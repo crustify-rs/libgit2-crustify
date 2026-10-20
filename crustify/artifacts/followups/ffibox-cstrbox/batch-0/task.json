@@ -1,0 +1,8 @@
+{
+  "objectives": ["unsafety", "contracts", "ub", "equiv", "internal", "conventions", "misc", "coverage", "fix"],
+  "commits": ["ac7dd20e5"],
+  "base_branch": "crustify/ffibox-cstrbox",
+  "model": "openrouter/anthropic/claude-opus-5.5",
+  "billing": "api",
+  "instructions": "instructions.md"
+}
