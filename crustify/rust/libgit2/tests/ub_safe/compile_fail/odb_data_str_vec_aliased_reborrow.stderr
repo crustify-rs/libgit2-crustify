@@ -5,5 +5,5 @@ error[E0502]: cannot borrow `v` as mutable because it is also borrowed as immuta
   |                  - immutable borrow occurs here
 7 |     v.as_mut_slice()[0] = OdbDataStrFree::dup(c"b").unwrap();
   |     ^^^^^^^^^^^^^^^^ mutable borrow occurs here
-8 |     let _ = shared[0].as_bytes();
-  |             --------- immutable borrow later used here
+8 |     let _ = data_str_bytes(&shared[0]);
+  |                             --------- immutable borrow later used here

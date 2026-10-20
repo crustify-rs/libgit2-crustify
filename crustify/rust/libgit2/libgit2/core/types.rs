@@ -2859,7 +2859,7 @@ mod unit_tests {
 
     mod signatures {
         use super::super::*;
-        use crate::libgit2::raw::{OdbDataBox, OdbDataStrFree};
+        use crate::libgit2::raw::{OdbDataBox, OdbDataStrFree, data_str_bytes};
         use crate::libgit2::util::sys::alloc::{Alloc, Allocator};
         use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering::SeqCst};
 
@@ -3073,7 +3073,7 @@ mod unit_tests {
             let old_at = sig.as_ref().name().unwrap().as_ptr();
             let old = sig.as_mut().replace_name(name).unwrap();
             assert_eq!(old.as_ptr(), old_at);
-            assert_eq!(old.to_str(), Ok("A"));
+            assert_eq!(data_str_bytes(&old), b"A");
             assert_eq!(sig.as_ref().name().unwrap().as_ptr(), name_at);
             let email = OdbDataStrFree::dup(c"b@c").unwrap();
             let email_at = email.as_ptr();
@@ -3106,7 +3106,10 @@ mod unit_tests {
                 let lost_name = sig
                     .as_mut()
                     .replace_name(OdbDataStrFree::dup(c"N").unwrap());
-                assert_eq!(lost_name.as_ref().map(|s| s.as_c_str()), name);
+                assert_eq!(
+                    lost_name.as_ref().map(data_str_bytes),
+                    name.map(|n| n.to_bytes().to_vec())
+                );
                 if sig.as_ref().email().is_none() {
                     sig.as_mut().set_email(OdbDataStrFree::dup(c"n@m").unwrap());
                 }

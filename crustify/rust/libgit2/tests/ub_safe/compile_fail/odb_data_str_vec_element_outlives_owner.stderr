@@ -7,8 +7,8 @@ error[E0505]: cannot move out of `v` because it is borrowed
   |                  - borrow of `v` occurs here
 7 |     drop(v);
   |          ^ move out of `v` occurs here
-8 |     let _ = first.as_bytes();
-  |             ----- borrow later used here
+8 |     let _ = data_str_bytes(first);
+  |                            ----- borrow later used here
   |
 help: consider cloning the value if the performance cost is acceptable
   |

@@ -14,7 +14,7 @@ use std::thread;
 
 use libgit2::ffi;
 use libgit2::libgit2::core::buffer::{Buf, BufMut, BufRef, BufVal};
-use libgit2::libgit2::raw::{OdbDataStrFree, OdbDataVec};
+use libgit2::libgit2::raw::{OdbDataStrFree, OdbDataVec, data_str_bytes};
 
 use crate::fixture::{fill_from_option, isolated, set_str_option};
 
@@ -169,7 +169,7 @@ fn moves_and_replacements_release_once() {
     // Out as a string, then the buffer dropped first.
     let s = second.as_mut().take_str().unwrap();
     drop(second);
-    assert_eq!(s.to_str(), Ok("refs/heads/main"));
+    assert_eq!(data_str_bytes(&s), b"refs/heads/main");
 
     // In again without a copy, then out as bytes, the parent dropped first again.
     first.as_mut().set_str(s);
@@ -240,11 +240,11 @@ fn libgit2_results_are_read_reused_and_released_once() {
             let s = ours.as_mut().take_str().unwrap();
             fill_from_option(ua, &mut ours);
             let bytes = ours.as_mut().take_bytes();
-            assert_eq!(s.as_bytes(), bytes.as_slice());
+            assert_eq!(data_str_bytes(&s), bytes.as_slice());
             fill_from_option(ua, &mut ours);
             fill_from_option(tp, &mut buf);
             drop((buf, ours));
-            assert_eq!(s.to_str(), Ok("crustify/2.0"));
+            assert_eq!(data_str_bytes(&s), b"crustify/2.0");
 
             set_str_option(ffi::GIT_OPT_SET_TEMPLATE_PATH, None);
             set_str_option(ffi::GIT_OPT_SET_USER_AGENT, None);
@@ -277,7 +277,7 @@ fn buffers_shared_and_sent_across_threads() {
     })
     .join()
     .unwrap();
-    assert_eq!(s.to_str(), Ok("from another thread"));
+    assert_eq!(data_str_bytes(&s), b"from another thread");
     let owner = Buf::from_bytes(b"dropped elsewhere").unwrap();
     thread::spawn(move || drop(owner)).join().unwrap();
 }

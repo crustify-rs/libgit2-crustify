@@ -445,7 +445,7 @@ const _: () = assert!(size_of::<c_char>() == size_of::<u8>());
 #[cfg(test)]
 mod unit_tests {
     use super::*;
-    use crate::libgit2::raw::OdbDataStrFree;
+    use crate::libgit2::raw::{OdbDataStrFree, data_str_bytes};
     use crate::libgit2::util::sys::alloc::{Alloc, Allocator};
     use crate::libgit2::util::sys::errors::runtime_pinned;
     use core::ffi::{c_int, c_void};
@@ -683,7 +683,7 @@ mod unit_tests {
         assert_eq!((buf.as_ref().len(), buf.as_ref().capacity()), (6, 7));
         assert_eq!(buf.as_ref().as_c_str(), c"origin");
         let s = buf.as_mut().take_str().unwrap();
-        assert_eq!(s.as_c_str(), c"origin");
+        assert_eq!(data_str_bytes(&s), b"origin");
         assert!(buf.as_mut().take_str().is_none(), "nothing left to take");
 
         buf.as_mut().set(Buf::from_bytes(b"pa\0ck").unwrap());
@@ -695,7 +695,7 @@ mod unit_tests {
         buf.as_mut().set(Buf::from_bytes(b"x").unwrap());
         buf.as_mut().set_bytes(b"").unwrap();
         assert_eq!((buf.as_ref().len(), buf.as_ref().capacity()), (0, 2));
-        assert_eq!(buf.as_mut().take_str().unwrap().as_c_str(), c"");
+        assert_eq!(data_str_bytes(&buf.as_mut().take_str().unwrap()), b"");
         buf.as_mut().set(Buf::from_bytes(b"y").unwrap());
         buf.as_mut().set_bytes(b"").unwrap();
         let empty = buf.as_mut().take_bytes();

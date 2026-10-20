@@ -14,7 +14,7 @@ use std::thread;
 
 use libgit2::ffi;
 use libgit2::libgit2::core::buffer::{Buf, BufVal};
-use libgit2::libgit2::raw::{OdbDataStr, OdbDataStrFree};
+use libgit2::libgit2::raw::{OdbDataStr, OdbDataStrFree, data_str_bytes};
 
 const CHILD: &str = "CRUSTIFY_UB_UNSAFE_CHILD";
 
@@ -178,11 +178,14 @@ fn adopting_c_built_buffers_at_the_edges() {
         // SAFETY: as above.
         let mut other = unsafe { Buf::from_raw(c_buf(bytes, reserved)) };
         let s = buf.as_mut().take_str().unwrap();
-        assert_eq!(s.as_bytes(), up_to_nul);
+        assert_eq!(data_str_bytes(&s), up_to_nul);
         let v = other.as_mut().take_bytes();
         assert_eq!(v.as_slice(), bytes);
         drop((buf, other));
-        assert_eq!((s.as_bytes(), v.as_slice()), (up_to_nul, bytes));
+        assert_eq!(
+            (data_str_bytes(&s), v.as_slice()),
+            (up_to_nul.to_vec(), bytes)
+        );
 
         // Released by the owner without a take.
         // SAFETY: as above.
@@ -217,7 +220,8 @@ fn adopting_what_libgit2_leaves() {
                 "the string is moved, not copied"
             );
             assert_eq!(s.len(), size);
-            assert!(s.to_str().unwrap().contains("libgit2"));
+            let text = String::from_utf8(data_str_bytes(&s)).unwrap();
+            assert!(text.contains("libgit2"));
             assert!(buf.as_ref().is_empty() && buf.as_ref().capacity() == 0);
             let t = s.clone();
             drop((s, buf));
@@ -264,7 +268,10 @@ fn adopting_what_libgit2_leaves() {
             get_option(ua, &mut raw);
             // SAFETY: `raw` is as libgit2 left it.
             let buf = unsafe { Buf::from_raw(raw) };
-            assert_eq!(buf.as_ref().as_c_str(), taken[0].as_c_str());
+            assert_eq!(
+                buf.as_ref().as_c_str().to_bytes(),
+                data_str_bytes(&taken[0])
+            );
 
             set_option(ffi::GIT_OPT_SET_TEMPLATE_PATH, ptr::null());
             // Adopted buffers and taken strings cross threads.

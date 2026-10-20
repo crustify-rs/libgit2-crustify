@@ -8,7 +8,7 @@
 
 use std::thread;
 
-use libgit2::libgit2::raw::{OdbDataArrayFree, OdbDataStrFree, OdbDataVec};
+use libgit2::libgit2::raw::{OdbDataArrayFree, OdbDataStrFree, OdbDataVec, data_str_bytes};
 use libgit2::libgit2::util::sys::alloc::{Allocator, FreeFn};
 
 use crate::fixture::{self, Counted, REFUSED, isolated, leave_free};
@@ -61,7 +61,7 @@ fn threads_share_a_rust_allocator() {
                             let v = OdbDataVec::<u8>::from_slice(&[t, i, t ^ i]).unwrap();
                             let s = OdbDataStrFree::dup(c"shared").unwrap();
                             assert_eq!(v.as_slice(), [t, i, t ^ i]);
-                            assert_eq!(s.as_bytes(), b"shared");
+                            assert_eq!(data_str_bytes(&s), b"shared");
                             assert!(COUNTED.as_ref().malloc().is_some());
                         }
                     })

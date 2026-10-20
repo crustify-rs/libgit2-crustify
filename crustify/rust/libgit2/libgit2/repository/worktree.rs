@@ -112,6 +112,7 @@ use std::path::Path;
 use ffibox::{CBorrowedPtr, CBox, CCell, define_ctype, impl_cdrop};
 
 use crate::ffi;
+use crate::libgit2::raw::data_str_bytes;
 use crate::libgit2::core::buffer::{Buf, BufVal};
 use crate::libgit2::core::strarray::{StrArray, StrArrayVal};
 use crate::libgit2::refs::refs::{ReferenceBox, ReferenceRef};
@@ -1323,7 +1324,8 @@ pub fn list(repo: RepositoryRef<'_>) -> Result<StrArrayVal, WorktreeError> {
     let slice = strings.as_mut_slice();
     let mut kept = 0;
     for i in 0..slice.len() {
-        if is_worktree_dir(&base.join(OsStr::from_bytes(slice[i].as_bytes()))) {
+        let name = data_str_bytes(&slice[i]);
+        if is_worktree_dir(&base.join(OsStr::from_bytes(&name))) {
             slice.swap(kept, i);
             kept += 1;
         }
