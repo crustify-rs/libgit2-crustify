@@ -112,7 +112,6 @@ use std::path::Path;
 use ffibox::{CBorrowedPtr, CBox, CCell, define_ctype, impl_cdrop};
 
 use crate::ffi;
-use crate::libgit2::raw::data_str_bytes;
 use crate::libgit2::core::buffer::{Buf, BufVal};
 use crate::libgit2::core::strarray::{StrArray, StrArrayVal};
 use crate::libgit2::refs::refs::{ReferenceBox, ReferenceRef};
@@ -1320,12 +1319,18 @@ pub fn list(repo: RepositoryRef<'_>) -> Result<StrArrayVal, WorktreeError> {
         generic,
     )?;
     let base = Path::new(OsStr::from_bytes(commondir.to_bytes())).join("worktrees");
+    // The names are read in place, while the array owns them: libgit2 keeps no pointer
+    // to its results, so they need no copy.
+    let keep: Vec<bool> = names
+        .as_ref()
+        .iter()
+        .map(|name| is_worktree_dir(&base.join(OsStr::from_bytes(name.to_bytes()))))
+        .collect();
     let mut strings = names.as_mut().take_strings();
     let slice = strings.as_mut_slice();
     let mut kept = 0;
-    for i in 0..slice.len() {
-        let name = data_str_bytes(&slice[i]);
-        if is_worktree_dir(&base.join(OsStr::from_bytes(&name))) {
+    for (i, keep) in keep.into_iter().enumerate() {
+        if keep {
             slice.swap(kept, i);
             kept += 1;
         }

@@ -7,7 +7,7 @@ use std::mem::{MaybeUninit, align_of};
 use std::thread;
 
 use libgit2::libgit2::raw::{
-    OdbDataArrayFree, OdbDataBox, OdbDataStrFree, OdbDataStrVec, OdbDataVec,
+    OdbDataArrayFree, OdbDataBox, OdbDataStr, OdbDataStrFree, OdbDataStrVec, OdbDataVec,
     data_str_bytes,
 };
 
@@ -223,6 +223,11 @@ fn strs(v: &OdbDataStrVec) -> Vec<Vec<u8>> {
     v.as_slice().iter().map(data_str_bytes).collect()
 }
 
+/// A string's bytes, read in place, for comparing as `CStr` compares.
+fn bytes(s: &OdbDataStr) -> impl Iterator<Item = u8> + '_ {
+    s.as_handles().elems().map(|c| c as u8)
+}
+
 #[test]
 #[cfg_attr(miri, ignore = "calls libgit2")]
 fn str_copies_strings_of_every_length() {
@@ -290,8 +295,7 @@ fn str_vec_elements_replace_and_move_in_place() {
     let mut v = OdbDataStrVec::dup_all(&[c"c", c"a", c"d", c"b"]).unwrap();
     // The replaced string is freed; ASan flags a leak or a double free.
     v.as_mut_slice()[2] = OdbDataStrFree::dup(c"e").unwrap();
-    v.as_mut_slice()
-        .sort_by(|x, y| data_str_bytes(x).cmp(&data_str_bytes(y)));
+    v.as_mut_slice().sort_by(|x, y| bytes(x).cmp(bytes(y)));
     assert_eq!(strs(&v), [&b"a"[..], b"b", b"c", b"e"]);
     v.as_mut_slice().swap(0, 3);
     v.as_mut_slice().reverse();

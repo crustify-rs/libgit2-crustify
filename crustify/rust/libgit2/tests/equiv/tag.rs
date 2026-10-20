@@ -488,6 +488,7 @@ mod tag_object {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "calls libgit2")]
     fn lookups_match_c() {
         init();
         let rust = Repository::open(&CString::new(TESTREPO).unwrap()).unwrap();
@@ -495,6 +496,7 @@ mod tag_object {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "calls libgit2")]
     fn lookups_in_a_repository_without_paths_match_c() {
         init();
         let rust = Repository::new().unwrap();
@@ -519,6 +521,7 @@ mod tag_object {
     /// targets it lacks, so their peel fails alike): each lookup fails, or succeeds,
     /// alike.
     #[test]
+    #[cfg_attr(miri, ignore = "calls libgit2")]
     fn lookups_of_unparsable_tags_match_c() {
         init();
         let path = std::env::temp_dir().join(format!("crustify-tag-equiv-{}", std::process::id()));

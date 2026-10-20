@@ -567,6 +567,11 @@ mod unit_tests {
         strs.iter().map(|s| s.as_bytes().to_vec()).collect()
     }
 
+    /// A string's bytes, read in place, for comparing as `CStr` compares.
+    fn bytes(s: &OdbDataStr) -> impl Iterator<Item = u8> + '_ {
+        s.as_handles().elems().map(|c| c as u8)
+    }
+
     /// Owned C strings and a `char *` array over them, in Rust's allocator, as C code
     /// builds an argument array.
     struct RustStrings {
@@ -811,7 +816,7 @@ mod unit_tests {
             .take_strings();
         strings
             .as_mut_slice()
-            .sort_by(|a, b| data_str_bytes(a).cmp(&data_str_bytes(b)));
+            .sort_by(|x, y| bytes(x).cmp(bytes(y)));
         let mut v = strings.into_vec();
         v.push(OdbDataStrFree::dup(c"refs/notes/x").unwrap());
         assert_eq!(data_str_bytes(&v.remove(0)), b"", "sorted first");

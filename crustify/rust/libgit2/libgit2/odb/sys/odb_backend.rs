@@ -38,10 +38,10 @@
 //! policies.
 
 use core::ffi::{CStr, c_char};
-use std::ffi::CString;
 use core::fmt;
 use core::mem::{ManuallyDrop, MaybeUninit, align_of, size_of};
 use core::ptr::{self, NonNull};
+use std::ffi::CString;
 
 use ffibox::{
     CAlloc, CAllocZeroed, CBox, CCell, CDrop, CPlainElem, CStrBox, CVec, CZeroable,
@@ -331,9 +331,10 @@ impl_cdupclone_str!(OdbDataStrFree, str_dup_raw);
 
 /// The string's bytes, **excluding** the NUL, copied out of libgit2's storage.
 ///
-/// [`CStrBox`] hands out a run of copies rather than a `&CStr`, since libgit2 keeps
-/// its own pointer to the string; a comparison, a path or a decode needs its own
-/// buffer.
+/// [`CStrBox`] hands out its bytes as a run of copies rather than a `&CStr`, so a
+/// path or a decode needs a buffer of its own. libgit2 keeps no pointer to an
+/// `OdbDataStr`, which owns its string alone: a comparison needs no copy, through
+/// `as_handles().elems()` with each `c_char` read as a `u8`, as `CStr` compares.
 #[must_use]
 pub fn data_str_bytes(s: &OdbDataStr) -> Vec<u8> {
     s.as_handles().elems().map(|b| b as u8).collect()
@@ -896,6 +897,16 @@ mod unit_tests {
         let w = unsafe { OdbDataStrVec::from_raw_parts(strings, count) }.unwrap();
         assert_eq!(w.as_ptr(), strings);
         assert_eq!(format!("{w:?}"), r#"["x", "y"]"#);
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore = "calls libgit2")]
+    fn str_vec_debug_formats_each_string_as_cstr_does() {
+        init();
+        let src = [c"", c"h\xc3\xa9llo", c"caf\xe9", c"q\"t\\", c"\x01\t\x7f"];
+        let v = OdbDataStrVec::dup_all(&src).unwrap();
+        assert_eq!(format!("{v:?}"), format!("{src:?}"));
+        assert_eq!(format!("{:?}", OdbDataStrVec::new()), "[]");
     }
 
     static LIVE: AtomicIsize = AtomicIsize::new(0);
