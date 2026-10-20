@@ -27,5 +27,5 @@
 
 pub use super::odb::sys::odb_backend::{
     OdbDataArrayFree, OdbDataBox, OdbDataFree, OdbDataStr, OdbDataStrFree, OdbDataStrVec,
-    OdbDataVec, data_str_bytes,
+    OdbDataVec,
 };

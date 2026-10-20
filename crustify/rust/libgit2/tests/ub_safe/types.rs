@@ -1058,7 +1058,7 @@ mod signatures {
     use libgit2::libgit2::core::types::{
         Signature, SignatureBox, SignatureMut, SignatureRef, SignatureView, Time,
     };
-    use libgit2::libgit2::raw::{OdbDataStr, OdbDataStrFree, data_str_bytes};
+    use libgit2::libgit2::raw::{OdbDataStr, OdbDataStrFree};
     use libgit2::libgit2::util::errors::ErrorClass;
 
     use crate::fixture::{init, isolated};
@@ -1093,7 +1093,7 @@ mod signatures {
     fn write_all(mut m: SignatureMut<'_>, name: &CStr, email: &CStr) {
         m.set_name(dup(name));
         let old = m.as_mut().replace_email(dup(email)).unwrap();
-        assert!(data_str_bytes(&old).len() <= 4097);
+        assert!(old.as_bytes().len() <= 4097);
         m.when_mut().set_seconds(-1);
         m.as_mut().when_mut().set_offset_minutes(-899);
         m.when_mut().set_sign(b'x');
@@ -1137,7 +1137,7 @@ mod signatures {
         let copy = sig.as_ref().to_signature().unwrap();
         let when = sig.as_ref().when().to_time();
         drop(sig);
-        assert_eq!(data_str_bytes(&old_name), b"First");
+        assert_eq!(old_name.as_c_str(), c"First");
         assert_eq!(read(clone.as_ref()).0, c"Second".to_owned());
         assert_eq!(read(copy.as_ref()).1, c"first@x".to_owned());
         assert_eq!(clone.as_ref(), copy.as_ref());
@@ -1170,7 +1170,7 @@ mod signatures {
         }
         drop(sig);
         assert_eq!(kept.len(), 64);
-        assert!(kept.iter().all(|s| !data_str_bytes(s).is_empty()));
+        assert!(kept.iter().all(|s| !s.as_bytes().is_empty()));
     }
 
     /// Views read borrowed strings in place, and copies of them own theirs: the copy

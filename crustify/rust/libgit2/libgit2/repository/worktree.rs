@@ -1319,18 +1319,11 @@ pub fn list(repo: RepositoryRef<'_>) -> Result<StrArrayVal, WorktreeError> {
         generic,
     )?;
     let base = Path::new(OsStr::from_bytes(commondir.to_bytes())).join("worktrees");
-    // The names are read in place, while the array owns them: libgit2 keeps no pointer
-    // to its results, so they need no copy.
-    let keep: Vec<bool> = names
-        .as_ref()
-        .iter()
-        .map(|name| is_worktree_dir(&base.join(OsStr::from_bytes(name.to_bytes()))))
-        .collect();
     let mut strings = names.as_mut().take_strings();
     let slice = strings.as_mut_slice();
     let mut kept = 0;
-    for (i, keep) in keep.into_iter().enumerate() {
-        if keep {
+    for i in 0..slice.len() {
+        if is_worktree_dir(&base.join(OsStr::from_bytes(slice[i].as_bytes()))) {
             slice.swap(kept, i);
             kept += 1;
         }

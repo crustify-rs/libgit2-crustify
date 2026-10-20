@@ -2478,7 +2478,6 @@ mod tree_entry {
     }
 
     #[test]
-    #[cfg_attr(miri, ignore = "calls libgit2")]
     fn copies_match_c() {
         init();
         let path = CString::new(TESTREPO).unwrap();
@@ -2611,7 +2610,6 @@ mod tree_entry {
     }
 
     #[test]
-    #[cfg_attr(miri, ignore = "calls libgit2")]
     fn path_lookups_match_c() {
         init();
         let path = CString::new(TESTREPO).unwrap();
@@ -3222,7 +3220,6 @@ mod tree_object {
     }
 
     #[test]
-    #[cfg_attr(miri, ignore = "calls libgit2")]
     fn lookups_match_c() {
         init();
         let rust = Repository::open(&CString::new(TESTREPO).unwrap()).unwrap();
@@ -3232,7 +3229,6 @@ mod tree_object {
     }
 
     #[test]
-    #[cfg_attr(miri, ignore = "calls libgit2")]
     fn lookups_in_a_repository_without_paths_match_c() {
         init();
         let rust = Repository::new().unwrap();
@@ -3256,7 +3252,6 @@ mod tree_object {
     /// A repository holding trees libgit2 cannot parse, beside well-formed ones (the
     /// empty tree, and one entry): each lookup fails, or succeeds, alike.
     #[test]
-    #[cfg_attr(miri, ignore = "calls libgit2")]
     fn lookups_of_unparsable_trees_match_c() {
         init();
         let path = std::env::temp_dir().join(format!("crustify-tree-equiv-{}", std::process::id()));
@@ -3491,7 +3486,6 @@ mod tree_object {
     ///
     /// [`TreeRef::id`]: libgit2::libgit2::object::tree::TreeRef::id
     #[test]
-    #[cfg_attr(miri, ignore = "calls libgit2")]
     fn getters_match_c() {
         init();
         let mut c = CSide::open(TESTREPO);

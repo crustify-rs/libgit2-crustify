@@ -41,7 +41,6 @@ use core::ffi::{CStr, c_char};
 use core::fmt;
 use core::mem::{ManuallyDrop, MaybeUninit, align_of, size_of};
 use core::ptr::{self, NonNull};
-use std::ffi::CString;
 
 use ffibox::{
     CAlloc, CAllocZeroed, CBox, CCell, CDrop, CPlainElem, CStrBox, CVec, CZeroable,
@@ -329,17 +328,6 @@ pub type OdbDataStr = CStrBox<OdbDataStrFree>;
 impl_cdrop_str!(OdbDataStrFree, str_free);
 impl_cdupclone_str!(OdbDataStrFree, str_dup_raw);
 
-/// The string's bytes, **excluding** the NUL, copied out of libgit2's storage.
-///
-/// [`CStrBox`] hands out its bytes as a run of copies rather than a `&CStr`, so a
-/// path or a decode needs a buffer of its own. libgit2 keeps no pointer to an
-/// `OdbDataStr`, which owns its string alone: a comparison needs no copy, through
-/// `as_handles().elems()` with each `c_char` read as a `u8`, as `CStr` compares.
-#[must_use]
-pub fn data_str_bytes(s: &OdbDataStr) -> Vec<u8> {
-    s.as_handles().elems().map(|b| b as u8).collect()
-}
-
 impl OdbDataStrFree {
     /// A copy of `s` in libgit2's allocator; `None` when the allocation fails.
     pub fn dup(s: &CStr) -> Option<OdbDataStr> {
@@ -386,7 +374,7 @@ impl OdbDataStrVec {
     /// Copies of `strs`, in order; `None` when an allocation fails, after releasing
     /// whatever was copied. An empty `strs` allocates nothing.
     pub fn dup_all<S: AsRef<CStr>>(strs: &[S]) -> Option<Self> {
-        Self::dup_each(strs, |s| OdbDataStrFree::dup(s.as_ref()))
+        Self::dup_each(strs, |s| s.as_ref())
     }
 
     /// `strs` moved into a run in libgit2's allocator; `None`, dropping them, when the
@@ -494,7 +482,7 @@ impl OdbDataStrVec {
 
     /// Copies every string; `None` on failure. See `Clone`.
     pub fn try_clone(&self) -> Option<Self> {
-        Self::dup_each(self.as_slice(), OdbDataStr::try_clone)
+        Self::dup_each(self.as_slice(), OdbDataStr::as_c_str)
     }
 
     /// The elements' base for Rust-side views: dangling when the run is NULL.
@@ -517,11 +505,11 @@ impl OdbDataStrVec {
     /// Copies of every item's string in `git_strarray_copy`'s order: the array first,
     /// then each string. A failed copy releases the copies made so far, then the
     /// array, as `git_strarray_dispose` does there.
-    fn dup_each<T>(items: &[T], dup: impl Fn(&T) -> Option<OdbDataStr>) -> Option<Self> {
+    fn dup_each<T>(items: &[T], as_c_str: impl Fn(&T) -> &CStr) -> Option<Self> {
         let mut run = OdbDataArrayFree::new_uninit::<OdbDataStr>(items.len())?;
         let slots = run.as_mut_slice();
         for (i, item) in items.iter().enumerate() {
-            let Some(copy) = dup(item) else {
+            let Some(copy) = OdbDataStrFree::dup(as_c_str(item)) else {
                 for slot in &mut slots[..i] {
                     // SAFETY: the slots before `i` were written below, and each is
                     // dropped once, before the storage is released.
@@ -559,21 +547,9 @@ impl Default for OdbDataStrVec {
 }
 
 impl fmt::Debug for OdbDataStrVec {
-    /// As a list of C strings — `["one", "two"]` — from bytes copied out of libgit2's
-    /// storage, since the elements hand out no `&CStr` to format.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        struct Quoted<'a>(&'a OdbDataStr);
-
-        impl fmt::Debug for Quoted<'_> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                let copy = CString::new(data_str_bytes(self.0))
-                    .expect("a NUL-terminated string has no interior NUL");
-                fmt::Debug::fmt(copy.as_c_str(), f)
-            }
-        }
-
         f.debug_list()
-            .entries(self.as_slice().iter().map(Quoted))
+            .entries(self.as_slice().iter().map(OdbDataStr::as_c_str))
             .finish()
     }
 }
@@ -856,13 +832,13 @@ mod unit_tests {
         unsafe { raw.copy_from_nonoverlapping(c"odb".as_ptr(), 4) };
         // SAFETY: a NUL-terminated string in fresh `git__malloc` storage, now owned here.
         let s = unsafe { OdbDataStr::from_raw(raw) }.unwrap();
-        assert_eq!(data_str_bytes(&s), b"odb");
+        assert_eq!(s.to_str(), Ok("odb"));
         let t = s.clone();
         assert_ne!(s.as_ptr(), t.as_ptr());
         let raw = s.into_raw();
         // SAFETY: the string `s` gave up, released once here.
         unsafe { ffi::git_odb_backend_data_free(ptr::null_mut(), raw.cast()) };
-        assert_eq!(data_str_bytes(&t), b"odb");
+        assert_eq!(t.as_bytes(), b"odb");
     }
 
     #[test]
@@ -876,7 +852,7 @@ mod unit_tests {
             strs.iter().map(OdbDataStr::as_ptr).collect::<Vec<_>>(),
             ptrs
         );
-        assert_eq!(data_str_bytes(&strs[2]), b"def");
+        assert_eq!(strs[2].as_bytes(), b"def");
         let back = OdbDataStrVec::from_vec(strs).unwrap();
         assert_eq!(
             back.as_slice()
@@ -897,16 +873,6 @@ mod unit_tests {
         let w = unsafe { OdbDataStrVec::from_raw_parts(strings, count) }.unwrap();
         assert_eq!(w.as_ptr(), strings);
         assert_eq!(format!("{w:?}"), r#"["x", "y"]"#);
-    }
-
-    #[test]
-    #[cfg_attr(miri, ignore = "calls libgit2")]
-    fn str_vec_debug_formats_each_string_as_cstr_does() {
-        init();
-        let src = [c"", c"h\xc3\xa9llo", c"caf\xe9", c"q\"t\\", c"\x01\t\x7f"];
-        let v = OdbDataStrVec::dup_all(&src).unwrap();
-        assert_eq!(format!("{v:?}"), format!("{src:?}"));
-        assert_eq!(format!("{:?}", OdbDataStrVec::new()), "[]");
     }
 
     static LIVE: AtomicIsize = AtomicIsize::new(0);

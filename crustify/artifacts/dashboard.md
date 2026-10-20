@@ -1202,26 +1202,3 @@ figures are the ones recorded before; what moved, and what it left blank:
 
 The dashboard before the move is `git show 0827c7651:crustify/artifacts/dashboard.md`; its
 Legend defines the old columns.
-
-### Follow-up review: the ffibox `CStrBox` update
-
-Commit `ac7dd20e5` follows ffibox's uncommitted `CStrBox` change: `as_handles()` replaces
-`as_c_str`, `as_bytes` and `to_str`, so no reference is formed over a string C may hold.
-No wave scheduled the commit. It was reviewed in its own batch,
-`followups/ffibox-cstrbox/batch-0`, on its branch `crustify/ffibox-cstrbox`, outside every
-batch table. The batch ran objectives `unsafety`, `contracts`, `ub`, `equiv`, `internal`,
-`conventions`, `misc`, `coverage` and `fix` on `openrouter/anthropic/claude-opus-5.5` via
-`claude`: `$7.00`, `20.65M` tokens, `23m19s` (`reviewer.usage.json` in its artifact dir).
-
-It filed four `misc` reports and no UB, contract or equivalence finding. Two are in this
-crate, and it fixed both: copies paid where libgit2 cannot write (`worktree::list`, two
-sort comparators), and a `compile_fail` case that read no string memory after the drop.
-Two are in ffibox, filed with reproducers and not fixed. `CStrBox`'s `Debug` diverges from
-`CStr`'s on non-ASCII UTF-8. Its premise, that C keeps a pointer to the string, contradicts
-the sole ownership its `from_raw` contract establishes. It added a unit test and a
-non-UTF-8 equivalence test, `+1` and `+1`.
-
-The batch also found that the workspace Miri gate's `equiv` binary aborted on the base. Twelve
-earlier-wave equivalence tests in `object`, `tag` and `tree` call libgit2 without
-`#[cfg_attr(miri, ignore = "calls libgit2")]`. Each was confirmed alone under Miri and given
-the attribute. BSan was not run: no test or reproducer is expected to trigger it.

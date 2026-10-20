@@ -2752,7 +2752,7 @@ mod signatures {
 
     use super::*;
     use libgit2::libgit2::core::types::{Signature, SignatureBox, SignatureRef, SignatureView};
-    use libgit2::libgit2::raw::{OdbDataStrFree, data_str_bytes};
+    use libgit2::libgit2::raw::OdbDataStrFree;
 
     /// A signature's fields as owned values: name, email, seconds, offset, sign.
     type Fields = (Option<CString>, Option<CString>, i64, i32, u8);
@@ -3117,10 +3117,7 @@ mod signatures {
             Step::Email(s) => {
                 let before = m.as_ref().email().map(CStr::to_owned);
                 let old = m.replace_email(OdbDataStrFree::dup(s).unwrap());
-                assert_eq!(
-                    old.map(|o| CString::new(data_str_bytes(&o)).unwrap()),
-                    before
-                );
+                assert_eq!(old.map(|o| o.as_c_str().to_owned()), before);
             }
             Step::When(seconds, offset) => m.set_when(Time::new(seconds, offset)),
             Step::Seconds(v) => m.when_mut().set_seconds(v),

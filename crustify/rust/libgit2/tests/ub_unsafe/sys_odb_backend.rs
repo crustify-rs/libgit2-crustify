@@ -11,7 +11,7 @@ use std::ptr;
 use std::thread;
 
 use libgit2::ffi;
-use libgit2::libgit2::raw::{OdbDataStrFree, OdbDataStrVec, data_str_bytes};
+use libgit2::libgit2::raw::{OdbDataStr, OdbDataStrFree, OdbDataStrVec};
 
 /// The raw C calls below allocate, which needs an initialised libgit2; the extra
 /// reference dies with the process.
@@ -20,8 +20,8 @@ fn init() {
     assert!(unsafe { ffi::git_libgit2_init() } > 0);
 }
 
-fn strs(v: &OdbDataStrVec) -> Vec<Vec<u8>> {
-    v.as_slice().iter().map(data_str_bytes).collect()
+fn strs(v: &OdbDataStrVec) -> Vec<&[u8]> {
+    v.as_slice().iter().map(OdbDataStr::as_bytes).collect()
 }
 
 /// A `git__malloc` array of `capacity` slots holding copies of `items`, NULL entries
@@ -57,7 +57,7 @@ fn adopts_its_own_raw_parts() {
         let v = unsafe { OdbDataStrVec::from_raw_parts(strings, count) }.unwrap();
         assert_eq!((v.as_ptr(), v.len()), (strings, n));
         assert_eq!(
-            data_str_bytes(&v.as_slice()[n - 1]),
+            v.as_slice()[n - 1].as_bytes(),
             format!("ref{}", n - 1).as_bytes()
         );
     }
@@ -138,12 +138,12 @@ fn adopts_what_libgit2_hands_out() {
     // SAFETY: libgit2's output, owned by the caller and handed over whole.
     let v = unsafe { OdbDataStrVec::from_raw_parts(out.strings, out.count) }.unwrap();
     assert!(!v.is_empty());
-    assert!(strs(&v).contains(&b"noop".to_vec()));
+    assert!(strs(&v).contains(&&b"noop"[..]));
     let mut owned = v.into_vec();
-    owned.retain(|s| data_str_bytes(s) != b"noop");
+    owned.retain(|s| s.as_bytes() != b"noop");
     let w = OdbDataStrVec::from_vec(owned).unwrap();
     // An adopted run crosses threads like any other.
-    thread::spawn(move || assert!(!strs(&w).contains(&b"noop".to_vec())))
+    thread::spawn(move || assert!(!strs(&w).contains(&&b"noop"[..])))
         .join()
         .unwrap();
 }

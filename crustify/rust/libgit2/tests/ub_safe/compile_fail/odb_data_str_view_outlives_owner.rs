@@ -1,9 +1,9 @@
-// A string's borrowed run cannot outlive the string whose bytes it reads.
+// A string's `CStr` view cannot outlive the string it borrows.
 use libgit2::libgit2::raw::OdbDataStrFree;
 
 fn main() {
     let s = OdbDataStrFree::dup(c"odb").unwrap();
-    let run = s.as_handles();
+    let view = s.as_c_str();
     drop(s);
-    let _ = run.elem(0);
+    let _ = view.to_bytes();
 }

@@ -8,7 +8,6 @@ use std::thread;
 
 use libgit2::libgit2::raw::{
     OdbDataArrayFree, OdbDataBox, OdbDataStr, OdbDataStrFree, OdbDataStrVec, OdbDataVec,
-    data_str_bytes,
 };
 
 use crate::fixture::{Pair, filled, isolated};
@@ -219,13 +218,8 @@ fn text(len: usize, seed: u8) -> CString {
     .unwrap()
 }
 
-fn strs(v: &OdbDataStrVec) -> Vec<Vec<u8>> {
-    v.as_slice().iter().map(data_str_bytes).collect()
-}
-
-/// A string's bytes, read in place, for comparing as `CStr` compares.
-fn bytes(s: &OdbDataStr) -> impl Iterator<Item = u8> + '_ {
-    s.as_handles().elems().map(|c| c as u8)
+fn strs(v: &OdbDataStrVec) -> Vec<&[u8]> {
+    v.as_slice().iter().map(OdbDataStr::as_bytes).collect()
 }
 
 #[test]
@@ -236,8 +230,9 @@ fn str_copies_strings_of_every_length() {
         let s = OdbDataStrFree::dup(&src).unwrap();
         assert_ne!(s.as_ptr(), src.as_ptr());
         assert_eq!((s.len(), s.is_empty()), (len, len == 0));
-        assert_eq!(data_str_bytes(&s), src.as_bytes());
-        assert_eq!(data_str_bytes(&s).len(), len);
+        assert_eq!(s.as_c_str(), src.as_c_str());
+        assert_eq!(s.as_bytes(), src.as_bytes());
+        assert_eq!(s.to_str().unwrap().len(), len);
         assert_eq!(format!("{s:?}"), format!("CStrBox({src:?})"));
     }
 }
@@ -246,9 +241,9 @@ fn str_copies_strings_of_every_length() {
 #[cfg_attr(miri, ignore = "calls libgit2")]
 fn str_keeps_bytes_that_are_not_utf8() {
     let s = OdbDataStrFree::dup(c"caf\xe9").unwrap();
-    assert!(core::str::from_utf8(&data_str_bytes(&s)).is_err());
-    assert_eq!(data_str_bytes(&s), b"caf\xe9");
-    assert_eq!(data_str_bytes(&s.clone()), b"caf\xe9");
+    assert!(s.to_str().is_err());
+    assert_eq!(s.as_bytes(), b"caf\xe9");
+    assert_eq!(s.clone().as_bytes(), b"caf\xe9");
 }
 
 #[test]
@@ -260,7 +255,7 @@ fn str_clone_is_independent_and_outlives_its_source() {
     assert!(s.as_ptr() != t.as_ptr() && t.as_ptr() != u.as_ptr());
     drop(s);
     drop(t);
-    assert_eq!(data_str_bytes(&u), b"refs/remotes/origin/HEAD");
+    assert_eq!(u.as_c_str(), c"refs/remotes/origin/HEAD");
 }
 
 #[test]
@@ -274,11 +269,11 @@ fn str_vec_copies_runs_of_every_shape() {
         assert_eq!((v.len(), v.is_empty()), (n, false));
         assert_eq!(
             strs(&v),
-            src.iter().map(|s| s.as_bytes().to_vec()).collect::<Vec<_>>()
+            src.iter().map(|s| s.as_bytes()).collect::<Vec<_>>()
         );
         assert_eq!(
-            data_str_bytes(v.as_slice().last().unwrap()),
-            src.last().unwrap().as_bytes()
+            v.as_slice().last().unwrap().as_c_str(),
+            src.last().unwrap().as_c_str()
         );
         assert!(
             v.as_slice()
@@ -295,7 +290,8 @@ fn str_vec_elements_replace_and_move_in_place() {
     let mut v = OdbDataStrVec::dup_all(&[c"c", c"a", c"d", c"b"]).unwrap();
     // The replaced string is freed; ASan flags a leak or a double free.
     v.as_mut_slice()[2] = OdbDataStrFree::dup(c"e").unwrap();
-    v.as_mut_slice().sort_by(|x, y| bytes(x).cmp(bytes(y)));
+    v.as_mut_slice()
+        .sort_by(|x, y| x.as_bytes().cmp(y.as_bytes()));
     assert_eq!(strs(&v), [&b"a"[..], b"b", b"c", b"e"]);
     v.as_mut_slice().swap(0, 3);
     v.as_mut_slice().reverse();
@@ -322,8 +318,8 @@ fn str_vec_moves_through_a_vec() {
     let last = out.pop().unwrap();
     drop(out);
     assert_eq!(
-        (data_str_bytes(&kept), data_str_bytes(&last)),
-        (b"origin".to_vec(), b"mirror".to_vec())
+        (kept.as_bytes(), last.as_bytes()),
+        (&b"origin"[..], &b"mirror"[..])
     );
 }
 
@@ -365,7 +361,7 @@ fn str_owners_cross_threads() {
         for _ in 0..4 {
             // Shared reads and copies of one string and one run at once.
             scope.spawn(|| {
-                assert_eq!(data_str_bytes(&s.clone()), b"shared");
+                assert_eq!(s.clone().as_bytes(), b"shared");
                 let w = v.clone();
                 assert_eq!(strs(&w), strs(&v));
             });
@@ -395,10 +391,7 @@ fn str_owners_work_before_any_init() {
             // libgit2's `failalloc` and write the OOM through a nonexistent TLS key.
             let s = OdbDataStrFree::dup(c"first").unwrap();
             let v = OdbDataStrVec::dup_all(&[c"a", c"b"]).unwrap();
-            assert_eq!(
-                (data_str_bytes(&s.clone()), v.clone().len()),
-                (b"first".to_vec(), 2)
-            );
+            assert_eq!((s.clone().as_bytes(), v.clone().len()), (&b"first"[..], 2));
         },
     );
 }

@@ -35,7 +35,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use libgit2::ffi;
 use libgit2::libgit2::raw::{
-    OdbDataArrayFree, OdbDataBox, OdbDataStrFree, OdbDataStrVec, OdbDataVec, data_str_bytes,
+    OdbDataArrayFree, OdbDataBox, OdbDataStrFree, OdbDataStrVec, OdbDataVec,
 };
 
 #[repr(C)]
@@ -570,7 +570,7 @@ fn c_strings(array: &ffi::git_strarray) -> Vec<Vec<u8>> {
 }
 
 fn rust_strings(v: &OdbDataStrVec) -> Vec<Vec<u8>> {
-    v.as_slice().iter().map(data_str_bytes).collect()
+    v.as_slice().iter().map(|s| s.as_bytes().to_vec()).collect()
 }
 
 fn is_zeroed(array: &ffi::git_strarray) -> bool {
@@ -584,7 +584,7 @@ fn str_copy_then_release(s: &CStr) {
     let o = r.step(|| OdbDataStrFree::dup(s).unwrap());
     assert_eq!(c.steps, r.steps);
     assert!(matches!(&r.steps[0][..], [Event::Alloc { len, .. }] if *len == s.count_bytes() + 1));
-    assert_eq!(c_str(p), data_str_bytes(&o));
+    assert_eq!(c_str(p), o.as_bytes());
     assert_eq!(s.is_empty(), o.is_empty());
 
     c.step(|| c_free(&mut backend(), p.cast()));
@@ -601,12 +601,12 @@ fn str_clone_then_release_source_first(s: &CStr) {
     let q = c.step(|| c_strdup(unsafe { CStr::from_ptr(p) }));
     let w = r.step(|| o.clone());
     assert_eq!(c.steps, r.steps);
-    assert_eq!(c_str(q), data_str_bytes(&w));
+    assert_eq!(c_str(q), w.as_bytes());
 
     c.step(|| c_free(&mut backend(), p.cast()));
     r.step(|| drop(o));
     assert_eq!(c.steps, r.steps);
-    assert_eq!(c_str(q), data_str_bytes(&w));
+    assert_eq!(c_str(q), w.as_bytes());
 
     c.step(|| c_free(&mut backend(), q.cast()));
     r.step(|| drop(w));
@@ -782,7 +782,7 @@ fn string_allocation_failures() {
     assert!(v.try_clone().is_none());
     assert_eq!(FAIL_IN.load(Ordering::SeqCst), 0);
     assert_eq!(rust_strings(&v), [&b"alpha"[..], b"beta", b"gamma"]);
-    assert_eq!(data_str_bytes(&s), b"delta");
+    assert_eq!(s.as_bytes(), b"delta");
 }
 
 /// `GIT_OPT_GET_EXTENSIONS` hands out a `git_strarray` from a `git_vector`, its array

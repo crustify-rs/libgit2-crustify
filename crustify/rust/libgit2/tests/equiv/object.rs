@@ -328,7 +328,6 @@ fn compare(mut c: CSide, rust: &RepositoryBox, script: &[Step<'_>]) {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "calls libgit2")]
 fn lookups_match_c() {
     init();
     let rust = Repository::open(&CString::new(TESTREPO).unwrap()).unwrap();
@@ -336,7 +335,6 @@ fn lookups_match_c() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "calls libgit2")]
 fn lookups_in_a_repository_without_paths_match_c() {
     init();
     let rust = Repository::new().unwrap();
@@ -363,7 +361,6 @@ fn lookups_in_a_repository_without_paths_match_c() {
 /// A repository holding objects libgit2 cannot parse, beside a well-formed one: each
 /// lookup fails (or succeeds) alike, through every constructor and type filter.
 #[test]
-#[cfg_attr(miri, ignore = "calls libgit2")]
 fn lookups_of_unparsable_objects_match_c() {
     init();
     let path = std::env::temp_dir().join(format!("crustify-object-equiv-{}", std::process::id()));
@@ -560,7 +557,6 @@ mod peel_and_bypath {
     }
 
     #[test]
-    #[cfg_attr(miri, ignore = "calls libgit2")]
     fn peels_and_path_lookups_match_c() {
         init();
         let c = CSide::open(TESTREPO);

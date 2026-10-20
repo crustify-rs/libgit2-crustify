@@ -1,9 +1,0 @@
-decode + path, CVec<u8> (borrowed &[u8]):      0 Rust allocations
-decode + path, CStrBox (copied out of a CSlice): 1 Rust allocations
-
-thread 'main' panicked at src/main.rs:67:5:
-assertion `left == right` failed: a string the CStrBox owns alone is copied to be read, where a CVec under the same ownership lends its bytes
-  left: 1
- right: 0
-note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
-exit 101

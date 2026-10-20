@@ -44,7 +44,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use libgit2::ffi;
 use libgit2::libgit2::core::buffer::{Buf, BufRef, BufVal};
-use libgit2::libgit2::raw::{OdbDataStrFree, data_str_bytes};
+use libgit2::libgit2::raw::OdbDataStrFree;
 
 const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 
@@ -501,7 +501,7 @@ fn rust_built_buffers_match_libgit2_shaped_ones() {
                 });
                 // SAFETY: `cstr` is the NUL-terminated string the buffer owned.
                 let c_str = unsafe { CStr::from_ptr(cstr) };
-                assert_eq!(c_str.to_bytes(), data_str_bytes(rstr.as_ref().unwrap()));
+                assert_eq!(c_str, rstr.as_ref().unwrap().as_c_str());
                 c.step(|| {
                     // SAFETY: the routine ignores `backend`; `cstr` is a live libgit2
                     // allocation, released once.
@@ -608,8 +608,8 @@ fn contents_taken_from_libgit2_results() {
                         } else {
                             match rbuf.as_mut().take_str() {
                                 Some(s) => State {
-                                    bytes: data_str_bytes(&s),
-                                    c_str: data_str_bytes(&s),
+                                    bytes: s.as_bytes().to_vec(),
+                                    c_str: s.as_bytes().to_vec(),
                                     capacity: 0,
                                 },
                                 None => State {

@@ -473,7 +473,7 @@ const _: () = assert!(
 #[cfg(test)]
 mod unit_tests {
     use super::*;
-    use crate::libgit2::raw::{OdbDataStrFree, data_str_bytes};
+    use crate::libgit2::raw::OdbDataStrFree;
     use crate::libgit2::util::sys::alloc::{Alloc, Allocator};
     use crate::libgit2::util::sys::errors::runtime_pinned;
     use core::ffi::{c_int, c_void};
@@ -565,11 +565,6 @@ mod unit_tests {
 
     fn expected(strs: &[&str]) -> Vec<Vec<u8>> {
         strs.iter().map(|s| s.as_bytes().to_vec()).collect()
-    }
-
-    /// A string's bytes, read in place, for comparing as `CStr` compares.
-    fn bytes(s: &OdbDataStr) -> impl Iterator<Item = u8> + '_ {
-        s.as_handles().elems().map(|c| c as u8)
     }
 
     /// Owned C strings and a `char *` array over them, in Rust's allocator, as C code
@@ -816,10 +811,10 @@ mod unit_tests {
             .take_strings();
         strings
             .as_mut_slice()
-            .sort_by(|x, y| bytes(x).cmp(bytes(y)));
+            .sort_by(|a, b| a.as_c_str().cmp(b.as_c_str()));
         let mut v = strings.into_vec();
         v.push(OdbDataStrFree::dup(c"refs/notes/x").unwrap());
-        assert_eq!(data_str_bytes(&v.remove(0)), b"", "sorted first");
+        assert_eq!(v.remove(0).as_c_str(), c"", "sorted first");
         array
             .as_mut()
             .set_strings(OdbDataStrVec::from_vec(v).unwrap());
