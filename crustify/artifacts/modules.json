@@ -18119,7 +18119,7 @@
         {
           "index": 94,
           "name": "src/libgit2/odb.c",
-          "status": "frozen",
+          "status": "todo",
           "foundational": false,
           "depends_on": [
             {
@@ -22746,7 +22746,7 @@
         {
           "index": 106,
           "name": "src/libgit2/diff_parse.c",
-          "status": "frozen",
+          "status": "todo",
           "foundational": false,
           "depends_on": [
             {
@@ -34578,7 +34578,7 @@
         {
           "index": 143,
           "name": "src/libgit2/checkout.c",
-          "status": "frozen",
+          "status": "todo",
           "foundational": false,
           "depends_on": [
             {
@@ -41208,7 +41208,7 @@
         {
           "index": 162,
           "name": "src/libgit2/indexer.c",
-          "status": "frozen",
+          "status": "todo",
           "foundational": false,
           "depends_on": [
             {
