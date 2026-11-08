@@ -12,13 +12,13 @@ for campaign decisions that remain unresolved.
 
 2. **Should this campaign port the C implementation to Rust, or create safe
    Rust wrappers?** (`id: campaign`)
-   - Answer: `wrap`
+   - Answer: `port`
 
 3. **What should this campaign target: a named subset of modules, or a named
    subset of functions and types, or the whole target repo? You can define them
    now or we can brainstorm them during the live session. You can also let the
    orchestrator decide.** (`id: scope`)
-   - Answer: the whole public API of the target, excluding deprecated items
+   - Answer: the whole target, excluding deprecated items
 
 4. **Which model and billing should do the translation work?**
    (`id: translate-agent`)
@@ -44,8 +44,7 @@ Unanswered optional questions use their defaults.
 
 8. **Should the campaign use the default batching and parallelism settings, or
    customize them?** (`id: workload`)
-   - Answer: `max-types: 2, max-syms: 25, max-loc: 500`, at least 20 fields per type
-     batch; parallelism: assistant's choice.
+   - Answer: `assistant's choice`.
 
 9. **What batch caps should review agents use? We recommend the same caps as
    translation by default.** (`id: review-workload`)
@@ -74,9 +73,16 @@ Unanswered optional questions use their defaults.
     - Answer: `concurrent`
     - By default: concurrent, within the scope and as many at once as the host allows.
 
+14. **At which points should the hybrid C-Rust program ship? Shipping advances `main` to
+    what the campaign has integrated, with your approval each time: the modules shipped
+    are translated, and the C still left is reached only through the wrappers on its
+    boundary.** (`id: ship`)
+    - Answer: `decide after planning`
+    - By default: after every integrated module.
+
 ## Commits
 
-14. **Which git identity should the campaign's commits carry: an author, and any
+15. **Which git identity should the campaign's commits carry: an author, and any
     co-authors? By default, Crustify's own, `crustify <crustify@berkeley.edu>` (the
     GitHub account `crustify-ai`), as the author, with no co-author.** (`id: identity`)
     - Answer: `author: Marius Momeu <marius.momeu@berkeley.edu>, co-authors: crustify
@@ -86,33 +92,22 @@ Unanswered optional questions use their defaults.
 
 Answer these approval-gate questions only if question 6 is answered `no`.
 
-15. **Should I wait for your approval before starting the setup phase?** (`id: gates.setup`)
+16. **Should I wait for your approval before starting the setup phase?** (`id: gates.setup`)
     - Answer: `no`
-16. **Should I wait for your approval before starting the translation phase?**
+17. **Should I wait for your approval before starting the translation phase?**
     (`id: gates.translation`)
-    - Answer: `yes`
-17. **Should I wait for your approval before integrating each module into the working
+    - Answer: `no`
+18. **Should I wait for your approval before integrating each module into the working
     branch?** (`id: gates.module`)
     - Answer: `no`
-18. **Should I wait for your approval before starting review passes?** (`id: gates.review`)
+19. **Should I wait for your approval before starting review passes?** (`id: gates.review`)
     - Answer: `no`
 
 # Benchmark recording questions
 
-19. **Where and in what format should the dashboard be recorded? By default, at
+20. **Where and in what format should the dashboard be recorded? By default, at
     `crustify/artifacts/dashboard.md`, from the standard template.** (`id: dashboard`)
     - Answer: `<repo-checkout>/crustify/artifacts/dashboard.md`, `standard` template
 
 # Additional instructions
 
-Unless otherwise stated, preserve the format of the dashboard exactly.
-
-You are resuming an existing campaign where many steps of the Setup and translation
-phase have been completed. It started in a libgit2 checkout at `/target`, with the
-campaign under `crustify/` and the Rust under `crustify/rust/`, and moved to this
-repository, with the C under `c/` and the Rust at its root, on 2026-10-23. In this
-session we re-plan the whole campaign, the work that has landed included, to observe how
-the current specs would have planned it; bring the landed tree to the current specs (the
-lint table, the per-TU homes), leaving the done waves of `schedule.json` as they ran; set
-up the side campaigns of the out-of-tree libraries; ship `crustify/devel` to `main`; and
-then pause.
