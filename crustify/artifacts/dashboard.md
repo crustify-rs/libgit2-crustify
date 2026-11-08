@@ -12,7 +12,7 @@ and in Notes.
 - **scope** — the whole target, deprecated items excluded, from 2026-11-08: every TU the build compiles, the `git2` CLI included; the whole public API of `libgit2.so` before
 - **translate-agent** — `openrouter/anthropic/claude-opus-5.5`, `api`
 - **review-agent** — `openrouter/anthropic/claude-opus-5.5`, `api`; objectives `all`
-- **plan-agent** — `anthropic/claude-opus-5-5`, `subscription`; `2` runs, `1` for the port re-plan (run `4`)
+- **plan-agent** — `anthropic/claude-opus-5-5`, `subscription`; `2` runs; runs `4` and `5` for the port re-plan
 - **identity** — author `Marius Momeu <marius.momeu@berkeley.edu>`, co-author `crustify <crustify@berkeley.edu>`, from 2026-11-03; `crustify` as the author before
 - **workload** — assistant's choice from 2026-11-08; before, max-types `2`, max-syms `25`, max-loc `500`, parallelism `assistant's choice` from 2026-11-03, `32` in the annotation pass (wave `525`), `16` before
 - **review-workload** — orchestrator's choice: max-types `20`, max-syms `100`
@@ -90,10 +90,10 @@ Implementation `openrouter/anthropic/claude-opus-5.5` via `claude`, `openrouter/
 | `libgit2/config` | `legacy-9` | `47` | `6h09m05s` | `$36.16` | `129.17M` | `$4.02` | `$0.77` | `$94.07` | `265.11M` | `$10.45` | `$2.00` | `$130.23` | `394.28M` | `$14.47` | `$2.77` |
 | `libgit2/index` | `legacy-18` | `75` | `10h41m03s` | `$195.65` | `307.26M` | `$10.87` | `$2.61` | `$67.64` | `186.28M` | `$3.76` | `$0.90` | `$263.29` | `493.54M` | `$14.63` | `$3.51` |
 | side campaigns | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| planners | — | — | `2h05m30s` | — | — | — | — | — | — | — | — | `$49.80` | `134.04M` | — | — |
+| planners | — | — | `2h19m45s` | — | — | — | — | — | — | — | — | `$54.71` | `145.42M` | — | — |
 | assistant | — | — | — | — | — | — | — | — | — | — | — | `$438.96` | `337.45M` | — | — |
-| **Σ recorded agents** | **`95`** | **`389`** | **`53h06m`** | **`$896.34`** | **`2391.61M`** | **`$9.44`** | **`$2.30`** | **`$701.91`** | **`1175.51M`** | **`$7.39`** | **`$1.80`** | **`$1648.05`** | **`3701.16M`** | **`$17.17`** | **`$4.19`** |
-| **Σ campaign** | **`95`** | **`389`** | **`53h06m`** | **`$896.34`** | **`2391.61M`** | — | — | **`$701.91`** | **`1175.51M`** | — | — | **`$2087.01`** | **`4038.61M`** | — | — |
+| **Σ recorded agents** | **`95`** | **`389`** | **`53h21m`** | **`$896.34`** | **`2391.61M`** | **`$9.44`** | **`$2.30`** | **`$701.91`** | **`1175.51M`** | **`$7.39`** | **`$1.80`** | **`$1652.96`** | **`3712.54M`** | **`$17.17`** | **`$4.19`** |
+| **Σ campaign** | **`95`** | **`389`** | **`53h21m`** | **`$896.34`** | **`2391.61M`** | — | — | **`$701.91`** | **`1175.51M`** | — | — | **`$2091.92`** | **`4049.99M`** | — | — |
 
 ## Safety audit
 
@@ -129,8 +129,8 @@ the corrections it made to what earlier runs committed.
 | 2 | `196` | `1144` | `configs/wavefront-config.json`, `configs/libgit2/*/wavefront-config.json` (196, replacing 22), `t3/chased_casts.csv`, `ownership-store.json` | `1` | `$19.65` | `54.17M` | `53m48s` |
 | 3 | `196` | `1144` | `configs/wavefront-config.json`, `configs/libgit2/*/wavefront-config.json` (196, removed: one configuration with `modules` replaces them) | `1` | `$7.13` | `17.22M` | `15m32s` |
 | 4 | `195` | `6303` | `configs/wavefront-config.json`, `t3/chased_casts.csv`, `t3/type_generators.csv` | `4` | `$9.66` | `25.54M` | `23m47s` |
-| 5 | `13` | `133` | — | `3` | — | — | — |
-| **Σ** | **`612`** | **`8891`** | | **`17`** | **`$49.80`** | **`134.04M`** | **`125m30s`** |
+| 5 | `13` | `133` | — | `3` | `$4.91` | `11.38M` | `14m15s` |
+| **Σ** | **`612`** | **`8891`** | | **`17`** | **`$54.71`** | **`145.42M`** | **`139m45s`** |
 
 ## Side campaigns
 
@@ -2132,3 +2132,12 @@ runs `3` and `4`, which it had left out of its sums. At the user's request, the 
 the corrective split left on modules now `port` were closed with the batches that landed, their
 111 unlanded items planned again in run `4`'s port waves; wave `12`, on the foundational
 `src/util/alloc.c`, stays `wip`.
+
+### Objectives: every module `port` but the foundational ones (2026-11-08)
+
+At the user's request, crustify's decomposition spec now sets each module's objective from the
+`campaign` answer alone: in a port campaign every module is `port` but the foundational ones,
+whatever its `rust_equivalent`, which link units now record too. Planner run `5` made the 13
+modules run `4` had kept `wrap` for their full-parity equivalents `port` (989 lines), so that
+`git_oid` and `SHA1_CTX` are ported too, and planned again the wrap of nine types that closing
+the `wip` waves had dropped.
