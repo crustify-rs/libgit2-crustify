@@ -1,5 +1,5 @@
 {
-  "_comment": "The libgit2 port campaign's decomposition, as specs/planning/decomposition.md describes, of the two link units the build links (crustify/builds/plain/build.ninja): the libgit2.so library, and the git2 CLI executable, whose link line names the same libgit2, util and deps objects and src/cli's 17 TUs, so that its link unit holds src/cli's modules and depends on libgit2. One module per translation unit a link line names, with the headers carrying the TU's name and its tests, the shared headers (include/git2/types.h, common.h, cert.h, odb_backend.h, sys/odb_backend.h, sys/refdb_backend.h, sys/stream.h, deps/xdiff/xdiff.h, xtypes.h, ...) split item by item with the file entries' items lists, and a header module for each header implementing what no TU does (src/util/integer.h, array.h, bitvec.h, hashmap_str.h, staticstr.h, src/libgit2/stream.h, src/libgit2/common.h, deps/ntlmclient/utf8.h, src/cli/error.h). The TUs the configured build compiles empty are configured out: src/libgit2/streams/openssl_dynamic.c, openssl_legacy.c, schannel.c, stransport.c, src/libgit2/transports/auth_gssapi.c, auth_sspi.c, ssh_exec.c and winhttp.c, and src/cli/win32/. The test executables (libgit2_tests, util_tests) and deps/clar are tests, gated with the modules whose internals they use. Out of scope, and so owned by no module: the deprecated items (deprecated.h, cred_helpers.h, sys/cred.h and the GIT_DEPRECATE_HARD blocks of the other public headers, such as git_oid_fromstr and git_blame_get_hunk_count) and the declarations the configured build never defines (git_transport_dummy, git_blame_file_from_buffer, git_tree_cache_free, ...): no module's file entries select them, and the schedule seeds of crustify/wavefront/configs/wavefront-config.json leave them out. Each module's objective follows its rust_equivalent: wrap for the seven foundational modules and for the modules the standard library or a crate replaces with full parity (src/util/bitvec.h, integer.h, staticstr.h, array.h, hashmap_str.h, tsort.c, vector.c, unix/realpath.c, hash/collisiondetect.c, hash/openssl.c, src/libgit2/strarray.c, oidarray.c and deps/ntlmclient/util.c), port for every other; the seven foundational ones hold the allocators, releasers and cloners of type-erased memory and of strings (src/util/alloc.c, the four src/util/allocators/, deps/reftable/basics.c and src/util/strlist.c), each foundational whole. depends_on holds one record per in-tree module and per out-of-tree library a module depends on, counted from a wavefront schedule of the whole closure (crustify/wavefront/configs/wavefront-config.json without its schedule_seeds, the body-deep graph, enums left out): an in-tree record's outgoing_edges are the unit edges from this module to the other, its incoming_edges those back, non-zero on either side of a cycle, and its counters the distinct entities it consumes there, by kind (a type generator macro is counted in the edges but in no kind); an out-of-tree record counts the distinct entities its units reference from the library whose installed headers define them, as dependencies.json names it, macros and compiler builtins left out. A module that uses only another's enums has no record of it. Which dependencies the order keeps and which it cuts is schedule.json's. counters.loc counts nonblank, noncomment lines of each owned entity's span: its definition in the TU or an internal header, its declaration or definition in an API header. Every path is below the C root, c/.",
+  "_comment": "The libgit2 port campaign's decomposition, as specs/planning/decomposition.md describes, of the two link units the build links (crustify/builds/plain/build.ninja): the libgit2.so library, and the git2 CLI executable, whose link line names the same libgit2, util and deps objects and src/cli's 17 TUs, so that its link unit holds src/cli's modules and depends on libgit2. One module per translation unit a link line names, with the headers carrying the TU's name and its tests, the shared headers (include/git2/types.h, common.h, cert.h, odb_backend.h, sys/odb_backend.h, sys/refdb_backend.h, sys/stream.h, deps/xdiff/xdiff.h, xtypes.h, ...) split item by item with the file entries' items lists, and a header module for each header implementing what no TU does (src/util/integer.h, array.h, bitvec.h, hashmap_str.h, staticstr.h, src/libgit2/stream.h, src/libgit2/common.h, deps/ntlmclient/utf8.h, src/cli/error.h). The TUs the configured build compiles empty are configured out: src/libgit2/streams/openssl_dynamic.c, openssl_legacy.c, schannel.c, stransport.c, src/libgit2/transports/auth_gssapi.c, auth_sspi.c, ssh_exec.c and winhttp.c, and src/cli/win32/. The test executables (libgit2_tests, util_tests) and deps/clar are tests, gated with the modules whose internals they use. Out of scope, and so owned by no module: the deprecated items (deprecated.h, cred_helpers.h, sys/cred.h and the GIT_DEPRECATE_HARD blocks of the other public headers, such as git_oid_fromstr and git_blame_get_hunk_count) and the declarations the configured build never defines (git_transport_dummy, git_blame_file_from_buffer, git_tree_cache_free, ...): no module's file entries select them, and the schedule seeds of crustify/wavefront/configs/wavefront-config.json leave them out. Each module's objective is the campaign's, port, but for the seven foundational modules, which are wrap in every campaign; a module the standard library or a crate replaces with full parity is ported onto it, as its rust_equivalent records. The seven foundational modules hold the allocators, releasers and cloners of type-erased memory and of strings (src/util/alloc.c, the four src/util/allocators/, deps/reftable/basics.c and src/util/strlist.c), each foundational whole. depends_on holds one record per in-tree module and per out-of-tree library a module depends on, counted from a wavefront schedule of the whole closure (crustify/wavefront/configs/wavefront-config.json without its schedule_seeds, the body-deep graph, enums left out): an in-tree record's outgoing_edges are the unit edges from this module to the other, its incoming_edges those back, non-zero on either side of a cycle, and its counters the distinct entities it consumes there, by kind (a type generator macro is counted in the edges but in no kind); an out-of-tree record counts the distinct entities its units reference from the library whose installed headers define them, as dependencies.json names it, macros and compiler builtins left out. A module that uses only another's enums has no record of it. Which dependencies the order keeps and which it cuts is schedule.json's. counters.loc counts nonblank, noncomment lines of each owned entity's span: its definition in the TU or an internal header, its declaration or definition in an API header. Every path is below the C root, c/.",
   "version": "0551dfd4ad989b6a3d5683c0d4cf326c6efef929",
   "link_units": [
     {
@@ -1084,7 +1084,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -2372,7 +2372,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -2577,7 +2577,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -2636,7 +2636,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -4064,7 +4064,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -4147,7 +4147,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -4250,7 +4250,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -4350,7 +4350,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -4582,7 +4582,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -8588,7 +8588,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -10962,7 +10962,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -12204,7 +12204,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -12633,7 +12633,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [

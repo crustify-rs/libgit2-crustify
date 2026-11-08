@@ -35,13 +35,6 @@
             "feature_parity": "partial",
             "license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
             "notes": "safe syscalls for files, directories, sockets, mmap and processes; no stdio, string, allocator, qsort, getaddrinfo or pthread API"
-          },
-          {
-            "crate": "libc",
-            "sys": null,
-            "feature_parity": "partial",
-            "license": "MIT OR Apache-2.0",
-            "notes": "raw FFI: every entity the campaign consumes is declared, but as unsafe extern functions over raw pointers, with no safe API; the crate the workspace already depends on"
           }
         ]
       }
@@ -177,13 +170,6 @@
             "feature_parity": "partial",
             "license": "Unlicense OR MIT",
             "notes": "RegexBuilder::caseless, Regex::is_match and captures_read cover pcre2_compile, pcre2_match, the match data and its ovector, and Error the error messages; patterns are &str, so the non-UTF-8 patterns the C compiles are rejected, and it vendors its own PCRE2 unless told to link the system one"
-          },
-          {
-            "crate": "pcre2-sys",
-            "sys": null,
-            "feature_parity": "partial",
-            "license": "Unlicense OR MIT",
-            "notes": "raw FFI: declares every function the campaign consumes as unsafe extern functions over raw pointers, with no safe API; the crate the workspace already depends on"
           }
         ]
       }
