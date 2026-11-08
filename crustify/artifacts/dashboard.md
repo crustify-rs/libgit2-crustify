@@ -8,17 +8,18 @@ As answered in `crustify/CRUSTIFY.md`; a change during the campaign is in its hi
 and in Notes.
 
 - **source** — `https://github.com/libgit2/libgit2.git` @ `0551dfd4ad989b6a3d5683c0d4cf326c6efef929`
-- **campaign** — `wrap`
-- **scope** — the whole public API of `libgit2.so`, deprecated items excluded
+- **campaign** — `port` from 2026-11-08, `wrap` before
+- **scope** — the whole target, deprecated items excluded, from 2026-11-08: every TU the build compiles, the `git2` CLI included; the whole public API of `libgit2.so` before
 - **translate-agent** — `openrouter/anthropic/claude-opus-5.5`, `api`
 - **review-agent** — `openrouter/anthropic/claude-opus-5.5`, `api`; objectives `all`
-- **plan-agent** — `anthropic/claude-opus-5-5`, `subscription`; `2` runs
+- **plan-agent** — `anthropic/claude-opus-5-5`, `subscription`; `2` runs, `1` for the port re-plan (run `4`)
 - **identity** — author `Marius Momeu <marius.momeu@berkeley.edu>`, co-author `crustify <crustify@berkeley.edu>`, from 2026-11-03; `crustify` as the author before
-- **workload** — max-types `2`, max-syms `25`, max-loc `500`, parallelism `assistant's choice` from 2026-11-03, `32` in the annotation pass (wave `525`), `16` before
+- **workload** — assistant's choice from 2026-11-08; before, max-types `2`, max-syms `25`, max-loc `500`, parallelism `assistant's choice` from 2026-11-03, `32` in the annotation pass (wave `525`), `16` before
 - **review-workload** — orchestrator's choice: max-types `20`, max-syms `100`
 - **sanitizers** — `asan-ubsan`, `tsan`, `bsan`
 - **target-config** — default, deprecated features disabled (`-DDEPRECATE_HARD=ON`), HTTPS through OpenSSL, SSH, Negotiate auth and i18n off, threads on; OpenSSL, PCRE2 and zlib from the side campaigns' installs of each variant; `build.json` version `3`
 - **module-concurrency** — `concurrent` from 2026-11-06
+- **ship** — decide after planning
 
 ## Legend
 
@@ -89,10 +90,10 @@ Implementation `openrouter/anthropic/claude-opus-5.5` via `claude`, `openrouter/
 | `libgit2/config` | `legacy-9` | `47` | `6h09m05s` | `$36.16` | `129.17M` | `$4.02` | `$0.77` | `$94.07` | `265.11M` | `$10.45` | `$2.00` | `$130.23` | `394.28M` | `$14.47` | `$2.77` |
 | `libgit2/index` | `legacy-18` | `75` | `10h41m03s` | `$195.65` | `307.26M` | `$10.87` | `$2.61` | `$67.64` | `186.28M` | `$3.76` | `$0.90` | `$263.29` | `493.54M` | `$14.63` | `$3.51` |
 | side campaigns | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| planners | — | — | `1h26m11s` | — | — | — | — | — | — | — | — | `$33.01` | `91.28M` | — | — |
+| planners | — | — | `2h05m30s` | — | — | — | — | — | — | — | — | `$49.80` | `134.04M` | — | — |
 | assistant | — | — | — | — | — | — | — | — | — | — | — | `$438.96` | `337.45M` | — | — |
-| **Σ recorded agents** | **`95`** | **`389`** | **`52h27m`** | **`$896.34`** | **`2391.61M`** | **`$9.44`** | **`$2.30`** | **`$701.91`** | **`1175.51M`** | **`$7.39`** | **`$1.80`** | **`$1631.26`** | **`3658.40M`** | **`$17.17`** | **`$4.19`** |
-| **Σ campaign** | **`95`** | **`389`** | **`52h27m`** | **`$896.34`** | **`2391.61M`** | — | — | **`$701.91`** | **`1175.51M`** | — | — | **`$2070.22`** | **`3995.85M`** | — | — |
+| **Σ recorded agents** | **`95`** | **`389`** | **`53h06m`** | **`$896.34`** | **`2391.61M`** | **`$9.44`** | **`$2.30`** | **`$701.91`** | **`1175.51M`** | **`$7.39`** | **`$1.80`** | **`$1648.05`** | **`3701.16M`** | **`$17.17`** | **`$4.19`** |
+| **Σ campaign** | **`95`** | **`389`** | **`53h06m`** | **`$896.34`** | **`2391.61M`** | — | — | **`$701.91`** | **`1175.51M`** | — | — | **`$2087.01`** | **`4038.61M`** | — | — |
 
 ## Safety audit
 
@@ -127,8 +128,8 @@ the corrections it made to what earlier runs committed.
 | 1 | `12` | `167` | `configs/wavefront-config.json`, `configs/libgit2/*/wavefront-config.json` (22), `t3/chased_casts.csv`, `t3/type_generators.csv` | `8` | `$13.36` | `37.11M` | `32m23s` |
 | 2 | `196` | `1144` | `configs/wavefront-config.json`, `configs/libgit2/*/wavefront-config.json` (196, replacing 22), `t3/chased_casts.csv`, `ownership-store.json` | `1` | `$19.65` | `54.17M` | `53m48s` |
 | 3 | `196` | `1144` | `configs/wavefront-config.json`, `configs/libgit2/*/wavefront-config.json` (196, removed: one configuration with `modules` replaces them) | `1` | `$7.13` | `17.22M` | `15m32s` |
-| 4 | `195` | `6303` | `configs/wavefront-config.json`, `t3/chased_casts.csv`, `t3/type_generators.csv` | `4` | — | — | — |
-| **Σ** | **`599`** | **`8758`** | | **`14`** | **`$40.14`** | **`108.50M`** | **`101m43s`** |
+| 4 | `195` | `6303` | `configs/wavefront-config.json`, `t3/chased_casts.csv`, `t3/type_generators.csv` | `4` | `$9.66` | `25.54M` | `23m47s` |
+| **Σ** | **`599`** | **`8758`** | | **`14`** | **`$49.80`** | **`134.04M`** | **`125m30s`** |
 
 ## Side campaigns
 
@@ -2117,3 +2118,16 @@ branch, and are integrated into `crustify/devel` one at a time. `gates.module` n
 each module's integration. The next planner run converts `schedule.json` to schema v4 and
 re-plans every wave, the landed ones included: the landed part of the new plan is marked
 done, and review waves leave `schedule.json`.
+
+### Settings: a port campaign over the whole target (2026-11-08)
+
+`campaign` changed from `wrap` to `port`, and `scope` widened from the public API to the whole
+target, deprecated items excluded; `workload` is now the assistant's choice, the translation
+phase starts without an approval gate, and the new `ship` question is decided after planning.
+Planner run `4` took every module's objective anew (194 `port`, 20 `wrap`), added the `git2` CLI
+as link unit `1`, and replaced the 115 `todo` waves with waves `204`-`1528`; it was the only
+planner run of this re-plan, at the user's request. The planners row of `Module stats` now holds
+runs `3` and `4`, which it had left out of its sums. At the user's request, the 17 `wip` waves
+the corrective split left on modules now `port` were closed with the batches that landed, their
+111 unlanded items planned again in run `4`'s port waves; wave `12`, on the foundational
+`src/util/alloc.c`, stays `wip`.
