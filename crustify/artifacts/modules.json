@@ -1,5 +1,5 @@
 {
-  "_comment": "The libgit2 wrap campaign's decomposition, as specs/decomposition.md describes, of the libgit2.so link unit the build links (crustify/builds/plain/build.ninja): one module per translation unit its link line names, with the headers carrying the TU's name and its tests, the shared headers (include/git2/types.h, common.h, cert.h, odb_backend.h, sys/odb_backend.h, sys/refdb_backend.h, sys/stream.h, deps/xdiff/xdiff.h, xtypes.h, ...) split item by item with the file entries' items lists, and a header module for each header implementing what no TU does (src/util/integer.h, array.h, bitvec.h, hashmap_str.h, staticstr.h, src/libgit2/stream.h, src/libgit2/common.h, deps/ntlmclient/utf8.h). The TUs the configured build compiles empty are configured out: src/libgit2/streams/openssl_dynamic.c, openssl_legacy.c, schannel.c, stransport.c, src/libgit2/transports/auth_gssapi.c, auth_sspi.c, ssh_exec.c and winhttp.c. Out of scope, and so owned by no module: the deprecated items (deprecated.h, cred_helpers.h, sys/cred.h and the GIT_DEPRECATE_HARD blocks of the other public headers, such as git_oid_fromstr and git_blame_get_hunk_count) and the declarations the configured build never defines (git_transport_dummy, git_blame_file_from_buffer, git_tree_cache_free, ...): no module's file entries select them, and the schedule seeds of crustify/wavefront/configs/wavefront-config.json leave them out. Every module is wrap, as the campaign is; the seven foundational ones hold the allocators, releasers and cloners of type-erased memory and of strings (src/util/alloc.c, the four src/util/allocators/, deps/reftable/basics.c and src/util/strlist.c), each foundational whole. depends_on holds one record per in-tree module and per out-of-tree library a module depends on, counted from a wavefront schedule of the whole closure (crustify/wavefront/configs/wavefront-config.json without its schedule_seeds, the body-deep graph, enums left out): an in-tree record's outgoing_edges are the unit edges from this module to the other, its incoming_edges those back, non-zero on either side of a cycle, and its counters the distinct entities it consumes there, by kind (a type generator macro is counted in the edges but in no kind); an out-of-tree record counts the distinct entities its units reference from the library whose installed headers define them, as dependencies.json names it, macros and compiler builtins left out. A module that uses only another's enums has no record of it. Which dependencies the order keeps and which it cuts is schedule.json's. counters.loc counts nonblank, noncomment lines of each owned entity's span: its definition in the TU or an internal header, its declaration or definition in an API header. Every path is below the C root, c/.",
+  "_comment": "The libgit2 port campaign's decomposition, as specs/planning/decomposition.md describes, of the two link units the build links (crustify/builds/plain/build.ninja): the libgit2.so library, and the git2 CLI executable, whose link line names the same libgit2, util and deps objects and src/cli's 17 TUs, so that its link unit holds src/cli's modules and depends on libgit2. One module per translation unit a link line names, with the headers carrying the TU's name and its tests, the shared headers (include/git2/types.h, common.h, cert.h, odb_backend.h, sys/odb_backend.h, sys/refdb_backend.h, sys/stream.h, deps/xdiff/xdiff.h, xtypes.h, ...) split item by item with the file entries' items lists, and a header module for each header implementing what no TU does (src/util/integer.h, array.h, bitvec.h, hashmap_str.h, staticstr.h, src/libgit2/stream.h, src/libgit2/common.h, deps/ntlmclient/utf8.h, src/cli/error.h). The TUs the configured build compiles empty are configured out: src/libgit2/streams/openssl_dynamic.c, openssl_legacy.c, schannel.c, stransport.c, src/libgit2/transports/auth_gssapi.c, auth_sspi.c, ssh_exec.c and winhttp.c, and src/cli/win32/. The test executables (libgit2_tests, util_tests) and deps/clar are tests, gated with the modules whose internals they use. Out of scope, and so owned by no module: the deprecated items (deprecated.h, cred_helpers.h, sys/cred.h and the GIT_DEPRECATE_HARD blocks of the other public headers, such as git_oid_fromstr and git_blame_get_hunk_count) and the declarations the configured build never defines (git_transport_dummy, git_blame_file_from_buffer, git_tree_cache_free, ...): no module's file entries select them, and the schedule seeds of crustify/wavefront/configs/wavefront-config.json leave them out. Each module's objective follows its rust_equivalent: wrap for the seven foundational modules and for the modules the standard library or a crate replaces with full parity (src/util/bitvec.h, integer.h, staticstr.h, array.h, hashmap_str.h, tsort.c, vector.c, unix/realpath.c, hash/collisiondetect.c, hash/openssl.c, src/libgit2/strarray.c, oidarray.c and deps/ntlmclient/util.c), port for every other; the seven foundational ones hold the allocators, releasers and cloners of type-erased memory and of strings (src/util/alloc.c, the four src/util/allocators/, deps/reftable/basics.c and src/util/strlist.c), each foundational whole. depends_on holds one record per in-tree module and per out-of-tree library a module depends on, counted from a wavefront schedule of the whole closure (crustify/wavefront/configs/wavefront-config.json without its schedule_seeds, the body-deep graph, enums left out): an in-tree record's outgoing_edges are the unit edges from this module to the other, its incoming_edges those back, non-zero on either side of a cycle, and its counters the distinct entities it consumes there, by kind (a type generator macro is counted in the edges but in no kind); an out-of-tree record counts the distinct entities its units reference from the library whose installed headers define them, as dependencies.json names it, macros and compiler builtins left out. A module that uses only another's enums has no record of it. Which dependencies the order keeps and which it cuts is schedule.json's. counters.loc counts nonblank, noncomment lines of each owned entity's span: its definition in the TU or an internal header, its declaration or definition in an API header. Every path is below the C root, c/.",
   "version": "0551dfd4ad989b6a3d5683c0d4cf326c6efef929",
   "link_units": [
     {
@@ -749,7 +749,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -829,7 +829,6 @@
                 "included": [
                   "llhttp_errno_name",
                   "llhttp_execute",
-                  "llhttp_finish",
                   "llhttp_get_errno",
                   "llhttp_get_error_pos",
                   "llhttp_get_error_reason",
@@ -867,7 +866,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -945,7 +944,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -1013,7 +1012,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -1240,7 +1239,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -1358,7 +1357,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -1468,7 +1467,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -1539,7 +1538,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -1631,7 +1630,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -1723,7 +1722,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -1797,7 +1796,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -1945,7 +1944,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -2069,7 +2068,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -2136,7 +2135,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -2195,7 +2194,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -2277,7 +2276,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -2439,7 +2438,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -2524,7 +2523,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -2582,7 +2581,13 @@
             "rust_equivalent": {
               "std": {
                 "library": [
-                  "core::convert::TryFrom"
+                  "core::convert::TryFrom",
+                  "core::primitive::usize::checked_add",
+                  "core::primitive::usize::checked_mul",
+                  "core::primitive::i32::checked_add",
+                  "core::primitive::i32::checked_sub",
+                  "core::primitive::i64::checked_add",
+                  "core::primitive::i64::checked_mul"
                 ],
                 "feature_parity": "full",
                 "notes": ""
@@ -2807,7 +2812,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -2824,9 +2829,9 @@
               "crates": [
                 {
                   "crate": "thread_local",
-                  "feature_parity": "full",
+                  "feature_parity": "partial",
                   "license": "MIT OR Apache-2.0",
-                  "notes": "per-object thread-local values, as git_tlsdata_* provide"
+                  "notes": "per-object thread-local values only, as git_tlsdata_* provide; no threads, mutexes, read-write locks, condition variables or atomics, which only the standard library provides"
                 }
               ]
             }
@@ -3306,7 +3311,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -3488,7 +3493,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -4484,7 +4489,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -4689,7 +4694,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -4904,7 +4909,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -5043,7 +5048,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -5172,7 +5177,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -5302,7 +5307,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -5431,7 +5436,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -5530,7 +5535,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -7199,7 +7204,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -7956,7 +7961,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -8060,7 +8065,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -8158,7 +8163,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -8257,7 +8262,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -8368,15 +8373,15 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
                 {
                   "crate": "memmap2",
-                  "feature_parity": "full",
+                  "feature_parity": "partial",
                   "license": "MIT OR Apache-2.0",
-                  "notes": ""
+                  "notes": "maps files shared, private or read-only at any offset (p_mmap, p_munmap); no page-size or mapping-alignment query (git__page_size, git__mmap_alignment), which mwindow sizes its windows by: its page_size() is private"
                 }
               ]
             }
@@ -8496,7 +8501,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -8642,7 +8647,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -8778,7 +8783,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -10801,7 +10806,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -11069,7 +11074,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -11189,7 +11194,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -11308,7 +11313,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -11421,7 +11426,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -11509,7 +11514,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -11689,7 +11694,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -11820,7 +11825,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -11991,7 +11996,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -12097,7 +12102,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -12269,7 +12274,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -12817,7 +12822,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -12973,7 +12978,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -13100,7 +13105,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -13277,7 +13282,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -13378,7 +13383,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -13522,7 +13527,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -13683,7 +13688,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -13870,7 +13875,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -14025,7 +14030,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -14162,7 +14167,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -14378,7 +14383,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -14484,7 +14489,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -14735,7 +14740,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -14942,7 +14947,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -15086,7 +15091,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -15304,7 +15309,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -16133,7 +16138,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -16537,7 +16542,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -16645,7 +16650,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -16793,7 +16798,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -16929,7 +16934,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -17153,7 +17158,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -17378,7 +17383,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -17865,7 +17870,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -18066,7 +18071,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -18601,7 +18606,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -18951,7 +18956,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -19179,7 +19184,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -19335,7 +19340,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -19734,7 +19739,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -20908,7 +20913,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -21717,7 +21722,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -21823,7 +21828,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -22019,7 +22024,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -22224,7 +22229,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -22417,7 +22422,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -22686,7 +22691,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -22895,7 +22900,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -23169,7 +23174,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -23928,7 +23933,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -24250,7 +24255,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -24492,7 +24497,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -24741,7 +24746,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -25107,7 +25112,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -25549,7 +25554,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -25735,7 +25740,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -25803,7 +25808,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -26013,7 +26018,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -26185,7 +26190,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -26256,7 +26261,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -26656,7 +26661,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -26932,7 +26937,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -27216,7 +27221,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -27572,7 +27577,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -27818,7 +27823,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -28265,7 +28270,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -28485,7 +28490,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -28607,7 +28612,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -28861,7 +28866,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -29324,7 +29329,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -29828,7 +29833,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -30166,7 +30171,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -30487,7 +30492,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -30797,7 +30802,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -31050,7 +31055,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -31432,7 +31437,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -31657,7 +31662,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -31992,7 +31997,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -32517,7 +32522,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -32833,7 +32838,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -33142,7 +33147,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -33545,7 +33550,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -33767,7 +33772,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -34525,7 +34530,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -35435,7 +35440,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -35703,7 +35708,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -36136,7 +36141,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -36288,7 +36293,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -36482,7 +36487,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -36713,7 +36718,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -36981,7 +36986,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -37400,7 +37405,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -37862,7 +37867,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -38153,7 +38158,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -38527,7 +38532,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -38967,7 +38972,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -39305,7 +39310,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -39564,7 +39569,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -39875,7 +39880,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -40163,7 +40168,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -40660,7 +40665,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -41045,7 +41050,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -41148,7 +41153,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -41575,7 +41580,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -41882,7 +41887,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -42215,7 +42220,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -42349,7 +42354,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -42723,7 +42728,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -42932,7 +42937,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -43316,7 +43321,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -43680,7 +43685,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -43948,7 +43953,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -44412,7 +44417,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -44608,7 +44613,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -44975,7 +44980,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -45326,7 +45331,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -45628,7 +45633,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -45818,7 +45823,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -46143,7 +46148,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -46373,7 +46378,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -46747,7 +46752,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -47149,7 +47154,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -47466,7 +47471,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -47581,7 +47586,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -47711,7 +47716,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -47831,7 +47836,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": {
                 "library": [
@@ -48065,7 +48070,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -48188,7 +48193,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -48366,7 +48371,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -48566,7 +48571,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -48937,7 +48942,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -49281,7 +49286,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": [
@@ -49497,7 +49502,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -49835,7 +49840,7 @@
           "api_headers": [],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -49962,7 +49967,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -50055,7 +50060,7 @@
             }
           ],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -50391,7 +50396,7 @@
           ],
           "tests": [],
           "objective": {
-            "objective": "wrap",
+            "objective": "port",
             "rust_equivalent": {
               "std": null,
               "crates": []
@@ -50413,6 +50418,3117 @@
               "structs": 0,
               "opaque_structs": 0,
               "functions": 6,
+              "global_variables": 0,
+              "unions": 0,
+              "callbacks": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "name": "git2",
+      "kind": "executable",
+      "linkage": null,
+      "depends_on": [
+        "libgit2"
+      ],
+      "modules": [
+        {
+          "index": 0,
+          "name": "src/cli/cmd.c",
+          "status": "todo",
+          "foundational": false,
+          "depends_on": [
+            {
+              "link_unit": "git2",
+              "module": "src/cli/main.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 3,
+              "counters": {
+                "structs": 0,
+                "functions": 0,
+                "global_variables": 1,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "library": "libc",
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            }
+          ],
+          "translation_unit": {
+            "path": "src/cli/cmd.c",
+            "items": {
+              "included": [],
+              "excluded": []
+            }
+          },
+          "internal_headers": [
+            {
+              "path": "src/cli/cmd.h",
+              "items": {
+                "included": [],
+                "excluded": []
+              }
+            }
+          ],
+          "api_headers": [],
+          "tests": [],
+          "objective": {
+            "objective": "port",
+            "rust_equivalent": {
+              "std": null,
+              "crates": [
+                {
+                  "crate": "clap",
+                  "license": "MIT OR Apache-2.0",
+                  "feature_parity": "partial",
+                  "notes": "subcommand dispatch by name through its own Command builder, not the cli_cmd_spec table of entry points, briefs and help flags"
+                }
+              ]
+            }
+          },
+          "counters": {
+            "implementation": {
+              "files": 2,
+              "loc": 14,
+              "structs": 1,
+              "functions": 1,
+              "global_variables": 0,
+              "unions": 0,
+              "callbacks": 0
+            },
+            "api": {
+              "files": 0,
+              "loc": 0,
+              "structs": 0,
+              "opaque_structs": 0,
+              "functions": 0,
+              "global_variables": 0,
+              "unions": 0,
+              "callbacks": 0
+            }
+          }
+        },
+        {
+          "index": 1,
+          "name": "src/cli/cmd_blame.c",
+          "status": "todo",
+          "foundational": false,
+          "depends_on": [
+            {
+              "link_unit": "git2",
+              "module": "src/cli/common.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/error.h",
+              "foundational": false,
+              "outgoing_edges": 4,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/main.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 1,
+              "counters": {
+                "structs": 0,
+                "functions": 0,
+                "global_variables": 2,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/opt.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 2,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/opt_usage.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 3,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/blame.c",
+              "foundational": false,
+              "outgoing_edges": 18,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 4,
+                "functions": 7,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/oid.c",
+              "foundational": false,
+              "outgoing_edges": 14,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/repository.c",
+              "foundational": false,
+              "outgoing_edges": 2,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/signature.c",
+              "foundational": false,
+              "outgoing_edges": 4,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 2,
+                "functions": 0,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/alloc.c",
+              "foundational": true,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/errors.c",
+              "foundational": false,
+              "outgoing_edges": 2,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/str.c",
+              "foundational": false,
+              "outgoing_edges": 9,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 3,
+                "global_variables": 1,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "library": "libc",
+              "counters": {
+                "structs": 1,
+                "functions": 8,
+                "global_variables": 2,
+                "unions": 0,
+                "callbacks": 0
+              }
+            }
+          ],
+          "translation_unit": {
+            "path": "src/cli/cmd_blame.c",
+            "items": {
+              "included": [],
+              "excluded": []
+            }
+          },
+          "internal_headers": [],
+          "api_headers": [],
+          "tests": [],
+          "objective": {
+            "objective": "port",
+            "rust_equivalent": {
+              "std": null,
+              "crates": []
+            }
+          },
+          "counters": {
+            "implementation": {
+              "files": 1,
+              "loc": 215,
+              "structs": 1,
+              "functions": 19,
+              "global_variables": 4,
+              "unions": 0,
+              "callbacks": 0
+            },
+            "api": {
+              "files": 0,
+              "loc": 0,
+              "structs": 0,
+              "opaque_structs": 0,
+              "functions": 0,
+              "global_variables": 0,
+              "unions": 0,
+              "callbacks": 0
+            }
+          }
+        },
+        {
+          "index": 2,
+          "name": "src/cli/cmd_cat_file.c",
+          "status": "todo",
+          "foundational": false,
+          "depends_on": [
+            {
+              "link_unit": "git2",
+              "module": "src/cli/common.c",
+              "foundational": false,
+              "outgoing_edges": 2,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/error.h",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/main.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 1,
+              "counters": {
+                "structs": 0,
+                "functions": 0,
+                "global_variables": 2,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/opt.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 2,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/opt_usage.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 3,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/blob.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/object.c",
+              "foundational": false,
+              "outgoing_edges": 14,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 7,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/odb.c",
+              "foundational": false,
+              "outgoing_edges": 7,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 2,
+                "functions": 5,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/oid.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/repository.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/revparse.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/tree.c",
+              "foundational": false,
+              "outgoing_edges": 8,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 2,
+                "functions": 6,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/posix.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "library": "libc",
+              "counters": {
+                "structs": 0,
+                "functions": 5,
+                "global_variables": 2,
+                "unions": 0,
+                "callbacks": 0
+              }
+            }
+          ],
+          "translation_unit": {
+            "path": "src/cli/cmd_cat_file.c",
+            "items": {
+              "included": [],
+              "excluded": []
+            }
+          },
+          "internal_headers": [],
+          "api_headers": [],
+          "tests": [],
+          "objective": {
+            "objective": "port",
+            "rust_equivalent": {
+              "std": null,
+              "crates": []
+            }
+          },
+          "counters": {
+            "implementation": {
+              "files": 1,
+              "loc": 142,
+              "structs": 0,
+              "functions": 5,
+              "global_variables": 4,
+              "unions": 0,
+              "callbacks": 0
+            },
+            "api": {
+              "files": 0,
+              "loc": 0,
+              "structs": 0,
+              "opaque_structs": 0,
+              "functions": 0,
+              "global_variables": 0,
+              "unions": 0,
+              "callbacks": 0
+            }
+          }
+        },
+        {
+          "index": 3,
+          "name": "src/cli/cmd_clone.c",
+          "status": "todo",
+          "foundational": false,
+          "depends_on": [
+            {
+              "link_unit": "git2",
+              "module": "src/cli/error.h",
+              "foundational": false,
+              "outgoing_edges": 2,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/main.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 1,
+              "counters": {
+                "structs": 0,
+                "functions": 0,
+                "global_variables": 2,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/opt.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 2,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/opt_usage.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 3,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/progress.c",
+              "foundational": false,
+              "outgoing_edges": 7,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 6,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/unix/sighandler.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/checkout.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 0,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/clone.c",
+              "foundational": false,
+              "outgoing_edges": 2,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/remote.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 2,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/repository.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/alloc.c",
+              "foundational": true,
+              "outgoing_edges": 2,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/fs_path.c",
+              "foundational": false,
+              "outgoing_edges": 4,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 3,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/futils.c",
+              "foundational": false,
+              "outgoing_edges": 2,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/str.c",
+              "foundational": false,
+              "outgoing_edges": 5,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 3,
+                "global_variables": 1,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/util.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "library": "libc",
+              "counters": {
+                "structs": 0,
+                "functions": 5,
+                "global_variables": 2,
+                "unions": 0,
+                "callbacks": 0
+              }
+            }
+          ],
+          "translation_unit": {
+            "path": "src/cli/cmd_clone.c",
+            "items": {
+              "included": [],
+              "excluded": []
+            }
+          },
+          "internal_headers": [],
+          "api_headers": [],
+          "tests": [],
+          "objective": {
+            "objective": "port",
+            "rust_equivalent": {
+              "std": null,
+              "crates": []
+            }
+          },
+          "counters": {
+            "implementation": {
+              "files": 1,
+              "loc": 158,
+              "structs": 0,
+              "functions": 8,
+              "global_variables": 10,
+              "unions": 0,
+              "callbacks": 0
+            },
+            "api": {
+              "files": 0,
+              "loc": 0,
+              "structs": 0,
+              "opaque_structs": 0,
+              "functions": 0,
+              "global_variables": 0,
+              "unions": 0,
+              "callbacks": 0
+            }
+          }
+        },
+        {
+          "index": 4,
+          "name": "src/cli/cmd_commit.c",
+          "status": "todo",
+          "foundational": false,
+          "depends_on": [
+            {
+              "link_unit": "git2",
+              "module": "src/cli/common.c",
+              "foundational": false,
+              "outgoing_edges": 2,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/error.h",
+              "foundational": false,
+              "outgoing_edges": 13,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/main.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 1,
+              "counters": {
+                "structs": 0,
+                "functions": 0,
+                "global_variables": 2,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/opt.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 2,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/opt_usage.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 3,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/branch.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/buf.c",
+              "foundational": false,
+              "outgoing_edges": 9,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/commit.c",
+              "foundational": false,
+              "outgoing_edges": 7,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 3,
+                "functions": 4,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/config.c",
+              "foundational": false,
+              "outgoing_edges": 11,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 3,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/diff.c",
+              "foundational": false,
+              "outgoing_edges": 2,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 0,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/index.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/message.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/object.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 0,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/object_api.c",
+              "foundational": false,
+              "outgoing_edges": 2,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/oid.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 0,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/refs.c",
+              "foundational": false,
+              "outgoing_edges": 4,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/repository.c",
+              "foundational": false,
+              "outgoing_edges": 15,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 5,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/signature.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/status.c",
+              "foundational": false,
+              "outgoing_edges": 14,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 3,
+                "functions": 4,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/tree.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 0,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/alloc.c",
+              "foundational": true,
+              "outgoing_edges": 2,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/errors.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/futils.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/str.c",
+              "foundational": false,
+              "outgoing_edges": 24,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 7,
+                "global_variables": 1,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/unix/process.c",
+              "foundational": false,
+              "outgoing_edges": 18,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 3,
+                "functions": 9,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/util.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "library": "libc",
+              "counters": {
+                "structs": 0,
+                "functions": 5,
+                "global_variables": 2,
+                "unions": 0,
+                "callbacks": 0
+              }
+            }
+          ],
+          "translation_unit": {
+            "path": "src/cli/cmd_commit.c",
+            "items": {
+              "included": [],
+              "excluded": []
+            }
+          },
+          "internal_headers": [],
+          "api_headers": [],
+          "tests": [],
+          "objective": {
+            "objective": "port",
+            "rust_equivalent": {
+              "std": null,
+              "crates": []
+            }
+          },
+          "counters": {
+            "implementation": {
+              "files": 1,
+              "loc": 482,
+              "structs": 0,
+              "functions": 11,
+              "global_variables": 9,
+              "unions": 0,
+              "callbacks": 0
+            },
+            "api": {
+              "files": 0,
+              "loc": 0,
+              "structs": 0,
+              "opaque_structs": 0,
+              "functions": 0,
+              "global_variables": 0,
+              "unions": 0,
+              "callbacks": 0
+            }
+          }
+        },
+        {
+          "index": 5,
+          "name": "src/cli/cmd_config.c",
+          "status": "todo",
+          "foundational": false,
+          "depends_on": [
+            {
+              "link_unit": "git2",
+              "module": "src/cli/common.c",
+              "foundational": false,
+              "outgoing_edges": 2,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/error.h",
+              "foundational": false,
+              "outgoing_edges": 6,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/main.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 1,
+              "counters": {
+                "structs": 0,
+                "functions": 0,
+                "global_variables": 2,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/opt.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 2,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/opt_usage.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 3,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/buf.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 0,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/config.c",
+              "foundational": false,
+              "outgoing_edges": 17,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 3,
+                "functions": 9,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/repository.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "library": "libc",
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 1,
+                "unions": 0,
+                "callbacks": 0
+              }
+            }
+          ],
+          "translation_unit": {
+            "path": "src/cli/cmd_config.c",
+            "items": {
+              "included": [],
+              "excluded": []
+            }
+          },
+          "internal_headers": [],
+          "api_headers": [],
+          "tests": [],
+          "objective": {
+            "objective": "port",
+            "rust_equivalent": {
+              "std": null,
+              "crates": []
+            }
+          },
+          "counters": {
+            "implementation": {
+              "files": 1,
+              "loc": 187,
+              "structs": 0,
+              "functions": 7,
+              "global_variables": 10,
+              "unions": 0,
+              "callbacks": 0
+            },
+            "api": {
+              "files": 0,
+              "loc": 0,
+              "structs": 0,
+              "opaque_structs": 0,
+              "functions": 0,
+              "global_variables": 0,
+              "unions": 0,
+              "callbacks": 0
+            }
+          }
+        },
+        {
+          "index": 6,
+          "name": "src/cli/cmd_hash_object.c",
+          "status": "todo",
+          "foundational": false,
+          "depends_on": [
+            {
+              "link_unit": "git2",
+              "module": "src/cli/common.c",
+              "foundational": false,
+              "outgoing_edges": 2,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/error.h",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/main.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 1,
+              "counters": {
+                "structs": 0,
+                "functions": 0,
+                "global_variables": 2,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/opt.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 2,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/opt_usage.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 3,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/object.c",
+              "foundational": false,
+              "outgoing_edges": 4,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 3,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/odb.c",
+              "foundational": false,
+              "outgoing_edges": 4,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/oid.c",
+              "foundational": false,
+              "outgoing_edges": 2,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/repository.c",
+              "foundational": false,
+              "outgoing_edges": 4,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 3,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/futils.c",
+              "foundational": false,
+              "outgoing_edges": 2,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/str.c",
+              "foundational": false,
+              "outgoing_edges": 4,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 1,
+                "global_variables": 1,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "library": "libc",
+              "counters": {
+                "structs": 0,
+                "functions": 3,
+                "global_variables": 2,
+                "unions": 0,
+                "callbacks": 0
+              }
+            }
+          ],
+          "translation_unit": {
+            "path": "src/cli/cmd_hash_object.c",
+            "items": {
+              "included": [],
+              "excluded": []
+            }
+          },
+          "internal_headers": [],
+          "api_headers": [],
+          "tests": [],
+          "objective": {
+            "objective": "port",
+            "rust_equivalent": {
+              "std": null,
+              "crates": []
+            }
+          },
+          "counters": {
+            "implementation": {
+              "files": 1,
+              "loc": 102,
+              "structs": 0,
+              "functions": 3,
+              "global_variables": 6,
+              "unions": 0,
+              "callbacks": 0
+            },
+            "api": {
+              "files": 0,
+              "loc": 0,
+              "structs": 0,
+              "opaque_structs": 0,
+              "functions": 0,
+              "global_variables": 0,
+              "unions": 0,
+              "callbacks": 0
+            }
+          }
+        },
+        {
+          "index": 7,
+          "name": "src/cli/cmd_help.c",
+          "status": "todo",
+          "foundational": false,
+          "depends_on": [
+            {
+              "link_unit": "git2",
+              "module": "src/cli/cmd.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/error.h",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/main.c",
+              "foundational": false,
+              "outgoing_edges": 5,
+              "incoming_edges": 2,
+              "counters": {
+                "structs": 0,
+                "functions": 0,
+                "global_variables": 4,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/opt.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 2,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/opt_usage.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "library": "libc",
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 1,
+                "unions": 0,
+                "callbacks": 0
+              }
+            }
+          ],
+          "translation_unit": {
+            "path": "src/cli/cmd_help.c",
+            "items": {
+              "included": [],
+              "excluded": []
+            }
+          },
+          "internal_headers": [],
+          "api_headers": [],
+          "tests": [],
+          "objective": {
+            "objective": "port",
+            "rust_equivalent": {
+              "std": null,
+              "crates": []
+            }
+          },
+          "counters": {
+            "implementation": {
+              "files": 1,
+              "loc": 45,
+              "structs": 0,
+              "functions": 3,
+              "global_variables": 2,
+              "unions": 0,
+              "callbacks": 0
+            },
+            "api": {
+              "files": 0,
+              "loc": 0,
+              "structs": 0,
+              "opaque_structs": 0,
+              "functions": 0,
+              "global_variables": 0,
+              "unions": 0,
+              "callbacks": 0
+            }
+          }
+        },
+        {
+          "index": 8,
+          "name": "src/cli/cmd_index_pack.c",
+          "status": "todo",
+          "foundational": false,
+          "depends_on": [
+            {
+              "link_unit": "git2",
+              "module": "src/cli/error.h",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/main.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 1,
+              "counters": {
+                "structs": 0,
+                "functions": 0,
+                "global_variables": 2,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/opt.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 2,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/opt_usage.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 3,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/progress.c",
+              "foundational": false,
+              "outgoing_edges": 4,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 3,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/indexer.c",
+              "foundational": false,
+              "outgoing_edges": 7,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 3,
+                "functions": 4,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/posix.c",
+              "foundational": false,
+              "outgoing_edges": 2,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "library": "libc",
+              "counters": {
+                "structs": 0,
+                "functions": 3,
+                "global_variables": 2,
+                "unions": 0,
+                "callbacks": 0
+              }
+            }
+          ],
+          "translation_unit": {
+            "path": "src/cli/cmd_index_pack.c",
+            "items": {
+              "included": [],
+              "excluded": []
+            }
+          },
+          "internal_headers": [],
+          "api_headers": [],
+          "tests": [],
+          "objective": {
+            "objective": "port",
+            "rust_equivalent": {
+              "std": null,
+              "crates": []
+            }
+          },
+          "counters": {
+            "implementation": {
+              "files": 1,
+              "loc": 73,
+              "structs": 0,
+              "functions": 2,
+              "global_variables": 5,
+              "unions": 0,
+              "callbacks": 0
+            },
+            "api": {
+              "files": 0,
+              "loc": 0,
+              "structs": 0,
+              "opaque_structs": 0,
+              "functions": 0,
+              "global_variables": 0,
+              "unions": 0,
+              "callbacks": 0
+            }
+          }
+        },
+        {
+          "index": 9,
+          "name": "src/cli/cmd_init.c",
+          "status": "todo",
+          "foundational": false,
+          "depends_on": [
+            {
+              "link_unit": "git2",
+              "module": "src/cli/error.h",
+              "foundational": false,
+              "outgoing_edges": 2,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/main.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 1,
+              "counters": {
+                "structs": 0,
+                "functions": 0,
+                "global_variables": 2,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/opt.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 2,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/opt_usage.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 3,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/repository.c",
+              "foundational": false,
+              "outgoing_edges": 5,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 2,
+                "functions": 3,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "library": "libc",
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 1,
+                "unions": 0,
+                "callbacks": 0
+              }
+            }
+          ],
+          "translation_unit": {
+            "path": "src/cli/cmd_init.c",
+            "items": {
+              "included": [],
+              "excluded": []
+            }
+          },
+          "internal_headers": [],
+          "api_headers": [],
+          "tests": [],
+          "objective": {
+            "objective": "port",
+            "rust_equivalent": {
+              "std": null,
+              "crates": []
+            }
+          },
+          "counters": {
+            "implementation": {
+              "files": 1,
+              "loc": 68,
+              "structs": 0,
+              "functions": 2,
+              "global_variables": 7,
+              "unions": 0,
+              "callbacks": 0
+            },
+            "api": {
+              "files": 0,
+              "loc": 0,
+              "structs": 0,
+              "opaque_structs": 0,
+              "functions": 0,
+              "global_variables": 0,
+              "unions": 0,
+              "callbacks": 0
+            }
+          }
+        },
+        {
+          "index": 10,
+          "name": "src/cli/cmd_version.c",
+          "status": "todo",
+          "foundational": false,
+          "depends_on": [
+            {
+              "link_unit": "git2",
+              "module": "src/cli/main.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 2,
+              "counters": {
+                "structs": 0,
+                "functions": 0,
+                "global_variables": 2,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/opt.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 2,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/opt_usage.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 3,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/libgit2.c",
+              "foundational": false,
+              "outgoing_edges": 2,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/settings.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "library": "libc",
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 1,
+                "unions": 0,
+                "callbacks": 0
+              }
+            }
+          ],
+          "translation_unit": {
+            "path": "src/cli/cmd_version.c",
+            "items": {
+              "included": [],
+              "excluded": []
+            }
+          },
+          "internal_headers": [],
+          "api_headers": [],
+          "tests": [],
+          "objective": {
+            "objective": "port",
+            "rust_equivalent": {
+              "std": null,
+              "crates": []
+            }
+          },
+          "counters": {
+            "implementation": {
+              "files": 1,
+              "loc": 72,
+              "structs": 1,
+              "functions": 2,
+              "global_variables": 4,
+              "unions": 0,
+              "callbacks": 0
+            },
+            "api": {
+              "files": 0,
+              "loc": 0,
+              "structs": 0,
+              "opaque_structs": 0,
+              "functions": 0,
+              "global_variables": 0,
+              "unions": 0,
+              "callbacks": 0
+            }
+          }
+        },
+        {
+          "index": 11,
+          "name": "src/cli/common.c",
+          "status": "todo",
+          "foundational": false,
+          "depends_on": [
+            {
+              "link_unit": "git2",
+              "module": "src/cli/error.h",
+              "foundational": false,
+              "outgoing_edges": 5,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/opt.c",
+              "foundational": false,
+              "outgoing_edges": 4,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 2,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/config.c",
+              "foundational": false,
+              "outgoing_edges": 4,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 2,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/config_mem.c",
+              "foundational": false,
+              "outgoing_edges": 2,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/repository.c",
+              "foundational": false,
+              "outgoing_edges": 6,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 3,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/fs_path.c",
+              "foundational": false,
+              "outgoing_edges": 2,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/posix.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/str.c",
+              "foundational": false,
+              "outgoing_edges": 12,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 6,
+                "global_variables": 1,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/util.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/vector.c",
+              "foundational": false,
+              "outgoing_edges": 5,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 3,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "library": "libc",
+              "counters": {
+                "structs": 0,
+                "functions": 3,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            }
+          ],
+          "translation_unit": {
+            "path": "src/cli/common.c",
+            "items": {
+              "included": [],
+              "excluded": []
+            }
+          },
+          "internal_headers": [
+            {
+              "path": "src/cli/common.h",
+              "items": {
+                "included": [],
+                "excluded": []
+              }
+            }
+          ],
+          "api_headers": [],
+          "tests": [],
+          "objective": {
+            "objective": "port",
+            "rust_equivalent": {
+              "std": null,
+              "crates": []
+            }
+          },
+          "counters": {
+            "implementation": {
+              "files": 2,
+              "loc": 124,
+              "structs": 1,
+              "functions": 4,
+              "global_variables": 0,
+              "unions": 0,
+              "callbacks": 0
+            },
+            "api": {
+              "files": 0,
+              "loc": 0,
+              "structs": 0,
+              "opaque_structs": 0,
+              "functions": 0,
+              "global_variables": 0,
+              "unions": 0,
+              "callbacks": 0
+            }
+          }
+        },
+        {
+          "index": 12,
+          "name": "src/cli/main.c",
+          "status": "todo",
+          "foundational": false,
+          "depends_on": [
+            {
+              "link_unit": "git2",
+              "module": "src/cli/cmd.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 1,
+              "counters": {
+                "structs": 1,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/cmd_blame.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 3,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/cmd_cat_file.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 3,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/cmd_clone.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 3,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/cmd_commit.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 3,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/cmd_config.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 3,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/cmd_hash_object.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 3,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/cmd_help.c",
+              "foundational": false,
+              "outgoing_edges": 2,
+              "incoming_edges": 5,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/cmd_index_pack.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 3,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/cmd_init.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 3,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/cmd_version.c",
+              "foundational": false,
+              "outgoing_edges": 2,
+              "incoming_edges": 3,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/error.h",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/opt.c",
+              "foundational": false,
+              "outgoing_edges": 6,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 3,
+                "functions": 3,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "git2",
+              "module": "src/cli/opt_usage.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/libgit2.c",
+              "foundational": false,
+              "outgoing_edges": 2,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 2,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "library": "libc",
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 1,
+                "unions": 0,
+                "callbacks": 0
+              }
+            }
+          ],
+          "translation_unit": {
+            "path": "src/cli/main.c",
+            "items": {
+              "included": [],
+              "excluded": []
+            }
+          },
+          "internal_headers": [],
+          "api_headers": [],
+          "tests": [],
+          "objective": {
+            "objective": "port",
+            "rust_equivalent": {
+              "std": null,
+              "crates": [
+                {
+                  "crate": "clap",
+                  "license": "MIT OR Apache-2.0",
+                  "feature_parity": "partial",
+                  "notes": "parses the common options and dispatches subcommands, but with its own usage and error text, not the cli_opt specs' GNU-style reordering, --help/--version handling or pager option"
+                }
+              ]
+            }
+          },
+          "counters": {
+            "implementation": {
+              "files": 1,
+              "loc": 93,
+              "structs": 0,
+              "functions": 4,
+              "global_variables": 7,
+              "unions": 0,
+              "callbacks": 0
+            },
+            "api": {
+              "files": 0,
+              "loc": 0,
+              "structs": 0,
+              "opaque_structs": 0,
+              "functions": 0,
+              "global_variables": 0,
+              "unions": 0,
+              "callbacks": 0
+            }
+          }
+        },
+        {
+          "index": 13,
+          "name": "src/cli/opt.c",
+          "status": "todo",
+          "foundational": false,
+          "depends_on": [
+            {
+              "library": "libc",
+              "counters": {
+                "structs": 1,
+                "functions": 8,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            }
+          ],
+          "translation_unit": {
+            "path": "src/cli/opt.c",
+            "items": {
+              "included": [],
+              "excluded": []
+            }
+          },
+          "internal_headers": [
+            {
+              "path": "src/cli/opt.h",
+              "items": {
+                "included": [],
+                "excluded": []
+              }
+            }
+          ],
+          "api_headers": [],
+          "tests": [],
+          "objective": {
+            "objective": "port",
+            "rust_equivalent": {
+              "std": null,
+              "crates": [
+                {
+                  "crate": "clap",
+                  "license": "MIT OR Apache-2.0",
+                  "feature_parity": "partial",
+                  "notes": "argument parsing from a declared spec, but not cli_opt_spec's model (switch, value, literal, arg and args kinds, choice groups, required and optional-value flags) or its status codes and GNU-style reordering"
+                },
+                {
+                  "crate": "lexopt",
+                  "feature_parity": "partial",
+                  "license": "MIT",
+                  "notes": "a low-level short/long option tokenizer with no spec table, choices, required checks or status reporting"
+                }
+              ]
+            }
+          },
+          "counters": {
+            "implementation": {
+              "files": 2,
+              "loc": 488,
+              "structs": 3,
+              "functions": 19,
+              "global_variables": 0,
+              "unions": 0,
+              "callbacks": 0
+            },
+            "api": {
+              "files": 0,
+              "loc": 0,
+              "structs": 0,
+              "opaque_structs": 0,
+              "functions": 0,
+              "global_variables": 0,
+              "unions": 0,
+              "callbacks": 0
+            }
+          }
+        },
+        {
+          "index": 14,
+          "name": "src/cli/opt_usage.c",
+          "status": "todo",
+          "foundational": false,
+          "depends_on": [
+            {
+              "link_unit": "git2",
+              "module": "src/cli/opt.c",
+              "foundational": false,
+              "outgoing_edges": 10,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 2,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/posix.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/str.c",
+              "foundational": false,
+              "outgoing_edges": 22,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 8,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "library": "libc",
+              "counters": {
+                "structs": 1,
+                "functions": 3,
+                "global_variables": 1,
+                "unions": 0,
+                "callbacks": 0
+              }
+            }
+          ],
+          "translation_unit": {
+            "path": "src/cli/opt_usage.c",
+            "items": {
+              "included": [],
+              "excluded": []
+            }
+          },
+          "internal_headers": [
+            {
+              "path": "src/cli/opt_usage.h",
+              "items": {
+                "included": [],
+                "excluded": []
+              }
+            }
+          ],
+          "api_headers": [],
+          "tests": [],
+          "objective": {
+            "objective": "port",
+            "rust_equivalent": {
+              "std": null,
+              "crates": [
+                {
+                  "crate": "clap",
+                  "license": "MIT OR Apache-2.0",
+                  "feature_parity": "partial",
+                  "notes": "generates usage and help text, in its own layout rather than cli_opt_usage_fprint's and cli_opt_help_fprint's, without the hidden and choice-group rendering they apply"
+                }
+              ]
+            }
+          },
+          "counters": {
+            "implementation": {
+              "files": 2,
+              "loc": 184,
+              "structs": 0,
+              "functions": 8,
+              "global_variables": 0,
+              "unions": 0,
+              "callbacks": 0
+            },
+            "api": {
+              "files": 0,
+              "loc": 0,
+              "structs": 0,
+              "opaque_structs": 0,
+              "functions": 0,
+              "global_variables": 0,
+              "unions": 0,
+              "callbacks": 0
+            }
+          }
+        },
+        {
+          "index": 15,
+          "name": "src/cli/progress.c",
+          "status": "todo",
+          "foundational": false,
+          "depends_on": [
+            {
+              "link_unit": "libgit2",
+              "module": "src/libgit2/indexer.c",
+              "foundational": false,
+              "outgoing_edges": 5,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 0,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/errors.c",
+              "foundational": false,
+              "outgoing_edges": 3,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/str.c",
+              "foundational": false,
+              "outgoing_edges": 15,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 6,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/util.c",
+              "foundational": false,
+              "outgoing_edges": 2,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "library": "libc",
+              "counters": {
+                "structs": 0,
+                "functions": 5,
+                "global_variables": 2,
+                "unions": 0,
+                "callbacks": 0
+              }
+            }
+          ],
+          "translation_unit": {
+            "path": "src/cli/progress.c",
+            "items": {
+              "included": [],
+              "excluded": []
+            }
+          },
+          "internal_headers": [
+            {
+              "path": "src/cli/progress.h",
+              "items": {
+                "included": [],
+                "excluded": []
+              }
+            }
+          ],
+          "api_headers": [],
+          "tests": [],
+          "objective": {
+            "objective": "port",
+            "rust_equivalent": {
+              "std": null,
+              "crates": [
+                {
+                  "crate": "indicatif",
+                  "feature_parity": "partial",
+                  "license": "MIT",
+                  "notes": "progress bars with throttled redraws, but not the git-style fetch, indexer and checkout lines, sideband passthrough or the deferred-line buffering cli_progress keeps"
+                }
+              ]
+            }
+          },
+          "counters": {
+            "implementation": {
+              "files": 2,
+              "loc": 280,
+              "structs": 1,
+              "functions": 16,
+              "global_variables": 0,
+              "unions": 0,
+              "callbacks": 0
+            },
+            "api": {
+              "files": 0,
+              "loc": 0,
+              "structs": 0,
+              "opaque_structs": 0,
+              "functions": 0,
+              "global_variables": 0,
+              "unions": 0,
+              "callbacks": 0
+            }
+          }
+        },
+        {
+          "index": 16,
+          "name": "src/cli/unix/sighandler.c",
+          "status": "todo",
+          "foundational": false,
+          "depends_on": [
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/errors.c",
+              "foundational": false,
+              "outgoing_edges": 1,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "library": "libc",
+              "counters": {
+                "structs": 0,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            }
+          ],
+          "translation_unit": {
+            "path": "src/cli/unix/sighandler.c",
+            "items": {
+              "included": [],
+              "excluded": []
+            }
+          },
+          "internal_headers": [
+            {
+              "path": "src/cli/sighandler.h",
+              "items": {
+                "included": [],
+                "excluded": []
+              }
+            }
+          ],
+          "api_headers": [],
+          "tests": [],
+          "objective": {
+            "objective": "port",
+            "rust_equivalent": {
+              "std": null,
+              "crates": [
+                {
+                  "crate": "ctrlc",
+                  "feature_parity": "partial",
+                  "license": "MIT OR Apache-2.0",
+                  "notes": "runs the interrupt handler on its own thread rather than from the SIGINT handler, and cannot be reset to the default disposition (cli_sighandler_set_interrupt(NULL))"
+                }
+              ]
+            }
+          },
+          "counters": {
+            "implementation": {
+              "files": 2,
+              "loc": 19,
+              "structs": 0,
+              "functions": 2,
+              "global_variables": 1,
+              "unions": 0,
+              "callbacks": 0
+            },
+            "api": {
+              "files": 0,
+              "loc": 0,
+              "structs": 0,
+              "opaque_structs": 0,
+              "functions": 0,
+              "global_variables": 0,
+              "unions": 0,
+              "callbacks": 0
+            }
+          }
+        },
+        {
+          "index": 17,
+          "name": "src/cli/error.h",
+          "status": "todo",
+          "foundational": false,
+          "depends_on": [
+            {
+              "link_unit": "libgit2",
+              "module": "src/util/errors.c",
+              "foundational": false,
+              "outgoing_edges": 2,
+              "incoming_edges": 0,
+              "counters": {
+                "structs": 1,
+                "functions": 1,
+                "global_variables": 0,
+                "unions": 0,
+                "callbacks": 0
+              }
+            },
+            {
+              "library": "libc",
+              "counters": {
+                "structs": 0,
+                "functions": 2,
+                "global_variables": 1,
+                "unions": 0,
+                "callbacks": 0
+              }
+            }
+          ],
+          "translation_unit": null,
+          "internal_headers": [
+            {
+              "path": "src/cli/error.h",
+              "items": {
+                "included": [],
+                "excluded": []
+              }
+            }
+          ],
+          "api_headers": [],
+          "tests": [],
+          "objective": {
+            "objective": "port",
+            "rust_equivalent": {
+              "std": {
+                "library": [
+                  "std::eprintln"
+                ],
+                "feature_parity": "partial",
+                "notes": "formats to standard error, but has no cli_error_git reporting of git_error_last() or the CLI_EXIT_ERROR/CLI_EXIT_USAGE codes these return"
+              },
+              "crates": []
+            }
+          },
+          "counters": {
+            "implementation": {
+              "files": 1,
+              "loc": 17,
+              "structs": 0,
+              "functions": 3,
+              "global_variables": 0,
+              "unions": 0,
+              "callbacks": 0
+            },
+            "api": {
+              "files": 0,
+              "loc": 0,
+              "structs": 0,
+              "opaque_structs": 0,
+              "functions": 0,
               "global_variables": 0,
               "unions": 0,
               "callbacks": 0

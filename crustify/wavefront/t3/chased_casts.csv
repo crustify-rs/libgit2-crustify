@@ -118,3 +118,6 @@ base_derived,,,,git_patch_generated_output,src/libgit2/patch_generate.h,git_xdif
 base_derived,,,,git_cert,include/git2/cert.h,git_cert_hostkey,include/git2/cert.h,add
 base_derived,,,,git_refcount,src/util/util.h,git_index,src/libgit2/index.h,add
 base_derived,,,,git_refcount,src/util/util.h,git_odb,src/libgit2/odb.h,add
+erased_field,git_remote_callbacks,include/git2/remote.h,payload,cli_progress,src/cli/progress.h,,,drop
+erased_field,git_checkout_options,include/git2/checkout.h,progress_payload,cli_progress,src/cli/progress.h,,,drop
+erased_field,git_indexer_options,include/git2/indexer.h,progress_cb_payload,cli_progress,src/cli/progress.h,,,drop

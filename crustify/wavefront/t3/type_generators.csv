@@ -1,6 +1,7 @@
 generator_macro,generator_def_file,derived_kind,derived_name,derived_def_file
 GIT_HASHMAP_STRUCT,src/util/hashmap.h,type,git_attr_cache_filemap,src/libgit2/attrcache.c
 GIT_HASHMAP_STRUCT,src/util/hashmap.h,type,git_attr_cache_macromap,src/libgit2/attrcache.c
+GIT_HASHMAP_STRUCT,src/util/hashmap.h,type,git_blame_commitmap,src/cli/cmd_blame.c
 GIT_HASHMAP_STRUCT,src/util/hashmap.h,type,git_cache_oidmap,src/libgit2/cache.h
 GIT_HASHMAP_STRUCT,src/util/hashmap.h,type,git_commit_graph_oidmap,src/libgit2/commit_graph.c
 GIT_HASHMAP_STRUCT,src/util/hashmap.h,type,git_config_list_headmap,src/libgit2/config_list.c

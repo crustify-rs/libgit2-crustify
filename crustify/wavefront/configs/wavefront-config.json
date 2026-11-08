@@ -1,9 +1,9 @@
 {
   "_comment": [
-    "The libgit2 wrap campaign's wavefront configuration, the only one: every query of the bindings and reviews resolves through it, and it orders and schedules the modules. Paths are below the C root, c/, wavefront's repo_root.",
-    "closure: the files of every module of crustify/artifacts/modules.json, impl_files its translation units and internal headers, api_headers the installed headers libgit2.so publishes. The TUs the configured build compiles empty (src/libgit2/streams/openssl_dynamic.c, openssl_legacy.c, schannel.c, stransport.c, src/libgit2/transports/auth_gssapi.c, auth_sspi.c, ssh_exec.c, winhttp.c) are configured out, as are the deprecated shims deprecated.h, cred_helpers.h and sys/cred.h and the MSVC-only stdint.h.",
+    "The libgit2 port campaign's wavefront configuration, the only one: every query of the bindings and reviews resolves through it, and it orders and schedules the modules. Paths are below the C root, c/, wavefront's repo_root.",
+    "closure: the files of every module of crustify/artifacts/modules.json, impl_files the translation units and internal headers of both link units, libgit2.so and the git2 CLI executable, api_headers the installed headers libgit2.so publishes. The TUs the configured build compiles empty (src/libgit2/streams/openssl_dynamic.c, openssl_legacy.c, schannel.c, stransport.c, src/libgit2/transports/auth_gssapi.c, auth_sspi.c, ssh_exec.c, winhttp.c, and src/cli/win32/) are configured out, as are the deprecated shims deprecated.h, cred_helpers.h and sys/cred.h and the MSVC-only stdint.h. The test suites and deps/clar are no part of it: their uses are no uses of the program's entities.",
     "modules: one record per module of modules.json, named <link-unit>/<name>, with ' (foundational)' after a foundational module's name; its files are the module's file entries with their items, as {name, kind}, each item an entity its file is home to (a typedef follows the tag it names, so a shared header's typedef of a struct another file defines is claimed there). Macros are listed by none.",
-    "schedule_seeds: the files of the modules planner run 3 plans, every module of the campaign, so that the out-of-scope entities no module owns (deprecated items, and declarations the configured build never defines, which modules.json's file entries exclude) are not seeded."
+    "schedule_seeds: the files of every module of the campaign, so that the out-of-scope entities no module owns (deprecated items, and declarations the configured build never defines, which modules.json's file entries exclude) are not seeded."
   ],
   "state_dir": "../crustify/wavefront",
   "closure": {
@@ -76,6 +76,30 @@
         "deps/xdiff/xtypes.h",
         "deps/xdiff/xutils.c",
         "deps/xdiff/xutils.h",
+        "src/cli/cmd.c",
+        "src/cli/cmd.h",
+        "src/cli/cmd_blame.c",
+        "src/cli/cmd_cat_file.c",
+        "src/cli/cmd_clone.c",
+        "src/cli/cmd_commit.c",
+        "src/cli/cmd_config.c",
+        "src/cli/cmd_hash_object.c",
+        "src/cli/cmd_help.c",
+        "src/cli/cmd_index_pack.c",
+        "src/cli/cmd_init.c",
+        "src/cli/cmd_version.c",
+        "src/cli/common.c",
+        "src/cli/common.h",
+        "src/cli/error.h",
+        "src/cli/main.c",
+        "src/cli/opt.c",
+        "src/cli/opt.h",
+        "src/cli/opt_usage.c",
+        "src/cli/opt_usage.h",
+        "src/cli/progress.c",
+        "src/cli/progress.h",
+        "src/cli/sighandler.h",
+        "src/cli/unix/sighandler.c",
         "src/libgit2/annotated_commit.c",
         "src/libgit2/annotated_commit.h",
         "src/libgit2/apply.c",
@@ -563,10 +587,6 @@
           "path": "deps/llhttp/llhttp.h",
           "items": {
             "included": [
-              {
-                "name": "llhttp_finish",
-                "kind": "type"
-              },
               {
                 "name": "llhttp_settings_s",
                 "kind": "type"
@@ -2901,6 +2921,120 @@
           }
         }
       ]
+    },
+    {
+      "name": "git2/src/cli/cmd.c",
+      "files": [
+        "src/cli/cmd.c",
+        "src/cli/cmd.h"
+      ]
+    },
+    {
+      "name": "git2/src/cli/cmd_blame.c",
+      "files": [
+        "src/cli/cmd_blame.c"
+      ]
+    },
+    {
+      "name": "git2/src/cli/cmd_cat_file.c",
+      "files": [
+        "src/cli/cmd_cat_file.c"
+      ]
+    },
+    {
+      "name": "git2/src/cli/cmd_clone.c",
+      "files": [
+        "src/cli/cmd_clone.c"
+      ]
+    },
+    {
+      "name": "git2/src/cli/cmd_commit.c",
+      "files": [
+        "src/cli/cmd_commit.c"
+      ]
+    },
+    {
+      "name": "git2/src/cli/cmd_config.c",
+      "files": [
+        "src/cli/cmd_config.c"
+      ]
+    },
+    {
+      "name": "git2/src/cli/cmd_hash_object.c",
+      "files": [
+        "src/cli/cmd_hash_object.c"
+      ]
+    },
+    {
+      "name": "git2/src/cli/cmd_help.c",
+      "files": [
+        "src/cli/cmd_help.c"
+      ]
+    },
+    {
+      "name": "git2/src/cli/cmd_index_pack.c",
+      "files": [
+        "src/cli/cmd_index_pack.c"
+      ]
+    },
+    {
+      "name": "git2/src/cli/cmd_init.c",
+      "files": [
+        "src/cli/cmd_init.c"
+      ]
+    },
+    {
+      "name": "git2/src/cli/cmd_version.c",
+      "files": [
+        "src/cli/cmd_version.c"
+      ]
+    },
+    {
+      "name": "git2/src/cli/common.c",
+      "files": [
+        "src/cli/common.c",
+        "src/cli/common.h"
+      ]
+    },
+    {
+      "name": "git2/src/cli/main.c",
+      "files": [
+        "src/cli/main.c"
+      ]
+    },
+    {
+      "name": "git2/src/cli/opt.c",
+      "files": [
+        "src/cli/opt.c",
+        "src/cli/opt.h"
+      ]
+    },
+    {
+      "name": "git2/src/cli/opt_usage.c",
+      "files": [
+        "src/cli/opt_usage.c",
+        "src/cli/opt_usage.h"
+      ]
+    },
+    {
+      "name": "git2/src/cli/progress.c",
+      "files": [
+        "src/cli/progress.c",
+        "src/cli/progress.h"
+      ]
+    },
+    {
+      "name": "git2/src/cli/unix/sighandler.c",
+      "files": [
+        "src/cli/unix/sighandler.c",
+        "src/cli/sighandler.h"
+      ]
+    },
+    {
+      "name": "git2/src/cli/error.h",
+      "files": [
+        "src/cli/error.h"
+      ]
     }
   ],
   "schedule_seeds": [
@@ -4356,7 +4490,31 @@
           }
         ]
       }
-    }
+    },
+    "src/cli/cmd.c",
+    "src/cli/cmd.h",
+    "src/cli/cmd_blame.c",
+    "src/cli/cmd_cat_file.c",
+    "src/cli/cmd_clone.c",
+    "src/cli/cmd_commit.c",
+    "src/cli/cmd_config.c",
+    "src/cli/cmd_hash_object.c",
+    "src/cli/cmd_help.c",
+    "src/cli/cmd_index_pack.c",
+    "src/cli/cmd_init.c",
+    "src/cli/cmd_version.c",
+    "src/cli/common.c",
+    "src/cli/common.h",
+    "src/cli/main.c",
+    "src/cli/opt.c",
+    "src/cli/opt.h",
+    "src/cli/opt_usage.c",
+    "src/cli/opt_usage.h",
+    "src/cli/progress.c",
+    "src/cli/progress.h",
+    "src/cli/unix/sighandler.c",
+    "src/cli/sighandler.h",
+    "src/cli/error.h"
   ],
   "t3_dir": "t3"
 }
