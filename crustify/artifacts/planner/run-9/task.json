@@ -1,0 +1,9 @@
+{
+  "backend": "claude",
+  "billing": "subscription",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "session_id": "b6ca02bd-29ba-4ade-a2aa-b5a08ed1463a"
+}
