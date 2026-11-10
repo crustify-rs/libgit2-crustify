@@ -1,7 +1,8 @@
 {
   "crate_path": "/target/libgit2-bindings",
   "sys_crates": [
-    "libgit2_sys"
+    "libgit2_sys",
+    "pcre2_sys"
   ],
   "scanner": {
     "ffimap": "a15f6f38de609c5cea252cdd8eb0a5a16ba45fd8",
@@ -750,13 +751,13 @@
           }
         },
         "sys": {
-          "total": 99,
+          "total": 120,
           "of_which": {
             "raw_ptr_in_sys": {
-              "total": 94,
+              "total": 115,
               "of_which": {
-                "used": 73,
-                "wrapped": 68
+                "used": 78,
+                "wrapped": 70
               }
             }
           },
@@ -1074,9 +1075,9 @@
           }
         },
         "sys": {
-          "total": 501,
+          "total": 723,
           "of_which": {
-            "used": 446
+            "used": 452
           }
         }
       }

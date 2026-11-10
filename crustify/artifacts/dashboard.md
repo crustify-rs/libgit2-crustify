@@ -97,26 +97,30 @@ Implementation `openrouter/anthropic/claude-opus-5.5` via `claude`, `openrouter/
 
 ## Safety audit
 
-Deterministic `ffimap <workdir> --json`; no model. Every counter is in the `ffimap.json`
-tracked in the campaign's artifact dir, in each wave's `waves/wave-<index>/` and in each
-batch run's dir.
+Deterministic `ffimap`, run as the `ffimap` skill's Accounting section describes; no
+model. Every counter is in the `ffimap.json` tracked in the campaign's artifact dir, in
+each wave's `waves/wave-<index>/` and in each batch run's dir. Each metric is one counter
+or a combination of counters, named by their dotted paths into the scan's `counts`; a `%`
+metric is a share within one record, and a `−` subtracts a share from the record it cuts.
 
 ### Metrics
 
 | metric | counters | what it counts |
 |---|---|---|
-| pub raw ptr (safe) | `raw_ptr_pub_safe_interface` | raw pointers on the safe public interface: public fields and safe public fns |
-| pub raw ptr | `raw_ptr_pub` | raw pointers anywhere on the public interface, `unsafe fn`s included |
-| pub void ptr | `void_ptr_ty_pub_fields_pub` + `void_ptr_fn_pub_safe` + `void_ptr_fn_pub_unsafe` | type-erased pointers left to the API's users |
-| pub unsafe fn | `unsafe_fns_pub` | the obligations the crate exports to its callers |
-| C borrow | `c_type_borrow_non_sanctioned` | Rust references into C memory outside the sanctioned handle positions; target 0 |
-| slice borrow | `raw_ptr_as_slice_borrow` | slices and strings borrowed over raw pointers, which C must neither free nor change |
-| unsafe loc % | `unsafe_loc_ratio` | unsafe block lines over code lines; context, not a score |
-| unsafe blocks | `unsafe_blocks` | unsafe blocks, the denominator of the ratio's reading |
-| Send/Sync | `unsafe_send_impl` + `unsafe_sync_impl` | thread safety asserted rather than derived from the fields |
-| C by value | Σ `c_type_by_val_*` + Σ `c_type_std_owner_*` | C types held outside an ffibox owner, which a move can leave dangling |
-| Drop/Clone | `drop_impl` + `clone_impl` | lifecycles written by hand rather than through an owner |
-| deref outside impl | `raw_ptr_derefs_outside_impl` | raw pointer dereferences outside any `impl` or trait body |
+| pub raw ptr | `raw_ptr.total.safe.pub` | raw pointers a consumer meets without writing `unsafe`: public fields and the signatures of safe public fns; target 0 |
+| pub void ptr | `raw_ptr.field.of_which.void.pub` + `raw_ptr.fn_sig_arg.of_which.void.{safe,unsafe}.pub` + `raw_ptr.fn_sig_ret.of_which.void.{safe,unsafe}.pub` | type-erased pointers left to the API's users, `unsafe fn`s included |
+| pub unsafe fn | `fn.unsafe.pub` | the obligations the crate exports to its callers |
+| &cell | `ty.ffibox.wrapper.as.borrowed.std.pub` − `….of_which.self_in_ref_accessor.pub` − `….of_which.self_in_trait_impl.pub` | public references to a cell outside the positions ffibox sanctions, where the convention wants a handle; target 0 |
+| C by value | `ty.ffibox.sys.as.by_val.total` + `ty.ffibox.sys.as.owned.std.total` | C structs held by value or in a standard-library owner rather than through a cell, which a move can leave dangling |
+| celled % | `ty.ffibox.sys.of_which.raw_ptr_in_sys.of_which.wrapped` / `….of_which.used` | of the C types the bindings pass by pointer that the crate uses, those a cell covers |
+| raw→std | `raw_ptr.casted_to.std.total` | raw pointers turned into a standard-library borrow, slice, string or owner, whose lifetime or ownership the type system then trusts |
+| unmanaged ptr types | `ty.storing_raw_ptr.of_which.none.total` | types that store a raw pointer and declare nothing about it |
+| ptr Drop | `ty.storing_raw_ptr.of_which.impl_drop.total` | types that store a raw pointer and free it by hand, rather than through an owner |
+| Send/Sync | `ty.impl_trait.of_which.std.send.total` + `ty.impl_trait.of_which.std.sync.total` | thread safety asserted rather than derived from the fields |
+| raw deref | `raw_ptr.deref.total` | raw-pointer reads and writes in bodies, each a pointer the code vouches for |
+| FFI calls | `code.unsafe_call.ffi` | calls across the C boundary, through bindings or stored function pointers |
+| unsafe loc % | `code.loc.unsafe` / `code.loc.total` | lines of unsafe code over code lines; the comparable measure of unsafe volume |
+| unsafe blocks | `code.unsafe_block.total` − `code.unsafe_block.of_which.ffi_export` | hand-written unsafe blocks, a port's generated export gateways left out; moves with the one-op-per-block policy, so not comparable across crates |
 
 ## Planning
 
@@ -356,100 +360,10 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 
 Deterministic `ffimap`; no model.
 
-| module | wave | batch | objective | pass | pub raw ptr (safe) | pub raw ptr | pub void ptr | pub unsafe fn | C borrow | slice borrow | unsafe loc % | unsafe blocks | Send/Sync | C by value | Drop/Clone | deref outside impl |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `libgit2/src/util/alloc.c` | `12` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+1.06` pp | `+24` | — | — | `+0` | `+0` |
-| `libgit2/util` | `legacy-4` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-2.56` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/oid.c` | `5` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+1.54` pp | `+19` | — | — | `+0` | `+0` |
-| `libgit2/oid` | `legacy-8` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.98` pp | `+1` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/oidarray.c` | `30` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+2.27` pp | `+19` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/buf.c` | `0` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.39` pp | `+20` | — | — | `+0` | `+0` |
-| `libgit2/core` | `legacy-14` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-1.93` pp | `+4` | — | — | `+0` | `+0` |
-| `libgit2/core` | `legacy-14` | `2` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.97` pp | `+2` | — | — | `+0` | `+0` |
-| `libgit2/core` | `legacy-14` | `3` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.47` pp | `+2` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/strarray.c` | `8` | `0` | wrap | first | `+0` | `+1` | `+0` | `+0` | — | — | `+0.44` pp | `+17` | — | — | `+0` | `+0` |
-| `libgit2/core` | `legacy-14` | `5` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-1.02` pp | `+2` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/signature.c` | `74` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.29` pp | `+12` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/filter.c` | `66` | `2` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.35` pp | `+26` | — | — | `+1` | `+3` |
-| `libgit2/src/libgit2/signature.c` | `74` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.59` pp | `+32` | — | — | `+1` | `+2` |
-| `libgit2/src/libgit2/annotated_commit.c` | `47` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.30` pp | `+13` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/checkout.c` | `125` | `0` | wrap | first | `+4` | `+8` | `+6` | `+4` | — | — | `+1.07` pp | `+46` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/config.c` | `44` | `0` | wrap | first | `+1` | `+1` | `+0` | `+1` | — | — | `+0.39` pp | `+20` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/index.c` | `49` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.11` pp | `+10` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/odb.c` | `22` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.01` pp | `+12` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/refdb.c` | `50` | `0` | wrap | first | `+0` | `+0` | `+0` | `+2` | — | — | `-0.15` pp | `+8` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/refs.c` | `46` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.05` pp | `+15` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/repository.c` | `34` | `0` | wrap | first | `+0` | `+0` | `+0` | `-1` | — | — | `+0.06` pp | `+17` | — | — | `+0` | `+0` |
-| `libgit2/repository` | `legacy-20` | `8` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.79` pp | `+3` | — | — | `+0` | `+0` |
-| `libgit2/repository` | `legacy-20` | `9` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.72` pp | `+4` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/worktree.c` | `51` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.05` pp | `+7` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/worktree.c` | `126` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.57` pp | `+13` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/repository.c` | `34` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.27` pp | `+36` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/worktree.c` | `126` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.04` pp | `+16` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/commit.c` | `118` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.41` pp | `+9` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/filter.c` | `66` | `0` | wrap | first | `+0` | `+0` | `+0` | `+2` | — | — | `-0.07` pp | `+18` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/trailer.c` | `10` | `0` | wrap | first | `+0` | `+0` | `+0` | `+1` | — | — | `-0.16` pp | `+18` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/object.c` | `45` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.16` pp | `+19` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/tree.c` | `104` | `1` | wrap | first | `+0` | `+0` | `+0` | `+1` | — | — | `-0.09` pp | `+9` | — | — | `+0` | `+0` |
-| `libgit2/object` | `legacy-26` | `5` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.08` pp | `+1` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/blob.c` | `80` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.17` pp | `+34` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/commit.c` | `48` | `0` | wrap | first | `+0` | `+1` | `+2` | `+1` | — | — | `+0.33` pp | `+36` | — | — | `-1` | `+0` |
-| `libgit2/src/libgit2/trailer.c` | `10` | `0` | wrap | first | `+0` | `+0` | `+0` | `+1` | — | — | `+0.14` pp | `+28` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/tag.c` | `103` | `0` | wrap | first | `-1` | `-2` | `+0` | `-1` | — | — | `+0.03` pp | `+29` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/tree.c` | `104` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.10` pp | `+11` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/commit.c` | `136` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.18` pp | `+19` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/config_mem.c` | `95` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+13` | — | — | `+1` | `+0` |
-| `libgit2/src/libgit2/transaction.c` | `76` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.12` pp | `+5` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/config.c` | `61` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.06` pp | `+28` | — | — | `+1` | `+0` |
-| `libgit2/src/libgit2/config.c` | `77` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.06` pp | `+11` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/config.c` | `90` | `0` | wrap | first | `+0` | `+0` | `+0` | `+1` | — | — | `+0.18` pp | `+37` | — | — | `+0` | `+2` |
-| `libgit2/src/libgit2/config.c` | `89` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.12` pp | `+40` | — | — | `+1` | `+0` |
-| `libgit2/src/libgit2/config.c` | `89` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.19` pp | `+44` | — | — | `+1` | `+0` |
-| `libgit2/src/libgit2/diff.c` | `26` | `0` | wrap | first | `+0` | `+0` | `+0` | `+1` | — | — | `+0.53` pp | `+45` | — | — | `+0` | `+0` |
-| `libgit2/index` | `legacy-48` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.10` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/index.c` | `119` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.06` pp | `+3` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/index.c` | `119` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+8` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/index.c` | `119` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.21` pp | `+12` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/iterator.c` | `3` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.01` pp | `+13` | — | — | `+1` | `+0` |
-| `libgit2/src/libgit2/pathspec.c` | `86` | `0` | wrap | first | `+0` | `-4` | `+0` | `-4` | — | — | `+0.11` pp | `+8` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/pathspec.c` | `154` | `0` | wrap | first | `+0` | `+4` | `+0` | `+4` | — | — | `+0.06` pp | `+17` | — | — | `+1` | `+0` |
-| `libgit2/src/libgit2/index.c` | `119` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.02` pp | `+40` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/index.c` | `119` | `2` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.08` pp | `+10` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/indexer.c` | `2` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.03` pp | `+30` | `+6` | — | `+0` | `+0` |
-| `libgit2/src/libgit2/odb.c` | `29` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.06` pp | `+27` | `+12` | — | `+0` | `+0` |
-| `libgit2/src/libgit2/odb.c` | `55` | `0` | wrap | first | `+2` | `+2` | `+0` | `+2` | — | — | `+0.09` pp | `+35` | `+0` | — | `+0` | `+0` |
-| `libgit2/src/libgit2/odb.c` | `40` | `0` | wrap | first | `-2` | `-2` | `+0` | `+1` | — | — | `+0.14` pp | `+51` | `+0` | — | `+0` | `+0` |
-| `libgit2/src/libgit2/diff_parse.c` | `62` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.05` pp | `+10` | `+6` | — | `+0` | `+0` |
-| `libgit2/src/libgit2/checkout.c` | `125` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+14` | `+6` | — | `+0` | `+0` |
-| `libgit2/src/libgit2/checkout.c` | `125` | `0` | wrap | first | `-3` | `-6` | `-6` | `-3` | — | — | `+0.01` pp | `+26` | `+0` | — | `+0` | `+12` |
-| `libgit2/util` | `legacy-6` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/util` | `legacy-6` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `-0.04` pp | `+2` | — | — | `+0` | `+0` |
-| `libgit2/oid` | `legacy-11` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `-0.18` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/oid` | `legacy-11` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/oid` | `legacy-12` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.37` pp | `+1` | — | — | `+0` | `+0` |
-| `libgit2/core` | `legacy-15` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/core` | `legacy-17` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `-0.02` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/repository` | `legacy-21` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `-0.18` pp | `+1` | — | — | `+0` | `+0` |
-| `libgit2/repository` | `legacy-23` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/object` | `legacy-27` | `0` | wrap | review | `+0` | `+0` | `+0` | `-3` | — | — | `+0.09` pp | `+8` | — | — | `+0` | `+0` |
-| `libgit2/object` | `legacy-29` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.03` pp | `+6` | — | — | `+0` | `+0` |
-| `libgit2/object` | `legacy-31` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/config` | `legacy-35` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `-0.09` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/config` | `legacy-37` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `-0.02` pp | `+3` | — | — | `+0` | `+0` |
-| `libgit2/config` | `legacy-39` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `-0.04` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/config` | `legacy-41` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `-0.01` pp | `-1` | — | — | `+0` | `-2` |
-| `libgit2/config` | `legacy-43` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `-0.02` pp | `+1` | — | — | `+0` | `+0` |
-| `libgit2/config` | `legacy-47` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `-1` | — | — | `+0` | `+0` |
-| `libgit2/index` | `legacy-49` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `-0.03` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/index` | `legacy-51` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/indexer.c` | `legacy-173` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+0` | `+0` | — | `+0` | `+0` |
-| `libgit2/src/libgit2/odb.c` | `legacy-177` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `-0.00` pp | `+0` | `+0` | — | `+0` | `+0` |
-| `libgit2/src/libgit2/odb.c` | `legacy-181` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+0` | `+0` | — | `+0` | `+0` |
-| `libgit2/src/libgit2/diff_parse.c` | `legacy-229` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+0` | `+0` | — | `+0` | `+0` |
-| `libgit2/src/libgit2/checkout.c` | `legacy-331` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+0` | `+0` | — | `+0` | `+0` |
-| `libgit2/src/libgit2/checkout.c` | `legacy-335` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.01` pp | `+5` | `+0` | — | `+0` | `+0` |
-| **Σ first** |  |  |  |  | **`+1`** | **`+3`** | **`+2`** | **`+13`** | — | — | **`-0.51` pp** | **`+1158`** | — | — | **`+7`** | **`+19`** |
-| **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`-3`** | — | — | **`-0.13` pp** | **`+25`** | — | — | **`+0`** | **`-2`** |
+| module | wave | batch | objective | pass | pub raw ptr | pub void ptr | pub unsafe fn | &cell | C by value | celled % | raw→std | unmanaged ptr types | ptr Drop | Send/Sync | raw deref | FFI calls | unsafe loc % | unsafe blocks |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Σ first** |  |  |  |  | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| **Σ review** |  |  |  |  | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
 
 ### Batches — review: PoC + reports
 
@@ -643,77 +557,10 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 
 Deterministic `ffimap`; no model.
 
-| module | wave | batch | objective | pass | pub raw ptr (safe) | pub raw ptr | pub void ptr | pub unsafe fn | C borrow | slice borrow | unsafe loc % | unsafe blocks | Send/Sync | C by value | Drop/Clone | deref outside impl |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `libgit2/raw-lifetime-void` | `legacy-0` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+13.04` pp | `+12` | — | — | `+0` | `+0` |
-| `libgit2/raw-lifetime-string` | `legacy-2` | `0` | wrap | first | `+2` | `+3` | `+0` | `+1` | — | — | `-0.15` pp | `+17` | — | — | `+2` | `+0` |
-| `libgit2/src/util/errors.c` | `13` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.03` pp | `+6` | — | — | `+0` | `+0` |
-| `libgit2/src/util/errors.c` | `21` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.09` pp | `+2` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/oid.c` | `17` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.62` pp | `+13` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/oidarray.c` | `41` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/libgit2.c` | `4` | `0` | wrap | first | `+0` | `+0` | `+0` | `+33` | — | — | `+2.41` pp | `+65` | — | — | `+1` | `+0` |
-| `libgit2/src/libgit2/libgit2.c` | `4` | `0` | wrap | first | `+0` | `+0` | `+0` | `+1` | — | — | `+0.01` pp | `+6` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/trace.c` | `9` | `0` | wrap | first | `+0` | `+0` | `+0` | `+2` | — | — | `+0.03` pp | `+2` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/repository.c` | `52` | `0` | wrap | first | `+1` | `+1` | `+1` | `+0` | — | — | `+0.54` pp | `+43` | — | — | `+1` | `+2` |
-| `libgit2/src/libgit2/repository.c` | `52` | `1` | wrap | first | `+0` | `+0` | `+0` | `+1` | — | — | `+0.17` pp | `+34` | — | — | `+0` | `+1` |
-| `libgit2/src/libgit2/worktree.c` | `135` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+26` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/repository.c` | `52` | `0` | wrap | first | `-1` | `-1` | `-1` | `+0` | — | — | `+0.04` pp | `+5` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/blob.c` | `93` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.07` pp | `+2` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/object.c` | `82` | `0` | wrap | first | `-1` | `-2` | `-2` | `-1` | — | — | `+0.12` pp | `+24` | — | — | `+0` | `+2` |
-| `libgit2/src/libgit2/tree.c` | `115` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.17` pp | `+28` | — | — | `+0` | `+2` |
-| `libgit2/src/libgit2/tree.c` | `115` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.03` pp | `+9` | — | — | `+0` | `+1` |
-| `libgit2/src/libgit2/commit.c` | `128` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+1.40` pp | `+52` | — | — | `+0` | `+1` |
-| `libgit2/src/libgit2/commit.c` | `128` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.11` pp | `+26` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/tag.c` | `114` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.36` pp | `+29` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/tree.c` | `115` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.08` pp | `+10` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/commit.c` | `142` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.11` pp | `+11` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/config.c` | `61` | `2` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.06` pp | `+3` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/config.c` | `77` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.04` pp | `+30` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/config.c` | `77` | `2` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.03` pp | `+4` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/config.c` | `77` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.01` pp | `+5` | — | — | `+0` | `+1` |
-| `libgit2/src/libgit2/config.c` | `89` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.07` pp | `+3` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/config.c` | `91` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+2` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/config.c` | `90` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.03` pp | `+7` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/index.c` | `119` | `3` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.02` pp | `+4` | — | — | `+0` | `+1` |
-| `libgit2/src/libgit2/index.c` | `129` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.04` pp | `+17` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/index.c` | `129` | `2` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.16` pp | `+27` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/pathspec.c` | `164` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+1` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/index.c` | `137` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.03` pp | `+14` | — | — | `+2` | `+0` |
-| `libgit2/index` | `legacy-52` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.01` pp | `+2` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/odb.c` | `40` | `1` | wrap | first | `+0` | `+0` | `+0` | `+4` | — | — | `+0.02` pp | `+27` | `+6` | — | `+0` | `+0` |
-| `libgit2/src/libgit2/indexer.c` | `16` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.04` pp | `+3` | `+0` | — | `+0` | `+1` |
-| `libgit2/src/libgit2/checkout.c` | `148` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.03` pp | `+3` | `+0` | — | `+0` | `+1` |
-| `libgit2/src/libgit2/checkout.c` | `148` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | — | — | `-0.05` pp | `+8` | `+0` | — | `+0` | `+2` |
-| `libgit2/raw-lifetime-void` | `legacy-1` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/raw-lifetime-string` | `legacy-3` | `0` | wrap | review | `+0` | `+0` | `+0` | `+1` | — | — | `-0.34` pp | `+1` | — | — | `+0` | `+0` |
-| `libgit2/util` | `legacy-6` | `2` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `-0.02` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/util` | `legacy-7` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/oid` | `legacy-12` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `-0.01` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/oid` | `legacy-13` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/core` | `legacy-15` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.20` pp | `+5` | — | — | `+0` | `+0` |
-| `libgit2/core` | `legacy-17` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/core` | `legacy-19` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/repository` | `legacy-23` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `-0.13` pp | `-4` | — | — | `+0` | `+0` |
-| `libgit2/repository` | `legacy-25` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.02` pp | `+5` | — | — | `+0` | `+0` |
-| `libgit2/object` | `legacy-27` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/object` | `legacy-29` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.04` pp | `+2` | — | — | `+0` | `+0` |
-| `libgit2/object` | `legacy-31` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/object` | `legacy-33` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `-0.01` pp | `+1` | — | — | `+0` | `+0` |
-| `libgit2/config` | `legacy-35` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `-0.02` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/config` | `legacy-37` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `-0.01` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/config` | `legacy-39` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `-0.04` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/config` | `legacy-41` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `-0.04` pp | `+2` | — | — | `+0` | `+0` |
-| `libgit2/config` | `legacy-43` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/config` | `legacy-45` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `-0.01` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/index` | `legacy-49` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `-0.01` pp | `+0` | — | — | `+0` | `-1` |
-| `libgit2/index` | `legacy-51` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+7` | — | — | `+0` | `+0` |
-| `libgit2/index` | `legacy-53` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+0` | — | — | `+0` | `+0` |
-| `libgit2/src/libgit2/odb.c` | `legacy-177` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+0` | `+0` | — | `+0` | `+0` |
-| `libgit2/src/libgit2/indexer.c` | `legacy-179` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `-0.00` pp | `+0` | `+0` | — | `+0` | `+0` |
-| `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+0` | `+0` | — | `+0` | `+0` |
-| `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | wrap | review | `+0` | `+0` | `+0` | `+0` | — | — | `+0.00` pp | `+0` | `+0` | — | `+0` | `+0` |
-| **Σ first** |  |  |  |  | **`+1`** | **`+1`** | **`-2`** | **`+41`** | — | — | **`+18.18` pp** | **`+582`** | — | — | **`+6`** | **`+15`** |
-| **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+1`** | — | — | **`-0.38` pp** | **`+19`** | — | — | **`+0`** | **`-1`** |
+| module | wave | batch | objective | pass | pub raw ptr | pub void ptr | pub unsafe fn | &cell | C by value | celled % | raw→std | unmanaged ptr types | ptr Drop | Send/Sync | raw deref | FFI calls | unsafe loc % | unsafe blocks |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Σ first** |  |  |  |  | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| **Σ review** |  |  |  |  | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
 
 ### Batches — review: PoC + reports
 
@@ -937,8 +784,9 @@ cells and C deltas stay as first recorded. The eight `libgit2/config` states bet
 were measured against a private coverage build of their own source, which exports them. A Σ `cov` cell is the state after the table's chronologically
 last landing. The `(+C/+Rust pp)` pairs in the `…: tests` tables are each workload's own
 coverage after minus before, so a batch that adds code its workload does not reach shows a
-negative Rust delta. Smell deltas are the crate-wide `unsafe_fn_smell` and `raw_ptr_smell`
-of an unseeded `crustify ffimap` over the same two states.
+negative Rust delta. The safety audit deltas are the Safety audit's metrics over the same two
+states, from the scans the `ffimap` skill names; the tables hold no row from before the
+metrics were redefined, as `Safety audit metrics from ffimap's counter tree` describes.
 
 Test counts are `#[test]` functions the landing commits add, by directory; trybuild
 `compile_fail` cases are not counted. `+LoC` and `rv loc` count `.rs` lines under
@@ -2143,3 +1991,22 @@ decomposition, re-derived the C tests' ties under the current Bundling rule (134
 them (1,547 in 1,010 waves), and numbered the `todo` waves compactly, `169`-`2344`, in one
 topological order (crustify 06e7a91). Exports kept for good fell from 252 to 70, the
 harness `deps/clar` reaches nearly all of them.
+
+### Safety audit metrics from ffimap's counter tree (2026-11-10)
+
+ffimap reports one tree of counters named by dotted paths, and the flat counters the
+earlier safety audit columns read are gone, so the template's metrics were redefined over
+the tree (crustify `f524d08`). The 157 batch rows measured under the earlier metrics were
+not rescanned: they are in this file as of `6331ac859`, and the tables start again from
+the next landing. The campaign tip, `6331ac859`, was rescanned with ffimap `a15f6f3`,
+`--ffibox`, `--sys-crates libgit2_sys,pcre2_sys` and the skill's twelve seams, as
+`crustify/artifacts/ffimap.json`, the base of the next batches' deltas:
+
+| pub raw ptr | pub void ptr | pub unsafe fn | &cell | C by value | celled % | raw→std | unmanaged ptr types | ptr Drop | Send/Sync | raw deref | FFI calls | unsafe loc % | unsafe blocks |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `2` | `1` | `102` | `22` | `111` | `89.74%` | `119` | `4` | `3` | `180` | `443` | `592` | `16.57%` | `1977` |
+
+The earlier tip scan, from `3db4b351d`, named `libgit2_sys` alone, while the batch scans
+name `pcre2_sys` too, which `config.rs` reaches C through: the rescan's `-sys` counters
+take in pcre2's declarations, 120 structs and 723 fns against 99 and 501, which moves
+`celled %` from 93.15% to 89.74%. Every other counter is unchanged.
