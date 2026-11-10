@@ -33,7 +33,7 @@ use crate::libgit2::src::libgit2::notes::NoteIteratorFree;
 /// send::<NoteIteratorBox<'static>>();
 /// ```
 ///
-/// Wraps `ty::git_iterator`
+/// Wraps `st::git_iterator`
 #[doc(alias = "git_iterator")]
 #[repr(transparent)]
 pub struct NoteIterator<'r>(ffi::git_note_iterator, PhantomData<(*const (), &'r ())>);

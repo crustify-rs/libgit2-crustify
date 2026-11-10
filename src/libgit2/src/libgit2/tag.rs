@@ -171,7 +171,7 @@ pub fn name_is_valid(name: &CStr) -> Result<bool, ErrorBuf> {
 /// }
 /// ```
 ///
-/// Wraps `ty::git_tag`
+/// Wraps `st::git_tag`
 #[doc(alias = "git_tag")]
 #[repr(transparent)]
 pub struct Tag<'r>(ffi::git_tag, PhantomData<(*const (), &'r ())>);
@@ -1065,7 +1065,7 @@ type ForeachFn<'f> = dyn FnMut(&CStr, OidRef<'_>) -> ControlFlow<NonZero<c_int>>
 /// send(ForeachCallback::new(&mut f));
 /// ```
 ///
-/// Wraps `ty::git_tag_foreach_cb`
+/// Wraps `fnp::git_tag_foreach_cb`
 #[doc(alias = "git_tag_foreach_cb")]
 pub struct ForeachCallback<'f> {
     f: &'f mut ForeachFn<'f>,

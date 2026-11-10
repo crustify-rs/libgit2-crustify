@@ -62,7 +62,7 @@ use crate::libgit2::src::util::errors::{ErrorBuf, ErrorClass, last, runtime_pinn
 /// the repository's type), and its routines that return a type answer `0` when they
 /// have none. [`from_raw`](Self::from_raw) gives `None` for all of them.
 ///
-/// Wraps `ty::git_oid_t`
+/// Wraps `enm::git_oid_t`
 #[doc(alias = "git_oid_t")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u32)]
@@ -178,7 +178,7 @@ define_ctype!(
     /// Read and write its fields through [`as_ref`](Self::as_ref) /
     /// [`as_mut`](Self::as_mut). It hashes as it compares, over all 33 bytes.
     ///
-    /// Wraps `ty::git_oid`
+    /// Wraps `st::git_oid`
     #[doc(alias = "git_oid")]
     #[derive(Clone, Copy)]
     Oid,
@@ -824,7 +824,7 @@ impl OidMut<'_> {
 /// }
 /// ```
 ///
-/// Wraps `ty::git_oid_shorten`
+/// Wraps `st::git_oid_shorten`
 #[doc(alias = "git_oid_shorten")]
 #[repr(transparent)]
 pub struct OidShortener<'s>(ffi::git_oid_shorten, PhantomData<(*const (), &'s [u8])>);

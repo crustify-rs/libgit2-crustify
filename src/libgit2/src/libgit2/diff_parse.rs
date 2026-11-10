@@ -140,7 +140,7 @@ define_ctype!(
     /// opts.as_ref().set_oid_type(None);
     /// ```
     ///
-    /// Wraps `ty::git_diff_parse_options`
+    /// Wraps `st::git_diff_parse_options`
     #[doc(alias = "git_diff_parse_options")]
     #[derive(Clone, Copy)]
     DiffParseOptions,

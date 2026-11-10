@@ -185,7 +185,7 @@ use crate::libgit2::src::util::errors::{
 /// [`from_raw`](Self::from_raw) gives `None` for any value without a variant: `0`,
 /// a combination of bits, or a bit this version of libgit2's header does not name.
 ///
-/// Wraps `ty::git_repository_init_flag_t`
+/// Wraps `enm::git_repository_init_flag_t`
 #[doc(alias = "git_repository_init_flag_t")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u32)]
@@ -519,7 +519,7 @@ impl core::iter::FusedIterator for InitFlagsIter {}
 /// let _ = InitMode::Custom(CustomMode(0o2775));
 /// ```
 ///
-/// Wraps `ty::git_repository_init_mode_t`
+/// Wraps `enm::git_repository_init_mode_t`
 #[doc(alias = "git_repository_init_mode_t")]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -654,7 +654,7 @@ impl CustomMode {
 /// `git_repository_init_ext` writes to the options it is given: it ORs internal bits
 /// into the flags (see [`InitFlags`]), which a later call with the same options reads.
 ///
-/// Wraps `ty::git_repository_init_options`
+/// Wraps `st::git_repository_init_options`
 #[doc(alias = "git_repository_init_options")]
 #[repr(transparent)]
 #[derive(Clone, Copy)]
@@ -1200,7 +1200,7 @@ const _: () = assert!(
 /// [`from_raw`](Self::from_raw) gives `None` for `GIT_REPOSITORY_ITEM__LAST` and every
 /// value after it, which libgit2 would read past its item table with.
 ///
-/// Wraps `ty::git_repository_item_t`
+/// Wraps `enm::git_repository_item_t`
 #[doc(alias = "git_repository_item_t")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u32)]
@@ -1336,7 +1336,7 @@ impl std::error::Error for UnnamedItem {}
 /// [`from_raw`](Self::from_raw) gives `None` for any value without a variant: `0`, a
 /// combination of bits, or a bit this version of libgit2's header does not name.
 ///
-/// Wraps `ty::git_repository_open_flag_t`
+/// Wraps `enm::git_repository_open_flag_t`
 #[doc(alias = "git_repository_open_flag_t")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u32)]
@@ -1646,7 +1646,7 @@ impl core::iter::FusedIterator for OpenFlagsIter {}
 ///
 /// [`from_raw`](Self::from_raw) gives `None` for every value the header does not name.
 ///
-/// Wraps `ty::git_repository_state_t`
+/// Wraps `enm::git_repository_state_t`
 #[doc(alias = "git_repository_state_t")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u32)]
@@ -1802,7 +1802,7 @@ define_ctype!(
     /// send(Repository::new().unwrap());
     /// ```
     ///
-    /// Wraps `ty::git_repository`
+    /// Wraps `st::git_repository`
     #[doc(alias = "git_repository")]
     Repository,
     RepositoryRef,
@@ -2957,7 +2957,7 @@ type MergeheadFn<'f> = dyn FnMut(OidRef<'_>) -> ControlFlow<NonZero<c_int>> + 'f
 /// send(MergeheadCallback::new(&mut f));
 /// ```
 ///
-/// Wraps `ty::git_repository_mergehead_foreach_cb`
+/// Wraps `fnp::git_repository_mergehead_foreach_cb`
 #[doc(alias = "git_repository_mergehead_foreach_cb")]
 pub struct MergeheadCallback<'f> {
     f: &'f mut MergeheadFn<'f>,
@@ -3789,7 +3789,7 @@ type FetchheadFn<'f> = dyn FnMut(FetchheadEntry<'_>) -> ControlFlow<()> + 'f;
 /// [`for_each_fetchhead`](RepositoryRef::for_each_fetchhead) resumes the panic once C
 /// has returned.
 ///
-/// Wraps `ty::git_repository_fetchhead_foreach_cb`
+/// Wraps `fnp::git_repository_fetchhead_foreach_cb`
 #[doc(alias = "git_repository_fetchhead_foreach_cb")]
 pub struct FetchheadForeachCallback<'f> {
     callback: &'f mut FetchheadFn<'f>,
@@ -3976,7 +3976,7 @@ define_ctype!(
     /// opts.as_ref().set_oid_type(None);
     /// ```
     ///
-    /// Wraps `ty::git_repository_new_options`
+    /// Wraps `st::git_repository_new_options`
     #[doc(alias = "git_repository_new_options")]
     #[derive(Clone, Copy)]
     NewOptions,

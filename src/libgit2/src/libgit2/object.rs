@@ -109,7 +109,7 @@ use crate::libgit2::src::util::errors::{
 /// [`from_raw`](Self::from_raw) gives `None` for both, and for every value
 /// `git_object_type_is_valid` refuses.
 ///
-/// Wraps `ty::git_object_t`
+/// Wraps `enm::git_object_t`
 #[doc(alias = "git_object_t")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(i32)]
@@ -225,7 +225,7 @@ impl std::error::Error for NotAnObjectType {}
 /// }
 /// ```
 ///
-/// Wraps `ty::git_object`
+/// Wraps `st::git_object`
 #[doc(alias = "git_object")]
 #[repr(transparent)]
 pub struct Object<'r>(ffi::git_object, PhantomData<(*const (), &'r ())>);
@@ -865,7 +865,7 @@ pub(crate) fn id_fits(repo: RepositoryRef<'_>, id: OidRef<'_>) -> Result<(), Rep
 /// let _copy = opts.clone();
 /// ```
 ///
-/// Wraps `ty::git_object_id_options`
+/// Wraps `st::git_object_id_options`
 #[doc(alias = "git_object_id_options")]
 #[repr(transparent)]
 pub struct ObjectIdOptions<'f>(

@@ -82,7 +82,7 @@ define_ctype!(
     /// never holds a NULL member. Read and replace members through
     /// [`as_ref`](Self::as_ref) / [`as_mut`](Self::as_mut).
     ///
-    /// Wraps `ty::git_allocator`
+    /// Wraps `st::git_allocator`
     #[doc(alias = "git_allocator")]
     #[derive(Clone, Copy)]
     Allocator,

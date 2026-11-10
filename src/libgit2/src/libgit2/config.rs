@@ -175,7 +175,7 @@ use crate::libgit2::src::util::errors::{
 /// let _ = handle;
 /// ```
 ///
-/// Wraps `ty::git_config`
+/// Wraps `st::git_config`
 #[doc(alias = "git_config")]
 #[repr(transparent)]
 pub struct Config<'r>(
@@ -1313,7 +1313,7 @@ fn integer_parse_error(value: Option<&CStr>) -> CString {
 /// C's priority comparators subtract signed integers and can overflow when mixing
 /// extreme negative and positive levels.
 ///
-/// Wraps `ty::git_config_level_t`
+/// Wraps `enm::git_config_level_t`
 #[doc(alias = "git_config_level_t")]
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1364,7 +1364,7 @@ impl From<ConfigLevel> for ffi::git_config_level_t {
 /// input directly; boolean and string mappings return the entry's mapped value.
 /// Unknown C values are rejected instead of constructing an invalid Rust enum.
 ///
-/// Wraps `ty::git_configmap_t`
+/// Wraps `enm::git_configmap_t`
 #[doc(alias = "git_configmap_t")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum MapType {
@@ -1582,7 +1582,7 @@ define_ctype!(
     /// fn clone(entry: EntryArc) { let _ = entry.clone(); }
     /// ```
     ///
-    /// Wraps `ty::git_config_entry`
+    /// Wraps `st::git_config_entry`
     #[doc(alias = "git_config_entry")]
     Entry,
     EntryRef,
@@ -2404,7 +2404,7 @@ type ForeachFn<'f> = dyn for<'e> FnMut(EntryRef<'e>) -> ControlFlow<NonZero<c_in
 /// std::thread::scope(|scope| { scope.spawn(move || drop(callback)); });
 /// ```
 ///
-/// Wraps `ty::git_config_foreach_cb`
+/// Wraps `fnp::git_config_foreach_cb`
 #[doc(alias = "git_config_foreach_cb")]
 pub struct ForeachCallback<'f> {
     f: &'f mut ForeachFn<'f>,
@@ -2727,7 +2727,7 @@ impl MapMatch<'_> {
 /// assert!(text.is_some());
 /// ```
 ///
-/// Wraps `ty::git_configmap`
+/// Wraps `st::git_configmap`
 #[doc(alias = "git_configmap")]
 #[repr(transparent)]
 pub struct ConfigMap<'s>(ffi::git_configmap, PhantomData<(*const (), &'s CStr)>);
@@ -3020,7 +3020,7 @@ define_ctype!(
     /// fn send(entry: BackendEntryArc) { std::thread::spawn(move || drop(entry)); }
     /// ```
     ///
-    /// Wraps `ty::git_config_backend_entry`
+    /// Wraps `st::git_config_backend_entry`
     #[doc(alias = "git_config_backend_entry")]
     BackendEntry,
     BackendEntryRef,
@@ -3340,7 +3340,7 @@ impl fmt::Debug for BackendEntryMut<'_> {
 /// fn copy(iter: IteratorBox<'_>) { let _ = iter.clone(); }
 /// ```
 ///
-/// Wraps `ty::git_config_iterator`
+/// Wraps `st::git_config_iterator`
 #[doc(alias = "git_config_iterator")]
 #[repr(transparent)]
 pub struct Iterator<'c>(ffi::git_config_iterator, PhantomData<(*const (), &'c ())>);
@@ -3772,7 +3772,7 @@ define_ctype!(
     /// Shared handles only inspect metadata; all dispatch requires exclusivity.
     /// No Send/Sync or Clone is asserted for arbitrary third-party backends.
     ///
-    /// Wraps `ty::git_config_backend`
+    /// Wraps `st::git_config_backend`
     #[doc(alias = "git_config_backend")]
     Backend,
     BackendRef,

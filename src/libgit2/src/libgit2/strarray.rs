@@ -67,7 +67,7 @@ define_ctype!(
     /// [`StrArrayView`] instead. Not `Clone`: it owns its strings, so a copy is
     /// [`StrArrayRef::to_str_array`], which allocates.
     ///
-    /// Wraps `ty::git_strarray`
+    /// Wraps `st::git_strarray`
     #[doc(alias = "git_strarray")]
     StrArray,
     StrArrayRef,

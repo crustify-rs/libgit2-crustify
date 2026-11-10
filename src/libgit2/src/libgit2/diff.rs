@@ -108,7 +108,7 @@ impl std::error::Error for DiffError {}
 /// sync::<DiffRef<'static, 'static>>();
 /// ```
 ///
-/// Wraps `ty::git_diff`
+/// Wraps `st::git_diff`
 #[doc(alias = "git_diff")]
 #[repr(transparent)]
 pub struct Diff<'r>(ffi::git_diff, PhantomData<(*const (), &'r ())>);
@@ -242,7 +242,7 @@ pub(crate) fn constructed(rc: i32, diff: Option<DiffBox<'_>>) -> Result<DiffBox<
 define_ctype!(
     /// A read-only delta borrowed from a diff, patch, or callback. All fields are
     /// initialized, but flags identify which id/size values C actually knows.
-    /// Wraps `ty::git_diff_delta`
+    /// Wraps `st::git_diff_delta`
     #[doc(alias = "git_diff_delta")]
     DiffDelta,
     DiffDeltaRef,
@@ -332,7 +332,7 @@ impl<'a> DiffDeltaRef<'a> {
 // API. C publishes files only as output through const deltas/callback pointers.
 define_ctype!(
     /// One embedded side of a delta. Borrowed from its parent, never freed alone.
-    /// Wraps `ty::git_diff_file`
+    /// Wraps `st::git_diff_file`
     #[doc(alias = "git_diff_file")]
     DiffFile,
     DiffFileRef,

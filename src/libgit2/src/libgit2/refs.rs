@@ -57,7 +57,7 @@ use crate::libgit2::src::util::errors::{ErrorBuf, last, runtime_pinned};
 /// `GIT_REFERENCE_ALL` and every value the header does not name, such as the `-1`
 /// that `git_reference_type(NULL)` returns in a release build.
 ///
-/// Wraps `ty::git_reference_t`
+/// Wraps `enm::git_reference_t`
 #[doc(alias = "git_reference_t")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u32)]
@@ -158,7 +158,7 @@ impl std::error::Error for NotAReferenceType {}
 /// }
 /// ```
 ///
-/// Wraps `ty::git_reference`
+/// Wraps `st::git_reference`
 #[doc(alias = "git_reference")]
 #[repr(transparent)]
 pub struct Reference<'r>(ffi::git_reference, PhantomData<(*const (), &'r ())>);
@@ -251,7 +251,7 @@ define_ctype!(
     /// let _copy = reference.clone();
     /// ```
     ///
-    /// Wraps `ty::git_reference`
+    /// Wraps `st::git_reference`
     #[doc(alias = "git_reference")]
     UnattachedReference,
     UnattachedReferenceRef,

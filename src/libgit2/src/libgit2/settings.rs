@@ -66,7 +66,7 @@ use crate::libgit2::src::util::errors::{ErrorBuf, last, runtime_pinned};
 /// [`from_raw`](Self::from_raw) gives `None` for any value without a variant,
 /// `0` included.
 ///
-/// Wraps `ty::git_buildinfo_t`
+/// Wraps `enm::git_buildinfo_t`
 #[doc(alias = "git_buildinfo_t")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u32)]
@@ -145,7 +145,7 @@ impl std::error::Error for UnnamedBuildInfo {}
 /// reading no further argument; [`from_raw`](Self::from_raw) and
 /// [`from_key`](Self::from_key) give `None` for exactly those.
 ///
-/// Wraps `ty::git_libgit2_opt_t`
+/// Wraps `enm::git_libgit2_opt_t`
 #[doc(alias = "git_libgit2_opt_t")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u32)]

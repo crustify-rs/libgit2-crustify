@@ -102,7 +102,7 @@ use crate::libgit2::src::util::errors::{ErrorBuf, ErrorClass, last, runtime_pinn
 /// copyable::<AnnotatedCommitBox<'static>>();
 /// ```
 ///
-/// Wraps `ty::git_annotated_commit`
+/// Wraps `st::git_annotated_commit`
 #[doc(alias = "git_annotated_commit")]
 #[repr(transparent)]
 pub struct AnnotatedCommit<'r>(ffi::git_annotated_commit, PhantomData<(*const (), &'r ())>);

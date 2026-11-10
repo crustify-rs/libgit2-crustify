@@ -41,7 +41,7 @@ use crate::libgit2::src::util::errors::{ErrorBuf, ErrorClass, last, runtime_pinn
 define_ctype!(
     /// A compiled, C-owned pathspec, reached only through owners and handles.
     ///
-    /// Wraps `ty::git_pathspec`
+    /// Wraps `st::git_pathspec`
     #[doc(alias = "git_pathspec")]
     Pathspec,
     PathspecRef,
@@ -197,7 +197,7 @@ pub(crate) fn patterns_are_parsable(patterns: StrArrayRef<'_>) -> bool {
 /// `USE_CASE` where case flags apply. These are bits, not a Rust enum: combinations
 /// (including zero and both case flags) are valid.
 ///
-/// Wraps `ty::git_pathspec_flag_t`
+/// Wraps `enm::git_pathspec_flag_t`
 #[doc(alias = "git_pathspec_flag_t")]
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -309,7 +309,7 @@ impl BitAndAssign for PathspecFlags {
 /// }
 /// ```
 ///
-/// Wraps `ty::git_pathspec_match_list`
+/// Wraps `st::git_pathspec_match_list`
 #[doc(alias = "git_pathspec_match_list")]
 #[repr(transparent)]
 pub struct MatchList<'diff>(

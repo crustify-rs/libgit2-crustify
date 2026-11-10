@@ -42,7 +42,7 @@ use crate::libgit2::src::libgit2::settings::Version;
 /// [`from_raw`](Self::from_raw) gives `None` for any value without a variant: `0`,
 /// a combination of bits, or a bit this version of libgit2's header does not name.
 ///
-/// Wraps `ty::git_feature_t`
+/// Wraps `enm::git_feature_t`
 #[doc(alias = "git_feature_t")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u32)]

@@ -68,7 +68,7 @@ use crate::ffi;
 /// std::thread::spawn(move || drop(options));
 /// ```
 ///
-/// Wraps `ty::git_config_backend_memory_options`
+/// Wraps `st::git_config_backend_memory_options`
 #[doc(alias = "git_config_backend_memory_options")]
 #[repr(transparent)]
 pub struct BackendMemoryOptions<'o>(

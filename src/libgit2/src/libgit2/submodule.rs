@@ -17,7 +17,7 @@ use crate::ffi;
 /// without a variant ("invalid value for fetchRecurseSubmodules"), and
 /// [`from_raw`](Self::from_raw) gives `None` for it.
 ///
-/// Wraps `ty::git_submodule_recurse_t`
+/// Wraps `enm::git_submodule_recurse_t`
 #[doc(alias = "git_submodule_recurse_t")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u32)]
@@ -114,7 +114,7 @@ impl std::error::Error for UnnamedSubmoduleRecurse {}
 /// gives `None` for it, and `from_raw(raw).unwrap_or_default()` resolves it as
 /// libgit2 does.
 ///
-/// Wraps `ty::git_submodule_update_t`
+/// Wraps `enm::git_submodule_update_t`
 #[doc(alias = "git_submodule_update_t")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u32)]
@@ -213,7 +213,7 @@ impl std::error::Error for UnnamedSubmoduleUpdate {}
 /// zeroed options struct) as `Unspecified`; [`from_raw`](Self::from_raw) gives `None`
 /// for all of them. libgit2's own routines return only named values.
 ///
-/// Wraps `ty::git_submodule_ignore_t`
+/// Wraps `enm::git_submodule_ignore_t`
 #[doc(alias = "git_submodule_ignore_t")]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[repr(i32)]

@@ -124,7 +124,7 @@ use crate::libgit2::src::util::errors::{
 /// [`from_raw`](Self::from_raw) gives `None` for any value without a variant: `0`,
 /// a combination of bits, or a bit this version of libgit2's header does not name.
 ///
-/// Wraps `ty::git_worktree_prune_t`
+/// Wraps `enm::git_worktree_prune_t`
 #[doc(alias = "git_worktree_prune_t")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u32)]
@@ -451,7 +451,7 @@ define_ctype!(
     /// opts.as_ref().set_flags(PruneFlags::empty());
     /// ```
     ///
-    /// Wraps `ty::git_worktree_prune_options`
+    /// Wraps `st::git_worktree_prune_options`
     #[doc(alias = "git_worktree_prune_options")]
     #[derive(Clone, Copy)]
     PruneOptions,
@@ -680,7 +680,7 @@ define_ctype!(
     /// let _ = <Worktree as ffibox::CZeroable>::zeroed();
     /// ```
     ///
-    /// Wraps `ty::git_worktree`
+    /// Wraps `st::git_worktree`
     #[doc(alias = "git_worktree")]
     Worktree,
     WorktreeRef,
@@ -874,7 +874,7 @@ pub type WorktreeBox = CBox<Worktree, WorktreeFree>;
 /// needs::<AddOptions<'static>>();
 /// ```
 ///
-/// Wraps `ty::git_worktree_add_options`
+/// Wraps `st::git_worktree_add_options`
 #[doc(alias = "git_worktree_add_options")]
 #[repr(transparent)]
 pub struct AddOptions<'o>(

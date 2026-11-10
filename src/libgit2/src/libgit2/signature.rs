@@ -195,7 +195,7 @@ define_ctype!(
     /// libgit2 leaves a signature without a timezone). Read and write its fields
     /// through [`as_ref`](Self::as_ref) / [`as_mut`](Self::as_mut).
     ///
-    /// Wraps `ty::git_time`
+    /// Wraps `st::git_time`
     #[doc(alias = "git_time")]
     #[derive(Clone, Copy)]
     Time,
@@ -440,7 +440,7 @@ define_ctype!(
     /// let _ = <Signature as ffibox::CZeroable>::zeroed();
     /// ```
     ///
-    /// Wraps `ty::git_signature`
+    /// Wraps `st::git_signature`
     #[doc(alias = "git_signature")]
     Signature,
     SignatureRef,

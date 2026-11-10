@@ -117,7 +117,7 @@ use crate::libgit2::src::util::errors::ErrorCode;
 /// [`from_raw`](Self::from_raw) gives `None` for any value without a variant: `0`,
 /// a combination of bits, or a bit this version of libgit2's header does not name.
 ///
-/// Wraps `ty::git_blob_filter_flag_t`
+/// Wraps `enm::git_blob_filter_flag_t`
 #[doc(alias = "git_blob_filter_flag_t")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u32)]
@@ -226,7 +226,7 @@ impl std::error::Error for UnnamedFilterFlag {}
 /// [`iter`](Self::iter) and [`contains`](Self::contains) see the named flags, and
 /// [`unnamed_bits`](Self::unnamed_bits) the rest.
 ///
-/// Wraps `ty::git_blob_filter_flag_t`
+/// Wraps `enm::git_blob_filter_flag_t`
 #[doc(alias = "git_blob_filter_flag_t")]
 #[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct FilterFlags(u32);
@@ -451,7 +451,7 @@ impl core::iter::FusedIterator for FilterFlagsIter {}
 /// }
 /// ```
 ///
-/// Wraps `ty::git_blob`
+/// Wraps `st::git_blob`
 #[doc(alias = "git_blob")]
 #[repr(transparent)]
 pub struct Blob<'r>(ffi::git_blob, PhantomData<(*const (), &'r ())>);
@@ -819,7 +819,7 @@ define_ctype!(
     /// let _ = id.raw_kind();
     /// ```
     ///
-    /// Wraps `ty::git_blob_filter_options`
+    /// Wraps `st::git_blob_filter_options`
     #[doc(alias = "git_blob_filter_options")]
     #[derive(Clone, Copy)]
     FilterOptions,

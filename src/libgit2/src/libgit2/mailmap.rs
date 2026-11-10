@@ -93,7 +93,7 @@ define_ctype!(
     /// The box and its handles are `Send` and `Sync`: shared access only reads (see the
     /// [module docs](self#threads)).
     ///
-    /// Wraps `ty::git_mailmap`
+    /// Wraps `st::git_mailmap`
     #[doc(alias = "git_mailmap")]
     Mailmap,
     MailmapRef,

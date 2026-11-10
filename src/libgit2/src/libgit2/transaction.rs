@@ -50,7 +50,7 @@ use crate::libgit2::src::util::errors::{ErrorBuf, last, runtime_pinned};
 /// require_sync::<TransactionBox<'static>>();
 /// ```
 ///
-/// Wraps `ty::git_transaction`
+/// Wraps `st::git_transaction`
 #[doc(alias = "git_transaction")]
 #[repr(transparent)]
 pub struct Transaction<'r>(ffi::git_transaction, PhantomData<(*const (), &'r ())>);

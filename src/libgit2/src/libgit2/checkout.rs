@@ -159,7 +159,7 @@ use crate::libgit2::src::util::errors::ErrorCode;
 /// Not `Clone`: the callbacks it stores are exclusive borrows, which a copy would
 /// alias. Build another with [`new`](Self::new) instead.
 ///
-/// Wraps `ty::git_checkout_options`
+/// Wraps `st::git_checkout_options`
 #[doc(alias = "git_checkout_options")]
 #[repr(transparent)]
 pub struct CheckoutOptions<'o>(
@@ -1212,7 +1212,7 @@ define_ctype!(
     /// counts beyond it. A value Rust holds is built with [`zeroed`](CZeroable::zeroed) (or
     /// [`Default`]) and is `Copy`, like the C struct.
     ///
-    /// Wraps `ty::git_checkout_perfdata`
+    /// Wraps `st::git_checkout_perfdata`
     #[doc(alias = "git_checkout_perfdata")]
     #[derive(Clone, Copy)]
     CheckoutPerfdata,
@@ -1430,7 +1430,7 @@ type ProgressFn<'f> = dyn FnMut(Option<&CStr>, usize, usize) + 'f;
 /// assert_eq!(seen[2], (Some(c"dir/b.txt".to_owned()), 2, 2));
 /// ```
 ///
-/// Wraps `ty::git_checkout_progress_cb`
+/// Wraps `fnp::git_checkout_progress_cb`
 #[doc(alias = "git_checkout_progress_cb")]
 pub struct ProgressCallback<'f> {
     f: &'f mut ProgressFn<'f>,
@@ -1654,7 +1654,7 @@ type NotifyFn<'f> = dyn FnMut(CheckoutNotification<'_>) -> ControlFlow<()> + 'f;
 /// assert_eq!(dirty, [c"b.txt".to_owned()]);
 /// ```
 ///
-/// Wraps `ty::git_checkout_notify_cb`
+/// Wraps `fnp::git_checkout_notify_cb`
 #[doc(alias = "git_checkout_notify_cb")]
 pub struct NotifyCallback<'f> {
     f: &'f mut NotifyFn<'f>,
@@ -1847,7 +1847,7 @@ type PerfdataFn<'f> = dyn FnMut(CheckoutPerfdataRef<'_>) + 'f;
 /// assert_eq!(seen, [counts]);
 /// ```
 ///
-/// Wraps `ty::git_checkout_perfdata_cb`
+/// Wraps `fnp::git_checkout_perfdata_cb`
 #[doc(alias = "git_checkout_perfdata_cb")]
 pub struct PerfdataCallback<'f> {
     f: &'f mut PerfdataFn<'f>,

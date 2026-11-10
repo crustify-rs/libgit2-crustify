@@ -28,7 +28,7 @@ use crate::ffi;
 /// lower level, so `configured >= level` decides whether a message is reported, as
 /// libgit2 decides it.
 ///
-/// Wraps `ty::git_trace_level_t`
+/// Wraps `enm::git_trace_level_t`
 #[doc(alias = "git_trace_level_t")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u32)]
@@ -201,7 +201,7 @@ pub trait Tracer {
 /// let _ = TraceCallback(c_tracer);
 /// ```
 ///
-/// Wraps `ty::git_trace_cb`
+/// Wraps `fnp::git_trace_cb`
 #[doc(alias = "git_trace_cb")]
 #[derive(Clone, Copy)]
 pub struct TraceCallback(TraceFn);

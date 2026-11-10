@@ -57,7 +57,7 @@ define_ctype!(
     /// zero one before handing it to libgit2. Read and write its counters through
     /// [`as_ref`](Self::as_ref) / [`as_mut`](Self::as_mut).
     ///
-    /// Wraps `ty::git_indexer_progress`
+    /// Wraps `st::git_indexer_progress`
     #[doc(alias = "git_indexer_progress")]
     #[derive(Clone, Copy)]
     IndexerProgress,
@@ -439,7 +439,7 @@ type ProgressFn<'f> = dyn FnMut(IndexerProgressRef<'_>) -> ControlFlow<()> + 'f;
 /// assert_eq!(seen[1], progress);
 /// ```
 ///
-/// Wraps `ty::git_indexer_progress_cb`
+/// Wraps `fnp::git_indexer_progress_cb`
 #[doc(alias = "git_indexer_progress_cb")]
 pub struct ProgressCallback<'f> {
     f: &'f mut ProgressFn<'f>,

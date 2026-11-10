@@ -50,7 +50,7 @@ define_ctype!(
     /// [`as_mut`](CVal::as_mut) handles. Not `Clone`: it owns its buffer, so a copy is
     /// [`OidArrayRef::to_oid_array`], which allocates.
     ///
-    /// Wraps `ty::git_oidarray`
+    /// Wraps `st::git_oidarray`
     #[doc(alias = "git_oidarray")]
     OidArray,
     OidArrayRef,

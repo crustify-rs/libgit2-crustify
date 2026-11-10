@@ -116,7 +116,7 @@ define_ctype!(
     /// let _ = Index(Default::default(), core::marker::PhantomData);
     /// ```
     ///
-    /// Wraps `ty::git_index`
+    /// Wraps `st::git_index`
     #[doc(alias = "git_index")]
     Index,
     IndexRef,
@@ -272,7 +272,7 @@ define_ctype!(
     /// options.as_ref().set_oid_type(None);
     /// ```
     ///
-    /// Wraps `ty::git_index_options`
+    /// Wraps `st::git_index_options`
     #[doc(alias = "git_index_options")]
     #[derive(Clone, Copy)]
     IndexOptions,
@@ -1032,7 +1032,7 @@ impl IndexMut<'_> {
 /// workdir-diff implementation includes ignored files only when the entire flags
 /// value equals `FORCE`, not when `FORCE` is combined with another flag.
 ///
-/// Wraps `ty::git_index_add_option_t`
+/// Wraps `enm::git_index_add_option_t`
 #[doc(alias = "git_index_add_option_t")]
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -1106,7 +1106,7 @@ impl core::ops::BitOrAssign for AddFlags {
 /// reading the owning repository's configuration instead. Values own no foreign
 /// resources and may be freely copied, shared or moved between threads.
 ///
-/// Wraps `ty::git_index_capability_t`
+/// Wraps `enm::git_index_capability_t`
 #[doc(alias = "git_index_capability_t")]
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -1316,7 +1316,7 @@ type MatchedPathFn<'f> = dyn FnMut(&CStr, Option<&CStr>) -> MatchedPathResult + 
 /// std::thread::scope(|s| { s.spawn(move || drop(callback)); });
 /// ```
 ///
-/// Wraps `ty::git_index_matched_path_cb`
+/// Wraps `fnp::git_index_matched_path_cb`
 #[doc(alias = "git_index_matched_path_cb")]
 pub struct MatchedPathCallback<'f> {
     f: &'f mut MatchedPathFn<'f>,
@@ -1424,7 +1424,7 @@ impl<'f> MatchedPathCallback<'f> {
 /// `Any` is not a stored entry stage; operations requiring a concrete stage must
 /// reject it. Raw values not named by the header are never transmuted into Rust.
 ///
-/// Wraps `ty::git_index_stage_t`
+/// Wraps `enm::git_index_stage_t`
 #[doc(alias = "git_index_stage_t")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(i32)]
@@ -2359,7 +2359,7 @@ impl IndexMut<'_> {
 /// This is the C enum's integer layout, not the narrower `git_index_entry.flags`
 /// field. It owns no resources and requires no foreign allocation or teardown.
 ///
-/// Wraps `ty::git_index_entry_flag_t`
+/// Wraps `enm::git_index_entry_flag_t`
 #[doc(alias = "git_index_entry_flag_t")]
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -2429,7 +2429,7 @@ define_ctype!(
     /// Neither this type nor its handles/owner is `Send` or `Sync`: the retained
     /// index can still be accessed by other C owners without a common lock.
     ///
-    /// Wraps `ty::git_index_iterator`
+    /// Wraps `st::git_index_iterator`
     #[doc(alias = "git_index_iterator")]
     IndexIterator,
     IndexIteratorRef,
@@ -2597,7 +2597,7 @@ impl Iterator for IndexIteratorMut<'_> {
 /// let cursor = ConflictIterator::new(index.as_ref());
 /// ```
 ///
-/// Wraps `ty::git_index_conflict_iterator`
+/// Wraps `st::git_index_conflict_iterator`
 #[doc(alias = "git_index_conflict_iterator")]
 #[repr(transparent)]
 pub struct ConflictIterator<'index>(
@@ -2790,7 +2790,7 @@ impl<'index> Iterator for ConflictIteratorMut<'_, 'index> {
 /// scalar value, not a C allocation; copying it copies no pointers or resources.
 /// The entry field itself is `u16`; the enum's ABI representation is preserved.
 ///
-/// Wraps `ty::git_index_entry_extended_flag_t`
+/// Wraps `enm::git_index_entry_extended_flag_t`
 #[doc(alias = "git_index_entry_extended_flag_t")]
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -2876,7 +2876,7 @@ define_ctype!(
     /// let _ = shared.seconds();
     /// ```
     ///
-    /// Wraps `ty::git_index_time`
+    /// Wraps `st::git_index_time`
     #[doc(alias = "git_index_time")]
     IndexTime,
     IndexTimeRef,
@@ -3066,7 +3066,7 @@ impl IndexTimeMut<'_> {
 ///
 /// Equal when every field is, the id by its type and bytes and the path by its contents.
 ///
-/// Wraps `ty::git_index_entry`
+/// Wraps `st::git_index_entry`
 #[doc(alias = "git_index_entry")]
 #[repr(transparent)]
 #[derive(Clone, Copy)]
@@ -3900,7 +3900,7 @@ define_ctype!(
     /// they must survive index mutation. The layout and exclusive handle are only
     /// for internal FFI interoperability, not independently constructed owners.
     ///
-    /// Wraps `ty::git_index_name_entry`
+    /// Wraps `st::git_index_name_entry`
     #[doc(alias = "git_index_name_entry")]
     NameEntry,
     NameEntryRef,
@@ -3979,7 +3979,7 @@ define_ctype!(
     /// });
     /// ```
     ///
-    /// Wraps `ty::git_index_reuc_entry`
+    /// Wraps `st::git_index_reuc_entry`
     #[doc(alias = "git_index_reuc_entry")]
     ReucEntry,
     ReucEntryRef,

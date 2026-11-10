@@ -59,7 +59,7 @@ define_ctype!(
     /// [`as_ref`](CVal::as_ref) / [`as_mut`](CVal::as_mut) handles. Not `Clone`: it owns
     /// its allocation, so a copy is [`BufRef::to_buf`], which allocates.
     ///
-    /// Wraps `ty::git_buf`
+    /// Wraps `st::git_buf`
     #[doc(alias = "git_buf")]
     Buf,
     BufRef,

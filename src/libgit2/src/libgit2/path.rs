@@ -23,7 +23,7 @@ use crate::ffi;
 /// [`from_raw`](Self::from_raw) gives `None` for every value the header does not name,
 /// all of which `git_path_is_gitfile` refuses.
 ///
-/// Wraps `ty::git_path_gitfile`
+/// Wraps `enm::git_path_gitfile`
 #[doc(alias = "git_path_gitfile")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u32)]
@@ -97,7 +97,7 @@ impl std::error::Error for UnnamedGitFile {}
 /// `GIT_ERROR_OS`, "invalid filesystem for path validation: " and the text of whatever
 /// `errno` held; [`from_raw`](Self::from_raw) gives `None` for exactly those.
 ///
-/// Wraps `ty::git_path_fs`
+/// Wraps `enm::git_path_fs`
 #[doc(alias = "git_path_fs")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u32)]

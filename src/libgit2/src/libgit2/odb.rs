@@ -190,7 +190,7 @@ use crate::libgit2::src::util::errors::{
 /// }
 /// ```
 ///
-/// Wraps `ty::git_odb`
+/// Wraps `st::git_odb`
 #[doc(alias = "git_odb")]
 #[repr(transparent)]
 pub struct Odb<'r>(
@@ -565,7 +565,7 @@ define_ctype!(
     /// opts.as_ref().set_oid_type(None);
     /// ```
     ///
-    /// Wraps `ty::git_odb_options`
+    /// Wraps `st::git_odb_options`
     #[doc(alias = "git_odb_options")]
     #[derive(Clone, Copy)]
     OdbOptions,
@@ -817,7 +817,7 @@ define_ctype!(
     /// assert_eq!(query.as_ref().raw_kind(), libgit2::ffi::GIT_OBJECT_ANY);
     /// ```
     ///
-    /// Wraps `ty::git_odb_expand_id`
+    /// Wraps `st::git_odb_expand_id`
     #[doc(alias = "git_odb_expand_id")]
     #[derive(Clone, Copy)]
     OdbExpandId,
@@ -1614,7 +1614,7 @@ define_ctype!(
     /// [`OdbRef::read_prefix`]. Nothing in it changes once it is read, and it keeps no
     /// pointer to the odb, which it may outlive.
     ///
-    /// Wraps `ty::git_odb_object`
+    /// Wraps `st::git_odb_object`
     #[doc(alias = "git_odb_object")]
     OdbObject,
     OdbObjectRef,
@@ -1876,7 +1876,7 @@ type ForeachFn<'f> = dyn FnMut(OidRef<'_>) -> ControlFlow<NonZero<c_int>> + 'f;
 /// send(ForeachCallback::new(&mut f));
 /// ```
 ///
-/// Wraps `ty::git_odb_foreach_cb`
+/// Wraps `fnp::git_odb_foreach_cb`
 #[doc(alias = "git_odb_foreach_cb")]
 pub struct ForeachCallback<'f> {
     f: &'f mut ForeachFn<'f>,
@@ -2576,7 +2576,7 @@ impl fmt::Debug for OdbDataStrVec {
 /// buffer of the declared size, trusting `git_odb_stream_write` to refuse what does not
 /// fit. Its members belong to the container its backend cast the stream to.
 ///
-/// Wraps `ty::git_odb_stream`
+/// Wraps `st::git_odb_stream`
 #[doc(alias = "git_odb_stream")]
 #[repr(transparent)]
 pub struct OdbStream<'o>(
@@ -3018,7 +3018,7 @@ fn passed() -> StreamError {
 /// There are no setters: the members belong to the container their backend cast the
 /// writepack to.
 ///
-/// Wraps `ty::git_odb_writepack`
+/// Wraps `st::git_odb_writepack`
 #[doc(alias = "git_odb_writepack")]
 #[repr(transparent)]
 pub struct OdbWritepack<'o>(
@@ -3324,7 +3324,7 @@ define_ctype!(
     /// }
     /// ```
     ///
-    /// Wraps `ty::git_odb_backend`
+    /// Wraps `st::git_odb_backend`
     #[doc(alias = "git_odb_backend")]
     OdbBackend,
     OdbBackendRef,

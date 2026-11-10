@@ -143,7 +143,7 @@ use crate::libgit2::src::util::errors::{ErrorBuf, last, runtime_pinned};
 /// }
 /// ```
 ///
-/// Wraps `ty::git_refdb`
+/// Wraps `st::git_refdb`
 #[doc(alias = "git_refdb")]
 #[repr(transparent)]
 pub struct Refdb<'r>(
@@ -364,7 +364,7 @@ const _: () = assert!(size_of::<RefdbBox<'static>>() == size_of::<*mut ffi::git_
 /// [`from_raw`](Self::from_raw) gives `None` for every value the header does not name,
 /// `0` included, which an options struct reads as [`RefdbType::default`].
 ///
-/// Wraps `ty::git_refdb_t`
+/// Wraps `enm::git_refdb_t`
 #[doc(alias = "git_refdb_t")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u32)]

@@ -156,7 +156,7 @@ use crate::libgit2::src::util::errors::{
 /// old git's group-writable `0100664`, or `0`, which reads as `Unreadable`.
 /// [`from_raw`](Self::from_raw) gives `None` for a value without a variant.
 ///
-/// Wraps `ty::git_filemode_t`
+/// Wraps `enm::git_filemode_t`
 #[doc(alias = "git_filemode_t")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u32)]
@@ -244,7 +244,7 @@ impl std::error::Error for UnnamedFileMode {}
 /// subtrees it loads on the way: either way, once per entry it reaches, each tree's entries in
 /// that tree's order, under the path of the tree that holds them.
 ///
-/// Wraps `ty::git_treewalk_mode`
+/// Wraps `enm::git_treewalk_mode`
 #[doc(alias = "git_treewalk_mode")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u32)]
@@ -450,7 +450,7 @@ type WalkFn<'f> = dyn FnMut(&CStr, TreeEntryRef<'_>) -> WalkAction + 'f;
 /// send(WalkCallback::new(&mut f));
 /// ```
 ///
-/// Wraps `ty::git_treewalk_cb`
+/// Wraps `fnp::git_treewalk_cb`
 #[doc(alias = "git_treewalk_cb")]
 pub struct WalkCallback<'f> {
     f: &'f mut WalkFn<'f>,
@@ -571,7 +571,7 @@ unsafe extern "C" fn walk_with(
 /// action for update"), after building the trees above the path.
 /// [`from_raw`](Self::from_raw) gives `None` for a value without a variant.
 ///
-/// Wraps `ty::git_tree_update_t`
+/// Wraps `enm::git_tree_update_t`
 #[doc(alias = "git_tree_update_t")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u32)]
@@ -718,7 +718,7 @@ const _: () = assert!(
 /// plain values are: libgit2 never writes through the path, and only the exclusive
 /// handle writes the fields. Equal when every field is, the path by its contents.
 ///
-/// Wraps `ty::git_tree_update`
+/// Wraps `st::git_tree_update`
 #[doc(alias = "git_tree_update")]
 #[repr(transparent)]
 #[derive(Clone, Copy)]
@@ -1117,7 +1117,7 @@ const _: () = assert!(
 /// }
 /// ```
 ///
-/// Wraps `ty::git_tree`
+/// Wraps `st::git_tree`
 #[doc(alias = "git_tree")]
 #[repr(transparent)]
 pub struct Tree<'r>(ffi::git_tree, PhantomData<(*const (), &'r ())>);
@@ -1683,7 +1683,7 @@ impl FusedIterator for TreeEntries<'_, '_> {}
 /// copyable::<TreeBuilderBox<'static>>();
 /// ```
 ///
-/// Wraps `ty::git_treebuilder`
+/// Wraps `st::git_treebuilder`
 #[doc(alias = "git_treebuilder")]
 #[repr(transparent)]
 pub struct TreeBuilder<'r>(ffi::git_treebuilder, PhantomData<(*const (), &'r ())>);
@@ -2196,7 +2196,7 @@ define_ctype!(
     /// }
     /// ```
     ///
-    /// Wraps `ty::git_tree_entry`
+    /// Wraps `st::git_tree_entry`
     #[doc(alias = "git_tree_entry")]
     TreeEntry,
     TreeEntryRef,
@@ -2546,7 +2546,7 @@ type FilterFn<'f> = dyn FnMut(TreeEntryRef<'_>) -> bool + 'f;
 /// send(TreeBuilderFilter::new(&mut f));
 /// ```
 ///
-/// Wraps `ty::git_treebuilder_filter_cb`
+/// Wraps `fnp::git_treebuilder_filter_cb`
 #[doc(alias = "git_treebuilder_filter_cb")]
 pub struct TreeBuilderFilter<'f> {
     f: &'f mut FilterFn<'f>,

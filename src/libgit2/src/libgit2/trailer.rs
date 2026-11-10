@@ -157,7 +157,7 @@ use crate::libgit2::src::util::errors::{ErrorBuf, last, runtime_pinned};
 /// `Copy`, `Send` and `Sync`, as a pair of `&'t CStr`s is: nothing writes through the
 /// strings, and only the exclusive handle writes the fields.
 ///
-/// Wraps `ty::git_message_trailer`
+/// Wraps `st::git_message_trailer`
 #[doc(alias = "git_message_trailer")]
 #[repr(transparent)]
 #[derive(Clone, Copy)]
@@ -461,7 +461,7 @@ define_ctype!(
     /// The owner and its handles are `Send` and `Sync` (see the
     /// [module docs](self#trailer-arrays)).
     ///
-    /// Wraps `ty::git_message_trailer_array`
+    /// Wraps `st::git_message_trailer_array`
     #[doc(alias = "git_message_trailer_array")]
     MessageTrailerArray,
     MessageTrailerArrayRef,

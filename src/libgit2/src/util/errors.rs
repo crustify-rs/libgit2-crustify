@@ -138,7 +138,7 @@ c_enum! {
     /// value, or a negative one the header does not name, gives `None` from
     /// [`from_raw`](Self::from_raw).
     ///
-    /// Wraps `ty::git_error_code`
+    /// Wraps `enm::git_error_code`
     #[doc(alias = "git_error_code")]
     pub enum ErrorCode {
         /// No error occurred; the call was successful.
@@ -226,7 +226,7 @@ c_enum! {
     /// `int`, which user code may set to a value the header does not name; such a
     /// value gives `None` from [`from_raw`](Self::from_raw).
     ///
-    /// Wraps `ty::git_error_t`
+    /// Wraps `enm::git_error_t`
     #[doc(alias = "git_error_t")]
     pub enum ErrorClass {
         /// No error.
@@ -341,7 +341,7 @@ define_ctype!(
     /// There are no setters: libgit2 publishes the struct read-only and no public
     /// routine takes one. [`ErrorRef::to_error_buf`] copies it.
     ///
-    /// Wraps `ty::git_error`
+    /// Wraps `st::git_error`
     #[doc(alias = "git_error")]
     Error,
     ErrorRef,

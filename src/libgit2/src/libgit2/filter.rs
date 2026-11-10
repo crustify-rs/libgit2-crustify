@@ -124,7 +124,7 @@ define_ctype!(
     /// }
     /// ```
     ///
-    /// Wraps `ty::git_writestream`
+    /// Wraps `st::git_writestream`
     #[doc(alias = "git_writestream")]
     WriteStream,
     WriteStreamRef,
@@ -756,7 +756,7 @@ impl std::error::Error for StreamError {}
 /// }
 /// ```
 ///
-/// Wraps `ty::git_filter_list`
+/// Wraps `st::git_filter_list`
 #[doc(alias = "git_filter_list")]
 #[repr(transparent)]
 pub struct FilterList<'r>(

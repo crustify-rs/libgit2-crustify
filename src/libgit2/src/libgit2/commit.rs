@@ -276,7 +276,7 @@ use crate::libgit2::src::util::errors::{ErrorBuf, ErrorClass, ErrorCode, last, s
 /// }
 /// ```
 ///
-/// Wraps `ty::git_commit`
+/// Wraps `st::git_commit`
 #[doc(alias = "git_commit")]
 #[repr(transparent)]
 pub struct Commit<'r>(ffi::git_commit, PhantomData<(*const (), &'r ())>);
@@ -1015,7 +1015,7 @@ impl<'a> CommitRef<'a, '_> {
 /// }
 /// ```
 ///
-/// Wraps `ty::git_commitarray`
+/// Wraps `st::git_commitarray`
 #[doc(alias = "git_commitarray")]
 #[repr(transparent)]
 pub struct CommitArray<'r>(ffi::git_commitarray, PhantomData<(*const (), &'r ())>);
@@ -1460,7 +1460,7 @@ define_ctype!(
     /// }
     /// ```
     ///
-    /// Wraps `ty::git_commitbuilder`
+    /// Wraps `st::git_commitbuilder`
     #[doc(alias = "git_commitbuilder")]
     CommitBuilder,
     CommitBuilderRef,
@@ -1574,7 +1574,7 @@ type SignFn<'f> =
 /// send(SignatureCallback::new(&mut f));
 /// ```
 ///
-/// Wraps `ty::git_commit_signature_cb`
+/// Wraps `fnp::git_commit_signature_cb`
 #[doc(alias = "git_commit_signature_cb")]
 pub struct SignatureCallback<'f> {
     f: &'f mut SignFn<'f>,
@@ -2793,7 +2793,7 @@ type CreateFn<'f> = dyn for<'c> FnMut(
 /// send(CreateCallback::new(&mut f));
 /// ```
 ///
-/// Wraps `ty::git_commit_create_cb`
+/// Wraps `fnp::git_commit_create_cb`
 #[doc(alias = "git_commit_create_cb")]
 pub struct CreateCallback<'f> {
     f: &'f mut CreateFn<'f>,
@@ -3049,7 +3049,7 @@ unsafe extern "C" fn create_with_closure(
 /// through the strings, and only the exclusive handle writes the fields. Equal when
 /// both strings are.
 ///
-/// Wraps `ty::git_commit_header`
+/// Wraps `st::git_commit_header`
 #[doc(alias = "git_commit_header")]
 #[repr(transparent)]
 #[derive(Clone, Copy)]
@@ -3332,7 +3332,7 @@ const _: () = assert!(
 /// Not `Clone`: the payload its callback receives may be an exclusive borrow, which a
 /// copy would alias. Build another with [`new`](Self::new) instead.
 ///
-/// Wraps `ty::git_commit_create_ext_options`
+/// Wraps `st::git_commit_create_ext_options`
 #[doc(alias = "git_commit_create_ext_options")]
 #[repr(transparent)]
 pub struct CreateExtOptions<'o>(
@@ -3815,7 +3815,7 @@ const _: () = assert!(
 /// Not `Clone`: the payload its callback receives may be an exclusive borrow, which a
 /// copy would alias. Build another with [`new`](Self::new) instead.
 ///
-/// Wraps `ty::git_commit_create_options`
+/// Wraps `st::git_commit_create_options`
 #[doc(alias = "git_commit_create_options")]
 #[repr(transparent)]
 pub struct CreateOptions<'o>(
@@ -4414,7 +4414,7 @@ type ParentFn<'f> = dyn FnMut(usize) -> Option<Oid> + 'f;
 /// send(ParentCallback::new(&mut f));
 /// ```
 ///
-/// Wraps `ty::git_commit_parent_callback`
+/// Wraps `fnp::git_commit_parent_callback`
 #[doc(alias = "git_commit_parent_callback")]
 pub struct ParentCallback<'f> {
     f: &'f mut ParentFn<'f>,
