@@ -22,11 +22,11 @@ for campaign decisions that remain unresolved.
 
 4. **Which model and billing should do the translation work?**
    (`id: translate-agent`)
-   - Answer: `openrouter/anthropic/claude-opus-5.5, api`
+   - Answer: `anthropic/claude-opus-5.5, subscription`
 
 5. **Do you want agentic review after translated work lands? If so, which
    model and billing should perform each review?** (`id: review-agent`)
-   - Answer: `openrouter/anthropic/claude-opus-5.5, api`, after each wave
+   - Answer: `anthropic/claude-opus-5.5, subscription`, after each wave
 
 6. **Should I run fully autonomously end to end?** (`id: autonomy`)
    - Answer: `no`
