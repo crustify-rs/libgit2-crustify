@@ -72,7 +72,16 @@ Unanswered optional questions use their defaults.
     what the campaign has integrated, with your approval each time: the modules shipped
     are translated, and the C still left is reached only through the wrappers on its
     boundary.** (`id: ship`)
-    - Answer: `decide after planning`
+    - Answer: `after:` `src/cli/opt.c` (git2), `deps/llhttp/api.c`, `deps/llhttp/http.c`,
+      `deps/llhttp/llhttp.c`, `deps/ntlmclient/compat.h`, `deps/ntlmclient/crypt_openssl.c`,
+      `deps/ntlmclient/unicode_builtin.c`, `deps/ntlmclient/utf8.h`, `deps/ntlmclient/util.c`,
+      `deps/ntlmclient/ntlm.c`, `deps/reftable/error.c`, `deps/reftable/record.c`,
+      `deps/xdiff/xmacros.h`, `src/libgit2/common.h`, `src/libgit2/streams/mbedtls.c`,
+      `src/util/cc-compat.h`, `src/util/ctype_compat.h`, `src/util/hash/sha1dc/ubc_check.c`,
+      `src/util/hashmap.h`, `src/util/integer.h`, `src/util/staticstr.h`, `src/util/strnlen.h`,
+      `src/util/thread.c`, `src/util/utf8.c`, `src/util/wildmatch.c`: the first ship point,
+      about 15K lines of integrated C (planned through wave 263). Later points are chosen the
+      same way, about every 15K lines of integrated C, each confirmed with the user.
     - `decide after planning`: once the plan is complete, I propose ship points from it,
       with the boundary each would leave, and record your choice here.
     - By default: after every integrated module.

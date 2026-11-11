@@ -19,7 +19,7 @@ and in Notes.
 - **sanitizers** — `asan-ubsan`, `tsan`, `bsan`
 - **target-config** — default, deprecated features disabled (`-DDEPRECATE_HARD=ON`), HTTPS through OpenSSL, SSH, Negotiate auth and i18n off, threads on; OpenSSL, PCRE2 and zlib from the side campaigns' installs of each variant; `build.json` version `3`
 - **module-concurrency** — `concurrent` from 2026-11-06, until crustify dropped the question on 2026-11-08: modules always run concurrently
-- **ship** — decide after planning
+- **ship** — after the 25 modules of the first point, about 15K lines of integrated C (planned through wave 263), from 2026-11-11; later points about every 15K lines, each confirmed
 - **evolution** — `evolve` from 2026-11-11, briefly `propose`, the default, when the settings took the template's question
 
 ## Legend
