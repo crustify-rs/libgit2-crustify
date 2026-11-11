@@ -26,6 +26,17 @@ ffibox = { path = "/opt/venv/share/ffibox" }
 glibc-bindings = { version = "0.1.0", git = "https://github.com/crustify-rs/glibc-bindings", rev = "6180870f2ddbc30a43e5687395eb4f13908b3cbf" }
 pcre2-sys = "0.2"
 libgit2-sys = { version = "0.1.0", path = "libgit2-sys" }
+nix = { version = "0.31.3", features = ["fs", "socket", "net", "poll", "process", "user", "feature", "signal", "mman", "time", "uio", "dir", "hostname"] }
+flate2 = "1.1.11"
+sha2 = "0.11.1"
+hmac = "0.13.0"
+md-5 = "0.11.0"
+md4 = "0.11.0"
+des = "0.9.0"
+getrandom = "0.4.3"
+rustls = "0.23.46"
+rustls-webpki = "0.103.16"
+pcre2 = "0.2.11"
 
 [dev-dependencies]
 # The campaign's tests and gates regenerate the bindings, and check them against the

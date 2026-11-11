@@ -2024,3 +2024,10 @@ user extended `scope` to build on the previous wrap campaign, and `review-worklo
 The same day the user answered `evolution` with `evolve`: agents may also land fixes and
 improvements, and new tools, on each component's `devel` branch, each approved at the
 next module's end.
+
+On 2026-11-11 the user decided the out-of-tree routes from planner run 11's
+recommendations, with two changes: libssl, and libcrypto's TLS and X.509 entities, adopt
+rustls (aws-lc-rs provider) and rustls-webpki rather than an OpenSSL crustify campaign, and
+libpcre2-8 adopts the pcre2 crate rather than local bindings. libz adopts flate2, libcrypto's
+digests sha2, hmac, md-5, md4, des and getrandom, and libc nix, with the rest of libc in
+`glibc-crustify`. Only libc keeps a crustify campaign; the crates are in the workspace.

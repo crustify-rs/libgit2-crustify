@@ -15991,7 +15991,12 @@
     "uncovered_sys": null
    },
    "decision": {
-    "adopt": [],
+    "adopt": [
+     {
+      "crate": "nix",
+      "fork": null
+     }
+    ],
     "uncovered": "crustify-campaign",
     "uncovered_sys": null,
     "overrides": []
@@ -18440,11 +18445,419 @@
     "uncovered": "crustify-campaign",
     "uncovered_sys": null
    },
-   "decision": null,
-   "crustify_campaign": {
-    "repository": "crustify-rs/openssl-crustify",
-    "pin": null
-   }
+   "decision": {
+    "adopt": [
+     {
+      "crate": "sha2",
+      "fork": null
+     },
+     {
+      "crate": "hmac",
+      "fork": null
+     },
+     {
+      "crate": "md-5",
+      "fork": null
+     },
+     {
+      "crate": "md4",
+      "fork": null
+     },
+     {
+      "crate": "des",
+      "fork": null
+     },
+     {
+      "crate": "getrandom",
+      "fork": null
+     },
+     {
+      "crate": "rustls-webpki",
+      "fork": null
+     },
+     {
+      "crate": "rustls",
+      "fork": null
+     }
+    ],
+    "uncovered": null,
+    "uncovered_sys": null,
+    "overrides": [
+     {
+      "c_name": "ASN1_STRING_get0_data",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "ASN1_STRING_length",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "ASN1_STRING_to_UTF8",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "ASN1_STRING_type",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "V_ASN1_UTF8STRING",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "asn1_string_st",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "BIO_CTRL_FLUSH",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "BIO_TYPE_SOURCE_SINK",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "BIO_get_data",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "BIO_get_new_index",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "BIO_meth_free",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "BIO_meth_new",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "BIO_meth_set_create",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "BIO_meth_set_ctrl",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "BIO_meth_set_destroy",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "BIO_meth_set_gets",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "BIO_meth_set_puts",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "BIO_meth_set_read",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "BIO_meth_set_write",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "BIO_new",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "BIO_set_data",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "BIO_set_init",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "bio_method_st",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "CRYPTO_free",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "CRYPTO_malloc",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "OPENSSL_free",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "OPENSSL_malloc",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "ERR_error_string",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "ERR_error_string_n",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "ERR_get_error",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "ERR_lib_error_string",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "OPENSSL_FILE",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "OPENSSL_LINE",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "NID_commonName",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "NID_subject_alt_name",
+      "route": "crate",
+      "crate": "rustls-webpki",
+      "rust_api": "webpki::EndEntityCert"
+     },
+     {
+      "c_name": "OPENSSL_sk_num",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "OPENSSL_sk_value",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "X509_name_st",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "bio_st",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "ossl_init_settings_st",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "ssl_ctx_st",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "ssl_st",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "x509_st",
+      "route": "crate",
+      "crate": "rustls-webpki",
+      "rust_api": "webpki::EndEntityCert"
+     },
+     {
+      "c_name": "x509_store_st",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "X509_NAME_ENTRY_get_data",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "X509_NAME_get_entry",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "X509_NAME_get_index_by_NID",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "X509_free",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "X509_get_ext_d2i",
+      "route": "crate",
+      "crate": "rustls-webpki",
+      "rust_api": "webpki::EndEntityCert"
+     },
+     {
+      "c_name": "X509_get_subject_name",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "X509_name_entry_st",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "i2d_X509",
+      "route": "crate",
+      "crate": "rustls-webpki",
+      "rust_api": "webpki::EndEntityCert"
+     },
+     {
+      "c_name": "X509_STORE_add_cert",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "X509_V_OK",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "GENERAL_NAMES_free",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "GENERAL_NAME_st",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "GEN_DNS",
+      "route": "crate",
+      "crate": "rustls-webpki",
+      "rust_api": "webpki::EndEntityCert"
+     },
+     {
+      "c_name": "GEN_IPADD",
+      "route": "crate",
+      "crate": "rustls-webpki",
+      "rust_api": "webpki::EndEntityCert"
+     },
+     {
+      "c_name": "ossl_check_const_GENERAL_NAME_sk_type",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "sk_GENERAL_NAME_num",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "sk_GENERAL_NAME_value",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "stack_st_GENERAL_NAME",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     }
+    ]
+   },
+   "crustify_campaign": null
   },
   {
    "name": "libssl",
@@ -19964,11 +20377,295 @@
     "uncovered": "crustify-campaign",
     "uncovered_sys": null
    },
-   "decision": null,
-   "crustify_campaign": {
-    "repository": "crustify-rs/openssl-crustify",
-    "pin": null
-   }
+   "decision": {
+    "adopt": [
+     {
+      "crate": "rustls",
+      "fork": null
+     }
+    ],
+    "uncovered": null,
+    "uncovered_sys": null,
+    "overrides": [
+     {
+      "c_name": "OPENSSL_init_ssl",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "SSL_CTRL_MODE",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "SSL_CTRL_SET_TLSEXT_HOSTNAME",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::pki_types::ServerName"
+     },
+     {
+      "c_name": "SSL_CTX_ctrl",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "SSL_CTX_free",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::ClientConfig"
+     },
+     {
+      "c_name": "SSL_CTX_get_cert_store",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::RootCertStore"
+     },
+     {
+      "c_name": "SSL_CTX_load_verify_locations",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "SSL_CTX_new",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::ClientConfig::builder"
+     },
+     {
+      "c_name": "SSL_CTX_set_cipher_list",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "SSL_CTX_set_default_verify_paths",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "SSL_CTX_set_mode",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "SSL_CTX_set_options",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::ClientConfig::builder_with_protocol_versions"
+     },
+     {
+      "c_name": "SSL_CTX_set_verify",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::client::danger::ServerCertVerifier"
+     },
+     {
+      "c_name": "SSL_ERROR_NONE",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "SSL_ERROR_SSL",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::Error"
+     },
+     {
+      "c_name": "SSL_ERROR_SYSCALL",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "SSL_ERROR_WANT_ACCEPT",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "SSL_ERROR_WANT_CONNECT",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "SSL_ERROR_WANT_READ",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "SSL_ERROR_WANT_WRITE",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "SSL_ERROR_WANT_X509_LOOKUP",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "SSL_ERROR_ZERO_RETURN",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "SSL_MODE_AUTO_RETRY",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "SSL_OP_BIT",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "SSL_OP_NO_COMPRESSION",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "SSL_OP_NO_SSLv2",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::version::TLS12"
+     },
+     {
+      "c_name": "SSL_OP_NO_SSLv3",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::version::TLS12"
+     },
+     {
+      "c_name": "SSL_OP_NO_TLSv1",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::version::TLS12"
+     },
+     {
+      "c_name": "SSL_OP_NO_TLSv1_1",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::version::TLS12"
+     },
+     {
+      "c_name": "SSL_VERIFY_NONE",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::client::danger::ServerCertVerifier"
+     },
+     {
+      "c_name": "SSL_connect",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::ClientConnection::complete_io"
+     },
+     {
+      "c_name": "SSL_ctrl",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::pki_types::ServerName"
+     },
+     {
+      "c_name": "SSL_free",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::ClientConnection"
+     },
+     {
+      "c_name": "SSL_get1_peer_certificate",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::ClientConnection::peer_certificates"
+     },
+     {
+      "c_name": "SSL_get_error",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::Error"
+     },
+     {
+      "c_name": "SSL_get_peer_certificate",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::ClientConnection::peer_certificates"
+     },
+     {
+      "c_name": "SSL_get_verify_result",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": null
+     },
+     {
+      "c_name": "SSL_new",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::ClientConnection::new"
+     },
+     {
+      "c_name": "SSL_read",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::StreamOwned::read"
+     },
+     {
+      "c_name": "SSL_set_bio",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::StreamOwned"
+     },
+     {
+      "c_name": "SSL_shutdown",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::ClientConnection::send_close_notify"
+     },
+     {
+      "c_name": "SSL_write",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::StreamOwned::write"
+     },
+     {
+      "c_name": "SSLv23_method",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::ClientConfig::builder"
+     },
+     {
+      "c_name": "TLS_method",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::ClientConfig::builder"
+     },
+     {
+      "c_name": "SSL_set_tlsext_host_name",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::pki_types::ServerName"
+     },
+     {
+      "c_name": "TLSEXT_NAMETYPE_host_name",
+      "route": "crate",
+      "crate": "rustls",
+      "rust_api": "rustls::pki_types::ServerName"
+     }
+    ]
+   },
+   "crustify_campaign": null
   },
   {
    "name": "libpcre2-8",
@@ -20957,7 +21654,174 @@
     "uncovered": "local",
     "uncovered_sys": "pcre2-sys"
    },
-   "decision": null,
+   "decision": {
+    "adopt": [
+     {
+      "crate": "pcre2",
+      "fork": null
+     }
+    ],
+    "uncovered": null,
+    "uncovered_sys": null,
+    "overrides": [
+     {
+      "c_name": "PCRE2_CASELESS",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": "pcre2::bytes::RegexBuilder::caseless"
+     },
+     {
+      "c_name": "PCRE2_ERROR_NOMATCH",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": "pcre2::bytes::Regex::captures_read"
+     },
+     {
+      "c_name": "PCRE2_GLUE",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": null
+     },
+     {
+      "c_name": "PCRE2_JOIN",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": null
+     },
+     {
+      "c_name": "PCRE2_SUFFIX",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": null
+     },
+     {
+      "c_name": "PCRE2_UNSET",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": "pcre2::bytes::CaptureLocations::get"
+     },
+     {
+      "c_name": "PCRE2_ZERO_TERMINATED",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": "pcre2::bytes::RegexBuilder::build"
+     },
+     {
+      "c_name": "pcre2_code_free",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": "pcre2::bytes::Regex"
+     },
+     {
+      "c_name": "pcre2_code_free_8",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": "pcre2::bytes::Regex"
+     },
+     {
+      "c_name": "pcre2_compile",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": "pcre2::bytes::RegexBuilder::build"
+     },
+     {
+      "c_name": "pcre2_compile_8",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": "pcre2::bytes::RegexBuilder::build"
+     },
+     {
+      "c_name": "pcre2_get_error_message",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": "pcre2::Error"
+     },
+     {
+      "c_name": "pcre2_get_error_message_8",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": "pcre2::Error"
+     },
+     {
+      "c_name": "pcre2_get_ovector_pointer",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": "pcre2::bytes::CaptureLocations::get"
+     },
+     {
+      "c_name": "pcre2_get_ovector_pointer_8",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": "pcre2::bytes::CaptureLocations::get"
+     },
+     {
+      "c_name": "pcre2_match",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": "pcre2::bytes::Regex::captures_read"
+     },
+     {
+      "c_name": "pcre2_match_8",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": "pcre2::bytes::Regex::captures_read"
+     },
+     {
+      "c_name": "pcre2_match_data_create",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": "pcre2::bytes::CaptureLocations"
+     },
+     {
+      "c_name": "pcre2_match_data_create_8",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": "pcre2::bytes::CaptureLocations"
+     },
+     {
+      "c_name": "pcre2_match_data_free",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": "pcre2::bytes::CaptureLocations"
+     },
+     {
+      "c_name": "pcre2_match_data_free_8",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": "pcre2::bytes::CaptureLocations"
+     },
+     {
+      "c_name": "pcre2_real_code_8",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": "pcre2::bytes::Regex"
+     },
+     {
+      "c_name": "pcre2_real_compile_context_8",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": null
+     },
+     {
+      "c_name": "pcre2_real_general_context_8",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": null
+     },
+     {
+      "c_name": "pcre2_real_match_context_8",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": null
+     },
+     {
+      "c_name": "pcre2_real_match_data_8",
+      "route": "crate",
+      "crate": "pcre2",
+      "rust_api": "pcre2::bytes::CaptureLocations"
+     }
+    ]
+   },
    "crustify_campaign": null
   },
   {
@@ -21898,7 +22762,17 @@
     "uncovered": null,
     "uncovered_sys": null
    },
-   "decision": null,
+   "decision": {
+    "adopt": [
+     {
+      "crate": "flate2",
+      "fork": null
+     }
+    ],
+    "uncovered": null,
+    "uncovered_sys": null,
+    "overrides": []
+   },
    "crustify_campaign": null
   }
  ]
