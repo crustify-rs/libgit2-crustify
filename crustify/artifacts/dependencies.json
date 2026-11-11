@@ -1,5 +1,5 @@
 {
-  "_comment": "The out-of-tree libraries libgit2.so and the git2 CLI link (readelf -d crustify/builds/plain/libgit2.so.1.9.0 and crustify/builds/plain/git2: libssl.so.3, libcrypto.so.3, libpcre2-8.so.0, libz.so.1, libc.so.6; the link line's -lrt is glibc's), one entry each, as specs/artifacts/dependencies.md describes. resolved is what the plain build's CMake found (crustify/builds/plain/CMakeCache.txt and its configure log; PCRE2's version from pkg-config --modversion libpcre2-8) and the Ubuntu 24.04 package that installed it (dpkg -S). Each library's wrapper is crustify-rs/<source>-crustify, OpenSSL's libssl and libcrypto sharing openssl-crustify; the repositories exist under their earlier names, crustify-rs/glibc-bindings (the pinned commit), openssl-bindings, pcre2-bindings and zlib-bindings, until they are renamed. decision is the user's: libc's is wrapper, the glibc side campaign the workspace already pins; the others are null until the user chooses between the side campaign and a crate rust_equivalent names. rust_equivalent judges each crate against every entity the campaign's dependency records count from the library.",
+  "_comment": "The out-of-tree libraries libgit2.so and the git2 CLI link (readelf -d crustify/builds/plain/libgit2.so.1.9.0 and crustify/builds/plain/git2: libssl.so.3, libcrypto.so.3, libpcre2-8.so.0, libz.so.1, libc.so.6; the link line's -lrt is glibc's), one entry each, as the dependencies-schema skill describes. resolved is what the plain build's CMake found (crustify/builds/plain/CMakeCache.txt and its configure log; PCRE2's version from pkg-config --modversion libpcre2-8) and the Ubuntu 24.04 package that installed it (dpkg -S). rust_equivalent assesses each candidate crate, by the areas of the library the campaign uses, against the dependencies skill's Adopted crates criteria, each with its evidence: the areas divide the entities the modules' dependency records count from the library (schedule.json's depends_on.external); coverage was read from each crate's API, soundness from its public API and unsafe code (downloaded sources, read, never built; no deterministic scan), advisories from RustSec's advisory-db, maintenance from crates.io, as of 2026-11-11 (planner run 10). recommendation is the plan's route for each library; decision is the user's, null until the user chooses from the recommendations. libc's decision is the user's earlier one, a wrapper for everything (the glibc side campaign the workspace already pins), carried into the current shape: no crate adopted, the remainder the wrapper. Each library's wrapper is crustify-rs/<source>-crustify, OpenSSL's libssl and libcrypto sharing openssl-crustify; on crustify-rs they exist under their earlier names, glibc-bindings (the pinned commit) and the empty openssl-bindings, pcre2-bindings and zlib-bindings, until they are renamed.",
   "version": "0551dfd4ad989b6a3d5683c0d4cf326c6efef929",
   "libraries": [
     {
@@ -15,29 +15,162 @@
         "patches": "glibc 2.39-0ubuntu8.9"
       },
       "linked_from": "system",
-      "decision": "wrapper",
-      "wrapper": {
-        "repository": "crustify-rs/glibc-crustify",
-        "pin": "6180870f2ddbc30a43e5687395eb4f13908b3cbf"
-      },
       "rust_equivalent": {
-        "ported": [],
+        "ported": [
+          {
+            "crate": "chrono",
+            "feature_parity": "partial",
+            "license": "MIT OR Apache-2.0",
+            "notes": "Calendar conversion only: Utc/Local from a timestamp (gmtime_r, localtime_r), reading TZ and /etc/localtime with its own tzfile parser. It has no mktime equivalent: it does not normalise out-of-range tm fields (date.c:564 relies on that) and takes no tm_isdst hint (signature.c:172 relies on mktime reading a gmtime result with tm_isdst=0 as standard time). Local::from_local_datetime returns ambiguous or none instead. clock_gettime, gettimeofday, time and difftime are std's (Instant, SystemTime).",
+            "version": "0.4.45",
+            "areas": [
+              "clocks and calendar time"
+            ],
+            "shares_state": false,
+            "soundness": {
+              "judgement": "sound",
+              "evidence": "10 unsafe blocks, no public unsafe fn. On Linux they are a NonZeroI32::new_unchecked on a checked value (naive/date/mod.rs:1496), from_utf8_unchecked over validated tz names (offset/local/tz_info/timezone.rs:550) and CStr::from_bytes_with_nul_unchecked after locating the NUL (offset/local/tz_data.rs:158). Since 0.4.20 it no longer calls libc localtime_r (lib.rs:457-472)."
+            },
+            "advisories": [],
+            "maintenance": {
+              "last_release": "2026-06-04",
+              "publisher": "the chronotope organization (github:chronotope:release-manager) and lifthrasiir"
+            },
+            "qualifies": []
+          }
+        ],
         "bindings": [
           {
             "crate": "nix",
             "sys": "libc",
             "feature_parity": "partial",
             "license": "MIT",
-            "notes": "safe wrappers over the process, signal, socket, directory, stat and file-descriptor calls the campaign consumes (fork, execve, waitpid, pipe, poll, sigwait, getaddrinfo, opendir, fstat, ...); no stdio (fprintf, snprintf), string (str*, mem*), qsort or pthread mutex/rwlock/condvar/key API, which std covers with different types"
+            "notes": "Calls glibc itself, so behaviour and errno side effects are glibc's. Covers files: open/fcntl (O_FSYNC on Linux gnu), stat/lstat/fstat with FileStat = libc::stat, fchmodat, mkdir, utimes, futimens, readlink, access, linkat/symlinkat/renameat/unlinkat (for rmdir), fsync, lseek, read/write, pread/pwrite, getcwd and Dir. Covers sockets: socket, connect, send, recv, sockopt KeepAlive/TcpKeepIdle/TcpKeepInterval/TcpKeepCount/SocketError, and poll. Also covers the get*id calls, sysconf, User::from_uid (getpwuid_r), sysinfo load_average, Errno last/set, pthread_sigmask, SigSet and SigSet::wait (sigwait), execve, pipe, dup2, chdir and waitpid. Lacks realpath, getaddrinfo/gai_strerror and inet_pton (std covers these), sigpending and getentropy. fork, signal, sigaction, mmap and munmap are unsafe fns. Errno::desc is nix's own table, so strerror text differs (EAGAIN gives 'Try again'; glibc gives 'Resource temporarily unavailable'). getloadavg goes through sysinfo(2) loads at 1/65536 precision. No stdio, string, ctype, qsort, calendar conversion, pthread mutex/rwlock/cond/key or malloc.",
+            "version": "0.31.3",
+            "areas": [
+              "files, directories and file metadata",
+              "sockets, name resolution and polling",
+              "process identity, users and system information",
+              "errno and error strings",
+              "processes and signals",
+              "clocks and calendar time"
+            ],
+            "shares_state": true,
+            "soundness": {
+              "judgement": "sound",
+              "evidence": "749 unsafe blocks and 59 pub unsafe fns; the operations unsafe by nature are unsafe fns (unistd.rs:278 fork, sys/signal.rs:930 sigaction, :992 signal, sys/mman.rs:427 mmap, :540 munmap). fds are std OwnedFd/BorrowedFd/AsFd, and PollFd<'fd> carries the borrow (poll.rs:18-20). Dir owns a NonNull<DIR> and is Send but not Sync (dir.rs:47,124). Growing buffers pass their capacity and set_len to the returned length (unistd.rs:937-950 getcwd, fcntl.rs:554-631 readlink, unistd.rs:3714-3745 getpwuid_r). Not UB: from_anything tests Errno::last()==ERANGE rather than getpwuid_r's return value (unistd.rs:3740)."
+            },
+            "advisories": [],
+            "maintenance": {
+              "last_release": "2026-05-11",
+              "publisher": "the nix-rust organization's nix-maintainers team and one maintainer (carllerche)"
+            },
+            "qualifies": [
+              "files, directories and file metadata",
+              "sockets, name resolution and polling",
+              "process identity, users and system information",
+              "errno and error strings"
+            ]
           },
           {
             "crate": "rustix",
-            "sys": null,
+            "sys": "linux-raw-sys",
             "feature_parity": "partial",
             "license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
-            "notes": "safe syscalls for files, directories, sockets, mmap and processes; no stdio, string, allocator, qsort, getaddrinfo or pthread API"
+            "notes": "Covers files: open, stat/lstat/fstat, chmod, mkdir, rmdir, unlink, link, symlink, readlink, rename, access, utimensat/futimens, fsync, seek, read/write/pread/pwrite, fcntl_getfl/setfl/getfd/setfd, getcwd, chdir and Dir. Covers sockets: socket_with, connect, send, recv, keepalive/keepidle/keepintvl/keepcnt, socket_error and poll. Also covers the get*id calls, page_size, getrandom, clock_gettime, sysinfo loads, pipe, dup2 and waitpid. Lacks realpath, getaddrinfo, inet_pton, getpwuid_r, sysconf (_SC_NPROCESSORS_ONLN, _SC_GETPW_R_SIZE_MAX) and an errno setter. fork, execve and signal masks exist only in its unsafe, semver-exempt runtime feature; mmap and munmap are unsafe fns. Its default Linux backend makes raw syscalls and leaves errno untouched, so a ported function whose C callers read errno must set errno some other way (the libc backend, --cfg rustix_use_libc, leaves glibc's errno). It fails the maintenance criterion alone: one crates.io owner publishes it.",
+            "version": "1.1.6",
+            "areas": [
+              "files, directories and file metadata",
+              "sockets, name resolution and polling",
+              "process identity, users and system information",
+              "processes and signals",
+              "clocks and calendar time",
+              "memory maps"
+            ],
+            "shares_state": true,
+            "soundness": {
+              "judgement": "sound",
+              "evidence": "1067 unsafe blocks and 70 pub unsafe fns, mostly mm/mmap.rs (9), the runtime module (16) and io_uring; none in the file, socket or id calls used. Every call takes AsFd/BorrowedFd, output buffers go through the sealed Buffer trait (buffer.rs:106-165), and Dir owns an OwnedFd (backend/linux_raw/fs/dir.rs:17-19). The xattr zero-length-buffer UB (RUSTSEC-2026-0486) is fixed in 1.1.6 and outside the used surface."
+            },
+            "advisories": [],
+            "maintenance": {
+              "last_release": "2026-10-27",
+              "publisher": "one crates.io owner (sunfishcode), from the bytecodealliance organization's repository"
+            },
+            "qualifies": []
+          },
+          {
+            "crate": "socket2",
+            "sys": "libc",
+            "feature_parity": "partial",
+            "license": "MIT OR Apache-2.0",
+            "notes": "Sockets only. Socket::new sets SOCK_CLOEXEC (socket.rs:744-), connect_timeout does a non-blocking connect, poll and SO_ERROR as socket.c does (socket.rs:215, sys/unix.rs:973), and it has set_tcp_keepalive(TcpKeepalive with_time/with_interval/with_retries), take_error, send/recv and set_nonblocking. Lacks getaddrinfo/gai_strerror and inet_pton (std::net covers them) and a general poll: its send/recv timeouts are SO_SNDTIMEO/SO_RCVTIMEO, where socket.c polls on EAGAIN.",
+            "version": "0.6.5",
+            "areas": [
+              "sockets, name resolution and polling"
+            ],
+            "shares_state": true,
+            "soundness": {
+              "judgement": "sound",
+              "evidence": "215 unsafe blocks and 3 pub unsafe fns (sockaddr.rs:73 view_as, :197 try_init, :232 set_length). Socket wraps an OwnedFd (sys/unix.rs:940); raw fds enter only through unsafe FromRawFd (sys/unix.rs:3057) or the crate-private from_raw fed by syscalls (socket.rs:86). The sockaddr layout cast of RUSTSEC-2020-0079 is fixed since 0.3.16."
+            },
+            "advisories": [],
+            "maintenance": {
+              "last_release": "2026-07-13",
+              "publisher": "the rust-lang organization (repo rust-lang/socket2; owners sfackler, Thomasdezeeuw, rust-lang-owner, github:tokio-rs:socket2)"
+            },
+            "qualifies": [
+              "sockets, name resolution and polling"
+            ]
+          },
+          {
+            "crate": "memmap2",
+            "sys": "libc",
+            "feature_parity": "partial",
+            "license": "MIT OR Apache-2.0",
+            "notes": "Memory maps only: Mmap and MmapMut over a file (MAP_SHARED with write through map_mut, MAP_PRIVATE through map_copy). Every file-backed constructor is an unsafe fn (lib.rs:557, 633, 677, 933, 1453). The only safe ones are map_if_safe, for sealed memfds or fs-verity files only (lib.rs:757), and MmapRaw, which yields a raw pointer. It cannot adopt or release a mapping given as (data, len), so a git_map created or unmapped by C cannot be shared.",
+            "version": "0.9.12",
+            "areas": [
+              "memory maps"
+            ],
+            "shares_state": false,
+            "soundness": {
+              "judgement": "sound",
+              "evidence": "72 unsafe blocks and 17 pub unsafe fns. Its safe Deref gives a slice over the mapping it owns (lib.rs:1103, 1698, 1705), with Send/Sync on MmapInner (unix.rs:658-659). The constructors' contract, that the file is not modified or truncated, is left to the caller. The out-of-range advise/flush offsets of RUSTSEC-2026-0186 are fixed in 0.9.11."
+            },
+            "advisories": [],
+            "maintenance": {
+              "last_release": "2026-10-21",
+              "publisher": "four maintainers (tbu-, RazrFalcon, de-vri-es, allan2)"
+            },
+            "qualifies": []
           }
         ]
+      },
+      "recommendation": {
+        "adopt": [
+          {
+            "crate": "nix",
+            "areas": [
+              "files, directories and file metadata",
+              "sockets, name resolution and polling",
+              "process identity, users and system information",
+              "errno and error strings"
+            ],
+            "fork": null
+          }
+        ],
+        "remainder": "wrapper",
+        "remainder_sys": null
+      },
+      "decision": {
+        "adopt": [],
+        "remainder": "wrapper",
+        "remainder_sys": null
+      },
+      "wrapper": {
+        "repository": "crustify-rs/glibc-crustify",
+        "pin": "6180870f2ddbc30a43e5687395eb4f13908b3cbf"
       }
     },
     {
@@ -53,42 +186,166 @@
         "patches": "openssl 3.0.13-0ubuntu3.16"
       },
       "linked_from": "side-campaign",
-      "decision": null,
-      "wrapper": {
-        "repository": "crustify-rs/openssl-crustify",
-        "pin": null
-      },
       "rust_equivalent": {
         "ported": [
           {
             "crate": "sha2",
             "feature_parity": "partial",
             "license": "MIT OR Apache-2.0",
-            "notes": "SHA256_Init/Update/Final only"
+            "notes": "covers only the SHA-256 area: Sha256::new/update/finalize replace SHA256_Init/Update/Final with identical output. It is not a C-layout SHA256_CTX: git_hash_sha256_ctx is embedded by value in git_hash_ctx (src/util/hash.h:28-34), which sits inside git_filebuf (src/util/filebuf.h:40) and pack-objects.h:65, so the hash port keeps that layout until its port/layout. Only src/util/hash/openssl.c touches the state.",
+            "version": "0.11.1",
+            "areas": [
+              "SHA-256 digest"
+            ],
+            "shares_state": false,
+            "soundness": {
+              "judgement": "sound",
+              "evidence": "39 unsafe lines, all SIMD/asm compress backends selected after cpufeatures detection (src/sha256.rs:56-72); x86_sha.rs:48-70 makes unaligned loads within [u8;64]/[u32;8]; soft/unroll.rs:39 reads K32[i] with i<64; block-buffer 0.12.1 (22 unsafe) checks its position invariant before each unchecked set (lib.rs:239-245)."
+            },
+            "advisories": [],
+            "maintenance": {
+              "last_release": "2026-10-12",
+              "publisher": "the RustCrypto organization"
+            },
+            "qualifies": [
+              "SHA-256 digest"
+            ]
           },
           {
             "crate": "hmac",
             "feature_parity": "partial",
             "license": "MIT OR Apache-2.0",
-            "notes": "HMAC_CTX_* only, with md-5 for EVP_md5"
+            "notes": "HMAC_CTX_new/reset/free/Init_ex/Update/Final become Hmac<Md5>::new_from_slice (any key length), update and finalize; a re-init is a new value. The digest comes from md-5, so hmac covers its area only with md-5 and md4. The HMAC_CTX* lives in ntlm_client.crypt_ctx (deps/ntlmclient/ntlm.h:72), but only crypt_openssl.c touches it.",
+            "version": "0.13.0",
+            "areas": [
+              "NTLM digests (MD4, HMAC-MD5)"
+            ],
+            "shares_state": false,
+            "soundness": {
+              "judgement": "sound",
+              "evidence": "no unsafe in hmac/src; its digest 0.11.3 dependency forbids unsafe_code."
+            },
+            "advisories": [],
+            "maintenance": {
+              "last_release": "2026-03-29",
+              "publisher": "the RustCrypto organization"
+            },
+            "qualifies": [
+              "NTLM digests (MD4, HMAC-MD5)"
+            ]
+          },
+          {
+            "crate": "md-5",
+            "feature_parity": "partial",
+            "license": "MIT OR Apache-2.0",
+            "notes": "MD5 only, in EVP_md5's role as hmac's digest parameter.",
+            "version": "0.11.0",
+            "areas": [
+              "NTLM digests (MD4, HMAC-MD5)"
+            ],
+            "shares_state": false,
+            "soundness": {
+              "judgement": "sound",
+              "evidence": "its only unsafe, src/compress/loongarch64_asm.rs:70 (inline asm), is not compiled on x86_64."
+            },
+            "advisories": [],
+            "maintenance": {
+              "last_release": "2026-03-27",
+              "publisher": "the RustCrypto organization"
+            },
+            "qualifies": [
+              "NTLM digests (MD4, HMAC-MD5)"
+            ]
           },
           {
             "crate": "md4",
             "feature_parity": "partial",
             "license": "MIT OR Apache-2.0",
-            "notes": "MD4 only"
+            "notes": "MD4 only: the one-shot MD4() becomes Md4::digest.",
+            "version": "0.11.0",
+            "areas": [
+              "NTLM digests (MD4, HMAC-MD5)"
+            ],
+            "shares_state": false,
+            "soundness": {
+              "judgement": "sound",
+              "evidence": "#![forbid(unsafe_code)] in src/lib.rs."
+            },
+            "advisories": [],
+            "maintenance": {
+              "last_release": "2026-03-27",
+              "publisher": "the RustCrypto organization"
+            },
+            "qualifies": [
+              "NTLM digests (MD4, HMAC-MD5)"
+            ]
           },
           {
             "crate": "des",
             "feature_parity": "partial",
             "license": "MIT OR Apache-2.0",
-            "notes": "DES_set_key/DES_ecb_encrypt only"
+            "notes": "DES_set_key/DES_ecb_encrypt become Des::new and encrypt_block. Like OpenSSL 3.0.13's DES_set_key, which schedules any key whatever its parity or weakness (crypto/des/set_key.c:298-306) and whose result ntlmclient ignores, it ignores parity bits and accepts weak keys (src/des.rs:46-51).",
+            "version": "0.9.0",
+            "areas": [
+              "DES-ECB"
+            ],
+            "shares_state": false,
+            "soundness": {
+              "judgement": "sound",
+              "evidence": "des and cipher 0.5.0 forbid unsafe_code; inout 0.2.6 (31 unsafe lines) builds in/out views only from &mut or (&, &mut) pairs of checked equal length (inout_buf.rs:72-80), and its from_raw is unsafe."
+            },
+            "advisories": [],
+            "maintenance": {
+              "last_release": "2026-04-10",
+              "publisher": "the RustCrypto organization"
+            },
+            "qualifies": [
+              "DES-ECB"
+            ]
           },
           {
-            "crate": "rand",
+            "crate": "getrandom",
             "feature_parity": "partial",
             "license": "MIT OR Apache-2.0",
-            "notes": "RAND_bytes only, from the operating system RNG rather than OpenSSL's DRBG"
+            "notes": "RAND_bytes becomes getrandom::fill: the bytes come from the kernel's CSPRNG rather than OpenSSL's DRBG, and a failure is a getrandom::Error rather than ERR_lib_error_string's text.",
+            "version": "0.4.3",
+            "areas": [
+              "random bytes"
+            ],
+            "shares_state": false,
+            "soundness": {
+              "judgement": "sound",
+              "evidence": "its safe API is fill(&mut [u8]) and fill_uninit(&mut [MaybeUninit<u8>]) (src/lib.rs:87-130); the Linux backend calls libc::getrandom on the exact buffer (backends/getrandom.rs); 114 unsafe lines across the platform backends."
+            },
+            "advisories": [],
+            "maintenance": {
+              "last_release": "2026-06-17",
+              "publisher": "the rust-random organization"
+            },
+            "qualifies": [
+              "random bytes"
+            ]
+          },
+          {
+            "crate": "rustls-webpki",
+            "feature_parity": "partial",
+            "license": "ISC",
+            "notes": "verifies chains and SAN DNS and IP names only: no subject CN for libgit2's CN fallback, no ASN1 string API, and the C caller's X509* (GIT_OPT_ADD_SSL_X509_CERT) only as DER, through i2d_X509; its verification rules differ from X509_verify_cert's.",
+            "version": "0.103.16",
+            "areas": [
+              "X.509 certificates and ASN.1 strings"
+            ],
+            "shares_state": false,
+            "soundness": {
+              "judgement": "sound",
+              "evidence": "no unsafe in src; no_std."
+            },
+            "advisories": [],
+            "maintenance": {
+              "last_release": "2026-10-20",
+              "publisher": "the rustls organization"
+            },
+            "qualifies": []
           }
         ],
         "bindings": [
@@ -97,9 +354,83 @@
             "sys": "openssl-sys",
             "feature_parity": "partial",
             "license": "Apache-2.0",
-            "notes": "covers X509 names, subject alternative names and DER encoding, SHA-256, HMAC, RAND_bytes and the error queue; MD4 and DES need OpenSSL 3's legacy provider through openssl::provider; no BIO_meth_* custom-BIO API (it builds its own BIO over Read + Write) and no CRYPTO_malloc/CRYPTO_free"
+            "notes": "Covers X509 (subject_alt_names with dnsname/ipaddress, subject_name().entries_by_nid, X509NameEntryRef::data, to_der), Asn1StringRef::to_string, openssl::sha::Sha256 over SHA256_CTX, PKey::hmac with Signer and MessageDigest::md5, rand_bytes and ErrorStack. MD4 (Md::fetch) and DES-ECB (Cipher::des_ecb) go through EVP, so OpenSSL 3 needs its legacy provider loaded, where the low-level MD4()/DES_* do not. No BIO_meth_* API (SslStream<S: Read + Write> builds its own BIO method), no ASN1_STRING_type accessor, and CRYPTO_malloc/free stay internal; its error Display adds file:line to ERR_error_string_n's format.",
+            "version": "0.10.82",
+            "areas": [
+              "SHA-256 digest",
+              "NTLM digests (MD4, HMAC-MD5)",
+              "DES-ECB",
+              "random bytes",
+              "X.509 certificates and ASN.1 strings",
+              "custom BIO over git_stream",
+              "errors, memory and initialisation"
+            ],
+            "shares_state": true,
+            "soundness": {
+              "judgement": "unsound",
+              "evidence": "ssl/bio.rs:107-113: bread makes a &mut [u8] over OpenSSL's read buffer, which OPENSSL_malloc allocates and never zeroes (ssl/record/ssl3_buffer.c:68), and hands it to the user's safe S::read; x509/store.rs:261-273: X509StoreRef::objects is a safe pub fn the crate documents as unsound (deprecated). 1245 unsafe lines; the paths the campaign would use were read."
+            },
+            "advisories": [],
+            "maintenance": {
+              "last_release": "2026-11-01",
+              "publisher": "two maintainers (sfackler, alex), in the rust-openssl organization's repository"
+            },
+            "qualifies": []
           }
         ]
+      },
+      "recommendation": {
+        "adopt": [
+          {
+            "crate": "sha2",
+            "areas": [
+              "SHA-256 digest"
+            ],
+            "fork": null
+          },
+          {
+            "crate": "hmac",
+            "areas": [
+              "NTLM digests (MD4, HMAC-MD5)"
+            ],
+            "fork": null
+          },
+          {
+            "crate": "md-5",
+            "areas": [
+              "NTLM digests (MD4, HMAC-MD5)"
+            ],
+            "fork": null
+          },
+          {
+            "crate": "md4",
+            "areas": [
+              "NTLM digests (MD4, HMAC-MD5)"
+            ],
+            "fork": null
+          },
+          {
+            "crate": "des",
+            "areas": [
+              "DES-ECB"
+            ],
+            "fork": null
+          },
+          {
+            "crate": "getrandom",
+            "areas": [
+              "random bytes"
+            ],
+            "fork": null
+          }
+        ],
+        "remainder": "wrapper",
+        "remainder_sys": null
+      },
+      "decision": null,
+      "wrapper": {
+        "repository": "crustify-rs/openssl-crustify",
+        "pin": null
       }
     },
     {
@@ -115,18 +446,29 @@
         "patches": "openssl 3.0.13-0ubuntu3.16"
       },
       "linked_from": "side-campaign",
-      "decision": null,
-      "wrapper": {
-        "repository": "crustify-rs/openssl-crustify",
-        "pin": null
-      },
       "rust_equivalent": {
         "ported": [
           {
             "crate": "rustls",
             "feature_parity": "partial",
             "license": "Apache-2.0 OR ISC OR MIT",
-            "notes": "a TLS client in Rust: no OpenSSL cipher-list strings (SSL_CTX_set_cipher_list), no SSL_CTX_load_verify_locations or default verify paths without rustls-native-certs, and certificate verification through webpki rather than X509_STORE"
+            "notes": "ClientConfig/ClientConnection over any Read + Write replace SSL_CTX, SSL and the custom BIO, with SNI, peer_certificates (DER) and TLS 1.2 and later only, which matches libgit2's SSL_OP_NO_* set. Gaps: no OpenSSL cipher-list strings, so GIT_OPT_SET_SSL_CIPHERS cannot be honoured; libgit2 completes the handshake with SSL_VERIFY_NONE, reads SSL_get_verify_result and returns GIT_ECERTIFICATE so that the user's certificate_check callback may override it (src/libgit2/transports/httpclient.c:837), which needs a custom danger::ServerCertVerifier, and verification is webpki's, not OpenSSL's; no CN fallback; verify paths need rustls-native-certs, which loads eagerly rather than through OpenSSL's hashed-directory lookup; the C caller's X509* only as DER; and it needs a crypto provider, aws-lc-rs by default, which bundles AWS-LC.",
+            "version": "0.23.46",
+            "areas": [
+              "TLS context",
+              "TLS client connections"
+            ],
+            "shares_state": false,
+            "soundness": {
+              "judgement": "sound",
+              "evidence": "#![forbid(unsafe_code)] (src/lib.rs:332); rustls-webpki and rustls-native-certs have no unsafe; the default aws-lc-rs provider (381 unsafe lines over the bundled AWS-LC) was not read."
+            },
+            "advisories": [],
+            "maintenance": {
+              "last_release": "2026-10-14",
+              "publisher": "the rustls organization"
+            },
+            "qualifies": []
           }
         ],
         "bindings": [
@@ -135,16 +477,58 @@
             "sys": "openssl-sys",
             "feature_parity": "partial",
             "license": "Apache-2.0",
-            "notes": "SslContextBuilder and SslStream cover SSL_CTX_new/free, options, cipher list, verify locations and paths, SSL_new/connect/read/write/shutdown, the peer certificate and verify result; SSL_set_bio over a custom BIO has no counterpart, the stream being any Read + Write instead"
+            "notes": "SslContextBuilder covers SSL_CTX_new(TLS_method), set_options (NO_SSLV2/3, NO_TLSV1/1_1, NO_COMPRESSION), set_mode(AUTO_RETRY), set_verify(NONE), set_default_verify_paths, set_cipher_list, load_verify_locations and cert_store_mut().add_cert; Ssl::new, set_hostname (SNI), SslStream's connect, ssl_read, ssl_write and shutdown, ssl::Error::code (SSL_get_error), peer_certificate and verify_result cover the connection. A built SslContext is immutable, while libgit2 changes the live git__ssl_ctx through git_openssl__set_cert_location and git_openssl__add_x509_cert, so a port rebuilds the context on each such option; SSL_set_bio over libgit2's BIO becomes SslStream<S> over a Read + Write adapter of git_stream; OPENSSL_init_ssl is implicit.",
+            "version": "0.10.82",
+            "areas": [
+              "TLS context",
+              "TLS client connections"
+            ],
+            "shares_state": true,
+            "soundness": {
+              "judgement": "unsound",
+              "evidence": "SslStream<S> reaches bread (ssl/bio.rs:107-113), which hands OpenSSL's unzeroed record buffer (ssl/record/ssl3_buffer.c:68) to the safe S::read as &mut [u8]; X509StoreRef::objects (x509/store.rs:261-273) is a safe API the crate documents as unsound."
+            },
+            "advisories": [],
+            "maintenance": {
+              "last_release": "2026-11-01",
+              "publisher": "two maintainers (sfackler, alex), in the rust-openssl organization's repository"
+            },
+            "qualifies": []
           },
           {
             "crate": "native-tls",
             "sys": "openssl-sys",
             "feature_parity": "partial",
             "license": "MIT OR Apache-2.0",
-            "notes": "a platform-TLS facade: no cipher-list control, no X509_STORE access and no verify result codes"
+            "notes": "A platform facade over the openssl crate on Linux: no cipher list, no verify-locations directory, no SSL_VERIFY_NONE-then-report flow (an invalid certificate fails the handshake unless danger_accept_invalid_certs), no verify result codes and no raw handles; add_root_certificate takes DER only.",
+            "version": "0.2.18",
+            "areas": [
+              "TLS context",
+              "TLS client connections"
+            ],
+            "shares_state": false,
+            "soundness": {
+              "judgement": "unsound",
+              "evidence": "its Linux TlsStream<S> is openssl::ssl::SslStream<S> (src/imp/openssl.rs:431), so it inherits bread's &mut [u8] over uninitialised memory (openssl ssl/bio.rs:107-113); its own 2 unsafe lines are macOS-only."
+            },
+            "advisories": [],
+            "maintenance": {
+              "last_release": "2026-02-18",
+              "publisher": "two maintainers (sfackler, kornelski)"
+            },
+            "qualifies": []
           }
         ]
+      },
+      "recommendation": {
+        "adopt": [],
+        "remainder": "wrapper",
+        "remainder_sys": null
+      },
+      "decision": null,
+      "wrapper": {
+        "repository": "crustify-rs/openssl-crustify",
+        "pin": null
       }
     },
     {
@@ -160,22 +544,85 @@
         "patches": "pcre2 10.42-4ubuntu2.1"
       },
       "linked_from": "side-campaign",
-      "decision": null,
-      "wrapper": {
-        "repository": "crustify-rs/pcre2-crustify",
-        "pin": null
-      },
       "rust_equivalent": {
-        "ported": [],
+        "ported": [
+          {
+            "crate": "fancy-regex",
+            "feature_parity": "partial",
+            "license": "MIT",
+            "notes": "Not PCRE2's syntax or semantics, though it adds backreferences, lookaround, atomic and possessive groups, conditionals, subroutine calls, \\K and \\Z over regex-automata, and matches &[u8] through BytesMode::Ascii since 0.20. `$` matches only at the end of the text (parse.rs:375-382), where PCRE2's also matches before a final newline; patterns are Strings, so raw non-UTF-8 pattern bytes (the built-in word patterns of userdiff.h:25,160) must be rewritten as escapes; no PCRE2 verbs or options; its backtrack limit is 1e6 against PCRE2's 1e7 match limit; its error texts differ from pcre2_get_error_message's.",
+            "version": "0.20.1",
+            "areas": [
+              "regular expressions"
+            ],
+            "shares_state": false,
+            "soundness": {
+              "judgement": "sound",
+              "evidence": "no unsafe in the crate's source; its regex-automata dependency's unsafe was not read."
+            },
+            "advisories": [],
+            "maintenance": {
+              "last_release": "2026-11-09",
+              "publisher": "the fancy-regex organization and three maintainers"
+            },
+            "qualifies": []
+          },
+          {
+            "crate": "regex",
+            "feature_parity": "partial",
+            "license": "MIT OR Apache-2.0",
+            "notes": "Another dialect: regex::bytes with unicode(false) and case_insensitive matches bytes with ASCII case folding, as PCRE2 does in non-UTF CASELESS mode, and CaptureLocations covers the ovector and unset groups, but it has no backreferences, lookaround, atomic or possessive groups, \\Q..\\E, \\Z, recursion or verbs; `$` matches only at the end of the text; size limits replace PCRE2's match limits; patterns are &str; its error texts differ. Config regexes, diff drivers' xfuncname and wordregex, and revparse's :/ expose PCRE2's syntax to users.",
+            "version": "1.13.1",
+            "areas": [
+              "regular expressions"
+            ],
+            "shares_state": false,
+            "soundness": {
+              "judgement": "sound",
+              "evidence": "one unsafe site in the crate, src/pattern.rs:30 (a nightly-only Pattern impl); the engine's unsafe, in regex-automata, memchr and aho-corasick, was not read."
+            },
+            "advisories": [],
+            "maintenance": {
+              "last_release": "2026-07-15",
+              "publisher": "the rust-lang organization"
+            },
+            "qualifies": []
+          }
+        ],
         "bindings": [
           {
             "crate": "pcre2",
             "sys": "pcre2-sys",
             "feature_parity": "partial",
             "license": "Unlicense OR MIT",
-            "notes": "RegexBuilder::caseless, Regex::is_match and captures_read cover pcre2_compile, pcre2_match, the match data and its ovector, and Error the error messages; patterns are &str, so the non-UTF-8 patterns the C compiles are rejected, and it vendors its own PCRE2 unless told to link the system one"
+            "notes": "The same engine and options as regexp.c: non-UTF by default (bytes.rs:100), caseless(), NULL contexts; bytes::Regex::is_match and captures_read with CaptureLocations cover pcre2_compile, pcre2_match, the match data and its ovector. Patterns are &str (bytes.rs:124), so raw non-UTF-8 pattern bytes must be escaped as \\xHH, which is lossy inside \\Q..\\E or after a backslash; the bare pcre2_get_error_message text is private (error.rs:92) and Display prefixes it (error.rs:116-125), where regexp.c:90-91 sets the bare message; pcre2-sys vendors PCRE2 10.46 statically when pkg-config fails (build.rs:33).",
+            "version": "0.2.11",
+            "areas": [
+              "regular expressions"
+            ],
+            "shares_state": false,
+            "soundness": {
+              "judgement": "sound",
+              "evidence": "37 unsafe lines: MatchData::find is pub(crate) unsafe (ffi.rs:409), called with options 0 only (bytes.rs:617,660,707); empty subjects get a valid singleton pointer (ffi.rs:436-441); the ovector slice is built from PCRE2's own pointer and count (ffi.rs:476-490); Code is Send + Sync (ffi.rs:80-81), which PCRE2 allows for compiled code; match data is per thread, from a pool (pool.rs:329); no raw handle is exposed."
+            },
+            "advisories": [],
+            "maintenance": {
+              "last_release": "2025-09-25",
+              "publisher": "one maintainer (BurntSushi)"
+            },
+            "qualifies": []
           }
         ]
+      },
+      "recommendation": {
+        "adopt": [],
+        "remainder": "local",
+        "remainder_sys": "pcre2-sys"
+      },
+      "decision": null,
+      "wrapper": {
+        "repository": "crustify-rs/pcre2-crustify",
+        "pin": null
       }
     },
     {
@@ -191,35 +638,142 @@
         "patches": "zlib 1:1.3.dfsg-3.1ubuntu2.2"
       },
       "linked_from": "side-campaign",
-      "decision": null,
-      "wrapper": {
-        "repository": "crustify-rs/zlib-crustify",
-        "pin": null
-      },
       "rust_equivalent": {
         "ported": [
+          {
+            "crate": "flate2",
+            "feature_parity": "partial",
+            "license": "MIT OR Apache-2.0",
+            "notes": "Assessed with its default rust_backend, miniz_oxide; its zlib and zlib-ng features make it a binding over libz-sys with the same API, and zlib-rs is another backend. Compress and Decompress cover deflateInit/deflate/deflateReset/deflateEnd and their inflate counterparts (Status Ok/BufError/StreamEnd, total_in/out, reset, message()), and Crc covers crc32. No deflateBound: reftable's block.c:174-198 uses it only to size one buffer for a single Z_FINISH call, which a compress_vec loop until StreamEnd replaces. With the miniz backend a first inflate call with Finish whose output does not fit fails the stream (miniz_oxide inflate/stream.rs:227-250), where zstream.c:106-123 passes Z_FINISH with chunked output, so the port passes FlushDecompress::None (the zlib-rs backend keeps zlib's semantics); Compression::new does not reject levels above 9, which filebuf.c:317-324 turns into an error; an allocation failure aborts rather than returning Z_MEM_ERROR; the miniz backend gives no zlib message text; its output is not byte-identical to zlib 1.3's, which the formats do not require (object ids hash uncompressed data, a pack's name hashes whatever bytes it holds), though tests/libgit2/pack/indexer.c:178 asserts the name of a thin pack libgit2 deflates (unverified across compressors).",
+            "version": "1.1.11",
+            "areas": [
+              "zlib streams",
+              "CRC-32"
+            ],
+            "shares_state": false,
+            "soundness": {
+              "judgement": "sound",
+              "evidence": "37 unsafe lines, 25 of them in ffi/c.rs, compiled for its C backends only; mem.rs:647-656 clamps set_len to the capacity; ffi/mod.rs:9-11 zero-fills uninitialised output before miniz_oxide sees it; no z_stream is exposed; miniz_oxide forbids unsafe_code."
+            },
+            "advisories": [],
+            "maintenance": {
+              "last_release": "2026-11-06",
+              "publisher": "the rust-lang organization"
+            },
+            "qualifies": [
+              "zlib streams",
+              "CRC-32"
+            ]
+          },
           {
             "crate": "zlib-rs",
             "feature_parity": "partial",
             "license": "Zlib",
-            "notes": "implements the zlib API the campaign consumes, crc32 and deflateBound included, but deflate output is not byte-identical to zlib 1.3's at every level and its Rust API is the C-shaped, unsafe one"
+            "notes": "Its safe API covers every use: Deflate/Inflate (new, compress/decompress with NoFlush/Finish, reset, total_in/out, zlib's error_message texts), compress_bound in deflateBound's place and crc32::crc32(start, buf). Deflate::new panics on a bad level or a failed allocation rather than returning Z_STREAM_ERROR/Z_MEM_ERROR (deflate.rs:136-137); its output is not byte-identical to zlib 1.3's.",
+            "version": "0.6.8",
+            "areas": [
+              "zlib streams",
+              "CRC-32"
+            ],
+            "shares_state": false,
+            "soundness": {
+              "judgement": "unclear",
+              "evidence": "stable.rs sets next_in/next_out from slices, clamps avail to c_uint::MAX and clears the pointers after each call (stable.rs:357-376), and reads msg only as a static C string (stable.rs:92,290); its other ~456 unsafe lines (SIMD, allocator, C API) were not read, and no scan was run."
+            },
+            "advisories": [],
+            "maintenance": {
+              "last_release": "2026-09-15",
+              "publisher": "the Trifecta Tech Foundation, two maintainers"
+            },
+            "qualifies": []
           },
           {
             "crate": "miniz_oxide",
             "feature_parity": "partial",
             "license": "MIT OR Zlib OR Apache-2.0",
-            "notes": "raw deflate and zlib streams only: no crc32, no deflateBound, and different compressed bytes"
-          }
-        ],
-        "bindings": [
+            "notes": "zlib-format deflate and inflate streams with reset and byte counts; no crc32, no deflateBound and no message texts; a first inflate call with Finish whose output does not fit fails the stream (inflate/stream.rs:227-250), so callers use MZFlush::None; its output differs from zlib's.",
+            "version": "0.9.1",
+            "areas": [
+              "zlib streams"
+            ],
+            "shares_state": false,
+            "soundness": {
+              "judgement": "sound",
+              "evidence": "#![forbid(unsafe_code)] (src/lib.rs:25)."
+            },
+            "advisories": [],
+            "maintenance": {
+              "last_release": "2026-03-13",
+              "publisher": "two maintainers (oyvindln, Frommi)"
+            },
+            "qualifies": [
+              "zlib streams"
+            ]
+          },
           {
-            "crate": "flate2",
-            "sys": "libz-sys",
+            "crate": "crc32fast",
             "feature_parity": "partial",
             "license": "MIT OR Apache-2.0",
-            "notes": "Compress and Decompress cover deflateInit/deflate/deflateReset/deflateEnd and their inflate counterparts, and Crc covers crc32; no deflateBound and no access to z_stream"
+            "notes": "CRC-32 only: Hasher::new_with_initial, update and finalize cover crc32(0, NULL, 0) and its incremental use.",
+            "version": "1.5.5",
+            "areas": [
+              "CRC-32"
+            ],
+            "shares_state": false,
+            "soundness": {
+              "judgement": "sound",
+              "evidence": "deny(unsafe_code) (lib.rs:44); its 26 unsafe lines are SIMD specialisations behind runtime feature detection (specialized/pclmulqdq.rs, aarch64.rs)."
+            },
+            "advisories": [],
+            "maintenance": {
+              "last_release": "2026-11-10",
+              "publisher": "one maintainer (srijs)"
+            },
+            "qualifies": []
+          },
+          {
+            "crate": "libz-rs-sys",
+            "feature_parity": "partial",
+            "license": "Zlib",
+            "notes": "zlib's C API, deflateBound and crc32 included, reimplemented over zlib-rs, but only as `pub unsafe extern \"C\" fn`s over a raw z_stream (lib.rs:183,637,1365,1918): no safe API, so no safe binding; it could stand in for the libz the remaining C links.",
+            "version": "0.6.8",
+            "areas": [
+              "zlib streams",
+              "CRC-32"
+            ],
+            "shares_state": true,
+            "soundness": {
+              "judgement": "unclear",
+              "evidence": "no safe API: every entry point is an unsafe extern \"C\" fn taking raw z_stream and buffer pointers, so the caller carries every contract, as with C zlib; its zlib-rs core was not scanned."
+            },
+            "advisories": [],
+            "maintenance": {
+              "last_release": "2026-09-15",
+              "publisher": "the Trifecta Tech Foundation, two maintainers"
+            },
+            "qualifies": []
           }
-        ]
+        ],
+        "bindings": []
+      },
+      "recommendation": {
+        "adopt": [
+          {
+            "crate": "flate2",
+            "areas": [
+              "zlib streams",
+              "CRC-32"
+            ],
+            "fork": null
+          }
+        ],
+        "remainder": null,
+        "remainder_sys": null
+      },
+      "decision": null,
+      "wrapper": {
+        "repository": "crustify-rs/zlib-crustify",
+        "pin": null
       }
     }
   ]

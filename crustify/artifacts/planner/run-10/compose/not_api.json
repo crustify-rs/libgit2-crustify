@@ -1,0 +1,28 @@
+{
+ "_comment": "The macros of the closure's files that are not API, which the decomposition's Bundling rule neither homes nor translates: attribute and linkage macros (declaration syntax, visibility, inline, format, unused and alignment attributes, the extern \"C\" brackets) and configuration macros (set to select a compilation path, read only by #if). Include guards are no units of wavefront 88793d7's schedules. Each is listed by name and defining file.",
+ "attribute": [
+  ["GIT_BEGIN_DECL", "include/git2/common.h"], ["GIT_END_DECL", "include/git2/common.h"],
+  ["GIT_CALLBACK", "include/git2/common.h"], ["GIT_EXTERN", "include/git2/common.h"],
+  ["GIT_EXTERN_DECL", "include/git2/common.h"], ["GIT_FORMAT_PRINTF", "include/git2/common.h"],
+  ["GIT_INLINE", "src/util/git2_util.h"], ["GIT_INLINE_KEYWORD", "src/util/git2_util.h"],
+  ["GIT_SYSTEM_CALL", "src/util/git2_util.h"], ["GIT_WARN_UNUSED_RESULT", "src/util/git2_util.h"],
+  ["NTLM_EXTERN", "deps/ntlmclient/ntlmclient.h"], ["NTLM_INLINE", "deps/ntlmclient/util.h"],
+  ["inline", "deps/xdiff/git-xdiff.h"], ["XDL_UNUSED", "deps/xdiff/git-xdiff.h"],
+  ["UTF8_ATTRIBUTE", "deps/ntlmclient/utf8.h"], ["utf8_constexpr14", "deps/ntlmclient/utf8.h"],
+  ["utf8_constexpr14_impl", "deps/ntlmclient/utf8.h"], ["utf8_nonnull", "deps/ntlmclient/utf8.h"],
+  ["utf8_pure", "deps/ntlmclient/utf8.h"], ["utf8_restrict", "deps/ntlmclient/utf8.h"],
+  ["utf8_weak", "deps/ntlmclient/utf8.h"], ["REFTABLE_UNUSED", "deps/reftable/basics.h"],
+  ["ALIGN", "deps/llhttp/llhttp.c"], ["LLHTTP_EXPORT", "deps/llhttp/llhttp.h"],
+  ["inline", "deps/reftable/reftable-system.h"],
+  ["GIT_UNUSED_FUNCTION", "src/util/cc-compat.h"], ["GIT_UNUSED_ARG", "src/util/cc-compat.h"],
+  ["GIT_FLEX_ARRAY", "src/util/cc-compat.h"], ["GIT_ALIGN", "src/util/cc-compat.h"],
+  ["GIT_HASHMAP_INLINE", "src/util/hashmap.h"], ["GIT_HASHMAP_EMPTY", "src/util/hashmap.h"]
+ ],
+ "configuration": [
+  ["REFTABLE_ALLOW_BANNED_ALLOCATORS", "deps/reftable/basics.c"],
+  ["REFTABLE_ALLOW_BANNED_ALLOCATORS", "deps/reftable/reftable-system.h"],
+  ["SHA1DC_ALLOW_UNALIGNED_ACCESS", "src/util/hash/sha1dc/sha1.c"],
+  ["SHA1DC_ON_INTEL_LIKE_PROCESSOR", "src/util/hash/sha1dc/sha1.c"],
+  ["PCRE2_CODE_UNIT_WIDTH", "src/util/regexp.h"]
+ ]
+}

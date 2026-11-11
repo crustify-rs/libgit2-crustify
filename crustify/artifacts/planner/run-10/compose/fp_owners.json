@@ -1,0 +1,73 @@
+{
+ "deps/xdiff/xemit.c": {
+  "deps/xdiff/xdiff.h": [
+   "int (*)(void *, long, long, long, long, const char *, long)",
+   "int (*)(void *, mmbuffer_t *, int)"
+  ]
+ },
+ "src/libgit2/config.c": {
+  "src/libgit2/config_backend.h": [
+   "int (*)(const git_config_entry *, void *)"
+  ]
+ },
+ "src/libgit2/filter.c": {
+  "include/git2/types.h": [
+   "int (*)(git_writestream *)",
+   "int (*)(git_writestream *, const char *, size_t)",
+   "void (*)(git_writestream *)"
+  ]
+ },
+ "src/libgit2/odb.c": {
+  "include/git2/sys/odb_backend.h": [
+   "int (*)(git_odb_backend *)",
+   "int (*)(git_odb_backend *, const git_oid *)",
+   "int (*)(git_odb_backend *, const git_oid *, const void *, size_t, git_object_t)",
+   "int (*)(git_odb_backend *, git_odb_foreach_cb, void *)",
+   "int (*)(git_odb_stream **, git_odb_backend *, git_object_size_t, git_object_t)",
+   "int (*)(git_odb_stream **, size_t *, git_object_t *, git_odb_backend *, const git_oid *)",
+   "int (*)(git_odb_writepack **, git_odb_backend *, git_odb *, git_indexer_progress_cb, void *)",
+   "int (*)(git_oid *, git_odb_backend *, const git_oid *, size_t)",
+   "int (*)(git_oid *, void **, size_t *, git_object_t *, git_odb_backend *, const git_oid *, size_t)",
+   "int (*)(size_t *, git_object_t *, git_odb_backend *, const git_oid *)",
+   "int (*)(void **, size_t *, git_object_t *, git_odb_backend *, const git_oid *)",
+   "void (*)(git_odb_backend *)"
+  ],
+  "include/git2/odb_backend.h": [
+   "int (*)(git_odb_stream *, char *, size_t)",
+   "int (*)(git_odb_stream *, const char *, size_t)",
+   "int (*)(git_odb_stream *, const git_oid *)",
+   "int (*)(git_odb_writepack *, const void *, size_t, git_indexer_progress *)",
+   "int (*)(git_odb_writepack *, git_indexer_progress *)",
+   "void (*)(git_odb_stream *)",
+   "void (*)(git_odb_writepack *)"
+  ]
+ },
+ "src/libgit2/refdb.c": {
+  "include/git2/sys/refdb_backend.h": [
+   "int (*)(const char **, git_reference_iterator *)",
+   "int (*)(git_refdb_backend *)",
+   "int (*)(git_refdb_backend *, const char *)",
+   "int (*)(git_refdb_backend *, const char *, const char *)",
+   "int (*)(git_refdb_backend *, const char *, const git_oid *, const char *)",
+   "int (*)(git_refdb_backend *, const char *, mode_t, uint32_t)",
+   "int (*)(git_refdb_backend *, const git_reference *, int, const git_signature *, const char *, const git_oid *, const char *)",
+   "int (*)(git_refdb_backend *, git_reflog *)",
+   "int (*)(git_refdb_backend *, void *, int, int, const git_reference *, const git_signature *, const char *)",
+   "int (*)(git_reference **, git_refdb_backend *, const char *)",
+   "int (*)(git_reference **, git_refdb_backend *, const char *, const char *, int, const git_signature *, const char *)",
+   "int (*)(git_reference **, git_reference_iterator *)",
+   "int (*)(git_reference_iterator **, git_refdb_backend *, const char *)",
+   "int (*)(git_reflog **, git_refdb_backend *, const char *)",
+   "int (*)(int *, git_refdb_backend *, const char *)",
+   "int (*)(void **, git_refdb_backend *, const char *)",
+   "void (*)(git_refdb_backend *)",
+   "void (*)(git_reference_iterator *)"
+  ]
+ },
+ "src/libgit2/streams/registry.c": {
+  "include/git2/sys/stream.h": [
+   "int (*)(git_stream **, const char *, const char *)",
+   "int (*)(git_stream **, git_stream *, const char *)"
+  ]
+ }
+}
