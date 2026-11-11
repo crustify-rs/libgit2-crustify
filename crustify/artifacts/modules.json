@@ -1,5 +1,5 @@
 {
-  "_comment": "The libgit2 port campaign's decomposition, as specs/planning/decomposition.md describes, of the two link units the build links (crustify/builds/plain/build.ninja): the libgit2.so library, and the git2 CLI executable, whose link line names the same libgit2, util and deps objects and src/cli's 17 TUs, so that its link unit holds src/cli's modules and depends on libgit2. One module per translation unit a link line names, with the headers carrying the TU's name and its tests, the shared headers (include/git2/types.h, common.h, cert.h, odb_backend.h, sys/odb_backend.h, sys/refdb_backend.h, sys/stream.h, deps/xdiff/xdiff.h, xtypes.h, ...) split item by item with the file entries' items lists, and a header module for each header implementing what no TU does (src/util/integer.h, array.h, bitvec.h, hashmap.h, hashmap_str.h, staticstr.h, cc-compat.h, ctype_compat.h, strnlen.h, src/libgit2/stream.h, src/libgit2/common.h, deps/ntlmclient/utf8.h, compat.h, deps/xdiff/xmacros.h, src/cli/error.h). Every entity is placed under its C kind, as wavefront 88793d7 schedules it: a shared header's API macro goes to the module whose logic it implements, as the functions it calls and the types it accesses show, a constant or a family of flags to the module owning the type that holds its values or, holding none, whose functions consume it; a function pointer written inline, named by its signature, goes with the struct or function whose declaration holds it; a typedef of its own to the module whose functions use it most; a header holding only macros and typedefs is bundled with the TU it is named for or implements (assert_safe.h and the error-checking macros of git2_util.h with src/util/errors.c, version.h with src/libgit2/libgit2.c, reftable-system.h with deps/reftable/system.c, auth_ntlm.h with auth_ntlmclient.c, src/util/hash/sha.h with src/util/hash.c, unix/pthread.h with src/util/thread.c). Attribute, linkage and configuration macros are not API, and no module owns them (crustify/artifacts/planner/run-8/compose/not_api.json). The TUs the configured build compiles empty are configured out: src/libgit2/streams/openssl_dynamic.c, openssl_legacy.c, schannel.c, stransport.c, src/libgit2/transports/auth_gssapi.c, auth_sspi.c, ssh_exec.c and winhttp.c, and src/cli/win32/. The test executables' sources (tests/libgit2, tests/util) are tests, each listed by the modules whose subject it is, as specs/planning/decomposition.md's Bundling describes: those whose internals it uses (the fields or layout of the types they own, macro expansions included, and their static functions and static globals) and those whose own results or effects its assertions check, the subject area its suite is named for (crustify/artifacts/planner/run-8/compose/areas.py) that its code reaches, the macros it expands included. A test file is split by test function where its tests divide between modules; a clar test case's code includes the static helpers of its file it calls and its suite's __initialize and __cleanup. deps/clar is the harness every test links, a fixture rather than a test, and is tied to no module. Out of scope, and so owned by no module: the deprecated items (deprecated.h, cred_helpers.h, sys/cred.h and the GIT_DEPRECATE_HARD blocks of the other public headers, such as git_oid_fromstr and git_blame_get_hunk_count) and the declarations the configured build never defines (git_transport_dummy, git_blame_file_from_buffer, git_tree_cache_free, ...): no module's file entries select them, and the schedule seeds of crustify/wavefront/configs/wavefront-config.json leave them out. Each module's objective is the campaign's, port, but for the seven foundational modules, which are wrap in every campaign; a module the standard library or a crate replaces with full parity is ported onto it, as its rust_equivalent records. Each link unit's rust_equivalent records the closest the standard library comes to it as a whole and the crates that could replace it outright: none, since gix and its gix-* components reimplement the target and git2 and libgit2-sys bind it. The seven foundational modules hold the allocators, releasers and cloners of type-erased memory and of strings (src/util/alloc.c, the four src/util/allocators/, deps/reftable/basics.c and src/util/strlist.c), each foundational whole. depends_on holds one record per in-tree module and per out-of-tree library a module depends on, counted from a wavefront 88793d7 schedule of the whole closure (crustify/wavefront/configs/wavefront-config.json without its schedule_seeds, the body-deep graph) over the kinds the modules schema counts, structs, unions, functions, globals and function pointers, at both ends of an edge: an in-tree record's outgoing_edges are the unit edges from this module to the other, its incoming_edges those back, non-zero on either side of a cycle, and its counters the distinct entities it consumes there, by kind; an out-of-tree record counts the distinct entities its units reference from the library whose installed headers define them, as dependencies.json names it, macros and compiler builtins left out. Enums, macros and typedefs of their own are counted nowhere yet, so a module that uses only another's enums, macros or typedefs has no record of it. counters.*.function_pointers counts the function pointers a module owns, declared by a typedef or written inline. Which dependencies the order keeps and which it cuts is schedule.json's. counters.loc counts nonblank, noncomment lines of each owned entity's span: its definition in the TU or an internal header, its declaration or definition in an API header. Every path is below the C root, c/.",
+  "_comment": "The libgit2 port campaign's decomposition, as specs/planning/decomposition.md describes, of the two link units the build links (crustify/builds/plain/build.ninja): the libgit2.so library, and the git2 CLI executable, whose link line names the same libgit2, util and deps objects and src/cli's 17 TUs, so that its link unit holds src/cli's modules and depends on libgit2. One module per translation unit a link line names, with the headers carrying the TU's name and its tests, the shared headers (include/git2/types.h, common.h, cert.h, odb_backend.h, sys/odb_backend.h, sys/refdb_backend.h, sys/stream.h, deps/xdiff/xdiff.h, xtypes.h, ...) split item by item with the file entries' items lists, and a header module for each header implementing what no TU does (src/util/integer.h, array.h, bitvec.h, hashmap.h, hashmap_str.h, staticstr.h, cc-compat.h, ctype_compat.h, strnlen.h, src/libgit2/stream.h, src/libgit2/common.h, deps/ntlmclient/utf8.h, compat.h, deps/xdiff/xmacros.h, src/cli/error.h). Every entity is placed under its C kind, as wavefront 88793d7 schedules it: a shared header's API macro goes to the module whose logic it implements, as the functions it calls and the types it accesses show, a constant or a family of flags to the module owning the type that holds its values or, holding none, whose functions consume it; a function pointer written inline, named by its signature, goes with the struct or function whose declaration holds it; a typedef of its own to the module whose functions use it most; a header holding only macros and typedefs is bundled with the TU it is named for or implements (assert_safe.h and the error-checking macros of git2_util.h with src/util/errors.c, version.h with src/libgit2/libgit2.c, reftable-system.h with deps/reftable/system.c, auth_ntlm.h with auth_ntlmclient.c, src/util/hash/sha.h with src/util/hash.c, unix/pthread.h with src/util/thread.c). Attribute, linkage and configuration macros are not API, and no module owns them (crustify/artifacts/planner/run-8/compose/not_api.json). The TUs the configured build compiles empty are configured out: src/libgit2/streams/openssl_dynamic.c, openssl_legacy.c, schannel.c, stransport.c, src/libgit2/transports/auth_gssapi.c, auth_sspi.c, ssh_exec.c and winhttp.c, and src/cli/win32/. The test executables' sources (tests/libgit2, tests/util) are tests, each listed by the modules whose subject it is, as specs/planning/decomposition.md's Bundling describes: those whose internals it uses (the fields or layout of the types they own, macro expansions included, and their static functions and static globals) and those whose own results or effects its assertions check, the subject area its suite is named for (crustify/artifacts/planner/run-8/compose/areas.py) that its code reaches, the macros it expands included. A test file is split by test function where its tests divide between modules; a clar test case's code includes the static helpers of its file it calls and its suite's __initialize and __cleanup. A test case whose body the configured build compiles empty (a GIT_WIN32-only body, a deprecated API's under GIT_DEPRECATE_HARD, an #if the configuration drops, or a comment alone; 95 of them, crustify/artifacts/planner/run-11/compose/empty11.py) is out of scope, as a configured-out translation unit is: it is tied to no module, a file whose every test case is empty is listed by none, and an entry that ties a file whole names its out-of-scope cases as excluded (planner run 11). deps/clar is the harness every test links, a fixture rather than a test, and is tied to no module. Out of scope, and so owned by no module: the deprecated items (deprecated.h, cred_helpers.h, sys/cred.h and the GIT_DEPRECATE_HARD blocks of the other public headers, such as git_oid_fromstr and git_blame_get_hunk_count) and the declarations the configured build never defines (git_transport_dummy, git_blame_file_from_buffer, git_tree_cache_free, ...): no module's file entries select them, and the schedule seeds of crustify/wavefront/configs/wavefront-config.json leave them out. Each module's objective is the campaign's, port, but for the seven foundational modules, which are wrap in every campaign; a module the standard library or a crate replaces with full parity is ported onto it, as its rust_equivalent records. Each link unit's rust_equivalent records the closest the standard library comes to it as a whole and the crates that could replace it outright: none, since gix and its gix-* components reimplement the target and git2 and libgit2-sys bind it. The seven foundational modules hold the allocators, releasers and cloners of type-erased memory and of strings (src/util/alloc.c, the four src/util/allocators/, deps/reftable/basics.c and src/util/strlist.c), each foundational whole. depends_on holds one record per in-tree module and per out-of-tree library a module depends on, counted from a wavefront 88793d7 schedule of the whole closure (crustify/wavefront/configs/wavefront-config.json without its schedule_seeds, the body-deep graph) over the kinds the modules schema counts, structs, unions, functions, globals and function pointers, at both ends of an edge: an in-tree record's outgoing_edges are the unit edges from this module to the other, its incoming_edges those back, non-zero on either side of a cycle, and its counters the distinct entities it consumes there, by kind; an out-of-tree record counts the distinct entities its units reference from the library whose installed headers define them, as dependencies.json names it, macros and compiler builtins left out. Enums, macros and typedefs of their own are counted nowhere yet, so a module that uses only another's enums, macros or typedefs has no record of it. counters.*.function_pointers counts the function pointers a module owns, declared by a typedef or written inline. Which dependencies the order keeps and which it cuts is schedule.json's. counters.loc counts nonblank, noncomment lines of each owned entity's span: its definition in the TU or an internal header, its declaration or definition in an API header. Every path is below the C root, c/.",
   "version": "0551dfd4ad989b6a3d5683c0d4cf326c6efef929",
   "link_units": [
     {
@@ -2548,7 +2548,9 @@
           "tests": [
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_sha1__win32_providers"
+                ],
                 "included": []
               },
               "path": "tests/util/sha1.c"
@@ -2607,15 +2609,7 @@
             }
           ],
           "api_headers": [],
-          "tests": [
-            {
-              "items": {
-                "excluded": [],
-                "included": []
-              },
-              "path": "tests/util/integer.c"
-            }
-          ],
+          "tests": [],
           "objective": {
             "objective": "port",
             "rust_equivalent": {
@@ -4442,19 +4436,10 @@
             },
             {
               "items": {
-                "excluded": [],
-                "included": [
-                  "test_repo_pathspec__in_memory",
-                  "test_repo_pathspec__index0",
-                  "test_repo_pathspec__starstar",
-                  "test_repo_pathspec__tree0",
-                  "test_repo_pathspec__tree5",
-                  "test_repo_pathspec__workdir0",
-                  "test_repo_pathspec__workdir1",
-                  "test_repo_pathspec__workdir2",
-                  "test_repo_pathspec__workdir3",
-                  "test_repo_pathspec__workdir4"
-                ]
+                "excluded": [
+                  "test_repo_pathspec__index1"
+                ],
+                "included": []
               },
               "path": "tests/libgit2/repo/pathspec.c"
             },
@@ -4763,7 +4748,9 @@
           "tests": [
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_sha1__win32_providers"
+                ],
                 "included": []
               },
               "path": "tests/util/sha1.c"
@@ -4871,7 +4858,9 @@
           "tests": [
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_sha256__win32_providers"
+                ],
                 "included": []
               },
               "path": "tests/util/sha256.c"
@@ -5008,14 +4997,18 @@
             },
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_sha1__win32_providers"
+                ],
                 "included": []
               },
               "path": "tests/util/sha1.c"
             },
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_sha256__win32_providers"
+                ],
                 "included": []
               },
               "path": "tests/util/sha256.c"
@@ -6347,41 +6340,28 @@
             },
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_checkout_index__conflicts_honor_coreautocrlf",
+                  "test_checkout_index__honor_coreautocrlf_setting_set_to_true"
+                ],
                 "included": []
               },
               "path": "tests/libgit2/checkout/index.c"
             },
             {
               "items": {
-                "excluded": [],
-                "included": [
-                  "test_checkout_fails",
-                  "test_checkout_nasty__dot_dotcapitalgit_path",
-                  "test_checkout_nasty__dot_dotgit_path",
-                  "test_checkout_nasty__dot_dotgit_tree",
-                  "test_checkout_nasty__dot_path",
-                  "test_checkout_nasty__dot_path_two",
-                  "test_checkout_nasty__dot_tree",
-                  "test_checkout_nasty__dotcapitalgit_path",
-                  "test_checkout_nasty__dotcapitalgit_tree",
-                  "test_checkout_nasty__dotdot_dotcapitalgit_path",
-                  "test_checkout_nasty__dotdot_dotgit_path",
-                  "test_checkout_nasty__dotdot_dotgit_tree",
-                  "test_checkout_nasty__dotdot_path",
-                  "test_checkout_nasty__dotdot_tree",
-                  "test_checkout_nasty__dotgit_alternate_data_stream",
-                  "test_checkout_nasty__dotgit_path",
-                  "test_checkout_nasty__dotgit_tree",
-                  "test_checkout_nasty__git_tilde1",
-                  "test_checkout_nasty__gitmodules_symlink",
-                  "test_checkout_nasty__honors_core_protecthfs",
-                  "test_checkout_nasty__honors_core_protectntfs",
-                  "test_checkout_nasty__symlink1",
-                  "test_checkout_nasty__symlink2",
-                  "test_checkout_nasty__symlink3",
-                  "test_checkout_passes"
-                ]
+                "excluded": [
+                  "test_checkout_nasty__dot_backslash_dotcapitalgit_path",
+                  "test_checkout_nasty__dot_git_colon",
+                  "test_checkout_nasty__dot_git_colon_stuff",
+                  "test_checkout_nasty__dot_git_dot",
+                  "test_checkout_nasty__dot_git_hfs_ignorable",
+                  "test_checkout_nasty__dotcapitalgit_backslash_path",
+                  "test_checkout_nasty__dotgit_backslash_path",
+                  "test_checkout_nasty__git_custom_shortname",
+                  "test_checkout_nasty__only_looks_like_a_git_shortname"
+                ],
+                "included": []
               },
               "path": "tests/libgit2/checkout/nasty.c"
             },
@@ -7427,7 +7407,9 @@
             },
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_repo_init__longpath"
+                ],
                 "included": []
               },
               "path": "tests/libgit2/repo/init.c"
@@ -7484,12 +7466,11 @@
             },
             {
               "items": {
-                "excluded": [],
-                "included": [
-                  "test_repo_reservedname__includes_shortname_on_win32",
-                  "test_repo_reservedname__includes_shortname_when_requested",
-                  "test_repo_reservedname__submodule_pointer_during_create"
-                ]
+                "excluded": [
+                  "test_repo_reservedname__custom_shortname_recognized",
+                  "test_repo_reservedname__submodule_pointer"
+                ],
+                "included": []
               },
               "path": "tests/libgit2/repo/reservedname.c"
             },
@@ -7738,15 +7719,6 @@
                 ]
               },
               "path": "tests/libgit2/submodule/submodule_helpers.c"
-            },
-            {
-              "items": {
-                "excluded": [],
-                "included": [
-                  "path"
-                ]
-              },
-              "path": "tests/libgit2/win32/longpath.c"
             },
             {
               "items": {
@@ -8827,7 +8799,11 @@
             },
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_repo_open__can_handle_win32_prefixed_safe_paths",
+                  "test_repo_open__can_handle_win32_unc_safe_paths",
+                  "test_repo_open__win32_path"
+                ],
                 "included": []
               },
               "path": "tests/libgit2/repo/open.c"
@@ -10046,34 +10022,18 @@
             },
             {
               "items": {
-                "excluded": [],
-                "included": [
-                  "test_checkout_fails",
-                  "test_checkout_nasty__dot_dotcapitalgit_path",
-                  "test_checkout_nasty__dot_dotgit_path",
-                  "test_checkout_nasty__dot_dotgit_tree",
-                  "test_checkout_nasty__dot_path",
-                  "test_checkout_nasty__dot_path_two",
-                  "test_checkout_nasty__dot_tree",
-                  "test_checkout_nasty__dotcapitalgit_path",
-                  "test_checkout_nasty__dotcapitalgit_tree",
-                  "test_checkout_nasty__dotdot_dotcapitalgit_path",
-                  "test_checkout_nasty__dotdot_dotgit_path",
-                  "test_checkout_nasty__dotdot_dotgit_tree",
-                  "test_checkout_nasty__dotdot_path",
-                  "test_checkout_nasty__dotdot_tree",
-                  "test_checkout_nasty__dotgit_alternate_data_stream",
-                  "test_checkout_nasty__dotgit_path",
-                  "test_checkout_nasty__dotgit_tree",
-                  "test_checkout_nasty__git_tilde1",
-                  "test_checkout_nasty__gitmodules_symlink",
-                  "test_checkout_nasty__honors_core_protecthfs",
-                  "test_checkout_nasty__honors_core_protectntfs",
-                  "test_checkout_nasty__symlink1",
-                  "test_checkout_nasty__symlink2",
-                  "test_checkout_nasty__symlink3",
-                  "test_checkout_passes"
-                ]
+                "excluded": [
+                  "test_checkout_nasty__dot_backslash_dotcapitalgit_path",
+                  "test_checkout_nasty__dot_git_colon",
+                  "test_checkout_nasty__dot_git_colon_stuff",
+                  "test_checkout_nasty__dot_git_dot",
+                  "test_checkout_nasty__dot_git_hfs_ignorable",
+                  "test_checkout_nasty__dotcapitalgit_backslash_path",
+                  "test_checkout_nasty__dotgit_backslash_path",
+                  "test_checkout_nasty__git_custom_shortname",
+                  "test_checkout_nasty__only_looks_like_a_git_shortname"
+                ],
+                "included": []
               },
               "path": "tests/libgit2/checkout/nasty.c"
             },
@@ -10685,27 +10645,10 @@
             },
             {
               "items": {
-                "excluded": [],
-                "included": [
-                  "merge_simple_branch",
-                  "test_merge_workdir_simple__automerge",
-                  "test_merge_workdir_simple__binary",
-                  "test_merge_workdir_simple__checkout_ours",
-                  "test_merge_workdir_simple__diff3",
-                  "test_merge_workdir_simple__diff3_from_config",
-                  "test_merge_workdir_simple__directory_file",
-                  "test_merge_workdir_simple__favor_ours",
-                  "test_merge_workdir_simple__favor_theirs",
-                  "test_merge_workdir_simple__gitattributes_union",
-                  "test_merge_workdir_simple__index_reload",
-                  "test_merge_workdir_simple__merge_overrides_config",
-                  "test_merge_workdir_simple__mergefile",
-                  "test_merge_workdir_simple__union",
-                  "test_merge_workdir_simple__unrelated",
-                  "test_merge_workdir_simple__unrelated_with_conflicts",
-                  "test_merge_workdir_simple__zdiff3",
-                  "test_merge_workdir_simple__zdiff3_from_config"
-                ]
+                "excluded": [
+                  "test_merge_workdir_simple__automerge_crlf"
+                ],
+                "included": []
               },
               "path": "tests/libgit2/merge/workdir/simple.c"
             },
@@ -11455,12 +11398,12 @@
             },
             {
               "items": {
-                "excluded": [],
-                "included": [
-                  "test_rebase_sign__create_gpg_signed",
-                  "test_rebase_sign__create_propagates_error",
-                  "test_rebase_sign__passthrough_create_cb"
-                ]
+                "excluded": [
+                  "test_rebase_sign__custom_signature_field",
+                  "test_rebase_sign__gpg_with_no_field",
+                  "test_rebase_sign__passthrough_signing_cb"
+                ],
+                "included": []
               },
               "path": "tests/libgit2/rebase/sign.c"
             },
@@ -14079,13 +14022,6 @@
             {
               "items": {
                 "excluded": [],
-                "included": []
-              },
-              "path": "tests/util/iconv.c"
-            },
-            {
-              "items": {
-                "excluded": [],
                 "included": [
                   "test_path_core__00_dirname",
                   "test_path_core__01_basename",
@@ -14125,10 +14061,21 @@
             },
             {
               "items": {
-                "excluded": [],
-                "included": [
-                  "test_path_win32__remove_namespace"
-                ]
+                "excluded": [
+                  "test_path_win32__8dot3_name",
+                  "test_path_win32__absolute_from_no_drive_letter",
+                  "test_path_win32__absolute_from_relative",
+                  "test_path_win32__canonicalize",
+                  "test_path_win32__dot_and_dotdot",
+                  "test_path_win32__honors_max_path",
+                  "test_path_win32__keeps_relative",
+                  "test_path_win32__realpath",
+                  "test_path_win32__removes_trailing_slash",
+                  "test_path_win32__squashes_multiple_slashes",
+                  "test_path_win32__unc",
+                  "test_path_win32__utf8_to_utf16"
+                ],
+                "included": []
               },
               "path": "tests/util/path/win32.c"
             }
@@ -14437,7 +14384,14 @@
             },
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_link__lstat_dangling_junction",
+                  "test_link__lstat_junction",
+                  "test_link__lstat_reparse_point",
+                  "test_link__stat_dangling_junction",
+                  "test_link__stat_junction",
+                  "test_link__stat_reparse_point"
+                ],
                 "included": []
               },
               "path": "tests/util/link.c"
@@ -17508,7 +17462,9 @@
             },
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_repo_discover__discovery_starting_at_system_root_causes_no_hang"
+                ],
                 "included": []
               },
               "path": "tests/libgit2/repo/discover.c"
@@ -17613,46 +17569,21 @@
             },
             {
               "items": {
-                "excluded": [],
-                "included": [
-                  "test_repo_open__allowlist_bare_dirs_cannot_have_wildcard_suffix",
-                  "test_repo_open__allowlist_dirs_cannot_have_wildcard_suffix",
-                  "test_repo_open__allowlist_relative_bare_dirs_cannot_have_wildcard_suffix",
-                  "test_repo_open__bad_gitlinks",
-                  "test_repo_open__bare_empty_repo",
-                  "test_repo_open__can_allowlist_bare_gitdir",
-                  "test_repo_open__can_allowlist_bare_wildcard_gitdir",
-                  "test_repo_open__can_allowlist_dirs_wildcard",
-                  "test_repo_open__can_allowlist_dirs_with_problematic_ownership",
-                  "test_repo_open__can_handle_prefixed_safe_paths",
-                  "test_repo_open__can_handle_prefixed_wildcard_safe_paths",
-                  "test_repo_open__can_reset_safe_directory_list",
-                  "test_repo_open__can_wildcard_allowlist_bare_gitdir",
-                  "test_repo_open__can_wildcard_allowlist_with_problematic_ownership",
-                  "test_repo_open__check_if_repository",
-                  "test_repo_open__failures",
-                  "test_repo_open__force_bare",
-                  "test_repo_open__format_version_1",
-                  "test_repo_open__from_git_new_workdir",
-                  "test_repo_open__gitlinked",
-                  "test_repo_open__no_config",
-                  "test_repo_open__open_with_discover",
-                  "test_repo_open__opening_a_non_existing_repository_returns_ENOTFOUND",
-                  "test_repo_open__prefixed_safe_paths_must_have_two_slashes",
-                  "test_repo_open__refstorage_extension",
-                  "test_repo_open__safe_directory_fails_with_trailing_slash",
-                  "test_repo_open__standard_empty_repo_through_gitdir",
-                  "test_repo_open__standard_empty_repo_through_workdir",
-                  "test_repo_open__validates_bare_repo_ownership",
-                  "test_repo_open__validates_dir_ownership",
-                  "test_repo_open__with_symlinked_config"
-                ]
+                "excluded": [
+                  "test_repo_open__can_handle_win32_prefixed_safe_paths",
+                  "test_repo_open__can_handle_win32_unc_safe_paths",
+                  "test_repo_open__win32_path"
+                ],
+                "included": []
               },
               "path": "tests/libgit2/repo/open.c"
             },
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_repo_reservedname__custom_shortname_recognized",
+                  "test_repo_reservedname__submodule_pointer"
+                ],
                 "included": []
               },
               "path": "tests/libgit2/repo/reservedname.c"
@@ -21203,7 +21134,9 @@
           "tests": [
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_path_validate__length_with_core_longpath"
+                ],
                 "included": []
               },
               "path": "tests/libgit2/path/validate.c"
@@ -21526,7 +21459,9 @@
           "tests": [
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_refs_basic__longpaths"
+                ],
                 "included": []
               },
               "path": "tests/libgit2/refs/basic.c"
@@ -22449,14 +22384,18 @@
             },
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_index_addall__hidden_files"
+                ],
                 "included": []
               },
               "path": "tests/libgit2/index/addall.c"
             },
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_index_bypath__add_hidden"
+                ],
                 "included": []
               },
               "path": "tests/libgit2/index/bypath.c"
@@ -22568,7 +22507,9 @@
             },
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_index_tests__sort0"
+                ],
                 "included": []
               },
               "path": "tests/libgit2/index/tests.c"
@@ -22891,8 +22832,7 @@
                   "test_win32_forbidden__can_open_index",
                   "test_win32_forbidden__can_query_submodules",
                   "test_win32_forbidden__cannot_add_dot_git_even_with_entry",
-                  "test_win32_forbidden__cannot_add_forbidden_filename_from_filesystem",
-                  "test_win32_forbidden__checking_out_forbidden_index_fails"
+                  "test_win32_forbidden__cannot_add_forbidden_filename_from_filesystem"
                 ]
               },
               "path": "tests/libgit2/win32/forbidden.c"
@@ -23573,26 +23513,11 @@
             },
             {
               "items": {
-                "excluded": [],
-                "included": [
-                  "check_status",
-                  "test_status_renames__both_casechange_one",
-                  "test_status_renames__both_casechange_two",
-                  "test_status_renames__both_one",
-                  "test_status_renames__both_rename_from_rewrite",
-                  "test_status_renames__both_two",
-                  "test_status_renames__case_insensitive_h2i_and_i2wc",
-                  "test_status_renames__head2index_no_rename_from_rewrite",
-                  "test_status_renames__head2index_one",
-                  "test_status_renames__head2index_rename_from_rewrite",
-                  "test_status_renames__head2index_two",
-                  "test_status_renames__index2workdir_one",
-                  "test_status_renames__index2workdir_rename_from_rewrite",
-                  "test_status_renames__index2workdir_two",
-                  "test_status_renames__rename_threshold",
-                  "test_status_renames__rewrites_only_for_renames",
-                  "test_status_renames__zero_byte_file_does_not_fail"
-                ]
+                "excluded": [
+                  "test_status_renames__precomposed_unicode_rename",
+                  "test_status_renames__precomposed_unicode_toggle_is_rename"
+                ],
+                "included": []
               },
               "path": "tests/libgit2/status/renames.c"
             },
@@ -26163,7 +26088,10 @@
             },
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_network_fetchlocal__update_refs_is_preferred",
+                  "test_network_fetchlocal__update_tips_backcompat"
+                ],
                 "included": []
               },
               "path": "tests/libgit2/network/fetchlocal.c"
@@ -26232,9 +26160,7 @@
                   "test_network_remote_remotes__query_refspecs",
                   "test_network_remote_remotes__remote_ready",
                   "test_network_remote_remotes__returns_ENOTFOUND_when_neither_url_nor_pushurl",
-                  "test_network_remote_remotes__tagopt",
-                  "test_network_remote_remotes__urlresolve",
-                  "test_network_remote_remotes__urlresolve_passthrough"
+                  "test_network_remote_remotes__tagopt"
                 ]
               },
               "path": "tests/libgit2/network/remote/remotes.c"
@@ -32692,8 +32618,7 @@
                   "test_win32_forbidden__can_diff_index_to_workdir",
                   "test_win32_forbidden__can_diff_tree_to_index",
                   "test_win32_forbidden__can_diff_tree_to_tree",
-                  "test_win32_forbidden__can_query_submodules",
-                  "test_win32_forbidden__checking_out_forbidden_index_fails"
+                  "test_win32_forbidden__can_query_submodules"
                 ]
               },
               "path": "tests/libgit2/win32/forbidden.c"
@@ -33764,7 +33689,9 @@
           "tests": [
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_repo_pathspec__index1"
+                ],
                 "included": []
               },
               "path": "tests/libgit2/repo/pathspec.c"
@@ -34629,9 +34556,7 @@
                   "test_network_remote_remotes__fnmatch",
                   "test_network_remote_remotes__refspec_parsing",
                   "test_network_remote_remotes__transform",
-                  "test_network_remote_remotes__transform_destination_to_source",
-                  "test_network_remote_remotes__urlresolve",
-                  "test_network_remote_remotes__urlresolve_passthrough"
+                  "test_network_remote_remotes__transform_destination_to_source"
                 ]
               },
               "path": "tests/libgit2/network/remote/remotes.c"
@@ -37682,7 +37607,9 @@
             },
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_merge_workdir_simple__automerge_crlf"
+                ],
                 "included": []
               },
               "path": "tests/libgit2/merge/workdir/simple.c"
@@ -37742,12 +37669,12 @@
             },
             {
               "items": {
-                "excluded": [],
-                "included": [
-                  "test_rebase_sign__create_gpg_signed",
-                  "test_rebase_sign__create_propagates_error",
-                  "test_rebase_sign__passthrough_create_cb"
-                ]
+                "excluded": [
+                  "test_rebase_sign__custom_signature_field",
+                  "test_rebase_sign__gpg_with_no_field",
+                  "test_rebase_sign__passthrough_signing_cb"
+                ],
+                "included": []
               },
               "path": "tests/libgit2/rebase/sign.c"
             },
@@ -38415,14 +38342,27 @@
             },
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_checkout_nasty__dot_backslash_dotcapitalgit_path",
+                  "test_checkout_nasty__dot_git_colon",
+                  "test_checkout_nasty__dot_git_colon_stuff",
+                  "test_checkout_nasty__dot_git_dot",
+                  "test_checkout_nasty__dot_git_hfs_ignorable",
+                  "test_checkout_nasty__dotcapitalgit_backslash_path",
+                  "test_checkout_nasty__dotgit_backslash_path",
+                  "test_checkout_nasty__git_custom_shortname",
+                  "test_checkout_nasty__only_looks_like_a_git_shortname"
+                ],
                 "included": []
               },
               "path": "tests/libgit2/checkout/nasty.c"
             },
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_checkout_tree__can_continue_when_dir_in_use",
+                  "test_checkout_tree__fails_when_dir_in_use"
+                ],
                 "included": []
               },
               "path": "tests/libgit2/checkout/tree.c"
@@ -38712,12 +38652,12 @@
             },
             {
               "items": {
-                "excluded": [],
-                "included": [
-                  "test_rebase_sign__create_gpg_signed",
-                  "test_rebase_sign__create_propagates_error",
-                  "test_rebase_sign__passthrough_create_cb"
-                ]
+                "excluded": [
+                  "test_rebase_sign__custom_signature_field",
+                  "test_rebase_sign__gpg_with_no_field",
+                  "test_rebase_sign__passthrough_signing_cb"
+                ],
+                "included": []
               },
               "path": "tests/libgit2/rebase/sign.c"
             },
@@ -39394,7 +39334,10 @@
             },
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_clone_local__git_style_unc_paths",
+                  "test_clone_local__standard_unc_paths_are_written_git_style"
+                ],
                 "included": []
               },
               "path": "tests/libgit2/clone/local.c"
@@ -40797,7 +40740,10 @@
             },
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_status_renames__precomposed_unicode_rename",
+                  "test_status_renames__precomposed_unicode_toggle_is_rename"
+                ],
                 "included": []
               },
               "path": "tests/libgit2/status/renames.c"
@@ -43118,7 +43064,9 @@
             },
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_merge_workdir_simple__automerge_crlf"
+                ],
                 "included": []
               },
               "path": "tests/libgit2/merge/workdir/simple.c"
@@ -44263,7 +44211,11 @@
             },
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_rebase_sign__custom_signature_field",
+                  "test_rebase_sign__gpg_with_no_field",
+                  "test_rebase_sign__passthrough_signing_cb"
+                ],
                 "included": []
               },
               "path": "tests/libgit2/rebase/sign.c"
@@ -49192,8 +49144,7 @@
                 "excluded": [],
                 "included": [
                   "test_win32_forbidden__can_blame_file",
-                  "test_win32_forbidden__can_query_submodules",
-                  "test_win32_forbidden__checking_out_forbidden_index_fails"
+                  "test_win32_forbidden__can_query_submodules"
                 ]
               },
               "path": "tests/libgit2/win32/forbidden.c"
@@ -54306,7 +54257,9 @@
             },
             {
               "items": {
-                "excluded": [],
+                "excluded": [
+                  "test_core_version__check"
+                ],
                 "included": []
               },
               "path": "tests/libgit2/core/version.c"
