@@ -9,17 +9,18 @@ and in Notes.
 
 - **source** — `https://github.com/libgit2/libgit2.git` @ `0551dfd4ad989b6a3d5683c0d4cf326c6efef929`
 - **campaign** — `port` from 2026-11-08, `wrap` before
-- **scope** — the whole target, deprecated items excluded, from 2026-11-08: every TU the build compiles, the `git2` CLI included; the whole public API of `libgit2.so` before
-- **translate-agent** — `openrouter/anthropic/claude-opus-5.5`, `api`
-- **review-agent** — `openrouter/anthropic/claude-opus-5.5`, `api`; objectives `all`
-- **plan-agent** — `anthropic/claude-opus-5-5`, `subscription`; `2` runs; runs `4` to `7` for the port re-plan
+- **scope** — the whole target, deprecated items excluded, building up on the previous wrap campaign, from 2026-11-08: every TU the build compiles, the `git2` CLI included; the whole public API of `libgit2.so` before
+- **translate-agent** — `claude`, `subscription`, proxy `none`, args `--model claude-opus-5-5`, from 2026-11-10; `openrouter/anthropic/claude-opus-5.5`, `api` before
+- **review-agent** — `claude`, `subscription`, proxy `none`, args `--model claude-opus-5-5`, from 2026-11-10; `openrouter/anthropic/claude-opus-5.5`, `api` before; objectives `all`
+- **plan-agent** — `claude`, `subscription`, proxy `none`, args `--model claude-opus-5-5`; `2` runs; runs `4` to `7` for the port re-plan, `8` and `9` at the user's request
 - **identity** — author `Marius Momeu <marius.momeu@berkeley.edu>`, co-author `crustify <crustify@berkeley.edu>`, from 2026-11-03; `crustify` as the author before
 - **workload** — assistant's choice from 2026-11-08; before, max-types `2`, max-syms `25`, max-loc `500`, parallelism `assistant's choice` from 2026-11-03, `32` in the annotation pass (wave `525`), `16` before
-- **review-workload** — orchestrator's choice: max-types `20`, max-syms `100`
+- **review-workload** — assistant's choice: max-types `20`, max-syms `100`
 - **sanitizers** — `asan-ubsan`, `tsan`, `bsan`
 - **target-config** — default, deprecated features disabled (`-DDEPRECATE_HARD=ON`), HTTPS through OpenSSL, SSH, Negotiate auth and i18n off, threads on; OpenSSL, PCRE2 and zlib from the side campaigns' installs of each variant; `build.json` version `3`
 - **module-concurrency** — `concurrent` from 2026-11-06, until crustify dropped the question on 2026-11-08: modules always run concurrently
 - **ship** — decide after planning
+- **evolution** — `propose`, the default, from 2026-11-11, when the settings took the template's question
 
 ## Legend
 
@@ -2010,3 +2011,10 @@ The earlier tip scan, from `3db4b351d`, named `libgit2_sys` alone, while the bat
 name `pcre2_sys` too, which `config.rs` reaches C through: the rescan's `-sys` counters
 take in pcre2's declarations, 120 structs and 723 fns against 99 and 501, which moves
 `celled %` from 93.15% to 89.74%. Every other counter is unchanged.
+
+On 2026-11-11 the settings were brought to the current template: the agent answers take
+its `<cli>, <billing>, args: …` form (`claude, subscription, args: --model
+claude-opus-5-5`, the same model and billing as since 2026-11-10), the new `evolution`
+question records its default, `propose`, and the questions after it are renumbered. The
+user extended `scope` to build on the previous wrap campaign, and `review-workload` reads
+`assistant's choice`, as the dashboard already resolved it.
