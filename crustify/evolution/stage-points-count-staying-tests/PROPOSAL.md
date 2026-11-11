@@ -1,6 +1,6 @@
 # The C tests that stay, in a `port/unexport`'s release point
 
-Status: `landed`, as crustify `737aebc` on `devel`, with the user's answer to its open question: a test case the configured build compiles empty is out of scope
+Status: `landed`, as crustify `737aebc` on `devel`, with the user's answer to its open question: a test case the configured build compiles empty is out of scope; superseded by crustify `596b74e` at the user's request: C tests hold no export back, and a `port/unexport` carries over the test cases that still reference its export
 
 ## Signal
 
