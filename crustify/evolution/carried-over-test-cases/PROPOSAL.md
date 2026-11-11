@@ -1,6 +1,6 @@
 # The test cases a `port/unexport` carries over, in the schedule
 
-Status: `open`
+Status: `landed`, as crustify `911b82e` on `devel`, with `carries_over` split into `cases`, `if_still_in_c` and `harness`; the assistant wrote run 11's records into `schedule.json` at the user's request, without a planner run
 
 ## Signal
 

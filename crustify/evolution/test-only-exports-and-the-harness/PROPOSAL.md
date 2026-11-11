@@ -1,6 +1,6 @@
 # Exports only the C tests reach, and the test harness's own references
 
-Status: `open`, with a question for the user (below)
+Status: `landed`, as crustify `911b82e` on `devel`, with the user's answer to its question: option 1, an export the harness cannot run without ends the C suite (an optional hook is dropped, a replaceable call replaced)
 
 ## Signal
 
