@@ -57,7 +57,7 @@ edition = "2024"
 rust-version = "1.99"
 version = "0.1.0"
 license = "GPL-2.0-only WITH GCC-exception-2.0"
-repository = "https://github.com/crustify-rs/libgit2-bindings"
+repository = "https://github.com/crustify-rs/libgit2-crustify"
 publish = false
 
 [patch."https://github.com/crustify-rs/glibc-bindings"]
