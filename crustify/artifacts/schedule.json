@@ -528373,9 +528373,121 @@
           "carries_over": {
             "cases": [
               {
+                "path": "tests/libgit2/core/features.c",
+                "tests": [
+                  "test_core_features__backends",
+                  "test_core_features__basic"
+                ]
+              },
+              {
+                "path": "tests/libgit2/object/raw/type2string.c",
+                "tests": [
+                  "test_object_raw_type2string__convert_string_to_type",
+                  "test_object_raw_type2string__convert_type_to_string"
+                ]
+              },
+              {
+                "path": "tests/libgit2/online/ssh_timeout.c",
+                "tests": [
+                  "test_online_ssh_timeout__no_infinite_loop"
+                ]
+              },
+              {
+                "path": "tests/libgit2/transport/ssh_exec.c",
+                "tests": [
+                  "test_transport_ssh_exec__reject_injection_hostname",
+                  "test_transport_ssh_exec__reject_injection_path",
+                  "test_transport_ssh_exec__reject_injection_username"
+                ]
+              },
+              {
+                "path": "tests/util/alloc.c",
+                "tests": [
+                  "test_alloc__free_replenishes_byte",
+                  "test_alloc__oom",
+                  "test_alloc__realloc",
+                  "test_alloc__single_byte_is_exhausted"
+                ]
+              },
+              {
+                "path": "tests/util/filebuf.c",
+                "tests": [
+                  "test_filebuf__hidden_file"
+                ]
+              },
+              {
+                "path": "tests/util/ftruncate.c",
+                "tests": [
+                  "test_ftruncate__2gb",
+                  "test_ftruncate__4gb"
+                ]
+              },
+              {
+                "path": "tests/util/futils.c",
+                "tests": [
+                  "test_futils__write_hidden_file"
+                ]
+              },
+              {
+                "path": "tests/util/hashmap.c",
+                "tests": [
+                  "test_hashmap__0"
+                ]
+              },
+              {
                 "path": "tests/util/init.c",
                 "tests": [
                   "test_init__returns_count"
+                ]
+              },
+              {
+                "path": "tests/util/link.c",
+                "tests": [
+                  "test_link__lstat_dangling_symlink",
+                  "test_link__lstat_dangling_symlink_directory",
+                  "test_link__lstat_hardlink",
+                  "test_link__lstat_regular_file",
+                  "test_link__readlink_nonexistent_file",
+                  "test_link__readlink_normal_file",
+                  "test_link__stat_dangling_symlink",
+                  "test_link__stat_dangling_symlink_directory",
+                  "test_link__stat_hardlink",
+                  "test_link__stat_regular_file",
+                  "test_link__stat_symlink",
+                  "test_link__stat_symlink_chain",
+                  "test_link__stat_symlink_directory"
+                ]
+              },
+              {
+                "path": "tests/util/path/win32.c",
+                "tests": [
+                  "test_path_win32__remove_namespace"
+                ]
+              },
+              {
+                "path": "tests/util/process/start.c",
+                "tests": [
+                  "test_process_start__adds_suffix"
+                ]
+              },
+              {
+                "path": "tests/util/string.c",
+                "tests": [
+                  "test_string__0",
+                  "test_string__strcmp"
+                ]
+              },
+              {
+                "path": "tests/util/wildmatch.c",
+                "tests": [
+                  "test_wildmatch__additional_with_malformed",
+                  "test_wildmatch__basic_wildmatch",
+                  "test_wildmatch__case_sensitivity",
+                  "test_wildmatch__character_classes",
+                  "test_wildmatch__pathmatch",
+                  "test_wildmatch__recursion",
+                  "test_wildmatch__slash_matching_features",
+                  "test_wildmatch__various_additional"
                 ]
               }
             ],
@@ -534355,21 +534467,7 @@
             }
           },
           "carries_over": {
-            "cases": [
-              {
-                "path": "tests/util/wildmatch.c",
-                "tests": [
-                  "test_wildmatch__additional_with_malformed",
-                  "test_wildmatch__basic_wildmatch",
-                  "test_wildmatch__case_sensitivity",
-                  "test_wildmatch__character_classes",
-                  "test_wildmatch__pathmatch",
-                  "test_wildmatch__recursion",
-                  "test_wildmatch__slash_matching_features",
-                  "test_wildmatch__various_additional"
-                ]
-              }
-            ],
+            "cases": [],
             "if_still_in_c": [],
             "harness": []
           }
@@ -534783,14 +534881,7 @@
             }
           },
           "carries_over": {
-            "cases": [
-              {
-                "path": "tests/util/string.c",
-                "tests": [
-                  "test_string__0"
-                ]
-              }
-            ],
+            "cases": [],
             "if_still_in_c": [],
             "harness": []
           }
@@ -553510,20 +553601,7 @@
             }
           },
           "carries_over": {
-            "cases": [
-              {
-                "path": "tests/util/link.c",
-                "tests": [
-                  "test_link__lstat_hardlink",
-                  "test_link__lstat_regular_file",
-                  "test_link__readlink_normal_file",
-                  "test_link__stat_hardlink",
-                  "test_link__stat_regular_file",
-                  "test_link__stat_symlink",
-                  "test_link__stat_symlink_chain"
-                ]
-              }
-            ],
+            "cases": [],
             "if_still_in_c": [],
             "harness": []
           }
@@ -553880,14 +553958,7 @@
             }
           },
           "carries_over": {
-            "cases": [
-              {
-                "path": "tests/libgit2/object/raw/type2string.c",
-                "tests": [
-                  "test_object_raw_type2string__convert_type_to_string"
-                ]
-              }
-            ],
+            "cases": [],
             "if_still_in_c": [],
             "harness": []
           }
@@ -556140,10 +556211,7 @@
           "carries_over": {
             "cases": [],
             "if_still_in_c": [],
-            "harness": [
-              "deps/clar/clar_libgit2.c:cl_sandbox_set_homedir",
-              "deps/clar/clar_libgit2.c:cl_sandbox_set_search_path_defaults"
-            ]
+            "harness": []
           }
         }
       ],
@@ -558630,19 +558698,9 @@
             }
           },
           "carries_over": {
-            "cases": [
-              {
-                "path": "tests/util/ftruncate.c",
-                "tests": [
-                  "test_ftruncate__2gb",
-                  "test_ftruncate__4gb"
-                ]
-              }
-            ],
+            "cases": [],
             "if_still_in_c": [],
-            "harness": [
-              "deps/clar/clar_libgit2.c:cl_getenv"
-            ]
+            "harness": []
           }
         }
       ],
@@ -562515,14 +562573,7 @@
             }
           },
           "carries_over": {
-            "cases": [
-              {
-                "path": "tests/libgit2/object/raw/type2string.c",
-                "tests": [
-                  "test_object_raw_type2string__convert_string_to_type"
-                ]
-              }
-            ],
+            "cases": [],
             "if_still_in_c": [],
             "harness": []
           }
@@ -565994,14 +566045,7 @@
             }
           },
           "carries_over": {
-            "cases": [
-              {
-                "path": "tests/libgit2/core/features.c",
-                "tests": [
-                  "test_core_features__backends"
-                ]
-              }
-            ],
+            "cases": [],
             "if_still_in_c": [],
             "harness": []
           }
@@ -566040,14 +566084,7 @@
             }
           },
           "carries_over": {
-            "cases": [
-              {
-                "path": "tests/libgit2/core/features.c",
-                "tests": [
-                  "test_core_features__basic"
-                ]
-              }
-            ],
+            "cases": [],
             "if_still_in_c": [],
             "harness": []
           }
@@ -570138,9 +570175,7 @@
           "carries_over": {
             "cases": [],
             "if_still_in_c": [],
-            "harness": [
-              "deps/clar/clar_libgit2.c:cl_getenv"
-            ]
+            "harness": []
           }
         }
       ],
@@ -575152,10 +575187,7 @@
           "carries_over": {
             "cases": [],
             "if_still_in_c": [],
-            "harness": [
-              "deps/clar/clar_libgit2.c:cl_sandbox_set_homedir",
-              "deps/clar/clar_libgit2.c:cl_sandbox_set_search_path_defaults"
-            ]
+            "harness": []
           }
         }
       ],
@@ -581596,11 +581628,7 @@
           "carries_over": {
             "cases": [],
             "if_still_in_c": [],
-            "harness": [
-              "deps/clar/clar_libgit2.c:cl_getenv",
-              "deps/clar/clar_libgit2.c:cl_sandbox_set_homedir",
-              "deps/clar/clar_libgit2.c:cl_sandbox_set_search_path_defaults"
-            ]
+            "harness": []
           }
         },
         {
@@ -581904,19 +581932,9 @@
             }
           },
           "carries_over": {
-            "cases": [
-              {
-                "path": "tests/util/process/start.c",
-                "tests": [
-                  "test_process_start__adds_suffix"
-                ]
-              }
-            ],
+            "cases": [],
             "if_still_in_c": [],
-            "harness": [
-              "deps/clar/clar_libgit2.c:cl_sandbox_set_homedir",
-              "deps/clar/clar_libgit2.c:cl_sandbox_set_search_path_defaults"
-            ]
+            "harness": []
           }
         }
       ],
