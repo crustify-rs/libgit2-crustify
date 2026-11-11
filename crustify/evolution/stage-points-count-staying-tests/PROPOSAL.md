@@ -1,6 +1,6 @@
 # The C tests that stay, in a `port/unexport`'s release point
 
-Status: `open`
+Status: `landed`, as crustify `737aebc` on `devel`, with the user's answer to its open question: a test case the configured build compiles empty is out of scope
 
 ## Signal
 
