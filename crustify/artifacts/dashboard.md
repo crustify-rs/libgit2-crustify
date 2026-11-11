@@ -20,7 +20,7 @@ and in Notes.
 - **target-config** — default, deprecated features disabled (`-DDEPRECATE_HARD=ON`), HTTPS through OpenSSL, SSH, Negotiate auth and i18n off, threads on; OpenSSL, PCRE2 and zlib from the side campaigns' installs of each variant; `build.json` version `3`
 - **module-concurrency** — `concurrent` from 2026-11-06, until crustify dropped the question on 2026-11-08: modules always run concurrently
 - **ship** — decide after planning
-- **evolution** — `propose`, the default, from 2026-11-11, when the settings took the template's question
+- **evolution** — `evolve` from 2026-11-11, briefly `propose`, the default, when the settings took the template's question
 
 ## Legend
 
@@ -2018,3 +2018,7 @@ claude-opus-5-5`, the same model and billing as since 2026-11-10), the new `evol
 question records its default, `propose`, and the questions after it are renumbered. The
 user extended `scope` to build on the previous wrap campaign, and `review-workload` reads
 `assistant's choice`, as the dashboard already resolved it.
+
+The same day the user answered `evolution` with `evolve`: agents may also land fixes and
+improvements, and new tools, on each component's `devel` branch, each approved at the
+next module's end.
