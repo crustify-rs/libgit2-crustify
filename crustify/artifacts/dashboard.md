@@ -436,7 +436,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/util/alloc.c` | `12` | `1` | wrap | first | `7` | `56` | `+1947/-677` | `45.91`% / `98.92`% | `$18.92` | `66.48M` | `54m55s` | `$2.70` | `$0.34` |
 | `libgit2/src/util/alloc.c` | `12` | `2` | wrap | first | `7` | `56` | `+693/-132` | `45.90`% / `98.90`% | `$14.31` | `50.49M` | `57m19s` | `$2.04` | `$0.26` |
 | `libgit2/src/util/allocators/stdalloc.c` | `181` | `0` | wrap | first | `1` | `18` | `+618/-10` | `45.85`% / `98.90`% | `$12.97` | `45.04M` | `43m28s` | `$12.97` | `$0.72` |
-| `libgit2/src/util/allocators/debugalloc.c` | `183` | `0` | wrap | first | `1` | `6` | `+771/-0` | `45.93`% / `98.90`% | — | — | — | — | — |
+| `libgit2/src/util/allocators/debugalloc.c` | `183` | `0` | wrap | first | `1` | `6` | `+771/-0` | `45.93`% / `98.90`% | `$10.68` | `35.39M` | `41m52s` | `$10.68` | `$1.78` |
 | `libgit2/src/util/errors.c` | `13` | `1` | wrap | first | `4` | `51` | `+1008/-26` | `1.30`% / `97.32`% | `$4.00` | `8.72M` | `21m23s` | `$1.00` | `$0.08` |
 | `libgit2/src/util/errors.c` | `21` | `0` | wrap | first | `1` | `15` | `+756/-71` | `1.36`% / `98.40`% | `$3.06` | `6.69M` | `15m41s` | `$3.06` | `$0.20` |
 | `libgit2/src/libgit2/oid.c` | `17` | `0` | wrap | first | `18` | `252` | `+1351/-11` | `6.07`% / `99.47`% | `$8.55` | `17.50M` | `40m06s` | `$0.48` | `$0.03` |
@@ -511,7 +511,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/reftable/basics.c` | `169` | `5` | wrap | review | `43` | — | `+298/-23` | `45.93`% / `98.90`% | `$30.16` | `83.09M` | `1h40m2s` | `$0.70` | — |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | wrap | review | `3` | — | `+11/-7` | `45.88`% / `98.92`% | `$5.87` | `16.61M` | `16m58s` | `$1.96` | — |
 | `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | wrap | review | `1` | — | `+82/-67` | `45.87`% / `98.86`% | `$12.85` | `46.60M` | `1h22m16s` | `$12.85` | — |
-| **Σ first** |  |  |  |  | **`481`** | **`8956`** | **`+76959/-3587`** | **`45.85`% / `98.90`%** | **`$534.29`** | **`1659.06M`** | — | **`$1.11`** | **`$0.06`** |
+| **Σ first** |  |  |  |  | **`481`** | **`8956`** | **`+76959/-3587`** | **`45.85`% / `98.90`%** | **`$544.97`** | **`1694.45M`** | — | **`$1.13`** | **`$0.06`** |
 | **Σ review** |  |  |  |  | **`513`** | — | **`+7718/-1465`** | **`45.86`% / `98.90`%** | **`$431.33`** | **`904.47M`** | — | **`$0.84`** | — |
 
 ### Batches: tests
@@ -701,8 +701,8 @@ review cost.
 |---|---|---|---|---|---|---|---|---|
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `3` | `0` | `3` | `+74/-13` | `$13.62` | `50.18M` | `2h6m13s` |
 | `libgit2/src/util/allocators/stdalloc.c` | `181` | `1` | `0` | `1` | `+86/-6` | `$14.45` | `39.79M` | `1h16m3s` |
-| `libgit2/src/util/allocators/debugalloc.c` | `183` | `1` | `0` | `1` | `+336/-75` | — | — | — |
-| **Σ** |  |  | **`0`** | **`5`** | **`+496/-94`** | **`$28.07`** | **`89.97M`** | — |
+| `libgit2/src/util/allocators/debugalloc.c` | `183` | `1` | `0` | `1` | `+336/-75` | `$15.62` | `43.77M` | `1h33m16s` |
+| **Σ** |  |  | **`0`** | **`5`** | **`+496/-94`** | **`$43.69`** | **`133.74M`** | — |
 
 ### Passes: PoC + reports
 
@@ -2927,3 +2927,11 @@ Additive conflicts only, merged by a binder (agent `aa4b4ec66d0865d47`, `$3.22`)
 the workspace passed on `plain` and `asan-ubsan`, Miri and TSan over `util::alloc` and the
 allocators, and `ffimap api` found no item changed or removed (830 kept, 1 new from the
 working branch's tip).
+
+### `libgit2/src/util/allocators/debugalloc.c` integration (2026-11-12)
+
+Merged by a binder (agent `ab953f49c8ee1452a`, `$5.11`) as `fbcc2cd65`. One conflict was not
+additive: `set_allocator`'s docs, which `stdalloc.c` and `debugalloc.c` had each corrected;
+both corrections are kept and agree with `Alloc`'s 8-byte alignment contract. The workspace
+passed on `plain` and `asan-ubsan`, Miri and TSan over the allocators, and `ffimap api` found
+no item changed or removed (831 kept, 1 new from the working branch's tip).
