@@ -77,10 +77,10 @@ Unanswered optional questions use their defaults.
       `deps/ntlmclient/unicode_builtin.c`, `deps/ntlmclient/utf8.h`, `deps/ntlmclient/util.c`,
       `deps/ntlmclient/ntlm.c`, `deps/reftable/error.c`, `deps/reftable/record.c`,
       `deps/xdiff/xmacros.h`, `src/libgit2/common.h`, `src/libgit2/streams/mbedtls.c`,
-      `src/util/cc-compat.h`, `src/util/ctype_compat.h`, `src/util/hash/sha1dc/ubc_check.c`,
+      `src/util/cc-compat.h`, `src/util/ctype_compat.h`, `src/util/errors.c`, `src/util/hash/sha1dc/ubc_check.c`,
       `src/util/hashmap.h`, `src/util/integer.h`, `src/util/staticstr.h`, `src/util/strnlen.h`,
       `src/util/thread.c`, `src/util/utf8.c`, `src/util/wildmatch.c`: the first ship point,
-      about 15K lines of integrated C (planned through wave 338 since planner run 12, 263 before). Later points are chosen the
+      about 15K lines of integrated C (planned through wave 338 since planner run 12, 263 before; `src/util/errors.c` joined it then, since `common.h` and `hashmap.h` expand its error macros). Later points are chosen the
       same way, about every 15K lines of integrated C, each confirmed with the user.
     - `decide after planning`: once the plan is complete, I propose ship points from it,
       with the boundary each would leave, and record your choice here.
