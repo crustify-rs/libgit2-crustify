@@ -1,7 +1,6 @@
 # Lifecycle primitives the library does not export
 
-Status: `open`, a change to the `binding-symbols` skill, for the user's approval at the
-module's end (`evolution: evolve`, not `unattended`)
+Status: `declined`, superseded by the static campaign link (crustify `20500ce`), under which unexported symbols link and the primitives bind directly.
 
 ## Signal
 

@@ -1,6 +1,6 @@
 # A merge into a wave branch is checked before it is committed
 
-Status: `open`
+Status: `landed`, as crustify `5de4538` on `devel`.
 
 ## Signal
 

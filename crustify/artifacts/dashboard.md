@@ -482,8 +482,6 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/raw-lifetime-void` | `legacy-1` | `0` | wrap | review | `2` | — | `+80/-1` | — | `$7.89` | `10.78M` | `18m36s` | `$3.94` | — |
 | `libgit2/raw-lifetime-string` | `legacy-3` | `0` | wrap | review | `2` | — | `+345/-23` | — | `$10.89` | `14.41M` | `22m03s` | `$5.45` | — |
 | `libgit2/src/util/alloc.c` | `12` | `3` | wrap | review | `7` | — | `+57/-20` | — / `98.90`% | `$15.18` | `40.96M` | `1h31m33s` | `$2.17` | — |
-| `libgit2/src/util/allocators/stdalloc.c` | `181` | `1` | wrap | review | `1` | — | `+86/-6` | `45.86`% / `98.90`% | `$14.45` | `39.79M` | `1h16m3s` | `$14.45` | — |
-| `libgit2/src/util/strlist.c` | `184` | `1` | wrap | review | `6` | — | `+408/-142` | `45.93`% / `98.90`% | `$21.71` | `81.05M` | `1h33m47s` | `$3.62` | — |
 | `libgit2/util` | `legacy-6` | `2` | wrap | review | `4` | — | `+281/-117` | `1.63`% / `99.74`% | `$12.00` | `16.87M` | `28m49s` | `$3.00` | — |
 | `libgit2/util` | `legacy-7` | `0` | wrap | review | `1` | — | `+0/-0` | `1.63`% / `99.74`% | `$6.26` | `6.37M` | `23m51s` | `$6.26` | — |
 | `libgit2/oid` | `legacy-12` | `1` | wrap | review | `18` | — | `+181/-10` | `7.80`% / `99.49`% | `$11.62` | `12.73M` | `34m10s` | `$0.65` | — |
@@ -511,11 +509,10 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | wrap | review | `1` | — | `+113/-14` | — | `$4.80` | `10.64M` | `27m50s` | `$4.80` | — |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | wrap | review | `2` | — | `+217/-15` | — | `$11.03` | `25.98M` | `47m17s` | `$5.51` | — |
 | `libgit2/deps/reftable/basics.c` | `169` | `4` | wrap | review | `43` | — | `+110/-16` | `45.99`% / `98.92`% | `$13.42` | `46.17M` | `40m4s` | `$0.31` | — |
-| `libgit2/deps/reftable/basics.c` | `169` | `5` | wrap | review | `43` | — | `+298/-23` | `45.93`% / `98.90`% | `$30.16` | `83.09M` | `1h40m2s` | `$0.70` | — |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | wrap | review | `3` | — | `+11/-7` | `45.88`% / `98.92`% | `$5.87` | `16.61M` | `16m58s` | `$1.96` | — |
 | `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | wrap | review | `1` | — | `+82/-67` | `45.87`% / `98.86`% | `$12.85` | `46.60M` | `1h22m16s` | `$12.85` | — |
 | **Σ first** |  |  |  |  | **`499`** | **`9066`** | **`+79898/-3634`** | **`45.88`% / `98.90`%** | **`$581.72`** | **`1824.00M`** | — | **`$1.17`** | **`$0.06`** |
-| **Σ review** |  |  |  |  | **`519`** | — | **`+8126/-1607`** | **`45.93`% / `98.90`%** | **`$453.04`** | **`985.52M`** | — | **`$0.87`** | — |
+| **Σ review** |  |  |  |  | **`469`** | — | **`+7334/-1436`** | **`45.93`% / `98.90`%** | **`$386.72`** | **`781.59M`** | — | **`$0.82`** | — |
 
 ### Batches: tests
 
@@ -699,8 +696,7 @@ Deterministic `ffimap api`; no model.
 | `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `+0` | `1` |
 | — (`tests/ub_safe`) | `legacy-526` | `0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
 | `libgit2/deps/reftable/basics.c` | `169` | `4` | `+0` | `+0` | `+0` | `+0` | `+1` | `+1` | `+1` | `+2` | `5` |
-| `libgit2/deps/reftable/basics.c` | `169` | `5` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `+0` | `+3` | `4` |
-| **Σ** |  |  | **`+1`** | **`+5`** | **`+4`** | **`+1`** | **`+4`** | **`+7`** | **`+13`** | **`+60`** | **`95`** |
+| **Σ** |  |  | **`+1`** | **`+5`** | **`+4`** | **`+1`** | **`+4`** | **`+6`** | **`+13`** | **`+57`** | **`91`** |
 
 ## Module passes
 
@@ -714,12 +710,13 @@ review cost.
 
 | module | wave | batch | types | symbols | +LoC | $ | tokens | wall |
 |---|---|---|---|---|---|---|---|---|
+| `libgit2/deps/reftable/basics.c` | `169` | `5` | `0` | `43` | `+298/-23` | `$30.16` | `83.09M` | `1h40m2s` |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `3` | `0` | `3` | `+74/-13` | `$13.62` | `50.18M` | `2h6m13s` |
 | `libgit2/src/util/alloc.c` | `177` | `1` | `1` | `22` | `+294/-136` | `$21.47` | `81.81M` | `2h40m43s` |
 | `libgit2/src/util/allocators/stdalloc.c` | `181` | `1` | `0` | `1` | `+86/-6` | `$14.45` | `39.79M` | `1h16m3s` |
 | `libgit2/src/util/allocators/debugalloc.c` | `183` | `1` | `0` | `1` | `+336/-75` | `$15.62` | `43.77M` | `1h33m16s` |
 | `libgit2/src/util/strlist.c` | `184` | `1` | `0` | `6` | `+408/-142` | `$21.71` | `81.05M` | `1h33m47s` |
-| **Σ** |  |  | **`1`** | **`33`** | **`+1198/-372`** | **`$86.87`** | **`296.60M`** | — |
+| **Σ** |  |  | **`1`** | **`76`** | **`+1496/-395`** | **`$117.03`** | **`379.69M`** | — |
 
 ### Passes: PoC + reports
 
@@ -727,12 +724,13 @@ review cost.
 
 | module | wave | batch | +lifecycle | +unsafe | +contracts import | +contracts export | +UB safe | +UB unsafe | +UB export | +equiv | +logic | +ergonomics | +idiom | +conventions | +misc | total |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `libgit2/deps/reftable/basics.c` | `169` | `5` | `+0` | `+0` | `+1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+3` | `4` |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `3` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
 | `libgit2/src/util/alloc.c` | `177` | `1` | `+0` | `+1` | `+1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `2` |
 | `libgit2/src/util/allocators/stdalloc.c` | `181` | `1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `0` |
 | `libgit2/src/util/allocators/debugalloc.c` | `183` | `1` | `+0` | `+0` | `+2` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `2` |
 | `libgit2/src/util/strlist.c` | `184` | `1` | `+0` | `+0` | `+1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+2` | `+1` | `+0` | `+0` | `+0` | `4` |
-| **Σ** |  |  | **`+0`** | **`+1`** | **`+4`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+2`** | **`+1`** | **`+0`** | **`+0`** | **`+1`** | **`9`** |
+| **Σ** |  |  | **`+0`** | **`+1`** | **`+5`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+2`** | **`+1`** | **`+0`** | **`+0`** | **`+4`** | **`13`** |
 
 ## Notes
 
@@ -3225,3 +3223,18 @@ passed on `plain` and `asan-ubsan` with the known failures, and Miri and TSan pa
 `util::alloc`, `util::allocators`, `util::strlist` and `settings`. `ffimap api` found no item
 changed or removed: 838 kept and 12 new from the working branch's tip. Every foundational
 module of the plan is now integrated.
+
+### Consolidation at the foundational modules' end (2026-11-12)
+
+The module passes of `stdalloc.c`, `strlist.c` and `basics.c` (`wave-169/batch-5`) had rows
+in the Symbols route's `Batches` and review tables as well as, or instead of, `Module
+passes`, so their cost counted twice across the `Σ` rows. Their rows are now in `Module
+passes` alone, `wave-169/batch-5`'s `+internal` finding counted as `+contracts import` and
+its three `+misc` findings left as they were, and the Symbols `Σ review` and the `Module
+passes` `Σ` rows recomputed from their rows.
+
+From the next wave, the safety audit scans name `into_raw` among the seams (crustify
+`200bc65`), so their `of_which.seam` shares are not comparable with earlier rows'; C
+coverage is read with `report.py`'s `C=@c` scope, the coverage variant's archive alone
+(`f03e78302`), the figure batches since `wave-169/batch-1` read by hand; and a wave's and a
+module's end gates run through Crustify's `end-gates` (`039b394`).

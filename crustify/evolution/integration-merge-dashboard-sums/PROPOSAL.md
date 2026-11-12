@@ -1,6 +1,6 @@
 # Recomputing the dashboard's `Σ` rows in an integration merge
 
-Status: `open`
+Status: `landed`, as crustify `3bc6b84` on `devel`, with the Overview's LoC figures and the once-held tables this proposal's further evidence names.
 
 ## Signal
 

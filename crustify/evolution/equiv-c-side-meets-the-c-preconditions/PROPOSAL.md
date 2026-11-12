@@ -1,6 +1,6 @@
 # The C side of an equivalence test meets the C's preconditions
 
-Status: `open`
+Status: `landed`, as crustify `0e7fff1` on `devel`.
 
 ## Signal
 

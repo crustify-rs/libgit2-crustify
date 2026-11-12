@@ -1,6 +1,6 @@
 # Give the dashboard the template's `Module passes` table
 
-Status: `open`
+Status: `landed` on the working branch at the module end of the foundational modules: `wave-169/batch-5`'s rows moved to `Module passes`, its `+internal` cell mapped to `+contracts import`, and the `Σ` rows recomputed. Its `+misc` findings were not recounted into `+ergonomics`.
 
 ## Signal
 

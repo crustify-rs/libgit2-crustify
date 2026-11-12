@@ -1,6 +1,6 @@
 # A template change that adds a dashboard table reaches the dashboard before batches fill it
 
-Status: `open`
+Status: `landed`, as crustify `6fd893f` on `devel`.
 
 ## Signal
 

@@ -1,6 +1,6 @@
 # Lifecycle primitives the target's shared library hides
 
-Status: `open`
+Status: `declined`, superseded by the static campaign link (crustify `20500ce`), under which hidden symbols link and the primitives bind directly.
 
 ## Signal
 

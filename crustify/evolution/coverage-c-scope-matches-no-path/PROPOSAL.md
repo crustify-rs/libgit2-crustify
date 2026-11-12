@@ -1,6 +1,6 @@
 # The coverage report's C scope names the paths the archive records
 
-Status: `open`
+Status: `landed`, as the campaign's `f03e78302`: `report.py`'s `C=@c` scope reads the C objects alone, and a filtered scope reporting files outside its dirs fails.
 
 ## Signal
 

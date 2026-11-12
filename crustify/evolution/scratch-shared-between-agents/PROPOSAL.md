@@ -1,6 +1,6 @@
 # Scratch a host shares between concurrent agents
 
-Status: `open`
+Status: `landed`, as crustify `5de4538` on `devel`.
 
 ## Signal
 

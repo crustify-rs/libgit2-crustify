@@ -1,6 +1,6 @@
 # The dashboard has no `Module passes` tables for a module pass to fill
 
-Status: `open`
+Status: `landed` on the working branch with `dashboard-lacks-module-passes`: every module pass now has its rows in `Module passes` alone.
 
 ## Signal
 

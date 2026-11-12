@@ -1,6 +1,6 @@
 # A runner for a wave's and a module's end gates
 
-Status: `open`
+Status: `landed`, with `module-end-gate-runner`, as crustify `039b394` on `devel`: `skills/verification/testing/gates/end-gates`, with its tests. The BSan bindings' comment-only difference is left to a stage's `--stage-env` (such as `bsan:CRUSTIFY_BINDINGS_UPDATE=1`, harmless in the snapshot), not fixed at its source.
 
 ## Signal
 

@@ -1,6 +1,6 @@
 # How a binding keeps a C defect out of its safe API
 
-Status: `open`
+Status: `landed`, as crustify `8f43548` on `devel`.
 
 ## Signal
 

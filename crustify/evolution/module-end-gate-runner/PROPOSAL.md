@@ -1,6 +1,6 @@
 # A script for the wave's and the module's end gates
 
-Status: `open`
+Status: `landed`, with `end-gates-runner`, as crustify `039b394` on `devel`; skips are checked against each binary's test list before anything runs, as this proposal asks.
 
 ## Signal
 

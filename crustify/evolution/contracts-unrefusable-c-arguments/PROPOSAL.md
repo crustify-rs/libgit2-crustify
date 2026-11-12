@@ -1,6 +1,6 @@
 # Which of C's arguments a gateway refuses, and which it trusts
 
-Status: `open`
+Status: `landed`, as crustify `01913db` on `devel`.
 
 ## Signal
 

@@ -1,6 +1,6 @@
 # The coverage report's C figures ignore their scope and move with the test binaries
 
-Status: `open`
+Status: `landed`, with `coverage-c-scope-matches-no-path`, as the campaign's `f03e78302`; the cause was the archive's recorded paths, which that proposal settled.
 
 ## Signal
 

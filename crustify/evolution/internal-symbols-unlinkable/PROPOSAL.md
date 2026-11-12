@@ -1,6 +1,6 @@
 # The variants must let the Rust link the internal symbols it binds
 
-Status: `open`
+Status: `landed`, as crustify `20500ce` on `devel`, the static campaign link, and the campaign's `d21c78c70`.
 
 ## Signal
 

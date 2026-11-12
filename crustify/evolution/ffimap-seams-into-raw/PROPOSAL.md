@@ -1,6 +1,6 @@
 # The seam list names `from_raw` but not its inverse `into_raw`
 
-Status: `open`
+Status: `landed`, as crustify `200bc65` on `devel`; scans name `into_raw` from the next wave, which the dashboard's Notes say.
 
 ## Signal
 
