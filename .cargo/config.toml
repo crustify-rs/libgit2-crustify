@@ -2,3 +2,8 @@
 # variant unless CRUSTIFY_BUILD_VARIANT names another (crustify's specs/bindgen.md).
 [env]
 CRUSTIFY_BUILD_VARIANT = "plain"
+# pcre2-sys links the PCRE2 that pkg-config finds, else builds its vendored copy, which would
+# shadow the side campaign's for libgit2's C too: point it at the variant's install
+# (crustify/evolution/bundled-pcre2-shadows-the-side-campaign). cargo-variant.sh sets
+# another variant's, which this does not override.
+PKG_CONFIG_PATH = { value = "../pcre2-bindings/crustify/builds/plain/install/lib/pkgconfig", relative = true }

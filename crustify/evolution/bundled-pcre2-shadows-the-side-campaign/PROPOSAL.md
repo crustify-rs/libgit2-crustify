@@ -1,6 +1,9 @@
 # pcre2-sys's vendored PCRE2 shadows the side campaign's for libgit2's C
 
-Status: `open`
+Status: `landed` on the working branch, as the change's first option: `.cargo/config.toml`
+sets `PKG_CONFIG_PATH` to the `plain` variant's side-campaign install and
+`crustify/scripts/cargo-variant.sh` to each variant's, so that `pcre2-sys` links the
+side campaign's `libpcre2-8.so` and builds no vendored copy.
 
 ## Signal
 
@@ -56,3 +59,10 @@ record the vendored copy as a decision in `dependencies.json`, with the reason.
 Not validated: the change is the assistant's to choose. The evidence above is reproduced
 with `nm -D --defined-only <test binary> | grep pcre2_compile_8` and
 `readelf -d <test binary> | grep NEEDED`, on base and on this run's tree.
+
+Validated on the working branch after the change: the `plain` `ub_safe` and `equiv` binaries,
+and the `asan-ubsan` `ub_safe` binary, define no `pcre2_compile_8` (`nm --defined-only`)
+and load `libpcre2-8.so.0` from `/target/pcre2-bindings/crustify/builds/<variant>/install/lib`
+(`ldd`), the `asan-ubsan` one ASan-instrumented (its `nm -D` lists `__asan_report_*`);
+`pcre2-sys`'s build output links `pcre2-8` from that dir. The `config` tests of `ub_safe`
+and `equiv` pass on `plain` (54 and 61) and of `ub_safe` on `asan-ubsan` (61).

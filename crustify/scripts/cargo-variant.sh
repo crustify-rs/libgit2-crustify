@@ -16,6 +16,9 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 host=x86_64-unknown-linux-gnu
 export CRUSTIFY_BUILD_VARIANT=$variant
 export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$here/target/$variant}
+# pcre2-sys links the variant's side-campaign PCRE2, the one libgit2's C links, rather than
+# building its vendored copy, which would shadow it in every test binary.
+export PKG_CONFIG_PATH="$here/../pcre2-bindings/crustify/builds/$variant/install/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 cd "$here"
 # The nightly the workspace pins, for the sanitizers that need it.
 nightly=$(sed -n 's/^nightly = "\(.*\)"$/\1/p' Cargo.toml)
