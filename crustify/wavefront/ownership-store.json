@@ -4036,7 +4036,7 @@
      "borrowed": null,
      "nullable": true,
      "mutable": true,
-     "note": "git__malloc(nelem*elsize) then memset 0: ZEROING; NULL on multiplication overflow (GIT_MULTIPLY_SIZET_OVERFLOW sets git_error_set_oom, nothing allocated) or OOM. Internal (hidden visibility); Rust: alloc::Free's CAllocZeroed and ArrayFree::new_zeroed, composed over git_odb_backend_data_alloc. Released by git__free."
+     "note": "git__malloc(nelem*elsize) then memset 0: ZEROING; NULL on multiplication overflow (GIT_MULTIPLY_SIZET_OVERFLOW sets git_error_set_oom, nothing allocated) or OOM; nelem*elsize == 0 asks git__malloc(0). Internal (hidden in libgit2.so, linked from the variant's static archive); Rust: alloc::Free's CAllocZeroed and ArrayFree::new_zeroed call it, an empty run included. Released by git__free."
     }
    }
   },
@@ -4065,7 +4065,7 @@
       "borrowed": null,
       "nullable": true,
       "mutable": true,
-      "note": "git__allocator.gfree(ptr): releases any git__malloc-family storage without reading it; NULL is a no-op (stdalloc free, failalloc no-op). Internal; publicly reachable only through git_odb_backend_data_free."
+      "note": "git__allocator.gfree(ptr): releases any git__malloc-family storage without reading it; NULL is a no-op (stdalloc free, failalloc no-op). static inline in alloc.h and hidden in libgit2.so; Rust calls it through the raw bindings' static_fns.c wrapper (git__free__extern), linked from the variant's static archive: the drops of alloc::Free, ArrayFree and StrFree."
      }
     }
    ]
@@ -4096,7 +4096,7 @@
      "borrowed": null,
      "nullable": true,
      "mutable": true,
-     "note": "git__allocator.gmalloc(len): NON-zeroing; NULL on OOM with git_error_set_oom; always NULL before git_libgit2_init (failalloc). Internal (hidden visibility); publicly reachable only through git_odb_backend_data_alloc. Released by git__free."
+     "note": "git__allocator.gmalloc(len, __FILE__, __LINE__): NON-zeroing; NULL on OOM with git_error_set_oom; always NULL before git_libgit2_init (failalloc). static inline in alloc.h and hidden in libgit2.so; Rust calls it through the raw bindings' static_fns.c wrapper (git__malloc__extern), linked from the variant's static archive: alloc::Free's CAlloc and ArrayFree's CLenAlloc / CLenClone. Released by git__free."
     }
    }
   },
@@ -4126,7 +4126,7 @@
      "borrowed": null,
      "nullable": true,
      "mutable": true,
-     "note": "git__reallocarray(NULL, nelem, elsize) = git__realloc(NULL, n): reaches the allocator's grealloc, not gmalloc. NON-zeroing array storage; NULL on overflow (git_error_set_oom) or OOM. Internal (hidden visibility); Rust: alloc::ArrayFree::new_uninit, through gmalloc (git_odb_backend_data_alloc), which git_allocator's contract makes equivalent. Released by git__free."
+     "note": "git__reallocarray(NULL, nelem, elsize) = git__realloc(NULL, n): reaches the allocator's grealloc, not gmalloc, git__realloc(NULL, 0) included. NON-zeroing array storage; NULL on overflow (git_error_set_oom) or OOM. Internal (hidden in libgit2.so, linked from the variant's static archive); Rust: alloc::ArrayFree::new_uninit calls it, an empty run included, after refusing a size past isize::MAX (git_error_set_oom) that no Rust slice may span. Released by git__free."
     }
    }
   },
@@ -4173,7 +4173,7 @@
      "borrowed": null,
      "nullable": true,
      "mutable": true,
-     "note": "Fresh git__malloc(strlen(str)+1) storage holding a copy of str with its terminator: the NUL-terminated string cloner behind git_strarray_copy, git_signature_new/dup and most libgit2 string fields. NULL on OOM (git_error_set_oom via git__malloc; before git_libgit2_init every request fails). Internal (hidden visibility): Rust's strategy is alloc::StrFree (CDupClone::c_dup, StrFree::dup) over git_odb_backend_data_alloc; released by git__free, publicly git_odb_backend_data_free."
+     "note": "Fresh git__malloc(strlen(str)+1) storage holding a copy of str with its terminator: the NUL-terminated string cloner behind git_strarray_copy, git_signature_new/dup and most libgit2 string fields. NULL on OOM (git_error_set_oom via git__malloc; before git_libgit2_init every request fails). Internal (hidden in libgit2.so, linked from the variant's static archive): Rust's strategy alloc::StrFree calls it (CDupClone::c_dup, StrFree::dup); released by git__free."
     }
    }
   },
@@ -4222,7 +4222,7 @@
      "borrowed": null,
      "nullable": true,
      "mutable": true,
-     "note": "Fresh git__malloc(len+1) storage holding the first len = strnlen(str, n) bytes of str plus a terminator: a bounded string cloner. NULL on OOM. Internal; Rust: alloc::StrFree::dup_prefix. Released by git__free (publicly git_odb_backend_data_free)."
+     "note": "Fresh git__malloc(len+1) storage holding the first len = strnlen(str, n) bytes of str plus a terminator: a bounded string cloner. NULL on OOM. Internal (linked from the variant's static archive); Rust: alloc::StrFree::dup_prefix calls it. Released by git__free."
     }
    }
   },
@@ -4271,7 +4271,7 @@
      "borrowed": null,
      "nullable": true,
      "mutable": true,
-     "note": "Fresh git__malloc(n+1) storage holding the n bytes at str plus a terminator: a byte-run-to-string cloner. NULL on OOM. No overflow check: n == SIZE_MAX wraps to git__malloc(0), whose success would overrun in memcpy (unreachable from Rust, whose slices stop at isize::MAX). Internal; Rust: alloc::StrFree::dup_bytes. Released by git__free (publicly git_odb_backend_data_free)."
+     "note": "Fresh git__malloc(n+1) storage holding the n bytes at str plus a terminator: a byte-run-to-string cloner. NULL on OOM. No overflow check: n == SIZE_MAX wraps to git__malloc(0), whose success would overrun in memcpy (unreachable from Rust, whose slices stop at isize::MAX). Internal (linked from the variant's static archive); Rust: alloc::StrFree::dup_bytes calls it. Released by git__free."
     }
    }
   },

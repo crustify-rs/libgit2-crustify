@@ -39,26 +39,23 @@
 //! The primitives are not functions of their own: an allocation is only ever made
 //! through an owner that releases it with the routine paired with its allocator.
 //!
-//! libgit2.so compiles these primitives with hidden visibility, so Rust cannot call
-//! them by name. It reaches the family through the two exported routines whose bodies
-//! are `git__malloc` and `git__free` alone, `git_odb_backend_data_alloc` and
-//! `git_odb_backend_data_free`, and composes the other primitives over them as
-//! `alloc.c` writes them: the same size checks, out-of-memory errors and copies. Two
-//! differences remain, neither observable through the safe API:
-//!
-//! - `git__mallocarray` is `git__realloc(NULL, n)`, so C reaches the allocator's `grealloc` where
-//!   the strategy reaches `gmalloc`; [`Alloc`]'s contract makes the two equivalent.
-//! - An empty array is NULL and allocates nothing, where `git__calloc(0, ..)` and
-//!   `git__mallocarray(0, ..)` ask the allocator for zero bytes.
+//! Each strategy calls its primitive through its raw binding: the five functions
+//! `alloc.c` defines link from the variant's static archive, although libgit2.so hides
+//! them, and `git__malloc` and `git__free`, `static inline` in `alloc.h`, through the
+//! wrappers the raw bindings compile for them. The size checks, out-of-memory errors
+//! and copies are therefore C's own. `git__mallocarray` is `git__realloc(NULL, n)`, so
+//! it reaches the allocator's `grealloc` where the others reach `gmalloc`, and an empty
+//! run built by [`ArrayFree::new_uninit`] or [`ArrayFree::new_zeroed`] asks the
+//! allocator for zero bytes, as `git__mallocarray(0, ..)` and `git__calloc(0, ..)` do.
 //!
 //! Every allocation first pins libgit2's runtime, initialising libgit2 once for the
 //! rest of the process: before initialisation libgit2's allocator fails every request
 //! and reports the failure through thread-local state that does not exist yet. A
-//! refused allocation leaves `GIT_ERROR_NOMEMORY` as the thread's last error, as
-//! `git__malloc` does. So does a run whose size overflows, built by
-//! [`ArrayFree::new_uninit`] or [`ArrayFree::new_zeroed`], as `git__mallocarray` and
-//! `git__calloc` report it, or whose size passes `isize::MAX` bytes, which no Rust slice
-//! may span; ffibox's own constructors of a run ([`AllocVec::new_uninit`] and its
+//! refused allocation leaves `GIT_ERROR_NOMEMORY` as the thread's last error, as C
+//! leaves it, and so does a run whose size overflows, which C refuses before asking
+//! the allocator. The strategies add one check of their own: a run whose size passes
+//! `isize::MAX` bytes, which no Rust slice may span, is refused before C is asked, with
+//! the same error. ffibox's own constructors of a run ([`AllocVec::new_uninit`] and its
 //! siblings) refuse such a size without reporting it, as they ask libgit2 nothing.
 //!
 //! An allocation is released through whichever allocator libgit2 holds when it is
@@ -473,6 +470,29 @@ mod ffi_import {
     /// runs on keep for an object that fills the request.
     const MAX_ALIGN: usize = align_of::<nix::libc::max_align_t>();
 
+    /// A run's pointer for C to read `bytes.len()` bytes through: an empty run's is a live
+    /// empty string, since C may not be handed a dangling pointer, even to read nothing.
+    fn run_ptr(bytes: &[u8]) -> *const c_char {
+        if bytes.is_empty() {
+            c"".as_ptr()
+        } else {
+            bytes.as_ptr().cast()
+        }
+    }
+
+    /// The allocation `alloc` makes in C once libgit2's runtime is pinned; `None` when
+    /// libgit2 cannot be initialised, or when `alloc` returns NULL.
+    ///
+    /// Before initialisation libgit2's allocator refuses every request and reports the
+    /// refusal through thread-local state that does not exist yet; once pinned, the
+    /// allocator is initialised and a refusal is reported on live thread-local state.
+    fn pinned<T>(alloc: impl FnOnce() -> *mut T) -> Option<NonNull<T>> {
+        if !runtime_pinned() {
+            return None;
+        }
+        NonNull::new(alloc())
+    }
+
     /// `git__malloc(len)`: a fresh allocation of at least `len` bytes; `None` when
     /// libgit2 cannot be initialised, or when the allocator refuses, which leaves
     /// `GIT_ERROR_NOMEMORY` as the thread's last error.
@@ -480,14 +500,8 @@ mod ffi_import {
     /// The allocation is aligned to the largest power of two not above `len`, up to
     /// [`MAX_ALIGN`].
     fn malloc(len: usize) -> Option<NonNull<u8>> {
-        if !runtime_pinned() {
-            return None;
-        }
-        // SAFETY: the routine is `GIT_UNUSED(backend); return git__malloc(len);`, so a NULL
-        // backend is never read; any `len` is accepted. The runtime is pinned, so the
-        // allocator is initialised and a refusal is reported on live thread-local state.
-        let data = unsafe { ffi::git_odb_backend_data_alloc(ptr::null_mut(), len) };
-        NonNull::new(data.cast())
+        // SAFETY: any `len` is accepted; `pinned` calls it on a pinned runtime.
+        pinned(|| unsafe { ffi::git__malloc(len) }).map(NonNull::cast)
     }
 
     /// `git__free(data)`.
@@ -497,46 +511,52 @@ mod ffi_import {
     /// `data` is a live allocation of libgit2's current allocator, which the caller owns
     /// and does not use again.
     unsafe fn free(data: NonNull<u8>) {
-        // SAFETY: the routine is `GIT_UNUSED(backend); git__free(data);`; `data` is a live
-        // allocation of the family the caller gives up, per this function's contract.
-        unsafe { ffi::git_odb_backend_data_free(ptr::null_mut(), data.as_ptr().cast()) }
+        // SAFETY: `data` is a live allocation of the family the caller gives up, per this
+        // function's contract; `git__free` releases it without reading it.
+        unsafe { ffi::git__free(data.as_ptr().cast()) }
     }
 
-    /// The byte size of `nelem` elements of `elsize` bytes, checked as
-    /// `GIT_MULTIPLY_SIZET_OVERFLOW` checks it: an overflow, or a size past `isize::MAX`,
-    /// leaves `GIT_ERROR_NOMEMORY` as the thread's last error and returns `None`.
-    fn array_size(nelem: usize, elsize: usize) -> Option<usize> {
-        let size = nelem
-            .checked_mul(elsize)
-            .filter(|&size| isize::try_from(size).is_ok());
-        if size.is_none() {
-            set_oom();
-        }
-        size
-    }
-
-    /// `git__calloc(nelem, elsize)`: zeroed storage of `nelem * elsize` bytes.
+    /// `git__calloc(nelem, elsize)`: zeroed storage of `nelem * elsize` bytes; `None` as
+    /// for [`malloc`], or when the size overflows, which C reports as out of memory.
     fn calloc(nelem: usize, elsize: usize) -> Option<NonNull<u8>> {
-        let size = array_size(nelem, elsize)?;
-        let data = malloc(size)?;
-        // SAFETY: `data` is a fresh allocation of at least `size` bytes.
-        unsafe { data.as_ptr().write_bytes(0, size) };
-        Some(data)
+        // SAFETY: any sizes are accepted, an overflowing product refused; `pinned` calls
+        // it on a pinned runtime.
+        pinned(|| unsafe { ffi::git__calloc(nelem, elsize) }).map(NonNull::cast)
     }
 
-    /// A copy of `bytes` followed by a NUL in libgit2's allocator, as `git__substrdup`
-    /// makes it: `git__malloc(n + 1)` and a copy.
-    fn dup_terminated(bytes: &[u8]) -> Option<NonNull<c_char>> {
-        // A slice spans at most `isize::MAX` bytes, so the terminator's byte cannot overflow.
-        let copy = malloc(bytes.len() + 1)?;
-        // SAFETY: `copy` is a fresh allocation of `bytes.len() + 1` bytes, so it cannot
-        // overlap the borrowed `bytes`.
-        unsafe { ptr::copy_nonoverlapping(bytes.as_ptr(), copy.as_ptr(), bytes.len()) };
-        // SAFETY: the last of those bytes.
-        let end = unsafe { copy.add(bytes.len()) };
-        // SAFETY: as above, in bounds and writable.
-        unsafe { end.write(0) };
-        Some(copy.cast())
+    /// `git__mallocarray(nelem, elsize)`: uninitialised storage of `nelem * elsize`
+    /// bytes, through the allocator's `grealloc`; `None` as for [`calloc`].
+    fn mallocarray(nelem: usize, elsize: usize) -> Option<NonNull<u8>> {
+        // SAFETY: as in `calloc`; `git__realloc(NULL, n)` resizes no live allocation.
+        pinned(|| unsafe { ffi::git__mallocarray(nelem, elsize) }).map(NonNull::cast)
+    }
+
+    /// `git__strdup(s)`: a copy of `s` and its terminator; `None` as for [`malloc`].
+    ///
+    /// # Safety
+    ///
+    /// `s` is a NUL-terminated string that stays live and unchanged for the call.
+    unsafe fn strdup(s: NonNull<c_char>) -> Option<NonNull<c_char>> {
+        // SAFETY: per this function's contract; C reads `s` up to its terminator, on a
+        // pinned runtime.
+        pinned(|| unsafe { ffi::git__strdup(s.as_ptr()) })
+    }
+
+    /// `git__strndup(bytes, bytes.len())`: a copy of `bytes` up to their first NUL, and
+    /// a terminator; `None` as for [`malloc`].
+    fn strndup(bytes: &[u8]) -> Option<NonNull<c_char>> {
+        // SAFETY: C reads at most `bytes.len()` bytes through the pointer
+        // (`p_strnlen`), all of them in `bytes`, on a pinned runtime.
+        pinned(|| unsafe { ffi::git__strndup(run_ptr(bytes), bytes.len()) })
+    }
+
+    /// `git__substrdup(bytes, bytes.len())`: a copy of all of `bytes` and a terminator;
+    /// `None` as for [`malloc`].
+    fn substrdup(bytes: &[u8]) -> Option<NonNull<c_char>> {
+        // SAFETY: C copies exactly `bytes.len()` bytes, all of them in `bytes`, into
+        // `git__malloc(n + 1)`, which cannot overflow since a slice spans at most
+        // `isize::MAX` bytes; on a pinned runtime.
+        pinned(|| unsafe { ffi::git__substrdup(run_ptr(bytes), bytes.len()) })
     }
 
     /// The policy of one object in libgit2's allocator: allocated by `git__malloc` or
@@ -622,8 +642,9 @@ mod ffi_import {
         }
     }
 
-    // SAFETY: as `CAlloc`, with every byte of the `T` zeroed before it is handed out, a
-    // state `T: CZeroable` vouches for; `c_drop` accepts any `T` since it never reads it.
+    // SAFETY: as `CAlloc`, with every byte of the `T` zeroed before it is handed out
+    // (`git__calloc`'s `memset`), a state `T: CZeroable` vouches for; `c_drop` accepts any
+    // `T` since it never reads it.
     unsafe impl<T: CZeroable> CAllocZeroed<T> for Free {
         /// Wraps `fn::git__calloc`
         #[doc(alias = "git__calloc")]
@@ -643,11 +664,12 @@ mod ffi_import {
     /// The policy of a counted run of elements in libgit2's allocator: allocated by
     /// `git__mallocarray`, `git__calloc` or `git__malloc`, released by `git__free`.
     ///
-    /// [`new_uninit`](Self::new_uninit) and [`new_zeroed`](Self::new_zeroed) allocate as
-    /// `git__mallocarray` and `git__calloc` do; [`CVec::from_fn`], [`CVec::from_slice`]
-    /// and `Clone` allocate a run's bytes through `git__malloc`. An empty run is NULL and
-    /// allocates nothing. Elements are dropped before the run is released, so a run of
-    /// owners releases each.
+    /// [`new_uninit`](Self::new_uninit) and [`new_zeroed`](Self::new_zeroed) are
+    /// `git__mallocarray` and `git__calloc`, an empty run included, which asks libgit2's
+    /// allocator for zero bytes as C does; [`CVec::from_fn`], [`CVec::from_slice`] and
+    /// `Clone` allocate a non-empty run's bytes through `git__malloc`, and an empty one
+    /// as NULL, allocating nothing. Elements are dropped before the run is released, so
+    /// a run of owners releases each.
     ///
     /// Element types aligned beyond what the allocator vouches for are rejected, as are
     /// zero-sized ones, which need no storage:
@@ -680,7 +702,7 @@ mod ffi_import {
         #[doc(alias = "git__free")]
         #[inline]
         unsafe fn c_drop_len(&self, ptr: *mut u8, _byte_len: usize) {
-            // An empty run is NULL and never released; `git__free(NULL)` would do nothing.
+            // ffibox never releases a NULL run; `git__free(NULL)` would do nothing.
             if let Some(ptr) = NonNull::new(ptr) {
                 // SAFETY: per `c_drop_len`'s contract, `ptr` is a live allocation of this
                 // policy's family, which the caller gives up.
@@ -725,13 +747,16 @@ mod ffi_import {
         /// `len` uninitialised elements, for C or Rust to fill before
         /// [`assume_init`](CVec::assume_init); `None` when the allocation is refused or
         /// its size overflows, which leaves `GIT_ERROR_NOMEMORY` as the thread's last
-        /// error. An empty run allocates nothing.
+        /// error.
+        ///
+        /// An empty run asks libgit2's allocator for zero bytes, as C does, and holds
+        /// what it returns until the run is dropped.
         ///
         /// Wraps `fn::git__mallocarray`
         #[doc(alias = "git__mallocarray")]
         #[must_use]
         pub fn new_uninit<T>(len: usize) -> Option<AllocVec<MaybeUninit<T>>> {
-            let data = Self::alloc_run::<T>(len, malloc)?;
+            let data = Self::alloc_run::<T>(len, mallocarray)?;
             // SAFETY: `data` is NULL with `len == 0`, or fresh, uniquely owned storage of
             // `len * size_of::<T>()` bytes aligned for `T`, which `c_drop_len` releases;
             // `MaybeUninit<T>` needs no initialisation.
@@ -739,25 +764,33 @@ mod ffi_import {
         }
 
         /// `len` zeroed elements; `None` when the allocation is refused or its size
-        /// overflows, which leaves `GIT_ERROR_NOMEMORY` as the thread's last error. An
-        /// empty run allocates nothing.
+        /// overflows, which leaves `GIT_ERROR_NOMEMORY` as the thread's last error.
+        ///
+        /// An empty run asks libgit2's allocator for zero bytes, as C does, and holds
+        /// what it returns until the run is dropped.
         ///
         /// Wraps `fn::git__calloc`
         #[doc(alias = "git__calloc")]
         #[must_use]
         pub fn new_zeroed<T: CPlainElem>(len: usize) -> Option<AllocVec<T>> {
-            let data = Self::alloc_run::<T>(len, |size| calloc(1, size))?;
+            let data = Self::alloc_run::<T>(len, calloc)?;
             // SAFETY: as in `new_uninit`, and every element is all zero, a valid `T` since
             // `T: CPlainElem` admits every bit pattern.
             unsafe { CVec::from_raw_parts_or_empty(data, len) }
         }
 
-        /// Storage for `len` elements of `T` from `alloc`, given their byte size: NULL
-        /// for none, `None` on failure. `alloc` is called with a size of at least
-        /// `size_of::<T>()`, which makes its allocation aligned for `T`.
+        /// Storage for `len` elements of `T` from `alloc(len, size_of::<T>())`, aligned
+        /// for `T`; `None` on failure, NULL only for an empty run held without storage.
+        ///
+        /// C checks the product for overflow; a size past `isize::MAX` bytes, which no
+        /// Rust slice may span, is refused here before C is asked, with the error C
+        /// leaves for an overflow. A non-empty allocation spans at least
+        /// `size_of::<T>()` bytes, which makes it aligned for `T`. An empty one need not
+        /// be, since no object fits in it: one that is not is released, and the run
+        /// held as NULL.
         fn alloc_run<T>(
             len: usize,
-            alloc: impl FnOnce(usize) -> Option<NonNull<u8>>,
+            alloc: impl FnOnce(usize, usize) -> Option<NonNull<u8>>,
         ) -> Option<*mut T> {
             const {
                 assert!(size_of::<T>() != 0, "zero-sized elements need no storage");
@@ -766,12 +799,26 @@ mod ffi_import {
                     "libgit2's allocator cannot align T"
                 );
             }
-            if len == 0 {
+            if exceeds_slice_bytes(len, size_of::<T>()) {
+                set_oom();
+                return None;
+            }
+            let data = alloc(len, size_of::<T>())?.cast::<T>();
+            if len == 0 && !data.is_aligned() {
+                // SAFETY: `data` is the fresh allocation `alloc` just made, given up here.
+                unsafe { free(data.cast()) };
                 return Some(ptr::null_mut());
             }
-            let size = array_size(len, size_of::<T>())?;
-            alloc(size).map(|data| data.as_ptr().cast())
+            Some(data.as_ptr())
         }
+    }
+
+    /// Whether `nelem` elements of `elsize` bytes span more than `isize::MAX` bytes
+    /// without overflowing `usize`, which C would ask its allocator for.
+    fn exceeds_slice_bytes(nelem: usize, elsize: usize) -> bool {
+        nelem
+            .checked_mul(elsize)
+            .is_some_and(|size| isize::try_from(size).is_err())
     }
 
     /// The policy of one NUL-terminated string in libgit2's allocator: copied by
@@ -822,8 +869,7 @@ mod ffi_import {
         unsafe fn c_dup(&self, ptr: NonNull<c_char>) -> Option<NonNull<c_char>> {
             // SAFETY: per `c_dup`'s contract, `ptr` is a live NUL-terminated string that
             // stays unchanged for the call.
-            let s = unsafe { CStr::from_ptr(ptr.as_ptr()) };
-            dup_terminated(s.to_bytes())
+            unsafe { strdup(ptr) }
         }
     }
 
@@ -835,7 +881,9 @@ mod ffi_import {
         #[doc(alias = "git__strdup")]
         #[must_use]
         pub fn dup(s: &CStr) -> Option<AllocStr> {
-            Self::adopt(dup_terminated(s.to_bytes())?)
+            let s = NonNull::from(s).cast::<c_char>();
+            // SAFETY: `s` is the borrowed string, live and unchanged for the call.
+            Self::adopt(unsafe { strdup(s) }?)
         }
 
         /// A copy of `bytes` up to their first NUL, or of all of them when they hold
@@ -849,8 +897,7 @@ mod ffi_import {
         #[doc(alias = "git__strndup")]
         #[must_use]
         pub fn dup_prefix(bytes: &[u8]) -> Option<AllocStr> {
-            let len = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
-            Self::adopt(dup_terminated(&bytes[..len])?)
+            Self::adopt(strndup(bytes)?)
         }
 
         /// A copy of all of `bytes` and a terminator in libgit2's allocator; `None` when
@@ -865,10 +912,10 @@ mod ffi_import {
         #[doc(alias = "git__substrdup")]
         #[must_use]
         pub fn dup_bytes(bytes: &[u8]) -> Option<AllocStr> {
-            Self::adopt(dup_terminated(bytes)?)
+            Self::adopt(substrdup(bytes)?)
         }
 
-        /// The owner of a string [`dup_terminated`] made.
+        /// The owner of a string one of the copies above made.
         fn adopt(copy: NonNull<c_char>) -> Option<AllocStr> {
             // SAFETY: `copy` is fresh, uniquely owned storage of libgit2's allocator,
             // NUL-terminated within its allocation, which `c_drop` releases.
@@ -888,6 +935,8 @@ mod ffi_import {
         use std::alloc::{Layout, alloc, dealloc, realloc};
         use std::cell::RefCell;
         use std::ffi::CString;
+        use std::sync::atomic::AtomicBool;
+        use std::sync::atomic::Ordering::Relaxed;
 
         use super::*;
         use crate::libgit2::src::libgit2::oid::Oid;
@@ -920,6 +969,22 @@ mod ffi_import {
         /// The one request size [`Heap`] refuses.
         const REFUSED: usize = 4242;
 
+        /// Whether [`Heap`] refuses zero-byte requests too, as C's `malloc(0)` may.
+        static REFUSE_ZERO: AtomicBool = AtomicBool::new(false);
+
+        /// Whether [`Heap`] answers a zero-byte request with [`odd_block`], an address
+        /// aligned for no type wider than a byte, which no object of the request fits
+        /// anyway.
+        static ODD_ZERO: AtomicBool = AtomicBool::new(false);
+
+        static ODD: [u64; 2] = [0; 2];
+
+        /// The odd address [`ODD_ZERO`] hands out; never written, and released as a
+        /// no-op.
+        fn odd_block() -> NonNull<u8> {
+            NonNull::new((&raw const ODD).cast::<u8>().wrapping_add(1).cast_mut()).unwrap()
+        }
+
         /// A Rust-heap allocator, so the trampolines run under Miri: each block carries its
         /// size in a 16-byte header.
         struct Heap;
@@ -936,8 +1001,11 @@ mod ffi_import {
         unsafe impl Alloc for Heap {
             fn malloc(len: usize, file: Option<&CStr>, line: i32) -> Option<NonNull<u8>> {
                 record(|c| c.push(Call::Malloc(len, file.map(CStr::to_owned), line)));
-                if len == REFUSED {
+                if len == REFUSED || (len == 0 && REFUSE_ZERO.load(Relaxed)) {
                     return None;
+                }
+                if len == 0 && ODD_ZERO.load(Relaxed) {
+                    return Some(odd_block());
                 }
                 // SAFETY: the layout is never zero-sized.
                 let base = NonNull::new(unsafe { alloc(layout(len)) })?;
@@ -984,6 +1052,9 @@ mod ffi_import {
 
             unsafe fn free(ptr: NonNull<u8>) {
                 record(|c| c.push(Call::Free));
+                if ptr == odd_block() {
+                    return;
+                }
                 // SAFETY: `ptr` is a live block of this allocator, so its header precedes it.
                 let base = unsafe { ptr.sub(HEADER) };
                 // SAFETY: as above; `base` was allocated with `layout(len)`.
@@ -1267,15 +1338,15 @@ mod ffi_import {
             );
         }
 
-        /// The sizes of the allocations requested since the last call, and the number of
-        /// releases.
+        /// The sizes of the allocations requested since the last call, through `malloc` or
+        /// `realloc(NULL, ..)`, and the number of releases.
         fn requests() -> (Vec<usize>, usize) {
             let calls = take_calls();
             let frees = calls.iter().filter(|c| **c == Call::Free).count();
             let sizes = calls
                 .into_iter()
                 .filter_map(|c| match c {
-                    Call::Malloc(len, ..) => Some(len),
+                    Call::Malloc(len, ..) | Call::Realloc(false, len, ..) => Some(len),
                     _ => None,
                 })
                 .collect();
@@ -1296,23 +1367,61 @@ mod ffi_import {
             with_heap(
                 concat!(module_path!(), "::strategies_request_what_alloc_c_requests"),
                 || {
-                    // `git__malloc(sizeof(T))` and `git__calloc(1, sizeof(T))`.
+                    // `git__malloc(sizeof(T))` and `git__calloc(1, sizeof(T))`, each
+                    // reaching `gmalloc` from `alloc.h`'s `git__malloc`.
                     let slot = AllocBox::<Allocator>::new_uninit().unwrap();
                     let id = AllocBox::<Oid>::new_zeroed().unwrap();
                     assert_eq!(id.as_ref().id(), &[0; 32][..id.as_ref().id().len()]);
                     drop((slot, id));
+                    let calls = take_calls();
+                    let sites: Vec<_> = calls
+                        .iter()
+                        .filter_map(|c| match c {
+                            Call::Malloc(_, file, line) => Some((file.clone(), *line)),
+                            _ => None,
+                        })
+                        .collect();
+                    // One line of `alloc.h`, spelled from the checkout the static wrapper
+                    // was compiled in, or from the one libgit2 was configured from.
+                    assert_eq!(sites.len(), 2, "{calls:?}");
+                    assert_eq!(sites[0].1, sites[1].1);
+                    assert!(
+                        sites.iter().all(|(file, _)| file
+                            .as_ref()
+                            .is_some_and(|f| f.to_bytes().ends_with(b"src/util/alloc.h"))),
+                        "{sites:?}"
+                    );
                     assert_eq!(
-                        requests(),
-                        (vec![size_of::<Allocator>(), size_of::<Oid>()], 2)
+                        calls
+                            .iter()
+                            .map(|c| match c {
+                                Call::Malloc(len, ..) => *len,
+                                _ => 0,
+                            })
+                            .collect::<Vec<_>>(),
+                        [size_of::<Allocator>(), size_of::<Oid>(), 0, 0]
                     );
 
-                    // `git__mallocarray(n, size)` and `git__calloc(n, size)`.
+                    // `git__mallocarray(n, size)`, which is `git__realloc(NULL, n * size)`,
+                    // and `git__calloc(n, size)`.
                     let mut words = ArrayFree::new_uninit::<u32>(3).unwrap();
                     words.as_mut_slice()[2].write(7);
                     let zeros = ArrayFree::new_zeroed::<u64>(5).unwrap();
                     assert_eq!(zeros.as_slice(), &[0; 5]);
                     drop((words, zeros));
-                    assert_eq!(requests(), (vec![12, 40], 2));
+                    let calls = take_calls();
+                    assert!(
+                        matches!(
+                            calls[..],
+                            [
+                                Call::Realloc(false, 12, ..),
+                                Call::Malloc(40, ..),
+                                Call::Free,
+                                Call::Free
+                            ]
+                        ),
+                        "{calls:?}"
+                    );
 
                     // A run's bytes through `git__malloc`, at least `MAX_ALIGN` of them.
                     let bytes = AllocVec::<u8>::from_slice(b"ab").unwrap();
@@ -1389,8 +1498,8 @@ mod ffi_import {
         }
 
         /// A size that overflows, or passes `isize::MAX`, is refused before the allocator is
-        /// asked, with libgit2's out-of-memory error, as `GIT_MULTIPLY_SIZET_OVERFLOW`
-        /// reports it in `git__calloc` and `git__mallocarray`.
+        /// asked, with libgit2's out-of-memory error: an overflow by `git__calloc` and
+        /// `git__mallocarray` (`GIT_MULTIPLY_SIZET_OVERFLOW`), the rest by the strategy.
         #[test]
         #[cfg_attr(miri, ignore = "calls libgit2")]
         fn overflowing_sizes_report_out_of_memory_unasked() {
@@ -1409,25 +1518,75 @@ mod ffi_import {
                     assert_out_of_memory();
                     assert!(ArrayFree::new_uninit::<[u8; 3]>(usize::MAX / 3 + 1).is_none());
                     assert_out_of_memory();
-                    assert_eq!(
-                        array_size(isize::MAX as usize, 1),
-                        Some(isize::MAX as usize)
-                    );
+                    // An overflow is C's to refuse, a size past `isize::MAX` the strategy's.
+                    assert!(!exceeds_slice_bytes(isize::MAX as usize, 1));
+                    assert!(exceeds_slice_bytes(isize::MAX as usize + 1, 1));
+                    assert!(!exceeds_slice_bytes(usize::MAX, 2));
                     assert_eq!(requests(), (vec![], 0));
                 },
             );
         }
 
-        /// An empty run is NULL: nothing is asked of libgit2, so Miri runs this.
+        /// ffibox's constructors build an empty run as NULL: nothing is asked of libgit2,
+        /// so Miri runs this.
         #[test]
-        fn empty_runs_allocate_nothing() {
-            let a = ArrayFree::new_zeroed::<u64>(0).unwrap();
-            let b = ArrayFree::new_uninit::<u8>(0).unwrap();
+        fn ffibox_empty_runs_allocate_nothing() {
             let c = AllocVec::<u16>::from_slice(&[]).unwrap();
             let d = AllocVec::<u32>::from_fn(0, |_| unreachable!()).unwrap();
-            assert!(a.as_ptr().is_null() && b.as_ptr().is_null());
             assert!(c.as_ptr().is_null() && d.as_ptr().is_null());
-            assert!(c.clone().is_empty() && a.as_slice().is_empty());
+            assert!(c.clone().is_empty() && d.as_slice().is_empty());
+        }
+
+        /// An empty run built as `git__calloc(0, ..)` or `git__mallocarray(0, ..)` asks the
+        /// allocator for zero bytes and holds the block until it is dropped; a refusal is
+        /// out of memory, as C reads it; and a block too misaligned for the element type
+        /// is released at once, the run held as NULL.
+        #[test]
+        #[cfg_attr(miri, ignore = "calls libgit2")]
+        fn c_empty_runs_ask_for_zero_bytes() {
+            with_heap(
+                concat!(module_path!(), "::c_empty_runs_ask_for_zero_bytes"),
+                || {
+                    let a = ArrayFree::new_zeroed::<u64>(0).unwrap();
+                    let b = ArrayFree::new_uninit::<u8>(0).unwrap();
+                    assert!(!a.as_ptr().is_null() && !b.as_ptr().is_null());
+                    assert!(a.as_slice().is_empty() && b.as_slice().is_empty());
+                    assert_ne!(a.as_ptr().cast::<u8>(), b.as_ptr().cast::<u8>());
+                    drop((a, b));
+                    let calls = take_calls();
+                    assert!(
+                        matches!(
+                            calls[..],
+                            [
+                                Call::Malloc(0, ..),
+                                Call::Realloc(false, 0, ..),
+                                Call::Free,
+                                Call::Free
+                            ]
+                        ),
+                        "{calls:?}"
+                    );
+
+                    REFUSE_ZERO.store(true, Relaxed);
+                    clear();
+                    assert!(ArrayFree::new_zeroed::<u32>(0).is_none());
+                    assert_out_of_memory();
+                    assert!(ArrayFree::new_uninit::<u32>(0).is_none());
+                    assert_out_of_memory();
+                    REFUSE_ZERO.store(false, Relaxed);
+                    take_calls();
+
+                    ODD_ZERO.store(true, Relaxed);
+                    let wide = ArrayFree::new_uninit::<u64>(0).unwrap();
+                    assert!(wide.as_ptr().is_null());
+                    assert_eq!(requests(), (vec![0], 1));
+                    let narrow = ArrayFree::new_zeroed::<u8>(0).unwrap();
+                    assert_eq!(narrow.as_ptr(), odd_block().as_ptr());
+                    drop((wide, narrow));
+                    ODD_ZERO.store(false, Relaxed);
+                    assert_eq!(requests(), (vec![0], 1));
+                },
+            );
         }
 
         /// libgit2 releases what the strategies made, and they release what libgit2 made.
@@ -1441,16 +1600,29 @@ mod ffi_import {
                 ),
                 || {
                     let s = StrFree::dup(c"handed over").unwrap().into_raw();
-                    // SAFETY: `s` is a live allocation of libgit2's allocator, given up; the
-                    // routine ignores `backend`.
-                    unsafe { ffi::git_odb_backend_data_free(ptr::null_mut(), s.cast()) };
-                    // SAFETY: as above; a fresh 8-byte allocation or NULL.
-                    let raw = unsafe { ffi::git_odb_backend_data_alloc(ptr::null_mut(), 8) };
+                    // SAFETY: `s` is a live allocation of libgit2's allocator, given up.
+                    unsafe { ffi::git__free(s.cast()) };
+                    // SAFETY: any size; a fresh 8-byte allocation or NULL.
+                    let raw = unsafe { ffi::git__malloc(8) };
                     // SAFETY: `raw` is fresh storage of libgit2's allocator holding 8 bytes,
                     // which the run adopts as 8 `MaybeUninit<u8>`.
                     let run = unsafe { AllocVec::<MaybeUninit<u8>>::from_raw_parts(raw.cast(), 8) };
                     drop(run.unwrap());
-                    assert_eq!(requests(), (vec![12, 8], 2));
+                    // SAFETY: a live C string, read for the call.
+                    let raw = unsafe { ffi::git__strdup(c"back".as_ptr()) };
+                    // SAFETY: `raw` is a fresh NUL-terminated copy in libgit2's allocator,
+                    // given up to the owner.
+                    let back = unsafe { AllocStr::from_raw(raw) }.unwrap();
+                    assert_eq!(back.as_c_str(), c"back");
+                    drop(back);
+                    // SAFETY: any sizes; zeroed storage for one `git_oid`, or NULL.
+                    let raw = unsafe { ffi::git__calloc(1, size_of::<ffi::git_oid>()) };
+                    // SAFETY: `raw` is fresh, zeroed storage of libgit2's allocator for one
+                    // `git_oid`, given up to the box.
+                    let id = unsafe { AllocBox::<Oid>::from_c(raw.cast()) }.unwrap();
+                    assert!(id.as_ref().id().iter().all(|&b| b == 0));
+                    drop(id);
+                    assert_eq!(requests(), (vec![12, 8, 5, size_of::<ffi::git_oid>()], 4));
                 },
             );
         }

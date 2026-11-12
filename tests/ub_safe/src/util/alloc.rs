@@ -143,12 +143,28 @@ fn vec_storage_aligns_wide_elements() {
 }
 
 #[test]
-fn vec_empty_forms_own_nothing() {
+fn vec_empty_ffibox_forms_own_nothing() {
     let a = AllocVec::<u8>::from_slice(&[]).unwrap();
-    let b = ArrayFree::new_uninit::<u16>(0).unwrap();
-    let c = ArrayFree::new_zeroed::<u64>(0).unwrap();
-    assert!(a.as_ptr().is_null() && b.as_ptr().is_null() && c.as_ptr().is_null());
-    assert!(a.clone().is_empty() && a.as_slice().is_empty() && c.as_slice().is_empty());
+    let b = AllocVec::<u64>::from_fn(0, |_| unreachable!()).unwrap();
+    assert!(a.as_ptr().is_null() && b.as_ptr().is_null());
+    assert!(a.clone().is_empty() && a.as_slice().is_empty() && b.as_slice().is_empty());
+}
+
+/// `git__mallocarray(0, ..)` and `git__calloc(0, ..)` hold a zero-byte block, which reads
+/// as an empty slice, copies, and is released once; `ASan` flags a lost or doubled free.
+#[test]
+#[cfg_attr(miri, ignore = "calls libgit2")]
+fn vec_empty_c_forms_hold_a_zero_byte_block() {
+    for _ in 0..16 {
+        let b = ArrayFree::new_uninit::<u16>(0).unwrap();
+        let c = ArrayFree::new_zeroed::<u64>(0).unwrap();
+        assert!(b.as_slice().is_empty() && c.as_slice().is_empty());
+        assert_eq!(c.as_ptr() as usize % align_of::<u64>(), 0);
+        let d = c.clone();
+        assert_eq!(d.len(), 0);
+        drop(c);
+        assert_eq!(d.try_clone().unwrap().len(), 0);
+    }
 }
 
 #[test]

@@ -1,4 +1,5 @@
-//! Equivalence of `git2/sys/alloc.h`'s `Allocator` with a raw `git_allocator`.
+//! Equivalence of `git2/sys/alloc.h`'s `Allocator` with a raw `git_allocator`, and of the
+//! lifecycle strategies with `src/util/alloc.h`'s primitives.
 //!
 //! - Values: the same member writes on an `Allocator` and on a raw `git_allocator` leave the same
 //!   members, step by step.
@@ -14,8 +15,12 @@
 //!
 //! Documented divergence, outside the comparison: `free(NULL)` stops at the trampoline
 //! and never reaches `Alloc::free`, so the raw side does not trace it either.
+//!
+//! The strategies, `AllocBox`, `AllocVec` and `AllocStr`, are compared with the primitives
+//! of `src/util/alloc.h` they call, as the section below describes.
 
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
+use std::mem::MaybeUninit;
 use std::process::Command;
 use std::ptr::{self, NonNull};
 use std::sync::Mutex;
@@ -26,7 +31,7 @@ use ffibox::CZeroable;
 use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::odb::OdbDataStrFree;
 use libgit2::libgit2::src::util::alloc::{
-    Alloc, AllocBox, AllocStr, Allocator, FreeFn, MallocFn, ReallocFn, StrFree,
+    Alloc, AllocBox, AllocStr, AllocVec, Allocator, ArrayFree, FreeFn, MallocFn, ReallocFn, StrFree,
 };
 
 const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
@@ -174,7 +179,7 @@ fn libc_malloc(len: usize) -> *mut c_void {
 ///
 /// `p` is NULL or a live libc block the caller gives up on success.
 unsafe fn libc_realloc(p: *mut c_void, len: usize) -> *mut c_void {
-    if len == REFUSED {
+    if len == REFUSED || (len != 0 && len == REFUSE.load(SeqCst)) {
         return ptr::null_mut();
     }
     // SAFETY: per this function's contract.
@@ -539,23 +544,391 @@ fn libgit2_drives_both_allocators_alike() {
 
 // --- the strategies -------------------------------------------------------------------
 //
-// `git__calloc`, `git__strdup`, `git__substrdup` and `git__free` are hidden in
-// libgit2.so, so the strategies standing in for them are compared through the exported
-// routines that call them: `git_signature_new` (`git__calloc(1, sizeof)` and two
-// `git__substrdup`s of the trimmed name and email), `git_signature_dup` (`git__calloc`
-// and two `git__strdup`s) and `git_signature_free` (three `git__free`s). The Rust side
-// builds and releases the same `git_signature` through `AllocBox`, `StrFree` and
-// `AllocStr`. Each step's allocator calls, file and line included, its result and the
-// thread's error are compared, side by side, and so are the signatures built; the mixed
-// sides release what the other side built, through the other allocator path.
+// Each strategy is compared with the primitive it stands in for, called through its raw
+// binding (`strategies_match_their_primitives`): `git__malloc` and `git__calloc` with
+// `AllocBox`, `git__calloc` and `git__mallocarray` with `ArrayFree`'s runs, empty ones
+// included, `git__strdup`, `git__strndup` and `git__substrdup` with `StrFree`, and
+// `git__free` with each owner's drop. Each step's allocator calls, file and line
+// included, its result and the thread's error are compared, side by side, and so is what
+// each allocation holds; the mixed sides release what the other side made.
 //
-// Not compared: `git__strndup` and `git__mallocarray`, which no exported routine reaches
-// without unrelated allocations around them, and refusals after the first allocation,
+// Then through the exported routines that call the primitives
+// (`strategies_allocate_and_release_as_libgit2_does`): `git_signature_new`
+// (`git__calloc(1, sizeof)` and two `git__substrdup`s of the trimmed name and email),
+// `git_signature_dup` (`git__calloc` and two `git__strdup`s) and `git_signature_free`
+// (three `git__free`s), which the Rust side builds and releases through `AllocBox`,
+// `StrFree` and `AllocStr`. Not compared there: refusals after the first allocation,
 // where `git_signature_new` and `git_signature_dup` leak what they built (C defects,
-// LSan); the unit tests cover them.
+// LSan).
 
 /// A request size the C-shaped tracer refuses besides [`REFUSED`]; 0 refuses none.
 static REFUSE: AtomicUsize = AtomicUsize::new(0);
+
+/// One request of the primitives' workload.
+#[derive(Clone, Copy, Debug)]
+enum Req {
+    /// `git__malloc(sizeof(git_signature))`, `AllocBox::new_uninit`.
+    Malloc,
+    /// `git__calloc(1, sizeof(git_signature))`, `AllocBox::new_zeroed`.
+    CallocOne,
+    /// `git__calloc(n, 8)`, `ArrayFree::new_zeroed::<u64>(n)`.
+    CallocRun(usize),
+    /// `git__mallocarray(n, 4)`, `ArrayFree::new_uninit::<u32>(n)`.
+    MallocArray(usize),
+    /// `git__strdup(s)`, `StrFree::dup(s)`.
+    Strdup(&'static CStr),
+    /// `git__strdup(s)` again, through `AllocStr`'s `Clone` (`CDupClone::c_dup`).
+    StrClone(&'static CStr),
+    /// `git__strndup(run, run.len())`, `StrFree::dup_prefix(run)`.
+    Strndup(&'static [u8]),
+    /// `git__substrdup(run, run.len())`, `StrFree::dup_bytes(run)`.
+    Substrdup(&'static [u8]),
+}
+
+/// What a request made, and how to release it.
+#[derive(Clone, Copy, Debug)]
+enum Made {
+    Box(*mut c_void),
+    Run(*mut c_void, usize),
+    Str(*mut c_char),
+}
+
+/// A pointer C may read `run.len()` bytes through, as the strategies pass it.
+fn run_ptr(run: &[u8]) -> *const c_char {
+    if run.is_empty() {
+        c"".as_ptr()
+    } else {
+        run.as_ptr().cast()
+    }
+}
+
+/// The bytes at `p`, `len` of them; none at NULL.
+///
+/// # Safety
+///
+/// `p` is NULL or valid for reads of `len` initialised bytes.
+unsafe fn bytes_at(p: *const c_void, len: usize) -> Vec<u8> {
+    if len == 0 || p.is_null() {
+        return Vec::new();
+    }
+    // SAFETY: per this function's contract.
+    unsafe { std::slice::from_raw_parts(p.cast::<u8>(), len) }.to_vec()
+}
+
+/// Makes `req` on `side`: 1 and what it holds when it made something, -1 when it was
+/// refused.
+fn request(side: Side, req: Req) -> (c_int, Vec<u8>, Option<Made>) {
+    let sig = size_of::<ffi::git_signature>();
+    let (made, held) = match (side, req) {
+        // Each side fills its uninitialised signature, untraced, so that every box
+        // released holds one.
+        (Side::C, Req::Malloc) => {
+            // SAFETY: any size.
+            let p = unsafe { ffi::git__malloc(sig) };
+            if !p.is_null() {
+                // SAFETY: a fresh allocation of `sig` bytes, aligned for the struct.
+                unsafe {
+                    p.cast::<ffi::git_signature>()
+                        .write(ffi::git_signature::default());
+                }
+            }
+            (NonNull::new(p).map(|p| Made::Box(p.as_ptr())), Vec::new())
+        }
+        (Side::Rust, Req::Malloc) => (
+            AllocBox::<Sig>::new_uninit().map(|mut b| {
+                // SAFETY: the box's fresh storage for one `git_signature`.
+                unsafe { b.as_c_ptr().write(ffi::git_signature::default()) };
+                // SAFETY: just filled.
+                Made::Box(unsafe { b.assume_init() }.into_raw().cast())
+            }),
+            Vec::new(),
+        ),
+        (Side::C, Req::CallocOne) => {
+            // SAFETY: any sizes.
+            let p = unsafe { ffi::git__calloc(1, sig) };
+            // SAFETY: a non-NULL `p` holds `sig` zeroed bytes.
+            let held = unsafe { bytes_at(p, sig) };
+            (NonNull::new(p).map(|p| Made::Box(p.as_ptr())), held)
+        }
+        (Side::Rust, Req::CallocOne) => match AllocBox::<Sig>::new_zeroed() {
+            Some(b) => {
+                let p = b.into_raw().cast::<c_void>();
+                // SAFETY: `p` holds `sig` zeroed bytes.
+                (Some(Made::Box(p)), unsafe { bytes_at(p, sig) })
+            }
+            None => (None, Vec::new()),
+        },
+        (Side::C, Req::CallocRun(n)) => {
+            // SAFETY: any sizes, an overflowing product refused.
+            let p = unsafe { ffi::git__calloc(n, 8) };
+            // SAFETY: a non-NULL `p` holds `8 * n` zeroed bytes, a product that does not
+            // overflow then; a NULL one is never read.
+            let held = unsafe { bytes_at(p, n.wrapping_mul(8)) };
+            (NonNull::new(p).map(|p| Made::Run(p.as_ptr(), n)), held)
+        }
+        (Side::Rust, Req::CallocRun(n)) => match ArrayFree::new_zeroed::<u64>(n) {
+            Some(v) => {
+                let held = v.as_slice().iter().flat_map(|w| w.to_ne_bytes()).collect();
+                let (p, n) = v.into_raw_parts();
+                (Some(Made::Run(p.cast(), n)), held)
+            }
+            None => (None, Vec::new()),
+        },
+        (Side::C, Req::MallocArray(n)) => {
+            // SAFETY: any sizes, an overflowing product refused.
+            let p = unsafe { ffi::git__mallocarray(n, 4) };
+            (
+                NonNull::new(p).map(|p| Made::Run(p.as_ptr(), n)),
+                Vec::new(),
+            )
+        }
+        (Side::Rust, Req::MallocArray(n)) => (
+            ArrayFree::new_uninit::<u32>(n).map(|v| {
+                let (p, n) = v.into_raw_parts();
+                Made::Run(p.cast(), n)
+            }),
+            Vec::new(),
+        ),
+        (Side::C, Req::Strdup(s) | Req::StrClone(s)) => {
+            // SAFETY: a live C string, read for the call.
+            str_made(unsafe { ffi::git__strdup(s.as_ptr()) }, None)
+        }
+        (Side::Rust, Req::Strdup(s)) => str_made(
+            StrFree::dup(s).map_or(ptr::null_mut(), AllocStr::into_raw),
+            None,
+        ),
+        (Side::Rust, Req::StrClone(s)) => {
+            // The source is made untraced and unrefused: only the copy is compared.
+            TRACING.store(false, SeqCst);
+            let refuse = REFUSE.swap(0, SeqCst);
+            let src = StrFree::dup(s).unwrap();
+            REFUSE.store(refuse, SeqCst);
+            TRACING.store(true, SeqCst);
+            let copy = src.try_clone();
+            TRACING.store(false, SeqCst);
+            drop(src);
+            TRACING.store(true, SeqCst);
+            str_made(copy.map_or(ptr::null_mut(), AllocStr::into_raw), None)
+        }
+        (Side::C, Req::Strndup(run)) => {
+            // SAFETY: C reads at most `run.len()` bytes, all in `run`.
+            str_made(unsafe { ffi::git__strndup(run_ptr(run), run.len()) }, None)
+        }
+        (Side::Rust, Req::Strndup(run)) => str_made(
+            StrFree::dup_prefix(run).map_or(ptr::null_mut(), AllocStr::into_raw),
+            None,
+        ),
+        (Side::C, Req::Substrdup(run)) => str_made(
+            // SAFETY: C copies exactly `run.len()` bytes, all in `run`.
+            unsafe { ffi::git__substrdup(run_ptr(run), run.len()) },
+            Some(run.len() + 1),
+        ),
+        (Side::Rust, Req::Substrdup(run)) => str_made(
+            StrFree::dup_bytes(run).map_or(ptr::null_mut(), AllocStr::into_raw),
+            Some(run.len() + 1),
+        ),
+    };
+    (if made.is_some() { 1 } else { -1 }, held, made)
+}
+
+/// A string request's outcome: what the copy holds, through its terminator, or all `len`
+/// bytes of its allocation.
+fn str_made(p: *mut c_char, len: Option<usize>) -> (Option<Made>, Vec<u8>) {
+    if p.is_null() {
+        return (None, Vec::new());
+    }
+    let held = match len {
+        // SAFETY: a copy of `n - 1` bytes and its terminator spans `n` bytes.
+        Some(n) => unsafe { bytes_at(p.cast(), n) },
+        // SAFETY: a live NUL-terminated copy.
+        None => unsafe { CStr::from_ptr(p) }.to_bytes_with_nul().to_vec(),
+    };
+    (Some(Made::Str(p)), held)
+}
+
+/// Releases what a request made, as `side` releases it.
+fn release(side: Side, made: Made) -> c_int {
+    match (side, made) {
+        (Side::C, Made::Box(p) | Made::Run(p, _)) => {
+            // SAFETY: a live allocation of libgit2's allocator, given up.
+            unsafe { ffi::git__free(p) }
+        }
+        (Side::C, Made::Str(p)) => {
+            // SAFETY: as above.
+            unsafe { ffi::git__free(p.cast()) }
+        }
+        (Side::Rust, Made::Box(p)) => {
+            // SAFETY: a live `git_signature` in libgit2's allocator, given up to the box,
+            // which releases it without reading it.
+            drop(unsafe { AllocBox::<Sig>::from_c(p.cast()) });
+        }
+        (Side::Rust, Made::Run(p, n)) => {
+            // SAFETY: a live allocation of libgit2's allocator for `n` elements, given up
+            // to the run, which reads none of them.
+            drop(unsafe { AllocVec::<MaybeUninit<u64>>::from_raw_parts(p.cast(), n) });
+        }
+        (Side::Rust, Made::Str(p)) => {
+            // SAFETY: a live NUL-terminated string of libgit2's allocator, given up.
+            drop(unsafe { AllocStr::from_raw(p) });
+        }
+    }
+    0
+}
+
+/// The requests the primitives' workload makes, and the size whose refusal fails each.
+const REQUESTS: [(Req, usize); 14] = [
+    (Req::Malloc, size_of::<ffi::git_signature>()),
+    (Req::CallocOne, size_of::<ffi::git_signature>()),
+    (Req::CallocRun(5), 40),
+    (Req::CallocRun(0), 0),
+    (Req::MallocArray(3), 12),
+    (Req::MallocArray(0), 0),
+    (Req::Strdup(c"refs/heads/main"), 16),
+    (Req::Strdup(c""), 1),
+    (Req::StrClone(c"origin"), 7),
+    (Req::Strndup(b"ab\0cd"), 3),
+    (Req::Strndup(b"abc"), 4),
+    (Req::Strndup(b""), 1),
+    (Req::Substrdup(b"ab\0cd"), 6),
+    (Req::Substrdup(b""), 1),
+];
+
+/// Makes every request on the `make` side, refuses each in turn, makes two whose size
+/// overflows, and releases what was made on the `free` side; one `Step` per call, and
+/// what each request made holds.
+fn primitive_workload(make: Side, free: Side) -> (Vec<Step>, Vec<Vec<u8>>) {
+    let mut numbering = Numbering::default();
+    let mut steps = Vec::new();
+    let mut step = |f: &mut dyn FnMut() -> c_int| {
+        set_str(ffi::GIT_ERROR_INVALID, c"marker");
+        TRACE.lock().unwrap().clear();
+        TRACING.store(true, SeqCst);
+        let result = f();
+        TRACING.store(false, SeqCst);
+        let events = numbering.normalise(std::mem::take(&mut *TRACE.lock().unwrap()));
+        steps.push(Step {
+            events,
+            result,
+            error: last_error(),
+        });
+    };
+    let mut blocks = Vec::new();
+    let mut held = Vec::new();
+    for (req, _) in REQUESTS {
+        step(&mut || {
+            let (rc, bytes, m) = request(make, req);
+            blocks.extend(m);
+            held.push(bytes);
+            rc
+        });
+    }
+    for (req, size) in REQUESTS {
+        if size == 0 {
+            continue;
+        }
+        REFUSE.store(size, SeqCst);
+        step(&mut || {
+            let (rc, _, m) = request(make, req);
+            assert!(m.is_none(), "{req:?}");
+            rc
+        });
+        REFUSE.store(0, SeqCst);
+    }
+    for req in [
+        Req::CallocRun(usize::MAX / 4),
+        Req::MallocArray(usize::MAX / 2),
+    ] {
+        step(&mut || request(make, req).0);
+    }
+    for m in blocks {
+        step(&mut || release(free, m));
+    }
+    (steps, held)
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls libgit2")]
+fn strategies_match_their_primitives() {
+    isolated(
+        concat!(module_path!(), "::strategies_match_their_primitives"),
+        || {
+            let c_side = ffi::git_allocator {
+                gmalloc: Some(c_traced_malloc),
+                grealloc: Some(c_traced_realloc),
+                gfree: Some(c_traced_free),
+            };
+            install(&raw const c_side);
+            // SAFETY: no arguments; refcounted, never released in this process.
+            assert!(unsafe { ffi::git_libgit2_init() } > 0);
+            // The thread's error state is allocated before any step.
+            set_str(ffi::GIT_ERROR_INVALID, c"marker");
+
+            let (c_steps, c_held) = primitive_workload(Side::C, Side::C);
+            for (make, free) in [
+                (Side::Rust, Side::Rust),
+                (Side::C, Side::Rust),
+                (Side::Rust, Side::C),
+            ] {
+                let (steps, held) = primitive_workload(make, free);
+                assert_eq!(held, c_held, "{make:?}/{free:?}");
+                assert_eq!(steps.len(), c_steps.len());
+                for (i, (c, rust)) in c_steps.iter().zip(&steps).enumerate() {
+                    assert_eq!(c, rust, "{make:?}/{free:?}, step {i}");
+                }
+            }
+            install(ptr::null());
+
+            // The comparison saw what it is about: requests through `gmalloc` and, for
+            // `git__mallocarray`, `grealloc`; zero-byte blocks; refusals and overflows
+            // reported as out of memory; and one release per block made.
+            let sig = size_of::<ffi::git_signature>();
+            let malloc = |s: &Step| match s.events[..] {
+                [Event::Malloc { len, got, .. }] => Some((len, got.is_some())),
+                _ => None,
+            };
+            assert_eq!(malloc(&c_steps[0]), Some((sig, true)));
+            assert_eq!(malloc(&c_steps[3]), Some((0, true)));
+            assert!(matches!(
+                c_steps[4].events[..],
+                [Event::Realloc {
+                    from: None,
+                    len: 12,
+                    got: Some(_),
+                    ..
+                }]
+            ));
+            assert!(matches!(
+                c_steps[5].events[..],
+                [Event::Realloc {
+                    from: None,
+                    len: 0,
+                    got: Some(_),
+                    ..
+                }]
+            ));
+            assert_eq!(c_held[1], vec![0; sig]);
+            assert_eq!(c_held[2], vec![0; 40]);
+            assert_eq!(c_held[9], b"ab\0");
+            assert_eq!(c_held[12], b"ab\0cd\0");
+            let refused = REQUESTS.iter().filter(|(_, size)| *size != 0).count();
+            let failures = &c_steps[REQUESTS.len()..REQUESTS.len() + refused + 2];
+            assert!(
+                failures
+                    .iter()
+                    .all(|s| s.result == -1 && s.error.0 == ffi::GIT_ERROR_NOMEMORY.cast_signed())
+            );
+            // The overflows asked the allocator nothing.
+            assert!(failures[refused..].iter().all(|s| s.events.is_empty()));
+            let releases = &c_steps[REQUESTS.len() + refused + 2..];
+            assert_eq!(releases.len(), REQUESTS.len());
+            assert!(
+                releases
+                    .iter()
+                    .all(|s| matches!(s.events[..], [Event::Free { block: Some(_) }]))
+            );
+        },
+    );
+}
 
 ffibox::define_ctype!(Sig, SigRef, SigMut, ffi::git_signature);
 

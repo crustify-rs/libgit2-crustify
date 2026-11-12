@@ -709,3 +709,13 @@ function reftable_buf_add
 function reftable_buf_init
 function reftable_buf_release
 type reftable_buf
+
+# wave-12/batch-2: src/util/alloc.c's allocator family (src/util/alloc.h); git__malloc and
+# git__free are `static inline`, wrapped in static_fns.c
+function git__calloc
+function git__free
+function git__malloc
+function git__mallocarray
+function git__strdup
+function git__strndup
+function git__substrdup
