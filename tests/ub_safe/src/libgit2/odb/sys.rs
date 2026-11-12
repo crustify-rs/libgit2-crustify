@@ -278,7 +278,7 @@ fn str_vec_empty_forms_own_nothing() {
     for r in [&v, &d, &e, &f] {
         assert!(r.is_empty() && r.as_ptr().is_null() && r.as_slice().is_empty());
     }
-    assert!(v.clone().into_vec().is_empty());
+    assert_eq!(v.clone().into_vec().len(), 0);
     let (strings, count) = e.into_raw_parts();
     assert!(strings.is_null() && count == 0);
 }

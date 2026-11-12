@@ -12027,7 +12027,26 @@
     "is_disposer": false,
     "is_cloner": null,
     "is_constructor": null
-   }
+   },
+   "ptr_args": [
+    {
+     "name": "ptr",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": {
+       "by_val": true
+      },
+      "string": true,
+      "owned": true,
+      "borrowed": null,
+      "nullable": true,
+      "mutable": false,
+      "note": "GIT_UNUSED(ptr): releases nothing and never touches ptr. It is the dropper of the failalloc family, whose allocator never allocates, so the only allocations it can be handed are none (NULL), and releasing nothing releases them; ownership passes to it as for any git_allocator gfree. Storage another allocator made and that libgit2 frees through git__free while failalloc is installed (only possible before git_libgit2_init) is leaked, not corrupted. Reachable safely through git_odb_backend_data_free before git_libgit2_init (git__free sets no error), which tests use to compare it with the Rust strategy."
+     }
+    }
+   ]
   },
   {
    "name": "git_failalloc_malloc",
@@ -12040,6 +12059,95 @@
     "is_constructor": {
      "alloc": true,
      "init": false
+    }
+   },
+   "ptr_args": [
+    {
+     "name": "file",
+     "ptr": {
+      "scalar": null,
+      "array": null,
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:file"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "GIT_UNUSED(file): never read. git__malloc/git__realloc (alloc.h) pass __FILE__, so libgit2's own calls never pass NULL, but git_failalloc_malloc accepts NULL on observed behaviour, as the git_allocator member contract (Rust MallocFn/ReallocFn) allows."
+     }
+    }
+   ],
+   "ptr_ret": {
+    "ptr": {
+     "scalar": {
+      "by_val": true
+     },
+     "array": {
+      "by_val": true
+     },
+     "string": false,
+     "owned": true,
+     "borrowed": null,
+     "nullable": true,
+     "mutable": true,
+     "note": "Always NULL: git_failalloc_malloc ignores every argument and allocates nothing, whatever the size (0 included). As a git_allocator member it is the family's allocator, so the slot is that of an owned, writable allocation of len bytes; none is ever produced. Installed as git__allocator's initial value (alloc.c) until git_libgit2_init's git_allocator_global_init replaces it, so every allocation before init fails. HAZARD for probes: git__malloc/git__realloc then call git_error_set_oom, whose threadstate lookup reads TLS key 0 before git_libgit2_init created it (see git_odb_backend_data_alloc's note), so C's failure is not observed through them in tests. Hidden visibility: libgit2.so does not export it, so Rust cannot link it; the Rust strategy FailAlloc (src/util/allocators/failalloc.rs) reproduces the constant body."
+    }
+   }
+  },
+  {
+   "name": "git_failalloc_realloc",
+   "defined_in": "src/util/allocators/failalloc.c",
+   "ptr_args": [
+    {
+     "name": "file",
+     "ptr": {
+      "scalar": null,
+      "array": null,
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:file"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "GIT_UNUSED(file): never read. git__malloc/git__realloc (alloc.h) pass __FILE__, so libgit2's own calls never pass NULL, but git_failalloc_realloc accepts NULL on observed behaviour, as the git_allocator member contract (Rust MallocFn/ReallocFn) allows."
+     }
+    },
+    {
+     "name": "ptr",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": {
+       "by_val": true
+      },
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:ptr"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "GIT_UNUSED(ptr): never read, written, released or kept. Every call fails (returns NULL), which is git_allocator's realloc failure path: ptr stays live and the caller's, unchanged, so it is only borrowed for the call. As a family member it accepts NULL (allocate afresh) or a live allocation of the same family; failalloc never makes one, so in practice it sees NULL, or storage of the allocator installed before a swap, which it leaves alone."
+     }
+    }
+   ],
+   "ptr_ret": {
+    "ptr": {
+     "scalar": {
+      "by_val": true
+     },
+     "array": {
+      "by_val": true
+     },
+     "string": false,
+     "owned": true,
+     "borrowed": null,
+     "nullable": true,
+     "mutable": true,
+     "note": "Always NULL: git_failalloc_realloc ignores every argument and allocates nothing, whatever the size (0 included). As a git_allocator member it is the family's allocator, so the slot is that of an owned, writable allocation of len bytes; none is ever produced. Installed as git__allocator's initial value (alloc.c) until git_libgit2_init's git_allocator_global_init replaces it, so every allocation before init fails. HAZARD for probes: git__malloc/git__realloc then call git_error_set_oom, whose threadstate lookup reads TLS key 0 before git_libgit2_init created it (see git_odb_backend_data_alloc's note), so C's failure is not observed through them in tests. Hidden visibility: libgit2.so does not export it, so Rust cannot link it; the Rust strategy FailAlloc (src/util/allocators/failalloc.rs) reproduces the constant body."
     }
    }
   },

@@ -62,11 +62,11 @@ in Notes.
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `694` | — | `28.44`% | `79.77`% |
-| UB unsafe tests | `91` | — | `19.38`% | `12.12`% |
-| Equiv tests | `489` | — | `43.42`% | `75.53`% |
-| Unit tests | `792` | — | `32.02`% | `87.46`% |
-| **Total tests** | **`2066`** | — | **`45.92`%** | **`98.92`%** |
+| UB safe tests | `699` | — | `10.92`% | `22.50`% |
+| UB unsafe tests | `99` | — | `0.60`% | `0.90`% |
+| Equiv tests | `490` | — | `44.32`% | `75.17`% |
+| Unit tests | `798` | — | `9.28`% | `16.26`% |
+| **Total tests** | **`2086`** | — | **`45.83`%** | **`77.00`%** |
 | total types | `258` | — | — | — |
 | ported types | `0` | `0.00`% | — | — |
 | wrapped types | `105` | `40.70`% | — | — |
@@ -451,6 +451,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/indexer.c` | `16` | `0` | wrap | first | `1` | `157` | `+970/-4` | — | `$4.45` | `10.63M` | `21m12s` | `$4.45` | `$0.03` |
 | `libgit2/src/libgit2/checkout.c` | `148` | `0` | wrap | first | `1` | `153` | `+855/-8` | — | `$7.63` | `22.75M` | `37m23s` | `$7.63` | `$0.05` |
 | `libgit2/src/libgit2/checkout.c` | `148` | `0` | wrap | first | `2` | `395` | `+1711/-20` | — | `$8.62` | `22.76M` | `47m38s` | `$4.31` | `$0.02` |
+| `libgit2/src/util/allocators/failalloc.c` | `176` | `0` | wrap | first | `3` | `18` | `+727/-6` | `45.83`% / `77.00`% | — | — | — | — | — |
 | `libgit2/raw-lifetime-void` | `legacy-1` | `0` | wrap | review | `2` | — | `+80/-1` | — | `$7.89` | `10.78M` | `18m36s` | `$3.94` | — |
 | `libgit2/raw-lifetime-string` | `legacy-3` | `0` | wrap | review | `2` | — | `+345/-23` | — | `$10.89` | `14.41M` | `22m03s` | `$5.45` | — |
 | `libgit2/util` | `legacy-6` | `2` | wrap | review | `4` | — | `+281/-117` | `1.63`% / `99.74`% | `$12.00` | `16.87M` | `28m49s` | `$3.00` | — |
@@ -479,7 +480,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/indexer.c` | `legacy-179` | `0` | wrap | review | `1` | — | `+35/-0` | — | `$3.18` | `8.05M` | `12m18s` | `$3.18` | — |
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | wrap | review | `1` | — | `+113/-14` | — | `$4.80` | `10.64M` | `27m50s` | `$4.80` | — |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | wrap | review | `2` | — | `+217/-15` | — | `$11.03` | `25.98M` | `47m17s` | `$5.51` | — |
-| **Σ first** |  |  |  |  | **`415`** | **`8478`** | **`+67747/-2506`** | **`46.66`% / `99.55`%** | **`$412.21`** | **`1262.84M`** | — | **`$0.99`** | **`$0.05`** |
+| **Σ first** |  |  |  |  | **`418`** | **`8496`** | **`+68474/-2512`** | **`45.83`% / `77.00`%** | **`$412.21`** | **`1262.84M`** | — | **`$0.99`** | **`$0.05`** |
 | **Σ review** |  |  |  |  | **`415`** | — | **`+7074/-1326`** | **`46.64`% / `99.55`%** | **`$339.40`** | **`631.25M`** | — | **`$0.82`** | — |
 
 ### Batches: tests
@@ -527,6 +528,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/indexer.c` | `16` | `0` | first | `+5` (—/— pp) | `+0` (—/— pp) | `+1` (—/— pp) | `+5` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `148` | `0` | first | `+5` (—/— pp) | `+0` (—/— pp) | `+2` (—/— pp) | `+8` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `148` | `0` | first | `+10` (—/— pp) | `+0` (—/— pp) | `+2` (—/— pp) | `+14` (—/— pp) |
+| `libgit2/src/util/allocators/failalloc.c` | `176` | `0` | first | `+5` (`-0.03`/`-0.05` pp) | `+8` (`+0.00`/`+0.00` pp) | `+1` (`-0.03`/`-0.09` pp) | `+6` (`+0.02`/`+0.14` pp) |
 | `libgit2/util` | `legacy-6` | `2` | review | `+1` (`+0.00`/`-0.79` pp) | `+0` (`+0.00`/`+0.00` pp) | `+0` (`+0.00`/`-0.79` pp) | `+1` (`+0.00`/`+4.47` pp) |
 | `libgit2/util` | `legacy-7` | `0` | review | `+0` (`+0.00`/`+0.00` pp) | `+0` (`+0.00`/`+0.00` pp) | `+0` (`+0.00`/`+0.00` pp) | `+0` (`+0.00`/`+0.00` pp) |
 | `libgit2/oid` | `legacy-12` | `1` | review | `+0` (`+0.00`/`+0.02` pp) | `+0` (`+0.00`/`-0.04` pp) | `+1` (`+0.00`/`+0.03` pp) | `+1` (`+0.00`/`+0.27` pp) |
@@ -553,7 +555,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/indexer.c` | `legacy-179` | `0` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) | `+1` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+2` (—/— pp) | `+0` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+1` (—/— pp) | `+1` (—/— pp) |
-| **Σ first** |  |  |  | **`+288` (`+10.21`/`+6.04` pp)** | **`+17` (`+3.17`/`-8.14` pp)** | **`+191` (`+8.99`/`+13.91` pp)** | **`+236` (`+11.76`/`-33.75` pp)** |
+| **Σ first** |  |  |  | **`+293` (`+10.18`/`+5.99` pp)** | **`+25` (`+3.17`/`-8.14` pp)** | **`+192` (`+8.96`/`+13.82` pp)** | **`+242` (`+11.78`/`-33.61` pp)** |
 | **Σ review** |  |  |  | **`+14` (`+0.34`/`-1.41` pp)** | **`+2` (`-0.92`/`+0.27` pp)** | **`+22` (`+0.09`/`-0.37` pp)** | **`+34` (`+2.44`/`+7.45` pp)** |
 
 ### Batches: safety audit
@@ -562,7 +564,8 @@ Deterministic `ffimap`; no model.
 
 | module | wave | batch | objective | pass | pub raw ptr | pub void ptr | pub unsafe fn | &cell | C by value | celled % | raw→std | unmanaged ptr types | ptr Drop | Send/Sync | raw deref | FFI calls | unsafe loc % | unsafe blocks |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **Σ first** |  |  |  |  | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| `libgit2/src/util/allocators/failalloc.c` | `176` | `0` | wrap | first | `+0` | `+0` | `+4` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.04` pp | `+0` |
+| **Σ first** |  |  |  |  | **`+0`** | **`+0`** | **`+4`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`-0.04` pp** | **`+0`** |
 | **Σ review** |  |  |  |  | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
 
 ### Batches — review: PoC + reports
@@ -1591,6 +1594,28 @@ tests pass under ASan+UBSan and TSan. This wave is not the module's last (wave 3
 so BSan ran only the reproducer, which it passed on the fixed tree without a report.
 `cargo test --workspace --no-fail-fast` fails only on the five compile-fail snapshots that
 the ffibox pin drift breaks. `ub_unsafe` and the doctests pass.
+
+### `libgit2/src/util/allocators/failalloc.c` wave 176 batch 0: the failing allocator family
+
+The module's three routines are hidden in `libgit2.so` (`extern`, not `GIT_EXTERN`, under
+`-fvisibility=hidden`), so no raw binding links them. The batch reproduces their constant
+bodies as the policies `FailAlloc` (singletons, strings, and the `Alloc` behind
+`Allocator::new`) and `FailArrayAlloc` (arrays), under `Replaces` anchors, and leaves the C
+as `git__allocator`'s initial value. Only the C `free` is compared, through
+`git_odb_backend_data_free` before `git_libgit2_init`: a failing `malloc` or `realloc` then
+reports through TLS key 0 (`crustify/LESSONS.md`). Worklist coverage under the batch's own
+tests: Rust `failalloc.rs` 100% lines, regions and functions; C `failalloc.c` 1 of 3
+functions, 21.43% lines.
+
+The coverage cells are measured on runs in which `lib`, `ub_safe` and `ub_unsafe` abort
+part-way, on the base as on the tip: ffibox `936204b` made `CVec` drop its elements, and
+`OdbDataStrVec`'s own `Drop` (`src/libgit2/src/libgit2/odb.rs`) still drops them too, a
+double free (glibc `free(): double free detected in tcache 2`). Their figures, and the
+totals, are therefore partial; the pp changes compare two equally partial runs, and the
+`ub_unsafe` row's zero change is a suite that aborts before the batch's tests run. The batch
+also adds the `tests/unit_pub` suite, counted under the unit column with `lib`, and rewrites
+four `assert!(….is_empty())` in `odb.rs` and the `odb/sys.rs` tests, which toolchain
+`1.99.0`'s `clippy::assert_is_empty` denies.
 
 ### Parallelism and review caps from `libgit2/repository`
 
