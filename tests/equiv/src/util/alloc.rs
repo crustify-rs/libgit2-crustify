@@ -19,12 +19,15 @@ use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::process::Command;
 use std::ptr::{self, NonNull};
 use std::sync::Mutex;
-use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::SeqCst;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 
+use ffibox::CZeroable;
 use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::odb::OdbDataStrFree;
-use libgit2::libgit2::src::util::alloc::{Alloc, Allocator, FreeFn, MallocFn, ReallocFn};
+use libgit2::libgit2::src::util::alloc::{
+    Alloc, AllocBox, AllocStr, Allocator, FreeFn, MallocFn, ReallocFn, StrFree,
+};
 
 const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 
@@ -160,7 +163,7 @@ fn trace(call: Raw) {
 }
 
 fn libc_malloc(len: usize) -> *mut c_void {
-    if len == REFUSED {
+    if len == REFUSED || (len != 0 && len == REFUSE.load(SeqCst)) {
         return ptr::null_mut();
     }
     // SAFETY: plain libc allocation.
@@ -530,6 +533,258 @@ fn libgit2_drives_both_allocators_alike() {
                 c_steps[4].events
             );
             assert_eq!(c_steps[5].error.0, ffi::GIT_ERROR_NOMEMORY.cast_signed());
+        },
+    );
+}
+
+// --- the strategies -------------------------------------------------------------------
+//
+// `git__calloc`, `git__strdup`, `git__substrdup` and `git__free` are hidden in
+// libgit2.so, so the strategies standing in for them are compared through the exported
+// routines that call them: `git_signature_new` (`git__calloc(1, sizeof)` and two
+// `git__substrdup`s of the trimmed name and email), `git_signature_dup` (`git__calloc`
+// and two `git__strdup`s) and `git_signature_free` (three `git__free`s). The Rust side
+// builds and releases the same `git_signature` through `AllocBox`, `StrFree` and
+// `AllocStr`. Each step's allocator calls, file and line included, its result and the
+// thread's error are compared, side by side, and so are the signatures built; the mixed
+// sides release what the other side built, through the other allocator path.
+//
+// Not compared: `git__strndup` and `git__mallocarray`, which no exported routine reaches
+// without unrelated allocations around them, and refusals after the first allocation,
+// where `git_signature_new` and `git_signature_dup` leak what they built (C defects,
+// LSan); the unit tests cover them.
+
+/// A request size the C-shaped tracer refuses besides [`REFUSED`]; 0 refuses none.
+static REFUSE: AtomicUsize = AtomicUsize::new(0);
+
+ffibox::define_ctype!(Sig, SigRef, SigMut, ffi::git_signature);
+
+// SAFETY: all zero is two NULL strings and a zero time, which `git_signature_free` and
+// `rust_free` accept, and which nothing reads before it is filled.
+unsafe impl CZeroable for Sig {}
+
+/// `signature.c`'s `is_crud`.
+fn is_crud(c: u8) -> bool {
+    c <= 32 || b",:;<>\"\\'".contains(&c)
+}
+
+/// `signature.c`'s `extract_trimmed`, before its copy.
+fn trimmed(s: &[u8]) -> &[u8] {
+    let start = s.iter().position(|&c| !is_crud(c)).unwrap_or(s.len());
+    let s = &s[start..];
+    let end = s.iter().rposition(|&c| !is_crud(c)).map_or(0, |i| i + 1);
+    &s[..end]
+}
+
+/// One side's routines.
+#[derive(Clone, Copy, Debug)]
+enum Side {
+    C,
+    Rust,
+}
+
+const NAME: &CStr = c"  Ann Example ";
+const EMAIL: &CStr = c" ann@example.org; ";
+
+/// `git_signature_new(NAME, EMAIL, 1234, -90)`, as the side builds it.
+fn sig_new(side: Side, out: &mut *mut ffi::git_signature) -> c_int {
+    match side {
+        Side::C => {
+            // SAFETY: `out` is writable; both strings are live C strings.
+            unsafe { ffi::git_signature_new(out, NAME.as_ptr(), EMAIL.as_ptr(), 1234, -90) }
+        }
+        Side::Rust => {
+            let Some(sig) = AllocBox::<Sig>::new_zeroed() else {
+                return -1;
+            };
+            let name = StrFree::dup_bytes(trimmed(NAME.to_bytes())).unwrap();
+            let email = StrFree::dup_bytes(trimmed(EMAIL.to_bytes())).unwrap();
+            let when = ffi::git_time {
+                time: 1234,
+                offset: -90,
+                sign: b'-'.cast_signed(),
+            };
+            *out = fill(sig, name, email, when);
+            0
+        }
+    }
+}
+
+/// Moves the strings into the boxed signature and hands it over.
+fn fill(
+    sig: AllocBox<Sig>,
+    name: AllocStr,
+    email: AllocStr,
+    when: ffi::git_time,
+) -> *mut ffi::git_signature {
+    let p = sig.into_c();
+    let filled = ffi::git_signature {
+        name: name.into_raw(),
+        email: email.into_raw(),
+        when,
+    };
+    // SAFETY: `p` is the live, zeroed `git_signature` the box gave up; the strings move
+    // into it, and `git_signature_free` or `sig_free` releases all three.
+    unsafe { p.write(filled) };
+    p
+}
+
+/// `git_signature_dup(src)`, as the side copies it.
+fn sig_dup(side: Side, out: &mut *mut ffi::git_signature, src: *const ffi::git_signature) -> c_int {
+    match side {
+        // SAFETY: `out` is writable; `src` is a live signature.
+        Side::C => unsafe { ffi::git_signature_dup(out, src) },
+        Side::Rust => {
+            let Some(sig) = AllocBox::<Sig>::new_zeroed() else {
+                return -1;
+            };
+            // SAFETY: `src` is a live signature.
+            let src = unsafe { src.read() };
+            // SAFETY: its strings are live and NUL-terminated.
+            let name = StrFree::dup(unsafe { CStr::from_ptr(src.name) }).unwrap();
+            // SAFETY: as above.
+            let email = StrFree::dup(unsafe { CStr::from_ptr(src.email) }).unwrap();
+            *out = fill(sig, name, email, src.when);
+            0
+        }
+    }
+}
+
+/// `git_signature_free(sig)`, as the side releases it.
+fn sig_free(side: Side, sig: *mut ffi::git_signature) -> c_int {
+    match side {
+        // SAFETY: `sig` is a live signature of libgit2's allocator, given up.
+        Side::C => unsafe { ffi::git_signature_free(sig) },
+        Side::Rust => {
+            // SAFETY: `sig` is a live signature.
+            let raw = unsafe { sig.read() };
+            // The struct and its strings are allocations of libgit2's allocator, all
+            // given up; each is adopted once, and released in `git_signature_free`'s
+            // order: name, email, struct.
+            // SAFETY: as above.
+            drop(unsafe { AllocStr::from_raw(raw.name) });
+            // SAFETY: as above.
+            drop(unsafe { AllocStr::from_raw(raw.email) });
+            // SAFETY: as above.
+            drop(unsafe { AllocBox::<Sig>::from_c(sig) });
+        }
+    }
+    0
+}
+
+/// What a signature holds.
+fn contents(sig: *const ffi::git_signature) -> Contents {
+    // SAFETY: `sig` is a live signature.
+    let sig = unsafe { sig.read() };
+    // SAFETY: its strings are live and NUL-terminated.
+    let name = unsafe { CStr::from_ptr(sig.name) }.to_owned();
+    // SAFETY: as above.
+    let email = unsafe { CStr::from_ptr(sig.email) }.to_owned();
+    (name, email, sig.when.time, sig.when.offset, sig.when.sign)
+}
+
+type Contents = (CString, CString, i64, c_int, c_char);
+
+/// Builds, copies, fails to build and releases signatures with the given sides'
+/// constructor, copier and releaser; one `Step` per call.
+fn signature_workload(new: Side, dup: Side, free: Side) -> (Vec<Step>, Vec<Contents>) {
+    let mut numbering = Numbering::default();
+    let mut steps = Vec::new();
+    let mut step = |f: &mut dyn FnMut() -> c_int| {
+        // A marker error, which a step that reports nothing leaves in place.
+        set_str(ffi::GIT_ERROR_INVALID, c"marker");
+        TRACE.lock().unwrap().clear();
+        TRACING.store(true, SeqCst);
+        let result = f();
+        TRACING.store(false, SeqCst);
+        let events = numbering.normalise(std::mem::take(&mut *TRACE.lock().unwrap()));
+        steps.push(Step {
+            events,
+            result,
+            error: last_error(),
+        });
+    };
+    let (mut p, mut q, mut r) = (ptr::null_mut(), ptr::null_mut(), ptr::null_mut());
+    step(&mut || sig_new(new, &mut p));
+    step(&mut || sig_dup(dup, &mut q, p));
+    let built = vec![contents(p), contents(q)];
+    // The first allocation refused: nothing is built, out of memory is reported.
+    REFUSE.store(size_of::<ffi::git_signature>(), SeqCst);
+    step(&mut || sig_new(new, &mut r));
+    step(&mut || sig_dup(dup, &mut r, p));
+    REFUSE.store(0, SeqCst);
+    assert!(r.is_null());
+    step(&mut || sig_free(free, q));
+    step(&mut || sig_free(free, p));
+    (steps, built)
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls libgit2")]
+fn strategies_allocate_and_release_as_libgit2_does() {
+    isolated(
+        concat!(
+            module_path!(),
+            "::strategies_allocate_and_release_as_libgit2_does"
+        ),
+        || {
+            let c_side = ffi::git_allocator {
+                gmalloc: Some(c_traced_malloc),
+                grealloc: Some(c_traced_realloc),
+                gfree: Some(c_traced_free),
+            };
+            install(&raw const c_side);
+            // SAFETY: no arguments; refcounted, never released in this process.
+            assert!(unsafe { ffi::git_libgit2_init() } > 0);
+            // The thread's error state is allocated before any step.
+            set_str(ffi::GIT_ERROR_INVALID, c"marker");
+
+            let (c_steps, c_built) = signature_workload(Side::C, Side::C, Side::C);
+            for (new, dup, free) in [
+                (Side::Rust, Side::Rust, Side::Rust),
+                // Rust copies and releases what C built.
+                (Side::C, Side::Rust, Side::Rust),
+                // C copies and releases what Rust built.
+                (Side::Rust, Side::C, Side::C),
+            ] {
+                let (steps, built) = signature_workload(new, dup, free);
+                assert_eq!(built, c_built, "{new:?}/{dup:?}/{free:?}");
+                assert_eq!(steps.len(), c_steps.len());
+                for (i, (c, rust)) in c_steps.iter().zip(&steps).enumerate() {
+                    assert_eq!(c, rust, "{new:?}/{dup:?}/{free:?}, step {i}");
+                }
+            }
+            install(ptr::null());
+
+            // The comparison saw what it is about.
+            let sig = size_of::<ffi::git_signature>();
+            let lens = |s: &Step| {
+                s.events
+                    .iter()
+                    .map(|e| match e {
+                        Event::Malloc { len, got, .. } => (*len, got.is_some()),
+                        Event::Free { block } => (0, block.is_some()),
+                        Event::Realloc { .. } => unreachable!("no resize"),
+                    })
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(lens(&c_steps[0]), [(sig, true), (12, true), (16, true)]);
+            assert_eq!(lens(&c_steps[1]), [(sig, true), (12, true), (16, true)]);
+            assert_eq!(lens(&c_steps[2]), [(sig, false)]);
+            assert_eq!(lens(&c_steps[4]), [(0, true); 3]);
+            assert_eq!(c_steps[0].error.1.as_c_str(), c"marker");
+            assert_eq!(c_steps[2].result, -1);
+            assert_eq!(c_steps[2].error.0, ffi::GIT_ERROR_NOMEMORY.cast_signed());
+            assert_eq!(
+                c_built[0],
+                (
+                    c"Ann Example".to_owned(),
+                    c"ann@example.org".to_owned(),
+                    1234,
+                    -90,
+                    b'-'.cast_signed()
+                )
+            );
         },
     );
 }

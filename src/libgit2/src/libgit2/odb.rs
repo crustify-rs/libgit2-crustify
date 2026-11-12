@@ -140,7 +140,7 @@ use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::fmt;
 use core::hash::{Hash, Hasher};
 use core::marker::PhantomData;
-use core::mem::{ManuallyDrop, MaybeUninit, align_of, size_of};
+use core::mem::{MaybeUninit, align_of, size_of};
 use core::num::NonZero;
 use core::ops::{BitOr, BitOrAssign, ControlFlow};
 use core::ptr::{self, NonNull};
@@ -2454,11 +2454,10 @@ impl OdbDataStrVec {
         }
     }
 
-    /// The storage, its strings no longer dropped with the run.
+    /// The storage, which owns the strings: an `OdbDataVec` drops its elements, then
+    /// frees the array.
     fn into_storage(self) -> OdbDataVec<OdbDataStr> {
-        let this = ManuallyDrop::new(self);
-        // SAFETY: the storage is read out exactly once and `self` is never dropped.
-        unsafe { ptr::read(&raw const this.0) }
+        self.0
     }
 
     /// Copies of every item's string in `git_strarray_copy`'s order: the array first,
@@ -2480,14 +2479,6 @@ impl OdbDataStrVec {
         }
         // SAFETY: the run has `items.len()` slots and the loop wrote each of them.
         Some(Self(unsafe { run.assume_init() }))
-    }
-}
-
-impl Drop for OdbDataStrVec {
-    fn drop(&mut self) {
-        // SAFETY: the run owns its strings, each dropped once here; the storage, which
-        // the inner `OdbDataVec` frees right after, is not read again.
-        unsafe { ptr::drop_in_place(self.as_mut_slice()) }
     }
 }
 
@@ -4283,9 +4274,9 @@ mod unit_tests {
         assert!(v.is_empty() && v.as_ptr().is_null() && v.as_slice().is_empty());
         assert_eq!(format!("{v:?}"), "[]");
         let mut d = OdbDataStrVec::default();
-        assert!(d.as_mut_slice().is_empty());
+        assert_eq!(d.as_mut_slice().len(), 0);
         assert!(d.try_clone().unwrap().as_ptr().is_null());
-        assert!(v.clone().into_vec().is_empty());
+        assert_eq!(v.clone().into_vec().len(), 0);
         let (strings, count) = OdbDataStrVec::dup_all::<&CStr>(&[])
             .unwrap()
             .into_raw_parts();
