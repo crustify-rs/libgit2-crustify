@@ -56,17 +56,17 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip `<sha>`; `main` shipped at `<sha>`; crustify `4605156`, ffibox `7950244` (`main`), wavefront `db28284`
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `18388` non-test, `96780` tests; **C LoC** — `86833`
+- **Rust LoC** — `18425` non-test, `96914` tests; **C LoC** — `86833`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `716` | — | `28.60`% | `79.40`% |
-| UB unsafe tests | `94` | — | `19.38`% | `13.16`% |
-| Equiv tests | `506` | — | `43.48`% | `75.11`% |
-| Unit tests | `850` | — | `32.08`% | `87.82`% |
-| **Total tests** | **`2166`** | — | **`45.99`%** | **`98.92`%** |
+| UB safe tests | `718` | — | `28.61`% | `79.41`% |
+| UB unsafe tests | `94` | — | `19.36`% | `13.10`% |
+| Equiv tests | `506` | — | `43.48`% | `74.95`% |
+| Unit tests | `853` | — | `32.05`% | `87.82`% |
+| **Total tests** | **`2171`** | — | **`45.93`%** | **`98.90`%** |
 | total types | `258` | — | — | — |
 | ported types | `0` | `0.00`% | — | — |
 | wrapped types | `107` | `41.47`% | — | — |
@@ -489,8 +489,9 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | wrap | review | `1` | — | `+113/-14` | — | `$4.80` | `10.64M` | `27m50s` | `$4.80` | — |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | wrap | review | `2` | — | `+217/-15` | — | `$11.03` | `25.98M` | `47m17s` | `$5.51` | — |
 | `libgit2/deps/reftable/basics.c` | `169` | `4` | wrap | review | `43` | — | `+110/-16` | `45.99`% / `98.92`% | — | — | — | — | — |
+| `libgit2/deps/reftable/basics.c` | `169` | `5` | wrap | review | `43` | — | `+298/-23` | `45.93`% / `98.90`% | — | — | — | — | — |
 | **Σ first** |  |  |  |  | **`458`** | **`8779`** | **`+71250/-2597`** | **`45.89`% / `98.92`%** | **`$412.21`** | **`1262.84M`** | — | **`$0.99`** | **`$0.05`** |
-| **Σ review** |  |  |  |  | **`458`** | — | **`+7184/-1342`** | **`45.99`% / `98.92`%** | **`$339.40`** | **`631.25M`** | — | **`$0.82`** | — |
+| **Σ review** |  |  |  |  | **`501`** | — | **`+7482/-1365`** | **`45.93`% / `98.90`%** | **`$339.40`** | **`631.25M`** | — | **`$0.82`** | — |
 
 ### Batches: tests
 
@@ -566,8 +567,9 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+2` (—/— pp) | `+0` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+1` (—/— pp) | `+1` (—/— pp) |
 | `libgit2/deps/reftable/basics.c` | `169` | `4` | review | `+0` (`-0.00`/`-0.01` pp) | `+1` (`+0.00`/`+0.00` pp) | `+1` (`+0.03`/`+0.10` pp) | `+0` (`+0.01`/`+0.01` pp) |
+| `libgit2/deps/reftable/basics.c` | `169` | `5` | review | `+2` (`+0.00`/`+0.01` pp) | `+0` (`-0.01`/`-0.06` pp) | `+0` (`+0.02`/`-0.16` pp) | `+3` (`+0.01`/`+0.01` pp) |
 | **Σ first** |  |  |  | **`+303` (`+10.39`/`+5.65` pp)** | **`+19` (`+3.32`/`-6.99` pp)** | **`+203` (`+9.05`/`+13.52` pp)** | **`+279` (`+12.03`/`-33.48` pp)** |
-| **Σ review** |  |  |  | **`+14` (`+0.34`/`-1.42` pp)** | **`+3` (`-0.92`/`+0.27` pp)** | **`+23` (`+0.12`/`-0.27` pp)** | **`+34` (`+2.45`/`+7.46` pp)** |
+| **Σ review** |  |  |  | **`+16` (`+0.34`/`-1.41` pp)** | **`+3` (`-0.93`/`+0.21` pp)** | **`+23` (`+0.14`/`-0.43` pp)** | **`+37` (`+2.46`/`+7.47` pp)** |
 
 ### Batches: safety audit
 
@@ -578,8 +580,9 @@ Deterministic `ffimap`; no model.
 | `libgit2/deps/reftable/basics.c` | `169` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+2` | `-0.11` pp | `+3` |
 | `libgit2/deps/reftable/basics.c` | `169` | `2` | wrap | first | `+0` | `+0` | `+9` | `+0` | `+1` | `+0.00` pp | `+1` | `+1` | `+0` | `+0` | `+0` | `+23` | `-0.10` pp | `+37` |
 | `libgit2/deps/reftable/basics.c` | `169` | `4` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.00` pp | `+0` |
+| `libgit2/deps/reftable/basics.c` | `169` | `5` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `-1` | `+0` | `+6` | `+0` | `+1` | `-0.02` pp | `+1` |
 | **Σ first** |  |  |  |  | **`+0`** | **`+0`** | **`+9`** | **`+0`** | **`+1`** | **`+0.00` pp** | **`+1`** | **`+1`** | **`+0`** | **`+0`** | **`+0`** | **`+25`** | **`-0.21` pp** | **`+40`** |
-| **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`-0.00` pp** | **`+0`** |
+| **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`-1`** | **`+0`** | **`+6`** | **`+0`** | **`+1`** | **`-0.02` pp** | **`+1`** |
 
 ### Batches — review: PoC + reports
 
@@ -617,7 +620,8 @@ Deterministic `ffimap`; no model.
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+2` | `2` |
 | — (`tests/ub_safe`) | `legacy-526` | `0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
 | `libgit2/deps/reftable/basics.c` | `169` | `4` | `+0` | `+0` | `+0` | `+0` | `+1` | `+1` | `+1` | `+2` | `5` |
-| **Σ** |  |  | **`+1`** | **`+5`** | **`+3`** | **`+1`** | **`+4`** | **`+6`** | **`+12`** | **`+53`** | **`85`** |
+| `libgit2/deps/reftable/basics.c` | `169` | `5` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `+0` | `+3` | `4` |
+| **Σ** |  |  | **`+1`** | **`+5`** | **`+3`** | **`+1`** | **`+4`** | **`+7`** | **`+12`** | **`+56`** | **`89`** |
 
 ## Notes
 
@@ -2272,3 +2276,65 @@ Miri ran the two new tests alone. The equivalence test stops at `reftable_error_
 marked `calls C`. The `ub_unsafe` test stops at the child process it spawns, and is marked so.
 No test is expected to trigger BorrowSanitizer. The safety audit row is a scan of the landed
 tree against batch 3's scan of the tip.
+### `libgit2/deps/reftable/basics.c` wave 169 batch 5: module pass
+
+The module pass reviews the module whole, across batches 0 to 4 as the wave tip `9aa6520a5`
+holds them, for every objective, `fix` included, and runs the wave's gates and the module's
+end gates. The dashboard has no `Module passes` table, so its rows are in the Symbols
+route's tables, where all four findings' items are; it reviewed the module's 2 types too
+(proposal `dashboard-lacks-module-passes`). The findings are counted as `+internal` one
+(`contracts/ffi_import`) and `+misc` three (one `misc`, and two `ergonomics`, which has no
+column). The host refused the report files, so the reports are in the review commit's
+message; the two reproducers sit under the reviews dir.
+
+- **contracts**: the TSan gate on the tip caught the equivalence suite's C side calling
+  `reftable_buf_add` before anything pinned libgit2's runtime, racing another test's first
+  `git_libgit2_init`, which writes reftable's allocator hooks. TSan halted `equiv` there. The
+  suite now pins the runtime before its first raw call, and all of `equiv` runs clean under
+  TSan (proposal `equiv-c-side-meets-the-c-preconditions`).
+- **ergonomics**: `Names`, `NamesVec` and `NamesRef` were neither `Send` nor `Sync`, unlike
+  the `Vec` of strings and slice they stand for. Each now is, with its proof.
+- **ergonomics**: runs grown by `REFTABLE_ALLOC_GROW`'s forms stay `MaybeUninit`, so a
+  consumer read back what it wrote only through `unsafe`. `ReftableArrayFree::grow_with`
+  grows an initialised run and fills the new elements, as `Vec::resize_with` does.
+- **misc**: `parse_names` counted C's array by hand with raw-pointer reads; it calls
+  `names_length`.
+
+The wave's Miri gate also stopped at `libgit2-sys`'s `hidden_symbols` test, which calls
+`reftable_buf_init` unmarked; it is marked `calls C`. The safety comments of `ffi_import`
+hold, ffimap's `ub` smells in the module are each sanctioned or proved, and the ownership
+store's findings for the module's 31 items match the C.
+
+Coverage follows batch 1's method: C over the coverage variant's static archive alone,
+86,833 lines, and Rust from `report.py`'s scope over `src/`. The batch's tree and its base,
+the wave tip, were measured in this session. Base: `45.94`% / `98.92`% in all, `ub_safe`
+`28.60`/`79.40`, `ub_unsafe` `19.37`/`13.16`, `equiv` `43.46`/`75.11`, and unit (lib and
+`unit_pub`) `32.04`/`87.82`; the Coverage stats were measured on the landed tree. Over the
+worklist, the tests run `98.50`% of `basics.c`'s 200 lines and `98.41`% of `basics.rs`' 504.
+The C lines left are `parse_names`' `next = end` and `hash_size`'s `abort()`, unreachable
+through the safe API. The Rust left is `NamesRef::iter`'s and `grow_with`'s `unreachable!`,
+the `None` arms of `resize`'s and `Refill`'s adoptions of a run that is NULL only when
+empty, and `realloc_with`'s zero size, which reftable never passes; a refusing sink now
+reaches the error types' formatter returns. The Overview's Rust LoC moves by `+37`
+non-test and `+134` test code lines, counted as batch 2 counted them.
+
+Gates on the tip and again on the landed tree, from snapshots of each:
+
+- plain, ASan+UBSan and TSan over the workspace: apart from the known trybuild snapshots (5
+  on stable, 13 on the nightly, the same set on both trees) and the nightly's `CommitBuilder`
+  doctest, the tip's only failure is the TSan race above, and the landed tree's none;
+- Miri over the workspace, one run per test binary, compile-fail skipped: the tip's only
+  error is `hidden_symbols`' unmarked C call, and the landed tree's none; and
+- BorrowSanitizer over the workspace, one invocation per test binary under a 4-hour
+  timeout, passes on both trees. Four indexer tests, which never finish under it, are
+  skipped by name and left to the indexer module: three of `lib` and
+  `a_progress_callback_sees_and_cancels_as_a_c_callback` of `equiv`. `lib` passes its
+  other 802 tests and `equiv` 495; three other modules' slow tests, the mailmap classifier
+  and `buffers_match`, and the index stage sweep, were split out and pass alone on the
+  landed tree. That tree's `equiv` run first failed 53 tests that re-execute themselves,
+  because an alone run relinked the binary beneath it; rerun alone, all 53 pass. The
+  module's own tests pass in every binary.
+
+The safety audit row is a scan of the landed tree against a scan of the tip. ffimap's
+checkout moved from `405e053` to `9aa2ef1` between them, which adds only its `api`
+subcommand, so the counters compare. The landed tree's scan is also the wave's record.

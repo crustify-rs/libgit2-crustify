@@ -6,6 +6,7 @@
 use libgit2_sys::{reftable_buf, reftable_buf_add, reftable_buf_init, reftable_buf_release};
 
 #[test]
+#[cfg_attr(miri, ignore = "calls C")]
 fn hidden_reftable_buffer_functions_link_and_run() {
     let mut buf = reftable_buf {
         alloc: 7,

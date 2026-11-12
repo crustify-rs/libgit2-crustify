@@ -12,6 +12,12 @@
 //! appends, trims, comparisons and detaches; `parse_names`, `binsearch` and `hash_size` on
 //! the same inputs; and the allocator's routines on the same requests.
 //!
+//! The C side allocates and releases through reftable's allocator hooks, which the
+//! process's first `git_libgit2_init` writes without synchronisation
+//! (`git_reftable_global_init`), and which the safe API reads only once libgit2's runtime is
+//! pinned. So the C side pins it too, through `pin_runtime`, before its first call that
+//! reads them: called first, it would race the first pin of a test on another thread.
+//!
 //! The name lists are compared with `names_length` and `names_equal` called on raw arrays
 //! built independently of the `NamesVec` the safe API reads, and on those `parse_names`
 //! returns. The size constants are compared with their generated bindings. The big-endian
@@ -127,11 +133,21 @@ fn contents_with_nul_bytes_read_whole() {
     assert_eq!(b.as_c_str(), None, "a NUL comes before the terminator");
 }
 
+/// Pins libgit2's runtime, as every safe owner of reftable's memory does before it
+/// allocates, so that this thread's later reads of reftable's allocator hooks are ordered
+/// after the first `git_libgit2_init` wrote them (`OnceLock` orders them). The pin is
+/// process-wide and never released.
+fn pin_runtime() {
+    drop(ReftableStr::from_c_str(c"pins the runtime").expect("libgit2 initialises"));
+}
+
 /// A C buffer, released by `reftable_buf_release` when dropped.
 struct RawBuf(ffi::reftable_buf);
 
 impl RawBuf {
+    /// An empty C buffer, with the runtime pinned for the routines that grow and release it.
     fn new() -> Self {
+        pin_runtime();
         let mut raw = MaybeUninit::uninit();
         // SAFETY: `reftable_buf_init` writes the whole struct without reading it.
         unsafe { ffi::reftable_buf_init(raw.as_mut_ptr()) };
@@ -150,7 +166,8 @@ impl RawBuf {
 
 impl Drop for RawBuf {
     fn drop(&mut self) {
-        // SAFETY: the struct owns `buf` (or nothing), released once here.
+        // SAFETY: the struct owns `buf` (or nothing), released once here, through the hook
+        // `RawBuf::new`'s pin ordered after its write.
         unsafe { ffi::reftable_buf_release(&raw mut self.0) }
     }
 }
@@ -170,7 +187,9 @@ enum Step {
 fn apply(step: Step, c: &mut RawBuf, rust: &mut BufVal) {
     match step {
         Step::Add(data) => {
-            // SAFETY: `c` is a live buffer and `data` readable for its length.
+            // SAFETY: `c` is a live buffer and `data` readable for its length; the runtime is
+            // pinned (`RawBuf::new`), so the hooks `reftable_realloc` reads are not written
+            // meanwhile.
             let rc =
                 unsafe { ffi::reftable_buf_add(&raw mut c.0, data.as_ptr().cast(), data.len()) };
             assert_eq!(rust.as_mut().add(data).map_err(Error::code), status(rc));
@@ -277,11 +296,13 @@ fn comparisons_match_c() {
 
 /// What C's `parse_names` gives for `input`: the names, or the error code.
 fn c_parse_names(input: &[u8]) -> Result<Vec<Vec<u8>>, c_int> {
+    pin_runtime();
     let mut buf = input.to_vec();
     buf.push(0);
     let mut out: *mut *mut c_char = ptr::null_mut();
     let size = c_int::try_from(input.len()).unwrap();
-    // SAFETY: `buf` holds `size` bytes and a NUL; `out` is written on success alone.
+    // SAFETY: `buf` holds `size` bytes and a NUL; `out` is written on success alone. The
+    // runtime is pinned, so the hooks C allocates through are not written meanwhile.
     let rc = unsafe { ffi::parse_names(buf.as_mut_ptr().cast(), size, &raw mut out) };
     if rc != 0 {
         assert!(out.is_null(), "untouched on failure");
@@ -414,7 +435,7 @@ fn hash_size_matches_c() {
 #[cfg_attr(miri, ignore = "calls C")]
 fn allocator_routines_match_c() {
     // A `calloc` that overflows is NULL in C, `None` here.
-    drop(ReftableStr::from_c_str(c"pins the runtime").unwrap());
+    pin_runtime();
     // SAFETY: `reftable_calloc` checks the product before it allocates.
     assert!(unsafe { ffi::reftable_calloc(usize::MAX, 2) }.is_null());
     assert!(ReftableArrayFree::new_zeroed::<u16>(usize::MAX).is_none());

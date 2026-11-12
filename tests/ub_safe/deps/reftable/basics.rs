@@ -21,7 +21,13 @@
 //! outlive the `NamesVec` or `Names` that lends it nor the strings it points at
 //! (`compile_fail` doctests on `NamesRef`). `names_length` and `names_equal` read the arrays
 //! up to their terminators, which the tests reach through lists of every relative length,
-//! so that an over-read past a terminator is caught by `ASan`.
+//! so that an over-read past a terminator is caught by `ASan`. The lists are `Send` and
+//! `Sync`: a parsed one moves to another thread and is released there, and several read a
+//! list and its borrowed view at once (`TSan`).
+//!
+//! `grow_with` fills a run of owners: each element is dropped once, whether the filling
+//! completes, fails before it starts or panics part-way (`ASan`, and `LSan` for an element
+//! lost).
 
 use std::collections::HashSet;
 use std::ffi::{CStr, CString};
@@ -31,7 +37,7 @@ use std::{panic, thread};
 use ffibox::CZeroable;
 use libgit2::ffi;
 use libgit2::libgit2::deps::reftable::basics::{
-    Buf, BufMut, BufRef, BufVal, HashId, NamesRef, NamesVec, ReftableArrayFree, ReftableBox,
+    Buf, BufMut, BufRef, BufVal, Error, HashId, NamesRef, NamesVec, ReftableArrayFree, ReftableBox,
     ReftableStr, ReftableVec, binsearch, free_and_null, parse_names,
 };
 
@@ -478,4 +484,94 @@ fn parsed_names_lend_their_array_while_borrowed() {
     let built = NamesVec::new(parsed.iter());
     assert!(names.equals(built.as_ref()));
     assert!(built.as_ref().equals(names));
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn name_lists_move_to_and_are_read_by_other_threads() {
+    // Parsed here, read and released on other threads while this one parses again.
+    let workers: Vec<_> = (0..4)
+        .map(|i| {
+            let parsed = parse_names(format!("{i}.ref\nnext.ref\n").as_bytes()).unwrap();
+            thread::spawn(move || {
+                let read = (parsed.len(), parsed.as_ref().len());
+                drop(parsed);
+                read
+            })
+        })
+        .collect();
+    let local = parse_names(b"local.ref\n").unwrap();
+    for worker in workers {
+        assert_eq!(worker.join().unwrap(), (2, 2));
+    }
+    // One built list, a parsed one and a borrowed view, read by several threads at once,
+    // through Rust and through `names_length` and `names_equal`.
+    let strings = [c"local.ref".to_owned(), c"other.ref".to_owned()];
+    let built = NamesVec::new(strings.iter().map(CString::as_c_str));
+    let view = built.as_ref();
+    thread::scope(|scope| {
+        for _ in 0..4 {
+            scope.spawn(|| {
+                assert_eq!(read_names(built.as_ref()), (2, 18));
+                assert_eq!(read_names(view), (2, 18));
+                assert!(!view.equals(local.as_ref()));
+                assert_eq!(local.get(0), Some(c"local.ref"));
+            });
+        }
+        drop(parse_names(b"meanwhile.ref\n").unwrap());
+    });
+}
+
+/// An owner of reftable's memory holding `i`.
+fn owner(i: usize) -> ReftableStr {
+    ReftableStr::from_c_str(&CString::new(i.to_string()).unwrap()).unwrap()
+}
+
+/// What each owner of `run` holds, in order.
+fn held(run: &ReftableVec<ReftableStr>) -> Vec<usize> {
+    run.iter()
+        .map(|s| s.to_str().unwrap().parse().unwrap())
+        .collect()
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn grown_runs_hold_each_owner_once_whatever_the_fill_does() {
+    // Filled to the end: the old owners moved with the allocation, the new ones in order.
+    let mut run = ReftableVec::from_fn(3, owner).unwrap();
+    let mut next = 3;
+    ReftableArrayFree::grow_with(&mut run, 4, || {
+        next += 1;
+        owner(next - 1)
+    })
+    .unwrap();
+    // `2 * 3 + 1` owners, each holding its index.
+    assert_eq!(held(&run), (0..7).collect::<Vec<_>>());
+    drop(run);
+
+    // Failed before any element is filled: the run is left as it was, and `fill` never runs.
+    let mut run = ReftableVec::from_fn(2, owner).unwrap();
+    let refused = ReftableArrayFree::grow_with(&mut run, usize::MAX, || unreachable!());
+    assert_eq!(refused, Err(Error::OutOfMemory));
+    assert_eq!(held(&run), [0, 1]);
+
+    // Panicking part-way: the run keeps what was filled before the panic, each owner once.
+    let mut filled = 2;
+    let caught = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+        ReftableArrayFree::grow_with(&mut run, 3, || {
+            assert!(filled < 4, "stop");
+            filled += 1;
+            owner(filled - 1)
+        })
+    }));
+    assert!(caught.is_err());
+    assert_eq!(held(&run), [0, 1, 2, 3]);
+    // The shortened run grows again from where it stopped.
+    ReftableArrayFree::grow_with(&mut run, 5, || {
+        filled += 1;
+        owner(filled - 1)
+    })
+    .unwrap();
+    // `2 * 4 + 1` owners, each holding its index.
+    assert_eq!(held(&run), (0..9).collect::<Vec<_>>());
 }

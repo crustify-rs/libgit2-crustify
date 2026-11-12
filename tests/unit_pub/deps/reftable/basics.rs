@@ -10,14 +10,16 @@ use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::error::Error as _;
 use std::ffi::CStr;
+use std::fmt::{self, Write as _};
 use std::mem::MaybeUninit;
 use std::panic;
 
 use ffibox::CZeroable;
 use libgit2::ffi;
 use libgit2::libgit2::deps::reftable::basics::{
-    Buf, BufMut, BufRef, BufVal, Error, HashId, LenOutOfRange, ReftableArrayFree, ReftableBox,
-    ReftableStr, ReftableVec, UnnamedHashId, binsearch, parse_names,
+    Buf, BufMut, BufRef, BufVal, Error, HashId, LenOutOfRange, Names, NamesRef, NamesVec,
+    ReftableArrayFree, ReftableBox, ReftableStr, ReftableVec, UnnamedHashId, binsearch,
+    parse_names,
 };
 
 #[test]
@@ -247,6 +249,52 @@ fn buffers_cross_threads_as_a_vec_does() {
     send_sync::<ReftableBox<Buf>>();
 }
 
+/// The traits a `Vec` of strings, and a slice of them, have that the name lists share,
+/// checked at compile time.
+#[test]
+fn name_lists_cross_threads_as_a_vec_of_strings_does() {
+    fn send_sync<T: Send + Sync>() {}
+    send_sync::<Names>();
+    send_sync::<NamesVec<'_>>();
+    send_sync::<NamesRef<'_>>();
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn grow_with_keeps_the_elements_and_fills_the_new_ones() {
+    let mut run = ReftableVec::from_slice(&[7u32, 8]).unwrap();
+    let mut next = 100;
+    let mut fill = || {
+        next += 1;
+        next
+    };
+    ReftableArrayFree::grow_with(&mut run, 2, &mut fill).unwrap();
+    assert_eq!(&*run, [7, 8], "long enough already: nothing filled");
+    ReftableArrayFree::grow_with(&mut run, 3, &mut fill).unwrap();
+    assert_eq!(
+        &*run,
+        [7, 8, 101, 102, 103],
+        "2 * 2 + 1 elements, filled in order"
+    );
+    ReftableArrayFree::grow_with(&mut run, 9, &mut fill).unwrap();
+    assert_eq!(run.len(), 2 * 5 + 1);
+    assert_eq!(run[..5], [7, 8, 101, 102, 103]);
+    assert_eq!(run[5..], [104, 105, 106, 107, 108, 109]);
+    // A size that overflows fails, and the run is left as it was.
+    assert_eq!(
+        ReftableArrayFree::grow_with(&mut run, usize::MAX, &mut fill),
+        Err(Error::OutOfMemory)
+    );
+    assert_eq!(run.len(), 11);
+    assert_eq!(run[10], 109);
+    // An empty run grows from nothing, as `REFTABLE_ALLOC_GROW` grows a NULL array.
+    let mut names = ReftableVec::<ReftableStr>::from_fn(0, |_| unreachable!()).unwrap();
+    ReftableArrayFree::grow_with(&mut names, 1, || ReftableStr::from_c_str(c"a.ref").unwrap())
+        .unwrap();
+    assert_eq!(names.len(), 1);
+    assert_eq!(names[0].as_c_str(), c"a.ref");
+}
+
 #[test]
 #[cfg_attr(miri, ignore = "calls C")]
 fn reftable_owners_allocate_copy_and_resize() {
@@ -335,6 +383,23 @@ fn parse_names_refuses_inputs_c_cannot_count() {
     // Lazily zeroed pages: nothing reads past the length check.
     let input = vec![0u8; usize::try_from(i32::MAX).unwrap() + 1];
     assert_eq!(parse_names(&input).unwrap_err(), Error::Api);
+}
+
+/// A sink that refuses every write, as a full buffer or a closed stream does.
+struct Refusing;
+
+impl fmt::Write for Refusing {
+    fn write_str(&mut self, _: &str) -> fmt::Result {
+        Err(fmt::Error)
+    }
+}
+
+#[test]
+fn errors_pass_a_refusing_sink_s_failure_on() {
+    let unnamed = HashId::try_from(0).unwrap_err();
+    assert_eq!(write!(Refusing, "{unnamed}"), Err(fmt::Error));
+    assert_eq!(write!(Refusing, "{}", Error::Other(-2)), Err(fmt::Error));
+    assert_eq!(write!(Refusing, "{LenOutOfRange}"), Err(fmt::Error));
 }
 
 #[test]

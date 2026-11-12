@@ -41,7 +41,9 @@
 //!
 //! A list of names is reftable's NULL-terminated array of C strings, such as a stack's
 //! table names: [`NamesRef`] borrows one, which `basics.c` counts and compares, from a
-//! [`Names`] that `parse_names` built or a [`NamesVec`] built in Rust. The big-endian integer
+//! [`Names`] that `parse_names` built or a [`NamesVec`] built in Rust. All three cross
+//! threads as the `Vec` of strings, or the slice, they stand for does: any thread may release
+//! a parsed list, and what a shared borrow reaches only reads. The big-endian integer
 //! helpers, [`alloc_size`] and [`swap`] are short enough, and independent of the build's
 //! configuration, to be ported rather than called: they reach no C.
 //!
@@ -64,7 +66,7 @@
 //!   `reftable_free`;
 //! - [`ReftableArrayFree`] a counted run of elements ([`ReftableVec`]), which it also
 //!   zero-allocates (`reftable_calloc`), resizes (`reftable_realloc`) and grows as
-//!   `REFTABLE_ALLOC_GROW` does;
+//!   `REFTABLE_ALLOC_GROW` does, leaving the new elements uninitialised or filling them;
 //! - [`ReftableStrFree`] a NUL-terminated string ([`ReftableStr`]), copied with `reftable_strdup`;
 //!   and
 //! - [`NamesFree`] the NULL-terminated array of strings `parse_names` builds and `free_names`
@@ -733,6 +735,14 @@ mod ffi_import {
         _borrow: PhantomData<&'a CStr>,
     }
 
+    // SAFETY: a `NamesRef` is a shared borrow of an array and its strings, which nothing
+    // writes or frees for `'a` (its invariant), and everything it reaches only reads them:
+    // its iterator, and `names_length` and `names_equal`, which write nothing and touch no
+    // other state. It crosses threads as the `&[&CStr]` it stands for does.
+    unsafe impl Send for NamesRef<'_> {}
+    // SAFETY: as above.
+    unsafe impl Sync for NamesRef<'_> {}
+
     impl<'a> NamesRef<'a> {
         /// The number of names before the terminator.
         ///
@@ -779,6 +789,14 @@ mod ffi_import {
         slots: Vec<*const c_char>,
         _strings: PhantomData<&'s CStr>,
     }
+
+    // SAFETY: a `NamesVec` holds `&'s CStr` borrows, which are `Send` and `Sync`, behind the
+    // array of their pointers, a `Vec` it owns and writes only in `new`; a shared borrow of
+    // it only lends that array, as a `NamesRef`. It crosses threads as the `Vec<&CStr>` it
+    // stands for does.
+    unsafe impl Send for NamesVec<'_> {}
+    // SAFETY: as above.
+    unsafe impl Sync for NamesVec<'_> {}
 
     impl<'s> NamesVec<'s> {
         /// A list of `names`, in order.
@@ -1106,8 +1124,9 @@ mod ffi_import {
     ///
     /// [`CVec::from_slice`] and `Clone` copy into the allocator; [`CVec::new_uninit`] and
     /// [`new_zeroed`](Self::new_zeroed) allocate in place, and [`resize`](Self::resize) and
-    /// [`grow`](Self::grow) move a run into a larger or smaller allocation. An empty run is
-    /// NULL and allocates nothing.
+    /// [`grow`](Self::grow) move a run into a larger or smaller allocation, the new elements
+    /// uninitialised, as [`grow_with`](Self::grow_with) does with the new elements filled. An
+    /// empty run is NULL and allocates nothing.
     ///
     /// Element types aligned beyond what the allocator vouches for are rejected, as are
     /// zero-sized ones, which need no storage:
@@ -1283,6 +1302,75 @@ mod ffi_import {
             let len = run.len().wrapping_mul(2).wrapping_add(1).max(min_len);
             Self::resize(run, len)
         }
+
+        /// Makes room for at least `min_len` elements, as [`grow`](Self::grow) does, and fills
+        /// each new one with `fill()`, in order, as `Vec::resize_with` does: the run stays
+        /// initialised, so a run of plain data or owners reads as a slice. The elements
+        /// already there keep their values, and a run already that long is left alone.
+        ///
+        /// [`grow`] leaves the new elements uninitialised, as `REFTABLE_ALLOC_GROW` does, so
+        /// reading back what was written into them takes `unsafe`; this form does not.
+        ///
+        /// Wraps `mac::REFTABLE_ALLOC_GROW`
+        ///
+        /// # Errors
+        ///
+        /// As [`grow`], leaving `run` as it was. If `fill` panics, `run` keeps the elements
+        /// filled before the panic, which unwinds once the run holds them.
+        ///
+        /// [`grow`]: Self::grow
+        #[doc(alias = "REFTABLE_ALLOC_GROW")]
+        pub fn grow_with<T>(
+            run: &mut ReftableVec<T>,
+            min_len: usize,
+            mut fill: impl FnMut() -> T,
+        ) -> Result<(), Error> {
+            if min_len <= run.len() {
+                return Ok(());
+            }
+            let (data, old_len) = mem::replace(run, CVec::empty()).into_raw_parts();
+            // SAFETY: the allocation the run gave up, NULL only when empty, of `old_len`
+            // initialised `T`, viewed as `MaybeUninit<T>`, which has `T`'s layout and asks
+            // nothing of its bytes; `reftable_free` releases it under either type.
+            let grown = unsafe { CVec::from_raw_parts_or_empty(data.cast(), old_len) };
+            let mut refill = Refill {
+                run,
+                grown: grown.unwrap_or_else(|| unreachable!("a run is NULL only when empty")),
+                init: old_len,
+            };
+            // `resize` keeps the first `old_len` elements, moved or in place, and leaves the
+            // run as it was on failure: they stay initialised either way.
+            Self::grow(&mut refill.grown, min_len)?;
+            while refill.init < refill.grown.len() {
+                let value = fill();
+                refill.grown.as_mut_slice()[refill.init].write(value);
+                refill.init += 1;
+            }
+            Ok(())
+        }
+    }
+
+    /// A run [`ReftableArrayFree::grow_with`] fills, of which the first `init` elements are
+    /// initialised: handed back to `run` as a run of those when dropped, however the filling
+    /// ends, completed, failed or unwinding.
+    struct Refill<'a, T> {
+        run: &'a mut ReftableVec<T>,
+        grown: ReftableVec<MaybeUninit<T>>,
+        init: usize,
+    }
+
+    impl<T> Drop for Refill<'_, T> {
+        fn drop(&mut self) {
+            let (data, _) = mem::replace(&mut self.grown, CVec::empty()).into_raw_parts();
+            // SAFETY: `data` is NULL with `init == 0`, or the allocation `grown` gave up, which
+            // nothing else owns, with room for at least `init` elements of which the first
+            // `init` are initialised `T`; `reftable_free` takes no size, so the run may cover
+            // fewer elements than the allocation has room for.
+            let run = unsafe { CVec::from_raw_parts_or_empty(data.cast::<T>(), self.init) };
+            if let Some(run) = run {
+                *self.run = run;
+            }
+        }
     }
 
     /// One NUL-terminated string in reftable's allocator, released through `reftable_free`
@@ -1361,6 +1449,17 @@ mod ffi_import {
     /// ```
     pub struct Names(CVec<*mut c_char, NamesFree>);
 
+    // SAFETY: a `Names` owns its array and strings, allocations of reftable's allocator that
+    // nothing ties to the thread that made them: any thread may release them (`Alloc`
+    // requires it of every hook family `set_alloc` installs, and libc's and libgit2's
+    // allocators allow it), and `parse_names` made them only after libgit2's runtime was
+    // pinned, so the thread a list moves to reads the hooks after libgit2 wrote them (the
+    // move synchronises with the parsing thread). A shared borrow only reads: `len`, `get`,
+    // `iter`, and the `NamesRef` it lends.
+    unsafe impl Send for Names {}
+    // SAFETY: as above.
+    unsafe impl Sync for Names {}
+
     impl Names {
         /// The number of names.
         #[must_use]
@@ -1413,17 +1512,10 @@ mod ffi_import {
         // copy). `out` is a writable slot, written only on success. The runtime is pinned.
         let rc = unsafe { ffi::parse_names(buf.as_mut_ptr().cast(), size, &raw mut out) };
         Error::check(rc)?;
-        let mut count = 0;
-        loop {
-            // SAFETY: on success `out` is a NULL-terminated array, so every slot up to the
-            // terminator is in bounds.
-            let slot = unsafe { out.add(count) };
-            // SAFETY: as above; the slot is initialised.
-            if unsafe { slot.read() }.is_null() {
-                break;
-            }
-            count += 1;
-        }
+        // SAFETY: on success `out` is a NULL-terminated array of strings, whose slots
+        // `names_length` counts up to the terminator, reading nothing else and writing
+        // nothing.
+        let count = unsafe { ffi::names_length(out.cast()) };
         // SAFETY: `out` is a fresh array of reftable's allocator, owned by the caller, of
         // `count` names and the NULL after them, which `free_names` releases with the names.
         let names = unsafe { CVec::from_raw_parts(out, count + 1) };
