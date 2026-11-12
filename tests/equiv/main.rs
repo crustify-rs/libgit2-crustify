@@ -3,4 +3,5 @@
 //! its path below the C root, in `tests/equiv/<TU path>.rs` (`src/libgit2/commit.rs` for
 //! `src/libgit2/commit.c`); the tests of a TU's `sys/` header are its `sys` module.
 
+mod deps;
 mod src;

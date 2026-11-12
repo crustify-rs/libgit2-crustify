@@ -668,6 +668,10 @@ type git_diff_option_t
 type git_index_time
 type git_note_iterator
 
+# deps/reftable/basics.c wave 169 batch 0: reftable's buffer and hash id (reftable-basics.h)
+type reftable_buf
+type reftable_hash
+
 var GIT_BLOB_FILTER_OPTIONS_VERSION
 var GIT_CHECKOUT_OPTIONS_VERSION
 var GIT_COMMIT_CREATE_EXT_OPTIONS_VERSION

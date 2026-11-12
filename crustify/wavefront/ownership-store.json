@@ -3855,6 +3855,32 @@
     }
    ],
    "_comment_user": "git_writestream is a vtable header embedded as the first member of a concrete stream (blob_writestream, buffered_stream, buf_stream, checkout_stream, user filter streams); its three members take the header pointer and cast it back to the container, so a header is never valid detached from its container (never copied or held by value). Ownership: git_blob_create_from_stream returns an owned stream (released by its own `free`, or consumed by git_blob_create_from_stream_commit); git_filter_list_stream_{buffer,file,blob} borrow a caller target for the call and write/close (never free) it; a user filter's git_filter_stream_fn returns an owned stream to libgit2, which frees it with its `free` member after closing the chain, and gets `next` borrowed for the chain's life. Rust wrapper: WriteStream/WriteStreamRef/WriteStreamMut (core/types.rs), WriteStreamBox = CBox<WriteStream, WriteStreamFree> (free through the object's own member), RustWriteStream<W: StreamWriter> for Rust implementations."
+  },
+  {
+   "name": "reftable_buf",
+   "defined_in": "deps/reftable/reftable-basics.h",
+   "_comment_user": "A growable byte buffer (basics.c). States: unallocated (alloc == 0: owns nothing; buf NULL and len 0 after REFTABLE_BUF_INIT, reftable_buf_init, _release or _detach; no C path leaves alloc == 0 with a non-NULL buf or a non-zero len) and allocated (alloc > 0: buf is a live reftable_malloc/realloc allocation of alloc bytes that the struct owns, len < alloc, buf[0..=len] written). Transitions: _add grows unallocated -> allocated (REFTABLE_ALLOC_GROW: alloc*2+1 or newlen+1) and leaves the buffer unchanged on OOM; _setlen shrinks len only and writes buf[len] = 0; _reset sets len 0 and buf[0] = 0 only when allocated; _release frees buf and reinitialises; _detach hands buf to the caller and reinitialises. buf[len] == 0 holds after every basics.c routine, but not after a direct len write: block_writer_init stores last_key.len = 0 without touching buf[0], so readers must not assume the terminator. Held by value: on the stack, embedded in block_writer/block_iter/writer/stack records, and copied by value as a borrow (block_writer_add's `last`, reftable_encode_key's prev_key/key parameters), never released through the copy. block_source_from_buf keeps the buffer's address in bs->arg, read by reftable_buf_size/_read_data for the source's life. All-zero is the initial state (REFTABLE_BUF_INIT is { 0 }).",
+   "fields": [
+    {
+     "name": "buf",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": true,
+      "owned": true,
+      "borrowed": {
+       "lifetime": "other"
+      },
+      "nullable": true,
+      "mutable": true,
+      "note": "Owned by the struct while alloc > 0: a reftable_malloc/realloc allocation of alloc bytes, freed by reftable_buf_release through reftable_free, or handed out by reftable_buf_detach. NULL while alloc == 0. Bytes [0, len) are the contents, possibly holding NUL bytes (reftable_buf_add takes arbitrary data); buf[len] is a NUL terminator after every basics.c routine, so callers that built it with _addstr read it as a C string (stack.c passes names and paths to unlink, tmpfile and flock), but block_writer_init's direct `last_key.len = 0` leaves buf[0] as it was. Borrowed on the by-value copies C makes for reading (block_writer_add's `last`, reftable_encode_key's arguments), which alias the original's allocation and are never released."
+     },
+     "refcount": false,
+     "locked_by": null
+    }
+   ]
   }
  ],
  "symbols": [

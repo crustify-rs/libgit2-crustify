@@ -23,4 +23,9 @@
 #include <git2/sys/repository.h>
 #include <git2/sys/stream.h>
 #include <git2/sys/transport.h>
+/*
+ * Internal headers whose items the batches bind; each needs the include directories the
+ * variant's C build compiles it with (build.rs, campaign mode).
+ */
+#include "reftable-basics.h"
 #include "shims.h"

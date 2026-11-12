@@ -139,11 +139,41 @@ fn campaign_library(manifest: &Path) -> Library {
     println!("cargo:dep_lib_dirs={}", dep_dirs.join(":"));
     println!("cargo:variant={variant}");
     println!("cargo:build_dir={}", build.display());
+    let cache = build.join("CMakeCache.txt");
+    let mut include = vec![root.join("c/include")];
+    include.extend(INTERNAL_INCLUDE.iter().map(|dir| root.join("c").join(dir)));
+    // The headers the build generates, `git2_features.h` among them, and those of the
+    // libraries it found, which the internal headers include (`reftable-system.h` includes
+    // `zlib.h`).
+    include.push(build.join("gen_headers"));
+    include.extend(variant_include_dirs(&cache));
     Library {
-        include: vec![root.join("c/include")],
+        include,
         version: pc_version(&build.join(format!("{LIB}.pc"))),
-        cc: Some(variant_cc(&build.join("CMakeCache.txt"))),
+        cc: Some(variant_cc(&cache)),
     }
+}
+
+/// The C root's directories of internal headers the bindings cover, besides the installed
+/// ones: `wrapper.h` includes the internal headers whose items the batches bind, which
+/// include their neighbours as the C build does. Only a campaign build has them; an install
+/// holds the public headers alone.
+const INTERNAL_INCLUDE: &[&str] = &["src/util", "deps/reftable"];
+
+/// The include directories of the libraries the variant's build found, as its CMake cache
+/// records them.
+fn variant_include_dirs(cache: &Path) -> Vec<PathBuf> {
+    let text = fs::read_to_string(cache).unwrap_or_else(|e| panic!("{}: {e}", cache.display()));
+    [
+        "ZLIB_INCLUDE_DIR:PATH=",
+        "PCRE2_INCLUDE_DIR:PATH=",
+        "OPENSSL_INCLUDE_DIR:PATH=",
+    ]
+    .iter()
+    .filter_map(|key| text.lines().find_map(|l| l.strip_prefix(key)))
+    .filter(|dir| !dir.is_empty() && !dir.ends_with("-NOTFOUND"))
+    .map(PathBuf::from)
+    .collect()
 }
 
 /// The library as a dependent finds it: under `<LIB>_DIR`, or through `pkg-config`.

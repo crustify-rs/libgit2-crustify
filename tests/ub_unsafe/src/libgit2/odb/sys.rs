@@ -89,7 +89,7 @@ fn adopts_an_allocated_array_of_no_strings() {
     assert!(v.is_empty() && v.as_slice().is_empty());
     assert_eq!(v.as_ptr(), arr, "the array is owned, and freed on drop");
     assert!(v.clone().as_ptr().is_null());
-    assert!(v.into_vec().is_empty());
+    assert_eq!(v.into_vec().len(), 0);
 }
 
 #[test]
