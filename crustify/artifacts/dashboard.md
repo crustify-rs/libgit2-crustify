@@ -56,17 +56,17 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip `<sha>`; `main` shipped at `<sha>`; crustify `4605156`, ffibox `7950244` (`main`), wavefront `db28284`
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `18375` non-test, `96638` tests; **C LoC** — `86833`
+- **Rust LoC** — `18387` non-test, `96721` tests; **C LoC** — `86833`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `715` | — | `28.62`% | `79.42`% |
+| UB safe tests | `716` | — | `28.61`% | `79.40`% |
 | UB unsafe tests | `93` | — | `19.36`% | `13.16`% |
-| Equiv tests | `505` | — | `43.41`% | `75.03`% |
-| Unit tests | `848` | — | `32.04`% | `87.81`% |
-| **Total tests** | **`2161`** | — | **`45.89`%** | **`98.92`%** |
+| Equiv tests | `505` | — | `43.44`% | `75.01`% |
+| Unit tests | `850` | — | `32.09`% | `87.82`% |
+| **Total tests** | **`2164`** | — | **`45.90`%** | **`98.92`%** |
 | total types | `258` | — | — | — |
 | ported types | `0` | `0.00`% | — | — |
 | wrapped types | `107` | `41.47`% | — | — |
@@ -256,8 +256,9 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/diff_parse.c` | `legacy-229` | `0` | wrap | review | `1` | `2` | `+6/-3` | — | `$4.69` | `10.34M` | `36m13s` | `$4.69` | `$2.34` |
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `0` | wrap | review | `1` | `3` | `+103/-5` | — | `$3.73` | `10.13M` | `16m05s` | `$3.73` | `$1.24` |
 | `libgit2/src/libgit2/checkout.c` | `legacy-335` | `0` | wrap | review | `1` | `20` | `+106/-17` | `45.92`% / `98.92`% | `$7.76` | `16.62M` | `33m19s` | `$7.76` | `$0.39` |
+| `libgit2/deps/reftable/basics.c` | `169` | `3` | wrap | review | `2` | `3` | `+134/-4` | `45.90`% / `98.92`% | — | — | — | — | — |
 | **Σ first** |  |  |  |  | **`107`** | **`215`** | **`+98491/-2532`** | **`45.90`% / `98.91`%** | **`$582.38`** | **`1417.09M`** | — | **`$5.55`** | **`$2.75`** |
-| **Σ review** |  |  |  |  | **`105`** | **`212`** | **`+9592/-2085`** | **`45.92`% / `98.92`%** | **`$417.64`** | **`685.69M`** | — | **`$3.98`** | **`$1.97`** |
+| **Σ review** |  |  |  |  | **`107`** | **`215`** | **`+9726/-2089`** | **`45.90`% / `98.92`%** | **`$417.64`** | **`685.69M`** | — | **`$3.98`** | **`$1.97`** |
 
 ### Batches: tests
 
@@ -358,8 +359,9 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/diff_parse.c` | `legacy-229` | `0` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `0` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+1` (—/— pp) | `+0` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `legacy-335` | `0` | review | `+0` (`+0.06`/`+0.02` pp) | `+0` (`+0.02`/`-0.01` pp) | `+0` (`-0.02`/`-0.07` pp) | `+1` (`+0.02`/`+0.00` pp) |
+| `libgit2/deps/reftable/basics.c` | `169` | `3` | review | `+1` (`+0.02`/`-0.02` pp) | `+0` (`+0.00`/`+0.00` pp) | `+0` (`-0.01`/`-0.02` pp) | `+2` (`+0.02`/`+0.01` pp) |
 | **Σ first** |  |  |  | **`+465` (`+25.11`/`-2.31` pp)** | **`+46` (`+14.02`/`-52.96` pp)** | **`+261` (`+31.13`/`-25.27` pp)** | **`+489` (`+12.62`/`+24.61` pp)** |
-| **Σ review** |  |  |  | **`+35` (`+0.43`/`+2.22` pp)** | **`+3` (`-0.38`/`-5.37` pp)** | **`+23` (`+2.69`/`-1.28` pp)** | **`+40` (`+4.68`/`+2.36` pp)** |
+| **Σ review** |  |  |  | **`+36` (`+0.45`/`+2.20` pp)** | **`+3` (`-0.38`/`-5.37` pp)** | **`+23` (`+2.68`/`-1.30` pp)** | **`+42` (`+4.70`/`+2.37` pp)** |
 
 ### Batches: safety audit
 
@@ -368,8 +370,9 @@ Deterministic `ffimap`; no model.
 | module | wave | batch | objective | pass | pub raw ptr | pub void ptr | pub unsafe fn | &cell | C by value | celled % | raw→std | unmanaged ptr types | ptr Drop | Send/Sync | raw deref | FFI calls | unsafe loc % | unsafe blocks |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | `libgit2/deps/reftable/basics.c` | `169` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | `+1` | `+0.00` pp | `+2` | `+0` | `+0` | `+0` | `+3` | `+0` | `-0.06` pp | `+10` |
+| `libgit2/deps/reftable/basics.c` | `169` | `3` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+6` | `+0` | `+0` | `-0.01` pp | `+0` |
 | **Σ first** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+1`** | **`+0.00` pp** | **`+2`** | **`+0`** | **`+0`** | **`+0`** | **`+3`** | **`+0`** | **`-0.06` pp** | **`+10`** |
-| **Σ review** |  |  |  |  | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+6`** | **`+0`** | **`+0`** | **`-0.01` pp** | **`+0`** |
 
 ### Batches — review: PoC + reports
 
@@ -403,7 +406,8 @@ Deterministic `ffimap`; no model.
 | `libgit2/src/libgit2/diff_parse.c` | `legacy-229` | `0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `+1` | `2` |
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
 | `libgit2/src/libgit2/checkout.c` | `legacy-335` | `0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
-| **Σ** |  |  | **`+7`** | **`+9`** | **`+3`** | **`+1`** | **`+3`** | **`+3`** | **`+15`** | **`+58`** | **`99`** |
+| `libgit2/deps/reftable/basics.c` | `169` | `3` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
+| **Σ** |  |  | **`+7`** | **`+9`** | **`+3`** | **`+1`** | **`+3`** | **`+3`** | **`+15`** | **`+59`** | **`100`** |
 
 ## Symbols
 
@@ -2181,3 +2185,35 @@ prefix (`--offline`).
 The safety audit row's `+2` FFI calls and `+3` unsafe blocks are `NamesRef`'s calls to
 `names_length` and `names_equal` and its iterator's adoption of the array. The batch adds no
 public `unsafe fn`, no raw pointer on the public interface, and no `Send` or `Sync`.
+### `libgit2/deps/reftable/basics.c` wave 169 batch 3: review of `reftable_buf` and `reftable_hash`
+
+This batch reviews the type route of batches 0 to 2 as the wave tip `bbaafcd09` holds it, for
+every objective: `Buf`, its handles, its owner `BufVal`, `BufRelease`, `Buf::new`, `Buf::INIT`,
+its `CZeroable` and the writers that keep its invariant, and `HashId`. It finds the type
+sound. Every safety comment holds, and the ownership store's findings for `reftable_buf` and
+its lifecycle routines match the C. Batch 2's resolution of the base's conflict markers kept
+`d21c78c70`'s side: `build.rs` is identical to it, and `wrapper.h` and `bindings.rs` add only
+the wave's headers and items. It has one finding, `ergonomics/buf-confined-to-its-thread`,
+counted under `+misc` since the table has no ergonomics column. `Buf` withheld `Send` and
+`Sync` without a reason, and `BufRef` was `Eq` but not `Hash`. The fix makes `Buf` and
+`BufMut` `Send`, makes `Buf`, `BufRef` and `BufMut` `Sync`, and hashes `BufRef` by its
+contents. The host refused the report file, so the report is carried in the fix commit's
+message. The reproducer crate sits beside where the report would be.
+
+Coverage follows batch 1's method: C over the coverage variant's static archive alone,
+86,833 lines, and Rust from `report.py`. The batch's tree and its base, the wave tip, were
+measured in the same session. Base: `45.90`% / `98.92`% in all, `ub_safe` `28.59`/`79.42`,
+`ub_unsafe` `19.36`/`13.16`, `equiv` `43.45`/`75.03`, and unit (lib and `unit_pub`)
+`32.07`/`87.81`. The worklist's C and Rust were already covered, but for the `?` returns of
+the formatters. The C figure moves by about 0.02 pp between runs of the same tests.
+
+Gates on the batch's tree:
+
+- fmt and clippy over the workspace;
+- the module's tests in every suite, plain and under ASan+UBSan;
+- TSan over the module's `ub_safe` and `unit_pub` tests, for the new `Send` and `Sync`; and
+- the module's doctests.
+
+Miri ran the three new tests alone. One passes there. The two marked `calls C` stop at
+`reftable_buf_init`. No test is expected to trigger BorrowSanitizer. The safety audit row's
+`+6` `Send/Sync` are the six impls.

@@ -16,8 +16,8 @@ use std::panic;
 use ffibox::CZeroable;
 use libgit2::ffi;
 use libgit2::libgit2::deps::reftable::basics::{
-    Buf, BufRef, BufVal, Error, HashId, LenOutOfRange, ReftableArrayFree, ReftableBox, ReftableStr,
-    ReftableVec, UnnamedHashId, binsearch, parse_names,
+    Buf, BufMut, BufRef, BufVal, Error, HashId, LenOutOfRange, ReftableArrayFree, ReftableBox,
+    ReftableStr, ReftableVec, UnnamedHashId, binsearch, parse_names,
 };
 
 #[test]
@@ -196,6 +196,48 @@ fn buffers_order_bytewise_and_share_prefixes() {
     assert_eq!(r[3].common_prefix_len(r[4]), 0);
     assert_eq!(r[3].common_prefix_len(r[3]), 3);
     assert_eq!(r[0].common_prefix_len(r[3]), 0);
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn buffers_hash_by_the_contents_they_compare() {
+    // Equal contents in allocations of different sizes, and an unallocated buffer beside an
+    // allocated empty one: equal buffers must hash alike.
+    let mut short = Buf::new();
+    short.as_mut().add(b"refs/heads/main").unwrap();
+    let mut long = Buf::new();
+    long.as_mut().add(b"refs/heads/main-and-more").unwrap();
+    long.as_mut().truncate(15).unwrap();
+    assert_ne!(short.as_ref().capacity(), long.as_ref().capacity());
+    let unallocated = Buf::new();
+    let mut emptied = Buf::new();
+    emptied.as_mut().add(b"x").unwrap();
+    emptied.as_mut().reset();
+    let mut other = Buf::new();
+    other.as_mut().add(b"refs/heads/maint").unwrap();
+    let set: HashSet<BufRef<'_>> = [
+        short.as_ref(),
+        long.as_ref(),
+        unallocated.as_ref(),
+        emptied.as_ref(),
+        other.as_ref(),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(set.len(), 3, "main, empty and maint");
+    assert!(set.contains(&long.as_ref()));
+    assert!(set.contains(&unallocated.as_ref()));
+}
+
+/// The traits a `Vec<u8>` has that the buffer's forms share, checked at compile time.
+#[test]
+fn buffers_cross_threads_as_a_vec_does() {
+    fn send_sync<T: Send + Sync>() {}
+    send_sync::<Buf>();
+    send_sync::<BufVal>();
+    send_sync::<BufRef<'_>>();
+    send_sync::<BufMut<'_>>();
+    send_sync::<ReftableBox<Buf>>();
 }
 
 #[test]

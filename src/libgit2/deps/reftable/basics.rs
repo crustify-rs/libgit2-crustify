@@ -34,7 +34,10 @@
 //! ([`Ord`], [`common_prefix_len`](BufRef::common_prefix_len)). A routine that would follow
 //! `buf` of a buffer that owns nothing, whatever `buf` and `len` hold, is given the
 //! unallocated state instead, so that the handles' tolerance of such a struct never reaches
-//! C.
+//! C. A buffer crosses threads as a `Vec<u8>` does: [`Buf`], and so [`BufVal`], is `Send`,
+//! since any thread may grow or release an allocation of reftable's, and `Sync`, since what
+//! a shared borrow reaches only reads. Its shared handle hashes the contents its [`Eq`]
+//! compares.
 //!
 //! A list of names is reftable's NULL-terminated array of C strings, such as a stack's
 //! table names: [`NamesRef`] borrows one, which `basics.c` counts and compares, from a
@@ -82,6 +85,7 @@
 
 use core::ffi::{CStr, c_int};
 use core::fmt;
+use core::hash::{Hash, Hasher};
 use core::mem::MaybeUninit;
 
 use ffibox::iter::CNullTerminated;
@@ -453,6 +457,14 @@ impl fmt::Debug for Escaped<'_> {
     }
 }
 
+impl Hash for BufRef<'_> {
+    /// Hashes the contents, which is what [`Eq`] compares: two buffers with equal bytes hash
+    /// alike, whatever their capacity.
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.as_bytes().hash(state);
+    }
+}
+
 impl fmt::Debug for BufMut<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.as_ref().fmt(f)
@@ -642,6 +654,28 @@ mod ffi_import {
     // it moves freely; the one routine that keeps a buffer's address,
     // `block_source_from_buf`, is bound to the buffer's borrow (module documentation).
     unsafe impl CZeroable for Buf {}
+
+    // SAFETY: a `Buf` holds its fields and, allocated, the allocation of reftable's allocator
+    // it owns, which nothing ties to the thread that made it. Any thread may grow or release
+    // that allocation: `Alloc` requires it of every hook family `set_alloc` installs, libc's
+    // and libgit2's allocators allow it, and a buffer is allocated only after libgit2's
+    // runtime is pinned, so the thread it moves to reads the hooks after libgit2 wrote them
+    // (the move synchronises with the allocating thread). An exclusive handle moves the same
+    // access, as `&mut` does.
+    unsafe impl Send for Buf {}
+    // SAFETY: as above.
+    unsafe impl Send for BufMut<'_> {}
+    // SAFETY: every operation a shared borrow reaches reads: the getters read the fields and
+    // the contents, and the comparisons hand C copies of the struct whose contents
+    // `reftable_buf_cmp` and `common_prefix_size` only read. Writes take `BufMut`, which
+    // `&BufMut` cannot reach beyond `as_ref`. A shared handle is `&Buf`'s access.
+    unsafe impl Sync for Buf {}
+    // SAFETY: as for `Sync for Buf`.
+    unsafe impl Send for BufRef<'_> {}
+    // SAFETY: as for `Sync for Buf`.
+    unsafe impl Sync for BufRef<'_> {}
+    // SAFETY: as for `Sync for Buf`.
+    unsafe impl Sync for BufMut<'_> {}
 
     impl Buf {
         /// An empty buffer that owns nothing, `REFTABLE_BUF_INIT` (`{ 0 }`): the value

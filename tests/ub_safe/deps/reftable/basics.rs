@@ -10,7 +10,9 @@
 //! without following `buf`, or from `Buf::new()`, whose `BufVal` releases what the buffer
 //! comes to own. Its handles reborrow without aliasing, and what they read is tied to the
 //! value's borrow (`compile_fail` doctests on `Buf` and its getters). The owners are moved,
-//! dropped after handing their allocation out, and dropped on other threads (`TSan`);
+//! dropped after handing their allocation out, and dropped on other threads (`TSan`), and a
+//! buffer, which is `Send` and `Sync`, is grown and released on other threads and read by
+//! several at once;
 //! `binsearch` is re-entered from its own predicate and stopped by a panic. Every test that
 //! allocates or calls C is ignored under Miri. `Buf::INIT` is the unallocated value as a
 //! constant.
@@ -301,6 +303,58 @@ fn strings_and_runs_are_released_on_other_threads() {
         scope.spawn(|| assert_eq!(s.to_str(), Ok("shared")));
         let _local = ReftableVec::from_slice(b"local").unwrap();
     });
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn buffers_grow_read_and_release_on_other_threads() {
+    // Filled here, grown and released on other threads while this one allocates.
+    let workers: Vec<_> = (0..8u8)
+        .map(|i| {
+            let mut value = Buf::new();
+            value.as_mut().add(&[b'a' + i; 5]).unwrap();
+            thread::spawn(move || {
+                value.as_mut().add(b"-grown").unwrap();
+                let read = (value.as_ref().len(), value.as_ref().as_c_str().is_some());
+                drop(value);
+                read
+            })
+        })
+        .collect();
+    let mut local = Buf::new();
+    local.as_mut().add(b"local").unwrap();
+    for worker in workers {
+        assert_eq!(worker.join().unwrap(), (11, true));
+    }
+    // One buffer read and compared by several threads at once, through the owner and
+    // through shared handles sent to them.
+    let mut a = Buf::new();
+    a.as_mut().add(b"refs/heads/main").unwrap();
+    let mut b = Buf::new();
+    b.as_mut().add(b"refs/heads/maint").unwrap();
+    let rb = b.as_ref();
+    thread::scope(|scope| {
+        for _ in 0..4 {
+            scope.spawn(|| {
+                let ra = a.as_ref();
+                assert!(ra < rb);
+                assert_eq!(ra.common_prefix_len(rb), 15);
+                assert_eq!(ra.as_c_str(), Some(c"refs/heads/main"));
+            });
+        }
+        local.as_mut().add(b"-more").unwrap();
+    });
+    // An exclusive handle fills a buffer on another thread; the owner reads it afterwards.
+    let mut c = Buf::new();
+    let m = c.as_mut();
+    thread::scope(|scope| {
+        scope.spawn(move || fill(m, b"filled elsewhere"));
+    });
+    assert_eq!(c.as_ref().as_bytes(), b"filled elsewhere");
+    // Released on another thread after this one detached part of it.
+    let detached = c.as_mut().detach().unwrap();
+    c.as_mut().add(b"again").unwrap();
+    thread::spawn(move || drop((c, detached))).join().unwrap();
 }
 
 #[test]
