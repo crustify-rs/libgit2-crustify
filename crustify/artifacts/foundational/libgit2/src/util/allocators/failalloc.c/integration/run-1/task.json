@@ -1,0 +1,23 @@
+{
+  "objective": "wrap",
+  "wave": null,
+  "batch": null,
+  "link_unit": "libgit2",
+  "module": "src/util/allocators/failalloc.c",
+  "foundational": true,
+  "base_branch": "refs/heads/crustify/foundational/libgit2/src/util/allocators/failalloc.c",
+  "backend": "claude",
+  "billing": "subscription",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "8e23c1c",
+    "wavefront": "ca31018",
+    "ffimap": "9aa2ef1",
+    "ffibox": "551d27d"
+  },
+  "items": [],
+  "session_id": "agent-a45661a9e2f166e49"
+}

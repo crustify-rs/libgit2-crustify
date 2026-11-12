@@ -668,6 +668,10 @@ type git_diff_option_t
 type git_index_time
 type git_note_iterator
 
+# deps/reftable/basics.c wave 169 batch 0: reftable's buffer and hash id (reftable-basics.h)
+type reftable_buf
+type reftable_hash
+
 var GIT_BLOB_FILTER_OPTIONS_VERSION
 var GIT_CHECKOUT_OPTIONS_VERSION
 var GIT_COMMIT_CREATE_EXT_OPTIONS_VERSION
@@ -710,6 +714,34 @@ function reftable_buf_init
 function reftable_buf_release
 type reftable_buf
 
+# deps/reftable/basics.c wave 169 batch 2: basics.c's allocator hooks, buffer routines and
+# helpers (basics.h, reftable-basics.h), and the error codes they return (reftable-error.h)
+function binsearch
+function common_prefix_size
+function free_names
+function hash_size
+function parse_names
+function reftable_buf_addstr
+function reftable_buf_cmp
+function reftable_buf_detach
+function reftable_buf_reset
+function reftable_buf_setlen
+function reftable_calloc
+function reftable_free
+function reftable_malloc
+function reftable_realloc
+function reftable_set_alloc
+function reftable_strdup
+type reftable_error
+
+# deps/reftable/basics.c wave 169 batch 1: name lists and the hash size constants
+# (basics.h, reftable-basics.h)
+function names_equal
+function names_length
+var REFTABLE_HASH_SIZE_SHA1
+var REFTABLE_HASH_SIZE_SHA256
+var REFTABLE_HASH_SIZE_MAX
+
 # wave-12/batch-2: src/util/alloc.c's allocator family (src/util/alloc.h); git__malloc and
 # git__free are `static inline`, wrapped in static_fns.c
 function git__calloc
@@ -719,6 +751,14 @@ function git__mallocarray
 function git__strdup
 function git__strndup
 function git__substrdup
+
+# src/util/allocators/failalloc.c: the failing allocator family (wave-176/batch-1)
+function git_failalloc_free
+function git_failalloc_malloc
+function git_failalloc_realloc
+
+# wave-182/batch-0: src/util/allocators/win32_leakcheck.c
+function git_win32_leakcheck_init_allocator
 
 # wave-181/batch-0: src/util/allocators/stdalloc.c (git2/sys/alloc.h); hidden from libgit2.so,
 # it links from the variant's static archive

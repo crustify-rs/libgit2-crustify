@@ -1,7 +1,30 @@
 # Lessons
 
-Rules that hold for this campaign's target alone, as the `evolution` skill's Lessons
-section describes. Each run reads them before its first step.
+Rules that hold for this campaign's target alone, each with the evidence it rests on and
+its scope, as the `evolution` skill's Lessons section describes. Every run reads them
+before its first step.
+
+## Before `git_libgit2_init`, probe libgit2's allocator only through a release
+
+**Rule.** Before `git_libgit2_init`, `git__allocator` is the failing family
+(`src/util/allocators/failalloc.c`), and a test may reach it only through a release:
+`git_odb_backend_data_free`, which is `git__free`, sets no error. Any allocation then
+fails, and `git__malloc`, `git__realloc` and every error setter report through
+`git_error_set_oom` or `set_error`, whose thread-state lookup reads TLS key 0 before
+`git_error_global_init` has created libgit2's key: it may return another component's
+slot and write `&oom_error` into it. The same holds for an allocator installed with
+`set_allocator` before initialisation that fails a request.
+
+**Evidence.** `git_odb_backend_data_alloc`'s finding in the ownership store (ASan
+unknown-crash in `git_error_set_oom`, `errors.c:170`); `src/util/errors.c`'s
+`threadstate_get`; the equivalence test of `wave-176/batch-0`
+(`tests/equiv/src/util/allocators/failalloc.rs`), which compares the C release with the
+Rust family's and leaves `malloc` and `realloc` uncompared for this reason. The family's
+routines called directly, as `git_failalloc_malloc` through its raw binding, set no error
+and are outside the rule: `wave-176/batch-1` compares them so in the test process.
+
+**Scope.** The tests of `src/util/allocators/*.c`, `src/util/alloc.c` and
+`src/util/errors.c`, and any test that runs libgit2 before its initialisation.
 
 ## libgit2's allocator family is reached through `alloc.rs`'s strategies
 
@@ -38,6 +61,25 @@ section describes. Each run reads them before its first step.
   already followed this rule.
 - **Scope.** Every lifecycle policy, owner or alignment claim over storage libgit2's
   allocator makes, whether it comes from Rust or from C.
+
+## The tree's inline `mod unit_tests` modules are no precedent for test placement
+
+- **Rule.** A new unit test of a module's public interface goes in `tests/unit_pub`, at the
+  tested TU's path (`tests/unit_pub/src/util/...`), and one of an internal routine in an
+  inline `#[cfg(test)] mod unit_priv` beside it, as the conventions' Testing section places
+  them, whatever the module's file or its neighbours hold. The 34 inline `mod unit_tests`
+  modules under `src/` (`alloc.rs` and `errors.rs` among them) predate that placement and
+  mix both kinds; a batch that adds tests to one of those files puts its new tests where the
+  conventions place them, and leaves the old ones to the batches that port their modules.
+  Until `tests/unit_pub` reaches the working branch, a wave that needs it creates it with
+  the same `main.rs`, `src.rs`, directory files and `[[test]] unit_pub` entry as waves 169
+  and 176, so that the branches merge with only the one-line `mod` additions conflicting.
+- **Evidence.** wave 182 batch 0 (`cff595a09`) put `win32_leakcheck.rs`'s three
+  public-interface tests in an inline `mod unit_tests`, following `alloc.rs` and
+  `errors.rs`; its module pass (`wave-182/batch-1`) moved them to `tests/unit_pub` and
+  renamed the module `unit_priv` (a `conventions` finding).
+- **Scope.** Every batch that writes unit tests, until the legacy `unit_tests` modules are
+  gone.
 
 ## Test allocators start from libgit2's standard allocator
 
