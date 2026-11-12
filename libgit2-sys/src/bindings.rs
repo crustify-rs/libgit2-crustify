@@ -14473,9 +14473,25 @@ impl Default for reftable_buf {
         }
     }
 }
+<<<<<<< refs/heads/crustify/waves/wave-169
 pub const REFTABLE_HASH_SHA1: reftable_hash = 89;
 pub const REFTABLE_HASH_SHA256: reftable_hash = 247;
 pub type reftable_hash = ::std::os::raw::c_uint;
+=======
+unsafe extern "C" {
+    pub fn reftable_buf_init(buf: *mut reftable_buf);
+}
+unsafe extern "C" {
+    pub fn reftable_buf_release(buf: *mut reftable_buf);
+}
+unsafe extern "C" {
+    pub fn reftable_buf_add(
+        buf: *mut reftable_buf,
+        data: *const ::std::os::raw::c_void,
+        len: usize,
+    ) -> ::std::os::raw::c_int;
+}
+>>>>>>> d21c78c70aa8564ad8021d6dfba9670e232b7905
 unsafe extern "C" {
     pub fn crustify_GIT_OID_DEFAULT() -> git_oid_t;
 }
