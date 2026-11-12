@@ -76,3 +76,25 @@ and generates the reftable bindings, which link from the static archive and run 
 `libgit2-sys/tests/hidden_symbols.rs` on `plain`, `asan-ubsan`, `tsan` and `bsan`. The
 committed public bindings were unchanged. The `static inline` and system-mode half is
 untested, since no internal `static inline` function is allowlisted yet.
+
+## Further evidence
+
+`foundational/libgit2/deps/reftable/basics.c` `wave-169/batch-2/run-1` met consequence 2.
+Allowlisting `reftable_alloc_grow`, a `static inline` function of `deps/reftable/basics.h`,
+made bindgen write `libgit2-sys/src/static_fns.c`, which includes `wrapper.h` and so
+`basics.h`. Packaging `libgit2-sys` in installed mode then failed while verifying the
+tarball. The prefix held `c/include`'s headers and the `plain` variant's `libgit2.so`:
+
+```text
+CRUSTIFY_BUILD_VARIANT= LIBGIT2_DIR=<prefix> cargo package -p libgit2-sys --offline --allow-dirty
+  cargo:warning=.../libgit2-sys-0.1.0/bindgen/wrapper.h:31:10: fatal error: 'basics.h' file not found
+error: failed to verify package tarball
+```
+
+The batch therefore did not allowlist the function. It reimplemented it in Rust instead, as
+`binding-symbols`' Functions section allows for a short `static inline` function: it is
+`ReftableArrayFree::grow` (`Replaces fn::reftable_alloc_grow`), over `reftable_realloc`.
+Without `static_fns.c` the package verifies again. Until the change above lands, the
+exception is the only way to bind an internal `static inline` function and keep the
+packaging gate passing. A function that depends on the build's configuration has no way
+at all.

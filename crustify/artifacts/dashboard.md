@@ -56,23 +56,23 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip `<sha>`; `main` shipped at `<sha>`; crustify `4605156`, ffibox `7950244` (`main`), wavefront `db28284`
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `17704` non-test, `94969` tests; **C LoC** — `86770`
+- **Rust LoC** — `18174` non-test, `96145` tests; **C LoC** — `190798`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `700` | — | `28.42`% | `79.65`% |
-| UB unsafe tests | `91` | — | `19.36`% | `11.90`% |
-| Equiv tests | `493` | — | `43.44`% | `75.15`% |
-| Unit tests | `805` | — | `31.96`% | `87.49`% |
-| **Total tests** | **`2089`** | — | **`45.90`%** | **`98.91`%** |
+| UB safe tests | `708` | — | `29.44`% | `79.62`% |
+| UB unsafe tests | `93` | — | `11.04`% | `13.26`% |
+| Equiv tests | `500` | — | `44.67`% | `75.32`% |
+| Unit tests | `828` | — | `21.56`% | `87.73`% |
+| **Total tests** | **`2129`** | — | **`59.03`%** | **`98.92`%** |
 | total types | `258` | — | — | — |
 | ported types | `0` | `0.00`% | — | — |
 | wrapped types | `107` | `41.47`% | — | — |
 | total symbols | `979` | — | — | — |
-| ported symbols | `4` | `0.41`% | — | — |
-| wrapped symbols | `448` | `45.76`% | — | — |
+| ported symbols | `5` | `0.51`% | — | — |
+| wrapped symbols | `467` | `47.70`% | — | — |
 
 ### Module stats
 
@@ -415,6 +415,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 
 | module | wave | batch | objective | pass | symbols | loc | +LoC | cov (C/Rust) | $ | tokens | wall | $/symbol | $/loc |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `libgit2/deps/reftable/basics.c` | `169` | `2` | wrap | first | `20` | `224` | `+2483/-72` | `59.03`% / `98.92`% | — | — | — | — | — |
 | `libgit2/raw-lifetime-void` | `legacy-0` | `0` | wrap | first | `2` | — | `+1245/-1` | — | `$8.28` | `17.79M` | `51m29s` | `$4.14` | — |
 | `libgit2/raw-lifetime-string` | `legacy-2` | `0` | wrap | first | `2` | — | `+1362/-14` | — | `$5.49` | `12.39M` | `23m12s` | `$2.75` | — |
 | `libgit2/src/util/errors.c` | `13` | `1` | wrap | first | `4` | `51` | `+1008/-26` | `1.30`% / `97.32`% | `$4.00` | `8.72M` | `21m23s` | `$1.00` | `$0.08` |
@@ -482,7 +483,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/indexer.c` | `legacy-179` | `0` | wrap | review | `1` | — | `+35/-0` | — | `$3.18` | `8.05M` | `12m18s` | `$3.18` | — |
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | wrap | review | `1` | — | `+113/-14` | — | `$4.80` | `10.64M` | `27m50s` | `$4.80` | — |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | wrap | review | `2` | — | `+217/-15` | — | `$11.03` | `25.98M` | `47m17s` | `$5.51` | — |
-| **Σ first** |  |  |  |  | **`415`** | **`8478`** | **`+67747/-2506`** | **`46.66`% / `99.55`%** | **`$412.21`** | **`1262.84M`** | — | **`$0.99`** | **`$0.05`** |
+| **Σ first** |  |  |  |  | **`435`** | **`8702`** | **`+70230/-2578`** | **`59.03`% / `98.92`%** | **`$412.21`** | **`1262.84M`** | — | **`$0.99`** | **`$0.05`** |
 | **Σ review** |  |  |  |  | **`415`** | — | **`+7074/-1326`** | **`46.64`% / `99.55`%** | **`$339.40`** | **`631.25M`** | — | **`$0.82`** | — |
 
 ### Batches: tests
@@ -493,6 +494,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 
 | module | wave | batch | pass | +UB safe tests (+C/+Rust pp) | +UB unsafe tests (+C/+Rust pp) | +equiv tests (+C/+Rust pp) | +unit tests (+C/+Rust pp) |
 |---|---|---|---|---|---|---|---|
+| `libgit2/deps/reftable/basics.c` | `169` | `2` | first | `+8` (`+0.16`/`-0.19` pp) | `+2` (`+0.15`/`+1.25` pp) | `+7` (`+0.05`/`-0.10` pp) | `+23` (`+0.26`/`+0.19` pp) |
 | `libgit2/src/util/errors.c` | `13` | `1` | first | `+11` (`+0.18`/`-1.19` pp) | `+0` (`+0.00`/`-10.21` pp) | `+4` (`+0.12`/`-2.07` pp) | `+4` (`+0.07`/`-8.60` pp) |
 | `libgit2/src/util/errors.c` | `21` | `0` | first | `+6` (`+0.00`/`+7.16` pp) | `+0` (`+0.00`/`-1.80` pp) | `+5` (`+0.00`/`+5.40` pp) | `+3` (`+0.01`/`+0.47` pp) |
 | `libgit2/src/libgit2/oid.c` | `17` | `0` | first | `+8` (`+0.17`/`+1.11` pp) | `+0` (`+0.00`/`-5.19` pp) | `+5` (`+0.18`/`+3.02` pp) | `+7` (`+0.10`/`-6.64` pp) |
@@ -556,7 +558,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/indexer.c` | `legacy-179` | `0` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) | `+1` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+2` (—/— pp) | `+0` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+1` (—/— pp) | `+1` (—/— pp) |
-| **Σ first** |  |  |  | **`+288` (`+10.21`/`+6.04` pp)** | **`+17` (`+3.17`/`-8.14` pp)** | **`+191` (`+8.99`/`+13.91` pp)** | **`+236` (`+11.76`/`-33.75` pp)** |
+| **Σ first** |  |  |  | **`+296` (`+10.37`/`+5.85` pp)** | **`+19` (`+3.32`/`-6.89` pp)** | **`+198` (`+9.04`/`+13.81` pp)** | **`+259` (`+12.02`/`-33.56` pp)** |
 | **Σ review** |  |  |  | **`+14` (`+0.34`/`-1.41` pp)** | **`+2` (`-0.92`/`+0.27` pp)** | **`+22` (`+0.09`/`-0.37` pp)** | **`+34` (`+2.44`/`+7.45` pp)** |
 
 ### Batches: safety audit
@@ -565,7 +567,8 @@ Deterministic `ffimap`; no model.
 
 | module | wave | batch | objective | pass | pub raw ptr | pub void ptr | pub unsafe fn | &cell | C by value | celled % | raw→std | unmanaged ptr types | ptr Drop | Send/Sync | raw deref | FFI calls | unsafe loc % | unsafe blocks |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **Σ first** |  |  |  |  | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| `libgit2/deps/reftable/basics.c` | `169` | `2` | wrap | first | `+0` | `+0` | `+9` | `+0` | `+1` | `+0.00` pp | `+1` | `+1` | `+0` | `+0` | `+0` | `+23` | `-0.10` pp | `+37` |
+| **Σ first** |  |  |  |  | **`+0`** | **`+0`** | **`+9`** | **`+0`** | **`+1`** | **`+0.00` pp** | **`+1`** | **`+1`** | **`+0`** | **`+0`** | **`+0`** | **`+23`** | **`-0.10` pp** | **`+37`** |
 | **Σ review** |  |  |  |  | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
 
 ### Batches — review: PoC + reports
@@ -2061,3 +2064,61 @@ this host, since its `glibc` submodule is not in cargo's cache, so it fails on b
 The batch calls no C: its own file is at 100% of lines and functions and 91 of 95 regions,
 the four left being the `?` returns of its formatters. The C line figures move by under
 0.02 pp between runs of the same tests.
+
+### `libgit2/deps/reftable/basics.c` wave 169 batch 2: `basics.c`'s routines
+
+This batch binds `basics.c`'s 20 functions. It completes batch 0's `Buf` with its owner,
+`BufVal` (`reftable_buf_release`), and its constructor, `Buf::new` (`reftable_buf_init`).
+The allocator's lifecycle roles become the policies `ReftableFree`, `ReftableArrayFree`,
+`ReftableStrFree` and `NamesFree`. `reftable_alloc_grow` is counted as ported
+(`ReftableArrayFree::grow`, a `Replaces`), since its bindgen wrapper would stop the
+installed-mode package from building. The other 19 are counted as wrapped.
+
+The wave base `4730ad9ba` holds conflict markers, so it does not build. The batch is
+therefore measured against that base with the three conflicted files resolved as
+`d21c78c70` has them, the bindings regenerated: its safety audit scan and its coverage.
+The coverage figures follow the method `d21c78c70` adopted, whose C object is the coverage
+variant's static archive. That puts 190,798 C lines in the denominator where `libgit2.so`
+had 86,770, so this batch's figures are not comparable with the earlier rows. The
+Overview's C LoC is that denominator.
+
+On the resolved base, the four suites reach `58.76`% / `98.93`% (C/Rust). The suites alone:
+`ub_safe` `29.28`/`79.81`, `ub_unsafe` `10.89`/`12.01`, `equiv` `44.62`/`75.42`, and unit
+(lib and `unit_pub`) `21.30`/`87.54`. The base's copy ran outside a repository, so
+`first_discoveries_race_to_pin_the_runtime` failed there, as the BSan gate snapshots note
+says.
+
+The Overview's Rust LoC moves by this changeset's code lines, counted without blank and
+comment lines, with `#[cfg(test)]` modules under tests: `+470` non-test and `+1176` tests,
+since batch 0's landing. The method behind the earlier figures is not recorded.
+
+Over the worklist, the tests run `95.00`% of `basics.c`'s lines (`93.17`% of regions, `90.62`%
+of branches) and `98.67`% of `basics.rs`'s (`96.92`% of regions). The lines they leave are of
+three kinds:
+
+- unreachable: `parse_names`' `next = end`, which only a buffer without a NUL at
+  `buf[size]` reaches, and the wrappers always pass one; `hash_size`'s `abort()`, for a
+  `HashId` it does not name; the `None` arm of `resize`'s restore; and `realloc_with`'s
+  zero size, which `reftable_realloc` never passes;
+- not this batch's: `names_equal`, with `names_length`.
+
+Every state of the buffer and every transition the analysis lists is reached: unallocated
+to allocated by `add` and `add_str`, trims within an allocation, and `detach` and the
+release back to unallocated. The structs that own nothing but carry a stale `buf` or
+`len` are reached too, in `unit_priv`. Every allocation failure is reached as well: the
+`unit_priv` sweeps under a refusing `set_alloc` family, and every allocation without
+libgit2's runtime.
+
+Gates on the batch's tree: plain, ASan+UBSan (with LSan) over the module's tests in every
+suite, the child-process sweeps included, and TSan over `ub_safe` and `unit_pub`, for the
+`Send`/`Sync` that `ReftableStr` and `ReftableVec` take from their unit policies. Miri ran
+the batch's Rust-only tests. Each of the 35 marked `calls C` was run alone there and seen to
+stop at its first foreign call; two marks that did not stop were removed. No test of the
+batch is expected to trigger BorrowSanitizer, so none ran under it. `libgit2-sys`
+packages in installed mode against a staged `plain` prefix (`--offline`).
+
+The safety audit row's `+9` `pub unsafe fn` are seven methods that ffibox's lifecycle traits
+require (`c_drop`, `c_drop_len`, `c_clone_len`, `c_dup`, `c_dispose`) plus `set_alloc` and
+`set_default_alloc`. The `+1` `C by value` is `BufRef`'s unallocated view, which C reads.
+The `+1` `raw→std` is `Names::name`'s `CStr`. The `+1` `unmanaged ptr types` is `Names`,
+whose `CVec` holds the array's bare `char *` elements under `NamesFree`.

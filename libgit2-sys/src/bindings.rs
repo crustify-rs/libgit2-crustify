@@ -14473,16 +14473,45 @@ impl Default for reftable_buf {
         }
     }
 }
-<<<<<<< refs/heads/crustify/waves/wave-169
 pub const REFTABLE_HASH_SHA1: reftable_hash = 89;
 pub const REFTABLE_HASH_SHA256: reftable_hash = 247;
 pub type reftable_hash = ::std::os::raw::c_uint;
-=======
+unsafe extern "C" {
+    pub fn reftable_set_alloc(
+        malloc: ::std::option::Option<
+            unsafe extern "C" fn(arg1: usize) -> *mut ::std::os::raw::c_void,
+        >,
+        realloc: ::std::option::Option<
+            unsafe extern "C" fn(
+                arg1: *mut ::std::os::raw::c_void,
+                arg2: usize,
+            ) -> *mut ::std::os::raw::c_void,
+        >,
+        free: ::std::option::Option<
+            unsafe extern "C" fn(arg1: *mut ::std::os::raw::c_void),
+        >,
+    );
+}
 unsafe extern "C" {
     pub fn reftable_buf_init(buf: *mut reftable_buf);
 }
 unsafe extern "C" {
     pub fn reftable_buf_release(buf: *mut reftable_buf);
+}
+unsafe extern "C" {
+    pub fn reftable_buf_reset(buf: *mut reftable_buf);
+}
+unsafe extern "C" {
+    pub fn reftable_buf_setlen(
+        buf: *mut reftable_buf,
+        len: usize,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn reftable_buf_cmp(
+        a: *const reftable_buf,
+        b: *const reftable_buf,
+    ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
     pub fn reftable_buf_add(
@@ -14491,7 +14520,75 @@ unsafe extern "C" {
         len: usize,
     ) -> ::std::os::raw::c_int;
 }
->>>>>>> d21c78c70aa8564ad8021d6dfba9670e232b7905
+unsafe extern "C" {
+    pub fn reftable_buf_addstr(
+        buf: *mut reftable_buf,
+        s: *const ::std::os::raw::c_char,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn reftable_buf_detach(buf: *mut reftable_buf) -> *mut ::std::os::raw::c_char;
+}
+unsafe extern "C" {
+    pub fn binsearch(
+        sz: usize,
+        f: ::std::option::Option<
+            unsafe extern "C" fn(
+                k: usize,
+                args: *mut ::std::os::raw::c_void,
+            ) -> ::std::os::raw::c_int,
+        >,
+        args: *mut ::std::os::raw::c_void,
+    ) -> usize;
+}
+unsafe extern "C" {
+    pub fn free_names(a: *mut *mut ::std::os::raw::c_char);
+}
+unsafe extern "C" {
+    pub fn parse_names(
+        buf: *mut ::std::os::raw::c_char,
+        size: ::std::os::raw::c_int,
+        out: *mut *mut *mut ::std::os::raw::c_char,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn reftable_malloc(sz: usize) -> *mut ::std::os::raw::c_void;
+}
+unsafe extern "C" {
+    pub fn reftable_realloc(
+        p: *mut ::std::os::raw::c_void,
+        sz: usize,
+    ) -> *mut ::std::os::raw::c_void;
+}
+unsafe extern "C" {
+    pub fn reftable_free(p: *mut ::std::os::raw::c_void);
+}
+unsafe extern "C" {
+    pub fn reftable_calloc(nelem: usize, elsize: usize) -> *mut ::std::os::raw::c_void;
+}
+unsafe extern "C" {
+    pub fn reftable_strdup(
+        str_: *const ::std::os::raw::c_char,
+    ) -> *mut ::std::os::raw::c_char;
+}
+unsafe extern "C" {
+    pub fn common_prefix_size(a: *mut reftable_buf, b: *mut reftable_buf) -> usize;
+}
+unsafe extern "C" {
+    pub fn hash_size(id: reftable_hash) -> u32;
+}
+pub const REFTABLE_IO_ERROR: reftable_error = -2;
+pub const REFTABLE_FORMAT_ERROR: reftable_error = -3;
+pub const REFTABLE_NOT_EXIST_ERROR: reftable_error = -4;
+pub const REFTABLE_LOCK_ERROR: reftable_error = -5;
+pub const REFTABLE_API_ERROR: reftable_error = -6;
+pub const REFTABLE_ZLIB_ERROR: reftable_error = -7;
+pub const REFTABLE_EMPTY_TABLE_ERROR: reftable_error = -8;
+pub const REFTABLE_REFNAME_ERROR: reftable_error = -10;
+pub const REFTABLE_ENTRY_TOO_BIG_ERROR: reftable_error = -11;
+pub const REFTABLE_OUTDATED_ERROR: reftable_error = -12;
+pub const REFTABLE_OUT_OF_MEMORY_ERROR: reftable_error = -13;
+pub type reftable_error = ::std::os::raw::c_int;
 unsafe extern "C" {
     pub fn crustify_GIT_OID_DEFAULT() -> git_oid_t;
 }

@@ -713,3 +713,23 @@ function reftable_buf_add
 function reftable_buf_init
 function reftable_buf_release
 type reftable_buf
+
+# deps/reftable/basics.c wave 169 batch 2: basics.c's allocator hooks, buffer routines and
+# helpers (basics.h, reftable-basics.h), and the error codes they return (reftable-error.h)
+function binsearch
+function common_prefix_size
+function free_names
+function hash_size
+function parse_names
+function reftable_buf_addstr
+function reftable_buf_cmp
+function reftable_buf_detach
+function reftable_buf_reset
+function reftable_buf_setlen
+function reftable_calloc
+function reftable_free
+function reftable_malloc
+function reftable_realloc
+function reftable_set_alloc
+function reftable_strdup
+type reftable_error

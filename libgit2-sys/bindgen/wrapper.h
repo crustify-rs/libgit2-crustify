@@ -27,15 +27,8 @@
 #include <git2/sys/repository.h>
 #include <git2/sys/stream.h>
 #include <git2/sys/transport.h>
-<<<<<<< refs/heads/crustify/waves/wave-169
-/*
- * Internal headers whose items the batches bind; each needs the include directories the
- * variant's C build compiles it with (build.rs, campaign mode).
- */
-#include "reftable-basics.h"
-=======
 /* Internal headers. */
 #include "basics.h" /* deps/reftable */
+#include "reftable-error.h" /* deps/reftable */
 
->>>>>>> d21c78c70aa8564ad8021d6dfba9670e232b7905
 #include "shims.h"

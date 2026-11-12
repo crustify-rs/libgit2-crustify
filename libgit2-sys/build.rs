@@ -185,18 +185,6 @@ fn campaign_library(manifest: &Path) -> Library {
     );
     println!("cargo:variant={variant}");
     println!("cargo:build_dir={}", build.display());
-<<<<<<< refs/heads/crustify/waves/wave-169
-    let cache = build.join("CMakeCache.txt");
-    let mut include = vec![root.join("c/include")];
-    include.extend(INTERNAL_INCLUDE.iter().map(|dir| root.join("c").join(dir)));
-    // The headers the build generates, `git2_features.h` among them, and those of the
-    // libraries it found, which the internal headers include (`reftable-system.h` includes
-    // `zlib.h`).
-    include.push(build.join("gen_headers"));
-    include.extend(variant_include_dirs(&cache));
-    Library {
-        include,
-=======
 
     // The bindings see the internal headers as the library's own TUs do, from this checkout's
     // `c/` in place of the source dir the build was configured from.
@@ -221,34 +209,11 @@ fn campaign_library(manifest: &Path) -> Library {
     Library {
         include,
         defines,
->>>>>>> d21c78c70aa8564ad8021d6dfba9670e232b7905
         version: pc_version(&build.join(format!("{LIB}.pc"))),
-        cc: Some(variant_cc(&cache)),
+        cc: Some(variant_cc(&build.join("CMakeCache.txt"))),
     }
 }
 
-<<<<<<< refs/heads/crustify/waves/wave-169
-/// The C root's directories of internal headers the bindings cover, besides the installed
-/// ones: `wrapper.h` includes the internal headers whose items the batches bind, which
-/// include their neighbours as the C build does. Only a campaign build has them; an install
-/// holds the public headers alone.
-const INTERNAL_INCLUDE: &[&str] = &["src/util", "deps/reftable"];
-
-/// The include directories of the libraries the variant's build found, as its CMake cache
-/// records them.
-fn variant_include_dirs(cache: &Path) -> Vec<PathBuf> {
-    let text = fs::read_to_string(cache).unwrap_or_else(|e| panic!("{}: {e}", cache.display()));
-    [
-        "ZLIB_INCLUDE_DIR:PATH=",
-        "PCRE2_INCLUDE_DIR:PATH=",
-        "OPENSSL_INCLUDE_DIR:PATH=",
-    ]
-    .iter()
-    .filter_map(|key| text.lines().find_map(|l| l.strip_prefix(key)))
-    .filter(|dir| !dir.is_empty() && !dir.ends_with("-NOTFOUND"))
-    .map(PathBuf::from)
-    .collect()
-=======
 /// Links a variant's static archive, which `crustify/scripts/static-archive.sh` made from the
 /// objects its shared library links, as the last step of its build.
 ///
@@ -496,7 +461,6 @@ fn cache_var(cache: &Path, name: &str) -> String {
         .find_map(|l| l.strip_prefix(name).and_then(|r| r.split_once('=')))
         .map(|(_, v)| v.to_string())
         .unwrap_or_else(|| panic!("{} records no {name}", cache.display()))
->>>>>>> d21c78c70aa8564ad8021d6dfba9670e232b7905
 }
 
 /// The library as a dependent finds it: under `<LIB>_DIR`, or through `pkg-config`.
