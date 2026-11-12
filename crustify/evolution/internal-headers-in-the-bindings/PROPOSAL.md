@@ -70,6 +70,21 @@ The shipped build then needs the static archive, as bundled mode would build it,
 internal functions the safe crate calls exported, or system mode gated off once a safe
 wrapper reaches an internal symbol, as it is gated off once a module is integrated.
 
+### Further evidence: a hidden function of a public header (wave-181/batch-0)
+
+`foundational/libgit2/src/util/allocators/stdalloc.c/wave-181/batch-0/run-1` allowlisted
+`git_stdalloc_init_allocator`, which the installed `git2/sys/alloc.h` declares without
+`GIT_EXTERN`. `wrapper.h` did not change, and the bindings regenerated from the public header
+alone, but the symbol is as hidden as an internal header's: `nm -D --defined-only` of the
+`plain` variant's `libgit2.so` lists 907 functions and not this one, while its static
+archive defines it (`stdalloc.o`, `T git_stdalloc_init_allocator`). So "internal" in the
+fourth consequence is a property of the export table, not of the header that declares the
+function: a gate on system mode that looked only at `wrapper.h`'s internal headers would
+miss `stdalloc::allocator`. The packaging gate (`cargo package -p libgit2-sys --offline`,
+`CRUSTIFY_BUILD_VARIANT=` and `LIBGIT2_DIR` at an install prefix of the `plain` build's
+headers, `libgit2.so` and `libgit2.pc`) still fails first at consequence 2, on
+`static_fns.c`'s `#include "alloc.h"`.
+
 ## Destination
 
 The spec: `bindgen`, Generation and Build modes, which the binder does not own.

@@ -22596,11 +22596,11 @@
       "string": false,
       "owned": false,
       "borrowed": {
-       "lifetime": "other"
+       "lifetime": "arg:allocator"
       },
       "nullable": false,
       "mutable": true,
-      "note": "Caller storage filled in place: sets all three members to the stdalloc malloc/realloc/free forwarders and returns 0. Not exported from libgit2.so (declared in git2/sys/alloc.h without GIT_EXTERN, hidden), so it cannot be bound; git_allocator_global_init applies it to git__allocator."
+      "note": "Caller storage filled in place: writes all three members (gmalloc, grealloc, gfree) with the static stdalloc__malloc/realloc/free forwarders, reads nothing, keeps no pointer to it, and returns 0 on every path. Dereferenced unchecked, so never NULL. Hidden from libgit2.so (declared in git2/sys/alloc.h without GIT_EXTERN), it links from the variants' static archives since d21c78c70, and src/util/allocators/stdalloc.rs binds it (wave-181/batch-0) as stdalloc::allocator(), returning the filled value. Called by setup_default_allocator (from git_allocator_global_init, and git_allocator_setup(NULL)) on &git__allocator, and by tests/util/str/oom.c."
      }
     }
    ]

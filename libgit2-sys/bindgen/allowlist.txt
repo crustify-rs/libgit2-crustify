@@ -719,3 +719,7 @@ function git__mallocarray
 function git__strdup
 function git__strndup
 function git__substrdup
+
+# wave-181/batch-0: src/util/allocators/stdalloc.c (git2/sys/alloc.h); hidden from libgit2.so,
+# it links from the variant's static archive
+function git_stdalloc_init_allocator

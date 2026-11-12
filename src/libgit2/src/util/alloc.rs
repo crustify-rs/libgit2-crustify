@@ -12,10 +12,10 @@
 //! copied freely, and never released.
 //!
 //! The header's init routines are not this module's: `git_stdalloc_init_allocator` is
-//! `src/util/allocators/stdalloc.c`'s, wrapped with that module, and
-//! `git_win32_crtdbg_init_allocator` is never defined on this platform. A value is built
-//! here from an [`Alloc`] implementation ([`Allocator::new`]), whose `extern "C"`
-//! trampolines adapt libgit2's calls to it, or from three C functions
+//! `src/util/allocators/stdalloc.c`'s, whose [`stdalloc::allocator`] returns the standard
+//! allocator's value, and `git_win32_crtdbg_init_allocator` is never defined on this
+//! platform. A value is built here from an [`Alloc`] implementation ([`Allocator::new`]),
+//! whose `extern "C"` trampolines adapt libgit2's calls to it, or from three C functions
 //! ([`Allocator::from_fns`]).
 //!
 //! The members are function pointers, so reading or replacing one is safe and calling
@@ -69,6 +69,7 @@
 //! [`set_allocator`]'s caller's obligation.
 //!
 //! [`set_allocator`]: crate::libgit2::src::libgit2::settings::set_allocator
+//! [`stdalloc::allocator`]: crate::libgit2::src::util::allocators::stdalloc::allocator
 
 pub use ffi_import::{
     Alloc, AllocBox, AllocStr, AllocVec, Allocator, AllocatorMut, AllocatorRef, ArrayFree, Free,
@@ -143,10 +144,13 @@ mod ffi_import {
         ///
         /// A plain value of three function pointers, resource-free: `Copy`, held inline,
         /// never released. Build one with [`new`](Self::new) over an [`Alloc`]
-        /// implementation, or with [`from_fns`](Self::from_fns) over C functions; both set
-        /// every member, and the setters only ever store a function, so a value built here
-        /// never holds a NULL member. Read and replace members through
-        /// [`as_ref`](Self::as_ref) / [`as_mut`](Self::as_mut).
+        /// implementation, or with [`from_fns`](Self::from_fns) over C functions, or take
+        /// libgit2's standard one from [`stdalloc::allocator`]; each sets every member, and
+        /// the setters only ever store a function, so a value built in Rust never holds a
+        /// NULL member. Read and replace members through [`as_ref`](Self::as_ref) /
+        /// [`as_mut`](Self::as_mut).
+        ///
+        /// [`stdalloc::allocator`]: crate::libgit2::src::util::allocators::stdalloc::allocator
         ///
         /// Wraps `st::git_allocator`
         #[doc(alias = "git_allocator")]

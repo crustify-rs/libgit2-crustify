@@ -40,6 +40,7 @@ and in Notes.
   change in pp
 - `+lifecycle` … `+misc`, `total` — the reports a review batch filed, by kind
 - safety audit columns — the Safety audit's metrics, as a landing changed them
+- API stability columns — the landing's items by how `ffimap api` classifies their consumer-facing API against its base: `kept`, `extended`, `changed`, `removed`, `new`, and `→Replaces` for the anchors a port moved; `unattributed` the crate's public items no anchor reaches, by module; `reasons` the changed and removed items with the reason the batch recorded
 - `cost` / `review cost` / `total` — a module's translation, review and combined cost;
   `module wall` — first launch to final gate; `Σ recorded agents` leaves the assistant
   out, `Σ campaign` adds it, without per-unit cells
@@ -56,17 +57,17 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip `<sha>`; `main` shipped at `<sha>`; crustify `4605156`, ffibox `7950244` (`main`), wavefront `db28284`
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `17732` non-test, `95599` tests; **C LoC** — `<n>`
+- **Rust LoC** — `17754` non-test, `95942` tests; **C LoC** — `<n>`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `713` | — | `28.42`% | `79.88`% |
-| UB unsafe tests | `91` | — | `19.36`% | `11.98`% |
-| Equiv tests | `491` | — | `43.43`% | `75.59`% |
-| Unit tests | `798` | — | `32.02`% | `87.53`% |
-| **Total tests** | **`2093`** | — | **`45.90`%** | **`98.90`%** |
+| UB safe tests | `715` | — | `28.40`% | `80.21`% |
+| UB unsafe tests | `91` | — | `19.34`% | `11.98`% |
+| Equiv tests | `493` | — | `43.39`% | `75.63`% |
+| Unit tests | `802` | — | `32.00`% | `87.53`% |
+| **Total tests** | **`2101`** | — | **`45.85`%** | **`98.90`%** |
 | total types | `258` | — | — | — |
 | ported types | `0` | `0.00`% | — | — |
 | wrapped types | `105` | `40.70`% | — | — |
@@ -368,6 +369,15 @@ Deterministic `ffimap`; no model.
 | **Σ first** |  |  |  |  | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
 | **Σ review** |  |  |  |  | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
 
+### Batches: API stability
+
+Deterministic `ffimap api`; no model.
+
+| module | wave | batch | objective | pass | kept | extended | changed | removed | new | →Replaces | unattributed | reasons |
+|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---|---|
+| **Σ first** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** |  |  |
+| **Σ review** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** |  |  |
+
 ### Batches — review: PoC + reports
 
 `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgit2/object` review wave 0; `openrouter/anthropic/claude-opus-5.5` via `claude` from `libgit2/object` review wave 1.
@@ -416,6 +426,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/raw-lifetime-string` | `legacy-2` | `0` | wrap | first | `2` | — | `+1362/-14` | — | `$5.49` | `12.39M` | `23m12s` | `$2.75` | — |
 | `libgit2/src/util/alloc.c` | `12` | `1` | wrap | first | `7` | `56` | `+1947/-677` | `45.91`% / `98.92`% | `$18.92` | `66.48M` | `54m55s` | `$2.70` | `$0.34` |
 | `libgit2/src/util/alloc.c` | `12` | `2` | wrap | first | `7` | `56` | `+693/-132` | `45.90`% / `98.90`% | `$14.31` | `50.49M` | `57m19s` | `$2.04` | `$0.26` |
+| `libgit2/src/util/allocators/stdalloc.c` | `181` | `0` | wrap | first | `1` | `18` | `+618/-10` | `45.85`% / `98.90`% | — | — | — | — | — |
 | `libgit2/src/util/errors.c` | `13` | `1` | wrap | first | `4` | `51` | `+1008/-26` | `1.30`% / `97.32`% | `$4.00` | `8.72M` | `21m23s` | `$1.00` | `$0.08` |
 | `libgit2/src/util/errors.c` | `21` | `0` | wrap | first | `1` | `15` | `+756/-71` | `1.36`% / `98.40`% | `$3.06` | `6.69M` | `15m41s` | `$3.06` | `$0.20` |
 | `libgit2/src/libgit2/oid.c` | `17` | `0` | wrap | first | `18` | `252` | `+1351/-11` | `6.07`% / `99.47`% | `$8.55` | `17.50M` | `40m06s` | `$0.48` | `$0.03` |
@@ -482,7 +493,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/indexer.c` | `legacy-179` | `0` | wrap | review | `1` | — | `+35/-0` | — | `$3.18` | `8.05M` | `12m18s` | `$3.18` | — |
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | wrap | review | `1` | — | `+113/-14` | — | `$4.80` | `10.64M` | `27m50s` | `$4.80` | — |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | wrap | review | `2` | — | `+217/-15` | — | `$11.03` | `25.98M` | `47m17s` | `$5.51` | — |
-| **Σ first** |  |  |  |  | **`429`** | **`8590`** | **`+70387/-3315`** | **`45.90`% / `98.90`%** | **`$445.45`** | **`1379.81M`** | — | **`$1.04`** | **`$0.05`** |
+| **Σ first** |  |  |  |  | **`430`** | **`8608`** | **`+71005/-3325`** | **`45.85`% / `98.90`%** | **`$445.45`** | **`1379.81M`** | — | **`$1.04`** | **`$0.05`** |
 | **Σ review** |  |  |  |  | **`422`** | — | **`+7131/-1346`** | **— / `98.90`%** | **`$354.58`** | **`672.21M`** | — | **`$0.84`** | — |
 
 ### Batches: tests
@@ -495,6 +506,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 |---|---|---|---|---|---|---|---|
 | `libgit2/src/util/alloc.c` | `12` | `1` | first | `+18` (`-0.02`/`+0.13` pp) | `+0` (`+0.02`/`-0.08` pp) | `+1` (`+0.02`/`-0.17` pp) | `+5` (`+0.01`/`+0.08` pp) |
 | `libgit2/src/util/alloc.c` | `12` | `2` | first | `+1` (`+0.00`/`-0.01` pp) | `+0` (`-0.02`/`-0.01` pp) | `+1` (`+0.00`/`+0.26` pp) | `+1` (`+0.02`/`-0.01` pp) |
+| `libgit2/src/util/allocators/stdalloc.c` | `181` | `0` | first | `+2` (`-0.01`/`+0.33` pp) | `+0` (`-0.05`/`+0.00` pp) | `+2` (`-0.07`/`+0.04` pp) | `+4` (`+0.00`/`+0.00` pp) |
 | `libgit2/src/util/errors.c` | `13` | `1` | first | `+11` (`+0.18`/`-1.19` pp) | `+0` (`+0.00`/`-10.21` pp) | `+4` (`+0.12`/`-2.07` pp) | `+4` (`+0.07`/`-8.60` pp) |
 | `libgit2/src/util/errors.c` | `21` | `0` | first | `+6` (`+0.00`/`+7.16` pp) | `+0` (`+0.00`/`-1.80` pp) | `+5` (`+0.00`/`+5.40` pp) | `+3` (`+0.01`/`+0.47` pp) |
 | `libgit2/src/libgit2/oid.c` | `17` | `0` | first | `+8` (`+0.17`/`+1.11` pp) | `+0` (`+0.00`/`-5.19` pp) | `+5` (`+0.18`/`+3.02` pp) | `+7` (`+0.10`/`-6.64` pp) |
@@ -559,7 +571,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/indexer.c` | `legacy-179` | `0` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) | `+1` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+2` (—/— pp) | `+0` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+1` (—/— pp) | `+1` (—/— pp) |
-| **Σ first** |  |  |  | **`+307` (`+10.19`/`+6.16` pp)** | **`+17` (`+3.17`/`-8.23` pp)** | **`+193` (`+9.01`/`+14.00` pp)** | **`+242` (`+11.79`/`-33.68` pp)** |
+| **Σ first** |  |  |  | **`+309` (`+10.18`/`+6.49` pp)** | **`+17` (`+3.12`/`-8.23` pp)** | **`+195` (`+8.94`/`+14.04` pp)** | **`+246` (`+11.79`/`-33.68` pp)** |
 | **Σ review** |  |  |  | **`+14` (`+0.34`/`-1.41` pp)** | **`+2` (`-0.92`/`+0.26` pp)** | **`+22` (`+0.09`/`-0.39` pp)** | **`+34` (`+2.44`/`+7.46` pp)** |
 
 ### Batches: safety audit
@@ -570,9 +582,20 @@ Deterministic `ffimap`; no model.
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | `libgit2/src/util/alloc.c` | `12` | `1` | wrap | first | `+0` | `+0` | `+5` | `+0` | `+0` | `+0.00` pp | `+1` | `+0` | `+0` | `+0` | `+0` | `+2` | `-0.06` pp | `+12` |
 | `libgit2/src/util/alloc.c` | `12` | `2` | wrap | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `-1` | `+0` | `+0` | `+0` | `+0` | `+5` | `+0.01` pp | `+3` |
+| `libgit2/src/util/allocators/stdalloc.c` | `181` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.13` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `-0.01` pp | `+1` |
 | `libgit2/src/util/alloc.c` | `12` | `3` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.01` pp | `+0` |
-| **Σ first** |  |  |  |  | **`+0`** | **`+0`** | **`+5`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+7`** | **`-0.05` pp** | **`+15`** |
+| **Σ first** |  |  |  |  | **`+0`** | **`+0`** | **`+5`** | **`+0`** | **`+0`** | **`+0.13` pp** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+8`** | **`-0.06` pp** | **`+16`** |
 | **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`-0.01` pp** | **`+0`** |
+
+### Batches: API stability
+
+Deterministic `ffimap api`; no model.
+
+| module | wave | batch | objective | pass | kept | extended | changed | removed | new | →Replaces | unattributed | reasons |
+|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---|---|
+| `libgit2/src/util/allocators/stdalloc.c` | `181` | `0` | wrap | first | `0` | `0` | `0` | `0` | `1` | `0` | — | — |
+| **Σ first** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`1`** | **`0`** |  |  |
+| **Σ review** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** |  |  |
 
 ### Batches — review: PoC + reports
 
@@ -2142,3 +2165,34 @@ The settings' `evolution` answer became `evolve, unattended: the whole campaign`
 that are useful and validated, at the user's instruction; others wait for the module's end.
 Landed under it: ffimap's `api` subcommand (ffimap `9aa2ef1`) and the API stability measure
 of every landing (Crustify `87e3816`), which applies from the next launched batch.
+
+### `libgit2/src/util/allocators/stdalloc.c` wave 181 batch 0: `git_stdalloc_init_allocator`
+
+`stdalloc::allocator()` returns the `Allocator` C fills with the standard family's three
+`static` forwarders to the C library's `malloc`, `realloc` and `free`; `git_stdalloc_init_allocator`
+is hidden from `libgit2.so` and links from the static archive, so the batch only allowlists
+it. `alloc.rs`'s and `set_allocator`'s docs now name the value, and `set_allocator(None)`
+is documented as restoring libgit2's default allocator, not the system one. The ownership
+store's note on its `allocator` parameter no longer says the function cannot be bound, and
+its borrow is `arg:allocator` rather than `other`; the `init` constructor role holds. The
+`unit_pub` suite is new on this branch, laid out as `failalloc.c`'s wave 176 lays it out;
+its tests count with the `--lib` unit tests in the `Unit tests` cells.
+
+Coverage was measured with `crustify/scripts/coverage/run.sh` on the wave base `69ff068e8`
+and on this tree. The C cells are read with the coverage variant's static archive as the
+only object (86,833 lines), from each suite's merged profile; `report.py` gave the Rust
+cells, its scope the scratch tree's `src/`. The C deltas are noise: `ub_unsafe`, which this
+batch does not touch, lost 45 lines between the runs. `stdalloc.c` is fully covered on both
+trees, since libgit2's initialisation already reached it; `stdalloc.rs` is 7 of 8 lines and
+11 of 12 regions, the missed one the `unreachable!` arm for a member C left unset, which the
+C body never leaves. `loc` is the change in ffimap's `code.loc.total`, and `+LoC` counts
+every `.rs` line of the diff, the 13 regenerated binding lines included.
+
+The `Batches: API stability` tables come from the template (Crustify `87e3816`), with their
+legend line; this is their first measured row. The item came out `new`, and every
+unattributed module `kept`. The batch's tests and its module's and `alloc.c`'s passed on
+`plain` and under ASan/UBSan. Under BSan, the five tests that hand pointers across the
+boundary passed, each alone, in a snapshot whose bindings took BSan's doc comments. Under Miri
+the batch's tests are ignored, each seen to stop at the foreign call or at spawning a process. Packaging `libgit2-sys` fails as before, on `static_fns.c`'s `#include "alloc.h"`.
+`internal-headers-in-the-bindings` records that this public header's function is as
+unexported as an internal one. Usage cells are the assistant's.

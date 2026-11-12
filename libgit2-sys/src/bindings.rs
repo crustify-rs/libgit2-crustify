@@ -12193,6 +12193,19 @@ const _: () = {
     ][::std::mem::offset_of!(git_allocator, gfree) - 16usize];
 };
 unsafe extern "C" {
+    /** Initialize the allocator structure to use the `stdalloc` pointer.
+
+ Set up the structure so that all of its members are using the standard
+ "stdalloc" allocator functions. The structure can then be used with
+ `git_allocator_setup`.
+
+ @param allocator The allocator that is to be initialized.
+ @return An error code or 0.*/
+    pub fn git_stdalloc_init_allocator(
+        allocator: *mut git_allocator,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     /** Create new commit in the repository from a list of `git_oid` values.
 
  See documentation for `git_commit_create()` for information about the
