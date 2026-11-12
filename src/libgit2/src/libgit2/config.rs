@@ -3780,12 +3780,16 @@ define_ctype!(
     ffi::git_config_backend
 );
 
-/// Release dispatch selected by the allocation, not by another backend's vtable.
+/// Release dispatch selected by the allocation, not by another backend's vtable. A
+/// backend without a `free` member cannot be released: it is left alone, its storage
+/// staying its builder's, where libgit2 would call through NULL.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct BackendFree;
 
-// SAFETY: owners adopt complete backend allocations with their matching free
-// callback; dispatch consumes exactly one allocation, including its owned fields.
+// SAFETY: owners adopt complete backend allocations with the callbacks their
+// implementation set, which no config holds; a `free` member consumes exactly that
+// allocation, including its owned fields, once. A backend without one is left alone,
+// never called through, and its storage stays its builder's, as `BackendBox` states.
 unsafe impl CDrop<Backend> for BackendFree {
     /// Wraps `fld::git_config_backend.free`
     #[doc(alias = "git_config_backend.free")]
@@ -3794,10 +3798,13 @@ unsafe impl CDrop<Backend> for BackendFree {
         // SAFETY: `p` addresses the owned complete allocation; the projection forms no reference to
         // it.
         let free_ptr = unsafe { &raw const (*p).free };
-        // SAFETY: reads its initialised, matching callback.
-        let free = unsafe { free_ptr.read() }.expect("backend lacks free callback");
-        // SAFETY: caller surrenders the sole owner and all borrowed dependencies live.
-        unsafe { free(p) };
+        // SAFETY: reads its initialised member: an optional function pointer.
+        if let Some(free) = unsafe { free_ptr.read() } {
+            // SAFETY: `free` is the member the backend's implementation set for this very
+            // allocation; the caller surrenders the sole owner and all borrowed dependencies
+            // live.
+            unsafe { free(p) };
+        }
     }
 }
 
@@ -3809,8 +3816,10 @@ unsafe impl CDrop<Backend> for BackendFree {
 /// interface: get acquires an immutable independently retained entry; iterator
 /// owns its result; snapshot yields independently owned storage after open;
 /// input strings are not retained; snapshots set readonly nonzero. NULL slots
-/// other than free are permitted: calls through them return a Config-class
-/// error naming the slot.
+/// are permitted: calls through them return a Config-class error naming the
+/// slot. A backend without free is never released: dropping the owner leaves it
+/// alone, and its storage stays its builder's, to keep live while the owner lives
+/// and reclaim afterwards.
 /// Repository/other external dependencies must remain live through destruction;
 /// use a lifetime-carrying owner instead for storage that retains such borrows.
 ///
@@ -3827,6 +3836,9 @@ pub type BackendBox = CBox<Backend, BackendFree>;
 
 /// Construction phase: only metadata and a consuming one-time open are available.
 /// C retains stable storage throughout initialization; failure frees it normally.
+/// Every one a caller holds was built by [`new`](Self::new) or
+/// [`new_readonly`](Self::new_readonly), so its `free` member is set: a config it is
+/// handed to calls that member, unchecked, when it lets go of it.
 pub struct UnopenedBackend(BackendBox);
 
 /// Non-dereferenceable identity of C's registration back-pointer. It may be stale:
@@ -4006,8 +4018,9 @@ impl<'r> ConfigMut<'_, 'r> {
         }
         // SAFETY: config and backend are exclusive live allocations; the bounded
         // priority cannot overflow C's comparators. Repository is NULL or kept live
-        // for 'r. C opens once, retaining backend only on success; on failure the
-        // still-owned allocation is released by its matching policy here.
+        // for 'r. C opens once, retaining backend only on success, and later calls its
+        // `free` member, which every `UnopenedBackend` a caller holds sets; on failure
+        // the still-owned allocation is released by its matching policy here.
         let rc = unsafe {
             ffi::git_config_add_backend(
                 self.as_mut_ptr(),
@@ -4057,7 +4070,8 @@ impl BackendOpen {
 }
 
 impl BackendFree {
-    /// Releases `backend` through its own `free` member.
+    /// Releases `backend` through its own `free` member, or leaves it to its builder
+    /// when it has none.
     pub fn release(self, backend: BackendBox) {
         drop(backend);
     }
@@ -4234,8 +4248,9 @@ impl BackendMut<'_> {
         // SAFETY: exclusive live source and writable output. C constructs a fresh
         // snapshot borrowing source only until its one-time open below completes.
         backend_status(unsafe { snapshot(&raw mut out, p) })?;
-        // SAFETY: success transfers a complete snapshot allocation and matching
-        // free callback; self remains live through its synchronous initialization.
+        // SAFETY: success transfers a complete snapshot allocation with its own
+        // callbacks, a NULL `free` leaving it to the backend that built it; self remains
+        // live through its synchronous initialization.
         let snapshot = unsafe { BackendBox::from_c(out) };
         UnopenedBackend(snapshot.expect("snapshot returned NULL")).open(ConfigLevel::LOCAL)
     }
@@ -8098,6 +8113,59 @@ pub(crate) mod unit_tests {
                 // Released with the iterator, still lent.
                 drop(lent);
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod unit_priv {
+    //! [`BackendFree`], the releaser of a [`BackendBox`], over a backend adopted through
+    //! `from_c`, whose contract allows a NULL `free` member.
+
+    use core::ptr;
+
+    use super::{BackendBox, BackendFree, ffi};
+
+    /// A complete backend built in Rust with every callback NULL, `free` among them, and a
+    /// read-only flag to recognise it by.
+    fn bare_backend() -> *mut ffi::git_config_backend {
+        Box::into_raw(Box::new(ffi::git_config_backend {
+            version: ffi::GIT_CONFIG_BACKEND_VERSION,
+            readonly: 7,
+            cfg: ptr::null_mut(),
+            open: None,
+            get: None,
+            set: None,
+            set_multivar: None,
+            del: None,
+            del_multivar: None,
+            iterator: None,
+            snapshot: None,
+            lock: None,
+            unlock: None,
+            free: None,
+        }))
+    }
+
+    /// A backend without `free` cannot be released: dropping its owner, or handing it to
+    /// [`BackendFree::release`], leaves it alone rather than panic in the releaser, which
+    /// would abort where C or an unwind reaches it, or call through NULL. Its storage
+    /// stays the test's, as it was before the adoption. Pure Rust, so Miri runs it.
+    #[test]
+    fn backend_without_free_is_left_to_its_builder() {
+        for release in [drop::<BackendBox>, |owner| BackendFree.release(owner)] {
+            let raw = bare_backend();
+            // SAFETY: `raw` is a complete backend nothing else holds, live until this test
+            // reclaims it below; `from_c`'s contract allows its NULL `free`, which leaves
+            // the storage to this test.
+            let owner = unsafe { BackendBox::from_c(raw) }.expect("a box is never NULL");
+            assert_eq!(owner.as_ref().readonly_raw(), 7);
+            release(owner);
+            // SAFETY: the owner left the allocation alone, so it is still the `Box` that
+            // `bare_backend` made, reclaimed once.
+            let reclaimed = unsafe { Box::from_raw(raw) };
+            assert_eq!(reclaimed.readonly, 7);
+            assert!(reclaimed.free.is_none());
         }
     }
 }
