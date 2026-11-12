@@ -3,7 +3,9 @@
 //! storage, and drop what they do build (the empty array) without touching an
 //! allocator.
 //!
-//! The strategy is Rust alone, so every test runs under Miri too.
+//! The strategies call the family's C routines, which Miri cannot run: the tests that ask
+//! the allocator for something are ignored under it, and those that ask nothing, an empty
+//! array or a size refused before the allocator is asked, run there too.
 
 use std::cell::Cell;
 use std::mem::MaybeUninit;
@@ -21,6 +23,7 @@ use crate::fixture::Pair;
 struct Wide([u8; 16]);
 
 #[test]
+#[cfg_attr(miri, ignore = "calls C")]
 fn boxes_never_hold_storage() {
     assert!(CBox::<Pair, FailAlloc>::new_uninit().is_none());
     assert!(CBox::<Pair, FailAlloc>::new_uninit_with(FailAlloc).is_none());
@@ -31,17 +34,25 @@ fn boxes_never_hold_storage() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "calls C")]
 fn arrays_never_hold_storage() {
     for len in [1, 2, 4096, 1 << 30] {
         assert!(CVec::<u8, FailArrayAlloc>::new_uninit(len).is_none());
         assert!(CVec::<u64, FailArrayAlloc>::new_uninit(len).is_none());
         assert!(CVec::<Wide, FailArrayAlloc>::new_uninit_with(len, FailArrayAlloc).is_none());
     }
-    // A size that overflows is refused before the allocator is asked.
-    assert!(CVec::<u64, FailArrayAlloc>::new_uninit(usize::MAX).is_none());
 }
 
 #[test]
+fn oversized_arrays_are_refused_before_the_allocator() {
+    // A size that overflows is refused before the allocator is asked, so this runs under
+    // Miri too, where the C routine cannot.
+    assert!(CVec::<u64, FailArrayAlloc>::new_uninit(usize::MAX).is_none());
+    assert!(CVec::<Wide, FailArrayAlloc>::from_fn(usize::MAX / 8, |_| Wide([0; 16])).is_none());
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
 fn a_failed_fill_never_runs_its_closure() {
     let calls = Cell::new(0);
     let count = |i: usize| {
@@ -85,6 +96,7 @@ fn empty_arrays_ask_for_nothing() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "calls C")]
 fn owners_cross_threads() {
     // The policies are stateless, so the owners they type move between threads; each
     // thread's requests fail on their own, and an empty run made on one drops on another.

@@ -28,6 +28,7 @@
 #include <git2/sys/stream.h>
 #include <git2/sys/transport.h>
 /* Internal headers. */
+#include "allocators/failalloc.h" /* src/util */
 #include "basics.h" /* deps/reftable */
 
 #include "shims.h"

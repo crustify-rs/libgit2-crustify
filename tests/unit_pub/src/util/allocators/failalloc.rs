@@ -1,6 +1,10 @@
 //! `src/util/allocators/failalloc.c`: the failing family's policies keep their contract,
-//! checked in Rust alone: every allocation they are asked for fails, whatever its size or
-//! call site, and the policies are plain, stateless values.
+//! checked through Rust assertions: every allocation they are asked for fails, whatever its
+//! size or call site, the policies are plain, stateless values, and the `git_allocator`
+//! built over the family holds C's own routines.
+//!
+//! The policies call the family's C routines, so the tests that allocate are ignored under
+//! Miri; those that only read the values run there too.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -38,12 +42,14 @@ fn hash_of<T: Hash>(value: &T) -> u64 {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "calls C")]
 fn singleton_allocation_fails() {
     assert!(<FailAlloc as CAlloc<Probe>>::c_alloc(&FailAlloc).is_none());
     assert!(<FailAlloc as CAlloc<Probe>>::c_alloc(&defaulted()).is_none());
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "calls C")]
 fn array_allocation_fails_whatever_its_size() {
     for len in SIZES.into_iter().filter(|&n| n != 0) {
         assert!(
@@ -55,6 +61,7 @@ fn array_allocation_fails_whatever_its_size() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "calls C")]
 fn alloc_malloc_fails_whatever_its_call_site() {
     for len in SIZES {
         assert_eq!(FailAlloc::malloc(len, None, 0), None, "malloc({len})");
@@ -74,6 +81,33 @@ fn the_allocator_sets_every_member() {
 }
 
 #[test]
+fn the_allocator_is_the_family_c_value() {
+    // `git_allocator_global_init` recognises the failing family by `gmalloc`'s address, so
+    // `Allocator::new` hands over the family's C value, `C_ALLOCATOR`, never trampolines
+    // into Rust: every value built over the family holds the same three functions. (That
+    // they are C's own routines is the equivalence suite's to show, through
+    // `git_libgit2_init`.)
+    let c = FailAlloc::C_ALLOCATOR.expect("the family binds C routines");
+    let c = c.as_ref();
+    for fail in [FAIL, Allocator::new::<FailAlloc>()] {
+        let members = fail.as_ref();
+        assert!(std::ptr::fn_addr_eq(
+            members.malloc().unwrap(),
+            c.malloc().unwrap()
+        ));
+        assert!(std::ptr::fn_addr_eq(
+            members.realloc().unwrap(),
+            c.realloc().unwrap()
+        ));
+        assert!(std::ptr::fn_addr_eq(
+            members.free().unwrap(),
+            c.free().unwrap()
+        ));
+        assert_eq!(format!("{fail:?}"), format!("{c:?}"));
+    }
+}
+
+#[test]
 fn policies_are_plain_values() {
     assert_eq!(format!("{FailAlloc:?}"), "FailAlloc");
     assert_eq!(format!("{FailArrayAlloc:?}"), "FailArrayAlloc");
@@ -87,6 +121,7 @@ fn policies_are_plain_values() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "calls C")]
 fn policies_cross_threads() {
     fn shareable<T: Send + Sync + Unpin + 'static>() {}
     shareable::<FailAlloc>();

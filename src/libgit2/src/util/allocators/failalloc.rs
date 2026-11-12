@@ -8,17 +8,19 @@
 //! routines ignore their arguments: `malloc` and `realloc` return NULL, whatever the
 //! size, and `free` releases nothing.
 //!
-//! The family is a strategy here, as libgit2's other allocator families are:
+//! The family is a strategy here, as libgit2's other allocator families are, each of its
+//! routines called through its raw binding:
 //!
 //! - [`FailAlloc`], the policy of singletons and strings: [`CBox::new_uninit`] under it returns
-//!   `None`, and its release is a no-op; it is also the [`Alloc`] implementation from which
-//!   [`Allocator::new`] builds a `git_allocator` value over the family; and
+//!   `None`, and its release is `git_failalloc_free`; it is also the [`Alloc`] implementation of
+//!   the family, from which [`Allocator::new`] builds the `git_allocator` C installs; and
 //! - [`FailArrayAlloc`], the policy of counted arrays: [`CVec::new_uninit`] and [`CVec::from_fn`]
 //!   under it return `None` for every non-empty request.
 //!
 //! ```
 //! use ffibox::{CBox, CVec};
-//! use libgit2::libgit2::src::util::alloc::Allocator;
+//! use libgit2::ffi;
+//! use libgit2::libgit2::src::util::alloc::{Allocator, MallocFn};
 //! use libgit2::libgit2::src::util::allocators::failalloc::{FailAlloc, FailArrayAlloc};
 //!
 //! # ffibox::define_ctype!(Point, PointRef, PointMut, point_st);
@@ -28,117 +30,166 @@
 //! // An empty array needs no storage, so nothing is asked of the allocator.
 //! assert!(CVec::<u64, FailArrayAlloc>::from_fn(0, |i| i as u64).is_some());
 //!
-//! // The `git_allocator` over the family, to install where every allocation must fail.
+//! // The `git_allocator` over the family holds C's own routines, as `git__allocator`'s
+//! // initial value does.
 //! static FAIL: Allocator = Allocator::new::<FailAlloc>();
-//! assert!(FAIL.as_ref().malloc().is_some());
+//! let malloc: MallocFn = ffi::git_failalloc_malloc;
+//! assert!(core::ptr::fn_addr_eq(
+//!     FAIL.as_ref().malloc().unwrap(),
+//!     malloc
+//! ));
 //! ```
 //!
-//! # The C routines are reproduced, not called
+//! # C's own addresses
 //!
-//! libgit2 declares the three routines `extern`, not `GIT_EXTERN`, and compiles under
-//! `-fvisibility=hidden`, so `libgit2.so` exports none of them and no raw binding can
-//! link them. Each body ignores every argument and returns a constant, so the strategy
-//! reproduces them in Rust, and its methods carry `Replaces` anchors; the C copies stay,
-//! `git__allocator`'s initial value.
+//! libgit2 tells this family apart from every other by address:
+//! `git_allocator_global_init` keeps whatever allocator is installed unless its `gmalloc`
+//! is `git_failalloc_malloc`. [`Allocator::new`] over [`FailAlloc`] therefore stores the
+//! three C routines themselves, through [`Alloc::C_ALLOCATOR`], rather than trampolines
+//! into the Rust methods, so that the value behaves as C's initial one does. Installed
+//! before `git_libgit2_init`, initialisation replaces it with the standard allocator;
+//! installed after it, every later allocation fails until another allocator is
+//! installed.
 //!
-//! One thing tells the two apart: their addresses. `git_allocator_global_init` keeps
-//! whatever allocator is installed unless its `gmalloc` is C's own
-//! `git_failalloc_malloc`, so an [`Allocator`] built over [`FailAlloc`] and installed
-//! before `git_libgit2_init` survives it, where C's initial value is replaced: libgit2
-//! then runs on the failing family until another allocator is installed. Either family,
-//! before initialisation, also fails into libgit2's error reporting, which reads
-//! thread state libgit2 has not set up yet: only a release is safe to make then.
+//! Before initialisation, a failed allocation made through libgit2 (`git__malloc`,
+//! `git__realloc`) reports itself through libgit2's error state, which reads thread state
+//! libgit2 has not set up yet: only a release is safe to make through it then. The
+//! routines called directly, as these strategies call them, touch no state of libgit2.
 //!
 //! [`CBox::new_uninit`]: ffibox::CBox::new_uninit
 //! [`CVec::new_uninit`]: ffibox::CVec::new_uninit
 //! [`CVec::from_fn`]: ffibox::CVec::from_fn
 //! [`Alloc`]: crate::libgit2::src::util::alloc::Alloc
-//! [`Allocator`]: crate::libgit2::src::util::alloc::Allocator
+//! [`Alloc::C_ALLOCATOR`]: crate::libgit2::src::util::alloc::Alloc::C_ALLOCATOR
 //! [`Allocator::new`]: crate::libgit2::src::util::alloc::Allocator::new
 
 pub use ffi_import::{FailAlloc, FailArrayAlloc};
 
 #[expect(
     unsafe_code,
-    reason = "the policies implement ffibox's and `Alloc`'s unsafe lifecycle traits"
+    reason = "the policies call the family's C routines, and implement ffibox's and `Alloc`'s \
+              unsafe lifecycle traits"
 )]
 mod ffi_import {
     use core::ffi::CStr;
     use core::mem::MaybeUninit;
-    use core::ptr::NonNull;
+    use core::ptr::{self, NonNull};
 
     use ffibox::{CAlloc, CCell, CDrop, CLenAlloc, CLenDrop};
 
-    use crate::libgit2::src::util::alloc::Alloc;
+    use crate::ffi;
+    use crate::libgit2::src::util::alloc::{Alloc, Allocator};
 
     /// The failing allocator family as the policy of singletons and strings, and as the
     /// [`Alloc`] implementation of a `git_allocator` over it.
     ///
     /// It never allocates: [`CAlloc::c_alloc`] and every [`Alloc`] allocation return
-    /// `None`. Its release is a no-op, which is the release of everything it allocated:
-    /// nothing. An owner under it therefore never holds storage: a safe constructor
-    /// fails, and only an `unsafe` adoption, whose contract asks for storage this family
-    /// made, could build one.
+    /// `None`, as `git_failalloc_malloc` and `git_failalloc_realloc` do. Its release is
+    /// `git_failalloc_free`, which releases what the family allocated: nothing. An owner
+    /// under it therefore never holds storage: a safe constructor fails, and only an
+    /// `unsafe` adoption, whose contract asks for storage this family made, could build
+    /// one.
     ///
-    /// Stateless, so it is `Send` and `Sync`: the family has no thread to free on.
+    /// Stateless, so it is `Send` and `Sync`: the family keeps no state, in Rust or in
+    /// C, and has no thread to free on.
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
     pub struct FailAlloc;
 
     /// The failing allocator family as the policy of counted arrays.
     ///
-    /// [`CLenAlloc::c_alloc_len`] returns `None` for every request, and its release is a
-    /// no-op. An empty array asks the allocator for nothing, so it builds as under any
-    /// policy, as NULL.
+    /// [`CLenAlloc::c_alloc_len`] is `git_failalloc_malloc`, which returns `None` for every
+    /// request, and its release `git_failalloc_free`. An empty array asks the allocator
+    /// for nothing, so it builds as under any policy, as NULL.
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
     pub struct FailArrayAlloc;
 
-    // SAFETY: this family makes no allocation: `c_alloc`, `c_alloc_len` and every
-    // `Alloc` call below return `None`. The `T` a caller may hand `c_drop` under this
-    // policy is one this family allocated, of which there are none, so releasing nothing
-    // releases all of it, exactly once; `self` carries no state.
+    /// `git_failalloc_malloc` for `len` bytes, the call site left unnamed, which the
+    /// routine ignores.
+    fn malloc(len: usize) -> Option<NonNull<u8>> {
+        // SAFETY: a NULL `file` is one `git_failalloc_malloc` accepts (it reads none of
+        // its arguments); it touches no state, so it is callable on any thread, before
+        // `git_libgit2_init` too.
+        let p = unsafe { ffi::git_failalloc_malloc(len, ptr::null(), 0) };
+        NonNull::new(p.cast())
+    }
+
+    /// `git_failalloc_free` on `ptr`.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` is NULL or a live allocation of this family that the caller owns and does
+    /// not use again.
+    unsafe fn free(ptr: *mut u8) {
+        // SAFETY: per this function's contract, `ptr` is NULL or one of the family's
+        // allocations, handed over: what `git_failalloc_free`, the family's `gfree`,
+        // releases.
+        unsafe { ffi::git_failalloc_free(ptr.cast()) }
+    }
+
+    // SAFETY: `c_drop` hands `git_failalloc_free`, the family's release, a `T` this family
+    // allocated, which it releases exactly once without reading it (it reads nothing);
+    // `self` carries no state.
     unsafe impl<T> CDrop<T> for FailAlloc {
-        /// Releases nothing: the family never allocated `ptr`.
+        /// Releases `ptr` through `git_failalloc_free`, which releases nothing: the family
+        /// never allocated it.
         ///
-        /// Replaces `fn::git_failalloc_free`
+        /// Wraps `fn::git_failalloc_free`
         #[doc(alias = "git_failalloc_free")]
         #[inline]
         unsafe fn c_drop(&self, ptr: NonNull<T>) {
-            let _ = ptr;
+            // SAFETY: per `c_drop`'s contract, `ptr` is a live `T` of this family whose
+            // claim the caller hands over.
+            unsafe { free(ptr.as_ptr().cast()) }
         }
     }
 
-    // SAFETY: `c_alloc` never returns `Some`, so the obligations on the storage it hands
-    // out hold vacuously, and `CDrop<MaybeUninit<T>>` above reads nothing.
+    // SAFETY: `c_alloc` returns what `git_failalloc_malloc` returns, and its body returns
+    // NULL for every size: `c_alloc` never returns `Some`, so the obligations on the
+    // storage it hands out (size, alignment for `T`, uniqueness) hold vacuously, and
+    // `CDrop<MaybeUninit<T>>` above reads nothing.
     unsafe impl<T: CCell> CAlloc<T> for FailAlloc {
-        /// Always `None`: the family fails every allocation.
+        /// Always `None`: `git_failalloc_malloc` fails every allocation.
         ///
-        /// Replaces `fn::git_failalloc_malloc`
+        /// Wraps `fn::git_failalloc_malloc`
         #[doc(alias = "git_failalloc_malloc")]
         #[inline]
         fn c_alloc(&self) -> Option<NonNull<MaybeUninit<T>>> {
-            None
+            malloc(size_of::<T>()).map(NonNull::cast)
         }
     }
 
-    // SAFETY: `malloc` and `realloc` always return `None`, which `Alloc` allows: for
-    // `realloc` it leaves `ptr` live and unchanged. `free` is handed only allocations of
-    // this implementation, of which there are none, and releases nothing. The three
-    // carry no state, so they run on any thread at once, and none calls into libgit2.
+    // SAFETY: the three methods are the family's C routines, which meet `Alloc`'s contract
+    // as `git__allocator`'s initial value: `malloc` and `realloc` always return NULL, which
+    // `Alloc` allows (for `realloc` it leaves `ptr` live and unchanged, since the routine
+    // reads nothing), and `free` releases nothing. They keep no state, so they run on any
+    // thread at once, and none allocates through libgit2 or touches its state.
+    // `C_ALLOCATOR` holds those same three routines.
     unsafe impl Alloc for FailAlloc {
-        /// Always `None`, whatever `len`: the family fails every allocation.
+        /// The family's C routines, so that a value [`Allocator::new`] builds over the
+        /// family holds C's own addresses, which `git_allocator_global_init` compares.
+        const C_ALLOCATOR: Option<Allocator> = Some(Allocator::from_fns(
+            ffi::git_failalloc_malloc,
+            ffi::git_failalloc_realloc,
+            ffi::git_failalloc_free,
+        ));
+
+        /// Always `None`, whatever `len`: `git_failalloc_malloc` fails every allocation.
         ///
-        /// Replaces `fn::git_failalloc_malloc`
+        /// Wraps `fn::git_failalloc_malloc`
         #[doc(alias = "git_failalloc_malloc")]
         #[inline]
         fn malloc(len: usize, file: Option<&CStr>, line: i32) -> Option<NonNull<u8>> {
-            let _ = (len, file, line);
-            None
+            let file = file.map_or(ptr::null(), CStr::as_ptr);
+            // SAFETY: `file` is NULL or a C string borrowed for the call; the routine reads
+            // none of its arguments and touches no state.
+            let p = unsafe { ffi::git_failalloc_malloc(len, file, line) };
+            NonNull::new(p.cast())
         }
 
-        /// Always `None`, leaving `ptr` live and the caller's: the family fails every
-        /// allocation.
+        /// Always `None`, leaving `ptr` live and the caller's: `git_failalloc_realloc`
+        /// fails every allocation.
         ///
-        /// Replaces `fn::git_failalloc_realloc`
+        /// Wraps `fn::git_failalloc_realloc`
         #[doc(alias = "git_failalloc_realloc")]
         #[inline]
         unsafe fn realloc(
@@ -147,49 +198,62 @@ mod ffi_import {
             file: Option<&CStr>,
             line: i32,
         ) -> Option<NonNull<u8>> {
-            let _ = (ptr, len, file, line);
-            None
+            let ptr = ptr.map_or(ptr::null_mut(), |p| p.as_ptr().cast());
+            let file = file.map_or(ptr::null(), CStr::as_ptr);
+            // SAFETY: per `realloc`'s contract, `ptr` is NULL or a live allocation of this
+            // family, which `git_failalloc_realloc` borrows without reading and leaves
+            // live on failure, its only outcome; `file` as in `malloc`.
+            let p = unsafe { ffi::git_failalloc_realloc(ptr, len, file, line) };
+            NonNull::new(p.cast())
         }
 
-        /// Releases nothing: the family never allocated `ptr`.
+        /// Releases `ptr` through `git_failalloc_free`, which releases nothing: the family
+        /// never allocated it.
         ///
-        /// Replaces `fn::git_failalloc_free`
+        /// Wraps `fn::git_failalloc_free`
         #[doc(alias = "git_failalloc_free")]
         #[inline]
         unsafe fn free(ptr: NonNull<u8>) {
-            let _ = ptr;
+            // SAFETY: per `free`'s contract, `ptr` is a live allocation of this family,
+            // handed over.
+            unsafe { free(ptr.as_ptr()) }
         }
     }
 
-    // SAFETY: as `CDrop` above: `c_alloc_len` makes no buffer, so the only buffers this
-    // family can be handed are none, and releasing nothing touches no byte of them.
+    // SAFETY: as `CDrop` above: `git_failalloc_free` releases a buffer of this family
+    // exactly once and reads no byte of it.
     unsafe impl CLenDrop for FailArrayAlloc {
-        /// Releases nothing: the family never allocated `ptr`.
+        /// Releases `ptr` through `git_failalloc_free`, which releases nothing: the family
+        /// never allocated it.
         ///
-        /// Replaces `fn::git_failalloc_free`
+        /// Wraps `fn::git_failalloc_free`
         #[doc(alias = "git_failalloc_free")]
         #[inline]
         unsafe fn c_drop_len(&self, ptr: *mut u8, byte_len: usize) {
-            let _ = (ptr, byte_len);
+            let _ = byte_len;
+            // SAFETY: per `c_drop_len`'s contract, `ptr` is a buffer of this family whose
+            // claim the caller hands over.
+            unsafe { free(ptr) }
         }
     }
 
-    // SAFETY: `c_alloc_len` never returns `Some`, so the storage obligations and
-    // `ALIGN` hold vacuously, and its `None` always means the allocation failed.
+    // SAFETY: as `CAlloc` above: `c_alloc_len` returns what `git_failalloc_malloc`
+    // returns, NULL for every size, so the storage obligations and `ALIGN` hold vacuously,
+    // and its `None` always means the allocation failed.
     unsafe impl CLenAlloc for FailArrayAlloc {
         /// The alignment libgit2's allocator families vouch for, glibc `malloc`'s
         /// `max_align_t`, so the element types every other family takes are taken here
         /// too. Vacuous: no buffer is ever returned.
         const ALIGN: usize = 16;
 
-        /// Always `None`, whatever `byte_len`: the family fails every allocation.
+        /// Always `None`, whatever `byte_len`: `git_failalloc_malloc` fails every
+        /// allocation.
         ///
-        /// Replaces `fn::git_failalloc_malloc`
+        /// Wraps `fn::git_failalloc_malloc`
         #[doc(alias = "git_failalloc_malloc")]
         #[inline]
         fn c_alloc_len(&self, byte_len: usize) -> Option<NonNull<u8>> {
-            let _ = byte_len;
-            None
+            malloc(byte_len)
         }
     }
 }

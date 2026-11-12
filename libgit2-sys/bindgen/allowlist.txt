@@ -709,3 +709,8 @@ function reftable_buf_add
 function reftable_buf_init
 function reftable_buf_release
 type reftable_buf
+
+# src/util/allocators/failalloc.c: the failing allocator family (wave-176/batch-1)
+function git_failalloc_free
+function git_failalloc_malloc
+function git_failalloc_realloc

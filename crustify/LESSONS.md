@@ -19,7 +19,9 @@ slot and write `&oom_error` into it. The same holds for an allocator installed w
 unknown-crash in `git_error_set_oom`, `errors.c:170`); `src/util/errors.c`'s
 `threadstate_get`; the equivalence test of `wave-176/batch-0`
 (`tests/equiv/src/util/allocators/failalloc.rs`), which compares the C release with the
-Rust family's and leaves `malloc` and `realloc` uncompared for this reason.
+Rust family's and leaves `malloc` and `realloc` uncompared for this reason. The family's
+routines called directly, as `git_failalloc_malloc` through its raw binding, set no error
+and are outside the rule: `wave-176/batch-1` compares them so in the test process.
 
 **Scope.** The tests of `src/util/allocators/*.c`, `src/util/alloc.c` and
 `src/util/errors.c`, and any test that runs libgit2 before its initialisation.

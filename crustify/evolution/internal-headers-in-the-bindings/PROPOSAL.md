@@ -76,3 +76,30 @@ and generates the reftable bindings, which link from the static archive and run 
 `libgit2-sys/tests/hidden_symbols.rs` on `plain`, `asan-ubsan`, `tsan` and `bsan`. The
 committed public bindings were unchanged. The `static inline` and system-mode half is
 untested, since no internal `static inline` function is allowlisted yet.
+
+## Further evidence: `wave-176/batch-1`
+
+`wave-176/batch-1/run-1` allowlisted `git_failalloc_malloc`, `_realloc` and `_free`,
+which `src/util/allocators/failalloc.h` declares, and which the safe crate's
+`FailAlloc` and `FailArrayAlloc` call. It added `#include "allocators/failalloc.h"` to
+`wrapper.h`. They are the first internal functions the safe crate itself, rather than a
+`-sys` test, references. Against a staged install of the `plain` variant (`LIBGIT2_DIR`,
+no `CRUSTIFY_BUILD_VARIANT`):
+
+- `cargo package -p libgit2-sys` passes, since shipped mode compiles only `shims.c` and
+  the crate's verification links no binary.
+- A dependent binary that uses the family, `Allocator::new::<FailAlloc>()` in a probe
+  crate's `main`, fails to link: `rust-lld: error: undefined symbol:
+  git_failalloc_malloc`, and the same for `_realloc` and `_free`. `libgit2.so` exports
+  none of the three (`nm -D` lists no `failalloc`). A dependent that does not use the
+  family links and runs. So consequence 2 reaches past `static inline` wrappers. Every
+  internal function the safe crate calls is unreachable in system mode, and the safe API
+  over it is unusable there.
+- Any build that enables the `bindgen` feature outside campaign mode fails on the first
+  internal include of `wrapper.h` (`fatal error: 'allocators/failalloc.h' file not
+  found`). This includes the safe crate's own tests through its dev-dependency.
+  That is consequence 3.
+
+The Build modes change should therefore also say what system mode does with the safe API
+over internal functions: whether to leave it out, or link a static archive as campaign
+mode does.

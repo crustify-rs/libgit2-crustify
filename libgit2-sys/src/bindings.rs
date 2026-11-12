@@ -14443,6 +14443,24 @@ const _: () = {
         "Offset of field: git_transport::free",
     ][::std::mem::offset_of!(git_transport, free) - 104usize];
 };
+unsafe extern "C" {
+    pub fn git_failalloc_malloc(
+        len: usize,
+        file: *const ::std::os::raw::c_char,
+        line: ::std::os::raw::c_int,
+    ) -> *mut ::std::os::raw::c_void;
+}
+unsafe extern "C" {
+    pub fn git_failalloc_realloc(
+        ptr: *mut ::std::os::raw::c_void,
+        size: usize,
+        file: *const ::std::os::raw::c_char,
+        line: ::std::os::raw::c_int,
+    ) -> *mut ::std::os::raw::c_void;
+}
+unsafe extern "C" {
+    pub fn git_failalloc_free(ptr: *mut ::std::os::raw::c_void);
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct reftable_buf {
