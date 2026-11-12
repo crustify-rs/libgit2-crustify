@@ -1,0 +1,4 @@
+{"backend": "claude", "billing": "subscription", "args": ["--model", "claude-opus-5-5"],
+ "revisions": {"crustify": "10df2c5", "wavefront": "bf21e16", "ffibox": "7af1232", "ffimap": "102d84f"},
+ "component": "crustify", "branch": "libgit2-crustify/evolution/sys-bindings-layout", "commit": "63b92be",
+ "proposal": "crustify/evolution/sys-bindings-layout"}
