@@ -1397,9 +1397,11 @@ mod resizes {
 
 // --- the installed allocator ------------------------------------------------------------
 //
-// In a child process, before libgit2 is initialised, where it holds no allocation: the
-// same installs made through Rust and through C's routines leave the same global, which
-// `installed` reads as C does.
+// In a child process: the global C reads before initialisation is the failing family, and
+// once `installed` has pinned libgit2's runtime it reads what C reads. The same installs
+// made through Rust and through C's routines then leave the same global. Every family
+// installed shares libc's storage, which initialisation's allocations came from, or, the
+// failing one, leaves storage alone, so each may replace any other.
 
 mod installed {
     use libgit2::ffi;
@@ -1422,8 +1424,7 @@ mod installed {
 
     /// The global's members as `installed` reads them, by address.
     fn rust_reads() -> [usize; 3] {
-        // SAFETY: no other thread runs in this process, so none writes the global.
-        let g = unsafe { installed() };
+        let g = installed().expect("libgit2 initialises");
         [
             g.malloc().map_or(0, |f| f as usize),
             g.realloc().map_or(0, |f| f as usize),
@@ -1460,8 +1461,8 @@ mod installed {
     /// each from the failing family, and the global each leaves.
     fn both_setups(allocator: Option<&Allocator>) -> ([usize; 3], [usize; 3]) {
         let mut failing = raw(&FAIL);
-        // SAFETY: no other thread runs, and libgit2 holds no allocation before
-        // initialisation, so any family may replace any other; C copies the live value.
+        // SAFETY: no other thread runs, and every family installed here shares libc's storage
+        // or leaves storage alone, so any may replace any other; C copies the live value.
         unsafe { ffi::git_allocator_setup(&raw mut failing) };
         // SAFETY: as above.
         unsafe { set_allocator(allocator.map(Allocator::as_ref)) };
@@ -1503,9 +1504,11 @@ mod installed {
                 "::installs_through_rust_and_c_leave_the_same_global"
             ),
             || {
-                // Before anything: the failing family, read alike.
+                // Before anything: the failing family, which C reads; the borrow pins the
+                // runtime first, and then reads what initialisation installed, as C does.
+                assert_eq!(c_reads(), addrs_of(&FAIL));
                 assert_eq!(rust_reads(), c_reads());
-                assert_eq!(rust_reads(), addrs_of(&FAIL));
+                assert_ne!(rust_reads(), addrs_of(&FAIL));
                 // A value, and `None` (the standard family).
                 let (rust, c) = both_setups(Some(&LIBC));
                 assert_eq!((rust, c), (addrs_of(&LIBC), rust));

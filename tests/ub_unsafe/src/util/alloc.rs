@@ -5,10 +5,11 @@
 //! The implementation behind them is libc's allocator, which Miri models, so these run
 //! there too; ASan/LSan flag a trampoline that loses, leaks or double-frees a block.
 //!
-//! `src/util/alloc.c`'s `installed`, the borrow of libgit2's allocator global, and
-//! `global_init`, which writes it, each get a suite of its own too. Each test runs alone in a
-//! child process, where it can keep the contract that no other thread writes the global, and
-//! where libgit2 starts uninitialised, with the failing family installed.
+//! `src/util/alloc.c`'s `global_init`, which writes libgit2's allocator global, gets a suite
+//! of its own too, and `set_allocator` (`git_allocator_setup`) one seen through `installed`,
+//! the global's safe borrow. Each test runs alone in a child process, where it can keep the
+//! contract that no other thread reads or writes the global while it is written, and where
+//! libgit2 starts uninitialised, with the failing family installed.
 
 use core::ffi::{CStr, c_void};
 use core::ptr::{self, NonNull};
@@ -19,7 +20,6 @@ use libgit2::libgit2::src::util::alloc::{
     Alloc, Allocator, AllocatorRef, FreeFn, MallocFn, ReallocFn, StrFree, global_init, installed,
 };
 use libgit2::libgit2::src::util::allocators::failalloc::FailAlloc;
-use libgit2::libgit2::src::util::errors;
 
 unsafe extern "C" {
     fn malloc(n: usize) -> *mut c_void;
@@ -123,8 +123,8 @@ fn malloc_member_accepts_zero_bytes() {
 }
 
 /// Zero-byte requests, through either allocating member, are allocations of their own:
-/// resized and released like any other. A live block is never resized to zero bytes,
-/// which the contract excludes (glibc would release it and return NULL).
+/// resized and released like any other. A live block resized to zero bytes is the next
+/// test's.
 #[test]
 fn zero_byte_requests_are_allocations() {
     let (malloc, realloc, free) = members();
@@ -141,6 +141,27 @@ fn zero_byte_requests_are_allocations() {
     unsafe { free(grown) };
     // SAFETY: as above.
     unsafe { free(b) };
+}
+
+/// A zero-byte resize of a live block, which C leaves implementation-defined, is refused
+/// before it reaches the implementation: NULL, the block left live. Were it passed on,
+/// glibc would release the block and return NULL, which reads as a failure that left it
+/// live: the release below would then be a double free, which `ASan` reports.
+#[test]
+fn realloc_member_refuses_a_zero_byte_resize_of_a_live_block() {
+    let (malloc, realloc, free) = members();
+    // SAFETY: NULL `file`; the block is released below.
+    let p = unsafe { malloc(16, ptr::null(), 0) };
+    assert!(!p.is_null());
+    // SAFETY: `p` holds 16 writable bytes.
+    unsafe { scribble(p, 16, 9) };
+    // SAFETY: `p` is a live block of this family; the members `Allocator::new` builds accept a
+    // zero-byte resize of one, and refuse it.
+    assert!(unsafe { realloc(p, 0, c"alloc.c".as_ptr(), 4) }.is_null());
+    // SAFETY: `p` is still live and unchanged.
+    unsafe { scribble(p, 16, 9) };
+    // SAFETY: `p` is a live block of this family, given up.
+    unsafe { free(p) };
 }
 
 #[test]
@@ -211,7 +232,7 @@ fn free_member_releases_blocks_from_either_allocating_member() {
     unsafe { free(b) };
 }
 
-// --- installed, global_init -------------------------------------------------------------
+// --- set_allocator, global_init ---------------------------------------------------------
 
 const CHILD: &str = "CRUSTIFY_UB_UNSAFE_CHILD";
 
@@ -252,77 +273,72 @@ fn failing() -> [usize; 3] {
 
 static FAIL: Allocator = Allocator::new::<FailAlloc>();
 
-mod installed {
+/// The global's members as C reads them, without pinning libgit2's runtime as `installed`
+/// does: what the global holds before initialisation.
+fn unpinned() -> [usize; 3] {
+    // SAFETY: a read of the C global, live for the whole process, which no other thread
+    // writes in the child processes these tests run in.
+    let g = unsafe { (&raw const libgit2::ffi::git__allocator).read() };
+    [
+        g.gmalloc.map_or(0, |f| f as usize),
+        g.grealloc.map_or(0, |f| f as usize),
+        g.gfree.map_or(0, |f| f as usize),
+    ]
+}
+
+/// `git_allocator_setup`, which `set_allocator` stands in for, seen through the global's
+/// borrow, `installed`, which reads the live global.
+mod set_allocator {
     use super::*;
 
-    #[test]
-    #[cfg_attr(miri, ignore = "spawns a process")]
-    fn reads_the_failing_family_before_init() {
-        isolated(
-            concat!(module_path!(), "::reads_the_failing_family_before_init"),
-            || {
-                // SAFETY: no other thread runs in this process, so none writes the global.
-                let global = unsafe { installed() };
-                assert_eq!(addrs(global), failing());
-            },
-        );
-    }
-
     /// The handle reads the live global, so it sees each install this thread makes between
-    /// its reads, initialisation's included.
+    /// its reads.
     #[test]
     #[cfg_attr(miri, ignore = "spawns a process")]
-    fn follows_every_install_on_the_reading_thread() {
+    fn the_borrow_follows_every_install_on_the_reading_thread() {
         isolated(
             concat!(
                 module_path!(),
-                "::follows_every_install_on_the_reading_thread"
+                "::the_borrow_follows_every_install_on_the_reading_thread"
             ),
             || {
-                // SAFETY: no other thread runs in this process, so none writes the global.
-                let global = unsafe { installed() };
-                // SAFETY: `LIBC` meets `Alloc`'s contract and libgit2 holds no allocation yet;
-                // no other thread runs.
+                // Pinning initialises libgit2, whose allocations are the standard family's.
+                let global = installed().unwrap();
+                let standard = addrs(global);
+                assert_ne!(standard, failing());
+                // SAFETY: `LIBC` meets `Alloc`'s contract and shares libc's storage with the
+                // standard family, which made every allocation libgit2 holds; no other thread
+                // runs.
                 unsafe { set_allocator(Some(LIBC.as_ref())) };
                 assert_eq!(addrs(global), addrs(LIBC.as_ref()));
-                // Initialisation keeps it; libgit2's allocations then come from libc.
-                errors::clear();
-                assert_eq!(addrs(global), addrs(LIBC.as_ref()));
+                assert!(StrFree::dup(c"libc").is_some());
                 // SAFETY: the standard family is libc's too, so it releases what `LIBC`
                 // allocated; no other thread runs.
                 unsafe { set_allocator(None) };
-                let standard = addrs(global);
-                assert_ne!(standard, addrs(LIBC.as_ref()));
-                assert_ne!(standard, failing());
+                assert_eq!(addrs(global), standard);
                 assert!(StrFree::dup(c"standard").is_some());
             },
         );
     }
 
-    /// Once libgit2 is initialised and nothing installs an allocator, the handle may read
-    /// from any thread at once.
+    /// An allocator installed before initialisation is the one the first borrow reads:
+    /// initialisation keeps it, and libgit2 allocates through it.
     #[test]
     #[cfg_attr(miri, ignore = "spawns a process")]
-    fn handles_read_from_many_threads_without_a_writer() {
+    fn an_allocator_installed_first_is_the_one_the_borrow_reads() {
         isolated(
             concat!(
                 module_path!(),
-                "::handles_read_from_many_threads_without_a_writer"
+                "::an_allocator_installed_first_is_the_one_the_borrow_reads"
             ),
             || {
-                errors::clear();
-                // SAFETY: libgit2 is initialised, and nothing in this process installs an
-                // allocator from here on.
-                let global = unsafe { installed() };
-                let seen = addrs(global);
-                std::thread::scope(|s| {
-                    for _ in 0..8 {
-                        s.spawn(move || {
-                            assert_eq!(addrs(global), seen);
-                            drop(StrFree::dup(c"while reading").unwrap());
-                        });
-                    }
-                });
+                assert_eq!(unpinned(), failing());
+                // SAFETY: `LIBC` meets `Alloc`'s contract and libgit2 holds no allocation yet;
+                // no other thread runs.
+                unsafe { set_allocator(Some(LIBC.as_ref())) };
+                let global = installed().unwrap();
+                assert_eq!(addrs(global), addrs(LIBC.as_ref()));
+                assert!(StrFree::dup(c"libc").is_some());
             },
         );
     }
@@ -340,15 +356,15 @@ mod global_init {
                 "::installs_the_standard_family_over_the_failing_one"
             ),
             || {
-                // SAFETY: no other thread runs; nothing writes the global meanwhile.
-                let global = unsafe { installed() };
+                assert_eq!(unpinned(), failing());
                 // SAFETY: libgit2 holds no allocation before initialisation; no other thread
                 // runs.
                 unsafe { global_init() };
-                let standard = addrs(global);
+                let standard = unpinned();
                 assert_ne!(standard, failing());
                 // Initialisation and a second call keep it.
-                errors::clear();
+                let global = installed().unwrap();
+                assert_eq!(addrs(global), standard);
                 // SAFETY: as above; the standard family is installed, so nothing is written.
                 unsafe { global_init() };
                 assert_eq!(addrs(global), standard);
@@ -366,9 +382,8 @@ mod global_init {
             unsafe { set_allocator(Some(LIBC.as_ref())) };
             // SAFETY: as above; `LIBC` is installed, so nothing is written.
             unsafe { global_init() };
-            // SAFETY: no other thread runs.
-            let global = unsafe { installed() };
-            assert_eq!(addrs(global), addrs(LIBC.as_ref()));
+            assert_eq!(unpinned(), addrs(LIBC.as_ref()));
+            assert_eq!(addrs(installed().unwrap()), addrs(LIBC.as_ref()));
         });
     }
 
@@ -383,17 +398,17 @@ mod global_init {
                 "::replaces_the_failing_family_installed_after_init"
             ),
             || {
-                errors::clear();
+                let global = installed().unwrap();
+                let standard = addrs(global);
                 // SAFETY: no other thread runs; the failing family accepts and keeps every
                 // allocation libgit2 holds, and nothing is allocated or released before the
                 // standard family is back.
                 unsafe { set_allocator(Some(FAIL.as_ref())) };
+                assert_eq!(addrs(global), failing());
                 // SAFETY: no other thread runs; every allocation libgit2 holds is the standard
                 // family's, made by initialisation.
                 unsafe { global_init() };
-                // SAFETY: no other thread runs.
-                let global = unsafe { installed() };
-                assert_ne!(addrs(global), failing());
+                assert_eq!(addrs(global), standard);
                 assert!(StrFree::dup(c"back").is_some());
             },
         );

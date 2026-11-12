@@ -82,8 +82,10 @@
 //! `git_libgit2_init` replaces with the standard one ([`global_init`]) unless another was
 //! installed first; [`set_allocator`] (`GIT_OPT_SET_ALLOCATOR`, `git_allocator_setup`)
 //! copies a value over it. Each write races every read on another thread, so no safe path
-//! writes it, and [`installed`], the borrow of it, is `unsafe` as well: its caller excludes
-//! those writes while it reads.
+//! writes it but libgit2's first initialisation, which runs under libgit2's own lock:
+//! [`installed`], the borrow of it, is safe because it pins libgit2's runtime first, after
+//! which only the `unsafe` installers write the global, and their callers keep every other
+//! thread from reading it meanwhile.
 //!
 //! [`set_allocator`]: crate::libgit2::src::libgit2::settings::set_allocator
 
@@ -144,7 +146,10 @@ mod ffi_import {
     /// `size` must be non-zero when `ptr` is not NULL. C leaves a zero-byte resize of a
     /// live allocation implementation-defined: glibc releases `ptr` and returns NULL, which
     /// this contract would read as a failure that left `ptr` live. No libgit2 code path
-    /// makes one, so a caller must not either.
+    /// makes one, so a caller must not either. A function may relax that: the trampolines
+    /// [`Allocator::new`] stores accept a zero-byte resize of a live allocation and refuse
+    /// it, returning NULL with `ptr` left live, so that [`Alloc::realloc`] never sees one,
+    /// whatever C passes.
     ///
     /// The C form of the member; its Rust form is [`Alloc::realloc`].
     ///
@@ -232,7 +237,9 @@ mod ffi_import {
         ///
         /// Its members are `extern "C"` trampolines generic over `A`: they turn the call
         /// site's `file` into an `Option<&CStr>`, pointers into `Option<NonNull<u8>>`,
-        /// and drop `free(NULL)` before it reaches [`Alloc::free`]. Each is a panic
+        /// drop `free(NULL)` before it reaches [`Alloc::free`], and refuse a zero-byte
+        /// resize of a live allocation before it reaches [`Alloc::realloc`], returning NULL
+        /// with the allocation left live, whatever C passes. Each is a panic
         /// barrier, since a panic cannot unwind into C: a panic in [`Alloc::malloc`] or
         /// [`Alloc::realloc`] returns NULL, C's out-of-memory convention, and one in
         /// [`Alloc::free`], which C gives no way to fail, aborts the process.
@@ -250,8 +257,8 @@ mod ffi_import {
         /// }
         ///
         /// /// libc's allocator, which meets `Alloc`'s contract as C's `malloc` family does
-        /// /// (libgit2 never resizes a live allocation to zero bytes, where glibc would
-        /// /// release it and return NULL).
+        /// /// (the trampolines never ask it to resize a live allocation to zero bytes,
+        /// /// where glibc would release it and return NULL).
         /// struct Libc;
         ///
         /// // SAFETY: forwards to libc's `malloc` family, unchanged.
@@ -412,7 +419,8 @@ mod ffi_import {
     ///   `ptr` live and unchanged, or releases `ptr` and returns an allocation as `malloc` would
     ///   whose first `min(old, len)` bytes are those `ptr` held (it may be `ptr` itself). It is
     ///   never called with `Some(ptr)` and `len == 0`, which C leaves implementation-defined (see
-    ///   [`ReallocFn`]), so an implementation need not decide that case;
+    ///   [`ReallocFn`]): the trampoline refuses that request before the method is reached, so an
+    ///   implementation need not decide that case;
     /// - `free(ptr)` releases `ptr`, a live allocation of the implementation;
     /// - all three may run concurrently on any threads, and an allocation may be resized or
     ///   released on a thread other than the one that made it;
@@ -421,7 +429,10 @@ mod ffi_import {
     ///   when it fails. A panic out of `free` aborts the process;
     /// - [`C_ALLOCATOR`](Self::C_ALLOCATOR), when `Some`, holds one family of C functions, each
     ///   meeting this contract as the method of its name does, over the methods' own storage: what
-    ///   either allocates, the other resizes and releases.
+    ///   either allocates, the other resizes and releases. C calls them with no trampoline in
+    ///   front, so its `realloc` also answers a zero-byte resize of a live allocation, by returning
+    ///   NULL and leaving it live (as `git_failalloc_realloc` does), or by releasing it and
+    ///   returning an allocation as `malloc(0)` would; never by releasing it and returning NULL.
     ///
     /// None of them, the methods or `C_ALLOCATOR`'s functions, may allocate through libgit2 or
     /// touch its state: libgit2 allocates through them, its per-thread error state included
@@ -513,21 +524,32 @@ mod ffi_import {
     /// `grealloc` over [`Alloc::realloc`]; a panic in it returns NULL, which leaves `ptr`
     /// live, as [`Alloc`]'s contract has a panicking `realloc` leave it.
     ///
+    /// A zero-byte resize of a live allocation, which C leaves implementation-defined and
+    /// [`Alloc::realloc`] is never asked for, is refused here, before `A` is called: NULL,
+    /// `ptr` left live and unchanged, as for any failed resize. C, not a Rust caller, chooses
+    /// the arguments, so the rule is kept in front of it rather than asked of it.
+    ///
     /// # Safety
     ///
-    /// As [`ReallocFn`]: this trampoline's family is `A`'s.
+    /// As [`ReallocFn`], but for its zero-size rule, which this trampoline does not need:
+    /// this trampoline's family is `A`'s.
     unsafe extern "C" fn realloc_with<A: Alloc>(
         ptr: *mut c_void,
         size: usize,
         file: *const c_char,
         line: c_int,
     ) -> *mut c_void {
+        if size == 0 && !ptr.is_null() {
+            // A zero-byte resize of a live allocation: refused, `ptr` left as it was.
+            return ptr::null_mut();
+        }
         // SAFETY: as in `malloc_with`.
         let file = unsafe { site_file(file) };
         let resize = || {
             // SAFETY: `ReallocFn`'s contract: `ptr` is NULL or a live allocation of this
-            // family, i.e. one `A` made, which the caller gives up on success, and `size`
-            // is non-zero when `ptr` is not NULL.
+            // family, i.e. one `A` made, which the caller gives up on success; `size` is
+            // non-zero when `ptr` is not NULL, since the zero-byte resize of a live one was
+            // refused above.
             let resized = unsafe { A::realloc(NonNull::new(ptr.cast()), size, file, line) };
             resized.map_or(ptr::null_mut(), |p| p.as_ptr().cast())
         };
@@ -1207,48 +1229,56 @@ mod ffi_import {
     // --- The installed allocator -----------------------------------------------------------
 
     /// libgit2's allocator: the global every allocation libgit2 makes reads its
-    /// members from (`git__allocator`), borrowed for the rest of the process.
+    /// members from (`git__allocator`), borrowed for the rest of the process once libgit2's
+    /// runtime is pinned; `None` when libgit2 cannot be initialised.
     ///
     /// The handle reads the global itself, not a copy of it: a read after an allocator was
-    /// installed reads the new one. Before `git_libgit2_init` it holds the failing family
-    /// (`git_failalloc_*`); initialisation installs the standard allocator ([`global_init`])
-    /// unless another was installed before it; and
-    /// [`set_allocator`](crate::libgit2::src::libgit2::settings::set_allocator) copies a value
-    /// over it. Neither pins libgit2's runtime nor needs it: the global holds a value from the
-    /// program's start.
+    /// installed reads the new one. Before `git_libgit2_init` the global holds the failing
+    /// family (`git_failalloc_*`), and initialisation installs the standard allocator
+    /// ([`global_init`]) unless another was installed before it; the borrow pins libgit2's
+    /// runtime first, initialising libgit2 once for the rest of the process, so it reads the
+    /// global as initialisation left it. [`set_allocator`] then copies a value over it.
     ///
-    /// No safe path writes the global or borrows it: C reads and writes it with no
-    /// synchronisation, so a read through the handle races any write on another thread.
+    /// C reads and writes the global with no synchronisation, so a read through the handle
+    /// races any write on another thread. Once the runtime is pinned, no safe path writes it:
+    /// a later `git_libgit2_init` takes another reference to a running libgit2 and installs
+    /// nothing, and the pinned reference is never released, so libgit2 is never shut down and
+    /// set up again. The writers left, [`set_allocator`] and [`global_init`], are `unsafe`, and
+    /// their callers keep every other thread from reading the global through this handle while
+    /// they write it, as they keep it from allocating. The handle can therefore be read on any
+    /// thread, and copies of it shared freely.
     ///
-    /// ```compile_fail,E0133
-    /// let _ = libgit2::libgit2::src::util::alloc::installed();
     /// ```
+    /// use libgit2::libgit2::src::util::alloc::installed;
     ///
-    /// # Safety
-    ///
-    /// For as long as the handle, or any copy of it, reads the global, no other thread may
-    /// write it: install an allocator ([`set_allocator`], `git_libgit2_opts` with
-    /// `GIT_OPT_SET_ALLOCATOR`, or [`global_init`]), or initialise libgit2 for the first time
-    /// since it was last shut down (`git_libgit2_init`, which this crate's first call into
-    /// libgit2 makes). A write on the reading thread, between reads, is no race.
+    /// let global = installed().expect("libgit2 initialises");
+    /// // Initialisation installed the standard allocator, which allocates.
+    /// assert!(global.malloc().is_some());
+    /// let seen = format!("{global:?}");
+    /// std::thread::spawn(move || assert_eq!(format!("{global:?}"), seen))
+    ///     .join()
+    ///     .unwrap();
+    /// ```
     ///
     /// [`set_allocator`]: crate::libgit2::src::libgit2::settings::set_allocator
     ///
     /// Wraps `glb::git__allocator`
     #[doc(alias = "git__allocator")]
     #[must_use]
-    #[expect(
-        clippy::missing_panics_doc,
-        reason = "the one `expect` is on a static's address, which is never NULL"
-    )]
-    pub unsafe fn installed() -> AllocatorRef<'static> {
+    pub fn installed() -> Option<AllocatorRef<'static>> {
+        if !runtime_pinned() {
+            return None;
+        }
         let global = &raw mut ffi::git__allocator;
-        // SAFETY: `global` addresses a C global, live and initialised for the whole process
-        // (its definition gives it the failing family); the handle reads it through that
-        // pointer, forming no reference, and no write races those reads, per this function's
-        // contract.
-        let handle = unsafe { AllocatorRef::from_ptr(global) };
-        handle.expect("a global's address is never NULL")
+        // SAFETY: `global` addresses a C global, live and initialised for the whole process;
+        // the handle reads it through that pointer, forming no reference. The runtime is
+        // pinned, so libgit2's first initialisation, the one write a safe path makes, happened
+        // before this point (`git_libgit2_init` counts under libgit2's own mutex, and the
+        // pinned reference is published through a `OnceLock`), and no later one installs
+        // anything, the pinned reference never being released; every other write is an
+        // `unsafe` installer's, whose contract excludes reads through this handle on other
+        // threads while it writes.
+        unsafe { AllocatorRef::from_ptr(global) }
     }
 
     /// Installs libgit2's standard allocator in place of the failing family, and keeps any
@@ -1274,8 +1304,9 @@ mod ffi_import {
     /// # Safety
     ///
     /// As [`set_allocator`]`(None)`'s, when the failing family is installed: no other thread
-    /// may call into libgit2, through this crate or otherwise, while this runs, since it
-    /// writes the global every allocation reads without synchronisation; and every allocation
+    /// may call into libgit2, through this crate or otherwise, nor read the global through
+    /// [`installed`]'s handle, while this runs, since it writes the global every allocation
+    /// reads without synchronisation; and every allocation
     /// libgit2 or a live owner of this crate holds must be one the standard allocator can
     /// resize and release. The failing family is installed before initialisation, when
     /// libgit2 holds no allocation, or when an earlier [`set_allocator`] installed it after;
@@ -1639,6 +1670,32 @@ mod ffi_import {
                     Call::Free,
                 ]
             );
+        }
+
+        /// A zero-byte resize of a live block never reaches the implementation: the trampoline
+        /// refuses it, returning NULL with the block left live, whatever C passes. Pure Rust,
+        /// so Miri runs it.
+        #[test]
+        fn zero_byte_resizes_of_live_blocks_are_refused() {
+            static HEAP: Allocator = Allocator::new::<Heap>();
+            let r = HEAP.as_ref();
+            let (malloc, realloc, free) =
+                (r.malloc().unwrap(), r.realloc().unwrap(), r.free().unwrap());
+            take_calls();
+            // SAFETY: NULL `file`; the block is released below.
+            let p = unsafe { malloc(4, ptr::null(), 0) };
+            assert!(!p.is_null());
+            // SAFETY: `p` holds 4 writable bytes.
+            unsafe { p.cast::<u8>().copy_from_nonoverlapping(b"live".as_ptr(), 4) };
+            // SAFETY: `p` is a live block of this family; these trampolines accept a zero-byte
+            // resize of one, and refuse it.
+            assert!(unsafe { realloc(p, 0, c"x".as_ptr(), 1) }.is_null());
+            // SAFETY: the refusal left `p` live and its 4 bytes as they were.
+            let kept = unsafe { core::slice::from_raw_parts(p.cast::<u8>(), 4) };
+            assert_eq!(kept, b"live");
+            // SAFETY: `p` is a live block of this family, given up once.
+            unsafe { free(p) };
+            assert_eq!(take_calls(), [Call::Malloc(4, None, 0), Call::Free]);
         }
 
         /// An implementation that panics in every member, before it allocates, resizes or
@@ -2260,9 +2317,17 @@ mod ffi_import {
             ptr::fn_addr_eq(a.malloc().unwrap(), failing)
         }
 
+        /// The global, borrowed without pinning the runtime, as [`installed`] borrows it once
+        /// it has: what the global holds before initialisation.
+        fn unpinned_global() -> AllocatorRef<'static> {
+            // SAFETY: a C global, live and initialised for the whole process; the callers run
+            // alone in a child process, where no other thread writes it.
+            unsafe { AllocatorRef::from_ptr(&raw mut ffi::git__allocator) }.unwrap()
+        }
+
         /// The global holds the failing family until `global_init` installs the standard
         /// allocator, which initialisation and later `global_init`s keep; the handle reads
-        /// the live global throughout.
+        /// the live global throughout, and [`installed`]'s is the same handle.
         #[test]
         #[cfg_attr(miri, ignore = "spawns a process")]
         fn the_failing_family_gives_way_to_the_standard_one() {
@@ -2272,22 +2337,41 @@ mod ffi_import {
                     "::the_failing_family_gives_way_to_the_standard_one"
                 ),
                 || {
-                    // SAFETY: a process of its own, with no other thread: nothing writes the
-                    // global while the handle reads it, but this thread, between reads.
-                    let global = unsafe { installed() };
+                    let global = unpinned_global();
                     assert!(is_failing(global));
-                    // SAFETY: as above; libgit2 holds no allocation before initialisation.
+                    // SAFETY: a process of its own, with no other thread: nothing reads or
+                    // writes the global meanwhile; libgit2 holds no allocation before
+                    // initialisation.
                     unsafe { global_init() };
                     assert!(!is_failing(global));
                     let standard = global.malloc().unwrap();
                     // SAFETY: as above; the standard family is installed, so nothing changes.
                     unsafe { global_init() };
+                    let again = installed().unwrap();
                     assert!(runtime_pinned());
                     assert!(ptr::fn_addr_eq(global.malloc().unwrap(), standard));
-                    // SAFETY: as above.
-                    let again = unsafe { installed() };
                     assert_eq!(format!("{again:?}"), format!("{global:?}"));
                     // The standard family allocates: a strategy's request succeeds.
+                    assert!(StrFree::dup(c"standard").is_some());
+                },
+            );
+        }
+
+        /// The first borrow initialises libgit2, which installs the standard allocator over
+        /// the failing family: the borrow never sees the family libgit2 starts with.
+        #[test]
+        #[cfg_attr(miri, ignore = "spawns a process")]
+        fn the_first_borrow_reads_the_global_as_initialisation_left_it() {
+            in_child(
+                concat!(
+                    module_path!(),
+                    "::the_first_borrow_reads_the_global_as_initialisation_left_it"
+                ),
+                || {
+                    assert!(is_failing(unpinned_global()));
+                    let global = installed().unwrap();
+                    assert!(runtime_pinned());
+                    assert!(!is_failing(global));
                     assert!(StrFree::dup(c"standard").is_some());
                 },
             );
@@ -2307,14 +2391,15 @@ mod ffi_import {
                     // SAFETY: `Heap` meets `Alloc`'s contract; installed before libgit2 holds
                     // any allocation, in a process of its own with no other thread.
                     unsafe { set_allocator(Some(HEAP.as_ref())) };
-                    // SAFETY: as above; nothing else writes the global.
-                    let global = unsafe { installed() };
+                    let global = unpinned_global();
                     let heap = HEAP.as_ref().malloc().unwrap();
                     assert!(ptr::fn_addr_eq(global.malloc().unwrap(), heap));
                     // SAFETY: as above; the Heap family is installed, so nothing changes.
                     unsafe { global_init() };
-                    assert!(runtime_pinned());
                     assert!(ptr::fn_addr_eq(global.malloc().unwrap(), heap));
+                    // Initialisation keeps it too.
+                    let pinned = installed().unwrap();
+                    assert!(ptr::fn_addr_eq(pinned.malloc().unwrap(), heap));
                     // libgit2 now allocates through `Heap`.
                     take_calls();
                     drop(StrFree::dup(c"heap").unwrap());

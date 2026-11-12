@@ -1284,8 +1284,9 @@ pub unsafe fn enable_strict_hash_verification(enabled: bool) {
 ///   global state holds allocations from its initialisation on), or install a family that shares
 ///   storage with the one it replaces (two over libc's `malloc`, say). The same holds for every
 ///   allocation a live owner of this crate holds (an `OdbDataBox`, say).
-/// - No other thread may call into libgit2 — through this crate or otherwise — while this runs:
-///   every allocation reads the global without synchronisation.
+/// - No other thread may call into libgit2 — through this crate or otherwise — nor read the global
+///   through an [`installed`] handle, while this runs: every allocation, and every read through the
+///   handle, reads the global without synchronisation.
 ///
 /// Wraps `fn::git_libgit2_opts`
 /// Wraps `fn::git_allocator_setup`

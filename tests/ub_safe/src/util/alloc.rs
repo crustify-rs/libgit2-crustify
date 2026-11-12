@@ -1,11 +1,11 @@
-//! `src/util/alloc.c`: `git2/sys/alloc.h`'s `Allocator` values, their handles and the
-//! trampolines `Allocator::new` builds, driven by libgit2 itself; and the lifecycle
-//! strategies over libgit2's allocator family, `AllocBox`, `AllocVec` and `AllocStr`.
+//! `src/util/alloc.c`: the lifecycle strategies over libgit2's allocator family, `AllocBox`,
+//! `AllocVec` and `AllocStr`, and `installed`, the safe borrow of libgit2's allocator global.
+//! Installing an allocator is `unsafe`, so the trampolines `Allocator::new` builds, driven by
+//! libgit2 itself, are `ub_unsafe`'s and the unit tests'.
 //!
-//! Each libgit2 test installs a Rust allocator in a child process of its own (libgit2's
-//! allocator is process-global), then runs safe workloads that allocate, resize and
-//! free through it; ASan/LSan flag a trampoline that mishandles a block, `TSan` one that
-//! races, and the counters show the calls reached Rust.
+//! The global's borrow is read from many threads while libgit2 allocates through it, and
+//! taken first by threads that race to initialise libgit2: `TSan` flags a read that races
+//! initialisation's write.
 //!
 //! The strategies' owners are driven through the safe API alone: every size around a
 //! page, copies that outlive their sources, partial fills dropped early, runs resized
@@ -18,7 +18,9 @@ use std::mem::{MaybeUninit, align_of};
 use std::thread;
 
 use libgit2::libgit2::src::libgit2::oid::Oid;
-use libgit2::libgit2::src::util::alloc::{AllocBox, AllocStr, AllocVec, ArrayFree, StrFree};
+use libgit2::libgit2::src::util::alloc::{
+    AllocBox, AllocStr, AllocVec, ArrayFree, StrFree, installed,
+};
 
 use crate::fixture::{Pair, isolated};
 
@@ -447,4 +449,56 @@ fn str_borrows_are_tied_to_their_owner() {
     assert_eq!(view, c"tied");
     // `drop(s)` here, with `view` used after, fails to compile (`StrFree`'s
     // `compile_fail` doctest).
+}
+
+// --- the installed allocator ------------------------------------------------------------
+
+/// The global's borrow reads the allocator initialisation left, from any thread at once,
+/// while libgit2 allocates through it; nothing safe writes the global meanwhile.
+#[test]
+#[cfg_attr(miri, ignore = "calls libgit2")]
+fn the_installed_allocator_is_read_from_many_threads() {
+    let global = installed().unwrap();
+    assert!(global.malloc().is_some() && global.realloc().is_some() && global.free().is_some());
+    let seen = format!("{global:?}");
+    thread::scope(|s| {
+        for _ in 0..8 {
+            let seen = &seen;
+            s.spawn(move || {
+                assert_eq!(&format!("{global:?}"), seen);
+                drop(StrFree::dup(c"while reading").unwrap());
+                assert_eq!(&format!("{:?}", installed().unwrap()), seen);
+            });
+        }
+    });
+}
+
+/// In a fresh process, first borrows race each other and first allocations to initialise
+/// libgit2, whose initialisation writes the global: each borrow is taken only once that
+/// write is done, so every thread reads the same allocator, and `TSan` sees no race.
+#[test]
+#[cfg_attr(miri, ignore = "spawns a process")]
+fn first_borrows_race_to_pin_the_runtime() {
+    isolated(
+        concat!(module_path!(), "::first_borrows_race_to_pin_the_runtime"),
+        || {
+            let barrier = std::sync::Barrier::new(8);
+            let seen: Vec<String> = thread::scope(|s| {
+                let handles: Vec<_> = (0..8u8)
+                    .map(|i| {
+                        let barrier = &barrier;
+                        s.spawn(move || {
+                            barrier.wait();
+                            if i % 2 == 0 {
+                                drop(StrFree::dup_bytes(&[b'a' + i; 4]).unwrap());
+                            }
+                            format!("{:?}", installed().unwrap())
+                        })
+                    })
+                    .collect();
+                handles.into_iter().map(|h| h.join().unwrap()).collect()
+            });
+            assert!(seen.iter().all(|s| *s == seen[0]), "{seen:?}");
+        },
+    );
 }
