@@ -1,0 +1,9 @@
+StrListFree::copy: 2 allocations left live by the refused copy
+NullStrListFree::copy: 2 allocations left live by the refused copy
+
+thread 'main' (2578572) panicked at src/main.rs:95:9:
+assertion `left == right` failed: StrListFree::copy: the refused copy leaks the array and the copy of "one"
+  left: 2
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+exit 101

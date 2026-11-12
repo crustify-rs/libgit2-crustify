@@ -1,0 +1,3 @@
+StrListFree::copy: 0 allocations left live by the refused copy
+NullStrListFree::copy: 0 allocations left live by the refused copy
+exit 0
