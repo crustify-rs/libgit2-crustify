@@ -1,6 +1,6 @@
 # Releasers that free a container's elements with it
 
-Status: `open`
+Status: `landed`, as ffibox `95c1e97` on `devel` (the row now maps such an array to element owners under the array allocator's policy, `CLenDrop` frees the buffer only, adoption asks for distinct elements, and `docs/hand-written.md` covers a routine that does more) and crustify `1a52bcd` (`binding-symbols`, Lifecycle strategies). The private `ManuallyDrop` shape stays sound; `strlist.rs` can move to plain owned elements when the module is next touched.
 
 ## Signal
 
