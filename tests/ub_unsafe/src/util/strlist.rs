@@ -65,6 +65,24 @@ mod str_list_from_raw_parts {
         assert_eq!(strs(&list), [c"x", c"yz"]);
     }
 
+    /// Equal strings are adopted when each is its own allocation: the list releases each once
+    /// (`contracts/ffi_import/adoptions-admit-repeated-strings` asks for distinct strings).
+    #[test]
+    #[cfg_attr(miri, ignore = "calls libgit2")]
+    fn adopts_equal_but_distinct_strings() {
+        let (array, len) = StrListFree::copy(&[c"a", c"a"]).unwrap().into_raw_parts();
+        // SAFETY: the array holds two slots.
+        let second = unsafe { array.add(1) };
+        // SAFETY: the first slot is initialised.
+        let first = unsafe { array.read() };
+        // SAFETY: as above, the second.
+        let second = unsafe { second.read() };
+        assert_ne!(first, second);
+        // SAFETY: a list's array of two distinct strings of libgit2's allocator, handed back.
+        let list = unsafe { StrList::from_raw_parts(array, len) }.unwrap();
+        assert_eq!(strs(&list), [c"a", c"a"]);
+    }
+
     /// An empty array, NULL or allocated, is the empty list; a count of strings that are not
     /// there, or a NULL string, is refused and leaves ownership with the caller.
     #[test]
@@ -144,6 +162,19 @@ mod null_str_list_from_raw {
             let list = unsafe { NullStrList::from_raw(out) }.unwrap();
             assert_eq!(strs(&list), strings);
         }
+    }
+
+    /// Equal strings are adopted when each is its own allocation, up to the terminator.
+    #[test]
+    #[cfg_attr(miri, ignore = "calls libgit2")]
+    fn adopts_equal_but_distinct_strings() {
+        let array = NullStrListFree::copy(&[c"x", c"x", c"x"])
+            .unwrap()
+            .into_raw();
+        // SAFETY: a list's NULL-terminated array of three distinct strings, handed back.
+        let list = unsafe { NullStrList::from_raw(array) }.unwrap();
+        assert_eq!(strs(&list), [c"x"; 3]);
+        assert!(list[0].as_ptr() != list[1].as_ptr() && list[1].as_ptr() != list[2].as_ptr());
     }
 
     /// A NULL array is refused; a NULL element ends the list there, and the strings after

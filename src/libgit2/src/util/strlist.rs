@@ -6,7 +6,7 @@
 //! libgit2 keeps a list of strings in two shapes, each copied from a counted run of borrowed
 //! strings and released, strings first and then the array, by its own routine:
 //!
-//! | policy | owner | copies | releases |
+//! | policy | owner | copies as | releases |
 //! |---|---|---|---|
 //! | [`StrListFree`] | [`StrList`], `len` strings and their count | `git_strlist_copy` | `git_strlist_free` |
 //! | [`NullStrListFree`] | [`NullStrList`], strings ended by a NULL pointer | `git_strlist_copy_with_null` | `git_strlist_free_with_null` |
@@ -20,16 +20,21 @@
 //! `git__free`, and the list's releaser frees whatever its elements hold when it drops. No element
 //! is ever NULL, and a [`NullStrList`]'s terminator is never in view.
 //!
-//! The copies and releases are C's own: each owner holds its array under its policy, which
-//! hands it to the release routine on drop, and is built only by the copy routine or by
-//! adopting an array C made. The policies release only the lists this module builds: no
-//! value of either can be made outside it, so no other owner reaches their releasers.
+//! The releases are C's own: each owner holds its array under its policy, which hands it to
+//! the release routine on drop, and is built only by a copy or by adopting an array C made.
+//! The policies release only the lists this module builds: no value of either can be made
+//! outside it, so no other owner reaches their releasers.
 //!
-//! A copy first pins libgit2's runtime, as every allocation of
-//! [`alloc`](crate::libgit2::src::util::alloc) does, and fails, as C does, only when libgit2's
-//! allocator refuses a request, which leaves `GIT_ERROR_NOMEMORY` as the thread's last error.
-//! C then leaks the array and the strings it had copied: `GIT_ERROR_CHECK_ALLOC` returns
-//! without releasing them, and the wrappers keep C's behaviour. An empty copy still asks the
+//! The copies are composed from the requests `strlist.c`'s make, in its order: the zeroed
+//! array through `git__calloc`, through
+//! [`ArrayFree::new_zeroed`](crate::libgit2::src::util::alloc::ArrayFree::new_zeroed),
+//! then each string through `git__strdup`, through [`StrFree::dup`]. A copy first pins
+//! libgit2's runtime, as every allocation of [`alloc`](crate::libgit2::src::util::alloc) does,
+//! and fails, as C does, only when libgit2's allocator refuses a request, which leaves
+//! `GIT_ERROR_NOMEMORY` as the thread's last error. A refused copy releases what it had
+//! copied, where `git_strlist_copy` and `git_strlist_copy_with_null` leak the array and the
+//! strings before the refused one (`GIT_ERROR_CHECK_ALLOC` returns without releasing them):
+//! that leak is why the copies are not those routines' calls. An empty copy still asks the
 //! allocator for its array, zero bytes for a counted list and one NULL pointer for a
 //! NULL-terminated one; [`StrList::new`] is the empty counted list without an array, which
 //! never reaches C.
@@ -37,15 +42,136 @@
 //! # Searching
 //!
 //! [`contains_prefix`] and [`contains_key`] search any run of borrowed strings, a list's
-//! elements among them, through `git_strlist_contains_prefix` and `git_strlist_contains_key`;
-//! they read their arguments only, and allocate nothing in libgit2.
+//! elements among them, through `git_strlist_contains_prefix`; they read their arguments only,
+//! and allocate nothing in libgit2. [`contains_key`] compares a key's name with its delimiter,
+//! where `git_strlist_contains_key` compares the name alone and so also finds it in a longer
+//! name.
 
-pub use ffi_import::{
-    NullStrList, NullStrListFree, StrList, StrListFree, contains_key, contains_prefix,
-};
+use core::ffi::{CStr, c_char};
+use core::hash::{Hash, Hasher};
 
-/// What the module reaches in C: the copy, search and release routines of
-/// `src/util/strlist.c`, and the owners of the lists they make.
+pub use ffi_import::{NullStrList, NullStrListFree, StrList, StrListFree, contains_prefix};
+
+use crate::libgit2::src::util::alloc::{AllocStr, ArrayFree, StrFree};
+
+/// Whether any of `strings` sets the variable of the `NAME=value` entry `key`: whether one
+/// begins with `key`'s name and its first `delimiter`; `false` when `key` holds no
+/// `delimiter`, without reading `strings`. This is what libgit2's process runner asks of the
+/// caller's environment for each inherited entry, to let the caller's own entry replace it.
+///
+/// `git_strlist_contains_key` compares the name alone, without the delimiter, so it also
+/// finds the name at the start of a longer one: `"FOO=1"` among `["FOOBAR=2"]`, where
+/// libgit2's process runner then drops an inherited `FOO` because the caller sets `FOOBAR`.
+/// Here the delimiter is compared too. A `delimiter` of 0, the terminator, is never found, so
+/// the answer is then always `false`, as in C.
+///
+/// ```
+/// use libgit2::libgit2::src::util::strlist::contains_key;
+///
+/// let env = [c"HOME=/root", c"FOOBAR=2"];
+/// assert!(contains_key(&env, c"HOME=/home/me", b'='));
+/// assert!(!contains_key(&env, c"USER=me", b'='));
+/// assert!(!contains_key(&env, c"HOME", b'='));
+/// // `FOO` is no variable of `FOOBAR=2`.
+/// assert!(!contains_key(&env, c"FOO=1", b'='));
+/// ```
+///
+/// Replaces `fn::git_strlist_contains_key`
+#[doc(alias = "git_strlist_contains_key")]
+#[must_use]
+pub fn contains_key<S: AsRef<CStr>>(strings: &[S], key: &CStr, delimiter: u8) -> bool {
+    let key = key.to_bytes();
+    key.iter()
+        .position(|&b| b == delimiter)
+        .is_some_and(|end| contains_prefix(strings, &key[..=end]))
+}
+
+// --- The lists as slices ---------------------------------------------------------------
+//
+// Each list stands in for a `Vec` of its strings, as ffibox's `CVec` of owners does: it
+// compares, hashes and iterates as its elements do.
+
+macro_rules! slice_traits {
+    ($list:ty) => {
+        impl AsRef<[AllocStr]> for $list {
+            fn as_ref(&self) -> &[AllocStr] {
+                self
+            }
+        }
+
+        impl AsMut<[AllocStr]> for $list {
+            fn as_mut(&mut self) -> &mut [AllocStr] {
+                self
+            }
+        }
+
+        impl<'a> IntoIterator for &'a $list {
+            type IntoIter = core::slice::Iter<'a, AllocStr>;
+            type Item = &'a AllocStr;
+
+            fn into_iter(self) -> Self::IntoIter {
+                self.iter()
+            }
+        }
+
+        impl<'a> IntoIterator for &'a mut $list {
+            type IntoIter = core::slice::IterMut<'a, AllocStr>;
+            type Item = &'a mut AllocStr;
+
+            fn into_iter(self) -> Self::IntoIter {
+                self.iter_mut()
+            }
+        }
+
+        /// Compared string by string, as a `Vec` of them is.
+        impl PartialEq for $list {
+            fn eq(&self, other: &Self) -> bool {
+                self[..] == other[..]
+            }
+        }
+
+        impl Eq for $list {}
+
+        impl PartialEq<[AllocStr]> for $list {
+            fn eq(&self, other: &[AllocStr]) -> bool {
+                self[..] == *other
+            }
+        }
+
+        impl Hash for $list {
+            fn hash<H: Hasher>(&self, state: &mut H) {
+                self[..].hash(state);
+            }
+        }
+    };
+}
+
+slice_traits!(StrList);
+slice_traits!(NullStrList);
+
+/// Copies of `strs`, in order, in the first slots of a zeroed array of `strs.len() + spare`
+/// pointers: the array through `git__calloc`, then each string through `git__strdup`, as
+/// `git_strlist_copy` and `git_strlist_copy_with_null` request them. `None` when a request is
+/// refused, which leaves `GIT_ERROR_NOMEMORY` as the thread's last error, with every copy
+/// and the array released, or when libgit2 cannot be initialised.
+///
+/// The array and its length are given up to the caller; the array is NULL only when it holds
+/// no slot and the allocator's zero-byte block was not aligned for one.
+fn copy_array<S: AsRef<CStr>>(strs: &[S], spare: usize) -> Option<(*mut *mut c_char, usize)> {
+    let strs: Vec<&CStr> = strs.iter().map(AsRef::as_ref).collect();
+    let mut array = ArrayFree::new_zeroed::<*mut c_char>(strs.len() + spare)?;
+    let copies = strs
+        .iter()
+        .map(|s| StrFree::dup(s))
+        .collect::<Option<Vec<AllocStr>>>()?;
+    for (slot, copy) in array.iter_mut().zip(copies) {
+        *slot = copy.into_raw();
+    }
+    Some(array.into_raw_parts())
+}
+
+/// What the module reaches in C: the search and release routines of `src/util/strlist.c`,
+/// and the owners of the lists they release.
 mod ffi_import {
     use core::ffi::{CStr, c_char};
     use core::mem::{ManuallyDrop, align_of, size_of};
@@ -56,7 +182,6 @@ mod ffi_import {
 
     use crate::ffi;
     use crate::libgit2::src::util::alloc::AllocStr;
-    use crate::libgit2::src::util::errors::runtime_pinned;
 
     /// One element of a list's array: a string of libgit2's allocator that the list's
     /// releaser frees, so the array's [`CVec`] never drops it.
@@ -133,8 +258,8 @@ mod ffi_import {
 
     // --- Counted lists -----------------------------------------------------------------
 
-    /// The policy of a counted list of strings in libgit2's allocator: copied by
-    /// `git_strlist_copy`, released, every string and then the array, by
+    /// The policy of a counted list of strings in libgit2's allocator: copied as
+    /// `git_strlist_copy` copies one, released, every string and then the array, by
     /// `git_strlist_free`.
     ///
     /// Its array and strings are those of [`StrList`], the only owner under it: no value
@@ -181,11 +306,12 @@ mod ffi_import {
 
     impl StrListFree {
         /// A counted list of copies of `strs`, in order, in libgit2's allocator; `None`
-        /// when an allocation is refused, which leaves `GIT_ERROR_NOMEMORY` as the
-        /// thread's last error, or when libgit2 cannot be initialised.
+        /// when an allocation is refused, which leaves `GIT_ERROR_NOMEMORY` as the thread's
+        /// last error, or when libgit2 cannot be initialised.
         ///
         /// An empty `strs` still allocates the list's array, zero bytes, as C does. A
-        /// refused copy leaks the copies made before it, as C does (see the module docs).
+        /// refused copy releases the copies made before it, where C leaks them (see the
+        /// module docs).
         ///
         /// ```
         /// use libgit2::libgit2::src::util::strlist::StrListFree;
@@ -195,26 +321,15 @@ mod ffi_import {
         /// assert_eq!(list[1].as_c_str(), c"user.name=me");
         /// ```
         ///
-        /// Wraps `fn::git_strlist_copy`
+        /// Replaces `fn::git_strlist_copy`
         #[doc(alias = "git_strlist_copy")]
         #[must_use]
         pub fn copy<S: AsRef<CStr>>(strs: &[S]) -> Option<StrList> {
-            let ptrs = thin_ptrs(strs);
-            if !runtime_pinned() {
-                return None;
-            }
-            let mut out: *mut *mut c_char = ptr::null_mut();
-            // SAFETY: `ptrs` holds `ptrs.len()` NUL-terminated strings borrowed from `strs`
-            // for the call (NULL, unread, when empty); `out` is a writable slot. The runtime
-            // is pinned, so libgit2's allocator is initialised.
-            let rc = unsafe { ffi::git_strlist_copy(&raw mut out, array_ptr(&ptrs), ptrs.len()) };
-            if rc != 0 {
-                return None;
-            }
-            // SAFETY: on success `out` is a fresh `git__calloc` array of `ptrs.len()`
-            // `git__strdup` copies, none NULL, which the caller owns and `git_strlist_free`
-            // releases.
-            Some(unsafe { StrList::adopt(out, ptrs.len()) })
+            let (array, len) = super::copy_array(strs, 0)?;
+            // SAFETY: `array` is NULL with `len == 0`, or a fresh `git__calloc` array of
+            // `len` `git__strdup` copies, none NULL, which the list owns and
+            // `git_strlist_free` releases.
+            Some(unsafe { StrList::adopt(array, len) })
         }
     }
 
@@ -224,7 +339,7 @@ mod ffi_import {
     /// Dereferences to its elements, `&[AllocStr]`, and mutably to `&mut [AllocStr]`: an
     /// element replaced through it is released at once, and the list releases what its
     /// elements hold when it drops. [`StrListFree::copy`] builds one, and `Clone` copies one
-    /// through `git_strlist_copy`; an empty one without an array is [`new`](Self::new).
+    /// as it does; an empty one without an array is [`new`](Self::new).
     ///
     /// ```
     /// use libgit2::libgit2::src::util::alloc::StrFree;
@@ -244,18 +359,19 @@ mod ffi_import {
             Self(CVec::empty_with(StrListFree(())))
         }
 
-        /// The owner of the array `git_strlist_copy` made.
+        /// The owner of a copied or adopted array.
         ///
         /// # Safety
         ///
-        /// `array` is a live, non-NULL array of libgit2's allocator holding `len` non-NULL
-        /// strings of the same allocator, all of which the caller gives up.
+        /// `array` is NULL with `len == 0`, or a live array of libgit2's allocator holding
+        /// `len` non-NULL strings of the same allocator, all of which the caller gives up.
         unsafe fn adopt(array: *mut *mut c_char, len: usize) -> Self {
             // SAFETY: per this function's contract; a slot is a non-NULL `char *` whose
             // string `git_strlist_free` releases with the array, and `byte_len` is the size
-            // of the `len` slots `git_strlist_free` reads.
-            let run = unsafe { CVec::from_raw_parts_with(array.cast(), len, StrListFree(())) };
-            Self(run.expect("a copied or adopted list's array is never NULL"))
+            // of the `len` slots `git_strlist_free` reads. NULL comes only with `len == 0`.
+            let run =
+                unsafe { CVec::from_raw_parts_or_empty_with(array.cast(), len, StrListFree(())) };
+            Self(run.expect("a NULL list's array holds no string"))
         }
 
         /// Takes ownership of `len` strings at `strings`, as `git_strlist_free` would
@@ -270,9 +386,10 @@ mod ffi_import {
         ///
         /// A non-NULL `strings` must be an array allocated by libgit2's current allocator,
         /// aligned for a pointer, whose first `len` elements are initialised, each NULL or
-        /// a NUL-terminated string allocated by the same allocator. The caller transfers
-        /// unique ownership of the array and of those strings, and does not use them again
-        /// unless `None` is returned.
+        /// a NUL-terminated string allocated by the same allocator, no two of them the same
+        /// string, since the list releases each element once. The caller transfers unique
+        /// ownership of the array and of those strings, and does not use them again unless
+        /// `None` is returned.
         pub unsafe fn from_raw_parts(strings: *mut *mut c_char, len: usize) -> Option<Self> {
             if strings.is_null() {
                 return (len == 0).then(Self::new);
@@ -303,10 +420,10 @@ mod ffi_import {
             self.0.as_ptr().cast_const().cast()
         }
 
-        /// A copy of every string through `git_strlist_copy`; `None` when an allocation is
-        /// refused, as for [`StrListFree::copy`].
+        /// A copy of every string, as [`StrListFree::copy`] makes one; `None` when an
+        /// allocation is refused, as for [`StrListFree::copy`].
         ///
-        /// Wraps `fn::git_strlist_copy`
+        /// Replaces `fn::git_strlist_copy`
         #[doc(alias = "git_strlist_copy")]
         #[must_use]
         pub fn try_clone(&self) -> Option<Self> {
@@ -358,9 +475,9 @@ mod ffi_import {
 
     // --- NULL-terminated lists ---------------------------------------------------------
 
-    /// The policy of a NULL-terminated list of strings in libgit2's allocator: copied by
-    /// `git_strlist_copy_with_null`, released, every string and then the array, by
-    /// `git_strlist_free_with_null`.
+    /// The policy of a NULL-terminated list of strings in libgit2's allocator: copied as
+    /// `git_strlist_copy_with_null` copies one, released, every string and then the array,
+    /// by `git_strlist_free_with_null`.
     ///
     /// Its arrays are those of [`NullStrList`], the only owner under it: no value of the
     /// policy can be made outside this module.
@@ -414,8 +531,8 @@ mod ffi_import {
         /// thread's last error, or when libgit2 cannot be initialised.
         ///
         /// The array holds one slot more than `strs`, the NULL terminator, so an empty
-        /// `strs` allocates an array holding the terminator alone. A refused copy leaks the
-        /// copies made before it, as C does (see the module docs).
+        /// `strs` allocates an array holding the terminator alone. A refused copy releases
+        /// the copies made before it, where C leaks them (see the module docs).
         ///
         /// ```
         /// use libgit2::libgit2::src::util::strlist::NullStrListFree;
@@ -425,27 +542,15 @@ mod ffi_import {
         /// assert_eq!(argv[0].as_c_str(), c"/bin/sh");
         /// ```
         ///
-        /// Wraps `fn::git_strlist_copy_with_null`
+        /// Replaces `fn::git_strlist_copy_with_null`
         #[doc(alias = "git_strlist_copy_with_null")]
         #[must_use]
         pub fn copy<S: AsRef<CStr>>(strs: &[S]) -> Option<NullStrList> {
-            let ptrs = thin_ptrs(strs);
-            if !runtime_pinned() {
-                return None;
-            }
-            let mut out: *mut *mut c_char = ptr::null_mut();
-            // SAFETY: as in `StrListFree::copy`; `ptrs.len() + 1`, which C checks for
-            // overflow, cannot overflow for a `Vec` of pointers.
-            let rc = unsafe {
-                ffi::git_strlist_copy_with_null(&raw mut out, array_ptr(&ptrs), ptrs.len())
-            };
-            if rc != 0 {
-                return None;
-            }
-            // SAFETY: on success `out` is a fresh `git__calloc` array of `ptrs.len() + 1`
-            // slots, the first `ptrs.len()` of them `git__strdup` copies and the last NULL,
-            // which the caller owns and `git_strlist_free_with_null` releases.
-            Some(unsafe { NullStrList::adopt(out, ptrs.len()) })
+            let (array, slots) = super::copy_array(strs, 1)?;
+            // SAFETY: `array` is a fresh `git__calloc` array of `slots` slots, at least one,
+            // so never NULL: the first `slots - 1` of them `git__strdup` copies and the last
+            // NULL, which the list owns and `git_strlist_free_with_null` releases.
+            Some(unsafe { NullStrList::adopt(array, slots - 1) })
         }
     }
 
@@ -457,11 +562,11 @@ mod ffi_import {
     /// `&mut [AllocStr]`: an element replaced through it is released at once, and the list
     /// releases what its elements hold when it drops. The terminator is never in view, so
     /// it stays where it is. Every list has an array: [`NullStrListFree::copy`] builds one,
-    /// and `Clone` copies one through `git_strlist_copy_with_null`.
+    /// and `Clone` copies one as it does.
     pub struct NullStrList(CVec<Slot, NullStrListFree>);
 
     impl NullStrList {
-        /// The owner of the array `git_strlist_copy_with_null` made.
+        /// The owner of a copied or adopted NULL-terminated array.
         ///
         /// # Safety
         ///
@@ -486,9 +591,9 @@ mod ffi_import {
         ///
         /// A non-NULL `strings` must be an array allocated by libgit2's current allocator,
         /// aligned for a pointer, holding NUL-terminated strings allocated by the same
-        /// allocator followed by a NULL element. The caller transfers unique ownership of
-        /// the array and of those strings, and does not use them again unless `None` is
-        /// returned.
+        /// allocator followed by a NULL element, no two of the strings the same, since the
+        /// list releases each one once. The caller transfers unique ownership of the array
+        /// and of those strings, and does not use them again unless `None` is returned.
         pub unsafe fn from_raw(strings: *mut *mut c_char) -> Option<Self> {
             if strings.is_null() {
                 return None;
@@ -524,10 +629,10 @@ mod ffi_import {
             self.0.as_ptr().cast_const().cast()
         }
 
-        /// A copy of every string through `git_strlist_copy_with_null`; `None` when an
+        /// A copy of every string, as [`NullStrListFree::copy`] makes one; `None` when an
         /// allocation is refused, as for [`NullStrListFree::copy`].
         ///
-        /// Wraps `fn::git_strlist_copy_with_null`
+        /// Replaces `fn::git_strlist_copy_with_null`
         #[doc(alias = "git_strlist_copy_with_null")]
         #[must_use]
         pub fn try_clone(&self) -> Option<Self> {
@@ -612,47 +717,9 @@ mod ffi_import {
         }
     }
 
-    /// Whether any of `strings` begins with the part of `key` before its first
-    /// `delimiter`, as libgit2's process runner asks whether the caller's environment sets
-    /// the variable of an inherited `NAME=value` entry; `false` when `key` holds no
-    /// `delimiter`, without reading `strings`.
-    ///
-    /// C compares that part alone, without the delimiter: `"FOO=1"` is found among
-    /// `["FOOBAR=2"]`, so the caller's `FOOBAR` hides an inherited `FOO` from libgit2's
-    /// process runner. The wrapper keeps C's answer. A `delimiter` of 0, the terminator, is
-    /// never found, so the answer is then always `false`.
-    ///
-    /// ```
-    /// use libgit2::libgit2::src::util::strlist::contains_key;
-    ///
-    /// let env = [c"HOME=/root", c"FOOBAR=2"];
-    /// assert!(contains_key(&env, c"HOME=/home/me", b'='));
-    /// assert!(!contains_key(&env, c"USER=me", b'='));
-    /// assert!(!contains_key(&env, c"HOME", b'='));
-    /// // The part before the delimiter is a prefix, so `FOO` is found in `FOOBAR=2`.
-    /// assert!(contains_key(&env, c"FOO=1", b'='));
-    /// ```
-    ///
-    /// Wraps `fn::git_strlist_contains_key`
-    #[doc(alias = "git_strlist_contains_key")]
-    #[must_use]
-    pub fn contains_key<S: AsRef<CStr>>(strings: &[S], key: &CStr, delimiter: u8) -> bool {
-        let ptrs = thin_ptrs(strings);
-        // SAFETY: `ptrs` as in `contains_prefix`; `key` is NUL-terminated, scanned up to
-        // its delimiter or terminator, and its bytes before the delimiter compared. Nothing
-        // is kept past the call, and nothing reaches libgit2's state.
-        unsafe {
-            ffi::git_strlist_contains_key(
-                array_ptr(&ptrs),
-                ptrs.len(),
-                key.as_ptr(),
-                c_char::from_ne_bytes([delimiter]),
-            )
-        }
-    }
-
     #[cfg(test)]
     mod unit_tests {
+        use core::hash::{Hash, Hasher};
         use core::ptr::NonNull;
         use std::alloc::{Layout, alloc, dealloc, realloc};
         use std::cell::RefCell;
@@ -662,7 +729,8 @@ mod ffi_import {
         use super::*;
         use crate::libgit2::src::libgit2::settings::set_allocator;
         use crate::libgit2::src::util::alloc::{Alloc, Allocator, StrFree};
-        use crate::libgit2::src::util::errors::{ErrorClass, clear, last};
+        use crate::libgit2::src::util::errors::{ErrorClass, clear, last, runtime_pinned};
+        use crate::libgit2::src::util::strlist::contains_key;
 
         /// One request that reached [`Counted`]: an allocation of so many bytes, through
         /// `malloc` or `realloc(NULL, ..)`, or a release.
@@ -756,7 +824,7 @@ mod ffi_import {
 
         /// Runs `body` alone in a child process of this binary, with [`Counted`] installed as
         /// libgit2's allocator before anything initialises libgit2. `leaks` lets the child
-        /// leak, as C does on a refused copy, without failing `LeakSanitizer`'s exit check.
+        /// leak, as C's copies do on a refusal, without failing `LeakSanitizer`'s exit check.
         fn with_counted(path: &str, leaks: bool, body: fn()) {
             let name = path.split_once("::").map_or(path, |(_, rest)| rest);
             if std::env::var(CHILD).as_deref() == Ok(name) {
@@ -865,15 +933,16 @@ mod ffi_import {
             );
         }
 
-        /// A refused request fails the copy with libgit2's out-of-memory error. A refused
-        /// array leaves nothing behind; a refused string leaks the array and the copies
-        /// before it, as `GIT_ERROR_CHECK_ALLOC` returns without releasing them.
+        /// A refused request fails the copy with libgit2's out-of-memory error, and leaves
+        /// nothing behind: a refused string releases the array and the copies before it,
+        /// which `git_strlist_copy` and `git_strlist_copy_with_null` leak
+        /// (`logic/refused-copies-leak`).
         #[test]
         #[cfg_attr(miri, ignore = "spawns a process")]
         fn refused_copies_report_out_of_memory() {
             with_counted(
                 concat!(module_path!(), "::refused_copies_report_out_of_memory"),
-                true,
+                false,
                 || {
                     let strs = [c"one", c"four", c"x"];
                     REFUSE.store(3 * PTR, Relaxed);
@@ -885,18 +954,31 @@ mod ffi_import {
                     assert_out_of_memory();
                     assert_eq!(take_calls(), [Call::Alloc(4 * PTR)]);
 
+                    // The copy of "one" and the array are released, in that order.
                     REFUSE.store(5, Relaxed);
                     assert!(StrListFree::copy(&strs).is_none());
                     assert_out_of_memory();
-                    assert_eq!(
-                        take_calls(),
-                        [Call::Alloc(3 * PTR), Call::Alloc(4), Call::Alloc(5)]
-                    );
+                    let refused = |array| {
+                        [
+                            Call::Alloc(array),
+                            Call::Alloc(4),
+                            Call::Alloc(5),
+                            Call::Free,
+                            Call::Free,
+                        ]
+                    };
+                    assert_eq!(take_calls(), refused(3 * PTR));
+                    assert!(NullStrListFree::copy(&strs).is_none());
+                    assert_out_of_memory();
+                    assert_eq!(take_calls(), refused(4 * PTR));
+
+                    // A refused first string releases the array alone.
+                    REFUSE.store(4, Relaxed);
                     assert!(NullStrListFree::copy(&strs).is_none());
                     assert_out_of_memory();
                     assert_eq!(
                         take_calls(),
-                        [Call::Alloc(4 * PTR), Call::Alloc(4), Call::Alloc(5)]
+                        [Call::Alloc(4 * PTR), Call::Alloc(4), Call::Free]
                     );
 
                     // A refused clone leaves its source live.
@@ -948,6 +1030,126 @@ mod ffi_import {
             let only = unsafe { CStr::from_ptr(string) };
             assert_eq!(only, c"k=v");
             assert_eq!(list[0].as_ptr(), only.as_ptr());
+        }
+
+        /// The copies make C's requests in C's order, and differ from C's only on a
+        /// refusal: C's `git_strlist_copy` and `git_strlist_copy_with_null` return without
+        /// releasing the array and the copies before the refused one, which the wrappers
+        /// release (`logic/refused-copies-leak`).
+        #[test]
+        #[cfg_attr(miri, ignore = "spawns a process")]
+        fn c_copies_leak_what_the_wrappers_release() {
+            with_counted(
+                concat!(module_path!(), "::c_copies_leak_what_the_wrappers_release"),
+                true,
+                || {
+                    let strs = [c"one", c"four"];
+                    let ptrs = strs.map(CStr::as_ptr);
+                    for null_terminated in [false, true] {
+                        let c_copy = if null_terminated {
+                            ffi::git_strlist_copy_with_null
+                        } else {
+                            ffi::git_strlist_copy
+                        };
+                        let array = (2 + usize::from(null_terminated)) * PTR;
+                        let requests = [Call::Alloc(array), Call::Alloc(4), Call::Alloc(5)];
+                        let mut out: *mut *mut c_char = ptr::null_mut();
+                        // A refused array is where both stop, with nothing to release.
+                        REFUSE.store(array, Relaxed);
+                        // SAFETY: as below; C reads nothing once its array is refused.
+                        let rc = unsafe { c_copy(&raw mut out, ptrs.as_ptr().cast_mut(), 2) };
+                        assert!(rc < 0 && out.is_null());
+                        assert_out_of_memory();
+                        assert_eq!(take_calls(), [Call::Alloc(array)]);
+                        REFUSE.store(5, Relaxed);
+                        // SAFETY: two live strings borrowed for the call; `out` is a writable
+                        // slot, which a refused copy leaves untouched.
+                        let rc = unsafe { c_copy(&raw mut out, ptrs.as_ptr().cast_mut(), 2) };
+                        assert!(rc < 0 && out.is_null());
+                        assert_out_of_memory();
+                        assert_eq!(take_calls(), requests, "C leaks both");
+                        let rust = if null_terminated {
+                            NullStrListFree::copy(&strs).is_some()
+                        } else {
+                            StrListFree::copy(&strs).is_some()
+                        };
+                        assert!(!rust);
+                        assert_out_of_memory();
+                        let released = [&requests[..], &[Call::Free; 2]].concat();
+                        assert_eq!(take_calls(), released, "the wrapper releases both");
+                        REFUSE.store(NONE, Relaxed);
+                    }
+                    // `git_strlist_copy_with_null` refuses a count whose terminator
+                    // overflows before it reads `in` or allocates; no slice reaches it.
+                    let mut out: *mut *mut c_char = ptr::null_mut();
+                    // SAFETY: C checks `len + 1` first and returns, reading nothing.
+                    let rc = unsafe {
+                        ffi::git_strlist_copy_with_null(&raw mut out, ptr::null_mut(), usize::MAX)
+                    };
+                    assert!(rc < 0 && out.is_null());
+                    assert_out_of_memory();
+                    assert_eq!(take_calls(), []);
+                },
+            );
+        }
+
+        /// A key's name is found with its delimiter: a longer name that begins with it is
+        /// not the key's, where `git_strlist_contains_key` finds it
+        /// (`logic/contains-key-matches-longer-names`).
+        #[test]
+        #[cfg_attr(miri, ignore = "calls libgit2")]
+        fn contains_key_compares_the_delimiter() {
+            let env = [c"FOOBAR=2", c"PATH=/bin:/usr/bin", c"NOEQ", c"EMPTY="];
+            for (key, delimiter, found) in [
+                (c"FOO=1", b'=', false),
+                (c"FOOBAR=1", b'=', true),
+                (c"EMPTY=x", b'=', true),
+                (c"EMPTY", b'=', false),
+                (c"=leading", b'=', false),
+                (c"PATH:x", b':', false),
+                (c"PATH=/bin:", b':', true),
+                (c"NOEQ=1", b'=', false),
+                (c"FOOBAR=2", 0, false),
+                (c"", b'=', false),
+            ] {
+                assert_eq!(contains_key(&env, key, delimiter), found, "{key:?}");
+            }
+            let empty: [&CStr; 0] = [];
+            assert!(!contains_key(&empty, c"FOO=1", b'='));
+            assert!(contains_key(&[c"=x"], c"=leading", b'='));
+        }
+
+        /// The lists compare, hash and iterate as their strings do, whatever their arrays.
+        #[test]
+        #[cfg_attr(miri, ignore = "calls libgit2")]
+        fn lists_compare_and_iterate_as_their_strings() {
+            use std::collections::hash_map::DefaultHasher;
+
+            fn hash<T: Hash + ?Sized>(t: &T) -> u64 {
+                let mut h = DefaultHasher::new();
+                t.hash(&mut h);
+                h.finish()
+            }
+
+            let mut a = StrListFree::copy(&[c"x", c"y"]).unwrap();
+            let b = a.clone();
+            assert!(a == b && hash(&a) == hash(&b) && a.as_ptr() != b.as_ptr());
+            assert_eq!(hash(&a), hash(&a[..]));
+            for s in &mut a {
+                *s = StrFree::dup(c"z").unwrap();
+            }
+            let zs = vec![StrFree::dup(c"z").unwrap(), StrFree::dup(c"z").unwrap()];
+            assert!(a != b && a == *zs.as_slice());
+            let seen: Vec<&CStr> = (&b).into_iter().map(AllocStr::as_c_str).collect();
+            assert_eq!(seen, [c"x", c"y"]);
+            assert_eq!(b.as_ref().len(), 2);
+            a.as_mut().swap(0, 1);
+
+            let empty = StrListFree::copy::<&CStr>(&[]).unwrap();
+            assert!(empty == StrList::new() && hash(&empty) == hash(&StrList::new()));
+
+            let argv = NullStrListFree::copy(&[c"x", c"y"]).unwrap();
+            assert!(argv == argv.clone() && argv[..] == b[..] && hash(&argv) == hash(&b));
         }
     }
 }

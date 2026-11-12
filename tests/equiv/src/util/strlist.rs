@@ -7,7 +7,10 @@
 //!   `git_strlist_free` and `git_strlist_free_with_null`.
 //! - Searches: `contains_prefix` and `contains_key` against the C routines called on a raw `const
 //!   char **` of the same strings, on a table of cases and after each step of a sequence that edits
-//!   both lists alike.
+//!   both lists alike. `contains_key` compares a key's name with its delimiter, where
+//!   `git_strlist_contains_key` compares the name alone: it answers as C's
+//!   `git_strlist_contains_prefix` of the name and delimiter, and as `git_strlist_contains_key`
+//!   wherever no string's name begins with the key's and is longer.
 
 use std::ffi::{CStr, CString, c_char};
 use std::ptr;
@@ -129,6 +132,29 @@ fn strs(list: &[AllocStr]) -> Vec<&CStr> {
     list.iter().map(AllocStr::as_c_str).collect()
 }
 
+/// `key`'s name and first `delimiter`, which `contains_key` searches for; `None` without one.
+fn name_with_delimiter(key: &CStr, delimiter: u8) -> Option<&[u8]> {
+    let key = key.to_bytes();
+    key.iter()
+        .position(|&b| b == delimiter)
+        .map(|end| &key[..=end])
+}
+
+/// What `contains_key` answers on `c`'s strings, from the C: `git_strlist_contains_prefix` of
+/// the name and delimiter, which `git_strlist_contains_key` answers too unless it finds the
+/// name alone at the start of a longer one. Returns the answer and whether C's diverges.
+fn key_in_c(c: &CList, key: &CStr, delimiter: u8) -> (bool, bool) {
+    let c_key = c.contains_key(key, delimiter);
+    let Some(prefix) = name_with_delimiter(key, delimiter) else {
+        assert!(!c_key);
+        return (false, false);
+    };
+    let found = c.contains_prefix(prefix);
+    // C's answer covers the corrected one: it compares fewer bytes.
+    assert!(c_key || !found, "{key:?}");
+    (found, c_key != found)
+}
+
 /// The copies hold what C's do, after each replacement and clone, and a NULL-terminated
 /// list's array ends with C's terminator.
 #[test]
@@ -224,22 +250,29 @@ fn searches_match_c() {
         (c"NOEQ", b'='),
         (c"=leading", b'='),
         (c"PATH:x", b':'),
+        (c"PATH=/bin:x", b':'),
+        (c"EMPTY=x", b'='),
         (c"HOME=/x", 0),
         (c"", b'='),
     ];
+    let mut diverging = Vec::new();
     for (key, delimiter) in keys {
-        let want = c.contains_key(key, delimiter);
+        let (want, diverges) = key_in_c(&c, key, delimiter);
         assert_eq!(contains_key(&env, key, delimiter), want, "{key:?}");
         assert_eq!(contains_key(&list, key, delimiter), want, "{key:?}");
+        if diverges {
+            diverging.push(key);
+        }
     }
-    // C's answers the wrappers keep: the delimiter is not compared, and an empty part
-    // before it is found in every non-empty run.
-    assert!(c.contains_key(c"FOO=1", b'='));
-    assert!(c.contains_key(c"=leading", b'='));
+    // C's answers the wrapper corrects: the name is found at the start of a longer one
+    // (`FOOBAR`, `PATH=/bin`), and an empty name before the delimiter in every string.
+    assert_eq!(diverging, [c"FOO=1", c"=leading", c"PATH:x"]);
+    assert!(c.contains_key(c"FOO=1", b'=') && !contains_key(&env, c"FOO=1", b'='));
 }
 
 /// The searches answer as C's do after each step of a sequence that edits both lists alike,
-/// one of them reached through a NULL-terminated list's elements.
+/// one of them reached through a NULL-terminated list's elements; `contains_key` as C's
+/// corrected search does.
 #[test]
 #[cfg_attr(miri, ignore = "calls libgit2")]
 fn searches_match_c_across_edits() {
@@ -252,7 +285,7 @@ fn searches_match_c_across_edits() {
             assert_eq!(contains_prefix(rust, prefix), c.contains_prefix(prefix));
         }
         for key in [c"a.b=9", c"c.d=9", c"e.f=9", c"a=9"] {
-            assert_eq!(contains_key(rust, key, b'='), c.contains_key(key, b'='));
+            assert_eq!(contains_key(rust, key, b'='), key_in_c(c, key, b'=').0);
         }
     };
     probe(&c, &rust);
@@ -264,6 +297,6 @@ fn searches_match_c_across_edits() {
     let owned: Vec<CString> = c.strs().into_iter().map(CStr::to_owned).collect();
     assert_eq!(
         contains_key(&owned, c"a=0", b'='),
-        c.contains_key(c"a=0", b'=')
+        key_in_c(&c, c"a=0", b'=').0
     );
 }

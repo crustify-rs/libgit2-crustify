@@ -56,23 +56,23 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip `<sha>`; `main` shipped at `<sha>`; crustify `4605156`, ffibox `7950244` (`main`), wavefront `db28284`
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `17943` non-test, `96229` tests; **C LoC** — `<n>`
+- **Rust LoC** — `17938` non-test, `96377` tests; **C LoC** — `<n>`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `718` | — | `28.45`% | `79.71`% |
-| UB unsafe tests | `97` | — | `19.40`% | `12.82`% |
-| Equiv tests | `494` | — | `43.47`% | `75.45`% |
-| Unit tests | `802` | — | `32.04`% | `87.34`% |
-| **Total tests** | **`2111`** | — | **`45.92`%** | **`98.89`%** |
+| UB safe tests | `718` | — | `28.41`% | `79.59`% |
+| UB unsafe tests | `99` | — | `19.43`% | `12.90`% |
+| Equiv tests | `494` | — | `43.45`% | `75.33`% |
+| Unit tests | `805` | — | `32.02`% | `87.49`% |
+| **Total tests** | **`2116`** | — | **`45.93`%** | **`98.90`%** |
 | total types | `258` | — | — | — |
 | ported types | `0` | `0.00`% | — | — |
 | wrapped types | `105` | `40.70`% | — | — |
 | total symbols | `979` | — | — | — |
-| ported symbols | `4` | `0.41`% | — | — |
-| wrapped symbols | `454` | `46.37`% | — | — |
+| ported symbols | `7` | `0.72`% | — | — |
+| wrapped symbols | `451` | `46.07`% | — | — |
 
 ### Module stats
 
@@ -466,6 +466,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/raw-lifetime-void` | `legacy-1` | `0` | wrap | review | `2` | — | `+80/-1` | — | `$7.89` | `10.78M` | `18m36s` | `$3.94` | — |
 | `libgit2/raw-lifetime-string` | `legacy-3` | `0` | wrap | review | `2` | — | `+345/-23` | — | `$10.89` | `14.41M` | `22m03s` | `$5.45` | — |
 | `libgit2/src/util/alloc.c` | `12` | `3` | wrap | review | `7` | — | `+57/-20` | — / `98.90`% | `$15.18` | `40.96M` | `1h31m33s` | `$2.17` | — |
+| `libgit2/src/util/strlist.c` | `184` | `1` | wrap | review | `6` | — | `+408/-142` | `45.93`% / `98.90`% | — | — | — | — | — |
 | `libgit2/util` | `legacy-6` | `2` | wrap | review | `4` | — | `+281/-117` | `1.63`% / `99.74`% | `$12.00` | `16.87M` | `28m49s` | `$3.00` | — |
 | `libgit2/util` | `legacy-7` | `0` | wrap | review | `1` | — | `+0/-0` | `1.63`% / `99.74`% | `$6.26` | `6.37M` | `23m51s` | `$6.26` | — |
 | `libgit2/oid` | `legacy-12` | `1` | wrap | review | `18` | — | `+181/-10` | `7.80`% / `99.49`% | `$11.62` | `12.73M` | `34m10s` | `$0.65` | — |
@@ -493,7 +494,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | wrap | review | `1` | — | `+113/-14` | — | `$4.80` | `10.64M` | `27m50s` | `$4.80` | — |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | wrap | review | `2` | — | `+217/-15` | — | `$11.03` | `25.98M` | `47m17s` | `$5.51` | — |
 | **Σ first** |  |  |  |  | **`435`** | **`8666`** | **`+71944/-3318`** | **`45.92`% / `98.89`%** | **`$445.45`** | **`1379.81M`** | — | **`$1.04`** | **`$0.05`** |
-| **Σ review** |  |  |  |  | **`422`** | — | **`+7131/-1346`** | **— / `98.90`%** | **`$354.58`** | **`672.21M`** | — | **`$0.84`** | — |
+| **Σ review** |  |  |  |  | **`428`** | — | **`+7539/-1488`** | **`45.93`% / `98.90`%** | **`$354.58`** | **`672.21M`** | — | **`$0.84`** | — |
 
 ### Batches: tests
 
@@ -544,6 +545,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/checkout.c` | `148` | `0` | first | `+5` (—/— pp) | `+0` (—/— pp) | `+2` (—/— pp) | `+8` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `148` | `0` | first | `+10` (—/— pp) | `+0` (—/— pp) | `+2` (—/— pp) | `+14` (—/— pp) |
 | `libgit2/src/util/alloc.c` | `12` | `3` | review | `+0` (—/`+0.00` pp) | `+0` (—/`-0.01` pp) | `+0` (—/`-0.02` pp) | `+0` (—/`+0.01` pp) |
+| `libgit2/src/util/strlist.c` | `184` | `1` | review | `+0` (`-0.04`/`-0.12` pp) | `+2` (`+0.03`/`+0.08` pp) | `+0` (`-0.02`/`-0.12` pp) | `+3` (`-0.02`/`+0.15` pp) |
 | `libgit2/util` | `legacy-6` | `2` | review | `+1` (`+0.00`/`-0.79` pp) | `+0` (`+0.00`/`+0.00` pp) | `+0` (`+0.00`/`-0.79` pp) | `+1` (`+0.00`/`+4.47` pp) |
 | `libgit2/util` | `legacy-7` | `0` | review | `+0` (`+0.00`/`+0.00` pp) | `+0` (`+0.00`/`+0.00` pp) | `+0` (`+0.00`/`+0.00` pp) | `+0` (`+0.00`/`+0.00` pp) |
 | `libgit2/oid` | `legacy-12` | `1` | review | `+0` (`+0.00`/`+0.02` pp) | `+0` (`+0.00`/`-0.04` pp) | `+1` (`+0.00`/`+0.03` pp) | `+1` (`+0.00`/`+0.27` pp) |
@@ -571,7 +573,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+2` (—/— pp) | `+0` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+1` (—/— pp) | `+1` (—/— pp) |
 | **Σ first** |  |  |  | **`+312` (`+10.22`/`+5.99` pp)** | **`+23` (`+3.22`/`-7.39` pp)** | **`+196` (`+9.08`/`+13.86` pp)** | **`+246` (`+11.83`/`-33.87` pp)** |
-| **Σ review** |  |  |  | **`+14` (`+0.34`/`-1.41` pp)** | **`+2` (`-0.92`/`+0.26` pp)** | **`+22` (`+0.09`/`-0.39` pp)** | **`+34` (`+2.44`/`+7.46` pp)** |
+| **Σ review** |  |  |  | **`+14` (`+0.30`/`-1.53` pp)** | **`+4` (`-0.89`/`+0.34` pp)** | **`+22` (`+0.07`/`-0.51` pp)** | **`+37` (`+2.42`/`+7.61` pp)** |
 
 ### Batches: safety audit
 
@@ -583,8 +585,9 @@ Deterministic `ffimap`; no model.
 | `libgit2/src/util/alloc.c` | `12` | `2` | wrap | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `-1` | `+0` | `+0` | `+0` | `+0` | `+5` | `+0.01` pp | `+3` |
 | `libgit2/src/util/strlist.c` | `184` | `0` | wrap | first | `+4` | `+0` | `+4` | `+0` | `+0` | `+0.00` pp | `+2` | `+0` | `+0` | `+0` | `+0` | `+6` | `-0.00` pp | `+23` |
 | `libgit2/src/util/alloc.c` | `12` | `3` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.01` pp | `+0` |
+| `libgit2/src/util/strlist.c` | `184` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `-3` | `-0.06` pp | `-3` |
 | **Σ first** |  |  |  |  | **`+4`** | **`+0`** | **`+9`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+2`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+13`** | **`-0.05` pp** | **`+38`** |
-| **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`-0.01` pp** | **`+0`** |
+| **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`-3`** | **`-0.07` pp** | **`-3`** |
 
 ### Batches: API stability
 
@@ -593,8 +596,9 @@ Deterministic `ffimap api`; no model.
 | module | wave | batch | objective | pass | kept | extended | changed | removed | new | →Replaces | unattributed | reasons |
 |---|---|---|---|---|---:|---:|---:|---:|---:|---:|---|---|
 | `libgit2/src/util/strlist.c` | `184` | `0` | wrap | first | `0` | `0` | `0` | `0` | `6` | `0` | — | — |
+| `libgit2/src/util/strlist.c` | `184` | `1` | wrap | review | `4` | `2` | `0` | `0` | `0` | `3` | — | — |
 | **Σ first** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`6`** | **`0`** |  |  |
-| **Σ review** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** |  |  |
+| **Σ review** |  |  |  |  | **`4`** | **`2`** | **`0`** | **`0`** | **`0`** | **`3`** |  |  |
 
 ### Batches — review: PoC + reports
 
@@ -605,6 +609,7 @@ Deterministic `ffimap api`; no model.
 | `libgit2/raw-lifetime-void` | `legacy-1` | `0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
 | `libgit2/raw-lifetime-string` | `legacy-3` | `0` | `+0` | `+1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `2` |
 | `libgit2/src/util/alloc.c` | `12` | `3` | `+0` | `+0` | `+1` | `+0` | `+0` | `+0` | `+0` | `+2` | `3` |
+| `libgit2/src/util/strlist.c` | `184` | `1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+4` | `4` |
 | `libgit2/util` | `legacy-6` | `2` | — | `+1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `2` |
 | `libgit2/util` | `legacy-7` | `0` | — | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
 | `libgit2/oid` | `legacy-12` | `1` | — | `+0` | `+0` | `+0` | `+0` | `+1` | `+0` | `+0` | `1` |
@@ -632,7 +637,7 @@ Deterministic `ffimap api`; no model.
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+2` | `2` |
 | — (`tests/ub_safe`) | `legacy-526` | `0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
-| **Σ** |  |  | **`+1`** | **`+5`** | **`+4`** | **`+1`** | **`+3`** | **`+5`** | **`+11`** | **`+53`** | **`83`** |
+| **Σ** |  |  | **`+1`** | **`+5`** | **`+4`** | **`+1`** | **`+3`** | **`+5`** | **`+11`** | **`+57`** | **`87`** |
 
 ## Notes
 
@@ -2196,3 +2201,68 @@ two by exact name under BSan (in a scratch copy, past the known bindings check),
 under Miri, where all but the empty-list unit test stop at the foreign boundary or at a child
 process. The safety audit scans used ffimap `9aa2ef1` with batch 2's arguments. Usage cells
 are the assistant's.
+
+### `libgit2/src/util/strlist.c` wave 184 batch 1: module pass
+
+The module pass, and the module's only review, over batch 0's six items, with every objective.
+Its four reports count under `+misc`, as wave 173 counted `contracts` there, since the table
+has no `logic`, `contracts` or `ergonomics` column: two `logic` (the C defects batch 0 kept),
+one `contracts` and one `ergonomics`. The harness refused the reports' files, so each report is
+in the two commits' messages; the reproducers, their runs on `aba03725e` and on the fixed tree,
+and a `disclosure.md` per finding are filed. The rows are this table's, as `alloc.c`'s module
+pass's are; this dashboard has no `Module passes` table.
+
+- `logic/refused-copies-leak`: the copies called `git_strlist_copy` /
+  `git_strlist_copy_with_null`, which leak the array and the earlier copies when a copy is
+  refused. They are now composed from the same requests in C's order (`ArrayFree::new_zeroed`,
+  then `StrFree::dup`), releasing what they made on a refusal; the release is still C's.
+- `logic/contains-key-matches-longer-names`: `git_strlist_contains_key` compares a name without
+  its delimiter, so `"FOO=1"` is found in `["FOOBAR=2"]`, and `merge_env` drops an inherited
+  `FOO` when the caller sets `FOOBAR`. `contains_key` is now native Rust over
+  `contains_prefix`, delimiter included. Its signature is unchanged, so `ffimap api` reads it
+  `kept`: its answer changed on purpose.
+- `contracts/ffi_import/adoptions-admit-repeated-strings`: the adoptions did not ask for
+  distinct strings; a repeated one is freed twice (ASan double free). Obligations corrected.
+- `ergonomics/lists-lack-slice-traits`: the lists gain `CVec`'s slice traits.
+
+Three anchors move from `Wraps` to `Replaces` (`fn::git_strlist_copy`,
+`fn::git_strlist_copy_with_null`, `fn::git_strlist_contains_key`), which moves 3 symbols from
+wrapped to ported. `ffimap api` (ffimap `9aa2ef1`, ffibox's rustdoc JSON with private items,
+nightly `2026-10-08`) keeps 4 items and extends the two copies (their lists' traits); no
+unattributed module moved. The safety audit's `FFI calls` and `unsafe blocks` fall by 3, the
+calls the copies and `contains_key` no longer make. `+LoC` counts `src/` and `tests/` alone.
+
+Coverage was measured on the landed tree with `crustify/scripts/coverage/run.sh` and read as
+batch 0 read it (Rust by `report.py` over the scratch tree's `src`, C by `llvm-cov report` with
+the `coverage` archive as the only object); the deltas are against batch 0's figures.
+`strlist.c` rises to 74/76 regions and 36/38 branches (from 72/76 and 34/38): a unit test drives
+C's own copies through a refused array, a refused string and an overflowing count, which keeps
+C's failure paths reached now that the wrappers no longer call them. Its two missed lines are
+still the frees' NULL returns. `strlist.rs` is at 170/172 lines and 200/202 regions: the
+clones' OOM aborts. The Rust suites' shifts follow `strlist.rs`'s new lines, which the unit
+suite reaches and the others mostly do not; the C suites' shifts of a few hundredths are within
+the 0.03 pp batch 0 measured between runs.
+
+Gates, each on the wave tip `aba03725e` before any change and again on the landed tree, from a
+snapshot under the worktree's `crustify/tmp/`, at 16 jobs in all:
+
+- Miri, one run per test binary, compile-fail skipped: on the tip `lib` 373, `ub_safe` 183,
+  `ub_unsafe` 18 and `equiv` 32 passed, every other test ignored at the foreign boundary or a
+  child process, `libgit2-sys`'s one test ignored; on the landed tree the same, with `lib`'s
+  and `ub_unsafe`'s ignored counts up by the new tests (432 and 81). Each new test was run alone
+  under Miri and stops at `git_libgit2_init`, `git_strlist_contains_prefix` or the child
+  process's `current_exe`.
+- ASan+UBSan and TSan, the whole workspace: `lib` 801 → 804, `equiv` 494, `ub_unsafe` 97 → 99,
+  `ub_safe`'s 717 tests, `libgit2-sys` and 359 of the doctests pass on both trees, which fail
+  only where the wave tip fails: 13 `ub_safe::compile_fail` trybuild mismatches under the
+  nightly (the five `$FFIBOX` ones among them) and the nightly's `CommitBuilder` E0624
+  doctest. Plain, on the landed tree, fails only on the five `$FFIBOX` mismatches.
+- BSan, one invocation per test binary under `timeout 5400`, in the scratch snapshot past the
+  known bindings check (`CRUSTIFY_BINDINGS_UPDATE=1`, a doc-comment-only difference): on the
+  tip `lib` 794, `ub_safe` 713, `ub_unsafe` 97, `equiv` 485 and `libgit2-sys` passed; on the
+  landed tree `lib` 797, `ub_safe` 713, `ub_unsafe` 99, `equiv` 485 and `libgit2-sys` passed. The
+  four indexer tests that never finish were skipped by exact name on both, and are not run.
+
+Proposals: `binding-c-defects` (the binding skills hold no rule for a C defect, which the task
+cited) and `ffimap-seams-into-raw`; `elementwise-releasers` gains this review's evidence. Usage
+cells are the assistant's.

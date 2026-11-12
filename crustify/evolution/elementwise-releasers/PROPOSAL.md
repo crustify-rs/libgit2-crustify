@@ -75,3 +75,15 @@ replaced, swapped and sorted between lists and other owners, lists cloned, adopt
 and released in every order (`tests/ub_safe/src/util/strlist.rs`,
 `tests/ub_unsafe/src/util/strlist.rs`), and the release counts checked against a counting
 allocator (`strlist.rs`'s `lists_request_and_release_what_strlist_c_does`).
+
+Reviewed in wave 184 batch 1 (the module pass), against every element operation the owners
+expose: the mutable views (assignment, `swap`, `mem::replace`, `sort`, `fill`, iteration)
+only ever exchange one `AllocStr` for another, so a slot holds a non-NULL string of
+`git__free`'s family whatever safe code does; `try_clone` reads the elements as `&CStr`;
+`into_raw_parts` / `into_raw` give the array up whole; and no value of either policy reaches
+code outside the module. One gap, in the adoptions rather than the shape: `from_raw_parts` and
+`from_raw` did not ask the adopted elements to be distinct strings, and a release that frees
+each element then frees a repeated one twice (finding
+`contracts/ffi_import/adoptions-admit-repeated-strings`, fixed in the contracts). The
+rewording of `docs/ownership.md`'s row and `CLenDrop`'s rustdoc proposed above should carry
+that obligation for any adoption of such a container.
