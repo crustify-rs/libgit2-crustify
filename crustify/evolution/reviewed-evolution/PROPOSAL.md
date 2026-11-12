@@ -1,7 +1,8 @@
 # Every change is reviewed, recorded and watched
 
-Status: `open`, drafted by the user in another workspace as crustify `ae35f81` on
-`review/evolution/reviewed-evolution`.
+Status: `open`: crustify `ae35f81` and `c2f21a0`, drafted by the user in another workspace on
+`review/evolution/reviewed-evolution`, with the reviews' fixes `4c7c40e` and `acb7aea`, on
+`libgit2-crustify/evolution/reviewed-evolution`.
 
 ## Signal
 
@@ -13,8 +14,7 @@ role evolves the skills it is judged by.
 
 ## Evidence
 
-- The user's direction, and the published record of self-improving agents (the commit's
-  own evidence).
+- The user's direction.
 - This campaign, 2026-11-12: `ffibox-vtables`'s first change (ffibox `23e0a9b`) passed its
   author's suite, Miri over its 14 new tests, clippy, and a downstream port. An independent
   soundness review, run before landing, found three paths to UB from safe Rust with Miri
@@ -27,17 +27,24 @@ role evolves the skills it is judged by.
 
 ## Destination
 
-The spec: the `evolution` skill (Validation, a new Review, Autonomy, Adoption, a new Record
-and Evolving evolution), the assistant and reviewer roles, `task-schema` (Evolution
-reviews), `layout`, `authoring`, and a new `EVOLUTION.md` at Crustify's root.
+The spec: the `evolution` skill (Changes, Validation, a new Review, Autonomy, Adoption, a new
+Record and Evolving evolution), `agents/common.md`, the assistant and reviewer roles,
+`task-schema` (Evolution reviews), `layout`, `authoring`, `accounting`, the `ffibox` and
+`wavefront` tool skills, the templates and the READMEs, and a new `EVOLUTION.md` at
+Crustify's root.
 
 ## Change
 
-Crustify `ae35f81`.
+Crustify `ae35f81` (every change reviewed, recorded and watched), `c2f21a0` (each campaign's
+working branch, `devel` the user's gate), `4c7c40e` (review-1's and review-2's fixes,
+rebased onto `c2f21a0`) and `acb7aea` (review-3's fixes).
 
 ## Validation
 
-Its own §7 reruns what failed: a review. Its first use is its own review, `review-1/`.
+Its own §7 reruns what failed, here a review: each round of review reran on the commit
+that answered the last. review-1 on `ae35f81` and review-2 on `6d533ec` (before the rebase)
+rejected it; review-3 on `4c7c40e` rejected it for five contradictions, each fixed in
+`acb7aea`.
 
 ## Review
 
@@ -97,3 +104,18 @@ reviewed is unsaid (documentation has misled agents, `ffibox-usage-docs`); the r
 and two signals (one of the settled contradictions; scratch outside `crustify/tmp/`) are not
 ones a campaign observes. The user's `review/evolution/reviewed-evolution` has moved on to
 `c2f21a0` meanwhile.
+
+`review-3` (session `afe6fb64-3eeb-446b-b076-869f54cb1c40`, under crustify
+`libgit2-crustify/devel` `e2a51c6`, pinned to `4c7c40e`; Opus 5.5, $1.23, 4m48s): **rejected
+as it stands**, its direction approved; the rebase onto `c2f21a0` loses nothing, review-2's
+A, B and C are resolved. Required: R1, the checklist's "weakens no check" contradicts
+`c2f21a0`'s marking; R2, under `propose` the record's statuses waited on a working branch
+that never moves; R3, `ffibox-vtables` landed with no entry; R4, against `devel`'s attended
+mode a review replaces the user's approval before a change runs in the campaign, so this
+change's entry and verdict must say it weakens a check; R5, a documentation defect's
+reproducer must still become a test. Advisory: a task message's precedence in
+`agents/common.md`, a review's cost per change, the `wavefront` skill's opt-in tests, two
+READMEs calling `devel` the line campaigns run, "working branch" naming, merging two
+campaigns' rows, revisiting what landed under a declined weakening, and this campaign's
+`unattended` setting. All addressed in `acb7aea`, the setting in the campaign's
+`CRUSTIFY.md`.

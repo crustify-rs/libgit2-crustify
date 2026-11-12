@@ -1,0 +1,4 @@
+{"backend": "claude", "billing": "subscription", "args": ["--model", "claude-opus-5-5"],
+ "revisions": {"crustify": "e2a51c6", "wavefront": "bf21e16", "ffibox": "7af1232", "ffimap": "102d84f"},
+ "component": "crustify", "branch": "libgit2-crustify/evolution/reviewed-evolution", "commit": "4c7c40e",
+ "proposal": "crustify/evolution/reviewed-evolution"}

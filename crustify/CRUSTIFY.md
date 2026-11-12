@@ -92,9 +92,11 @@ Unanswered optional questions use their defaults.
     how long without asking you? Agents file proposals and record the target's lessons;
     fixes and improvements land on each component's `devel` branch, never on its `main`.**
     (`id: evolution`)
-    - Answer: `evolve, unattended: the whole campaign`, for changes that are useful and
-      validated (a tool's by its tests, a spec change by the evidence that motivated it);
-      the rest wait for the user at the next module's end.
+    - Answer: `evolve`, on the campaign's working branches (`libgit2-crustify/devel` of each
+      component, which the campaign's checkouts are on since 2026-11-12): a change lands
+      there once its review approves it, and each component's `devel` takes the working
+      branch only with the user's approval, as crustify `c2f21a0`'s model has it. The
+      former `unattended: the whole campaign` is retired with it.
     - `propose`: proposals and lessons only. `repair`: also fixes of defects. `evolve`: also
       improvements and new tools. Without `unattended`, you approve each change at the next
       module's end. Merging `devel` into `main`, and a new tool upstream, always need your
