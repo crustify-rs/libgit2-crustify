@@ -86,8 +86,15 @@ fn buf_debug_shows_length_capacity_and_escaped_bytes() {
 #[test]
 #[cfg_attr(miri, ignore = "calls C")]
 fn hash_ids_report_their_id_sizes() {
+    use libgit2::libgit2::deps::reftable::basics::{HASH_SIZE_SHA1, HASH_SIZE_SHA256};
+
     assert_eq!(HashId::Sha1.size(), 20);
     assert_eq!(HashId::Sha256.size(), 32);
+    // In the unit of the constants and of slices, so that an id is cut without a cast.
+    assert_eq!(HashId::Sha1.size(), HASH_SIZE_SHA1);
+    assert_eq!(HashId::Sha256.size(), HASH_SIZE_SHA256);
+    let id = [0xAB_u8; HASH_SIZE_SHA256];
+    assert_eq!(id[..HashId::Sha1.size()].len(), HASH_SIZE_SHA1);
 }
 
 #[test]

@@ -191,3 +191,37 @@ fn set_default_alloc_hands_reftable_back_to_libc() {
         },
     );
 }
+
+#[test]
+#[cfg_attr(miri, ignore = "spawns a child process")]
+fn set_alloc_ordered_by_a_channel_lets_other_threads_allocate() {
+    // The worker allocates only once a channel orders it after the call, as the contract
+    // asks; under `TSan` the hooks' write and the worker's reads do not race. A worker that
+    // merely waits instead races (crustify/reviews/foundational/libgit2/deps/reftable/
+    // basics.c/wave-169/batch-4/contracts/ffi_import/set-alloc-orders-hooks-by-time).
+    isolated(
+        concat!(
+            module_path!(),
+            "::set_alloc_ordered_by_a_channel_lets_other_threads_allocate"
+        ),
+        || {
+            let _runtime = runtime();
+            let (installed, wait) = std::sync::mpsc::channel::<()>();
+            let worker = std::thread::spawn(move || {
+                wait.recv().unwrap();
+                exercise();
+            });
+            // SAFETY: nothing has allocated through reftable; the worker uses the hooks
+            // only after receiving from the channel, which this thread sends on after the
+            // call; libgit2's runtime stays initialised while `Counted` is installed.
+            unsafe { set_alloc::<Counted>() };
+            installed.send(()).unwrap();
+            worker.join().unwrap();
+            assert!(
+                ALLOCATED.load(SeqCst) >= 7,
+                "the worker allocated through `Counted`"
+            );
+            assert!(RELEASED.load(SeqCst) >= ALLOCATED.load(SeqCst));
+        },
+    );
+}

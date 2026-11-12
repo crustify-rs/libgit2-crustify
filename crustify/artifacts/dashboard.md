@@ -56,17 +56,17 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip `<sha>`; `main` shipped at `<sha>`; crustify `4605156`, ffibox `7950244` (`main`), wavefront `db28284`
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `18387` non-test, `96721` tests; **C LoC** — `86833`
+- **Rust LoC** — `18388` non-test, `96780` tests; **C LoC** — `86833`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `716` | — | `28.61`% | `79.40`% |
-| UB unsafe tests | `93` | — | `19.36`% | `13.16`% |
-| Equiv tests | `505` | — | `43.44`% | `75.01`% |
-| Unit tests | `850` | — | `32.09`% | `87.82`% |
-| **Total tests** | **`2164`** | — | **`45.90`%** | **`98.92`%** |
+| UB safe tests | `716` | — | `28.60`% | `79.40`% |
+| UB unsafe tests | `94` | — | `19.38`% | `13.16`% |
+| Equiv tests | `506` | — | `43.48`% | `75.11`% |
+| Unit tests | `850` | — | `32.08`% | `87.82`% |
+| **Total tests** | **`2166`** | — | **`45.99`%** | **`98.92`%** |
 | total types | `258` | — | — | — |
 | ported types | `0` | `0.00`% | — | — |
 | wrapped types | `107` | `41.47`% | — | — |
@@ -488,8 +488,9 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/indexer.c` | `legacy-179` | `0` | wrap | review | `1` | — | `+35/-0` | — | `$3.18` | `8.05M` | `12m18s` | `$3.18` | — |
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | wrap | review | `1` | — | `+113/-14` | — | `$4.80` | `10.64M` | `27m50s` | `$4.80` | — |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | wrap | review | `2` | — | `+217/-15` | — | `$11.03` | `25.98M` | `47m17s` | `$5.51` | — |
+| `libgit2/deps/reftable/basics.c` | `169` | `4` | wrap | review | `43` | — | `+110/-16` | `45.99`% / `98.92`% | — | — | — | — | — |
 | **Σ first** |  |  |  |  | **`458`** | **`8779`** | **`+71250/-2597`** | **`45.89`% / `98.92`%** | **`$412.21`** | **`1262.84M`** | — | **`$0.99`** | **`$0.05`** |
-| **Σ review** |  |  |  |  | **`415`** | — | **`+7074/-1326`** | **`46.64`% / `99.55`%** | **`$339.40`** | **`631.25M`** | — | **`$0.82`** | — |
+| **Σ review** |  |  |  |  | **`458`** | — | **`+7184/-1342`** | **`45.99`% / `98.92`%** | **`$339.40`** | **`631.25M`** | — | **`$0.82`** | — |
 
 ### Batches: tests
 
@@ -564,8 +565,9 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/indexer.c` | `legacy-179` | `0` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) | `+1` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+2` (—/— pp) | `+0` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+1` (—/— pp) | `+1` (—/— pp) |
+| `libgit2/deps/reftable/basics.c` | `169` | `4` | review | `+0` (`-0.00`/`-0.01` pp) | `+1` (`+0.00`/`+0.00` pp) | `+1` (`+0.03`/`+0.10` pp) | `+0` (`+0.01`/`+0.01` pp) |
 | **Σ first** |  |  |  | **`+303` (`+10.39`/`+5.65` pp)** | **`+19` (`+3.32`/`-6.99` pp)** | **`+203` (`+9.05`/`+13.52` pp)** | **`+279` (`+12.03`/`-33.48` pp)** |
-| **Σ review** |  |  |  | **`+14` (`+0.34`/`-1.41` pp)** | **`+2` (`-0.92`/`+0.27` pp)** | **`+22` (`+0.09`/`-0.37` pp)** | **`+34` (`+2.44`/`+7.45` pp)** |
+| **Σ review** |  |  |  | **`+14` (`+0.34`/`-1.42` pp)** | **`+3` (`-0.92`/`+0.27` pp)** | **`+23` (`+0.12`/`-0.27` pp)** | **`+34` (`+2.45`/`+7.46` pp)** |
 
 ### Batches: safety audit
 
@@ -575,8 +577,9 @@ Deterministic `ffimap`; no model.
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | `libgit2/deps/reftable/basics.c` | `169` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+2` | `-0.11` pp | `+3` |
 | `libgit2/deps/reftable/basics.c` | `169` | `2` | wrap | first | `+0` | `+0` | `+9` | `+0` | `+1` | `+0.00` pp | `+1` | `+1` | `+0` | `+0` | `+0` | `+23` | `-0.10` pp | `+37` |
+| `libgit2/deps/reftable/basics.c` | `169` | `4` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.00` pp | `+0` |
 | **Σ first** |  |  |  |  | **`+0`** | **`+0`** | **`+9`** | **`+0`** | **`+1`** | **`+0.00` pp** | **`+1`** | **`+1`** | **`+0`** | **`+0`** | **`+0`** | **`+25`** | **`-0.21` pp** | **`+40`** |
-| **Σ review** |  |  |  |  | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`-0.00` pp** | **`+0`** |
 
 ### Batches — review: PoC + reports
 
@@ -613,7 +616,8 @@ Deterministic `ffimap`; no model.
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+2` | `2` |
 | — (`tests/ub_safe`) | `legacy-526` | `0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
-| **Σ** |  |  | **`+1`** | **`+5`** | **`+3`** | **`+1`** | **`+3`** | **`+5`** | **`+11`** | **`+51`** | **`80`** |
+| `libgit2/deps/reftable/basics.c` | `169` | `4` | `+0` | `+0` | `+0` | `+0` | `+1` | `+1` | `+1` | `+2` | `5` |
+| **Σ** |  |  | **`+1`** | **`+5`** | **`+3`** | **`+1`** | **`+4`** | **`+6`** | **`+12`** | **`+53`** | **`85`** |
 
 ## Notes
 
@@ -2217,3 +2221,54 @@ Gates on the batch's tree:
 Miri ran the three new tests alone. One passes there. The two marked `calls C` stop at
 `reftable_buf_init`. No test is expected to trigger BorrowSanitizer. The safety audit row's
 `+6` `Send/Sync` are the six impls.
+
+### `libgit2/deps/reftable/basics.c` wave 169 batch 4: review of batches 1 and 2's symbols
+
+This batch reviews the symbol route of batches 1 (`bbaafcd09`, 23 items) and 2 (`2032628fd`,
+20 items), for every objective, `fix` included. It files five findings. They are counted
+here as `+equiv` one, `+internal` one (`contracts/ffi_import`), `+conventions` one and
+`+misc` two (one `misc`, and one `ergonomics`, which has no column).
+
+- **contracts**: `set_alloc`'s contract asked only that no thread allocate "during the call".
+  A TSan reproducer that honours that, by allocating 500 ms later with nothing ordering it,
+  races with the hooks' write. The contract now asks for ordering by synchronisation.
+- **equiv**: `Error`'s `Display` claimed `reftable_error_str`'s text for every code. It gives
+  it for three. The doc now records the divergence.
+- **conventions** (not patched): `basics::Error` stands in, unanchored, for
+  `enm::reftable_error`, which wave 216 holds in `error.rs`. This is proposed as a plan
+  correction in `crustify/evolution/reftable-error-wrapped-ahead-of-basics/`.
+- **misc**: `ReftableArrayFree::grow` cited installed-mode packaging for its port. The doc
+  now cites `binding-symbols`' reason.
+- **ergonomics**: `HashId::size` returned `u32` beside `usize` constants. Batch 3 handed this
+  point over. It now returns `usize`.
+
+The host refused the report files, so the reports are in the review commit's message. The
+two reproducers are committed under the reviews dir. The 15 ports with `Replaces` are each
+allowed by their `binding-symbols` route: the short, configuration-independent `static
+inline` functions, the logic macros restated as functions, and the constant macros bindgen
+does not generate. None is rebound. `set_alloc` and `set_default_alloc` stay unsafe: the
+hooks' ordering and the families of live allocations cannot be expressed in types.
+
+Coverage follows batch 1's method: C over the coverage variant's static archive alone,
+86,833 lines, with no source filter, and Rust over `src/`. The row's cells and Coverage stats
+were measured on the rebased tree, over batch 3. The per-suite `pp` changes compare the
+batch's tree with its base, `bbaafcd09`, both measured in this session (base `45.92`% /
+`98.92`%). Over the worklist, the tests run `99.50`% of `basics.c`'s 200 lines and `98.75`%
+of `basics.rs`' 481. The C lines left are `parse_names`' `next = end` and `hash_size`'s
+`abort()`, which a NUL-terminated input and `HashId` make unreachable. The Rust lines left
+are the formatters' `?` returns and an `unreachable!`. `basics.h`'s overflow and
+growth-failure branches in other TUs' macro expansions are unreachable through the module's
+safe API, which refuses those sizes before C.
+
+Gates, on the batch's tree and again after the rebase over batch 3 (`418ca278b`), which
+touched the same file:
+
+- fmt and clippy over the workspace;
+- the module's tests in every suite, plain and under ASan+UBSan;
+- TSan over its `ub_safe` and `ub_unsafe` tests; and
+- its doctests.
+
+Miri ran the two new tests alone. The equivalence test stops at `reftable_error_str`, and is
+marked `calls C`. The `ub_unsafe` test stops at the child process it spawns, and is marked so.
+No test is expected to trigger BorrowSanitizer. The safety audit row is a scan of the landed
+tree against batch 3's scan of the tip.

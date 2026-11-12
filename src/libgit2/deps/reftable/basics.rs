@@ -71,7 +71,8 @@
 //!   releases ([`Names`]).
 //!
 //! [`set_alloc`] and [`set_default_alloc`] replace the hooks: `unsafe`, since replacing them
-//! while another thread allocates through them races, and storage made under one family
+//! races with any use of them on another thread that no synchronisation orders before or
+//! after the call, and storage made under one family
 //! and released under another is freed by the wrong allocator.
 //!
 //! # Errors
@@ -531,7 +532,10 @@ impl Error {
 }
 
 impl fmt::Display for Error {
-    /// The text `reftable_error_str` gives the code.
+    /// The text `reftable_error_str` gives [`Format`](Self::Format), [`Api`](Self::Api) and
+    /// [`OutOfMemory`](Self::OutOfMemory); any other code is printed by its number, as
+    /// `reftable error code <code>`, where `reftable_error_str` names it or prints `unknown
+    /// error code <code>`.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Format => f.write_str("corrupt reftable file"),
@@ -1255,10 +1259,10 @@ mod ffi_import {
         /// already that long is left alone, and a shorter one moves into an allocation of
         /// `max(2 * len + 1, min_len)` elements, its elements keeping their bytes.
         ///
-        /// Replaces `fn::reftable_alloc_grow`, a `static inline` function of `basics.h`,
-        /// which calls `reftable_realloc` as [`resize`](Self::resize) does: the wrapper
-        /// bindgen generates for it includes internal headers, which a build from the
-        /// installed headers does not have.
+        /// Replaces `fn::reftable_alloc_grow`, a short `static inline` function whose whole
+        /// body is in `basics.h` and depends on no build configuration, ported rather than
+        /// called through a generated wrapper, as the module documentation describes. It
+        /// calls `reftable_realloc` as [`resize`](Self::resize) does.
         ///
         /// # Errors
         ///
@@ -1517,8 +1521,10 @@ mod ffi_import {
     ///
     /// # Safety
     ///
-    /// - No other thread may allocate, resize or release reftable memory during the call: the hooks
-    ///   are statics C writes without synchronisation.
+    /// - Every allocation, resize or release of reftable memory on another thread must be ordered
+    ///   before or after the call by synchronisation, such as a join, a lock or a channel, and not
+    ///   merely run at another time: the hooks are statics C writes and reads without
+    ///   synchronisation, so an unordered read races with the call's write.
     /// - Every allocation of reftable's allocator that is live when the hooks change — a
     ///   [`ReftableBox`], [`ReftableVec`], [`ReftableStr`], [`Names`] or allocated [`Buf`], or
     ///   reftable memory C holds — must be released or resized only by the family that made it:
@@ -1529,7 +1535,8 @@ mod ffi_import {
     #[doc(alias = "reftable_set_alloc")]
     pub unsafe fn set_alloc<A: Alloc>() {
         // SAFETY: the trampolines meet the hooks' contracts, as `A` meets `Alloc`'s; the
-        // caller excludes concurrent use of the hooks and allocations of another family.
+        // caller orders every other thread's use of the hooks before or after this write,
+        // and excludes allocations of another family.
         unsafe {
             ffi::reftable_set_alloc(
                 Some(malloc_with::<A>),
@@ -1548,8 +1555,9 @@ mod ffi_import {
     /// As [`set_alloc`], with libc's allocator as the new family.
     #[doc(alias = "reftable_set_alloc")]
     pub unsafe fn set_default_alloc() {
-        // SAFETY: NULL hooks select libc's allocator; the caller excludes concurrent use of
-        // the hooks and allocations of another family.
+        // SAFETY: NULL hooks select libc's allocator; the caller orders every other thread's
+        // use of the hooks before or after this write, and excludes allocations of another
+        // family.
         unsafe { ffi::reftable_set_alloc(None, None, None) }
     }
 
@@ -1597,15 +1605,19 @@ mod ffi_import {
 
     impl HashId {
         /// The size of the object ids the hash function produces, in bytes: 20 for SHA-1, 32
-        /// for SHA-256. reftable reads its unset id, `0`, which no variant names, as SHA-1.
+        /// for SHA-256, as [`HASH_SIZE_SHA1`](super::HASH_SIZE_SHA1) and
+        /// [`HASH_SIZE_SHA256`](super::HASH_SIZE_SHA256) give them. reftable reads its unset
+        /// id, `0`, which no variant names, as SHA-1.
         ///
         /// Wraps `fn::hash_size`
         #[doc(alias = "hash_size")]
         #[must_use]
-        pub fn size(self) -> u32 {
+        pub fn size(self) -> usize {
             // SAFETY: `hash_size` reads its argument alone, and every `HashId` is a value
             // its switch names, so it never reaches its `abort()`.
-            unsafe { ffi::hash_size(self.raw()) }
+            let size = unsafe { ffi::hash_size(self.raw()) };
+            // 20 or 32: a `u32` that fits a `usize` on every target the crate builds for.
+            size as usize
         }
     }
 

@@ -400,11 +400,13 @@ fn binsearch_matches_c() {
 fn hash_size_matches_c() {
     for id in [HashId::Sha1, HashId::Sha256] {
         // SAFETY: a value `hash_size`'s switch names.
-        assert_eq!(id.size(), unsafe { ffi::hash_size(id.raw()) });
+        let c = unsafe { ffi::hash_size(id.raw()) };
+        assert_eq!(id.size(), usize::try_from(c).unwrap());
     }
     // reftable's unset id reads as SHA-1, which `HashId` leaves to its caller.
     // SAFETY: `hash_size` takes 0 too.
-    assert_eq!(unsafe { ffi::hash_size(0) }, HashId::Sha1.size());
+    let unset = unsafe { ffi::hash_size(0) };
+    assert_eq!(usize::try_from(unset).unwrap(), HashId::Sha1.size());
     assert_eq!(HashId::from_raw(0), None);
 }
 
@@ -591,4 +593,43 @@ fn grow_or_clear_keeps_elements_as_reftable_alloc_grow_does() {
     // SAFETY: as above, for element 1.
     let second = unsafe { run[1].assume_init() };
     assert_eq!((first, second), (0xABCD, 0x1234));
+}
+
+unsafe extern "C" {
+    /// `deps/reftable/error.c`'s, which wave 216 binds: declared here until then, since the
+    /// variant's static archive defines it. Takes any code; returns a static string, or one in
+    /// a static buffer that the next call overwrites.
+    fn reftable_error_str(err: c_int) -> *const c_char;
+}
+
+/// `reftable_error_str`'s text for `code`, copied before the next call.
+fn c_error_str(code: c_int) -> String {
+    // SAFETY: any code is accepted.
+    let raw = unsafe { reftable_error_str(code) };
+    // SAFETY: a NUL-terminated string, static or in C's static buffer, read before the next
+    // call.
+    let text = unsafe { CStr::from_ptr(raw) };
+    text.to_str().unwrap().to_owned()
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn error_display_is_reftable_error_str_for_the_named_codes() {
+    // The codes `Error` names print as C names them.
+    for error in [Error::Format, Error::Api, Error::OutOfMemory] {
+        assert_eq!(error.to_string(), c_error_str(error.code()), "{error:?}");
+    }
+    // Every other code prints by its number, where C names it or calls it unknown: the
+    // divergence `Display` documents.
+    for code in (-14..=-1).filter(|c| {
+        !matches!(
+            Error::from_code(*c),
+            Error::Format | Error::Api | Error::OutOfMemory
+        )
+    }) {
+        let error = Error::from_code(code);
+        assert_eq!(error, Error::Other(code));
+        assert_eq!(error.to_string(), format!("reftable error code {code}"));
+        assert_ne!(error.to_string(), c_error_str(code));
+    }
 }
