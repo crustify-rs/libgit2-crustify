@@ -1,0 +1,100 @@
+=================================================================
+==2175986==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x74a2cc44db70 at pc 0x56c2017806f6 bp 0x7ffc9e4e7aa0 sp 0x7ffc9e4e7a98
+WRITE of size 8 at 0x74a2cc44db70 thread T0
+    #0 0x56c2017806f5 in debugalloc__realloc /target/libgit2-bindings/c/src/util/allocators/debugalloc.c:53:2
+    #1 0x56c20178207a in git__realloc /target/libgit2-bindings/c/src/util/alloc.h:29:12
+    #2 0x56c20178207a in git_str_try_grow /target/libgit2-bindings/c/src/util/str.c:86:12
+    #3 0x56c201781dd0 in git_str_grow /target/libgit2-bindings/c/src/util/str.c:110:9
+    #4 0x56c201781dd0 in git_str_init /target/libgit2-bindings/c/src/util/str.c:31:2
+    #5 0x56c2018a1d9c in read_loose_packlike /target/libgit2-bindings/c/src/libgit2/odb_loose.c:259:3
+    #6 0x56c2018a1d9c in read_loose /target/libgit2-bindings/c/src/libgit2/odb_loose.c:374:11
+    #7 0x56c20189f4d3 in loose_backend__read /target/libgit2-bindings/c/src/libgit2/odb_loose.c:633:22
+    #8 0x56c20189a861 in odb_read_1 /target/libgit2-bindings/c/src/libgit2/odb.c:1108:12
+    #9 0x56c20189a40e in git_odb_read /target/libgit2-bindings/c/src/libgit2/odb.c:1170:10
+    #10 0x56c201612d97 in <libgit2::libgit2::src::libgit2::odb::OdbRef>::read src/libgit2/src/libgit2/odb.rs:1425:27
+    #11 0x56c20160ab47 in debug_size_obligation_unenforceable::main crustify/reviews/foundational/libgit2/src/util/allocators/debugalloc.c/wave-183/batch-1/contracts/ffi_import/debug-size-obligation-unenforceable/src/main.rs:47:29
+    #12 0x56c20160cc7d in <fn() as core::ops::function::FnOnce<()>>::call_once /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ops/function.rs:250:5
+    #13 0x56c20160b5c0 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/sys/backtrace.rs:166:18
+    #14 0x56c2016093a3 in std::rt::lang_start::<()>::{closure#0} /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/rt.rs:206:18
+    #15 0x56c201a38d67 in <&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe as core::ops::function::FnOnce<()>>::call_once /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/core/src/ops/function.rs:287:21
+    #16 0x56c201a38d67 in std::panicking::catch_unwind::do_call::<&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe, i32> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panicking.rs:573:43
+    #17 0x56c201a38d67 in std::panicking::catch_unwind::<i32, &dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panicking.rs:541:19
+    #18 0x56c201a38d67 in std::panic::catch_unwind::<&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe, i32> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panic.rs:359:14
+    #19 0x56c201a38d67 in std::rt::lang_start_internal::{closure#0} /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/rt.rs:175:24
+    #20 0x56c201a38d67 in std::panicking::catch_unwind::do_call::<std::rt::lang_start_internal::{closure#0}, isize> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panicking.rs:573:43
+    #21 0x56c201a38d67 in std::panicking::catch_unwind::<isize, std::rt::lang_start_internal::{closure#0}> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panicking.rs:541:19
+    #22 0x56c201a38d67 in std::panic::catch_unwind::<std::rt::lang_start_internal::{closure#0}, isize> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panic.rs:359:14
+    #23 0x56c201a38d67 in std::rt::lang_start_internal /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/rt.rs:171:5
+    #24 0x56c20160930f in std::rt::lang_start::<()> /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/rt.rs:205:5
+    #25 0x56c20160af40 in main (crustify/tmp/repro-target/x86_64-unknown-linux-gnu/debug/debug-size-obligation-unenforceable+0x320f40) (BuildId: be6160c1a85a8da6fea2ae77d045484d71357320)
+    #26 0x7882cd1481c9 in __libc_start_call_main csu/../sysdeps/nptl/libc_start_call_main.h:58:16
+    #27 0x7882cd14828a in __libc_start_main csu/../csu/libc-start.c:360:3
+    #28 0x56c20153de14 in _start (crustify/tmp/repro-target/x86_64-unknown-linux-gnu/debug/debug-size-obligation-unenforceable+0x253e14) (BuildId: be6160c1a85a8da6fea2ae77d045484d71357320)
+
+0x74a2cc44db71 is located 0 bytes after 1-byte region [0x74a2cc44db70,0x74a2cc44db71)
+allocated by thread T0 here:
+    #0 0x56c2015d5e94 in malloc (crustify/tmp/repro-target/x86_64-unknown-linux-gnu/debug/debug-size-obligation-unenforceable+0x2ebe94) (BuildId: be6160c1a85a8da6fea2ae77d045484d71357320)
+    #1 0x56c2017805d8 in debugalloc__realloc /target/libgit2-bindings/c/src/util/allocators/debugalloc.c:42:16
+    #2 0x56c20178207a in git__realloc /target/libgit2-bindings/c/src/util/alloc.h:29:12
+    #3 0x56c20178207a in git_str_try_grow /target/libgit2-bindings/c/src/util/str.c:86:12
+    #4 0x56c201781dd0 in git_str_grow /target/libgit2-bindings/c/src/util/str.c:110:9
+    #5 0x56c201781dd0 in git_str_init /target/libgit2-bindings/c/src/util/str.c:31:2
+    #6 0x56c2018a1d9c in read_loose_packlike /target/libgit2-bindings/c/src/libgit2/odb_loose.c:259:3
+    #7 0x56c2018a1d9c in read_loose /target/libgit2-bindings/c/src/libgit2/odb_loose.c:374:11
+    #8 0x56c20189f4d3 in loose_backend__read /target/libgit2-bindings/c/src/libgit2/odb_loose.c:633:22
+    #9 0x56c20189a861 in odb_read_1 /target/libgit2-bindings/c/src/libgit2/odb.c:1108:12
+    #10 0x56c20189a40e in git_odb_read /target/libgit2-bindings/c/src/libgit2/odb.c:1170:10
+    #11 0x56c201612d97 in <libgit2::libgit2::src::libgit2::odb::OdbRef>::read src/libgit2/src/libgit2/odb.rs:1425:27
+    #12 0x56c20160ab47 in debug_size_obligation_unenforceable::main crustify/reviews/foundational/libgit2/src/util/allocators/debugalloc.c/wave-183/batch-1/contracts/ffi_import/debug-size-obligation-unenforceable/src/main.rs:47:29
+    #13 0x56c20160cc7d in <fn() as core::ops::function::FnOnce<()>>::call_once /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ops/function.rs:250:5
+    #14 0x56c20160b5c0 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/sys/backtrace.rs:166:18
+    #15 0x56c2016093a3 in std::rt::lang_start::<()>::{closure#0} /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/rt.rs:206:18
+    #16 0x56c201a38d67 in <&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe as core::ops::function::FnOnce<()>>::call_once /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/core/src/ops/function.rs:287:21
+    #17 0x56c201a38d67 in std::panicking::catch_unwind::do_call::<&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe, i32> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panicking.rs:573:43
+    #18 0x56c201a38d67 in std::panicking::catch_unwind::<i32, &dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panicking.rs:541:19
+    #19 0x56c201a38d67 in std::panic::catch_unwind::<&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe, i32> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panic.rs:359:14
+    #20 0x56c201a38d67 in std::rt::lang_start_internal::{closure#0} /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/rt.rs:175:24
+    #21 0x56c201a38d67 in std::panicking::catch_unwind::do_call::<std::rt::lang_start_internal::{closure#0}, isize> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panicking.rs:573:43
+    #22 0x56c201a38d67 in std::panicking::catch_unwind::<isize, std::rt::lang_start_internal::{closure#0}> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panicking.rs:541:19
+    #23 0x56c201a38d67 in std::panic::catch_unwind::<std::rt::lang_start_internal::{closure#0}, isize> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panic.rs:359:14
+    #24 0x56c201a38d67 in std::rt::lang_start_internal /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/rt.rs:171:5
+    #25 0x56c20160930f in std::rt::lang_start::<()> /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/rt.rs:205:5
+    #26 0x56c20160af40 in main (crustify/tmp/repro-target/x86_64-unknown-linux-gnu/debug/debug-size-obligation-unenforceable+0x320f40) (BuildId: be6160c1a85a8da6fea2ae77d045484d71357320)
+    #27 0x7882cd1481c9 in __libc_start_call_main csu/../sysdeps/nptl/libc_start_call_main.h:58:16
+    #28 0x7882cd14828a in __libc_start_main csu/../csu/libc-start.c:360:3
+    #29 0x56c20153de14 in _start (crustify/tmp/repro-target/x86_64-unknown-linux-gnu/debug/debug-size-obligation-unenforceable+0x253e14) (BuildId: be6160c1a85a8da6fea2ae77d045484d71357320)
+
+SUMMARY: AddressSanitizer: heap-buffer-overflow /target/libgit2-bindings/c/src/util/allocators/debugalloc.c:53:2 in debugalloc__realloc
+Shadow bytes around the buggy address:
+  0x74a2cc44d880: fa fa 00 00 fa fa 00 00 fa fa 00 00 fa fa 00 00
+  0x74a2cc44d900: fa fa 00 00 fa fa 00 00 fa fa 00 00 fa fa 00 00
+  0x74a2cc44d980: fa fa 00 00 fa fa 00 00 fa fa 00 00 fa fa 00 00
+  0x74a2cc44da00: fa fa 00 00 fa fa 00 00 fa fa 00 00 fa fa 00 00
+  0x74a2cc44da80: fa fa 00 00 fa fa 00 00 fa fa 00 00 fa fa 00 00
+=>0x74a2cc44db00: fa fa 00 00 fa fa 00 00 fa fa 00 03 fa fa[fa]fa
+  0x74a2cc44db80: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x74a2cc44dc00: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x74a2cc44dc80: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x74a2cc44dd00: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x74a2cc44dd80: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+==2175986==ABORTING
+exit 134
