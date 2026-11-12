@@ -112786,7 +112786,7 @@
       "foundational": true,
       "layer": 0,
       "sublayer": 0,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [],
         "cut": []
@@ -114211,10 +114211,13 @@
           "module": "deps/reftable/basics.c",
           "foundational": true,
           "kind": "review",
-          "status": "wip",
+          "status": "done",
           "reviews": [],
           "module_pass": true,
-          "commits": []
+          "commits": [
+            "7db163587df7f5d320844352dc1be686ad7d1e9a",
+            "81dede2b17b9d2b6d8ab21ee99ff4009bbd167cb"
+          ]
         }
       ]
     },
@@ -114225,7 +114228,7 @@
       "foundational": true,
       "layer": 0,
       "sublayer": 1,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [
           169
@@ -114507,7 +114510,7 @@
       "foundational": true,
       "layer": 0,
       "sublayer": 2,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [
           169,
@@ -114676,7 +114679,7 @@
       "foundational": true,
       "layer": 0,
       "sublayer": 3,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [
           169,
@@ -114890,7 +114893,7 @@
       "foundational": true,
       "layer": 0,
       "sublayer": 4,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [
           169,
@@ -114950,7 +114953,7 @@
       "foundational": true,
       "layer": 0,
       "sublayer": 5,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [
           169,
@@ -115042,7 +115045,7 @@
       "foundational": true,
       "layer": 0,
       "sublayer": 6,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [
           169,
@@ -115325,7 +115328,7 @@
       "foundational": true,
       "layer": 1,
       "sublayer": 1,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           12
@@ -115666,7 +115669,115 @@
         }
       ],
       "packed_with": null,
-      "batches": []
+      "batches": [
+        {
+          "index": 0,
+          "link_unit": "libgit2",
+          "module": "src/util/alloc.c",
+          "foundational": true,
+          "kind": "wrap",
+          "status": "wip",
+          "items": [
+            {
+              "name": "void (*)(void *)",
+              "defined_in": "include/git2/sys/alloc.h",
+              "kind": "function_pointer",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "void * (*)(size_t, const char *, int)",
+              "defined_in": "include/git2/sys/alloc.h",
+              "kind": "function_pointer",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "void * (*)(void *, size_t, const char *, int)",
+              "defined_in": "include/git2/sys/alloc.h",
+              "kind": "function_pointer",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "xdl_calloc",
+              "defined_in": "deps/xdiff/git-xdiff.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "xdl_free",
+              "defined_in": "deps/xdiff/git-xdiff.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "xdl_malloc",
+              "defined_in": "deps/xdiff/git-xdiff.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "xdl_realloc",
+              "defined_in": "deps/xdiff/git-xdiff.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "git__allocator",
+              "defined_in": "src/util/alloc.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "git__realloc",
+              "defined_in": "src/util/alloc.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "git__reallocarray",
+              "defined_in": "src/util/alloc.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "git_allocator_global_init",
+              "defined_in": "src/util/alloc.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "git_allocator_setup",
+              "defined_in": "src/util/alloc.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            }
+          ],
+          "commits": []
+        }
+      ]
     },
     {
       "index": 178,
@@ -115675,7 +115786,7 @@
       "foundational": true,
       "layer": 1,
       "sublayer": 2,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           12,
@@ -115729,7 +115840,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 177,
       "batches": []
     },
     {
@@ -115739,7 +115850,7 @@
       "foundational": true,
       "layer": 1,
       "sublayer": 3,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           12,
@@ -115791,7 +115902,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 177,
       "batches": []
     },
     {
@@ -115801,7 +115912,7 @@
       "foundational": true,
       "layer": 1,
       "sublayer": 4,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           12,
@@ -115986,7 +116097,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 177,
       "batches": []
     },
     {

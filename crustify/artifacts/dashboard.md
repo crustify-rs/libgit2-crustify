@@ -166,7 +166,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 
 | module | wave | batch | objective | pass | types | fields | +LoC | cov (C/Rust) | $ | tokens | wall | $/type | $/field |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `libgit2/deps/reftable/basics.c` | `169` | `0` | wrap | first | `2` | `3` | `+949/-6` | `45.90`% / `98.91`% | — | — | — | — | — |
+| `libgit2/deps/reftable/basics.c` | `169` | `0` | wrap | first | `2` | `3` | `+949/-6` | `45.90`% / `98.91`% | `$15.76` | `54.82M` | `48m51s` | `$7.88` | `$5.25` |
 | `libgit2/src/util/alloc.c` | `12` | `0` | wrap | first | `2` | `5` | `+1934/-2` | `1.30`% / `98.16`% | `$7.55` | `19.09M` | `33m43s` | `$3.77` | `$1.51` |
 | `libgit2/util` | `legacy-4` | `1` | wrap | first | `2` | `0` | `+849/-26` | `1.35`% / `98.34`% | `$5.25` | `12.24M` | `38m51s` | `$2.62` | — |
 | `libgit2/src/libgit2/oid.c` | `5` | `0` | wrap | first | `2` | `2` | `+1514/-4` | `1.73`% / `99.82`% | `$9.89` | `28.93M` | `49m08s` | `$4.95` | `$4.95` |
@@ -257,9 +257,9 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/diff_parse.c` | `legacy-229` | `0` | wrap | review | `1` | `2` | `+6/-3` | — | `$4.69` | `10.34M` | `36m13s` | `$4.69` | `$2.34` |
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `0` | wrap | review | `1` | `3` | `+103/-5` | — | `$3.73` | `10.13M` | `16m05s` | `$3.73` | `$1.24` |
 | `libgit2/src/libgit2/checkout.c` | `legacy-335` | `0` | wrap | review | `1` | `20` | `+106/-17` | `45.92`% / `98.92`% | `$7.76` | `16.62M` | `33m19s` | `$7.76` | `$0.39` |
-| `libgit2/deps/reftable/basics.c` | `169` | `3` | wrap | review | `2` | `3` | `+134/-4` | `45.90`% / `98.92`% | — | — | — | — | — |
-| **Σ first** |  |  |  |  | **`107`** | **`215`** | **`+98491/-2532`** | **`45.90`% / `98.91`%** | **`$582.38`** | **`1417.09M`** | — | **`$5.55`** | **`$2.75`** |
-| **Σ review** |  |  |  |  | **`107`** | **`215`** | **`+9726/-2089`** | **`45.90`% / `98.92`%** | **`$417.64`** | **`685.69M`** | — | **`$3.98`** | **`$1.97`** |
+| `libgit2/deps/reftable/basics.c` | `169` | `3` | wrap | review | `2` | `3` | `+134/-4` | `45.90`% / `98.92`% | `$9.26` | `30.25M` | `24m42s` | `$4.63` | `$3.09` |
+| **Σ first** |  |  |  |  | **`107`** | **`215`** | **`+98491/-2532`** | **`45.90`% / `98.91`%** | **`$598.14`** | **`1471.91M`** | — | **`$5.59`** | **`$2.78`** |
+| **Σ review** |  |  |  |  | **`107`** | **`215`** | **`+9726/-2089`** | **`45.90`% / `98.92`%** | **`$426.90`** | **`715.94M`** | — | **`$3.99`** | **`$1.99`** |
 
 ### Batches: tests
 
@@ -420,8 +420,8 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 
 | module | wave | batch | objective | pass | symbols | loc | +LoC | cov (C/Rust) | $ | tokens | wall | $/symbol | $/loc |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `libgit2/deps/reftable/basics.c` | `169` | `1` | wrap | first | `23` | `77` | `+1020/-19` | `45.89`% / `98.92`% | — | — | — | — | — |
-| `libgit2/deps/reftable/basics.c` | `169` | `2` | wrap | first | `20` | `224` | `+2483/-72` | `59.03`% / `98.92`% | — | — | — | — | — |
+| `libgit2/deps/reftable/basics.c` | `169` | `1` | wrap | first | `23` | `77` | `+1020/-19` | `45.89`% / `98.92`% | `$21.51` | `67.27M` | `1h40m19s` | `$0.94` | `$0.28` |
+| `libgit2/deps/reftable/basics.c` | `169` | `2` | wrap | first | `20` | `224` | `+2483/-72` | `59.03`% / `98.92`% | `$22.88` | `67.79M` | `1h18m31s` | `$1.14` | `$0.10` |
 | `libgit2/raw-lifetime-void` | `legacy-0` | `0` | wrap | first | `2` | — | `+1245/-1` | — | `$8.28` | `17.79M` | `51m29s` | `$4.14` | — |
 | `libgit2/raw-lifetime-string` | `legacy-2` | `0` | wrap | first | `2` | — | `+1362/-14` | — | `$5.49` | `12.39M` | `23m12s` | `$2.75` | — |
 | `libgit2/src/util/alloc.c` | `12` | `1` | wrap | first | `7` | `56` | `+1947/-677` | `45.91`% / `98.92`% | `$18.92` | `66.48M` | `54m55s` | `$2.70` | `$0.34` |
@@ -494,11 +494,11 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/indexer.c` | `legacy-179` | `0` | wrap | review | `1` | — | `+35/-0` | — | `$3.18` | `8.05M` | `12m18s` | `$3.18` | — |
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | wrap | review | `1` | — | `+113/-14` | — | `$4.80` | `10.64M` | `27m50s` | `$4.80` | — |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | wrap | review | `2` | — | `+217/-15` | — | `$11.03` | `25.98M` | `47m17s` | `$5.51` | — |
-| `libgit2/deps/reftable/basics.c` | `169` | `4` | wrap | review | `43` | — | `+110/-16` | `45.99`% / `98.92`% | — | — | — | — | — |
-| `libgit2/deps/reftable/basics.c` | `169` | `5` | wrap | review | `43` | — | `+298/-23` | `45.93`% / `98.90`% | — | — | — | — | — |
+| `libgit2/deps/reftable/basics.c` | `169` | `4` | wrap | review | `43` | — | `+110/-16` | `45.99`% / `98.92`% | `$13.42` | `46.17M` | `40m4s` | `$0.31` | — |
+| `libgit2/deps/reftable/basics.c` | `169` | `5` | wrap | review | `43` | — | `+298/-23` | `45.93`% / `98.90`% | `$30.16` | `83.09M` | `1h40m2s` | `$0.70` | — |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | wrap | review | `3` | — | `+11/-7` | `45.88`% / `98.92`% | `$5.87` | `16.61M` | `16m58s` | `$1.96` | — |
-| **Σ first** |  |  |  |  | **`478`** | **`8927`** | **`+75141/-3577`** | **`45.89`% / `98.92`%** | **`$468.89`** | **`1452.50M`** | — | **`$1.08`** | **`$0.05`** |
-| **Σ review** |  |  |  |  | **`511`** | — | **`+7550/-1392`** | **`45.93`% / `98.90`%** | **`$360.45`** | **`688.82M`** | — | **`$0.85`** | — |
+| **Σ first** |  |  |  |  | **`478`** | **`8927`** | **`+75141/-3577`** | **`45.89`% / `98.92`%** | **`$513.28`** | **`1587.56M`** | — | **`$1.07`** | **`$0.06`** |
+| **Σ review** |  |  |  |  | **`511`** | — | **`+7550/-1392`** | **`45.93`% / `98.90`%** | **`$404.03`** | **`818.08M`** | — | **`$0.79`** | — |
 
 ### Batches: tests
 
@@ -2637,3 +2637,13 @@ Gates on the tip and again on the landed tree, from snapshots of each:
 The safety audit row is a scan of the landed tree against a scan of the tip. ffimap's
 checkout moved from `405e053` to `9aa2ef1` between them, which adds only its `api`
 subcommand, so the counters compare. The landed tree's scan is also the wave's record.
+
+### `libgit2/deps/reftable/basics.c` integration (2026-11-12)
+
+Additive conflicts only (allowlist, `tests/unit_pub/main.rs`, a proposal's evidence, the
+dashboard), merged by a binder (`crustify/artifacts/foundational/libgit2/deps/reftable/basics.c/integration/run-1`,
+agent `a0aa6123c73b89c48`, `$4.47`) as `d8ae0c8f6`: the workspace passed on `plain` and
+`asan-ubsan`, Miri and TSan where the module meets `util::alloc`, and `ffimap api` found no
+item changed or removed (819 kept from the module's tip, 780 from the working branch's). The
+module pass's rows (wave 169 batch 5) stay in the Symbols tables beside the `Module passes`
+section (proposal `dashboard-lacks-module-passes`).
