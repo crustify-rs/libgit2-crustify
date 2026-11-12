@@ -46,6 +46,30 @@ added `#include "basics.h"` to `libgit2-sys/bindgen/wrapper.h`.
   3. The `bindgen` feature outside campaign mode regenerates from an install's headers,
      so it cannot regenerate once `wrapper.h` names an internal header.
 
+### Further evidence: the first internal `static inline` function (wave-12/batch-2)
+
+`foundational/libgit2/src/util/alloc.c/wave-12/batch-2/run-1` allowlisted `git__malloc`
+and `git__free`, `static inline` in `src/util/alloc.h`, with `#include "alloc.h"` in
+`wrapper.h`, and the five functions `alloc.c` defines. Campaign mode generated
+`libgit2-sys/src/static_fns.c` (`git__malloc__extern`, `git__free__extern`), compiled it
+with the variant's flags and include dirs, and the strategies of
+`src/libgit2/src/util/alloc.rs` call all seven on `plain` and `asan-ubsan`. Consequence 2
+above then happened as predicted: the packaging gate, `cargo package -p libgit2-sys
+--offline` with `CRUSTIFY_BUILD_VARIANT=` and `LIBGIT2_DIR` set to a `cmake --install` of
+the `plain` build, fails to verify the tarball, since `static_fns.c` includes `wrapper.h`,
+whose `#include "alloc.h"` the installed headers cannot satisfy:
+
+```text
+bindgen/wrapper.h:31:10: fatal error: 'alloc.h' file not found
+```
+
+A fourth consequence follows, which the change above does not cover: once the safe crate
+calls an internal function, as `alloc.rs` now calls `git__calloc`, system mode cannot link
+it either, whatever the wrappers do, since an installed `libgit2.so` exports none of them.
+The shipped build then needs the static archive, as bundled mode would build it, or the
+internal functions the safe crate calls exported, or system mode gated off once a safe
+wrapper reaches an internal symbol, as it is gated off once a module is integrated.
+
 ## Destination
 
 The spec: `bindgen`, Generation and Build modes, which the binder does not own.

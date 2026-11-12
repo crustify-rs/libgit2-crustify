@@ -140,7 +140,7 @@ use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::fmt;
 use core::hash::{Hash, Hasher};
 use core::marker::PhantomData;
-use core::mem::{ManuallyDrop, MaybeUninit, align_of, size_of};
+use core::mem::{MaybeUninit, align_of, size_of};
 use core::num::NonZero;
 use core::ops::{BitOr, BitOrAssign, ControlFlow};
 use core::ptr::{self, NonNull};
@@ -2454,11 +2454,10 @@ impl OdbDataStrVec {
         }
     }
 
-    /// The storage, its strings no longer dropped with the run.
+    /// The storage, which owns the strings: an `OdbDataVec` drops its elements, then
+    /// frees the array.
     fn into_storage(self) -> OdbDataVec<OdbDataStr> {
-        let this = ManuallyDrop::new(self);
-        // SAFETY: the storage is read out exactly once and `self` is never dropped.
-        unsafe { ptr::read(&raw const this.0) }
+        self.0
     }
 
     /// Copies of every item's string in `git_strarray_copy`'s order: the array first,

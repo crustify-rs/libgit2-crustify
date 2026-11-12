@@ -14444,6 +14444,37 @@ const _: () = {
     ][::std::mem::offset_of!(git_transport, free) - 104usize];
 };
 unsafe extern "C" {
+    #[link_name = "git__malloc__extern"]
+    pub fn git__malloc(len: usize) -> *mut ::std::os::raw::c_void;
+}
+unsafe extern "C" {
+    #[link_name = "git__free__extern"]
+    pub fn git__free(ptr: *mut ::std::os::raw::c_void);
+}
+unsafe extern "C" {
+    pub fn git__calloc(nelem: usize, elsize: usize) -> *mut ::std::os::raw::c_void;
+}
+unsafe extern "C" {
+    pub fn git__mallocarray(nelem: usize, elsize: usize) -> *mut ::std::os::raw::c_void;
+}
+unsafe extern "C" {
+    pub fn git__strdup(
+        str_: *const ::std::os::raw::c_char,
+    ) -> *mut ::std::os::raw::c_char;
+}
+unsafe extern "C" {
+    pub fn git__strndup(
+        str_: *const ::std::os::raw::c_char,
+        n: usize,
+    ) -> *mut ::std::os::raw::c_char;
+}
+unsafe extern "C" {
+    pub fn git__substrdup(
+        str_: *const ::std::os::raw::c_char,
+        n: usize,
+    ) -> *mut ::std::os::raw::c_char;
+}
+unsafe extern "C" {
     pub fn git_failalloc_malloc(
         len: usize,
         file: *const ::std::os::raw::c_char,
