@@ -1,0 +1,10 @@
+[package]
+name = "debug-size-obligation-unenforceable"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+libgit2 = { path = "../../../../../../../../../../../../.." }

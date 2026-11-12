@@ -59,6 +59,10 @@ path = "tests/ub_unsafe/main.rs"
 name = "equiv"
 path = "tests/equiv/main.rs"
 
+[[test]]
+name = "unit_pub"
+path = "tests/unit_pub/main.rs"
+
 [workspace]
 resolver = "3"
 members = [".", "libgit2-sys"]

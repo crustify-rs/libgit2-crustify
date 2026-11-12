@@ -12,10 +12,10 @@
 //! copied freely, and never released.
 //!
 //! The header's init routines are not this module's: `git_stdalloc_init_allocator` is
-//! `src/util/allocators/stdalloc.c`'s, wrapped with that module, and
-//! `git_win32_crtdbg_init_allocator` is never defined on this platform. A value is built
-//! here from an [`Alloc`] implementation ([`Allocator::new`]), whose `extern "C"`
-//! trampolines adapt libgit2's calls to it, or from three C functions
+//! `src/util/allocators/stdalloc.c`'s, whose [`stdalloc::allocator`] returns the standard
+//! allocator's value, and `git_win32_crtdbg_init_allocator` is never defined on this
+//! platform. A value is built here from an [`Alloc`] implementation ([`Allocator::new`]),
+//! whose `extern "C"` trampolines adapt libgit2's calls to it, or from three C functions
 //! ([`Allocator::from_fns`]).
 //!
 //! The members are function pointers, so reading or replacing one is safe and calling
@@ -69,6 +69,7 @@
 //! [`set_allocator`]'s caller's obligation.
 //!
 //! [`set_allocator`]: crate::libgit2::src::libgit2::settings::set_allocator
+//! [`stdalloc::allocator`]: crate::libgit2::src::util::allocators::stdalloc::allocator
 
 pub use ffi_import::{
     Alloc, AllocBox, AllocStr, AllocVec, Allocator, AllocatorMut, AllocatorRef, ArrayFree, Free,
@@ -143,10 +144,13 @@ mod ffi_import {
         ///
         /// A plain value of three function pointers, resource-free: `Copy`, held inline,
         /// never released. Build one with [`new`](Self::new) over an [`Alloc`]
-        /// implementation, or with [`from_fns`](Self::from_fns) over C functions; both set
-        /// every member, and the setters only ever store a function, so a value built here
-        /// never holds a NULL member. Read and replace members through
-        /// [`as_ref`](Self::as_ref) / [`as_mut`](Self::as_mut).
+        /// implementation, or with [`from_fns`](Self::from_fns) over C functions, or take
+        /// libgit2's standard one from [`stdalloc::allocator`] or its debug one from
+        /// [`debug`](Self::debug); each sets every member, and the setters only ever store a
+        /// function, so a value built in Rust never holds a NULL member. Read and replace
+        /// members through [`as_ref`](Self::as_ref) / [`as_mut`](Self::as_mut).
+        ///
+        /// [`stdalloc::allocator`]: crate::libgit2::src::util::allocators::stdalloc::allocator
         ///
         /// Wraps `st::git_allocator`
         #[doc(alias = "git_allocator")]
@@ -243,8 +247,15 @@ mod ffi_import {
         /// static LIBC: Allocator = Allocator::new::<Libc>();
         /// assert!(LIBC.as_ref().malloc().is_some());
         /// ```
+        ///
+        /// An implementation that binds one of libgit2's own C families names its routines
+        /// in [`Alloc::C_ALLOCATOR`], and the value is those routines themselves, with C's
+        /// addresses, which libgit2 compares, rather than trampolines.
         pub const fn new<A: Alloc>() -> Self {
-            Self::from_fns(malloc_with::<A>, realloc_with::<A>, free_with::<A>)
+            match A::C_ALLOCATOR {
+                Some(family) => family,
+                None => Self::from_fns(malloc_with::<A>, realloc_with::<A>, free_with::<A>),
+            }
         }
     }
 
@@ -360,11 +371,13 @@ mod ffi_import {
     /// libgit2 trusts these functions as it trusts C's `malloc`, `realloc` and `free`:
     ///
     /// - `malloc(len, ..)` returns `None`, or the start of a fresh allocation of at least `len`
-    ///   bytes, aligned for any object that fits in `len` bytes as `malloc` aligns (to
-    ///   `max_align_t`, or the largest power of two not above a smaller `len`), overlapping no
-    ///   other live allocation of the implementation. `len` may be 0, as for C's `malloc(0)`: the
-    ///   result is `None` (which libgit2 reads as out of memory) or an allocation of its own, which
-    ///   `free` releases like any other;
+    ///   bytes, overlapping no other live allocation of the implementation, and aligned to the
+    ///   largest power of two not above `len`, up to the alignment of a `usize` or a `u64`,
+    ///   whichever is wider (8 bytes on 64-bit targets). That is what libgit2's C and this crate's
+    ///   owners rely on, not `malloc`'s `max_align_t`: libgit2's own debug allocator
+    ///   ([`Allocator::debug`]) keeps no more. `len` may be 0, as for C's `malloc(0)`: the result
+    ///   is `None` (which libgit2 reads as out of memory) or an allocation of its own, which `free`
+    ///   releases like any other;
     /// - `realloc(None, len, ..)` behaves as `malloc`. `realloc(Some(ptr), len, ..)`, with `ptr` a
     ///   live allocation of the implementation and `len` non-zero, either returns `None` and leaves
     ///   `ptr` live and unchanged, or releases `ptr` and returns an allocation as `malloc` would
@@ -373,11 +386,16 @@ mod ffi_import {
     ///   [`ReallocFn`]), so an implementation need not decide that case;
     /// - `free(ptr)` releases `ptr`, a live allocation of the implementation;
     /// - all three may run concurrently on any threads, and an allocation may be resized or
-    ///   released on a thread other than the one that made it.
+    ///   released on a thread other than the one that made it;
+    /// - [`C_ALLOCATOR`](Self::C_ALLOCATOR), when `Some`, holds one family of C functions, each
+    ///   meeting this contract as the method of its name does, over the methods' own storage: what
+    ///   either allocates, the other resizes and releases.
     ///
-    /// None of them may call into libgit2: libgit2 allocates through them, its per-thread
-    /// error state included (`threadstate_get`), so a libgit2 call from inside one recurses
-    /// without bound.
+    /// None of them, the methods or `C_ALLOCATOR`'s functions, may allocate through libgit2 or
+    /// touch its state: libgit2 allocates through them, its per-thread error state included
+    /// (`threadstate_get`), so such a call from inside one recurses without bound. A routine of
+    /// libgit2's own that does neither may be called, such as its failing family's
+    /// (`git_failalloc_*`), which is what `C_ALLOCATOR` holds for that family.
     pub unsafe trait Alloc {
         /// Allocates at least `len` bytes; `None` on failure.
         fn malloc(len: usize, file: Option<&CStr>, line: i32) -> Option<NonNull<u8>>;
@@ -403,6 +421,16 @@ mod ffi_import {
         /// `ptr` is a live allocation of this implementation that the caller owns and does
         /// not use again.
         unsafe fn free(ptr: NonNull<u8>);
+
+        /// The C functions of the family, when the implementation binds one of libgit2's own
+        /// allocator families: [`Allocator::new`] stores them in place of its trampolines.
+        ///
+        /// libgit2 compares a family's members by address (`git_allocator_global_init` keeps
+        /// whatever allocator is installed unless its `gmalloc` is `git_failalloc_malloc`),
+        /// and a trampoline never has a C function's address, so a value built over the
+        /// binding of a C family holds that family's own functions. `None`, the default, for
+        /// every other implementation.
+        const C_ALLOCATOR: Option<Allocator> = None;
     }
 
     /// The call site's file name, as C passes it.
@@ -479,8 +507,8 @@ mod ffi_import {
     /// each `malloc` block with its `size_t` length and returns the address past it, so it
     /// keeps only `size_t`'s alignment. libgit2 itself places structs of pointers, `size_t`s
     /// and 64-bit integers in that storage, and its CI runs under `debugalloc`, so every
-    /// allocator libgit2 runs on keeps this much; [`Alloc`]'s contract asks more of one
-    /// installed from Rust.
+    /// allocator libgit2 runs on keeps this much, and [`Alloc`]'s contract asks this much of
+    /// one installed from Rust.
     const MAX_ALIGN: usize = {
         let (word, wide) = (align_of::<usize>(), align_of::<u64>());
         if word > wide { word } else { wide }
@@ -1111,6 +1139,58 @@ mod ffi_import {
 
         // Each coercion of a function item may yield a distinct address (Miri models
         // that), so every comparison below is against one stored pointer value.
+
+        /// The C family `CFamily` names: its functions, stored once.
+        static C_FAMILY: Allocator = Allocator::from_fns(c_malloc, c_realloc, c_free);
+
+        /// An implementation that binds a C family: its methods are never reached through an
+        /// `Allocator::new` value, which holds the C functions themselves.
+        struct CFamily;
+
+        // SAFETY: every allocation fails and nothing is released, as `C_FAMILY`'s functions
+        // do; none touches any state.
+        unsafe impl Alloc for CFamily {
+            const C_ALLOCATOR: Option<Allocator> = Some(C_FAMILY);
+
+            fn malloc(_: usize, _: Option<&CStr>, _: i32) -> Option<NonNull<u8>> {
+                None
+            }
+
+            unsafe fn realloc(
+                _: Option<NonNull<u8>>,
+                _: usize,
+                _: Option<&CStr>,
+                _: i32,
+            ) -> Option<NonNull<u8>> {
+                None
+            }
+
+            unsafe fn free(_: NonNull<u8>) {}
+        }
+
+        #[test]
+        fn a_c_family_keeps_its_own_functions() {
+            let built = Allocator::new::<CFamily>();
+            let (theirs, ours) = (C_FAMILY.as_ref(), built.as_ref());
+            assert!(ptr::fn_addr_eq(
+                ours.malloc().unwrap(),
+                theirs.malloc().unwrap()
+            ));
+            assert!(ptr::fn_addr_eq(
+                ours.realloc().unwrap(),
+                theirs.realloc().unwrap()
+            ));
+            assert!(ptr::fn_addr_eq(
+                ours.free().unwrap(),
+                theirs.free().unwrap()
+            ));
+            // A family without C functions gets trampolines, never those.
+            let heap = Allocator::new::<Heap>();
+            assert!(!ptr::fn_addr_eq(
+                heap.as_ref().malloc().unwrap(),
+                theirs.malloc().unwrap()
+            ));
+        }
 
         #[test]
         #[expect(

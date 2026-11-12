@@ -1,0 +1,23 @@
+{
+  "objective": "wrap",
+  "wave": null,
+  "batch": null,
+  "link_unit": "libgit2",
+  "module": "deps/reftable/basics.c",
+  "foundational": true,
+  "base_branch": "refs/heads/crustify/foundational/libgit2/deps/reftable/basics.c",
+  "backend": "claude",
+  "billing": "subscription",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "8e23c1c",
+    "wavefront": "ca31018",
+    "ffimap": "9aa2ef1",
+    "ffibox": "551d27d"
+  },
+  "items": [],
+  "session_id": "agent-a0aa6123c73b89c48"
+}

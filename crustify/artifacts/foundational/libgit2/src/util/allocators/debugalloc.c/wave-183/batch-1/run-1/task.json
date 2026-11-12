@@ -1,0 +1,29 @@
+{
+  "paths": [
+    "src/libgit2/src/util/allocators/debugalloc.rs",
+    "tests/equiv/src/util/allocators/debugalloc.rs",
+    "tests/ub_safe/src/util/allocators/debugalloc.rs",
+    "tests/unit_pub/src/util/allocators/debugalloc.rs"
+  ],
+  "wave": 183,
+  "batch": 1,
+  "link_unit": "libgit2",
+  "module": "src/util/allocators/debugalloc.c",
+  "foundational": true,
+  "base_branch": "refs/heads/crustify/waves/wave-183",
+  "backend": "claude",
+  "billing": "subscription",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "8e23c1c",
+    "wavefront": "ca31018",
+    "ffimap": "9aa2ef1",
+    "ffibox": "551d27d"
+  },
+  "wave_gates": true,
+  "module_pass": true,
+  "session_id": "agent-a141fad9ce059c3dd"
+}

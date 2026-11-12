@@ -1,0 +1,30 @@
+{
+  "paths": [
+    "src/libgit2/deps/reftable/basics.rs",
+    "tests/equiv/deps/reftable/basics.rs",
+    "tests/ub_safe/deps/reftable/basics.rs",
+    "tests/ub_unsafe/deps/reftable/basics.rs",
+    "tests/unit_pub/deps/reftable/basics.rs"
+  ],
+  "wave": 169,
+  "batch": 5,
+  "link_unit": "libgit2",
+  "module": "deps/reftable/basics.c",
+  "foundational": true,
+  "base_branch": "refs/heads/crustify/waves/wave-169",
+  "backend": "claude",
+  "billing": "subscription",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "20500ce",
+    "wavefront": "ca31018",
+    "ffimap": "405e053",
+    "ffibox": "551d27d"
+  },
+  "wave_gates": true,
+  "module_pass": true,
+  "session_id": "agent-afcc54aad6d8b63c5"
+}
