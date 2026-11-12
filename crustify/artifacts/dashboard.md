@@ -454,8 +454,8 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/indexer.c` | `16` | `0` | wrap | first | `1` | `157` | `+970/-4` | — | `$4.45` | `10.63M` | `21m12s` | `$4.45` | `$0.03` |
 | `libgit2/src/libgit2/checkout.c` | `148` | `0` | wrap | first | `1` | `153` | `+855/-8` | — | `$7.63` | `22.75M` | `37m23s` | `$7.63` | `$0.05` |
 | `libgit2/src/libgit2/checkout.c` | `148` | `0` | wrap | first | `2` | `395` | `+1711/-20` | — | `$8.62` | `22.76M` | `47m38s` | `$4.31` | `$0.02` |
-| `libgit2/src/util/allocators/failalloc.c` | `176` | `0` | wrap | first | `3` | `18` | `+727/-6` | `45.83`% / `77.00`% | — | — | — | — | — |
-| `libgit2/src/util/allocators/failalloc.c` | `176` | `1` | wrap | first | `3` | `18` | `+524/-165` | `45.88`% / `98.92`% | — | — | — | — | — |
+| `libgit2/src/util/allocators/failalloc.c` | `176` | `0` | wrap | first | `3` | `18` | `+727/-6` | `45.83`% / `77.00`% | `$12.77` | `42.14M` | `37m48s` | `$4.26` | `$0.71` |
+| `libgit2/src/util/allocators/failalloc.c` | `176` | `1` | wrap | first | `3` | `18` | `+524/-165` | `45.88`% / `98.92`% | `$10.66` | `30.55M` | `57m49s` | `$3.55` | `$0.59` |
 | `libgit2/raw-lifetime-void` | `legacy-1` | `0` | wrap | review | `2` | — | `+80/-1` | — | `$7.89` | `10.78M` | `18m36s` | `$3.94` | — |
 | `libgit2/raw-lifetime-string` | `legacy-3` | `0` | wrap | review | `2` | — | `+345/-23` | — | `$10.89` | `14.41M` | `22m03s` | `$5.45` | — |
 | `libgit2/src/util/alloc.c` | `12` | `3` | wrap | review | `7` | — | `+57/-20` | — / `98.90`% | `$15.18` | `40.96M` | `1h31m33s` | `$2.17` | — |
@@ -485,9 +485,9 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/indexer.c` | `legacy-179` | `0` | wrap | review | `1` | — | `+35/-0` | — | `$3.18` | `8.05M` | `12m18s` | `$3.18` | — |
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | wrap | review | `1` | — | `+113/-14` | — | `$4.80` | `10.64M` | `27m50s` | `$4.80` | — |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | wrap | review | `2` | — | `+217/-15` | — | `$11.03` | `25.98M` | `47m17s` | `$5.51` | — |
-| `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | wrap | review | `3` | — | `+11/-7` | `45.88`% / `98.92`% | — | — | — | — | — |
-| **Σ first** |  |  |  |  | **`435`** | **`8626`** | **`+71638/-3486`** | **`45.88`% / `98.92`%** | **`$445.45`** | **`1379.81M`** | — | **`$1.04`** | **`$0.05`** |
-| **Σ review** |  |  |  |  | **`425`** | — | **`+7142/-1353`** | **`45.88`% / `98.92`%** | **`$354.58`** | **`672.21M`** | — | **`$0.84`** | — |
+| `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | wrap | review | `3` | — | `+11/-7` | `45.88`% / `98.92`% | `$5.87` | `16.61M` | `16m58s` | `$1.96` | — |
+| **Σ first** |  |  |  |  | **`435`** | **`8626`** | **`+71638/-3486`** | **`45.88`% / `98.92`%** | **`$468.89`** | **`1452.50M`** | — | **`$1.08`** | **`$0.05`** |
+| **Σ review** |  |  |  |  | **`425`** | — | **`+7142/-1353`** | **`45.88`% / `98.92`%** | **`$360.45`** | **`688.82M`** | — | **`$0.85`** | — |
 
 ### Batches: tests
 
@@ -645,8 +645,8 @@ review cost.
 
 | module | wave | batch | types | symbols | +LoC | $ | tokens | wall |
 |---|---|---|---|---|---|---|---|---|
-| `libgit2/src/util/allocators/failalloc.c` | `176` | `3` | `0` | `3` | `+74/-13` | — | — | — |
-| **Σ** |  |  | **`0`** | **`3`** | **`+74/-13`** | — | — | — |
+| `libgit2/src/util/allocators/failalloc.c` | `176` | `3` | `0` | `3` | `+74/-13` | `$13.62` | `50.18M` | `2h6m13s` |
+| **Σ** |  |  | **`0`** | **`3`** | **`+74/-13`** | **`$13.62`** | **`50.18M`** | — |
 
 ### Passes: PoC + reports
 
@@ -2316,3 +2316,17 @@ The settings' `evolution` answer became `evolve, unattended: the whole campaign`
 that are useful and validated, at the user's instruction; others wait for the module's end.
 Landed under it: ffimap's `api` subcommand (ffimap `9aa2ef1`) and the API stability measure
 of every landing (Crustify `87e3816`), which applies from the next launched batch.
+
+### `libgit2/src/util/allocators/failalloc.c` integration (2026-11-12)
+
+The integration merge of the working branch into `failalloc.c`'s module branch conflicted in
+`src/libgit2/src/util/alloc.rs` beyond the additive files: `alloc.c`'s wave 12 had moved the
+file into an `ffi_import` region, and wave 176 had added `Alloc::C_ALLOCATOR` to the old
+layout. A binder resolved it (`crustify/artifacts/foundational/libgit2/src/util/allocators/failalloc.c/integration/run-1`,
+agent `a45661a9e2f166e49`, `$3.83`), carrying `C_ALLOCATOR`, its contract wording and its unit
+test into the region; the merged tree (`36e39853a`) passed the workspace on `plain` and
+`asan-ubsan`, Miri and TSan over the allocator modules, and `ffimap api` found no item of
+either module changed or removed. Under BSan, four `indexer.c` tests never finish
+(`indexer::unit_tests::{a_break_cancels_the_indexing_with_git_euser, a_panic_cancels_then_resumes_after_the_walk, libgit2_calls_the_closure_with_its_progress}`
+and `equiv`'s `src::libgit2::indexer::a_progress_callback_sees_and_cancels_as_a_c_callback`);
+module passes skip them by name until the indexer module sizes them for BSan.
