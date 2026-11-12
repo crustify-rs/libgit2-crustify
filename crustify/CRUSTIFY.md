@@ -80,7 +80,7 @@ Unanswered optional questions use their defaults.
       `src/util/cc-compat.h`, `src/util/ctype_compat.h`, `src/util/hash/sha1dc/ubc_check.c`,
       `src/util/hashmap.h`, `src/util/integer.h`, `src/util/staticstr.h`, `src/util/strnlen.h`,
       `src/util/thread.c`, `src/util/utf8.c`, `src/util/wildmatch.c`: the first ship point,
-      about 15K lines of integrated C (planned through wave 263). Later points are chosen the
+      about 15K lines of integrated C (planned through wave 338 since planner run 12, 263 before). Later points are chosen the
       same way, about every 15K lines of integrated C, each confirmed with the user.
     - `decide after planning`: once the plan is complete, I propose ship points from it,
       with the boundary each would leave, and record your choice here.
