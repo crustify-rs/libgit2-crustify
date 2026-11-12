@@ -1,6 +1,10 @@
 # Review reports the host refuses to let a reviewer write
 
-Status: `open`
+Status: `landed`, as crustify `dcaaadd` on `devel`, the change's option 1: the `claude`
+provider's `spawn.py` launches each stage run as a process of its own, and the assistants'
+prompts end with how they launch through it. The interim is done too: the assistant filed
+the refused reports of the foundational review batches, from their commits, under their
+reviews dirs.
 
 ## Signal
 
@@ -63,3 +67,10 @@ commits carry them, are filed that way from their commit messages.
 Not yet validated: option 1 or 2 is validated by the next review batch writing its reports
 itself; the interim by the assistant filing the earlier batches' reports from their commit
 messages.
+
+Validated on 2026-11-12: a general-purpose subagent's Write of
+`crustify/tmp/probe-subagent/wave-0/batch-0/misc/probe/report.md` was refused with the message
+above, a `claude -p` process's Write of the same shape of path succeeded, and a
+`crustify:reviewer` run launched through `spawn.py` wrote its `report.md`, recorded its
+`session_id` and `exit_code` in its run dir, and had its transcript copied into
+`$CRUSTIFY_HOME/transcripts/`.
