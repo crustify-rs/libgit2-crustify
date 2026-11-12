@@ -1263,6 +1263,13 @@ pub unsafe fn enable_strict_hash_verification(enabled: bool) {
 /// is borrowed for the call only. Does not initialise libgit2: initialisation keeps an
 /// allocator installed before it, and itself allocates.
 ///
+/// `GIT_OPT_SET_ALLOCATOR` is `src/util/alloc.c`'s `git_allocator_setup`, which this stands in
+/// for: it copies `allocator` over the global, or with `None` installs the standard allocator
+/// (`git_stdalloc_init_allocator`'s family, or `debugalloc` in a `DEBUG_STRICT_ALLOC` build),
+/// and cannot fail. [`installed`] borrows the global it writes.
+///
+/// [`installed`]: crate::libgit2::src::util::alloc::installed
+///
 /// # Safety
 ///
 /// - `allocator`'s members must form one allocator family meeting [`Alloc`]'s contract, as an
@@ -1281,7 +1288,8 @@ pub unsafe fn enable_strict_hash_verification(enabled: bool) {
 ///   every allocation reads the global without synchronisation.
 ///
 /// Wraps `fn::git_libgit2_opts`
-#[doc(alias = "git_libgit2_opts")]
+/// Wraps `fn::git_allocator_setup`
+#[doc(alias = "git_libgit2_opts", alias = "git_allocator_setup")]
 pub unsafe fn set_allocator(allocator: Option<AllocatorRef<'_>>) {
     let allocator = allocator.map_or(ptr::null(), |a| a.as_ptr());
     // SAFETY: `GIT_OPT_SET_ALLOCATOR` reads one `git_allocator *`, NULL or a live

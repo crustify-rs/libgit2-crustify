@@ -68,11 +68,28 @@
 //! released, so replacing the allocator while an owner lives is
 //! [`set_allocator`]'s caller's obligation.
 //!
+//! A run is resized through the family's `git__reallocarray` ([`ArrayFree::resize`]) and
+//! `git__realloc` ([`ArrayFree::resize_bytes`]), which keep its prefix and leave it as it
+//! was when the allocator refuses. xdiff's allocation macros (`xdl_malloc`, `xdl_calloc`,
+//! `xdl_realloc`, `xdl_free`, `deps/xdiff/git-xdiff.h`) are aliases of the family's
+//! primitives, and stand in Rust as the strategies over those primitives.
+//!
+//! # The installed allocator
+//!
+//! Every allocation reads libgit2's allocator from a hidden global, `git__allocator`, with
+//! no synchronisation. It starts as the failing family
+//! ([`failalloc`](crate::libgit2::src::util::allocators::failalloc)), which
+//! `git_libgit2_init` replaces with the standard one ([`global_init`]) unless another was
+//! installed first; [`set_allocator`] (`GIT_OPT_SET_ALLOCATOR`, `git_allocator_setup`)
+//! copies a value over it. Each write races every read on another thread, so no safe path
+//! writes it, and [`installed`], the borrow of it, is `unsafe` as well: its caller excludes
+//! those writes while it reads.
+//!
 //! [`set_allocator`]: crate::libgit2::src::libgit2::settings::set_allocator
 
 pub use ffi_import::{
     Alloc, AllocBox, AllocStr, AllocVec, Allocator, AllocatorMut, AllocatorRef, ArrayFree, Free,
-    FreeFn, MallocFn, ReallocFn, StrFree,
+    FreeFn, MallocFn, ReallocFn, StrFree, global_init, installed,
 };
 
 /// What the module reaches in C: `git_allocator`'s layout and trampolines, and the
@@ -81,16 +98,17 @@ mod ffi_import {
     use core::ffi::{CStr, c_char, c_int, c_void};
     use core::fmt;
     use core::marker::PhantomData;
-    use core::mem::{MaybeUninit, align_of, size_of};
+    use core::mem::{self, MaybeUninit, align_of, size_of};
     use core::ptr::{self, NonNull};
 
+    use ffibox::callback::barrier;
     use ffibox::{
         CAlloc, CAllocZeroed, CBox, CCell, CDrop, CDupClone, CLenAlloc, CLenClone, CLenDrop,
         CMutSeam, CPlainElem, CRefSeam, CStrBox, CVec, CZeroable, define_ctype,
     };
 
     use crate::ffi;
-    use crate::libgit2::src::util::errors::{runtime_pinned, set_oom};
+    use crate::libgit2::src::util::errors::{ErrorBuf, last, runtime_pinned, set_oom};
 
     /// `git_allocator.gmalloc`: allocate `n` bytes for the caller at `file`:`line`.
     ///
@@ -103,6 +121,11 @@ mod ffi_import {
     /// `file` must be NULL or a NUL-terminated string live for the call (libgit2 passes
     /// `__FILE__`). A function may add obligations of its own; the trampolines
     /// [`Allocator::new`] stores add none.
+    ///
+    /// The C form of the member; its Rust form is [`Alloc::malloc`].
+    ///
+    /// Wraps `fnp::git_allocator.gmalloc`
+    #[doc(alias = "git_allocator.gmalloc")]
     pub type MallocFn =
         unsafe extern "C" fn(n: usize, file: *const c_char, line: c_int) -> *mut c_void;
 
@@ -122,6 +145,11 @@ mod ffi_import {
     /// live allocation implementation-defined: glibc releases `ptr` and returns NULL, which
     /// this contract would read as a failure that left `ptr` live. No libgit2 code path
     /// makes one, so a caller must not either.
+    ///
+    /// The C form of the member; its Rust form is [`Alloc::realloc`].
+    ///
+    /// Wraps `fnp::git_allocator.grealloc`
+    #[doc(alias = "git_allocator.grealloc")]
     pub type ReallocFn = unsafe extern "C" fn(
         ptr: *mut c_void,
         size: usize,
@@ -135,6 +163,11 @@ mod ffi_import {
     ///
     /// `ptr` must be NULL or a live allocation of the same allocator family, which the
     /// caller owns and does not use again.
+    ///
+    /// The C form of the member; its Rust form is [`Alloc::free`].
+    ///
+    /// Wraps `fnp::git_allocator.gfree`
+    #[doc(alias = "git_allocator.gfree")]
     pub type FreeFn = unsafe extern "C" fn(ptr: *mut c_void);
 
     define_ctype!(
@@ -199,8 +232,10 @@ mod ffi_import {
         ///
         /// Its members are `extern "C"` trampolines generic over `A`: they turn the call
         /// site's `file` into an `Option<&CStr>`, pointers into `Option<NonNull<u8>>`,
-        /// and drop `free(NULL)` before it reaches [`Alloc::free`]. A panic in `A`
-        /// aborts the process, since it cannot unwind into C.
+        /// and drop `free(NULL)` before it reaches [`Alloc::free`]. Each is a panic
+        /// barrier, since a panic cannot unwind into C: a panic in [`Alloc::malloc`] or
+        /// [`Alloc::realloc`] returns NULL, C's out-of-memory convention, and one in
+        /// [`Alloc::free`], which C gives no way to fail, aborts the process.
         ///
         /// ```
         /// use core::ffi::{CStr, c_void};
@@ -381,6 +416,9 @@ mod ffi_import {
     /// - `free(ptr)` releases `ptr`, a live allocation of the implementation;
     /// - all three may run concurrently on any threads, and an allocation may be resized or
     ///   released on a thread other than the one that made it;
+    /// - a panic out of `malloc` or `realloc` stands for a `None` return, which the trampoline
+    ///   returns to C in its place: `realloc` leaves `ptr` live and unchanged when it panics, as
+    ///   when it fails. A panic out of `free` aborts the process;
     /// - [`C_ALLOCATOR`](Self::C_ALLOCATOR), when `Some`, holds one family of C functions, each
     ///   meeting this contract as the method of its name does, over the methods' own storage: what
     ///   either allocates, the other resizes and releases.
@@ -392,15 +430,26 @@ mod ffi_import {
     /// (`git_failalloc_*`), which is what `C_ALLOCATOR` holds for that family.
     pub unsafe trait Alloc {
         /// Allocates at least `len` bytes; `None` on failure.
+        ///
+        /// The Rust form of the member, which C reaches through a trampoline; its C form
+        /// is [`MallocFn`].
+        ///
+        /// Wraps `fnp::git_allocator.gmalloc`
+        #[doc(alias = "git_allocator.gmalloc")]
         fn malloc(len: usize, file: Option<&CStr>, line: i32) -> Option<NonNull<u8>>;
 
         /// Resizes `ptr` to `len` bytes, or allocates afresh for `None`; `None` on
         /// failure, leaving `ptr` live.
         ///
+        /// The Rust form of the member; its C form is [`ReallocFn`].
+        ///
+        /// Wraps `fnp::git_allocator.grealloc`
+        ///
         /// # Safety
         ///
         /// `ptr` is `None` or a live allocation of this implementation that the caller
         /// owns and, on success, gives up; `len` is non-zero when `ptr` is `Some`.
+        #[doc(alias = "git_allocator.grealloc")]
         unsafe fn realloc(
             ptr: Option<NonNull<u8>>,
             len: usize,
@@ -410,10 +459,15 @@ mod ffi_import {
 
         /// Releases `ptr`.
         ///
+        /// The Rust form of the member; its C form is [`FreeFn`].
+        ///
+        /// Wraps `fnp::git_allocator.gfree`
+        ///
         /// # Safety
         ///
         /// `ptr` is a live allocation of this implementation that the caller owns and does
         /// not use again.
+        #[doc(alias = "git_allocator.gfree")]
         unsafe fn free(ptr: NonNull<u8>);
 
         /// The C functions of the family, when the implementation binds one of libgit2's own
@@ -437,7 +491,8 @@ mod ffi_import {
         (!file.is_null()).then(|| unsafe { CStr::from_ptr(file) })
     }
 
-    /// `gmalloc` over [`Alloc::malloc`].
+    /// `gmalloc` over [`Alloc::malloc`]; a panic in it returns NULL, C's out-of-memory
+    /// convention.
     ///
     /// # Safety
     ///
@@ -449,10 +504,14 @@ mod ffi_import {
     ) -> *mut c_void {
         // SAFETY: `MallocFn`'s contract: `file` is NULL or a C string live for the call.
         let file = unsafe { site_file(file) };
-        A::malloc(len, file, line).map_or(ptr::null_mut(), |p| p.as_ptr().cast())
+        barrier(
+            || A::malloc(len, file, line).map_or(ptr::null_mut(), |p| p.as_ptr().cast()),
+            ptr::null_mut,
+        )
     }
 
-    /// `grealloc` over [`Alloc::realloc`].
+    /// `grealloc` over [`Alloc::realloc`]; a panic in it returns NULL, which leaves `ptr`
+    /// live, as [`Alloc`]'s contract has a panicking `realloc` leave it.
     ///
     /// # Safety
     ///
@@ -465,14 +524,18 @@ mod ffi_import {
     ) -> *mut c_void {
         // SAFETY: as in `malloc_with`.
         let file = unsafe { site_file(file) };
-        // SAFETY: `ReallocFn`'s contract: `ptr` is NULL or a live allocation of this
-        // family, i.e. one `A` made, which the caller gives up on success, and `size` is
-        // non-zero when `ptr` is not NULL.
-        let resized = unsafe { A::realloc(NonNull::new(ptr.cast()), size, file, line) };
-        resized.map_or(ptr::null_mut(), |p| p.as_ptr().cast())
+        let resize = || {
+            // SAFETY: `ReallocFn`'s contract: `ptr` is NULL or a live allocation of this
+            // family, i.e. one `A` made, which the caller gives up on success, and `size`
+            // is non-zero when `ptr` is not NULL.
+            let resized = unsafe { A::realloc(NonNull::new(ptr.cast()), size, file, line) };
+            resized.map_or(ptr::null_mut(), |p| p.as_ptr().cast())
+        };
+        barrier(resize, ptr::null_mut)
     }
 
-    /// `gfree` over [`Alloc::free`]; `free(NULL)` stops here.
+    /// `gfree` over [`Alloc::free`]; `free(NULL)` stops here. A panic in it aborts the
+    /// process: C's `free` cannot fail, so there is no convention to map it to.
     ///
     /// # Safety
     ///
@@ -569,6 +632,31 @@ mod ffi_import {
         pinned(|| unsafe { ffi::git__mallocarray(nelem, elsize) }).map(NonNull::cast)
     }
 
+    /// `git__realloc(data, size)`: `data`'s first `min(old, size)` bytes at an address that
+    /// may be new, or a fresh allocation for NULL; `None` as for [`malloc`], `data` then
+    /// left live.
+    ///
+    /// # Safety
+    ///
+    /// `data` is NULL or a live allocation of libgit2's current allocator, which the caller
+    /// owns and, on success, gives up; `size` is non-zero, as [`ReallocFn`] asks.
+    unsafe fn realloc(data: *mut u8, size: usize) -> Option<NonNull<u8>> {
+        // SAFETY: per this function's contract, on a pinned runtime.
+        pinned(|| unsafe { ffi::git__realloc(data.cast(), size) }).map(NonNull::cast)
+    }
+
+    /// `git__reallocarray(data, nelem, elsize)`: [`realloc`] to `nelem * elsize` bytes;
+    /// `None` as for [`calloc`], `data` then left live.
+    ///
+    /// # Safety
+    ///
+    /// As [`realloc`], with `nelem` and `elsize` non-zero: C refuses an overflowing product
+    /// before it asks the allocator, and passes it any other.
+    unsafe fn reallocarray(data: *mut u8, nelem: usize, elsize: usize) -> Option<NonNull<u8>> {
+        // SAFETY: per this function's contract, on a pinned runtime.
+        pinned(|| unsafe { ffi::git__reallocarray(data.cast(), nelem, elsize) }).map(NonNull::cast)
+    }
+
     /// `git__strdup(s)`: a copy of `s` and its terminator; `None` as for [`malloc`].
     ///
     /// # Safety
@@ -652,7 +740,8 @@ mod ffi_import {
     // adoption vouching for the same, put in one. `self` carries no state.
     unsafe impl<T> CDrop<T> for Free {
         /// Wraps `fn::git__free`
-        #[doc(alias = "git__free")]
+        /// Wraps `mac::xdl_free`
+        #[doc(alias = "git__free", alias = "xdl_free")]
         #[inline]
         unsafe fn c_drop(&self, ptr: NonNull<T>) {
             // SAFETY: per `c_drop`'s contract, `ptr` is a live allocation of this policy's
@@ -666,7 +755,8 @@ mod ffi_import {
     // makes aligned for `T`; `c_drop` above releases it without reading it.
     unsafe impl<T: CCell> CAlloc<T> for Free {
         /// Wraps `fn::git__malloc`
-        #[doc(alias = "git__malloc")]
+        /// Wraps `mac::xdl_malloc`
+        #[doc(alias = "git__malloc", alias = "xdl_malloc")]
         #[inline]
         fn c_alloc(&self) -> Option<NonNull<MaybeUninit<T>>> {
             const {
@@ -685,7 +775,8 @@ mod ffi_import {
     // `T` since it never reads it.
     unsafe impl<T: CZeroable> CAllocZeroed<T> for Free {
         /// Wraps `fn::git__calloc`
-        #[doc(alias = "git__calloc")]
+        /// Wraps `mac::xdl_calloc`
+        #[doc(alias = "git__calloc", alias = "xdl_calloc")]
         #[inline]
         fn c_alloc_zeroed(&self) -> Option<NonNull<T>> {
             const {
@@ -744,7 +835,8 @@ mod ffi_import {
     // it, or an `unsafe` adoption vouches.
     unsafe impl CLenDrop for ArrayFree {
         /// Wraps `fn::git__free`
-        #[doc(alias = "git__free")]
+        /// Wraps `mac::xdl_free`
+        #[doc(alias = "git__free", alias = "xdl_free")]
         #[inline]
         unsafe fn c_drop_len(&self, ptr: *mut u8, _byte_len: usize) {
             // ffibox never releases a NULL run; `git__free(NULL)` would do nothing.
@@ -763,7 +855,8 @@ mod ffi_import {
         const ALIGN: usize = MAX_ALIGN;
 
         /// Wraps `fn::git__malloc`
-        #[doc(alias = "git__malloc")]
+        /// Wraps `mac::xdl_malloc`
+        #[doc(alias = "git__malloc", alias = "xdl_malloc")]
         #[inline]
         fn c_alloc_len(&self, byte_len: usize) -> Option<NonNull<u8>> {
             // ffibox's run constructors refuse only a size that overflows `usize`.
@@ -781,7 +874,8 @@ mod ffi_import {
         const ALIGN: usize = MAX_ALIGN;
 
         /// Wraps `fn::git__malloc`
-        #[doc(alias = "git__malloc")]
+        /// Wraps `mac::xdl_malloc`
+        #[doc(alias = "git__malloc", alias = "xdl_malloc")]
         #[inline]
         unsafe fn c_clone_len(&self, ptr: *mut u8, byte_len: usize) -> Option<NonNull<u8>> {
             let copy = malloc(byte_len.max(MAX_ALIGN))?;
@@ -820,13 +914,140 @@ mod ffi_import {
         /// what it returns until the run is dropped.
         ///
         /// Wraps `fn::git__calloc`
-        #[doc(alias = "git__calloc")]
+        /// Wraps `mac::xdl_calloc`
+        #[doc(alias = "git__calloc", alias = "xdl_calloc")]
         #[must_use]
         pub fn new_zeroed<T: CPlainElem>(len: usize) -> Option<AllocVec<T>> {
             let data = Self::alloc_run::<T>(len, calloc)?;
             // SAFETY: as in `new_uninit`, and every element is all zero, a valid `T` since
             // `T: CPlainElem` admits every bit pattern.
             unsafe { CVec::from_raw_parts_or_empty(data, len) }
+        }
+
+        /// Resizes `run` to `len` elements, in place or at a new address, keeping its first
+        /// `min(run.len(), len)` elements' bytes; the elements past its old length are
+        /// uninitialised. On failure `run` is left as it was, and the error, libgit2's
+        /// out-of-memory error (`GIT_ERROR_NOMEMORY`), is also the thread's last error.
+        ///
+        /// This is `git__reallocarray(ptr, len, size_of::<T>())`: libgit2's allocator resizes
+        /// the run's storage through its `grealloc`, and allocates storage afresh for a run
+        /// that has none. A size that overflows `usize` is refused by C, and one past
+        /// `isize::MAX` bytes, which no Rust slice may span, here, both before the allocator is
+        /// asked. Resizing to zero elements is Rust's own: it releases the storage
+        /// (`git__free`) and leaves the run empty without storage, where C would ask the
+        /// allocator for a zero-byte resize of live storage, which C leaves
+        /// implementation-defined and libgit2 never makes (see [`ReallocFn`]).
+        ///
+        /// The elements past `len` are forgotten, not dropped, as `MaybeUninit` ones always
+        /// are. A run grows once its storage is resized:
+        ///
+        /// ```
+        /// use core::mem::MaybeUninit;
+        ///
+        /// use libgit2::libgit2::src::util::alloc::ArrayFree;
+        ///
+        /// let mut run = ArrayFree::new_uninit::<u32>(2).unwrap();
+        /// run.as_mut_slice()[0].write(7);
+        /// ArrayFree::resize(&mut run, 3).unwrap();
+        /// run.as_mut_slice()[1].write(8);
+        /// run.as_mut_slice()[2].write(9);
+        /// // SAFETY: every element was written above.
+        /// let run = unsafe { run.assume_init() };
+        /// assert_eq!(run.as_slice(), &[7, 8, 9]);
+        /// ```
+        ///
+        /// Element types aligned beyond what the allocator vouches for are rejected, as
+        /// zero-sized ones are:
+        ///
+        /// ```compile_fail,E0080
+        /// use libgit2::libgit2::src::util::alloc::{AllocVec, ArrayFree};
+        ///
+        /// let _ = ArrayFree::resize(&mut AllocVec::<core::mem::MaybeUninit<u128>>::empty(), 1);
+        /// ```
+        ///
+        /// # Errors
+        ///
+        /// The thread's last libgit2 error, out of memory, when the allocator refuses the
+        /// resize or its size is refused before it is asked; libgit2's "library has not been
+        /// initialized" when libgit2 cannot be initialised.
+        ///
+        /// Wraps `fn::git__reallocarray`
+        #[doc(alias = "git__reallocarray")]
+        pub fn resize<T>(run: &mut AllocVec<MaybeUninit<T>>, len: usize) -> Result<(), ErrorBuf> {
+            const {
+                assert!(size_of::<T>() != 0, "zero-sized elements need no storage");
+                assert!(
+                    align_of::<T>() <= MAX_ALIGN,
+                    "libgit2's allocator cannot align T"
+                );
+            }
+            Self::resize_run(run, len, Resize::Elements)
+        }
+
+        /// Resizes a run of bytes to `len` bytes, as [`resize`](Self::resize) resizes a run
+        /// of elements: in place or at a new address, its first `min(run.len(), len)` bytes
+        /// kept, the run left as it was on failure; resizing to zero bytes releases the
+        /// storage.
+        ///
+        /// This is `git__realloc(ptr, len)`, which asks the allocator for `len` bytes with no
+        /// product to check, and xdiff's `xdl_realloc`, its alias. A size past `isize::MAX`
+        /// is refused before the allocator is asked.
+        ///
+        /// # Errors
+        ///
+        /// As [`resize`](Self::resize)'s.
+        ///
+        /// Wraps `fn::git__realloc`
+        /// Wraps `mac::xdl_realloc`
+        #[doc(alias = "git__realloc", alias = "xdl_realloc")]
+        pub fn resize_bytes(
+            run: &mut AllocVec<MaybeUninit<u8>>,
+            len: usize,
+        ) -> Result<(), ErrorBuf> {
+            Self::resize_run(run, len, Resize::Bytes)
+        }
+
+        /// The resize [`resize`](Self::resize) and [`resize_bytes`](Self::resize_bytes)
+        /// share, through the primitive `how` names; `T` is aligned for by every storage
+        /// of at least `size_of::<T>()` bytes the allocator returns, as `resize` checks at
+        /// compile time (a byte always is).
+        fn resize_run<T>(
+            run: &mut AllocVec<MaybeUninit<T>>,
+            len: usize,
+            how: Resize,
+        ) -> Result<(), ErrorBuf> {
+            if len == 0 {
+                // The old storage, if any, is released by the run's own drop.
+                *run = CVec::empty();
+                return Ok(());
+            }
+            if exceeds_slice_bytes(len, size_of::<T>()) {
+                set_oom();
+                return Err(last());
+            }
+            let data = run.as_ptr().cast::<u8>();
+            let resized = match how {
+                // SAFETY: `data` is the run's storage, a live allocation of libgit2's
+                // allocator that the run owns, or NULL for a run without storage; it is given
+                // up only on success, when the run is replaced below. `len` is non-zero, and
+                // `resize_bytes` passes byte runs only, so `len` is the size in bytes.
+                Resize::Bytes => unsafe { realloc(data, len) },
+                // SAFETY: as above; `len` and `size_of::<T>()` are both non-zero.
+                Resize::Elements => unsafe { reallocarray(data, len, size_of::<T>()) },
+            };
+            let Some(resized) = resized else {
+                return Err(last());
+            };
+            // SAFETY: `resized` is fresh, uniquely owned storage of libgit2's allocator of
+            // `len * size_of::<T>()` bytes, at least `size_of::<T>()` of them, so aligned for
+            // `T` (`resize_run`'s precondition); `c_drop_len` releases it, and
+            // `MaybeUninit<T>` needs no initialisation.
+            let resized = unsafe { CVec::from_raw_parts(resized.as_ptr().cast(), len) };
+            let old = mem::replace(run, resized.expect("a non-NULL run adopts"));
+            // The resize released the old storage, or handed it on as `resized`: its owner is
+            // dissolved without releasing it again.
+            let (_released, _) = old.into_raw_parts();
+            Ok(())
         }
 
         /// Storage for `len` elements of `T` from `alloc(len, size_of::<T>())`, aligned
@@ -861,6 +1082,15 @@ mod ffi_import {
             }
             Some(data.as_ptr())
         }
+    }
+
+    /// Which of the family's resizes [`ArrayFree::resize_run`] calls.
+    #[derive(Clone, Copy)]
+    enum Resize {
+        /// `git__realloc`, to a size in bytes.
+        Bytes,
+        /// `git__reallocarray`, to a count of elements.
+        Elements,
     }
 
     /// Whether `nelem` elements of `elsize` bytes span more than `isize::MAX` bytes
@@ -900,7 +1130,8 @@ mod ffi_import {
     // an `unsafe` adoption vouches.
     unsafe impl CDrop<c_char> for StrFree {
         /// Wraps `fn::git__free`
-        #[doc(alias = "git__free")]
+        /// Wraps `mac::xdl_free`
+        #[doc(alias = "git__free", alias = "xdl_free")]
         #[inline]
         unsafe fn c_drop(&self, ptr: NonNull<c_char>) {
             // SAFETY: per `c_drop`'s contract, `ptr` is a live string of this policy's
@@ -971,6 +1202,97 @@ mod ffi_import {
             // NUL-terminated within its allocation, which `c_drop` releases.
             unsafe { AllocStr::from_raw(copy.as_ptr()) }
         }
+    }
+
+    // --- The installed allocator -----------------------------------------------------------
+
+    /// libgit2's allocator: the global every allocation libgit2 makes reads its
+    /// members from (`git__allocator`), borrowed for the rest of the process.
+    ///
+    /// The handle reads the global itself, not a copy of it: a read after an allocator was
+    /// installed reads the new one. Before `git_libgit2_init` it holds the failing family
+    /// (`git_failalloc_*`); initialisation installs the standard allocator ([`global_init`])
+    /// unless another was installed before it; and
+    /// [`set_allocator`](crate::libgit2::src::libgit2::settings::set_allocator) copies a value
+    /// over it. Neither pins libgit2's runtime nor needs it: the global holds a value from the
+    /// program's start.
+    ///
+    /// No safe path writes the global or borrows it: C reads and writes it with no
+    /// synchronisation, so a read through the handle races any write on another thread.
+    ///
+    /// ```compile_fail,E0133
+    /// let _ = libgit2::libgit2::src::util::alloc::installed();
+    /// ```
+    ///
+    /// # Safety
+    ///
+    /// For as long as the handle, or any copy of it, reads the global, no other thread may
+    /// write it: install an allocator ([`set_allocator`], `git_libgit2_opts` with
+    /// `GIT_OPT_SET_ALLOCATOR`, or [`global_init`]), or initialise libgit2 for the first time
+    /// since it was last shut down (`git_libgit2_init`, which this crate's first call into
+    /// libgit2 makes). A write on the reading thread, between reads, is no race.
+    ///
+    /// [`set_allocator`]: crate::libgit2::src::libgit2::settings::set_allocator
+    ///
+    /// Wraps `glb::git__allocator`
+    #[doc(alias = "git__allocator")]
+    #[must_use]
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "the one `expect` is on a static's address, which is never NULL"
+    )]
+    pub unsafe fn installed() -> AllocatorRef<'static> {
+        let global = &raw mut ffi::git__allocator;
+        // SAFETY: `global` addresses a C global, live and initialised for the whole process
+        // (its definition gives it the failing family); the handle reads it through that
+        // pointer, forming no reference, and no write races those reads, per this function's
+        // contract.
+        let handle = unsafe { AllocatorRef::from_ptr(global) };
+        handle.expect("a global's address is never NULL")
+    }
+
+    /// Installs libgit2's standard allocator in place of the failing family, and keeps any
+    /// other allocator installed: the allocator step of `git_libgit2_init`, which runs it
+    /// first, so that an allocator installed before initialisation stays.
+    ///
+    /// libgit2 tells the failing family by its `gmalloc`'s address
+    /// (`git_failalloc_malloc`): with that one installed, this installs the standard
+    /// allocator (`stdalloc`, over libc's `malloc` family, or `debugalloc` in a
+    /// `DEBUG_STRICT_ALLOC` build), as [`set_allocator`]`(None)` does; with any other
+    /// installed, nothing changes. Before initialisation it lets libgit2 allocate, yet its
+    /// error state is not set up then, as the campaign's lessons note: an allocation that fails
+    /// before initialisation still reports through it.
+    ///
+    /// Installing the standard allocator cannot fail on this platform, so nothing is returned.
+    ///
+    /// It writes a global C reads unsynchronised, so no safe call reaches it:
+    ///
+    /// ```compile_fail,E0133
+    /// libgit2::libgit2::src::util::alloc::global_init();
+    /// ```
+    ///
+    /// # Safety
+    ///
+    /// As [`set_allocator`]`(None)`'s, when the failing family is installed: no other thread
+    /// may call into libgit2, through this crate or otherwise, while this runs, since it
+    /// writes the global every allocation reads without synchronisation; and every allocation
+    /// libgit2 or a live owner of this crate holds must be one the standard allocator can
+    /// resize and release. The failing family is installed before initialisation, when
+    /// libgit2 holds no allocation, or when an earlier [`set_allocator`] installed it after;
+    /// with any other family installed, the call only reads the global, which no other
+    /// thread may write meanwhile.
+    ///
+    /// [`set_allocator`]: crate::libgit2::src::libgit2::settings::set_allocator
+    ///
+    /// Wraps `fn::git_allocator_global_init`
+    #[doc(alias = "git_allocator_global_init")]
+    pub unsafe fn global_init() {
+        // SAFETY: no arguments; it reads the global and, with the failing family installed,
+        // writes the standard family over it, which races nothing and strands no allocation
+        // per this function's contract.
+        let rc = unsafe { ffi::git_allocator_global_init() };
+        // `git_stdalloc_init_allocator` and `git_debugalloc_init_allocator` return 0.
+        debug_assert_eq!(rc, 0);
     }
 
     // Each owner is the pointer it stands in for: its policy is zero-sized, so C reads a
@@ -1319,11 +1641,12 @@ mod ffi_import {
             );
         }
 
-        /// An implementation that panics: libgit2 would call the trampoline from C, so the
-        /// panic cannot unwind and aborts the process instead of corrupting a C frame.
+        /// An implementation that panics in every member, before it allocates, resizes or
+        /// releases anything, as `Alloc`'s contract asks of a panicking `realloc`.
         struct Panicking;
 
-        // SAFETY: never returns an allocation, so nothing is ever live.
+        // SAFETY: never returns an allocation, so nothing is ever live; each method panics
+        // before touching anything, so a panicking `realloc` leaves `ptr` as it was.
         unsafe impl Alloc for Panicking {
             fn malloc(len: usize, _: Option<&CStr>, _: i32) -> Option<NonNull<u8>> {
                 panic!("refusing {len} bytes");
@@ -1331,30 +1654,56 @@ mod ffi_import {
 
             unsafe fn realloc(
                 _: Option<NonNull<u8>>,
-                _: usize,
+                len: usize,
                 _: Option<&CStr>,
                 _: i32,
             ) -> Option<NonNull<u8>> {
-                None
+                panic!("refusing to resize to {len} bytes");
             }
 
-            unsafe fn free(_: NonNull<u8>) {}
+            unsafe fn free(_: NonNull<u8>) {
+                panic!("refusing to release");
+            }
         }
+
+        static PANICKING: Allocator = Allocator::new::<Panicking>();
 
         const CHILD: &str = "CRUSTIFY_ALLOC_UNIT_CHILD";
 
+        /// libgit2 calls the trampolines from C, which a panic must not unwind into: the
+        /// barrier returns NULL in its place, C's out-of-memory convention, and leaves a
+        /// resized block live. Pure Rust, so Miri runs it.
+        #[test]
+        fn panics_in_malloc_and_realloc_read_as_failure() {
+            let r = PANICKING.as_ref();
+            let (malloc, realloc) = (r.malloc().unwrap(), r.realloc().unwrap());
+            // SAFETY: NULL `file`; the implementation panics before allocating.
+            assert!(unsafe { malloc(1, ptr::null(), 0) }.is_null());
+            // SAFETY: NULL is a fresh allocation, which the implementation never makes.
+            assert!(unsafe { realloc(ptr::null_mut(), 8, c"x".as_ptr(), 1) }.is_null());
+            // A live block the panicking resize must leave alone: `ReallocFn`'s contract wants
+            // one of the family, and the implementation never reads it.
+            let mut block = [0x5Au8; 16];
+            // SAFETY: as above; the implementation panics before reading `block`.
+            let resized = unsafe { realloc(block.as_mut_ptr().cast(), 32, ptr::null(), 0) };
+            assert!(resized.is_null());
+            assert_eq!(block, [0x5A; 16]);
+        }
+
+        /// `gfree` has no failure to report, so a panic in [`Alloc::free`] aborts rather
+        /// than unwind into C.
         #[test]
         #[cfg_attr(miri, ignore = "spawns a process")]
         #[cfg_attr(bsan, ignore = "the child's abort path spins under BorrowSanitizer")]
-        fn panic_in_the_implementation_aborts() {
+        fn panic_in_free_aborts() {
             // The test's path within the binary: `module_path!` less the crate name.
-            let path = concat!(module_path!(), "::panic_in_the_implementation_aborts");
+            let path = concat!(module_path!(), "::panic_in_free_aborts");
             let name = path.split_once("::").map_or(path, |(_, rest)| rest);
             if std::env::var(CHILD).as_deref() == Ok(name) {
-                static PANICKING: Allocator = Allocator::new::<Panicking>();
-                let malloc = PANICKING.as_ref().malloc().unwrap();
-                // SAFETY: NULL `file`; the implementation panics before allocating.
-                let _ = unsafe { malloc(1, ptr::null(), 0) };
+                let free = PANICKING.as_ref().free().unwrap();
+                let mut block = 0u64;
+                // SAFETY: the implementation panics before releasing anything.
+                unsafe { free((&raw mut block).cast()) };
                 unreachable!("the trampoline must not return from a panic");
             }
             let out = std::process::Command::new(std::env::current_exe().unwrap())
@@ -1364,7 +1713,7 @@ mod ffi_import {
                 .unwrap();
             let stderr = String::from_utf8_lossy(&out.stderr);
             assert!(!out.status.success(), "{stderr}");
-            assert!(stderr.contains("refusing 1 bytes"), "{stderr}");
+            assert!(stderr.contains("refusing to release"), "{stderr}");
             assert!(stderr.contains("cannot unwind"), "{stderr}");
             assert!(!stderr.contains("must not return"), "{stderr}");
         }
@@ -1416,14 +1765,24 @@ mod ffi_import {
         /// Runs `body` alone in a child process of this binary, with [`Heap`] installed as
         /// libgit2's allocator before anything initialises libgit2.
         fn with_heap(path: &str, body: fn()) {
-            let name = path.split_once("::").map_or(path, |(_, rest)| rest);
-            if std::env::var(CHILD).as_deref() == Ok(name) {
-                static HEAP: Allocator = Allocator::new::<Heap>();
+            in_child(path, || {
                 // SAFETY: `Heap` meets `Alloc`'s contract; it is installed before libgit2 holds
                 // any allocation, in a process of its own, before any other thread runs.
                 unsafe { set_allocator(Some(HEAP.as_ref())) };
                 assert!(runtime_pinned());
                 take_calls();
+                body();
+            });
+        }
+
+        /// The [`Heap`] value [`with_heap`] installs.
+        static HEAP: Allocator = Allocator::new::<Heap>();
+
+        /// Runs `body` alone in a child process of this binary, where nothing has
+        /// initialised libgit2.
+        fn in_child(path: &str, body: impl FnOnce()) {
+            let name = path.split_once("::").map_or(path, |(_, rest)| rest);
+            if std::env::var(CHILD).as_deref() == Ok(name) {
                 body();
                 return;
             }
@@ -1731,6 +2090,235 @@ mod ffi_import {
                     assert!(id.as_ref().id().iter().all(|&b| b == 0));
                     drop(id);
                     assert_eq!(requests(), (vec![12, 8, 5, size_of::<ffi::git_oid>()], 4));
+                },
+            );
+        }
+
+        // --- the resizes ----------------------------------------------------------------------
+
+        /// A run of `len` uninitialised `T`, filled with `fill(i)`; `len` is at most 256.
+        fn filled<T: Copy>(len: usize, fill: impl Fn(u8) -> T) -> AllocVec<MaybeUninit<T>> {
+            let mut run = ArrayFree::new_uninit::<T>(len).unwrap();
+            for (i, slot) in (0..=u8::MAX).zip(run.as_mut_slice()) {
+                slot.write(fill(i));
+            }
+            run
+        }
+
+        /// The first `n` elements of `run`, which the test wrote.
+        fn prefix<T: Copy>(run: &AllocVec<MaybeUninit<T>>, n: usize) -> Vec<T> {
+            run.as_slice()[..n]
+                .iter()
+                // SAFETY: the callers read only the elements they wrote or kept.
+                .map(|e| unsafe { e.assume_init() })
+                .collect()
+        }
+
+        /// Each resize reaches the allocator's `grealloc` as `alloc.c` does: with the run's
+        /// storage, or NULL for a run without, and the size in bytes; resizing to zero is
+        /// a release.
+        #[test]
+        #[cfg_attr(miri, ignore = "spawns a process")]
+        fn resizes_request_what_alloc_c_requests() {
+            with_heap(
+                concat!(module_path!(), "::resizes_request_what_alloc_c_requests"),
+                || {
+                    let mut run = filled::<u32>(3, |i| u32::from(i) + 1);
+                    take_calls();
+                    // `git__reallocarray(ptr, 5, 4)`: one resize of 20 bytes, prefix kept.
+                    ArrayFree::resize(&mut run, 5).unwrap();
+                    assert_eq!(run.len(), 5);
+                    assert_eq!(prefix(&run, 3), [1, 2, 3]);
+                    // Shrinking keeps the first elements too.
+                    ArrayFree::resize(&mut run, 2).unwrap();
+                    assert_eq!(prefix(&run, 2), [1, 2]);
+                    assert!(matches!(
+                        take_calls()[..],
+                        [Call::Realloc(true, 20, ..), Call::Realloc(true, 8, ..)]
+                    ));
+                    // To zero: released, and held without storage.
+                    ArrayFree::resize(&mut run, 0).unwrap();
+                    assert!(run.is_empty() && run.as_ptr().is_null());
+                    assert_eq!(take_calls(), [Call::Free]);
+                    // A run without storage, and one at zero, stay so unasked.
+                    ArrayFree::resize(&mut run, 0).unwrap();
+                    assert_eq!(take_calls(), []);
+                    // Growing a run without storage is `grealloc(NULL, ..)`.
+                    ArrayFree::resize(&mut run, 4).unwrap();
+                    assert_eq!(run.len(), 4);
+                    assert!(matches!(take_calls()[..], [Call::Realloc(false, 16, ..)]));
+                    drop(run);
+                    assert_eq!(take_calls(), [Call::Free]);
+
+                    // `git__realloc(ptr, n)` on bytes; a zero-byte block of `new_uninit(0)`
+                    // grows like any other.
+                    let mut bytes = ArrayFree::new_uninit::<u8>(0).unwrap();
+                    assert!(!bytes.as_ptr().is_null());
+                    take_calls();
+                    ArrayFree::resize_bytes(&mut bytes, 5).unwrap();
+                    for (slot, b) in bytes.as_mut_slice().iter_mut().zip(*b"hello") {
+                        slot.write(b);
+                    }
+                    ArrayFree::resize_bytes(&mut bytes, 9).unwrap();
+                    assert_eq!(prefix(&bytes, 5), b"hello");
+                    ArrayFree::resize_bytes(&mut bytes, 0).unwrap();
+                    assert!(bytes.as_ptr().is_null());
+                    let calls = take_calls();
+                    assert!(
+                        matches!(
+                            calls[..],
+                            [
+                                Call::Realloc(true, 5, ..),
+                                Call::Realloc(true, 9, ..),
+                                Call::Free
+                            ]
+                        ),
+                        "{calls:?}"
+                    );
+                    // The call site is `alloc.h`'s `git__realloc`, for both resizes.
+                    ArrayFree::resize_bytes(&mut bytes, 1).unwrap();
+                    let calls = take_calls();
+                    let Call::Realloc(false, 1, Some(file), _) = &calls[0] else {
+                        panic!("{calls:?}");
+                    };
+                    assert!(file.to_bytes().ends_with(b"src/util/alloc.h"), "{file:?}");
+                },
+            );
+        }
+
+        /// A refused resize leaves the run as it was, its storage, length and elements, and
+        /// libgit2's out-of-memory error.
+        #[test]
+        #[cfg_attr(miri, ignore = "spawns a process")]
+        fn refused_resizes_leave_the_run_as_it_was() {
+            with_heap(
+                concat!(module_path!(), "::refused_resizes_leave_the_run_as_it_was"),
+                || {
+                    let mut run = filled::<u16>(4, |i| u16::from(i) * 3);
+                    let before = run.as_ptr();
+                    clear();
+                    let e = ArrayFree::resize(&mut run, REFUSED / 2).unwrap_err();
+                    assert_eq!(e.class(), Some(ErrorClass::NoMemory));
+                    assert_out_of_memory();
+                    assert_eq!((run.as_ptr(), run.len()), (before, 4));
+                    assert_eq!(prefix(&run, 4), [0, 3, 6, 9]);
+
+                    let mut bytes = filled::<u8>(3, |i| i);
+                    let e = ArrayFree::resize_bytes(&mut bytes, REFUSED).unwrap_err();
+                    assert_eq!(e.class(), Some(ErrorClass::NoMemory));
+                    assert_out_of_memory();
+                    assert_eq!(prefix(&bytes, 3), [0, 1, 2]);
+                    // A run without storage stays without on a refusal.
+                    let mut empty = AllocVec::<MaybeUninit<u8>>::empty();
+                    assert!(ArrayFree::resize_bytes(&mut empty, REFUSED).is_err());
+                    assert!(empty.as_ptr().is_null());
+                    assert_out_of_memory();
+                    drop((run, bytes));
+                    let calls = take_calls();
+                    assert_eq!(calls.iter().filter(|c| **c == Call::Free).count(), 2);
+                },
+            );
+        }
+
+        /// A size past `isize::MAX` is refused by the strategy, one that overflows by
+        /// `git__reallocarray`, both before the allocator is asked.
+        #[test]
+        #[cfg_attr(miri, ignore = "spawns a process")]
+        fn oversized_resizes_report_out_of_memory_unasked() {
+            with_heap(
+                concat!(
+                    module_path!(),
+                    "::oversized_resizes_report_out_of_memory_unasked"
+                ),
+                || {
+                    let mut run = filled::<u32>(2, |_| 7);
+                    let mut bytes = filled::<u8>(2, |_| 7);
+                    clear();
+                    take_calls();
+                    for len in [isize::MAX as usize / 4 + 1, usize::MAX / 4 + 1, usize::MAX] {
+                        let e = ArrayFree::resize(&mut run, len).unwrap_err();
+                        assert_eq!(e.class(), Some(ErrorClass::NoMemory), "{len}");
+                        assert_out_of_memory();
+                    }
+                    let e = ArrayFree::resize_bytes(&mut bytes, isize::MAX as usize + 1);
+                    assert_eq!(e.unwrap_err().class(), Some(ErrorClass::NoMemory));
+                    assert_out_of_memory();
+                    assert_eq!(requests(), (vec![], 0));
+                    assert_eq!(
+                        (prefix(&run, 2), prefix(&bytes, 2)),
+                        (vec![7; 2], vec![7; 2])
+                    );
+                },
+            );
+        }
+
+        // --- the installed allocator ---------------------------------------------------------
+
+        /// Whether `a` holds the failing family's `gmalloc`, as libgit2 tells it.
+        fn is_failing(a: AllocatorRef<'_>) -> bool {
+            let failing: MallocFn = ffi::git_failalloc_malloc;
+            ptr::fn_addr_eq(a.malloc().unwrap(), failing)
+        }
+
+        /// The global holds the failing family until `global_init` installs the standard
+        /// allocator, which initialisation and later `global_init`s keep; the handle reads
+        /// the live global throughout.
+        #[test]
+        #[cfg_attr(miri, ignore = "spawns a process")]
+        fn the_failing_family_gives_way_to_the_standard_one() {
+            in_child(
+                concat!(
+                    module_path!(),
+                    "::the_failing_family_gives_way_to_the_standard_one"
+                ),
+                || {
+                    // SAFETY: a process of its own, with no other thread: nothing writes the
+                    // global while the handle reads it, but this thread, between reads.
+                    let global = unsafe { installed() };
+                    assert!(is_failing(global));
+                    // SAFETY: as above; libgit2 holds no allocation before initialisation.
+                    unsafe { global_init() };
+                    assert!(!is_failing(global));
+                    let standard = global.malloc().unwrap();
+                    // SAFETY: as above; the standard family is installed, so nothing changes.
+                    unsafe { global_init() };
+                    assert!(runtime_pinned());
+                    assert!(ptr::fn_addr_eq(global.malloc().unwrap(), standard));
+                    // SAFETY: as above.
+                    let again = unsafe { installed() };
+                    assert_eq!(format!("{again:?}"), format!("{global:?}"));
+                    // The standard family allocates: a strategy's request succeeds.
+                    assert!(StrFree::dup(c"standard").is_some());
+                },
+            );
+        }
+
+        /// An allocator installed before initialisation stays: `global_init` keeps any
+        /// family but the failing one.
+        #[test]
+        #[cfg_attr(miri, ignore = "spawns a process")]
+        fn global_init_keeps_an_allocator_installed_first() {
+            in_child(
+                concat!(
+                    module_path!(),
+                    "::global_init_keeps_an_allocator_installed_first"
+                ),
+                || {
+                    // SAFETY: `Heap` meets `Alloc`'s contract; installed before libgit2 holds
+                    // any allocation, in a process of its own with no other thread.
+                    unsafe { set_allocator(Some(HEAP.as_ref())) };
+                    // SAFETY: as above; nothing else writes the global.
+                    let global = unsafe { installed() };
+                    let heap = HEAP.as_ref().malloc().unwrap();
+                    assert!(ptr::fn_addr_eq(global.malloc().unwrap(), heap));
+                    // SAFETY: as above; the Heap family is installed, so nothing changes.
+                    unsafe { global_init() };
+                    assert!(runtime_pinned());
+                    assert!(ptr::fn_addr_eq(global.malloc().unwrap(), heap));
+                    // libgit2 now allocates through `Heap`.
+                    take_calls();
+                    drop(StrFree::dup(c"heap").unwrap());
+                    assert_eq!(requests(), (vec![5], 1));
                 },
             );
         }

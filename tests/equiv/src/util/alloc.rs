@@ -17,7 +17,11 @@
 //! and never reaches `Alloc::free`, so the raw side does not trace it either.
 //!
 //! The strategies, `AllocBox`, `AllocVec` and `AllocStr`, are compared with the primitives
-//! of `src/util/alloc.h` they call, as the section below describes.
+//! of `src/util/alloc.h` they call, as the section below describes; the resizes,
+//! `ArrayFree::resize` and `ArrayFree::resize_bytes`, with `git__reallocarray` and
+//! `git__realloc`; and the global's borrow and writers, `installed`, `set_allocator` and
+//! `global_init`, with reads of `git__allocator`, `git_allocator_setup` and
+//! `git_allocator_global_init`.
 
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::mem::MaybeUninit;
@@ -1160,4 +1164,361 @@ fn strategies_allocate_and_release_as_libgit2_does() {
             );
         },
     );
+}
+
+// --- the resizes ------------------------------------------------------------------------
+//
+// One run on each side, filled alike, goes through the same lengths: C's a raw buffer
+// resized by `git__reallocarray` or `git__realloc`, Rust's an `AllocVec` resized by
+// `ArrayFree::resize` or `ArrayFree::resize_bytes`. After each step the outcome, the error
+// class of a failure and the kept prefix are compared, and both new tails are written
+// alike. Documented divergences, outside the comparison: a resize to zero, which Rust
+// answers by releasing the run where C would ask the allocator for an
+// implementation-defined zero-byte resize no libgit2 path makes; and a size past
+// `isize::MAX` bytes that does not overflow, which Rust refuses before the allocator is
+// asked.
+
+mod resizes {
+    use std::ffi::{CStr, c_int, c_void};
+    use std::mem::MaybeUninit;
+    use std::ptr::{self, NonNull};
+
+    use libgit2::ffi;
+    use libgit2::libgit2::src::libgit2::settings::set_allocator;
+    use libgit2::libgit2::src::util::alloc::{Alloc, AllocVec, Allocator, ArrayFree};
+    use libgit2::libgit2::src::util::errors;
+
+    use super::isolated;
+
+    /// The value element `i` of either run holds after step `step`.
+    fn value(step: usize, i: usize) -> u32 {
+        u32::try_from(step * 1000 + i).unwrap()
+    }
+
+    /// C's run: its storage and length.
+    struct CRun {
+        data: *mut c_void,
+        len: usize,
+    }
+
+    impl CRun {
+        fn elements(&self, n: usize) -> Vec<u32> {
+            if n == 0 {
+                return Vec::new();
+            }
+            // SAFETY: the first `n` elements of the live storage were written.
+            unsafe { std::slice::from_raw_parts(self.data.cast::<u32>(), n) }.to_vec()
+        }
+
+        fn fill(&mut self, from: usize, step: usize) {
+            for i in from..self.len {
+                // SAFETY: `i < len`, an element of the live storage.
+                let slot = unsafe { self.data.cast::<u32>().add(i) };
+                // SAFETY: as above; the storage is aligned for `u32`.
+                unsafe { slot.write(value(step, i)) };
+            }
+        }
+    }
+
+    fn rust_elements(run: &AllocVec<MaybeUninit<u32>>, n: usize) -> Vec<u32> {
+        run.as_slice()[..n]
+            .iter()
+            // SAFETY: the first `n` elements were written.
+            .map(|e| unsafe { e.assume_init() })
+            .collect()
+    }
+
+    fn rust_fill(run: &mut AllocVec<MaybeUninit<u32>>, from: usize, step: usize) {
+        for (i, slot) in run.as_mut_slice().iter_mut().enumerate().skip(from) {
+            slot.write(value(step, i));
+        }
+    }
+
+    /// The class of the thread's last libgit2 error, read after a failed C call.
+    fn c_error_class() -> c_int {
+        // SAFETY: no arguments.
+        let e = unsafe { ffi::git_error_last() };
+        // SAFETY: `git_error_last` never returns NULL; the class is read at once.
+        unsafe { (*e).klass }
+    }
+
+    /// Resizes both runs to each length of `lens` in turn, `bytes` choosing the resizes
+    /// over bytes (`git__realloc`, `resize_bytes`, with 4-byte elements counted as 4 bytes)
+    /// rather than elements.
+    fn compare(start: usize, lens: &[usize], bytes: bool) {
+        errors::clear();
+        let data = if start == 0 {
+            ptr::null_mut()
+        } else {
+            // SAFETY: any sizes; a fresh run of `start` elements.
+            unsafe { ffi::git__mallocarray(start, 4) }
+        };
+        let mut c = CRun { data, len: start };
+        let mut rust = if start == 0 {
+            AllocVec::empty()
+        } else {
+            ArrayFree::new_uninit::<u32>(start).unwrap()
+        };
+        c.fill(0, 0);
+        rust_fill(&mut rust, 0, 0);
+        for (step, &len) in lens.iter().enumerate().map(|(i, l)| (i + 1, l)) {
+            let kept = c.len.min(len);
+            let resized = if bytes {
+                // SAFETY: `c.data` is NULL or the live run, given up on success; the size
+                // is non-zero.
+                unsafe { ffi::git__realloc(c.data, len * 4) }
+            } else {
+                // SAFETY: as above.
+                unsafe { ffi::git__reallocarray(c.data, len, 4) }
+            };
+            let c_class = resized.is_null().then(c_error_class);
+            let rust_out = if bytes {
+                // The byte resize sees the run as bytes: a run of `u32` reinterpreted is
+                // what C's `git__realloc` callers resize.
+                let (p, n) = std::mem::take(&mut rust).into_raw_parts();
+                // SAFETY: the run's storage, `n * 4` bytes of libgit2's allocator, adopted
+                // as bytes by a run of the same policy.
+                let mut as_bytes = unsafe {
+                    AllocVec::<MaybeUninit<u8>>::from_raw_parts_or_empty(p.cast(), n * 4)
+                }
+                .unwrap();
+                let out = ArrayFree::resize_bytes(&mut as_bytes, len * 4);
+                let (p, n) = as_bytes.into_raw_parts();
+                // SAFETY: the storage, resized or not, back as the elements it holds; its
+                // byte length is a multiple of 4.
+                rust = unsafe { AllocVec::from_raw_parts_or_empty(p.cast(), n / 4) }.unwrap();
+                out
+            } else {
+                ArrayFree::resize(&mut rust, len)
+            };
+            assert_eq!(
+                c_class,
+                rust_out.as_ref().err().map(errors::ErrorBuf::raw_class),
+                "step {step}: resize to {len}"
+            );
+            if let Some(resized) = NonNull::new(resized) {
+                c = CRun {
+                    data: resized.as_ptr(),
+                    len,
+                };
+                c.fill(kept, step);
+                rust_fill(&mut rust, kept, step);
+            }
+            assert_eq!(c.len, rust.len(), "step {step}");
+            assert_eq!(
+                c.elements(c.len),
+                rust_elements(&rust, rust.len()),
+                "step {step}"
+            );
+        }
+        // SAFETY: the live run, given up once.
+        unsafe { ffi::git__free(c.data) };
+        drop(rust);
+    }
+
+    /// The lengths each comparison walks: growth, shrinkage, the same length, past a page,
+    /// and back.
+    const LENS: [usize; 7] = [5, 2, 9, 9, 1, 4096, 3];
+
+    #[test]
+    #[cfg_attr(miri, ignore = "calls libgit2")]
+    fn element_resizes_match_reallocarray_step_by_step() {
+        compare(3, &LENS, false);
+        // A run without storage is allocated afresh by both.
+        compare(0, &LENS, false);
+        // An overflowing product is refused by both, the run left as it was.
+        compare(2, &[usize::MAX / 2 + 1, 4, usize::MAX / 4 + 1, 1], false);
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore = "calls libgit2")]
+    fn byte_resizes_match_realloc_step_by_step() {
+        compare(3, &LENS, true);
+        compare(0, &LENS, true);
+    }
+
+    unsafe extern "C" {
+        fn malloc(n: usize) -> *mut c_void;
+        fn realloc(p: *mut c_void, n: usize) -> *mut c_void;
+        fn free(p: *mut c_void);
+    }
+
+    /// The one resize size, in bytes, [`Refusing`] refuses.
+    const REFUSED: usize = 4 * 4242;
+
+    /// libc's allocator, refusing every request of [`REFUSED`] bytes.
+    pub(super) struct Refusing;
+
+    // SAFETY: forwards to libc's `malloc` family unchanged, which meets `Alloc`'s contract,
+    // but for refusals, which leave every block as it was.
+    unsafe impl Alloc for Refusing {
+        fn malloc(len: usize, _: Option<&CStr>, _: i32) -> Option<NonNull<u8>> {
+            // SAFETY: plain libc allocation.
+            (len != REFUSED).then(|| NonNull::new(unsafe { malloc(len) }.cast()))?
+        }
+
+        unsafe fn realloc(
+            p: Option<NonNull<u8>>,
+            len: usize,
+            _: Option<&CStr>,
+            _: i32,
+        ) -> Option<NonNull<u8>> {
+            if len == REFUSED {
+                return None;
+            }
+            let p = p.map_or(ptr::null_mut(), |p| p.as_ptr().cast());
+            // SAFETY: `p` is NULL or a live libc block the caller gives up on success.
+            NonNull::new(unsafe { realloc(p, len) }.cast())
+        }
+
+        unsafe fn free(p: NonNull<u8>) {
+            // SAFETY: `p` is a live libc block the caller gives up.
+            unsafe { free(p.as_ptr().cast()) }
+        }
+    }
+
+    static REFUSING: Allocator = Allocator::new::<Refusing>();
+
+    /// A resize the allocator refuses fails alike on both sides, each run kept whole, and
+    /// the next resize succeeds on both.
+    #[test]
+    #[cfg_attr(miri, ignore = "spawns a process")]
+    fn refused_resizes_match() {
+        isolated(concat!(module_path!(), "::refused_resizes_match"), || {
+            // SAFETY: `Refusing` meets `Alloc`'s contract; installed before libgit2 holds
+            // any allocation, in a process of its own.
+            unsafe { set_allocator(Some(REFUSING.as_ref())) };
+            compare(3, &[REFUSED / 4, 7, REFUSED / 4, 2], false);
+            compare(3, &[REFUSED / 4, 7, REFUSED / 4, 2], true);
+            compare(0, &[REFUSED / 4, 1], true);
+        });
+    }
+}
+
+// --- the installed allocator ------------------------------------------------------------
+//
+// In a child process, before libgit2 is initialised, where it holds no allocation: the
+// same installs made through Rust and through C's routines leave the same global, which
+// `installed` reads as C does.
+
+mod installed {
+    use libgit2::ffi;
+    use libgit2::libgit2::src::libgit2::settings::set_allocator;
+    use libgit2::libgit2::src::util::alloc::{Allocator, global_init, installed};
+    use libgit2::libgit2::src::util::allocators::failalloc::FailAlloc;
+
+    use super::isolated;
+
+    /// The global's members as C reads them, by address.
+    fn c_reads() -> [usize; 3] {
+        // SAFETY: a read of the global, which no other thread writes in this process.
+        let g = unsafe { (&raw const ffi::git__allocator).read() };
+        [
+            g.gmalloc.map_or(0, |f| f as usize),
+            g.grealloc.map_or(0, |f| f as usize),
+            g.gfree.map_or(0, |f| f as usize),
+        ]
+    }
+
+    /// The global's members as `installed` reads them, by address.
+    fn rust_reads() -> [usize; 3] {
+        // SAFETY: no other thread runs in this process, so none writes the global.
+        let g = unsafe { installed() };
+        [
+            g.malloc().map_or(0, |f| f as usize),
+            g.realloc().map_or(0, |f| f as usize),
+            g.free().map_or(0, |f| f as usize),
+        ]
+    }
+
+    /// The raw value of `a`, for C's routines to copy.
+    fn raw(a: &Allocator) -> ffi::git_allocator {
+        let r = a.as_ref();
+        ffi::git_allocator {
+            gmalloc: r.malloc(),
+            grealloc: r.realloc(),
+            gfree: r.free(),
+        }
+    }
+
+    static FAIL: Allocator = Allocator::new::<FailAlloc>();
+
+    /// A family over libc's allocator.
+    static LIBC: Allocator = Allocator::new::<super::resizes::Refusing>();
+
+    /// `a`'s members, by address.
+    fn addrs_of(a: &Allocator) -> [usize; 3] {
+        let r = a.as_ref();
+        [
+            r.malloc().map_or(0, |f| f as usize),
+            r.realloc().map_or(0, |f| f as usize),
+            r.free().map_or(0, |f| f as usize),
+        ]
+    }
+
+    /// `allocator`'s install through `set_allocator` and through `git_allocator_setup`,
+    /// each from the failing family, and the global each leaves.
+    fn both_setups(allocator: Option<&Allocator>) -> ([usize; 3], [usize; 3]) {
+        let mut failing = raw(&FAIL);
+        // SAFETY: no other thread runs, and libgit2 holds no allocation before
+        // initialisation, so any family may replace any other; C copies the live value.
+        unsafe { ffi::git_allocator_setup(&raw mut failing) };
+        // SAFETY: as above.
+        unsafe { set_allocator(allocator.map(Allocator::as_ref)) };
+        let rust = rust_reads();
+        assert_eq!(rust, c_reads());
+        // SAFETY: as above.
+        unsafe { ffi::git_allocator_setup(&raw mut failing) };
+        let mut copy = allocator.map(raw);
+        let arg = copy.as_mut().map_or(std::ptr::null_mut(), |c| &raw mut *c);
+        // SAFETY: as above; `arg` is NULL or a live value C copies.
+        let rc = unsafe { ffi::git_allocator_setup(arg) };
+        assert_eq!(rc, 0);
+        (rust, c_reads())
+    }
+
+    /// `global_init` and `git_allocator_global_init` from the same global, and the
+    /// global each leaves.
+    fn both_global_inits(from: &Allocator) -> ([usize; 3], [usize; 3]) {
+        let mut start = raw(from);
+        // SAFETY: as in `both_setups`.
+        unsafe { ffi::git_allocator_setup(&raw mut start) };
+        // SAFETY: as above.
+        unsafe { global_init() };
+        let rust = rust_reads();
+        // SAFETY: as above.
+        unsafe { ffi::git_allocator_setup(&raw mut start) };
+        // SAFETY: as above.
+        let rc = unsafe { ffi::git_allocator_global_init() };
+        assert_eq!(rc, 0);
+        (rust, c_reads())
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore = "spawns a process")]
+    fn installs_through_rust_and_c_leave_the_same_global() {
+        isolated(
+            concat!(
+                module_path!(),
+                "::installs_through_rust_and_c_leave_the_same_global"
+            ),
+            || {
+                // Before anything: the failing family, read alike.
+                assert_eq!(rust_reads(), c_reads());
+                assert_eq!(rust_reads(), addrs_of(&FAIL));
+                // A value, and `None` (the standard family).
+                let (rust, c) = both_setups(Some(&LIBC));
+                assert_eq!((rust, c), (addrs_of(&LIBC), rust));
+                let (rust, c) = both_setups(None);
+                assert_eq!(rust, c);
+                assert_ne!(rust, addrs_of(&FAIL));
+                let standard = rust;
+                // `global_init` over the failing family installs the standard one, over any
+                // other keeps it.
+                assert_eq!(both_global_inits(&FAIL), (standard, standard));
+                let libc = addrs_of(&LIBC);
+                assert_eq!(both_global_inits(&LIBC), (libc, libc));
+            },
+        );
+    }
 }

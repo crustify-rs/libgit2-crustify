@@ -719,6 +719,13 @@ function git__mallocarray
 function git__strdup
 function git__strndup
 function git__substrdup
+# wave-177/batch-0: the rest of src/util/alloc.c: the resizes (git__realloc is `static
+# inline`, wrapped in static_fns.c), the hidden global and the allocator's set-up routines
+function git__realloc
+function git__reallocarray
+function git_allocator_global_init
+function git_allocator_setup
+var git__allocator
 
 # src/util/allocators/failalloc.c: the failing allocator family (wave-176/batch-1)
 function git_failalloc_free

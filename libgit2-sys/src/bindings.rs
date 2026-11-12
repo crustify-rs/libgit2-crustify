@@ -14444,8 +14444,18 @@ const _: () = {
     ][::std::mem::offset_of!(git_transport, free) - 104usize];
 };
 unsafe extern "C" {
+    pub static mut git__allocator: git_allocator;
+}
+unsafe extern "C" {
     #[link_name = "git__malloc__extern"]
     pub fn git__malloc(len: usize) -> *mut ::std::os::raw::c_void;
+}
+unsafe extern "C" {
+    #[link_name = "git__realloc__extern"]
+    pub fn git__realloc(
+        ptr: *mut ::std::os::raw::c_void,
+        size: usize,
+    ) -> *mut ::std::os::raw::c_void;
 }
 unsafe extern "C" {
     #[link_name = "git__free__extern"]
@@ -14456,6 +14466,13 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn git__mallocarray(nelem: usize, elsize: usize) -> *mut ::std::os::raw::c_void;
+}
+unsafe extern "C" {
+    pub fn git__reallocarray(
+        ptr: *mut ::std::os::raw::c_void,
+        nelem: usize,
+        elsize: usize,
+    ) -> *mut ::std::os::raw::c_void;
 }
 unsafe extern "C" {
     pub fn git__strdup(
@@ -14473,6 +14490,19 @@ unsafe extern "C" {
         str_: *const ::std::os::raw::c_char,
         n: usize,
     ) -> *mut ::std::os::raw::c_char;
+}
+unsafe extern "C" {
+    /** This function is being called by our global setup routines to
+ initialize the standard allocator.*/
+    pub fn git_allocator_global_init() -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    /** Switch out libgit2's global memory allocator
+
+ @param allocator The new allocator that should be used. All function pointers
+                  of it need to be set correctly.
+ @return An error code or 0.*/
+    pub fn git_allocator_setup(allocator: *mut git_allocator) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
     pub fn git_failalloc_malloc(

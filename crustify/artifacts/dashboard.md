@@ -57,23 +57,23 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip `<sha>`; `main` shipped at `<sha>`; crustify `4605156`, ffibox `7950244` (`main`), wavefront `db28284`
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `17732` non-test, `95599` tests; **C LoC** — `<n>`
+- **Rust LoC** — `17798` non-test, `96295` tests; **C LoC** — `<n>`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `719` | — | `28.41`% | `79.71`% |
-| UB unsafe tests | `102` | — | `19.38`% | `12.24`% |
-| Equiv tests | `495` | — | `43.43`% | `75.59`% |
-| Unit tests | `806` | — | `32.00`% | `87.30`% |
-| **Total tests** | **`2122`** | — | **`45.88`%** | **`98.92`%** |
+| UB safe tests | `724` | — | `28.39`% | `79.70`% |
+| UB unsafe tests | `108` | — | `19.38`% | `12.41`% |
+| Equiv tests | `499` | — | `43.42`% | `75.72`% |
+| Unit tests | `816` | — | `31.98`% | `87.42`% |
+| **Total tests** | **`2147`** | — | **`45.88`%** | **`98.90`%** |
 | total types | `258` | — | — | — |
 | ported types | `0` | `0.00`% | — | — |
 | wrapped types | `105` | `40.70`% | — | — |
 | total symbols | `979` | — | — | — |
 | ported symbols | `4` | `0.41`% | — | — |
-| wrapped symbols | `448` | `45.76`% | — | — |
+| wrapped symbols | `460` | `46.99`% | — | — |
 
 ### Module stats
 
@@ -417,6 +417,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/raw-lifetime-string` | `legacy-2` | `0` | wrap | first | `2` | — | `+1362/-14` | — | `$5.49` | `12.39M` | `23m12s` | `$2.75` | — |
 | `libgit2/src/util/alloc.c` | `12` | `1` | wrap | first | `7` | `56` | `+1947/-677` | `45.91`% / `98.92`% | `$18.92` | `66.48M` | `54m55s` | `$2.70` | `$0.34` |
 | `libgit2/src/util/alloc.c` | `12` | `2` | wrap | first | `7` | `56` | `+693/-132` | `45.90`% / `98.90`% | `$14.31` | `50.49M` | `57m19s` | `$2.04` | `$0.26` |
+| `libgit2/src/util/alloc.c` | `177` | `0` | wrap | first | `12` | `34` | `+1382/-44` | `45.88`% / `98.90`% | — | — | — | — | — |
 | `libgit2/src/util/errors.c` | `13` | `1` | wrap | first | `4` | `51` | `+1008/-26` | `1.30`% / `97.32`% | `$4.00` | `8.72M` | `21m23s` | `$1.00` | `$0.08` |
 | `libgit2/src/util/errors.c` | `21` | `0` | wrap | first | `1` | `15` | `+756/-71` | `1.36`% / `98.40`% | `$3.06` | `6.69M` | `15m41s` | `$3.06` | `$0.20` |
 | `libgit2/src/libgit2/oid.c` | `17` | `0` | wrap | first | `18` | `252` | `+1351/-11` | `6.07`% / `99.47`% | `$8.55` | `17.50M` | `40m06s` | `$0.48` | `$0.03` |
@@ -486,7 +487,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | wrap | review | `1` | — | `+113/-14` | — | `$4.80` | `10.64M` | `27m50s` | `$4.80` | — |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | wrap | review | `2` | — | `+217/-15` | — | `$11.03` | `25.98M` | `47m17s` | `$5.51` | — |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | wrap | review | `3` | — | `+11/-7` | `45.88`% / `98.92`% | `$5.87` | `16.61M` | `16m58s` | `$1.96` | — |
-| **Σ first** |  |  |  |  | **`435`** | **`8626`** | **`+71638/-3486`** | **`45.88`% / `98.92`%** | **`$468.89`** | **`1452.50M`** | — | **`$1.08`** | **`$0.05`** |
+| **Σ first** |  |  |  |  | **`447`** | **`8660`** | **`+73020/-3530`** | **`45.88`% / `98.90`%** | **`$468.89`** | **`1452.50M`** | — | **`$1.08`** | **`$0.05`** |
 | **Σ review** |  |  |  |  | **`425`** | — | **`+7142/-1353`** | **`45.88`% / `98.92`%** | **`$360.45`** | **`688.82M`** | — | **`$0.85`** | — |
 
 ### Batches: tests
@@ -499,6 +500,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 |---|---|---|---|---|---|---|---|
 | `libgit2/src/util/alloc.c` | `12` | `1` | first | `+18` (`-0.02`/`+0.13` pp) | `+0` (`+0.02`/`-0.08` pp) | `+1` (`+0.02`/`-0.17` pp) | `+5` (`+0.01`/`+0.08` pp) |
 | `libgit2/src/util/alloc.c` | `12` | `2` | first | `+1` (`+0.00`/`-0.01` pp) | `+0` (`-0.02`/`-0.01` pp) | `+1` (`+0.00`/`+0.26` pp) | `+1` (`+0.02`/`-0.01` pp) |
+| `libgit2/src/util/alloc.c` | `177` | `0` | first | `+5` (`+0.01`/`-0.01` pp) | `+6` (`+0.01`/`+0.25` pp) | `+4` (`+0.01`/`+0.06` pp) | `+10` (`-0.01`/`+0.04` pp) |
 | `libgit2/src/util/errors.c` | `13` | `1` | first | `+11` (`+0.18`/`-1.19` pp) | `+0` (`+0.00`/`-10.21` pp) | `+4` (`+0.12`/`-2.07` pp) | `+4` (`+0.07`/`-8.60` pp) |
 | `libgit2/src/util/errors.c` | `21` | `0` | first | `+6` (`+0.00`/`+7.16` pp) | `+0` (`+0.00`/`-1.80` pp) | `+5` (`+0.00`/`+5.40` pp) | `+3` (`+0.01`/`+0.47` pp) |
 | `libgit2/src/libgit2/oid.c` | `17` | `0` | first | `+8` (`+0.17`/`+1.11` pp) | `+0` (`+0.00`/`-5.19` pp) | `+5` (`+0.18`/`+3.02` pp) | `+7` (`+0.10`/`-6.64` pp) |
@@ -565,7 +567,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/indexer.c` | `legacy-179` | `0` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) | `+1` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+2` (—/— pp) | `+0` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+1` (—/— pp) | `+1` (—/— pp) |
-| **Σ first** |  |  |  | **`+313` (`+10.17`/`+6.06` pp)** | **`+26` (`+3.18`/`-8.17` pp)** | **`+197` (`+9.00`/`+14.07` pp)** | **`+250` (`+11.78`/`-33.59` pp)** |
+| **Σ first** |  |  |  | **`+318` (`+10.18`/`+6.05` pp)** | **`+32` (`+3.19`/`-7.92` pp)** | **`+201` (`+9.01`/`+14.13` pp)** | **`+260` (`+11.77`/`-33.55` pp)** |
 | **Σ review** |  |  |  | **`+14` (`+0.34`/`-1.41` pp)** | **`+4` (`-0.92`/`+0.26` pp)** | **`+22` (`+0.09`/`-0.39` pp)** | **`+34` (`+2.44`/`+7.46` pp)** |
 
 ### Batches: safety audit
@@ -576,12 +578,13 @@ Deterministic `ffimap`; no model.
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | `libgit2/src/util/alloc.c` | `12` | `1` | wrap | first | `+0` | `+0` | `+5` | `+0` | `+0` | `+0.00` pp | `+1` | `+0` | `+0` | `+0` | `+0` | `+2` | `-0.06` pp | `+12` |
 | `libgit2/src/util/alloc.c` | `12` | `2` | wrap | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `-1` | `+0` | `+0` | `+0` | `+0` | `+5` | `+0.01` pp | `+3` |
+| `libgit2/src/util/alloc.c` | `177` | `0` | wrap | first | `+0` | `+0` | `+2` | `+0` | `+0` | `+0.13` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+3` | `-0.02` pp | `+7` |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `0` | wrap | first | `+0` | `+0` | `+4` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.04` pp | `+0` |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+4` | `+0.02` pp | `+7` |
 | `libgit2/src/util/alloc.c` | `12` | `3` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.01` pp | `+0` |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `3` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
-| **Σ first** |  |  |  |  | **`+0`** | **`+0`** | **`+9`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+11`** | **`-0.07` pp** | **`+22`** |
+| **Σ first** |  |  |  |  | **`+0`** | **`+0`** | **`+11`** | **`+0`** | **`+0`** | **`+0.13` pp** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+14`** | **`-0.09` pp** | **`+29`** |
 | **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`-0.01` pp** | **`+0`** |
 
 ### Batches: API stability
@@ -590,8 +593,9 @@ Deterministic `ffimap api`; no model.
 
 | module | wave | batch | objective | pass | kept | extended | changed | removed | new | →Replaces | unattributed | reasons |
 |---|---|---|---|---|---:|---:|---:|---:|---:|---:|---|---|
+| `libgit2/src/util/alloc.c` | `177` | `0` | wrap | first | `0` | `0` | `0` | `0` | `12` | `0` | `alloc` −4 (anchored) | — |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `3` | wrap | review | `3` | `0` | `0` | `0` | `0` | `0` | — | — |
-| **Σ first** |  |  |  |  | — | — | — | — | — | — |  |  |
+| **Σ first** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`12`** | **`0`** |  |  |
 | **Σ review** |  |  |  |  | **`3`** | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** |  |  |
 
 ### Batches — review: PoC + reports
@@ -2330,3 +2334,77 @@ either module changed or removed. Under BSan, four `indexer.c` tests never finis
 (`indexer::unit_tests::{a_break_cancels_the_indexing_with_git_euser, a_panic_cancels_then_resumes_after_the_walk, libgit2_calls_the_closure_with_its_progress}`
 and `equiv`'s `src::libgit2::indexer::a_progress_callback_sees_and_cancels_as_a_c_callback`);
 module passes skip them by name until the indexer module sizes them for BSan.
+
+### `libgit2/src/util/alloc.c` wave 177 batch 0: the rest of `alloc.c`
+
+The module's second run binds its 12 remaining symbols in `src/libgit2/src/util/alloc.rs`,
+completing wave 12's stand-ins rather than adding to them. The three inline function
+pointers of `git_allocator`'s members are the existing `MallocFn`, `ReallocFn` and `FreeFn`
+aliases (their C form) and `Alloc`'s three methods (their Rust form), anchored
+`fnp::git_allocator.gmalloc` and so on. Their trampolines become the panic barrier
+`binding-symbols` asks for: a panic in `Alloc::malloc` or `Alloc::realloc` now returns NULL,
+C's out-of-memory convention, where it aborted, and one in `Alloc::free` still aborts, since
+C's `free` cannot fail. `Alloc`'s `# Safety` gains the one clause that needs: a panicking
+`realloc` leaves `ptr` live. `ffimap api` cannot see a behaviour change; no signature moved.
+xdiff's `xdl_malloc`, `xdl_calloc`, `xdl_realloc` and `xdl_free` are anchored beside the
+primitives they alias, on those primitives' strategy methods, a placement no skill stated
+(`crustify/evolution/symbol-alias-anchors`, landed as Crustify `107cc09`).
+`git__reallocarray` and `git__realloc` are `ArrayFree::resize` and `ArrayFree::resize_bytes`,
+over `&mut AllocVec<MaybeUninit<T>>`, returning `Result<(), ErrorBuf>` and leaving the run
+whole on failure. A resize to zero releases the run, where C would make the zero-byte
+`grealloc` its own contract excludes, and a size past `isize::MAX` is refused before C is
+asked: both are documented divergences, tested as unit tests. The hidden global
+`git__allocator` is `installed()`, an `unsafe fn` returning `AllocatorRef<'static>`
+(Globals: mutable without a lock, so its accessor excludes concurrent writes and is reported
+as such), and `git_allocator_global_init` is the `unsafe fn global_init()`; no safe path
+writes or borrows the global. `git_allocator_setup` is the second anchor of
+`settings::set_allocator`, which `GIT_OPT_SET_ALLOCATOR` reaches, as the task asked; it stays
+outside a region, as all of `settings.rs` does. `allowlist.txt` gains the four functions and
+`var git__allocator`; `git__realloc` is `static inline`, wrapped in `static_fns.c`. The
+ownership store gains the pointer findings of `git__realloc`, `git__reallocarray` and
+`git_allocator_setup`; none plays a lifecycle role, `realloc`-style routines being none.
+`memcpy`, `git_allocator_setup`'s one libc entity, stays in the C; no Rust of the batch
+reaches it, so its `std` route was not exercised.
+
+Coverage was measured with `crustify/scripts/coverage/run.sh` on a `git archive` of the wave
+tip `1043d550f` and on this tree, each suite alone. C is read with the `coverage` variant's
+static archive as the only object and no source filter (86,833 lines), as the task asked,
+not through `report.py`'s scope; Rust with `report.py`'s objects over the scratch tree's
+`src/`. The unit column merges `lib` and `unit_pub`. The Coverage stats rows are this tree's
+figures by that method, and replace the earlier method's. The nightly doctests' `CommitBuilder`
+compile-fail case fails in both trees. Worklist coverage: C `alloc.c` 56 of 56 lines, 39 of
+39 regions and 20 of 20 branches, `alloc.h`'s `git__realloc` as `alloc.c` compiles it 6 of 6
+lines and 2 of 2 branches; Rust `alloc.rs` 241 of 247 lines, 287 of 295 regions and 64 of 64
+functions, every new line reached. The misses predate the batch: `pinned`'s refusal when
+libgit2 cannot be initialised (environment-dependent), `ArrayFree`'s release of a NULL run,
+which ffibox never asks for (unreachable), and `?` exits of generic instances. The global's
+transitions, failing family to standard (`global_init`, initialisation), to any family
+(`set_allocator`), any to standard (`set_allocator(None)`), and failing family installed after
+initialisation back to standard, are each reached. The Overview's Rust LoC line is advanced by
+the change in ffimap's `code.loc` and `code.tests.loc` between the two trees (`+66`, `+696`).
+`+LoC` leaves out the 30 regenerated lines of `libgit2-sys/src/bindings.rs`.
+
+The safety audit scans (ffimap `9aa2ef1`, `--ffibox`, `--sys-crates libgit2_sys,pcre2_sys`, the
+twelve seams, `--regions ffi_import,ffi_export`) are of the same two trees. The two new public
+`unsafe fn`s are `installed` and `global_init`, inside `ffi_import`. `ffimap api`, against the
+wave tip with ffibox's private rustdoc JSON: the 12 items are `new`, the crate's other 780
+`kept`, and `alloc`'s four unattributed public items (`Alloc` and the three aliases) leave the
+unattributed surface, since they now carry anchors.
+
+Gates, on the batch's base `1043d550f`: the workspace is formatted, and `clippy
+--all-targets` passes with warnings denied. The whole workspace passes on `plain` and under
+ASan+UBSan but for the known trybuild snapshot mismatches (5 on `plain`, 13 under the
+nightly) and the nightly's `CommitBuilder` compile-fail doctest. TSan ran every test
+matching `util::alloc` in `lib`, `ub_safe`, `ub_unsafe`, `equiv` and `unit_pub`, the
+threaded resizes and the global's readers among them, and Miri the same set: 25 Rust-only
+tests pass, and each newly marked test was run alone there and seen to stop at
+`git_libgit2_init` (`calls libgit2`) or at `readlink` (`spawns a process`). BorrowSanitizer
+ran five tests alone, by exact name: `installed::follows_every_install_on_the_reading_thread`,
+`vec_resizes_through_every_size` (203 s), `vec_resizes_to_zero_and_back`,
+`panics_in_malloc_and_realloc_read_as_failure` and `element_resizes_match_reallocarray_step_by_step`
+(682 s); all pass with no report. Under `cargo bsan` the bindings check differs by doc
+comments alone, as known, so those runs set `CRUSTIFY_BINDINGS_UPDATE` and the committed
+bindings were restored after. The packaging gate was not run: `git__realloc` is a second
+`static inline` of `src/util/alloc.h` in `static_fns.c`, so it fails as
+`crustify/evolution/internal-headers-in-the-bindings` records, and staging an install would
+write the shared `plain` build's install manifest. Usage cells are the assistant's.

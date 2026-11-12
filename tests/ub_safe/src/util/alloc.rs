@@ -8,9 +8,10 @@
 //! races, and the counters show the calls reached Rust.
 //!
 //! The strategies' owners are driven through the safe API alone: every size around a
-//! page, copies that outlive their sources, partial fills dropped early, owners that
-//! cross threads, and first allocations that race to initialise libgit2. `ASan` flags an
-//! overrun, a double free or a free through the wrong allocator, `TSan` a race.
+//! page, copies that outlive their sources, partial fills dropped early, runs resized
+//! through every size and to zero, owners that cross threads, and first allocations that
+//! race to initialise libgit2. `ASan` flags an overrun, a double free or a free through the
+//! wrong allocator, `TSan` a race.
 
 use std::ffi::{CStr, CString};
 use std::mem::{MaybeUninit, align_of};
@@ -176,6 +177,117 @@ fn vec_rejects_oversized_requests_without_panicking() {
     assert!(AllocVec::<u64>::new_uninit(usize::MAX).is_none());
     assert!(AllocVec::<u8>::new_uninit(isize::MAX as usize + 1).is_none());
     assert!(AllocVec::<u8>::from_fn(isize::MAX as usize + 1, |_| 0).is_none());
+}
+
+// --- resizes ----------------------------------------------------------------------------
+
+/// Writes every slot of `run` from `from` on; `ASan` flags a slot past the storage.
+fn fill_from(run: &mut AllocVec<MaybeUninit<u32>>, from: usize, seed: u32) {
+    for (i, slot) in run.as_mut_slice().iter_mut().enumerate().skip(from) {
+        slot.write(seed ^ u32::try_from(i).unwrap());
+    }
+}
+
+/// A run grows and shrinks through every size around a page, each new tail written to its
+/// end, as `git__reallocarray` moves it; `ASan` flags a lost prefix block or an overrun.
+#[test]
+#[cfg_attr(miri, ignore = "calls libgit2")]
+fn vec_resizes_through_every_size() {
+    let mut run = AllocVec::<MaybeUninit<u32>>::empty();
+    let mut len = 0;
+    for next in SIZES.into_iter().chain(SIZES.into_iter().rev()) {
+        ArrayFree::resize(&mut run, next).unwrap();
+        assert_eq!(run.len(), next);
+        assert_eq!(run.as_ptr() as usize % align_of::<u32>(), 0);
+        fill_from(&mut run, len.min(next), 0x5EED);
+        len = next;
+    }
+    let mut bytes = ArrayFree::new_uninit::<u8>(0).unwrap();
+    for next in SIZES {
+        ArrayFree::resize_bytes(&mut bytes, next).unwrap();
+        bytes.as_mut_slice()[next - 1].write(1);
+    }
+}
+
+/// Resizing to zero releases the storage, and growing again allocates afresh; a run of
+/// each origin, `ffibox`'s and C's, goes through it.
+#[test]
+#[cfg_attr(miri, ignore = "calls libgit2")]
+fn vec_resizes_to_zero_and_back() {
+    for len in [0, 1, 4097] {
+        let mut runs = [
+            ArrayFree::new_uninit::<u32>(len).unwrap(),
+            AllocVec::<u32>::new_uninit(len).unwrap(),
+            AllocVec::<MaybeUninit<u32>>::empty(),
+        ];
+        for run in &mut runs {
+            ArrayFree::resize(run, 0).unwrap();
+            assert!(run.is_empty() && run.as_ptr().is_null());
+            ArrayFree::resize(run, 3).unwrap();
+            fill_from(run, 0, 3);
+        }
+    }
+}
+
+/// A refused resize leaves the run whole and usable, and no request panics.
+#[test]
+#[cfg_attr(miri, ignore = "reports through libgit2's error state")]
+fn vec_resizes_reject_oversized_requests_without_panicking() {
+    let mut run = ArrayFree::new_uninit::<u32>(2).unwrap();
+    fill_from(&mut run, 0, 9);
+    for len in [isize::MAX as usize / 4 + 1, usize::MAX / 4 + 1, usize::MAX] {
+        assert!(ArrayFree::resize(&mut run, len).is_err());
+        assert_eq!(run.len(), 2);
+        fill_from(&mut run, 0, 10);
+    }
+    let mut bytes = AllocVec::<MaybeUninit<u8>>::empty();
+    assert!(ArrayFree::resize_bytes(&mut bytes, isize::MAX as usize + 1).is_err());
+    assert!(bytes.as_ptr().is_null());
+    ArrayFree::resize_bytes(&mut bytes, 1).unwrap();
+}
+
+/// A run made on one thread is resized on another and released on a third; `TSan` flags a
+/// race on the allocator's state.
+#[test]
+#[cfg_attr(miri, ignore = "calls libgit2")]
+fn resized_runs_cross_threads() {
+    let runs: Vec<_> = (0..8u32)
+        .map(|seed| {
+            thread::spawn(move || {
+                let mut run = ArrayFree::new_uninit::<u32>(4).unwrap();
+                fill_from(&mut run, 0, seed);
+                run
+            })
+        })
+        .map(|h| h.join().unwrap())
+        .collect();
+    let resized: Vec<_> = runs
+        .into_iter()
+        .map(|mut run| {
+            thread::spawn(move || {
+                ArrayFree::resize(&mut run, 4096).unwrap();
+                fill_from(&mut run, 4, 1);
+                run
+            })
+        })
+        .map(|h| h.join().unwrap())
+        .collect();
+    thread::spawn(move || drop(resized)).join().unwrap();
+}
+
+/// A resize is the first call into libgit2 in a fresh process: it pins the runtime first,
+/// rather than ask the failing family libgit2 starts with.
+#[test]
+#[cfg_attr(miri, ignore = "spawns a process")]
+fn resizes_work_before_any_init() {
+    isolated(
+        concat!(module_path!(), "::resizes_work_before_any_init"),
+        || {
+            let mut bytes = AllocVec::<MaybeUninit<u8>>::empty();
+            ArrayFree::resize_bytes(&mut bytes, 16).unwrap();
+            assert_eq!(bytes.len(), 16);
+        },
+    );
 }
 
 // --- strings ----------------------------------------------------------------------------

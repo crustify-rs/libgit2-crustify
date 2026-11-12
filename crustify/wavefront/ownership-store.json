@@ -4131,6 +4131,80 @@
    }
   },
   {
+   "name": "git__realloc",
+   "defined_in": "src/util/alloc.h",
+   "ptr_args": [
+    {
+     "name": "ptr",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": true,
+      "borrowed": {
+       "lifetime": "arg:ptr"
+      },
+      "nullable": true,
+      "mutable": true,
+      "note": "git__allocator.grealloc(ptr, size, __FILE__, __LINE__): NULL allocates afresh; on success the old storage is released and its first min(old, size) bytes carried over, so ownership passes to the callee; on failure (NULL return, git_error_set_oom) ptr stays live and the caller's, read for the call only. Never called with a live ptr and size 0 by libgit2 (implementation-defined in C). Rust: alloc::ArrayFree::resize_bytes, which releases a run resized to 0 itself instead."
+     }
+    }
+   ],
+   "ptr_ret": {
+    "ptr": {
+     "scalar": null,
+     "array": {
+      "by_val": true
+     },
+     "string": false,
+     "owned": true,
+     "borrowed": null,
+     "nullable": true,
+     "mutable": true,
+     "note": "A fresh allocation of size bytes in libgit2's allocator family, holding the old prefix, released by git__free; NULL on failure with GIT_ERROR_NOMEMORY (ptr then still live). static inline in alloc.h; Rust calls it through the static_fns.c wrapper."
+    }
+   }
+  },
+  {
+   "name": "git__reallocarray",
+   "defined_in": "src/util/alloc.c",
+   "ptr_args": [
+    {
+     "name": "ptr",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": true,
+      "borrowed": {
+       "lifetime": "arg:ptr"
+      },
+      "nullable": true,
+      "mutable": true,
+      "note": "git__realloc(ptr, nelem * elsize) after GIT_MULTIPLY_SIZET_OVERFLOW: an overflowing product returns NULL with git_error_set_oom and leaves ptr untouched. Ownership as git__realloc's: given up on success, kept by the caller on failure. Rust: alloc::ArrayFree::resize, which refuses a size past isize::MAX first and releases a run resized to 0 itself."
+     }
+    }
+   ],
+   "ptr_ret": {
+    "ptr": {
+     "scalar": null,
+     "array": {
+      "by_val": true
+     },
+     "string": false,
+     "owned": true,
+     "borrowed": null,
+     "nullable": true,
+     "mutable": true,
+     "note": "Array storage of nelem * elsize bytes in libgit2's allocator holding the old prefix, released by git__free; NULL on overflow or OOM (GIT_ERROR_NOMEMORY), ptr then still live. Not a constructor (type-lifecycle: realloc-style routines play no role)."
+    }
+   }
+  },
+  {
    "name": "git__strdup",
    "defined_in": "src/util/alloc.c",
    "lifetime": {
@@ -4274,6 +4348,29 @@
      "note": "Fresh git__malloc(n+1) storage holding the n bytes at str plus a terminator: a byte-run-to-string cloner. NULL on OOM. No overflow check: n == SIZE_MAX wraps to git__malloc(0), whose success would overrun in memcpy (unreachable from Rust, whose slices stop at isize::MAX). Internal (linked from the variant's static archive); Rust: alloc::StrFree::dup_bytes calls it. Released by git__free."
     }
    }
+  },
+  {
+   "name": "git_allocator_setup",
+   "defined_in": "src/util/alloc.c",
+   "ptr_args": [
+    {
+     "name": "allocator",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:allocator"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "memcpy'd into git__allocator and not retained: borrowed for the call. NULL restores the default allocator (stdalloc, or debugalloc under GIT_DEBUG_STRICT_ALLOC). Reached from GIT_OPT_SET_ALLOCATOR; Rust: settings::set_allocator (unsafe: the write races every unsynchronised read of git__allocator)."
+     }
+    }
+   ]
   },
   {
    "name": "git_annotated_commit_free",
