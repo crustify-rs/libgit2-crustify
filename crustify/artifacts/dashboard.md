@@ -465,7 +465,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/checkout.c` | `148` | `0` | wrap | first | `2` | `395` | `+1711/-20` | — | `$8.62` | `22.76M` | `47m38s` | `$4.31` | `$0.02` |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `0` | wrap | first | `3` | `18` | `+727/-6` | `45.83`% / `77.00`% | `$12.77` | `42.14M` | `37m48s` | `$4.26` | `$0.71` |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `1` | wrap | first | `3` | `18` | `+524/-165` | `45.88`% / `98.92`% | `$10.66` | `30.55M` | `57m49s` | `$3.55` | `$0.59` |
-| `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `0` | wrap | first | `1` | `5` | `+429/-0` | `45.88`% / `98.87`% | — | — | — | — | — |
+| `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `0` | wrap | first | `1` | `5` | `+429/-0` | `45.88`% / `98.87`% | `$8.04` | `26.46M` | `22m4s` | `$8.04` | `$1.61` |
 | `libgit2/raw-lifetime-void` | `legacy-1` | `0` | wrap | review | `2` | — | `+80/-1` | — | `$7.89` | `10.78M` | `18m36s` | `$3.94` | — |
 | `libgit2/raw-lifetime-string` | `legacy-3` | `0` | wrap | review | `2` | — | `+345/-23` | — | `$10.89` | `14.41M` | `22m03s` | `$5.45` | — |
 | `libgit2/src/util/alloc.c` | `12` | `3` | wrap | review | `7` | — | `+57/-20` | — / `98.90`% | `$15.18` | `40.96M` | `1h31m33s` | `$2.17` | — |
@@ -498,9 +498,9 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/reftable/basics.c` | `169` | `4` | wrap | review | `43` | — | `+110/-16` | `45.99`% / `98.92`% | `$13.42` | `46.17M` | `40m4s` | `$0.31` | — |
 | `libgit2/deps/reftable/basics.c` | `169` | `5` | wrap | review | `43` | — | `+298/-23` | `45.93`% / `98.90`% | `$30.16` | `83.09M` | `1h40m2s` | `$0.70` | — |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | wrap | review | `3` | — | `+11/-7` | `45.88`% / `98.92`% | `$5.87` | `16.61M` | `16m58s` | `$1.96` | — |
-| `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | wrap | review | `1` | — | `+82/-67` | `45.87`% / `98.86`% | — | — | — | — | — |
-| **Σ first** |  |  |  |  | **`479`** | **`8932`** | **`+75570/-3577`** | **`45.88`% / `98.87`%** | **`$513.28`** | **`1587.56M`** | — | **`$1.07`** | **`$0.06`** |
-| **Σ review** |  |  |  |  | **`512`** | — | **`+7632/-1459`** | **`45.87`% / `98.86`%** | **`$404.03`** | **`818.08M`** | — | **`$0.79`** | — |
+| `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | wrap | review | `1` | — | `+82/-67` | `45.87`% / `98.86`% | `$12.85` | `46.60M` | `1h22m16s` | `$12.85` | — |
+| **Σ first** |  |  |  |  | **`479`** | **`8932`** | **`+75570/-3577`** | **`45.88`% / `98.87`%** | **`$521.32`** | **`1614.02M`** | — | **`$1.09`** | **`$0.06`** |
+| **Σ review** |  |  |  |  | **`512`** | — | **`+7632/-1459`** | **`45.87`% / `98.86`%** | **`$416.88`** | **`864.68M`** | — | **`$0.81`** | — |
 
 ### Batches: tests
 
@@ -2742,3 +2742,10 @@ skipped by exact name, three in `lib` and
 They are the indexer module's to fix and are not marked. Every binary passed on both trees
 with no report: `lib` 794 and 791 tests, `ub_safe` 711, `ub_unsafe` 91, `equiv` 483, and
 `unit_pub` 3 on the landed tree. The run's records are under its worktree's `crustify/tmp/gates/`.
+
+### `libgit2/src/util/allocators/win32_leakcheck.c` integration (2026-11-12)
+
+Additive conflicts only, merged by a binder (agent `a431e1942be646f96`, `$4.41`) as `17d41483f`:
+the workspace passed on `plain` and `asan-ubsan`, Miri and TSan over `util::alloc` and the
+allocators, and `ffimap api` found no item changed or removed (829 kept, 1 new from the
+working branch's tip).
