@@ -95,3 +95,24 @@ ffibox's suite and Miri, over a toy table in its tests, checking that:
 Then port one campaign table to it, `basics.rs`'s reftable hooks as the smallest, with its
 tests unchanged. Then compare the scan (`ffimap`) of the module before and after:
 `code.unsafe_block` and `fn.unsafe.priv` should fall.
+
+## Reviews
+
+Not landed yet: on ffibox's `libgit2-crustify/evolution/ffibox-vtables`.
+
+- First change (`d0f612e`, `23e0a9b`, `454172f`): `CTable<T, S>` and `impl_cvtable!`, its
+  validation ported `filter.rs`'s `git_writestream`, since reftable's allocator hooks are no
+  table (three context-free hooks, no state to recover). An independent soundness review found
+  three paths to UB from safe Rust, each with a Miri reproducer: `as_ref`/`as_mut` handles
+  ignoring `S`'s thread-safety (F1), a deferred release dropping `S` on another thread (F2),
+  `#[target_feature]` accepted on a trampoline (F3); and three hazards: a wrong `@` marking
+  compiling (F4), `CTable::new` letting safe code choose slots (F5), `S` borrowing past
+  `into_c` (F6).
+- Fixes (`041fc6c`): F1 `S: Send + Sync` on the handles with `unsafe` `_local` forms; F2 a
+  stated obligation; F3 `#[doc]` only; F4 `unsafe impl` input; F5 `CVtable::base()` and
+  `unsafe with_base`; F6 `S: 'static` on `into_c`. Re-review: those closed, but the macro
+  matched the caller's `unsafe` as a literal and dropped it, hiding the obligation from
+  `forbid(unsafe_code)` and clippy (N1, reproduced); the contract licenses NULL slots C calls
+  unconditionally (N2); the `Install` token can be kept (N3); the handles' bound is stricter
+  than `define_ctype!`'s `!Send` handles need (N4); and F2 should be a bound, as `CPayload` and
+  `CClosure` make theirs. A second round of fixes is under way.
