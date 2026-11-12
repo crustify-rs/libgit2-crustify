@@ -69,3 +69,31 @@ whether it is retroactive; `37683f4` loosened the templates' default autonomy an
 to the user. An `accounting` row for evolution reviews is missing. Cost: a review is cheap next
 to a batch; scale its depth by what a change touches, and never exempt soundness, unblocking
 or check changes.
+
+`review-2` (session `05a34716-5b36-4804-a92e-89094983e9e2`, under crustify `devel` `e2a51c6`,
+pinned to `6d533ec` on `libgit2-crustify/evolution/reviewed-evolution`; Opus 5.5, $1.13,
+4m35s): **rejected as it stands**, its direction approved; review-1's five required fixes
+are made (R3 partly: where the statuses put to the user under `propose` are kept is
+unsaid), the record is complete (44 commits of 2026-11-12, 15 entries sampled against
+their proposals) and the generated agents match the build. Required:
+
+A. §6 drops the regression test for a packaging defect, which `devel` requires of every
+   tool defect: its reproducer becomes a test run against an installed build.
+B. The reviewer role (`agents/reviewer.md:45`) reruns validation only "where the proposal's
+   record of it is in doubt", less than §8 asks of a tool's code, a check, a soundness fix
+   and this skill's rules: make it match.
+C. Record entries escape review, though `test`, `none` and `confirmed` end or skip a watch,
+   and "in the commit that lands its change" contradicts "only the reviewed commit lands"
+   (`6d533ec` itself has no entry): draft the entry in the reviewed change, or its proposal
+   for a tool's change; have §8 check its recurrence signal and any `test`; and say how a
+   reviewed commit lands (fast-forward, or a cherry-pick that is reviewed again).
+
+Also: the reviewer's shared prompt still lets a task message win over the role; a review's
+cost is folded into the `assistant` row; the `wavefront` tool skill does not name
+`WAVEFRONT_CODEQL_TESTS`; this proposal still names `ae35f81` and cites no source for the
+record of self-improving agents; how deeply a skill change outside the listed kinds is
+reviewed is unsaid (documentation has misled agents, `ffibox-usage-docs`); the record's
+"(weakens a check)" notes sit in the recurrence column, "no proposal" rows have no format,
+and two signals (one of the settled contradictions; scratch outside `crustify/tmp/`) are not
+ones a campaign observes. The user's `review/evolution/reviewed-evolution` has moved on to
+`c2f21a0` meanwhile.
