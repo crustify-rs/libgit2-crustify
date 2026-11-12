@@ -414,8 +414,8 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | `libgit2/raw-lifetime-void` | `legacy-0` | `0` | wrap | first | `2` | — | `+1245/-1` | — | `$8.28` | `17.79M` | `51m29s` | `$4.14` | — |
 | `libgit2/raw-lifetime-string` | `legacy-2` | `0` | wrap | first | `2` | — | `+1362/-14` | — | `$5.49` | `12.39M` | `23m12s` | `$2.75` | — |
-| `libgit2/src/util/alloc.c` | `12` | `1` | wrap | first | `7` | `56` | `+1947/-677` | `45.91`% / `98.92`% | — | — | — | — | — |
-| `libgit2/src/util/alloc.c` | `12` | `2` | wrap | first | `7` | `56` | `+693/-132` | `45.90`% / `98.90`% | — | — | — | — | — |
+| `libgit2/src/util/alloc.c` | `12` | `1` | wrap | first | `7` | `56` | `+1947/-677` | `45.91`% / `98.92`% | `$18.92` | `66.48M` | `54m55s` | `$2.70` | `$0.34` |
+| `libgit2/src/util/alloc.c` | `12` | `2` | wrap | first | `7` | `56` | `+693/-132` | `45.90`% / `98.90`% | `$14.31` | `50.49M` | `57m19s` | `$2.04` | `$0.26` |
 | `libgit2/src/util/errors.c` | `13` | `1` | wrap | first | `4` | `51` | `+1008/-26` | `1.30`% / `97.32`% | `$4.00` | `8.72M` | `21m23s` | `$1.00` | `$0.08` |
 | `libgit2/src/util/errors.c` | `21` | `0` | wrap | first | `1` | `15` | `+756/-71` | `1.36`% / `98.40`% | `$3.06` | `6.69M` | `15m41s` | `$3.06` | `$0.20` |
 | `libgit2/src/libgit2/oid.c` | `17` | `0` | wrap | first | `18` | `252` | `+1351/-11` | `6.07`% / `99.47`% | `$8.55` | `17.50M` | `40m06s` | `$0.48` | `$0.03` |
@@ -455,7 +455,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/checkout.c` | `148` | `0` | wrap | first | `2` | `395` | `+1711/-20` | — | `$8.62` | `22.76M` | `47m38s` | `$4.31` | `$0.02` |
 | `libgit2/raw-lifetime-void` | `legacy-1` | `0` | wrap | review | `2` | — | `+80/-1` | — | `$7.89` | `10.78M` | `18m36s` | `$3.94` | — |
 | `libgit2/raw-lifetime-string` | `legacy-3` | `0` | wrap | review | `2` | — | `+345/-23` | — | `$10.89` | `14.41M` | `22m03s` | `$5.45` | — |
-| `libgit2/src/util/alloc.c` | `12` | `3` | wrap | review | `7` | — | `+57/-20` | — / `98.90`% | — | — | — | — | — |
+| `libgit2/src/util/alloc.c` | `12` | `3` | wrap | review | `7` | — | `+57/-20` | — / `98.90`% | `$15.18` | `40.96M` | `1h31m33s` | `$2.17` | — |
 | `libgit2/util` | `legacy-6` | `2` | wrap | review | `4` | — | `+281/-117` | `1.63`% / `99.74`% | `$12.00` | `16.87M` | `28m49s` | `$3.00` | — |
 | `libgit2/util` | `legacy-7` | `0` | wrap | review | `1` | — | `+0/-0` | `1.63`% / `99.74`% | `$6.26` | `6.37M` | `23m51s` | `$6.26` | — |
 | `libgit2/oid` | `legacy-12` | `1` | wrap | review | `18` | — | `+181/-10` | `7.80`% / `99.49`% | `$11.62` | `12.73M` | `34m10s` | `$0.65` | — |
@@ -482,8 +482,8 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/indexer.c` | `legacy-179` | `0` | wrap | review | `1` | — | `+35/-0` | — | `$3.18` | `8.05M` | `12m18s` | `$3.18` | — |
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | wrap | review | `1` | — | `+113/-14` | — | `$4.80` | `10.64M` | `27m50s` | `$4.80` | — |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | wrap | review | `2` | — | `+217/-15` | — | `$11.03` | `25.98M` | `47m17s` | `$5.51` | — |
-| **Σ first** |  |  |  |  | **`429`** | **`8590`** | **`+70387/-3315`** | **`45.90`% / `98.90`%** | **`$412.21`** | **`1262.84M`** | — | **`$0.99`** | **`$0.05`** |
-| **Σ review** |  |  |  |  | **`422`** | — | **`+7131/-1346`** | **— / `98.90`%** | **`$339.40`** | **`631.25M`** | — | **`$0.82`** | — |
+| **Σ first** |  |  |  |  | **`429`** | **`8590`** | **`+70387/-3315`** | **`45.90`% / `98.90`%** | **`$445.45`** | **`1379.81M`** | — | **`$1.04`** | **`$0.05`** |
+| **Σ review** |  |  |  |  | **`422`** | — | **`+7131/-1346`** | **— / `98.90`%** | **`$354.58`** | **`672.21M`** | — | **`$0.84`** | — |
 
 ### Batches: tests
 
@@ -2120,3 +2120,25 @@ the five known trybuild snapshots and, under the nightly, the `CommitBuilder` co
 doctest. `config.rs`'s `ub_safe` and `equiv` suites hold three `#[cfg(not(miri))]` modules,
 which the testing spec does not allow in place of the attribute. They are outside this
 batch's workset and left as they are. Usage cells are the assistant's.
+
+### Campaign mode links each variant's C statically (2026-11-12)
+
+libgit2 compiles with `-fvisibility=hidden`, so the variants' `libgit2.so` exported only the
+public API, and the foundational batches of waves 169, 176 and 12 could not link the internal
+functions they bind: `failalloc.c`'s first run reproduced its C in Rust, and `alloc.c`'s
+composed its primitives over odb.c's exports. The user chose to link the C statically: a fix
+run outside the schedule (`crustify/artifacts/fixes/static-campaign-link/run-1`, agent
+`aa3f296035849fec4`, `$10.79`, `34.61M`, `47m18s`) made every variant archive `libgit2.so`'s
+196 objects (`crustify/scripts/static-archive.sh`, `build.json` version 5) and campaign mode
+link that archive (`d21c78c70`). The suite on `plain` and `asan-ubsan` kept its counts; all
+five variants link statically. `failalloc.c` and `alloc.c` were then bound again
+(`wave-176/batch-1`, `wave-12/batch-2`). The merge of `d21c78c70` into wave 169
+(`4730ad9ba`) carried conflict markers in `libgit2-sys/build.rs`, `wrapper.h` and
+`bindings.rs`; both of the wave's batches resolved them to `d21c78c70`'s side.
+
+### Evolution unattended for validated changes (2026-11-12)
+
+The settings' `evolution` answer became `evolve, unattended: the whole campaign` for changes
+that are useful and validated, at the user's instruction; others wait for the module's end.
+Landed under it: ffimap's `api` subcommand (ffimap `9aa2ef1`) and the API stability measure
+of every landing (Crustify `87e3816`), which applies from the next launched batch.
