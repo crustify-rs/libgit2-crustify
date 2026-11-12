@@ -11,7 +11,7 @@ scope fails when a file it reports lies outside its dirs: llvm-cov falls back to
 when its filters match no source, which would count the test binaries' std and Rust as C.
 
 The C objects are those of the coverage variant's static archive, its `static` in build.json
-(crustify/builds/coverage/crustify/libgit2.a), which the test binaries link: each binary holds
+(crustify/builds/coverage/crustify/libcrustify.a), which the test binaries link: each binary holds
 only the TUs it reaches, so the archive, which llvm-cov reads member by member, gives every TU
 its place in the denominator, one no test reaches at zero."""
 import subprocess,sys,pathlib,json,glob,os
