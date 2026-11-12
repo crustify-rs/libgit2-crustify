@@ -1,6 +1,15 @@
 # A header macro that implements logic is scheduled after the symbols it expands to
 
-Status: `open`
+Status: `landed`, change 2 as wavefront `e529c26` on its `devel`, with the user's approval,
+and applied to the plan by planner run 12; change 1 declined, as the order now comes from
+wavefront's graph without the planner's correction: the scheduling skill's Order section
+computes it over the units' dependencies, and wavefront's `docs/graph.md` (Edges) gives a
+macro the body edges its replacement list references, as this proposal asks. Validated:
+in run 12's schedule of `deps/reftable/basics.c`, `REFTABLE_ALLOC_ARRAY` and
+`REFTABLE_FREE_AND_NULL` follow `reftable_alloc_size`, `reftable_malloc` and `reftable_free`
+(sublayer 3), `REFTABLE_CALLOC_ARRAY` `reftable_calloc` (4), `REFTABLE_ALLOC_GROW`
+`reftable_alloc_grow` (5) and `REFTABLE_ALLOC_GROW_OR_NULL` both (6). The module's waves
+had already run (169-175), so no wave of it is re-planned.
 
 ## Signal
 

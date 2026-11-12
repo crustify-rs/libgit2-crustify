@@ -1,5 +1,5 @@
 {
- "_comment": "The libgit2 port campaign's out-of-tree libraries, in the schema of Crustify 043a8ae, as planner run 11 brought them to it from run 10's assessments: each library's candidate crates, each with one quality_assessment composed from run 10's reading of it against the Adopted crates criteria (coverage, shared state, soundness, advisories, maintenance) and its verdict; every entity the campaign uses of the library (c_entities), from the external records of schedule.json's modules, named by the public header that declares it, with what each candidate and std offers for it and the plan's recommended route, by the area run 10 assessed it in; and the recommendation that follows. libc's decision is the user's, carried unchanged: no crate adopted, what std does not serve through its crustify campaign. The other decisions are the user's to make from the recommendations. libz-rs-sys, assessed by run 10, is no candidate: it has no safe API. Planner run 11's composition is crustify/artifacts/planner/run-11/compose/ (deps11.py).",
+ "_comment": "The libgit2 port campaign's out-of-tree libraries, in the schema of Crustify 043a8ae, as planner run 11 brought them to it from run 10's assessments: each library's candidate crates, each with one quality_assessment composed from run 10's reading of it against the Adopted crates criteria (coverage, shared state, soundness, advisories, maintenance) and its verdict; every entity the campaign uses of the library (c_entities), from the external records of schedule.json's modules, named by the public header that declares it, with the modules that use it, what each candidate and std offers for it and the plan's recommended route, by the area run 10 assessed it in; and the recommendation that follows. Each library's decision is the user's, as recorded after run 11 (fb010a58e): the crates it adopts, the route of what they leave uncovered, and the overrides of the entities whose recommended route it does not take. libz-rs-sys, assessed by run 10, is no candidate: it has no safe API. Planner run 12 took each entity's used_by from its schedule, whose macros reference out-of-tree entities too (wavefront e529c26). Planner run 11's composition is crustify/artifacts/planner/run-11/compose/ (deps11.py), run 12's crustify/artifacts/planner/run-12/compose/ (deps12.py).",
  "version": "0551dfd4ad989b6a3d5683c0d4cf326c6efef929",
  "libraries": [
   {
@@ -89,6 +89,11 @@
      "kind": "function",
      "header": "arpa/inet.h",
      "used_by": [
+      {
+       "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
       {
        "link_unit": "libgit2",
        "module": "src/libgit2/streams/openssl.c",
@@ -337,12 +342,12 @@
       },
       {
        "link_unit": "libgit2",
-       "module": "deps/xdiff/xutils.c",
+       "module": "src/util/str.c",
        "foundational": false
       },
       {
        "link_unit": "libgit2",
-       "module": "src/util/str.c",
+       "module": "deps/xdiff/xutils.c",
        "foundational": false
       },
       {
@@ -636,12 +641,12 @@
       },
       {
        "link_unit": "libgit2",
-       "module": "deps/xdiff/xutils.c",
+       "module": "src/util/str.c",
        "foundational": false
       },
       {
        "link_unit": "libgit2",
-       "module": "src/util/str.c",
+       "module": "deps/xdiff/xutils.c",
        "foundational": false
       },
       {
@@ -878,6 +883,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/ctype_compat.h",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/util/wildmatch.c",
        "foundational": false
       },
@@ -927,6 +937,11 @@
      "kind": "macro",
      "header": "ctype.h",
      "used_by": [
+      {
+       "link_unit": "libgit2",
+       "module": "src/util/ctype_compat.h",
+       "foundational": false
+      },
       {
        "link_unit": "libgit2",
        "module": "src/util/wildmatch.c",
@@ -1053,6 +1068,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/ctype_compat.h",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/util/wildmatch.c",
        "foundational": false
       },
@@ -1151,6 +1171,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/ctype_compat.h",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/util/wildmatch.c",
        "foundational": false
       },
@@ -1208,17 +1233,27 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/ctype_compat.h",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/util/wildmatch.c",
        "foundational": false
       },
       {
        "link_unit": "libgit2",
-       "module": "deps/xdiff/xutils.c",
+       "module": "deps/xdiff/xmacros.h",
        "foundational": false
       },
       {
        "link_unit": "libgit2",
        "module": "src/util/str.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
+       "module": "deps/xdiff/xutils.c",
        "foundational": false
       },
       {
@@ -1360,6 +1395,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/ctype_compat.h",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/util/wildmatch.c",
        "foundational": false
       },
@@ -1399,6 +1439,11 @@
      "kind": "macro",
      "header": "ctype.h",
      "used_by": [
+      {
+       "link_unit": "libgit2",
+       "module": "src/util/ctype_compat.h",
+       "foundational": false
+      },
       {
        "link_unit": "libgit2",
        "module": "src/util/wildmatch.c",
@@ -1470,6 +1515,11 @@
      "kind": "macro",
      "header": "ctype.h",
      "used_by": [
+      {
+       "link_unit": "libgit2",
+       "module": "src/util/ctype_compat.h",
+       "foundational": false
+      },
       {
        "link_unit": "libgit2",
        "module": "src/util/wildmatch.c",
@@ -3675,6 +3725,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/util/futils.c",
        "foundational": false
       },
@@ -4079,6 +4134,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/libgit2/streams/socket.c",
        "foundational": false
       }
@@ -4103,6 +4163,11 @@
      "kind": "function",
      "header": "netdb.h",
      "used_by": [
+      {
+       "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
       {
        "link_unit": "libgit2",
        "module": "src/libgit2/streams/socket.c",
@@ -4135,6 +4200,11 @@
      "kind": "function",
      "header": "netdb.h",
      "used_by": [
+      {
+       "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
       {
        "link_unit": "libgit2",
        "module": "src/libgit2/streams/socket.c",
@@ -4698,6 +4768,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "deps/reftable/system.c",
        "foundational": false
       },
@@ -4814,6 +4889,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/thread.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/libgit2/pack-objects.c",
        "foundational": false
       }
@@ -4840,6 +4920,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/thread.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/libgit2/pack-objects.c",
        "foundational": false
       }
@@ -4864,6 +4949,11 @@
      "kind": "function",
      "header": "pthread.h",
      "used_by": [
+      {
+       "link_unit": "libgit2",
+       "module": "src/util/thread.c",
+       "foundational": false
+      },
       {
        "link_unit": "libgit2",
        "module": "src/libgit2/pack-objects.c",
@@ -4918,6 +5008,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/thread.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/libgit2/pack-objects.c",
        "foundational": false
       }
@@ -4970,6 +5065,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/thread.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/libgit2/pack-objects.c",
        "foundational": false
       }
@@ -5020,6 +5120,11 @@
      "kind": "function",
      "header": "pthread.h",
      "used_by": [
+      {
+       "link_unit": "libgit2",
+       "module": "src/util/thread.c",
+       "foundational": false
+      },
       {
        "link_unit": "libgit2",
        "module": "src/libgit2/pack-objects.c",
@@ -5100,6 +5205,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/thread.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/util/rand.c",
        "foundational": false
       },
@@ -5171,6 +5281,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/thread.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/util/rand.c",
        "foundational": false
       },
@@ -5240,6 +5355,11 @@
      "kind": "function",
      "header": "pthread.h",
      "used_by": [
+      {
+       "link_unit": "libgit2",
+       "module": "src/util/thread.c",
+       "foundational": false
+      },
       {
        "link_unit": "libgit2",
        "module": "src/util/runtime.c",
@@ -5404,6 +5524,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/thread.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/util/runtime.c",
        "foundational": false
       },
@@ -5556,6 +5681,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/thread.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/libgit2/streams/registry.c",
        "foundational": false
       },
@@ -5602,6 +5732,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/thread.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/libgit2/streams/registry.c",
        "foundational": false
       },
@@ -5646,6 +5781,11 @@
      "kind": "function",
      "header": "pthread.h",
      "used_by": [
+      {
+       "link_unit": "libgit2",
+       "module": "src/util/thread.c",
+       "foundational": false
+      },
       {
        "link_unit": "libgit2",
        "module": "src/libgit2/streams/registry.c",
@@ -5740,6 +5880,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/thread.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/libgit2/streams/registry.c",
        "foundational": false
       },
@@ -5784,6 +5929,11 @@
      "kind": "function",
      "header": "pthread.h",
      "used_by": [
+      {
+       "link_unit": "libgit2",
+       "module": "src/util/thread.c",
+       "foundational": false
+      },
       {
        "link_unit": "libgit2",
        "module": "src/libgit2/streams/registry.c",
@@ -6452,6 +6602,11 @@
       },
       {
        "link_unit": "libgit2",
+       "module": "src/libgit2/diff_xdiff.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/libgit2/merge_file.c",
        "foundational": false
       },
@@ -6556,6 +6711,11 @@
       {
        "link_unit": "libgit2",
        "module": "deps/reftable/record.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
+       "module": "deps/xdiff/xmacros.h",
        "foundational": false
       },
       {
@@ -6712,6 +6872,11 @@
       },
       {
        "link_unit": "libgit2",
+       "module": "src/util/hashmap.h",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/util/hashmap_str.h",
        "foundational": false
       },
@@ -6848,12 +7013,22 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/util.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/util/varint.c",
        "foundational": false
       },
       {
        "link_unit": "libgit2",
        "module": "src/libgit2/pack.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
+       "module": "src/libgit2/mwindow.c",
        "foundational": false
       },
       {
@@ -6971,13 +7146,13 @@
        "foundational": false
       },
       {
-       "link_unit": "libgit2",
-       "module": "src/libgit2/diff_print.c",
+       "link_unit": "git2",
+       "module": "src/cli/opt_usage.c",
        "foundational": false
       },
       {
-       "link_unit": "git2",
-       "module": "src/cli/opt_usage.c",
+       "link_unit": "libgit2",
+       "module": "src/libgit2/diff_print.c",
        "foundational": false
       }
      ],
@@ -7188,6 +7363,11 @@
      "used_by": [
       {
        "link_unit": "git2",
+       "module": "src/cli/error.h",
+       "foundational": false
+      },
+      {
+       "link_unit": "git2",
        "module": "src/cli/common.c",
        "foundational": false
       },
@@ -7376,6 +7556,11 @@
       {
        "link_unit": "libgit2",
        "module": "deps/reftable/error.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
+       "module": "src/util/posix.c",
        "foundational": false
       },
       {
@@ -7625,6 +7810,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/util/str.c",
        "foundational": false
       },
@@ -7762,13 +7952,18 @@
      "header": "stdlib.h",
      "used_by": [
       {
-       "link_unit": "libgit2",
-       "module": "src/util/unix/process.c",
+       "link_unit": "git2",
+       "module": "src/cli/error.h",
        "foundational": false
       },
       {
        "link_unit": "git2",
        "module": "src/cli/opt_usage.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
+       "module": "src/util/unix/process.c",
        "foundational": false
       },
       {
@@ -8229,12 +8424,12 @@
      "used_by": [
       {
        "link_unit": "libgit2",
-       "module": "deps/xdiff/xutils.c",
+       "module": "src/util/str.c",
        "foundational": false
       },
       {
        "link_unit": "libgit2",
-       "module": "src/util/str.c",
+       "module": "deps/xdiff/xutils.c",
        "foundational": false
       },
       {
@@ -8375,12 +8570,12 @@
       },
       {
        "link_unit": "libgit2",
-       "module": "deps/xdiff/xutils.c",
+       "module": "src/util/str.c",
        "foundational": false
       },
       {
        "link_unit": "libgit2",
-       "module": "src/util/str.c",
+       "module": "deps/xdiff/xutils.c",
        "foundational": false
       },
       {
@@ -8576,17 +8771,22 @@
       },
       {
        "link_unit": "libgit2",
-       "module": "deps/xdiff/xutils.c",
-       "foundational": false
-      },
-      {
-       "link_unit": "libgit2",
        "module": "src/util/allocators/debugalloc.c",
        "foundational": true
       },
       {
        "link_unit": "libgit2",
+       "module": "src/libgit2/common.h",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/util/str.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
+       "module": "deps/xdiff/xutils.c",
        "foundational": false
       },
       {
@@ -8621,6 +8821,11 @@
       },
       {
        "link_unit": "libgit2",
+       "module": "deps/xdiff/xemit.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/libgit2/oid.c",
        "foundational": false
       },
@@ -8632,11 +8837,6 @@
       {
        "link_unit": "libgit2",
        "module": "src/util/vector.c",
-       "foundational": false
-      },
-      {
-       "link_unit": "libgit2",
-       "module": "deps/xdiff/xemit.c",
        "foundational": false
       },
       {
@@ -9042,6 +9242,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/staticstr.h",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/util/str.c",
        "foundational": false
       },
@@ -9118,11 +9323,6 @@
       },
       {
        "link_unit": "libgit2",
-       "module": "src/libgit2/common.h",
-       "foundational": false
-      },
-      {
-       "link_unit": "libgit2",
        "module": "deps/llhttp/llhttp.c",
        "foundational": false
       },
@@ -9163,6 +9363,11 @@
       },
       {
        "link_unit": "libgit2",
+       "module": "src/libgit2/common.h",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/util/str.c",
        "foundational": false
       },
@@ -9173,12 +9378,17 @@
       },
       {
        "link_unit": "libgit2",
-       "module": "src/util/hashmap_str.h",
+       "module": "src/util/hashmap.h",
        "foundational": false
       },
       {
        "link_unit": "libgit2",
        "module": "src/util/pool.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
+       "module": "src/util/hashmap_str.h",
        "foundational": false
       },
       {
@@ -9810,12 +10020,12 @@
       },
       {
        "link_unit": "libgit2",
-       "module": "src/util/hashmap_str.h",
+       "module": "src/util/util.c",
        "foundational": false
       },
       {
        "link_unit": "libgit2",
-       "module": "src/util/util.c",
+       "module": "src/util/hashmap_str.h",
        "foundational": false
       },
       {
@@ -10281,17 +10491,17 @@
       },
       {
        "link_unit": "libgit2",
-       "module": "deps/xdiff/xutils.c",
-       "foundational": false
-      },
-      {
-       "link_unit": "libgit2",
        "module": "src/util/regexp.c",
        "foundational": false
       },
       {
        "link_unit": "libgit2",
        "module": "src/util/str.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
+       "module": "deps/xdiff/xutils.c",
        "foundational": false
       },
       {
@@ -10347,6 +10557,11 @@
       {
        "link_unit": "libgit2",
        "module": "deps/reftable/system.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
+       "module": "src/libgit2/parse.c",
        "foundational": false
       },
       {
@@ -10872,6 +11087,11 @@
      "kind": "function",
      "header": "string.h",
      "used_by": [
+      {
+       "link_unit": "libgit2",
+       "module": "src/util/strnlen.h",
+       "foundational": false
+      },
       {
        "link_unit": "libgit2",
        "module": "src/util/alloc.c",
@@ -11864,6 +12084,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/libgit2/streams/socket.c",
        "foundational": false
       }
@@ -11906,6 +12131,11 @@
      "kind": "function",
      "header": "sys/socket.h",
      "used_by": [
+      {
+       "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
       {
        "link_unit": "libgit2",
        "module": "src/libgit2/streams/socket.c",
@@ -13006,6 +13236,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/util/futils.c",
        "foundational": false
       },
@@ -13052,6 +13287,11 @@
      "kind": "function",
      "header": "sys/stat.h",
      "used_by": [
+      {
+       "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
       {
        "link_unit": "libgit2",
        "module": "deps/reftable/blocksource.c",
@@ -13170,6 +13410,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/util/fs_path.c",
        "foundational": false
       },
@@ -13226,6 +13471,11 @@
      "kind": "function",
      "header": "sys/stat.h",
      "used_by": [
+      {
+       "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
       {
        "link_unit": "libgit2",
        "module": "src/util/futils.c",
@@ -13370,6 +13620,11 @@
      "kind": "function",
      "header": "sys/stat.h",
      "used_by": [
+      {
+       "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
       {
        "link_unit": "libgit2",
        "module": "src/util/fs_path.c",
@@ -13729,6 +13984,11 @@
      "kind": "function",
      "header": "sys/time.h",
      "used_by": [
+      {
+       "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
       {
        "link_unit": "libgit2",
        "module": "src/util/futils.c",
@@ -14141,6 +14401,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/util/date.c",
        "foundational": false
       },
@@ -14181,6 +14446,11 @@
      "kind": "function",
      "header": "time.h",
      "used_by": [
+      {
+       "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
       {
        "link_unit": "libgit2",
        "module": "src/util/date.c",
@@ -14708,6 +14978,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/util/fs_path.c",
        "foundational": false
       },
@@ -14787,6 +15062,11 @@
      "kind": "function",
      "header": "unistd.h",
      "used_by": [
+      {
+       "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
       {
        "link_unit": "libgit2",
        "module": "deps/reftable/system.c",
@@ -15455,6 +15735,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/libgit2/index.c",
        "foundational": false
       },
@@ -15530,6 +15815,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/libgit2/pack.c",
        "foundational": false
       },
@@ -15576,6 +15866,11 @@
      "kind": "function",
      "header": "unistd.h",
      "used_by": [
+      {
+       "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
       {
        "link_unit": "libgit2",
        "module": "src/libgit2/indexer.c",
@@ -15664,6 +15959,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/util/futils.c",
        "foundational": false
       },
@@ -15722,6 +16022,11 @@
      "used_by": [
       {
        "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
+      {
+       "link_unit": "libgit2",
        "module": "src/util/futils.c",
        "foundational": false
       }
@@ -15758,6 +16063,11 @@
      "kind": "function",
      "header": "unistd.h",
      "used_by": [
+      {
+       "link_unit": "libgit2",
+       "module": "src/util/posix.c",
+       "foundational": false
+      },
       {
        "link_unit": "libgit2",
        "module": "src/util/fs_path.c",

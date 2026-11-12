@@ -28,6 +28,12 @@ them.
   way around its guard, and the user is to settle it through their settings. A second
   attempt through the file tool, for one of batch 2's reports, was refused the same way.
   None of the three reports is filed.
+- Planner run 12 (`crustify/planner/run-12`) met it too, for a plan correction the
+  `reviewing` skill's Plan corrections section files as
+  `crustify/reviews/planner/modules/if-still-in-c-for-test-only-exports-alone/report.md`:
+  the Write was refused with the same message, so the report went to the assistant in the
+  run's final message. The refusal reaches every stage agent run as a subagent that files
+  reports, not reviewers alone.
 
 ## Destination
 
