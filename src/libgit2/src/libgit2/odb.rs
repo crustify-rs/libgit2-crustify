@@ -2483,14 +2483,6 @@ impl OdbDataStrVec {
     }
 }
 
-impl Drop for OdbDataStrVec {
-    fn drop(&mut self) {
-        // SAFETY: the run owns its strings, each dropped once here; the storage, which
-        // the inner `OdbDataVec` frees right after, is not read again.
-        unsafe { ptr::drop_in_place(self.as_mut_slice()) }
-    }
-}
-
 impl Clone for OdbDataStrVec {
     /// Copies every string; aborts when an allocation fails, as `OdbDataStr`'s
     /// `Clone` does. [`try_clone`](Self::try_clone) reports the failure instead.

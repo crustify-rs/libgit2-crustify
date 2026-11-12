@@ -1,4 +1,8 @@
-/* bindgen input: libgit2's installed public headers, deprecated ones excluded. */
+/*
+ * bindgen input: libgit2's installed public headers, deprecated ones excluded, and the
+ * internal headers that declare the internal items the allowlist names, which campaign mode
+ * finds on the include path libgit2's own TUs compile with.
+ */
 #include <git2.h>
 #include <git2/sys/alloc.h>
 #include <git2/sys/commit.h>
@@ -23,4 +27,7 @@
 #include <git2/sys/repository.h>
 #include <git2/sys/stream.h>
 #include <git2/sys/transport.h>
+/* Internal headers. */
+#include "basics.h" /* deps/reftable */
+
 #include "shims.h"
