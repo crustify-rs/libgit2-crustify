@@ -1,7 +1,8 @@
 # ffibox goal G9 and references over immutable C bytes
 
-Status: `open`. Changing `GOALS`-level documents needs the user's approval
-(`evolution` §8), so this waits for them.
+Status: `landed`, as ffibox `efe1be9` on `devel`. The user approved it on 2026-11-12 and
+refined it: the hazard is a reference that something else can alias while it lives, not
+any reference.
 
 ## Signal
 
@@ -19,13 +20,20 @@ ffibox `docs/goals.md`, G9's first row.
 ## Change
 
 Reword the row so that the goal states the rule the primitives keep: no Rust reference
-over foreign memory that C or another handle may write while the reference lives.
+over foreign memory that anything may write or free while the reference lives (C, another
+handle, another thread), and no `&mut` over memory anything else may access.
 Immutable runs lent under a shared handle are then the one stated exception, and every
 other site stays a handle or a `CSlice`.
 
 The alternative is to keep G9 absolute and move both cases to `CSlice` and a `CStr`
 handle. That would touch the campaign's 8 `&[u8]` sites and every `&CStr` getter, and it
 would cost consumers copies or handles where a reference is sound.
+
+The wording covers single-threaded writes too, such as a later call through the same
+handle or a re-entering callback, and writes by C through its own pointers, not only by
+another Rust reference: a `&T` asserts that no one writes the memory while it lives. The
+README's mental model and `borrows.md`'s convention follow; `lib.rs`'s rule, about wrapped
+objects, stands.
 
 ## Validation
 
