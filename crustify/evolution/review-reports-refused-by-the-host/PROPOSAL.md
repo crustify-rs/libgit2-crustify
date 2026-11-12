@@ -31,24 +31,29 @@ them.
 
 ## Destination
 
-The spec: the `reviewing` skill's Reports and Landing sections, the reviewer role, and the
-assistant's review steps.
+The `claude` provider (`providers/claude/`), as the `evolution` skill's Destinations section
+has placed a host's refusal since Crustify `36a7154`: the spec's rule, that a reviewer files
+each finding's `report.md`, stays as it is.
 
 ## Change
 
-Either the host's settings let reviewer subagents write under `crustify/reviews/`, which
-only the user can decide, or the spec routes the reports around the reviewer:
+The provider prevents the refusal with what Claude Code offers, in this order of preference:
 
-Where the host refuses a reviewer's report writes, the reviewer hands each finding's
-report, in the format the Reports section gives, in its final message, one section per
-`<objective>/<slug>`, and the assistant files them verbatim under the batch's reviews dir
-as the batch's first commit before promoting the wave, with the reviewer's run id in its
-subject. A reproducer, which is code rather than a report, is still written by the
-reviewer. The Landing section then says that a review batch that could file no report
-lands its Rust-tree commit alone, and that its reports commit follows from the assistant.
+1. it launches each stage run as a process of its own (`claude -p --agent crustify:<role>`),
+   whose agent is a main agent rather than a subagent, so the host's subagent guard on
+   report files does not apply; or
+2. the settings it installs allow the stage agents' writes under the campaign's
+   `crustify/reviews/` and `crustify/artifacts/` paths, if Claude Code's permission rules
+   reach that guard.
+
+Until one lands, the interim the Destinations section gives applies: the reviewer hands
+each report, in the Reports section's format, in its final message, one section per
+`<objective>/<slug>`, and the assistant files them verbatim under the batch's reviews dir.
+The reports of `wave-176/batch-2` and `batch-3`, and of the later review batches whose
+commits carry them, are filed that way from their commit messages.
 
 ## Validation
 
-Not yet validated: it needs the assistant to file batch 3's report, and batch 2's two
-findings from `ab7d4915c`'s message, and the next review batch to run under the changed
-skill.
+Not yet validated: option 1 or 2 is validated by the next review batch writing its reports
+itself; the interim by the assistant filing the earlier batches' reports from their commit
+messages.
