@@ -600,7 +600,7 @@ mod ffi_import {
     use core::ptr::{self, NonNull};
     use core::slice;
 
-    use ffibox::callback::CClosure;
+    use ffibox::callback::{CClosure, barrier};
     use ffibox::iter::CNullTerminated;
     use ffibox::{
         CAlloc, CAllocZeroed, CBox, CCell, CDispose, CDrop, CDupClone, CLenAlloc, CLenClone,
@@ -1542,12 +1542,15 @@ mod ffi_import {
     ///   allocation of the implementation, either returns `None` and leaves `ptr` live and
     ///   unchanged, or releases `ptr` and returns an allocation as `malloc` would whose first
     ///   `min(old, len)` bytes are those `ptr` held (it may be `ptr` itself);
-    /// - `free(ptr)` releases `ptr`, a live allocation of the implementation; and
+    /// - `free(ptr)` releases `ptr`, a live allocation of the implementation;
     /// - all three may run concurrently on any threads, and an allocation may be resized or
-    ///   released on a thread other than the one that made it.
+    ///   released on a thread other than the one that made it; and
+    /// - a panic out of `malloc` or `realloc` stands for a `None` return, which the hook returns to
+    ///   C in its place, NULL: `realloc` leaves `ptr` live and unchanged when it panics, as when it
+    ///   fails. A panic out of `free` aborts the process, since C's `free` cannot fail and the
+    ///   panic cannot unwind into C.
     ///
-    /// None of them may call into reftable or libgit2, which may allocate through them. A
-    /// panic in one aborts the process, since it cannot unwind into C.
+    /// None of them may call into reftable or libgit2, which may allocate through them.
     pub unsafe trait Alloc {
         /// Allocates at least `len` bytes; `None` on failure.
         fn malloc(len: NonZeroUsize) -> Option<NonNull<u8>>;
@@ -1570,15 +1573,22 @@ mod ffi_import {
         unsafe fn free(ptr: NonNull<u8>);
     }
 
-    /// reftable's `malloc` hook over [`Alloc::malloc`].
+    /// reftable's `malloc` hook over [`Alloc::malloc`]; a panic in it returns NULL, C's
+    /// out-of-memory convention.
     extern "C" fn malloc_with<A: Alloc>(len: usize) -> *mut c_void {
-        NonZeroUsize::new(len)
-            .and_then(A::malloc)
-            .map_or(ptr::null_mut(), |p| p.as_ptr().cast())
+        barrier(
+            || {
+                NonZeroUsize::new(len)
+                    .and_then(A::malloc)
+                    .map_or(ptr::null_mut(), |p| p.as_ptr().cast())
+            },
+            ptr::null_mut,
+        )
     }
 
     /// reftable's `realloc` hook over [`Alloc::realloc`]; a zero size, which
-    /// `reftable_realloc` never passes, fails.
+    /// `reftable_realloc` never passes, fails. A panic in it returns NULL, which leaves
+    /// `ptr` live, as [`Alloc`]'s contract has a panicking `realloc` leave it.
     ///
     /// # Safety
     ///
@@ -1588,13 +1598,17 @@ mod ffi_import {
         let Some(len) = NonZeroUsize::new(len) else {
             return ptr::null_mut();
         };
-        // SAFETY: per this function's contract `ptr` is NULL or a live allocation of `A`,
-        // which the caller gives up on success.
-        let resized = unsafe { A::realloc(NonNull::new(ptr.cast()), len) };
-        resized.map_or(ptr::null_mut(), |p| p.as_ptr().cast())
+        let resize = || {
+            // SAFETY: per this function's contract `ptr` is NULL or a live allocation of
+            // `A`, which the caller gives up on success.
+            let resized = unsafe { A::realloc(NonNull::new(ptr.cast()), len) };
+            resized.map_or(ptr::null_mut(), |p| p.as_ptr().cast())
+        };
+        barrier(resize, ptr::null_mut)
     }
 
-    /// reftable's `free` hook over [`Alloc::free`]; `free(NULL)` stops here.
+    /// reftable's `free` hook over [`Alloc::free`]; `free(NULL)` stops here. A panic in it
+    /// aborts the process: C's `free` cannot fail, so there is no convention to map it to.
     ///
     /// # Safety
     ///
@@ -1985,8 +1999,8 @@ mod ffi_import {
 
         use super::{
             Alloc, Buf, BufMut, BufRef, BufRelease, Error, LenOutOfRange, Names, NamesVec,
-            ReftableArrayFree, ReftableBox, ReftableStr, ReftableVec, parse_names, runtime_pinned,
-            set_alloc,
+            ReftableArrayFree, ReftableBox, ReftableStr, ReftableVec, free_with, malloc_with,
+            parse_names, realloc_with, runtime_pinned, set_alloc,
         };
         use crate::ffi;
 
@@ -2370,6 +2384,55 @@ mod ffi_import {
                 // SAFETY: `p` is a live libc block the caller gives up.
                 unsafe { free(p.as_ptr().cast()) }
             }
+        }
+
+        /// libc's allocator, whose `malloc` and `realloc` panic before they allocate or
+        /// resize anything.
+        struct Panicking;
+
+        // SAFETY: never makes or resizes an allocation, and each of `malloc` and `realloc`
+        // panics before touching anything, so a panicking `realloc` leaves `ptr` live and
+        // unchanged; `free` releases a libc block, which every allocation of this family is.
+        unsafe impl Alloc for Panicking {
+            fn malloc(len: NonZeroUsize) -> Option<NonNull<u8>> {
+                panic!("refusing {len} bytes");
+            }
+
+            unsafe fn realloc(_: Option<NonNull<u8>>, len: NonZeroUsize) -> Option<NonNull<u8>> {
+                panic!("refusing to resize to {len} bytes");
+            }
+
+            unsafe fn free(p: NonNull<u8>) {
+                // SAFETY: `p` is a live libc block the caller gives up.
+                unsafe { free(p.as_ptr().cast()) }
+            }
+        }
+
+        /// reftable calls its hooks from C, which a panic must not unwind into: the hooks'
+        /// barrier returns NULL in its place, C's out-of-memory convention, and leaves a
+        /// block a panicking resize was asked for live, for `free` to release. Pure Rust
+        /// over libc's allocator, which Miri provides, so Miri runs it.
+        #[test]
+        fn panics_in_malloc_and_realloc_read_as_failure() {
+            assert!(malloc_with::<Panicking>(16).is_null());
+            // SAFETY: NULL asks for a fresh allocation, which `Panicking` never makes.
+            assert!(unsafe { realloc_with::<Panicking>(ptr::null_mut(), 8) }.is_null());
+
+            // A live block of the family, which the panicking resize must leave alone.
+            // SAFETY: a plain libc allocation, released below.
+            let block = unsafe { malloc(16) }.cast::<u8>();
+            assert!(!block.is_null());
+            // SAFETY: `block` holds 16 writable bytes.
+            unsafe { block.write_bytes(0x5A, 16) };
+            // SAFETY: `block` is a live allocation of `Panicking`'s family, which the caller
+            // would give up on success; the implementation panics before reading it.
+            let resized = unsafe { realloc_with::<Panicking>(block.cast(), 32) };
+            assert!(resized.is_null());
+            // SAFETY: the failed resize left `block` live, its 16 bytes as they were.
+            let kept = unsafe { core::slice::from_raw_parts(block, 16) };
+            assert_eq!(kept, [0x5A; 16]);
+            // SAFETY: `block` is a live allocation of the family, given up once.
+            unsafe { free_with::<Panicking>(block.cast()) };
         }
 
         /// Pins the runtime, which installs libgit2's hooks, then installs `Countdown`.
