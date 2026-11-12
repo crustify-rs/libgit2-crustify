@@ -26924,6 +26924,84 @@
    }
   },
   {
+   "name": "names_equal",
+   "defined_in": "deps/reftable/basics.c",
+   "ptr_args": [
+    {
+     "name": "a",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_ref": {
+        "owned": false,
+        "borrowed": {
+         "lifetime": "arg:a"
+        }
+       }
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:a"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "NULL-terminated array of NUL-terminated strings, read for the call only: a[i] up to the first NULL slot of a or b, each pair through strcmp. Never NULL itself (a[0] is read). The slots are not written despite the non-const outer pointee. The stack passes the names parse_names read and those of its tables."
+     }
+    },
+    {
+     "name": "b",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_ref": {
+        "owned": false,
+        "borrowed": {
+         "lifetime": "arg:b"
+        }
+       }
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:b"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "As a: read up to the first NULL slot of either list, never written."
+     }
+    }
+   ]
+  },
+  {
+   "name": "names_length",
+   "defined_in": "deps/reftable/basics.c",
+   "ptr_args": [
+    {
+     "name": "names",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_ref": {
+        "owned": false,
+        "borrowed": {
+         "lifetime": "arg:names"
+        }
+       }
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:names"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "NULL-terminated array of strings, read for the call only: the slots up to the terminator are counted, the strings never read. Never NULL (names[0] is read); never written."
+     }
+    }
+   ]
+  },
+  {
    "name": "pack_backend__free",
    "defined_in": "src/libgit2/odb_pack.c",
    "lifetime": {
@@ -27084,6 +27162,29 @@
      "note": "The grown allocation, or p as passed when the size overflows or reftable_realloc fails; REFTABLE_ALLOC_GROW detects failure by *allocp staying below nelem."
     }
    }
+  },
+  {
+   "name": "reftable_alloc_size",
+   "defined_in": "deps/reftable/basics.h",
+   "ptr_args": [
+    {
+     "name": "out",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:out"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Out-parameter: written with nelem * elsize only when it does not overflow size_t (return 0); left unwritten on overflow (return -1)."
+     }
+    }
+   ]
   },
   {
    "name": "reftable_buf_add",
@@ -27410,6 +27511,98 @@
    ]
   },
   {
+   "name": "reftable_get_be16",
+   "defined_in": "deps/reftable/basics.h",
+   "ptr_args": [
+    {
+     "name": "in",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:in"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "Type-erased byte buffer: exactly 2 bytes read as a big-endian integer, for the call only."
+     }
+    }
+   ]
+  },
+  {
+   "name": "reftable_get_be24",
+   "defined_in": "deps/reftable/basics.h",
+   "ptr_args": [
+    {
+     "name": "in",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:in"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "Type-erased byte buffer: exactly 3 bytes read as a big-endian integer, for the call only."
+     }
+    }
+   ]
+  },
+  {
+   "name": "reftable_get_be32",
+   "defined_in": "deps/reftable/basics.h",
+   "ptr_args": [
+    {
+     "name": "in",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:in"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "Type-erased byte buffer: exactly 4 bytes read as a big-endian integer, for the call only."
+     }
+    }
+   ]
+  },
+  {
+   "name": "reftable_get_be64",
+   "defined_in": "deps/reftable/basics.h",
+   "ptr_args": [
+    {
+     "name": "in",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:in"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "Type-erased byte buffer: exactly 8 bytes read as a big-endian integer, for the call only."
+     }
+    }
+   ]
+  },
+  {
    "name": "reftable_malloc",
    "defined_in": "deps/reftable/basics.c",
    "lifetime": {
@@ -27438,6 +27631,98 @@
      "note": "reftable's allocator: the hook set by reftable_set_alloc (libgit2 installs git__ wrappers in refdb_reftable.c) or malloc. NON-zeroing; returns NULL for sz == 0 and on failure. Released by reftable_free."
     }
    }
+  },
+  {
+   "name": "reftable_put_be16",
+   "defined_in": "deps/reftable/basics.h",
+   "ptr_args": [
+    {
+     "name": "out",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:out"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Type-erased byte buffer: exactly 2 bytes written, big-endian, never read; callers pass a position inside a block or footer they own."
+     }
+    }
+   ]
+  },
+  {
+   "name": "reftable_put_be24",
+   "defined_in": "deps/reftable/basics.h",
+   "ptr_args": [
+    {
+     "name": "out",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:out"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Type-erased byte buffer: exactly 3 bytes written, big-endian, never read; callers pass a position inside a block or footer they own."
+     }
+    }
+   ]
+  },
+  {
+   "name": "reftable_put_be32",
+   "defined_in": "deps/reftable/basics.h",
+   "ptr_args": [
+    {
+     "name": "out",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:out"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Type-erased byte buffer: exactly 4 bytes written, big-endian, never read; callers pass a position inside a block or footer they own."
+     }
+    }
+   ]
+  },
+  {
+   "name": "reftable_put_be64",
+   "defined_in": "deps/reftable/basics.h",
+   "ptr_args": [
+    {
+     "name": "out",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:out"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Type-erased byte buffer: exactly 8 bytes written, big-endian, never read; callers pass a position inside a block or footer they own."
+     }
+    }
+   ]
   },
   {
    "name": "reftable_realloc",

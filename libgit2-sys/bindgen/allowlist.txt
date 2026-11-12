@@ -733,3 +733,11 @@ function reftable_realloc
 function reftable_set_alloc
 function reftable_strdup
 type reftable_error
+
+# deps/reftable/basics.c wave 169 batch 1: name lists and the hash size constants
+# (basics.h, reftable-basics.h)
+function names_equal
+function names_length
+var REFTABLE_HASH_SIZE_SHA1
+var REFTABLE_HASH_SIZE_SHA256
+var REFTABLE_HASH_SIZE_MAX

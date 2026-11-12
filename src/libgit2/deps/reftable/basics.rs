@@ -23,10 +23,10 @@
 //! and `len` hold.
 //!
 //! An all-zero `Buf` is the unallocated state, so [`Buf`] is `CZeroable` and
-//! `Buf::zeroed()` builds a value, which owns nothing: the form a parent C struct embeds and
-//! disposes itself. A buffer Rust owns is a [`BufVal`], which [`Buf::new`]
-//! (`reftable_buf_init`) builds and which releases what the buffer comes to own through
-//! `reftable_buf_release` when dropped ([`BufRelease`]). A bare value that comes to own an
+//! `Buf::zeroed()` builds a value, which owns nothing, as does the constant [`Buf::INIT`]: the form
+//! a parent C struct embeds and disposes itself. A buffer Rust owns is a [`BufVal`], which
+//! [`Buf::new`] (`reftable_buf_init`) builds and which releases what the buffer comes to own
+//! through `reftable_buf_release` when dropped ([`BufRelease`]). A bare value that comes to own an
 //! allocation leaks it when dropped, as a `Vec` given to `mem::forget` does. The exclusive
 //! handle appends ([`add`](BufMut::add), [`add_str`](BufMut::add_str)), trims
 //! ([`truncate`](BufMut::truncate), [`reset`](BufMut::reset)) and hands the allocation out
@@ -35,6 +35,12 @@
 //! `buf` of a buffer that owns nothing, whatever `buf` and `len` hold, is given the
 //! unallocated state instead, so that the handles' tolerance of such a struct never reaches
 //! C.
+//!
+//! A list of names is reftable's NULL-terminated array of C strings, such as a stack's
+//! table names: [`NamesRef`] borrows one, which `basics.c` counts and compares, from a
+//! [`Names`] that `parse_names` built or a [`NamesVec`] built in Rust. The big-endian integer
+//! helpers, [`alloc_size`] and [`swap`] are short enough, and independent of the build's
+//! configuration, to be ported rather than called: they reach no C.
 //!
 //! `block_source_from_buf` keeps a buffer's address in the block source it fills, and
 //! reads it for the source's life: a binding of it ties the source to the buffer's
@@ -76,11 +82,14 @@
 
 use core::ffi::{CStr, c_int};
 use core::fmt;
+use core::mem::MaybeUninit;
+
+use ffibox::iter::CNullTerminated;
 
 pub use self::ffi_import::{
-    Alloc, Buf, BufMut, BufRef, BufRelease, BufVal, Names, NamesFree, ReftableArrayFree,
-    ReftableBox, ReftableFree, ReftableStr, ReftableStrFree, ReftableVec, binsearch, parse_names,
-    set_alloc, set_default_alloc,
+    Alloc, Buf, BufMut, BufRef, BufRelease, BufVal, Names, NamesFree, NamesRef, NamesVec,
+    ReftableArrayFree, ReftableBox, ReftableFree, ReftableStr, ReftableStrFree, ReftableVec,
+    binsearch, parse_names, set_alloc, set_default_alloc,
 };
 use crate::ffi;
 
@@ -173,6 +182,255 @@ impl fmt::Display for UnnamedHashId {
 }
 
 impl std::error::Error for UnnamedHashId {}
+
+/// The size in bytes of a SHA-1 object id, as reftable stores one.
+///
+/// Wraps `mac::REFTABLE_HASH_SIZE_SHA1`
+#[doc(alias = "REFTABLE_HASH_SIZE_SHA1")]
+pub const HASH_SIZE_SHA1: usize = ffi::REFTABLE_HASH_SIZE_SHA1 as usize;
+
+/// The size in bytes of a SHA-256 object id, as reftable stores one.
+///
+/// Wraps `mac::REFTABLE_HASH_SIZE_SHA256`
+#[doc(alias = "REFTABLE_HASH_SIZE_SHA256")]
+pub const HASH_SIZE_SHA256: usize = ffi::REFTABLE_HASH_SIZE_SHA256 as usize;
+
+/// The size in bytes of the longest object id reftable stores, that of
+/// [`HASH_SIZE_SHA256`]: the size of the id arrays its records hold inline.
+///
+/// Wraps `mac::REFTABLE_HASH_SIZE_MAX`
+#[doc(alias = "REFTABLE_HASH_SIZE_MAX")]
+pub const HASH_SIZE_MAX: usize = ffi::REFTABLE_HASH_SIZE_MAX as usize;
+
+/// The format id a table's header and footer carry for SHA-1, `"sha1"` read as a big-endian
+/// `u32`. It is on disk, so it never changes.
+///
+/// bindgen does not evaluate the cast `basics.h` defines it with, so the value is the one its
+/// comment documents, which the tests check against the bytes.
+///
+/// Replaces `mac::REFTABLE_FORMAT_ID_SHA1`
+#[doc(alias = "REFTABLE_FORMAT_ID_SHA1")]
+pub const FORMAT_ID_SHA1: u32 = u32::from_be_bytes(*b"sha1");
+
+/// The format id a table's header and footer carry for SHA-256, `"s256"` read as a
+/// big-endian `u32`. It is on disk, so it never changes.
+///
+/// Defined as [`FORMAT_ID_SHA1`] is.
+///
+/// Replaces `mac::REFTABLE_FORMAT_ID_SHA256`
+#[doc(alias = "REFTABLE_FORMAT_ID_SHA256")]
+pub const FORMAT_ID_SHA256: u32 = u32::from_be_bytes(*b"s256");
+
+/// Writes `i` big-endian into `out`, as reftable encodes 16-bit integers on disk.
+///
+/// Replaces `fn::reftable_put_be16`
+#[doc(alias = "reftable_put_be16")]
+#[inline]
+pub const fn put_be16(out: &mut [u8; 2], i: u16) {
+    *out = i.to_be_bytes();
+}
+
+/// Writes the low 24 bits of `i` big-endian into `out`, as reftable encodes block sizes and
+/// offsets on disk; the top byte of `i` is dropped.
+///
+/// Replaces `fn::reftable_put_be24`
+#[doc(alias = "reftable_put_be24")]
+#[inline]
+pub const fn put_be24(out: &mut [u8; 3], i: u32) {
+    let [_, b0, b1, b2] = i.to_be_bytes();
+    *out = [b0, b1, b2];
+}
+
+/// Writes `i` big-endian into `out`, as reftable encodes 32-bit integers on disk.
+///
+/// Replaces `fn::reftable_put_be32`
+#[doc(alias = "reftable_put_be32")]
+#[inline]
+pub const fn put_be32(out: &mut [u8; 4], i: u32) {
+    *out = i.to_be_bytes();
+}
+
+/// Writes `i` big-endian into `out`, as reftable encodes 64-bit integers on disk.
+///
+/// Replaces `fn::reftable_put_be64`
+#[doc(alias = "reftable_put_be64")]
+#[inline]
+pub const fn put_be64(out: &mut [u8; 8], i: u64) {
+    *out = i.to_be_bytes();
+}
+
+/// The 16-bit integer `bytes` encode big-endian.
+///
+/// Replaces `fn::reftable_get_be16`
+#[doc(alias = "reftable_get_be16")]
+#[inline]
+#[must_use]
+pub const fn get_be16(bytes: &[u8; 2]) -> u16 {
+    u16::from_be_bytes(*bytes)
+}
+
+/// The 24-bit integer `bytes` encode big-endian, below `1 << 24`.
+///
+/// Replaces `fn::reftable_get_be24`
+#[doc(alias = "reftable_get_be24")]
+#[inline]
+#[must_use]
+pub const fn get_be24(bytes: &[u8; 3]) -> u32 {
+    let [b0, b1, b2] = *bytes;
+    u32::from_be_bytes([0, b0, b1, b2])
+}
+
+/// The 32-bit integer `bytes` encode big-endian.
+///
+/// Replaces `fn::reftable_get_be32`
+#[doc(alias = "reftable_get_be32")]
+#[inline]
+#[must_use]
+pub const fn get_be32(bytes: &[u8; 4]) -> u32 {
+    u32::from_be_bytes(*bytes)
+}
+
+/// The 64-bit integer `bytes` encode big-endian.
+///
+/// Replaces `fn::reftable_get_be64`
+#[doc(alias = "reftable_get_be64")]
+#[inline]
+#[must_use]
+pub const fn get_be64(bytes: &[u8; 8]) -> u64 {
+    u64::from_be_bytes(*bytes)
+}
+
+/// The size in bytes of `nelem` elements of `elsize` bytes each, or `None` when it overflows
+/// `usize`, where the C returns `-1` and writes nothing.
+///
+/// Replaces `fn::reftable_alloc_size`
+#[doc(alias = "reftable_alloc_size")]
+#[inline]
+#[must_use]
+pub const fn alloc_size(nelem: usize, elsize: usize) -> Option<usize> {
+    nelem.checked_mul(elsize)
+}
+
+/// Swaps the values behind `a` and `b`.
+///
+/// The C macro swaps two places of the same size through a byte buffer, and fails to compile
+/// when their sizes differ; here both are of one type, which the type checker enforces.
+///
+/// Replaces `mac::REFTABLE_SWAP`
+#[doc(alias = "REFTABLE_SWAP")]
+#[inline]
+pub const fn swap<T>(a: &mut T, b: &mut T) {
+    core::mem::swap(a, b);
+}
+
+/// Releases what `slot` owns, through the owner's policy, and leaves the slot empty: a slot
+/// that was already empty is left as it was.
+///
+/// The C macro frees a pointer through `reftable_free` and stores `NULL` in it; here the
+/// pointer is an owner, which frees through the routine paired with its allocator when it
+/// drops, and `None` is the NULL pointer.
+///
+/// Replaces `mac::REFTABLE_FREE_AND_NULL`
+#[doc(alias = "REFTABLE_FREE_AND_NULL")]
+#[inline]
+pub fn free_and_null<T>(slot: &mut Option<T>) {
+    drop(slot.take());
+}
+
+impl ReftableArrayFree {
+    /// `len` uninitialised elements in reftable's allocator; `None` when the allocation fails,
+    /// its size overflows or passes `isize::MAX` bytes, or libgit2's runtime cannot be pinned.
+    /// An empty request allocates nothing, where `reftable_malloc(0)` returns NULL.
+    ///
+    /// The C macro checks `alloc * sizeof(*x)` with `reftable_alloc_size`, sets `errno` to
+    /// `ENOMEM` and stores `NULL` when it overflows, and allocates with `reftable_malloc`
+    /// otherwise; here the failure is the `None`, and `errno` is left alone.
+    ///
+    /// Wraps `mac::REFTABLE_ALLOC_ARRAY`
+    #[doc(alias = "REFTABLE_ALLOC_ARRAY")]
+    #[must_use]
+    pub fn alloc_array<T>(len: usize) -> Option<ReftableVec<MaybeUninit<T>>> {
+        ReftableVec::<T>::new_uninit(len)
+    }
+
+    /// Makes room for at least `min_len` elements, as [`grow`](Self::grow) does, or, when it
+    /// cannot, releases the run and leaves it empty.
+    ///
+    /// The C macro grows `x` with `REFTABLE_ALLOC_GROW` and, on failure, frees it with
+    /// `REFTABLE_FREE_AND_NULL` and zeroes its capacity, leaving the caller nothing to free:
+    /// the run is that pointer and capacity.
+    ///
+    /// Wraps `mac::REFTABLE_ALLOC_GROW_OR_NULL`
+    ///
+    /// # Errors
+    ///
+    /// As [`grow`](Self::grow), after which `run` is empty.
+    #[doc(alias = "REFTABLE_ALLOC_GROW_OR_NULL")]
+    pub fn grow_or_clear<T>(
+        run: &mut ReftableVec<MaybeUninit<T>>,
+        min_len: usize,
+    ) -> Result<(), Error> {
+        Self::grow(run, min_len).inspect_err(|_| *run = ReftableVec::empty())
+    }
+}
+
+impl fmt::Debug for NamesRef<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
+    }
+}
+
+impl PartialEq for NamesRef<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.equals(*other)
+    }
+}
+
+impl Eq for NamesRef<'_> {}
+
+impl<'a> IntoIterator for NamesRef<'a> {
+    type IntoIter = CNullTerminated<'a, CStr>;
+    type Item = &'a CStr;
+
+    fn into_iter(self) -> CNullTerminated<'a, CStr> {
+        self.iter()
+    }
+}
+
+impl<'a> IntoIterator for &NamesRef<'a> {
+    type IntoIter = CNullTerminated<'a, CStr>;
+    type Item = &'a CStr;
+
+    fn into_iter(self) -> CNullTerminated<'a, CStr> {
+        self.iter()
+    }
+}
+
+impl NamesRef<'_> {
+    /// Whether the list holds no names: its first slot is the terminator.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.iter().next().is_none()
+    }
+}
+
+impl fmt::Debug for NamesVec<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.as_ref().fmt(f)
+    }
+}
+
+impl<'s> FromIterator<&'s CStr> for NamesVec<'s> {
+    fn from_iter<I: IntoIterator<Item = &'s CStr>>(names: I) -> Self {
+        Self::new(names)
+    }
+}
+
+impl<'s> From<&[&'s CStr]> for NamesVec<'s> {
+    fn from(names: &[&'s CStr]) -> Self {
+        Self::new(names.iter().copied())
+    }
+}
 
 impl fmt::Debug for BufRef<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -310,7 +568,7 @@ impl fmt::Debug for Names {
 }
 
 /// The C layout of [`Buf`] and its handles, the owners and policies over reftable's
-/// allocator, and the calls into `basics.c`.
+/// allocator, the name lists, and the calls into `basics.c`.
 #[expect(
     unsafe_code,
     reason = "reads reftable_buf's fields through its handles' pointers and calls basics.c"
@@ -325,6 +583,7 @@ mod ffi_import {
     use core::slice;
 
     use ffibox::callback::CClosure;
+    use ffibox::iter::CNullTerminated;
     use ffibox::{
         CAlloc, CAllocZeroed, CBox, CCell, CDispose, CDrop, CDupClone, CLenAlloc, CLenClone,
         CLenDrop, CMutSeam, CPlainElem, CRefSeam, CStrBox, CVal, CVec, CZeroable, define_ctype,
@@ -383,6 +642,144 @@ mod ffi_import {
     // it moves freely; the one routine that keeps a buffer's address,
     // `block_source_from_buf`, is bound to the buffer's borrow (module documentation).
     unsafe impl CZeroable for Buf {}
+
+    impl Buf {
+        /// An empty buffer that owns nothing, `REFTABLE_BUF_INIT` (`{ 0 }`): the value
+        /// `Buf::zeroed()` builds, usable where a constant is needed.
+        ///
+        /// Replaces `mac::REFTABLE_BUF_INIT`
+        #[doc(alias = "REFTABLE_BUF_INIT")]
+        pub const INIT: Self = Self(
+            ffi::reftable_buf {
+                alloc: 0,
+                len: 0,
+                buf: ptr::null_mut(),
+            },
+            PhantomData,
+        );
+    }
+
+    /// A borrowed list of names, reftable's NULL-terminated array of strings (`const char
+    /// **`): the table names of a stack's `tables.list`, which `parse_names` reads and the
+    /// stack compares with the tables it holds.
+    ///
+    /// Each name is a C string, and the list ends at its first NULL slot. The handle borrows
+    /// the array and its strings for `'a`, while nothing writes or frees either; a
+    /// [`NamesVec`] builds one in Rust and lends it through [`NamesVec::as_ref`]. It cannot
+    /// outlive the array:
+    ///
+    /// ```compile_fail,E0597
+    /// use libgit2::libgit2::deps::reftable::basics::NamesVec;
+    ///
+    /// let names = {
+    ///     let list = NamesVec::new([c"a.ref"]);
+    ///     list.as_ref()
+    /// };
+    /// let _ = names.len();
+    /// ```
+    ///
+    /// nor the strings the array points at:
+    ///
+    /// ```compile_fail,E0716
+    /// use std::ffi::CString;
+    ///
+    /// use libgit2::libgit2::deps::reftable::basics::NamesVec;
+    ///
+    /// let list = NamesVec::new([CString::new("a.ref").unwrap().as_c_str()]);
+    /// let _ = list.as_ref().len();
+    /// ```
+    #[derive(Clone, Copy)]
+    pub struct NamesRef<'a> {
+        /// The array's first slot.
+        slots: NonNull<*const c_char>,
+        _borrow: PhantomData<&'a CStr>,
+    }
+
+    impl<'a> NamesRef<'a> {
+        /// The number of names before the terminator.
+        ///
+        /// Wraps `fn::names_length`
+        #[doc(alias = "names_length")]
+        #[must_use]
+        pub fn len(&self) -> usize {
+            // SAFETY: `slots` addresses a NULL-terminated array of pointers to live strings,
+            // unchanged for `'a` (the handle's invariant); `names_length` reads the slots up
+            // to the terminator and writes nothing, despite its non-const outer pointer.
+            unsafe { ffi::names_length(self.slots.as_ptr()) }
+        }
+
+        /// The names, in order, each borrowed for `'a`.
+        #[must_use]
+        pub fn iter(&self) -> CNullTerminated<'a, CStr> {
+            // SAFETY: as in `len`: the array is NULL-terminated, and each slot before the
+            // terminator addresses a live string, neither written nor freed for `'a`.
+            let names = unsafe { CNullTerminated::from_ptr(self.slots.as_ptr().cast_const()) };
+            names.unwrap_or_else(|| unreachable!("`slots` is not NULL"))
+        }
+
+        /// Whether `self` and `other` hold the same names in the same order, each compared
+        /// byte for byte.
+        ///
+        /// Wraps `fn::names_equal`
+        #[doc(alias = "names_equal")]
+        #[must_use]
+        pub fn equals(&self, other: NamesRef<'_>) -> bool {
+            // SAFETY: both handles address NULL-terminated arrays of pointers to live
+            // strings, unchanged while they are borrowed (their invariant); `names_equal`
+            // reads the slots and the strings up to the first terminator of either and writes
+            // nothing.
+            let equal = unsafe { ffi::names_equal(self.slots.as_ptr(), other.slots.as_ptr()) };
+            equal != 0
+        }
+    }
+
+    /// A list of names built in Rust: the strings it borrows, in order, behind the
+    /// NULL-terminated array of pointers that reftable's name lists are, lent as a
+    /// [`NamesRef`] through [`as_ref`](Self::as_ref).
+    pub struct NamesVec<'s> {
+        /// The strings' pointers, then the terminating NULL: never empty.
+        slots: Vec<*const c_char>,
+        _strings: PhantomData<&'s CStr>,
+    }
+
+    impl<'s> NamesVec<'s> {
+        /// A list of `names`, in order.
+        pub fn new(names: impl IntoIterator<Item = &'s CStr>) -> Self {
+            let mut slots: Vec<*const c_char> = names.into_iter().map(CStr::as_ptr).collect();
+            slots.push(ptr::null());
+            Self {
+                slots,
+                _strings: PhantomData,
+            }
+        }
+
+        /// The list as reftable's functions read it, borrowed from `self`.
+        #[must_use]
+        pub fn as_ref(&self) -> NamesRef<'_> {
+            // `slots` ends with NULL, and each pointer before it addresses a string borrowed
+            // for `'s`, which outlives this borrow of `self`; neither the vector, which only
+            // `new` writes, nor the strings, which are shared borrows, change while it lasts.
+            NamesRef {
+                slots: NonNull::from(self.slots.as_slice()).cast(),
+                _borrow: PhantomData,
+            }
+        }
+    }
+
+    impl Names {
+        /// The list as reftable's functions read it, borrowed from `self`, so that it can be
+        /// counted and compared with another list.
+        #[must_use]
+        pub fn as_ref(&self) -> NamesRef<'_> {
+            // The run is the NULL-terminated array `parse_names` returned, never empty (it
+            // holds the terminator), of strings the array owns; nothing changes or frees
+            // either while `self` is borrowed.
+            NamesRef {
+                slots: NonNull::from(self.0.as_slice()).cast(),
+                _borrow: PhantomData,
+            }
+        }
+    }
 
     impl<'a> BufRef<'a> {
         /// The `alloc` field.
@@ -745,8 +1142,12 @@ mod ffi_import {
         /// passes `isize::MAX` bytes, or libgit2's runtime cannot be pinned. An empty
         /// request allocates nothing.
         ///
+        /// `REFTABLE_CALLOC_ARRAY(x, len)` is this call, `x` the run it returns.
+        ///
         /// Wraps `fn::reftable_calloc`
+        /// Wraps `mac::REFTABLE_CALLOC_ARRAY`
         #[doc(alias = "reftable_calloc")]
+        #[doc(alias = "REFTABLE_CALLOC_ARRAY")]
         #[must_use]
         pub fn new_zeroed<T: CPlainElem>(len: usize) -> Option<ReftableVec<T>> {
             const {
@@ -829,7 +1230,13 @@ mod ffi_import {
         ///
         /// As [`resize`](Self::resize); C sets `errno` to `ENOMEM` when the size overflows,
         /// which this does not.
+        ///
+        /// `REFTABLE_ALLOC_GROW(x, nr, alloc)` is this call, `x` the run and `alloc` its
+        /// length, which the run carries: the macro's true result is the error.
+        ///
+        /// Wraps `mac::REFTABLE_ALLOC_GROW`
         #[doc(alias = "reftable_alloc_grow")]
+        #[doc(alias = "REFTABLE_ALLOC_GROW")]
         pub fn grow<T>(run: &mut ReftableVec<MaybeUninit<T>>, min_len: usize) -> Result<(), Error> {
             if min_len <= run.len() {
                 return Ok(());
@@ -1426,7 +1833,7 @@ mod ffi_import {
     mod unit_priv {
         //! The getters over allocated buffers, which only `basics.c`'s routines make: the
         //! fixture builds the C struct over Rust storage, as one of them leaves it, and
-        //! reads it through a handle.
+        //! reads it through a handle. And the array a `NamesVec` lends, as C reads it.
 
         use core::cmp::Ordering;
         use core::ffi::{CStr, c_char, c_void};
@@ -1439,8 +1846,9 @@ mod ffi_import {
         use ffibox::{CDispose, CMutSeam, CRefSeam, CVec, CZeroable};
 
         use super::{
-            Alloc, Buf, BufMut, BufRef, BufRelease, Error, LenOutOfRange, Names, ReftableArrayFree,
-            ReftableBox, ReftableStr, ReftableVec, parse_names, runtime_pinned, set_alloc,
+            Alloc, Buf, BufMut, BufRef, BufRelease, Error, LenOutOfRange, Names, NamesVec,
+            ReftableArrayFree, ReftableBox, ReftableStr, ReftableVec, parse_names, runtime_pinned,
+            set_alloc,
         };
         use crate::ffi;
 
@@ -1970,6 +2378,28 @@ mod ffi_import {
                     assert!(!runtime_pinned());
                 },
             );
+        }
+
+        #[test]
+        fn names_vec_lends_its_strings_then_a_null_slot() {
+            let names = [c"a.ref", c"", c"b.ref"];
+            let list = NamesVec::new(names);
+            assert_eq!(list.slots.len(), names.len() + 1);
+            for (slot, name) in list.slots.iter().zip(names) {
+                assert_eq!(*slot, name.as_ptr(), "the slot points at the string itself");
+            }
+            assert!(list.slots[names.len()].is_null());
+            let lent = list.as_ref();
+            assert_eq!(lent.slots.as_ptr().cast_const(), list.slots.as_ptr());
+            // Each lent handle addresses the same array.
+            assert_eq!(list.as_ref().slots, lent.slots);
+        }
+
+        #[test]
+        fn empty_names_vec_is_the_terminator_alone() {
+            let list = NamesVec::new([]);
+            assert_eq!(list.slots, [ptr::null()]);
+            assert!(list.as_ref().iter().next().is_none());
         }
     }
 }

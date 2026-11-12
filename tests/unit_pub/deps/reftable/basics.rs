@@ -1,6 +1,8 @@
 //! Unit tests for `deps/reftable/basics.c`: `HashId`'s conversions, sizes and their error,
 //! the buffer `Buf` through its owner and handles, the owners of reftable's allocator,
-//! `parse_names`, `binsearch` and the error types, decided by Rust assertions.
+//! `parse_names`, `binsearch` and the error types, the size and format constants, the
+//! big-endian helpers, `alloc_size`, `swap`, `free_and_null`, the allocation macros' forms
+//! and name lists, decided by Rust assertions.
 //!
 //! Every test that allocates or calls C is ignored under Miri, which cannot call libgit2.
 
@@ -365,4 +367,306 @@ fn errors_carry_reftable_codes_and_messages() {
     }
     let set: HashSet<Error> = [Error::Format, Error::Format, Error::Other(-1)].into();
     assert_eq!(set.len(), 2);
+}
+
+#[test]
+fn hash_sizes_are_those_of_sha1_and_sha256_ids() {
+    use libgit2::libgit2::deps::reftable::basics::{
+        HASH_SIZE_MAX, HASH_SIZE_SHA1, HASH_SIZE_SHA256,
+    };
+
+    assert_eq!(HASH_SIZE_SHA1, 20);
+    assert_eq!(HASH_SIZE_SHA256, 32);
+    assert_eq!(HASH_SIZE_MAX, HASH_SIZE_SHA256);
+    // Records hold their ids inline in arrays of the longest size.
+    let id = [0u8; HASH_SIZE_MAX];
+    assert!(id.len() >= HASH_SIZE_SHA1);
+}
+
+#[test]
+fn format_ids_are_their_names_read_big_endian() {
+    use libgit2::libgit2::deps::reftable::basics::{FORMAT_ID_SHA1, FORMAT_ID_SHA256, get_be32};
+
+    // `basics.h`'s values, which are on disk.
+    assert_eq!(FORMAT_ID_SHA1, 0x7368_6131);
+    assert_eq!(FORMAT_ID_SHA256, 0x7332_3536);
+    assert_eq!(FORMAT_ID_SHA1.to_be_bytes(), *b"sha1");
+    assert_eq!(FORMAT_ID_SHA256.to_be_bytes(), *b"s256");
+    assert_eq!(get_be32(b"sha1"), FORMAT_ID_SHA1);
+    assert_ne!(FORMAT_ID_SHA1, FORMAT_ID_SHA256);
+}
+
+#[test]
+fn big_endian_helpers_write_the_most_significant_byte_first() {
+    use libgit2::libgit2::deps::reftable::basics::{put_be16, put_be24, put_be32, put_be64};
+
+    let mut b2 = [0u8; 2];
+    put_be16(&mut b2, 0x0102);
+    assert_eq!(b2, [0x01, 0x02]);
+    let mut b3 = [0u8; 3];
+    put_be24(&mut b3, 0x01_0203);
+    assert_eq!(b3, [0x01, 0x02, 0x03]);
+    let mut b4 = [0u8; 4];
+    put_be32(&mut b4, 0x0102_0304);
+    assert_eq!(b4, [0x01, 0x02, 0x03, 0x04]);
+    let mut b8 = [0u8; 8];
+    put_be64(&mut b8, 0x0102_0304_0506_0708);
+    assert_eq!(b8, [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]);
+}
+
+#[test]
+fn put_be24_drops_the_top_byte() {
+    use libgit2::libgit2::deps::reftable::basics::{get_be24, put_be24};
+
+    let mut out = [0xAAu8; 3];
+    put_be24(&mut out, 0xFF12_3456);
+    assert_eq!(out, [0x12, 0x34, 0x56]);
+    assert_eq!(get_be24(&out), 0x12_3456);
+    put_be24(&mut out, u32::MAX);
+    assert_eq!(get_be24(&out), (1 << 24) - 1);
+}
+
+#[test]
+fn big_endian_helpers_round_trip_at_their_edges() {
+    use libgit2::libgit2::deps::reftable::basics::{
+        get_be16, get_be24, get_be32, get_be64, put_be16, put_be24, put_be32, put_be64,
+    };
+
+    for v in [0, 1, 0x7F, 0x80, 0xFF, 0x100, 0x7FFF, 0x8000, u16::MAX] {
+        let mut b = [0; 2];
+        put_be16(&mut b, v);
+        assert_eq!(get_be16(&b), v);
+    }
+    for v in [
+        0, 1, 0xFF, 0x100, 0xFFFF, 0x1_0000, 0x7F_FFFF, 0x80_0000, 0xFF_FFFF,
+    ] {
+        let mut b = [0; 3];
+        put_be24(&mut b, v);
+        assert_eq!(get_be24(&b), v);
+    }
+    for v in [0, 1, 0xFF, 0x1_0000, 0x7FFF_FFFF, 0x8000_0000, u32::MAX] {
+        let mut b = [0; 4];
+        put_be32(&mut b, v);
+        assert_eq!(get_be32(&b), v);
+    }
+    for v in [0, 1, 0xFF, 1 << 32, i64::MAX as u64, 1 << 63, u64::MAX] {
+        let mut b = [0; 8];
+        put_be64(&mut b, v);
+        assert_eq!(get_be64(&b), v);
+    }
+}
+
+#[test]
+fn big_endian_helpers_read_every_byte_into_its_place() {
+    use libgit2::libgit2::deps::reftable::basics::{get_be16, get_be24, get_be32, get_be64};
+
+    assert_eq!(get_be16(&[0xFF, 0x00]), 0xFF00);
+    assert_eq!(get_be24(&[0x00, 0xFF, 0x00]), 0x00_FF00);
+    assert_eq!(get_be32(&[0x80, 0, 0, 1]), 0x8000_0001);
+    assert_eq!(
+        get_be64(&[0x80, 0, 0, 0, 0, 0, 0, 1]),
+        0x8000_0000_0000_0001
+    );
+}
+
+#[test]
+fn big_endian_helpers_evaluate_at_compile_time() {
+    use libgit2::libgit2::deps::reftable::basics::{get_be24, put_be24};
+
+    const ENCODED: [u8; 3] = {
+        let mut out = [0; 3];
+        put_be24(&mut out, 4096);
+        out
+    };
+    const BLOCK_SIZE: u32 = get_be24(&ENCODED);
+    assert_eq!(ENCODED, [0x00, 0x10, 0x00]);
+    assert_eq!(BLOCK_SIZE, 4096);
+}
+
+#[test]
+fn alloc_size_multiplies_or_reports_overflow() {
+    use libgit2::libgit2::deps::reftable::basics::alloc_size;
+
+    assert_eq!(alloc_size(0, 0), Some(0));
+    assert_eq!(alloc_size(0, usize::MAX), Some(0));
+    assert_eq!(alloc_size(usize::MAX, 0), Some(0));
+    assert_eq!(alloc_size(3, 8), Some(24));
+    assert_eq!(alloc_size(1, usize::MAX), Some(usize::MAX));
+    assert_eq!(alloc_size(usize::MAX, 1), Some(usize::MAX));
+    assert_eq!(alloc_size(2, usize::MAX / 2), Some(usize::MAX - 1));
+    assert_eq!(alloc_size(2, usize::MAX / 2 + 1), None);
+    assert_eq!(alloc_size(usize::MAX, usize::MAX), None);
+    let half = 1usize << (usize::BITS / 2);
+    assert_eq!(alloc_size(half, half), None);
+    assert_eq!(alloc_size(half - 1, half + 1), Some(usize::MAX));
+}
+
+#[test]
+fn swap_exchanges_values_of_one_type() {
+    use libgit2::libgit2::deps::reftable::basics::swap;
+
+    let (mut a, mut b) = (1u32, 2u32);
+    swap(&mut a, &mut b);
+    assert_eq!((a, b), (2, 1));
+    // As the priority queue swaps heap entries in place.
+    let mut heap = vec![String::from("refs/b"), String::from("refs/a")];
+    let (first, rest) = heap.split_at_mut(1);
+    swap(&mut first[0], &mut rest[0]);
+    assert_eq!(heap, ["refs/a", "refs/b"]);
+}
+
+#[test]
+fn free_and_null_drops_what_the_slot_owns_once() {
+    use std::rc::Rc;
+
+    use libgit2::libgit2::deps::reftable::basics::free_and_null;
+
+    let owned = Rc::new(());
+    let mut slot = Some(Rc::clone(&owned));
+    assert_eq!(Rc::strong_count(&owned), 2);
+    free_and_null(&mut slot);
+    assert!(slot.is_none());
+    assert_eq!(Rc::strong_count(&owned), 1);
+    // An empty slot stays empty, as `reftable_free(NULL)` frees nothing.
+    free_and_null(&mut slot);
+    assert!(slot.is_none());
+    assert_eq!(Rc::strong_count(&owned), 1);
+}
+
+#[test]
+fn buf_init_is_the_empty_buffer() {
+    let init = Buf::INIT;
+    let zeroed = Buf::zeroed();
+    assert_eq!(format!("{init:?}"), format!("{zeroed:?}"));
+    let r = init.as_ref();
+    assert_eq!((r.len(), r.capacity(), r.as_bytes()), (0, 0, &b""[..]));
+    assert_eq!(r.as_c_str(), Some(c""));
+    // A constant: each use is a value of its own.
+    let mut bufs = [Buf::INIT, Buf::INIT];
+    assert!(bufs.iter_mut().all(|b| b.as_mut().as_ref().is_empty()));
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn names_count_their_entries() {
+    use libgit2::libgit2::deps::reftable::basics::NamesVec;
+
+    let none = NamesVec::new([]);
+    assert_eq!(none.as_ref().len(), 0);
+    assert!(none.as_ref().is_empty());
+    let two = NamesVec::new([c"0x01-0x02-a.ref", c"0x03-0x03-b.ref"]);
+    assert_eq!(two.as_ref().len(), 2);
+    assert!(!two.as_ref().is_empty());
+    // An empty name is a name: the list ends at the NULL slot, not at an empty string.
+    let with_empty = NamesVec::new([c"", c"x", c""]);
+    assert_eq!(with_empty.as_ref().len(), 3);
+}
+
+#[test]
+fn names_iterate_in_order() {
+    use libgit2::libgit2::deps::reftable::basics::NamesVec;
+
+    let names = [c"a.ref", c"", c"b.ref"];
+    let list = NamesVec::from(&names[..]);
+    let read: Vec<&CStr> = list.as_ref().iter().collect();
+    assert_eq!(read, names);
+    let r = list.as_ref();
+    assert_eq!((&r).into_iter().count(), 3);
+    assert_eq!(r.into_iter().last(), Some(c"b.ref"));
+    assert_eq!(format!("{list:?}"), r#"["a.ref", "", "b.ref"]"#);
+    assert_eq!(format!("{:?}", NamesVec::new([])), "[]");
+    assert!(NamesVec::new([]).as_ref().iter().next().is_none());
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn names_compare_by_content_and_order() {
+    use libgit2::libgit2::deps::reftable::basics::NamesVec;
+
+    let a: NamesVec<'_> = [c"t1.ref", c"t2.ref"].into_iter().collect();
+    let same_content = [c"t1.ref".to_owned(), c"t2.ref".to_owned()];
+    let b = NamesVec::new(same_content.iter().map(std::ffi::CString::as_c_str));
+    assert!(a.as_ref().equals(b.as_ref()));
+    assert_eq!(a.as_ref(), b.as_ref());
+
+    let reordered = NamesVec::new([c"t2.ref", c"t1.ref"]);
+    let prefix = NamesVec::new([c"t1.ref"]);
+    let longer = NamesVec::new([c"t1.ref", c"t2.ref", c"t3.ref"]);
+    let changed = NamesVec::new([c"t1.ref", c"t2.reF"]);
+    let empty = NamesVec::new([]);
+    for other in [&reordered, &prefix, &longer, &changed, &empty] {
+        assert!(!a.as_ref().equals(other.as_ref()), "{other:?}");
+        assert!(!other.as_ref().equals(a.as_ref()), "{other:?}");
+        assert_ne!(a.as_ref(), other.as_ref());
+    }
+    assert_eq!(empty.as_ref(), NamesVec::new([]).as_ref());
+    // Equal handles to one list.
+    let r = a.as_ref();
+    assert_eq!(r, r);
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn alloc_array_allocates_uninitialised_runs_or_nothing() {
+    let mut run = ReftableArrayFree::alloc_array::<u64>(3).unwrap();
+    assert_eq!(run.len(), 3);
+    for slot in &mut run {
+        slot.write(10);
+    }
+    // `reftable_malloc(0)` returns NULL: an empty run allocates nothing.
+    let empty = ReftableArrayFree::alloc_array::<u64>(0).unwrap();
+    assert!(empty.is_empty());
+    // `REFTABLE_ALLOC_ARRAY`'s overflow check refuses the request.
+    assert!(ReftableArrayFree::alloc_array::<u64>(usize::MAX / 4).is_none());
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn calloc_array_and_alloc_grow_are_the_array_owner_s_constructors() {
+    let zeroed = ReftableArrayFree::new_zeroed::<u16>(4).unwrap();
+    assert_eq!(&zeroed[..], [0; 4]);
+    let mut run = ReftableArrayFree::alloc_array::<u8>(1).unwrap();
+    run[0].write(7);
+    ReftableArrayFree::grow(&mut run, 2).unwrap();
+    // `alloc * 2 + 1`, at least `nr`.
+    assert_eq!(run.len(), 3);
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn grow_or_clear_grows_or_leaves_nothing_to_free() {
+    let mut run = ReftableArrayFree::alloc_array::<u32>(2).unwrap();
+    run[0].write(0xABCD);
+    ReftableArrayFree::grow_or_clear(&mut run, 2).unwrap();
+    assert_eq!(run.len(), 2, "already long enough");
+    ReftableArrayFree::grow_or_clear(&mut run, 3).unwrap();
+    assert_eq!(run.len(), 5);
+    // A size that overflows fails, and the run is released and left empty.
+    assert_eq!(
+        ReftableArrayFree::grow_or_clear(&mut run, usize::MAX),
+        Err(Error::OutOfMemory)
+    );
+    assert!(run.is_empty());
+    // An empty run grows from nothing.
+    ReftableArrayFree::grow_or_clear(&mut run, 1).unwrap();
+    assert_eq!(run.len(), 1);
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn parsed_names_compare_with_names_built_in_rust() {
+    use libgit2::libgit2::deps::reftable::basics::NamesVec;
+
+    let parsed = parse_names(b"t1.ref\n\nt2.ref\n").unwrap();
+    assert_eq!(parsed.as_ref().len(), 2);
+    assert_eq!(
+        parsed.as_ref(),
+        NamesVec::new([c"t1.ref", c"t2.ref"]).as_ref()
+    );
+    assert_ne!(parsed.as_ref(), NamesVec::new([c"t1.ref"]).as_ref());
+    let read: Vec<&CStr> = parsed.as_ref().iter().collect();
+    assert_eq!(read, [c"t1.ref", c"t2.ref"]);
+    let none = parse_names(b"").unwrap();
+    assert!(none.as_ref().is_empty());
+    assert_eq!(none.as_ref().len(), 0);
 }

@@ -46,6 +46,21 @@ added `#include "basics.h"` to `libgit2-sys/bindgen/wrapper.h`.
   3. The `bindgen` feature outside campaign mode regenerates from an install's headers,
      so it cannot regenerate once `wrapper.h` names an internal header.
 
+### `wave-169/batch-1` (`deps/reftable/basics.c`)
+
+The batch's nine `static inline` functions of `basics.h` (`reftable_put_be16` to `_be64`,
+`reftable_get_be16` to `_be64`, `reftable_alloc_size`) were ported rather than allowlisted,
+as `binding-symbols` allows for short, configuration-independent header functions:
+allowlisting any of them would have generated `static_fns.c`, which includes `wrapper.h` and
+so `basics.h`, `system.h` and `git2_util.h`, and consequence 2 would have broken the shipped
+build. With the ports, `cargo package -p libgit2-sys --offline` against a staged `plain`
+install (`CRUSTIFY_BUILD_VARIANT=` and `LIBGIT2_DIR`) still builds: `shims.c` includes only
+`shims.h`, and no `static_fns.c` exists. The cost is that the ported helpers have no C to be
+compared with: their tests check the bytes the C bodies write. The two extern functions the
+batch allowlisted, `names_equal` and `names_length`, generate declarations only, which link
+in campaign mode and not against an install's `libgit2.so`, as `internal-symbols-unlinkable`
+records.
+
 ## Destination
 
 The spec: `bindgen`, Generation and Build modes, which the binder does not own.

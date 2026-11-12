@@ -11,17 +11,24 @@
 //! from one description, and compare after each step: a buffer through a sequence of
 //! appends, trims, comparisons and detaches; `parse_names`, `binsearch` and `hash_size` on
 //! the same inputs; and the allocator's routines on the same requests.
+//!
+//! The name lists are compared with `names_length` and `names_equal` called on raw arrays
+//! built independently of the `NamesVec` the safe API reads, and on those `parse_names`
+//! returns. The size constants are compared with their generated bindings. The big-endian
+//! helpers and `alloc_size` are ported `static inline` functions of `basics.h`, which the
+//! raw bindings do not reach: their tests are `unit_pub`'s, against the bytes the C bodies
+//! write.
 
 use std::cmp::Ordering;
-use std::ffi::{CStr, c_char, c_int, c_void};
+use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::mem::MaybeUninit;
 use std::{ptr, slice};
 
 use ffibox::{CRefSeam, CZeroable};
 use libgit2::ffi;
 use libgit2::libgit2::deps::reftable::basics::{
-    Buf, BufRef, BufVal, Error, HashId, ReftableArrayFree, ReftableStr, ReftableVec, binsearch,
-    parse_names,
+    Buf, BufRef, BufVal, Error, HASH_SIZE_MAX, HASH_SIZE_SHA1, HASH_SIZE_SHA256, HashId, NamesVec,
+    ReftableArrayFree, ReftableStr, ReftableVec, binsearch, parse_names,
 };
 
 #[test]
@@ -454,4 +461,134 @@ fn grow_matches_reftable_alloc_grow() {
     ReftableArrayFree::grow(&mut run, 2).unwrap();
     // SAFETY: element 0 was written above and kept by the resize.
     assert_eq!(unsafe { run[0].assume_init() }, 0xDEAD_BEEF);
+}
+
+#[test]
+fn buf_init_is_reftable_buf_init() {
+    let init = Buf::INIT;
+    // SAFETY: the handle addresses `init`, a live `reftable_buf`, which is read once.
+    let raw = unsafe { init.as_ref().as_ptr().read() };
+    assert_eq!((raw.alloc, raw.len), (0, 0));
+    assert!(raw.buf.is_null());
+}
+
+#[test]
+fn hash_sizes_are_reftable_basics_h_constants() {
+    assert_eq!(
+        u32::try_from(HASH_SIZE_SHA1),
+        Ok(ffi::REFTABLE_HASH_SIZE_SHA1)
+    );
+    assert_eq!(
+        u32::try_from(HASH_SIZE_SHA256),
+        Ok(ffi::REFTABLE_HASH_SIZE_SHA256)
+    );
+    assert_eq!(
+        u32::try_from(HASH_SIZE_MAX),
+        Ok(ffi::REFTABLE_HASH_SIZE_MAX)
+    );
+}
+
+/// A raw NULL-terminated array over `names`, built apart from any `NamesVec`.
+fn raw_names(names: &[CString]) -> Vec<*const c_char> {
+    names
+        .iter()
+        .map(|n| n.as_ptr())
+        .chain([ptr::null()])
+        .collect()
+}
+
+fn owned(names: &[&str]) -> Vec<CString> {
+    names.iter().map(|n| CString::new(*n).unwrap()).collect()
+}
+
+/// The lists a stack compares: its tables before and after a reload, and their edits.
+const LISTS: &[&[&str]] = &[
+    &[],
+    &[""],
+    &["0x000000000001-0x000000000001-11111111.ref"],
+    &[
+        "0x000000000001-0x000000000001-11111111.ref",
+        "0x000000000002-0x000000000003-22222222.ref",
+    ],
+    &[
+        "0x000000000002-0x000000000003-22222222.ref",
+        "0x000000000001-0x000000000001-11111111.ref",
+    ],
+    &[
+        "0x000000000001-0x000000000001-11111111.ref",
+        "0x000000000002-0x000000000003-22222222.ref",
+        "0x000000000004-0x000000000004-44444444.ref",
+    ],
+    &["a", "b", ""],
+    &["a", "b"],
+    &["a", "c"],
+    &["\u{e9}t\u{e9}.ref"],
+];
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn names_length_and_equal_match_the_c_on_raw_arrays() {
+    for (i, a) in LISTS.iter().enumerate() {
+        let a_c = owned(a);
+        let mut a_raw = raw_names(&a_c);
+        // SAFETY: `a_raw` is a NULL-terminated array of live strings, which `names_length`
+        // only reads.
+        let c_len = unsafe { ffi::names_length(a_raw.as_mut_ptr()) };
+        let a_rust = owned(a);
+        let a_list = NamesVec::new(a_rust.iter().map(CString::as_c_str));
+        assert_eq!(a_list.as_ref().len(), c_len, "{a:?}");
+        assert_eq!(c_len, a.len());
+
+        for (j, b) in LISTS.iter().enumerate() {
+            let b_c = owned(b);
+            let mut b_raw = raw_names(&b_c);
+            // SAFETY: both are NULL-terminated arrays of live strings, which `names_equal`
+            // only reads.
+            let c_equal = unsafe { ffi::names_equal(a_raw.as_mut_ptr(), b_raw.as_mut_ptr()) };
+            let b_rust = owned(b);
+            let b_list = NamesVec::new(b_rust.iter().map(CString::as_c_str));
+            assert_eq!(
+                a_list.as_ref().equals(b_list.as_ref()),
+                c_equal != 0,
+                "{a:?} {b:?}"
+            );
+            assert_eq!(c_equal != 0, i == j, "{a:?} {b:?}");
+        }
+    }
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn parsed_names_count_and_compare_as_the_c_does() {
+    for (input, list) in [
+        (&b"a\nb\n"[..], &["a", "b"][..]),
+        (b"\n\nx\n", &["x"]),
+        (b"", &[]),
+    ] {
+        let parsed = parse_names(input).unwrap();
+        let c_names = owned(list);
+        let mut raw = raw_names(&c_names);
+        // SAFETY: `raw` is a NULL-terminated array of live strings, which C only reads.
+        let c_len = unsafe { ffi::names_length(raw.as_mut_ptr()) };
+        assert_eq!(parsed.as_ref().len(), c_len);
+        let rust = NamesVec::new(c_names.iter().map(CString::as_c_str));
+        assert!(parsed.as_ref().equals(rust.as_ref()), "{list:?}");
+    }
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn grow_or_clear_keeps_elements_as_reftable_alloc_grow_does() {
+    // `REFTABLE_ALLOC_GROW_OR_NULL(x, 3, cap)` over a run of 2: `realloc` to `2 * 2 + 1`
+    // elements, which keeps the first two.
+    let mut run = ReftableArrayFree::alloc_array::<u32>(2).unwrap();
+    run[0] = MaybeUninit::new(0xABCD);
+    run[1] = MaybeUninit::new(0x1234);
+    ReftableArrayFree::grow_or_clear(&mut run, 3).unwrap();
+    assert_eq!(run.len(), 2 * 2 + 1);
+    // SAFETY: element 0 was written above and kept by the growth.
+    let first = unsafe { run[0].assume_init() };
+    // SAFETY: as above, for element 1.
+    let second = unsafe { run[1].assume_init() };
+    assert_eq!((first, second), (0xABCD, 0x1234));
 }

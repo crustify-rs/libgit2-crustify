@@ -12,18 +12,25 @@
 //! value's borrow (`compile_fail` doctests on `Buf` and its getters). The owners are moved,
 //! dropped after handing their allocation out, and dropped on other threads (`TSan`);
 //! `binsearch` is re-entered from its own predicate and stopped by a panic. Every test that
-//! allocates or calls C is ignored under Miri.
+//! allocates or calls C is ignored under Miri. `Buf::INIT` is the unallocated value as a
+//! constant.
+//!
+//! A `NamesRef` borrows a NULL-terminated array of strings for its lifetime, and cannot
+//! outlive the `NamesVec` or `Names` that lends it nor the strings it points at
+//! (`compile_fail` doctests on `NamesRef`). `names_length` and `names_equal` read the arrays
+//! up to their terminators, which the tests reach through lists of every relative length,
+//! so that an over-read past a terminator is caught by `ASan`.
 
 use std::collections::HashSet;
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 use std::hint::black_box;
 use std::{panic, thread};
 
 use ffibox::CZeroable;
 use libgit2::ffi;
 use libgit2::libgit2::deps::reftable::basics::{
-    Buf, BufMut, BufRef, BufVal, HashId, ReftableArrayFree, ReftableBox, ReftableStr, ReftableVec,
-    binsearch, parse_names,
+    Buf, BufMut, BufRef, BufVal, HashId, NamesRef, NamesVec, ReftableArrayFree, ReftableBox,
+    ReftableStr, ReftableVec, binsearch, free_and_null, parse_names,
 };
 
 /// Every value around the declared ones, then a coarse stride across the whole type and
@@ -294,4 +301,127 @@ fn strings_and_runs_are_released_on_other_threads() {
         scope.spawn(|| assert_eq!(s.to_str(), Ok("shared")));
         let _local = ReftableVec::from_slice(b"local").unwrap();
     });
+}
+
+#[test]
+fn buf_init_reads_as_empty_and_moves() {
+    let mut values: Vec<Buf> = (0..8).map(|_| Buf::INIT).collect();
+    values.push(Buf::INIT);
+    for value in &mut values {
+        assert_eq!(read_all(value.as_ref()), EMPTY);
+        assert_eq!(pass_on(value.as_mut()), 0);
+    }
+    let boxed: Vec<Box<Buf>> = values.into_iter().map(Box::new).collect();
+    assert!(boxed.iter().all(|b| read_all(b.as_ref().as_ref()) == EMPTY));
+}
+
+/// Reads every part of a list: through C (`names_length`, `names_equal` with itself) and
+/// through Rust (its iterator).
+fn read_names(names: NamesRef<'_>) -> (usize, usize) {
+    let iterated: usize = names.iter().map(|n| n.to_bytes().len()).sum();
+    let count = names.iter().count();
+    assert_eq!(names.len(), count);
+    assert!(names.equals(names));
+    (count, iterated)
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn name_lists_of_every_relative_length_are_read_up_to_their_terminators() {
+    // Heap strings of growing length, so that ASan bounds each one and each array.
+    let strings: Vec<CString> = (0..6)
+        .map(|i| CString::new("n".repeat(i)).unwrap())
+        .collect();
+    let lists: Vec<NamesVec<'_>> = (0..=strings.len())
+        .map(|n| NamesVec::new(strings[..n].iter().map(CString::as_c_str)))
+        .collect();
+    for (i, a) in lists.iter().enumerate() {
+        let (count, bytes) = read_names(a.as_ref());
+        assert_eq!(count, i);
+        assert_eq!(bytes, (0..i).sum::<usize>());
+        for (j, b) in lists.iter().enumerate() {
+            // A prefix and a longer list differ at the shorter one's terminator.
+            assert_eq!(a.as_ref().equals(b.as_ref()), i == j);
+        }
+    }
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn name_handles_copy_and_outlive_the_scope_that_made_them() {
+    let strings = [c"a.ref".to_owned(), c"b.ref".to_owned()];
+    let list = NamesVec::new(strings.iter().map(CString::as_c_str));
+    let names = {
+        let first = list.as_ref();
+        let copy = first;
+        assert_eq!(read_names(first), read_names(copy));
+        copy
+    };
+    // Tied to the list's borrow, not to the handle's scope.
+    let read: Vec<&CStr> = names.iter().collect();
+    assert_eq!(read, [c"a.ref", c"b.ref"]);
+    assert_eq!(read_names(names), (2, 10));
+    // A list moves with its heap array; a fresh handle reads the moved list.
+    let moved = Box::new(list);
+    assert_eq!(read_names(moved.as_ref().as_ref()), (2, 10));
+}
+
+#[test]
+fn free_and_null_releases_each_owner_once() {
+    let mut slots: Vec<Option<Box<Buf>>> = (0..16).map(|_| Some(Box::new(Buf::INIT))).collect();
+    for slot in &mut slots {
+        free_and_null(slot);
+        free_and_null(slot);
+        assert!(slot.is_none());
+    }
+    let mut nested = Some(vec![Some(Box::new(1u8)), None]);
+    free_and_null(&mut nested);
+    assert!(nested.is_none());
+}
+
+#[test]
+fn name_handles_iterate_without_calling_c() {
+    let strings: Vec<CString> = (0..4)
+        .map(|i| CString::new("x".repeat(i)).unwrap())
+        .collect();
+    let list = NamesVec::new(strings.iter().map(CString::as_c_str));
+    let names = list.as_ref();
+    let mut a = names.iter();
+    let b = a;
+    assert_eq!(a.next(), Some(c""));
+    assert_eq!(b.count(), 4, "a copy taken before a step starts over");
+    assert_eq!(a.count_remaining(), 3);
+    assert!(!names.is_empty());
+    assert!(NamesVec::new([]).as_ref().is_empty());
+    assert_eq!(format!("{names:?}"), r#"["", "x", "xx", "xxx"]"#);
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn allocation_macro_forms_release_what_they_allocate_once() {
+    for len in [0, 1, 7, 64] {
+        let mut run = ReftableArrayFree::alloc_array::<u16>(len).unwrap();
+        for slot in &mut run {
+            slot.write(0xBEEF);
+        }
+        ReftableArrayFree::grow_or_clear(&mut run, len + 1).unwrap();
+        assert!(run.len() > len);
+        // A failed growth releases the run once and leaves nothing for its drop.
+        assert!(ReftableArrayFree::grow_or_clear(&mut run, usize::MAX).is_err());
+        assert!(run.is_empty());
+        let mut slot = Some(ReftableArrayFree::alloc_array::<u8>(len + 1).unwrap());
+        free_and_null(&mut slot);
+        free_and_null(&mut slot);
+    }
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn parsed_names_lend_their_array_while_borrowed() {
+    let parsed = parse_names(b"a.ref\nbb.ref\n\nccc.ref\n").unwrap();
+    let names = parsed.as_ref();
+    assert_eq!(read_names(names), (3, 18));
+    let built = NamesVec::new(parsed.iter());
+    assert!(names.equals(built.as_ref()));
+    assert!(built.as_ref().equals(names));
 }

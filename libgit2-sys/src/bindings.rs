@@ -534,6 +534,9 @@ pub const GIT_FILTER_VERSION: u32 = 1;
 pub const GIT_ODB_BACKEND_VERSION: u32 = 1;
 pub const GIT_REFDB_BACKEND_VERSION: u32 = 1;
 pub const GIT_REPOSITORY_NEW_OPTIONS_VERSION: u32 = 1;
+pub const REFTABLE_HASH_SIZE_SHA1: u32 = 20;
+pub const REFTABLE_HASH_SIZE_SHA256: u32 = 32;
+pub const REFTABLE_HASH_SIZE_MAX: u32 = 32;
 pub type __mode_t = ::std::os::raw::c_uint;
 pub type mode_t = __mode_t;
 unsafe extern "C" {
@@ -14550,6 +14553,15 @@ unsafe extern "C" {
         size: ::std::os::raw::c_int,
         out: *mut *mut *mut ::std::os::raw::c_char,
     ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn names_equal(
+        a: *mut *const ::std::os::raw::c_char,
+        b: *mut *const ::std::os::raw::c_char,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn names_length(names: *mut *const ::std::os::raw::c_char) -> usize;
 }
 unsafe extern "C" {
     pub fn reftable_malloc(sz: usize) -> *mut ::std::os::raw::c_void;
