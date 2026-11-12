@@ -1,6 +1,11 @@
 # Where the bindings find an internal header's include path and definitions
 
-Status: `open`
+Status: `landed`, as crustify `e2a51c6` on `devel`: `bindgen`'s Generation section says
+how an internal header is generated, and Build modes that system mode then fails, naming
+what an install lacks, with bundled mode the default. Left to the campaign: this tree's
+`libgit2-sys/build.rs` has campaign and system ("shipped") modes but no bundled mode, so the
+crate builds for a dependent only once it gains one, before the first ship point's
+packaging gate.
 
 ## Signal
 
