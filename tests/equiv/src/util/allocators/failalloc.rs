@@ -3,10 +3,10 @@
 //! The strategies call the three C routines through their raw bindings, so the comparisons
 //! check the mapping they apply: NULL as `None`, a pointer as `Option<NonNull<u8>>`, a
 //! release that leaves its buffer alone. They run on independently owned buffers, filled
-//! alike, and compare what each call left of its buffer; handing a release or a resize a
-//! buffer the family did not allocate probes the routines, as the C's `GIT_UNUSED` shows
-//! them, beyond the family's contract, which only an allocation of the family (there are
-//! none) or NULL meets. NULL is compared too.
+//! alike, and compare what each call left of its buffer: a buffer the family did not
+//! allocate, which `FailAlloc` documents its release and resize accept and leave alone,
+//! as the C's `GIT_UNUSED` shows them, since the family makes none of its own. NULL is
+//! compared too.
 //!
 //! The routines called directly set no error and read no state of libgit2, so they are
 //! compared in the test process. Through `git__allocator`, whose initial value they are,
@@ -274,8 +274,9 @@ fn rust_family_installed_before_init_behaves_as_cs_initial_one() {
 
             // Installed once libgit2 runs, every later allocation fails, until another
             // allocator is installed. No allocation is released in between.
-            // SAFETY: the family resizes nothing and releases without touching what it is
-            // handed, so libgit2's live allocations stay whole; one thread.
+            // SAFETY: `FailAlloc` documents that it resizes (failing) and releases (as a
+            // no-op) storage of any family without touching it, so every allocation
+            // libgit2 holds is one it can resize and release; one thread.
             unsafe { set_allocator(Some(FAIL.as_ref())) };
             // SAFETY: the backend is never read; any size may be asked for.
             let data = unsafe { ffi::git_odb_backend_data_alloc(ptr::null_mut(), 64) };

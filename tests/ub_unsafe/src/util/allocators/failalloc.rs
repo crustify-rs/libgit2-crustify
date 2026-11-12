@@ -3,10 +3,11 @@
 //! `unsafe extern "C"` members of the `git_allocator` built over the family, which are
 //! C's own routines. One suite per method.
 //!
-//! The family never allocates, so the contracts that ask for one of its allocations
-//! (`Alloc::free`, `Alloc::realloc` with `Some`, `CLenDrop::c_drop_len`) cannot be met
-//! here; the equivalence suite probes those calls against C's. Every method calls the
-//! family's C routines, so none of these runs under Miri.
+//! The family never allocates, so the calls that release or resize storage
+//! (`Alloc::free`, `Alloc::realloc` with `Some`, `CDrop::c_drop`, `CLenDrop::c_drop_len`)
+//! are handed storage of another family, which `FailAlloc` documents they accept and
+//! leave alone; the equivalence suite compares those calls with C's. Every method calls
+//! the family's C routines, so none of these runs under Miri.
 
 use core::ffi::{CStr, c_char};
 use core::ptr::{self, NonNull};
@@ -100,6 +101,51 @@ mod realloc {
                 let got = unsafe { FailAlloc::realloc(None, len, file, 30) };
                 assert_eq!(got, None, "realloc(None, {len})");
             }
+        }
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore = "calls C")]
+    fn resizes_of_live_storage_fail_and_leave_it_whole() {
+        // Storage of another family, which `FailAlloc` documents its resize accepts: every
+        // resize fails, so the box is still whole, live and the test's afterwards.
+        for len in [1usize, 16, 4096] {
+            let boxed = Box::into_raw(vec![0x3Cu8; len].into_boxed_slice());
+            let ptr = NonNull::new(boxed.cast::<u8>());
+            for (new_len, file) in [(len / 2 + 1, None), (2 * len, Some(c"src/util/str.c"))] {
+                // SAFETY: `ptr` addresses `len` live bytes this test owns, of a family
+                // the resize accepts; `new_len` is non-zero.
+                let got = unsafe { FailAlloc::realloc(ptr, new_len, file, 7) };
+                assert_eq!(got, None, "realloc(Some, {new_len})");
+            }
+            // SAFETY: the failed resizes kept nothing and freed nothing, so `boxed` is
+            // still the box `Box::into_raw` made, and still the test's alone.
+            let back = unsafe { Box::from_raw(boxed) };
+            assert!(back.iter().all(|&b| b == 0x3C));
+        }
+    }
+}
+
+// --- Alloc::free --------------------------------------------------------------------
+
+mod free {
+    use super::*;
+
+    #[test]
+    #[cfg_attr(miri, ignore = "calls C")]
+    fn releases_nothing_it_is_handed() {
+        // Storage of another family, which `FailAlloc` documents its release accepts and
+        // leaves alone: the box is whole afterwards, and still the test's to settle.
+        for len in [1usize, 16, 4096] {
+            let boxed = Box::into_raw(vec![0xC3u8; len].into_boxed_slice());
+            let ptr = NonNull::new(boxed.cast::<u8>()).unwrap();
+            // SAFETY: `ptr` addresses `len` live bytes this test owns, of a family the
+            // release accepts, handed over.
+            unsafe { <FailAlloc as Alloc>::free(ptr) };
+            // SAFETY: the release kept and freed nothing, so `boxed` is still the box
+            // `Box::into_raw` made, and still the test's alone.
+            let back = unsafe { Box::from_raw(boxed) };
+            assert!(back.iter().all(|&b| b == 0xC3));
         }
     }
 }

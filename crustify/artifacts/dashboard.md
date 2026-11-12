@@ -40,6 +40,7 @@ and in Notes.
   change in pp
 - `+lifecycle` … `+misc`, `total` — the reports a review batch filed, by kind
 - safety audit columns — the Safety audit's metrics, as a landing changed them
+- API stability columns — the landing's items by how `ffimap api` classifies their consumer-facing API against its base: `kept`, `extended`, `changed`, `removed`, `new`, and `→Replaces` for the anchors a port moved; `unattributed` the crate's public items no anchor reaches, by module; `reasons` the changed and removed items with the reason the batch recorded
 - `cost` / `review cost` / `total` — a module's translation, review and combined cost;
   `module wall` — first launch to final gate; `Σ recorded agents` leaves the assistant
   out, `Σ campaign` adds it, without per-unit cells
@@ -63,10 +64,10 @@ in Notes.
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
 | UB safe tests | `700` | — | `28.41`% | `79.71`% |
-| UB unsafe tests | `100` | — | `19.38`% | `12.24`% |
+| UB unsafe tests | `102` | — | `19.38`% | `12.24`% |
 | Equiv tests | `493` | — | `43.43`% | `75.59`% |
 | Unit tests | `800` | — | `32.00`% | `87.30`% |
-| **Total tests** | **`2093`** | — | **`45.88`%** | **`98.92`%** |
+| **Total tests** | **`2095`** | — | **`45.88`%** | **`98.92`%** |
 | total types | `258` | — | — | — |
 | ported types | `0` | `0.00`% | — | — |
 | wrapped types | `105` | `40.70`% | — | — |
@@ -559,8 +560,9 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+2` (—/— pp) | `+0` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+1` (—/— pp) | `+1` (—/— pp) |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | review | `+0` (`+0.00`/`+0.00` pp) | `+0` (`+0.00`/`+0.00` pp) | `+0` (`+0.00`/`+0.00` pp) | `+0` (`+0.00`/`+0.00` pp) |
+| `libgit2/src/util/allocators/failalloc.c` | `176` | `3` | review | `+0` (—/— pp) | `+2` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) |
 | **Σ first** |  |  |  | **`+294` (`+10.19`/`+5.94` pp)** | **`+26` (`+3.18`/`-8.08` pp)** | **`+195` (`+8.98`/`+13.98` pp)** | **`+244` (`+11.75`/`-33.66` pp)** |
-| **Σ review** |  |  |  | **`+14` (`+0.34`/`-1.41` pp)** | **`+2` (`-0.92`/`+0.27` pp)** | **`+22` (`+0.09`/`-0.37` pp)** | **`+34` (`+2.44`/`+7.45` pp)** |
+| **Σ review** |  |  |  | **`+14` (`+0.34`/`-1.41` pp)** | **`+4` (`-0.92`/`+0.27` pp)** | **`+22` (`+0.09`/`-0.37` pp)** | **`+34` (`+2.44`/`+7.45` pp)** |
 
 ### Batches: safety audit
 
@@ -571,8 +573,19 @@ Deterministic `ffimap`; no model.
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `0` | wrap | first | `+0` | `+0` | `+4` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.04` pp | `+0` |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+4` | `+0.02` pp | `+7` |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
+| `libgit2/src/util/allocators/failalloc.c` | `176` | `3` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
 | **Σ first** |  |  |  |  | **`+0`** | **`+0`** | **`+4`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+4`** | **`-0.02` pp** | **`+7`** |
 | **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** |
+
+### Batches: API stability
+
+Deterministic `ffimap api`; no model.
+
+| module | wave | batch | objective | pass | kept | extended | changed | removed | new | →Replaces | unattributed | reasons |
+|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---|---|
+| `libgit2/src/util/allocators/failalloc.c` | `176` | `3` | wrap | review | `3` | `0` | `0` | `0` | `0` | `0` | — | — |
+| **Σ first** |  |  |  |  | — | — | — | — | — | — |  |  |
+| **Σ review** |  |  |  |  | **`3`** | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** |  |  |
 
 ### Batches — review: PoC + reports
 
@@ -611,6 +624,30 @@ Deterministic `ffimap`; no model.
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+2` | `2` |
 | — (`tests/ub_safe`) | `legacy-526` | `0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
 | **Σ** |  |  | **`+1`** | **`+5`** | **`+3`** | **`+1`** | **`+3`** | **`+5`** | **`+11`** | **`+53`** | **`82`** |
+
+## Module passes
+
+One row per module pass, which reviews its module whole across both routes, as the
+`reviewing` skill's Review batches section describes; its usage counts in its module's
+review cost.
+
+### Passes
+
+`claude-opus-5-5` on `claude`.
+
+| module | wave | batch | types | symbols | +LoC | $ | tokens | wall |
+|---|---|---|---|---|---|---|---|---|
+| `libgit2/src/util/allocators/failalloc.c` | `176` | `3` | `0` | `3` | `+74/-13` | — | — | — |
+| **Σ** |  |  | **`0`** | **`3`** | **`+74/-13`** | — | — | — |
+
+### Passes: PoC + reports
+
+`claude-opus-5-5` on `claude`.
+
+| module | wave | batch | +lifecycle | +unsafe | +contracts import | +contracts export | +UB safe | +UB unsafe | +UB export | +equiv | +logic | +ergonomics | +idiom | +conventions | +misc | total |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `libgit2/src/util/allocators/failalloc.c` | `176` | `3` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
+| **Σ** |  |  | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+1`** | **`1`** |
 
 ## Notes
 
@@ -1677,6 +1714,59 @@ roles of the three routines otherwise hold against their bodies. On the wave tip
 tests and its dependents' (`util::allocators::failalloc`, `util::alloc`, `allocator`) and the
 doctests of both files passed plain and under ASan+UBSan. On the landed tree, fmt, clippy and
 the same tests passed plain.
+
+### `libgit2/src/util/allocators/failalloc.c` wave 176 batch 3: module pass
+
+Batch 3 is the module pass. It reviews the module whole across batches 0 to 2 (`9a64abfc7`,
+`7045f4428`, `ab7d4915c`), with `Alloc::C_ALLOCATOR`, for every objective, and runs the
+wave's gates and the module's end gates. Its row is in `Module passes`. Its tests and
+safety-audit rows sit under `Symbols`, since every item of the module is a symbol. It found
+one problem, under `+misc`. The module docs advertised installing the family after
+`git_libgit2_init`, but `set_allocator`'s contract allows that only for storage the family
+can resize and release, and nothing documented that `FailAlloc` accepts other families'
+storage. The equivalence suite relied on that undocumented acceptance. `FailAlloc` now
+states the guarantee, which the C's `GIT_UNUSED` bodies provide. `ub_unsafe` gains two
+tests that call `Alloc::realloc(Some)` and `Alloc::free` within it, which is why the
+`UB unsafe tests` count goes from `100` to `102`. The Miri gate also marked
+`libgit2-sys/tests/hidden_symbols.rs`'s test `calls C`. The host refused the run's
+`report.md` writes, as it did batch 2's, so no report is filed under `crustify/reviews/`.
+The fix commit's message carries the finding (proposal
+`review-reports-refused-by-the-host`).
+
+ffimap moves only test counters (`code.tests.*`: `+2` fns, `+5` unsafe blocks), so every
+safety-audit column is `+0`. Coverage was not measured: the landing changes no executable
+library code, only comments and tests. The `Coverage stats` percentages are batch 1's, and
+the suite pp cells are `—`. The ownership findings and lifecycle roles of the three
+routines hold against their bodies.
+
+Gates ran on `git archive` snapshots of the wave tip `ab7d4915c` and of the landed tree, each
+made a Git repository, at 16 jobs in all. **Tests**, plain, under ASan+UBSan and under TSan:
+both trees pass everything except the known failures. These are the trybuild compile-fail
+mismatches: 5 plain, which print `$FFIBOX`, and 13 under each nightly sanitizer. The
+nightly runs also fail the `CommitBuilder` compile-fail doctest. The tip's first TSan run
+of the trybuild suite failed all 197 cases, because the concurrent BSan build had
+overwritten the snapshot's `bindings.rs` and so broke the nested campaign-mode build.
+Rerun alone after a restore, it gave the same 13. The landed tree adds two `ub_unsafe`
+tests, 102 passing. **Miri**, one run per test binary of both crates, skipping
+compile-fail: on the tip, `hidden_symbols` stops at `reftable_buf_init` and every other
+binary passes. On the landed tree, with that test marked, all seven pass. **BSan**, one
+invocation per test binary: `ub_safe`, `ub_unsafe`, `unit_pub` and both `libgit2-sys`
+binaries pass on both trees. The bindings check runs with `CRUSTIFY_BINDINGS_UPDATE=1` in
+the snapshot, since BSan regenerates doc comments only (known). Four indexer tests that
+index a `git`-built pack through `ProgressCallback` stall under BorrowSanitizer and keep
+CPU-bound on both trees. They are `lib`'s
+`a_break_cancels_the_indexing_with_git_euser`, `a_panic_cancels_then_resumes_after_the_walk`
+and `libgit2_calls_the_closure_with_its_progress`, and `equiv`'s
+`a_progress_callback_sees_and_cancels_as_a_c_callback`. The first, alone, had no result in
+20 minutes. Neither the tip nor the landed tree finishes these four, and every other `lib`
+test passes on both (785, 5 ignored). `equiv` passes every other test on the tip
+(484, 8 ignored), and so does the landed tree, rerun with the indexer test skipped by its exact name (484, 8 ignored). These are `src/libgit2/indexer.c`'s tests, outside this
+module, and they are reported to the assistant rather than marked here.
+
+API stability, from this run on: Crustify's `testing-gates` gained the `ffimap api`
+measure while the run was under way. The `Batches: API stability` table is new here, so
+earlier landings have no rows, and its `Σ first` is `—`. All 3 items are `kept`, and the
+17 unattributed public items of the crate are all `kept` too.
 
 ### Parallelism and review caps from `libgit2/repository`
 

@@ -49,7 +49,9 @@
 //! into the Rust methods, so that the value behaves as C's initial one does. Installed
 //! before `git_libgit2_init`, initialisation replaces it with the standard allocator;
 //! installed after it, every later allocation fails until another allocator is
-//! installed.
+//! installed, and whatever libgit2 releases meanwhile leaks: the family accepts storage
+//! of any family and leaves it alone (see [`FailAlloc`]), which is what lets
+//! [`set_allocator`] install it over a running libgit2.
 //!
 //! Before initialisation, a failed allocation made through libgit2 (`git__malloc`,
 //! `git__realloc`) reports itself through libgit2's error state, which reads thread state
@@ -62,6 +64,7 @@
 //! [`Alloc`]: crate::libgit2::src::util::alloc::Alloc
 //! [`Alloc::C_ALLOCATOR`]: crate::libgit2::src::util::alloc::Alloc::C_ALLOCATOR
 //! [`Allocator::new`]: crate::libgit2::src::util::alloc::Allocator::new
+//! [`set_allocator`]: crate::libgit2::src::libgit2::settings::set_allocator
 
 pub use ffi_import::{FailAlloc, FailArrayAlloc};
 
@@ -90,6 +93,15 @@ mod ffi_import {
     /// `unsafe` adoption, whose contract asks for storage this family made, could build
     /// one.
     ///
+    /// Its release and its resize go further than [`Alloc`] asks: neither reads, writes,
+    /// keeps nor releases the pointer it is handed (C's `GIT_UNUSED`), so storage of any
+    /// family, or of none, may reach them and is left as it was, live and its owner's, or
+    /// leaked once nothing else releases it. Every allocation a running libgit2 holds is
+    /// therefore one this family can resize (the resize fails, leaving it live) and
+    /// release (as a no-op), as the second obligation of
+    /// [`set_allocator`](crate::libgit2::src::libgit2::settings::set_allocator) asks of a
+    /// family installed after `git_libgit2_init`.
+    ///
     /// Stateless, so it is `Send` and `Sync`: the family keeps no state, in Rust or in
     /// C, and has no thread to free on.
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -98,8 +110,9 @@ mod ffi_import {
     /// The failing allocator family as the policy of counted arrays.
     ///
     /// [`CLenAlloc::c_alloc_len`] is `git_failalloc_malloc`, which returns `None` for every
-    /// request, and its release `git_failalloc_free`. An empty array asks the allocator
-    /// for nothing, so it builds as under any policy, as NULL.
+    /// request, and its release `git_failalloc_free`, which, as [`FailAlloc`]'s does,
+    /// accepts storage of any family and leaves it alone. An empty array asks the
+    /// allocator for nothing, so it builds as under any policy, as NULL.
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
     pub struct FailArrayAlloc;
 
