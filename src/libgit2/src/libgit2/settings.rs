@@ -1266,11 +1266,13 @@ pub unsafe fn enable_strict_hash_verification(enabled: bool) {
 /// # Safety
 ///
 /// - `allocator`'s members must form one allocator family meeting [`Alloc`]'s contract, as an
-///   [`Allocator::new`] value does; an [`Allocator::from_fns`] value does only if its functions do.
+///   [`Allocator::new`] value does, and [`Allocator::debug`]'s; an [`Allocator::from_fns`] value
+///   does only if its functions do.
 ///
 /// [`Alloc`]: crate::libgit2::src::util::alloc::Alloc
 /// [`Allocator::new`]: crate::libgit2::src::util::alloc::Allocator::new
 /// [`Allocator::from_fns`]: crate::libgit2::src::util::alloc::Allocator::from_fns
+/// [`Allocator::debug`]: crate::libgit2::src::util::alloc::Allocator::debug
 /// - Every allocation libgit2 holds when this runs must be one the new family can resize and
 ///   release, since libgit2 releases it through whichever allocator is current then: install before
 ///   libgit2 is initialised (before any call into this crate that reaches libgit2 — libgit2's

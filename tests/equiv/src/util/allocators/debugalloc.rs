@@ -1,7 +1,8 @@
 //! Equivalence of `src/util/allocators/debugalloc.c` with `Allocator::debug`.
 //!
-//! - Values: `Allocator::debug` holds what `git_debugalloc_init_allocator` writes into a raw
-//!   `git_allocator`, whatever the raw value held before, call after call.
+//! - Values: `Allocator::debug` holds the `free` that `git_debugalloc_init_allocator` writes into a
+//!   raw `git_allocator`, whatever the raw value held before, call after call, and guards in place
+//!   of its `malloc` and `realloc`, which behave as C's but for the sizes C wraps.
 //! - The family: the same steps run on the routines read from either value, on independently owned
 //!   blocks, and are compared after each step: whether a call returned NULL, the length word each
 //!   block starts with, the bytes a resize keeps, and the release of every block, which the
@@ -12,7 +13,8 @@
 //!
 //! A request `malloc` cannot meet aborts under `ASan` unless its allocator may return NULL,
 //! and installing an allocator is process-global, so those steps run alone in child
-//! processes, the former with `allocator_may_return_null=1` for `ASan` and `TSan` alike.
+//! processes, the former with `allocator_may_return_null=1` for `ASan`, `TSan` and
+//! `BorrowSanitizer` alike.
 
 use std::ffi::{c_char, c_int, c_void};
 use std::process::Command;
@@ -29,7 +31,7 @@ use libgit2::libgit2::src::util::errors::{ErrorClass, clear, last};
 const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 
 /// Runs `body` alone in a child process, with `options` appended to the sanitizers'
-/// inherited options (`ASAN_OPTIONS`, `TSAN_OPTIONS`), so that no other test shares
+/// inherited options (`ASAN_OPTIONS`, `TSAN_OPTIONS`, `BSAN_OPTIONS`), so that no other test shares
 /// libgit2's globals or those options.
 fn isolated(test: &str, options: &str, body: fn()) {
     let name = test.strip_prefix("equiv::").unwrap_or(test);
@@ -41,7 +43,7 @@ fn isolated(test: &str, options: &str, body: fn()) {
     child
         .args([name, "--exact", "--test-threads=1", "--nocapture"])
         .env(CHILD, name);
-    for var in ["ASAN_OPTIONS", "TSAN_OPTIONS"] {
+    for var in ["ASAN_OPTIONS", "TSAN_OPTIONS", "BSAN_OPTIONS"] {
         let inherited = std::env::var(var).unwrap_or_default();
         let separator = if inherited.is_empty() || options.is_empty() {
             ""
@@ -84,22 +86,25 @@ fn raw_init(before: ffi::git_allocator) -> (c_int, ffi::git_allocator) {
     (rc, raw)
 }
 
-/// Whether `rust` holds exactly the members of `c`.
+/// Whether `rust` holds `c`'s `free`, and set members of its own, the guards, in place of
+/// `c`'s `malloc` and `realloc`.
 fn same_members(rust: Allocator, c: &ffi::git_allocator) -> bool {
     let h = rust.as_ref();
-    let eq = |r: Option<usize>, c: Option<usize>| r.is_some() && r == c;
-    eq(
-        h.malloc().map(|f| f as usize),
-        c.gmalloc.map(|f| f as usize),
-    ) && eq(
-        h.realloc().map(|f| f as usize),
-        c.grealloc.map(|f| f as usize),
-    ) && eq(h.free().map(|f| f as usize), c.gfree.map(|f| f as usize))
+    let addr = |f: Option<usize>| f.filter(|&a| a != 0);
+    let (malloc, realloc, free) = (
+        addr(h.malloc().map(|f| f as usize)),
+        addr(h.realloc().map(|f| f as usize)),
+        addr(h.free().map(|f| f as usize)),
+    );
+    free.is_some()
+        && free == c.gfree.map(|f| f as usize)
+        && malloc.is_some_and(|m| Some(m) != c.gmalloc.map(|f| f as usize))
+        && realloc.is_some_and(|r| Some(r) != c.grealloc.map(|f| f as usize))
 }
 
 #[test]
 #[cfg_attr(miri, ignore = "calls C")]
-fn debug_holds_what_c_writes_over_any_value() {
+fn debug_holds_cs_free_and_guards_over_any_value() {
     let (m, r, f): (MallocFn, ReallocFn, FreeFn) = (other_malloc, other_realloc, other_free);
     let befores = [
         ffi::git_allocator::default(),
@@ -161,8 +166,8 @@ impl Family {
 
     /// `malloc(len)`, naming this file as the call site, as libgit2 names its own.
     fn malloc(self, len: usize) -> *mut u8 {
-        // SAFETY: `file` is a C string live for the call, and `len` stays clear of the
-        // sizes C wraps (`Allocator::debug`'s obligation).
+        // SAFETY: `file` is a C string live for the call; C's own routine is called only
+        // with sizes it does not wrap (`family_failures_return_null_and_keep_the_block`).
         unsafe { (self.malloc)(len, c"debugalloc.rs".as_ptr(), 1) }.cast()
     }
 
@@ -370,16 +375,27 @@ fn family_failures_return_null_and_keep_the_block() {
         ),
         "allocator_may_return_null=1",
         || {
-            // `isize::MAX` bytes, and the word C adds, are more than `malloc` can give.
-            let huge = isize::MAX.unsigned_abs();
-            for family in [Family::of_rust(), Family::of_c()] {
-                assert!(family.malloc(huge).is_null());
+            // `isize::MAX` bytes, and the word C adds, are more than `malloc` can give, and
+            // so is every size up to the last that C does not wrap, which the guards refuse
+            // before C: either way the request fails.
+            let huge = [
+                isize::MAX.unsigned_abs(),
+                isize::MAX.unsigned_abs() + 1,
+                usize::MAX - size_of::<usize>(),
+            ];
+            for (family, huge) in [Family::of_rust(), Family::of_c()]
+                .into_iter()
+                .flat_map(|f| huge.map(|h| (f, h)))
+            {
+                assert!(family.malloc(huge).is_null(), "malloc({huge})");
+                // SAFETY: a NULL `ptr`; `huge` is non-zero.
+                assert!(unsafe { family.realloc(ptr::null_mut(), huge) }.is_null());
                 let p = family.malloc(16);
                 // SAFETY: a fresh block of 16 bytes.
                 unsafe { fill(p, 16, 5) };
                 // SAFETY: `p` is live, and stays the caller's on failure.
                 let q = unsafe { family.realloc(p, huge) };
-                assert!(q.is_null());
+                assert!(q.is_null(), "realloc(p, {huge})");
                 // The failed resize left `p` live and whole.
                 // SAFETY: `p` is live, its 16 bytes written.
                 let kept = unsafe { left(p, 16) };
@@ -412,9 +428,8 @@ fn installed_before_init_libgit2_and_the_strategies_run_on_it() {
         || {
             let debug = Allocator::debug();
             // SAFETY: libgit2 is not initialised and holds no allocation, so every
-            // allocation it ever makes is this family's; its storage is aligned to a word,
-            // which libgit2 and the crate's strategies need at most, and nothing here asks
-            // for a size near `usize::MAX`; this child runs one test on one thread.
+            // allocation it ever makes is this family's, which meets `Alloc`'s contract;
+            // this child runs one test on one thread.
             unsafe { set_allocator(Some(debug.as_ref())) };
 
             // The strategies pin the runtime, so libgit2 initialises over the installed
