@@ -1,0 +1,568 @@
+{
+  "crate_path": "/target/libgit2-crustify/crustify/.worktrees/fixes/static-campaign-link",
+  "sys_crates": [],
+  "scanner": {
+    "ffimap": "405e0539850b5da007ae3c3da35543234d9f3327",
+    "toolchain": "nightly-2026-10-07",
+    "ffibox": false,
+    "seams": [],
+    "regions": [],
+    "barriers": [],
+    "features": []
+  },
+  "counts": {
+    "raw_ptr": {
+      "total": {
+        "total": 145,
+        "unsafe": {
+          "total": 113,
+          "pub": 3,
+          "priv": 110
+        },
+        "safe": {
+          "total": 32,
+          "pub": 2,
+          "priv": 30
+        }
+      },
+      "fn_sig_arg": {
+        "total": 111,
+        "unsafe": {
+          "total": 107,
+          "pub": 3,
+          "priv": 104
+        },
+        "safe": {
+          "total": 4,
+          "pub": 0,
+          "priv": 4
+        },
+        "of_which": {
+          "void": {
+            "total": 22,
+            "unsafe": {
+              "total": 19,
+              "pub": 1,
+              "priv": 18
+            },
+            "safe": {
+              "total": 3,
+              "pub": 0,
+              "priv": 3
+            }
+          }
+        }
+      },
+      "fn_sig_ret": {
+        "total": 29,
+        "unsafe": {
+          "total": 6,
+          "pub": 0,
+          "priv": 6
+        },
+        "safe": {
+          "total": 23,
+          "pub": 2,
+          "priv": 21
+        },
+        "of_which": {
+          "void": {
+            "total": 6,
+            "unsafe": {
+              "total": 2,
+              "pub": 0,
+              "priv": 2
+            },
+            "safe": {
+              "total": 4,
+              "pub": 0,
+              "priv": 4
+            }
+          }
+        }
+      },
+      "fn_sig_trait_impl": {
+        "total": 69,
+        "unsafe": {
+          "total": 62,
+          "pub": 60,
+          "priv": 2
+        },
+        "safe": {
+          "total": 7,
+          "pub": 7,
+          "priv": 0
+        },
+        "of_which": {
+          "void": {
+            "total": 0,
+            "unsafe": {
+              "total": 0,
+              "pub": 0,
+              "priv": 0
+            },
+            "safe": {
+              "total": 0,
+              "pub": 0,
+              "priv": 0
+            }
+          },
+          "std": {
+            "total": 0,
+            "unsafe": {
+              "total": 0,
+              "pub": 0,
+              "priv": 0
+            },
+            "safe": {
+              "total": 0,
+              "pub": 0,
+              "priv": 0
+            }
+          },
+          "local": {
+            "total": 0,
+            "unsafe": {
+              "total": 0,
+              "pub": 0,
+              "priv": 0
+            },
+            "safe": {
+              "total": 0,
+              "pub": 0,
+              "priv": 0
+            }
+          }
+        }
+      },
+      "field": {
+        "total": 5,
+        "pub": 0,
+        "priv": 5,
+        "of_which": {
+          "void": {
+            "total": 0,
+            "pub": 0,
+            "priv": 0
+          }
+        }
+      },
+      "deref": {
+        "total": 443,
+        "rd": 252,
+        "wr": 191
+      },
+      "casted_to": {
+        "total": 119,
+        "std": {
+          "total": 119,
+          "owner": 9,
+          "string": 86,
+          "borrow": 15,
+          "slice": 9,
+          "other": 0
+        }
+      },
+      "surrendered": {
+        "total": 6,
+        "std": {
+          "total": 6,
+          "owner": 5,
+          "string": 1
+        }
+      }
+    },
+    "ty": {
+      "total": {
+        "total": 415,
+        "pub": 388,
+        "priv": 27,
+        "of_which": {
+          "macro": {
+            "total": 124,
+            "pub": 118,
+            "priv": 6
+          },
+          "no_trait": {
+            "total": 59,
+            "pub": 44,
+            "priv": 15
+          },
+          "std_trait": {
+            "total": 356,
+            "pub": 344,
+            "priv": 12
+          },
+          "local_trait": {
+            "total": 0,
+            "pub": 0,
+            "priv": 0
+          },
+          "repr_c": {
+            "total": 7,
+            "pub": 0,
+            "priv": 7
+          },
+          "repr_transparent": {
+            "total": 230,
+            "pub": 224,
+            "priv": 6
+          },
+          "std_impl": {
+            "total": 1076,
+            "Clone": {
+              "total": 247,
+              "pub": 240,
+              "priv": 7
+            },
+            "Debug": {
+              "total": 317,
+              "pub": 310,
+              "priv": 7
+            },
+            "Default": {
+              "total": 88,
+              "pub": 86,
+              "priv": 2
+            },
+            "Display": {
+              "total": 37,
+              "pub": 37,
+              "priv": 0
+            },
+            "Eq": {
+              "total": 113,
+              "pub": 112,
+              "priv": 1
+            },
+            "Error": {
+              "total": 36,
+              "pub": 36,
+              "priv": 0
+            },
+            "From": {
+              "total": 15,
+              "pub": 15,
+              "priv": 0
+            },
+            "Hash": {
+              "total": 101,
+              "pub": 101,
+              "priv": 0
+            },
+            "Iterator": {
+              "total": 9,
+              "pub": 9,
+              "priv": 0
+            },
+            "PartialEq": {
+              "total": 113,
+              "pub": 112,
+              "priv": 1
+            }
+          }
+        }
+      },
+      "storing_raw_ptr": {
+        "total": 5,
+        "pub": 3,
+        "priv": 2,
+        "of_which": {
+          "impl_drop": {
+            "total": 2,
+            "pub": 1,
+            "priv": 1
+          },
+          "impl_clone": {
+            "total": 2,
+            "pub": 1,
+            "priv": 1
+          },
+          "impl_deref": {
+            "total": 0,
+            "pub": 0,
+            "priv": 0
+          },
+          "impl_deref_mut": {
+            "total": 0,
+            "pub": 0,
+            "priv": 0
+          },
+          "impl_send_sync": {
+            "total": 2,
+            "pub": 2,
+            "priv": 0
+          },
+          "has_lifetime": {
+            "total": 3,
+            "pub": 1,
+            "priv": 2
+          },
+          "pub_field": {
+            "total": 0,
+            "pub": 0,
+            "priv": 0
+          },
+          "none": {
+            "total": 0,
+            "pub": 0,
+            "priv": 0
+          }
+        }
+      },
+      "wrapping_unsafe_cell": {
+        "total": 0,
+        "pub": 0,
+        "priv": 0
+      },
+      "impl_block": {
+        "total": 444,
+        "pub": 431,
+        "priv": 13,
+        "of_which": {
+          "other": {
+            "total": 444,
+            "pub": 431,
+            "priv": 13
+          }
+        }
+      },
+      "impl_trait": {
+        "total": 2256,
+        "pub": 2175,
+        "priv": 81,
+        "of_which": {
+          "unsafe": 324,
+          "derived": {
+            "total": 1259,
+            "pub": 1230,
+            "priv": 29
+          },
+          "std": {
+            "total": 1962,
+            "drop": {
+              "total": 5,
+              "pub": 4,
+              "priv": 1
+            },
+            "clone": {
+              "total": 247,
+              "pub": 240,
+              "priv": 7
+            },
+            "send": {
+              "total": 91,
+              "pub": 91,
+              "priv": 0
+            },
+            "sync": {
+              "total": 89,
+              "pub": 89,
+              "priv": 0
+            },
+            "ref_forming": {
+              "total": 0,
+              "pub": 0,
+              "priv": 0
+            },
+            "other": {
+              "total": 1530,
+              "pub": 1467,
+              "priv": 63
+            }
+          },
+          "local": {
+            "total": 2,
+            "pub": 0,
+            "priv": 2
+          }
+        }
+      },
+      "generic": {
+        "total": 226,
+        "pub": 209,
+        "priv": 17,
+        "of_which": {
+          "storing_raw_ptr": {
+            "total": 4,
+            "pub": 2,
+            "priv": 2
+          },
+          "lifetime": {
+            "total": 222,
+            "pub": 208,
+            "priv": 14
+          },
+          "type": {
+            "total": 5,
+            "pub": 1,
+            "priv": 4
+          }
+        }
+      }
+    },
+    "fn": {
+      "total": {
+        "total": 2950,
+        "pub": 2662,
+        "priv": 288,
+        "of_which": {
+          "macro": {
+            "total": 872,
+            "pub": 849,
+            "priv": 23
+          }
+        }
+      },
+      "unsafe": {
+        "total": 166,
+        "pub": 102,
+        "priv": 64,
+        "of_which": {
+          "in_trait_impl": {
+            "total": 57,
+            "other": {
+              "total": 57,
+              "pub": 55,
+              "priv": 2
+            },
+            "std": {
+              "total": 0,
+              "pub": 0,
+              "priv": 0
+            },
+            "local": {
+              "total": 0,
+              "pub": 0,
+              "priv": 0
+            }
+          },
+          "other": {
+            "total": 109,
+            "pub": 47,
+            "priv": 62
+          }
+        }
+      },
+      "safe": {
+        "total": 2784,
+        "pub": 2560,
+        "priv": 224,
+        "of_which": {
+          "with_unsafe": {
+            "total": 962,
+            "pub": 901,
+            "priv": 61
+          }
+        }
+      },
+      "sig": {
+        "of_which": {
+          "c_type": {
+            "total": 174,
+            "arg": {
+              "total": 86,
+              "pub": 15,
+              "priv": 71
+            },
+            "ret": {
+              "total": 88,
+              "pub": 45,
+              "priv": 43
+            }
+          },
+          "result": {
+            "total": 409,
+            "ret": {
+              "total": 409,
+              "pub": 340,
+              "priv": 69
+            }
+          }
+        }
+      },
+      "extern_abi": {
+        "total": 43,
+        "pub": 0,
+        "priv": 43,
+        "of_which": {
+          "macro": {
+            "total": 0,
+            "pub": 0,
+            "priv": 0
+          },
+          "exported": {
+            "total": 0,
+            "pub": 0,
+            "priv": 0
+          },
+          "catches_unwind": {
+            "total": 15,
+            "pub": 0,
+            "priv": 15
+          },
+          "raw_ptr_sig": {
+            "total": 43,
+            "pub": 0,
+            "priv": 43
+          }
+        }
+      }
+    },
+    "static": {
+      "total": {
+        "total": 3,
+        "pub": 0,
+        "priv": 3
+      },
+      "of_which": {
+        "exported": {
+          "total": 0,
+          "pub": 0,
+          "priv": 0
+        },
+        "mut": {
+          "total": 0,
+          "pub": 0,
+          "priv": 0
+        }
+      }
+    },
+    "code": {
+      "loc": {
+        "total": 17572,
+        "unsafe": 2910
+      },
+      "unsafe_block": {
+        "total": 2096,
+        "of_which": {
+          "ffi_export": 120
+        }
+      },
+      "unsafe_call": {
+        "total": 1653,
+        "ffi": 592,
+        "rust": 1061,
+        "intrinsic": 0
+      },
+      "fn_ptr": {
+        "total": 51,
+        "extern_abi": {
+          "total": 51,
+          "foreign": 0,
+          "other": 0,
+          "local": 51
+        }
+      },
+      "tests": {
+        "loc": {
+          "total": 94599,
+          "unsafe": 7837
+        },
+        "unsafe_block": 6307,
+        "fn": 4981
+      }
+    }
+  },
+  "counts_unavailable": null
+}

@@ -1,8 +1,10 @@
 #!/bin/bash
 # run.sh <repo> <package> <cov dir>: build a coverage-instrumented scratch copy of the safe
 # crate against the `coverage` variant, its test items under #[coverage(off)], and run each
-# suite alone into <cov dir>/prof/<suite>: lib, each integration test binary, and doc.
-# report.py then reads the figures (testing spec, Coverage).
+# suite alone into <cov dir>/prof/<suite>: lib, each integration test binary, and doc. Each
+# binary links the variant's C statically, so its profiles count the C and the Rust alike.
+# report.py then reads the figures (testing spec, Coverage), with the variant's static archive
+# as the C object.
 set -euo pipefail
 repo=$1 pkg=$2 out=$3
 host=x86_64-unknown-linux-gnu
