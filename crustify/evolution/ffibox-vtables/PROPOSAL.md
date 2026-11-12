@@ -1,10 +1,12 @@
 # Function-pointer tables a library calls into, implemented by a Rust trait
 
-Status: `open`, proposed after the ffibox usage audit of 2026-11-12. The user approved
-filing it; it awaits their decision on the design at a module's end. It answers the TODO
-in the `ffibox` tool skill's Binding symbols section: "ffibox has no primitive yet for a
-struct of function pointers a library calls into, bound to a trait the Rust side
-implements: a binding hand-writes it until it does".
+Status: `landed` on ffibox's `libgit2-crustify/devel`, this campaign's working branch of
+ffibox forked from `devel` `a0c44b2`, by fast-forward to `7af1232` (`d0f612e`, `23e0a9b`,
+`454172f`, `041fc6c`, `54be237`, `7af1232`), after its fourth review approved it; ffibox's
+`devel` takes it only with the user's approval, under the branching model of the user's
+crustify `c2f21a0`, which the user had the campaign follow on 2026-11-12. The `ffibox` tool
+skill's Binding symbols TODO is still to be replaced, and `filter.rs`'s port
+(`crustify/tmp/wt-vtables-out/filter-port-v4.patch`) is a validation, not landed.
 
 ## Signal
 
@@ -98,8 +100,6 @@ tests unchanged. Then compare the scan (`ffimap`) of the module before and after
 
 ## Reviews
 
-Not landed yet: on ffibox's `libgit2-crustify/evolution/ffibox-vtables`.
-
 - First change (`d0f612e`, `23e0a9b`, `454172f`): `CTable<T, S>` and `impl_cvtable!`, its
   validation ported `filter.rs`'s `git_writestream`, since reftable's allocator hooks are no
   table (three context-free hooks, no state to recover). An independent soundness review found
@@ -115,4 +115,17 @@ Not landed yet: on ffibox's `libgit2-crustify/evolution/ffibox-vtables`.
   `forbid(unsafe_code)` and clippy (N1, reproduced); the contract licenses NULL slots C calls
   unconditionally (N2); the `Install` token can be kept (N3); the handles' bound is stricter
   than `define_ctype!`'s `!Send` handles need (N4); and F2 should be a bound, as `CPayload` and
-  `CClosure` make theirs. A second round of fixes is under way.
+  `CClosure` make theirs. - Second fixes (`54be237`): the binding writes the whole `unsafe impl … CVtable<S> for T {}`
+  line, which the macro emits with the binding's own tokens, so `forbid(unsafe_code)` and
+  clippy's SAFETY check see it; `into_c` requires `S: Send + Sync + 'static`, with `unsafe
+  into_c_local`; NULL only where C allows it, `base =` mandatory; an `Install<'a, T, S>` brand;
+  `CLocalHandles` and safe `_local` handles. Third review: the macro's internal `@slot` /
+  `@slots` arms were callable directly, minting trampolines with no `unsafe impl` or token
+  (R11, reproduced); and the traced `filter.rs` port's threading claim holds (libgit2 calls and
+  frees a write stream on the thread of the call it was handed to).
+- Third fixes (`7af1232`): the internal arms type-check the install token and the table;
+  `impl_clocal_handles!` asserts the handles are neither `Send` nor `Sync`. Fourth review:
+  approved; R11's reproducers fail to compile, the ambiguity check holds for handles with
+  lifetimes, and the suite and race tests are clean under Miri on both models. Remaining by
+  design: a hand-written `install` calling itself on another table of its type is its
+  `unsafe impl`'s obligation, as the docs say.
