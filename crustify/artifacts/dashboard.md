@@ -510,9 +510,8 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | wrap | review | `2` | — | `+217/-15` | — | `$11.03` | `25.98M` | `47m17s` | `$5.51` | — |
 | `libgit2/deps/reftable/basics.c` | `169` | `4` | wrap | review | `43` | — | `+110/-16` | `45.99`% / `98.92`% | `$13.42` | `46.17M` | `40m4s` | `$0.31` | — |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | wrap | review | `3` | — | `+11/-7` | `45.88`% / `98.92`% | `$5.87` | `16.61M` | `16m58s` | `$1.96` | — |
-| `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | wrap | review | `1` | — | `+82/-67` | `45.87`% / `98.86`% | `$12.85` | `46.60M` | `1h22m16s` | `$12.85` | — |
 | **Σ first** |  |  |  |  | **`499`** | **`9066`** | **`+79898/-3634`** | **`45.88`% / `98.90`%** | **`$581.72`** | **`1824.00M`** | — | **`$1.17`** | **`$0.06`** |
-| **Σ review** |  |  |  |  | **`469`** | — | **`+7334/-1436`** | **`45.93`% / `98.90`%** | **`$386.72`** | **`781.59M`** | — | **`$0.82`** | — |
+| **Σ review** |  |  |  |  | **`468`** | — | **`+7252/-1369`** | **`45.93`% / `98.90`%** | **`$373.87`** | **`734.99M`** | — | **`$0.80`** | — |
 
 ### Batches: tests
 
@@ -693,10 +692,9 @@ Deterministic `ffimap api`; no model.
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+2` | `2` |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+2` | `2` |
-| `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `+0` | `1` |
 | — (`tests/ub_safe`) | `legacy-526` | `0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
 | `libgit2/deps/reftable/basics.c` | `169` | `4` | `+0` | `+0` | `+0` | `+0` | `+1` | `+1` | `+1` | `+2` | `5` |
-| **Σ** |  |  | **`+1`** | **`+5`** | **`+4`** | **`+1`** | **`+4`** | **`+6`** | **`+13`** | **`+57`** | **`91`** |
+| **Σ** |  |  | **`+1`** | **`+5`** | **`+4`** | **`+1`** | **`+4`** | **`+6`** | **`+12`** | **`+57`** | **`90`** |
 
 ## Module passes
 
@@ -714,9 +712,10 @@ review cost.
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `3` | `0` | `3` | `+74/-13` | `$13.62` | `50.18M` | `2h6m13s` |
 | `libgit2/src/util/alloc.c` | `177` | `1` | `1` | `22` | `+294/-136` | `$21.47` | `81.81M` | `2h40m43s` |
 | `libgit2/src/util/allocators/stdalloc.c` | `181` | `1` | `0` | `1` | `+86/-6` | `$14.45` | `39.79M` | `1h16m3s` |
+| `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | `0` | `1` | `+82/-67` | `$12.85` | `46.60M` | `1h22m16s` |
 | `libgit2/src/util/allocators/debugalloc.c` | `183` | `1` | `0` | `1` | `+336/-75` | `$15.62` | `43.77M` | `1h33m16s` |
 | `libgit2/src/util/strlist.c` | `184` | `1` | `0` | `6` | `+408/-142` | `$21.71` | `81.05M` | `1h33m47s` |
-| **Σ** |  |  | **`1`** | **`76`** | **`+1496/-395`** | **`$117.03`** | **`379.69M`** | — |
+| **Σ** |  |  | **`1`** | **`77`** | **`+1578/-462`** | **`$129.88`** | **`426.29M`** | — |
 
 ### Passes: PoC + reports
 
@@ -728,9 +727,10 @@ review cost.
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `3` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
 | `libgit2/src/util/alloc.c` | `177` | `1` | `+0` | `+1` | `+1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `2` |
 | `libgit2/src/util/allocators/stdalloc.c` | `181` | `1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `0` |
+| `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `+0` | `1` |
 | `libgit2/src/util/allocators/debugalloc.c` | `183` | `1` | `+0` | `+0` | `+2` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `2` |
 | `libgit2/src/util/strlist.c` | `184` | `1` | `+0` | `+0` | `+1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+2` | `+1` | `+0` | `+0` | `+0` | `4` |
-| **Σ** |  |  | **`+0`** | **`+1`** | **`+5`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+2`** | **`+1`** | **`+0`** | **`+0`** | **`+4`** | **`13`** |
+| **Σ** |  |  | **`+0`** | **`+1`** | **`+5`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+2`** | **`+1`** | **`+0`** | **`+1`** | **`+4`** | **`14`** |
 
 ## Notes
 
@@ -3231,7 +3231,9 @@ in the Symbols route's `Batches` and review tables as well as, or instead of, `M
 passes`, so their cost counted twice across the `Σ` rows. Their rows are now in `Module
 passes` alone, `wave-169/batch-5`'s `+internal` finding counted as `+contracts import` and
 its three `+misc` findings left as they were, and the Symbols `Σ review` and the `Module
-passes` `Σ` rows recomputed from their rows.
+passes` `Σ` rows recomputed from their rows. `win32_leakcheck.c`'s module pass (`wave-182/batch-1`), its
+only review, moved there as well afterwards, its `conventions` finding under `+conventions`;
+its tests, safety-audit and API-stability rows stay under `Symbols`, as `alloc.c`'s do.
 
 From the next wave, the safety audit scans name `into_raw` among the seams (crustify
 `200bc65`), so their `of_which.seam` shares are not comparable with earlier rows'; C
