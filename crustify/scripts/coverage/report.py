@@ -5,6 +5,11 @@ suite's as ALL, and prints the TOTAL line of `llvm-cov report` for each named sc
 objects and every test and doctest binary as objects for every suite. A scope's @<dir>
 resolves the relative paths a C build recorded. MERGED=1 reuses the merged profiles, and ONLY=<suite> reports that one alone.
 
+A scope written `<name>=@c`, such as `C=@c`, reads the C objects alone, with no source filter:
+the archive holds only the link unit's TUs, whatever paths their build recorded. Any other
+scope fails when a file it reports lies outside its dirs: llvm-cov falls back to every object
+when its filters match no source, which would count the test binaries' std and Rust as C.
+
 The C objects are those of the coverage variant's static archive, its `static` in build.json
 (crustify/builds/coverage/crustify/libgit2.a), which the test binaries link: each binary holds
 only the TUs it reaches, so the archive, which llvm-cov reads member by member, gives every TU
@@ -27,11 +32,20 @@ def merge(name,dirs):
     return prof
 def total(prof,srcs):
     cd=[]
-    if '@' in srcs[-1]: srcs[-1],c=srcs[-1].split('@'); cd=['-compilation-dir='+c]
-    args=[B+'llvm-cov','report','-instr-profile',str(prof)]+cd+[objs[0]]+sum((['-object',o] for o in objs[1:]),[])+srcs
+    if srcs==['@c']: use,srcs=cobjs,[]
+    else:
+        use=objs
+        if '@' in srcs[-1]: srcs[-1],c=srcs[-1].split('@'); cd=['-compilation-dir='+c]
+    args=[B+'llvm-cov','report','-instr-profile',str(prof)]+cd+[use[0]]+sum((['-object',o] for o in use[1:]),[])+srcs
     r=subprocess.run(args,capture_output=True,text=True)
     if r.returncode: sys.exit(r.stderr[-2000:])
-    t=[l for l in r.stdout.splitlines() if l.startswith('TOTAL')][-1].split()
+    lines=r.stdout.splitlines()
+    if srcs and not cd:
+        roots=[str(pathlib.Path(d).resolve()) for d in srcs]
+        rows=[l.split()[0] for l in lines[2:] if l.strip() and not l.startswith(('-','TOTAL','Filename'))]
+        stray=[f for f in rows if not any(str(pathlib.Path(f).resolve()).startswith(r+'/') or str(pathlib.Path(f).resolve())==r for r in roots)]
+        if stray: sys.exit(f'scope {srcs} reports {len(stray)} files outside it, such as {stray[0]}: its filters match no source')
+    t=[l for l in lines if l.startswith('TOTAL')][-1].split()
     # TOTAL regions missed cover functions missed exec lines missed cover branches missed cover
     return dict(lines=(int(t[7])-int(t[8]),int(t[7]),t[9]),functions=(int(t[4])-int(t[5]),int(t[4]),t[6]),regions=(int(t[1])-int(t[2]),int(t[1]),t[3]))
 res={}
