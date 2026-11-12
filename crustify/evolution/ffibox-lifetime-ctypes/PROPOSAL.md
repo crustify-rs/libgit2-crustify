@@ -69,6 +69,18 @@ Migration is optional and per module: a hand-written type and a macro one are th
 layout. In a port campaign most of these types' modules are ported, so the campaign should
 not sweep them. New wrappers and ported modules' exported handles use the macro.
 
+## Addendum: the two policy macros that do not take a lifetime
+
+`ffibox-usage-docs` (ffibox `1b3308b`) found that `impl_cdrop!`, `impl_crefclone!` and
+`impl_cdispose!` already take `Foo<'_>`, but `impl_cdupclone!` and `impl_cguarded!` do not:
+- `c_dup`'s returned type elides to `&self`'s lifetime;
+- `impl_cguarded!` names the type in a generated struct and an associated type (E0637).
+
+So this proposal also covers an optional leading lifetime list on those two, such as
+`impl_cdupclone!(<'r> ReferenceDup, Reference<'r>, adapter)`, weighed against ffibox's
+G20 (simple macros). That would make `ReferenceFree`'s `CDupClone` and locks over
+lifetime-carrying types macro-generated too.
+
 ## Validation
 
 ffibox's suite, with tests that build a lifetime-carrying type through the macro and
