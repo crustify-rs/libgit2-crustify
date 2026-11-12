@@ -11062,7 +11062,26 @@
      "alloc": false,
      "init": true
     }
-   }
+   },
+   "ptr_args": [
+    {
+     "name": "allocator",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:allocator"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "An out-parameter: the body stores debugalloc__malloc, debugalloc__realloc and debugalloc__free into gmalloc, grealloc and gfree, reads none of the struct, keeps no pointer to it and returns 0. Dereferenced unconditionally, so never NULL. The only C caller is setup_default_allocator under GIT_DEBUG_STRICT_ALLOC, on &git__allocator. Bound as Allocator::debug (wave-183/batch-0), which passes a local."
+     }
+    }
+   ]
   },
   {
    "name": "git_diff_free",

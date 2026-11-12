@@ -719,3 +719,6 @@ function git__mallocarray
 function git__strdup
 function git__strndup
 function git__substrdup
+
+# src/util/allocators/debugalloc.c: the debug allocator's initialiser (wave-183/batch-0)
+function git_debugalloc_init_allocator

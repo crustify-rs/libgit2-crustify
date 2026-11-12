@@ -56,23 +56,23 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip `<sha>`; `main` shipped at `<sha>`; crustify `4605156`, ffibox `7950244` (`main`), wavefront `db28284`
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `17732` non-test, `95599` tests; **C LoC** — `<n>`
+- **Rust LoC** — `17754` non-test, `96011` tests; **C LoC** — `<n>`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `713` | — | `28.42`% | `79.88`% |
+| UB safe tests | `715` | — | `28.38`% | `80.08`% |
 | UB unsafe tests | `91` | — | `19.36`% | `11.98`% |
-| Equiv tests | `491` | — | `43.43`% | `75.59`% |
-| Unit tests | `798` | — | `32.02`% | `87.53`% |
-| **Total tests** | **`2093`** | — | **`45.90`%** | **`98.90`%** |
+| Equiv tests | `495` | — | `43.48`% | `75.63`% |
+| Unit tests | `801` | — | `32.03`% | `87.53`% |
+| **Total tests** | **`2102`** | — | **`45.93`%** | **`98.90`%** |
 | total types | `258` | — | — | — |
 | ported types | `0` | `0.00`% | — | — |
 | wrapped types | `105` | `40.70`% | — | — |
 | total symbols | `979` | — | — | — |
 | ported symbols | `4` | `0.41`% | — | — |
-| wrapped symbols | `448` | `45.76`% | — | — |
+| wrapped symbols | `449` | `45.86`% | — | — |
 
 ### Module stats
 
@@ -368,6 +368,15 @@ Deterministic `ffimap`; no model.
 | **Σ first** |  |  |  |  | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
 | **Σ review** |  |  |  |  | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
 
+### Batches: API stability
+
+Deterministic `ffimap api`; no model.
+
+| module | wave | batch | objective | pass | kept | extended | changed | removed | new | →Replaces | unattributed | reasons |
+|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---|---|
+| **Σ first** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** |  |  |
+| **Σ review** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** |  |  |
+
 ### Batches — review: PoC + reports
 
 `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgit2/object` review wave 0; `openrouter/anthropic/claude-opus-5.5` via `claude` from `libgit2/object` review wave 1.
@@ -416,6 +425,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/raw-lifetime-string` | `legacy-2` | `0` | wrap | first | `2` | — | `+1362/-14` | — | `$5.49` | `12.39M` | `23m12s` | `$2.75` | — |
 | `libgit2/src/util/alloc.c` | `12` | `1` | wrap | first | `7` | `56` | `+1947/-677` | `45.91`% / `98.92`% | `$18.92` | `66.48M` | `54m55s` | `$2.70` | `$0.34` |
 | `libgit2/src/util/alloc.c` | `12` | `2` | wrap | first | `7` | `56` | `+693/-132` | `45.90`% / `98.90`% | `$14.31` | `50.49M` | `57m19s` | `$2.04` | `$0.26` |
+| `libgit2/src/util/allocators/debugalloc.c` | `183` | `0` | wrap | first | `1` | `6` | `+771/-0` | `45.93`% / `98.90`% | — | — | — | — | — |
 | `libgit2/src/util/errors.c` | `13` | `1` | wrap | first | `4` | `51` | `+1008/-26` | `1.30`% / `97.32`% | `$4.00` | `8.72M` | `21m23s` | `$1.00` | `$0.08` |
 | `libgit2/src/util/errors.c` | `21` | `0` | wrap | first | `1` | `15` | `+756/-71` | `1.36`% / `98.40`% | `$3.06` | `6.69M` | `15m41s` | `$3.06` | `$0.20` |
 | `libgit2/src/libgit2/oid.c` | `17` | `0` | wrap | first | `18` | `252` | `+1351/-11` | `6.07`% / `99.47`% | `$8.55` | `17.50M` | `40m06s` | `$0.48` | `$0.03` |
@@ -482,7 +492,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/indexer.c` | `legacy-179` | `0` | wrap | review | `1` | — | `+35/-0` | — | `$3.18` | `8.05M` | `12m18s` | `$3.18` | — |
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | wrap | review | `1` | — | `+113/-14` | — | `$4.80` | `10.64M` | `27m50s` | `$4.80` | — |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | wrap | review | `2` | — | `+217/-15` | — | `$11.03` | `25.98M` | `47m17s` | `$5.51` | — |
-| **Σ first** |  |  |  |  | **`429`** | **`8590`** | **`+70387/-3315`** | **`45.90`% / `98.90`%** | **`$445.45`** | **`1379.81M`** | — | **`$1.04`** | **`$0.05`** |
+| **Σ first** |  |  |  |  | **`430`** | **`8596`** | **`+71158/-3315`** | **`45.93`% / `98.90`%** | **`$445.45`** | **`1379.81M`** | — | **`$1.04`** | **`$0.05`** |
 | **Σ review** |  |  |  |  | **`422`** | — | **`+7131/-1346`** | **— / `98.90`%** | **`$354.58`** | **`672.21M`** | — | **`$0.84`** | — |
 
 ### Batches: tests
@@ -495,6 +505,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 |---|---|---|---|---|---|---|---|
 | `libgit2/src/util/alloc.c` | `12` | `1` | first | `+18` (`-0.02`/`+0.13` pp) | `+0` (`+0.02`/`-0.08` pp) | `+1` (`+0.02`/`-0.17` pp) | `+5` (`+0.01`/`+0.08` pp) |
 | `libgit2/src/util/alloc.c` | `12` | `2` | first | `+1` (`+0.00`/`-0.01` pp) | `+0` (`-0.02`/`-0.01` pp) | `+1` (`+0.00`/`+0.26` pp) | `+1` (`+0.02`/`-0.01` pp) |
+| `libgit2/src/util/allocators/debugalloc.c` | `183` | `0` | first | `+2` (`-0.04`/`+0.20` pp) | `+0` (`+0.00`/`+0.00` pp) | `+4` (`+0.05`/`+0.04` pp) | `+3` (`+0.01`/`+0.00` pp) |
 | `libgit2/src/util/errors.c` | `13` | `1` | first | `+11` (`+0.18`/`-1.19` pp) | `+0` (`+0.00`/`-10.21` pp) | `+4` (`+0.12`/`-2.07` pp) | `+4` (`+0.07`/`-8.60` pp) |
 | `libgit2/src/util/errors.c` | `21` | `0` | first | `+6` (`+0.00`/`+7.16` pp) | `+0` (`+0.00`/`-1.80` pp) | `+5` (`+0.00`/`+5.40` pp) | `+3` (`+0.01`/`+0.47` pp) |
 | `libgit2/src/libgit2/oid.c` | `17` | `0` | first | `+8` (`+0.17`/`+1.11` pp) | `+0` (`+0.00`/`-5.19` pp) | `+5` (`+0.18`/`+3.02` pp) | `+7` (`+0.10`/`-6.64` pp) |
@@ -559,7 +570,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/indexer.c` | `legacy-179` | `0` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) | `+1` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+2` (—/— pp) | `+0` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+1` (—/— pp) | `+1` (—/— pp) |
-| **Σ first** |  |  |  | **`+307` (`+10.19`/`+6.16` pp)** | **`+17` (`+3.17`/`-8.23` pp)** | **`+193` (`+9.01`/`+14.00` pp)** | **`+242` (`+11.79`/`-33.68` pp)** |
+| **Σ first** |  |  |  | **`+309` (`+10.15`/`+6.36` pp)** | **`+17` (`+3.17`/`-8.23` pp)** | **`+197` (`+9.06`/`+14.04` pp)** | **`+245` (`+11.80`/`-33.68` pp)** |
 | **Σ review** |  |  |  | **`+14` (`+0.34`/`-1.41` pp)** | **`+2` (`-0.92`/`+0.26` pp)** | **`+22` (`+0.09`/`-0.39` pp)** | **`+34` (`+2.44`/`+7.46` pp)** |
 
 ### Batches: safety audit
@@ -570,9 +581,20 @@ Deterministic `ffimap`; no model.
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | `libgit2/src/util/alloc.c` | `12` | `1` | wrap | first | `+0` | `+0` | `+5` | `+0` | `+0` | `+0.00` pp | `+1` | `+0` | `+0` | `+0` | `+0` | `+2` | `-0.06` pp | `+12` |
 | `libgit2/src/util/alloc.c` | `12` | `2` | wrap | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `-1` | `+0` | `+0` | `+0` | `+0` | `+5` | `+0.01` pp | `+3` |
+| `libgit2/src/util/allocators/debugalloc.c` | `183` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.13` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `-0.01` pp | `+1` |
 | `libgit2/src/util/alloc.c` | `12` | `3` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.01` pp | `+0` |
-| **Σ first** |  |  |  |  | **`+0`** | **`+0`** | **`+5`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+7`** | **`-0.05` pp** | **`+15`** |
+| **Σ first** |  |  |  |  | **`+0`** | **`+0`** | **`+5`** | **`+0`** | **`+0`** | **`+0.13` pp** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+8`** | **`-0.06` pp** | **`+16`** |
 | **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`-0.01` pp** | **`+0`** |
+
+### Batches: API stability
+
+Deterministic `ffimap api`; no model.
+
+| module | wave | batch | objective | pass | kept | extended | changed | removed | new | →Replaces | unattributed | reasons |
+|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---|---|
+| `libgit2/src/util/allocators/debugalloc.c` | `183` | `0` | wrap | first | `0` | `0` | `0` | `0` | `1` | `0` | — | — |
+| **Σ first** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`1`** | **`0`** |  |  |
+| **Σ review** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** |  |  |
 
 ### Batches — review: PoC + reports
 
@@ -2120,6 +2142,51 @@ the five known trybuild snapshots and, under the nightly, the `CommitBuilder` co
 doctest. `config.rs`'s `ub_safe` and `equiv` suites hold three `#[cfg(not(miri))]` modules,
 which the testing spec does not allow in place of the attribute. They are outside this
 batch's workset and left as they are. Usage cells are the assistant's.
+
+### `libgit2/src/util/allocators/debugalloc.c` wave 183 batch 0: the debug allocator
+
+`git_debugalloc_init_allocator`, the only item, is `git_allocator`'s `init` constructor, so
+it is bound as that type's safe constructor, `Allocator::debug()` in
+`src/libgit2/src/util/allocators/debugalloc.rs`. It returns the value over the family's three
+static C routines, the same on every call, and drops C's constant 0 status. `allowlist.txt`
+and `wrapper.h` (`src/util`'s `allocators/debugalloc.h`) gain it, and the bindings are
+regenerated: `+LoC` leaves out their 5 lines. The module documents how the family departs
+from `Alloc`'s contract, which `set_allocator` asks for. Its storage is aligned to `usize`
+only (`crustify/LESSONS.md`). It fails every zero-byte request, so under it
+`ArrayFree::new_uninit(0)` and `new_zeroed(0)` fail with `GIT_ERROR_NOMEMORY`. A request
+within a word of `usize::MAX` wraps its block size: C writes the length word past a
+block of under 8 bytes. That is a C defect, confirmed under ASan with a scratch reproducer
+(heap-buffer-overflow in `debugalloc__malloc`). The members' doc adds the size limit as
+an obligation. The ownership store gains the parameter's pointer block, an out-parameter
+borrowed for the call. Its `init` role holds against the body.
+
+Coverage was measured on this tree with `crustify/scripts/coverage/run.sh` and the
+`coverage` variant. The C figures come from `llvm-cov report` over the variant's static
+archive alone, 86,833 lines, with each suite's merged profile. `report.py`'s C scope does
+not filter: it counts 190,640 lines. The Rust figures are `report.py`'s. The base
+figures are the Coverage stats as the wave base left them. The `Unit tests` line merges
+the lib and the new `unit_pub` suite, whose scaffold mirrors wave 176's. The worklist
+reaches all of `debugalloc.c`: 45 of 45 lines, 4 of 4 functions, 47 of 47 regions and 22
+of 22 branches. In `debugalloc.rs` it reaches 7 of 8 lines; the uncovered line is the
+`unreachable!` of a member C left unset. The tests reach the value's one state, and each
+block state of the family: allocated, grown, shrunk, released by a zero-byte resize,
+allocated by `realloc(NULL, n)`, released, and a failed allocation or resize that leaves
+its block whole. ASan+UBSan and TSan ran every test matching `allocators::debugalloc`.
+Each of the nine was run alone under Miri and seen to stop at
+`git_debugalloc_init_allocator`, or at the child process's `readlink`; all are marked. No
+test is expected to trigger BorrowSanitizer, so none ran under it.
+
+The safety audit row comes from ffimap scans of the wave base `69ff068e8` and of this tree
+(ffimap `9aa2ef1`, `--ffibox`, `--sys-crates libgit2_sys,pcre2_sys`, the twelve seams,
+`--regions ffi_import,ffi_export`). Neither scan lists a site of this changeset among the
+safe-boundary sites. The API stability row is `ffimap api diff` between both trees'
+rustdoc JSON (`nightly-2026-10-08`), with ffibox's (`--document-private-items`). The item
+is `new`; the other 777 items and the 17 unattributed modules are `kept`. The `Types`
+table of it is added empty, as the template lays it out. The packaging gate fails as on
+the base: `cargo package -p libgit2-sys --offline` against a staged `plain` prefix stops
+at `wrapper.h`'s `alloc.h` (`crustify/evolution/internal-headers-in-the-bindings`). Under
+the nightly, the `CommitBuilder` compile-fail doctest fails as known. Usage cells are the
+assistant's.
 
 ### Campaign mode links each variant's C statically (2026-11-12)
 

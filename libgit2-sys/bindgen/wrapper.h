@@ -29,6 +29,7 @@
 #include <git2/sys/transport.h>
 /* Internal headers. */
 #include "alloc.h"  /* src/util */
+#include "allocators/debugalloc.h" /* src/util */
 #include "basics.h" /* deps/reftable */
 
 #include "shims.h"
