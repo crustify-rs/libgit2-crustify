@@ -100,3 +100,24 @@ and are outside the rule: `wave-176/batch-1` compares them so in the test proces
 - **Scope.** Every test allocator written from wave 181 on. The existing ones stay until
   their modules' batches revisit them; they are not wrong, since the standard family is the
   C library's heap, but they repeat a binding by hand.
+
+## reftable's error type is `basics::Error`, which `error.c`'s port takes over
+
+- **Rule.** Rust reports reftable's error codes as `deps::reftable::basics::Error`, and no
+  other reftable module defines an error type of its own. The batch that ports
+  `enum reftable_error` (`deps/reftable/error.c`, wave 217 under planner run 12's numbering)
+  makes that type the enum's port, not a second one: it moves `Error` to
+  `src/libgit2/deps/reftable/error.rs` with a variant per constant of
+  `deps/reftable/reftable-error.h`, each anchored to its constant, keeps `Other(c_int)` for
+  codes outside the enum and `from_code` / `code`, gives `Display` `reftable_error_str`'s text,
+  and leaves `pub use super::error::Error;` in `basics.rs`, so that `basics.rs`'s callers and
+  tests do not change.
+- **Evidence.** `deps/reftable/basics.c` returns `REFTABLE_OUT_OF_MEMORY_ERROR` and
+  `REFTABLE_FORMAT_ERROR`, yet was scheduled (wave 169, foundational, now integrated) with no
+  dependency on `enum reftable_error`, since wavefront records no use of an enum constant
+  (`crustify/evolution/wavefront-enum-constant-uses`). Wave-169/batch-2 therefore defined
+  `basics::Error`, unanchored, with three of `reftable_error_str`'s strings
+  (`wave-169/batch-4`'s `conventions/reftable-error-type-homed-in-basics`;
+  `crustify/evolution/reftable-error-wrapped-ahead-of-basics`).
+- **Scope.** The batch of wave 217 that ports `enm::reftable_error` and
+  `fn::reftable_error_str`, and every reftable module's batch until then.

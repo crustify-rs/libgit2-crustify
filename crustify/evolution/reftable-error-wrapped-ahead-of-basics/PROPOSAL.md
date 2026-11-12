@@ -1,6 +1,11 @@
 # Wrap `enum reftable_error` ahead of its first consumer, `deps/reftable/basics.c`
 
-Status: `open`
+Status: `landed` as the change's second option, a lesson of `crustify/LESSONS.md`
+("reftable's error type is `basics::Error`, which `error.c`'s port takes over"), which every
+run reads, wave 217's batch among them. The first option is declined: `basics.c` is already
+integrated, so wrapping the enum ahead of it would only rehome a type its port is due to
+take over. The wavefront gap the Change section suspected is confirmed and filed as
+`wavefront-enum-constant-uses`.
 
 ## Signal
 
