@@ -437,7 +437,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/util/alloc.c` | `12` | `2` | wrap | first | `7` | `56` | `+693/-132` | `45.90`% / `98.90`% | `$14.31` | `50.49M` | `57m19s` | `$2.04` | `$0.26` |
 | `libgit2/src/util/allocators/stdalloc.c` | `181` | `0` | wrap | first | `1` | `18` | `+618/-10` | `45.85`% / `98.90`% | `$12.97` | `45.04M` | `43m28s` | `$12.97` | `$0.72` |
 | `libgit2/src/util/allocators/debugalloc.c` | `183` | `0` | wrap | first | `1` | `6` | `+771/-0` | `45.93`% / `98.90`% | `$10.68` | `35.39M` | `41m52s` | `$10.68` | `$1.78` |
-| `libgit2/src/util/strlist.c` | `184` | `0` | wrap | first | `6` | `76` | `+1557/-3` | `45.92`% / `98.89`% | — | — | — | — | — |
+| `libgit2/src/util/strlist.c` | `184` | `0` | wrap | first | `6` | `76` | `+1557/-3` | `45.92`% / `98.89`% | `$15.77` | `53.40M` | `54m23s` | `$2.63` | `$0.21` |
 | `libgit2/src/util/errors.c` | `13` | `1` | wrap | first | `4` | `51` | `+1008/-26` | `1.30`% / `97.32`% | `$4.00` | `8.72M` | `21m23s` | `$1.00` | `$0.08` |
 | `libgit2/src/util/errors.c` | `21` | `0` | wrap | first | `1` | `15` | `+756/-71` | `1.36`% / `98.40`% | `$3.06` | `6.69M` | `15m41s` | `$3.06` | `$0.20` |
 | `libgit2/src/libgit2/oid.c` | `17` | `0` | wrap | first | `18` | `252` | `+1351/-11` | `6.07`% / `99.47`% | `$8.55` | `17.50M` | `40m06s` | `$0.48` | `$0.03` |
@@ -482,7 +482,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/raw-lifetime-string` | `legacy-3` | `0` | wrap | review | `2` | — | `+345/-23` | — | `$10.89` | `14.41M` | `22m03s` | `$5.45` | — |
 | `libgit2/src/util/alloc.c` | `12` | `3` | wrap | review | `7` | — | `+57/-20` | — / `98.90`% | `$15.18` | `40.96M` | `1h31m33s` | `$2.17` | — |
 | `libgit2/src/util/allocators/stdalloc.c` | `181` | `1` | wrap | review | `1` | — | `+86/-6` | `45.86`% / `98.90`% | `$14.45` | `39.79M` | `1h16m3s` | `$14.45` | — |
-| `libgit2/src/util/strlist.c` | `184` | `1` | wrap | review | `6` | — | `+408/-142` | `45.93`% / `98.90`% | — | — | — | — | — |
+| `libgit2/src/util/strlist.c` | `184` | `1` | wrap | review | `6` | — | `+408/-142` | `45.93`% / `98.90`% | `$21.71` | `81.05M` | `1h33m47s` | `$3.62` | — |
 | `libgit2/util` | `legacy-6` | `2` | wrap | review | `4` | — | `+281/-117` | `1.63`% / `99.74`% | `$12.00` | `16.87M` | `28m49s` | `$3.00` | — |
 | `libgit2/util` | `legacy-7` | `0` | wrap | review | `1` | — | `+0/-0` | `1.63`% / `99.74`% | `$6.26` | `6.37M` | `23m51s` | `$6.26` | — |
 | `libgit2/oid` | `legacy-12` | `1` | wrap | review | `18` | — | `+181/-10` | `7.80`% / `99.49`% | `$11.62` | `12.73M` | `34m10s` | `$0.65` | — |
@@ -513,8 +513,8 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/reftable/basics.c` | `169` | `5` | wrap | review | `43` | — | `+298/-23` | `45.93`% / `98.90`% | `$30.16` | `83.09M` | `1h40m2s` | `$0.70` | — |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | wrap | review | `3` | — | `+11/-7` | `45.88`% / `98.92`% | `$5.87` | `16.61M` | `16m58s` | `$1.96` | — |
 | `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | wrap | review | `1` | — | `+82/-67` | `45.87`% / `98.86`% | `$12.85` | `46.60M` | `1h22m16s` | `$12.85` | — |
-| **Σ first** |  |  |  |  | **`487`** | **`9032`** | **`+78516/-3590`** | **`45.92`% / `98.89`%** | **`$544.97`** | **`1694.45M`** | — | **`$1.13`** | **`$0.06`** |
-| **Σ review** |  |  |  |  | **`519`** | — | **`+8126/-1607`** | **`45.93`% / `98.90`%** | **`$431.33`** | **`904.47M`** | — | **`$0.84`** | — |
+| **Σ first** |  |  |  |  | **`487`** | **`9032`** | **`+78516/-3590`** | **`45.92`% / `98.89`%** | **`$560.74`** | **`1747.85M`** | — | **`$1.15`** | **`$0.06`** |
+| **Σ review** |  |  |  |  | **`519`** | — | **`+8126/-1607`** | **`45.93`% / `98.90`%** | **`$453.04`** | **`985.52M`** | — | **`$0.87`** | — |
 
 ### Batches: tests
 
@@ -710,8 +710,8 @@ review cost.
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `3` | `0` | `3` | `+74/-13` | `$13.62` | `50.18M` | `2h6m13s` |
 | `libgit2/src/util/allocators/stdalloc.c` | `181` | `1` | `0` | `1` | `+86/-6` | `$14.45` | `39.79M` | `1h16m3s` |
 | `libgit2/src/util/allocators/debugalloc.c` | `183` | `1` | `0` | `1` | `+336/-75` | `$15.62` | `43.77M` | `1h33m16s` |
-| `libgit2/src/util/strlist.c` | `184` | `1` | `0` | `6` | `+408/-142` | — | — | — |
-| **Σ** |  |  | **`0`** | **`11`** | **`+904/-236`** | **`$43.69`** | **`133.74M`** | — |
+| `libgit2/src/util/strlist.c` | `184` | `1` | `0` | `6` | `+408/-142` | `$21.71` | `81.05M` | `1h33m47s` |
+| **Σ** |  |  | **`0`** | **`11`** | **`+904/-236`** | **`$65.40`** | **`214.79M`** | — |
 
 ### Passes: PoC + reports
 
@@ -3044,3 +3044,10 @@ snapshot under the worktree's `crustify/tmp/`, at 16 jobs in all:
 Proposals: `binding-c-defects` (the binding skills hold no rule for a C defect, which the task
 cited) and `ffimap-seams-into-raw`; `elementwise-releasers` gains this review's evidence. Usage
 cells are the assistant's.
+
+### `libgit2/src/util/strlist.c` integration (2026-11-12)
+
+Additive conflicts only, merged by a binder (agent `a633fc9e20c86313b`, `$3.67`) as `dd510b3e8`;
+the module pass's rows moved to the `Module passes` section. The workspace passed on `plain`
+and `asan-ubsan`, Miri and TSan over `util::strlist` and the allocators, and `ffimap api`
+found no item changed or removed (832 kept, 6 new from the working branch's tip).
