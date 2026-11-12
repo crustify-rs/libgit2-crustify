@@ -4162,7 +4162,7 @@
      "borrowed": null,
      "nullable": true,
      "mutable": true,
-     "note": "git__malloc(nelem*elsize) then memset 0: ZEROING; NULL on multiplication overflow (no error set) or OOM. Internal; released by git__free."
+     "note": "git__malloc(nelem*elsize) then memset 0: ZEROING; NULL on multiplication overflow (GIT_MULTIPLY_SIZET_OVERFLOW sets git_error_set_oom, nothing allocated) or OOM; nelem*elsize == 0 asks git__malloc(0). Internal (hidden in libgit2.so, linked from the variant's static archive); Rust: alloc::Free's CAllocZeroed and ArrayFree::new_zeroed call it, an empty run included. Released by git__free."
     }
    }
   },
@@ -4191,7 +4191,7 @@
       "borrowed": null,
       "nullable": true,
       "mutable": true,
-      "note": "git__allocator.gfree(ptr): releases any git__malloc-family storage without reading it; NULL is a no-op (stdalloc free, failalloc no-op). Internal; publicly reachable only through git_odb_backend_data_free."
+      "note": "git__allocator.gfree(ptr): releases any git__malloc-family storage without reading it; NULL is a no-op (stdalloc free, failalloc no-op). static inline in alloc.h and hidden in libgit2.so; Rust calls it through the raw bindings' static_fns.c wrapper (git__free__extern), linked from the variant's static archive: the drops of alloc::Free, ArrayFree and StrFree."
      }
     }
    ]
@@ -4222,7 +4222,7 @@
      "borrowed": null,
      "nullable": true,
      "mutable": true,
-     "note": "git__allocator.gmalloc(len): NON-zeroing; NULL on OOM with git_error_set_oom; always NULL before git_libgit2_init (failalloc). Internal (hidden visibility); publicly reachable only through git_odb_backend_data_alloc. Released by git__free."
+     "note": "git__allocator.gmalloc(len, __FILE__, __LINE__): NON-zeroing; NULL on OOM with git_error_set_oom; always NULL before git_libgit2_init (failalloc). static inline in alloc.h and hidden in libgit2.so; Rust calls it through the raw bindings' static_fns.c wrapper (git__malloc__extern), linked from the variant's static archive: alloc::Free's CAlloc and ArrayFree's CLenAlloc / CLenClone. Released by git__free."
     }
    }
   },
@@ -4252,7 +4252,7 @@
      "borrowed": null,
      "nullable": true,
      "mutable": true,
-     "note": "git__reallocarray(NULL, nelem, elsize): NON-zeroing array storage; NULL on overflow or OOM. Internal; released by git__free."
+     "note": "git__reallocarray(NULL, nelem, elsize) = git__realloc(NULL, n): reaches the allocator's grealloc, not gmalloc, git__realloc(NULL, 0) included. NON-zeroing array storage; NULL on overflow (git_error_set_oom) or OOM. Internal (hidden in libgit2.so, linked from the variant's static archive); Rust: alloc::ArrayFree::new_uninit calls it, an empty run included, after refusing a size past isize::MAX (git_error_set_oom) that no Rust slice may span. Released by git__free."
     }
    }
   },
@@ -4299,7 +4299,7 @@
      "borrowed": null,
      "nullable": true,
      "mutable": true,
-     "note": "Fresh git__malloc(strlen(str)+1) storage holding a copy of str with its terminator: the NUL-terminated string cloner behind git_strarray_copy, git_signature_new/dup and most libgit2 string fields. NULL on OOM (git_error_set_oom via git__malloc; before git_libgit2_init every request fails). Internal (hidden visibility): Rust reproduces it as OdbDataStrFree::dup / str_dup over git_odb_backend_data_alloc; released by git__free, publicly git_odb_backend_data_free."
+     "note": "Fresh git__malloc(strlen(str)+1) storage holding a copy of str with its terminator: the NUL-terminated string cloner behind git_strarray_copy, git_signature_new/dup and most libgit2 string fields. NULL on OOM (git_error_set_oom via git__malloc; before git_libgit2_init every request fails). Internal (hidden in libgit2.so, linked from the variant's static archive): Rust's strategy alloc::StrFree calls it (CDupClone::c_dup, StrFree::dup); released by git__free."
     }
    }
   },
@@ -4348,7 +4348,7 @@
      "borrowed": null,
      "nullable": true,
      "mutable": true,
-     "note": "Fresh git__malloc(len+1) storage holding the first len = strnlen(str, n) bytes of str plus a terminator: a bounded string cloner. NULL on OOM. Internal; released by git__free (publicly git_odb_backend_data_free)."
+     "note": "Fresh git__malloc(len+1) storage holding the first len = strnlen(str, n) bytes of str plus a terminator: a bounded string cloner. NULL on OOM. Internal (linked from the variant's static archive); Rust: alloc::StrFree::dup_prefix calls it. Released by git__free."
     }
    }
   },
@@ -4397,7 +4397,7 @@
      "borrowed": null,
      "nullable": true,
      "mutable": true,
-     "note": "Fresh git__malloc(n+1) storage holding the n bytes at str plus a terminator: a byte-run-to-string cloner. NULL on OOM or when n+1 overflows to 0 only through malloc(0) semantics (no overflow check). Internal; released by git__free (publicly git_odb_backend_data_free)."
+     "note": "Fresh git__malloc(n+1) storage holding the n bytes at str plus a terminator: a byte-run-to-string cloner. NULL on OOM. No overflow check: n == SIZE_MAX wraps to git__malloc(0), whose success would overrun in memcpy (unreachable from Rust, whose slices stop at isize::MAX). Internal (linked from the variant's static archive); Rust: alloc::StrFree::dup_bytes calls it. Released by git__free."
     }
    }
   },
@@ -12153,7 +12153,26 @@
     "is_disposer": false,
     "is_cloner": null,
     "is_constructor": null
-   }
+   },
+   "ptr_args": [
+    {
+     "name": "ptr",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": {
+       "by_val": true
+      },
+      "string": true,
+      "owned": true,
+      "borrowed": null,
+      "nullable": true,
+      "mutable": false,
+      "note": "GIT_UNUSED(ptr): releases nothing and never touches ptr. It is the dropper of the failalloc family, whose allocator never allocates, so the only allocations it can be handed are none (NULL), and releasing nothing releases them; ownership passes to it as for any git_allocator gfree. Storage another family made reaches it whenever this family replaces that one in git__allocator: after git_libgit2_init through set_allocator (git_allocator_setup is a memcpy; the equivalence suite installs it so), or before it after a swap; libgit2 then frees that storage through git__free into this routine, which leaks it and never touches it. Reachable safely through git_odb_backend_data_free before git_libgit2_init (git__free sets no error), which tests use to compare it with the Rust strategy. Links from the variants' static archive through its raw binding, which the Rust strategies call as their release (wave-176/batch-1)."
+     }
+    }
+   ]
   },
   {
    "name": "git_failalloc_malloc",
@@ -12166,6 +12185,95 @@
     "is_constructor": {
      "alloc": true,
      "init": false
+    }
+   },
+   "ptr_args": [
+    {
+     "name": "file",
+     "ptr": {
+      "scalar": null,
+      "array": null,
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:file"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "GIT_UNUSED(file): never read. git__malloc/git__realloc (alloc.h) pass __FILE__, so libgit2's own calls never pass NULL, but git_failalloc_malloc accepts NULL on observed behaviour, as the git_allocator member contract (Rust MallocFn/ReallocFn) allows."
+     }
+    }
+   ],
+   "ptr_ret": {
+    "ptr": {
+     "scalar": {
+      "by_val": true
+     },
+     "array": {
+      "by_val": true
+     },
+     "string": false,
+     "owned": true,
+     "borrowed": null,
+     "nullable": true,
+     "mutable": true,
+     "note": "Always NULL: git_failalloc_malloc ignores every argument and allocates nothing, whatever the size (0 included). As a git_allocator member it is the family's allocator, so the slot is that of an owned, writable allocation of len bytes; none is ever produced. Installed as git__allocator's initial value (alloc.c) until git_libgit2_init's git_allocator_global_init replaces it, so every allocation before init fails. HAZARD for probes: git__malloc/git__realloc then call git_error_set_oom, whose threadstate lookup reads TLS key 0 before git_libgit2_init created it (see git_odb_backend_data_alloc's note), so C's failure is not observed through them in tests. Hidden in libgit2.so, it links from the variants' static archive through its raw binding (wave-176/batch-1): the Rust strategies FailAlloc and FailArrayAlloc (src/util/allocators/failalloc.rs) call it, and Allocator::new::<FailAlloc>() stores its own address, which git_allocator_global_init compares with git__allocator.gmalloc."
+    }
+   }
+  },
+  {
+   "name": "git_failalloc_realloc",
+   "defined_in": "src/util/allocators/failalloc.c",
+   "ptr_args": [
+    {
+     "name": "file",
+     "ptr": {
+      "scalar": null,
+      "array": null,
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:file"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "GIT_UNUSED(file): never read. git__malloc/git__realloc (alloc.h) pass __FILE__, so libgit2's own calls never pass NULL, but git_failalloc_realloc accepts NULL on observed behaviour, as the git_allocator member contract (Rust MallocFn/ReallocFn) allows."
+     }
+    },
+    {
+     "name": "ptr",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": {
+       "by_val": true
+      },
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:ptr"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "GIT_UNUSED(ptr): never read, written, released or kept. Every call fails (returns NULL), which is git_allocator's realloc failure path: ptr stays live and the caller's, unchanged, so it is only borrowed for the call. As a family member it accepts NULL (allocate afresh) or a live allocation of the same family; failalloc never makes one, so in practice it sees NULL, or storage of the allocator installed before a swap, which it leaves alone."
+     }
+    }
+   ],
+   "ptr_ret": {
+    "ptr": {
+     "scalar": {
+      "by_val": true
+     },
+     "array": {
+      "by_val": true
+     },
+     "string": false,
+     "owned": true,
+     "borrowed": null,
+     "nullable": true,
+     "mutable": true,
+     "note": "Always NULL: git_failalloc_realloc ignores every argument and allocates nothing, whatever the size (0 included). As a git_allocator member it is the family's allocator, so the slot is that of an owned, writable allocation of len bytes; none is ever produced. Installed as git__allocator's initial value (alloc.c) until git_libgit2_init's git_allocator_global_init replaces it, so every allocation before init fails. HAZARD for probes: git__malloc/git__realloc then call git_error_set_oom, whose threadstate lookup reads TLS key 0 before git_libgit2_init created it (see git_odb_backend_data_alloc's note), so C's failure is not observed through them in tests. Hidden in libgit2.so, it links from the variants' static archive through its raw binding (wave-176/batch-1): the Rust strategies FailAlloc and FailArrayAlloc (src/util/allocators/failalloc.rs) call it, and Allocator::new::<FailAlloc>() stores its own address, which git_allocator_global_init compares with git__allocator.gmalloc."
     }
    }
   },

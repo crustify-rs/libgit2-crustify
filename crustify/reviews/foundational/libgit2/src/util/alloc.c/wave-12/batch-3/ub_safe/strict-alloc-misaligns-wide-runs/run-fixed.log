@@ -1,0 +1,4 @@
+error: could not compile `strict-alloc-misaligns-wide-runs` (bin "strict-alloc-misaligns-wide-runs") due to 2 previous errors
+error[E0080]: evaluation panicked: libgit2's allocator cannot align T
+error[E0080]: evaluation panicked: the policy's allocator cannot align T
+exit 101

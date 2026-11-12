@@ -1,0 +1,25 @@
+{
+  "commits": [
+    "9a64abfc7f1a31b00ea7f160ea0112f1119e94e3",
+    "7045f442807d4f4d4d075284c76a39d3991241b7"
+  ],
+  "wave": 176,
+  "batch": 2,
+  "link_unit": "libgit2",
+  "module": "src/util/allocators/failalloc.c",
+  "foundational": true,
+  "base_branch": "refs/heads/crustify/waves/wave-176",
+  "backend": "claude",
+  "billing": "subscription",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "20500ce",
+    "wavefront": "ca31018",
+    "ffimap": "405e053",
+    "ffibox": "551d27d"
+  },
+  "session_id": "agent-a839e4b4a157097b9"
+}

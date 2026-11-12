@@ -61,6 +61,30 @@ batch allowlisted, `names_equal` and `names_length`, generate declarations only,
 in campaign mode and not against an install's `libgit2.so`, as `internal-symbols-unlinkable`
 records.
 
+### Further evidence: the first internal `static inline` function (wave-12/batch-2)
+
+`foundational/libgit2/src/util/alloc.c/wave-12/batch-2/run-1` allowlisted `git__malloc`
+and `git__free`, `static inline` in `src/util/alloc.h`, with `#include "alloc.h"` in
+`wrapper.h`, and the five functions `alloc.c` defines. Campaign mode generated
+`libgit2-sys/src/static_fns.c` (`git__malloc__extern`, `git__free__extern`), compiled it
+with the variant's flags and include dirs, and the strategies of
+`src/libgit2/src/util/alloc.rs` call all seven on `plain` and `asan-ubsan`. Consequence 2
+above then happened as predicted: the packaging gate, `cargo package -p libgit2-sys
+--offline` with `CRUSTIFY_BUILD_VARIANT=` and `LIBGIT2_DIR` set to a `cmake --install` of
+the `plain` build, fails to verify the tarball, since `static_fns.c` includes `wrapper.h`,
+whose `#include "alloc.h"` the installed headers cannot satisfy:
+
+```text
+bindgen/wrapper.h:31:10: fatal error: 'alloc.h' file not found
+```
+
+A fourth consequence follows, which the change above does not cover: once the safe crate
+calls an internal function, as `alloc.rs` now calls `git__calloc`, system mode cannot link
+it either, whatever the wrappers do, since an installed `libgit2.so` exports none of them.
+The shipped build then needs the static archive, as bundled mode would build it, or the
+internal functions the safe crate calls exported, or system mode gated off once a safe
+wrapper reaches an internal symbol, as it is gated off once a module is integrated.
+
 ## Destination
 
 The spec: `bindgen`, Generation and Build modes, which the binder does not own.
@@ -113,3 +137,30 @@ Without `static_fns.c` the package verifies again. Until the change above lands,
 exception is the only way to bind an internal `static inline` function and keep the
 packaging gate passing. A function that depends on the build's configuration has no way
 at all.
+
+## Further evidence: `wave-176/batch-1`
+
+`wave-176/batch-1/run-1` allowlisted `git_failalloc_malloc`, `_realloc` and `_free`,
+which `src/util/allocators/failalloc.h` declares, and which the safe crate's
+`FailAlloc` and `FailArrayAlloc` call. It added `#include "allocators/failalloc.h"` to
+`wrapper.h`. They are the first internal functions the safe crate itself, rather than a
+`-sys` test, references. Against a staged install of the `plain` variant (`LIBGIT2_DIR`,
+no `CRUSTIFY_BUILD_VARIANT`):
+
+- `cargo package -p libgit2-sys` passes, since shipped mode compiles only `shims.c` and
+  the crate's verification links no binary.
+- A dependent binary that uses the family, `Allocator::new::<FailAlloc>()` in a probe
+  crate's `main`, fails to link: `rust-lld: error: undefined symbol:
+  git_failalloc_malloc`, and the same for `_realloc` and `_free`. `libgit2.so` exports
+  none of the three (`nm -D` lists no `failalloc`). A dependent that does not use the
+  family links and runs. So consequence 2 reaches past `static inline` wrappers. Every
+  internal function the safe crate calls is unreachable in system mode, and the safe API
+  over it is unusable there.
+- Any build that enables the `bindgen` feature outside campaign mode fails on the first
+  internal include of `wrapper.h` (`fatal error: 'allocators/failalloc.h' file not
+  found`). This includes the safe crate's own tests through its dev-dependency.
+  That is consequence 3.
+
+The Build modes change should therefore also say what system mode does with the safe API
+over internal functions: whether to leave it out, or link a static archive as campaign
+mode does.

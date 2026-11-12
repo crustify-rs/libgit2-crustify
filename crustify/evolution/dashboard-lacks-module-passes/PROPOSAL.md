@@ -34,3 +34,14 @@ and recounting the `ergonomics` findings counted under `+misc` from their commit
 ## Validation
 
 None: a format change, checked by reading the template beside the dashboard.
+
+## Further evidence: the integration of `deps/reftable/basics.c`
+
+`foundational/libgit2/deps/reftable/basics.c/integration/run-1` merged `crustify/devel`
+(`1043d550f`), whose dashboard had gained the `Module passes` section with
+`src/util/allocators/failalloc.c`'s module pass (`wave-176/batch-3`) in it. The merge keeps
+every row where its side put it, so the merged dashboard holds both layouts: `wave-176/batch-3`
+in `Passes` and `Passes: PoC + reports`, and `wave-169/batch-5` in the Symbols route's
+`Batches` and `Batches — review: PoC + reports`, under the older review columns. What is left
+of the change is the move of `wave-169/batch-5`'s two rows, with its review columns mapped,
+and the Symbols `Σ review` cells that count it recomputed.

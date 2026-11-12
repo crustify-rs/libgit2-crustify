@@ -1,0 +1,6 @@
+ArrayFree::new_uninit: refused before libgit2 was asked
+
+thread 'main' (1278671) panicked at src/main.rs:69:9:
+AllocVec::new_uninit: libgit2's allocator was asked for 9223372036854775808 bytes
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+exit 101

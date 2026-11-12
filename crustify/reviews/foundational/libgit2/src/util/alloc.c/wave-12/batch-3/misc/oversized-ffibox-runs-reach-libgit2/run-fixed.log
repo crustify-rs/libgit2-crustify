@@ -1,0 +1,4 @@
+ArrayFree::new_uninit: refused before libgit2 was asked
+AllocVec::new_uninit: refused before libgit2 was asked
+AllocVec::from_fn: refused before libgit2 was asked
+exit 0

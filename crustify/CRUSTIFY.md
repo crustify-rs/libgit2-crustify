@@ -92,7 +92,9 @@ Unanswered optional questions use their defaults.
     how long without asking you? Agents file proposals and record the target's lessons;
     fixes and improvements land on each component's `devel` branch, never on its `main`.**
     (`id: evolution`)
-    - Answer: `evolve`
+    - Answer: `evolve, unattended: the whole campaign`, for changes that are useful and
+      validated (a tool's by its tests, a spec change by the evidence that motivated it);
+      the rest wait for the user at the next module's end.
     - `propose`: proposals and lessons only. `repair`: also fixes of defects. `evolve`: also
       improvements and new tools. Without `unattended`, you approve each change at the next
       module's end. Merging `devel` into `main`, and a new tool upstream, always need your

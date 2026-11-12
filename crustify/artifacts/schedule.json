@@ -80088,7 +80088,7 @@
       "foundational": true,
       "layer": 0,
       "sublayer": 0,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [],
         "cut": []
@@ -81270,7 +81270,7 @@
           "module": "src/util/alloc.c",
           "foundational": true,
           "kind": "wrap",
-          "status": "todo",
+          "status": "done",
           "items": [
             {
               "name": "git__calloc",
@@ -81329,7 +81329,94 @@
               "home": "src/libgit2/src/util/alloc.rs"
             }
           ],
-          "commits": []
+          "commits": [
+            "c0c753430c0c1c481140b9e8c9db9be19a02d63e"
+          ]
+        },
+        {
+          "index": 2,
+          "link_unit": "libgit2",
+          "module": "src/util/alloc.c",
+          "foundational": true,
+          "kind": "wrap",
+          "status": "done",
+          "items": [
+            {
+              "name": "git__calloc",
+              "defined_in": "src/util/alloc.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "git__free",
+              "defined_in": "src/util/alloc.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "git__malloc",
+              "defined_in": "src/util/alloc.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "git__mallocarray",
+              "defined_in": "src/util/alloc.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "git__strdup",
+              "defined_in": "src/util/alloc.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "git__strndup",
+              "defined_in": "src/util/alloc.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "git__substrdup",
+              "defined_in": "src/util/alloc.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            }
+          ],
+          "commits": [
+            "1dc9911d7571383efccfb511578b07f87206d6ae"
+          ]
+        },
+        {
+          "index": 3,
+          "link_unit": "libgit2",
+          "module": "src/util/alloc.c",
+          "foundational": true,
+          "kind": "review",
+          "status": "done",
+          "reviews": [
+            1,
+            2
+          ],
+          "commits": [
+            "6a6276fc390dc5ab55952fcb9823142d42dfcb3f",
+            "3dbb73d6d318a120c709c7479e7ea064f799102d"
+          ]
         }
       ]
     },
@@ -112699,7 +112786,7 @@
       "foundational": true,
       "layer": 0,
       "sublayer": 0,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [],
         "cut": []
@@ -113683,7 +113770,453 @@
         }
       ],
       "packed_with": null,
-      "batches": []
+      "batches": [
+        {
+          "index": 0,
+          "link_unit": "libgit2",
+          "module": "deps/reftable/basics.c",
+          "foundational": true,
+          "kind": "wrap",
+          "status": "done",
+          "items": [
+            {
+              "name": "reftable_buf",
+              "defined_in": "deps/reftable/reftable-basics.h",
+              "kind": "struct",
+              "field_users": [
+                "alloc",
+                "len",
+                "buf"
+              ],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_hash",
+              "defined_in": "deps/reftable/reftable-basics.h",
+              "kind": "enum",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            }
+          ],
+          "commits": [
+            "85ad07673ad28da0a1417ce8ef058d2b0b4acfb7"
+          ]
+        },
+        {
+          "index": 1,
+          "link_unit": "libgit2",
+          "module": "deps/reftable/basics.c",
+          "foundational": true,
+          "kind": "wrap",
+          "status": "done",
+          "items": [
+            {
+              "name": "REFTABLE_ALLOC_ARRAY",
+              "defined_in": "deps/reftable/basics.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "REFTABLE_ALLOC_GROW",
+              "defined_in": "deps/reftable/basics.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "REFTABLE_ALLOC_GROW_OR_NULL",
+              "defined_in": "deps/reftable/basics.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "REFTABLE_BUF_INIT",
+              "defined_in": "deps/reftable/reftable-basics.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "REFTABLE_CALLOC_ARRAY",
+              "defined_in": "deps/reftable/basics.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "REFTABLE_FORMAT_ID_SHA1",
+              "defined_in": "deps/reftable/basics.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "REFTABLE_FORMAT_ID_SHA256",
+              "defined_in": "deps/reftable/basics.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "REFTABLE_FREE_AND_NULL",
+              "defined_in": "deps/reftable/basics.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "REFTABLE_HASH_SIZE_MAX",
+              "defined_in": "deps/reftable/reftable-basics.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "REFTABLE_HASH_SIZE_SHA1",
+              "defined_in": "deps/reftable/reftable-basics.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "REFTABLE_HASH_SIZE_SHA256",
+              "defined_in": "deps/reftable/reftable-basics.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "REFTABLE_SWAP",
+              "defined_in": "deps/reftable/basics.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "names_equal",
+              "defined_in": "deps/reftable/basics.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "names_length",
+              "defined_in": "deps/reftable/basics.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_alloc_size",
+              "defined_in": "deps/reftable/basics.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_get_be16",
+              "defined_in": "deps/reftable/basics.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_get_be24",
+              "defined_in": "deps/reftable/basics.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_get_be32",
+              "defined_in": "deps/reftable/basics.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_get_be64",
+              "defined_in": "deps/reftable/basics.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_put_be16",
+              "defined_in": "deps/reftable/basics.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_put_be24",
+              "defined_in": "deps/reftable/basics.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_put_be32",
+              "defined_in": "deps/reftable/basics.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_put_be64",
+              "defined_in": "deps/reftable/basics.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            }
+          ],
+          "commits": [
+            "bbaafcd09715359fe4d5df8f1c8ddad7b0e37088"
+          ]
+        },
+        {
+          "index": 2,
+          "link_unit": "libgit2",
+          "module": "deps/reftable/basics.c",
+          "foundational": true,
+          "kind": "wrap",
+          "status": "done",
+          "items": [
+            {
+              "name": "binsearch",
+              "defined_in": "deps/reftable/basics.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "common_prefix_size",
+              "defined_in": "deps/reftable/basics.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "hash_size",
+              "defined_in": "deps/reftable/basics.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_buf_cmp",
+              "defined_in": "deps/reftable/basics.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_buf_init",
+              "defined_in": "deps/reftable/basics.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_buf_reset",
+              "defined_in": "deps/reftable/basics.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_buf_setlen",
+              "defined_in": "deps/reftable/basics.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_buf_detach",
+              "defined_in": "deps/reftable/basics.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_free",
+              "defined_in": "deps/reftable/basics.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_malloc",
+              "defined_in": "deps/reftable/basics.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_set_alloc",
+              "defined_in": "deps/reftable/basics.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "free_names",
+              "defined_in": "deps/reftable/basics.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_buf_release",
+              "defined_in": "deps/reftable/basics.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_calloc",
+              "defined_in": "deps/reftable/basics.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_realloc",
+              "defined_in": "deps/reftable/basics.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_strdup",
+              "defined_in": "deps/reftable/basics.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_alloc_grow",
+              "defined_in": "deps/reftable/basics.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "parse_names",
+              "defined_in": "deps/reftable/basics.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_buf_add",
+              "defined_in": "deps/reftable/basics.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            },
+            {
+              "name": "reftable_buf_addstr",
+              "defined_in": "deps/reftable/basics.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/reftable/basics.rs"
+            }
+          ],
+          "commits": [
+            "2032628fdf3833bb7b301ca56be1b33fae30283e"
+          ]
+        },
+        {
+          "index": 3,
+          "link_unit": "libgit2",
+          "module": "deps/reftable/basics.c",
+          "foundational": true,
+          "kind": "review",
+          "status": "done",
+          "reviews": [
+            0
+          ],
+          "commits": [
+            "ec289165f7e9ff5b40ddc376b2dee2c2fbf0bbd1",
+            "418ca278b55b1cf61271258c2328fd13fc632ef8"
+          ]
+        },
+        {
+          "index": 4,
+          "link_unit": "libgit2",
+          "module": "deps/reftable/basics.c",
+          "foundational": true,
+          "kind": "review",
+          "status": "done",
+          "reviews": [
+            1,
+            2
+          ],
+          "commits": [
+            "d04070734ec2a12bdabf80a930f4fefb33e1346b",
+            "9aa6520a584e0bd25828b64ef8fb45bb78076feb"
+          ]
+        },
+        {
+          "index": 5,
+          "link_unit": "libgit2",
+          "module": "deps/reftable/basics.c",
+          "foundational": true,
+          "kind": "review",
+          "status": "wip",
+          "reviews": [],
+          "module_pass": true,
+          "commits": []
+        }
+      ]
     },
     {
       "index": 170,
@@ -113692,7 +114225,7 @@
       "foundational": true,
       "layer": 0,
       "sublayer": 1,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           169
@@ -113964,7 +114497,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 169,
       "batches": []
     },
     {
@@ -113974,7 +114507,7 @@
       "foundational": true,
       "layer": 0,
       "sublayer": 2,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           169,
@@ -114133,7 +114666,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 169,
       "batches": []
     },
     {
@@ -114143,7 +114676,7 @@
       "foundational": true,
       "layer": 0,
       "sublayer": 3,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           169,
@@ -114347,7 +114880,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 169,
       "batches": []
     },
     {
@@ -114357,7 +114890,7 @@
       "foundational": true,
       "layer": 0,
       "sublayer": 4,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           169,
@@ -114407,7 +114940,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 169,
       "batches": []
     },
     {
@@ -114417,7 +114950,7 @@
       "foundational": true,
       "layer": 0,
       "sublayer": 5,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           169,
@@ -114499,7 +115032,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 169,
       "batches": []
     },
     {
@@ -114509,7 +115042,7 @@
       "foundational": true,
       "layer": 0,
       "sublayer": 6,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           169,
@@ -114558,7 +115091,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 169,
       "batches": []
     },
     {
@@ -114568,7 +115101,7 @@
       "foundational": true,
       "layer": 0,
       "sublayer": 0,
-      "status": "todo",
+      "status": "done",
       "depends_on": {
         "scheduled": [],
         "cut": [
@@ -114680,7 +115213,110 @@
         }
       ],
       "packed_with": null,
-      "batches": []
+      "batches": [
+        {
+          "index": 0,
+          "link_unit": "libgit2",
+          "module": "src/util/allocators/failalloc.c",
+          "foundational": true,
+          "kind": "wrap",
+          "status": "done",
+          "items": [
+            {
+              "name": "git_failalloc_free",
+              "defined_in": "src/util/allocators/failalloc.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/allocators/failalloc.rs"
+            },
+            {
+              "name": "git_failalloc_malloc",
+              "defined_in": "src/util/allocators/failalloc.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/allocators/failalloc.rs"
+            },
+            {
+              "name": "git_failalloc_realloc",
+              "defined_in": "src/util/allocators/failalloc.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/allocators/failalloc.rs"
+            }
+          ],
+          "commits": [
+            "9a64abfc7f1a31b00ea7f160ea0112f1119e94e3"
+          ]
+        },
+        {
+          "index": 1,
+          "link_unit": "libgit2",
+          "module": "src/util/allocators/failalloc.c",
+          "foundational": true,
+          "kind": "wrap",
+          "status": "done",
+          "items": [
+            {
+              "name": "git_failalloc_free",
+              "defined_in": "src/util/allocators/failalloc.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/allocators/failalloc.rs"
+            },
+            {
+              "name": "git_failalloc_malloc",
+              "defined_in": "src/util/allocators/failalloc.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/allocators/failalloc.rs"
+            },
+            {
+              "name": "git_failalloc_realloc",
+              "defined_in": "src/util/allocators/failalloc.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/allocators/failalloc.rs"
+            }
+          ],
+          "commits": [
+            "7045f442807d4f4d4d075284c76a39d3991241b7"
+          ]
+        },
+        {
+          "index": 2,
+          "link_unit": "libgit2",
+          "module": "src/util/allocators/failalloc.c",
+          "foundational": true,
+          "kind": "review",
+          "status": "done",
+          "reviews": [
+            0,
+            1
+          ],
+          "commits": [
+            "ab7d4915c74fa6261aa30b5116bacd8b9aad4e46"
+          ]
+        },
+        {
+          "index": 3,
+          "link_unit": "libgit2",
+          "module": "src/util/allocators/failalloc.c",
+          "foundational": true,
+          "kind": "review",
+          "status": "done",
+          "reviews": [],
+          "module_pass": true,
+          "commits": [
+            "018f7da5e8a3f531a4b008a402b1cfbd1c3697b9"
+          ]
+        }
+      ]
     },
     {
       "index": 177,
@@ -115360,7 +115996,7 @@
       "foundational": true,
       "layer": 2,
       "sublayer": 0,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           12
@@ -115406,7 +116042,40 @@
         }
       ],
       "packed_with": null,
-      "batches": []
+      "batches": [
+        {
+          "index": 0,
+          "link_unit": "libgit2",
+          "module": "src/util/allocators/stdalloc.c",
+          "foundational": true,
+          "kind": "wrap",
+          "status": "done",
+          "items": [
+            {
+              "name": "git_stdalloc_init_allocator",
+              "defined_in": "src/util/allocators/stdalloc.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/allocators/stdalloc.rs"
+            }
+          ],
+          "commits": [
+            "4788fd67e0da7c2f8a9526e232adf85db3fb3b69"
+          ]
+        },
+        {
+          "index": 1,
+          "link_unit": "libgit2",
+          "module": "src/util/allocators/stdalloc.c",
+          "foundational": true,
+          "kind": "review",
+          "status": "wip",
+          "reviews": [],
+          "module_pass": true,
+          "commits": []
+        }
+      ]
     },
     {
       "index": 182,
@@ -115415,7 +116084,7 @@
       "foundational": true,
       "layer": 2,
       "sublayer": 0,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           12
@@ -115462,7 +116131,40 @@
         }
       ],
       "packed_with": null,
-      "batches": []
+      "batches": [
+        {
+          "index": 0,
+          "link_unit": "libgit2",
+          "module": "src/util/allocators/win32_leakcheck.c",
+          "foundational": true,
+          "kind": "wrap",
+          "status": "done",
+          "items": [
+            {
+              "name": "git_win32_leakcheck_init_allocator",
+              "defined_in": "src/util/allocators/win32_leakcheck.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/allocators/win32_leakcheck.rs"
+            }
+          ],
+          "commits": [
+            "cff595a0915c088f50e8c1a2336ea4763b46d99d"
+          ]
+        },
+        {
+          "index": 1,
+          "link_unit": "libgit2",
+          "module": "src/util/allocators/win32_leakcheck.c",
+          "foundational": true,
+          "kind": "review",
+          "status": "wip",
+          "reviews": [],
+          "module_pass": true,
+          "commits": []
+        }
+      ]
     },
     {
       "index": 183,
@@ -115471,7 +116173,7 @@
       "foundational": true,
       "layer": 2,
       "sublayer": 0,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           12
@@ -115515,7 +116217,40 @@
         }
       ],
       "packed_with": null,
-      "batches": []
+      "batches": [
+        {
+          "index": 0,
+          "link_unit": "libgit2",
+          "module": "src/util/allocators/debugalloc.c",
+          "foundational": true,
+          "kind": "wrap",
+          "status": "done",
+          "items": [
+            {
+              "name": "git_debugalloc_init_allocator",
+              "defined_in": "src/util/allocators/debugalloc.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/allocators/debugalloc.rs"
+            }
+          ],
+          "commits": [
+            "fd3e6b8e126b4d8cb5b220f7402b0c87cdbecbaa"
+          ]
+        },
+        {
+          "index": 1,
+          "link_unit": "libgit2",
+          "module": "src/util/allocators/debugalloc.c",
+          "foundational": true,
+          "kind": "review",
+          "status": "wip",
+          "reviews": [],
+          "module_pass": true,
+          "commits": []
+        }
+      ]
     },
     {
       "index": 184,
@@ -115524,7 +116259,7 @@
       "foundational": true,
       "layer": 2,
       "sublayer": 0,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           12
@@ -115708,7 +116443,80 @@
         }
       ],
       "packed_with": null,
-      "batches": []
+      "batches": [
+        {
+          "index": 0,
+          "link_unit": "libgit2",
+          "module": "src/util/strlist.c",
+          "foundational": true,
+          "kind": "wrap",
+          "status": "done",
+          "items": [
+            {
+              "name": "git_strlist_contains_prefix",
+              "defined_in": "src/util/strlist.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/strlist.rs"
+            },
+            {
+              "name": "git_strlist_copy",
+              "defined_in": "src/util/strlist.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/strlist.rs"
+            },
+            {
+              "name": "git_strlist_copy_with_null",
+              "defined_in": "src/util/strlist.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/strlist.rs"
+            },
+            {
+              "name": "git_strlist_free",
+              "defined_in": "src/util/strlist.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/strlist.rs"
+            },
+            {
+              "name": "git_strlist_free_with_null",
+              "defined_in": "src/util/strlist.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/strlist.rs"
+            },
+            {
+              "name": "git_strlist_contains_key",
+              "defined_in": "src/util/strlist.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/strlist.rs"
+            }
+          ],
+          "commits": [
+            "aba03725e2756a17ccccef7940f1d410d60c0461"
+          ]
+        },
+        {
+          "index": 1,
+          "link_unit": "libgit2",
+          "module": "src/util/strlist.c",
+          "foundational": true,
+          "kind": "review",
+          "status": "wip",
+          "reviews": [],
+          "module_pass": true,
+          "commits": []
+        }
+      ]
     },
     {
       "index": 185,
@@ -115717,7 +116525,7 @@
       "foundational": true,
       "layer": 2,
       "sublayer": 1,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           184
@@ -115760,7 +116568,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 184,
       "batches": []
     },
     {

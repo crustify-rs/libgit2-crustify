@@ -1,0 +1,3 @@
+from_slice: 0x63df57353c10
+new_zeroed: 0x63df57353be0
+exit 0
