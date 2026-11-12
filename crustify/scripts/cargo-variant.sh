@@ -5,7 +5,10 @@
 #
 # <variant> is a `variants` key of crustify/artifacts/build.json: plain, coverage, asan-ubsan,
 # tsan or bsan. Each variant uses its own target dir under target/.
-# Set CRUSTIFY_LIBGIT2_BUILD_DIR to link a private build instead of the shared one.
+# libgit2-sys links the variant's static archive (its `static` in build.json) into each test
+# binary, so the C runs under the instrumentation the Rust is built with here, one runtime
+# serving both. Set CRUSTIFY_BUILD_DIR to a private build of the variant, which carries the
+# same archive, to link it instead of the shared one.
 set -euo pipefail
 variant=${1:?usage: cargo-variant.sh <variant> <cargo subcommand> [args...]}
 shift
@@ -25,7 +28,8 @@ case $variant in
   plain)
     exec cargo "$@" ;;
   coverage)
-    # Source-based coverage on the pinned nightly, against the variant's clang-instrumented C;
+    # Source-based coverage on the pinned nightly, against the variant's clang-instrumented C,
+    # which each test binary links statically, so that rustc's profiler runtime counts both;
     # crustify/scripts/coverage/ measures the suites as the testing spec's Coverage section does.
     export RUSTFLAGS="${RUSTFLAGS:-} -C instrument-coverage"
     export RUSTDOCFLAGS="${RUSTDOCFLAGS:-} -C instrument-coverage"

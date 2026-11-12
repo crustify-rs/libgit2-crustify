@@ -703,3 +703,9 @@ type git_indexer_progress
 type git_odb_stream
 type git_odb_stream_t
 type git_odb_writepack
+
+# fixes/static-campaign-link: internal symbols link from a variant's static archive
+function reftable_buf_add
+function reftable_buf_init
+function reftable_buf_release
+type reftable_buf

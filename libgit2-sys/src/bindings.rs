@@ -14443,6 +14443,49 @@ const _: () = {
         "Offset of field: git_transport::free",
     ][::std::mem::offset_of!(git_transport, free) - 104usize];
 };
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct reftable_buf {
+    pub alloc: usize,
+    pub len: usize,
+    pub buf: *mut ::std::os::raw::c_char,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of reftable_buf"][::std::mem::size_of::<reftable_buf>() - 24usize];
+    ["Alignment of reftable_buf"][::std::mem::align_of::<reftable_buf>() - 8usize];
+    [
+        "Offset of field: reftable_buf::alloc",
+    ][::std::mem::offset_of!(reftable_buf, alloc) - 0usize];
+    [
+        "Offset of field: reftable_buf::len",
+    ][::std::mem::offset_of!(reftable_buf, len) - 8usize];
+    [
+        "Offset of field: reftable_buf::buf",
+    ][::std::mem::offset_of!(reftable_buf, buf) - 16usize];
+};
+impl Default for reftable_buf {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+unsafe extern "C" {
+    pub fn reftable_buf_init(buf: *mut reftable_buf);
+}
+unsafe extern "C" {
+    pub fn reftable_buf_release(buf: *mut reftable_buf);
+}
+unsafe extern "C" {
+    pub fn reftable_buf_add(
+        buf: *mut reftable_buf,
+        data: *const ::std::os::raw::c_void,
+        len: usize,
+    ) -> ::std::os::raw::c_int;
+}
 unsafe extern "C" {
     pub fn crustify_GIT_OID_DEFAULT() -> git_oid_t;
 }
