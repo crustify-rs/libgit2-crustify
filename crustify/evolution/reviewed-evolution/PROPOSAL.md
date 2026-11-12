@@ -1,8 +1,10 @@
 # Every change is reviewed, recorded and watched
 
-Status: `open`: crustify `ae35f81` and `c2f21a0`, drafted by the user in another workspace on
-`review/evolution/reviewed-evolution`, with the reviews' fixes `4c7c40e` and `acb7aea`, on
-`libgit2-crustify/evolution/reviewed-evolution`.
+Status: `landed` on Crustify's `libgit2-crustify/devel`, the campaign's working branch, by
+fast-forward to `acb7aea` (`ae35f81`, `c2f21a0`, `4c7c40e`, `acb7aea`), after review-4
+approved it; Crustify's `devel` takes it only with the user's approval. It is marked as
+weakening a check (its record entry, row 51): a reviewed change lands on a working branch
+without the user's approval.
 
 ## Signal
 
@@ -119,3 +121,16 @@ READMEs calling `devel` the line campaigns run, "working branch" naming, merging
 campaigns' rows, revisiting what landed under a declined weakening, and this campaign's
 `unattended` setting. All addressed in `acb7aea`, the setting in the campaign's
 `CRUSTIFY.md`.
+
+`review-4` (a `crustify:reviewer` subagent of the assistant's session, under
+`libgit2-crustify/devel` `e2a51c6`, narrowed to `4c7c40e..acb7aea` and campaign `0df22bd1e`;
+74.6k tokens, 2m26s): **approved**, marked as weakening a check as row 51 says. R1–R5
+resolved, the advisories addressed or left by choice, and `providers/claude/` matches
+`compose.py build` from `git archive acb7aea`. Advisory, for a follow-up: the `wavefront`
+skill's new Evolution section is named by no step of its description and restates the
+README; the Autonomy table's `propose` cell says "nothing" though record statuses are
+committed; the module's-end consolidation omits the revisits for a declined weakening;
+`authoring` still describes `common.md`'s task-message precedence as unconditional; the
+accounting rule asks for tokens the Review rows did not give; `templates/docker/Dockerfile:98`
+still calls `devel` the line campaigns run; and this campaign's `CRUSTIFY.md` evolution
+question still read the old model (fixed with the template's wording).
