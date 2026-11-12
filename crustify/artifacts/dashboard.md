@@ -56,17 +56,17 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip `<sha>`; `main` shipped at `<sha>`; crustify `4605156`, ffibox `7950244` (`main`), wavefront `db28284`
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `17768` non-test, `95818` tests; **C LoC** — `<n>`
+- **Rust LoC** — `17768` non-test, `95814` tests; **C LoC** — `<n>`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `716` | — | `28.39`% | `79.88`% |
-| UB unsafe tests | `91` | — | `19.38`% | `11.96`% |
-| Equiv tests | `492` | — | `43.41`% | `75.59`% |
-| Unit tests | `802` | — | `31.99`% | `87.51`% |
-| **Total tests** | **`2101`** | — | **`45.88`%** | **`98.87`%** |
+| UB safe tests | `716` | — | `28.41`% | `79.88`% |
+| UB unsafe tests | `91` | — | `19.36`% | `11.96`% |
+| Equiv tests | `492` | — | `43.40`% | `75.59`% |
+| Unit tests | `802` | — | `31.98`% | `87.51`% |
+| **Total tests** | **`2101`** | — | **`45.87`%** | **`98.86`%** |
 | total types | `258` | — | — | — |
 | ported types | `0` | `0.00`% | — | — |
 | wrapped types | `105` | `40.70`% | — | — |
@@ -483,8 +483,9 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/indexer.c` | `legacy-179` | `0` | wrap | review | `1` | — | `+35/-0` | — | `$3.18` | `8.05M` | `12m18s` | `$3.18` | — |
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | wrap | review | `1` | — | `+113/-14` | — | `$4.80` | `10.64M` | `27m50s` | `$4.80` | — |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | wrap | review | `2` | — | `+217/-15` | — | `$11.03` | `25.98M` | `47m17s` | `$5.51` | — |
+| `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | wrap | review | `1` | — | `+82/-67` | `45.87`% / `98.86`% | — | — | — | — | — |
 | **Σ first** |  |  |  |  | **`430`** | **`8595`** | **`+70816/-3315`** | **`45.88`% / `98.87`%** | **`$445.45`** | **`1379.81M`** | — | **`$1.04`** | **`$0.05`** |
-| **Σ review** |  |  |  |  | **`422`** | — | **`+7131/-1346`** | **— / `98.90`%** | **`$354.58`** | **`672.21M`** | — | **`$0.84`** | — |
+| **Σ review** |  |  |  |  | **`423`** | — | **`+7213/-1413`** | **`45.87`% / `98.86`%** | **`$354.58`** | **`672.21M`** | — | **`$0.84`** | — |
 
 ### Batches: tests
 
@@ -561,8 +562,9 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/indexer.c` | `legacy-179` | `0` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) | `+1` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+2` (—/— pp) | `+0` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+1` (—/— pp) | `+1` (—/— pp) |
+| `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | review | `+0` (`+0.02`/`+0.00` pp) | `+0` (`-0.02`/`+0.00` pp) | `+0` (`-0.01`/`+0.00` pp) | `+0` (`-0.01`/`+0.00` pp) |
 | **Σ first** |  |  |  | **`+310` (`+10.16`/`+6.16` pp)** | **`+17` (`+3.18`/`-8.25` pp)** | **`+194` (`+8.96`/`+14.00` pp)** | **`+246` (`+11.77`/`-33.70` pp)** |
-| **Σ review** |  |  |  | **`+14` (`+0.34`/`-1.41` pp)** | **`+2` (`-0.92`/`+0.26` pp)** | **`+22` (`+0.09`/`-0.39` pp)** | **`+34` (`+2.44`/`+7.46` pp)** |
+| **Σ review** |  |  |  | **`+14` (`+0.36`/`-1.41` pp)** | **`+2` (`-0.94`/`+0.26` pp)** | **`+22` (`+0.08`/`-0.39` pp)** | **`+34` (`+2.43`/`+7.46` pp)** |
 
 ### Batches: safety audit
 
@@ -574,6 +576,7 @@ Deterministic `ffimap`; no model.
 | `libgit2/src/util/alloc.c` | `12` | `2` | wrap | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `-1` | `+0` | `+0` | `+0` | `+0` | `+5` | `+0.01` pp | `+3` |
 | `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.13` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `-0.02` pp | `+1` |
 | `libgit2/src/util/alloc.c` | `12` | `3` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.01` pp | `+0` |
+| `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
 | **Σ first** |  |  |  |  | **`+0`** | **`+0`** | **`+5`** | **`+0`** | **`+0`** | **`+0.13` pp** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+8`** | **`-0.07` pp** | **`+16`** |
 | **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`-0.01` pp** | **`+0`** |
 
@@ -584,8 +587,9 @@ Deterministic `ffimap api`; no model.
 | module | wave | batch | objective | pass | kept | extended | changed | removed | new | →Replaces | unattributed | reasons |
 |---|---|---|---|---|---:|---:|---:|---:|---:|---:|---|---|
 | `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `0` | wrap | first | `0` | `0` | `0` | `0` | `1` | `0` | — | — |
+| `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | wrap | review | `1` | `0` | `0` | `0` | `0` | `0` | — | — |
 | **Σ first** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`1`** | **`0`** |  |  |
-| **Σ review** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** |  |  |
+| **Σ review** |  |  |  |  | **`1`** | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** |  |  |
 
 ### Batches — review: PoC + reports
 
@@ -622,8 +626,9 @@ Deterministic `ffimap api`; no model.
 | `libgit2/src/libgit2/indexer.c` | `legacy-179` | `0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `+0` | `+0` | `1` |
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+2` | `2` |
+| `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `+0` | `1` |
 | — (`tests/ub_safe`) | `legacy-526` | `0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
-| **Σ** |  |  | **`+1`** | **`+5`** | **`+4`** | **`+1`** | **`+3`** | **`+5`** | **`+11`** | **`+53`** | **`83`** |
+| **Σ** |  |  | **`+1`** | **`+5`** | **`+4`** | **`+1`** | **`+3`** | **`+5`** | **`+12`** | **`+53`** | **`84`** |
 
 ## Notes
 
@@ -2190,3 +2195,54 @@ is added, so neither BSan nor TSan ran. The packaging gate fails as
 `internal-headers-in-the-bindings` records (`wrapper.h:31`, `alloc.h`), and the proposal
 gains this batch's evidence. In both trees the nightly doctests' `CommitBuilder` case
 fails. Usage cells are the assistant's.
+
+### `libgit2/src/util/allocators/win32_leakcheck.c` wave 182 batch 1: module pass
+
+Batch 1 is the module's pass and its only review. It reviews batch 0's landing
+(`cff595a09`) and the module's three files for every objective, and runs the wave's gates
+and the module's end gates. It found one problem, a `conventions` finding. The module's
+three public-interface unit tests sat in an inline `mod unit_tests`, which the conventions
+reserve, as `unit_priv`, for tests of internal routines. They moved to a new
+`tests/unit_pub` suite, created with waves 169's and 176's scaffolding byte for byte so that
+the branches merge with one-line conflicts only. The inline module is now `unit_priv` and
+keeps the test of the private `reported_error`. The equivalence test now asserts that the
+failing stub leaves its argument unwritten, the one check of the moved test it did not
+already make. The harness kept the run from writing `report.md` under `crustify/reviews/`,
+so the fix commit's message carries the finding. It needs no reproducer.
+
+The class correction holds. The `#else` stub passes the error code `GIT_EINVALID` as
+`git_error_set`'s class. The wrapper reports `GIT_ERROR_INVALID` with the stub's message,
+which keeps the specified contract and drops the bug, as the fidelity goal asks. It is
+documented, and a named `unit_pub` test asserts it. Re-setting the thread's error cannot
+leave it out of step with the returned copy: the stub's call has already sized the
+thread's buffer for the same message, so the `"%s"` re-format allocates nothing. The
+binding, a constructor returning an `Allocator` by value with no owner or policy, its
+ownership finding and its `init` role hold. The API is `kept` (`ffimap api diff`), and every
+safety audit counter equals the tip's. The row sits in the Symbols tables as a `review` row,
+since this dashboard has no `Module passes` section (proposal `dashboard-module-passes`).
+
+Coverage: one `run.sh` run on the landed tree, with C over the coverage variant's static
+archive alone and Rust by `report.py`, against batch 0's figures for the same tip. Unit is
+`lib` and `unit_pub` merged: 799 and 3 tests, 802 as before. The C moves of a few
+hundredths are the run-to-run noise batch 0 describes. `win32_leakcheck.c`'s 5 lines all run.
+Its Rust runs 19 of 25 lines: the refusal when libgit2 cannot be initialised and the
+Windows-only success path stay uncovered. Batch 0 counted 20, and the one-line Rust `Total`
+drop is that closing brace after the `return`, with no code changed. `Rust LoC` is batch 0's
+figure moved by the landing's delta (-4 test lines), counted the same way on both trees.
+
+Gates ran on the wave tip `cff595a09`, from a snapshot, and on the landed tree, at 16 jobs in
+all. The whole workspace ran plain, under ASan+UBSan and under TSan. Both trees fail only
+the known cases: 5 trybuild mismatches on plain, and 13 under the nightly sanitizer builds.
+The extra 8 are compile-fail wordings that differ by toolchain. The nightly's
+`CommitBuilder` doctest also fails. No sanitizer reported. Miri ran one run per test binary,
+skipping `compile_fail`, and reported no error on either tree. The four new and moved tests
+were each run alone under Miri and stop at `git_libgit2_init`. Seven `equiv` tests and six
+`ub_safe` tests are `#[cfg(not(miri))]` in `config.rs`, outside this module.
+BorrowSanitizer ran one invocation per test binary, each under a `timeout`, from snapshots
+whose bindings were regenerated, since the `bsan` bindgen output differs by doc comments
+alone. On the coordinator's word, four indexer tests that never finish under BSan were
+skipped by exact name, three in `lib` and
+`src::libgit2::indexer::a_progress_callback_sees_and_cancels_as_a_c_callback` in `equiv`.
+They are the indexer module's to fix and are not marked. Every binary passed on both trees
+with no report: `lib` 794 and 791 tests, `ub_safe` 711, `ub_unsafe` 91, `equiv` 483, and
+`unit_pub` 3 on the landed tree. The run's records are under its worktree's `crustify/tmp/gates/`.

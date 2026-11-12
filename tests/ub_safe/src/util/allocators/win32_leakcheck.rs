@@ -3,9 +3,10 @@
 //! Every variant builds the C stub, which fails and sets the thread's error. The tests
 //! race first calls to initialise libgit2 from a fresh process, call it from many threads
 //! at once, hold its errors across later libgit2 calls that overwrite the thread's state,
-//! and keep allocating through libgit2 after it: `ASan`/`UBSan` flag a stub that writes
-//! through its argument or a wrapper that reads an unwritten value, and the allocations
-//! show that libgit2's installed allocator is left as it was.
+//! and keep allocating through libgit2 after it, under the sanitizers: the errors are owned
+//! copies that outlive the thread state they were read from, the first calls race to pin
+//! the runtime, and the allocations show that libgit2's installed allocator is left as it
+//! was.
 
 use std::sync::Barrier;
 use std::thread;

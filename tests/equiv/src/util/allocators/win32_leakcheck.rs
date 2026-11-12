@@ -11,8 +11,8 @@
 //! Documented divergence, outside the comparison: C's stub passes the error code
 //! `GIT_EINVALID` (-21) where `git_error_set` takes a class, and the wrapper reports the
 //! class `GIT_ERROR_INVALID` instead, in its result and in the thread's last error. The
-//! sequence checks each side's class against its own contract, and the module's
-//! `unit_tests` cover the correction.
+//! sequence checks each side's class against its own contract, and `tests/unit_pub` covers
+//! the correction.
 
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::thread;
@@ -79,6 +79,7 @@ fn c_step() -> Step {
         && raw.gfree.map(|f| f as usize) == sentinel.gfree.map(|f| f as usize);
     let (klass, message) = c_last();
     assert_eq!(rc, ffi::GIT_ERROR, "C returns -1");
+    assert!(unwritten, "the failing stub leaves the value as it was");
     assert_eq!(
         klass,
         ffi::GIT_EINVALID,

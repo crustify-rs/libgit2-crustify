@@ -114,70 +114,12 @@ mod ffi_import {
         ErrorBuf::new(ErrorClass::Invalid.raw(), error.message())
     }
 
+    /// Unit tests of the private routine: the public contract is `tests/unit_pub`'s, and the
+    /// comparison with C `tests/equiv`'s.
     #[cfg(test)]
-    mod unit_tests {
-        use std::ffi::CStr;
-
+    mod unit_priv {
         use super::*;
-        use crate::libgit2::src::util::errors::{clear, set_str};
-
-        const MESSAGE: &CStr = c"leakcheck memory allocator not available";
-
-        /// The raw C call, on a sentinel value: its return code, what it left in the
-        /// value, and the thread's last error.
-        fn raw_call() -> (i32, bool, ErrorBuf) {
-            assert!(runtime_pinned());
-            let mut raw = ffi::git_allocator::default();
-            // SAFETY: as in `allocator`: a live, exclusively borrowed `git_allocator`, and
-            // the runtime is pinned.
-            let rc = unsafe { ffi::git_win32_leakcheck_init_allocator(&raw mut raw) };
-            let untouched = raw.gmalloc.is_none() && raw.grealloc.is_none() && raw.gfree.is_none();
-            (rc, untouched, last())
-        }
-
-        #[test]
-        #[cfg_attr(miri, ignore = "calls C")]
-        fn this_build_has_no_leakcheck_allocator() {
-            let error = allocator().unwrap_err();
-            assert_eq!(error.class(), Some(ErrorClass::Invalid));
-            assert_eq!(error.message(), MESSAGE);
-        }
-
-        /// C's stub passes `GIT_EINVALID` as the class: the correction this wrapper makes,
-        /// in the returned error and in the thread's last error.
-        #[test]
-        #[cfg_attr(miri, ignore = "calls C")]
-        fn the_stubs_error_code_class_is_corrected() {
-            let (rc, untouched, c_error) = raw_call();
-            assert_eq!(rc, ffi::GIT_ERROR);
-            assert!(untouched, "the stub writes nothing");
-            assert_eq!(c_error.raw_class(), ffi::GIT_EINVALID);
-            assert_eq!(c_error.class(), None);
-            assert_eq!(c_error.message(), MESSAGE);
-
-            let error = allocator().unwrap_err();
-            assert_eq!(error.raw_class(), ErrorClass::Invalid.raw());
-            assert_eq!(
-                last(),
-                error,
-                "the thread's last error is the corrected one"
-            );
-        }
-
-        /// The call replaces whatever error the thread held, cleared or set, and repeats
-        /// identically.
-        #[test]
-        #[cfg_attr(miri, ignore = "calls C")]
-        fn each_call_replaces_the_threads_error() {
-            clear();
-            let first = allocator().unwrap_err();
-            assert_eq!(last(), first);
-
-            set_str(ErrorClass::Odb, c"an older error").unwrap();
-            let second = allocator().unwrap_err();
-            assert_eq!(second, first);
-            assert_eq!(last(), second);
-        }
+        use crate::libgit2::src::util::errors::set_str;
 
         /// An error left by another call, of another class, is returned as it is.
         #[test]
