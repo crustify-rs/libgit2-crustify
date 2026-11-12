@@ -2483,14 +2483,6 @@ impl OdbDataStrVec {
     }
 }
 
-impl Drop for OdbDataStrVec {
-    fn drop(&mut self) {
-        // SAFETY: the run owns its strings, each dropped once here; the storage, which
-        // the inner `OdbDataVec` frees right after, is not read again.
-        unsafe { ptr::drop_in_place(self.as_mut_slice()) }
-    }
-}
-
 impl Clone for OdbDataStrVec {
     /// Copies every string; aborts when an allocation fails, as `OdbDataStr`'s
     /// `Clone` does. [`try_clone`](Self::try_clone) reports the failure instead.
@@ -4283,9 +4275,9 @@ mod unit_tests {
         assert!(v.is_empty() && v.as_ptr().is_null() && v.as_slice().is_empty());
         assert_eq!(format!("{v:?}"), "[]");
         let mut d = OdbDataStrVec::default();
-        assert!(d.as_mut_slice().is_empty());
+        assert_eq!(d.as_mut_slice().len(), 0);
         assert!(d.try_clone().unwrap().as_ptr().is_null());
-        assert!(v.clone().into_vec().is_empty());
+        assert_eq!(v.clone().into_vec().len(), 0);
         let (strings, count) = OdbDataStrVec::dup_all::<&CStr>(&[])
             .unwrap()
             .into_raw_parts();
