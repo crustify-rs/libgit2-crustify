@@ -1,6 +1,6 @@
 # `CClosure::failed()` reads the panic slot an invocation holds mutably
 
-Status: `open`
+Status: `landed`, as ffibox `a2cef17` on `devel`: `failed()` reads an atomic `panicked` flag, set after the slot's one store, and `invoke_scoped` holds no reference to the slot across the closure's call. The fix also closes a data race the defect hid: a `Send` closure invoked on a C worker thread while another callback asks `failed()`. Both cases are tests that fail under Miri on the old code and pass under Stacked and Tree Borrows.
 
 ## Signal
 
