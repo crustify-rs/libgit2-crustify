@@ -1,7 +1,12 @@
 # `define_ctype!` for layout types that carry a lifetime
 
-Status: `open`, proposed after the ffibox usage audit of 2026-11-12. The user approved
-filing it; it awaits their decision on the design at a module's end.
+Status: `landed`, as ffibox `9c1a54c` and `a0c44b2` on `devel`, with the Addendum: `define_ctype!`
+takes lifetimes (`Reference<'r>, ReferenceRef, ReferenceMut, ffi::git_reference, phantom = &'r ()`),
+and `impl_cdupclone!` / `impl_cguarded!` an optional leading `<'r>` list. Two departures
+from the Change: the macro emits no `Debug`, as its lifetime-free form never did and the
+campaign's hand-written `Debug` bodies differ; and `phantom` names the type inside the
+marker, to which the macro always adds `*const ()`, so a safe call cannot make a layout
+type `Send` or `Sync` (G10).
 
 ## Signal
 
@@ -91,3 +96,8 @@ check that:
 
 Then rebuild one campaign module with a type moved to the macro, such as
 `transaction.rs`'s `Transaction<'r>`, with its tests unchanged.
+
+Validated: ffibox's suite with `--all-features` (252 passed), clippy and fmt clean, and Miri
+over the new tests; a throwaway worktree of the campaign at `362a9f6f2` moved
+`transaction.rs`'s `Transaction<'r>` to the macro and passed `ub_safe` (762), the
+`transaction` unit tests and doctests unchanged. The campaign tree builds against it.
