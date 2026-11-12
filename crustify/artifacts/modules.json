@@ -322,7 +322,7 @@
         {
           "index": 3,
           "name": "src/util/allocators/debugalloc.c",
-          "status": "todo",
+          "status": "frozen",
           "foundational": true,
           "depends_on": [
             {
@@ -406,7 +406,7 @@
         {
           "index": 4,
           "name": "src/util/allocators/stdalloc.c",
-          "status": "todo",
+          "status": "frozen",
           "foundational": true,
           "depends_on": [
             {
@@ -500,7 +500,7 @@
         {
           "index": 5,
           "name": "src/util/allocators/win32_leakcheck.c",
-          "status": "todo",
+          "status": "frozen",
           "foundational": true,
           "depends_on": [
             {
@@ -582,7 +582,7 @@
         {
           "index": 6,
           "name": "src/util/strlist.c",
-          "status": "todo",
+          "status": "frozen",
           "foundational": true,
           "depends_on": [
             {

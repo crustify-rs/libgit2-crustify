@@ -3,3 +3,4 @@
 pub mod alloc;
 pub mod allocators;
 pub mod errors;
+pub mod strlist;
