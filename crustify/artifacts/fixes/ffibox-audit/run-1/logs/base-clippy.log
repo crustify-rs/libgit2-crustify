@@ -1,0 +1,5 @@
+   Compiling libc-sys v0.1.0 (/target/glibc-bindings/libc-sys)
+   Compiling libgit2-sys v0.1.0 (/target/libgit2-crustify/crustify/.worktrees/fixes/ffibox-audit/crustify/tmp/base/libgit2-sys)
+    Checking glibc-bindings v0.1.0 (/target/glibc-bindings)
+   Compiling libgit2 v0.1.0 (/target/libgit2-crustify/crustify/.worktrees/fixes/ffibox-audit/crustify/tmp/base)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 34.34s

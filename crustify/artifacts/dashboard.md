@@ -3240,3 +3240,19 @@ From the next wave, the safety audit scans name `into_raw` among the seams (crus
 coverage is read with `report.py`'s `C=@c` scope, the coverage variant's archive alone
 (`f03e78302`), the figure batches since `wave-169/batch-1` read by hand; and a wave's and a
 module's end gates run through Crustify's `end-gates` (`039b394`).
+
+### Fixes from the ffibox usage audit (2026-11-12)
+
+An audit of how the campaign's Rust uses ffibox found two defects in integrated modules,
+which the user had fixed. Both landed in a fix run outside the schedule
+(`crustify/artifacts/fixes/ffibox-audit/run-1`, agent `a3879246b5cb866ea`, `$4.74`,
+`13.23M`, `14m20s`):
+- `config.c`'s `BackendFree` leaves a backend without `free` alone instead of panicking in
+  `Drop`, as odb.c's `OdbBackendFree` does (`976a00f34`).
+- `basics.c`'s reftable `malloc` and `realloc` hooks map a panic to NULL through
+  `callback::barrier`, as `alloc.c`'s do (`119974060`).
+
+Each fix has a test, and those tests fail on the old code. On the scoped gates
+(plain, asan-ubsan, tsan, clippy, fmt), only lib's count changed, 81 to 83, and Miri
+passes the two new tests. The audit's missing primitives are filed as
+`ffibox-lifetime-ctypes` and `ffibox-vtables` (`694546abf`).

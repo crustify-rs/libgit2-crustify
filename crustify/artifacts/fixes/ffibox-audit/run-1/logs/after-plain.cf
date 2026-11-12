@@ -1,0 +1,5 @@
+test tests/ub_safe/compile_fail/commit_arc_no_mut_handle.rs ... mismatch
+test tests/ub_safe/compile_fail/mailmap_not_clone.rs ... mismatch
+test tests/ub_safe/compile_fail/object_arc_no_mut_handle.rs ... mismatch
+test tests/ub_safe/compile_fail/tag_and_tree_arc_no_mut_handle.rs ... mismatch
+test tests/ub_safe/compile_fail/tree_builder_not_clone.rs ... mismatch

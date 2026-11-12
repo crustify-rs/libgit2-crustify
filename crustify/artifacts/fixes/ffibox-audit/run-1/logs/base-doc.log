@@ -1,0 +1,167 @@
+   Compiling libc v0.2.190
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.14
+   Compiling pkg-config v0.3.34
+   Compiling cfg-if v1.0.5
+   Compiling proc-macro2 v1.0.107
+   Compiling typenum v1.20.1
+   Compiling unicode-ident v1.0.26
+   Compiling quote v1.0.47
+   Compiling glob v0.3.4
+   Compiling memchr v2.8.3
+   Compiling zmij v1.0.23
+   Compiling dunce v1.0.5
+   Compiling prettyplease v0.3.0
+   Compiling fs_extra v1.3.0
+   Compiling serde_json v1.0.151
+   Compiling serde_core v1.0.229
+   Compiling minimal-lexical v0.2.1
+   Compiling regex-syntax v0.8.11
+   Compiling itoa v1.0.18
+   Compiling log v0.4.34
+   Compiling libloading v0.8.9
+   Compiling cmov v0.5.4
+   Compiling bitflags v2.13.2
+   Compiling bindgen v0.73.2
+   Compiling const-oid v0.10.3
+   Compiling rustc-hash v2.1.3
+   Compiling ctutils v0.4.8
+   Compiling aws-lc-rs v1.19.0
+   Compiling autocfg v1.5.1
+   Compiling clang-sys v1.9.1
+   Compiling zeroize v1.9.1
+   Compiling crc32fast v1.5.5
+   Compiling cfg_aliases v0.2.2
+   Compiling target-tuple v1.0.2
+   Compiling nix v0.31.3
+   Compiling nom v7.1.3
+   Compiling rustls-pki-types v1.16.0
+   Compiling winnow v1.0.4
+   Compiling untrusted v0.9.0
+   Compiling getrandom v0.4.3
+   Compiling rustls v0.23.46
+   Compiling serde v1.0.229
+   Compiling memoffset v0.9.1
+   Compiling simd-adler32 v0.3.10
+   Compiling adler2 v2.0.1
+   Compiling cpufeatures v0.3.1
+   Compiling toml_parser v1.1.4+spec-1.1.0
+   Compiling miniz_oxide v0.9.1
+   Compiling syn v3.0.6
+   Compiling toml_writer v1.1.3+spec-1.1.0
+   Compiling libgit2 v0.1.0 (/target/libgit2-crustify/crustify/.worktrees/fixes/ffibox-audit/crustify/tmp/base)
+   Compiling subtle v2.6.1
+   Compiling once_cell v1.21.4
+   Compiling ffibox v0.1.1 (/opt/venv/share/ffibox)
+   Compiling termcolor v1.4.1
+   Compiling hybrid-array v0.4.15
+   Compiling regex-automata v0.4.18
+   Compiling flate2 v1.1.11
+   Compiling jobserver v0.1.35
+   Compiling crypto-common v0.2.2
+   Compiling block-buffer v0.12.1
+   Compiling inout v0.2.6
+   Compiling cc v1.6.0
+   Compiling cexpr v0.6.0
+   Compiling digest v0.11.3
+   Compiling cipher v0.5.2
+   Compiling md4 v0.11.0
+   Compiling hmac v0.13.0
+   Compiling sha2 v0.11.1
+   Compiling md-5 v0.11.0
+   Compiling des v0.9.0
+   Compiling cmake v0.1.58
+   Compiling regex v1.13.1
+   Compiling toml_datetime v1.1.2+spec-1.1.0
+   Compiling serde_spanned v1.1.2
+   Compiling toml v1.1.7+spec-1.1.0
+   Compiling aws-lc-sys v0.47.0
+   Compiling libc-sys v0.1.0 (/target/glibc-bindings/libc-sys)
+   Compiling pcre2-sys v0.2.10
+   Compiling glibc-bindings v0.1.0 (/target/glibc-bindings)
+   Compiling serde_derive v1.0.229
+   Compiling pcre2 v0.2.11
+   Compiling trybuild v1.0.122
+   Compiling libgit2-sys v0.1.0 (/target/libgit2-crustify/crustify/.worktrees/fixes/ffibox-audit/crustify/tmp/base/libgit2-sys)
+   Compiling rustls-webpki v0.103.16
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 36.78s
+   Doc-tests libgit2
+
+running 2 tests
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::ConfigMap (line 2679) ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::CustomBackend (line 4486) ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 69 filtered out; finished in 0.04s
+
+
+running 66 tests
+test src/libgit2/deps/reftable/basics.rs - libgit2::deps::reftable::basics::ffi_import::Buf (line 627) - compile fail ... ok
+test src/libgit2/deps/reftable/basics.rs - libgit2::deps::reftable::basics::ffi_import::BufRef<'a>::as_bytes (line 914) - compile fail ... ok
+test src/libgit2/deps/reftable/basics.rs - libgit2::deps::reftable::basics::ffi_import::BufRef<'a>::as_c_str (line 975) - compile fail ... ok
+test src/libgit2/deps/reftable/basics.rs - libgit2::deps::reftable::basics::ffi_import::BufRef<'a>::as_bytes (line 928) - compile fail ... ok
+test src/libgit2/deps/reftable/basics.rs - libgit2::deps::reftable::basics::ffi_import::Names (line 1442) - compile fail ... ok
+test src/libgit2/deps/reftable/basics.rs - libgit2::deps::reftable::basics::ffi_import::BufRef<'a>::as_bytes (line 942) - compile fail ... ok
+test src/libgit2/deps/reftable/basics.rs - libgit2::deps::reftable::basics::ffi_import::NamesRef (line 711) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::Config (line 117) - compile fail ... ok
+test src/libgit2/deps/reftable/basics.rs - libgit2::deps::reftable::basics::ffi_import::Buf (line 639) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::ConfigArc (line 450) - compile fail ... ok
+test src/libgit2/deps/reftable/basics.rs - libgit2::deps::reftable::basics::ffi_import::BufMut<'_>::detach (line 1937) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::BackendMut<'_>::iterator (line 4174) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::BackendEntryMut<'_>::entry_mut (line 3216) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::Config (line 169) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::BackendTransaction (line 4355) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::BackendEntry (line 3004) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::ConfigMut<'_,'_>::set_string (line 279) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::Entry (line 1566) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::ConfigMap (line 2722) - compile fail ... ok
+test src/libgit2/deps/reftable/basics.rs - libgit2::deps::reftable::basics::ffi_import::NamesRef (line 723) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::ConfigMap (line 2691) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::ConfigMap (line 2708) - compile fail ... ok
+test src/libgit2/deps/reftable/basics.rs - libgit2::deps::reftable::basics::HashId (line 112) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::ConfigRef<'_,'_>::foreach (line 1996) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::ConfigRef<'_,'_>::foreach (line 2008) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::ConfigRef<'_,'_>::foreach (line 1983) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::ForeachCallback (line 2387) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::CustomBackend::get (line 4559) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::ConfigMap (line 2699) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::Config (line 127) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::BackendEntry (line 3018) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::ConfigMap (line 2717) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::BackendEntry (line 2994) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::Config (line 153) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::BackendBox (line 3817) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::Entry (line 1575) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::BackendEntryFree::release (line 3246) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::Config (line 160) - compile fail ... ok
+test src/libgit2/deps/reftable/basics.rs - libgit2::deps::reftable::basics::ffi_import::ReftableArrayFree (line 1144) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::BackendBox (line 3822) - compile fail ... ok
+test src/libgit2/deps/reftable/basics.rs - libgit2::deps::reftable::basics::ffi_import::BufVal (line 1754) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::BackendEntry (line 2999) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::BackendEntry (line 3013) - compile fail ... ok
+test src/libgit2/deps/reftable/basics.rs - libgit2::deps::reftable::basics::ffi_import::ReftableArrayFree (line 1134) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::Config (line 135) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::Config (line 144) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::Entry (line 1580) - compile fail ... ok
+test src/libgit2/deps/reftable/basics.rs - libgit2::deps::reftable::basics::ffi_import::ReftableFree (line 1055) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::ConfigMut<'_,'_>::set_string (line 273) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::IteratorMut<'_,'_>::advance_entry (line 1757) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::IteratorMut<'_,'_>::advance_entry (line 1745) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::Iterator (line 3285) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::Iterator (line 3293) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::Iterator (line 3325) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::Iterator (line 3303) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::ForeachCallback (line 2375) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::Iterator (line 3318) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::IteratorMut<'_,'c>::set_backend (line 3519) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::UnopenedBackend::new (line 3909) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::ForeachCallback (line 2399) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::parse_bool (line 1198) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::Iterator (line 3313) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::Iterator (line 3333) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::Entry (line 1561) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::UnopenedBackend::new (line 3930) - compile fail ... ok
+test src/libgit2/src/libgit2/config.rs - libgit2::src::libgit2::config::Iterator (line 3338) - compile fail ... ok
+
+test result: ok. 66 passed; 0 failed; 0 ignored; 0 measured; 312 filtered out; finished in 0.33s
+
+all doctests ran in 1.76s; merged doctests compilation took 1.38s

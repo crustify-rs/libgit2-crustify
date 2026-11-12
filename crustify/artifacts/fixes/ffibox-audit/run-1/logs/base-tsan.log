@@ -1,0 +1,1363 @@
+== base tsan 2026-11-12T19:12:21+00:00 tree=/target/libgit2-crustify/crustify/.worktrees/fixes/ffibox-audit/crustify/tmp/base
+warning: missing `[lints]` to inherit `[workspace.lints]`
+  --> libgit2-sys/Cargo.toml
+   = note: `cargo::missing_lints_inheritance` is set to `warn` by default
+help: to inherit `workspace.lints, add:
+   |
+29 ~ bindgen = ["dep:bindgen"]
+30 + [lints]
+31 + workspace = true
+   |
+help: to clarify your intent to not inherit, add:
+   |
+29 ~ bindgen = ["dep:bindgen"]
+30 + [lints]
+   |
+warning: `libgit2-sys` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+  --> /opt/venv/share/ffibox/Cargo.toml:11:12
+   |
+ 9 | repository = "https://github.com/crustify-rs/ffibox"
+   |              ---------------------------------------
+10 | documentation = "https://docs.rs/ffibox"
+11 | homepage = "https://github.com/crustify-rs/ffibox"
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `ffibox` (manifest) generated 1 warning
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling libc-sys v0.1.0 (/target/glibc-bindings/libc-sys)
+   Compiling libgit2-sys v0.1.0 (/target/libgit2-crustify/crustify/.worktrees/fixes/ffibox-audit/crustify/tmp/base/libgit2-sys)
+   Compiling glibc-bindings v0.1.0 (/target/glibc-bindings)
+   Compiling libgit2 v0.1.0 (/target/libgit2-crustify/crustify/.worktrees/fixes/ffibox-audit/crustify/tmp/base)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 18.37s
+     Running unittests src/lib.rs (/target/libgit2-crustify/crustify/.worktrees/fixes/ffibox-audit/crustify/tmp/target/tsan/x86_64-unknown-linux-gnu/debug/build/libgit2/14da95a82c435174/out/libgit2-14da95a82c435174)
+
+running 81 tests
+test libgit2::deps::reftable::basics::ffi_import::unit_priv::allocated_buffer_reads_its_contents_and_terminator ... ok
+test libgit2::deps::reftable::basics::ffi_import::unit_priv::allocated_empty_buffer_reads_as_the_empty_string ... ok
+test libgit2::deps::reftable::basics::ffi_import::unit_priv::allocated_size_with_a_null_buffer_reads_as_empty ... ok
+test libgit2::deps::reftable::basics::ffi_import::unit_priv::bytes_borrow_the_storage_they_read ... ok
+test libgit2::deps::reftable::basics::ffi_import::unit_priv::empty_names_vec_is_the_terminator_alone ... ok
+test libgit2::deps::reftable::basics::ffi_import::unit_priv::handles_address_the_value_and_null_adopts_nothing ... ok
+test libgit2::deps::reftable::basics::ffi_import::unit_priv::interior_nul_is_kept_in_bytes_and_refused_as_c_string ... ok
+test libgit2::deps::reftable::basics::ffi_import::unit_priv::missing_terminator_is_refused_as_c_string ... ok
+test libgit2::deps::reftable::basics::ffi_import::unit_priv::names_count_and_borrow_their_strings ... ok
+test libgit2::deps::reftable::basics::ffi_import::unit_priv::names_vec_lends_its_strings_then_a_null_slot ... ok
+test libgit2::deps::reftable::basics::ffi_import::unit_priv::new_buffer_is_reftable_buf_init ... ok
+test libgit2::deps::reftable::basics::ffi_import::unit_priv::release_leaves_storage_it_does_not_own_to_its_owner ... ok
+test libgit2::deps::reftable::basics::ffi_import::unit_priv::unallocated_buffer_reads_as_empty_whatever_its_other_fields_hold ... ok
+test libgit2::deps::reftable::basics::ffi_import::unit_priv::writers_refuse_contents_past_isize_max_before_c ... ok
+test libgit2::src::libgit2::config::unit_tests::checked_mapping_modes ... ok
+test libgit2::src::libgit2::config::unit_tests::callback_trampoline_stops_panics_nulls_and_reuses ... ok
+test libgit2::src::libgit2::config::unit_tests::entry_layout_and_borrowed_fields_without_c ... ok
+test libgit2::src::libgit2::config::unit_tests::debug_and_thread_traits ... ok
+test libgit2::src::libgit2::config::unit_tests::enumeration_result_preserves_stops_even_when_c_erases_iterover ... ok
+test libgit2::src::libgit2::config::unit_tests::handles_wrap_pointers_without_reading ... ok
+test libgit2::src::libgit2::config::unit_tests::integer_parse_error_quotes_the_value ... ok
+test libgit2::src::libgit2::config::unit_tests::iterators::backend_walk_adapter_borrowed_bases_and_lending ... ok
+test libgit2::src::libgit2::config::unit_tests::layout_and_custom_values ... ok
+test libgit2::src::libgit2::config::unit_tests::layout_matches_c ... ok
+test libgit2::src::libgit2::config::unit_tests::mapping_layout_borrows_clone_and_seams ... ok
+test libgit2::src::libgit2::config::unit_tests::readonly_delete_error_quotes_the_name ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::backend_entries::acquired_callback_and_owner_roundtrip ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::backend_entries::layout_and_exclusive_projection ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::backend_entries::release_policy_rejects_missing_callback - should panic ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::backend_entries::debug_prints_the_entry_only ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::backends::backend_rust_layout_and_stale_identity_are_not_dereferenced ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::backends::backend_transactions_release_once_and_reborrow ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::custom::custom_dispatch_reaches_store_and_releases_once ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::custom::custom_release_during_callback_waits_for_return ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::custom::custom_slots_and_layout ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::custom::owned_and_shared_entries_read_their_copies ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::debug_and_thread_traits ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::iterators::iterator_owned_release_and_reentry ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::iterators::iterator_layout_and_borrowed_rust_callback ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::layout_and_pointer_seams ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::rust_only_reborrows_and_clone ... ok
+test libgit2::deps::reftable::basics::ffi_import::unit_priv::nothing_allocates_without_the_runtime ... ok
+test libgit2::src::libgit2::config::unit_tests::without_runtime_fails_cleanly ... ok
+test libgit2::src::libgit2::config::unit_tests::opening_routines_report_allocation_failure ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::backends::backend_registration_allocator_failures_release_owned_inputs ... ok
+test libgit2::src::libgit2::config::unit_tests::entry_allocation_failures_leave_config_usable ... ok
+test libgit2::src::libgit2::config::unit_tests::enumeration_initial_allocation_failure_is_reported ... ok
+test libgit2::deps::reftable::basics::ffi_import::unit_priv::detach_writes_a_terminator_the_buffer_lacks ... ok
+test libgit2::deps::reftable::basics::ffi_import::unit_priv::writers_settle_a_struct_that_owns_nothing_before_c_sees_it ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::backends::failed_rollback_on_drop_is_discarded ... ok
+test libgit2::src::libgit2::config::unit_tests::store_errors_take_codes_and_raise_verbatim ... ok
+test libgit2::src::libgit2::config::unit_tests::exclusive_handle_reborrows ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::custom::custom_null_strings_are_refused ... ok
+test libgit2::src::libgit2::config::unit_tests::write_order_length_is_checked_before_ffi ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::custom::readonly_lookups_keep_one_entry_per_distinct_answer ... ok
+test libgit2::src::libgit2::config::unit_tests::file_priority_rejected_before_foreign_comparators ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::custom::entries_lend_until_advance_and_end_after_failure ... ok
+test libgit2::deps::reftable::basics::ffi_import::unit_priv::comparisons_read_a_struct_that_owns_nothing_as_empty ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::custom::custom_reentry_is_refused_per_slot ... ok
+test libgit2::src::libgit2::config::unit_tests::constructors_build_empty_configs ... ok
+test libgit2::src::libgit2::config::unit_tests::config_errors_keep_codes ... ok
+test libgit2::src::libgit2::config::unit_tests::iterators::advance_entry_dispatches_statuses_and_lends ... ok
+test libgit2::src::libgit2::config::unit_tests::get_i64_silent_parse_failure_is_not_a_stale_error ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::custom::custom_default_slots_refuse_and_name_themselves ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::iterators::multivar_regex_skips_valueless ... ok
+test libgit2::src::libgit2::config::unit_tests::parse_i64_suffix_tail_reports_its_own_error ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::backends::backend_missing_slots_reject_before_ffi_dispatch ... ok
+test libgit2::src::libgit2::config::unit_tests::iterators::backend_walk_reports_masked_next_errors_and_cleans_failure_paths ... ok
+test libgit2::src::libgit2::config::unit_tests::callback_foreign_iteration_cleans_up_before_resuming_panic ... ok
+test libgit2::src::libgit2::config::unit_tests::sys_config::backends::backend_registration_open_transfer_errors_and_release_counts ... ok
+test libgit2::src::libgit2::config::unit_tests::valueless_misses_never_reach_c_formatting ... ok
+test libgit2::src::libgit2::config::unit_tests::repository_config_is_shared_for_the_repository_borrow ... ok
+test libgit2::src::libgit2::config::unit_tests::readonly_deletes_report_their_own_error ... ok
+test libgit2::src::libgit2::config::unit_tests::entry_reports_failed_rereads ... ok
+test libgit2::src::libgit2::config::unit_tests::mapped_snapshot_construction_failure_reports_oom ... ok
+test libgit2::src::libgit2::config::unit_tests::snapshot_allocation_failure_leaves_source_live ... ok
+test libgit2::src::libgit2::config::unit_tests::snapshot_backend_allocation_failure_releases_new_config ... ok
+test libgit2::src::libgit2::config::unit_tests::iterators::constructors_report_allocation_failure ... ok
+test libgit2::src::libgit2::config::unit_tests::out_of_memory_is_an_error ... ok
+test libgit2::deps::reftable::basics::ffi_import::unit_priv::every_allocation_failure_is_reported_and_leaves_the_owner_as_it_was ... ok
+test libgit2::src::libgit2::config::unit_tests::write_order_refuses_oversized_slices ... ok
+
+test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 758 filtered out; finished in 12.75s
+
+     Running tests/equiv/main.rs (/target/libgit2-crustify/crustify/.worktrees/fixes/ffibox-audit/crustify/tmp/target/tsan/x86_64-unknown-linux-gnu/debug/build/libgit2/b650a291d5930663/out/equiv-b650a291d5930663)
+
+running 59 tests
+test deps::reftable::basics::buf_init_is_reftable_buf_init ... ok
+test deps::reftable::basics::contents_with_nul_bytes_read_whole ... ok
+test deps::reftable::basics::getters_read_the_fields_as_c_consumers_do ... ok
+test deps::reftable::basics::error_display_is_reftable_error_str_for_the_named_codes ... ok
+test deps::reftable::basics::hash_size_matches_c ... ok
+test deps::reftable::basics::hash_sizes_are_reftable_basics_h_constants ... ok
+test deps::reftable::basics::hash_id_names_exactly_the_constants_of_reftable_basics_h ... ok
+test deps::reftable::basics::zeroed_buf_is_reftable_buf_init ... ok
+test src::libgit2::config::config_level_values_match_c ... ok
+test deps::reftable::basics::names_length_and_equal_match_the_c_on_raw_arrays ... ok
+test src::libgit2::config::sys::backends::backend_template_init_matches_c ... ok
+test deps::reftable::basics::binsearch_matches_c ... ok
+test src::libgit2::config::sys::memory_options_init_and_mutation_match_c ... ok
+test deps::reftable::basics::grow_matches_reftable_alloc_grow ... ok
+test deps::reftable::basics::grow_or_clear_keeps_elements_as_reftable_alloc_grow_does ... ok
+test deps::reftable::basics::allocator_routines_match_c ... ok
+test deps::reftable::basics::buffer_routines_match_c_step_by_step ... ok
+test src::libgit2::config::entry_and_map_types::mapping_fields_and_transitions_match_c_records ... ok
+test src::libgit2::config::mapping_mode_values_match_c_behavior ... ok
+test deps::reftable::basics::parsed_names_count_and_compare_as_the_c_does ... ok
+test src::libgit2::config::sys::custom_backends::custom_backend_entry_layout_matches_c ... ok
+test deps::reftable::basics::parse_names_matches_c ... ok
+test deps::reftable::basics::comparisons_match_c ... ok
+test src::libgit2::config::iterator_entries::public_constructor_failures_and_empty_configs_match_c ... ok
+test src::libgit2::config::file_access::search_and_path_results_match_c ... ok
+test src::libgit2::config::sys::custom_backends::custom_backend_failures_match_a_c_backend ... ok
+test src::libgit2::config::enumeration::enumeration_empty_configs_match_c ... ok
+test src::libgit2::config::iterator_entries::public_entries_sequences_match_c ... ok
+test src::libgit2::config::file_access::missing_level_views_match_c ... ok
+test src::libgit2::config::sys::custom_backends::layered_misses_leave_errors_like_a_c_backend ... ok
+test src::libgit2::config::repository_configs_match ... ok
+test src::libgit2::config::mapping_callbacks::borrowed_callback_values_and_nonzero_codes_match_c ... ok
+test src::libgit2::config::sys::iterators::filtered_multivar_steps_match_c ... ok
+test src::libgit2::config::sys::backend_entries::backend_entry_layout_and_lifecycle_match_c ... ok
+test src::libgit2::config::sys::iterators::iterator_sequences_match_c ... ok
+test src::libgit2::config::entry_and_map_types::rust_map_tables_dispatch_like_c_tables ... ok
+test src::libgit2::config::mapping_callbacks::map_lookup_matches_c_after_each_table_edit ... ok
+test src::libgit2::config::sys::backend_entries::backend_entries_across_levels_match_c ... ok
+test src::libgit2::config::writes_and_snapshots::partial_snapshot_failure_matches_c_and_releases_partial_owner ... ok
+test src::libgit2::config::sys::custom_backends::custom_backend_sequences_match_a_c_backend ... ok
+test src::libgit2::config::entry_and_map_types::entry_selection_sequences_match_c ... ok
+test src::libgit2::config::parsers::parse_i64_sequences_match_c ... ok
+test src::libgit2::config::iterator_entries::public_entries_across_levels_interleaved_match_c ... ok
+test src::libgit2::config::entry_and_map_types::entries_match_c_acquisition_fields_errors_and_release ... ok
+test src::libgit2::config::enumeration::enumeration_refresh_errors_and_recovery_match_c ... ok
+test src::libgit2::config::writes_and_snapshots::multivar_and_file_lock_error_sequences_match_c ... ok
+test src::libgit2::config::parsers::parse_sequences_match_c ... ok
+test src::libgit2::config::new_configs_match ... ok
+test src::libgit2::config::mapping_callbacks::spent_backend_failures_keep_any_previous_error ... ok
+test src::libgit2::config::shared_configs_match ... ok
+test src::libgit2::config::mapping_callbacks::mapped_config_matches_c_across_writes_snapshots_and_errors ... ok
+test src::libgit2::config::file_access::snapshot_strings_and_readonly_mutations_match_c ... ok
+test src::libgit2::config::file_access::file_sequences_match_c ... ok
+test src::libgit2::config::file_access::isolated_search_and_default_failures_match_c ... ok
+test src::libgit2::config::writes_and_snapshots::multi_call_writes_order_and_snapshot_match_c ... ok
+test src::libgit2::config::enumeration::enumeration_invalid_value_filters_match_c ... ok
+test src::libgit2::config::enumeration::enumeration_sequences_match_c_callbacks_errors_and_priority ... ok
+test src::libgit2::config::sys::iterators::multivar_regex_errors_match_c ... ok
+test src::libgit2::config::enumeration::enumeration_value_filters_match_c ... ok
+
+test result: ok. 59 passed; 0 failed; 0 ignored; 0 measured; 467 filtered out; finished in 0.73s
+
+     Running tests/ub_safe/main.rs (/target/libgit2-crustify/crustify/.worktrees/fixes/ffibox-audit/crustify/tmp/target/tsan/x86_64-unknown-linux-gnu/debug/build/libgit2/80a2c058745cc54c/out/ub_safe-80a2c058745cc54c)
+
+running 84 tests
+test deps::reftable::basics::binsearch_is_reentered_from_its_own_predicate ... ok
+test deps::reftable::basics::buf_handles_reborrow_without_aliasing ... ok
+test deps::reftable::basics::buf_init_reads_as_empty_and_moves ... ok
+test deps::reftable::basics::binsearch_panic_leaves_nothing_behind ... ok
+test deps::reftable::basics::buf_values_move_and_stay_empty ... ok
+test deps::reftable::basics::bytes_outlive_the_handle_they_were_read_through ... ok
+test deps::reftable::basics::free_and_null_releases_each_owner_once ... ok
+test deps::reftable::basics::hash_id_from_raw_yields_only_valid_ids ... ok
+test deps::reftable::basics::hash_id_round_trips_through_its_c_value ... ok
+test deps::reftable::basics::name_handles_copy_and_outlive_the_scope_that_made_them ... ok
+test deps::reftable::basics::name_handles_iterate_without_calling_c ... ok
+test deps::reftable::basics::name_lists_of_every_relative_length_are_read_up_to_their_terminators ... ok
+test deps::reftable::basics::zeroed_buf_reads_as_empty_through_every_handle ... ok
+test src::libgit2::config::entry_and_map_types::maps_preserve_borrows_across_clone_and_mutable_reborrows ... ok
+test src::libgit2::config::config_level_values_and_threads ... ok
+test src::libgit2::config::entry_and_map_types::maps_cross_threads ... ok
+test src::libgit2::config::mapping_modes_are_checked ... ok
+test src::libgit2::config::sys::memory_options_reborrow_and_replace ... ok
+test src::libgit2::config::sys::memory_options_cross_threads ... ok
+warning: `package.homepage` is redundant with `package.repository`
+  --> /opt/venv/share/ffibox/Cargo.toml:11:12
+   |
+ 9 | repository = "https://github.com/crustify-rs/ffibox"
+   |              ---------------------------------------
+10 | documentation = "https://docs.rs/ffibox"
+11 | homepage = "https://github.com/crustify-rs/ffibox"
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `ffibox` (manifest) generated 1 warning
+   Compiling libc-sys v0.1.0 (/target/glibc-bindings/libc-sys)
+   Compiling libgit2-sys v0.1.0 (/target/libgit2-crustify/crustify/.worktrees/fixes/ffibox-audit/crustify/tmp/base/libgit2-sys)
+test deps::reftable::basics::detached_and_reset_buffers_release_nothing_twice ... ok
+test deps::reftable::basics::comparisons_borrow_without_aliasing_writers ... ok
+test src::libgit2::config::mapping_callbacks::mapping_tables_can_be_read_on_scoped_threads ... ok
+test deps::reftable::basics::allocation_macro_forms_release_what_they_allocate_once ... ok
+test deps::reftable::basics::parsed_names_lend_their_array_while_borrowed ... ok
+test deps::reftable::basics::names_are_read_while_the_array_lives ... ok
+test src::libgit2::config::mapping_callbacks::mapping_borrows_tables_and_returns_owned_results ... ok
+test src::libgit2::config::writes_and_snapshots::readonly_delete_errors_are_owned ... ok
+test deps::reftable::basics::reftable_owners_resize_clone_and_drop ... ok
+test src::libgit2::config::parsers::results_outlive_inputs_and_later_calls ... ok
+test src::libgit2::config::iterator_entries::public_entries_independent_threads_and_empty ... ok
+test src::libgit2::config::sys::iterators::iterator_empty_and_failed_construction ... ok
+test src::libgit2::config::sys::custom_backends::reentry_through_a_kept_config_is_refused ... ok
+test src::libgit2::config::sys::custom_backends::backend_handles_dispatch_to_the_store ... ok
+test src::libgit2::config::sys::custom_backends::snapshots_that_fail_to_open_are_released ... ok
+test src::libgit2::config::file_access::default_search_and_path_buffers ... ok
+test deps::reftable::basics::grown_runs_hold_each_owner_once_whatever_the_fill_does ... ok
+test src::libgit2::config::sys::custom_backends::registration_failures_release_the_store ... ok
+test src::libgit2::config::sys::custom_backends::readonly_and_layered_backends ... ok
+test deps::reftable::basics::owned_buffers_grow_move_and_release_once ... ok
+test src::libgit2::config::sys::custom_backends::failing_walks_end_and_lookups_terminate ... ok
+test src::libgit2::config::enumeration::enumeration_nested_shared_and_mutable_reborrows ... ok
+test src::libgit2::config::iterator_entries::public_entries_reborrow_and_release ... ok
+test src::libgit2::config::entry_and_map_types::rewritten_unparsable_file_fails_lookup_cleanly ... ok
+test src::libgit2::config::sys::custom_backends::readonly_lookups_outlive_their_entries_config_and_snapshot ... ok
+test src::libgit2::config::mapping_callbacks::mapped_refresh_errors_do_not_reach_uninitialized_entry ... ok
+test src::libgit2::config::sys::iterators::iterator_foreign_refresh_error_and_retry ... ok
+test src::libgit2::config::mapping_callbacks::callback_parent_drop_nested_calls_and_panic_reuse ... ok
+test src::libgit2::config::iterator_entries::public_entries_refresh_error_and_retry ... ok
+test src::libgit2::config::sys::custom_backends::custom_backend_serves_every_config_routine ... ok
+test src::libgit2::config::sys::iterators::iterator_regex_valueless_and_non_utf8 ... ok
+test src::libgit2::config::sys::iterators::filtered_iterator_release_points ... ok
+test src::libgit2::config::enumeration::enumeration_independent_configs_walk_on_threads ... ok
+test src::libgit2::config::sys::backend_entries::backend_entry_retained_storage_and_release ... ok
+test src::libgit2::config::enumeration::enumeration_value_filter_skips_valueless_and_cleans_up ... ok
+test src::libgit2::config::enumeration::enumeration_stops_reuse_null_empty_and_non_utf8 ... ok
+test src::libgit2::config::enumeration::enumeration_panics_cleanup_then_reuse_all_variants ... ok
+test src::libgit2::config::sys::backend_entries::backend_entry_debug_reads_retained_storage ... ok
+test src::libgit2::config::sys::iterators::iterator_lifecycle_reborrow_and_callbacks ... ok
+test src::libgit2::config::file_access::file_constructor_error_cleanup ... ok
+test deps::reftable::basics::name_lists_move_to_and_are_read_by_other_threads ... ok
+test deps::reftable::basics::strings_and_runs_are_released_on_other_threads ... ok
+test src::libgit2::config::sys::custom_backends::threads_drive_their_own_backends ... ok
+test src::libgit2::config::mapping_callbacks::mapped_lower_backend_failure_preserves_the_previous_error ... ok
+test deps::reftable::basics::buffers_grow_read_and_release_on_other_threads ... ok
+test src::libgit2::config::configs_build_use_and_release ... ok
+test src::libgit2::config::repository_config_reparses_against_its_live_repository ... ok
+test src::libgit2::config::entry_and_map_types::entries_outlive_snapshots_views_and_writes ... ok
+test src::libgit2::config::enumeration::enumeration_errors_and_empty_walks_keep_callback_usable ... ok
+test src::libgit2::config::entry_and_map_types::entries_retain_storage_across_parent_drop_and_refresh ... ok
+test src::libgit2::config::shared_configs_release_each_reference_once ... ok
+test src::libgit2::config::writes_and_snapshots::independent_writes_and_snapshots_on_threads ... ok
+test src::libgit2::config::writes_and_snapshots::multivar_and_locked_file_failures_leave_owned_errors ... ok
+test src::libgit2::config::file_access::independent_file_owners_on_threads ... ok
+test src::libgit2::config::parsers::nullable_and_boundary_inputs ... ok
+test src::libgit2::config::enumeration::enumeration_repository_level_and_snapshot_configs ... ok
+test src::libgit2::config::writes_and_snapshots::string_inputs_and_order_slices_are_not_retained ... ok
+test src::libgit2::config::writes_and_snapshots::snapshot_copies_survive_source_and_repository_drop ... ok
+test src::libgit2::config::file_access::search_locations_in_isolated_environment ... ok
+test src::libgit2::config::iterator_entries::public_entries_interleaved_views_snapshots_and_reparse ... ok
+test src::libgit2::config::file_access::global_views_and_repository_keepalive ... ok
+test src::libgit2::config::file_access::file_api_sequences ... ok
+test src::libgit2::config::parsers::first_parser_errors_race_to_init ... ok
+test src::libgit2::config::first_configs_race_to_init ... ok
+    Checking glibc-bindings v0.1.0 (/target/glibc-bindings)
+   Compiling libgit2 v0.1.0 (/target/libgit2-crustify/crustify/.worktrees/fixes/ffibox-audit/crustify/tmp/base)
+    Checking libgit2-tests v0.0.0 (/target/libgit2-crustify/crustify/.worktrees/fixes/ffibox-audit/crustify/tmp/target/tsan/tests/trybuild/libgit2)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 13.24s
+
+
+test compile_fail has been running for over 60 seconds
+test [0m[1mtests/ub_safe/compile_fail/allocator_aliased_handles.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/allocator_handle_outlives_value.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/blob_as_object_outlives_arc.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/blob_clone_outlives_repository.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/blob_filter_flag_from_int_cast.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/blob_from_object_outlives_object.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/branch_type_from_int_cast.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/buf_aliased_handles.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/buf_bytes_outlive_owner.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/buf_set_bytes_while_borrowed.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/buf_take_while_borrowed.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/checkout_notification_outlives_call.rs[0m ... [0m[1m[31mmismatch
+[0m
+[0m[1m[34mEXPECTED:
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[34merror[E0521]: borrowed data escapes outside of function
+[0m[34m  --> tests/ub_safe/compile_fail/checkout_notification_outlives_call.rs:13:24
+[0m[34m   |
+[0m[34m 8 | fn keep<'k>(kept: &mut Option<CheckoutNotification<'k>>) {
+[0m[34m   |         --  ---- `kept` is a reference that is only valid in the function body
+[0m[34m   |         |
+[0m[34m   |         lifetime `'k` defined here
+[0m[34m...
+[0m[34m13 |     let mut callback = NotifyCallback::new(&mut f);
+[0m[34m   |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[0m[34m   |                        |
+[0m[34m   |                        `kept` escapes the function body here
+[0m[34m   |                        argument requires that `'k` must outlive `'static`
+[0m[34m   |
+[0m[34m   = note: requirement occurs because of a mutable reference to `{closure@$DIR/tests/ub_safe/compile_fail/checkout_notification_outlives_call.rs:9:17: 9:46}`
+[0m[34m   = note: mutable references are invariant over their type parameter
+[0m[34m   = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance
+[0m[34m
+[0m[34merror: implementation of `FnMut` is not general enough
+[0m[34m  --> tests/ub_safe/compile_fail/checkout_notification_outlives_call.rs:13:24
+[0m[34m   |
+[0m[34m13 |     let mut callback = NotifyCallback::new(&mut f);
+[0m[34m   |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation of `FnMut` is not general enough
+[0m[34m   |
+[0m[34m   = note: closure with signature `fn(CheckoutNotification<'2>) -> ControlFlow<()>` must implement `FnMut<(CheckoutNotification<'1>,)>`, for any lifetime `'1`...
+[0m[34m   = note: ...but it actually implements `FnMut<(CheckoutNotification<'2>,)>`, for some specific lifetime `'2`
+[0m[34m
+[0m[34merror: implementation of `FnOnce` is not general enough
+[0m[34m  --> tests/ub_safe/compile_fail/checkout_notification_outlives_call.rs:13:24
+[0m[34m   |
+[0m[34m13 |     let mut callback = NotifyCallback::new(&mut f);
+[0m[34m   |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation of `FnOnce` is not general enough
+[0m[34m   |
+[0m[34m   = note: closure with signature `fn(CheckoutNotification<'2>) -> ControlFlow<()>` must implement `FnOnce<(CheckoutNotification<'1>,)>`, for any lifetime `'1`...
+[0m[34m   = note: ...but it actually implements `FnOnce<(CheckoutNotification<'2>,)>`, for some specific lifetime `'2`
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m
+[0m[1m[31mACTUAL OUTPUT:
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[31merror[E0277]: expected an `FnMut(CheckoutNotification<'_>)` closure, found `{closure@$DIR/tests/ub_safe/compile_fail/checkout_notification_outlives_call.rs:9:17: 9:46}`
+[0m[31m  --> tests/ub_safe/compile_fail/checkout_notification_outlives_call.rs:13:44
+[0m[31m   |
+[0m[31m13 |     let mut callback = NotifyCallback::new(&mut f);
+[0m[31m   |                        ------------------- ^^^^^^ expected an `FnMut(CheckoutNotification<'_>)` closure, found `{closure@$DIR/tests/ub_safe/compile_fail/checkout_notification_outlives_call.rs:9:17: 9:46}`
+[0m[31m   |                        |
+[0m[31m   |                        required by a bound introduced by this call
+[0m[31m   |
+[0m[31m   = help: the trait `for<'a> FnMut(CheckoutNotification<'a>)` is not implemented for closure `{closure@$DIR/tests/ub_safe/compile_fail/checkout_notification_outlives_call.rs:9:17: 9:46}`
+[0m[31m   = note: expected a closure with signature `for<'a> fn(CheckoutNotification<'a>)`
+[0m[31m              found a closure with signature `fn(CheckoutNotification<'k>)`
+[0m[31mnote: required by a bound in `NotifyCallback::<'f>::new`
+[0m[31m  --> src/libgit2/src/libgit2/checkout.rs
+[0m[31m   |
+[0m[31m   | impl<'f> NotifyCallback<'f> {
+[0m[31m   |     /// The callback that calls `f` with each notification, until it breaks.
+[0m[31m   |     pub fn new<F>(f: &'f mut F) -> Self
+[0m[31m   |     where
+[0m[31m   |         F: FnMut(CheckoutNotification<'_>) -> ControlFlow<()> + 'f,
+[0m[31m   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `NotifyCallback::<'f>::new`
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0mnote: If the [0m[31mactual output[0m is the correct output you can bless it by rerunning
+      your test with the environment variable TRYBUILD=overwrite
+
+test [0m[1mtests/ub_safe/compile_fail/checkout_notify_callback_borrows_closure.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/checkout_notify_callback_not_send.rs[0m ... [0m[1m[31mmismatch
+[0m
+[0m[1m[34mEXPECTED:
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[34merror[E0277]: `dyn for<'a> FnMut(CheckoutNotification<'a>) -> ControlFlow<()>` cannot be sent between threads safely
+[0m[34m  --> tests/ub_safe/compile_fail/checkout_notify_callback_not_send.rs:12:17
+[0m[34m   |
+[0m[34m12 |         s.spawn(move || drop(callback));
+[0m[34m   |           ----- -------^^^^^^^^^^^^^^^
+[0m[34m   |           |     |
+[0m[34m   |           |     `dyn for<'a> FnMut(CheckoutNotification<'a>) -> ControlFlow<()>` cannot be sent between threads safely
+[0m[34m   |           |     within this `{closure@$DIR/tests/ub_safe/compile_fail/checkout_notify_callback_not_send.rs:12:17: 12:24}`
+[0m[34m   |           required by a bound introduced by this call
+[0m[34m   |
+[0m[34m   = help: within `{closure@$DIR/tests/ub_safe/compile_fail/checkout_notify_callback_not_send.rs:12:17: 12:24}`, the trait `Send` is not implemented for `dyn for<'a> FnMut(CheckoutNotification<'a>) -> ControlFlow<()>`
+[0m[34m   = note: required because it appears within the type `&mut dyn for<'a> FnMut(CheckoutNotification<'a>) -> ControlFlow<()>`
+[0m[34mnote: required because it appears within the type `NotifyCallback<'_>`
+[0m[34m  --> src/libgit2/src/libgit2/checkout.rs
+[0m[34m   |
+[0m[34m   | pub struct NotifyCallback<'f> {
+[0m[34m   |            ^^^^^^^^^^^^^^
+[0m[34mnote: required because it's used within this closure
+[0m[34m  --> tests/ub_safe/compile_fail/checkout_notify_callback_not_send.rs:12:17
+[0m[34m   |
+[0m[34m12 |         s.spawn(move || drop(callback));
+[0m[34m   |                 ^^^^^^^
+[0m[34mnote: required by a bound in `Scope::<'scope, 'env>::spawn`
+[0m[34m  --> $RUST/std/src/thread/scoped.rs
+[0m[34m   |
+[0m[34m   |     pub fn spawn<F, T>(&'scope self, f: F) -> ScopedJoinHandle<'scope, T>
+[0m[34m   |            ----- required by a bound in this associated function
+[0m[34m   |     where
+[0m[34m   |         F: FnOnce() -> T + Send + 'scope,
+[0m[34m   |                            ^^^^ required by this bound in `Scope::<'scope, 'env>::spawn`
+[0m[34mhelp: use parentheses to call this trait object
+[0m[34m   |
+[0m[34m12 |         s.spawn((move || drop(callback))(/* CheckoutNotification<'_> */));
+[0m[34m   |                 +                      +++++++++++++++++++++++++++++++++
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m
+[0m[1m[31mACTUAL OUTPUT:
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[31merror[E0277]: `dyn for<'a> FnMut(CheckoutNotification<'a>) -> ControlFlow<()>` cannot be sent between threads safely
+[0m[31m  --> tests/ub_safe/compile_fail/checkout_notify_callback_not_send.rs:12:17
+[0m[31m   |
+[0m[31m12 |         s.spawn(move || drop(callback));
+[0m[31m   |           ----- -------^^^^^^^^^^^^^^^
+[0m[31m   |           |     |
+[0m[31m   |           |     `dyn for<'a> FnMut(CheckoutNotification<'a>) -> ControlFlow<()>` cannot be sent between threads safely
+[0m[31m   |           |     within this `{closure@$DIR/tests/ub_safe/compile_fail/checkout_notify_callback_not_send.rs:12:17: 12:24}`
+[0m[31m   |           required by a bound introduced by this call
+[0m[31m   |
+[0m[31m   = help: within `{closure@$DIR/tests/ub_safe/compile_fail/checkout_notify_callback_not_send.rs:12:17: 12:24}`, the trait `Send` is not implemented for `dyn for<'a> FnMut(CheckoutNotification<'a>) -> ControlFlow<()>`
+[0m[31m   = note: required because it appears within the type `&mut dyn for<'a> FnMut(CheckoutNotification<'a>) -> ControlFlow<()>`
+[0m[31mnote: required because it appears within the type `NotifyCallback<'_>`
+[0m[31m  --> src/libgit2/src/libgit2/checkout.rs
+[0m[31m   |
+[0m[31m   | pub struct NotifyCallback<'f> {
+[0m[31m   |            ^^^^^^^^^^^^^^
+[0m[31mnote: required because `callback` is used within this closure
+[0m[31m  --> tests/ub_safe/compile_fail/checkout_notify_callback_not_send.rs:12:30
+[0m[31m   |
+[0m[31m12 |         s.spawn(move || drop(callback));
+[0m[31m   |                              ^^^^^^^^
+[0m[31mnote: required by a bound in `Scope::<'scope, 'env>::spawn`
+[0m[31m  --> $RUST/std/src/thread/scoped.rs
+[0m[31m   |
+[0m[31m   | impl<'scope, 'env> Scope<'scope, 'env> {
+[0m[31m...
+[0m[31m   |     pub fn spawn<F, T>(&'scope self, f: F) -> ScopedJoinHandle<'scope, T>
+[0m[31m   |     where
+[0m[31m   |         F: FnOnce() -> T + Send + 'scope,
+[0m[31m   |                            ^^^^ required by this bound in `Scope::<'scope, 'env>::spawn`
+[0m[31mhelp: use parentheses to call this trait object
+[0m[31m   |
+[0m[31m12 |         s.spawn((move || drop(callback))(/* CheckoutNotification<'_> */));
+[0m[31m   |                 +                      +++++++++++++++++++++++++++++++++
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0mnote: If the [0m[31mactual output[0m is the correct output you can bless it by rerunning
+      your test with the environment variable TRYBUILD=overwrite
+
+test [0m[1mtests/ub_safe/compile_fail/checkout_options_aliased_handles.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/checkout_options_baseline_index_mutated_while_borrowed.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/checkout_options_baseline_index_outlives_owner.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/checkout_options_baseline_outlives_tree.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/checkout_options_callback_dropped_while_stored.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/checkout_options_callback_stored_twice.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/checkout_options_callback_used_while_stored.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/checkout_options_label_outlives_string.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/checkout_options_owned_paths_changed_while_borrowed.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/checkout_options_paths_held_across_set.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/checkout_options_paths_outlive_view.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/checkout_options_raw_seams_require_unsafe.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/checkout_perfdata_aliased_handles.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/checkout_perfdata_callback_not_send.rs[0m ... [0m[1m[31mmismatch
+[0m
+[0m[1m[34mEXPECTED:
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[34merror[E0277]: `dyn for<'a> FnMut(CheckoutPerfdataRef<'a>)` cannot be sent between threads safely
+[0m[34m  --> tests/ub_safe/compile_fail/checkout_perfdata_callback_not_send.rs:11:17
+[0m[34m   |
+[0m[34m11 |         s.spawn(move || drop(callback));
+[0m[34m   |           ----- -------^^^^^^^^^^^^^^^
+[0m[34m   |           |     |
+[0m[34m   |           |     `dyn for<'a> FnMut(CheckoutPerfdataRef<'a>)` cannot be sent between threads safely
+[0m[34m   |           |     within this `{closure@$DIR/tests/ub_safe/compile_fail/checkout_perfdata_callback_not_send.rs:11:17: 11:24}`
+[0m[34m   |           required by a bound introduced by this call
+[0m[34m   |
+[0m[34m   = help: within `{closure@$DIR/tests/ub_safe/compile_fail/checkout_perfdata_callback_not_send.rs:11:17: 11:24}`, the trait `Send` is not implemented for `dyn for<'a> FnMut(CheckoutPerfdataRef<'a>)`
+[0m[34m   = note: required because it appears within the type `&mut dyn for<'a> FnMut(CheckoutPerfdataRef<'a>)`
+[0m[34mnote: required because it appears within the type `PerfdataCallback<'_>`
+[0m[34m  --> src/libgit2/src/libgit2/checkout.rs
+[0m[34m   |
+[0m[34m   | pub struct PerfdataCallback<'f> {
+[0m[34m   |            ^^^^^^^^^^^^^^^^
+[0m[34mnote: required because it's used within this closure
+[0m[34m  --> tests/ub_safe/compile_fail/checkout_perfdata_callback_not_send.rs:11:17
+[0m[34m   |
+[0m[34m11 |         s.spawn(move || drop(callback));
+[0m[34m   |                 ^^^^^^^
+[0m[34mnote: required by a bound in `Scope::<'scope, 'env>::spawn`
+[0m[34m  --> $RUST/std/src/thread/scoped.rs
+[0m[34m   |
+[0m[34m   |     pub fn spawn<F, T>(&'scope self, f: F) -> ScopedJoinHandle<'scope, T>
+[0m[34m   |            ----- required by a bound in this associated function
+[0m[34m   |     where
+[0m[34m   |         F: FnOnce() -> T + Send + 'scope,
+[0m[34m   |                            ^^^^ required by this bound in `Scope::<'scope, 'env>::spawn`
+[0m[34mhelp: use parentheses to call this trait object
+[0m[34m   |
+[0m[34m11 |         s.spawn((move || drop(callback))(/* CheckoutPerfdataRef<'_> */));
+[0m[34m   |                 +                      ++++++++++++++++++++++++++++++++
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m
+[0m[1m[31mACTUAL OUTPUT:
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[31merror[E0277]: `dyn for<'a> FnMut(CheckoutPerfdataRef<'a>)` cannot be sent between threads safely
+[0m[31m  --> tests/ub_safe/compile_fail/checkout_perfdata_callback_not_send.rs:11:17
+[0m[31m   |
+[0m[31m11 |         s.spawn(move || drop(callback));
+[0m[31m   |           ----- -------^^^^^^^^^^^^^^^
+[0m[31m   |           |     |
+[0m[31m   |           |     `dyn for<'a> FnMut(CheckoutPerfdataRef<'a>)` cannot be sent between threads safely
+[0m[31m   |           |     within this `{closure@$DIR/tests/ub_safe/compile_fail/checkout_perfdata_callback_not_send.rs:11:17: 11:24}`
+[0m[31m   |           required by a bound introduced by this call
+[0m[31m   |
+[0m[31m   = help: within `{closure@$DIR/tests/ub_safe/compile_fail/checkout_perfdata_callback_not_send.rs:11:17: 11:24}`, the trait `Send` is not implemented for `dyn for<'a> FnMut(CheckoutPerfdataRef<'a>)`
+[0m[31m   = note: required because it appears within the type `&mut dyn for<'a> FnMut(CheckoutPerfdataRef<'a>)`
+[0m[31mnote: required because it appears within the type `PerfdataCallback<'_>`
+[0m[31m  --> src/libgit2/src/libgit2/checkout.rs
+[0m[31m   |
+[0m[31m   | pub struct PerfdataCallback<'f> {
+[0m[31m   |            ^^^^^^^^^^^^^^^^
+[0m[31mnote: required because `callback` is used within this closure
+[0m[31m  --> tests/ub_safe/compile_fail/checkout_perfdata_callback_not_send.rs:11:30
+[0m[31m   |
+[0m[31m11 |         s.spawn(move || drop(callback));
+[0m[31m   |                              ^^^^^^^^
+[0m[31mnote: required by a bound in `Scope::<'scope, 'env>::spawn`
+[0m[31m  --> $RUST/std/src/thread/scoped.rs
+[0m[31m   |
+[0m[31m   | impl<'scope, 'env> Scope<'scope, 'env> {
+[0m[31m...
+[0m[31m   |     pub fn spawn<F, T>(&'scope self, f: F) -> ScopedJoinHandle<'scope, T>
+[0m[31m   |     where
+[0m[31m   |         F: FnOnce() -> T + Send + 'scope,
+[0m[31m   |                            ^^^^ required by this bound in `Scope::<'scope, 'env>::spawn`
+[0m[31mhelp: use parentheses to call this trait object
+[0m[31m   |
+[0m[31m11 |         s.spawn((move || drop(callback))(/* CheckoutPerfdataRef<'_> */));
+[0m[31m   |                 +                      ++++++++++++++++++++++++++++++++
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0mnote: If the [0m[31mactual output[0m is the correct output you can bless it by rerunning
+      your test with the environment variable TRYBUILD=overwrite
+
+test [0m[1mtests/ub_safe/compile_fail/checkout_perfdata_outlives_call.rs[0m ... [0m[1m[31mmismatch
+[0m
+[0m[1m[34mEXPECTED:
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[34merror[E0521]: borrowed data escapes outside of function
+[0m[34m --> tests/ub_safe/compile_fail/checkout_perfdata_outlives_call.rs:9:24
+[0m[34m  |
+[0m[34m7 | fn keep<'k>(kept: &mut Option<CheckoutPerfdataRef<'k>>) {
+[0m[34m  |         --  ---- `kept` is a reference that is only valid in the function body
+[0m[34m  |         |
+[0m[34m  |         lifetime `'k` defined here
+[0m[34m8 |     let mut f = |d: CheckoutPerfdataRef<'k>| *kept = Some(d);
+[0m[34m9 |     let mut callback = PerfdataCallback::new(&mut f);
+[0m[34m  |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[0m[34m  |                        |
+[0m[34m  |                        `kept` escapes the function body here
+[0m[34m  |                        argument requires that `'k` must outlive `'static`
+[0m[34m  |
+[0m[34m  = note: requirement occurs because of a mutable reference to `{closure@$DIR/tests/ub_safe/compile_fail/checkout_perfdata_outlives_call.rs:8:17: 8:45}`
+[0m[34m  = note: mutable references are invariant over their type parameter
+[0m[34m  = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance
+[0m[34m
+[0m[34merror: implementation of `FnMut` is not general enough
+[0m[34m --> tests/ub_safe/compile_fail/checkout_perfdata_outlives_call.rs:9:24
+[0m[34m  |
+[0m[34m9 |     let mut callback = PerfdataCallback::new(&mut f);
+[0m[34m  |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation of `FnMut` is not general enough
+[0m[34m  |
+[0m[34m  = note: closure with signature `fn(CheckoutPerfdataRef<'2>)` must implement `FnMut<(CheckoutPerfdataRef<'1>,)>`, for any lifetime `'1`...
+[0m[34m  = note: ...but it actually implements `FnMut<(CheckoutPerfdataRef<'2>,)>`, for some specific lifetime `'2`
+[0m[34m
+[0m[34merror: implementation of `FnOnce` is not general enough
+[0m[34m --> tests/ub_safe/compile_fail/checkout_perfdata_outlives_call.rs:9:24
+[0m[34m  |
+[0m[34m9 |     let mut callback = PerfdataCallback::new(&mut f);
+[0m[34m  |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation of `FnOnce` is not general enough
+[0m[34m  |
+[0m[34m  = note: closure with signature `fn(CheckoutPerfdataRef<'2>)` must implement `FnOnce<(CheckoutPerfdataRef<'1>,)>`, for any lifetime `'1`...
+[0m[34m  = note: ...but it actually implements `FnOnce<(CheckoutPerfdataRef<'2>,)>`, for some specific lifetime `'2`
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m
+[0m[1m[31mACTUAL OUTPUT:
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[31merror[E0277]: expected an `FnMut(CheckoutPerfdataRef<'_>)` closure, found `{closure@$DIR/tests/ub_safe/compile_fail/checkout_perfdata_outlives_call.rs:8:17: 8:45}`
+[0m[31m --> tests/ub_safe/compile_fail/checkout_perfdata_outlives_call.rs:9:46
+[0m[31m  |
+[0m[31m9 |     let mut callback = PerfdataCallback::new(&mut f);
+[0m[31m  |                        --------------------- ^^^^^^ expected an `FnMut(CheckoutPerfdataRef<'_>)` closure, found `{closure@$DIR/tests/ub_safe/compile_fail/checkout_perfdata_outlives_call.rs:8:17: 8:45}`
+[0m[31m  |                        |
+[0m[31m  |                        required by a bound introduced by this call
+[0m[31m  |
+[0m[31m  = help: the trait `for<'a> FnMut(CheckoutPerfdataRef<'a>)` is not implemented for closure `{closure@$DIR/tests/ub_safe/compile_fail/checkout_perfdata_outlives_call.rs:8:17: 8:45}`
+[0m[31m  = note: expected a closure with signature `for<'a> fn(CheckoutPerfdataRef<'a>)`
+[0m[31m             found a closure with signature `fn(CheckoutPerfdataRef<'k>)`
+[0m[31mnote: required by a bound in `PerfdataCallback::<'f>::new`
+[0m[31m --> src/libgit2/src/libgit2/checkout.rs
+[0m[31m  |
+[0m[31m  | impl<'f> PerfdataCallback<'f> {
+[0m[31m  |     /// The callback that calls `f` with each checkout's counters.
+[0m[31m  |     pub fn new<F>(f: &'f mut F) -> Self
+[0m[31m  |     where
+[0m[31m  |         F: FnMut(CheckoutPerfdataRef<'_>) + 'f,
+[0m[31m  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `PerfdataCallback::<'f>::new`
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0mnote: If the [0m[31mactual output[0m is the correct output you can bless it by rerunning
+      your test with the environment variable TRYBUILD=overwrite
+
+test [0m[1mtests/ub_safe/compile_fail/checkout_perfdata_ref_outlives_value.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/checkout_progress_callback_borrows_closure.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/checkout_progress_callback_not_send.rs[0m ... [0m[1m[31mmismatch
+[0m
+[0m[1m[34mEXPECTED:
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[34merror[E0277]: `dyn for<'a> FnMut(Option<&'a CStr>, usize, usize)` cannot be sent between threads safely
+[0m[34m  --> tests/ub_safe/compile_fail/checkout_progress_callback_not_send.rs:12:17
+[0m[34m   |
+[0m[34m12 |         s.spawn(move || drop(callback));
+[0m[34m   |           ----- -------^^^^^^^^^^^^^^^
+[0m[34m   |           |     |
+[0m[34m   |           |     `dyn for<'a> FnMut(Option<&'a CStr>, usize, usize)` cannot be sent between threads safely
+[0m[34m   |           |     within this `{closure@$DIR/tests/ub_safe/compile_fail/checkout_progress_callback_not_send.rs:12:17: 12:24}`
+[0m[34m   |           required by a bound introduced by this call
+[0m[34m   |
+[0m[34m   = help: within `{closure@$DIR/tests/ub_safe/compile_fail/checkout_progress_callback_not_send.rs:12:17: 12:24}`, the trait `Send` is not implemented for `dyn for<'a> FnMut(Option<&'a CStr>, usize, usize)`
+[0m[34m   = note: required because it appears within the type `&mut dyn for<'a> FnMut(Option<&'a CStr>, usize, usize)`
+[0m[34mnote: required because it appears within the type `libgit2::libgit2::src::libgit2::checkout::ProgressCallback<'_>`
+[0m[34m  --> src/libgit2/src/libgit2/checkout.rs
+[0m[34m   |
+[0m[34m   | pub struct ProgressCallback<'f> {
+[0m[34m   |            ^^^^^^^^^^^^^^^^
+[0m[34mnote: required because it's used within this closure
+[0m[34m  --> tests/ub_safe/compile_fail/checkout_progress_callback_not_send.rs:12:17
+[0m[34m   |
+[0m[34m12 |         s.spawn(move || drop(callback));
+[0m[34m   |                 ^^^^^^^
+[0m[34mnote: required by a bound in `Scope::<'scope, 'env>::spawn`
+[0m[34m  --> $RUST/std/src/thread/scoped.rs
+[0m[34m   |
+[0m[34m   |     pub fn spawn<F, T>(&'scope self, f: F) -> ScopedJoinHandle<'scope, T>
+[0m[34m   |            ----- required by a bound in this associated function
+[0m[34m   |     where
+[0m[34m   |         F: FnOnce() -> T + Send + 'scope,
+[0m[34m   |                            ^^^^ required by this bound in `Scope::<'scope, 'env>::spawn`
+[0m[34mhelp: use parentheses to call this trait object
+[0m[34m   |
+[0m[34m12 |         s.spawn((move || drop(callback))(/* Option<&CStr> */, /* usize */, /* usize */));
+[0m[34m   |                 +                      ++++++++++++++++++++++++++++++++++++++++++++++++
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m
+[0m[1m[31mACTUAL OUTPUT:
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[31merror[E0277]: `dyn for<'a> FnMut(Option<&'a CStr>, usize, usize)` cannot be sent between threads safely
+[0m[31m  --> tests/ub_safe/compile_fail/checkout_progress_callback_not_send.rs:12:17
+[0m[31m   |
+[0m[31m12 |         s.spawn(move || drop(callback));
+[0m[31m   |           ----- -------^^^^^^^^^^^^^^^
+[0m[31m   |           |     |
+[0m[31m   |           |     `dyn for<'a> FnMut(Option<&'a CStr>, usize, usize)` cannot be sent between threads safely
+[0m[31m   |           |     within this `{closure@$DIR/tests/ub_safe/compile_fail/checkout_progress_callback_not_send.rs:12:17: 12:24}`
+[0m[31m   |           required by a bound introduced by this call
+[0m[31m   |
+[0m[31m   = help: within `{closure@$DIR/tests/ub_safe/compile_fail/checkout_progress_callback_not_send.rs:12:17: 12:24}`, the trait `Send` is not implemented for `dyn for<'a> FnMut(Option<&'a CStr>, usize, usize)`
+[0m[31m   = note: required because it appears within the type `&mut dyn for<'a> FnMut(Option<&'a CStr>, usize, usize)`
+[0m[31mnote: required because it appears within the type `libgit2::libgit2::src::libgit2::checkout::ProgressCallback<'_>`
+[0m[31m  --> src/libgit2/src/libgit2/checkout.rs
+[0m[31m   |
+[0m[31m   | pub struct ProgressCallback<'f> {
+[0m[31m   |            ^^^^^^^^^^^^^^^^
+[0m[31mnote: required because `callback` is used within this closure
+[0m[31m  --> tests/ub_safe/compile_fail/checkout_progress_callback_not_send.rs:12:30
+[0m[31m   |
+[0m[31m12 |         s.spawn(move || drop(callback));
+[0m[31m   |                              ^^^^^^^^
+[0m[31mnote: required by a bound in `Scope::<'scope, 'env>::spawn`
+[0m[31m  --> $RUST/std/src/thread/scoped.rs
+[0m[31m   |
+[0m[31m   | impl<'scope, 'env> Scope<'scope, 'env> {
+[0m[31m...
+[0m[31m   |     pub fn spawn<F, T>(&'scope self, f: F) -> ScopedJoinHandle<'scope, T>
+[0m[31m   |     where
+[0m[31m   |         F: FnOnce() -> T + Send + 'scope,
+[0m[31m   |                            ^^^^ required by this bound in `Scope::<'scope, 'env>::spawn`
+[0m[31mhelp: use parentheses to call this trait object
+[0m[31m   |
+[0m[31m12 |         s.spawn((move || drop(callback))(/* Option<&CStr> */, /* usize */, /* usize */));
+[0m[31m   |                 +                      ++++++++++++++++++++++++++++++++++++++++++++++++
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0mnote: If the [0m[31mactual output[0m is the correct output you can bless it by rerunning
+      your test with the environment variable TRYBUILD=overwrite
+
+test [0m[1mtests/ub_safe/compile_fail/checkout_progress_path_outlives_call.rs[0m ... [0m[1m[31mmismatch
+[0m
+[0m[1m[34mEXPECTED:
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[34merror[E0521]: borrowed data escapes outside of function
+[0m[34m --> tests/ub_safe/compile_fail/checkout_progress_path_outlives_call.rs:9:24
+[0m[34m  |
+[0m[34m7 | fn keep<'k>(kept: &mut Option<&'k CStr>) {
+[0m[34m  |         --  ---- `kept` is a reference that is only valid in the function body
+[0m[34m  |         |
+[0m[34m  |         lifetime `'k` defined here
+[0m[34m8 |     let mut f = |path: Option<&'k CStr>, _: usize, _: usize| *kept = path;
+[0m[34m9 |     let mut callback = ProgressCallback::new(&mut f);
+[0m[34m  |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[0m[34m  |                        |
+[0m[34m  |                        `kept` escapes the function body here
+[0m[34m  |                        argument requires that `'k` must outlive `'static`
+[0m[34m  |
+[0m[34m  = note: requirement occurs because of a mutable reference to `{closure@$DIR/tests/ub_safe/compile_fail/checkout_progress_path_outlives_call.rs:8:17: 8:61}`
+[0m[34m  = note: mutable references are invariant over their type parameter
+[0m[34m  = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance
+[0m[34m
+[0m[34merror: implementation of `FnMut` is not general enough
+[0m[34m --> tests/ub_safe/compile_fail/checkout_progress_path_outlives_call.rs:9:24
+[0m[34m  |
+[0m[34m9 |     let mut callback = ProgressCallback::new(&mut f);
+[0m[34m  |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation of `FnMut` is not general enough
+[0m[34m  |
+[0m[34m  = note: closure with signature `fn(Option<&'2 CStr>, usize, usize)` must implement `FnMut<(Option<&'1 CStr>, usize, usize)>`, for any lifetime `'1`...
+[0m[34m  = note: ...but it actually implements `FnMut<(Option<&'2 CStr>, usize, usize)>`, for some specific lifetime `'2`
+[0m[34m
+[0m[34merror: implementation of `FnOnce` is not general enough
+[0m[34m --> tests/ub_safe/compile_fail/checkout_progress_path_outlives_call.rs:9:24
+[0m[34m  |
+[0m[34m9 |     let mut callback = ProgressCallback::new(&mut f);
+[0m[34m  |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation of `FnOnce` is not general enough
+[0m[34m  |
+[0m[34m  = note: closure with signature `fn(Option<&'2 CStr>, usize, usize)` must implement `FnOnce<(Option<&'1 CStr>, usize, usize)>`, for any lifetime `'1`...
+[0m[34m  = note: ...but it actually implements `FnOnce<(Option<&'2 CStr>, usize, usize)>`, for some specific lifetime `'2`
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m
+[0m[1m[31mACTUAL OUTPUT:
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[31merror[E0277]: expected an `FnMut(Option<&CStr>, usize, usize)` closure, found `{closure@$DIR/tests/ub_safe/compile_fail/checkout_progress_path_outlives_call.rs:8:17: 8:61}`
+[0m[31m --> tests/ub_safe/compile_fail/checkout_progress_path_outlives_call.rs:9:46
+[0m[31m  |
+[0m[31m9 |     let mut callback = ProgressCallback::new(&mut f);
+[0m[31m  |                        --------------------- ^^^^^^ expected an `FnMut(Option<&CStr>, usize, usize)` closure, found `{closure@$DIR/tests/ub_safe/compile_fail/checkout_progress_path_outlives_call.rs:8:17: 8:61}`
+[0m[31m  |                        |
+[0m[31m  |                        required by a bound introduced by this call
+[0m[31m  |
+[0m[31m  = help: the trait `for<'a> FnMut(Option<&'a CStr>, usize, usize)` is not implemented for closure `{closure@$DIR/tests/ub_safe/compile_fail/checkout_progress_path_outlives_call.rs:8:17: 8:61}`
+[0m[31m  = note: expected a closure with signature `for<'a> fn(Option<&'a CStr>, usize, usize)`
+[0m[31m             found a closure with signature `fn(Option<&'k CStr>, usize, usize)`
+[0m[31mnote: required by a bound in `libgit2::libgit2::src::libgit2::checkout::ProgressCallback::<'f>::new`
+[0m[31m --> src/libgit2/src/libgit2/checkout.rs
+[0m[31m  |
+[0m[31m  | impl<'f> ProgressCallback<'f> {
+[0m[31m  |     /// The callback that calls `f` with each path and step count.
+[0m[31m  |     pub fn new<F>(f: &'f mut F) -> Self
+[0m[31m  |     where
+[0m[31m  |         F: FnMut(Option<&CStr>, usize, usize) + 'f,
+[0m[31m  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `ProgressCallback::<'f>::new`
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0mnote: If the [0m[31mactual output[0m is the correct output you can bless it by rerunning
+      your test with the environment variable TRYBUILD=overwrite
+
+test [0m[1mtests/ub_safe/compile_fail/commit_arc_no_mut_handle.rs[0m ... [0m[1m[31mmismatch
+[0m
+[0m[1m[34mEXPECTED:
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[34merror[E0599]: the method `as_mut` exists for mutable reference `&'a mut ffibox::shared::CArc<libgit2::libgit2::src::libgit2::commit::Commit<'static>, CommitFree>`, but its trait bounds were not satisfied
+[0m[34m --> tests/ub_safe/compile_fail/commit_arc_no_mut_handle.rs:6:12
+[0m[34m  |
+[0m[34m6 |     commit.as_mut()
+[0m[34m  |            ^^^^^^
+[0m[34m  |
+[0m[34m ::: $FFIBOX/src/shared.rs
+[0m[34m  |
+[0m[34m  | pub struct CArc<T, D: CDrop<T>> {
+[0m[34m  | ------------------------------- doesn't satisfy `_: AsMut<_>`
+[0m[34m  |
+[0m[34m  = note: the following trait bounds were not satisfied:
+[0m[34m          `ffibox::shared::CArc<libgit2::libgit2::src::libgit2::commit::Commit<'static>, CommitFree>: AsMut<_>`
+[0m[34m          which is required by `&'a mut ffibox::shared::CArc<libgit2::libgit2::src::libgit2::commit::Commit<'static>, CommitFree>: AsMut<_>`
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m
+[0m[1m[31mACTUAL OUTPUT:
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[31merror[E0599]: the method `as_mut` exists for mutable reference `&'a mut ffibox::shared::CArc<libgit2::libgit2::src::libgit2::commit::Commit<'static>, CommitFree>`, but its trait bounds were not satisfied
+[0m[31m   --> tests/ub_safe/compile_fail/commit_arc_no_mut_handle.rs:6:12
+[0m[31m    |
+[0m[31m  6 |     commit.as_mut()
+[0m[31m    |            ^^^^^^
+[0m[31m    |
+[0m[31m   ::: /opt/venv/share/ffibox/src/shared.rs:127:1
+[0m[31m    |
+[0m[31m127 | pub struct CArc<T, D: CDrop<T>> {
+[0m[31m    | ------------------------------- doesn't satisfy `_: AsMut<_>`
+[0m[31m    |
+[0m[31m    = note: the following trait bounds were not satisfied:
+[0m[31m            `ffibox::shared::CArc<libgit2::libgit2::src::libgit2::commit::Commit<'static>, CommitFree>: AsMut<_>`
+[0m[31m            which is required by `&'a mut ffibox::shared::CArc<libgit2::libgit2::src::libgit2::commit::Commit<'static>, CommitFree>: AsMut<_>`
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0mnote: If the [0m[31mactual output[0m is the correct output you can bless it by rerunning
+      your test with the environment variable TRYBUILD=overwrite
+
+test [0m[1mtests/ub_safe/compile_fail/commit_array_outlives_repository.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/commit_builder_handles.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/commit_handle_outlives_owner.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/commit_header_aliased_handles.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/commit_header_handle_outlives_value.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/commit_header_outlives_strings.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/commit_header_set_outlives_string.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/commit_on_head_options_shared_while_lent.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/commit_on_head_signer_reaches_its_options.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/commit_outlives_repository.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/common_enums_from_int_cast.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/common_option_setters_require_unsafe.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/config_arc_outlives_repository.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/config_file_repository_retained.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/config_level_parent_frozen.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/config_transaction_borrows_exclusively.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/config_transaction_cannot_relock.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/create_ext_options_aliased_handles.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/create_ext_options_borrows_outlive_owner.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/create_ext_options_signer_outlives_options.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/create_options_aliased_handles.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/create_options_borrows_outlive_owner.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/create_options_signer_outlives_options.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/diff_exclusive_reborrow.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/diff_file_outlives_parent.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/diff_outlives_repository.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/diff_parse_options_mut_aliased.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/diff_parse_options_no_raw_conversion.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/error_buf_message_outlives_copy.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/error_code_from_int_cast.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/file_mode_from_int_cast.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/filesystem_from_int_cast.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/filter_list_blocks_repository_mut.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/filter_list_outlives_repository.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/filter_options_commit_id_outlives_options.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/git_file_from_int_cast.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/global_runtime_not_clone.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/index_arc_has_no_exclusive_handle.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/index_find_needs_exclusive_handle.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/index_matched_path_callback_reaches_scanned_index.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/index_shared_owner_cannot_clear.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/indexer_progress_handle_outlives_value.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/indexer_progress_mut_aliased.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/indexer_progress_ref_has_no_setters.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/init_options_aliased_handles.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/init_options_oid_type_from_int.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/init_options_refdb_type_from_int.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/init_options_string_outlives_borrow.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/library_option_from_int_cast.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/mailmap_handle_outlives_box.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/mailmap_not_clone.rs[0m ... [0m[1m[31mmismatch
+[0m
+[0m[1m[34mEXPECTED:
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[34merror[E0599]: the method `clone` exists for struct `ffibox::refs::CBox<Mailmap, MailmapFree>`, but its trait bounds were not satisfied
+[0m[34m --> tests/ub_safe/compile_fail/mailmap_not_clone.rs:6:25
+[0m[34m  |
+[0m[34m6 |     let _copy = mailmap.clone();
+[0m[34m  |                         ^^^^^ method cannot be called on `ffibox::refs::CBox<Mailmap, MailmapFree>` due to unsatisfied trait bounds
+[0m[34m  |
+[0m[34m ::: src/libgit2/src/libgit2/mailmap.rs
+[0m[34m  |
+[0m[34m  | pub struct MailmapFree;
+[0m[34m  | ---------------------- doesn't satisfy `MailmapFree: ffibox::traits::CDupClone<Mailmap>`
+[0m[34m  |
+[0m[34m ::: $FFIBOX/src/refs.rs
+[0m[34m  |
+[0m[34m  | pub struct CBox<T, D: CDrop<T>> {
+[0m[34m  | ------------------------------- doesn't satisfy `ffibox::refs::CBox<Mailmap, MailmapFree>: Clone`
+[0m[34m  |
+[0m[34m  = note: the following trait bounds were not satisfied:
+[0m[34m          `MailmapFree: ffibox::traits::CDupClone<Mailmap>`
+[0m[34m          which is required by `ffibox::refs::CBox<Mailmap, MailmapFree>: Clone`
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m
+[0m[1m[31mACTUAL OUTPUT:
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[31merror[E0599]: the method `clone` exists for struct `ffibox::refs::CBox<Mailmap, MailmapFree>`, but its trait bounds were not satisfied
+[0m[31m   --> tests/ub_safe/compile_fail/mailmap_not_clone.rs:6:25
+[0m[31m    |
+[0m[31m  6 |     let _copy = mailmap.clone();
+[0m[31m    |                         ^^^^^ method cannot be called on `ffibox::refs::CBox<Mailmap, MailmapFree>` due to unsatisfied trait bounds
+[0m[31m    |
+[0m[31m   ::: src/libgit2/src/libgit2/mailmap.rs
+[0m[31m    |
+[0m[31m    | pub struct MailmapFree;
+[0m[31m    | ---------------------- doesn't satisfy `MailmapFree: ffibox::traits::CDupClone<Mailmap>`
+[0m[31m    |
+[0m[31m   ::: /opt/venv/share/ffibox/src/refs.rs:382:1
+[0m[31m    |
+[0m[31m382 | pub struct CBox<T, D: CDrop<T>> {
+[0m[31m    | ------------------------------- doesn't satisfy `ffibox::refs::CBox<Mailmap, MailmapFree>: Clone`
+[0m[31m    |
+[0m[31m    = note: the following trait bounds were not satisfied:
+[0m[31m            `MailmapFree: ffibox::traits::CDupClone<Mailmap>`
+[0m[31m            which is required by `ffibox::refs::CBox<Mailmap, MailmapFree>: Clone`
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0mnote: If the [0m[31mactual output[0m is the correct output you can bless it by rerunning
+      your test with the environment variable TRYBUILD=overwrite
+
+test [0m[1mtests/ub_safe/compile_fail/mailmap_shared_with_exclusive.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/message_trailer_array_held_across_take.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/message_trailer_array_trailers_outlive_array.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/message_trailer_outlives_strings.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/message_trailer_ref_writes.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/message_trailer_stores_shorter_string.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/new_options_aliased_handles.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/new_options_oid_type_from_int.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/object_and_reference_type_from_int.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/object_arc_no_mut_handle.rs[0m ... [0m[1m[31mmismatch
+[0m
+[0m[1m[34mEXPECTED:
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[34merror[E0599]: the method `as_mut` exists for mutable reference `&'a mut ffibox::shared::CArc<libgit2::libgit2::src::libgit2::object::Object<'static>, ObjectFree>`, but its trait bounds were not satisfied
+[0m[34m --> tests/ub_safe/compile_fail/object_arc_no_mut_handle.rs:6:12
+[0m[34m  |
+[0m[34m6 |     object.as_mut()
+[0m[34m  |            ^^^^^^
+[0m[34m  |
+[0m[34m ::: $FFIBOX/src/shared.rs
+[0m[34m  |
+[0m[34m  | pub struct CArc<T, D: CDrop<T>> {
+[0m[34m  | ------------------------------- doesn't satisfy `_: AsMut<_>`
+[0m[34m  |
+[0m[34m  = note: the following trait bounds were not satisfied:
+[0m[34m          `ffibox::shared::CArc<libgit2::libgit2::src::libgit2::object::Object<'static>, ObjectFree>: AsMut<_>`
+[0m[34m          which is required by `&'a mut ffibox::shared::CArc<libgit2::libgit2::src::libgit2::object::Object<'static>, ObjectFree>: AsMut<_>`
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m
+[0m[1m[31mACTUAL OUTPUT:
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[31merror[E0599]: the method `as_mut` exists for mutable reference `&'a mut ffibox::shared::CArc<libgit2::libgit2::src::libgit2::object::Object<'static>, ObjectFree>`, but its trait bounds were not satisfied
+[0m[31m   --> tests/ub_safe/compile_fail/object_arc_no_mut_handle.rs:6:12
+[0m[31m    |
+[0m[31m  6 |     object.as_mut()
+[0m[31m    |            ^^^^^^
+[0m[31m    |
+[0m[31m   ::: /opt/venv/share/ffibox/src/shared.rs:127:1
+[0m[31m    |
+[0m[31m127 | pub struct CArc<T, D: CDrop<T>> {
+[0m[31m    | ------------------------------- doesn't satisfy `_: AsMut<_>`
+[0m[31m    |
+[0m[31m    = note: the following trait bounds were not satisfied:
+[0m[31m            `ffibox::shared::CArc<libgit2::libgit2::src::libgit2::object::Object<'static>, ObjectFree>: AsMut<_>`
+[0m[31m            which is required by `&'a mut ffibox::shared::CArc<libgit2::libgit2::src::libgit2::object::Object<'static>, ObjectFree>: AsMut<_>`
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0mnote: If the [0m[31mactual output[0m is the correct output you can bless it by rerunning
+      your test with the environment variable TRYBUILD=overwrite
+
+test [0m[1mtests/ub_safe/compile_fail/object_clone_outlives_repository.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/object_handle_outlives_arc.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/object_id_options_alias_filter_list.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/object_id_options_outlive_filter_list.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/object_outlives_repository.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/odb_backend_aliased_handles.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/odb_backend_handle_outlives_owner.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/odb_data_box_aliased_handles.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/odb_data_box_handle_outlives_owner.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/odb_data_str_vec_aliased_reborrow.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/odb_data_str_vec_element_outlives_owner.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/odb_data_str_view_outlives_owner.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/odb_data_vec_aliased_reborrow.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/odb_data_vec_slice_outlives_owner.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/odb_expand_id_handle_outlives_value.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/odb_expand_id_mut_aliased.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/odb_expand_id_ref_has_no_setters.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/odb_handle_outlives_owner.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/odb_options_mut_aliased.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/odb_options_no_raw_conversion.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/odb_owner_outlives_repository.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/odb_owner_outlives_repository_on_thread.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/oid_copy_from_itself.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/oid_format_aliases_buffer.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/oid_handle_outlives_value.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/oid_id_bytes_outlive_value.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/oid_id_mut_aliased.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/oid_shortener_add_outlives_id.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/oid_shortener_add_then_mutate_id.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/oid_shortener_handle_outlives_box.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/oid_shortener_mut_shrinks_strings.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/oid_shortener_outlives_strings.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/oid_type_from_int_cast.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/oidarray_ids_mut_aliased.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/oidarray_ids_outlive_owner.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/oidarray_set_ids_while_borrowed.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/progress_callback_borrows_closure.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/progress_callback_not_send.rs[0m ... [0m[1m[31mmismatch
+[0m
+[0m[1m[34mEXPECTED:
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[34merror[E0277]: `dyn for<'a> FnMut(IndexerProgressRef<'a>) -> ControlFlow<()>` cannot be sent between threads safely
+[0m[34m  --> tests/ub_safe/compile_fail/progress_callback_not_send.rs:12:17
+[0m[34m   |
+[0m[34m12 |         s.spawn(move || drop(callback));
+[0m[34m   |           ----- -------^^^^^^^^^^^^^^^
+[0m[34m   |           |     |
+[0m[34m   |           |     `dyn for<'a> FnMut(IndexerProgressRef<'a>) -> ControlFlow<()>` cannot be sent between threads safely
+[0m[34m   |           |     within this `{closure@$DIR/tests/ub_safe/compile_fail/progress_callback_not_send.rs:12:17: 12:24}`
+[0m[34m   |           required by a bound introduced by this call
+[0m[34m   |
+[0m[34m   = help: within `{closure@$DIR/tests/ub_safe/compile_fail/progress_callback_not_send.rs:12:17: 12:24}`, the trait `Send` is not implemented for `dyn for<'a> FnMut(IndexerProgressRef<'a>) -> ControlFlow<()>`
+[0m[34m   = note: required because it appears within the type `&mut dyn for<'a> FnMut(IndexerProgressRef<'a>) -> ControlFlow<()>`
+[0m[34mnote: required because it appears within the type `libgit2::libgit2::src::libgit2::indexer::ProgressCallback<'_>`
+[0m[34m  --> src/libgit2/src/libgit2/indexer.rs
+[0m[34m   |
+[0m[34m   | pub struct ProgressCallback<'f> {
+[0m[34m   |            ^^^^^^^^^^^^^^^^
+[0m[34mnote: required because it's used within this closure
+[0m[34m  --> tests/ub_safe/compile_fail/progress_callback_not_send.rs:12:17
+[0m[34m   |
+[0m[34m12 |         s.spawn(move || drop(callback));
+[0m[34m   |                 ^^^^^^^
+[0m[34mnote: required by a bound in `Scope::<'scope, 'env>::spawn`
+[0m[34m  --> $RUST/std/src/thread/scoped.rs
+[0m[34m   |
+[0m[34m   |     pub fn spawn<F, T>(&'scope self, f: F) -> ScopedJoinHandle<'scope, T>
+[0m[34m   |            ----- required by a bound in this associated function
+[0m[34m   |     where
+[0m[34m   |         F: FnOnce() -> T + Send + 'scope,
+[0m[34m   |                            ^^^^ required by this bound in `Scope::<'scope, 'env>::spawn`
+[0m[34mhelp: use parentheses to call this trait object
+[0m[34m   |
+[0m[34m12 |         s.spawn((move || drop(callback))(/* IndexerProgressRef<'_> */));
+[0m[34m   |                 +                      +++++++++++++++++++++++++++++++
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m
+[0m[1m[31mACTUAL OUTPUT:
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[31merror[E0277]: `dyn for<'a> FnMut(IndexerProgressRef<'a>) -> ControlFlow<()>` cannot be sent between threads safely
+[0m[31m  --> tests/ub_safe/compile_fail/progress_callback_not_send.rs:12:17
+[0m[31m   |
+[0m[31m12 |         s.spawn(move || drop(callback));
+[0m[31m   |           ----- -------^^^^^^^^^^^^^^^
+[0m[31m   |           |     |
+[0m[31m   |           |     `dyn for<'a> FnMut(IndexerProgressRef<'a>) -> ControlFlow<()>` cannot be sent between threads safely
+[0m[31m   |           |     within this `{closure@$DIR/tests/ub_safe/compile_fail/progress_callback_not_send.rs:12:17: 12:24}`
+[0m[31m   |           required by a bound introduced by this call
+[0m[31m   |
+[0m[31m   = help: within `{closure@$DIR/tests/ub_safe/compile_fail/progress_callback_not_send.rs:12:17: 12:24}`, the trait `Send` is not implemented for `dyn for<'a> FnMut(IndexerProgressRef<'a>) -> ControlFlow<()>`
+[0m[31m   = note: required because it appears within the type `&mut dyn for<'a> FnMut(IndexerProgressRef<'a>) -> ControlFlow<()>`
+[0m[31mnote: required because it appears within the type `libgit2::libgit2::src::libgit2::indexer::ProgressCallback<'_>`
+[0m[31m  --> src/libgit2/src/libgit2/indexer.rs
+[0m[31m   |
+[0m[31m   | pub struct ProgressCallback<'f> {
+[0m[31m   |            ^^^^^^^^^^^^^^^^
+[0m[31mnote: required because `callback` is used within this closure
+[0m[31m  --> tests/ub_safe/compile_fail/progress_callback_not_send.rs:12:30
+[0m[31m   |
+[0m[31m12 |         s.spawn(move || drop(callback));
+[0m[31m   |                              ^^^^^^^^
+[0m[31mnote: required by a bound in `Scope::<'scope, 'env>::spawn`
+[0m[31m  --> $RUST/std/src/thread/scoped.rs
+[0m[31m   |
+[0m[31m   | impl<'scope, 'env> Scope<'scope, 'env> {
+[0m[31m...
+[0m[31m   |     pub fn spawn<F, T>(&'scope self, f: F) -> ScopedJoinHandle<'scope, T>
+[0m[31m   |     where
+[0m[31m   |         F: FnOnce() -> T + Send + 'scope,
+[0m[31m   |                            ^^^^ required by this bound in `Scope::<'scope, 'env>::spawn`
+[0m[31mhelp: use parentheses to call this trait object
+[0m[31m   |
+[0m[31m12 |         s.spawn((move || drop(callback))(/* IndexerProgressRef<'_> */));
+[0m[31m   |                 +                      +++++++++++++++++++++++++++++++
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0mnote: If the [0m[31mactual output[0m is the correct output you can bless it by rerunning
+      your test with the environment variable TRYBUILD=overwrite
+
+test [0m[1mtests/ub_safe/compile_fail/progress_callback_progress_outlives_call.rs[0m ... [0m[1m[31mmismatch
+[0m
+[0m[1m[34mEXPECTED:
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[34merror[E0521]: borrowed data escapes outside of closure
+[0m[34m --> tests/ub_safe/compile_fail/progress_callback_progress_outlives_call.rs:8:9
+[0m[34m  |
+[0m[34m6 | fn keep<'k>(kept: &mut Option<IndexerProgressRef<'k>>) {
+[0m[34m  |             ---- `kept` declared here, outside of the closure body
+[0m[34m7 |     let mut f = |progress: IndexerProgressRef<'_>| {
+[0m[34m  |                  -------- `progress` is a reference that is only valid in the closure body
+[0m[34m8 |         *kept = Some(progress);
+[0m[34m  |         ^^^^^^^^^^^^^^^^^^^^^^ `progress` escapes the closure body here
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m
+[0m[1m[31mACTUAL OUTPUT:
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[31merror[E0521]: borrowed data escapes outside of closure
+[0m[31m --> tests/ub_safe/compile_fail/progress_callback_progress_outlives_call.rs:8:9
+[0m[31m  |
+[0m[31m6 | fn keep<'k>(kept: &mut Option<IndexerProgressRef<'k>>) {
+[0m[31m  |             ---- `kept` declared here, outside of the closure body
+[0m[31m7 |     let mut f = |progress: IndexerProgressRef<'_>| {
+[0m[31m  |                  -------- `progress` is only valid in the closure body
+[0m[31m8 |         *kept = Some(progress);
+[0m[31m  |         ^^^^^^^^^^^^^^^^^^^^^^ `progress` escapes the closure body here
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0mnote: If the [0m[31mactual output[0m is the correct output you can bless it by rerunning
+      your test with the environment variable TRYBUILD=overwrite
+
+test [0m[1mtests/ub_safe/compile_fail/refdb_type_from_int_cast.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/reference_handle_outlives_box.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/reference_mut_reborrow_aliased.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/reference_outlives_repository.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/repository_enums_from_int_cast.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/repository_init_flag_from_int_cast.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/repository_state_from_int_cast.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/signature_mut_aliased.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/signature_name_held_across_set.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/signature_name_outlives_box.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/signature_ref_has_no_setters.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/signature_time_handle_held_across_set.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/signature_view_outlives_strings.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/strarray_iter_outlives_view.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/strarray_mut_aliased.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/strarray_string_held_across_set.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/strarray_string_outlives_owner.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/strarray_view_outlives_strings.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/submodule_settings_from_int_cast.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/tag_and_tree_arc_no_mut_handle.rs[0m ... [0m[1m[31mmismatch
+[0m
+[0m[1m[34mEXPECTED:
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[34merror[E0599]: the method `as_mut` exists for mutable reference `&'a mut ffibox::shared::CArc<libgit2::libgit2::src::libgit2::tag::Tag<'static>, TagFree>`, but its trait bounds were not satisfied
+[0m[34m --> tests/ub_safe/compile_fail/tag_and_tree_arc_no_mut_handle.rs:7:9
+[0m[34m  |
+[0m[34m7 |     tag.as_mut()
+[0m[34m  |         ^^^^^^
+[0m[34m  |
+[0m[34m ::: $FFIBOX/src/shared.rs
+[0m[34m  |
+[0m[34m  | pub struct CArc<T, D: CDrop<T>> {
+[0m[34m  | ------------------------------- doesn't satisfy `_: AsMut<_>`
+[0m[34m  |
+[0m[34m  = note: the following trait bounds were not satisfied:
+[0m[34m          `ffibox::shared::CArc<libgit2::libgit2::src::libgit2::tag::Tag<'static>, TagFree>: AsMut<_>`
+[0m[34m          which is required by `&'a mut ffibox::shared::CArc<libgit2::libgit2::src::libgit2::tag::Tag<'static>, TagFree>: AsMut<_>`
+[0m[34m
+[0m[34merror[E0599]: the method `as_mut` exists for mutable reference `&'a mut ffibox::shared::CArc<libgit2::libgit2::src::libgit2::tree::Tree<'static>, TreeFree>`, but its trait bounds were not satisfied
+[0m[34m  --> tests/ub_safe/compile_fail/tag_and_tree_arc_no_mut_handle.rs:11:10
+[0m[34m   |
+[0m[34m11 |     tree.as_mut()
+[0m[34m   |          ^^^^^^
+[0m[34m   |
+[0m[34m  ::: $FFIBOX/src/shared.rs
+[0m[34m   |
+[0m[34m   | pub struct CArc<T, D: CDrop<T>> {
+[0m[34m   | ------------------------------- doesn't satisfy `_: AsMut<_>`
+[0m[34m   |
+[0m[34m   = note: the following trait bounds were not satisfied:
+[0m[34m           `ffibox::shared::CArc<libgit2::libgit2::src::libgit2::tree::Tree<'static>, TreeFree>: AsMut<_>`
+[0m[34m           which is required by `&'a mut ffibox::shared::CArc<libgit2::libgit2::src::libgit2::tree::Tree<'static>, TreeFree>: AsMut<_>`
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m
+[0m[1m[31mACTUAL OUTPUT:
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[31merror[E0599]: the method `as_mut` exists for mutable reference `&'a mut ffibox::shared::CArc<libgit2::libgit2::src::libgit2::tag::Tag<'static>, TagFree>`, but its trait bounds were not satisfied
+[0m[31m   --> tests/ub_safe/compile_fail/tag_and_tree_arc_no_mut_handle.rs:7:9
+[0m[31m    |
+[0m[31m  7 |     tag.as_mut()
+[0m[31m    |         ^^^^^^
+[0m[31m    |
+[0m[31m   ::: /opt/venv/share/ffibox/src/shared.rs:127:1
+[0m[31m    |
+[0m[31m127 | pub struct CArc<T, D: CDrop<T>> {
+[0m[31m    | ------------------------------- doesn't satisfy `_: AsMut<_>`
+[0m[31m    |
+[0m[31m    = note: the following trait bounds were not satisfied:
+[0m[31m            `ffibox::shared::CArc<libgit2::libgit2::src::libgit2::tag::Tag<'static>, TagFree>: AsMut<_>`
+[0m[31m            which is required by `&'a mut ffibox::shared::CArc<libgit2::libgit2::src::libgit2::tag::Tag<'static>, TagFree>: AsMut<_>`
+[0m[31m
+[0m[31merror[E0599]: the method `as_mut` exists for mutable reference `&'a mut ffibox::shared::CArc<libgit2::libgit2::src::libgit2::tree::Tree<'static>, TreeFree>`, but its trait bounds were not satisfied
+[0m[31m   --> tests/ub_safe/compile_fail/tag_and_tree_arc_no_mut_handle.rs:11:10
+[0m[31m    |
+[0m[31m 11 |     tree.as_mut()
+[0m[31m    |          ^^^^^^
+[0m[31m    |
+[0m[31m   ::: /opt/venv/share/ffibox/src/shared.rs:127:1
+[0m[31m    |
+[0m[31m127 | pub struct CArc<T, D: CDrop<T>> {
+[0m[31m    | ------------------------------- doesn't satisfy `_: AsMut<_>`
+[0m[31m    |
+[0m[31m    = note: the following trait bounds were not satisfied:
+[0m[31m            `ffibox::shared::CArc<libgit2::libgit2::src::libgit2::tree::Tree<'static>, TreeFree>: AsMut<_>`
+[0m[31m            which is required by `&'a mut ffibox::shared::CArc<libgit2::libgit2::src::libgit2::tree::Tree<'static>, TreeFree>: AsMut<_>`
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0mnote: If the [0m[31mactual output[0m is the correct output you can bless it by rerunning
+      your test with the environment variable TRYBUILD=overwrite
+
+test [0m[1mtests/ub_safe/compile_fail/tag_handle_outlives_arc.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/tag_outlives_repository.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/time_handle_outlives_value.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/time_mut_aliased.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/time_ref_has_no_setters.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/trace_callback_from_fn_requires_unsafe.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/trace_level_from_int_cast.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/trace_set_and_clear_require_unsafe.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/transaction_alias_reborrow.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/transaction_handle_outlives_owner.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/transaction_outlives_repository.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/tree_builder_aliased_handles.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/tree_builder_filter_reaches_builder.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/tree_builder_handle_outlives_owner.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/tree_builder_inserted_entry_held_across_write.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/tree_builder_lent_entry_held_across_insert.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/tree_builder_lent_entry_outlives_builder.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/tree_builder_not_clone.rs[0m ... [0m[1m[31mmismatch
+[0m
+[0m[1m[34mEXPECTED:
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[34merror[E0599]: the method `clone` exists for struct `ffibox::refs::CBox<TreeBuilder<'_>, TreeBuilderFree>`, but its trait bounds were not satisfied
+[0m[34m  --> tests/ub_safe/compile_fail/tree_builder_not_clone.rs:10:25
+[0m[34m   |
+[0m[34m10 |     let _copy = builder.clone();
+[0m[34m   |                         ^^^^^ method cannot be called due to unsatisfied trait bounds
+[0m[34m   |
+[0m[34m  ::: src/libgit2/src/libgit2/tree.rs
+[0m[34m   |
+[0m[34m   | pub struct TreeBuilderFree;
+[0m[34m   | -------------------------- doesn't satisfy `_: CDupClone<TreeBuilder<'_>>`
+[0m[34m   |
+[0m[34m  ::: $FFIBOX/src/refs.rs
+[0m[34m   |
+[0m[34m   | pub struct CBox<T, D: CDrop<T>> {
+[0m[34m   | ------------------------------- doesn't satisfy `_: Clone`
+[0m[34m   |
+[0m[34m   = note: the following trait bounds were not satisfied:
+[0m[34m           `TreeBuilderFree: ffibox::traits::CDupClone<TreeBuilder<'_>>`
+[0m[34m           which is required by `ffibox::refs::CBox<TreeBuilder<'_>, TreeBuilderFree>: Clone`
+[0m[34m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m
+[0m[1m[31mACTUAL OUTPUT:
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0m[31merror[E0599]: the method `clone` exists for struct `ffibox::refs::CBox<TreeBuilder<'_>, TreeBuilderFree>`, but its trait bounds were not satisfied
+[0m[31m   --> tests/ub_safe/compile_fail/tree_builder_not_clone.rs:10:25
+[0m[31m    |
+[0m[31m 10 |     let _copy = builder.clone();
+[0m[31m    |                         ^^^^^ method cannot be called due to unsatisfied trait bounds
+[0m[31m    |
+[0m[31m   ::: src/libgit2/src/libgit2/tree.rs
+[0m[31m    |
+[0m[31m    | pub struct TreeBuilderFree;
+[0m[31m    | -------------------------- doesn't satisfy `_: CDupClone<TreeBuilder<'_>>`
+[0m[31m    |
+[0m[31m   ::: /opt/venv/share/ffibox/src/refs.rs:382:1
+[0m[31m    |
+[0m[31m382 | pub struct CBox<T, D: CDrop<T>> {
+[0m[31m    | ------------------------------- doesn't satisfy `_: Clone`
+[0m[31m    |
+[0m[31m    = note: the following trait bounds were not satisfied:
+[0m[31m            `TreeBuilderFree: ffibox::traits::CDupClone<TreeBuilder<'_>>`
+[0m[31m            which is required by `ffibox::refs::CBox<TreeBuilder<'_>, TreeBuilderFree>: Clone`
+[0m[31m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+[0mnote: If the [0m[31mactual output[0m is the correct output you can bless it by rerunning
+      your test with the environment variable TRYBUILD=overwrite
+
+test [0m[1mtests/ub_safe/compile_fail/tree_builder_outlives_repository.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/tree_entry_getters_outlive_box.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/tree_entry_handle_outlives_box.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/tree_entry_mut_aliased.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/tree_entry_object_outlives_repository.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/tree_handle_outlives_object.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/tree_id_outlives_tree.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/tree_lent_entry_outlives_tree.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/tree_outlives_repository.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/tree_owner_outlives_repository.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/tree_update_action_from_int_cast.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/tree_update_aliased_handles.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/tree_update_handle_outlives_value.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/tree_update_outlives_path.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/tree_update_set_outlives_path.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/tree_walk_closure_takes_repository_mut.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/unattached_reference_handle_outlives_box.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/unattached_reference_mut_aliased.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/walk_mode_from_int_cast.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/worktree_prune_flag_from_int_cast.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/writestream_box_borrows_local.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/writestream_closed_box_unusable.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/writestream_handle_outlives_owner.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/writestream_no_bare_header.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ub_safe/compile_fail/writestream_writer_while_lent.rs[0m ... [0m[32mok
+[0m
+
+test compile_fail ... FAILED
+
+failures:
+
+---- compile_fail stdout ----
+
+thread 'compile_fail' (3528927) panicked at /work/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/trybuild-1.0.122/src/run.rs:103:13:
+13 of 197 tests failed
+
+
+failures:
+    compile_fail
+
+test result: FAILED. 83 passed; 1 failed; 0 ignored; 0 measured; 678 filtered out; finished in 70.95s
+
+error: test failed, to rerun pass `-p libgit2 --test ub_safe`
+     Running tests/ub_unsafe/main.rs (/target/libgit2-crustify/crustify/.worktrees/fixes/ffibox-audit/crustify/tmp/target/tsan/x86_64-unknown-linux-gnu/debug/build/libgit2/de4ad21adf29c78e/out/ub_unsafe-de4ad21adf29c78e)
+
+running 4 tests
+test deps::reftable::basics::set_default_alloc_hands_reftable_back_to_libc ... ok
+test deps::reftable::basics::set_alloc_ordered_by_a_channel_lets_other_threads_allocate ... ok
+test deps::reftable::basics::set_alloc_routes_every_owner_through_the_hooks ... ok
+test src::libgit2::config::sys::iterator_set_backend_live_and_null ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 116 filtered out; finished in 0.55s
+
+     Running tests/unit_pub/main.rs (/target/libgit2-crustify/crustify/.worktrees/fixes/ffibox-audit/crustify/tmp/target/tsan/x86_64-unknown-linux-gnu/debug/build/libgit2/c15d9695489e33db/out/unit_pub-c15d9695489e33db)
+
+running 42 tests
+test deps::reftable::basics::alloc_size_multiplies_or_reports_overflow ... ok
+test deps::reftable::basics::big_endian_helpers_evaluate_at_compile_time ... ok
+test deps::reftable::basics::big_endian_helpers_read_every_byte_into_its_place ... ok
+test deps::reftable::basics::big_endian_helpers_round_trip_at_their_edges ... ok
+test deps::reftable::basics::big_endian_helpers_write_the_most_significant_byte_first ... ok
+test deps::reftable::basics::binsearch_stops_at_the_first_error ... ok
+test deps::reftable::basics::binsearch_resumes_a_panic_of_its_predicate ... ok
+test deps::reftable::basics::buf_debug_shows_length_capacity_and_escaped_bytes ... ok
+test deps::reftable::basics::buf_init_is_the_empty_buffer ... ok
+test deps::reftable::basics::buffers_cross_threads_as_a_vec_does ... ok
+test deps::reftable::basics::empty_buf_reports_no_bytes_through_every_handle ... ok
+test deps::reftable::basics::errors_carry_reftable_codes_and_messages ... ok
+test deps::reftable::basics::errors_pass_a_refusing_sink_s_failure_on ... ok
+test deps::reftable::basics::format_ids_are_their_names_read_big_endian ... ok
+test deps::reftable::basics::free_and_null_drops_what_the_slot_owns_once ... ok
+test deps::reftable::basics::hash_id_and_its_error_compare_and_hash_by_value ... ok
+test deps::reftable::basics::hash_id_converts_from_and_to_its_c_value ... ok
+test deps::reftable::basics::hash_ids_report_their_id_sizes ... ok
+test deps::reftable::basics::hash_sizes_are_those_of_sha1_and_sha256_ids ... ok
+test deps::reftable::basics::name_lists_cross_threads_as_a_vec_of_strings_does ... ok
+test deps::reftable::basics::names_compare_by_content_and_order ... ok
+test deps::reftable::basics::names_count_their_entries ... ok
+test deps::reftable::basics::names_iterate_in_order ... ok
+test deps::reftable::basics::put_be24_drops_the_top_byte ... ok
+test deps::reftable::basics::binsearch_finds_the_first_true_index_of_an_ascending_predicate ... ok
+test deps::reftable::basics::swap_exchanges_values_of_one_type ... ok
+test deps::reftable::basics::unset_and_unknown_hash_ids_are_refused_with_their_value ... ok
+test deps::reftable::basics::alloc_array_allocates_uninitialised_runs_or_nothing ... ok
+test deps::reftable::basics::calloc_array_and_alloc_grow_are_the_array_owner_s_constructors ... ok
+test deps::reftable::basics::grow_or_clear_grows_or_leaves_nothing_to_free ... ok
+test deps::reftable::basics::grow_with_keeps_the_elements_and_fills_the_new_ones ... ok
+test deps::reftable::basics::new_buf_appends_bytes_and_strings_with_a_terminator ... ok
+test deps::reftable::basics::runs_grow_as_reftable_alloc_grow_does ... ok
+test deps::reftable::basics::reftable_owners_allocate_copy_and_resize ... ok
+test deps::reftable::basics::detach_hands_the_contents_out_and_empties_the_buffer ... ok
+test deps::reftable::basics::truncate_and_reset_keep_the_allocation ... ok
+test deps::reftable::basics::parsed_names_compare_with_names_built_in_rust ... ok
+test deps::reftable::basics::buffers_hash_by_the_contents_they_compare ... ok
+test deps::reftable::basics::buffers_order_bytewise_and_share_prefixes ... ok
+test deps::reftable::basics::parse_names_reads_newline_ended_lines_and_drops_empty_ones ... ok
+test deps::reftable::basics::parse_names_refuses_unended_lines_and_nul_bytes ... ok
+test deps::reftable::basics::parse_names_refuses_inputs_c_cannot_count ... ok
+
+test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 2.22s
+
+error: 1 target failed:
+    `-p libgit2 --test ub_safe`
+== exit 101 2026-11-12T19:14:08+00:00

@@ -1,0 +1,25 @@
+   Compiling libc-sys v0.1.0 (/target/glibc-bindings/libc-sys)
+   Compiling libgit2-sys v0.1.0 (/target/libgit2-crustify/crustify/.worktrees/fixes/ffibox-audit/crustify/tmp/revert/libgit2-sys)
+   Compiling glibc-bindings v0.1.0 (/target/glibc-bindings)
+   Compiling libgit2 v0.1.0 (/target/libgit2-crustify/crustify/.worktrees/fixes/ffibox-audit/crustify/tmp/revert)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.82s
+     Running unittests src/lib.rs (/target/libgit2-crustify/crustify/.worktrees/fixes/ffibox-audit/crustify/tmp/target/plain/debug/deps/libgit2-4e55a921c30fed51)
+
+running 1 test
+test libgit2::src::libgit2::config::unit_priv::backend_without_free_is_left_to_its_builder ... FAILED
+
+failures:
+
+---- libgit2::src::libgit2::config::unit_priv::backend_without_free_is_left_to_its_builder stdout ----
+
+thread 'libgit2::src::libgit2::config::unit_priv::backend_without_free_is_left_to_its_builder' (3551872) panicked at src/libgit2/src/libgit2/config.rs:3803:61:
+backend lacks free callback
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    libgit2::src::libgit2::config::unit_priv::backend_without_free_is_left_to_its_builder
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 840 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p libgit2 --lib`
