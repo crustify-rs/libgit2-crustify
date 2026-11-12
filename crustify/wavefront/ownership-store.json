@@ -3855,9 +3855,75 @@
     }
    ],
    "_comment_user": "git_writestream is a vtable header embedded as the first member of a concrete stream (blob_writestream, buffered_stream, buf_stream, checkout_stream, user filter streams); its three members take the header pointer and cast it back to the container, so a header is never valid detached from its container (never copied or held by value). Ownership: git_blob_create_from_stream returns an owned stream (released by its own `free`, or consumed by git_blob_create_from_stream_commit); git_filter_list_stream_{buffer,file,blob} borrow a caller target for the call and write/close (never free) it; a user filter's git_filter_stream_fn returns an owned stream to libgit2, which frees it with its `free` member after closing the chain, and gets `next` borrowed for the chain's life. Rust wrapper: WriteStream/WriteStreamRef/WriteStreamMut (core/types.rs), WriteStreamBox = CBox<WriteStream, WriteStreamFree> (free through the object's own member), RustWriteStream<W: StreamWriter> for Rust implementations."
+  },
+  {
+   "name": "reftable_buf",
+   "defined_in": "deps/reftable/reftable-basics.h",
+   "_comment_user": "A growable byte buffer (basics.c). States: unallocated (alloc == 0: owns nothing; buf NULL and len 0 after REFTABLE_BUF_INIT, reftable_buf_init, _release or _detach; no C path leaves alloc == 0 with a non-NULL buf or a non-zero len) and allocated (alloc > 0: buf is a live reftable_malloc/realloc allocation of alloc bytes that the struct owns, len < alloc, buf[0..=len] written). Transitions: _add grows unallocated -> allocated (REFTABLE_ALLOC_GROW: alloc*2+1 or newlen+1) and leaves the buffer unchanged on OOM; _setlen shrinks len only and writes buf[len] = 0; _reset sets len 0 and buf[0] = 0 only when allocated; _release frees buf and reinitialises; _detach hands buf to the caller and reinitialises. buf[len] == 0 holds after every basics.c routine, but not after a direct len write: block_writer_init stores last_key.len = 0 without touching buf[0], so readers must not assume the terminator. Held by value: on the stack, embedded in block_writer/block_iter/writer/stack records, and copied by value as a borrow (block_writer_add's `last`, reftable_encode_key's prev_key/key parameters), never released through the copy. block_source_from_buf keeps the buffer's address in bs->arg, read by reftable_buf_size/_read_data for the source's life. All-zero is the initial state (REFTABLE_BUF_INIT is { 0 }).",
+   "fields": [
+    {
+     "name": "buf",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": true,
+      "owned": true,
+      "borrowed": {
+       "lifetime": "other"
+      },
+      "nullable": true,
+      "mutable": true,
+      "note": "Owned by the struct while alloc > 0: a reftable_malloc/realloc allocation of alloc bytes, freed by reftable_buf_release through reftable_free, or handed out by reftable_buf_detach. NULL while alloc == 0. Bytes [0, len) are the contents, possibly holding NUL bytes (reftable_buf_add takes arbitrary data); buf[len] is a NUL terminator after every basics.c routine, so callers that built it with _addstr read it as a C string (stack.c passes names and paths to unlink, tmpfile and flock), but block_writer_init's direct `last_key.len = 0` leaves buf[0] as it was. Borrowed on the by-value copies C makes for reading (block_writer_add's `last`, reftable_encode_key's arguments), which alias the original's allocation and are never released."
+     },
+     "refcount": false,
+     "locked_by": null
+    }
+   ]
   }
  ],
  "symbols": [
+  {
+   "name": "binsearch",
+   "defined_in": "deps/reftable/basics.c",
+   "ptr_args": [
+    {
+     "name": "args",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:args"
+      },
+      "nullable": true,
+      "mutable": true,
+      "note": "Opaque context, only passed through to f (block.c passes a struct restart_needle_less_args that f writes its error flag into); never dereferenced by binsearch."
+     }
+    },
+    {
+     "name": "f",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:f"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "Predicate called synchronously on the calling thread with k < sz and args; never stored. Ascending: <0 aborts (returns sz), >0 true, 0 false. The final probe f(0) reads a negative return as true (returns 0)."
+     }
+    }
+   ]
+  },
   {
    "name": "blob_writestream_free",
    "defined_in": "src/libgit2/blob.c",
@@ -3945,6 +4011,46 @@
    }
   },
   {
+   "name": "common_prefix_size",
+   "defined_in": "deps/reftable/basics.c",
+   "ptr_args": [
+    {
+     "name": "a",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:a"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "A reftable_buf the caller holds (stack, or embedded in a writer, iterator or record); unallocated (alloc 0, buf NULL, len 0) or allocated (buf owns alloc bytes, len < alloc). Not kept past the call. Only reads a->len and a->buf[0..len)."
+     }
+    },
+    {
+     "name": "b",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:b"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "A reftable_buf the caller holds (stack, or embedded in a writer, iterator or record); unallocated (alloc 0, buf NULL, len 0) or allocated (buf owns alloc bytes, len < alloc). Not kept past the call. Only reads b->len and b->buf[0..len)."
+     }
+    }
+   ]
+  },
+  {
    "name": "debugalloc__free",
    "defined_in": "src/util/allocators/debugalloc.c",
    "lifetime": {
@@ -4008,7 +4114,27 @@
     "is_disposer": false,
     "is_cloner": null,
     "is_constructor": null
-   }
+   },
+   "ptr_args": [
+    {
+     "name": "a",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_ref": {
+        "owned": true,
+        "borrowed": null
+       }
+      },
+      "string": false,
+      "owned": true,
+      "borrowed": null,
+      "nullable": true,
+      "mutable": false,
+      "note": "NULL-terminated array of reftable_malloc strings, as parse_names builds it; each string then the array released with reftable_free. NULL is a no-op."
+     }
+    }
+   ]
   },
   {
    "name": "git__calloc",
@@ -12027,7 +12153,26 @@
     "is_disposer": false,
     "is_cloner": null,
     "is_constructor": null
-   }
+   },
+   "ptr_args": [
+    {
+     "name": "ptr",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": {
+       "by_val": true
+      },
+      "string": true,
+      "owned": true,
+      "borrowed": null,
+      "nullable": true,
+      "mutable": false,
+      "note": "GIT_UNUSED(ptr): releases nothing and never touches ptr. It is the dropper of the failalloc family, whose allocator never allocates, so the only allocations it can be handed are none (NULL), and releasing nothing releases them; ownership passes to it as for any git_allocator gfree. Storage another family made reaches it whenever this family replaces that one in git__allocator: after git_libgit2_init through set_allocator (git_allocator_setup is a memcpy; the equivalence suite installs it so), or before it after a swap; libgit2 then frees that storage through git__free into this routine, which leaks it and never touches it. Reachable safely through git_odb_backend_data_free before git_libgit2_init (git__free sets no error), which tests use to compare it with the Rust strategy. Links from the variants' static archive through its raw binding, which the Rust strategies call as their release (wave-176/batch-1)."
+     }
+    }
+   ]
   },
   {
    "name": "git_failalloc_malloc",
@@ -12040,6 +12185,95 @@
     "is_constructor": {
      "alloc": true,
      "init": false
+    }
+   },
+   "ptr_args": [
+    {
+     "name": "file",
+     "ptr": {
+      "scalar": null,
+      "array": null,
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:file"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "GIT_UNUSED(file): never read. git__malloc/git__realloc (alloc.h) pass __FILE__, so libgit2's own calls never pass NULL, but git_failalloc_malloc accepts NULL on observed behaviour, as the git_allocator member contract (Rust MallocFn/ReallocFn) allows."
+     }
+    }
+   ],
+   "ptr_ret": {
+    "ptr": {
+     "scalar": {
+      "by_val": true
+     },
+     "array": {
+      "by_val": true
+     },
+     "string": false,
+     "owned": true,
+     "borrowed": null,
+     "nullable": true,
+     "mutable": true,
+     "note": "Always NULL: git_failalloc_malloc ignores every argument and allocates nothing, whatever the size (0 included). As a git_allocator member it is the family's allocator, so the slot is that of an owned, writable allocation of len bytes; none is ever produced. Installed as git__allocator's initial value (alloc.c) until git_libgit2_init's git_allocator_global_init replaces it, so every allocation before init fails. HAZARD for probes: git__malloc/git__realloc then call git_error_set_oom, whose threadstate lookup reads TLS key 0 before git_libgit2_init created it (see git_odb_backend_data_alloc's note), so C's failure is not observed through them in tests. Hidden in libgit2.so, it links from the variants' static archive through its raw binding (wave-176/batch-1): the Rust strategies FailAlloc and FailArrayAlloc (src/util/allocators/failalloc.rs) call it, and Allocator::new::<FailAlloc>() stores its own address, which git_allocator_global_init compares with git__allocator.gmalloc."
+    }
+   }
+  },
+  {
+   "name": "git_failalloc_realloc",
+   "defined_in": "src/util/allocators/failalloc.c",
+   "ptr_args": [
+    {
+     "name": "file",
+     "ptr": {
+      "scalar": null,
+      "array": null,
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:file"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "GIT_UNUSED(file): never read. git__malloc/git__realloc (alloc.h) pass __FILE__, so libgit2's own calls never pass NULL, but git_failalloc_realloc accepts NULL on observed behaviour, as the git_allocator member contract (Rust MallocFn/ReallocFn) allows."
+     }
+    },
+    {
+     "name": "ptr",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": {
+       "by_val": true
+      },
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:ptr"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "GIT_UNUSED(ptr): never read, written, released or kept. Every call fails (returns NULL), which is git_allocator's realloc failure path: ptr stays live and the caller's, unchanged, so it is only borrowed for the call. As a family member it accepts NULL (allocate afresh) or a live allocation of the same family; failalloc never makes one, so in practice it sees NULL, or storage of the allocator installed before a swap, which it leaves alone."
+     }
+    }
+   ],
+   "ptr_ret": {
+    "ptr": {
+     "scalar": {
+      "by_val": true
+     },
+     "array": {
+      "by_val": true
+     },
+     "string": false,
+     "owned": true,
+     "borrowed": null,
+     "nullable": true,
+     "mutable": true,
+     "note": "Always NULL: git_failalloc_realloc ignores every argument and allocates nothing, whatever the size (0 included). As a git_allocator member it is the family's allocator, so the slot is that of an owned, writable allocation of len bytes; none is ever produced. Installed as git__allocator's initial value (alloc.c) until git_libgit2_init's git_allocator_global_init replaces it, so every allocation before init fails. HAZARD for probes: git__malloc/git__realloc then call git_error_set_oom, whose threadstate lookup reads TLS key 0 before git_libgit2_init created it (see git_odb_backend_data_alloc's note), so C's failure is not observed through them in tests. Hidden in libgit2.so, it links from the variants' static archive through its raw binding (wave-176/batch-1): the Rust strategies FailAlloc and FailArrayAlloc (src/util/allocators/failalloc.rs) call it, and Allocator::new::<FailAlloc>() stores its own address, which git_allocator_global_init compares with git__allocator.gmalloc."
     }
    }
   },
@@ -26817,6 +27051,84 @@
    }
   },
   {
+   "name": "names_equal",
+   "defined_in": "deps/reftable/basics.c",
+   "ptr_args": [
+    {
+     "name": "a",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_ref": {
+        "owned": false,
+        "borrowed": {
+         "lifetime": "arg:a"
+        }
+       }
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:a"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "NULL-terminated array of NUL-terminated strings, read for the call only: a[i] up to the first NULL slot of a or b, each pair through strcmp. Never NULL itself (a[0] is read). The slots are not written despite the non-const outer pointee. The stack passes the names parse_names read and those of its tables."
+     }
+    },
+    {
+     "name": "b",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_ref": {
+        "owned": false,
+        "borrowed": {
+         "lifetime": "arg:b"
+        }
+       }
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:b"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "As a: read up to the first NULL slot of either list, never written."
+     }
+    }
+   ]
+  },
+  {
+   "name": "names_length",
+   "defined_in": "deps/reftable/basics.c",
+   "ptr_args": [
+    {
+     "name": "names",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_ref": {
+        "owned": false,
+        "borrowed": {
+         "lifetime": "arg:names"
+        }
+       }
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:names"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "NULL-terminated array of strings, read for the call only: the slots up to the terminator are counted, the strings never read. Never NULL (names[0] is read); never written."
+     }
+    }
+   ]
+  },
+  {
    "name": "pack_backend__free",
    "defined_in": "src/libgit2/odb_pack.c",
    "lifetime": {
@@ -26856,7 +27168,46 @@
      "alloc": true,
      "init": false
     }
-   }
+   },
+   "ptr_args": [
+    {
+     "name": "buf",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:buf"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "size bytes, each '\\n' overwritten with NUL; strchr scans past them to the first '\\n' or NUL, so buf[size] must be a readable NUL (stack.c reads the file into size + 1 bytes and NUL-terminates). A line not ended by '\\n' before that NUL is REFTABLE_FORMAT_ERROR."
+     }
+    },
+    {
+     "name": "out",
+     "ptr": {
+      "scalar": {
+       "by_ref": {
+        "owned": true,
+        "borrowed": null
+       }
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:out"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Out-parameter written only on success, with a NULL-terminated array of reftable_strdup names (empty lines dropped) that free_names releases; untouched on failure, after the partial array is freed."
+     }
+    }
+   ]
   },
   {
    "name": "pathspec_match_free",
@@ -26886,6 +27237,238 @@
    ]
   },
   {
+   "name": "reftable_alloc_grow",
+   "defined_in": "deps/reftable/basics.h",
+   "ptr_args": [
+    {
+     "name": "allocp",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:allocp"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "In/out element capacity; updated to max(2*old+1, nelem) only on success."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": true,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "NULL or a live allocation of *allocp elements of elsize bytes from reftable's allocator; given up when the grown allocation is returned, returned unchanged on failure (size overflow sets errno ENOMEM)."
+     }
+    }
+   ],
+   "ptr_ret": {
+    "ptr": {
+     "scalar": null,
+     "array": {
+      "by_val": true
+     },
+     "string": false,
+     "owned": true,
+     "borrowed": null,
+     "nullable": true,
+     "mutable": true,
+     "note": "The grown allocation, or p as passed when the size overflows or reftable_realloc fails; REFTABLE_ALLOC_GROW detects failure by *allocp staying below nelem."
+    }
+   }
+  },
+  {
+   "name": "reftable_alloc_size",
+   "defined_in": "deps/reftable/basics.h",
+   "ptr_args": [
+    {
+     "name": "out",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:out"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Out-parameter: written with nelem * elsize only when it does not overflow size_t (return 0); left unwritten on overflow (return -1)."
+     }
+    }
+   ]
+  },
+  {
+   "name": "reftable_buf_add",
+   "defined_in": "deps/reftable/basics.c",
+   "ptr_args": [
+    {
+     "name": "buf",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:buf"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "A reftable_buf the caller holds (stack, or embedded in a writer, iterator or record); unallocated (alloc 0, buf NULL, len 0) or allocated (buf owns alloc bytes, len < alloc). Not kept past the call. Grows through REFTABLE_ALLOC_GROW (reftable_realloc) to hold len + 1 more bytes; unchanged on REFTABLE_OUT_OF_MEMORY_ERROR. Leaves buf[len] NUL."
+     }
+    },
+    {
+     "name": "data",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:data"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "len arbitrary bytes, NUL bytes included, copied with memcpy; must not overlap the buffer's growth (a realloc may free it)."
+     }
+    }
+   ]
+  },
+  {
+   "name": "reftable_buf_addstr",
+   "defined_in": "deps/reftable/basics.c",
+   "ptr_args": [
+    {
+     "name": "buf",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:buf"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "A reftable_buf the caller holds (stack, or embedded in a writer, iterator or record); unallocated (alloc 0, buf NULL, len 0) or allocated (buf owns alloc bytes, len < alloc). Not kept past the call. As reftable_buf_add."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": null,
+      "array": null,
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "Read with strlen, then appended without its terminator."
+     }
+    }
+   ]
+  },
+  {
+   "name": "reftable_buf_cmp",
+   "defined_in": "deps/reftable/basics.c",
+   "ptr_args": [
+    {
+     "name": "a",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:a"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "A reftable_buf the caller holds (stack, or embedded in a writer, iterator or record); unallocated (alloc 0, buf NULL, len 0) or allocated (buf owns alloc bytes, len < alloc). Not kept past the call. Reads len and memcmp's buf[0..min len); buf not read when the shorter length is 0."
+     }
+    },
+    {
+     "name": "b",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:b"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "A reftable_buf the caller holds (stack, or embedded in a writer, iterator or record); unallocated (alloc 0, buf NULL, len 0) or allocated (buf owns alloc bytes, len < alloc). Not kept past the call. As a."
+     }
+    }
+   ]
+  },
+  {
+   "name": "reftable_buf_detach",
+   "defined_in": "deps/reftable/basics.c",
+   "ptr_args": [
+    {
+     "name": "buf",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:buf"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "A reftable_buf the caller holds (stack, or embedded in a writer, iterator or record); unallocated (alloc 0, buf NULL, len 0) or allocated (buf owns alloc bytes, len < alloc). Not kept past the call. Reinitialised to REFTABLE_BUF_INIT after its buf is handed out."
+     }
+    }
+   ],
+   "ptr_ret": {
+    "ptr": {
+     "scalar": null,
+     "array": {
+      "by_val": true
+     },
+     "string": true,
+     "owned": true,
+     "borrowed": null,
+     "nullable": true,
+     "mutable": true,
+     "note": "buf->buf as it was: NULL for an unallocated buffer, else the alloc-byte allocation of reftable's allocator, len bytes then the NUL basics.c writes (contents may hold NUL bytes); the caller releases it with reftable_free."
+    }
+   }
+  },
+  {
    "name": "reftable_buf_init",
    "defined_in": "deps/reftable/basics.c",
    "lifetime": {
@@ -26897,7 +27480,26 @@
      "alloc": false,
      "init": true
     }
-   }
+   },
+   "ptr_args": [
+    {
+     "name": "buf",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:buf"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Storage the caller provides, written whole with REFTABLE_BUF_INIT without being read: any previous allocation is not freed."
+     }
+    }
+   ]
   },
   {
    "name": "reftable_buf_release",
@@ -26908,7 +27510,72 @@
     "is_disposer": true,
     "is_cloner": null,
     "is_constructor": null
-   }
+   },
+   "ptr_args": [
+    {
+     "name": "buf",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:buf"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "A reftable_buf the caller holds (stack, or embedded in a writer, iterator or record); unallocated (alloc 0, buf NULL, len 0) or allocated (buf owns alloc bytes, len < alloc). Not kept past the call. Frees buf through reftable_free (NULL when unallocated, which reads the free hook) and reinitialises the struct, which stays the caller's storage."
+     }
+    }
+   ]
+  },
+  {
+   "name": "reftable_buf_reset",
+   "defined_in": "deps/reftable/basics.c",
+   "ptr_args": [
+    {
+     "name": "buf",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:buf"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "A reftable_buf the caller holds (stack, or embedded in a writer, iterator or record); unallocated (alloc 0, buf NULL, len 0) or allocated (buf owns alloc bytes, len < alloc). Not kept past the call. When allocated, sets len 0 and buf[0] NUL; keeps the allocation."
+     }
+    }
+   ]
+  },
+  {
+   "name": "reftable_buf_setlen",
+   "defined_in": "deps/reftable/basics.c",
+   "ptr_args": [
+    {
+     "name": "buf",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:buf"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "A reftable_buf the caller holds (stack, or embedded in a writer, iterator or record); unallocated (alloc 0, buf NULL, len 0) or allocated (buf owns alloc bytes, len < alloc). Not kept past the call. len > buf->len returns -1 untouched; len == buf->len returns 0 without writing; otherwise writes buf[len] NUL and sets len."
+     }
+    }
+   ]
   },
   {
    "name": "reftable_calloc",
@@ -26971,6 +27638,98 @@
    ]
   },
   {
+   "name": "reftable_get_be16",
+   "defined_in": "deps/reftable/basics.h",
+   "ptr_args": [
+    {
+     "name": "in",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:in"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "Type-erased byte buffer: exactly 2 bytes read as a big-endian integer, for the call only."
+     }
+    }
+   ]
+  },
+  {
+   "name": "reftable_get_be24",
+   "defined_in": "deps/reftable/basics.h",
+   "ptr_args": [
+    {
+     "name": "in",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:in"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "Type-erased byte buffer: exactly 3 bytes read as a big-endian integer, for the call only."
+     }
+    }
+   ]
+  },
+  {
+   "name": "reftable_get_be32",
+   "defined_in": "deps/reftable/basics.h",
+   "ptr_args": [
+    {
+     "name": "in",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:in"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "Type-erased byte buffer: exactly 4 bytes read as a big-endian integer, for the call only."
+     }
+    }
+   ]
+  },
+  {
+   "name": "reftable_get_be64",
+   "defined_in": "deps/reftable/basics.h",
+   "ptr_args": [
+    {
+     "name": "in",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:in"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "Type-erased byte buffer: exactly 8 bytes read as a big-endian integer, for the call only."
+     }
+    }
+   ]
+  },
+  {
    "name": "reftable_malloc",
    "defined_in": "deps/reftable/basics.c",
    "lifetime": {
@@ -27001,6 +27760,192 @@
    }
   },
   {
+   "name": "reftable_put_be16",
+   "defined_in": "deps/reftable/basics.h",
+   "ptr_args": [
+    {
+     "name": "out",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:out"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Type-erased byte buffer: exactly 2 bytes written, big-endian, never read; callers pass a position inside a block or footer they own."
+     }
+    }
+   ]
+  },
+  {
+   "name": "reftable_put_be24",
+   "defined_in": "deps/reftable/basics.h",
+   "ptr_args": [
+    {
+     "name": "out",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:out"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Type-erased byte buffer: exactly 3 bytes written, big-endian, never read; callers pass a position inside a block or footer they own."
+     }
+    }
+   ]
+  },
+  {
+   "name": "reftable_put_be32",
+   "defined_in": "deps/reftable/basics.h",
+   "ptr_args": [
+    {
+     "name": "out",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:out"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Type-erased byte buffer: exactly 4 bytes written, big-endian, never read; callers pass a position inside a block or footer they own."
+     }
+    }
+   ]
+  },
+  {
+   "name": "reftable_put_be64",
+   "defined_in": "deps/reftable/basics.h",
+   "ptr_args": [
+    {
+     "name": "out",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:out"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Type-erased byte buffer: exactly 8 bytes written, big-endian, never read; callers pass a position inside a block or footer they own."
+     }
+    }
+   ]
+  },
+  {
+   "name": "reftable_realloc",
+   "defined_in": "deps/reftable/basics.c",
+   "ptr_args": [
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": true,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "NULL or a live allocation of reftable's allocator. Given up on success, or always when sz == 0 (freed, NULL returned); stays the caller's when the resize fails."
+     }
+    }
+   ],
+   "ptr_ret": {
+    "ptr": {
+     "scalar": null,
+     "array": {
+      "by_val": true
+     },
+     "string": false,
+     "owned": true,
+     "borrowed": null,
+     "nullable": true,
+     "mutable": true,
+     "note": "The resized allocation; NULL on failure (p untouched) and for sz == 0 (p freed)."
+    }
+   }
+  },
+  {
+   "name": "reftable_set_alloc",
+   "defined_in": "deps/reftable/basics.c",
+   "ptr_args": [
+    {
+     "name": "free",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Stored in reftable_free_ptr; NULL falls back to free. Called with NULL too (reftable_free(NULL)). git_reftable_global_init (git_libgit2_init) installs libgit2's allocator; storage allocated under one set of hooks must be released under the same."
+     }
+    },
+    {
+     "name": "malloc",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Stored in the static reftable_malloc_ptr without synchronisation; NULL falls back to malloc. Called with sz > 0 only (reftable_malloc handles 0)."
+     }
+    },
+    {
+     "name": "realloc",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Stored in reftable_realloc_ptr; NULL falls back to realloc. Called with sz > 0 only (reftable_realloc frees on 0)."
+     }
+    }
+   ]
+  },
+  {
    "name": "reftable_strdup",
    "defined_in": "deps/reftable/basics.c",
    "lifetime": {
@@ -27012,6 +27957,37 @@
      "upref": false
     },
     "is_constructor": null
+   },
+   "ptr_args": [
+    {
+     "name": "str",
+     "ptr": {
+      "scalar": null,
+      "array": null,
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:str"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "Read with strlen for the call; never NULL at any caller."
+     }
+    }
+   ],
+   "ptr_ret": {
+    "ptr": {
+     "scalar": null,
+     "array": {
+      "by_val": true
+     },
+     "string": true,
+     "owned": true,
+     "borrowed": null,
+     "nullable": true,
+     "mutable": true,
+     "note": "A copy with its terminator in reftable_malloc storage, NULL on failure; released with reftable_free."
+    }
    }
   },
   {

@@ -28,8 +28,10 @@
 #include <git2/sys/stream.h>
 #include <git2/sys/transport.h>
 /* Internal headers. */
-#include "alloc.h"  /* src/util */
+#include "alloc.h"                      /* src/util */
+#include "allocators/failalloc.h"       /* src/util */
 #include "allocators/win32_leakcheck.h" /* src/util */
 #include "basics.h" /* deps/reftable */
+#include "reftable-error.h" /* deps/reftable */
 
 #include "shims.h"
