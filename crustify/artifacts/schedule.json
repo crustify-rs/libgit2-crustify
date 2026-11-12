@@ -115676,7 +115676,7 @@
           "module": "src/util/alloc.c",
           "foundational": true,
           "kind": "wrap",
-          "status": "wip",
+          "status": "done",
           "items": [
             {
               "name": "void (*)(void *)",
@@ -115775,6 +115775,19 @@
               "home": "src/libgit2/src/util/alloc.rs"
             }
           ],
+          "commits": [
+            "fce21ef4e701414c69fbcab0ef6aa3f0741b5f27"
+          ]
+        },
+        {
+          "index": 1,
+          "link_unit": "libgit2",
+          "module": "src/util/alloc.c",
+          "foundational": true,
+          "kind": "review",
+          "status": "wip",
+          "reviews": [],
+          "module_pass": true,
           "commits": []
         }
       ]
@@ -116288,7 +116301,7 @@
       "foundational": true,
       "layer": 2,
       "sublayer": 0,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [
           12
@@ -116360,10 +116373,13 @@
           "module": "src/util/allocators/debugalloc.c",
           "foundational": true,
           "kind": "review",
-          "status": "wip",
+          "status": "done",
           "reviews": [],
           "module_pass": true,
-          "commits": []
+          "commits": [
+            "801c9ddbd37979944e9997a87aa2997dd0311cfd",
+            "007596d400714b49f15c99644f1d100da7f9dcb6"
+          ]
         }
       ]
     },
