@@ -134,3 +134,10 @@ committed; the module's-end consolidation omits the revisits for a declined weak
 accounting rule asks for tokens the Review rows did not give; `templates/docker/Dockerfile:98`
 still calls `devel` the line campaigns run; and this campaign's `CRUSTIFY.md` evolution
 question still read the old model (fixed with the template's wording).
+
+Review-4's advisories landed as crustify `65cb926` and `10df2c5` on `libgit2-crustify/devel`:
+a `crustify:reviewer` subagent rejected `65cb926` for its record entry, which named no signal
+for two fixes a campaign can observe, and an ungrammatical sentence of `authoring`, and
+approved the correction `10df2c5` (88.8k tokens, 3m14s for both rounds, with `59c454c`'s
+review).
+

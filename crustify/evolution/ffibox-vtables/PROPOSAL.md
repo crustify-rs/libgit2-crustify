@@ -5,7 +5,8 @@ ffibox forked from `devel` `a0c44b2`, by fast-forward to `7af1232` (`d0f612e`, `
 `454172f`, `041fc6c`, `54be237`, `7af1232`), after its fourth review approved it; ffibox's
 `devel` takes it only with the user's approval, under the branching model of the user's
 crustify `c2f21a0`, which the user had the campaign follow on 2026-11-12. The `ffibox` tool
-skill's Binding symbols TODO is still to be replaced, and `filter.rs`'s port
+skill's Binding symbols TODO is replaced by the rule, crustify `59c454c` on Crustify's
+`libgit2-crustify/devel`, reviewed and approved by a `crustify:reviewer` subagent; and `filter.rs`'s port
 (`crustify/tmp/wt-vtables-out/filter-port-v4.patch`) is a validation, not landed.
 
 ## Signal
