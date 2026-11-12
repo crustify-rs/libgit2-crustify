@@ -14518,6 +14518,42 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn git_strlist_copy(
+        out: *mut *mut *mut ::std::os::raw::c_char,
+        in_: *mut *const ::std::os::raw::c_char,
+        len: usize,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn git_strlist_copy_with_null(
+        out: *mut *mut *mut ::std::os::raw::c_char,
+        in_: *mut *const ::std::os::raw::c_char,
+        len: usize,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn git_strlist_contains_prefix(
+        strings: *mut *const ::std::os::raw::c_char,
+        len: usize,
+        str_: *const ::std::os::raw::c_char,
+        n: usize,
+    ) -> bool;
+}
+unsafe extern "C" {
+    pub fn git_strlist_contains_key(
+        strings: *mut *const ::std::os::raw::c_char,
+        len: usize,
+        key: *const ::std::os::raw::c_char,
+        delimiter: ::std::os::raw::c_char,
+    ) -> bool;
+}
+unsafe extern "C" {
+    pub fn git_strlist_free(strings: *mut *mut ::std::os::raw::c_char, len: usize);
+}
+unsafe extern "C" {
+    pub fn git_strlist_free_with_null(strings: *mut *mut ::std::os::raw::c_char);
+}
+unsafe extern "C" {
     pub fn crustify_GIT_OID_DEFAULT() -> git_oid_t;
 }
 unsafe extern "C" {

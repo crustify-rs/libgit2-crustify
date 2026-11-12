@@ -719,3 +719,11 @@ function git__mallocarray
 function git__strdup
 function git__strndup
 function git__substrdup
+
+# wave-184/batch-0: src/util/strlist.c's string lists (src/util/strlist.h)
+function git_strlist_contains_key
+function git_strlist_contains_prefix
+function git_strlist_copy
+function git_strlist_copy_with_null
+function git_strlist_free
+function git_strlist_free_with_null

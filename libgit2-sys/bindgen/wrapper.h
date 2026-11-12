@@ -30,5 +30,6 @@
 /* Internal headers. */
 #include "alloc.h"  /* src/util */
 #include "basics.h" /* deps/reftable */
+#include "strlist.h" /* src/util */
 
 #include "shims.h"

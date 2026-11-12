@@ -70,6 +70,17 @@ The shipped build then needs the static archive, as bundled mode would build it,
 internal functions the safe crate calls exported, or system mode gated off once a safe
 wrapper reaches an internal symbol, as it is gated off once a module is integrated.
 
+### Further evidence: a second internal header (wave-184/batch-0)
+
+`foundational/libgit2/src/util/strlist.c/wave-184/batch-0/run-1` added
+`#include "strlist.h"` to `wrapper.h` and allowlisted the six functions `strlist.c` defines,
+which `src/libgit2/src/util/strlist.rs` calls; `libgit2.so` exports none of them. The
+packaging gate, `cargo package -p libgit2-sys --allow-dirty` with `CRUSTIFY_BUILD_VARIANT=`
+and no `LIBGIT2_DIR`, fails to verify the tarball in system mode, the default for a crate
+whose `c/` is still the whole library, before compiling anything: `libgit2 not found: set
+LIBGIT2_DIR to its install prefix`. With an install it would stop at `wrapper.h`'s internal
+includes, as above, and could not link the internal functions either.
+
 ## Destination
 
 The spec: `bindgen`, Generation and Build modes, which the binder does not own.

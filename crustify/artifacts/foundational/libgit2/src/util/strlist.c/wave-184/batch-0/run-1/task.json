@@ -1,0 +1,72 @@
+{
+  "objective": "wrap",
+  "wave": 184,
+  "batch": 0,
+  "link_unit": "libgit2",
+  "module": "src/util/strlist.c",
+  "foundational": true,
+  "base_branch": "refs/heads/crustify/waves/wave-184",
+  "backend": "claude",
+  "billing": "subscription",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "5de4538",
+    "wavefront": "ca31018",
+    "ffimap": "9aa2ef1",
+    "ffibox": "551d27d"
+  },
+  "items": [
+    {
+      "name": "git_strlist_contains_prefix",
+      "defined_in": "src/util/strlist.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/strlist.rs"
+    },
+    {
+      "name": "git_strlist_copy",
+      "defined_in": "src/util/strlist.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/strlist.rs"
+    },
+    {
+      "name": "git_strlist_copy_with_null",
+      "defined_in": "src/util/strlist.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/strlist.rs"
+    },
+    {
+      "name": "git_strlist_free",
+      "defined_in": "src/util/strlist.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/strlist.rs"
+    },
+    {
+      "name": "git_strlist_free_with_null",
+      "defined_in": "src/util/strlist.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/strlist.rs"
+    },
+    {
+      "name": "git_strlist_contains_key",
+      "defined_in": "src/util/strlist.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/strlist.rs"
+    }
+  ],
+  "session_id": "agent-a357bf78e69fd80f8"
+}

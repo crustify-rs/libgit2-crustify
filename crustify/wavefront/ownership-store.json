@@ -22686,6 +22686,94 @@
    ]
   },
   {
+   "name": "git_strlist_contains_key",
+   "defined_in": "src/util/strlist.c",
+   "ptr_args": [
+    {
+     "name": "key",
+     "ptr": {
+      "scalar": null,
+      "array": null,
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:key"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "Scanned up to the delimiter or its terminator, then its bytes before the delimiter are the prefix git_strlist_contains_prefix searches for: the delimiter itself is not compared, so \"FOO=1\" matches \"FOOBAR=2\". Without the delimiter (or with delimiter NUL) the result is false and strings is not read."
+     }
+    },
+    {
+     "name": "strings",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_ref": {
+        "owned": false,
+        "borrowed": {
+         "lifetime": "arg:strings"
+        }
+       }
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:strings"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "As git_strlist_contains_prefix's strings, read only when key holds the delimiter."
+     }
+    }
+   ]
+  },
+  {
+   "name": "git_strlist_contains_prefix",
+   "defined_in": "src/util/strlist.c",
+   "ptr_args": [
+    {
+     "name": "str",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:str"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "Read by strncmp(strings[i], str, n): at most n bytes, stopping at a NUL, so a run of n bytes need not be NUL-terminated. A NUL within the first n bytes makes the comparison an exact match of the bytes before it. n == 0 reads nothing and matches every string."
+     }
+    },
+    {
+     "name": "strings",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_ref": {
+        "owned": false,
+        "borrowed": {
+         "lifetime": "arg:strings"
+        }
+       }
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:strings"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "len non-NULL NUL-terminated strings, each read by strncmp during the call only. Read only when len > 0."
+     }
+    }
+   ]
+  },
+  {
    "name": "git_strlist_copy",
    "defined_in": "src/util/strlist.c",
    "lifetime": {
@@ -22697,7 +22785,51 @@
      "upref": false
     },
     "is_constructor": null
-   }
+   },
+   "ptr_args": [
+    {
+     "name": "in",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_ref": {
+        "owned": false,
+        "borrowed": {
+         "lifetime": "arg:in"
+        }
+       }
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:in"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "len NUL-terminated strings, each read up to its terminator by git__strdup during the call and never kept; every element must be non-NULL (strdup(NULL) crashes). Read only when len > 0, so NULL is accepted with len == 0."
+     }
+    },
+    {
+     "name": "out",
+     "ptr": {
+      "scalar": {
+       "by_ref": {
+        "owned": true,
+        "borrowed": null
+       }
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:out"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Out-parameter, written only on success: the caller receives a git__calloc array of len git__strdup copies, which it owns and releases with git_strlist_free(*out, len). On failure *out is left untouched and the array and the copies made so far leak (GIT_ERROR_CHECK_ALLOC returns without freeing). len == 0 still allocates: git__calloc(0, 8), a zero-byte block, or a failure when the allocator returns NULL for it."
+     }
+    }
+   ]
   },
   {
    "name": "git_strlist_copy_with_null",
@@ -22711,7 +22843,51 @@
      "upref": false
     },
     "is_constructor": null
-   }
+   },
+   "ptr_args": [
+    {
+     "name": "in",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_ref": {
+        "owned": false,
+        "borrowed": {
+         "lifetime": "arg:in"
+        }
+       }
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:in"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "As git_strlist_copy's in: len non-NULL strings borrowed for the call; the input is counted, not NULL-terminated."
+     }
+    },
+    {
+     "name": "out",
+     "ptr": {
+      "scalar": {
+       "by_ref": {
+        "owned": true,
+        "borrowed": null
+       }
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:out"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Out-parameter, written only on success: a git__calloc array of len + 1 slots, the first len git__strdup copies and the last NULL, which the caller owns and releases with git_strlist_free_with_null(*out). Failure leaks as git_strlist_copy does; len + 1 is checked for overflow (GIT_ERROR_CHECK_ALLOC_ADD)."
+     }
+    }
+   ]
   },
   {
    "name": "git_strlist_free",
@@ -22722,7 +22898,27 @@
     "is_disposer": false,
     "is_cloner": null,
     "is_constructor": null
-   }
+   },
+   "ptr_args": [
+    {
+     "name": "strings",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_ref": {
+        "owned": true,
+        "borrowed": null
+       }
+      },
+      "string": false,
+      "owned": true,
+      "borrowed": null,
+      "nullable": true,
+      "mutable": false,
+      "note": "A git__calloc array whose first len elements are strings of libgit2's allocator: each is git__free'd, NULL ones included (a no-op), then the array. NULL returns at once."
+     }
+    }
+   ]
   },
   {
    "name": "git_strlist_free_with_null",
@@ -22733,7 +22929,27 @@
     "is_disposer": false,
     "is_cloner": null,
     "is_constructor": null
-   }
+   },
+   "ptr_args": [
+    {
+     "name": "strings",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_ref": {
+        "owned": true,
+        "borrowed": null
+       }
+      },
+      "string": false,
+      "owned": true,
+      "borrowed": null,
+      "nullable": true,
+      "mutable": false,
+      "note": "A NULL-terminated array of libgit2's allocator whose elements before the terminator are strings of the same allocator: each is git__free'd, then the array. NULL returns at once."
+     }
+    }
+   ]
   },
   {
    "name": "git_tag_annotation_create",
