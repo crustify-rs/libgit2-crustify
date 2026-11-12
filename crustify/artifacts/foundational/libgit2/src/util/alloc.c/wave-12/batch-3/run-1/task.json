@@ -1,0 +1,26 @@
+{
+  "commits": [
+    "c0c753430c0c1c481140b9e8c9db9be19a02d63e",
+    "1dc9911d7571383efccfb511578b07f87206d6ae"
+  ],
+  "wave": 12,
+  "batch": 3,
+  "link_unit": "libgit2",
+  "module": "src/util/alloc.c",
+  "foundational": true,
+  "base_branch": "refs/heads/crustify/waves/wave-12",
+  "backend": "claude",
+  "billing": "subscription",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "20500ce",
+    "wavefront": "ca31018",
+    "ffimap": "405e053",
+    "ffibox": "551d27d"
+  },
+  "wave_gates": true,
+  "session_id": "agent-a2741c1878afb3794"
+}

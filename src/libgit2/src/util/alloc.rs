@@ -11,12 +11,12 @@
 //! the value is only borrowed for that call and owns nothing: it is held by value,
 //! copied freely, and never released.
 //!
-//! The header's init routines are not part of libgit2.so's interface:
-//! `git_stdalloc_init_allocator` is compiled hidden and
-//! `git_win32_crtdbg_init_allocator` is never defined on this platform. A value is
-//! therefore built in Rust, from an [`Alloc`] implementation ([`Allocator::new`]),
-//! whose `extern "C"` trampolines adapt libgit2's calls to it, or from three C
-//! functions ([`Allocator::from_fns`]).
+//! The header's init routines are not this module's: `git_stdalloc_init_allocator` is
+//! `src/util/allocators/stdalloc.c`'s, wrapped with that module, and
+//! `git_win32_crtdbg_init_allocator` is never defined on this platform. A value is built
+//! here from an [`Alloc`] implementation ([`Allocator::new`]), whose `extern "C"`
+//! trampolines adapt libgit2's calls to it, or from three C functions
+//! ([`Allocator::from_fns`]).
 //!
 //! The members are function pointers, so reading or replacing one is safe and calling
 //! one is `unsafe`, under the contract its type alias states. Which members make a
@@ -55,8 +55,14 @@
 //! leaves it, and so does a run whose size overflows, which C refuses before asking
 //! the allocator. The strategies add one check of their own: a run whose size passes
 //! `isize::MAX` bytes, which no Rust slice may span, is refused before C is asked, with
-//! the same error. ffibox's own constructors of a run ([`AllocVec::new_uninit`] and its
-//! siblings) refuse such a size without reporting it, as they ask libgit2 nothing.
+//! the same error, whichever constructor builds the run: ffibox's own
+//! ([`AllocVec::new_uninit`], [`AllocVec::from_fn`]) included, which refuse a size that
+//! overflows `usize` without reporting it.
+//!
+//! Storage is vouched for at the alignment of a `usize` or a `u64`, whichever is wider
+//! (8 bytes on 64-bit targets), not `malloc`'s: libgit2 configured with
+//! `DEBUG_STRICT_ALLOC` runs on its `debugalloc`, which returns `malloc`'s block offset
+//! by a `size_t`. A type aligned beyond it is refused at compile time.
 //!
 //! An allocation is released through whichever allocator libgit2 holds when it is
 //! released, so replacing the allocator while an owner lives is
@@ -466,9 +472,19 @@ mod ffi_import {
     // --- The strategies over libgit2's allocator family ---------------------------------
 
     /// The alignment every allocation this module asks for at least this many bytes is
-    /// guaranteed: `malloc`'s, which [`Alloc`]'s contract makes every allocator libgit2
-    /// runs on keep for an object that fills the request.
-    const MAX_ALIGN: usize = align_of::<nix::libc::max_align_t>();
+    /// guaranteed: that of a `usize` or a `u64`, whichever is wider.
+    ///
+    /// Not `malloc`'s (`max_align_t`, 16 bytes on x86-64): libgit2 configured with
+    /// `DEBUG_STRICT_ALLOC` installs `debugalloc` as its default allocator, which prefixes
+    /// each `malloc` block with its `size_t` length and returns the address past it, so it
+    /// keeps only `size_t`'s alignment. libgit2 itself places structs of pointers, `size_t`s
+    /// and 64-bit integers in that storage, and its CI runs under `debugalloc`, so every
+    /// allocator libgit2 runs on keeps this much; [`Alloc`]'s contract asks more of one
+    /// installed from Rust.
+    const MAX_ALIGN: usize = {
+        let (word, wide) = (align_of::<usize>(), align_of::<u64>());
+        if word > wide { word } else { wide }
+    };
 
     /// A run's pointer for C to read `bytes.len()` bytes through: an empty run's is a live
     /// empty string, since C may not be handed a dangling pointer, even to read nothing.
@@ -567,12 +583,12 @@ mod ffi_import {
     /// releases nothing the object owns. A `T` owning resources is promoted to a fuller
     /// destructor with `with_policy` before it acquires them.
     ///
-    /// A type aligned beyond what the allocator vouches for is rejected:
+    /// A type aligned beyond what the allocator vouches for, 16 bytes included, is rejected:
     ///
     /// ```compile_fail,E0080
     /// use libgit2::libgit2::src::util::alloc::AllocBox;
     ///
-    /// #[repr(C, align(64))]
+    /// #[repr(C, align(16))]
     /// pub struct wide_st { pub x: u8 }
     /// ffibox::define_ctype!(Wide, WideRef, WideMut, wide_st);
     ///
@@ -672,16 +688,23 @@ mod ffi_import {
     /// a run of owners releases each.
     ///
     /// Element types aligned beyond what the allocator vouches for are rejected, as are
-    /// zero-sized ones, which need no storage:
+    /// zero-sized ones, which need no storage. A `u128` is 16-aligned, which `debugalloc`'s
+    /// storage is not, whichever constructor would build the run:
     ///
     /// ```compile_fail,E0080
     /// use libgit2::libgit2::src::util::alloc::AllocVec;
     ///
-    /// #[derive(Clone, Copy)]
-    /// #[repr(align(64))]
-    /// struct Wide(u8);
+    /// let _ = AllocVec::<u128>::from_slice(&[1, 2]);
+    /// ```
     ///
-    /// let _ = AllocVec::<Wide>::from_slice(&[Wide(0)]);
+    /// ```compile_fail,E0080
+    /// use libgit2::libgit2::src::util::alloc::AllocVec;
+    ///
+    /// let _ = AllocVec::<u128>::from_fn(2, |i| i as u128);
+    /// ```
+    ///
+    /// ```compile_fail,E0080
+    /// let _ = libgit2::libgit2::src::util::alloc::ArrayFree::new_zeroed::<u128>(2);
     /// ```
     ///
     /// ```compile_fail,E0080
@@ -721,6 +744,11 @@ mod ffi_import {
         #[doc(alias = "git__malloc")]
         #[inline]
         fn c_alloc_len(&self, byte_len: usize) -> Option<NonNull<u8>> {
+            // ffibox's run constructors refuse only a size that overflows `usize`.
+            if exceeds_slice_bytes(byte_len, 1) {
+                set_oom();
+                return None;
+            }
             malloc(byte_len.max(MAX_ALIGN))
         }
     }
@@ -1517,6 +1545,12 @@ mod ffi_import {
                     assert!(ArrayFree::new_uninit::<u8>(isize::MAX as usize + 1).is_none());
                     assert_out_of_memory();
                     assert!(ArrayFree::new_uninit::<[u8; 3]>(usize::MAX / 3 + 1).is_none());
+                    assert_out_of_memory();
+                    // ffibox's own constructors reach the policy's `c_alloc_len`, which
+                    // refuses a size past `isize::MAX` as well.
+                    assert!(AllocVec::<u8>::new_uninit(isize::MAX as usize + 1).is_none());
+                    assert_out_of_memory();
+                    assert!(AllocVec::<u16>::from_fn(isize::MAX as usize / 2 + 1, |_| 0).is_none());
                     assert_out_of_memory();
                     // An overflow is C's to refuse, a size past `isize::MAX` the strategy's.
                     assert!(!exceeds_slice_bytes(isize::MAX as usize, 1));

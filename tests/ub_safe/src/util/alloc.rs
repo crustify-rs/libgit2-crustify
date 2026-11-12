@@ -136,8 +136,8 @@ fn vec_storage_aligns_wide_elements() {
     assert!(ptrs.as_slice().iter().all(|q| q.is_null()));
     let floats = AllocVec::<f64>::from_slice(&[0.5, -1.0]).unwrap();
     assert_eq!(floats.clone().as_slice(), &[0.5, -1.0]);
-    let wide = AllocVec::<u128>::from_slice(&[u128::MAX]).unwrap();
-    assert_eq!(wide.as_ptr() as usize % align_of::<u128>(), 0);
+    let longs = ArrayFree::new_uninit::<i64>(5).unwrap();
+    assert_eq!(longs.as_ptr() as usize % align_of::<i64>(), 0);
     let byte = AllocVec::<u8>::from_slice(&[9]).unwrap();
     assert_eq!(byte.clone().as_slice(), &[9]);
 }
@@ -174,6 +174,8 @@ fn vec_rejects_oversized_requests_without_panicking() {
     assert!(ArrayFree::new_uninit::<MaybeUninit<u64>>(usize::MAX / 4).is_none());
     assert!(ArrayFree::new_zeroed::<u32>(usize::MAX).is_none());
     assert!(AllocVec::<u64>::new_uninit(usize::MAX).is_none());
+    assert!(AllocVec::<u8>::new_uninit(isize::MAX as usize + 1).is_none());
+    assert!(AllocVec::<u8>::from_fn(isize::MAX as usize + 1, |_| 0).is_none());
 }
 
 // --- strings ----------------------------------------------------------------------------
