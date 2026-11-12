@@ -1,6 +1,9 @@
 # wavefront records no use of an enum constant
 
-Status: `open`
+Status: `landed`, as wavefront `497794b` on `devel` (and `69a97a0`, which ships the `.qll`
+libraries the data-files list left out). The `todo` waves take it only once the campaign's
+tables are extracted again (`t2/enum_constant_uses.csv`) and a planner run re-plans them;
+that run decides first where `git_filemode_t` is homed (see Validation).
 
 ## Signal
 
@@ -40,5 +43,15 @@ an enum constant through `int`.
 
 ## Validation
 
-Not yet: wavefront's suite, plus the count of new dependencies the extraction yields over
-libgit2 and of the `todo` waves whose `depends_on` it changes.
+- wavefront's suite, 250 tests, with 15 new ones over a fixture whose function returns an
+  enum constant through `int`; `macro_references` and `layout_uses` byte-identical on libgit2
+  before and after.
+- Over libgit2, on copies under `crustify/tmp/wavefront-enum-constant-uses/`: 18,231 rows,
+  8,155 (user, enum) pairs over 174 enums. `reftable_buf_add` now depends on
+  `reftable_error`. Scheduling the campaign's configuration gives 2,963 new item-to-enum
+  edges; 12 modules gain a dependency on a module they were not ordered after: the 11
+  reftable modules on `deps/reftable/error.c`, and `src/util/futils.c` on
+  `src/libgit2/tree.c`, through one use (`GIT_MODE_ISBLOB`, `src/util/futils.h`, names
+  `GIT_FILEMODE_BLOB` of `git_filemode_t`, homed in `tree.c`). That one edge closes a
+  util–libgit2 cycle and accounts for 485 of the 524 new item cuts and 43 of the 44 new
+  module cuts (item cuts 1340 → 1864, module cuts 206 → 250, waves 1234 → 1237).
