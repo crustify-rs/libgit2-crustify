@@ -112786,7 +112786,7 @@
       "foundational": true,
       "layer": 0,
       "sublayer": 0,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [],
         "cut": []
@@ -114211,10 +114211,13 @@
           "module": "deps/reftable/basics.c",
           "foundational": true,
           "kind": "review",
-          "status": "wip",
+          "status": "done",
           "reviews": [],
           "module_pass": true,
-          "commits": []
+          "commits": [
+            "7db163587df7f5d320844352dc1be686ad7d1e9a",
+            "81dede2b17b9d2b6d8ab21ee99ff4009bbd167cb"
+          ]
         }
       ]
     },
@@ -114225,7 +114228,7 @@
       "foundational": true,
       "layer": 0,
       "sublayer": 1,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [
           169
@@ -114507,7 +114510,7 @@
       "foundational": true,
       "layer": 0,
       "sublayer": 2,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [
           169,
@@ -114676,7 +114679,7 @@
       "foundational": true,
       "layer": 0,
       "sublayer": 3,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [
           169,
@@ -114890,7 +114893,7 @@
       "foundational": true,
       "layer": 0,
       "sublayer": 4,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [
           169,
@@ -114950,7 +114953,7 @@
       "foundational": true,
       "layer": 0,
       "sublayer": 5,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [
           169,
@@ -115042,7 +115045,7 @@
       "foundational": true,
       "layer": 0,
       "sublayer": 6,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [
           169,
@@ -115101,7 +115104,7 @@
       "foundational": true,
       "layer": 0,
       "sublayer": 0,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [],
         "cut": [
@@ -115309,10 +115312,12 @@
           "module": "src/util/allocators/failalloc.c",
           "foundational": true,
           "kind": "review",
-          "status": "wip",
+          "status": "done",
           "reviews": [],
           "module_pass": true,
-          "commits": []
+          "commits": [
+            "018f7da5e8a3f531a4b008a402b1cfbd1c3697b9"
+          ]
         }
       ]
     },
@@ -115323,7 +115328,7 @@
       "foundational": true,
       "layer": 1,
       "sublayer": 1,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           12
@@ -115664,7 +115669,128 @@
         }
       ],
       "packed_with": null,
-      "batches": []
+      "batches": [
+        {
+          "index": 0,
+          "link_unit": "libgit2",
+          "module": "src/util/alloc.c",
+          "foundational": true,
+          "kind": "wrap",
+          "status": "done",
+          "items": [
+            {
+              "name": "void (*)(void *)",
+              "defined_in": "include/git2/sys/alloc.h",
+              "kind": "function_pointer",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "void * (*)(size_t, const char *, int)",
+              "defined_in": "include/git2/sys/alloc.h",
+              "kind": "function_pointer",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "void * (*)(void *, size_t, const char *, int)",
+              "defined_in": "include/git2/sys/alloc.h",
+              "kind": "function_pointer",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "xdl_calloc",
+              "defined_in": "deps/xdiff/git-xdiff.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "xdl_free",
+              "defined_in": "deps/xdiff/git-xdiff.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "xdl_malloc",
+              "defined_in": "deps/xdiff/git-xdiff.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "xdl_realloc",
+              "defined_in": "deps/xdiff/git-xdiff.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "git__allocator",
+              "defined_in": "src/util/alloc.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "git__realloc",
+              "defined_in": "src/util/alloc.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "git__reallocarray",
+              "defined_in": "src/util/alloc.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "git_allocator_global_init",
+              "defined_in": "src/util/alloc.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            },
+            {
+              "name": "git_allocator_setup",
+              "defined_in": "src/util/alloc.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/alloc.rs"
+            }
+          ],
+          "commits": [
+            "fce21ef4e701414c69fbcab0ef6aa3f0741b5f27"
+          ]
+        },
+        {
+          "index": 1,
+          "link_unit": "libgit2",
+          "module": "src/util/alloc.c",
+          "foundational": true,
+          "kind": "review",
+          "status": "wip",
+          "reviews": [],
+          "module_pass": true,
+          "commits": []
+        }
+      ]
     },
     {
       "index": 178,
@@ -115673,7 +115799,7 @@
       "foundational": true,
       "layer": 1,
       "sublayer": 2,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           12,
@@ -115727,7 +115853,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 177,
       "batches": []
     },
     {
@@ -115737,7 +115863,7 @@
       "foundational": true,
       "layer": 1,
       "sublayer": 3,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           12,
@@ -115789,7 +115915,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 177,
       "batches": []
     },
     {
@@ -115799,7 +115925,7 @@
       "foundational": true,
       "layer": 1,
       "sublayer": 4,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           12,
@@ -115984,7 +116110,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 177,
       "batches": []
     },
     {
@@ -115994,7 +116120,7 @@
       "foundational": true,
       "layer": 2,
       "sublayer": 0,
-      "status": "todo",
+      "status": "done",
       "depends_on": {
         "scheduled": [
           12
@@ -116040,7 +116166,42 @@
         }
       ],
       "packed_with": null,
-      "batches": []
+      "batches": [
+        {
+          "index": 0,
+          "link_unit": "libgit2",
+          "module": "src/util/allocators/stdalloc.c",
+          "foundational": true,
+          "kind": "wrap",
+          "status": "done",
+          "items": [
+            {
+              "name": "git_stdalloc_init_allocator",
+              "defined_in": "src/util/allocators/stdalloc.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/allocators/stdalloc.rs"
+            }
+          ],
+          "commits": [
+            "4788fd67e0da7c2f8a9526e232adf85db3fb3b69"
+          ]
+        },
+        {
+          "index": 1,
+          "link_unit": "libgit2",
+          "module": "src/util/allocators/stdalloc.c",
+          "foundational": true,
+          "kind": "review",
+          "status": "done",
+          "reviews": [],
+          "module_pass": true,
+          "commits": [
+            "b41de91fd29997ecbcfb5f4f6508269f96a740da"
+          ]
+        }
+      ]
     },
     {
       "index": 182,
@@ -116049,7 +116210,7 @@
       "foundational": true,
       "layer": 2,
       "sublayer": 0,
-      "status": "todo",
+      "status": "done",
       "depends_on": {
         "scheduled": [
           12
@@ -116096,7 +116257,42 @@
         }
       ],
       "packed_with": null,
-      "batches": []
+      "batches": [
+        {
+          "index": 0,
+          "link_unit": "libgit2",
+          "module": "src/util/allocators/win32_leakcheck.c",
+          "foundational": true,
+          "kind": "wrap",
+          "status": "done",
+          "items": [
+            {
+              "name": "git_win32_leakcheck_init_allocator",
+              "defined_in": "src/util/allocators/win32_leakcheck.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/allocators/win32_leakcheck.rs"
+            }
+          ],
+          "commits": [
+            "cff595a0915c088f50e8c1a2336ea4763b46d99d"
+          ]
+        },
+        {
+          "index": 1,
+          "link_unit": "libgit2",
+          "module": "src/util/allocators/win32_leakcheck.c",
+          "foundational": true,
+          "kind": "review",
+          "status": "done",
+          "reviews": [],
+          "module_pass": true,
+          "commits": [
+            "d2b4d3e8b303d815b8e5fd28021f14394a4d1fa1"
+          ]
+        }
+      ]
     },
     {
       "index": 183,
@@ -116105,7 +116301,7 @@
       "foundational": true,
       "layer": 2,
       "sublayer": 0,
-      "status": "todo",
+      "status": "done",
       "depends_on": {
         "scheduled": [
           12
@@ -116149,7 +116345,43 @@
         }
       ],
       "packed_with": null,
-      "batches": []
+      "batches": [
+        {
+          "index": 0,
+          "link_unit": "libgit2",
+          "module": "src/util/allocators/debugalloc.c",
+          "foundational": true,
+          "kind": "wrap",
+          "status": "done",
+          "items": [
+            {
+              "name": "git_debugalloc_init_allocator",
+              "defined_in": "src/util/allocators/debugalloc.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/allocators/debugalloc.rs"
+            }
+          ],
+          "commits": [
+            "fd3e6b8e126b4d8cb5b220f7402b0c87cdbecbaa"
+          ]
+        },
+        {
+          "index": 1,
+          "link_unit": "libgit2",
+          "module": "src/util/allocators/debugalloc.c",
+          "foundational": true,
+          "kind": "review",
+          "status": "done",
+          "reviews": [],
+          "module_pass": true,
+          "commits": [
+            "801c9ddbd37979944e9997a87aa2997dd0311cfd",
+            "007596d400714b49f15c99644f1d100da7f9dcb6"
+          ]
+        }
+      ]
     },
     {
       "index": 184,
@@ -116158,7 +116390,7 @@
       "foundational": true,
       "layer": 2,
       "sublayer": 0,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           12
@@ -116342,7 +116574,80 @@
         }
       ],
       "packed_with": null,
-      "batches": []
+      "batches": [
+        {
+          "index": 0,
+          "link_unit": "libgit2",
+          "module": "src/util/strlist.c",
+          "foundational": true,
+          "kind": "wrap",
+          "status": "done",
+          "items": [
+            {
+              "name": "git_strlist_contains_prefix",
+              "defined_in": "src/util/strlist.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/strlist.rs"
+            },
+            {
+              "name": "git_strlist_copy",
+              "defined_in": "src/util/strlist.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/strlist.rs"
+            },
+            {
+              "name": "git_strlist_copy_with_null",
+              "defined_in": "src/util/strlist.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/strlist.rs"
+            },
+            {
+              "name": "git_strlist_free",
+              "defined_in": "src/util/strlist.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/strlist.rs"
+            },
+            {
+              "name": "git_strlist_free_with_null",
+              "defined_in": "src/util/strlist.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/strlist.rs"
+            },
+            {
+              "name": "git_strlist_contains_key",
+              "defined_in": "src/util/strlist.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/strlist.rs"
+            }
+          ],
+          "commits": [
+            "aba03725e2756a17ccccef7940f1d410d60c0461"
+          ]
+        },
+        {
+          "index": 1,
+          "link_unit": "libgit2",
+          "module": "src/util/strlist.c",
+          "foundational": true,
+          "kind": "review",
+          "status": "wip",
+          "reviews": [],
+          "module_pass": true,
+          "commits": []
+        }
+      ]
     },
     {
       "index": 185,
@@ -116351,7 +116656,7 @@
       "foundational": true,
       "layer": 2,
       "sublayer": 1,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           184
@@ -116394,7 +116699,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 184,
       "batches": []
     },
     {

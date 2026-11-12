@@ -1,0 +1,16 @@
+[package]
+name = "error-display-is-not-reftable-error-str"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+libgit2 = { path = "../../../../../../../../../../.." }
+
+[patch."https://github.com/crustify-rs/glibc-bindings"]
+glibc-bindings = { path = "/target/glibc-bindings" }
+
+[patch."https://github.com/crustify-rs/ffibox"]
+ffibox = { path = "/opt/venv/share/ffibox" }

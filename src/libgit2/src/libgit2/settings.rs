@@ -1257,7 +1257,9 @@ pub unsafe fn enable_strict_hash_verification(enabled: bool) {
 }
 
 /// Makes `allocator` libgit2's memory allocator for every later allocation, or with
-/// `None` restores the system allocator (`malloc` and friends).
+/// `None` restores its default one: the standard allocator over the C library's `malloc`
+/// and friends ([`stdalloc::allocator`]), or, in a build with `DEBUG_STRICT_ALLOC`, the debug
+/// allocator ([`Allocator::debug`]'s family, without its guards).
 ///
 /// libgit2 copies the three members into a global (`git__allocator`), so `allocator`
 /// is borrowed for the call only. Does not initialise libgit2: initialisation keeps an
@@ -1266,13 +1268,14 @@ pub unsafe fn enable_strict_hash_verification(enabled: bool) {
 /// # Safety
 ///
 /// - `allocator`'s members must form one allocator family meeting [`Alloc`]'s contract, as an
-///   [`Allocator::new`] value does, and [`Allocator::debug`]'s; an [`Allocator::from_fns`] value
-///   does only if its functions do.
+///   [`Allocator::new`] value does, and so do the [`stdalloc::allocator`] and [`Allocator::debug`]
+///   values; an [`Allocator::from_fns`] value does only if its functions do.
 ///
 /// [`Alloc`]: crate::libgit2::src::util::alloc::Alloc
 /// [`Allocator::new`]: crate::libgit2::src::util::alloc::Allocator::new
 /// [`Allocator::from_fns`]: crate::libgit2::src::util::alloc::Allocator::from_fns
 /// [`Allocator::debug`]: crate::libgit2::src::util::alloc::Allocator::debug
+/// [`stdalloc::allocator`]: crate::libgit2::src::util::allocators::stdalloc::allocator
 /// - Every allocation libgit2 holds when this runs must be one the new family can resize and
 ///   release, since libgit2 releases it through whichever allocator is current then: install before
 ///   libgit2 is initialised (before any call into this crate that reaches libgit2 — libgit2's

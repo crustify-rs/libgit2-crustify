@@ -1,0 +1,184 @@
+{
+  "objective": "wrap",
+  "wave": 169,
+  "batch": 2,
+  "link_unit": "libgit2",
+  "module": "deps/reftable/basics.c",
+  "foundational": true,
+  "base_branch": "refs/heads/crustify/waves/wave-169",
+  "backend": "claude",
+  "billing": "subscription",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "20500ce",
+    "wavefront": "ca31018",
+    "ffimap": "405e053",
+    "ffibox": "551d27d"
+  },
+  "items": [
+    {
+      "name": "binsearch",
+      "defined_in": "deps/reftable/basics.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "common_prefix_size",
+      "defined_in": "deps/reftable/basics.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "hash_size",
+      "defined_in": "deps/reftable/basics.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "reftable_buf_cmp",
+      "defined_in": "deps/reftable/basics.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "reftable_buf_init",
+      "defined_in": "deps/reftable/basics.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "reftable_buf_reset",
+      "defined_in": "deps/reftable/basics.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "reftable_buf_setlen",
+      "defined_in": "deps/reftable/basics.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "reftable_buf_detach",
+      "defined_in": "deps/reftable/basics.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "reftable_free",
+      "defined_in": "deps/reftable/basics.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "reftable_malloc",
+      "defined_in": "deps/reftable/basics.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "reftable_set_alloc",
+      "defined_in": "deps/reftable/basics.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "free_names",
+      "defined_in": "deps/reftable/basics.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "reftable_buf_release",
+      "defined_in": "deps/reftable/basics.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "reftable_calloc",
+      "defined_in": "deps/reftable/basics.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "reftable_realloc",
+      "defined_in": "deps/reftable/basics.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "reftable_strdup",
+      "defined_in": "deps/reftable/basics.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "reftable_alloc_grow",
+      "defined_in": "deps/reftable/basics.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "parse_names",
+      "defined_in": "deps/reftable/basics.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "reftable_buf_add",
+      "defined_in": "deps/reftable/basics.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "reftable_buf_addstr",
+      "defined_in": "deps/reftable/basics.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    }
+  ],
+  "session_id": "agent-aefbdafc7c5a4d9b4"
+}

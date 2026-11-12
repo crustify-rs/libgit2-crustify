@@ -1,0 +1,28 @@
+{
+  "paths": [
+    "src/libgit2/src/util/allocators/win32_leakcheck.rs",
+    "tests/equiv/src/util/allocators/win32_leakcheck.rs",
+    "tests/ub_safe/src/util/allocators/win32_leakcheck.rs"
+  ],
+  "wave": 182,
+  "batch": 1,
+  "link_unit": "libgit2",
+  "module": "src/util/allocators/win32_leakcheck.c",
+  "foundational": true,
+  "base_branch": "refs/heads/crustify/waves/wave-182",
+  "backend": "claude",
+  "billing": "subscription",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "8e23c1c",
+    "wavefront": "ca31018",
+    "ffimap": "9aa2ef1",
+    "ffibox": "551d27d"
+  },
+  "wave_gates": true,
+  "module_pass": true,
+  "session_id": "agent-afa7eec508cbe3183"
+}
