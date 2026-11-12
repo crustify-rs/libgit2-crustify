@@ -435,7 +435,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/raw-lifetime-string` | `legacy-2` | `0` | wrap | first | `2` | — | `+1362/-14` | — | `$5.49` | `12.39M` | `23m12s` | `$2.75` | — |
 | `libgit2/src/util/alloc.c` | `12` | `1` | wrap | first | `7` | `56` | `+1947/-677` | `45.91`% / `98.92`% | `$18.92` | `66.48M` | `54m55s` | `$2.70` | `$0.34` |
 | `libgit2/src/util/alloc.c` | `12` | `2` | wrap | first | `7` | `56` | `+693/-132` | `45.90`% / `98.90`% | `$14.31` | `50.49M` | `57m19s` | `$2.04` | `$0.26` |
-| `libgit2/src/util/alloc.c` | `177` | `0` | wrap | first | `12` | `34` | `+1382/-44` | `45.88`% / `98.90`% | — | — | — | — | — |
+| `libgit2/src/util/alloc.c` | `177` | `0` | wrap | first | `12` | `34` | `+1382/-44` | `45.88`% / `98.90`% | `$20.98` | `76.15M` | `1h8m48s` | `$1.75` | `$0.62` |
 | `libgit2/src/util/allocators/stdalloc.c` | `181` | `0` | wrap | first | `1` | `18` | `+618/-10` | `45.85`% / `98.90`% | `$12.97` | `45.04M` | `43m28s` | `$12.97` | `$0.72` |
 | `libgit2/src/util/allocators/debugalloc.c` | `183` | `0` | wrap | first | `1` | `6` | `+771/-0` | `45.93`% / `98.90`% | `$10.68` | `35.39M` | `41m52s` | `$10.68` | `$1.78` |
 | `libgit2/src/util/strlist.c` | `184` | `0` | wrap | first | `6` | `76` | `+1557/-3` | `45.92`% / `98.89`% | `$15.77` | `53.40M` | `54m23s` | `$2.63` | `$0.21` |
@@ -514,7 +514,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/reftable/basics.c` | `169` | `5` | wrap | review | `43` | — | `+298/-23` | `45.93`% / `98.90`% | `$30.16` | `83.09M` | `1h40m2s` | `$0.70` | — |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | wrap | review | `3` | — | `+11/-7` | `45.88`% / `98.92`% | `$5.87` | `16.61M` | `16m58s` | `$1.96` | — |
 | `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | wrap | review | `1` | — | `+82/-67` | `45.87`% / `98.86`% | `$12.85` | `46.60M` | `1h22m16s` | `$12.85` | — |
-| **Σ first** |  |  |  |  | **`499`** | **`9066`** | **`+79898/-3634`** | **`45.88`% / `98.90`%** | **`$560.74`** | **`1747.85M`** | — | **`$1.15`** | **`$0.06`** |
+| **Σ first** |  |  |  |  | **`499`** | **`9066`** | **`+79898/-3634`** | **`45.88`% / `98.90`%** | **`$581.72`** | **`1824.00M`** | — | **`$1.17`** | **`$0.06`** |
 | **Σ review** |  |  |  |  | **`519`** | — | **`+8126/-1607`** | **`45.93`% / `98.90`%** | **`$453.04`** | **`985.52M`** | — | **`$0.87`** | — |
 
 ### Batches: tests
@@ -715,11 +715,11 @@ review cost.
 | module | wave | batch | types | symbols | +LoC | $ | tokens | wall |
 |---|---|---|---|---|---|---|---|---|
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `3` | `0` | `3` | `+74/-13` | `$13.62` | `50.18M` | `2h6m13s` |
-| `libgit2/src/util/alloc.c` | `177` | `1` | `1` | `22` | `+294/-136` | — | — | — |
+| `libgit2/src/util/alloc.c` | `177` | `1` | `1` | `22` | `+294/-136` | `$21.47` | `81.81M` | `2h40m43s` |
 | `libgit2/src/util/allocators/stdalloc.c` | `181` | `1` | `0` | `1` | `+86/-6` | `$14.45` | `39.79M` | `1h16m3s` |
 | `libgit2/src/util/allocators/debugalloc.c` | `183` | `1` | `0` | `1` | `+336/-75` | `$15.62` | `43.77M` | `1h33m16s` |
 | `libgit2/src/util/strlist.c` | `184` | `1` | `0` | `6` | `+408/-142` | `$21.71` | `81.05M` | `1h33m47s` |
-| **Σ** |  |  | **`1`** | **`33`** | **`+1198/-372`** | **`$65.40`** | **`214.79M`** | — |
+| **Σ** |  |  | **`1`** | **`33`** | **`+1198/-372`** | **`$86.87`** | **`296.60M`** | — |
 
 ### Passes: PoC + reports
 
@@ -3211,3 +3211,17 @@ changes no raw binding, so the packaging gate does not apply.
 Proposals: `crustify/evolution/contracts-unrefusable-c-arguments` (which of C's arguments a
 gateway refuses and which it trusts) and `crustify/evolution/module-end-gate-runner` (a
 script for these gates). Usage cells are the assistant's.
+
+
+### `libgit2/src/util/alloc.c` integration, second run (2026-11-12)
+
+The module's second run (waves 177 to 180, packed into wave 177) merged with the working
+branch by a binder (agent `a7e406ba038cf58fd`, `$3.25`, `8.56M`, `13m13s`) as `3c1acdd1c`.
+Only the generated bindings and the dashboard conflicted: the bindings were regenerated in
+campaign mode, and the dashboard's rows were kept from both sides with its `Σ` cells summed
+as ours + theirs − base. Its coverage percentages are the later landing's (wave 177 batch 1),
+not measured on the merged tree, and its `C LoC` is the working branch's. The workspace
+passed on `plain` and `asan-ubsan` with the known failures, and Miri and TSan passed over
+`util::alloc`, `util::allocators`, `util::strlist` and `settings`. `ffimap api` found no item
+changed or removed: 838 kept and 12 new from the working branch's tip. Every foundational
+module of the plan is now integrated.
