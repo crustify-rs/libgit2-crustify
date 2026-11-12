@@ -162,8 +162,9 @@ mod ffi_import {
     // as `git__allocator`'s initial value: `malloc` and `realloc` always return NULL, which
     // `Alloc` allows (for `realloc` it leaves `ptr` live and unchanged, since the routine
     // reads nothing), and `free` releases nothing. They keep no state, so they run on any
-    // thread at once, and none allocates through libgit2 or touches its state.
-    // `C_ALLOCATOR` holds those same three routines.
+    // thread at once, and none allocates through libgit2 or touches its state, the libgit2
+    // calls `Alloc` admits. `C_ALLOCATOR` holds those same three routines, one family over
+    // the methods' storage, of which there is none.
     unsafe impl Alloc for FailAlloc {
         /// The family's C routines, so that a value [`Allocator::new`] builds over the
         /// family holds C's own addresses, which `git_allocator_global_init` compares.

@@ -314,12 +314,15 @@ impl AllocatorMut<'_> {
 /// - `free(ptr)` releases `ptr`, a live allocation of the implementation;
 /// - all three may run concurrently on any threads, and an allocation may be resized or released on
 ///   a thread other than the one that made it;
-/// - [`C_ALLOCATOR`](Self::C_ALLOCATOR), when `Some`, holds C functions that each behave as the
-///   function of its name, under this contract: they are its C counterparts.
+/// - [`C_ALLOCATOR`](Self::C_ALLOCATOR), when `Some`, holds one family of C functions, each meeting
+///   this contract as the method of its name does, over the methods' own storage: what either
+///   allocates, the other resizes and releases.
 ///
-/// None of them may call into libgit2: libgit2 allocates through them, its per-thread
-/// error state included (`threadstate_get`), so a libgit2 call from inside one recurses
-/// without bound.
+/// None of them, the methods or `C_ALLOCATOR`'s functions, may allocate through libgit2 or touch
+/// its state: libgit2 allocates through them, its per-thread error state included
+/// (`threadstate_get`), so such a call from inside one recurses without bound. A routine of
+/// libgit2's own that does neither may be called, such as its failing family's
+/// (`git_failalloc_*`), which is what `C_ALLOCATOR` holds for that family.
 pub unsafe trait Alloc {
     /// Allocates at least `len` bytes; `None` on failure.
     fn malloc(len: usize, file: Option<&CStr>, line: i32) -> Option<NonNull<u8>>;

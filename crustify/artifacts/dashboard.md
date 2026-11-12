@@ -481,8 +481,9 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/indexer.c` | `legacy-179` | `0` | wrap | review | `1` | — | `+35/-0` | — | `$3.18` | `8.05M` | `12m18s` | `$3.18` | — |
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | wrap | review | `1` | — | `+113/-14` | — | `$4.80` | `10.64M` | `27m50s` | `$4.80` | — |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | wrap | review | `2` | — | `+217/-15` | — | `$11.03` | `25.98M` | `47m17s` | `$5.51` | — |
+| `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | wrap | review | `3` | — | `+11/-7` | `45.88`% / `98.92`% | — | — | — | — | — |
 | **Σ first** |  |  |  |  | **`421`** | **`8514`** | **`+68998/-2677`** | **`45.88`% / `98.92`%** | **`$412.21`** | **`1262.84M`** | — | **`$0.99`** | **`$0.05`** |
-| **Σ review** |  |  |  |  | **`415`** | — | **`+7074/-1326`** | **`46.64`% / `99.55`%** | **`$339.40`** | **`631.25M`** | — | **`$0.82`** | — |
+| **Σ review** |  |  |  |  | **`418`** | — | **`+7085/-1333`** | **`45.88`% / `98.92`%** | **`$339.40`** | **`631.25M`** | — | **`$0.82`** | — |
 
 ### Batches: tests
 
@@ -557,6 +558,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/indexer.c` | `legacy-179` | `0` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) | `+1` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+2` (—/— pp) | `+0` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+1` (—/— pp) | `+1` (—/— pp) |
+| `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | review | `+0` (`+0.00`/`+0.00` pp) | `+0` (`+0.00`/`+0.00` pp) | `+0` (`+0.00`/`+0.00` pp) | `+0` (`+0.00`/`+0.00` pp) |
 | **Σ first** |  |  |  | **`+294` (`+10.19`/`+5.94` pp)** | **`+26` (`+3.18`/`-8.08` pp)** | **`+195` (`+8.98`/`+13.98` pp)** | **`+244` (`+11.75`/`-33.66` pp)** |
 | **Σ review** |  |  |  | **`+14` (`+0.34`/`-1.41` pp)** | **`+2` (`-0.92`/`+0.27` pp)** | **`+22` (`+0.09`/`-0.37` pp)** | **`+34` (`+2.44`/`+7.45` pp)** |
 
@@ -568,8 +570,9 @@ Deterministic `ffimap`; no model.
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `0` | wrap | first | `+0` | `+0` | `+4` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.04` pp | `+0` |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+4` | `+0.02` pp | `+7` |
+| `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
 | **Σ first** |  |  |  |  | **`+0`** | **`+0`** | **`+4`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+4`** | **`-0.02` pp** | **`+7`** |
-| **Σ review** |  |  |  |  | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** |
 
 ### Batches — review: PoC + reports
 
@@ -605,8 +608,9 @@ Deterministic `ffimap`; no model.
 | `libgit2/src/libgit2/indexer.c` | `legacy-179` | `0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `+0` | `+0` | `1` |
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+2` | `2` |
+| `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+2` | `2` |
 | — (`tests/ub_safe`) | `legacy-526` | `0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
-| **Σ** |  |  | **`+1`** | **`+5`** | **`+3`** | **`+1`** | **`+3`** | **`+5`** | **`+11`** | **`+51`** | **`80`** |
+| **Σ** |  |  | **`+1`** | **`+5`** | **`+3`** | **`+1`** | **`+3`** | **`+5`** | **`+11`** | **`+53`** | **`82`** |
 
 ## Notes
 
@@ -1648,6 +1652,31 @@ merges `lib` and `unit_pub`. `+LoC` leaves out the 18 regenerated lines of
 child-process tests stop at `readlink`. ASan+UBSan ran every test matching `util::alloc`,
 `libgit2::settings`, `libgit2::libgit2` and `hidden`. The batch asserts no `Send` or `Sync`,
 so TSan did not run, and it expects no BorrowSanitizer report, so BSan did not run either.
+
+### `libgit2/src/util/allocators/failalloc.c` wave 176 batch 2: review of batches 0 and 1
+
+Batch 2 reviews `9a64abfc7` and `7045f4428`, and with them `Alloc::C_ALLOCATOR` in
+`src/libgit2/src/util/alloc.rs`, for every objective. It found two problems, both counted under
+`+misc` as earlier `contracts` and ownership-note findings are. First, `Alloc`'s `# Safety`
+forbade any call into libgit2, which contradicts the `C_ALLOCATOR` bullet, whose purpose is to
+hold libgit2's own routines. Read literally, the rule is broken by `FailAlloc`, whose methods
+call `git_failalloc_*`. The bullet also left open whether the C functions and the methods share
+storage. The contract now forbids only allocating through libgit2 or touching its state, for
+the methods and `C_ALLOCATOR` alike, and asks for one family over the methods' storage.
+Second, `git_failalloc_free`'s ownership note said foreign storage reaches it "only before
+`git_libgit2_init`". `set_allocator` installs the family after initialisation too, so the note
+is resubmitted. The properties stand. Both fixes are text, so `+LoC` is that of the comments.
+The harness blocked the run from writing the findings' `report.md` files, so none are filed
+under `crustify/reviews/`, and the fix commit's message carries each finding instead.
+
+Every ffimap counter equals the wave tip's (`ffimap diff` against batch 1's scan is empty). The
+`cov (C/Rust)` cells carry batch 1's measurement of the same executable code, since the
+landing changes comments and a store note only. Batch 1's worklist figures still describe the
+tests: C `failalloc.c` and Rust `failalloc.rs` at 100%. The ownership findings and lifecycle
+roles of the three routines otherwise hold against their bodies. On the wave tip, the module's
+tests and its dependents' (`util::allocators::failalloc`, `util::alloc`, `allocator`) and the
+doctests of both files passed plain and under ASan+UBSan. On the landed tree, fmt, clippy and
+the same tests passed plain.
 
 ### Parallelism and review caps from `libgit2/repository`
 
