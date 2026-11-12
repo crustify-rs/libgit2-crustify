@@ -19,11 +19,11 @@ libgit2 = []
 # with `$FFIBOX` in compile-fail snapshots. glibc-bindings takes it by Git, which the
 # [patch] below points at this path, so the graph holds one ffibox.
 ffibox = { path = "/opt/venv/share/ffibox" }
-# libc's wrapper, the crustify-rs/glibc-bindings side campaign: pinned to a commit
+# libc's wrapper, the crustify-rs/glibc-crustify side campaign: pinned to a commit
 # (`wrapper.pin` in crustify/artifacts/dependencies.json), and patched below to its clone
 # beside this repository while the campaign extends it, by absolute path, which the batch
 # worktrees under crustify/.worktrees resolve too.
-glibc-bindings = { version = "0.1.0", git = "https://github.com/crustify-rs/glibc-bindings", rev = "6180870f2ddbc30a43e5687395eb4f13908b3cbf" }
+glibc-bindings = { version = "0.1.0", git = "https://github.com/crustify-rs/glibc-crustify", rev = "6180870f2ddbc30a43e5687395eb4f13908b3cbf" }
 pcre2-sys = "0.2"
 libgit2-sys = { version = "0.1.0", path = "libgit2-sys" }
 nix = { version = "0.31.3", features = ["fs", "socket", "net", "poll", "process", "user", "feature", "signal", "mman", "time", "uio", "dir", "hostname"] }
@@ -75,8 +75,8 @@ license = "GPL-2.0-only WITH GCC-exception-2.0"
 repository = "https://github.com/crustify-rs/libgit2-crustify"
 publish = false
 
-[patch."https://github.com/crustify-rs/glibc-bindings"]
-glibc-bindings = { path = "/target/glibc-bindings" }
+[patch."https://github.com/crustify-rs/glibc-crustify"]
+glibc-bindings = { path = "/target/glibc-crustify" }
 
 [patch."https://github.com/crustify-rs/ffibox"]
 ffibox = { path = "/opt/venv/share/ffibox" }

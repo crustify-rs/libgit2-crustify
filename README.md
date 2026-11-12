@@ -19,10 +19,10 @@ and thoroughly reviewed by its own specialized agents.
   on the public API.
 - bindgen for the raw bindings; ASan/UBSan, TSan, Miri and BorrowSanitizer to check for
   undefined behaviour.
-- [glibc-bindings](https://github.com/crustify-rs/glibc-bindings),
-  [openssl-bindings](https://github.com/crustify-rs/openssl-bindings),
-  [pcre2-bindings](https://github.com/crustify-rs/pcre2-bindings) and
-  [zlib-bindings](https://github.com/crustify-rs/zlib-bindings) for the libraries libgit2
+- [glibc-crustify](https://github.com/crustify-rs/glibc-crustify),
+  [openssl-crustify](https://github.com/crustify-rs/openssl-crustify),
+  [pcre2-crustify](https://github.com/crustify-rs/pcre2-crustify) and
+  [zlib-crustify](https://github.com/crustify-rs/zlib-crustify) for the libraries libgit2
   links; each is built per sanitizer variant, and wraps what libgit2's API uses as the
   campaign reaches it.
 
