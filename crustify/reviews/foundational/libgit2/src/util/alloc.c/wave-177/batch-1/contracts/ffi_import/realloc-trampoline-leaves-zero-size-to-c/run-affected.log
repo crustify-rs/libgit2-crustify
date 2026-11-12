@@ -1,0 +1,62 @@
+$ crustify/scripts/cargo-variant.sh asan-ubsan test -p libgit2 --test ub_unsafe -- realloc_member_refuses_a_zero_byte_resize_of_a_live_block
+# on fce21ef4e plus the test, with realloc_with's zero-size guard removed
+  --> libgit2-sys/Cargo.toml
+   = note: `cargo::missing_lints_inheritance` is set to `warn` by default
+help: to inherit `workspace.lints, add:
+   |
+29 ~ bindgen = ["dep:bindgen"]
+30 + [lints]
+31 + workspace = true
+   |
+help: to clarify your intent to not inherit, add:
+   |
+29 ~ bindgen = ["dep:bindgen"]
+30 + [lints]
+   |
+  --> /opt/venv/share/ffibox/Cargo.toml:11:12
+   |
+ 9 | repository = "https://github.com/crustify-rs/ffibox"
+   |              ---------------------------------------
+10 | documentation = "https://docs.rs/ffibox"
+11 | homepage = "https://github.com/crustify-rs/ffibox"
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 25s
+     Running tests/ub_unsafe/main.rs (target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad)
+
+running 1 test
+=================================================================
+==3143553==ERROR: AddressSanitizer: heap-use-after-free on address 0x713cae5e4010 at pc 0x5887e3df569c bp 0x711cabdfe2d0 sp 0x711cabdfe2c8
+WRITE of size 1 at 0x713cae5e4010 thread T1
+    #0 0x5887e3df569b  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x44e69b) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
+    #1 0x5887e3df66da  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x44f6da) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
+    #2 0x5887e3e8f938  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x4e8938) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
+    #3 0x5887e3e24ee7  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x47dee7) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
+    #4 0x5887e3e8fc4a  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x4e8c4a) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
+    #5 0x5887e3e9ce24  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x4f5e24) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
+    #6 0x5887e3e97813  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x4f0813) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
+    #7 0x5887e3e9feb1  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x4f8eb1) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
+    #8 0x5887e426d26e  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x8c626e) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
+    #9 0x5887e3d45546  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x39e546) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
+    #10 0x751caf4d7b83  (/lib/x86_64-linux-gnu/libc.so.6+0x9cb83) (BuildId: a4a7992a8e66555c8141ab2a08a8465ff6e0ea65)
+    #11 0x751caf564ecb  (/lib/x86_64-linux-gnu/libc.so.6+0x129ecb) (BuildId: a4a7992a8e66555c8141ab2a08a8465ff6e0ea65)
+
+0x713cae5e4010 is located 0 bytes inside of 16-byte region [0x713cae5e4010,0x713cae5e4020)
+freed by thread T1 here:
+    #0 0x5887e3d48611  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x3a1611) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
+    #1 0x5887e3df67c0  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x44f7c0) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
+    #2 0x5887e3da53fa  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x3fe3fa) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
+    #3 0x5887e3e24b4c  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x47db4c) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
+    #4 0x5887e3e85490  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x4de490) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
+    #5 0x5887e3de36af  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x43c6af) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
+    #6 0x5887e3df7b2c  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x450b2c) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
+    #7 0x5887e3df7501  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x450501) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
+    #8 0x5887e3dd5219  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x42e219) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
+    #9 0x5887e3da4609  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x3fd609) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
+    #10 0x5887e3df667c  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x44f67c) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
+    #11 0x5887e3e8f938  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x4e8938) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
+    #12 0x5887e3e24ee7  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x47dee7) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
+    #13 0x5887e3e8fc4a  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x4e8c4a) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
+    #14 0x5887e3e9ce24  (<worktree>/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/build/libgit2/1945404b2aaa28ad/out/ub_unsafe-1945404b2aaa28ad+0x4f5e24) (BuildId: 47d3b8ad8171fb9bf9d54bc248945506c5c92538)
