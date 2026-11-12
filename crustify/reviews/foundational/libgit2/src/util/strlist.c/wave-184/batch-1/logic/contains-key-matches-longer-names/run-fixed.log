@@ -1,0 +1,3 @@
+contains_key(["FOOBAR=2"], "FOO=1", '=') = false
+contains_key(["HOME=/root"], "=x", '=') = false
+exit 0

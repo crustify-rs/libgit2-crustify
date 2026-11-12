@@ -6,4 +6,5 @@
 //! The suite uses the safe API alone and forbids `unsafe_code`.
 #![forbid(unsafe_code)]
 
+mod deps;
 mod src;

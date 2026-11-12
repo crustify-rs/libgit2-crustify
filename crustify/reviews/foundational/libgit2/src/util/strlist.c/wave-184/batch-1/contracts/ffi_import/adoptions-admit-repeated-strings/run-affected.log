@@ -1,0 +1,36 @@
+$ ASAN_OPTIONS=detect_leaks=1:abort_on_error=1 ./adoptions-admit-repeated-strings 
+StrList::from_raw_parts adopted ["a", "a"]
+=================================================================
+==2583438==ERROR: AddressSanitizer: attempting double-free on 0x70345344db30 in thread T0:
+    #0 0x62ee751c3966 in free (adoptions-admit-repeated-strings+0x2e2966) (BuildId: f8dacd40691279de658f8169ee00f047cffb3567)
+    #1 0x62ee75375571 in git__free /target/libgit2-bindings/c/src/util/alloc.h:39:2
+    #2 0x62ee75375571 in git_strlist_free /target/libgit2-bindings/c/src/util/strlist.c:92:3
+    #3 0x62ee751f7be0 in <libgit2::libgit2::src::util::strlist::ffi_import::StrListFree as ffibox::traits::CLenDrop>::c_drop_len strlist.rs:178:22
+    #4 0x62ee751f9965 in <ffibox::refs::FreeBuffer<libgit2::libgit2::src::util::strlist::ffi_import::StrListFree> as core::ops::drop::Drop>::drop /opt/venv/share/ffibox/src/refs.rs:1685:30
+    #6 0x62ee751f94f4 in <ffibox::refs::CVec<core::mem::manually_drop::ManuallyDrop<ffibox::refs::CStrBox<libgit2::libgit2::src::util::alloc::ffi_import::StrFree>>, libgit2::libgit2::src::util::strlist::ffi_import::StrListFree> as core::ops::drop::Drop>::drop /opt/venv/share/ffibox/src/refs.rs:1667:5
+    #10 0x62ee751f8a8e in adoptions_admit_repeated_strings::main main.rs:51:9
+
+0x70345344db30 is located 0 bytes inside of 2-byte region [0x70345344db30,0x70345344db32)
+freed by thread T0 here:
+    #0 0x62ee751c3966 in free (adoptions-admit-repeated-strings+0x2e2966) (BuildId: f8dacd40691279de658f8169ee00f047cffb3567)
+    #1 0x62ee75375571 in git__free /target/libgit2-bindings/c/src/util/alloc.h:39:2
+    #2 0x62ee75375571 in git_strlist_free /target/libgit2-bindings/c/src/util/strlist.c:92:3
+exit 134
+$ ASAN_OPTIONS=detect_leaks=1:abort_on_error=1 ./adoptions-admit-repeated-strings null
+NullStrList::from_raw adopted ["a", "a"]
+=================================================================
+==2583515==ERROR: AddressSanitizer: attempting double-free on 0x7161e624db30 in thread T0:
+    #0 0x560f78643966 in free (adoptions-admit-repeated-strings+0x2e2966) (BuildId: f8dacd40691279de658f8169ee00f047cffb3567)
+    #1 0x560f787f571a in git__free /target/libgit2-bindings/c/src/util/alloc.h:39:2
+    #2 0x560f787f571a in git_strlist_free_with_null /target/libgit2-bindings/c/src/util/strlist.c:105:3
+    #3 0x560f78677c28 in <libgit2::libgit2::src::util::strlist::ffi_import::NullStrListFree as ffibox::traits::CLenDrop>::c_drop_len strlist.rs:407:22
+    #4 0x560f78679a05 in <ffibox::refs::FreeBuffer<libgit2::libgit2::src::util::strlist::ffi_import::NullStrListFree> as core::ops::drop::Drop>::drop /opt/venv/share/ffibox/src/refs.rs:1685:30
+    #6 0x560f786797e4 in <ffibox::refs::CVec<core::mem::manually_drop::ManuallyDrop<ffibox::refs::CStrBox<libgit2::libgit2::src::util::alloc::ffi_import::StrFree>>, libgit2::libgit2::src::util::strlist::ffi_import::NullStrListFree> as core::ops::drop::Drop>::drop /opt/venv/share/ffibox/src/refs.rs:1667:5
+    #10 0x560f78678c41 in adoptions_admit_repeated_strings::main main.rs:40:9
+
+0x7161e624db30 is located 0 bytes inside of 2-byte region [0x7161e624db30,0x7161e624db32)
+freed by thread T0 here:
+    #0 0x560f78643966 in free (adoptions-admit-repeated-strings+0x2e2966) (BuildId: f8dacd40691279de658f8169ee00f047cffb3567)
+    #1 0x560f787f571a in git__free /target/libgit2-bindings/c/src/util/alloc.h:39:2
+    #2 0x560f787f571a in git_strlist_free_with_null /target/libgit2-bindings/c/src/util/strlist.c:105:3
+exit 134

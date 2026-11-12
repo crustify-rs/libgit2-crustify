@@ -1,0 +1,76 @@
+# src/util/alloc.c integration, run-1
+
+- Repository: the module's worktree, `/target/libgit2-crustify/crustify/.worktrees/foundational/libgit2/src/util/alloc.c/integration`, checked out on
+  `crustify/foundational/libgit2/src/util/alloc.c` at `1a34b9caf` (its second run, wave 177: 12 items wrapped, its module pass fixed two findings, and `installed()` became safe, the one API change, with its reason in the notes).
+- Run dir: `crustify/artifacts/foundational/libgit2/src/util/alloc.c/integration/run-1/`.
+
+## Departures from your role, named so you keep them
+
+This is not a scheduled batch. You carry out the integration merge of `src/util/alloc.c` into the working
+branch, as `versioning`'s Integration section describes: merge, resolve, gate, commit. You
+have no items and no worklist, and your translation steps do not apply. You land by
+committing the merge on the module's branch in this worktree; the assistant fast-forwards
+the working branch to it. Use no landing lock, and push nothing.
+
+## What to do
+
+1. Merge the working branch's tip (`crustify/devel`, at `d5e348dca` or later):
+   `git merge crustify/devel`.
+   - Additive conflicts keep both sides: dashboard rows, `LESSONS.md`, proposals' evidence,
+     `allowlist.txt`, `wrapper.h`, module lists such as `tests/*/main.rs`, `src.rs` and
+     `util.rs`, and `Cargo.toml`'s `[[test]]` entries (one each).
+   - The generated bindings (`libgit2-sys/src/bindings.rs`, `static_fns.c`) are regenerated
+     from the merged input in campaign mode with `CRUSTIFY_BINDINGS_UPDATE=1`, whether or
+     not they conflict.
+   - In the dashboard, keep every row both sides added. Recompute each additive `Σ` cell as
+     the sum of the merged rows (ours + theirs − base). Usage `Σ` cells are summed over the
+     rows that have usage. Coverage cells and the Coverage stats percentages take the later
+     landing; say they were not measured on the merged tree. One `Batches: API stability`
+     table per route, one `Module passes` section and one legend line, however many times
+     each side added them.
+   - Any conflict that is not additive is resolved without discarding either side; describe
+     it.
+   - No conflict marker may stay (`git diff --check`, `git grep -n '^<<<<<<< '`).
+2. The merged tree passes `testing-gates`' Regressions gates:
+   - check, `cargo +nightly-2026-10-08 fmt --all --check`, and clippy over the workspace,
+     warnings denied;
+   - the whole workspace's tests on `plain` and `asan-ubsan`;
+   - Miri and TSan over the tests of the modules both sides touched, where their code
+     meets.
+
+   Both sides passed their module and wave gates, so judge further gates by what the
+   combination could break, and say what you ran. Known failures, not yours:
+   - 5 trybuild `$FFIBOX` mismatches (13 under the nightly sanitizers);
+   - the nightly `CommitBuilder` compile-fail doctest;
+   - `first_discoveries_race_to_pin_the_runtime` outside a git repository;
+   - under BSan, four indexer tests that never finish;
+   - packaging against an installed libgit2.
+3. Commit the merge as `crustify: integrate src/util/alloc.c (foundational)`, with the settings'
+   identity: author Marius Momeu, the single `Co-Authored-By: crustify
+   <crustify@berkeley.edu>` trailer. The message describes every non-additive resolution.
+4. Run `ffimap api` from the module branch's tip before the merge, and from the working
+   branch's tip, to the merged tree (ffibox's private rustdoc JSON in `crustify/tmp/`).
+   Report any item that is not `kept`, `extended` or `new`.
+
+## This module's history
+
+`alloc.c` was integrated once already, after its first run (wave 12). This is its second
+integration: the working branch already holds that first run, so the merge base is
+`1043d550f`. Since then the working branch has integrated `win32_leakcheck.c`,
+`stdalloc.c`, `debugalloc.c` and `strlist.c`, which use the allocator family this run
+changed: the trampolines that now return NULL on a panic and refuse a zero-byte resize
+of a live block, and `installed()`, now safe. Run their tests that reach `alloc.rs`
+under Miri and TSan, and check that no caller of `installed()` still wraps it in `unsafe`
+(the unused-unsafe lint denies it).
+
+## Host
+
+No other agent runs beside you. Cap builds at 32 jobs, keep all
+scratch in `crustify/tmp/`, and end only processes of this worktree.
+
+## Report
+
+Report:
+- the merge commit, and each conflict's resolution;
+- the gates and their results;
+- the API measure.

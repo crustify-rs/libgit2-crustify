@@ -60,3 +60,32 @@ In `accounting` §2.1, after "the others stand as measured on the batch's base."
 Applied by hand in this run's merge commit; the recomputed sums were checked against both
 sides' rows (for example `Σ first` symbols 415 + 6 + 14 = 435, PoC total 80 + 2 + 3 = 85),
 and the counts in `Coverage stats` against the merged tree's `cargo test` totals.
+
+## Further evidence: the Overview's Rust LoC line
+
+The Overview's `Rust LoC` line is not covered by the change above. The integration of
+`deps/reftable/basics.c` (`d8ae0c8f6`) took it from the later landing, as it did the
+`Coverage stats` percentages; that equalled the sum only because failalloc.c's landings had
+left the line at the base's figure. Here both sides moved it, by the code lines their
+landings added, and taking either would drop the other's.
+`foundational/libgit2/src/util/allocators/win32_leakcheck.c/integration/run-1` summed it as
+an additive cell (ours + theirs − base: `17768` + `18425` − `17732` = `18461` non-test,
+`95814` + `96914` − `95599` = `97129` tests) and took `C LoC` (`86833`, the coverage
+archive's lines, which no side changed) from the side that filled it. The change should
+name it: "the Overview's `Rust LoC` figures are additive; its `C LoC` is the later
+landing's".
+
+## Further evidence: sections both sides added merge clean, twice
+
+`foundational/libgit2/src/util/allocators/debugalloc.c/integration/run-1`, merging
+`crustify/devel` (`9b8151916`) into the module branch (`007596d40`). Both sides had added
+the template's Types `### Batches: API stability` table (empty, identical) and a
+`## Module passes` section at different places, so git merged both copies of each without
+a conflict: the tree held two Types API stability tables and two `## Module passes`
+sections, and no conflict marker pointed at them. The task message again had to state the
+rule ("one `Batches: API stability` table per route, one `Module passes` section and one
+legend line"), and the run folded the second `Module passes` into the first, recomputing
+its `Σ` rows (5 symbols, `+496/-94`; 3 reports) as the change above says. The change should
+add: "A table or section the template holds once is kept once, with the rows of every
+copy, whether or not the merge conflicts there; the merged dashboard is checked for
+repeated headings before it is committed."

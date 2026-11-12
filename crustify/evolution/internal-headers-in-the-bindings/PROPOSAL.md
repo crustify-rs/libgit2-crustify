@@ -46,6 +46,21 @@ added `#include "basics.h"` to `libgit2-sys/bindgen/wrapper.h`.
   3. The `bindgen` feature outside campaign mode regenerates from an install's headers,
      so it cannot regenerate once `wrapper.h` names an internal header.
 
+### `wave-169/batch-1` (`deps/reftable/basics.c`)
+
+The batch's nine `static inline` functions of `basics.h` (`reftable_put_be16` to `_be64`,
+`reftable_get_be16` to `_be64`, `reftable_alloc_size`) were ported rather than allowlisted,
+as `binding-symbols` allows for short, configuration-independent header functions:
+allowlisting any of them would have generated `static_fns.c`, which includes `wrapper.h` and
+so `basics.h`, `system.h` and `git2_util.h`, and consequence 2 would have broken the shipped
+build. With the ports, `cargo package -p libgit2-sys --offline` against a staged `plain`
+install (`CRUSTIFY_BUILD_VARIANT=` and `LIBGIT2_DIR`) still builds: `shims.c` includes only
+`shims.h`, and no `static_fns.c` exists. The cost is that the ported helpers have no C to be
+compared with: their tests check the bytes the C bodies write. The two extern functions the
+batch allowlisted, `names_equal` and `names_length`, generate declarations only, which link
+in campaign mode and not against an install's `libgit2.so`, as `internal-symbols-unlinkable`
+records.
+
 ### Further evidence: the first internal `static inline` function (wave-12/batch-2)
 
 `foundational/libgit2/src/util/alloc.c/wave-12/batch-2/run-1` allowlisted `git__malloc`
@@ -69,6 +84,46 @@ it either, whatever the wrappers do, since an installed `libgit2.so` exports non
 The shipped build then needs the static archive, as bundled mode would build it, or the
 internal functions the safe crate calls exported, or system mode gated off once a safe
 wrapper reaches an internal symbol, as it is gated off once a module is integrated.
+
+### Further evidence: an internal header with no `static inline` function (wave-182/batch-0)
+
+`foundational/libgit2/src/util/allocators/win32_leakcheck.c/wave-182/batch-0/run-1`
+allowlisted `git_win32_leakcheck_init_allocator` and added `#include
+"allocators/win32_leakcheck.h"` to `wrapper.h`, after `alloc.h`. Campaign mode generated
+its binding and linked it from the static archive (`nm -D libgit2.so` lists none of it,
+`libgit2.a`'s `win32_leakcheck.c.o` defines it). The packaging gate, run as above against a
+prefix assembled from the `plain` build (`c/include`, the build's `include/`, its
+`libgit2.so*` and `libgit2.pc`), fails exactly as before, at `wrapper.h:31` (`'alloc.h' file
+not found`) while compiling `static_fns.c`: the new header, on line 32, is never reached, and
+would fail the same way, since no install carries `src/util`. The fourth consequence holds
+too: the safe crate now calls a second internal function an installed `libgit2.so` does not
+export.
+
+### Further evidence: a hidden function of a public header (wave-181/batch-0)
+
+`foundational/libgit2/src/util/allocators/stdalloc.c/wave-181/batch-0/run-1` allowlisted
+`git_stdalloc_init_allocator`, which the installed `git2/sys/alloc.h` declares without
+`GIT_EXTERN`. `wrapper.h` did not change, and the bindings regenerated from the public header
+alone, but the symbol is as hidden as an internal header's: `nm -D --defined-only` of the
+`plain` variant's `libgit2.so` lists 907 functions and not this one, while its static
+archive defines it (`stdalloc.o`, `T git_stdalloc_init_allocator`). So "internal" in the
+fourth consequence is a property of the export table, not of the header that declares the
+function: a gate on system mode that looked only at `wrapper.h`'s internal headers would
+miss `stdalloc::allocator`. The packaging gate (`cargo package -p libgit2-sys --offline`,
+`CRUSTIFY_BUILD_VARIANT=` and `LIBGIT2_DIR` at an install prefix of the `plain` build's
+headers, `libgit2.so` and `libgit2.pc`) still fails first at consequence 2, on
+`static_fns.c`'s `#include "alloc.h"`.
+
+### Further evidence: a second internal header (wave-184/batch-0)
+
+`foundational/libgit2/src/util/strlist.c/wave-184/batch-0/run-1` added
+`#include "strlist.h"` to `wrapper.h` and allowlisted the six functions `strlist.c` defines,
+which `src/libgit2/src/util/strlist.rs` calls; `libgit2.so` exports none of them. The
+packaging gate, `cargo package -p libgit2-sys --allow-dirty` with `CRUSTIFY_BUILD_VARIANT=`
+and no `LIBGIT2_DIR`, fails to verify the tarball in system mode, the default for a crate
+whose `c/` is still the whole library, before compiling anything: `libgit2 not found: set
+LIBGIT2_DIR to its install prefix`. With an install it would stop at `wrapper.h`'s internal
+includes, as above, and could not link the internal functions either.
 
 ## Destination
 
@@ -100,6 +155,28 @@ and generates the reftable bindings, which link from the static archive and run 
 `libgit2-sys/tests/hidden_symbols.rs` on `plain`, `asan-ubsan`, `tsan` and `bsan`. The
 committed public bindings were unchanged. The `static inline` and system-mode half is
 untested, since no internal `static inline` function is allowlisted yet.
+
+## Further evidence
+
+`foundational/libgit2/deps/reftable/basics.c` `wave-169/batch-2/run-1` met consequence 2.
+Allowlisting `reftable_alloc_grow`, a `static inline` function of `deps/reftable/basics.h`,
+made bindgen write `libgit2-sys/src/static_fns.c`, which includes `wrapper.h` and so
+`basics.h`. Packaging `libgit2-sys` in installed mode then failed while verifying the
+tarball. The prefix held `c/include`'s headers and the `plain` variant's `libgit2.so`:
+
+```text
+CRUSTIFY_BUILD_VARIANT= LIBGIT2_DIR=<prefix> cargo package -p libgit2-sys --offline --allow-dirty
+  cargo:warning=.../libgit2-sys-0.1.0/bindgen/wrapper.h:31:10: fatal error: 'basics.h' file not found
+error: failed to verify package tarball
+```
+
+The batch therefore did not allowlist the function. It reimplemented it in Rust instead, as
+`binding-symbols`' Functions section allows for a short `static inline` function: it is
+`ReftableArrayFree::grow` (`Replaces fn::reftable_alloc_grow`), over `reftable_realloc`.
+Without `static_fns.c` the package verifies again. Until the change above lands, the
+exception is the only way to bind an internal `static inline` function and keep the
+packaging gate passing. A function that depends on the build's configuration has no way
+at all.
 
 ## Further evidence: `wave-176/batch-1`
 

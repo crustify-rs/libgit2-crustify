@@ -12,10 +12,10 @@
 //! copied freely, and never released.
 //!
 //! The header's init routines are not this module's: `git_stdalloc_init_allocator` is
-//! `src/util/allocators/stdalloc.c`'s, wrapped with that module, and
-//! `git_win32_crtdbg_init_allocator` is never defined on this platform. A value is built
-//! here from an [`Alloc`] implementation ([`Allocator::new`]), whose `extern "C"`
-//! trampolines adapt libgit2's calls to it, or from three C functions
+//! `src/util/allocators/stdalloc.c`'s, whose [`stdalloc::allocator`] returns the standard
+//! allocator's value, and `git_win32_crtdbg_init_allocator` is never defined on this
+//! platform. A value is built here from an [`Alloc`] implementation ([`Allocator::new`]),
+//! whose `extern "C"` trampolines adapt libgit2's calls to it, or from three C functions
 //! ([`Allocator::from_fns`]).
 //!
 //! The members are function pointers, so reading or replacing one is safe and calling
@@ -88,6 +88,7 @@
 //! thread from reading it meanwhile.
 //!
 //! [`set_allocator`]: crate::libgit2::src::libgit2::settings::set_allocator
+//! [`stdalloc::allocator`]: crate::libgit2::src::util::allocators::stdalloc::allocator
 
 pub use ffi_import::{
     Alloc, AllocBox, AllocStr, AllocVec, Allocator, AllocatorMut, AllocatorRef, ArrayFree, Free,
@@ -181,10 +182,13 @@ mod ffi_import {
         ///
         /// A plain value of three function pointers, resource-free: `Copy`, held inline,
         /// never released. Build one with [`new`](Self::new) over an [`Alloc`]
-        /// implementation, or with [`from_fns`](Self::from_fns) over C functions; both set
-        /// every member, and the setters only ever store a function, so a value built here
-        /// never holds a NULL member. Read and replace members through
-        /// [`as_ref`](Self::as_ref) / [`as_mut`](Self::as_mut).
+        /// implementation, or with [`from_fns`](Self::from_fns) over C functions, or take
+        /// libgit2's standard one from [`stdalloc::allocator`] or its debug one from
+        /// [`debug`](Self::debug); each sets every member, and the setters only ever store a
+        /// function, so a value built in Rust never holds a NULL member. Read and replace
+        /// members through [`as_ref`](Self::as_ref) / [`as_mut`](Self::as_mut).
+        ///
+        /// [`stdalloc::allocator`]: crate::libgit2::src::util::allocators::stdalloc::allocator
         ///
         /// Wraps `st::git_allocator`
         #[doc(alias = "git_allocator")]
@@ -409,11 +413,13 @@ mod ffi_import {
     /// libgit2 trusts these functions as it trusts C's `malloc`, `realloc` and `free`:
     ///
     /// - `malloc(len, ..)` returns `None`, or the start of a fresh allocation of at least `len`
-    ///   bytes, aligned for any object that fits in `len` bytes as `malloc` aligns (to
-    ///   `max_align_t`, or the largest power of two not above a smaller `len`), overlapping no
-    ///   other live allocation of the implementation. `len` may be 0, as for C's `malloc(0)`: the
-    ///   result is `None` (which libgit2 reads as out of memory) or an allocation of its own, which
-    ///   `free` releases like any other;
+    ///   bytes, overlapping no other live allocation of the implementation, and aligned to the
+    ///   largest power of two not above `len`, up to the alignment of a `usize` or a `u64`,
+    ///   whichever is wider (8 bytes on 64-bit targets). That is what libgit2's C and this crate's
+    ///   owners rely on, not `malloc`'s `max_align_t`: libgit2's own debug allocator
+    ///   ([`Allocator::debug`]) keeps no more. `len` may be 0, as for C's `malloc(0)`: the result
+    ///   is `None` (which libgit2 reads as out of memory) or an allocation of its own, which `free`
+    ///   releases like any other;
     /// - `realloc(None, len, ..)` behaves as `malloc`. `realloc(Some(ptr), len, ..)`, with `ptr` a
     ///   live allocation of the implementation and `len` non-zero, either returns `None` and leaves
     ///   `ptr` live and unchanged, or releases `ptr` and returns an allocation as `malloc` would
@@ -586,8 +592,8 @@ mod ffi_import {
     /// each `malloc` block with its `size_t` length and returns the address past it, so it
     /// keeps only `size_t`'s alignment. libgit2 itself places structs of pointers, `size_t`s
     /// and 64-bit integers in that storage, and its CI runs under `debugalloc`, so every
-    /// allocator libgit2 runs on keeps this much; [`Alloc`]'s contract asks more of one
-    /// installed from Rust.
+    /// allocator libgit2 runs on keeps this much, and [`Alloc`]'s contract asks this much of
+    /// one installed from Rust.
     const MAX_ALIGN: usize = {
         let (word, wide) = (align_of::<usize>(), align_of::<u64>());
         if word > wide { word } else { wide }

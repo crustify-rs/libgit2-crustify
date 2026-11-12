@@ -24,6 +24,31 @@ wave 12 batch 3 (`src/util/alloc.c` review), run 1, on the static campaign link 
   12, measured "with the coverage variant's static archive as the C object"). Neither run
   reproduces it. The Rust figures do reproduce, to 0.01 pp.
 
+### The cause of the scope miss (wave-181/batch-0)
+
+`foundational/libgit2/src/util/allocators/stdalloc.c/wave-181/batch-0/run-1` read the
+coverage variant's archive alone with `llvm-cov report -instr-profile <suite>.profdata
+crustify/builds/coverage/crustify/libgit2.a`, the nightly's `llvm-cov`, on both its trees.
+`llvm-cov export -summary-only` names the archive's sources as
+`/target/libgit2-bindings/c/src/...`: the variant was configured from the campaign's earlier
+checkout (`CMAKE_HOME_DIRECTORY:INTERNAL=/target/libgit2-bindings/c` in its `CMakeCache.txt`),
+and that is the path its coverage mapping records. A scope over `$PWD/c/...` therefore
+selects nothing, and `llvm-cov` falls back to every file. With the archive as the only
+object:
+
+- no filter gives 86,833 lines on both trees, 45.92% on the wave base `69ff068e8` and 45.85%
+  on the batch's tree; and
+- the filter `/target/libgit2-bindings/c/src/ /target/libgit2-bindings/c/include/
+  /target/libgit2-bindings/c/deps/` gives 86,770 lines (45.88% on the tree). That is the
+  denominator the dashboard's `Overview test counts` note records for the earlier
+  `libgit2.so` measurement.
+
+So the denominator moves only when the test binaries are passed as objects beside the
+archive, since each binary maps its own copy of the members it links. The change this
+supports: `report.py` reads the C figure from the archive alone, and maps the recorded
+source root to the checkout's `c/` (`-path-equivalence=<CMAKE_HOME_DIRECTORY>,$PWD/c`) or
+filters by the recorded root, so that a C scope selects what it names.
+
 ## Destination
 
 A campaign artifact: `crustify/scripts/coverage/report.py` and `run.sh`, which setup owns,

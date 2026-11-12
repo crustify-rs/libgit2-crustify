@@ -1,0 +1,7 @@
+contains_key(["FOOBAR=2"], "FOO=1", '=') = true
+contains_key(["HOME=/root"], "=x", '=') = true
+
+thread 'main' (2579789) panicked at src/main.rs:21:5:
+FOOBAR=2 sets FOOBAR, not FOO
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+exit 101

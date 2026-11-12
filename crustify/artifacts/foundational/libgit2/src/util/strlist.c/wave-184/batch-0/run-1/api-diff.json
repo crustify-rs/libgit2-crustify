@@ -1,0 +1,120 @@
+{
+ "after": {
+  "crate": "libgit2",
+  "crate_version": "0.1.0",
+  "deps": [
+   "ffibox"
+  ],
+  "format_version": 61,
+  "plumbing": [
+   "ffibox"
+  ]
+ },
+ "anchor_moves": {},
+ "api": 2,
+ "before": {
+  "crate": "libgit2",
+  "crate_version": "0.1.0",
+  "deps": [
+   "ffibox"
+  ],
+  "format_version": 61,
+  "plumbing": [
+   "ffibox"
+  ]
+ },
+ "items": {
+  "fn::git_strlist_contains_key": {
+   "status": "new"
+  },
+  "fn::git_strlist_contains_prefix": {
+   "status": "new"
+  },
+  "fn::git_strlist_copy": {
+   "status": "new"
+  },
+  "fn::git_strlist_copy_with_null": {
+   "status": "new"
+  },
+  "fn::git_strlist_free": {
+   "status": "new"
+  },
+  "fn::git_strlist_free_with_null": {
+   "status": "new"
+  }
+ },
+ "missing": [],
+ "rekeyed": 0,
+ "retargeted": 0,
+ "totals": {
+  "changed": 0,
+  "extended": 0,
+  "kept": 0,
+  "new": 6,
+  "removed": 0
+ },
+ "unattributed": {
+  "modules": {
+   "libgit2::libgit2::src::libgit2::checkout": {
+    "status": "kept"
+   },
+   "libgit2::libgit2::src::libgit2::commit": {
+    "status": "kept"
+   },
+   "libgit2::libgit2::src::libgit2::config": {
+    "status": "kept"
+   },
+   "libgit2::libgit2::src::libgit2::diff": {
+    "status": "kept"
+   },
+   "libgit2::libgit2::src::libgit2::filter": {
+    "status": "kept"
+   },
+   "libgit2::libgit2::src::libgit2::index": {
+    "status": "kept"
+   },
+   "libgit2::libgit2::src::libgit2::libgit2": {
+    "status": "kept"
+   },
+   "libgit2::libgit2::src::libgit2::odb": {
+    "status": "kept"
+   },
+   "libgit2::libgit2::src::libgit2::repository": {
+    "status": "kept"
+   },
+   "libgit2::libgit2::src::libgit2::settings": {
+    "status": "kept"
+   },
+   "libgit2::libgit2::src::libgit2::signature": {
+    "status": "kept"
+   },
+   "libgit2::libgit2::src::libgit2::strarray": {
+    "status": "kept"
+   },
+   "libgit2::libgit2::src::libgit2::trace": {
+    "status": "kept"
+   },
+   "libgit2::libgit2::src::libgit2::tree": {
+    "status": "kept"
+   },
+   "libgit2::libgit2::src::libgit2::worktree": {
+    "status": "kept"
+   },
+   "libgit2::libgit2::src::util::alloc": {
+    "status": "kept"
+   },
+   "libgit2::libgit2::src::util::errors": {
+    "status": "kept"
+   }
+  },
+  "totals": {
+   "changed": 0,
+   "extended": 0,
+   "kept": 17,
+   "new": 0,
+   "removed": 0
+  }
+ },
+ "unresolved": 0,
+ "view": "contract"
+}

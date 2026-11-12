@@ -534,6 +534,9 @@ pub const GIT_FILTER_VERSION: u32 = 1;
 pub const GIT_ODB_BACKEND_VERSION: u32 = 1;
 pub const GIT_REFDB_BACKEND_VERSION: u32 = 1;
 pub const GIT_REPOSITORY_NEW_OPTIONS_VERSION: u32 = 1;
+pub const REFTABLE_HASH_SIZE_SHA1: u32 = 20;
+pub const REFTABLE_HASH_SIZE_SHA256: u32 = 32;
+pub const REFTABLE_HASH_SIZE_MAX: u32 = 32;
 pub type __mode_t = ::std::os::raw::c_uint;
 pub type mode_t = __mode_t;
 unsafe extern "C" {
@@ -12193,6 +12196,19 @@ const _: () = {
     ][::std::mem::offset_of!(git_allocator, gfree) - 16usize];
 };
 unsafe extern "C" {
+    /** Initialize the allocator structure to use the `stdalloc` pointer.
+
+ Set up the structure so that all of its members are using the standard
+ "stdalloc" allocator functions. The structure can then be used with
+ `git_allocator_setup`.
+
+ @param allocator The allocator that is to be initialized.
+ @return An error code or 0.*/
+    pub fn git_stdalloc_init_allocator(
+        allocator: *mut git_allocator,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     /** Create new commit in the repository from a list of `git_oid` values.
 
  See documentation for `git_commit_create()` for information about the
@@ -14505,6 +14521,11 @@ unsafe extern "C" {
     pub fn git_allocator_setup(allocator: *mut git_allocator) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn git_debugalloc_init_allocator(
+        allocator: *mut git_allocator,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn git_failalloc_malloc(
         len: usize,
         file: *const ::std::os::raw::c_char,
@@ -14521,6 +14542,11 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn git_failalloc_free(ptr: *mut ::std::os::raw::c_void);
+}
+unsafe extern "C" {
+    pub fn git_win32_leakcheck_init_allocator(
+        allocator: *mut git_allocator,
+    ) -> ::std::os::raw::c_int;
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -14552,6 +14578,25 @@ impl Default for reftable_buf {
         }
     }
 }
+pub const REFTABLE_HASH_SHA1: reftable_hash = 89;
+pub const REFTABLE_HASH_SHA256: reftable_hash = 247;
+pub type reftable_hash = ::std::os::raw::c_uint;
+unsafe extern "C" {
+    pub fn reftable_set_alloc(
+        malloc: ::std::option::Option<
+            unsafe extern "C" fn(arg1: usize) -> *mut ::std::os::raw::c_void,
+        >,
+        realloc: ::std::option::Option<
+            unsafe extern "C" fn(
+                arg1: *mut ::std::os::raw::c_void,
+                arg2: usize,
+            ) -> *mut ::std::os::raw::c_void,
+        >,
+        free: ::std::option::Option<
+            unsafe extern "C" fn(arg1: *mut ::std::os::raw::c_void),
+        >,
+    );
+}
 unsafe extern "C" {
     pub fn reftable_buf_init(buf: *mut reftable_buf);
 }
@@ -14559,11 +14604,140 @@ unsafe extern "C" {
     pub fn reftable_buf_release(buf: *mut reftable_buf);
 }
 unsafe extern "C" {
+    pub fn reftable_buf_reset(buf: *mut reftable_buf);
+}
+unsafe extern "C" {
+    pub fn reftable_buf_setlen(
+        buf: *mut reftable_buf,
+        len: usize,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn reftable_buf_cmp(
+        a: *const reftable_buf,
+        b: *const reftable_buf,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn reftable_buf_add(
         buf: *mut reftable_buf,
         data: *const ::std::os::raw::c_void,
         len: usize,
     ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn reftable_buf_addstr(
+        buf: *mut reftable_buf,
+        s: *const ::std::os::raw::c_char,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn reftable_buf_detach(buf: *mut reftable_buf) -> *mut ::std::os::raw::c_char;
+}
+unsafe extern "C" {
+    pub fn binsearch(
+        sz: usize,
+        f: ::std::option::Option<
+            unsafe extern "C" fn(
+                k: usize,
+                args: *mut ::std::os::raw::c_void,
+            ) -> ::std::os::raw::c_int,
+        >,
+        args: *mut ::std::os::raw::c_void,
+    ) -> usize;
+}
+unsafe extern "C" {
+    pub fn free_names(a: *mut *mut ::std::os::raw::c_char);
+}
+unsafe extern "C" {
+    pub fn parse_names(
+        buf: *mut ::std::os::raw::c_char,
+        size: ::std::os::raw::c_int,
+        out: *mut *mut *mut ::std::os::raw::c_char,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn names_equal(
+        a: *mut *const ::std::os::raw::c_char,
+        b: *mut *const ::std::os::raw::c_char,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn names_length(names: *mut *const ::std::os::raw::c_char) -> usize;
+}
+unsafe extern "C" {
+    pub fn reftable_malloc(sz: usize) -> *mut ::std::os::raw::c_void;
+}
+unsafe extern "C" {
+    pub fn reftable_realloc(
+        p: *mut ::std::os::raw::c_void,
+        sz: usize,
+    ) -> *mut ::std::os::raw::c_void;
+}
+unsafe extern "C" {
+    pub fn reftable_free(p: *mut ::std::os::raw::c_void);
+}
+unsafe extern "C" {
+    pub fn reftable_calloc(nelem: usize, elsize: usize) -> *mut ::std::os::raw::c_void;
+}
+unsafe extern "C" {
+    pub fn reftable_strdup(
+        str_: *const ::std::os::raw::c_char,
+    ) -> *mut ::std::os::raw::c_char;
+}
+unsafe extern "C" {
+    pub fn common_prefix_size(a: *mut reftable_buf, b: *mut reftable_buf) -> usize;
+}
+unsafe extern "C" {
+    pub fn hash_size(id: reftable_hash) -> u32;
+}
+pub const REFTABLE_IO_ERROR: reftable_error = -2;
+pub const REFTABLE_FORMAT_ERROR: reftable_error = -3;
+pub const REFTABLE_NOT_EXIST_ERROR: reftable_error = -4;
+pub const REFTABLE_LOCK_ERROR: reftable_error = -5;
+pub const REFTABLE_API_ERROR: reftable_error = -6;
+pub const REFTABLE_ZLIB_ERROR: reftable_error = -7;
+pub const REFTABLE_EMPTY_TABLE_ERROR: reftable_error = -8;
+pub const REFTABLE_REFNAME_ERROR: reftable_error = -10;
+pub const REFTABLE_ENTRY_TOO_BIG_ERROR: reftable_error = -11;
+pub const REFTABLE_OUTDATED_ERROR: reftable_error = -12;
+pub const REFTABLE_OUT_OF_MEMORY_ERROR: reftable_error = -13;
+pub type reftable_error = ::std::os::raw::c_int;
+unsafe extern "C" {
+    pub fn git_strlist_copy(
+        out: *mut *mut *mut ::std::os::raw::c_char,
+        in_: *mut *const ::std::os::raw::c_char,
+        len: usize,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn git_strlist_copy_with_null(
+        out: *mut *mut *mut ::std::os::raw::c_char,
+        in_: *mut *const ::std::os::raw::c_char,
+        len: usize,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn git_strlist_contains_prefix(
+        strings: *mut *const ::std::os::raw::c_char,
+        len: usize,
+        str_: *const ::std::os::raw::c_char,
+        n: usize,
+    ) -> bool;
+}
+unsafe extern "C" {
+    pub fn git_strlist_contains_key(
+        strings: *mut *const ::std::os::raw::c_char,
+        len: usize,
+        key: *const ::std::os::raw::c_char,
+        delimiter: ::std::os::raw::c_char,
+    ) -> bool;
+}
+unsafe extern "C" {
+    pub fn git_strlist_free(strings: *mut *mut ::std::os::raw::c_char, len: usize);
+}
+unsafe extern "C" {
+    pub fn git_strlist_free_with_null(strings: *mut *mut ::std::os::raw::c_char);
 }
 unsafe extern "C" {
     pub fn crustify_GIT_OID_DEFAULT() -> git_oid_t;

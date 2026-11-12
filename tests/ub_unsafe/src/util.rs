@@ -2,3 +2,4 @@
 
 mod alloc;
 mod allocators;
+mod strlist;

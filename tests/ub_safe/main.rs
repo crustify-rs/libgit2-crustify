@@ -10,6 +10,7 @@
 //! there; the Rust-only paths (empty buffers, rejected sizes) still run.
 #![forbid(unsafe_code)]
 
+mod deps;
 mod fixture;
 mod src;
 

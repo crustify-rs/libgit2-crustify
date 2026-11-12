@@ -1,0 +1,208 @@
+{
+  "objective": "wrap",
+  "wave": 169,
+  "batch": 1,
+  "link_unit": "libgit2",
+  "module": "deps/reftable/basics.c",
+  "foundational": true,
+  "base_branch": "refs/heads/crustify/waves/wave-169",
+  "backend": "claude",
+  "billing": "subscription",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "20500ce",
+    "wavefront": "ca31018",
+    "ffimap": "405e053",
+    "ffibox": "551d27d"
+  },
+  "items": [
+    {
+      "name": "REFTABLE_ALLOC_ARRAY",
+      "defined_in": "deps/reftable/basics.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "REFTABLE_ALLOC_GROW",
+      "defined_in": "deps/reftable/basics.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "REFTABLE_ALLOC_GROW_OR_NULL",
+      "defined_in": "deps/reftable/basics.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "REFTABLE_BUF_INIT",
+      "defined_in": "deps/reftable/reftable-basics.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "REFTABLE_CALLOC_ARRAY",
+      "defined_in": "deps/reftable/basics.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "REFTABLE_FORMAT_ID_SHA1",
+      "defined_in": "deps/reftable/basics.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "REFTABLE_FORMAT_ID_SHA256",
+      "defined_in": "deps/reftable/basics.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "REFTABLE_FREE_AND_NULL",
+      "defined_in": "deps/reftable/basics.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "REFTABLE_HASH_SIZE_MAX",
+      "defined_in": "deps/reftable/reftable-basics.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "REFTABLE_HASH_SIZE_SHA1",
+      "defined_in": "deps/reftable/reftable-basics.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "REFTABLE_HASH_SIZE_SHA256",
+      "defined_in": "deps/reftable/reftable-basics.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "REFTABLE_SWAP",
+      "defined_in": "deps/reftable/basics.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "names_equal",
+      "defined_in": "deps/reftable/basics.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "names_length",
+      "defined_in": "deps/reftable/basics.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "reftable_alloc_size",
+      "defined_in": "deps/reftable/basics.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "reftable_get_be16",
+      "defined_in": "deps/reftable/basics.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "reftable_get_be24",
+      "defined_in": "deps/reftable/basics.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "reftable_get_be32",
+      "defined_in": "deps/reftable/basics.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "reftable_get_be64",
+      "defined_in": "deps/reftable/basics.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "reftable_put_be16",
+      "defined_in": "deps/reftable/basics.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "reftable_put_be24",
+      "defined_in": "deps/reftable/basics.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "reftable_put_be32",
+      "defined_in": "deps/reftable/basics.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    },
+    {
+      "name": "reftable_put_be64",
+      "defined_in": "deps/reftable/basics.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/deps/reftable/basics.rs"
+    }
+  ],
+  "session_id": "agent-a988eb44a6792a144"
+}
