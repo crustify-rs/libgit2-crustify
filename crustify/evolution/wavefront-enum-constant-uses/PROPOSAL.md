@@ -1,9 +1,11 @@
 # wavefront records no use of an enum constant
 
 Status: `landed`, as wavefront `497794b` on `devel` (and `69a97a0`, which ships the `.qll`
-libraries the data-files list left out). The `todo` waves take it only once the campaign's
-tables are extracted again (`t2/enum_constant_uses.csv`) and a planner run re-plans them;
-that run decides first where `git_filemode_t` is homed (see Validation).
+libraries the data-files list left out). The user decided on 2026-11-12 not to re-plan the
+`todo` waves under it: the campaign's tables are not extracted again, so its plan keeps
+planner run 12's order, and `reftable_error`'s case is carried by the lesson of
+`reftable-error-wrapped-ahead-of-basics`. A later planner run that extracts the tables takes
+it, and decides first where `git_filemode_t` is homed (see Validation).
 
 ## Signal
 
