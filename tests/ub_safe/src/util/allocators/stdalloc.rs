@@ -56,7 +56,9 @@ fn values_cross_threads_and_change_apart() {
     let moved = thread::spawn(stdalloc::allocator).join().unwrap();
     assert_eq!(members(moved), expected);
 
-    // Changing a copy leaves the value it was copied from, and a fresh one, as they were.
+    // A copy changed through its handle and a reborrow of it, from this thread. The safe API
+    // offers no functions but the standard ones, so the members stay what they were; the
+    // inline unit test `a_changed_copy_leaves_the_standard_value` replaces them with others.
     let mut changed = standard;
     let realloc = standard.as_ref().realloc().unwrap();
     let mut handle = changed.as_mut();

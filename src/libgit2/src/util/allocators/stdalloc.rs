@@ -99,9 +99,47 @@ mod ffi_import {
 
     #[cfg(test)]
     mod unit_tests {
+        use core::ffi::{c_char, c_int, c_void};
         use core::{ptr, slice};
 
         use super::allocator;
+        use crate::libgit2::src::util::alloc::{FreeFn, MallocFn};
+
+        /// The value is plain data: replacing the members of a copy leaves the value it was
+        /// copied from, and every later one, the standard functions.
+        #[test]
+        #[cfg_attr(miri, ignore = "calls C")]
+        fn a_changed_copy_leaves_the_standard_value() {
+            unsafe extern "C" fn refuse(_: usize, _: *const c_char, _: c_int) -> *mut c_void {
+                ptr::null_mut()
+            }
+            unsafe extern "C" fn keep(_: *mut c_void) {}
+            let (refuse, keep): (MallocFn, FreeFn) = (refuse, keep);
+
+            let standard = allocator();
+            let mut changed = standard;
+            let mut members = changed.as_mut();
+            members.set_malloc(refuse);
+            members.set_free(keep);
+
+            let (now, before) = (changed.as_ref(), standard.as_ref());
+            assert!(ptr::fn_addr_eq(now.malloc().unwrap(), refuse));
+            assert!(ptr::fn_addr_eq(now.free().unwrap(), keep));
+            assert!(ptr::fn_addr_eq(
+                now.realloc().unwrap(),
+                before.realloc().unwrap()
+            ));
+            assert!(!ptr::fn_addr_eq(
+                before.malloc().unwrap(),
+                now.malloc().unwrap()
+            ));
+            assert!(!ptr::fn_addr_eq(
+                before.free().unwrap(),
+                now.free().unwrap()
+            ));
+            assert_eq!(format!("{standard:?}"), format!("{:?}", allocator()));
+            assert_ne!(format!("{changed:?}"), format!("{standard:?}"));
+        }
 
         /// The members reach the C library's heap: a block of at least the size asked for,
         /// aligned as `malloc` aligns, resized with its contents kept, and released once;
@@ -165,8 +203,8 @@ mod ffi_import {
         #[cfg_attr(miri, ignore = "calls C")]
         fn storage_is_the_c_library_heap() {
             unsafe extern "C" {
-                fn malloc(n: usize) -> *mut core::ffi::c_void;
-                fn free(p: *mut core::ffi::c_void);
+                fn malloc(n: usize) -> *mut c_void;
+                fn free(p: *mut c_void);
             }
             let standard = allocator();
             let r = standard.as_ref();

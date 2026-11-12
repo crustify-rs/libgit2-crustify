@@ -8,7 +8,10 @@
 //!   rest, is built once over the Rust value and once over the raw value C fills, and installed in
 //!   a child process of its own each (libgit2's allocator is process-global), before libgit2 is
 //!   initialised. Both run one workload through the allocator strategies, and its outcomes and
-//!   error states are compared.
+//!   error states are compared. Each side then restores libgit2's default allocator, as
+//!   `test_str_oom__cleanup` does (`git_allocator_setup(NULL)`): `set_allocator(None)` and
+//!   `GIT_OPT_SET_ALLOCATOR` with NULL, after which the refusing functions, still armed, no longer
+//!   serve, and the blocks they made are released by the standard family they came from.
 
 use std::ffi::{CString, c_char, c_int, c_void};
 use std::process::Command;
@@ -176,6 +179,24 @@ fn install(side: &str) {
     }
 }
 
+/// Restores libgit2's default allocator on `side`, as `test_str_oom__cleanup` does.
+fn restore_default(side: &str) {
+    match side {
+        // SAFETY: every block libgit2 holds was made by the refusing functions, which forward
+        // to the standard family the default allocator is (this build has no
+        // `DEBUG_STRICT_ALLOC`), so it resizes and releases them; this process runs this test
+        // alone, on its only thread calling libgit2.
+        "rust" => unsafe { set_allocator(None) },
+        "c" => {
+            let opt = c_int::try_from(ffi::GIT_OPT_SET_ALLOCATOR).unwrap();
+            // SAFETY: as above; `GIT_OPT_SET_ALLOCATOR` reads NULL as the default allocator.
+            let rc = unsafe { ffi::git_libgit2_opts(opt, ptr::null::<ffi::git_allocator>()) };
+            assert_eq!(rc, 0);
+        }
+        _ => unreachable!("unknown side {side}"),
+    }
+}
+
 /// Whether the last error is an out-of-memory one.
 fn last_is_oom() -> bool {
     errors::last().class() == Some(errors::ErrorClass::NoMemory)
@@ -183,12 +204,13 @@ fn last_is_oom() -> bool {
 
 /// The workload, through the allocator strategies, which reach the installed allocator:
 /// each step's outcome, and whether a refusal left an out-of-memory error.
-fn workload() -> Vec<String> {
+fn workload(side: &str) -> Vec<String> {
     let mut steps = Vec::new();
     // Initialises libgit2, through the installed allocator, before it refuses anything.
     let warm = AllocVec::<u8>::from_slice(&[1; 8]);
     steps.push(format!("warm {:?}", warm.as_deref()));
     ARMED.store(true, SeqCst);
+    let mut held = Vec::new();
     for len in [LIMIT, LIMIT + 1] {
         // `git__malloc`, the family's `malloc`.
         errors::clear();
@@ -215,7 +237,24 @@ fn workload() -> Vec<String> {
             copy.as_ref().map(|s| s.to_bytes().len()),
             copy.is_none() && last_is_oom()
         ));
+        held.push((run, array, copy));
     }
+    // Still armed: the default allocator serves what the refusing ones refused, and releases
+    // the blocks they made, held until here.
+    restore_default(side);
+    let len = LIMIT + 1;
+    errors::clear();
+    let run = AllocVec::<u8>::from_slice(&vec![7; len]);
+    let array = ArrayFree::new_uninit::<u8>(len);
+    let copy = StrFree::dup(&CString::new(vec![b'a'; len - 1]).unwrap());
+    steps.push(format!(
+        "restored {len}: malloc {:?} realloc {} strdup {:?} oom={}",
+        run.as_deref().map(<[u8]>::len),
+        array.is_some(),
+        copy.as_ref().map(|s| s.to_bytes().len()),
+        last_is_oom()
+    ));
+    drop(held);
     ARMED.store(false, SeqCst);
     let after = AllocVec::<u8>::from_slice(&[2; LIMIT * 2]);
     steps.push(format!("disarmed {:?}", after.as_deref().map(<[u8]>::len)));
@@ -249,7 +288,7 @@ fn run_side(side: &str) -> Vec<String> {
 fn oom_allocator_over_the_standard_one_as_c_builds_it() {
     if let Ok(side) = std::env::var(CHILD) {
         install(&side);
-        for step in workload() {
+        for step in workload(&side) {
             println!("STEP {step}");
         }
         return;
@@ -266,6 +305,7 @@ fn oom_allocator_over_the_standard_one_as_c_builds_it() {
             "malloc 101: 0 oom=true",
             "realloc 101: false oom=true",
             "strdup 101: None oom=true",
+            "restored 101: malloc Some(101) realloc true strdup Some(100) oom=false",
             "disarmed Some(200)",
         ]
     );

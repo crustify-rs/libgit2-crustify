@@ -38,3 +38,23 @@ section describes. Each run reads them before its first step.
   already followed this rule.
 - **Scope.** Every lifecycle policy, owner or alignment claim over storage libgit2's
   allocator makes, whether it comes from Rust or from C.
+
+## Test allocators start from libgit2's standard allocator
+
+- **Rule.** A test that installs an allocator which refuses, counts or delays some requests
+  builds it as libgit2's own out-of-memory tests do (`tests/util/str/oom.c`): it copies
+  `stdalloc::allocator()` (`src/libgit2/src/util/allocators/stdalloc.rs`), replaces the
+  members it changes, and forwards the rest of each request to the standard member it
+  replaced, read once from that value. It does not declare the C library's `malloc`,
+  `realloc` and `free` in an `extern` block of its own, nor reimplement an `Alloc` over them
+  only to stand in for the standard family.
+- **Evidence.** wave 181 batch 0 bound `git_stdalloc_init_allocator` once the static
+  campaign link (`d21c78c70`) made it link; it had been hidden from `libgit2.so`. Before it,
+  about thirty test files (the `Refusing` and `Countdown` allocators of `buf.rs`,
+  `config.rs`, `index.rs`, `refs.rs`, `settings.rs` and others, and their `equiv` and
+  `ub_unsafe` counterparts) each declared libc's `malloc` family to build one. The module
+  pass (wave 181 batch 1) built the out-of-memory equivalence test this way, as batch 0
+  did, and restores the default with `set_allocator(None)` as `test_str_oom__cleanup` does.
+- **Scope.** Every test allocator written from wave 181 on. The existing ones stay until
+  their modules' batches revisit them; they are not wrong, since the standard family is the
+  C library's heap, but they repeat a binding by hand.
