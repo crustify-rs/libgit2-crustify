@@ -70,6 +70,20 @@ The shipped build then needs the static archive, as bundled mode would build it,
 internal functions the safe crate calls exported, or system mode gated off once a safe
 wrapper reaches an internal symbol, as it is gated off once a module is integrated.
 
+### Further evidence: an internal header with no `static inline` function (wave-182/batch-0)
+
+`foundational/libgit2/src/util/allocators/win32_leakcheck.c/wave-182/batch-0/run-1`
+allowlisted `git_win32_leakcheck_init_allocator` and added `#include
+"allocators/win32_leakcheck.h"` to `wrapper.h`, after `alloc.h`. Campaign mode generated
+its binding and linked it from the static archive (`nm -D libgit2.so` lists none of it,
+`libgit2.a`'s `win32_leakcheck.c.o` defines it). The packaging gate, run as above against a
+prefix assembled from the `plain` build (`c/include`, the build's `include/`, its
+`libgit2.so*` and `libgit2.pc`), fails exactly as before, at `wrapper.h:31` (`'alloc.h' file
+not found`) while compiling `static_fns.c`: the new header, on line 32, is never reached, and
+would fail the same way, since no install carries `src/util`. The fourth consequence holds
+too: the safe crate now calls a second internal function an installed `libgit2.so` does not
+export.
+
 ## Destination
 
 The spec: `bindgen`, Generation and Build modes, which the binder does not own.

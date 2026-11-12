@@ -14474,6 +14474,11 @@ unsafe extern "C" {
         n: usize,
     ) -> *mut ::std::os::raw::c_char;
 }
+unsafe extern "C" {
+    pub fn git_win32_leakcheck_init_allocator(
+        allocator: *mut git_allocator,
+    ) -> ::std::os::raw::c_int;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct reftable_buf {

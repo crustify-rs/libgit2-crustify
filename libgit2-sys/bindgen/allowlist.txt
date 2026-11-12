@@ -719,3 +719,6 @@ function git__mallocarray
 function git__strdup
 function git__strndup
 function git__substrdup
+
+# wave-182/batch-0: src/util/allocators/win32_leakcheck.c
+function git_win32_leakcheck_init_allocator
