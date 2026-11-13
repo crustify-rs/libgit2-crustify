@@ -26,6 +26,23 @@ the raw bindings out as `bindgen` (crustify `63b92be`) describes:
    skill says nothing of how a dependent supplies them (`CMAKE_PREFIX_PATH`/`PKG_CONFIG_PATH`
    here).
 
+The `git2` link unit's scaffold (`f9a02dc65`, `44e95b76d`, 2026-11-13), the CLI executable, met
+four more:
+
+5. **"An empty allowlist generates nothing" (Generation)**: bindgen still writes its one-line
+   banner, and the update path deleted an empty `static_fns.c` that Layout lists as committed;
+   the build script now writes it empty.
+6. **An executable link unit in bundled mode**: no target of the build system builds an
+   executable's objects without linking it; the build script runs the compile commands the
+   build system records for the CLI's TUs (`compile_commands.json`) and archives them, which is
+   not "built by the target's own build system" as Build modes says.
+7. **An executable link unit in shared and system modes**: neither mode says what to do with a
+   link unit no library holds; the build script refuses its feature, naming the modes that serve it.
+8. **A type `external.txt` re-exports must be bound in the owning link unit**: the CLI's headers
+   name `git_str`, which `sys::libgit2` did not bind, so the scaffold added it to libgit2's
+   allowlist; Extending says a batch extends its own link unit's input and nothing else, which
+   leaves this cross-unit case unsaid.
+
 ## Destination
 
 The spec: `bindgen` (Generation, Build modes, Publishing).
