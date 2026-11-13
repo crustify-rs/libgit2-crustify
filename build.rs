@@ -863,8 +863,7 @@ impl Edge {
         self.vars
             .iter()
             .find(|(n, _)| n == name)
-            .map(|(_, v)| v.clone())
-            .unwrap_or_default()
+            .map_or_default(|(_, v)| v.clone())
     }
 }
 
@@ -1103,8 +1102,7 @@ fn pc_field(pc: &Path, field: &str) -> String {
         .unwrap_or_else(|e| panic!("{}: {e}", pc.display()))
         .lines()
         .find_map(|l| l.strip_prefix(field)?.strip_prefix(':'))
-        .map(|v| v.trim().to_string())
-        .unwrap_or_default()
+        .map_or_default(|v| v.trim().to_string())
 }
 
 /// Compiles a link unit's macro shims and the wrappers of its `static inline` functions.
