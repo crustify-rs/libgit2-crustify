@@ -130007,7 +130007,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 0,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [],
         "cut": []
@@ -130061,7 +130061,40 @@
         }
       ],
       "packed_with": null,
-      "batches": []
+      "batches": [
+        {
+          "index": 0,
+          "link_unit": "libgit2",
+          "module": "src/util/strnlen.h",
+          "foundational": false,
+          "kind": "port",
+          "status": "done",
+          "items": [
+            {
+              "name": "p_strnlen",
+              "defined_in": "src/util/strnlen.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/strnlen_h.rs"
+            }
+          ],
+          "commits": [
+            "7ef895eb2fa5803383f3908de4d8e3e18cc69d42"
+          ]
+        },
+        {
+          "index": 1,
+          "link_unit": "libgit2",
+          "module": "src/util/strnlen.h",
+          "foundational": false,
+          "kind": "review",
+          "status": "wip",
+          "reviews": [],
+          "module_pass": true,
+          "commits": []
+        }
+      ]
     },
     {
       "index": 226,
