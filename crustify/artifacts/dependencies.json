@@ -7681,7 +7681,13 @@
       "crate": null,
       "rust_api": null
      },
-     "confirmation": null
+     "confirmation": {
+      "batch": "wave-194/batch-3",
+      "route": "recommended",
+      "crate": null,
+      "rust_api": "glibc_bindings::libc::libio::stdio::stderr",
+      "note": "the trace goes through C's own locked stderr stream, to stay in order with what the remaining C writes there; std::io::stderr writes the descriptor directly"
+     }
     },
     {
      "c_name": "stdin",
