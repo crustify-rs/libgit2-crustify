@@ -14715,6 +14715,471 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn hash_size(id: reftable_hash) -> u32;
 }
+pub type llhttp__internal_t = llhttp__internal_s;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct llhttp__internal_s {
+    pub _index: i32,
+    pub _span_pos0: *mut ::std::os::raw::c_void,
+    pub _span_cb0: *mut ::std::os::raw::c_void,
+    pub error: i32,
+    pub reason: *const ::std::os::raw::c_char,
+    pub error_pos: *const ::std::os::raw::c_char,
+    pub data: *mut ::std::os::raw::c_void,
+    pub _current: *mut ::std::os::raw::c_void,
+    pub content_length: u64,
+    pub type_: u8,
+    pub method: u8,
+    pub http_major: u8,
+    pub http_minor: u8,
+    pub header_state: u8,
+    pub lenient_flags: u16,
+    pub upgrade: u8,
+    pub finish: u8,
+    pub flags: u16,
+    pub status_code: u16,
+    pub initial_message_completed: u8,
+    pub settings: *mut ::std::os::raw::c_void,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    [
+        "Size of llhttp__internal_s",
+    ][::std::mem::size_of::<llhttp__internal_s>() - 96usize];
+    [
+        "Alignment of llhttp__internal_s",
+    ][::std::mem::align_of::<llhttp__internal_s>() - 8usize];
+    [
+        "Offset of field: llhttp__internal_s::_index",
+    ][::std::mem::offset_of!(llhttp__internal_s, _index) - 0usize];
+    [
+        "Offset of field: llhttp__internal_s::_span_pos0",
+    ][::std::mem::offset_of!(llhttp__internal_s, _span_pos0) - 8usize];
+    [
+        "Offset of field: llhttp__internal_s::_span_cb0",
+    ][::std::mem::offset_of!(llhttp__internal_s, _span_cb0) - 16usize];
+    [
+        "Offset of field: llhttp__internal_s::error",
+    ][::std::mem::offset_of!(llhttp__internal_s, error) - 24usize];
+    [
+        "Offset of field: llhttp__internal_s::reason",
+    ][::std::mem::offset_of!(llhttp__internal_s, reason) - 32usize];
+    [
+        "Offset of field: llhttp__internal_s::error_pos",
+    ][::std::mem::offset_of!(llhttp__internal_s, error_pos) - 40usize];
+    [
+        "Offset of field: llhttp__internal_s::data",
+    ][::std::mem::offset_of!(llhttp__internal_s, data) - 48usize];
+    [
+        "Offset of field: llhttp__internal_s::_current",
+    ][::std::mem::offset_of!(llhttp__internal_s, _current) - 56usize];
+    [
+        "Offset of field: llhttp__internal_s::content_length",
+    ][::std::mem::offset_of!(llhttp__internal_s, content_length) - 64usize];
+    [
+        "Offset of field: llhttp__internal_s::type_",
+    ][::std::mem::offset_of!(llhttp__internal_s, type_) - 72usize];
+    [
+        "Offset of field: llhttp__internal_s::method",
+    ][::std::mem::offset_of!(llhttp__internal_s, method) - 73usize];
+    [
+        "Offset of field: llhttp__internal_s::http_major",
+    ][::std::mem::offset_of!(llhttp__internal_s, http_major) - 74usize];
+    [
+        "Offset of field: llhttp__internal_s::http_minor",
+    ][::std::mem::offset_of!(llhttp__internal_s, http_minor) - 75usize];
+    [
+        "Offset of field: llhttp__internal_s::header_state",
+    ][::std::mem::offset_of!(llhttp__internal_s, header_state) - 76usize];
+    [
+        "Offset of field: llhttp__internal_s::lenient_flags",
+    ][::std::mem::offset_of!(llhttp__internal_s, lenient_flags) - 78usize];
+    [
+        "Offset of field: llhttp__internal_s::upgrade",
+    ][::std::mem::offset_of!(llhttp__internal_s, upgrade) - 80usize];
+    [
+        "Offset of field: llhttp__internal_s::finish",
+    ][::std::mem::offset_of!(llhttp__internal_s, finish) - 81usize];
+    [
+        "Offset of field: llhttp__internal_s::flags",
+    ][::std::mem::offset_of!(llhttp__internal_s, flags) - 82usize];
+    [
+        "Offset of field: llhttp__internal_s::status_code",
+    ][::std::mem::offset_of!(llhttp__internal_s, status_code) - 84usize];
+    [
+        "Offset of field: llhttp__internal_s::initial_message_completed",
+    ][::std::mem::offset_of!(llhttp__internal_s, initial_message_completed) - 86usize];
+    [
+        "Offset of field: llhttp__internal_s::settings",
+    ][::std::mem::offset_of!(llhttp__internal_s, settings) - 88usize];
+};
+impl Default for llhttp__internal_s {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+pub const HPE_OK: llhttp_errno = 0;
+pub const HPE_INTERNAL: llhttp_errno = 1;
+pub const HPE_STRICT: llhttp_errno = 2;
+pub const HPE_CR_EXPECTED: llhttp_errno = 25;
+pub const HPE_LF_EXPECTED: llhttp_errno = 3;
+pub const HPE_UNEXPECTED_CONTENT_LENGTH: llhttp_errno = 4;
+pub const HPE_UNEXPECTED_SPACE: llhttp_errno = 30;
+pub const HPE_CLOSED_CONNECTION: llhttp_errno = 5;
+pub const HPE_INVALID_METHOD: llhttp_errno = 6;
+pub const HPE_INVALID_URL: llhttp_errno = 7;
+pub const HPE_INVALID_CONSTANT: llhttp_errno = 8;
+pub const HPE_INVALID_VERSION: llhttp_errno = 9;
+pub const HPE_INVALID_HEADER_TOKEN: llhttp_errno = 10;
+pub const HPE_INVALID_CONTENT_LENGTH: llhttp_errno = 11;
+pub const HPE_INVALID_CHUNK_SIZE: llhttp_errno = 12;
+pub const HPE_INVALID_STATUS: llhttp_errno = 13;
+pub const HPE_INVALID_EOF_STATE: llhttp_errno = 14;
+pub const HPE_INVALID_TRANSFER_ENCODING: llhttp_errno = 15;
+pub const HPE_CB_MESSAGE_BEGIN: llhttp_errno = 16;
+pub const HPE_CB_HEADERS_COMPLETE: llhttp_errno = 17;
+pub const HPE_CB_MESSAGE_COMPLETE: llhttp_errno = 18;
+pub const HPE_CB_CHUNK_HEADER: llhttp_errno = 19;
+pub const HPE_CB_CHUNK_COMPLETE: llhttp_errno = 20;
+pub const HPE_PAUSED: llhttp_errno = 21;
+pub const HPE_PAUSED_UPGRADE: llhttp_errno = 22;
+pub const HPE_PAUSED_H2_UPGRADE: llhttp_errno = 23;
+pub const HPE_USER: llhttp_errno = 24;
+pub const HPE_CB_URL_COMPLETE: llhttp_errno = 26;
+pub const HPE_CB_STATUS_COMPLETE: llhttp_errno = 27;
+pub const HPE_CB_METHOD_COMPLETE: llhttp_errno = 32;
+pub const HPE_CB_VERSION_COMPLETE: llhttp_errno = 33;
+pub const HPE_CB_HEADER_FIELD_COMPLETE: llhttp_errno = 28;
+pub const HPE_CB_HEADER_VALUE_COMPLETE: llhttp_errno = 29;
+pub const HPE_CB_CHUNK_EXTENSION_NAME_COMPLETE: llhttp_errno = 34;
+pub const HPE_CB_CHUNK_EXTENSION_VALUE_COMPLETE: llhttp_errno = 35;
+pub const HPE_CB_RESET: llhttp_errno = 31;
+pub type llhttp_errno = ::std::os::raw::c_uint;
+pub use self::llhttp_errno as llhttp_errno_t;
+pub const HTTP_BOTH: llhttp_type = 0;
+pub const HTTP_REQUEST: llhttp_type = 1;
+pub const HTTP_RESPONSE: llhttp_type = 2;
+pub type llhttp_type = ::std::os::raw::c_uint;
+pub use self::llhttp_type as llhttp_type_t;
+pub const HTTP_DELETE: llhttp_method = 0;
+pub const HTTP_GET: llhttp_method = 1;
+pub const HTTP_HEAD: llhttp_method = 2;
+pub const HTTP_POST: llhttp_method = 3;
+pub const HTTP_PUT: llhttp_method = 4;
+pub const HTTP_CONNECT: llhttp_method = 5;
+pub const HTTP_OPTIONS: llhttp_method = 6;
+pub const HTTP_TRACE: llhttp_method = 7;
+pub const HTTP_COPY: llhttp_method = 8;
+pub const HTTP_LOCK: llhttp_method = 9;
+pub const HTTP_MKCOL: llhttp_method = 10;
+pub const HTTP_MOVE: llhttp_method = 11;
+pub const HTTP_PROPFIND: llhttp_method = 12;
+pub const HTTP_PROPPATCH: llhttp_method = 13;
+pub const HTTP_SEARCH: llhttp_method = 14;
+pub const HTTP_UNLOCK: llhttp_method = 15;
+pub const HTTP_BIND: llhttp_method = 16;
+pub const HTTP_REBIND: llhttp_method = 17;
+pub const HTTP_UNBIND: llhttp_method = 18;
+pub const HTTP_ACL: llhttp_method = 19;
+pub const HTTP_REPORT: llhttp_method = 20;
+pub const HTTP_MKACTIVITY: llhttp_method = 21;
+pub const HTTP_CHECKOUT: llhttp_method = 22;
+pub const HTTP_MERGE: llhttp_method = 23;
+pub const HTTP_MSEARCH: llhttp_method = 24;
+pub const HTTP_NOTIFY: llhttp_method = 25;
+pub const HTTP_SUBSCRIBE: llhttp_method = 26;
+pub const HTTP_UNSUBSCRIBE: llhttp_method = 27;
+pub const HTTP_PATCH: llhttp_method = 28;
+pub const HTTP_PURGE: llhttp_method = 29;
+pub const HTTP_MKCALENDAR: llhttp_method = 30;
+pub const HTTP_LINK: llhttp_method = 31;
+pub const HTTP_UNLINK: llhttp_method = 32;
+pub const HTTP_SOURCE: llhttp_method = 33;
+pub const HTTP_PRI: llhttp_method = 34;
+pub const HTTP_DESCRIBE: llhttp_method = 35;
+pub const HTTP_ANNOUNCE: llhttp_method = 36;
+pub const HTTP_SETUP: llhttp_method = 37;
+pub const HTTP_PLAY: llhttp_method = 38;
+pub const HTTP_PAUSE: llhttp_method = 39;
+pub const HTTP_TEARDOWN: llhttp_method = 40;
+pub const HTTP_GET_PARAMETER: llhttp_method = 41;
+pub const HTTP_SET_PARAMETER: llhttp_method = 42;
+pub const HTTP_REDIRECT: llhttp_method = 43;
+pub const HTTP_RECORD: llhttp_method = 44;
+pub const HTTP_FLUSH: llhttp_method = 45;
+pub const HTTP_QUERY: llhttp_method = 46;
+pub type llhttp_method = ::std::os::raw::c_uint;
+pub use self::llhttp_method as llhttp_method_t;
+pub const HTTP_STATUS_CONTINUE: llhttp_status = 100;
+pub const HTTP_STATUS_SWITCHING_PROTOCOLS: llhttp_status = 101;
+pub const HTTP_STATUS_PROCESSING: llhttp_status = 102;
+pub const HTTP_STATUS_EARLY_HINTS: llhttp_status = 103;
+pub const HTTP_STATUS_RESPONSE_IS_STALE: llhttp_status = 110;
+pub const HTTP_STATUS_REVALIDATION_FAILED: llhttp_status = 111;
+pub const HTTP_STATUS_DISCONNECTED_OPERATION: llhttp_status = 112;
+pub const HTTP_STATUS_HEURISTIC_EXPIRATION: llhttp_status = 113;
+pub const HTTP_STATUS_MISCELLANEOUS_WARNING: llhttp_status = 199;
+pub const HTTP_STATUS_OK: llhttp_status = 200;
+pub const HTTP_STATUS_CREATED: llhttp_status = 201;
+pub const HTTP_STATUS_ACCEPTED: llhttp_status = 202;
+pub const HTTP_STATUS_NON_AUTHORITATIVE_INFORMATION: llhttp_status = 203;
+pub const HTTP_STATUS_NO_CONTENT: llhttp_status = 204;
+pub const HTTP_STATUS_RESET_CONTENT: llhttp_status = 205;
+pub const HTTP_STATUS_PARTIAL_CONTENT: llhttp_status = 206;
+pub const HTTP_STATUS_MULTI_STATUS: llhttp_status = 207;
+pub const HTTP_STATUS_ALREADY_REPORTED: llhttp_status = 208;
+pub const HTTP_STATUS_TRANSFORMATION_APPLIED: llhttp_status = 214;
+pub const HTTP_STATUS_IM_USED: llhttp_status = 226;
+pub const HTTP_STATUS_MISCELLANEOUS_PERSISTENT_WARNING: llhttp_status = 299;
+pub const HTTP_STATUS_MULTIPLE_CHOICES: llhttp_status = 300;
+pub const HTTP_STATUS_MOVED_PERMANENTLY: llhttp_status = 301;
+pub const HTTP_STATUS_FOUND: llhttp_status = 302;
+pub const HTTP_STATUS_SEE_OTHER: llhttp_status = 303;
+pub const HTTP_STATUS_NOT_MODIFIED: llhttp_status = 304;
+pub const HTTP_STATUS_USE_PROXY: llhttp_status = 305;
+pub const HTTP_STATUS_SWITCH_PROXY: llhttp_status = 306;
+pub const HTTP_STATUS_TEMPORARY_REDIRECT: llhttp_status = 307;
+pub const HTTP_STATUS_PERMANENT_REDIRECT: llhttp_status = 308;
+pub const HTTP_STATUS_BAD_REQUEST: llhttp_status = 400;
+pub const HTTP_STATUS_UNAUTHORIZED: llhttp_status = 401;
+pub const HTTP_STATUS_PAYMENT_REQUIRED: llhttp_status = 402;
+pub const HTTP_STATUS_FORBIDDEN: llhttp_status = 403;
+pub const HTTP_STATUS_NOT_FOUND: llhttp_status = 404;
+pub const HTTP_STATUS_METHOD_NOT_ALLOWED: llhttp_status = 405;
+pub const HTTP_STATUS_NOT_ACCEPTABLE: llhttp_status = 406;
+pub const HTTP_STATUS_PROXY_AUTHENTICATION_REQUIRED: llhttp_status = 407;
+pub const HTTP_STATUS_REQUEST_TIMEOUT: llhttp_status = 408;
+pub const HTTP_STATUS_CONFLICT: llhttp_status = 409;
+pub const HTTP_STATUS_GONE: llhttp_status = 410;
+pub const HTTP_STATUS_LENGTH_REQUIRED: llhttp_status = 411;
+pub const HTTP_STATUS_PRECONDITION_FAILED: llhttp_status = 412;
+pub const HTTP_STATUS_PAYLOAD_TOO_LARGE: llhttp_status = 413;
+pub const HTTP_STATUS_URI_TOO_LONG: llhttp_status = 414;
+pub const HTTP_STATUS_UNSUPPORTED_MEDIA_TYPE: llhttp_status = 415;
+pub const HTTP_STATUS_RANGE_NOT_SATISFIABLE: llhttp_status = 416;
+pub const HTTP_STATUS_EXPECTATION_FAILED: llhttp_status = 417;
+pub const HTTP_STATUS_IM_A_TEAPOT: llhttp_status = 418;
+pub const HTTP_STATUS_PAGE_EXPIRED: llhttp_status = 419;
+pub const HTTP_STATUS_ENHANCE_YOUR_CALM: llhttp_status = 420;
+pub const HTTP_STATUS_MISDIRECTED_REQUEST: llhttp_status = 421;
+pub const HTTP_STATUS_UNPROCESSABLE_ENTITY: llhttp_status = 422;
+pub const HTTP_STATUS_LOCKED: llhttp_status = 423;
+pub const HTTP_STATUS_FAILED_DEPENDENCY: llhttp_status = 424;
+pub const HTTP_STATUS_TOO_EARLY: llhttp_status = 425;
+pub const HTTP_STATUS_UPGRADE_REQUIRED: llhttp_status = 426;
+pub const HTTP_STATUS_PRECONDITION_REQUIRED: llhttp_status = 428;
+pub const HTTP_STATUS_TOO_MANY_REQUESTS: llhttp_status = 429;
+pub const HTTP_STATUS_REQUEST_HEADER_FIELDS_TOO_LARGE_UNOFFICIAL: llhttp_status = 430;
+pub const HTTP_STATUS_REQUEST_HEADER_FIELDS_TOO_LARGE: llhttp_status = 431;
+pub const HTTP_STATUS_LOGIN_TIMEOUT: llhttp_status = 440;
+pub const HTTP_STATUS_NO_RESPONSE: llhttp_status = 444;
+pub const HTTP_STATUS_RETRY_WITH: llhttp_status = 449;
+pub const HTTP_STATUS_BLOCKED_BY_PARENTAL_CONTROL: llhttp_status = 450;
+pub const HTTP_STATUS_UNAVAILABLE_FOR_LEGAL_REASONS: llhttp_status = 451;
+pub const HTTP_STATUS_CLIENT_CLOSED_LOAD_BALANCED_REQUEST: llhttp_status = 460;
+pub const HTTP_STATUS_INVALID_X_FORWARDED_FOR: llhttp_status = 463;
+pub const HTTP_STATUS_REQUEST_HEADER_TOO_LARGE: llhttp_status = 494;
+pub const HTTP_STATUS_SSL_CERTIFICATE_ERROR: llhttp_status = 495;
+pub const HTTP_STATUS_SSL_CERTIFICATE_REQUIRED: llhttp_status = 496;
+pub const HTTP_STATUS_HTTP_REQUEST_SENT_TO_HTTPS_PORT: llhttp_status = 497;
+pub const HTTP_STATUS_INVALID_TOKEN: llhttp_status = 498;
+pub const HTTP_STATUS_CLIENT_CLOSED_REQUEST: llhttp_status = 499;
+pub const HTTP_STATUS_INTERNAL_SERVER_ERROR: llhttp_status = 500;
+pub const HTTP_STATUS_NOT_IMPLEMENTED: llhttp_status = 501;
+pub const HTTP_STATUS_BAD_GATEWAY: llhttp_status = 502;
+pub const HTTP_STATUS_SERVICE_UNAVAILABLE: llhttp_status = 503;
+pub const HTTP_STATUS_GATEWAY_TIMEOUT: llhttp_status = 504;
+pub const HTTP_STATUS_HTTP_VERSION_NOT_SUPPORTED: llhttp_status = 505;
+pub const HTTP_STATUS_VARIANT_ALSO_NEGOTIATES: llhttp_status = 506;
+pub const HTTP_STATUS_INSUFFICIENT_STORAGE: llhttp_status = 507;
+pub const HTTP_STATUS_LOOP_DETECTED: llhttp_status = 508;
+pub const HTTP_STATUS_BANDWIDTH_LIMIT_EXCEEDED: llhttp_status = 509;
+pub const HTTP_STATUS_NOT_EXTENDED: llhttp_status = 510;
+pub const HTTP_STATUS_NETWORK_AUTHENTICATION_REQUIRED: llhttp_status = 511;
+pub const HTTP_STATUS_WEB_SERVER_UNKNOWN_ERROR: llhttp_status = 520;
+pub const HTTP_STATUS_WEB_SERVER_IS_DOWN: llhttp_status = 521;
+pub const HTTP_STATUS_CONNECTION_TIMEOUT: llhttp_status = 522;
+pub const HTTP_STATUS_ORIGIN_IS_UNREACHABLE: llhttp_status = 523;
+pub const HTTP_STATUS_TIMEOUT_OCCURED: llhttp_status = 524;
+pub const HTTP_STATUS_SSL_HANDSHAKE_FAILED: llhttp_status = 525;
+pub const HTTP_STATUS_INVALID_SSL_CERTIFICATE: llhttp_status = 526;
+pub const HTTP_STATUS_RAILGUN_ERROR: llhttp_status = 527;
+pub const HTTP_STATUS_SITE_IS_OVERLOADED: llhttp_status = 529;
+pub const HTTP_STATUS_SITE_IS_FROZEN: llhttp_status = 530;
+pub const HTTP_STATUS_IDENTITY_PROVIDER_AUTHENTICATION_ERROR: llhttp_status = 561;
+pub const HTTP_STATUS_NETWORK_READ_TIMEOUT: llhttp_status = 598;
+pub const HTTP_STATUS_NETWORK_CONNECT_TIMEOUT: llhttp_status = 599;
+pub type llhttp_status = ::std::os::raw::c_uint;
+pub use self::llhttp_status as llhttp_status_t;
+pub type llhttp_t = llhttp__internal_t;
+pub type llhttp_settings_t = llhttp_settings_s;
+pub type llhttp_data_cb = ::std::option::Option<
+    unsafe extern "C" fn(
+        arg1: *mut llhttp_t,
+        at: *const ::std::os::raw::c_char,
+        length: usize,
+    ) -> ::std::os::raw::c_int,
+>;
+pub type llhttp_cb = ::std::option::Option<
+    unsafe extern "C" fn(arg1: *mut llhttp_t) -> ::std::os::raw::c_int,
+>;
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct llhttp_settings_s {
+    pub on_message_begin: llhttp_cb,
+    pub on_url: llhttp_data_cb,
+    pub on_status: llhttp_data_cb,
+    pub on_method: llhttp_data_cb,
+    pub on_version: llhttp_data_cb,
+    pub on_header_field: llhttp_data_cb,
+    pub on_header_value: llhttp_data_cb,
+    pub on_chunk_extension_name: llhttp_data_cb,
+    pub on_chunk_extension_value: llhttp_data_cb,
+    pub on_headers_complete: llhttp_cb,
+    pub on_body: llhttp_data_cb,
+    pub on_message_complete: llhttp_cb,
+    pub on_url_complete: llhttp_cb,
+    pub on_status_complete: llhttp_cb,
+    pub on_method_complete: llhttp_cb,
+    pub on_version_complete: llhttp_cb,
+    pub on_header_field_complete: llhttp_cb,
+    pub on_header_value_complete: llhttp_cb,
+    pub on_chunk_extension_name_complete: llhttp_cb,
+    pub on_chunk_extension_value_complete: llhttp_cb,
+    pub on_chunk_header: llhttp_cb,
+    pub on_chunk_complete: llhttp_cb,
+    pub on_reset: llhttp_cb,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of llhttp_settings_s"][::std::mem::size_of::<llhttp_settings_s>() - 184usize];
+    [
+        "Alignment of llhttp_settings_s",
+    ][::std::mem::align_of::<llhttp_settings_s>() - 8usize];
+    [
+        "Offset of field: llhttp_settings_s::on_message_begin",
+    ][::std::mem::offset_of!(llhttp_settings_s, on_message_begin) - 0usize];
+    [
+        "Offset of field: llhttp_settings_s::on_url",
+    ][::std::mem::offset_of!(llhttp_settings_s, on_url) - 8usize];
+    [
+        "Offset of field: llhttp_settings_s::on_status",
+    ][::std::mem::offset_of!(llhttp_settings_s, on_status) - 16usize];
+    [
+        "Offset of field: llhttp_settings_s::on_method",
+    ][::std::mem::offset_of!(llhttp_settings_s, on_method) - 24usize];
+    [
+        "Offset of field: llhttp_settings_s::on_version",
+    ][::std::mem::offset_of!(llhttp_settings_s, on_version) - 32usize];
+    [
+        "Offset of field: llhttp_settings_s::on_header_field",
+    ][::std::mem::offset_of!(llhttp_settings_s, on_header_field) - 40usize];
+    [
+        "Offset of field: llhttp_settings_s::on_header_value",
+    ][::std::mem::offset_of!(llhttp_settings_s, on_header_value) - 48usize];
+    [
+        "Offset of field: llhttp_settings_s::on_chunk_extension_name",
+    ][::std::mem::offset_of!(llhttp_settings_s, on_chunk_extension_name) - 56usize];
+    [
+        "Offset of field: llhttp_settings_s::on_chunk_extension_value",
+    ][::std::mem::offset_of!(llhttp_settings_s, on_chunk_extension_value) - 64usize];
+    [
+        "Offset of field: llhttp_settings_s::on_headers_complete",
+    ][::std::mem::offset_of!(llhttp_settings_s, on_headers_complete) - 72usize];
+    [
+        "Offset of field: llhttp_settings_s::on_body",
+    ][::std::mem::offset_of!(llhttp_settings_s, on_body) - 80usize];
+    [
+        "Offset of field: llhttp_settings_s::on_message_complete",
+    ][::std::mem::offset_of!(llhttp_settings_s, on_message_complete) - 88usize];
+    [
+        "Offset of field: llhttp_settings_s::on_url_complete",
+    ][::std::mem::offset_of!(llhttp_settings_s, on_url_complete) - 96usize];
+    [
+        "Offset of field: llhttp_settings_s::on_status_complete",
+    ][::std::mem::offset_of!(llhttp_settings_s, on_status_complete) - 104usize];
+    [
+        "Offset of field: llhttp_settings_s::on_method_complete",
+    ][::std::mem::offset_of!(llhttp_settings_s, on_method_complete) - 112usize];
+    [
+        "Offset of field: llhttp_settings_s::on_version_complete",
+    ][::std::mem::offset_of!(llhttp_settings_s, on_version_complete) - 120usize];
+    [
+        "Offset of field: llhttp_settings_s::on_header_field_complete",
+    ][::std::mem::offset_of!(llhttp_settings_s, on_header_field_complete) - 128usize];
+    [
+        "Offset of field: llhttp_settings_s::on_header_value_complete",
+    ][::std::mem::offset_of!(llhttp_settings_s, on_header_value_complete) - 136usize];
+    [
+        "Offset of field: llhttp_settings_s::on_chunk_extension_name_complete",
+    ][::std::mem::offset_of!(llhttp_settings_s, on_chunk_extension_name_complete)
+        - 144usize];
+    [
+        "Offset of field: llhttp_settings_s::on_chunk_extension_value_complete",
+    ][::std::mem::offset_of!(llhttp_settings_s, on_chunk_extension_value_complete)
+        - 152usize];
+    [
+        "Offset of field: llhttp_settings_s::on_chunk_header",
+    ][::std::mem::offset_of!(llhttp_settings_s, on_chunk_header) - 160usize];
+    [
+        "Offset of field: llhttp_settings_s::on_chunk_complete",
+    ][::std::mem::offset_of!(llhttp_settings_s, on_chunk_complete) - 168usize];
+    [
+        "Offset of field: llhttp_settings_s::on_reset",
+    ][::std::mem::offset_of!(llhttp_settings_s, on_reset) - 176usize];
+};
+unsafe extern "C" {
+    pub fn llhttp_init(
+        parser: *mut llhttp_t,
+        type_: llhttp_type_t,
+        settings: *const llhttp_settings_t,
+    );
+}
+unsafe extern "C" {
+    pub fn llhttp_get_type(parser: *mut llhttp_t) -> u8;
+}
+unsafe extern "C" {
+    pub fn llhttp_get_http_major(parser: *mut llhttp_t) -> u8;
+}
+unsafe extern "C" {
+    pub fn llhttp_get_http_minor(parser: *mut llhttp_t) -> u8;
+}
+unsafe extern "C" {
+    pub fn llhttp_get_method(parser: *mut llhttp_t) -> u8;
+}
+unsafe extern "C" {
+    pub fn llhttp_get_status_code(parser: *mut llhttp_t) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn llhttp_get_upgrade(parser: *mut llhttp_t) -> u8;
+}
+unsafe extern "C" {
+    pub fn llhttp_settings_init(settings: *mut llhttp_settings_t);
+}
+unsafe extern "C" {
+    pub fn llhttp_execute(
+        parser: *mut llhttp_t,
+        data: *const ::std::os::raw::c_char,
+        len: usize,
+    ) -> llhttp_errno_t;
+}
+unsafe extern "C" {
+    pub fn llhttp_get_errno(parser: *const llhttp_t) -> llhttp_errno_t;
+}
+unsafe extern "C" {
+    pub fn llhttp_get_error_reason(
+        parser: *const llhttp_t,
+    ) -> *const ::std::os::raw::c_char;
+}
+unsafe extern "C" {
+    pub fn llhttp_get_error_pos(
+        parser: *const llhttp_t,
+    ) -> *const ::std::os::raw::c_char;
+}
 pub const REFTABLE_IO_ERROR: reftable_error = -2;
 pub const REFTABLE_FORMAT_ERROR: reftable_error = -3;
 pub const REFTABLE_NOT_EXIST_ERROR: reftable_error = -4;

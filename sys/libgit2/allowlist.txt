@@ -782,3 +782,30 @@ function git_strlist_copy
 function git_strlist_copy_with_null
 function git_strlist_free
 function git_strlist_free_with_null
+
+# wave-194/batch-0: deps/llhttp/llhttp.h's parser struct, its typedefs and the four enums
+# deps/llhttp/llhttp.c wraps ahead of api.c's port, and api.c's initialiser, executor and
+# getters, through which the equivalence tests compare the parser's fields with the C
+type llhttp__internal_s
+type llhttp__internal_t
+type llhttp_errno
+type llhttp_errno_t
+type llhttp_method
+type llhttp_method_t
+type llhttp_status
+type llhttp_status_t
+type llhttp_t
+type llhttp_type
+type llhttp_type_t
+function llhttp_execute
+function llhttp_get_errno
+function llhttp_get_error_pos
+function llhttp_get_error_reason
+function llhttp_get_http_major
+function llhttp_get_http_minor
+function llhttp_get_method
+function llhttp_get_status_code
+function llhttp_get_type
+function llhttp_get_upgrade
+function llhttp_init
+function llhttp_settings_init

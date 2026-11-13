@@ -3857,6 +3857,130 @@
    "_comment_user": "git_writestream is a vtable header embedded as the first member of a concrete stream (blob_writestream, buffered_stream, buf_stream, checkout_stream, user filter streams); its three members take the header pointer and cast it back to the container, so a header is never valid detached from its container (never copied or held by value). Ownership: git_blob_create_from_stream returns an owned stream (released by its own `free`, or consumed by git_blob_create_from_stream_commit); git_filter_list_stream_{buffer,file,blob} borrow a caller target for the call and write/close (never free) it; a user filter's git_filter_stream_fn returns an owned stream to libgit2, which frees it with its `free` member after closing the chain, and gets `next` borrowed for the chain's life. Rust wrapper: WriteStream/WriteStreamRef/WriteStreamMut (core/types.rs), WriteStreamBox = CBox<WriteStream, WriteStreamFree> (free through the object's own member), RustWriteStream<W: StreamWriter> for Rust implementations."
   },
   {
+   "name": "llhttp__internal_s",
+   "defined_in": "deps/llhttp/llhttp.h",
+   "_comment_user": "wave-194/batch-0: llhttp's parser state. It owns nothing: held by value (embedded in git_http_client), filled in place by llhttp__internal_init (via llhttp_init/llhttp_reset), never allocated or freed outside WebAssembly (llhttp_alloc/llhttp_free). C keeps no pointer to a parser between calls: each callback receives it. _index, _span_pos0, _span_cb0, _current, header_state and initial_message_completed are touched only by llhttp.c's generated code.",
+   "fields": [
+    {
+     "name": "_current",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Not a pointer to memory: the llparse_state_t of the next state, cast to void * through intptr_t; 0 is s_error. Never dereferenced. Private to llhttp.c."
+     }
+    },
+    {
+     "name": "_span_cb0",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function pointer erased to void *: the llhttp__internal__span_cb (llhttp__on_url, ...) of the open span, called by llhttp__internal_execute. Private to llhttp.c."
+     }
+    },
+    {
+     "name": "_span_pos0",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "other"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Start of the open span within the current input; llhttp__internal_execute rebases it to each call's `p` and passes it to _span_cb0 at the call's end. NULL when no span is open. Private to llhttp.c."
+     }
+    },
+    {
+     "name": "data",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "other"
+      },
+      "nullable": true,
+      "mutable": true,
+      "note": "The user's context: llhttp never reads it, llhttp_reset preserves it, llhttp__internal_init zeroes it. libgit2's httpclient.c stores a stack http_parser_context for the duration of each execute and its callbacks write through it (T3 drops the cast edge to http_parser_context to cut the cycle)."
+     }
+    },
+    {
+     "name": "error_pos",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "other"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Points into the `p`..`endp` input of the llhttp_execute call that failed or paused (the generated error and pause states, and llhttp__internal_execute's span error, which stores endp). The input belongs to the caller and may be freed after the call: never dereferenced by llhttp; httpparser.c only subtracts the input's start (git_http_parser_execute)."
+     }
+    },
+    {
+     "name": "reason",
+     "ptr": {
+      "scalar": null,
+      "array": null,
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "llhttp.c and api.c store only string literals (llhttp_pause, llhttp_finish, SPAN_CALLBACK_MAYBE, the generated error states); llhttp_set_error_reason stores the caller's string, which libgit2 never calls. NULL until the first error. Read by llhttp_get_error_reason (httpclient's git_http_parser_errmsg)."
+     }
+    },
+    {
+     "name": "settings",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "other"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The caller's const llhttp_settings_t, stored by llhttp_init and kept by llhttp_reset; llhttp.h requires it to live at least as long as the parser. api.c's CALLBACK_MAYBE/SPAN_CALLBACK_MAYBE read it as const and call its callbacks; NULL runs none. T3 drops the cast edge to llhttp_settings_s to cut the cycle through llhttp_cb."
+     }
+    }
+   ]
+  },
+  {
    "name": "reftable_buf",
    "defined_in": "deps/reftable/reftable-basics.h",
    "_comment_user": "A growable byte buffer (basics.c). States: unallocated (alloc == 0: owns nothing; buf NULL and len 0 after REFTABLE_BUF_INIT, reftable_buf_init, _release or _detach; no C path leaves alloc == 0 with a non-NULL buf or a non-zero len) and allocated (alloc > 0: buf is a live reftable_malloc/realloc allocation of alloc bytes that the struct owns, len < alloc, buf[0..=len] written). Transitions: _add grows unallocated -> allocated (REFTABLE_ALLOC_GROW: alloc*2+1 or newlen+1) and leaves the buffer unchanged on OOM; _setlen shrinks len only and writes buf[len] = 0; _reset sets len 0 and buf[0] = 0 only when allocated; _release frees buf and reinitialises; _detach hands buf to the caller and reinitialises. buf[len] == 0 holds after every basics.c routine, but not after a direct len write: block_writer_init stores last_key.len = 0 without touching buf[0], so readers must not assume the terminator. Held by value: on the stack, embedded in block_writer/block_iter/writer/stack records, and copied by value as a borrow (block_writer_add's `last`, reftable_encode_key's prev_key/key parameters), never released through the copy. block_source_from_buf keeps the buffer's address in bs->arg, read by reftable_buf_size/_read_data for the source's life. All-zero is the initial state (REFTABLE_BUF_INIT is { 0 }).",
@@ -27320,6 +27444,89 @@
       "nullable": true,
       "mutable": true,
       "note": "Consumes entry and all three independently allocated optional strings using git__free. Internal static helper; public clients never release an entry directly."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__internal_init",
+   "defined_in": "deps/llhttp/llhttp.c",
+   "lifetime": {
+    "for": "state",
+    "is_dropper": false,
+    "is_disposer": false,
+    "is_cloner": null,
+    "is_constructor": {
+     "alloc": false,
+     "init": true
+    }
+   },
+   "ptr_args": [
+    {
+     "name": "state",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:state"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Caller-provided storage, zeroed with memset and given the start state; not kept after the call."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_init",
+   "defined_in": "deps/llhttp/api.c",
+   "lifetime": {
+    "for": "parser",
+    "is_dropper": false,
+    "is_disposer": false,
+    "is_cloner": null,
+    "is_constructor": {
+     "alloc": false,
+     "init": true
+    }
+   },
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Caller-provided storage, initialised in place by llhttp__internal_init, then given its type and settings; not kept after the call."
+     }
+    },
+    {
+     "name": "settings",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "other"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Stored in parser->settings, which keeps it beyond the call: llhttp.h requires it to live at least as long as the parser. NULL runs no callback."
      }
     }
    ]

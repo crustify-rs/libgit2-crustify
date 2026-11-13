@@ -1,0 +1,99 @@
+{
+  "objective": "wrap",
+  "wave": 194,
+  "batch": 0,
+  "link_unit": "libgit2",
+  "module": "deps/llhttp/api.c",
+  "foundational": false,
+  "base_branch": "refs/heads/crustify/waves/wave-194",
+  "backend": "claude",
+  "billing": "api",
+  "model_proxy": "openrouter",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "cc84106",
+    "wavefront": "bf21e16",
+    "ffimap": "9aa2ef1",
+    "ffibox": "9c22a73"
+  },
+  "items": [
+    {
+      "name": "llhttp__internal_s",
+      "defined_in": "deps/llhttp/llhttp.h",
+      "kind": "struct",
+      "field_users": [
+        "type",
+        "error",
+        "finish",
+        "data",
+        "flags",
+        "method",
+        "settings",
+        "reason",
+        "lenient_flags",
+        "initial_message_completed",
+        "status_code",
+        "upgrade",
+        "header_state",
+        "http_minor",
+        "http_major",
+        "content_length",
+        "_current",
+        "error_pos",
+        "_span_cb0",
+        "_span_pos0",
+        "_index"
+      ],
+      "typedefs": [
+        "git_http_parser",
+        "llhttp__internal_t",
+        "llhttp_t"
+      ],
+      "home": "src/libgit2/deps/llhttp/llhttp.rs"
+    },
+    {
+      "name": "llhttp_errno",
+      "defined_in": "deps/llhttp/llhttp.h",
+      "kind": "enum",
+      "field_users": [],
+      "typedefs": [
+        "llhttp_errno_t"
+      ],
+      "home": "src/libgit2/deps/llhttp/llhttp.rs"
+    },
+    {
+      "name": "llhttp_method",
+      "defined_in": "deps/llhttp/llhttp.h",
+      "kind": "enum",
+      "field_users": [],
+      "typedefs": [
+        "llhttp_method_t"
+      ],
+      "home": "src/libgit2/deps/llhttp/llhttp.rs"
+    },
+    {
+      "name": "llhttp_status",
+      "defined_in": "deps/llhttp/llhttp.h",
+      "kind": "enum",
+      "field_users": [],
+      "typedefs": [
+        "llhttp_status_t"
+      ],
+      "home": "src/libgit2/deps/llhttp/llhttp.rs"
+    },
+    {
+      "name": "llhttp_type",
+      "defined_in": "deps/llhttp/llhttp.h",
+      "kind": "enum",
+      "field_users": [],
+      "typedefs": [
+        "llhttp_type_t"
+      ],
+      "home": "src/libgit2/deps/llhttp/llhttp.rs"
+    }
+  ],
+  "session_id": "9bd7e543-fd10-45ae-8ed8-7eccf874e612"
+}
