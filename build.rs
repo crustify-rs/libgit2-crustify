@@ -211,6 +211,9 @@ fn main() {
 
     let mode = mode();
     let regenerate = cfg!(feature = "bindgen");
+    if mode == Mode::Campaign && regenerate {
+        pin_llvm(&root);
+    }
     let units: Vec<&LinkUnit> = UNITS.iter().filter(|u| u.enabled()).collect();
     if matches!(mode, Mode::System | Mode::Shared) {
         // An install, or a shared build, has a library for each library link unit, and none
@@ -257,6 +260,65 @@ fn main() {
     if regenerate && mode != Mode::Campaign {
         println!("cargo:rustc-cfg=crustify_regenerated");
     }
+}
+
+/// Has bindgen generate with the LLVM `Cargo.toml` pins (`bindgen-llvm`, at
+/// `bindgen-llvm-version`), so that every campaign build regenerates the committed bytes.
+///
+/// bindgen loads libclang at run time through clang-sys, which takes the library
+/// `LIBCLANG_PATH` names, and asks the clang `CLANG_PATH` names for the system include dirs;
+/// unset, they fall back to a search whose result depends on the host. A driver may set its
+/// own: `cargo bsan` points both at `BorrowSanitizer`'s LLVM, whose libclang keeps the doc
+/// comments of macro constants that the pinned one drops. Both are set here, in this
+/// process, to the pinned LLVM's, before bindgen reads them.
+fn pin_llvm(root: &Path) {
+    let manifest = root.join("Cargo.toml");
+    let text = fs::read_to_string(&manifest).unwrap();
+    // A key of the [workspace.metadata.crustify] table, whose values are plain strings.
+    let value = |key: &str| {
+        let mut table = false;
+        text.lines()
+            .find_map(|l| {
+                let l = l.trim();
+                if l.starts_with('[') {
+                    table = l == "[workspace.metadata.crustify]";
+                    return None;
+                }
+                let (k, v) = l.split_once('=')?;
+                (table && k.trim() == key).then(|| v.trim().trim_matches('"').to_string())
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "{} pins no `{key}` in [workspace.metadata.crustify]",
+                    manifest.display()
+                )
+            })
+    };
+    let prefix = PathBuf::from(value("bindgen-llvm"));
+    let version = value("bindgen-llvm-version");
+    let libclang = prefix.join("lib/libclang.so");
+    let clang = prefix.join("bin/clang");
+    let reported = Command::new(&clang)
+        .arg("--version")
+        .output()
+        .ok()
+        .map_or_default(|o| String::from_utf8_lossy(&o.stdout).into_owned());
+    assert!(
+        libclang.exists() && reported.contains(&format!("clang version {version} ")),
+        "the raw bindings are generated with LLVM {version}, which Cargo.toml pins at {}: \
+         {} or {} is missing, or not that version ({:?}); install it, or regenerate the \
+         bindings with another LLVM and pin that one",
+        prefix.display(),
+        libclang.display(),
+        clang.display(),
+        reported.lines().next().unwrap_or_default()
+    );
+    // SAFETY: the build script has started no thread: nothing reads or writes the
+    // environment concurrently.
+    unsafe { env::set_var("LIBCLANG_PATH", &libclang) };
+    // SAFETY: as above, the build script is still single-threaded.
+    unsafe { env::set_var("CLANG_PATH", &clang) };
+    println!("cargo:rerun-if-changed={}", manifest.display());
 }
 
 /// The build mode: campaign mode when the environment names a campaign build, else the one

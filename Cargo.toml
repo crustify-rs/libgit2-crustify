@@ -129,6 +129,13 @@ ffibox = { path = "/crustify-rs/ffibox" }
 
 [workspace.metadata.crustify]
 nightly = "nightly-2026-10-08"
+# The LLVM that generates the committed raw bindings, beside the bindgen pinned in
+# [build-dependencies]: its libclang parses the headers, and its clang gives bindgen the
+# system include dirs. Campaign mode loads exactly these, whatever drives the build (cargo
+# bsan forces its own LLVM's), and checks the version clang reports (crustify's `bindgen`
+# skill, Generation).
+bindgen-llvm = "/usr/lib/llvm-18"
+bindgen-llvm-version = "18.1.3"
 
 [workspace.lints.rust]
 nonstandard_style = { level = "deny", priority = -1 }
