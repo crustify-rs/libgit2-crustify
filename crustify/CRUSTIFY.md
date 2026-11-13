@@ -60,6 +60,12 @@ Unanswered optional questions use their defaults.
     the toolchain supports.** (`id: sanitizers`)
     - Answer: `asan-ubsan, tsan, bsan`, the variants `crustify/artifacts/build.json`
       records; MSan is not built.
+    - From 2026-11-13, at the user's instruction, BSan is no gate of a batch, a wave or a
+      module's end: it runs once before each ship point, over the whole workspace, and
+      for a review's reproducers, where a reviewer needs it to prove a UB candidate and
+      to run the regression test the reproducer becomes. Its variant stays built. This
+      departs from the `testing-gates` skill's Regressions section, which runs it for
+      every batch and at a module's end.
     - Miri needs no build and is always on.
 
 12. **How should the target be configured: which of its build features should be
