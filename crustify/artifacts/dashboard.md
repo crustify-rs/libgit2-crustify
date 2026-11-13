@@ -3554,6 +3554,83 @@ binding or C changed, so the packaging gate does not apply. Usage cells are the
 assistant's.
 
 
+### `libgit2/src/util/utf8.c` integration: the switch from C
+
+The campaign's first switch, run by `modules/libgit2/src/util/utf8.c/integration/run-1` on the
+module's branch after the merge of the working branch (`43605086f`): `012d1d34c`, and the
+fork's `1b37e3d08`. The export feature `ffi-export-src-util-utf8-c` is deleted, the crate's
+only one, so `utf8.rs`'s gateway compiles from now on, and its four `unit_priv` tests run in
+`lib`. The module's six `equiv` tests are retired with the C they compared
+(`tests/equiv/src/util/utf8.rs`); their cases stay in its unit tests and doctests. The raw
+bindings of `git_utf8_iterate`, `git_utf8_char_length` and `git_utf8_valid_buf_length` stay,
+and now reach the exports. `src/util/utf8.c` leaves `c/`: the change is the commit
+`integrate src/util/utf8.c` on a local `fork/main`, which stands for
+`crustify-rs/libgit2-fork`'s `main` and is not pushed, and `.gitmodules` names the fork.
+`utf8.h` stays for `path.c`, `diff_xdiff.c` and `fs_path.c`. The module's tied C test,
+`tests/util/utf8.c`, calls `git_utf8_char_length` alone, so it stays and checks the export.
+No C test leaves, so no case needs listing. The exports are a private module's, so the
+crate's API does not change.
+
+The switch also made the one-time change of the C build. The fork's
+`cmake/SelectRust.cmake` links the static library that `LIBGIT2_RUST_LIBRARY` names wherever
+the remaining C is linked: `libgit2.so`, the CLI, `libgit2_tests` and `util_tests`. It is an
+imported target among `LIBGIT2_SYSTEM_LIBS`. `libgit2.so` keeps the Rust's symbols local
+(`--exclude-libs`). Its dynamic symbols are the previous generation's on every variant,
+`asan-ubsan`'s two linker-made `__start_`/`__stop_asan_globals` aside. Those come from LLVM
+23's instrumentation of the Rust and are protected. Without the variable, the library leaves
+the three exports undefined, as the crate's bundled and shared builds of `c/` need. Each
+variant's `build` command first makes the library (`crustify/scripts/rust-staticlib.sh`),
+between `configure` and the C's link. It builds the crate of the checkout that runs it as a
+`staticlib` on the dev profile, the profile the Rust tests run on, so that the C tests check
+the same build with debug assertions and overflow checks on. It builds in campaign mode
+against the configured variant, with `--features bindgen`, so that the committed bindings
+are checked, and with `CRUSTIFY_STATICLIB`, under which `build.rs` reads the build's
+configuration and links none of its C. It instruments the Rust as `cargo-variant.sh` does.
+`nm` shows that the library defines only the Rust, the three exports and the crate's
+`__extern` wrappers, and no libgit2 C. Every other campaign build leaves the library out of
+its link, matched by canonical path, so that no binary holds the Rust twice. BSan has no
+`cargo bsan rustc`, so a stand-in for the cargo it runs turns its `build` into `rustc
+--crate-type staticlib`. The BSan runtime its driver bundles is removed from the copy, since
+the variant's C link links it.
+
+The variants were rebuilt as a new generation, `crustify/builds.gen1`, with
+`crustify/scripts/build-variants.sh`, and this worktree's `crustify/builds` links to it.
+`crustify/builds` itself, which three batches were using, was left untouched. Each variant is
+configured from the generation's own `c`, a detached worktree of the fork at `1b37e3d08`, so
+that the build outlives this worktree and the base checkout's next moves (`build.json`
+version 7). Each archive holds 212 objects, where the previous generation's held 213:
+`utf8.c.o` is gone. Each variant passed its smoke test (`util_tests -sutf8`). In every
+variant, `utf8proc_utf8class` is absent from the C test executables, which take
+`git_utf8_iterate` from the Rust; in `libgit2.so` it is a local symbol.
+
+Gates on `012d1d34c`, over gen1, from `end-gates` snapshots at 24 jobs. The workspace is
+formatted, and `clippy --workspace --all-targets` passes with warnings denied. Plain passes
+the whole workspace: `lib` 848 and 1 ignored, `equiv` 528, `ub_safe` 763, `ub_unsafe` 120,
+`unit_pub` 84, `hidden_symbols` 1, doctests 76 and 378. ASan+UBSan and TSan pass it but for
+the known nightly failures: the 9 `compile_fail` snapshots and the `CommitBuilder` doctest
+(E0624). Miri passes every binary: `lib` 400, `ub_safe` 194, `equiv` 38, `unit_pub` 49,
+`ub_unsafe` 19, the rest marked. The remaining C tests ran over the link with the Rust,
+through `crustify/scripts/c-tests.sh`. It runs `build.json`'s `ctest` command, then every
+suite alone as the baseline did, and compares the result with `c-baseline.json`. Plain,
+ASan+UBSan and TSan give 3443 passed and 55 skipped of 3498, coverage 3444 and 54, each the
+baseline's record. Under TSan, the same 10 suites as the baseline's report the C's
+lock-order inversions and races, and no case fails; no report has a Rust frame. `ctest`
+passes both targets on plain, ASan+UBSan and coverage. Under TSan it fails `offline` on those
+reports alone, 49 lock-order inversions and glibc's `tzset` race. BSan was rebuilt and not
+run, as the settings' `sanitizers` answer has it. `c/` changed, so the crate was packaged as
+`package-gate-procedure` has it. The package has 697 files, `utf8.c` out and
+`SelectRust.cmake` in, and builds alone in bundled mode. Its `libgit2.pc`'s
+`Requires.private` also needs the side campaigns' installs on `PKG_CONFIG_PATH`, beside
+`CMAKE_PREFIX_PATH`. Its `lib` tests link, `path.c`'s `next_hfs_char` calling the Rust export.
+790 pass, among them the module's; the other 58 need the fixture repositories of
+`c/tests/resources`, which the package leaves out.
+
+From the switch on, the module's coverage is its Rust's: `utf8.c` is in no build, and the C
+figures lose its 71 lines. This run did not measure coverage. The procedure this switch
+worked out, which every later switch repeats, is proposed for the spec
+(`crustify/evolution/module-switch-procedure`). That libgit2's switch removes a file and no
+CMake line is a lesson. Usage cells are the assistant's.
+
 ### `libgit2/deps/ntlmclient/compat.h` wave 200 batch 0: `MIN`
 
 `deps/ntlmclient/compat.h` is a header with no translation unit, and its one scheduled item is
