@@ -118767,7 +118767,7 @@
           "module": "src/cli/opt.c",
           "foundational": false,
           "kind": "port",
-          "status": "wip",
+          "status": "done",
           "items": [
             {
               "name": "cli_opt_flag_t",
@@ -118802,7 +118802,9 @@
               "home": "src/git2/src/cli/opt.rs"
             }
           ],
-          "commits": []
+          "commits": [
+            "8a149ac08ad0cbd3caf187bc785182d3fa0b8518"
+          ]
         },
         {
           "index": 1,
@@ -118826,6 +118828,73 @@
               "kind": "function",
               "field_users": [],
               "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            }
+          ],
+          "commits": []
+        },
+        {
+          "index": 2,
+          "link_unit": "git2",
+          "module": "src/cli/opt.c",
+          "foundational": false,
+          "kind": "wrap",
+          "status": "wip",
+          "items": [
+            {
+              "name": "cli_opt_spec",
+              "defined_in": "src/cli/opt.h",
+              "kind": "struct",
+              "field_users": [
+                "type",
+                "name",
+                "value",
+                "alias",
+                "help",
+                "value_name",
+                "usage",
+                "switch_value"
+              ],
+              "typedefs": [
+                "cli_opt_spec"
+              ],
+              "home": "src/git2/src/cli/opt.rs"
+            },
+            {
+              "name": "cli_opt",
+              "defined_in": "src/cli/opt.h",
+              "kind": "struct",
+              "field_users": [
+                "arg",
+                "status",
+                "value",
+                "args_len",
+                "spec"
+              ],
+              "typedefs": [
+                "cli_opt"
+              ],
+              "home": "src/git2/src/cli/opt.rs"
+            },
+            {
+              "name": "cli_opt_parser",
+              "defined_in": "src/cli/opt.h",
+              "kind": "struct",
+              "field_users": [
+                "args",
+                "flags",
+                "idx",
+                "in_literal",
+                "needs_sort",
+                "in_short",
+                "in_args",
+                "arg_idx",
+                "args_len",
+                "specs"
+              ],
+              "typedefs": [
+                "cli_opt_parser"
+              ],
               "home": "src/git2/src/cli/opt.rs"
             }
           ],
@@ -122654,7 +122723,7 @@
           "module": "deps/ntlmclient/compat.h",
           "foundational": false,
           "kind": "port",
-          "status": "wip",
+          "status": "done",
           "items": [
             {
               "name": "MIN",
@@ -122665,6 +122734,19 @@
               "home": "src/libgit2/deps/ntlmclient/compat_h.rs"
             }
           ],
+          "commits": [
+            "4b6e5a4db08d1cae714504081882bec6cac44072"
+          ]
+        },
+        {
+          "index": 1,
+          "link_unit": "libgit2",
+          "module": "deps/ntlmclient/compat.h",
+          "foundational": false,
+          "kind": "review",
+          "status": "wip",
+          "reviews": [],
+          "module_pass": true,
           "commits": []
         }
       ]
@@ -132831,7 +132913,7 @@
           "module": "src/util/utf8.c",
           "foundational": false,
           "kind": "port",
-          "status": "wip",
+          "status": "done",
           "items": [
             {
               "name": "utf8proc_utf8class",
@@ -132874,6 +132956,19 @@
               "home": "src/libgit2/src/util/utf8.rs"
             }
           ],
+          "commits": [
+            "680ac73bf4cc9c6f7002ad150a5f040cde7985fb"
+          ]
+        },
+        {
+          "index": 1,
+          "link_unit": "libgit2",
+          "module": "src/util/utf8.c",
+          "foundational": false,
+          "kind": "review",
+          "status": "wip",
+          "reviews": [],
+          "module_pass": true,
           "commits": []
         }
       ]
