@@ -55,6 +55,7 @@ use std::sync::OnceLock;
 use ffibox::{CRefSeam, define_ctype};
 use glibc_bindings::libc::csu::errno_loc::set_errno;
 
+use crate::libgit2::src::libgit2::filter::initialise_builtin_filters;
 use crate::libgit2::src::libgit2::libgit2::{Runtime, init};
 use crate::sys::libgit2 as sys;
 
@@ -548,6 +549,12 @@ pub fn last() -> ErrorBuf {
 /// shutdown pairs; a refused one is final, as [`init`] refuses every initialisation
 /// after a failed one.
 ///
+/// The first call also initialises libgit2's built-in filters, before any repository
+/// exists: libgit2 marks a filter initialised, unsynchronised, the first time a list
+/// selects it, so the first loads of two threads, through any routine that loads a
+/// list, would race on that flag. Every safe constructor pins the runtime first, so each
+/// load is ordered after the flags were written, and finds them set.
+///
 /// The calling thread's `errno` survives the first call, which initialises libgit2,
 /// so a `GIT_ERROR_OS` error set right after still describes the caller's failure.
 pub(crate) fn runtime_pinned() -> bool {
@@ -556,7 +563,15 @@ pub(crate) fn runtime_pinned() -> bool {
         return pinned.is_some();
     }
     let errno = io::Error::last_os_error().raw_os_error().unwrap_or(0);
-    let pinned = PINNED.get_or_init(|| init().ok()).is_some();
+    let pinned = PINNED
+        .get_or_init(|| {
+            let runtime = init().ok();
+            if runtime.is_some() {
+                initialise_builtin_filters();
+            }
+            runtime
+        })
+        .is_some();
     set_errno(errno);
     pinned
 }

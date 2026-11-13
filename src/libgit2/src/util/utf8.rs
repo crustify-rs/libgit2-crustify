@@ -234,7 +234,8 @@ mod ffi_export {
     ///
     /// # Safety
     ///
-    /// `out` is valid for a write of a `u32`, and `str` for reads of `str_len` bytes.
+    /// `out` is valid and aligned for a write of a `u32`, as C's `uint32_t *` is, and `str`
+    /// valid for reads of `str_len` bytes.
     #[unsafe(no_mangle)]
     unsafe extern "C" fn git_utf8_iterate(
         out: *mut u32,
@@ -282,6 +283,131 @@ mod ffi_export {
         // which C does not change during the call.
         let bytes = unsafe { bytes(str, str_len) };
         barrier(|| valid_prefix_len(bytes), || std::process::abort())
+    }
+
+    /// The exports as their C callers call them: `next_hfs_char`'s walk by `git_utf8_iterate`,
+    /// `git_xdiff_cb`'s prefix and `fs_path.c`'s count, each reading only the `str_len` bytes
+    /// it is given, from an allocation of exactly that size, so that Miri reports a read past
+    /// them. They compile with the gateway, under the export feature until the switch.
+    #[cfg(test)]
+    mod unit_priv {
+        use core::ffi::{c_char, c_int};
+        use core::ptr;
+
+        use super::{git_utf8_char_length, git_utf8_iterate, git_utf8_valid_buf_length};
+        use crate::libgit2::src::util::utf8::{char_count, decode_char, valid_prefix_len};
+
+        /// Inputs of every outcome: each length, cut short, broken, overlong, a surrogate, a
+        /// noncharacter, a code point past U+10FFFF and bytes that start no sequence.
+        const CASES: [&[u8]; 16] = [
+            b"a",
+            b"\0",
+            b"\xC2\xA2$",
+            b"\xE2\x82\xAC",
+            b"\xF0\x90\x8D\x88",
+            b"\xE2\x82",
+            b"\xE2\x41\xAC",
+            b"\xC0\x80",
+            b"\xED\xA0\x80",
+            b"\xEF\xBF\xBE",
+            b"\xF4\x90\x80\x80",
+            b"\x80",
+            b"\xFF",
+            b"\x24\xC0\xC0\x34",
+            b"\x24\xF5\xFD\xC2",
+            b"ab\xE2\x82\xACcd\xFF",
+        ];
+
+        /// `git_utf8_iterate` of `bytes`, held in an allocation of exactly their size: what
+        /// it writes through `out`, which starts as `u32::MAX`, and what it returns.
+        fn iterate(bytes: &[u8]) -> (u32, c_int) {
+            let exact: Box<[u8]> = bytes.into();
+            let mut out = u32::MAX;
+            // SAFETY: `out` is a live, aligned `u32`, and `exact` holds `exact.len()` bytes,
+            // which nothing writes during the call.
+            let len = unsafe {
+                git_utf8_iterate(&raw mut out, exact.as_ptr().cast::<c_char>(), exact.len())
+            };
+            (out, len)
+        }
+
+        /// `git_utf8_char_length` and `git_utf8_valid_buf_length` of `bytes`, held as above.
+        fn lengths(bytes: &[u8]) -> (usize, usize) {
+            let exact: Box<[u8]> = bytes.into();
+            // SAFETY: `exact` holds `exact.len()` bytes, which nothing writes during the call.
+            let count = unsafe { git_utf8_char_length(exact.as_ptr().cast(), exact.len()) };
+            // SAFETY: as above.
+            let prefix = unsafe { git_utf8_valid_buf_length(exact.as_ptr().cast(), exact.len()) };
+            (count, prefix)
+        }
+
+        /// `git_utf8_iterate` writes the code point `decode_char` reads and returns its
+        /// length, and on a refusal writes 0 over what `out` held and returns -1, as C does.
+        #[test]
+        fn iterate_reports_decode_char_as_c_does() {
+            for bytes in CASES {
+                let expected = decode_char(bytes).map_or((0, -1), |(c, len)| {
+                    (u32::from(c), c_int::try_from(len).expect("at most 4"))
+                });
+                assert_eq!(iterate(bytes), expected, "{bytes:02X?}");
+            }
+            assert_eq!(iterate(b"\xF0\x90\x8D\x88"), (0x1_0348, 4));
+            assert_eq!(iterate(b"\xC2\xA2$"), (0xA2, 2));
+            assert_eq!(iterate(b"\xE2\x82"), (0, -1));
+        }
+
+        /// The walk `next_hfs_char` makes: each length is within the bytes left, and the code
+        /// points are the string's characters.
+        #[test]
+        fn iterate_walks_a_path_within_its_size() {
+            let path = "a\u{200C}.g\u{FEFF}it/é€𐍈".as_bytes();
+            let mut rest = path;
+            let mut chars = Vec::new();
+            while !rest.is_empty() {
+                let (code_point, len) = iterate(rest);
+                let len = usize::try_from(len).expect("a valid path");
+                assert!((1..=rest.len()).contains(&len), "{rest:02X?}");
+                chars.push(char::from_u32(code_point).expect("a scalar value"));
+                rest = &rest[len..];
+            }
+            let expected: Vec<char> = "a\u{200C}.g\u{FEFF}it/é€𐍈".chars().collect();
+            assert_eq!(chars, expected);
+        }
+
+        /// `git_utf8_char_length` and `git_utf8_valid_buf_length` are `char_count` and
+        /// `valid_prefix_len`; a prefix stops before a sequence its size cuts short, as
+        /// `git_xdiff_cb` relies on when it truncates a hunk header.
+        #[test]
+        fn lengths_are_the_native_counts() {
+            for bytes in CASES {
+                assert_eq!(
+                    lengths(bytes),
+                    (char_count(bytes), valid_prefix_len(bytes)),
+                    "{bytes:02X?}"
+                );
+            }
+            assert_eq!(lengths(b"\x24\xC2\xC2\xA2"), (3, 1));
+            assert_eq!(lengths(b"ab\xE2\x82"), (4, 2));
+            assert_eq!(lengths(b""), (0, 0));
+        }
+
+        /// With `str_len` 0, `str` is not read, whether it is NULL or dangling: the count and
+        /// the prefix are 0, and `git_utf8_iterate` refuses, writing 0, where C would read
+        /// past the size.
+        #[test]
+        fn empty_input_is_not_read() {
+            for str in [ptr::null(), ptr::dangling::<c_char>()] {
+                let mut out = u32::MAX;
+                // SAFETY: `out` is a live, aligned `u32`, and `str_len` is 0, for which the
+                // export reads nothing at `str`.
+                let len = unsafe { git_utf8_iterate(&raw mut out, str, 0) };
+                assert_eq!((out, len), (0, -1));
+                // SAFETY: `str_len` is 0, for which the export reads nothing at `str`.
+                assert_eq!(unsafe { git_utf8_char_length(str, 0) }, 0);
+                // SAFETY: as above.
+                assert_eq!(unsafe { git_utf8_valid_buf_length(str, 0) }, 0);
+            }
+        }
     }
 }
 
