@@ -47,7 +47,9 @@
 //! `llhttp_lenient_flags` and `llhttp_finish` have types of their own.
 //!
 //! The reason is a C string llhttp sets from its own literals, which lives as long as the
-//! program, and Rust sets only to a `'static` one, so it is lent for the handle's borrow.
+//! program, Rust sets only to a `'static` one, and a C callback, as `llhttp_set_error_reason`
+//! lets it, only to one that lives while the parser holds it (`set_settings_ptr`'s contract),
+//! so it is lent for the handle's borrow.
 //! The error position points into the input of the `llhttp_execute` call that failed, which
 //! the caller may since have freed, so it is never followed: [`ParserRef::error_offset`]
 //! compares it with the input it is given. `data` and `settings` are read as the addresses
@@ -1855,10 +1857,13 @@ mod ffi_import {
                 return None;
             }
             // SAFETY: a non-NULL `reason` is a NUL-terminated string that lives, unchanged,
-            // as long as the program, or as the parser where C code set it: llhttp stores only
-            // its string literals, `set_reason` only a `&'static CStr`, and a handle built
-            // over C's parser vouches for the strings that C set (the handle's invariant).
-            // Nothing writes the string, and it outlives the parser's borrow `'a`.
+            // as long as the program, or for as long as the parser holds it where C code set
+            // it: llhttp stores only its string literals, `set_reason` only a `&'static CStr`,
+            // the callbacks of a table stored by `set_settings_ptr` only strings its contract
+            // keeps alive so, those of a `Callback` or `DataCallback` only strings that live
+            // as long as the program (`from_fn`'s contract), and a handle built over C's
+            // parser vouches for the strings that C set (the handle's invariant). Nothing
+            // writes the string, and the parser holds it, unreplaced, for the borrow `'a`.
             Some(unsafe { CStr::from_ptr(reason) })
         }
 
@@ -2095,6 +2100,12 @@ mod ffi_import {
         /// unchanged, and whose callbacks are sound to call with this parser and its `data`,
         /// for as long as the parser executes with it: api.c's dispatchers read it on every
         /// event of `llhttp_execute` and `llhttp_finish`, and call each callback it sets.
+        ///
+        /// A callback that sets the parser's `reason`, as `llhttp_set_error_reason` lets it,
+        /// must set it NULL or to a NUL-terminated string that stays live and unchanged for as
+        /// long as the parser holds it: until the reason is replaced or the parser is
+        /// initialised again, or else for as long as the parser lives. The safe
+        /// [`reason`](ParserRef::reason) reads it at any time, long after the callback ran.
         ///
         /// Wraps `fld::llhttp__internal_s.settings`
         #[doc(alias = "llhttp__internal_s.settings")]
@@ -2480,7 +2491,10 @@ mod ffi_import {
         /// every live, exclusively held parser, in any state and whatever its `data` and
         /// `settings` hold, on the thread that holds the parser, and must not unwind: those
         /// are the calls [`call`](Self::call) makes, and those of the parsers a
-        /// [`Settings`](crate::libgit2::deps::llhttp::api::Settings) holding it is given. A C
+        /// [`Settings`](crate::libgit2::deps::llhttp::api::Settings) holding it is given. Where
+        /// it sets the parser's `reason`, it sets it NULL or to a NUL-terminated string that
+        /// lives, unchanged, as long as the program, since it may serve any parser, which
+        /// [`ParserRef::reason`] reads at any time. A C
         /// callback that reads the parser's `data` as its own context does not meet this,
         /// and is reached through the settings its parser executes with instead, stored by
         /// [`ParserMut::set_settings_ptr`], whose contract vouches for it.

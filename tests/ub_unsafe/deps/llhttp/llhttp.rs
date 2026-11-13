@@ -12,7 +12,8 @@
 //! `set_settings_ptr`'s suite also installs Rust handlers, through [`Callback`] and
 //! [`DataCallback`], and parses with [`ParserMut::parse`], so that C calls the trampolines:
 //! handlers that collect each run, pause, return their own error, panic, parse another
-//! parser, and try to parse or initialise the parser whose parse runs them.
+//! parser, and try to parse or initialise the parser whose parse runs them; and a C callback
+//! sets a reason its context owns, which the parser holds past the parse.
 
 use std::ffi::{c_char, c_int, c_void};
 use std::ptr;
@@ -223,6 +224,76 @@ mod set_settings_ptr {
             sys::HPE_OK
         );
         assert_eq!(parser.as_ref().status_code(), 0);
+    }
+
+    /// The reason a context's `on_url` refuses a URL with: its own string, not a literal.
+    struct Refusal {
+        reason: std::ffi::CString,
+    }
+
+    /// An `on_url` that refuses the URL with the reason its context owns, through
+    /// `llhttp_set_error_reason`, as llhttp asks a callback to before returning its error.
+    ///
+    /// # Safety
+    ///
+    /// `parser` is a live parser whose `data` addresses a live `Refusal`.
+    unsafe extern "C" fn refuse_url(
+        parser: *mut sys::llhttp_t,
+        _: *const c_char,
+        _: usize,
+    ) -> c_int {
+        // SAFETY: llhttp calls back with the parser it runs, whose `data` the test set to a
+        // live `Refusal`.
+        let refusal = unsafe { (*parser).data.cast::<Refusal>() };
+        // SAFETY: as above, `refusal` is a live `Refusal`, which nothing writes during the
+        // callback, so it may be borrowed for the read.
+        let reason = unsafe { (*refusal).reason.as_ptr() };
+        // SAFETY: `parser` is live; llhttp keeps the pointer as the parser's reason, which the
+        // refusal outlives while the parser holds it (the test's contract).
+        unsafe { sys::llhttp_set_error_reason(parser, reason) };
+        sys::HPE_USER.cast_signed()
+    }
+
+    // The regression test of `contracts/ffi_import/settings-ptr-admits-a-reason-that-dies-first`:
+    // the reason a callback sets lives while the parser holds it, and is read through the safe
+    // getter after the parse, then replaced before the context that owns it goes.
+    #[test]
+    #[cfg_attr(miri, ignore = "calls C")]
+    fn a_reason_its_callbacks_set_is_read_while_the_parser_holds_it() {
+        let mut settings = sys::llhttp_settings_t::default();
+        // SAFETY: `settings` is a live table, which `llhttp_settings_init` zeroes.
+        unsafe { sys::llhttp_settings_init(&raw mut settings) };
+        settings.on_url = Some(refuse_url);
+        let mut refusal = Refusal {
+            reason: c"the context refuses the URL".to_owned(),
+        };
+        let mut parser = c_init(ParserType::Request);
+        // SAFETY: `refusal` is the live `Refusal` the callback reads, until it is cleared.
+        unsafe { parser.as_mut().set_data((&raw mut refusal).cast()) };
+        // SAFETY: `settings` is live and unchanged while the parser executes with it, its one
+        // callback is sound with this parser's `data`, and the reason it sets, `refusal`'s,
+        // lives until the parser no longer holds it, replaced below.
+        unsafe { parser.as_mut().set_settings_ptr(&raw const settings) };
+        let error = parser
+            .as_mut()
+            .parse(b"GET /refused HTTP/1.1\r\n")
+            .unwrap_err();
+        assert_eq!(error.code(), sys::HPE_USER.cast_signed());
+        // SAFETY: NULL runs no callback, so nothing reads `data` from here on.
+        unsafe { parser.as_mut().set_settings_ptr(ptr::null()) };
+        // SAFETY: as above.
+        unsafe { parser.as_mut().set_data(ptr::null_mut()) };
+        // The callback is long done; the reason is still the context's.
+        let reason = parser.as_ref().reason().map(std::ffi::CStr::as_ptr);
+        assert_eq!(reason, Some(refusal.reason.as_ptr()));
+        assert_eq!(
+            parser.as_ref().reason(),
+            Some(c"the context refuses the URL")
+        );
+        // The parser gives the reason up before its context goes.
+        parser.as_mut().set_reason(None);
+        drop(refusal);
+        assert_eq!(parser.as_ref().reason(), None);
     }
 }
 
