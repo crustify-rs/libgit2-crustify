@@ -29,15 +29,17 @@
 //!   included.
 
 use core::cell::Cell;
-use std::ffi::{CStr, CString, c_char, c_int, c_uint};
+use core::num::NonZero;
+use core::ops::ControlFlow;
+use std::ffi::{CStr, CString, c_char, c_int, c_uint, c_void};
 use std::process::Command;
 use std::{mem, ptr, slice};
 
 use ffibox::{CMutSeam, CRefSeam, CZeroable};
 use glibc_bindings::libc::ffi as libc;
 use libgit2_crustify::git2::src::cli::opt::{
-    Arg, ArgsSlot, Kind, Opt, OptRef, ParseFlags, Parser, Spec, SpecRef, SpecTable, Status, Target,
-    Usage, uses_gnu_style,
+    Arg, ArgsSlot, ForeachCallbackFn, Kind, Opt, OptRef, ParseFlags, Parser, Spec, SpecRef,
+    SpecTable, Status, Target, Usage, for_each, parse, uses_gnu_style,
 };
 use libgit2_crustify::sys::git2 as sys;
 
@@ -788,5 +790,456 @@ fn write_status_writes_what_cli_opt_status_fprint_writes() {
         // SAFETY: `c_opt` is a live outcome with `NULL` pointers, borrowed for the handle.
         let opt = unsafe { OptRef::from_ptr(&raw mut c_opt) }.expect("non-null");
         assert_eq!(rust_status(opt, Some(c"git2"), table), c, "{raw}");
+    }
+}
+
+/// The variables the specs of a [`fixture`] table write, one set for each side of a comparison.
+#[derive(Default)]
+struct Vars<'p> {
+    help: Cell<c_int>,
+    config: Cell<Option<Arg<'p>>>,
+    debug: Cell<c_int>,
+    verbose: Cell<c_int>,
+    mode: Cell<c_int>,
+    output: Cell<Option<Arg<'p>>>,
+    sign: Cell<Option<Arg<'p>>>,
+    first: Cell<Option<Arg<'p>>>,
+    second: Cell<Option<Arg<'p>>>,
+    rest: ArgsSlot<'p>,
+}
+
+/// The two tables the parses are compared over, each ended by its zeroed spec, over `v`:
+///
+/// - `0`, a table of every kind: `common.h`'s `--help`, which stops parsing, and `-c`; a bool, two
+///   accumulators counting up and down, a choice of two switches, a value, a value that is
+///   optional, the literal `--`, a required argument, another, and the remaining arguments;
+/// - `1`, `cmd_cat_file.c`'s: `common.h`'s four options, a required choice of four switches and an
+///   argument, and a required argument.
+///
+/// Neither starts with a spec marked [`Usage::CHOICE`] nor has a bool without a name, which the C
+/// misreads.
+fn fixture<'p>(shape: usize, v: &'p Vars<'p>) -> Vec<Spec<'p>> {
+    let help = Spec::new(Target::Switch(Some(&v.help)))
+        .with_name(c"help")
+        .with_switch_value(1)
+        .with_usage(Usage::HIDDEN | Usage::STOP_PARSING);
+    let config = Spec::new(Target::Value(Some(&v.config)))
+        .with_alias(b'c')
+        .with_usage(Usage::HIDDEN);
+    match shape {
+        0 => vec![
+            help,
+            config,
+            Spec::new(Target::Bool(Some(&v.debug)))
+                .with_name(c"debug")
+                .with_alias(b'd'),
+            Spec::new(Target::Accumulator(Some(&v.verbose))).with_alias(b'v'),
+            Spec::new(Target::Accumulator(Some(&v.verbose)))
+                .with_alias(b'q')
+                .with_switch_value(-1),
+            Spec::new(Target::Switch(Some(&v.mode)))
+                .with_name(c"read")
+                .with_alias(b'r')
+                .with_switch_value(1),
+            Spec::new(Target::Switch(Some(&v.mode)))
+                .with_name(c"write")
+                .with_alias(b'w')
+                .with_switch_value(2)
+                .with_usage(Usage::CHOICE),
+            Spec::new(Target::Value(Some(&v.output)))
+                .with_name(c"output")
+                .with_alias(b'o'),
+            Spec::new(Target::Value(Some(&v.sign)))
+                .with_name(c"sign")
+                .with_alias(b'S')
+                .with_usage(Usage::VALUE_OPTIONAL),
+            Spec::new(Target::Literal),
+            Spec::new(Target::Arg(Some(&v.first))).with_usage(Usage::REQUIRED),
+            Spec::new(Target::Arg(Some(&v.second))),
+            Spec::new(Target::Args(Some(&v.rest))),
+            Spec::zeroed(),
+        ],
+        _ => vec![
+            help,
+            config,
+            Spec::new(Target::Value(Some(&v.output)))
+                .with_name(c"config-env")
+                .with_usage(Usage::HIDDEN),
+            Spec::new(Target::Switch(Some(&v.debug)))
+                .with_name(c"no-pager")
+                .with_usage(Usage::HIDDEN),
+            Spec::new(Target::Switch(Some(&v.mode)))
+                .with_alias(b't')
+                .with_switch_value(1)
+                .with_usage(Usage::REQUIRED),
+            Spec::new(Target::Switch(Some(&v.mode)))
+                .with_alias(b's')
+                .with_switch_value(2)
+                .with_usage(Usage::CHOICE),
+            Spec::new(Target::Switch(Some(&v.mode)))
+                .with_alias(b'e')
+                .with_switch_value(3)
+                .with_usage(Usage::CHOICE),
+            Spec::new(Target::Switch(Some(&v.mode)))
+                .with_alias(b'p')
+                .with_switch_value(4)
+                .with_usage(Usage::CHOICE),
+            Spec::new(Target::Arg(Some(&v.first))).with_usage(Usage::CHOICE),
+            Spec::new(Target::Arg(Some(&v.second))).with_usage(Usage::REQUIRED),
+            Spec::zeroed(),
+        ],
+    }
+}
+
+/// The command lines the parses are compared over, under both tables and both styles.
+///
+/// None gives the C one of its defects: no bare `-`, which it matches with `--help` and reads
+/// past; no unknown option after the first of a bundle, after which it misreads the next
+/// argument; no option a GNU-style parse would move after a literal `--` it has parsed, nor a
+/// bare argument before a last option whose value is optional, which it loses.
+/// `cli_opt_parse` is compared only where the specs given fit its array, as
+/// [`parse_returns_what_cli_opt_parse_returns`] checks.
+const LINES: &[&[&CStr]] = &[
+    &[],
+    &[c"--help"],
+    &[c"--help", c"--nope"],
+    &[c"--debug", c"a"],
+    &[c"--no-debug", c"a"],
+    &[c"--debug=1"],
+    &[c"-dvv", c"a", c"b"],
+    &[c"-qqv", c"a"],
+    &[c"-dofile", c"a"],
+    &[c"-do", c"file", c"a"],
+    &[c"--output", c"x", c"a"],
+    &[c"--output=x", c"a"],
+    &[c"--output=", c"a"],
+    &[c"--output"],
+    &[c"-o"],
+    &[c"-o", c"--debug"],
+    &[c"a", c"--debug", c"b", c"-ofile", c"c", c"d"],
+    &[c"a", c"-o", c"out", c"b"],
+    &[c"a", c"b", c"--output"],
+    &[c"a", c"-dS", c"b"],
+    &[c"-dS"],
+    &[c"-S", c"a"],
+    &[c"-Skey", c"a"],
+    &[c"--sign", c"--debug"],
+    &[c"--nope", c"a"],
+    &[c"a", c"--nope", c"b"],
+    &[c"-x"],
+    &[c"-xd", c"a"],
+    &[c"a", c"--", c"-d", c"b"],
+    &[c"--", c"-d", c"a"],
+    &[c"-d", c"--", c"--help"],
+    &[c"-r", c"--write", c"a"],
+    &[c"--read", c"a", c"--write"],
+    &[c"a", c"b", c"c", c"d", c"e"],
+    &[c"a", c"b", c"--help", c"c"],
+    &[c"-c", c"k=v", c"a"],
+    &[c"-ck=v", c"--config-env=k=v", c"a"],
+    &[c"--config-env", c"k=v"],
+    &[c"--no-pager", c"-s", c"obj"],
+    &[c"-tsep", c"obj"],
+    &[c"-p", c"obj"],
+    &[c"blob", c"obj"],
+    &[c"obj"],
+    &[c"-t"],
+    &[c"obj", c"-e", c"more"],
+];
+
+/// The two styles the parses are compared under: in order, and GNU style.
+const STYLES: [ParseFlags; 2] = [ParseFlags::DEFAULT, ParseFlags::FORCE_GNU];
+
+/// What an outcome holds, by value: its status, its spec's position in `table`, its argument and
+/// value as bytes, and how many arguments an `Args` spec took.
+type Seen = (u32, Option<usize>, Option<Vec<u8>>, Option<Vec<u8>>, usize);
+
+/// What `opt` holds, as [`Seen`].
+fn seen<'p>(opt: OptRef<'_, 'p>, table: SpecTable<'p>) -> Seen {
+    let bytes = |s: Option<&CStr>| s.map(|s| s.to_bytes().to_vec());
+    (
+        raw_status(opt),
+        opt.spec().and_then(|s| table.position(s)),
+        bytes(opt.arg()),
+        bytes(opt.value()),
+        opt.args_len(),
+    )
+}
+
+/// The status of an outcome as C holds it, a value `opt.h` does not name included.
+fn raw_status(opt: OptRef<'_, '_>) -> u32 {
+    // SAFETY: the handle borrows a live, initialised outcome; this copies its bytes out.
+    unsafe { opt.as_ptr().read() }.status
+}
+
+/// What the variables hold, by value: the four integers, the five strings as bytes, and whether
+/// the remaining arguments were stored.
+type Held = ([c_int; 4], [Option<Vec<u8>>; 5], bool);
+
+/// What `v` holds, as [`Held`].
+fn held(v: &Vars<'_>) -> Held {
+    let bytes = |c: &Cell<Option<Arg<'_>>>| c.get().map(|a| a.as_c_str().to_bytes().to_vec());
+    (
+        [v.help.get(), v.debug.get(), v.verbose.get(), v.mode.get()],
+        [
+            bytes(&v.config),
+            bytes(&v.output),
+            bytes(&v.sign),
+            bytes(&v.first),
+            bytes(&v.second),
+        ],
+        v.rest.is_set(),
+    )
+}
+
+/// A parser's state by value: its position, the argument specs taken, the arguments an `Args` spec
+/// took, its place in a bundle, whether it still reorders, whether it is literal, and its
+/// arguments in their current order.
+type State = (usize, usize, usize, usize, bool, bool, Vec<Vec<u8>>);
+
+/// What `parser` holds, as [`State`].
+fn state(parser: &Parser<'_>) -> State {
+    let r = parser.as_ref();
+    let order = r.args().iter().map(|a| a.as_c_str().to_bytes().to_vec());
+    (
+        r.idx(),
+        r.arg_idx(),
+        r.in_args(),
+        r.in_short(),
+        r.needs_sort(),
+        r.in_literal(),
+        order.collect(),
+    )
+}
+
+/// How many arguments the `Args` spec of `v` took, found in `parser`'s array, or `None`.
+fn tail<'p>(v: &Vars<'p>, parser: &Parser<'p>) -> Option<usize> {
+    v.rest.get_in(parser.as_ref().args()).map(<[_]>::len)
+}
+
+/// `f`, as the callback of a parse over a table borrowed for `'p`: a closure of every outcome's
+/// borrow.
+fn callback<'p, F>(f: F) -> F
+where
+    F: FnMut(OptRef<'_, 'p>) -> ControlFlow<NonZero<c_int>>,
+{
+    f
+}
+
+/// The most outcomes any line gives; a parse that gives more loops.
+const MAX_STEPS: usize = 32;
+
+/// `ParserMut::parse_next` steps through every line as `cli_opt_parser_next` does, under both
+/// tables and styles: after each step the outcome, the parser's state, the arguments' order and
+/// the variables are the C's, the remaining arguments stored where C stores them.
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn parse_next_steps_as_cli_opt_parser_next() {
+    for shape in 0..2 {
+        for flags in STYLES {
+            for line in LINES {
+                let (c_vars, r_vars) = (Vars::default(), Vars::default());
+                let (c_specs, r_specs) = (fixture(shape, &c_vars), fixture(shape, &r_vars));
+                let c_table = SpecTable::new(&c_specs).expect("ended");
+                let r_table = SpecTable::new(&r_specs).expect("ended");
+                let mut c_args: Vec<_> = line.iter().copied().map(Arg::new).collect();
+                let mut r_args: Vec<_> = line.iter().copied().map(Arg::new).collect();
+                let mut c_parser = Parser::new(c_table, &mut c_args, flags);
+                let mut r_parser = Parser::new(r_table, &mut r_args, flags);
+                let at = format!("{shape} {flags:?} {line:?}");
+                for step in 0.. {
+                    assert!(step < MAX_STEPS, "{at}: no end");
+                    let mut c_opt = Opt::zeroed();
+                    let status = next(&mut c_opt, &mut c_parser);
+                    let r_opt = r_parser.as_mut().parse_next();
+                    assert_eq!(
+                        seen(r_opt.as_ref(), r_table),
+                        seen(c_opt.as_ref(), c_table),
+                        "{at}: step {step}"
+                    );
+                    assert_eq!(state(&r_parser), state(&c_parser), "{at}: step {step}");
+                    assert_eq!(held(&r_vars), held(&c_vars), "{at}: step {step}");
+                    if status == Some(Status::Done) {
+                        break;
+                    }
+                }
+                assert_eq!(tail(&r_vars, &r_parser), tail(&c_vars, &c_parser), "{at}");
+            }
+        }
+    }
+}
+
+/// How many specs a parse of `line` against the table `shape` gives `cli_opt_parse` to keep: the
+/// outcomes it accepts before its first failure, its end or an option that stops it.
+fn given_count(shape: usize, line: &[&CStr], flags: ParseFlags) -> usize {
+    let vars = Vars::default();
+    let specs = fixture(shape, &vars);
+    let table = SpecTable::new(&specs).expect("ended");
+    let mut args: Vec<_> = line.iter().copied().map(Arg::new).collect();
+    let mut parser = Parser::new(table, &mut args, flags);
+    let mut given = 0;
+    loop {
+        let opt = parser.as_mut().parse_next();
+        let o = opt.as_ref();
+        let stops = o
+            .spec()
+            .is_some_and(|s| s.usage().contains(Usage::STOP_PARSING));
+        if o.status() != Some(Status::Ok) || stops {
+            return given;
+        }
+        given += 1;
+    }
+}
+
+/// `parse` returns what `cli_opt_parse` returns for every line under both tables and styles: the
+/// outcome C writes, as `Ok` for `CLI_OPT_STATUS_DONE` and as `Err` for any other status, the
+/// variables C writes, and, on success, the arguments in the order C leaves them.
+///
+/// A line whose specs given outnumber its arguments, as `-tsep obj` does, is not given to C, which
+/// keeps them in an array of one entry per argument and would write past it; at least one line
+/// of each table is.
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn parse_returns_what_cli_opt_parse_returns() {
+    let mut kept_out = 0;
+    for shape in 0..2 {
+        for flags in STYLES {
+            for line in LINES {
+                if given_count(shape, line, flags) > line.len() {
+                    kept_out += 1;
+                    continue;
+                }
+                let (c_vars, r_vars) = (Vars::default(), Vars::default());
+                let (c_specs, r_specs) = (fixture(shape, &c_vars), fixture(shape, &r_vars));
+                let c_table = SpecTable::new(&c_specs).expect("ended");
+                let r_table = SpecTable::new(&r_specs).expect("ended");
+                let mut c_args: Vec<_> = line.iter().copied().map(Arg::new).collect();
+                let mut c_opt = Opt::zeroed();
+                // SAFETY: the outcome is live and borrowed exclusively for the call; the table is
+                // a `SpecTable`'s, ended by its zeroed spec, whose variables live past the call,
+                // and the arguments a live array of C strings, which nothing else reaches during
+                // it; the specs it keeps fit its array, as counted above.
+                let rc = unsafe {
+                    sys::cli_opt_parse(
+                        c_opt.as_mut().as_mut_ptr(),
+                        c_table.get(0).expect("a spec").as_ptr(),
+                        c_args.as_mut_ptr().cast(),
+                        c_args.len(),
+                        flags.bits(),
+                    )
+                };
+                let mut r_args: Vec<_> = line.iter().copied().map(Arg::new).collect();
+                let at = format!("{shape} {flags:?} {line:?}");
+                let c_seen = seen(c_opt.as_ref(), c_table);
+                assert_eq!(c_seen.0, rc, "{at}");
+                match parse(r_table, &mut r_args, flags) {
+                    Ok((done, args)) => {
+                        assert_eq!(rc, sys::CLI_OPT_STATUS_DONE, "{at}");
+                        assert_eq!(seen(done.as_ref(), r_table), c_seen, "{at}");
+                        let order = |a: &[Arg<'_>]| -> Vec<Vec<u8>> {
+                            a.iter().map(|a| a.as_c_str().to_bytes().to_vec()).collect()
+                        };
+                        assert_eq!(order(args), order(&c_args), "{at}");
+                        assert_eq!(
+                            r_vars.rest.get_in(args).map(<[_]>::len),
+                            c_vars.rest.get_in(&c_args).map(<[_]>::len),
+                            "{at}"
+                        );
+                    }
+                    Err(failed) => {
+                        assert_ne!(rc, sys::CLI_OPT_STATUS_DONE, "{at}");
+                        assert_eq!(seen(failed.as_ref(), r_table), c_seen, "{at}");
+                    }
+                }
+                assert_eq!(held(&r_vars), held(&c_vars), "{at}");
+            }
+        }
+    }
+    assert!(kept_out > 0 && kept_out < LINES.len());
+}
+
+/// What [`record`] saw, and when it breaks.
+struct Recorded<'t> {
+    table: SpecTable<'t>,
+    outcomes: Vec<Seen>,
+    break_at: usize,
+}
+
+/// A C-ABI callback standing in for `common.c`'s `parse_option`: it records each outcome in the
+/// [`Recorded`] at `ctx`, and returns `-7` at the `break_at`th, 0 before.
+unsafe extern "C" fn record(opt: *mut sys::cli_opt, ctx: *mut c_void) -> c_int {
+    // SAFETY: `ctx` is the test's `Recorded`, which nothing else uses during the call.
+    let recorded = unsafe { &mut *ctx.cast::<Recorded<'_>>() };
+    // SAFETY: `opt` is the live outcome the parse lends for the call, whose spec is one of the
+    // table's, and whose strings are the arguments, which live past the call.
+    let opt = unsafe { OptRef::from_ptr(opt) }.expect("non-null");
+    recorded.outcomes.push(seen(opt, recorded.table));
+    if recorded.outcomes.len() == recorded.break_at {
+        -7
+    } else {
+        0
+    }
+}
+
+/// `for_each` calls its callback as `cli_opt_foreach` calls its own, with the same outcomes in
+/// the same order, for every line under both tables and styles, failures included, and stops
+/// where it breaks, with the code it broke with, or at the end, the variables as C leaves them.
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn for_each_calls_back_as_cli_opt_foreach_does() {
+    for shape in 0..2 {
+        for flags in STYLES {
+            for line in LINES {
+                for break_at in [0, 1, 3] {
+                    let (c_vars, r_vars) = (Vars::default(), Vars::default());
+                    let (c_specs, r_specs) = (fixture(shape, &c_vars), fixture(shape, &r_vars));
+                    let c_table = SpecTable::new(&c_specs).expect("ended");
+                    let r_table = SpecTable::new(&r_specs).expect("ended");
+                    let mut c_args: Vec<_> = line.iter().copied().map(Arg::new).collect();
+                    let mut c_seen = Recorded {
+                        table: c_table,
+                        outcomes: Vec::new(),
+                        break_at,
+                    };
+                    // SAFETY: the table is a `SpecTable`'s, whose variables live past the call,
+                    // the arguments a live array of C strings, which nothing else reaches during
+                    // it, and `record` reads each outcome, with `c_seen` as its context, for the
+                    // call alone.
+                    let rc = unsafe {
+                        sys::cli_opt_foreach(
+                            c_table.get(0).expect("a spec").as_ptr(),
+                            c_args.as_mut_ptr().cast(),
+                            c_args.len(),
+                            flags.bits(),
+                            Some(record),
+                            ptr::from_mut(&mut c_seen).cast(),
+                        )
+                    };
+                    let mut r_args: Vec<_> = line.iter().copied().map(Arg::new).collect();
+                    let mut r_seen = Vec::new();
+                    let mut keep = callback(|opt| {
+                        r_seen.push(seen(opt, r_table));
+                        match NonZero::new(if r_seen.len() == break_at { -7 } else { 0 }) {
+                            Some(code) => ControlFlow::Break(code),
+                            None => ControlFlow::Continue(()),
+                        }
+                    });
+                    let flow = for_each(
+                        r_table,
+                        &mut r_args,
+                        flags,
+                        ForeachCallbackFn::new(&mut keep),
+                    );
+                    let at = format!("{shape} {flags:?} {line:?} {break_at}");
+                    let r_rc = match flow {
+                        ControlFlow::Continue(()) => 0,
+                        ControlFlow::Break(code) => code.get(),
+                    };
+                    assert_eq!(r_rc, rc, "{at}");
+                    assert_eq!(r_seen, c_seen.outcomes, "{at}");
+                    assert_eq!(held(&r_vars), held(&c_vars), "{at}");
+                }
+            }
+        }
     }
 }

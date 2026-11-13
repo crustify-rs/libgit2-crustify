@@ -15,7 +15,7 @@
 //! it runs all the others.
 
 use core::cell::Cell;
-use core::ffi::CStr;
+use core::ffi::{CStr, c_int};
 use core::num::NonZero;
 use core::ops::ControlFlow;
 use std::io;
@@ -24,7 +24,7 @@ use std::process::Command;
 use ffibox::CZeroable;
 use libgit2_crustify::git2::src::cli::opt::{
     Arg, ArgsSlot, ForeachCallbackFn, Kind, Opt, OptRef, ParseFlags, Parser, Spec, SpecTable,
-    Status, Target, Usage, uses_gnu_style,
+    Status, Target, Usage, for_each, parse, uses_gnu_style,
 };
 
 /// Every usage flag a constant names, `DEFAULT` aside.
@@ -1089,4 +1089,597 @@ fn a_closure_callback_sees_each_outcome() {
         assert_eq!(callback.call(opt.as_ref()), ControlFlow::Continue(()));
     }
     assert_eq!(kept, [(Some(Status::Ok), Some(c"--kept"))]);
+}
+
+/// What one outcome of a parse shows: its status, its spec's position in the table, and its
+/// argument and value.
+type Step<'p> = (
+    Option<Status>,
+    Option<usize>,
+    Option<&'p CStr>,
+    Option<&'p CStr>,
+);
+
+/// Every outcome `parser` gives until it is done, the done one included, as [`Step`]s.
+fn steps<'p>(parser: &mut Parser<'p>, table: SpecTable<'p>) -> Vec<Step<'p>> {
+    let mut steps = Vec::new();
+    loop {
+        let opt = parser.as_mut().parse_next();
+        let o = opt.as_ref();
+        steps.push((
+            o.status(),
+            o.spec().and_then(|s| table.position(s)),
+            o.arg(),
+            o.value(),
+        ));
+        if o.status() == Some(Status::Done) {
+            return steps;
+        }
+        assert!(steps.len() < 32, "no end");
+    }
+}
+
+/// The strings of `args`, in order.
+fn strings<'p>(args: &[Arg<'p>]) -> Vec<&'p CStr> {
+    args.iter().map(|a| a.as_c_str()).collect()
+}
+
+/// `f`, as the callback of a parse over a table borrowed for `'p`.
+fn callback<'p, F>(f: F) -> F
+where
+    F: FnMut(OptRef<'_, 'p>) -> ControlFlow<NonZero<c_int>>,
+{
+    f
+}
+
+/// Each kind of option writes its variable as it is given, long and short, with its value from
+/// after an `=`, from the rest of its argument or from the next one, and a bundle gives one
+/// outcome per option, each naming the whole argument.
+#[test]
+fn each_option_writes_its_variable() {
+    let (debug, verbose, mode) = (Cell::new(7), Cell::new(0), Cell::new(0));
+    let (output, file) = (Cell::new(None), Cell::new(None));
+    let specs = [
+        Spec::new(Target::Bool(Some(&debug)))
+            .with_name(c"debug")
+            .with_alias(b'd'),
+        Spec::new(Target::Accumulator(Some(&verbose))).with_alias(b'v'),
+        Spec::new(Target::Accumulator(Some(&verbose)))
+            .with_alias(b'q')
+            .with_switch_value(-2),
+        Spec::new(Target::Switch(Some(&mode)))
+            .with_name(c"write")
+            .with_switch_value(2),
+        Spec::new(Target::Value(Some(&output)))
+            .with_name(c"output")
+            .with_alias(b'o'),
+        Spec::new(Target::Arg(Some(&file))),
+        Spec::default(),
+    ];
+    let table = SpecTable::new(&specs).unwrap();
+    let mut args = [
+        c"--no-debug",
+        c"-vvq",
+        c"--write",
+        c"--output=a",
+        c"--output",
+        c"b",
+        c"-oc",
+        c"-do",
+        c"d",
+        c"file",
+    ]
+    .map(Arg::new);
+    let mut parser = Parser::new(table, &mut args, ParseFlags::DEFAULT);
+    let ok = Some(Status::Ok);
+    assert_eq!(
+        steps(&mut parser, table),
+        [
+            (ok, Some(0), Some(c"--no-debug"), None),
+            (ok, Some(1), Some(c"-vvq"), None),
+            (ok, Some(1), Some(c"-vvq"), None),
+            (ok, Some(2), Some(c"-vvq"), None),
+            (ok, Some(3), Some(c"--write"), None),
+            (ok, Some(4), Some(c"--output=a"), Some(c"a")),
+            (ok, Some(4), Some(c"--output"), Some(c"b")),
+            (ok, Some(4), Some(c"-oc"), Some(c"c")),
+            (ok, Some(0), Some(c"-do"), None),
+            (ok, Some(4), Some(c"-do"), Some(c"d")),
+            (ok, Some(5), Some(c"file"), None),
+            (Some(Status::Done), None, None, None),
+        ]
+    );
+    assert_eq!((debug.get(), verbose.get(), mode.get()), (1, 0, 2));
+    assert_eq!(output.get().map(Arg::as_c_str), Some(c"d"));
+    assert_eq!(file.get().map(Arg::as_c_str), Some(c"file"));
+}
+
+/// A value option with nothing to take is a missing value, unless its value is optional, and
+/// `--name=` gives it none: the next argument is taken whatever it looks like.
+#[test]
+fn a_value_option_takes_what_follows_or_lacks_it() {
+    let (output, sign) = (Cell::new(None), Cell::new(None));
+    let specs = [
+        Spec::new(Target::Value(Some(&output)))
+            .with_name(c"output")
+            .with_alias(b'o'),
+        Spec::new(Target::Value(Some(&sign)))
+            .with_alias(b'S')
+            .with_usage(Usage::VALUE_OPTIONAL),
+        Spec::default(),
+    ];
+    let table = SpecTable::new(&specs).unwrap();
+    let mut args = [c"--output=", c"-o", c"-S", c"-S"].map(Arg::new);
+    let mut parser = Parser::new(table, &mut args, ParseFlags::DEFAULT);
+    let missing = Some(Status::MissingValue);
+    assert_eq!(
+        steps(&mut parser, table),
+        [
+            (missing, Some(0), Some(c"--output="), None),
+            (Some(Status::Ok), Some(0), Some(c"-o"), Some(c"-S")),
+            (Some(Status::Ok), Some(1), Some(c"-S"), None),
+            (Some(Status::Done), None, None, None),
+        ]
+    );
+    assert_eq!(output.get().map(Arg::as_c_str), Some(c"-S"));
+    assert_eq!(sign.get().map(Arg::as_c_str), None);
+    let mut args = [c"-o"].map(Arg::new);
+    let mut parser = Parser::new(table, &mut args, ParseFlags::DEFAULT);
+    assert_eq!(steps(&mut parser, table)[0].0, missing);
+}
+
+/// Bare arguments take the argument specs in order and then the remaining-arguments spec, which
+/// takes every argument left, options included, and is counted once the parse is done; with
+/// every argument spec taken, a bare argument is unknown.
+#[test]
+fn bare_arguments_take_the_argument_specs() {
+    let (first, rest) = (Cell::new(None), ArgsSlot::new());
+    let specs = [
+        Spec::new(Target::Bool(None)).with_name(c"debug"),
+        Spec::new(Target::Arg(Some(&first))),
+        Spec::new(Target::Args(Some(&rest))),
+        Spec::default(),
+    ];
+    let table = SpecTable::new(&specs).unwrap();
+    let mut args = [c"a", c"b", c"--debug", c"c"].map(Arg::new);
+    let mut parser = Parser::new(table, &mut args, ParseFlags::DEFAULT);
+    let opt = parser.as_mut().parse_next();
+    assert_eq!(opt.as_ref().spec().and_then(|s| table.position(s)), Some(1));
+    let opt = parser.as_mut().parse_next();
+    assert_eq!(opt.as_ref().spec().and_then(|s| table.position(s)), Some(2));
+    assert_eq!(opt.as_ref().args_len(), 3);
+    let done = parser.as_mut().parse_next();
+    assert_eq!(done.as_ref().status(), Some(Status::Done));
+    assert_eq!(done.as_ref().args_len(), 3);
+    let tail = rest.get_in(parser.as_ref().args()).unwrap();
+    assert_eq!(strings(tail), [c"b", c"--debug", c"c"]);
+    assert_eq!(first.get().map(Arg::as_c_str), Some(c"a"));
+
+    let specs = [Spec::new(Target::Arg(None)), Spec::default()];
+    let table = SpecTable::new(&specs).unwrap();
+    let mut args = [c"a", c"b"].map(Arg::new);
+    let mut parser = Parser::new(table, &mut args, ParseFlags::DEFAULT);
+    let unknown = Some(Status::UnknownOption);
+    assert_eq!(
+        steps(&mut parser, table)[1],
+        (unknown, None, Some(c"b"), None)
+    );
+}
+
+/// GNU style moves the options after the first bare argument ahead of it, with the values they
+/// take, once, keeping both orders; without it, every argument after the first bare one is bare.
+#[test]
+fn gnu_style_moves_options_ahead_of_bare_arguments() {
+    let (debug, output, rest) = (Cell::new(0), Cell::new(None), ArgsSlot::new());
+    let specs = [
+        Spec::new(Target::Bool(Some(&debug))).with_name(c"debug"),
+        Spec::new(Target::Value(Some(&output))).with_alias(b'o'),
+        Spec::new(Target::Args(Some(&rest))),
+        Spec::default(),
+    ];
+    let table = SpecTable::new(&specs).unwrap();
+    let line = [c"a", c"-o", c"out", c"b", c"--debug", c"-ox", c"c"];
+    let mut args = line.map(Arg::new);
+    let mut parser = Parser::new(table, &mut args, ParseFlags::FORCE_GNU);
+    let opt = parser.as_mut().parse_next();
+    assert_eq!(opt.as_ref().value(), Some(c"out"));
+    assert!(!parser.as_ref().needs_sort());
+    assert_eq!(
+        strings(parser.as_ref().args()),
+        [c"-o", c"out", c"--debug", c"-ox", c"a", c"b", c"c"]
+    );
+    while parser.as_mut().parse_next().as_ref().status() != Some(Status::Done) {}
+    assert_eq!(
+        (debug.get(), output.get().map(Arg::as_c_str)),
+        (1, Some(c"x"))
+    );
+    let tail = rest.get_in(parser.as_ref().args()).unwrap();
+    assert_eq!(strings(tail), [c"a", c"b", c"c"]);
+
+    let mut args = line.map(Arg::new);
+    let mut parser = Parser::new(table, &mut args, ParseFlags::DEFAULT);
+    assert_eq!(steps(&mut parser, table).len(), 2);
+    assert_eq!(strings(parser.as_ref().args()), line);
+}
+
+/// A GNU-style parse that meets a required value with nothing after it reports it before the
+/// bare arguments, and a literal `--` it meets ends the reordering.
+#[test]
+fn gnu_style_stops_at_a_missing_value_and_a_literal() {
+    let specs = [
+        Spec::new(Target::Bool(None)).with_alias(b'd'),
+        Spec::new(Target::Value(None)).with_alias(b'o'),
+        Spec::new(Target::Literal),
+        Spec::new(Target::Args(None)),
+        Spec::default(),
+    ];
+    let table = SpecTable::new(&specs).unwrap();
+    let mut args = [c"a", c"-d", c"-o"].map(Arg::new);
+    let mut parser = Parser::new(table, &mut args, ParseFlags::FORCE_GNU);
+    let missing = (Some(Status::MissingValue), Some(1), Some(c"-o"), None);
+    assert_eq!(steps(&mut parser, table)[0], missing);
+
+    let mut args = [c"a", c"-d", c"--", c"-d", c"b"].map(Arg::new);
+    let mut parser = Parser::new(table, &mut args, ParseFlags::FORCE_GNU);
+    let _ = parser.as_mut().parse_next();
+    assert_eq!(
+        strings(parser.as_ref().args()),
+        [c"-d", c"a", c"--", c"-d", c"b"]
+    );
+}
+
+/// Parsing ends at the arguments' end, at any position past it, and in a parser with no table,
+/// whose arguments are unknown; a position in a bundle past its argument's end is unknown too.
+#[test]
+fn a_parser_ends_and_refuses_without_reading_past() {
+    let mut p = Parser::default();
+    assert_eq!(
+        p.as_mut().parse_next().as_ref().status(),
+        Some(Status::Done)
+    );
+
+    let specs = [
+        Spec::new(Target::Bool(None)).with_alias(b'd'),
+        Spec::default(),
+    ];
+    let table = SpecTable::new(&specs).unwrap();
+    let mut args = [c"-d", c"x"].map(Arg::new);
+    let mut parser = Parser::new(table, &mut args, ParseFlags::DEFAULT);
+    parser.as_mut().set_idx(usize::MAX);
+    assert_eq!(
+        parser.as_mut().parse_next().as_ref().status(),
+        Some(Status::Done)
+    );
+    parser.as_mut().set_idx(0);
+    parser.as_mut().set_in_short(usize::MAX);
+    let opt = parser.as_mut().parse_next();
+    assert_eq!(opt.as_ref().status(), Some(Status::UnknownOption));
+    assert_eq!(parser.as_ref().in_short(), 0);
+    parser.as_mut().set_idx(0);
+    parser.as_mut().set_in_short(5);
+    assert_eq!(
+        parser.as_mut().parse_next().as_ref().status(),
+        Some(Status::UnknownOption)
+    );
+
+    let mut args = [c"--debug", c"-d", c"x"].map(Arg::new);
+    let mut tableless = Parser::default();
+    tableless.as_mut().set_args(&mut args);
+    let statuses: Vec<_> = (0..4)
+        .map(|_| tableless.as_mut().parse_next().as_ref().status())
+        .collect();
+    let unknown = Some(Status::UnknownOption);
+    assert_eq!(statuses, [unknown, unknown, unknown, Some(Status::Done)]);
+}
+
+/// The bare `-` is an unknown option, in either style, where the C matches the first spec
+/// without an alias, the CLI's `--help`, and reads past the argument.
+#[test]
+fn a_bare_dash_is_unknown() {
+    let help = Cell::new(0);
+    for flags in [ParseFlags::DEFAULT, ParseFlags::FORCE_GNU] {
+        let mut args = [c"a", c"-"].map(Arg::new);
+        let mut alone = [c"-"].map(Arg::new);
+        let specs = [
+            Spec::new(Target::Switch(Some(&help)))
+                .with_name(c"help")
+                .with_switch_value(1)
+                .with_usage(Usage::HIDDEN | Usage::STOP_PARSING),
+            Spec::new(Target::Args(None)),
+            Spec::default(),
+        ];
+        let table = SpecTable::new(&specs).unwrap();
+        let mut parser = Parser::new(table, &mut args, flags);
+        parser.as_mut().set_idx(1);
+        let unknown = (Some(Status::UnknownOption), None, Some(c"-"), None);
+        assert_eq!(steps(&mut parser, table)[0], unknown, "{flags:?}");
+        assert!(parse(table, &mut alone, flags).is_err());
+    }
+    assert_eq!(help.get(), 0);
+}
+
+/// An unknown option ends its bundle wherever it is in it: the next argument parses from its
+/// start, where the C reads it from as far in as the bundle had gone, past its end here.
+#[test]
+fn an_unknown_option_ends_its_bundle() {
+    for bundle in [c"-xd", c"-dx", c"-ddxd"] {
+        let mut args = [Arg::new(bundle), Arg::new(c"y")];
+        let (debug, file) = (Cell::new(0), Cell::new(None));
+        let specs = [
+            Spec::new(Target::Bool(Some(&debug))).with_alias(b'd'),
+            Spec::new(Target::Arg(Some(&file))),
+            Spec::default(),
+        ];
+        let table = SpecTable::new(&specs).unwrap();
+        let mut parser = Parser::new(table, &mut args, ParseFlags::DEFAULT);
+        let steps = steps(&mut parser, table);
+        let unknown = steps
+            .iter()
+            .position(|s| s.0 == Some(Status::UnknownOption))
+            .unwrap();
+        assert_eq!(steps[unknown].2, Some(bundle));
+        assert_eq!(
+            steps[unknown + 1],
+            (Some(Status::Ok), Some(1), Some(c"y"), None)
+        );
+        assert_eq!(file.get().map(Arg::as_c_str), Some(c"y"), "{bundle:?}");
+    }
+}
+
+/// A literal `--` parsed before the first bare argument makes every later argument literal, and
+/// a GNU-style parse moves none of them, where the C moves those that look like options ahead
+/// of the others.
+#[test]
+fn nothing_after_a_literal_is_reordered() {
+    let (debug, first, second) = (Cell::new(0), Cell::new(None), Cell::new(None));
+    let specs = [
+        Spec::new(Target::Bool(Some(&debug))).with_alias(b'd'),
+        Spec::new(Target::Literal),
+        Spec::new(Target::Arg(Some(&first))),
+        Spec::new(Target::Arg(Some(&second))),
+        Spec::default(),
+    ];
+    let table = SpecTable::new(&specs).unwrap();
+    let mut args = [c"--", c"a", c"-d"].map(Arg::new);
+    let (done, args) = parse(table, &mut args, ParseFlags::FORCE_GNU).unwrap();
+    assert_eq!(done.as_ref().status(), Some(Status::Done));
+    assert_eq!(strings(args), [c"--", c"a", c"-d"]);
+    assert_eq!(first.get().map(Arg::as_c_str), Some(c"a"));
+    assert_eq!(second.get().map(Arg::as_c_str), Some(c"-d"));
+    assert_eq!(debug.get(), 0);
+}
+
+/// A GNU-style parse whose last argument is an option with an optional value parses the bare
+/// arguments before it, where the C skips them.
+#[test]
+fn a_last_optional_value_loses_no_argument() {
+    for last in [c"-S", c"--gpg-sign"] {
+        let mut args = [Arg::new(c"file"), Arg::new(last)];
+        let (sign, file) = (Cell::new(None), Cell::new(None));
+        let specs = [
+            Spec::new(Target::Value(Some(&sign)))
+                .with_name(c"gpg-sign")
+                .with_alias(b'S')
+                .with_usage(Usage::VALUE_OPTIONAL),
+            Spec::new(Target::Arg(Some(&file))).with_usage(Usage::REQUIRED),
+            Spec::default(),
+        ];
+        let table = SpecTable::new(&specs).unwrap();
+        let (_, args) = parse(table, &mut args, ParseFlags::FORCE_GNU).unwrap();
+        assert_eq!(strings(args), [c"file", last]);
+        assert_eq!(file.get().map(Arg::as_c_str), Some(c"file"));
+        assert!(sign.get().is_none());
+    }
+}
+
+/// A whole parse fails at the first argument that does, unknown or missing its value, and once
+/// done reports the first requirement not given, a choice's by its first spec; it succeeds when
+/// one option of a required choice is given.
+#[test]
+fn a_parse_fails_at_the_first_failure_or_requirement() {
+    let mode = Cell::new(0);
+    // The status, failing spec and argument of a parse of `line` against `cmd_cat_file.c`'s
+    // table, or `None` once it succeeds.
+    let parse_line = |line: &[&CStr]| {
+        let mut args: Vec<_> = line.iter().copied().map(Arg::new).collect();
+        let (kind, object) = (Cell::new(None), Cell::new(None));
+        let specs = [
+            Spec::new(Target::Value(None)).with_alias(b'c'),
+            Spec::new(Target::Switch(Some(&mode)))
+                .with_alias(b't')
+                .with_switch_value(1)
+                .with_usage(Usage::REQUIRED),
+            Spec::new(Target::Switch(Some(&mode)))
+                .with_alias(b's')
+                .with_switch_value(2)
+                .with_usage(Usage::CHOICE),
+            Spec::new(Target::Arg(Some(&kind))).with_usage(Usage::CHOICE),
+            Spec::new(Target::Arg(Some(&object))).with_usage(Usage::REQUIRED),
+            Spec::default(),
+        ];
+        let table = SpecTable::new(&specs).unwrap();
+        let o = parse(table, &mut args, ParseFlags::FORCE_GNU).err()?;
+        let o = o.as_ref();
+        let arg = o.arg().map(|a| a.to_bytes().to_vec());
+        Some((o.status(), o.spec().and_then(|s| table.position(s)), arg))
+    };
+    let missing = Some(Status::MissingArgument);
+    assert_eq!(parse_line(&[]), Some((missing, Some(1), None)));
+    assert_eq!(parse_line(&[c"-t"]), Some((missing, Some(4), None)));
+    assert_eq!(parse_line(&[c"blob"]), Some((missing, Some(4), None)));
+    assert_eq!(
+        parse_line(&[c"-x", c"-t"]),
+        Some((Some(Status::UnknownOption), None, Some(b"-x".to_vec())))
+    );
+    assert_eq!(
+        parse_line(&[c"-t", c"-c"]),
+        Some((Some(Status::MissingValue), Some(0), Some(b"-c".to_vec())))
+    );
+    for line in [&[c"-s", c"obj"][..], &[c"blob", c"obj"], &[c"obj", c"-t"]] {
+        assert_eq!(parse_line(line), None, "{line:?}");
+    }
+    // The last parse's `-t`.
+    assert_eq!(mode.get(), 1);
+}
+
+/// A bundle gives a whole parse one spec per option, more than it has arguments, with no bound,
+/// where the C keeps them in a stack array of one entry per argument and writes past it.
+#[test]
+fn a_parse_keeps_every_spec_a_bundle_gives() {
+    let flags: Vec<Cell<c_int>> = (0..26).map(|_| Cell::new(0)).collect();
+    let mut specs: Vec<Spec<'_>> = (b'a'..=b'z')
+        .zip(&flags)
+        .map(|(alias, flag)| {
+            Spec::new(Target::Switch(Some(flag)))
+                .with_alias(alias)
+                .with_switch_value(1)
+                .with_usage(Usage::REQUIRED)
+        })
+        .collect();
+    specs.push(Spec::default());
+    let table = SpecTable::new(&specs).unwrap();
+    let mut args = [Arg::new(c"-abcdefghijklmnopqrstuvwxyz")];
+    let (done, _) = parse(table, &mut args, ParseFlags::DEFAULT).unwrap();
+    assert_eq!(done.as_ref().status(), Some(Status::Done));
+    assert!(flags.iter().all(|f| f.get() == 1));
+    let mut args = [Arg::new(c"-abcdefghijklmnopqrstuvwxy")];
+    let missing = parse(table, &mut args, ParseFlags::DEFAULT).unwrap_err();
+    assert_eq!(
+        missing.as_ref().spec().and_then(|s| table.position(s)),
+        Some(25)
+    );
+}
+
+/// An option that stops parsing ends a whole parse there, done, its requirements unchecked and
+/// the arguments after it unread.
+#[test]
+fn an_option_that_stops_parsing_ends_the_parse() {
+    let (help, debug) = (Cell::new(0), Cell::new(0));
+    let specs = [
+        Spec::new(Target::Switch(Some(&help)))
+            .with_name(c"help")
+            .with_switch_value(1)
+            .with_usage(Usage::STOP_PARSING),
+        Spec::new(Target::Bool(Some(&debug))).with_alias(b'd'),
+        Spec::new(Target::Arg(None)).with_usage(Usage::REQUIRED),
+        Spec::default(),
+    ];
+    let table = SpecTable::new(&specs).unwrap();
+    let mut args = [c"--help", c"--nope", c"-d"].map(Arg::new);
+    let (done, args) = parse(table, &mut args, ParseFlags::DEFAULT).unwrap();
+    let d = done.as_ref();
+    assert_eq!(d.status(), Some(Status::Done));
+    assert_eq!(d.spec().and_then(|s| table.position(s)), Some(0));
+    assert_eq!(d.arg(), Some(c"--help"));
+    assert_eq!(strings(args), [c"--help", c"--nope", c"-d"]);
+    assert_eq!((help.get(), debug.get()), (1, 0));
+}
+
+/// A callback sees every outcome in order, failures included, and the parse stops at the code it
+/// breaks with; one that never breaks sees the parse through.
+#[test]
+fn for_each_calls_back_until_it_breaks() {
+    /// A table of one value and the remaining arguments, its lifetime the parse's.
+    fn specs<'p>() -> [Spec<'p>; 3] {
+        [
+            Spec::new(Target::Value(None)).with_alias(b'c'),
+            Spec::new(Target::Args(None)),
+            Spec::default(),
+        ]
+    }
+    let line = [c"-ca=1", c"--nope", c"-c", c"b=2", c"file"];
+    for break_at in [1, 2, 3, 4] {
+        let mut args = line.map(Arg::new);
+        let specs = specs();
+        let table = SpecTable::new(&specs).unwrap();
+        let mut seen = Vec::new();
+        let mut f = callback(|opt| {
+            seen.push((opt.status(), opt.value()));
+            if seen.len() == break_at {
+                ControlFlow::Break(NonZero::new(-4).unwrap())
+            } else {
+                ControlFlow::Continue(())
+            }
+        });
+        let flow = for_each(
+            table,
+            &mut args,
+            ParseFlags::FORCE_GNU,
+            ForeachCallbackFn::new(&mut f),
+        );
+        let all = [
+            (Some(Status::Ok), Some(c"a=1")),
+            (Some(Status::UnknownOption), None),
+            (Some(Status::Ok), Some(c"b=2")),
+            (Some(Status::Ok), None),
+        ];
+        assert_eq!(seen, all[..break_at.min(4)], "{break_at}");
+        assert_eq!(flow, ControlFlow::Break(NonZero::new(-4).unwrap()));
+    }
+    let mut args = line.map(Arg::new);
+    let specs = specs();
+    let table = SpecTable::new(&specs).unwrap();
+    let mut calls = 0;
+    let mut f = callback(|_| {
+        calls += 1;
+        ControlFlow::Continue(())
+    });
+    let flow = for_each(
+        table,
+        &mut args,
+        ParseFlags::FORCE_GNU,
+        ForeachCallbackFn::new(&mut f),
+    );
+    assert_eq!((flow, calls), (ControlFlow::Continue(()), 4));
+}
+
+/// Options of specs without a variable parse as those with one do, writing nothing, and a parse
+/// of no arguments succeeds, handing back none.
+#[test]
+fn specs_without_variables_and_no_arguments_parse() {
+    let mut args = [
+        c"--debug",
+        c"--no-debug",
+        c"--mode",
+        c"--out=x",
+        c"--out",
+        c"y",
+        c"-dm",
+    ]
+    .map(Arg::new);
+    let mut none: [Arg<'_>; 0] = [];
+    let specs = [
+        Spec::new(Target::Bool(None))
+            .with_name(c"debug")
+            .with_alias(b'd'),
+        Spec::new(Target::Switch(None))
+            .with_name(c"mode")
+            .with_alias(b'm'),
+        Spec::new(Target::Value(None)).with_name(c"out"),
+        Spec::new(Target::Literal).with_alias(b'l'),
+        Spec::default(),
+    ];
+    let table = SpecTable::new(&specs).unwrap();
+    let mut parser = Parser::new(table, &mut args, ParseFlags::DEFAULT);
+    let ok = Some(Status::Ok);
+    let found: Vec<_> = steps(&mut parser, table)
+        .into_iter()
+        .map(|(status, spec, _, value)| (status, spec, value))
+        .collect();
+    assert_eq!(
+        found,
+        [
+            (ok, Some(0), None),
+            (ok, Some(0), None),
+            (ok, Some(1), None),
+            (ok, Some(2), Some(c"x")),
+            (ok, Some(2), Some(c"y")),
+            (ok, Some(0), None),
+            (ok, Some(1), None),
+            (Some(Status::Done), None, None),
+        ]
+    );
+    let (done, args) = parse(table, &mut none, ParseFlags::FORCE_GNU).unwrap();
+    assert_eq!(done.as_ref().status(), Some(Status::Done));
+    assert!(args.is_empty());
 }

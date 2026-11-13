@@ -39,6 +39,11 @@ batch renamed them for what they do (`find_long`, `find_short`, `find_arg`, `is_
 `skip_choice_args`, `is_given`, `check_required`) and kept each anchor and alias. A batch that
 ports a module's helpers meets it as a rule of the module's whole route, not of one item.
 
+`wave-186/batch-5/run-1` met it five times more, for `parse_long`, `parse_short`, `parse_arg`,
+`spec_for_sort` and `sort_gnu_style`, each private, renamed `take_long`, `take_short`,
+`take_bare`, `find_for_sort` and `reorder_gnu_style` with their anchors and aliases kept: every
+static function of `opt.c` that the route ported has needed it.
+
 ## Destination
 
 The spec: the conventions' Anchors section (`rust/conventions`), which the translator and

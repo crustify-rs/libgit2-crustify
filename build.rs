@@ -22,12 +22,12 @@
 //!   link edge records them; only the side campaigns' installs among those take an rpath. A variant
 //!   that records none has its shared library linked, with an rpath to it. A private build follows
 //!   the record of the variant `CRUSTIFY_BUILD_VARIANT` names. The Rust library a variant's own C
-//!   links, from the first module's switch on, is the crate built as a `staticlib` in campaign
-//!   mode with `CRUSTIFY_STATICLIB` set (`crustify/scripts/rust-staticlib.sh`): it reads the
-//!   variant's configured build for its headers, definitions and compiler, and links none of
-//!   it, so that it carries no C of the target's; the variant's link edges list it among their
-//!   libraries (`LIBGIT2_RUST_LIBRARY`), and every other campaign build leaves it out of the
-//!   link, so that no binary holds the Rust twice.
+//!   links, from the first module's switch on, is the crate built as a `staticlib` in campaign mode
+//!   with `CRUSTIFY_STATICLIB` set (`crustify/scripts/rust-staticlib.sh`): it reads the variant's
+//!   configured build for its headers, definitions and compiler, and links none of it, so that it
+//!   carries no C of the target's; the variant's link edges list it among their libraries
+//!   (`LIBGIT2_RUST_LIBRARY`), and every other campaign build leaves it out of the link, so that no
+//!   binary holds the Rust twice.
 //!
 //! Every mode uses the committed `sys/<link-unit>/bindings.rs` unless the `bindgen` feature
 //! regenerates the bindings into `OUT_DIR` from the headers of the C it links, with the include

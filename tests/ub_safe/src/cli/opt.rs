@@ -4,17 +4,22 @@
 //! shapes C's spec tables take and read back, through the getters, the pointers it stored, with
 //! borrowed handles aliased, reborrowed and copied. The status message reads a choice's later
 //! options from the table it is given, never past it, and a callback's closure keeps the strings
-//! the outcomes lend past the outcomes.
+//! the outcomes lend past the outcomes. The parser, [`ParserMut::parse_next`], [`parse`] and
+//! [`for_each`], reads heap copies of its arguments within their bounds, in any state its setters
+//! can give it, and what a parse takes from them outlives it.
+//!
+//! [`ParserMut::parse_next`]: libgit2_crustify::git2::src::cli::opt::ParserMut::parse_next
 
 use core::cell::Cell;
 use core::ffi::CStr;
 use core::num::NonZero;
 use core::ops::ControlFlow;
+use std::ffi::CString;
 
 use ffibox::CZeroable;
 use libgit2_crustify::git2::src::cli::opt::{
     Arg, ArgsSlot, ForeachCallbackFn, Kind, Opt, OptRef, ParseFlags, Parser, Spec, SpecTable,
-    Status, Target, Usage,
+    Status, Target, Usage, for_each, parse,
 };
 
 /// A parser set up over an empty argument array: its stored pointer is never read, and the
@@ -243,4 +248,147 @@ fn a_callback_keeps_what_outcomes_lend() {
         .map(|a| a.as_c_str())
         .collect();
     assert_eq!(keep_through_a_callback(&lent), [&b"--value"[..], b"file"]);
+}
+
+/// Heap copies of `line`, each its own allocation, as the sanitizers and Miri bound them.
+fn heap(line: &[&str]) -> Vec<CString> {
+    line.iter()
+        .map(|a| CString::new(*a).expect("no NUL"))
+        .collect()
+}
+
+/// A GNU-style parse over heap strings reorders its array in place, takes values from within
+/// arguments and from the ones after them, reads each bundle to its end and no further, and
+/// what the variables, the outcomes and the slot keep stays readable once the parse is over and
+/// the array handed back.
+#[test]
+fn a_parse_keeps_what_it_takes_from_heap_arguments() {
+    let owned = heap(&[
+        "a", "-dvofile", "b", "--out", "x", "-v", "--out=y", "c", "d",
+    ]);
+    let mut args: Vec<_> = owned.iter().map(|a| Arg::new(a)).collect();
+    let (debug, verbose, out, first) =
+        (Cell::new(0), Cell::new(0), Cell::new(None), Cell::new(None));
+    let rest = ArgsSlot::new();
+    let specs = [
+        Spec::new(Target::Bool(Some(&debug))).with_alias(b'd'),
+        Spec::new(Target::Accumulator(Some(&verbose))).with_alias(b'v'),
+        Spec::new(Target::Value(Some(&out)))
+            .with_name(c"out")
+            .with_alias(b'o'),
+        Spec::new(Target::Arg(Some(&first))),
+        Spec::new(Target::Args(Some(&rest))),
+        Spec::zeroed(),
+    ];
+    let table = SpecTable::new(&specs).expect("ended");
+    let (done, args) = parse(table, &mut args, ParseFlags::FORCE_GNU).expect("parsed");
+    let order: Vec<_> = args.iter().map(|a| a.as_c_str().to_bytes()).collect();
+    assert_eq!(
+        order,
+        [
+            &b"-dvofile"[..],
+            b"--out",
+            b"x",
+            b"-v",
+            b"--out=y",
+            b"a",
+            b"b",
+            b"c",
+            b"d"
+        ]
+    );
+    assert_eq!(done.as_ref().args_len(), 3);
+    assert_eq!((debug.get(), verbose.get()), (1, 2));
+    assert_eq!(out.get().map(Arg::as_c_str), Some(c"y"));
+    assert_eq!(first.get().map(Arg::as_c_str), Some(c"a"));
+    let tail: Vec<_> = rest
+        .get_in(args)
+        .expect("in the arguments")
+        .iter()
+        .map(|a| a.as_c_str())
+        .collect();
+    assert_eq!(tail, [c"b", c"c", c"d"]);
+}
+
+/// A parser in a state its setters can give it but no parse does, inside a bundle past its
+/// argument's end, past its arguments, or with no table, reads no argument past its end.
+#[test]
+fn a_parser_in_any_state_reads_within_its_arguments() {
+    let owned = heap(&["-d", "-", "x"]);
+    let mut args: Vec<_> = owned.iter().map(|a| Arg::new(a)).collect();
+    let specs = [
+        Spec::new(Target::Value(None)).with_name(c"config-env"),
+        Spec::new(Target::Bool(None)).with_alias(b'd'),
+        Spec::zeroed(),
+    ];
+    let table = SpecTable::new(&specs).expect("ended");
+    let mut parser = Parser::new(table, &mut args, ParseFlags::FORCE_GNU);
+    for (idx, in_short) in [
+        (0, 1),
+        (0, 2),
+        (0, usize::MAX),
+        (1, 0),
+        (2, 3),
+        (3, 0),
+        (usize::MAX, 0),
+    ] {
+        let mut p = parser.as_mut();
+        p.set_idx(idx);
+        p.set_in_short(in_short);
+        let _ = p.parse_next();
+        let _ = parser.as_mut().parse_next();
+    }
+    let mut none = Parser::default();
+    let owned = heap(&["--x", "-", "y"]);
+    let mut args: Vec<_> = owned.iter().map(|a| Arg::new(a)).collect();
+    none.as_mut().set_args(&mut args);
+    for _ in 0..4 {
+        let _ = none.as_mut().parse_next();
+    }
+    assert_eq!(none.as_ref().idx(), 3);
+}
+
+/// `f`, as the callback of a parse over a table borrowed for `'p`: a closure of every outcome's
+/// borrow, which may keep what the outcomes lend for `'p`.
+fn callback<'p, F>(f: F) -> F
+where
+    F: FnMut(OptRef<'_, 'p>) -> ControlFlow<NonZero<core::ffi::c_int>>,
+{
+    f
+}
+
+/// A whole parse's callback keeps the values and arguments the outcomes lend, which outlive the
+/// parse and the callback, and its break ends the parse at once.
+#[test]
+fn a_callback_keeps_what_a_whole_parse_lends() {
+    let owned = heap(&["-ca", "-c", "b", "file", "-cc"]);
+    let mut args: Vec<_> = owned.iter().map(|a| Arg::new(a)).collect();
+    let specs = [
+        Spec::new(Target::Value(None)).with_alias(b'c'),
+        Spec::zeroed(),
+    ];
+    let table = SpecTable::new(&specs).expect("ended");
+    let mut kept: Vec<&CStr> = Vec::new();
+    {
+        let mut keep = callback(|opt| {
+            kept.extend(opt.value());
+            kept.extend(opt.arg());
+            match opt.arg().map(CStr::to_bytes) {
+                Some(b"file") => ControlFlow::Break(NonZero::new(1).expect("non-zero")),
+                _ => ControlFlow::Continue(()),
+            }
+        });
+        let flow = for_each(
+            table,
+            &mut args,
+            ParseFlags::FORCE_GNU,
+            ForeachCallbackFn::new(&mut keep),
+        );
+        assert_eq!(flow, ControlFlow::Break(NonZero::new(1).expect("non-zero")));
+    }
+    let kept: Vec<_> = kept.iter().map(|s| s.to_bytes()).collect();
+    assert_eq!(
+        kept,
+        [&b"a"[..], b"-ca", b"b", b"-c", b"c", b"-cc", b"file"]
+    );
 }

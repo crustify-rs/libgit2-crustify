@@ -14,13 +14,24 @@
 //!
 //! # Its entry points
 //!
-//! [`Parser::new`] (`cli_opt_parser_init`) sets a parser up and [`OptRef::write_status`]
-//! (`cli_opt_status_fprint`) describes a parse's outcome, as the CLI shows it on its standard
-//! error. The CLI's remaining C, `main.c` and `opt_usage.c`, calls both, so each has an
-//! export, compiled under the module's export feature, `ffi-export-src-cli-opt-c`, which stays
-//! off until the module switches from C. [`ForeachCallbackFn`] is the callback a whole parse
-//! calls with each outcome (`cli_opt_foreach`'s), which a Rust closure or, through that
-//! export, `common.c`'s C function implements.
+//! [`Parser::new`] (`cli_opt_parser_init`) sets a parser up and [`ParserMut::parse_next`]
+//! (`cli_opt_parser_next`) parses its arguments one by one, reordering them GNU style where it
+//! was asked to; [`parse`] (`cli_opt_parse`) parses a whole command line and checks its required
+//! arguments, and [`for_each`] (`cli_opt_foreach`) calls a [`ForeachCallbackFn`] with each
+//! outcome, which a Rust closure or, through the export, `common.c`'s C function implements.
+//! [`OptRef::write_status`] (`cli_opt_status_fprint`) describes an outcome, as the CLI shows it on
+//! its standard error. The CLI's remaining C calls all five: `main.c` sets a parser up, steps it
+//! and describes its failures, each `cmd_*.c` parses its own arguments, `common.c` reads the
+//! configuration options, and `opt_usage.c` describes failures. So each has an export, compiled
+//! under the module's export feature, `ffi-export-src-cli-opt-c`, which stays off until the
+//! module switches from C.
+//!
+//! The parser corrects the C's defects, each
+//! documented on the routine that departs: it reads no string past its end, nor through a null
+//! pointer, and keeps any number of the specs a parse gives, where the C writes past a stack
+//! array of one per argument; an unknown option ends its bundle; and GNU-style reordering moves
+//! nothing after a literal `--`, and loses no bare argument before an option whose value is
+//! optional.
 //!
 //! # The parser's structs
 //!
@@ -53,7 +64,7 @@
 use core::cell::Cell;
 use core::ffi::{CStr, c_int};
 use core::num::NonZero;
-use core::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign};
+use core::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, ControlFlow};
 use core::{fmt, ptr};
 use std::io;
 
@@ -714,13 +725,6 @@ impl<'p> Parser<'p> {
 
 /// How a long argument, `--<arg>`, selects the spec [`find_long`] finds for it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the parser of long arguments, batch 5's, reads it"
-    )
-)]
 enum LongForm<'p> {
     /// By the spec's name alone, as `--name`, or the bare `--` of a [`Kind::Literal`] spec.
     Plain,
@@ -746,13 +750,6 @@ enum LongForm<'p> {
 ///
 /// Replaces `fn::spec_for_long`
 #[doc(alias = "spec_for_long")]
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the parser of long arguments, batch 5's, calls it"
-    )
-)]
 fn find_long<'p>(
     parser: ParserRef<'_, 'p>,
     arg: &'p CStr,
@@ -802,10 +799,6 @@ fn find_long<'p>(
 ///
 /// Replaces `fn::spec_for_short`
 #[doc(alias = "spec_for_short")]
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the parser of short options, batch 5's, calls it")
-)]
 fn find_short<'p>(
     parser: ParserRef<'_, 'p>,
     arg: &'p CStr,
@@ -834,13 +827,6 @@ fn find_short<'p>(
 ///
 /// Replaces `fn::spec_for_arg`
 #[doc(alias = "spec_for_arg")]
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the parser of bare arguments, batch 5's, calls it"
-    )
-)]
 fn find_arg<'p>(parser: &mut ParserMut<'_, 'p>) -> Option<SpecRef<'p, 'p>> {
     let specs = parser.as_ref().specs()?;
     let arg_idx = parser.as_ref().arg_idx();
@@ -890,10 +876,6 @@ fn is_later_choice(specs: SpecTable<'_>, index: usize) -> bool {
 ///
 /// Replaces `fn::consume_choices`
 #[doc(alias = "consume_choices")]
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the parsers of options, batch 5's, call it")
-)]
 fn skip_choice_args<'p>(spec: SpecRef<'_, 'p>, parser: &mut ParserMut<'_, 'p>) {
     let Some(specs) = parser.as_ref().specs() else {
         return;
@@ -937,10 +919,6 @@ fn is_given(given: &[SpecRef<'_, '_>], spec: SpecRef<'_, '_>) -> bool {
 ///
 /// Replaces `fn::validate_required`
 #[doc(alias = "validate_required")]
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the whole parse, batch 5's, calls it")
-)]
 fn check_required<'p>(
     specs: SpecTable<'p>,
     given: &[SpecRef<'_, 'p>],
@@ -967,6 +945,524 @@ fn check_required<'p>(
         }
     }
     Ok(())
+}
+
+/// The string of `arg` from its byte `at` on, the empty one at its end, or `None` past it: the
+/// `&arg[at]` C forms, which it reads past the string's end when `at` is beyond it.
+fn suffix(arg: &CStr, at: usize) -> Option<&CStr> {
+    arg.to_bytes_with_nul()
+        .get(at..)
+        .and_then(|rest| CStr::from_bytes_until_nul(rest).ok())
+}
+
+/// Whether an outcome that matched `spec` with `value` is [`Status::MissingValue`]: `spec` is a
+/// [`Kind::Value`] spec given no value, which [`Usage::VALUE_OPTIONAL`] does not make optional.
+fn lacks_value(spec: SpecRef<'_, '_>, value: Option<&CStr>) -> bool {
+    spec.kind() == Some(Kind::Value)
+        && value.is_none()
+        && !spec.usage().contains(Usage::VALUE_OPTIONAL)
+}
+
+/// Adds the step an [`Kind::Accumulator`] spec counts by, its switch value or `1` for `0`, to
+/// `count`. C's `+=` on an `int` that overflows is undefined; here it wraps.
+fn accumulate(count: &Cell<c_int>, spec: SpecRef<'_, '_>) {
+    let step = match spec.switch_value() {
+        0 => 1,
+        step => step,
+    };
+    count.set(count.get().wrapping_add(step));
+}
+
+/// The argument after the one being parsed, which a [`Kind::Value`] spec given no value of its
+/// own takes, as `bar` of `--foo bar` or `-f bar`, whatever it looks like: the parser moves past
+/// it. `None`, the parser unmoved, when no argument is left.
+fn take_following<'p>(parser: &mut ParserMut<'_, 'p>) -> Option<&'p CStr> {
+    let idx = parser.as_ref().idx();
+    let value = parser.as_ref().args().get(idx).copied()?;
+    parser.set_idx(idx + 1);
+    Some(value.as_c_str())
+}
+
+/// Parses the long argument at the parser's position, `--<name>`, which it moves past: the outcome
+/// of the spec [`find_long`] finds for `<name>`, or [`Status::UnknownOption`] when it finds none.
+///
+/// The spec found writes its variable, if it has one: a [`Kind::Bool`] spec `1`, or `0` for its
+/// `no-` form; a [`Kind::Switch`] spec its switch value; a [`Kind::Value`] spec the value after
+/// its `=`, or else the next argument, which the parser then moves past too. A [`Kind::Literal`]
+/// spec, the bare `--`, makes every later argument literal. A value spec given no value is
+/// [`Status::MissingValue`], unless its value is optional, and an outcome of a choice counts
+/// its argument specs as matched, as [`skip_choice_args`] does.
+///
+/// Replaces `fn::parse_long`
+#[doc(alias = "parse_long")]
+fn take_long<'p>(parser: &mut ParserMut<'_, 'p>) -> Opt<'p> {
+    let mut opt = Opt::zeroed();
+    let idx = parser.as_ref().idx();
+    let Some(arg) = parser.as_ref().args().get(idx).copied() else {
+        return opt;
+    };
+    let arg = arg.as_c_str();
+    parser.set_idx(idx + 1);
+    let mut out = opt.as_mut();
+    out.set_arg(Some(arg));
+    let found = suffix(arg, 2).and_then(|name| find_long(parser.as_ref(), name));
+    let Some((spec, form)) = found else {
+        out.set_status(Status::UnknownOption);
+        return opt;
+    };
+    out.set_spec(Some(spec));
+    let mut value = None;
+    match spec.target() {
+        Some(Target::Literal) => parser.set_in_literal(true),
+        Some(Target::Bool(Some(flag))) => flag.set(c_int::from(form != LongForm::Negated)),
+        Some(Target::Accumulator(Some(count))) => accumulate(count, spec),
+        Some(Target::Switch(Some(mode))) => mode.set(spec.switch_value()),
+        Some(Target::Value(variable)) => {
+            value = match form {
+                LongForm::Valued(given) => given,
+                LongForm::Plain | LongForm::Negated => take_following(parser),
+            };
+            if let Some(variable) = variable {
+                variable.set(value.map(Arg::new));
+            }
+        }
+        _ => {}
+    }
+    out.set_value(value);
+    out.set_status(if lacks_value(spec, value) {
+        Status::MissingValue
+    } else {
+        Status::Ok
+    });
+    skip_choice_args(spec, parser);
+    opt
+}
+
+/// Parses the short option at the parser's position: `-<c>`, or the next option of a bundle of
+/// them, as the `b` of `-abc` once `a` is parsed. The outcome of the spec [`find_short`] finds for
+/// the option's character, or [`Status::UnknownOption`] when it finds none.
+///
+/// The spec found writes its variable, if it has one, as [`take_long`]'s do, a [`Kind::Bool`]
+/// spec always `1`: a [`Kind::Value`] spec takes the rest of the argument as its value, as `foo` of
+/// `-ofoo`, or else the next argument. An option of any other kind followed by more of the bundle
+/// leaves the parser on the argument, at the bundle's next option; otherwise the parser moves past
+/// it, and past a value it took. The outcome's argument is the whole bundle, as C gives it.
+///
+/// An unknown option ends its bundle: the parser moves to the next argument, at its start. The C
+/// moves to the next argument but stays as far into it as it was into the bundle, so that it
+/// parses that argument from the wrong character, past its end when the argument is shorter.
+///
+/// Replaces `fn::parse_short`
+#[doc(alias = "parse_short")]
+fn take_short<'p>(parser: &mut ParserMut<'_, 'p>) -> Opt<'p> {
+    let mut opt = Opt::zeroed();
+    let (idx, in_short) = (parser.as_ref().idx(), parser.as_ref().in_short());
+    let Some(arg) = parser.as_ref().args().get(idx).copied() else {
+        return opt;
+    };
+    let arg = arg.as_c_str();
+    parser.set_idx(idx + 1);
+    let mut out = opt.as_mut();
+    out.set_arg(Some(arg));
+    let rest = in_short.checked_add(1).and_then(|at| suffix(arg, at));
+    let found = rest.and_then(|rest| Some((rest, find_short(parser.as_ref(), rest)?)));
+    let Some((rest, (spec, attached))) = found else {
+        parser.set_in_short(0);
+        out.set_status(Status::UnknownOption);
+        return opt;
+    };
+    out.set_spec(Some(spec));
+    let mut value = None;
+    match spec.target() {
+        Some(Target::Bool(Some(flag))) => flag.set(1),
+        Some(Target::Accumulator(Some(count))) => accumulate(count, spec),
+        Some(Target::Switch(Some(mode))) => mode.set(spec.switch_value()),
+        Some(Target::Value(variable)) => {
+            value = attached.or_else(|| take_following(parser));
+            if let Some(variable) = variable {
+                variable.set(value.map(Arg::new));
+            }
+        }
+        _ => {}
+    }
+    if spec.kind() != Some(Kind::Value) && rest.to_bytes().len() > 1 {
+        parser.set_in_short(in_short + 1);
+        parser.set_idx(idx);
+    } else {
+        parser.set_in_short(0);
+    }
+    out.set_value(value);
+    out.set_status(if lacks_value(spec, value) {
+        Status::MissingValue
+    } else {
+        Status::Ok
+    });
+    skip_choice_args(spec, parser);
+    opt
+}
+
+/// Parses the bare argument at the parser's position, which it moves past: the outcome of the
+/// spec [`find_arg`] gives it, or [`Status::UnknownOption`] when every argument spec is taken.
+///
+/// A [`Kind::Arg`] spec stores the argument in its variable; a [`Kind::Args`] spec stores where
+/// the remaining arguments start, this one included, in its [`ArgsSlot`], counts them as the
+/// outcome's and the parser's [`args_len`](OptRef::args_len), and moves the parser past them all.
+///
+/// Replaces `fn::parse_arg`
+#[doc(alias = "parse_arg")]
+fn take_bare<'p>(parser: &mut ParserMut<'_, 'p>) -> Opt<'p> {
+    let mut opt = Opt::zeroed();
+    let spec = find_arg(parser);
+    let (idx, len) = (parser.as_ref().idx(), parser.as_ref().args_len());
+    let arg = parser.as_ref().args().get(idx).copied();
+    let mut out = opt.as_mut();
+    out.set_spec(spec);
+    out.set_arg(arg.map(Arg::as_c_str));
+    let Some(spec) = spec else {
+        parser.set_idx(idx + 1);
+        out.set_status(Status::UnknownOption);
+        return opt;
+    };
+    match spec.target() {
+        Some(Target::Args(slot)) => {
+            if let Some(slot) = slot {
+                slot.set(parser.as_ref().args().get(idx..).unwrap_or_default());
+            }
+            let taken = len.saturating_sub(idx);
+            parser.set_in_args(taken);
+            parser.set_idx(len);
+            out.set_args_len(taken);
+        }
+        target => {
+            if let Some(Target::Arg(Some(variable))) = target {
+                variable.set(arg);
+            }
+            parser.set_idx(idx + 1);
+        }
+    }
+    out.set_status(Status::Ok);
+    opt
+}
+
+/// The spec `arg` selects when the parser reorders its arguments GNU style, with whether a
+/// [`Kind::Value`] spec selected still needs a value from the next argument: `None` for an
+/// argument that is no option, or no option the parser knows.
+///
+/// A long argument, `--<name>`, selects what [`find_long`] finds, which needs a value unless
+/// it gave one after an `=`. A short one, `-<c>…`, is read as a bundle, to its last option or to
+/// the first that takes the rest as its value, as `-xvffile`'s `f`: that option is the one,
+/// which needs a value only when the bundle gave none. A bundle holding an unknown option, or
+/// the bare `-`, selects nothing, where the C selects the first spec without an alias for the
+/// bare `-` and reads past its end, as [`find_short`] describes.
+///
+/// Replaces `fn::spec_for_sort`
+#[doc(alias = "spec_for_sort")]
+fn find_for_sort<'p>(parser: ParserRef<'_, 'p>, arg: &'p CStr) -> Option<(SpecRef<'p, 'p>, bool)> {
+    let bytes = arg.to_bytes();
+    if bytes.starts_with(b"--") {
+        let (spec, form) = find_long(parser, suffix(arg, 2)?)?;
+        return Some((spec, !matches!(form, LongForm::Valued(_))));
+    }
+    if !bytes.starts_with(b"-") {
+        return None;
+    }
+    let mut at = 1;
+    loop {
+        let (spec, value) = find_short(parser, suffix(arg, at)?)?;
+        at += 1;
+        if value.is_some() || at >= bytes.len() {
+            return Some((spec, value.is_none()));
+        }
+    }
+}
+
+/// Moves the options after the parser's position ahead of the bare arguments there, keeping
+/// their order and those of the bare arguments, each option with the value it takes from the
+/// next argument, so that `file1 --help file2` parses as `--help file1 file2`, as GNU
+/// `getopt_long` does: whether it moved any. The parser does it once: it no longer needs to.
+///
+/// An option is what [`find_for_sort`] selects. A bare `--` the parser knows, a
+/// [`Kind::Literal`] spec, ends the reordering: what follows it is literal. A [`Kind::Value`]
+/// spec that needs a value with no argument after it stops the reordering with the parser moved
+/// to it, so that the parse reports its missing value next, unless its value is optional
+/// ([`Usage::VALUE_OPTIONAL`]): the option is the last argument, and stays where it is. An
+/// option at the parser's first argument, which no parse gives this routine, moves nothing.
+///
+/// Two departures from the C, which reorders whatever its parser's state: a parser that has
+/// parsed a literal `--` reorders nothing, since every argument after it is literal, where the
+/// C moves the arguments that look like its options ahead of the others; and an option whose
+/// value is optional ends no reordering, where the C moves the parser to it past the bare
+/// arguments before it, which no outcome then reports.
+///
+/// Replaces `fn::sort_gnu_style`
+#[doc(alias = "sort_gnu_style")]
+fn reorder_gnu_style(parser: &mut ParserMut<'_, '_>) -> bool {
+    parser.set_needs_sort(false);
+    if parser.as_ref().in_literal() {
+        return false;
+    }
+    let len = parser.as_ref().args_len();
+    let mut insert = parser.as_ref().idx();
+    let mut at = insert;
+    let mut changed = false;
+    while let Some(arg) = parser.as_ref().args().get(at).copied() {
+        let Some((spec, needs_value)) = find_for_sort(parser.as_ref(), arg.as_c_str()) else {
+            at += 1;
+            continue;
+        };
+        if spec.kind() == Some(Kind::Literal) {
+            break;
+        }
+        let mut offset = 0;
+        if spec.kind() == Some(Kind::Value) && needs_value {
+            if at + 1 < len {
+                offset = 1;
+            } else if spec.usage().contains(Usage::VALUE_OPTIONAL) {
+                break;
+            } else {
+                parser.set_idx(at);
+                return true;
+            }
+        }
+        if at == 0 {
+            return false;
+        }
+        if let Some(run) = parser.args_mut().get_mut(insert..=at + offset) {
+            run.rotate_right(1 + offset);
+        }
+        insert += 1 + offset;
+        at += 1 + offset;
+        changed = true;
+    }
+    changed
+}
+
+impl<'p> ParserMut<'_, 'p> {
+    /// Parses the argument at the parser's position, or the next option of the bundle it is in,
+    /// and moves past it: its outcome, with the spec it matched, the argument as given and the
+    /// value it took, and [`Status::Done`] once no argument is left, which reports how many
+    /// arguments a [`Kind::Args`] spec took, if one did. The specs' variables are written as the
+    /// argument selects them.
+    ///
+    /// An argument that starts with `--` is a long option, `--name`, `--name=value` or
+    /// `--no-name`, and one that starts with `-` a short option or a bundle of them, `-abc` or
+    /// `-ovalue`: each is looked up among the table's options, and one the table does not have is
+    /// [`Status::UnknownOption`]. A [`Kind::Value`] option given no value takes the next
+    /// argument, or is [`Status::MissingValue`] when none is left and its value is not optional.
+    /// Any other argument is bare, as is every argument after a literal `--`: it takes the next of
+    /// the table's [`Kind::Arg`] specs, in order, or a [`Kind::Args`] spec, which takes every
+    /// argument left; once they are taken, a bare argument is [`Status::UnknownOption`]. An
+    /// option of a choice ([`Usage::CHOICE`]) given counts the choice's argument specs as taken.
+    ///
+    /// A parser that parses GNU style, as [`Parser::new`] decides, reorders its arguments at the
+    /// first bare one it meets, moving the options after it, with their values, ahead of it,
+    /// so that options may follow bare arguments, as `file1 --help file2`; it parses in the
+    /// order given otherwise, every argument after the first bare one being bare.
+    ///
+    /// ```
+    /// use core::cell::Cell;
+    ///
+    /// use libgit2_crustify::git2::src::cli::opt::{
+    ///     Arg, ParseFlags, Parser, Spec, SpecTable, Status, Target,
+    /// };
+    ///
+    /// let (debug, file) = (Cell::new(0), Cell::new(None));
+    /// let specs = [
+    ///     Spec::new(Target::Bool(Some(&debug))).with_name(c"debug"),
+    ///     Spec::new(Target::Arg(Some(&file))),
+    ///     Spec::default(),
+    /// ];
+    /// let table = SpecTable::new(&specs).unwrap();
+    /// let mut args = [c"notes.txt", c"--debug"].map(Arg::new);
+    /// let mut parser = Parser::new(table, &mut args, ParseFlags::FORCE_GNU);
+    /// let mut parser = parser.as_mut();
+    /// let first = parser.parse_next();
+    /// assert_eq!(first.as_ref().status(), Some(Status::Ok));
+    /// assert_eq!(first.as_ref().arg(), Some(c"--debug"));
+    /// assert_eq!(parser.parse_next().as_ref().arg(), Some(c"notes.txt"));
+    /// assert_eq!(parser.parse_next().as_ref().status(), Some(Status::Done));
+    /// assert_eq!(debug.get(), 1);
+    /// assert_eq!(file.get().map(Arg::as_c_str), Some(c"notes.txt"));
+    /// ```
+    ///
+    /// The C defects [`find_long`], [`find_short`], [`skip_choice_args`], [`take_short`] and
+    /// [`reorder_gnu_style`] list are not carried over: a parser that has no table, as a zeroed
+    /// one, finds no spec, and its arguments are unknown, where the C reads through a null
+    /// pointer.
+    ///
+    /// Replaces `fn::cli_opt_parser_next`
+    #[doc(alias = "cli_opt_parser_next")]
+    #[must_use]
+    pub fn parse_next(&mut self) -> Opt<'p> {
+        loop {
+            let state = self.as_ref();
+            let Some(arg) = state.args().get(state.idx()).copied() else {
+                let mut done = Opt::zeroed();
+                done.as_mut().set_args_len(state.in_args());
+                return done;
+            };
+            let bytes = arg.as_c_str().to_bytes();
+            let (in_short, in_literal) = (state.in_short() != 0, state.in_literal());
+            if bytes.starts_with(b"--") && !in_short && !in_literal {
+                return take_long(self);
+            }
+            if in_short || (bytes.starts_with(b"-") && !in_literal) {
+                return take_short(self);
+            }
+            if !(state.needs_sort() && reorder_gnu_style(self)) {
+                return take_bare(self);
+            }
+        }
+    }
+}
+
+/// Parses every argument of `args` against `specs` under `flags`, as a [`Parser`] does, and
+/// checks that each required spec ([`Usage::REQUIRED`]) was given, or one option of a required
+/// choice: the [`Status::Done`] outcome and the arguments in the order the parse left them, which
+/// a GNU-style parse may have changed, and in which a [`Kind::Args`] spec's [`ArgsSlot`] finds what
+/// it took. The specs' variables hold what the arguments gave them.
+///
+/// An argument that ends parsing ([`Usage::STOP_PARSING`]), as a command's `--help`, ends it
+/// there, unchecked: the outcome is that argument's, its status [`Status::Done`].
+///
+/// ```
+/// use core::cell::Cell;
+///
+/// use libgit2_crustify::git2::src::cli::opt::{
+///     Arg, ArgsSlot, ParseFlags, Spec, SpecTable, Status, Target, Usage, parse,
+/// };
+///
+/// let (quiet, paths) = (Cell::new(0), ArgsSlot::new());
+/// let specs = [
+///     Spec::new(Target::Bool(Some(&quiet))).with_alias(b'q'),
+///     Spec::new(Target::Args(Some(&paths))).with_usage(Usage::REQUIRED),
+///     Spec::default(),
+/// ];
+/// let table = SpecTable::new(&specs).unwrap();
+/// let mut args = [c"a.txt", c"-q", c"b.txt"].map(Arg::new);
+/// let (done, args) = parse(table, &mut args, ParseFlags::FORCE_GNU).unwrap();
+/// assert_eq!(done.as_ref().args_len(), 2);
+/// let taken: Vec<_> = paths
+///     .get_in(args)
+///     .unwrap()
+///     .iter()
+///     .map(|a| a.as_c_str())
+///     .collect();
+/// assert_eq!(taken, [c"a.txt", c"b.txt"]);
+/// assert_eq!(quiet.get(), 1);
+/// ```
+///
+/// The parse borrows the arguments for as long as the variables it wrote, which hold them, are
+/// in use, so they cannot be changed meanwhile; the arguments it hands back are that borrow's:
+///
+/// ```compile_fail,E0506
+/// use core::cell::Cell;
+///
+/// use libgit2_crustify::git2::src::cli::opt::{Arg, ParseFlags, Spec, SpecTable, Target, parse};
+///
+/// let file = Cell::new(None);
+/// let specs = [Spec::new(Target::Arg(Some(&file))), Spec::default()];
+/// let table = SpecTable::new(&specs).unwrap();
+/// let mut args = [Arg::new(c"a")];
+/// let _ = parse(table, &mut args, ParseFlags::DEFAULT);
+/// args[0] = Arg::new(c"b");
+/// let _ = file.get();
+/// ```
+///
+/// # Errors
+///
+/// The outcome of the first argument that fails, an [`Status::UnknownOption`] or a
+/// [`Status::MissingValue`], at which the parse stops; or, once every argument is parsed, a
+/// [`Status::MissingArgument`] outcome whose spec is the first requirement not given, the first
+/// spec of its choice.
+///
+/// The C keeps the specs the arguments gave in a stack array of one entry per argument, and a
+/// bundle of short options gives one per option, so that `-ab` writes past it: here they are
+/// kept in a [`Vec`], with no bound.
+///
+/// Replaces `fn::cli_opt_parse`
+#[doc(alias = "cli_opt_parse")]
+pub fn parse<'p>(
+    specs: SpecTable<'p>,
+    args: &'p mut [Arg<'p>],
+    flags: ParseFlags,
+) -> Result<(Opt<'p>, &'p [Arg<'p>]), Opt<'p>> {
+    let mut parser = Parser::new(specs, args, flags);
+    let mut given = Vec::new();
+    let (mut outcome, stopped) = loop {
+        let mut opt = parser.as_mut().parse_next();
+        match opt.as_ref().status() {
+            Some(Status::Ok) => {}
+            Some(Status::Done) => break (opt, false),
+            _ => return Err(opt),
+        }
+        if let Some(spec) = opt.as_ref().spec() {
+            if spec.usage().contains(Usage::STOP_PARSING) {
+                opt.as_mut().set_status(Status::Done);
+                break (opt, true);
+            }
+            given.push(spec);
+        }
+    };
+    if !stopped && let Err(missing) = check_required(specs, &given) {
+        let mut out = outcome.as_mut();
+        out.set_spec(Some(missing));
+        out.set_status(Status::MissingArgument);
+        return Err(outcome);
+    }
+    Ok((outcome, parser.into_args()))
+}
+
+/// Parses every argument of `args` against `specs` under `flags`, as a [`Parser`] does, and calls
+/// `callback` with each outcome, failures included, until the arguments are done or it breaks:
+/// what it broke with, or [`ControlFlow::Continue`] once every argument is parsed. Nothing is
+/// checked of the specs required.
+///
+/// ```
+/// use core::ffi::CStr;
+/// use core::ops::ControlFlow;
+///
+/// use libgit2_crustify::git2::src::cli::opt::{
+///     Arg, ForeachCallbackFn, OptRef, ParseFlags, Spec, SpecTable, Target, for_each,
+/// };
+///
+/// let specs = [
+///     Spec::new(Target::Value(None)).with_alias(b'c'),
+///     Spec::default(),
+/// ];
+/// let table = SpecTable::new(&specs).unwrap();
+/// let mut args = [c"-cuser.name=me", c"log", c"-c", c"core.pager=less"].map(Arg::new);
+/// let mut config = Vec::new();
+/// let mut keep = |opt: OptRef<'_, '_>| {
+///     config.extend(opt.value().map(CStr::to_owned));
+///     ControlFlow::Continue(())
+/// };
+/// let flow = for_each(
+///     table,
+///     &mut args,
+///     ParseFlags::FORCE_GNU,
+///     ForeachCallbackFn::new(&mut keep),
+/// );
+/// assert_eq!(flow, ControlFlow::Continue(()));
+/// assert_eq!(config, [c"user.name=me", c"core.pager=less"]);
+/// ```
+///
+/// Replaces `fn::cli_opt_foreach`
+#[doc(alias = "cli_opt_foreach")]
+pub fn for_each<'p>(
+    specs: SpecTable<'p>,
+    args: &'p mut [Arg<'p>],
+    flags: ParseFlags,
+    mut callback: ForeachCallbackFn<'_, 'p>,
+) -> ControlFlow<NonZero<c_int>> {
+    let mut parser = Parser::new(specs, args, flags);
+    loop {
+        let opt = parser.as_mut().parse_next();
+        if opt.as_ref().status() == Some(Status::Done) {
+            return ControlFlow::Continue(());
+        }
+        callback.call(opt.as_ref())?;
+    }
 }
 
 /// What C's `printf` writes for a `NULL` string, which glibc prints as `(null)`.
@@ -2079,6 +2575,33 @@ mod ffi_import {
     // slice), and which C's `cli_opt_parser_next` reports done at once, reading neither.
     unsafe impl CZeroable for Parser<'_> {}
 
+    impl<'p> Parser<'p> {
+        /// The arguments the parser read, in the order it left them, given back for `'p` once
+        /// the parser is done with: the array it borrowed exclusively for `'p`, which nothing
+        /// but the parser reached meanwhile.
+        pub(super) fn into_args(self) -> &'p mut [Arg<'p>] {
+            let p = self.as_ref().as_ptr();
+            // SAFETY: `p` is the pointer of the parser `self` holds; the projection forms no
+            // reference to it.
+            let args_ptr = unsafe { &raw const (*p).args };
+            // SAFETY: as above.
+            let len_ptr = unsafe { &raw const (*p).args_len };
+            // SAFETY: a read of the live parser `self` holds.
+            let args = unsafe { args_ptr.read() };
+            // SAFETY: as above.
+            let len = unsafe { len_ptr.read() };
+            if args.is_null() || len == 0 {
+                return &mut [];
+            }
+            // SAFETY: `new` and `set_args` store an `&'p mut [Arg<'p>]`'s start and length, the
+            // only ways a `Parser<'p>` value comes to hold an array, so `args` addresses `len`
+            // valid `Arg<'p>`s borrowed exclusively for `'p`. That borrow was the parser's, which
+            // this consumes: no handle of it, which would borrow it, lives, so nothing else
+            // reaches the array for `'p`.
+            unsafe { core::slice::from_raw_parts_mut(args.cast::<Arg<'p>>(), len) }
+        }
+    }
+
     impl Default for Parser<'_> {
         /// The zeroed parser.
         fn default() -> Self {
@@ -2537,11 +3060,8 @@ mod ffi_import {
         /// points at for `'p`, which `f` only reads, and whose address it does not keep once it
         /// returns, as `common.c`'s `parse_option` does.
         #[cfg_attr(
-            not(test),
-            expect(
-                dead_code,
-                reason = "the export of the whole parse, batch 5's, calls it"
-            )
+            not(any(test, feature = "ffi-export-src-cli-opt-c")),
+            expect(dead_code, reason = "the export of `cli_opt_foreach` calls it")
         )]
         pub(crate) unsafe fn from_c(f: ForeachCallbackC, ctx: *mut c_void) -> Self {
             // SAFETY: the caller's contract, for `'f`.
@@ -3232,33 +3752,87 @@ mod ffi_import {
 }
 
 /// The gateway through which the CLI's remaining C calls this module once it has switched:
-/// `cli_opt_parser_init`, which `main.c` calls, and `cli_opt_status_fprint`, which `main.c` and
-/// `opt_usage.c` call, each checked against its raw binding's signature, so that a C
-/// declaration that drifts fails to build.
+/// `cli_opt_parser_init` and `cli_opt_parser_next`, which `main.c` calls, `cli_opt_parse`, which
+/// each `cmd_*.c` calls, `cli_opt_foreach`, which `common.c` calls, and `cli_opt_status_fprint`,
+/// which `main.c` and `opt_usage.c` call, each checked against its raw binding's signature, so
+/// that a C declaration that drifts fails to build.
 #[cfg(feature = "ffi-export-src-cli-opt-c")]
 #[expect(
     unsafe_code,
     reason = "the C ABI exports of opt.c's entry points, which adopt the pointers C passes"
 )]
 mod ffi_export {
-    use core::ffi::{CStr, c_char, c_int, c_uint};
+    use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
+    use core::ops::ControlFlow;
     use core::slice;
 
     use ffibox::callback::barrier;
-    use ffibox::{CRefSeam, CZeroable};
+    use ffibox::{CMutSeam, CRefSeam, CZeroable};
     use glibc_bindings::libc::csu::errno_loc::set_errno;
     use glibc_bindings::libc::libio::genops::FileRef;
     use nix::errno::Errno;
 
-    use super::{Arg, FileWriter, OptRef, ParseFlags, Parser, Spec, SpecTable};
+    use super::{
+        Arg, FileWriter, ForeachCallbackFn, Opt, OptRef, ParseFlags, Parser, ParserMut, Spec,
+        SpecTable, for_each, parse,
+    };
     use crate::sys::git2 as sys;
 
     // Each export has its raw binding's type: the array's elements coerce to one function
     // pointer type only when their signatures agree.
     const _: () = {
         let _ = [sys::cli_opt_parser_init, cli_opt_parser_init];
+        let _ = [sys::cli_opt_parser_next, cli_opt_parser_next];
+        let _ = [sys::cli_opt_parse, cli_opt_parse];
+        let _ = [sys::cli_opt_foreach, cli_opt_foreach];
         let _ = [sys::cli_opt_status_fprint, cli_opt_status_fprint];
     };
+
+    /// The `args_len` arguments at `args`, as C passes a parse its `argv`, borrowed exclusively
+    /// for `'p`; it aborts on a `NULL` array of arguments with `args_len` other than 0, or a
+    /// `NULL` argument within it.
+    ///
+    /// # Safety
+    ///
+    /// `args` addresses `args_len` arguments, each a NUL-terminated string, unless `args_len` is
+    /// 0: the array and the strings live, the strings unchanged, for `'p`, and nothing but the
+    /// parse given them reaches the array meanwhile.
+    unsafe fn adopt_args<'p>(args: *mut *mut c_char, args_len: usize) -> &'p mut [Arg<'p>] {
+        if args_len == 0 {
+            return &mut [];
+        }
+        if args.is_null() {
+            std::process::abort();
+        }
+        // SAFETY: the caller's contract: `args` addresses `args_len` readable elements.
+        let elements = unsafe { slice::from_raw_parts(args.cast_const(), args_len) };
+        if elements.iter().any(|arg| arg.is_null()) {
+            std::process::abort();
+        }
+        // SAFETY: the `args_len` elements are non-null, as just checked, and each a NUL-terminated
+        // string that lives, unchanged, for `'p`, which only the parse given them reaches
+        // meanwhile, by the caller's contract: valid `Arg`s, which are `#[repr(transparent)]` over
+        // a non-null `char *`, borrowed exclusively for as long.
+        unsafe { slice::from_raw_parts_mut(args.cast::<Arg<'p>>(), args_len) }
+    }
+
+    /// Writes `opt` to `*out` and returns its status, as C's parser fills the outcome its caller
+    /// gives it and returns that outcome's status. It aborts on a `NULL` `out`.
+    ///
+    /// # Safety
+    ///
+    /// `out` is `NULL` or valid for a write of a `cli_opt`.
+    unsafe fn write_outcome(out: *mut sys::cli_opt, opt: Opt<'_>) -> sys::cli_opt_status_t {
+        if out.is_null() {
+            std::process::abort();
+        }
+        let status = opt.as_ref().raw_status();
+        // SAFETY: `out` is non-null and valid for a write of a `cli_opt`, the caller's contract;
+        // `Opt` is `#[repr(transparent)]` over it, and the write reads nothing of the old value,
+        // which needs no drop.
+        unsafe { out.cast::<Opt<'_>>().write(opt) };
+        status
+    }
 
     /// `cli_opt_parser_init`: [`Parser::new`] over the table at `specs` and the `args_len`
     /// arguments at `args`, written to `*parser`, which it overwrites whole, as C's `memset`
@@ -3291,29 +3865,138 @@ mod ffi_export {
         let Some(table) = (unsafe { SpecTable::from_ptr(specs) }) else {
             std::process::abort();
         };
-        let args: &mut [Arg<'_>] = if args_len == 0 {
-            &mut []
-        } else {
-            if args.is_null() {
-                std::process::abort();
-            }
-            // SAFETY: the caller's contract: `args` addresses `args_len` readable elements.
-            let elements = unsafe { slice::from_raw_parts(args.cast_const(), args_len) };
-            if elements.iter().any(|arg| arg.is_null()) {
-                std::process::abort();
-            }
-            // SAFETY: the `args_len` elements are non-null, as just checked, and each a
-            // NUL-terminated string that lives, unchanged, while C uses the parser, which only
-            // that parse reaches meanwhile, by the caller's contract: valid `Arg`s, which are
-            // `#[repr(transparent)]` over a non-null `char *`, borrowed exclusively for as long.
-            unsafe { slice::from_raw_parts_mut(args.cast::<Arg<'_>>(), args_len) }
-        };
+        // SAFETY: the caller's contract: `args` addresses `args_len` arguments that live, the
+        // strings unchanged, while C uses the parser, which only that parse reaches meanwhile.
+        let args = unsafe { adopt_args(args, args_len) };
         let flags = ParseFlags::from_bits_retain(flags);
         let new = barrier(|| Parser::new(table, args, flags), || std::process::abort());
         // SAFETY: `parser` is non-null and valid for a write of a `cli_opt_parser`, the
         // caller's contract; `Parser` is `#[repr(transparent)]` over it, and the write reads
         // nothing of the old value, which needs no drop.
         unsafe { parser.cast::<Parser<'_>>().write(new) };
+    }
+
+    /// `cli_opt_parser_next`: [`ParserMut::parse_next`] of `*parser`, whose outcome it writes to
+    /// `*opt`, overwriting it whole, as C's `memset` does, and whose status it returns. A `NULL`
+    /// outcome or parser aborts, where the C, built with `NDEBUG`, writes through it; so does a
+    /// panic, which no status the C returns describes.
+    ///
+    /// # Safety
+    ///
+    /// `opt` is valid for a write of a `cli_opt`, and `parser` is a parser `cli_opt_parser_init`
+    /// set up and only this export has changed since: a valid `Parser`, as
+    /// [`Parser`]'s adoption asks, whose table and arguments live, unchanged but for the order
+    /// a parse gives the arguments, while C uses the parser and the outcomes it gives, and which
+    /// nothing else reaches during the call.
+    #[unsafe(no_mangle)]
+    unsafe extern "C" fn cli_opt_parser_next(
+        opt: *mut sys::cli_opt,
+        parser: *mut sys::cli_opt_parser,
+    ) -> sys::cli_opt_status_t {
+        // SAFETY: the caller's contract: `parser` is a valid parser that nothing else reaches
+        // during the call, whose table and arguments live while C uses it and its outcomes, the
+        // lifetime this adoption takes.
+        let Some(mut parser) = (unsafe { ParserMut::from_ptr(parser) }) else {
+            std::process::abort();
+        };
+        let next = barrier(|| parser.parse_next(), || std::process::abort());
+        // SAFETY: the caller's contract: `opt` is valid for a write of a `cli_opt`.
+        unsafe { write_outcome(opt, next) }
+    }
+
+    /// `cli_opt_parse`: [`parse`] of the `args_len` arguments at `args` against the table at
+    /// `specs`, whose outcome, the one that failed or the last, it writes to `*opt`, overwriting it
+    /// whole, and whose status it returns: `CLI_OPT_STATUS_DONE` once every argument is parsed and
+    /// every requirement met. A `NULL` outcome, table or array of arguments, or a `NULL` argument
+    /// within it, aborts, where the C, built with `NDEBUG`, writes or reads through it; so does a
+    /// panic, which no status the C returns describes.
+    ///
+    /// # Safety
+    ///
+    /// `opt` is valid for a write of a `cli_opt`; `specs` is a spec table, as
+    /// [`SpecTable::from_ptr`] adopts one, and `args` addresses `args_len` arguments, each a
+    /// NUL-terminated string, unless `args_len` is 0: all of them live, the strings unchanged,
+    /// while C uses the outcome and the specs' variables, and nothing but this parse reaches the
+    /// array during the call.
+    #[unsafe(no_mangle)]
+    unsafe extern "C" fn cli_opt_parse(
+        opt: *mut sys::cli_opt,
+        specs: *const sys::cli_opt_spec,
+        args: *mut *mut c_char,
+        args_len: usize,
+        flags: c_uint,
+    ) -> sys::cli_opt_status_t {
+        if opt.is_null() {
+            std::process::abort();
+        }
+        // SAFETY: the caller's contract: `specs` is a table that lives, unchanged, while C uses
+        // the outcome and the variables, the lifetime this adoption takes.
+        let Some(table) = (unsafe { SpecTable::from_ptr(specs) }) else {
+            std::process::abort();
+        };
+        // SAFETY: the caller's contract: `args` addresses `args_len` arguments that live, the
+        // strings unchanged, as long, which only this parse reaches during the call.
+        let args = unsafe { adopt_args(args, args_len) };
+        let flags = ParseFlags::from_bits_retain(flags);
+        let outcome = barrier(
+            || match parse(table, args, flags) {
+                Ok((done, _)) => done,
+                Err(failed) => failed,
+            },
+            || std::process::abort(),
+        );
+        // SAFETY: the caller's contract: `opt`, non-null, is valid for a write of a `cli_opt`.
+        unsafe { write_outcome(opt, outcome) }
+    }
+
+    /// `cli_opt_foreach`: [`for_each`] of the `args_len` arguments at `args` against the table at
+    /// `specs`, calling `callback` with each outcome and `callback_data`: the first value other
+    /// than 0 it returns, or 0 once every argument is parsed. A panic is reported as -1, a failure
+    /// `common.c`, the CLI's caller, reads as any other. A `NULL` table, callback or array of
+    /// arguments, or a `NULL` argument within it, aborts, where the C, built with `NDEBUG`, reads
+    /// or calls through it.
+    ///
+    /// # Safety
+    ///
+    /// `specs` is a spec table, as [`SpecTable::from_ptr`] adopts one, and `args` addresses
+    /// `args_len` arguments, each a NUL-terminated string, unless `args_len` is 0: all of them
+    /// live, the strings unchanged, while C uses the specs' variables, and nothing but this parse
+    /// reaches the array during the call. `callback` may be called with `callback_data` as its
+    /// second argument, any number of times, on the calling thread, during the call, with an
+    /// outcome it only reads and whose address it does not keep once it returns, as
+    /// [`ForeachCallbackFn::from_c`] asks.
+    #[unsafe(no_mangle)]
+    unsafe extern "C" fn cli_opt_foreach(
+        specs: *const sys::cli_opt_spec,
+        args: *mut *mut c_char,
+        args_len: usize,
+        flags: c_uint,
+        callback: Option<unsafe extern "C" fn(*mut sys::cli_opt, *mut c_void) -> c_int>,
+        callback_data: *mut c_void,
+    ) -> c_int {
+        // SAFETY: the caller's contract: `specs` is a table that lives, unchanged, while C uses
+        // the variables, the lifetime this adoption takes.
+        let Some(table) = (unsafe { SpecTable::from_ptr(specs) }) else {
+            std::process::abort();
+        };
+        let Some(callback) = callback else {
+            std::process::abort();
+        };
+        // SAFETY: the caller's contract: `args` addresses `args_len` arguments that live, the
+        // strings unchanged, as long, which only this parse reaches during the call.
+        let args = unsafe { adopt_args(args, args_len) };
+        let flags = ParseFlags::from_bits_retain(flags);
+        // SAFETY: the caller's contract: `callback` may be called with `callback_data`, on this
+        // thread, during this call, which the callable does not outlive, with outcomes it only
+        // reads and does not keep.
+        let callback = unsafe { ForeachCallbackFn::from_c(callback, callback_data) };
+        barrier(
+            || match for_each(table, args, flags, callback) {
+                ControlFlow::Continue(()) => 0,
+                ControlFlow::Break(code) => code.get(),
+            },
+            || -1,
+        )
     }
 
     /// `cli_opt_status_fprint`: [`OptRef::write_status`] of `*opt` to the stream `file`, after
@@ -3464,7 +4147,8 @@ mod unit_priv {
 
     use super::{
         Arg, LongForm, ParseFlags, Parser, Spec, SpecRef, SpecTable, Target, Usage, check_required,
-        find_arg, find_long, find_short, is_choice, is_given, skip_choice_args, write_spec_name,
+        find_arg, find_for_sort, find_long, find_short, is_choice, is_given, reorder_gnu_style,
+        skip_choice_args, write_spec_name,
     };
 
     /// A parser over `table` with no arguments, through which the lookups read the table.
@@ -3793,6 +4477,127 @@ mod unit_priv {
         );
         assert!(check_required(table, &[spec(2)]).is_ok());
         assert!(check_required(table, &[spec(0)]).is_err());
+    }
+
+    /// The spec a GNU-style reordering selects for each kind of argument, and whether it still
+    /// needs a value: a long option unless it gave one, a bundle by its last option or the first
+    /// that takes the rest as its value; nothing for a bare argument, an unknown option, a bundle
+    /// holding one, or the bare `-`.
+    #[test]
+    fn reordering_selects_options_as_parsing_does() {
+        let specs = [
+            Spec::new(Target::Bool(None))
+                .with_name(c"debug")
+                .with_alias(b'd'),
+            Spec::new(Target::Value(None))
+                .with_name(c"output")
+                .with_alias(b'o'),
+            Spec::new(Target::Literal),
+            Spec::new(Target::Switch(None)).with_name(c"help"),
+            Spec::default(),
+        ];
+        let table = SpecTable::new(&specs).unwrap();
+        let p = parser(table);
+        let find = |arg: &'static CStr| {
+            find_for_sort(p.as_ref(), arg).map(|(s, needs)| (table.position(s).unwrap(), needs))
+        };
+        assert_eq!(find(c"--debug"), Some((0, true)));
+        assert_eq!(find(c"--no-debug"), Some((0, true)));
+        assert_eq!(find(c"--output"), Some((1, true)));
+        assert_eq!(find(c"--output=x"), Some((1, false)));
+        assert_eq!(find(c"--output="), Some((1, false)));
+        assert_eq!(find(c"--"), Some((2, true)));
+        assert_eq!(find(c"-d"), Some((0, true)));
+        assert_eq!(find(c"-dd"), Some((0, true)));
+        assert_eq!(find(c"-do"), Some((1, true)));
+        assert_eq!(find(c"-dofile"), Some((1, false)));
+        assert_eq!(find(c"-ofile"), Some((1, false)));
+        for none in [c"file", c"", c"-", c"-x", c"-dx", c"--nope", c"-h"] {
+            assert_eq!(find(none), None, "{none:?}");
+        }
+    }
+
+    /// A reordering moves each option, with the value it takes, ahead of the bare arguments
+    /// before it, keeping both orders, and says so; one with nothing to move says not.
+    #[test]
+    fn reordering_moves_options_and_values_forward() {
+        let specs = [
+            Spec::new(Target::Bool(None)).with_alias(b'd'),
+            Spec::new(Target::Value(None)).with_alias(b'o'),
+            Spec::default(),
+        ];
+        let table = SpecTable::new(&specs).unwrap();
+        let mut args = [c"x", c"a", c"-d", c"b", c"-o", c"v", c"c", c"-ow"].map(Arg::new);
+        let mut p = Parser::new(table, &mut args, ParseFlags::FORCE_GNU);
+        p.as_mut().set_idx(1);
+        assert!(reorder_gnu_style(&mut p.as_mut()));
+        assert!(!p.as_ref().needs_sort());
+        assert_eq!(p.as_ref().idx(), 1);
+        let order: Vec<_> = p.as_ref().args().iter().map(|a| a.as_c_str()).collect();
+        assert_eq!(order, [c"x", c"-d", c"-o", c"v", c"-ow", c"a", c"b", c"c"]);
+        p.as_mut().set_idx(5);
+        assert!(
+            !reorder_gnu_style(&mut p.as_mut()),
+            "no option after the bare arguments"
+        );
+        let mut args = [c"a", c"b"].map(Arg::new);
+        let mut p = Parser::new(table, &mut args, ParseFlags::FORCE_GNU);
+        assert!(!reorder_gnu_style(&mut p.as_mut()));
+        assert!(!p.as_ref().needs_sort());
+    }
+
+    /// A reordering stops at a literal `--`, moves the parser to a last option missing a
+    /// required value, leaves one whose value is optional in place, moves nothing from the
+    /// parser's first argument, and nothing once the parser is literal, clearing its need to
+    /// reorder each time.
+    #[test]
+    fn reordering_stops_where_parsing_must_not_move() {
+        let reorder = |line: &[&'static CStr], idx: usize, literal: bool| {
+            let mut args: Vec<_> = line.iter().copied().map(Arg::new).collect();
+            let specs = [
+                Spec::new(Target::Bool(None)).with_alias(b'd'),
+                Spec::new(Target::Value(None)).with_alias(b'o'),
+                Spec::new(Target::Value(None))
+                    .with_alias(b'S')
+                    .with_usage(Usage::VALUE_OPTIONAL),
+                Spec::new(Target::Literal),
+                Spec::default(),
+            ];
+            let table = SpecTable::new(&specs).unwrap();
+            let mut p = Parser::new(table, &mut args, ParseFlags::FORCE_GNU);
+            p.as_mut().set_idx(idx);
+            p.as_mut().set_in_literal(literal);
+            let changed = reorder_gnu_style(&mut p.as_mut());
+            assert!(!p.as_ref().needs_sort());
+            let order: Vec<_> = p
+                .as_ref()
+                .args()
+                .iter()
+                .map(|a| a.as_c_str().to_owned())
+                .collect();
+            (changed, p.as_ref().idx(), order)
+        };
+        let owned = |line: &[&CStr]| line.iter().map(|a| (*a).to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            reorder(&[c"a", c"--", c"-d"], 0, false),
+            (false, 0, owned(&[c"a", c"--", c"-d"]))
+        );
+        assert_eq!(
+            reorder(&[c"a", c"-d", c"b", c"-o"], 0, false),
+            (true, 3, owned(&[c"-d", c"a", c"b", c"-o"]))
+        );
+        assert_eq!(
+            reorder(&[c"a", c"-d", c"b", c"-S"], 0, false),
+            (true, 0, owned(&[c"-d", c"a", c"b", c"-S"]))
+        );
+        assert_eq!(
+            reorder(&[c"-d", c"a"], 0, false),
+            (false, 0, owned(&[c"-d", c"a"]))
+        );
+        assert_eq!(
+            reorder(&[c"--", c"a", c"-d"], 1, true),
+            (false, 1, owned(&[c"--", c"a", c"-d"]))
+        );
     }
 
     /// The name of each kind of spec, in one write, a missing string written `(null)`.
