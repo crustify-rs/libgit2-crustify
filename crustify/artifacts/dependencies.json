@@ -7948,7 +7948,13 @@
       "crate": "std",
       "rust_api": "std::process::abort"
      },
-     "confirmation": null
+     "confirmation": {
+      "batch": "wave-194/batch-4",
+      "route": "recommended",
+      "crate": "std",
+      "rust_api": "std::process::abort",
+      "note": "std::process::abort in the llhttp_init export; a panic the export reports as HPE_INTERNAL where C's llhttp_finish aborts; the name functions' abort is unreachable with a typed enum"
+     }
     },
     {
      "c_name": "calloc",
