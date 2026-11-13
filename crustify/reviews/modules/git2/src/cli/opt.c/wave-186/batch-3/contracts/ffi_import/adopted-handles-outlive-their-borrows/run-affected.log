@@ -1,0 +1,16 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 36.16s
+     Running `/root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/bin/cargo-miri runner /target/libgit2-crustify/crustify/.worktrees/modules/git2/src/cli/opt.c/wave-186/batch-3/crustify/tmp/b3/target-miri/miri/x86_64-unknown-linux-gnu/debug/adopted-handles-outlive-their-borrows`
+error: Undefined Behavior: constructing invalid value of type &std::ffi::CStr: encountered a dangling reference (use-after-free)
+  --> src/main.rs:27:22
+   |
+27 |     println!("{:?}", name.to_bytes());
+   |                      ^^^^ Undefined Behavior occurred here
+   |
+   = help: this indicates a bug in the program: it performed an invalid operation, and caused Undefined Behavior
+   = help: see https://doc.rust-lang.org/nightly/reference/behavior-considered-undefined.html for further information
+
+note: some details are omitted, run with `MIRIFLAGS=-Zmiri-backtrace=full` for a verbose backtrace
+
+error: aborting due to 1 previous error
+
+exit 1

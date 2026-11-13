@@ -1,0 +1,11 @@
+[package]
+name = "adopted-handles-outlive-their-borrows"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+libgit2 = { package = "libgit2-crustify", path = "../../../../../../../../../../../.." }
+ffibox = { path = "/crustify-rs/ffibox" }
