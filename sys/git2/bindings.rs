@@ -913,6 +913,29 @@ unsafe extern "C" {
     ) -> cli_opt_status_t;
 }
 unsafe extern "C" {
+    /** Quickly executes the given callback for each argument.
+
+ @param specs A NULL-terminated array of `cli_opt_spec`s that can be parsed
+ @param args The arguments that will be parsed
+ @param args_len The length of arguments to be parsed
+ @param flags The `cli_opt_flag_t flags for parsing
+ @param callback The callback to invoke for each specified option
+ @param callback_data Data to be provided to the callback*/
+    pub fn cli_opt_foreach(
+        specs: *const cli_opt_spec,
+        args: *mut *mut ::std::os::raw::c_char,
+        args_len: usize,
+        flags: ::std::os::raw::c_uint,
+        callback: ::std::option::Option<
+            unsafe extern "C" fn(
+                arg1: *mut cli_opt,
+                arg2: *mut ::std::os::raw::c_void,
+            ) -> ::std::os::raw::c_int,
+        >,
+        callback_data: *mut ::std::os::raw::c_void,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     /** Initializes a parser that parses the given arguments according to the
  given specifications.
 
@@ -942,4 +965,19 @@ unsafe extern "C" {
         opt: *mut cli_opt,
         parser: *mut cli_opt_parser,
     ) -> cli_opt_status_t;
+}
+unsafe extern "C" {
+    /** Prints the status after parsing the most recent argument.  This is
+ useful for printing an error message when an unknown argument was
+ specified, or when an argument was specified without a value.
+
+ @param file The file to print information to
+ @param command The name of the command to use when printing (optional)
+ @param opt The option that failed to parse
+ @return 0 on success, -1 on failure*/
+    pub fn cli_opt_status_fprint(
+        file: *mut FILE,
+        command: *const ::std::os::raw::c_char,
+        opt: *const cli_opt,
+    ) -> ::std::os::raw::c_int;
 }

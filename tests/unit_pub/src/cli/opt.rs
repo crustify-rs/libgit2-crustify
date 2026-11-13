@@ -4,7 +4,9 @@
 //! over; these cover the flag sets' operations over the combinations the CLI's spec tables
 //! use, the closed enums' C values, which the CLI's remaining C relies on, the parsing
 //! style each combination of flags selects, and the accessors of the spec, outcome and parser
-//! layouts, built in Rust storage.
+//! layouts, built in Rust storage; `Parser::new`, the port of `cli_opt_parser_init`, the
+//! message `OptRef::write_status`, the port of `cli_opt_status_fprint`, writes for each outcome,
+//! and the callback `ForeachCallbackFn` over a Rust closure.
 //!
 //! None reaches C. `uses_gnu_style` reads `POSIXLY_CORRECT`, which a test does not set in its
 //! own process: setting the environment is unsafe while other threads may read it, as the
@@ -13,13 +15,16 @@
 //! it runs all the others.
 
 use core::cell::Cell;
+use core::ffi::CStr;
 use core::num::NonZero;
+use core::ops::ControlFlow;
+use std::io;
 use std::process::Command;
 
 use ffibox::CZeroable;
 use libgit2_crustify::git2::src::cli::opt::{
-    Arg, ArgsSlot, Kind, Opt, ParseFlags, Parser, Spec, SpecTable, Status, Target, Usage,
-    uses_gnu_style,
+    Arg, ArgsSlot, ForeachCallbackFn, Kind, Opt, OptRef, ParseFlags, Parser, Spec, SpecTable,
+    Status, Target, Usage, uses_gnu_style,
 };
 
 /// Every usage flag a constant names, `DEFAULT` aside.
@@ -727,4 +732,361 @@ fn a_parsers_arguments_reorder_in_place() {
     assert_eq!(order, [c"--help", c"file"]);
     assert_eq!(taken.get().map(Arg::as_c_str), Some(c"file"));
     assert!(format!("{parser:?}").contains("\"--help\""));
+}
+
+/// A new parser holds its table, its arguments and its flags, unnamed bits included, at its
+/// first argument with every other piece of state clear; it reorders under `FORCE_GNU` alone
+/// of the flags whose style no environment changes.
+#[test]
+fn a_new_parser_starts_at_its_first_argument() {
+    for (flags, sorts) in [
+        (ParseFlags::DEFAULT, false),
+        (ParseFlags::FORCE_GNU, true),
+        (ParseFlags::from_bits_retain(1 << 7), false),
+        (
+            ParseFlags::FORCE_GNU | ParseFlags::from_bits_retain(1 << 31),
+            true,
+        ),
+    ] {
+        let mut args = [Arg::new(c"one"), Arg::new(c"--two")];
+        let specs = [Spec::new(Target::Arg(None)), Spec::zeroed()];
+        let table = SpecTable::new(&specs).expect("ended");
+        let parser = Parser::new(table, &mut args, flags);
+        let r = parser.as_ref();
+        assert_eq!(
+            r.specs().map(|t| t.position(table.get(0).unwrap())),
+            Some(Some(0))
+        );
+        let read: Vec<_> = r.args().iter().map(|a| a.as_c_str()).collect();
+        assert_eq!(read, [c"one", c"--two"]);
+        assert_eq!((r.args_len(), r.flags()), (2, flags));
+        assert_eq!(
+            (r.idx(), r.arg_idx(), r.in_args(), r.in_short()),
+            (0, 0, 0, 0)
+        );
+        assert_eq!(r.needs_sort(), sorts, "{flags:?}");
+        assert!(!r.in_literal());
+    }
+    let mut none: [Arg<'_>; 0] = [];
+    let specs = [Spec::zeroed()];
+    let table = SpecTable::new(&specs).expect("ended");
+    let parser = Parser::new(table, &mut none, ParseFlags::DEFAULT);
+    assert!(parser.as_ref().args().is_empty());
+}
+
+/// The message for `opt`, written to a `Vec`.
+fn status<'p>(opt: &Opt<'p>, command: Option<&str>, table: SpecTable<'p>) -> Vec<u8> {
+    let mut out = Vec::new();
+    opt.as_ref()
+        .write_status(&mut out, command, table)
+        .expect("written");
+    out
+}
+
+/// An outcome of `status` matching `spec` of `table`, for argument `arg`.
+fn outcome<'p>(
+    status: Status,
+    spec: Option<usize>,
+    arg: Option<&'p CStr>,
+    table: SpecTable<'p>,
+) -> Opt<'p> {
+    let mut opt = Opt::zeroed();
+    opt.as_mut().set_status(status);
+    opt.as_mut().set_spec(spec.and_then(|i| table.get(i)));
+    opt.as_mut().set_arg(arg);
+    opt
+}
+
+/// An outcome's status, spec position and argument, with its message.
+type Case<'a> = (Status, Option<usize>, Option<&'a CStr>, &'a [u8]);
+
+/// The message of each status, after the command when it is given.
+#[test]
+fn each_status_has_its_message() {
+    let specs = [
+        Spec::new(Target::Value(None))
+            .with_alias(b'o')
+            .with_name(c"output"),
+        Spec::new(Target::Arg(None)).with_value_name(c"<path>"),
+        Spec::zeroed(),
+    ];
+    let table = SpecTable::new(&specs).expect("ended");
+    let cases: [Case<'_>; 7] = [
+        (
+            Status::Done,
+            None,
+            None,
+            b"finished processing arguments (no error)\n",
+        ),
+        (Status::Ok, Some(0), Some(c"-o"), b"no error\n"),
+        (
+            Status::UnknownOption,
+            None,
+            Some(c"--nope"),
+            b"unknown option: --nope\n",
+        ),
+        (
+            Status::UnknownOption,
+            None,
+            None,
+            b"unknown option: (null)\n",
+        ),
+        (
+            Status::MissingValue,
+            Some(0),
+            Some(c"-o"),
+            b"argument '-o' requires a value.\n",
+        ),
+        (
+            Status::MissingArgument,
+            Some(1),
+            None,
+            b"argument '<path>' is required.\n",
+        ),
+        (
+            Status::MissingArgument,
+            Some(0),
+            None,
+            b"argument '-o' is required.\n",
+        ),
+    ];
+    for (st, spec, arg, message) in cases {
+        let opt = outcome(st, spec, arg, table);
+        assert_eq!(status(&opt, None, table), message, "{st:?}");
+        let mut prefixed = b"git2: ".to_vec();
+        prefixed.extend_from_slice(message);
+        assert_eq!(status(&opt, Some("git2"), table), prefixed, "{st:?}");
+        assert_eq!(status(&opt, Some(""), table)[..2], *b": ");
+    }
+}
+
+/// A required choice names each of its options in order: `either` two, `one of` more, from the
+/// spec the outcome names to the end of its choice.
+#[test]
+fn a_required_choice_names_its_options() {
+    let specs = [
+        Spec::new(Target::Switch(None)).with_alias(b'a'),
+        Spec::new(Target::Switch(None))
+            .with_name(c"bee")
+            .with_usage(Usage::CHOICE),
+        Spec::new(Target::Arg(None))
+            .with_value_name(c"<c>")
+            .with_usage(Usage::CHOICE),
+        Spec::new(Target::Args(None))
+            .with_value_name(c"<d>...")
+            .with_usage(Usage::CHOICE),
+        Spec::new(Target::Switch(None)).with_alias(b'e'),
+        Spec::new(Target::Switch(None))
+            .with_alias(b'f')
+            .with_usage(Usage::CHOICE),
+        Spec::zeroed(),
+    ];
+    let table = SpecTable::new(&specs).expect("ended");
+    let cases: [(usize, &[u8]); 5] = [
+        (0, b"one of '-a', '--bee', '<c>' or '<d>...' is required.\n"),
+        (1, b"one of '--bee', '<c>' or '<d>...' is required.\n"),
+        (2, b"either '<c>' or '<d>...' is required.\n"),
+        (3, b"argument '<d>...' is required.\n"),
+        (4, b"either '-e' or '-f' is required.\n"),
+    ];
+    for (spec, message) in cases {
+        let opt = outcome(Status::MissingArgument, Some(spec), None, table);
+        assert_eq!(status(&opt, None, table), message, "{spec}");
+    }
+}
+
+/// A spec is named by its alias, by its long name when shown long or without an alias, and by
+/// its value name for a bare argument; a missing name, and an argument's bytes that are not
+/// UTF-8, are written as C writes them.
+#[test]
+fn specs_are_named_as_c_names_them() {
+    let specs = [
+        Spec::new(Target::Switch(None))
+            .with_alias(b'f')
+            .with_name(c"force")
+            .with_usage(Usage::SHOW_LONG),
+        Spec::new(Target::Bool(None)),
+        Spec::new(Target::Arg(None)),
+        Spec::new(Target::Switch(None)).with_alias(0xE9),
+        Spec::zeroed(),
+    ];
+    let table = SpecTable::new(&specs).expect("ended");
+    let named = |i| {
+        status(
+            &outcome(Status::MissingValue, Some(i), None, table),
+            None,
+            table,
+        )
+    };
+    assert_eq!(named(0), b"argument '--force' requires a value.\n");
+    assert_eq!(named(1), b"argument '--(null)' requires a value.\n");
+    assert_eq!(named(2), b"argument '(null)' requires a value.\n");
+    assert_eq!(named(3), b"argument '-\xe9' requires a value.\n");
+    let opt = outcome(Status::UnknownOption, None, Some(c"--caf\xe9"), table);
+    assert_eq!(status(&opt, None, table), b"unknown option: --caf\xe9\n");
+}
+
+/// A spec outside the table given is named alone, its choices unknown.
+#[test]
+fn a_spec_outside_the_table_is_named_alone() {
+    let specs = [
+        Spec::new(Target::Switch(None)).with_alias(b'a'),
+        Spec::new(Target::Switch(None))
+            .with_alias(b'b')
+            .with_usage(Usage::CHOICE),
+        Spec::zeroed(),
+    ];
+    let table = SpecTable::new(&specs).expect("ended");
+    let others = [Spec::zeroed()];
+    let empty = SpecTable::new(&others).expect("ended");
+    let mut opt = Opt::zeroed();
+    opt.as_mut().set_status(Status::MissingArgument);
+    opt.as_mut().set_spec(table.get(0));
+    let mut out = Vec::new();
+    opt.as_ref().write_status(&mut out, None, empty).unwrap();
+    assert_eq!(out, b"argument '-a' is required.\n");
+}
+
+/// Each write a writer is given, kept apart, failing from the `fail_at`th on.
+struct Pieces {
+    pieces: Vec<Vec<u8>>,
+    fail_at: usize,
+}
+
+impl io::Write for Pieces {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if self.pieces.len() == self.fail_at {
+            return Err(io::Error::from(io::ErrorKind::BrokenPipe));
+        }
+        self.pieces.push(buf.to_vec());
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+/// The message is written in the pieces C's `fprintf` calls write, and stops at the first that
+/// fails, whose error it returns, the pieces before it written.
+#[test]
+fn the_message_is_written_in_c_pieces_until_one_fails() {
+    let specs = [
+        Spec::new(Target::Switch(None)).with_alias(b'a'),
+        Spec::new(Target::Switch(None))
+            .with_alias(b'b')
+            .with_usage(Usage::CHOICE),
+        Spec::zeroed(),
+    ];
+    let table = SpecTable::new(&specs).expect("ended");
+    let opt = outcome(Status::MissingArgument, Some(0), None, table);
+    let all: [&[u8]; 10] = [
+        b"git2: ",
+        b"either",
+        b" '",
+        b"-a",
+        b"'",
+        b" or",
+        b" '",
+        b"-b",
+        b"'",
+        b" is required.\n",
+    ];
+    let mut out = Pieces {
+        pieces: Vec::new(),
+        fail_at: usize::MAX,
+    };
+    opt.as_ref()
+        .write_status(&mut out, Some("git2"), table)
+        .unwrap();
+    assert_eq!(out.pieces, all);
+    for fail_at in 0..10 {
+        let mut out = Pieces {
+            pieces: Vec::new(),
+            fail_at,
+        };
+        let e = opt
+            .as_ref()
+            .write_status(&mut out, Some("git2"), table)
+            .unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::BrokenPipe);
+        assert_eq!(out.pieces, all[..fail_at], "{fail_at}");
+    }
+    let opt = outcome(Status::MissingValue, Some(1), None, table);
+    let mut out = Pieces {
+        pieces: Vec::new(),
+        fail_at: usize::MAX,
+    };
+    opt.as_ref().write_status(&mut out, None, table).unwrap();
+    assert_eq!(
+        out.pieces,
+        [&b"argument '"[..], b"-b", b"' requires a value.\n"]
+    );
+}
+
+/// An outcome that misses a value or an argument names a spec: one that names none is refused,
+/// with nothing written, where the C reads through a null pointer.
+#[test]
+fn a_missing_spec_is_refused_unwritten() {
+    let specs = [Spec::zeroed()];
+    let table = SpecTable::new(&specs).expect("ended");
+    for st in [Status::MissingValue, Status::MissingArgument] {
+        let opt = outcome(st, None, Some(c"-x"), table);
+        let mut out = Vec::new();
+        let e = opt
+            .as_ref()
+            .write_status(&mut out, Some("git2"), table)
+            .unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::InvalidInput, "{st:?}");
+        assert_eq!(out, b"");
+    }
+}
+
+/// A closure's callback is called with each outcome and returns what the closure returns; the
+/// strings the outcomes lend outlive them.
+#[test]
+fn a_closure_callback_sees_each_outcome() {
+    let specs = [
+        Spec::new(Target::Value(None)).with_alias(b'o'),
+        Spec::zeroed(),
+    ];
+    let table = SpecTable::new(&specs).expect("ended");
+    let mut kept: Vec<(Option<Status>, Option<&CStr>)> = Vec::new();
+    let mut calls = 0;
+    {
+        let mut f = |opt: OptRef<'_, '_>| {
+            calls += 1;
+            if opt.status() == Some(Status::UnknownOption) {
+                ControlFlow::Break(NonZero::new(-3).unwrap())
+            } else {
+                ControlFlow::Continue(())
+            }
+        };
+        let mut callback = ForeachCallbackFn::new(&mut f);
+        for (st, arg, flow) in [
+            (Status::Ok, c"-ofile", ControlFlow::Continue(())),
+            (
+                Status::UnknownOption,
+                c"--x",
+                ControlFlow::Break(NonZero::new(-3).unwrap()),
+            ),
+        ] {
+            let opt = outcome(st, Some(0), Some(arg), table);
+            assert_eq!(callback.call(opt.as_ref()), flow);
+        }
+        assert_eq!(format!("{callback:?}"), "ForeachCallbackFn(Rust)");
+    }
+    assert_eq!(calls, 2);
+    let mut keep = |opt: OptRef<'_, 'static>| {
+        kept.push((opt.status(), opt.arg()));
+        ControlFlow::Continue(())
+    };
+    {
+        let mut callback = ForeachCallbackFn::new(&mut keep);
+        let mut opt = Opt::zeroed();
+        opt.as_mut().set_status(Status::Ok);
+        opt.as_mut().set_arg(Some(c"--kept"));
+        assert_eq!(callback.call(opt.as_ref()), ControlFlow::Continue(()));
+    }
+    assert_eq!(kept, [(Some(Status::Ok), Some(c"--kept"))]);
 }

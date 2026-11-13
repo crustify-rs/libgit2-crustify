@@ -57,23 +57,23 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip the integration of `libgit2/src/util/strnlen.h`, `30176475c`; `main` at `c58bc5de8`, nothing shipped yet; crustify `cc84106`, ffibox `9c22a73`, wavefront `bf21e16`, ffimap `9aa2ef1` (each on its `libgit2-crustify/devel`, wavefront and ffimap on `devel`)
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `20235` non-test, `101229` tests; **C LoC** — `89080`
+- **Rust LoC** — `20630` non-test, `102656` tests; **C LoC** — `89080`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `768` | — | `27.95`% | `78.28`% |
-| UB unsafe tests | `125` | — | `19.07`% | `16.10`% |
-| Equiv tests | `539` | — | `42.87`% | `74.13`% |
-| Unit tests | `950` | — | `31.37`% | `88.13`% |
-| **Total tests** | **`2382`** | — | **`45.33`%** | **`98.85`%** |
+| UB safe tests | `770` | — | `27.93`% | `77.78`% |
+| UB unsafe tests | `127` | — | `19.06`% | `16.00`% |
+| Equiv tests | `541` | — | `42.93`% | `74.02`% |
+| Unit tests | `983` | — | `31.75`% | `88.33`% |
+| **Total tests** | **`2421`** | — | **`45.41`%** | **`98.84`%** |
 | total types | `258` | — | — | — |
 | ported types | `4` | `1.55`% | — | — |
 | wrapped types | `110` | `42.64`% | — | — |
 | total symbols | `979` | — | — | — |
-| ported symbols | `26` | `2.55`% | — | — |
-| wrapped symbols | `494` | `50.46`% | — | — |
+| ported symbols | `37` | `3.78`% | — | — |
+| wrapped symbols | `493` | `50.36`% | — | — |
 
 ### Module stats
 
@@ -497,6 +497,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/ntlmclient/compat.h` | `200` | `0` | port | first | `1` | `0` | `+167/-0` | `45.00`% / `98.81`% | — | — | — | — | — |
 | `libgit2/src/util/strnlen.h` | `225` | `0` | port | first | `1` | `0` | `+184/-0` | `45.02`% / `98.81`% | `$5.42` | `13.67M` | `19m47s` | `$5.42` | — |
 | `git2/src/cli/opt.c` | `186` | `1` | port | first | `2` | `18` | `+1230/-11` | `45.07`% / `98.82`% | — | — | — | — | — |
+| `git2/src/cli/opt.c` | `186` | `4` | port | first | `11` | `246` | `+2656/-66` | `45.41`% / `98.84`% | — | — | — | — | — |
 | `libgit2/raw-lifetime-void` | `legacy-1` | `0` | wrap | review | `2` | — | `+80/-1` | — | `$7.89` | `10.78M` | `18m36s` | `$3.94` | — |
 | `libgit2/raw-lifetime-string` | `legacy-3` | `0` | wrap | review | `2` | — | `+345/-23` | — | `$10.89` | `14.41M` | `22m03s` | `$5.45` | — |
 | `libgit2/src/util/alloc.c` | `12` | `3` | wrap | review | `7` | — | `+57/-20` | — / `98.90`% | `$15.18` | `40.96M` | `1h31m33s` | `$2.17` | — |
@@ -528,7 +529,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | wrap | review | `2` | — | `+217/-15` | — | `$11.03` | `25.98M` | `47m17s` | `$5.51` | — |
 | `libgit2/deps/reftable/basics.c` | `169` | `4` | wrap | review | `43` | — | `+110/-16` | `45.99`% / `98.92`% | `$13.42` | `46.17M` | `40m4s` | `$0.31` | — |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | wrap | review | `3` | — | `+11/-7` | `45.88`% / `98.92`% | `$5.87` | `16.61M` | `16m58s` | `$1.96` | — |
-| **Σ first** |  |  |  |  | **`503`** | **`9084`** | **`+81479/-3645`** | **`45.07`% / `98.82`%** | **`$587.14`** | **`1837.67M`** | — | **`$1.17`** | **`$0.06`** |
+| **Σ first** |  |  |  |  | **`514`** | **`9330`** | **`+84135/-3711`** | **`45.41`% / `98.84`%** | **`$587.14`** | **`1837.67M`** | — | **`$1.17`** | **`$0.06`** |
 | **Σ review** |  |  |  |  | **`468`** | — | **`+7252/-1369`** | **`45.93`% / `98.90`%** | **`$373.87`** | **`734.99M`** | — | **`$0.80`** | — |
 
 ### Batches: tests
@@ -624,9 +625,10 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/ntlmclient/compat.h` | `200` | `0` | first | `+0` (`+0.03`/`-0.02` pp) | `+0` (`-0.01`/`-0.00` pp) | `+0` (`+0.01`/`-0.02` pp) | `+6` (`-0.01`/`+0.00` pp) |
 | `libgit2/src/util/strnlen.h` | `225` | `0` | first | `+0` (`+0.04`/`-0.03` pp) | `+0` (`+0.02`/`+0.00` pp) | `+2` (`+0.00`/`+0.01` pp) | `+6` (`-0.02`/`+0.01` pp) |
 | `git2/src/cli/opt.c` | `186` | `1` | first | `+0` (`+0.02`/`-0.05` pp) | `+0` (`+0.01`/`-0.01` pp) | `+2` (`+0.12`/`+0.04` pp) | `+6` (`+0.02`/`+0.00` pp) |
+| `git2/src/cli/opt.c` | `186` | `4` | first | `+2` (`-0.02`/`-0.48` pp) | `+2` (`+0.00`/`-0.10` pp) | `+2` (`+0.08`/`-0.09` pp) | `+33` (`+0.36`/`+0.20` pp) |
 | `libgit2/deps/ntlmclient/compat.h` | `200` | `1` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) |
 | `libgit2/src/util/strnlen.h` | `225` | `1` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) |
-| **Σ first** |  |  |  | **`+345` (`+10.40`/`+5.92` pp)** | **`+40` (`+3.37`/`-5.96` pp)** | **`+227` (`+9.20`/`+13.71` pp)** | **`+336` (`+12.06`/`-33.48` pp)** |
+| **Σ first** |  |  |  | **`+347` (`+10.38`/`+5.44` pp)** | **`+42` (`+3.37`/`-6.06` pp)** | **`+229` (`+9.28`/`+13.62` pp)** | **`+369` (`+12.42`/`-33.28` pp)** |
 | **Σ review** |  |  |  | **`+18` (`+0.31`/`-1.51` pp)** | **`+8` (`-0.80`/`+0.59` pp)** | **`+23` (`+0.09`/`-0.54` pp)** | **`+45` (`+2.44`/`+7.64` pp)** |
 
 ### Batches: safety audit
@@ -659,9 +661,10 @@ Deterministic `ffimap`; no model.
 | `libgit2/deps/ntlmclient/compat.h` | `200` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.00` pp | `+0` |
 | `libgit2/src/util/strnlen.h` | `225` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.00` pp | `+0` |
 | `git2/src/cli/opt.c` | `186` | `1` | port | first | `+0` | `+0` | `+10` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+30` | `+0` | `+0.04` pp | `+37` |
+| `git2/src/cli/opt.c` | `186` | `4` | port | first | `+0` | `+0` | `+1` | `+0` | `+0` | `+0.00` pp | `+3` | `+0` | `+0` | `+0` | `+0` | `-1` | `-0.19` pp | `+1` |
 | `libgit2/deps/ntlmclient/compat.h` | `200` | `1` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
 | `libgit2/src/util/strnlen.h` | `225` | `1` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
-| **Σ first** |  |  |  |  | **`+4`** | **`+0`** | **`+34`** | **`+0`** | **`+1`** | **`+0.52` pp** | **`+3`** | **`+1`** | **`+0`** | **`+0`** | **`+30`** | **`+48`** | **`-0.30` pp** | **`+132`** |
+| **Σ first** |  |  |  |  | **`+4`** | **`+0`** | **`+35`** | **`+0`** | **`+1`** | **`+0.52` pp** | **`+6`** | **`+1`** | **`+0`** | **`+0`** | **`+30`** | **`+47`** | **`-0.49` pp** | **`+133`** |
 | **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`-1`** | **`+0`** | **`+1`** | **`+0.00` pp** | **`+0`** | **`-1`** | **`+0`** | **`+6`** | **`+0`** | **`+0`** | **`-0.11` pp** | **`-2`** |
 
 ### Batches: API stability
@@ -684,9 +687,10 @@ Deterministic `ffimap api`; no model.
 | `libgit2/deps/ntlmclient/compat.h` | `200` | `0` | port | first | `0` | `0` | `0` | `0` | `1` | `0` | — | — |
 | `libgit2/src/util/strnlen.h` | `225` | `0` | port | first | `0` | `0` | `0` | `0` | `1` | `0` | — | — |
 | `git2/src/cli/opt.c` | `186` | `1` | port | first | `0` | `0` | `0` | `0` | `2` | `0` | `sys::git2` extended | — |
+| `git2/src/cli/opt.c` | `186` | `4` | port | first | `1` | `0` | `0` | `0` | `2` | `1` | `git2::src::cli::opt` extended, `sys::git2` extended | — |
 | `libgit2/deps/ntlmclient/compat.h` | `200` | `1` | port | review | `1` | `0` | `0` | `0` | `0` | `0` | — | — |
 | `libgit2/src/util/strnlen.h` | `225` | `1` | port | review | `1` | `0` | `0` | `0` | `0` | `0` | — | — |
-| **Σ first** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`25`** | **`0`** |  |  |
+| **Σ first** |  |  |  |  | **`1`** | **`0`** | **`0`** | **`0`** | **`27`** | **`1`** |  |  |
 | **Σ review** |  |  |  |  | **`34`** | **`2`** | **`1`** | **`0`** | **`0`** | **`3`** |  |  |
 
 ### Batches — review: PoC + reports
@@ -3671,6 +3675,128 @@ of the workspace (`lib` 844 and 1 ignored, `ub_safe` 767, `ub_unsafe` 125, `equi
 the known `CommitBuilder` compile-fail doctest. TSan has no obligation, with no `Send` or
 `Sync` claim and no thread. BSan is no gate of this batch, and was not run. The raw bindings
 did not change, so the crate was not packaged. Usage cells are the assistant's.
+
+
+### `git2/src/cli/opt.c` wave 186 batch 4: the parser's lookups, its set-up and its status message
+
+The symbol route of waves 188 and 189, folded onto wave 186: eleven items ported into
+`src/git2/src/cli/opt.rs` beside batches 0 to 3's. `fn::cli_opt_parser_init` is `Parser::new`,
+whose API batch 2 gave it over C: it is now native, a zeroed parser filled through its setters,
+`needs_sort` from `uses_gnu_style`, so `FFI calls` drops by one and the five `ub_safe` tests
+that reached C only through it lose their `calls C` marks and pass under Miri. Its anchor moves
+from `Wraps` to `Replaces`. `fn::cli_opt_status_fprint` is `OptRef::write_status(&self, out:
+&mut impl io::Write, command: Option<&str>, specs: SpecTable<'p>) -> io::Result<()>`, which
+writes the CLI's message in the pieces C's `fprintf` calls write and stops at the first that
+fails. A choice's later options are read from the table it is given, since an outcome's spec
+does not know its table; a spec outside it is named alone. The strings C prints with `%s`,
+`NULL` ones included, come out as glibc writes them, `(null)`. The C returns its last piece's
+count; `opt.h` documents 0 and -1, which the export returns. `fnp::cli_opt_foreach.callback`,
+the inline `int (*)(cli_opt *, void *)` keyed by its declaring parameter, is
+`ForeachCallbackFn<'f, 'p>`. It holds a Rust `FnMut(OptRef<'_, 'p>) -> ControlFlow<NonZero<c_int>>`
+or a C function with its context, through the crate-private `unsafe fn from_c` that batch 5's
+`cli_opt_foreach` export builds from `common.c`'s `parse_option`. No remaining C calls the
+callback, so it has no trampoline. The other eight are `opt.c`'s static helpers, private native
+routines that wait for batch 5's parser under `dead_code` expectations. rustdoc refuses an alias
+equal to an item's name, so they are renamed and keep their aliases: `find_long`, `find_short`,
+`find_arg`, `is_choice`, `skip_choice_args`, `is_given`, `check_required` and `write_spec_name`.
+
+Three C defects are not carried over, each kept by a `unit_priv` test:
+
+- `spec_for_long` compares a `no-` argument with a bool spec's name without checking that it has
+  one, `strcmp(arg + 3, NULL)`. A nameless bool matches nothing.
+- `spec_for_short` matches the bare `-` with the first spec without an alias, and reads
+  `arg[1]` past the string for a value spec. A spec without an alias matches no short option.
+  The CLI's `cli_common_opts` lead with `--help`, which has no alias.
+- `consume_choices` steps back before the table's start when its first spec is a `CHOICE`. The
+  table's start ends the choice.
+
+A fourth, in batch 5's `cli_opt_parse`, broke an equivalence test under `plain`. Its
+`alloca`'d `given_specs` holds `args_len + 1` entries, but a bundle of short options gives one
+outcome per option, so `-ab` writes past it (ASan: `dynamic-stack-buffer-overflow`, `opt.c:579`)
+and `git2 cat-file -tsep <object>` would too. The reproducer is in the run dir,
+`cli-opt-parse-given-specs-overflow/`, and this batch's comparisons of `cli_opt_parse` give no
+bundles.
+
+The module's `ffi_export` gateway, under `ffi-export-src-cli-opt-c`, declared off in
+`Cargo.toml` as wave 229's utf8.c feature is: `cli_opt_parser_init` and `cli_opt_status_fprint`,
+for `main.c` and `opt_usage.c`, each checked against its raw binding at compile time and run in
+`callback::barrier`. The first adopts the table through `SpecTable::from_ptr`, a public `unsafe`
+adoption beside ffibox's `from_ptr` seams, and the arguments as `Arg`s after checking each is
+non-null, where the C stores them unread; a `NULL` parser, table or argument aborts. The second
+writes through `FileWriter`, an `io::Write` over glibc-bindings' `FileRef::print`. libc's
+wrapper writes `&str` alone, so a piece that is not UTF-8, an argument such as `--caf\xe9`, is
+written with U+FFFD, the export's one departure from C (proposal `fileref-prints-bytes`). The
+`git2` allowlist gains `cli_opt_foreach`, whose callback type the C form is checked against, and
+`cli_opt_status_fprint`. `FILE` and the seven types its layout names join `external.txt`, so
+that `src/sys.rs` re-exports them from glibc-bindings' `ffi` rather than the bindings copying
+them. The bindings were regenerated in campaign mode, `+38` lines. The ten functions' pointer
+findings are in the ownership store (`cli_opt_parser_init`'s were batch 2's).
+
+Routes, for their `confirmation`: `_IO_FILE` and `fprintf` take `crustify-campaign`, confirmed.
+The export writes the stream C's `main.c` and `opt_usage.c` write, through `FileRef`, while the
+native API writes any `io::Write`, std's `stderr` included. The wrapper lacks a byte-exact write
+for non-UTF-8 text, as above. `memset` is `std`: the parser is `CZeroable::zeroed`, whose
+padding is zero as C's `memset` leaves it, which `equiv` checks byte for byte. `strncmp`,
+`strcmp`, `strchr` and `strlen` are `std`, as `[u8]` comparisons, `strip_prefix`,
+`iter().position` and `CStr::to_bytes`. `assert` (`cli_opt_parser_init`'s, a no-op under the
+build's `NDEBUG`) needs no Rust: a parser is a value, and the export aborts on `NULL`. `alloca`
+is not used by this batch's items: it is `cli_opt_parse`'s, batch 5's, where a `Vec` also ends
+the overflow above.
+
+Tests: 2 `ub_safe` (a choice read within its table, a callback's closure keeping what outcomes
+lend), 2 `ub_unsafe` (`SpecTable::from_ptr` from an array's start, within it, at its end and from
+`NULL`), 2 `equiv` (`Parser::new` against `cli_opt_parser_init` byte for byte over every style
+flag combination, and `write_status` against `cli_opt_status_fprint` into `open_memstream` for
+every status, every spec of a choice table, `(null)` names, a non-ASCII alias, a non-UTF-8
+argument and three unnamed statuses), 8 `unit_pub` and 25 in `lib`: 14 `unit_priv` of the
+helpers, 2 of the callback's C form, and 9 `equiv_priv` in `ffi_import`. Those compare
+`find_long`, `find_short`, `find_arg`, `skip_choice_args` and `check_required` with C through
+`cli_opt_parser_next` and `cli_opt_parse`, the C form with `cli_opt_foreach`, and `FileWriter`
+with C's writes, failures to a read-only stream (`EBADF`) included. Two compile-fail doctests
+and three doctests document the new API. The CLI has no C tests to carry over. Worklist coverage
+under all suites: `opt.rs` 781 of 785 lines, 151 of 151 functions and 838 of 850 regions, the one line left being `ArgsSlot::get_in`'s refusal of a
+misaligned offset, which no safe code or C stores. C `opt.c` 388 of 403 lines (96.28%), 19 of 19 functions, up from 71.22% of lines and 16 functions at batch 2:
+`cli_opt_status_fprint`, `spec_name_fprint` and `cli_opt_foreach`, unreached until now, are
+reached.
+
+Coverage was measured with `crustify/scripts/coverage/run.sh` on a `git archive` of the wave tip
+`4800c0ae2`, whose merge of the working branch was not measured, and on this tree. It was read
+with `report.py` from each scratch tree's `src/` (`C=@c` over the `coverage` variant's
+`libcrustify.a`, `Rust=.`), the unit column merging `lib` and `unit_pub`. The tip measures as `Coverage stats` recorded it (`45.33`% / `98.85`%). `equiv`'s `+0.08` pp C and the unit column's `+0.36` pp C are the parser and status paths the new comparisons reach; the Rust shifts in suites that do not reach the new code are its denominator's `+222` lines. The
+Overview's Rust LoC moves by ffimap's `code.loc.total` (`+395`) and `code.tests.loc.total`
+(`+1427`). `+LoC` counts every `.rs` line, the regenerated `bindings.rs`'s 38 among them, as the
+module's earlier rows do. The `loc` cell is wavefront's, the eleven records' `loc`, `246`.
+`ported symbols` gains the eleven items, and `wrapped symbols` loses `cli_opt_parser_init`.
+
+The safety audit scans (ffimap `9aa2ef1`, `--ffibox`, `--sys-crates pcre2_sys`, the 13 seams,
+`--regions ffi_import,ffi_export`) name the export feature on this tree and none on the tip,
+which declares none, as wave 229's did. `pub unsafe fn` `+1` is `SpecTable::from_ptr`. `raw→std`
+`+3` is the gateway's `CStr::from_ptr` and its two argument slices. `FFI calls` `-1` is
+`Parser::new`. `unsafe blocks` `+1` nets the callback's two and `from_ptr`'s one against
+`Parser::new`'s two. The boundary scan's sites in the changeset are `SpecTable::from_ptr` alone,
+an adoption no safe variant replaces: a `format!` in `write_status`, whose `format_args!`
+expansion counted as unsafe outside the regions, was replaced by `to_string`. `ffimap api diff`
+against the tip (rustdoc JSON on nightly `2026-10-08`, with ffibox's private one): `fn::cli_opt_parser_init`
+`kept`, its anchor `Wraps`→`Replaces`; `fn::cli_opt_status_fprint` and
+`fnp::cli_opt_foreach.callback` `new`; the eight private helpers `missing`. Unattributed,
+`git2::src::cli::opt` is `extended` by `SpecTable::from_ptr` and `sys::git2` by the two
+bindings; the others are `kept`.
+
+Gates, on the base `4800c0ae2`, which the wave branch still pointed at when the batch landed:
+the workspace is formatted (the pinned nightly's rustfmt), and `clippy --all-targets` passes with
+warnings denied with the export feature off, on, and with `--all-features`. The whole workspace
+passes on `plain` (`lib` 869 and 1 ignored, `ub_safe` 770, `ub_unsafe` 127, `equiv` 541,
+`unit_pub` 113, `hidden_symbols` 1, doctests 79 merged and 387 standalone). The module's tests
+(`lib` 29, `unit_pub` 40, `ub_safe` 8, `ub_unsafe` 7, `equiv` 13, doctests 6 and 9 compile-fail,
+whose codes nightly checks) pass under ASan+UBSan. Under Miri they pass but the ten marked
+`calls C`, each run alone there and seen to stop at a foreign call, and the two marked `spawns a
+process`. The module's dependents in `modules.json` are the CLI's other C modules, which have no
+Rust tests yet. TSan has no obligation, with no `Send` or `Sync` claim and no thread, and BSan is
+no gate of this batch, and was not run. The raw bindings changed, so the crate was packaged in
+bundled mode (698 files) and verified, by `packaging-gate-procedure`'s command. Proposals:
+`fileref-prints-bytes` (the glibc-crustify side campaign), `export-adoptions-and-the-safe-boundary`
+(`binding`'s Safe boundary section), and this batch's evidence added to
+`doc-alias-equal-to-the-name`. Usage cells are the assistant's.
 
 
 ### `libgit2/deps/ntlmclient/compat.h` wave 200 batch 0: `MIN`

@@ -4235,6 +4235,61 @@
    ]
   },
   {
+   "name": "cli_opt_status_fprint",
+   "defined_in": "src/cli/opt.c",
+   "ptr_args": [
+    {
+     "name": "command",
+     "ptr": {
+      "scalar": null,
+      "array": null,
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:command"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The program name printed before ': '; NULL prints none."
+     }
+    },
+    {
+     "name": "file",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:file"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "An open stream main.c and opt_usage.c pass (stderr), written with fprintf in pieces; not kept, not flushed. Rust: glibc-bindings' FileRef in the export, any io::Write natively."
+     }
+    },
+    {
+     "name": "opt",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:opt"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "The outcome of a parse, read only: status, arg (NULL printed (null)) and spec, which is dereferenced unchecked for MISSING_VALUE and MISSING_ARGUMENT and, for a choice, read forward to the end of its choice in its table."
+     }
+    }
+   ]
+  },
+  {
    "name": "common_prefix_size",
    "defined_in": "deps/reftable/basics.c",
    "ptr_args": [
@@ -4270,6 +4325,46 @@
       "nullable": false,
       "mutable": false,
       "note": "A reftable_buf the caller holds (stack, or embedded in a writer, iterator or record); unallocated (alloc 0, buf NULL, len 0) or allocated (buf owns alloc bytes, len < alloc). Not kept past the call. Only reads b->len and b->buf[0..len)."
+     }
+    }
+   ]
+  },
+  {
+   "name": "consume_choices",
+   "defined_in": "src/cli/opt.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Only arg_idx is written, advanced past each ARG spec of the choice."
+     }
+    },
+    {
+     "name": "spec",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser->specs"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "The spec just matched, an element of the parser's table: the walk steps back over its run of CHOICE specs, unbounded (past the table's start when the first spec is a CHOICE), then forward over its choice."
      }
     }
    ]
@@ -28592,6 +28687,339 @@
    }
   },
   {
+   "name": "spec_for_arg",
+   "defined_in": "src/cli/opt.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Its table is read; arg_idx advances when an ARG spec is returned."
+     }
+    }
+   ],
+   "ptr_ret": {
+    "ptr": {
+     "scalar": {
+      "by_val": true
+     },
+     "array": null,
+     "string": false,
+     "owned": false,
+     "borrowed": {
+      "lifetime": "arg:parser->specs"
+     },
+     "nullable": true,
+     "mutable": false,
+     "note": "An element of the parser's table, or NULL when no argument spec is left."
+    }
+   }
+  },
+  {
+   "name": "spec_for_long",
+   "defined_in": "src/cli/opt.c",
+   "ptr_args": [
+    {
+     "name": "arg",
+     "ptr": {
+      "scalar": null,
+      "array": null,
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:arg"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "The argument after its '--'; the value returned through value points into it. A bool spec's NULL name is passed to strcmp for a no- argument."
+     }
+    },
+    {
+     "name": "has_value",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:has_value"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Out-parameter: set to 1 for a --<name>=<value> match of a value spec, left otherwise."
+     }
+    },
+    {
+     "name": "is_negated",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:is_negated"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Out-parameter: set to 1 for a --no-<name> match of a bool spec, left as it is otherwise."
+     }
+    },
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "Only its table is read."
+     }
+    },
+    {
+     "name": "value",
+     "ptr": {
+      "scalar": {
+       "by_ref": {
+        "owned": false,
+        "borrowed": {
+         "lifetime": "arg:arg"
+        }
+       }
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:value"
+      },
+      "nullable": false,
+      "mutable": null,
+      "note": "Out-parameter: on a --<name>=<value> match, the suffix of arg after the first '=', or NULL when empty; left otherwise. The routine writes *value, the inner pointer; the chars it points at are const, which the pointee's const records, so whether the slot is written is left null here."
+     }
+    }
+   ],
+   "ptr_ret": {
+    "ptr": {
+     "scalar": {
+      "by_val": true
+     },
+     "array": null,
+     "string": false,
+     "owned": false,
+     "borrowed": {
+      "lifetime": "arg:parser->specs"
+     },
+     "nullable": true,
+     "mutable": false,
+     "note": "The first spec of the parser's table the argument selects, or NULL."
+    }
+   }
+  },
+  {
+   "name": "spec_for_short",
+   "defined_in": "src/cli/opt.c",
+   "ptr_args": [
+    {
+     "name": "arg",
+     "ptr": {
+      "scalar": null,
+      "array": null,
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:arg"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "The rest of a short option's argument from the option's character; empty for the bare '-', which matches a spec without an alias and, for a value spec, has arg[1] read past its end."
+     }
+    },
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "Only its table is read."
+     }
+    },
+    {
+     "name": "value",
+     "ptr": {
+      "scalar": {
+       "by_ref": {
+        "owned": false,
+        "borrowed": {
+         "lifetime": "arg:arg"
+        }
+       }
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:value"
+      },
+      "nullable": false,
+      "mutable": null,
+      "note": "Out-parameter: the rest of arg after its first character for a value spec with more after it, NULL for any other match; left when nothing matches. The routine writes *value, the inner pointer; the chars it points at are const, which the pointee's const records, so whether the slot is written is left null here."
+     }
+    }
+   ],
+   "ptr_ret": {
+    "ptr": {
+     "scalar": {
+      "by_val": true
+     },
+     "array": null,
+     "string": false,
+     "owned": false,
+     "borrowed": {
+      "lifetime": "arg:parser->specs"
+     },
+     "nullable": true,
+     "mutable": false,
+     "note": "The first spec whose alias is arg's first character, or NULL."
+    }
+   }
+  },
+  {
+   "name": "spec_included",
+   "defined_in": "src/cli/opt.c",
+   "ptr_args": [
+    {
+     "name": "spec",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:spec"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "A spec of the table validate_required iterates; compared by address with each given spec, never dereferenced."
+     }
+    },
+    {
+     "name": "specs",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_ref": {
+        "owned": false,
+        "borrowed": {
+         "lifetime": "other"
+        }
+       }
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:specs"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "cli_opt_parse's alloca'd given_specs: the specs the arguments matched, each an element of the parse's table, ended by NULL; read during the call only. Rust: a slice of SpecRef<'p>."
+     }
+    }
+   ]
+  },
+  {
+   "name": "spec_is_choice",
+   "defined_in": "src/cli/opt.c",
+   "ptr_args": [
+    {
+     "name": "spec",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:spec"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "An element of a spec table ended by a CLI_OPT_TYPE_NONE spec: the spec after it is read (type and usage), which the end bounds while spec is before it; C reads past the end for the end itself. Rust: an index into a SpecTable."
+     }
+    }
+   ]
+  },
+  {
+   "name": "spec_name_fprint",
+   "defined_in": "src/cli/opt.c",
+   "ptr_args": [
+    {
+     "name": "file",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:file"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The stream cli_opt_status_fprint is given, written with one fprintf; not kept."
+     }
+    },
+    {
+     "name": "spec",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:spec"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "Dereferenced unchecked: its type, alias, usage, and name or value_name, printed with %s, which glibc writes as (null) for NULL."
+     }
+    }
+   ]
+  },
+  {
    "name": "stdalloc__free",
    "defined_in": "src/util/allocators/stdalloc.c",
    "lifetime": {
@@ -28615,6 +29043,51 @@
      "init": false
     }
    }
+  },
+  {
+   "name": "validate_required",
+   "defined_in": "src/cli/opt.c",
+   "ptr_args": [
+    {
+     "name": "given_specs",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_ref": {
+        "owned": false,
+        "borrowed": {
+         "lifetime": "other"
+        }
+       }
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:given_specs"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "NULL-terminated array of the specs the arguments matched, elements of the specs[] table (an array parameter wavefront records no pointer slot for, hence 'other'); read only. cli_opt_parse sizes it args_len + 1, which a bundle of short options overflows."
+     }
+    },
+    {
+     "name": "opt",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:opt"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Written only when a requirement is missing: spec (the first spec of the requirement) and status MISSING_ARGUMENT; its status is returned."
+     }
+    }
+   ]
   }
  ]
 }

@@ -1,21 +1,25 @@
 //! `src/cli/opt.c`: the spec, outcome and parser layouts through the safe API alone, under
-//! the sanitizers. [`Parser::new`] is C's `cli_opt_parser_init`, which stores the table and
-//! the arguments it is given; these tests set parsers up over the shapes C's spec tables take
-//! and read back, through the getters, the pointers C stored, with borrowed handles aliased,
-//! reborrowed and copied. Miri cannot call C, so the tests that set a parser up stop there.
+//! the sanitizers and Miri. [`Parser::new`], the port of `cli_opt_parser_init`, stores the table
+//! and the arguments it is given in the parser's C layout; these tests set parsers up over the
+//! shapes C's spec tables take and read back, through the getters, the pointers it stored, with
+//! borrowed handles aliased, reborrowed and copied. The status message reads a choice's later
+//! options from the table it is given, never past it, and a callback's closure keeps the strings
+//! the outcomes lend past the outcomes.
 
 use core::cell::Cell;
+use core::ffi::CStr;
 use core::num::NonZero;
+use core::ops::ControlFlow;
 
 use ffibox::CZeroable;
 use libgit2_crustify::git2::src::cli::opt::{
-    Arg, ArgsSlot, Kind, Opt, ParseFlags, Parser, Spec, SpecTable, Target, Usage,
+    Arg, ArgsSlot, ForeachCallbackFn, Kind, Opt, OptRef, ParseFlags, Parser, Spec, SpecTable,
+    Status, Target, Usage,
 };
 
-/// A parser C set up over an empty argument array: its stored pointer is never read, and the
+/// A parser set up over an empty argument array: its stored pointer is never read, and the
 /// getters lend an empty slice.
 #[test]
-#[cfg_attr(miri, ignore = "calls C")]
 fn a_parser_over_no_arguments() {
     let specs = [Spec::zeroed()];
     let table = SpecTable::new(&specs).expect("ended");
@@ -26,12 +30,11 @@ fn a_parser_over_no_arguments() {
     assert_eq!(parser.as_ref().specs().map(|t| t.len()), Some(0));
 }
 
-/// C stores the table and the arguments as given, clears every position, and records the
-/// flags; the getters read each, as many times and through as many copies of the shared
+/// A parser stores the table and the arguments as given, clears every position, and records
+/// the flags; the getters read each, as many times and through as many copies of the shared
 /// handle as asked.
 #[test]
-#[cfg_attr(miri, ignore = "calls C")]
-fn a_parser_reads_back_what_c_stored() {
+fn a_parser_reads_back_what_it_stored() {
     let debug = Cell::new(0);
     let output = Cell::new(None);
     let rest = ArgsSlot::new();
@@ -68,10 +71,9 @@ fn a_parser_reads_back_what_c_stored() {
     assert_eq!(a.flags(), ParseFlags::DEFAULT);
 }
 
-/// `FORCE_GNU` makes C set the parser up to reorder its arguments whatever the environment,
+/// `FORCE_GNU` sets the parser up to reorder its arguments whatever the environment,
 /// in the bit beside `in_literal`, which it leaves clear.
 #[test]
-#[cfg_attr(miri, ignore = "calls C")]
 fn force_gnu_needs_a_sort() {
     let specs = [Spec::zeroed()];
     let table = SpecTable::new(&specs).expect("ended");
@@ -86,10 +88,9 @@ fn force_gnu_needs_a_sort() {
     assert!(parser.as_ref().in_literal());
 }
 
-/// The arguments C stored reorder through the exclusive handle, and the strings taken from
+/// The arguments a parser stored reorder through the exclusive handle, and the strings taken from
 /// them before stay valid: a variable, an outcome and a slot keep what they took.
 #[test]
-#[cfg_attr(miri, ignore = "calls C")]
 fn reordering_keeps_the_strings_taken() {
     let value = Cell::new(None);
     let rest = ArgsSlot::new();
@@ -130,10 +131,9 @@ fn reordering_keeps_the_strings_taken() {
     assert_eq!(tail, [c"a", c"--b"]);
 }
 
-/// A spec read through a parser's table writes its variable through the `Cell` C was given,
+/// A spec read through a parser's table writes its variable through the `Cell` it was given,
 /// and the caller reads the write back through its own borrow.
 #[test]
-#[cfg_attr(miri, ignore = "calls C")]
 fn variables_are_written_through_the_table() {
     let count = Cell::new(1);
     let specs = [
@@ -167,4 +167,80 @@ fn a_parser_filled_in_rust_reads_back() {
     let r = parser.as_ref();
     assert_eq!(r.specs().map(|t| t.len()), Some(1));
     assert_eq!(r.args().len(), 2);
+}
+
+/// A required choice that the table's last spec continues, or that a spec of another table
+/// starts, is read no further than the table given: its last option before the end, or the spec
+/// alone.
+#[test]
+fn a_choice_is_read_within_its_table() {
+    let specs = [
+        Spec::new(Target::Switch(None)).with_alias(b'a'),
+        Spec::new(Target::Switch(None))
+            .with_alias(b'b')
+            .with_usage(Usage::CHOICE),
+        Spec::zeroed(),
+        Spec::new(Target::Switch(None))
+            .with_alias(b'z')
+            .with_usage(Usage::CHOICE),
+    ];
+    let table = SpecTable::new(&specs).expect("ended");
+    let one = [
+        Spec::new(Target::Switch(None)).with_alias(b'q'),
+        Spec::zeroed(),
+    ];
+    let alone = SpecTable::new(&one).expect("ended");
+    let mut opt = Opt::zeroed();
+    opt.as_mut().set_status(Status::MissingArgument);
+    for (at, message) in [
+        (0, &b"either '-a' or '-b' is required.\n"[..]),
+        (1, b"argument '-b' is required.\n"),
+    ] {
+        opt.as_mut().set_spec(table.get(at));
+        let mut out = Vec::new();
+        opt.as_ref().write_status(&mut out, None, table).unwrap();
+        assert_eq!(out, message);
+        let mut out = Vec::new();
+        let mut other = Opt::zeroed();
+        other.as_mut().set_status(Status::MissingArgument);
+        other.as_mut().set_spec(alone.get(0));
+        other.as_ref().write_status(&mut out, None, alone).unwrap();
+        assert_eq!(out, b"argument '-q' is required.\n");
+    }
+}
+
+/// What a callback's closure keeps of the outcomes of `lent`, each built and dropped in turn:
+/// the arguments they lend for `'p`.
+fn keep_through_a_callback<'p>(lent: &[&'p CStr]) -> Vec<&'p [u8]> {
+    let mut kept = Vec::new();
+    let mut keep = |opt: OptRef<'_, 'p>| {
+        kept.extend(opt.arg().map(CStr::to_bytes));
+        ControlFlow::Continue(())
+    };
+    {
+        let mut callback = ForeachCallbackFn::new(&mut keep);
+        for &arg in lent {
+            let mut opt = Opt::zeroed();
+            opt.as_mut().set_arg(Some(arg));
+            let _ = callback.call(opt.as_ref());
+        }
+    }
+    kept
+}
+
+/// A callback's closure keeps the strings each outcome lends, which live as long as the
+/// arguments do, after the outcome that lent them is gone.
+#[test]
+fn a_callback_keeps_what_outcomes_lend() {
+    let mut args = [Arg::new(c"--value"), Arg::new(c"file")];
+    let specs = [Spec::new(Target::Arg(None)), Spec::zeroed()];
+    let table = SpecTable::new(&specs).expect("ended");
+    let parser = Parser::new(table, &mut args, ParseFlags::DEFAULT);
+    let lent: Vec<&CStr> = parser
+        .as_ref()
+        .args()
+        .iter()
+        .map(|a| a.as_c_str())
+        .collect();
+    assert_eq!(keep_through_a_callback(&lent), [&b"--value"[..], b"file"]);
 }

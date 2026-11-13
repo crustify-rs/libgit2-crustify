@@ -5,6 +5,10 @@
 //! adopted handle is then read through every getter, and the exclusive ones written, while
 //! what it points at lives (`ASan`: use after free; Miri: dangling references).
 //!
+//! `SpecTable::from_ptr` adopts a whole table, as the exports adopt the CLI's C tables: from
+//! its first spec, from one within it, and at its end, each read to that end and no further
+//! (`ASan`: overflow; Miri: out-of-bounds reads).
+//!
 //! None calls C: the layouts are built in Rust storage, as C builds them in its own, and
 //! adopted from their pointers, so Miri runs them all.
 
@@ -18,6 +22,7 @@ use libgit2_crustify::git2::src::cli::opt::{
     Arg, ArgsSlot, Kind, Opt, OptRef, ParseFlags, Parser, ParserMut, ParserRef, Spec, SpecMut,
     SpecRef, SpecTable, Status, Target, Usage,
 };
+use libgit2_crustify::sys::git2 as sys;
 
 /// A null pointer adopts as no handle, whichever seam adopts it.
 #[test]
@@ -162,4 +167,58 @@ fn an_adopted_parser_lends_its_table_and_arguments() {
         .map(|a| a.as_c_str())
         .collect();
     assert_eq!(tail, [c"a"]);
+}
+
+/// A table of C layouts with strings and a variable, adopted from its first spec, reads as the
+/// table it is, ended by its zeroed spec, and its variable is written through it.
+#[test]
+fn a_table_adopted_from_its_start_reads_to_its_end() {
+    let name = CString::new("output").unwrap();
+    let count = Cell::new(0);
+    let specs = [
+        Spec::new(Target::Accumulator(Some(&count))).with_alias(b'v'),
+        Spec::new(Target::Value(None)).with_name(&name),
+        Spec::zeroed(),
+        Spec::new(Target::Literal),
+    ];
+    // The array's pointer, whose provenance covers every spec: a pointer from one spec's
+    // `as_ref()` covers that spec alone, and reading the next through it is undefined.
+    let start = specs.as_ptr().cast::<sys::cli_opt_spec>();
+    // SAFETY: `start` addresses `specs`, ended by its zeroed spec, live and unchanged but for the
+    // variable's `Cell` while the table lives, for the `'p` the borrows of `name` and `count`
+    // bound.
+    let table = unsafe { SpecTable::from_ptr(start) }.expect("non-null");
+    assert_eq!(table.len(), 2);
+    assert_eq!(table.get(1).and_then(|s| s.name()), Some(name.as_c_str()));
+    assert!(table.get(2).is_none());
+    let Some(Target::Accumulator(Some(v))) = table.get(0).and_then(|s| s.target()) else {
+        panic!("an accumulator");
+    };
+    v.set(v.get() + 3);
+    assert_eq!(count.get(), 3);
+    let positions: Vec<_> = table.iter().map(|s| table.position(s)).collect();
+    assert_eq!(positions, [Some(0), Some(1)]);
+}
+
+/// A table adopted from a spec within an array starts there, and one adopted at the end is
+/// empty; a null pointer is no table.
+#[test]
+fn a_table_adopted_within_an_array_starts_there() {
+    let specs = [
+        Spec::new(Target::Literal),
+        Spec::new(Target::Arg(None)),
+        Spec::new(Target::Args(None)),
+        Spec::zeroed(),
+    ];
+    let base = specs.as_ptr().cast::<sys::cli_opt_spec>();
+    // SAFETY: each pointer addresses an element of `specs`, which a zeroed spec ends, with the
+    // array's provenance, live and unchanged while the tables live.
+    let tail = unsafe { SpecTable::from_ptr(base.wrapping_add(1)) }.expect("non-null");
+    let kinds: Vec<_> = tail.iter().map(|s| s.kind()).collect();
+    assert_eq!(kinds, [Some(Kind::Arg), Some(Kind::Args)]);
+    // SAFETY: as above.
+    let end = unsafe { SpecTable::from_ptr(base.wrapping_add(3)) }.expect("non-null");
+    assert!(end.is_empty());
+    // SAFETY: `from_ptr` refuses a null pointer.
+    assert!(unsafe { SpecTable::from_ptr(ptr::null()) }.is_none());
 }

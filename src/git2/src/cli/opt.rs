@@ -5,11 +5,22 @@
 //! discriminants stay C's values while the CLI's remaining C, its `cmd_*.c` spec tables,
 //! `opt_usage.c` and `common.c`, uses their constants, and [`Usage`] and [`ParseFlags`] are
 //! bit sets, which that C combines with `|`. `opt.h` keeps the C definitions for that C:
-//! the two are not linked, and nothing here is exported.
+//! the two are not linked.
 //!
 //! The parser's helpers are native Rust too: [`Kind::is_option`], `opt.c`'s
-//! `spec_is_option_type`, and [`uses_gnu_style`], its `support_gnu_style`: no C outside
-//! `opt.c` reaches either, so neither is exported.
+//! `spec_is_option_type`, and [`uses_gnu_style`], its `support_gnu_style`, and the routines
+//! through which the parser finds the spec an argument selects, steps over a choice and checks
+//! the required arguments. No C outside `opt.c` reaches them, so none is exported.
+//!
+//! # Its entry points
+//!
+//! [`Parser::new`] (`cli_opt_parser_init`) sets a parser up and [`OptRef::write_status`]
+//! (`cli_opt_status_fprint`) describes a parse's outcome, as the CLI shows it on its standard
+//! error. The CLI's remaining C, `main.c` and `opt_usage.c`, calls both, so each has an
+//! export, compiled under the module's export feature, `ffi-export-src-cli-opt-c`, which stays
+//! off until the module switches from C. [`ForeachCallbackFn`] is the callback a whole parse
+//! calls with each outcome (`cli_opt_foreach`'s), which a Rust closure or, through that
+//! export, `common.c`'s C function implements.
 //!
 //! # The parser's structs
 //!
@@ -41,13 +52,16 @@
 
 use core::cell::Cell;
 use core::ffi::{CStr, c_int};
-use core::fmt;
 use core::num::NonZero;
 use core::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign};
+use core::{fmt, ptr};
+use std::io;
 
 pub use ffi_import::{
-    Arg, Opt, OptMut, OptRef, Parser, ParserMut, ParserRef, Spec, SpecMut, SpecRef, SpecTable,
+    Arg, ForeachCallbackFn, Opt, OptMut, OptRef, Parser, ParserMut, ParserRef, Spec, SpecMut,
+    SpecRef, SpecTable,
 };
+use ffibox::{CRefSeam, CZeroable};
 
 /// The kind of command-line argument an option spec parses.
 ///
@@ -608,7 +622,7 @@ impl<'p> ArgsSlot<'p> {
     /// A slot no parse has written: it holds C's `NULL`.
     #[must_use]
     pub const fn new() -> Self {
-        Self(Cell::new(core::ptr::null_mut()))
+        Self(Cell::new(ptr::null_mut()))
     }
 
     /// Whether a parse, or [`set`](Self::set), has stored a position.
@@ -625,7 +639,7 @@ impl<'p> ArgsSlot<'p> {
 
     /// Empties the slot, as [`new`](Self::new) builds it.
     pub fn clear(&self) {
-        self.0.set(core::ptr::null_mut());
+        self.0.set(ptr::null_mut());
     }
 
     /// The arguments of `args` from the stored position on, or `None` when the slot is empty or
@@ -661,22 +675,526 @@ impl fmt::Debug for ArgsSlot<'_> {
     }
 }
 
+impl<'p> Parser<'p> {
+    /// A parser of `args` against `specs` under `flags`, at its first argument: it will
+    /// reorder `args` GNU style when `flags` asks for it, [`ParseFlags::FORCE_GNU`], or
+    /// [`ParseFlags::GNU`] while the environment has no `POSIXLY_CORRECT`, read here, as
+    /// [`uses_gnu_style`] reads it.
+    ///
+    /// Every other piece of its state starts cleared, as C's `memset` leaves it: no argument
+    /// parsed, no [`Kind::Arg`] spec matched, no remaining arguments taken, no bundle of short
+    /// options entered and no literal `--` seen. It reads neither the table nor the arguments.
+    ///
+    /// ```
+    /// use libgit2_crustify::git2::src::cli::opt::{Arg, ParseFlags, Parser, Spec, SpecTable};
+    ///
+    /// let specs = [Spec::default()];
+    /// let table = SpecTable::new(&specs).unwrap();
+    /// let mut args = [Arg::new(c"file")];
+    /// let parser = Parser::new(table, &mut args, ParseFlags::FORCE_GNU);
+    /// assert_eq!((parser.as_ref().args_len(), parser.as_ref().idx()), (1, 0));
+    /// assert!(parser.as_ref().needs_sort());
+    /// ```
+    ///
+    /// Replaces `fn::cli_opt_parser_init`
+    #[doc(alias = "cli_opt_parser_init")]
+    #[must_use]
+    pub fn new(specs: SpecTable<'p>, args: &'p mut [Arg<'p>], flags: ParseFlags) -> Self {
+        let mut parser = Self::zeroed();
+        {
+            let mut state = parser.as_mut();
+            state.set_specs(Some(specs));
+            state.set_args(args);
+            state.set_flags(flags);
+            state.set_needs_sort(uses_gnu_style(flags));
+        }
+        parser
+    }
+}
+
+/// How a long argument, `--<arg>`, selects the spec [`find_long`] finds for it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the parser of long arguments, batch 5's, reads it"
+    )
+)]
+enum LongForm<'p> {
+    /// By the spec's name alone, as `--name`, or the bare `--` of a [`Kind::Literal`] spec.
+    Plain,
+    /// By the `no-` form of a [`Kind::Bool`] spec's name, as `--no-name`, which sets it to 0.
+    Negated,
+    /// By a [`Kind::Value`] spec's name with its value after an `=`, as `--name=value`: the
+    /// value, or `None` for the empty one of `--name=`.
+    Valued(Option<&'p CStr>),
+}
+
+/// The spec a long argument selects, with how it selects it: `arg` is the argument after its
+/// `--`, as `debug` of `--debug`, the empty string for the bare `--`. `None` when the parser
+/// has no table, or no spec of its table matches.
+///
+/// The table's specs are tried in order, and the first that matches is the one: within each,
+/// a [`Kind::Literal`] spec matches the bare `--`, a [`Kind::Bool`] spec its name after `no-`,
+/// a spec whose kind [`is_option`](Kind::is_option) its name, and a [`Kind::Value`] spec its
+/// name before the first `=` of `arg`. Names compare as bytes, as `strcmp` compares them.
+///
+/// The C compares `arg` after its `no-` with a bool spec's name without checking that the spec
+/// has one, which reads through a null pointer: a bool spec without a name matches no `no-`
+/// argument here, as it matches no other.
+///
+/// Replaces `fn::spec_for_long`
+#[doc(alias = "spec_for_long")]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the parser of long arguments, batch 5's, calls it"
+    )
+)]
+fn find_long<'p>(
+    parser: ParserRef<'_, 'p>,
+    arg: &'p CStr,
+) -> Option<(SpecRef<'p, 'p>, LongForm<'p>)> {
+    let bytes = arg.to_bytes();
+    let eql = bytes.iter().position(|&b| b == b'=');
+    parser.specs()?.iter().find_map(|spec| {
+        let kind = spec.kind();
+        let name = spec.name().map(CStr::to_bytes);
+        if kind == Some(Kind::Literal) && bytes.is_empty() {
+            return Some((spec, LongForm::Plain));
+        }
+        if kind == Some(Kind::Bool) && name.is_some() && bytes.strip_prefix(b"no-") == name {
+            return Some((spec, LongForm::Negated));
+        }
+        if kind.is_some_and(Kind::is_option) && name == Some(bytes) {
+            return Some((spec, LongForm::Plain));
+        }
+        if kind == Some(Kind::Value)
+            && let (Some(name), Some(at)) = (name, eql)
+            && bytes.get(..at) == Some(name)
+        {
+            let value = arg
+                .to_bytes_with_nul()
+                .get(at + 1..)
+                .and_then(|rest| CStr::from_bytes_until_nul(rest).ok())
+                .filter(|value| !value.is_empty());
+            return Some((spec, LongForm::Valued(value)));
+        }
+        None
+    })
+}
+
+/// The spec a short option selects, with the value it carries: `arg` is the rest of the
+/// argument from the option's character on, as `ofile` of `-ofile`, or `vd` of the bundle `-xvd`
+/// once `x` is parsed. `None` when the parser has no table, or no spec of its table has that
+/// character as its alias.
+///
+/// The first spec whose alias is the character is the one. A [`Kind::Value`] spec takes the rest
+/// of `arg` after it as its value, as `file` of `-ofile`, when there is any; every other spec,
+/// and a value spec at the end of `arg`, carries none.
+///
+/// The C compares the character with every spec's alias, `0` for a spec without one, so that
+/// an empty `arg`, the bare `-`, selects the first spec without an alias, and a value spec
+/// without one then has the byte after the string's end read: a spec without an alias matches
+/// no short option here, and the empty `arg` matches none.
+///
+/// Replaces `fn::spec_for_short`
+#[doc(alias = "spec_for_short")]
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the parser of short options, batch 5's, calls it")
+)]
+fn find_short<'p>(
+    parser: ParserRef<'_, 'p>,
+    arg: &'p CStr,
+) -> Option<(SpecRef<'p, 'p>, Option<&'p CStr>)> {
+    let first = *arg.to_bytes().first()?;
+    let spec = parser
+        .specs()?
+        .iter()
+        .find(|spec| spec.alias().map(NonZero::get) == Some(first))?;
+    let value = if spec.kind() == Some(Kind::Value) {
+        arg.to_bytes_with_nul()
+            .get(1..)
+            .and_then(|rest| CStr::from_bytes_until_nul(rest).ok())
+            .filter(|value| !value.is_empty())
+    } else {
+        None
+    };
+    Some((spec, value))
+}
+
+/// The spec the parser's next bare argument selects: the [`Kind::Arg`] spec of the table that
+/// as many bare arguments as the parser's [`arg_idx`](ParserRef::arg_idx) precede, which it
+/// then counts as matched, or, when a [`Kind::Args`] spec comes first, that spec, which takes
+/// every argument left and counts nothing. `None` when the parser has no table, or every
+/// argument spec is matched.
+///
+/// Replaces `fn::spec_for_arg`
+#[doc(alias = "spec_for_arg")]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the parser of bare arguments, batch 5's, calls it"
+    )
+)]
+fn find_arg<'p>(parser: &mut ParserMut<'_, 'p>) -> Option<SpecRef<'p, 'p>> {
+    let specs = parser.as_ref().specs()?;
+    let arg_idx = parser.as_ref().arg_idx();
+    let mut args = 0;
+    for spec in specs.iter() {
+        match spec.kind() {
+            Some(Kind::Arg) if args == arg_idx => {
+                parser.set_arg_idx(arg_idx.wrapping_add(1));
+                return Some(spec);
+            }
+            Some(Kind::Arg) => args += 1,
+            Some(Kind::Args) if args == arg_idx => return Some(spec),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Whether the spec at `index` of `specs` starts or continues a choice: whether the spec after
+/// it is one of the choices it offers, a spec of [`Usage::CHOICE`]. The last spec of the table,
+/// and an index past it, are no choice.
+///
+/// Replaces `fn::spec_is_choice`
+#[doc(alias = "spec_is_choice")]
+fn is_choice(specs: SpecTable<'_>, index: usize) -> bool {
+    index
+        .checked_add(1)
+        .and_then(|next| specs.get(next))
+        .is_some_and(|next| next.usage().contains(Usage::CHOICE))
+}
+
+/// Whether the spec at `index` of `specs` is a later choice of a choice before it.
+fn is_later_choice(specs: SpecTable<'_>, index: usize) -> bool {
+    specs
+        .get(index)
+        .is_some_and(|spec| spec.usage().contains(Usage::CHOICE))
+}
+
+/// Counts as matched the [`Kind::Arg`] specs of the choice `spec` belongs to, once one of its
+/// options is given, since a choice of switches and bare arguments takes one of them: the
+/// parser's [`arg_idx`](ParserRef::arg_idx) moves past each argument spec of the choice. Nothing
+/// changes when `spec` is not in the parser's table, or belongs to no choice.
+///
+/// The choice starts at the spec before `spec`'s run of [`Usage::CHOICE`] specs. The C steps
+/// back over that run without a bound, before the table's start when its first spec is marked
+/// [`Usage::CHOICE`]: the table's start ends the run here, as the start of its choice.
+///
+/// Replaces `fn::consume_choices`
+#[doc(alias = "consume_choices")]
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the parsers of options, batch 5's, call it")
+)]
+fn skip_choice_args<'p>(spec: SpecRef<'_, 'p>, parser: &mut ParserMut<'_, 'p>) {
+    let Some(specs) = parser.as_ref().specs() else {
+        return;
+    };
+    let Some(mut start) = specs.position(spec) else {
+        return;
+    };
+    while start > 0 && is_later_choice(specs, start) {
+        start -= 1;
+    }
+    if !is_choice(specs, start) {
+        return;
+    }
+    let mut consumed = 0_usize;
+    let mut index = start;
+    loop {
+        if specs.get(index).and_then(|s| s.kind()) == Some(Kind::Arg) {
+            consumed += 1;
+        }
+        index += 1;
+        if !is_later_choice(specs, index) {
+            break;
+        }
+    }
+    let arg_idx = parser.as_ref().arg_idx();
+    parser.set_arg_idx(arg_idx.wrapping_add(consumed));
+}
+
+/// Whether `spec` is one of `given`, the specs the arguments matched, compared by address, as C
+/// compares spec pointers.
+///
+/// Replaces `fn::spec_included`
+#[doc(alias = "spec_included")]
+fn is_given(given: &[SpecRef<'_, '_>], spec: SpecRef<'_, '_>) -> bool {
+    given.iter().any(|g| ptr::eq(g.as_ptr(), spec.as_ptr()))
+}
+
+/// Checks that the arguments gave every required spec of `specs`, `given` being the specs they
+/// matched: a spec of [`Usage::REQUIRED`], or, when it starts a choice, one of its choices. The
+/// first requirement not given is the error: its spec, the first of its choice.
+///
+/// Replaces `fn::validate_required`
+#[doc(alias = "validate_required")]
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the whole parse, batch 5's, calls it")
+)]
+fn check_required<'p>(
+    specs: SpecTable<'p>,
+    given: &[SpecRef<'_, 'p>],
+) -> Result<(), SpecRef<'p, 'p>> {
+    let mut required = None;
+    let mut met = false;
+    for (index, spec) in specs.iter().enumerate() {
+        let head = match required {
+            Some(head) => head,
+            None if spec.usage().contains(Usage::REQUIRED) => {
+                met = false;
+                spec
+            }
+            None => continue,
+        };
+        required = Some(head);
+        met = met || is_given(given, spec);
+        if !is_choice(specs, index) {
+            if !met {
+                return Err(head);
+            }
+            required = None;
+            met = false;
+        }
+    }
+    Ok(())
+}
+
+/// What C's `printf` writes for a `NULL` string, which glibc prints as `(null)`.
+const NULL_TEXT: &[u8] = b"(null)";
+
+/// The bytes of a string a spec or an outcome holds, glibc's `(null)` for none.
+fn c_text(s: Option<&CStr>) -> &[u8] {
+    s.map_or(NULL_TEXT, CStr::to_bytes)
+}
+
+/// Writes the name a status message gives `spec`, in one write: its value name for a
+/// [`Kind::Arg`] or [`Kind::Args`] spec, as `<path>`; else `-` and its alias, unless it has none
+/// or is shown long ([`Usage::SHOW_LONG`]); else `--` and its long name. A name or value name it
+/// lacks is written `(null)`, as glibc's `printf` writes a `NULL` string.
+///
+/// Replaces `fn::spec_name_fprint`
+#[doc(alias = "spec_name_fprint")]
+fn write_spec_name<W: io::Write + ?Sized>(out: &mut W, spec: SpecRef<'_, '_>) -> io::Result<()> {
+    match spec.kind() {
+        Some(Kind::Arg | Kind::Args) => out.write_all(c_text(spec.value_name())),
+        _ => match spec.alias() {
+            Some(alias) if !spec.usage().contains(Usage::SHOW_LONG) => {
+                out.write_all(&[b'-', alias.get()])
+            }
+            _ => out.write_all(&[b"--", c_text(spec.name())].concat()),
+        },
+    }
+}
+
+impl<'p> OptRef<'_, 'p> {
+    /// Writes to `out` the message the CLI shows for this outcome, after `command` and `": "`
+    /// when given:
+    ///
+    /// - [`Status::Done`]: `finished processing arguments (no error)`;
+    /// - [`Status::Ok`]: `no error`;
+    /// - [`Status::UnknownOption`]: `unknown option: ` and the argument;
+    /// - [`Status::MissingValue`]: `argument '<name>' requires a value.`;
+    /// - [`Status::MissingArgument`]: `argument '<name>' is required.`, or, for a spec that starts
+    ///   a choice, `either '<a>' or '<b>' is required.` and `one of '<a>', '<b>' or '<c>' is
+    ///   required.`, each choice named in order; and
+    /// - a status `opt.h` does not name, which only an outcome C wrote holds: `unknown status: `
+    ///   and its value, as a C `int`;
+    ///
+    /// each ended by a newline. An option is named by its alias, as `-f`, or by its long name, as
+    /// `--foo`, when it has no alias or is shown long ([`Usage::SHOW_LONG`]), and a bare argument
+    /// by its value name. The argument and the names are written as their bytes, and one that is
+    /// missing as `(null)`, as glibc's `printf` writes a `NULL` string.
+    ///
+    /// `specs` is the table the outcome's spec is in, which a choice's later options are read
+    /// from: a spec it does not hold is named alone. The message is written in the pieces C's
+    /// `fprintf` calls write, each in one [`write_all`](io::Write::write_all), and stops at the
+    /// first that fails, as the C does.
+    ///
+    /// ```
+    /// use libgit2_crustify::git2::src::cli::opt::{Opt, Spec, SpecTable, Status, Target, Usage};
+    ///
+    /// let specs = [
+    ///     Spec::new(Target::Switch(None)).with_alias(b'f'),
+    ///     Spec::new(Target::Switch(None))
+    ///         .with_name(c"bar")
+    ///         .with_usage(Usage::CHOICE),
+    ///     Spec::default(),
+    /// ];
+    /// let table = SpecTable::new(&specs).unwrap();
+    /// let mut opt = Opt::default();
+    /// opt.as_mut().set_status(Status::MissingArgument);
+    /// opt.as_mut().set_spec(table.get(0));
+    /// let mut out = Vec::new();
+    /// opt.as_ref()
+    ///     .write_status(&mut out, Some("git2"), table)
+    ///     .unwrap();
+    /// assert_eq!(out, b"git2: either '-f' or '--bar' is required.\n");
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// The first error of `out`'s writes, after the pieces before it are written; and
+    /// [`io::ErrorKind::InvalidInput`], with nothing written, for a [`Status::MissingValue`] or
+    /// [`Status::MissingArgument`] outcome that names no spec, which the C reads through a null
+    /// pointer.
+    ///
+    /// The C returns the count of the last piece it writes. `opt.h` documents 0 on success, which
+    /// the export returns, and `-1` on failure.
+    ///
+    /// Replaces `fn::cli_opt_status_fprint`
+    #[doc(alias = "cli_opt_status_fprint")]
+    pub fn write_status<W: io::Write + ?Sized>(
+        &self,
+        out: &mut W,
+        command: Option<&str>,
+        specs: SpecTable<'p>,
+    ) -> io::Result<()> {
+        let message = match (self.status(), self.spec()) {
+            (Some(Status::Done), _) => Message::Done,
+            (Some(Status::Ok), _) => Message::Ok,
+            (Some(Status::UnknownOption), _) => Message::UnknownOption,
+            (Some(Status::MissingValue), Some(spec)) => Message::MissingValue(spec),
+            (Some(Status::MissingArgument), Some(spec)) => Message::MissingArgument(spec),
+            (Some(Status::MissingValue | Status::MissingArgument), None) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "the outcome names no spec",
+                ));
+            }
+            (None, _) => Message::Unnamed(c_int::from_ne_bytes(self.raw_status().to_ne_bytes())),
+        };
+        if let Some(command) = command {
+            out.write_all(&[command.as_bytes(), b": "].concat())?;
+        }
+        match message {
+            Message::Done => out.write_all(b"finished processing arguments (no error)\n"),
+            Message::Ok => out.write_all(b"no error\n"),
+            Message::UnknownOption => {
+                out.write_all(&[b"unknown option: ", c_text(self.arg()), b"\n"].concat())
+            }
+            Message::MissingValue(spec) => {
+                out.write_all(b"argument '")?;
+                write_spec_name(out, spec)?;
+                out.write_all(b"' requires a value.\n")
+            }
+            Message::MissingArgument(spec) => {
+                if let Some(first) = specs.position(spec).filter(|&at| is_choice(specs, at)) {
+                    write_choices(out, specs, first)
+                } else {
+                    out.write_all(b"argument '")?;
+                    write_spec_name(out, spec)?;
+                    out.write_all(b"' is required.\n")
+                }
+            }
+            Message::Unnamed(raw) => {
+                out.write_all(&[b"unknown status: ", raw.to_string().as_bytes(), b"\n"].concat())
+            }
+        }
+    }
+}
+
+/// The message [`OptRef::write_status`] writes, decided before any of it is.
+enum Message<'s> {
+    /// [`Status::Done`].
+    Done,
+    /// [`Status::Ok`].
+    Ok,
+    /// [`Status::UnknownOption`], naming the argument.
+    UnknownOption,
+    /// [`Status::MissingValue`] of the spec.
+    MissingValue(SpecRef<'s, 's>),
+    /// [`Status::MissingArgument`] of the spec, or of the choice it starts.
+    MissingArgument(SpecRef<'s, 's>),
+    /// A status `opt.h` does not name, as a C `int`.
+    Unnamed(c_int),
+}
+
+/// Writes the requirement of the choice that starts at `first` of `specs`, which
+/// [`is_choice`]: `either` its two options, or `one of` its three or more, each named, and
+/// `is required.`.
+fn write_choices<W: io::Write + ?Sized>(
+    out: &mut W,
+    specs: SpecTable<'_>,
+    first: usize,
+) -> io::Result<()> {
+    let lead: &[u8] = if is_choice(specs, first + 1) {
+        b"one of"
+    } else {
+        b"either"
+    };
+    out.write_all(lead)?;
+    let mut index = first;
+    while let Some(choice) = specs.get(index) {
+        let more = is_choice(specs, index);
+        if !more {
+            out.write_all(b" or")?;
+        } else if index != first {
+            out.write_all(b",")?;
+        }
+        out.write_all(b" '")?;
+        write_spec_name(out, choice)?;
+        out.write_all(b"'")?;
+        if !more {
+            break;
+        }
+        index += 1;
+    }
+    out.write_all(b" is required.\n")
+}
+
+/// A C stream as an [`io::Write`], each write one locked `fprintf(stream, "%s", text)` of its
+/// bytes, as C's `fprintf` calls write the status message, in order with the C that shares the
+/// stream.
+///
+/// libc's wrapper writes text, a `&str`: bytes that are not UTF-8, which an argument can hold,
+/// are written with each invalid sequence replaced by U+FFFD, the one place the export's message
+/// departs from C's.
+#[cfg(any(test, feature = "ffi-export-src-cli-opt-c"))]
+struct FileWriter<'a>(glibc_bindings::libc::libio::genops::FileRef<'a>);
+
+#[cfg(any(test, feature = "ffi-export-src-cli-opt-c"))]
+impl io::Write for FileWriter<'_> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match core::str::from_utf8(buf) {
+            Ok(text) => self.0.print(text)?,
+            Err(_) => self.0.print(&String::from_utf8_lossy(buf))?,
+        };
+        Ok(buf.len())
+    }
+
+    /// Nothing: C's `cli_opt_status_fprint` leaves the stream's buffer to its buffering mode.
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 /// The CLI's three structs as C lays them out, with their handles and accessors, the argument
-/// strings they borrow, and the C initialiser of a parser.
+/// strings they borrow, and the C form of the callback a whole parse calls.
 #[expect(
     unsafe_code,
-    reason = "the C layouts of opt.h's structs, the argument strings they point at, and \
-              cli_opt_parser_init through the raw bindings"
+    reason = "the C layouts of opt.h's structs, the argument strings they point at, and the C \
+              functions a parse's callback calls"
 )]
 mod ffi_import {
     use core::cell::Cell;
-    use core::ffi::{CStr, c_char, c_int, c_void};
+    use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
     use core::fmt;
     use core::marker::PhantomData;
-    use core::mem::MaybeUninit;
     use core::num::NonZero;
+    use core::ops::ControlFlow;
     use core::ptr::{self, NonNull};
 
+    use ffibox::callback::CFn;
     use ffibox::{CMutSeam, CRefSeam, CSlice, CZeroable, define_ctype};
 
     use super::{ArgsSlot, Kind, ParseFlags, Status, Target, Usage};
@@ -1185,6 +1703,29 @@ mod ffi_import {
             Self { specs }
         }
 
+        /// The table C passes at `p`, a `const cli_opt_spec[]` ended by its first spec of kind
+        /// `CLI_OPT_TYPE_NONE`, or `None` for `NULL`. Its specs are read up to that end, which
+        /// it holds after them; `p` may address any spec of an array, the table then starting
+        /// there.
+        ///
+        /// The adoption through which an export reaches the spec tables of the CLI's remaining
+        /// C, as [`CRefSeam::from_ptr`] adopts one spec.
+        ///
+        /// # Safety
+        ///
+        /// `p` is `NULL`, or addresses, with provenance over all of it, an array of
+        /// `cli_opt_spec`s ended by one of kind
+        /// `CLI_OPT_TYPE_NONE`, that lives, unchanged, for `'p`, and each spec before that end
+        /// is a valid `Spec<'p>`, as [`Spec`]'s adoption asks: its strings are `NULL` or live,
+        /// unchanged, for `'p`, and its `value` is `NULL` or the variable its `type` writes,
+        /// live for `'p` and written only by a parse.
+        #[must_use]
+        pub unsafe fn from_ptr(p: *const sys::cli_opt_spec) -> Option<Self> {
+            let p = NonNull::new(p.cast_mut())?;
+            // SAFETY: the caller's contract, for a non-null `p`.
+            Some(unsafe { Self::from_c(p) })
+        }
+
         /// The specs' start, which C reads up to the end.
         fn as_c_ptr(&self) -> *const sys::cli_opt_spec {
             self.specs.as_ptr()
@@ -1305,12 +1846,17 @@ mod ffi_import {
         #[doc(alias = "cli_opt.status")]
         #[must_use]
         pub fn status(&self) -> Option<Status> {
+            Status::from_raw(self.raw_status())
+        }
+
+        /// The outcome as C holds it, a value `opt.h` does not name included.
+        pub(super) fn raw_status(&self) -> u32 {
             let p = self.as_ptr();
             // SAFETY: `p` is the handle's pointer to the live outcome it borrows; the
             // projection forms no reference to it.
             let status_ptr = unsafe { &raw const (*p).status };
             // SAFETY: a read through the shared handle's pointer to a live outcome.
-            Status::from_raw(unsafe { status_ptr.read() })
+            unsafe { status_ptr.read() }
         }
 
         /// The spec the argument matched, from its parser's table, or `None` for an argument
@@ -1532,37 +2078,6 @@ mod ffi_import {
     // them), no flag and every position and bit 0, which every getter reads (`None`, an empty
     // slice), and which C's `cli_opt_parser_next` reports done at once, reading neither.
     unsafe impl CZeroable for Parser<'_> {}
-
-    impl<'p> Parser<'p> {
-        /// A parser of `args` against `specs` under `flags`, at its first argument: it will
-        /// reorder `args` GNU style when `flags` asks for it, [`ParseFlags::FORCE_GNU`], or
-        /// [`ParseFlags::GNU`] while the environment has no `POSIXLY_CORRECT`, read here.
-        ///
-        /// Wraps `fn::cli_opt_parser_init`
-        #[doc(alias = "cli_opt_parser_init")]
-        #[must_use]
-        pub fn new(specs: SpecTable<'p>, args: &'p mut [Arg<'p>], flags: ParseFlags) -> Self {
-            let mut raw = MaybeUninit::<sys::cli_opt_parser>::uninit();
-            // SAFETY: `raw` is writable storage for one parser, which `cli_opt_parser_init`
-            // zeroes whole before it stores the table, the array and its length, and the flags;
-            // it keeps no pointer to `raw`, reads no argument and no spec, and only reads the
-            // environment, which safe Rust cannot change meanwhile. The table and the array
-            // are borrowed for `'p`, as the getters require, the array exclusively, through
-            // the pointer stored.
-            unsafe {
-                sys::cli_opt_parser_init(
-                    raw.as_mut_ptr(),
-                    specs.as_c_ptr(),
-                    args.as_mut_ptr().cast(),
-                    args.len(),
-                    flags.bits(),
-                );
-            }
-            // SAFETY: `cli_opt_parser_init` initialised every byte: `memset` first, then each
-            // field it sets.
-            Self(unsafe { raw.assume_init() }, PhantomData)
-        }
-    }
 
     impl Default for Parser<'_> {
         /// The zeroed parser.
@@ -1918,6 +2433,956 @@ mod ffi_import {
             self.as_ref().fmt(f)
         }
     }
+
+    /// The C form of a [`ForeachCallbackFn`]: the type of `cli_opt_foreach`'s `callback`, which
+    /// C calls with each outcome and the `callback_data` it was given beside it.
+    pub(crate) type ForeachCallbackC =
+        unsafe extern "C" fn(*mut sys::cli_opt, *mut c_void) -> c_int;
+
+    // The C form is the type `cli_opt_foreach` declares for its callback: the function's raw
+    // binding coerces to a function pointer that takes it only when the two agree.
+    const _: unsafe extern "C" fn(
+        *const sys::cli_opt_spec,
+        *mut *mut c_char,
+        usize,
+        c_uint,
+        Option<ForeachCallbackC>,
+        *mut c_void,
+    ) -> c_int = sys::cli_opt_foreach;
+
+    /// A closure called with each outcome.
+    type ForeachClosure<'f, 'p> = dyn FnMut(OptRef<'_, 'p>) -> ControlFlow<NonZero<c_int>> + 'f;
+
+    /// The callback a whole parse calls with the outcome of each argument, which stops the
+    /// parse by breaking with a code, the parse's result; `cli_opt_foreach`'s `callback`, with
+    /// its `callback_data`.
+    ///
+    /// A Rust closure, borrowed for `'f`, or a C function with its context, which the CLI's
+    /// remaining C (`common.c`'s `parse_option`) hands the parse's export: called the same way
+    /// whichever it is. The parse lends each outcome for the call alone, and the outcome lends
+    /// its spec, argument and value for `'p`, the borrow of the parse's table and arguments, so
+    /// a closure may keep those, but not the outcome:
+    ///
+    /// ```
+    /// use core::ffi::CStr;
+    /// use core::ops::ControlFlow;
+    ///
+    /// use libgit2_crustify::git2::src::cli::opt::{ForeachCallbackFn, Opt, OptRef};
+    ///
+    /// let mut values: Vec<Option<&CStr>> = Vec::new();
+    /// let mut keep = |opt: OptRef<'_, 'static>| {
+    ///     values.push(opt.value());
+    ///     ControlFlow::Continue(())
+    /// };
+    /// let mut callback = ForeachCallbackFn::new(&mut keep);
+    /// let mut opt = Opt::default();
+    /// opt.as_mut().set_value(Some(c"x"));
+    /// assert_eq!(callback.call(opt.as_ref()), ControlFlow::Continue(()));
+    /// assert_eq!(values, [Some(c"x")]);
+    /// ```
+    ///
+    /// ```compile_fail,E0521
+    /// use core::ops::ControlFlow;
+    /// use libgit2_crustify::git2::src::cli::opt::{ForeachCallbackFn, OptRef};
+    ///
+    /// fn keep<'k, 'p>(kept: &mut Option<OptRef<'k, 'p>>) {
+    ///     let mut f = |opt: OptRef<'_, 'p>| {
+    ///         *kept = Some(opt);
+    ///         ControlFlow::Continue(())
+    ///     };
+    ///     let _ = ForeachCallbackFn::new(&mut f);
+    /// }
+    /// ```
+    ///
+    /// The parse calls it on the thread that holds it, and the closure need not be `Send`; nor
+    /// is the callback:
+    ///
+    /// ```compile_fail,E0277
+    /// use core::ops::ControlFlow;
+    /// use libgit2_crustify::git2::src::cli::opt::{ForeachCallbackFn, OptRef};
+    ///
+    /// fn send<T: Send>(_: T) {}
+    /// let mut f = |_: OptRef<'_, '_>| ControlFlow::Continue(());
+    /// send(ForeachCallbackFn::new(&mut f));
+    /// ```
+    ///
+    /// Replaces `fnp::cli_opt_foreach.callback`
+    #[doc(alias = "cli_opt_foreach.callback")]
+    pub struct ForeachCallbackFn<'f, 'p>(ForeachInner<'f, 'p>);
+
+    /// The two implementations of a [`ForeachCallbackFn`].
+    enum ForeachInner<'f, 'p> {
+        /// A Rust closure.
+        Rust(&'f mut ForeachClosure<'f, 'p>),
+        /// A C function and its context, callable for `'f`.
+        C(CFn<'f, ForeachCallbackC, 1>),
+    }
+
+    impl<'f, 'p> ForeachCallbackFn<'f, 'p> {
+        /// The callback that calls `f` with each outcome, until it breaks.
+        pub fn new<F>(f: &'f mut F) -> Self
+        where
+            F: FnMut(OptRef<'_, 'p>) -> ControlFlow<NonZero<c_int>> + 'f,
+        {
+            Self(ForeachInner::Rust(f))
+        }
+
+        /// The callback that calls the C function `f` with each outcome and `ctx`, until it
+        /// returns other than 0, as `cli_opt_foreach` calls the function it is given.
+        ///
+        /// # Safety
+        ///
+        /// `f` may be called with `ctx` as its second argument, any number of times, on the
+        /// calling thread, until `'f` ends; each call passes it an outcome that lends what it
+        /// points at for `'p`, which `f` only reads, and whose address it does not keep once it
+        /// returns, as `common.c`'s `parse_option` does.
+        #[cfg_attr(
+            not(test),
+            expect(
+                dead_code,
+                reason = "the export of the whole parse, batch 5's, calls it"
+            )
+        )]
+        pub(crate) unsafe fn from_c(f: ForeachCallbackC, ctx: *mut c_void) -> Self {
+            // SAFETY: the caller's contract, for `'f`.
+            Self(ForeachInner::C(unsafe { CFn::new(f, ctx) }))
+        }
+
+        /// Calls the callback with `opt`, the outcome of one argument: whether the parse goes
+        /// on, or stops with the code the callback breaks with. A C function's return is the
+        /// code, 0 going on.
+        pub fn call(&mut self, opt: OptRef<'_, 'p>) -> ControlFlow<NonZero<c_int>> {
+            match &mut self.0 {
+                ForeachInner::Rust(f) => f(opt),
+                ForeachInner::C(f) => {
+                    // SAFETY: `from_c`'s contract makes `f` callable with its context now, on
+                    // this thread; `opt` is a live outcome that lends what it points at for
+                    // `'p`, which `f` only reads during the call, so the pointer's write
+                    // permission is never used.
+                    let rc = unsafe { f.call((opt.as_ptr().cast_mut(),)) };
+                    NonZero::new(rc).map_or(ControlFlow::Continue(()), ControlFlow::Break)
+                }
+            }
+        }
+    }
+
+    impl fmt::Debug for ForeachCallbackFn<'_, '_> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match &self.0 {
+                ForeachInner::Rust(_) => f.write_str("ForeachCallbackFn(Rust)"),
+                ForeachInner::C(c) => f.debug_tuple("ForeachCallbackFn").field(c).finish(),
+            }
+        }
+    }
+
+    /// The C form of [`ForeachCallbackFn`], over a C-ABI function standing in for `common.c`'s:
+    /// it is called with the outcome and its context, and its return is the code it breaks with.
+    #[cfg(test)]
+    mod unit_priv {
+        use core::ffi::{c_int, c_void};
+        use core::ops::ControlFlow;
+        use core::ptr;
+
+        use ffibox::{CRefSeam, CZeroable};
+
+        use super::{ForeachCallbackFn, Opt, Status};
+        use crate::sys::git2 as sys;
+
+        /// What [`record`] saw, and when it breaks.
+        struct Seen {
+            outcomes: Vec<(*const sys::cli_opt, u32)>,
+            break_at: usize,
+        }
+
+        /// Records the outcome it is given and its status in the `Seen` at `ctx`, and returns 7
+        /// once it has seen `break_at` of them, 0 before.
+        unsafe extern "C" fn record(opt: *mut sys::cli_opt, ctx: *mut c_void) -> c_int {
+            // SAFETY: `ctx` is the test's `Seen`, which nothing else uses during the call.
+            let seen = unsafe { &mut *ctx.cast::<Seen>() };
+            // SAFETY: `opt` is the live outcome the callback lends for the call.
+            let status = unsafe { (*opt).status };
+            seen.outcomes.push((opt.cast_const(), status));
+            if seen.outcomes.len() == seen.break_at {
+                7
+            } else {
+                0
+            }
+        }
+
+        #[test]
+        fn a_c_function_is_called_with_the_outcome_and_its_context() {
+            let mut seen = Seen {
+                outcomes: Vec::new(),
+                break_at: 2,
+            };
+            let mut opt = Opt::zeroed();
+            opt.as_mut().set_status(Status::Ok);
+            {
+                // SAFETY: `record` reads the outcome alone, and `seen` outlives the callback,
+                // which nothing else touches while it lives.
+                let mut callback =
+                    unsafe { ForeachCallbackFn::from_c(record, ptr::from_mut(&mut seen).cast()) };
+                assert_eq!(callback.call(opt.as_ref()), ControlFlow::Continue(()));
+                opt.as_mut().set_status(Status::MissingValue);
+                assert_eq!(
+                    callback.call(opt.as_ref()),
+                    ControlFlow::Break(core::num::NonZero::new(7).unwrap())
+                );
+                assert!(format!("{callback:?}").starts_with("ForeachCallbackFn(CFn"));
+            }
+            let at = opt.as_ref().as_ptr();
+            assert_eq!(
+                seen.outcomes,
+                [
+                    (at, sys::CLI_OPT_STATUS_OK),
+                    (at, sys::CLI_OPT_STATUS_MISSING_VALUE)
+                ]
+            );
+        }
+
+        #[test]
+        fn a_closure_is_shown_as_rust() {
+            let mut f = |_: super::OptRef<'_, '_>| ControlFlow::Continue(());
+            let callback = ForeachCallbackFn::new(&mut f);
+            assert_eq!(format!("{callback:?}"), "ForeachCallbackFn(Rust)");
+        }
+    }
+
+    /// The parser's internal routines against C's: `opt.c`'s static functions are reached
+    /// through the exported routines that call them, `cli_opt_parser_next`, `cli_opt_parse` and
+    /// `cli_opt_foreach`, over tables built through the safe API, and the stream the export writes
+    /// through against C's own `fprintf` calls, into memory streams. All of them call C.
+    #[cfg(test)]
+    mod equiv_priv {
+        use core::cell::Cell;
+        use core::ffi::{CStr, c_char, c_int, c_void};
+        use core::ops::ControlFlow;
+        use core::ptr;
+
+        use ffibox::{CMutSeam, CRefSeam, CZeroable};
+        use glibc_bindings::libc::ffi as libc;
+        use glibc_bindings::libc::libio::genops::FileRef;
+
+        use super::super::{
+            FileWriter, LongForm, check_required, find_arg, find_long, find_short, skip_choice_args,
+        };
+        use super::{
+            Arg, ForeachCallbackFn, Opt, ParseFlags, Parser, Spec, SpecRef, SpecTable, Status,
+            Target, Usage,
+        };
+        use crate::sys::git2 as sys;
+
+        /// One step of C's parser, `cli_opt_parser_next`.
+        fn c_next<'p>(opt: &mut Opt<'p>, parser: &mut Parser<'p>) -> Option<Status> {
+            // SAFETY: both are live values Rust holds, borrowed exclusively for the call; the
+            // parser's table and arguments are borrowed for `'p`, so what C stores in the outcome
+            // and the specs' variables lives as long as they do.
+            let raw = unsafe {
+                sys::cli_opt_parser_next(opt.as_mut().as_mut_ptr(), parser.as_mut().as_mut_ptr())
+            };
+            Status::from_raw(raw)
+        }
+
+        /// The first outcome C's parser gives `arg` alone, against `table`, and the parser after
+        /// it.
+        fn c_first<'p>(table: SpecTable<'p>, args: &'p mut [Arg<'p>]) -> (Opt<'p>, Parser<'p>) {
+            let mut parser = Parser::new(table, args, ParseFlags::DEFAULT);
+            let mut opt = Opt::zeroed();
+            c_next(&mut opt, &mut parser);
+            (opt, parser)
+        }
+
+        /// Where a spec C or Rust found is in `table`.
+        fn index(table: SpecTable<'_>, spec: Option<SpecRef<'_, '_>>) -> Option<usize> {
+            spec.map(|s| {
+                let offset = s.as_ptr().addr() - table.get(0).unwrap().as_ptr().addr();
+                offset / size_of::<Spec<'_>>()
+            })
+        }
+
+        /// `spec_for_long` in `parse_long`: the spec C's parser selects for `--<arg>`, the value it
+        /// takes from after the `=`, and the bool it sets to 0 for `no-`, against [`find_long`].
+        #[test]
+        #[cfg_attr(miri, ignore = "calls C")]
+        fn long_arguments_select_the_specs_c_selects() {
+            let args: [&CStr; 22] = [
+                c"debug",
+                c"no-debug",
+                c"read",
+                c"no-read",
+                c"verbose",
+                c"file",
+                c"output",
+                c"output=x",
+                c"output=",
+                c"output=a=b",
+                c"",
+                c"outputs=x",
+                c"x",
+                c"no-x",
+                c"unknown",
+                c"o=1",
+                c"o",
+                c"no-",
+                c"=",
+                c"=v",
+                c"no-x=1",
+                c"no-debugx",
+            ];
+            for arg in args {
+                let (debug, x) = (Cell::new(7), Cell::new(7));
+                let specs = [
+                    Spec::new(Target::Bool(Some(&debug))).with_name(c"debug"),
+                    Spec::new(Target::Switch(None)).with_name(c"read"),
+                    Spec::new(Target::Accumulator(None)).with_name(c"verbose"),
+                    Spec::new(Target::Value(None)).with_name(c"output"),
+                    Spec::new(Target::Literal),
+                    Spec::new(Target::Value(None)).with_name(c"no-read"),
+                    Spec::new(Target::Arg(None)).with_name(c"file"),
+                    Spec::new(Target::Value(None)).with_name(c"o"),
+                    Spec::new(Target::Bool(Some(&x))).with_name(c"x"),
+                    Spec::new(Target::Value(None)).with_name(c""),
+                    Spec::default(),
+                ];
+                let table = SpecTable::new(&specs).unwrap();
+                let long = [b"--", arg.to_bytes_with_nul()].concat();
+                let long = CStr::from_bytes_with_nul(&long).unwrap();
+                let mut c_args = [Arg::new(long)];
+                debug.set(7);
+                x.set(7);
+                let (opt, parser) = c_first(table, &mut c_args);
+                let o = opt.as_ref();
+                let rust = find_long(parser.as_ref(), arg);
+                let at = index(table, rust.map(|(s, _)| s));
+                assert_eq!(index(table, o.spec()), at, "{arg:?}");
+                // What C wrote to the bool the argument selected, if it selected one.
+                let bool_set = match at {
+                    Some(0) => Some(debug.get()),
+                    Some(8) => Some(x.get()),
+                    _ => None,
+                };
+                match rust.map(|(_, form)| form) {
+                    Some(LongForm::Valued(value)) => assert_eq!(o.value(), value, "{arg:?}"),
+                    Some(LongForm::Negated) => assert_eq!(bool_set, Some(0), "{arg:?}"),
+                    Some(LongForm::Plain) => {
+                        assert_eq!(o.value(), None, "{arg:?}");
+                        assert!(bool_set.is_none_or(|v| v == 1), "{arg:?}");
+                    }
+                    None => assert_eq!(o.status(), Some(Status::UnknownOption), "{arg:?}"),
+                }
+            }
+        }
+
+        /// `spec_for_short` in `parse_short`: the spec C's parser selects for `-<arg>` and the
+        /// value it takes from the rest of the argument, against [`find_short`]; the bare
+        /// `-`, where the C reads past the argument, is not compared.
+        #[test]
+        #[cfg_attr(miri, ignore = "calls C")]
+        fn short_options_select_the_specs_c_selects() {
+            let args: [&CStr; 11] = [
+                c"ofile", c"o", c"o-", c"d", c"dvv", c"vd", c"a", c"x", c"\xe9", c"l", c"h",
+            ];
+            for arg in args {
+                let specs = [
+                    Spec::new(Target::Value(None)).with_alias(b'o'),
+                    Spec::new(Target::Bool(None)).with_alias(b'd'),
+                    Spec::new(Target::Accumulator(None)).with_alias(b'v'),
+                    Spec::new(Target::Arg(None)).with_alias(b'a'),
+                    Spec::new(Target::Switch(None)).with_alias(b'd'),
+                    Spec::new(Target::Switch(None)).with_name(c"help"),
+                    Spec::new(Target::Switch(None)).with_alias(0xE9),
+                    Spec::new(Target::Literal).with_alias(b'l'),
+                    Spec::default(),
+                ];
+                let table = SpecTable::new(&specs).unwrap();
+                let short = [b"-", arg.to_bytes_with_nul()].concat();
+                let short = CStr::from_bytes_with_nul(&short).unwrap();
+                let mut c_args = [Arg::new(short)];
+                let (opt, parser) = c_first(table, &mut c_args);
+                let o = opt.as_ref();
+                let rust = find_short(parser.as_ref(), arg);
+                assert_eq!(
+                    index(table, o.spec()),
+                    index(table, rust.map(|(s, _)| s)),
+                    "{arg:?}"
+                );
+                assert_eq!(o.value(), rust.and_then(|(_, v)| v), "{arg:?}");
+            }
+        }
+
+        /// `spec_for_arg` in `parse_arg`: the specs C's parser gives successive bare arguments, and
+        /// the argument specs it counts, against [`find_arg`].
+        #[test]
+        #[cfg_attr(miri, ignore = "calls C")]
+        fn bare_arguments_take_the_specs_c_gives_them() {
+            for shape in 0..3 {
+                let specs: Vec<Spec<'_>> = match shape {
+                    0 => vec![
+                        Spec::new(Target::Arg(None)),
+                        Spec::new(Target::Bool(None)).with_alias(b'd'),
+                        Spec::new(Target::Arg(None)),
+                        Spec::new(Target::Args(None)),
+                        Spec::default(),
+                    ],
+                    1 => vec![Spec::new(Target::Arg(None)), Spec::default()],
+                    _ => vec![
+                        Spec::new(Target::Args(None)),
+                        Spec::new(Target::Arg(None)),
+                        Spec::default(),
+                    ],
+                };
+                let table = SpecTable::new(&specs).unwrap();
+                let mut c_args = [c"a", c"b", c"c", c"d"].map(Arg::new);
+                let mut parser = Parser::new(table, &mut c_args, ParseFlags::DEFAULT);
+                let mut rust = Parser::new(table, &mut [], ParseFlags::DEFAULT);
+                let mut opt = Opt::zeroed();
+                while c_next(&mut opt, &mut parser).is_some_and(|s| s != Status::Done) {
+                    let found = find_arg(&mut rust.as_mut());
+                    assert_eq!(
+                        index(table, opt.as_ref().spec()),
+                        index(table, found),
+                        "{shape}"
+                    );
+                    assert_eq!(
+                        parser.as_ref().arg_idx(),
+                        rust.as_ref().arg_idx(),
+                        "{shape}"
+                    );
+                }
+            }
+        }
+
+        /// `consume_choices` in `parse_long` and `parse_short`: the argument specs C counts once an
+        /// option of a choice is given, and the spec the next bare argument then takes, against
+        /// [`skip_choice_args`] and [`find_arg`].
+        #[test]
+        #[cfg_attr(miri, ignore = "calls C")]
+        fn a_choice_given_counts_the_arguments_c_counts() {
+            let cases: [&[&CStr]; 6] = [
+                &[c"-a", c"file"],
+                &[c"--bee", c"file"],
+                &[c"-c", c"file"],
+                &[c"-vx", c"file"],
+                &[c"file", c"-a", c"more"],
+                &[c"-a", c"-c", c"file", c"rest"],
+            ];
+            for case in cases {
+                let specs = [
+                    Spec::new(Target::Switch(None)).with_alias(b'a'),
+                    Spec::new(Target::Arg(None)).with_usage(Usage::CHOICE),
+                    Spec::new(Target::Switch(None))
+                        .with_name(c"bee")
+                        .with_usage(Usage::CHOICE),
+                    Spec::new(Target::Arg(None)).with_usage(Usage::CHOICE),
+                    Spec::new(Target::Switch(None)).with_alias(b'c'),
+                    Spec::new(Target::Value(None))
+                        .with_alias(b'v')
+                        .with_usage(Usage::CHOICE),
+                    Spec::new(Target::Arg(None)),
+                    Spec::new(Target::Args(None)),
+                    Spec::default(),
+                ];
+                let table = SpecTable::new(&specs).unwrap();
+                let mut c_args: Vec<_> = case.iter().copied().map(Arg::new).collect();
+                let mut parser = Parser::new(table, &mut c_args, ParseFlags::DEFAULT);
+                let mut rust = Parser::new(table, &mut [], ParseFlags::DEFAULT);
+                let mut opt = Opt::zeroed();
+                while c_next(&mut opt, &mut parser).is_some_and(|s| s != Status::Done) {
+                    let spec = opt.as_ref().spec().unwrap();
+                    if opt
+                        .as_ref()
+                        .arg()
+                        .is_some_and(|a| a.to_bytes().starts_with(b"-"))
+                    {
+                        skip_choice_args(spec, &mut rust.as_mut());
+                    } else {
+                        let found = find_arg(&mut rust.as_mut());
+                        assert_eq!(index(table, Some(spec)), index(table, found), "{case:?}");
+                    }
+                    assert_eq!(
+                        parser.as_ref().arg_idx(),
+                        rust.as_ref().arg_idx(),
+                        "{case:?}"
+                    );
+                }
+            }
+        }
+
+        /// `validate_required`, `spec_included` and `spec_is_choice` in `cli_opt_parse`: the
+        /// requirement C reports missing, by its spec, or none, against [`check_required`] of the
+        /// specs C's parser matched.
+        ///
+        /// No case bundles short options: `cli_opt_parse` keeps the specs given in an `alloca`
+        /// array of `args_len + 1` entries, one per argument, and a bundle such as `-ab` gives
+        /// one spec per option, so that the C writes past the array.
+        #[test]
+        #[cfg_attr(miri, ignore = "calls C")]
+        fn the_requirement_c_reports_missing_is_the_one_rust_reports() {
+            let cases: [&[&CStr]; 9] = [
+                &[],
+                &[c"-x"],
+                &[c"-n1"],
+                &[c"-n1", c"-a"],
+                &[c"-n1", c"-b", c"-f"],
+                &[c"-n1", c"-c", c"-g"],
+                &[c"-f", c"-c", c"-n", c"2"],
+                &[
+                    c"-x", c"-a", c"-b", c"-c", c"-d", c"-e", c"-f", c"-g", c"-n3",
+                ],
+                &[c"-n1", c"-d", c"-e"],
+            ];
+            for case in cases {
+                let specs = [
+                    Spec::new(Target::Switch(None)).with_alias(b'x'),
+                    Spec::new(Target::Value(None))
+                        .with_alias(b'n')
+                        .with_usage(Usage::REQUIRED),
+                    Spec::new(Target::Switch(None))
+                        .with_alias(b'a')
+                        .with_usage(Usage::REQUIRED),
+                    Spec::new(Target::Switch(None))
+                        .with_alias(b'b')
+                        .with_usage(Usage::CHOICE),
+                    Spec::new(Target::Switch(None))
+                        .with_alias(b'c')
+                        .with_usage(Usage::CHOICE | Usage::REQUIRED),
+                    Spec::new(Target::Switch(None)).with_alias(b'd'),
+                    Spec::new(Target::Switch(None))
+                        .with_alias(b'e')
+                        .with_usage(Usage::CHOICE),
+                    Spec::new(Target::Switch(None))
+                        .with_alias(b'f')
+                        .with_usage(Usage::REQUIRED),
+                    Spec::new(Target::Switch(None))
+                        .with_alias(b'g')
+                        .with_usage(Usage::CHOICE),
+                    Spec::default(),
+                ];
+                let table = SpecTable::new(&specs).unwrap();
+                let mut c_args: Vec<_> = case.iter().copied().map(Arg::new).collect();
+                let mut opt = Opt::zeroed();
+                // SAFETY: the outcome is live and borrowed exclusively for the call; the table is a
+                // `SpecTable`'s, ended by its zeroed spec, and the arguments a live array of C
+                // strings, which a default parse never reorders.
+                let status = unsafe {
+                    sys::cli_opt_parse(
+                        opt.as_mut().as_mut_ptr(),
+                        table.get(0).unwrap().as_ptr(),
+                        c_args.as_mut_ptr().cast(),
+                        c_args.len(),
+                        ParseFlags::DEFAULT.bits(),
+                    )
+                };
+                let mut given_args: Vec<_> = case.iter().copied().map(Arg::new).collect();
+                let mut parser = Parser::new(table, &mut given_args, ParseFlags::DEFAULT);
+                let mut step = Opt::zeroed();
+                let mut given = Vec::new();
+                while c_next(&mut step, &mut parser).is_some_and(|s| s != Status::Done) {
+                    assert_eq!(step.as_ref().status(), Some(Status::Ok), "{case:?}");
+                    given.push(step.as_ref().spec().unwrap());
+                }
+                match check_required(table, &given) {
+                    Ok(()) => assert_eq!(status, sys::CLI_OPT_STATUS_DONE, "{case:?}"),
+                    Err(spec) => {
+                        assert_eq!(status, sys::CLI_OPT_STATUS_MISSING_ARGUMENT, "{case:?}");
+                        assert_eq!(index(table, opt.as_ref().spec()), index(table, Some(spec)));
+                    }
+                }
+            }
+        }
+
+        /// What [`seen`] recorded of each outcome: its spec's index and its status.
+        struct Seen<'t> {
+            table: SpecTable<'t>,
+            outcomes: Vec<(Option<usize>, u32)>,
+            break_at: usize,
+        }
+
+        /// A C-ABI callback standing in for `common.c`'s: it records each outcome in the `Seen` at
+        /// `ctx` and breaks with 9 at the `break_at`th.
+        unsafe extern "C" fn seen(opt: *mut sys::cli_opt, ctx: *mut c_void) -> c_int {
+            // SAFETY: `ctx` is the test's `Seen`, which nothing else uses during the call.
+            let seen = unsafe { &mut *ctx.cast::<Seen<'_>>() };
+            // SAFETY: `opt` is the live outcome the parse lends for the call.
+            let raw = unsafe { opt.read() };
+            let spec = (!raw.spec.is_null()).then(|| {
+                // SAFETY: a non-null spec is an element of the table, as C's parser hands out.
+                usize::try_from(unsafe {
+                    raw.spec.offset_from(seen.table.get(0).unwrap().as_ptr())
+                })
+                .unwrap()
+            });
+            seen.outcomes.push((spec, raw.status));
+            c_int::from(seen.outcomes.len() == seen.break_at) * 9
+        }
+
+        /// The callback's C form is called as C's `cli_opt_foreach` calls its callback: with each
+        /// outcome in turn and its context, the parse stopping at the first code other than 0,
+        /// which is its result.
+        #[test]
+        #[cfg_attr(miri, ignore = "calls C")]
+        fn a_c_callback_is_called_as_cli_opt_foreach_calls_it() {
+            for break_at in [0, 1, 3, 5] {
+                let specs = [
+                    Spec::new(Target::Switch(None)).with_alias(b'a'),
+                    Spec::new(Target::Value(None)).with_name(c"val"),
+                    Spec::new(Target::Arg(None)),
+                    Spec::default(),
+                ];
+                let table = SpecTable::new(&specs).unwrap();
+                let given = [c"-a", c"--val=1", c"--nope", c"file", c"extra"];
+                let mut c_args = given.map(Arg::new);
+                let mut c_seen = Seen {
+                    table,
+                    outcomes: Vec::new(),
+                    break_at,
+                };
+                // SAFETY: the table is a `SpecTable`'s, the arguments a live array of C strings,
+                // and `seen` reads each outcome, with `c_seen` as its context, for the call alone.
+                let c_rc = unsafe {
+                    sys::cli_opt_foreach(
+                        table.get(0).unwrap().as_ptr(),
+                        c_args.as_mut_ptr().cast(),
+                        c_args.len(),
+                        0,
+                        Some(seen),
+                        ptr::from_mut(&mut c_seen).cast(),
+                    )
+                };
+                let mut r_args = given.map(Arg::new);
+                let mut r_seen = Seen {
+                    table,
+                    outcomes: Vec::new(),
+                    break_at,
+                };
+                let mut rc = 0;
+                {
+                    // SAFETY: `seen` only reads the outcome it is lent, and `r_seen` outlives the
+                    // callback, which nothing else touches while it lives.
+                    let mut callback = unsafe {
+                        ForeachCallbackFn::from_c(seen, ptr::from_mut(&mut r_seen).cast())
+                    };
+                    let mut parser = Parser::new(table, &mut r_args, ParseFlags::DEFAULT);
+                    let mut opt = Opt::zeroed();
+                    while c_next(&mut opt, &mut parser).is_some_and(|s| s != Status::Done) {
+                        if let ControlFlow::Break(code) = callback.call(opt.as_ref()) {
+                            rc = code.get();
+                            break;
+                        }
+                    }
+                }
+                assert_eq!(rc, c_rc, "{break_at}");
+                assert_eq!(r_seen.outcomes, c_seen.outcomes, "{break_at}");
+            }
+        }
+
+        /// A memory stream, `open_memstream`'s, and the bytes it holds once closed.
+        struct MemStream {
+            file: *mut libc::FILE,
+            buf: Box<(*mut c_char, usize)>,
+        }
+
+        impl MemStream {
+            fn open() -> Self {
+                let mut buf = Box::new((ptr::null_mut(), 0));
+                // SAFETY: both locations are boxed, so they stay put until `close` reads them.
+                let file = unsafe { libc::open_memstream(&raw mut buf.0, &raw mut buf.1) };
+                assert!(!file.is_null());
+                Self { file, buf }
+            }
+
+            /// Closes the stream and returns what was written to it.
+            fn close(self) -> Vec<u8> {
+                // SAFETY: the stream is open, and nothing uses it after this.
+                assert_eq!(unsafe { libc::fclose(self.file) }, 0);
+                // SAFETY: `fclose` left the buffer holding `size` bytes, which `free` releases.
+                let bytes =
+                    unsafe { core::slice::from_raw_parts(self.buf.0.cast::<u8>(), self.buf.1) }
+                        .to_vec();
+                // SAFETY: the buffer is `open_memstream`'s, freed once, with `free`.
+                unsafe { libc::free(self.buf.0.cast()) };
+                bytes
+            }
+        }
+
+        /// What C's `cli_opt_status_fprint` writes for `opt`, and what it returns.
+        fn c_status(opt: &Opt<'_>, command: Option<&CStr>) -> (Vec<u8>, c_int) {
+            let stream = MemStream::open();
+            // SAFETY: an open stream, the command `NULL` or a C string, and an outcome whose spec
+            // is in a live table, all live for the call.
+            let rc = unsafe {
+                sys::cli_opt_status_fprint(
+                    stream.file,
+                    command.map_or(ptr::null(), CStr::as_ptr),
+                    opt.as_ref().as_ptr(),
+                )
+            };
+            (stream.close(), rc)
+        }
+
+        /// What the export writes for `opt`: [`OptRef::write_status`](super::OptRef::write_status)
+        /// through a [`FileWriter`] over a C stream.
+        fn rust_status<'p>(opt: &Opt<'p>, command: Option<&str>, table: SpecTable<'p>) -> Vec<u8> {
+            let stream = MemStream::open();
+            {
+                // SAFETY: an open stream, which only this handle reaches until it is closed.
+                let file = unsafe { FileRef::from_ptr(stream.file) }.unwrap();
+                opt.as_ref()
+                    .write_status(&mut FileWriter(file), command, table)
+                    .unwrap();
+            }
+            stream.close()
+        }
+
+        /// The stream the export writes through holds what C's `fprintf` calls write, for each
+        /// status of an outcome and its spec's choices; an argument that is not UTF-8 is written
+        /// with U+FFFD in place of each invalid sequence, where C writes its bytes.
+        #[test]
+        #[cfg_attr(miri, ignore = "calls C")]
+        fn the_export_writes_what_c_writes() {
+            let specs = [
+                Spec::new(Target::Switch(None)).with_alias(b'f'),
+                Spec::new(Target::Switch(None))
+                    .with_name(c"bar")
+                    .with_usage(Usage::CHOICE),
+                Spec::new(Target::Arg(None))
+                    .with_value_name(c"<x>")
+                    .with_usage(Usage::CHOICE),
+                Spec::new(Target::Value(None)).with_name(c"out"),
+                Spec::default(),
+            ];
+            let table = SpecTable::new(&specs).unwrap();
+            let cases = [
+                (Status::Done, None, None),
+                (Status::Ok, Some(0), None),
+                (Status::UnknownOption, None, Some(c"--nope")),
+                (Status::MissingValue, Some(3), Some(c"--out")),
+                (Status::MissingArgument, Some(0), None),
+                (Status::MissingArgument, Some(1), None),
+                (Status::MissingArgument, Some(3), None),
+            ];
+            for (status, spec, arg) in cases {
+                let mut opt = Opt::zeroed();
+                opt.as_mut().set_status(status);
+                opt.as_mut().set_spec(spec.and_then(|i| table.get(i)));
+                opt.as_mut().set_arg(arg);
+                for command in [None, Some(c"git2")] {
+                    let (c, rc) = c_status(&opt, command);
+                    assert!(rc >= 0);
+                    let rust = rust_status(&opt, command.map(|c| c.to_str().unwrap()), table);
+                    assert_eq!(rust, c, "{status:?} {spec:?} {command:?}");
+                }
+            }
+            let mut opt = Opt::zeroed();
+            opt.as_mut().set_status(Status::UnknownOption);
+            opt.as_mut().set_arg(Some(c"--caf\xe9"));
+            let (c, _) = c_status(&opt, None);
+            assert_eq!(c, b"unknown option: --caf\xe9\n");
+            assert_eq!(
+                rust_status(&opt, None, table),
+                "unknown option: --caf\u{fffd}\n".as_bytes()
+            );
+        }
+
+        /// A stream that refuses writes fails C's first `fprintf` and the export's first write
+        /// alike, with `EBADF` in `errno`, and neither writes anything.
+        #[test]
+        #[cfg_attr(miri, ignore = "calls C")]
+        fn a_stream_that_refuses_writes_fails_both() {
+            use glibc_bindings::libc::csu::errno_loc::errno;
+
+            let mut storage = [0_u8; 64];
+            let mut read_only = || {
+                // SAFETY: `storage` outlives the stream, which reads it alone, under mode `r`.
+                let file = unsafe {
+                    libc::fmemopen(storage.as_mut_ptr().cast(), storage.len(), c"r".as_ptr())
+                };
+                assert!(!file.is_null());
+                file
+            };
+            let opt = Opt::zeroed();
+            let file = read_only();
+            // SAFETY: an open stream, the command a C string, and a zeroed outcome, live for the
+            // call.
+            let rc = unsafe {
+                sys::cli_opt_status_fprint(file, c"git2".as_ptr(), opt.as_ref().as_ptr())
+            };
+            let c_errno = errno();
+            // SAFETY: the stream is open, and nothing uses it after this.
+            unsafe { libc::fclose(file) };
+            assert!(rc < 0);
+            let file = read_only();
+            let written = {
+                // SAFETY: an open stream, which only this handle reaches until it is closed.
+                let stream = unsafe { FileRef::from_ptr(file) }.unwrap();
+                opt.as_ref().write_status(
+                    &mut FileWriter(stream),
+                    Some("git2"),
+                    SpecTable::new(&[Spec::zeroed()]).unwrap(),
+                )
+            };
+            // SAFETY: as above.
+            unsafe { libc::fclose(file) };
+            let e = written.unwrap_err();
+            assert_eq!(e.raw_os_error(), Some(c_errno));
+            assert_eq!(e.raw_os_error(), Some(nix::errno::Errno::EBADF as c_int));
+            assert!(storage.iter().all(|&b| b == 0));
+        }
+    }
+}
+
+/// The gateway through which the CLI's remaining C calls this module once it has switched:
+/// `cli_opt_parser_init`, which `main.c` calls, and `cli_opt_status_fprint`, which `main.c` and
+/// `opt_usage.c` call, each checked against its raw binding's signature, so that a C
+/// declaration that drifts fails to build.
+#[cfg(feature = "ffi-export-src-cli-opt-c")]
+#[expect(
+    unsafe_code,
+    reason = "the C ABI exports of opt.c's entry points, which adopt the pointers C passes"
+)]
+mod ffi_export {
+    use core::ffi::{CStr, c_char, c_int, c_uint};
+    use core::slice;
+
+    use ffibox::callback::barrier;
+    use ffibox::{CRefSeam, CZeroable};
+    use glibc_bindings::libc::csu::errno_loc::set_errno;
+    use glibc_bindings::libc::libio::genops::FileRef;
+    use nix::errno::Errno;
+
+    use super::{Arg, FileWriter, OptRef, ParseFlags, Parser, Spec, SpecTable};
+    use crate::sys::git2 as sys;
+
+    // Each export has its raw binding's type: the array's elements coerce to one function
+    // pointer type only when their signatures agree.
+    const _: () = {
+        let _ = [sys::cli_opt_parser_init, cli_opt_parser_init];
+        let _ = [sys::cli_opt_status_fprint, cli_opt_status_fprint];
+    };
+
+    /// `cli_opt_parser_init`: [`Parser::new`] over the table at `specs` and the `args_len`
+    /// arguments at `args`, written to `*parser`, which it overwrites whole, as C's `memset`
+    /// does. A panic aborts, as it cannot fail.
+    ///
+    /// The C stores `specs` and `args` unread, and the parse that follows reads them; here they
+    /// are read at once, so a `NULL` parser, a `NULL` table, a `NULL` array of arguments with
+    /// `args_len` other than 0, or a `NULL` argument within it aborts, where the C, built with
+    /// `NDEBUG`, writes through the `NULL` parser or faults in that parse.
+    ///
+    /// # Safety
+    ///
+    /// `parser` is valid for a write of a `cli_opt_parser`; `specs` is a spec table, as
+    /// [`SpecTable::from_ptr`] adopts one, and `args` addresses `args_len` arguments, each a
+    /// NUL-terminated string, unless `args_len` is 0: all of them live, the strings unchanged,
+    /// while C uses the parser, and nothing but that parse reaches the array meanwhile.
+    #[unsafe(no_mangle)]
+    unsafe extern "C" fn cli_opt_parser_init(
+        parser: *mut sys::cli_opt_parser,
+        specs: *const sys::cli_opt_spec,
+        args: *mut *mut c_char,
+        args_len: usize,
+        flags: c_uint,
+    ) {
+        if parser.is_null() {
+            std::process::abort();
+        }
+        // SAFETY: the caller's contract: `specs` is a table that lives, unchanged, while C uses
+        // the parser, the lifetime this adoption takes.
+        let Some(table) = (unsafe { SpecTable::from_ptr(specs) }) else {
+            std::process::abort();
+        };
+        let args: &mut [Arg<'_>] = if args_len == 0 {
+            &mut []
+        } else {
+            if args.is_null() {
+                std::process::abort();
+            }
+            // SAFETY: the caller's contract: `args` addresses `args_len` readable elements.
+            let elements = unsafe { slice::from_raw_parts(args.cast_const(), args_len) };
+            if elements.iter().any(|arg| arg.is_null()) {
+                std::process::abort();
+            }
+            // SAFETY: the `args_len` elements are non-null, as just checked, and each a
+            // NUL-terminated string that lives, unchanged, while C uses the parser, which only
+            // that parse reaches meanwhile, by the caller's contract: valid `Arg`s, which are
+            // `#[repr(transparent)]` over a non-null `char *`, borrowed exclusively for as long.
+            unsafe { slice::from_raw_parts_mut(args.cast::<Arg<'_>>(), args_len) }
+        };
+        let flags = ParseFlags::from_bits_retain(flags);
+        let new = barrier(|| Parser::new(table, args, flags), || std::process::abort());
+        // SAFETY: `parser` is non-null and valid for a write of a `cli_opt_parser`, the
+        // caller's contract; `Parser` is `#[repr(transparent)]` over it, and the write reads
+        // nothing of the old value, which needs no drop.
+        unsafe { parser.cast::<Parser<'_>>().write(new) };
+    }
+
+    /// `cli_opt_status_fprint`: [`OptRef::write_status`] of `*opt` to the stream `file`, after
+    /// `command` when it is not `NULL`, read from the table that starts at the outcome's spec,
+    /// which holds that spec's later choices. Returns 0 once it is written, and -1 when a write
+    /// fails, as `opt.h` documents, `errno` holding the stream's error, or `EINVAL` for an
+    /// outcome the message cannot name, a missing value or argument with no spec, whose spec the
+    /// C reads through a null pointer. A panic is reported as a failure.
+    ///
+    /// The C returns the count of its last piece's `fprintf` on success: no caller reads it. A
+    /// `command` or an argument that is not UTF-8 is written with each invalid sequence replaced
+    /// by U+FFFD, since libc's wrapper writes text: [`FileWriter`]'s departure.
+    ///
+    /// # Safety
+    ///
+    /// `file` is an open stream that stays open during the call, every other access to it
+    /// holding its lock, as C's stdio routines do; `command` is `NULL` or a NUL-terminated
+    /// string; and `opt` is an outcome C's parser wrote, or a zeroed one: a valid `Opt`, as
+    /// [`Opt`](super::Opt)'s adoption asks, whose spec, when it has one, is an element of a spec
+    /// table [`SpecTable::from_ptr`] adopts from it. All of them live, unchanged, for the call.
+    #[unsafe(no_mangle)]
+    unsafe extern "C" fn cli_opt_status_fprint(
+        file: *mut sys::FILE,
+        command: *const c_char,
+        opt: *const sys::cli_opt,
+    ) -> c_int {
+        // SAFETY: the caller's contract: `file` is an open stream for the call, every other
+        // access holding its lock, as `FileRef::from_ptr` asks of a stream.
+        let Some(file) = (unsafe { FileRef::from_ptr(file) }) else {
+            set_errno(Errno::EINVAL as c_int);
+            return -1;
+        };
+        // SAFETY: the caller's contract: a non-null `command` is a NUL-terminated string that
+        // lives, unchanged, for the call.
+        let command = (!command.is_null()).then(|| unsafe { CStr::from_ptr(command) });
+        // SAFETY: the caller's contract: `opt` is a valid outcome that lives, unchanged, for
+        // the call, the lifetime this adoption takes.
+        let Some(opt) = (unsafe { OptRef::from_ptr(opt.cast_mut()) }) else {
+            set_errno(Errno::EINVAL as c_int);
+            return -1;
+        };
+        let end = [Spec::zeroed()];
+        let specs = opt
+            .spec()
+            // SAFETY: the caller's contract: the outcome's spec is an element of a table
+            // ended by a spec of kind `CLI_OPT_TYPE_NONE`, live and unchanged for the call.
+            .and_then(|spec| unsafe { SpecTable::from_ptr(spec.as_ptr()) })
+            .or_else(|| SpecTable::new(&end));
+        let Some(specs) = specs else {
+            set_errno(Errno::EINVAL as c_int);
+            return -1;
+        };
+        let command = command.map(CStr::to_string_lossy);
+        let written = barrier(
+            || opt.write_status(&mut FileWriter(file), command.as_deref(), specs),
+            || Err(std::io::Error::other("panicked")),
+        );
+        match written {
+            Ok(()) => 0,
+            Err(e) => {
+                // The stream's failures leave `errno` as `fprintf` set it; the refusal of an
+                // outcome without a spec sets none of its own.
+                if e.kind() == std::io::ErrorKind::InvalidInput && e.raw_os_error().is_none() {
+                    set_errno(Errno::EINVAL as c_int);
+                }
+                -1
+            }
+        }
+    }
 }
 
 /// The integer forms of [`Kind`] and [`Status`], compared with the constants `opt.h` defines,
@@ -1986,5 +3451,417 @@ mod equiv_priv {
             None
         );
         assert_eq!(Status::from_raw(u32::MAX), None);
+    }
+}
+
+/// The parser's internal routines against their contract, over tables built through the safe
+/// API: which spec each argument selects, how a choice is stepped over and which requirement is
+/// missing, with the C defects they correct. No C runs.
+#[cfg(test)]
+mod unit_priv {
+    use core::cell::Cell;
+    use core::ffi::CStr;
+
+    use super::{
+        Arg, LongForm, ParseFlags, Parser, Spec, SpecRef, SpecTable, Target, Usage, check_required,
+        find_arg, find_long, find_short, is_choice, is_given, skip_choice_args, write_spec_name,
+    };
+
+    /// A parser over `table` with no arguments, through which the lookups read the table.
+    fn parser(table: SpecTable<'_>) -> Parser<'_> {
+        Parser::new(table, &mut [], ParseFlags::DEFAULT)
+    }
+
+    /// The position of a found spec in `table`.
+    fn at<'p, T>(table: SpecTable<'p>, found: Option<(SpecRef<'p, 'p>, T)>) -> Option<(usize, T)> {
+        found.map(|(spec, rest)| (table.position(spec).expect("in the table"), rest))
+    }
+
+    /// Each kind of long argument selects the first spec that takes it, by name, `no-` and
+    /// `=value`, and the bare `--` the literal.
+    #[test]
+    fn long_arguments_select_their_specs() {
+        let flag = Cell::new(0);
+        let specs = [
+            Spec::new(Target::Bool(Some(&flag))).with_name(c"debug"),
+            Spec::new(Target::Switch(None)).with_name(c"read"),
+            Spec::new(Target::Accumulator(None)).with_name(c"verbose"),
+            Spec::new(Target::Value(None)).with_name(c"output"),
+            Spec::new(Target::Literal),
+            Spec::new(Target::Value(None)).with_name(c"no-read"),
+            Spec::new(Target::Arg(None)).with_name(c"file"),
+            Spec::default(),
+        ];
+        let table = SpecTable::new(&specs).unwrap();
+        let p = parser(table);
+        let find = |arg: &'static CStr| at(table, find_long(p.as_ref(), arg));
+        assert_eq!(find(c"debug"), Some((0, LongForm::Plain)));
+        assert_eq!(find(c"no-debug"), Some((0, LongForm::Negated)));
+        assert_eq!(find(c"read"), Some((1, LongForm::Plain)));
+        // A switch has no `no-` form: the value spec of that name is the one.
+        assert_eq!(find(c"no-read"), Some((5, LongForm::Plain)));
+        // An accumulator is selected by its alias alone, an argument never by a name.
+        assert_eq!(find(c"verbose"), None);
+        assert_eq!(find(c"file"), None);
+        assert_eq!(find(c"output"), Some((3, LongForm::Plain)));
+        assert_eq!(
+            find(c"output=out.txt"),
+            Some((3, LongForm::Valued(Some(c"out.txt"))))
+        );
+        assert_eq!(
+            find(c"output=a=b"),
+            Some((3, LongForm::Valued(Some(c"a=b"))))
+        );
+        assert_eq!(find(c"output="), Some((3, LongForm::Valued(None))));
+        assert_eq!(find(c""), Some((4, LongForm::Plain)));
+        assert_eq!(find(c"outputs=x"), None);
+        assert_eq!(find(c"out=x"), None);
+        assert_eq!(find(c"debug=1"), None);
+        assert_eq!(find(c"unknown"), None);
+        assert_eq!(flag.get(), 0, "a lookup writes nothing");
+    }
+
+    /// The first matching spec wins, whatever comes after it.
+    #[test]
+    fn the_first_spec_that_matches_is_the_one() {
+        let specs = [
+            Spec::new(Target::Switch(None)).with_name(c"x"),
+            Spec::new(Target::Bool(None)).with_name(c"x"),
+            Spec::new(Target::Literal),
+            Spec::new(Target::Literal),
+            Spec::default(),
+        ];
+        let table = SpecTable::new(&specs).unwrap();
+        let p = parser(table);
+        assert_eq!(
+            at(table, find_long(p.as_ref(), c"x")),
+            Some((0, LongForm::Plain))
+        );
+        assert_eq!(
+            at(table, find_long(p.as_ref(), c"no-x")),
+            Some((1, LongForm::Negated))
+        );
+        assert_eq!(
+            at(table, find_long(p.as_ref(), c"")),
+            Some((2, LongForm::Plain))
+        );
+    }
+
+    /// A bool spec without a name matches no `no-` argument, where the C compares the argument
+    /// with its `NULL` name.
+    #[test]
+    fn a_nameless_bool_has_no_negation() {
+        let specs = [
+            Spec::new(Target::Bool(None)).with_alias(b'd'),
+            Spec::new(Target::Value(None)).with_alias(b'o'),
+            Spec::default(),
+        ];
+        let table = SpecTable::new(&specs).unwrap();
+        let p = parser(table);
+        assert!(find_long(p.as_ref(), c"no-").is_none());
+        assert!(find_long(p.as_ref(), c"no-d").is_none());
+        assert!(find_long(p.as_ref(), c"=x").is_none());
+    }
+
+    /// A parser without a table finds nothing.
+    #[test]
+    fn a_parser_without_a_table_finds_nothing() {
+        let mut p = Parser::default();
+        assert!(find_long(p.as_ref(), c"").is_none());
+        assert!(find_short(p.as_ref(), c"x").is_none());
+        assert!(find_arg(&mut p.as_mut()).is_none());
+    }
+
+    /// A short option selects the first spec of its alias, and a value spec takes the rest of
+    /// the argument as its value.
+    #[test]
+    fn short_options_select_their_specs() {
+        let specs = [
+            Spec::new(Target::Value(None)).with_alias(b'o'),
+            Spec::new(Target::Bool(None)).with_alias(b'd'),
+            Spec::new(Target::Accumulator(None)).with_alias(b'v'),
+            Spec::new(Target::Arg(None)).with_alias(b'a'),
+            Spec::new(Target::Switch(None)).with_alias(b'd'),
+            Spec::new(Target::Switch(None)).with_alias(0xE9),
+            Spec::default(),
+        ];
+        let table = SpecTable::new(&specs).unwrap();
+        let p = parser(table);
+        let find = |arg: &'static CStr| at(table, find_short(p.as_ref(), arg));
+        assert_eq!(find(c"ofile"), Some((0, Some(c"file"))));
+        assert_eq!(find(c"o"), Some((0, None)));
+        assert_eq!(find(c"o-"), Some((0, Some(c"-"))));
+        assert_eq!(find(c"d"), Some((1, None)));
+        // The rest of a bundle is no value of a spec that takes none.
+        assert_eq!(find(c"dvv"), Some((1, None)));
+        assert_eq!(find(c"vd"), Some((2, None)));
+        assert_eq!(find(c"a"), Some((3, None)));
+        assert_eq!(find(c"\xe9"), Some((5, None)));
+        assert_eq!(find(c"x"), None);
+    }
+
+    /// The bare `-` selects no spec, where the C selects the first spec without an alias and
+    /// reads past the argument for a value spec; and a spec without an alias is never selected.
+    #[test]
+    fn no_short_option_selects_a_spec_without_an_alias() {
+        let specs = [
+            Spec::new(Target::Value(None)).with_name(c"config-env"),
+            Spec::new(Target::Switch(None)).with_name(c"help"),
+            Spec::new(Target::Bool(None)).with_alias(b'q'),
+            Spec::default(),
+        ];
+        let table = SpecTable::new(&specs).unwrap();
+        let p = parser(table);
+        assert!(find_short(p.as_ref(), c"").is_none());
+        assert_eq!(at(table, find_short(p.as_ref(), c"q")), Some((2, None)));
+    }
+
+    /// Bare arguments take the argument specs in order, each once, and the remaining arguments
+    /// spec every one after them, without counting.
+    #[test]
+    fn bare_arguments_take_the_argument_specs_in_order() {
+        let specs = [
+            Spec::new(Target::Arg(None)),
+            Spec::new(Target::Bool(None)).with_alias(b'd'),
+            Spec::new(Target::Arg(None)),
+            Spec::new(Target::Args(None)),
+            Spec::new(Target::Arg(None)),
+            Spec::default(),
+        ];
+        let table = SpecTable::new(&specs).unwrap();
+        let mut p = parser(table);
+        let mut next = || find_arg(&mut p.as_mut()).and_then(|s| table.position(s));
+        assert_eq!(next(), Some(0));
+        assert_eq!(next(), Some(2));
+        assert_eq!(next(), Some(3));
+        assert_eq!(next(), Some(3));
+        assert_eq!(p.as_ref().arg_idx(), 2);
+
+        let specs = [Spec::new(Target::Arg(None)), Spec::default()];
+        let table = SpecTable::new(&specs).unwrap();
+        let mut p = parser(table);
+        assert!(find_arg(&mut p.as_mut()).is_some());
+        assert!(find_arg(&mut p.as_mut()).is_none());
+        assert_eq!(p.as_ref().arg_idx(), 1);
+        p.as_mut().set_arg_idx(usize::MAX);
+        assert!(find_arg(&mut p.as_mut()).is_none());
+    }
+
+    /// A choice: [`is_choice`] holds at each spec followed by one marked [`Usage::CHOICE`],
+    /// not at the last spec nor past it.
+    #[test]
+    fn a_spec_followed_by_a_choice_is_a_choice() {
+        let specs = [
+            Spec::new(Target::Switch(None)),
+            Spec::new(Target::Switch(None)).with_usage(Usage::CHOICE),
+            Spec::new(Target::Arg(None)).with_usage(Usage::CHOICE | Usage::REQUIRED),
+            Spec::new(Target::Switch(None)),
+            Spec::new(Target::Switch(None)).with_usage(Usage::CHOICE),
+            Spec::default(),
+        ];
+        let table = SpecTable::new(&specs).unwrap();
+        let choices: Vec<_> = (0..7).map(|i| is_choice(table, i)).collect();
+        assert_eq!(choices, [true, true, false, true, false, false, false]);
+        assert!(!is_choice(table, usize::MAX));
+    }
+
+    /// An option of a choice counts its argument specs as matched, from any of its specs, and
+    /// a spec outside every choice, or outside the table, counts none.
+    #[test]
+    fn a_choice_given_counts_its_arguments() {
+        let specs = [
+            Spec::new(Target::Switch(None)).with_alias(b'a'),
+            Spec::new(Target::Arg(None)).with_usage(Usage::CHOICE),
+            Spec::new(Target::Switch(None))
+                .with_alias(b'b')
+                .with_usage(Usage::CHOICE),
+            Spec::new(Target::Arg(None)).with_usage(Usage::CHOICE),
+            Spec::new(Target::Switch(None)).with_alias(b'c'),
+            Spec::new(Target::Arg(None)),
+            Spec::default(),
+        ];
+        let table = SpecTable::new(&specs).unwrap();
+        let mut p = parser(table);
+        for (index, after) in [(0, 2), (2, 4), (3, 6), (4, 6), (5, 6)] {
+            skip_choice_args(table.get(index).unwrap(), &mut p.as_mut());
+            assert_eq!(p.as_ref().arg_idx(), after, "{index}");
+        }
+        let other = [Spec::new(Target::Arg(None)), Spec::default()];
+        let other = SpecTable::new(&other).unwrap();
+        skip_choice_args(other.get(0).unwrap(), &mut p.as_mut());
+        assert_eq!(p.as_ref().arg_idx(), 6);
+        skip_choice_args(table.get(0).unwrap(), &mut Parser::default().as_mut());
+    }
+
+    /// A table whose first spec is marked a choice starts its choice there, where the C steps
+    /// back before the table's start.
+    #[test]
+    fn a_choice_starts_no_earlier_than_the_table() {
+        let specs = [
+            Spec::new(Target::Arg(None)).with_usage(Usage::CHOICE),
+            Spec::new(Target::Arg(None)).with_usage(Usage::CHOICE),
+            Spec::new(Target::Switch(None)),
+            Spec::default(),
+        ];
+        let table = SpecTable::new(&specs).unwrap();
+        let mut p = parser(table);
+        skip_choice_args(table.get(1).unwrap(), &mut p.as_mut());
+        assert_eq!(p.as_ref().arg_idx(), 2);
+        let specs = [
+            Spec::new(Target::Arg(None)).with_usage(Usage::CHOICE),
+            Spec::new(Target::Switch(None)),
+            Spec::default(),
+        ];
+        let table = SpecTable::new(&specs).unwrap();
+        let mut p = parser(table);
+        skip_choice_args(table.get(0).unwrap(), &mut p.as_mut());
+        assert_eq!(p.as_ref().arg_idx(), 0, "a choice of one is none");
+    }
+
+    /// The specs given are compared by address: an equal spec of another table is not given.
+    #[test]
+    fn given_specs_are_found_by_address() {
+        let specs = [
+            Spec::new(Target::Literal),
+            Spec::new(Target::Literal),
+            Spec::default(),
+        ];
+        let table = SpecTable::new(&specs).unwrap();
+        let (a, b) = (table.get(0).unwrap(), table.get(1).unwrap());
+        assert!(is_given(&[b, a], a));
+        assert!(!is_given(&[b], a));
+        assert!(!is_given(&[], a));
+    }
+
+    /// The first requirement not given is reported by its spec, the first of its choice, and
+    /// one option of a required choice meets it.
+    #[test]
+    fn requirements_are_met_by_a_spec_or_one_choice() {
+        let specs = [
+            Spec::new(Target::Switch(None)).with_alias(b'x'),
+            Spec::new(Target::Arg(None)).with_usage(Usage::REQUIRED),
+            Spec::new(Target::Switch(None))
+                .with_alias(b'a')
+                .with_usage(Usage::REQUIRED),
+            Spec::new(Target::Switch(None))
+                .with_alias(b'b')
+                .with_usage(Usage::CHOICE),
+            Spec::new(Target::Arg(None)).with_usage(Usage::CHOICE),
+            Spec::new(Target::Arg(None)).with_usage(Usage::REQUIRED),
+            Spec::default(),
+        ];
+        let table = SpecTable::new(&specs).unwrap();
+        let spec = |i| table.get(i).unwrap();
+        let missing = |given: &[usize]| {
+            let given: Vec<_> = given.iter().map(|&i| spec(i)).collect();
+            check_required(table, &given)
+                .err()
+                .and_then(|s| table.position(s))
+        };
+        assert_eq!(missing(&[]), Some(1));
+        assert_eq!(missing(&[1]), Some(2));
+        assert_eq!(missing(&[1, 0]), Some(2));
+        for choice in [2, 3, 4] {
+            assert_eq!(missing(&[1, choice]), Some(5), "{choice}");
+            assert_eq!(missing(&[5, choice, 1]), None, "{choice}");
+        }
+        assert_eq!(missing(&[5, 1]), Some(2));
+        let none = [Spec::new(Target::Arg(None)), Spec::default()];
+        assert!(check_required(SpecTable::new(&none).unwrap(), &[]).is_ok());
+    }
+
+    /// A requirement on a later choice holds for the rest of its choice.
+    #[test]
+    fn a_requirement_inside_a_choice_holds_for_its_rest() {
+        let specs = [
+            Spec::new(Target::Switch(None)).with_alias(b'a'),
+            Spec::new(Target::Switch(None))
+                .with_alias(b'b')
+                .with_usage(Usage::CHOICE | Usage::REQUIRED),
+            Spec::new(Target::Switch(None))
+                .with_alias(b'c')
+                .with_usage(Usage::CHOICE),
+            Spec::default(),
+        ];
+        let table = SpecTable::new(&specs).unwrap();
+        let spec = |i| table.get(i).unwrap();
+        assert_eq!(
+            check_required(table, &[])
+                .err()
+                .and_then(|s| table.position(s)),
+            Some(1)
+        );
+        assert!(check_required(table, &[spec(2)]).is_ok());
+        assert!(check_required(table, &[spec(0)]).is_err());
+    }
+
+    /// The name of each kind of spec, in one write, a missing string written `(null)`.
+    #[test]
+    fn spec_names_are_written_whole() {
+        let specs = [
+            Spec::new(Target::Arg(None))
+                .with_value_name(c"<file>")
+                .with_alias(b'f'),
+            Spec::new(Target::Args(None)),
+            Spec::new(Target::Switch(None))
+                .with_alias(b'f')
+                .with_name(c"force"),
+            Spec::new(Target::Switch(None))
+                .with_alias(b'f')
+                .with_name(c"force")
+                .with_usage(Usage::SHOW_LONG),
+            Spec::new(Target::Value(None)).with_name(c"output"),
+            Spec::new(Target::Bool(None)),
+            Spec::new(Target::Switch(None)).with_alias(0xE9),
+            Spec::default(),
+        ];
+        let table = SpecTable::new(&specs).unwrap();
+        let expected: [&[u8]; 7] = [
+            b"<file>",
+            b"(null)",
+            b"-f",
+            b"--force",
+            b"--output",
+            b"--(null)",
+            b"-\xe9",
+        ];
+        for (spec, expected) in table.iter().zip(expected) {
+            let mut out = Pieces::default();
+            write_spec_name(&mut out, spec).unwrap();
+            assert_eq!(out.0, [expected], "{spec:?}");
+        }
+    }
+
+    /// Each write the writer is given, kept apart.
+    #[derive(Default)]
+    struct Pieces(Vec<Vec<u8>>);
+
+    impl std::io::Write for Pieces {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.push(buf.to_vec());
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// An argument lent by a parse is a borrow of its array, for `'p`.
+    #[test]
+    fn values_lent_by_a_lookup_outlive_the_parser() {
+        let specs = [
+            Spec::new(Target::Value(None)).with_alias(b'o'),
+            Spec::default(),
+        ];
+        let table = SpecTable::new(&specs).unwrap();
+        let args = [Arg::new(c"-ofile")];
+        let value = {
+            let p = parser(table);
+            let arg = args[0].as_c_str();
+            let rest = CStr::from_bytes_until_nul(&arg.to_bytes_with_nul()[1..]).unwrap();
+            find_short(p.as_ref(), rest).and_then(|(_, v)| v)
+        };
+        assert_eq!(value, Some(c"file"));
     }
 }

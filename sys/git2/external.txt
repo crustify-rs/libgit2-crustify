@@ -1,3 +1,11 @@
+FILE
+_IO_FILE
+_IO_codecvt
+_IO_lock_t
+_IO_marker
+_IO_wide_data
+__off64_t
+__off_t
 git_error
 git_indexer_progress
 git_repository

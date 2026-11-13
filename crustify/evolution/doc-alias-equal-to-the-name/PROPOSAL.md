@@ -32,6 +32,13 @@ it: the CLI's static helpers (`opt.c`'s `spec_included`, `consume_choices`,
 `validate_required`, `parse_long`, `parse_short`, `parse_arg`, `sort_gnu_style`, and the
 `cmd_*.c` helpers) among them.
 
+`wave-186/batch-4/run-1` met it seven times over, porting `opt.c`'s static helpers
+`spec_for_long`, `spec_for_short`, `spec_for_arg`, `spec_is_choice`, `consume_choices`,
+`spec_included` and `validate_required`, each refused as above. They are private, so the
+batch renamed them for what they do (`find_long`, `find_short`, `find_arg`, `is_choice`,
+`skip_choice_args`, `is_given`, `check_required`) and kept each anchor and alias. A batch that
+ports a module's helpers meets it as a rule of the module's whole route, not of one item.
+
 ## Destination
 
 The spec: the conventions' Anchors section (`rust/conventions`), which the translator and
