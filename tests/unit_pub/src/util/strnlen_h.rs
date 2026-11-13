@@ -45,13 +45,20 @@ fn high_bytes_are_not_terminators() {
     assert_eq!(strnlen("é\0".as_bytes()), 2);
 }
 
-/// Every NUL position in every bound up to 70 bytes, from every start within a word, so that
-/// a scan done word by word would cross each boundary, against the standard library's.
+/// The longest bound the sweep below reaches. Under `BorrowSanitizer`, whose debug runs cost tens
+/// of milliseconds each, it stops at 24, past the 16 bytes from which core's `memchr` scans word
+/// by word; every other build sweeps to 70.
+const LONGEST: usize = if cfg!(bsan) { 24 } else { 70 };
+
+/// Every NUL position in every bound up to [`LONGEST`] bytes, from every start within a word,
+/// so that a scan done word by word would cross each boundary, against the standard library's.
+/// Each start fills a buffer of its own: `BorrowSanitizer`'s cost per access to one buffer grows
+/// with the borrows of it already made.
 #[test]
 fn every_nul_position_in_every_bound() {
-    let mut buf = [b'x'; 80];
     for start in 0..8 {
-        for len in 0..=70 {
+        let mut buf = [b'x'; 80];
+        for len in 0..=LONGEST {
             for nul in (0..len).map(Some).chain([None]) {
                 buf.fill(b'x');
                 if let Some(at) = nul {

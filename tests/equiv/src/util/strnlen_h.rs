@@ -40,14 +40,21 @@ fn edge_cases_match_the_c() {
     }
 }
 
-/// Every NUL position in every bound up to 70 bytes, from every start within a word, so that
-/// glibc's vectorized `strnlen` crosses each of its alignment cases.
+/// The longest bound the sweep below reaches. Under `BorrowSanitizer`, whose debug runs cost tens
+/// of milliseconds each, it stops at 24, past the 16 bytes from which core's `memchr` scans word
+/// by word, and leaves glibc's longer vector cases to the other builds, which sweep to 70.
+const LONGEST: usize = if cfg!(bsan) { 24 } else { 70 };
+
+/// Every NUL position in every bound up to [`LONGEST`] bytes, from every start within a word,
+/// so that glibc's vectorized `strnlen` crosses each of its alignment cases. Each start fills a
+/// buffer of its own: `BorrowSanitizer`'s cost per access to one buffer grows with the borrows of
+/// it already made.
 #[test]
 #[cfg_attr(miri, ignore = "calls libgit2")]
 fn every_nul_position_matches_the_c() {
-    let mut buf = [b'x'; 80];
     for start in 0..8 {
-        for len in 0..=70 {
+        let mut buf = [b'x'; 80];
+        for len in 0..=LONGEST {
             for nul in (0..len).map(Some).chain([None]) {
                 buf.fill(b'x');
                 if let Some(at) = nul {
