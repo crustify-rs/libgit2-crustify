@@ -1,9 +1,10 @@
-//! `src/cli/opt.c`: the enums of `opt.h`, `Kind::is_option`, the port of
+//! `src/cli/opt.c`: the enums and structs of `opt.h`, `Kind::is_option`, the port of
 //! `spec_is_option_type`, and `uses_gnu_style`, the port of `support_gnu_style`, checked
 //! against their contract through Rust assertions alone. The CLI has no C tests to carry
 //! over; these cover the flag sets' operations over the combinations the CLI's spec tables
-//! use, the closed enums' C values, which the CLI's remaining C relies on, and the parsing
-//! style each combination of flags selects.
+//! use, the closed enums' C values, which the CLI's remaining C relies on, the parsing
+//! style each combination of flags selects, and the accessors of the spec, outcome and parser
+//! layouts, built in Rust storage.
 //!
 //! None reaches C. `uses_gnu_style` reads `POSIXLY_CORRECT`, which a test does not set in its
 //! own process: setting the environment is unsafe while other threads may read it, as the
@@ -11,9 +12,15 @@
 //! binary, whose environment the parent sets, and Miri, which spawns no process, ignores it;
 //! it runs all the others.
 
+use core::cell::Cell;
+use core::num::NonZero;
 use std::process::Command;
 
-use libgit2_crustify::git2::src::cli::opt::{Kind, ParseFlags, Status, Usage, uses_gnu_style};
+use ffibox::CZeroable;
+use libgit2_crustify::git2::src::cli::opt::{
+    Arg, ArgsSlot, Kind, Opt, ParseFlags, Parser, Spec, SpecTable, Status, Target, Usage,
+    uses_gnu_style,
+};
 
 /// Every usage flag a constant names, `DEFAULT` aside.
 const USAGE_FLAGS: [Usage; 6] = [
@@ -295,4 +302,392 @@ fn gnu_yields_to_posixly_correct() {
             run_child(name, Some("0"));
         }
     }
+}
+/// A zeroed spec is the end of a table: kind `None`, and no variable, name, alias, switch
+/// value, usage flag, value name or help, as `Default` builds it too.
+#[test]
+fn a_zeroed_spec_is_empty() {
+    for spec in [Spec::zeroed(), Spec::default()] {
+        let r = spec.as_ref();
+        assert_eq!(r.kind(), Some(Kind::None));
+        assert!(matches!(r.target(), Some(Target::None)));
+        assert_eq!(r.name(), None);
+        assert_eq!(r.alias(), None);
+        assert_eq!(r.switch_value(), 0);
+        assert_eq!(r.usage(), Usage::DEFAULT);
+        assert_eq!(r.value_name(), None);
+        assert_eq!(r.help(), None);
+    }
+}
+
+/// Each target reads back with its kind and the very variable it was given, or none.
+#[test]
+fn targets_round_trip_with_their_kinds() {
+    let flag = Cell::new(0);
+    let value = Cell::new(None);
+    let rest = ArgsSlot::new();
+    let targets = [
+        Target::None,
+        Target::Bool(Some(&flag)),
+        Target::Switch(Some(&flag)),
+        Target::Accumulator(Some(&flag)),
+        Target::Value(Some(&value)),
+        Target::Literal,
+        Target::Arg(Some(&value)),
+        Target::Args(Some(&rest)),
+        Target::Bool(None),
+        Target::Value(None),
+        Target::Args(None),
+    ];
+    for target in targets {
+        let spec = Spec::new(target);
+        let read = spec.as_ref().target().expect("a kind opt.h names");
+        assert_eq!(spec.as_ref().kind(), Some(target.kind()), "{target:?}");
+        assert_eq!(read.kind(), target.kind(), "{target:?}");
+        match (target, read) {
+            (Target::Bool(a), Target::Bool(b))
+            | (Target::Switch(a), Target::Switch(b))
+            | (Target::Accumulator(a), Target::Accumulator(b)) => {
+                assert_eq!(a.map(core::ptr::from_ref), b.map(core::ptr::from_ref));
+            }
+            (Target::Value(a), Target::Value(b)) | (Target::Arg(a), Target::Arg(b)) => {
+                assert_eq!(a.map(core::ptr::from_ref), b.map(core::ptr::from_ref));
+            }
+            (Target::Args(a), Target::Args(b)) => {
+                assert_eq!(a.map(core::ptr::from_ref), b.map(core::ptr::from_ref));
+            }
+            (Target::None, Target::None) | (Target::Literal, Target::Literal) => {}
+            _ => panic!("{target:?} read back as {read:?}"),
+        }
+    }
+}
+
+/// Setting a target replaces the kind and the variable together: a switch turned into a value
+/// spec no longer reaches the switch's variable.
+#[test]
+fn set_target_replaces_kind_and_variable() {
+    let mode = Cell::new(7);
+    let value = Cell::new(None);
+    let mut spec = Spec::new(Target::Switch(Some(&mode)));
+    spec.as_mut().set_target(Target::Value(Some(&value)));
+    let Some(Target::Value(Some(v))) = spec.as_ref().target() else {
+        panic!("{:?}", spec.as_ref().target());
+    };
+    v.set(Some(Arg::new(c"x")));
+    assert_eq!(value.get().map(Arg::as_c_str), Some(c"x"));
+    assert_eq!(mode.get(), 7);
+    spec.as_mut().set_target(Target::Literal);
+    assert!(matches!(spec.as_ref().target(), Some(Target::Literal)));
+}
+
+/// A variable shared by two specs is written through either, as two switches selecting one
+/// mode share it.
+#[test]
+fn specs_share_a_variable() {
+    let mode = Cell::new(0);
+    let mut read = Spec::new(Target::Switch(Some(&mode)));
+    read.as_mut().set_switch_value(1);
+    let mut write = Spec::new(Target::Switch(Some(&mode)));
+    write.as_mut().set_switch_value(2);
+    for spec in [&read, &write] {
+        let r = spec.as_ref();
+        let Some(Target::Switch(Some(v))) = r.target() else {
+            panic!("{:?}", r.target());
+        };
+        v.set(r.switch_value());
+        assert_eq!(mode.get(), r.switch_value());
+    }
+    assert_eq!(mode.get(), 2);
+}
+
+/// The strings, alias, switch value and usage read back as set, and clear back to none.
+#[test]
+fn spec_fields_round_trip() {
+    let mut spec = Spec::new(Target::Value(None));
+    let mut m = spec.as_mut();
+    m.set_name(Some(c"config-env"));
+    m.set_alias(NonZero::new(b'c'));
+    m.set_switch_value(-3);
+    m.set_usage(Usage::HIDDEN | Usage::VALUE_OPTIONAL);
+    m.set_value_name(Some(c"key=value"));
+    m.set_help(Some(c"set configuration value to environment variable"));
+    let r = spec.as_ref();
+    assert_eq!(r.name(), Some(c"config-env"));
+    assert_eq!(r.alias().map(NonZero::get), Some(b'c'));
+    assert_eq!(r.switch_value(), -3);
+    assert_eq!(r.usage(), Usage::HIDDEN | Usage::VALUE_OPTIONAL);
+    assert_eq!(r.value_name(), Some(c"key=value"));
+    assert_eq!(
+        r.help(),
+        Some(c"set configuration value to environment variable")
+    );
+
+    let mut m = spec.as_mut();
+    m.set_name(None);
+    m.set_alias(None);
+    m.set_value_name(None);
+    m.set_help(None);
+    let r = spec.as_ref();
+    assert_eq!(
+        (r.name(), r.alias(), r.value_name(), r.help()),
+        (None, None, None, None)
+    );
+}
+
+/// An alias above ASCII keeps its byte, as C's `char` holds it.
+#[test]
+fn a_non_ascii_alias_keeps_its_byte() {
+    let mut spec = Spec::zeroed();
+    spec.as_mut().set_alias(NonZero::new(0xE9));
+    assert_eq!(spec.as_ref().alias().map(NonZero::get), Some(0xE9));
+}
+
+/// A spec's `Debug` shows its fields through its handles.
+#[test]
+fn spec_debug_shows_its_fields() {
+    let mut spec = Spec::new(Target::Literal);
+    spec.as_mut().set_name(Some(c"lit"));
+    let shown = format!("{spec:?}");
+    assert!(shown.contains("Literal"), "{shown}");
+    assert!(shown.contains("\"lit\""), "{shown}");
+    assert_eq!(format!("{:?}", spec.as_mut()), shown);
+}
+
+/// A table runs up to its first zeroed spec, and needs one.
+#[test]
+fn a_table_ends_at_its_first_zeroed_spec() {
+    let flag = Cell::new(0);
+    let specs = [
+        Spec::new(Target::Bool(Some(&flag))),
+        Spec::new(Target::Literal),
+        Spec::zeroed(),
+        Spec::new(Target::Bool(None)),
+        Spec::zeroed(),
+    ];
+    let table = SpecTable::new(&specs).expect("ended");
+    assert_eq!(table.len(), 2);
+    assert!(!table.is_empty());
+    let kinds: Vec<_> = table.iter().map(|s| s.kind()).collect();
+    assert_eq!(kinds, [Some(Kind::Bool), Some(Kind::Literal)]);
+    assert_eq!(table.get(1).and_then(|s| s.kind()), Some(Kind::Literal));
+    assert!(table.get(2).is_none());
+    assert_eq!(format!("{table:?}").matches("Spec").count(), 2);
+
+    let unended = [Spec::new(Target::Literal)];
+    assert!(SpecTable::new(&unended).is_none());
+    assert!(SpecTable::new(&[]).is_none());
+
+    let only_end = [Spec::zeroed()];
+    let empty = SpecTable::new(&only_end).expect("ended");
+    assert!(empty.is_empty());
+    assert_eq!(empty.iter().count(), 0);
+}
+
+/// A spec's position is found by address in its own table only, never at the end.
+#[test]
+fn positions_are_found_by_address() {
+    let specs = [
+        Spec::new(Target::Literal),
+        Spec::new(Target::Arg(None)),
+        Spec::zeroed(),
+    ];
+    let table = SpecTable::new(&specs).expect("ended");
+    for (i, spec) in table.iter().enumerate() {
+        assert_eq!(table.position(spec), Some(i));
+    }
+    assert_eq!(table.position(specs[2].as_ref()), None);
+    let other = Spec::new(Target::Literal);
+    assert_eq!(table.position(other.as_ref()), None);
+    let tail = SpecTable::new(&specs[1..]).expect("ended");
+    assert_eq!(tail.position(specs[0].as_ref()), None);
+    assert_eq!(tail.position(specs[1].as_ref()), Some(0));
+}
+
+/// An argument lends back the string it was built from, and shows it in `Debug`.
+#[test]
+fn an_arg_lends_its_string() {
+    let s = c"--debug";
+    let arg = Arg::new(s);
+    assert_eq!(arg.as_c_str(), s);
+    assert_eq!(arg.as_c_str().as_ptr(), s.as_ptr());
+    assert_eq!(Arg::from(s).as_c_str(), s);
+    assert_eq!(format!("{arg:?}"), format!("{s:?}"));
+}
+
+/// An empty slot finds nothing; a set one finds the tail it was given in its own array, and
+/// nothing in another; clearing empties it.
+#[test]
+fn an_args_slot_finds_its_tail() {
+    let mut args = [Arg::new(c"a"), Arg::new(c"b"), Arg::new(c"c")];
+    let other = [Arg::new(c"a")];
+    let slot = ArgsSlot::default();
+    assert!(!slot.is_set());
+    assert!(slot.get_in(&args).is_none());
+
+    slot.set(&args[1..]);
+    assert!(slot.is_set());
+    let tail: Vec<_> = slot
+        .get_in(&args)
+        .expect("in args")
+        .iter()
+        .map(|a| a.as_c_str())
+        .collect();
+    assert_eq!(tail, [c"b", c"c"]);
+    assert!(slot.get_in(&other).is_none());
+    assert!(slot.get_in(&args[2..]).is_none());
+    assert_eq!(slot.get_in(&args[..2]).map(<[Arg<'_>]>::len), Some(1));
+
+    slot.set(&args[3..]);
+    assert_eq!(slot.get_in(&args).map(<[Arg<'_>]>::len), Some(0));
+    args[0] = Arg::new(c"z");
+    assert_eq!(slot.get_in(&args).map(<[Arg<'_>]>::len), Some(0));
+    assert!(format!("{slot:?}").starts_with("ArgsSlot("));
+
+    slot.clear();
+    assert!(!slot.is_set());
+    assert!(slot.get_in(&args).is_none());
+}
+
+/// A zeroed outcome is done, with no spec, argument, value or arguments taken.
+#[test]
+fn a_zeroed_opt_is_done() {
+    for opt in [Opt::zeroed(), Opt::default()] {
+        let r = opt.as_ref();
+        assert_eq!(r.status(), Some(Status::Done));
+        assert!(r.spec().is_none());
+        assert_eq!((r.arg(), r.value(), r.args_len()), (None, None, 0));
+    }
+}
+
+/// Every field of an outcome reads back as set, its spec by address.
+#[test]
+fn opt_fields_round_trip() {
+    let specs = [Spec::new(Target::Value(None)), Spec::zeroed()];
+    let table = SpecTable::new(&specs).expect("ended");
+    let arg = c"--name=value";
+    let mut opt = Opt::zeroed();
+    let spec = table.get(0).expect("one spec");
+    let mut m = opt.as_mut();
+    m.set_status(Status::MissingValue);
+    m.set_spec(Some(spec));
+    m.set_arg(Some(arg));
+    m.set_value(Some(c"value"));
+    m.set_args_len(4);
+    let r = opt.as_ref();
+    assert_eq!(r.status(), Some(Status::MissingValue));
+    assert_eq!(r.spec().map(|s| table.position(s)), Some(Some(0)));
+    assert_eq!(r.arg(), Some(arg));
+    assert_eq!(r.value(), Some(c"value"));
+    assert_eq!(r.args_len(), 4);
+    assert!(format!("{opt:?}").contains("MissingValue"));
+
+    let mut m = opt.as_mut();
+    m.set_spec(None);
+    m.set_arg(None);
+    m.set_value(None);
+    assert!(format!("{m:?}").contains("spec: None"));
+    let r = opt.as_ref();
+    assert!(r.spec().is_none());
+    assert_eq!((r.arg(), r.value()), (None, None));
+}
+
+/// Every status round-trips through an outcome.
+#[test]
+fn statuses_round_trip_through_an_opt() {
+    let mut opt = Opt::zeroed();
+    for status in [
+        Status::Done,
+        Status::Ok,
+        Status::UnknownOption,
+        Status::MissingValue,
+        Status::MissingArgument,
+    ] {
+        opt.as_mut().set_status(status);
+        assert_eq!(opt.as_ref().status(), Some(status));
+    }
+}
+
+/// A zeroed parser has no table and no arguments, every position and bit clear.
+#[test]
+fn a_zeroed_parser_is_empty() {
+    for parser in [Parser::zeroed(), Parser::default()] {
+        let r = parser.as_ref();
+        assert!(r.specs().is_none());
+        assert!(r.args().is_empty());
+        assert_eq!(r.args_len(), 0);
+        assert_eq!(r.flags(), ParseFlags::DEFAULT);
+        assert_eq!(
+            (r.idx(), r.arg_idx(), r.in_args(), r.in_short()),
+            (0, 0, 0, 0)
+        );
+        assert!(!r.needs_sort());
+        assert!(!r.in_literal());
+    }
+    let mut parser = Parser::zeroed();
+    assert!(parser.as_mut().args_mut().is_empty());
+}
+
+/// A parser's table, arguments and their count, and its state read back as set; its two bits
+/// are independent of each other.
+#[test]
+fn parser_fields_round_trip() {
+    let specs = [Spec::new(Target::Arg(None)), Spec::zeroed()];
+    let table = SpecTable::new(&specs).expect("ended");
+    let mut args = [Arg::new(c"one"), Arg::new(c"--two")];
+    let mut parser = Parser::zeroed();
+    let mut m = parser.as_mut();
+    m.set_specs(Some(table));
+    m.set_args(&mut args);
+    m.set_flags(ParseFlags::GNU);
+    m.set_idx(1);
+    m.set_arg_idx(2);
+    m.set_in_args(3);
+    m.set_in_short(4);
+    m.set_needs_sort(true);
+    let r = parser.as_ref();
+    let read = r.specs().expect("a table");
+    assert_eq!(read.len(), 1);
+    assert_eq!(read.position(table.get(0).expect("one spec")), Some(0));
+    let args_read: Vec<_> = r.args().iter().map(|a| a.as_c_str()).collect();
+    assert_eq!(args_read, [c"one", c"--two"]);
+    assert_eq!(r.args_len(), 2);
+    assert_eq!(r.flags(), ParseFlags::GNU);
+    assert_eq!(
+        (r.idx(), r.arg_idx(), r.in_args(), r.in_short()),
+        (1, 2, 3, 4)
+    );
+    assert!(r.needs_sort());
+    assert!(!r.in_literal());
+
+    let mut m = parser.as_mut();
+    m.set_in_literal(true);
+    assert!(m.as_ref().needs_sort() && m.as_ref().in_literal());
+    m.set_needs_sort(false);
+    assert!(!m.as_ref().needs_sort() && m.as_ref().in_literal());
+    m.set_in_literal(false);
+    assert!(!m.as_ref().needs_sort() && !m.as_ref().in_literal());
+    m.set_specs(None);
+    assert!(m.as_ref().specs().is_none());
+    assert!(format!("{m:?}").contains("specs: None"));
+}
+
+/// The arguments a parser holds reorder in place, as a GNU-style parse moves its options, and
+/// an outcome or variable keeps the strings it took.
+#[test]
+fn a_parsers_arguments_reorder_in_place() {
+    let mut args = [Arg::new(c"file"), Arg::new(c"--help")];
+    let taken = Cell::new(None);
+    let mut parser = Parser::zeroed();
+    parser.as_mut().set_args(&mut args);
+    taken.set(parser.as_ref().args().first().copied());
+    parser.as_mut().args_mut().swap(0, 1);
+    let order: Vec<_> = parser
+        .as_ref()
+        .args()
+        .iter()
+        .map(|a| a.as_c_str())
+        .collect();
+    assert_eq!(order, [c"--help", c"file"]);
+    assert_eq!(taken.get().map(Arg::as_c_str), Some(c"file"));
+    assert!(format!("{parser:?}").contains("\"--help\""));
 }

@@ -1,4 +1,4 @@
-//! Equivalence of `src/cli/opt.c` with its port.
+//! Equivalence of `src/cli/opt.c` with its port, and of `opt.h`'s structs with their Rust layouts.
 //!
 //! - `opt.h`'s enums: each Rust variant's discriminant and each flag's bits against the constant
 //!   `opt.h` defines, which the raw bindings reach. The CLI's remaining C passes these values to
@@ -17,12 +17,23 @@
 //! - `support_gnu_style` is `cli_opt_parser_init`'s `needs_sort`, compared with `uses_gnu_style`
 //!   for each combination of the style flags. The environment it reads is set in a child process of
 //!   this binary, never in the test's own, whose other threads may read it.
+//! - `opt.h`'s structs: C's own parser, `cli_opt_parser_next` and `cli_opt_parse` through the raw
+//!   bindings, runs over spec tables, arguments and parsers built through the safe API, and what it
+//!   writes, to the outcome, the parser and the specs' variables, is read back through the getters
+//!   and compared with the fields as C laid them out; state the setters write is read by C. Those
+//!   call C, so Miri stops there.
 
-use std::ffi::{CString, c_char, c_uint};
+use core::cell::Cell;
+use core::num::NonZero;
+use std::ffi::{CStr, CString, c_char, c_uint};
 use std::process::Command;
 use std::{mem, ptr};
 
-use libgit2_crustify::git2::src::cli::opt::{Kind, ParseFlags, Status, Usage, uses_gnu_style};
+use ffibox::{CMutSeam, CRefSeam, CZeroable};
+use libgit2_crustify::git2::src::cli::opt::{
+    Arg, ArgsSlot, Kind, Opt, OptRef, ParseFlags, Parser, Spec, SpecRef, SpecTable, Status, Target,
+    Usage, uses_gnu_style,
+};
 use libgit2_crustify::sys::git2 as sys;
 
 /// Each kind's discriminant is its `CLI_OPT_TYPE_*` constant's value.
@@ -272,4 +283,345 @@ fn gnu_style_matches_the_c_in_each_environment() {
             .collect();
         assert_eq!(steps, expected, "POSIXLY_CORRECT={value:?}");
     }
+}
+/// One step of C's parser: `cli_opt_parser_next` over `opt` and `parser`, its status checked
+/// against the outcome's.
+fn next<'p>(opt: &mut Opt<'p>, parser: &mut Parser<'p>) -> Option<Status> {
+    let (o, p) = (opt.as_mut().as_mut_ptr(), parser.as_mut().as_mut_ptr());
+    // SAFETY: both point at live values Rust holds, borrowed exclusively for the call; the
+    // parser's table and arguments, built through the safe API, are borrowed for `'p`, so what
+    // C stores in the outcome and the specs' variables lives as long as they do.
+    let status = unsafe { sys::cli_opt_parser_next(o, p) };
+    assert_eq!(opt.as_ref().status().map(|s| s as u32), Some(status));
+    opt.as_ref().status()
+}
+
+/// The getters of an outcome against its fields as C laid them out.
+fn assert_opt_matches_c(opt: OptRef<'_, '_>) {
+    // SAFETY: the handle borrows a live, initialised outcome; this copies its bytes out.
+    let c = unsafe { opt.as_ptr().read() };
+    assert_eq!(opt.status().map(|s| s as u32), Some(c.status));
+    assert_eq!(opt.spec().map_or(ptr::null(), |s| s.as_ptr()), c.spec);
+    assert_eq!(
+        opt.arg().map_or(ptr::null(), CStr::as_ptr),
+        c.arg.cast_const()
+    );
+    assert_eq!(
+        opt.value().map_or(ptr::null(), CStr::as_ptr),
+        c.value.cast_const()
+    );
+    assert_eq!(opt.args_len(), c.args_len);
+}
+
+/// The getters of a parser against its fields as C laid them out, the bit-fields through
+/// bindgen's accessors.
+fn assert_parser_matches_c(parser: &Parser<'_>) {
+    let r = parser.as_ref();
+    // SAFETY: the handle borrows a live, initialised parser; this copies its bytes out.
+    let c = unsafe { r.as_ptr().read() };
+    let table = r.specs().expect("a table");
+    assert_eq!(table.get(0).map_or(ptr::null(), |s| s.as_ptr()), c.specs);
+    assert_eq!(r.args().as_ptr().cast::<*mut c_char>(), c.args.cast_const());
+    assert_eq!((r.args_len(), r.flags().bits()), (c.args_len, c.flags));
+    assert_eq!(
+        (r.idx(), r.arg_idx(), r.in_args(), r.in_short()),
+        (c.idx, c.arg_idx, c.in_args, c.in_short)
+    );
+    assert_eq!(
+        (u32::from(r.needs_sort()), u32::from(r.in_literal())),
+        (c.needs_sort(), c.in_literal())
+    );
+}
+
+/// The strings of a parser's arguments, in their current order.
+fn order<'p>(parser: &Parser<'p>) -> Vec<&'p CStr> {
+    parser
+        .as_ref()
+        .args()
+        .iter()
+        .map(|a| a.as_c_str())
+        .collect()
+}
+
+/// C parses a table of every kind built in Rust: each outcome it writes reads back through the
+/// getters, by spec position, argument and value, and each variable holds what C stored, the
+/// remaining arguments found through the slot in the parser's array.
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn c_parses_a_table_built_in_rust() {
+    let debug = Cell::new(0);
+    let mode = Cell::new(0);
+    let verbose = Cell::new(0);
+    let output = Cell::new(None);
+    let file = Cell::new(None);
+    let rest = ArgsSlot::new();
+    let mut specs = [
+        Spec::new(Target::Bool(Some(&debug))),
+        Spec::new(Target::Switch(Some(&mode))),
+        Spec::new(Target::Switch(Some(&mode))),
+        Spec::new(Target::Accumulator(Some(&verbose))),
+        Spec::new(Target::Value(Some(&output))),
+        Spec::new(Target::Arg(Some(&file))),
+        Spec::new(Target::Args(Some(&rest))),
+        Spec::zeroed(),
+    ];
+    specs[0].as_mut().set_name(Some(c"debug"));
+    specs[0].as_mut().set_alias(NonZero::new(b'd'));
+    specs[1].as_mut().set_name(Some(c"read"));
+    specs[1].as_mut().set_switch_value(1);
+    specs[2].as_mut().set_name(Some(c"write"));
+    specs[2].as_mut().set_switch_value(2);
+    specs[3].as_mut().set_alias(NonZero::new(b'v'));
+    specs[4].as_mut().set_name(Some(c"output"));
+    specs[4].as_mut().set_alias(NonZero::new(b'o'));
+    let table = SpecTable::new(&specs).expect("ended");
+    let mut args = [
+        c"--debug",
+        c"-vv",
+        c"--write",
+        c"-ofile.txt",
+        c"--output=x",
+        c"--no-debug",
+        c"input",
+        c"more",
+        c"stuff",
+    ]
+    .map(Arg::new);
+    let mut parser = Parser::new(table, &mut args, ParseFlags::DEFAULT);
+    let mut opt = Opt::zeroed();
+
+    // (status, spec, arg, value, the parser's next index, its position in a bundle)
+    let expected = [
+        (Status::Ok, Some(0), Some(c"--debug"), None, 1, 0),
+        (Status::Ok, Some(3), Some(c"-vv"), None, 1, 1),
+        (Status::Ok, Some(3), Some(c"-vv"), None, 2, 0),
+        (Status::Ok, Some(2), Some(c"--write"), None, 3, 0),
+        (
+            Status::Ok,
+            Some(4),
+            Some(c"-ofile.txt"),
+            Some(c"file.txt"),
+            4,
+            0,
+        ),
+        (Status::Ok, Some(4), Some(c"--output=x"), Some(c"x"), 5, 0),
+        (Status::Ok, Some(0), Some(c"--no-debug"), None, 6, 0),
+        (Status::Ok, Some(5), Some(c"input"), None, 7, 0),
+        (Status::Ok, Some(6), Some(c"more"), None, 9, 0),
+    ];
+    for (i, (status, spec, arg, value, idx, in_short)) in expected.into_iter().enumerate() {
+        assert_eq!(next(&mut opt, &mut parser), Some(status), "step {i}");
+        let o = opt.as_ref();
+        assert_opt_matches_c(o);
+        assert_parser_matches_c(&parser);
+        assert_eq!(
+            o.spec().map(|s| table.position(s)),
+            spec.map(Some),
+            "step {i}"
+        );
+        assert_eq!((o.arg(), o.value()), (arg, value), "step {i}");
+        assert_eq!(
+            (parser.as_ref().idx(), parser.as_ref().in_short()),
+            (idx, in_short),
+            "step {i}"
+        );
+    }
+    assert_eq!(opt.as_ref().args_len(), 2);
+    assert_eq!(parser.as_ref().in_args(), 2);
+    assert_eq!(parser.as_ref().arg_idx(), 1);
+    assert_eq!(next(&mut opt, &mut parser), Some(Status::Done));
+    assert_opt_matches_c(opt.as_ref());
+    assert_eq!(opt.as_ref().args_len(), 2);
+    assert!(opt.as_ref().spec().is_none());
+
+    assert_eq!((debug.get(), mode.get(), verbose.get()), (0, 2, 2));
+    assert_eq!(output.get().map(Arg::as_c_str), Some(c"x"));
+    assert_eq!(file.get().map(Arg::as_c_str), Some(c"input"));
+    let tail = rest
+        .get_in(parser.as_ref().args())
+        .expect("in the parser's arguments");
+    let tail: Vec<_> = tail.iter().map(|a| a.as_c_str()).collect();
+    assert_eq!(tail, [c"more", c"stuff"]);
+}
+
+/// C reorders a GNU-style parser's arguments in the array the parser lends, options and their
+/// values ahead of the bare arguments, and clears `needs_sort` once it has.
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn c_reorders_the_arguments_rust_lent() {
+    let debug = Cell::new(0);
+    let output = Cell::new(None);
+    let file = Cell::new(None);
+    let rest = ArgsSlot::new();
+    let mut specs = [
+        Spec::new(Target::Bool(Some(&debug))),
+        Spec::new(Target::Value(Some(&output))),
+        Spec::new(Target::Arg(Some(&file))),
+        Spec::new(Target::Args(Some(&rest))),
+        Spec::zeroed(),
+    ];
+    specs[0].as_mut().set_name(Some(c"debug"));
+    specs[1].as_mut().set_alias(NonZero::new(b'o'));
+    let table = SpecTable::new(&specs).expect("ended");
+    let mut args = [c"file", c"--debug", c"-o", c"out", c"more"].map(Arg::new);
+    let mut parser = Parser::new(table, &mut args, ParseFlags::FORCE_GNU);
+    assert!(parser.as_ref().needs_sort());
+    let mut opt = Opt::zeroed();
+    assert_eq!(next(&mut opt, &mut parser), Some(Status::Ok));
+    assert_parser_matches_c(&parser);
+    assert!(!parser.as_ref().needs_sort());
+    assert_eq!(
+        order(&parser),
+        [c"--debug", c"-o", c"out", c"file", c"more"]
+    );
+    assert_eq!(opt.as_ref().arg(), Some(c"--debug"));
+    while next(&mut opt, &mut parser) == Some(Status::Ok) {
+        assert_opt_matches_c(opt.as_ref());
+    }
+    assert_eq!(opt.as_ref().status(), Some(Status::Done));
+    assert_eq!(debug.get(), 1);
+    assert_eq!(output.get().map(Arg::as_c_str), Some(c"out"));
+    assert_eq!(file.get().map(Arg::as_c_str), Some(c"file"));
+    let tail = rest
+        .get_in(parser.as_ref().args())
+        .expect("in the parser's arguments");
+    assert_eq!(
+        tail.iter().map(|a| a.as_c_str()).collect::<Vec<_>>(),
+        [c"more"]
+    );
+}
+
+/// The state the setters write is the state C reads: a literal parser takes `--debug` as a
+/// bare argument, a set index skips arguments, a position in a bundle resumes there, and a
+/// sort asked for is done.
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn c_reads_the_state_rust_set() {
+    let debug = Cell::new(0);
+    let verbose = Cell::new(0);
+    let file = Cell::new(None);
+    let mut specs = [
+        Spec::new(Target::Bool(Some(&debug))),
+        Spec::new(Target::Accumulator(Some(&verbose))),
+        Spec::new(Target::Arg(Some(&file))),
+        Spec::zeroed(),
+    ];
+    specs[0].as_mut().set_name(Some(c"debug"));
+    specs[0].as_mut().set_alias(NonZero::new(b'd'));
+    specs[1].as_mut().set_alias(NonZero::new(b'v'));
+    let table = SpecTable::new(&specs).expect("ended");
+    let mut opt = Opt::zeroed();
+
+    let mut literal_args = [Arg::new(c"--debug")];
+    let mut parser = Parser::new(table, &mut literal_args, ParseFlags::DEFAULT);
+    parser.as_mut().set_in_literal(true);
+    assert_eq!(next(&mut opt, &mut parser), Some(Status::Ok));
+    assert_eq!(
+        opt.as_ref().spec().map(|s| table.position(s)),
+        Some(Some(2))
+    );
+    assert_eq!(file.get().map(Arg::as_c_str), Some(c"--debug"));
+    assert_eq!(debug.get(), 0);
+
+    let mut skipped = [c"--nope", c"-dv"].map(Arg::new);
+    let mut parser = Parser::new(table, &mut skipped, ParseFlags::DEFAULT);
+    parser.as_mut().set_idx(1);
+    parser.as_mut().set_in_short(1);
+    assert_eq!(next(&mut opt, &mut parser), Some(Status::Ok));
+    assert_eq!(
+        opt.as_ref().spec().map(|s| table.position(s)),
+        Some(Some(1))
+    );
+    assert_eq!((verbose.get(), debug.get()), (1, 0));
+    assert_parser_matches_c(&parser);
+    assert_eq!(next(&mut opt, &mut parser), Some(Status::Done));
+
+    let mut sorted = [c"x", c"-d"].map(Arg::new);
+    let mut parser = Parser::new(table, &mut sorted, ParseFlags::DEFAULT);
+    parser.as_mut().set_needs_sort(true);
+    parser.as_mut().set_flags(ParseFlags::GNU);
+    assert_eq!(next(&mut opt, &mut parser), Some(Status::Ok));
+    assert_eq!(order(&parser), [c"-d", c"x"]);
+    assert_eq!(debug.get(), 1);
+    assert_eq!(parser.as_ref().flags(), ParseFlags::GNU);
+}
+
+/// A `cli_opt_parse` case: the arguments, and the status, spec position and argument of the
+/// outcome.
+type Case<'a> = (&'a [&'a CStr], Status, Option<usize>, Option<&'a CStr>);
+
+/// `cli_opt_parse` reports its failures in an outcome Rust reads: the unknown option with no
+/// spec, the value a spec lacks, and the required argument missing, with its spec.
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn c_parse_reports_failures_through_the_outcome() {
+    let output = Cell::new(None);
+    let file = Cell::new(None);
+    let mut specs = [
+        Spec::new(Target::Value(Some(&output))),
+        Spec::new(Target::Arg(Some(&file))),
+        Spec::zeroed(),
+    ];
+    specs[0].as_mut().set_name(Some(c"output"));
+    specs[1].as_mut().set_usage(Usage::REQUIRED);
+    let table = SpecTable::new(&specs).expect("ended");
+    let c_table = table.get(0).expect("a spec").as_ptr();
+
+    let cases: [Case<'_>; 3] = [
+        (&[c"--nope"], Status::UnknownOption, None, Some(c"--nope")),
+        (
+            &[c"--output"],
+            Status::MissingValue,
+            Some(0),
+            Some(c"--output"),
+        ),
+        (&[c"--output=x"], Status::MissingArgument, Some(1), None),
+    ];
+    for (given, status, spec, arg) in cases {
+        let mut args: Vec<Arg<'_>> = given.iter().copied().map(Arg::new).collect();
+        let mut opt = Opt::zeroed();
+        // SAFETY: the outcome is live and borrowed exclusively for the call; the table is a
+        // `SpecTable`'s, ended by its zeroed spec, and the arguments a live array of C strings,
+        // which C reorders in place under `CLI_OPT_PARSE_DEFAULT` never.
+        let rc = unsafe {
+            sys::cli_opt_parse(
+                opt.as_mut().as_mut_ptr(),
+                c_table,
+                args.as_mut_ptr().cast(),
+                args.len(),
+                ParseFlags::DEFAULT.bits(),
+            )
+        };
+        let o = opt.as_ref();
+        assert_eq!(o.status(), Some(status), "{given:?}");
+        assert_eq!(o.status().map(|s| s as u32), Some(rc), "{given:?}");
+        assert_opt_matches_c(o);
+        assert_eq!(
+            o.spec().map(|s| table.position(s)),
+            spec.map(Some),
+            "{given:?}"
+        );
+        assert_eq!(o.arg(), arg, "{given:?}");
+    }
+}
+
+/// Values C can hold that `opt.h` does not name read as no kind, no target and no status.
+#[test]
+fn unnamed_c_values_are_none() {
+    let raw = sys::cli_opt_spec {
+        type_: sys::CLI_OPT_TYPE_ARGS + 1,
+        ..Default::default()
+    };
+    // SAFETY: `raw` is a live spec with `NULL` strings and variable, borrowed for the handle.
+    let spec = unsafe { SpecRef::from_ptr((&raw const raw).cast_mut()) }.expect("non-null");
+    assert_eq!(spec.kind(), None);
+    assert!(spec.target().is_none());
+
+    let raw = sys::cli_opt {
+        status: sys::CLI_OPT_STATUS_MISSING_ARGUMENT + 1,
+        ..Default::default()
+    };
+    // SAFETY: `raw` is a live outcome with `NULL` pointers, borrowed for the handle.
+    let opt = unsafe { OptRef::from_ptr((&raw const raw).cast_mut()) }.expect("non-null");
+    assert_eq!(opt.status(), None);
 }

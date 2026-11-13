@@ -892,6 +892,27 @@ impl cli_opt_parser {
     }
 }
 unsafe extern "C" {
+    /** Parses all the command-line arguments and updates all the options using
+ the pointers provided.  Parsing stops on any invalid argument and
+ information about the failure will be provided in the opt argument.
+
+ This is the simplest way to parse options; it handles the initialization
+ (`parser_init`) and looping (`parser_next`).
+
+ @param opt The The `cli_opt` information that failed parsing
+ @param specs A NULL-terminated array of `cli_opt_spec`s that can be parsed
+ @param args The arguments that will be parsed
+ @param args_len The length of arguments to be parsed
+ @param flags The `cli_opt_flag_t flags for parsing*/
+    pub fn cli_opt_parse(
+        opt: *mut cli_opt,
+        specs: *const cli_opt_spec,
+        args: *mut *mut ::std::os::raw::c_char,
+        args_len: usize,
+        flags: ::std::os::raw::c_uint,
+    ) -> cli_opt_status_t;
+}
+unsafe extern "C" {
     /** Initializes a parser that parses the given arguments according to the
  given specifications.
 

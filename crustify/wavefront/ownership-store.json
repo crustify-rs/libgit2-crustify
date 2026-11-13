@@ -2,6 +2,175 @@
  "_comment": "Authored analysis: ownership, lifecycle, refcount and locking judgements that no composer can derive, keyed to the C entities they describe. The structural half of each record (field layout, signatures, footprints, casts) is composed from the CodeQL tables on demand and merged in at read time, so a re-extract rewrites nothing here. Written only by `wavefront <repo> <target> query {types,symbols} --update`; read through wavefront.manifests. Hand-edit at your own risk: `--update` validates a submission against the composed skeleton (unknown field, wrong kind, ptr-invariant violation) and this file does not.",
  "types": [
   {
+   "name": "cli_opt",
+   "defined_in": "src/cli/opt.h",
+   "_comment_user": "The outcome of one cli_opt_parser_next, held by its caller on the stack (main.c, every cmd_*.c's invalid_opt) and cleared with memset before each argument; nothing allocates or frees one. Bound in wave-186/batch-2 as opt.rs's Opt<'p>.",
+   "fields": [
+    {
+     "name": "arg",
+     "ptr": {
+      "scalar": null,
+      "array": null,
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "other"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The argument as given, an element of the parser's args; NULL once done. Never written through."
+     }
+    },
+    {
+     "name": "spec",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "other"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "An element of the parser's spec table, or NULL for an unknown option and once done; kept by the caller after the parse (cli_opt_status_fprint, validate_required)."
+     }
+    },
+    {
+     "name": "value",
+     "ptr": {
+      "scalar": null,
+      "array": null,
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "other"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A VALUE spec's value: a suffix of its argument (after '=' or the short alias) or the next argument; NULL when none was given. Read by common.c's parse_option; never written through."
+     }
+    }
+   ]
+  },
+  {
+   "name": "cli_opt_parser",
+   "defined_in": "src/cli/opt.h",
+   "_comment_user": "A parser's state, filled in place by cli_opt_parser_init (memset, then the table, the array and its length, the flags and needs_sort) in its caller's storage (main.c's stack, cli_opt_parse and cli_opt_foreach); nothing allocates or frees one. Bound in wave-186/batch-2 as opt.rs's Parser<'p>.",
+   "fields": [
+    {
+     "name": "args",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_ref": {
+        "owned": false,
+        "borrowed": {
+         "lifetime": "other"
+        }
+       }
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "other"
+      },
+      "nullable": true,
+      "mutable": true,
+      "note": "The caller's argv slice, args_len non-null strings; sort_gnu_style reorders its elements in place, and parse_arg stores &args[idx] in an ARGS spec's variable. NULL only with args_len 0."
+     }
+    },
+    {
+     "name": "specs",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "other"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The caller's spec table, read up to its zeroed spec; borrowed for the parser's life. NULL only in a zeroed parser, which cli_opt_parser_next reports done without reading it."
+     }
+    }
+   ]
+  },
+  {
+   "name": "cli_opt_spec",
+   "defined_in": "src/cli/opt.h",
+   "_comment_user": "A spec of a const table the CLI's commands define statically (main.c, cmd_*.c) or on the stack (common.c), ended by a zeroed spec; nothing allocates or frees one. type selects what value points at. Bound in wave-186/batch-2 as opt.rs's Spec<'p>, its type and value one Target.",
+   "fields": [
+    {
+     "name": "help",
+     "ptr": {
+      "scalar": null,
+      "array": null,
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A string literal usage prints; NULL for none."
+     }
+    },
+    {
+     "name": "name",
+     "ptr": {
+      "scalar": null,
+      "array": null,
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The long option's name, a string literal of the table; NULL for a spec without one (a short-only value spec, CLI_COMMON_OPT_CONFIG). Read with strcmp/strncmp by spec_for_long, which checks NULL except in the --no-<name> branch of a bool spec."
+     }
+    },
+    {
+     "name": "value",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": true,
+      "note": "Type-erased by type: an int * for BOOL, SWITCH and ACCUMULATOR (set, assigned the switch value, or incremented), a char ** for VALUE and ARG (assigned an argument or a suffix of one), a char *** for ARGS (assigned &parser->args[idx]); unused for NONE and LITERAL. The command's static variable, shared by several specs where switches multiplex a mode; NULL for a spec that writes nothing. Written only by parse_long, parse_short and parse_arg."
+     }
+    },
+    {
+     "name": "value_name",
+     "ptr": {
+      "scalar": null,
+      "array": null,
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A string literal usage prints for VALUE, ARG and ARGS specs; NULL elsewhere."
+     }
+    }
+   ]
+  },
+  {
    "name": "git_allocator",
    "defined_in": "include/git2/sys/alloc.h",
    "fields": [
@@ -4009,6 +4178,61 @@
      "note": "libc calloc: ZEROING; NULL on overflow or failure. Released by free."
     }
    }
+  },
+  {
+   "name": "cli_opt_parser_init",
+   "defined_in": "src/cli/opt.c",
+   "lifetime": {
+    "for": "parser",
+    "is_dropper": false,
+    "is_disposer": false,
+    "is_cloner": null,
+    "is_constructor": {
+     "alloc": false,
+     "init": true
+    }
+   },
+   "ptr_args": [
+    {
+     "name": "args",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_ref": {
+        "owned": false,
+        "borrowed": {
+         "lifetime": "other"
+        }
+       }
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "other"
+      },
+      "nullable": true,
+      "mutable": true,
+      "note": "Stored in parser->args, not read here; the parser reorders it later."
+     }
+    },
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Caller storage, zeroed whole then filled; asserted non-null. Its address is not kept."
+     }
+    }
+   ]
   },
   {
    "name": "common_prefix_size",

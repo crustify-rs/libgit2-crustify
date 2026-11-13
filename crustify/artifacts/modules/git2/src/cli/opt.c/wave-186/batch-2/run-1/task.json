@@ -1,0 +1,81 @@
+{
+  "objective": "wrap",
+  "wave": 186,
+  "batch": 2,
+  "link_unit": "git2",
+  "module": "src/cli/opt.c",
+  "foundational": false,
+  "base_branch": "refs/heads/crustify/waves/wave-186",
+  "backend": "claude",
+  "billing": "api",
+  "model_proxy": "openrouter",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "cc84106",
+    "wavefront": "bf21e16",
+    "ffimap": "9aa2ef1",
+    "ffibox": "9c22a73"
+  },
+  "items": [
+    {
+      "name": "cli_opt_spec",
+      "defined_in": "src/cli/opt.h",
+      "kind": "struct",
+      "field_users": [
+        "type",
+        "name",
+        "value",
+        "alias",
+        "help",
+        "value_name",
+        "usage",
+        "switch_value"
+      ],
+      "typedefs": [
+        "cli_opt_spec"
+      ],
+      "home": "src/git2/src/cli/opt.rs"
+    },
+    {
+      "name": "cli_opt",
+      "defined_in": "src/cli/opt.h",
+      "kind": "struct",
+      "field_users": [
+        "arg",
+        "status",
+        "value",
+        "args_len",
+        "spec"
+      ],
+      "typedefs": [
+        "cli_opt"
+      ],
+      "home": "src/git2/src/cli/opt.rs"
+    },
+    {
+      "name": "cli_opt_parser",
+      "defined_in": "src/cli/opt.h",
+      "kind": "struct",
+      "field_users": [
+        "args",
+        "flags",
+        "idx",
+        "in_literal",
+        "needs_sort",
+        "in_short",
+        "in_args",
+        "arg_idx",
+        "args_len",
+        "specs"
+      ],
+      "typedefs": [
+        "cli_opt_parser"
+      ],
+      "home": "src/git2/src/cli/opt.rs"
+    }
+  ],
+  "session_id": "640af224-1c6e-4aa5-a6d2-08530a18083d"
+}
