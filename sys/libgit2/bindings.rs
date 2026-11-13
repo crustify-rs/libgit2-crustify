@@ -14870,6 +14870,17 @@ pub const HPE_CB_CHUNK_EXTENSION_VALUE_COMPLETE: llhttp_errno = 35;
 pub const HPE_CB_RESET: llhttp_errno = 31;
 pub type llhttp_errno = ::std::os::raw::c_uint;
 pub use self::llhttp_errno as llhttp_errno_t;
+pub const LENIENT_HEADERS: llhttp_lenient_flags = 1;
+pub const LENIENT_CHUNKED_LENGTH: llhttp_lenient_flags = 2;
+pub const LENIENT_KEEP_ALIVE: llhttp_lenient_flags = 4;
+pub const LENIENT_TRANSFER_ENCODING: llhttp_lenient_flags = 8;
+pub const LENIENT_VERSION: llhttp_lenient_flags = 16;
+pub const LENIENT_DATA_AFTER_CLOSE: llhttp_lenient_flags = 32;
+pub const LENIENT_OPTIONAL_LF_AFTER_CR: llhttp_lenient_flags = 64;
+pub const LENIENT_OPTIONAL_CRLF_AFTER_CHUNK: llhttp_lenient_flags = 128;
+pub const LENIENT_OPTIONAL_CR_BEFORE_LF: llhttp_lenient_flags = 256;
+pub const LENIENT_SPACES_AFTER_CHUNK_SIZE: llhttp_lenient_flags = 512;
+pub type llhttp_lenient_flags = ::std::os::raw::c_uint;
 pub const HTTP_BOTH: llhttp_type = 0;
 pub const HTTP_REQUEST: llhttp_type = 1;
 pub const HTTP_RESPONSE: llhttp_type = 2;
@@ -15184,12 +15195,27 @@ unsafe extern "C" {
     pub fn llhttp_finish(parser: *mut llhttp_t) -> llhttp_errno_t;
 }
 unsafe extern "C" {
+    pub fn llhttp_pause(parser: *mut llhttp_t);
+}
+unsafe extern "C" {
+    pub fn llhttp_resume(parser: *mut llhttp_t);
+}
+unsafe extern "C" {
+    pub fn llhttp_resume_after_upgrade(parser: *mut llhttp_t);
+}
+unsafe extern "C" {
     pub fn llhttp_get_errno(parser: *const llhttp_t) -> llhttp_errno_t;
 }
 unsafe extern "C" {
     pub fn llhttp_get_error_reason(
         parser: *const llhttp_t,
     ) -> *const ::std::os::raw::c_char;
+}
+unsafe extern "C" {
+    pub fn llhttp_set_error_reason(
+        parser: *mut llhttp_t,
+        reason: *const ::std::os::raw::c_char,
+    );
 }
 unsafe extern "C" {
     pub fn llhttp_get_error_pos(
@@ -15204,6 +15230,66 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn llhttp_status_name(status: llhttp_status_t) -> *const ::std::os::raw::c_char;
+}
+unsafe extern "C" {
+    pub fn llhttp_set_lenient_headers(
+        parser: *mut llhttp_t,
+        enabled: ::std::os::raw::c_int,
+    );
+}
+unsafe extern "C" {
+    pub fn llhttp_set_lenient_chunked_length(
+        parser: *mut llhttp_t,
+        enabled: ::std::os::raw::c_int,
+    );
+}
+unsafe extern "C" {
+    pub fn llhttp_set_lenient_keep_alive(
+        parser: *mut llhttp_t,
+        enabled: ::std::os::raw::c_int,
+    );
+}
+unsafe extern "C" {
+    pub fn llhttp_set_lenient_transfer_encoding(
+        parser: *mut llhttp_t,
+        enabled: ::std::os::raw::c_int,
+    );
+}
+unsafe extern "C" {
+    pub fn llhttp_set_lenient_version(
+        parser: *mut llhttp_t,
+        enabled: ::std::os::raw::c_int,
+    );
+}
+unsafe extern "C" {
+    pub fn llhttp_set_lenient_data_after_close(
+        parser: *mut llhttp_t,
+        enabled: ::std::os::raw::c_int,
+    );
+}
+unsafe extern "C" {
+    pub fn llhttp_set_lenient_optional_lf_after_cr(
+        parser: *mut llhttp_t,
+        enabled: ::std::os::raw::c_int,
+    );
+}
+unsafe extern "C" {
+    pub fn llhttp_set_lenient_optional_cr_before_lf(
+        parser: *mut llhttp_t,
+        enabled: ::std::os::raw::c_int,
+    );
+}
+unsafe extern "C" {
+    pub fn llhttp_set_lenient_optional_crlf_after_chunk(
+        parser: *mut llhttp_t,
+        enabled: ::std::os::raw::c_int,
+    );
+}
+unsafe extern "C" {
+    pub fn llhttp_set_lenient_spaces_after_chunk_size(
+        parser: *mut llhttp_t,
+        enabled: ::std::os::raw::c_int,
+    );
 }
 pub const REFTABLE_IO_ERROR: reftable_error = -2;
 pub const REFTABLE_FORMAT_ERROR: reftable_error = -3;

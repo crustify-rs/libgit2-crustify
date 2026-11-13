@@ -7,17 +7,26 @@
 //! are compared whole after the call, after `llhttp_reset`, and by the callbacks C's
 //! dispatchers run for each of a sequence of runs, `llhttp_finish` included, the two
 //! parsers' outcomes and fields compared after each run.
+//!
+//! The parser's API api.c gives is compared with its C the same way, on pairs of parsers
+//! brought to one state: [`ParserMut::pause`], [`ParserMut::resume`] and
+//! [`ParserMut::resume_after_upgrade`] against `llhttp_pause`, `llhttp_resume` and
+//! `llhttp_resume_after_upgrade` from each state, every pair of them in turn, the whole
+//! parser compared after each call; [`ParserMut::execute`] against `llhttp_execute` over runs
+//! interleaved with pauses and resumptions; the ten lenient setters against theirs, `int`
+//! flags C reads as true included; and [`ParserMut::set_reason`] against
+//! `llhttp_set_error_reason`.
 
 use std::cell::RefCell;
-use std::ffi::c_int;
+use std::ffi::{CStr, c_int};
 use std::mem::MaybeUninit;
 use std::sync::Mutex;
 
 use ffibox::{CMutSeam, CRefSeam, CZeroable};
 use libgit2_crustify::libgit2::deps::llhttp::api::{Settings, SettingsRef};
 use libgit2_crustify::libgit2::deps::llhttp::llhttp::{
-    Callback, DataCallback, DataHandler, EventHandler, Parsed, Parser, ParserMut, ParserRef,
-    ParserType,
+    Callback, DataCallback, DataHandler, EventHandler, ParseError, Parsed, Parser, ParserMut,
+    ParserRef, ParserType,
 };
 use libgit2_crustify::sys::libgit2 as sys;
 
@@ -355,6 +364,258 @@ fn a_table_given_by_set_settings_runs_as_one_given_by_llhttp_init() {
         let rust_out = rust_runs(&mut rust, runs);
         assert_eq!(rust_out, c_out, "{parser_type:?} {mask:#x}");
         assert!(c_out.iter().any(|(_, log)| !log.is_empty()));
+        assert_eq!(
+            fields(&raw_parser(rust.as_ref())),
+            fields(&raw_parser(c.as_ref()))
+        );
+    }
+}
+
+// --- The parser's API ------------------------------------------------------------------
+
+/// `parser`'s fields as [`fields`] compares them, but for its reason, which is compared by
+/// its text: llhttp's literals and Rust's are distinct copies of one text.
+fn state(parser: ParserRef<'_>) -> impl PartialEq + std::fmt::Debug + use<> {
+    let mut raw = raw_parser(parser);
+    raw.reason = core::ptr::null();
+    (fields(&raw), parser.reason().map(CStr::to_owned))
+}
+
+/// One of the three calls that move a parser between running and paused.
+#[derive(Clone, Copy, Debug)]
+enum Call {
+    Pause,
+    Resume,
+    ResumeAfterUpgrade,
+}
+
+impl Call {
+    /// Makes the call through C.
+    fn c(self, parser: &mut Parser) {
+        let raw = parser.as_mut().as_mut_ptr();
+        match self {
+            // SAFETY: `raw` addresses a live parser Rust owns; each call reads and writes
+            // only its `error` and `reason`.
+            Self::Pause => unsafe { sys::llhttp_pause(raw) },
+            // SAFETY: as above.
+            Self::Resume => unsafe { sys::llhttp_resume(raw) },
+            // SAFETY: as above.
+            Self::ResumeAfterUpgrade => unsafe { sys::llhttp_resume_after_upgrade(raw) },
+        }
+    }
+
+    /// Makes the call through Rust.
+    fn rust(self, parser: &mut Parser) {
+        match self {
+            Self::Pause => parser.as_mut().pause(),
+            Self::Resume => parser.as_mut().resume(),
+            Self::ResumeAfterUpgrade => parser.as_mut().resume_after_upgrade(),
+        }
+    }
+}
+
+/// A response parser fed `input` through C, from `Parser::new`.
+fn fed(input: &[u8]) -> Parser {
+    let mut parser = Parser::new();
+    parser.as_mut().set_parser_type(ParserType::Response);
+    // SAFETY: the parser is initialised and has no settings; `input` is live for the call.
+    unsafe {
+        sys::llhttp_execute(
+            parser.as_mut().as_mut_ptr(),
+            input.as_ptr().cast(),
+            input.len(),
+        )
+    };
+    parser
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn pause_and_the_resumptions_move_the_parser_as_c_does() {
+    const UPGRADE: &[u8] = b"HTTP/1.1 101 Switching Protocols\r\nConnection: upgrade\r\n\
+                             Upgrade: x\r\n\r\n";
+    // A parser running, paused at an upgrade, and failed; the pause each call makes from
+    // them reaches the paused state too.
+    let starts: [&[u8]; 4] = [b"", b"HTTP/1.1 200 OK\r\n", UPGRADE, b"HTTP/9"];
+    let calls = [Call::Pause, Call::Resume, Call::ResumeAfterUpgrade];
+    for start in starts {
+        for first in calls {
+            for second in calls {
+                let (mut c, mut rust) = (fed(start), fed(start));
+                for call in [first, second] {
+                    call.c(&mut c);
+                    call.rust(&mut rust);
+                    assert_eq!(
+                        state(rust.as_ref()),
+                        state(c.as_ref()),
+                        "{start:?}: {first:?}, {second:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// What a run returned through `llhttp_execute`'s convention.
+fn code(outcome: Result<Parsed, ParseError>) -> u32 {
+    match outcome {
+        Ok(Parsed::All) => sys::HPE_OK,
+        Ok(Parsed::Paused) => sys::HPE_PAUSED,
+        Ok(Parsed::PausedUpgrade) => sys::HPE_PAUSED_UPGRADE,
+        Err(error) => error.code().cast_unsigned(),
+    }
+}
+
+/// A step of a sequence fed to two parsers: a run of the input, or a call.
+enum Action {
+    Run(&'static [u8]),
+    Do(Call),
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn execute_reads_runs_between_pauses_as_llhttp_execute_does() {
+    use Action::{Do, Run};
+    let sequences: [&[Action]; 3] = [
+        &[
+            Run(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n"),
+            Do(Call::Pause),
+            Run(b"\r\nhi"),
+            Do(Call::Resume),
+            Run(b"\r\nhi"),
+            Run(b"HTTP/1.1 204 No Content\r\n\r\n"),
+        ],
+        &[
+            Run(b"HTTP/1.1 101 Switching Protocols\r\nConnection: upgrade\r\nUpgrade: x\r\n\r\nbytes"),
+            Run(b"more"),
+            Do(Call::Resume),
+            Run(b"more"),
+            Do(Call::ResumeAfterUpgrade),
+            Run(b"HTTP/1.1 200 OK\r\n"),
+        ],
+        &[
+            Run(b"HTTP/1.1 200 OK\r\nBad Header\r\n"),
+            Do(Call::Pause),
+            Do(Call::Resume),
+            Run(b"\r\n"),
+        ],
+    ];
+    for steps in sequences {
+        let (mut c, mut rust) = (Parser::new(), Parser::new());
+        for step in steps {
+            match step {
+                Run(run) => {
+                    // SAFETY: the parser is initialised and has no settings; `run` is live.
+                    let c_code = unsafe {
+                        sys::llhttp_execute(c.as_mut().as_mut_ptr(), run.as_ptr().cast(), run.len())
+                    };
+                    assert_eq!(code(rust.as_mut().execute(run)), c_code);
+                }
+                Do(call) => {
+                    call.c(&mut c);
+                    call.rust(&mut rust);
+                }
+            }
+            assert_eq!(state(rust.as_ref()), state(c.as_ref()));
+        }
+    }
+}
+
+/// A lenient setter through Rust and through C.
+type LenientPair = (
+    fn(&mut ParserMut<'_>, bool),
+    unsafe extern "C" fn(*mut sys::llhttp_t, c_int),
+);
+
+/// The ten lenient setters, Rust's beside C's.
+const LENIENT: [LenientPair; 10] = [
+    (
+        |p, on| p.set_lenient_headers(on),
+        sys::llhttp_set_lenient_headers,
+    ),
+    (
+        |p, on| p.set_lenient_chunked_length(on),
+        sys::llhttp_set_lenient_chunked_length,
+    ),
+    (
+        |p, on| p.set_lenient_keep_alive(on),
+        sys::llhttp_set_lenient_keep_alive,
+    ),
+    (
+        |p, on| p.set_lenient_transfer_encoding(on),
+        sys::llhttp_set_lenient_transfer_encoding,
+    ),
+    (
+        |p, on| p.set_lenient_version(on),
+        sys::llhttp_set_lenient_version,
+    ),
+    (
+        |p, on| p.set_lenient_data_after_close(on),
+        sys::llhttp_set_lenient_data_after_close,
+    ),
+    (
+        |p, on| p.set_lenient_optional_lf_after_cr(on),
+        sys::llhttp_set_lenient_optional_lf_after_cr,
+    ),
+    (
+        |p, on| p.set_lenient_optional_crlf_after_chunk(on),
+        sys::llhttp_set_lenient_optional_crlf_after_chunk,
+    ),
+    (
+        |p, on| p.set_lenient_optional_cr_before_lf(on),
+        sys::llhttp_set_lenient_optional_cr_before_lf,
+    ),
+    (
+        |p, on| p.set_lenient_spaces_after_chunk_size(on),
+        sys::llhttp_set_lenient_spaces_after_chunk_size,
+    ),
+];
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn the_lenient_setters_set_the_flags_as_c_does() {
+    // C reads any nonzero `enabled` as true.
+    let sequence: [c_int; 6] = [1, 1, 0, 7, -1, 0];
+    for start in [0, 0x155, 0x3FF] {
+        for (rust_set, c_set) in LENIENT {
+            let (mut c, mut rust) = (Parser::zeroed(), Parser::zeroed());
+            c.as_mut().set_lenient_flags_raw(start);
+            rust.as_mut().set_lenient_flags_raw(start);
+            for enabled in sequence {
+                // SAFETY: the handle addresses a live parser Rust owns; the setter writes
+                // only its `lenient_flags`.
+                unsafe { c_set(c.as_mut().as_mut_ptr(), enabled) };
+                rust_set(&mut rust.as_mut(), enabled != 0);
+                assert_eq!(
+                    fields(&raw_parser(rust.as_ref())),
+                    fields(&raw_parser(c.as_ref()))
+                );
+            }
+        }
+    }
+    // Every setter's bit, from the same start, gives every flag.
+    let (mut c, mut rust) = (Parser::zeroed(), Parser::zeroed());
+    for (rust_set, c_set) in LENIENT {
+        // SAFETY: as above.
+        unsafe { c_set(c.as_mut().as_mut_ptr(), 1) };
+        rust_set(&mut rust.as_mut(), true);
+    }
+    assert_eq!(
+        rust.as_ref().lenient_flags_raw(),
+        c.as_ref().lenient_flags_raw()
+    );
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn set_reason_stores_the_string_as_llhttp_set_error_reason_does() {
+    for reason in [Some(c"Callback refused"), None] {
+        let (mut c, mut rust) = (Parser::zeroed(), Parser::zeroed());
+        let raw = reason.map_or(core::ptr::null(), CStr::as_ptr);
+        // SAFETY: the handle addresses a live parser Rust owns; the call stores `raw`, a
+        // `'static` string or NULL, and reads nothing through it.
+        unsafe { sys::llhttp_set_error_reason(c.as_mut().as_mut_ptr(), raw) };
+        rust.as_mut().set_reason(reason);
         assert_eq!(
             fields(&raw_parser(rust.as_ref())),
             fields(&raw_parser(c.as_ref()))

@@ -3,8 +3,13 @@
 //! and the parser's typed setter, [`ParserMut::set_settings`], with the callbacks a parse
 //! then runs, decided by Rust assertions.
 //!
+//! The parser's API api.c gives, decided the same way: [`ParserMut::execute`], the pause and
+//! its two resumptions from each state the parser can be in, inside a parse and between two,
+//! the ten lenient setters, each against the bit it owns, and [`ParserRef::debug_trace`]'s
+//! write and refusal. llhttp has no C tests in the tree, so none is carried over.
+//!
 //! The constructor and the parses call C, and are ignored under Miri; the slots' tests on a
-//! zeroed table run there.
+//! zeroed table, and the pause, resume and lenient tests on a zeroed parser, run there.
 
 use std::cell::RefCell;
 use std::ffi::c_int;
@@ -15,7 +20,8 @@ use libgit2_crustify::libgit2::deps::llhttp::api::{
     HttpParserSettings, Settings, SettingsMut, SettingsRef, SettingsT,
 };
 use libgit2_crustify::libgit2::deps::llhttp::llhttp::{
-    Callback, DataCallback, DataHandler, Errno, EventHandler, Parsed, Parser, ParserMut, ParserType,
+    Callback, DataCallback, DataHandler, Errno, EventHandler, Parsed, Parser, ParserMut, ParserRef,
+    ParserType,
 };
 use libgit2_crustify::sys::libgit2 as sys;
 
@@ -550,4 +556,269 @@ fn reinit_clears_the_table_as_llhttp_internal_init_does() {
         Ok(Parsed::All)
     );
     assert_eq!(take_log(), Vec::new());
+}
+
+// --- The parser's API ------------------------------------------------------------------
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn execute_reads_a_message_in_runs_as_parse_does() {
+    let input: &[u8] =
+        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nhiHTTP/1.1 204 No Content\r\n\r\n";
+    for size in [1, 7, input.len()] {
+        let (mut by_execute, mut by_parse) = (Parser::new(), Parser::new());
+        for run in input.chunks(size) {
+            assert_eq!(
+                by_execute.as_mut().execute(run),
+                by_parse.as_mut().parse(run)
+            );
+            assert_eq!(
+                by_execute.as_ref().status_code(),
+                by_parse.as_ref().status_code()
+            );
+            assert_eq!(
+                by_execute.as_ref().content_length(),
+                by_parse.as_ref().content_length()
+            );
+        }
+        assert_eq!(by_execute.as_ref().status_code(), 204);
+    }
+    let mut parser = Parser::new();
+    // A parser of either kind reads a request first, whose method `garbage` is not.
+    let error = parser.as_mut().execute(b"garbage").unwrap_err();
+    assert_eq!(error.errno(), Ok(Errno::InvalidMethod));
+    assert_eq!(parser.as_mut().execute(b"HTTP/1.1 200 OK\r\n"), Err(error));
+}
+
+#[test]
+fn pause_pauses_a_parser_without_an_error() {
+    let mut parser = Parser::zeroed();
+    parser.as_mut().pause();
+    assert_eq!(parser.as_ref().error(), Ok(Errno::Paused));
+    assert_eq!(parser.as_ref().reason(), Some(c"Paused"));
+    parser.as_mut().pause();
+    assert_eq!(parser.as_ref().error(), Ok(Errno::Paused));
+}
+
+#[test]
+fn pause_keeps_an_error_and_its_reason() {
+    for error in [Errno::PausedUpgrade, Errno::InvalidVersion, Errno::User] {
+        let mut parser = Parser::zeroed();
+        parser.as_mut().set_error(error);
+        parser.as_mut().set_reason(Some(c"kept"));
+        parser.as_mut().pause();
+        assert_eq!(parser.as_ref().error(), Ok(error));
+        assert_eq!(parser.as_ref().reason(), Some(c"kept"));
+    }
+}
+
+#[test]
+fn resume_clears_only_a_pause_and_keeps_the_reason() {
+    let mut parser = Parser::zeroed();
+    parser.as_mut().pause();
+    parser.as_mut().resume();
+    assert_eq!(parser.as_ref().error(), Ok(Errno::Ok));
+    assert_eq!(parser.as_ref().reason(), Some(c"Paused"));
+    for error in [
+        Errno::Ok,
+        Errno::PausedUpgrade,
+        Errno::PausedH2Upgrade,
+        Errno::User,
+    ] {
+        parser.as_mut().set_error(error);
+        parser.as_mut().resume();
+        assert_eq!(parser.as_ref().error(), Ok(error));
+    }
+}
+
+#[test]
+fn resume_after_upgrade_clears_only_an_upgrades_pause() {
+    let mut parser = Parser::zeroed();
+    parser.as_mut().set_error(Errno::PausedUpgrade);
+    parser.as_mut().resume_after_upgrade();
+    assert_eq!(parser.as_ref().error(), Ok(Errno::Ok));
+    for error in [
+        Errno::Ok,
+        Errno::Paused,
+        Errno::PausedH2Upgrade,
+        Errno::User,
+    ] {
+        parser.as_mut().set_error(error);
+        parser.as_mut().resume_after_upgrade();
+        assert_eq!(parser.as_ref().error(), Ok(error));
+    }
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn a_paused_parser_reads_nothing_until_resumed() {
+    let input = b"HTTP/1.1 204 No Content\r\n\r\n";
+    let mut parser = Parser::new();
+    parser.as_mut().pause();
+    assert_eq!(parser.as_mut().execute(input), Ok(Parsed::Paused));
+    assert_eq!(parser.as_ref().status_code(), 0);
+    parser.as_mut().resume_after_upgrade();
+    assert_eq!(parser.as_mut().execute(input), Ok(Parsed::Paused));
+    parser.as_mut().resume();
+    assert_eq!(parser.as_mut().execute(input), Ok(Parsed::All));
+    assert_eq!(parser.as_ref().status_code(), 204);
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn a_parse_paused_by_a_callback_resumes_where_it_stopped() {
+    let settings: &'static mut Settings = kept();
+    settings
+        .as_mut()
+        .set_on_headers_complete(Some(Callback::new::<Pausing>()));
+    settings
+        .as_mut()
+        .set_on_body(Some(DataCallback::new::<Data<10>>()));
+    let mut parser = Parser::new();
+    parser.as_mut().set_settings(Some(settings.as_ref()));
+    let input = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nhi";
+    assert_eq!(parser.as_mut().execute(input), Ok(Parsed::Paused));
+    let offset = parser.as_ref().error_offset(input).unwrap();
+    assert_eq!(&input[offset..], b"hi");
+    parser.as_mut().resume();
+    assert_eq!(parser.as_mut().execute(&input[offset..]), Ok(Parsed::All));
+    assert_eq!(take_log(), [(10, b"hi".to_vec())]);
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn an_upgrade_resumes_after_resume_after_upgrade() {
+    let upgrade = b"HTTP/1.1 101 Switching Protocols\r\nConnection: upgrade\r\nUpgrade: x\r\n\r\n";
+    let mut parser = Parser::new();
+    assert_eq!(parser.as_mut().execute(upgrade), Ok(Parsed::PausedUpgrade));
+    assert_eq!(parser.as_ref().error_offset(upgrade), Some(upgrade.len()));
+    assert!(parser.as_ref().upgrade());
+    parser.as_mut().resume();
+    assert_eq!(parser.as_mut().execute(b"x"), Ok(Parsed::PausedUpgrade));
+    parser.as_mut().resume_after_upgrade();
+    assert_eq!(parser.as_ref().error(), Ok(Errno::Ok));
+}
+
+/// Pauses its parser, as libgit2's HTTP client does, but returns `0`.
+struct PausingAndGoingOn;
+
+impl EventHandler for PausingAndGoingOn {
+    fn on_event(mut parser: ParserMut<'_>) -> c_int {
+        parser.pause();
+        0
+    }
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn a_callback_that_pauses_and_returns_0_pauses_the_next_run() {
+    let settings: &'static mut Settings = kept();
+    settings
+        .as_mut()
+        .set_on_message_begin(Some(Callback::new::<PausingAndGoingOn>()));
+    let mut parser = Parser::new();
+    parser.as_mut().set_settings(Some(settings.as_ref()));
+    let input = b"HTTP/1.1 204 No Content\r\n\r\n";
+    assert_eq!(parser.as_mut().execute(input), Ok(Parsed::All));
+    assert_eq!(parser.as_ref().status_code(), 204);
+    assert_eq!(parser.as_ref().error(), Ok(Errno::Paused));
+    assert_eq!(parser.as_mut().execute(input), Ok(Parsed::Paused));
+}
+
+/// A lenient setter and the `llhttp_lenient_flags` bit it owns.
+type Lenient = (fn(&mut ParserMut<'_>, bool), u32);
+
+/// The ten lenient setters, in `llhttp_lenient_flags`' order.
+const LENIENT: [Lenient; 10] = [
+    (|p, on| p.set_lenient_headers(on), sys::LENIENT_HEADERS),
+    (
+        |p, on| p.set_lenient_chunked_length(on),
+        sys::LENIENT_CHUNKED_LENGTH,
+    ),
+    (
+        |p, on| p.set_lenient_keep_alive(on),
+        sys::LENIENT_KEEP_ALIVE,
+    ),
+    (
+        |p, on| p.set_lenient_transfer_encoding(on),
+        sys::LENIENT_TRANSFER_ENCODING,
+    ),
+    (|p, on| p.set_lenient_version(on), sys::LENIENT_VERSION),
+    (
+        |p, on| p.set_lenient_data_after_close(on),
+        sys::LENIENT_DATA_AFTER_CLOSE,
+    ),
+    (
+        |p, on| p.set_lenient_optional_lf_after_cr(on),
+        sys::LENIENT_OPTIONAL_LF_AFTER_CR,
+    ),
+    (
+        |p, on| p.set_lenient_optional_crlf_after_chunk(on),
+        sys::LENIENT_OPTIONAL_CRLF_AFTER_CHUNK,
+    ),
+    (
+        |p, on| p.set_lenient_optional_cr_before_lf(on),
+        sys::LENIENT_OPTIONAL_CR_BEFORE_LF,
+    ),
+    (
+        |p, on| p.set_lenient_spaces_after_chunk_size(on),
+        sys::LENIENT_SPACES_AFTER_CHUNK_SIZE,
+    ),
+];
+
+#[test]
+fn each_lenient_setter_sets_and_clears_its_own_bit() {
+    for (set, bit) in LENIENT {
+        let bit = u16::try_from(bit).unwrap();
+        for others in [0, !bit] {
+            let mut parser = Parser::zeroed();
+            parser.as_mut().set_lenient_flags_raw(others);
+            set(&mut parser.as_mut(), true);
+            assert_eq!(parser.as_ref().lenient_flags_raw(), others | bit);
+            set(&mut parser.as_mut(), true);
+            assert_eq!(parser.as_ref().lenient_flags_raw(), others | bit);
+            set(&mut parser.as_mut(), false);
+            assert_eq!(parser.as_ref().lenient_flags_raw(), others);
+            set(&mut parser.as_mut(), false);
+            assert_eq!(parser.as_ref().lenient_flags_raw(), others);
+        }
+    }
+}
+
+#[test]
+fn the_lenient_setters_together_set_every_flag() {
+    let mut parser = Parser::zeroed();
+    for (set, _) in LENIENT {
+        set(&mut parser.as_mut(), true);
+    }
+    assert_eq!(parser.as_ref().lenient_flags_raw(), 0x3FF);
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn a_lenient_setter_relaxes_its_check() {
+    let input = b"HTTP/3.4 200 OK\r\n\r\n";
+    let mut strict = Parser::new();
+    assert_eq!(
+        strict.as_mut().execute(input).unwrap_err().errno(),
+        Ok(Errno::InvalidVersion)
+    );
+    let mut lenient = Parser::new();
+    lenient.as_mut().set_lenient_version(true);
+    assert_eq!(lenient.as_mut().execute(input), Ok(Parsed::All));
+    assert_eq!(
+        (lenient.as_ref().http_major(), lenient.as_ref().http_minor()),
+        (3, 4)
+    );
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "reads a C global")]
+fn debug_trace_writes_to_stderr_and_refuses_a_nul() {
+    let parser = Parser::zeroed();
+    let trace: ParserRef<'_> = parser.as_ref();
+    trace.debug_trace(b"", "unit_pub: next=null").unwrap();
+    trace.debug_trace(b"\x80", "unit_pub: next=80").unwrap();
+    let error = trace.debug_trace(b"H", "a\0b").unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
 }

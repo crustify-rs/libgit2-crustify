@@ -1,0 +1,350 @@
+{
+    "after": {
+        "crate": "libgit2_crustify",
+        "crate_version": "0.1.0",
+        "deps": [
+            "ffibox"
+        ],
+        "format_version": 61,
+        "plumbing": [
+            "ffibox"
+        ]
+    },
+    "anchor_moves": {},
+    "api": 2,
+    "before": {
+        "crate": "libgit2_crustify",
+        "crate_version": "0.1.0",
+        "deps": [
+            "ffibox"
+        ],
+        "format_version": 61,
+        "plumbing": [
+            "ffibox"
+        ]
+    },
+    "items": {
+        "fn::llhttp__debug": {
+            "status": "new"
+        },
+        "fn::llhttp_execute": {
+            "status": "new"
+        },
+        "fn::llhttp_get_errno": {
+            "status": "new"
+        },
+        "fn::llhttp_get_error_pos": {
+            "status": "new"
+        },
+        "fn::llhttp_get_error_reason": {
+            "status": "new"
+        },
+        "fn::llhttp_get_http_major": {
+            "status": "new"
+        },
+        "fn::llhttp_get_http_minor": {
+            "status": "new"
+        },
+        "fn::llhttp_get_method": {
+            "status": "new"
+        },
+        "fn::llhttp_get_status_code": {
+            "status": "new"
+        },
+        "fn::llhttp_get_type": {
+            "status": "new"
+        },
+        "fn::llhttp_get_upgrade": {
+            "status": "new"
+        },
+        "fn::llhttp_pause": {
+            "status": "new"
+        },
+        "fn::llhttp_resume": {
+            "status": "new"
+        },
+        "fn::llhttp_resume_after_upgrade": {
+            "status": "new"
+        },
+        "fn::llhttp_set_error_reason": {
+            "status": "new"
+        },
+        "fn::llhttp_set_lenient_chunked_length": {
+            "status": "new"
+        },
+        "fn::llhttp_set_lenient_data_after_close": {
+            "status": "new"
+        },
+        "fn::llhttp_set_lenient_headers": {
+            "status": "new"
+        },
+        "fn::llhttp_set_lenient_keep_alive": {
+            "status": "new"
+        },
+        "fn::llhttp_set_lenient_optional_cr_before_lf": {
+            "status": "new"
+        },
+        "fn::llhttp_set_lenient_optional_crlf_after_chunk": {
+            "status": "new"
+        },
+        "fn::llhttp_set_lenient_optional_lf_after_cr": {
+            "status": "new"
+        },
+        "fn::llhttp_set_lenient_spaces_after_chunk_size": {
+            "status": "new"
+        },
+        "fn::llhttp_set_lenient_transfer_encoding": {
+            "status": "new"
+        },
+        "fn::llhttp_set_lenient_version": {
+            "status": "new"
+        },
+        "mac::HTTP_ERRNO_GEN": {
+            "status": "new"
+        },
+        "mac::HTTP_METHOD_GEN": {
+            "status": "new"
+        },
+        "mac::HTTP_STATUS_GEN": {
+            "status": "new"
+        }
+    },
+    "missing": [],
+    "rekeyed": 0,
+    "retargeted": 0,
+    "totals": {
+        "changed": 0,
+        "extended": 0,
+        "kept": 0,
+        "new": 28,
+        "removed": 0
+    },
+    "unattributed": {
+        "modules": {
+            "libgit2_crustify::libgit2::deps::llhttp::llhttp": {
+                "status": "kept"
+            },
+            "libgit2_crustify::libgit2::deps::reftable::basics": {
+                "status": "kept"
+            },
+            "libgit2_crustify::libgit2::src::libgit2::checkout": {
+                "status": "kept"
+            },
+            "libgit2_crustify::libgit2::src::libgit2::commit": {
+                "status": "kept"
+            },
+            "libgit2_crustify::libgit2::src::libgit2::config": {
+                "status": "kept"
+            },
+            "libgit2_crustify::libgit2::src::libgit2::diff": {
+                "status": "kept"
+            },
+            "libgit2_crustify::libgit2::src::libgit2::filter": {
+                "status": "kept"
+            },
+            "libgit2_crustify::libgit2::src::libgit2::index": {
+                "status": "kept"
+            },
+            "libgit2_crustify::libgit2::src::libgit2::libgit2": {
+                "status": "kept"
+            },
+            "libgit2_crustify::libgit2::src::libgit2::odb": {
+                "status": "kept"
+            },
+            "libgit2_crustify::libgit2::src::libgit2::repository": {
+                "status": "kept"
+            },
+            "libgit2_crustify::libgit2::src::libgit2::settings": {
+                "status": "kept"
+            },
+            "libgit2_crustify::libgit2::src::libgit2::signature": {
+                "status": "kept"
+            },
+            "libgit2_crustify::libgit2::src::libgit2::strarray": {
+                "status": "kept"
+            },
+            "libgit2_crustify::libgit2::src::libgit2::trace": {
+                "status": "kept"
+            },
+            "libgit2_crustify::libgit2::src::libgit2::tree": {
+                "status": "kept"
+            },
+            "libgit2_crustify::libgit2::src::libgit2::worktree": {
+                "status": "kept"
+            },
+            "libgit2_crustify::libgit2::src::util::errors": {
+                "status": "kept"
+            },
+            "libgit2_crustify::libgit2::src::util::utf8": {
+                "status": "kept"
+            },
+            "libgit2_crustify::sys::git2": {
+                "status": "kept"
+            },
+            "libgit2_crustify::sys::libgit2": {
+                "changes": [
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::LENIENT_CHUNKED_LENGTH",
+                        "part": "item",
+                        "severity": "extended"
+                    },
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::LENIENT_DATA_AFTER_CLOSE",
+                        "part": "item",
+                        "severity": "extended"
+                    },
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::LENIENT_HEADERS",
+                        "part": "item",
+                        "severity": "extended"
+                    },
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::LENIENT_KEEP_ALIVE",
+                        "part": "item",
+                        "severity": "extended"
+                    },
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::LENIENT_OPTIONAL_CRLF_AFTER_CHUNK",
+                        "part": "item",
+                        "severity": "extended"
+                    },
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::LENIENT_OPTIONAL_CR_BEFORE_LF",
+                        "part": "item",
+                        "severity": "extended"
+                    },
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::LENIENT_OPTIONAL_LF_AFTER_CR",
+                        "part": "item",
+                        "severity": "extended"
+                    },
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::LENIENT_SPACES_AFTER_CHUNK_SIZE",
+                        "part": "item",
+                        "severity": "extended"
+                    },
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::LENIENT_TRANSFER_ENCODING",
+                        "part": "item",
+                        "severity": "extended"
+                    },
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::LENIENT_VERSION",
+                        "part": "item",
+                        "severity": "extended"
+                    },
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::llhttp_lenient_flags",
+                        "part": "item",
+                        "severity": "extended"
+                    },
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::llhttp_pause",
+                        "part": "item",
+                        "severity": "extended"
+                    },
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::llhttp_resume",
+                        "part": "item",
+                        "severity": "extended"
+                    },
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::llhttp_resume_after_upgrade",
+                        "part": "item",
+                        "severity": "extended"
+                    },
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::llhttp_set_error_reason",
+                        "part": "item",
+                        "severity": "extended"
+                    },
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::llhttp_set_lenient_chunked_length",
+                        "part": "item",
+                        "severity": "extended"
+                    },
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::llhttp_set_lenient_data_after_close",
+                        "part": "item",
+                        "severity": "extended"
+                    },
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::llhttp_set_lenient_headers",
+                        "part": "item",
+                        "severity": "extended"
+                    },
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::llhttp_set_lenient_keep_alive",
+                        "part": "item",
+                        "severity": "extended"
+                    },
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::llhttp_set_lenient_optional_cr_before_lf",
+                        "part": "item",
+                        "severity": "extended"
+                    },
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::llhttp_set_lenient_optional_crlf_after_chunk",
+                        "part": "item",
+                        "severity": "extended"
+                    },
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::llhttp_set_lenient_optional_lf_after_cr",
+                        "part": "item",
+                        "severity": "extended"
+                    },
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::llhttp_set_lenient_spaces_after_chunk_size",
+                        "part": "item",
+                        "severity": "extended"
+                    },
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::llhttp_set_lenient_transfer_encoding",
+                        "part": "item",
+                        "severity": "extended"
+                    },
+                    {
+                        "change": "added",
+                        "item": "libgit2_crustify::sys::libgit2::llhttp_set_lenient_version",
+                        "part": "item",
+                        "severity": "extended"
+                    }
+                ],
+                "status": "extended"
+            }
+        },
+        "totals": {
+            "changed": 0,
+            "extended": 1,
+            "kept": 20,
+            "new": 0,
+            "removed": 0
+        }
+    },
+    "unresolved": 0,
+    "view": "contract"
+}

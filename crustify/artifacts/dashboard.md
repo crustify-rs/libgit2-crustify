@@ -57,22 +57,22 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip the integration of `libgit2/src/util/strnlen.h`, `30176475c`; `main` at `c58bc5de8`, nothing shipped yet; crustify `cc84106`, ffibox `9c22a73`, wavefront `bf21e16`, ffimap `9aa2ef1` (each on its `libgit2-crustify/devel`, wavefront and ffimap on `devel`)
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `20301` non-test, `102697` tests; **C LoC** — `89080`
+- **Rust LoC** — `20560` non-test, `103232` tests; **C LoC** — `89009`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `781` | — | `29.24`% | `78.63`% |
-| UB unsafe tests | `134` | — | `20.05`% | `14.98`% |
-| Equiv tests | `551` | — | `44.43`% | `75.03`% |
-| Unit tests | `974` | — | `33.74`% | `87.87`% |
-| **Total tests** | **`2440`** | — | **`47.05`%** | **`98.71`%** |
+| UB safe tests | `783` | — | `29.58`% | `78.51`% |
+| UB unsafe tests | `134` | — | `20.10`% | `14.91`% |
+| Equiv tests | `549` | — | `44.51`% | `74.73`% |
+| Unit tests | `995` | — | `33.97`% | `87.89`% |
+| **Total tests** | **`2461`** | — | **`47.21`%** | **`98.68`%** |
 | total types | `258` | — | — | — |
 | ported types | `0` | `0.00`% | — | — |
 | wrapped types | `113` | `43.80`% | — | — |
 | total symbols | `979` | — | — | — |
-| ported symbols | `32` | `2.66`% | — | — |
+| ported symbols | `60` | `6.13`% | — | — |
 | wrapped symbols | `498` | `50.87`% | — | — |
 
 ### Module stats
@@ -492,6 +492,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/ntlmclient/compat.h` | `200` | `0` | port | first | `1` | `0` | `+167/-0` | `45.00`% / `98.81`% | — | — | — | — | — |
 | `libgit2/src/util/strnlen.h` | `225` | `0` | port | first | `1` | `0` | `+184/-0` | `45.02`% / `98.81`% | `$5.42` | `13.67M` | `19m47s` | `$5.42` | — |
 | `libgit2/deps/llhttp/api.c` | `194` | `1` | wrap | first | `7` | `38` | `+2114/-23` | `46.45`% / `98.66`% | — | — | — | — | — |
+| `libgit2/deps/llhttp/api.c` | `194` | `3` | port | first | `28` | `134` | `+1256/-11` | `47.21`% / `98.68`% | — | — | — | — | — |
 | `libgit2/src/util/utf8.c` | `229` | `0` | port | first | `5` | `89` | `+764/-0` | `44.97`% / `98.81`% | — | — | — | — | — |
 | `libgit2/raw-lifetime-void` | `legacy-1` | `0` | wrap | review | `2` | — | `+80/-1` | — | `$7.89` | `10.78M` | `18m36s` | `$3.94` | — |
 | `libgit2/raw-lifetime-string` | `legacy-3` | `0` | wrap | review | `2` | — | `+345/-23` | — | `$10.89` | `14.41M` | `22m03s` | `$5.45` | — |
@@ -524,7 +525,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | wrap | review | `2` | — | `+217/-15` | — | `$11.03` | `25.98M` | `47m17s` | `$5.51` | — |
 | `libgit2/deps/reftable/basics.c` | `169` | `4` | wrap | review | `43` | — | `+110/-16` | `45.99`% / `98.92`% | `$13.42` | `46.17M` | `40m4s` | `$0.31` | — |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | wrap | review | `3` | — | `+11/-7` | `45.88`% / `98.92`% | `$5.87` | `16.61M` | `16m58s` | `$1.96` | — |
-| **Σ first** |  |  |  |  | **`513`** | **`9193`** | **`+83127/-3657`** | **`46.45`% / `98.66`%** | **`$587.14`** | **`1837.67M`** | — | **`$1.17`** | **`$0.06`** |
+| **Σ first** |  |  |  |  | **`541`** | **`9327`** | **`+84383/-3668`** | **`47.21`% / `98.68`%** | **`$587.14`** | **`1837.67M`** | — | **`$1.17`** | **`$0.06`** |
 | **Σ review** |  |  |  |  | **`468`** | — | **`+7252/-1369`** | **`45.93`% / `98.90`%** | **`$373.87`** | **`734.99M`** | — | **`$0.80`** | — |
 
 ### Batches: tests
@@ -622,9 +623,10 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/ntlmclient/compat.h` | `200` | `1` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) |
 | `libgit2/src/util/strnlen.h` | `225` | `1` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) |
 | `libgit2/deps/llhttp/api.c` | `194` | `1` | first | `+7` (`+1.23`/`-0.43` pp) | `+8` (`+0.23`/`+0.65` pp) | `+5` (`+0.27`/`-0.07` pp) | `+17` (`+1.81`/`+0.00` pp) |
+| `libgit2/deps/llhttp/api.c` | `194` | `3` | first | `+2` (`+0.35`/`+0.09` pp) | `+0` (`-0.01`/`-0.07` pp) | `+4` (`+0.10`/`-0.13` pp) | `+17` (`+0.28`/`+0.05` pp) |
 | `libgit2/src/util/utf8.c` | `229` | `0` | first | `+0` (`-0.03`/`-0.32` pp) | `+0` (`-0.02`/`-0.06` pp) | `+6` (`+0.04`/`-0.02` pp) | `+15` (`+0.03`/`+0.04` pp) |
 | `libgit2/src/util/utf8.c` | `229` | `1` | review | `+1` (`+0.00`/`+0.00` pp) | `+0` (`+0.04`/`+0.09` pp) | `+0` (`+0.00`/`+0.01` pp) | `+0` (`-0.05`/`+0.01` pp) |
-| **Σ first** |  |  |  | **`+352` (`+11.58`/`+5.22` pp)** | **`+48` (`+3.57`/`-5.36` pp)** | **`+236` (`+9.39`/`+13.58` pp)** | **`+362` (`+13.88`/`-33.44` pp)** |
+| **Σ first** |  |  |  | **`+354` (`+11.93`/`+5.31` pp)** | **`+48` (`+3.56`/`-5.43` pp)** | **`+240` (`+9.49`/`+13.45` pp)** | **`+379` (`+14.16`/`-33.39` pp)** |
 | **Σ review** |  |  |  | **`+19` (`+0.31`/`-1.51` pp)** | **`+8` (`-0.76`/`+0.68` pp)** | **`+23` (`+0.09`/`-0.53` pp)** | **`+45` (`+2.39`/`+7.65` pp)** |
 
 ### Batches: safety audit
@@ -659,9 +661,10 @@ Deterministic `ffimap`; no model.
 | `libgit2/deps/ntlmclient/compat.h` | `200` | `1` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
 | `libgit2/src/util/strnlen.h` | `225` | `1` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
 | `libgit2/deps/llhttp/api.c` | `194` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+1` | `+0` | `+0` | `+0` | `+1` | `+4` | `-0.09` pp | `+7` |
+| `libgit2/deps/llhttp/api.c` | `194` | `3` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+1` | `+0` | `+0` | `+0` | `+1` | `+0` | `-0.09` pp | `+2` |
 | `libgit2/src/util/utf8.c` | `229` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+1` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.05` pp | `+1` |
 | `libgit2/src/util/utf8.c` | `229` | `1` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `-3` | `-0.02` pp | `-3` |
-| **Σ first** |  |  |  |  | **`+4`** | **`+0`** | **`+24`** | **`+0`** | **`+1`** | **`+0.52` pp** | **`+5`** | **`+1`** | **`+0`** | **`+0`** | **`+1`** | **`+52`** | **`-0.48` pp** | **`+103`** |
+| **Σ first** |  |  |  |  | **`+4`** | **`+0`** | **`+24`** | **`+0`** | **`+1`** | **`+0.52` pp** | **`+6`** | **`+1`** | **`+0`** | **`+0`** | **`+2`** | **`+52`** | **`-0.57` pp** | **`+105`** |
 | **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`-1`** | **`+0`** | **`+1`** | **`+0.00` pp** | **`+0`** | **`-1`** | **`+0`** | **`+6`** | **`+0`** | **`-3`** | **`-0.13` pp** | **`-5`** |
 
 ### Batches: API stability
@@ -686,9 +689,10 @@ Deterministic `ffimap api`; no model.
 | `libgit2/deps/ntlmclient/compat.h` | `200` | `1` | port | review | `1` | `0` | `0` | `0` | `0` | `0` | — | — |
 | `libgit2/src/util/strnlen.h` | `225` | `1` | port | review | `1` | `0` | `0` | `0` | `0` | `0` | — | — |
 | `libgit2/deps/llhttp/api.c` | `194` | `1` | wrap | first | `0` | `0` | `0` | `0` | `7` | `0` | `llhttp` new (`Parsed`, `ParseError`, `EventHandler`, `DataHandler`); `sys::libgit2` extended | — |
+| `libgit2/deps/llhttp/api.c` | `194` | `3` | port | first | `0` | `0` | `0` | `0` | `28` | `0` | `sys::libgit2` extended (`+26` bindings) | — |
 | `libgit2/src/util/utf8.c` | `229` | `0` | port | first | `0` | `0` | `0` | `0` | `3` | `0` | `utf8` new (`InvalidCodePoint`); `sys::libgit2` extended (`+3` bindings) | — |
 | `libgit2/src/util/utf8.c` | `229` | `1` | port | review | `3` | `0` | `0` | `0` | `0` | `0` | — | — |
-| **Σ first** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`33`** | **`0`** |  |  |
+| **Σ first** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`61`** | **`0`** |  |  |
 | **Σ review** |  |  |  |  | **`37`** | **`2`** | **`1`** | **`0`** | **`0`** | **`3`** |  |  |
 
 ### Batches — review: PoC + reports
@@ -3705,6 +3709,117 @@ builds alone in bundled mode (698 files), with `glibc-bindings` and `ffibox` pat
 local sources for crates.io too and CMake and pkg-config given the side campaigns' `plain`
 installs. Usage cells are the assistant's.
 
+
+### `libgit2/deps/llhttp/api.c` wave 194 batch 3: the parser's API
+
+api.c's first `port` batch, the `symbol` route of its wave 194: 28 items, homed in
+`src/libgit2/deps/llhttp/api.rs`. Thirteen are a field's read or write, or a map's text, that
+batches 0 and 1 already give in `llhttp.rs`, so they are ported as those items, which carry
+each function's `Replaces` anchor and alias beside their own, and no second API is written:
+`fn::llhttp_get_type`, `fn::llhttp_get_method` and `fn::llhttp_get_errno` are
+`ParserRef::parser_type`, `method` and `error`, read as llhttp's enums; `llhttp_get_http_major`,
+`llhttp_get_http_minor`, `llhttp_get_status_code` and `llhttp_get_upgrade` are `http_major`,
+`http_minor`, `status_code` and `upgrade`; `llhttp_get_error_reason` and
+`llhttp_set_error_reason` are `reason` and `set_reason`; `llhttp_get_error_pos` is
+`error_offset`, which locates the position in a slice rather than return a pointer into a past
+input. The generators `mac::HTTP_ERRNO_GEN`, `mac::HTTP_METHOD_GEN` and `mac::HTTP_STATUS_GEN`
+(`case PREFIX##NAME: return <text>;` inside the name functions) are `Errno::constant_name`,
+`Method::map_string` and `Status::map_string`. Those anchors sit in `llhttp.rs`, outside the
+items' home (`crustify/evolution/port-onto-an-existing-accessor`). The rest is native code in
+`api.rs`: `ParserMut::execute(&[u8]) -> Result<Parsed, ParseError>` (`llhttp_execute`, the name
+batch 1 left free, over `parse`); `pause`, `resume` and `resume_after_upgrade`, each moving the
+parser only from the state C expects (no error, `HPE_PAUSED`, `HPE_PAUSED_UPGRADE`), the
+reason kept as C keeps it; the ten `set_lenient_*(bool)` setters, each over its bit of
+`llhttp_lenient_flags`, whose constants the raw bindings gain; and `ParserRef::debug_trace`.
+
+`fn::llhttp__debug` is compiled on this build, unconditionally, into `api.c.o` (`nm` of the
+`plain` archive defines it), but nothing calls it: `llhttp.c` was generated without llparse's
+debug mode and holds no call (wavefront: no callers), and no header declares it. So it is
+ported, native and unexported, as `debug_trace(&self, rest: &[u8], msg: &str) ->
+io::Result<()>`. Its `fprintf(stderr, …)` keeps the `crustify-campaign` route
+`dependencies.json` recommends for `fprintf` and `stderr`: the line goes through
+`glibc-bindings`' `stderr()` and `FileRef::print`, one locked `fprintf` on C's own stream, in
+order with the remaining C's writes there, which `std::io::stderr`, writing the descriptor,
+would not keep. The borrow's contract holds for the call: no C of libgit2, its dependencies or
+its tests assigns, closes, reopens or unlocks `stderr`. One C defect is not carried over: C
+prints the next byte, a signed `char`, through `%02x`, so a byte of 0x80 or more prints
+sign-extended (`ffffff80`), a value `%x` does not define; Rust prints two digits, documented
+and kept by a `unit_priv` test. `abort` and `memset` are not used by this batch's items: in
+api.c they are the name functions' and `llhttp_finish`'s `default: abort()` and
+`llhttp_settings_init`'s `memset`, batch 4's, where the `std` route holds
+(`std::process::abort`, a zeroed value). The line is built without `format_args!`, whose
+expansion the first scan counted as two unsafe blocks outside the regions
+(`crustify/evolution/std-macro-expansions-outside-regions`).
+
+Six of the functions have C callers outside api.c, and are exported in the module's gateway,
+`ffi_export`, under the new export feature `ffi-export-deps-llhttp-api-c`, off:
+`llhttp_execute`, `llhttp_get_error_pos` and `llhttp_resume_after_upgrade`
+(`transports/httpparser.c`), and `llhttp_pause`, `llhttp_resume` and `llhttp_get_error_reason`
+(`transports/httpparser.h`'s macros, expanded in `httpclient.c`). Each is checked at compile
+time against its raw binding (`[sys::<name>, <name>]`). `llhttp_execute`'s body runs in
+`barrier`, a panic (`parse`'s refusals) reported as `HPE_INTERNAL`; the three that cannot fail
+abort on one. `llhttp_get_error_pos` hands back the stored address unread. The others,
+`llhttp_set_error_reason` (called only by api.c's own span dispatchers), the getters and the
+lenient setters, have no C caller outside the module and are not exported. The gateway cannot
+be linked in place of `api.c.o` before batch 4: the object also defines `llhttp_init` and the
+23 dispatchers, which are still C. The raw bindings gain `llhttp_lenient_flags`, `llhttp_pause`,
+`llhttp_resume`, `llhttp_resume_after_upgrade`, `llhttp_set_error_reason` and the ten lenient
+setters, for the signature checks and the equivalence tests. The 25 functions' pointer
+findings are submitted to the ownership store.
+
+Tests: 4 `unit_priv` (the trace line against `llhttp__debug`'s format, the high byte, the
+flag conversion and its refusal), 13 `unit_pub` (`execute` against `parse` in every run size
+and on a kept error; `pause`, `resume` and `resume_after_upgrade` from each state; a paused
+parser reading nothing; a pause by a callback resumed at its error offset; an upgrade; a
+callback that pauses and returns `0`, which pauses the next run; every lenient setter against
+its bit, alone and together; a relaxed version check; `debug_trace`'s write and its refusal of
+a NUL), 2 `ub_safe` (callbacks pausing, resuming, relaxing and tracing their parser mid-parse;
+`execute` refused from a callback of its own parse, as `parse` is), 4 `equiv` (the three calls
+from four states in every pair against C's, the whole parser after each; `execute` against
+`llhttp_execute` over runs between pauses; the lenient setters against C's, `int` values C
+reads as true included; `set_reason` against `llhttp_set_error_reason`), and 3 doctests. No
+`ub_unsafe` suite: the batch adds no public `unsafe fn`. llhttp has no C tests in the tree,
+so none is carried over.
+
+Coverage: `run.sh` on a `git archive` of the base `300c14dfc` and on this tree, read with
+`report.py` from each scratch tree's `src/libgit2`, the unit column merging `lib` and
+`unit_pub`; the pp cells are against the base's own figures, C / Rust lines `29.23`% /
+`78.42`% (`ub_safe`), `20.11`% / `14.98`% (`ub_unsafe`), `44.41`% / `74.86`% (`equiv`),
+`33.69`% / `87.84`% (unit) and `47.04`% / `98.67`% (total), since the base took the
+working branch with `utf8.c`'s switch, which measured none. Worklist: `api.rs` 123 of 123
+lines, 20 of 20 functions, 96 of 96 regions; the gateway is compiled out. `api.c` moves from
+184 to 264 of its 283 lines and 43 to 54 of 55 functions: every function of the worklist runs
+under `equiv` but `llhttp__debug`, which has no raw binding and no caller, and whose format
+the `unit_priv` test checks instead. Of the parser's states the tests reach running, paused,
+upgrade-paused and failed, and every transition the three calls make between them, inside and
+outside a parse. The Overview's Rust LoC moves by ffimap's `code.loc.total` (`+259`) and
+`code.tests.loc.total` (`+535`), its C LoC to the measured `89009`; `ported symbols` counts the
+28. `+LoC` leaves out the regenerated `bindings.rs` (`+86`). The `loc` cell is wavefront's
+`query dag --loc`.
+
+The safety audit scans (ffimap `9aa2ef1`, flags as wave 225's) name the export feature on
+this tree and none on the base, which declares none: `raw→std` `+1` is the gateway's
+`slice::from_raw_parts`, `raw deref` `+1` its read of `error_pos`, and of the nine new unsafe
+blocks one is `ffi_import`'s `stderr()` borrow and eight `ffi_export`'s, seven of them the
+exports' and left out of the cell. The boundary scan's sites hold none in the changeset: those
+in the llhttp files are batch 0's `data` and `settings` accessors. `ffimap api` against the
+base (nightly `2026-10-08`, ffibox's with private items): the 28 items are `new`; the 15 keys
+of the parser, its members and maps whose items gained anchors are `kept`; unattributed, only
+`sys::libgit2` is extended, by 26 bindings.
+
+Gates, on the base `300c14dfc`, the wave branch's tip: formatted (nightly rustfmt; `build.rs`'s
+diff is the base's), and `clippy --workspace --all-targets` passes with warnings denied with
+the export feature off and on. The whole workspace passes on `plain` (`lib` 852 and 1
+ignored, `equiv` 549, `ub_safe` 783, `ub_unsafe` 134, `unit_pub` 142, `hidden_symbols` 1,
+doctests 89 merged and 387 standalone). Every llhttp test passes under ASan+UBSan, the
+doctests included. Miri passes the 10 Rust-only tests (4 `unit_priv`, 6 `unit_pub`); each of
+the 13 marked was run alone and stops at a foreign call, or, for `debug_trace`'s, at C's
+`stderr` (`reads a C global`). TSan has no obligation: no `Send` or `Sync` claim and no thread;
+nor has BSan, which nothing here is expected to trigger. The raw bindings changed, so the
+crate was packaged (`--no-verify --exclude-lockfile`, 697 files) and built alone in bundled
+mode with no variant, `glibc-bindings` and `ffibox` patched to their local sources and the
+side campaigns' `plain` installs on `OPENSSL_ROOT_DIR`, `CMAKE_PREFIX_PATH` and
+`PKG_CONFIG_PATH`. Usage cells are the assistant's.
 
 ### `libgit2/src/util/utf8.c` wave 229 batch 0: the module's `port`
 

@@ -827,6 +827,25 @@ function llhttp_status_name
 function llhttp_finish
 function llhttp_reset
 
+# wave-194/batch-3: api.c's pause, resume, error reason and lenient setters, through which the
+# equivalence tests compare the ports with the C and the gateway checks the exports'
+# signatures, and llhttp.h's lenient flags, whose bits the setters set
+type llhttp_lenient_flags
+function llhttp_pause
+function llhttp_resume
+function llhttp_resume_after_upgrade
+function llhttp_set_error_reason
+function llhttp_set_lenient_chunked_length
+function llhttp_set_lenient_data_after_close
+function llhttp_set_lenient_headers
+function llhttp_set_lenient_keep_alive
+function llhttp_set_lenient_optional_cr_before_lf
+function llhttp_set_lenient_optional_crlf_after_chunk
+function llhttp_set_lenient_optional_lf_after_cr
+function llhttp_set_lenient_spaces_after_chunk_size
+function llhttp_set_lenient_transfer_encoding
+function llhttp_set_lenient_version
+
 # wave-229/batch-0: src/util/utf8.c (src/util/utf8.h), switched to Rust: they reach its
 # exports, and check their signatures
 function git_utf8_char_length

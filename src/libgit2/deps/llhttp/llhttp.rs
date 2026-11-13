@@ -1358,6 +1358,11 @@ impl Errno {
     ///
     /// Replaces `mac::HTTP_ERRNO_MAP`
     #[doc(alias = "HTTP_ERRNO_MAP")]
+    /// It is the text of api.c's generator `HTTP_ERRNO_GEN(CODE, NAME, _)`, `case HPE_##NAME:
+    /// return "HPE_" #NAME;`, which `llhttp_errno_name` expands `HTTP_ERRNO_MAP` with.
+    ///
+    /// Replaces `mac::HTTP_ERRNO_GEN`
+    #[doc(alias = "HTTP_ERRNO_GEN")]
     #[must_use]
     pub const fn constant_name(self) -> &'static CStr {
         self.constant_cstr()
@@ -1404,6 +1409,12 @@ impl Method {
     ///
     /// Replaces `mac::HTTP_ALL_METHOD_MAP`
     #[doc(alias = "HTTP_ALL_METHOD_MAP")]
+    /// It is the text of api.c's generator `HTTP_METHOD_GEN(NUM, NAME, STRING)`, `case
+    /// HTTP_##NAME: return #STRING;`, which `llhttp_method_name` expands
+    /// `HTTP_ALL_METHOD_MAP` with.
+    ///
+    /// Replaces `mac::HTTP_METHOD_GEN`
+    #[doc(alias = "HTTP_METHOD_GEN")]
     #[must_use]
     pub const fn map_string(self) -> &'static CStr {
         match self.string_override() {
@@ -1459,6 +1470,12 @@ impl Status {
     ///
     /// Replaces `mac::HTTP_STATUS_MAP`
     #[doc(alias = "HTTP_STATUS_MAP")]
+    /// It is the text of api.c's generator `HTTP_STATUS_GEN(NUM, NAME, STRING)`, `case
+    /// HTTP_STATUS_##NAME: return #STRING;`, which `llhttp_status_name` expands
+    /// `HTTP_STATUS_MAP` with.
+    ///
+    /// Replaces `mac::HTTP_STATUS_GEN`
+    #[doc(alias = "HTTP_STATUS_GEN")]
     #[must_use]
     pub const fn map_string(self) -> &'static CStr {
         match self.string_override() {
@@ -1507,6 +1524,10 @@ impl ParserRef<'_> {
     ///
     /// Wraps `fld::llhttp__internal_s.type`
     #[doc(alias = "llhttp__internal_s.type")]
+    /// It is api.c's `llhttp_get_type` too, which returns the byte.
+    ///
+    /// Replaces `fn::llhttp_get_type`
+    #[doc(alias = "llhttp_get_type")]
     pub fn parser_type(&self) -> Result<ParserType, UnnamedParserType> {
         ParserType::try_from(u32::from(self.parser_type_raw()))
     }
@@ -1522,6 +1543,10 @@ impl ParserRef<'_> {
     ///
     /// Wraps `fld::llhttp__internal_s.error`
     #[doc(alias = "llhttp__internal_s.error")]
+    /// It is api.c's `llhttp_get_errno` too.
+    ///
+    /// Replaces `fn::llhttp_get_errno`
+    #[doc(alias = "llhttp_get_errno")]
     pub fn error(&self) -> Result<Errno, UnnamedErrno> {
         Errno::try_from(self.error_raw().cast_unsigned())
     }
@@ -1537,6 +1562,10 @@ impl ParserRef<'_> {
     ///
     /// Wraps `fld::llhttp__internal_s.method`
     #[doc(alias = "llhttp__internal_s.method")]
+    /// It is api.c's `llhttp_get_method` too, which returns the byte.
+    ///
+    /// Replaces `fn::llhttp_get_method`
+    #[doc(alias = "llhttp_get_method")]
     pub fn method(&self) -> Result<Method, UnnamedMethod> {
         Method::try_from(u32::from(self.method_raw()))
     }
@@ -1815,6 +1844,10 @@ mod ffi_import {
         ///
         /// Wraps `fld::llhttp__internal_s.reason`
         #[doc(alias = "llhttp__internal_s.reason")]
+        /// It is api.c's `llhttp_get_error_reason` too, which returns NULL for `None`.
+        ///
+        /// Replaces `fn::llhttp_get_error_reason`
+        #[doc(alias = "llhttp_get_error_reason")]
         #[must_use]
         pub fn reason(&self) -> Option<&'a CStr> {
             let reason = get!(self, reason);
@@ -1840,6 +1873,11 @@ mod ffi_import {
         ///
         /// Wraps `fld::llhttp__internal_s.error_pos`
         #[doc(alias = "llhttp__internal_s.error_pos")]
+        /// It is api.c's `llhttp_get_error_pos` too, whose pointer it locates in `data`
+        /// rather than return.
+        ///
+        /// Replaces `fn::llhttp_get_error_pos`
+        #[doc(alias = "llhttp_get_error_pos")]
         #[must_use]
         pub fn error_offset(&self, data: &[u8]) -> Option<usize> {
             let pos = get!(self, error_pos);
@@ -1901,6 +1939,10 @@ mod ffi_import {
         ///
         /// Wraps `fld::llhttp__internal_s.http_major`
         #[doc(alias = "llhttp__internal_s.http_major")]
+        /// It is api.c's `llhttp_get_http_major` too.
+        ///
+        /// Replaces `fn::llhttp_get_http_major`
+        #[doc(alias = "llhttp_get_http_major")]
         #[must_use]
         pub fn http_major(&self) -> u8 {
             get!(self, http_major)
@@ -1910,6 +1952,10 @@ mod ffi_import {
         ///
         /// Wraps `fld::llhttp__internal_s.http_minor`
         #[doc(alias = "llhttp__internal_s.http_minor")]
+        /// It is api.c's `llhttp_get_http_minor` too.
+        ///
+        /// Replaces `fn::llhttp_get_http_minor`
+        #[doc(alias = "llhttp_get_http_minor")]
         #[must_use]
         pub fn http_minor(&self) -> u8 {
             get!(self, http_minor)
@@ -1931,6 +1977,10 @@ mod ffi_import {
         ///
         /// Wraps `fld::llhttp__internal_s.upgrade`
         #[doc(alias = "llhttp__internal_s.upgrade")]
+        /// It is api.c's `llhttp_get_upgrade` too, which returns the byte, `0` or `1`.
+        ///
+        /// Replaces `fn::llhttp_get_upgrade`
+        #[doc(alias = "llhttp_get_upgrade")]
         #[must_use]
         pub fn upgrade(&self) -> bool {
             get!(self, upgrade) != 0
@@ -1961,6 +2011,10 @@ mod ffi_import {
         ///
         /// Wraps `fld::llhttp__internal_s.status_code`
         #[doc(alias = "llhttp__internal_s.status_code")]
+        /// It is api.c's `llhttp_get_status_code` too, which returns it as an `int`.
+        ///
+        /// Replaces `fn::llhttp_get_status_code`
+        #[doc(alias = "llhttp_get_status_code")]
         #[must_use]
         pub fn status_code(&self) -> u16 {
             get!(self, status_code)
@@ -2007,6 +2061,11 @@ mod ffi_import {
         ///
         /// Wraps `fld::llhttp__internal_s.reason`
         #[doc(alias = "llhttp__internal_s.reason")]
+        /// It is api.c's `llhttp_set_error_reason` too, which a callback calls before it
+        /// returns an error.
+        ///
+        /// Replaces `fn::llhttp_set_error_reason`
+        #[doc(alias = "llhttp_set_error_reason")]
         pub fn set_reason(&mut self, reason: Option<&'static CStr>) {
             set!(self, reason, reason.map_or(core::ptr::null(), CStr::as_ptr));
         }

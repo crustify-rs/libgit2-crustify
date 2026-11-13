@@ -27979,6 +27979,80 @@
    ]
   },
   {
+   "name": "llhttp__debug",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "One past the current input's end; only compared with p, never dereferenced."
+     }
+    },
+    {
+     "name": "msg",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:msg"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "The trace's message, printed with %s; not kept."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "The position in the current input; its first byte is read when p != endp. Not kept."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "The parser traced: its address, `type` and `flags` are printed; not kept."
+     }
+    }
+   ]
+  },
+  {
    "name": "llhttp__internal_execute",
    "defined_in": "deps/llhttp/llhttp.c",
    "ptr_args": [
@@ -28132,6 +28206,285 @@
    ]
   },
   {
+   "name": "llhttp_execute",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "data",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:data"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "`len` bytes of input, read for the call; llhttp keeps `_span_pos0` and `error_pos` pointing into it but never follows them after the call. NULL only with `len` 0 (libgit2 never passes that). Ported as ParserMut::execute(&[u8])."
+     }
+    },
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser advanced over the run; handed to each settings callback for the call; not kept beyond it."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_get_errno",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "The parser whose `error` is read, for the call; not kept. Ported as a ParserRef accessor (wave-194/batch-3)."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_get_error_pos",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "The parser whose `error_pos` is returned; not kept."
+     }
+    }
+   ],
+   "ptr_ret": {
+    "ptr": {
+     "scalar": null,
+     "array": {
+      "by_val": true
+     },
+     "string": false,
+     "owned": false,
+     "borrowed": {
+      "lifetime": "other"
+     },
+     "nullable": true,
+     "mutable": false,
+     "note": "The parser's `error_pos`: a pointer into the input of the llhttp_execute call that stopped, which the caller may since have freed; NULL before any. Never dereferenced: httpparser.c subtracts the input's start. Ported as ParserRef::error_offset(&[u8]), which locates it in a slice without following it."
+    }
+   }
+  },
+  {
+   "name": "llhttp_get_error_reason",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "The parser whose `reason` is returned; not kept."
+     }
+    }
+   ],
+   "ptr_ret": {
+    "ptr": {
+     "scalar": {
+      "by_val": true
+     },
+     "array": null,
+     "string": true,
+     "owned": false,
+     "borrowed": {
+      "lifetime": "static"
+     },
+     "nullable": true,
+     "mutable": false,
+     "note": "The parser's `reason`: NULL before any error, else one of llhttp's string literals or a string a callback set through llhttp_set_error_reason, which must outlive the parser. Not owned; never freed. Ported as ParserRef::reason (Option<&CStr>)."
+    }
+   }
+  },
+  {
+   "name": "llhttp_get_http_major",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "The parser whose `http_major` is read, for the call; not kept. Ported as a ParserRef accessor (wave-194/batch-3)."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_get_http_minor",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "The parser whose `http_minor` is read, for the call; not kept. Ported as a ParserRef accessor (wave-194/batch-3)."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_get_method",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "The parser whose `method` is read, for the call; not kept. Ported as a ParserRef accessor (wave-194/batch-3)."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_get_status_code",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "The parser whose `status_code` is read, for the call; not kept. Ported as a ParserRef accessor (wave-194/batch-3)."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_get_type",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "The parser whose `type` is read, for the call; not kept. Ported as a ParserRef accessor (wave-194/batch-3)."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_get_upgrade",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "The parser whose `upgrade` is read, for the call; not kept. Ported as a ParserRef accessor (wave-194/batch-3)."
+     }
+    }
+   ]
+  },
+  {
    "name": "llhttp_init",
    "defined_in": "deps/llhttp/api.c",
    "lifetime": {
@@ -28177,6 +28530,345 @@
       "nullable": true,
       "mutable": false,
       "note": "Stored in parser->settings, which keeps it beyond the call: llhttp.h requires it to live at least as long as the parser. NULL runs no callback."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_pause",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp_pause sets `error` to HPE_PAUSED and `reason` to a literal on, when it has no error, for the call; not kept."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_resume",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp_resume clears a HPE_PAUSED `error` of, for the call; not kept."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_resume_after_upgrade",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp_resume_after_upgrade clears a HPE_PAUSED_UPGRADE `error` of, for the call; not kept."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_set_error_reason",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp_set_error_reason stores `reason` in, for the call; not kept."
+     }
+    },
+    {
+     "name": "reason",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": true,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Stored in parser->reason, beyond the call: it must live as long as the parser can return it (llhttp's callers pass literals). Not read, not freed. Ported as ParserMut::set_reason(Option<&'static CStr>)."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_set_lenient_chunked_length",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp_set_lenient_chunked_length sets or clears one bit of `lenient_flags` in, for the call; not kept."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_set_lenient_data_after_close",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp_set_lenient_data_after_close sets or clears one bit of `lenient_flags` in, for the call; not kept."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_set_lenient_headers",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp_set_lenient_headers sets or clears one bit of `lenient_flags` in, for the call; not kept."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_set_lenient_keep_alive",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp_set_lenient_keep_alive sets or clears one bit of `lenient_flags` in, for the call; not kept."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_set_lenient_optional_cr_before_lf",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp_set_lenient_optional_cr_before_lf sets or clears one bit of `lenient_flags` in, for the call; not kept."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_set_lenient_optional_crlf_after_chunk",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp_set_lenient_optional_crlf_after_chunk sets or clears one bit of `lenient_flags` in, for the call; not kept."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_set_lenient_optional_lf_after_cr",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp_set_lenient_optional_lf_after_cr sets or clears one bit of `lenient_flags` in, for the call; not kept."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_set_lenient_spaces_after_chunk_size",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp_set_lenient_spaces_after_chunk_size sets or clears one bit of `lenient_flags` in, for the call; not kept."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_set_lenient_transfer_encoding",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp_set_lenient_transfer_encoding sets or clears one bit of `lenient_flags` in, for the call; not kept."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_set_lenient_version",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp_set_lenient_version sets or clears one bit of `lenient_flags` in, for the call; not kept."
      }
     }
    ]

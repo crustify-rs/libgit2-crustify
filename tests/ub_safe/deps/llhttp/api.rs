@@ -6,8 +6,12 @@
 //!
 //! The illegal paths, a table that does not live as long as the program given to a parser
 //! and a table written while a parser holds it, are `Settings`' and
-//! `ParserMut::set_settings`' compile-fail doctests. The tests that build a table with
-//! `Settings::new` or parse call C, and are ignored under Miri; the rest runs there.
+//! `ParserMut::set_settings`' compile-fail doctests. The parser's API api.c gives is run
+//! from inside the callbacks of a parse, on the parser being parsed: the pause, the
+//! resumptions, the lenient setters and the trace, which change what the parse reads next
+//! but not where it stands, and [`ParserMut::execute`], which is refused there, as
+//! `ParserMut::parse` is. The tests that build a table with `Settings::new` or parse call C,
+//! and are ignored under Miri; the rest runs there.
 
 use std::cell::{Cell, RefCell};
 use std::ffi::c_int;
@@ -17,7 +21,7 @@ use std::thread;
 use ffibox::CZeroable;
 use libgit2_crustify::libgit2::deps::llhttp::api::{Settings, SettingsMut};
 use libgit2_crustify::libgit2::deps::llhttp::llhttp::{
-    Callback, DataCallback, DataHandler, EventHandler, Parsed, Parser, ParserMut, ParserType,
+    Callback, DataCallback, DataHandler, Errno, EventHandler, Parsed, Parser, ParserMut, ParserType,
 };
 
 thread_local! {
@@ -262,4 +266,79 @@ fn parsers_given_different_tables_run_their_own() {
     }
     assert_eq!(BODY.take(), b"ab");
     assert_eq!(COMPLETE.replace(0), 2);
+}
+
+// --- The parser's API inside a parse ---------------------------------------------------
+
+/// Pauses, resumes, relaxes every check and traces its parser at each event, then goes on.
+struct Fidgeting;
+
+impl EventHandler for Fidgeting {
+    fn on_event(mut parser: ParserMut<'_>) -> c_int {
+        parser.pause();
+        parser.resume_after_upgrade();
+        parser.resume();
+        parser.set_lenient_headers(true);
+        parser.set_lenient_optional_cr_before_lf(true);
+        parser.set_lenient_headers(false);
+        drop(parser.as_ref().debug_trace(b"", "ub_safe: inside a parse"));
+        0
+    }
+}
+
+/// Executes its own parser again, which is refused, and returns what the refusal gave.
+struct Reexecuting;
+
+impl EventHandler for Reexecuting {
+    fn on_event(mut parser: ParserMut<'_>) -> c_int {
+        let _ = parser.execute(b"HTTP/1.1 200 OK\r\n\r\n");
+        0
+    }
+}
+
+/// A kept table whose every event slot calls `H`.
+fn every_event<H: EventHandler>() -> &'static Settings {
+    let settings = kept();
+    let mut m = settings.as_mut();
+    let callback = Some(Callback::new::<H>());
+    m.set_on_message_begin(callback);
+    m.set_on_headers_complete(callback);
+    m.set_on_header_field_complete(callback);
+    m.set_on_header_value_complete(callback);
+    m.set_on_chunk_header(callback);
+    m.set_on_chunk_complete(callback);
+    m.set_on_message_complete(callback);
+    settings
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn callbacks_pause_resume_and_relax_their_parser_mid_parse() {
+    let mut parser = Parser::new();
+    parser.as_mut().set_parser_type(ParserType::Response);
+    parser
+        .as_mut()
+        .set_settings(Some(every_event::<Fidgeting>().as_ref()));
+    let input = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nhi\r\n0\r\n\r\n";
+    for run in input.chunks(3) {
+        assert_eq!(parser.as_mut().execute(run), Ok(Parsed::All));
+    }
+    assert_eq!(parser.as_ref().status_code(), 200);
+    assert_eq!(parser.as_ref().lenient_flags_raw(), 0x100);
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn a_callback_cannot_execute_the_parser_whose_parse_runs_it() {
+    let mut parser = Parser::new();
+    parser
+        .as_mut()
+        .set_settings(Some(every_event::<Reexecuting>().as_ref()));
+    // The nested `execute` panics, and the trampoline turns the panic into the callback's
+    // `-1`, which stops the outer parse with `HPE_CB_MESSAGE_BEGIN`.
+    let error = parser
+        .as_mut()
+        .execute(b"HTTP/1.1 204 No Content\r\n\r\n")
+        .unwrap_err();
+    assert_eq!(error.errno(), Ok(Errno::CbMessageBegin));
 }
