@@ -610,6 +610,7 @@ type git_repository_mergehead_foreach_cb
 type git_repository_new_options
 type git_repository_open_flag_t
 type git_repository_state_t
+type git_str
 type git_strarray
 type git_submodule_ignore_t
 type git_submodule_recurse_t

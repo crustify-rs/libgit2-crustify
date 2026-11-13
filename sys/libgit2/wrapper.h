@@ -34,6 +34,7 @@
 #include "allocators/win32_leakcheck.h" /* src/util */
 #include "basics.h" /* deps/reftable */
 #include "reftable-error.h" /* deps/reftable */
+#include "str.h" /* src/util */
 #include "strlist.h" /* src/util */
 
 #include "shims.h"

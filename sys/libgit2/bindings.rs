@@ -14459,6 +14459,30 @@ const _: () = {
         "Offset of field: git_transport::free",
     ][::std::mem::offset_of!(git_transport, free) - 104usize];
 };
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct git_str {
+    pub ptr: *mut ::std::os::raw::c_char,
+    pub asize: usize,
+    pub size: usize,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of git_str"][::std::mem::size_of::<git_str>() - 24usize];
+    ["Alignment of git_str"][::std::mem::align_of::<git_str>() - 8usize];
+    ["Offset of field: git_str::ptr"][::std::mem::offset_of!(git_str, ptr) - 0usize];
+    ["Offset of field: git_str::asize"][::std::mem::offset_of!(git_str, asize) - 8usize];
+    ["Offset of field: git_str::size"][::std::mem::offset_of!(git_str, size) - 16usize];
+};
+impl Default for git_str {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
 unsafe extern "C" {
     pub static mut git__allocator: git_allocator;
 }
