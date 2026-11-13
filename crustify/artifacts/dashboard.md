@@ -57,22 +57,22 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip the integration of `libgit2/src/util/strnlen.h`, `30176475c`; `main` at `c58bc5de8`, nothing shipped yet; crustify `cc84106`, ffibox `9c22a73`, wavefront `bf21e16`, ffimap `9aa2ef1` (each on its `libgit2-crustify/devel`, wavefront and ffimap on `devel`)
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `18820` non-test, `99734` tests; **C LoC** — `89080`
+- **Rust LoC** — `18823` non-test, `99823` tests; **C LoC** — `89080`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `762` | — | `27.96`% | `79.18`% |
-| UB unsafe tests | `120` | — | `19.09`% | `14.38`% |
-| Equiv tests | `528` | — | `42.52`% | `74.96`% |
-| Unit tests | `908` | — | `31.35`% | `87.75`% |
-| **Total tests** | **`2318`** | — | **`45.02`%** | **`98.81`%** |
+| UB safe tests | `762` | — | `27.96`% | `79.17`% |
+| UB unsafe tests | `120` | — | `19.06`% | `14.37`% |
+| Equiv tests | `528` | — | `42.53`% | `74.94`% |
+| Unit tests | `914` | — | `31.35`% | `87.75`% |
+| **Total tests** | **`2324`** | — | **`45.00`%** | **`98.81`%** |
 | total types | `258` | — | — | — |
 | ported types | `0` | `0.00`% | — | — |
 | wrapped types | `107` | `41.47`% | — | — |
 | total symbols | `979` | — | — | — |
-| ported symbols | `23` | `2.35`% | — | — |
+| ported symbols | `24` | `2.45`% | — | — |
 | wrapped symbols | `493` | `50.36`% | — | — |
 
 ### Module stats
@@ -481,6 +481,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `0` | wrap | first | `3` | `18` | `+727/-6` | `45.83`% / `77.00`% | `$12.77` | `42.14M` | `37m48s` | `$4.26` | `$0.71` |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `1` | wrap | first | `3` | `18` | `+524/-165` | `45.88`% / `98.92`% | `$10.66` | `30.55M` | `57m49s` | `$3.55` | `$0.59` |
 | `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `0` | wrap | first | `1` | `5` | `+429/-0` | `45.88`% / `98.87`% | `$8.04` | `26.46M` | `22m4s` | `$8.04` | `$1.61` |
+| `libgit2/deps/ntlmclient/compat.h` | `200` | `0` | port | first | `1` | `0` | `+167/-0` | `45.00`% / `98.81`% | — | — | — | — | — |
 | `libgit2/src/util/strnlen.h` | `225` | `0` | port | first | `1` | `0` | `+184/-0` | `45.02`% / `98.81`% | `$5.42` | `13.67M` | `19m47s` | `$5.42` | — |
 | `libgit2/raw-lifetime-void` | `legacy-1` | `0` | wrap | review | `2` | — | `+80/-1` | — | `$7.89` | `10.78M` | `18m36s` | `$3.94` | — |
 | `libgit2/raw-lifetime-string` | `legacy-3` | `0` | wrap | review | `2` | — | `+345/-23` | — | `$10.89` | `14.41M` | `22m03s` | `$5.45` | — |
@@ -513,7 +514,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | wrap | review | `2` | — | `+217/-15` | — | `$11.03` | `25.98M` | `47m17s` | `$5.51` | — |
 | `libgit2/deps/reftable/basics.c` | `169` | `4` | wrap | review | `43` | — | `+110/-16` | `45.99`% / `98.92`% | `$13.42` | `46.17M` | `40m4s` | `$0.31` | — |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | wrap | review | `3` | — | `+11/-7` | `45.88`% / `98.92`% | `$5.87` | `16.61M` | `16m58s` | `$1.96` | — |
-| **Σ first** |  |  |  |  | **`500`** | **`9066`** | **`+80082/-3634`** | **`45.02`% / `98.81`%** | **`$587.14`** | **`1837.67M`** | — | **`$1.17`** | **`$0.06`** |
+| **Σ first** |  |  |  |  | **`501`** | **`9066`** | **`+80249/-3634`** | **`45.00`% / `98.81`%** | **`$587.14`** | **`1837.67M`** | — | **`$1.17`** | **`$0.06`** |
 | **Σ review** |  |  |  |  | **`468`** | — | **`+7252/-1369`** | **`45.93`% / `98.90`%** | **`$373.87`** | **`734.99M`** | — | **`$0.80`** | — |
 
 ### Batches: tests
@@ -606,9 +607,10 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/reftable/basics.c` | `169` | `4` | review | `+0` (`-0.00`/`-0.01` pp) | `+1` (`+0.00`/`+0.00` pp) | `+1` (`+0.03`/`+0.10` pp) | `+0` (`+0.01`/`+0.01` pp) |
 | `libgit2/deps/reftable/basics.c` | `169` | `5` | review | `+2` (`+0.00`/`+0.01` pp) | `+0` (`-0.01`/`-0.06` pp) | `+0` (`+0.02`/`-0.16` pp) | `+3` (`+0.01`/`+0.01` pp) |
 | `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | review | `+0` (`+0.02`/`+0.00` pp) | `+0` (`-0.02`/`+0.00` pp) | `+0` (`-0.01`/`+0.00` pp) | `+0` (`-0.01`/`+0.00` pp) |
+| `libgit2/deps/ntlmclient/compat.h` | `200` | `0` | first | `+0` (`+0.03`/`-0.02` pp) | `+0` (`-0.01`/`-0.00` pp) | `+0` (`+0.01`/`-0.02` pp) | `+6` (`-0.01`/`+0.00` pp) |
 | `libgit2/src/util/strnlen.h` | `225` | `0` | first | `+0` (`+0.04`/`-0.03` pp) | `+0` (`+0.02`/`+0.00` pp) | `+2` (`+0.00`/`+0.01` pp) | `+6` (`-0.02`/`+0.01` pp) |
 | `libgit2/src/util/strnlen.h` | `225` | `1` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) |
-| **Σ first** |  |  |  | **`+345` (`+10.35`/`+5.99` pp)** | **`+40` (`+3.37`/`-5.95` pp)** | **`+225` (`+9.07`/`+13.69` pp)** | **`+324` (`+12.05`/`-33.48` pp)** |
+| **Σ first** |  |  |  | **`+345` (`+10.38`/`+5.97` pp)** | **`+40` (`+3.36`/`-5.95` pp)** | **`+225` (`+9.08`/`+13.67` pp)** | **`+330` (`+12.04`/`-33.48` pp)** |
 | **Σ review** |  |  |  | **`+18` (`+0.31`/`-1.51` pp)** | **`+8` (`-0.80`/`+0.59` pp)** | **`+23` (`+0.09`/`-0.54` pp)** | **`+45` (`+2.44`/`+7.64` pp)** |
 
 ### Batches: safety audit
@@ -638,6 +640,7 @@ Deterministic `ffimap`; no model.
 | `libgit2/src/util/allocators/stdalloc.c` | `181` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
 | `libgit2/src/util/allocators/debugalloc.c` | `183` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+1` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+2` | `-0.02` pp | `+0` |
 | `libgit2/src/util/strlist.c` | `184` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `-3` | `-0.06` pp | `-3` |
+| `libgit2/deps/ntlmclient/compat.h` | `200` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.00` pp | `+0` |
 | `libgit2/src/util/strnlen.h` | `225` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.00` pp | `+0` |
 | `libgit2/src/util/strnlen.h` | `225` | `1` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
 | **Σ first** |  |  |  |  | **`+4`** | **`+0`** | **`+24`** | **`+0`** | **`+1`** | **`+0.52` pp** | **`+3`** | **`+1`** | **`+0`** | **`+0`** | **`+0`** | **`+48`** | **`-0.34` pp** | **`+95`** |
@@ -660,9 +663,10 @@ Deterministic `ffimap api`; no model.
 | `libgit2/src/util/allocators/stdalloc.c` | `181` | `1` | wrap | review | `1` | `0` | `0` | `0` | `0` | `0` | — | — |
 | `libgit2/src/util/allocators/debugalloc.c` | `183` | `1` | wrap | review | `1` | `0` | `0` | `0` | `0` | `0` | — | `fn::git_debugalloc_init_allocator`: signature kept; its `malloc`/`realloc` members became size guards (soundness fix, `debug-size-obligation-unenforceable`) |
 | `libgit2/src/util/strlist.c` | `184` | `1` | wrap | review | `4` | `2` | `0` | `0` | `0` | `3` | — | — |
+| `libgit2/deps/ntlmclient/compat.h` | `200` | `0` | port | first | `0` | `0` | `0` | `0` | `1` | `0` | — | — |
 | `libgit2/src/util/strnlen.h` | `225` | `0` | port | first | `0` | `0` | `0` | `0` | `1` | `0` | — | — |
 | `libgit2/src/util/strnlen.h` | `225` | `1` | port | review | `1` | `0` | `0` | `0` | `0` | `0` | — | — |
-| **Σ first** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`22`** | **`0`** |  |  |
+| **Σ first** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`23`** | **`0`** |  |  |
 | **Σ review** |  |  |  |  | **`33`** | **`2`** | **`1`** | **`0`** | **`0`** | **`3`** |  |  |
 
 ### Batches — review: PoC + reports
@@ -3379,3 +3383,54 @@ rounds of BSan over the workspace, the first lost to a 5400 s timeout. From 2026
 over the workspace only before a ship point, and otherwise on small things (`990d7033a`,
 `22ace3a00`). `Module stats` gains the module's row, the first of a per-TU module: the
 foundational modules have none there, so its `Σ` rows hold the legacy modules and this one.
+
+
+### `libgit2/deps/ntlmclient/compat.h` wave 200 batch 0: `MIN`
+
+`deps/ntlmclient/compat.h` is a header with no translation unit, and its one scheduled item is
+`#define MIN(x, y) (((x) < (y)) ? (x) : (y))`, under `#ifndef MIN`; the header's `bool`,
+`true` and `false` are defined only under `_MSC_VER`. `mac::MIN` is the native
+`fn min<T: PartialOrd>(x: T, y: T) -> T` in `src/libgit2/deps/ntlmclient/compat_h.rs`, the
+macro's body over any `PartialOrd` type: ties and pairs `<` cannot order return `y`, as the C
+does, and for an `Ord` type the result is `core::cmp::min`'s, the plan's `rust_equivalent`. It
+is not a `const fn`, since a generic comparison cannot be called in a constant on stable Rust
+1.100. Its docs name where it departs from the macro: one operand type rather than the usual
+arithmetic conversions, and each operand evaluated once, where the macro evaluates the one
+it returns twice; `ntlm.c`'s three uses pass `size_t` operands without side effects. The file
+holds no unsafe region and carries `#![forbid(unsafe_code)]`. No C reaches it and the macro has
+no export: it stays in its header for `ntlm.c`'s `des_key_from_password` and
+`generate_lm_hash`, wavefront's only users of it. The `loc` cell is wavefront's, `0` for a
+macro.
+
+Tests: six `unit_pub` tests (`ntlm.c`'s key-length uses for every password length up to 20,
+integers of each width at their bounds against `Ord::min`, which operand a tie returns, NaN and
+signed zeros, single evaluation of each operand, and owned operands), and a doctest. No `equiv`
+test: the macro's C users are static functions of `ntlm.c`, reached only through
+`ntlm_client_response`, which the raw bindings do not reach and no suite calls (`ntlm.c` is at
+`0.00`% of its 967 lines in every suite), and binding `deps/ntlmclient/ntlm.h` is `ntlm.c`'s
+batches'. The module has no C tests to carry over.
+
+Coverage was measured with `crustify/scripts/coverage/run.sh` on a `git archive` of the wave
+tip `2216b0cd0` and on this tree, each suite alone, and read with `report.py` from each scratch
+tree's `src/libgit2` (`C=@c` over the `coverage` variant's `libcrustify.a`, 89,080 lines, and
+Rust over the scratch tree's `src/`), the unit column merging `lib` and `unit_pub`. The tip
+measures `44.97`% / `98.81`% in total, where `45.02`% was recorded; the pp cells are against this
+run's own tip measurement, and the C shifts, which no test of this batch reaches, are
+run-to-run variation. Worklist: Rust `compat_h.rs` 3 of 3 lines, 5 of 5 regions and 1 of 1
+function, all by `unit_pub`; the C expansions in `ntlm.c` are reached by no suite. The Overview's
+Rust LoC moves by ffimap's `code.loc.total` (`+3`) and `code.tests.loc.total` (`+89`).
+
+The safety audit scans (ffimap `9aa2ef1`, `--ffibox`, `--sys-crates pcre2_sys`, the 13 seams,
+`--regions ffi_import,ffi_export`, no export feature: the module has no translation unit) move
+only the line and function totals; the boundary scan's sites hold none in the changeset.
+`ffimap api` against the tip, with ffibox's private rustdoc JSON (nightly `2026-10-08`):
+`mac::MIN` is `new`, and every unattributed module `kept`.
+
+Gates, on the base `2216b0cd0`: the workspace is formatted, and `clippy --workspace
+--all-targets` passes with warnings denied on `plain`. The whole workspace passes on `plain`
+(`lib` 840 and 1 ignored, `ub_safe` 762, `ub_unsafe` 120, `equiv` 528, `unit_pub` 73,
+`hidden_symbols` 1, doctests 73 merged and 378 standalone). The module's six tests and its
+doctest pass under ASan+UBSan and under Miri. The coverage runs ran every suite of both trees on
+the nightly; only the known `CommitBuilder` compile-fail doctest fails, on both. TSan and BSan
+have no obligation: the batch adds no unsafe code, no `Send` or `Sync` claim and no thread. No
+raw binding or C changed, so the packaging gate does not apply. Usage cells are the assistant's.
