@@ -14,8 +14,8 @@
 //! Every function reads its argument alone and holds no state, so the module is native Rust.
 //! The C that remains calls the three `git_utf8_*` functions (`src/libgit2/path.c` and
 //! `src/libgit2/diff_xdiff.c`, and on Windows `src/util/fs_path.c`), which reach this module
-//! through its exports once it has switched; until then the exports compile only under the
-//! `ffi-export-src-util-utf8-c` feature.
+//! through its exports: the module has switched from C, and `src/util/utf8.c` has left the
+//! build.
 
 use core::error::Error;
 use core::fmt;
@@ -186,11 +186,10 @@ pub fn valid_prefix_len(bytes: &[u8]) -> usize {
     offset
 }
 
-/// The gateway through which the C that remains calls this module once it has switched:
+/// The gateway through which the C that remains calls this module:
 /// `git_utf8_iterate`, `git_utf8_char_length` and `git_utf8_valid_buf_length`, each
 /// checked against its raw binding's signature, so that a C declaration that drifts fails
 /// to build.
-#[cfg(feature = "ffi-export-src-util-utf8-c")]
 mod ffi_export {
     use core::ffi::{c_char, c_int};
     use core::slice;
@@ -288,7 +287,7 @@ mod ffi_export {
     /// The exports as their C callers call them: `next_hfs_char`'s walk by `git_utf8_iterate`,
     /// `git_xdiff_cb`'s prefix and `fs_path.c`'s count, each reading only the `str_len` bytes
     /// it is given, from an allocation of exactly that size, so that Miri reports a read past
-    /// them. They compile with the gateway, under the export feature until the switch.
+    /// them. They compile with the gateway.
     #[cfg(test)]
     mod unit_priv {
         use core::ffi::{c_char, c_int};

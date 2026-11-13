@@ -5,4 +5,3 @@ mod allocators;
 mod errors;
 mod strlist;
 mod strnlen_h;
-mod utf8;
