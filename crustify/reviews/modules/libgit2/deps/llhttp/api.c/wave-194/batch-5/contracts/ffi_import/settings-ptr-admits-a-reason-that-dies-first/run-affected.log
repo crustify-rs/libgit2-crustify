@@ -1,0 +1,127 @@
+during the context: Some("URL refused by the caller\'s context")
+=================================================================
+==1993070==ERROR: AddressSanitizer: heap-use-after-free on address 0x700666de0010 at pc 0x5be7f956c346 bp 0x7ffd4175c930 sp 0x7ffd4175c0f8
+READ of size 2 at 0x700666de0010 thread T0
+    #0 0x5be7f956c345 in strlen (crustify/tmp/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/settings-ptr-admits-a-reason-that-dies-first+0x81345) (BuildId: 08c8e5e45fe04058ea45f6a989fec4ee06bbcc3c)
+    #1 0x5be7f9628355 in core::ffi::c_str::strlen::runtime /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ffi/c_str.rs:781:60
+    #2 0x5be7f9628355 in core::ffi::c_str::strlen /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/intrinsics/mod.rs:2731:9
+    #3 0x5be7f9628355 in <core::ffi::c_str::CStr>::from_ptr /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ffi/c_str.rs:259:28
+    #4 0x5be7f96237ff in <libgit2_crustify::libgit2::deps::llhttp::llhttp::ffi_import::ParserRef>::reason src/libgit2/deps/llhttp/llhttp.rs:1862:27
+    #5 0x5be7f962264b in settings_ptr_admits_a_reason_that_dies_first::main crustify/reviews/modules/libgit2/deps/llhttp/api.c/wave-194/batch-5/contracts/ffi_import/settings-ptr-admits-a-reason-that-dies-first/src/main.rs:101:57
+    #6 0x5be7f96215dd in <fn() as core::ops::function::FnOnce<()>>::call_once /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ops/function.rs:250:5
+    #7 0x5be7f9622a50 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/sys/backtrace.rs:166:18
+    #8 0x5be7f9621ca3 in std::rt::lang_start::<()>::{closure#0} /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/rt.rs:206:18
+    #9 0x5be7f96636d7 in <&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe as core::ops::function::FnOnce<()>>::call_once library/core/src/ops/function.rs:287:21
+    #10 0x5be7f96636d7 in std::panicking::catch_unwind::do_call::<&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe, i32> library/std/src/panicking.rs:573:43
+    #11 0x5be7f96636d7 in std::panicking::catch_unwind::<i32, &dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe> library/std/src/panicking.rs:541:19
+    #12 0x5be7f96636d7 in std::panic::catch_unwind::<&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe, i32> library/std/src/panic.rs:359:14
+    #13 0x5be7f96636d7 in std::rt::lang_start_internal::{closure#0} library/std/src/rt.rs:175:24
+    #14 0x5be7f96636d7 in std::panicking::catch_unwind::do_call::<std::rt::lang_start_internal::{closure#0}, isize> library/std/src/panicking.rs:573:43
+    #15 0x5be7f96636d7 in std::panicking::catch_unwind::<isize, std::rt::lang_start_internal::{closure#0}> library/std/src/panicking.rs:541:19
+    #16 0x5be7f96636d7 in std::panic::catch_unwind::<std::rt::lang_start_internal::{closure#0}, isize> library/std/src/panic.rs:359:14
+    #17 0x5be7f96636d7 in std::rt::lang_start_internal library/std/src/rt.rs:171:5
+    #18 0x5be7f9621c0f in std::rt::lang_start::<()> /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/rt.rs:205:5
+    #19 0x5be7f9622780 in main (crustify/tmp/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/settings-ptr-admits-a-reason-that-dies-first+0x137780) (BuildId: 08c8e5e45fe04058ea45f6a989fec4ee06bbcc3c)
+    #20 0x73c667adc1c9 in __libc_start_call_main csu/../sysdeps/nptl/libc_start_call_main.h:58:16
+    #21 0x73c667adc28a in __libc_start_main csu/../csu/libc-start.c:360:3
+    #22 0x5be7f95579a4 in _start (crustify/tmp/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/settings-ptr-admits-a-reason-that-dies-first+0x6c9a4) (BuildId: 08c8e5e45fe04058ea45f6a989fec4ee06bbcc3c)
+
+0x700666de0010 is located 0 bytes inside of 36-byte region [0x700666de0010,0x700666de0034)
+freed by thread T0 here:
+    #0 0x5be7f95ef086 in free (crustify/tmp/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/settings-ptr-admits-a-reason-that-dies-first+0x104086) (BuildId: 08c8e5e45fe04058ea45f6a989fec4ee06bbcc3c)
+    #1 0x5be7f9640331 in alloc::alloc::dealloc_nonnull /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/alloc.rs:205:14
+    #2 0x5be7f9640331 in <alloc::alloc::Global>::deallocate_impl_runtime /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/alloc.rs:354:22
+    #3 0x5be7f9640331 in <alloc::alloc::Global>::deallocate_impl /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/alloc.rs:469:9
+    #4 0x5be7f9640331 in <alloc::alloc::Global as core::alloc::Allocator>::deallocate /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/alloc.rs:588:23
+    #5 0x5be7f964069f in <alloc::boxed::Box<[u8]> as core::ops::drop::Drop>::drop /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/boxed.rs:1993:24
+    #6 0x5be7f963f7a5 in core::ptr::drop_glue::<alloc::boxed::Box<[u8]>> /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ptr/mod.rs:848:1
+    #7 0x5be7f963f8ad in core::ptr::drop_glue::<alloc::ffi::c_str::CString> /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ptr/mod.rs:848:1
+    #8 0x5be7f96214d1 in core::ptr::drop_glue::<settings_ptr_admits_a_reason_that_dies_first::Context> /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ptr/mod.rs:848:1
+    #9 0x5be7f9621473 in core::ptr::drop_glue::<alloc::boxed::Box<settings_ptr_admits_a_reason_that_dies_first::Context>> /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ptr/mod.rs:848:1
+    #10 0x5be7f9621aaa in core::mem::drop::<alloc::boxed::Box<settings_ptr_admits_a_reason_that_dies_first::Context>> /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/mem/mod.rs:1051:1
+    #11 0x5be7f9622621 in settings_ptr_admits_a_reason_that_dies_first::main crustify/reviews/modules/libgit2/deps/llhttp/api.c/wave-194/batch-5/contracts/ffi_import/settings-ptr-admits-a-reason-that-dies-first/src/main.rs:98:5
+    #12 0x5be7f96215dd in <fn() as core::ops::function::FnOnce<()>>::call_once /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ops/function.rs:250:5
+    #13 0x5be7f9622a50 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/sys/backtrace.rs:166:18
+    #14 0x5be7f9621ca3 in std::rt::lang_start::<()>::{closure#0} /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/rt.rs:206:18
+    #15 0x5be7f96636d7 in <&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe as core::ops::function::FnOnce<()>>::call_once library/core/src/ops/function.rs:287:21
+    #16 0x5be7f96636d7 in std::panicking::catch_unwind::do_call::<&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe, i32> library/std/src/panicking.rs:573:43
+    #17 0x5be7f96636d7 in std::panicking::catch_unwind::<i32, &dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe> library/std/src/panicking.rs:541:19
+    #18 0x5be7f96636d7 in std::panic::catch_unwind::<&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe, i32> library/std/src/panic.rs:359:14
+    #19 0x5be7f96636d7 in std::rt::lang_start_internal::{closure#0} library/std/src/rt.rs:175:24
+    #20 0x5be7f96636d7 in std::panicking::catch_unwind::do_call::<std::rt::lang_start_internal::{closure#0}, isize> library/std/src/panicking.rs:573:43
+    #21 0x5be7f96636d7 in std::panicking::catch_unwind::<isize, std::rt::lang_start_internal::{closure#0}> library/std/src/panicking.rs:541:19
+    #22 0x5be7f96636d7 in std::panic::catch_unwind::<std::rt::lang_start_internal::{closure#0}, isize> library/std/src/panic.rs:359:14
+    #23 0x5be7f96636d7 in std::rt::lang_start_internal library/std/src/rt.rs:171:5
+    #24 0x5be7f9621c0f in std::rt::lang_start::<()> /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/rt.rs:205:5
+    #25 0x5be7f9622780 in main (crustify/tmp/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/settings-ptr-admits-a-reason-that-dies-first+0x137780) (BuildId: 08c8e5e45fe04058ea45f6a989fec4ee06bbcc3c)
+    #26 0x73c667adc1c9 in __libc_start_call_main csu/../sysdeps/nptl/libc_start_call_main.h:58:16
+    #27 0x73c667adc28a in __libc_start_main csu/../csu/libc-start.c:360:3
+    #28 0x5be7f95579a4 in _start (crustify/tmp/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/settings-ptr-admits-a-reason-that-dies-first+0x6c9a4) (BuildId: 08c8e5e45fe04058ea45f6a989fec4ee06bbcc3c)
+
+previously allocated by thread T0 here:
+    #0 0x5be7f95ef654 in malloc (crustify/tmp/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/settings-ptr-admits-a-reason-that-dies-first+0x104654) (BuildId: 08c8e5e45fe04058ea45f6a989fec4ee06bbcc3c)
+    #1 0x5be7f9676672 in alloc::alloc::alloc library/alloc/src/alloc.rs:158:9
+    #2 0x5be7f9676672 in <alloc::alloc::Global>::alloc_impl_runtime library/alloc/src/alloc.rs:335:73
+    #3 0x5be7f9676672 in <alloc::alloc::Global>::alloc_impl library/alloc/src/alloc.rs:457:9
+    #4 0x5be7f9676672 in <alloc::alloc::Global as core::alloc::Allocator>::allocate library/alloc/src/alloc.rs:575:14
+    #5 0x5be7f9676672 in <alloc::raw_vec::RawVecInner>::try_allocate_in library/alloc/src/raw_vec/mod.rs:485:47
+    #6 0x5be7f9676672 in <alloc::raw_vec::RawVecInner>::with_capacity_in library/alloc/src/raw_vec/mod.rs:453:15
+    #7 0x5be7f9676672 in <alloc::raw_vec::RawVec<u8>>::with_capacity_in library/alloc/src/raw_vec/mod.rs:187:20
+    #8 0x5be7f9676672 in <alloc::vec::Vec<u8>>::with_capacity_in library/alloc/src/vec/mod.rs:971:20
+    #9 0x5be7f9676672 in <alloc::vec::Vec<u8>>::with_capacity library/alloc/src/vec/mod.rs:525:9
+    #10 0x5be7f9676672 in <alloc::ffi::c_str::CString>::new::spec_new_impl_bytes library/alloc/src/ffi/c_str.rs:285:30
+    #11 0x5be7f9676672 in <&str as <alloc::ffi::c_str::CString>::new::SpecNewImpl>::spec_new_impl library/alloc/src/ffi/c_str.rs:305:17
+    #12 0x5be7f963f6dc in <alloc::ffi::c_str::CString>::new::<&str> /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/ffi/c_str.rs:315:11
+    #13 0x5be7f96220ce in settings_ptr_admits_a_reason_that_dies_first::main crustify/reviews/modules/libgit2/deps/llhttp/api.c/wave-194/batch-5/contracts/ffi_import/settings-ptr-admits-a-reason-that-dies-first/src/main.rs:78:17
+    #14 0x5be7f96215dd in <fn() as core::ops::function::FnOnce<()>>::call_once /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ops/function.rs:250:5
+    #15 0x5be7f9622a50 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/sys/backtrace.rs:166:18
+    #16 0x5be7f9621ca3 in std::rt::lang_start::<()>::{closure#0} /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/rt.rs:206:18
+    #17 0x5be7f96636d7 in <&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe as core::ops::function::FnOnce<()>>::call_once library/core/src/ops/function.rs:287:21
+    #18 0x5be7f96636d7 in std::panicking::catch_unwind::do_call::<&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe, i32> library/std/src/panicking.rs:573:43
+    #19 0x5be7f96636d7 in std::panicking::catch_unwind::<i32, &dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe> library/std/src/panicking.rs:541:19
+    #20 0x5be7f96636d7 in std::panic::catch_unwind::<&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe, i32> library/std/src/panic.rs:359:14
+    #21 0x5be7f96636d7 in std::rt::lang_start_internal::{closure#0} library/std/src/rt.rs:175:24
+    #22 0x5be7f96636d7 in std::panicking::catch_unwind::do_call::<std::rt::lang_start_internal::{closure#0}, isize> library/std/src/panicking.rs:573:43
+    #23 0x5be7f96636d7 in std::panicking::catch_unwind::<isize, std::rt::lang_start_internal::{closure#0}> library/std/src/panicking.rs:541:19
+    #24 0x5be7f96636d7 in std::panic::catch_unwind::<std::rt::lang_start_internal::{closure#0}, isize> library/std/src/panic.rs:359:14
+    #25 0x5be7f96636d7 in std::rt::lang_start_internal library/std/src/rt.rs:171:5
+    #26 0x5be7f9621c0f in std::rt::lang_start::<()> /root/.rustup/toolchains/nightly-2026-10-08-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/rt.rs:205:5
+    #27 0x5be7f9622780 in main (crustify/tmp/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/settings-ptr-admits-a-reason-that-dies-first+0x137780) (BuildId: 08c8e5e45fe04058ea45f6a989fec4ee06bbcc3c)
+    #28 0x73c667adc1c9 in __libc_start_call_main csu/../sysdeps/nptl/libc_start_call_main.h:58:16
+    #29 0x73c667adc28a in __libc_start_main csu/../csu/libc-start.c:360:3
+    #30 0x5be7f95579a4 in _start (crustify/tmp/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/settings-ptr-admits-a-reason-that-dies-first+0x6c9a4) (BuildId: 08c8e5e45fe04058ea45f6a989fec4ee06bbcc3c)
+
+SUMMARY: AddressSanitizer: heap-use-after-free (crustify/tmp/target/asan-ubsan/x86_64-unknown-linux-gnu/debug/settings-ptr-admits-a-reason-that-dies-first+0x81345) (BuildId: 08c8e5e45fe04058ea45f6a989fec4ee06bbcc3c) in strlen
+Shadow bytes around the buggy address:
+  0x700666ddfd80: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x700666ddfe00: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x700666ddfe80: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x700666ddff00: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x700666ddff80: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+=>0x700666de0000: fa fa[fd]fd fd fd fd fa fa fa fa fa fa fa fa fa
+  0x700666de0080: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x700666de0100: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x700666de0180: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x700666de0200: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x700666de0280: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+==1993070==ABORTING
+exit 134
