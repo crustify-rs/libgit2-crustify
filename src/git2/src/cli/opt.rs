@@ -6,6 +6,10 @@
 //! `opt_usage.c` and `common.c`, uses their constants, and [`Usage`] and [`ParseFlags`] are
 //! bit sets, which that C combines with `|`. `opt.h` keeps the C definitions for that C:
 //! the two are not linked, and nothing here is exported.
+//!
+//! The parser's helpers are native Rust too: [`Kind::is_option`], `opt.c`'s
+//! `spec_is_option_type`, and [`uses_gnu_style`], its `support_gnu_style`: no C outside
+//! `opt.c` reaches either, so neither is exported.
 #![forbid(unsafe_code)]
 
 use core::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign};
@@ -378,6 +382,74 @@ impl Status {
     pub(crate) const fn raw(self) -> u32 {
         self as u32
     }
+}
+
+/// The environment variable that asks programs for POSIX behaviour, which turns
+/// [`ParseFlags::GNU`] off.
+const POSIXLY_CORRECT: &str = "POSIXLY_CORRECT";
+
+impl Kind {
+    /// Whether a spec of this kind is an option its long name selects, as `--name`: a
+    /// [`Bool`](Self::Bool), a [`Switch`](Self::Switch) or a [`Value`](Self::Value).
+    ///
+    /// The parser selects a spec of any other kind otherwise, or never by its long name: a
+    /// bare `--` selects the [`Literal`](Self::Literal), an [`Arg`](Self::Arg) or
+    /// [`Args`](Self::Args) takes bare arguments, an [`Accumulator`](Self::Accumulator) is
+    /// selected by its short alias alone, as `-v`, and [`None`](Self::None) ends a spec list.
+    /// The C parser of long arguments has a branch for an accumulator that this predicate
+    /// leaves unreachable, as the C macro does; no spec of the CLI is an accumulator.
+    ///
+    /// The C macro takes a spec and reads its `type`; here the predicate is the kind's, which
+    /// a ported spec's kind answers. It computes on its argument alone, so it is a `const fn`.
+    /// A C spec whose `type` holds a value `opt.h` does not name, which the macro reports as
+    /// no option, has no `Kind`: its conversion refuses it before the predicate is reached.
+    ///
+    /// ```
+    /// use libgit2_crustify::git2::src::cli::opt::Kind;
+    ///
+    /// assert!(Kind::Bool.is_option());
+    /// assert!(Kind::Value.is_option());
+    /// assert!(!Kind::Accumulator.is_option());
+    /// assert!(!Kind::Args.is_option());
+    /// ```
+    ///
+    /// Replaces `mac::spec_is_option_type`
+    #[doc(alias = "spec_is_option_type")]
+    #[must_use]
+    #[inline]
+    pub const fn is_option(self) -> bool {
+        matches!(self, Self::Bool | Self::Switch | Self::Value)
+    }
+}
+
+/// Whether a parser built with `flags` parses GNU-style, as `getopt_long` does, letting
+/// options follow bare arguments (`file1 --help file2`), which it reorders in place: always
+/// under [`ParseFlags::FORCE_GNU`]; under [`ParseFlags::GNU`] alone, unless the environment
+/// sets `POSIXLY_CORRECT`, to any value, the empty one included; never without either. The
+/// flags that ask nothing of the parsing style, those no constant names included, do not
+/// change it.
+///
+/// The C reads the variable with `getenv`, whose result it compares with NULL, which is
+/// [`std::env::var_os`] returning `Some`: libc's `getenv` takes its `std` route. The variable
+/// is read on every call, so a change to the environment between two parsers changes the
+/// second one's style. On Windows the C reads it with `_wgetenv` where `UNICODE` is defined,
+/// which `var_os` does too, and the crate is built for Linux alone.
+///
+/// ```
+/// use libgit2_crustify::git2::src::cli::opt::{ParseFlags, uses_gnu_style};
+///
+/// assert!(uses_gnu_style(ParseFlags::FORCE_GNU));
+/// assert!(!uses_gnu_style(ParseFlags::DEFAULT));
+/// ```
+///
+/// Replaces `fn::support_gnu_style`
+#[doc(alias = "support_gnu_style")]
+#[must_use]
+pub fn uses_gnu_style(flags: ParseFlags) -> bool {
+    if flags.contains(ParseFlags::FORCE_GNU) {
+        return true;
+    }
+    flags.contains(ParseFlags::GNU) && std::env::var_os(POSIXLY_CORRECT).is_none()
 }
 
 /// The integer forms of [`Kind`] and [`Status`], compared with the constants `opt.h` defines,

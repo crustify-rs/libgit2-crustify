@@ -1,6 +1,8 @@
 # Agent-owned bindgen allowlist: one `function|type|var <regex>` per line, matched against
 # C names. Add only the items a batch needs; keep each kind's entries sorted.
 
+function cli_opt_parser_init
+function cli_opt_parser_next
 type cli_opt_flag_t
 type cli_opt_status_t
 type cli_opt_type_t

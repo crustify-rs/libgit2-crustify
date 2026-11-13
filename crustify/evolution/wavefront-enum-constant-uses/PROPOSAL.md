@@ -57,3 +57,16 @@ an enum constant through `int`.
   `GIT_FILEMODE_BLOB` of `git_filemode_t`, homed in `tree.c`). That one edge closes a
   util–libgit2 cycle and accounts for 485 of the 524 new item cuts and 43 of the 44 new
   module cuts (item cuts 1340 → 1864, module cuts 206 → 250, waves 1234 → 1237).
+
+## Later evidence
+
+- `wave-186/batch-1/run-1` (`git2/src/cli/opt.c`): wave 186 packs `opt.h`'s four enums
+  (batch 0) beside `spec_is_option_type` and `support_gnu_style` (batch 1), whose records
+  (wavefront `bf21e16`, the campaign's unre-extracted tables) list no dependency on them,
+  though the macro compares a spec's `type` with three `cli_opt_type_t` constants and the
+  function tests two `cli_opt_flag_t` constants. The ports take the enums' Rust types
+  (`Kind::is_option`, `uses_gnu_style(ParseFlags)`), so batch 1 was written against
+  stand-ins of batch 0's in-progress types and landed after batch 0 (`8a149ac08`), on its
+  types. Within one module the edge costs an ordering of two batches of one wave, not a
+  wrong home or a binding; until a planner run re-extracts the tables, a wave's batches that
+  use a sibling's enum constants are the cases to expect.
