@@ -1,0 +1,3 @@
+C:      returned -1, errno 4, wrote "git"
+export: returned -1, errno 4, wrote "git"
+exit 0
