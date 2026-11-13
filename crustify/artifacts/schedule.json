@@ -118812,7 +118812,7 @@
           "module": "src/cli/opt.c",
           "foundational": false,
           "kind": "port",
-          "status": "wip",
+          "status": "done",
           "items": [
             {
               "name": "spec_is_option_type",
@@ -118831,7 +118831,9 @@
               "home": "src/git2/src/cli/opt.rs"
             }
           ],
-          "commits": []
+          "commits": [
+            "29ec3ab87a7e8b51fbb6e67caabaa89f51c606ed"
+          ]
         },
         {
           "index": 2,
@@ -118839,7 +118841,7 @@
           "module": "src/cli/opt.c",
           "foundational": false,
           "kind": "wrap",
-          "status": "wip",
+          "status": "done",
           "items": [
             {
               "name": "cli_opt_spec",
@@ -118897,6 +118899,21 @@
               ],
               "home": "src/git2/src/cli/opt.rs"
             }
+          ],
+          "commits": [
+            "fe6b85bfa029d37fe1b6e149b523f950bd9869d1"
+          ]
+        },
+        {
+          "index": 3,
+          "link_unit": "git2",
+          "module": "src/cli/opt.c",
+          "foundational": false,
+          "kind": "review",
+          "status": "wip",
+          "reviews": [
+            0,
+            2
           ],
           "commits": []
         }
