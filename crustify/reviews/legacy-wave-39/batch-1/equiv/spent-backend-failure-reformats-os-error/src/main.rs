@@ -23,7 +23,7 @@ use std::ffi::{CStr, CString, c_int};
 use std::path::PathBuf;
 use std::ptr;
 
-use libgit2::ffi;
+use libgit2::sys::libgit2 as sys;
 use libgit2::libgit2::config::config::{Config, ConfigLevel, ConfigMap, MapMatch};
 use libgit2::libgit2::util::errors::{ErrorClass, last};
 use libgit2::libgit2::util::sys::errors::set_str;
@@ -78,23 +78,23 @@ fn main() {
     let mut raw = ptr::null_mut();
     // SAFETY: writable slot and live NUL path; success hands out one owned config.
     assert_eq!(
-        unsafe { ffi::git_config_open_ondisk(&mut raw, c_lower.as_ptr()) },
+        unsafe { sys::git_config_open_ondisk(&mut raw, c_lower.as_ptr()) },
         0
     );
     // SAFETY: live exclusive config, live NUL path, a free priority, no repository.
     let rc = unsafe {
-        ffi::git_config_add_file_ondisk(
+        sys::git_config_add_file_ondisk(
             raw,
             c_upper.as_ptr(),
-            ffi::GIT_CONFIG_LEVEL_APP,
+            sys::GIT_CONFIG_LEVEL_APP,
             ptr::null(),
             0,
         )
     };
     assert_eq!(rc, 0);
     let maps = [ConfigMap::new(MapMatch::String(c"input"), 42)];
-    let raw_maps = [ffi::git_configmap {
-        type_: ffi::GIT_CONFIGMAP_STRING,
+    let raw_maps = [sys::git_configmap {
+        type_: sys::GIT_CONFIGMAP_STRING,
         str_match: c"input".as_ptr(),
         map_value: 42,
     }];
@@ -115,7 +115,7 @@ fn main() {
         let mut entry = ptr::null_mut();
         // SAFETY: live config, NUL key, writable slot. The key's backend is the
         // highest, so C never reaches the broken one below it.
-        let rc = unsafe { ffi::git_config_get_entry(&mut entry, raw, c"a.b".as_ptr()) };
+        let rc = unsafe { sys::git_config_get_entry(&mut entry, raw, c"a.b".as_ptr()) };
         let c_value = if rc < 0 {
             Err(rc)
         } else {
@@ -126,7 +126,7 @@ fn main() {
         };
         let c = observe(c_value);
         // SAFETY: releases the one acquired reference (NULL is a no-op).
-        unsafe { ffi::git_config_entry_free(entry) };
+        unsafe { sys::git_config_entry_free(entry) };
         println!("entry, previous {class:?}:\n  rust {rust:?}\n  c    {c:?}");
         diverged |= rust != c;
 
@@ -144,7 +144,7 @@ fn main() {
         let mut out = 0;
         // SAFETY: live config, NUL key, writable scalar; one record with a live string.
         let rc = unsafe {
-            ffi::git_config_get_mapped(&mut out, raw, c"a.b".as_ptr(), raw_maps.as_ptr(), 1)
+            sys::git_config_get_mapped(&mut out, raw, c"a.b".as_ptr(), raw_maps.as_ptr(), 1)
         };
         let c = observe(if rc < 0 { Err(rc) } else { Ok(out.to_string()) });
         println!("get_mapped, previous {class:?}:\n  rust {rust:?}\n  c    {c:?}");
@@ -152,7 +152,7 @@ fn main() {
     }
     drop(config);
     // SAFETY: releases the one owned C config.
-    unsafe { ffi::git_config_free(raw) };
+    unsafe { sys::git_config_free(raw) };
     for path in [&rust_lower, &rust_upper, &c_lower, &c_upper] {
         let _ = std::fs::remove_file(path.to_str().unwrap());
     }

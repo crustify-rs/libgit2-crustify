@@ -35,10 +35,10 @@ use std::ffi::{CStr, CString, c_int};
 use std::path::PathBuf;
 use std::ptr;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryError};
 use libgit2::libgit2::src::libgit2::settings::{SearchPathLevel, set_search_path};
 use libgit2::libgit2::src::libgit2::signature::{Signature, SignatureBox};
+use libgit2::sys::libgit2 as sys;
 
 const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 
@@ -84,7 +84,7 @@ type Seen = (Vec<u8>, Vec<u8>, i64, i32, u8);
 /// A call's outcome: the signatures it built, or its failure.
 type Outcome = Result<Vec<Seen>, (c_int, c_int, String)>;
 
-fn c_seen(sig: *mut ffi::git_signature) -> Seen {
+fn c_seen(sig: *mut sys::git_signature) -> Seen {
     {
         // SAFETY: a live signature the caller owns, with both strings (libgit2 built it
         // through `git_signature_new`), read, then released once.
@@ -102,7 +102,7 @@ fn c_seen(sig: *mut ffi::git_signature) -> Seen {
             )
         };
         // SAFETY: as above.
-        unsafe { ffi::git_signature_free(sig) };
+        unsafe { sys::git_signature_free(sig) };
         seen
     }
 }
@@ -111,7 +111,7 @@ fn c_failed(rc: c_int) -> Outcome {
     {
         // SAFETY: libgit2 is initialised; the last error and its message are live until
         // the next call on this thread, after the copy.
-        let e = unsafe { ffi::git_error_last() };
+        let e = unsafe { sys::git_error_last() };
         // SAFETY: as above.
         let klass = unsafe { (*e).klass };
         // SAFETY: as above.
@@ -152,11 +152,11 @@ fn rust_failed(e: RepositoryError) -> Outcome {
 }
 
 /// The four calls, C's: the default, then the author, the committer, and both.
-fn c_calls(repo: *mut ffi::git_repository) -> Vec<Outcome> {
+fn c_calls(repo: *mut sys::git_repository) -> Vec<Outcome> {
     let mut outcomes = Vec::new();
     let mut out = ptr::null_mut();
     // SAFETY: a writable slot and the live repository.
-    let rc = unsafe { ffi::git_signature_default(&raw mut out, repo) };
+    let rc = unsafe { sys::git_signature_default(&raw mut out, repo) };
     outcomes.push(if rc < 0 {
         c_failed(rc)
     } else {
@@ -164,7 +164,7 @@ fn c_calls(repo: *mut ffi::git_repository) -> Vec<Outcome> {
     });
     for (author, committer) in [(true, false), (false, true), (true, true)] {
         let (mut a, mut c) = (ptr::null_mut(), ptr::null_mut());
-        let slot = |wanted: bool, s: &mut *mut ffi::git_signature| {
+        let slot = |wanted: bool, s: &mut *mut sys::git_signature| {
             if wanted {
                 ptr::from_mut(s)
             } else {
@@ -173,7 +173,7 @@ fn c_calls(repo: *mut ffi::git_repository) -> Vec<Outcome> {
         };
         // SAFETY: writable slots (or NULL, not both) and the live repository.
         let rc = unsafe {
-            ffi::git_signature_default_from_env(slot(author, &mut a), slot(committer, &mut c), repo)
+            sys::git_signature_default_from_env(slot(author, &mut a), slot(committer, &mut c), repo)
         };
         outcomes.push(if rc < 0 {
             c_failed(rc)
@@ -253,7 +253,7 @@ fn compare(tag: &str, config: &str, exact: bool, expect: fn(&[Outcome])) {
 
     let mut c_repo = ptr::null_mut();
     // SAFETY: a writable slot and a NUL-terminated path.
-    let rc = unsafe { ffi::git_repository_open(&raw mut c_repo, c_path.as_ptr()) };
+    let rc = unsafe { sys::git_repository_open(&raw mut c_repo, c_path.as_ptr()) };
     assert_eq!(rc, 0);
     let rust_repo = Repository::open(&c_path).unwrap();
     // Twice: the second round reads the configuration both sides have loaded.
@@ -272,7 +272,7 @@ fn compare(tag: &str, config: &str, exact: bool, expect: fn(&[Outcome])) {
     }
     drop(rust_repo);
     // SAFETY: the raw repository is released once; nothing of it is held.
-    unsafe { ffi::git_repository_free(c_repo) };
+    unsafe { sys::git_repository_free(c_repo) };
     drop(std::fs::remove_dir_all(&root));
 }
 
@@ -453,7 +453,7 @@ fn a_configuration_corrupted_after_opening() {
             std::fs::write(&config, &file).unwrap();
             let mut c_repo = ptr::null_mut();
             // SAFETY: a writable slot and a NUL-terminated path.
-            let rc = unsafe { ffi::git_repository_open(&raw mut c_repo, c_path.as_ptr()) };
+            let rc = unsafe { sys::git_repository_open(&raw mut c_repo, c_path.as_ptr()) };
             assert_eq!(rc, 0);
             let rust_repo = Repository::open(&c_path).unwrap();
             file.push_str("[user\n");
@@ -462,7 +462,7 @@ fn a_configuration_corrupted_after_opening() {
             let mut c_author = ptr::null_mut();
             // SAFETY: a writable slot, no committer slot, and the live repository.
             let rc = unsafe {
-                ffi::git_signature_default_from_env(&raw mut c_author, ptr::null_mut(), c_repo)
+                sys::git_signature_default_from_env(&raw mut c_author, ptr::null_mut(), c_repo)
             };
             let c_seen = if rc < 0 {
                 c_failed(rc)
@@ -492,7 +492,7 @@ fn a_configuration_corrupted_after_opening() {
             }
             drop(rust_repo);
             // SAFETY: the raw repository is released once; nothing of it is held.
-            unsafe { ffi::git_repository_free(c_repo) };
+            unsafe { sys::git_repository_free(c_repo) };
             drop(std::fs::remove_dir_all(&root));
         },
     );

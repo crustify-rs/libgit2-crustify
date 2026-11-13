@@ -16,17 +16,17 @@ use std::collections::HashSet;
 use std::hint::black_box;
 use std::thread;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::tree::{UnnamedWalkMode, WalkMode};
+use libgit2::sys::libgit2 as sys;
 
 /// Every small value, a stride across the rest of `git_treewalk_mode`, and its ends.
-fn probes() -> impl Iterator<Item = ffi::git_treewalk_mode> {
+fn probes() -> impl Iterator<Item = sys::git_treewalk_mode> {
     let stride = if cfg!(bsan) || cfg!(miri) { 97 } else { 1 };
     (0..=4096)
         .step_by(stride)
         .chain([0, 1, 2])
-        .chain((0..=ffi::git_treewalk_mode::MAX).step_by(1 << 24))
-        .chain([ffi::git_treewalk_mode::MAX - 1, ffi::git_treewalk_mode::MAX])
+        .chain((0..=sys::git_treewalk_mode::MAX).step_by(1 << 24))
+        .chain([sys::git_treewalk_mode::MAX - 1, sys::git_treewalk_mode::MAX])
 }
 
 #[test]
@@ -36,8 +36,8 @@ fn from_raw_yields_only_valid_modes() {
         if let Some(mode) = WalkMode::from_raw(black_box(raw)) {
             // Matching on the value reads its discriminant.
             let back = match black_box(mode) {
-                WalkMode::PreOrder => ffi::GIT_TREEWALK_PRE,
-                WalkMode::PostOrder => ffi::GIT_TREEWALK_POST,
+                WalkMode::PreOrder => sys::GIT_TREEWALK_PRE,
+                WalkMode::PostOrder => sys::GIT_TREEWALK_POST,
                 _ => unreachable!(),
             };
             assert_eq!(back, raw);
@@ -107,13 +107,13 @@ mod builder {
     use std::sync::Barrier;
     use std::thread;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::object::Object;
     use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
     use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
     use libgit2::libgit2::src::libgit2::tree::{
         FileMode, Tree, TreeArc, TreeBuilder, TreeBuilderBox, TreeBuilderMut, TreeRef,
     };
+    use libgit2::sys::libgit2 as sys;
 
     use crate::fixture::init;
     use crate::fixture::tree::{count, entries, id, mode_of};
@@ -245,7 +245,7 @@ mod builder {
         // The same names again replace each entry's id in place.
         fill(&mut builder, 16);
         assert_eq!(count(&builder), 16);
-        assert_eq!(mode_of(&builder, c"e3"), Some(ffi::GIT_FILEMODE_COMMIT));
+        assert_eq!(mode_of(&builder, c"e3"), Some(sys::GIT_FILEMODE_COMMIT));
 
         builder.as_mut().clear();
         assert_eq!(count(&builder), 0);
@@ -406,7 +406,7 @@ mod builder {
         let builder = seeded(target.repo(), tree);
         drop(source);
         assert_eq!(count(&builder), 4);
-        assert_eq!(mode_of(&builder, c"ab"), Some(ffi::GIT_FILEMODE_TREE));
+        assert_eq!(mode_of(&builder, c"ab"), Some(sys::GIT_FILEMODE_TREE));
     }
 
     /// A tree of the builder's own repository: the empty tree it wrote, then a tree with
@@ -1103,7 +1103,6 @@ mod tree_entry {
     use std::sync::Barrier;
     use std::thread;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::object::{Object, ObjectType};
     use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
     use libgit2::libgit2::src::libgit2::repository::RepositoryRef;
@@ -1112,6 +1111,7 @@ mod tree_entry {
         TreeEntryRef, TreeRef,
     };
     use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+    use libgit2::sys::libgit2 as sys;
 
     use crate::fixture::TempRepo;
     use crate::fixture::object_and_tree_entry::{
@@ -1157,7 +1157,7 @@ mod tree_entry {
             assert_eq!(&entry_view(clone), view);
         }
         assert_eq!(expected[1].0.as_c_str(), c"ab");
-        assert_eq!(expected[1].2, ffi::GIT_FILEMODE_TREE);
+        assert_eq!(expected[1].2, sys::GIT_FILEMODE_TREE);
         assert_eq!(expected[5].0.as_c_str(), c"1.txt");
     }
 
@@ -1331,7 +1331,7 @@ mod tree_entry {
         assert_eq!(entry_view(&deep), entry_view(&again));
         assert_eq!(entry_view(&deep).0.as_c_str(), c"1.txt");
         assert_eq!(entry_view(&dir).0.as_c_str(), c"de");
-        assert_eq!(entry_view(&dir).2, ffi::GIT_FILEMODE_TREE);
+        assert_eq!(entry_view(&dir).2, sys::GIT_FILEMODE_TREE);
         drop(again);
         let copy = deep.clone();
         drop(deep);
@@ -1347,18 +1347,18 @@ mod tree_entry {
     #[cfg_attr(miri, ignore = "calls libgit2")]
     fn missing_subtrees_fail_with_libgit2s_error() {
         let repo = TempRepo::new("tree-entry-missing-subtree");
-        let blob = write_raw(&repo, b"leaf\n", ffi::GIT_OBJECT_BLOB);
+        let blob = write_raw(&repo, b"leaf\n", sys::GIT_OBJECT_BLOB);
         // Entries in git's order (libgit2 searches them by bisection).
         let mut raw = b"100644 leaf\0".to_vec();
         raw.extend(&blob.as_ref().id()[..20]);
         raw.extend(b"40000 sub\0");
         raw.extend([0xDE; 20]);
-        let id = write_raw(&repo, &raw, ffi::GIT_OBJECT_TREE);
+        let id = write_raw(&repo, &raw, sys::GIT_OBJECT_TREE);
         let tree = Tree::lookup(repository(&repo), id.as_ref()).unwrap();
         // The entry itself, with or without a trailing `/`, needs no subtree.
         let sub = TreeEntry::bypath(tree.as_ref(), c"sub").unwrap();
         assert_eq!(entry_view(&sub).1, "de".repeat(20));
-        assert_eq!(entry_view(&sub).2, ffi::GIT_FILEMODE_TREE);
+        assert_eq!(entry_view(&sub).2, sys::GIT_FILEMODE_TREE);
         assert_eq!(
             entry_view(&TreeEntry::bypath(tree.as_ref(), c"sub/").unwrap()),
             entry_view(&sub)
@@ -1843,12 +1843,12 @@ mod tree_object {
     use std::ffi::CString;
     use std::thread;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::object::{Object, ObjectArc, ObjectType};
     use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
     use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryError};
     use libgit2::libgit2::src::libgit2::tree::{Tree, TreeArc, TreeEntry, TreeRef};
     use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+    use libgit2::sys::libgit2 as sys;
 
     use crate::fixture::TempRepo;
     use crate::fixture::object_and_tree_entry::{
@@ -1882,7 +1882,7 @@ mod tree_object {
     /// handed over as an object.
     fn hex(tree: &TreeArc<'_>) -> String {
         let (hex, kind) = object_view(&Tree::into_object(tree.clone()));
-        assert_eq!(kind, ffi::GIT_OBJECT_TREE);
+        assert_eq!(kind, sys::GIT_OBJECT_TREE);
         hex
     }
 
@@ -2032,7 +2032,7 @@ mod tree_object {
     fn unparsable_trees_fail_and_leave_nothing_behind() {
         let repo = TempRepo::new("tree-unparsable");
         let r = repository(&repo);
-        let blob = write_raw(&repo, b"leaf\n", ffi::GIT_OBJECT_BLOB);
+        let blob = write_raw(&repo, b"leaf\n", sys::GIT_OBJECT_BLOB);
         let mut entry = b"100644 leaf\0".to_vec();
         entry.extend(&blob.as_ref().id()[..20]);
         let mut corrupt: Vec<Vec<u8>> = vec![
@@ -2052,7 +2052,7 @@ mod tree_object {
         long.extend(b"100644 last\0trunc");
         corrupt.push(long);
         for data in &corrupt {
-            let id = write_raw(&repo, data, ffi::GIT_OBJECT_TREE);
+            let id = write_raw(&repo, data, sys::GIT_OBJECT_TREE);
             for result in [
                 Tree::lookup(r, id.as_ref()),
                 Tree::lookup_prefix(r, id.as_ref(), 12),
@@ -2061,16 +2061,16 @@ mod tree_object {
                 assert_eq!(e.raw_code(), -1, "{e:?}");
             }
         }
-        let empty = write_raw(&repo, b"", ffi::GIT_OBJECT_TREE);
+        let empty = write_raw(&repo, b"", sys::GIT_OBJECT_TREE);
         assert_eq!(
             entries(&Tree::lookup(r, empty.as_ref()).unwrap()),
             Vec::<(CString, u32)>::new()
         );
-        let one = write_raw(&repo, &entry, ffi::GIT_OBJECT_TREE);
+        let one = write_raw(&repo, &entry, sys::GIT_OBJECT_TREE);
         let tree = Tree::lookup_prefix(r, one.as_ref(), 40).unwrap();
         assert_eq!(
             entries(&tree),
-            [(c"leaf".to_owned(), ffi::GIT_FILEMODE_BLOB)]
+            [(c"leaf".to_owned(), sys::GIT_FILEMODE_BLOB)]
         );
     }
 
@@ -2199,7 +2199,6 @@ mod tree_reads {
     use std::panic::{self, AssertUnwindSafe};
     use std::thread;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::object::ObjectType;
     use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
     use libgit2::libgit2::src::libgit2::repository::RepositoryBox;
@@ -2208,6 +2207,7 @@ mod tree_reads {
         TreeEntryRef, TreeRef, WalkAction, WalkCallback, WalkMode,
     };
     use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode, last};
+    use libgit2::sys::libgit2 as sys;
 
     use crate::fixture::TempRepo;
     use crate::fixture::object_and_tree_entry::{entry_view, open_testrepo, repository, write_raw};
@@ -2441,13 +2441,13 @@ mod tree_reads {
     #[cfg_attr(miri, ignore = "calls libgit2")]
     fn walks_into_missing_or_mistyped_subtrees_fail_cleanly() {
         let temp = TempRepo::new("tree-reads-broken");
-        let blob = write_raw(&temp, b"leaf\n", ffi::GIT_OBJECT_BLOB);
+        let blob = write_raw(&temp, b"leaf\n", sys::GIT_OBJECT_BLOB);
         for target in [[0x77u8; 20].as_slice(), &blob.as_ref().id()[..20]] {
             let mut data = b"160000 a\0".to_vec();
             data.extend_from_slice(&[0x11; 20]);
             data.extend_from_slice(b"40000 broken\0");
             data.extend_from_slice(target);
-            let broken = write_raw(&temp, &data, ffi::GIT_OBJECT_TREE);
+            let broken = write_raw(&temp, &data, sys::GIT_OBJECT_TREE);
             let tree = Tree::lookup(repository(&temp), broken.as_ref()).unwrap();
             for mode in [WalkMode::PreOrder, WalkMode::PostOrder] {
                 let mut visits = Vec::new();

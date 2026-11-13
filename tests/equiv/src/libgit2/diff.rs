@@ -4,7 +4,6 @@ use core::ffi::CStr;
 use core::ptr;
 use std::ffi::CString;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::blob;
 use libgit2::libgit2::src::libgit2::diff::{Diff, DiffBox, DiffError};
 use libgit2::libgit2::src::libgit2::index::Index;
@@ -12,17 +11,18 @@ use libgit2::libgit2::src::libgit2::oid::OidType;
 use libgit2::libgit2::src::libgit2::repository::Repository;
 use libgit2::libgit2::src::libgit2::tree::{FileMode, Tree, TreeArc, TreeBuilder};
 use libgit2::libgit2::src::util::errors::last;
+use libgit2::sys::libgit2 as sys;
 use support::{DeltaSnapshot, FileSnapshot, PATCH, RENAME, Repo};
 
-struct RawDiff(*mut ffi::git_diff);
+struct RawDiff(*mut sys::git_diff);
 impl Drop for RawDiff {
     fn drop(&mut self) {
         // SAFETY: each fixture adopts a fresh successful C output once; no borrow
         // escapes its snapshots, and the repository (if any) outlives this owner.
-        unsafe { ffi::git_diff_free(self.0) }
+        unsafe { sys::git_diff_free(self.0) }
     }
 }
-unsafe fn raw_file(f: ffi::git_diff_file) -> FileSnapshot {
+unsafe fn raw_file(f: sys::git_diff_file) -> FileSnapshot {
     let path = if f.path.is_null() {
         None
     } else {
@@ -44,13 +44,13 @@ fn raw_snapshot(diff: &RawDiff) -> Vec<DeltaSnapshot> {
     {
         // SAFETY: this fixture holds one live initialized diff throughout all reads;
         // each index is in range and all returned path contents are copied out.
-        let len = unsafe { ffi::git_diff_num_deltas(diff.0) };
+        let len = unsafe { sys::git_diff_num_deltas(diff.0) };
         // SAFETY: as above.
-        unsafe { assert!(ffi::git_diff_get_delta(diff.0, len).is_null()) };
+        unsafe { assert!(sys::git_diff_get_delta(diff.0, len).is_null()) };
         (0..len)
             .map(|i| {
                 // SAFETY: as above; `i < len`, so the delta is live.
-                let d = unsafe { ffi::git_diff_get_delta(diff.0, i) };
+                let d = unsafe { sys::git_diff_get_delta(diff.0, i) };
                 // SAFETY: as above; the delta is copied.
                 let d = unsafe { d.read() };
                 // SAFETY: as above, its files' paths live with the diff.
@@ -81,7 +81,7 @@ fn parse_sequences_and_errors_match_c() {
         let mut raw = ptr::null_mut();
         // SAFETY: valid byte range and writable output; runtime pinned by safe parse.
         let rc =
-            unsafe { ffi::git_diff_from_buffer(&raw mut raw, input.as_ptr().cast(), input.len()) };
+            unsafe { sys::git_diff_from_buffer(&raw mut raw, input.as_ptr().cast(), input.len()) };
         match safe {
             Ok(safe) => {
                 assert_eq!(rc, 0);
@@ -105,15 +105,15 @@ fn parse_sequences_and_errors_match_c() {
         }
     }
     let safe = Diff::from_buffer_with_oid_type(PATCH, OidType::Sha1).unwrap();
-    let mut opts = ffi::git_diff_parse_options {
-        version: ffi::GIT_DIFF_PARSE_OPTIONS_VERSION,
-        oid_type: ffi::GIT_OID_SHA1,
+    let mut opts = sys::git_diff_parse_options {
+        version: sys::GIT_DIFF_PARSE_OPTIONS_VERSION,
+        oid_type: sys::GIT_OID_SHA1,
     };
     let mut raw = ptr::null_mut();
     assert_eq!(
         // SAFETY: initialized options, readable input, fresh output slot, adopted below.
         unsafe {
-            ffi::git_diff_from_buffer_ext(
+            sys::git_diff_from_buffer_ext(
                 &raw mut raw,
                 PATCH.as_ptr().cast(),
                 PATCH.len(),
@@ -161,7 +161,7 @@ fn generated_multi_call_sequences_match_c() {
             match step {
                 // SAFETY: as above.
                 0 => unsafe {
-                    ffi::git_diff_tree_to_tree(
+                    sys::git_diff_tree_to_tree(
                         &raw mut out,
                         repo,
                         ptr::null_mut(),
@@ -171,7 +171,7 @@ fn generated_multi_call_sequences_match_c() {
                 },
                 // SAFETY: as above.
                 1 => unsafe {
-                    ffi::git_diff_tree_to_tree(
+                    sys::git_diff_tree_to_tree(
                         &raw mut out,
                         repo,
                         c_old.as_c_ptr(),
@@ -181,7 +181,7 @@ fn generated_multi_call_sequences_match_c() {
                 },
                 // SAFETY: as above.
                 2 => unsafe {
-                    ffi::git_diff_tree_to_tree(
+                    sys::git_diff_tree_to_tree(
                         &raw mut out,
                         repo,
                         c_new.as_c_ptr(),
@@ -191,7 +191,7 @@ fn generated_multi_call_sequences_match_c() {
                 },
                 // SAFETY: as above.
                 3 => unsafe {
-                    ffi::git_diff_tree_to_index(
+                    sys::git_diff_tree_to_index(
                         &raw mut out,
                         repo,
                         c_old.as_c_ptr(),
@@ -201,15 +201,15 @@ fn generated_multi_call_sequences_match_c() {
                 },
                 // SAFETY: as above.
                 4 => unsafe {
-                    ffi::git_diff_index_to_workdir(&raw mut out, repo, ptr::null_mut(), ptr::null())
+                    sys::git_diff_index_to_workdir(&raw mut out, repo, ptr::null_mut(), ptr::null())
                 },
                 // SAFETY: as above.
                 5 => unsafe {
-                    ffi::git_diff_tree_to_workdir(&raw mut out, repo, c_old.as_c_ptr(), ptr::null())
+                    sys::git_diff_tree_to_workdir(&raw mut out, repo, c_old.as_c_ptr(), ptr::null())
                 },
                 // SAFETY: as above.
                 6 => unsafe {
-                    ffi::git_diff_tree_to_workdir_with_index(
+                    sys::git_diff_tree_to_workdir_with_index(
                         &raw mut out,
                         repo,
                         c_old.as_c_ptr(),
@@ -218,7 +218,7 @@ fn generated_multi_call_sequences_match_c() {
                 },
                 // SAFETY: as above.
                 _ => unsafe {
-                    ffi::git_diff_index_to_index(
+                    sys::git_diff_index_to_index(
                         &raw mut out,
                         repo,
                         ci.as_c_ptr(),
@@ -254,7 +254,7 @@ fn progress_cancellation_codes_match_c() {
     let rust_tree = rust.tree(b"content\n");
     let c_tree = c.tree(b"content\n");
     unsafe extern "C" fn cancel(
-        _: *const ffi::git_diff,
+        _: *const sys::git_diff,
         _: *const core::ffi::c_char,
         _: *const core::ffi::c_char,
         payload: *mut core::ffi::c_void,
@@ -265,19 +265,19 @@ fn progress_cancellation_codes_match_c() {
     for code in [-123, 123] {
         let rust_code = code;
         let c_code = code;
-        let mut rust_opts = ffi::git_diff_options::default();
-        let mut c_opts = ffi::git_diff_options::default();
+        let mut rust_opts = sys::git_diff_options::default();
+        let mut c_opts = sys::git_diff_options::default();
         // SAFETY: two writable option structs, supported version, pinned runtime.
         unsafe {
             assert_eq!(
-                ffi::git_diff_options_init(&raw mut rust_opts, ffi::GIT_DIFF_OPTIONS_VERSION),
+                sys::git_diff_options_init(&raw mut rust_opts, sys::GIT_DIFF_OPTIONS_VERSION),
                 0
             );
         };
         // SAFETY: as above.
         unsafe {
             assert_eq!(
-                ffi::git_diff_options_init(&raw mut c_opts, ffi::GIT_DIFF_OPTIONS_VERSION),
+                sys::git_diff_options_init(&raw mut c_opts, sys::GIT_DIFF_OPTIONS_VERSION),
                 0
             );
         };
@@ -304,7 +304,7 @@ fn progress_cancellation_codes_match_c() {
         let mut out = ptr::null_mut();
         // SAFETY: independent valid inputs; callback payload is live and read only.
         let rc = unsafe {
-            ffi::git_diff_tree_to_tree(
+            sys::git_diff_tree_to_tree(
                 &raw mut out,
                 c.get().as_c_ptr(),
                 ptr::null_mut(),
@@ -325,7 +325,7 @@ fn progress_cancellation_codes_match_c() {
 fn assert_generated_like_c(
     safe: Result<DiffBox<'_>, DiffError>,
     rc: i32,
-    out: *mut ffi::git_diff,
+    out: *mut sys::git_diff,
     step: &str,
 ) {
     match safe {
@@ -360,11 +360,11 @@ fn tree_of<'r>(fixture: &'r Repo, files: &[(&CStr, &[u8])]) -> TreeArc<'r> {
     Tree::lookup(repo, id.as_ref()).unwrap()
 }
 
-struct RawIndex(*mut ffi::git_index);
+struct RawIndex(*mut sys::git_index);
 impl Drop for RawIndex {
     fn drop(&mut self) {
         // SAFETY: releases the one counted reference git_repository_index handed out.
-        unsafe { ffi::git_index_free(self.0) }
+        unsafe { sys::git_index_free(self.0) }
     }
 }
 
@@ -390,18 +390,18 @@ fn case_insensitive_populated_and_bare_generators_match_c() {
         let mut index = ptr::null_mut();
         // SAFETY: writable slot and a live repository; the counted reference is
         // released by RawIndex, and both are used on this thread only.
-        let rc = unsafe { ffi::git_repository_index(&raw mut index, fixture.get().as_c_ptr()) };
+        let rc = unsafe { sys::git_repository_index(&raw mut index, fixture.get().as_c_ptr()) };
         assert_eq!(rc, 0);
         let index = RawIndex(index);
         {
-            let caps = ffi::GIT_INDEX_CAPABILITY_IGNORE_CASE;
+            let caps = sys::GIT_INDEX_CAPABILITY_IGNORE_CASE;
             // SAFETY: the live repository index, used on this thread only; C copies the
             // paths and reads the staged files from the working directory.
-            unsafe { assert_eq!(ffi::git_index_set_caps(index.0, caps), 0) };
+            unsafe { assert_eq!(sys::git_index_set_caps(index.0, caps), 0) };
             // SAFETY: as above.
             unsafe {
                 for path in [c"B", c"a"] {
-                    assert_eq!(ffi::git_index_add_bypath(index.0, path.as_ptr()), 0);
+                    assert_eq!(sys::git_index_add_bypath(index.0, path.as_ptr()), 0);
                 }
             }
         }
@@ -439,7 +439,7 @@ fn case_insensitive_populated_and_bare_generators_match_c() {
             match step {
                 // SAFETY: as above.
                 0 => unsafe {
-                    ffi::git_diff_tree_to_index(
+                    sys::git_diff_tree_to_index(
                         &raw mut out,
                         repo,
                         c_tree.as_c_ptr(),
@@ -449,7 +449,7 @@ fn case_insensitive_populated_and_bare_generators_match_c() {
                 },
                 // SAFETY: as above.
                 1 => unsafe {
-                    ffi::git_diff_tree_to_index(
+                    sys::git_diff_tree_to_index(
                         &raw mut out,
                         repo,
                         c_tree.as_c_ptr(),
@@ -459,7 +459,7 @@ fn case_insensitive_populated_and_bare_generators_match_c() {
                 },
                 // SAFETY: as above.
                 2 => unsafe {
-                    ffi::git_diff_index_to_index(
+                    sys::git_diff_index_to_index(
                         &raw mut out,
                         repo,
                         c_index.0,
@@ -469,11 +469,11 @@ fn case_insensitive_populated_and_bare_generators_match_c() {
                 },
                 // SAFETY: as above.
                 3 => unsafe {
-                    ffi::git_diff_index_to_workdir(&raw mut out, repo, c_index.0, ptr::null())
+                    sys::git_diff_index_to_workdir(&raw mut out, repo, c_index.0, ptr::null())
                 },
                 // SAFETY: as above.
                 _ => unsafe {
-                    ffi::git_diff_tree_to_workdir_with_index(
+                    sys::git_diff_tree_to_workdir_with_index(
                         &raw mut out,
                         repo,
                         c_tree.as_c_ptr(),
@@ -505,7 +505,7 @@ fn case_insensitive_populated_and_bare_generators_match_c() {
             match step {
                 // SAFETY: as above.
                 0 => unsafe {
-                    ffi::git_diff_tree_to_index(
+                    sys::git_diff_tree_to_index(
                         &raw mut out,
                         repo,
                         c_tree.as_c_ptr(),
@@ -515,7 +515,7 @@ fn case_insensitive_populated_and_bare_generators_match_c() {
                 },
                 // SAFETY: as above.
                 _ => unsafe {
-                    ffi::git_diff_index_to_workdir(&raw mut out, repo, ptr::null_mut(), ptr::null())
+                    sys::git_diff_index_to_workdir(&raw mut out, repo, ptr::null_mut(), ptr::null())
                 },
             }
         };
@@ -544,7 +544,7 @@ fn case_insensitive_populated_and_bare_generators_match_c() {
         // Only the working-directory generators need a working directory.
         assert_eq!(
             safe.as_ref().err().map(DiffError::raw_code),
-            (step < 3).then_some(ffi::GIT_EBAREREPO)
+            (step < 3).then_some(sys::GIT_EBAREREPO)
         );
         let mut out = ptr::null_mut();
         let rc = {
@@ -554,15 +554,15 @@ fn case_insensitive_populated_and_bare_generators_match_c() {
             match step {
                 // SAFETY: as above.
                 0 => unsafe {
-                    ffi::git_diff_index_to_workdir(&raw mut out, repo, ptr::null_mut(), ptr::null())
+                    sys::git_diff_index_to_workdir(&raw mut out, repo, ptr::null_mut(), ptr::null())
                 },
                 // SAFETY: as above.
                 1 => unsafe {
-                    ffi::git_diff_tree_to_workdir(&raw mut out, repo, ptr::null_mut(), ptr::null())
+                    sys::git_diff_tree_to_workdir(&raw mut out, repo, ptr::null_mut(), ptr::null())
                 },
                 // SAFETY: as above.
                 2 => unsafe {
-                    ffi::git_diff_tree_to_workdir_with_index(
+                    sys::git_diff_tree_to_workdir_with_index(
                         &raw mut out,
                         repo,
                         ptr::null_mut(),
@@ -571,7 +571,7 @@ fn case_insensitive_populated_and_bare_generators_match_c() {
                 },
                 // SAFETY: as above.
                 _ => unsafe {
-                    ffi::git_diff_tree_to_index(
+                    sys::git_diff_tree_to_index(
                         &raw mut out,
                         repo,
                         ptr::null_mut(),

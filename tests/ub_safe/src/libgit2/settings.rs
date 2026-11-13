@@ -35,9 +35,9 @@ use std::ffi::c_int;
 use std::hint::black_box;
 use std::thread;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::libgit2::{Feature, Features};
 use libgit2::libgit2::src::libgit2::settings::{BuildInfo, LibraryOption};
+use libgit2::sys::libgit2 as sys;
 
 /// Every value around the declared ones, each single bit, and a coarse stride across
 /// the whole type; `BorrowSanitizer` instruments each comparison, so the probe set stays
@@ -160,10 +160,10 @@ fn values_cross_threads() {
 /// Every value around the declared ones, a coarse stride across the whole type, and
 /// the extremes; `BorrowSanitizer` instruments each comparison, so the probe set stays
 /// small.
-fn option_probes() -> impl Iterator<Item = ffi::git_libgit2_opt_t> {
+fn option_probes() -> impl Iterator<Item = sys::git_libgit2_opt_t> {
     (0..=300)
-        .chain((0..=ffi::git_libgit2_opt_t::MAX).step_by(1 << 26))
-        .chain([ffi::git_libgit2_opt_t::MAX - 1, ffi::git_libgit2_opt_t::MAX])
+        .chain((0..=sys::git_libgit2_opt_t::MAX).step_by(1 << 26))
+        .chain([sys::git_libgit2_opt_t::MAX - 1, sys::git_libgit2_opt_t::MAX])
 }
 
 #[test]

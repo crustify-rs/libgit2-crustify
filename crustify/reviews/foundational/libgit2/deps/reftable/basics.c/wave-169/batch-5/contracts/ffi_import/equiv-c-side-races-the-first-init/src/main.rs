@@ -13,7 +13,7 @@
 use core::mem::MaybeUninit;
 use std::thread;
 
-use libgit2::ffi;
+use libgit2::sys::libgit2 as sys;
 use libgit2::libgit2::deps::reftable::basics::ReftableStr;
 
 fn main() {
@@ -26,17 +26,17 @@ fn main() {
     let mut raw = MaybeUninit::uninit();
     // SAFETY: `reftable_buf_init` writes the whole struct without reading it (the suite's
     // `RawBuf::new`).
-    unsafe { ffi::reftable_buf_init(raw.as_mut_ptr()) };
+    unsafe { sys::reftable_buf_init(raw.as_mut_ptr()) };
     // SAFETY: initialised above.
-    let mut raw: ffi::reftable_buf = unsafe { raw.assume_init() };
+    let mut raw: sys::reftable_buf = unsafe { raw.assume_init() };
     let data = b"0x000000000001";
     // SAFETY: `raw` is a live buffer and `data` readable for its length (the suite's
     // `apply`, `Step::Add`).
-    let rc = unsafe { ffi::reftable_buf_add(&raw mut raw, data.as_ptr().cast(), data.len()) };
+    let rc = unsafe { sys::reftable_buf_add(&raw mut raw, data.as_ptr().cast(), data.len()) };
     assert_eq!(rc, 0);
 
     other.join().expect("the other thread allocates");
     // SAFETY: the struct owns `buf`, released once here (the suite's `RawBuf::drop`).
-    unsafe { ffi::reftable_buf_release(&raw mut raw) };
+    unsafe { sys::reftable_buf_release(&raw mut raw) };
     println!("no race reported");
 }

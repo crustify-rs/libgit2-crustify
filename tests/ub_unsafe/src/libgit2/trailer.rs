@@ -31,24 +31,24 @@ use std::ffi::{CStr, CString, c_char};
 use std::mem::MaybeUninit;
 use std::thread;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::trailer::{
     MessageTrailer, MessageTrailerArray, MessageTrailerArrayRef, MessageTrailerArrayVal,
 };
+use libgit2::sys::libgit2 as sys;
 
 /// Takes a `git_libgit2_init` reference that is never released.
 fn init() {
     // SAFETY: no arguments; libgit2 counts initialisations under its own lock.
-    assert!(unsafe { ffi::git_libgit2_init() } > 0);
+    assert!(unsafe { sys::git_libgit2_init() } > 0);
 }
 
 /// `git_message_trailers` over `message`, as C code fills an array; the caller frees
 /// it, or adopts it.
-fn parse_raw(message: &CStr) -> ffi::git_message_trailer_array {
-    let mut arr = MaybeUninit::<ffi::git_message_trailer_array>::zeroed();
+fn parse_raw(message: &CStr) -> sys::git_message_trailer_array {
+    let mut arr = MaybeUninit::<sys::git_message_trailer_array>::zeroed();
     // SAFETY: `arr` is writable storage, which libgit2 fills on success; `message` is
     // NUL-terminated and only read.
-    let rc = unsafe { ffi::git_message_trailers(arr.as_mut_ptr(), message.as_ptr()) };
+    let rc = unsafe { sys::git_message_trailers(arr.as_mut_ptr(), message.as_ptr()) };
     assert_eq!(rc, 0);
     // SAFETY: a 0 return means every field was written.
     unsafe { arr.assume_init() }
@@ -141,7 +141,7 @@ fn pairs(array: MessageTrailerArrayRef<'_>) -> Vec<(CString, CString)> {
 }
 
 /// What C code reads of a raw array, copied out.
-fn c_pairs(raw: &ffi::git_message_trailer_array) -> Vec<(CString, CString)> {
+fn c_pairs(raw: &sys::git_message_trailer_array) -> Vec<(CString, CString)> {
     (0..raw.count)
         .map(|i| {
             // SAFETY: `i < count`, within the trailer buffer libgit2 filled.
@@ -208,7 +208,7 @@ fn arrays_given_back_by_the_safe_api_are_adopted() {
         let mut again = adopted.into_inner().into_raw();
         assert_eq!(c_pairs(&again), expected);
         // SAFETY: given up once more, and freed once by C.
-        unsafe { ffi::git_message_trailer_array_free(&raw mut again) };
+        unsafe { sys::git_message_trailer_array_free(&raw mut again) };
     }
 }
 
@@ -218,7 +218,7 @@ fn arrays_given_back_by_the_safe_api_are_adopted() {
 #[test]
 fn null_arrays_are_adopted_without_c() {
     for count in [0, 1, usize::MAX] {
-        let raw = ffi::git_message_trailer_array {
+        let raw = sys::git_message_trailer_array {
             trailers: std::ptr::null_mut(),
             count,
             _trailer_block: std::ptr::null_mut(),

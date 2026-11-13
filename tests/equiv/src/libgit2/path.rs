@@ -11,18 +11,18 @@
 mod git_file {
     use std::ffi::{CStr, c_int};
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::path::GitFile;
+    use libgit2::sys::libgit2 as sys;
 
     fn init() {
         // SAFETY: balanced by nothing: the reference lives for the process.
-        assert!(unsafe { ffi::git_libgit2_init() } > 0);
+        assert!(unsafe { sys::git_libgit2_init() } > 0);
     }
 
     fn c_last() -> (c_int, String) {
         {
             // SAFETY: the runtime is initialised; the error is copied before any other call.
-            let e = unsafe { ffi::git_error_last() };
+            let e = unsafe { sys::git_error_last() };
             // SAFETY: as above.
             let klass = unsafe { (*e).klass };
             // SAFETY: as above.
@@ -44,15 +44,15 @@ mod git_file {
     /// length says.
     fn is_gitfile(
         component: &CStr,
-        raw: ffi::git_path_gitfile,
+        raw: sys::git_path_gitfile,
     ) -> (c_int, Option<(c_int, String)>) {
         // SAFETY: `component` is a live NUL-terminated string, read for the call only.
         let rc = unsafe {
-            ffi::git_path_is_gitfile(
+            sys::git_path_is_gitfile(
                 component.as_ptr(),
                 component.to_bytes().len(),
                 raw,
-                ffi::GIT_PATH_FS_GENERIC,
+                sys::GIT_PATH_FS_GENERIC,
             )
         };
         (rc, (rc < 0).then(c_last))
@@ -87,7 +87,7 @@ mod git_file {
                 // A `GIT_ERROR_OS` message carries the thread's `errno` after it.
                 let (rc, err) = c;
                 let (class, message) = err.unwrap();
-                assert_eq!((rc, class), (-1, ffi::GIT_ERROR_OS.cast_signed()), "{raw}");
+                assert_eq!((rc, class), (-1, sys::GIT_ERROR_OS.cast_signed()), "{raw}");
                 assert!(message.starts_with("invalid gitfile for path validation"));
             }
         }
@@ -125,8 +125,8 @@ mod filesystem {
     use std::ffi::{CStr, CString, c_int};
 
     use glibc_bindings::libc::csu::errno_loc::set_errno;
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::path::{Filesystem, GitFile, UnnamedFilesystem};
+    use libgit2::sys::libgit2 as sys;
 
     /// Takes a `git_libgit2_init` reference that is never released.
     fn init() {
@@ -141,20 +141,20 @@ mod filesystem {
     fn is_gitfile(
         name: &str,
         gitfile: GitFile,
-        fs: ffi::git_path_fs,
+        fs: sys::git_path_fs,
     ) -> Result<c_int, (c_int, String)> {
         let name = CString::new(name).unwrap();
         let len = name.as_bytes().len();
         set_errno(0);
         // SAFETY: `name` is NUL-terminated and `len` long, read for the call only (the
         // NTFS check reads past `len` up to the NUL, which the `CString` supplies).
-        let rc = unsafe { ffi::git_path_is_gitfile(name.as_ptr(), len, gitfile.raw(), fs) };
+        let rc = unsafe { sys::git_path_is_gitfile(name.as_ptr(), len, gitfile.raw(), fs) };
         if rc >= 0 {
             return Ok(rc);
         }
         // SAFETY: libgit2 is initialised; the result is live until the next libgit2 call
         // on this thread, and is copied before one.
-        let e = unsafe { ffi::git_error_last() };
+        let e = unsafe { sys::git_error_last() };
         // SAFETY: as above.
         let klass = unsafe { (*e).klass };
         // SAFETY: as above.
@@ -205,7 +205,7 @@ mod filesystem {
     fn from_raw_accepts_what_git_path_is_gitfile_accepts() {
         init();
         let invalid = (
-            ffi::GIT_ERROR_OS.cast_signed(),
+            sys::GIT_ERROR_OS.cast_signed(),
             "invalid filesystem for path validation: ".to_owned(),
         );
         let probes = (0..=16).chain([0x7FFF_FFFF, 0x8000_0000, u32::MAX - 1, u32::MAX]);
@@ -242,8 +242,8 @@ mod filesystem {
 mod is_gitfile {
     use std::ffi::{CStr, CString};
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::path::{Filesystem, GitFile, is_gitfile};
+    use libgit2::sys::libgit2 as sys;
 
     const FILES: [GitFile; 3] = [
         GitFile::Gitignore,
@@ -256,7 +256,7 @@ mod is_gitfile {
     fn c_is_gitfile(component: &CStr, file: GitFile, fs: Filesystem) -> bool {
         // SAFETY: a live NUL-terminated component with its full length; named values.
         let rc = unsafe {
-            ffi::git_path_is_gitfile(
+            sys::git_path_is_gitfile(
                 component.as_ptr(),
                 component.to_bytes().len(),
                 file.raw(),

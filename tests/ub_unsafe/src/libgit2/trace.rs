@@ -16,9 +16,9 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::SeqCst;
 use std::thread;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::trace;
 use libgit2::libgit2::src::libgit2::trace::{TraceCallback, TraceLevel, Tracer};
+use libgit2::sys::libgit2 as sys;
 
 const CHILD: &str = "CRUSTIFY_UB_UNSAFE_CHILD";
 
@@ -43,19 +43,19 @@ fn isolated(test: &str, body: fn()) {
     );
 }
 
-static LOG: Mutex<Vec<(ffi::git_trace_level_t, Vec<u8>)>> = Mutex::new(Vec::new());
+static LOG: Mutex<Vec<(sys::git_trace_level_t, Vec<u8>)>> = Mutex::new(Vec::new());
 static CALLS: AtomicUsize = AtomicUsize::new(0);
 
 /// Copies the message into a locked log: callable from any thread, at once, and
 /// reads `msg` only during the call.
-unsafe extern "C" fn c_logging(level: ffi::git_trace_level_t, msg: *const c_char) {
+unsafe extern "C" fn c_logging(level: sys::git_trace_level_t, msg: *const c_char) {
     // SAFETY: `TraceFn`'s contract: `msg` is a C string live for the call.
     let bytes = unsafe { CStr::from_ptr(msg) }.to_bytes().to_vec();
     LOG.lock().unwrap().push((level, bytes));
 }
 
 /// Counts calls with an atomic and reads every byte of the message.
-unsafe extern "C" fn c_counting(_: ffi::git_trace_level_t, msg: *const c_char) {
+unsafe extern "C" fn c_counting(_: sys::git_trace_level_t, msg: *const c_char) {
     // SAFETY: as above.
     let len = unsafe { CStr::from_ptr(msg) }.to_bytes().len();
     CALLS.fetch_add(1, SeqCst);
@@ -72,7 +72,7 @@ const LEVELS: [TraceLevel; 7] = [
     TraceLevel::Trace,
 ];
 
-fn take_mine(tag: &[u8]) -> Vec<(ffi::git_trace_level_t, Vec<u8>)> {
+fn take_mine(tag: &[u8]) -> Vec<(sys::git_trace_level_t, Vec<u8>)> {
     let mut log = LOG.lock().unwrap();
     let (mine, rest) = log.drain(..).partition(|(_, m)| m.starts_with(tag));
     *log = rest;
@@ -126,7 +126,7 @@ thread_local! {
 }
 
 /// Calls back into the callback adopted over itself, two levels deep.
-unsafe extern "C" fn c_reentrant(level: ffi::git_trace_level_t, msg: *const c_char) {
+unsafe extern "C" fn c_reentrant(level: sys::git_trace_level_t, msg: *const c_char) {
     let depth = DEPTH.get();
     if depth < 2 {
         DEPTH.set(depth + 1);
@@ -211,20 +211,20 @@ fn serve_404() -> CString {
 fn connect(url: &CStr) -> c_int {
     let mut remote = std::ptr::null_mut();
     // SAFETY: a live out-parameter and a C string, which libgit2 copies.
-    let rc = unsafe { ffi::git_remote_create_detached(&raw mut remote, url.as_ptr()) };
+    let rc = unsafe { sys::git_remote_create_detached(&raw mut remote, url.as_ptr()) };
     assert_eq!(rc, 0);
     // SAFETY: a live remote; NULL callbacks, proxy and headers take the defaults.
     let rc = unsafe {
-        ffi::git_remote_connect(
+        sys::git_remote_connect(
             remote,
-            ffi::GIT_DIRECTION_FETCH,
+            sys::GIT_DIRECTION_FETCH,
             std::ptr::null(),
             std::ptr::null(),
             std::ptr::null(),
         )
     };
     // SAFETY: the remote created above, freed once.
-    unsafe { ffi::git_remote_free(remote) };
+    unsafe { sys::git_remote_free(remote) };
     rc
 }
 
@@ -237,7 +237,7 @@ fn from_fn_installed_in_libgit2() {
         concat!(module_path!(), "::from_fn_installed_in_libgit2"),
         || {
             // SAFETY: no arguments; the reference dies with the child.
-            assert!(unsafe { ffi::git_libgit2_init() } > 0);
+            assert!(unsafe { sys::git_libgit2_init() } > 0);
             let url = serve_404();
             // Untraced, on this thread first: libgit2's HTTP client fills its parser
             // settings lazily in a static without a lock, so concurrent first
@@ -260,7 +260,7 @@ fn from_fn_installed_in_libgit2() {
             assert!(
                 connecting
                     .iter()
-                    .all(|(level, _)| *level == ffi::GIT_TRACE_DEBUG)
+                    .all(|(level, _)| *level == sys::GIT_TRACE_DEBUG)
             );
         },
     );
@@ -280,7 +280,7 @@ fn from_fn_installed_function_outlives_every_callback_value() {
         ),
         || {
             // SAFETY: no arguments; the reference dies with the child.
-            assert!(unsafe { ffi::git_libgit2_init() } > 0);
+            assert!(unsafe { sys::git_libgit2_init() } > 0);
             let url = serve_404();
             assert!(connect(&url) < 0);
             {
@@ -301,7 +301,7 @@ fn from_fn_installed_function_outlives_every_callback_value() {
             assert!(
                 connecting
                     .iter()
-                    .all(|(level, _)| *level == ffi::GIT_TRACE_DEBUG)
+                    .all(|(level, _)| *level == sys::GIT_TRACE_DEBUG)
             );
         },
     );
@@ -323,15 +323,15 @@ mod config {
     use std::sync::atomic::Ordering::SeqCst;
     use std::thread;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::trace;
     use libgit2::libgit2::src::libgit2::trace::{TraceCallback, TraceLevel, Tracer};
+    use libgit2::sys::libgit2 as sys;
 
     use super::{connect, isolated, serve_404};
 
     fn init() {
         // SAFETY: no arguments; the reference dies with the child.
-        assert!(unsafe { ffi::git_libgit2_init() } > 0);
+        assert!(unsafe { sys::git_libgit2_init() } > 0);
     }
 
     /// Connections from `threads` threads at once, each `per` times; the URL's server

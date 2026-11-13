@@ -15,10 +15,10 @@ use std::ffi::{CStr, c_int};
 use std::process::Command;
 use std::ptr::NonNull;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::libgit2::{InitError, Runtime, init};
 use libgit2::libgit2::src::libgit2::settings;
 use libgit2::libgit2::src::util::alloc::{Alloc, Allocator};
+use libgit2::sys::libgit2 as sys;
 
 const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 
@@ -44,12 +44,12 @@ fn isolated(test: &str, body: fn()) {
 
 fn c_init() -> c_int {
     // SAFETY: no arguments; counted under libgit2's own mutex.
-    unsafe { ffi::git_libgit2_init() }
+    unsafe { sys::git_libgit2_init() }
 }
 
 fn c_shutdown() -> c_int {
     // SAFETY: no arguments; every call here releases a reference `c_init` took.
-    unsafe { ffi::git_libgit2_shutdown() }
+    unsafe { sys::git_libgit2_shutdown() }
 }
 
 /// One step of a sequence: take a reference, or release the most recent one.
@@ -160,12 +160,12 @@ fn c_init_fails_without_memory() {
         concat!(module_path!(), "::c_init_fails_without_memory"),
         || {
             let raw = (&raw const REFUSING)
-                .cast::<ffi::git_allocator>()
+                .cast::<sys::git_allocator>()
                 .cast_mut();
             // SAFETY: `Allocator` is `#[repr(transparent)]` over `git_allocator`, so `raw`
             // addresses a complete one, which libgit2 copies before anything is allocated.
             let rc =
-                unsafe { ffi::git_libgit2_opts(ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(), raw) };
+                unsafe { sys::git_libgit2_opts(sys::GIT_OPT_SET_ALLOCATOR.cast_signed(), raw) };
             assert_eq!(rc, 0);
             assert_eq!(c_init(), -1);
         },

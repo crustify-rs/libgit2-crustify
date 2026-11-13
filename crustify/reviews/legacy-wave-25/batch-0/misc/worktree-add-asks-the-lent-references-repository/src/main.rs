@@ -17,7 +17,7 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::ptr;
 
-use libgit2::ffi;
+use libgit2::sys::libgit2 as sys;
 use libgit2::libgit2::core::global;
 use libgit2::libgit2::refs::refs::ReferenceBox;
 use libgit2::libgit2::repository::repository::{Repository, RepositoryBox};
@@ -32,25 +32,25 @@ fn committed(path: &Path) -> RepositoryBox {
     let repo = Repository::init(&c_path(path), false).unwrap();
     let mut odb = ptr::null_mut();
     // SAFETY: a writable slot and the live repository; the odb is released below.
-    assert_eq!(unsafe { ffi::git_repository_odb(&mut odb, repo.as_c_ptr()) }, 0);
-    let write = |data: &[u8], kind: ffi::git_object_t| {
-        let mut id = ffi::git_oid::default();
+    assert_eq!(unsafe { sys::git_repository_odb(&mut odb, repo.as_c_ptr()) }, 0);
+    let write = |data: &[u8], kind: sys::git_object_t| {
+        let mut id = sys::git_oid::default();
         let (bytes, len) = (data.as_ptr().cast(), data.len());
         // SAFETY: a writable id, the live odb and `data` readable for `len` bytes at a
         // non-NULL address.
-        assert_eq!(unsafe { ffi::git_odb_write(&mut id, odb, bytes, len, kind) }, 0);
+        assert_eq!(unsafe { sys::git_odb_write(&mut id, odb, bytes, len, kind) }, 0);
         let mut hex = [0 as std::ffi::c_char; 65];
         // SAFETY: `hex` bounds the write, and the routine NUL-terminates in it.
-        unsafe { ffi::git_oid_tostr(hex.as_mut_ptr(), hex.len(), &id) };
+        unsafe { sys::git_oid_tostr(hex.as_mut_ptr(), hex.len(), &id) };
         // SAFETY: NUL-terminated within `hex`.
         unsafe { CStr::from_ptr(hex.as_ptr()) }.to_str().unwrap().to_owned()
     };
     let who = "A U Thor <author@example.com> 1700000000 +0000";
-    let tree = write(b"", ffi::GIT_OBJECT_TREE);
+    let tree = write(b"", sys::GIT_OBJECT_TREE);
     let commit = format!("tree {tree}\nauthor {who}\ncommitter {who}\n\nfirst\n");
-    let commit = write(commit.as_bytes(), ffi::GIT_OBJECT_COMMIT);
+    let commit = write(commit.as_bytes(), sys::GIT_OBJECT_COMMIT);
     // SAFETY: the odb reference taken above, released once.
-    unsafe { ffi::git_odb_free(odb) };
+    unsafe { sys::git_odb_free(odb) };
     for branch in ["main", "feature"] {
         fs::write(path.join(".git/refs/heads").join(branch), format!("{commit}\n")).unwrap();
     }
@@ -62,7 +62,7 @@ fn committed(path: &Path) -> RepositoryBox {
 fn lookup<'r>(repo: &'r RepositoryBox, name: &CStr) -> ReferenceBox<'r> {
     let mut out = ptr::null_mut();
     // SAFETY: a writable slot, the live repository and a NUL-terminated name.
-    let rc = unsafe { ffi::git_reference_lookup(&mut out, repo.as_c_ptr(), name.as_ptr()) };
+    let rc = unsafe { sys::git_reference_lookup(&mut out, repo.as_c_ptr(), name.as_ptr()) };
     assert_eq!(rc, 0, "{name:?}");
     // SAFETY: a fresh attached reference owned here alone, released by
     // `git_reference_free`; `repo` outlives it.

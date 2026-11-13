@@ -1,7 +1,7 @@
 error[E0597]: `list` does not live long enough
   --> tests/ub_safe/compile_fail/object_id_options_outlive_filter_list.rs:12:40
    |
-11 |         let mut list = FilterList::new(repo.as_ref(), ffi::GIT_FILTER_TO_ODB, 0).unwrap();
+11 |         let mut list = FilterList::new(repo.as_ref(), sys::GIT_FILTER_TO_ODB, 0).unwrap();
    |             -------- binding `list` declared here
 12 |         opts.as_mut().set_filters(Some(list.as_mut()));
    |                                        ^^^^ borrowed value does not live long enough

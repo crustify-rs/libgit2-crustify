@@ -5,7 +5,7 @@
 use core::fmt;
 use core::hash::Hash;
 
-use crate::ffi;
+use crate::sys::libgit2 as sys;
 
 /// Whether `git fetch` recurses into a submodule: the value of its
 /// `submodule.<name>.fetchRecurseSubmodules` setting.
@@ -24,31 +24,31 @@ use crate::ffi;
 #[non_exhaustive]
 pub enum SubmoduleRecurse {
     /// Do not recurse into the submodule.
-    No = ffi::GIT_SUBMODULE_RECURSE_NO,
+    No = sys::GIT_SUBMODULE_RECURSE_NO,
     /// Recurse into the submodule.
-    Yes = ffi::GIT_SUBMODULE_RECURSE_YES,
+    Yes = sys::GIT_SUBMODULE_RECURSE_YES,
     /// Recurse into the submodule only when the commit the superproject records is
     /// not already in its local clone.
-    OnDemand = ffi::GIT_SUBMODULE_RECURSE_ONDEMAND,
+    OnDemand = sys::GIT_SUBMODULE_RECURSE_ONDEMAND,
 }
 
 impl SubmoduleRecurse {
     /// The variant whose C value is `raw`; `None` for a value this version of
     /// libgit2's header does not name.
     #[must_use]
-    pub const fn from_raw(raw: ffi::git_submodule_recurse_t) -> Option<Self> {
+    pub const fn from_raw(raw: sys::git_submodule_recurse_t) -> Option<Self> {
         match raw {
-            ffi::GIT_SUBMODULE_RECURSE_NO => Some(Self::No),
-            ffi::GIT_SUBMODULE_RECURSE_YES => Some(Self::Yes),
-            ffi::GIT_SUBMODULE_RECURSE_ONDEMAND => Some(Self::OnDemand),
+            sys::GIT_SUBMODULE_RECURSE_NO => Some(Self::No),
+            sys::GIT_SUBMODULE_RECURSE_YES => Some(Self::Yes),
+            sys::GIT_SUBMODULE_RECURSE_ONDEMAND => Some(Self::OnDemand),
             _ => None,
         }
     }
 
     /// The C value, as libgit2's functions take and return it.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_submodule_recurse_t {
-        self as ffi::git_submodule_recurse_t
+    pub const fn raw(self) -> sys::git_submodule_recurse_t {
+        self as sys::git_submodule_recurse_t
     }
 }
 
@@ -60,16 +60,16 @@ impl Default for SubmoduleRecurse {
     }
 }
 
-impl TryFrom<ffi::git_submodule_recurse_t> for SubmoduleRecurse {
+impl TryFrom<sys::git_submodule_recurse_t> for SubmoduleRecurse {
     type Error = UnnamedSubmoduleRecurse;
 
-    fn try_from(raw: ffi::git_submodule_recurse_t) -> Result<Self, UnnamedSubmoduleRecurse> {
+    fn try_from(raw: sys::git_submodule_recurse_t) -> Result<Self, UnnamedSubmoduleRecurse> {
         Self::from_raw(raw).ok_or(UnnamedSubmoduleRecurse(raw))
     }
 }
 
-impl From<SubmoduleRecurse> for ffi::git_submodule_recurse_t {
-    fn from(value: SubmoduleRecurse) -> ffi::git_submodule_recurse_t {
+impl From<SubmoduleRecurse> for sys::git_submodule_recurse_t {
+    fn from(value: SubmoduleRecurse) -> sys::git_submodule_recurse_t {
         value.raw()
     }
 }
@@ -77,12 +77,12 @@ impl From<SubmoduleRecurse> for ffi::git_submodule_recurse_t {
 /// A submodule recursion setting that this version of libgit2's header does not
 /// name, which libgit2 refuses to write. [`raw`](Self::raw) has it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct UnnamedSubmoduleRecurse(ffi::git_submodule_recurse_t);
+pub struct UnnamedSubmoduleRecurse(sys::git_submodule_recurse_t);
 
 impl UnnamedSubmoduleRecurse {
     /// The value, as it was converted.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_submodule_recurse_t {
+    pub const fn raw(self) -> sys::git_submodule_recurse_t {
         self.0
     }
 }
@@ -121,33 +121,33 @@ impl std::error::Error for UnnamedSubmoduleRecurse {}
 #[non_exhaustive]
 pub enum SubmoduleUpdate {
     /// Check the new commit out as a detached `HEAD` of the submodule.
-    Checkout = ffi::GIT_SUBMODULE_UPDATE_CHECKOUT,
+    Checkout = sys::GIT_SUBMODULE_UPDATE_CHECKOUT,
     /// Rebase the submodule's current branch onto the new commit.
-    Rebase = ffi::GIT_SUBMODULE_UPDATE_REBASE,
+    Rebase = sys::GIT_SUBMODULE_UPDATE_REBASE,
     /// Merge the new commit into the submodule's current branch.
-    Merge = ffi::GIT_SUBMODULE_UPDATE_MERGE,
+    Merge = sys::GIT_SUBMODULE_UPDATE_MERGE,
     /// Leave the submodule alone, even when the superproject's commit changes.
-    None = ffi::GIT_SUBMODULE_UPDATE_NONE,
+    None = sys::GIT_SUBMODULE_UPDATE_NONE,
 }
 
 impl SubmoduleUpdate {
     /// The variant whose C value is `raw`; `None` for `GIT_SUBMODULE_UPDATE_DEFAULT`
     /// and for a value this version of libgit2's header does not name.
     #[must_use]
-    pub const fn from_raw(raw: ffi::git_submodule_update_t) -> Option<Self> {
+    pub const fn from_raw(raw: sys::git_submodule_update_t) -> Option<Self> {
         match raw {
-            ffi::GIT_SUBMODULE_UPDATE_CHECKOUT => Some(Self::Checkout),
-            ffi::GIT_SUBMODULE_UPDATE_REBASE => Some(Self::Rebase),
-            ffi::GIT_SUBMODULE_UPDATE_MERGE => Some(Self::Merge),
-            ffi::GIT_SUBMODULE_UPDATE_NONE => Some(Self::None),
+            sys::GIT_SUBMODULE_UPDATE_CHECKOUT => Some(Self::Checkout),
+            sys::GIT_SUBMODULE_UPDATE_REBASE => Some(Self::Rebase),
+            sys::GIT_SUBMODULE_UPDATE_MERGE => Some(Self::Merge),
+            sys::GIT_SUBMODULE_UPDATE_NONE => Some(Self::None),
             _ => None,
         }
     }
 
     /// The C value, as libgit2's functions take and return it.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_submodule_update_t {
-        self as ffi::git_submodule_update_t
+    pub const fn raw(self) -> sys::git_submodule_update_t {
+        self as sys::git_submodule_update_t
     }
 }
 
@@ -160,16 +160,16 @@ impl Default for SubmoduleUpdate {
     }
 }
 
-impl TryFrom<ffi::git_submodule_update_t> for SubmoduleUpdate {
+impl TryFrom<sys::git_submodule_update_t> for SubmoduleUpdate {
     type Error = UnnamedSubmoduleUpdate;
 
-    fn try_from(raw: ffi::git_submodule_update_t) -> Result<Self, UnnamedSubmoduleUpdate> {
+    fn try_from(raw: sys::git_submodule_update_t) -> Result<Self, UnnamedSubmoduleUpdate> {
         Self::from_raw(raw).ok_or(UnnamedSubmoduleUpdate(raw))
     }
 }
 
-impl From<SubmoduleUpdate> for ffi::git_submodule_update_t {
-    fn from(value: SubmoduleUpdate) -> ffi::git_submodule_update_t {
+impl From<SubmoduleUpdate> for sys::git_submodule_update_t {
+    fn from(value: SubmoduleUpdate) -> sys::git_submodule_update_t {
         value.raw()
     }
 }
@@ -178,12 +178,12 @@ impl From<SubmoduleUpdate> for ffi::git_submodule_update_t {
 /// `GIT_SUBMODULE_UPDATE_DEFAULT` (0), or a value this version of libgit2's header
 /// does not name. libgit2 refuses to write either. [`raw`](Self::raw) has it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct UnnamedSubmoduleUpdate(ffi::git_submodule_update_t);
+pub struct UnnamedSubmoduleUpdate(sys::git_submodule_update_t);
 
 impl UnnamedSubmoduleUpdate {
     /// The value, as it was converted.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_submodule_update_t {
+    pub const fn raw(self) -> sys::git_submodule_update_t {
         self.0
     }
 }
@@ -221,53 +221,53 @@ impl std::error::Error for UnnamedSubmoduleUpdate {}
 pub enum SubmoduleIgnore {
     /// Use the submodule's configuration (`GIT_SUBMODULE_IGNORE_UNSPECIFIED`).
     #[default]
-    Unspecified = ffi::GIT_SUBMODULE_IGNORE_UNSPECIFIED,
+    Unspecified = sys::GIT_SUBMODULE_IGNORE_UNSPECIFIED,
     /// Any change, untracked files included, makes the submodule dirty; ignored files
     /// are still ignored (`GIT_SUBMODULE_IGNORE_NONE`, config `none`).
-    None = ffi::GIT_SUBMODULE_IGNORE_NONE,
+    None = sys::GIT_SUBMODULE_IGNORE_NONE,
     /// Only changes to tracked files, the index or the HEAD commit count
     /// (`GIT_SUBMODULE_IGNORE_UNTRACKED`, config `untracked`).
-    Untracked = ffi::GIT_SUBMODULE_IGNORE_UNTRACKED,
+    Untracked = sys::GIT_SUBMODULE_IGNORE_UNTRACKED,
     /// The working directory is not scanned: only a moved HEAD counts
     /// (`GIT_SUBMODULE_IGNORE_DIRTY`, config `dirty`).
-    Dirty = ffi::GIT_SUBMODULE_IGNORE_DIRTY,
+    Dirty = sys::GIT_SUBMODULE_IGNORE_DIRTY,
     /// Never dirty: only the submodule's location is reported
     /// (`GIT_SUBMODULE_IGNORE_ALL`, config `all`).
-    All = ffi::GIT_SUBMODULE_IGNORE_ALL,
+    All = sys::GIT_SUBMODULE_IGNORE_ALL,
 }
 
 impl SubmoduleIgnore {
     /// The variant whose C value is `raw`; `None` for a value this version of
     /// libgit2's header does not name.
     #[must_use]
-    pub const fn from_raw(raw: ffi::git_submodule_ignore_t) -> Option<Self> {
+    pub const fn from_raw(raw: sys::git_submodule_ignore_t) -> Option<Self> {
         match raw {
-            ffi::GIT_SUBMODULE_IGNORE_UNSPECIFIED => Some(Self::Unspecified),
-            ffi::GIT_SUBMODULE_IGNORE_NONE => Some(Self::None),
-            ffi::GIT_SUBMODULE_IGNORE_UNTRACKED => Some(Self::Untracked),
-            ffi::GIT_SUBMODULE_IGNORE_DIRTY => Some(Self::Dirty),
-            ffi::GIT_SUBMODULE_IGNORE_ALL => Some(Self::All),
+            sys::GIT_SUBMODULE_IGNORE_UNSPECIFIED => Some(Self::Unspecified),
+            sys::GIT_SUBMODULE_IGNORE_NONE => Some(Self::None),
+            sys::GIT_SUBMODULE_IGNORE_UNTRACKED => Some(Self::Untracked),
+            sys::GIT_SUBMODULE_IGNORE_DIRTY => Some(Self::Dirty),
+            sys::GIT_SUBMODULE_IGNORE_ALL => Some(Self::All),
             _ => None,
         }
     }
 
     /// The C value, as libgit2's functions take and return it.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_submodule_ignore_t {
-        self as ffi::git_submodule_ignore_t
+    pub const fn raw(self) -> sys::git_submodule_ignore_t {
+        self as sys::git_submodule_ignore_t
     }
 }
 
-impl TryFrom<ffi::git_submodule_ignore_t> for SubmoduleIgnore {
+impl TryFrom<sys::git_submodule_ignore_t> for SubmoduleIgnore {
     type Error = UnnamedSubmoduleIgnore;
 
-    fn try_from(raw: ffi::git_submodule_ignore_t) -> Result<Self, UnnamedSubmoduleIgnore> {
+    fn try_from(raw: sys::git_submodule_ignore_t) -> Result<Self, UnnamedSubmoduleIgnore> {
         Self::from_raw(raw).ok_or(UnnamedSubmoduleIgnore(raw))
     }
 }
 
-impl From<SubmoduleIgnore> for ffi::git_submodule_ignore_t {
-    fn from(value: SubmoduleIgnore) -> ffi::git_submodule_ignore_t {
+impl From<SubmoduleIgnore> for sys::git_submodule_ignore_t {
+    fn from(value: SubmoduleIgnore) -> sys::git_submodule_ignore_t {
         value.raw()
     }
 }
@@ -276,12 +276,12 @@ impl From<SubmoduleIgnore> for ffi::git_submodule_ignore_t {
 /// which a zeroed diff options struct holds, or anything outside `-1` and `1..=4`.
 /// [`raw`](Self::raw) has it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct UnnamedSubmoduleIgnore(pub(crate) ffi::git_submodule_ignore_t);
+pub struct UnnamedSubmoduleIgnore(pub(crate) sys::git_submodule_ignore_t);
 
 impl UnnamedSubmoduleIgnore {
     /// The value, as it was converted.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_submodule_ignore_t {
+    pub const fn raw(self) -> sys::git_submodule_ignore_t {
         self.0
     }
 }
@@ -300,6 +300,6 @@ impl std::error::Error for UnnamedSubmoduleIgnore {}
 
 // A `SubmoduleIgnore` passes where C takes a `git_submodule_ignore_t`.
 const _: () = assert!(
-    size_of::<SubmoduleIgnore>() == size_of::<ffi::git_submodule_ignore_t>()
-        && align_of::<SubmoduleIgnore>() == align_of::<ffi::git_submodule_ignore_t>()
+    size_of::<SubmoduleIgnore>() == size_of::<sys::git_submodule_ignore_t>()
+        && align_of::<SubmoduleIgnore>() == align_of::<sys::git_submodule_ignore_t>()
 );

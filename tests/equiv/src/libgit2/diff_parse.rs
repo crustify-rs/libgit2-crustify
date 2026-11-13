@@ -5,11 +5,11 @@
 
 use core::ptr;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::diff::{Diff, DiffBox, DiffDeltaRef, DiffError, DiffFileRef};
 use libgit2::libgit2::src::libgit2::diff_parse::DiffParseOptions;
 use libgit2::libgit2::src::libgit2::oid::OidType;
 use libgit2::libgit2::src::util::errors::last;
+use libgit2::sys::libgit2 as sys;
 
 /// A git patch with abbreviated ids.
 const PATCH: &[u8] = b"diff --git a/file b/file\nindex 1111111..2222222 100644\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n";
@@ -76,7 +76,7 @@ fn safe_snapshot(diff: &DiffBox<'static>) -> Vec<DeltaSnapshot> {
 /// success the deltas, read back through the safe handles of the adopted diff.
 fn c_parse(
     input: &[u8],
-    opts: Option<ffi::git_diff_parse_options>,
+    opts: Option<sys::git_diff_parse_options>,
 ) -> (i32, Option<Vec<DeltaSnapshot>>) {
     let mut opts = opts;
     let opts_ptr = opts.as_mut().map_or(ptr::null_mut(), ptr::from_mut);
@@ -85,7 +85,7 @@ fn c_parse(
     // NULL or a live options value C only reads; the runtime is pinned by the safe parse
     // every caller runs first.
     let rc = unsafe {
-        ffi::git_diff_from_buffer_ext(&raw mut raw, input.as_ptr().cast(), input.len(), opts_ptr)
+        sys::git_diff_from_buffer_ext(&raw mut raw, input.as_ptr().cast(), input.len(), opts_ptr)
     };
     if rc != 0 {
         assert!(raw.is_null());
@@ -93,21 +93,21 @@ fn c_parse(
     }
     // Read the C diff back through the test's own C calls.
     // SAFETY: a successful parse hands out one live diff, released below.
-    let len = unsafe { ffi::git_diff_num_deltas(raw) };
+    let len = unsafe { sys::git_diff_num_deltas(raw) };
     let mut out = Vec::new();
     for i in 0..len {
         // SAFETY: `i < len`, so the delta lives as long as the diff.
-        let d = unsafe { ffi::git_diff_get_delta(raw, i) };
+        let d = unsafe { sys::git_diff_get_delta(raw, i) };
         // SAFETY: as above; the delta is copied out, its paths read before the release.
         let d = unsafe { d.read() };
         out.push(snapshot_of(&d));
     }
     // SAFETY: the diff is released once, after its last read.
-    unsafe { ffi::git_diff_free(raw) };
+    unsafe { sys::git_diff_free(raw) };
     (rc, Some(out))
 }
 
-fn file_of(f: &ffi::git_diff_file) -> FileSnapshot {
+fn file_of(f: &sys::git_diff_file) -> FileSnapshot {
     let path = (!f.path.is_null()).then(|| {
         // SAFETY: a non-null path of a live delta is its diff's NUL-terminated string.
         unsafe { core::ffi::CStr::from_ptr(f.path) }
@@ -125,7 +125,7 @@ fn file_of(f: &ffi::git_diff_file) -> FileSnapshot {
     )
 }
 
-fn snapshot_of(d: &ffi::git_diff_delta) -> DeltaSnapshot {
+fn snapshot_of(d: &sys::git_diff_delta) -> DeltaSnapshot {
     (
         d.status,
         d.flags,
@@ -140,7 +140,7 @@ fn snapshot_of(d: &ffi::git_diff_delta) -> DeltaSnapshot {
 fn assert_matches(
     safe: Result<DiffBox<'static>, DiffError>,
     input: &[u8],
-    raw: ffi::git_diff_parse_options,
+    raw: sys::git_diff_parse_options,
 ) {
     match safe {
         Ok(safe) => {
@@ -168,15 +168,15 @@ fn options_parse_as_c_does_for_every_type_and_version() {
                 let mut opts = DiffParseOptions::new();
                 opts.as_mut().set_oid_type(kind);
                 opts.as_mut().set_version(version);
-                let raw = ffi::git_diff_parse_options {
+                let raw = sys::git_diff_parse_options {
                     version,
                     oid_type: kind.map_or(0, OidType::raw),
                 };
                 assert_eq!(
-                    ffi::git_diff_parse_options::from(opts).oid_type,
+                    sys::git_diff_parse_options::from(opts).oid_type,
                     raw.oid_type
                 );
-                assert_eq!(ffi::git_diff_parse_options::from(opts).version, raw.version);
+                assert_eq!(sys::git_diff_parse_options::from(opts).version, raw.version);
                 let safe_input = input.clone();
                 let safe = Diff::from_buffer_with_options(&safe_input, opts);
                 drop(safe_input);
@@ -217,8 +217,8 @@ fn default_options_match_null_options() {
 #[cfg_attr(miri, ignore = "calls libgit2")]
 fn edited_options_sequence_matches_c() {
     let mut opts = DiffParseOptions::new();
-    let mut raw = ffi::git_diff_parse_options {
-        version: ffi::GIT_DIFF_PARSE_OPTIONS_VERSION,
+    let mut raw = sys::git_diff_parse_options {
+        version: sys::GIT_DIFF_PARSE_OPTIONS_VERSION,
         oid_type: 0,
     };
     let steps: [(Option<OidType>, u32, &[u8]); 6] = [

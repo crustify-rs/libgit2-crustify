@@ -6,8 +6,8 @@ use core::marker::PhantomData;
 
 use ffibox::{CBorrowedPtr, CBox, CCell, CMutSeam, CRefSeam};
 
-use crate::ffi;
 use crate::libgit2::src::libgit2::notes::NoteIteratorFree;
+use crate::sys::libgit2 as sys;
 
 /// An opaque note iterator. Construct with [`new`](Self::new) or
 /// [`from_commit`](Self::from_commit), never as an inline value.
@@ -36,7 +36,7 @@ use crate::libgit2::src::libgit2::notes::NoteIteratorFree;
 /// Wraps `st::git_iterator`
 #[doc(alias = "git_iterator")]
 #[repr(transparent)]
-pub struct NoteIterator<'r>(ffi::git_note_iterator, PhantomData<(*const (), &'r ())>);
+pub struct NoteIterator<'r>(sys::git_note_iterator, PhantomData<(*const (), &'r ())>);
 
 /// Shared handle; the public C API has no read-only iterator operations.
 #[repr(transparent)]
@@ -55,7 +55,7 @@ pub struct NoteIteratorMut<'a, 'r>(
 // invariant in the pointee (including its repository lifetime). No C reference
 // or inline opaque value is ever constructed.
 unsafe impl<'r> CCell for NoteIterator<'r> {
-    type C = ffi::git_note_iterator;
+    type C = sys::git_note_iterator;
     type Mut<'a>
         = NoteIteratorMut<'a, 'r>
     where

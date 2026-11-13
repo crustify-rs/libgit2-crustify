@@ -103,12 +103,12 @@ use std::panic::{self, AssertUnwindSafe};
 
 use ffibox::{CBorrowedPtr, CCell, CMutSeam, CRefSeam, CZeroable, define_ctype};
 
-use crate::ffi;
 use crate::libgit2::src::libgit2::diff::DiffFileRef;
 use crate::libgit2::src::libgit2::index::IndexRef;
 use crate::libgit2::src::libgit2::strarray::StrArrayRef;
 use crate::libgit2::src::libgit2::tree::TreeRef;
 use crate::libgit2::src::util::errors::ErrorCode;
+use crate::sys::libgit2 as sys;
 
 /// Options for a checkout (`git_checkout_options`), held by value in Rust storage.
 ///
@@ -163,7 +163,7 @@ use crate::libgit2::src::util::errors::ErrorCode;
 #[doc(alias = "git_checkout_options")]
 #[repr(transparent)]
 pub struct CheckoutOptions<'o>(
-    ffi::git_checkout_options,
+    sys::git_checkout_options,
     PhantomData<(*const (), &'o CStr)>,
 );
 
@@ -188,7 +188,7 @@ pub struct CheckoutOptionsMut<'a, 'o>(
 // the options, and `CheckoutOptionsRef` has no write operation. `CheckoutOptionsMut` is
 // invariant in the options through its `PhantomData<&'a mut CheckoutOptions<'o>>`.
 unsafe impl<'o> CCell for CheckoutOptions<'o> {
-    type C = ffi::git_checkout_options;
+    type C = sys::git_checkout_options;
     type Mut<'a>
         = CheckoutOptionsMut<'a, 'o>
     where
@@ -224,12 +224,12 @@ impl<'o> CheckoutOptions<'o> {
     #[doc(alias = "git_checkout_options_init")]
     #[must_use]
     pub fn new() -> Self {
-        let mut raw = MaybeUninit::<ffi::git_checkout_options>::uninit();
+        let mut raw = MaybeUninit::<sys::git_checkout_options>::uninit();
         // SAFETY: `raw` is writable storage for one `git_checkout_options`, which
         // `git_checkout_options_init` overwrites whole with the template for this
         // version; nothing else reads it during the call.
         let rc = unsafe {
-            ffi::git_checkout_options_init(raw.as_mut_ptr(), ffi::GIT_CHECKOUT_OPTIONS_VERSION)
+            sys::git_checkout_options_init(raw.as_mut_ptr(), sys::GIT_CHECKOUT_OPTIONS_VERSION)
         };
         assert_eq!(rc, 0, "git_checkout_options_init refused its own version");
         // SAFETY: a 0 return means the template was copied in: every field is
@@ -577,7 +577,7 @@ impl<'a, 'o> CheckoutOptionsRef<'a, 'o> {
     /// checkout skips their closures, as the rest of the outer one does.
     pub(crate) fn walk_with<R>(
         self,
-        walk: impl FnOnce(*const ffi::git_checkout_options) -> R,
+        walk: impl FnOnce(*const sys::git_checkout_options) -> R,
     ) -> R {
         let slots = self.stored_slots();
         let nested = slots.iter().flatten().any(|&(_, busy)| {
@@ -653,7 +653,7 @@ impl<'a, 'o> CheckoutOptionsRef<'a, 'o> {
     }
 
     /// The notification callback's fields, as stored.
-    fn notify_fields(self) -> (ffi::git_checkout_notify_cb, *mut c_void) {
+    fn notify_fields(self) -> (sys::git_checkout_notify_cb, *mut c_void) {
         let p = self.as_ptr();
         // SAFETY: the shared handle's pointer addresses live options; the projection forms no
         // reference to them.
@@ -668,7 +668,7 @@ impl<'a, 'o> CheckoutOptionsRef<'a, 'o> {
     }
 
     /// The progress callback's fields, as stored.
-    fn progress_fields(self) -> (ffi::git_checkout_progress_cb, *mut c_void) {
+    fn progress_fields(self) -> (sys::git_checkout_progress_cb, *mut c_void) {
         let p = self.as_ptr();
         // SAFETY: the shared handle's pointer addresses live options; the projection forms no
         // reference to them.
@@ -683,7 +683,7 @@ impl<'a, 'o> CheckoutOptionsRef<'a, 'o> {
     }
 
     /// The performance-data callback's fields, as stored.
-    fn perfdata_fields(self) -> (ffi::git_checkout_perfdata_cb, *mut c_void) {
+    fn perfdata_fields(self) -> (sys::git_checkout_perfdata_cb, *mut c_void) {
         let p = self.as_ptr();
         // SAFETY: the shared handle's pointer addresses live options; the projection forms no
         // reference to them.
@@ -865,7 +865,7 @@ impl<'o> CheckoutOptionsMut<'_, 'o> {
     #[doc(alias = "git_checkout_options.notify_cb")]
     #[doc(alias = "git_checkout_options.notify_payload")]
     pub fn set_notify_callback(&mut self, callback: Option<&'o mut NotifyCallback<'_>>) {
-        let (notify_cb, notify_payload): (ffi::git_checkout_notify_cb, *mut c_void) = match callback
+        let (notify_cb, notify_payload): (sys::git_checkout_notify_cb, *mut c_void) = match callback
         {
             Some(callback) => {
                 callback.panic = None;
@@ -903,7 +903,7 @@ impl<'o> CheckoutOptionsMut<'_, 'o> {
     #[doc(alias = "git_checkout_options.progress_cb")]
     #[doc(alias = "git_checkout_options.progress_payload")]
     pub fn set_progress_callback(&mut self, callback: Option<&'o mut ProgressCallback<'_>>) {
-        let (progress_cb, progress_payload): (ffi::git_checkout_progress_cb, *mut c_void) =
+        let (progress_cb, progress_payload): (sys::git_checkout_progress_cb, *mut c_void) =
             match callback {
                 Some(callback) => {
                     callback.panic = None;
@@ -939,7 +939,7 @@ impl<'o> CheckoutOptionsMut<'_, 'o> {
     #[doc(alias = "git_checkout_options.perfdata_cb")]
     #[doc(alias = "git_checkout_options.perfdata_payload")]
     pub fn set_perfdata_callback(&mut self, callback: Option<&'o mut PerfdataCallback<'_>>) {
-        let (perfdata_cb, perfdata_payload): (ffi::git_checkout_perfdata_cb, *mut c_void) =
+        let (perfdata_cb, perfdata_payload): (sys::git_checkout_perfdata_cb, *mut c_void) =
             match callback {
                 Some(callback) => {
                     callback.panic = None;
@@ -981,7 +981,7 @@ impl<'o> CheckoutOptionsMut<'_, 'o> {
         let strings_ptr = unsafe { &raw const (*paths.as_ptr()).strings };
         // SAFETY: reads the initialised field.
         let strings = unsafe { strings_ptr.read() };
-        let raw = ffi::git_strarray {
+        let raw = sys::git_strarray {
             strings: if count == 0 { ptr::null_mut() } else { strings },
             count,
         };
@@ -1000,7 +1000,7 @@ impl<'o> CheckoutOptionsMut<'_, 'o> {
     /// Wraps `fld::git_checkout_options.paths`
     #[doc(alias = "git_checkout_options.paths")]
     pub fn clear_paths(&mut self) {
-        let empty = ffi::git_strarray {
+        let empty = sys::git_strarray {
             strings: ptr::null_mut(),
             count: 0,
         };
@@ -1122,8 +1122,8 @@ impl fmt::Debug for CheckoutOptionsMut<'_, '_> {
 
 // A `CheckoutOptions` is a `git_checkout_options`, so C reads a value Rust holds in place.
 const _: () = assert!(
-    size_of::<CheckoutOptions<'_>>() == size_of::<ffi::git_checkout_options>()
-        && align_of::<CheckoutOptions<'_>>() == align_of::<ffi::git_checkout_options>()
+    size_of::<CheckoutOptions<'_>>() == size_of::<sys::git_checkout_options>()
+        && align_of::<CheckoutOptions<'_>>() == align_of::<sys::git_checkout_options>()
 );
 
 /// What fills one of a [`CheckoutOptions`]' callbacks, as its getters
@@ -1165,10 +1165,10 @@ type Panic = Box<dyn Any + Send + 'static>;
 
 /// The [`NotifyCallback`] a notification slot holds, when the safe setter stored one.
 fn stored_notify(
-    callback: ffi::git_checkout_notify_cb,
+    callback: sys::git_checkout_notify_cb,
     payload: *mut c_void,
 ) -> Option<*mut NotifyCallback<'static>> {
-    let ours: ffi::git_checkout_notify_cb = Some(notify_with);
+    let ours: sys::git_checkout_notify_cb = Some(notify_with);
     let stored = callback
         .zip(ours)
         .is_some_and(|(f, g)| ptr::fn_addr_eq(f, g));
@@ -1177,10 +1177,10 @@ fn stored_notify(
 
 /// The [`ProgressCallback`] a progress slot holds, when the safe setter stored one.
 fn stored_progress(
-    callback: ffi::git_checkout_progress_cb,
+    callback: sys::git_checkout_progress_cb,
     payload: *mut c_void,
 ) -> Option<*mut ProgressCallback<'static>> {
-    let ours: ffi::git_checkout_progress_cb = Some(progress_with);
+    let ours: sys::git_checkout_progress_cb = Some(progress_with);
     let stored = callback
         .zip(ours)
         .is_some_and(|(f, g)| ptr::fn_addr_eq(f, g));
@@ -1189,10 +1189,10 @@ fn stored_progress(
 
 /// The [`PerfdataCallback`] a performance-data slot holds, when the safe setter stored one.
 fn stored_perfdata(
-    callback: ffi::git_checkout_perfdata_cb,
+    callback: sys::git_checkout_perfdata_cb,
     payload: *mut c_void,
 ) -> Option<*mut PerfdataCallback<'static>> {
-    let ours: ffi::git_checkout_perfdata_cb = Some(perfdata_with);
+    let ours: sys::git_checkout_perfdata_cb = Some(perfdata_with);
     let stored = callback
         .zip(ours)
         .is_some_and(|(f, g)| ptr::fn_addr_eq(f, g));
@@ -1218,7 +1218,7 @@ define_ctype!(
     CheckoutPerfdata,
     CheckoutPerfdataRef,
     CheckoutPerfdataMut,
-    ffi::git_checkout_perfdata
+    sys::git_checkout_perfdata
 );
 
 // SAFETY: three `size_t` counters, all zero being "no call counted yet": the state libgit2
@@ -1382,8 +1382,8 @@ impl Eq for CheckoutPerfdata {}
 
 // A `CheckoutPerfdata` is a `git_checkout_perfdata`, so a callback's pointer is one to it.
 const _: () = assert!(
-    size_of::<CheckoutPerfdata>() == size_of::<ffi::git_checkout_perfdata>()
-        && align_of::<CheckoutPerfdata>() == align_of::<ffi::git_checkout_perfdata>()
+    size_of::<CheckoutPerfdata>() == size_of::<sys::git_checkout_perfdata>()
+        && align_of::<CheckoutPerfdata>() == align_of::<sys::git_checkout_perfdata>()
 );
 
 /// The closure behind a [`ProgressCallback`].
@@ -1482,7 +1482,7 @@ impl<'f> ProgressCallback<'f> {
     /// otherwise skip the closure in and resume from.
     pub(crate) fn walk_with<R>(
         &mut self,
-        walk: impl FnOnce(ffi::git_checkout_progress_cb, *mut c_void) -> R,
+        walk: impl FnOnce(sys::git_checkout_progress_cb, *mut c_void) -> R,
     ) -> R {
         self.panic = None;
         let result = walk(Some(progress_with), ptr::from_mut(self).cast());
@@ -1626,12 +1626,12 @@ type NotifyFn<'f> = dyn FnMut(CheckoutNotification<'_>) -> ControlFlow<()> + 'f;
 /// use std::ffi::CStr;
 /// use std::ops::ControlFlow;
 ///
-/// use libgit2::ffi;
 /// use libgit2::libgit2::src::libgit2::checkout::{CheckoutNotification, NotifyCallback};
+/// use libgit2::sys::libgit2 as sys;
 ///
 /// let mut dirty = Vec::new();
 /// let mut refuse_dirty = |n: CheckoutNotification<'_>| {
-///     if n.why == ffi::GIT_CHECKOUT_NOTIFY_DIRTY {
+///     if n.why == sys::GIT_CHECKOUT_NOTIFY_DIRTY {
 ///         dirty.extend(n.path.map(CStr::to_owned));
 ///         ControlFlow::Break(())
 ///     } else {
@@ -1646,9 +1646,9 @@ type NotifyFn<'f> = dyn FnMut(CheckoutNotification<'_>) -> ControlFlow<()> + 'f;
 ///     target: None,
 ///     workdir: None,
 /// };
-/// let updated = notification(ffi::GIT_CHECKOUT_NOTIFY_UPDATED, c"a.txt");
+/// let updated = notification(sys::GIT_CHECKOUT_NOTIFY_UPDATED, c"a.txt");
 /// assert_eq!(callback.call(updated), ControlFlow::Continue(()));
-/// let dirty_file = notification(ffi::GIT_CHECKOUT_NOTIFY_DIRTY, c"b.txt");
+/// let dirty_file = notification(sys::GIT_CHECKOUT_NOTIFY_DIRTY, c"b.txt");
 /// assert_eq!(callback.call(dirty_file), ControlFlow::Break(()));
 /// drop(callback);
 /// assert_eq!(dirty, [c"b.txt".to_owned()]);
@@ -1729,7 +1729,7 @@ impl<'f> NotifyCallback<'f> {
     /// otherwise cancel and resume from.
     pub(crate) fn walk_with<R>(
         &mut self,
-        walk: impl FnOnce(ffi::git_checkout_notify_cb, *mut c_void) -> R,
+        walk: impl FnOnce(sys::git_checkout_notify_cb, *mut c_void) -> R,
     ) -> R {
         self.panic = None;
         let result = walk(Some(notify_with), ptr::from_mut(self).cast());
@@ -1758,11 +1758,11 @@ impl fmt::Debug for NotifyCallback<'_> {
 /// string, all live and unchanged for the call.
 #[inline(never)]
 unsafe extern "C" fn notify_with(
-    why: ffi::git_checkout_notify_t,
+    why: sys::git_checkout_notify_t,
     path: *const c_char,
-    baseline: *const ffi::git_diff_file,
-    target: *const ffi::git_diff_file,
-    workdir: *const ffi::git_diff_file,
+    baseline: *const sys::git_diff_file,
+    target: *const sys::git_diff_file,
+    workdir: *const sys::git_diff_file,
     payload: *mut c_void,
 ) -> c_int {
     let callback = payload.cast::<NotifyCallback<'_>>();
@@ -1785,7 +1785,7 @@ unsafe extern "C" fn notify_with(
     // SAFETY: per this function's contract, each file is NULL, read as `None`, or live and
     // unchanged for the call; the closure only reads it, through a handle that cannot
     // outlive the call, since the closure is generic over its lifetime.
-    let file = |f: *const ffi::git_diff_file| unsafe { DiffFileRef::from_ptr(f.cast_mut()) };
+    let file = |f: *const sys::git_diff_file| unsafe { DiffFileRef::from_ptr(f.cast_mut()) };
     let notification = CheckoutNotification {
         why,
         path,
@@ -1898,7 +1898,7 @@ impl<'f> PerfdataCallback<'f> {
     /// otherwise skip the closure in and resume from.
     pub(crate) fn walk_with<R>(
         &mut self,
-        walk: impl FnOnce(ffi::git_checkout_perfdata_cb, *mut c_void) -> R,
+        walk: impl FnOnce(sys::git_checkout_perfdata_cb, *mut c_void) -> R,
     ) -> R {
         self.panic = None;
         let result = walk(Some(perfdata_with), ptr::from_mut(self).cast());
@@ -1926,7 +1926,7 @@ impl fmt::Debug for PerfdataCallback<'_> {
 /// unchanged for the call.
 #[inline(never)]
 unsafe extern "C" fn perfdata_with(
-    perfdata: *const ffi::git_checkout_perfdata,
+    perfdata: *const sys::git_checkout_perfdata,
     payload: *mut c_void,
 ) {
     let callback = payload.cast::<PerfdataCallback<'_>>();
@@ -1976,8 +1976,8 @@ mod unit_tests {
     /// `GIT_CHECKOUT_OPTIONS_INIT`, built in Rust so Miri can run the accessors;
     /// `new_matches_the_template` ties it to `git_checkout_options_init`.
     fn template<'o>() -> CheckoutOptions<'o> {
-        let raw = ffi::git_checkout_options {
-            version: ffi::GIT_CHECKOUT_OPTIONS_VERSION,
+        let raw = sys::git_checkout_options {
+            version: sys::GIT_CHECKOUT_OPTIONS_VERSION,
             ..Default::default()
         };
         CheckoutOptions(raw, PhantomData)
@@ -1995,16 +1995,16 @@ mod unit_tests {
             progress_payload,
             perfdata_payload,
             o.paths().iter().collect::<Vec<_>>(),
-            (o.as_ptr() as usize) % align_of::<ffi::git_checkout_options>(),
+            (o.as_ptr() as usize) % align_of::<sys::git_checkout_options>(),
         )
     }
 
     extern "C" fn notify(
-        _: ffi::git_checkout_notify_t,
+        _: sys::git_checkout_notify_t,
         _: *const c_char,
-        _: *const ffi::git_diff_file,
-        _: *const ffi::git_diff_file,
-        _: *const ffi::git_diff_file,
+        _: *const sys::git_diff_file,
+        _: *const sys::git_diff_file,
+        _: *const sys::git_diff_file,
         _: *mut c_void,
     ) -> c_int {
         0
@@ -2012,7 +2012,7 @@ mod unit_tests {
 
     extern "C" fn progress(_: *const c_char, _: usize, _: usize, _: *mut c_void) {}
 
-    extern "C" fn perfdata(_: *const ffi::git_checkout_perfdata, _: *mut c_void) {}
+    extern "C" fn perfdata(_: *const sys::git_checkout_perfdata, _: *mut c_void) {}
 
     #[test]
     #[cfg_attr(miri, ignore = "calls libgit2")]
@@ -2048,7 +2048,7 @@ mod unit_tests {
     fn defaults_read_as_documented() {
         let options = template();
         let o = options.as_ref();
-        assert_eq!(o.version(), ffi::GIT_CHECKOUT_OPTIONS_VERSION);
+        assert_eq!(o.version(), sys::GIT_CHECKOUT_OPTIONS_VERSION);
         assert_eq!((o.strategy(), o.dir_mode(), o.file_mode()), (0, 0, 0));
         assert_eq!((o.file_open_flags(), o.notify_flags()), (0, 0));
         assert!(!o.disable_filters());
@@ -2173,7 +2173,7 @@ mod unit_tests {
         assert!(options.0.paths.strings.is_null() && options.0.paths.count == 0);
 
         // A NULL array with a stale count reads as empty, and is stored as such.
-        let mut stale = ffi::git_strarray {
+        let mut stale = sys::git_strarray {
             strings: ptr::null_mut(),
             count: 3,
         };
@@ -2189,7 +2189,7 @@ mod unit_tests {
         let mut owned = StrArray::new();
         // A non-NULL array with count 0, as libgit2's producers leave an empty result.
         let mut empty_buffer: Vec<*mut c_char> = vec![ptr::null_mut(); 1];
-        let mut raw = ffi::git_strarray {
+        let mut raw = sys::git_strarray {
             strings: empty_buffer.as_mut_ptr(),
             count: 0,
         };
@@ -2246,7 +2246,7 @@ mod unit_tests {
     ///
     /// `o` must address live options whose callbacks are sound for such arguments.
     unsafe fn run_callbacks(
-        o: *const ffi::git_checkout_options,
+        o: *const sys::git_checkout_options,
         why: u32,
         path: &CStr,
         perfdata: &CheckoutPerfdata,
@@ -2264,7 +2264,7 @@ mod unit_tests {
             unsafe { cb(path.as_ptr(), 1, 2, raw.progress_payload) };
         }
         if let Some(cb) = raw.perfdata_cb {
-            let counts = ptr::from_ref(perfdata).cast::<ffi::git_checkout_perfdata>();
+            let counts = ptr::from_ref(perfdata).cast::<sys::git_checkout_perfdata>();
             // SAFETY: as above; the counts are live and only read.
             unsafe { cb(counts, raw.perfdata_payload) };
         }
@@ -2473,7 +2473,7 @@ mod unit_tests {
 
     #[test]
     fn a_call_from_inside_the_closure_finds_the_callback_busy() {
-        let options = Cell::new(ptr::null::<ffi::git_checkout_options>());
+        let options = Cell::new(ptr::null::<sys::git_checkout_options>());
         let data = CheckoutPerfdata::default();
         let depth = Cell::new(0);
         let events = RefCell::new(Vec::new());
@@ -2531,7 +2531,7 @@ mod unit_tests {
 
     #[test]
     fn a_nested_walk_leaves_the_outer_walks_panics_to_it() {
-        let options = Cell::new(ptr::null::<ffi::git_checkout_options>());
+        let options = Cell::new(ptr::null::<sys::git_checkout_options>());
         let data = CheckoutPerfdata::default();
         let events = RefCell::new(Vec::new());
         let nested = Cell::new(None);
@@ -2670,7 +2670,7 @@ mod unit_tests {
     fn layout_is_the_c_struct() {
         assert_eq!(
             size_of::<CheckoutOptions<'_>>(),
-            size_of::<ffi::git_checkout_options>()
+            size_of::<sys::git_checkout_options>()
         );
         assert_eq!(
             size_of::<CheckoutOptionsRef<'_, '_>>(),
@@ -2720,7 +2720,7 @@ mod unit_tests {
 
     #[test]
     fn perfdata_reads_a_c_struct_in_place() {
-        let raw = ffi::git_checkout_perfdata {
+        let raw = sys::git_checkout_perfdata {
             mkdir_calls: 2,
             stat_calls: 17,
             chmod_calls: 5,
@@ -2761,7 +2761,7 @@ mod unit_tests {
     fn perfdata_layout_is_the_c_struct() {
         assert_eq!(
             size_of::<CheckoutPerfdata>(),
-            size_of::<ffi::git_checkout_perfdata>()
+            size_of::<sys::git_checkout_perfdata>()
         );
         assert_eq!(size_of::<CheckoutPerfdataRef<'_>>(), size_of::<*const u8>());
         assert_eq!(size_of::<CheckoutPerfdataMut<'_>>(), size_of::<*const u8>());
@@ -2793,12 +2793,12 @@ mod unit_tests {
         use super::*;
 
         const DRY_RUN: u32 = 1 << 24;
-        const UPDATED: u32 = ffi::GIT_CHECKOUT_NOTIFY_UPDATED;
-        const UNTRACKED: u32 = ffi::GIT_CHECKOUT_NOTIFY_UNTRACKED;
-        const CONFLICT: u32 = ffi::GIT_CHECKOUT_NOTIFY_CONFLICT;
-        const DIRTY: u32 = ffi::GIT_CHECKOUT_NOTIFY_DIRTY;
-        const IGNORED: u32 = ffi::GIT_CHECKOUT_NOTIFY_IGNORED;
-        const USER: c_int = ffi::GIT_EUSER;
+        const UPDATED: u32 = sys::GIT_CHECKOUT_NOTIFY_UPDATED;
+        const UNTRACKED: u32 = sys::GIT_CHECKOUT_NOTIFY_UNTRACKED;
+        const CONFLICT: u32 = sys::GIT_CHECKOUT_NOTIFY_CONFLICT;
+        const DIRTY: u32 = sys::GIT_CHECKOUT_NOTIFY_DIRTY;
+        const IGNORED: u32 = sys::GIT_CHECKOUT_NOTIFY_IGNORED;
+        const USER: c_int = sys::GIT_EUSER;
 
         /// One side of a notification, as owned data: its path, mode and size.
         type Side = Option<(Option<CString>, u16, u64)>;
@@ -2868,14 +2868,14 @@ mod unit_tests {
             options.as_mut().set_strategy(strategy);
             options
                 .as_mut()
-                .set_notify_flags(ffi::GIT_CHECKOUT_NOTIFY_ALL);
+                .set_notify_flags(sys::GIT_CHECKOUT_NOTIFY_ALL);
             options.as_mut().set_target_directory(Some(target));
             options.as_mut().set_notify_callback(Some(notify));
             options.as_mut().set_perfdata_callback(Some(perfdata));
             options.as_ref().walk_with(|o| {
                 // SAFETY: the live repository and index; live options, whose pointers are
                 // live or NULL and whose callbacks the walk resumes, read for the call.
-                unsafe { ffi::git_checkout_index(staged.repo, staged.index, o) }
+                unsafe { sys::git_checkout_index(staged.repo, staged.index, o) }
             })
         }
 
@@ -2971,7 +2971,7 @@ mod unit_tests {
             let staged = Staged::new("notify-conflict", FILES);
             let (path, target) = staged.target("out");
             dirty(&path);
-            for (strategy, expected) in [(0, ffi::GIT_ECONFLICT), (FORCE | DRY_RUN, 0)] {
+            for (strategy, expected) in [(0, sys::GIT_ECONFLICT), (FORCE | DRY_RUN, 0)] {
                 let mut whys = Vec::new();
                 let mut record = |n: CheckoutNotification<'_>| {
                     whys.push(n.why);
@@ -3113,8 +3113,8 @@ mod unit_tests {
         }
 
         /// A `git_diff_file` over `path`, as libgit2 lends one.
-        fn raw_file(path: &CStr, size: u64) -> ffi::git_diff_file {
-            ffi::git_diff_file {
+        fn raw_file(path: &CStr, size: u64) -> sys::git_diff_file {
+            sys::git_diff_file {
                 path: path.as_ptr(),
                 size,
                 mode: 0o100_644,
@@ -3344,7 +3344,7 @@ mod unit_tests {
             let mut seen = Vec::new();
             let mut record = |d: CheckoutPerfdataRef<'_>| seen.push(d.copied());
             let mut callback = PerfdataCallback::new(&mut record);
-            let raw = ffi::git_checkout_perfdata {
+            let raw = sys::git_checkout_perfdata {
                 mkdir_calls: 1,
                 stat_calls: 2,
                 chmod_calls: 3,
@@ -3431,8 +3431,8 @@ mod unit_tests {
         /// all staged in its index; released on drop.
         pub(super) struct Staged {
             pub(super) dir: PathBuf,
-            pub(super) repo: *mut ffi::git_repository,
-            pub(super) index: *mut ffi::git_index,
+            pub(super) repo: *mut sys::git_repository,
+            pub(super) index: *mut sys::git_index,
         }
 
         impl Staged {
@@ -3447,7 +3447,7 @@ mod unit_tests {
 
             fn build(tag: &str, files: &[(&str, &str)]) -> Self {
                 // SAFETY: initialising libgit2 has no precondition; the reference is kept.
-                assert!(unsafe { ffi::git_libgit2_init() } >= 1);
+                assert!(unsafe { sys::git_libgit2_init() } >= 1);
                 let dir = std::env::temp_dir()
                     .join(format!("crustify-checkout-unit-{tag}-{}", process::id()));
                 drop(fs::remove_dir_all(&dir));
@@ -3456,12 +3456,12 @@ mod unit_tests {
                 let mut repo = ptr::null_mut();
                 // SAFETY: a writable slot and a NUL-terminated path, read for the call; the
                 // result is a repository this fixture owns.
-                let rc = unsafe { ffi::git_repository_init(&raw mut repo, c_work.as_ptr(), 0) };
+                let rc = unsafe { sys::git_repository_init(&raw mut repo, c_work.as_ptr(), 0) };
                 assert_eq!(rc, 0);
                 let mut index = ptr::null_mut();
                 // SAFETY: a writable slot and the live repository; the result is one more
                 // counted reference to its index, which this fixture releases.
-                let rc = unsafe { ffi::git_repository_index(&raw mut index, repo) };
+                let rc = unsafe { sys::git_repository_index(&raw mut index, repo) };
                 assert_eq!(rc, 0);
                 for (path, content) in files {
                     let file = work.join(path);
@@ -3469,7 +3469,7 @@ mod unit_tests {
                     fs::write(file, content).unwrap();
                     let path = CString::new(*path).unwrap();
                     // SAFETY: the live index, and a NUL-terminated path it copies.
-                    let rc = unsafe { ffi::git_index_add_bypath(index, path.as_ptr()) };
+                    let rc = unsafe { sys::git_index_add_bypath(index, path.as_ptr()) };
                     assert_eq!(rc, 0);
                 }
                 Self { dir, repo, index }
@@ -3486,7 +3486,7 @@ mod unit_tests {
                     // SAFETY: the live repository and index; live options, whose pointers
                     // are live or NULL and whose callback the walk resumes, read for the
                     // call.
-                    unsafe { ffi::git_checkout_index(self.repo, self.index, o) }
+                    unsafe { sys::git_checkout_index(self.repo, self.index, o) }
                 })
             }
 
@@ -3500,9 +3500,9 @@ mod unit_tests {
         impl Drop for Staged {
             fn drop(&mut self) {
                 // SAFETY: the index reference `new` took, released once.
-                unsafe { ffi::git_index_free(self.index) };
+                unsafe { sys::git_index_free(self.index) };
                 // SAFETY: the repository `new` opened, freed once, after its index.
-                unsafe { ffi::git_repository_free(self.repo) };
+                unsafe { sys::git_repository_free(self.repo) };
                 drop(fs::remove_dir_all(&self.dir));
             }
         }
@@ -3585,7 +3585,7 @@ mod unit_tests {
             options.as_mut().set_progress_callback(Some(&mut callback));
             let rc = options.as_ref().walk_with(|o| {
                 // SAFETY: as in `Staged::checkout`.
-                unsafe { ffi::git_checkout_index(staged.repo, staged.index, o) }
+                unsafe { sys::git_checkout_index(staged.repo, staged.index, o) }
             });
             drop(callback);
             assert_eq!((rc, calls), (0, 0));

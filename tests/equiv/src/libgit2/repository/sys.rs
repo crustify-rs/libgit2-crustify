@@ -22,20 +22,20 @@ mod new_options {
     use std::ffi::{CStr, c_int};
     use std::ptr;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::oid::OidType;
     use libgit2::libgit2::src::libgit2::repository::{NewOptions, NewOptionsRef, Repository};
+    use libgit2::sys::libgit2 as sys;
 
     fn init() {
         // SAFETY: no arguments; the reference is never released.
-        assert!(unsafe { ffi::git_libgit2_init() } >= 1);
+        assert!(unsafe { sys::git_libgit2_init() } >= 1);
     }
 
     /// `git_repository_new_options_init(version)` into a zeroed struct.
-    fn c_options(version: u32) -> (c_int, ffi::git_repository_new_options) {
-        let mut opts = ffi::git_repository_new_options::default();
+    fn c_options(version: u32) -> (c_int, sys::git_repository_new_options) {
+        let mut opts = sys::git_repository_new_options::default();
         // SAFETY: `opts` is a live options struct the call may overwrite.
-        let rc = unsafe { ffi::git_repository_new_options_init(&raw mut opts, version) };
+        let rc = unsafe { sys::git_repository_new_options_init(&raw mut opts, version) };
         (rc, opts)
     }
 
@@ -51,12 +51,12 @@ mod new_options {
     #[test]
     #[cfg_attr(miri, ignore = "calls libgit2")]
     fn new_matches_the_c_initialisers() {
-        let (rc, c) = c_options(ffi::GIT_REPOSITORY_NEW_OPTIONS_VERSION);
+        let (rc, c) = c_options(sys::GIT_REPOSITORY_NEW_OPTIONS_VERSION);
         assert_eq!(rc, 0);
         let rust = NewOptions::new();
         assert_eq!(fields(&rust), (c.version, c.oid_type));
         // `GIT_REPOSITORY_NEW_OPTIONS_INIT` is `{VERSION}`.
-        assert_eq!(fields(&rust), (ffi::GIT_REPOSITORY_NEW_OPTIONS_VERSION, 0));
+        assert_eq!(fields(&rust), (sys::GIT_REPOSITORY_NEW_OPTIONS_VERSION, 0));
         assert_eq!(rust.as_ref().version(), NewOptions::VERSION);
         // C refuses other versions, leaving the struct as it was; `new` has none.
         for version in [0, 2] {
@@ -67,16 +67,16 @@ mod new_options {
 
     #[test]
     fn conversions_keep_exactly_what_c_accepts() {
-        for oid_type in [0, ffi::GIT_OID_SHA1, ffi::GIT_OID_SHA256, 3, u32::MAX] {
+        for oid_type in [0, sys::GIT_OID_SHA1, sys::GIT_OID_SHA256, 3, u32::MAX] {
             for version in [0, 1, 2] {
-                let raw = ffi::git_repository_new_options { version, oid_type };
+                let raw = sys::git_repository_new_options { version, oid_type };
                 // `git_repository_new_ext` asserts a non-zero type is valid.
                 let valid = oid_type == 0 || OidType::from_raw(oid_type).is_some();
                 match NewOptions::try_from(raw) {
                     Ok(o) => {
                         assert!(valid, "{oid_type}");
                         assert_eq!(fields(&o), (version, oid_type));
-                        let back = ffi::git_repository_new_options::from(o);
+                        let back = sys::git_repository_new_options::from(o);
                         assert_eq!((back.version, back.oid_type), (version, oid_type));
                     }
                     Err(e) => assert_eq!((valid, e.raw()), (false, oid_type)),
@@ -90,14 +90,14 @@ mod new_options {
     type Call = (c_int, Option<(c_int, String)>, Option<(u32, c_int)>);
 
     /// `git_repository_new_ext(opts)`, freeing the repository it builds.
-    fn new_ext(opts: *mut ffi::git_repository_new_options) -> Call {
+    fn new_ext(opts: *mut sys::git_repository_new_options) -> Call {
         let mut repo = ptr::null_mut();
         // SAFETY: `repo` is a live slot and `opts` live options, only read.
-        let rc = unsafe { ffi::git_repository_new_ext(&raw mut repo, opts) };
+        let rc = unsafe { sys::git_repository_new_ext(&raw mut repo, opts) };
         let error = (rc != 0).then(|| {
             // SAFETY: after a failure `git_error_last` is this thread's error, live until
             // the next libgit2 call on this thread.
-            let e = unsafe { ffi::git_error_last() };
+            let e = unsafe { sys::git_error_last() };
             // SAFETY: as above, non-NULL; it is copied out first.
             let e = unsafe { &*e };
             // SAFETY: a set error's message is a NUL-terminated string.
@@ -106,12 +106,12 @@ mod new_options {
         });
         let repo_state = (!repo.is_null()).then(|| {
             // SAFETY: `repo` is the live repository the call built, only read.
-            let repository_oid_type = unsafe { ffi::git_repository_oid_type(repo) };
+            let repository_oid_type = unsafe { sys::git_repository_oid_type(repo) };
             // SAFETY: as above.
-            unsafe { (repository_oid_type, ffi::git_repository_is_bare(repo)) }
+            unsafe { (repository_oid_type, sys::git_repository_is_bare(repo)) }
         });
         // SAFETY: `repo` is NULL or the fresh repository, released once here.
-        unsafe { ffi::git_repository_free(repo) };
+        unsafe { sys::git_repository_free(repo) };
         (rc, error, repo_state)
     }
 
@@ -143,20 +143,20 @@ mod new_options {
         init();
         type Change = (
             &'static str,
-            fn(&mut ffi::git_repository_new_options),
+            fn(&mut sys::git_repository_new_options),
             fn(&mut NewOptions),
         );
         let steps: [Change; 8] = [
             ("the defaults", |_| (), |_| ()),
             (
                 "SHA-256",
-                |c| c.oid_type = ffi::GIT_OID_SHA256,
+                |c| c.oid_type = sys::GIT_OID_SHA256,
                 |r| r.as_mut().set_oid_type(Some(OidType::Sha256)),
             ),
             ("the same options again", |_| (), |_| ()),
             (
                 "SHA-1",
-                |c| c.oid_type = ffi::GIT_OID_SHA1,
+                |c| c.oid_type = sys::GIT_OID_SHA1,
                 |r| r.as_mut().set_oid_type(Some(OidType::Sha1)),
             ),
             (
@@ -184,7 +184,7 @@ mod new_options {
                 |r| r.as_mut().set_version(u32::MAX),
             ),
         ];
-        let mut c = c_options(ffi::GIT_REPOSITORY_NEW_OPTIONS_VERSION).1;
+        let mut c = c_options(sys::GIT_REPOSITORY_NEW_OPTIONS_VERSION).1;
         let mut rust = NewOptions::new();
         let mut calls = Vec::new();
         for (tag, c_change, rust_change) in steps {
@@ -202,7 +202,7 @@ mod new_options {
             calls.push(c_call);
         }
         let summary: Vec<_> = calls.iter().map(|(rc, _, repo)| (*rc, *repo)).collect();
-        let (sha1, sha256) = (Some((ffi::GIT_OID_SHA1, 1)), Some((ffi::GIT_OID_SHA256, 1)));
+        let (sha1, sha256) = (Some((sys::GIT_OID_SHA1, 1)), Some((sys::GIT_OID_SHA256, 1)));
         assert_eq!(
             summary,
             [
@@ -223,18 +223,18 @@ mod new_options {
     fn with_oid_type_matches_new_ext() {
         init();
         for kind in [OidType::Sha1, OidType::Sha256] {
-            let mut c = c_options(ffi::GIT_REPOSITORY_NEW_OPTIONS_VERSION).1;
+            let mut c = c_options(sys::GIT_REPOSITORY_NEW_OPTIONS_VERSION).1;
             c.oid_type = kind.raw();
             let (rc, error, repo) = new_ext(&raw mut c);
             assert_eq!((rc, error), (0, None));
             let rust = Repository::with_oid_type(kind).unwrap();
             // SAFETY: the live repository, only read.
-            let repository_oid_type = unsafe { ffi::git_repository_oid_type(rust.as_c_ptr()) };
+            let repository_oid_type = unsafe { sys::git_repository_oid_type(rust.as_c_ptr()) };
             // SAFETY: as above.
             let rust_state = unsafe {
                 (
                     repository_oid_type,
-                    ffi::git_repository_is_bare(rust.as_c_ptr()),
+                    sys::git_repository_is_bare(rust.as_c_ptr()),
                 )
             };
             assert_eq!(Some(rust_state), repo, "{kind:?}");
@@ -262,8 +262,8 @@ mod submodule_cache {
     use std::path::PathBuf;
     use std::{fs, ptr};
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
+    use libgit2::sys::libgit2 as sys;
 
     #[derive(Clone, Copy, Debug)]
     enum Step {
@@ -276,12 +276,12 @@ mod submodule_cache {
         Clear,
     }
 
-    type Lookup = Result<ffi::git_submodule_ignore_t, c_int>;
+    type Lookup = Result<sys::git_submodule_ignore_t, c_int>;
     type Outcome = (c_int, Option<(c_int, String)>, Lookup, Lookup);
 
     fn init() {
         // SAFETY: no arguments; the reference is never released.
-        assert!(unsafe { ffi::git_libgit2_init() } >= 1);
+        assert!(unsafe { sys::git_libgit2_init() } >= 1);
     }
 
     /// The thread's last error as C reports it.
@@ -289,7 +289,7 @@ mod submodule_cache {
         {
             // SAFETY: the runtime is initialised; `git_error_last` never returns NULL, and
             // its message is a C string, live until the next libgit2 call on this thread.
-            let e = unsafe { ffi::git_error_last() };
+            let e = unsafe { sys::git_error_last() };
             // SAFETY: as above.
             let message2 = unsafe { (*e).message };
             // SAFETY: as above.
@@ -344,26 +344,26 @@ mod submodule_cache {
     }
 
     /// `git_submodule_lookup(name)`: the submodule's `ignore` setting, or the code.
-    fn lookup(repo: *mut ffi::git_repository, name: &CStr) -> Lookup {
+    fn lookup(repo: *mut sys::git_repository, name: &CStr) -> Lookup {
         let mut sm = ptr::null_mut();
         {
             // SAFETY: a writable slot, a live repository on this thread and a
             // NUL-terminated name; the submodule reference is released once.
-            let rc = unsafe { ffi::git_submodule_lookup(&raw mut sm, repo, name.as_ptr()) };
+            let rc = unsafe { sys::git_submodule_lookup(&raw mut sm, repo, name.as_ptr()) };
             if rc != 0 {
                 return Err(rc);
             }
             // SAFETY: as above.
-            let ignore = unsafe { ffi::git_submodule_ignore(sm) };
+            let ignore = unsafe { sys::git_submodule_ignore(sm) };
             // SAFETY: as above.
-            unsafe { ffi::git_submodule_free(sm) };
+            unsafe { sys::git_submodule_free(sm) };
             Ok(ignore)
         }
     }
 
     fn observe(
         root: &Root,
-        repo: *mut ffi::git_repository,
+        repo: *mut sys::git_repository,
         rc: c_int,
         error: Option<(c_int, String)>,
     ) -> Outcome {
@@ -381,20 +381,20 @@ mod submodule_cache {
         let path = c_root.c_path();
         // SAFETY: a writable slot and a NUL-terminated path; the repository is freed at
         // the end.
-        let rc = unsafe { ffi::git_repository_init(&raw mut c, path.as_ptr(), 0) };
+        let rc = unsafe { sys::git_repository_init(&raw mut c, path.as_ptr(), 0) };
         assert_eq!(rc, 0);
         let mut rust: RepositoryBox = Repository::init(&rust_root.c_path(), false).unwrap();
         for (k, &step) in steps.iter().enumerate() {
             let (c_out, rust_out) = match step {
                 Step::Cache | Step::Clear => {
                     // SAFETY: no arguments; clears this thread's error state.
-                    unsafe { ffi::git_error_clear() };
+                    unsafe { sys::git_error_clear() };
                     let rc = if matches!(step, Step::Cache) {
                         // SAFETY: the C side's live repository, on this thread.
-                        unsafe { ffi::git_repository_submodule_cache_all(c) }
+                        unsafe { sys::git_repository_submodule_cache_all(c) }
                     } else {
                         // SAFETY: as above.
-                        unsafe { ffi::git_repository_submodule_cache_clear(c) }
+                        unsafe { sys::git_repository_submodule_cache_clear(c) }
                     };
                     let c_out = observe(&c_root, c, rc, (rc < 0).then(c_last));
                     let (rc, error) = if matches!(step, Step::Cache) {
@@ -424,7 +424,7 @@ mod submodule_cache {
         }
         drop(rust);
         // SAFETY: the C side's repository, released once (with any cache it holds).
-        unsafe { ffi::git_repository_free(c) };
+        unsafe { sys::git_repository_free(c) };
     }
 
     #[test]

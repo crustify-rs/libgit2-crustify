@@ -3,7 +3,7 @@
 //!
 //! Both sides get an independently owned instance of the same backend: a minimal
 //! writable C-ABI backend whose `get` forwards to an opened in-memory backend.
-use libgit2::ffi;
+use libgit2::sys::libgit2 as sys;
 use libgit2::libgit2::config::sys::config::BackendBox;
 use libgit2::libgit2::util::errors::last;
 use std::ffi::{CStr, c_char};
@@ -11,15 +11,15 @@ use std::ptr;
 
 #[repr(C)]
 struct Writable {
-    base: ffi::git_config_backend,
-    inner: *mut ffi::git_config_backend,
+    base: sys::git_config_backend,
+    inner: *mut sys::git_config_backend,
 }
 
 impl Writable {
     unsafe extern "C" fn get(
-        p: *mut ffi::git_config_backend,
+        p: *mut sys::git_config_backend,
         key: *const c_char,
-        out: *mut *mut ffi::git_config_backend_entry,
+        out: *mut *mut sys::git_config_backend_entry,
     ) -> i32 {
         // SAFETY: installed only on complete Writable boxes; inner is opened and
         // owned by this allocation, and its get acquires a retained entry.
@@ -29,26 +29,26 @@ impl Writable {
         }
     }
 
-    unsafe extern "C" fn free(p: *mut ffi::git_config_backend) {
+    unsafe extern "C" fn free(p: *mut sys::git_config_backend) {
         // SAFETY: called once with the sole owner of the Writable box.
         let this = unsafe { Box::from_raw(p.cast::<Self>()) };
         // SAFETY: inner is uniquely owned by this allocation.
         unsafe { ((*this.inner).free.unwrap())(this.inner) };
     }
 
-    fn new() -> *mut ffi::git_config_backend {
+    fn new() -> *mut sys::git_config_backend {
         let data = b"[a]\nb = value\n";
         let mut inner = ptr::null_mut();
         // SAFETY: readable input, writable out; C copies the bytes.
         let rc = unsafe {
-            ffi::git_config_backend_from_string(&mut inner, data.as_ptr().cast(), data.len(), ptr::null_mut())
+            sys::git_config_backend_from_string(&mut inner, data.as_ptr().cast(), data.len(), ptr::null_mut())
         };
         assert_eq!(rc, 0);
         // SAFETY: fresh memory backend, opened exactly once; NULL repo is ignored.
-        let rc = unsafe { ((*inner).open.unwrap())(inner, ffi::GIT_CONFIG_LEVEL_LOCAL, ptr::null()) };
+        let rc = unsafe { ((*inner).open.unwrap())(inner, sys::GIT_CONFIG_LEVEL_LOCAL, ptr::null()) };
         assert_eq!(rc, 0);
-        let base = ffi::git_config_backend {
-            version: ffi::GIT_CONFIG_BACKEND_VERSION,
+        let base = sys::git_config_backend {
+            version: sys::GIT_CONFIG_BACKEND_VERSION,
             readonly: 0,
             get: Some(Self::get),
             free: Some(Self::free),
@@ -58,7 +58,7 @@ impl Writable {
     }
 }
 
-fn value(entry: *const ffi::git_config_entry) -> Vec<u8> {
+fn value(entry: *const sys::git_config_entry) -> Vec<u8> {
     // SAFETY: a live entry acquired by a successful get.
     unsafe { CStr::from_ptr((*entry).value) }.to_bytes().to_vec()
 }
@@ -74,7 +74,7 @@ fn main() {
     let c = if rc == 0 {
         // SAFETY: success acquired one entry reference, released right after.
         let v = value(unsafe { ptr::addr_of!((*out).entry) });
-        unsafe { ffi::git_config_entry_free(ptr::addr_of_mut!((*out).entry)) };
+        unsafe { sys::git_config_entry_free(ptr::addr_of_mut!((*out).entry)) };
         Ok(v)
     } else {
         Err((rc, last().message().to_owned()))

@@ -27,13 +27,13 @@
 
 use std::ffi::{CStr, c_int};
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::blob::data_is_binary;
+use libgit2::sys::libgit2 as sys;
 
 /// Initialises libgit2; never released.
 fn init() {
     // SAFETY: no arguments; the reference is never released.
-    assert!(unsafe { ffi::git_libgit2_init() } >= 1);
+    assert!(unsafe { sys::git_libgit2_init() } >= 1);
 }
 
 /// The calling thread's last error class and message.
@@ -42,7 +42,7 @@ fn c_last() -> (c_int, String) {
         // SAFETY: `git_error_last` never returns NULL after init, and its message is a
         // NUL-terminated string, both live until the next libgit2 call on this thread,
         // after the copy.
-        let e = unsafe { ffi::git_error_last() };
+        let e = unsafe { sys::git_error_last() };
         // SAFETY: as above.
         let klass = unsafe { (*e).klass };
         // SAFETY: as above.
@@ -61,7 +61,7 @@ fn c_last() -> (c_int, String) {
 fn mark() {
     // SAFETY: a valid class and a NUL-terminated message, copied by libgit2.
     let rc =
-        unsafe { ffi::git_error_set_str(ffi::GIT_ERROR_INVALID.cast_signed(), c"marker".as_ptr()) };
+        unsafe { sys::git_error_set_str(sys::GIT_ERROR_INVALID.cast_signed(), c"marker".as_ptr()) };
     assert_eq!(rc, 0);
 }
 
@@ -70,7 +70,7 @@ fn c_verdict(data: &[u8]) -> (bool, (c_int, String)) {
     let copy = data.to_vec();
     mark();
     // SAFETY: `copy` is live for `copy.len()` bytes, far below `INT_MAX`.
-    let rc = unsafe { ffi::git_blob_data_is_binary(copy.as_ptr().cast(), copy.len()) };
+    let rc = unsafe { sys::git_blob_data_is_binary(copy.as_ptr().cast(), copy.len()) };
     assert!(rc == 0 || rc == 1, "C returned {rc}");
     (rc != 0, c_last())
 }
@@ -84,7 +84,7 @@ fn rust_verdict(data: &[u8]) -> (bool, (c_int, String)) {
 
 fn assert_equivalent(data: &[u8]) {
     let c = c_verdict(data);
-    assert_eq!(c.1, (ffi::GIT_ERROR_INVALID.cast_signed(), "marker".into()));
+    assert_eq!(c.1, (sys::GIT_ERROR_INVALID.cast_signed(), "marker".into()));
     assert_eq!(rust_verdict(data), c, "{data:x?}");
 }
 
@@ -264,30 +264,30 @@ mod filter_flags {
     use std::ptr;
     use std::sync::OnceLock;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::blob::{
         FilterFlag, FilterFlags, FilterOptions, UnnamedFilterFlag,
     };
     use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2::sys::libgit2 as sys;
 
     use super::init;
 
     /// Every `git_blob_filter_flag_t` constant and the variant carrying it.
-    const FLAGS: [(ffi::git_blob_filter_flag_t, FilterFlag); 4] = [
+    const FLAGS: [(sys::git_blob_filter_flag_t, FilterFlag); 4] = [
         (
-            ffi::GIT_BLOB_FILTER_CHECK_FOR_BINARY,
+            sys::GIT_BLOB_FILTER_CHECK_FOR_BINARY,
             FilterFlag::CheckForBinary,
         ),
         (
-            ffi::GIT_BLOB_FILTER_NO_SYSTEM_ATTRIBUTES,
+            sys::GIT_BLOB_FILTER_NO_SYSTEM_ATTRIBUTES,
             FilterFlag::NoSystemAttributes,
         ),
         (
-            ffi::GIT_BLOB_FILTER_ATTRIBUTES_FROM_HEAD,
+            sys::GIT_BLOB_FILTER_ATTRIBUTES_FROM_HEAD,
             FilterFlag::AttributesFromHead,
         ),
         (
-            ffi::GIT_BLOB_FILTER_ATTRIBUTES_FROM_COMMIT,
+            sys::GIT_BLOB_FILTER_ATTRIBUTES_FROM_COMMIT,
             FilterFlag::AttributesFromCommit,
         ),
     ];
@@ -325,19 +325,19 @@ mod filter_flags {
             .chain([u32::MAX - 1, u32::MAX])
     }
 
-    fn oid(hex: &CStr) -> ffi::git_oid {
-        let mut out = ffi::git_oid::default();
+    fn oid(hex: &CStr) -> sys::git_oid {
+        let mut out = sys::git_oid::default();
         // SAFETY: `out` is writable; `hex` is a NUL-terminated 40-digit SHA-1.
-        let rc = unsafe { ffi::git_oid_from_string(&raw mut out, hex.as_ptr(), ffi::GIT_OID_SHA1) };
+        let rc = unsafe { sys::git_oid_from_string(&raw mut out, hex.as_ptr(), sys::GIT_OID_SHA1) };
         assert_eq!(rc, 0);
         out
     }
 
     /// One side's own `crlf.git`, opened read-only, and the blobs it looks up.
     struct Side {
-        repo: *mut ffi::git_repository,
-        blobs: Vec<*mut ffi::git_blob>,
-        buf: ffi::git_buf,
+        repo: *mut sys::git_repository,
+        blobs: Vec<*mut sys::git_blob>,
+        buf: sys::git_buf,
     }
 
     const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
@@ -388,7 +388,7 @@ mod filter_flags {
             let path = concat!(env!("CARGO_MANIFEST_DIR"), "/c/tests/resources/crlf.git\0");
             let mut repo = ptr::null_mut();
             // SAFETY: `repo` receives the repository; `path` is NUL-terminated.
-            let rc = unsafe { ffi::git_repository_open_bare(&raw mut repo, path.as_ptr().cast()) };
+            let rc = unsafe { sys::git_repository_open_bare(&raw mut repo, path.as_ptr().cast()) };
             assert_eq!(rc, 0);
             let blobs = CALLS
                 .iter()
@@ -396,7 +396,7 @@ mod filter_flags {
                     let mut blob = ptr::null_mut();
                     let id = oid(id);
                     // SAFETY: `repo` is open; `blob` receives a blob this side frees.
-                    let ret = unsafe { ffi::git_blob_lookup(&raw mut blob, repo, &raw const id) };
+                    let ret = unsafe { sys::git_blob_lookup(&raw mut blob, repo, &raw const id) };
                     assert_eq!(ret, 0);
                     blob
                 })
@@ -404,7 +404,7 @@ mod filter_flags {
             Self {
                 repo,
                 blobs,
-                buf: ffi::git_buf::default(),
+                buf: sys::git_buf::default(),
             }
         }
 
@@ -412,12 +412,12 @@ mod filter_flags {
         fn filter(
             &mut self,
             i: usize,
-            opts: &mut ffi::git_blob_filter_options,
+            opts: &mut sys::git_blob_filter_options,
         ) -> (c_int, Vec<u8>) {
             // SAFETY: the buffer is this side's, zeroed or filled by libgit2; the blob is
             // live; the path is NUL-terminated; `opts` is initialised options.
             let rc = unsafe {
-                ffi::git_blob_filter(&raw mut self.buf, self.blobs[i], CALLS[i].1.as_ptr(), opts)
+                sys::git_blob_filter(&raw mut self.buf, self.blobs[i], CALLS[i].1.as_ptr(), opts)
             };
             let out = if self.buf.ptr.is_null() {
                 Vec::new()
@@ -434,26 +434,26 @@ mod filter_flags {
         fn drop(&mut self) {
             // SAFETY: each object is this side's and released once, the buffer last
             // written by libgit2.
-            unsafe { ffi::git_buf_dispose(&raw mut self.buf) };
+            unsafe { sys::git_buf_dispose(&raw mut self.buf) };
             // SAFETY: as above.
             unsafe {
                 for &blob in &self.blobs {
-                    ffi::git_blob_free(blob);
+                    sys::git_blob_free(blob);
                 }
             }
             // SAFETY: as above.
-            unsafe { ffi::git_repository_free(self.repo) };
+            unsafe { sys::git_repository_free(self.repo) };
         }
     }
 
     /// Options as `git_blob_filter_options_init` fills them, with the commit
     /// `ATTRIBUTES_FROM_COMMIT` reads.
-    fn c_options() -> ffi::git_blob_filter_options {
+    fn c_options() -> sys::git_blob_filter_options {
         // SAFETY: `git_blob_filter_options` is plain data, all-zero valid.
-        let mut opts: ffi::git_blob_filter_options = unsafe { std::mem::zeroed() };
+        let mut opts: sys::git_blob_filter_options = unsafe { std::mem::zeroed() };
         // SAFETY: `opts` is writable; the version is this header's.
         let rc = unsafe {
-            ffi::git_blob_filter_options_init(&raw mut opts, ffi::GIT_BLOB_FILTER_OPTIONS_VERSION)
+            sys::git_blob_filter_options_init(&raw mut opts, sys::GIT_BLOB_FILTER_OPTIONS_VERSION)
         };
         assert_eq!(rc, 0);
         opts.attr_commit_id = oid(IDENT_COMMIT);
@@ -462,7 +462,7 @@ mod filter_flags {
 
     /// Options built through [`FilterOptions`]: the defaults, `flags`, and the commit
     /// `ATTRIBUTES_FROM_COMMIT` reads, as the value C reads.
-    fn rust_options(flags: FilterFlags) -> ffi::git_blob_filter_options {
+    fn rust_options(flags: FilterFlags) -> sys::git_blob_filter_options {
         let mut opts = FilterOptions::new();
         let mut m = opts.as_mut();
         m.set_flags(flags);
@@ -613,11 +613,11 @@ mod filter_flags {
     fn c_filtered(
         side: &mut Side,
         i: usize,
-        opts: Option<&mut ffi::git_blob_filter_options>,
+        opts: Option<&mut sys::git_blob_filter_options>,
     ) -> Filtered {
         // SAFETY: as in `Side::filter`; NULL options are the defaults.
         let rc = unsafe {
-            ffi::git_blob_filter(
+            sys::git_blob_filter(
                 &raw mut side.buf,
                 side.blobs[i],
                 CALLS[i].1.as_ptr(),
@@ -631,7 +631,7 @@ mod filter_flags {
             unsafe { std::slice::from_raw_parts(side.buf.ptr.cast::<u8>(), side.buf.size) }.to_vec()
         };
         // SAFETY: the side's buffer, emptied for the next call.
-        unsafe { ffi::git_buf_dispose(&raw mut side.buf) };
+        unsafe { sys::git_buf_dispose(&raw mut side.buf) };
         (rc, out, (rc < 0).then(super::c_last))
     }
 
@@ -699,7 +699,7 @@ mod filter_flags {
         }
         for version in [
             0,
-            ffi::GIT_BLOB_FILTER_OPTIONS_VERSION.cast_signed() + 1,
+            sys::GIT_BLOB_FILTER_OPTIONS_VERSION.cast_signed() + 1,
             -1,
         ] {
             let mut c_opts = c_options();
@@ -751,11 +751,11 @@ mod owner {
     use std::ffi::{CStr, CString, c_int};
     use std::ptr;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::blob::{Blob, BlobArc, BlobRef};
     use libgit2::libgit2::src::libgit2::object::Object;
     use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
     use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox, RepositoryError};
+    use libgit2::sys::libgit2 as sys;
 
     use super::{c_last, init};
 
@@ -774,7 +774,7 @@ mod owner {
     /// repository path, as each side reads them, or the failure.
     #[derive(Clone, Debug, PartialEq, Eq)]
     enum Outcome {
-        Found(String, ffi::git_object_t, Vec<u8>, Facts),
+        Found(String, sys::git_object_t, Vec<u8>, Facts),
         Failed(c_int, c_int, String),
     }
 
@@ -796,35 +796,35 @@ mod owner {
     }
 
     /// C's view of a live blob.
-    fn found(p: *const ffi::git_blob) -> Outcome {
+    fn found(p: *const sys::git_blob) -> Outcome {
         let mut out = [0u8; 65];
         {
-            let object = p.cast::<ffi::git_object>();
+            let object = p.cast::<sys::git_object>();
             // SAFETY: `p` is a live blob; its id and content live as long as it and are
             // copied at once; `out` has 65 writable bytes, NUL included.
-            let object_id = unsafe { ffi::git_object_id(object) };
+            let object_id = unsafe { sys::git_object_id(object) };
             // SAFETY: as above.
-            unsafe { ffi::git_oid_tostr(out.as_mut_ptr().cast(), out.len(), object_id) };
+            unsafe { sys::git_oid_tostr(out.as_mut_ptr().cast(), out.len(), object_id) };
             // SAFETY: as above.
-            let size = unsafe { usize::try_from(ffi::git_blob_rawsize(p)).unwrap() };
+            let size = unsafe { usize::try_from(sys::git_blob_rawsize(p)).unwrap() };
             let data = if size == 0 {
                 Vec::new()
             } else {
                 // SAFETY: as above.
-                let content = unsafe { ffi::git_blob_rawcontent(p) };
+                let content = unsafe { sys::git_blob_rawcontent(p) };
                 // SAFETY: as above, the content holds `size` bytes; they are copied.
                 unsafe { std::slice::from_raw_parts(content.cast::<u8>(), size) }.to_vec()
             };
             // SAFETY: as above.
-            let object_type = unsafe { ffi::git_object_type(object) };
+            let object_type = unsafe { sys::git_object_type(object) };
             // SAFETY: as above.
-            let blob_rawsize = unsafe { ffi::git_blob_rawsize(p) };
+            let blob_rawsize = unsafe { sys::git_blob_rawsize(p) };
             // SAFETY: as above.
-            let blob_is_binary = unsafe { ffi::git_blob_is_binary(p) };
+            let blob_is_binary = unsafe { sys::git_blob_is_binary(p) };
             // SAFETY: as above.
-            let blob_owner = unsafe { ffi::git_blob_owner(p) };
+            let blob_owner = unsafe { sys::git_blob_owner(p) };
             // SAFETY: as above.
-            let repository_path = unsafe { ffi::git_repository_path(blob_owner) };
+            let repository_path = unsafe { sys::git_repository_path(blob_owner) };
             // SAFETY: as above.
             unsafe {
                 Outcome::Found(
@@ -874,8 +874,8 @@ mod owner {
 
     /// The C side: the raw repository and the blobs it looked up.
     struct CSide {
-        repo: *mut ffi::git_repository,
-        held: Vec<*mut ffi::git_blob>,
+        repo: *mut sys::git_repository,
+        held: Vec<*mut sys::git_blob>,
     }
 
     impl CSide {
@@ -883,7 +883,7 @@ mod owner {
             let path = CString::new(TESTREPO).unwrap();
             let mut repo = ptr::null_mut();
             // SAFETY: a writable slot and a NUL-terminated path.
-            let rc = unsafe { ffi::git_repository_open(&raw mut repo, path.as_ptr()) };
+            let rc = unsafe { sys::git_repository_open(&raw mut repo, path.as_ptr()) };
             assert_eq!(rc, 0);
             Self {
                 repo,
@@ -894,7 +894,7 @@ mod owner {
         fn pathless() -> Self {
             let mut repo = ptr::null_mut();
             // SAFETY: a writable slot.
-            assert_eq!(unsafe { ffi::git_repository_new(&raw mut repo) }, 0);
+            assert_eq!(unsafe { sys::git_repository_new(&raw mut repo) }, 0);
             Self {
                 repo,
                 held: Vec::new(),
@@ -902,14 +902,14 @@ mod owner {
         }
 
         fn run(&mut self, (hex, len): Step) -> (Outcome, Option<usize>) {
-            let mut id = ffi::git_oid::default();
+            let mut id = sys::git_oid::default();
             // SAFETY: a writable id, and `hex.len()` readable bytes of hex digits.
             let rc = unsafe {
-                ffi::git_oid_from_prefix(
+                sys::git_oid_from_prefix(
                     &raw mut id,
                     hex.as_ptr().cast(),
                     hex.len(),
-                    ffi::GIT_OID_SHA1,
+                    sys::GIT_OID_SHA1,
                 )
             };
             assert_eq!(rc, 0);
@@ -918,11 +918,11 @@ mod owner {
             // repository's type.
             let rc = match len {
                 // SAFETY: as above.
-                None => unsafe { ffi::git_blob_lookup(&raw mut out, self.repo, &raw const id) },
+                None => unsafe { sys::git_blob_lookup(&raw mut out, self.repo, &raw const id) },
                 Some(len) => {
                     // SAFETY: as above.
                     unsafe {
-                        ffi::git_blob_lookup_prefix(&raw mut out, self.repo, &raw const id, len)
+                        sys::git_blob_lookup_prefix(&raw mut out, self.repo, &raw const id, len)
                     }
                 }
             };
@@ -944,14 +944,14 @@ mod owner {
                 .map(|&b| {
                     let mut out = ptr::null_mut();
                     // SAFETY: a writable slot and a live blob this side holds.
-                    assert_eq!(unsafe { ffi::git_blob_dup(&raw mut out, b) }, 0);
+                    assert_eq!(unsafe { sys::git_blob_dup(&raw mut out, b) }, 0);
                     assert_eq!(out, b);
                     out
                 })
                 .collect();
             for b in std::mem::replace(&mut self.held, copies) {
                 // SAFETY: a reference this side holds, released once.
-                unsafe { ffi::git_blob_free(b) };
+                unsafe { sys::git_blob_free(b) };
             }
             self.held.iter().map(|&b| found(b)).collect()
         }
@@ -963,11 +963,11 @@ mod owner {
             // repository.
             unsafe {
                 for &b in &self.held {
-                    ffi::git_blob_free(b);
+                    sys::git_blob_free(b);
                 }
             }
             // SAFETY: as above.
-            unsafe { ffi::git_repository_free(self.repo) };
+            unsafe { sys::git_repository_free(self.repo) };
         }
     }
 
@@ -1091,9 +1091,9 @@ mod owner {
             // SAFETY: an `int` object type and a `size_t`; this child runs nothing else
             // meanwhile.
             let rc = unsafe {
-                ffi::git_libgit2_opts(
-                    ffi::GIT_OPT_SET_CACHE_OBJECT_LIMIT.cast_signed(),
-                    ffi::GIT_OBJECT_BLOB,
+                sys::git_libgit2_opts(
+                    sys::GIT_OPT_SET_CACHE_OBJECT_LIMIT.cast_signed(),
+                    sys::GIT_OBJECT_BLOB,
                     1usize << 20,
                 )
             };
@@ -1111,35 +1111,35 @@ mod owner {
         let c = CSide::open();
         let rust = open_rust();
         for hex in [README, NEW_TXT, COMMIT, TREE, TAG] {
-            let mut id = ffi::git_oid::default();
+            let mut id = sys::git_oid::default();
             let mut object = ptr::null_mut();
             let expected = {
                 // SAFETY: a writable id and slot, `hex` 40 hex digits, the live repository.
                 let rc = unsafe {
-                    ffi::git_oid_from_string(
+                    sys::git_oid_from_string(
                         &raw mut id,
                         CString::new(hex).unwrap().as_ptr(),
-                        ffi::GIT_OID_SHA1,
+                        sys::GIT_OID_SHA1,
                     )
                 };
                 assert_eq!(rc, 0);
                 // SAFETY: as above.
                 let rc = unsafe {
-                    ffi::git_object_lookup(
+                    sys::git_object_lookup(
                         &raw mut object,
                         c.repo,
                         &raw const id,
-                        ffi::GIT_OBJECT_ANY,
+                        sys::GIT_OBJECT_ANY,
                     )
                 };
                 assert_eq!(rc, 0);
                 // SAFETY: as above.
                 let view = unsafe {
-                    (ffi::git_object_type(object) == ffi::GIT_OBJECT_BLOB)
+                    (sys::git_object_type(object) == sys::GIT_OBJECT_BLOB)
                         .then(|| found(object.cast()))
                 };
                 // SAFETY: as above.
-                unsafe { ffi::git_object_free(object) };
+                unsafe { sys::git_object_free(object) };
                 view
             };
             let oid = Oid::from_string(&CString::new(hex).unwrap(), OidType::Sha1).unwrap();
@@ -1149,7 +1149,7 @@ mod owner {
                     let view = rust_found(blob.as_ref());
                     let p = blob.as_c_ptr();
                     let back = Blob::into_object(blob);
-                    assert_eq!(back.as_c_ptr().cast::<ffi::git_blob>(), p);
+                    assert_eq!(back.as_c_ptr().cast::<sys::git_blob>(), p);
                     Some(view)
                 }
                 Err(_) => None,
@@ -1178,7 +1178,7 @@ mod owner {
         let mut c_repo = ptr::null_mut();
         let c_path = CString::new(dirs[0].to_str().unwrap()).unwrap();
         // SAFETY: a writable slot and a NUL-terminated path.
-        let rc = unsafe { ffi::git_repository_init(&raw mut c_repo, c_path.as_ptr(), 1) };
+        let rc = unsafe { sys::git_repository_init(&raw mut c_repo, c_path.as_ptr(), 1) };
         assert_eq!(rc, 0);
         let rust =
             Repository::init(&CString::new(dirs[1].to_str().unwrap()).unwrap(), true).unwrap();
@@ -1192,10 +1192,10 @@ mod owner {
             inputs.push(control);
         }
         for data in &inputs {
-            let mut id = ffi::git_oid::default();
+            let mut id = sys::git_oid::default();
             // SAFETY: a writable id, the live repository and `data.len()` bytes.
             let rc = unsafe {
-                ffi::git_blob_create_from_buffer(
+                sys::git_blob_create_from_buffer(
                     &raw mut id,
                     c_repo,
                     data.as_ptr().cast(),
@@ -1205,11 +1205,11 @@ mod owner {
             assert_eq!(rc, 0);
             let mut blob = ptr::null_mut();
             // SAFETY: a writable slot, the live repository and an id of its type.
-            let ret = unsafe { ffi::git_blob_lookup(&raw mut blob, c_repo, &raw const id) };
+            let ret = unsafe { sys::git_blob_lookup(&raw mut blob, c_repo, &raw const id) };
             assert_eq!(ret, 0);
             let mut expected = found(blob);
             // SAFETY: the blob, released once.
-            unsafe { ffi::git_blob_free(blob) };
+            unsafe { sys::git_blob_free(blob) };
             // The repository paths differ by design: compare their file names only.
             if let Outcome::Found(_, _, _, (_, _, path)) = &mut expected {
                 *path = path.as_ref().map(|p| p.replace("-c/", "-rust/"));
@@ -1222,7 +1222,7 @@ mod owner {
         }
         drop(rust);
         // SAFETY: the C side's repository, released once.
-        unsafe { ffi::git_repository_free(c_repo) };
+        unsafe { sys::git_repository_free(c_repo) };
         for dir in dirs {
             drop(std::fs::remove_dir_all(dir));
         }
@@ -1243,14 +1243,14 @@ mod filter_options {
     use std::ffi::c_int;
     use std::ptr::NonNull;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::blob::{FilterFlags, FilterOptions};
     use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2::sys::libgit2 as sys;
 
     use super::{c_last, init};
 
     /// The fields of a raw struct, `reserved` by address.
-    fn fields(o: &ffi::git_blob_filter_options) -> (c_int, u32, usize, u8, [u8; 32]) {
+    fn fields(o: &sys::git_blob_filter_options) -> (c_int, u32, usize, u8, [u8; 32]) {
         (
             o.version,
             o.flags,
@@ -1260,15 +1260,15 @@ mod filter_options {
         )
     }
 
-    fn c_init(version: u32) -> (c_int, ffi::git_blob_filter_options) {
-        let mut opts = ffi::git_blob_filter_options {
+    fn c_init(version: u32) -> (c_int, sys::git_blob_filter_options) {
+        let mut opts = sys::git_blob_filter_options {
             version: 0x5A5A,
             flags: 0xA5A5,
             reserved: NonNull::<u8>::dangling().as_ptr().cast(),
-            attr_commit_id: ffi::git_oid::default(),
+            attr_commit_id: sys::git_oid::default(),
         };
         // SAFETY: `opts` is a live, writable struct.
-        let rc = unsafe { ffi::git_blob_filter_options_init(&raw mut opts, version) };
+        let rc = unsafe { sys::git_blob_filter_options_init(&raw mut opts, version) };
         (rc, opts)
     }
 
@@ -1276,9 +1276,9 @@ mod filter_options {
     #[cfg_attr(miri, ignore = "calls libgit2")]
     fn new_matches_git_blob_filter_options_init() {
         init();
-        let (rc, c) = c_init(ffi::GIT_BLOB_FILTER_OPTIONS_VERSION);
+        let (rc, c) = c_init(sys::GIT_BLOB_FILTER_OPTIONS_VERSION);
         assert_eq!(rc, 0);
-        let rust: ffi::git_blob_filter_options = FilterOptions::new().into();
+        let rust: sys::git_blob_filter_options = FilterOptions::new().into();
         assert_eq!(fields(&rust), fields(&c));
         assert_eq!(FilterOptions::VERSION, c.version);
         assert_eq!(FilterOptions::default(), FilterOptions::from(c));
@@ -1289,7 +1289,7 @@ mod filter_options {
             assert_eq!(rc, -1);
             assert_eq!((untouched.version, untouched.flags), (0x5A5A, 0xA5A5));
             let message = format!("invalid version {shown} on git_blob_filter_options");
-            assert_eq!(c_last(), (ffi::GIT_ERROR_INVALID.cast_signed(), message));
+            assert_eq!(c_last(), (sys::GIT_ERROR_INVALID.cast_signed(), message));
         }
     }
 
@@ -1321,7 +1321,7 @@ mod filter_options {
             Write::Version(1),
             Write::Flags(1),
         ];
-        let (_, mut c) = c_init(ffi::GIT_BLOB_FILTER_OPTIONS_VERSION);
+        let (_, mut c) = c_init(sys::GIT_BLOB_FILTER_OPTIONS_VERSION);
         let mut rust = FilterOptions::new();
         let mut slot = 0u8;
         let reserved = std::ptr::from_mut(&mut slot).cast();
@@ -1346,7 +1346,7 @@ mod filter_options {
                 Write::Reserved => {
                     // Only a raw value can carry a pointer: both sides take C's.
                     c.reserved = reserved;
-                    let mut raw: ffi::git_blob_filter_options = rust.into();
+                    let mut raw: sys::git_blob_filter_options = rust.into();
                     raw.reserved = reserved;
                     rust = raw.into();
                 }
@@ -1355,7 +1355,7 @@ mod filter_options {
                     rust.as_mut().clear_reserved();
                 }
             }
-            let got: ffi::git_blob_filter_options = rust.into();
+            let got: sys::git_blob_filter_options = rust.into();
             assert_eq!(fields(&got), fields(&c), "{step:?}");
             assert_eq!(rust.as_ref().has_reserved(), !c.reserved.is_null());
             assert_eq!(rust.as_ref().flags().bits(), c.flags);
@@ -1390,12 +1390,12 @@ mod writing {
     use std::path::{Path, PathBuf};
     use std::ptr;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::blob::{
         create_from_buffer, create_from_disk, create_from_stream, create_from_workdir,
     };
     use libgit2::libgit2::src::libgit2::oid::Oid;
     use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox, RepositoryError};
+    use libgit2::sys::libgit2 as sys;
 
     use super::init;
 
@@ -1483,7 +1483,7 @@ mod writing {
             }
         }
 
-        fn raw(&self) -> *mut ffi::git_repository {
+        fn raw(&self) -> *mut sys::git_repository {
             self.repo.as_ref().unwrap().as_c_ptr()
         }
 
@@ -1537,7 +1537,7 @@ mod writing {
         {
             // SAFETY: after init `git_error_last` never returns NULL, and its message is
             // NUL-terminated, both live until the next libgit2 call here, after the copy.
-            let e = unsafe { ffi::git_error_last() };
+            let e = unsafe { sys::git_error_last() };
             // SAFETY: as above.
             let klass = unsafe { (*e).klass };
             // SAFETY: as above.
@@ -1553,13 +1553,13 @@ mod writing {
         }
     }
 
-    fn c_done(code: c_int, id: &ffi::git_oid) -> Outcome {
+    fn c_done(code: c_int, id: &sys::git_oid) -> Outcome {
         if code < 0 {
             return Err(c_error(code));
         }
         let mut out = [0u8; 65];
         // SAFETY: `id` is live; `out` has 65 writable bytes.
-        unsafe { ffi::git_oid_tostr(out.as_mut_ptr().cast(), out.len(), id) };
+        unsafe { sys::git_oid_tostr(out.as_mut_ptr().cast(), out.len(), id) };
         Ok(CStr::from_bytes_until_nul(&out)
             .unwrap()
             .to_str()
@@ -1586,7 +1586,7 @@ mod writing {
         // SAFETY: a writable slot, the live repository and a NULL or NUL-terminated
         // hint, copied.
         let rc = unsafe {
-            ffi::git_blob_create_from_stream(
+            sys::git_blob_create_from_stream(
                 &raw mut stream,
                 side.raw(),
                 hint.as_ref().map_or(ptr::null(), |h| h.as_ptr()),
@@ -1610,9 +1610,9 @@ mod writing {
             unsafe { free2.unwrap()(stream) };
             return Ok(String::new());
         }
-        let mut id = ffi::git_oid::default();
+        let mut id = sys::git_oid::default();
         // SAFETY: the open stream, consumed; a writable id.
-        let rc = unsafe { ffi::git_blob_create_from_stream_commit(&raw mut id, stream) };
+        let rc = unsafe { sys::git_blob_create_from_stream_commit(&raw mut id, stream) };
         c_done(rc, &id)
     }
 
@@ -1634,14 +1634,14 @@ mod writing {
     }
 
     fn c_run(side: &Side, step: Step) -> Outcome {
-        let mut id = ffi::git_oid::default();
+        let mut id = sys::git_oid::default();
         let repo = side.raw();
         let outcome = match step {
             Step::Buffer(data) => {
                 let data = data.to_vec();
                 // SAFETY: a writable id, the live repository and a live buffer.
                 let rc = unsafe {
-                    ffi::git_blob_create_from_buffer(
+                    sys::git_blob_create_from_buffer(
                         &raw mut id,
                         repo,
                         data.as_ptr().cast(),
@@ -1654,7 +1654,7 @@ mod writing {
                 let data = big(len);
                 // SAFETY: as above.
                 let rc = unsafe {
-                    ffi::git_blob_create_from_buffer(
+                    sys::git_blob_create_from_buffer(
                         &raw mut id,
                         repo,
                         data.as_ptr().cast(),
@@ -1667,21 +1667,21 @@ mod writing {
                 let rel = CString::new(rel).unwrap();
                 // SAFETY: a writable id, the live repository and a relative path.
                 let rc =
-                    unsafe { ffi::git_blob_create_from_workdir(&raw mut id, repo, rel.as_ptr()) };
+                    unsafe { sys::git_blob_create_from_workdir(&raw mut id, repo, rel.as_ptr()) };
                 c_done(rc, &id)
             }
             Step::DiskInside(rel) => {
                 let path = side.inside(rel);
                 // SAFETY: a writable id, the live repository and a NUL-terminated path.
                 let rc =
-                    unsafe { ffi::git_blob_create_from_disk(&raw mut id, repo, path.as_ptr()) };
+                    unsafe { sys::git_blob_create_from_disk(&raw mut id, repo, path.as_ptr()) };
                 c_done(rc, &id)
             }
             Step::DiskOutside(data) => {
                 let path = side.outside(data);
                 // SAFETY: as above.
                 let rc =
-                    unsafe { ffi::git_blob_create_from_disk(&raw mut id, repo, path.as_ptr()) };
+                    unsafe { sys::git_blob_create_from_disk(&raw mut id, repo, path.as_ptr()) };
                 c_done(rc, &id)
             }
             Step::Stream(hint, pieces) => c_stream(side, hint, pieces, true),

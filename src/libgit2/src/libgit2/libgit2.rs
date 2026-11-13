@@ -32,8 +32,8 @@ use core::num::NonZeroUsize;
 use core::ops::{BitOr, BitOrAssign};
 use std::sync::{Mutex, PoisonError};
 
-use crate::ffi;
 use crate::libgit2::src::libgit2::settings::Version;
+use crate::sys::libgit2 as sys;
 
 /// One configurable feature of libgit2: an optional setting (threading, say), or a
 /// capability that one of several backend providers supplies (HTTPS, through
@@ -49,31 +49,31 @@ use crate::libgit2::src::libgit2::settings::Version;
 #[non_exhaustive]
 pub enum Feature {
     /// libgit2 is thread-aware and can be used from multiple threads.
-    Threads = ffi::GIT_FEATURE_THREADS,
+    Threads = sys::GIT_FEATURE_THREADS,
     /// HTTPS remotes.
-    Https = ffi::GIT_FEATURE_HTTPS,
+    Https = sys::GIT_FEATURE_HTTPS,
     /// SSH remotes.
-    Ssh = ffi::GIT_FEATURE_SSH,
+    Ssh = sys::GIT_FEATURE_SSH,
     /// Sub-second resolution in index timestamps.
-    Nsec = ffi::GIT_FEATURE_NSEC,
+    Nsec = sys::GIT_FEATURE_NSEC,
     /// HTTP parsing; always available.
-    HttpParser = ffi::GIT_FEATURE_HTTP_PARSER,
+    HttpParser = sys::GIT_FEATURE_HTTP_PARSER,
     /// Regular expression support; always available.
-    Regex = ffi::GIT_FEATURE_REGEX,
+    Regex = sys::GIT_FEATURE_REGEX,
     /// Internationalization support for filename translation.
-    I18n = ffi::GIT_FEATURE_I18N,
+    I18n = sys::GIT_FEATURE_I18N,
     /// NTLM support over HTTPS.
-    AuthNtlm = ffi::GIT_FEATURE_AUTH_NTLM,
+    AuthNtlm = sys::GIT_FEATURE_AUTH_NTLM,
     /// Kerberos (SPNEGO) authentication support over HTTPS.
-    AuthNegotiate = ffi::GIT_FEATURE_AUTH_NEGOTIATE,
+    AuthNegotiate = sys::GIT_FEATURE_AUTH_NEGOTIATE,
     /// zlib support; always available.
-    Compression = ffi::GIT_FEATURE_COMPRESSION,
+    Compression = sys::GIT_FEATURE_COMPRESSION,
     /// SHA1 object support; always available.
-    Sha1 = ffi::GIT_FEATURE_SHA1,
+    Sha1 = sys::GIT_FEATURE_SHA1,
     /// SHA256 object support.
-    Sha256 = ffi::GIT_FEATURE_SHA256,
+    Sha256 = sys::GIT_FEATURE_SHA256,
     /// HTTP remotes.
-    Http = ffi::GIT_FEATURE_HTTP,
+    Http = sys::GIT_FEATURE_HTTP,
 }
 
 impl Feature {
@@ -97,10 +97,10 @@ impl Feature {
     /// The variant whose C value is `raw`; `None` for a value this version of
     /// libgit2's header does not name.
     #[must_use]
-    pub const fn from_raw(raw: ffi::git_feature_t) -> Option<Self> {
+    pub const fn from_raw(raw: sys::git_feature_t) -> Option<Self> {
         let mut i = 0;
         while i < Self::ALL.len() {
-            if Self::ALL[i] as ffi::git_feature_t == raw {
+            if Self::ALL[i] as sys::git_feature_t == raw {
                 return Some(Self::ALL[i]);
             }
             i += 1;
@@ -110,8 +110,8 @@ impl Feature {
 
     /// The C value, as `git_libgit2_feature_backend` takes it.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_feature_t {
-        self as ffi::git_feature_t
+    pub const fn raw(self) -> sys::git_feature_t {
+        self as sys::git_feature_t
     }
 
     /// The feature's bit in the `int` `git_libgit2_features` returns. Every bit is
@@ -121,16 +121,16 @@ impl Feature {
     }
 }
 
-impl TryFrom<ffi::git_feature_t> for Feature {
+impl TryFrom<sys::git_feature_t> for Feature {
     type Error = UnnamedFeature;
 
-    fn try_from(raw: ffi::git_feature_t) -> Result<Self, UnnamedFeature> {
+    fn try_from(raw: sys::git_feature_t) -> Result<Self, UnnamedFeature> {
         Self::from_raw(raw).ok_or(UnnamedFeature(raw))
     }
 }
 
-impl From<Feature> for ffi::git_feature_t {
-    fn from(value: Feature) -> ffi::git_feature_t {
+impl From<Feature> for sys::git_feature_t {
+    fn from(value: Feature) -> sys::git_feature_t {
         value.raw()
     }
 }
@@ -138,12 +138,12 @@ impl From<Feature> for ffi::git_feature_t {
 /// A feature value that this version of libgit2's header does not name: `0`, a
 /// combination of features, or a later header's bit. [`raw`](Self::raw) has it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct UnnamedFeature(ffi::git_feature_t);
+pub struct UnnamedFeature(sys::git_feature_t);
 
 impl UnnamedFeature {
     /// The value, as it was converted.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_feature_t {
+    pub const fn raw(self) -> sys::git_feature_t {
         self.0
     }
 }
@@ -360,7 +360,7 @@ pub fn version() -> Version {
     let (mut major, mut minor, mut revision) = (0, 0, 0);
     // SAFETY: three out-parameters, each a live `int` local, written once and not
     // retained; the routine reads no other state and always returns 0.
-    unsafe { ffi::git_libgit2_version(&raw mut major, &raw mut minor, &raw mut revision) };
+    unsafe { sys::git_libgit2_version(&raw mut major, &raw mut minor, &raw mut revision) };
     Version {
         major,
         minor,
@@ -381,7 +381,7 @@ pub fn version() -> Version {
 #[must_use]
 pub fn prerelease() -> Option<&'static CStr> {
     // SAFETY: no arguments, no state read.
-    let s = unsafe { ffi::git_libgit2_prerelease() };
+    let s = unsafe { sys::git_libgit2_prerelease() };
     // SAFETY: a non-NULL result is `LIBGIT2_VERSION_PRERELEASE`, a NUL-terminated
     // literal in libgit2.so's read-only data, never written or freed while the library
     // is loaded, which it is for the rest of the process.
@@ -398,7 +398,7 @@ pub fn prerelease() -> Option<&'static CStr> {
 #[must_use]
 pub fn features() -> Features {
     // SAFETY: no arguments; the routine ORs compile-time constants.
-    Features::from_bits_retain(unsafe { ffi::git_libgit2_features() })
+    Features::from_bits_retain(unsafe { sys::git_libgit2_features() })
 }
 
 /// The backend that provides `feature` in the libgit2 library in use: `"openssl"`
@@ -416,7 +416,7 @@ pub fn features() -> Features {
 #[must_use]
 pub fn feature_backend(feature: Feature) -> Option<&'static CStr> {
     // SAFETY: a named `git_feature_t`, by value; the routine reads no state.
-    let s = unsafe { ffi::git_libgit2_feature_backend(feature.raw()) };
+    let s = unsafe { sys::git_libgit2_feature_backend(feature.raw()) };
     // SAFETY: a non-NULL result is one of the routine's NUL-terminated literals, in
     // libgit2.so's read-only data, never written or freed while the library is loaded,
     // which it is for the rest of the process.
@@ -474,11 +474,11 @@ pub fn init() -> Result<Runtime, InitError> {
     }
     // SAFETY: no arguments; libgit2 counts initialisations under its own mutex, so it
     // is callable from any thread at any time.
-    let count = unsafe { ffi::git_libgit2_init() };
+    let count = unsafe { sys::git_libgit2_init() };
     if count > MAX_REFERENCES {
         // SAFETY: releases the reference this call just took, which is not the last:
         // the count is far above 1.
-        unsafe { ffi::git_libgit2_shutdown() };
+        unsafe { sys::git_libgit2_shutdown() };
         return Err(InitError::TooManyReferences);
     }
     if let Some(count) = usize::try_from(count).ok().and_then(NonZeroUsize::new) {
@@ -532,7 +532,7 @@ impl Drop for Runtime {
 fn release() -> Result<usize, ShutdownError> {
     // SAFETY: no arguments; the caller gives up a reference `init` took, so the count
     // is released no more often than it was taken. libgit2 counts under its own mutex.
-    let remaining = unsafe { ffi::git_libgit2_shutdown() };
+    let remaining = unsafe { sys::git_libgit2_shutdown() };
     usize::try_from(remaining).map_err(|_| ShutdownError)
 }
 
@@ -687,7 +687,7 @@ mod unit_tests {
                 assert_eq!(init().unwrap_err(), InitError::Poisoned, "for good");
                 // C's own answer: success, over the count the failure left at 1.
                 // SAFETY: no arguments; the reference dies with the child.
-                assert_eq!(unsafe { ffi::git_libgit2_init() }, 2);
+                assert_eq!(unsafe { sys::git_libgit2_init() }, 2);
                 assert_eq!(init().unwrap_err(), InitError::Poisoned);
             },
         );
@@ -733,12 +733,12 @@ mod unit_tests {
             || {
                 // SAFETY: no arguments; releases a reference never taken, which is
                 // this test's subject, in a child of its own.
-                assert_eq!(unsafe { ffi::git_libgit2_shutdown() }, -1);
+                assert_eq!(unsafe { sys::git_libgit2_shutdown() }, -1);
                 assert_eq!(init().unwrap_err(), InitError::Failed, "answered 0");
                 assert_eq!(init().unwrap_err(), InitError::Poisoned);
                 // SAFETY: no arguments; balanced by the shutdown below.
-                assert_eq!(unsafe { ffi::git_libgit2_init() }, 1, "C sets up again");
-                let mut buf = ffi::git_buf {
+                assert_eq!(unsafe { sys::git_libgit2_init() }, 1, "C sets up again");
+                let mut buf = sys::git_buf {
                     ptr: ptr::null_mut(),
                     reserved: 0,
                     size: 0,
@@ -746,16 +746,16 @@ mod unit_tests {
                 // SAFETY: `GIT_OPT_GET_USER_AGENT` fills the zeroed `git_buf *` it is
                 // given; libgit2 is initialised; disposed below.
                 let rc = unsafe {
-                    ffi::git_libgit2_opts(ffi::GIT_OPT_GET_USER_AGENT.cast_signed(), &raw mut buf)
+                    sys::git_libgit2_opts(sys::GIT_OPT_GET_USER_AGENT.cast_signed(), &raw mut buf)
                 };
                 assert_eq!(rc, 0);
                 // SAFETY: libgit2 filled the buffer with a NUL-terminated string.
                 let agent = unsafe { CStr::from_ptr(buf.ptr) }.to_owned();
                 // SAFETY: as libgit2 left it.
-                unsafe { ffi::git_buf_dispose(&raw mut buf) };
+                unsafe { sys::git_buf_dispose(&raw mut buf) };
                 assert!(agent.to_bytes().starts_with(b"libgit2 "));
                 // SAFETY: releases the reference just taken.
-                assert_eq!(unsafe { ffi::git_libgit2_shutdown() }, 0);
+                assert_eq!(unsafe { sys::git_libgit2_shutdown() }, 0);
             },
         );
     }
@@ -775,10 +775,10 @@ mod unit_tests {
                 assert_eq!(r.count().get(), 1);
                 // SAFETY: no arguments; releases the Rust reference's count from C,
                 // which is this test's subject, in a child of its own.
-                assert_eq!(unsafe { ffi::git_libgit2_shutdown() }, 0);
+                assert_eq!(unsafe { sys::git_libgit2_shutdown() }, 0);
                 assert_eq!(r.shutdown(), Err(ShutdownError), "the count went to -1");
                 // SAFETY: no arguments; brings the count back to 0, setting nothing up.
-                assert_eq!(unsafe { ffi::git_libgit2_init() }, 0);
+                assert_eq!(unsafe { sys::git_libgit2_init() }, 0);
             },
         );
     }
@@ -798,9 +798,9 @@ mod unit_tests {
                 assert_eq!(a.shutdown(), Ok(1));
                 assert_eq!(c.shutdown(), Ok(0));
                 // SAFETY: no arguments; balanced by the shutdown below.
-                assert_eq!(unsafe { ffi::git_libgit2_init() }, 1, "back at 0 before");
+                assert_eq!(unsafe { sys::git_libgit2_init() }, 1, "back at 0 before");
                 // SAFETY: releases the reference just taken.
-                assert_eq!(unsafe { ffi::git_libgit2_shutdown() }, 0);
+                assert_eq!(unsafe { sys::git_libgit2_shutdown() }, 0);
             },
         );
     }

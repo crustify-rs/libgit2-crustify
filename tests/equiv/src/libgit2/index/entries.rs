@@ -50,7 +50,7 @@ struct Fields {
 }
 
 /// The fields of the entry at `e`, NULL for `None`.
-fn c_fields(e: *const ffi::git_index_entry) -> Option<Fields> {
+fn c_fields(e: *const raw::git_index_entry) -> Option<Fields> {
     {
         // SAFETY: NULL or a live entry, copied before any other call.
         let e = unsafe { e.as_ref()? };
@@ -89,18 +89,18 @@ fn rust_fields(e: IndexEntryRef<'_, '_>) -> Fields {
 }
 
 /// Every entry and the resolved-conflict count, through C.
-fn c_observe(index: *mut ffi::git_index) -> (Vec<Fields>, usize) {
+fn c_observe(index: *mut raw::git_index) -> (Vec<Fields>, usize) {
     {
         // SAFETY: a live index lending no entry; each is copied before the next call.
-        let index_entrycount = unsafe { ffi::git_index_entrycount(index) };
+        let index_entrycount = unsafe { raw::git_index_entrycount(index) };
         // SAFETY: as above.
         let entries = unsafe {
             (0..index_entrycount)
-                .map(|n| c_fields(ffi::git_index_get_byindex(index, n)).unwrap())
+                .map(|n| c_fields(raw::git_index_get_byindex(index, n)).unwrap())
                 .collect()
         };
         // SAFETY: as above.
-        unsafe { (entries, ffi::git_index_reuc_entrycount(index)) }
+        unsafe { (entries, raw::git_index_reuc_entrycount(index)) }
     }
 }
 
@@ -143,7 +143,7 @@ fn row_entry<'a>(row: &Row<'a>) -> IndexEntry<'a> {
 }
 
 /// Both indexes agree on their entries and resolved-conflict count.
-fn assert_same(c: *mut ffi::git_index, rust: &IndexMut<'_>, step: &str) {
+fn assert_same(c: *mut raw::git_index, rust: &IndexMut<'_>, step: &str) {
     assert_eq!(c_observe(c), rust_observe(rust), "{step}");
 }
 
@@ -186,7 +186,7 @@ fn add_sequences_match() {
         let entry = row_entry(row);
         clear();
         // SAFETY: a live index lending no entry; C copies the entry and its path.
-        let expected = c_status(unsafe { ffi::git_index_add(c.0, &entry.into_raw()) });
+        let expected = c_status(unsafe { raw::git_index_add(c.0, &entry.into_raw()) });
         clear();
         let actual = rust_status(rust.as_mut().add(entry.as_ref()));
         assert_eq!(expected, actual, "{row:?}");
@@ -216,7 +216,7 @@ fn lookups_match() {
     for row in rows {
         let entry = row_entry(row);
         // SAFETY: as in `add_sequences_match`.
-        assert_eq!(unsafe { ffi::git_index_add(c.0, &entry.into_raw()) }, 0);
+        assert_eq!(unsafe { raw::git_index_add(c.0, &entry.into_raw()) }, 0);
         rust.as_mut().add(entry.as_ref()).unwrap();
     }
     let paths = [
@@ -229,12 +229,12 @@ fn lookups_match() {
             Capabilities::empty()
         };
         // SAFETY: a live index lending no entry.
-        assert_eq!(unsafe { ffi::git_index_set_caps(c.0, caps.bits()) }, 0);
+        assert_eq!(unsafe { raw::git_index_set_caps(c.0, caps.bits()) }, 0);
         rust.as_mut().set_caps(caps.into()).unwrap();
         let handle = rust.as_mut();
         for position in [0, 3, 8, 9, 10, usize::MAX] {
             // SAFETY: a live index lending no entry; the entry is copied at once.
-            let expected = c_fields(unsafe { ffi::git_index_get_byindex(c.0, position) });
+            let expected = c_fields(unsafe { raw::git_index_get_byindex(c.0, position) });
             assert_eq!(
                 expected,
                 handle.entry(position).map(rust_fields),
@@ -245,7 +245,7 @@ fn lookups_match() {
             for stage in [Stage::Normal, Stage::Ancestor, Stage::Ours, Stage::Theirs] {
                 clear();
                 // SAFETY: as above; `path` is read for the call.
-                let found = unsafe { ffi::git_index_get_bypath(c.0, path.as_ptr(), stage.raw()) };
+                let found = unsafe { raw::git_index_get_bypath(c.0, path.as_ptr(), stage.raw()) };
                 let expected = (c_fields(found), c_last());
                 clear();
                 let lent = handle.entry_by_path(path, stage).map(rust_fields);
@@ -259,7 +259,7 @@ fn lookups_match() {
             let [a, o, t] = &mut slots;
             clear();
             // SAFETY: three writable slots, a live index and a NUL-terminated key.
-            let rc = unsafe { ffi::git_index_conflict_get(a, o, t, c.0, path.as_ptr()) };
+            let rc = unsafe { raw::git_index_conflict_get(a, o, t, c.0, path.as_ptr()) };
             let expected = (rc == 0).then(|| slots.map(c_fields));
             let expected_error = c_last();
             clear();
@@ -268,7 +268,7 @@ fn lookups_match() {
             });
             assert_eq!((expected, expected_error), (actual, c_last()), "{path:?}");
             if rc != 0 {
-                assert_eq!(rc, ffi::GIT_ENOTFOUND);
+                assert_eq!(rc, raw::GIT_ENOTFOUND);
             }
         }
     }
@@ -285,7 +285,7 @@ fn conflict_add_sequences_match() {
     for row in [(c"f", 0, 1, 1, 0o100_644, 0), (c"g", 0, 1, 2, 0o100_644, 0)] {
         let entry = row_entry(&row);
         // SAFETY: as in `add_sequences_match`.
-        assert_eq!(unsafe { ffi::git_index_add(c.0, &entry.into_raw()) }, 0);
+        assert_eq!(unsafe { raw::git_index_add(c.0, &entry.into_raw()) }, 0);
         rust.as_mut().add(entry.as_ref()).unwrap();
     }
     let side = |path, byte, mode| Some(entry(path, 0, 1, byte, mode, 0));
@@ -320,7 +320,7 @@ fn conflict_add_sequences_match() {
             .map(|s| s.as_ref().map_or(ptr::null(), ptr::from_ref));
         clear();
         // SAFETY: a live index lending no entry; each side NULL or a live entry.
-        let expected = c_status(unsafe { ffi::git_index_conflict_add(c.0, a, o, t) });
+        let expected = c_status(unsafe { raw::git_index_conflict_add(c.0, a, o, t) });
         clear();
         let actual = rust_status(rust.as_mut().add_conflict(lent[0], lent[1], lent[2]));
         assert_eq!(expected, actual, "step {n}");
@@ -342,20 +342,20 @@ fn stage_bits_match() {
         let raw = entry.into_raw();
         let ptr = &raw const raw;
         // SAFETY: a live entry, only read.
-        let index_entry_stage = unsafe { ffi::git_index_entry_stage(ptr) };
+        let index_entry_stage = unsafe { raw::git_index_entry_stage(ptr) };
         // SAFETY: as above.
         let (stage, conflict) =
-            unsafe { (index_entry_stage, ffi::git_index_entry_is_conflict(ptr)) };
+            unsafe { (index_entry_stage, raw::git_index_entry_is_conflict(ptr)) };
         assert_eq!(entry.as_ref().stage().raw(), stage, "{bits:#x}");
         assert_eq!(entry.as_ref().is_conflict(), conflict != 0, "{bits:#x}");
     }
 }
 
 /// The same conflicts and entries, `(a, o, t)` sides on each of `paths`.
-fn seed_conflicts(c: *mut ffi::git_index, rust: &mut IndexBox) {
+fn seed_conflicts(c: *mut raw::git_index, rust: &mut IndexBox) {
     let resolved = entry(c"aa-resolved", 0, 1, 1, 0o100_644, 0);
     // SAFETY: as in `add_sequences_match`.
-    assert_eq!(unsafe { ffi::git_index_add(c, &resolved.into_raw()) }, 0);
+    assert_eq!(unsafe { raw::git_index_add(c, &resolved.into_raw()) }, 0);
     rust.as_mut().add(resolved.as_ref()).unwrap();
     for (path, mask) in [
         (c"a", 7u8),
@@ -373,14 +373,14 @@ fn seed_conflicts(c: *mut ffi::git_index, rust: &mut IndexBox) {
             .each_ref()
             .map(|s| s.as_ref().map_or(ptr::null(), ptr::from_ref));
         // SAFETY: as in `conflict_add_sequences_match`.
-        assert_eq!(unsafe { ffi::git_index_conflict_add(c, a, o, t) }, 0);
+        assert_eq!(unsafe { raw::git_index_conflict_add(c, a, o, t) }, 0);
         rust.as_mut()
             .add_conflict(lent[0], lent[1], lent[2])
             .unwrap();
     }
     let normal = entry(c"b", 0, 1, 9, 0o100_644, 0);
     // SAFETY: as above.
-    assert_eq!(unsafe { ffi::git_index_add(c, &normal.into_raw()) }, 0);
+    assert_eq!(unsafe { raw::git_index_add(c, &normal.into_raw()) }, 0);
     rust.as_mut().add(normal.as_ref()).unwrap();
 }
 
@@ -397,7 +397,7 @@ fn conflict_iteration_matches() {
         }
         let mut raw = ptr::null_mut();
         // SAFETY: a writable slot and a live index, unchanged until the cursor is freed.
-        let rc = unsafe { ffi::git_index_conflict_iterator_new(&raw mut raw, c.0) };
+        let rc = unsafe { raw::git_index_conflict_iterator_new(&raw mut raw, c.0) };
         assert_eq!(rc, 0);
         let mut cursor = ConflictIterator::new(rust.as_mut()).unwrap();
         let mut steps = cursor.as_mut();
@@ -405,16 +405,16 @@ fn conflict_iteration_matches() {
             let mut slots = [ptr::null(); 3];
             let [a, o, t] = &mut slots;
             // SAFETY: a live cursor over its unchanged index; three writable slots.
-            let rc = unsafe { ffi::git_index_conflict_next(a, o, t, raw) };
+            let rc = unsafe { raw::git_index_conflict_next(a, o, t, raw) };
             let expected = (rc == 0).then(|| slots.map(c_fields));
             let actual = steps.next().map(|conflict| {
                 [conflict.ancestor, conflict.ours, conflict.theirs].map(|s| s.map(rust_fields))
             });
             assert_eq!(expected, actual, "{seeded} {step}");
-            assert!(rc == 0 || rc == ffi::GIT_ITEROVER);
+            assert!(rc == 0 || rc == raw::GIT_ITEROVER);
         }
         // SAFETY: the cursor allocated above, freed once.
-        unsafe { ffi::git_index_conflict_iterator_free(raw) };
+        unsafe { raw::git_index_conflict_iterator_free(raw) };
         drop(cursor);
         assert_same(c.0, &rust.as_mut(), "after iteration");
     }
@@ -432,12 +432,12 @@ fn snapshot_iteration_matches() {
     let rust: IndexArc = rust.into();
     let mut raw = ptr::null_mut();
     // SAFETY: a writable slot and a live index; C counts a reference of its own.
-    assert_eq!(unsafe { ffi::git_index_iterator_new(&raw mut raw, c.0) }, 0);
+    assert_eq!(unsafe { raw::git_index_iterator_new(&raw mut raw, c.0) }, 0);
     let mut iterator = IndexIterator::new(&rust).unwrap();
     let c_next = || {
         let mut out = ptr::null();
         // SAFETY: a live iterator; `out` is written only on success, and copied at once.
-        let rc = unsafe { ffi::git_index_iterator_next(&raw mut out, raw) };
+        let rc = unsafe { raw::git_index_iterator_next(&raw mut out, raw) };
         (rc == 0).then(|| c_fields(out).unwrap())
     };
     for step in 0..14 {
@@ -451,16 +451,16 @@ fn snapshot_iteration_matches() {
                 let added = entry(c"zz", 0, 1, 1, 0o100_644, 0);
                 // SAFETY: a live index whose entries no borrow reads (the snapshots
                 // copy or own theirs); C copies each entry and frees removed ones late.
-                unsafe { assert_eq!(ffi::git_index_add(index, &replaced.into_raw()), 0) };
+                unsafe { assert_eq!(raw::git_index_add(index, &replaced.into_raw()), 0) };
                 // SAFETY: as above.
-                unsafe { assert_eq!(ffi::git_index_add(index, &added.into_raw()), 0) };
+                unsafe { assert_eq!(raw::git_index_add(index, &added.into_raw()), 0) };
                 // SAFETY: as above.
-                unsafe { assert_eq!(ffi::git_index_remove(index, c"e".as_ptr(), 3), 0) };
+                unsafe { assert_eq!(raw::git_index_remove(index, c"e".as_ptr(), 3), 0) };
             }
         }
     }
     // SAFETY: the iterator allocated above, freed once.
-    unsafe { ffi::git_index_iterator_free(raw) };
+    unsafe { raw::git_index_iterator_free(raw) };
 }
 
 /// A non-bare repository, with the index C and Rust each own a reference to.
@@ -485,7 +485,7 @@ impl Repo {
         let mut out = ptr::null_mut();
         let repo = self.repo.as_ref().unwrap().as_c_ptr();
         // SAFETY: a writable slot and a live repository.
-        let rc = unsafe { ffi::git_repository_index(&raw mut out, repo) };
+        let rc = unsafe { raw::git_repository_index(&raw mut out, repo) };
         assert_eq!(rc, 0);
         CIndex(out)
     }
@@ -562,7 +562,7 @@ fn add_from_buffer_sequences_match() {
     clear();
     // SAFETY: a live index; `file` and the bytes are read for the call.
     let expected = c_status(unsafe {
-        ffi::git_index_add_from_buffer(c.0, &file.into_raw(), b"x".as_ptr().cast(), 1)
+        raw::git_index_add_from_buffer(c.0, &file.into_raw(), b"x".as_ptr().cast(), 1)
     });
     clear();
     let actual = rust_status(rust.as_mut().add_from_buffer(file.as_ref(), b"x"));
@@ -584,7 +584,7 @@ fn add_from_buffer_sequences_match() {
     let raw: Vec<_> = sides.iter().map(|s| s.into_raw()).collect();
     // SAFETY: a live index; each side a live entry naming an object the repository has.
     let rc = unsafe {
-        ffi::git_index_conflict_add(c.0, &raw const raw[0], &raw const raw[1], &raw const raw[2])
+        raw::git_index_conflict_add(c.0, &raw const raw[0], &raw const raw[1], &raw const raw[2])
     };
     assert_eq!(rc, 0);
     rust.as_mut()
@@ -610,7 +610,7 @@ fn add_from_buffer_sequences_match() {
         // SAFETY: a live index lending no entry; the entry and bytes are read for the
         // call.
         let expected = c_status(unsafe {
-            ffi::git_index_add_from_buffer(c.0, &entry.into_raw(), data.as_ptr().cast(), data.len())
+            raw::git_index_add_from_buffer(c.0, &entry.into_raw(), data.as_ptr().cast(), data.len())
         });
         clear();
         let actual = rust_status(rust.as_mut().add_from_buffer(entry.as_ref(), data));
@@ -627,7 +627,7 @@ fn add_from_buffer_sequences_match() {
     clear();
     // SAFETY: as above.
     let expected = c_status(unsafe {
-        ffi::git_index_add_from_buffer(c.0, &stuck.into_raw(), b"stuck".as_ptr().cast(), 5)
+        raw::git_index_add_from_buffer(c.0, &stuck.into_raw(), b"stuck".as_ptr().cast(), 5)
     });
     clear();
     let actual = rust_status(rust.as_mut().add_from_buffer(stuck.as_ref(), b"stuck"));
@@ -672,7 +672,7 @@ fn conflict_stage_buffers_fail_as_c_before_adding() {
             // SAFETY: a live index lending no entry; the entry and the bytes are read
             // for the call, which fails before libgit2 adds anything.
             let expected = c_status(unsafe {
-                ffi::git_index_add_from_buffer(
+                raw::git_index_add_from_buffer(
                     c.0,
                     &side.into_raw(),
                     data.as_ptr().cast(),
@@ -719,7 +719,7 @@ fn owned_additions_match() {
             .map(|s| s.as_ref().map_or(ptr::null(), ptr::from_ref));
         clear();
         // SAFETY: a live index lending no entry; each side NULL or a live entry.
-        let expected = c_status(unsafe { ffi::git_index_conflict_add(c.0, ra, ro, rt) });
+        let expected = c_status(unsafe { raw::git_index_conflict_add(c.0, ra, ro, rt) });
         clear();
         let actual = rust_status(rust.as_mut().add_conflict(a, o, t));
         // C leaves a stale error behind a success (the odb's packed lookup).
@@ -732,7 +732,7 @@ fn owned_additions_match() {
     for entry in [&present, &missing, &submodule] {
         clear();
         // SAFETY: as above.
-        let expected = c_status(unsafe { ffi::git_index_add(c.0, &entry.into_raw()) });
+        let expected = c_status(unsafe { raw::git_index_add(c.0, &entry.into_raw()) });
         clear();
         let actual = rust_status(rust.as_mut().add(entry.as_ref()));
         assert_eq!(expected.0, actual.0);
@@ -771,14 +771,14 @@ fn read_tree_sequences_match() {
     ];
     for row in &seed {
         // SAFETY: as in `add_sequences_match`.
-        assert_eq!(unsafe { ffi::git_index_add(c.0, &row.into_raw()) }, 0);
+        assert_eq!(unsafe { raw::git_index_add(c.0, &row.into_raw()) }, 0);
         rust.as_mut().add(row.as_ref()).unwrap();
     }
     for (n, files) in shapes.iter().enumerate() {
         let (c_tree, rust_tree) = (c_repo.tree(files), rust_repo.tree(files));
         clear();
         // SAFETY: a live index lending no entry, and a live tree.
-        let expected = c_status(unsafe { ffi::git_index_read_tree(c.0, c_tree.as_c_ptr()) });
+        let expected = c_status(unsafe { raw::git_index_read_tree(c.0, c_tree.as_c_ptr()) });
         clear();
         let actual = rust_status(rust.as_mut().read_tree(rust_tree.as_ref()));
         assert_eq!(expected, actual, "tree {n}");
@@ -788,14 +788,14 @@ fn read_tree_sequences_match() {
             for index in [c.0, rust.as_c_ptr()] {
                 {
                     // SAFETY: a live index lending no entry.
-                    let entry = unsafe { ffi::git_index_get_byindex(index, 0) };
+                    let entry = unsafe { raw::git_index_get_byindex(index, 0) };
                     // SAFETY: as above; the entry is copied, changed and added back before
                     // any other call.
                     let mut first = unsafe { *entry };
                     first.file_size = 77;
                     first.ino = 5;
                     // SAFETY: as above.
-                    unsafe { assert_eq!(ffi::git_index_add(index, &raw const first), 0) };
+                    unsafe { assert_eq!(raw::git_index_add(index, &raw const first), 0) };
                 }
             }
         }
@@ -811,7 +811,7 @@ fn read_tree_sequences_match() {
     });
     clear();
     // SAFETY: as above.
-    let expected = c_status(unsafe { ffi::git_index_read_tree(c.0, broken[0].as_c_ptr()) });
+    let expected = c_status(unsafe { raw::git_index_read_tree(c.0, broken[0].as_c_ptr()) });
     clear();
     let actual = rust_status(rust.as_mut().read_tree(broken[1].as_ref()));
     assert_eq!(expected, actual, "broken");
@@ -835,7 +835,7 @@ fn read_tree_sequences_match() {
         let mut out = ptr::null_mut();
         let raw = opts.into_raw();
         // SAFETY: a writable slot and live options of this version, read for the call.
-        let rc = unsafe { ffi::git_index_new_ext(&raw mut out, &raw const raw) };
+        let rc = unsafe { raw::git_index_new_ext(&raw mut out, &raw const raw) };
         assert_eq!(rc, 0);
         CIndex(out)
     };
@@ -843,7 +843,7 @@ fn read_tree_sequences_match() {
     for (c_index, rust_index) in [(c.0, &mut rust), (c256.0, &mut rust256)] {
         clear();
         // SAFETY: as above.
-        let expected = c_status(unsafe { ffi::git_index_read_tree(c_index, trees[0].as_c_ptr()) });
+        let expected = c_status(unsafe { raw::git_index_read_tree(c_index, trees[0].as_c_ptr()) });
         clear();
         let actual = rust_status(rust_index.as_mut().read_tree(trees[1].as_ref()));
         assert_eq!(expected, actual, "sha256");
@@ -866,7 +866,7 @@ fn refused_tree_entry_names_match() {
             let mut rust = Index::new().unwrap();
             let (c_tree, rust_tree) = (c_repo.tree(&["a", "d/x"]), rust_repo.tree(&["a", "d/x"]));
             // SAFETY: a live index lending no entry, and a live tree.
-            let rc = unsafe { ffi::git_index_read_tree(c.0, c_tree.as_c_ptr()) };
+            let rc = unsafe { raw::git_index_read_tree(c.0, c_tree.as_c_ptr()) };
             assert_eq!(rc, 0);
             rust.as_mut().read_tree(rust_tree.as_ref()).unwrap();
             // A tree entry named `.git`, which an index cannot hold, after one it can.
@@ -880,16 +880,16 @@ fn refused_tree_entry_names_match() {
                     raw.extend_from_slice(&id.as_ref().id()[..20]);
                 }
                 let odb = repo.repo().odb().unwrap();
-                let mut tree = ffi::git_oid::default();
+                let mut tree = raw::git_oid::default();
                 // SAFETY: a live odb, a writable id and `raw` live for its length, read for the
                 // call.
                 let rc = unsafe {
-                    ffi::git_odb_write(
+                    raw::git_odb_write(
                         &raw mut tree,
                         odb.as_c_ptr(),
                         raw.as_ptr().cast(),
                         raw.len(),
-                        ffi::GIT_OBJECT_TREE,
+                        raw::GIT_OBJECT_TREE,
                     )
                 };
                 assert_eq!(rc, 0);
@@ -898,7 +898,7 @@ fn refused_tree_entry_names_match() {
             });
             clear();
             // SAFETY: as above.
-            let expected = c_status(unsafe { ffi::git_index_read_tree(c.0, dot[0].as_c_ptr()) });
+            let expected = c_status(unsafe { raw::git_index_read_tree(c.0, dot[0].as_c_ptr()) });
             clear();
             let actual = rust_status(rust.as_mut().read_tree(dot[1].as_ref()));
             assert_eq!(expected, actual, "dot");

@@ -41,7 +41,6 @@ use std::path::PathBuf;
 use std::{fs, ptr};
 
 use ffibox::CZeroable;
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::annotated_commit::{AnnotatedCommit, AnnotatedCommitBox};
 use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
 use libgit2::libgit2::src::libgit2::refs::ReferenceBox;
@@ -49,11 +48,12 @@ use libgit2::libgit2::src::libgit2::repository::{
     InitFlag, InitOptions, Repository, RepositoryBox, RepositoryRef,
 };
 use libgit2::libgit2::src::util::errors::ErrorBuf;
+use libgit2::sys::libgit2 as sys;
 
 /// Initialises libgit2; never released.
 fn init() {
     // SAFETY: no arguments; the reference is never released.
-    assert!(unsafe { ffi::git_libgit2_init() } >= 1);
+    assert!(unsafe { sys::git_libgit2_init() } >= 1);
 }
 
 /// The calling thread's last error class and message.
@@ -62,7 +62,7 @@ fn c_last() -> (c_int, String) {
         // SAFETY: `git_error_last` never returns NULL after init, and its message is a
         // NUL-terminated string, both live until the next libgit2 call on this thread,
         // after the copy.
-        let e = unsafe { ffi::git_error_last() };
+        let e = unsafe { sys::git_error_last() };
         // SAFETY: as above.
         let klass = unsafe { (*e).klass };
         // SAFETY: as above.
@@ -78,10 +78,10 @@ fn c_last() -> (c_int, String) {
 }
 
 /// The hex form of `id`, as `git_oid_tostr` writes it.
-fn hex(id: *const ffi::git_oid) -> String {
+fn hex(id: *const sys::git_oid) -> String {
     let mut buf = [0; 65];
     // SAFETY: `buf` holds 65 bytes, which bounds the write; `id` is a live oid.
-    unsafe { ffi::git_oid_tostr(buf.as_mut_ptr(), buf.len(), id) };
+    unsafe { sys::git_oid_tostr(buf.as_mut_ptr(), buf.len(), id) };
     // SAFETY: `git_oid_tostr` NUL-terminates within `buf`.
     unsafe { CStr::from_ptr(buf.as_ptr()) }
         .to_string_lossy()
@@ -91,11 +91,11 @@ fn hex(id: *const ffi::git_oid) -> String {
 /// The objects every probe repository holds, by id.
 #[derive(Clone, Copy)]
 struct Ids {
-    tree: ffi::git_oid,
-    blob: ffi::git_oid,
-    first: ffi::git_oid,
-    second: ffi::git_oid,
-    tag: ffi::git_oid,
+    tree: sys::git_oid,
+    blob: sys::git_oid,
+    first: sys::git_oid,
+    second: sys::git_oid,
+    tag: sys::git_oid,
 }
 
 /// A fresh bare repository whose `main` (and `HEAD`) is a second commit over a first,
@@ -120,7 +120,7 @@ impl Repo {
         clippy::items_after_statements,
         reason = "each helper item sits beside the steps that use it"
     )]
-    fn new(tag: &str, kind: ffi::git_oid_t) -> Self {
+    fn new(tag: &str, kind: sys::git_oid_t) -> Self {
         init();
         let path = std::env::temp_dir().join(format!(
             "crustify-annotated-commit-equiv-{}-{tag}",
@@ -137,26 +137,26 @@ impl Repo {
         let (mut odb, raw) = (ptr::null_mut(), repo.as_c_ptr());
         // SAFETY: `odb` is a live slot and `raw` a live repository; the odb is a counted
         // reference, released below.
-        assert_eq!(unsafe { ffi::git_repository_odb(&raw mut odb, raw) }, 0);
-        let write = |data: &[u8], kind: ffi::git_object_t| {
-            let mut id = ffi::git_oid::default();
+        assert_eq!(unsafe { sys::git_repository_odb(&raw mut odb, raw) }, 0);
+        let write = |data: &[u8], kind: sys::git_object_t| {
+            let mut id = sys::git_oid::default();
             let rc =
                 // SAFETY: `id` is a live slot, `odb` a live odb and `data` readable for its
                 // length.
-                unsafe { ffi::git_odb_write(&raw mut id, odb, data.as_ptr().cast(), data.len(), kind) };
+                unsafe { sys::git_odb_write(&raw mut id, odb, data.as_ptr().cast(), data.len(), kind) };
             assert_eq!(rc, 0, "{:?}", c_last());
             id
         };
         const WHO: &str = "A U Thor <author@example.com> 1700000000 +0130";
-        let tree = write(b"", ffi::GIT_OBJECT_TREE);
-        let blob = write(b"hello\n", ffi::GIT_OBJECT_BLOB);
+        let tree = write(b"", sys::GIT_OBJECT_TREE);
+        let blob = write(b"hello\n", sys::GIT_OBJECT_BLOB);
         let first = write(
             format!(
                 "tree {}\nauthor {WHO}\ncommitter {WHO}\n\nfirst\n",
                 hex(&raw const tree)
             )
             .as_bytes(),
-            ffi::GIT_OBJECT_COMMIT,
+            sys::GIT_OBJECT_COMMIT,
         );
         let second = write(
             format!(
@@ -165,7 +165,7 @@ impl Repo {
                 hex(&raw const first)
             )
             .as_bytes(),
-            ffi::GIT_OBJECT_COMMIT,
+            sys::GIT_OBJECT_COMMIT,
         );
         let tag = write(
             format!(
@@ -173,10 +173,10 @@ impl Repo {
                 hex(&raw const second)
             )
             .as_bytes(),
-            ffi::GIT_OBJECT_TAG,
+            sys::GIT_OBJECT_TAG,
         );
         // SAFETY: the counted reference taken above, released once.
-        unsafe { ffi::git_odb_free(odb) };
+        unsafe { sys::git_odb_free(odb) };
         let this = Self {
             path,
             repo: Some(repo),
@@ -203,7 +203,7 @@ impl Repo {
     /// Points the loose reference `name` at `id` by writing its file, as
     /// `git_reference_create` would without a reflog signature: that takes the current
     /// time, whose glibc timezone lookup `ThreadSanitizer` reports against other tests'.
-    fn write_ref(&self, name: &CStr, id: &ffi::git_oid) {
+    fn write_ref(&self, name: &CStr, id: &sys::git_oid) {
         let file = self.path.join(name.to_str().unwrap());
         fs::create_dir_all(file.parent().unwrap()).unwrap();
         fs::write(file, format!("{}\n", hex(id))).unwrap();
@@ -219,16 +219,16 @@ impl Repo {
     }
 
     /// The repository's raw pointer, for the C side.
-    fn raw(&self) -> *mut ffi::git_repository {
+    fn raw(&self) -> *mut sys::git_repository {
         self.repo.as_ref().unwrap().as_c_ptr()
     }
 
     /// The reference `name`, which the caller frees.
-    fn reference(&self, name: &CStr) -> *mut ffi::git_reference {
+    fn reference(&self, name: &CStr) -> *mut sys::git_reference {
         let mut reference = ptr::null_mut();
         // SAFETY: a live slot, the live repository and a NUL-terminated name.
         let rc =
-            unsafe { ffi::git_reference_lookup(&raw mut reference, self.raw(), name.as_ptr()) };
+            unsafe { sys::git_reference_lookup(&raw mut reference, self.raw(), name.as_ptr()) };
         assert_eq!(rc, 0, "{:?}", c_last());
         reference
     }
@@ -258,13 +258,13 @@ struct Read {
 }
 
 /// Reads the annotated commit at `commit` through libgit2's accessors.
-fn read(commit: *const ffi::git_annotated_commit) -> Read {
+fn read(commit: *const sys::git_annotated_commit) -> Read {
     {
         // SAFETY: `commit` is a live annotated commit, only read; the id and name point
         // into it and are copied before it can be freed.
-        let ref_name = unsafe { ffi::git_annotated_commit_ref(commit) };
+        let ref_name = unsafe { sys::git_annotated_commit_ref(commit) };
         // SAFETY: as above.
-        let annotated_commit_id = unsafe { ffi::git_annotated_commit_id(commit) };
+        let annotated_commit_id = unsafe { sys::git_annotated_commit_id(commit) };
         // SAFETY: as above.
         unsafe {
             Read {
@@ -294,12 +294,12 @@ enum Step {
     FromFetchhead(&'static CStr, &'static CStr, u8, [u8; 32]),
 }
 
-fn raw(id: &ffi::git_oid) -> (u8, [u8; 32]) {
+fn raw(id: &sys::git_oid) -> (u8, [u8; 32]) {
     (id.type_, id.id)
 }
 
-fn c_oid((kind, id): (u8, [u8; 32])) -> ffi::git_oid {
-    ffi::git_oid { type_: kind, id }
+fn c_oid((kind, id): (u8, [u8; 32])) -> sys::git_oid {
+    sys::git_oid { type_: kind, id }
 }
 
 fn rust_oid((kind, id): (u8, [u8; 32])) -> Oid {
@@ -313,7 +313,7 @@ fn rust_oid((kind, id): (u8, [u8; 32])) -> Oid {
 fn steps(ids: &Ids) -> Vec<Step> {
     let lookup = |(kind, id)| Step::Lookup(kind, id);
     let (own, first) = raw(&ids.first);
-    let other = u8::try_from(ffi::GIT_OID_SHA1 + ffi::GIT_OID_SHA256).unwrap() - own;
+    let other = u8::try_from(sys::GIT_OID_SHA1 + sys::GIT_OID_SHA256).unwrap() - own;
     let fetch = |b, u, (kind, id)| Step::FromFetchhead(b, u, kind, id);
     vec![
         lookup(raw(&ids.second)),
@@ -365,14 +365,14 @@ fn steps(ids: &Ids) -> Vec<Step> {
 /// The error both sides record for an id of another type than the repository's.
 fn refused() -> (c_int, String) {
     (
-        ffi::GIT_ERROR_INVALID.cast_signed(),
+        sys::GIT_ERROR_INVALID.cast_signed(),
         "specified object ID type does not match repository object ID type".into(),
     )
 }
 
 /// Runs `step` through libgit2 on `repo`, keeping what it builds in `held`; an id of
 /// another type than the repository's is not handed to C (see the module docs).
-fn c_step(repo: &Repo, step: Step, held: &mut Vec<*mut ffi::git_annotated_commit>) -> Outcome {
+fn c_step(repo: &Repo, step: Step, held: &mut Vec<*mut sys::git_annotated_commit>) -> Outcome {
     if let Step::Lookup(kind, _) | Step::FromFetchhead(_, _, kind, _) = step
         && kind != repo.kind()
     {
@@ -389,23 +389,23 @@ fn c_step(repo: &Repo, step: Step, held: &mut Vec<*mut ffi::git_annotated_commit
     let rc = match step {
         Step::Lookup(kind, id) => {
             // SAFETY: as above.
-            unsafe { ffi::git_annotated_commit_lookup(&raw mut out, raw, &c_oid((kind, id))) }
+            unsafe { sys::git_annotated_commit_lookup(&raw mut out, raw, &c_oid((kind, id))) }
         }
         Step::FromRef(name) => {
             let reference = repo.reference(name);
             // SAFETY: as above.
-            let rc = unsafe { ffi::git_annotated_commit_from_ref(&raw mut out, raw, reference) };
+            let rc = unsafe { sys::git_annotated_commit_from_ref(&raw mut out, raw, reference) };
             // SAFETY: as above.
-            unsafe { ffi::git_reference_free(reference) };
+            unsafe { sys::git_reference_free(reference) };
             rc
         }
         Step::FromRevspec(spec) => {
             // SAFETY: as above.
-            unsafe { ffi::git_annotated_commit_from_revspec(&raw mut out, raw, spec.as_ptr()) }
+            unsafe { sys::git_annotated_commit_from_revspec(&raw mut out, raw, spec.as_ptr()) }
         }
         // SAFETY: as above.
         Step::FromFetchhead(branch, url, kind, id) => unsafe {
-            ffi::git_annotated_commit_from_fetchhead(
+            sys::git_annotated_commit_from_fetchhead(
                 &raw mut out,
                 raw,
                 branch.as_ptr(),
@@ -472,16 +472,16 @@ fn rust_step<'r>(repo: &'r Repo, step: Step, held: &mut Vec<AnnotatedCommitBox<'
 #[test]
 #[cfg_attr(miri, ignore = "calls libgit2")]
 fn constructors_build_and_fail_as_c() {
-    constructors_build_and_fail_as_c_with(ffi::GIT_OID_SHA1);
+    constructors_build_and_fail_as_c_with(sys::GIT_OID_SHA1);
 }
 
 #[test]
 #[cfg_attr(miri, ignore = "calls libgit2")]
 fn constructors_build_and_fail_as_c_over_sha256() {
-    constructors_build_and_fail_as_c_with(ffi::GIT_OID_SHA256);
+    constructors_build_and_fail_as_c_with(sys::GIT_OID_SHA256);
 }
 
-fn constructors_build_and_fail_as_c_with(kind: ffi::git_oid_t) {
+fn constructors_build_and_fail_as_c_with(kind: sys::git_oid_t) {
     let c_repo = Repo::new(&format!("c-{kind}"), kind);
     let rust_repo = Repo::new(&format!("rust-{kind}"), kind);
     assert_eq!(c_repo.kind(), u8::try_from(kind).unwrap());
@@ -500,7 +500,7 @@ fn constructors_build_and_fail_as_c_with(kind: ffi::git_oid_t) {
     // Release in a different order than built, the repositories still open.
     for p in c_held.drain(..).rev() {
         // SAFETY: each a live annotated commit the C side owns, freed once.
-        unsafe { ffi::git_annotated_commit_free(p) };
+        unsafe { sys::git_annotated_commit_free(p) };
     }
     rust_held.reverse();
     drop(rust_held);

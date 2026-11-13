@@ -178,12 +178,12 @@ use core::ptr::{self, addr_of, addr_of_mut};
 
 use ffibox::{CBox, CMutSeam, CRefSeam, CZeroable, define_ctype, impl_cdrop, impl_cdupclone};
 
-use crate::ffi;
 use crate::libgit2::src::libgit2::odb::OdbDataStr;
 use crate::libgit2::src::libgit2::repository::{RepositoryError, RepositoryRef};
 use crate::libgit2::src::util::errors::{
     ErrorBuf, ErrorClass, last, runtime_pinned, set, set_oom, set_str,
 };
+use crate::sys::libgit2 as sys;
 
 define_ctype!(
     /// A point in time as a git signature records it (`git_time`): seconds since the
@@ -201,7 +201,7 @@ define_ctype!(
     Time,
     TimeRef,
     TimeMut,
-    ffi::git_time
+    sys::git_time
 );
 
 // SAFETY: all zero is the epoch at offset 0 with sign byte 0, the value
@@ -247,15 +247,15 @@ impl Time {
 }
 
 /// The `git_time` value as it is, for code that already holds one by value.
-impl From<ffi::git_time> for Time {
-    fn from(raw: ffi::git_time) -> Time {
+impl From<sys::git_time> for Time {
+    fn from(raw: sys::git_time) -> Time {
         Time(raw, PhantomData)
     }
 }
 
 /// The `git_time` value, for code that passes one by value.
-impl From<Time> for ffi::git_time {
-    fn from(time: Time) -> ffi::git_time {
+impl From<Time> for sys::git_time {
+    fn from(time: Time) -> sys::git_time {
         time.0
     }
 }
@@ -309,7 +309,7 @@ impl TimeRef<'_> {
     /// A copy of the time, as a value of its own.
     #[must_use]
     pub fn to_time(&self) -> Time {
-        Time::from(ffi::git_time {
+        Time::from(sys::git_time {
             time: self.seconds(),
             offset: self.offset_minutes(),
             sign: self.sign().cast_signed(),
@@ -417,8 +417,8 @@ impl Hash for Time {
 
 // A `Time` is a `git_time`, so C reads and writes a value Rust holds in place.
 const _: () = assert!(
-    size_of::<Time>() == size_of::<ffi::git_time>()
-        && align_of::<Time>() == align_of::<ffi::git_time>()
+    size_of::<Time>() == size_of::<sys::git_time>()
+        && align_of::<Time>() == align_of::<sys::git_time>()
 );
 
 define_ctype!(
@@ -445,7 +445,7 @@ define_ctype!(
     Signature,
     SignatureRef,
     SignatureMut,
-    ffi::git_signature
+    sys::git_signature
 );
 
 // SAFETY: an owned signature is a struct and its two strings, all allocations of
@@ -492,7 +492,7 @@ impl_cdrop!(
     #[doc(alias = "git_signature_free")]
     SignatureFree,
     Signature,
-    ffi::git_signature_free
+    sys::git_signature_free
 );
 
 impl_cdupclone!(
@@ -510,7 +510,7 @@ impl_cdupclone!(
 ///
 /// `sig` must address a live `git_signature` whose `name` and `email` are each NULL or
 /// a NUL-terminated string, none of them written during the call.
-unsafe fn signature_dup(sig: *mut ffi::git_signature) -> *mut ffi::git_signature {
+unsafe fn signature_dup(sig: *mut sys::git_signature) -> *mut sys::git_signature {
     // SAFETY: per this function's contract `sig` addresses a live `git_signature`; the projection
     // forms no reference to it.
     let name_ptr = unsafe { &raw const (*sig).name };
@@ -528,7 +528,7 @@ unsafe fn signature_dup(sig: *mut ffi::git_signature) -> *mut ffi::git_signature
     // NUL-terminated strings, only read. libgit2 writes the slot only on success, with a
     // fresh signature the caller owns. The runtime is pinned, so a failure is reported on
     // live thread-local state.
-    let rc = unsafe { ffi::git_signature_dup(&raw mut copy, sig) };
+    let rc = unsafe { sys::git_signature_dup(&raw mut copy, sig) };
     if rc < 0 { ptr::null_mut() } else { copy }
 }
 
@@ -585,7 +585,7 @@ impl Signature {
         // retained. The runtime is pinned, so a failure is reported on live thread-local
         // state.
         let rc = unsafe {
-            ffi::git_signature_new(
+            sys::git_signature_new(
                 &raw mut out,
                 name.as_ptr(),
                 email.as_ptr(),
@@ -619,7 +619,7 @@ impl Signature {
         }
         let mut out = ptr::null_mut();
         // SAFETY: as in `new`.
-        let rc = unsafe { ffi::git_signature_now(&raw mut out, name.as_ptr(), email.as_ptr()) };
+        let rc = unsafe { sys::git_signature_now(&raw mut out, name.as_ptr(), email.as_ptr()) };
         // SAFETY: `git_signature_now` leaves `out` NULL on failure (adopted as `None`), or
         // writes a fresh signature from libgit2's allocator that the caller owns alone,
         // released by `git_signature_free` as `SignatureFree` does.
@@ -652,7 +652,7 @@ impl Signature {
         let mut out = ptr::null_mut();
         // SAFETY: `out` is a writable slot and `buf` a non-NULL NUL-terminated string, as
         // libgit2 asserts, read up to its NUL for the call only. The runtime is pinned.
-        let rc = unsafe { ffi::git_signature_from_buffer(&raw mut out, buf.as_ptr()) };
+        let rc = unsafe { sys::git_signature_from_buffer(&raw mut out, buf.as_ptr()) };
         // SAFETY: `git_signature_from_buffer` leaves `out` NULL on failure (adopted as `None`), or
         // writes a fresh signature from libgit2's allocator that the caller owns alone,
         // released by `git_signature_free` as `SignatureFree` does.
@@ -904,7 +904,7 @@ impl<'a> SignatureView<'a> {
     /// A view of `name` and `email`, at `when`.
     #[must_use]
     pub fn new(name: &'a CStr, email: &'a CStr, when: Time) -> Self {
-        let raw = ffi::git_signature {
+        let raw = sys::git_signature {
             name: name.as_ptr().cast_mut(),
             email: email.as_ptr().cast_mut(),
             when: when.into(),
@@ -940,8 +940,8 @@ impl fmt::Debug for SignatureView<'_> {
 // A `Signature` is a `git_signature`, so C reads one in place, and owns one through a
 // `SignatureBox`; a view's `Signature` is held by value.
 const _: () = assert!(
-    size_of::<Signature>() == size_of::<ffi::git_signature>()
-        && align_of::<Signature>() == align_of::<ffi::git_signature>()
+    size_of::<Signature>() == size_of::<sys::git_signature>()
+        && align_of::<Signature>() == align_of::<sys::git_signature>()
 );
 
 impl Signature {
@@ -967,7 +967,7 @@ impl Signature {
         // SAFETY: `out` is a writable slot, set only on success; `repo` is a live
         // repository on this thread, whose configuration libgit2 loads and snapshots
         // through this shared handle, as `RepositoryRef` allows, keeping nothing of it.
-        let rc = unsafe { ffi::git_signature_default(&raw mut out, repo.as_ptr().cast_mut()) };
+        let rc = unsafe { sys::git_signature_default(&raw mut out, repo.as_ptr().cast_mut()) };
         // SAFETY: NULL on failure, or a fresh signature from `git_signature_now` the
         // caller owns alone, released by `git_signature_free` as `SignatureBox` does.
         adopted(rc, unsafe { SignatureBox::from_c(out) })
@@ -1016,7 +1016,7 @@ impl Signature {
         // `repo` a live repository on this thread, whose configuration libgit2 loads and
         // snapshots through this shared handle, keeping nothing of it.
         let rc = unsafe {
-            ffi::git_signature_default_from_env(
+            sys::git_signature_default_from_env(
                 &raw mut author,
                 &raw mut committer,
                 repo.as_ptr().cast_mut(),
@@ -1054,7 +1054,7 @@ impl Signature {
         // slot NULL, which libgit2 skips; `repo` a live repository on this thread, whose
         // configuration libgit2 loads and snapshots through this shared handle.
         let rc = unsafe {
-            ffi::git_signature_default_from_env(
+            sys::git_signature_default_from_env(
                 &raw mut out,
                 ptr::null_mut(),
                 repo.as_ptr().cast_mut(),
@@ -1083,7 +1083,7 @@ impl Signature {
         let mut out = ptr::null_mut();
         // SAFETY: as in `default_author_from_env`, with the author's slot NULL.
         let rc = unsafe {
-            ffi::git_signature_default_from_env(
+            sys::git_signature_default_from_env(
                 ptr::null_mut(),
                 &raw mut out,
                 repo.as_ptr().cast_mut(),
@@ -1117,39 +1117,39 @@ mod unit_tests {
     };
     use crate::libgit2::src::libgit2::tree::{FileMode, UnnamedFileMode};
 
-    const OBJECT_TYPES: [(ffi::git_object_t, ObjectType); 4] = [
-        (ffi::GIT_OBJECT_COMMIT, ObjectType::Commit),
-        (ffi::GIT_OBJECT_TREE, ObjectType::Tree),
-        (ffi::GIT_OBJECT_BLOB, ObjectType::Blob),
-        (ffi::GIT_OBJECT_TAG, ObjectType::Tag),
+    const OBJECT_TYPES: [(sys::git_object_t, ObjectType); 4] = [
+        (sys::GIT_OBJECT_COMMIT, ObjectType::Commit),
+        (sys::GIT_OBJECT_TREE, ObjectType::Tree),
+        (sys::GIT_OBJECT_BLOB, ObjectType::Blob),
+        (sys::GIT_OBJECT_TAG, ObjectType::Tag),
     ];
 
-    const REFERENCE_TYPES: [(ffi::git_reference_t, ReferenceType); 2] = [
-        (ffi::GIT_REFERENCE_DIRECT, ReferenceType::Direct),
-        (ffi::GIT_REFERENCE_SYMBOLIC, ReferenceType::Symbolic),
+    const REFERENCE_TYPES: [(sys::git_reference_t, ReferenceType); 2] = [
+        (sys::GIT_REFERENCE_DIRECT, ReferenceType::Direct),
+        (sys::GIT_REFERENCE_SYMBOLIC, ReferenceType::Symbolic),
     ];
 
     /// Every value around the declared ones, and the extremes.
-    fn object_probes() -> impl Iterator<Item = ffi::git_object_t> {
+    fn object_probes() -> impl Iterator<Item = sys::git_object_t> {
         (-300..=300).chain([
-            ffi::git_object_t::MIN,
-            ffi::git_object_t::MIN + 1,
-            ffi::git_object_t::MAX - 1,
-            ffi::git_object_t::MAX,
+            sys::git_object_t::MIN,
+            sys::git_object_t::MIN + 1,
+            sys::git_object_t::MAX - 1,
+            sys::git_object_t::MAX,
         ])
     }
 
     /// Every value around the declared ones, and the extremes; `u32::MAX` is the `-1`
     /// of `git_reference_type(NULL)`.
-    fn reference_probes() -> impl Iterator<Item = ffi::git_reference_t> {
-        (0..=300).chain([ffi::git_reference_t::MAX - 1, ffi::git_reference_t::MAX])
+    fn reference_probes() -> impl Iterator<Item = sys::git_reference_t> {
+        (0..=300).chain([sys::git_reference_t::MAX - 1, sys::git_reference_t::MAX])
     }
 
     #[test]
     fn object_variants_carry_their_c_values() {
         for (raw, kind) in OBJECT_TYPES {
             assert_eq!(kind.raw(), raw);
-            assert_eq!(ffi::git_object_t::from(kind), raw);
+            assert_eq!(sys::git_object_t::from(kind), raw);
             assert_eq!(ObjectType::from_raw(raw), Some(kind));
             assert_eq!(ObjectType::try_from(raw), Ok(kind));
             assert_eq!(ObjectType::raw_or_any(Some(kind)), raw);
@@ -1175,27 +1175,27 @@ mod unit_tests {
             }
         }
         // The named non-types in particular.
-        for raw in [ffi::GIT_OBJECT_ANY, ffi::GIT_OBJECT_INVALID, 0] {
+        for raw in [sys::GIT_OBJECT_ANY, sys::GIT_OBJECT_INVALID, 0] {
             assert_eq!(ObjectType::from_raw(raw), None);
         }
     }
 
     #[test]
     fn object_filter_spells_any_as_none() {
-        assert_eq!(ObjectType::raw_or_any(None), ffi::GIT_OBJECT_ANY);
+        assert_eq!(ObjectType::raw_or_any(None), sys::GIT_OBJECT_ANY);
         assert_eq!(ObjectType::from_raw(ObjectType::raw_or_any(None)), None);
     }
 
     #[test]
     fn not_an_object_type_reports_the_value() {
-        let e = ObjectType::try_from(ffi::GIT_OBJECT_ANY).unwrap_err();
+        let e = ObjectType::try_from(sys::GIT_OBJECT_ANY).unwrap_err();
         assert_eq!(e.raw(), -2);
         assert_eq!(e.to_string(), "libgit2 value -2 is not an object type");
         assert!(e.source().is_none());
         let boxed: Box<dyn Error> = Box::new(e);
         assert_eq!(boxed.to_string(), e.to_string());
         assert_eq!(
-            ObjectType::try_from(ffi::git_object_t::MIN)
+            ObjectType::try_from(sys::git_object_t::MIN)
                 .unwrap_err()
                 .to_string(),
             format!("libgit2 value {} is not an object type", i32::MIN)
@@ -1206,7 +1206,7 @@ mod unit_tests {
     fn reference_variants_carry_their_c_values() {
         for (raw, kind) in REFERENCE_TYPES {
             assert_eq!(kind.raw(), raw);
-            assert_eq!(ffi::git_reference_t::from(kind), raw);
+            assert_eq!(sys::git_reference_t::from(kind), raw);
             assert_eq!(ReferenceType::from_raw(raw), Some(kind));
             assert_eq!(ReferenceType::try_from(raw), Ok(kind));
         }
@@ -1229,14 +1229,14 @@ mod unit_tests {
                 }
             }
         }
-        for raw in [ffi::GIT_REFERENCE_INVALID, ffi::GIT_REFERENCE_ALL] {
+        for raw in [sys::GIT_REFERENCE_INVALID, sys::GIT_REFERENCE_ALL] {
             assert_eq!(ReferenceType::from_raw(raw), None);
         }
     }
 
     #[test]
     fn not_a_reference_type_reports_the_value() {
-        let e = ReferenceType::try_from(ffi::GIT_REFERENCE_ALL).unwrap_err();
+        let e = ReferenceType::try_from(sys::GIT_REFERENCE_ALL).unwrap_err();
         assert_eq!(e.raw(), 3);
         assert_eq!(e.to_string(), "libgit2 value 3 is not a reference type");
         assert!(e.source().is_none());
@@ -1265,7 +1265,7 @@ mod unit_tests {
             SubmoduleRecurse::Yes,
             SubmoduleRecurse::OnDemand,
         ] {
-            let raw = ffi::git_submodule_recurse_t::from(v);
+            let raw = sys::git_submodule_recurse_t::from(v);
             assert_eq!(SubmoduleRecurse::try_from(raw), Ok(v));
         }
         for v in [
@@ -1274,7 +1274,7 @@ mod unit_tests {
             SubmoduleUpdate::Merge,
             SubmoduleUpdate::None,
         ] {
-            let raw = ffi::git_submodule_update_t::from(v);
+            let raw = sys::git_submodule_update_t::from(v);
             assert_eq!(SubmoduleUpdate::try_from(raw), Ok(v));
         }
     }
@@ -1284,7 +1284,7 @@ mod unit_tests {
         assert_eq!(SubmoduleRecurse::default(), SubmoduleRecurse::No);
         assert_eq!(SubmoduleUpdate::default(), SubmoduleUpdate::Checkout);
         assert_eq!(
-            SubmoduleUpdate::from_raw(ffi::GIT_SUBMODULE_UPDATE_DEFAULT).unwrap_or_default(),
+            SubmoduleUpdate::from_raw(sys::GIT_SUBMODULE_UPDATE_DEFAULT).unwrap_or_default(),
             SubmoduleUpdate::Checkout
         );
     }
@@ -1299,7 +1299,7 @@ mod unit_tests {
         );
         assert!(e.source().is_none());
 
-        let e = SubmoduleUpdate::try_from(ffi::GIT_SUBMODULE_UPDATE_DEFAULT).unwrap_err();
+        let e = SubmoduleUpdate::try_from(sys::GIT_SUBMODULE_UPDATE_DEFAULT).unwrap_err();
         assert_eq!(e.raw(), 0);
         assert_eq!(
             e.to_string(),
@@ -1319,8 +1319,8 @@ mod unit_tests {
     #[test]
     fn layout_matches_c() {
         assert_eq!(size_of::<Time>(), 16);
-        assert_eq!(size_of::<TimeRef<'_>>(), size_of::<*const ffi::git_time>());
-        assert_eq!(size_of::<TimeMut<'_>>(), size_of::<*const ffi::git_time>());
+        assert_eq!(size_of::<TimeRef<'_>>(), size_of::<*const sys::git_time>());
+        assert_eq!(size_of::<TimeMut<'_>>(), size_of::<*const sys::git_time>());
     }
 
     #[test]
@@ -1385,7 +1385,7 @@ mod unit_tests {
             format!("{m:?}"),
             format!(
                 "{:?}",
-                Time::from(ffi::git_time {
+                Time::from(sys::git_time {
                     time: 7,
                     offset: 0,
                     sign: 0,
@@ -1396,7 +1396,7 @@ mod unit_tests {
 
     #[test]
     fn raw_conversions_round_trip() {
-        let raw = ffi::git_time {
+        let raw = sys::git_time {
             time: -42,
             offset: 330,
             sign: b'x'.cast_signed(),
@@ -1405,7 +1405,7 @@ mod unit_tests {
         assert_eq!(time.as_ref().seconds(), -42);
         assert_eq!(time.as_ref().offset_minutes(), 330);
         assert_eq!(time.as_ref().sign(), b'x');
-        let back = ffi::git_time::from(time);
+        let back = sys::git_time::from(time);
         assert_eq!(
             (back.time, back.offset, back.sign),
             (raw.time, raw.offset, raw.sign)
@@ -1445,7 +1445,7 @@ mod unit_tests {
         );
     }
 
-    const MODES: [(ffi::git_filemode_t, FileMode); 6] = [
+    const MODES: [(sys::git_filemode_t, FileMode); 6] = [
         (0o000_000, FileMode::Unreadable),
         (0o040_000, FileMode::Tree),
         (0o100_644, FileMode::Blob),
@@ -1458,7 +1458,7 @@ mod unit_tests {
     fn variants_carry_the_octal_modes() {
         for (raw, mode) in MODES {
             assert_eq!(mode.raw(), raw);
-            assert_eq!(ffi::git_filemode_t::from(mode), raw);
+            assert_eq!(sys::git_filemode_t::from(mode), raw);
             assert_eq!(FileMode::from_raw(raw), Some(mode));
             assert_eq!(FileMode::try_from(raw), Ok(mode));
         }
@@ -1634,7 +1634,7 @@ mod unit_tests {
 
         #[test]
         fn missing_free_member_is_left_alone() {
-            let mut header = ffi::git_writestream::default();
+            let mut header = sys::git_writestream::default();
             // SAFETY: a live header the test owns, with no `free` member to call.
             unsafe { stream_free(&raw mut header) };
         }
@@ -1663,7 +1663,7 @@ mod unit_tests {
 
             let error = stream.as_mut().write(b"x").unwrap_err();
             assert_eq!(error.code(), Some(ErrorCode::User));
-            assert_eq!(error.raw_code(), ffi::GIT_EUSER);
+            assert_eq!(error.raw_code(), sys::GIT_EUSER);
             assert_eq!(error.class(), Some(ErrorClass::Filter));
             assert_eq!(error.message(), c"write refused");
             // The member left the thread's error, as a C stream does.
@@ -1708,7 +1708,7 @@ mod unit_tests {
             assert_eq!(rc, 0);
             // SAFETY: as above.
             let rc = unsafe { write_with::<Logged>(header, ptr::null(), 5) };
-            assert_eq!(rc, ffi::GIT_ERROR);
+            assert_eq!(rc, sys::GIT_ERROR);
             let last = last();
             assert_eq!(
                 (last.class(), last.message()),
@@ -1729,7 +1729,7 @@ mod unit_tests {
             // SAFETY: no filters; `data` is live for the call; the target is the header of
             // a live stream, whose members accept the write and close libgit2 makes.
             let rc = unsafe {
-                ffi::git_filter_list_stream_buffer(
+                sys::git_filter_list_stream_buffer(
                     ptr::null_mut(),
                     data.as_ptr().cast(),
                     data.len(),
@@ -1761,7 +1761,7 @@ mod unit_tests {
             // `Ok` would read as success in C.
             assert_eq!(error.clone().with_code(ErrorCode::Ok), error);
             let passthrough = error.clone().with_code(ErrorCode::Passthrough);
-            assert_eq!(passthrough.raw_code(), ffi::GIT_PASSTHROUGH);
+            assert_eq!(passthrough.raw_code(), sys::GIT_PASSTHROUGH);
             assert_ne!(passthrough, error);
             let dyn_err: &dyn std::error::Error = &error;
             assert!(dyn_err.source().is_none());
@@ -1854,8 +1854,8 @@ mod unit_tests {
                     // SAFETY: `Allocator` is `#[repr(transparent)]` over `git_allocator`, with
                     // every member set; libgit2 copies it before anything is allocated.
                     let rc = unsafe {
-                        ffi::git_libgit2_opts(
-                            ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(),
+                        sys::git_libgit2_opts(
+                            sys::GIT_OPT_SET_ALLOCATOR.cast_signed(),
                             allocator.as_ref().as_ptr(),
                         )
                     };
@@ -1886,7 +1886,7 @@ mod unit_tests {
         }
     }
 
-    const SUBMODULE_IGNORES: [(SubmoduleIgnore, ffi::git_submodule_ignore_t); 5] = [
+    const SUBMODULE_IGNORES: [(SubmoduleIgnore, sys::git_submodule_ignore_t); 5] = [
         (SubmoduleIgnore::Unspecified, -1),
         (SubmoduleIgnore::None, 1),
         (SubmoduleIgnore::Untracked, 2),
@@ -1899,7 +1899,7 @@ mod unit_tests {
     fn submodule_ignore_named_values_round_trip() {
         for (variant, raw) in SUBMODULE_IGNORES {
             assert_eq!(variant.raw(), raw);
-            assert_eq!(ffi::git_submodule_ignore_t::from(variant), raw);
+            assert_eq!(sys::git_submodule_ignore_t::from(variant), raw);
             assert_eq!(SubmoduleIgnore::from_raw(raw), Some(variant));
             assert_eq!(SubmoduleIgnore::try_from(raw), Ok(variant));
         }
@@ -1932,11 +1932,11 @@ mod unit_tests {
     fn submodule_ignore_layout_matches_c() {
         assert_eq!(
             size_of::<SubmoduleIgnore>(),
-            size_of::<ffi::git_submodule_ignore_t>()
+            size_of::<sys::git_submodule_ignore_t>()
         );
         assert_eq!(
             size_of::<Option<SubmoduleIgnore>>(),
-            size_of::<ffi::git_submodule_ignore_t>()
+            size_of::<sys::git_submodule_ignore_t>()
         );
     }
 
@@ -1947,7 +1947,7 @@ mod unit_tests {
         for kind in BRANCH_TYPES {
             assert_eq!(BranchType::from_raw(kind.raw()), Some(kind));
             assert_eq!(BranchType::try_from(kind.raw()), Ok(kind));
-            assert_eq!(ffi::git_branch_t::from(kind), kind.raw());
+            assert_eq!(sys::git_branch_t::from(kind), kind.raw());
         }
         assert_eq!(BranchType::Local.raw(), 1);
         assert_eq!(BranchType::Remote.raw(), 2);
@@ -1982,8 +1982,8 @@ mod unit_tests {
 
     #[test]
     fn branch_enum_is_the_c_enum() {
-        assert_eq!(size_of::<BranchType>(), size_of::<ffi::git_branch_t>());
-        assert_eq!(align_of::<BranchType>(), align_of::<ffi::git_branch_t>());
+        assert_eq!(size_of::<BranchType>(), size_of::<sys::git_branch_t>());
+        assert_eq!(align_of::<BranchType>(), align_of::<sys::git_branch_t>());
     }
 
     mod signatures {
@@ -2088,8 +2088,8 @@ mod unit_tests {
             // SAFETY: `Allocator` is `#[repr(transparent)]` over `git_allocator`, with
             // every member set; libgit2 copies it before anything is allocated.
             let rc = unsafe {
-                ffi::git_libgit2_opts(
-                    ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(),
+                sys::git_libgit2_opts(
+                    sys::GIT_OPT_SET_ALLOCATOR.cast_signed(),
                     allocator.as_ref().as_ptr(),
                 )
             };
@@ -2108,7 +2108,7 @@ mod unit_tests {
             let mut storage = OdbDataBox::<Signature>::new_uninit().unwrap();
             // SAFETY: `storage` is fresh, writable storage for one `git_signature`.
             unsafe {
-                storage.as_c_ptr().write(ffi::git_signature {
+                storage.as_c_ptr().write(sys::git_signature {
                     name: dup(name),
                     email: dup(email),
                     when: Time::new(5, -90).into(),
@@ -2124,23 +2124,23 @@ mod unit_tests {
 
         #[test]
         fn layout_matches_c() {
-            assert_eq!(size_of::<Signature>(), size_of::<ffi::git_signature>());
-            assert_eq!(align_of::<Signature>(), align_of::<ffi::git_signature>());
+            assert_eq!(size_of::<Signature>(), size_of::<sys::git_signature>());
+            assert_eq!(align_of::<Signature>(), align_of::<sys::git_signature>());
             assert_eq!(
                 size_of::<SignatureRef<'_>>(),
-                size_of::<*const ffi::git_signature>()
+                size_of::<*const sys::git_signature>()
             );
             assert_eq!(
                 size_of::<SignatureMut<'_>>(),
-                size_of::<*const ffi::git_signature>()
+                size_of::<*const sys::git_signature>()
             );
             assert_eq!(
                 size_of::<SignatureBox>(),
-                size_of::<*mut ffi::git_signature>()
+                size_of::<*mut sys::git_signature>()
             );
             assert_eq!(
                 size_of::<Option<SignatureBox>>(),
-                size_of::<*mut ffi::git_signature>()
+                size_of::<*mut sys::git_signature>()
             );
         }
 
@@ -2273,7 +2273,7 @@ mod unit_tests {
                     GRANTS.store(1, SeqCst);
                     let mut out = ptr::null_mut();
                     // SAFETY: a writable slot and a NUL-terminated line, read for the call.
-                    let rc = unsafe { ffi::git_signature_from_buffer(&raw mut out, line.as_ptr()) };
+                    let rc = unsafe { sys::git_signature_from_buffer(&raw mut out, line.as_ptr()) };
                     GRANTS.store(-1, SeqCst);
                     assert_eq!(rc, 0);
                     // SAFETY: `out` is the signature C returned, live until it is freed below.
@@ -2281,7 +2281,7 @@ mod unit_tests {
                     // SAFETY: as above.
                     assert!(!unsafe { (*out).email }.is_null());
                     // SAFETY: freed once, after its last read.
-                    unsafe { ffi::git_signature_free(out) };
+                    unsafe { sys::git_signature_free(out) };
 
                     // The struct, the name, then the email refused: always an error.
                     for grants in 0..3 {
@@ -2516,8 +2516,8 @@ mod unit_tests {
             // SAFETY: `Allocator` is `#[repr(transparent)]` over `git_allocator`, with every
             // member set; libgit2 copies it before anything is allocated.
             let rc = unsafe {
-                ffi::git_libgit2_opts(
-                    ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(),
+                sys::git_libgit2_opts(
+                    sys::GIT_OPT_SET_ALLOCATOR.cast_signed(),
                     allocator.as_ref().as_ptr(),
                 )
             };
@@ -2598,7 +2598,7 @@ mod unit_tests {
                     let (mut author, mut committer) = (ptr::null_mut(), ptr::null_mut());
                     // SAFETY: two writable slots and a live repository on this thread.
                     let rc = unsafe {
-                        ffi::git_signature_default_from_env(
+                        sys::git_signature_default_from_env(
                             &raw mut author,
                             &raw mut committer,
                             repo.as_ptr().cast_mut(),

@@ -19,9 +19,9 @@
 //!
 //! ```
 //! use ffibox::{CBox, CVec};
-//! use libgit2::ffi;
 //! use libgit2::libgit2::src::util::alloc::{Allocator, MallocFn};
 //! use libgit2::libgit2::src::util::allocators::failalloc::{FailAlloc, FailArrayAlloc};
+//! use libgit2::sys::libgit2 as sys;
 //!
 //! # ffibox::define_ctype!(Point, PointRef, PointMut, point_st);
 //! # #[repr(C)] pub struct point_st { x: i32 }
@@ -33,7 +33,7 @@
 //! // The `git_allocator` over the family holds C's own routines, as `git__allocator`'s
 //! // initial value does.
 //! static FAIL: Allocator = Allocator::new::<FailAlloc>();
-//! let malloc: MallocFn = ffi::git_failalloc_malloc;
+//! let malloc: MallocFn = sys::git_failalloc_malloc;
 //! assert!(core::ptr::fn_addr_eq(
 //!     FAIL.as_ref().malloc().unwrap(),
 //!     malloc
@@ -80,8 +80,8 @@ mod ffi_import {
 
     use ffibox::{CAlloc, CCell, CDrop, CLenAlloc, CLenDrop};
 
-    use crate::ffi;
     use crate::libgit2::src::util::alloc::{Alloc, Allocator};
+    use crate::sys::libgit2 as sys;
 
     /// The failing allocator family as the policy of singletons and strings, and as the
     /// [`Alloc`] implementation of a `git_allocator` over it.
@@ -122,7 +122,7 @@ mod ffi_import {
         // SAFETY: a NULL `file` is one `git_failalloc_malloc` accepts (it reads none of
         // its arguments); it touches no state, so it is callable on any thread, before
         // `git_libgit2_init` too.
-        let p = unsafe { ffi::git_failalloc_malloc(len, ptr::null(), 0) };
+        let p = unsafe { sys::git_failalloc_malloc(len, ptr::null(), 0) };
         NonNull::new(p.cast())
     }
 
@@ -136,7 +136,7 @@ mod ffi_import {
         // SAFETY: per this function's contract, `ptr` is NULL or one of the family's
         // allocations, handed over: what `git_failalloc_free`, the family's `gfree`,
         // releases.
-        unsafe { ffi::git_failalloc_free(ptr.cast()) }
+        unsafe { sys::git_failalloc_free(ptr.cast()) }
     }
 
     // SAFETY: `c_drop` hands `git_failalloc_free`, the family's release, a `T` this family
@@ -182,9 +182,9 @@ mod ffi_import {
         /// The family's C routines, so that a value [`Allocator::new`] builds over the
         /// family holds C's own addresses, which `git_allocator_global_init` compares.
         const C_ALLOCATOR: Option<Allocator> = Some(Allocator::from_fns(
-            ffi::git_failalloc_malloc,
-            ffi::git_failalloc_realloc,
-            ffi::git_failalloc_free,
+            sys::git_failalloc_malloc,
+            sys::git_failalloc_realloc,
+            sys::git_failalloc_free,
         ));
 
         /// Always `None`, whatever `len`: `git_failalloc_malloc` fails every allocation.
@@ -196,7 +196,7 @@ mod ffi_import {
             let file = file.map_or(ptr::null(), CStr::as_ptr);
             // SAFETY: `file` is NULL or a C string borrowed for the call; the routine reads
             // none of its arguments and touches no state.
-            let p = unsafe { ffi::git_failalloc_malloc(len, file, line) };
+            let p = unsafe { sys::git_failalloc_malloc(len, file, line) };
             NonNull::new(p.cast())
         }
 
@@ -217,7 +217,7 @@ mod ffi_import {
             // SAFETY: per `realloc`'s contract, `ptr` is NULL or a live allocation of this
             // family, which `git_failalloc_realloc` borrows without reading and leaves
             // live on failure, its only outcome; `file` as in `malloc`.
-            let p = unsafe { ffi::git_failalloc_realloc(ptr, len, file, line) };
+            let p = unsafe { sys::git_failalloc_realloc(ptr, len, file, line) };
             NonNull::new(p.cast())
         }
 

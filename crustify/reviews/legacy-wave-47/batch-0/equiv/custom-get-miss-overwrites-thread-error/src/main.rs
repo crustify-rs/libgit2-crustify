@@ -4,7 +4,7 @@
 //! The higher level lacks the key, the lower one holds it. Both configs are driven
 //! through the same routines; the return and the thread's last error are compared
 //! after each step.
-use libgit2::ffi;
+use libgit2::sys::libgit2 as sys;
 use libgit2::libgit2::config::config::{Config, ConfigBox, ConfigError, ConfigLevel};
 use libgit2::libgit2::config::sys::config::{
     BackendEntry, BackendEntryArc, CustomBackend, EntryOrigin, UnopenedBackend,
@@ -51,50 +51,50 @@ impl CustomBackend for Store {
 
 #[repr(C)]
 struct Raw {
-    base: ffi::git_config_backend,
+    base: sys::git_config_backend,
     store: Store,
 }
 
 #[repr(C)]
 struct RawEntry {
-    base: ffi::git_config_backend_entry,
+    base: sys::git_config_backend_entry,
     strings: (CString, CString),
 }
 
-unsafe extern "C" fn raw_entry_free(entry: *mut ffi::git_config_backend_entry) {
+unsafe extern "C" fn raw_entry_free(entry: *mut sys::git_config_backend_entry) {
     // SAFETY: installed only on `RawEntry` boxes, each released once.
     drop(unsafe { Box::from_raw(entry.cast::<RawEntry>()) });
 }
 
 unsafe extern "C" fn raw_open(
-    _: *mut ffi::git_config_backend,
-    _: ffi::git_config_level_t,
-    _: *const ffi::git_repository,
+    _: *mut sys::git_config_backend,
+    _: sys::git_config_level_t,
+    _: *const sys::git_repository,
 ) -> c_int {
     0
 }
 
 unsafe extern "C" fn raw_get(
-    p: *mut ffi::git_config_backend,
+    p: *mut sys::git_config_backend,
     key: *const c_char,
-    out: *mut *mut ffi::git_config_backend_entry,
+    out: *mut *mut sys::git_config_backend_entry,
 ) -> c_int {
     // SAFETY: libgit2 passes the live backend, a live key and a writable slot.
     let (this, key) = unsafe { (&*p.cast::<Raw>(), CStr::from_ptr(key)) };
     let Some((k, v)) = this.store.lookup(key) else {
         // SAFETY: as above. A miss is no error: libgit2's backends set none.
         unsafe { out.write(ptr::null_mut()) };
-        return ffi::GIT_ENOTFOUND;
+        return sys::GIT_ENOTFOUND;
     };
     let mut entry = Box::new(RawEntry {
-        base: ffi::git_config_backend_entry {
-            entry: ffi::git_config_entry {
+        base: sys::git_config_backend_entry {
+            entry: sys::git_config_entry {
                 name: ptr::null(),
                 value: ptr::null(),
                 backend_type: ptr::null(),
                 origin_path: ptr::null(),
                 include_depth: 0,
-                level: ffi::GIT_CONFIG_LEVEL_APP,
+                level: sys::GIT_CONFIG_LEVEL_APP,
             },
             free: Some(raw_entry_free),
         },
@@ -107,16 +107,16 @@ unsafe extern "C" fn raw_get(
     0
 }
 
-unsafe extern "C" fn raw_free(p: *mut ffi::git_config_backend) {
+unsafe extern "C" fn raw_free(p: *mut sys::git_config_backend) {
     // SAFETY: libgit2 releases the backend once.
     drop(unsafe { Box::from_raw(p.cast::<Raw>()) });
 }
 
-fn raw_backend(store: Store) -> *mut ffi::git_config_backend {
+fn raw_backend(store: Store) -> *mut sys::git_config_backend {
     let mut base = std::mem::MaybeUninit::uninit();
     // SAFETY: a writable slot for the supported version's template.
     let rc =
-        unsafe { ffi::git_config_init_backend(base.as_mut_ptr(), ffi::GIT_CONFIG_BACKEND_VERSION) };
+        unsafe { sys::git_config_init_backend(base.as_mut_ptr(), sys::GIT_CONFIG_BACKEND_VERSION) };
     assert_eq!(rc, 0);
     // SAFETY: initialised by the call above.
     let mut base = unsafe { base.assume_init() };
@@ -142,7 +142,7 @@ fn c_config() -> ConfigBox<'static> {
         let backend = raw_backend(store);
         // SAFETY: a live config and a complete, unopened backend it takes on success.
         let rc = unsafe {
-            ffi::git_config_add_backend(config.as_c_ptr(), backend, level.raw(), ptr::null(), 0)
+            sys::git_config_add_backend(config.as_c_ptr(), backend, level.raw(), ptr::null(), 0)
         };
         assert_eq!(rc, 0);
     }
@@ -170,25 +170,25 @@ fn last_error() -> (c_int, CString) {
 /// A raw routine's return and the error it left, starting from a cleared state.
 fn raw_step(
     config: &ConfigBox<'_>,
-    step: fn(*mut ffi::git_config) -> c_int,
+    step: fn(*mut sys::git_config) -> c_int,
 ) -> (c_int, (c_int, CString)) {
     clear();
     let rc = step(config.as_c_ptr());
     (rc, last_error())
 }
 
-fn get_int64(config: *mut ffi::git_config) -> c_int {
+fn get_int64(config: *mut sys::git_config) -> c_int {
     let mut out = 0;
     // SAFETY: a live config and key, a writable scalar.
-    unsafe { ffi::git_config_get_int64(&mut out, config, KEY.as_ptr()) }
+    unsafe { sys::git_config_get_int64(&mut out, config, KEY.as_ptr()) }
 }
 
-fn get_entry(config: *mut ffi::git_config) -> c_int {
+fn get_entry(config: *mut sys::git_config) -> c_int {
     let mut entry = ptr::null_mut();
     // SAFETY: a live config and key, a writable slot.
-    let rc = unsafe { ffi::git_config_get_entry(&mut entry, config, KEY.as_ptr()) };
+    let rc = unsafe { sys::git_config_get_entry(&mut entry, config, KEY.as_ptr()) };
     // SAFETY: NULL or the reference the lookup acquired, released once.
-    unsafe { ffi::git_config_entry_free(entry) };
+    unsafe { sys::git_config_entry_free(entry) };
     rc
 }
 

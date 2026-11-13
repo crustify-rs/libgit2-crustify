@@ -39,11 +39,11 @@ use core::ptr::{self, NonNull};
 
 use ffibox::{CBorrowedPtr, CBox, CCell, CDrop, CMutSeam, CRefSeam};
 
-use crate::ffi;
 use crate::libgit2::src::libgit2::oid::OidRef;
 use crate::libgit2::src::libgit2::refs::ReferenceRef;
 use crate::libgit2::src::libgit2::repository::RepositoryRef;
 use crate::libgit2::src::util::errors::{ErrorBuf, ErrorClass, last, runtime_pinned, set};
+use crate::sys::libgit2 as sys;
 
 /// A commit and how it was looked up (`git_annotated_commit`): the input merge and
 /// rebase take to record the caller's intent ("merge `refs/heads/feature`", not just
@@ -105,7 +105,7 @@ use crate::libgit2::src::util::errors::{ErrorBuf, ErrorClass, last, runtime_pinn
 /// Wraps `st::git_annotated_commit`
 #[doc(alias = "git_annotated_commit")]
 #[repr(transparent)]
-pub struct AnnotatedCommit<'r>(ffi::git_annotated_commit, PhantomData<(*const (), &'r ())>);
+pub struct AnnotatedCommit<'r>(sys::git_annotated_commit, PhantomData<(*const (), &'r ())>);
 
 /// Shared borrow of an [`AnnotatedCommit`]. `Copy`, like `&T`.
 #[repr(transparent)]
@@ -128,7 +128,7 @@ pub struct AnnotatedCommitMut<'a, 'r>(
 // the C object, and `AnnotatedCommitRef` has no write operation. `AnnotatedCommitMut` is
 // invariant in the commit through its `PhantomData<&'a mut AnnotatedCommit<'r>>`.
 unsafe impl<'r> CCell for AnnotatedCommit<'r> {
-    type C = ffi::git_annotated_commit;
+    type C = sys::git_annotated_commit;
     type Mut<'a>
         = AnnotatedCommitMut<'a, 'r>
     where
@@ -201,7 +201,7 @@ unsafe impl<'r> CDrop<AnnotatedCommit<'r>> for AnnotatedCommitFree {
         // SAFETY: per `c_drop`'s contract, `ptr` addresses a live annotated commit whose
         // ownership the caller gives up; `AnnotatedCommit` is transparent over
         // `git_annotated_commit`.
-        unsafe { ffi::git_annotated_commit_free(ptr.as_ptr().cast()) }
+        unsafe { sys::git_annotated_commit_free(ptr.as_ptr().cast()) }
     }
 }
 
@@ -233,10 +233,10 @@ fn id_fits(repo: RepositoryRef<'_>, id: OidRef<'_>) -> bool {
 }
 
 /// Whether the object id type `kind` is `repo`'s; sets libgit2's error when it is not.
-fn type_fits(repo: RepositoryRef<'_>, kind: ffi::git_oid_t) -> bool {
+fn type_fits(repo: RepositoryRef<'_>, kind: sys::git_oid_t) -> bool {
     // SAFETY: `repo` is a live repository on this thread, whose `oid_type` libgit2 only
     // reads.
-    if unsafe { ffi::git_repository_oid_type(repo.as_ptr().cast_mut()) } == kind {
+    if unsafe { sys::git_repository_oid_type(repo.as_ptr().cast_mut()) } == kind {
         return true;
     }
     set(
@@ -274,7 +274,7 @@ impl<'r> AnnotatedCommit<'r> {
         // `id` a live `git_oid` of the repository's type, only read. The runtime is
         // pinned, so a failure is reported on live thread-local state.
         let rc = unsafe {
-            ffi::git_annotated_commit_lookup(&raw mut out, repo.as_ptr().cast_mut(), id.as_ptr())
+            sys::git_annotated_commit_lookup(&raw mut out, repo.as_ptr().cast_mut(), id.as_ptr())
         };
         // SAFETY: `git_annotated_commit_lookup` leaves `out` NULL on failure, or writes a
         // fresh annotated commit of `repo` the caller owns alone, released by
@@ -314,10 +314,10 @@ impl<'r> AnnotatedCommit<'r> {
         }
         // SAFETY: `reference` is a live attached reference, whose database and repository
         // its borrow keeps alive on this thread.
-        let owner = unsafe { ffi::git_reference_owner(reference.as_ptr()) };
+        let owner = unsafe { sys::git_reference_owner(reference.as_ptr()) };
         // SAFETY: libgit2 read the database's repository pointer, live as above; this reads
         // that repository's `oid_type`.
-        let kind = unsafe { ffi::git_repository_oid_type(owner) };
+        let kind = unsafe { sys::git_repository_oid_type(owner) };
         if !type_fits(repo, kind) {
             return Err(last());
         }
@@ -328,7 +328,7 @@ impl<'r> AnnotatedCommit<'r> {
         // keeps alive, on this thread (it is not `Send`), only read (its name is
         // copied). The runtime is pinned.
         let rc = unsafe {
-            ffi::git_annotated_commit_from_ref(
+            sys::git_annotated_commit_from_ref(
                 &raw mut out,
                 repo.as_ptr().cast_mut(),
                 reference.as_ptr(),
@@ -374,7 +374,7 @@ impl<'r> AnnotatedCommit<'r> {
         // repository's type, all only read (the strings are copied). The runtime is
         // pinned.
         let rc = unsafe {
-            ffi::git_annotated_commit_from_fetchhead(
+            sys::git_annotated_commit_from_fetchhead(
                 &raw mut out,
                 repo.as_ptr().cast_mut(),
                 branch_name.as_ptr(),
@@ -411,7 +411,7 @@ impl<'r> AnnotatedCommit<'r> {
         // in `lookup`; `revspec` is NUL-terminated and only read (it is copied as the
         // description). The runtime is pinned.
         let rc = unsafe {
-            ffi::git_annotated_commit_from_revspec(
+            sys::git_annotated_commit_from_revspec(
                 &raw mut out,
                 repo.as_ptr().cast_mut(),
                 revspec.as_ptr(),
@@ -442,23 +442,23 @@ mod unit_tests {
     fn layout_is_one_pointer() {
         assert_eq!(
             size_of::<AnnotatedCommit<'_>>(),
-            size_of::<ffi::git_annotated_commit>()
+            size_of::<sys::git_annotated_commit>()
         );
         assert_eq!(
             size_of::<AnnotatedCommitBox<'_>>(),
-            size_of::<*mut ffi::git_annotated_commit>()
+            size_of::<*mut sys::git_annotated_commit>()
         );
         assert_eq!(
             size_of::<Option<AnnotatedCommitBox<'_>>>(),
-            size_of::<*mut ffi::git_annotated_commit>()
+            size_of::<*mut sys::git_annotated_commit>()
         );
         assert_eq!(
             size_of::<AnnotatedCommitRef<'_, '_>>(),
-            size_of::<*const ffi::git_annotated_commit>()
+            size_of::<*const sys::git_annotated_commit>()
         );
         assert_eq!(
             size_of::<AnnotatedCommitMut<'_, '_>>(),
-            size_of::<*mut ffi::git_annotated_commit>()
+            size_of::<*mut sys::git_annotated_commit>()
         );
     }
 
@@ -467,7 +467,7 @@ mod unit_tests {
     #[test]
     fn handles_round_trip_their_pointer() {
         let mut raw = core::mem::MaybeUninit::<[usize; 4]>::uninit();
-        let p: *mut ffi::git_annotated_commit = raw.as_mut_ptr().cast();
+        let p: *mut sys::git_annotated_commit = raw.as_mut_ptr().cast();
         // SAFETY: a pointer into this test's live local storage, which no one else
         // reaches; the handles only carry it and nothing here dereferences it (the
         // opaque `git_annotated_commit` is zero-sized to Rust).
@@ -488,7 +488,7 @@ mod unit_tests {
     struct Repo {
         path: PathBuf,
         repo: Option<RepositoryBox>,
-        commit: ffi::git_oid,
+        commit: sys::git_oid,
     }
 
     impl Repo {
@@ -500,23 +500,23 @@ mod unit_tests {
             ));
             drop(std::fs::remove_dir_all(&path));
             let c_path = CString::new(path.as_os_str().as_bytes()).unwrap();
-            let mut opts = ffi::git_repository_init_options::default();
+            let mut opts = sys::git_repository_init_options::default();
             // SAFETY: `opts` is a live options struct, filled with the version's
             // defaults.
             let rc = unsafe {
-                ffi::git_repository_init_options_init(
+                sys::git_repository_init_options_init(
                     &raw mut opts,
-                    ffi::GIT_REPOSITORY_INIT_OPTIONS_VERSION,
+                    sys::GIT_REPOSITORY_INIT_OPTIONS_VERSION,
                 )
             };
             assert_eq!(rc, 0);
-            opts.flags = ffi::GIT_REPOSITORY_INIT_BARE | ffi::GIT_REPOSITORY_INIT_MKDIR;
+            opts.flags = sys::GIT_REPOSITORY_INIT_BARE | sys::GIT_REPOSITORY_INIT_MKDIR;
             opts.oid_type = kind.into();
             let mut raw = ptr::null_mut();
             // SAFETY: a live slot, a NUL-terminated path and live options, all read for
             // the call.
             let rc = unsafe {
-                ffi::git_repository_init_ext(&raw mut raw, c_path.as_ptr(), &raw mut opts)
+                sys::git_repository_init_ext(&raw mut raw, c_path.as_ptr(), &raw mut opts)
             };
             assert_eq!(rc, 0);
             // SAFETY: a fresh repository this fixture owns alone, released by
@@ -524,40 +524,40 @@ mod unit_tests {
             let repo = unsafe { RepositoryBox::from_c(raw) }.unwrap();
             let mut odb = ptr::null_mut();
             // SAFETY: a live slot and the live repository; released below.
-            assert_eq!(unsafe { ffi::git_repository_odb(&raw mut odb, raw) }, 0);
-            let mut tree = ffi::git_oid::default();
+            assert_eq!(unsafe { sys::git_repository_odb(&raw mut odb, raw) }, 0);
+            let mut tree = sys::git_oid::default();
             // SAFETY: a live slot and the live odb; no data, at a non-NULL address
             // (libgit2 hands it to `memcpy`).
             let rc = unsafe {
-                ffi::git_odb_write(
+                sys::git_odb_write(
                     &raw mut tree,
                     odb,
                     b"".as_ptr().cast(),
                     0,
-                    ffi::GIT_OBJECT_TREE,
+                    sys::GIT_OBJECT_TREE,
                 )
             };
             assert_eq!(rc, 0);
             let mut hex = [0u8; 65];
             // SAFETY: `hex` holds 65 bytes, which bounds the write; `tree` is live.
-            unsafe { ffi::git_oid_tostr(hex.as_mut_ptr().cast(), hex.len(), &raw const tree) };
+            unsafe { sys::git_oid_tostr(hex.as_mut_ptr().cast(), hex.len(), &raw const tree) };
             let hex = CStr::from_bytes_until_nul(&hex).unwrap().to_str().unwrap();
             let data =
                 format!("tree {hex}\nauthor A <a@b> 0 +0000\ncommitter A <a@b> 0 +0000\n\nm\n");
-            let mut commit = ffi::git_oid::default();
+            let mut commit = sys::git_oid::default();
             // SAFETY: a live slot, the live odb and `data` readable for its length.
             let rc = unsafe {
-                ffi::git_odb_write(
+                sys::git_odb_write(
                     &raw mut commit,
                     odb,
                     data.as_ptr().cast(),
                     data.len(),
-                    ffi::GIT_OBJECT_COMMIT,
+                    sys::GIT_OBJECT_COMMIT,
                 )
             };
             assert_eq!(rc, 0);
             // SAFETY: the odb reference taken above, released once.
-            unsafe { ffi::git_odb_free(odb) };
+            unsafe { sys::git_odb_free(odb) };
             Self {
                 path,
                 repo: Some(repo),
@@ -582,7 +582,7 @@ mod unit_tests {
             let mut hex = [0u8; 65];
             // SAFETY: `hex` holds 65 bytes, which bounds the write; the id is live.
             unsafe {
-                ffi::git_oid_tostr(hex.as_mut_ptr().cast(), hex.len(), &raw const self.commit)
+                sys::git_oid_tostr(hex.as_mut_ptr().cast(), hex.len(), &raw const self.commit)
             };
             let hex = CStr::from_bytes_until_nul(&hex).unwrap().to_str().unwrap();
             let file = self.path.join("refs/heads/main");
@@ -592,7 +592,7 @@ mod unit_tests {
             let raw = self.repo().as_ptr().cast_mut();
             let rc =
                 // SAFETY: a live slot, the live repository and a NUL-terminated name.
-                unsafe { ffi::git_reference_lookup(&raw mut out, raw, c"refs/heads/main".as_ptr()) };
+                unsafe { sys::git_reference_lookup(&raw mut out, raw, c"refs/heads/main".as_ptr()) };
             assert_eq!(rc, 0);
             // SAFETY: a fresh attached reference the caller owns, released by
             // `git_reference_free`; it borrows `self`, which frees the repository last.
@@ -605,7 +605,7 @@ mod unit_tests {
             // SAFETY: a live slot, the live repository used by this thread alone and a
             // live id of its type.
             let rc = unsafe {
-                ffi::git_annotated_commit_lookup(
+                sys::git_annotated_commit_lookup(
                     &raw mut out,
                     self.repo().as_ptr().cast_mut(),
                     &raw const self.commit,

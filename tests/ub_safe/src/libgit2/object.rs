@@ -41,7 +41,6 @@
 
 use std::ffi::{CStr, CString};
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::object::{
     Object, ObjectArc, ObjectIdOptions, ObjectIdOptionsMut, ObjectType, id_from_buffer,
     id_from_file,
@@ -51,6 +50,7 @@ use libgit2::libgit2::src::libgit2::repository::{
     Repository, RepositoryBox, RepositoryError, RepositoryRef,
 };
 use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+use libgit2::sys::libgit2 as sys;
 
 use crate::fixture::TempRepo;
 use crate::fixture::object_and_tree_entry::{object_view, open_testrepo, repository, write_raw};
@@ -323,16 +323,16 @@ fn unparsable_objects_fail_and_leave_nothing_behind() {
     let corrupt = [
         (
             b"tree nope\n".as_slice(),
-            ffi::GIT_OBJECT_COMMIT,
+            sys::GIT_OBJECT_COMMIT,
             ObjectType::Commit,
         ),
-        (b"100644 one\0short", ffi::GIT_OBJECT_TREE, ObjectType::Tree),
+        (b"100644 one\0short", sys::GIT_OBJECT_TREE, ObjectType::Tree),
         (
             b"100644 a\0aaaaaaaaaaaaaaaaaaaa100644 b",
-            ffi::GIT_OBJECT_TREE,
+            sys::GIT_OBJECT_TREE,
             ObjectType::Tree,
         ),
-        (b"object 1234\n", ffi::GIT_OBJECT_TAG, ObjectType::Tag),
+        (b"object 1234\n", sys::GIT_OBJECT_TAG, ObjectType::Tag),
     ];
     for (data, raw, kind) in corrupt {
         let id = write_raw(&repo, data, raw);
@@ -345,9 +345,9 @@ fn unparsable_objects_fail_and_leave_nothing_behind() {
             assert_eq!(e.raw_code(), -1, "{e:?}");
         }
     }
-    let fine = write_raw(&repo, b"fine\n", ffi::GIT_OBJECT_BLOB);
+    let fine = write_raw(&repo, b"fine\n", sys::GIT_OBJECT_BLOB);
     let blob = Object::lookup(r, fine.as_ref(), Some(ObjectType::Blob)).unwrap();
-    assert_eq!(object_view(&blob).1, ffi::GIT_OBJECT_BLOB);
+    assert_eq!(object_view(&blob).1, sys::GIT_OBJECT_BLOB);
 }
 
 /// What a type mismatch reports, for the record: libgit2's wording.
@@ -383,7 +383,7 @@ fn derived_objects_count_their_own_reference() {
     // `None` peels through the whole tag chain, to the commit.
     let commit = tag.as_ref().peel(None).unwrap();
     assert!(!ObjectArc::ptr_eq(&commit, &tag));
-    assert_eq!(object_view(&commit).1, ffi::GIT_OBJECT_COMMIT);
+    assert_eq!(object_view(&commit).1, sys::GIT_OBJECT_COMMIT);
     let inner = Object::lookup(repo.as_ref(), id(INNER_TAG).as_ref(), None).unwrap();
     let commit_again = inner.as_ref().peel(Some(ObjectType::Commit)).unwrap();
     assert!(ObjectArc::ptr_eq(&commit, &commit_again));
@@ -402,7 +402,7 @@ fn derived_objects_count_their_own_reference() {
         .lookup_bypath(c"readme.txt", Some(ObjectType::Blob))
         .unwrap();
     assert_eq!(object_view(&readme), object_view(&readme_blob));
-    assert_eq!(object_view(&readme).1, ffi::GIT_OBJECT_BLOB);
+    assert_eq!(object_view(&readme).1, sys::GIT_OBJECT_BLOB);
     // Blobs are not cached: each lookup by path parses a fresh one.
     assert!(!ObjectArc::ptr_eq(&readme, &readme_blob));
 
@@ -505,7 +505,7 @@ fn refused_derivations_leave_nothing_behind() {
         .as_ref()
         .lookup_bypath(c"ab/de/fgh/1.txt", Some(ObjectType::Blob))
         .unwrap();
-    assert_eq!(object_view(&deep).1, ffi::GIT_OBJECT_BLOB);
+    assert_eq!(object_view(&deep).1, sys::GIT_OBJECT_BLOB);
     drop((blob, tree, commit, tag));
     assert_eq!(hex(&deep), "1f67fc4386b2d171e0d21be1c447e12660561f9b");
     drop(deep);
@@ -860,7 +860,7 @@ fn ids_and_owners_borrow_from_their_object() {
 #[cfg_attr(miri, ignore = "calls libgit2")]
 fn owners_of_written_objects() {
     let temp = TempRepo::new("owners");
-    let blob = write_raw(&temp, b"owned", ffi::GIT_OBJECT_BLOB);
+    let blob = write_raw(&temp, b"owned", sys::GIT_OBJECT_BLOB);
     let repo = repository(&temp);
     let object = Object::lookup(repo, blob.as_ref(), None).unwrap();
     assert_eq!(object.as_ref().id(), blob.as_ref());

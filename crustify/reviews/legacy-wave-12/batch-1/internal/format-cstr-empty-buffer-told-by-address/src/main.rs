@@ -5,17 +5,17 @@
 //! NUL in zero bytes and panics. Exits non-zero (the panic) on the affected commit;
 //! prints `Ok("")` once the wrapper decides by `out.is_empty()`.
 
-use libgit2::ffi;
+use libgit2::sys::libgit2 as sys;
 use libgit2::libgit2::oid::oid::{Oid, OidType};
 
 fn main() {
-    let c_oid = ffi::git_oid {
+    let c_oid = sys::git_oid {
         type_: 1,
         id: [0; 32],
     };
     let mut scratch = [b'#'; 1];
     // SAFETY: a length of 0 writes nothing through `scratch`; the oid is live.
-    let empty = unsafe { ffi::git_oid_tostr(scratch.as_mut_ptr().cast(), 0, &c_oid) };
+    let empty = unsafe { sys::git_oid_tostr(scratch.as_mut_ptr().cast(), 0, &c_oid) };
     println!("libgit2's static \"\" is at {empty:?}");
 
     // SAFETY: a zero-length slice needs a non-null, aligned pointer and no bytes behind

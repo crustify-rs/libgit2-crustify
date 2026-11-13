@@ -41,9 +41,9 @@ use std::ptr;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::buf::{Buf, BufRef, BufVal};
 use libgit2::libgit2::src::libgit2::odb::OdbDataStrFree;
+use libgit2::sys::libgit2 as sys;
 
 const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 
@@ -125,7 +125,7 @@ unsafe extern "C" fn traced_free(ptr: *mut c_void) {
 
 /// Installs the tracing allocator, then initialises libgit2 on top of it.
 fn install_tracing_allocator() {
-    let mut allocator = ffi::git_allocator {
+    let mut allocator = sys::git_allocator {
         gmalloc: Some(traced_malloc),
         grealloc: Some(traced_realloc),
         gfree: Some(traced_free),
@@ -133,14 +133,14 @@ fn install_tracing_allocator() {
     // SAFETY: `GIT_OPT_SET_ALLOCATOR` takes a `git_allocator *` with every member set,
     // which it copies; nothing is allocated yet, so no storage changes allocator.
     let rc = unsafe {
-        ffi::git_libgit2_opts(ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(), &raw mut allocator)
+        sys::git_libgit2_opts(sys::GIT_OPT_SET_ALLOCATOR.cast_signed(), &raw mut allocator)
     };
     assert_eq!(rc, 0);
     // SAFETY: no arguments; refcounted, never released in this process.
-    assert!(unsafe { ffi::git_libgit2_init() } > 0);
+    assert!(unsafe { sys::git_libgit2_init() } > 0);
     // Warm this thread's error state, which libgit2 allocates on first use.
     // SAFETY: no arguments; the result is not read.
-    unsafe { ffi::git_error_last() };
+    unsafe { sys::git_error_last() };
 }
 
 /// One allocator event, with pointers replaced by the index of their allocation.
@@ -217,7 +217,7 @@ impl Recorder {
 
 // --- the C side -----------------------------------------------------------------
 
-fn c_state(buf: &ffi::git_buf) -> State {
+fn c_state(buf: &sys::git_buf) -> State {
     if buf.ptr.is_null() {
         return State {
             bytes: Vec::new(),
@@ -237,23 +237,23 @@ fn c_state(buf: &ffi::git_buf) -> State {
     }
 }
 
-fn c_get(opt: u32, buf: &mut ffi::git_buf) {
+fn c_get(opt: u32, buf: &mut sys::git_buf) {
     // SAFETY: the `GET` options take a `git_buf *` that is zeroed, disposed or owns a
     // libgit2 allocation, which they reuse or replace.
-    let rc = unsafe { ffi::git_libgit2_opts(opt.cast_signed(), &raw mut *buf) };
+    let rc = unsafe { sys::git_libgit2_opts(opt.cast_signed(), &raw mut *buf) };
     assert_eq!(rc, 0);
 }
 
-fn c_dispose(buf: &mut ffi::git_buf) {
+fn c_dispose(buf: &mut sys::git_buf) {
     // SAFETY: `buf` is zeroed, disposed or as libgit2 / `c_from_bytes` left it.
-    unsafe { ffi::git_buf_dispose(buf) }
+    unsafe { sys::git_buf_dispose(buf) }
 }
 
 /// A buffer as libgit2 hands one out, holding a copy of `bytes`.
-fn c_from_bytes(bytes: &[u8]) -> ffi::git_buf {
+fn c_from_bytes(bytes: &[u8]) -> sys::git_buf {
     // SAFETY: the routine ignores `backend`; any length.
     let p =
-        unsafe { ffi::git_odb_backend_data_alloc(ptr::null_mut(), bytes.len() + 1) }.cast::<u8>();
+        unsafe { sys::git_odb_backend_data_alloc(ptr::null_mut(), bytes.len() + 1) }.cast::<u8>();
     assert!(!p.is_null());
     // SAFETY: `p` holds `bytes.len() + 1` writable bytes, distinct from `bytes`.
     unsafe { p.copy_from_nonoverlapping(bytes.as_ptr(), bytes.len()) };
@@ -261,7 +261,7 @@ fn c_from_bytes(bytes: &[u8]) -> ffi::git_buf {
     let value = unsafe { p.add(bytes.len()) };
     // SAFETY: as above.
     unsafe { value.write(0) };
-    ffi::git_buf {
+    sys::git_buf {
         ptr: p.cast(),
         reserved: bytes.len() + 1,
         size: bytes.len(),
@@ -270,7 +270,7 @@ fn c_from_bytes(bytes: &[u8]) -> ffi::git_buf {
 
 /// `git_buf_set` for contents that fit the allocation (`buf.c`): moved in place,
 /// NUL-terminated.
-fn c_set_in_place(buf: &mut ffi::git_buf, bytes: &[u8]) {
+fn c_set_in_place(buf: &mut sys::git_buf, bytes: &[u8]) {
     assert!(bytes.len() < buf.reserved);
     // SAFETY: `buf` owns `reserved` writable bytes, of which `bytes.len() + 1` fit.
     unsafe { ptr::copy(bytes.as_ptr(), buf.ptr.cast::<u8>(), bytes.len()) };
@@ -283,7 +283,7 @@ fn c_set_in_place(buf: &mut ffi::git_buf, bytes: &[u8]) {
 
 fn set_opt(opt: u32, s: *const c_char) {
     // SAFETY: the `SET` options taking a string copy it, or restore the default for NULL.
-    assert_eq!(unsafe { ffi::git_libgit2_opts(opt.cast_signed(), s) }, 0);
+    assert_eq!(unsafe { sys::git_libgit2_opts(opt.cast_signed(), s) }, 0);
 }
 
 // --- the Rust side ----------------------------------------------------------------
@@ -318,9 +318,9 @@ fn libgit2_results_read_reuse_and_release_alike() {
         ),
         || {
             install_tracing_allocator();
-            let ua = ffi::GIT_OPT_GET_USER_AGENT;
-            let tp = ffi::GIT_OPT_GET_TEMPLATE_PATH;
-            set_opt(ffi::GIT_OPT_SET_TEMPLATE_PATH, c"".as_ptr());
+            let ua = sys::GIT_OPT_GET_USER_AGENT;
+            let tp = sys::GIT_OPT_GET_TEMPLATE_PATH;
+            set_opt(sys::GIT_OPT_SET_TEMPLATE_PATH, c"".as_ptr());
 
             let script: [(&CStr, u32); 6] = [
                 (c"crustify/1.0", ua),
@@ -331,14 +331,14 @@ fn libgit2_results_read_reuse_and_release_alike() {
                 (c"", tp),
             ];
             let (mut c, mut r) = (Recorder::default(), Recorder::default());
-            let mut cbuf = ffi::git_buf {
+            let mut cbuf = sys::git_buf {
                 ptr: ptr::null_mut(),
                 reserved: 0,
                 size: 0,
             };
             let mut rbuf = Buf::new();
             for (agent, opt) in script {
-                set_opt(ffi::GIT_OPT_SET_USER_AGENT, agent.as_ptr());
+                set_opt(sys::GIT_OPT_SET_USER_AGENT, agent.as_ptr());
                 c.step(|| {
                     c_get(opt, &mut cbuf);
                     c_state(&cbuf)
@@ -349,7 +349,7 @@ fn libgit2_results_read_reuse_and_release_alike() {
                 });
             }
             // An empty result into a fresh buffer: the static empty string, unallocated.
-            let mut cempty = ffi::git_buf {
+            let mut cempty = sys::git_buf {
                 ptr: ptr::null_mut(),
                 reserved: 0,
                 size: 0,
@@ -411,8 +411,8 @@ fn libgit2_results_read_reuse_and_release_alike() {
             );
             assert_eq!((cbuf.reserved, cbuf.size), (0, 0));
 
-            set_opt(ffi::GIT_OPT_SET_TEMPLATE_PATH, ptr::null());
-            set_opt(ffi::GIT_OPT_SET_USER_AGENT, ptr::null());
+            set_opt(sys::GIT_OPT_SET_TEMPLATE_PATH, ptr::null());
+            set_opt(sys::GIT_OPT_SET_USER_AGENT, ptr::null());
         },
     );
 }
@@ -437,12 +437,12 @@ fn rust_built_buffers_match_libgit2_shaped_ones() {
         ),
         || {
             install_tracing_allocator();
-            set_opt(ffi::GIT_OPT_SET_USER_AGENT, c"crustify/1.0".as_ptr());
+            set_opt(sys::GIT_OPT_SET_USER_AGENT, c"crustify/1.0".as_ptr());
             let long: Vec<u8> = (0..4096u32).map(|i| (i * 7 + 1).to_le_bytes()[0]).collect();
             let contents: [&[u8]; 5] = [b"a", b"refs/heads/main", b"pa\0ck\0", b"\0", &long];
             for bytes in contents {
                 let (mut c, mut r) = (Recorder::default(), Recorder::default());
-                let mut cbuf = ffi::git_buf {
+                let mut cbuf = sys::git_buf {
                     ptr: ptr::null_mut(),
                     reserved: 0,
                     size: 0,
@@ -458,7 +458,7 @@ fn rust_built_buffers_match_libgit2_shaped_ones() {
                 });
 
                 // A copy, then the original edited in place: the copy is unaffected.
-                let mut ccopy = ffi::git_buf {
+                let mut ccopy = sys::git_buf {
                     ptr: ptr::null_mut(),
                     reserved: 0,
                     size: 0,
@@ -486,11 +486,11 @@ fn rust_built_buffers_match_libgit2_shaped_ones() {
 
                 // libgit2 reuses either side's allocation alike.
                 c.step(|| {
-                    c_get(ffi::GIT_OPT_GET_USER_AGENT, &mut cbuf);
+                    c_get(sys::GIT_OPT_GET_USER_AGENT, &mut cbuf);
                     c_state(&cbuf)
                 });
                 r.step(|| {
-                    r_get(ffi::GIT_OPT_GET_USER_AGENT, &mut rbuf);
+                    r_get(sys::GIT_OPT_GET_USER_AGENT, &mut rbuf);
                     r_state(rbuf.as_ref())
                 });
 
@@ -499,7 +499,7 @@ fn rust_built_buffers_match_libgit2_shaped_ones() {
                 let mut rstr = None;
                 c.step(|| {
                     cstr = cbuf.ptr;
-                    cbuf = ffi::git_buf {
+                    cbuf = sys::git_buf {
                         ptr: ptr::null_mut(),
                         reserved: 0,
                         size: 0,
@@ -516,7 +516,7 @@ fn rust_built_buffers_match_libgit2_shaped_ones() {
                 c.step(|| {
                     // SAFETY: the routine ignores `backend`; `cstr` is a live libgit2
                     // allocation, released once.
-                    unsafe { ffi::git_odb_backend_data_free(ptr::null_mut(), cstr.cast()) };
+                    unsafe { sys::git_odb_backend_data_free(ptr::null_mut(), cstr.cast()) };
                     c_dispose(&mut ccopy);
                     c_dispose(&mut cbuf);
                     c_state(&cbuf)
@@ -547,7 +547,7 @@ fn rust_built_buffers_match_libgit2_shaped_ones() {
             // `git_buf_set` grows to exactly `datalen + 1`.
             // SAFETY: `cbuf.ptr` is a live allocation of this allocator.
             let p = unsafe { traced_realloc(cbuf.ptr.cast(), grown.len() + 1, ptr::null(), 0) };
-            cbuf = ffi::git_buf {
+            cbuf = sys::git_buf {
                 ptr: p.cast(),
                 reserved: grown.len() + 1,
                 size: cbuf.size,
@@ -558,7 +558,7 @@ fn rust_built_buffers_match_libgit2_shaped_ones() {
             c_dispose(&mut cbuf);
             drop(rbuf);
 
-            set_opt(ffi::GIT_OPT_SET_USER_AGENT, ptr::null());
+            set_opt(sys::GIT_OPT_SET_USER_AGENT, ptr::null());
         },
     );
 }
@@ -576,12 +576,12 @@ fn contents_taken_from_libgit2_results() {
         concat!(module_path!(), "::contents_taken_from_libgit2_results"),
         || {
             install_tracing_allocator();
-            set_opt(ffi::GIT_OPT_SET_USER_AGENT, c"crustify/1.0".as_ptr());
-            set_opt(ffi::GIT_OPT_SET_TEMPLATE_PATH, c"".as_ptr());
-            for opt in [ffi::GIT_OPT_GET_USER_AGENT, ffi::GIT_OPT_GET_TEMPLATE_PATH] {
+            set_opt(sys::GIT_OPT_SET_USER_AGENT, c"crustify/1.0".as_ptr());
+            set_opt(sys::GIT_OPT_SET_TEMPLATE_PATH, c"".as_ptr());
+            for opt in [sys::GIT_OPT_GET_USER_AGENT, sys::GIT_OPT_GET_TEMPLATE_PATH] {
                 for as_bytes in [false, true] {
                     let (mut c, mut r) = (Recorder::default(), Recorder::default());
-                    let mut cbuf = ffi::git_buf {
+                    let mut cbuf = sys::git_buf {
                         ptr: ptr::null_mut(),
                         reserved: 0,
                         size: 0,
@@ -648,7 +648,7 @@ fn contents_taken_from_libgit2_results() {
                         r_state(rbuf.as_ref())
                     });
                     assert_eq!(c.steps, r.steps, "option {opt}, bytes {as_bytes}");
-                    if opt == ffi::GIT_OPT_GET_USER_AGENT {
+                    if opt == sys::GIT_OPT_GET_USER_AGENT {
                         assert_eq!(c.steps[1].0, [Event::Free { alloc: 0 }]);
                         assert_eq!(c.steps[1].1.bytes, b"crustify/1.0");
                     } else {
@@ -662,7 +662,7 @@ fn contents_taken_from_libgit2_results() {
 
             // A string handed to a buffer: `git_buf_dispose` releases it as `set_str` does.
             let (mut c, mut r) = (Recorder::default(), Recorder::default());
-            let mut cbuf = ffi::git_buf {
+            let mut cbuf = sys::git_buf {
                 ptr: ptr::null_mut(),
                 reserved: 0,
                 size: 0,
@@ -691,8 +691,8 @@ fn contents_taken_from_libgit2_results() {
             assert_eq!(c.steps, r.steps);
             assert_eq!(c.steps[1].0, [Event::Free { alloc: 0 }]);
 
-            set_opt(ffi::GIT_OPT_SET_TEMPLATE_PATH, ptr::null());
-            set_opt(ffi::GIT_OPT_SET_USER_AGENT, ptr::null());
+            set_opt(sys::GIT_OPT_SET_TEMPLATE_PATH, ptr::null());
+            set_opt(sys::GIT_OPT_SET_USER_AGENT, ptr::null());
         },
     );
 }

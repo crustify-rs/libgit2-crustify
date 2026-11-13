@@ -526,15 +526,15 @@ mod notify_callback {
     use std::sync::Mutex;
     use std::thread;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::checkout::{
         CheckoutNotification, CheckoutPerfdata, CheckoutPerfdataRef, NotifyCallback,
         PerfdataCallback,
     };
     use libgit2::libgit2::src::libgit2::diff::{Diff, DiffFileRef};
+    use libgit2::sys::libgit2 as sys;
 
-    const CONFLICT: u32 = ffi::GIT_CHECKOUT_NOTIFY_CONFLICT;
-    const UPDATED: u32 = ffi::GIT_CHECKOUT_NOTIFY_UPDATED;
+    const CONFLICT: u32 = sys::GIT_CHECKOUT_NOTIFY_CONFLICT;
+    const UPDATED: u32 = sys::GIT_CHECKOUT_NOTIFY_UPDATED;
 
     /// A modification of `file`, then a rename of `old` to `new`.
     const PATCH: &[u8] = b"diff --git a/file b/file\nindex 1111111..2222222 100644\n\
@@ -930,12 +930,12 @@ mod stored_callbacks {
     use std::panic::{self, AssertUnwindSafe};
     use std::thread;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::checkout::{
         CallbackSlot, CheckoutNotification, CheckoutOptions, CheckoutPerfdataRef, NotifyCallback,
         PerfdataCallback, ProgressCallback,
     };
     use libgit2::libgit2::src::libgit2::worktree::AddOptions;
+    use libgit2::sys::libgit2 as sys;
 
     use crate::fixture::isolated;
     use crate::fixture::worktree_add::AddRepo;
@@ -966,7 +966,7 @@ mod stored_callbacks {
         let mut m = opts.as_mut();
         let mut checkout = m.checkout_options();
         checkout.set_strategy(FORCE);
-        checkout.set_notify_flags(ffi::GIT_CHECKOUT_NOTIFY_ALL);
+        checkout.set_notify_flags(sys::GIT_CHECKOUT_NOTIFY_ALL);
     }
 
     fn callbacks_run_during_the_add() {
@@ -1008,7 +1008,7 @@ mod stored_callbacks {
         let target = [false, true, false];
         let updated = |path: &CStr| {
             (
-                ffi::GIT_CHECKOUT_NOTIFY_UPDATED,
+                sys::GIT_CHECKOUT_NOTIFY_UPDATED,
                 Some(path.to_owned()),
                 target,
             )
@@ -1051,13 +1051,13 @@ mod stored_callbacks {
             checkout.set_notify_callback(Some(&mut notify));
             checkout.set_progress_callback(Some(&mut progress));
             let (code, _) = repo.add("wt", Some(&opts)).unwrap_err();
-            assert_eq!(code, ffi::GIT_EUSER);
+            assert_eq!(code, sys::GIT_EUSER);
             // The cancel stopped the checkout before it wrote anything.
             assert!(!repo.base.join("wt/wt/a.txt").exists());
         }
         // Free again, the notification callback still breaks on `b.txt`.
         let bare = |path| CheckoutNotification {
-            why: ffi::GIT_CHECKOUT_NOTIFY_UPDATED,
+            why: sys::GIT_CHECKOUT_NOTIFY_UPDATED,
             path: Some(path),
             baseline: None,
             target: None,
@@ -1152,7 +1152,7 @@ mod stored_callbacks {
         drop(outer.unwrap());
         // The nested add's checkout found the callback busy, so it was cancelled without
         // entering the closure again; the outer checkout went on.
-        assert_eq!(nested.borrow().clone(), [Err(ffi::GIT_EUSER)]);
+        assert_eq!(nested.borrow().clone(), [Err(sys::GIT_EUSER)]);
         let calls = calls.borrow().clone();
         assert_eq!(
             calls,

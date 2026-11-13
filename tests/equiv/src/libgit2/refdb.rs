@@ -27,12 +27,12 @@ mod owner {
     use std::process::Command;
     use std::ptr::{self, NonNull};
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::refdb::{Refdb, RefdbBox, RefdbType};
     use libgit2::libgit2::src::libgit2::repository::{
         InitFlag, InitOptions, Repository, RepositoryBox,
     };
     use libgit2::libgit2::src::util::errors::ErrorBuf;
+    use libgit2::sys::libgit2 as sys;
 
     const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 
@@ -58,13 +58,13 @@ mod owner {
 
     fn init() {
         // SAFETY: balanced by nothing: the reference lives for the process.
-        assert!(unsafe { ffi::git_libgit2_init() } > 0);
+        assert!(unsafe { sys::git_libgit2_init() } > 0);
     }
 
     fn c_last() -> (c_int, CString) {
         {
             // SAFETY: the runtime is initialised; the error is copied before any other call.
-            let e = unsafe { ffi::git_error_last() };
+            let e = unsafe { sys::git_error_last() };
             // SAFETY: as above.
             let klass = unsafe { (*e).klass };
             // SAFETY: as above.
@@ -107,11 +107,11 @@ mod owner {
     struct Repo {
         path: PathBuf,
         repo: RepositoryBox,
-        blob: ffi::git_oid,
+        blob: sys::git_oid,
     }
 
     impl Repo {
-        fn new(tag: &str, format: ffi::git_refdb_t) -> Self {
+        fn new(tag: &str, format: sys::git_refdb_t) -> Self {
             init();
             let path = std::env::temp_dir()
                 .join(format!("crustify-refdb-equiv-{}-{tag}", std::process::id()));
@@ -125,24 +125,24 @@ mod owner {
                 .unwrap()
                 .into_c();
             let mut odb = ptr::null_mut();
-            let mut blob = ffi::git_oid::default();
+            let mut blob = sys::git_oid::default();
             let data = b"refdb equivalence\n";
             {
                 // SAFETY: live slots and the live repository; the data is read for the call
                 // only, and the odb reference is released right after.
-                unsafe { assert_eq!(ffi::git_repository_odb(&raw mut odb, repo), 0) };
+                unsafe { assert_eq!(sys::git_repository_odb(&raw mut odb, repo), 0) };
                 // SAFETY: as above.
                 let rc = unsafe {
-                    ffi::git_odb_write(
+                    sys::git_odb_write(
                         &raw mut blob,
                         odb,
                         data.as_ptr().cast(),
                         data.len(),
-                        ffi::GIT_OBJECT_BLOB,
+                        sys::GIT_OBJECT_BLOB,
                     )
                 };
                 // SAFETY: as above.
-                unsafe { ffi::git_odb_free(odb) };
+                unsafe { sys::git_odb_free(odb) };
                 assert_eq!(rc, 0);
             }
             Self {
@@ -160,7 +160,7 @@ mod owner {
                 // SAFETY: a live slot, the live repository, a NUL-terminated name and the
                 // blob's id, read for the call; the reference is freed right after.
                 let rc = unsafe {
-                    ffi::git_reference_create(
+                    sys::git_reference_create(
                         &raw mut out,
                         self.repo.as_c_ptr(),
                         name.as_ptr(),
@@ -170,7 +170,7 @@ mod owner {
                     )
                 };
                 // SAFETY: as above.
-                unsafe { ffi::git_reference_free(out) };
+                unsafe { sys::git_reference_free(out) };
                 rc
             }
         }
@@ -186,7 +186,7 @@ mod owner {
                         // SAFETY: a live slot, the live repository and a NUL-terminated name;
                         // the reference is read, then freed.
                         let rc = unsafe {
-                            ffi::git_reference_lookup(
+                            sys::git_reference_lookup(
                                 &raw mut out,
                                 self.repo.as_c_ptr(),
                                 name.as_ptr(),
@@ -194,12 +194,12 @@ mod owner {
                         };
                         let id = (rc == 0).then(|| {
                             // SAFETY: as above.
-                            let target = unsafe { ffi::git_reference_target(out) };
+                            let target = unsafe { sys::git_reference_target(out) };
                             // SAFETY: as above.
                             unsafe { (*target).id }
                         });
                         // SAFETY: as above.
-                        unsafe { ffi::git_reference_free(out) };
+                        unsafe { sys::git_reference_free(out) };
                         (rc, id)
                     }
                 })
@@ -245,13 +245,13 @@ mod owner {
         out
     }
 
-    fn compress(db: *mut ffi::git_refdb) -> c_int {
+    fn compress(db: *mut sys::git_refdb) -> c_int {
         // SAFETY: a live refdb with a backend, of a live repository.
-        unsafe { ffi::git_refdb_compress(db) }
+        unsafe { sys::git_refdb_compress(db) }
     }
 
     /// Runs the same writes and compactions on both pairs, comparing after each step.
-    fn same_sequence(c: (&Repo, *mut ffi::git_refdb), rust: (&Repo, &RefdbBox<'_>)) {
+    fn same_sequence(c: (&Repo, *mut sys::git_refdb), rust: (&Repo, &RefdbBox<'_>)) {
         let step = |what: &str| {
             assert_eq!(c.0.state(), rust.0.state(), "after {what}");
         };
@@ -271,10 +271,10 @@ mod owner {
         step("compacting again");
     }
 
-    fn formats() -> [(&'static str, ffi::git_refdb_t); 2] {
+    fn formats() -> [(&'static str, sys::git_refdb_t); 2] {
         [
-            ("files", ffi::GIT_REFDB_FILES),
-            ("reftable", ffi::GIT_REFDB_REFTABLE),
+            ("files", sys::GIT_REFDB_FILES),
+            ("reftable", sys::GIT_REFDB_REFTABLE),
         ]
     }
 
@@ -293,23 +293,23 @@ mod owner {
             let rust_repo = Repo::new(&format!("open-rust-{tag}"), format);
             let mut c_db = ptr::null_mut();
             // SAFETY: a writable slot and the live repository.
-            let c_rc = unsafe { ffi::git_refdb_open(&raw mut c_db, c_repo.repo.as_c_ptr()) };
+            let c_rc = unsafe { sys::git_refdb_open(&raw mut c_db, c_repo.repo.as_c_ptr()) };
             let rust_db = Refdb::open(rust_repo.repo.as_ref());
             assert_eq!(c_reported(c_rc), rust_reported(&rust_db));
             let rust_db = rust_db.unwrap();
             same_sequence((&c_repo, c_db), (&rust_repo, &rust_db));
             // SAFETY: the refdb `git_refdb_open` gave out, freed once.
-            unsafe { ffi::git_refdb_free(c_db) };
+            unsafe { sys::git_refdb_free(c_db) };
             drop(rust_db);
             assert_eq!(c_repo.state(), rust_repo.state(), "after release ({tag})");
         }
     }
 
     /// A fresh files backend of `repo`.
-    fn fs_backend(repo: &Repo) -> NonNull<ffi::git_refdb_backend> {
+    fn fs_backend(repo: &Repo) -> NonNull<sys::git_refdb_backend> {
         let mut out = ptr::null_mut();
         // SAFETY: a writable slot and the live repository.
-        let rc = unsafe { ffi::git_refdb_backend_fs(&raw mut out, repo.repo.as_c_ptr()) };
+        let rc = unsafe { sys::git_refdb_backend_fs(&raw mut out, repo.repo.as_c_ptr()) };
         assert_eq!(rc, 0);
         NonNull::new(out).unwrap()
     }
@@ -318,17 +318,17 @@ mod owner {
     /// or the error, with the refdb freed.
     fn c_new(
         repo: &Repo,
-        backend: NonNull<ffi::git_refdb_backend>,
-    ) -> Result<*mut ffi::git_refdb, (c_int, CString)> {
+        backend: NonNull<sys::git_refdb_backend>,
+    ) -> Result<*mut sys::git_refdb, (c_int, CString)> {
         let mut db = ptr::null_mut();
         // SAFETY: a writable slot and the live repository.
-        c_reported(unsafe { ffi::git_refdb_new(&raw mut db, repo.repo.as_c_ptr()) })?;
+        c_reported(unsafe { sys::git_refdb_new(&raw mut db, repo.repo.as_c_ptr()) })?;
         // SAFETY: the fresh refdb, without a backend, and a live backend, taken only on
         // success.
-        let rc = unsafe { ffi::git_refdb_set_backend(db, backend.as_ptr()) };
+        let rc = unsafe { sys::git_refdb_set_backend(db, backend.as_ptr()) };
         if let Err(e) = c_reported(rc) {
             // SAFETY: the fresh refdb, freed once; it has no backend to free.
-            unsafe { ffi::git_refdb_free(db) };
+            unsafe { sys::git_refdb_free(db) };
             return Err(e);
         }
         Ok(db)
@@ -347,8 +347,8 @@ mod owner {
     }
 
     fn new_matches() {
-        let c_repo = Repo::new("new-c", ffi::GIT_REFDB_FILES);
-        let rust_repo = Repo::new("new-rust", ffi::GIT_REFDB_FILES);
+        let c_repo = Repo::new("new-c", sys::GIT_REFDB_FILES);
+        let rust_repo = Repo::new("new-rust", sys::GIT_REFDB_FILES);
         let c_db = c_new(&c_repo, fs_backend(&c_repo));
         // SAFETY: the live repository, freed after the refdb, and a fresh backend of it,
         // given to the refdb.
@@ -357,7 +357,7 @@ mod owner {
         let (c_db, rust_db) = (c_db.unwrap(), rust_db.unwrap());
         same_sequence((&c_repo, c_db), (&rust_repo, &rust_db));
         // SAFETY: the refdb `c_new` built, freed once with its backend.
-        unsafe { ffi::git_refdb_free(c_db) };
+        unsafe { sys::git_refdb_free(c_db) };
         drop(rust_db);
         assert_eq!(c_repo.state(), rust_repo.state(), "after release");
     }
@@ -365,10 +365,10 @@ mod owner {
     #[test]
     #[cfg_attr(miri, ignore = "calls libgit2")]
     fn refused_backends_fail_alike_and_stay_the_callers() {
-        let c_repo = Repo::new("refused-c", ffi::GIT_REFDB_FILES);
-        let rust_repo = Repo::new("refused-rust", ffi::GIT_REFDB_FILES);
-        let mut c_backend = ffi::git_refdb_backend::default();
-        let mut rust_backend = ffi::git_refdb_backend::default();
+        let c_repo = Repo::new("refused-c", sys::GIT_REFDB_FILES);
+        let rust_repo = Repo::new("refused-rust", sys::GIT_REFDB_FILES);
+        let mut c_backend = sys::git_refdb_backend::default();
+        let mut rust_backend = sys::git_refdb_backend::default();
         for version in [0, 1, 2, i32::MAX as u32, u32::MAX] {
             c_backend.version = version;
             rust_backend.version = version;
@@ -434,13 +434,13 @@ mod refdb_type {
     use std::path::PathBuf;
     use std::{fs, ptr};
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::refdb::RefdbType;
+    use libgit2::sys::libgit2 as sys;
 
     /// Initialises libgit2; never released.
     fn init() {
         // SAFETY: no arguments; the reference is never released.
-        assert!(unsafe { ffi::git_libgit2_init() } >= 1);
+        assert!(unsafe { sys::git_libgit2_init() } >= 1);
     }
 
     /// The calling thread's last error class and message.
@@ -449,7 +449,7 @@ mod refdb_type {
             // SAFETY: `git_error_last` never returns NULL after init, and its message is a
             // NUL-terminated string, both live until the next libgit2 call on this thread,
             // after the copy.
-            let e = unsafe { ffi::git_error_last() };
+            let e = unsafe { sys::git_error_last() };
             // SAFETY: as above.
             let klass = unsafe { (*e).klass };
             // SAFETY: as above.
@@ -499,31 +499,31 @@ mod refdb_type {
     }
 
     /// Runs the C steps for `raw` in a fresh directory.
-    fn c_outcome(tag: &str, raw: ffi::git_refdb_t) -> (Outcome, String) {
+    fn c_outcome(tag: &str, raw: sys::git_refdb_t) -> (Outcome, String) {
         let path =
             std::env::temp_dir().join(format!("crustify-refdb-equiv-{}-{tag}", std::process::id()));
         drop(fs::remove_dir_all(&path));
         let scratch = Scratch(path);
         let c_path = CString::new(scratch.0.as_os_str().as_bytes()).unwrap();
-        let mut opts = ffi::git_repository_init_options::default();
+        let mut opts = sys::git_repository_init_options::default();
         // SAFETY: `opts` is a live options struct, filled with the version's defaults.
         let rc = unsafe {
-            ffi::git_repository_init_options_init(
+            sys::git_repository_init_options_init(
                 &raw mut opts,
-                ffi::GIT_REPOSITORY_INIT_OPTIONS_VERSION,
+                sys::GIT_REPOSITORY_INIT_OPTIONS_VERSION,
             )
         };
         assert_eq!(rc, 0);
-        opts.flags = ffi::GIT_REPOSITORY_INIT_BARE | ffi::GIT_REPOSITORY_INIT_MKDIR;
+        opts.flags = sys::GIT_REPOSITORY_INIT_BARE | sys::GIT_REPOSITORY_INIT_MKDIR;
         opts.refdb_type = raw;
         let mut repo = ptr::null_mut();
         // SAFETY: a live slot, a NUL-terminated path and live options, read for the call;
         // the result is a fresh repository on success, NULL otherwise.
         let rc =
-            unsafe { ffi::git_repository_init_ext(&raw mut repo, c_path.as_ptr(), &raw mut opts) };
+            unsafe { sys::git_repository_init_ext(&raw mut repo, c_path.as_ptr(), &raw mut opts) };
         let init = if rc == 0 { Ok(()) } else { Err((rc, c_last())) };
         // SAFETY: the repository just built, or NULL, which the free accepts.
-        unsafe { ffi::git_repository_free(repo) };
+        unsafe { sys::git_repository_free(repo) };
 
         let config = fs::read_to_string(scratch.0.join("config")).unwrap_or_default();
         let reftable_dir = scratch.0.join("reftable").is_dir();
@@ -531,10 +531,10 @@ mod refdb_type {
         let mut repo = ptr::null_mut();
         // SAFETY: a live slot and a NUL-terminated path, read for the call; no ceiling.
         let rc = unsafe {
-            ffi::git_repository_open_ext(
+            sys::git_repository_open_ext(
                 &raw mut repo,
                 c_path.as_ptr(),
-                ffi::GIT_REPOSITORY_OPEN_BARE | ffi::GIT_REPOSITORY_OPEN_NO_SEARCH,
+                sys::GIT_REPOSITORY_OPEN_BARE | sys::GIT_REPOSITORY_OPEN_NO_SEARCH,
                 ptr::null(),
             )
         };
@@ -542,12 +542,12 @@ mod refdb_type {
         let head = (rc == 0).then(|| {
             let mut head = ptr::null_mut();
             // SAFETY: a live slot, the open repository and a NUL-terminated name.
-            let rc = unsafe { ffi::git_reference_lookup(&raw mut head, repo, c"HEAD".as_ptr()) };
+            let rc = unsafe { sys::git_reference_lookup(&raw mut head, repo, c"HEAD".as_ptr()) };
             assert_eq!(rc, 0, "{:?}", c_last());
             {
                 // SAFETY: a live symbolic reference: its target lives as long as it, copied
                 // before the reference is freed once.
-                let reference_symbolic_target = unsafe { ffi::git_reference_symbolic_target(head) };
+                let reference_symbolic_target = unsafe { sys::git_reference_symbolic_target(head) };
                 // SAFETY: as above.
                 let target = unsafe {
                     CStr::from_ptr(reference_symbolic_target)
@@ -555,12 +555,12 @@ mod refdb_type {
                         .into_owned()
                 };
                 // SAFETY: as above.
-                unsafe { ffi::git_reference_free(head) };
+                unsafe { sys::git_reference_free(head) };
                 target
             }
         });
         // SAFETY: the reopened repository, or NULL.
-        unsafe { ffi::git_repository_free(repo) };
+        unsafe { sys::git_repository_free(repo) };
         (
             Outcome {
                 init,
@@ -575,7 +575,7 @@ mod refdb_type {
 
     /// What the Rust conversion predicts for `raw`, given the branch a fresh repository's
     /// `HEAD` names.
-    fn predicted(raw: ffi::git_refdb_t, head: &str) -> Outcome {
+    fn predicted(raw: sys::git_refdb_t, head: &str) -> Outcome {
         let format = if raw == 0 {
             Some(RefdbType::default())
         } else {
@@ -583,9 +583,9 @@ mod refdb_type {
         };
         let unknown = || {
             Err((
-                ffi::GIT_EINVALID,
+                sys::GIT_EINVALID,
                 (
-                    ffi::GIT_ERROR_REPOSITORY.cast_signed(),
+                    sys::GIT_ERROR_REPOSITORY.cast_signed(),
                     "unknown refstorage format 'unknown'".to_owned(),
                 ),
             ))
@@ -609,8 +609,8 @@ mod refdb_type {
     }
 
     /// Every value around the declared ones, and the extremes.
-    fn probes() -> impl Iterator<Item = ffi::git_refdb_t> {
-        (0..=5).chain([100, ffi::git_refdb_t::MAX - 1, ffi::git_refdb_t::MAX])
+    fn probes() -> impl Iterator<Item = sys::git_refdb_t> {
+        (0..=5).chain([100, sys::git_refdb_t::MAX - 1, sys::git_refdb_t::MAX])
     }
 
     /// Each raw value initialises, records, reopens and resolves `HEAD` exactly as the

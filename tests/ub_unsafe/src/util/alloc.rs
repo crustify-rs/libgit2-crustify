@@ -278,7 +278,7 @@ static FAIL: Allocator = Allocator::new::<FailAlloc>();
 fn unpinned() -> [usize; 3] {
     // SAFETY: a read of the C global, live for the whole process, which no other thread
     // writes in the child processes these tests run in.
-    let g = unsafe { (&raw const libgit2::ffi::git__allocator).read() };
+    let g = unsafe { (&raw const libgit2::sys::libgit2::git__allocator).read() };
     [
         g.gmalloc.map_or(0, |f| f as usize),
         g.grealloc.map_or(0, |f| f as usize),

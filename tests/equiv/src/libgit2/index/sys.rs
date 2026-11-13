@@ -6,9 +6,9 @@ mod reuc;
 use std::ffi::{CStr, CString, c_int};
 use std::ptr;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::index::{Index, IndexBox};
 use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
+use libgit2::sys::libgit2 as sys;
 use reuc::{IndexFile, Record, Snapshot, snapshot, sorted};
 
 mod reuc_edits;
@@ -19,11 +19,11 @@ fn raw_names(index: &IndexBox) -> Vec<Names> {
     // This test alone accesses the index; C may sort, but each string is copied before
     // any mutation or drop. Null fields mean absent names.
     // SAFETY: as above.
-    let count = unsafe { ffi::git_index_name_entrycount(index.as_c_ptr()) };
+    let count = unsafe { sys::git_index_name_entrycount(index.as_c_ptr()) };
     (0..count)
         .map(|i| {
             // SAFETY: as above; `i` is below the count, so the entry is live.
-            let entry = unsafe { ffi::git_index_name_get_byindex(index.as_c_ptr(), i) };
+            let entry = unsafe { sys::git_index_name_get_byindex(index.as_c_ptr(), i) };
             // SAFETY: as above, the live entry; the projection forms no reference to it.
             let ancestor = unsafe { &raw const (*entry).ancestor };
             // SAFETY: as above.
@@ -68,7 +68,7 @@ fn name_lifecycle_matches_c() {
             // SAFETY: independently owned index; two or three valid NUL-terminated
             // inputs, which C duplicates and never retains.
             let rc = unsafe {
-                ffi::git_index_name_add(
+                sys::git_index_name_add(
                     raw.as_c_ptr(),
                     names[0].map_or(ptr::null(), CStr::as_ptr),
                     names[1].map_or(ptr::null(), CStr::as_ptr),
@@ -81,12 +81,12 @@ fn name_lifecycle_matches_c() {
         }
         for position in [scenarios.len(), usize::MAX] {
             // SAFETY: live index; all positions are checked by C, no borrow retained.
-            assert!(unsafe { ffi::git_index_name_get_byindex(raw.as_c_ptr(), position) }.is_null());
+            assert!(unsafe { sys::git_index_name_get_byindex(raw.as_c_ptr(), position) }.is_null());
             assert!(safe.as_mut().name_entry(position).is_none());
         }
         for _ in 0..2 {
             // SAFETY: this index and its entries have no outstanding borrows.
-            assert_eq!(unsafe { ffi::git_index_name_clear(raw.as_c_ptr()) }, 0);
+            assert_eq!(unsafe { sys::git_index_name_clear(raw.as_c_ptr()) }, 0);
             safe.as_mut().clear_names().unwrap();
             assert_eq!(safe_names(&mut safe), raw_names(&raw));
         }
@@ -97,7 +97,7 @@ fn name_lifecycle_matches_c() {
 ///
 /// # Safety
 /// `entry` is null or a live record of an index nobody mutates during the call.
-unsafe fn raw_snapshot(entry: *const ffi::git_index_reuc_entry) -> Option<Snapshot> {
+unsafe fn raw_snapshot(entry: *const sys::git_index_reuc_entry) -> Option<Snapshot> {
     if entry.is_null() {
         return None;
     }
@@ -128,11 +128,11 @@ unsafe fn raw_snapshot(entry: *const ffi::git_index_reuc_entry) -> Option<Snapsh
 
 fn raw_reuc(index: &IndexBox) -> Vec<Snapshot> {
     // SAFETY: this test alone accesses the index.
-    let count = unsafe { ffi::git_index_reuc_entrycount(index.as_c_ptr()) };
+    let count = unsafe { sys::git_index_reuc_entrycount(index.as_c_ptr()) };
     (0..count)
         .map(|i| {
             // SAFETY: as above; `i` is below the count, so the record is live.
-            let record = unsafe { ffi::git_index_reuc_get_byindex(index.as_c_ptr(), i) };
+            let record = unsafe { sys::git_index_reuc_get_byindex(index.as_c_ptr(), i) };
             // SAFETY: as above; every record is copied before any mutation or drop.
             unsafe { raw_snapshot(record) }.unwrap()
         })
@@ -162,7 +162,7 @@ fn lookups_match(raw: &IndexBox, safe: &mut IndexBox, path: &CStr) {
     // SAFETY: a live index nobody mutates while the record is copied; `path` is read
     // for the call only.
     let index_reuc_get_bypath =
-        unsafe { ffi::git_index_reuc_get_bypath(raw.as_c_ptr(), path.as_ptr()) };
+        unsafe { sys::git_index_reuc_get_bypath(raw.as_c_ptr(), path.as_ptr()) };
     // SAFETY: as above.
     let expected = unsafe { raw_snapshot(index_reuc_get_bypath) };
     let handle = safe.as_mut();
@@ -176,7 +176,7 @@ fn lookups_match(raw: &IndexBox, safe: &mut IndexBox, path: &CStr) {
 fn positions_match(raw: &IndexBox, safe: &mut IndexBox, position: usize) {
     let index = raw.as_c_ptr();
     // SAFETY: as in `lookups_match`; C checks the position.
-    let index_reuc_get_byindex = unsafe { ffi::git_index_reuc_get_byindex(index, position) };
+    let index_reuc_get_byindex = unsafe { sys::git_index_reuc_get_byindex(index, position) };
     // SAFETY: as above.
     let expected = unsafe { raw_snapshot(index_reuc_get_byindex) };
     assert_eq!(safe.as_mut().reuc_entry(position).map(snapshot), expected);
@@ -185,11 +185,11 @@ fn positions_match(raw: &IndexBox, safe: &mut IndexBox, position: usize) {
 fn reuc_add(index: &IndexBox, path: &CStr, modes: [c_int; 3], ids: &[Oid; 3]) -> c_int {
     let ids = ids
         .each_ref()
-        .map(|id| ptr::from_ref(id).cast::<ffi::git_oid>());
+        .map(|id| ptr::from_ref(id).cast::<sys::git_oid>());
     // SAFETY: a live index without outstanding REUC borrows (the old same-path record
     // is freed); `path` and the transparent `Oid`s are copied for the call.
     unsafe {
-        ffi::git_index_reuc_add(
+        sys::git_index_reuc_add(
             index.as_c_ptr(),
             path.as_ptr(),
             modes[0],
@@ -204,7 +204,7 @@ fn reuc_add(index: &IndexBox, path: &CStr, modes: [c_int; 3], ids: &[Oid; 3]) ->
 
 fn set_caps(index: &IndexBox, caps: c_int) {
     // SAFETY: a live index without outstanding REUC borrows; C re-sorts its vectors.
-    let rc = unsafe { ffi::git_index_set_caps(index.as_c_ptr(), caps) };
+    let rc = unsafe { sys::git_index_set_caps(index.as_c_ptr(), caps) };
     assert_eq!(rc, 0);
 }
 
@@ -227,7 +227,7 @@ fn reuc_file_records_match_c() {
         let expected = raw_reuc(&raw);
         assert_eq!(expected.len(), records.len());
         assert_eq!(safe_reuc(&mut safe), expected);
-        for caps in [0, ffi::GIT_INDEX_CAPABILITY_IGNORE_CASE, 0] {
+        for caps in [0, sys::GIT_INDEX_CAPABILITY_IGNORE_CASE, 0] {
             set_caps(&raw, caps);
             set_caps(&safe, caps);
             assert_eq!(safe_reuc(&mut safe), raw_reuc(&raw));
@@ -268,15 +268,15 @@ fn reuc_add_sequence_matches_c() {
             positions_match(&raw, &mut safe, 4);
         }
         // SAFETY: both indexes are live, with no outstanding REUC borrows.
-        unsafe { assert_eq!(ffi::git_index_reuc_remove(raw.as_c_ptr(), 1), 0) };
+        unsafe { assert_eq!(sys::git_index_reuc_remove(raw.as_c_ptr(), 1), 0) };
         // SAFETY: as above.
-        unsafe { assert_eq!(ffi::git_index_reuc_remove(safe.as_c_ptr(), 1), 0) };
+        unsafe { assert_eq!(sys::git_index_reuc_remove(safe.as_c_ptr(), 1), 0) };
         assert_eq!(safe_reuc(&mut safe), raw_reuc(&raw));
         lookups_match(&raw, &mut safe, c"m");
         // SAFETY: as above.
-        unsafe { assert_eq!(ffi::git_index_reuc_clear(raw.as_c_ptr()), 0) };
+        unsafe { assert_eq!(sys::git_index_reuc_clear(raw.as_c_ptr()), 0) };
         // SAFETY: as above.
-        unsafe { assert_eq!(ffi::git_index_reuc_clear(safe.as_c_ptr()), 0) };
+        unsafe { assert_eq!(sys::git_index_reuc_clear(safe.as_c_ptr()), 0) };
         assert_eq!(safe_reuc(&mut safe), raw_reuc(&raw));
         assert_eq!(
             safe_reuc(&mut safe),

@@ -6,7 +6,7 @@ use core::fmt;
 use core::hash::Hash;
 use core::ops::BitOr;
 
-use crate::ffi;
+use crate::sys::libgit2 as sys;
 
 /// Which branches a branch routine means: local ones (under `refs/heads/`), remote-tracking
 /// ones (under `refs/remotes/`), or both.
@@ -25,30 +25,30 @@ use crate::ffi;
 #[repr(u32)]
 pub enum BranchType {
     /// Local branches, `refs/heads/*`.
-    Local = ffi::GIT_BRANCH_LOCAL,
+    Local = sys::GIT_BRANCH_LOCAL,
     /// Remote-tracking branches, `refs/remotes/*`.
-    Remote = ffi::GIT_BRANCH_REMOTE,
+    Remote = sys::GIT_BRANCH_REMOTE,
     /// Both kinds.
-    All = ffi::GIT_BRANCH_ALL,
+    All = sys::GIT_BRANCH_ALL,
 }
 
 impl BranchType {
     /// The variant whose C value is `raw`; `None` for any value libgit2's header does not
     /// name, `0` included.
     #[must_use]
-    pub const fn from_raw(raw: ffi::git_branch_t) -> Option<Self> {
+    pub const fn from_raw(raw: sys::git_branch_t) -> Option<Self> {
         match raw {
-            ffi::GIT_BRANCH_LOCAL => Some(Self::Local),
-            ffi::GIT_BRANCH_REMOTE => Some(Self::Remote),
-            ffi::GIT_BRANCH_ALL => Some(Self::All),
+            sys::GIT_BRANCH_LOCAL => Some(Self::Local),
+            sys::GIT_BRANCH_REMOTE => Some(Self::Remote),
+            sys::GIT_BRANCH_ALL => Some(Self::All),
             _ => None,
         }
     }
 
     /// The C value, as libgit2's functions take and return it.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_branch_t {
-        self as ffi::git_branch_t
+    pub const fn raw(self) -> sys::git_branch_t {
+        self as sys::git_branch_t
     }
 
     /// Whether every branch `other` means is also one `self` means, as
@@ -73,16 +73,16 @@ impl BitOr for BranchType {
     }
 }
 
-impl TryFrom<ffi::git_branch_t> for BranchType {
+impl TryFrom<sys::git_branch_t> for BranchType {
     type Error = UnnamedBranchType;
 
-    fn try_from(raw: ffi::git_branch_t) -> Result<Self, UnnamedBranchType> {
+    fn try_from(raw: sys::git_branch_t) -> Result<Self, UnnamedBranchType> {
         Self::from_raw(raw).ok_or(UnnamedBranchType(raw))
     }
 }
 
-impl From<BranchType> for ffi::git_branch_t {
-    fn from(value: BranchType) -> ffi::git_branch_t {
+impl From<BranchType> for sys::git_branch_t {
+    fn from(value: BranchType) -> sys::git_branch_t {
         value.raw()
     }
 }
@@ -91,12 +91,12 @@ impl From<BranchType> for ffi::git_branch_t {
 /// as listing nothing, or a value with bits beyond `GIT_BRANCH_ALL`. [`raw`](Self::raw)
 /// has it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct UnnamedBranchType(ffi::git_branch_t);
+pub struct UnnamedBranchType(sys::git_branch_t);
 
 impl UnnamedBranchType {
     /// The value, as it was converted.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_branch_t {
+    pub const fn raw(self) -> sys::git_branch_t {
         self.0
     }
 }

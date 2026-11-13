@@ -26,7 +26,7 @@
 use std::ffi::{CStr, CString, c_int};
 use std::ptr;
 
-use libgit2::ffi;
+use libgit2::sys::libgit2 as sys;
 use libgit2::libgit2::core::types::FileMode;
 use libgit2::libgit2::index::index::{Index, IndexEntry, Stage};
 use libgit2::libgit2::oid::oid::{Oid, OidType};
@@ -47,7 +47,7 @@ fn main() {
     let mut rust = Index::new().unwrap();
     let mut c = ptr::null_mut();
     // SAFETY: the runtime is pinned by `Index::new`; a writable slot.
-    assert_eq!(unsafe { ffi::git_index_new(&mut c) }, 0);
+    assert_eq!(unsafe { sys::git_index_new(&mut c) }, 0);
 
     let steps = [
         ("stage 2 file", entry(Stage::Ours, 0o100644)),
@@ -59,15 +59,15 @@ fn main() {
         // SAFETY: a live index lending no entry; the entry, its static path and the
         // byte are read for the call.
         let rc = unsafe {
-            ffi::git_index_add_from_buffer(c, &entry.into_raw(), b"x".as_ptr().cast(), 1)
+            sys::git_index_add_from_buffer(c, &entry.into_raw(), b"x".as_ptr().cast(), 1)
         };
         // SAFETY: as above; the error is copied before the next call.
         let expected: Observation = unsafe {
-            let error = ffi::git_error_last();
+            let error = sys::git_error_last();
             (
                 rc,
                 (rc != 0).then(|| ((*error).klass, CStr::from_ptr((*error).message).to_owned())),
-                ffi::git_index_entrycount(c),
+                sys::git_index_entrycount(c),
             )
         };
         let actual: Observation = match rust.as_mut().add_from_buffer(entry.as_ref(), b"x") {
@@ -82,6 +82,6 @@ fn main() {
         failed |= expected != actual;
     }
     // SAFETY: the only reference to the C index, released once.
-    unsafe { ffi::git_index_free(c) };
+    unsafe { sys::git_index_free(c) };
     assert!(!failed, "the safe API's errors differ from libgit2's");
 }

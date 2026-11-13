@@ -8,11 +8,11 @@ use core::ptr::{self};
 
 use ffibox::CRefSeam;
 
-use crate::ffi;
 use crate::libgit2::src::libgit2::diff::{Diff, DiffBox, DiffError, constructed};
 use crate::libgit2::src::libgit2::index::IndexRef;
 use crate::libgit2::src::libgit2::repository::RepositoryRef;
 use crate::libgit2::src::libgit2::tree::TreeRef;
+use crate::sys::libgit2 as sys;
 
 impl<'r> Diff<'r> {
     /// Compare two trees; None denotes the empty tree on either side.
@@ -34,7 +34,7 @@ impl<'r> Diff<'r> {
         // used only on this thread. C copies entries/paths, keeps repo uncounted,
         // and retains no input handle. NULL options selects callback-free defaults.
         let rc = unsafe {
-            ffi::git_diff_tree_to_tree(
+            sys::git_diff_tree_to_tree(
                 &raw mut out,
                 repo.as_ptr().cast_mut(),
                 old.map_or(ptr::null_mut(), |t| t.as_ptr().cast_mut()),
@@ -66,7 +66,7 @@ impl<'r> Diff<'r> {
         // used only on this thread. C copies entries/paths, keeps repo uncounted,
         // and retains no input handle. NULL options selects callback-free defaults.
         let rc = unsafe {
-            ffi::git_diff_tree_to_index(
+            sys::git_diff_tree_to_index(
                 &raw mut out,
                 repo.as_ptr().cast_mut(),
                 old.map_or(ptr::null_mut(), |t| t.as_ptr().cast_mut()),
@@ -97,7 +97,7 @@ impl<'r> Diff<'r> {
         // used only on this thread. C copies entries/paths, keeps repo uncounted,
         // and retains no input handle. NULL options selects callback-free defaults.
         let rc = unsafe {
-            ffi::git_diff_index_to_workdir(
+            sys::git_diff_index_to_workdir(
                 &raw mut out,
                 repo.as_ptr().cast_mut(),
                 index.map_or(ptr::null_mut(), |i| i.as_ptr().cast_mut()),
@@ -127,7 +127,7 @@ impl<'r> Diff<'r> {
         // used only on this thread. C copies entries/paths, keeps repo uncounted,
         // and retains no input handle. NULL options selects callback-free defaults.
         let rc = unsafe {
-            ffi::git_diff_tree_to_workdir(
+            sys::git_diff_tree_to_workdir(
                 &raw mut out,
                 repo.as_ptr().cast_mut(),
                 old.map_or(ptr::null_mut(), |t| t.as_ptr().cast_mut()),
@@ -157,7 +157,7 @@ impl<'r> Diff<'r> {
         // used only on this thread. C copies entries/paths, keeps repo uncounted,
         // and retains no input handle. NULL options selects callback-free defaults.
         let rc = unsafe {
-            ffi::git_diff_tree_to_workdir_with_index(
+            sys::git_diff_tree_to_workdir_with_index(
                 &raw mut out,
                 repo.as_ptr().cast_mut(),
                 old.map_or(ptr::null_mut(), |t| t.as_ptr().cast_mut()),
@@ -188,7 +188,7 @@ impl<'r> Diff<'r> {
         // used only on this thread. C copies entries/paths, keeps repo uncounted,
         // and retains no input handle. NULL options selects callback-free defaults.
         let rc = unsafe {
-            ffi::git_diff_index_to_index(
+            sys::git_diff_index_to_index(
                 &raw mut out,
                 repo.as_ptr().cast_mut(),
                 old.as_ptr().cast_mut(),

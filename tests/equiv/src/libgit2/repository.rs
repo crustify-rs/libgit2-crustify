@@ -30,30 +30,30 @@ mod init_flags_and_modes {
     use std::process::Command;
     use std::{fs, ptr};
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::repository::{InitFlag, InitFlags, InitMode};
+    use libgit2::sys::libgit2 as raw;
 
     /// Every `git_repository_init_flag_t` constant and the variant carrying it.
-    const FLAGS: [(ffi::git_repository_init_flag_t, InitFlag); 6] = [
-        (ffi::GIT_REPOSITORY_INIT_BARE, InitFlag::Bare),
-        (ffi::GIT_REPOSITORY_INIT_NO_REINIT, InitFlag::NoReinit),
-        (ffi::GIT_REPOSITORY_INIT_MKDIR, InitFlag::Mkdir),
-        (ffi::GIT_REPOSITORY_INIT_MKPATH, InitFlag::Mkpath),
+    const FLAGS: [(raw::git_repository_init_flag_t, InitFlag); 6] = [
+        (raw::GIT_REPOSITORY_INIT_BARE, InitFlag::Bare),
+        (raw::GIT_REPOSITORY_INIT_NO_REINIT, InitFlag::NoReinit),
+        (raw::GIT_REPOSITORY_INIT_MKDIR, InitFlag::Mkdir),
+        (raw::GIT_REPOSITORY_INIT_MKPATH, InitFlag::Mkpath),
         (
-            ffi::GIT_REPOSITORY_INIT_EXTERNAL_TEMPLATE,
+            raw::GIT_REPOSITORY_INIT_EXTERNAL_TEMPLATE,
             InitFlag::ExternalTemplate,
         ),
         (
-            ffi::GIT_REPOSITORY_INIT_RELATIVE_GITLINK,
+            raw::GIT_REPOSITORY_INIT_RELATIVE_GITLINK,
             InitFlag::RelativeGitlink,
         ),
     ];
 
     /// Every `git_repository_init_mode_t` constant and the variant carrying it.
-    const MODES: [(ffi::git_repository_init_mode_t, InitMode); 3] = [
-        (ffi::GIT_REPOSITORY_INIT_SHARED_UMASK, InitMode::SharedUmask),
-        (ffi::GIT_REPOSITORY_INIT_SHARED_GROUP, InitMode::SharedGroup),
-        (ffi::GIT_REPOSITORY_INIT_SHARED_ALL, InitMode::SharedAll),
+    const MODES: [(raw::git_repository_init_mode_t, InitMode); 3] = [
+        (raw::GIT_REPOSITORY_INIT_SHARED_UMASK, InitMode::SharedUmask),
+        (raw::GIT_REPOSITORY_INIT_SHARED_GROUP, InitMode::SharedGroup),
+        (raw::GIT_REPOSITORY_INIT_SHARED_ALL, InitMode::SharedAll),
     ];
 
     /// Every value up to past the highest flag bit and around the shared modes, each
@@ -77,7 +77,7 @@ mod init_flags_and_modes {
     fn flag_from_raw_names_exactly_the_c_constants() {
         for (c, flag) in FLAGS {
             assert_eq!(flag.raw(), c, "{flag:?}");
-            assert_eq!(ffi::git_repository_init_flag_t::from(flag), c, "{flag:?}");
+            assert_eq!(raw::git_repository_init_flag_t::from(flag), c, "{flag:?}");
         }
         assert_eq!(InitFlag::ALL.map(InitFlag::raw), FLAGS.map(|(c, _)| c));
         for raw in probes() {
@@ -117,7 +117,7 @@ mod init_flags_and_modes {
     fn mode_from_raw_names_exactly_the_c_constants() {
         for (c, mode) in MODES {
             assert_eq!(mode.raw(), c, "{mode:?}");
-            assert_eq!(ffi::git_repository_init_mode_t::from(mode), c, "{mode:?}");
+            assert_eq!(raw::git_repository_init_mode_t::from(mode), c, "{mode:?}");
         }
         for raw in probes() {
             let mode = InitMode::from_raw(raw);
@@ -135,7 +135,7 @@ mod init_flags_and_modes {
 
     fn init() {
         // SAFETY: no arguments; the reference is never released.
-        assert!(unsafe { ffi::git_libgit2_init() } >= 1);
+        assert!(unsafe { raw::git_libgit2_init() } >= 1);
     }
 
     /// A scratch directory, removed on drop.
@@ -219,20 +219,20 @@ mod init_flags_and_modes {
     type Step = (c_int, Option<(c_int, String)>, u32);
 
     /// `git_repository_init_ext(root/path, opts)`, freeing the repository it opens.
-    fn init_ext(root: &Path, path: &str, opts: &mut ffi::git_repository_init_options) -> Step {
+    fn init_ext(root: &Path, path: &str, opts: &mut raw::git_repository_init_options) -> Step {
         let c_path = CString::new(root.join(path).as_os_str().as_bytes()).unwrap();
         let mut repo = ptr::null_mut();
         // SAFETY: `repo` is a live slot, `c_path` NUL-terminated and `opts` a live
         // options struct whose strings outlive the call; the result is NULL or a
         // fresh repository.
-        let rc = unsafe { ffi::git_repository_init_ext(&raw mut repo, c_path.as_ptr(), opts) };
+        let rc = unsafe { raw::git_repository_init_ext(&raw mut repo, c_path.as_ptr(), opts) };
         // SAFETY: `repo` is NULL or the fresh repository, released once here.
-        unsafe { ffi::git_repository_free(repo) };
+        unsafe { raw::git_repository_free(repo) };
         // A successful open leaves a stale error behind, so only a failure's counts.
         let error = (rc < 0).then(|| {
             // SAFETY: after a failure `git_error_last` is this thread's error, live until
             // the next libgit2 call on this thread.
-            let e = unsafe { ffi::git_error_last() };
+            let e = unsafe { raw::git_error_last() };
             // SAFETY: as above, non-NULL; it is copied out first.
             let e = unsafe { &*e };
             // SAFETY: a set error's message is a NUL-terminated string.
@@ -243,13 +243,13 @@ mod init_flags_and_modes {
     }
 
     /// Default options, as `git_repository_init_options_init` fills them.
-    fn options() -> ffi::git_repository_init_options {
-        let mut opts = ffi::git_repository_init_options::default();
+    fn options() -> raw::git_repository_init_options {
+        let mut opts = raw::git_repository_init_options::default();
         // SAFETY: `opts` is a live options struct, filled with the version's defaults.
         let rc = unsafe {
-            ffi::git_repository_init_options_init(
+            raw::git_repository_init_options_init(
                 &raw mut opts,
-                ffi::GIT_REPOSITORY_INIT_OPTIONS_VERSION,
+                raw::GIT_REPOSITORY_INIT_OPTIONS_VERSION,
             )
         };
         assert_eq!(rc, 0);
@@ -300,7 +300,7 @@ mod init_flags_and_modes {
         let mut steps = Vec::new();
         for step in 0..3 {
             if step == 2 {
-                opts[0].flags |= ffi::GIT_REPOSITORY_INIT_NO_REINIT;
+                opts[0].flags |= raw::GIT_REPOSITORY_INIT_NO_REINIT;
                 let flags = InitFlags::from_bits_retain(opts[1].flags) | InitFlag::NoReinit;
                 opts[1].flags = flags.bits();
             }
@@ -326,7 +326,7 @@ mod init_flags_and_modes {
     )]
     fn init_ext_reads_rust_values_as_c_constants() {
         use InitFlag::*;
-        use ffi::{
+        use raw::{
             GIT_REPOSITORY_INIT_BARE as BARE, GIT_REPOSITORY_INIT_EXTERNAL_TEMPLATE as TEMPLATE,
             GIT_REPOSITORY_INIT_MKDIR as MKDIR, GIT_REPOSITORY_INIT_MKPATH as MKPATH,
             GIT_REPOSITORY_INIT_NO_REINIT as NO_REINIT,
@@ -488,7 +488,7 @@ mod init_flags_and_modes {
             [0x3_0010, 0x7_0010, 0x7_0012],
             "has .git, natural workdir, then reinit"
         );
-        assert_eq!(rcs("mkpath"), [0, 0, ffi::GIT_EEXISTS]);
+        assert_eq!(rcs("mkpath"), [0, 0, raw::GIT_EEXISTS]);
         assert_eq!(flags("bare-group"), [0x9, 0x4_0009, 0x4_000B]);
         assert_eq!(rcs("missing-parent"), [-1, -1, -1]);
         for tag in [
@@ -499,12 +499,12 @@ mod init_flags_and_modes {
         ] {
             assert!(rcs(tag).iter().all(|&rc| rc < 0), "{tag}");
         }
-        assert_eq!(rcs("missing-template"), [0, 0, ffi::GIT_EEXISTS]);
-        assert_eq!(rcs("no-reinit"), [0, ffi::GIT_EEXISTS, ffi::GIT_EEXISTS]);
+        assert_eq!(rcs("missing-template"), [0, 0, raw::GIT_EEXISTS]);
+        assert_eq!(rcs("no-reinit"), [0, raw::GIT_EEXISTS, raw::GIT_EEXISTS]);
         assert_eq!(
             outcomes["no-reinit"][1].1,
             Some((
-                ffi::GIT_ERROR_REPOSITORY.cast_signed(),
+                raw::GIT_ERROR_REPOSITORY.cast_signed(),
                 "attempt to reinitialize '<root>/nr'".to_owned()
             ))
         );
@@ -567,7 +567,7 @@ mod init_flags_and_modes {
     #[test]
     #[cfg_attr(miri, ignore = "calls libgit2")]
     fn mkpath_reads_the_environment_as_open_from_env() {
-        assert_eq!(InitFlag::Mkpath.raw(), ffi::GIT_REPOSITORY_OPEN_FROM_ENV);
+        assert_eq!(InitFlag::Mkpath.raw(), raw::GIT_REPOSITORY_OPEN_FROM_ENV);
         let module = module_path!().split_once("::").unwrap().1;
         let name = format!("{module}::mkpath_reads_the_environment_as_open_from_env");
         if std::env::var(CHILD).as_deref() == Ok(name.as_str()) {
@@ -578,16 +578,16 @@ mod init_flags_and_modes {
             for (tag, c, rust) in [
                 (
                     "mkpath",
-                    ffi::GIT_REPOSITORY_INIT_MKPATH,
+                    raw::GIT_REPOSITORY_INIT_MKPATH,
                     InitFlags::from(InitFlag::Mkpath),
                 ),
                 (
                     "mkdir",
-                    ffi::GIT_REPOSITORY_INIT_MKDIR,
+                    raw::GIT_REPOSITORY_INIT_MKDIR,
                     InitFlags::from(InitFlag::Mkdir),
                 ),
             ] {
-                let base = ffi::GIT_REPOSITORY_INIT_BARE | ffi::GIT_REPOSITORY_INIT_NO_REINIT;
+                let base = raw::GIT_REPOSITORY_INIT_BARE | raw::GIT_REPOSITORY_INIT_NO_REINIT;
                 let mut c_opts = options();
                 c_opts.flags = base | c;
                 let c = init_ext(&root, &format!("{tag}-c"), &mut c_opts);
@@ -602,7 +602,7 @@ mod init_flags_and_modes {
                 );
                 outcomes.push(c.0);
             }
-            assert_eq!(outcomes, [ffi::GIT_EEXISTS, 0]);
+            assert_eq!(outcomes, [raw::GIT_EEXISTS, 0]);
             return;
         }
 
@@ -652,40 +652,40 @@ mod items_and_open_flags {
     use std::path::{Path, PathBuf};
     use std::{fs, ptr};
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::repository::{
         Item, OpenFlag, OpenFlags, UnnamedItem, UnnamedOpenFlag,
     };
+    use libgit2::sys::libgit2 as raw;
 
     /// Every `git_repository_item_t` constant but the sentinel, and its variant.
-    const ITEMS: [(ffi::git_repository_item_t, Item); 15] = [
-        (ffi::GIT_REPOSITORY_ITEM_GITDIR, Item::GitDir),
-        (ffi::GIT_REPOSITORY_ITEM_WORKDIR, Item::WorkDir),
-        (ffi::GIT_REPOSITORY_ITEM_COMMONDIR, Item::CommonDir),
-        (ffi::GIT_REPOSITORY_ITEM_INDEX, Item::Index),
-        (ffi::GIT_REPOSITORY_ITEM_OBJECTS, Item::Objects),
-        (ffi::GIT_REPOSITORY_ITEM_REFS, Item::Refs),
-        (ffi::GIT_REPOSITORY_ITEM_PACKED_REFS, Item::PackedRefs),
-        (ffi::GIT_REPOSITORY_ITEM_REMOTES, Item::Remotes),
-        (ffi::GIT_REPOSITORY_ITEM_CONFIG, Item::Config),
-        (ffi::GIT_REPOSITORY_ITEM_INFO, Item::Info),
-        (ffi::GIT_REPOSITORY_ITEM_HOOKS, Item::Hooks),
-        (ffi::GIT_REPOSITORY_ITEM_LOGS, Item::Logs),
-        (ffi::GIT_REPOSITORY_ITEM_MODULES, Item::Modules),
-        (ffi::GIT_REPOSITORY_ITEM_WORKTREES, Item::Worktrees),
+    const ITEMS: [(raw::git_repository_item_t, Item); 15] = [
+        (raw::GIT_REPOSITORY_ITEM_GITDIR, Item::GitDir),
+        (raw::GIT_REPOSITORY_ITEM_WORKDIR, Item::WorkDir),
+        (raw::GIT_REPOSITORY_ITEM_COMMONDIR, Item::CommonDir),
+        (raw::GIT_REPOSITORY_ITEM_INDEX, Item::Index),
+        (raw::GIT_REPOSITORY_ITEM_OBJECTS, Item::Objects),
+        (raw::GIT_REPOSITORY_ITEM_REFS, Item::Refs),
+        (raw::GIT_REPOSITORY_ITEM_PACKED_REFS, Item::PackedRefs),
+        (raw::GIT_REPOSITORY_ITEM_REMOTES, Item::Remotes),
+        (raw::GIT_REPOSITORY_ITEM_CONFIG, Item::Config),
+        (raw::GIT_REPOSITORY_ITEM_INFO, Item::Info),
+        (raw::GIT_REPOSITORY_ITEM_HOOKS, Item::Hooks),
+        (raw::GIT_REPOSITORY_ITEM_LOGS, Item::Logs),
+        (raw::GIT_REPOSITORY_ITEM_MODULES, Item::Modules),
+        (raw::GIT_REPOSITORY_ITEM_WORKTREES, Item::Worktrees),
         (
-            ffi::GIT_REPOSITORY_ITEM_WORKTREE_CONFIG,
+            raw::GIT_REPOSITORY_ITEM_WORKTREE_CONFIG,
             Item::WorktreeConfig,
         ),
     ];
 
     /// Every `git_repository_open_flag_t` constant and its variant.
-    const FLAGS: [(ffi::git_repository_open_flag_t, OpenFlag); 5] = [
-        (ffi::GIT_REPOSITORY_OPEN_NO_SEARCH, OpenFlag::NoSearch),
-        (ffi::GIT_REPOSITORY_OPEN_CROSS_FS, OpenFlag::CrossFs),
-        (ffi::GIT_REPOSITORY_OPEN_BARE, OpenFlag::Bare),
-        (ffi::GIT_REPOSITORY_OPEN_NO_DOTGIT, OpenFlag::NoDotGit),
-        (ffi::GIT_REPOSITORY_OPEN_FROM_ENV, OpenFlag::FromEnv),
+    const FLAGS: [(raw::git_repository_open_flag_t, OpenFlag); 5] = [
+        (raw::GIT_REPOSITORY_OPEN_NO_SEARCH, OpenFlag::NoSearch),
+        (raw::GIT_REPOSITORY_OPEN_CROSS_FS, OpenFlag::CrossFs),
+        (raw::GIT_REPOSITORY_OPEN_BARE, OpenFlag::Bare),
+        (raw::GIT_REPOSITORY_OPEN_NO_DOTGIT, OpenFlag::NoDotGit),
+        (raw::GIT_REPOSITORY_OPEN_FROM_ENV, OpenFlag::FromEnv),
     ];
 
     /// The directory an item resolves against, per the variant's documentation.
@@ -729,14 +729,14 @@ mod items_and_open_flags {
 
     fn init() {
         // SAFETY: no arguments; the reference is never released.
-        assert!(unsafe { ffi::git_libgit2_init() } >= 1);
+        assert!(unsafe { raw::git_libgit2_init() } >= 1);
     }
 
     /// The calling thread's last error, as C reads it.
     fn c_last() -> (c_int, CString) {
         // SAFETY: the runtime is initialised; the result is a static error or this
         // thread's, live until the next libgit2 call on this thread.
-        let e = unsafe { ffi::git_error_last() };
+        let e = unsafe { raw::git_error_last() };
         assert!(!e.is_null());
         {
             // SAFETY: `e` is a live `git_error` whose message is NULL or a C string.
@@ -799,36 +799,36 @@ mod items_and_open_flags {
     }
 
     /// An open repository, freed on drop.
-    struct Repo(*mut ffi::git_repository);
+    struct Repo(*mut raw::git_repository);
 
     impl Drop for Repo {
         fn drop(&mut self) {
             // SAFETY: the repository this test opened, released exactly once.
-            unsafe { ffi::git_repository_free(self.0) }
+            unsafe { raw::git_repository_free(self.0) }
         }
     }
 
     /// `git_repository_init_ext(path)`, bare or with a working directory.
     fn init_repo(path: &Path, bare: bool) -> Repo {
-        let mut opts = ffi::git_repository_init_options::default();
+        let mut opts = raw::git_repository_init_options::default();
         // SAFETY: `opts` is a live options struct, filled with the version's defaults.
         let rc = unsafe {
-            ffi::git_repository_init_options_init(
+            raw::git_repository_init_options_init(
                 &raw mut opts,
-                ffi::GIT_REPOSITORY_INIT_OPTIONS_VERSION,
+                raw::GIT_REPOSITORY_INIT_OPTIONS_VERSION,
             )
         };
         assert_eq!(rc, 0);
-        opts.flags = ffi::GIT_REPOSITORY_INIT_MKDIR;
+        opts.flags = raw::GIT_REPOSITORY_INIT_MKDIR;
         if bare {
-            opts.flags |= ffi::GIT_REPOSITORY_INIT_BARE;
+            opts.flags |= raw::GIT_REPOSITORY_INIT_BARE;
         }
         let path = c_path(path);
         let mut out = ptr::null_mut();
         // SAFETY: `out` is a live slot, `path` NUL-terminated and `opts` a live options
         // struct, all read for the call only; the result is NULL or a fresh repository.
         let rc =
-            unsafe { ffi::git_repository_init_ext(&raw mut out, path.as_ptr(), &raw mut opts) };
+            unsafe { raw::git_repository_init_ext(&raw mut out, path.as_ptr(), &raw mut opts) };
         assert_eq!(rc, 0, "{:?}", c_last());
         Repo(out)
     }
@@ -866,7 +866,7 @@ mod items_and_open_flags {
     /// a NULL `start` only under `GIT_REPOSITORY_OPEN_FROM_ENV`, which reads it from
     /// the environment.
     fn open_nullable(start: Option<&CStr>, flags: u32, ceiling: Option<&CStr>) -> Opened {
-        assert!(start.is_some() || flags & ffi::GIT_REPOSITORY_OPEN_FROM_ENV != 0);
+        assert!(start.is_some() || flags & raw::GIT_REPOSITORY_OPEN_FROM_ENV != 0);
         let c_str = |s: Option<&CStr>| s.map_or(ptr::null(), CStr::as_ptr);
         let (start, ceiling) = (c_str(start), c_str(ceiling));
         let mut out = ptr::null_mut();
@@ -874,7 +874,7 @@ mod items_and_open_flags {
         // read for the call only, or NULL, which libgit2 accepts for `ceiling` and, as
         // asserted, for `start` under `FROM_ENV`. The result is NULL or a fresh
         // repository.
-        let rc = unsafe { ffi::git_repository_open_ext(&raw mut out, start, flags, ceiling) };
+        let rc = unsafe { raw::git_repository_open_ext(&raw mut out, start, flags, ceiling) };
         if rc < 0 {
             assert!(out.is_null());
             return (rc, Err(c_last()));
@@ -884,11 +884,11 @@ mod items_and_open_flags {
         let repo = Repo(out);
         // SAFETY: `repo` is live; the strings it returns live as long as it, past the
         // copies.
-        let repository_path = unsafe { ffi::git_repository_path(repo.0) };
+        let repository_path = unsafe { raw::git_repository_path(repo.0) };
         // SAFETY: as above.
         let path = unsafe { c_string(repository_path) };
         // SAFETY: as above.
-        let repository_workdir = unsafe { ffi::git_repository_workdir(repo.0) };
+        let repository_workdir = unsafe { raw::git_repository_workdir(repo.0) };
         // SAFETY: as above.
         let workdir = unsafe { c_string(repository_workdir) };
         // SAFETY: as above.
@@ -896,7 +896,7 @@ mod items_and_open_flags {
             (
                 path.unwrap(),
                 workdir,
-                ffi::git_repository_is_bare(repo.0) == 1,
+                raw::git_repository_is_bare(repo.0) == 1,
             )
         };
         (rc, Ok(opened))
@@ -905,13 +905,13 @@ mod items_and_open_flags {
     /// `git_repository_item_path(repo, raw)`: the return, and the path or the error.
     fn item_path(
         repo: &Repo,
-        raw: ffi::git_repository_item_t,
+        raw: raw::git_repository_item_t,
     ) -> (c_int, Result<String, (c_int, CString)>) {
-        let mut buf = ffi::git_buf::default();
+        let mut buf = raw::git_buf::default();
         // SAFETY: `buf` is an empty `git_buf`, `repo` a live repository and `raw` a
         // value below `GIT_REPOSITORY_ITEM__LAST` (the callers pass only the constants
         // and the variants), so libgit2 indexes its item table in bounds.
-        let rc = unsafe { ffi::git_repository_item_path(&raw mut buf, repo.0, raw) };
+        let rc = unsafe { raw::git_repository_item_path(&raw mut buf, repo.0, raw) };
         let result = if rc < 0 {
             Err(c_last())
         } else {
@@ -920,7 +920,7 @@ mod items_and_open_flags {
             Ok(unsafe { c_string(buf.ptr) }.unwrap())
         };
         // SAFETY: `buf` is the call's buffer, disposed of exactly once.
-        unsafe { ffi::git_buf_dispose(&raw mut buf) };
+        unsafe { raw::git_buf_dispose(&raw mut buf) };
         (rc, result)
     }
 
@@ -935,7 +935,7 @@ mod items_and_open_flags {
             let named = ITEMS.iter().find(|(c, _)| *c == raw).map(|&(_, item)| item);
             assert_eq!(Item::from_raw(raw), named, "{raw}");
             if named.is_none() {
-                assert!(raw >= ffi::GIT_REPOSITORY_ITEM__LAST);
+                assert!(raw >= raw::GIT_REPOSITORY_ITEM__LAST);
                 assert_eq!(Item::try_from(raw).map_err(UnnamedItem::raw), Err(raw));
             }
         }
@@ -979,7 +979,7 @@ mod items_and_open_flags {
         // SAFETY: `out` is a live slot, the paths NUL-terminated strings read for the
         // call only; the result is kept and freed by `Repo`.
         let rc = unsafe {
-            ffi::git_repository_open_ext(&raw mut out, wt_path.as_ptr(), 0, ceiling.as_ptr())
+            raw::git_repository_open_ext(&raw mut out, wt_path.as_ptr(), 0, ceiling.as_ptr())
         };
         assert_eq!(rc, 0, "{:?}", c_last());
         let wt_repo = Repo(out);
@@ -1030,9 +1030,9 @@ mod items_and_open_flags {
                     None => assert_eq!(
                         c,
                         (
-                            ffi::GIT_ENOTFOUND,
+                            raw::GIT_ENOTFOUND,
                             Err((
-                                ffi::GIT_ERROR_INVALID.cast_signed(),
+                                raw::GIT_ERROR_INVALID.cast_signed(),
                                 c"path cannot exist in repository".to_owned()
                             ))
                         ),
@@ -1052,7 +1052,7 @@ mod items_and_open_flags {
         let mut out = ptr::null_mut();
         // SAFETY: `out` is a live slot; the result is a fresh repository, freed by
         // `Repo`.
-        assert_eq!(unsafe { ffi::git_repository_new(&raw mut out) }, 0);
+        assert_eq!(unsafe { raw::git_repository_new(&raw mut out) }, 0);
         let repo = Repo(out);
         for (raw, item) in ITEMS {
             let c = item_path(&repo, raw);
@@ -1060,9 +1060,9 @@ mod items_and_open_flags {
             assert_eq!(
                 c,
                 (
-                    ffi::GIT_ENOTFOUND,
+                    raw::GIT_ENOTFOUND,
                     Err((
-                        ffi::GIT_ERROR_INVALID.cast_signed(),
+                        raw::GIT_ERROR_INVALID.cast_signed(),
                         c"path cannot exist in repository".to_owned()
                     ))
                 ),
@@ -1132,7 +1132,7 @@ mod items_and_open_flags {
         }
         // The scenarios reach both an open and a refusal.
         assert!(
-            outcomes.contains(&0) && outcomes.contains(&ffi::GIT_ENOTFOUND),
+            outcomes.contains(&0) && outcomes.contains(&raw::GIT_ENOTFOUND),
             "{outcomes:?}"
         );
     }
@@ -1155,9 +1155,9 @@ mod items_and_open_flags {
             |git: &str, work: Option<&str>, is_bare| (0, Ok((dir(git), work.map(dir), is_bare)));
         let refused = |start: &CString| {
             (
-                ffi::GIT_ENOTFOUND,
+                raw::GIT_ENOTFOUND,
                 Err((
-                    ffi::GIT_ERROR_REPOSITORY.cast_signed(),
+                    raw::GIT_ERROR_REPOSITORY.cast_signed(),
                     CString::new(format!(
                         "could not find repository at '{}'",
                         start.to_str().unwrap()
@@ -1235,7 +1235,7 @@ mod items_and_open_flags {
             let c = open_nullable(Some(deeper), bits, None);
             assert_eq!(open_nullable(Some(deeper), set.bits(), None), c, "{set:?}");
             let expected = if set.contains(OpenFlag::NoSearch) {
-                ffi::GIT_ENOTFOUND
+                raw::GIT_ENOTFOUND
             } else {
                 0
             };
@@ -1276,7 +1276,7 @@ mod items_and_open_flags {
                 "{set:?}"
             );
             // Nothing above is a repository, so both searches end empty-handed.
-            assert_eq!(c.0, ffi::GIT_ENOTFOUND, "{set:?} {c:?}");
+            assert_eq!(c.0, raw::GIT_ENOTFOUND, "{set:?} {c:?}");
         }
         drop(fs::remove_dir_all(start.parent().unwrap()));
     }
@@ -1382,7 +1382,7 @@ mod items_and_open_flags {
                     "{set:?}"
                 );
                 // The search from `deeper` stops at the ceiling `main/sub`.
-                assert_eq!(from_deeper.0, ffi::GIT_ENOTFOUND, "{set:?} {from_deeper:?}");
+                assert_eq!(from_deeper.0, raw::GIT_ENOTFOUND, "{set:?} {from_deeper:?}");
             }
             // Without `FromEnv` nothing is read: the search reaches `main`.
             assert_eq!(step(Some(&deeper), OpenFlags::empty()).0, 0);
@@ -1412,42 +1412,42 @@ mod state {
     use std::path::{Path, PathBuf};
     use std::{fs, ptr};
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::repository::RepositoryState;
+    use libgit2::sys::libgit2 as raw;
 
     /// Every `git_repository_state_t` constant, beside the variant that must carry it.
-    const STATES: [(ffi::git_repository_state_t, RepositoryState); 12] = [
-        (ffi::GIT_REPOSITORY_STATE_NONE, RepositoryState::Clean),
-        (ffi::GIT_REPOSITORY_STATE_MERGE, RepositoryState::Merge),
-        (ffi::GIT_REPOSITORY_STATE_REVERT, RepositoryState::Revert),
+    const STATES: [(raw::git_repository_state_t, RepositoryState); 12] = [
+        (raw::GIT_REPOSITORY_STATE_NONE, RepositoryState::Clean),
+        (raw::GIT_REPOSITORY_STATE_MERGE, RepositoryState::Merge),
+        (raw::GIT_REPOSITORY_STATE_REVERT, RepositoryState::Revert),
         (
-            ffi::GIT_REPOSITORY_STATE_REVERT_SEQUENCE,
+            raw::GIT_REPOSITORY_STATE_REVERT_SEQUENCE,
             RepositoryState::RevertSequence,
         ),
         (
-            ffi::GIT_REPOSITORY_STATE_CHERRYPICK,
+            raw::GIT_REPOSITORY_STATE_CHERRYPICK,
             RepositoryState::CherryPick,
         ),
         (
-            ffi::GIT_REPOSITORY_STATE_CHERRYPICK_SEQUENCE,
+            raw::GIT_REPOSITORY_STATE_CHERRYPICK_SEQUENCE,
             RepositoryState::CherryPickSequence,
         ),
-        (ffi::GIT_REPOSITORY_STATE_BISECT, RepositoryState::Bisect),
-        (ffi::GIT_REPOSITORY_STATE_REBASE, RepositoryState::Rebase),
+        (raw::GIT_REPOSITORY_STATE_BISECT, RepositoryState::Bisect),
+        (raw::GIT_REPOSITORY_STATE_REBASE, RepositoryState::Rebase),
         (
-            ffi::GIT_REPOSITORY_STATE_REBASE_INTERACTIVE,
+            raw::GIT_REPOSITORY_STATE_REBASE_INTERACTIVE,
             RepositoryState::RebaseInteractive,
         ),
         (
-            ffi::GIT_REPOSITORY_STATE_REBASE_MERGE,
+            raw::GIT_REPOSITORY_STATE_REBASE_MERGE,
             RepositoryState::RebaseMerge,
         ),
         (
-            ffi::GIT_REPOSITORY_STATE_APPLY_MAILBOX,
+            raw::GIT_REPOSITORY_STATE_APPLY_MAILBOX,
             RepositoryState::ApplyMailbox,
         ),
         (
-            ffi::GIT_REPOSITORY_STATE_APPLY_MAILBOX_OR_REBASE,
+            raw::GIT_REPOSITORY_STATE_APPLY_MAILBOX_OR_REBASE,
             RepositoryState::ApplyMailboxOrRebase,
         ),
     ];
@@ -1497,7 +1497,7 @@ mod state {
     struct StateRepo {
         base: PathBuf,
         gitdir: PathBuf,
-        repo: *mut ffi::git_repository,
+        repo: *mut raw::git_repository,
     }
 
     impl StateRepo {
@@ -1507,32 +1507,32 @@ mod state {
         )]
         fn new(tag: &str, bare: bool) -> Self {
             // SAFETY: no arguments; the reference is never released.
-            assert!(unsafe { ffi::git_libgit2_init() } >= 1);
+            assert!(unsafe { raw::git_libgit2_init() } >= 1);
             let base = std::env::temp_dir().join(format!(
                 "crustify-repository-state-equiv-{}-{tag}",
                 std::process::id()
             ));
             drop(fs::remove_dir_all(&base));
             let c_path = CString::new(base.as_os_str().as_bytes()).unwrap();
-            let mut opts = ffi::git_repository_init_options::default();
+            let mut opts = raw::git_repository_init_options::default();
             // SAFETY: `opts` is a live options struct, filled with the version's
             // defaults.
             let rc = unsafe {
-                ffi::git_repository_init_options_init(
+                raw::git_repository_init_options_init(
                     &raw mut opts,
-                    ffi::GIT_REPOSITORY_INIT_OPTIONS_VERSION,
+                    raw::GIT_REPOSITORY_INIT_OPTIONS_VERSION,
                 )
             };
             assert_eq!(rc, 0);
-            opts.flags = ffi::GIT_REPOSITORY_INIT_MKPATH;
+            opts.flags = raw::GIT_REPOSITORY_INIT_MKPATH;
             if bare {
-                opts.flags |= ffi::GIT_REPOSITORY_INIT_BARE;
+                opts.flags |= raw::GIT_REPOSITORY_INIT_BARE;
             }
             let mut repo = ptr::null_mut();
             // SAFETY: a live slot, a NUL-terminated path and live options, read for the
             // call.
             let rc = unsafe {
-                ffi::git_repository_init_ext(&raw mut repo, c_path.as_ptr(), &raw mut opts)
+                raw::git_repository_init_ext(&raw mut repo, c_path.as_ptr(), &raw mut opts)
             };
             assert_eq!(rc, 0);
             let gitdir = if bare {
@@ -1546,7 +1546,7 @@ mod state {
         /// `git_repository_state`'s raw answer.
         fn state(&self) -> c_int {
             // SAFETY: the live repository, only read.
-            unsafe { ffi::git_repository_state(self.repo) }
+            unsafe { raw::git_repository_state(self.repo) }
         }
 
         fn apply(&self, step: &Step) {
@@ -1557,7 +1557,7 @@ mod state {
                 Step::RemoveDir(p) => fs::remove_dir_all(at(p)).unwrap(),
                 Step::Cleanup => {
                     // SAFETY: the live repository.
-                    let rc = unsafe { ffi::git_repository_state_cleanup(self.repo) };
+                    let rc = unsafe { raw::git_repository_state_cleanup(self.repo) };
                     assert_eq!(rc, 0);
                 }
             }
@@ -1567,17 +1567,17 @@ mod state {
     impl Drop for StateRepo {
         fn drop(&mut self) {
             // SAFETY: the repository this fixture opened, freed once.
-            unsafe { ffi::git_repository_free(self.repo) };
+            unsafe { raw::git_repository_free(self.repo) };
             drop(fs::remove_dir_all(&self.base));
         }
     }
 
     /// The variant C's answer names, checked to convert back to that answer.
     fn converted(raw: c_int) -> Option<RepositoryState> {
-        let raw = ffi::git_repository_state_t::try_from(raw).ok()?;
+        let raw = raw::git_repository_state_t::try_from(raw).ok()?;
         let state = RepositoryState::from_raw(raw)?;
         assert_eq!(state.raw(), raw);
-        assert_eq!(ffi::git_repository_state_t::from(state), raw);
+        assert_eq!(raw::git_repository_state_t::from(state), raw);
         Some(state)
     }
 
@@ -1589,7 +1589,7 @@ mod state {
         }
         // The constants are dense from 0: nothing past the last is named.
         assert_eq!(
-            RepositoryState::from_raw(ffi::GIT_REPOSITORY_STATE_APPLY_MAILBOX_OR_REBASE + 1),
+            RepositoryState::from_raw(raw::GIT_REPOSITORY_STATE_APPLY_MAILBOX_OR_REBASE + 1),
             None
         );
     }
@@ -1653,9 +1653,9 @@ mod repository_owner {
     use std::process::Command;
     use std::{fs, ptr, thread};
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::oid::OidType;
     use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox, RepositoryError};
+    use libgit2::sys::libgit2 as raw;
 
     /// libgit2's bare test repository, only ever opened read-only.
     const TESTREPO: &str = concat!(
@@ -1683,7 +1683,7 @@ mod repository_owner {
         workdir: Option<String>,
         commondir: Option<String>,
         is_bare: c_int,
-        oid_type: ffi::git_oid_t,
+        oid_type: raw::git_oid_t,
     }
 
     /// One step's outcome.
@@ -1799,22 +1799,22 @@ mod repository_owner {
     }
 
     /// The state of the live repository `repo`.
-    fn state(scratch: &Scratch, repo: *mut ffi::git_repository) -> State {
+    fn state(scratch: &Scratch, repo: *mut raw::git_repository) -> State {
         // SAFETY: `repo` is live; each getter only reads it, and the strings they
         // return live as long as it does, past the copies.
-        let repository_path = unsafe { ffi::git_repository_path(repo) };
+        let repository_path = unsafe { raw::git_repository_path(repo) };
         // SAFETY: as above.
         let copied2 = unsafe { copied(scratch, repository_path) };
         // SAFETY: as above.
-        let repository_workdir = unsafe { ffi::git_repository_workdir(repo) };
+        let repository_workdir = unsafe { raw::git_repository_workdir(repo) };
         // SAFETY: as above.
         let copied3 = unsafe { copied(scratch, repository_workdir) };
         // SAFETY: as above.
-        let repository_commondir = unsafe { ffi::git_repository_commondir(repo) };
+        let repository_commondir = unsafe { raw::git_repository_commondir(repo) };
         // SAFETY: as above.
         let copied4 = unsafe { copied(scratch, repository_commondir) };
         // SAFETY: as above.
-        let repository_is_bare = unsafe { ffi::git_repository_is_bare(repo) };
+        let repository_is_bare = unsafe { raw::git_repository_is_bare(repo) };
         // SAFETY: as above.
         unsafe {
             State {
@@ -1822,7 +1822,7 @@ mod repository_owner {
                 workdir: copied3,
                 commondir: copied4,
                 is_bare: repository_is_bare,
-                oid_type: ffi::git_repository_oid_type(repo),
+                oid_type: raw::git_repository_oid_type(repo),
             }
         }
     }
@@ -1845,26 +1845,26 @@ mod repository_owner {
         // options, each read for the call only; the runtime is initialised.
         let rc = match step {
             // SAFETY: as above.
-            Step::New => unsafe { ffi::git_repository_new(&raw mut out) },
+            Step::New => unsafe { raw::git_repository_new(&raw mut out) },
             Step::WithOidType(kind) => {
-                let mut opts = ffi::git_repository_new_options {
-                    version: ffi::GIT_REPOSITORY_NEW_OPTIONS_VERSION,
+                let mut opts = raw::git_repository_new_options {
+                    version: raw::GIT_REPOSITORY_NEW_OPTIONS_VERSION,
                     oid_type: kind.raw(),
                 };
                 // SAFETY: as above.
-                unsafe { ffi::git_repository_new_ext(&raw mut out, &raw mut opts) }
+                unsafe { raw::git_repository_new_ext(&raw mut out, &raw mut opts) }
             }
             Step::OpenTestrepo { bare: false } | Step::Open(_) => {
                 // SAFETY: as above.
-                unsafe { ffi::git_repository_open(&raw mut out, path.as_ptr()) }
+                unsafe { raw::git_repository_open(&raw mut out, path.as_ptr()) }
             }
             Step::OpenTestrepo { bare: true } | Step::OpenBare(_) => {
                 // SAFETY: as above.
-                unsafe { ffi::git_repository_open_bare(&raw mut out, path.as_ptr()) }
+                unsafe { raw::git_repository_open_bare(&raw mut out, path.as_ptr()) }
             }
             Step::Init(_, bare) => {
                 // SAFETY: as above.
-                unsafe { ffi::git_repository_init(&raw mut out, path.as_ptr(), bare.into()) }
+                unsafe { raw::git_repository_init(&raw mut out, path.as_ptr(), bare.into()) }
             }
         };
         let outcome = if rc == 0 {
@@ -1878,7 +1878,7 @@ mod repository_owner {
             }
         };
         // SAFETY: `out` is NULL or the repository the call produced, freed once.
-        unsafe { ffi::git_repository_free(out) };
+        unsafe { raw::git_repository_free(out) };
         (outcome, filled.map(|rel| scratch.tree(rel)))
     }
 
@@ -1909,7 +1909,7 @@ mod repository_owner {
         {
             // SAFETY: the runtime is initialised; the result is a static error or this
             // thread's, live until the next libgit2 call on this thread, after the copy.
-            let e = unsafe { ffi::git_error_last() };
+            let e = unsafe { raw::git_error_last() };
             // SAFETY: as above.
             let message = unsafe { (*e).message };
             // SAFETY: as above.
@@ -1928,7 +1928,7 @@ mod repository_owner {
     /// Initialises libgit2 for the C side; never released.
     fn init() {
         // SAFETY: no arguments; the reference is never released.
-        assert!(unsafe { ffi::git_libgit2_init() } >= 1);
+        assert!(unsafe { raw::git_libgit2_init() } >= 1);
     }
 
     /// Runs `steps` on each side, each on a thread and in a scratch directory of its
@@ -2073,21 +2073,21 @@ mod init_options {
     use std::process::Command;
     use std::{fs, ptr};
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::oid::OidType;
     use libgit2::libgit2::src::libgit2::refdb::RefdbType;
     use libgit2::libgit2::src::libgit2::repository::{
         InitFlag, InitFlags, InitMode, InitOptions, InitOptionsMut, InitOptionsRef, Repository,
     };
+    use libgit2::sys::libgit2 as raw;
 
     fn init() {
         // SAFETY: no arguments; the reference is never released.
-        assert!(unsafe { ffi::git_libgit2_init() } >= 1);
+        assert!(unsafe { raw::git_libgit2_init() } >= 1);
     }
 
     /// `git_repository_init_options_init(version)` into a zeroed struct.
-    fn c_options(version: u32) -> (c_int, ffi::git_repository_init_options) {
-        let mut opts = ffi::git_repository_init_options {
+    fn c_options(version: u32) -> (c_int, raw::git_repository_init_options) {
+        let mut opts = raw::git_repository_init_options {
             version: 0,
             flags: 0,
             mode: 0,
@@ -2100,7 +2100,7 @@ mod init_options {
             refdb_type: 0,
         };
         // SAFETY: `opts` is a live options struct the call may overwrite.
-        let rc = unsafe { ffi::git_repository_init_options_init(&raw mut opts, version) };
+        let rc = unsafe { raw::git_repository_init_options_init(&raw mut opts, version) };
         (rc, opts)
     }
 
@@ -2117,7 +2117,7 @@ mod init_options {
         })
     }
 
-    fn c_fields(o: &ffi::git_repository_init_options, root: &Path) -> Fields {
+    fn c_fields(o: &raw::git_repository_init_options, root: &Path) -> Fields {
         (
             [o.version, o.flags, o.mode, o.oid_type, o.refdb_type],
             [
@@ -2154,13 +2154,13 @@ mod init_options {
     #[cfg_attr(miri, ignore = "calls libgit2")]
     fn new_matches_the_c_initialisers() {
         let root = Path::new("/");
-        let (rc, c) = c_options(ffi::GIT_REPOSITORY_INIT_OPTIONS_VERSION);
+        let (rc, c) = c_options(raw::GIT_REPOSITORY_INIT_OPTIONS_VERSION);
         assert_eq!(rc, 0);
         let rust = InitOptions::new();
         assert_eq!(rust_fields(rust.as_ref(), root), c_fields(&c, root));
         // `GIT_REPOSITORY_INIT_OPTIONS_INIT` is `{VERSION}`: every other field zero.
         let mut macro_form = c_options(0).1;
-        macro_form.version = ffi::GIT_REPOSITORY_INIT_OPTIONS_VERSION;
+        macro_form.version = raw::GIT_REPOSITORY_INIT_OPTIONS_VERSION;
         assert_eq!(
             rust_fields(rust.as_ref(), root),
             c_fields(&macro_form, root)
@@ -2249,19 +2249,19 @@ mod init_options {
     type Call = (c_int, Option<(c_int, String)>, u32);
 
     /// `git_repository_init_ext(root/path, opts)`, freeing any repository it leaves.
-    fn init_ext(root: &Path, path: &str, opts: *mut ffi::git_repository_init_options) -> Call {
+    fn init_ext(root: &Path, path: &str, opts: *mut raw::git_repository_init_options) -> Call {
         let c_path = CString::new(root.join(path).as_os_str().as_bytes()).unwrap();
         let mut repo = ptr::null_mut();
         // SAFETY: `repo` is a live slot, `c_path` NUL-terminated and `opts` live options
         // whose strings outlive the call.
-        let rc = unsafe { ffi::git_repository_init_ext(&raw mut repo, c_path.as_ptr(), opts) };
+        let rc = unsafe { raw::git_repository_init_ext(&raw mut repo, c_path.as_ptr(), opts) };
         // SAFETY: `repo` is NULL or the repository the call left, released once here.
-        unsafe { ffi::git_repository_free(repo) };
+        unsafe { raw::git_repository_free(repo) };
         // A successful open leaves a stale error behind, so only a failure's counts.
         let error = (rc != 0).then(|| {
             // SAFETY: after a failure `git_error_last` is this thread's error, live until
             // the next libgit2 call on this thread.
-            let e = unsafe { ffi::git_error_last() };
+            let e = unsafe { raw::git_error_last() };
             // SAFETY: as above, non-NULL; it is copied out first.
             let e = unsafe { &*e };
             // SAFETY: a set error's message is a NUL-terminated string.
@@ -2326,7 +2326,7 @@ mod init_options {
     /// One change to the options, spelled both ways: through the C struct's fields
     /// and through the setters.
     struct Change {
-        c: fn(&mut ffi::git_repository_init_options, &Strings),
+        c: fn(&mut raw::git_repository_init_options, &Strings),
         rust: for<'o> fn(&mut InitOptions<'o>, &'o Strings),
     }
 
@@ -2343,7 +2343,7 @@ mod init_options {
     )]
     fn steps() -> Vec<Step> {
         use InitFlag::*;
-        use ffi::{
+        use raw::{
             GIT_REPOSITORY_INIT_BARE as BARE, GIT_REPOSITORY_INIT_EXTERNAL_TEMPLATE as EXTERNAL,
             GIT_REPOSITORY_INIT_MKDIR as MKDIR, GIT_REPOSITORY_INIT_MKPATH as MKPATH,
             GIT_REPOSITORY_INIT_NO_REINIT as NO_REINIT,
@@ -2411,9 +2411,9 @@ mod init_options {
                 change: change!(
                     |c, s| {
                         c.flags = BARE | MKDIR;
-                        c.mode = ffi::GIT_REPOSITORY_INIT_SHARED_GROUP;
+                        c.mode = raw::GIT_REPOSITORY_INIT_SHARED_GROUP;
                         c.template_path = s.template.as_ptr();
-                        c.oid_type = ffi::GIT_OID_SHA256;
+                        c.oid_type = raw::GIT_OID_SHA256;
                         c.initial_head = ptr::null();
                         c.description = ptr::null();
                     },
@@ -2436,7 +2436,7 @@ mod init_options {
                         c.mode = 0o750;
                         c.template_path = ptr::null();
                         c.oid_type = 0;
-                        c.refdb_type = ffi::GIT_REFDB_REFTABLE;
+                        c.refdb_type = raw::GIT_REFDB_REFTABLE;
                     },
                     |r, s| {
                         r.set_flags(Bare | Mkpath);
@@ -2453,8 +2453,8 @@ mod init_options {
                 change: change!(
                     |c, s| {
                         c.flags = MKPATH | RELATIVE;
-                        c.mode = ffi::GIT_REPOSITORY_INIT_SHARED_UMASK;
-                        c.refdb_type = ffi::GIT_REFDB_FILES;
+                        c.mode = raw::GIT_REPOSITORY_INIT_SHARED_UMASK;
+                        c.refdb_type = raw::GIT_REFDB_FILES;
                         c.workdir_path = s.workdir.as_ptr();
                     },
                     |r, s| {
@@ -2471,7 +2471,7 @@ mod init_options {
                 change: change!(
                     |c, s| {
                         c.flags = BARE | MKPATH | EXTERNAL;
-                        c.mode = ffi::GIT_REPOSITORY_INIT_SHARED_ALL;
+                        c.mode = raw::GIT_REPOSITORY_INIT_SHARED_ALL;
                         c.workdir_path = ptr::null();
                     },
                     |r, s| {
@@ -2487,7 +2487,7 @@ mod init_options {
                 change: change!(
                     |c, s| {
                         c.flags = MKPATH;
-                        c.mode = ffi::GIT_REPOSITORY_INIT_SHARED_UMASK;
+                        c.mode = raw::GIT_REPOSITORY_INIT_SHARED_UMASK;
                     },
                     |r, s| {
                         r.set_flags(Mkpath.into());
@@ -2587,7 +2587,7 @@ mod init_options {
         init();
         let roots = [Root::new("c"), Root::new("rust")];
         let strings = [Strings::new(&roots[0]), Strings::new(&roots[1])];
-        let mut c = c_options(ffi::GIT_REPOSITORY_INIT_OPTIONS_VERSION).1;
+        let mut c = c_options(raw::GIT_REPOSITORY_INIT_OPTIONS_VERSION).1;
         let mut rust = InitOptions::new();
         let mut calls = Vec::new();
         // The fields, with the internal flag bits (see `rust_init_ext`) masked.
@@ -2637,7 +2637,7 @@ mod init_options {
         // repository directory was created, and before anything was written into it.
         assert_eq!(
             calls[14].1.1.as_ref().unwrap().0,
-            ffi::GIT_ERROR_OS.cast_signed()
+            raw::GIT_ERROR_OS.cast_signed()
         );
         assert!(
             calls[14]
@@ -2700,35 +2700,35 @@ mod init_options {
             let head = CString::new("explicit").unwrap();
             let template =
                 CString::new(root.join("home/other-tpl").as_os_str().as_bytes()).unwrap();
-            let mut c = c_options(ffi::GIT_REPOSITORY_INIT_OPTIONS_VERSION).1;
+            let mut c = c_options(raw::GIT_REPOSITORY_INIT_OPTIONS_VERSION).1;
             let mut rust = InitOptions::new();
             let mut calls = Vec::new();
             for (tag, c_flags, rust_flags, path) in [
                 (
                     "the configured branch and template",
-                    ffi::GIT_REPOSITORY_INIT_BARE
-                        | ffi::GIT_REPOSITORY_INIT_MKDIR
-                        | ffi::GIT_REPOSITORY_INIT_EXTERNAL_TEMPLATE,
+                    raw::GIT_REPOSITORY_INIT_BARE
+                        | raw::GIT_REPOSITORY_INIT_MKDIR
+                        | raw::GIT_REPOSITORY_INIT_EXTERNAL_TEMPLATE,
                     InitFlag::Bare | InitFlag::Mkdir | InitFlag::ExternalTemplate,
                     "configured",
                 ),
                 (
                     "the configured branch, the built-in template",
-                    ffi::GIT_REPOSITORY_INIT_MKPATH,
+                    raw::GIT_REPOSITORY_INIT_MKPATH,
                     InitFlags::from(InitFlag::Mkpath),
                     "builtin",
                 ),
                 (
                     "an explicit branch and template override the settings",
-                    ffi::GIT_REPOSITORY_INIT_BARE
-                        | ffi::GIT_REPOSITORY_INIT_MKDIR
-                        | ffi::GIT_REPOSITORY_INIT_EXTERNAL_TEMPLATE,
+                    raw::GIT_REPOSITORY_INIT_BARE
+                        | raw::GIT_REPOSITORY_INIT_MKDIR
+                        | raw::GIT_REPOSITORY_INIT_EXTERNAL_TEMPLATE,
                     InitFlag::Bare | InitFlag::Mkdir | InitFlag::ExternalTemplate,
                     "explicit",
                 ),
                 (
                     "a reinitialisation keeps its HEAD",
-                    ffi::GIT_REPOSITORY_INIT_BARE,
+                    raw::GIT_REPOSITORY_INIT_BARE,
                     InitFlags::from(InitFlag::Bare),
                     "explicit",
                 ),
@@ -2848,8 +2848,8 @@ mod init_options {
         ];
         let mut codes = Vec::new();
         for (path, head, template) in steps {
-            let mut c = c_options(ffi::GIT_REPOSITORY_INIT_OPTIONS_VERSION).1;
-            c.flags = ffi::GIT_REPOSITORY_INIT_BARE | ffi::GIT_REPOSITORY_INIT_MKDIR;
+            let mut c = c_options(raw::GIT_REPOSITORY_INIT_OPTIONS_VERSION).1;
+            c.flags = raw::GIT_REPOSITORY_INIT_BARE | raw::GIT_REPOSITORY_INIT_MKDIR;
             c.initial_head = head.map_or(ptr::null(), CStr::as_ptr);
             c.template_path = if template {
                 bad_tpl[0].as_ptr()
@@ -2868,7 +2868,7 @@ mod init_options {
             codes.push((c_call.0, c_call.1.map(|(_, m)| m)));
         }
         let rc: Vec<_> = codes.iter().map(|(rc, _)| *rc).collect();
-        assert_eq!(rc, [-1, 0, 0, ffi::GIT_EEXISTS], "{codes:#?}");
+        assert_eq!(rc, [-1, 0, 0, raw::GIT_EEXISTS], "{codes:#?}");
         for path in ["fresh-bad-head/HEAD", "reinit/HEAD"] {
             let head = fs::read_to_string(roots[0].0.join(path)).unwrap();
             assert_eq!(head, "ref: refs/heads/bad..name\n", "{path}");
@@ -2899,14 +2899,14 @@ mod routines {
     use std::path::{Path, PathBuf};
     use std::{fs, ptr};
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::odb::Odb;
     use libgit2::libgit2::src::libgit2::oid::OidType;
     use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
+    use libgit2::sys::libgit2 as raw;
 
     fn init() {
         // SAFETY: no arguments; the reference is never released.
-        assert!(unsafe { ffi::git_libgit2_init() } >= 1);
+        assert!(unsafe { raw::git_libgit2_init() } >= 1);
     }
 
     /// The thread's last error as C reports it.
@@ -2914,7 +2914,7 @@ mod routines {
         {
             // SAFETY: the runtime is initialised; `git_error_last` never returns NULL, and
             // its message is a C string, live until the next libgit2 call on this thread.
-            let e = unsafe { ffi::git_error_last() };
+            let e = unsafe { raw::git_error_last() };
             // SAFETY: as above.
             let message2 = unsafe { (*e).message };
             // SAFETY: as above.
@@ -2955,14 +2955,14 @@ mod routines {
     }
 
     /// A raw repository, freed on drop.
-    struct CRepo(*mut ffi::git_repository);
+    struct CRepo(*mut raw::git_repository);
 
     impl CRepo {
         fn init(path: &Path, bare: bool) -> Self {
             let mut out = ptr::null_mut();
             let path = c_path(path);
             // SAFETY: a writable slot and a NUL-terminated path, read for the call.
-            let rc = unsafe { ffi::git_repository_init(&raw mut out, path.as_ptr(), bare.into()) };
+            let rc = unsafe { raw::git_repository_init(&raw mut out, path.as_ptr(), bare.into()) };
             assert_eq!(rc, 0);
             Self(out)
         }
@@ -2971,7 +2971,7 @@ mod routines {
             let mut out = ptr::null_mut();
             let path = c_path(path);
             // SAFETY: a writable slot and a NUL-terminated path, read for the call.
-            let rc = unsafe { ffi::git_repository_open(&raw mut out, path.as_ptr()) };
+            let rc = unsafe { raw::git_repository_open(&raw mut out, path.as_ptr()) };
             assert_eq!(rc, 0);
             Self(out)
         }
@@ -2979,7 +2979,7 @@ mod routines {
         fn new() -> Self {
             let mut out = ptr::null_mut();
             // SAFETY: a writable slot.
-            assert_eq!(unsafe { ffi::git_repository_new(&raw mut out) }, 0);
+            assert_eq!(unsafe { raw::git_repository_new(&raw mut out) }, 0);
             Self(out)
         }
     }
@@ -2987,7 +2987,7 @@ mod routines {
     impl Drop for CRepo {
         fn drop(&mut self) {
             // SAFETY: the repository this value made, released once.
-            unsafe { ffi::git_repository_free(self.0) }
+            unsafe { raw::git_repository_free(self.0) }
         }
     }
 
@@ -3009,7 +3009,7 @@ mod routines {
     /// The working directory C reads, masked.
     fn c_workdir(root: &Root, repo: &CRepo) -> Option<String> {
         // SAFETY: a live repository, only read; the result is NULL or its string.
-        let dir = unsafe { ffi::git_repository_workdir(repo.0) };
+        let dir = unsafe { raw::git_repository_workdir(repo.0) };
         // SAFETY: NULL-checked; the string lives as long as the repository.
         (!dir.is_null()).then(|| root.mask(&unsafe { CStr::from_ptr(dir) }.to_string_lossy()))
     }
@@ -3053,32 +3053,32 @@ mod routines {
     /// What a repository over an odb reports: its object id type, git directory,
     /// working directory, and which of `ids` its odb holds.
     fn wrapped_view(
-        repo: *mut ffi::git_repository,
-        ids: &[ffi::git_oid],
+        repo: *mut raw::git_repository,
+        ids: &[raw::git_oid],
     ) -> (u32, bool, bool, Vec<bool>) {
         {
             let mut odb = ptr::null_mut();
             // SAFETY: a live repository and live ids, only read; the odb reference is
             // released once.
-            unsafe { assert_eq!(ffi::git_repository_odb(&raw mut odb, repo), 0) };
+            unsafe { assert_eq!(raw::git_repository_odb(&raw mut odb, repo), 0) };
             // SAFETY: as above.
             let held = unsafe {
                 ids.iter()
-                    .map(|id| ffi::git_odb_exists(odb, id) == 1)
+                    .map(|id| raw::git_odb_exists(odb, id) == 1)
                     .collect()
             };
             // SAFETY: as above.
-            unsafe { ffi::git_odb_free(odb) };
+            unsafe { raw::git_odb_free(odb) };
             // SAFETY: as above.
-            let repository_oid_type = unsafe { ffi::git_repository_oid_type(repo) };
+            let repository_oid_type = unsafe { raw::git_repository_oid_type(repo) };
             // SAFETY: as above.
-            let repository_path = unsafe { ffi::git_repository_path(repo) };
+            let repository_path = unsafe { raw::git_repository_path(repo) };
             // SAFETY: as above.
             unsafe {
                 (
                     repository_oid_type,
                     repository_path.is_null(),
-                    ffi::git_repository_workdir(repo).is_null(),
+                    raw::git_repository_workdir(repo).is_null(),
                     held,
                 )
             }
@@ -3086,17 +3086,17 @@ mod routines {
     }
 
     /// Writes `data` as a blob into the objects directory `objects`; its id.
-    fn write_blob(objects: &Path, oid_type: OidType, data: &[u8]) -> ffi::git_oid {
+    fn write_blob(objects: &Path, oid_type: OidType, data: &[u8]) -> raw::git_oid {
         let odb = Odb::open_with_oid_type(&c_path(objects), oid_type).unwrap();
-        let mut id = ffi::git_oid::default();
+        let mut id = raw::git_oid::default();
         // SAFETY: a live odb, a writable id and `data` live for its length.
         let rc = unsafe {
-            ffi::git_odb_write(
+            raw::git_odb_write(
                 &raw mut id,
                 odb.as_c_ptr(),
                 data.as_ptr().cast(),
                 data.len(),
-                ffi::GIT_OBJECT_BLOB,
+                raw::GIT_OBJECT_BLOB,
             )
         };
         assert_eq!(rc, 0);
@@ -3125,8 +3125,8 @@ mod routines {
             let absent = write_blob(&elsewhere, oid_type, b"three");
             let probe = [ids[0], ids[1], absent];
 
-            let opts = ffi::git_odb_options {
-                version: ffi::GIT_ODB_OPTIONS_VERSION,
+            let opts = raw::git_odb_options {
+                version: raw::GIT_ODB_OPTIONS_VERSION,
                 oid_type: oid_type.raw(),
             };
             let mut c_odb = ptr::null_mut();
@@ -3137,14 +3137,14 @@ mod routines {
                 // caller's odb reference is released once the repository holds its own.
                 unsafe {
                     assert_eq!(
-                        ffi::git_odb_open_ext(&raw mut c_odb, dir.as_ptr(), &raw const opts),
+                        raw::git_odb_open_ext(&raw mut c_odb, dir.as_ptr(), &raw const opts),
                         0
                     );
                 };
                 // SAFETY: as above.
-                let rc = unsafe { ffi::git_repository_wrap_odb(&raw mut c_repo, c_odb) };
+                let rc = unsafe { raw::git_repository_wrap_odb(&raw mut c_repo, c_odb) };
                 // SAFETY: as above.
-                unsafe { ffi::git_odb_free(c_odb) };
+                unsafe { raw::git_odb_free(c_odb) };
                 rc
             };
             let c_repo = CRepo(c_repo);
@@ -3202,12 +3202,12 @@ mod routines {
     fn outcome(
         root: &Root,
         gitdir: &Path,
-        repo: *mut ffi::git_repository,
+        repo: *mut raw::git_repository,
         rc: c_int,
         error: Option<(c_int, String)>,
     ) -> Outcome {
         // SAFETY: a live repository on this thread.
-        let state = (unsafe { ffi::git_repository_state(repo) }).cast_unsigned();
+        let state = (unsafe { raw::git_repository_state(repo) }).cast_unsigned();
         let left = MARKERS
             .into_iter()
             .filter(|m| gitdir.join(m).exists())
@@ -3236,9 +3236,9 @@ mod routines {
             let (c_out, rust_out) = match step {
                 Step::Cleanup => {
                     // SAFETY: no arguments; clears this thread's error state.
-                    unsafe { ffi::git_error_clear() };
+                    unsafe { raw::git_error_clear() };
                     // SAFETY: the live repository of the C side.
-                    let rc = unsafe { ffi::git_repository_state_cleanup(c.0) };
+                    let rc = unsafe { raw::git_repository_state_cleanup(c.0) };
                     let c_error = (rc < 0).then(c_last);
                     let c_out = outcome(&c_root, &gitdir(&c_root), c.0, rc, c_error);
                     let (rc, error) = match rust.as_mut().cleanup_state() {
@@ -3300,7 +3300,7 @@ mod routines {
             );
             // Every step succeeds, and the last cleanup leaves nothing behind.
             assert!(outcomes.iter().all(|o| o.0 == 0), "{outcomes:?}");
-            assert_eq!(outcomes.last().unwrap().2, ffi::GIT_REPOSITORY_STATE_NONE);
+            assert_eq!(outcomes.last().unwrap().2, raw::GIT_REPOSITORY_STATE_NONE);
             assert!(
                 outcomes.last().unwrap().3.is_empty(),
                 "{:?}",
@@ -3354,7 +3354,6 @@ mod heads_and_parts {
     use std::path::{Path, PathBuf};
     use std::{fs, ptr};
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::annotated_commit::AnnotatedCommit;
     use libgit2::libgit2::src::libgit2::config::{Config, ConfigArc};
     use libgit2::libgit2::src::libgit2::index::{Index, IndexArc};
@@ -3364,10 +3363,11 @@ mod heads_and_parts {
         MergeheadCallback, OpenFlag, OpenFlags, Repository, RepositoryBox, RepositoryError,
     };
     use libgit2::libgit2::src::libgit2::worktree::WorktreeBox;
+    use libgit2::sys::libgit2 as raw;
 
     fn init() {
         // SAFETY: no arguments; the reference is never released.
-        assert!(unsafe { ffi::git_libgit2_init() } >= 1);
+        assert!(unsafe { raw::git_libgit2_init() } >= 1);
     }
 
     fn resource(name: &str) -> PathBuf {
@@ -3424,7 +3424,7 @@ mod heads_and_parts {
     fn c_last() -> (c_int, String) {
         // SAFETY: the runtime is initialised; the error is copied before the next
         // libgit2 call on this thread.
-        let e = unsafe { ffi::git_error_last() };
+        let e = unsafe { raw::git_error_last() };
         assert!(!e.is_null());
         {
             // SAFETY: a live error whose message is NULL or a C string.
@@ -3460,14 +3460,14 @@ mod heads_and_parts {
     }
 
     /// A repository C opened, freed on drop.
-    struct CRepo(*mut ffi::git_repository);
+    struct CRepo(*mut raw::git_repository);
 
     impl CRepo {
         fn open(path: &Path) -> Self {
             init();
             let mut out = ptr::null_mut();
             // SAFETY: a live slot and a NUL-terminated path.
-            let rc = unsafe { ffi::git_repository_open(&raw mut out, c_path(path).as_ptr()) };
+            let rc = unsafe { raw::git_repository_open(&raw mut out, c_path(path).as_ptr()) };
             assert_eq!(rc, 0, "{:?}", c_last());
             Self(out)
         }
@@ -3476,7 +3476,7 @@ mod heads_and_parts {
             init();
             let mut out = ptr::null_mut();
             // SAFETY: a live slot.
-            assert_eq!(unsafe { ffi::git_repository_new(&raw mut out) }, 0);
+            assert_eq!(unsafe { raw::git_repository_new(&raw mut out) }, 0);
             Self(out)
         }
     }
@@ -3484,7 +3484,7 @@ mod heads_and_parts {
     impl Drop for CRepo {
         fn drop(&mut self) {
             // SAFETY: the repository this test opened, released once.
-            unsafe { ffi::git_repository_free(self.0) }
+            unsafe { raw::git_repository_free(self.0) }
         }
     }
 
@@ -3603,23 +3603,23 @@ mod heads_and_parts {
             let c = CRepo::open(dir);
             let rust = Repository::open(&c_path(dir)).unwrap();
             // SAFETY: a live repository, only read; the path lives as long as it.
-            let c_path = unsafe { masked(ffi::git_repository_path(c.0), &scratch.0) };
+            let c_path = unsafe { masked(raw::git_repository_path(c.0), &scratch.0) };
             let rust_path = rust.as_ref().path().map(|p| {
                 p.to_string_lossy()
                     .replace(scratch.0.to_str().unwrap(), "<root>")
             });
             assert_eq!(rust_path, c_path, "{dir:?}");
             // SAFETY: a live repository, only read.
-            let c_type = unsafe { ffi::git_repository_oid_type(c.0) };
+            let c_type = unsafe { raw::git_repository_oid_type(c.0) };
             assert_eq!(rust.as_ref().oid_type().raw(), c_type, "{dir:?}");
         }
         let c = CRepo::new();
         let rust = Repository::new().unwrap();
         // SAFETY: a live repository, only read.
-        assert!(unsafe { ffi::git_repository_path(c.0) }.is_null());
+        assert!(unsafe { raw::git_repository_path(c.0) }.is_null());
         assert_eq!(rust.as_ref().path(), None);
         // SAFETY: as above.
-        let c_type = unsafe { ffi::git_repository_oid_type(c.0) };
+        let c_type = unsafe { raw::git_repository_oid_type(c.0) };
         assert_eq!(rust.as_ref().oid_type().raw(), c_type);
     }
 
@@ -3633,29 +3633,29 @@ mod heads_and_parts {
         for (c, rust) in [(c.0, &rust), (c_new.0, &rust_new)] {
             let mut odb = ptr::null_mut();
             // SAFETY: a live slot and repository.
-            let rc = unsafe { ffi::git_repository_odb(&raw mut odb, c) };
+            let rc = unsafe { raw::git_repository_odb(&raw mut odb, c) };
             let c_side = if rc < 0 {
                 Err(c_outcome(rc))
             } else {
                 // SAFETY: the reference just returned, read and released once.
-                let n = unsafe { ffi::git_odb_num_backends(odb) };
+                let n = unsafe { raw::git_odb_num_backends(odb) };
                 // SAFETY: as above.
-                unsafe { ffi::git_odb_free(odb) };
+                unsafe { raw::git_odb_free(odb) };
                 Ok(n)
             };
             let rust_side = match rust.as_ref().odb() {
                 // SAFETY: the arc's live odb, only read.
-                Ok(odb) => Ok(unsafe { ffi::git_odb_num_backends(odb.as_c_ptr()) }),
+                Ok(odb) => Ok(unsafe { raw::git_odb_num_backends(odb.as_c_ptr()) }),
                 Err(e) => Err(rust_outcome(Err(e))),
             };
             assert_eq!(rust_side, c_side);
 
             let mut db = ptr::null_mut();
             // SAFETY: a live slot and repository.
-            let rc = unsafe { ffi::git_repository_refdb(&raw mut db, c) };
+            let rc = unsafe { raw::git_repository_refdb(&raw mut db, c) };
             let c_side = c_outcome(rc);
             // SAFETY: NULL or the reference just returned, released once.
-            unsafe { ffi::git_refdb_free(db) };
+            unsafe { raw::git_refdb_free(db) };
             let rust_side = rust_outcome(rust.as_ref().refdb().map(drop));
             assert_eq!(rust_side, c_side);
         }
@@ -3683,7 +3683,7 @@ mod heads_and_parts {
         ];
         let compare = || {
             // SAFETY: a live repository with a git directory.
-            let c_state = unsafe { ffi::git_repository_state(c.0) };
+            let c_state = unsafe { raw::git_repository_state(c.0) };
             let rust_state = rust.as_ref().state().unwrap();
             assert_eq!(rust_state.raw().cast_signed(), c_state);
         };
@@ -3705,9 +3705,9 @@ mod heads_and_parts {
         let scratch = Scratch::new("message");
         let (c_dir, c, rust_dir, rust) = pair(&scratch, "testrepo.git");
         let read = || {
-            let mut buf = ffi::git_buf::default();
+            let mut buf = raw::git_buf::default();
             // SAFETY: an empty buffer and a live repository.
-            let rc = unsafe { ffi::git_repository_message(&raw mut buf, c.0) };
+            let rc = unsafe { raw::git_repository_message(&raw mut buf, c.0) };
             let c_side = if rc < 0 {
                 Err(c_outcome(rc))
             } else {
@@ -3715,7 +3715,7 @@ mod heads_and_parts {
                 Ok(unsafe { std::slice::from_raw_parts(buf.ptr.cast::<u8>(), buf.size) }.to_vec())
             };
             // SAFETY: the call's buffer, disposed of once.
-            unsafe { ffi::git_buf_dispose(&raw mut buf) };
+            unsafe { raw::git_buf_dispose(&raw mut buf) };
             let rust_side = match rust.as_ref().message() {
                 Ok(buf) => Ok(buf.as_ref().as_bytes().to_vec()),
                 Err(e) => Err(rust_outcome(Err(e))),
@@ -3724,7 +3724,7 @@ mod heads_and_parts {
         };
         let remove = || {
             // SAFETY: a live repository with a git directory.
-            let c_rc = unsafe { ffi::git_repository_message_remove(c.0) };
+            let c_rc = unsafe { raw::git_repository_message_remove(c.0) };
             // libgit2 sets no error when the unlink fails: compare the code only.
             let rust_rc = rust
                 .as_ref()
@@ -3790,7 +3790,7 @@ mod heads_and_parts {
             c"HEAD",
         ] {
             // SAFETY: a live repository and a NUL-terminated name.
-            let c_rc = unsafe { ffi::git_repository_set_head(c.0, name.as_ptr()) };
+            let c_rc = unsafe { raw::git_repository_set_head(c.0, name.as_ptr()) };
             compare(name.to_str().unwrap(), c_rc, rust.as_ref().set_head(name));
         }
         for hex in [
@@ -3800,13 +3800,13 @@ mod heads_and_parts {
             c"0000000000000000000000000000000000000001",
             c"7b4384978d2493e851f9cca7858815fac9b10980",
         ] {
-            let mut c_id = ffi::git_oid::default();
-            let (hex_ptr, sha1) = (hex.as_ptr(), ffi::GIT_OID_SHA1);
+            let mut c_id = raw::git_oid::default();
+            let (hex_ptr, sha1) = (hex.as_ptr(), raw::GIT_OID_SHA1);
             // SAFETY: a writable id and a NUL-terminated hex string.
-            let rc = unsafe { ffi::git_oid_from_string(&raw mut c_id, hex_ptr, sha1) };
+            let rc = unsafe { raw::git_oid_from_string(&raw mut c_id, hex_ptr, sha1) };
             assert_eq!(rc, 0);
             // SAFETY: a live repository and a live id of its type.
-            let c_rc = unsafe { ffi::git_repository_set_head_detached(c.0, &raw const c_id) };
+            let c_rc = unsafe { raw::git_repository_set_head_detached(c.0, &raw const c_id) };
             let id = Oid::from_string(hex, OidType::Sha1).unwrap();
             compare(
                 hex.to_str().unwrap(),
@@ -3819,14 +3819,14 @@ mod heads_and_parts {
             let mut annotated = ptr::null_mut();
             // SAFETY: a live slot, repository and revspec.
             let rc = unsafe {
-                ffi::git_annotated_commit_from_revspec(&raw mut annotated, c.0, spec.as_ptr())
+                raw::git_annotated_commit_from_revspec(&raw mut annotated, c.0, spec.as_ptr())
             };
             assert_eq!(rc, 0);
-            let (repo, detach) = (c.0, ffi::git_repository_set_head_detached_from_annotated);
+            let (repo, detach) = (c.0, raw::git_repository_set_head_detached_from_annotated);
             // SAFETY: a live repository and annotated commit, freed once below.
             let c_rc = unsafe { detach(repo, annotated) };
             // SAFETY: as above.
-            unsafe { ffi::git_annotated_commit_free(annotated) };
+            unsafe { raw::git_annotated_commit_free(annotated) };
             let commit = AnnotatedCommit::from_revspec(rust.as_ref(), spec).unwrap();
             let result = rust
                 .as_ref()
@@ -3860,20 +3860,20 @@ mod heads_and_parts {
         for (name, email) in identities {
             let raw = |s: Option<&CStr>| s.map_or(ptr::null(), CStr::as_ptr);
             // SAFETY: a live repository; the strings are copied.
-            let c_rc = unsafe { ffi::git_repository_set_ident(c.0, raw(name), raw(email)) };
+            let c_rc = unsafe { raw::git_repository_set_ident(c.0, raw(name), raw(email)) };
             let result = rust.as_mut().set_ident(name, email);
             assert_eq!(rust_outcome(result), c_outcome(c_rc));
-            let read = |repo: *mut ffi::git_repository| {
+            let read = |repo: *mut raw::git_repository| {
                 let (mut n, mut e) = (ptr::null(), ptr::null());
                 // SAFETY: live slots and repository; the strings live as long as it.
-                let rc = unsafe { ffi::git_repository_ident(&raw mut n, &raw mut e, repo) };
+                let rc = unsafe { raw::git_repository_ident(&raw mut n, &raw mut e, repo) };
                 assert_eq!(rc, 0);
                 (masked(n, &scratch.0), masked(e, &scratch.0))
             };
             assert_eq!(read(rust.as_c_ptr()), read(c.0));
             // The identity reaches the reflog the same way.
             // SAFETY: a live repository and name.
-            let c_rc = unsafe { ffi::git_repository_set_head(c.0, c"refs/heads/br2".as_ptr()) };
+            let c_rc = unsafe { raw::git_repository_set_head(c.0, c"refs/heads/br2".as_ptr()) };
             assert_eq!(
                 rust_outcome(rust.as_ref().set_head(c"refs/heads/br2")),
                 c_outcome(c_rc)
@@ -3883,19 +3883,19 @@ mod heads_and_parts {
         for namespace in [Some(c"space"), Some(c"nested/space"), None, Some(c"")] {
             let raw = namespace.map_or(ptr::null(), CStr::as_ptr);
             // SAFETY: a live repository; the string is copied.
-            let c_rc = unsafe { ffi::git_repository_set_namespace(c.0, raw) };
+            let c_rc = unsafe { raw::git_repository_set_namespace(c.0, raw) };
             assert_eq!(
                 rust_outcome(rust.as_mut().set_namespace(namespace)),
                 c_outcome(c_rc)
             );
             // SAFETY: live repositories; the strings live as long as they do.
-            let repository_get_namespace = unsafe { ffi::git_repository_get_namespace(c.0) };
+            let repository_get_namespace = unsafe { raw::git_repository_get_namespace(c.0) };
             // SAFETY: as above.
             let (c_ns, rust_ns) = unsafe {
                 (
                     masked(repository_get_namespace, &scratch.0),
                     masked(
-                        ffi::git_repository_get_namespace(rust.as_c_ptr()),
+                        raw::git_repository_get_namespace(rust.as_c_ptr()),
                         &scratch.0,
                     ),
                 )
@@ -3922,14 +3922,14 @@ mod heads_and_parts {
         drop(repos);
         let c = CRepo::open(&c_root.join("repo"));
         let mut rust = Repository::open(&c_path(&rust_root.join("repo"))).unwrap();
-        let snapshot = |repo: *mut ffi::git_repository, root: &Path| {
+        let snapshot = |repo: *mut raw::git_repository, root: &Path| {
             // SAFETY: a live repository, only read.
-            let repository_workdir = unsafe { ffi::git_repository_workdir(repo) };
+            let repository_workdir = unsafe { raw::git_repository_workdir(repo) };
             // SAFETY: as above.
             let (workdir, bare) = unsafe {
                 (
                     masked(repository_workdir, root),
-                    ffi::git_repository_is_bare(repo),
+                    raw::git_repository_is_bare(repo),
                 )
             };
             (
@@ -3953,7 +3953,7 @@ mod heads_and_parts {
             let (c_wd, rust_wd) = (c_path(&c_root.join(dir)), c_path(&rust_root.join(dir)));
             let (repo, wd, link) = (c.0, c_wd.as_ptr(), gitlink.into());
             // SAFETY: a live repository with a git directory and a NUL-terminated path.
-            let c_rc = unsafe { ffi::git_repository_set_workdir(repo, wd, link) };
+            let c_rc = unsafe { raw::git_repository_set_workdir(repo, wd, link) };
             let c_outcome = c_outcome(c_rc);
             let rust_outcome = rust_outcome(rust.as_mut().set_workdir(&rust_wd, gitlink));
             let mask = |o: Outcome, root: &Path| {
@@ -3975,7 +3975,7 @@ mod heads_and_parts {
         }
         for _ in 0..2 {
             // SAFETY: a live repository.
-            let c_rc = unsafe { ffi::git_repository_set_bare(c.0) };
+            let c_rc = unsafe { raw::git_repository_set_bare(c.0) };
             assert_eq!(rust_outcome(rust.as_mut().set_bare()), c_outcome(c_rc));
             assert_eq!(
                 snapshot(rust.as_c_ptr(), &rust_root),
@@ -3986,13 +3986,13 @@ mod heads_and_parts {
         let c_new = CRepo::new();
         let mut rust_new = Repository::new().unwrap();
         // SAFETY: a live repository and path; without the gitlink.
-        let c_rc = unsafe { ffi::git_repository_set_workdir(c_new.0, c"/".as_ptr(), 0) };
+        let c_rc = unsafe { raw::git_repository_set_workdir(c_new.0, c"/".as_ptr(), 0) };
         assert_eq!(
             rust_outcome(rust_new.as_mut().set_workdir(c"/", false)),
             c_outcome(c_rc)
         );
         // SAFETY: a live repository.
-        let c_rc = unsafe { ffi::git_repository_set_bare(c_new.0) };
+        let c_rc = unsafe { raw::git_repository_set_bare(c_new.0) };
         assert_eq!(rust_outcome(rust_new.as_mut().set_bare()), c_outcome(c_rc));
     }
 
@@ -4011,7 +4011,7 @@ mod heads_and_parts {
         }
         for recurse in [false, true] {
             // SAFETY: a live repository with a git directory.
-            let c_rc = unsafe { ffi::git_repository_reinit_filesystem(c.0, recurse.into()) };
+            let c_rc = unsafe { raw::git_repository_reinit_filesystem(c.0, recurse.into()) };
             assert_eq!(
                 rust_outcome(rust.as_mut().reinit_filesystem(recurse)),
                 c_outcome(c_rc)
@@ -4033,42 +4033,42 @@ mod heads_and_parts {
         let c_config = Config::new().unwrap();
         let rust_config: ConfigArc<'_> = Config::new().unwrap().into();
         // SAFETY: live repository and config; C up-refs the config.
-        let rc = unsafe { ffi::git_repository_set_config(c.0, c_config.as_c_ptr()) };
+        let rc = unsafe { raw::git_repository_set_config(c.0, c_config.as_c_ptr()) };
         assert_eq!(rc, 0);
         rust.as_mut().set_config(&rust_config);
-        let repo_config = |repo: *mut ffi::git_repository| {
+        let repo_config = |repo: *mut raw::git_repository| {
             let mut out = ptr::null_mut();
             // SAFETY: a live slot and repository; the reference is released at once.
-            assert_eq!(unsafe { ffi::git_repository_config(&raw mut out, repo) }, 0);
+            assert_eq!(unsafe { raw::git_repository_config(&raw mut out, repo) }, 0);
             // SAFETY: as above.
-            unsafe { ffi::git_config_free(out) };
+            unsafe { raw::git_config_free(out) };
             out
         };
         assert_eq!(repo_config(c.0), c_config.as_c_ptr());
         assert_eq!(repo_config(rust.as_c_ptr()), rust_config.as_c_ptr());
 
-        let index_of = |repo: *mut ffi::git_repository| {
+        let index_of = |repo: *mut raw::git_repository| {
             let mut out = ptr::null_mut();
             // SAFETY: a live slot and repository.
-            let rc = unsafe { ffi::git_repository_index(&raw mut out, repo) };
+            let rc = unsafe { raw::git_repository_index(&raw mut out, repo) };
             assert_eq!(rc, 0, "{:?}", c_last());
             // SAFETY: the reference just returned, read and released once.
-            let n = unsafe { ffi::git_index_entrycount(out) };
+            let n = unsafe { raw::git_index_entrycount(out) };
             // SAFETY: as above.
-            unsafe { ffi::git_index_free(out) };
+            unsafe { raw::git_index_free(out) };
             (out, n)
         };
         let c_index: IndexArc = Index::new().unwrap().into();
         let rust_index: IndexArc = Index::new().unwrap().into();
         // SAFETY: live repository and index; C up-refs the index.
-        let rc = unsafe { ffi::git_repository_set_index(c.0, c_index.as_c_ptr()) };
+        let rc = unsafe { raw::git_repository_set_index(c.0, c_index.as_c_ptr()) };
         assert_eq!(rc, 0);
         rust.as_mut().set_index(Some(&rust_index));
         assert_eq!(index_of(c.0), (c_index.as_c_ptr(), 0));
         assert_eq!(index_of(rust.as_c_ptr()), (rust_index.as_c_ptr(), 0));
         // Removed: the repository loads its index file again.
         // SAFETY: a live repository; NULL removes the index.
-        let rc = unsafe { ffi::git_repository_set_index(c.0, ptr::null_mut()) };
+        let rc = unsafe { raw::git_repository_set_index(c.0, ptr::null_mut()) };
         assert_eq!(rc, 0);
         rust.as_mut().set_index(None);
         let (c_loaded, c_entries) = index_of(c.0);
@@ -4081,14 +4081,14 @@ mod heads_and_parts {
         let rust_odb = Odb::new().unwrap();
         let rust_raw = rust_odb.as_c_ptr();
         // SAFETY: live repository and odb; C up-refs the odb.
-        let rc = unsafe { ffi::git_repository_set_odb(c.0, c_odb.as_c_ptr()) };
+        let rc = unsafe { raw::git_repository_set_odb(c.0, c_odb.as_c_ptr()) };
         assert_eq!(rc, 0);
         rust.as_mut().set_odb(rust_odb).unwrap();
         let mut out = ptr::null_mut();
         // SAFETY: a live slot and repository; the reference is released at once.
-        assert_eq!(unsafe { ffi::git_repository_odb(&raw mut out, c.0) }, 0);
+        assert_eq!(unsafe { raw::git_repository_odb(&raw mut out, c.0) }, 0);
         // SAFETY: as above.
-        unsafe { ffi::git_odb_free(out) };
+        unsafe { raw::git_odb_free(out) };
         assert_eq!(out, c_odb.as_c_ptr());
         assert_eq!(rust.as_ref().odb().unwrap().as_c_ptr(), rust_raw);
     }
@@ -4148,17 +4148,17 @@ mod heads_and_parts {
             OpenFlag::Bare | OpenFlag::NoDotGit,
             OpenFlags::from_bits_retain(1 << 9),
         ];
-        let describe = |repo: *mut ffi::git_repository| {
+        let describe = |repo: *mut raw::git_repository| {
             // SAFETY: a live repository, only read; its strings outlive the copies.
-            let repository_path = unsafe { ffi::git_repository_path(repo) };
+            let repository_path = unsafe { raw::git_repository_path(repo) };
             // SAFETY: as above.
-            let repository_workdir = unsafe { ffi::git_repository_workdir(repo) };
+            let repository_workdir = unsafe { raw::git_repository_workdir(repo) };
             // SAFETY: as above.
             unsafe {
                 (
                     masked(repository_path, &scratch.0),
                     masked(repository_workdir, &scratch.0),
-                    ffi::git_repository_is_bare(repo),
+                    raw::git_repository_is_bare(repo),
                 )
             }
         };
@@ -4177,7 +4177,7 @@ mod heads_and_parts {
                     let mut out = ptr::null_mut();
                     // SAFETY: a live slot, a NUL-terminated start and ceiling or NULL.
                     let rc = unsafe {
-                        ffi::git_repository_open_ext(
+                        raw::git_repository_open_ext(
                             &raw mut out,
                             start.as_ptr(),
                             flags.bits(),
@@ -4190,7 +4190,7 @@ mod heads_and_parts {
                         Ok(describe(out))
                     };
                     // SAFETY: NULL or the repository just opened, freed once.
-                    unsafe { ffi::git_repository_free(out) };
+                    unsafe { raw::git_repository_free(out) };
                     let rust_side = match Repository::open_ext(Some(&start), flags, ceiling) {
                         Ok(repo) => Ok(describe(repo.as_c_ptr())),
                         Err(e) => Err(mask(rust_outcome(Err(e)))),
@@ -4199,7 +4199,7 @@ mod heads_and_parts {
 
                     // SAFETY: a NULL out slot: only the search runs.
                     let rc = unsafe {
-                        ffi::git_repository_open_ext(
+                        raw::git_repository_open_ext(
                             ptr::null_mut(),
                             start.as_ptr(),
                             flags.bits(),
@@ -4209,7 +4209,7 @@ mod heads_and_parts {
                     let exists = Repository::exists_ext(Some(&start), flags, ceiling);
                     match rc {
                         0 => assert!(exists.unwrap()),
-                        ffi::GIT_ENOTFOUND => assert!(!exists.unwrap()),
+                        raw::GIT_ENOTFOUND => assert!(!exists.unwrap()),
                         rc => assert_eq!(exists.map_err(|e| e.raw_code()), Err(rc)),
                     }
                 }
@@ -4236,22 +4236,22 @@ mod heads_and_parts {
             let mut wt = ptr::null_mut();
             // SAFETY: a live slot, repository and name.
             let rc =
-                unsafe { ffi::git_worktree_lookup(&raw mut wt, main.as_c_ptr(), c"wt".as_ptr()) };
+                unsafe { raw::git_worktree_lookup(&raw mut wt, main.as_c_ptr(), c"wt".as_ptr()) };
             assert_eq!(rc, 0);
             // SAFETY: the fresh worktree, owned here.
             unsafe { WorktreeBox::from_c(wt) }.unwrap()
         };
-        let describe = |repo: *mut ffi::git_repository| {
+        let describe = |repo: *mut raw::git_repository| {
             // SAFETY: a live repository, only read.
-            let repository_path = unsafe { ffi::git_repository_path(repo) };
+            let repository_path = unsafe { raw::git_repository_path(repo) };
             // SAFETY: as above.
-            let repository_workdir = unsafe { ffi::git_repository_workdir(repo) };
+            let repository_workdir = unsafe { raw::git_repository_workdir(repo) };
             // SAFETY: as above.
             unsafe {
                 (
                     masked(repository_path, &scratch.0),
                     masked(repository_workdir, &scratch.0),
-                    ffi::git_repository_is_bare(repo),
+                    raw::git_repository_is_bare(repo),
                 )
             }
         };
@@ -4260,14 +4260,14 @@ mod heads_and_parts {
             let mut out = ptr::null_mut();
             // SAFETY: a live slot and worktree.
             let rc =
-                unsafe { ffi::git_repository_open_from_worktree(&raw mut out, c_wt.as_c_ptr()) };
+                unsafe { raw::git_repository_open_from_worktree(&raw mut out, c_wt.as_c_ptr()) };
             let c_side = if rc < 0 {
                 Err(c_outcome(rc))
             } else {
                 Ok(describe(out))
             };
             // SAFETY: NULL or the fresh repository, freed once.
-            unsafe { ffi::git_repository_free(out) };
+            unsafe { raw::git_repository_free(out) };
             let rust_side = match Repository::open_from_worktree(rust_wt.as_ref()) {
                 Ok(repo) => Ok(describe(repo.as_c_ptr())),
                 Err(e) => Err(rust_outcome(Err(e))),
@@ -4331,10 +4331,10 @@ mod heads_and_parts {
         };
         let id = |hex: &CStr| Oid::from_string(hex, OidType::Sha1).unwrap();
         let c_id = |hex: &CStr| {
-            let mut out = ffi::git_oid::default();
+            let mut out = raw::git_oid::default();
             // SAFETY: a writable id and a NUL-terminated hex string.
             let rc =
-                unsafe { ffi::git_oid_from_string(&raw mut out, hex.as_ptr(), ffi::GIT_OID_SHA1) };
+                unsafe { raw::git_oid_from_string(&raw mut out, hex.as_ptr(), raw::GIT_OID_SHA1) };
             assert_eq!(rc, 0);
             out
         };
@@ -4346,13 +4346,13 @@ mod heads_and_parts {
             }
             for name in [c"refs/heads/br2", c"refs/heads/a..b", c"not a ref"] {
                 // SAFETY: a live repository and a NUL-terminated name.
-                let c_rc = unsafe { ffi::git_repository_set_head(c.0, name.as_ptr()) };
+                let c_rc = unsafe { raw::git_repository_set_head(c.0, name.as_ptr()) };
                 let c_side = mask(c_outcome(c_rc));
                 let rust_side = mask(rust_outcome(rust.as_ref().set_head(name)));
                 assert_eq!(rust_side, c_side, "{step} {name:?}");
             }
             // SAFETY: a live repository and id of its type.
-            let c_rc = unsafe { ffi::git_repository_set_head_detached(c.0, &c_id(commit)) };
+            let c_rc = unsafe { raw::git_repository_set_head_detached(c.0, &c_id(commit)) };
             let rust_side = rust_outcome(rust.as_ref().set_head_detached(id(commit).as_ref()));
             assert_eq!(mask(rust_side), mask(c_outcome(c_rc)), "{step}");
         }
@@ -4372,7 +4372,7 @@ mod heads_and_parts {
         let mut c = ptr::null_mut();
         // SAFETY: a live slot and a NUL-terminated path.
         let rc = unsafe {
-            ffi::git_repository_open_ext(
+            raw::git_repository_open_ext(
                 &raw mut c,
                 c_path(&c_dir).as_ptr(),
                 bare.bits(),
@@ -4390,19 +4390,19 @@ mod heads_and_parts {
             (o.0, o.1.map(|(k, m)| (k, m.replace(root, "<root>"))))
         };
         // SAFETY: a live repository and path; the gitlink needs the configuration.
-        let c_rc = unsafe { ffi::git_repository_set_workdir(c.0, w.as_ptr(), 1) };
+        let c_rc = unsafe { raw::git_repository_set_workdir(c.0, w.as_ptr(), 1) };
         assert!(c_rc < 0);
         let rust_side = rust_outcome(rust.as_mut().set_workdir(&w, true));
         assert_eq!(mask(rust_side), mask(c_outcome(c_rc)));
         // Not bare any more without the gitlink; making it bare needs the configuration.
         // SAFETY: as above, without the gitlink.
-        let c_rc = unsafe { ffi::git_repository_set_workdir(c.0, w.as_ptr(), 0) };
+        let c_rc = unsafe { raw::git_repository_set_workdir(c.0, w.as_ptr(), 0) };
         assert_eq!(
             rust_outcome(rust.as_mut().set_workdir(&w, false)),
             c_outcome(c_rc)
         );
         // SAFETY: a live repository.
-        let c_rc = unsafe { ffi::git_repository_set_bare(c.0) };
+        let c_rc = unsafe { raw::git_repository_set_bare(c.0) };
         assert!(c_rc < 0);
         assert_eq!(
             mask(rust_outcome(rust.as_mut().set_bare())),
@@ -4428,7 +4428,7 @@ mod heads_and_parts {
         let c = CRepo::open(&roots[0]);
         let mut rust = Repository::open(&c_path(&roots[1])).unwrap();
         // SAFETY: a live repository with a git directory.
-        let c_rc = unsafe { ffi::git_repository_reinit_filesystem(c.0, 1) };
+        let c_rc = unsafe { raw::git_repository_reinit_filesystem(c.0, 1) };
         assert_eq!(
             rust_outcome(rust.as_mut().reinit_filesystem(true)),
             c_outcome(c_rc)
@@ -4456,7 +4456,7 @@ mod heads_and_parts {
                 fs::remove_dir_all(rust_dir.join("objects")).unwrap();
                 let mut odb = ptr::null_mut();
                 // SAFETY: a live slot and repository.
-                let rc = unsafe { ffi::git_repository_odb(&raw mut odb, c.0) };
+                let rc = unsafe { raw::git_repository_odb(&raw mut odb, c.0) };
                 assert_eq!((rc, odb.is_null()), (-1, true));
                 let mask = |o: Outcome| {
                     let root = scratch.0.to_str().unwrap();
@@ -4510,17 +4510,17 @@ mod heads_and_parts {
                 let mut c = ptr::null_mut();
                 // SAFETY: a live slot; NULL start and ceiling under `FROM_ENV`.
                 let rc = unsafe {
-                    ffi::git_repository_open_ext(&raw mut c, ptr::null(), flags.bits(), ptr::null())
+                    raw::git_repository_open_ext(&raw mut c, ptr::null(), flags.bits(), ptr::null())
                 };
                 assert_eq!(rc, 0, "{:?}", c_last());
                 let c = CRepo(c);
                 let rust = Repository::open_ext(None, flags, None).unwrap();
                 // SAFETY: live repositories, only read.
-                let repository_path = unsafe { ffi::git_repository_path(c.0) };
+                let repository_path = unsafe { raw::git_repository_path(c.0) };
                 // SAFETY: as above.
                 let cstr = unsafe { CStr::from_ptr(repository_path) };
                 // SAFETY: as above.
-                let repository_path2 = unsafe { ffi::git_repository_path(rust.as_c_ptr()) };
+                let repository_path2 = unsafe { raw::git_repository_path(rust.as_c_ptr()) };
                 // SAFETY: as above.
                 let (c_path, rust_path) =
                     unsafe { (cstr.to_owned(), CStr::from_ptr(repository_path2).to_owned()) };
@@ -4528,19 +4528,19 @@ mod heads_and_parts {
                 assert_eq!(rust_path, c_path);
                 let mut odb = ptr::null_mut();
                 // SAFETY: a live slot and repository; the reference is released below.
-                assert_eq!(unsafe { ffi::git_repository_odb(&raw mut odb, c.0) }, 0);
+                assert_eq!(unsafe { raw::git_repository_odb(&raw mut odb, c.0) }, 0);
                 // SAFETY: the live reference, read and released once.
-                let c_backends = unsafe { ffi::git_odb_num_backends(odb) };
+                let c_backends = unsafe { raw::git_odb_num_backends(odb) };
                 // SAFETY: as above.
-                unsafe { ffi::git_odb_free(odb) };
+                unsafe { raw::git_odb_free(odb) };
                 let rust_odb = rust.as_ref().odb().unwrap();
                 // SAFETY: the arc's live odb, only read.
-                let rust_backends = unsafe { ffi::git_odb_num_backends(rust_odb.as_c_ptr()) };
+                let rust_backends = unsafe { raw::git_odb_num_backends(rust_odb.as_c_ptr()) };
                 assert_eq!(rust_backends, c_backends);
                 assert!(c_backends > 2, "{c_backends}");
                 // SAFETY: a NULL out slot: only the search.
                 let rc = unsafe {
-                    ffi::git_repository_open_ext(
+                    raw::git_repository_open_ext(
                         ptr::null_mut(),
                         ptr::null(),
                         flags.bits(),
@@ -4576,7 +4576,7 @@ mod heads_and_parts {
         let mut out = ptr::null_mut();
         // SAFETY: a live slot and NUL-terminated start.
         let rc = unsafe {
-            ffi::git_repository_open_ext(&raw mut out, start.as_ptr(), flags.bits(), ptr::null())
+            raw::git_repository_open_ext(&raw mut out, start.as_ptr(), flags.bits(), ptr::null())
         };
         let c_side = c_outcome(rc);
         assert!(out.is_null());
@@ -4584,7 +4584,7 @@ mod heads_and_parts {
         assert_eq!(rust_side, c_side);
         // SAFETY: a NULL out slot: only the search.
         let rc = unsafe {
-            ffi::git_repository_open_ext(ptr::null_mut(), start.as_ptr(), flags.bits(), ptr::null())
+            raw::git_repository_open_ext(ptr::null_mut(), start.as_ptr(), flags.bits(), ptr::null())
         };
         let exists = Repository::exists_ext(Some(&start), flags, None).map_err(|e| e.raw_code());
         assert_eq!(exists, Err(rc));
@@ -4598,13 +4598,13 @@ mod heads_and_parts {
         code: c_int,
     }
 
-    unsafe extern "C" fn record(id: *const ffi::git_oid, payload: *mut c_void) -> c_int {
+    unsafe extern "C" fn record(id: *const raw::git_oid, payload: *mut c_void) -> c_int {
         // SAFETY: the test passes a live `Recorder`; libgit2 a live id. The hex form
         // is written into a local buffer.
         let recorder = unsafe { &mut *payload.cast::<Recorder>() };
         let mut hex = [0u8; 65];
         // SAFETY: 65 writable bytes and a live id.
-        unsafe { ffi::git_oid_tostr(hex.as_mut_ptr().cast(), hex.len(), id) };
+        unsafe { raw::git_oid_tostr(hex.as_mut_ptr().cast(), hex.len(), id) };
         let hex = CStr::from_bytes_until_nul(&hex).unwrap();
         recorder.seen.push(hex.to_str().unwrap().to_owned());
         if recorder.seen.len() == recorder.stop_at {
@@ -4643,7 +4643,7 @@ mod heads_and_parts {
             // SAFETY: a live repository; the callback and payload are used for the
             // call only.
             let c_rc = unsafe {
-                ffi::git_repository_mergehead_foreach(
+                raw::git_repository_mergehead_foreach(
                     repo.as_c_ptr(),
                     Some(record),
                     ptr::from_mut(&mut recorder).cast(),
@@ -4701,12 +4701,12 @@ mod head_and_lookups {
     use std::sync::atomic::Ordering::SeqCst;
     use std::{fs, ptr, thread};
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::object::ObjectType;
     use libgit2::libgit2::src::libgit2::repository::{
         FetchheadEntry, FetchheadForeachCallback, Item, Repository, RepositoryBox, RepositoryError,
         discover,
     };
+    use libgit2::sys::libgit2 as raw;
 
     const RESOURCES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/c/tests/resources");
 
@@ -4838,7 +4838,7 @@ mod head_and_lookups {
         {
             // SAFETY: the runtime is initialised; the result is a static error or this
             // thread's, live until the next libgit2 call on this thread, after the copy.
-            let e = unsafe { ffi::git_error_last() };
+            let e = unsafe { raw::git_error_last() };
             // SAFETY: as above.
             let message = unsafe { (*e).message };
             // SAFETY: as above.
@@ -4857,7 +4857,7 @@ mod head_and_lookups {
     /// Initialises libgit2 for the C side; never released.
     fn init() {
         // SAFETY: no arguments; the reference is never released.
-        assert!(unsafe { ffi::git_libgit2_init() } >= 1);
+        assert!(unsafe { raw::git_libgit2_init() } >= 1);
     }
 
     /// A NULL or live C string, copied with the root masked.
@@ -4878,13 +4878,13 @@ mod head_and_lookups {
     /// # Safety
     ///
     /// `id` must be NULL or a live id.
-    unsafe fn hex(id: *const ffi::git_oid) -> String {
+    unsafe fn hex(id: *const raw::git_oid) -> String {
         if id.is_null() {
             return "(none)".into();
         }
         let mut out = [0u8; 65];
         // SAFETY: a live id and 65 writable bytes, NUL included.
-        unsafe { ffi::git_oid_tostr(out.as_mut_ptr().cast(), out.len(), id) };
+        unsafe { raw::git_oid_tostr(out.as_mut_ptr().cast(), out.len(), id) };
         CStr::from_bytes_until_nul(&out)
             .unwrap()
             .to_string_lossy()
@@ -4896,17 +4896,17 @@ mod head_and_lookups {
     /// # Safety
     ///
     /// `r` must be a live direct reference; only its fields are read.
-    unsafe fn describe(r: *const ffi::git_reference) -> String {
+    unsafe fn describe(r: *const raw::git_reference) -> String {
         // SAFETY: per this function's contract.
-        let reference_name = unsafe { ffi::git_reference_name(r) };
+        let reference_name = unsafe { raw::git_reference_name(r) };
         // SAFETY: as above.
         let cstr = unsafe { CStr::from_ptr(reference_name) };
         // SAFETY: as above.
-        let reference_target = unsafe { ffi::git_reference_target(r) };
+        let reference_target = unsafe { raw::git_reference_target(r) };
         // SAFETY: as above.
         let hex2 = unsafe { hex(reference_target) };
         // SAFETY: as above.
-        let reference_target_peel = unsafe { ffi::git_reference_target_peel(r) };
+        let reference_target_peel = unsafe { raw::git_reference_target_peel(r) };
         // SAFETY: as above.
         let hex3 = unsafe { hex(reference_target_peel) };
         // SAFETY: as above.
@@ -4916,16 +4916,16 @@ mod head_and_lookups {
                 cstr.to_string_lossy(),
                 hex2,
                 hex3,
-                ffi::git_reference_type(r),
+                raw::git_reference_type(r),
             )
         }
     }
 
     /// An `int32` read from a live config, or its failure.
-    fn read_int32(scratch: &Scratch, config: *mut ffi::git_config, key: &CStr) -> Outcome {
+    fn read_int32(scratch: &Scratch, config: *mut raw::git_config, key: &CStr) -> Outcome {
         let mut value = 0;
         // SAFETY: a live config, only read, and a NUL-terminated key.
-        let rc = unsafe { ffi::git_config_get_int32(&raw mut value, config, key.as_ptr()) };
+        let rc = unsafe { raw::git_config_get_int32(&raw mut value, config, key.as_ptr()) };
         if rc < 0 {
             c_failed(scratch, rc)
         } else {
@@ -4934,13 +4934,13 @@ mod head_and_lookups {
     }
 
     /// A live index's path and entry count.
-    fn read_index(scratch: &Scratch, index: *mut ffi::git_index) -> Outcome {
+    fn read_index(scratch: &Scratch, index: *mut raw::git_index) -> Outcome {
         // SAFETY: a live index, only read; its path lives as long as it does.
-        let index_path = unsafe { ffi::git_index_path(index) };
+        let index_path = unsafe { raw::git_index_path(index) };
         // SAFETY: as above.
         let text = unsafe { text(scratch, index_path) };
         // SAFETY: as above.
-        unsafe { Outcome::Value(format!("{} {}", text, ffi::git_index_entrycount(index))) }
+        unsafe { Outcome::Value(format!("{} {}", text, raw::git_index_entrycount(index))) }
     }
 
     /// The commits of a live array, by id.
@@ -4948,7 +4948,7 @@ mod head_and_lookups {
     /// # Safety
     ///
     /// `commits` must address `count` live commits.
-    unsafe fn commit_ids(commits: *const *mut ffi::git_commit, count: usize) -> String {
+    unsafe fn commit_ids(commits: *const *mut raw::git_commit, count: usize) -> String {
         let ids: Vec<String> = (0..count)
             .map(|i| {
                 // SAFETY: per this function's contract, `commits` holds `count` live
@@ -4957,7 +4957,7 @@ mod head_and_lookups {
                 // SAFETY: as above.
                 let commit = unsafe { *slot };
                 // SAFETY: as above, a live commit.
-                let id = unsafe { ffi::git_commit_id(commit) };
+                let id = unsafe { raw::git_commit_id(commit) };
                 // SAFETY: as above, its id lives with it.
                 unsafe { hex(id) }
             })
@@ -5003,7 +5003,7 @@ mod head_and_lookups {
     }
 
     /// Steps the sides share: opening, and the raw setup.
-    fn setup(scratch: &Scratch, repo: *mut ffi::git_repository, step: Step) -> Option<Outcome> {
+    fn setup(scratch: &Scratch, repo: *mut raw::git_repository, step: Step) -> Option<Outcome> {
         // SAFETY: `repo` is the side's live repository; the setters copy their strings.
         let rc = match step {
             Step::Write(rel, contents) => {
@@ -5014,11 +5014,11 @@ mod head_and_lookups {
             }
             // SAFETY: as above.
             Step::SetNamespace(namespace) => unsafe {
-                ffi::git_repository_set_namespace(repo, namespace.map_or(ptr::null(), CStr::as_ptr))
+                raw::git_repository_set_namespace(repo, namespace.map_or(ptr::null(), CStr::as_ptr))
             },
             // SAFETY: as above.
             Step::SetIdent(name, email) => unsafe {
-                ffi::git_repository_set_ident(
+                raw::git_repository_set_ident(
                     repo,
                     name.map_or(ptr::null(), CStr::as_ptr),
                     email.map_or(ptr::null(), CStr::as_ptr),
@@ -5030,12 +5030,12 @@ mod head_and_lookups {
     }
 
     /// The C side's repository: freed on drop.
-    struct CRepo(*mut ffi::git_repository);
+    struct CRepo(*mut raw::git_repository);
 
     impl Drop for CRepo {
         fn drop(&mut self) {
             // SAFETY: NULL or the side's own repository, freed once.
-            unsafe { ffi::git_repository_free(self.0) };
+            unsafe { raw::git_repository_free(self.0) };
         }
     }
 
@@ -5051,37 +5051,37 @@ mod head_and_lookups {
                 let path = scratch.c_path(rel);
                 *repo = CRepo(ptr::null_mut());
                 // SAFETY: a writable slot and a NUL-terminated path.
-                let rc = unsafe { ffi::git_repository_open(&raw mut repo.0, path.as_ptr()) };
+                let rc = unsafe { raw::git_repository_open(&raw mut repo.0, path.as_ptr()) };
                 c_answer(scratch, rc)
             }
             Step::New => {
                 *repo = CRepo(ptr::null_mut());
                 // SAFETY: a writable slot.
-                c_answer(scratch, unsafe { ffi::git_repository_new(&raw mut repo.0) })
+                c_answer(scratch, unsafe { raw::git_repository_new(&raw mut repo.0) })
             }
             Step::Write(..) | Step::SetNamespace(_) | Step::SetIdent(..) => {
                 setup(scratch, r, step).unwrap()
             }
             Step::Commondir => {
                 // SAFETY: a live repository, only read.
-                let dir = unsafe { ffi::git_repository_commondir(r) };
+                let dir = unsafe { raw::git_repository_commondir(r) };
                 // SAFETY: the string lives as long as the repository does.
                 Outcome::Value(unsafe { text(scratch, dir) })
             }
             // SAFETY: as above.
-            Step::IsBare => c_answer(scratch, unsafe { ffi::git_repository_is_bare(r) }),
+            Step::IsBare => c_answer(scratch, unsafe { raw::git_repository_is_bare(r) }),
             // SAFETY: as above.
-            Step::IsWorktree => c_answer(scratch, unsafe { ffi::git_repository_is_worktree(r) }),
+            Step::IsWorktree => c_answer(scratch, unsafe { raw::git_repository_is_worktree(r) }),
             Step::Namespace => {
                 // SAFETY: as above.
-                let namespace = unsafe { ffi::git_repository_get_namespace(r) };
+                let namespace = unsafe { raw::git_repository_get_namespace(r) };
                 // SAFETY: as above.
                 Outcome::Value(unsafe { text(scratch, namespace) })
             }
             Step::Ident => {
                 let (mut name, mut email) = (ptr::null(), ptr::null());
                 // SAFETY: as above, with two writable slots.
-                let rc = unsafe { ffi::git_repository_ident(&raw mut name, &raw mut email, r) };
+                let rc = unsafe { raw::git_repository_ident(&raw mut name, &raw mut email, r) };
                 assert_eq!(rc, 0);
                 Outcome::Value(
                     // SAFETY: both NULL or the repository's own strings.
@@ -5091,11 +5091,11 @@ mod head_and_lookups {
                 )
             }
             // SAFETY: as above.
-            Step::IsShallow => c_answer(scratch, unsafe { ffi::git_repository_is_shallow(r) }),
+            Step::IsShallow => c_answer(scratch, unsafe { raw::git_repository_is_shallow(r) }),
             Step::ItemPath(item) => {
-                let mut buf = ffi::git_buf::default();
+                let mut buf = raw::git_buf::default();
                 // SAFETY: an empty buffer, a live repository and a named item.
-                let rc = unsafe { ffi::git_repository_item_path(&raw mut buf, r, item.raw()) };
+                let rc = unsafe { raw::git_repository_item_path(&raw mut buf, r, item.raw()) };
                 let outcome = if rc < 0 {
                     c_failed(scratch, rc)
                 } else {
@@ -5103,44 +5103,44 @@ mod head_and_lookups {
                     Outcome::Value(unsafe { text(scratch, buf.ptr) })
                 };
                 // SAFETY: as above.
-                unsafe { ffi::git_buf_dispose(&raw mut buf) };
+                unsafe { raw::git_buf_dispose(&raw mut buf) };
                 outcome
             }
             Step::Config(key) | Step::Snapshot(key) => {
                 let mut config = ptr::null_mut();
                 let rc = if matches!(step, Step::Config(_)) {
                     // SAFETY: a writable slot and a live repository.
-                    unsafe { ffi::git_repository_config(&raw mut config, r) }
+                    unsafe { raw::git_repository_config(&raw mut config, r) }
                 } else {
                     // SAFETY: as above.
-                    unsafe { ffi::git_repository_config_snapshot(&raw mut config, r) }
+                    unsafe { raw::git_repository_config_snapshot(&raw mut config, r) }
                 };
                 if rc < 0 {
                     return c_failed(scratch, rc);
                 }
                 let outcome = read_int32(scratch, config, key);
                 // SAFETY: the reference the call handed out, released once.
-                unsafe { ffi::git_config_free(config) };
+                unsafe { raw::git_config_free(config) };
                 outcome
             }
             Step::Index => {
                 let mut index = ptr::null_mut();
                 // SAFETY: a writable slot and a live repository.
-                let rc = unsafe { ffi::git_repository_index(&raw mut index, r) };
+                let rc = unsafe { raw::git_repository_index(&raw mut index, r) };
                 if rc < 0 {
                     return c_failed(scratch, rc);
                 }
                 let outcome = read_index(scratch, index);
                 // SAFETY: the reference the call handed out, released once.
-                unsafe { ffi::git_index_free(index) };
+                unsafe { raw::git_index_free(index) };
                 outcome
             }
             Step::HashFile(path, kind, as_path) => {
                 let path = scratch.c_path(path);
-                let mut id = ffi::git_oid::default();
+                let mut id = raw::git_oid::default();
                 // SAFETY: a writable id, a live repository, NUL-terminated strings.
                 let rc = unsafe {
-                    ffi::git_repository_hashfile(
+                    raw::git_repository_hashfile(
                         &raw mut id,
                         r,
                         path.as_ptr(),
@@ -5162,11 +5162,11 @@ mod head_and_lookups {
                     Step::HeadForWorktree(name) => {
                         // SAFETY: as above.
                         unsafe {
-                            ffi::git_repository_head_for_worktree(&raw mut out, r, name.as_ptr())
+                            raw::git_repository_head_for_worktree(&raw mut out, r, name.as_ptr())
                         }
                     }
                     // SAFETY: as above.
-                    _ => unsafe { ffi::git_repository_head(&raw mut out, r) },
+                    _ => unsafe { raw::git_repository_head(&raw mut out, r) },
                 };
                 if rc < 0 {
                     return c_failed(scratch, rc);
@@ -5175,27 +5175,27 @@ mod head_and_lookups {
                     // SAFETY: the fresh reference the call handed out, read and freed once.
                     let described = unsafe { describe(out) };
                     // SAFETY: as above.
-                    unsafe { ffi::git_reference_free(out) };
+                    unsafe { raw::git_reference_free(out) };
                     Outcome::Value(described)
                 }
             }
             Step::HeadDetached => {
                 // SAFETY: a live repository.
-                c_answer(scratch, unsafe { ffi::git_repository_head_detached(r) })
+                c_answer(scratch, unsafe { raw::git_repository_head_detached(r) })
             }
             // SAFETY: as above.
-            Step::HeadUnborn => c_answer(scratch, unsafe { ffi::git_repository_head_unborn(r) }),
+            Step::HeadUnborn => c_answer(scratch, unsafe { raw::git_repository_head_unborn(r) }),
             // SAFETY: as above.
-            Step::IsEmpty => c_answer(scratch, unsafe { ffi::git_repository_is_empty(r) }),
+            Step::IsEmpty => c_answer(scratch, unsafe { raw::git_repository_is_empty(r) }),
             Step::HeadDetachedForWorktree(name) => {
                 // SAFETY: as above, with a NUL-terminated name.
                 c_answer(scratch, unsafe {
-                    ffi::git_repository_head_detached_for_worktree(r, name.as_ptr())
+                    raw::git_repository_head_detached_for_worktree(r, name.as_ptr())
                 })
             }
             Step::DetachHead => {
                 // SAFETY: as above.
-                let rc = unsafe { ffi::git_repository_detach_head(r) };
+                let rc = unsafe { raw::git_repository_detach_head(r) };
                 if rc < 0 {
                     c_failed(scratch, rc)
                 } else {
@@ -5203,10 +5203,10 @@ mod head_and_lookups {
                 }
             }
             Step::CommitParents => {
-                let mut array = ffi::git_commitarray::default();
+                let mut array = raw::git_commitarray::default();
                 // SAFETY: an empty array and a live repository whose HEAD names a commit
                 // or nothing, and whose MERGE_HEAD (if any) names commits only.
-                let rc = unsafe { ffi::git_repository_commit_parents(&raw mut array, r) };
+                let rc = unsafe { raw::git_repository_commit_parents(&raw mut array, r) };
                 if rc < 0 {
                     return c_failed(scratch, rc);
                 }
@@ -5214,21 +5214,21 @@ mod head_and_lookups {
                     // SAFETY: the array the call filled, read and disposed once.
                     let ids = unsafe { commit_ids(array.commits, array.count) };
                     // SAFETY: as above.
-                    unsafe { ffi::git_commitarray_dispose(&raw mut array) };
+                    unsafe { raw::git_commitarray_dispose(&raw mut array) };
                     Outcome::Value(ids)
                 }
             }
             Step::Cleanup => {
                 // SAFETY: a live repository nothing else uses.
-                c_answer(scratch, unsafe { ffi::git_repository__cleanup(r) })
+                c_answer(scratch, unsafe { raw::git_repository__cleanup(r) })
             }
         }
     }
 
     /// The contents of the repository's `HEAD` file.
-    fn head_file(scratch: &Scratch, repo: *mut ffi::git_repository) -> String {
+    fn head_file(scratch: &Scratch, repo: *mut raw::git_repository) -> String {
         // SAFETY: a live repository, only read; its path lives as long as it does.
-        let repository_path = unsafe { ffi::git_repository_path(repo) };
+        let repository_path = unsafe { raw::git_repository_path(repo) };
         // SAFETY: as above.
         let gitdir = unsafe { CStr::from_ptr(repository_path) };
         let head = fs::read_to_string(Path::new(&*gitdir.to_string_lossy()).join("HEAD")).unwrap();
@@ -5849,10 +5849,10 @@ mod head_and_lookups {
                     };
                     let ceiling = ceiling.as_deref().map(|c| CString::new(c).unwrap());
                     let ceiling_ptr = ceiling.as_deref().map_or(ptr::null(), CStr::as_ptr);
-                    let mut buf = ffi::git_buf::default();
+                    let mut buf = raw::git_buf::default();
                     // SAFETY: an empty buffer and NUL-terminated (or NULL ceiling) paths.
                     let rc = unsafe {
-                        ffi::git_repository_discover(
+                        raw::git_repository_discover(
                             &raw mut buf,
                             start_path.as_ptr(),
                             across_fs.into(),
@@ -5866,7 +5866,7 @@ mod head_and_lookups {
                         Outcome::Value(unsafe { text(&scratch, buf.ptr) })
                     };
                     // SAFETY: disposed once.
-                    unsafe { ffi::git_buf_dispose(&raw mut buf) };
+                    unsafe { raw::git_buf_dispose(&raw mut buf) };
                     let rust = match discover(&start_path, across_fs, ceiling.as_deref()) {
                         Ok(buf) => Outcome::Value(scratch.relative(buf.as_ref().to_str().unwrap())),
                         Err(error) => rust_failed(&scratch, &error),
@@ -5908,7 +5908,7 @@ mod head_and_lookups {
     unsafe extern "C" fn c_recorder(
         ref_name: *const c_char,
         remote_url: *const c_char,
-        oid: *const ffi::git_oid,
+        oid: *const raw::git_oid,
         is_merge: c_uint,
         payload: *mut c_void,
     ) -> c_int {
@@ -5944,7 +5944,7 @@ mod head_and_lookups {
             // The open leaves a stale error, and libgit2 names a stop in the error only
             // when none is set.
             // SAFETY: the runtime is initialised.
-            unsafe { ffi::git_error_clear() };
+            unsafe { raw::git_error_clear() };
             let mut entries = Vec::new();
             let outcome = if rust {
                 let mut seen = 0;
@@ -5968,18 +5968,18 @@ mod head_and_lookups {
                 match walked {
                     Ok(ControlFlow::Continue(())) => Outcome::Value(0.to_string()),
                     // libgit2 left the callback's error as the thread's.
-                    Ok(ControlFlow::Break(())) => c_failed(&scratch, ffi::GIT_EUSER),
+                    Ok(ControlFlow::Break(())) => c_failed(&scratch, raw::GIT_EUSER),
                     Err(error) => rust_failed(&scratch, &error),
                 }
             } else {
                 let mut recorder = Recorder {
                     answer,
-                    code: ffi::GIT_EUSER,
+                    code: raw::GIT_EUSER,
                     entries: Vec::new(),
                 };
                 // SAFETY: a live repository and the recorder, live for the call.
                 let rc = unsafe {
-                    ffi::git_repository_fetchhead_foreach(
+                    raw::git_repository_fetchhead_foreach(
                         repo.as_c_ptr(),
                         Some(c_recorder),
                         (&raw mut recorder).cast(),
@@ -6092,16 +6092,16 @@ mod head_and_lookups {
             }
             let mut recorder = Recorder {
                 answer: step_answer,
-                code: ffi::GIT_EUSER,
+                code: raw::GIT_EUSER,
                 entries: Vec::new(),
             };
             // Each walk starts without an error, which libgit2 names the stop in only
             // when none is set.
             // SAFETY: the runtime is initialised.
-            unsafe { ffi::git_error_clear() };
+            unsafe { raw::git_error_clear() };
             // SAFETY: a live repository and the recorder, live for the call.
             let rc = unsafe {
-                ffi::git_repository_fetchhead_foreach(
+                raw::git_repository_fetchhead_foreach(
                     c_repo.as_c_ptr(),
                     Some(c_recorder),
                     (&raw mut recorder).cast(),
@@ -6115,10 +6115,10 @@ mod head_and_lookups {
             answer.set(step_answer);
             seen.borrow_mut().clear();
             // SAFETY: the runtime is initialised.
-            unsafe { ffi::git_error_clear() };
+            unsafe { raw::git_error_clear() };
             let rust = match rust_repo.as_ref().for_each_fetchhead(&mut callback) {
                 Ok(ControlFlow::Continue(())) => Outcome::Value(0.to_string()),
-                Ok(ControlFlow::Break(())) => c_failed(&sides[1], ffi::GIT_EUSER),
+                Ok(ControlFlow::Break(())) => c_failed(&sides[1], raw::GIT_EUSER),
                 Err(error) => rust_failed(&sides[1], &error),
             };
             assert_eq!(
@@ -6202,7 +6202,7 @@ mod head_and_lookups {
         let mut callback = FetchheadForeachCallback::new(&mut panicking);
         // libgit2 names the callback in the error only when none is set.
         // SAFETY: the runtime is initialised.
-        unsafe { ffi::git_error_clear() };
+        unsafe { raw::git_error_clear() };
         let resumed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             repo.as_ref().for_each_fetchhead(&mut callback)
         }));
@@ -6215,7 +6215,7 @@ mod head_and_lookups {
         assert_eq!(
             (class, message.as_str()),
             (
-                ffi::GIT_ERROR_CALLBACK.cast_signed(),
+                raw::GIT_ERROR_CALLBACK.cast_signed(),
                 "git_repository_fetchhead_foreach callback returned -7"
             )
         );

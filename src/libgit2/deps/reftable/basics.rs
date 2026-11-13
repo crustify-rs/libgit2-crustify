@@ -98,7 +98,7 @@ pub use self::ffi_import::{
     ReftableArrayFree, ReftableBox, ReftableFree, ReftableStr, ReftableStrFree, ReftableVec,
     binsearch, parse_names, set_alloc, set_default_alloc,
 };
-use crate::ffi;
+use crate::sys::libgit2 as sys;
 
 /// A hash function the reftable library understands (`enum reftable_hash`): the one that
 /// produced the object ids a table stores, which fixes their size.
@@ -126,43 +126,43 @@ pub enum HashId {
     ///
     /// Wraps `enm::REFTABLE_HASH_SHA1`
     #[doc(alias = "REFTABLE_HASH_SHA1")]
-    Sha1 = ffi::REFTABLE_HASH_SHA1,
+    Sha1 = sys::REFTABLE_HASH_SHA1,
     /// SHA-256, whose ids are 32 bytes long.
     ///
     /// Wraps `enm::REFTABLE_HASH_SHA256`
     #[doc(alias = "REFTABLE_HASH_SHA256")]
-    Sha256 = ffi::REFTABLE_HASH_SHA256,
+    Sha256 = sys::REFTABLE_HASH_SHA256,
 }
 
 impl HashId {
     /// The variant whose C value is `raw`; `None` for a value `reftable-basics.h` does not
     /// name, `0`, reftable's unset id, among them.
     #[must_use]
-    pub const fn from_raw(raw: ffi::reftable_hash) -> Option<Self> {
+    pub const fn from_raw(raw: sys::reftable_hash) -> Option<Self> {
         match raw {
-            ffi::REFTABLE_HASH_SHA1 => Some(Self::Sha1),
-            ffi::REFTABLE_HASH_SHA256 => Some(Self::Sha256),
+            sys::REFTABLE_HASH_SHA1 => Some(Self::Sha1),
+            sys::REFTABLE_HASH_SHA256 => Some(Self::Sha256),
             _ => None,
         }
     }
 
     /// The C value, as reftable's functions take and return it.
     #[must_use]
-    pub const fn raw(self) -> ffi::reftable_hash {
-        self as ffi::reftable_hash
+    pub const fn raw(self) -> sys::reftable_hash {
+        self as sys::reftable_hash
     }
 }
 
-impl TryFrom<ffi::reftable_hash> for HashId {
+impl TryFrom<sys::reftable_hash> for HashId {
     type Error = UnnamedHashId;
 
-    fn try_from(raw: ffi::reftable_hash) -> Result<Self, UnnamedHashId> {
+    fn try_from(raw: sys::reftable_hash) -> Result<Self, UnnamedHashId> {
         Self::from_raw(raw).ok_or(UnnamedHashId(raw))
     }
 }
 
-impl From<HashId> for ffi::reftable_hash {
-    fn from(value: HashId) -> ffi::reftable_hash {
+impl From<HashId> for sys::reftable_hash {
+    fn from(value: HashId) -> sys::reftable_hash {
         value.raw()
     }
 }
@@ -170,12 +170,12 @@ impl From<HashId> for ffi::reftable_hash {
 /// A hash id that `reftable-basics.h` does not name: `0`, which reftable reads as unset, or
 /// a value no table carries. [`raw`](Self::raw) has it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct UnnamedHashId(ffi::reftable_hash);
+pub struct UnnamedHashId(sys::reftable_hash);
 
 impl UnnamedHashId {
     /// The value, as it was converted.
     #[must_use]
-    pub const fn raw(self) -> ffi::reftable_hash {
+    pub const fn raw(self) -> sys::reftable_hash {
         self.0
     }
 }
@@ -194,20 +194,20 @@ impl std::error::Error for UnnamedHashId {}
 ///
 /// Wraps `mac::REFTABLE_HASH_SIZE_SHA1`
 #[doc(alias = "REFTABLE_HASH_SIZE_SHA1")]
-pub const HASH_SIZE_SHA1: usize = ffi::REFTABLE_HASH_SIZE_SHA1 as usize;
+pub const HASH_SIZE_SHA1: usize = sys::REFTABLE_HASH_SIZE_SHA1 as usize;
 
 /// The size in bytes of a SHA-256 object id, as reftable stores one.
 ///
 /// Wraps `mac::REFTABLE_HASH_SIZE_SHA256`
 #[doc(alias = "REFTABLE_HASH_SIZE_SHA256")]
-pub const HASH_SIZE_SHA256: usize = ffi::REFTABLE_HASH_SIZE_SHA256 as usize;
+pub const HASH_SIZE_SHA256: usize = sys::REFTABLE_HASH_SIZE_SHA256 as usize;
 
 /// The size in bytes of the longest object id reftable stores, that of
 /// [`HASH_SIZE_SHA256`]: the size of the id arrays its records hold inline.
 ///
 /// Wraps `mac::REFTABLE_HASH_SIZE_MAX`
 #[doc(alias = "REFTABLE_HASH_SIZE_MAX")]
-pub const HASH_SIZE_MAX: usize = ffi::REFTABLE_HASH_SIZE_MAX as usize;
+pub const HASH_SIZE_MAX: usize = sys::REFTABLE_HASH_SIZE_MAX as usize;
 
 /// The format id a table's header and footer carry for SHA-1, `"sha1"` read as a big-endian
 /// `u32`. It is on disk, so it never changes.
@@ -505,9 +505,9 @@ impl Error {
     #[must_use]
     pub const fn from_code(code: c_int) -> Self {
         match code {
-            ffi::REFTABLE_FORMAT_ERROR => Self::Format,
-            ffi::REFTABLE_API_ERROR => Self::Api,
-            ffi::REFTABLE_OUT_OF_MEMORY_ERROR => Self::OutOfMemory,
+            sys::REFTABLE_FORMAT_ERROR => Self::Format,
+            sys::REFTABLE_API_ERROR => Self::Api,
+            sys::REFTABLE_OUT_OF_MEMORY_ERROR => Self::OutOfMemory,
             other => Self::Other(other),
         }
     }
@@ -516,9 +516,9 @@ impl Error {
     #[must_use]
     pub const fn code(self) -> c_int {
         match self {
-            Self::Format => ffi::REFTABLE_FORMAT_ERROR,
-            Self::Api => ffi::REFTABLE_API_ERROR,
-            Self::OutOfMemory => ffi::REFTABLE_OUT_OF_MEMORY_ERROR,
+            Self::Format => sys::REFTABLE_FORMAT_ERROR,
+            Self::Api => sys::REFTABLE_API_ERROR,
+            Self::OutOfMemory => sys::REFTABLE_OUT_OF_MEMORY_ERROR,
             Self::Other(code) => code,
         }
     }
@@ -608,8 +608,8 @@ mod ffi_import {
     };
 
     use super::{Error, HashId, LenOutOfRange};
-    use crate::ffi;
     use crate::libgit2::src::util::errors::runtime_pinned;
+    use crate::sys::libgit2 as sys;
 
     define_ctype!(
         /// A growable byte buffer of reftable's (`struct reftable_buf`): [`len`](BufRef::len)
@@ -651,7 +651,7 @@ mod ffi_import {
         Buf,
         BufRef,
         BufMut,
-        ffi::reftable_buf
+        sys::reftable_buf
     );
 
     // SAFETY: all-zero is `REFTABLE_BUF_INIT`, the unallocated state: `alloc == 0`, which
@@ -690,7 +690,7 @@ mod ffi_import {
         /// Replaces `mac::REFTABLE_BUF_INIT`
         #[doc(alias = "REFTABLE_BUF_INIT")]
         pub const INIT: Self = Self(
-            ffi::reftable_buf {
+            sys::reftable_buf {
                 alloc: 0,
                 len: 0,
                 buf: ptr::null_mut(),
@@ -753,7 +753,7 @@ mod ffi_import {
             // SAFETY: `slots` addresses a NULL-terminated array of pointers to live strings,
             // unchanged for `'a` (the handle's invariant); `names_length` reads the slots up
             // to the terminator and writes nothing, despite its non-const outer pointer.
-            unsafe { ffi::names_length(self.slots.as_ptr()) }
+            unsafe { sys::names_length(self.slots.as_ptr()) }
         }
 
         /// The names, in order, each borrowed for `'a`.
@@ -776,7 +776,7 @@ mod ffi_import {
             // strings, unchanged while they are borrowed (their invariant); `names_equal`
             // reads the slots and the strings up to the first terminator of either and writes
             // nothing.
-            let equal = unsafe { ffi::names_equal(self.slots.as_ptr(), other.slots.as_ptr()) };
+            let equal = unsafe { sys::names_equal(self.slots.as_ptr(), other.slots.as_ptr()) };
             equal != 0
         }
     }
@@ -1019,7 +1019,7 @@ mod ffi_import {
         // SAFETY: `reftable_malloc` takes any size and returns fresh storage of reftable's
         // allocator, or NULL. The runtime is pinned, so libgit2 installed its hooks before
         // this read of them (`OnceLock` orders the read after the initialisation).
-        let data = unsafe { ffi::reftable_malloc(len) };
+        let data = unsafe { sys::reftable_malloc(len) };
         NonNull::new(data.cast())
     }
 
@@ -1031,7 +1031,7 @@ mod ffi_import {
         }
         // SAFETY: as in `malloc`; `reftable_calloc` checks `count * size` for overflow
         // before it allocates.
-        let data = unsafe { ffi::reftable_calloc(count, size) };
+        let data = unsafe { sys::reftable_calloc(count, size) };
         NonNull::new(data.cast())
     }
 
@@ -1080,7 +1080,7 @@ mod ffi_import {
             // SAFETY: per `c_drop`'s contract `ptr` is a live allocation the caller owns;
             // every owner under this policy holds storage of reftable's allocator, made
             // after the runtime was pinned.
-            unsafe { ffi::reftable_free(ptr.as_ptr().cast()) }
+            unsafe { sys::reftable_free(ptr.as_ptr().cast()) }
         }
     }
 
@@ -1159,7 +1159,7 @@ mod ffi_import {
         unsafe fn c_drop_len(&self, ptr: *mut u8, _byte_len: usize) {
             // SAFETY: per `c_drop_len`'s contract `ptr` is a live allocation the caller
             // owns, made by reftable's allocator after the runtime was pinned.
-            unsafe { ffi::reftable_free(ptr.cast()) }
+            unsafe { sys::reftable_free(ptr.cast()) }
         }
     }
 
@@ -1255,7 +1255,7 @@ mod ffi_import {
             // SAFETY: `data` is NULL or the run's live allocation of reftable's allocator,
             // which the run gave up: `reftable_realloc` takes it on success and for
             // `size == 0`, and leaves it live on failure. The runtime is pinned.
-            let resized = unsafe { ffi::reftable_realloc(data.cast(), size) };
+            let resized = unsafe { sys::reftable_realloc(data.cast(), size) };
             if size == 0 {
                 // Released, and NULL returned: the run stays empty.
                 return Ok(());
@@ -1392,7 +1392,7 @@ mod ffi_import {
         unsafe fn c_drop(&self, ptr: NonNull<c_char>) {
             // SAFETY: per `c_drop`'s contract `ptr` is a live string the caller owns, from
             // reftable's allocator.
-            unsafe { ffi::reftable_free(ptr.as_ptr().cast()) }
+            unsafe { sys::reftable_free(ptr.as_ptr().cast()) }
         }
     }
 
@@ -1408,7 +1408,7 @@ mod ffi_import {
             }
             // SAFETY: per `c_dup`'s contract `ptr` is a live NUL-terminated string, which
             // `reftable_strdup` reads for the call. The runtime is pinned.
-            let copy = unsafe { ffi::reftable_strdup(ptr.as_ptr()) };
+            let copy = unsafe { sys::reftable_strdup(ptr.as_ptr()) };
             NonNull::new(copy)
         }
     }
@@ -1428,7 +1428,7 @@ mod ffi_import {
         unsafe fn c_drop_len(&self, ptr: *mut u8, _byte_len: usize) {
             // SAFETY: per `c_drop_len`'s contract `ptr` is a live array the caller owns: a
             // `Names` run, NULL-terminated, of strings of reftable's allocator.
-            unsafe { ffi::free_names(ptr.cast()) }
+            unsafe { sys::free_names(ptr.cast()) }
         }
     }
 
@@ -1510,12 +1510,12 @@ mod ffi_import {
         // SAFETY: `buf` holds `size` writable bytes and the NUL after them, at which
         // `strchr` stops, live for the call; C keeps no pointer into it (each name is a
         // copy). `out` is a writable slot, written only on success. The runtime is pinned.
-        let rc = unsafe { ffi::parse_names(buf.as_mut_ptr().cast(), size, &raw mut out) };
+        let rc = unsafe { sys::parse_names(buf.as_mut_ptr().cast(), size, &raw mut out) };
         Error::check(rc)?;
         // SAFETY: on success `out` is a NULL-terminated array of strings, whose slots
         // `names_length` counts up to the terminator, reading nothing else and writing
         // nothing.
-        let count = unsafe { ffi::names_length(out.cast()) };
+        let count = unsafe { sys::names_length(out.cast()) };
         // SAFETY: `out` is a fresh array of reftable's allocator, owned by the caller, of
         // `count` names and the NULL after them, which `free_names` releases with the names.
         let names = unsafe { CVec::from_raw_parts(out, count + 1) };
@@ -1644,7 +1644,7 @@ mod ffi_import {
         // caller orders every other thread's use of the hooks before or after this write,
         // and excludes allocations of another family.
         unsafe {
-            ffi::reftable_set_alloc(
+            sys::reftable_set_alloc(
                 Some(malloc_with::<A>),
                 Some(realloc_with::<A>),
                 Some(free_with::<A>),
@@ -1664,7 +1664,7 @@ mod ffi_import {
         // SAFETY: NULL hooks select libc's allocator; the caller orders every other thread's
         // use of the hooks before or after this write, and excludes allocations of another
         // family.
-        unsafe { ffi::reftable_set_alloc(None, None, None) }
+        unsafe { sys::reftable_set_alloc(None, None, None) }
     }
 
     // --- Helpers -----------------------------------------------------------------------
@@ -1701,7 +1701,7 @@ mod ffi_import {
         let callback = unsafe { CClosure::new_local(&mut probe, -1) };
         // SAFETY: the trampoline and context belong to `callback`, which outlives the call;
         // `binsearch` passes them back with indices below `len` alone.
-        let found = unsafe { ffi::binsearch(len, Some(callback.trampoline()), callback.ctx()) };
+        let found = unsafe { sys::binsearch(len, Some(callback.trampoline()), callback.ctx()) };
         callback.finish();
         match error {
             Some(e) => Err(e),
@@ -1721,7 +1721,7 @@ mod ffi_import {
         pub fn size(self) -> usize {
             // SAFETY: `hash_size` reads its argument alone, and every `HashId` is a value
             // its switch names, so it never reaches its `abort()`.
-            let size = unsafe { ffi::hash_size(self.raw()) };
+            let size = unsafe { sys::hash_size(self.raw()) };
             // 20 or 32: a `u32` that fits a `usize` on every target the crate builds for.
             size as usize
         }
@@ -1756,7 +1756,7 @@ mod ffi_import {
             }
             // SAFETY: an allocated buffer owns `buf`, an allocation of reftable's allocator;
             // the caller gives the value up, so it is released once.
-            unsafe { ffi::reftable_buf_release(handle.as_mut_ptr()) }
+            unsafe { sys::reftable_buf_release(handle.as_mut_ptr()) }
         }
     }
 
@@ -1780,10 +1780,10 @@ mod ffi_import {
         /// Wraps `fn::reftable_buf_init`
         #[doc(alias = "reftable_buf_init")]
         pub fn new() -> BufVal {
-            let mut raw = MaybeUninit::<ffi::reftable_buf>::uninit();
+            let mut raw = MaybeUninit::<sys::reftable_buf>::uninit();
             // SAFETY: `reftable_buf_init` writes `REFTABLE_BUF_INIT` over the whole struct
             // without reading it.
-            unsafe { ffi::reftable_buf_init(raw.as_mut_ptr()) };
+            unsafe { sys::reftable_buf_init(raw.as_mut_ptr()) };
             // SAFETY: initialised by the call above.
             let raw = unsafe { raw.assume_init() };
             // SAFETY: an unallocated buffer owns nothing, which `BufRelease` accepts.
@@ -1795,8 +1795,8 @@ mod ffi_import {
         /// The buffer as C reads it: a copy of the struct in the state its handles read,
         /// unallocated (`REFTABLE_BUF_INIT`) for one that owns nothing, so that C never
         /// follows a `buf` the buffer does not own.
-        fn view(&self) -> ffi::reftable_buf {
-            ffi::reftable_buf {
+        fn view(&self) -> sys::reftable_buf {
+            sys::reftable_buf {
                 alloc: self.capacity(),
                 len: self.len(),
                 buf: self.raw_data().cast_mut().cast(),
@@ -1813,7 +1813,7 @@ mod ffi_import {
             // SAFETY: `a` and `b` are live structs for the call, each unallocated or over
             // `len` readable bytes the buffers own and that no exclusive handle changes
             // while these shared ones live; C only reads them.
-            unsafe { ffi::common_prefix_size(&raw mut a, &raw mut b) }
+            unsafe { sys::common_prefix_size(&raw mut a, &raw mut b) }
         }
     }
 
@@ -1826,7 +1826,7 @@ mod ffi_import {
         fn cmp(&self, other: &Self) -> Ordering {
             let (a, b) = (self.view(), other.view());
             // SAFETY: as in `common_prefix_len`.
-            let order = unsafe { ffi::reftable_buf_cmp(&raw const a, &raw const b) };
+            let order = unsafe { sys::reftable_buf_cmp(&raw const a, &raw const b) };
             order.cmp(&0)
         }
     }
@@ -1853,7 +1853,7 @@ mod ffi_import {
             if self.as_ref().raw_data().is_null() {
                 // SAFETY: `reftable_buf_init` overwrites the struct without reading it; the
                 // buffer owns nothing, so nothing is lost.
-                unsafe { ffi::reftable_buf_init(self.as_mut_ptr()) }
+                unsafe { sys::reftable_buf_init(self.as_mut_ptr()) }
             }
         }
 
@@ -1874,7 +1874,7 @@ mod ffi_import {
             self.settle();
             // SAFETY: the handle addresses a live buffer, unallocated or owning `buf`;
             // `reftable_buf_reset` writes `len` and `buf[0]` of an allocated one alone.
-            unsafe { ffi::reftable_buf_reset(self.as_mut_ptr()) }
+            unsafe { sys::reftable_buf_reset(self.as_mut_ptr()) }
         }
 
         /// Shortens the contents to their first `len` bytes, writing the terminator after
@@ -1890,7 +1890,7 @@ mod ffi_import {
             self.settle();
             // SAFETY: as in `reset`; `reftable_buf_setlen` writes `buf[len]` and `len` only
             // for `len < self.len`, which is within an allocated buffer (`len < alloc`).
-            let rc = unsafe { ffi::reftable_buf_setlen(self.as_mut_ptr(), len) };
+            let rc = unsafe { sys::reftable_buf_setlen(self.as_mut_ptr(), len) };
             if rc == 0 { Ok(()) } else { Err(LenOutOfRange) }
         }
 
@@ -1914,7 +1914,7 @@ mod ffi_import {
             // `data` is `data.len()` readable bytes that cannot overlap the buffer, which
             // this exclusive handle borrows.
             let rc = unsafe {
-                ffi::reftable_buf_add(self.as_mut_ptr(), data.as_ptr().cast(), data.len())
+                sys::reftable_buf_add(self.as_mut_ptr(), data.as_ptr().cast(), data.len())
             };
             Error::check(rc)
         }
@@ -1935,7 +1935,7 @@ mod ffi_import {
             self.settle();
             // SAFETY: as in `add`, with `s` a NUL-terminated string `strlen` reads for the
             // call.
-            let rc = unsafe { ffi::reftable_buf_addstr(self.as_mut_ptr(), s.as_ptr()) };
+            let rc = unsafe { sys::reftable_buf_addstr(self.as_mut_ptr(), s.as_ptr()) };
             Error::check(rc)
         }
 
@@ -1973,7 +1973,7 @@ mod ffi_import {
             }
             // SAFETY: the handle addresses a live buffer, unallocated or owning `buf`;
             // `reftable_buf_detach` returns `buf` and reinitialises the struct.
-            let detached = unsafe { ffi::reftable_buf_detach(self.as_mut_ptr()) };
+            let detached = unsafe { sys::reftable_buf_detach(self.as_mut_ptr()) };
             // SAFETY: `detached` is NULL for an unallocated buffer, or the allocation of
             // reftable's allocator it owned, NUL-terminated at `buf[len]` at the latest,
             // which the caller now owns and `reftable_free` releases.
@@ -2002,14 +2002,14 @@ mod ffi_import {
             ReftableArrayFree, ReftableBox, ReftableStr, ReftableVec, free_with, malloc_with,
             parse_names, realloc_with, runtime_pinned, set_alloc,
         };
-        use crate::ffi;
+        use crate::sys::libgit2 as sys;
 
         /// A `reftable_buf` over `storage`, as reftable leaves one: `alloc` bytes, of which
         /// `len` hold the contents. The caller keeps `storage` alive and unmoved while it
         /// reads the result.
-        fn raw_over(storage: &mut [u8], len: usize) -> ffi::reftable_buf {
+        fn raw_over(storage: &mut [u8], len: usize) -> sys::reftable_buf {
             assert!(len < storage.len(), "an allocated buffer has len < alloc");
-            ffi::reftable_buf {
+            sys::reftable_buf {
                 alloc: storage.len(),
                 len,
                 buf: storage.as_mut_ptr().cast::<c_char>(),
@@ -2017,8 +2017,8 @@ mod ffi_import {
         }
 
         /// Reads `raw` through a shared handle.
-        fn with_ref<R>(raw: &mut ffi::reftable_buf, read: impl FnOnce(BufRef<'_>) -> R) -> R {
-            let ptr: *mut ffi::reftable_buf = raw;
+        fn with_ref<R>(raw: &mut sys::reftable_buf, read: impl FnOnce(BufRef<'_>) -> R) -> R {
+            let ptr: *mut sys::reftable_buf = raw;
             // SAFETY: `raw` is a live `reftable_buf` borrowed for this call, in a state its
             // handles accept (`raw_over`'s), over storage the caller keeps alive.
             let handle = unsafe { BufRef::from_ptr(ptr) }.expect("non-null");
@@ -2087,7 +2087,7 @@ mod ffi_import {
         #[test]
         fn unallocated_buffer_reads_as_empty_whatever_its_other_fields_hold() {
             let mut storage = *b"stale\0";
-            let mut raw = ffi::reftable_buf {
+            let mut raw = sys::reftable_buf {
                 alloc: 0,
                 len: 5,
                 buf: storage.as_mut_ptr().cast::<c_char>(),
@@ -2098,7 +2098,7 @@ mod ffi_import {
                 assert_eq!(b.as_bytes(), b"");
                 assert_eq!(b.as_c_str(), Some(c""));
             });
-            let mut raw = ffi::reftable_buf {
+            let mut raw = sys::reftable_buf {
                 alloc: 0,
                 len: 7,
                 buf: ptr::null_mut(),
@@ -2108,7 +2108,7 @@ mod ffi_import {
 
         #[test]
         fn allocated_size_with_a_null_buffer_reads_as_empty() {
-            let mut raw = ffi::reftable_buf {
+            let mut raw = sys::reftable_buf {
                 alloc: 8,
                 len: 3,
                 buf: ptr::null_mut(),
@@ -2124,7 +2124,7 @@ mod ffi_import {
         #[test]
         fn handles_address_the_value_and_null_adopts_nothing() {
             let mut value = Buf::zeroed();
-            let expected: *const ffi::reftable_buf = ptr::from_ref(&value).cast();
+            let expected: *const sys::reftable_buf = ptr::from_ref(&value).cast();
             assert_eq!(value.as_ref().as_ptr(), expected);
             assert_eq!(value.as_mut().as_ref().as_ptr(), expected);
             // SAFETY: a null pointer adopts nothing.
@@ -2146,8 +2146,8 @@ mod ffi_import {
         // --- The routines over states only C or a crate-internal adoption builds -------
 
         /// A handle over `raw`, as a crate-internal adoption of a C-owned buffer makes one.
-        fn with_mut<R>(raw: &mut ffi::reftable_buf, write: impl FnOnce(BufMut<'_>) -> R) -> R {
-            let ptr: *mut ffi::reftable_buf = raw;
+        fn with_mut<R>(raw: &mut sys::reftable_buf, write: impl FnOnce(BufMut<'_>) -> R) -> R {
+            let ptr: *mut sys::reftable_buf = raw;
             // SAFETY: `raw` is a live `reftable_buf` borrowed for this call; the tests below
             // build the states the handles tolerate, over storage the caller keeps alive.
             let handle = unsafe { BufMut::from_ptr(ptr) }.expect("non-null");
@@ -2155,7 +2155,7 @@ mod ffi_import {
         }
 
         /// Releases what a raw buffer owns, as `BufRelease` does for a `BufVal`.
-        fn release(raw: &mut ffi::reftable_buf) {
+        fn release(raw: &mut sys::reftable_buf) {
             let ptr = NonNull::from(raw).cast::<Buf>();
             // SAFETY: `ptr` addresses a live buffer the caller gives up.
             unsafe { BufRelease.c_dispose(ptr) };
@@ -2178,7 +2178,7 @@ mod ffi_import {
             // `alloc == 0` owns nothing, whatever `buf` and `len` hold: C must not follow
             // them (it would write into, or reallocate, storage the buffer does not own).
             let mut storage = *b"stale\0";
-            let stale = |storage: &mut [u8; 6]| ffi::reftable_buf {
+            let stale = |storage: &mut [u8; 6]| sys::reftable_buf {
                 alloc: 0,
                 len: 5,
                 buf: storage.as_mut_ptr().cast::<c_char>(),
@@ -2204,7 +2204,7 @@ mod ffi_import {
             with_ref(&mut raw, |b| assert_eq!(b.as_bytes(), b"new"));
             release(&mut raw);
             // A size with a NULL `buf` owns nothing either.
-            let mut raw = ffi::reftable_buf {
+            let mut raw = sys::reftable_buf {
                 alloc: 8,
                 len: 3,
                 buf: ptr::null_mut(),
@@ -2218,7 +2218,7 @@ mod ffi_import {
         #[test]
         fn release_leaves_storage_it_does_not_own_to_its_owner() {
             let mut storage = *b"not reftable's\0";
-            let mut raw = ffi::reftable_buf {
+            let mut raw = sys::reftable_buf {
                 alloc: 0,
                 len: 3,
                 buf: storage.as_mut_ptr().cast::<c_char>(),
@@ -2235,12 +2235,12 @@ mod ffi_import {
         #[test]
         #[cfg_attr(miri, ignore = "calls C")]
         fn comparisons_read_a_struct_that_owns_nothing_as_empty() {
-            let mut a = ffi::reftable_buf {
+            let mut a = sys::reftable_buf {
                 alloc: 0,
                 len: 4,
                 buf: ptr::null_mut(),
             };
-            let mut b = ffi::reftable_buf {
+            let mut b = sys::reftable_buf {
                 alloc: 9,
                 len: 2,
                 buf: ptr::null_mut(),
@@ -2280,7 +2280,7 @@ mod ffi_import {
         #[test]
         fn writers_refuse_contents_past_isize_max_before_c() {
             // Never dereferenced: the size check comes first.
-            let mut raw = ffi::reftable_buf {
+            let mut raw = sys::reftable_buf {
                 alloc: usize::MAX,
                 len: isize::MAX.cast_unsigned() - 2,
                 buf: ptr::dangling_mut(),
@@ -2555,8 +2555,8 @@ mod ffi_import {
                     // SAFETY: `Allocator` is `#[repr(transparent)]` over `git_allocator`,
                     // every member set; libgit2 copies it before anything is allocated.
                     let rc = unsafe {
-                        ffi::git_libgit2_opts(
-                            ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(),
+                        sys::git_libgit2_opts(
+                            sys::GIT_OPT_SET_ALLOCATOR.cast_signed(),
                             allocator.as_ref().as_ptr(),
                         )
                     };

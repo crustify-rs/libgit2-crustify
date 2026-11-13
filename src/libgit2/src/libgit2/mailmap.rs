@@ -43,10 +43,10 @@ use std::borrow::Cow;
 
 use ffibox::{CBox, CMutSeam, CNew, CRefSeam, define_ctype, impl_cdrop};
 
-use crate::ffi;
 use crate::libgit2::src::libgit2::repository::RepositoryRef;
 use crate::libgit2::src::libgit2::signature::{SignatureBox, SignatureRef};
 use crate::libgit2::src::util::errors::{ErrorBuf, ErrorClass, clear, last, runtime_pinned, set};
+use crate::sys::libgit2 as sys;
 
 define_ctype!(
     /// A mailmap (`git_mailmap`): an opaque C object holding the entries parsed from
@@ -98,7 +98,7 @@ define_ctype!(
     Mailmap,
     MailmapRef,
     MailmapMut,
-    ffi::git_mailmap
+    sys::git_mailmap
 );
 
 // SAFETY: a mailmap owns its entries and their strings, all in libgit2's allocator,
@@ -153,7 +153,7 @@ impl_cdrop!(
     #[doc(alias = "git_mailmap_free")]
     MailmapFree,
     Mailmap,
-    ffi::git_mailmap_free
+    sys::git_mailmap_free
 );
 
 // SAFETY: `git_mailmap_new` writes a fresh `git__calloc`'d mailmap with an empty,
@@ -171,7 +171,7 @@ unsafe impl CNew<Mailmap> for MailmapFree {
         // SAFETY: `out` is a writable slot; the runtime is pinned, so the allocation
         // goes through an initialised allocator and a failure is reported on live
         // thread-local state.
-        let rc = unsafe { ffi::git_mailmap_new(&raw mut out) };
+        let rc = unsafe { sys::git_mailmap_new(&raw mut out) };
         if rc < 0 {
             return None;
         }
@@ -233,7 +233,7 @@ impl Mailmap {
         // SAFETY: `out` is a writable slot; `data` addresses `buf.len()` readable bytes
         // (or one, for an empty `buf`), which libgit2 only reads during the call. The
         // runtime is pinned, so allocations and errors reach live state.
-        let rc = unsafe { ffi::git_mailmap_from_buffer(&raw mut out, data, buf.len()) };
+        let rc = unsafe { sys::git_mailmap_from_buffer(&raw mut out, data, buf.len()) };
         if rc < 0 {
             // The error state was cleared before the call, so `GIT_ERROR_NONE` is
             // libgit2's silence: the NUL check, the one failure that sets no error.
@@ -285,7 +285,7 @@ impl Mailmap {
         // repository is not `Sync`, so no other thread uses it meanwhile. The runtime is
         // pinned, so allocations and errors reach live state.
         let rc =
-            unsafe { ffi::git_mailmap_from_repository(&raw mut out, repo.as_ptr().cast_mut()) };
+            unsafe { sys::git_mailmap_from_repository(&raw mut out, repo.as_ptr().cast_mut()) };
         if rc < 0 {
             return Err(last());
         }
@@ -342,7 +342,7 @@ impl<'a> MailmapRef<'a> {
         // and read for the call. It needs no allocation and sets no error, and cannot
         // fail with non-NULL arguments.
         let rc = unsafe {
-            ffi::git_mailmap_resolve(
+            sys::git_mailmap_resolve(
                 &raw mut real_name,
                 &raw mut real_email,
                 self.as_ptr(),
@@ -419,7 +419,7 @@ impl<'a> MailmapRef<'a> {
         // copied during the call. The mailmap was built after the runtime was pinned, so
         // allocations and errors reach live state.
         let rc = unsafe {
-            ffi::git_mailmap_resolve_signature(&raw mut out, self.as_ptr(), signature.as_ptr())
+            sys::git_mailmap_resolve_signature(&raw mut out, self.as_ptr(), signature.as_ptr())
         };
         if rc < 0 {
             return Err(last());
@@ -488,7 +488,7 @@ impl MailmapMut<'_> {
         // and `replace_email` is not empty. The mailmap was built after the runtime was
         // pinned, so its allocations and errors reach live state.
         let rc = unsafe {
-            ffi::git_mailmap_add_entry(
+            sys::git_mailmap_add_entry(
                 mm,
                 opt(real_name),
                 opt(real_email),
@@ -581,8 +581,8 @@ fn replaces_empty_email(line: &[u8]) -> bool {
 // A `Mailmap` is only ever behind a pointer, so the box is pointer-sized, and an
 // optional one is a nullable `git_mailmap *`.
 const _: () = assert!(
-    size_of::<MailmapBox>() == size_of::<*mut ffi::git_mailmap>()
-        && size_of::<Option<MailmapBox>>() == size_of::<*mut ffi::git_mailmap>()
+    size_of::<MailmapBox>() == size_of::<*mut sys::git_mailmap>()
+        && size_of::<Option<MailmapBox>>() == size_of::<*mut sys::git_mailmap>()
 );
 
 #[cfg(test)]
@@ -683,8 +683,8 @@ mod unit_tests {
         // SAFETY: `Allocator` is `#[repr(transparent)]` over `git_allocator`, with every
         // member set; libgit2 copies it before anything is allocated.
         let rc = unsafe {
-            ffi::git_libgit2_opts(
-                ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(),
+            sys::git_libgit2_opts(
+                sys::GIT_OPT_SET_ALLOCATOR.cast_signed(),
                 allocator.as_ref().as_ptr(),
             )
         };
@@ -699,7 +699,7 @@ mod unit_tests {
         // SAFETY: two writable slots; `mailmap` is live for the call, which only reads
         // it; `name` and `email` are NUL-terminated.
         let rc = unsafe {
-            ffi::git_mailmap_resolve(
+            sys::git_mailmap_resolve(
                 &raw mut real_name,
                 &raw mut real_email,
                 mailmap.as_ptr(),
@@ -735,18 +735,18 @@ not an entry
 
     #[test]
     fn layout_matches_c() {
-        assert_eq!(size_of::<MailmapBox>(), size_of::<*mut ffi::git_mailmap>());
+        assert_eq!(size_of::<MailmapBox>(), size_of::<*mut sys::git_mailmap>());
         assert_eq!(
             size_of::<Option<MailmapBox>>(),
-            size_of::<*mut ffi::git_mailmap>()
+            size_of::<*mut sys::git_mailmap>()
         );
         assert_eq!(
             size_of::<MailmapRef<'_>>(),
-            size_of::<*const ffi::git_mailmap>()
+            size_of::<*const sys::git_mailmap>()
         );
         assert_eq!(
             size_of::<MailmapMut<'_>>(),
-            size_of::<*const ffi::git_mailmap>()
+            size_of::<*const sys::git_mailmap>()
         );
         assert_eq!(size_of::<MailmapFree>(), 0);
     }
@@ -755,7 +755,7 @@ not an entry
     /// and keeps any other pointer, `as_ptr` gives it back, and `Debug` prints it.
     #[test]
     fn handles_wrap_pointers_without_reading() {
-        let dangling: *mut ffi::git_mailmap = NonNull::dangling().as_ptr();
+        let dangling: *mut sys::git_mailmap = NonNull::dangling().as_ptr();
         // SAFETY: the handle is never dereferenced: `as_ptr` and `Debug` only read the
         // pointer itself, which is what this test checks.
         let handle = unsafe { MailmapRef::from_ptr(dangling) }.unwrap();
@@ -779,7 +779,7 @@ not an entry
         // SAFETY: `m` is the only handle to a live mailmap, written for the call; the
         // strings are NUL-terminated and copied.
         let rc = unsafe {
-            ffi::git_mailmap_add_entry(
+            sys::git_mailmap_add_entry(
                 m.as_mut_ptr(),
                 c"Real".as_ptr(),
                 ptr::null(),
@@ -868,7 +868,7 @@ not an entry
         let mut raw = ptr::null_mut();
         // SAFETY: a writable slot; the buffer is `MAILMAP.len()` readable bytes.
         let rc = unsafe {
-            ffi::git_mailmap_from_buffer(&raw mut raw, MAILMAP.as_ptr().cast(), MAILMAP.len())
+            sys::git_mailmap_from_buffer(&raw mut raw, MAILMAP.as_ptr().cast(), MAILMAP.len())
         };
         assert_eq!(rc, 0);
         // SAFETY: a fresh mailmap the caller owns alone, released by `git_mailmap_free`.
@@ -880,7 +880,7 @@ not an entry
         let given_back = adopted.into_c();
         assert_eq!(given_back, raw);
         // SAFETY: `into_c` surrendered the only reference, freed here once.
-        unsafe { ffi::git_mailmap_free(given_back) };
+        unsafe { sys::git_mailmap_free(given_back) };
         // SAFETY: NULL is refused before any box exists.
         assert!(unsafe { MailmapBox::from_c(ptr::null_mut()) }.is_none());
     }
@@ -1092,7 +1092,7 @@ not an entry
                         } else {
                             line.as_ptr().cast()
                         };
-                        ffi::git_mailmap_from_buffer(&raw mut out, data, line.len())
+                        sys::git_mailmap_from_buffer(&raw mut out, data, line.len())
                     };
                     let shown = String::from_utf8_lossy(&line);
                     if replaces_empty_email(&line) {
@@ -1103,7 +1103,7 @@ not an entry
                     } else {
                         assert_eq!(rc, 0, "{shown:?}");
                         // SAFETY: a fresh mailmap, freed once.
-                        unsafe { ffi::git_mailmap_free(out) };
+                        unsafe { sys::git_mailmap_free(out) };
                     }
                 }
                 // The corpus is sampled under BorrowSanitizer (see `corpus`).
@@ -1222,7 +1222,7 @@ not an entry
             // NUL-terminated. The results point at the inputs or at the mailmap's entries,
             // both live for `'s`.
             let rc = unsafe {
-                ffi::git_mailmap_resolve(
+                sys::git_mailmap_resolve(
                     &raw mut real_name,
                     &raw mut real_email,
                     m.as_ptr(),
@@ -1246,7 +1246,7 @@ not an entry
     #[cfg_attr(miri, ignore = "calls libgit2")]
     fn signatures_missing_a_string_are_refused_before_c() {
         let mailmap = Mailmap::from_buffer(MAILMAP).unwrap();
-        let when = ffi::git_time {
+        let when = sys::git_time {
             time: 1,
             offset: 0,
             sign: b'+'.cast_signed(),
@@ -1261,7 +1261,7 @@ not an entry
             (ptr::null_mut(), ptr::null_mut(), c"'name'"),
         ];
         for (name, email, what) in cases {
-            let mut raw = ffi::git_signature { name, email, when };
+            let mut raw = sys::git_signature { name, email, when };
             // SAFETY: `raw` is a live signature on this stack frame, outliving the
             // handle, whose strings are NULL or static; nothing writes it meanwhile.
             let sig = unsafe { SignatureRef::from_ptr(&raw mut raw) }.unwrap();

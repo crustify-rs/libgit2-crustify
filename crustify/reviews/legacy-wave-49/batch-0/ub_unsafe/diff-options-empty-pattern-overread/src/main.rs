@@ -26,7 +26,7 @@
 use core::ffi::c_char;
 use std::ffi::CString;
 
-use libgit2::ffi;
+use libgit2::sys::libgit2 as sys;
 use libgit2::libgit2::diff::diff::{Diff, DiffInputs};
 use libgit2::libgit2::repository::repository::Repository;
 
@@ -42,11 +42,11 @@ fn main() {
         let patterns = [CString::new("a").unwrap(), CString::new("").unwrap()];
         let mut strings: Vec<*mut c_char> =
             patterns.iter().map(|p| p.as_ptr().cast_mut()).collect();
-        let mut opts = ffi::git_diff_options::default();
+        let mut opts = sys::git_diff_options::default();
         // SAFETY: writable storage of the right type; a version this libgit2 supports.
-        let rc = unsafe { ffi::git_diff_options_init(&mut opts, ffi::GIT_DIFF_OPTIONS_VERSION) };
+        let rc = unsafe { sys::git_diff_options_init(&mut opts, sys::GIT_DIFF_OPTIONS_VERSION) };
         assert_eq!(rc, 0);
-        opts.pathspec = ffi::git_strarray {
+        opts.pathspec = sys::git_strarray {
             strings: strings.as_mut_ptr(),
             count: strings.len(),
         };

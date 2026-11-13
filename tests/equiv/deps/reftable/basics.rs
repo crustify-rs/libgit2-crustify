@@ -31,18 +31,18 @@ use std::mem::MaybeUninit;
 use std::{ptr, slice};
 
 use ffibox::{CRefSeam, CZeroable};
-use libgit2::ffi;
 use libgit2::libgit2::deps::reftable::basics::{
     Buf, BufRef, BufVal, Error, HASH_SIZE_MAX, HASH_SIZE_SHA1, HASH_SIZE_SHA256, HashId, NamesVec,
     ReftableArrayFree, ReftableStr, ReftableVec, binsearch, parse_names,
 };
+use libgit2::sys::libgit2 as sys;
 
 #[test]
 fn hash_id_names_exactly_the_constants_of_reftable_basics_h() {
-    assert_eq!(HashId::Sha1.raw(), ffi::REFTABLE_HASH_SHA1);
-    assert_eq!(HashId::Sha256.raw(), ffi::REFTABLE_HASH_SHA256);
-    let named = [ffi::REFTABLE_HASH_SHA1, ffi::REFTABLE_HASH_SHA256];
-    for raw in (0..=1024).chain([ffi::reftable_hash::MAX]) {
+    assert_eq!(HashId::Sha1.raw(), sys::REFTABLE_HASH_SHA1);
+    assert_eq!(HashId::Sha256.raw(), sys::REFTABLE_HASH_SHA256);
+    let named = [sys::REFTABLE_HASH_SHA1, sys::REFTABLE_HASH_SHA256];
+    for raw in (0..=1024).chain([sys::reftable_hash::MAX]) {
         assert_eq!(
             HashId::from_raw(raw).is_some(),
             named.contains(&raw),
@@ -53,8 +53,8 @@ fn hash_id_names_exactly_the_constants_of_reftable_basics_h() {
 
 #[test]
 fn zeroed_buf_is_reftable_buf_init() {
-    assert_eq!(size_of::<Buf>(), size_of::<ffi::reftable_buf>());
-    assert_eq!(align_of::<Buf>(), align_of::<ffi::reftable_buf>());
+    assert_eq!(size_of::<Buf>(), size_of::<sys::reftable_buf>());
+    assert_eq!(align_of::<Buf>(), align_of::<sys::reftable_buf>());
     let value = Buf::zeroed();
     // SAFETY: the handle addresses `value`, a live `reftable_buf`, which is read once.
     let raw = unsafe { value.as_ref().as_ptr().read() };
@@ -66,7 +66,7 @@ fn zeroed_buf_is_reftable_buf_init() {
 
 /// What a C consumer reads of `raw`'s fields, and what the handle's getters read: `len`,
 /// `alloc`, the contents and, where they are terminated, the C string.
-fn compare(raw: &mut ffi::reftable_buf) {
+fn compare(raw: &mut sys::reftable_buf) {
     let c_len = raw.len;
     let c_alloc = raw.alloc;
     let c_bytes: Vec<u8> = if raw.alloc == 0 {
@@ -75,7 +75,7 @@ fn compare(raw: &mut ffi::reftable_buf) {
         // SAFETY: `raw.buf` addresses `raw.alloc > raw.len` bytes of live storage.
         unsafe { slice::from_raw_parts(raw.buf.cast::<u8>(), raw.len) }.to_vec()
     };
-    let ptr: *mut ffi::reftable_buf = raw;
+    let ptr: *mut sys::reftable_buf = raw;
     // SAFETY: `raw` is a live `reftable_buf` in a state `basics.c` leaves, borrowed for
     // this call.
     let b = unsafe { BufRef::from_ptr(ptr) }.expect("non-null");
@@ -93,7 +93,7 @@ fn compare(raw: &mut ffi::reftable_buf) {
 fn getters_read_the_fields_as_c_consumers_do() {
     // `REFTABLE_BUF_INIT`, then a buffer `reftable_buf_addstr` filled with a table name,
     // then that buffer after `reftable_buf_reset` and after `reftable_buf_setlen`.
-    let mut init = ffi::reftable_buf {
+    let mut init = sys::reftable_buf {
         alloc: 0,
         len: 0,
         buf: ptr::null_mut(),
@@ -107,7 +107,7 @@ fn getters_read_the_fields_as_c_consumers_do() {
         if let Some(i) = terminator_at {
             storage[i] = 0;
         }
-        let mut raw = ffi::reftable_buf {
+        let mut raw = sys::reftable_buf {
             alloc: storage.len(),
             len,
             buf: storage.as_mut_ptr().cast::<c_char>(),
@@ -120,13 +120,13 @@ fn getters_read_the_fields_as_c_consumers_do() {
 fn contents_with_nul_bytes_read_whole() {
     // `reftable_buf_add` takes arbitrary bytes, such as a binary record key.
     let mut storage = [0x01, 0x00, b'r', 0xFF, 0x00, 0x00];
-    let mut raw = ffi::reftable_buf {
+    let mut raw = sys::reftable_buf {
         alloc: storage.len(),
         len: 4,
         buf: storage.as_mut_ptr().cast::<c_char>(),
     };
     compare(&mut raw);
-    let ptr: *mut ffi::reftable_buf = &raw mut raw;
+    let ptr: *mut sys::reftable_buf = &raw mut raw;
     // SAFETY: as in `compare`.
     let b = unsafe { BufRef::from_ptr(ptr) }.expect("non-null");
     assert_eq!(b.as_bytes(), [0x01, 0x00, b'r', 0xFF]);
@@ -142,7 +142,7 @@ fn pin_runtime() {
 }
 
 /// A C buffer, released by `reftable_buf_release` when dropped.
-struct RawBuf(ffi::reftable_buf);
+struct RawBuf(sys::reftable_buf);
 
 impl RawBuf {
     /// An empty C buffer, with the runtime pinned for the routines that grow and release it.
@@ -150,7 +150,7 @@ impl RawBuf {
         pin_runtime();
         let mut raw = MaybeUninit::uninit();
         // SAFETY: `reftable_buf_init` writes the whole struct without reading it.
-        unsafe { ffi::reftable_buf_init(raw.as_mut_ptr()) };
+        unsafe { sys::reftable_buf_init(raw.as_mut_ptr()) };
         // SAFETY: initialised above.
         Self(unsafe { raw.assume_init() })
     }
@@ -168,7 +168,7 @@ impl Drop for RawBuf {
     fn drop(&mut self) {
         // SAFETY: the struct owns `buf` (or nothing), released once here, through the hook
         // `RawBuf::new`'s pin ordered after its write.
-        unsafe { ffi::reftable_buf_release(&raw mut self.0) }
+        unsafe { sys::reftable_buf_release(&raw mut self.0) }
     }
 }
 
@@ -191,27 +191,27 @@ fn apply(step: Step, c: &mut RawBuf, rust: &mut BufVal) {
             // pinned (`RawBuf::new`), so the hooks `reftable_realloc` reads are not written
             // meanwhile.
             let rc =
-                unsafe { ffi::reftable_buf_add(&raw mut c.0, data.as_ptr().cast(), data.len()) };
+                unsafe { sys::reftable_buf_add(&raw mut c.0, data.as_ptr().cast(), data.len()) };
             assert_eq!(rust.as_mut().add(data).map_err(Error::code), status(rc));
         }
         Step::AddStr(s) => {
             // SAFETY: as above, with `s` NUL-terminated.
-            let rc = unsafe { ffi::reftable_buf_addstr(&raw mut c.0, s.as_ptr()) };
+            let rc = unsafe { sys::reftable_buf_addstr(&raw mut c.0, s.as_ptr()) };
             assert_eq!(rust.as_mut().add_str(s).map_err(Error::code), status(rc));
         }
         Step::SetLen(len) => {
             // SAFETY: `c` is a live buffer.
-            let rc = unsafe { ffi::reftable_buf_setlen(&raw mut c.0, len) };
+            let rc = unsafe { sys::reftable_buf_setlen(&raw mut c.0, len) };
             assert_eq!(rust.as_mut().truncate(len).is_ok(), rc == 0, "{step:?}");
         }
         Step::Reset => {
             // SAFETY: as above.
-            unsafe { ffi::reftable_buf_reset(&raw mut c.0) };
+            unsafe { sys::reftable_buf_reset(&raw mut c.0) };
             rust.as_mut().reset();
         }
         Step::Detach => {
             // SAFETY: as above; the caller owns what it returns.
-            let detached = unsafe { ffi::reftable_buf_detach(&raw mut c.0) };
+            let detached = unsafe { sys::reftable_buf_detach(&raw mut c.0) };
             // SAFETY: NULL, or a NUL-terminated allocation of reftable's, now ours.
             let c_str = unsafe { ReftableStr::from_raw(detached) };
             let rust_str = rust.as_mut().detach();
@@ -266,7 +266,7 @@ fn pair(bytes: &[u8]) -> (RawBuf, BufVal) {
     let (mut c, mut rust) = (RawBuf::new(), Buf::new());
     if !bytes.is_empty() {
         // SAFETY: as in `apply`.
-        let rc = unsafe { ffi::reftable_buf_add(&raw mut c.0, bytes.as_ptr().cast(), bytes.len()) };
+        let rc = unsafe { sys::reftable_buf_add(&raw mut c.0, bytes.as_ptr().cast(), bytes.len()) };
         assert_eq!(rc, 0);
         rust.as_mut().add(bytes).unwrap();
     }
@@ -281,12 +281,12 @@ fn comparisons_match_c() {
     for (ca, ra) in &pairs {
         for (cb, rb) in &pairs {
             // SAFETY: both are live buffers, only read.
-            let cmp = unsafe { ffi::reftable_buf_cmp(&raw const ca.0, &raw const cb.0) };
+            let cmp = unsafe { sys::reftable_buf_cmp(&raw const ca.0, &raw const cb.0) };
             assert_eq!(ra.as_ref().cmp(&rb.as_ref()), cmp.cmp(&0));
             assert_eq!(ra.as_ref() == rb.as_ref(), cmp == 0);
             let (mut a, mut b) = (ca.0, cb.0);
             // SAFETY: copies of live buffers' structs, only read.
-            let prefix = unsafe { ffi::common_prefix_size(&raw mut a, &raw mut b) };
+            let prefix = unsafe { sys::common_prefix_size(&raw mut a, &raw mut b) };
             assert_eq!(ra.as_ref().common_prefix_len(rb.as_ref()), prefix);
         }
     }
@@ -303,7 +303,7 @@ fn c_parse_names(input: &[u8]) -> Result<Vec<Vec<u8>>, c_int> {
     let size = c_int::try_from(input.len()).unwrap();
     // SAFETY: `buf` holds `size` bytes and a NUL; `out` is written on success alone. The
     // runtime is pinned, so the hooks C allocates through are not written meanwhile.
-    let rc = unsafe { ffi::parse_names(buf.as_mut_ptr().cast(), size, &raw mut out) };
+    let rc = unsafe { sys::parse_names(buf.as_mut_ptr().cast(), size, &raw mut out) };
     if rc != 0 {
         assert!(out.is_null(), "untouched on failure");
         return Err(rc);
@@ -321,7 +321,7 @@ fn c_parse_names(input: &[u8]) -> Result<Vec<Vec<u8>>, c_int> {
         names.push(unsafe { CStr::from_ptr(name) }.to_bytes().to_vec());
     }
     // SAFETY: the array and its strings are ours, released once.
-    unsafe { ffi::free_names(out) };
+    unsafe { sys::free_names(out) };
     Ok(names)
 }
 
@@ -387,7 +387,7 @@ fn binsearch_matches_c() {
                     probed: Vec::new(),
                 };
                 // SAFETY: `c_less` reads `table`, which outlives the call.
-                let c = unsafe { ffi::binsearch(len, Some(c_less), (&raw mut table).cast()) };
+                let c = unsafe { sys::binsearch(len, Some(c_less), (&raw mut table).cast()) };
                 let mut probed = Vec::new();
                 let rust = binsearch(len, |k| {
                     probed.push(k);
@@ -421,12 +421,12 @@ fn binsearch_matches_c() {
 fn hash_size_matches_c() {
     for id in [HashId::Sha1, HashId::Sha256] {
         // SAFETY: a value `hash_size`'s switch names.
-        let c = unsafe { ffi::hash_size(id.raw()) };
+        let c = unsafe { sys::hash_size(id.raw()) };
         assert_eq!(id.size(), usize::try_from(c).unwrap());
     }
     // reftable's unset id reads as SHA-1, which `HashId` leaves to its caller.
     // SAFETY: `hash_size` takes 0 too.
-    let unset = unsafe { ffi::hash_size(0) };
+    let unset = unsafe { sys::hash_size(0) };
     assert_eq!(usize::try_from(unset).unwrap(), HashId::Sha1.size());
     assert_eq!(HashId::from_raw(0), None);
 }
@@ -437,29 +437,29 @@ fn allocator_routines_match_c() {
     // A `calloc` that overflows is NULL in C, `None` here.
     pin_runtime();
     // SAFETY: `reftable_calloc` checks the product before it allocates.
-    assert!(unsafe { ffi::reftable_calloc(usize::MAX, 2) }.is_null());
+    assert!(unsafe { sys::reftable_calloc(usize::MAX, 2) }.is_null());
     assert!(ReftableArrayFree::new_zeroed::<u16>(usize::MAX).is_none());
     // SAFETY: as above, for an empty request, which C answers with NULL.
-    assert!(unsafe { ffi::reftable_calloc(0, 8) }.is_null());
+    assert!(unsafe { sys::reftable_calloc(0, 8) }.is_null());
     assert!(ReftableArrayFree::new_zeroed::<u64>(0).unwrap().is_empty());
     // SAFETY: `reftable_malloc(0)` is NULL, as is `reftable_realloc(NULL, 0)`.
-    assert!(unsafe { ffi::reftable_malloc(0) }.is_null());
+    assert!(unsafe { sys::reftable_malloc(0) }.is_null());
     // SAFETY: as above.
-    assert!(unsafe { ffi::reftable_realloc(ptr::null_mut(), 0) }.is_null());
+    assert!(unsafe { sys::reftable_realloc(ptr::null_mut(), 0) }.is_null());
     let mut run = ReftableVec::<u8>::new_uninit(0).unwrap();
     ReftableArrayFree::resize(&mut run, 0).unwrap();
     assert!(run.is_empty());
 
     // A copy of a string holds its bytes in either.
     // SAFETY: a NUL-terminated string, read for the call.
-    let c = unsafe { ffi::reftable_strdup(c"ref".as_ptr()) };
+    let c = unsafe { sys::reftable_strdup(c"ref".as_ptr()) };
     // SAFETY: NULL or a fresh copy, which the owner releases with `reftable_free`.
     let c = unsafe { ReftableStr::from_raw(c) }.unwrap();
     assert_eq!(c, ReftableStr::from_c_str(c"ref").unwrap());
 
     // A zeroed run is zero in either.
     // SAFETY: a fresh allocation of 4 zeroed `u32`s, or NULL.
-    let c = unsafe { ffi::reftable_calloc(4, size_of::<u32>()) }.cast::<u32>();
+    let c = unsafe { sys::reftable_calloc(4, size_of::<u32>()) }.cast::<u32>();
     // SAFETY: as above, owned by the run.
     let c = unsafe { ReftableVec::from_raw_parts(c, 4) }.unwrap();
     assert_eq!(c, ReftableArrayFree::new_zeroed::<u32>(4).unwrap());
@@ -499,15 +499,15 @@ fn buf_init_is_reftable_buf_init() {
 fn hash_sizes_are_reftable_basics_h_constants() {
     assert_eq!(
         u32::try_from(HASH_SIZE_SHA1),
-        Ok(ffi::REFTABLE_HASH_SIZE_SHA1)
+        Ok(sys::REFTABLE_HASH_SIZE_SHA1)
     );
     assert_eq!(
         u32::try_from(HASH_SIZE_SHA256),
-        Ok(ffi::REFTABLE_HASH_SIZE_SHA256)
+        Ok(sys::REFTABLE_HASH_SIZE_SHA256)
     );
     assert_eq!(
         u32::try_from(HASH_SIZE_MAX),
-        Ok(ffi::REFTABLE_HASH_SIZE_MAX)
+        Ok(sys::REFTABLE_HASH_SIZE_MAX)
     );
 }
 
@@ -556,7 +556,7 @@ fn names_length_and_equal_match_the_c_on_raw_arrays() {
         let mut a_raw = raw_names(&a_c);
         // SAFETY: `a_raw` is a NULL-terminated array of live strings, which `names_length`
         // only reads.
-        let c_len = unsafe { ffi::names_length(a_raw.as_mut_ptr()) };
+        let c_len = unsafe { sys::names_length(a_raw.as_mut_ptr()) };
         let a_rust = owned(a);
         let a_list = NamesVec::new(a_rust.iter().map(CString::as_c_str));
         assert_eq!(a_list.as_ref().len(), c_len, "{a:?}");
@@ -567,7 +567,7 @@ fn names_length_and_equal_match_the_c_on_raw_arrays() {
             let mut b_raw = raw_names(&b_c);
             // SAFETY: both are NULL-terminated arrays of live strings, which `names_equal`
             // only reads.
-            let c_equal = unsafe { ffi::names_equal(a_raw.as_mut_ptr(), b_raw.as_mut_ptr()) };
+            let c_equal = unsafe { sys::names_equal(a_raw.as_mut_ptr(), b_raw.as_mut_ptr()) };
             let b_rust = owned(b);
             let b_list = NamesVec::new(b_rust.iter().map(CString::as_c_str));
             assert_eq!(
@@ -592,7 +592,7 @@ fn parsed_names_count_and_compare_as_the_c_does() {
         let c_names = owned(list);
         let mut raw = raw_names(&c_names);
         // SAFETY: `raw` is a NULL-terminated array of live strings, which C only reads.
-        let c_len = unsafe { ffi::names_length(raw.as_mut_ptr()) };
+        let c_len = unsafe { sys::names_length(raw.as_mut_ptr()) };
         assert_eq!(parsed.as_ref().len(), c_len);
         let rust = NamesVec::new(c_names.iter().map(CString::as_c_str));
         assert!(parsed.as_ref().equals(rust.as_ref()), "{list:?}");

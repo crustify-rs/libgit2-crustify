@@ -28,9 +28,9 @@ pub use ffi_import::allocator;
     reason = "calls git_win32_leakcheck_init_allocator through its raw binding"
 )]
 mod ffi_import {
-    use crate::ffi;
     use crate::libgit2::src::util::alloc::Allocator;
     use crate::libgit2::src::util::errors::{ErrorBuf, ErrorClass, last, runtime_pinned, set};
+    use crate::sys::libgit2 as sys;
 
     /// The allocator that records every allocation with the Windows CRT's leak checker,
     /// or the error saying it is not built.
@@ -82,7 +82,7 @@ mod ffi_import {
         if !runtime_pinned() {
             return Err(last());
         }
-        let mut raw = ffi::git_allocator {
+        let mut raw = sys::git_allocator {
             gmalloc: None,
             grealloc: None,
             gfree: None,
@@ -91,7 +91,7 @@ mod ffi_import {
         // exclusively; C only writes its three members (the Windows branch) or leaves it
         // untouched (the stub), and keeps no pointer to it. The runtime is pinned, so the
         // stub's `git_error_set` reaches libgit2's live thread state.
-        let rc = unsafe { ffi::git_win32_leakcheck_init_allocator(&raw mut raw) };
+        let rc = unsafe { sys::git_win32_leakcheck_init_allocator(&raw mut raw) };
         if rc < 0 {
             return Err(reported_error());
         }
@@ -107,7 +107,7 @@ mod ffi_import {
     /// rewritten to `GIT_ERROR_INVALID`, in the returned copy and in the thread's state.
     fn reported_error() -> ErrorBuf {
         let error = last();
-        if error.raw_class() != ffi::GIT_EINVALID {
+        if error.raw_class() != sys::GIT_EINVALID {
             return error;
         }
         set(ErrorClass::Invalid, error.message());

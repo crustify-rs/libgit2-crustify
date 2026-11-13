@@ -36,10 +36,10 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use ffibox::CZeroable;
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::odb::OdbDataVec;
 use libgit2::libgit2::src::libgit2::oid::{Oid, OidRef, OidType};
 use libgit2::libgit2::src::libgit2::oidarray::{OidArray, OidArrayRef};
+use libgit2::sys::libgit2 as sys;
 
 const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 
@@ -123,7 +123,7 @@ unsafe extern "C" fn traced_free(ptr: *mut c_void) {
 
 /// Installs the tracing allocator, then initialises libgit2 on top of it.
 fn install_tracing_allocator() {
-    let mut allocator = ffi::git_allocator {
+    let mut allocator = sys::git_allocator {
         gmalloc: Some(traced_malloc),
         grealloc: Some(traced_realloc),
         gfree: Some(traced_free),
@@ -131,11 +131,11 @@ fn install_tracing_allocator() {
     // SAFETY: `GIT_OPT_SET_ALLOCATOR` takes a `git_allocator *` with every member set,
     // which it copies; nothing is allocated yet, so no storage changes allocator.
     let rc = unsafe {
-        ffi::git_libgit2_opts(ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(), &raw mut allocator)
+        sys::git_libgit2_opts(sys::GIT_OPT_SET_ALLOCATOR.cast_signed(), &raw mut allocator)
     };
     assert_eq!(rc, 0);
     // SAFETY: no arguments; refcounted, never released in this process.
-    assert!(unsafe { ffi::git_libgit2_init() } > 0);
+    assert!(unsafe { sys::git_libgit2_init() } > 0);
 }
 
 /// One allocator event, with pointers replaced by the number of their allocation.
@@ -213,7 +213,7 @@ fn compare(c: &Recorder, rust: &Recorder) {
 // --- the C side --------------------------------------------------------------
 
 /// The ids of a raw array, read as C code indexes them.
-fn c_contents(array: &ffi::git_oidarray) -> Vec<(u8, [u8; 32])> {
+fn c_contents(array: &sys::git_oidarray) -> Vec<(u8, [u8; 32])> {
     (0..array.count)
         .map(|i| {
             // SAFETY: `ids` holds at least `count` ids whenever `count` is non-zero, and
@@ -227,7 +227,7 @@ fn c_contents(array: &ffi::git_oidarray) -> Vec<(u8, [u8; 32])> {
 }
 
 /// `git_oidarray__reverse`, which libgit2.so does not export, as `oidarray.c` writes it.
-fn c_reverse(array: &mut ffi::git_oidarray) {
+fn c_reverse(array: &mut sys::git_oidarray) {
     for i in 0..array.count / 2 {
         let j = array.count - 1 - i;
         {
@@ -247,15 +247,15 @@ fn c_reverse(array: &mut ffi::git_oidarray) {
 }
 
 /// A `git__malloc`'d copy of `count` ids, NULL for none: `git_smart__shallow_roots`.
-fn c_copy(ids: *const ffi::git_oid, count: usize) -> ffi::git_oidarray {
-    let len = count * size_of::<ffi::git_oid>();
-    let mut out = ffi::git_oidarray {
+fn c_copy(ids: *const sys::git_oid, count: usize) -> sys::git_oidarray {
+    let len = count * size_of::<sys::git_oid>();
+    let mut out = sys::git_oidarray {
         ids: ptr::null_mut(),
         count,
     };
     if len != 0 {
         // SAFETY: the routine ignores its backend; libgit2 is initialised.
-        out.ids = unsafe { ffi::git_odb_backend_data_alloc(ptr::null_mut(), len) }.cast();
+        out.ids = unsafe { sys::git_odb_backend_data_alloc(ptr::null_mut(), len) }.cast();
         assert!(!out.ids.is_null());
         // SAFETY: `ids` holds `count` ids, the fresh buffer as many.
         unsafe { ptr::copy_nonoverlapping(ids, out.ids, count) };
@@ -263,10 +263,10 @@ fn c_copy(ids: *const ffi::git_oid, count: usize) -> ffi::git_oidarray {
     out
 }
 
-fn c_dispose(array: &mut ffi::git_oidarray) {
+fn c_dispose(array: &mut sys::git_oidarray) {
     // SAFETY: `array` owns `ids` (NULL, or libgit2's allocation), released once here;
     // the caller does not read it again before reinitialising it.
-    unsafe { ffi::git_oidarray_dispose(array) }
+    unsafe { sys::git_oidarray_dispose(array) }
 }
 
 // --- the Rust side -----------------------------------------------------------
@@ -304,22 +304,22 @@ fn oid(seed: u8) -> Oid {
 // --- libgit2's results ---------------------------------------------------------
 
 /// `git_merge_bases(a4a7dce, be3563a)` in the `testrepo.git` fixture, which has two.
-fn merge_bases(repo: *mut ffi::git_repository) -> ffi::git_oidarray {
+fn merge_bases(repo: *mut sys::git_repository) -> sys::git_oidarray {
     let parse = |hex: &CStr| {
-        let mut oid = ffi::git_oid::default();
+        let mut oid = sys::git_oid::default();
         // SAFETY: `oid` is writable and `hex` NUL-terminated.
-        let rc = unsafe { ffi::git_oid_from_string(&raw mut oid, hex.as_ptr(), ffi::GIT_OID_SHA1) };
+        let rc = unsafe { sys::git_oid_from_string(&raw mut oid, hex.as_ptr(), sys::GIT_OID_SHA1) };
         assert_eq!(rc, 0);
         oid
     };
     let one = parse(c"a4a7dce85cf63874e984719f4fdd239f5145052f");
     let two = parse(c"be3563ae3f795b2b4353bcce3a527ad0a4f7f644");
-    let mut out = ffi::git_oidarray {
+    let mut out = sys::git_oidarray {
         ids: ptr::null_mut(),
         count: 0,
     };
     // SAFETY: `out` is writable, `repo` an open repository, `one` and `two` live ids.
-    let rc = unsafe { ffi::git_merge_bases(&raw mut out, repo, &raw const one, &raw const two) };
+    let rc = unsafe { sys::git_merge_bases(&raw mut out, repo, &raw const one, &raw const two) };
     assert_eq!(rc, 0);
     out
 }
@@ -342,10 +342,10 @@ fn merge_base_results_read_edit_and_release_alike() {
             // SAFETY: `repo` receives the repository; `path` is NUL-terminated; no
             // ceiling directories.
             let rc = unsafe {
-                ffi::git_repository_open_ext(
+                sys::git_repository_open_ext(
                     &raw mut repo,
                     path.as_ptr().cast(),
-                    ffi::GIT_REPOSITORY_OPEN_NO_SEARCH,
+                    sys::GIT_REPOSITORY_OPEN_NO_SEARCH,
                     ptr::null(),
                 )
             };
@@ -397,7 +397,7 @@ fn merge_base_results_read_edit_and_release_alike() {
             assert_eq!(first[..4], [0x9F, 0xD7, 0x38, 0xE8]);
             assert_eq!(c.steps[3].1, [Event::Free { alloc: Some(0) }]);
             // SAFETY: `repo` is open and released once.
-            unsafe { ffi::git_repository_free(repo) };
+            unsafe { sys::git_repository_free(repo) };
         },
     );
 }
@@ -416,11 +416,11 @@ fn built_arrays_match_c_built_ones() {
                 let next: Vec<Oid> = (0..=n)
                     .map(|i| oid(100 + u8::try_from(i).unwrap()))
                     .collect();
-                let raw_src = src.as_ptr().cast::<ffi::git_oid>();
-                let raw_next = next.as_ptr().cast::<ffi::git_oid>();
+                let raw_src = src.as_ptr().cast::<sys::git_oid>();
+                let raw_next = next.as_ptr().cast::<sys::git_oid>();
 
                 let mut c = Recorder::default();
-                let empty = ffi::git_oidarray {
+                let empty = sys::git_oidarray {
                     ids: ptr::null_mut(),
                     count: 0,
                 };

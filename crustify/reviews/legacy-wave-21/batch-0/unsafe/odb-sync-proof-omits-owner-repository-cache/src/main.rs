@@ -15,7 +15,7 @@
 //! error (`tests/ub_safe/compile_fail/odb_owner_outlives_repository.rs`).
 use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
-use libgit2::ffi;
+use libgit2::sys::libgit2 as sys;
 use libgit2::libgit2::odb::odb::{Odb, OdbArc};
 use libgit2::libgit2::repository::repository::RepositoryBox;
 
@@ -25,14 +25,14 @@ fn wrap_odb(odb: &OdbArc) -> RepositoryBox {
     let mut raw = ptr::null_mut();
     // SAFETY: a live odb and a writable slot; the repository takes its own reference and
     // becomes the odb's owner.
-    assert_eq!(unsafe { ffi::git_repository_wrap_odb(&mut raw, odb.as_c_ptr()) }, 0);
+    assert_eq!(unsafe { sys::git_repository_wrap_odb(&mut raw, odb.as_c_ptr()) }, 0);
     // SAFETY: the fresh repository the call wrote, owned here alone.
     unsafe { RepositoryBox::from_c(raw) }.unwrap()
 }
 
 fn main() {
     let odb = Odb::new().unwrap();
-    let id = ffi::git_oid { id: [0x11; 32], type_: ffi::GIT_OID_SHA1 as u8 };
+    let id = sys::git_oid { id: [0x11; 32], type_: sys::GIT_OID_SHA1 as u8 };
     let done = AtomicBool::new(false);
     // The shared handle is `Send` (`Odb: Sync`), so other threads may read through it.
     let handle = odb.as_ref();
@@ -43,10 +43,10 @@ fn main() {
                     // SAFETY: `OdbRef` is `#[repr(transparent)]` over one pointer to the
                     // odb the arc keeps alive (its `as_ptr` is crate-private); what the
                     // wrapper of `git_odb_exists` on `OdbRef` does.
-                    let p: *mut ffi::git_odb = unsafe { core::mem::transmute(handle) };
+                    let p: *mut sys::git_odb = unsafe { core::mem::transmute(handle) };
                     // SAFETY: a live odb the handle designates; the routine only reads
                     // it, through its own locks.
-                    unsafe { ffi::git_odb_exists(p, &id) };
+                    unsafe { sys::git_odb_exists(p, &id) };
                 }
             });
         }

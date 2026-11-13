@@ -30,13 +30,13 @@ use ffibox::{
     CArc, CBorrowedPtr, CBox, CCell, CDrop, CMutSeam, CRefSeam, define_ctype, impl_cdrop,
 };
 
-use crate::ffi;
 use crate::libgit2::src::libgit2::diff::{DiffDeltaRef, DiffRef};
 use crate::libgit2::src::libgit2::index::IndexMut;
 use crate::libgit2::src::libgit2::repository::{RepositoryError, RepositoryMut};
 use crate::libgit2::src::libgit2::strarray::StrArrayRef;
 use crate::libgit2::src::libgit2::tree::TreeRef;
 use crate::libgit2::src::util::errors::{ErrorBuf, ErrorClass, last, runtime_pinned, set};
+use crate::sys::libgit2 as sys;
 
 define_ctype!(
     /// A compiled, C-owned pathspec, reached only through owners and handles.
@@ -46,7 +46,7 @@ define_ctype!(
     Pathspec,
     PathspecRef,
     PathspecMut,
-    ffi::git_pathspec
+    sys::git_pathspec
 );
 
 /// Releases one counted reference, freeing the patterns, prefix, pool and object
@@ -59,7 +59,7 @@ impl_cdrop!(
     #[doc(alias = "git_pathspec_free")]
     PathspecFree,
     Pathspec,
-    ffi::git_pathspec_free
+    sys::git_pathspec_free
 );
 
 /// The sole reference to a compiled pathspec, with shared and exclusive handles.
@@ -140,7 +140,7 @@ impl Pathspec {
         // SAFETY: `patterns` supplies a live read-only array of non-null terminated
         // strings (or an empty array). C copies them and retains no input pointer.
         // `out` is a writable output slot; the pinned runtime outlives the result.
-        let rc = unsafe { ffi::git_pathspec_new(&raw mut out, patterns.as_ptr()) };
+        let rc = unsafe { sys::git_pathspec_new(&raw mut out, patterns.as_ptr()) };
         if rc < 0 {
             // C cleans its partial allocation and leaves the output untouched.
             return Err(last());
@@ -171,7 +171,7 @@ impl PathspecRef<'_> {
         let (pathspec, path) = (self.as_ptr(), path.as_ptr());
         // SAFETY: this handle keeps the initialized pathspec alive and unwritten for
         // the call, and `path` is NUL-terminated. C reads both without retaining them.
-        let rc = unsafe { ffi::git_pathspec_matches_path(pathspec, flags.bits(), path) };
+        let rc = unsafe { sys::git_pathspec_matches_path(pathspec, flags.bits(), path) };
         rc > 0
     }
 }
@@ -205,19 +205,19 @@ pub struct PathspecFlags(u32);
 
 impl PathspecFlags {
     /// Default matching, with no flags enabled.
-    pub const DEFAULT: Self = Self(ffi::GIT_PATHSPEC_DEFAULT);
+    pub const DEFAULT: Self = Self(sys::GIT_PATHSPEC_DEFAULT);
     /// Do not keep matching filenames; test for matches or collect failures only.
-    pub const FAILURES_ONLY: Self = Self(ffi::GIT_PATHSPEC_FAILURES_ONLY);
+    pub const FAILURES_ONLY: Self = Self(sys::GIT_PATHSPEC_FAILURES_ONLY);
     /// Record the patterns that had no matches.
-    pub const FIND_FAILURES: Self = Self(ffi::GIT_PATHSPEC_FIND_FAILURES);
+    pub const FIND_FAILURES: Self = Self(sys::GIT_PATHSPEC_FIND_FAILURES);
     /// Force case-insensitive matching.
-    pub const IGNORE_CASE: Self = Self(ffi::GIT_PATHSPEC_IGNORE_CASE);
+    pub const IGNORE_CASE: Self = Self(sys::GIT_PATHSPEC_IGNORE_CASE);
     /// Disable glob matching (literal directory-prefix matching still applies).
-    pub const NO_GLOB: Self = Self(ffi::GIT_PATHSPEC_NO_GLOB);
+    pub const NO_GLOB: Self = Self(sys::GIT_PATHSPEC_NO_GLOB);
     /// Report no matches as `GIT_ENOTFOUND` in list-producing operations.
-    pub const NO_MATCH_ERROR: Self = Self(ffi::GIT_PATHSPEC_NO_MATCH_ERROR);
+    pub const NO_MATCH_ERROR: Self = Self(sys::GIT_PATHSPEC_NO_MATCH_ERROR);
     /// Force case-sensitive matching where the operation supports it.
-    pub const USE_CASE: Self = Self(ffi::GIT_PATHSPEC_USE_CASE);
+    pub const USE_CASE: Self = Self(sys::GIT_PATHSPEC_USE_CASE);
 
     /// Preserve every supplied bit, including bits unknown to this C version.
     #[must_use]
@@ -313,7 +313,7 @@ impl BitAndAssign for PathspecFlags {
 #[doc(alias = "git_pathspec_match_list")]
 #[repr(transparent)]
 pub struct MatchList<'diff>(
-    ffi::git_pathspec_match_list,
+    sys::git_pathspec_match_list,
     PhantomData<(&'diff (), *const ())>,
 );
 
@@ -333,7 +333,7 @@ pub struct MatchListMut<'a, 'diff>(
 // and CBorrowedPtr respectively; markers are zero-sized. Mut is invariant in
 // MatchList, shared handles only read, and neither handle references C storage.
 unsafe impl<'diff> CCell for MatchList<'diff> {
-    type C = ffi::git_pathspec_match_list;
+    type C = sys::git_pathspec_match_list;
     type Mut<'a>
         = MatchListMut<'a, 'diff>
     where
@@ -364,7 +364,7 @@ unsafe impl CDrop<MatchList<'_>> for MatchListFree {
     #[doc(alias = "git_pathspec_match_list_free")]
     unsafe fn c_drop(&self, ptr: NonNull<MatchList<'_>>) {
         // SAFETY: CDrop's caller transfers the live, unique list allocation.
-        unsafe { ffi::git_pathspec_match_list_free(ptr.as_ptr().cast()) }
+        unsafe { sys::git_pathspec_match_list_free(ptr.as_ptr().cast()) }
     }
 }
 
@@ -379,7 +379,7 @@ impl<'a> MatchListRef<'a, '_> {
     #[must_use]
     pub fn len(&self) -> usize {
         // SAFETY: this handle keeps the initialized list alive and unwritten.
-        unsafe { ffi::git_pathspec_match_list_entrycount(self.as_ptr()) }
+        unsafe { sys::git_pathspec_match_list_entrycount(self.as_ptr()) }
     }
 
     /// Whether no path matched.
@@ -396,7 +396,7 @@ impl<'a> MatchListRef<'a, '_> {
     pub fn entry(&self, index: usize) -> Option<&'a CStr> {
         // SAFETY: C checks the datatype and index before reading its array. Strings
         // are NUL-terminated pool allocations, immutable until this list is freed.
-        let p = unsafe { ffi::git_pathspec_match_list_entry(self.as_ptr(), index) };
+        let p = unsafe { sys::git_pathspec_match_list_entry(self.as_ptr(), index) };
         // SAFETY: non-null results belong to the list for the handle's lifetime.
         (!p.is_null()).then(|| unsafe { CStr::from_ptr(p) })
     }
@@ -408,7 +408,7 @@ impl<'a> MatchListRef<'a, '_> {
     #[must_use]
     pub fn failed_len(&self) -> usize {
         // SAFETY: the shared handle keeps the initialized list alive.
-        unsafe { ffi::git_pathspec_match_list_failed_entrycount(self.as_ptr()) }
+        unsafe { sys::git_pathspec_match_list_failed_entrycount(self.as_ptr()) }
     }
 
     /// A copied unmatched pattern, or `None` out of bounds.
@@ -419,7 +419,7 @@ impl<'a> MatchListRef<'a, '_> {
     pub fn failed_entry(&self, index: usize) -> Option<&'a CStr> {
         // SAFETY: C bounds-checks before reading; failure strings are immutable
         // NUL-terminated allocations in this list's pool (not caller storage).
-        let p = unsafe { ffi::git_pathspec_match_list_failed_entry(self.as_ptr(), index) };
+        let p = unsafe { sys::git_pathspec_match_list_failed_entry(self.as_ptr(), index) };
         // SAFETY: a non-null result remains live for the list handle's lifetime.
         (!p.is_null()).then(|| unsafe { CStr::from_ptr(p) })
     }
@@ -433,7 +433,7 @@ impl<'a> MatchListRef<'a, '_> {
     pub fn diff_entry(&self, index: usize) -> Option<DiffDeltaRef<'a>> {
         // SAFETY: C checks datatype and bounds; the list and borrowed diff are live.
         let pathspec_match_list_diff_entry =
-            unsafe { ffi::git_pathspec_match_list_diff_entry(self.as_ptr(), index) };
+            unsafe { sys::git_pathspec_match_list_diff_entry(self.as_ptr(), index) };
         // SAFETY: as above.
         unsafe { DiffDeltaRef::from_ptr(pathspec_match_list_diff_entry.cast_mut()) }
     }
@@ -486,7 +486,7 @@ impl MatchList<'static> {
         // patterns C only reads while atomically bumping their count; writable out
         // slot. C copies all names and releases its iterator before returning.
         let rc = unsafe {
-            ffi::git_pathspec_match_index(
+            sys::git_pathspec_match_index(
                 &raw mut out,
                 index.as_mut_ptr(),
                 flags.bits(),
@@ -519,7 +519,7 @@ impl MatchList<'static> {
         // traversal, a live shared pathspec owner (read, and its count atomically
         // bumped, by C), and a writable output slot.
         let rc = unsafe {
-            ffi::git_pathspec_match_tree(
+            sys::git_pathspec_match_tree(
                 &raw mut out,
                 tree.as_ptr().cast_mut(),
                 flags.bits(),
@@ -554,7 +554,7 @@ impl MatchList<'static> {
         // and its count atomically bumped, by C); C copies names, retains no
         // repository, and writes only our output slot.
         let rc = unsafe {
-            ffi::git_pathspec_match_workdir(
+            sys::git_pathspec_match_workdir(
                 &raw mut out,
                 repo.as_mut_ptr(),
                 flags.bits(),
@@ -605,7 +605,7 @@ impl<'diff> MatchList<'diff> {
         // pathspec owner, and a writable output slot. C reads the pathspec and
         // retains it via its atomic count, but merely borrows delta pointers.
         let rc = unsafe {
-            ffi::git_pathspec_match_diff(
+            sys::git_pathspec_match_diff(
                 &raw mut out,
                 diff.as_ptr().cast_mut(),
                 flags.bits(),
@@ -639,11 +639,11 @@ mod match_list_unit_tests {
     fn handles_and_owner_preserve_pointer_layout() {
         assert_eq!(
             size_of::<MatchList<'static>>(),
-            size_of::<ffi::git_pathspec_match_list>()
+            size_of::<sys::git_pathspec_match_list>()
         );
         assert_eq!(
             align_of::<MatchList<'static>>(),
-            align_of::<ffi::git_pathspec_match_list>()
+            align_of::<sys::git_pathspec_match_list>()
         );
         assert_eq!(size_of::<MatchListRef<'_, '_>>(), size_of::<*const ()>());
         assert_eq!(size_of::<MatchListMut<'_, '_>>(), size_of::<*const ()>());
@@ -697,17 +697,17 @@ mod unit_tests {
     fn flag_algebra_and_layout() {
         assert_eq!(
             size_of::<PathspecFlags>(),
-            size_of::<ffi::git_pathspec_flag_t>()
+            size_of::<sys::git_pathspec_flag_t>()
         );
         assert_eq!(
             align_of::<PathspecFlags>(),
-            align_of::<ffi::git_pathspec_flag_t>()
+            align_of::<sys::git_pathspec_flag_t>()
         );
-        assert_eq!(size_of::<Pathspec>(), size_of::<ffi::git_pathspec>());
-        assert_eq!(align_of::<Pathspec>(), align_of::<ffi::git_pathspec>());
+        assert_eq!(size_of::<Pathspec>(), size_of::<sys::git_pathspec>());
+        assert_eq!(align_of::<Pathspec>(), align_of::<sys::git_pathspec>());
         assert_eq!(
             size_of::<PathspecBox>(),
-            size_of::<*mut ffi::git_pathspec>()
+            size_of::<*mut sys::git_pathspec>()
         );
         assert_eq!(size_of::<PathspecArc>(), size_of::<PathspecBox>());
         assert_eq!(size_of::<PathspecRef<'_>>(), size_of::<PathspecBox>());
@@ -867,8 +867,8 @@ mod unit_tests {
             // SAFETY: this fresh process has never initialized libgit2; the valid
             // allocator table is copied by C before any allocations are made.
             let rc = unsafe {
-                ffi::git_libgit2_opts(
-                    ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(),
+                sys::git_libgit2_opts(
+                    sys::GIT_OPT_SET_ALLOCATOR.cast_signed(),
                     allocator.as_ref().as_ptr(),
                 )
             };

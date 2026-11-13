@@ -12,10 +12,10 @@ use core::ptr::{self, NonNull};
 
 use ffibox::{CBorrowedPtr, CBox, CCell, CDrop, CMutSeam, CRefSeam};
 
-use crate::ffi;
 use crate::libgit2::src::libgit2::config::{ConfigMut, ConfigRef};
 use crate::libgit2::src::libgit2::repository::RepositoryRef;
 use crate::libgit2::src::util::errors::{ErrorBuf, last, runtime_pinned};
+use crate::sys::libgit2 as sys;
 
 /// Opaque reference transaction, borrowing its repository for `'r`.
 ///
@@ -53,7 +53,7 @@ use crate::libgit2::src::util::errors::{ErrorBuf, last, runtime_pinned};
 /// Wraps `st::git_transaction`
 #[doc(alias = "git_transaction")]
 #[repr(transparent)]
-pub struct Transaction<'r>(ffi::git_transaction, PhantomData<(*const (), &'r ())>);
+pub struct Transaction<'r>(sys::git_transaction, PhantomData<(*const (), &'r ())>);
 
 /// Shared, copyable borrow of a reference transaction.
 #[repr(transparent)]
@@ -68,7 +68,7 @@ pub struct TransactionMut<'a, 'r>(TransactionRef<'a, 'r>, PhantomData<&'a mut Tr
 // CBorrowedPtr respectively, with only zero-sized markers and no handle Drop.
 // No Rust reference covers C memory. The mutable handle is invariant in Transaction.
 unsafe impl<'r> CCell for Transaction<'r> {
-    type C = ffi::git_transaction;
+    type C = sys::git_transaction;
     type Mut<'a>
         = TransactionMut<'a, 'r>
     where
@@ -126,7 +126,7 @@ unsafe impl<'r> CDrop<Transaction<'r>> for TransactionFree {
     unsafe fn c_drop(&self, ptr: NonNull<Transaction<'r>>) {
         // SAFETY: the caller transfers one live transaction allocated by C, with
         // its parent still alive. Transaction has the C type's layout.
-        unsafe { ffi::git_transaction_free(ptr.as_ptr().cast()) }
+        unsafe { sys::git_transaction_free(ptr.as_ptr().cast()) }
     }
 }
 
@@ -157,7 +157,7 @@ impl<'r> Transaction<'r> {
         // SAFETY: out is writable and repo is live for 'r; C stores that borrow
         // and obtains its own refdb reference. On failure it cleans its pool and
         // leaves out untouched. The runtime remains initialized through teardown.
-        let rc = unsafe { ffi::git_transaction_new(&raw mut out, repo.as_ptr().cast_mut()) };
+        let rc = unsafe { sys::git_transaction_new(&raw mut out, repo.as_ptr().cast_mut()) };
         if rc < 0 {
             return Err(last());
         }
@@ -223,7 +223,7 @@ impl<'r> ConfigTransaction<'_, 'r> {
             reason = "only the unit tests reach it until a consumer needs it"
         )
     )]
-    pub(crate) fn as_mut_ptr(&mut self) -> *mut ffi::git_transaction {
+    pub(crate) fn as_mut_ptr(&mut self) -> *mut sys::git_transaction {
         self.transaction.as_c_ptr()
     }
 }
@@ -242,31 +242,31 @@ mod unit_tests {
     fn layouts_and_handle_reborrows() {
         assert_eq!(
             size_of::<Transaction<'_>>(),
-            size_of::<ffi::git_transaction>()
+            size_of::<sys::git_transaction>()
         );
         assert_eq!(
             align_of::<Transaction<'_>>(),
-            align_of::<ffi::git_transaction>()
+            align_of::<sys::git_transaction>()
         );
         assert_eq!(
             size_of::<TransactionBox<'_>>(),
-            size_of::<*mut ffi::git_transaction>()
+            size_of::<*mut sys::git_transaction>()
         );
         assert_eq!(
             size_of::<Option<TransactionBox<'_>>>(),
-            size_of::<*mut ffi::git_transaction>()
+            size_of::<*mut sys::git_transaction>()
         );
         assert_eq!(
             size_of::<TransactionRef<'_, '_>>(),
-            size_of::<*mut ffi::git_transaction>()
+            size_of::<*mut sys::git_transaction>()
         );
         assert_eq!(
             size_of::<TransactionMut<'_, '_>>(),
-            size_of::<*mut ffi::git_transaction>()
+            size_of::<*mut sys::git_transaction>()
         );
         // SAFETY: bindgen represents this opaque type as a zero-sized byte array,
         // for which zero is valid. It is never passed to C or read as a C body.
-        let mut raw = unsafe { core::mem::zeroed::<ffi::git_transaction>() };
+        let mut raw = unsafe { core::mem::zeroed::<sys::git_transaction>() };
         let p = NonNull::from(&mut raw).cast::<Transaction<'_>>();
         // SAFETY: raw is initialized opaque Rust-owned storage, live throughout
         // this test. No C function is called and no handle dereferences it.
@@ -289,10 +289,10 @@ mod unit_tests {
         // no repository borrow is retained by this backend.
         unsafe {
             assert_eq!(
-                ffi::git_config_add_file_ondisk(
+                sys::git_config_add_file_ondisk(
                     config.as_c_ptr(),
                     cpath.as_ptr(),
-                    ffi::GIT_CONFIG_LEVEL_LOCAL,
+                    sys::GIT_CONFIG_LEVEL_LOCAL,
                     ptr::null(),
                     0
                 ),
@@ -302,7 +302,7 @@ mod unit_tests {
         // SAFETY: as above.
         unsafe {
             assert_eq!(
-                ffi::git_config_set_int32(config.as_c_ptr(), c"a.b".as_ptr(), 1),
+                sys::git_config_set_int32(config.as_c_ptr(), c"a.b".as_ptr(), 1),
                 0
             );
         };
@@ -311,12 +311,12 @@ mod unit_tests {
         // stages a scalar copy. Commit is performed once, before dropping tx.
         unsafe {
             assert_eq!(
-                ffi::git_config_set_int32(tx.config_mut().as_mut_ptr(), c"a.b".as_ptr(), 2),
+                sys::git_config_set_int32(tx.config_mut().as_mut_ptr(), c"a.b".as_ptr(), 2),
                 0
             );
         };
         // SAFETY: as above.
-        unsafe { assert_eq!(ffi::git_transaction_commit(tx.as_mut_ptr()), 0) };
+        unsafe { assert_eq!(sys::git_transaction_commit(tx.as_mut_ptr()), 0) };
         drop(tx); // Must not unlock again after C cleared cfg/cfg_data.
         assert!(std::fs::read_to_string(&path).unwrap().contains('2'));
         drop(config);
@@ -338,7 +338,7 @@ mod unit_tests {
         // SAFETY: NULL is refused without creating an owner or running release.
         assert!(unsafe { TransactionBox::from_c(ptr::null_mut()) }.is_none());
         // SAFETY: the C releaser explicitly accepts NULL as a no-op.
-        unsafe { ffi::git_transaction_free(ptr::null_mut()) };
+        unsafe { sys::git_transaction_free(ptr::null_mut()) };
     }
 
     mod out_of_memory {
@@ -420,8 +420,8 @@ mod unit_tests {
             // SAFETY: `Allocator` is `#[repr(transparent)]` over `git_allocator`, with
             // every member set; libgit2 copies it before anything is allocated.
             let rc = unsafe {
-                ffi::git_libgit2_opts(
-                    ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(),
+                sys::git_libgit2_opts(
+                    sys::GIT_OPT_SET_ALLOCATOR.cast_signed(),
                     allocator.as_ref().as_ptr(),
                 )
             };
@@ -445,10 +445,10 @@ mod unit_tests {
                     let mut config = Config::new().unwrap();
                     // SAFETY: a live sole config and a NUL-terminated path; no repository.
                     let rc = unsafe {
-                        ffi::git_config_add_file_ondisk(
+                        sys::git_config_add_file_ondisk(
                             config.as_c_ptr(),
                             cpath.as_ptr(),
-                            ffi::GIT_CONFIG_LEVEL_LOCAL,
+                            sys::GIT_CONFIG_LEVEL_LOCAL,
                             ptr::null(),
                             0,
                         )

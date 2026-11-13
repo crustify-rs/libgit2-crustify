@@ -88,8 +88,8 @@ use core::ptr::{self, NonNull, addr_of};
 
 use ffibox::{CBorrowedPtr, CCell, CDispose, CMutSeam, CRefSeam, CSlice, CVal, define_ctype};
 
-use crate::ffi;
 use crate::libgit2::src::util::errors::{ErrorBuf, last, runtime_pinned};
+use crate::sys::libgit2 as sys;
 
 /// One trailer of a commit message (`git_message_trailer`): a key and its value,
 /// borrowed for `'t` from whatever holds the strings.
@@ -161,7 +161,7 @@ use crate::libgit2::src::util::errors::{ErrorBuf, last, runtime_pinned};
 #[doc(alias = "git_message_trailer")]
 #[repr(transparent)]
 #[derive(Clone, Copy)]
-pub struct MessageTrailer<'t>(ffi::git_message_trailer, PhantomData<&'t CStr>);
+pub struct MessageTrailer<'t>(sys::git_message_trailer, PhantomData<&'t CStr>);
 
 /// Shared borrow of a [`MessageTrailer`]. `Copy`, like `&T`; the getters live here.
 #[repr(transparent)]
@@ -184,7 +184,7 @@ pub struct MessageTrailerMut<'a, 't>(
 // the trailer, and `MessageTrailerRef` has no write operation. `MessageTrailerMut` is
 // invariant in the trailer through its `PhantomData<&'a mut MessageTrailer<'t>>`.
 unsafe impl<'t> CCell for MessageTrailer<'t> {
-    type C = ffi::git_message_trailer;
+    type C = sys::git_message_trailer;
     type Mut<'a>
         = MessageTrailerMut<'a, 't>
     where
@@ -235,7 +235,7 @@ impl<'t> MessageTrailer<'t> {
     #[must_use]
     pub fn new(key: &'t CStr, value: &'t CStr) -> Self {
         Self(
-            ffi::git_message_trailer {
+            sys::git_message_trailer {
                 key: key.as_ptr(),
                 value: value.as_ptr(),
             },
@@ -253,14 +253,14 @@ impl<'t> MessageTrailer<'t> {
     /// `git_message_trailer_array`, `'t` must end before the array is freed with
     /// `git_message_trailer_array_free`, which frees the strings.
     #[must_use]
-    pub unsafe fn from_raw(raw: ffi::git_message_trailer) -> Self {
+    pub unsafe fn from_raw(raw: sys::git_message_trailer) -> Self {
         Self(raw, PhantomData)
     }
 
     /// The raw `git_message_trailer`, its two pointers borrowed for `'t`; nothing is to
     /// be freed.
     #[must_use]
-    pub fn into_raw(self) -> ffi::git_message_trailer {
+    pub fn into_raw(self) -> sys::git_message_trailer {
         self.0
     }
 
@@ -386,8 +386,8 @@ impl fmt::Debug for MessageTrailerMut<'_, '_> {
 
 // A trailer is the C struct itself: two pointers, and a handle one pointer.
 const _: () = assert!(
-    size_of::<MessageTrailer<'static>>() == size_of::<ffi::git_message_trailer>()
-        && align_of::<MessageTrailer<'static>>() == align_of::<ffi::git_message_trailer>()
+    size_of::<MessageTrailer<'static>>() == size_of::<sys::git_message_trailer>()
+        && align_of::<MessageTrailer<'static>>() == align_of::<sys::git_message_trailer>()
         && size_of::<MessageTrailerRef<'static, 'static>>() == size_of::<*const ()>()
 );
 
@@ -466,7 +466,7 @@ define_ctype!(
     MessageTrailerArray,
     MessageTrailerArrayRef,
     MessageTrailerArrayMut,
-    ffi::git_message_trailer_array
+    sys::git_message_trailer_array
 );
 
 // SAFETY: an array owns its block and its trailer buffer, both in libgit2's allocator,
@@ -495,7 +495,7 @@ unsafe impl Send for MessageTrailerArrayMut<'_> {}
 unsafe impl Sync for MessageTrailerArrayMut<'_> {}
 
 /// The empty array: no block, no trailers, as `git_message_trailer_array arr = {0}`.
-const EMPTY: ffi::git_message_trailer_array = ffi::git_message_trailer_array {
+const EMPTY: sys::git_message_trailer_array = sys::git_message_trailer_array {
     trailers: ptr::null_mut(),
     count: 0,
     _trailer_block: ptr::null_mut(),
@@ -522,7 +522,7 @@ unsafe impl CDispose<MessageTrailerArray> for MessageTrailerArrayFree {
     #[doc(alias = "git_message_trailer_array_free")]
     #[inline]
     unsafe fn c_dispose(&self, ptr: NonNull<MessageTrailerArray>) {
-        let raw: *mut ffi::git_message_trailer_array = ptr.as_ptr().cast();
+        let raw: *mut sys::git_message_trailer_array = ptr.as_ptr().cast();
         // SAFETY: per `c_dispose`'s contract `raw` addresses a live
         // `git_message_trailer_array`.
         let trailer_block_ptr = unsafe { addr_of!((*raw)._trailer_block) };
@@ -538,7 +538,7 @@ unsafe impl CDispose<MessageTrailerArray> for MessageTrailerArrayFree {
         // SAFETY: `raw` is live and, per the handles' invariant, owns both buffers (or
         // NULL), from libgit2's allocator; the caller gives the value up, so each is
         // freed once.
-        unsafe { ffi::git_message_trailer_array_free(raw) }
+        unsafe { sys::git_message_trailer_array_free(raw) }
     }
 }
 
@@ -587,7 +587,7 @@ impl MessageTrailerArray {
         // leaves empty on failure; `message` is NUL-terminated and only read during the
         // call. The runtime is pinned, so the allocations go through an initialised
         // allocator.
-        let rc = unsafe { ffi::git_message_trailers(place, message.as_ptr()) };
+        let rc = unsafe { sys::git_message_trailers(place, message.as_ptr()) };
         if rc < 0 {
             return Err(last());
         }
@@ -609,7 +609,7 @@ impl MessageTrailerArray {
     /// `key` and `value` is non-NULL and addresses a NUL-terminated string that stays
     /// live, and that nothing writes, until the result releases the trailers (strings
     /// in `raw._trailer_block` qualify, as libgit2's do).
-    pub unsafe fn from_raw(raw: ffi::git_message_trailer_array) -> MessageTrailerArrayVal {
+    pub unsafe fn from_raw(raw: sys::git_message_trailer_array) -> MessageTrailerArrayVal {
         // SAFETY: the caller gives up `raw`, which owns what it points at (this
         // function's contract).
         unsafe { CVal::new(Self(raw, PhantomData)) }
@@ -618,7 +618,7 @@ impl MessageTrailerArray {
     /// The raw `git_message_trailer_array`, ownership included: C code releases it
     /// with `git_message_trailer_array_free`.
     #[must_use]
-    pub fn into_raw(self) -> ffi::git_message_trailer_array {
+    pub fn into_raw(self) -> sys::git_message_trailer_array {
         self.0
     }
 }
@@ -734,9 +734,9 @@ impl MessageTrailerArrayMut<'_> {
 // A `MessageTrailerArray` is a `git_message_trailer_array`, so C reads and writes a
 // value Rust holds in place, and the owner adds nothing to it.
 const _: () = assert!(
-    size_of::<MessageTrailerArray>() == size_of::<ffi::git_message_trailer_array>()
-        && align_of::<MessageTrailerArray>() == align_of::<ffi::git_message_trailer_array>()
-        && size_of::<MessageTrailerArrayVal>() == size_of::<ffi::git_message_trailer_array>()
+    size_of::<MessageTrailerArray>() == size_of::<sys::git_message_trailer_array>()
+        && align_of::<MessageTrailerArray>() == align_of::<sys::git_message_trailer_array>()
+        && size_of::<MessageTrailerArrayVal>() == size_of::<sys::git_message_trailer_array>()
 );
 
 #[cfg(test)]
@@ -754,12 +754,12 @@ mod unit_tests {
 
     /// `git_message_trailers` over `message`, raw, for the adoption tests; the caller
     /// frees the array.
-    fn parse_raw(message: &CStr) -> ffi::git_message_trailer_array {
+    fn parse_raw(message: &CStr) -> sys::git_message_trailer_array {
         assert!(runtime_pinned());
-        let mut arr = MaybeUninit::<ffi::git_message_trailer_array>::zeroed();
+        let mut arr = MaybeUninit::<sys::git_message_trailer_array>::zeroed();
         // SAFETY: `arr` is writable storage, which libgit2 fills on success; `message`
         // is NUL-terminated and only read.
-        let rc = unsafe { ffi::git_message_trailers(arr.as_mut_ptr(), message.as_ptr()) };
+        let rc = unsafe { sys::git_message_trailers(arr.as_mut_ptr(), message.as_ptr()) };
         assert_eq!(rc, 0);
         // SAFETY: a 0 return means every field was written.
         unsafe { arr.assume_init() }
@@ -769,11 +769,11 @@ mod unit_tests {
     fn layout_matches_c() {
         assert_eq!(
             size_of::<MessageTrailer<'_>>(),
-            size_of::<ffi::git_message_trailer>()
+            size_of::<sys::git_message_trailer>()
         );
         assert_eq!(
             align_of::<MessageTrailer<'_>>(),
-            align_of::<ffi::git_message_trailer>()
+            align_of::<sys::git_message_trailer>()
         );
         assert_eq!(
             size_of::<MessageTrailerRef<'_, '_>>(),
@@ -865,15 +865,15 @@ mod unit_tests {
     fn array_layout_matches_c() {
         assert_eq!(
             size_of::<MessageTrailerArray>(),
-            size_of::<ffi::git_message_trailer_array>()
+            size_of::<sys::git_message_trailer_array>()
         );
         assert_eq!(
             align_of::<MessageTrailerArray>(),
-            align_of::<ffi::git_message_trailer_array>()
+            align_of::<sys::git_message_trailer_array>()
         );
         assert_eq!(
             size_of::<MessageTrailerArrayVal>(),
-            size_of::<ffi::git_message_trailer_array>()
+            size_of::<sys::git_message_trailer_array>()
         );
         assert_eq!(
             size_of::<MessageTrailerArrayRef<'_>>(),
@@ -912,7 +912,7 @@ mod unit_tests {
     /// without C (Miri).
     #[test]
     fn null_trailers_read_as_empty() {
-        let raw = ffi::git_message_trailer_array {
+        let raw = sys::git_message_trailer_array {
             trailers: ptr::null_mut(),
             count: 7,
             _trailer_block: ptr::null_mut(),
@@ -945,7 +945,7 @@ mod unit_tests {
         assert_eq!(raw.count, 2);
         assert!(!raw._trailer_block.is_null());
         // SAFETY: the buffers the owner gave up, freed once.
-        unsafe { ffi::git_message_trailer_array_free(&raw mut raw) };
+        unsafe { sys::git_message_trailer_array_free(&raw mut raw) };
 
         // An adopted array with a block but no trailer buffer frees the block alone.
         // SAFETY: filled by `git_message_trailers`, freed by the owner.
@@ -1108,8 +1108,8 @@ mod unit_tests {
         // SAFETY: `Allocator` is transparent over a `git_allocator` with every member
         // set; libgit2 copies it before anything is allocated in this child.
         let rc = unsafe {
-            ffi::git_libgit2_opts(
-                ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(),
+            sys::git_libgit2_opts(
+                sys::GIT_OPT_SET_ALLOCATOR.cast_signed(),
                 allocator.as_ref().as_ptr(),
             )
         };

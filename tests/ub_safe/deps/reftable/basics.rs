@@ -35,18 +35,18 @@ use std::hint::black_box;
 use std::{panic, thread};
 
 use ffibox::CZeroable;
-use libgit2::ffi;
 use libgit2::libgit2::deps::reftable::basics::{
     Buf, BufMut, BufRef, BufVal, Error, HashId, NamesRef, NamesVec, ReftableArrayFree, ReftableBox,
     ReftableStr, ReftableVec, binsearch, free_and_null, parse_names,
 };
+use libgit2::sys::libgit2 as sys;
 
 /// Every value around the declared ones, then a coarse stride across the whole type and
 /// its top; `BorrowSanitizer` instruments each comparison, so the probe set stays small.
-fn probes() -> impl Iterator<Item = ffi::reftable_hash> {
+fn probes() -> impl Iterator<Item = sys::reftable_hash> {
     (0..=300)
-        .chain((0..=ffi::reftable_hash::MAX).step_by(1 << 26))
-        .chain([ffi::reftable_hash::MAX - 1, ffi::reftable_hash::MAX])
+        .chain((0..=sys::reftable_hash::MAX).step_by(1 << 26))
+        .chain([sys::reftable_hash::MAX - 1, sys::reftable_hash::MAX])
 }
 
 #[test]
@@ -71,7 +71,7 @@ fn hash_id_from_raw_yields_only_valid_ids() {
 #[test]
 fn hash_id_round_trips_through_its_c_value() {
     for id in [HashId::Sha1, HashId::Sha256] {
-        let raw = ffi::reftable_hash::from(black_box(id));
+        let raw = sys::reftable_hash::from(black_box(id));
         assert_eq!(HashId::from_raw(raw), Some(id));
     }
 }

@@ -25,16 +25,16 @@ mod prune_options {
     use std::path::PathBuf;
     use std::{fs, ptr};
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::worktree::{
         PruneFlag, PruneFlags, PruneOptions, UnnamedPruneFlag,
     };
+    use libgit2::sys::libgit2 as sys;
 
     /// Every `git_worktree_prune_t` constant and the variant carrying it.
-    const FLAGS: [(ffi::git_worktree_prune_t, PruneFlag); 3] = [
-        (ffi::GIT_WORKTREE_PRUNE_VALID, PruneFlag::Valid),
-        (ffi::GIT_WORKTREE_PRUNE_LOCKED, PruneFlag::Locked),
-        (ffi::GIT_WORKTREE_PRUNE_WORKING_TREE, PruneFlag::WorkingTree),
+    const FLAGS: [(sys::git_worktree_prune_t, PruneFlag); 3] = [
+        (sys::GIT_WORKTREE_PRUNE_VALID, PruneFlag::Valid),
+        (sys::GIT_WORKTREE_PRUNE_LOCKED, PruneFlag::Locked),
+        (sys::GIT_WORKTREE_PRUNE_WORKING_TREE, PruneFlag::WorkingTree),
     ];
 
     /// Every value up to past the highest flag bit, each single bit and its
@@ -51,7 +51,7 @@ mod prune_options {
     /// Initialises libgit2, whose error state the consumers write; never released.
     fn init() {
         // SAFETY: no arguments; the reference is never released.
-        assert!(unsafe { ffi::git_libgit2_init() } >= 1);
+        assert!(unsafe { sys::git_libgit2_init() } >= 1);
     }
 
     /// The calling thread's last error, as C reports it.
@@ -60,7 +60,7 @@ mod prune_options {
             // SAFETY: the runtime is initialised; `git_error_last` never returns NULL, and
             // its message is NULL or a C string, live until the next libgit2 call on this
             // thread, after the copy.
-            let e = unsafe { ffi::git_error_last() };
+            let e = unsafe { sys::git_error_last() };
             // SAFETY: as above.
             let message = unsafe { (*e).message };
             // SAFETY: as above.
@@ -78,14 +78,14 @@ mod prune_options {
 
     /// `git_worktree_prune_options_init(version)` over a struct filled with a sentinel
     /// pattern, and what it left there.
-    fn c_init(version: u32) -> (c_int, ffi::git_worktree_prune_options) {
-        let mut raw = ffi::git_worktree_prune_options {
+    fn c_init(version: u32) -> (c_int, sys::git_worktree_prune_options) {
+        let mut raw = sys::git_worktree_prune_options {
             version: 0xDEAD_BEEF,
             flags: 0xDEAD_BEEF,
         };
         // SAFETY: `raw` is a live struct the call may write; any version is accepted
         // as input (a wrong one is refused with an error).
-        let rc = unsafe { ffi::git_worktree_prune_options_init(&raw mut raw, version) };
+        let rc = unsafe { sys::git_worktree_prune_options_init(&raw mut raw, version) };
         (rc, raw)
     }
 
@@ -93,7 +93,7 @@ mod prune_options {
     fn flag_from_raw_names_exactly_the_c_constants() {
         for (c, flag) in FLAGS {
             assert_eq!(flag.raw(), c, "{flag:?}");
-            assert_eq!(ffi::git_worktree_prune_t::from(flag), c, "{flag:?}");
+            assert_eq!(sys::git_worktree_prune_t::from(flag), c, "{flag:?}");
             assert_eq!(PruneFlags::from(flag).bits(), c, "{flag:?}");
         }
         assert_eq!(PruneFlag::ALL.map(PruneFlag::raw), FLAGS.map(|(c, _)| c));
@@ -120,13 +120,13 @@ mod prune_options {
     fn new_matches_git_worktree_prune_options_init() {
         assert_eq!(
             PruneOptions::VERSION,
-            ffi::GIT_WORKTREE_PRUNE_OPTIONS_VERSION
+            sys::GIT_WORKTREE_PRUNE_OPTIONS_VERSION
         );
         // Repeated: the routine keeps no state, and overwrites whatever was there.
         for _ in 0..4 {
-            let (rc, c) = c_init(ffi::GIT_WORKTREE_PRUNE_OPTIONS_VERSION);
+            let (rc, c) = c_init(sys::GIT_WORKTREE_PRUNE_OPTIONS_VERSION);
             assert_eq!(rc, 0);
-            let rust = ffi::git_worktree_prune_options::from(PruneOptions::new());
+            let rust = sys::git_worktree_prune_options::from(PruneOptions::new());
             assert_eq!((rust.version, rust.flags), (c.version, c.flags));
             // `GIT_WORKTREE_PRUNE_OPTIONS_INIT`: `{VERSION, 0}`.
             assert_eq!((c.version, c.flags), (PruneOptions::VERSION, 0));
@@ -154,7 +154,7 @@ mod prune_options {
             assert_eq!(
                 c_last(),
                 (
-                    ffi::GIT_ERROR_INVALID.cast_signed(),
+                    sys::GIT_ERROR_INVALID.cast_signed(),
                     format!(
                         "invalid version {} on git_worktree_prune_options",
                         version.cast_signed()
@@ -184,8 +184,8 @@ mod prune_options {
     const DEFAULT: Spec = flags(&[]);
 
     /// The step's options, built through C and its constants.
-    fn c_options(spec: Spec) -> ffi::git_worktree_prune_options {
-        let (rc, mut raw) = c_init(ffi::GIT_WORKTREE_PRUNE_OPTIONS_VERSION);
+    fn c_options(spec: Spec) -> sys::git_worktree_prune_options {
+        let (rc, mut raw) = c_init(sys::GIT_WORKTREE_PRUNE_OPTIONS_VERSION);
         assert_eq!(rc, 0);
         for flag in spec.flags {
             let c = FLAGS.iter().find(|(_, f)| f == flag).unwrap().0;
@@ -199,7 +199,7 @@ mod prune_options {
     }
 
     /// The step's options, built through the Rust API.
-    fn rust_options(spec: Spec) -> ffi::git_worktree_prune_options {
+    fn rust_options(spec: Spec) -> sys::git_worktree_prune_options {
         let mut opts = PruneOptions::new();
         let mut m = opts.as_mut();
         let mut set: PruneFlags = spec.flags.iter().copied().collect();
@@ -209,7 +209,7 @@ mod prune_options {
             m.set_version(version);
         }
         assert_eq!(opts.as_ref().flags(), set);
-        ffi::git_worktree_prune_options::from(opts)
+        sys::git_worktree_prune_options::from(opts)
     }
 
     #[derive(Clone, Copy, Debug)]
@@ -238,12 +238,12 @@ mod prune_options {
     /// A repository with a working directory, and its worktrees beside it.
     struct Side {
         root: PathBuf,
-        repo: *mut ffi::git_repository,
-        build: fn(Spec) -> ffi::git_worktree_prune_options,
+        repo: *mut sys::git_repository,
+        build: fn(Spec) -> sys::git_worktree_prune_options,
     }
 
     impl Side {
-        fn new(tag: &str, build: fn(Spec) -> ffi::git_worktree_prune_options) -> Self {
+        fn new(tag: &str, build: fn(Spec) -> sys::git_worktree_prune_options) -> Self {
             let root = std::env::temp_dir().join(format!(
                 "crustify-worktree-equiv-{}-{tag}",
                 std::process::id()
@@ -251,23 +251,23 @@ mod prune_options {
             drop(fs::remove_dir_all(&root));
             fs::create_dir_all(&root).unwrap();
             let path = CString::new(root.join("repo").as_os_str().as_bytes()).unwrap();
-            let mut opts = ffi::git_repository_init_options::default();
+            let mut opts = sys::git_repository_init_options::default();
             // SAFETY: `opts` is a live options struct, filled with the version's
             // defaults.
             let rc = unsafe {
-                ffi::git_repository_init_options_init(
+                sys::git_repository_init_options_init(
                     &raw mut opts,
-                    ffi::GIT_REPOSITORY_INIT_OPTIONS_VERSION,
+                    sys::GIT_REPOSITORY_INIT_OPTIONS_VERSION,
                 )
             };
             assert_eq!(rc, 0);
-            opts.flags = ffi::GIT_REPOSITORY_INIT_MKPATH;
+            opts.flags = sys::GIT_REPOSITORY_INIT_MKPATH;
             let mut repo = ptr::null_mut();
             // SAFETY: `repo` is a live slot, `path` NUL-terminated and `opts` a live
             // options struct, all read for the call only; the result is a fresh
             // repository, freed by `drop`.
             let rc = unsafe {
-                ffi::git_repository_init_ext(&raw mut repo, path.as_ptr(), &raw mut opts)
+                sys::git_repository_init_ext(&raw mut repo, path.as_ptr(), &raw mut opts)
             };
             assert_eq!(rc, 0, "{:?}", c_last());
             Self { root, repo, build }
@@ -298,25 +298,25 @@ mod prune_options {
         fn with_worktree(
             &self,
             name: &str,
-            call: impl FnOnce(*mut ffi::git_worktree) -> c_int,
+            call: impl FnOnce(*mut sys::git_worktree) -> c_int,
         ) -> c_int {
             let c_name = CString::new(name).unwrap();
             let mut wt = ptr::null_mut();
             // SAFETY: `wt` is a live slot, `repo` the live repository and `c_name`
             // NUL-terminated; the result is NULL or a fresh worktree.
-            let rc = unsafe { ffi::git_worktree_lookup(&raw mut wt, self.repo, c_name.as_ptr()) };
+            let rc = unsafe { sys::git_worktree_lookup(&raw mut wt, self.repo, c_name.as_ptr()) };
             if rc != 0 {
                 return rc;
             }
             let rc = call(wt);
             // SAFETY: `wt` is the live worktree the lookup produced, released once.
-            unsafe { ffi::git_worktree_free(wt) };
+            unsafe { sys::git_worktree_free(wt) };
             rc
         }
 
         fn run(&self, step: Step) -> Outcome {
             // SAFETY: no arguments; clears this thread's error state.
-            unsafe { ffi::git_error_clear() };
+            unsafe { sys::git_error_clear() };
             let rc = match step {
                 Step::Add(name) => {
                     self.add(name);
@@ -343,7 +343,7 @@ mod prune_options {
                     // SAFETY: `wt` is a live worktree and `opts` a live options struct,
                     // which the call only reads.
                     self.with_worktree(name, |wt| unsafe {
-                        ffi::git_worktree_is_prunable(wt, &raw mut opts)
+                        sys::git_worktree_is_prunable(wt, &raw mut opts)
                     })
                 }
                 Step::Prune(name, spec) => {
@@ -351,7 +351,7 @@ mod prune_options {
                     // SAFETY: as above; the call deletes directories of the side's
                     // own root only.
                     self.with_worktree(name, |wt| unsafe {
-                        ffi::git_worktree_prune(wt, &raw mut opts)
+                        sys::git_worktree_prune(wt, &raw mut opts)
                     })
                 }
             };
@@ -368,7 +368,7 @@ mod prune_options {
     impl Drop for Side {
         fn drop(&mut self) {
             // SAFETY: the repository `new` produced, released once.
-            unsafe { ffi::git_repository_free(self.repo) };
+            unsafe { sys::git_repository_free(self.repo) };
             drop(fs::remove_dir_all(&self.root));
         }
     }
@@ -462,7 +462,7 @@ mod prune_options {
             1, // wt2
             0,
             0,
-            ffi::GIT_ENOTFOUND,
+            sys::GIT_ENOTFOUND,
             1, // wt3
             0,
             0,
@@ -476,7 +476,7 @@ mod prune_options {
         assert_eq!(
             outcomes[9].1,
             (
-                ffi::GIT_ERROR_INVALID.cast_signed(),
+                sys::GIT_ERROR_INVALID.cast_signed(),
                 "invalid version 0 on git_worktree_prune_options".to_owned()
             )
         );
@@ -532,7 +532,7 @@ mod prune_options {
             -1,
             -1,
             0,
-            ffi::GIT_ENOTFOUND,
+            sys::GIT_ENOTFOUND,
             0,
             0,
             0, // wt1 to wt3
@@ -595,8 +595,8 @@ mod worktree_box {
     use std::sync::Mutex;
     use std::{fs, ptr};
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::worktree::WorktreeBox;
+    use libgit2::sys::libgit2 as sys;
 
     const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 
@@ -692,18 +692,18 @@ mod worktree_box {
             freed: Vec::new(),
             step: 0,
         });
-        let mut allocator = ffi::git_allocator {
+        let mut allocator = sys::git_allocator {
             gmalloc: Some(traced_malloc),
             grealloc: Some(traced_realloc),
             gfree: Some(traced_free),
         };
-        let option = ffi::GIT_OPT_SET_ALLOCATOR.cast_signed();
+        let option = sys::GIT_OPT_SET_ALLOCATOR.cast_signed();
         // SAFETY: `GIT_OPT_SET_ALLOCATOR` takes a `git_allocator *` with every member set,
         // which it copies; nothing is allocated yet, so no storage changes allocator.
-        let rc = unsafe { ffi::git_libgit2_opts(option, &raw mut allocator) };
+        let rc = unsafe { sys::git_libgit2_opts(option, &raw mut allocator) };
         assert_eq!(rc, 0);
         // SAFETY: no arguments; refcounted, never released in this process.
-        assert!(unsafe { ffi::git_libgit2_init() } > 0);
+        assert!(unsafe { sys::git_libgit2_init() } > 0);
     }
 
     // --- the sides ---------------------------------------------------------------------
@@ -754,37 +754,37 @@ mod worktree_box {
             side
         }
 
-        fn init(&self) -> *mut ffi::git_repository {
+        fn init(&self) -> *mut sys::git_repository {
             let c_path = CString::new(self.base.join("repo").as_os_str().as_bytes()).unwrap();
-            let mut opts = ffi::git_repository_init_options::default();
+            let mut opts = sys::git_repository_init_options::default();
             // SAFETY: `opts` is a live options struct, filled with the version's defaults.
             let rc = unsafe {
-                ffi::git_repository_init_options_init(
+                sys::git_repository_init_options_init(
                     &raw mut opts,
-                    ffi::GIT_REPOSITORY_INIT_OPTIONS_VERSION,
+                    sys::GIT_REPOSITORY_INIT_OPTIONS_VERSION,
                 )
             };
             assert_eq!(rc, 0);
-            opts.flags = ffi::GIT_REPOSITORY_INIT_MKPATH;
+            opts.flags = sys::GIT_REPOSITORY_INIT_MKPATH;
             let mut repo = ptr::null_mut();
             // SAFETY: a live slot, a NUL-terminated path and live options, read for the call.
             let rc = unsafe {
-                ffi::git_repository_init_ext(&raw mut repo, c_path.as_ptr(), &raw mut opts)
+                sys::git_repository_init_ext(&raw mut repo, c_path.as_ptr(), &raw mut opts)
             };
             assert_eq!(rc, 0);
             repo
         }
 
         /// Opens the repository at `<base>/<rel>`: the main one, or a worktree's.
-        fn open(&self, rel: &str) -> *mut ffi::git_repository {
+        fn open(&self, rel: &str) -> *mut sys::git_repository {
             let c_path = CString::new(self.base.join(rel).as_os_str().as_bytes()).unwrap();
             let mut repo = ptr::null_mut();
             // SAFETY: a live slot and a NUL-terminated path; no ceiling directories.
             let rc = unsafe {
-                ffi::git_repository_open_ext(
+                sys::git_repository_open_ext(
                     &raw mut repo,
                     c_path.as_ptr(),
-                    ffi::GIT_REPOSITORY_OPEN_NO_SEARCH,
+                    sys::GIT_REPOSITORY_OPEN_NO_SEARCH,
                     ptr::null(),
                 )
             };
@@ -811,7 +811,7 @@ mod worktree_box {
 
         /// Runs one step under tracing. `read` gives the worktree to read afterwards, as
         /// a raw pointer that stays the side's.
-        fn step(&mut self, f: impl FnOnce() -> (c_int, *mut ffi::git_worktree)) {
+        fn step(&mut self, f: impl FnOnce() -> (c_int, *mut sys::git_worktree)) {
             with_trace(|t| {
                 t.step += 1;
                 t.freed.clear();
@@ -820,11 +820,11 @@ mod worktree_box {
             let read = (!wt.is_null()).then(|| {
                 // SAFETY: `wt` is the side's live worktree, only read; the strings live as
                 // long as it does and are copied out at once.
-                let worktree_name = unsafe { ffi::git_worktree_name(wt) };
+                let worktree_name = unsafe { sys::git_worktree_name(wt) };
                 // SAFETY: as above.
                 let cstr = unsafe { CStr::from_ptr(worktree_name) };
                 // SAFETY: as above.
-                let worktree_path = unsafe { ffi::git_worktree_path(wt) };
+                let worktree_path = unsafe { sys::git_worktree_path(wt) };
                 // SAFETY: as above.
                 let (name, path) =
                     unsafe { (cstr.to_owned(), CStr::from_ptr(worktree_path).to_owned()) };
@@ -860,25 +860,25 @@ mod worktree_box {
         }
     }
 
-    fn close(repo: *mut ffi::git_repository) {
+    fn close(repo: *mut sys::git_repository) {
         // SAFETY: a repository the side opened, freed once; no worktree borrows it.
-        unsafe { ffi::git_repository_free(repo) };
+        unsafe { sys::git_repository_free(repo) };
     }
 
     /// `git_worktree_lookup(name)` on `repo`: the code and the slot.
-    fn lookup(repo: *mut ffi::git_repository, name: &CStr) -> (c_int, *mut ffi::git_worktree) {
+    fn lookup(repo: *mut sys::git_repository, name: &CStr) -> (c_int, *mut sys::git_worktree) {
         let mut out = ptr::null_mut();
         // SAFETY: a live slot, a live repository and a NUL-terminated name, only read.
-        let rc = unsafe { ffi::git_worktree_lookup(&raw mut out, repo, name.as_ptr()) };
+        let rc = unsafe { sys::git_worktree_lookup(&raw mut out, repo, name.as_ptr()) };
         (rc, out)
     }
 
     /// `git_worktree_open_from_repository(repo)`: the code and the slot, which starts NULL
     /// since libgit2 leaves it alone on failure.
-    fn open_from(repo: *mut ffi::git_repository) -> (c_int, *mut ffi::git_worktree) {
+    fn open_from(repo: *mut sys::git_repository) -> (c_int, *mut sys::git_worktree) {
         let mut out = ptr::null_mut();
         // SAFETY: a live slot and a live repository, only read.
-        let rc = unsafe { ffi::git_worktree_open_from_repository(&raw mut out, repo) };
+        let rc = unsafe { sys::git_worktree_open_from_repository(&raw mut out, repo) };
         (rc, out)
     }
 
@@ -898,7 +898,7 @@ mod worktree_box {
         });
         side.step(|| {
             // SAFETY: the worktree looked up above, freed once.
-            unsafe { ffi::git_worktree_free(wt) };
+            unsafe { sys::git_worktree_free(wt) };
             (0, ptr::null_mut())
         });
         let wt_repo = side.open("wt/beta");
@@ -913,7 +913,7 @@ mod worktree_box {
         });
         side.step(|| {
             // SAFETY: the worktree opened above, freed once.
-            unsafe { ffi::git_worktree_free(wt) };
+            unsafe { sys::git_worktree_free(wt) };
             (0, ptr::null_mut())
         });
         let repo = side.open("repo");
@@ -1031,7 +1031,7 @@ mod worktree_box {
                 assert_eq!(opened.rc, 0);
                 assert_eq!(opened.kept.len(), 7, "{opened:?}");
                 assert_eq!(c[5].released, opened.kept);
-                assert_eq!(c[6].rc, ffi::GIT_ENOTFOUND);
+                assert_eq!(c[6].rc, sys::GIT_ENOTFOUND);
                 assert!(c[6].kept.is_empty(), "{:?}", c[6].kept);
                 // `git_worktree_open_from_repository`'s failures: a repository that is no
                 // worktree's, a worktree whose administrative directory is broken, and one
@@ -1077,15 +1077,15 @@ mod add_options {
     use std::path::{Path, PathBuf};
     use std::{fs, ptr};
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::refs::ReferenceBox;
     use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
     use libgit2::libgit2::src::libgit2::worktree::{AddOptions, AddOptionsRef, Worktree};
+    use libgit2::sys::libgit2 as sys;
 
     /// Initialises libgit2, whose error state the consumers write; never released.
     fn init() {
         // SAFETY: no arguments; the reference is never released.
-        assert!(unsafe { ffi::git_libgit2_init() } >= 1);
+        assert!(unsafe { sys::git_libgit2_init() } >= 1);
     }
 
     /// The calling thread's last error, as C reports it, with `base` replaced by
@@ -1095,7 +1095,7 @@ mod add_options {
             // SAFETY: the runtime is initialised; `git_error_last` never returns NULL, and
             // its message is NULL or a C string, live until the next libgit2 call on this
             // thread, after the copy.
-            let e = unsafe { ffi::git_error_last() };
+            let e = unsafe { sys::git_error_last() };
             // SAFETY: as above.
             let message = unsafe { (*e).message };
             // SAFETY: as above.
@@ -1115,13 +1115,13 @@ mod add_options {
     /// `git_worktree_add_options_init(version)` over storage filled with `0xa5` bytes:
     /// its return, and the bytes it left.
     fn c_init_bytes(version: u32) -> (c_int, Vec<u8>) {
-        let mut raw = MaybeUninit::<ffi::git_worktree_add_options>::uninit();
-        let size = size_of::<ffi::git_worktree_add_options>();
+        let mut raw = MaybeUninit::<sys::git_worktree_add_options>::uninit();
+        let size = size_of::<sys::git_worktree_add_options>();
         // SAFETY: `raw` is writable storage of `size` bytes.
         unsafe { ptr::write_bytes(raw.as_mut_ptr().cast::<u8>(), 0xA5, size) };
         // SAFETY: `raw` is writable storage for the struct; a refused version leaves it
         // untouched.
-        let rc = unsafe { ffi::git_worktree_add_options_init(raw.as_mut_ptr(), version) };
+        let rc = unsafe { sys::git_worktree_add_options_init(raw.as_mut_ptr(), version) };
         // SAFETY: every byte of the storage is initialised (the fill, then possibly the
         // template), and is read as bytes.
         let bytes = unsafe { std::slice::from_raw_parts(raw.as_ptr().cast::<u8>(), size) };
@@ -1129,11 +1129,11 @@ mod add_options {
     }
 
     /// `git_worktree_add_options_init(GIT_WORKTREE_ADD_OPTIONS_VERSION)`.
-    fn c_init() -> ffi::git_worktree_add_options {
-        let mut raw = ffi::git_worktree_add_options::default();
+    fn c_init() -> sys::git_worktree_add_options {
+        let mut raw = sys::git_worktree_add_options::default();
         // SAFETY: `raw` is a live struct the call overwrites.
         let rc = unsafe {
-            ffi::git_worktree_add_options_init(&raw mut raw, ffi::GIT_WORKTREE_ADD_OPTIONS_VERSION)
+            sys::git_worktree_add_options_init(&raw mut raw, sys::GIT_WORKTREE_ADD_OPTIONS_VERSION)
         };
         assert_eq!(rc, 0);
         raw
@@ -1151,17 +1151,17 @@ mod add_options {
         (u32, u32, u32, u32, c_int, u32, Option<CString>),
     );
 
-    fn name_of(reference: *const ffi::git_reference) -> Option<CString> {
+    fn name_of(reference: *const sys::git_reference) -> Option<CString> {
         if reference.is_null() {
             return None;
         }
         // SAFETY: a live reference; its name lives as long as it and is copied.
-        let reference_name = unsafe { ffi::git_reference_name(reference) };
+        let reference_name = unsafe { sys::git_reference_name(reference) };
         // SAFETY: as above.
         Some(unsafe { CStr::from_ptr(reference_name) }.to_owned())
     }
 
-    fn c_fields(raw: &ffi::git_worktree_add_options) -> Fields {
+    fn c_fields(raw: &sys::git_worktree_add_options) -> Fields {
         let c = &raw.checkout_options;
         let target = c.target_directory;
         (
@@ -1208,7 +1208,7 @@ mod add_options {
     #[test]
     #[cfg_attr(miri, ignore = "calls libgit2")]
     fn new_matches_git_worktree_add_options_init() {
-        assert_eq!(AddOptions::VERSION, ffi::GIT_WORKTREE_ADD_OPTIONS_VERSION);
+        assert_eq!(AddOptions::VERSION, sys::GIT_WORKTREE_ADD_OPTIONS_VERSION);
         // Repeated: the routine keeps no state, and overwrites whatever was there.
         for _ in 0..4 {
             let c = c_init();
@@ -1226,7 +1226,7 @@ mod add_options {
                     0,
                     0,
                     None,
-                    (ffi::GIT_CHECKOUT_OPTIONS_VERSION, 0, 0, 0, 0, 0, None)
+                    (sys::GIT_CHECKOUT_OPTIONS_VERSION, 0, 0, 0, 0, 0, None)
                 )
             );
             assert!(c.checkout_options.paths.strings.is_null());
@@ -1242,13 +1242,13 @@ mod add_options {
         // The versions Rust offers no constructor for: C refuses each, leaving the
         // struct as it was.
         init();
-        let untouched = vec![0xA5; size_of::<ffi::git_worktree_add_options>()];
+        let untouched = vec![0xA5; size_of::<sys::git_worktree_add_options>()];
         for version in [0, 2, 3, u32::MAX] {
             assert_eq!(c_init_bytes(version), (-1, untouched.clone()), "{version}");
             assert_eq!(
                 c_last(Path::new("/nonexistent")),
                 (
-                    ffi::GIT_ERROR_INVALID.cast_signed(),
+                    sys::GIT_ERROR_INVALID.cast_signed(),
                     format!(
                         "invalid version {} on git_worktree_add_options",
                         version.cast_signed()
@@ -1437,17 +1437,17 @@ mod add_options {
             };
             let (mut odb, raw) = (ptr::null_mut(), repo.as_c_ptr());
             // SAFETY: a live slot and the live repository; released below.
-            assert_eq!(unsafe { ffi::git_repository_odb(&raw mut odb, raw) }, 0);
-            let write = |data: &[u8], kind: ffi::git_object_t| {
-                let mut id = ffi::git_oid::default();
+            assert_eq!(unsafe { sys::git_repository_odb(&raw mut odb, raw) }, 0);
+            let write = |data: &[u8], kind: sys::git_object_t| {
+                let mut id = sys::git_oid::default();
                 let (bytes, len) = (data.as_ptr().cast(), data.len());
                 // SAFETY: a live slot, the live odb and `data` readable for its length at
                 // a non-NULL address.
-                let rc = unsafe { ffi::git_odb_write(&raw mut id, odb, bytes, len, kind) };
+                let rc = unsafe { sys::git_odb_write(&raw mut id, odb, bytes, len, kind) };
                 assert_eq!(rc, 0);
                 let mut hex = [0; 65];
                 // SAFETY: `hex` bounds the write; `id` is live.
-                unsafe { ffi::git_oid_tostr(hex.as_mut_ptr(), hex.len(), &raw const id) };
+                unsafe { sys::git_oid_tostr(hex.as_mut_ptr(), hex.len(), &raw const id) };
                 // SAFETY: `git_oid_tostr` NUL-terminates within `hex`.
                 unsafe { CStr::from_ptr(hex.as_ptr()) }
                     .to_str()
@@ -1455,11 +1455,11 @@ mod add_options {
                     .to_owned()
             };
             const WHO: &str = "A U Thor <author@example.com> 1700000000 +0000";
-            let tree = write(b"", ffi::GIT_OBJECT_TREE);
+            let tree = write(b"", sys::GIT_OBJECT_TREE);
             let commit = format!("tree {tree}\nauthor {WHO}\ncommitter {WHO}\n\nfirst\n");
-            let commit = write(commit.as_bytes(), ffi::GIT_OBJECT_COMMIT);
+            let commit = write(commit.as_bytes(), sys::GIT_OBJECT_COMMIT);
             // SAFETY: the odb reference taken above, released once.
-            unsafe { ffi::git_odb_free(odb) };
+            unsafe { sys::git_odb_free(odb) };
             for name in [
                 "heads/main",
                 "heads/alpha",
@@ -1492,11 +1492,11 @@ mod add_options {
         }
 
         /// `git_reference_lookup(name)`, raw.
-        fn lookup(&self, name: &CStr) -> *mut ffi::git_reference {
+        fn lookup(&self, name: &CStr) -> *mut sys::git_reference {
             let mut out = ptr::null_mut();
             let repo = self.repo().as_c_ptr();
             // SAFETY: a live slot, the live repository and a NUL-terminated name.
-            let rc = unsafe { ffi::git_reference_lookup(&raw mut out, repo, name.as_ptr()) };
+            let rc = unsafe { sys::git_reference_lookup(&raw mut out, repo, name.as_ptr()) };
             assert_eq!(rc, 0, "{name:?}");
             out
         }
@@ -1511,7 +1511,7 @@ mod add_options {
         }
 
         /// `git_worktree_add(name, <base>/wt/<name>, opts)` and what it left.
-        fn add(&self, name: &str, opts: *const ffi::git_worktree_add_options) -> Outcome {
+        fn add(&self, name: &str, opts: *const sys::git_worktree_add_options) -> Outcome {
             self.add_at(name, &format!("wt/{name}"), opts)
         }
 
@@ -1520,7 +1520,7 @@ mod add_options {
             &self,
             name: &str,
             dir: &str,
-            opts: *const ffi::git_worktree_add_options,
+            opts: *const sys::git_worktree_add_options,
         ) -> Outcome {
             let c_name = CString::new(name).unwrap();
             let dir = self.c_path(dir);
@@ -1529,7 +1529,7 @@ mod add_options {
             // SAFETY: a live slot, the live repository, two NUL-terminated strings and
             // live options whose reference and strings the caller keeps alive.
             let rc = unsafe {
-                ffi::git_worktree_add(&raw mut out, repo, c_name.as_ptr(), dir.as_ptr(), opts)
+                sys::git_worktree_add(&raw mut out, repo, c_name.as_ptr(), dir.as_ptr(), opts)
             };
             let error = (rc < 0).then(|| c_last(&self.base));
             assert_eq!(out.is_null(), rc < 0);
@@ -1537,17 +1537,17 @@ mod add_options {
                 {
                     // SAFETY: the fresh worktree, live; its name and path are strings it owns,
                     // copied before it is freed.
-                    let worktree_name = unsafe { ffi::git_worktree_name(out) };
+                    let worktree_name = unsafe { sys::git_worktree_name(out) };
                     // SAFETY: as above.
                     let name = unsafe { CStr::from_ptr(worktree_name) };
                     // SAFETY: as above.
-                    let worktree_path = unsafe { ffi::git_worktree_path(out) };
+                    let worktree_path = unsafe { sys::git_worktree_path(out) };
                     // SAFETY: as above.
                     unsafe { self.named(name, CStr::from_ptr(worktree_path)) }
                 }
             });
             // SAFETY: NULL or the fresh worktree the caller owns, freed once.
-            unsafe { ffi::git_worktree_free(out) };
+            unsafe { sys::git_worktree_free(out) };
             (rc, error, added, self.snapshot())
         }
 
@@ -1659,7 +1659,7 @@ mod add_options {
             let c_outcome = c.add(name, &raw const raw);
             let c_seen = c_fields(&raw);
             // SAFETY: NULL or the reference looked up above, freed once.
-            unsafe { ffi::git_reference_free(c_ref) };
+            unsafe { sys::git_reference_free(c_ref) };
 
             // Rust: the safe constructor and setters, lending an owned reference.
             let reference = spec.reference.map(|n| {
@@ -1702,7 +1702,7 @@ mod add_options {
             c_messages.push(c_outcome.1.map(|(_, message)| message));
         }
         // Both sides took every branch the steps aim at.
-        let eexists = ffi::GIT_EEXISTS;
+        let eexists = sys::GIT_EEXISTS;
         assert_eq!(
             c_log,
             [0, 0, -1, -1, -1, 0, -1, 0, eexists, eexists, -1],
@@ -1799,8 +1799,8 @@ mod add_options {
                     codes.push((c_outcome.0, c_outcome.1.map(|(_, m)| m)));
                 }
                 let rc: Vec<_> = codes.iter().map(|(rc, _)| *rc).collect();
-                let (eexists, unborn) = (ffi::GIT_EEXISTS, ffi::GIT_EUNBORNBRANCH);
-                let invalid = ffi::GIT_EINVALIDSPEC;
+                let (eexists, unborn) = (sys::GIT_EEXISTS, sys::GIT_EUNBORNBRANCH);
+                let invalid = sys::GIT_EINVALIDSPEC;
                 assert_eq!(
                     rc,
                     [0, eexists, 0, -1, eexists, eexists, invalid, 0, unborn],
@@ -1858,7 +1858,7 @@ mod add_options {
             raw.ref_ = c_ref;
             let c_outcome = c.add(name, &raw const raw);
             // SAFETY: NULL or the reference looked up above, freed once.
-            unsafe { ffi::git_reference_free(c_ref) };
+            unsafe { sys::git_reference_free(c_ref) };
             let lent = reference.map(|n| {
                 // SAFETY: a fresh attached reference the test owns, released by
                 // `git_reference_free`; the side's repository outlives it.
@@ -1913,7 +1913,7 @@ mod add_options {
             fs::write(other.gitdir().join("refs/heads/only"), main).unwrap();
         }
         let steps: [(&str, &CStr, c_int); 3] = [
-            ("x1", c"refs/heads/only", ffi::GIT_EUNBORNBRANCH),
+            ("x1", c"refs/heads/only", sys::GIT_EUNBORNBRANCH),
             ("x2", c"refs/tags/v1", -1),
             ("x3", c"refs/heads/feature", 0),
         ];
@@ -1923,7 +1923,7 @@ mod add_options {
             raw.ref_ = c_ref;
             let c_outcome = c.add(name, &raw const raw);
             // SAFETY: the reference looked up above, freed once.
-            unsafe { ffi::git_reference_free(c_ref) };
+            unsafe { sys::git_reference_free(c_ref) };
             // SAFETY: a fresh attached reference the test owns, released by
             // `git_reference_free`; the other side's repository outlives it.
             let lent = unsafe { ReferenceBox::from_c(rust_other.lookup(reference)) }.unwrap();
@@ -1950,7 +1950,7 @@ mod add_options {
         raw.ref_ = c_ref;
         let c_outcome = c.add("x4", &raw const raw);
         // SAFETY: the reference looked up above, freed once.
-        unsafe { ffi::git_reference_free(c_ref) };
+        unsafe { sys::git_reference_free(c_ref) };
         assert_eq!((c_outcome.0, &c_outcome.1), (0, &None));
         assert!(c.gitdir().join("worktrees/x4/HEAD").is_file());
         let raw = rust_other.lookup(c"refs/heads/feature");
@@ -1965,7 +1965,7 @@ mod add_options {
             (
                 -1,
                 &Some((
-                    ffi::GIT_ERROR_WORKTREE.cast_signed(),
+                    sys::GIT_ERROR_WORKTREE.cast_signed(),
                     "reference refs/heads/feature is already checked out".to_owned()
                 ))
             )
@@ -2004,7 +2004,7 @@ mod add_options {
             ("b1", true, -1),
             ("b2", false, -1),
             ("g1", true, -1),
-            ("g2", false, ffi::GIT_ENOTFOUND),
+            ("g2", false, sys::GIT_ENOTFOUND),
         ];
         for (step, (name, with_reference, expected)) in steps.into_iter().enumerate() {
             if name == "g1" {
@@ -2031,7 +2031,7 @@ mod add_options {
             }
             let c_outcome = c.add(name, &raw const raw);
             // SAFETY: NULL or the reference looked up above, freed once.
-            unsafe { ffi::git_reference_free(c_ref) };
+            unsafe { sys::git_reference_free(c_ref) };
             let mut opts = AddOptions::new();
             opts.as_mut()
                 .set_reference(lent.as_ref().map(ffibox::CBox::as_ref));
@@ -2076,12 +2076,12 @@ mod routines {
     use std::path::PathBuf;
     use std::{fs, ptr};
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
     use libgit2::libgit2::src::libgit2::worktree::{
         PruneFlag, PruneFlags, PruneOptions, Worktree, WorktreeBox, WorktreeError, list,
     };
     use libgit2::libgit2::src::util::errors::last;
+    use libgit2::sys::libgit2 as sys;
 
     const NAMES: [&str; 2] = ["wt1", "wt2"];
 
@@ -2132,10 +2132,10 @@ mod routines {
         {
             // SAFETY: the runtime is initialised; `git_error_last` never returns NULL, and
             // its message is a C string, live until the next libgit2 call on this thread.
-            let e = unsafe { ffi::git_error_last() };
+            let e = unsafe { sys::git_error_last() };
             // SAFETY: as above.
             unsafe {
-                if (*e).klass == ffi::GIT_ERROR_NONE.cast_signed() {
+                if (*e).klass == sys::GIT_ERROR_NONE.cast_signed() {
                     return None;
                 }
             }
@@ -2150,7 +2150,7 @@ mod routines {
 
     fn init() {
         // SAFETY: no arguments; the reference is never released.
-        assert!(unsafe { ffi::git_libgit2_init() } >= 1);
+        assert!(unsafe { sys::git_libgit2_init() } >= 1);
     }
 
     fn options(flags: u32) -> PruneOptions {
@@ -2285,8 +2285,8 @@ mod routines {
 
     struct CSide {
         layout: Layout,
-        repo: *mut ffi::git_repository,
-        worktrees: Vec<*mut ffi::git_worktree>,
+        repo: *mut sys::git_repository,
+        worktrees: Vec<*mut sys::git_worktree>,
     }
 
     impl CSide {
@@ -2296,7 +2296,7 @@ mod routines {
             let path = layout.repo_path();
             // SAFETY: a writable slot and a NUL-terminated path; the result is freed by
             // `drop`.
-            let rc = unsafe { ffi::git_repository_init(&raw mut repo, path.as_ptr(), 0) };
+            let rc = unsafe { sys::git_repository_init(&raw mut repo, path.as_ptr(), 0) };
             assert_eq!(rc, 0);
             for n in NAMES {
                 layout.add(n);
@@ -2308,13 +2308,13 @@ mod routines {
             }
         }
 
-        fn keep(&mut self, rc: c_int, wt: *mut ffi::git_worktree) -> (c_int, Option<String>) {
+        fn keep(&mut self, rc: c_int, wt: *mut sys::git_worktree) -> (c_int, Option<String>) {
             if rc != 0 {
                 return (rc, None);
             }
             self.worktrees.push(wt);
             // SAFETY: the live worktree just kept; its name is a C string it owns.
-            let worktree_name = unsafe { ffi::git_worktree_name(wt) };
+            let worktree_name = unsafe { sys::git_worktree_name(wt) };
             // SAFETY: as above.
             let name = unsafe { CStr::from_ptr(worktree_name) };
             (rc, Some(name.to_string_lossy().into_owned()))
@@ -2326,7 +2326,7 @@ mod routines {
         )]
         fn run(&mut self, step: Step) -> Record {
             // SAFETY: no arguments; clears this thread's error state.
-            unsafe { ffi::git_error_clear() };
+            unsafe { sys::git_error_clear() };
             if self.layout.touch(step).is_some() {
                 return self.layout.record(0, None, None);
             }
@@ -2339,7 +2339,7 @@ mod routines {
                     let mut out = ptr::null_mut();
                     // SAFETY: as above.
                     let rc = unsafe {
-                        ffi::git_worktree_lookup(&raw mut out, self.repo, c_name.as_ptr())
+                        sys::git_worktree_lookup(&raw mut out, self.repo, c_name.as_ptr())
                     };
                     self.keep(rc, out)
                 }
@@ -2347,7 +2347,7 @@ mod routines {
                     let mut out = ptr::null_mut();
                     // SAFETY: as above.
                     let rc =
-                        unsafe { ffi::git_worktree_open_from_repository(&raw mut out, self.repo) };
+                        unsafe { sys::git_worktree_open_from_repository(&raw mut out, self.repo) };
                     self.keep(rc, out)
                 }
                 Step::OpenFromWorktree(name) => {
@@ -2355,40 +2355,40 @@ mod routines {
                         CString::new(self.layout.workdir(name).as_os_str().as_bytes()).unwrap();
                     let mut repo = ptr::null_mut();
                     // SAFETY: as above.
-                    let rc = unsafe { ffi::git_repository_open(&raw mut repo, dir.as_ptr()) };
+                    let rc = unsafe { sys::git_repository_open(&raw mut repo, dir.as_ptr()) };
                     assert_eq!(rc, 0);
                     let mut out = ptr::null_mut();
                     // SAFETY: as above.
-                    let rc = unsafe { ffi::git_worktree_open_from_repository(&raw mut out, repo) };
+                    let rc = unsafe { sys::git_worktree_open_from_repository(&raw mut out, repo) };
                     // SAFETY: as above, the repository opened here, freed once.
-                    unsafe { ffi::git_repository_free(repo) };
+                    unsafe { sys::git_repository_free(repo) };
                     self.keep(rc, out)
                 }
                 Step::Name(i) => {
                     // SAFETY: as above.
-                    let name = unsafe { ffi::git_worktree_name(wt(i, self)) };
+                    let name = unsafe { sys::git_worktree_name(wt(i, self)) };
                     // SAFETY: as above, the name lives with the worktree; it is copied.
                     let name = unsafe { CStr::from_ptr(name) };
                     (0, Some(name.to_string_lossy().into_owned()))
                 }
                 Step::Path(i) => {
                     // SAFETY: as above.
-                    let path = unsafe { ffi::git_worktree_path(wt(i, self)) };
+                    let path = unsafe { sys::git_worktree_path(wt(i, self)) };
                     // SAFETY: as above, the path lives with the worktree; it is copied.
                     let path = unsafe { CStr::from_ptr(path) };
                     (0, Some(path.to_string_lossy().into_owned()))
                 }
                 // SAFETY: as above.
-                Step::Validate(i) => (unsafe { ffi::git_worktree_validate(wt(i, self)) }, None),
+                Step::Validate(i) => (unsafe { sys::git_worktree_validate(wt(i, self)) }, None),
                 Step::IsLocked(i) => (
                     // SAFETY: as above, without a reason buffer.
-                    unsafe { ffi::git_worktree_is_locked(ptr::null_mut(), wt(i, self)) },
+                    unsafe { sys::git_worktree_is_locked(ptr::null_mut(), wt(i, self)) },
                     None,
                 ),
                 Step::LockReason(i) => {
-                    let mut buf = ffi::git_buf::default();
+                    let mut buf = sys::git_buf::default();
                     // SAFETY: as above, with a zeroed buffer.
-                    let rc = unsafe { ffi::git_worktree_is_locked(&raw mut buf, wt(i, self)) };
+                    let rc = unsafe { sys::git_worktree_is_locked(&raw mut buf, wt(i, self)) };
                     let reason = (rc > 0).then(|| {
                         // SAFETY: a locked worktree's reason fills `size` bytes of the buffer.
                         let bytes =
@@ -2397,43 +2397,43 @@ mod routines {
                     });
                     if buf.reserved > 0 {
                         // SAFETY: as above, the buffer libgit2 filled, disposed once.
-                        unsafe { ffi::git_buf_dispose(&raw mut buf) };
+                        unsafe { sys::git_buf_dispose(&raw mut buf) };
                     }
                     (rc, reason)
                 }
                 Step::Lock(i, reason) => {
                     let reason = reason.map_or(ptr::null(), CStr::as_ptr);
                     // SAFETY: as above, with a NULL or NUL-terminated reason.
-                    (unsafe { ffi::git_worktree_lock(wt(i, self), reason) }, None)
+                    (unsafe { sys::git_worktree_lock(wt(i, self), reason) }, None)
                 }
                 // SAFETY: as above.
-                Step::Unlock(i) => (unsafe { ffi::git_worktree_unlock(wt(i, self)) }, None),
+                Step::Unlock(i) => (unsafe { sys::git_worktree_unlock(wt(i, self)) }, None),
                 Step::IsPrunable(i, flags) => {
-                    let mut opts = ffi::git_worktree_prune_options {
-                        version: ffi::GIT_WORKTREE_PRUNE_OPTIONS_VERSION,
+                    let mut opts = sys::git_worktree_prune_options {
+                        version: sys::GIT_WORKTREE_PRUNE_OPTIONS_VERSION,
                         flags,
                     };
                     // SAFETY: as above, with live options.
                     (
-                        unsafe { ffi::git_worktree_is_prunable(wt(i, self), &raw mut opts) },
+                        unsafe { sys::git_worktree_is_prunable(wt(i, self), &raw mut opts) },
                         None,
                     )
                 }
                 Step::Prune(i, flags) => {
-                    let mut opts = ffi::git_worktree_prune_options {
-                        version: ffi::GIT_WORKTREE_PRUNE_OPTIONS_VERSION,
+                    let mut opts = sys::git_worktree_prune_options {
+                        version: sys::GIT_WORKTREE_PRUNE_OPTIONS_VERSION,
                         flags,
                     };
                     // SAFETY: as above, with live options.
                     (
-                        unsafe { ffi::git_worktree_prune(wt(i, self), &raw mut opts) },
+                        unsafe { sys::git_worktree_prune(wt(i, self), &raw mut opts) },
                         None,
                     )
                 }
                 Step::List => {
-                    let mut array = ffi::git_strarray::default();
+                    let mut array = sys::git_strarray::default();
                     // SAFETY: as above, with a zeroed array.
-                    let rc = unsafe { ffi::git_worktree_list(&raw mut array, self.repo) };
+                    let rc = unsafe { sys::git_worktree_list(&raw mut array, self.repo) };
                     let names = (0..array.count)
                         .map(|k| {
                             // SAFETY: the array holds `count` strings, and `k < count`.
@@ -2445,14 +2445,14 @@ mod routines {
                         })
                         .collect();
                     // SAFETY: as above, the array libgit2 filled, disposed once.
-                    unsafe { ffi::git_strarray_dispose(&raw mut array) };
+                    unsafe { sys::git_strarray_dispose(&raw mut array) };
                     (rc, sorted_names(names))
                 }
                 Step::SetWorkdir(name) => {
                     let dir = self.layout.c_dir(name);
                     // SAFETY: as above.
                     (
-                        unsafe { ffi::git_repository_set_workdir(self.repo, dir.as_ptr(), 0) },
+                        unsafe { sys::git_repository_set_workdir(self.repo, dir.as_ptr(), 0) },
                         None,
                     )
                 }
@@ -2474,10 +2474,10 @@ mod routines {
         fn drop(&mut self) {
             for wt in self.worktrees.drain(..) {
                 // SAFETY: each worktree this side looked up, released once.
-                unsafe { ffi::git_worktree_free(wt) };
+                unsafe { sys::git_worktree_free(wt) };
             }
             // SAFETY: the repository `new` made, released once.
-            unsafe { ffi::git_repository_free(self.repo) };
+            unsafe { sys::git_repository_free(self.repo) };
         }
     }
 

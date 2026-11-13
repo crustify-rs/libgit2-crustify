@@ -180,8 +180,8 @@ mod ffi_import {
 
     use ffibox::{CLenDrop, CVec};
 
-    use crate::ffi;
     use crate::libgit2::src::util::alloc::AllocStr;
+    use crate::sys::libgit2 as sys;
 
     /// One element of a list's array: a string of libgit2's allocator that the list's
     /// releaser frees, so the array's [`CVec`] never drops it.
@@ -300,7 +300,7 @@ mod ffi_import {
             let len = byte_len / size_of::<Slot>();
             // SAFETY: per the impl's safety comment, `ptr` is a list's array of `len` live
             // strings of libgit2's allocator, all of which the caller gives up.
-            unsafe { ffi::git_strlist_free(ptr.cast(), len) }
+            unsafe { sys::git_strlist_free(ptr.cast(), len) }
         }
     }
 
@@ -521,7 +521,7 @@ mod ffi_import {
         unsafe fn c_drop_len(&self, ptr: *mut u8, _byte_len: usize) {
             // SAFETY: per the impl's safety comment, `ptr` is a NULL-terminated list's array
             // of live strings of libgit2's allocator, all of which the caller gives up.
-            unsafe { ffi::git_strlist_free_with_null(ptr.cast()) }
+            unsafe { sys::git_strlist_free_with_null(ptr.cast()) }
         }
     }
 
@@ -713,7 +713,7 @@ mod ffi_import {
         // `prefix.len()` bytes of `prefix_ptr`, all of them in `prefix`. Nothing is kept
         // past the call, and nothing reaches libgit2's state.
         unsafe {
-            ffi::git_strlist_contains_prefix(array_ptr(&ptrs), ptrs.len(), prefix_ptr, prefix.len())
+            sys::git_strlist_contains_prefix(array_ptr(&ptrs), ptrs.len(), prefix_ptr, prefix.len())
         }
     }
 
@@ -1047,9 +1047,9 @@ mod ffi_import {
                     let ptrs = strs.map(CStr::as_ptr);
                     for null_terminated in [false, true] {
                         let c_copy = if null_terminated {
-                            ffi::git_strlist_copy_with_null
+                            sys::git_strlist_copy_with_null
                         } else {
-                            ffi::git_strlist_copy
+                            sys::git_strlist_copy
                         };
                         let array = (2 + usize::from(null_terminated)) * PTR;
                         let requests = [Call::Alloc(array), Call::Alloc(4), Call::Alloc(5)];
@@ -1084,7 +1084,7 @@ mod ffi_import {
                     let mut out: *mut *mut c_char = ptr::null_mut();
                     // SAFETY: C checks `len + 1` first and returns, reading nothing.
                     let rc = unsafe {
-                        ffi::git_strlist_copy_with_null(&raw mut out, ptr::null_mut(), usize::MAX)
+                        sys::git_strlist_copy_with_null(&raw mut out, ptr::null_mut(), usize::MAX)
                     };
                     assert!(rc < 0 && out.is_null());
                     assert_out_of_memory();

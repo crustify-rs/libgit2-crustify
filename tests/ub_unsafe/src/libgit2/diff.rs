@@ -3,13 +3,13 @@
 mod support;
 use std::ffi::CString;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::diff::{Diff, DiffInputs};
 use libgit2::libgit2::src::libgit2::index::Index;
 use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
 use libgit2::libgit2::src::libgit2::repository::Repository;
 use libgit2::libgit2::src::libgit2::tree::Tree;
 use libgit2::libgit2::src::util::errors::ErrorClass;
+use libgit2::sys::libgit2 as sys;
 use support::Repo;
 
 /// Suite for `Diff::generate_with_options`: each generator, empty inputs, callbacks,
@@ -26,10 +26,10 @@ fn generate_with_options_contract() {
     let old = fixture.tree(b"old\n");
     let new = fixture.tree(b"new\n");
     let index = Index::new().unwrap();
-    let mut opts = ffi::git_diff_options::default();
+    let mut opts = sys::git_diff_options::default();
     assert_eq!(
         // SAFETY: writable initialized storage of the right type, supported version.
-        unsafe { ffi::git_diff_options_init(&raw mut opts, ffi::GIT_DIFF_OPTIONS_VERSION) },
+        unsafe { sys::git_diff_options_init(&raw mut opts, sys::GIT_DIFF_OPTIONS_VERSION) },
         0
     );
     for input in [
@@ -65,8 +65,8 @@ fn generate_with_options_contract() {
         }
     }
     unsafe extern "C" fn notify(
-        _: *const ffi::git_diff,
-        _: *const ffi::git_diff_delta,
+        _: *const sys::git_diff,
+        _: *const sys::git_diff_delta,
         _: *const core::ffi::c_char,
         p: *mut core::ffi::c_void,
     ) -> i32 {
@@ -79,7 +79,7 @@ fn generate_with_options_contract() {
         let mut state = (0usize, result);
         opts.notify_cb = Some(notify);
         opts.payload = (&raw mut state).cast();
-        opts.flags = ffi::GIT_DIFF_REVERSE;
+        opts.flags = sys::GIT_DIFF_REVERSE;
         // SAFETY: callback matches the payload, never unwinds/reenters/retains any
         // pointer. Payload and opts remain live until result is dropped; no
         // conflicting payload access occurs during the call.
@@ -96,7 +96,7 @@ fn generate_with_options_contract() {
         match result {
             0 => assert_eq!(
                 diff.as_ref().unwrap().as_ref().get(0).unwrap().status(),
-                ffi::GIT_DELTA_DELETED
+                sys::GIT_DELTA_DELETED
             ),
             1 => assert!(diff.as_ref().unwrap().as_ref().is_empty()),
             _ => assert_eq!(diff.as_ref().err().unwrap().raw_code(), result),
@@ -105,7 +105,7 @@ fn generate_with_options_contract() {
         assert_eq!(state.0, 1);
     }
     unsafe extern "C" fn cancel_progress(
-        _: *const ffi::git_diff,
+        _: *const sys::git_diff,
         _: *const core::ffi::c_char,
         _: *const core::ffi::c_char,
         _: *mut core::ffi::c_void,
@@ -142,9 +142,9 @@ fn generate_with_options_checked_fields() {
     let repo = fixture.get().as_ref();
     let tree = fixture.tree(b"old\n");
     let index = Index::new().unwrap();
-    let mut opts = ffi::git_diff_options::default();
+    let mut opts = sys::git_diff_options::default();
     // SAFETY: writable initialized storage of the right type, supported version.
-    let rc = unsafe { ffi::git_diff_options_init(&raw mut opts, ffi::GIT_DIFF_OPTIONS_VERSION) };
+    let rc = unsafe { sys::git_diff_options_init(&raw mut opts, sys::GIT_DIFF_OPTIONS_VERSION) };
     assert_eq!(rc, 0);
     let inputs = || {
         [
@@ -166,9 +166,9 @@ fn generate_with_options_checked_fields() {
         ]
     };
     for (version, oid_type) in [
-        (ffi::GIT_DIFF_OPTIONS_VERSION + 1, 0),
+        (sys::GIT_DIFF_OPTIONS_VERSION + 1, 0),
         (0, 0),
-        (ffi::GIT_DIFF_OPTIONS_VERSION, ffi::GIT_OID_SHA256),
+        (sys::GIT_DIFF_OPTIONS_VERSION, sys::GIT_OID_SHA256),
     ] {
         (opts.version, opts.oid_type) = (version, oid_type);
         for input in inputs() {
@@ -179,14 +179,14 @@ fn generate_with_options_checked_fields() {
             assert_eq!(e.class(), Some(ErrorClass::Invalid));
         }
     }
-    (opts.version, opts.oid_type) = (ffi::GIT_DIFF_OPTIONS_VERSION, ffi::GIT_OID_SHA1);
+    (opts.version, opts.oid_type) = (sys::GIT_DIFF_OPTIONS_VERSION, sys::GIT_OID_SHA1);
     // A pathspec, matched as patterns or (DISABLE_PATHSPEC_MATCH) as literal paths.
     let mut paths = [c"fil*".as_ptr().cast_mut()];
-    opts.pathspec = ffi::git_strarray {
+    opts.pathspec = sys::git_strarray {
         strings: paths.as_mut_ptr(),
         count: paths.len(),
     };
-    for (flags, expected) in [(0, 1), (ffi::GIT_DIFF_DISABLE_PATHSPEC_MATCH, 0)] {
+    for (flags, expected) in [(0, 1), (sys::GIT_DIFF_DISABLE_PATHSPEC_MATCH, 0)] {
         opts.flags = flags;
         for input in inputs() {
             // Only the tree side holds `file`; the working directory and indices are
@@ -202,7 +202,7 @@ fn generate_with_options_checked_fields() {
             assert_eq!(diff.as_ref().len(), len, "flags {flags}");
         }
     }
-    (opts.flags, opts.pathspec) = (0, ffi::git_strarray::default());
+    (opts.flags, opts.pathspec) = (0, sys::git_strarray::default());
     let res = format!("{}/c/tests/resources", env!("CARGO_MANIFEST_DIR"));
     let sha256 =
         Repository::open(&CString::new(format!("{res}/testrepo_256.git")).unwrap()).unwrap();
@@ -223,7 +223,7 @@ fn generate_with_options_checked_fields() {
     assert_eq!(diff.len(), 3);
     for i in 0..diff.len() {
         let delta = diff.get(i).unwrap();
-        assert_eq!(delta.status(), ffi::GIT_DELTA_DELETED);
+        assert_eq!(delta.status(), sys::GIT_DELTA_DELETED);
         assert_eq!(delta.old_file().id().kind(), Some(OidType::Sha256));
     }
 }
@@ -240,9 +240,9 @@ fn generate_with_options_refuses_empty_pattern_beside_others() {
     let repo = fixture.get().as_ref();
     let tree = fixture.tree(b"old\n");
     let index = Index::new().unwrap();
-    let mut opts = ffi::git_diff_options::default();
+    let mut opts = sys::git_diff_options::default();
     // SAFETY: writable initialized storage of the right type, supported version.
-    let rc = unsafe { ffi::git_diff_options_init(&raw mut opts, ffi::GIT_DIFF_OPTIONS_VERSION) };
+    let rc = unsafe { sys::git_diff_options_init(&raw mut opts, sys::GIT_DIFF_OPTIONS_VERSION) };
     assert_eq!(rc, 0);
     let inputs = || {
         [
@@ -272,7 +272,7 @@ fn generate_with_options_refuses_empty_pattern_beside_others() {
     ] {
         let owned: Vec<CString> = patterns.iter().map(|p| CString::new(*p).unwrap()).collect();
         let mut strings: Vec<_> = owned.iter().map(|p| p.as_ptr().cast_mut()).collect();
-        opts.pathspec = ffi::git_strarray {
+        opts.pathspec = sys::git_strarray {
             strings: strings.as_mut_ptr(),
             count: strings.len(),
         };

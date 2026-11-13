@@ -54,11 +54,11 @@ use std::ffi::CString;
 
 use ffibox::{CMutSeam, CRefSeam};
 
-use crate::ffi;
 use crate::libgit2::src::libgit2::object::ObjectType;
 use crate::libgit2::src::libgit2::strarray::{StrArray, StrArrayVal};
 use crate::libgit2::src::util::alloc::AllocatorRef;
 use crate::libgit2::src::util::errors::{ErrorBuf, last, runtime_pinned};
+use crate::sys::libgit2 as sys;
 
 /// A detail of how libgit2 was built, which `git_libgit2_buildinfo` reports as a
 /// static string, or NULL when the build did not record it.
@@ -73,40 +73,40 @@ use crate::libgit2::src::util::errors::{ErrorBuf, last, runtime_pinned};
 #[non_exhaustive]
 pub enum BuildInfo {
     /// The CPU type that libgit2 was built for.
-    Cpu = ffi::GIT_BUILDINFO_CPU,
+    Cpu = sys::GIT_BUILDINFO_CPU,
     /// The commit that libgit2 was built from.
-    Commit = ffi::GIT_BUILDINFO_COMMIT,
+    Commit = sys::GIT_BUILDINFO_COMMIT,
 }
 
 impl BuildInfo {
     /// The variant whose C value is `raw`; `None` for a value this version of
     /// libgit2's header does not name.
     #[must_use]
-    pub const fn from_raw(raw: ffi::git_buildinfo_t) -> Option<Self> {
+    pub const fn from_raw(raw: sys::git_buildinfo_t) -> Option<Self> {
         match raw {
-            ffi::GIT_BUILDINFO_CPU => Some(Self::Cpu),
-            ffi::GIT_BUILDINFO_COMMIT => Some(Self::Commit),
+            sys::GIT_BUILDINFO_CPU => Some(Self::Cpu),
+            sys::GIT_BUILDINFO_COMMIT => Some(Self::Commit),
             _ => None,
         }
     }
 
     /// The C value, as `git_libgit2_buildinfo` takes it.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_buildinfo_t {
-        self as ffi::git_buildinfo_t
+    pub const fn raw(self) -> sys::git_buildinfo_t {
+        self as sys::git_buildinfo_t
     }
 }
 
-impl TryFrom<ffi::git_buildinfo_t> for BuildInfo {
+impl TryFrom<sys::git_buildinfo_t> for BuildInfo {
     type Error = UnnamedBuildInfo;
 
-    fn try_from(raw: ffi::git_buildinfo_t) -> Result<Self, UnnamedBuildInfo> {
+    fn try_from(raw: sys::git_buildinfo_t) -> Result<Self, UnnamedBuildInfo> {
         Self::from_raw(raw).ok_or(UnnamedBuildInfo(raw))
     }
 }
 
-impl From<BuildInfo> for ffi::git_buildinfo_t {
-    fn from(value: BuildInfo) -> ffi::git_buildinfo_t {
+impl From<BuildInfo> for sys::git_buildinfo_t {
+    fn from(value: BuildInfo) -> sys::git_buildinfo_t {
         value.raw()
     }
 }
@@ -114,12 +114,12 @@ impl From<BuildInfo> for ffi::git_buildinfo_t {
 /// A build-information item that this version of libgit2's header does not name.
 /// [`raw`](Self::raw) has it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct UnnamedBuildInfo(ffi::git_buildinfo_t);
+pub struct UnnamedBuildInfo(sys::git_buildinfo_t);
 
 impl UnnamedBuildInfo {
     /// The value, as it was converted.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_buildinfo_t {
+    pub const fn raw(self) -> sys::git_buildinfo_t {
         self.0
     }
 }
@@ -153,216 +153,216 @@ impl std::error::Error for UnnamedBuildInfo {}
 pub enum LibraryOption {
     /// `opts(GIT_OPT_GET_MWINDOW_SIZE, size_t *out)`: reads the largest mmap window libgit2
     /// maps for a pack file.
-    GetMwindowSize = ffi::GIT_OPT_GET_MWINDOW_SIZE,
+    GetMwindowSize = sys::GIT_OPT_GET_MWINDOW_SIZE,
     /// `opts(GIT_OPT_SET_MWINDOW_SIZE, size_t size)`: sets the largest mmap window libgit2
     /// maps for a pack file.
-    SetMwindowSize = ffi::GIT_OPT_SET_MWINDOW_SIZE,
+    SetMwindowSize = sys::GIT_OPT_SET_MWINDOW_SIZE,
     /// `opts(GIT_OPT_GET_MWINDOW_MAPPED_LIMIT, size_t *out)`: reads the most memory libgit2
     /// keeps mapped at once, over all files.
-    GetMwindowMappedLimit = ffi::GIT_OPT_GET_MWINDOW_MAPPED_LIMIT,
+    GetMwindowMappedLimit = sys::GIT_OPT_GET_MWINDOW_MAPPED_LIMIT,
     /// `opts(GIT_OPT_SET_MWINDOW_MAPPED_LIMIT, size_t limit)`: sets the most memory libgit2
     /// keeps mapped at once, over all files.
-    SetMwindowMappedLimit = ffi::GIT_OPT_SET_MWINDOW_MAPPED_LIMIT,
+    SetMwindowMappedLimit = sys::GIT_OPT_SET_MWINDOW_MAPPED_LIMIT,
     /// `opts(GIT_OPT_GET_SEARCH_PATH, int level, git_buf *out)`: reads the search path of a
     /// config level (`GIT_CONFIG_LEVEL_SYSTEM`, `_GLOBAL` or `_XDG`; any other level is
     /// `GIT_ERROR_INVALID`) into `out`.
-    GetSearchPath = ffi::GIT_OPT_GET_SEARCH_PATH,
+    GetSearchPath = sys::GIT_OPT_GET_SEARCH_PATH,
     /// `opts(GIT_OPT_SET_SEARCH_PATH, int level, const char *path)`: sets the search path
     /// of a config level, which attributes and ignore files share; NULL restores the
     /// default, and `$PATH` in `path` stands for the old value.
-    SetSearchPath = ffi::GIT_OPT_SET_SEARCH_PATH,
+    SetSearchPath = sys::GIT_OPT_SET_SEARCH_PATH,
     /// `opts(GIT_OPT_SET_CACHE_OBJECT_LIMIT, git_object_t type, size_t size)`: sets the
     /// largest object of a type the object cache keeps; 0 keeps none. The type travels as
     /// an `int`.
-    SetCacheObjectLimit = ffi::GIT_OPT_SET_CACHE_OBJECT_LIMIT,
+    SetCacheObjectLimit = sys::GIT_OPT_SET_CACHE_OBJECT_LIMIT,
     /// `opts(GIT_OPT_SET_CACHE_MAX_SIZE, ssize_t max_storage_bytes)`: sets the soft limit
     /// on the bytes all repositories' object caches hold together.
-    SetCacheMaxSize = ffi::GIT_OPT_SET_CACHE_MAX_SIZE,
+    SetCacheMaxSize = sys::GIT_OPT_SET_CACHE_MAX_SIZE,
     /// `opts(GIT_OPT_ENABLE_CACHING, int enabled)`: turns the object cache on or off.
-    EnableCaching = ffi::GIT_OPT_ENABLE_CACHING,
+    EnableCaching = sys::GIT_OPT_ENABLE_CACHING,
     /// `opts(GIT_OPT_GET_CACHED_MEMORY, ssize_t *current, ssize_t *allowed)`: reads the
     /// bytes cached now and the limit on them.
-    GetCachedMemory = ffi::GIT_OPT_GET_CACHED_MEMORY,
+    GetCachedMemory = sys::GIT_OPT_GET_CACHED_MEMORY,
     /// `opts(GIT_OPT_GET_TEMPLATE_PATH, git_buf *out)`: reads the default template
     /// directory into `out`.
-    GetTemplatePath = ffi::GIT_OPT_GET_TEMPLATE_PATH,
+    GetTemplatePath = sys::GIT_OPT_GET_TEMPLATE_PATH,
     /// `opts(GIT_OPT_SET_TEMPLATE_PATH, const char *path)`: sets the default template
     /// directory.
-    SetTemplatePath = ffi::GIT_OPT_SET_TEMPLATE_PATH,
+    SetTemplatePath = sys::GIT_OPT_SET_TEMPLATE_PATH,
     /// `opts(GIT_OPT_SET_SSL_CERT_LOCATIONS, const char *file, const char *path)`: sets
     /// where TLS looks for certificate authorities: a bundle file, a directory of
     /// certificates, or both; with neither, the TLS backend fails (`GIT_ERROR_SSL`).
-    SetSslCertLocations = ffi::GIT_OPT_SET_SSL_CERT_LOCATIONS,
+    SetSslCertLocations = sys::GIT_OPT_SET_SSL_CERT_LOCATIONS,
     /// `opts(GIT_OPT_SET_USER_AGENT, const char *user_agent)`: sets the comment section of
     /// the User-Agent header; `""` sends none and NULL restores the default.
-    SetUserAgent = ffi::GIT_OPT_SET_USER_AGENT,
+    SetUserAgent = sys::GIT_OPT_SET_USER_AGENT,
     /// `opts(GIT_OPT_ENABLE_STRICT_OBJECT_CREATION, int enabled)`: turns validation of the
     /// objects a new object refers to on or off (on by default).
-    EnableStrictObjectCreation = ffi::GIT_OPT_ENABLE_STRICT_OBJECT_CREATION,
+    EnableStrictObjectCreation = sys::GIT_OPT_ENABLE_STRICT_OBJECT_CREATION,
     /// `opts(GIT_OPT_ENABLE_STRICT_SYMBOLIC_REF_CREATION, int enabled)`: turns validation
     /// of a new symbolic reference's target on or off (on by default).
-    EnableStrictSymbolicRefCreation = ffi::GIT_OPT_ENABLE_STRICT_SYMBOLIC_REF_CREATION,
+    EnableStrictSymbolicRefCreation = sys::GIT_OPT_ENABLE_STRICT_SYMBOLIC_REF_CREATION,
     /// `opts(GIT_OPT_SET_SSL_CIPHERS, const char *ciphers)`: sets the TLS cipher list.
     /// libgit2 copies `ciphers` with `strdup`, so it must not be NULL.
-    SetSslCiphers = ffi::GIT_OPT_SET_SSL_CIPHERS,
+    SetSslCiphers = sys::GIT_OPT_SET_SSL_CIPHERS,
     /// `opts(GIT_OPT_GET_USER_AGENT, git_buf *out)`: reads the comment section of the User-
     /// Agent header into `out`.
-    GetUserAgent = ffi::GIT_OPT_GET_USER_AGENT,
+    GetUserAgent = sys::GIT_OPT_GET_USER_AGENT,
     /// `opts(GIT_OPT_ENABLE_OFS_DELTA, int enabled)`: turns offset deltas in written and
     /// negotiated packfiles on or off (on by default).
-    EnableOfsDelta = ffi::GIT_OPT_ENABLE_OFS_DELTA,
+    EnableOfsDelta = sys::GIT_OPT_ENABLE_OFS_DELTA,
     /// `opts(GIT_OPT_ENABLE_FSYNC_GITDIR, int enabled)`: turns `fsync` of the files written
     /// under the git directory on or off (off by default).
-    EnableFsyncGitDir = ffi::GIT_OPT_ENABLE_FSYNC_GITDIR,
+    EnableFsyncGitDir = sys::GIT_OPT_ENABLE_FSYNC_GITDIR,
     /// `opts(GIT_OPT_GET_WINDOWS_SHAREMODE, unsigned long *value)`: reads the share mode
     /// files are opened with on Windows; elsewhere it leaves `value` unwritten and
     /// succeeds.
-    GetWindowsShareMode = ffi::GIT_OPT_GET_WINDOWS_SHAREMODE,
+    GetWindowsShareMode = sys::GIT_OPT_GET_WINDOWS_SHAREMODE,
     /// `opts(GIT_OPT_SET_WINDOWS_SHAREMODE, unsigned long value)`: sets the share mode
     /// files are opened with on Windows; elsewhere it ignores `value` and succeeds.
-    SetWindowsShareMode = ffi::GIT_OPT_SET_WINDOWS_SHAREMODE,
+    SetWindowsShareMode = sys::GIT_OPT_SET_WINDOWS_SHAREMODE,
     /// `opts(GIT_OPT_ENABLE_STRICT_HASH_VERIFICATION, int enabled)`: turns verification of
     /// an object's hash on every read on or off (on by default).
-    EnableStrictHashVerification = ffi::GIT_OPT_ENABLE_STRICT_HASH_VERIFICATION,
+    EnableStrictHashVerification = sys::GIT_OPT_ENABLE_STRICT_HASH_VERIFICATION,
     /// `opts(GIT_OPT_SET_ALLOCATOR, git_allocator *allocator)`: replaces libgit2's
     /// allocator by a copy of `allocator`; NULL restores the system one.
-    SetAllocator = ffi::GIT_OPT_SET_ALLOCATOR,
+    SetAllocator = sys::GIT_OPT_SET_ALLOCATOR,
     /// `opts(GIT_OPT_ENABLE_UNSAVED_INDEX_SAFETY, int enabled)`: turns the refusal to
     /// reload an index with unsaved changes from disk on or off.
-    EnableUnsavedIndexSafety = ffi::GIT_OPT_ENABLE_UNSAVED_INDEX_SAFETY,
+    EnableUnsavedIndexSafety = sys::GIT_OPT_ENABLE_UNSAVED_INDEX_SAFETY,
     /// `opts(GIT_OPT_GET_PACK_MAX_OBJECTS, size_t *out)`: reads the most objects libgit2
     /// accepts in a fetched pack file.
-    GetPackMaxObjects = ffi::GIT_OPT_GET_PACK_MAX_OBJECTS,
+    GetPackMaxObjects = sys::GIT_OPT_GET_PACK_MAX_OBJECTS,
     /// `opts(GIT_OPT_SET_PACK_MAX_OBJECTS, size_t objects)`: sets the most objects libgit2
     /// accepts in a fetched pack file.
-    SetPackMaxObjects = ffi::GIT_OPT_SET_PACK_MAX_OBJECTS,
+    SetPackMaxObjects = sys::GIT_OPT_SET_PACK_MAX_OBJECTS,
     /// `opts(GIT_OPT_DISABLE_PACK_KEEP_FILE_CHECKS, int disabled)`: turns off (or back on)
     /// the check for a pack file's `.keep` file.
-    DisablePackKeepFileChecks = ffi::GIT_OPT_DISABLE_PACK_KEEP_FILE_CHECKS,
+    DisablePackKeepFileChecks = sys::GIT_OPT_DISABLE_PACK_KEEP_FILE_CHECKS,
     /// `opts(GIT_OPT_ENABLE_HTTP_EXPECT_CONTINUE, int enabled)`: turns `Expect:
     /// 100-continue` on NTLM or Negotiate POSTs on or off.
-    EnableHttpExpectContinue = ffi::GIT_OPT_ENABLE_HTTP_EXPECT_CONTINUE,
+    EnableHttpExpectContinue = sys::GIT_OPT_ENABLE_HTTP_EXPECT_CONTINUE,
     /// `opts(GIT_OPT_GET_MWINDOW_FILE_LIMIT, size_t *out)`: reads the most files libgit2
     /// keeps mapped at once.
-    GetMwindowFileLimit = ffi::GIT_OPT_GET_MWINDOW_FILE_LIMIT,
+    GetMwindowFileLimit = sys::GIT_OPT_GET_MWINDOW_FILE_LIMIT,
     /// `opts(GIT_OPT_SET_MWINDOW_FILE_LIMIT, size_t limit)`: sets the most files libgit2
     /// keeps mapped at once; 0 (the default) is unlimited.
-    SetMwindowFileLimit = ffi::GIT_OPT_SET_MWINDOW_FILE_LIMIT,
+    SetMwindowFileLimit = sys::GIT_OPT_SET_MWINDOW_FILE_LIMIT,
     /// `opts(GIT_OPT_SET_ODB_PACKED_PRIORITY, int priority)`: sets the priority of the
     /// packed backend a repository's default object database gets.
-    SetOdbPackedPriority = ffi::GIT_OPT_SET_ODB_PACKED_PRIORITY,
+    SetOdbPackedPriority = sys::GIT_OPT_SET_ODB_PACKED_PRIORITY,
     /// `opts(GIT_OPT_SET_ODB_LOOSE_PRIORITY, int priority)`: sets the priority of the loose
     /// backend a repository's default object database gets.
-    SetOdbLoosePriority = ffi::GIT_OPT_SET_ODB_LOOSE_PRIORITY,
+    SetOdbLoosePriority = sys::GIT_OPT_SET_ODB_LOOSE_PRIORITY,
     /// `opts(GIT_OPT_GET_EXTENSIONS, git_strarray *out)`: reads the repository extensions
     /// libgit2 accepts, built-in and added, without the negated ones, into `out` (released
     /// with `git_strarray_dispose`).
-    GetExtensions = ffi::GIT_OPT_GET_EXTENSIONS,
+    GetExtensions = sys::GIT_OPT_GET_EXTENSIONS,
     /// `opts(GIT_OPT_SET_EXTENSIONS, const char **extensions, size_t len)`: declares the
     /// repository extensions the caller supports; a `!` prefix negates a built-in one.
-    SetExtensions = ffi::GIT_OPT_SET_EXTENSIONS,
+    SetExtensions = sys::GIT_OPT_SET_EXTENSIONS,
     /// `opts(GIT_OPT_GET_OWNER_VALIDATION, int *enabled)`: reads whether a repository's
     /// directory must belong to the current user.
-    GetOwnerValidation = ffi::GIT_OPT_GET_OWNER_VALIDATION,
+    GetOwnerValidation = sys::GIT_OPT_GET_OWNER_VALIDATION,
     /// `opts(GIT_OPT_SET_OWNER_VALIDATION, int enabled)`: sets whether a repository's
     /// directory must belong to the current user (it must by default).
-    SetOwnerValidation = ffi::GIT_OPT_SET_OWNER_VALIDATION,
+    SetOwnerValidation = sys::GIT_OPT_SET_OWNER_VALIDATION,
     /// `opts(GIT_OPT_GET_HOMEDIR, git_buf *out)`: reads the home directory libgit2 looks
     /// files up in into `out`.
-    GetHomeDir = ffi::GIT_OPT_GET_HOMEDIR,
+    GetHomeDir = sys::GIT_OPT_GET_HOMEDIR,
     /// `opts(GIT_OPT_SET_HOMEDIR, const char *path)`: sets the home directory libgit2 looks
     /// files up in.
-    SetHomeDir = ffi::GIT_OPT_SET_HOMEDIR,
+    SetHomeDir = sys::GIT_OPT_SET_HOMEDIR,
     /// `opts(GIT_OPT_SET_SERVER_CONNECT_TIMEOUT, int timeout)`: sets the timeout, in
     /// milliseconds, of a connection to a remote; 0 is the system default and a negative
     /// value is `GIT_ERROR_INVALID`.
-    SetServerConnectTimeout = ffi::GIT_OPT_SET_SERVER_CONNECT_TIMEOUT,
+    SetServerConnectTimeout = sys::GIT_OPT_SET_SERVER_CONNECT_TIMEOUT,
     /// `opts(GIT_OPT_GET_SERVER_CONNECT_TIMEOUT, int *timeout)`: reads the timeout, in
     /// milliseconds, of a connection to a remote.
-    GetServerConnectTimeout = ffi::GIT_OPT_GET_SERVER_CONNECT_TIMEOUT,
+    GetServerConnectTimeout = sys::GIT_OPT_GET_SERVER_CONNECT_TIMEOUT,
     /// `opts(GIT_OPT_SET_SERVER_TIMEOUT, int timeout)`: sets the timeout, in milliseconds,
     /// of a read from or write to a remote; 0 is the system default and a negative value is
     /// `GIT_ERROR_INVALID`.
-    SetServerTimeout = ffi::GIT_OPT_SET_SERVER_TIMEOUT,
+    SetServerTimeout = sys::GIT_OPT_SET_SERVER_TIMEOUT,
     /// `opts(GIT_OPT_GET_SERVER_TIMEOUT, int *timeout)`: reads the timeout, in
     /// milliseconds, of a read from or write to a remote.
-    GetServerTimeout = ffi::GIT_OPT_GET_SERVER_TIMEOUT,
+    GetServerTimeout = sys::GIT_OPT_GET_SERVER_TIMEOUT,
     /// `opts(GIT_OPT_SET_USER_AGENT_PRODUCT, const char *user_agent_product)`: sets the
     /// product portion of the User-Agent header (`git/2.0` by default); `""` sends no User-
     /// Agent and NULL restores the default.
-    SetUserAgentProduct = ffi::GIT_OPT_SET_USER_AGENT_PRODUCT,
+    SetUserAgentProduct = sys::GIT_OPT_SET_USER_AGENT_PRODUCT,
     /// `opts(GIT_OPT_GET_USER_AGENT_PRODUCT, git_buf *out)`: reads the product portion of
     /// the User-Agent header into `out`.
-    GetUserAgentProduct = ffi::GIT_OPT_GET_USER_AGENT_PRODUCT,
+    GetUserAgentProduct = sys::GIT_OPT_GET_USER_AGENT_PRODUCT,
     /// `opts(GIT_OPT_ADD_SSL_X509_CERT, const X509 *cert)`: adds an OpenSSL certificate to
     /// the TLS certificate store for the rest of the process; NULL adds nothing.
-    AddSslX509Cert = ffi::GIT_OPT_ADD_SSL_X509_CERT,
+    AddSslX509Cert = sys::GIT_OPT_ADD_SSL_X509_CERT,
     /// `opts(GIT_OPT_GET_PACK_MAX_OBJECT_SIZE, size_t *out)`: reads the largest object
     /// libgit2 accepts in a fetched pack file.
-    GetPackMaxObjectSize = ffi::GIT_OPT_GET_PACK_MAX_OBJECT_SIZE,
+    GetPackMaxObjectSize = sys::GIT_OPT_GET_PACK_MAX_OBJECT_SIZE,
     /// `opts(GIT_OPT_SET_PACK_MAX_OBJECT_SIZE, size_t object_size)`: sets the largest
     /// object libgit2 accepts in a fetched pack file (2 GiB by default).
-    SetPackMaxObjectSize = ffi::GIT_OPT_SET_PACK_MAX_OBJECT_SIZE,
+    SetPackMaxObjectSize = sys::GIT_OPT_SET_PACK_MAX_OBJECT_SIZE,
 }
 
 impl LibraryOption {
     /// The variant whose C value is `raw`; `None` for a key this version of
     /// libgit2's header does not name.
     #[must_use]
-    pub const fn from_raw(raw: ffi::git_libgit2_opt_t) -> Option<Self> {
+    pub const fn from_raw(raw: sys::git_libgit2_opt_t) -> Option<Self> {
         match raw {
-            ffi::GIT_OPT_GET_MWINDOW_SIZE => Some(Self::GetMwindowSize),
-            ffi::GIT_OPT_SET_MWINDOW_SIZE => Some(Self::SetMwindowSize),
-            ffi::GIT_OPT_GET_MWINDOW_MAPPED_LIMIT => Some(Self::GetMwindowMappedLimit),
-            ffi::GIT_OPT_SET_MWINDOW_MAPPED_LIMIT => Some(Self::SetMwindowMappedLimit),
-            ffi::GIT_OPT_GET_SEARCH_PATH => Some(Self::GetSearchPath),
-            ffi::GIT_OPT_SET_SEARCH_PATH => Some(Self::SetSearchPath),
-            ffi::GIT_OPT_SET_CACHE_OBJECT_LIMIT => Some(Self::SetCacheObjectLimit),
-            ffi::GIT_OPT_SET_CACHE_MAX_SIZE => Some(Self::SetCacheMaxSize),
-            ffi::GIT_OPT_ENABLE_CACHING => Some(Self::EnableCaching),
-            ffi::GIT_OPT_GET_CACHED_MEMORY => Some(Self::GetCachedMemory),
-            ffi::GIT_OPT_GET_TEMPLATE_PATH => Some(Self::GetTemplatePath),
-            ffi::GIT_OPT_SET_TEMPLATE_PATH => Some(Self::SetTemplatePath),
-            ffi::GIT_OPT_SET_SSL_CERT_LOCATIONS => Some(Self::SetSslCertLocations),
-            ffi::GIT_OPT_SET_USER_AGENT => Some(Self::SetUserAgent),
-            ffi::GIT_OPT_ENABLE_STRICT_OBJECT_CREATION => Some(Self::EnableStrictObjectCreation),
-            ffi::GIT_OPT_ENABLE_STRICT_SYMBOLIC_REF_CREATION => {
+            sys::GIT_OPT_GET_MWINDOW_SIZE => Some(Self::GetMwindowSize),
+            sys::GIT_OPT_SET_MWINDOW_SIZE => Some(Self::SetMwindowSize),
+            sys::GIT_OPT_GET_MWINDOW_MAPPED_LIMIT => Some(Self::GetMwindowMappedLimit),
+            sys::GIT_OPT_SET_MWINDOW_MAPPED_LIMIT => Some(Self::SetMwindowMappedLimit),
+            sys::GIT_OPT_GET_SEARCH_PATH => Some(Self::GetSearchPath),
+            sys::GIT_OPT_SET_SEARCH_PATH => Some(Self::SetSearchPath),
+            sys::GIT_OPT_SET_CACHE_OBJECT_LIMIT => Some(Self::SetCacheObjectLimit),
+            sys::GIT_OPT_SET_CACHE_MAX_SIZE => Some(Self::SetCacheMaxSize),
+            sys::GIT_OPT_ENABLE_CACHING => Some(Self::EnableCaching),
+            sys::GIT_OPT_GET_CACHED_MEMORY => Some(Self::GetCachedMemory),
+            sys::GIT_OPT_GET_TEMPLATE_PATH => Some(Self::GetTemplatePath),
+            sys::GIT_OPT_SET_TEMPLATE_PATH => Some(Self::SetTemplatePath),
+            sys::GIT_OPT_SET_SSL_CERT_LOCATIONS => Some(Self::SetSslCertLocations),
+            sys::GIT_OPT_SET_USER_AGENT => Some(Self::SetUserAgent),
+            sys::GIT_OPT_ENABLE_STRICT_OBJECT_CREATION => Some(Self::EnableStrictObjectCreation),
+            sys::GIT_OPT_ENABLE_STRICT_SYMBOLIC_REF_CREATION => {
                 Some(Self::EnableStrictSymbolicRefCreation)
             }
-            ffi::GIT_OPT_SET_SSL_CIPHERS => Some(Self::SetSslCiphers),
-            ffi::GIT_OPT_GET_USER_AGENT => Some(Self::GetUserAgent),
-            ffi::GIT_OPT_ENABLE_OFS_DELTA => Some(Self::EnableOfsDelta),
-            ffi::GIT_OPT_ENABLE_FSYNC_GITDIR => Some(Self::EnableFsyncGitDir),
-            ffi::GIT_OPT_GET_WINDOWS_SHAREMODE => Some(Self::GetWindowsShareMode),
-            ffi::GIT_OPT_SET_WINDOWS_SHAREMODE => Some(Self::SetWindowsShareMode),
-            ffi::GIT_OPT_ENABLE_STRICT_HASH_VERIFICATION => {
+            sys::GIT_OPT_SET_SSL_CIPHERS => Some(Self::SetSslCiphers),
+            sys::GIT_OPT_GET_USER_AGENT => Some(Self::GetUserAgent),
+            sys::GIT_OPT_ENABLE_OFS_DELTA => Some(Self::EnableOfsDelta),
+            sys::GIT_OPT_ENABLE_FSYNC_GITDIR => Some(Self::EnableFsyncGitDir),
+            sys::GIT_OPT_GET_WINDOWS_SHAREMODE => Some(Self::GetWindowsShareMode),
+            sys::GIT_OPT_SET_WINDOWS_SHAREMODE => Some(Self::SetWindowsShareMode),
+            sys::GIT_OPT_ENABLE_STRICT_HASH_VERIFICATION => {
                 Some(Self::EnableStrictHashVerification)
             }
-            ffi::GIT_OPT_SET_ALLOCATOR => Some(Self::SetAllocator),
-            ffi::GIT_OPT_ENABLE_UNSAVED_INDEX_SAFETY => Some(Self::EnableUnsavedIndexSafety),
-            ffi::GIT_OPT_GET_PACK_MAX_OBJECTS => Some(Self::GetPackMaxObjects),
-            ffi::GIT_OPT_SET_PACK_MAX_OBJECTS => Some(Self::SetPackMaxObjects),
-            ffi::GIT_OPT_DISABLE_PACK_KEEP_FILE_CHECKS => Some(Self::DisablePackKeepFileChecks),
-            ffi::GIT_OPT_ENABLE_HTTP_EXPECT_CONTINUE => Some(Self::EnableHttpExpectContinue),
-            ffi::GIT_OPT_GET_MWINDOW_FILE_LIMIT => Some(Self::GetMwindowFileLimit),
-            ffi::GIT_OPT_SET_MWINDOW_FILE_LIMIT => Some(Self::SetMwindowFileLimit),
-            ffi::GIT_OPT_SET_ODB_PACKED_PRIORITY => Some(Self::SetOdbPackedPriority),
-            ffi::GIT_OPT_SET_ODB_LOOSE_PRIORITY => Some(Self::SetOdbLoosePriority),
-            ffi::GIT_OPT_GET_EXTENSIONS => Some(Self::GetExtensions),
-            ffi::GIT_OPT_SET_EXTENSIONS => Some(Self::SetExtensions),
-            ffi::GIT_OPT_GET_OWNER_VALIDATION => Some(Self::GetOwnerValidation),
-            ffi::GIT_OPT_SET_OWNER_VALIDATION => Some(Self::SetOwnerValidation),
-            ffi::GIT_OPT_GET_HOMEDIR => Some(Self::GetHomeDir),
-            ffi::GIT_OPT_SET_HOMEDIR => Some(Self::SetHomeDir),
-            ffi::GIT_OPT_SET_SERVER_CONNECT_TIMEOUT => Some(Self::SetServerConnectTimeout),
-            ffi::GIT_OPT_GET_SERVER_CONNECT_TIMEOUT => Some(Self::GetServerConnectTimeout),
-            ffi::GIT_OPT_SET_SERVER_TIMEOUT => Some(Self::SetServerTimeout),
-            ffi::GIT_OPT_GET_SERVER_TIMEOUT => Some(Self::GetServerTimeout),
-            ffi::GIT_OPT_SET_USER_AGENT_PRODUCT => Some(Self::SetUserAgentProduct),
-            ffi::GIT_OPT_GET_USER_AGENT_PRODUCT => Some(Self::GetUserAgentProduct),
-            ffi::GIT_OPT_ADD_SSL_X509_CERT => Some(Self::AddSslX509Cert),
-            ffi::GIT_OPT_GET_PACK_MAX_OBJECT_SIZE => Some(Self::GetPackMaxObjectSize),
-            ffi::GIT_OPT_SET_PACK_MAX_OBJECT_SIZE => Some(Self::SetPackMaxObjectSize),
+            sys::GIT_OPT_SET_ALLOCATOR => Some(Self::SetAllocator),
+            sys::GIT_OPT_ENABLE_UNSAVED_INDEX_SAFETY => Some(Self::EnableUnsavedIndexSafety),
+            sys::GIT_OPT_GET_PACK_MAX_OBJECTS => Some(Self::GetPackMaxObjects),
+            sys::GIT_OPT_SET_PACK_MAX_OBJECTS => Some(Self::SetPackMaxObjects),
+            sys::GIT_OPT_DISABLE_PACK_KEEP_FILE_CHECKS => Some(Self::DisablePackKeepFileChecks),
+            sys::GIT_OPT_ENABLE_HTTP_EXPECT_CONTINUE => Some(Self::EnableHttpExpectContinue),
+            sys::GIT_OPT_GET_MWINDOW_FILE_LIMIT => Some(Self::GetMwindowFileLimit),
+            sys::GIT_OPT_SET_MWINDOW_FILE_LIMIT => Some(Self::SetMwindowFileLimit),
+            sys::GIT_OPT_SET_ODB_PACKED_PRIORITY => Some(Self::SetOdbPackedPriority),
+            sys::GIT_OPT_SET_ODB_LOOSE_PRIORITY => Some(Self::SetOdbLoosePriority),
+            sys::GIT_OPT_GET_EXTENSIONS => Some(Self::GetExtensions),
+            sys::GIT_OPT_SET_EXTENSIONS => Some(Self::SetExtensions),
+            sys::GIT_OPT_GET_OWNER_VALIDATION => Some(Self::GetOwnerValidation),
+            sys::GIT_OPT_SET_OWNER_VALIDATION => Some(Self::SetOwnerValidation),
+            sys::GIT_OPT_GET_HOMEDIR => Some(Self::GetHomeDir),
+            sys::GIT_OPT_SET_HOMEDIR => Some(Self::SetHomeDir),
+            sys::GIT_OPT_SET_SERVER_CONNECT_TIMEOUT => Some(Self::SetServerConnectTimeout),
+            sys::GIT_OPT_GET_SERVER_CONNECT_TIMEOUT => Some(Self::GetServerConnectTimeout),
+            sys::GIT_OPT_SET_SERVER_TIMEOUT => Some(Self::SetServerTimeout),
+            sys::GIT_OPT_GET_SERVER_TIMEOUT => Some(Self::GetServerTimeout),
+            sys::GIT_OPT_SET_USER_AGENT_PRODUCT => Some(Self::SetUserAgentProduct),
+            sys::GIT_OPT_GET_USER_AGENT_PRODUCT => Some(Self::GetUserAgentProduct),
+            sys::GIT_OPT_ADD_SSL_X509_CERT => Some(Self::AddSslX509Cert),
+            sys::GIT_OPT_GET_PACK_MAX_OBJECT_SIZE => Some(Self::GetPackMaxObjectSize),
+            sys::GIT_OPT_SET_PACK_MAX_OBJECT_SIZE => Some(Self::SetPackMaxObjectSize),
             _ => None,
         }
     }
@@ -379,8 +379,8 @@ impl LibraryOption {
 
     /// The C value, as the header declares it.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_libgit2_opt_t {
-        self as ffi::git_libgit2_opt_t
+    pub const fn raw(self) -> sys::git_libgit2_opt_t {
+        self as sys::git_libgit2_opt_t
     }
 
     /// The key as `git_libgit2_opts` takes it, an `int`; every variant's value fits.
@@ -390,16 +390,16 @@ impl LibraryOption {
     }
 }
 
-impl TryFrom<ffi::git_libgit2_opt_t> for LibraryOption {
+impl TryFrom<sys::git_libgit2_opt_t> for LibraryOption {
     type Error = UnnamedLibraryOption;
 
-    fn try_from(raw: ffi::git_libgit2_opt_t) -> Result<Self, UnnamedLibraryOption> {
+    fn try_from(raw: sys::git_libgit2_opt_t) -> Result<Self, UnnamedLibraryOption> {
         Self::from_raw(raw).ok_or(UnnamedLibraryOption(raw))
     }
 }
 
-impl From<LibraryOption> for ffi::git_libgit2_opt_t {
-    fn from(value: LibraryOption) -> ffi::git_libgit2_opt_t {
+impl From<LibraryOption> for sys::git_libgit2_opt_t {
+    fn from(value: LibraryOption) -> sys::git_libgit2_opt_t {
         value.raw()
     }
 }
@@ -407,12 +407,12 @@ impl From<LibraryOption> for ffi::git_libgit2_opt_t {
 /// An option key that this version of libgit2's header does not name, which
 /// `git_libgit2_opts` refuses; [`raw`](Self::raw) has it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct UnnamedLibraryOption(ffi::git_libgit2_opt_t);
+pub struct UnnamedLibraryOption(sys::git_libgit2_opt_t);
 
 impl UnnamedLibraryOption {
     /// The value, as it was converted.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_libgit2_opt_t {
+    pub const fn raw(self) -> sys::git_libgit2_opt_t {
         self.0
     }
 }
@@ -435,7 +435,7 @@ impl std::error::Error for UnnamedLibraryOption {}
 /// `git_libgit2_version` reports it.
 ///
 /// It is the version of the loaded libgit2.so, which may differ from the headers this
-/// crate was generated from (`ffi::LIBGIT2_VERSION_*`). It displays as
+/// crate was generated from (`sys::LIBGIT2_VERSION_*`). It displays as
 /// `major.minor.revision`; [`prerelease`](crate::libgit2::src::libgit2::libgit2::prerelease) has
 /// the rest of the version.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -467,7 +467,7 @@ impl fmt::Display for Version {
 #[must_use]
 pub fn build_info(item: BuildInfo) -> Option<&'static CStr> {
     // SAFETY: a named `git_buildinfo_t`, by value; the routine reads no state.
-    let s = unsafe { ffi::git_libgit2_buildinfo(item.raw()) };
+    let s = unsafe { sys::git_libgit2_buildinfo(item.raw()) };
     // SAFETY: a non-NULL result is `GIT_BUILD_CPU` or `GIT_BUILD_COMMIT`, a
     // NUL-terminated literal in libgit2.so's read-only data, never written or freed
     // while the library is loaded, which it is for the rest of the process.
@@ -488,7 +488,7 @@ unsafe fn get_size(key: LibraryOption) -> usize {
     let mut value = 0usize;
     // SAFETY: per this function's contract, `key` reads one `size_t *`, a live local
     // here, writes through it and keeps no pointer to it.
-    let rc = unsafe { ffi::git_libgit2_opts(key.key(), &raw mut value) };
+    let rc = unsafe { sys::git_libgit2_opts(key.key(), &raw mut value) };
     debug_assert_eq!(rc, 0, "{key:?} cannot fail");
     value
 }
@@ -502,7 +502,7 @@ unsafe fn get_int(key: LibraryOption) -> c_int {
     let mut value: c_int = 0;
     // SAFETY: per this function's contract, `key` reads one `int *`, a live local
     // here, writes through it and keeps no pointer to it.
-    let rc = unsafe { ffi::git_libgit2_opts(key.key(), &raw mut value) };
+    let rc = unsafe { sys::git_libgit2_opts(key.key(), &raw mut value) };
     debug_assert_eq!(rc, 0, "{key:?} cannot fail");
     value
 }
@@ -516,7 +516,7 @@ unsafe fn get_int(key: LibraryOption) -> c_int {
 unsafe fn set_size(key: LibraryOption, value: usize) {
     // SAFETY: per this function's contract, `key` reads one `size_t` and the global
     // it writes is not accessed concurrently.
-    let rc = unsafe { ffi::git_libgit2_opts(key.key(), value) };
+    let rc = unsafe { sys::git_libgit2_opts(key.key(), value) };
     debug_assert_eq!(rc, 0, "{key:?} cannot fail");
 }
 
@@ -529,7 +529,7 @@ unsafe fn set_size(key: LibraryOption, value: usize) {
 unsafe fn set_int(key: LibraryOption, value: c_int) {
     // SAFETY: per this function's contract, `key` reads one `int` and the global it
     // writes is not accessed concurrently.
-    let rc = unsafe { ffi::git_libgit2_opts(key.key(), value) };
+    let rc = unsafe { sys::git_libgit2_opts(key.key(), value) };
     debug_assert_eq!(rc, 0, "{key:?} cannot fail");
 }
 
@@ -574,9 +574,9 @@ unsafe fn sysdir_status(
             // a `const char *`, NUL-terminated here, which `git_sysdir_set` copies without
             // allocating for these two values; the caller excludes concurrent access to the
             // directory.
-            Some(level) => unsafe { ffi::git_libgit2_opts(key.key(), level.raw(), path.as_ptr()) },
+            Some(level) => unsafe { sys::git_libgit2_opts(key.key(), level.raw(), path.as_ptr()) },
             // SAFETY: as above, for a key that reads the string alone.
-            None => unsafe { ffi::git_libgit2_opts(key.key(), path.as_ptr()) },
+            None => unsafe { sys::git_libgit2_opts(key.key(), path.as_ptr()) },
         };
     }
     debug_assert_eq!(repaired, 0, "{key:?} could not be emptied");
@@ -588,11 +588,11 @@ unsafe fn sysdir_status(
 /// error. Pins the runtime first.
 ///
 /// `fill` hands the buffer to a `git_libgit2_opts` key that writes a `git_buf *`.
-fn buf_string(fill: impl FnOnce(*mut ffi::git_buf) -> c_int) -> Result<CString, ErrorBuf> {
+fn buf_string(fill: impl FnOnce(*mut sys::git_buf) -> c_int) -> Result<CString, ErrorBuf> {
     if !runtime_pinned() {
         return Err(last());
     }
-    let mut buf = ffi::git_buf {
+    let mut buf = sys::git_buf {
         ptr: ptr::null_mut(),
         reserved: 0,
         size: 0,
@@ -612,7 +612,7 @@ fn buf_string(fill: impl FnOnce(*mut ffi::git_buf) -> c_int) -> Result<CString, 
     // SAFETY: `buf` is zeroed or as libgit2 left it, so it owns `ptr` exactly when
     // `reserved > 0`, which is what `git_buf_dispose` frees; the runtime is pinned,
     // so `git__free` reads an initialised allocator. Nothing reads `buf` afterwards.
-    unsafe { ffi::git_buf_dispose(&raw mut buf) };
+    unsafe { sys::git_buf_dispose(&raw mut buf) };
     out
 }
 
@@ -624,20 +624,20 @@ fn buf_string(fill: impl FnOnce(*mut ffi::git_buf) -> c_int) -> Result<CString, 
 pub enum SearchPathLevel {
     /// The system-wide configuration, typically `/etc/gitconfig`
     /// (`GIT_CONFIG_LEVEL_SYSTEM`).
-    System = ffi::GIT_CONFIG_LEVEL_SYSTEM,
+    System = sys::GIT_CONFIG_LEVEL_SYSTEM,
     /// The XDG configuration, typically `~/.config/git/config`
     /// (`GIT_CONFIG_LEVEL_XDG`).
-    Xdg = ffi::GIT_CONFIG_LEVEL_XDG,
+    Xdg = sys::GIT_CONFIG_LEVEL_XDG,
     /// The user's global configuration, typically `~/.gitconfig`
     /// (`GIT_CONFIG_LEVEL_GLOBAL`).
-    Global = ffi::GIT_CONFIG_LEVEL_GLOBAL,
+    Global = sys::GIT_CONFIG_LEVEL_GLOBAL,
 }
 
 impl SearchPathLevel {
     /// The `git_config_level_t` value, as `git_libgit2_opts` reads it.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_config_level_t {
-        self as ffi::git_config_level_t
+    pub const fn raw(self) -> sys::git_config_level_t {
+        self as sys::git_config_level_t
     }
 }
 
@@ -748,7 +748,7 @@ pub fn search_path(level: SearchPathLevel) -> Result<CString, ErrorBuf> {
         // `git_buf *`, the zeroed local `buf_string` passes, which it fills and does
         // not retain. The runtime is pinned, so the search paths exist; they are
         // written only by `set_search_path`, whose caller excludes this.
-        unsafe { ffi::git_libgit2_opts(LibraryOption::GetSearchPath.key(), level.raw(), buf) }
+        unsafe { sys::git_libgit2_opts(LibraryOption::GetSearchPath.key(), level.raw(), buf) }
     })
 }
 
@@ -782,7 +782,7 @@ pub unsafe fn set_search_path(level: SearchPathLevel, path: Option<&CStr>) -> Re
     // `const char *`, NULL or NUL-terminated, which it copies and does not retain. The
     // runtime is pinned; the caller excludes concurrent access to the search paths.
     let rc =
-        unsafe { ffi::git_libgit2_opts(LibraryOption::SetSearchPath.key(), level.raw(), path) };
+        unsafe { sys::git_libgit2_opts(LibraryOption::SetSearchPath.key(), level.raw(), path) };
     // SAFETY: `GIT_OPT_SET_SEARCH_PATH` is served by `git_sysdir_set`, reading the
     // level first, and `rc` is what it just returned; the caller excludes concurrent
     // access to the search paths.
@@ -808,7 +808,7 @@ pub unsafe fn set_cache_object_limit(kind: ObjectType, size: usize) {
     // that indexes its table in bounds, so it neither fails nor sets an error, and a
     // `size_t`. The caller excludes concurrent access to the limits.
     let rc = unsafe {
-        ffi::git_libgit2_opts(LibraryOption::SetCacheObjectLimit.key(), kind.raw(), size)
+        sys::git_libgit2_opts(LibraryOption::SetCacheObjectLimit.key(), kind.raw(), size)
     };
     debug_assert_eq!(rc, 0);
 }
@@ -828,7 +828,7 @@ pub unsafe fn set_cache_max_size(max_storage_bytes: isize) {
     // SAFETY: `GIT_OPT_SET_CACHE_MAX_SIZE` reads one `ssize_t`; the caller excludes
     // concurrent access to its global.
     let rc =
-        unsafe { ffi::git_libgit2_opts(LibraryOption::SetCacheMaxSize.key(), max_storage_bytes) };
+        unsafe { sys::git_libgit2_opts(LibraryOption::SetCacheMaxSize.key(), max_storage_bytes) };
     debug_assert_eq!(rc, 0);
 }
 
@@ -866,7 +866,7 @@ pub unsafe fn cached_memory() -> CachedMemory {
     // `ssize_t *`, fields of a live local, and keeps neither; the caller excludes the
     // concurrent cache updates its plain read would race.
     let rc = unsafe {
-        ffi::git_libgit2_opts(
+        sys::git_libgit2_opts(
             LibraryOption::GetCachedMemory.key(),
             &raw mut memory.current,
             &raw mut memory.allowed,
@@ -892,7 +892,7 @@ pub fn template_path() -> Result<CString, ErrorBuf> {
         // `buf_string` passes, which it fills and does not retain. The runtime is
         // pinned; the path is written only by `set_template_path`, whose caller
         // excludes this.
-        unsafe { ffi::git_libgit2_opts(LibraryOption::GetTemplatePath.key(), buf) }
+        unsafe { sys::git_libgit2_opts(LibraryOption::GetTemplatePath.key(), buf) }
     })
 }
 
@@ -923,7 +923,7 @@ pub unsafe fn set_template_path(path: Option<&CStr>) -> Result<(), ErrorBuf> {
     // SAFETY: `GIT_OPT_SET_TEMPLATE_PATH` reads one `const char *`, NULL or
     // NUL-terminated, which it copies and does not retain. The runtime is pinned; the
     // caller excludes concurrent access to the path.
-    let rc = unsafe { ffi::git_libgit2_opts(LibraryOption::SetTemplatePath.key(), path) };
+    let rc = unsafe { sys::git_libgit2_opts(LibraryOption::SetTemplatePath.key(), path) };
     // SAFETY: `GIT_OPT_SET_TEMPLATE_PATH` is served by `git_sysdir_set` with no level,
     // and `rc` is what it just returned; the caller excludes concurrent access to the
     // path.
@@ -961,7 +961,7 @@ pub unsafe fn set_ssl_cert_locations(
     // SAFETY: `GIT_OPT_SET_SSL_CERT_LOCATIONS` reads two `const char *`, each NULL or
     // NUL-terminated, which OpenSSL reads during the call. The runtime is pinned, so
     // the OpenSSL context exists; the caller excludes concurrent use of it.
-    let rc = unsafe { ffi::git_libgit2_opts(LibraryOption::SetSslCertLocations.key(), file, path) };
+    let rc = unsafe { sys::git_libgit2_opts(LibraryOption::SetSslCertLocations.key(), file, path) };
     status(rc)
 }
 
@@ -992,7 +992,7 @@ pub unsafe fn add_ssl_x509_cert(cert: NonNull<c_void>) -> Result<(), ErrorBuf> {
     // SAFETY: `GIT_OPT_ADD_SSL_X509_CERT` reads one `X509 *`, a live certificate per
     // this function's contract, which OpenSSL up-refs into the store under the
     // store's own lock. The runtime is pinned, so the OpenSSL context exists.
-    let rc = unsafe { ffi::git_libgit2_opts(LibraryOption::AddSslX509Cert.key(), cert.as_ptr()) };
+    let rc = unsafe { sys::git_libgit2_opts(LibraryOption::AddSslX509Cert.key(), cert.as_ptr()) };
     status(rc)
 }
 
@@ -1013,7 +1013,7 @@ pub fn user_agent() -> Result<CString, ErrorBuf> {
         // `buf_string` passes, which it fills and does not retain. The runtime is
         // pinned; the string is replaced only by `set_user_agent`, whose caller
         // excludes this.
-        unsafe { ffi::git_libgit2_opts(LibraryOption::GetUserAgent.key(), buf) }
+        unsafe { sys::git_libgit2_opts(LibraryOption::GetUserAgent.key(), buf) }
     })
 }
 
@@ -1044,7 +1044,7 @@ pub unsafe fn set_user_agent(user_agent: Option<&CStr>) -> Result<(), ErrorBuf> 
     // NUL-terminated, which it copies and does not retain. The runtime is pinned, for
     // good, so the copy is never freed by a shutdown it would outlive; the caller
     // excludes concurrent readers of the string it frees.
-    status(unsafe { ffi::git_libgit2_opts(LibraryOption::SetUserAgent.key(), user_agent) })
+    status(unsafe { sys::git_libgit2_opts(LibraryOption::SetUserAgent.key(), user_agent) })
 }
 
 /// The product part of the `User-Agent` header libgit2 sends: `"git/2.0"` by default.
@@ -1061,7 +1061,7 @@ pub fn user_agent_product() -> Result<CString, ErrorBuf> {
     buf_string(|buf| {
         // SAFETY: as in `user_agent`, for `GIT_OPT_GET_USER_AGENT_PRODUCT`, whose string
         // is replaced only by `set_user_agent_product`.
-        unsafe { ffi::git_libgit2_opts(LibraryOption::GetUserAgentProduct.key(), buf) }
+        unsafe { sys::git_libgit2_opts(LibraryOption::GetUserAgentProduct.key(), buf) }
     })
 }
 
@@ -1089,7 +1089,7 @@ pub unsafe fn set_user_agent_product(product: Option<&CStr>) -> Result<(), Error
     }
     let product = product.map_or(ptr::null(), CStr::as_ptr);
     // SAFETY: as in `set_user_agent`, for `GIT_OPT_SET_USER_AGENT_PRODUCT`.
-    let rc = unsafe { ffi::git_libgit2_opts(LibraryOption::SetUserAgentProduct.key(), product) };
+    let rc = unsafe { sys::git_libgit2_opts(LibraryOption::SetUserAgentProduct.key(), product) };
     status(rc)
 }
 
@@ -1163,7 +1163,7 @@ pub unsafe fn set_ssl_ciphers(ciphers: &CStr) -> Result<(), ErrorBuf> {
     // never NULL here (libgit2 would `strlen` it), which it copies and does not
     // retain. The runtime is pinned, for good, so the copy is never freed by a
     // shutdown it would outlive; the caller excludes concurrent readers.
-    status(unsafe { ffi::git_libgit2_opts(LibraryOption::SetSslCiphers.key(), ciphers.as_ptr()) })
+    status(unsafe { sys::git_libgit2_opts(LibraryOption::SetSslCiphers.key(), ciphers.as_ptr()) })
 }
 
 /// Enables or disables offset deltas when creating pack files and negotiating with a
@@ -1212,7 +1212,7 @@ pub fn windows_sharemode() -> Option<c_ulong> {
     // The global is written only by `set_windows_sharemode`, whose caller excludes
     // this.
     let rc =
-        unsafe { ffi::git_libgit2_opts(LibraryOption::GetWindowsShareMode.key(), &raw mut mode) };
+        unsafe { sys::git_libgit2_opts(LibraryOption::GetWindowsShareMode.key(), &raw mut mode) };
     debug_assert_eq!(rc, 0);
     cfg!(windows).then_some(mode)
 }
@@ -1231,7 +1231,7 @@ pub fn windows_sharemode() -> Option<c_ulong> {
 pub unsafe fn set_windows_sharemode(mode: c_ulong) {
     // SAFETY: `GIT_OPT_SET_WINDOWS_SHAREMODE` reads one `unsigned long` on Windows and
     // nothing elsewhere; the caller excludes concurrent access to its global.
-    let rc = unsafe { ffi::git_libgit2_opts(LibraryOption::SetWindowsShareMode.key(), mode) };
+    let rc = unsafe { sys::git_libgit2_opts(LibraryOption::SetWindowsShareMode.key(), mode) };
     debug_assert_eq!(rc, 0);
 }
 
@@ -1302,7 +1302,7 @@ pub unsafe fn set_allocator(allocator: Option<AllocatorRef<'_>>) {
     // value it `memcpy`s and does not retain. The family is coherent and every live
     // allocation is the new family's, and nothing else reads the global, per this
     // function's contract.
-    let rc = unsafe { ffi::git_libgit2_opts(LibraryOption::SetAllocator.key(), allocator) };
+    let rc = unsafe { sys::git_libgit2_opts(LibraryOption::SetAllocator.key(), allocator) };
     debug_assert_eq!(rc, 0);
 }
 
@@ -1455,7 +1455,7 @@ pub fn extensions() -> Result<StrArrayVal, ErrorBuf> {
     // runtime is pinned; the extension list is written only by `set_extensions`,
     // whose caller excludes this.
     let rc = unsafe {
-        ffi::git_libgit2_opts(
+        sys::git_libgit2_opts(
             LibraryOption::GetExtensions.key(),
             out.as_mut().as_mut_ptr(),
         )
@@ -1493,7 +1493,7 @@ pub unsafe fn set_extensions<S: AsRef<CStr>>(extensions: &[S]) -> Result<(), Err
     // call, which libgit2 copies and does not retain (an empty `ptrs` is read not at
     // all). The runtime is pinned; the caller excludes concurrent access to the list.
     let rc = unsafe {
-        ffi::git_libgit2_opts(
+        sys::git_libgit2_opts(
             LibraryOption::SetExtensions.key(),
             ptrs.as_ptr(),
             ptrs.len(),
@@ -1546,7 +1546,7 @@ pub fn homedir() -> Result<CString, ErrorBuf> {
         // `buf_string` passes, which it fills and does not retain. The runtime is
         // pinned; the path is written only by `set_homedir`, whose caller excludes
         // this.
-        unsafe { ffi::git_libgit2_opts(LibraryOption::GetHomeDir.key(), buf) }
+        unsafe { sys::git_libgit2_opts(LibraryOption::GetHomeDir.key(), buf) }
     })
 }
 
@@ -1575,7 +1575,7 @@ pub unsafe fn set_homedir(path: Option<&CStr>) -> Result<(), ErrorBuf> {
     }
     let path = path.map_or(ptr::null(), CStr::as_ptr);
     // SAFETY: as in `set_template_path`, for `GIT_OPT_SET_HOMEDIR`.
-    let rc = unsafe { ffi::git_libgit2_opts(LibraryOption::SetHomeDir.key(), path) };
+    let rc = unsafe { sys::git_libgit2_opts(LibraryOption::SetHomeDir.key(), path) };
     // SAFETY: as in `set_template_path`, for `GIT_OPT_SET_HOMEDIR`.
     unsafe { sysdir_status(rc, LibraryOption::SetHomeDir, None) }
 }
@@ -1619,7 +1619,7 @@ pub unsafe fn set_server_connect_timeout(timeout_ms: c_int) -> Result<(), ErrorB
     // range-checks. The runtime is pinned, so a rejection is reported on live thread
     // state; the caller excludes concurrent access to the global.
     status(unsafe {
-        ffi::git_libgit2_opts(LibraryOption::SetServerConnectTimeout.key(), timeout_ms)
+        sys::git_libgit2_opts(LibraryOption::SetServerConnectTimeout.key(), timeout_ms)
     })
 }
 
@@ -1658,7 +1658,7 @@ pub unsafe fn set_server_timeout(timeout_ms: c_int) -> Result<(), ErrorBuf> {
         return Err(last());
     }
     // SAFETY: as in `set_server_connect_timeout`, for `GIT_OPT_SET_SERVER_TIMEOUT`.
-    status(unsafe { ffi::git_libgit2_opts(LibraryOption::SetServerTimeout.key(), timeout_ms) })
+    status(unsafe { sys::git_libgit2_opts(LibraryOption::SetServerTimeout.key(), timeout_ms) })
 }
 
 /// The largest object, in bytes, libgit2 accepts in a pack file downloaded from a
@@ -1783,7 +1783,7 @@ mod unit_tests {
         for feature in Feature::ALL {
             assert_eq!(Feature::from_raw(feature.raw()), Some(feature));
             assert_eq!(Feature::try_from(feature.raw()), Ok(feature));
-            assert_eq!(ffi::git_feature_t::from(feature), feature.raw());
+            assert_eq!(sys::git_feature_t::from(feature), feature.raw());
         }
         for raw in [0, 3, 1 << 13, 1 << 31, u32::MAX] {
             assert_eq!(Feature::from_raw(raw), None);
@@ -1801,7 +1801,7 @@ mod unit_tests {
         for info in [BuildInfo::Cpu, BuildInfo::Commit] {
             assert_eq!(BuildInfo::from_raw(info.raw()), Some(info));
             assert_eq!(BuildInfo::try_from(info.raw()), Ok(info));
-            assert_eq!(ffi::git_buildinfo_t::from(info), info.raw());
+            assert_eq!(sys::git_buildinfo_t::from(info), info.raw());
         }
         assert_eq!(BuildInfo::Cpu.raw(), 1);
         assert_eq!(BuildInfo::Commit.raw(), 2);
@@ -1826,7 +1826,7 @@ mod unit_tests {
         set |= Feature::Threads;
         assert_eq!(
             set.bits(),
-            (ffi::GIT_FEATURE_SHA256 | ffi::GIT_FEATURE_THREADS).cast_signed()
+            (sys::GIT_FEATURE_SHA256 | sys::GIT_FEATURE_THREADS).cast_signed()
         );
         assert!(set.contains(Feature::Threads) && set.contains(Feature::Sha256));
         assert!(!set.contains(Feature::Ssh));
@@ -1901,14 +1901,14 @@ mod unit_tests {
     }
 
     /// One past the last key `git2/common.h` declares.
-    const END: ffi::git_libgit2_opt_t = ffi::GIT_OPT_SET_PACK_MAX_OBJECT_SIZE + 1;
+    const END: sys::git_libgit2_opt_t = sys::GIT_OPT_SET_PACK_MAX_OBJECT_SIZE + 1;
 
     #[test]
     fn keys_are_dense_and_round_trip() {
         for raw in 0..END {
             let opt = LibraryOption::from_raw(raw).unwrap();
             assert_eq!(opt.raw(), raw);
-            assert_eq!(ffi::git_libgit2_opt_t::from(opt), raw);
+            assert_eq!(sys::git_libgit2_opt_t::from(opt), raw);
             assert_eq!(opt.key(), raw.cast_signed());
             assert_eq!(LibraryOption::from_key(opt.key()), Some(opt));
             assert_eq!(LibraryOption::try_from(raw), Ok(opt));
@@ -1979,9 +1979,9 @@ mod unit_tests {
 
     #[test]
     fn search_path_levels_are_the_config_levels() {
-        assert_eq!(SearchPathLevel::System.raw(), ffi::GIT_CONFIG_LEVEL_SYSTEM);
-        assert_eq!(SearchPathLevel::Xdg.raw(), ffi::GIT_CONFIG_LEVEL_XDG);
-        assert_eq!(SearchPathLevel::Global.raw(), ffi::GIT_CONFIG_LEVEL_GLOBAL);
+        assert_eq!(SearchPathLevel::System.raw(), sys::GIT_CONFIG_LEVEL_SYSTEM);
+        assert_eq!(SearchPathLevel::Xdg.raw(), sys::GIT_CONFIG_LEVEL_XDG);
+        assert_eq!(SearchPathLevel::Global.raw(), sys::GIT_CONFIG_LEVEL_GLOBAL);
     }
 
     #[test]
@@ -2010,7 +2010,7 @@ mod unit_tests {
         assert_eq!(buf_string(|_| 0).unwrap(), CString::default());
         let agent = buf_string(|buf| {
             // SAFETY: `GIT_OPT_GET_USER_AGENT` fills the zeroed `git_buf *` it is given.
-            unsafe { ffi::git_libgit2_opts(LibraryOption::GetUserAgent.key(), buf) }
+            unsafe { sys::git_libgit2_opts(LibraryOption::GetUserAgent.key(), buf) }
         })
         .unwrap();
         assert!(agent.to_bytes().starts_with(b"libgit2 "));

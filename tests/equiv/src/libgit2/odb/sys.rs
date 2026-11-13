@@ -32,10 +32,10 @@ use std::ptr;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::odb::{
     OdbDataArrayFree, OdbDataBox, OdbDataStrFree, OdbDataStrVec, OdbDataVec,
 };
+use libgit2::sys::libgit2 as sys;
 
 #[repr(C)]
 #[expect(
@@ -160,7 +160,7 @@ unsafe extern "C" fn traced_free(ptr: *mut c_void) {
 
 /// Installs the tracing allocator, then initialises libgit2 on top of it.
 fn install_tracing_allocator() {
-    let mut allocator = ffi::git_allocator {
+    let mut allocator = sys::git_allocator {
         gmalloc: Some(traced_malloc),
         grealloc: Some(traced_realloc),
         gfree: Some(traced_free),
@@ -168,11 +168,11 @@ fn install_tracing_allocator() {
     // SAFETY: `GIT_OPT_SET_ALLOCATOR` takes a `git_allocator *` with every member set,
     // which it copies; nothing is allocated yet, so no storage changes allocator.
     let rc = unsafe {
-        ffi::git_libgit2_opts(ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(), &raw mut allocator)
+        sys::git_libgit2_opts(sys::GIT_OPT_SET_ALLOCATOR.cast_signed(), &raw mut allocator)
     };
     assert_eq!(rc, 0);
     // SAFETY: no arguments; refcounted, never released in this process.
-    assert!(unsafe { ffi::git_libgit2_init() } > 0);
+    assert!(unsafe { sys::git_libgit2_init() } > 0);
     // Warm this thread's error state, which libgit2 allocates on first use.
     last_error();
 }
@@ -255,7 +255,7 @@ fn last_error() -> (c_int, String) {
     {
         // SAFETY: `git_error_last` never returns NULL; the error lives until the next
         // libgit2 call on this thread, and is copied out before one.
-        let e = unsafe { ffi::git_error_last() };
+        let e = unsafe { sys::git_error_last() };
         // SAFETY: as above.
         let klass = unsafe { (*e).klass };
         // SAFETY: as above.
@@ -272,25 +272,25 @@ fn last_error() -> (c_int, String) {
 
 fn clear_error() {
     // SAFETY: no arguments; resets this thread's error state.
-    unsafe { ffi::git_error_clear() }
+    unsafe { sys::git_error_clear() }
 }
 
 /// A backend the C side passes; both routines ignore it.
-fn backend() -> ffi::git_odb_backend {
-    ffi::git_odb_backend {
+fn backend() -> sys::git_odb_backend {
+    sys::git_odb_backend {
         version: 1,
         ..Default::default()
     }
 }
 
-fn c_alloc(backend: &mut ffi::git_odb_backend, len: usize) -> *mut u8 {
+fn c_alloc(backend: &mut sys::git_odb_backend, len: usize) -> *mut u8 {
     // SAFETY: a valid backend and any length; returns fresh storage or NULL.
-    unsafe { ffi::git_odb_backend_data_alloc(backend, len) }.cast()
+    unsafe { sys::git_odb_backend_data_alloc(backend, len) }.cast()
 }
 
-fn c_free(backend: &mut ffi::git_odb_backend, data: *mut u8) {
+fn c_free(backend: &mut sys::git_odb_backend, data: *mut u8) {
     // SAFETY: callers pass a live `git_odb_backend_data_alloc` allocation once.
-    unsafe { ffi::git_odb_backend_data_free(backend, data.cast()) }
+    unsafe { sys::git_odb_backend_data_free(backend, data.cast()) }
 }
 
 fn c_read(data: *const u8, len: usize) -> Vec<u8> {
@@ -508,7 +508,7 @@ fn allocation_failures() {
         assert_eq!(c.steps, r.steps);
         assert!(matches!(r.steps[0][..], [Event::AllocFailed { .. }]));
         assert_eq!(c_error, last_error());
-        assert_eq!(c_error.0, ffi::GIT_ERROR_NOMEMORY.cast_signed());
+        assert_eq!(c_error.0, sys::GIT_ERROR_NOMEMORY.cast_signed());
     };
 
     fail(&mut || c_alloc(&mut backend(), 32).is_null(), &mut || {
@@ -616,8 +616,8 @@ fn c_str(s: *const c_char) -> Vec<u8> {
 
 /// `git_strarray_copy` over the exported allocator: the array (`git__calloc`), then
 /// each string; a failure disposes of what was made and leaves a zeroed array.
-fn c_strarray_copy(strs: &[&CStr]) -> Result<ffi::git_strarray, ffi::git_strarray> {
-    let mut tgt = ffi::git_strarray {
+fn c_strarray_copy(strs: &[&CStr]) -> Result<sys::git_strarray, sys::git_strarray> {
+    let mut tgt = sys::git_strarray {
         strings: ptr::null_mut(),
         count: 0,
     };
@@ -647,13 +647,13 @@ fn c_strarray_copy(strs: &[&CStr]) -> Result<ffi::git_strarray, ffi::git_strarra
     Ok(tgt)
 }
 
-fn c_strarray_dispose(array: &mut ffi::git_strarray) {
+fn c_strarray_dispose(array: &mut sys::git_strarray) {
     // SAFETY: `array` holds `count` strings and the array from libgit2's allocator,
     // or is zeroed.
-    unsafe { ffi::git_strarray_dispose(array) }
+    unsafe { sys::git_strarray_dispose(array) }
 }
 
-fn c_strings(array: &ffi::git_strarray) -> Vec<Vec<u8>> {
+fn c_strings(array: &sys::git_strarray) -> Vec<Vec<u8>> {
     (0..array.count)
         .map(|i| {
             // SAFETY: `array` holds `count` live strings, and `i < count`.
@@ -668,7 +668,7 @@ fn rust_strings(v: &OdbDataStrVec) -> Vec<Vec<u8>> {
     v.as_slice().iter().map(|s| s.as_bytes().to_vec()).collect()
 }
 
-fn is_zeroed(array: &ffi::git_strarray) -> bool {
+fn is_zeroed(array: &sys::git_strarray) -> bool {
     array.strings.is_null() && array.count == 0
 }
 
@@ -719,14 +719,14 @@ fn str_clone_then_release_source_first(s: &CStr) {
 /// A string handed to a `git_buf` that `git_buf_dispose` releases, as libgit2's
 /// output buffers are.
 fn str_handed_to_git_buf_dispose(s: &CStr) {
-    let into_buf = |p: *mut c_char| ffi::git_buf {
+    let into_buf = |p: *mut c_char| sys::git_buf {
         ptr: p,
         reserved: s.count_bytes() + 1,
         size: s.count_bytes(),
     };
-    let dispose = |buf: &mut ffi::git_buf| {
+    let dispose = |buf: &mut sys::git_buf| {
         // SAFETY: `buf` owns a string from libgit2's allocator.
-        unsafe { ffi::git_buf_dispose(buf) }
+        unsafe { sys::git_buf_dispose(buf) }
     };
     let (mut c, mut r) = (Recorder::default(), Recorder::default());
     let mut cbuf = c.step(|| into_buf(c_strdup(s)));
@@ -768,7 +768,7 @@ fn run_handed_to_git_strarray_dispose(strs: &[&CStr]) {
     let mut a = c.step(|| c_strarray_copy(strs).unwrap());
     let mut b = r.step(|| {
         let (strings, count) = OdbDataStrVec::dup_all(strs).unwrap().into_raw_parts();
-        ffi::git_strarray { strings, count }
+        sys::git_strarray { strings, count }
     });
     assert_eq!(c.steps, r.steps);
     assert_eq!(c_strings(&a), c_strings(&b));
@@ -831,7 +831,7 @@ fn run_moved_through_a_vec(strs: &[&CStr]) {
     let v = r.step(|| OdbDataStrVec::dup_all(strs).unwrap());
 
     let mut b = c.step(|| {
-        let mut b = ffi::git_strarray {
+        let mut b = sys::git_strarray {
             strings: ptr::null_mut(),
             count: 0,
         };
@@ -843,12 +843,12 @@ fn run_moved_through_a_vec(strs: &[&CStr]) {
             let arr = arr.cast::<*mut c_char>();
             // SAFETY: `arr` holds `moved.len()` writable slots.
             unsafe { arr.copy_from_nonoverlapping(moved.as_ptr(), moved.len()) };
-            b = ffi::git_strarray {
+            b = sys::git_strarray {
                 strings: arr,
                 count: moved.len(),
             };
         }
-        a = ffi::git_strarray {
+        a = sys::git_strarray {
             strings: ptr::null_mut(),
             count: 0,
         };
@@ -881,7 +881,7 @@ fn string_allocation_failures() {
         assert_eq!(c.steps, r.steps, "allocation {at} refused");
         assert!(is_zeroed(&a));
         assert_eq!(c_error, last_error());
-        assert_eq!(c_error.0, ffi::GIT_ERROR_NOMEMORY.cast_signed());
+        assert_eq!(c_error.0, sys::GIT_ERROR_NOMEMORY.cast_signed());
     }
 
     // A refused `git__strdup`, and a refused clone, leave their sources intact.
@@ -915,13 +915,13 @@ fn string_allocation_failures() {
 )]
 fn run_adopted_from_libgit2() {
     let get = || {
-        let mut out = ffi::git_strarray {
+        let mut out = sys::git_strarray {
             strings: ptr::null_mut(),
             count: 0,
         };
         // SAFETY: `GIT_OPT_GET_EXTENSIONS` takes a `git_strarray *`, which it fills.
         let rc = unsafe {
-            ffi::git_libgit2_opts(ffi::GIT_OPT_GET_EXTENSIONS.cast_signed(), &raw mut out)
+            sys::git_libgit2_opts(sys::GIT_OPT_GET_EXTENSIONS.cast_signed(), &raw mut out)
         };
         assert_eq!(rc, 0);
         out
@@ -930,8 +930,8 @@ fn run_adopted_from_libgit2() {
     let ptrs: Vec<*const c_char> = exts.iter().map(|s| s.as_ptr()).collect();
     // SAFETY: `GIT_OPT_SET_EXTENSIONS` takes an array of `len` strings, which it copies.
     let rc = unsafe {
-        ffi::git_libgit2_opts(
-            ffi::GIT_OPT_SET_EXTENSIONS.cast_signed(),
+        sys::git_libgit2_opts(
+            sys::GIT_OPT_SET_EXTENSIONS.cast_signed(),
             ptrs.as_ptr(),
             ptrs.len(),
         )
@@ -970,8 +970,8 @@ fn run_adopted_from_libgit2() {
 
     // SAFETY: an empty list of user extensions.
     let rc = unsafe {
-        ffi::git_libgit2_opts(
-            ffi::GIT_OPT_SET_EXTENSIONS.cast_signed(),
+        sys::git_libgit2_opts(
+            sys::GIT_OPT_SET_EXTENSIONS.cast_signed(),
             ptr::null::<*const c_char>(),
             0usize,
         )

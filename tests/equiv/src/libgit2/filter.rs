@@ -42,12 +42,12 @@ use std::path::PathBuf;
 use std::ptr::{self, NonNull};
 use std::sync::OnceLock;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::filter::{FilterList, FilterListBox};
 use libgit2::libgit2::src::libgit2::object::{Object, ObjectArc, ObjectRef, ObjectType};
 use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
 use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
 use libgit2::libgit2::src::util::errors::ErrorBuf;
+use libgit2::sys::libgit2 as sys;
 
 const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 
@@ -80,10 +80,10 @@ thread_local! {
     static PAYLOADS: RefCell<(usize, usize)> = const { RefCell::new((0, 0)) };
 }
 
-fn hex(id: *const ffi::git_oid) -> String {
+fn hex(id: *const sys::git_oid) -> String {
     let mut out = [0u8; 41];
     // SAFETY: a live id; `out` holds 41 bytes, NUL included.
-    unsafe { ffi::git_oid_tostr(out.as_mut_ptr().cast(), out.len(), id) };
+    unsafe { sys::git_oid_tostr(out.as_mut_ptr().cast(), out.len(), id) };
     CStr::from_bytes_until_nul(&out)
         .unwrap()
         .to_str()
@@ -93,13 +93,13 @@ fn hex(id: *const ffi::git_oid) -> String {
 
 /// `git_filter.check` of the probe: records the source's id and keeps a payload.
 unsafe extern "C" fn probe_check(
-    _filter: *mut ffi::git_filter,
+    _filter: *mut sys::git_filter,
     payload: *mut *mut c_void,
-    src: *const ffi::git_filter_source,
+    src: *const sys::git_filter_source,
     _values: *mut *const c_char,
 ) -> c_int {
     // SAFETY: libgit2's live source, read for the call.
-    let id = unsafe { ffi::git_filter_source_id(src) };
+    let id = unsafe { sys::git_filter_source_id(src) };
     SEEN.with_borrow_mut(|seen| seen.push((!id.is_null()).then(|| hex(id))));
     PAYLOADS.with_borrow_mut(|p| p.0 += 1);
     // SAFETY: libgit2's live payload slot; the list hands it back to `probe_cleanup`.
@@ -108,7 +108,7 @@ unsafe extern "C" fn probe_check(
 }
 
 /// `git_filter.cleanup` of the probe: frees the payload `probe_check` made.
-unsafe extern "C" fn probe_cleanup(_filter: *mut ffi::git_filter, payload: *mut c_void) {
+unsafe extern "C" fn probe_cleanup(_filter: *mut sys::git_filter, payload: *mut c_void) {
     // SAFETY: the payload `probe_check` boxed, handed back once.
     drop(unsafe { Box::from_raw(payload.cast::<u32>()) });
     PAYLOADS.with_borrow_mut(|p| p.1 += 1);
@@ -116,28 +116,28 @@ unsafe extern "C" fn probe_cleanup(_filter: *mut ffi::git_filter, payload: *mut 
 
 /// `git_filter.check` of the refusing filter: fails the load, with an error of its own.
 unsafe extern "C" fn refuse_check(
-    _filter: *mut ffi::git_filter,
+    _filter: *mut sys::git_filter,
     _payload: *mut *mut c_void,
-    _src: *const ffi::git_filter_source,
+    _src: *const sys::git_filter_source,
     _values: *mut *const c_char,
 ) -> c_int {
     // SAFETY: a NUL-terminated message, which libgit2 copies; the runtime is initialised.
     unsafe {
-        ffi::git_error_set_str(
-            ffi::GIT_ERROR_FILTER.cast_signed(),
+        sys::git_error_set_str(
+            sys::GIT_ERROR_FILTER.cast_signed(),
             c"refused by check".as_ptr(),
         )
     };
-    ffi::GIT_EUSER
+    sys::GIT_EUSER
 }
 
 /// `git_filter.initialize` of the uninitialisable filter: fails, so every load selecting
 /// it fails, and libgit2 tries again on the next.
-unsafe extern "C" fn refuse_initialize(_filter: *mut ffi::git_filter) -> c_int {
+unsafe extern "C" fn refuse_initialize(_filter: *mut sys::git_filter) -> c_int {
     // SAFETY: as in `refuse_check`.
     unsafe {
-        ffi::git_error_set_str(
-            ffi::GIT_ERROR_FILTER.cast_signed(),
+        sys::git_error_set_str(
+            sys::GIT_ERROR_FILTER.cast_signed(),
             c"cannot initialise".as_ptr(),
         )
     };
@@ -151,47 +151,47 @@ fn setup() {
     static DONE: OnceLock<()> = OnceLock::new();
     DONE.get_or_init(|| {
         // SAFETY: balanced by nothing: the reference lives for the process.
-        assert!(unsafe { ffi::git_libgit2_init() } > 0);
-        let filter = Box::leak(Box::new(ffi::git_filter::default()));
+        assert!(unsafe { sys::git_libgit2_init() } > 0);
+        let filter = Box::leak(Box::new(sys::git_filter::default()));
         // SAFETY: a live filter struct, filled with the version's defaults.
-        let rc = unsafe { ffi::git_filter_init(filter, ffi::GIT_FILTER_VERSION) };
+        let rc = unsafe { sys::git_filter_init(filter, sys::GIT_FILTER_VERSION) };
         assert_eq!(rc, 0);
         filter.attributes = c"+crustify-probe".as_ptr();
         filter.check = Some(probe_check);
         filter.cleanup = Some(probe_cleanup);
         // SAFETY: a NUL-terminated name and a filter that lives for the process.
-        let rc = unsafe { ffi::git_filter_register(c"crustify-probe".as_ptr(), filter, 0) };
+        let rc = unsafe { sys::git_filter_register(c"crustify-probe".as_ptr(), filter, 0) };
         assert_eq!(rc, 0);
         // After `ident` (priority 100): its list has been started when this one refuses.
-        let refuse = Box::leak(Box::new(ffi::git_filter::default()));
+        let refuse = Box::leak(Box::new(sys::git_filter::default()));
         // SAFETY: as for the probe.
-        let rc = unsafe { ffi::git_filter_init(refuse, ffi::GIT_FILTER_VERSION) };
+        let rc = unsafe { sys::git_filter_init(refuse, sys::GIT_FILTER_VERSION) };
         assert_eq!(rc, 0);
         refuse.attributes = c"+crustify-refuse".as_ptr();
         refuse.check = Some(refuse_check);
         // SAFETY: as for the probe.
-        let rc = unsafe { ffi::git_filter_register(c"crustify-refuse".as_ptr(), refuse, 200) };
+        let rc = unsafe { sys::git_filter_register(c"crustify-refuse".as_ptr(), refuse, 200) };
         assert_eq!(rc, 0);
-        let uninit = Box::leak(Box::new(ffi::git_filter::default()));
+        let uninit = Box::leak(Box::new(sys::git_filter::default()));
         // SAFETY: as for the probe.
-        let rc = unsafe { ffi::git_filter_init(uninit, ffi::GIT_FILTER_VERSION) };
+        let rc = unsafe { sys::git_filter_init(uninit, sys::GIT_FILTER_VERSION) };
         assert_eq!(rc, 0);
         uninit.attributes = c"+crustify-uninit".as_ptr();
         uninit.initialize = Some(refuse_initialize);
         // SAFETY: as for the probe.
-        let rc = unsafe { ffi::git_filter_register(c"crustify-uninit".as_ptr(), uninit, 200) };
+        let rc = unsafe { sys::git_filter_register(c"crustify-uninit".as_ptr(), uninit, 200) };
         assert_eq!(rc, 0);
         let wd = Workdir::new("prime");
         let (list, _) = c_load(
             wd.raw(),
             None,
             c"a.probe",
-            ffi::GIT_FILTER_TO_ODB,
+            sys::GIT_FILTER_TO_ODB,
             Opts::Flags(0),
         );
         assert!(!list.is_null());
         // SAFETY: the fresh list, released once.
-        unsafe { ffi::git_filter_list_free(list) };
+        unsafe { sys::git_filter_list_free(list) };
         drop(take_seen());
     });
 }
@@ -210,7 +210,7 @@ fn take_seen() -> (Vec<Option<String>>, (usize, usize)) {
 struct Workdir {
     path: PathBuf,
     repo: Option<RepositoryBox>,
-    head: ffi::git_oid,
+    head: sys::git_oid,
 }
 
 impl Workdir {
@@ -225,9 +225,9 @@ impl Workdir {
         let raw = repo.as_c_ptr();
         let attributes = b"*.head ident\n";
         let (mut builder, mut tree, mut who) = (ptr::null_mut(), ptr::null_mut(), ptr::null_mut());
-        let (mut blob, mut tree_id) = (ffi::git_oid::default(), ffi::git_oid::default());
-        let mut head = ffi::git_oid::default();
-        let opts = ffi::git_commit_create_ext_options {
+        let (mut blob, mut tree_id) = (sys::git_oid::default(), sys::git_oid::default());
+        let mut head = sys::git_oid::default();
+        let opts = sys::git_commit_create_ext_options {
             version: 1,
             update_ref: c"HEAD".as_ptr(),
             ..Default::default()
@@ -238,7 +238,7 @@ impl Workdir {
             // SAFETY: writable slots, the live repository, live buffers and NUL-terminated
             // strings; every object is freed once.
             let rc = unsafe {
-                ffi::git_blob_create_from_buffer(
+                sys::git_blob_create_from_buffer(
                     &raw mut blob,
                     raw,
                     attributes.as_ptr().cast(),
@@ -249,35 +249,35 @@ impl Workdir {
             // SAFETY: as above.
             unsafe {
                 assert_eq!(
-                    ffi::git_treebuilder_new(&raw mut builder, raw, ptr::null()),
+                    sys::git_treebuilder_new(&raw mut builder, raw, ptr::null()),
                     0
                 );
             };
             // SAFETY: as above.
             let rc = unsafe {
-                ffi::git_treebuilder_insert(
+                sys::git_treebuilder_insert(
                     ptr::null_mut(),
                     builder,
                     c".gitattributes".as_ptr(),
                     &raw const blob,
-                    ffi::GIT_FILEMODE_BLOB,
+                    sys::GIT_FILEMODE_BLOB,
                 )
             };
             assert_eq!(rc, 0);
             // SAFETY: as above.
-            unsafe { assert_eq!(ffi::git_treebuilder_write(&raw mut tree_id, builder), 0) };
+            unsafe { assert_eq!(sys::git_treebuilder_write(&raw mut tree_id, builder), 0) };
             // SAFETY: as above.
-            unsafe { ffi::git_treebuilder_free(builder) };
+            unsafe { sys::git_treebuilder_free(builder) };
             // SAFETY: as above.
             unsafe {
                 assert_eq!(
-                    ffi::git_tree_lookup(&raw mut tree, raw, &raw const tree_id),
+                    sys::git_tree_lookup(&raw mut tree, raw, &raw const tree_id),
                     0
                 );
             };
             // SAFETY: as above.
             let rc = unsafe {
-                ffi::git_signature_new(
+                sys::git_signature_new(
                     &raw mut who,
                     c"A".as_ptr(),
                     c"a@example.com".as_ptr(),
@@ -288,7 +288,7 @@ impl Workdir {
             assert_eq!(rc, 0);
             // SAFETY: as above.
             let rc = unsafe {
-                ffi::git_commit_create_ext(
+                sys::git_commit_create_ext(
                     &raw mut head,
                     raw,
                     who,
@@ -302,9 +302,9 @@ impl Workdir {
             };
             assert_eq!(rc, 0);
             // SAFETY: as above.
-            unsafe { ffi::git_tree_free(tree) };
+            unsafe { sys::git_tree_free(tree) };
             // SAFETY: as above.
-            unsafe { ffi::git_signature_free(who) };
+            unsafe { sys::git_signature_free(who) };
         }
         std::fs::write(
             path.join(".gitattributes"),
@@ -324,16 +324,16 @@ impl Workdir {
         self.repo.as_ref().unwrap()
     }
 
-    fn raw(&self) -> *mut ffi::git_repository {
+    fn raw(&self) -> *mut sys::git_repository {
         self.box_().as_c_ptr()
     }
 
     /// Writes a blob of `content`; its id.
-    fn write_blob(&self, content: &[u8]) -> ffi::git_oid {
-        let mut id = ffi::git_oid::default();
+    fn write_blob(&self, content: &[u8]) -> sys::git_oid {
+        let mut id = sys::git_oid::default();
         // SAFETY: a writable id, the live repository and `content`, read for the call.
         let rc = unsafe {
-            ffi::git_blob_create_from_buffer(
+            sys::git_blob_create_from_buffer(
                 &raw mut id,
                 self.raw(),
                 content.as_ptr().cast(),
@@ -345,11 +345,11 @@ impl Workdir {
     }
 
     /// A new blob of `content`, looked up raw for the C side: the caller frees it.
-    fn blob(&self, content: &[u8]) -> NonNull<ffi::git_blob> {
+    fn blob(&self, content: &[u8]) -> NonNull<sys::git_blob> {
         let id = self.write_blob(content);
         let mut blob = ptr::null_mut();
         // SAFETY: a writable slot, the live repository and a live id of its type.
-        let rc = unsafe { ffi::git_blob_lookup(&raw mut blob, self.raw(), &raw const id) };
+        let rc = unsafe { sys::git_blob_lookup(&raw mut blob, self.raw(), &raw const id) };
         assert_eq!(rc, 0);
         NonNull::new(blob).unwrap()
     }
@@ -369,9 +369,9 @@ impl Drop for Workdir {
     }
 }
 
-fn free_blob(blob: NonNull<ffi::git_blob>) {
+fn free_blob(blob: NonNull<sys::git_blob>) {
     // SAFETY: a blob `Workdir::blob` looked up, freed once.
-    unsafe { ffi::git_blob_free(blob.as_ptr()) }
+    unsafe { sys::git_blob_free(blob.as_ptr()) }
 }
 
 /// An error as both sides report it: class and message.
@@ -380,7 +380,7 @@ type Reported = (c_int, CString);
 fn c_last() -> Reported {
     {
         // SAFETY: the runtime is initialised; the error is copied before any other call.
-        let e = unsafe { ffi::git_error_last() };
+        let e = unsafe { sys::git_error_last() };
         // SAFETY: as above.
         let klass = unsafe { (*e).klass };
         // SAFETY: as above.
@@ -407,25 +407,25 @@ enum Built {
 }
 
 /// The list's shape: its length and whether it holds `crlf`, `ident`, the probe.
-fn shape(list: *mut ffi::git_filter_list) -> Built {
+fn shape(list: *mut sys::git_filter_list) -> Built {
     // SAFETY: a live list, only read; NUL-terminated names.
-    let filter_list_length = unsafe { ffi::git_filter_list_length(list) };
+    let filter_list_length = unsafe { sys::git_filter_list_length(list) };
     // SAFETY: as above.
     unsafe {
         Built::List {
             len: filter_list_length,
             holds: [c"crlf", c"ident", c"crustify-probe"]
-                .map(|name| ffi::git_filter_list_contains(list, name.as_ptr())),
+                .map(|name| sys::git_filter_list_contains(list, name.as_ptr())),
         }
     }
 }
 
 /// `git_filter_list_apply_to_buffer`: the output, or the error.
-fn apply(list: *mut ffi::git_filter_list, data: &[u8]) -> Result<Vec<u8>, Reported> {
-    let mut out = ffi::git_buf::default();
+fn apply(list: *mut sys::git_filter_list, data: &[u8]) -> Result<Vec<u8>, Reported> {
+    let mut out = sys::git_buf::default();
     // SAFETY: a zeroed buffer, a NULL or live list, used by this call alone, and `data`.
     let rc = unsafe {
-        ffi::git_filter_list_apply_to_buffer(&raw mut out, list, data.as_ptr().cast(), data.len())
+        sys::git_filter_list_apply_to_buffer(&raw mut out, list, data.as_ptr().cast(), data.len())
     };
     let result = if rc < 0 {
         Err(c_last())
@@ -434,7 +434,7 @@ fn apply(list: *mut ffi::git_filter_list, data: &[u8]) -> Result<Vec<u8>, Report
         Ok(unsafe { std::slice::from_raw_parts(out.ptr.cast::<u8>(), out.size) }.to_vec())
     };
     // SAFETY: the buffer, released once.
-    unsafe { ffi::git_buf_dispose(&raw mut out) };
+    unsafe { sys::git_buf_dispose(&raw mut out) };
     result
 }
 
@@ -445,18 +445,18 @@ const INPUTS: [&[u8]; 4] = [b"a\nb\n", b"a\r\nb\r\n", b"$Id$\nx\n", b"$Id: 0123 
 #[derive(Clone, Copy)]
 enum Opts<'a> {
     Flags(u32),
-    Ext(Option<&'a ffi::git_filter_options>),
+    Ext(Option<&'a sys::git_filter_options>),
 }
 
 /// The C side: the list `git_filter_list_load` / `_load_ext` built, or NULL, and what
 /// was built.
 fn c_load(
-    repo: *mut ffi::git_repository,
-    blob: Option<NonNull<ffi::git_blob>>,
+    repo: *mut sys::git_repository,
+    blob: Option<NonNull<sys::git_blob>>,
     path: &CStr,
-    mode: ffi::git_filter_mode_t,
+    mode: sys::git_filter_mode_t,
     opts: Opts<'_>,
-) -> (*mut ffi::git_filter_list, Built) {
+) -> (*mut sys::git_filter_list, Built) {
     let mut list = ptr::null_mut();
     let blob = blob.map_or(ptr::null_mut(), NonNull::as_ptr);
     let rc = match opts {
@@ -464,14 +464,14 @@ fn c_load(
             // SAFETY: a writable slot; the live repository and blob (or NULL); a NUL-terminated
             // path; NULL or live options, only copied.
             unsafe {
-                ffi::git_filter_list_load(&raw mut list, repo, blob, path.as_ptr(), mode, flags)
+                sys::git_filter_list_load(&raw mut list, repo, blob, path.as_ptr(), mode, flags)
             }
         }
         Opts::Ext(o) => {
             let o = o.map_or(ptr::null_mut(), |o| ptr::from_ref(o).cast_mut());
             // SAFETY: as above.
             unsafe {
-                ffi::git_filter_list_load_ext(&raw mut list, repo, blob, path.as_ptr(), mode, o)
+                sys::git_filter_list_load_ext(&raw mut list, repo, blob, path.as_ptr(), mode, o)
             }
         }
     };
@@ -488,7 +488,7 @@ fn rust_load<'r>(
     wd: &'r Workdir,
     blob: Option<ObjectRef<'_, '_>>,
     path: &CStr,
-    mode: ffi::git_filter_mode_t,
+    mode: sys::git_filter_mode_t,
     opts: Opts<'_>,
 ) -> (Option<FilterListBox<'r>>, Built) {
     let repo = wd.box_().as_ref();
@@ -520,7 +520,7 @@ fn compare(
     r: &Workdir,
     with_blob: bool,
     path: &CStr,
-    mode: ffi::git_filter_mode_t,
+    mode: sys::git_filter_mode_t,
     opts: Opts<'_>,
 ) {
     let case = format!("{path:?} mode {mode} blob {with_blob}");
@@ -555,7 +555,7 @@ fn compare(
         );
     }
     // SAFETY: the C list, or NULL, released once.
-    unsafe { ffi::git_filter_list_free(c_list) };
+    unsafe { sys::git_filter_list_free(c_list) };
     let c_after = take_seen();
     drop(r_list);
     let r_after = take_seen();
@@ -577,7 +577,7 @@ const PATHS: [&CStr; 11] = [
     c"a.refuse",
     c"a.refuse-only",
 ];
-const MODES: [ffi::git_filter_mode_t; 3] = [ffi::GIT_FILTER_TO_WORKTREE, ffi::GIT_FILTER_TO_ODB, 5];
+const MODES: [sys::git_filter_mode_t; 3] = [sys::GIT_FILTER_TO_WORKTREE, sys::GIT_FILTER_TO_ODB, 5];
 
 #[test]
 #[cfg_attr(miri, ignore = "calls libgit2")]
@@ -587,10 +587,10 @@ fn load() {
         let (c, r) = (Workdir::new("load-c"), Workdir::new("load-r"));
         for flags in [
             0,
-            ffi::GIT_FILTER_ALLOW_UNSAFE,
-            ffi::GIT_FILTER_NO_SYSTEM_ATTRIBUTES,
-            ffi::GIT_FILTER_ATTRIBUTES_FROM_HEAD,
-            ffi::GIT_FILTER_ATTRIBUTES_FROM_COMMIT,
+            sys::GIT_FILTER_ALLOW_UNSAFE,
+            sys::GIT_FILTER_NO_SYSTEM_ATTRIBUTES,
+            sys::GIT_FILTER_ATTRIBUTES_FROM_HEAD,
+            sys::GIT_FILTER_ATTRIBUTES_FROM_COMMIT,
         ] {
             for path in PATHS {
                 for mode in MODES {
@@ -608,24 +608,24 @@ fn load_ext() {
         setup();
         let (c, r) = (Workdir::new("ext-c"), Workdir::new("ext-r"));
         assert_eq!(c.head.id, r.head.id);
-        let base = ffi::git_filter_options {
+        let base = sys::git_filter_options {
             version: 1,
             ..Default::default()
         };
-        let from_head = ffi::git_filter_options {
-            flags: ffi::GIT_FILTER_ATTRIBUTES_FROM_HEAD,
+        let from_head = sys::git_filter_options {
+            flags: sys::GIT_FILTER_ATTRIBUTES_FROM_HEAD,
             ..base
         };
-        let from_commit = ffi::git_filter_options {
-            flags: ffi::GIT_FILTER_ATTRIBUTES_FROM_COMMIT | ffi::GIT_FILTER_NO_SYSTEM_ATTRIBUTES,
+        let from_commit = sys::git_filter_options {
+            flags: sys::GIT_FILTER_ATTRIBUTES_FROM_COMMIT | sys::GIT_FILTER_NO_SYSTEM_ATTRIBUTES,
             attr_commit_id: c.head,
             ..base
         };
         let mut missing = from_commit;
         missing.attr_commit_id.id[..2].copy_from_slice(&[0xBA, 0xD0]);
-        let unchecked = ffi::git_filter_options {
+        let unchecked = sys::git_filter_options {
             version: 99,
-            flags: ffi::GIT_FILTER_ALLOW_UNSAFE,
+            flags: sys::GIT_FILTER_ALLOW_UNSAFE,
             reserved: NonNull::<u8>::dangling().as_ptr().cast(),
             ..base
         };
@@ -653,9 +653,9 @@ fn with_blob() {
     isolated(concat!(module_path!(), "::with_blob"), || {
         setup();
         let (c, r) = (Workdir::new("blob-c"), Workdir::new("blob-r"));
-        let from_head = ffi::git_filter_options {
+        let from_head = sys::git_filter_options {
             version: 1,
-            flags: ffi::GIT_FILTER_ATTRIBUTES_FROM_HEAD,
+            flags: sys::GIT_FILTER_ATTRIBUTES_FROM_HEAD,
             ..Default::default()
         };
         for path in PATHS {
@@ -682,7 +682,7 @@ fn failing_initialize() {
         let (list, built) = c_load(c.raw(), None, c"a.uninit", 0, Opts::Flags(0));
         assert!(list.is_null());
         let expect = (
-            ffi::GIT_ERROR_FILTER.cast_signed(),
+            sys::GIT_ERROR_FILTER.cast_signed(),
             c"cannot initialise".to_owned(),
         );
         assert_eq!(built, Built::Failed(expect));
@@ -722,10 +722,10 @@ fn new() {
         setup();
         let (c, r) = (Workdir::new("new-c"), Workdir::new("new-r"));
         for mode in MODES.into_iter().chain([u32::MAX]) {
-            for flags in [0, ffi::GIT_FILTER_ALLOW_UNSAFE, u32::MAX] {
+            for flags in [0, sys::GIT_FILTER_ALLOW_UNSAFE, u32::MAX] {
                 let mut c_list = ptr::null_mut();
                 // SAFETY: a writable slot and the live repository.
-                let rc = unsafe { ffi::git_filter_list_new(&raw mut c_list, c.raw(), mode, flags) };
+                let rc = unsafe { sys::git_filter_list_new(&raw mut c_list, c.raw(), mode, flags) };
                 assert_eq!(rc, 0);
                 let r_list = FilterList::new(r.box_().as_ref(), mode, flags).unwrap();
                 assert_eq!(shape(c_list), shape(r_list.as_c_ptr()));
@@ -735,7 +735,7 @@ fn new() {
                     assert_eq!(c_out.as_deref(), Ok(input));
                 }
                 // SAFETY: the C list, released once.
-                unsafe { ffi::git_filter_list_free(c_list) };
+                unsafe { sys::git_filter_list_free(c_list) };
                 drop(r_list);
             }
         }
@@ -753,7 +753,7 @@ fn absolute_paths() {
         let c = Workdir::new("abs-child");
         for path in PATHS {
             for opts in [Opts::Flags(0), Opts::Ext(None)] {
-                let (list, built) = c_load(c.raw(), None, path, ffi::GIT_FILTER_TO_ODB, opts);
+                let (list, built) = c_load(c.raw(), None, path, sys::GIT_FILTER_TO_ODB, opts);
                 assert!(list.is_null());
                 println!("C-BUILT {built:?}");
             }
@@ -766,7 +766,7 @@ fn absolute_paths() {
     let mut rust = Vec::new();
     for path in PATHS {
         for opts in [Opts::Flags(0), Opts::Ext(None)] {
-            let (list, built) = rust_load(&r, None, path, ffi::GIT_FILTER_TO_ODB, opts);
+            let (list, built) = rust_load(&r, None, path, sys::GIT_FILTER_TO_ODB, opts);
             assert!(list.is_none());
             rust.push(format!("C-BUILT {built:?}"));
         }

@@ -25,11 +25,11 @@ mod new_options {
     use std::sync::Mutex;
     use std::thread;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::oid::OidType;
     use libgit2::libgit2::src::libgit2::repository::{
         NewOptions, NewOptionsMut, NewOptionsRef, Repository,
     };
+    use libgit2::sys::libgit2 as sys;
 
     use crate::fixture::{init, isolated};
 
@@ -46,7 +46,7 @@ mod new_options {
 
     /// The options as C would build them, without calling it: Miri runs these.
     fn options(version: u32, oid_type: Option<OidType>) -> NewOptions {
-        let raw = ffi::git_repository_new_options {
+        let raw = sys::git_repository_new_options {
             version,
             oid_type: oid_type.map_or(0, OidType::raw),
         };
@@ -65,7 +65,7 @@ mod new_options {
     #[test]
     fn try_from_refuses_every_unnamed_oid_type() {
         for raw in probes() {
-            let opts = black_box(ffi::git_repository_new_options {
+            let opts = black_box(sys::git_repository_new_options {
                 version: raw,
                 oid_type: raw,
             });
@@ -100,7 +100,7 @@ mod new_options {
             for opts in [&local, &*boxed, &run[last]] {
                 assert_eq!(read(opts.as_ref()), (version, kind));
                 assert_eq!(read(opts.as_ref().to_options().as_ref()), (version, kind));
-                let raw = ffi::git_repository_new_options::from(*opts);
+                let raw = sys::git_repository_new_options::from(*opts);
                 assert_eq!(
                     (raw.version, raw.oid_type),
                     (version, kind.map_or(0, OidType::raw))

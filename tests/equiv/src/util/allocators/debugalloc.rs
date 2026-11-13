@@ -20,13 +20,13 @@ use std::ffi::{c_char, c_int, c_void};
 use std::process::Command;
 use std::ptr;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::oid::{Oid, OidShortener, OidType};
 use libgit2::libgit2::src::libgit2::settings::set_allocator;
 use libgit2::libgit2::src::util::alloc::{
     AllocBox, AllocVec, Allocator, ArrayFree, FreeFn, MallocFn, ReallocFn, StrFree,
 };
 use libgit2::libgit2::src::util::errors::{ErrorClass, clear, last};
+use libgit2::sys::libgit2 as sys;
 
 const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 
@@ -79,16 +79,16 @@ unsafe extern "C" fn other_realloc(
 unsafe extern "C" fn other_free(_: *mut c_void) {}
 
 /// The family's routines as C writes them over `before`, and C's status.
-fn raw_init(before: ffi::git_allocator) -> (c_int, ffi::git_allocator) {
+fn raw_init(before: sys::git_allocator) -> (c_int, sys::git_allocator) {
     let mut raw = before;
     // SAFETY: `raw` is a live, writable `git_allocator`, which the routine only writes.
-    let rc = unsafe { ffi::git_debugalloc_init_allocator(&raw mut raw) };
+    let rc = unsafe { sys::git_debugalloc_init_allocator(&raw mut raw) };
     (rc, raw)
 }
 
 /// Whether `rust` holds `c`'s `free`, and set members of its own, the guards, in place of
 /// `c`'s `malloc` and `realloc`.
-fn same_members(rust: Allocator, c: &ffi::git_allocator) -> bool {
+fn same_members(rust: Allocator, c: &sys::git_allocator) -> bool {
     let h = rust.as_ref();
     let addr = |f: Option<usize>| f.filter(|&a| a != 0);
     let (malloc, realloc, free) = (
@@ -107,13 +107,13 @@ fn same_members(rust: Allocator, c: &ffi::git_allocator) -> bool {
 fn debug_holds_cs_free_and_guards_over_any_value() {
     let (m, r, f): (MallocFn, ReallocFn, FreeFn) = (other_malloc, other_realloc, other_free);
     let befores = [
-        ffi::git_allocator::default(),
-        ffi::git_allocator {
+        sys::git_allocator::default(),
+        sys::git_allocator {
             gmalloc: Some(m),
             grealloc: Some(r),
             gfree: Some(f),
         },
-        ffi::git_allocator {
+        sys::git_allocator {
             gmalloc: Some(m),
             grealloc: None,
             gfree: Some(f),
@@ -155,7 +155,7 @@ impl Family {
     }
 
     fn of_c() -> Self {
-        let (rc, raw) = raw_init(ffi::git_allocator::default());
+        let (rc, raw) = raw_init(sys::git_allocator::default());
         assert_eq!(rc, 0);
         Self {
             malloc: raw.gmalloc.unwrap(),
@@ -440,12 +440,12 @@ fn installed_before_init_libgit2_and_the_strategies_run_on_it() {
             // SAFETY: the run's block is the family's, live while `words` is.
             assert_eq!(unsafe { length_word(words.as_ptr().cast()) }, 24);
             // SAFETY: the primitive the run's strategy calls, for the same size.
-            let raw = unsafe { ffi::git__malloc(24) };
+            let raw = unsafe { sys::git__malloc(24) };
             assert!(!raw.is_null());
             // SAFETY: a live block of the family.
             assert_eq!(unsafe { length_word(raw.cast()) }, 24);
             // SAFETY: the family's block, given up.
-            unsafe { ffi::git__free(raw) };
+            unsafe { sys::git__free(raw) };
 
             let s = StrFree::dup(c"debug").unwrap();
             // SAFETY: the string's block is the family's, live while `s` is: its terminator
@@ -454,7 +454,7 @@ fn installed_before_init_libgit2_and_the_strategies_run_on_it() {
             let id = AllocBox::<Oid>::new_zeroed().unwrap();
             // SAFETY: the box's block is the family's, live while `id` is.
             let id_word = unsafe { length_word(id.as_c_ptr().cast()) };
-            assert_eq!(id_word, size_of::<ffi::git_oid>());
+            assert_eq!(id_word, size_of::<sys::git_oid>());
             assert!(id.as_ptr().addr().is_multiple_of(align_of::<usize>()));
 
             // A zero-byte request fails under this family, through the strategies and
@@ -465,14 +465,14 @@ fn installed_before_init_libgit2_and_the_strategies_run_on_it() {
             assert_eq!(last().class(), Some(ErrorClass::NoMemory));
             clear();
             // SAFETY: no live allocation is involved; any size may be asked for.
-            assert!(unsafe { ffi::git__mallocarray(0, 1) }.is_null());
+            assert!(unsafe { sys::git__mallocarray(0, 1) }.is_null());
             assert_eq!(last().class(), Some(ErrorClass::NoMemory));
             clear();
             assert!(ArrayFree::new_zeroed::<u64>(0).is_none());
             assert_eq!(last().class(), Some(ErrorClass::NoMemory));
             clear();
             // SAFETY: as above.
-            assert!(unsafe { ffi::git__calloc(0, 8) }.is_null());
+            assert!(unsafe { sys::git__calloc(0, 8) }.is_null());
             assert_eq!(last().class(), Some(ErrorClass::NoMemory));
             clear();
 

@@ -22,9 +22,9 @@ use std::ptr;
 
 use glibc_bindings::libc::csu::errno_loc::{errno, set_errno};
 use glibc_bindings::libc::ffi as libc;
-use libgit2::ffi;
 use libgit2::libgit2::src::util::errors;
 use libgit2::libgit2::src::util::errors::ErrorClass;
+use libgit2::sys::libgit2 as sys;
 
 const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 
@@ -85,7 +85,7 @@ fn last_error() -> (c_int, Vec<u8>) {
     {
         // SAFETY: `git_error_last` never returns NULL; its message lives until the next
         // libgit2 call on this thread, and is copied out before one.
-        let e = unsafe { ffi::git_error_last() };
+        let e = unsafe { sys::git_error_last() };
         // SAFETY: as above.
         let klass = unsafe { (*e).klass };
         // SAFETY: as above.
@@ -102,7 +102,7 @@ fn c_string(message: &[u8]) -> CString {
 fn c_step(step: &Step) -> Option<c_int> {
     match step {
         // SAFETY: no arguments.
-        Clear => unsafe { ffi::git_error_clear() },
+        Clear => unsafe { sys::git_error_clear() },
         Set(class, message) => {
             let mut format = Vec::new();
             for &b in message {
@@ -114,17 +114,17 @@ fn c_step(step: &Step) -> Option<c_int> {
             }
             let format = c_string(&format);
             // SAFETY: a format naming no argument, as every `%` is doubled.
-            unsafe { ffi::git_error_set(class.raw(), format.as_ptr()) }
+            unsafe { sys::git_error_set(class.raw(), format.as_ptr()) }
         }
         // SAFETY: a NULL format reads no argument.
-        Bare(class) => unsafe { ffi::git_error_set(class.raw(), ptr::null()) },
+        Bare(class) => unsafe { sys::git_error_set(class.raw(), ptr::null()) },
         Str(class, message) => {
             let message = c_string(message);
             // SAFETY: a NUL-terminated string, copied during the call.
-            return Some(unsafe { ffi::git_error_set_str(class.raw(), message.as_ptr()) });
+            return Some(unsafe { sys::git_error_set_str(class.raw(), message.as_ptr()) });
         }
         // SAFETY: no arguments.
-        Oom => unsafe { ffi::git_error_set_oom() },
+        Oom => unsafe { sys::git_error_set_oom() },
         Errno(value) => set_errno(*value),
         FailNext => refuse_next(),
     }
@@ -196,7 +196,7 @@ fn compare(steps: &[Step]) -> Vec<Seen> {
 fn init() {
     // SAFETY: no arguments; refcounted, never released in this process. The C side
     // needs it; the Rust side pins its own reference.
-    assert!(unsafe { ffi::git_libgit2_init() } > 0);
+    assert!(unsafe { sys::git_libgit2_init() } > 0);
 }
 
 fn text(len: usize, seed: u8) -> Vec<u8> {
@@ -383,7 +383,7 @@ unsafe extern "C" fn libc_free(p: *mut c_void) {
 #[cfg_attr(miri, ignore = "calls libgit2")]
 fn allocation_failures() {
     isolated(concat!(module_path!(), "::allocation_failures"), || {
-        let mut allocator = ffi::git_allocator {
+        let mut allocator = sys::git_allocator {
             gmalloc: Some(refusing_malloc),
             grealloc: Some(refusing_realloc),
             gfree: Some(libc_free),
@@ -391,7 +391,7 @@ fn allocation_failures() {
         // SAFETY: a `git_allocator *` with every member set, which libgit2 copies;
         // nothing is allocated yet, so no storage changes allocator.
         let rc = unsafe {
-            ffi::git_libgit2_opts(ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(), &raw mut allocator)
+            sys::git_libgit2_opts(sys::GIT_OPT_SET_ALLOCATOR.cast_signed(), &raw mut allocator)
         };
         assert_eq!(rc, 0);
         init();

@@ -136,7 +136,6 @@ use ffibox::{
     impl_cdrop,
 };
 
-use crate::ffi;
 use crate::libgit2::src::libgit2::object::{ObjectArc, ObjectRef, ObjectType, id_fits};
 use crate::libgit2::src::libgit2::object_api::TreeFree;
 use crate::libgit2::src::libgit2::oid::{Oid, OidMut, OidRef};
@@ -144,6 +143,7 @@ use crate::libgit2::src::libgit2::repository::{RepositoryError, RepositoryRef};
 use crate::libgit2::src::util::errors::{
     ErrorBuf, ErrorClass, ErrorCode, last, runtime_pinned, set,
 };
+use crate::sys::libgit2 as sys;
 
 /// The mode of a tree entry: the kind of object it names, and for a blob whether it
 /// is an executable or a symbolic link (`git_filemode_t`, UNIX modes in octal).
@@ -164,52 +164,52 @@ use crate::libgit2::src::util::errors::{
 pub enum FileMode {
     /// `0000000`: no object. libgit2 gives it to a working-directory file it could
     /// not read; no tree entry can be inserted with it.
-    Unreadable = ffi::GIT_FILEMODE_UNREADABLE,
+    Unreadable = sys::GIT_FILEMODE_UNREADABLE,
     /// `0040000`: a subtree.
-    Tree = ffi::GIT_FILEMODE_TREE,
+    Tree = sys::GIT_FILEMODE_TREE,
     /// `0100644`: a regular file's blob.
-    Blob = ffi::GIT_FILEMODE_BLOB,
+    Blob = sys::GIT_FILEMODE_BLOB,
     /// `0100755`: an executable file's blob.
-    BlobExecutable = ffi::GIT_FILEMODE_BLOB_EXECUTABLE,
+    BlobExecutable = sys::GIT_FILEMODE_BLOB_EXECUTABLE,
     /// `0120000`: a blob holding a symbolic link's target.
-    Link = ffi::GIT_FILEMODE_LINK,
+    Link = sys::GIT_FILEMODE_LINK,
     /// `0160000`: a submodule's commit, which the repository need not contain.
-    Commit = ffi::GIT_FILEMODE_COMMIT,
+    Commit = sys::GIT_FILEMODE_COMMIT,
 }
 
 impl FileMode {
     /// The variant whose C value is `raw`; `None` for a mode this version of
     /// libgit2's header does not name.
     #[must_use]
-    pub const fn from_raw(raw: ffi::git_filemode_t) -> Option<Self> {
+    pub const fn from_raw(raw: sys::git_filemode_t) -> Option<Self> {
         match raw {
-            ffi::GIT_FILEMODE_UNREADABLE => Some(Self::Unreadable),
-            ffi::GIT_FILEMODE_TREE => Some(Self::Tree),
-            ffi::GIT_FILEMODE_BLOB => Some(Self::Blob),
-            ffi::GIT_FILEMODE_BLOB_EXECUTABLE => Some(Self::BlobExecutable),
-            ffi::GIT_FILEMODE_LINK => Some(Self::Link),
-            ffi::GIT_FILEMODE_COMMIT => Some(Self::Commit),
+            sys::GIT_FILEMODE_UNREADABLE => Some(Self::Unreadable),
+            sys::GIT_FILEMODE_TREE => Some(Self::Tree),
+            sys::GIT_FILEMODE_BLOB => Some(Self::Blob),
+            sys::GIT_FILEMODE_BLOB_EXECUTABLE => Some(Self::BlobExecutable),
+            sys::GIT_FILEMODE_LINK => Some(Self::Link),
+            sys::GIT_FILEMODE_COMMIT => Some(Self::Commit),
             _ => None,
         }
     }
 
     /// The C value, as libgit2's functions take and return it.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_filemode_t {
-        self as ffi::git_filemode_t
+    pub const fn raw(self) -> sys::git_filemode_t {
+        self as sys::git_filemode_t
     }
 }
 
-impl TryFrom<ffi::git_filemode_t> for FileMode {
+impl TryFrom<sys::git_filemode_t> for FileMode {
     type Error = UnnamedFileMode;
 
-    fn try_from(raw: ffi::git_filemode_t) -> Result<Self, UnnamedFileMode> {
+    fn try_from(raw: sys::git_filemode_t) -> Result<Self, UnnamedFileMode> {
         Self::from_raw(raw).ok_or(UnnamedFileMode(raw))
     }
 }
 
-impl From<FileMode> for ffi::git_filemode_t {
-    fn from(value: FileMode) -> ffi::git_filemode_t {
+impl From<FileMode> for sys::git_filemode_t {
+    fn from(value: FileMode) -> sys::git_filemode_t {
         value.raw()
     }
 }
@@ -218,12 +218,12 @@ impl From<FileMode> for ffi::git_filemode_t {
 /// `git_tree_entry_filemode_raw` returns for a tree that spells one;
 /// [`raw`](Self::raw) has it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct UnnamedFileMode(pub(crate) ffi::git_filemode_t);
+pub struct UnnamedFileMode(pub(crate) sys::git_filemode_t);
 
 impl UnnamedFileMode {
     /// The value, as it was converted.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_filemode_t {
+    pub const fn raw(self) -> sys::git_filemode_t {
         self.0
     }
 }
@@ -252,42 +252,42 @@ impl std::error::Error for UnnamedFileMode {}
 pub enum WalkMode {
     /// Visit each entry before the subtree it names: a subtree's entries follow its
     /// own, and a positive callback result skips the subtree.
-    PreOrder = ffi::GIT_TREEWALK_PRE,
+    PreOrder = sys::GIT_TREEWALK_PRE,
     /// Visit each entry after the subtree it names: a subtree's entries precede its
     /// own, so the subtree is already walked, and a positive callback result is
     /// ignored.
-    PostOrder = ffi::GIT_TREEWALK_POST,
+    PostOrder = sys::GIT_TREEWALK_POST,
 }
 
 impl WalkMode {
     /// The variant whose C value is `raw`; `None` for a value this version of
     /// libgit2's header does not name, which `git_tree_walk` refuses.
     #[must_use]
-    pub const fn from_raw(raw: ffi::git_treewalk_mode) -> Option<Self> {
+    pub const fn from_raw(raw: sys::git_treewalk_mode) -> Option<Self> {
         match raw {
-            ffi::GIT_TREEWALK_PRE => Some(Self::PreOrder),
-            ffi::GIT_TREEWALK_POST => Some(Self::PostOrder),
+            sys::GIT_TREEWALK_PRE => Some(Self::PreOrder),
+            sys::GIT_TREEWALK_POST => Some(Self::PostOrder),
             _ => None,
         }
     }
 
     /// The C value, as `git_tree_walk` takes it.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_treewalk_mode {
-        self as ffi::git_treewalk_mode
+    pub const fn raw(self) -> sys::git_treewalk_mode {
+        self as sys::git_treewalk_mode
     }
 }
 
-impl TryFrom<ffi::git_treewalk_mode> for WalkMode {
+impl TryFrom<sys::git_treewalk_mode> for WalkMode {
     type Error = UnnamedWalkMode;
 
-    fn try_from(raw: ffi::git_treewalk_mode) -> Result<Self, UnnamedWalkMode> {
+    fn try_from(raw: sys::git_treewalk_mode) -> Result<Self, UnnamedWalkMode> {
         Self::from_raw(raw).ok_or(UnnamedWalkMode(raw))
     }
 }
 
-impl From<WalkMode> for ffi::git_treewalk_mode {
-    fn from(value: WalkMode) -> ffi::git_treewalk_mode {
+impl From<WalkMode> for sys::git_treewalk_mode {
+    fn from(value: WalkMode) -> sys::git_treewalk_mode {
         value.raw()
     }
 }
@@ -295,12 +295,12 @@ impl From<WalkMode> for ffi::git_treewalk_mode {
 /// A tree walk mode that this version of libgit2's header does not name, which
 /// `git_tree_walk` refuses as an invalid walking mode; [`raw`](Self::raw) has it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct UnnamedWalkMode(ffi::git_treewalk_mode);
+pub struct UnnamedWalkMode(sys::git_treewalk_mode);
 
 impl UnnamedWalkMode {
     /// The value, as it was converted.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_treewalk_mode {
+    pub const fn raw(self) -> sys::git_treewalk_mode {
         self.0
     }
 }
@@ -505,7 +505,7 @@ impl<'f> WalkCallback<'f> {
     /// touches until `walk` returns, and only for calls from this thread.
     pub(crate) fn walk_with<R>(
         &mut self,
-        walk: impl FnOnce(ffi::git_treewalk_cb, *mut c_void) -> R,
+        walk: impl FnOnce(sys::git_treewalk_cb, *mut c_void) -> R,
     ) -> R {
         self.stopped = false;
         let result = walk(Some(walk_with), ptr::from_mut(self).cast());
@@ -534,7 +534,7 @@ impl fmt::Debug for WalkCallback<'_> {
 /// writes, both live for the call.
 unsafe extern "C" fn walk_with(
     root: *const c_char,
-    entry: *const ffi::git_tree_entry,
+    entry: *const sys::git_tree_entry,
     payload: *mut c_void,
 ) -> c_int {
     // SAFETY: per this function's contract, `payload` is a live callback borrowed for
@@ -579,40 +579,40 @@ unsafe extern "C" fn walk_with(
 pub enum UpdateAction {
     /// Insert an entry at the path, or replace the one there with the update's id and
     /// file mode; replacing a blob with a tree, or a tree with a blob, fails.
-    Upsert = ffi::GIT_TREE_UPDATE_UPSERT,
+    Upsert = sys::GIT_TREE_UPDATE_UPSERT,
     /// Remove the entry at the path; only the path is read.
-    Remove = ffi::GIT_TREE_UPDATE_REMOVE,
+    Remove = sys::GIT_TREE_UPDATE_REMOVE,
 }
 
 impl UpdateAction {
     /// The variant whose C value is `raw`; `None` for any value libgit2's header does not
     /// name.
     #[must_use]
-    pub const fn from_raw(raw: ffi::git_tree_update_t) -> Option<Self> {
+    pub const fn from_raw(raw: sys::git_tree_update_t) -> Option<Self> {
         match raw {
-            ffi::GIT_TREE_UPDATE_UPSERT => Some(Self::Upsert),
-            ffi::GIT_TREE_UPDATE_REMOVE => Some(Self::Remove),
+            sys::GIT_TREE_UPDATE_UPSERT => Some(Self::Upsert),
+            sys::GIT_TREE_UPDATE_REMOVE => Some(Self::Remove),
             _ => None,
         }
     }
 
     /// The C value, as libgit2's functions take it.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_tree_update_t {
-        self as ffi::git_tree_update_t
+    pub const fn raw(self) -> sys::git_tree_update_t {
+        self as sys::git_tree_update_t
     }
 }
 
-impl TryFrom<ffi::git_tree_update_t> for UpdateAction {
+impl TryFrom<sys::git_tree_update_t> for UpdateAction {
     type Error = UnnamedUpdateAction;
 
-    fn try_from(raw: ffi::git_tree_update_t) -> Result<Self, UnnamedUpdateAction> {
+    fn try_from(raw: sys::git_tree_update_t) -> Result<Self, UnnamedUpdateAction> {
         Self::from_raw(raw).ok_or(UnnamedUpdateAction(raw))
     }
 }
 
-impl From<UpdateAction> for ffi::git_tree_update_t {
-    fn from(value: UpdateAction) -> ffi::git_tree_update_t {
+impl From<UpdateAction> for sys::git_tree_update_t {
+    fn from(value: UpdateAction) -> sys::git_tree_update_t {
         value.raw()
     }
 }
@@ -620,12 +620,12 @@ impl From<UpdateAction> for ffi::git_tree_update_t {
 /// An update action that libgit2's header does not name, which `git_tree_create_updated`
 /// refuses; [`raw`](Self::raw) has it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct UnnamedUpdateAction(ffi::git_tree_update_t);
+pub struct UnnamedUpdateAction(sys::git_tree_update_t);
 
 impl UnnamedUpdateAction {
     /// The value, as it was converted.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_tree_update_t {
+    pub const fn raw(self) -> sys::git_tree_update_t {
         self.0
     }
 }
@@ -644,8 +644,8 @@ impl std::error::Error for UnnamedUpdateAction {}
 
 // An `UpdateAction` passes where C takes a `git_tree_update_t`.
 const _: () = assert!(
-    size_of::<UpdateAction>() == size_of::<ffi::git_tree_update_t>()
-        && align_of::<UpdateAction>() == align_of::<ffi::git_tree_update_t>()
+    size_of::<UpdateAction>() == size_of::<sys::git_tree_update_t>()
+        && align_of::<UpdateAction>() == align_of::<sys::git_tree_update_t>()
 );
 
 /// One change for `git_tree_create_updated` to make to a tree (`git_tree_update`): an
@@ -722,7 +722,7 @@ const _: () = assert!(
 #[doc(alias = "git_tree_update")]
 #[repr(transparent)]
 #[derive(Clone, Copy)]
-pub struct TreeUpdate<'p>(ffi::git_tree_update, PhantomData<&'p CStr>);
+pub struct TreeUpdate<'p>(sys::git_tree_update, PhantomData<&'p CStr>);
 
 /// Shared borrow of a [`TreeUpdate`]. `Copy`, like `&T`; the getters live here.
 #[repr(transparent)]
@@ -745,7 +745,7 @@ pub struct TreeUpdateMut<'a, 'p>(
 // `TreeUpdateMut` is invariant in the update through its
 // `PhantomData<&'a mut TreeUpdate<'p>>`.
 unsafe impl<'p> CCell for TreeUpdate<'p> {
-    type C = ffi::git_tree_update;
+    type C = sys::git_tree_update;
     type Mut<'a>
         = TreeUpdateMut<'a, 'p>
     where
@@ -810,9 +810,9 @@ impl<'p> TreeUpdate<'p> {
     /// changes them.
     #[must_use]
     pub const fn remove(path: &'p CStr) -> Self {
-        let none = ffi::git_oid {
+        let none = sys::git_oid {
             type_: 0,
-            id: [0; ffi::GIT_OID_MAX_SIZE as usize],
+            id: [0; sys::GIT_OID_MAX_SIZE as usize],
         };
         Self::new(UpdateAction::Remove, path, none, FileMode::Unreadable)
     }
@@ -820,11 +820,11 @@ impl<'p> TreeUpdate<'p> {
     const fn new(
         action: UpdateAction,
         path: &'p CStr,
-        id: ffi::git_oid,
+        id: sys::git_oid,
         filemode: FileMode,
     ) -> Self {
         Self(
-            ffi::git_tree_update {
+            sys::git_tree_update {
                 action: action.raw(),
                 id,
                 filemode: filemode.raw(),
@@ -851,8 +851,8 @@ impl<'p> TreeUpdate<'p> {
 }
 
 /// The `git_oid` `id` holds, copied field by field.
-fn copy_id(id: OidRef<'_>) -> ffi::git_oid {
-    ffi::git_oid {
+fn copy_id(id: OidRef<'_>) -> sys::git_oid {
+    sys::git_oid {
         type_: id.raw_kind(),
         id: id.id(),
     }
@@ -1080,9 +1080,9 @@ impl fmt::Debug for TreeUpdateMut<'_, '_> {
 // A `TreeUpdate` is a `git_tree_update`, so a `[TreeUpdate]` is the array C reads in
 // place.
 const _: () = assert!(
-    size_of::<TreeUpdate<'static>>() == size_of::<ffi::git_tree_update>()
-        && align_of::<TreeUpdate<'static>>() == align_of::<ffi::git_tree_update>()
-        && size_of::<[TreeUpdate<'static>; 3]>() == size_of::<[ffi::git_tree_update; 3]>()
+    size_of::<TreeUpdate<'static>>() == size_of::<sys::git_tree_update>()
+        && align_of::<TreeUpdate<'static>>() == align_of::<sys::git_tree_update>()
+        && size_of::<[TreeUpdate<'static>; 3]>() == size_of::<[sys::git_tree_update; 3]>()
         && size_of::<TreeUpdateRef<'static, 'static>>() == size_of::<*const ()>()
 );
 
@@ -1120,7 +1120,7 @@ const _: () = assert!(
 /// Wraps `st::git_tree`
 #[doc(alias = "git_tree")]
 #[repr(transparent)]
-pub struct Tree<'r>(ffi::git_tree, PhantomData<(*const (), &'r ())>);
+pub struct Tree<'r>(sys::git_tree, PhantomData<(*const (), &'r ())>);
 
 /// Shared borrow of a [`Tree`]. `Copy`, like `&T`.
 ///
@@ -1153,7 +1153,7 @@ pub struct TreeMut<'a, 'r>(
 // C object, and `TreeRef` has no write operation. `TreeMut` is invariant in the tree
 // through its `PhantomData<&'a mut Tree<'r>>`.
 unsafe impl<'r> CCell for Tree<'r> {
-    type C = ffi::git_tree;
+    type C = sys::git_tree;
     type Mut<'a>
         = TreeMut<'a, 'r>
     where
@@ -1354,7 +1354,7 @@ impl<'r> Tree<'r> {
         // borrowed NUL-terminated paths and named actions and modes, read in place. Ids
         // looked up fit `repo`, and no upserted component exceeds 65535 bytes (above).
         let rc = unsafe {
-            ffi::git_tree_create_updated(
+            sys::git_tree_create_updated(
                 id.as_mut().as_mut_ptr(),
                 repo.as_ptr().cast_mut(),
                 baseline,
@@ -1378,7 +1378,7 @@ impl<'a, 'r> TreeRef<'a, 'r> {
     pub fn len(&self) -> usize {
         // SAFETY: the handle addresses a live tree for `'a`, whose entry array libgit2
         // filled when parsing it and only reads the size of here.
-        unsafe { ffi::git_tree_entrycount(self.as_ptr()) }
+        unsafe { sys::git_tree_entrycount(self.as_ptr()) }
     }
 
     /// Whether the tree lists no entry: the empty tree.
@@ -1411,7 +1411,7 @@ impl<'a, 'r> TreeRef<'a, 'r> {
     pub fn get(&self, index: usize) -> Option<TreeEntryRef<'a>> {
         // SAFETY: the handle addresses a live tree for `'a`; libgit2 checks `index` against the
         // entry count and returns NULL past it, or the address of the entry in the tree's array.
-        let entry = unsafe { ffi::git_tree_entry_byindex(self.as_ptr(), index) };
+        let entry = unsafe { sys::git_tree_entry_byindex(self.as_ptr(), index) };
         // SAFETY: `entry` is NULL or an entry the tree keeps, unwritten, until it is freed after
         // `'a`.
         unsafe { TreeEntryRef::from_ptr(entry.cast_mut()) }
@@ -1432,7 +1432,7 @@ impl<'a, 'r> TreeRef<'a, 'r> {
         // SAFETY: the handle addresses a live tree for `'a`, only read; `name` is NUL-terminated
         // and read for the call only, within its length (a name longer than 65535 bytes is compared
         // on its first `len % 65536` bytes and its full length, and matches nothing).
-        let entry = unsafe { ffi::git_tree_entry_byname(self.as_ptr(), name.as_ptr()) };
+        let entry = unsafe { sys::git_tree_entry_byname(self.as_ptr(), name.as_ptr()) };
         // SAFETY: `entry` is NULL or an entry of the tree's array, live and unwritten until the
         // tree is freed after `'a`.
         unsafe { TreeEntryRef::from_ptr(entry.cast_mut()) }
@@ -1452,7 +1452,7 @@ impl<'a, 'r> TreeRef<'a, 'r> {
     pub fn get_by_id(&self, id: OidRef<'_>) -> Option<TreeEntryRef<'a>> {
         // SAFETY: the handle addresses a live tree for `'a`, only read; `id` is a live, whole
         // `git_oid`, compared bytewise for the call only.
-        let entry = unsafe { ffi::git_tree_entry_byid(self.as_ptr(), id.as_ptr()) };
+        let entry = unsafe { sys::git_tree_entry_byid(self.as_ptr(), id.as_ptr()) };
         // SAFETY: `entry` is NULL or an entry of the tree's array, live and unwritten until the
         // tree is freed after `'a`.
         unsafe { TreeEntryRef::from_ptr(entry.cast_mut()) }
@@ -1556,11 +1556,11 @@ impl<'a, 'r> TreeRef<'a, 'r> {
             // each it walked; `mode` is a named mode; `f` and `payload` are the
             // callback's own trampoline and payload, which nothing else touches until
             // the call returns (`callback` is exclusively borrowed).
-            unsafe { ffi::git_tree_walk(tree, mode.raw(), f, payload) }
+            unsafe { sys::git_tree_walk(tree, mode.raw(), f, payload) }
         });
         match rc {
             0 => Ok(ControlFlow::Continue(())),
-            ffi::GIT_EUSER if callback.stopped() => Ok(ControlFlow::Break(())),
+            sys::GIT_EUSER if callback.stopped() => Ok(ControlFlow::Break(())),
             rc => Err(RepositoryError::from_libgit2(rc)),
         }
     }
@@ -1686,7 +1686,7 @@ impl FusedIterator for TreeEntries<'_, '_> {}
 /// Wraps `st::git_treebuilder`
 #[doc(alias = "git_treebuilder")]
 #[repr(transparent)]
-pub struct TreeBuilder<'r>(ffi::git_treebuilder, PhantomData<(*const (), &'r ())>);
+pub struct TreeBuilder<'r>(sys::git_treebuilder, PhantomData<(*const (), &'r ())>);
 
 /// Shared borrow of a [`TreeBuilder`]. `Copy`, like `&T`.
 #[repr(transparent)]
@@ -1709,7 +1709,7 @@ pub struct TreeBuilderMut<'a, 'r>(
 // `TreeBuilderMut` is invariant in the builder through its
 // `PhantomData<&'a mut TreeBuilder<'r>>`.
 unsafe impl<'r> CCell for TreeBuilder<'r> {
-    type C = ffi::git_treebuilder;
+    type C = sys::git_treebuilder;
     type Mut<'a>
         = TreeBuilderMut<'a, 'r>
     where
@@ -1738,7 +1738,7 @@ impl<'r> TreeBuilderRef<'_, 'r> {
         // SAFETY: the handle addresses a live builder that no one writes while it is
         // borrowed; `git_treebuilder_entrycount` takes it mutably but only reads the size
         // of its map.
-        unsafe { ffi::git_treebuilder_entrycount(self.as_ptr().cast_mut()) }
+        unsafe { sys::git_treebuilder_entrycount(self.as_ptr().cast_mut()) }
     }
 
     /// Whether the builder holds no entry, so that writing it writes the empty tree.
@@ -1752,7 +1752,7 @@ impl<'r> TreeBuilderRef<'_, 'r> {
     /// member, `git_repository *repo` (`src/libgit2/tree.h`), which `git_treebuilder_new`
     /// sets and nothing changes afterwards.
     pub(crate) fn repository(&self) -> RepositoryRef<'r> {
-        let repo = self.as_ptr().cast::<*mut ffi::git_repository>();
+        let repo = self.as_ptr().cast::<*mut sys::git_repository>();
         // SAFETY: the handle addresses a live builder, whose private struct starts with
         // its `repo` pointer (`struct git_treebuilder` in `src/libgit2/tree.h`, the
         // revision this crate links), aligned as a pointer; libgit2 writes it only when
@@ -1789,7 +1789,7 @@ impl<'r> TreeBuilderMut<'_, 'r> {
         // else reaches meanwhile; `git_treebuilder_clear` frees the entries it owns and
         // empties its map, without reaching the repository. It fails only on a NULL
         // builder, so its result is always 0 here.
-        let rc = unsafe { ffi::git_treebuilder_clear(self.as_mut_ptr()) };
+        let rc = unsafe { sys::git_treebuilder_clear(self.as_mut_ptr()) };
         debug_assert_eq!(rc, 0);
     }
 }
@@ -1821,7 +1821,7 @@ unsafe impl<'r> CDrop<TreeBuilder<'r>> for TreeBuilderFree {
     unsafe fn c_drop(&self, ptr: NonNull<TreeBuilder<'r>>) {
         // SAFETY: per `c_drop`'s contract, `ptr` addresses a live builder whose ownership
         // the caller gives up; `TreeBuilder` is transparent over `git_treebuilder`.
-        unsafe { ffi::git_treebuilder_free(ptr.as_ptr().cast()) }
+        unsafe { sys::git_treebuilder_free(ptr.as_ptr().cast()) }
     }
 }
 
@@ -1829,7 +1829,7 @@ unsafe impl<'r> CDrop<TreeBuilder<'r>> for TreeBuilderFree {
 pub type TreeBuilderBox<'r> = CBox<TreeBuilder<'r>, TreeBuilderFree>;
 
 const _: () =
-    assert!(size_of::<TreeBuilderBox<'static>>() == size_of::<*mut ffi::git_treebuilder>());
+    assert!(size_of::<TreeBuilderBox<'static>>() == size_of::<*mut sys::git_treebuilder>());
 
 impl<'r> TreeBuilder<'r> {
     /// An empty builder for `repo`: writing it straight away writes the empty tree.
@@ -1848,7 +1848,7 @@ impl<'r> TreeBuilder<'r> {
         // SAFETY: `out` is a writable slot; `repo` a live repository on this thread, which
         // the builder only records; no source tree. The runtime is pinned, so a failure
         // is reported on live thread-local state.
-        let rc = unsafe { ffi::git_treebuilder_new(&raw mut out, repo, ptr::null()) };
+        let rc = unsafe { sys::git_treebuilder_new(&raw mut out, repo, ptr::null()) };
         // SAFETY: on success `git_treebuilder_new` writes a fresh builder for `repo` that
         // the caller owns alone, released by `git_treebuilder_free` as `TreeBuilderFree`
         // does; it keeps `repo`, which outlives `'r`. On failure it leaves `out` NULL.
@@ -1884,7 +1884,7 @@ impl<'r> TreeBuilder<'r> {
         // tree for the call, which the handle it came from keeps alive, only read. The
         // runtime is pinned.
         let rc = unsafe {
-            ffi::git_treebuilder_new(&raw mut out, repo.as_ptr().cast_mut(), source.as_ptr())
+            sys::git_treebuilder_new(&raw mut out, repo.as_ptr().cast_mut(), source.as_ptr())
         };
         // SAFETY: as in `new`: a fresh builder for `repo` the caller owns alone, or NULL.
         constructed(rc, unsafe { TreeBuilderBox::from_c(out) })
@@ -1932,7 +1932,7 @@ impl<'a> TreeBuilderRef<'a, '_> {
         // SAFETY: the shared handle's pointer addresses a live builder that nothing writes during
         // `'a`; `name` is NUL-terminated and read for the call only. `git_treebuilder_get` only
         // probes the builder's map, setting no error on a miss.
-        let entry = unsafe { ffi::git_treebuilder_get(self.as_ptr().cast_mut(), name.as_ptr()) };
+        let entry = unsafe { sys::git_treebuilder_get(self.as_ptr().cast_mut(), name.as_ptr()) };
         // SAFETY: `entry` is NULL or the entry the map holds, which stays live and unchanged until
         // the builder next removes, replaces or clears its entries, all of which need an exclusive
         // borrow, excluded during `'a`.
@@ -2035,7 +2035,7 @@ impl TreeBuilderMut<'_, '_> {
         // bytes is stored whole. An id libgit2 looks up (any mode but a commit's or an
         // unreadable one, a non-zero id) is of the repository's type, checked above.
         let rc = unsafe {
-            ffi::git_treebuilder_insert(
+            sys::git_treebuilder_insert(
                 &raw mut out,
                 self.as_mut_ptr(),
                 name.as_ptr(),
@@ -2067,7 +2067,7 @@ impl TreeBuilderMut<'_, '_> {
         // else reaches meanwhile, and no handle to its entries outlives that borrow;
         // `name` is NUL-terminated and read for the call only. libgit2 frees the entry
         // it removes, without reaching the repository.
-        let rc = unsafe { ffi::git_treebuilder_remove(self.as_mut_ptr(), name.as_ptr()) };
+        let rc = unsafe { sys::git_treebuilder_remove(self.as_mut_ptr(), name.as_ptr()) };
         if rc < 0 { Err(last()) } else { Ok(()) }
     }
 
@@ -2104,7 +2104,7 @@ impl TreeBuilderMut<'_, '_> {
         // write buffer libgit2 refills; its repository is live for `'r` and used on this
         // thread only, as `RepositoryRef` allows, where libgit2 loads and writes the
         // object database.
-        let rc = unsafe { ffi::git_treebuilder_write(out, self.as_mut_ptr()) };
+        let rc = unsafe { sys::git_treebuilder_write(out, self.as_mut_ptr()) };
         if rc < 0 {
             return Err(RepositoryError::from_libgit2(rc));
         }
@@ -2168,7 +2168,7 @@ impl TreeBuilderMut<'_, '_> {
             // repository. `f` and `payload` are the filter's own trampoline and payload,
             // which nothing else touches until the call returns (`filter` is exclusively
             // borrowed).
-            unsafe { ffi::git_treebuilder_filter(builder, f, payload) }
+            unsafe { sys::git_treebuilder_filter(builder, f, payload) }
         });
         // It fails only on a NULL builder or filter, neither of which reaches it.
         debug_assert_eq!(rc, 0);
@@ -2201,7 +2201,7 @@ define_ctype!(
     TreeEntry,
     TreeEntryRef,
     TreeEntryMut,
-    ffi::git_tree_entry
+    sys::git_tree_entry
 );
 
 // SAFETY: an owned entry is one block of libgit2's process-wide allocator, which frees
@@ -2244,7 +2244,7 @@ impl_cdrop!(
     #[doc(alias = "git_tree_entry_free")]
     TreeEntryFree,
     TreeEntry,
-    ffi::git_tree_entry_free
+    sys::git_tree_entry_free
 );
 
 // SAFETY: `dup` returns `None` or a fresh block from `git_tree_entry_dup` holding a
@@ -2278,7 +2278,7 @@ fn dup(source: TreeEntryRef<'_>) -> Option<TreeEntryBox> {
     // entry nothing writes while the shared handle lives, whose NUL-terminated name, id
     // and mode are read for the call only. The runtime is pinned, so a failure is
     // reported on live thread-local state.
-    let rc = unsafe { ffi::git_tree_entry_dup(&raw mut out, source.as_ptr()) };
+    let rc = unsafe { sys::git_tree_entry_dup(&raw mut out, source.as_ptr()) };
     if rc < 0 {
         return None;
     }
@@ -2318,7 +2318,7 @@ impl TreeEntry {
         // unwritten while the handle lives, whose repository is live for the handle's
         // `'r` and used on this thread only, as `RepositoryRef` allows, where libgit2
         // looks the subtrees up; `path` is NUL-terminated and read for the call only.
-        let rc = unsafe { ffi::git_tree_entry_bypath(&raw mut out, tree.as_ptr(), path.as_ptr()) };
+        let rc = unsafe { sys::git_tree_entry_bypath(&raw mut out, tree.as_ptr(), path.as_ptr()) };
         if rc < 0 {
             return Err(RepositoryError::from_libgit2(rc));
         }
@@ -2339,7 +2339,7 @@ impl<'a> TreeEntryRef<'a> {
     #[must_use]
     pub fn name(&self) -> &'a CStr {
         // SAFETY: the handle addresses a live entry, unchanged while it is borrowed for `'a`.
-        let name = unsafe { ffi::git_tree_entry_name(self.as_ptr()) };
+        let name = unsafe { sys::git_tree_entry_name(self.as_ptr()) };
         // SAFETY: its name is a NUL-terminated string that its owner (the entry's own block, or the
         // tree or builder it belongs to) keeps for at least as long.
         unsafe { CStr::from_ptr(name) }
@@ -2357,7 +2357,7 @@ impl<'a> TreeEntryRef<'a> {
     )]
     pub fn id(&self) -> OidRef<'a> {
         // SAFETY: the handle addresses a live entry for `'a`.
-        let id = unsafe { ffi::git_tree_entry_id(self.as_ptr()) };
+        let id = unsafe { sys::git_tree_entry_id(self.as_ptr()) };
         // SAFETY: the id is a field of the entry, which no one writes while the entry is borrowed
         // shared.
         let id = unsafe { OidRef::from_ptr(id.cast_mut()) };
@@ -2381,7 +2381,7 @@ impl<'a> TreeEntryRef<'a> {
     #[must_use]
     pub fn filemode(&self) -> FileMode {
         // SAFETY: the handle addresses a live entry for `'a`, whose mode libgit2 reads.
-        let raw = unsafe { ffi::git_tree_entry_filemode(self.as_ptr()) };
+        let raw = unsafe { sys::git_tree_entry_filemode(self.as_ptr()) };
         FileMode::from_raw(raw).expect("a normalised file mode is always a named one")
     }
 
@@ -2392,9 +2392,9 @@ impl<'a> TreeEntryRef<'a> {
     /// Wraps `fn::git_tree_entry_filemode_raw`
     #[doc(alias = "git_tree_entry_filemode_raw")]
     #[must_use]
-    pub fn filemode_raw(&self) -> ffi::git_filemode_t {
+    pub fn filemode_raw(&self) -> sys::git_filemode_t {
         // SAFETY: the handle addresses a live entry for `'a`, whose mode libgit2 reads.
-        unsafe { ffi::git_tree_entry_filemode_raw(self.as_ptr()) }
+        unsafe { sys::git_tree_entry_filemode_raw(self.as_ptr()) }
     }
 
     /// The type of the object the entry names, as its stored file mode tells it: a
@@ -2410,7 +2410,7 @@ impl<'a> TreeEntryRef<'a> {
     #[must_use]
     pub fn kind(&self) -> ObjectType {
         // SAFETY: the handle addresses a live entry for `'a`, whose mode libgit2 reads.
-        let raw = unsafe { ffi::git_tree_entry_type(self.as_ptr()) };
+        let raw = unsafe { sys::git_tree_entry_type(self.as_ptr()) };
         ObjectType::from_raw(raw).expect("an entry's type is always a named one")
     }
 
@@ -2425,7 +2425,7 @@ impl<'a> TreeEntryRef<'a> {
     pub fn cmp_in_tree(&self, other: TreeEntryRef<'_>) -> Ordering {
         // SAFETY: both handles address live entries, unchanged while borrowed; libgit2
         // reads their names, name lengths and modes.
-        let rc = unsafe { ffi::git_tree_entry_cmp(self.as_ptr(), other.as_ptr()) };
+        let rc = unsafe { sys::git_tree_entry_cmp(self.as_ptr(), other.as_ptr()) };
         rc.cmp(&0)
     }
 
@@ -2457,7 +2457,7 @@ impl<'a> TreeEntryRef<'a> {
         // through this shared handle, as `RepositoryRef` allows; the entry is live for
         // `'a` and only its id, of `repo`'s type (checked above), is read.
         let rc = unsafe {
-            ffi::git_tree_entry_to_object(&raw mut out, repo.as_ptr().cast_mut(), self.as_ptr())
+            sys::git_tree_entry_to_object(&raw mut out, repo.as_ptr().cast_mut(), self.as_ptr())
         };
         if rc < 0 {
             return Err(RepositoryError::from_libgit2(rc));
@@ -2586,7 +2586,7 @@ impl<'f> TreeBuilderFilter<'f> {
     /// else touches until `filter` returns.
     pub(crate) fn filter_with<R>(
         &mut self,
-        filter: impl FnOnce(ffi::git_treebuilder_filter_cb, *mut c_void) -> R,
+        filter: impl FnOnce(sys::git_treebuilder_filter_cb, *mut c_void) -> R,
     ) -> R {
         let result = filter(Some(filter_with), ptr::from_mut(self).cast());
         if let Some(panic) = self.panic.take() {
@@ -2611,7 +2611,7 @@ impl fmt::Debug for TreeBuilderFilter<'_> {
 /// `payload` must address a live [`TreeBuilderFilter`] that nothing else uses during
 /// the call, and `entry` be NULL or address a `git_tree_entry` live and unchanged for
 /// the call.
-unsafe extern "C" fn filter_with(entry: *const ffi::git_tree_entry, payload: *mut c_void) -> c_int {
+unsafe extern "C" fn filter_with(entry: *const sys::git_tree_entry, payload: *mut c_void) -> c_int {
     // SAFETY: per this function's contract, `payload` is a live filter borrowed for the
     // call alone.
     let filter = unsafe { &mut *payload.cast::<TreeBuilderFilter<'_>>() };
@@ -2635,9 +2635,9 @@ unsafe extern "C" fn filter_with(entry: *const ffi::git_tree_entry, payload: *mu
 
 // A `TreeEntry` is a `git_tree_entry`, never held by value; the owner is one pointer.
 const _: () = assert!(
-    size_of::<TreeEntry>() == size_of::<ffi::git_tree_entry>()
-        && size_of::<TreeEntryBox>() == size_of::<*mut ffi::git_tree_entry>()
-        && size_of::<Option<TreeEntryBox>>() == size_of::<*mut ffi::git_tree_entry>()
+    size_of::<TreeEntry>() == size_of::<sys::git_tree_entry>()
+        && size_of::<TreeEntryBox>() == size_of::<*mut sys::git_tree_entry>()
+        && size_of::<Option<TreeEntryBox>>() == size_of::<*mut sys::git_tree_entry>()
 );
 
 #[cfg(test)]
@@ -2652,15 +2652,15 @@ mod unit_tests {
         for mode in MODES {
             assert_eq!(WalkMode::from_raw(mode.raw()), Some(mode));
             assert_eq!(WalkMode::try_from(mode.raw()), Ok(mode));
-            assert_eq!(ffi::git_treewalk_mode::from(mode), mode.raw());
+            assert_eq!(sys::git_treewalk_mode::from(mode), mode.raw());
         }
-        assert_eq!(WalkMode::PreOrder.raw(), ffi::GIT_TREEWALK_PRE);
-        assert_eq!(WalkMode::PostOrder.raw(), ffi::GIT_TREEWALK_POST);
+        assert_eq!(WalkMode::PreOrder.raw(), sys::GIT_TREEWALK_PRE);
+        assert_eq!(WalkMode::PostOrder.raw(), sys::GIT_TREEWALK_POST);
     }
 
     #[test]
     fn unnamed_values_are_refused_without_panicking() {
-        for raw in [2, 3, 0x100, ffi::git_treewalk_mode::MAX] {
+        for raw in [2, 3, 0x100, sys::git_treewalk_mode::MAX] {
             assert_eq!(WalkMode::from_raw(raw), None);
             let err = WalkMode::try_from(raw).unwrap_err();
             assert_eq!(err.raw(), raw);
@@ -2673,7 +2673,7 @@ mod unit_tests {
 
     #[test]
     fn layout_is_the_c_enum() {
-        assert_eq!(size_of::<WalkMode>(), size_of::<ffi::git_treewalk_mode>());
+        assert_eq!(size_of::<WalkMode>(), size_of::<sys::git_treewalk_mode>());
         assert_eq!(size_of::<Option<WalkMode>>(), size_of::<WalkMode>());
     }
 
@@ -2682,11 +2682,11 @@ mod unit_tests {
     #[test]
     fn update_actions_round_trip() {
         for (action, raw) in [
-            (UpdateAction::Upsert, ffi::GIT_TREE_UPDATE_UPSERT),
-            (UpdateAction::Remove, ffi::GIT_TREE_UPDATE_REMOVE),
+            (UpdateAction::Upsert, sys::GIT_TREE_UPDATE_UPSERT),
+            (UpdateAction::Remove, sys::GIT_TREE_UPDATE_REMOVE),
         ] {
             assert_eq!(action.raw(), raw);
-            assert_eq!(ffi::git_tree_update_t::from(action), raw);
+            assert_eq!(sys::git_tree_update_t::from(action), raw);
             assert_eq!(UpdateAction::from_raw(raw), Some(action));
             assert_eq!(UpdateAction::try_from(raw), Ok(action));
         }
@@ -2706,19 +2706,19 @@ mod unit_tests {
     fn layouts_are_pointer_sized() {
         assert_eq!(
             size_of::<TreeBuilder<'_>>(),
-            size_of::<ffi::git_treebuilder>()
+            size_of::<sys::git_treebuilder>()
         );
         assert_eq!(
             size_of::<TreeBuilderRef<'_, '_>>(),
-            size_of::<*const ffi::git_treebuilder>()
+            size_of::<*const sys::git_treebuilder>()
         );
         assert_eq!(
             size_of::<TreeBuilderMut<'_, '_>>(),
-            size_of::<*mut ffi::git_treebuilder>()
+            size_of::<*mut sys::git_treebuilder>()
         );
         assert_eq!(
             size_of::<Option<TreeBuilderBox<'_>>>(),
-            size_of::<*mut ffi::git_treebuilder>()
+            size_of::<*mut sys::git_treebuilder>()
         );
     }
 
@@ -2727,7 +2727,7 @@ mod unit_tests {
     #[test]
     fn handles_round_trip_their_pointer() {
         let mut raw = core::mem::MaybeUninit::<[usize; 8]>::uninit();
-        let p: *mut ffi::git_treebuilder = raw.as_mut_ptr().cast();
+        let p: *mut sys::git_treebuilder = raw.as_mut_ptr().cast();
         // SAFETY: a pointer into this test's live local storage, which no one else
         // reaches; the handles only carry it and nothing here dereferences it (the
         // opaque `git_treebuilder` is zero-sized to Rust).
@@ -2759,14 +2759,14 @@ mod unit_tests {
             let mut out = ptr::null_mut();
             // SAFETY: a writable slot, a live repository, no source tree.
             let rc = unsafe {
-                ffi::git_treebuilder_new(&raw mut out, repo.as_ptr().cast_mut(), ptr::null())
+                sys::git_treebuilder_new(&raw mut out, repo.as_ptr().cast_mut(), ptr::null())
             };
             assert_eq!(rc, 0);
             out
         };
-        let count = |p: *mut ffi::git_treebuilder| {
+        let count = |p: *mut sys::git_treebuilder| {
             // SAFETY: a live builder the test owns; the call only reads it.
-            unsafe { ffi::git_treebuilder_entrycount(p) }
+            unsafe { sys::git_treebuilder_entrycount(p) }
         };
 
         let p = raw(repo.as_ref());
@@ -2774,19 +2774,19 @@ mod unit_tests {
         // `git_treebuilder_free` releases.
         let mut builder = unsafe { TreeBuilderBox::from_c(p) }.unwrap();
         assert_eq!(builder.as_c_ptr(), p);
-        let id = ffi::git_oid {
-            type_: u8::try_from(ffi::GIT_OID_SHA1).unwrap(),
+        let id = sys::git_oid {
+            type_: u8::try_from(sys::GIT_OID_SHA1).unwrap(),
             id: [0x11; 32],
         };
         // SAFETY: a live builder, a NUL-terminated name and a live id; a commit entry is
         // not checked against the object database.
         let rc = unsafe {
-            ffi::git_treebuilder_insert(
+            sys::git_treebuilder_insert(
                 ptr::null_mut(),
                 p,
                 c"sub".as_ptr(),
                 &raw const id,
-                ffi::GIT_FILEMODE_COMMIT,
+                sys::GIT_FILEMODE_COMMIT,
             )
         };
         assert_eq!(rc, 0);
@@ -2831,12 +2831,12 @@ mod unit_tests {
         }
 
         /// The C struct an update is, read whole through its shared handle.
-        fn raw(update: &TreeUpdate<'_>) -> ffi::git_tree_update {
+        fn raw(update: &TreeUpdate<'_>) -> sys::git_tree_update {
             // SAFETY: the handle addresses `update`, a live, initialised value.
             unsafe { update.as_ref().as_ptr().read() }
         }
 
-        fn same_id(a: &ffi::git_oid, b: &ffi::git_oid) -> bool {
+        fn same_id(a: &sys::git_oid, b: &sys::git_oid) -> bool {
             (a.type_, a.id) == (b.type_, b.id)
         }
 
@@ -2844,11 +2844,11 @@ mod unit_tests {
         fn layout_is_the_c_struct() {
             assert_eq!(
                 size_of::<TreeUpdate<'_>>(),
-                size_of::<ffi::git_tree_update>()
+                size_of::<sys::git_tree_update>()
             );
             assert_eq!(
                 align_of::<TreeUpdate<'_>>(),
-                align_of::<ffi::git_tree_update>()
+                align_of::<sys::git_tree_update>()
             );
             assert_eq!(size_of::<TreeUpdateRef<'_, '_>>(), size_of::<*const ()>());
             assert_eq!(size_of::<TreeUpdateMut<'_, '_>>(), size_of::<*mut ()>());
@@ -2856,14 +2856,14 @@ mod unit_tests {
             // A `[TreeUpdate]` is the C array: element `i` is read where C reads it.
             let paths = [c"a", c"b/c", c"d/e/f"];
             let updates = paths.map(TreeUpdate::remove);
-            let base = updates.as_ptr().cast::<ffi::git_tree_update>();
+            let base = updates.as_ptr().cast::<sys::git_tree_update>();
             for (i, path) in paths.iter().enumerate() {
                 // SAFETY: `i` is within the live array, which is `[git_tree_update; 3]`.
                 let add = unsafe { base.add(i) };
                 // SAFETY: as above.
                 let c = unsafe { add.read() };
                 assert_eq!(c.path, path.as_ptr());
-                assert_eq!(c.action, ffi::GIT_TREE_UPDATE_REMOVE);
+                assert_eq!(c.action, sys::GIT_TREE_UPDATE_REMOVE);
                 assert_eq!(updates[i].as_ref().as_ptr(), base.wrapping_add(i));
             }
         }
@@ -2880,9 +2880,9 @@ mod unit_tests {
             let path = CString::new("dir/sub/file.txt").unwrap();
             let up = TreeUpdate::upsert(&path, id.as_ref(), FileMode::BlobExecutable);
             let c = raw(&up);
-            assert_eq!(c.action, ffi::GIT_TREE_UPDATE_UPSERT);
+            assert_eq!(c.action, sys::GIT_TREE_UPDATE_UPSERT);
             assert!(same_id(&c.id, &raw_oid(&id)));
-            assert_eq!(c.filemode, ffi::GIT_FILEMODE_BLOB_EXECUTABLE);
+            assert_eq!(c.filemode, sys::GIT_FILEMODE_BLOB_EXECUTABLE);
             assert_eq!(c.path, path.as_ptr());
             let r = up.as_ref();
             assert_eq!(r.action(), UpdateAction::Upsert);
@@ -2896,16 +2896,16 @@ mod unit_tests {
 
             const GONE: TreeUpdate<'static> = TreeUpdate::remove(c"README");
             let c = raw(&GONE);
-            assert_eq!(c.action, ffi::GIT_TREE_UPDATE_REMOVE);
+            assert_eq!(c.action, sys::GIT_TREE_UPDATE_REMOVE);
             assert!(same_id(&c.id, &raw_oid(&Oid::zeroed())));
-            assert_eq!(c.filemode, ffi::GIT_FILEMODE_UNREADABLE);
+            assert_eq!(c.filemode, sys::GIT_FILEMODE_UNREADABLE);
             assert_eq!(GONE.as_ref().path(), c"README");
             assert_eq!(GONE.as_ref().filemode(), FileMode::Unreadable);
             assert_eq!(GONE.as_ref().id().kind(), None);
         }
 
-        fn raw_oid(id: &Oid) -> ffi::git_oid {
-            ffi::git_oid {
+        fn raw_oid(id: &Oid) -> sys::git_oid {
+            sys::git_oid {
                 type_: id.as_ref().raw_kind(),
                 id: id.as_ref().id(),
             }
@@ -2921,12 +2921,12 @@ mod unit_tests {
 
             update.as_mut().set_action(UpdateAction::Remove);
             let c = raw(&update);
-            assert_eq!(c.action, ffi::GIT_TREE_UPDATE_REMOVE);
+            assert_eq!(c.action, sys::GIT_TREE_UPDATE_REMOVE);
             assert!(same_id(&c.id, &before.id));
             assert_eq!((c.filemode, c.path), (before.filemode, before.path));
 
             update.as_mut().set_filemode(FileMode::Link);
-            assert_eq!(raw(&update).filemode, ffi::GIT_FILEMODE_LINK);
+            assert_eq!(raw(&update).filemode, sys::GIT_FILEMODE_LINK);
             assert_eq!(update.as_ref().filemode(), FileMode::Link);
 
             update.as_mut().set_path(&second);
@@ -2949,8 +2949,8 @@ mod unit_tests {
 
             update.as_mut().set_action(UpdateAction::Upsert);
             let c = raw(&update);
-            assert_eq!(c.action, ffi::GIT_TREE_UPDATE_UPSERT);
-            assert_eq!(c.filemode, ffi::GIT_FILEMODE_LINK);
+            assert_eq!(c.action, sys::GIT_TREE_UPDATE_UPSERT);
+            assert_eq!(c.filemode, sys::GIT_FILEMODE_LINK);
             assert_eq!(c.path, second.as_ptr());
         }
 
@@ -2959,7 +2959,7 @@ mod unit_tests {
         #[test]
         fn handles_and_copies() {
             let mut update = TreeUpdate::remove(c"x");
-            let at = ptr::from_ref(&update).cast::<ffi::git_tree_update>();
+            let at = ptr::from_ref(&update).cast::<sys::git_tree_update>();
             {
                 let mut m = update.as_mut();
                 assert_eq!(m.as_mut_ptr().cast_const(), at);
@@ -3034,13 +3034,13 @@ mod unit_tests {
 
         use ffibox::{CDrop, CRefClone, CRefSeam};
 
-        use crate::ffi;
         use crate::libgit2::src::libgit2::object::{Object, ObjectArc, ObjectRef, ObjectType};
         use crate::libgit2::src::libgit2::object_api::*;
         use crate::libgit2::src::libgit2::oid::{Oid, OidRef, OidType};
         use crate::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
         use crate::libgit2::src::libgit2::tree::*;
         use crate::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+        use crate::sys::libgit2 as sys;
 
         /// `testrepo.git`: commit `763d71a`, whose tree `ae90f12` holds `README`.
         const TESTREPO: &str = concat!(
@@ -3061,38 +3061,38 @@ mod unit_tests {
         }
 
         /// C's id and type of a live object.
-        fn view(object: ObjectRef<'_, '_>) -> (String, ffi::git_object_t) {
+        fn view(object: ObjectRef<'_, '_>) -> (String, sys::git_object_t) {
             let p = object.as_ptr();
             {
                 // SAFETY: `p` is a live object the handle borrows; its id lives as long as it
                 // and is formatted at once.
-                let object_id = unsafe { ffi::git_object_id(p) };
+                let object_id = unsafe { sys::git_object_id(p) };
                 // SAFETY: as above.
                 let id = unsafe { OidRef::from_ptr(object_id.cast_mut()).unwrap() };
                 // SAFETY: as above.
-                unsafe { (id.to_hex_string().unwrap(), ffi::git_object_type(p)) }
+                unsafe { (id.to_hex_string().unwrap(), sys::git_object_type(p)) }
             }
         }
 
-        fn tree_view() -> (String, ffi::git_object_t) {
-            (TREE.to_str().unwrap().to_owned(), ffi::GIT_OBJECT_TREE)
+        fn tree_view() -> (String, sys::git_object_t) {
+            (TREE.to_str().unwrap().to_owned(), sys::GIT_OBJECT_TREE)
         }
 
         #[test]
         fn layout_matches_c() {
-            assert_eq!(size_of::<Tree<'_>>(), size_of::<ffi::git_tree>());
-            assert_eq!(size_of::<TreeArc<'_>>(), size_of::<*mut ffi::git_tree>());
+            assert_eq!(size_of::<Tree<'_>>(), size_of::<sys::git_tree>());
+            assert_eq!(size_of::<TreeArc<'_>>(), size_of::<*mut sys::git_tree>());
             assert_eq!(
                 size_of::<Option<TreeArc<'_>>>(),
-                size_of::<*mut ffi::git_tree>()
+                size_of::<*mut sys::git_tree>()
             );
             assert_eq!(
                 size_of::<TreeRef<'_, '_>>(),
-                size_of::<*const ffi::git_tree>()
+                size_of::<*const sys::git_tree>()
             );
             assert_eq!(
                 size_of::<TreeMut<'_, '_>>(),
-                size_of::<*const ffi::git_tree>()
+                size_of::<*const sys::git_tree>()
             );
             assert_eq!(size_of::<TreeFree>(), 0);
         }
@@ -3106,7 +3106,7 @@ mod unit_tests {
             assert!(unsafe { TreeRef::from_ptr(ptr::null_mut()) }.is_none());
             // SAFETY: as above.
             assert!(unsafe { TreeMut::from_ptr(ptr::null_mut()) }.is_none());
-            let p = NonNull::<ffi::git_tree>::dangling().as_ptr();
+            let p = NonNull::<sys::git_tree>::dangling().as_ptr();
             // SAFETY: a zero-sized object at an aligned pointer, never read or written,
             // and reached by this handle alone.
             let mut m = unsafe { TreeMut::from_ptr(p) }.unwrap();
@@ -3199,8 +3199,8 @@ mod unit_tests {
             let lookup = |hex: &CStr| Object::lookup(r, sha1(hex).as_ref(), None).unwrap();
 
             for (hex, kind) in [
-                (COMMIT, ffi::GIT_OBJECT_COMMIT),
-                (README, ffi::GIT_OBJECT_BLOB),
+                (COMMIT, sys::GIT_OBJECT_COMMIT),
+                (README, sys::GIT_OBJECT_BLOB),
             ] {
                 let other = lookup(hex);
                 assert!(TreeRef::from_object(other.as_ref()).is_none());
@@ -3256,7 +3256,7 @@ mod unit_tests {
         assert_eq!(builder.as_ref().len(), 4);
         assert!(!builder.as_mut().as_ref().is_empty());
         // SAFETY: the box's live builder, only read.
-        let c_count = unsafe { ffi::git_treebuilder_entrycount(builder.as_c_ptr()) };
+        let c_count = unsafe { sys::git_treebuilder_entrycount(builder.as_c_ptr()) };
         assert_eq!(c_count, 4);
         builder.as_mut().clear();
         assert_eq!(builder.as_ref().len(), 0);
@@ -3396,8 +3396,8 @@ mod unit_tests {
             // SAFETY: `Allocator` is `#[repr(transparent)]` over `git_allocator`, with every
             // member set; libgit2 copies it before anything is allocated.
             let rc = unsafe {
-                ffi::git_libgit2_opts(
-                    ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(),
+                sys::git_libgit2_opts(
+                    sys::GIT_OPT_SET_ALLOCATOR.cast_signed(),
                     allocator.as_ref().as_ptr(),
                 )
             };
@@ -3426,7 +3426,7 @@ mod unit_tests {
             let mut out = ptr::null_mut();
             // SAFETY: a writable slot, the live tree and a NUL-terminated path.
             let rc =
-                unsafe { ffi::git_tree_entry_bypath(&raw mut out, tree.as_ptr(), path.as_ptr()) };
+                unsafe { sys::git_tree_entry_bypath(&raw mut out, tree.as_ptr(), path.as_ptr()) };
             assert_eq!(rc, 0);
             // SAFETY: a fresh entry the caller owns, freed by `git_tree_entry_free`.
             unsafe { TreeEntryBox::from_c(out) }.unwrap()
@@ -3438,11 +3438,11 @@ mod unit_tests {
             {
                 // SAFETY: `p` is a live entry the handle borrows; its name and id live as long
                 // as it does and are copied at once.
-                let tree_entry_name = unsafe { ffi::git_tree_entry_name(p) };
+                let tree_entry_name = unsafe { sys::git_tree_entry_name(p) };
                 // SAFETY: as above.
                 let name = unsafe { CStr::from_ptr(tree_entry_name) };
                 // SAFETY: as above.
-                let tree_entry_id = unsafe { ffi::git_tree_entry_id(p) };
+                let tree_entry_id = unsafe { sys::git_tree_entry_id(p) };
                 // SAFETY: as above.
                 let id = unsafe { OidRef::from_ptr(tree_entry_id.cast_mut()).unwrap() };
                 // SAFETY: as above.
@@ -3450,7 +3450,7 @@ mod unit_tests {
                     (
                         name.to_str().unwrap().to_owned(),
                         id.to_hex_string().unwrap(),
-                        ffi::git_tree_entry_filemode_raw(p),
+                        sys::git_tree_entry_filemode_raw(p),
                     )
                 }
             }
@@ -3460,7 +3460,7 @@ mod unit_tests {
             (
                 name.into(),
                 id.to_str().unwrap().into(),
-                ffi::GIT_FILEMODE_BLOB,
+                sys::GIT_FILEMODE_BLOB,
             )
         }
 
@@ -3470,33 +3470,33 @@ mod unit_tests {
         struct RawEntry {
             attr: u16,
             filename_len: u16,
-            oid: ffi::git_oid,
+            oid: sys::git_oid,
             filename: *const c_char,
         }
 
         fn raw_entry() -> RawEntry {
             RawEntry {
-                attr: u16::try_from(ffi::GIT_FILEMODE_BLOB).unwrap(),
+                attr: u16::try_from(sys::GIT_FILEMODE_BLOB).unwrap(),
                 filename_len: 6,
-                oid: ffi::git_oid::default(),
+                oid: sys::git_oid::default(),
                 filename: c"README".as_ptr(),
             }
         }
 
         #[test]
         fn layout_matches_c() {
-            assert_eq!(size_of::<TreeEntry>(), size_of::<ffi::git_tree_entry>());
+            assert_eq!(size_of::<TreeEntry>(), size_of::<sys::git_tree_entry>());
             assert_eq!(
                 size_of::<TreeEntryBox>(),
-                size_of::<*mut ffi::git_tree_entry>()
+                size_of::<*mut sys::git_tree_entry>()
             );
             assert_eq!(
                 size_of::<TreeEntryRef<'_>>(),
-                size_of::<*const ffi::git_tree_entry>()
+                size_of::<*const sys::git_tree_entry>()
             );
             assert_eq!(
                 size_of::<TreeEntryMut<'_>>(),
-                size_of::<*const ffi::git_tree_entry>()
+                size_of::<*const sys::git_tree_entry>()
             );
             assert_eq!(size_of::<TreeEntryFree>(), 0);
         }
@@ -3507,7 +3507,7 @@ mod unit_tests {
             // SAFETY: NULL is refused without being read.
             assert!(unsafe { TreeEntryRef::from_ptr(ptr::null_mut()) }.is_none());
             let mut raw = raw_entry();
-            let p: *mut ffi::git_tree_entry = ptr::from_mut(&mut raw).cast();
+            let p: *mut sys::git_tree_entry = ptr::from_mut(&mut raw).cast();
             // SAFETY: `raw` is live for the handle's use and reached by it alone.
             let mut m = unsafe { TreeEntryMut::from_ptr(p) }.unwrap();
             assert_eq!(m.as_mut_ptr(), p);
@@ -3701,7 +3701,7 @@ mod unit_tests {
 
         /// A Rust-built entry of `name` with mode `attr` and id `id`, for C to read; its
         /// name must outlive it.
-        fn entry_of(name: &CStr, attr: u16, id: ffi::git_oid) -> RawEntry {
+        fn entry_of(name: &CStr, attr: u16, id: sys::git_oid) -> RawEntry {
             RawEntry {
                 attr,
                 filename_len: u16::try_from(name.to_bytes().len()).unwrap(),
@@ -3711,8 +3711,8 @@ mod unit_tests {
         }
 
         /// `id`'s C value.
-        fn raw_id(id: &Oid) -> ffi::git_oid {
-            ffi::git_oid {
+        fn raw_id(id: &Oid) -> sys::git_oid {
+            sys::git_oid {
                 type_: id.as_ref().raw_kind(),
                 id: id.as_ref().id(),
             }
@@ -3742,7 +3742,7 @@ mod unit_tests {
                 assert_eq!(entry.filemode_raw(), raw);
                 assert_eq!(entry.filemode().raw(), raw);
                 // SAFETY: a live entry, only read.
-                let c_kind = unsafe { ffi::git_tree_entry_type(entry.as_ptr()) };
+                let c_kind = unsafe { sys::git_tree_entry_type(entry.as_ptr()) };
                 assert_eq!(entry.kind().raw(), c_kind);
             }
             assert_eq!(readme.kind(), ObjectType::Blob);
@@ -3774,7 +3774,7 @@ mod unit_tests {
                 (0o000_100, FileMode::BlobExecutable, ObjectType::Blob),
             ];
             for (attr, mode, kind) in cases {
-                let mut raw = entry_of(c"x", attr, ffi::git_oid::default());
+                let mut raw = entry_of(c"x", attr, sys::git_oid::default());
                 let entry = handle(&mut raw);
                 assert_eq!(entry.filemode_raw(), u32::from(attr), "{attr:o}");
                 assert_eq!(entry.filemode(), mode, "{attr:o}");
@@ -3812,13 +3812,13 @@ mod unit_tests {
                 ((c"", FILE), (c"a", FILE), Less),
             ];
             for ((n1, m1), (n2, m2), expected) in cases {
-                let mut a = entry_of(n1, m1, ffi::git_oid::default());
+                let mut a = entry_of(n1, m1, sys::git_oid::default());
                 let mut b = entry_of(n2, m2, raw_id(&other));
                 let (a, b) = (handle(&mut a), handle(&mut b));
                 assert_eq!(a.cmp_in_tree(b), expected, "{n1:?} {m1:o} / {n2:?} {m2:o}");
                 assert_eq!(b.cmp_in_tree(a), expected.reverse());
                 // SAFETY: both live entries, only read.
-                let c = unsafe { ffi::git_tree_entry_cmp(a.as_ptr(), b.as_ptr()) };
+                let c = unsafe { sys::git_tree_entry_cmp(a.as_ptr(), b.as_ptr()) };
                 assert_eq!(c.cmp(&0), expected);
             }
             let repo = open();
@@ -3860,7 +3860,7 @@ mod unit_tests {
             assert_eq!(e.code(), Some(ErrorCode::NotFound));
 
             let mut wide = entry_of(c"x", 0o100_644, raw_id(&id));
-            wide.oid.type_ = u8::try_from(ffi::GIT_OID_SHA256).unwrap();
+            wide.oid.type_ = u8::try_from(sys::GIT_OID_SHA256).unwrap();
             let e = handle(&mut wide).to_object(repo.as_ref()).unwrap_err();
             assert_eq!(e.raw_code(), -1);
             assert_eq!(e.class(), Some(ErrorClass::Invalid));
@@ -3898,7 +3898,7 @@ mod unit_tests {
             let rc = filter.filter_with(|callback, payload| {
                 // SAFETY: a live builder nothing else reaches; the callback and payload
                 // are the filter's, live for the call.
-                unsafe { ffi::git_treebuilder_filter(p, callback, payload) }
+                unsafe { sys::git_treebuilder_filter(p, callback, payload) }
             });
             assert_eq!(rc, 0);
             drop(filter);
@@ -3935,7 +3935,7 @@ mod unit_tests {
             let caught = panic::catch_unwind(AssertUnwindSafe(|| {
                 filter.filter_with(|callback, payload| {
                     // SAFETY: as in `filters_remove_what_the_closure_picks`.
-                    unsafe { ffi::git_treebuilder_filter(p, callback, payload) }
+                    unsafe { sys::git_treebuilder_filter(p, callback, payload) }
                 })
             }));
             let message = caught.unwrap_err();
@@ -3974,7 +3974,7 @@ mod unit_tests {
             // The write above went through `filter`; borrow it afresh for the call.
             let payload: *mut c_void = ptr::from_mut(&mut filter).cast();
             let mut raw = raw_entry();
-            let entry: *const ffi::git_tree_entry = ptr::from_mut(&mut raw).cast();
+            let entry: *const sys::git_tree_entry = ptr::from_mut(&mut raw).cast();
             // SAFETY: as above; `raw` is live and only read.
             assert_eq!(unsafe { filter_with(entry, payload) }, 0);
             assert_eq!(
@@ -4065,14 +4065,14 @@ mod unit_tests {
 
         fn count(builder: &TreeBuilderBox<'_>) -> usize {
             // SAFETY: the box's live builder, only read.
-            unsafe { ffi::git_treebuilder_entrycount(builder.as_c_ptr()) }
+            unsafe { sys::git_treebuilder_entrycount(builder.as_c_ptr()) }
         }
 
         /// C's name of a live entry.
         fn name_of(entry: TreeEntryRef<'_>) -> CString {
             // SAFETY: a live entry the handle borrows; its name lives with it and is
             // copied at once.
-            let tree_entry_name = unsafe { ffi::git_tree_entry_name(entry.as_ptr()) };
+            let tree_entry_name = unsafe { sys::git_tree_entry_name(entry.as_ptr()) };
             // SAFETY: as above.
             unsafe { CStr::from_ptr(tree_entry_name) }.to_owned()
         }
@@ -4140,7 +4140,7 @@ mod unit_tests {
             }
             unsafe extern "C" fn cb(
                 root: *const c_char,
-                entry: *const ffi::git_tree_entry,
+                entry: *const sys::git_tree_entry,
                 payload: *mut c_void,
             ) -> c_int {
                 {
@@ -4150,7 +4150,7 @@ mod unit_tests {
                     // SAFETY: as above.
                     let root = unsafe { CStr::from_ptr(root).to_str().unwrap() };
                     // SAFETY: as above.
-                    let tree_entry_name = unsafe { ffi::git_tree_entry_name(entry) };
+                    let tree_entry_name = unsafe { sys::git_tree_entry_name(entry) };
                     // SAFETY: as above.
                     let name = unsafe { CStr::from_ptr(tree_entry_name) };
                     let name = name.to_str().unwrap();
@@ -4165,7 +4165,7 @@ mod unit_tests {
             crate::libgit2::src::util::errors::clear();
             // SAFETY: a live tree, the callback and its payload, live for the walk.
             let rc = unsafe {
-                ffi::git_tree_walk(
+                sys::git_tree_walk(
                     tree.as_c_ptr(),
                     mode.raw(),
                     Some(cb),
@@ -4194,7 +4194,7 @@ mod unit_tests {
             let rc = callback.walk_with(|cb, payload| {
                 // SAFETY: a live tree, and the trampoline with its payload, live and
                 // unused otherwise for the walk.
-                unsafe { ffi::git_tree_walk(tree.as_c_ptr(), mode.raw(), cb, payload) }
+                unsafe { sys::git_tree_walk(tree.as_c_ptr(), mode.raw(), cb, payload) }
             });
             let stopped = callback.stopped();
             drop(callback);
@@ -4209,7 +4209,7 @@ mod unit_tests {
             }
             assert_eq!(WalkAction::Continue.raw(), 0);
             assert_eq!(WalkAction::Skip.raw(), 1);
-            assert_eq!(WalkAction::Stop.raw(), ffi::GIT_EUSER);
+            assert_eq!(WalkAction::Stop.raw(), sys::GIT_EUSER);
             for (rc, action) in [
                 (2, WalkAction::Skip),
                 (c_int::MAX, WalkAction::Skip),
@@ -4236,16 +4236,16 @@ mod unit_tests {
                     let c = c_walk(&tree, mode, rule);
                     let (rust, stopped) = rust_walk(&tree, mode, rule);
                     assert_eq!(stopped, c.0 < 0, "{mode:?} rule {i}");
-                    if c.0 == 0 || c.0 == ffi::GIT_EUSER {
+                    if c.0 == 0 || c.0 == sys::GIT_EUSER {
                         assert_eq!(rust, c, "{mode:?} rule {i}");
                     } else {
                         // The closure stops with `GIT_EUSER`, and libgit2 reports that.
                         assert_eq!(rust.1, c.1, "{mode:?} rule {i}");
-                        assert_eq!(rust.0, ffi::GIT_EUSER);
+                        assert_eq!(rust.0, sys::GIT_EUSER);
                         assert_eq!(
                             rust.2,
                             (
-                                ffi::GIT_ERROR_CALLBACK.cast_signed(),
+                                sys::GIT_ERROR_CALLBACK.cast_signed(),
                                 "git_tree_walk callback returned -7".into()
                             )
                         );
@@ -4355,12 +4355,12 @@ mod unit_tests {
             let mut out = Oid::zeroed();
             // SAFETY: a live odb, a writable id, and `data` read for the call.
             let rc = unsafe {
-                ffi::git_odb_write(
+                sys::git_odb_write(
                     out.as_mut().as_mut_ptr(),
                     odb.as_c_ptr(),
                     data.as_ptr().cast(),
                     data.len(),
-                    ffi::GIT_OBJECT_TREE,
+                    sys::GIT_OBJECT_TREE,
                 )
             };
             assert_eq!(rc, 0);
@@ -4447,18 +4447,18 @@ mod unit_tests {
                 callback.walk_with(|cb, payload| {
                     // SAFETY: a live tree, and the trampoline with its payload.
                     rc = unsafe {
-                        ffi::git_tree_walk(tree.as_c_ptr(), WalkMode::PreOrder.raw(), cb, payload)
+                        sys::git_tree_walk(tree.as_c_ptr(), WalkMode::PreOrder.raw(), cb, payload)
                     };
                     // SAFETY: as libgit2 calls it: the payload, a root and a live entry.
-                    let entry = unsafe { ffi::git_tree_entry_byindex(tree.as_c_ptr(), 0) };
+                    let entry = unsafe { sys::git_tree_entry_byindex(tree.as_c_ptr(), 0) };
                     // SAFETY: as above.
                     again = unsafe { cb.unwrap()(c"".as_ptr(), entry, payload) };
                 });
             }));
             let payload = resumed.unwrap_err();
             assert_eq!(payload.downcast_ref::<&str>(), Some(&"closure panicked"));
-            assert_eq!(rc, ffi::GIT_EUSER);
-            assert_eq!(again, ffi::GIT_EUSER);
+            assert_eq!(rc, sys::GIT_EUSER);
+            assert_eq!(again, sys::GIT_EUSER);
             assert!(callback.stopped());
             assert_eq!(
                 format!("{callback:?}"),
@@ -4476,16 +4476,16 @@ mod unit_tests {
             struct RawEntry {
                 attr: u16,
                 filename_len: u16,
-                oid: ffi::git_oid,
+                oid: sys::git_oid,
                 filename: *const c_char,
             }
             let mut raw = RawEntry {
-                attr: u16::try_from(ffi::GIT_FILEMODE_BLOB).unwrap(),
+                attr: u16::try_from(sys::GIT_FILEMODE_BLOB).unwrap(),
                 filename_len: 1,
-                oid: ffi::git_oid::default(),
+                oid: sys::git_oid::default(),
                 filename: c"a".as_ptr(),
             };
-            let entry: *const ffi::git_tree_entry = ptr::from_mut(&mut raw).cast();
+            let entry: *const sys::git_tree_entry = ptr::from_mut(&mut raw).cast();
             let mut calls = 0;
             let mut f = |_: &CStr, _: TreeEntryRef<'_>| {
                 calls += 1;
@@ -4503,7 +4503,7 @@ mod unit_tests {
                 // SAFETY: as above.
                 unsafe { [cb2, cb3, cb(ptr::null(), ptr::null(), payload)] }
             });
-            assert_eq!(rcs, [ffi::GIT_EUSER; 3]);
+            assert_eq!(rcs, [sys::GIT_EUSER; 3]);
             assert!(callback.stopped());
             let rc = callback.walk_with(|cb, payload| {
                 // SAFETY: the payload, a root and a live local entry, unread by the
@@ -4564,12 +4564,12 @@ mod unit_tests {
             // SAFETY: the box's live builder, unaliased; a NUL-terminated name and a live
             // id, both copied; no entry wanted back.
             let rc = unsafe {
-                ffi::git_treebuilder_insert(
+                sys::git_treebuilder_insert(
                     ptr::null_mut(),
                     builder.as_c_ptr(),
                     name.as_ptr(),
                     raw_id.as_ref().as_ptr(),
-                    ffi::GIT_FILEMODE_COMMIT,
+                    sys::GIT_FILEMODE_COMMIT,
                 )
             };
             assert_eq!(rc, 0);
@@ -4719,7 +4719,7 @@ mod unit_tests {
             // SAFETY: a live repository, unaliased; a writable id; a live array of one
             // update whose path outlives the call.
             let rc = unsafe {
-                ffi::git_tree_create_updated(
+                sys::git_tree_create_updated(
                     out.as_mut().as_mut_ptr(),
                     repo.as_c_ptr(),
                     ptr::null_mut(),

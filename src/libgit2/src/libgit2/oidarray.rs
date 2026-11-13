@@ -36,9 +36,9 @@ use core::ptr::{self, NonNull, addr_of, addr_of_mut};
 
 use ffibox::{CDispose, CMutSeam, CRefSeam, CSlice, CSliceMut, CVal, define_ctype};
 
-use crate::ffi;
 use crate::libgit2::src::libgit2::odb::{OdbDataArrayFree, OdbDataVec};
 use crate::libgit2::src::libgit2::oid::Oid;
+use crate::sys::libgit2 as sys;
 
 define_ctype!(
     /// An array of object ids (`git_oidarray`): `count` ids in one buffer of
@@ -55,7 +55,7 @@ define_ctype!(
     OidArray,
     OidArrayRef,
     OidArrayMut,
-    ffi::git_oidarray
+    sys::git_oidarray
 );
 
 // SAFETY: an `OidArray` is a pointer to a buffer of plain `git_oid` bytes it owns
@@ -103,7 +103,7 @@ unsafe impl CDispose<OidArray> for OidArrayDispose {
     #[doc(alias = "git_oidarray_dispose")]
     #[inline]
     unsafe fn c_dispose(&self, ptr: NonNull<OidArray>) {
-        let raw: *mut ffi::git_oidarray = ptr.as_ptr().cast();
+        let raw: *mut sys::git_oidarray = ptr.as_ptr().cast();
         // SAFETY: per `c_dispose`'s contract `raw` addresses a live `git_oidarray`.
         let ids_ptr = unsafe { addr_of!((*raw).ids) };
         // SAFETY: as above.
@@ -114,7 +114,7 @@ unsafe impl CDispose<OidArray> for OidArrayDispose {
         // SAFETY: `raw` is live and, per the handles' invariant, owns `ids`, a buffer
         // from libgit2's allocator; the caller gives the value up, so it is released
         // once.
-        unsafe { ffi::git_oidarray_dispose(raw) }
+        unsafe { sys::git_oidarray_dispose(raw) }
     }
 }
 
@@ -129,7 +129,7 @@ impl OidArray {
         // SAFETY: an empty array owns nothing, which `git_oidarray_dispose` accepts.
         unsafe {
             CVal::new(Self(
-                ffi::git_oidarray {
+                sys::git_oidarray {
                     ids: ptr::null_mut(),
                     count: 0,
                 },
@@ -356,9 +356,9 @@ impl OidArrayMut<'_> {
 // An `OidArray` is a `git_oidarray`, so C reads and writes a value Rust holds in place,
 // and the owner adds nothing to it.
 const _: () = assert!(
-    size_of::<OidArray>() == size_of::<ffi::git_oidarray>()
-        && align_of::<OidArray>() == align_of::<ffi::git_oidarray>()
-        && size_of::<OidArrayVal>() == size_of::<ffi::git_oidarray>()
+    size_of::<OidArray>() == size_of::<sys::git_oidarray>()
+        && align_of::<OidArray>() == align_of::<sys::git_oidarray>()
+        && size_of::<OidArrayVal>() == size_of::<sys::git_oidarray>()
 );
 
 #[cfg(test)]
@@ -464,15 +464,15 @@ mod unit_tests {
 
     #[test]
     fn layout_matches_c() {
-        assert_eq!(size_of::<OidArray>(), size_of::<ffi::git_oidarray>());
-        assert_eq!(size_of::<OidArrayVal>(), size_of::<ffi::git_oidarray>());
+        assert_eq!(size_of::<OidArray>(), size_of::<sys::git_oidarray>());
+        assert_eq!(size_of::<OidArrayVal>(), size_of::<sys::git_oidarray>());
         assert_eq!(
             size_of::<OidArrayRef<'_>>(),
-            size_of::<*const ffi::git_oidarray>()
+            size_of::<*const sys::git_oidarray>()
         );
         assert_eq!(
             size_of::<OidArrayMut<'_>>(),
-            size_of::<*const ffi::git_oidarray>()
+            size_of::<*const sys::git_oidarray>()
         );
         assert_eq!(size_of::<OidArrayDispose>(), 0);
     }
@@ -512,7 +512,7 @@ mod unit_tests {
         unsafe { OidArrayDispose.c_dispose(NonNull::from(&mut bare)) };
         assert!(bare.as_ref().is_empty());
 
-        let mut broken = ffi::git_oidarray {
+        let mut broken = sys::git_oidarray {
             ids: ptr::null_mut(),
             count: 3,
         };
@@ -533,7 +533,7 @@ mod unit_tests {
     fn handles_over_rust_storage() {
         let mut storage: Vec<Oid> = (0..4).map(|i| oid(10 * i)).collect();
         let base = storage.as_mut_ptr();
-        let mut raw = ffi::git_oidarray {
+        let mut raw = sys::git_oidarray {
             ids: base.cast(),
             count: 4,
         };
@@ -655,19 +655,19 @@ mod unit_tests {
         // SAFETY: `repo` receives the repository; `path` is NUL-terminated; no ceiling
         // directories.
         let rc = unsafe {
-            ffi::git_repository_open_ext(
+            sys::git_repository_open_ext(
                 &raw mut repo,
                 path.as_ptr().cast(),
-                ffi::GIT_REPOSITORY_OPEN_NO_SEARCH,
+                sys::GIT_REPOSITORY_OPEN_NO_SEARCH,
                 ptr::null(),
             )
         };
         assert_eq!(rc, 0);
         let parse = |hex: &CStr| {
-            let mut oid = ffi::git_oid::default();
+            let mut oid = sys::git_oid::default();
             // SAFETY: `oid` is writable and `hex` NUL-terminated.
             let rc =
-                unsafe { ffi::git_oid_from_string(&raw mut oid, hex.as_ptr(), ffi::GIT_OID_SHA1) };
+                unsafe { sys::git_oid_from_string(&raw mut oid, hex.as_ptr(), sys::GIT_OID_SHA1) };
             assert_eq!(rc, 0);
             oid
         };
@@ -680,7 +680,7 @@ mod unit_tests {
         // `out` owns a buffer from libgit2's allocator, which keeps the handles'
         // invariant and the owner's drop releases.
         let rc = unsafe {
-            ffi::git_merge_bases(
+            sys::git_merge_bases(
                 array.as_mut().as_mut_ptr(),
                 repo,
                 &raw const one,
@@ -714,7 +714,7 @@ mod unit_tests {
         assert_eq!(contents(copy.as_ref())[1], contents(array.as_ref())[1]);
         drop(array);
         // SAFETY: `repo` is open and released once.
-        unsafe { ffi::git_repository_free(repo) };
+        unsafe { sys::git_repository_free(repo) };
     }
 
     /// Handles over a C-owned `git_oidarray`, as libgit2 hands a callback one: the
@@ -724,18 +724,18 @@ mod unit_tests {
     #[cfg_attr(miri, ignore = "calls libgit2")]
     fn handles_over_a_c_owned_array() {
         assert!(runtime_pinned());
-        let len = 2 * size_of::<ffi::git_oid>();
+        let len = 2 * size_of::<sys::git_oid>();
         // SAFETY: the routine ignores its backend; the runtime is pinned.
-        let ids = unsafe { ffi::git_odb_backend_data_alloc(ptr::null_mut(), len) };
+        let ids = unsafe { sys::git_odb_backend_data_alloc(ptr::null_mut(), len) };
         assert!(!ids.is_null());
-        let ids = ids.cast::<ffi::git_oid>();
+        let ids = ids.cast::<sys::git_oid>();
         for (i, seed) in [7u8, 8].into_iter().enumerate() {
             // SAFETY: `ids` holds two `git_oid`s; `Oid` is transparent over one.
             let add = unsafe { ids.add(i) };
             // SAFETY: as above.
             unsafe { add.cast::<Oid>().write(oid(seed)) };
         }
-        let mut raw = ffi::git_oidarray { ids, count: 2 };
+        let mut raw = sys::git_oidarray { ids, count: 2 };
 
         // SAFETY: `raw` is live for the handle's use and owns `ids` (two ids from
         // libgit2's allocator); no other handle reaches it meanwhile.
@@ -750,12 +750,12 @@ mod unit_tests {
         assert_eq!(contents(r), expected(&[1, 2, 3]));
         // C releases the buffer Rust stored.
         // SAFETY: `raw` owns `ids`, from libgit2's allocator, and is not used again.
-        unsafe { ffi::git_oidarray_dispose(&raw mut raw) };
+        unsafe { sys::git_oidarray_dispose(&raw mut raw) };
 
         // An array that breaks the invariant with a NULL `ids` and a count reads as
         // empty through every accessor, and is reset without a free, rather than
         // dereferencing NULL.
-        let mut broken = ffi::git_oidarray {
+        let mut broken = sys::git_oidarray {
             ids: ptr::null_mut(),
             count: 3,
         };
@@ -785,8 +785,8 @@ mod unit_tests {
                 // with every member set; libgit2 copies it before anything is
                 // allocated.
                 let rc = unsafe {
-                    ffi::git_libgit2_opts(
-                        ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(),
+                    sys::git_libgit2_opts(
+                        sys::GIT_OPT_SET_ALLOCATOR.cast_signed(),
                         allocator.as_ref().as_ptr(),
                     )
                 };
@@ -817,8 +817,8 @@ mod unit_tests {
                 let allocator = Allocator::new::<Refusing>();
                 // SAFETY: as in `copies_out_of_memory_are_none`.
                 let rc = unsafe {
-                    ffi::git_libgit2_opts(
-                        ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(),
+                    sys::git_libgit2_opts(
+                        sys::GIT_OPT_SET_ALLOCATOR.cast_signed(),
                         allocator.as_ref().as_ptr(),
                     )
                 };

@@ -26,21 +26,21 @@ use std::hint::black_box;
 use std::thread;
 
 use ffibox::CZeroable;
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::oid::{
     Oid, OidShortener, OidShortenerBox, OidShortenerMut, OidType,
 };
 use libgit2::libgit2::src::util::errors::ErrorClass;
+use libgit2::sys::libgit2 as sys;
 
 use crate::fixture::isolated;
 
 /// Every value around the declared ones and `git_oid.type`'s byte boundary, then a
 /// coarse stride across the whole type; `BorrowSanitizer` instruments each comparison,
 /// so the probe set stays small.
-fn probes() -> impl Iterator<Item = ffi::git_oid_t> {
+fn probes() -> impl Iterator<Item = sys::git_oid_t> {
     (0..=300)
-        .chain((0..=ffi::git_oid_t::MAX).step_by(1 << 26))
-        .chain([ffi::git_oid_t::MAX - 1, ffi::git_oid_t::MAX])
+        .chain((0..=sys::git_oid_t::MAX).step_by(1 << 26))
+        .chain([sys::git_oid_t::MAX - 1, sys::git_oid_t::MAX])
 }
 
 #[test]
@@ -76,7 +76,7 @@ fn option_niche_holds_for_every_value() {
 
 #[test]
 fn sizes_stay_within_a_git_oid() {
-    let oid = ffi::git_oid::default();
+    let oid = sys::git_oid::default();
     let mut hex = [0u8; 2 * 32];
     for raw in probes() {
         let Some(ty) = OidType::from_raw(black_box(raw)) else {

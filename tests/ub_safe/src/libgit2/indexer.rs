@@ -142,7 +142,7 @@ fn reborrows_keep_one_writer() {
 #[test]
 fn copies_are_independent() {
     let c = {
-        let a = IndexerProgress::from(libgit2::ffi::git_indexer_progress {
+        let a = IndexerProgress::from(libgit2::sys::libgit2::git_indexer_progress {
             total_objects: 3,
             ..Default::default()
         });

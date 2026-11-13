@@ -22,7 +22,7 @@
 use core::ffi::{CStr, c_char};
 use core::fmt;
 
-use crate::ffi;
+use crate::sys::libgit2 as sys;
 
 /// How much libgit2 traces: a level enables its own messages and those of every
 /// lower level, so `configured >= level` decides whether a message is reported, as
@@ -35,55 +35,55 @@ use crate::ffi;
 #[non_exhaustive]
 pub enum TraceLevel {
     /// No tracing will be performed.
-    None = ffi::GIT_TRACE_NONE,
+    None = sys::GIT_TRACE_NONE,
     /// Severe errors that may impact the program's execution.
-    Fatal = ffi::GIT_TRACE_FATAL,
+    Fatal = sys::GIT_TRACE_FATAL,
     /// Errors that do not impact the program's execution.
-    Error = ffi::GIT_TRACE_ERROR,
+    Error = sys::GIT_TRACE_ERROR,
     /// Warnings that suggest abnormal data.
-    Warn = ffi::GIT_TRACE_WARN,
+    Warn = sys::GIT_TRACE_WARN,
     /// Informational messages about program execution.
-    Info = ffi::GIT_TRACE_INFO,
+    Info = sys::GIT_TRACE_INFO,
     /// Detailed data that allows for debugging.
-    Debug = ffi::GIT_TRACE_DEBUG,
+    Debug = sys::GIT_TRACE_DEBUG,
     /// Exceptionally detailed debugging data.
-    Trace = ffi::GIT_TRACE_TRACE,
+    Trace = sys::GIT_TRACE_TRACE,
 }
 
 impl TraceLevel {
     /// The variant whose C value is `raw`; `None` for a value this version of
     /// libgit2's header does not name.
     #[must_use]
-    pub const fn from_raw(raw: ffi::git_trace_level_t) -> Option<Self> {
+    pub const fn from_raw(raw: sys::git_trace_level_t) -> Option<Self> {
         match raw {
-            ffi::GIT_TRACE_NONE => Some(Self::None),
-            ffi::GIT_TRACE_FATAL => Some(Self::Fatal),
-            ffi::GIT_TRACE_ERROR => Some(Self::Error),
-            ffi::GIT_TRACE_WARN => Some(Self::Warn),
-            ffi::GIT_TRACE_INFO => Some(Self::Info),
-            ffi::GIT_TRACE_DEBUG => Some(Self::Debug),
-            ffi::GIT_TRACE_TRACE => Some(Self::Trace),
+            sys::GIT_TRACE_NONE => Some(Self::None),
+            sys::GIT_TRACE_FATAL => Some(Self::Fatal),
+            sys::GIT_TRACE_ERROR => Some(Self::Error),
+            sys::GIT_TRACE_WARN => Some(Self::Warn),
+            sys::GIT_TRACE_INFO => Some(Self::Info),
+            sys::GIT_TRACE_DEBUG => Some(Self::Debug),
+            sys::GIT_TRACE_TRACE => Some(Self::Trace),
             _ => None,
         }
     }
 
     /// The C value, as libgit2's functions take and return it.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_trace_level_t {
-        self as ffi::git_trace_level_t
+    pub const fn raw(self) -> sys::git_trace_level_t {
+        self as sys::git_trace_level_t
     }
 }
 
-impl TryFrom<ffi::git_trace_level_t> for TraceLevel {
+impl TryFrom<sys::git_trace_level_t> for TraceLevel {
     type Error = UnnamedTraceLevel;
 
-    fn try_from(raw: ffi::git_trace_level_t) -> Result<Self, UnnamedTraceLevel> {
+    fn try_from(raw: sys::git_trace_level_t) -> Result<Self, UnnamedTraceLevel> {
         Self::from_raw(raw).ok_or(UnnamedTraceLevel(raw))
     }
 }
 
-impl From<TraceLevel> for ffi::git_trace_level_t {
-    fn from(value: TraceLevel) -> ffi::git_trace_level_t {
+impl From<TraceLevel> for sys::git_trace_level_t {
+    fn from(value: TraceLevel) -> sys::git_trace_level_t {
         value.raw()
     }
 }
@@ -91,12 +91,12 @@ impl From<TraceLevel> for ffi::git_trace_level_t {
 /// A trace level that this version of libgit2's header does not name; [`raw`](Self::raw)
 /// has it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct UnnamedTraceLevel(ffi::git_trace_level_t);
+pub struct UnnamedTraceLevel(sys::git_trace_level_t);
 
 impl UnnamedTraceLevel {
     /// The value, as it was converted.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_trace_level_t {
+    pub const fn raw(self) -> sys::git_trace_level_t {
         self.0
     }
 }
@@ -127,7 +127,7 @@ impl std::error::Error for UnnamedTraceLevel {}
 ///
 /// `msg` must be a NUL-terminated string live for the call. A function may add
 /// obligations of its own; the trampolines [`TraceCallback::new`] stores add none.
-pub type TraceFn = unsafe extern "C" fn(level: ffi::git_trace_level_t, msg: *const c_char);
+pub type TraceFn = unsafe extern "C" fn(level: sys::git_trace_level_t, msg: *const c_char);
 
 /// A receiver of libgit2's trace messages, which [`TraceCallback::new`] adapts to a C
 /// callback.
@@ -195,9 +195,9 @@ pub trait Tracer {
 ///
 /// ```compile_fail,E0423
 /// use std::ffi::c_char;
-/// use {libgit2::ffi, libgit2::libgit2::src::libgit2::trace::TraceCallback};
+/// use {libgit2::sys::libgit2 as sys, libgit2::libgit2::src::libgit2::trace::TraceCallback};
 ///
-/// unsafe extern "C" fn c_tracer(_: ffi::git_trace_level_t, _: *const c_char) {}
+/// unsafe extern "C" fn c_tracer(_: sys::git_trace_level_t, _: *const c_char) {}
 /// let _ = TraceCallback(c_tracer);
 /// ```
 ///
@@ -248,7 +248,7 @@ impl TraceCallback {
 
     /// The C value, as `git_trace_set` takes it: never NULL.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_trace_cb {
+    pub const fn raw(self) -> sys::git_trace_cb {
         Some(self.0)
     }
 }
@@ -266,7 +266,7 @@ impl fmt::Debug for TraceCallback {
 /// # Safety
 ///
 /// As [`TraceFn`]: `msg` is NULL or a NUL-terminated string live for the call.
-unsafe extern "C" fn trace_with<T: Tracer>(level: ffi::git_trace_level_t, msg: *const c_char) {
+unsafe extern "C" fn trace_with<T: Tracer>(level: sys::git_trace_level_t, msg: *const c_char) {
     let Some(level) = TraceLevel::from_raw(level) else {
         return;
     };
@@ -315,7 +315,7 @@ pub unsafe fn set(level: TraceLevel, callback: TraceCallback) {
     // touching the error state, so before `git_libgit2_init` too; `callback` is safe
     // to call from any thread for the rest of the process, as libgit2 will call it.
     // The caller excludes every concurrent reader and writer of the global.
-    let rc = unsafe { ffi::git_trace_set(level.raw(), callback.raw()) };
+    let rc = unsafe { sys::git_trace_set(level.raw(), callback.raw()) };
     debug_assert_eq!(rc, 0, "git_trace_set refused a callback");
 }
 
@@ -335,7 +335,7 @@ pub unsafe fn clear() {
     // SAFETY: `GIT_TRACE_NONE` without a callback, which `git_trace_set` accepts
     // without touching the error state. The caller excludes every concurrent reader
     // and writer of the global, so no traced call sees the NULL after its check.
-    let rc = unsafe { ffi::git_trace_set(TraceLevel::None.raw(), None) };
+    let rc = unsafe { sys::git_trace_set(TraceLevel::None.raw(), None) };
     debug_assert_eq!(rc, 0, "git_trace_set refused to clear");
 }
 
@@ -358,13 +358,13 @@ mod unit_tests {
         for level in LEVELS {
             assert_eq!(TraceLevel::from_raw(level.raw()), Some(level));
             assert_eq!(TraceLevel::try_from(level.raw()), Ok(level));
-            assert_eq!(ffi::git_trace_level_t::from(level), level.raw());
+            assert_eq!(sys::git_trace_level_t::from(level), level.raw());
         }
     }
 
     #[test]
     fn unnamed_values_are_refused_without_panicking() {
-        for raw in [7, 8, 0x100, ffi::git_trace_level_t::MAX] {
+        for raw in [7, 8, 0x100, sys::git_trace_level_t::MAX] {
             assert_eq!(TraceLevel::from_raw(raw), None);
             let err = TraceLevel::try_from(raw).unwrap_err();
             assert_eq!(err.raw(), raw);
@@ -408,7 +408,7 @@ mod unit_tests {
 
         /// A C-ABI function honouring `from_fn`'s contract: it records on the calling
         /// thread, and only reads `msg` during the call.
-        unsafe extern "C" fn c_recorder(level: ffi::git_trace_level_t, msg: *const c_char) {
+        unsafe extern "C" fn c_recorder(level: sys::git_trace_level_t, msg: *const c_char) {
             // SAFETY: `TraceFn`'s contract: `msg` is a C string live for the call.
             let message = unsafe { CStr::from_ptr(msg) }.to_owned();
             let level = TraceLevel::from_raw(level).expect("a named level");
@@ -432,15 +432,15 @@ mod unit_tests {
         #[test]
         fn trampoline_drops_calls_libgit2_never_makes() {
             let f = TraceCallback::new::<Recorder>().as_fn();
-            for raw in [7, 8, 0x100, ffi::git_trace_level_t::MAX] {
+            for raw in [7, 8, 0x100, sys::git_trace_level_t::MAX] {
                 // SAFETY: a C string live for the call; any level is accepted.
                 unsafe { f(raw, c"unnamed".as_ptr()) };
             }
             // SAFETY: the trampoline accepts NULL, as its contract states.
-            unsafe { f(ffi::GIT_TRACE_INFO, core::ptr::null()) };
+            unsafe { f(sys::GIT_TRACE_INFO, core::ptr::null()) };
             assert_eq!(take_seen(), []);
             // SAFETY: as above.
-            unsafe { f(ffi::GIT_TRACE_WARN, c"named".as_ptr()) };
+            unsafe { f(sys::GIT_TRACE_WARN, c"named".as_ptr()) };
             assert_eq!(take_seen(), [(TraceLevel::Warn, c"named".to_owned())]);
         }
 
@@ -504,10 +504,10 @@ mod unit_tests {
 
     #[test]
     fn layout_is_the_c_value() {
-        assert_eq!(size_of::<TraceLevel>(), size_of::<ffi::git_trace_level_t>());
+        assert_eq!(size_of::<TraceLevel>(), size_of::<sys::git_trace_level_t>());
         assert_eq!(
             size_of::<Option<TraceLevel>>(),
-            size_of::<ffi::git_trace_level_t>()
+            size_of::<sys::git_trace_level_t>()
         );
     }
 }

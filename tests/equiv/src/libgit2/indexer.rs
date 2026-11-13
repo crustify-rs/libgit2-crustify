@@ -22,10 +22,10 @@ use std::process::{Command, Stdio};
 use std::{fs, process, ptr};
 
 use ffibox::{CMutSeam, CRefSeam, CZeroable};
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::indexer::{
     IndexerProgress, IndexerProgressRef, ProgressCallback,
 };
+use libgit2::sys::libgit2 as sys;
 
 /// Takes a `git_libgit2_init` reference that is never released.
 fn init() {
@@ -36,7 +36,7 @@ fn init() {
 fn c_last() -> (c_int, String) {
     // SAFETY: libgit2 is initialised; the result is a static error or this thread's
     // error state, live until the next libgit2 call on this thread.
-    let e = unsafe { ffi::git_error_last() };
+    let e = unsafe { sys::git_error_last() };
     assert!(!e.is_null());
     // SAFETY: `e` is live (above); its fields are copied out before any other call.
     let klass = unsafe { (*e).klass };
@@ -165,18 +165,18 @@ fn index(
     objects: &CStr,
     pack: &[u8],
     piece: usize,
-    callback: ffi::git_indexer_progress_cb,
+    callback: sys::git_indexer_progress_cb,
     payload: *mut c_void,
     calls: &dyn Fn() -> usize,
 ) -> Vec<Step> {
     let mut odb = ptr::null_mut();
     // SAFETY: `odb` is a writable slot; `objects` is NUL-terminated, read for the call.
-    let rc = unsafe { ffi::git_odb_open(&raw mut odb, objects.as_ptr()) };
+    let rc = unsafe { sys::git_odb_open(&raw mut odb, objects.as_ptr()) };
     assert_eq!(rc, 0);
     let mut wp = ptr::null_mut();
     // SAFETY: `wp` is a writable slot; `odb` is live; the callback and payload stay valid
     // until the writepack is freed below.
-    let rc = unsafe { ffi::git_odb_write_pack(&raw mut wp, odb, callback, payload) };
+    let rc = unsafe { sys::git_odb_write_pack(&raw mut wp, odb, callback, payload) };
     assert_eq!(rc, 0);
     // SAFETY: `wp` is the live writepack libgit2 opened, with its members set.
     let members = unsafe { wp.read() };
@@ -222,7 +222,7 @@ fn index(
     // SAFETY: `wp` is live and no longer used.
     unsafe { free(wp) };
     // SAFETY: `odb` is live and no longer used.
-    unsafe { ffi::git_odb_free(odb) };
+    unsafe { sys::git_odb_free(odb) };
     steps
 }
 
@@ -235,7 +235,7 @@ struct CLog {
 /// A C callback as libgit2's callers write one: records the progress, and cancels with
 /// `GIT_EUSER` at the call its payload names.
 unsafe extern "C" fn c_record(
-    stats: *const ffi::git_indexer_progress,
+    stats: *const sys::git_indexer_progress,
     payload: *mut c_void,
 ) -> c_int {
     // SAFETY: `payload` is the `CLog` the indexing was given, used by nothing else meanwhile.
@@ -244,7 +244,7 @@ unsafe extern "C" fn c_record(
     let progress = unsafe { IndexerProgressRef::from_ptr(stats.cast_mut()) }.unwrap();
     log.seen.push(counters(progress));
     if log.stop_at == Some(log.seen.len()) {
-        ffi::GIT_EUSER
+        sys::GIT_EUSER
     } else {
         0
     }
@@ -253,7 +253,7 @@ unsafe extern "C" fn c_record(
 /// The Rust side's forwarder: hands the lent progress to the [`ProgressCallback`] its
 /// payload addresses, and returns what the callback returns libgit2.
 unsafe extern "C" fn forward(
-    stats: *const ffi::git_indexer_progress,
+    stats: *const sys::git_indexer_progress,
     payload: *mut c_void,
 ) -> c_int {
     // SAFETY: `payload` is the callback the indexing was given, used by nothing else
@@ -263,7 +263,7 @@ unsafe extern "C" fn forward(
     let progress = unsafe { IndexerProgressRef::from_ptr(stats.cast_mut()) }.unwrap();
     match callback.call(progress) {
         ControlFlow::Continue(()) => 0,
-        ControlFlow::Break(()) => ffi::GIT_EUSER,
+        ControlFlow::Break(()) => sys::GIT_EUSER,
     }
 }
 

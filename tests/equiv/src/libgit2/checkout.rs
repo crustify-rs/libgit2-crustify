@@ -42,7 +42,6 @@ use std::{fs, ptr};
 
 use ffibox::{CMutSeam, CRefSeam};
 use glibc_bindings::libc::ffi as libc;
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::checkout::{
     CallbackSlot, CheckoutNotification, CheckoutOptions, CheckoutOptionsMut, CheckoutOptionsRef,
     CheckoutPerfdata, CheckoutPerfdataRef, NotifyCallback, PerfdataCallback, ProgressCallback,
@@ -52,6 +51,7 @@ use libgit2::libgit2::src::libgit2::index::IndexArc;
 use libgit2::libgit2::src::libgit2::repository::{InitFlag, InitOptions, Repository};
 use libgit2::libgit2::src::libgit2::strarray::StrArrayView;
 use libgit2::libgit2::src::libgit2::tree::TreeArc;
+use libgit2::sys::libgit2 as sys;
 
 /// `git_checkout_strategy_t` bits, from `git2/checkout.h`: the `-sys` crate does not bind
 /// the enum, whose header comment bindgen copies into a doc comment rustdoc would run as
@@ -69,7 +69,7 @@ const GIT_CHECKOUT_CONFLICT_STYLE_ZDIFF3: u32 = 1 << 25;
 
 fn init() {
     // SAFETY: initialising the library has no precondition.
-    assert!(unsafe { ffi::git_libgit2_init() } >= 1);
+    assert!(unsafe { sys::git_libgit2_init() } >= 1);
 }
 
 /// The calling thread's last error, with `root` spelled `<root>`.
@@ -78,7 +78,7 @@ fn c_last(root: &Path) -> (c_int, String) {
         // SAFETY: `git_error_last` never returns NULL after init, and its message is a
         // NUL-terminated string, both live until the next libgit2 call on this thread,
         // after the copy.
-        let e = unsafe { ffi::git_error_last() };
+        let e = unsafe { sys::git_error_last() };
         // SAFETY: as above.
         let klass = unsafe { (*e).klass };
         // SAFETY: as above.
@@ -103,9 +103,9 @@ type Slot<F> = (F, *mut c_void);
 /// its payload valid for what it does with it, for as long as the options live.
 fn store_c_callbacks(
     m: &mut CheckoutOptionsMut<'_, '_>,
-    notify: Option<Slot<ffi::git_checkout_notify_cb>>,
-    progress: Option<Slot<ffi::git_checkout_progress_cb>>,
-    perfdata: Option<Slot<ffi::git_checkout_perfdata_cb>>,
+    notify: Option<Slot<sys::git_checkout_notify_cb>>,
+    progress: Option<Slot<sys::git_checkout_progress_cb>>,
+    perfdata: Option<Slot<sys::git_checkout_perfdata_cb>>,
 ) {
     let p = m.as_mut_ptr();
     // SAFETY: `p` addresses the live options `m` borrows exclusively, read whole: plain
@@ -127,7 +127,7 @@ fn store_c_callbacks(
 
 /// The C struct a [`CheckoutOptions`] is laid out as: `#[repr(transparent)]` over
 /// `git_checkout_options`, as its docs state. Stands in for the checkout wrappers.
-fn c_ptr(options: &CheckoutOptions<'_>) -> *const ffi::git_checkout_options {
+fn c_ptr(options: &CheckoutOptions<'_>) -> *const sys::git_checkout_options {
     ptr::from_ref(options).cast()
 }
 
@@ -151,10 +151,10 @@ const TREE2: &[(&str, &str)] = &[
 struct Fixture {
     root: PathBuf,
     work: PathBuf,
-    repo: *mut ffi::git_repository,
+    repo: *mut sys::git_repository,
     /// The repository's index, for C; `index_ref` holds the reference.
-    index: *mut ffi::git_index,
-    trees: [*mut ffi::git_tree; 2],
+    index: *mut sys::git_index,
+    trees: [*mut sys::git_tree; 2],
     /// The Rust side's owners of `trees`, one more counted reference each, released in
     /// `Drop` before the repository, which `'static` stands for.
     tree_refs: Vec<TreeArc<'static>>,
@@ -189,7 +189,7 @@ impl Fixture {
             .into_c();
         let mut index = ptr::null_mut();
         // SAFETY: `repo` is live; the result is a new reference to its index.
-        let rc = unsafe { ffi::git_repository_index(&raw mut index, repo) };
+        let rc = unsafe { sys::git_repository_index(&raw mut index, repo) };
         assert_eq!(rc, 0);
         // SAFETY: one counted reference to the repository's index, which `git_index_free`
         // releases; the repository keeps another, so it is shared.
@@ -214,7 +214,7 @@ impl Fixture {
                 // SAFETY: the tree is live; `git_tree_dup` counts one more reference on it,
                 // given to the owner and released by `git_tree_free`, which `Drop` runs
                 // before the repository is freed.
-                unsafe { assert_eq!(ffi::git_tree_dup(&raw mut copy, tree), 0) };
+                unsafe { assert_eq!(sys::git_tree_dup(&raw mut copy, tree), 0) };
                 // SAFETY: as above.
                 unsafe { TreeArc::from_c(copy).unwrap() }
             };
@@ -223,10 +223,10 @@ impl Fixture {
         fixture.write_files(TREE1);
         drop(fs::remove_file(fixture.work.join("e.txt")));
         // SAFETY: the index and tree are live.
-        let rc = unsafe { ffi::git_index_read_tree(fixture.index, fixture.trees[0]) };
+        let rc = unsafe { sys::git_index_read_tree(fixture.index, fixture.trees[0]) };
         assert_eq!(rc, 0);
         // SAFETY: the index is live and backed by the repository's index file.
-        assert_eq!(unsafe { ffi::git_index_write(fixture.index) }, 0);
+        assert_eq!(unsafe { sys::git_index_write(fixture.index) }, 0);
         fixture
     }
 
@@ -240,21 +240,21 @@ impl Fixture {
 
     /// Writes `files` into the working directory and the index, and looks up the tree
     /// the index then holds.
-    fn write_tree(&self, files: &[(&str, &str)]) -> *mut ffi::git_tree {
+    fn write_tree(&self, files: &[(&str, &str)]) -> *mut sys::git_tree {
         self.write_files(files);
         for (path, _) in files {
             let path = CString::new(*path).unwrap();
             // SAFETY: the index is live and `path` NUL-terminated, read for the call.
-            let rc = unsafe { ffi::git_index_add_bypath(self.index, path.as_ptr()) };
+            let rc = unsafe { sys::git_index_add_bypath(self.index, path.as_ptr()) };
             assert_eq!(rc, 0, "{:?}", c_last(&self.root));
         }
-        let mut id = ffi::git_oid::default();
+        let mut id = sys::git_oid::default();
         // SAFETY: `id` is a live out-parameter and the index is live.
-        let ret = unsafe { ffi::git_index_write_tree(&raw mut id, self.index) };
+        let ret = unsafe { sys::git_index_write_tree(&raw mut id, self.index) };
         assert_eq!(ret, 0);
         let mut tree = ptr::null_mut();
         // SAFETY: `tree` is a live slot; the result is a new reference the fixture owns.
-        let rc = unsafe { ffi::git_tree_lookup(&raw mut tree, self.repo, &raw const id) };
+        let rc = unsafe { sys::git_tree_lookup(&raw mut tree, self.repo, &raw const id) };
         assert_eq!(rc, 0);
         tree
     }
@@ -266,10 +266,10 @@ impl Fixture {
     /// and deleted by us, against `k/l`, added by us.
     fn add_conflict(&self) {
         let entry = |path: &'static CStr, content: &str| {
-            let mut id = ffi::git_oid::default();
+            let mut id = sys::git_oid::default();
             // SAFETY: `id` is a live out-parameter; the buffer is read for the call.
             let rc = unsafe {
-                ffi::git_blob_create_from_buffer(
+                sys::git_blob_create_from_buffer(
                     &raw mut id,
                     self.repo,
                     content.as_ptr().cast(),
@@ -277,14 +277,14 @@ impl Fixture {
                 )
             };
             assert_eq!(rc, 0);
-            ffi::git_index_entry {
+            sys::git_index_entry {
                 mode: 0o100_644,
                 id,
                 path: path.as_ptr(),
                 ..Default::default()
             }
         };
-        let side = |e: &Option<ffi::git_index_entry>| e.as_ref().map_or(ptr::null(), ptr::from_ref);
+        let side = |e: &Option<sys::git_index_entry>| e.as_ref().map_or(ptr::null(), ptr::from_ref);
         let conflicts = [
             (
                 Some(entry(c"f.txt", "a\nx\n")),
@@ -300,7 +300,7 @@ impl Fixture {
             // SAFETY: the index is live and the entries are read for the call; it
             // copies their paths.
             let rc = unsafe {
-                ffi::git_index_conflict_add(self.index, side(ancestor), side(ours), side(theirs))
+                sys::git_index_conflict_add(self.index, side(ancestor), side(ours), side(theirs))
             };
             assert_eq!(rc, 0, "{:?}", c_last(&self.root));
         }
@@ -340,7 +340,7 @@ impl Fixture {
     }
 
     /// The tree or index a C baseline pointer designates, by name.
-    fn name_of(&self, tree: *mut ffi::git_tree, index: *mut ffi::git_index) -> String {
+    fn name_of(&self, tree: *mut sys::git_tree, index: *mut sys::git_index) -> String {
         let tree = match self.trees.iter().position(|&t| t == tree) {
             _ if tree.is_null() => "none".to_owned(),
             Some(i) => format!("tree{i}"),
@@ -362,11 +362,11 @@ impl Drop for Fixture {
         // options value pointing at it; `index_ref` releases the index's.
         unsafe {
             for tree in self.trees {
-                ffi::git_tree_free(tree);
+                sys::git_tree_free(tree);
             }
         }
         // SAFETY: as above.
-        unsafe { ffi::git_repository_free(self.repo) };
+        unsafe { sys::git_repository_free(self.repo) };
         drop(fs::remove_dir_all(&self.root));
     }
 }
@@ -393,17 +393,17 @@ fn string(s: *const c_char) -> Option<String> {
     (!s.is_null()).then(|| unsafe { CStr::from_ptr(s) }.to_string_lossy().into_owned())
 }
 
-fn diff_path(file: *const ffi::git_diff_file) -> Option<String> {
+fn diff_path(file: *const sys::git_diff_file) -> Option<String> {
     // SAFETY: libgit2 passes NULL or a diff file live for the callback.
     (!file.is_null()).then(|| string(unsafe { (*file).path }).unwrap_or_default())
 }
 
 extern "C" fn notify(
-    why: ffi::git_checkout_notify_t,
+    why: sys::git_checkout_notify_t,
     path: *const c_char,
-    baseline: *const ffi::git_diff_file,
-    target: *const ffi::git_diff_file,
-    workdir: *const ffi::git_diff_file,
+    baseline: *const sys::git_diff_file,
+    target: *const sys::git_diff_file,
+    workdir: *const sys::git_diff_file,
     payload: *mut c_void,
 ) -> c_int {
     let mut log = log(payload).borrow_mut();
@@ -420,7 +420,7 @@ extern "C" fn progress(path: *const c_char, completed: usize, total: usize, payl
         .push((string(path), completed, total));
 }
 
-extern "C" fn perfdata(data: *const ffi::git_checkout_perfdata, payload: *mut c_void) {
+extern "C" fn perfdata(data: *const sys::git_checkout_perfdata, payload: *mut c_void) {
     // SAFETY: libgit2 passes its live counters for the callback.
     let d = unsafe { &*data };
     log(payload)
@@ -429,9 +429,9 @@ extern "C" fn perfdata(data: *const ffi::git_checkout_perfdata, payload: *mut c_
         .push((d.mkdir_calls, d.stat_calls, d.chmod_calls));
 }
 
-const NOTIFY: ffi::git_checkout_notify_cb = Some(notify);
-const PROGRESS: ffi::git_checkout_progress_cb = Some(progress);
-const PERFDATA: ffi::git_checkout_perfdata_cb = Some(perfdata);
+const NOTIFY: sys::git_checkout_notify_cb = Some(notify);
+const PROGRESS: sys::git_checkout_progress_cb = Some(progress);
+const PERFDATA: sys::git_checkout_perfdata_cb = Some(perfdata);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 enum Baseline {
@@ -479,7 +479,7 @@ struct Step {
 }
 
 impl Step {
-    fn baseline(&self, f: &Fixture) -> (*mut ffi::git_tree, *mut ffi::git_index) {
+    fn baseline(&self, f: &Fixture) -> (*mut sys::git_tree, *mut sys::git_index) {
         match self.baseline {
             Baseline::Head => (ptr::null_mut(), ptr::null_mut()),
             Baseline::Tree(i) => (f.trees[i], ptr::null_mut()),
@@ -490,7 +490,7 @@ impl Step {
     /// Writes the step's options into a C struct, field by field.
     fn apply_c(
         &self,
-        o: &mut ffi::git_checkout_options,
+        o: &mut sys::git_checkout_options,
         f: &Fixture,
         log: &RefCell<Log>,
         paths: &[*mut c_char],
@@ -516,7 +516,7 @@ impl Step {
         } else {
             (None, ptr::null_mut())
         };
-        o.paths = ffi::git_strarray {
+        o.paths = sys::git_strarray {
             strings: paths.as_ptr().cast_mut(),
             count: paths.len(),
         };
@@ -583,7 +583,7 @@ impl Step {
         &self,
         f: &Fixture,
         log: &RefCell<Log>,
-        options: *const ffi::git_checkout_options,
+        options: *const sys::git_checkout_options,
     ) -> Outcome {
         if let Some((path, content)) = self.write {
             fs::write(f.work.join(path), content).unwrap();
@@ -601,10 +601,10 @@ impl Step {
         let rc = if self.index {
             // SAFETY: the repository, index and trees are the fixture's live objects, and
             // `options` addresses live options whose pointers are all live or NULL.
-            unsafe { ffi::git_checkout_index(f.repo, f.index, options) }
+            unsafe { sys::git_checkout_index(f.repo, f.index, options) }
         } else {
             // SAFETY: as above.
-            unsafe { ffi::git_checkout_tree(f.repo, f.trees[self.tree].cast(), options) }
+            unsafe { sys::git_checkout_tree(f.repo, f.trees[self.tree].cast(), options) }
         };
         let error = (rc != 0).then(|| c_last(&f.root));
         Outcome {
@@ -638,7 +638,7 @@ struct Fields {
     strings: [Option<String>; 4],
 }
 
-fn c_fields(o: &ffi::git_checkout_options, f: &Fixture, log: &RefCell<Log>) -> Fields {
+fn c_fields(o: &sys::git_checkout_options, f: &Fixture, log: &RefCell<Log>) -> Fields {
     let payload = ptr::from_ref(log).cast_mut().cast::<c_void>();
     let paths = (0..o.paths.count)
         .map(|i| {
@@ -752,10 +752,10 @@ fn compare(tag: &str, conflict: bool, steps: &[Step]) -> Vec<Outcome> {
         .collect();
     let views: Vec<StrArrayView<'_>> = steps.iter().map(|s| StrArrayView::new(s.paths)).collect();
 
-    let mut c = ffi::git_checkout_options::default();
+    let mut c = sys::git_checkout_options::default();
     // SAFETY: `c` is writable storage for the struct; version 1 is accepted.
     let rc =
-        unsafe { ffi::git_checkout_options_init(&raw mut c, ffi::GIT_CHECKOUT_OPTIONS_VERSION) };
+        unsafe { sys::git_checkout_options_init(&raw mut c, sys::GIT_CHECKOUT_OPTIONS_VERSION) };
     assert_eq!(rc, 0);
     let mut rust = CheckoutOptions::new();
     assert_eq!(
@@ -781,20 +781,20 @@ fn compare(tag: &str, conflict: bool, steps: &[Step]) -> Vec<Outcome> {
 }
 
 const FORCE: u32 = GIT_CHECKOUT_FORCE;
-const ALL: u32 = ffi::GIT_CHECKOUT_NOTIFY_ALL;
+const ALL: u32 = sys::GIT_CHECKOUT_NOTIFY_ALL;
 
 #[test]
 #[cfg_attr(miri, ignore = "calls libgit2")]
 fn new_matches_c_init() {
     let f = Fixture::new("init");
     let log = RefCell::new(Log::default());
-    let mut c = ffi::git_checkout_options::default();
+    let mut c = sys::git_checkout_options::default();
     // SAFETY: `c` is writable storage for the struct; version 1 is accepted.
     let rc =
-        unsafe { ffi::git_checkout_options_init(&raw mut c, ffi::GIT_CHECKOUT_OPTIONS_VERSION) };
+        unsafe { sys::git_checkout_options_init(&raw mut c, sys::GIT_CHECKOUT_OPTIONS_VERSION) };
     assert_eq!(rc, 0);
     // `GIT_CHECKOUT_OPTIONS_INIT` is `{ GIT_CHECKOUT_OPTIONS_VERSION }`.
-    let macro_init = ffi::git_checkout_options {
+    let macro_init = sys::git_checkout_options {
         version: 1,
         ..Default::default()
     };
@@ -894,7 +894,7 @@ fn tree_checkouts_match_step_by_step() {
             tree: 1,
             baseline: Baseline::Tree(0),
             notify: Notify::On,
-            notify_flags: ffi::GIT_CHECKOUT_NOTIFY_UPDATED | ffi::GIT_CHECKOUT_NOTIFY_DIRTY,
+            notify_flags: sys::GIT_CHECKOUT_NOTIFY_UPDATED | sys::GIT_CHECKOUT_NOTIFY_DIRTY,
             ..Step::default()
         },
         // Back to tree 0 against the stale baseline: the working directory is dirty.
@@ -921,7 +921,7 @@ fn tree_checkouts_match_step_by_step() {
         },
         Step {
             notify: Notify::Cancel(-3),
-            notify_flags: ffi::GIT_CHECKOUT_NOTIFY_UPDATED,
+            notify_flags: sys::GIT_CHECKOUT_NOTIFY_UPDATED,
             ..forced
         },
         Step {
@@ -1102,53 +1102,53 @@ fn bare_root(tag: &str) -> (PathBuf, CString) {
 /// at `options`, and reports the result, the error and what the root then holds.
 fn bare_checkout(
     root: &Path,
-    options: *const ffi::git_checkout_options,
+    options: *const sys::git_checkout_options,
 ) -> (c_int, Option<(c_int, String)>, Vec<PathBuf>) {
     init();
     let c_git = CString::new(root.join("repo.git").as_os_str().as_bytes()).unwrap();
     let mut repo = ptr::null_mut();
     // SAFETY: a live slot and a NUL-terminated path; `1` asks for a bare repository.
-    let rc = unsafe { ffi::git_repository_init(&raw mut repo, c_git.as_ptr(), 1) };
+    let rc = unsafe { sys::git_repository_init(&raw mut repo, c_git.as_ptr(), 1) };
     assert_eq!(rc, 0);
-    let mut blob = ffi::git_oid::default();
-    let mut id = ffi::git_oid::default();
+    let mut blob = sys::git_oid::default();
+    let mut id = sys::git_oid::default();
     let mut builder = ptr::null_mut();
     let mut tree = ptr::null_mut();
     {
         // SAFETY: every out-parameter is live and every input read for the call; the
         // builder is freed once, after its last use.
         let rc = unsafe {
-            ffi::git_blob_create_from_buffer(&raw mut blob, repo, c"x\n".as_ptr().cast(), 2)
+            sys::git_blob_create_from_buffer(&raw mut blob, repo, c"x\n".as_ptr().cast(), 2)
         };
         assert_eq!(rc, 0);
         // SAFETY: as above.
         unsafe {
             assert_eq!(
-                ffi::git_treebuilder_new(&raw mut builder, repo, ptr::null()),
+                sys::git_treebuilder_new(&raw mut builder, repo, ptr::null()),
                 0
             );
         };
         // SAFETY: as above.
         let rc = unsafe {
-            ffi::git_treebuilder_insert(
+            sys::git_treebuilder_insert(
                 ptr::null_mut(),
                 builder,
                 c"x.txt".as_ptr(),
                 &raw const blob,
-                ffi::GIT_FILEMODE_BLOB,
+                sys::GIT_FILEMODE_BLOB,
             )
         };
         assert_eq!(rc, 0);
         // SAFETY: as above.
-        unsafe { assert_eq!(ffi::git_treebuilder_write(&raw mut id, builder), 0) };
+        unsafe { assert_eq!(sys::git_treebuilder_write(&raw mut id, builder), 0) };
         // SAFETY: as above.
-        unsafe { ffi::git_treebuilder_free(builder) };
+        unsafe { sys::git_treebuilder_free(builder) };
         // SAFETY: as above.
-        unsafe { assert_eq!(ffi::git_tree_lookup(&raw mut tree, repo, &raw const id), 0) };
+        unsafe { assert_eq!(sys::git_tree_lookup(&raw mut tree, repo, &raw const id), 0) };
     }
     // SAFETY: the repository and tree are live, and so is everything `options` points
     // at, which the caller keeps alive across this call.
-    let rc = unsafe { ffi::git_checkout_tree(repo, tree.cast(), options) };
+    let rc = unsafe { sys::git_checkout_tree(repo, tree.cast(), options) };
     let error = (rc != 0).then(|| c_last(root));
     let mut files: Vec<PathBuf> = walkdir(root)
         .into_iter()
@@ -1157,9 +1157,9 @@ fn bare_checkout(
         .collect();
     files.sort();
     // SAFETY: the tree and repository are released once, after their last use.
-    unsafe { ffi::git_tree_free(tree) };
+    unsafe { sys::git_tree_free(tree) };
     // SAFETY: as above.
-    unsafe { ffi::git_repository_free(repo) };
+    unsafe { sys::git_repository_free(repo) };
     drop(fs::remove_dir_all(root));
     (rc, error, files)
 }
@@ -1218,10 +1218,10 @@ fn bare_repository_needs_a_target_directory() {
     for with_target in [false, true] {
         let tag = if with_target { "target" } else { "none" };
         let (c_root, c_target) = bare_root(&format!("{tag}-c"));
-        let mut c = ffi::git_checkout_options::default();
-        let version = ffi::GIT_CHECKOUT_OPTIONS_VERSION;
+        let mut c = sys::git_checkout_options::default();
+        let version = sys::GIT_CHECKOUT_OPTIONS_VERSION;
         // SAFETY: `c` is writable storage for the struct; version 1 is accepted.
-        let rc = unsafe { ffi::git_checkout_options_init(&raw mut c, version) };
+        let rc = unsafe { sys::git_checkout_options_init(&raw mut c, version) };
         assert_eq!(rc, 0);
         c.checkout_strategy = GIT_CHECKOUT_FORCE;
         if with_target {
@@ -1267,7 +1267,7 @@ struct PerfdataReads {
     copies: Vec<CheckoutPerfdata>,
 }
 
-extern "C" fn perfdata_reads(data: *const ffi::git_checkout_perfdata, payload: *mut c_void) {
+extern "C" fn perfdata_reads(data: *const sys::git_checkout_perfdata, payload: *mut c_void) {
     // SAFETY: the payload is the test's `RefCell<PerfdataReads>`, which outlives every
     // checkout calling back with it.
     let reads = unsafe { &*payload.cast::<RefCell<PerfdataReads>>() };
@@ -1311,7 +1311,7 @@ fn perfdata_reads_match_c_after_every_checkout() {
         }
         // SAFETY: the repository and tree are the fixture's live objects, and the options
         // are live, laid out as `git_checkout_options`, their pointers live or NULL.
-        let rc = unsafe { ffi::git_checkout_tree(f.repo, f.trees[tree].cast(), c_ptr(&options)) };
+        let rc = unsafe { sys::git_checkout_tree(f.repo, f.trees[tree].cast(), c_ptr(&options)) };
         assert_eq!(rc, 0, "{:?}", c_last(&f.root));
         let reads = reads.borrow();
         assert_eq!(reads.c.len(), i + 1, "one report per checkout");
@@ -1364,10 +1364,10 @@ fn compare_progress(tag: &str, prepare: fn(&mut Fixture), steps: &[Step]) -> Vec
     };
     let mut callback = ProgressCallback::new(&mut record);
 
-    let mut c = ffi::git_checkout_options::default();
+    let mut c = sys::git_checkout_options::default();
     // SAFETY: `c` is writable storage for the struct; version 1 is accepted.
     let rc =
-        unsafe { ffi::git_checkout_options_init(&raw mut c, ffi::GIT_CHECKOUT_OPTIONS_VERSION) };
+        unsafe { sys::git_checkout_options_init(&raw mut c, sys::GIT_CHECKOUT_OPTIONS_VERSION) };
     assert_eq!(rc, 0);
     let mut outcomes = Vec::new();
     for (i, step) in steps.iter().enumerate() {
@@ -1545,10 +1545,10 @@ fn compare_callbacks(tag: &str, conflict: bool, steps: &[Step]) -> Vec<Outcome> 
     let mut notify = NotifyCallback::new(&mut record_notify);
     let mut perfdata = PerfdataCallback::new(&mut record_perfdata);
 
-    let mut c = ffi::git_checkout_options::default();
+    let mut c = sys::git_checkout_options::default();
     // SAFETY: `c` is writable storage for the struct; version 1 is accepted.
     let rc =
-        unsafe { ffi::git_checkout_options_init(&raw mut c, ffi::GIT_CHECKOUT_OPTIONS_VERSION) };
+        unsafe { sys::git_checkout_options_init(&raw mut c, sys::GIT_CHECKOUT_OPTIONS_VERSION) };
     assert_eq!(rc, 0);
     let mut outcomes = Vec::new();
     for (i, step) in steps.iter().enumerate() {
@@ -1574,7 +1574,7 @@ fn compare_callbacks(tag: &str, conflict: bool, steps: &[Step]) -> Vec<Outcome> 
         assert_eq!(slots, (rust_if(on.0), rust_if(on.1)), "step {i}");
         let mut expected = step.checkout(&cf, &clog, &raw const c);
         let mut actual = step.checkout(&rf, &rlog, c_ptr(&rust));
-        if expected.rc == ffi::GIT_EUSER {
+        if expected.rc == sys::GIT_EUSER {
             // libgit2 sets a cancel's message only when the thread holds no error yet, and
             // whether its config refresh left a benign one (a missing global config file)
             // varies from run to run, on either side: the message is libgit2's, so each
@@ -1584,10 +1584,10 @@ fn compare_callbacks(tag: &str, conflict: bool, steps: &[Step]) -> Vec<Outcome> 
                 assert!(
                     (class, message.as_str())
                         == (
-                            ffi::GIT_ERROR_CALLBACK.cast_signed(),
+                            sys::GIT_ERROR_CALLBACK.cast_signed(),
                             "git_checkout notification callback returned -7"
                         )
-                        || class == ffi::GIT_ERROR_OS.cast_signed(),
+                        || class == sys::GIT_ERROR_OS.cast_signed(),
                     "step {i}: {class} {message}"
                 );
             }
@@ -1629,13 +1629,13 @@ fn notify_and_perfdata_callbacks_see_what_c_callbacks_see() {
         },
         // A cancel stops the checkout before it writes or counts anything.
         Step {
-            notify: Notify::Cancel(ffi::GIT_EUSER),
+            notify: Notify::Cancel(sys::GIT_EUSER),
             target: Some(2),
             ..watched
         },
         // Only some reasons, into the working directory, over a dirty file.
         Step {
-            notify_flags: ffi::GIT_CHECKOUT_NOTIFY_UPDATED | ffi::GIT_CHECKOUT_NOTIFY_DIRTY,
+            notify_flags: sys::GIT_CHECKOUT_NOTIFY_UPDATED | sys::GIT_CHECKOUT_NOTIFY_DIRTY,
             write: Some(("e.txt", "dirty\n")),
             ..watched
         },
@@ -1648,8 +1648,8 @@ fn notify_and_perfdata_callbacks_see_what_c_callbacks_see() {
         // A cancel on one reason only, from the performance callback's step.
         Step {
             tree: 1,
-            notify: Notify::Cancel(ffi::GIT_EUSER),
-            notify_flags: ffi::GIT_CHECKOUT_NOTIFY_UPDATED,
+            notify: Notify::Cancel(sys::GIT_EUSER),
+            notify_flags: sys::GIT_CHECKOUT_NOTIFY_UPDATED,
             baseline: Baseline::Tree(0),
             ..watched
         },
@@ -1666,18 +1666,18 @@ fn notify_and_perfdata_callbacks_see_what_c_callbacks_see() {
     assert!(!log(0).notify.is_empty() && log(0).perfdata.is_empty());
     assert!(!log(1).notify.is_empty() && log(1).perfdata.len() == 1);
     assert!(!log(2).notify.is_empty() && log(2).perfdata.is_empty());
-    assert_eq!((outcomes[3].rc, log(3).notify.len()), (ffi::GIT_EUSER, 1));
+    assert_eq!((outcomes[3].rc, log(3).notify.len()), (sys::GIT_EUSER, 1));
     assert_eq!(log(3).perfdata, []);
     let a = Some("a.txt".to_owned());
     assert_eq!(
         log(5).notify,
         [(
-            ffi::GIT_CHECKOUT_NOTIFY_UPDATED,
+            sys::GIT_CHECKOUT_NOTIFY_UPDATED,
             "a.txt".to_owned(),
             [a.clone(), a.clone(), a]
         )]
     );
-    assert_eq!(outcomes[6].rc, ffi::GIT_EUSER);
+    assert_eq!(outcomes[6].rc, sys::GIT_EUSER);
     assert!(log(7).notify.is_empty() && log(7).perfdata.is_empty());
 }
 
@@ -1697,8 +1697,8 @@ fn a_notify_callback_sees_conflicts_as_a_c_callback() {
         watched,
         // Cancelled at the first conflict, the only reason notified.
         Step {
-            notify: Notify::Cancel(ffi::GIT_EUSER),
-            notify_flags: ffi::GIT_CHECKOUT_NOTIFY_CONFLICT,
+            notify: Notify::Cancel(sys::GIT_EUSER),
+            notify_flags: sys::GIT_CHECKOUT_NOTIFY_CONFLICT,
             ..watched
         },
         // Into fresh directories, conflicts allowed or skipped: updates, then the counts.
@@ -1718,14 +1718,14 @@ fn a_notify_callback_sees_conflicts_as_a_c_callback() {
         let notify = &outcomes[i].log.notify;
         notify
             .iter()
-            .filter(|(why, ..)| *why == ffi::GIT_CHECKOUT_NOTIFY_CONFLICT)
+            .filter(|(why, ..)| *why == sys::GIT_CHECKOUT_NOTIFY_CONFLICT)
             .count()
     };
     assert_ne!(outcomes[0].rc, 0);
     assert!(conflicts(0) > 1, "{:?}", outcomes[0].log.notify);
     assert_eq!(
         (outcomes[1].rc, outcomes[1].log.notify.len()),
-        (ffi::GIT_EUSER, 1)
+        (sys::GIT_EUSER, 1)
     );
     assert_eq!(conflicts(1), 1);
     for outcome in &outcomes[2..] {
@@ -1749,15 +1749,15 @@ fn perfdata_reads_match_c_on_links_update_only_and_a_failed_index_write() {
     std::os::unix::fs::symlink("a.txt", f.work.join("link")).unwrap();
     let link = CString::new("link").unwrap();
     // SAFETY: the index is live and `link` NUL-terminated, read for the call.
-    let rc = unsafe { ffi::git_index_add_bypath(f.index, link.as_ptr()) };
+    let rc = unsafe { sys::git_index_add_bypath(f.index, link.as_ptr()) };
     assert_eq!(rc, 0, "{:?}", c_last(&f.root));
-    let mut id = ffi::git_oid::default();
+    let mut id = sys::git_oid::default();
     // SAFETY: `id` is a live out-parameter and the index is live.
-    let rc = unsafe { ffi::git_index_write_tree(&raw mut id, f.index) };
+    let rc = unsafe { sys::git_index_write_tree(&raw mut id, f.index) };
     assert_eq!(rc, 0);
     let mut link_tree = ptr::null_mut();
     // SAFETY: `link_tree` is a live slot; the result is a new reference, freed below.
-    let rc = unsafe { ffi::git_tree_lookup(&raw mut link_tree, f.repo, &raw const id) };
+    let rc = unsafe { sys::git_tree_lookup(&raw mut link_tree, f.repo, &raw const id) };
     assert_eq!(rc, 0);
 
     let reads = RefCell::new(PerfdataReads::default());
@@ -1782,7 +1782,7 @@ fn perfdata_reads_match_c_on_links_update_only_and_a_failed_index_write() {
             false,
             0,
         ),
-        (f.trees[0], GIT_CHECKOUT_FORCE, 6, true, ffi::GIT_ELOCKED),
+        (f.trees[0], GIT_CHECKOUT_FORCE, 6, true, sys::GIT_ELOCKED),
     ];
     for (i, &(tree, strategy, target, locked, expected)) in steps.iter().enumerate() {
         {
@@ -1795,7 +1795,7 @@ fn perfdata_reads_match_c_on_links_update_only_and_a_failed_index_write() {
         }
         // SAFETY: the repository and tree are live, and the options are live, laid out
         // as `git_checkout_options`, their pointers live or NULL.
-        let rc = unsafe { ffi::git_checkout_tree(f.repo, tree.cast(), c_ptr(&options)) };
+        let rc = unsafe { sys::git_checkout_tree(f.repo, tree.cast(), c_ptr(&options)) };
         if locked {
             fs::remove_file(&lock).unwrap();
         }
@@ -1827,7 +1827,7 @@ fn perfdata_reads_match_c_on_links_update_only_and_a_failed_index_write() {
     let reads = reads.into_inner();
     assert!(reads.c.iter().all(|c| c.1 > 0 && c.2 == 0), "{reads:?}");
     // SAFETY: `link_tree` is the reference looked up above, used no more.
-    unsafe { ffi::git_tree_free(link_tree) };
+    unsafe { sys::git_tree_free(link_tree) };
 }
 
 #[test]
@@ -1881,12 +1881,12 @@ fn a_progress_callback_sees_symlinks_and_submodules_as_a_c_callback() {
     fn add_links(f: &mut Fixture) {
         std::os::unix::fs::symlink("a.txt", f.work.join("link")).unwrap();
         // SAFETY: the index is live and the path NUL-terminated, read for the call.
-        let rc = unsafe { ffi::git_index_add_bypath(f.index, c"link".as_ptr()) };
+        let rc = unsafe { sys::git_index_add_bypath(f.index, c"link".as_ptr()) };
         assert_eq!(rc, 0, "{:?}", c_last(&f.root));
-        let gitlink = ffi::git_index_entry {
+        let gitlink = sys::git_index_entry {
             mode: 0o160_000,
             // A SHA-1 id (`GIT_OID_SHA1`), whose commit need not exist.
-            id: ffi::git_oid {
+            id: sys::git_oid {
                 type_: 1,
                 id: core::array::from_fn(|i| if i < 20 { 0x5A } else { 0 }),
             },
@@ -1894,19 +1894,19 @@ fn a_progress_callback_sees_symlinks_and_submodules_as_a_c_callback() {
             ..Default::default()
         };
         // SAFETY: the index is live and the entry read for the call; it copies the path.
-        let rc = unsafe { ffi::git_index_add(f.index, &raw const gitlink) };
+        let rc = unsafe { sys::git_index_add(f.index, &raw const gitlink) };
         assert_eq!(rc, 0, "{:?}", c_last(&f.root));
-        let mut id = ffi::git_oid::default();
+        let mut id = sys::git_oid::default();
         // SAFETY: `id` is a live out-parameter and the index is live.
-        let rc = unsafe { ffi::git_index_write_tree(&raw mut id, f.index) };
+        let rc = unsafe { sys::git_index_write_tree(&raw mut id, f.index) };
         assert_eq!(rc, 0);
         let mut tree = ptr::null_mut();
         // SAFETY: `tree` is a live slot; the result is a new reference the fixture owns.
-        let rc = unsafe { ffi::git_tree_lookup(&raw mut tree, f.repo, &raw const id) };
+        let rc = unsafe { sys::git_tree_lookup(&raw mut tree, f.repo, &raw const id) };
         assert_eq!(rc, 0);
         // SAFETY: the fixture's own reference to the tree it replaces, released once; the
         // Rust side's owner holds a reference of its own.
-        unsafe { ffi::git_tree_free(f.trees[1]) };
+        unsafe { sys::git_tree_free(f.trees[1]) };
         f.trees[1] = tree;
     }
     let steps = [Step {
@@ -1957,30 +1957,30 @@ fn a_notify_callback_sees_directories_and_ignored_files_as_a_c_callback() {
         // Cancelled at the dirty file, the only reason notified.
         Step {
             strategy: FORCE,
-            notify: Notify::Cancel(ffi::GIT_EUSER),
-            notify_flags: ffi::GIT_CHECKOUT_NOTIFY_DIRTY,
+            notify: Notify::Cancel(sys::GIT_EUSER),
+            notify_flags: sys::GIT_CHECKOUT_NOTIFY_DIRTY,
             ..watched
         },
     ];
     let outcomes = compare_callbacks("callbacks-directory", false, &steps);
     let a = || Some("a.txt".to_owned());
     let dirty = (
-        ffi::GIT_CHECKOUT_NOTIFY_DIRTY,
+        sys::GIT_CHECKOUT_NOTIFY_DIRTY,
         "a.txt".to_owned(),
         [a(), a(), None],
     );
     let untracked = (
-        ffi::GIT_CHECKOUT_NOTIFY_UNTRACKED,
+        sys::GIT_CHECKOUT_NOTIFY_UNTRACKED,
         "a.txt/".to_owned(),
         [None, None, Some("a.txt/".to_owned())],
     );
     let ignored = (
-        ffi::GIT_CHECKOUT_NOTIFY_IGNORED,
+        sys::GIT_CHECKOUT_NOTIFY_IGNORED,
         "x.log".to_owned(),
         [None, None, Some("x.log".to_owned())],
     );
     let updated = (
-        ffi::GIT_CHECKOUT_NOTIFY_UPDATED,
+        sys::GIT_CHECKOUT_NOTIFY_UPDATED,
         "a.txt".to_owned(),
         [a(), a(), Some("a.txt/".to_owned())],
     );
@@ -2014,7 +2014,7 @@ fn a_notify_callback_sees_directories_and_ignored_files_as_a_c_callback() {
     );
     assert_eq!(
         (outcomes[2].rc, &outcomes[2].log.notify[..]),
-        (ffi::GIT_EUSER, &[dirty][..])
+        (sys::GIT_EUSER, &[dirty][..])
     );
     assert_eq!(outcomes[2].log.perfdata, []);
 }

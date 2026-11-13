@@ -26,7 +26,7 @@ use std::num::NonZero;
 use std::ops::ControlFlow;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use libgit2::ffi;
+use libgit2::sys::libgit2 as sys;
 use libgit2::libgit2::object::tag::{ForeachCallback, foreach};
 use libgit2::libgit2::oid::oid::OidRef;
 use libgit2::libgit2::repository::repository::Repository;
@@ -40,14 +40,14 @@ const TESTREPO: &str = concat!(
 /// Every tag the C callback saw; it breaks with `GIT_ITEROVER` at the first.
 unsafe extern "C" fn stop_at_first(
     name: *const std::ffi::c_char,
-    _id: *mut ffi::git_oid,
+    _id: *mut sys::git_oid,
     payload: *mut c_void,
 ) -> c_int {
     // SAFETY: libgit2 passes the walk's `Vec` and a NUL-terminated name, for the call.
     let seen = unsafe { &mut *payload.cast::<Vec<String>>() };
     // SAFETY: as above.
     seen.push(unsafe { CStr::from_ptr(name) }.to_string_lossy().into_owned());
-    ffi::GIT_ITEROVER
+    sys::GIT_ITEROVER
 }
 
 fn main() {
@@ -55,20 +55,20 @@ fn main() {
 
     // C: `git_tag_foreach` on a repository of its own.
     // SAFETY: plain initialisation, never released.
-    assert!(unsafe { ffi::git_libgit2_init() } >= 1);
+    assert!(unsafe { sys::git_libgit2_init() } >= 1);
     let mut c_repo = std::ptr::null_mut();
     // SAFETY: a writable slot and a NUL-terminated path.
-    assert_eq!(unsafe { ffi::git_repository_open(&mut c_repo, path.as_ptr()) }, 0);
+    assert_eq!(unsafe { sys::git_repository_open(&mut c_repo, path.as_ptr()) }, 0);
     let mut c_seen: Vec<String> = Vec::new();
     // SAFETY: a live repository; the callback reads the live `Vec` it is given.
     let c_rc = unsafe {
-        ffi::git_tag_foreach(c_repo, Some(stop_at_first), (&raw mut c_seen).cast())
+        sys::git_tag_foreach(c_repo, Some(stop_at_first), (&raw mut c_seen).cast())
     };
     let c_error = last().message().to_string_lossy().into_owned();
     // SAFETY: the repository opened above, released once.
-    unsafe { ffi::git_repository_free(c_repo) };
+    unsafe { sys::git_repository_free(c_repo) };
     // SAFETY: a plain call.
-    unsafe { ffi::git_error_clear() };
+    unsafe { sys::git_error_clear() };
     println!("C:    rc {c_rc}, saw {c_seen:?}, error {c_error:?}");
 
     // Rust: the safe API on a repository of its own.
@@ -76,7 +76,7 @@ fn main() {
     let mut rust_seen: Vec<String> = Vec::new();
     let mut f = |name: &CStr, _: OidRef<'_>| {
         rust_seen.push(name.to_string_lossy().into_owned());
-        ControlFlow::Break(NonZero::new(ffi::GIT_ITEROVER).unwrap())
+        ControlFlow::Break(NonZero::new(sys::GIT_ITEROVER).unwrap())
     };
     let mut callback = ForeachCallback::new(&mut f);
     let walked = catch_unwind(AssertUnwindSafe(|| foreach(repo.as_ref(), &mut callback)));
@@ -93,7 +93,7 @@ fn main() {
     assert_eq!(rust_error, c_error, "the walks left different errors");
     assert_eq!(
         walked.unwrap(),
-        ControlFlow::Break(NonZero::new(ffi::GIT_ITEROVER).unwrap()),
+        ControlFlow::Break(NonZero::new(sys::GIT_ITEROVER).unwrap()),
         "the closure's break was lost"
     );
 }

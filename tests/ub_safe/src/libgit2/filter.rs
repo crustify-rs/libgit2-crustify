@@ -39,10 +39,10 @@
 use std::ffi::CString;
 use std::path::PathBuf;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::filter::FilterList;
 use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox, RepositoryRef};
 use libgit2::libgit2::src::util::errors::ErrorClass;
+use libgit2::sys::libgit2 as sys;
 
 use crate::fixture::{init, isolated};
 
@@ -99,15 +99,15 @@ fn failed_loads_build_nothing() {
                 let error = FilterList::load(
                     wd.repo(),
                     c"a.txt",
-                    ffi::GIT_FILTER_TO_ODB,
-                    ffi::GIT_FILTER_ATTRIBUTES_FROM_HEAD,
+                    sys::GIT_FILTER_TO_ODB,
+                    sys::GIT_FILTER_ATTRIBUTES_FROM_HEAD,
                 )
                 .map(|_| ())
                 .unwrap_err();
                 assert_eq!(error.class(), Some(ErrorClass::Reference));
-                let opts = ffi::git_filter_options {
+                let opts = sys::git_filter_options {
                     version: 1,
-                    flags: ffi::GIT_FILTER_ATTRIBUTES_FROM_HEAD,
+                    flags: sys::GIT_FILTER_ATTRIBUTES_FROM_HEAD,
                     ..Default::default()
                 };
                 assert!(FilterList::load_ext(wd.repo(), c"a.id", 0, Some(&opts)).is_err());

@@ -236,7 +236,6 @@ pub(crate) mod index {
     use std::ffi::{CStr, CString, c_int};
 
     use ffibox::CZeroable;
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::index::{
         Capabilities, EntryExtendedFlags, EntryFlags, IndexArc, IndexBox, IndexEntry, IndexRef,
         ReucSide,
@@ -244,6 +243,7 @@ pub(crate) mod index {
     use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
     use libgit2::libgit2::src::libgit2::repository::RepositoryError;
     use libgit2::libgit2::src::libgit2::tree::FileMode;
+    use libgit2::sys::libgit2 as sys;
 
     use super::{CHILD, TempRepo};
 
@@ -337,7 +337,7 @@ pub(crate) mod index {
         add_flagged(
             index,
             path,
-            u16::try_from(ffi::GIT_INDEX_ENTRY_INTENT_TO_ADD).unwrap(),
+            u16::try_from(sys::GIT_INDEX_ENTRY_INTENT_TO_ADD).unwrap(),
         )
     }
 
@@ -390,7 +390,7 @@ pub(crate) mod index {
     /// is `GIT_ENOTFOUND`.
     pub(crate) fn remove_reuc(index: &mut IndexBox, position: usize) -> c_int {
         let removed = index.as_mut().remove_reuc(position);
-        removed.map_or(ffi::GIT_ENOTFOUND, |()| 0)
+        removed.map_or(sys::GIT_ENOTFOUND, |()| 0)
     }
 
     /// `IndexMut::clear_reuc`; the status.
@@ -754,12 +754,12 @@ pub(crate) mod head_and_lookups {
 pub(crate) mod tree {
     use std::ffi::{CStr, CString};
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
     use libgit2::libgit2::src::libgit2::tree::{TreeArc, TreeBuilderBox};
+    use libgit2::sys::libgit2 as sys;
 
     /// Each entry's name and raw file mode, of `tree`, through the safe getters.
-    pub(crate) fn entries(tree: &TreeArc<'_>) -> Vec<(CString, ffi::git_filemode_t)> {
+    pub(crate) fn entries(tree: &TreeArc<'_>) -> Vec<(CString, sys::git_filemode_t)> {
         let tree = tree.as_ref();
         let entries: Vec<_> = tree
             .iter()
@@ -783,7 +783,7 @@ pub(crate) mod tree {
     pub(crate) fn mode_of(
         builder: &TreeBuilderBox<'_>,
         name: &CStr,
-    ) -> Option<ffi::git_filemode_t> {
+    ) -> Option<sys::git_filemode_t> {
         Some(builder.as_ref().get(name)?.filemode_raw())
     }
 }
@@ -795,12 +795,12 @@ pub(crate) mod tree {
 pub(crate) mod object_and_tree_entry {
     use std::ffi::CString;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::blob::create_from_buffer;
     use libgit2::libgit2::src::libgit2::object::{Object, ObjectArc, ObjectType};
     use libgit2::libgit2::src::libgit2::oid::Oid;
     use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox, RepositoryRef};
     use libgit2::libgit2::src::libgit2::tree::{FileMode, TreeBuilder, TreeEntryBox};
+    use libgit2::sys::libgit2 as sys;
 
     use super::TempRepo;
 
@@ -821,7 +821,7 @@ pub(crate) mod object_and_tree_entry {
     }
 
     /// The hex id and C's type of the object an owner holds, through the safe getters.
-    pub(crate) fn object_view(object: &ObjectArc<'_>) -> (String, ffi::git_object_t) {
+    pub(crate) fn object_view(object: &ObjectArc<'_>) -> (String, sys::git_object_t) {
         let object = object.as_ref();
         (object.id().to_hex_string().unwrap(), object.kind().raw())
     }
@@ -858,7 +858,7 @@ pub(crate) mod object_and_tree_entry {
 
     /// `OdbRef::write` of `data` as an object of type `kind`, which the object
     /// database stores without parsing it; the id.
-    pub(crate) fn write_raw(repo: &TempRepo, data: &[u8], kind: ffi::git_object_t) -> Oid {
+    pub(crate) fn write_raw(repo: &TempRepo, data: &[u8], kind: sys::git_object_t) -> Oid {
         let kind = ObjectType::from_raw(kind).expect("an object type");
         let odb = repository(repo).odb().unwrap();
         odb.as_ref().write(data, kind).unwrap()

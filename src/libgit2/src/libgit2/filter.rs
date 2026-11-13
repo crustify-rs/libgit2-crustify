@@ -86,12 +86,12 @@ use std::sync::Once;
 
 use ffibox::{CBorrowedPtr, CBox, CCell, CDrop, CMutSeam, CRefSeam, define_ctype, impl_cdrop};
 
-use crate::ffi;
 use crate::libgit2::src::libgit2::object::ObjectRef;
 use crate::libgit2::src::libgit2::repository::RepositoryRef;
 use crate::libgit2::src::util::errors::{
     ErrorBuf, ErrorClass, ErrorCode, last, runtime_pinned, set,
 };
+use crate::sys::libgit2 as sys;
 
 define_ctype!(
     /// A stream that data is written into piece by piece, then closed
@@ -129,7 +129,7 @@ define_ctype!(
     WriteStream,
     WriteStreamRef,
     WriteStreamMut,
-    ffi::git_writestream
+    sys::git_writestream
 );
 
 impl WriteStream {
@@ -233,7 +233,7 @@ fn check(rc: c_int) -> Result<(), StreamError> {
 ///
 /// `stream` is a live header in its container, with its members set, which the caller
 /// owns and does not use again.
-pub(crate) unsafe fn stream_free(stream: *mut ffi::git_writestream) {
+pub(crate) unsafe fn stream_free(stream: *mut sys::git_writestream) {
     // SAFETY: per this function's contract the caller owns the live header; the projection forms no
     // reference to it.
     let free_ptr = unsafe { &raw const (*stream).free };
@@ -315,7 +315,7 @@ impl<T: StreamWriter + ?Sized> StreamWriter for &mut T {
 /// so a pointer to it is a pointer to the box.
 #[repr(C)]
 pub(crate) struct Repr<W> {
-    stream: ffi::git_writestream,
+    stream: sys::git_writestream,
     writer: W,
 }
 
@@ -387,7 +387,7 @@ impl<W: StreamWriter> RustWriteStream<W> {
     /// A stream whose members run `writer`.
     pub fn new(writer: W) -> Self {
         let repr = Box::new(Repr {
-            stream: ffi::git_writestream {
+            stream: sys::git_writestream {
                 write: Some(write_with::<W>),
                 close: Some(close_with::<W>),
                 free: Some(free_with::<W>),
@@ -401,7 +401,7 @@ impl<W: StreamWriter> RustWriteStream<W> {
     }
 
     /// The stream's header.
-    pub(crate) fn header(&self) -> *mut ffi::git_writestream {
+    pub(crate) fn header(&self) -> *mut sys::git_writestream {
         // The header is `Repr`'s first field, at offset 0 (`#[repr(C)]`).
         self.raw.as_ptr().cast()
     }
@@ -494,7 +494,7 @@ impl<W: StreamWriter + fmt::Debug> fmt::Debug for RustWriteStream<W> {
 ///
 /// `stream` is the header of a live `Repr<W>`, which no other reference reaches for
 /// `'a`.
-unsafe fn writer_of<'a, W>(stream: *mut ffi::git_writestream) -> &'a mut W {
+unsafe fn writer_of<'a, W>(stream: *mut sys::git_writestream) -> &'a mut W {
     // SAFETY: per this function's contract; the header is at offset 0 of its `Repr`.
     unsafe { &mut (*stream.cast::<Repr<W>>()).writer }
 }
@@ -517,7 +517,7 @@ fn returned(result: Result<(), StreamError>) -> c_int {
 /// `stream` is the header of a live `Repr<W>`, which nothing else reaches during the
 /// call; `buffer` is NULL or valid for reads of `len` bytes, unchanged during the call.
 pub(crate) unsafe extern "C" fn write_with<W: StreamWriter>(
-    stream: *mut ffi::git_writestream,
+    stream: *mut sys::git_writestream,
     buffer: *const c_char,
     len: usize,
 ) -> c_int {
@@ -541,7 +541,7 @@ pub(crate) unsafe extern "C" fn write_with<W: StreamWriter>(
 ///
 /// `stream` is the header of a live `Repr<W>`, which nothing else reaches during the
 /// call.
-unsafe extern "C" fn close_with<W: StreamWriter>(stream: *mut ffi::git_writestream) -> c_int {
+unsafe extern "C" fn close_with<W: StreamWriter>(stream: *mut sys::git_writestream) -> c_int {
     // SAFETY: per this function's contract.
     let writer = unsafe { writer_of::<W>(stream) };
     returned(writer.close())
@@ -553,7 +553,7 @@ unsafe extern "C" fn close_with<W: StreamWriter>(stream: *mut ffi::git_writestre
 ///
 /// `stream` is the header of a live `Repr<W>` box, which the caller owns and does not
 /// use again.
-unsafe extern "C" fn free_with<W: StreamWriter>(stream: *mut ffi::git_writestream) {
+unsafe extern "C" fn free_with<W: StreamWriter>(stream: *mut sys::git_writestream) {
     // SAFETY: per this function's contract, the box from `RustWriteStream::new`, given
     // up by its owner.
     drop(unsafe { Box::from_raw(stream.cast::<Repr<W>>()) });
@@ -643,7 +643,7 @@ impl StreamError {
             // SAFETY: `message` is a live C string, which libgit2 copies; any class is
             // accepted. The runtime is pinned, so the thread state is looked up under
             // libgit2's live TLS key.
-            let _ = unsafe { ffi::git_error_set_str(self.class, self.message.as_ptr()) };
+            let _ = unsafe { sys::git_error_set_str(self.class, self.message.as_ptr()) };
         }
         self.code
     }
@@ -760,8 +760,8 @@ impl std::error::Error for StreamError {}
 #[doc(alias = "git_filter_list")]
 #[repr(transparent)]
 pub struct FilterList<'r>(
-    ffi::git_filter_list,
-    PhantomData<(*const (), &'r ffi::git_repository)>,
+    sys::git_filter_list,
+    PhantomData<(*const (), &'r sys::git_repository)>,
 );
 
 /// Shared borrow of a [`FilterList`]. `Copy`, like `&T`.
@@ -785,7 +785,7 @@ pub struct FilterListMut<'a, 'r>(
 // `FilterListRef` has no write operation. `FilterListMut` is invariant in the list
 // through its `PhantomData<&'a mut FilterList<'r>>`.
 unsafe impl<'r> CCell for FilterList<'r> {
-    type C = ffi::git_filter_list;
+    type C = sys::git_filter_list;
     type Mut<'a>
         = FilterListMut<'a, 'r>
     where
@@ -848,7 +848,7 @@ unsafe impl<'r> CDrop<FilterList<'r>> for FilterListFree {
         // SAFETY: per `c_drop`'s contract, `ptr` addresses a live list whose ownership
         // the caller gives up; `FilterList` is transparent over `git_filter_list`. It
         // was built after the runtime was pinned, so its filters are still registered.
-        unsafe { ffi::git_filter_list_free(ptr.as_ptr().cast()) }
+        unsafe { sys::git_filter_list_free(ptr.as_ptr().cast()) }
     }
 }
 
@@ -884,7 +884,7 @@ fn loaded(
 /// The `git_blob` an object of type blob is, live for `'b`, the handle's borrow: what
 /// the `_with_blob` forms build from their object, and nothing else does.
 #[derive(Clone, Copy)]
-struct LiveBlob<'b>(NonNull<ffi::git_blob>, PhantomData<&'b ffi::git_blob>);
+struct LiveBlob<'b>(NonNull<sys::git_blob>, PhantomData<&'b sys::git_blob>);
 
 impl<'b> LiveBlob<'b> {
     /// The blob `object` is; for an object of any other type, which libgit2 would read
@@ -893,7 +893,7 @@ impl<'b> LiveBlob<'b> {
     fn of(object: ObjectRef<'b, '_>) -> Result<Self, ErrorBuf> {
         // SAFETY: the handle addresses a live object; `git_object_type` reads its cached
         // type.
-        if unsafe { ffi::git_object_type(object.as_ptr()) } != ffi::GIT_OBJECT_BLOB {
+        if unsafe { sys::git_object_type(object.as_ptr()) } != sys::GIT_OBJECT_BLOB {
             set(ErrorClass::Filter, c"the object is not a blob");
             return Err(last());
         }
@@ -904,7 +904,7 @@ impl<'b> LiveBlob<'b> {
     }
 
     /// The pointer libgit2 takes: the blob, or NULL for none.
-    fn as_ptr(blob: Option<Self>) -> *mut ffi::git_blob {
+    fn as_ptr(blob: Option<Self>) -> *mut sys::git_blob {
         blob.map_or(ptr::null_mut(), |b| b.0.as_ptr())
     }
 }
@@ -918,12 +918,12 @@ impl<'r> FilterList<'r> {
     /// `repo` for `'r`, and the repository cannot go first:
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::ffi;
+    /// use libgit2::sys::libgit2 as sys;
     /// use libgit2::libgit2::src::libgit2::filter::FilterList;
     /// use libgit2::libgit2::src::libgit2::repository::Repository;
     ///
     /// let repo = Repository::new().unwrap();
-    /// let list = FilterList::new(repo.as_ref(), ffi::GIT_FILTER_TO_ODB, 0).unwrap();
+    /// let list = FilterList::new(repo.as_ref(), sys::GIT_FILTER_TO_ODB, 0).unwrap();
     /// drop(repo);
     /// drop(list);
     /// ```
@@ -939,7 +939,7 @@ impl<'r> FilterList<'r> {
     #[doc(alias = "git_filter_list_new")]
     pub fn new(
         repo: RepositoryRef<'r>,
-        mode: ffi::git_filter_mode_t,
+        mode: sys::git_filter_mode_t,
         flags: u32,
     ) -> Result<FilterListBox<'r>, ErrorBuf> {
         if !runtime_pinned() {
@@ -952,7 +952,7 @@ impl<'r> FilterList<'r> {
         // thread, which neither leaves. The runtime is pinned, so a failure is reported
         // on live thread-local state.
         let rc = unsafe {
-            ffi::git_filter_list_new(&raw mut out, repo.as_ptr().cast_mut(), mode, flags)
+            sys::git_filter_list_new(&raw mut out, repo.as_ptr().cast_mut(), mode, flags)
         };
         // SAFETY: on success `out` is a fresh list nothing else references, released by
         // `git_filter_list_free` as `FilterListFree` does; on failure it is NULL. Its
@@ -980,12 +980,12 @@ impl<'r> FilterList<'r> {
     /// The list keeps `repo`, as [`new`](Self::new) does:
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::ffi;
+    /// use libgit2::sys::libgit2 as sys;
     /// use libgit2::libgit2::src::libgit2::filter::FilterList;
     /// use libgit2::libgit2::src::libgit2::repository::Repository;
     ///
     /// let repo = Repository::open(c".").unwrap();
-    /// let list = FilterList::load(repo.as_ref(), c"a.txt", ffi::GIT_FILTER_TO_ODB, 0);
+    /// let list = FilterList::load(repo.as_ref(), c"a.txt", sys::GIT_FILTER_TO_ODB, 0);
     /// drop(repo);
     /// drop(list);
     /// ```
@@ -1003,7 +1003,7 @@ impl<'r> FilterList<'r> {
     pub fn load(
         repo: RepositoryRef<'r>,
         path: &CStr,
-        mode: ffi::git_filter_mode_t,
+        mode: sys::git_filter_mode_t,
         flags: u32,
     ) -> Result<Option<FilterListBox<'r>>, ErrorBuf> {
         Self::load_from(repo, None, path, mode, flags)
@@ -1025,7 +1025,7 @@ impl<'r> FilterList<'r> {
         repo: RepositoryRef<'r>,
         blob: ObjectRef<'_, '_>,
         path: &CStr,
-        mode: ffi::git_filter_mode_t,
+        mode: sys::git_filter_mode_t,
         flags: u32,
     ) -> Result<Option<FilterListBox<'r>>, ErrorBuf> {
         Self::load_from(repo, Some(blob), path, mode, flags)
@@ -1036,7 +1036,7 @@ impl<'r> FilterList<'r> {
         repo: RepositoryRef<'r>,
         blob: Option<ObjectRef<'_, '_>>,
         path: &CStr,
-        mode: ffi::git_filter_mode_t,
+        mode: sys::git_filter_mode_t,
         flags: u32,
     ) -> Result<Option<FilterListBox<'r>>, ErrorBuf> {
         if !runtime_pinned() {
@@ -1054,7 +1054,7 @@ impl<'r> FilterList<'r> {
         // live for the call, as a `LiveBlob` is, its id read for the filters' checks;
         // `path` NUL-terminated, copied. The runtime is pinned: the filter registry and its lock
         // exist, and a failure is reported on live thread-local state.
-        let rc = unsafe { ffi::git_filter_list_load(&raw mut out, repo, blob, path, mode, flags) };
+        let rc = unsafe { sys::git_filter_list_load(&raw mut out, repo, blob, path, mode, flags) };
         // SAFETY: `out` is NULL (no filter applies, or a failure), or a fresh list
         // nothing else references, released by `git_filter_list_free` as
         // `FilterListFree` does. Its repository outlives `'r`.
@@ -1078,8 +1078,8 @@ impl<'r> FilterList<'r> {
     pub fn load_ext(
         repo: RepositoryRef<'r>,
         path: &CStr,
-        mode: ffi::git_filter_mode_t,
-        opts: Option<&ffi::git_filter_options>,
+        mode: sys::git_filter_mode_t,
+        opts: Option<&sys::git_filter_options>,
     ) -> Result<Option<FilterListBox<'r>>, ErrorBuf> {
         Self::load_ext_from(repo, None, path, mode, opts)
     }
@@ -1098,8 +1098,8 @@ impl<'r> FilterList<'r> {
         repo: RepositoryRef<'r>,
         blob: ObjectRef<'_, '_>,
         path: &CStr,
-        mode: ffi::git_filter_mode_t,
-        opts: Option<&ffi::git_filter_options>,
+        mode: sys::git_filter_mode_t,
+        opts: Option<&sys::git_filter_options>,
     ) -> Result<Option<FilterListBox<'r>>, ErrorBuf> {
         Self::load_ext_from(repo, Some(blob), path, mode, opts)
     }
@@ -1109,8 +1109,8 @@ impl<'r> FilterList<'r> {
         repo: RepositoryRef<'r>,
         blob: Option<ObjectRef<'_, '_>>,
         path: &CStr,
-        mode: ffi::git_filter_mode_t,
-        opts: Option<&ffi::git_filter_options>,
+        mode: sys::git_filter_mode_t,
+        opts: Option<&sys::git_filter_options>,
     ) -> Result<Option<FilterListBox<'r>>, ErrorBuf> {
         if !runtime_pinned() {
             return Err(last());
@@ -1127,7 +1127,7 @@ impl<'r> FilterList<'r> {
         // read (copied into the session) for the call: libgit2 is built with
         // `GIT_DEPRECATE_HARD`, so the `reserved` pointer is never read.
         let rc =
-            unsafe { ffi::git_filter_list_load_ext(&raw mut out, repo, blob, path, mode, opts) };
+            unsafe { sys::git_filter_list_load_ext(&raw mut out, repo, blob, path, mode, opts) };
         // SAFETY: as in `load_from`.
         loaded(rc, unsafe { FilterListBox::from_c(out) })
     }
@@ -1150,7 +1150,7 @@ pub(crate) fn initialise_builtin_filters() {
         // SAFETY: `list` is a writable slot, left NULL on failure; no repository, which
         // the list only keeps, and it is never applied. The caller pinned the runtime.
         let rc = unsafe {
-            ffi::git_filter_list_new(&raw mut list, ptr::null_mut(), ffi::GIT_FILTER_TO_ODB, 0)
+            sys::git_filter_list_new(&raw mut list, ptr::null_mut(), sys::GIT_FILTER_TO_ODB, 0)
         };
         if rc < 0 || list.is_null() {
             return;
@@ -1158,25 +1158,25 @@ pub(crate) fn initialise_builtin_filters() {
         for name in [c"crlf", c"ident"] {
             // SAFETY: a NUL-terminated name; libgit2 looks it up under its registry lock
             // and returns the registered filter, which the registry keeps, or NULL.
-            let filter = unsafe { ffi::git_filter_lookup(name.as_ptr()) };
+            let filter = unsafe { sys::git_filter_lookup(name.as_ptr()) };
             if !filter.is_null() {
                 // SAFETY: the live scratch list and a registered filter, with no payload;
                 // libgit2 initialises the filter and appends an entry, or fails without
                 // one. No constructor here loads meanwhile: they wait on `DONE`.
-                unsafe { ffi::git_filter_list_push(list, filter, ptr::null_mut()) };
+                unsafe { sys::git_filter_list_push(list, filter, ptr::null_mut()) };
             }
         }
         // SAFETY: the scratch list, released once; its entries have no payload, which
         // the built-in filters' `cleanup` accepts.
-        unsafe { ffi::git_filter_list_free(list) };
+        unsafe { sys::git_filter_list_free(list) };
     });
 }
 
 // The layout type is the C type's size, so a list pointer converts both ways.
-const _: () = assert!(size_of::<FilterList<'static>>() == size_of::<ffi::git_filter_list>());
+const _: () = assert!(size_of::<FilterList<'static>>() == size_of::<sys::git_filter_list>());
 
 const _: () =
-    assert!(size_of::<FilterListBox<'static>>() == size_of::<*mut ffi::git_filter_list>());
+    assert!(size_of::<FilterListBox<'static>>() == size_of::<*mut sys::git_filter_list>());
 
 #[cfg(test)]
 mod unit_tests {
@@ -1252,30 +1252,30 @@ mod unit_tests {
 
     fn length(list: &FilterListBox<'_>) -> usize {
         // SAFETY: a live list; libgit2 only reads its entry count.
-        unsafe { ffi::git_filter_list_length(list.as_ref().as_ptr()) }
+        unsafe { sys::git_filter_list_length(list.as_ref().as_ptr()) }
     }
 
     #[test]
     fn layout_is_one_pointer() {
         assert_eq!(
             size_of::<FilterList<'_>>(),
-            size_of::<ffi::git_filter_list>()
+            size_of::<sys::git_filter_list>()
         );
         assert_eq!(
             size_of::<FilterListBox<'_>>(),
-            size_of::<*mut ffi::git_filter_list>()
+            size_of::<*mut sys::git_filter_list>()
         );
         assert_eq!(
             size_of::<Option<FilterListBox<'_>>>(),
-            size_of::<*mut ffi::git_filter_list>()
+            size_of::<*mut sys::git_filter_list>()
         );
         assert_eq!(
             size_of::<FilterListRef<'_, '_>>(),
-            size_of::<*const ffi::git_filter_list>()
+            size_of::<*const sys::git_filter_list>()
         );
         assert_eq!(
             size_of::<FilterListMut<'_, '_>>(),
-            size_of::<*mut ffi::git_filter_list>()
+            size_of::<*mut sys::git_filter_list>()
         );
         assert_eq!(size_of::<FilterListFree>(), 0);
     }
@@ -1285,7 +1285,7 @@ mod unit_tests {
     #[test]
     fn handles_without_c() {
         let mut storage = 0u64;
-        let raw: *mut ffi::git_filter_list = ptr::from_mut(&mut storage).cast();
+        let raw: *mut sys::git_filter_list = ptr::from_mut(&mut storage).cast();
         // SAFETY: NULL is refused.
         assert!(unsafe { FilterListRef::from_ptr(ptr::null_mut()) }.is_none());
         // SAFETY: NULL is refused.
@@ -1321,7 +1321,7 @@ mod unit_tests {
             assert_eq!(error.message(), c"refused here");
             assert!(loaded(0, None).unwrap().is_none());
             let wd = Workdir::new("loaded");
-            let list = FilterList::new(wd.repo(), ffi::GIT_FILTER_TO_ODB, 0).unwrap();
+            let list = FilterList::new(wd.repo(), sys::GIT_FILTER_TO_ODB, 0).unwrap();
             assert_eq!(length(&loaded(0, Some(list)).unwrap().unwrap()), 0);
         });
     }
@@ -1348,20 +1348,20 @@ mod unit_tests {
                     expect(FilterList::load(
                         wd.repo(),
                         path,
-                        ffi::GIT_FILTER_TO_WORKTREE,
+                        sys::GIT_FILTER_TO_WORKTREE,
                         0,
                     ));
                     expect(FilterList::load_ext(
                         wd.repo(),
                         path,
-                        ffi::GIT_FILTER_TO_ODB,
+                        sys::GIT_FILTER_TO_ODB,
                         None,
                     ));
                 }
                 // Not absolute: a leading `.` or a `/` further in.
                 for path in [c"./a.txt", c"sub/a.txt", c"a.txt/"] {
                     assert!(
-                        FilterList::load(wd.repo(), path, ffi::GIT_FILTER_TO_WORKTREE, 0).is_ok()
+                        FilterList::load(wd.repo(), path, sys::GIT_FILTER_TO_WORKTREE, 0).is_ok()
                     );
                 }
             },
@@ -1381,7 +1381,7 @@ mod unit_tests {
                 initialise_builtin_filters();
                 let wd = Workdir::new("builtins");
                 for path in [c"a.txt", c"a.id"] {
-                    let list = FilterList::load(wd.repo(), path, ffi::GIT_FILTER_TO_WORKTREE, 0)
+                    let list = FilterList::load(wd.repo(), path, sys::GIT_FILTER_TO_WORKTREE, 0)
                         .unwrap()
                         .unwrap();
                     assert_eq!(length(&list), 1);
@@ -1400,7 +1400,7 @@ mod unit_tests {
             concat!(module_path!(), "::free_policy_and_c_release_lists"),
             || {
                 let wd = Workdir::new("free");
-                let list = FilterList::load(wd.repo(), c"a.txt", ffi::GIT_FILTER_TO_WORKTREE, 0)
+                let list = FilterList::load(wd.repo(), c"a.txt", sys::GIT_FILTER_TO_WORKTREE, 0)
                     .unwrap()
                     .unwrap();
                 assert_eq!(length(&list), 1);
@@ -1410,22 +1410,22 @@ mod unit_tests {
                     FilterListFree.c_drop(NonNull::new(raw).unwrap().cast::<FilterList<'_>>());
                 };
 
-                let list = FilterList::load(wd.repo(), c"a.id", ffi::GIT_FILTER_TO_ODB, 0)
+                let list = FilterList::load(wd.repo(), c"a.id", sys::GIT_FILTER_TO_ODB, 0)
                     .unwrap()
                     .unwrap();
                 let raw = list.into_c();
                 // SAFETY: the live list given up above, released once by C.
-                unsafe { ffi::git_filter_list_free(raw) };
+                unsafe { sys::git_filter_list_free(raw) };
 
                 let mut out = ptr::null_mut();
                 // SAFETY: a writable slot, the live repository and a NUL-terminated path.
                 let rc = unsafe {
-                    ffi::git_filter_list_load(
+                    sys::git_filter_list_load(
                         &raw mut out,
                         wd.repo().as_ptr().cast_mut(),
                         ptr::null_mut(),
                         c"b.txt".as_ptr(),
-                        ffi::GIT_FILTER_TO_ODB,
+                        sys::GIT_FILTER_TO_ODB,
                         0,
                     )
                 };

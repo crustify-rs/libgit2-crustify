@@ -7,11 +7,11 @@ use core::ops::ControlFlow;
 
 use ffibox::CRefSeam;
 
-use crate::ffi;
 use crate::libgit2::src::libgit2::repository::{
     FetchheadForeachCallback, RepositoryError, RepositoryRef, pathless, unpinned,
 };
 use crate::libgit2::src::util::errors::runtime_pinned;
+use crate::sys::libgit2 as sys;
 
 impl RepositoryRef<'_> {
     /// Calls `callback` with each entry of the repository's `FETCH_HEAD`, in file
@@ -81,11 +81,11 @@ impl RepositoryRef<'_> {
         // the routine only reads (its `gitdir` and object id type); the callback's own
         // trampoline and payload, which nothing else touches until the call returns
         // (`callback` is exclusively borrowed). The runtime is pinned.
-        let rc = unsafe { ffi::git_repository_fetchhead_foreach(repo, f, payload) };
+        let rc = unsafe { sys::git_repository_fetchhead_foreach(repo, f, payload) };
         callback.resume_panic();
         match rc {
             0 => Ok(ControlFlow::Continue(())),
-            ffi::GIT_EUSER if callback.stopped => Ok(ControlFlow::Break(())),
+            sys::GIT_EUSER if callback.stopped => Ok(ControlFlow::Break(())),
             rc => Err(RepositoryError::from_libgit2(rc)),
         }
     }

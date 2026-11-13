@@ -8,21 +8,21 @@
 //! The same applies to `OdbWritepackRef::from_ptr` and `OdbWritepackRef::backend`.
 
 use ffibox::CRefSeam;
-use libgit2::ffi;
+use libgit2::sys::libgit2 as sys;
 use libgit2::libgit2::src::libgit2::odb::OdbStreamRef;
 
 fn main() {
     // A backend that made the stream, then went away. The stream is still a live,
     // initialised `git_odb_stream` in Rust storage.
-    let gone = Box::into_raw(Box::new(ffi::git_odb_backend {
-        version: ffi::GIT_ODB_BACKEND_VERSION,
-        ..ffi::git_odb_backend::default()
+    let gone = Box::into_raw(Box::new(sys::git_odb_backend {
+        version: sys::GIT_ODB_BACKEND_VERSION,
+        ..sys::git_odb_backend::default()
     }));
     // SAFETY: `gone` came from `Box::into_raw` just above and is reclaimed once.
     drop(unsafe { Box::from_raw(gone) });
-    let mut stream = ffi::git_odb_stream {
+    let mut stream = sys::git_odb_stream {
         backend: gone,
-        ..ffi::git_odb_stream::default()
+        ..sys::git_odb_stream::default()
     };
     // SAFETY: `stream` is a live, initialised `git_odb_stream` in this frame. It outlives
     // the handle, and nothing writes it while the handle lives. This is everything

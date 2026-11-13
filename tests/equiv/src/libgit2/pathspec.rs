@@ -7,13 +7,13 @@ use core::ptr;
 use libgit2::libgit2::src::libgit2::index::Index;
 use libgit2::libgit2::src::libgit2::pathspec::{MatchList, Pathspec, PathspecArc, PathspecFlags};
 use libgit2::libgit2::src::libgit2::strarray::StrArrayView;
-use libgit2_sys as ffi;
+use libgit2::sys::libgit2 as sys;
 
 /// The C result for one path, which is only ever 0 or 1 for non-null arguments.
-fn raw_matches(raw: *const ffi::git_pathspec, flags: PathspecFlags, path: &CStr) -> bool {
+fn raw_matches(raw: *const sys::git_pathspec, flags: PathspecFlags, path: &CStr) -> bool {
     // SAFETY: callers pass a live, initialized pathspec they own; `path` is
     // NUL-terminated. C reads both and retains neither.
-    let rc = unsafe { ffi::git_pathspec_matches_path(raw, flags.bits(), path.as_ptr()) };
+    let rc = unsafe { sys::git_pathspec_matches_path(raw, flags.bits(), path.as_ptr()) };
     assert!(rc == 0 || rc == 1, "unexpected matches_path result {rc}");
     rc == 1
 }
@@ -77,14 +77,14 @@ fn construction_copy_and_release_sequences() {
         let view = StrArrayView::new(&safe_patterns);
         let safe_result = Pathspec::new(view.as_ref()); // also pins runtime
         let mut ptrs: Vec<_> = raw_patterns.iter().map(|s| s.as_ptr().cast_mut()).collect();
-        let input = ffi::git_strarray {
+        let input = sys::git_strarray {
             strings: ptrs.as_mut_ptr(),
             count: ptrs.len(),
         };
         let mut raw = ptr::null_mut();
         // SAFETY: initialized runtime; valid input pointers only read during the
         // call, and writable output slot. This result owns a separate C allocation.
-        let rc = unsafe { ffi::git_pathspec_new(&raw mut raw, &raw const input) };
+        let rc = unsafe { sys::git_pathspec_new(&raw mut raw, &raw const input) };
         assert_eq!(safe_result.is_ok(), rc == 0);
         let mut safe = safe_result.unwrap();
         drop(view);
@@ -123,7 +123,7 @@ fn construction_copy_and_release_sequences() {
         let shared: PathspecArc = safe.into();
         // SAFETY: release exactly the independently allocated reference; no handles
         // to it remain. The Rust owner is a different allocation and stays live.
-        unsafe { ffi::git_pathspec_free(raw) };
+        unsafe { sys::git_pathspec_free(raw) };
         // Releasing the C object leaves the Rust owner's compiled patterns intact.
         for (flags, path, raw_result) in expected {
             assert_eq!(shared.as_ref().matches_path(flags, path), raw_result);
@@ -134,21 +134,21 @@ fn construction_copy_and_release_sequences() {
 #[test]
 fn flag_values_match_public_c_constants() {
     for (safe, raw) in [
-        (PathspecFlags::DEFAULT, ffi::GIT_PATHSPEC_DEFAULT),
-        (PathspecFlags::IGNORE_CASE, ffi::GIT_PATHSPEC_IGNORE_CASE),
-        (PathspecFlags::USE_CASE, ffi::GIT_PATHSPEC_USE_CASE),
-        (PathspecFlags::NO_GLOB, ffi::GIT_PATHSPEC_NO_GLOB),
+        (PathspecFlags::DEFAULT, sys::GIT_PATHSPEC_DEFAULT),
+        (PathspecFlags::IGNORE_CASE, sys::GIT_PATHSPEC_IGNORE_CASE),
+        (PathspecFlags::USE_CASE, sys::GIT_PATHSPEC_USE_CASE),
+        (PathspecFlags::NO_GLOB, sys::GIT_PATHSPEC_NO_GLOB),
         (
             PathspecFlags::NO_MATCH_ERROR,
-            ffi::GIT_PATHSPEC_NO_MATCH_ERROR,
+            sys::GIT_PATHSPEC_NO_MATCH_ERROR,
         ),
         (
             PathspecFlags::FIND_FAILURES,
-            ffi::GIT_PATHSPEC_FIND_FAILURES,
+            sys::GIT_PATHSPEC_FIND_FAILURES,
         ),
         (
             PathspecFlags::FAILURES_ONLY,
-            ffi::GIT_PATHSPEC_FAILURES_ONLY,
+            sys::GIT_PATHSPEC_FAILURES_ONLY,
         ),
     ] {
         assert_eq!(safe.bits(), raw);
@@ -177,13 +177,13 @@ fn slash_only_patterns_compile_to_nothing() {
         let safe = Pathspec::new(view.as_ref()).unwrap();
         let mut raw = ptr::null_mut();
         let mut strings = [pattern.as_ptr().cast_mut()];
-        let input = ffi::git_strarray {
+        let input = sys::git_strarray {
             strings: strings.as_mut_ptr(),
             count: 1,
         };
         // SAFETY: initialized runtime; the input is read during the call only; the
         // output slot is writable and receives an independent pathspec.
-        let ret = unsafe { ffi::git_pathspec_new(&raw mut raw, &raw const input) };
+        let ret = unsafe { sys::git_pathspec_new(&raw mut raw, &raw const input) };
         assert_eq!(ret, 0);
         for flags in [PathspecFlags::DEFAULT, PathspecFlags::IGNORE_CASE] {
             let safe_result = safe.as_ref().matches_path(flags, path);
@@ -191,7 +191,7 @@ fn slash_only_patterns_compile_to_nothing() {
             assert_eq!(safe_result, expected, "{pattern:?} {path:?} {flags:?}");
         }
         // SAFETY: the independent pathspec's only reference, released once.
-        unsafe { ffi::git_pathspec_free(raw) };
+        unsafe { sys::git_pathspec_free(raw) };
     }
 }
 
@@ -221,14 +221,14 @@ fn matching_across_retaining_list_sequence() {
     let view = StrArrayView::new(&patterns);
     let safe: PathspecArc = Pathspec::new(view.as_ref()).unwrap().into();
     let mut ptrs: Vec<_> = patterns.iter().map(|s| s.as_ptr().cast_mut()).collect();
-    let input = ffi::git_strarray {
+    let input = sys::git_strarray {
         strings: ptrs.as_mut_ptr(),
         count: ptrs.len(),
     };
     let mut raw = ptr::null_mut();
     // SAFETY: initialized runtime (the safe constructor ran); valid input pointers
     // only read during the call; writable output slot for an independent pathspec.
-    let ret = unsafe { ffi::git_pathspec_new(&raw mut raw, &raw const input) };
+    let ret = unsafe { sys::git_pathspec_new(&raw mut raw, &raw const input) };
     assert_eq!(ret, 0);
     let compare = |step: &str| {
         for flags in flag_sets {
@@ -250,7 +250,7 @@ fn matching_across_retaining_list_sequence() {
     // SAFETY: an independent live index and the raw pathspec; writable out slot. The
     // list takes its own counted reference to `raw`.
     let rc = unsafe {
-        ffi::git_pathspec_match_index(
+        sys::git_pathspec_match_index(
             &raw mut raw_list,
             raw_index.as_c_ptr(),
             PathspecFlags::FIND_FAILURES.bits(),
@@ -261,13 +261,13 @@ fn matching_across_retaining_list_sequence() {
     compare("retained by a list");
     drop(safe_list);
     // SAFETY: the fresh raw list is released once; `raw` keeps its own reference.
-    unsafe { ffi::git_pathspec_match_list_free(raw_list) };
+    unsafe { sys::git_pathspec_match_list_free(raw_list) };
     compare("list released");
     drop(view);
     drop(ptrs);
     compare("inputs released");
     // SAFETY: the last reference to the raw pathspec; no list retains it any more.
-    unsafe { ffi::git_pathspec_free(raw) };
+    unsafe { sys::git_pathspec_free(raw) };
 }
 
 mod match_list;

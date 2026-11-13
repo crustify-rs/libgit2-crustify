@@ -1,12 +1,12 @@
 //! Independent C/Rust note iterators, compared through multi-step C traversal.
 use core::ptr;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::commit::Commit;
 use libgit2::libgit2::src::libgit2::iterator::{NoteIterator, NoteIteratorBox};
 use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
 use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
 use libgit2::libgit2::src::util::errors::last;
+use libgit2::sys::libgit2 as sys;
 
 const FIXTURE: &str = "c/tests/resources/testrepo.git";
 
@@ -16,29 +16,29 @@ const FIXTURE: &str = "c/tests/resources/testrepo.git";
     clippy::many_single_char_names,
     reason = "short names for the sides and values the steps compare"
 )]
-fn traverse_together(safe: NoteIteratorBox<'_>, raw: *mut ffi::git_note_iterator) -> usize {
+fn traverse_together(safe: NoteIteratorBox<'_>, raw: *mut sys::git_note_iterator) -> usize {
     let mut count = 0;
     let mut exhausted = 0;
     for _ in 0..128 {
         let (mut a, mut b, mut c, mut d) = (
-            ffi::git_oid::default(),
-            ffi::git_oid::default(),
-            ffi::git_oid::default(),
-            ffi::git_oid::default(),
+            sys::git_oid::default(),
+            sys::git_oid::default(),
+            sys::git_oid::default(),
+            sys::git_oid::default(),
         );
         // SAFETY: initialized, disjoint output ids; two live sole iterators,
         // advanced without any outstanding handles; their repository remains live.
-        let note_next = unsafe { ffi::git_note_next(&raw mut a, &raw mut b, raw) };
+        let note_next = unsafe { sys::git_note_next(&raw mut a, &raw mut b, raw) };
         // SAFETY: as above.
         let (x, y) = unsafe {
             (
                 note_next,
-                ffi::git_note_next(&raw mut c, &raw mut d, safe.as_c_ptr()),
+                sys::git_note_next(&raw mut c, &raw mut d, safe.as_c_ptr()),
             )
         };
         assert_eq!(x, y);
         assert_eq!((a.id, b.id), (c.id, d.id));
-        if x == ffi::GIT_ITEROVER {
+        if x == sys::GIT_ITEROVER {
             exhausted += 1;
             if exhausted == 2 {
                 break;
@@ -51,18 +51,18 @@ fn traverse_together(safe: NoteIteratorBox<'_>, raw: *mut ffi::git_note_iterator
     assert_eq!(exhausted, 2);
     drop(safe);
     // SAFETY: the independent C iterator is still owned here, released once.
-    unsafe { ffi::git_note_iterator_free(raw) };
+    unsafe { sys::git_note_iterator_free(raw) };
     count
 }
 
 fn raw_new(
     repo: &RepositoryBox,
     name: Option<&core::ffi::CStr>,
-) -> (i32, *mut ffi::git_note_iterator) {
+) -> (i32, *mut sys::git_note_iterator) {
     let mut raw = ptr::null_mut();
     // SAFETY: valid repository, optional NUL string, and null-initialized slot.
     let rc = unsafe {
-        ffi::git_note_iterator_new(
+        sys::git_note_iterator_new(
             &raw mut raw,
             repo.as_c_ptr(),
             name.map_or(ptr::null(), std::ffi::CStr::as_ptr),
@@ -88,7 +88,7 @@ fn constructors_and_traversal_agree() {
             let mut raw = ptr::null_mut();
             // SAFETY: live commit and writable fresh output; the successful iterator
             // owns independent traversal state, released by traverse_together.
-            let rc = unsafe { ffi::git_note_commit_iterator_new(&raw mut raw, commit.as_c_ptr()) };
+            let rc = unsafe { sys::git_note_commit_iterator_new(&raw mut raw, commit.as_c_ptr()) };
             (rc, raw)
         } else {
             raw_new(&repo, Some(c"refs/notes/fanout"))

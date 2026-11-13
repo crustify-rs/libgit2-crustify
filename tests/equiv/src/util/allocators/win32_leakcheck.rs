@@ -17,10 +17,10 @@
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::thread;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::util::alloc::StrFree;
 use libgit2::libgit2::src::util::allocators::win32_leakcheck::allocator;
 use libgit2::libgit2::src::util::errors::{ErrorClass, last, set_str};
+use libgit2::sys::libgit2 as sys;
 
 /// What one step observed: whether the call failed, whether it built an allocator, and
 /// the message of the thread's last error after it; each side checks its class itself.
@@ -35,7 +35,7 @@ struct Step {
 fn c_last() -> (c_int, CString) {
     // SAFETY: no arguments; the caller has initialised libgit2, so the thread state is
     // looked up under its live TLS key.
-    let error = unsafe { ffi::git_error_last() };
+    let error = unsafe { sys::git_error_last() };
     assert!(!error.is_null());
     // SAFETY: `git_error_last` returns a static error or this thread's error state, live
     // and unchanged until the next libgit2 call on this thread; it is copied out now.
@@ -65,7 +65,7 @@ unsafe extern "C" fn sentinel_free(_: *mut c_void) {
 
 /// The raw call on a value holding sentinel members, which the stub must leave as they are.
 fn c_step() -> Step {
-    let sentinel = ffi::git_allocator {
+    let sentinel = sys::git_allocator {
         gmalloc: Some(sentinel_malloc),
         grealloc: Some(sentinel_realloc),
         gfree: Some(sentinel_free),
@@ -73,16 +73,16 @@ fn c_step() -> Step {
     let mut raw = sentinel;
     // SAFETY: `raw` is a live `git_allocator` this frame owns exclusively, which C only
     // writes or leaves untouched and does not retain; libgit2 is initialised.
-    let rc = unsafe { ffi::git_win32_leakcheck_init_allocator(&raw mut raw) };
+    let rc = unsafe { sys::git_win32_leakcheck_init_allocator(&raw mut raw) };
     let unwritten = raw.gmalloc.map(|f| f as usize) == sentinel.gmalloc.map(|f| f as usize)
         && raw.grealloc.map(|f| f as usize) == sentinel.grealloc.map(|f| f as usize)
         && raw.gfree.map(|f| f as usize) == sentinel.gfree.map(|f| f as usize);
     let (klass, message) = c_last();
-    assert_eq!(rc, ffi::GIT_ERROR, "C returns -1");
+    assert_eq!(rc, sys::GIT_ERROR, "C returns -1");
     assert!(unwritten, "the failing stub leaves the value as it was");
     assert_eq!(
         klass,
-        ffi::GIT_EINVALID,
+        sys::GIT_EINVALID,
         "C passes GIT_EINVALID as the class"
     );
     Step {
@@ -97,7 +97,7 @@ fn rust_step() -> Step {
     let (klass, message) = c_last();
     assert_eq!(
         klass,
-        ffi::GIT_ERROR_INVALID.cast_signed(),
+        sys::GIT_ERROR_INVALID.cast_signed(),
         "the corrected class"
     );
     if let Err(error) = &result {

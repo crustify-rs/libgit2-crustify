@@ -3,12 +3,12 @@
 mod support;
 use std::ffi::CString;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::diff::{Diff, DiffArc};
 use libgit2::libgit2::src::libgit2::index::Index;
 use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
 use libgit2::libgit2::src::libgit2::repository::{InitFlag, InitOptions, Repository};
 use libgit2::libgit2::src::libgit2::tree::Tree;
+use libgit2::sys::libgit2 as sys;
 use support::{PATCH, RENAME, Repo};
 
 #[test]
@@ -186,9 +186,9 @@ fn foreign_object_id_type_inputs_stay_in_bounds() {
         u8::try_from(OidType::Sha256.raw()).unwrap(),
     );
     let (added, deleted, modified) = (
-        ffi::GIT_DELTA_ADDED,
-        ffi::GIT_DELTA_DELETED,
-        ffi::GIT_DELTA_MODIFIED,
+        sys::GIT_DELTA_ADDED,
+        sys::GIT_DELTA_DELETED,
+        sys::GIT_DELTA_MODIFIED,
     );
     // (diff, delta count, distinct (status, old type, new type, old/new abbrev)).
     let cases = [

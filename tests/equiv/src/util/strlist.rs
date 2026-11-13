@@ -15,12 +15,12 @@
 use std::ffi::{CStr, CString, c_char};
 use std::ptr;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::libgit2::init;
 use libgit2::libgit2::src::util::alloc::{AllocStr, StrFree};
 use libgit2::libgit2::src::util::strlist::{
     NullStrListFree, StrListFree, contains_key, contains_prefix,
 };
+use libgit2::sys::libgit2 as sys;
 
 /// A list C copied and owns: `len` strings of libgit2's allocator, released on drop.
 struct CList {
@@ -35,9 +35,9 @@ impl CList {
         let ptrs: Vec<*const c_char> = strs.iter().map(|s| s.as_ptr()).collect();
         let mut array = ptr::null_mut();
         let copy = if null_terminated {
-            ffi::git_strlist_copy_with_null
+            sys::git_strlist_copy_with_null
         } else {
-            ffi::git_strlist_copy
+            sys::git_strlist_copy
         };
         // SAFETY: `ptrs.len()` live strings borrowed for the call; `array` is a writable slot.
         // libgit2 is initialised by the caller.
@@ -75,12 +75,12 @@ impl CList {
         assert!(i < self.len);
         let slot = self.slot(i);
         // SAFETY: a live string borrowed for the call; libgit2 is initialised.
-        let copy = unsafe { ffi::git__strdup(s.as_ptr()) };
+        let copy = unsafe { sys::git__strdup(s.as_ptr()) };
         assert!(!copy.is_null());
         // SAFETY: the slot is initialised.
         let old = unsafe { slot.read() };
         // SAFETY: the slot held a live string the list owns, released once and replaced.
-        unsafe { ffi::git__free(old.cast()) };
+        unsafe { sys::git__free(old.cast()) };
         // SAFETY: the slot is writable.
         unsafe { slot.write(copy) };
     }
@@ -94,7 +94,7 @@ impl CList {
     fn contains_prefix(&self, prefix: &[u8]) -> bool {
         // SAFETY: the list's live strings; `prefix` holds `prefix.len()` readable bytes.
         unsafe {
-            ffi::git_strlist_contains_prefix(
+            sys::git_strlist_contains_prefix(
                 self.array.cast(),
                 self.len,
                 prefix.as_ptr().cast(),
@@ -106,7 +106,7 @@ impl CList {
     fn contains_key(&self, key: &CStr, delimiter: u8) -> bool {
         // SAFETY: the list's live strings; `key` is NUL-terminated.
         unsafe {
-            ffi::git_strlist_contains_key(
+            sys::git_strlist_contains_key(
                 self.array.cast(),
                 self.len,
                 key.as_ptr(),
@@ -120,10 +120,10 @@ impl Drop for CList {
     fn drop(&mut self) {
         if self.null_terminated {
             // SAFETY: the NULL-terminated array and strings this list owns, released once.
-            unsafe { ffi::git_strlist_free_with_null(self.array) }
+            unsafe { sys::git_strlist_free_with_null(self.array) }
         } else {
             // SAFETY: the array and `len` strings this list owns, released once.
-            unsafe { ffi::git_strlist_free(self.array, self.len) }
+            unsafe { sys::git_strlist_free(self.array, self.len) }
         }
     }
 }

@@ -35,13 +35,13 @@ use std::ffi::{CStr, CString, c_char};
 use std::mem::MaybeUninit;
 
 use glibc_bindings::libc::ffi as libc;
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::trailer::{MessageTrailer, MessageTrailerArray};
+use libgit2::sys::libgit2 as sys;
 
 /// Takes a `git_libgit2_init` reference that is never released.
 fn init() {
     // SAFETY: no arguments; libgit2 counts initialisations under its own lock.
-    assert!(unsafe { ffi::git_libgit2_init() } > 0);
+    assert!(unsafe { sys::git_libgit2_init() } > 0);
 }
 
 /// C's reading of a NUL-terminated string: `strlen`, then the bytes.
@@ -68,9 +68,9 @@ fn parsed_trailers_match() {
         c"",
     ];
     for message in messages {
-        let mut arr = MaybeUninit::<ffi::git_message_trailer_array>::zeroed();
+        let mut arr = MaybeUninit::<sys::git_message_trailer_array>::zeroed();
         // SAFETY: writable storage; `message` is NUL-terminated and only read.
-        let rc = unsafe { ffi::git_message_trailers(arr.as_mut_ptr(), message.as_ptr()) };
+        let rc = unsafe { sys::git_message_trailers(arr.as_mut_ptr(), message.as_ptr()) };
         assert_eq!(rc, 0);
         // SAFETY: a 0 return means every field was written.
         let mut arr = unsafe { arr.assume_init() };
@@ -93,7 +93,7 @@ fn parsed_trailers_match() {
         }
         assert_eq!(rust_side, c_side, "{message:?}");
         // SAFETY: filled by `git_message_trailers`, freed once.
-        unsafe { ffi::git_message_trailer_array_free(&raw mut arr) };
+        unsafe { sys::git_message_trailer_array_free(&raw mut arr) };
     }
 }
 
@@ -152,7 +152,7 @@ const MESSAGES: [&CStr; 15] = [
 type ArrayView = (Vec<(Vec<u8>, Vec<u8>)>, bool, bool);
 
 /// C's view of a raw array.
-fn c_array(arr: &ffi::git_message_trailer_array) -> ArrayView {
+fn c_array(arr: &sys::git_message_trailer_array) -> ArrayView {
     let pairs = (0..arr.count)
         .map(|i| {
             // SAFETY: `i < count`, within the trailer buffer.
@@ -174,12 +174,12 @@ fn c_array(arr: &ffi::git_message_trailer_array) -> ArrayView {
 fn parsed_arrays_match() {
     init();
     for message in MESSAGES {
-        let mut c = ffi::git_message_trailer_array::default();
+        let mut c = sys::git_message_trailer_array::default();
         // SAFETY: zeroed storage; `message` is NUL-terminated and only read.
-        let rc = unsafe { ffi::git_message_trailers(&raw mut c, message.as_ptr()) };
+        let rc = unsafe { sys::git_message_trailers(&raw mut c, message.as_ptr()) };
         let c_view = (rc, c_array(&c));
         // SAFETY: filled by `git_message_trailers`, freed once.
-        unsafe { ffi::git_message_trailer_array_free(&raw mut c) };
+        unsafe { sys::git_message_trailer_array_free(&raw mut c) };
 
         let rust = MessageTrailerArray::parse(message).unwrap();
         let trailers: Vec<_> = rust
@@ -207,9 +207,9 @@ mod allocator {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::trailer::{MessageTrailerArray, MessageTrailerArrayVal};
     use libgit2::libgit2::src::util::errors::last;
+    use libgit2::sys::libgit2 as sys;
 
     use super::{ArrayView, MESSAGES, c_array};
 
@@ -314,7 +314,7 @@ mod allocator {
     /// Installs the allocator, then initialises libgit2 on top of it and pins the
     /// crate's runtime, so neither allocates during a step.
     fn install() {
-        let mut allocator = ffi::git_allocator {
+        let mut allocator = sys::git_allocator {
             gmalloc: Some(traced_malloc),
             grealloc: Some(traced_realloc),
             gfree: Some(traced_free),
@@ -322,11 +322,11 @@ mod allocator {
         // SAFETY: `GIT_OPT_SET_ALLOCATOR` takes a `git_allocator *` with every member
         // set, which it copies; nothing is allocated yet.
         let rc = unsafe {
-            ffi::git_libgit2_opts(ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(), &raw mut allocator)
+            sys::git_libgit2_opts(sys::GIT_OPT_SET_ALLOCATOR.cast_signed(), &raw mut allocator)
         };
         assert_eq!(rc, 0);
         // SAFETY: no arguments; refcounted, never released in this process.
-        assert!(unsafe { ffi::git_libgit2_init() } > 0);
+        assert!(unsafe { sys::git_libgit2_init() } > 0);
         drop(MessageTrailerArray::parse(c"").unwrap());
         // The thread's error state, which a failure writes to.
         drop(last());
@@ -381,26 +381,26 @@ mod allocator {
         }
     }
 
-    fn c_parse(message: &CStr) -> ffi::git_message_trailer_array {
-        let mut arr = ffi::git_message_trailer_array::default();
+    fn c_parse(message: &CStr) -> sys::git_message_trailer_array {
+        let mut arr = sys::git_message_trailer_array::default();
         // SAFETY: zeroed storage; `message` is NUL-terminated and only read.
-        let rc = unsafe { ffi::git_message_trailers(&raw mut arr, message.as_ptr()) };
+        let rc = unsafe { sys::git_message_trailers(&raw mut arr, message.as_ptr()) };
         assert_eq!(rc, 0);
         arr
     }
 
     /// C code releasing an array and zeroing it, as a holder reusing the storage does.
-    fn c_free(arr: &mut ffi::git_message_trailer_array) {
+    fn c_free(arr: &mut sys::git_message_trailer_array) {
         // SAFETY: an array `git_message_trailers` filled, or the zeroed one; freed once,
         // then zeroed before anything reads it.
-        unsafe { ffi::git_message_trailer_array_free(arr) };
-        *arr = ffi::git_message_trailer_array::default();
+        unsafe { sys::git_message_trailer_array_free(arr) };
+        *arr = sys::git_message_trailer_array::default();
     }
 
     fn rust_view(array: &MessageTrailerArrayVal) -> ArrayView {
         // Rust's storage, read as C reads it: `MessageTrailerArray` is transparent over
         // the C struct, which `CVal` holds first.
-        let raw = std::ptr::from_ref(array).cast::<ffi::git_message_trailer_array>();
+        let raw = std::ptr::from_ref(array).cast::<sys::git_message_trailer_array>();
         // SAFETY: a live array, copied out (plain data) without writing.
         c_array(&unsafe { raw.read() })
     }
@@ -493,10 +493,10 @@ mod allocator {
             concat!(module_path!(), "::failed_allocations_match"),
             || {
                 let message = MESSAGES[1];
-                let mut c = ffi::git_message_trailer_array::default();
+                let mut c = sys::git_message_trailer_array::default();
                 FAIL.store(1, Ordering::SeqCst);
                 // SAFETY: zeroed storage; `message` is NUL-terminated and only read.
-                let rc = unsafe { ffi::git_message_trailers(&raw mut c, message.as_ptr()) };
+                let rc = unsafe { sys::git_message_trailers(&raw mut c, message.as_ptr()) };
                 let c_error = last();
                 assert_eq!(FAIL.load(Ordering::SeqCst), 0);
                 let c_seen = (
@@ -533,8 +533,8 @@ mod allocator {
 mod prettify {
     use std::ffi::CString;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::message::prettify;
+    use libgit2::sys::libgit2 as sys;
 
     use super::init;
 
@@ -563,11 +563,11 @@ mod prettify {
         out
     }
 
-    fn c_prettify(buf: &mut ffi::git_buf, message: &[u8], comment: Option<u8>) -> Vec<u8> {
+    fn c_prettify(buf: &mut sys::git_buf, message: &[u8], comment: Option<u8>) -> Vec<u8> {
         let message = CString::new(message).unwrap();
         let (strip, c) = comment.map_or((0, 0), |c| (1, c.cast_signed()));
         // SAFETY: a buffer libgit2 filled before or zeroed; a NUL-terminated message.
-        let rc = unsafe { ffi::git_message_prettify(buf, message.as_ptr(), strip, c) };
+        let rc = unsafe { sys::git_message_prettify(buf, message.as_ptr(), strip, c) };
         assert_eq!(rc, 0);
         if buf.ptr.is_null() {
             return Vec::new();
@@ -580,7 +580,7 @@ mod prettify {
     #[cfg_attr(miri, ignore = "calls libgit2")]
     fn prettified_messages_match_c() {
         init();
-        let mut buf = ffi::git_buf::default();
+        let mut buf = sys::git_buf::default();
         for message in corpus() {
             for comment in std::iter::once(None).chain((0..=u8::MAX).map(Some)) {
                 let c = c_prettify(&mut buf, &message, comment);
@@ -589,6 +589,6 @@ mod prettify {
             }
         }
         // SAFETY: the buffer libgit2 filled, disposed once.
-        unsafe { ffi::git_buf_dispose(&raw mut buf) };
+        unsafe { sys::git_buf_dispose(&raw mut buf) };
     }
 }

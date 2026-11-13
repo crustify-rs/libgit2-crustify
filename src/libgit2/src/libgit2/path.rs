@@ -15,7 +15,7 @@
 use core::ffi::CStr;
 use core::fmt;
 
-use crate::ffi;
+use crate::sys::libgit2 as sys;
 
 /// A git-specific file whose name `git_path_is_gitfile` recognises, in any spelling a
 /// filesystem treats as that name.
@@ -29,43 +29,43 @@ use crate::ffi;
 #[repr(u32)]
 pub enum GitFile {
     /// `.gitignore`.
-    Gitignore = ffi::GIT_PATH_GITFILE_GITIGNORE,
+    Gitignore = sys::GIT_PATH_GITFILE_GITIGNORE,
     /// `.gitmodules`.
-    Gitmodules = ffi::GIT_PATH_GITFILE_GITMODULES,
+    Gitmodules = sys::GIT_PATH_GITFILE_GITMODULES,
     /// `.gitattributes`.
-    Gitattributes = ffi::GIT_PATH_GITFILE_GITATTRIBUTES,
+    Gitattributes = sys::GIT_PATH_GITFILE_GITATTRIBUTES,
 }
 
 impl GitFile {
     /// The variant whose C value is `raw`; `None` for every value the header does not
     /// name.
     #[must_use]
-    pub const fn from_raw(raw: ffi::git_path_gitfile) -> Option<Self> {
+    pub const fn from_raw(raw: sys::git_path_gitfile) -> Option<Self> {
         match raw {
-            ffi::GIT_PATH_GITFILE_GITIGNORE => Some(Self::Gitignore),
-            ffi::GIT_PATH_GITFILE_GITMODULES => Some(Self::Gitmodules),
-            ffi::GIT_PATH_GITFILE_GITATTRIBUTES => Some(Self::Gitattributes),
+            sys::GIT_PATH_GITFILE_GITIGNORE => Some(Self::Gitignore),
+            sys::GIT_PATH_GITFILE_GITMODULES => Some(Self::Gitmodules),
+            sys::GIT_PATH_GITFILE_GITATTRIBUTES => Some(Self::Gitattributes),
             _ => None,
         }
     }
 
     /// The C value, as `git_path_is_gitfile` takes it.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_path_gitfile {
-        self as ffi::git_path_gitfile
+    pub const fn raw(self) -> sys::git_path_gitfile {
+        self as sys::git_path_gitfile
     }
 }
 
-impl TryFrom<ffi::git_path_gitfile> for GitFile {
+impl TryFrom<sys::git_path_gitfile> for GitFile {
     type Error = UnnamedGitFile;
 
-    fn try_from(raw: ffi::git_path_gitfile) -> Result<Self, UnnamedGitFile> {
+    fn try_from(raw: sys::git_path_gitfile) -> Result<Self, UnnamedGitFile> {
         Self::from_raw(raw).ok_or(UnnamedGitFile(raw))
     }
 }
 
-impl From<GitFile> for ffi::git_path_gitfile {
-    fn from(value: GitFile) -> ffi::git_path_gitfile {
+impl From<GitFile> for sys::git_path_gitfile {
+    fn from(value: GitFile) -> sys::git_path_gitfile {
         value.raw()
     }
 }
@@ -73,12 +73,12 @@ impl From<GitFile> for ffi::git_path_gitfile {
 /// A `git_path_gitfile` value that libgit2's header does not name, which
 /// `git_path_is_gitfile` refuses. [`raw`](Self::raw) has it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct UnnamedGitFile(ffi::git_path_gitfile);
+pub struct UnnamedGitFile(sys::git_path_gitfile);
 
 impl UnnamedGitFile {
     /// The value, as it was converted.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_path_gitfile {
+    pub const fn raw(self) -> sys::git_path_gitfile {
         self.0
     }
 }
@@ -104,43 +104,43 @@ impl std::error::Error for UnnamedGitFile {}
 pub enum Filesystem {
     /// Both NTFS's and HFS+'s rules: a name matches if either filesystem would treat it
     /// as the file.
-    Generic = ffi::GIT_PATH_FS_GENERIC,
+    Generic = sys::GIT_PATH_FS_GENERIC,
     /// NTFS's rules only: 8.3 short names (`GITMOD~1`) and trailing dots and spaces.
-    Ntfs = ffi::GIT_PATH_FS_NTFS,
+    Ntfs = sys::GIT_PATH_FS_NTFS,
     /// HFS+'s rules only: case folding and ignorable Unicode code points.
-    Hfs = ffi::GIT_PATH_FS_HFS,
+    Hfs = sys::GIT_PATH_FS_HFS,
 }
 
 impl Filesystem {
     /// The variant whose C value is `raw`; `None` for any value libgit2's header does not
     /// name.
     #[must_use]
-    pub const fn from_raw(raw: ffi::git_path_fs) -> Option<Self> {
+    pub const fn from_raw(raw: sys::git_path_fs) -> Option<Self> {
         match raw {
-            ffi::GIT_PATH_FS_GENERIC => Some(Self::Generic),
-            ffi::GIT_PATH_FS_NTFS => Some(Self::Ntfs),
-            ffi::GIT_PATH_FS_HFS => Some(Self::Hfs),
+            sys::GIT_PATH_FS_GENERIC => Some(Self::Generic),
+            sys::GIT_PATH_FS_NTFS => Some(Self::Ntfs),
+            sys::GIT_PATH_FS_HFS => Some(Self::Hfs),
             _ => None,
         }
     }
 
     /// The C value, as libgit2's functions take it.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_path_fs {
-        self as ffi::git_path_fs
+    pub const fn raw(self) -> sys::git_path_fs {
+        self as sys::git_path_fs
     }
 }
 
-impl TryFrom<ffi::git_path_fs> for Filesystem {
+impl TryFrom<sys::git_path_fs> for Filesystem {
     type Error = UnnamedFilesystem;
 
-    fn try_from(raw: ffi::git_path_fs) -> Result<Self, UnnamedFilesystem> {
+    fn try_from(raw: sys::git_path_fs) -> Result<Self, UnnamedFilesystem> {
         Self::from_raw(raw).ok_or(UnnamedFilesystem(raw))
     }
 }
 
-impl From<Filesystem> for ffi::git_path_fs {
-    fn from(value: Filesystem) -> ffi::git_path_fs {
+impl From<Filesystem> for sys::git_path_fs {
+    fn from(value: Filesystem) -> sys::git_path_fs {
         value.raw()
     }
 }
@@ -148,12 +148,12 @@ impl From<Filesystem> for ffi::git_path_fs {
 /// A `git_path_fs` value that libgit2's header does not name, and its path checks
 /// refuse. [`raw`](Self::raw) has it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct UnnamedFilesystem(ffi::git_path_fs);
+pub struct UnnamedFilesystem(sys::git_path_fs);
 
 impl UnnamedFilesystem {
     /// The value, as it was converted.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_path_fs {
+    pub const fn raw(self) -> sys::git_path_fs {
         self.0
     }
 }
@@ -208,7 +208,7 @@ pub fn is_gitfile(component: &CStr, file: GitFile, fs: Filesystem) -> bool {
     // both the length-bounded HFS+ rules and the NUL-bounded NTFS ones read within it,
     // during the call only. `file` and `fs` are named values, which libgit2 accepts
     // without touching the error state, so no runtime pin is needed.
-    let rc = unsafe { ffi::git_path_is_gitfile(component.as_ptr(), len, file.raw(), fs.raw()) };
+    let rc = unsafe { sys::git_path_is_gitfile(component.as_ptr(), len, file.raw(), fs.raw()) };
     debug_assert!(
         rc >= 0,
         "git_path_is_gitfile refused a named file or filesystem"
@@ -229,7 +229,7 @@ mod unit_tests {
         ] {
             assert_eq!(GitFile::from_raw(file.raw()), Some(file));
             assert_eq!(GitFile::try_from(file.raw()), Ok(file));
-            assert_eq!(ffi::git_path_gitfile::from(file), file.raw());
+            assert_eq!(sys::git_path_gitfile::from(file), file.raw());
         }
         // The order `path.c`'s table of names relies on.
         assert_eq!(GitFile::Gitignore.raw(), 0);
@@ -250,7 +250,7 @@ mod unit_tests {
     #[test]
     fn option_niche_holds() {
         assert_eq!(size_of::<Option<GitFile>>(), size_of::<GitFile>());
-        assert_eq!(size_of::<GitFile>(), size_of::<ffi::git_path_gitfile>());
+        assert_eq!(size_of::<GitFile>(), size_of::<sys::git_path_gitfile>());
     }
 
     mod filesystem {
@@ -259,7 +259,7 @@ mod unit_tests {
         #[test]
         fn conversions_round_trip_the_named_values() {
             for fs in [Filesystem::Generic, Filesystem::Ntfs, Filesystem::Hfs] {
-                let raw = ffi::git_path_fs::from(fs);
+                let raw = sys::git_path_fs::from(fs);
                 assert_eq!(raw, fs.raw());
                 assert_eq!(Filesystem::from_raw(raw), Some(fs));
                 assert_eq!(Filesystem::try_from(raw), Ok(fs));

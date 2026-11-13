@@ -9,14 +9,14 @@ use std::ffi::{CStr, c_char};
 use std::mem::size_of;
 use std::{ptr, thread};
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::odb::{OdbDataStr, OdbDataStrFree, OdbDataStrVec};
+use libgit2::sys::libgit2 as sys;
 
 /// The raw C calls below allocate, which needs an initialised libgit2; the extra
 /// reference dies with the process.
 fn init() {
     // SAFETY: no arguments; libgit2 counts initialisations under its own lock.
-    assert!(unsafe { ffi::git_libgit2_init() } > 0);
+    assert!(unsafe { sys::git_libgit2_init() } > 0);
 }
 
 fn strs(v: &OdbDataStrVec) -> Vec<&[u8]> {
@@ -29,7 +29,7 @@ fn c_array(items: &[Option<&CStr>], capacity: usize) -> *mut *mut c_char {
     assert!(capacity >= items.len() && capacity > 0);
     // SAFETY: `backend` is unused by the routine; any length.
     let arr = unsafe {
-        ffi::git_odb_backend_data_alloc(ptr::null_mut(), capacity * size_of::<*mut c_char>())
+        sys::git_odb_backend_data_alloc(ptr::null_mut(), capacity * size_of::<*mut c_char>())
     }
     .cast::<*mut c_char>();
     assert!(!arr.is_null());
@@ -115,12 +115,12 @@ fn refuses_a_null_element_and_leaves_ownership() {
         assert!(unsafe { OdbDataStrVec::from_raw_parts(arr, 3) }.is_none());
         // Still the caller's: libgit2's disposer releases it; ASan flags a leak or a
         // double free.
-        let mut array = ffi::git_strarray {
+        let mut array = sys::git_strarray {
             strings: arr,
             count: 3,
         };
         // SAFETY: `array` owns its array and strings; `git__free(NULL)` is a no-op.
-        unsafe { ffi::git_strarray_dispose(&raw mut array) };
+        unsafe { sys::git_strarray_dispose(&raw mut array) };
     }
 }
 
@@ -128,14 +128,14 @@ fn refuses_a_null_element_and_leaves_ownership() {
 #[cfg_attr(miri, ignore = "calls libgit2")]
 fn adopts_what_libgit2_hands_out() {
     init();
-    let mut out = ffi::git_strarray {
+    let mut out = sys::git_strarray {
         strings: ptr::null_mut(),
         count: 0,
     };
     // SAFETY: `GIT_OPT_GET_EXTENSIONS` takes a `git_strarray *`, which it fills from a
     // `git_vector`, so the array may have spare capacity.
     let rc =
-        unsafe { ffi::git_libgit2_opts(ffi::GIT_OPT_GET_EXTENSIONS.cast_signed(), &raw mut out) };
+        unsafe { sys::git_libgit2_opts(sys::GIT_OPT_GET_EXTENSIONS.cast_signed(), &raw mut out) };
     assert_eq!(rc, 0);
     // SAFETY: libgit2's output, owned by the caller and handed over whole.
     let v = unsafe { OdbDataStrVec::from_raw_parts(out.strings, out.count) }.unwrap();

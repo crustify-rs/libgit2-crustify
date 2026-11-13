@@ -22,7 +22,7 @@ use std::fmt::Debug;
 use std::path::PathBuf;
 use std::ptr;
 
-use libgit2::ffi;
+use libgit2::sys::libgit2 as sys;
 use libgit2::libgit2::config::config::Config;
 use libgit2::libgit2::util::errors::{ErrorCode, last};
 
@@ -55,13 +55,13 @@ fn c_code(rc: c_int) -> Option<String> {
     })
 }
 
-fn add_file(config: *mut ffi::git_config, path: &CStr) {
+fn add_file(config: *mut sys::git_config, path: &CStr) {
     // SAFETY: a live config with no other user, a NUL-terminated path; no repository.
     let rc = unsafe {
-        ffi::git_config_add_file_ondisk(
+        sys::git_config_add_file_ondisk(
             config,
             path.as_ptr(),
-            ffi::GIT_CONFIG_LEVEL_LOCAL,
+            sys::GIT_CONFIG_LEVEL_LOCAL,
             ptr::null(),
             0,
         )
@@ -69,7 +69,7 @@ fn add_file(config: *mut ffi::git_config, path: &CStr) {
     assert_eq!(rc, 0);
     // SAFETY: as above; the setter copies the name.
     assert_eq!(
-        unsafe { ffi::git_config_set_int32(config, c"a.b".as_ptr(), 1) },
+        unsafe { sys::git_config_set_int32(config, c"a.b".as_ptr(), 1) },
         0
     );
 }
@@ -81,15 +81,15 @@ fn main() {
     let mut rust = Config::new().unwrap();
     let mut raw = ptr::null_mut();
     // SAFETY: the runtime is pinned by `Config::new`; a writable slot.
-    assert_eq!(unsafe { ffi::git_config_new(&mut raw) }, 0);
+    assert_eq!(unsafe { sys::git_config_new(&mut raw) }, 0);
 
-    let c_step = |raw: *mut ffi::git_config| -> Observation {
+    let c_step = |raw: *mut sys::git_config| -> Observation {
         let mut tx = ptr::null_mut();
         // SAFETY: a live config and a writable slot; a transaction is freed at once.
-        let rc = unsafe { ffi::git_config_lock(&mut tx, raw) };
+        let rc = unsafe { sys::git_config_lock(&mut tx, raw) };
         if rc == 0 {
             // SAFETY: the one transaction just handed out, released once.
-            unsafe { ffi::git_transaction_free(tx) };
+            unsafe { sys::git_transaction_free(tx) };
             return (None, 0, String::new());
         }
         let error = last();
@@ -142,7 +142,7 @@ fn main() {
 
     drop(rust);
     // SAFETY: the raw config, released once after its last transaction.
-    unsafe { ffi::git_config_free(raw) };
+    unsafe { sys::git_config_free(raw) };
     let _ = std::fs::remove_file(c_path);
     let _ = std::fs::remove_file(r_path);
 

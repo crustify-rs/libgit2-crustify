@@ -3,11 +3,11 @@
 
 use core::ptr;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::diff::{Diff, DiffBox};
 use libgit2::libgit2::src::libgit2::index::{Index, IndexBox};
 use libgit2::libgit2::src::libgit2::pathspec::{MatchList, MatchListRef, PathspecFlags};
 use libgit2::libgit2::src::libgit2::tree::FileMode;
+use libgit2::sys::libgit2 as sys;
 #[path = "../../../../support/pathspec_match_list.rs"]
 mod support;
 use std::ffi::{CStr, CString};
@@ -20,25 +20,25 @@ use support::patterns;
 fn index(paths: &[&CStr]) -> IndexBox {
     let index = Index::new().unwrap();
     for path in paths {
-        let mut entry = ffi::git_index_entry {
+        let mut entry = sys::git_index_entry {
             path: path.as_ptr(),
             mode: 0o100_644,
             ..Default::default()
         };
-        entry.id.type_ = u8::try_from(ffi::GIT_OID_SHA1).unwrap();
+        entry.id.type_ = u8::try_from(sys::GIT_OID_SHA1).unwrap();
         entry.id.id[0] = 1;
         // SAFETY: sole index and initialized input; C copies the entry and path.
-        let ret = unsafe { ffi::git_index_add(index.as_c_ptr(), &raw const entry) };
+        let ret = unsafe { sys::git_index_add(index.as_c_ptr(), &raw const entry) };
         assert_eq!(ret, 0);
     }
     index
 }
 
-struct RawList(*mut ffi::git_pathspec_match_list);
+struct RawList(*mut sys::git_pathspec_match_list);
 impl Drop for RawList {
     fn drop(&mut self) {
         // SAFETY: one fresh C result, or NULL on failure; freed once.
-        unsafe { ffi::git_pathspec_match_list_free(self.0) }
+        unsafe { sys::git_pathspec_match_list_free(self.0) }
     }
 }
 
@@ -82,7 +82,7 @@ fn raw_seen(list: &RawList) -> Seen {
     {
         // SAFETY: every pointer here is returned from this live list, which its source
         // diff (if any) outlives. C bounds-checks; all present strings are terminated.
-        let count = unsafe { ffi::git_pathspec_match_list_entrycount(list.0) };
+        let count = unsafe { sys::git_pathspec_match_list_entrycount(list.0) };
         let probes: Vec<_> = (0..=count).chain([usize::MAX]).collect();
         // SAFETY: as above.
         let string = unsafe {
@@ -101,19 +101,19 @@ fn raw_seen(list: &RawList) -> Seen {
             entries: probes
                 .iter()
                 // SAFETY: as above.
-                .map(|&i| string(unsafe { ffi::git_pathspec_match_list_entry(list.0, i) }))
+                .map(|&i| string(unsafe { sys::git_pathspec_match_list_entry(list.0, i) }))
                 .collect(),
             // SAFETY: as above.
-            failures: (0..=unsafe { ffi::git_pathspec_match_list_failed_entrycount(list.0) })
+            failures: (0..=unsafe { sys::git_pathspec_match_list_failed_entrycount(list.0) })
                 .chain([usize::MAX])
                 // SAFETY: as above.
-                .map(|i| string(unsafe { ffi::git_pathspec_match_list_failed_entry(list.0, i) }))
+                .map(|i| string(unsafe { sys::git_pathspec_match_list_failed_entry(list.0, i) }))
                 .collect(),
             deltas: probes
                 .iter()
                 .map(|&i| {
                     // SAFETY: as above.
-                    let p = unsafe { ffi::git_pathspec_match_list_diff_entry(list.0, i) };
+                    let p = unsafe { sys::git_pathspec_match_list_diff_entry(list.0, i) };
                     if p.is_null() {
                         None
                     } else {
@@ -141,7 +141,7 @@ fn compare_error(rc: i32, error: RepositoryError) {
     {
         // SAFETY: the preceding C failure set this thread's error; it is copied before
         // any other C operation. Successful safe allocations are not running here.
-        let e = unsafe { ffi::git_error_last() };
+        let e = unsafe { sys::git_error_last() };
         assert!(!e.is_null());
         // SAFETY: as above.
         unsafe { assert_eq!((*e).klass, error.raw_class()) };
@@ -179,7 +179,7 @@ fn index_flag_sequences_and_release_order() {
             // SAFETY: independent initialized index/pathspec and a writable out
             // slot. The source owners remain live; RawList releases each result.
             let rc = unsafe {
-                ffi::git_pathspec_match_index(
+                sys::git_pathspec_match_index(
                     &raw mut raw.0,
                     raw_index.as_c_ptr(),
                     bits,
@@ -209,10 +209,10 @@ fn index_flag_sequences_and_release_order() {
         assert_eq!(
             // SAFETY: same independent initialized sources and writable out slot.
             unsafe {
-                ffi::git_pathspec_match_index(
+                sys::git_pathspec_match_index(
                     &raw mut raw.0,
                     raw_index.as_c_ptr(),
-                    ffi::GIT_PATHSPEC_FIND_FAILURES,
+                    sys::GIT_PATHSPEC_FIND_FAILURES,
                     raw_ps.as_c_ptr(),
                 )
             },
@@ -254,7 +254,7 @@ fn diff_variants_retain_only_borrowed_deltas() {
                 // SAFETY: independent live diff and pathspec. The diff remains live
                 // and unchanged until after RawList releases its borrowed pointers.
                 let rc = unsafe {
-                    ffi::git_pathspec_match_diff(
+                    sys::git_pathspec_match_diff(
                         &raw mut raw.0,
                         raw_diff.as_c_ptr(),
                         bits,
@@ -302,10 +302,10 @@ fn tree_and_workdir_sources_and_bare_error() {
         // SAFETY: independent live repository/pathspec and writable output slot;
         // a bare repo is a supported error case, not an invalid pointer.
         let rc = unsafe {
-            ffi::git_pathspec_match_workdir(
+            sys::git_pathspec_match_workdir(
                 &raw mut raw.0,
                 raw_repo.as_c_ptr(),
-                ffi::GIT_PATHSPEC_FIND_FAILURES,
+                sys::GIT_PATHSPEC_FIND_FAILURES,
                 raw_ps.as_c_ptr(),
             )
         };
@@ -337,10 +337,10 @@ fn tree_and_workdir_sources_and_bare_error() {
         assert_eq!(
             // SAFETY: independently owned tree and pathspec; C copies every result.
             unsafe {
-                ffi::git_pathspec_match_tree(
+                sys::git_pathspec_match_tree(
                     &raw mut raw_tree_list.0,
                     raw_tree.as_c_ptr(),
-                    ffi::GIT_PATHSPEC_FIND_FAILURES,
+                    sys::GIT_PATHSPEC_FIND_FAILURES,
                     raw_ps.as_c_ptr(),
                 )
             },

@@ -131,12 +131,12 @@ mod tag_object {
     use std::ffi::CString;
     use std::thread;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::object::{Object, ObjectArc, ObjectType};
     use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
     use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryError};
     use libgit2::libgit2::src::libgit2::tag::{Tag, TagArc, TagRef};
     use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+    use libgit2::sys::libgit2 as sys;
 
     use crate::fixture::TempRepo;
     use crate::fixture::object_and_tree_entry::{
@@ -162,13 +162,13 @@ mod tag_object {
 
     /// C's hex id and type of the tag an owner holds, read through another counted
     /// reference handed over as an object.
-    fn view(tag: &TagArc<'_>) -> (String, ffi::git_object_t) {
+    fn view(tag: &TagArc<'_>) -> (String, sys::git_object_t) {
         object_view(&Tag::into_object(tag.clone()))
     }
 
     fn hex(tag: &TagArc<'_>) -> String {
         let (hex, kind) = view(tag);
-        assert_eq!(kind, ffi::GIT_OBJECT_TAG);
+        assert_eq!(kind, sys::GIT_OBJECT_TAG);
         hex
     }
 
@@ -240,7 +240,7 @@ mod tag_object {
             let peeled = owner.path().map(|_| tag.as_ref().peel().unwrap()).unwrap();
             assert_eq!(object_view(&target).1, tag.as_ref().target_kind().raw());
             drop(tag);
-            assert_ne!(object_view(&peeled).1, ffi::GIT_OBJECT_TAG);
+            assert_ne!(object_view(&peeled).1, sys::GIT_OBJECT_TAG);
             kept.extend([target, peeled]);
         }
         let views: Vec<_> = kept.iter().map(object_view).collect();
@@ -288,7 +288,7 @@ mod tag_object {
             assert!(TagArc::ptr_eq(&tag, &viewed) && TagArc::ptr_eq(&tag, &adopted));
             assert_eq!(
                 object_view(&object),
-                (hex_id.to_owned(), ffi::GIT_OBJECT_TAG)
+                (hex_id.to_owned(), sys::GIT_OBJECT_TAG)
             );
             let clone = tag.clone();
             let copy = short.as_ref().to_tag();
@@ -434,7 +434,7 @@ mod tag_object {
             format!("{target}name x\n"),
         ];
         for data in &corrupt {
-            let id = write_raw(&repo, data.as_bytes(), ffi::GIT_OBJECT_TAG);
+            let id = write_raw(&repo, data.as_bytes(), sys::GIT_OBJECT_TAG);
             for result in [
                 Tag::lookup(r, id.as_ref()),
                 Tag::lookup_prefix(r, id.as_ref(), 12),
@@ -446,25 +446,25 @@ mod tag_object {
         let bare = write_raw(
             &repo,
             format!("{target}tag bare\n").as_bytes(),
-            ffi::GIT_OBJECT_TAG,
+            sys::GIT_OBJECT_TAG,
         );
         let tag = Tag::lookup(r, bare.as_ref()).unwrap();
-        assert_eq!(view(&tag).1, ffi::GIT_OBJECT_TAG);
+        assert_eq!(view(&tag).1, sys::GIT_OBJECT_TAG);
         let full = write_raw(
             &repo,
             format!("{target}tag full\ntagger A <a@b> 0 +0000\n\nmessage\n").as_bytes(),
-            ffi::GIT_OBJECT_TAG,
+            sys::GIT_OBJECT_TAG,
         );
         let tag = Tag::lookup_prefix(r, full.as_ref(), 40).unwrap();
-        assert_eq!(view(&tag).1, ffi::GIT_OBJECT_TAG);
+        assert_eq!(view(&tag).1, sys::GIT_OBJECT_TAG);
         // A header line past the tagger, before the blank line and the message.
         let more = write_raw(
             &repo,
             format!("{target}tag more\ntagger A <a@b> 0 +0000\nextra x\n\nmessage\n").as_bytes(),
-            ffi::GIT_OBJECT_TAG,
+            sys::GIT_OBJECT_TAG,
         );
         let tag = Tag::lookup(r, more.as_ref()).unwrap();
-        assert_eq!(view(&tag).1, ffi::GIT_OBJECT_TAG);
+        assert_eq!(view(&tag).1, sys::GIT_OBJECT_TAG);
     }
 
     /// libgit2 copies the id it is given: each one is overwritten and freed right after
@@ -509,7 +509,7 @@ mod tag_object {
             let r = repo.as_ref();
             let again = Object::lookup(r, id(&object_view(&target).0).as_ref(), None).unwrap();
             // The cache keeps commits, not blobs: a blob target is parsed afresh.
-            let blob = object_view(&target).1 == ffi::GIT_OBJECT_BLOB;
+            let blob = object_view(&target).1 == sys::GIT_OBJECT_BLOB;
             assert_eq!(ObjectArc::ptr_eq(&target, &again), !blob, "{hex_id}");
             assert_eq!(object_view(&target), object_view(&again));
             let peeled = tag

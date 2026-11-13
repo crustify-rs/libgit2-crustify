@@ -152,7 +152,6 @@ use ffibox::{
     impl_cdupclone_str, impl_clenclone, impl_clendrop,
 };
 
-use crate::ffi;
 use crate::libgit2::src::libgit2::filter::StreamError;
 use crate::libgit2::src::libgit2::indexer::IndexerProgressMut;
 use crate::libgit2::src::libgit2::object::ObjectType;
@@ -160,6 +159,7 @@ use crate::libgit2::src::libgit2::oid::{Oid, OidMut, OidRef, OidType, UnnamedOid
 use crate::libgit2::src::util::errors::{
     ErrorBuf, ErrorClass, ErrorCode, last, runtime_pinned, set,
 };
+use crate::sys::libgit2 as sys;
 
 /// An object database (`git_odb`): the layout type named by [`OdbArc`] and the
 /// handles, never held by value.
@@ -194,8 +194,8 @@ use crate::libgit2::src::util::errors::{
 #[doc(alias = "git_odb")]
 #[repr(transparent)]
 pub struct Odb<'r>(
-    ffi::git_odb,
-    PhantomData<(*const (), &'r ffi::git_repository)>,
+    sys::git_odb,
+    PhantomData<(*const (), &'r sys::git_repository)>,
 );
 
 /// Shared borrow of an [`Odb`]. `Copy`, like `&T`; every odb routine takes it.
@@ -218,7 +218,7 @@ pub struct OdbMut<'a, 'r>(
 // `OdbRef` has no write operation. `OdbMut` is invariant in the odb through its
 // `PhantomData<&'a mut Odb<'r>>`.
 unsafe impl<'r> CCell for Odb<'r> {
-    type C = ffi::git_odb;
+    type C = sys::git_odb;
     type Mut<'a>
         = OdbMut<'a, 'r>
     where
@@ -310,7 +310,7 @@ unsafe impl<'r> CDrop<Odb<'r>> for OdbFree {
     unsafe fn c_drop(&self, ptr: NonNull<Odb<'r>>) {
         // SAFETY: per `c_drop`'s contract, `ptr` addresses a live odb whose reference
         // the caller gives up; `Odb` is transparent over `git_odb`.
-        unsafe { ffi::git_odb_free(ptr.as_ptr().cast()) }
+        unsafe { sys::git_odb_free(ptr.as_ptr().cast()) }
     }
 }
 
@@ -327,7 +327,7 @@ unsafe impl CNew<Odb<'static>> for OdbFree {
         let mut out = ptr::null_mut();
         // SAFETY: `out` is a writable slot; the runtime is pinned, so a failure is
         // reported on live thread-local state.
-        let rc = unsafe { ffi::git_odb_new(&raw mut out) };
+        let rc = unsafe { sys::git_odb_new(&raw mut out) };
         if rc < 0 {
             return None;
         }
@@ -407,7 +407,7 @@ pub type OdbArc<'r> = CArc<Odb<'r>, OdbFree>;
 /// Pins the runtime first; a constructor that fails leaves the slot NULL (or untouched,
 /// and so NULL) and the thread's libgit2 error set.
 fn construct(
-    fill: impl FnOnce(&mut *mut ffi::git_odb) -> c_int,
+    fill: impl FnOnce(&mut *mut sys::git_odb) -> c_int,
 ) -> Result<OdbArc<'static>, ErrorBuf> {
     if !runtime_pinned() {
         return Err(last());
@@ -436,7 +436,7 @@ impl Odb<'static> {
         construct(|out| {
             // SAFETY: `out` is a writable slot, which the routine fills with a fresh
             // reference on success. The runtime is pinned.
-            unsafe { ffi::git_odb_new(out) }
+            unsafe { sys::git_odb_new(out) }
         })
     }
 
@@ -457,7 +457,7 @@ impl Odb<'static> {
             // SAFETY: `out` is a writable slot, filled with a fresh reference on
             // success; `opts` is a live options struct of this version, which the
             // routine copies and does not retain. The runtime is pinned.
-            unsafe { ffi::git_odb_new_ext(out, opts.as_ref().as_ptr()) }
+            unsafe { sys::git_odb_new_ext(out, opts.as_ref().as_ptr()) }
         })
     }
 
@@ -482,7 +482,7 @@ impl Odb<'static> {
             // SAFETY: `out` is a writable slot, filled with a fresh reference on
             // success and set to NULL otherwise; `objects_dir` is NUL-terminated, read
             // and copied for the call only. The runtime is pinned.
-            unsafe { ffi::git_odb_open(out, objects_dir.as_ptr()) }
+            unsafe { sys::git_odb_open(out, objects_dir.as_ptr()) }
         })
     }
 
@@ -506,18 +506,18 @@ impl Odb<'static> {
         construct(|out| {
             // SAFETY: as in `open`; `opts` is a live options struct of this version,
             // which the routine copies and does not retain.
-            unsafe { ffi::git_odb_open_ext(out, objects_dir.as_ptr(), opts.as_ref().as_ptr()) }
+            unsafe { sys::git_odb_open_ext(out, objects_dir.as_ptr(), opts.as_ref().as_ptr()) }
         })
     }
 }
 
 // The layout type is the C type's size, so an odb pointer converts both ways, and the
 // owner is pointer-sized.
-const _: () = assert!(size_of::<Odb<'static>>() == size_of::<ffi::git_odb>());
+const _: () = assert!(size_of::<Odb<'static>>() == size_of::<sys::git_odb>());
 
-const _: () = assert!(size_of::<OdbArc<'static>>() == size_of::<*mut ffi::git_odb>());
+const _: () = assert!(size_of::<OdbArc<'static>>() == size_of::<*mut sys::git_odb>());
 
-const _: () = assert!(size_of::<Option<OdbArc<'static>>>() == size_of::<*mut ffi::git_odb>());
+const _: () = assert!(size_of::<Option<OdbArc<'static>>>() == size_of::<*mut sys::git_odb>());
 
 define_ctype!(
     /// The options of an object database (`git_odb_options`): the structure version, and
@@ -571,7 +571,7 @@ define_ctype!(
     OdbOptions,
     OdbOptionsRef,
     OdbOptionsMut,
-    ffi::git_odb_options
+    sys::git_odb_options
 );
 
 // SAFETY: an `OdbOptions` is 8 plain bytes: no pointer, no interior mutability, no thread
@@ -597,7 +597,7 @@ unsafe impl Sync for OdbOptionsMut<'_> {}
 impl OdbOptions {
     /// The structure version this crate's header declares (`GIT_ODB_OPTIONS_VERSION`), the
     /// only one libgit2 accepts.
-    pub const VERSION: u32 = ffi::GIT_ODB_OPTIONS_VERSION;
+    pub const VERSION: u32 = sys::GIT_ODB_OPTIONS_VERSION;
 
     /// The default options, as `git_odb_options_init` fills them for
     /// [`VERSION`](Self::VERSION) and `GIT_ODB_OPTIONS_INIT` spells them: the current
@@ -613,12 +613,12 @@ impl OdbOptions {
     #[doc(alias = "git_odb_options_init")]
     #[must_use]
     pub fn new() -> OdbOptions {
-        let mut raw = ffi::git_odb_options::default();
+        let mut raw = sys::git_odb_options::default();
         // SAFETY: `raw` is a live `git_odb_options` the call may write, and is not retained.
         // With the header's own version the routine's version check passes, so it only
         // copies the 8-byte `GIT_ODB_OPTIONS_INIT` template into `raw`: no allocation and no
         // error state, so no initialised runtime is needed.
-        let rc = unsafe { ffi::git_odb_options_init(&raw mut raw, Self::VERSION) };
+        let rc = unsafe { sys::git_odb_options_init(&raw mut raw, Self::VERSION) };
         assert_eq!(rc, 0, "git_odb_options_init refused its own version");
         OdbOptions(raw, PhantomData)
     }
@@ -640,8 +640,8 @@ impl Default for OdbOptions {
 }
 
 /// The `git_odb_options` value, for code that passes one by value.
-impl From<OdbOptions> for ffi::git_odb_options {
-    fn from(opts: OdbOptions) -> ffi::git_odb_options {
+impl From<OdbOptions> for sys::git_odb_options {
+    fn from(opts: OdbOptions) -> sys::git_odb_options {
         opts.0
     }
 }
@@ -772,8 +772,8 @@ impl Hash for OdbOptions {
 
 // An `OdbOptions` is a `git_odb_options`, so C reads a value Rust holds in place.
 const _: () = assert!(
-    size_of::<OdbOptions>() == size_of::<ffi::git_odb_options>()
-        && align_of::<OdbOptions>() == align_of::<ffi::git_odb_options>()
+    size_of::<OdbOptions>() == size_of::<sys::git_odb_options>()
+        && align_of::<OdbOptions>() == align_of::<sys::git_odb_options>()
 );
 
 define_ctype!(
@@ -814,7 +814,10 @@ define_ctype!(
     /// let mut query = OdbExpandId::new(prefix.as_ref(), 8, Some(ObjectType::Blob));
     /// assert_eq!(query.as_ref().length(), 8);
     /// query.as_mut().set_kind(None);
-    /// assert_eq!(query.as_ref().raw_kind(), libgit2::ffi::GIT_OBJECT_ANY);
+    /// assert_eq!(
+    ///     query.as_ref().raw_kind(),
+    ///     libgit2::sys::libgit2::GIT_OBJECT_ANY
+    /// );
     /// ```
     ///
     /// Wraps `st::git_odb_expand_id`
@@ -823,7 +826,7 @@ define_ctype!(
     OdbExpandId,
     OdbExpandIdRef,
     OdbExpandIdMut,
-    ffi::git_odb_expand_id
+    sys::git_odb_expand_id
 );
 
 // SAFETY: all zero is libgit2's typeless `GIT_OID_NONE` id, `length` 0 and `type` 0, which
@@ -873,15 +876,15 @@ impl Default for OdbExpandId {
 }
 
 /// The `git_odb_expand_id` value as it is, for code that already holds one by value.
-impl From<ffi::git_odb_expand_id> for OdbExpandId {
-    fn from(raw: ffi::git_odb_expand_id) -> OdbExpandId {
+impl From<sys::git_odb_expand_id> for OdbExpandId {
+    fn from(raw: sys::git_odb_expand_id) -> OdbExpandId {
         OdbExpandId(raw, PhantomData)
     }
 }
 
 /// The `git_odb_expand_id` value, for code that passes one by value.
-impl From<OdbExpandId> for ffi::git_odb_expand_id {
-    fn from(query: OdbExpandId) -> ffi::git_odb_expand_id {
+impl From<OdbExpandId> for sys::git_odb_expand_id {
+    fn from(query: OdbExpandId) -> sys::git_odb_expand_id {
         query.0
     }
 }
@@ -938,7 +941,7 @@ impl<'a> OdbExpandIdRef<'a> {
     /// Wraps `fld::git_odb_expand_id.type`
     #[doc(alias = "git_odb_expand_id.type")]
     #[must_use]
-    pub fn raw_kind(&self) -> ffi::git_object_t {
+    pub fn raw_kind(&self) -> sys::git_object_t {
         // SAFETY: `self.as_ptr()` addresses the live object this handle borrows; the
         // projection forms no reference to it.
         let type_ptr = unsafe { &raw const (*self.as_ptr()).type_ };
@@ -950,7 +953,7 @@ impl<'a> OdbExpandIdRef<'a> {
     /// A copy of the query, as a value of its own.
     #[must_use]
     pub fn to_expand_id(&self) -> OdbExpandId {
-        OdbExpandId::from(ffi::git_odb_expand_id {
+        OdbExpandId::from(sys::git_odb_expand_id {
             id: copy_oid(self.id()),
             length: self.length(),
             type_: self.raw_kind(),
@@ -1022,8 +1025,8 @@ impl OdbExpandIdMut<'_> {
 }
 
 /// The 33 bytes of `id`, as a value of its own.
-fn copy_oid(id: OidRef<'_>) -> ffi::git_oid {
-    ffi::git_oid {
+fn copy_oid(id: OidRef<'_>) -> sys::git_oid {
+    sys::git_oid {
         type_: id.raw_kind(),
         id: id.id(),
     }
@@ -1089,8 +1092,8 @@ impl Hash for OdbExpandId {
 // An `OdbExpandId` is a `git_odb_expand_id`, so C reads and writes a run of them Rust holds
 // in place.
 const _: () = assert!(
-    size_of::<OdbExpandId>() == size_of::<ffi::git_odb_expand_id>()
-        && align_of::<OdbExpandId>() == align_of::<ffi::git_odb_expand_id>()
+    size_of::<OdbExpandId>() == size_of::<sys::git_odb_expand_id>()
+        && align_of::<OdbExpandId>() == align_of::<sys::git_odb_expand_id>()
 );
 
 /// The failure of an odb routine: the code it returned, and the error it left as the
@@ -1191,7 +1194,7 @@ fn status(rc: c_int) -> Result<(), OdbError> {
 }
 
 /// The object a reading routine returned `rc` for, adopted from its out slot.
-fn read_out(rc: c_int, out: *mut ffi::git_odb_object) -> Result<OdbObjectArc, OdbError> {
+fn read_out(rc: c_int, out: *mut sys::git_odb_object) -> Result<OdbObjectArc, OdbError> {
     status(rc)?;
     // SAFETY: the routine succeeded, so `out` is one counted reference to a live object,
     // which the caller owns and `git_odb_object_free` releases, as `OdbObjectFree` does.
@@ -1209,7 +1212,7 @@ const MISMATCH: &CStr = c"specified object ID type does not match object databas
 /// keeps for forward compatibility.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct LookupFlags(ffi::git_odb_lookup_flags_t);
+pub struct LookupFlags(sys::git_odb_lookup_flags_t);
 
 impl LookupFlags {
     /// No option: a lookup that misses refreshes the odb and looks again.
@@ -1217,7 +1220,7 @@ impl LookupFlags {
     /// A lookup that misses does not refresh the odb (`GIT_ODB_LOOKUP_NO_REFRESH`): for
     /// a batch of lookups of objects that may legitimately be missing, after one
     /// [`refresh`](OdbRef::refresh).
-    pub const NO_REFRESH: Self = Self(ffi::GIT_ODB_LOOKUP_NO_REFRESH);
+    pub const NO_REFRESH: Self = Self(sys::GIT_ODB_LOOKUP_NO_REFRESH);
 
     /// The bits `bits`, every one kept, including those this version ignores.
     #[must_use]
@@ -1260,15 +1263,15 @@ impl OdbRef<'_, '_> {
     /// nor looked up, so the probe takes no lock and reaches no backend. `None` only for
     /// a type this header does not name, which no constructor of this crate builds.
     fn id_type(&self) -> Option<OidType> {
-        let mut query = ffi::git_odb_expand_id::default();
+        let mut query = sys::git_odb_expand_id::default();
         // SAFETY: the handle addresses a live odb for the call, whose options the routine
         // reads (fixed once the odb is built, so shared reads race nothing); `query` is
         // one writable entry, which the routine clears in place and does not retain.
         // With length 0 it neither locks nor calls a backend, then clears this thread's
         // error state, which the pinned runtime keeps live.
-        let rc = unsafe { ffi::git_odb_expand_ids(self.as_ptr().cast_mut(), &raw mut query, 1) };
+        let rc = unsafe { sys::git_odb_expand_ids(self.as_ptr().cast_mut(), &raw mut query, 1) };
         debug_assert_eq!(rc, 0, "an unexpandable entry is cleared, not an error");
-        OidType::from_raw(ffi::git_oid_t::from(query.id.type_))
+        OidType::from_raw(sys::git_oid_t::from(query.id.type_))
     }
 
     /// Whether `id` is of the odb's type: the only ids the backends format safely.
@@ -1307,7 +1310,7 @@ impl OdbRef<'_, '_> {
         // the routine changes under the odb's mutex only; `path` is NUL-terminated, read
         // and copied for the call, never retained.
         let rc =
-            unsafe { ffi::git_odb_add_disk_alternate(self.as_ptr().cast_mut(), path.as_ptr()) };
+            unsafe { sys::git_odb_add_disk_alternate(self.as_ptr().cast_mut(), path.as_ptr()) };
         status(rc)
     }
 
@@ -1329,7 +1332,7 @@ impl OdbRef<'_, '_> {
         // SAFETY: the handle addresses a live odb, which the routine walks under its
         // mutex and whose cache it reads under the cache's lock; `id` is a live id of
         // the odb's type (checked above), read for the call only.
-        let rc = unsafe { ffi::git_odb_exists(self.as_ptr().cast_mut(), id.as_ptr()) };
+        let rc = unsafe { sys::git_odb_exists(self.as_ptr().cast_mut(), id.as_ptr()) };
         rc > 0
     }
 
@@ -1345,7 +1348,7 @@ impl OdbRef<'_, '_> {
         }
         // SAFETY: as in `exists`; `flags` is plain bits, of which libgit2 reads one.
         let rc =
-            unsafe { ffi::git_odb_exists_ext(self.as_ptr().cast_mut(), id.as_ptr(), flags.bits()) };
+            unsafe { sys::git_odb_exists_ext(self.as_ptr().cast_mut(), id.as_ptr(), flags.bits()) };
         rc > 0
     }
 
@@ -1373,7 +1376,7 @@ impl OdbRef<'_, '_> {
         // `(len + 1) / 2` bytes of it, within its `GIT_OID_MAX_SIZE`, and any other
         // takes the full-id path.
         let rc = unsafe {
-            ffi::git_odb_exists_prefix(
+            sys::git_odb_exists_prefix(
                 out.as_mut().as_mut_ptr(),
                 self.as_ptr().cast_mut(),
                 short_id.as_ptr(),
@@ -1392,7 +1395,7 @@ impl OdbRef<'_, '_> {
     pub fn num_backends(&self) -> usize {
         // SAFETY: the handle addresses a live odb, whose backend count the routine reads
         // under its mutex.
-        unsafe { ffi::git_odb_num_backends(self.as_ptr().cast_mut()) }
+        unsafe { sys::git_odb_num_backends(self.as_ptr().cast_mut()) }
     }
 
     /// The object with the id `id`: from the cache when it holds it, otherwise read from
@@ -1422,7 +1425,7 @@ impl OdbRef<'_, '_> {
         // handle addresses a live odb, walked under its mutex and cached under its
         // cache's lock; `id` is a live id of the odb's type (checked above), read for
         // the call only.
-        let rc = unsafe { ffi::git_odb_read(&raw mut out, self.as_ptr().cast_mut(), id.as_ptr()) };
+        let rc = unsafe { sys::git_odb_read(&raw mut out, self.as_ptr().cast_mut(), id.as_ptr()) };
         read_out(rc, out)
     }
 
@@ -1440,13 +1443,13 @@ impl OdbRef<'_, '_> {
     #[doc(alias = "git_odb_read_header")]
     pub fn read_header(&self, id: OidRef<'_>) -> Result<(usize, Option<ObjectType>), OdbError> {
         self.fits(id)?;
-        let (mut len, mut kind) = (0, ffi::GIT_OBJECT_INVALID);
+        let (mut len, mut kind) = (0, sys::GIT_OBJECT_INVALID);
         // SAFETY: `len` and `kind` are writable out slots; the handle addresses a live
         // odb, walked under its mutex; `id` is a live id of the odb's type (checked
         // above), read for the call only. An object the routine reads to answer is
         // released before it returns.
         let rc = unsafe {
-            ffi::git_odb_read_header(
+            sys::git_odb_read_header(
                 &raw mut len,
                 &raw mut kind,
                 self.as_ptr().cast_mut(),
@@ -1479,7 +1482,7 @@ impl OdbRef<'_, '_> {
         // SAFETY: as in `read`; `len` is clamped to the odb's hex size before the prefix
         // is copied, so at most `GIT_OID_MAX_SIZE` bytes of `short_id` are read.
         let rc = unsafe {
-            ffi::git_odb_read_prefix(
+            sys::git_odb_read_prefix(
                 &raw mut out,
                 self.as_ptr().cast_mut(),
                 short_id.as_ptr(),
@@ -1508,7 +1511,7 @@ impl OdbRef<'_, '_> {
     pub fn refresh(&self) -> Result<(), OdbError> {
         // SAFETY: the handle addresses a live odb, whose backends and commit-graph the
         // routine refreshes under its mutex.
-        let rc = unsafe { ffi::git_odb_refresh(self.as_ptr().cast_mut()) };
+        let rc = unsafe { sys::git_odb_refresh(self.as_ptr().cast_mut()) };
         status(rc)
     }
 
@@ -1539,7 +1542,7 @@ impl OdbRef<'_, '_> {
         // graph it holds and keep none, under its mutex; per this function's contract no
         // other thread holds the freed graph's file.
         let rc =
-            unsafe { ffi::git_odb_set_commit_graph(self.as_ptr().cast_mut(), ptr::null_mut()) };
+            unsafe { sys::git_odb_set_commit_graph(self.as_ptr().cast_mut(), ptr::null_mut()) };
         status(rc)
     }
 
@@ -1565,7 +1568,7 @@ impl OdbRef<'_, '_> {
         // mutex; `data` is valid for reads of its length (any non-NULL pointer when
         // empty), read for the call only; `kind` names an object type.
         let rc = unsafe {
-            ffi::git_odb_write(
+            sys::git_odb_write(
                 out.as_mut().as_mut_ptr(),
                 self.as_ptr().cast_mut(),
                 data.as_ptr().cast(),
@@ -1600,7 +1603,7 @@ impl OdbRef<'_, '_> {
         // SAFETY: the handle addresses a live odb; per this function's contract no other
         // thread uses it, so the unlocked walk of its backends and of the packed
         // backend's packs races nothing.
-        let rc = unsafe { ffi::git_odb_write_multi_pack_index(self.as_ptr().cast_mut()) };
+        let rc = unsafe { sys::git_odb_write_multi_pack_index(self.as_ptr().cast_mut()) };
         status(rc)
     }
 }
@@ -1619,7 +1622,7 @@ define_ctype!(
     OdbObject,
     OdbObjectRef,
     OdbObjectMut,
-    ffi::git_odb_object
+    sys::git_odb_object
 );
 
 // SAFETY: an odb object has no thread affinity: its count is atomic
@@ -1658,7 +1661,7 @@ impl<'a> OdbObjectRef<'a> {
     pub fn id(&self) -> OidRef<'a> {
         // SAFETY: the handle addresses a live object for `'a`, which the routine only
         // reads.
-        let id = unsafe { ffi::git_odb_object_id(self.as_ptr().cast_mut()) };
+        let id = unsafe { sys::git_odb_object_id(self.as_ptr().cast_mut()) };
         // SAFETY: `id` addresses the object's own id, never written after the read, which
         // lives as long as the object, past `'a`.
         unsafe { OidRef::from_ptr(id.cast_mut()) }.expect("an odb object always has an id")
@@ -1689,7 +1692,7 @@ impl<'a> OdbObjectRef<'a> {
         let size = self.size();
         // SAFETY: the handle addresses a live object for `'a`, which the routine only
         // reads.
-        let data = unsafe { ffi::git_odb_object_data(self.as_ptr().cast_mut()) };
+        let data = unsafe { sys::git_odb_object_data(self.as_ptr().cast_mut()) };
         if size == 0 || data.is_null() {
             // A custom backend may hand back NULL for an empty object.
             return &[];
@@ -1708,7 +1711,7 @@ impl<'a> OdbObjectRef<'a> {
     pub fn size(&self) -> usize {
         // SAFETY: the handle addresses a live object for `'a`, which the routine only
         // reads.
-        unsafe { ffi::git_odb_object_size(self.as_ptr().cast_mut()) }
+        unsafe { sys::git_odb_object_size(self.as_ptr().cast_mut()) }
     }
 
     /// The object's type. `None` only for one a custom backend reported that names no
@@ -1720,7 +1723,7 @@ impl<'a> OdbObjectRef<'a> {
     pub fn kind(&self) -> Option<ObjectType> {
         // SAFETY: the handle addresses a live object for `'a`, which the routine only
         // reads.
-        let kind = unsafe { ffi::git_odb_object_type(self.as_ptr().cast_mut()) };
+        let kind = unsafe { sys::git_odb_object_type(self.as_ptr().cast_mut()) };
         ObjectType::from_raw(kind)
     }
 }
@@ -1762,7 +1765,7 @@ unsafe impl CDrop<OdbObject> for OdbObjectFree {
         // SAFETY: per `c_drop`'s contract, `ptr` addresses a live object of which the
         // caller gives up one reference; `OdbObject` is transparent over
         // `git_odb_object`.
-        unsafe { ffi::git_odb_object_free(ptr.as_ptr().cast()) }
+        unsafe { sys::git_odb_object_free(ptr.as_ptr().cast()) }
     }
 }
 
@@ -1777,7 +1780,7 @@ unsafe impl CRefClone<OdbObject> for OdbObjectFree {
         let mut dest = ptr::null_mut();
         // SAFETY: `dest` is a writable slot; `ptr` addresses a live object whose
         // reference the caller holds, per `c_up_ref`'s contract.
-        let rc = unsafe { ffi::git_odb_object_dup(&raw mut dest, ptr.as_ptr().cast()) };
+        let rc = unsafe { sys::git_odb_object_dup(&raw mut dest, ptr.as_ptr().cast()) };
         debug_assert_eq!(dest, ptr.as_ptr().cast());
         rc == 0
     }
@@ -1812,7 +1815,7 @@ unsafe impl CRefClone<OdbObject> for OdbObjectFree {
 /// ```
 pub type OdbObjectArc = CArc<OdbObject, OdbObjectFree>;
 
-const _: () = assert!(size_of::<OdbObjectArc>() == size_of::<*mut ffi::git_odb_object>());
+const _: () = assert!(size_of::<OdbObjectArc>() == size_of::<*mut sys::git_odb_object>());
 
 /// The closure behind a [`ForeachCallback`].
 type ForeachFn<'f> = dyn FnMut(OidRef<'_>) -> ControlFlow<NonZero<c_int>> + 'f;
@@ -1926,7 +1929,7 @@ impl<'f> ForeachCallback<'f> {
     /// touches until `walk` returns.
     pub(crate) fn walk_with<R>(
         &mut self,
-        walk: impl FnOnce(ffi::git_odb_foreach_cb, *mut c_void) -> R,
+        walk: impl FnOnce(sys::git_odb_foreach_cb, *mut c_void) -> R,
     ) -> R {
         self.stopped = None;
         let result = walk(Some(foreach_with), ptr::from_mut(self).cast());
@@ -1951,7 +1954,7 @@ impl fmt::Debug for ForeachCallback<'_> {
 ///
 /// `payload` must address a live [`ForeachCallback`] that nothing else uses during the
 /// call, and `id` be NULL or a `git_oid` live and unchanged for the call.
-unsafe extern "C" fn foreach_with(id: *const ffi::git_oid, payload: *mut c_void) -> c_int {
+unsafe extern "C" fn foreach_with(id: *const sys::git_oid, payload: *mut c_void) -> c_int {
     // SAFETY: per this function's contract, `payload` is a live callback borrowed for the
     // call alone.
     let callback = unsafe { &mut *payload.cast::<ForeachCallback<'_>>() };
@@ -1999,7 +2002,7 @@ fn data_alloc(byte_len: usize) -> Option<NonNull<u8>> {
     // SAFETY: the routine never reads `backend` (`GIT_UNUSED`), so NULL is accepted;
     // it returns fresh `git__malloc` storage, or NULL on failure, for any `len`. The
     // runtime is pinned, so a failure is reported on live thread-local state.
-    let data = unsafe { ffi::git_odb_backend_data_alloc(ptr::null_mut(), byte_len.max(1)) };
+    let data = unsafe { sys::git_odb_backend_data_alloc(ptr::null_mut(), byte_len.max(1)) };
     NonNull::new(data.cast())
 }
 
@@ -2012,7 +2015,7 @@ fn data_alloc(byte_len: usize) -> Option<NonNull<u8>> {
 unsafe fn data_free(data: *mut u8) {
     // SAFETY: the routine never reads `backend`; `data` is a live `git__malloc`
     // allocation the caller gives up, per this function's contract.
-    unsafe { ffi::git_odb_backend_data_free(ptr::null_mut(), data.cast()) }
+    unsafe { sys::git_odb_backend_data_free(ptr::null_mut(), data.cast()) }
 }
 
 /// One object in libgit2's allocator, released through `git_odb_backend_data_free`.
@@ -2571,8 +2574,8 @@ impl fmt::Debug for OdbDataStrVec {
 #[doc(alias = "git_odb_stream")]
 #[repr(transparent)]
 pub struct OdbStream<'o>(
-    ffi::git_odb_stream,
-    PhantomData<(*const (), &'o ffi::git_odb)>,
+    sys::git_odb_stream,
+    PhantomData<(*const (), &'o sys::git_odb)>,
 );
 
 /// Shared borrow of an [`OdbStream`]: its getters. `Copy`, like `&T`.
@@ -2595,7 +2598,7 @@ pub struct OdbStreamMut<'a, 'o>(
 // no reference to the stream, and `OdbStreamRef` has no write operation. `OdbStreamMut`
 // is invariant in the stream through its `PhantomData<&'a mut OdbStream<'o>>`.
 unsafe impl<'o> CCell for OdbStream<'o> {
-    type C = ffi::git_odb_stream;
+    type C = sys::git_odb_stream;
     type Mut<'a>
         = OdbStreamMut<'a, 'o>
     where
@@ -2653,7 +2656,7 @@ impl<'a> OdbStreamRef<'a, '_> {
     }
 
     /// The stream's mode, as its backend set it: the bits of `git_odb_stream_t`,
-    /// [`ffi::GIT_STREAM_RDONLY`] for a read stream and [`ffi::GIT_STREAM_WRONLY`] for a
+    /// [`sys::GIT_STREAM_RDONLY`] for a read stream and [`sys::GIT_STREAM_WRONLY`] for a
     /// write stream, or 0 when the backend set none (libgit2's loose read stream does
     /// not).
     ///
@@ -2830,7 +2833,7 @@ unsafe impl<'o> CDrop<OdbStream<'o>> for OdbStreamFree {
     unsafe fn c_drop(&self, ptr: NonNull<OdbStream<'o>>) {
         // SAFETY: per `c_drop`'s contract, `ptr` addresses a live stream the caller owns
         // and gives up; `OdbStream` is transparent over `git_odb_stream`.
-        unsafe { ffi::git_odb_stream_free(ptr.as_ptr().cast()) }
+        unsafe { sys::git_odb_stream_free(ptr.as_ptr().cast()) }
     }
 }
 
@@ -2843,9 +2846,9 @@ pub type OdbStreamBox<'o> = CBox<OdbStream<'o>, OdbStreamFree>;
 
 // The layout type is the C type's size, so a stream pointer converts both ways, and the
 // owner is pointer-sized.
-const _: () = assert!(size_of::<OdbStream<'static>>() == size_of::<ffi::git_odb_stream>());
+const _: () = assert!(size_of::<OdbStream<'static>>() == size_of::<sys::git_odb_stream>());
 
-const _: () = assert!(size_of::<OdbStreamBox<'static>>() == size_of::<*mut ffi::git_odb_stream>());
+const _: () = assert!(size_of::<OdbStreamBox<'static>>() == size_of::<*mut sys::git_odb_stream>());
 
 /// What [`OdbRef::open_read_stream`] opens: the stream, and the object's length and type
 /// as its backend reported them.
@@ -2890,7 +2893,7 @@ impl<'a> OdbRef<'a, '_> {
         // on success; the odb is live for `'a` and locks itself while it picks a
         // backend; `kind` is a valid object type and `size` any value.
         let rc = unsafe {
-            ffi::git_odb_open_wstream(&raw mut out, self.as_ptr().cast_mut(), size, kind.raw())
+            sys::git_odb_open_wstream(&raw mut out, self.as_ptr().cast_mut(), size, kind.raw())
         };
         if rc < 0 {
             return Err(StreamError::from_libgit2(rc));
@@ -2929,13 +2932,13 @@ impl<'a> OdbRef<'a, '_> {
         }
         let mut out = ptr::null_mut();
         let mut len = 0;
-        let mut kind = ffi::GIT_OBJECT_INVALID;
+        let mut kind = sys::GIT_OBJECT_INVALID;
         // SAFETY: the out slots are writable, and filled on success; `id` is a live id
         // of the odb's type (checked above), read for the call only, which the loose
         // backend formats into a path sized for that type; the odb is live for `'a` and
         // locks itself while it picks a backend.
         let rc = unsafe {
-            ffi::git_odb_open_rstream(
+            sys::git_odb_open_rstream(
                 &raw mut out,
                 &raw mut len,
                 &raw mut kind,
@@ -3013,8 +3016,8 @@ fn passed() -> StreamError {
 #[doc(alias = "git_odb_writepack")]
 #[repr(transparent)]
 pub struct OdbWritepack<'o>(
-    ffi::git_odb_writepack,
-    PhantomData<(*const (), &'o ffi::git_odb)>,
+    sys::git_odb_writepack,
+    PhantomData<(*const (), &'o sys::git_odb)>,
 );
 
 /// Shared borrow of an [`OdbWritepack`]: its getters. `Copy`, like `&T`.
@@ -3037,7 +3040,7 @@ pub struct OdbWritepackMut<'a, 'o>(
 // out no reference to the writepack, and `OdbWritepackRef` has no write operation.
 // `OdbWritepackMut` is invariant in the writepack through its `PhantomData`.
 unsafe impl<'o> CCell for OdbWritepack<'o> {
-    type C = ffi::git_odb_writepack;
+    type C = sys::git_odb_writepack;
     type Mut<'a>
         = OdbWritepackMut<'a, 'o>
     where
@@ -3220,7 +3223,7 @@ unsafe impl<'o> CDrop<OdbWritepack<'o>> for OdbWritepackFree {
     /// Wraps `fld::git_odb_writepack.free`
     #[doc(alias = "git_odb_writepack.free")]
     unsafe fn c_drop(&self, ptr: NonNull<OdbWritepack<'o>>) {
-        let writepack: *mut ffi::git_odb_writepack = ptr.as_ptr().cast();
+        let writepack: *mut sys::git_odb_writepack = ptr.as_ptr().cast();
         // SAFETY: per `c_drop`'s contract, `ptr` addresses a live writepack the caller
         // owns; `OdbWritepack` is transparent over `git_odb_writepack`. The projection
         // forms no reference to it.
@@ -3244,10 +3247,10 @@ unsafe impl<'o> CDrop<OdbWritepack<'o>> for OdbWritepackFree {
 /// it. It is not `Clone`: libgit2 copies no writepack.
 pub type OdbWritepackBox<'o> = CBox<OdbWritepack<'o>, OdbWritepackFree>;
 
-const _: () = assert!(size_of::<OdbWritepack<'static>>() == size_of::<ffi::git_odb_writepack>());
+const _: () = assert!(size_of::<OdbWritepack<'static>>() == size_of::<sys::git_odb_writepack>());
 
 const _: () =
-    assert!(size_of::<OdbWritepackBox<'static>>() == size_of::<*mut ffi::git_odb_writepack>());
+    assert!(size_of::<OdbWritepackBox<'static>>() == size_of::<*mut sys::git_odb_writepack>());
 
 /// The failure of a call on a member its backend did not set.
 fn missing_member(message: &CStr) -> StreamError {
@@ -3320,7 +3323,7 @@ define_ctype!(
     OdbBackend,
     OdbBackendRef,
     OdbBackendMut,
-    ffi::git_odb_backend
+    sys::git_odb_backend
 );
 
 impl OdbBackend {
@@ -3350,11 +3353,11 @@ impl OdbBackend {
     #[doc(alias = "git_odb_init_backend")]
     #[must_use]
     pub fn new() -> Self {
-        let mut raw = MaybeUninit::<ffi::git_odb_backend>::uninit();
+        let mut raw = MaybeUninit::<sys::git_odb_backend>::uninit();
         // SAFETY: `raw` is writable storage for one backend, exclusively this call's; the
         // routine zeroes all of it and sets its version, retaining no pointer.
         let rc =
-            unsafe { ffi::git_odb_init_backend(raw.as_mut_ptr(), ffi::GIT_ODB_BACKEND_VERSION) };
+            unsafe { sys::git_odb_init_backend(raw.as_mut_ptr(), sys::GIT_ODB_BACKEND_VERSION) };
         assert_eq!(rc, 0, "git_odb_init_backend refused its own version");
         // SAFETY: success wrote every byte: zeroes (NULL members and odb, which the
         // getters read as absent) and the version.
@@ -3382,7 +3385,7 @@ unsafe impl CDrop<OdbBackend> for OdbBackendFree {
     /// Wraps `fld::git_odb_backend.free`
     #[doc(alias = "git_odb_backend.free")]
     unsafe fn c_drop(&self, ptr: NonNull<OdbBackend>) {
-        let backend = ptr.as_ptr().cast::<ffi::git_odb_backend>();
+        let backend = ptr.as_ptr().cast::<sys::git_odb_backend>();
         // SAFETY: per `c_drop`'s contract `backend` addresses a live backend the caller
         // gives up; the projection forms no reference to it.
         let free_ptr = unsafe { &raw const (*backend).free };
@@ -3406,9 +3409,9 @@ unsafe impl CDrop<OdbBackend> for OdbBackendFree {
 /// is not `Clone`: libgit2 copies no backend.
 pub type OdbBackendBox = CBox<OdbBackend, OdbBackendFree>;
 
-const _: () = assert!(size_of::<OdbBackend>() == size_of::<ffi::git_odb_backend>());
+const _: () = assert!(size_of::<OdbBackend>() == size_of::<sys::git_odb_backend>());
 
-const _: () = assert!(size_of::<OdbBackendBox>() == size_of::<*mut ffi::git_odb_backend>());
+const _: () = assert!(size_of::<OdbBackendBox>() == size_of::<*mut sys::git_odb_backend>());
 
 /// The failure of a call on a member the backend did not set: `GIT_ERROR` with a
 /// `GIT_ERROR_ODB` error naming the member, where libgit2 would call through NULL (or,
@@ -3436,7 +3439,7 @@ fn member_status(rc: c_int) -> Result<(), OdbError> {
 /// a pointer a handle lends.
 macro_rules! member {
     ($backend:expr, $name:ident) => {{
-        let backend: *const ffi::git_odb_backend = $backend;
+        let backend: *const sys::git_odb_backend = $backend;
         // SAFETY: `backend` addresses the live backend a handle borrows; the projection
         // forms no reference to it.
         let member_ptr = unsafe { &raw const (*backend).$name };
@@ -3482,11 +3485,11 @@ impl OdbBackendRef<'_> {
     #[doc(alias = "git_odb_backend.odb")]
     #[must_use]
     pub fn belongs_to(&self, odb: OdbRef<'_, '_>) -> bool {
-        ptr::eq(self.odb_ptr(), odb.as_ptr().cast::<ffi::git_odb>())
+        ptr::eq(self.odb_ptr(), odb.as_ptr().cast::<sys::git_odb>())
     }
 
     /// The odb the backend records, as an address only.
-    fn odb_ptr(&self) -> *const ffi::git_odb {
+    fn odb_ptr(&self) -> *const sys::git_odb {
         // SAFETY: as in `version`.
         let odb_ptr = unsafe { &raw const (*self.as_ptr()).odb };
         // SAFETY: a read through the shared handle's pointer to a live backend; any value
@@ -3864,7 +3867,7 @@ mod unit_tests {
                 "::failure_before_init_lands_on_live_thread_state"
             ),
             || {
-                let mut allocator = ffi::git_allocator {
+                let mut allocator = sys::git_allocator {
                     gmalloc: Some(refusing_malloc),
                     grealloc: Some(libc_realloc),
                     gfree: Some(libc_free),
@@ -3872,8 +3875,8 @@ mod unit_tests {
                 // SAFETY: a `git_allocator *` with every member set, which libgit2 copies;
                 // nothing is allocated yet, so no storage changes allocator.
                 let rc = unsafe {
-                    ffi::git_libgit2_opts(
-                        ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(),
+                    sys::git_libgit2_opts(
+                        sys::GIT_OPT_SET_ALLOCATOR.cast_signed(),
                         &raw mut allocator,
                     )
                 };
@@ -3881,16 +3884,16 @@ mod unit_tests {
 
                 assert!(OdbDataArrayFree::new_uninit::<u8>(REFUSED).is_none());
                 // SAFETY: `git_error_last` never returns NULL.
-                let error_last = unsafe { ffi::git_error_last() };
+                let error_last = unsafe { sys::git_error_last() };
                 // SAFETY: as above.
                 let klass = unsafe { (*error_last).klass };
                 assert_eq!(
                     klass,
-                    ffi::GIT_ERROR_NOMEMORY.cast_signed(),
+                    sys::GIT_ERROR_NOMEMORY.cast_signed(),
                     "reported on this thread's state"
                 );
                 // SAFETY: no arguments; the extra reference dies with the process.
-                let ret = unsafe { ffi::git_libgit2_init() };
+                let ret = unsafe { sys::git_libgit2_init() };
                 assert!(ret >= 2, "the strategy holds a reference");
                 assert!(OdbDataVec::<u8>::from_slice(b"pinned").is_some());
             },
@@ -3902,7 +3905,7 @@ mod unit_tests {
     fn vec_adopts_a_c_allocation() {
         init();
         // SAFETY: `backend` is unused by the routine.
-        let raw = unsafe { ffi::git_odb_backend_data_alloc(ptr::null_mut(), 4) }.cast::<u8>();
+        let raw = unsafe { sys::git_odb_backend_data_alloc(ptr::null_mut(), 4) }.cast::<u8>();
         assert!(!raw.is_null());
         // SAFETY: `raw` holds 4 writable bytes.
         unsafe { raw.copy_from_nonoverlapping(b"odb!".as_ptr(), 4) };
@@ -3920,7 +3923,7 @@ mod unit_tests {
         let (data, len) = v.into_raw_parts();
         assert_eq!(len, 3);
         // SAFETY: `data` is the `git__malloc` buffer `v` gave up, released once here.
-        unsafe { ffi::git_odb_backend_data_free(ptr::null_mut(), data.cast()) };
+        unsafe { sys::git_odb_backend_data_free(ptr::null_mut(), data.cast()) };
     }
 
     #[test]
@@ -3954,7 +3957,7 @@ mod unit_tests {
     fn box_adopts_and_returns_a_c_allocation() {
         init();
         // SAFETY: `backend` is unused by the routine.
-        let raw = unsafe { ffi::git_odb_backend_data_alloc(ptr::null_mut(), size_of::<pair_st>()) }
+        let raw = unsafe { sys::git_odb_backend_data_alloc(ptr::null_mut(), size_of::<pair_st>()) }
             .cast::<pair_st>();
         assert!(!raw.is_null());
         // SAFETY: `raw` is fresh storage for one `pair_st`, malloc-aligned.
@@ -3964,7 +3967,7 @@ mod unit_tests {
         assert_eq!(pair.as_ref().b(), 2);
         let raw = pair.into_c();
         // SAFETY: the storage `pair` gave up, released once here.
-        unsafe { ffi::git_odb_backend_data_free(ptr::null_mut(), raw.cast()) };
+        unsafe { sys::git_odb_backend_data_free(ptr::null_mut(), raw.cast()) };
     }
 
     #[test]
@@ -4074,7 +4077,7 @@ mod unit_tests {
     fn str_adopts_a_c_allocation_and_returns_it() {
         init();
         // SAFETY: `backend` is unused by the routine.
-        let raw = unsafe { ffi::git_odb_backend_data_alloc(ptr::null_mut(), 4) }.cast::<c_char>();
+        let raw = unsafe { sys::git_odb_backend_data_alloc(ptr::null_mut(), 4) }.cast::<c_char>();
         assert!(!raw.is_null());
         // SAFETY: `raw` holds 4 writable bytes.
         unsafe { raw.copy_from_nonoverlapping(c"odb".as_ptr(), 4) };
@@ -4085,7 +4088,7 @@ mod unit_tests {
         assert_ne!(s.as_ptr(), t.as_ptr());
         let raw = s.into_raw();
         // SAFETY: the string `s` gave up, released once here.
-        unsafe { ffi::git_odb_backend_data_free(ptr::null_mut(), raw.cast()) };
+        unsafe { sys::git_odb_backend_data_free(ptr::null_mut(), raw.cast()) };
         assert_eq!(t.as_bytes(), b"odb");
     }
 
@@ -4167,7 +4170,7 @@ mod unit_tests {
                 "::str_vec_failed_copy_releases_what_it_made"
             ),
             || {
-                let mut allocator = ffi::git_allocator {
+                let mut allocator = sys::git_allocator {
                     gmalloc: Some(counting_malloc),
                     grealloc: Some(libc_realloc),
                     gfree: Some(counting_free),
@@ -4175,8 +4178,8 @@ mod unit_tests {
                 // SAFETY: a `git_allocator *` with every member set, which libgit2 copies;
                 // nothing is allocated yet, and nothing reallocates between the counts.
                 let rc = unsafe {
-                    ffi::git_libgit2_opts(
-                        ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(),
+                    sys::git_libgit2_opts(
+                        sys::GIT_OPT_SET_ALLOCATOR.cast_signed(),
                         &raw mut allocator,
                     )
                 };
@@ -4223,7 +4226,7 @@ mod unit_tests {
 
         const ABORTING: &str = "CRUSTIFY_UNIT_ABORTING";
         if let Ok(which) = std::env::var(ABORTING) {
-            let mut allocator = ffi::git_allocator {
+            let mut allocator = sys::git_allocator {
                 gmalloc: Some(counting_malloc),
                 grealloc: Some(libc_realloc),
                 gfree: Some(counting_free),
@@ -4231,7 +4234,7 @@ mod unit_tests {
             // SAFETY: a `git_allocator *` with every member set, which libgit2 copies;
             // nothing is allocated yet.
             let rc = unsafe {
-                ffi::git_libgit2_opts(ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(), &raw mut allocator)
+                sys::git_libgit2_opts(sys::GIT_OPT_SET_ALLOCATOR.cast_signed(), &raw mut allocator)
             };
             assert_eq!(rc, 0);
             init();
@@ -4298,7 +4301,7 @@ mod unit_tests {
     fn str_owners_are_pointer_sized() {
         assert_eq!(size_of::<OdbDataStr>(), size_of::<*mut c_char>());
         assert_eq!(size_of::<Option<OdbDataStr>>(), size_of::<*mut c_char>());
-        assert_eq!(size_of::<OdbDataStrVec>(), size_of::<ffi::git_strarray>());
+        assert_eq!(size_of::<OdbDataStrVec>(), size_of::<sys::git_strarray>());
         let policy = OdbDataStrFree;
         let copy = policy;
         assert_eq!(
@@ -4343,18 +4346,18 @@ mod unit_tests {
         }
 
         /// `git_odb_num_backends` on a live odb.
-        fn backends(odb: *mut ffi::git_odb) -> usize {
+        fn backends(odb: *mut sys::git_odb) -> usize {
             // SAFETY: `odb` is a live odb the caller holds a reference to; the routine
             // takes its lock and reads the backend count.
-            unsafe { ffi::git_odb_num_backends(odb) }
+            unsafe { sys::git_odb_num_backends(odb) }
         }
 
         #[test]
         #[cfg_attr(miri, ignore = "calls libgit2")]
         fn options_carry_this_version_and_the_type() {
             for kind in [OidType::Sha1, OidType::Sha256] {
-                let opts = ffi::git_odb_options::from(OdbOptions::with_oid_type(kind));
-                assert_eq!(opts.version, ffi::GIT_ODB_OPTIONS_VERSION);
+                let opts = sys::git_odb_options::from(OdbOptions::with_oid_type(kind));
+                assert_eq!(opts.version, sys::GIT_ODB_OPTIONS_VERSION);
                 assert_eq!(OidType::from_raw(opts.oid_type), Some(kind));
             }
         }
@@ -4365,7 +4368,7 @@ mod unit_tests {
             assert!(runtime_pinned());
             let mut raw = ptr::null_mut();
             // SAFETY: `raw` is a writable slot, filled with a fresh reference on success.
-            assert_eq!(unsafe { ffi::git_odb_new(&raw mut raw) }, 0);
+            assert_eq!(unsafe { sys::git_odb_new(&raw mut raw) }, 0);
             // SAFETY: `raw` is the one reference `git_odb_new` created, given up here.
             let odb = unsafe { OdbArc::from_c(raw) }.unwrap();
             assert_eq!(odb.as_c_ptr(), raw);
@@ -4404,7 +4407,7 @@ mod unit_tests {
             let raw = odb.into_c();
             assert_eq!(backends(raw), 0);
             // SAFETY: `raw` is the reference `into_c` surrendered, released once.
-            unsafe { ffi::git_odb_free(raw) };
+            unsafe { sys::git_odb_free(raw) };
         }
 
         /// A repository given the odb holds a reference of its own: dropping the Rust one
@@ -4417,19 +4420,19 @@ mod unit_tests {
             let mut repo = ptr::null_mut();
             // SAFETY: `repo` is a writable slot; `raw` is a live odb, which the new
             // repository takes a reference to and owns.
-            let ret = unsafe { ffi::git_repository_wrap_odb(&raw mut repo, raw) };
+            let ret = unsafe { sys::git_repository_wrap_odb(&raw mut repo, raw) };
             assert_eq!(ret, 0);
             drop(odb);
             let mut again = ptr::null_mut();
             // SAFETY: `repo` is live; the result is a new reference to its odb.
-            assert_eq!(unsafe { ffi::git_repository_odb(&raw mut again, repo) }, 0);
+            assert_eq!(unsafe { sys::git_repository_odb(&raw mut again, repo) }, 0);
             assert_eq!(again, raw);
             // SAFETY: `again` is the reference just taken, adopted once.
             let again = unsafe { OdbArc::from_c(again) }.unwrap();
             assert_eq!(backends(again.as_c_ptr()), 0);
             // SAFETY: `repo` is the live repository `git_repository_wrap_odb` made, freed
             // once; `again` keeps the odb alive past it.
-            unsafe { ffi::git_repository_free(repo) };
+            unsafe { sys::git_repository_free(repo) };
             assert_eq!(backends(again.as_c_ptr()), 0);
         }
 
@@ -4526,8 +4529,8 @@ mod unit_tests {
             // member set; libgit2 copies it before anything is allocated, and it is libc's
             // family, as the default one is.
             let rc = unsafe {
-                ffi::git_libgit2_opts(
-                    ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(),
+                sys::git_libgit2_opts(
+                    sys::GIT_OPT_SET_ALLOCATOR.cast_signed(),
                     allocator.as_ref().as_ptr(),
                 )
             };
@@ -4639,26 +4642,26 @@ mod unit_tests {
         }
 
         /// An oid of type `kind` whose id bytes count up from `seed`, built in Rust.
-        fn oid(kind: u8, seed: u8) -> ffi::git_oid {
+        fn oid(kind: u8, seed: u8) -> sys::git_oid {
             let mut id = [0u8; 32];
             for (i, b) in id.iter_mut().enumerate() {
                 *b = seed.wrapping_add(u8::try_from(i).unwrap());
             }
-            ffi::git_oid { type_: kind, id }
+            sys::git_oid { type_: kind, id }
         }
 
-        fn raw_query(id: ffi::git_oid, length: u16, type_: ffi::git_object_t) -> OdbExpandId {
-            OdbExpandId::from(ffi::git_odb_expand_id { id, length, type_ })
+        fn raw_query(id: sys::git_oid, length: u16, type_: sys::git_object_t) -> OdbExpandId {
+            OdbExpandId::from(sys::git_odb_expand_id { id, length, type_ })
         }
 
         #[test]
         #[cfg_attr(miri, ignore = "calls libgit2")]
         fn options_start_from_the_init_template() {
             let opts = OdbOptions::new();
-            let raw = ffi::git_odb_options::from(opts);
+            let raw = sys::git_odb_options::from(opts);
             assert_eq!(
                 (raw.version, raw.oid_type),
-                (ffi::GIT_ODB_OPTIONS_VERSION, 0)
+                (sys::GIT_ODB_OPTIONS_VERSION, 0)
             );
             assert_eq!(opts.as_ref().version(), OdbOptions::VERSION);
             assert_eq!(opts.as_ref().oid_type(), None);
@@ -4676,7 +4679,7 @@ mod unit_tests {
             for kind in [Some(OidType::Sha256), Some(OidType::Sha1), None] {
                 opts.as_mut().set_oid_type(kind);
                 assert_eq!(opts.as_ref().oid_type(), kind);
-                let raw = ffi::git_odb_options::from(opts);
+                let raw = sys::git_odb_options::from(opts);
                 assert_eq!(raw.oid_type, kind.map_or(0, OidType::raw));
             }
             for version in [0, 2, u32::MAX, OdbOptions::VERSION] {
@@ -4714,7 +4717,7 @@ mod unit_tests {
         #[test]
         fn zeroed_query_is_all_zero_and_default() {
             let q = OdbExpandId::zeroed();
-            let raw = ffi::git_odb_expand_id::from(q);
+            let raw = sys::git_odb_expand_id::from(q);
             assert_eq!(
                 (raw.id.type_, raw.id.id, raw.length, raw.type_),
                 (0, [0; 32], 0, 0)
@@ -4727,19 +4730,19 @@ mod unit_tests {
 
         #[test]
         fn query_fields_read_back_what_was_stored() {
-            let q = raw_query(oid(1, 9), 40, ffi::GIT_OBJECT_TREE);
+            let q = raw_query(oid(1, 9), 40, sys::GIT_OBJECT_TREE);
             let r = q.as_ref();
             assert_eq!(r.length(), 40);
             assert_eq!(r.kind(), Some(ObjectType::Tree));
             assert_eq!((r.id().raw_kind(), r.id().id()), (1, oid(1, 9).id));
             for (raw, kind) in [
-                (ffi::GIT_OBJECT_ANY, None),
-                (ffi::GIT_OBJECT_INVALID, None),
+                (sys::GIT_OBJECT_ANY, None),
+                (sys::GIT_OBJECT_INVALID, None),
                 (0, None),
                 (99, None),
-                (ffi::GIT_OBJECT_COMMIT, Some(ObjectType::Commit)),
-                (ffi::GIT_OBJECT_BLOB, Some(ObjectType::Blob)),
-                (ffi::GIT_OBJECT_TAG, Some(ObjectType::Tag)),
+                (sys::GIT_OBJECT_COMMIT, Some(ObjectType::Commit)),
+                (sys::GIT_OBJECT_BLOB, Some(ObjectType::Blob)),
+                (sys::GIT_OBJECT_TAG, Some(ObjectType::Tag)),
             ] {
                 let q = raw_query(oid(2, 0), 0, raw);
                 assert_eq!((q.as_ref().raw_kind(), q.as_ref().kind()), (raw, kind));
@@ -4751,7 +4754,7 @@ mod unit_tests {
             let mut q = OdbExpandId::zeroed();
             let src = raw_query(oid(2, 200), 0, 0);
             q.as_mut().set_id(src.as_ref().id());
-            let raw = ffi::git_odb_expand_id::from(q);
+            let raw = sys::git_odb_expand_id::from(q);
             assert_eq!(
                 (raw.id.type_, raw.id.id, raw.length, raw.type_),
                 (2, oid(2, 200).id, 0, 0)
@@ -4761,24 +4764,24 @@ mod unit_tests {
                 assert_eq!(q.as_ref().length(), length);
             }
             q.as_mut().set_kind(Some(ObjectType::Blob));
-            assert_eq!(q.as_ref().raw_kind(), ffi::GIT_OBJECT_BLOB);
+            assert_eq!(q.as_ref().raw_kind(), sys::GIT_OBJECT_BLOB);
             q.as_mut().set_kind(None);
-            assert_eq!(q.as_ref().raw_kind(), ffi::GIT_OBJECT_ANY);
-            assert_eq!(ffi::git_odb_expand_id::from(q).id.id, oid(2, 200).id);
+            assert_eq!(q.as_ref().raw_kind(), sys::GIT_OBJECT_ANY);
+            assert_eq!(sys::git_odb_expand_id::from(q).id.id, oid(2, 200).id);
         }
 
         #[test]
         fn query_id_is_edited_in_place() {
-            let mut q = raw_query(oid(1, 0), 40, ffi::GIT_OBJECT_ANY);
+            let mut q = raw_query(oid(1, 0), 40, sys::GIT_OBJECT_ANY);
             {
                 let mut m = q.as_mut();
                 let mut id = m.id_mut();
                 id.set_raw_kind(2);
                 id.set_id([0xAB; 32]);
             }
-            let raw = ffi::git_odb_expand_id::from(q);
+            let raw = sys::git_odb_expand_id::from(q);
             assert_eq!((raw.id.type_, raw.id.id), (2, [0xAB; 32]));
-            assert_eq!((raw.length, raw.type_), (40, ffi::GIT_OBJECT_ANY));
+            assert_eq!((raw.length, raw.type_), (40, sys::GIT_OBJECT_ANY));
             // Copying a query's id over itself, through a copy, leaves it whole.
             let before = q;
             let copy = q;
@@ -4788,16 +4791,16 @@ mod unit_tests {
 
         #[test]
         fn query_copies_compare_and_hash_by_field() {
-            let q = raw_query(oid(1, 5), 12, ffi::GIT_OBJECT_COMMIT);
+            let q = raw_query(oid(1, 5), 12, sys::GIT_OBJECT_COMMIT);
             let copy = q.as_ref().to_expand_id();
             assert_eq!(copy, q);
             assert_eq!(hash_of(&copy), hash_of(&q));
             assert_eq!(hash_of(&copy.as_ref()), hash_of(&q.as_ref()));
             for other in [
-                raw_query(oid(2, 5), 12, ffi::GIT_OBJECT_COMMIT),
-                raw_query(oid(1, 6), 12, ffi::GIT_OBJECT_COMMIT),
-                raw_query(oid(1, 5), 13, ffi::GIT_OBJECT_COMMIT),
-                raw_query(oid(1, 5), 12, ffi::GIT_OBJECT_ANY),
+                raw_query(oid(2, 5), 12, sys::GIT_OBJECT_COMMIT),
+                raw_query(oid(1, 6), 12, sys::GIT_OBJECT_COMMIT),
+                raw_query(oid(1, 5), 13, sys::GIT_OBJECT_COMMIT),
+                raw_query(oid(1, 5), 12, sys::GIT_OBJECT_ANY),
             ] {
                 assert_ne!(other, q);
             }
@@ -4820,17 +4823,17 @@ mod unit_tests {
             assert_eq!(r.id(), id.as_ref());
             assert_eq!((r.length(), r.kind()), (8, Some(ObjectType::Blob)));
             let any = OdbExpandId::new(id.as_ref(), 40, None);
-            assert_eq!(any.as_ref().raw_kind(), ffi::GIT_OBJECT_ANY);
+            assert_eq!(any.as_ref().raw_kind(), sys::GIT_OBJECT_ANY);
         }
 
         #[test]
         fn new_query_from_a_zero_id_needs_no_c() {
             let zero = OdbExpandId::zeroed();
             let q = OdbExpandId::new(zero.as_ref().id(), 4, Some(ObjectType::Tag));
-            let raw = ffi::git_odb_expand_id::from(q);
+            let raw = sys::git_odb_expand_id::from(q);
             assert_eq!(
                 (raw.id.type_, raw.length, raw.type_),
-                (0, 4, ffi::GIT_OBJECT_TAG)
+                (0, 4, sys::GIT_OBJECT_TAG)
             );
         }
     }
@@ -4847,36 +4850,36 @@ mod unit_tests {
         /// A stream with every field set but `backend`, which is NULL, as for a stream no
         /// backend set up; its members `read`/`write`/`finalize_write` present when
         /// `members` is set.
-        fn raw_stream(members: bool) -> ffi::git_odb_stream {
+        fn raw_stream(members: bool) -> sys::git_odb_stream {
             unsafe extern "C" fn read(
-                _: *mut ffi::git_odb_stream,
+                _: *mut sys::git_odb_stream,
                 _: *mut c_char,
                 _: usize,
             ) -> c_int {
                 0
             }
             unsafe extern "C" fn write(
-                _: *mut ffi::git_odb_stream,
+                _: *mut sys::git_odb_stream,
                 _: *const c_char,
                 _: usize,
             ) -> c_int {
                 0
             }
             unsafe extern "C" fn finalize(
-                _: *mut ffi::git_odb_stream,
-                _: *const ffi::git_oid,
+                _: *mut sys::git_odb_stream,
+                _: *const sys::git_oid,
             ) -> c_int {
                 0
             }
-            ffi::git_odb_stream {
+            sys::git_odb_stream {
                 backend: ptr::null_mut(),
-                mode: ffi::GIT_STREAM_RW,
+                mode: sys::GIT_STREAM_RW,
                 hash_ctx: if members {
                     ptr::without_provenance_mut(0x2000)
                 } else {
                     ptr::null_mut()
                 },
-                oid_type: if members { ffi::GIT_OID_SHA256 } else { 77 },
+                oid_type: if members { sys::GIT_OID_SHA256 } else { 77 },
                 declared_size: u64::MAX,
                 received_bytes: 12,
                 read: members.then_some::<unsafe extern "C" fn(_, _, _) -> _>(read),
@@ -4889,9 +4892,9 @@ mod unit_tests {
         #[test]
         fn stream_getters_read_every_field() {
             // The template a custom backend starts from, built without C for Miri.
-            let mut backend = ffi::git_odb_backend {
-                version: ffi::GIT_ODB_BACKEND_VERSION,
-                ..ffi::git_odb_backend::default()
+            let mut backend = sys::git_odb_backend {
+                version: sys::GIT_ODB_BACKEND_VERSION,
+                ..sys::git_odb_backend::default()
             };
             let backend_ptr = &raw mut backend;
             for members in [true, false] {
@@ -4906,9 +4909,9 @@ mod unit_tests {
                 let s = unsafe { OdbStreamRef::from_ptr(&raw mut raw) }.unwrap();
                 assert_eq!(
                     s.backend().map(|b| (b.as_ptr().addr(), b.version())),
-                    members.then(|| (backend_ptr.addr(), ffi::GIT_ODB_BACKEND_VERSION))
+                    members.then(|| (backend_ptr.addr(), sys::GIT_ODB_BACKEND_VERSION))
                 );
-                assert_eq!(s.mode(), ffi::GIT_STREAM_RW);
+                assert_eq!(s.mode(), sys::GIT_STREAM_RW);
                 assert_eq!(s.has_hash_ctx(), members);
                 if members {
                     assert_eq!(s.oid_type(), Ok(OidType::Sha256));
@@ -4939,11 +4942,11 @@ mod unit_tests {
         /// A stream in a container that records its `free` call, as a backend's does.
         #[repr(C)]
         struct Counted<'l> {
-            stream: ffi::git_odb_stream,
+            stream: sys::git_odb_stream,
             log: &'l RefCell<Vec<&'static str>>,
         }
 
-        unsafe extern "C" fn counted_free(stream: *mut ffi::git_odb_stream) {
+        unsafe extern "C" fn counted_free(stream: *mut sys::git_odb_stream) {
             // SAFETY: the stream heads a boxed `Counted`, given up by its owner.
             let counted = unsafe { Box::from_raw(stream.cast::<Counted<'_>>()) };
             counted.log.borrow_mut().push("free");
@@ -4970,7 +4973,7 @@ mod unit_tests {
         /// A writepack in a container that records its members' calls.
         #[repr(C)]
         struct Pack<'l> {
-            writepack: ffi::git_odb_writepack,
+            writepack: sys::git_odb_writepack,
             log: &'l RefCell<Vec<String>>,
         }
 
@@ -4979,16 +4982,16 @@ mod unit_tests {
         /// # Safety
         ///
         /// `wp` heads a live `Pack`.
-        unsafe fn log_of<'l>(wp: *mut ffi::git_odb_writepack) -> &'l RefCell<Vec<String>> {
+        unsafe fn log_of<'l>(wp: *mut sys::git_odb_writepack) -> &'l RefCell<Vec<String>> {
             // SAFETY: per this function's contract.
             unsafe { (*wp.cast::<Pack<'l>>()).log }
         }
 
         unsafe extern "C" fn pack_append(
-            wp: *mut ffi::git_odb_writepack,
+            wp: *mut sys::git_odb_writepack,
             data: *const c_void,
             size: usize,
-            stats: *mut ffi::git_indexer_progress,
+            stats: *mut sys::git_indexer_progress,
         ) -> c_int {
             // SAFETY: the writepack heads a live `Pack`; `stats` is writable.
             unsafe {
@@ -5002,8 +5005,8 @@ mod unit_tests {
         }
 
         unsafe extern "C" fn pack_commit(
-            wp: *mut ffi::git_odb_writepack,
-            stats: *mut ffi::git_indexer_progress,
+            wp: *mut sys::git_odb_writepack,
+            stats: *mut sys::git_indexer_progress,
         ) -> c_int {
             // SAFETY: as in `pack_append`.
             unsafe { log_of(wp).borrow_mut().push("commit".to_owned()) };
@@ -5012,7 +5015,7 @@ mod unit_tests {
             1
         }
 
-        unsafe extern "C" fn pack_free(wp: *mut ffi::git_odb_writepack) {
+        unsafe extern "C" fn pack_free(wp: *mut sys::git_odb_writepack) {
             // SAFETY: the writepack heads a boxed `Pack`, given up by its owner.
             let pack = unsafe { Box::from_raw(wp.cast::<Pack<'_>>()) };
             pack.log.borrow_mut().push("free".to_owned());
@@ -5021,7 +5024,7 @@ mod unit_tests {
         /// A writepack owner over a fresh `Pack` logging into `log`, with the members
         /// `members` sets.
         fn pack(log: &RefCell<Vec<String>>, members: bool) -> OdbWritepackBox<'_> {
-            let writepack = ffi::git_odb_writepack {
+            let writepack = sys::git_odb_writepack {
                 backend: ptr::null_mut(),
                 append: members.then_some::<unsafe extern "C" fn(_, _, _, _) -> _>(pack_append),
                 commit: members.then_some::<unsafe extern "C" fn(_, _) -> _>(pack_commit),
@@ -5075,7 +5078,7 @@ mod unit_tests {
 
         #[test]
         fn writepack_without_free_is_left_alone() {
-            let mut raw = ffi::git_odb_writepack {
+            let mut raw = sys::git_odb_writepack {
                 backend: ptr::null_mut(),
                 append: None,
                 commit: None,
@@ -5096,10 +5099,10 @@ mod unit_tests {
         }
 
         unsafe extern "C" fn failing_append(
-            _: *mut ffi::git_odb_writepack,
+            _: *mut sys::git_odb_writepack,
             _: *const c_void,
             _: usize,
-            _: *mut ffi::git_indexer_progress,
+            _: *mut sys::git_indexer_progress,
         ) -> c_int {
             set(ErrorClass::Indexer, c"bad pack");
             -7
@@ -5162,7 +5165,7 @@ mod unit_tests {
             assert_eq!(LookupFlags::NONE.bits(), 0);
             assert_eq!(
                 LookupFlags::NO_REFRESH.bits(),
-                ffi::GIT_ODB_LOOKUP_NO_REFRESH
+                sys::GIT_ODB_LOOKUP_NO_REFRESH
             );
             let mut flags = LookupFlags::from_bits_retain(0x80);
             assert!(!flags.contains(LookupFlags::NO_REFRESH));
@@ -5183,7 +5186,7 @@ mod unit_tests {
             set(ErrorClass::Odb, c"first");
             let error = OdbError::from_libgit2(ErrorCode::NotFound.raw());
             assert_eq!(error.code(), Some(ErrorCode::NotFound));
-            assert_eq!(error.raw_code(), ffi::GIT_ENOTFOUND);
+            assert_eq!(error.raw_code(), sys::GIT_ENOTFOUND);
             assert_eq!(error.class(), Some(ErrorClass::Odb));
             assert_eq!(error.raw_class(), ErrorClass::Odb.raw());
             assert_eq!(error.message(), c"first");
@@ -5191,7 +5194,7 @@ mod unit_tests {
             assert!(format!("{error:?}").contains("NotFound"));
             // A positive return, which no routine documents, is a generic failure; a code
             // the header does not name is kept raw.
-            assert_eq!(OdbError::from_libgit2(1).raw_code(), ffi::GIT_ERROR);
+            assert_eq!(OdbError::from_libgit2(1).raw_code(), sys::GIT_ERROR);
             let unnamed = OdbError::from_libgit2(-12_345);
             assert_eq!((unnamed.code(), unnamed.raw_code()), (None, -12_345));
             assert!(format!("{unnamed:?}").contains("-12345"));
@@ -5297,7 +5300,7 @@ mod unit_tests {
                 callback.walk_with(|cb, payload| {
                     // SAFETY: a live odb; `cb` and `payload` are the trampoline and its
                     // callback, live for the walk.
-                    unsafe { ffi::git_odb_foreach(odb.as_c_ptr(), cb, payload) }
+                    unsafe { sys::git_odb_foreach(odb.as_c_ptr(), cb, payload) }
                 })
             };
             let mut seen = Vec::new();
@@ -5366,7 +5369,7 @@ mod unit_tests {
         /// lay it out, then the state its members read.
         #[repr(C)]
         struct Fake<'c> {
-            base: ffi::git_odb_backend,
+            base: sys::git_odb_backend,
             /// How often `free` ran.
             frees: &'c Cell<u32>,
             /// The ids `foreach` walks.
@@ -5384,9 +5387,9 @@ mod unit_tests {
             fn new(frees: &'c Cell<u32>, calls: &'c Cell<u32>, with_free: bool) -> Box<Self> {
                 // `git_odb_init_backend`'s template, built without C so that Miri runs
                 // the release tests.
-                let mut base = ffi::git_odb_backend {
-                    version: ffi::GIT_ODB_BACKEND_VERSION,
-                    ..ffi::git_odb_backend::default()
+                let mut base = sys::git_odb_backend {
+                    version: sys::GIT_ODB_BACKEND_VERSION,
+                    ..sys::git_odb_backend::default()
                 };
                 base.foreach = Some(Self::foreach);
                 base.refresh = Some(Self::refresh);
@@ -5411,13 +5414,13 @@ mod unit_tests {
             /// # Safety
             ///
             /// `backend` must be the base of a live `Fake`, used by nothing else.
-            unsafe fn this<'a>(backend: *mut ffi::git_odb_backend) -> &'a mut Self {
+            unsafe fn this<'a>(backend: *mut sys::git_odb_backend) -> &'a mut Self {
                 // SAFETY: per this function's contract; the base is at offset zero, and
                 // the reference covers the Rust-owned container.
                 unsafe { &mut *backend.cast::<Self>() }
             }
 
-            unsafe extern "C" fn free(backend: *mut ffi::git_odb_backend) {
+            unsafe extern "C" fn free(backend: *mut sys::git_odb_backend) {
                 // SAFETY: libgit2's contract for `free`: the backend's own allocation,
                 // given up; it is a `Box<Fake>` (`adopt`).
                 let this = unsafe { Box::from_raw(backend.cast::<Self>()) };
@@ -5425,8 +5428,8 @@ mod unit_tests {
             }
 
             unsafe extern "C" fn foreach(
-                backend: *mut ffi::git_odb_backend,
-                cb: ffi::git_odb_foreach_cb,
+                backend: *mut sys::git_odb_backend,
+                cb: sys::git_odb_foreach_cb,
                 payload: *mut c_void,
             ) -> c_int {
                 // SAFETY: the dispatching handle lends the live backend exclusively.
@@ -5443,14 +5446,14 @@ mod unit_tests {
                 this.rc
             }
 
-            unsafe extern "C" fn refresh(backend: *mut ffi::git_odb_backend) -> c_int {
+            unsafe extern "C" fn refresh(backend: *mut sys::git_odb_backend) -> c_int {
                 // SAFETY: as in `foreach`.
                 let this = unsafe { Self::this(backend) };
                 this.calls.set(this.calls.get() + 1);
                 this.rc
             }
 
-            unsafe extern "C" fn writemidx(backend: *mut ffi::git_odb_backend) -> c_int {
+            unsafe extern "C" fn writemidx(backend: *mut sys::git_odb_backend) -> c_int {
                 // SAFETY: as in `foreach`.
                 unsafe { Self::refresh(backend) }
             }
@@ -5462,7 +5465,7 @@ mod unit_tests {
             init();
             let mut template = OdbBackend::default();
             let r = template.as_ref();
-            assert_eq!(r.version(), ffi::GIT_ODB_BACKEND_VERSION);
+            assert_eq!(r.version(), sys::GIT_ODB_BACKEND_VERSION);
             assert!(!r.in_odb());
             let present = [
                 r.has_read(),

@@ -110,8 +110,8 @@ mod ffi_import {
         CMutSeam, CPlainElem, CRefSeam, CStrBox, CVec, CZeroable, define_ctype,
     };
 
-    use crate::ffi;
     use crate::libgit2::src::util::errors::{ErrorBuf, last, runtime_pinned, set_oom};
+    use crate::sys::libgit2 as sys;
 
     /// `git_allocator.gmalloc`: allocate `n` bytes for the caller at `file`:`line`.
     ///
@@ -196,7 +196,7 @@ mod ffi_import {
         Allocator,
         AllocatorRef,
         AllocatorMut,
-        ffi::git_allocator
+        sys::git_allocator
     );
 
     // SAFETY: an `Allocator` is three function pointers and nothing else: no interior
@@ -228,7 +228,7 @@ mod ffi_import {
         /// together.
         pub const fn from_fns(malloc: MallocFn, realloc: ReallocFn, free: FreeFn) -> Self {
             Self(
-                ffi::git_allocator {
+                sys::git_allocator {
                     gmalloc: Some(malloc),
                     grealloc: Some(realloc),
                     gfree: Some(free),
@@ -578,8 +578,8 @@ mod ffi_import {
 
     // An `Allocator` is a `git_allocator`, so C reads a value Rust built in place.
     const _: () = assert!(
-        size_of::<Allocator>() == size_of::<ffi::git_allocator>()
-            && align_of::<Allocator>() == align_of::<ffi::git_allocator>()
+        size_of::<Allocator>() == size_of::<sys::git_allocator>()
+            && align_of::<Allocator>() == align_of::<sys::git_allocator>()
     );
 
     // --- The strategies over libgit2's allocator family ---------------------------------
@@ -630,7 +630,7 @@ mod ffi_import {
     /// [`MAX_ALIGN`].
     fn malloc(len: usize) -> Option<NonNull<u8>> {
         // SAFETY: any `len` is accepted; `pinned` calls it on a pinned runtime.
-        pinned(|| unsafe { ffi::git__malloc(len) }).map(NonNull::cast)
+        pinned(|| unsafe { sys::git__malloc(len) }).map(NonNull::cast)
     }
 
     /// `git__free(data)`.
@@ -642,7 +642,7 @@ mod ffi_import {
     unsafe fn free(data: NonNull<u8>) {
         // SAFETY: `data` is a live allocation of the family the caller gives up, per this
         // function's contract; `git__free` releases it without reading it.
-        unsafe { ffi::git__free(data.as_ptr().cast()) }
+        unsafe { sys::git__free(data.as_ptr().cast()) }
     }
 
     /// `git__calloc(nelem, elsize)`: zeroed storage of `nelem * elsize` bytes; `None` as
@@ -650,14 +650,14 @@ mod ffi_import {
     fn calloc(nelem: usize, elsize: usize) -> Option<NonNull<u8>> {
         // SAFETY: any sizes are accepted, an overflowing product refused; `pinned` calls
         // it on a pinned runtime.
-        pinned(|| unsafe { ffi::git__calloc(nelem, elsize) }).map(NonNull::cast)
+        pinned(|| unsafe { sys::git__calloc(nelem, elsize) }).map(NonNull::cast)
     }
 
     /// `git__mallocarray(nelem, elsize)`: uninitialised storage of `nelem * elsize`
     /// bytes, through the allocator's `grealloc`; `None` as for [`calloc`].
     fn mallocarray(nelem: usize, elsize: usize) -> Option<NonNull<u8>> {
         // SAFETY: as in `calloc`; `git__realloc(NULL, n)` resizes no live allocation.
-        pinned(|| unsafe { ffi::git__mallocarray(nelem, elsize) }).map(NonNull::cast)
+        pinned(|| unsafe { sys::git__mallocarray(nelem, elsize) }).map(NonNull::cast)
     }
 
     /// `git__realloc(data, size)`: `data`'s first `min(old, size)` bytes at an address that
@@ -670,7 +670,7 @@ mod ffi_import {
     /// owns and, on success, gives up; `size` is non-zero, as [`ReallocFn`] asks.
     unsafe fn realloc(data: *mut u8, size: usize) -> Option<NonNull<u8>> {
         // SAFETY: per this function's contract, on a pinned runtime.
-        pinned(|| unsafe { ffi::git__realloc(data.cast(), size) }).map(NonNull::cast)
+        pinned(|| unsafe { sys::git__realloc(data.cast(), size) }).map(NonNull::cast)
     }
 
     /// `git__reallocarray(data, nelem, elsize)`: [`realloc`] to `nelem * elsize` bytes;
@@ -682,7 +682,7 @@ mod ffi_import {
     /// before it asks the allocator, and passes it any other.
     unsafe fn reallocarray(data: *mut u8, nelem: usize, elsize: usize) -> Option<NonNull<u8>> {
         // SAFETY: per this function's contract, on a pinned runtime.
-        pinned(|| unsafe { ffi::git__reallocarray(data.cast(), nelem, elsize) }).map(NonNull::cast)
+        pinned(|| unsafe { sys::git__reallocarray(data.cast(), nelem, elsize) }).map(NonNull::cast)
     }
 
     /// `git__strdup(s)`: a copy of `s` and its terminator; `None` as for [`malloc`].
@@ -693,7 +693,7 @@ mod ffi_import {
     unsafe fn strdup(s: NonNull<c_char>) -> Option<NonNull<c_char>> {
         // SAFETY: per this function's contract; C reads `s` up to its terminator, on a
         // pinned runtime.
-        pinned(|| unsafe { ffi::git__strdup(s.as_ptr()) })
+        pinned(|| unsafe { sys::git__strdup(s.as_ptr()) })
     }
 
     /// `git__strndup(bytes, bytes.len())`: a copy of `bytes` up to their first NUL, and
@@ -701,7 +701,7 @@ mod ffi_import {
     fn strndup(bytes: &[u8]) -> Option<NonNull<c_char>> {
         // SAFETY: C reads at most `bytes.len()` bytes through the pointer
         // (`p_strnlen`), all of them in `bytes`, on a pinned runtime.
-        pinned(|| unsafe { ffi::git__strndup(run_ptr(bytes), bytes.len()) })
+        pinned(|| unsafe { sys::git__strndup(run_ptr(bytes), bytes.len()) })
     }
 
     /// `git__substrdup(bytes, bytes.len())`: a copy of all of `bytes` and a terminator;
@@ -710,7 +710,7 @@ mod ffi_import {
         // SAFETY: C copies exactly `bytes.len()` bytes, all of them in `bytes`, into
         // `git__malloc(n + 1)`, which cannot overflow since a slice spans at most
         // `isize::MAX` bytes; on a pinned runtime.
-        pinned(|| unsafe { ffi::git__substrdup(run_ptr(bytes), bytes.len()) })
+        pinned(|| unsafe { sys::git__substrdup(run_ptr(bytes), bytes.len()) })
     }
 
     /// The policy of one object in libgit2's allocator: allocated by `git__malloc` or
@@ -1275,7 +1275,7 @@ mod ffi_import {
         if !runtime_pinned() {
             return None;
         }
-        let global = &raw mut ffi::git__allocator;
+        let global = &raw mut sys::git__allocator;
         // SAFETY: `global` addresses a C global, live and initialised for the whole process;
         // the handle reads it through that pointer, forming no reference. The runtime is
         // pinned, so libgit2's first initialisation, the one write a safe path makes, happened
@@ -1327,7 +1327,7 @@ mod ffi_import {
         // SAFETY: no arguments; it reads the global and, with the failing family installed,
         // writes the standard family over it, which races nothing and strands no allocation
         // per this function's contract.
-        let rc = unsafe { ffi::git_allocator_global_init() };
+        let rc = unsafe { sys::git_allocator_global_init() };
         // `git_stdalloc_init_allocator` and `git_debugalloc_init_allocator` return 0.
         debug_assert_eq!(rc, 0);
     }
@@ -1335,7 +1335,7 @@ mod ffi_import {
     // Each owner is the pointer it stands in for: its policy is zero-sized, so C reads a
     // run of them as a `T **` or a `char **`, and `Option` of one as a nullable pointer.
     const _: () = assert!(
-        size_of::<Option<AllocBox<Allocator>>>() == size_of::<*mut ffi::git_allocator>()
+        size_of::<Option<AllocBox<Allocator>>>() == size_of::<*mut sys::git_allocator>()
             && size_of::<Option<AllocStr>>() == size_of::<*mut c_char>()
     );
 
@@ -1794,7 +1794,7 @@ mod ffi_import {
             );
 
             // A member C left NULL shows as a null address.
-            let mut raw = ffi::git_allocator::default();
+            let mut raw = sys::git_allocator::default();
             // SAFETY: `raw` is a live `git_allocator` for the handle's lifetime.
             let r = unsafe { AllocatorRef::from_ptr(&raw mut raw) }.unwrap();
             assert_eq!(
@@ -2131,28 +2131,28 @@ mod ffi_import {
                 || {
                     let s = StrFree::dup(c"handed over").unwrap().into_raw();
                     // SAFETY: `s` is a live allocation of libgit2's allocator, given up.
-                    unsafe { ffi::git__free(s.cast()) };
+                    unsafe { sys::git__free(s.cast()) };
                     // SAFETY: any size; a fresh 8-byte allocation or NULL.
-                    let raw = unsafe { ffi::git__malloc(8) };
+                    let raw = unsafe { sys::git__malloc(8) };
                     // SAFETY: `raw` is fresh storage of libgit2's allocator holding 8 bytes,
                     // which the run adopts as 8 `MaybeUninit<u8>`.
                     let run = unsafe { AllocVec::<MaybeUninit<u8>>::from_raw_parts(raw.cast(), 8) };
                     drop(run.unwrap());
                     // SAFETY: a live C string, read for the call.
-                    let raw = unsafe { ffi::git__strdup(c"back".as_ptr()) };
+                    let raw = unsafe { sys::git__strdup(c"back".as_ptr()) };
                     // SAFETY: `raw` is a fresh NUL-terminated copy in libgit2's allocator,
                     // given up to the owner.
                     let back = unsafe { AllocStr::from_raw(raw) }.unwrap();
                     assert_eq!(back.as_c_str(), c"back");
                     drop(back);
                     // SAFETY: any sizes; zeroed storage for one `git_oid`, or NULL.
-                    let raw = unsafe { ffi::git__calloc(1, size_of::<ffi::git_oid>()) };
+                    let raw = unsafe { sys::git__calloc(1, size_of::<sys::git_oid>()) };
                     // SAFETY: `raw` is fresh, zeroed storage of libgit2's allocator for one
                     // `git_oid`, given up to the box.
                     let id = unsafe { AllocBox::<Oid>::from_c(raw.cast()) }.unwrap();
                     assert!(id.as_ref().id().iter().all(|&b| b == 0));
                     drop(id);
-                    assert_eq!(requests(), (vec![12, 8, 5, size_of::<ffi::git_oid>()], 4));
+                    assert_eq!(requests(), (vec![12, 8, 5, size_of::<sys::git_oid>()], 4));
                 },
             );
         }
@@ -2319,7 +2319,7 @@ mod ffi_import {
 
         /// Whether `a` holds the failing family's `gmalloc`, as libgit2 tells it.
         fn is_failing(a: AllocatorRef<'_>) -> bool {
-            let failing: MallocFn = ffi::git_failalloc_malloc;
+            let failing: MallocFn = sys::git_failalloc_malloc;
             ptr::fn_addr_eq(a.malloc().unwrap(), failing)
         }
 
@@ -2328,7 +2328,7 @@ mod ffi_import {
         fn unpinned_global() -> AllocatorRef<'static> {
             // SAFETY: a C global, live and initialised for the whole process; the callers run
             // alone in a child process, where no other thread writes it.
-            unsafe { AllocatorRef::from_ptr(&raw mut ffi::git__allocator) }.unwrap()
+            unsafe { AllocatorRef::from_ptr(&raw mut sys::git__allocator) }.unwrap()
         }
 
         /// The global holds the failing family until `global_init` installs the standard

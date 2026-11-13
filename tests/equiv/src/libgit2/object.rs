@@ -40,10 +40,10 @@
 use std::ffi::{CStr, CString, c_int};
 use std::ptr;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::object::{Object, ObjectArc, ObjectType};
 use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
 use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox, RepositoryError};
+use libgit2::sys::libgit2 as sys;
 
 const TESTREPO: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -52,7 +52,7 @@ const TESTREPO: &str = concat!(
 
 fn init() {
     // SAFETY: no arguments; the reference is never released.
-    assert!(unsafe { ffi::git_libgit2_init() } >= 1);
+    assert!(unsafe { sys::git_libgit2_init() } >= 1);
 }
 
 /// The calling thread's last error class and message.
@@ -61,7 +61,7 @@ fn c_last() -> (c_int, String) {
         // SAFETY: `git_error_last` never returns NULL after init, and its message is a
         // NUL-terminated string, both live until the next libgit2 call on this thread,
         // after the copy.
-        let e = unsafe { ffi::git_error_last() };
+        let e = unsafe { sys::git_error_last() };
         // SAFETY: as above.
         let klass = unsafe { (*e).klass };
         // SAFETY: as above.
@@ -79,18 +79,18 @@ fn c_last() -> (c_int, String) {
 /// What a lookup gave: the object's id and type as C reads them, or the failure.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Outcome {
-    Found(String, ffi::git_object_t),
+    Found(String, sys::git_object_t),
     Failed(c_int, c_int, String),
 }
 
 /// C's view of a live object.
-fn found(p: *const ffi::git_object) -> Outcome {
+fn found(p: *const sys::git_object) -> Outcome {
     let mut out = [0u8; 65];
     // SAFETY: `p` is a live object; its id lives as long as it and is formatted into
     // `out`, 65 writable bytes, NUL included.
-    let object_id = unsafe { ffi::git_object_id(p) };
+    let object_id = unsafe { sys::git_object_id(p) };
     // SAFETY: as above.
-    unsafe { ffi::git_oid_tostr(out.as_mut_ptr().cast(), out.len(), object_id) };
+    unsafe { sys::git_oid_tostr(out.as_mut_ptr().cast(), out.len(), object_id) };
     // SAFETY: as above.
     unsafe {
         Outcome::Found(
@@ -99,7 +99,7 @@ fn found(p: *const ffi::git_object) -> Outcome {
                 .to_str()
                 .unwrap()
                 .to_owned(),
-            ffi::git_object_type(p),
+            sys::git_object_type(p),
         )
     }
 }
@@ -120,8 +120,8 @@ fn id_of(step: Step<'_>) -> Oid {
 
 /// The C side: the raw repository and the references it looked up.
 struct CSide {
-    repo: *mut ffi::git_repository,
-    held: Vec<*mut ffi::git_object>,
+    repo: *mut sys::git_repository,
+    held: Vec<*mut sys::git_object>,
 }
 
 impl CSide {
@@ -130,10 +130,10 @@ impl CSide {
         let mut repo = ptr::null_mut();
         // SAFETY: a writable slot and a NUL-terminated path; no ceiling directories.
         let rc = unsafe {
-            ffi::git_repository_open_ext(
+            sys::git_repository_open_ext(
                 &raw mut repo,
                 path.as_ptr(),
-                ffi::GIT_REPOSITORY_OPEN_NO_SEARCH,
+                sys::GIT_REPOSITORY_OPEN_NO_SEARCH,
                 ptr::null(),
             )
         };
@@ -147,7 +147,7 @@ impl CSide {
     fn pathless() -> Self {
         let mut repo = ptr::null_mut();
         // SAFETY: a writable slot.
-        assert_eq!(unsafe { ffi::git_repository_new(&raw mut repo) }, 0);
+        assert_eq!(unsafe { sys::git_repository_new(&raw mut repo) }, 0);
         Self {
             repo,
             held: Vec::new(),
@@ -157,14 +157,14 @@ impl CSide {
     /// The step's outcome, and the index of the earlier result it is the same object
     /// as; a found object is held.
     fn run(&mut self, step: Step<'_>) -> (Outcome, Option<usize>) {
-        let mut id = ffi::git_oid::default();
+        let mut id = sys::git_oid::default();
         // SAFETY: a writable id, and `hex.len()` readable bytes of hex digits.
         let rc = unsafe {
-            ffi::git_oid_from_prefix(
+            sys::git_oid_from_prefix(
                 &raw mut id,
                 step.hex.as_ptr().cast(),
                 step.hex.len(),
-                ffi::GIT_OID_SHA1,
+                sys::GIT_OID_SHA1,
             )
         };
         assert_eq!(rc, 0);
@@ -174,11 +174,11 @@ impl CSide {
         // the call, and a named type or `GIT_OBJECT_ANY`.
         let rc = match step.len {
             // SAFETY: as above.
-            None => unsafe { ffi::git_object_lookup(&raw mut out, self.repo, &raw const id, kind) },
+            None => unsafe { sys::git_object_lookup(&raw mut out, self.repo, &raw const id, kind) },
             Some(len) => {
                 // SAFETY: as above.
                 unsafe {
-                    ffi::git_object_lookup_prefix(&raw mut out, self.repo, &raw const id, len, kind)
+                    sys::git_object_lookup_prefix(&raw mut out, self.repo, &raw const id, len, kind)
                 }
             }
         };
@@ -200,14 +200,14 @@ impl CSide {
             .map(|&o| {
                 let mut dest = ptr::null_mut();
                 // SAFETY: `o` is a live reference this side holds.
-                assert_eq!(unsafe { ffi::git_object_dup(&raw mut dest, o) }, 0);
+                assert_eq!(unsafe { sys::git_object_dup(&raw mut dest, o) }, 0);
                 assert_eq!(dest, o);
                 dest
             })
             .collect();
         for o in std::mem::replace(&mut self.held, copies) {
             // SAFETY: each original reference is released once; its copy remains.
-            unsafe { ffi::git_object_free(o) };
+            unsafe { sys::git_object_free(o) };
         }
         self.held.iter().map(|&o| found(o)).collect()
     }
@@ -218,11 +218,11 @@ impl Drop for CSide {
         // SAFETY: every held reference is released once, then the repository.
         unsafe {
             for &o in &self.held {
-                ffi::git_object_free(o);
+                sys::git_object_free(o);
             }
         }
         // SAFETY: as above.
-        unsafe { ffi::git_repository_free(self.repo) };
+        unsafe { sys::git_repository_free(self.repo) };
     }
 }
 
@@ -383,15 +383,15 @@ fn lookups_of_unparsable_objects_match_c() {
     let path = std::env::temp_dir().join(format!("crustify-object-equiv-{}", std::process::id()));
     drop(std::fs::remove_dir_all(&path));
     let path_str = path.to_str().unwrap().to_owned();
-    let objects: [(&[u8], ffi::git_object_t); 5] = [
-        (b"tree nope\n", ffi::GIT_OBJECT_COMMIT),
-        (b"100644 one\0short", ffi::GIT_OBJECT_TREE),
+    let objects: [(&[u8], sys::git_object_t); 5] = [
+        (b"tree nope\n", sys::GIT_OBJECT_COMMIT),
+        (b"100644 one\0short", sys::GIT_OBJECT_TREE),
         (
             b"100644 a\0aaaaaaaaaaaaaaaaaaaa100644 b",
-            ffi::GIT_OBJECT_TREE,
+            sys::GIT_OBJECT_TREE,
         ),
-        (b"object 1234\n", ffi::GIT_OBJECT_TAG),
-        (b"fine\n", ffi::GIT_OBJECT_BLOB),
+        (b"object 1234\n", sys::GIT_OBJECT_TAG),
+        (b"fine\n", sys::GIT_OBJECT_BLOB),
     ];
     let ids: Vec<String> = {
         let repo = Repository::init(&CString::new(path_str.as_str()).unwrap(), true).unwrap();
@@ -399,13 +399,13 @@ fn lookups_of_unparsable_objects_match_c() {
         objects
             .iter()
             .map(|(data, kind)| {
-                let mut id = ffi::git_oid::default();
+                let mut id = sys::git_oid::default();
                 let mut out = [0u8; 41];
                 {
                     // SAFETY: a live odb, a writable id, `data` read for the call; the id is
                     // formatted into 41 writable bytes, NUL included.
                     let rc = unsafe {
-                        ffi::git_odb_write(
+                        sys::git_odb_write(
                             &raw mut id,
                             odb.as_c_ptr(),
                             data.as_ptr().cast(),
@@ -416,7 +416,7 @@ fn lookups_of_unparsable_objects_match_c() {
                     assert_eq!(rc, 0);
                     // SAFETY: as above.
                     unsafe {
-                        ffi::git_oid_tostr(out.as_mut_ptr().cast(), out.len(), &raw const id)
+                        sys::git_oid_tostr(out.as_mut_ptr().cast(), out.len(), &raw const id)
                     };
                 }
                 CStr::from_bytes_until_nul(&out)
@@ -475,10 +475,10 @@ mod peel_and_bypath {
     use std::ffi::CStr;
     use std::ptr;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::object::{Object, ObjectArc, ObjectType};
     use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
     use libgit2::libgit2::src::libgit2::repository::Repository;
+    use libgit2::sys::libgit2 as sys;
 
     use super::{BLOB, COMMIT, CSide, Outcome, TESTREPO, TREE, c_last, found, init, outcome};
 
@@ -517,12 +517,12 @@ mod peel_and_bypath {
 
     /// The C side's derived objects: each with whether it is its base.
     fn c_peel(
-        base: *mut ffi::git_object,
+        base: *mut sys::git_object,
         kind: Option<ObjectType>,
-    ) -> (Outcome, bool, *mut ffi::git_object) {
+    ) -> (Outcome, bool, *mut sys::git_object) {
         let mut out = ptr::null_mut();
         // SAFETY: a writable slot, a live object and a named type or `GIT_OBJECT_ANY`.
-        let rc = unsafe { ffi::git_object_peel(&raw mut out, base, ObjectType::raw_or_any(kind)) };
+        let rc = unsafe { sys::git_object_peel(&raw mut out, base, ObjectType::raw_or_any(kind)) };
         if rc < 0 {
             let (class, message) = c_last();
             return (Outcome::Failed(rc, class, message), false, ptr::null_mut());
@@ -531,15 +531,15 @@ mod peel_and_bypath {
     }
 
     fn c_bypath(
-        base: *mut ffi::git_object,
+        base: *mut sys::git_object,
         path: &CStr,
         kind: Option<ObjectType>,
-    ) -> (Outcome, *mut ffi::git_object) {
+    ) -> (Outcome, *mut sys::git_object) {
         let mut out = ptr::null_mut();
         // SAFETY: a writable slot, a live object, a NUL-terminated path and a named type
         // or `GIT_OBJECT_ANY`.
         let rc = unsafe {
-            ffi::git_object_lookup_bypath(
+            sys::git_object_lookup_bypath(
                 &raw mut out,
                 base,
                 path.as_ptr(),
@@ -583,21 +583,21 @@ mod peel_and_bypath {
         init();
         let c = CSide::open(TESTREPO);
         let rust = Repository::open(&std::ffi::CString::new(TESTREPO).unwrap()).unwrap();
-        let mut c_held: Vec<*mut ffi::git_object> = Vec::new();
+        let mut c_held: Vec<*mut sys::git_object> = Vec::new();
         let mut rust_held: Vec<ObjectArc<'_>> = Vec::new();
         let mut c_bases = Vec::new();
         let mut rust_bases = Vec::new();
         for hex in BASES {
-            let mut id = ffi::git_oid::default();
+            let mut id = sys::git_oid::default();
             // SAFETY: a writable id and 40 readable hex digits.
             let rc = unsafe {
-                ffi::git_oid_from_prefix(&raw mut id, hex.as_ptr().cast(), 40, ffi::GIT_OID_SHA1)
+                sys::git_oid_from_prefix(&raw mut id, hex.as_ptr().cast(), 40, sys::GIT_OID_SHA1)
             };
             assert_eq!(rc, 0);
             let mut base = ptr::null_mut();
             // SAFETY: a writable slot, the live repository and a live id of its type.
             let rc = unsafe {
-                ffi::git_object_lookup(&raw mut base, c.repo, &raw const id, ffi::GIT_OBJECT_ANY)
+                sys::git_object_lookup(&raw mut base, c.repo, &raw const id, sys::GIT_OBJECT_ANY)
             };
             assert_eq!(rc, 0);
             c_bases.push(base);
@@ -654,7 +654,7 @@ mod peel_and_bypath {
         for base in c_bases {
             // SAFETY: each base's reference is released once; the derived objects hold
             // their own.
-            unsafe { ffi::git_object_free(base) };
+            unsafe { sys::git_object_free(base) };
         }
         drop(rust_bases);
         let c_views: Vec<_> = c_held.iter().map(|&o| found(o)).collect();
@@ -662,7 +662,7 @@ mod peel_and_bypath {
         assert_eq!(c_views, rust_views);
         for o in c_held {
             // SAFETY: each derived reference is released once.
-            unsafe { ffi::git_object_free(o) };
+            unsafe { sys::git_object_free(o) };
         }
         drop(rust_held);
     }
@@ -673,13 +673,13 @@ mod id_options {
     use std::ffi::{CStr, CString, c_int};
     use std::ptr;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::filter::{FilterList, FilterListBox};
     use libgit2::libgit2::src::libgit2::object::{
         ObjectIdOptions, ObjectType, id_from_buffer, id_from_file,
     };
     use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
     use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox, RepositoryError};
+    use libgit2::sys::libgit2 as sys;
 
     use super::{c_last, init};
 
@@ -709,8 +709,8 @@ mod id_options {
 
     /// The fields of options as C reads them; the list as present or not.
     fn c_fields(
-        opts: *const ffi::git_object_id_options,
-    ) -> (u32, ffi::git_object_t, ffi::git_oid_t, bool) {
+        opts: *const sys::git_object_id_options,
+    ) -> (u32, sys::git_object_t, sys::git_oid_t, bool) {
         // SAFETY: live options, read field by field.
         let version = unsafe { (*opts).version };
         // SAFETY: as above.
@@ -724,15 +724,15 @@ mod id_options {
     /// What `git_object_id_from_buffer` makes of `data` through `opts`: the id's hex, or
     /// the code and the error.
     fn c_id(
-        opts: *const ffi::git_object_id_options,
+        opts: *const sys::git_object_id_options,
         data: &[u8],
     ) -> Result<String, (c_int, c_int, String)> {
-        let mut out = ffi::git_oid::default();
+        let mut out = sys::git_oid::default();
         let bytes = if data.is_empty() { &[0u8][..] } else { data };
         // SAFETY: a writable id; `data.len()` readable bytes (a live one for none); live
         // options whose list, if any, is live and used by nothing else meanwhile.
         let rc = unsafe {
-            ffi::git_object_id_from_buffer(&raw mut out, bytes.as_ptr().cast(), data.len(), opts)
+            sys::git_object_id_from_buffer(&raw mut out, bytes.as_ptr().cast(), data.len(), opts)
         };
         if rc < 0 {
             let (class, message) = c_last();
@@ -740,7 +740,7 @@ mod id_options {
         }
         let mut hex = [0u8; 65];
         // SAFETY: the id libgit2 wrote; 65 writable bytes, NUL included.
-        unsafe { ffi::git_oid_tostr(hex.as_mut_ptr().cast(), hex.len(), &raw const out) };
+        unsafe { sys::git_oid_tostr(hex.as_mut_ptr().cast(), hex.len(), &raw const out) };
         Ok(CStr::from_bytes_until_nul(&hex)
             .unwrap()
             .to_str()
@@ -751,20 +751,20 @@ mod id_options {
     /// What `git_object_id_from_file` makes of the file at `path` through `opts`, in the
     /// shape of [`c_id`].
     fn c_file_id(
-        opts: *const ffi::git_object_id_options,
+        opts: *const sys::git_object_id_options,
         path: &CStr,
     ) -> Result<String, (c_int, c_int, String)> {
-        let mut out = ffi::git_oid::default();
+        let mut out = sys::git_oid::default();
         // SAFETY: a writable id; a NUL-terminated path; live options whose list, if any,
         // is live and used by nothing else meanwhile.
-        let rc = unsafe { ffi::git_object_id_from_file(&raw mut out, path.as_ptr(), opts) };
+        let rc = unsafe { sys::git_object_id_from_file(&raw mut out, path.as_ptr(), opts) };
         if rc < 0 {
             let (class, message) = c_last();
             return Err((rc, class, message));
         }
         let mut hex = [0u8; 65];
         // SAFETY: the id libgit2 wrote; 65 writable bytes, NUL included.
-        unsafe { ffi::git_oid_tostr(hex.as_mut_ptr().cast(), hex.len(), &raw const out) };
+        unsafe { sys::git_oid_tostr(hex.as_mut_ptr().cast(), hex.len(), &raw const out) };
         Ok(CStr::from_bytes_until_nul(&hex)
             .unwrap()
             .to_str()
@@ -821,7 +821,7 @@ mod id_options {
     /// C's ids of every content, from buffers then from files, through `opts`, with the
     /// failures' messages relative to each side's own directory.
     fn c_ids(
-        opts: *const ffi::git_object_id_options,
+        opts: *const sys::git_object_id_options,
         files: &Files,
     ) -> Vec<Result<String, (c_int, c_int, String)>> {
         let mut ids: Vec<_> = CONTENTS.iter().map(|d| c_id(opts, d)).collect();
@@ -897,10 +897,10 @@ mod id_options {
 
         fn lists(&self) -> (FilterListBox<'_>, FilterListBox<'_>) {
             let repo = self.repo.as_ref().unwrap().as_ref();
-            let crlf = FilterList::load(repo, c"a.txt", ffi::GIT_FILTER_TO_ODB, 0)
+            let crlf = FilterList::load(repo, c"a.txt", sys::GIT_FILTER_TO_ODB, 0)
                 .unwrap()
                 .unwrap();
-            let empty = FilterList::new(repo, ffi::GIT_FILTER_TO_ODB, 0).unwrap();
+            let empty = FilterList::new(repo, sys::GIT_FILTER_TO_ODB, 0).unwrap();
             (crlf, empty)
         }
     }
@@ -953,12 +953,12 @@ mod id_options {
     const CONTENTS: [&[u8]; 4] = [b"", b"hello\n", b"a\r\nb\r\n", b"mixed\r\nends\n\r\n"];
 
     type Observed = (
-        (u32, ffi::git_object_t, ffi::git_oid_t, bool),
+        (u32, sys::git_object_t, sys::git_oid_t, bool),
         Vec<Result<String, (c_int, c_int, String)>>,
     );
 
     /// The options' fields, and C's ids of every content through them.
-    fn observe(opts: *const ffi::git_object_id_options) -> Observed {
+    fn observe(opts: *const sys::git_object_id_options) -> Observed {
         (
             c_fields(opts),
             CONTENTS.iter().map(|d| c_id(opts, d)).collect(),
@@ -966,21 +966,21 @@ mod id_options {
     }
 
     /// Rust's options, read in place: `ObjectIdOptions` is transparent over the C struct.
-    fn rust_raw(opts: &ObjectIdOptions<'_>) -> *const ffi::git_object_id_options {
+    fn rust_raw(opts: &ObjectIdOptions<'_>) -> *const sys::git_object_id_options {
         ptr::from_ref(opts).cast()
     }
 
     #[test]
     #[cfg_attr(miri, ignore = "calls libgit2")]
     fn new_matches_init() {
-        let mut c = ffi::git_object_id_options::default();
+        let mut c = sys::git_object_id_options::default();
         // SAFETY: writable options, overwritten with the template.
         let rc = unsafe {
-            ffi::git_object_id_options_init(&raw mut c, ffi::GIT_OBJECT_ID_OPTIONS_VERSION)
+            sys::git_object_id_options_init(&raw mut c, sys::GIT_OBJECT_ID_OPTIONS_VERSION)
         };
         assert_eq!(rc, 0);
-        let template = ffi::git_object_id_options {
-            version: ffi::GIT_OBJECT_ID_OPTIONS_VERSION,
+        let template = sys::git_object_id_options {
+            version: sys::GIT_OBJECT_ID_OPTIONS_VERSION,
             ..Default::default()
         };
         let rust = ObjectIdOptions::new();
@@ -1032,10 +1032,10 @@ mod id_options {
             let (mut rust_safe, _) = rust_safe_wd.lists();
             let (c_crlf, c_empty) = c_wd.lists();
             let (mut rust_crlf, mut rust_empty) = rust_wd.lists();
-            let mut c = ffi::git_object_id_options::default();
+            let mut c = sys::git_object_id_options::default();
             // SAFETY: writable options, overwritten with the template.
             let rc = unsafe {
-                ffi::git_object_id_options_init(&raw mut c, ffi::GIT_OBJECT_ID_OPTIONS_VERSION)
+                sys::git_object_id_options_init(&raw mut c, sys::GIT_OBJECT_ID_OPTIONS_VERSION)
             };
             assert_eq!(rc, 0);
             let mut rust = ObjectIdOptions::new();
@@ -1092,7 +1092,7 @@ mod id_options {
                     // The refusing list fails the CRLF content, on both sides alike.
                     let refused = (
                         -1,
-                        ffi::GIT_ERROR_FILTER.cast_signed(),
+                        sys::GIT_ERROR_FILTER.cast_signed(),
                         "CRLF would be replaced by LF in 'a.txt'".to_owned(),
                     );
                     assert_eq!(seen.1[2], Err(refused));
@@ -1131,9 +1131,9 @@ mod types_and_contents {
 
     use std::ffi::{CStr, CString, c_int};
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::object::{ObjectType, content_is_valid, type_is_valid};
     use libgit2::libgit2::src::libgit2::oid::OidType;
+    use libgit2::sys::libgit2 as sys;
 
     use super::{c_last, init};
 
@@ -1150,13 +1150,13 @@ mod types_and_contents {
         init();
         for raw in (-5..12).chain([i32::MIN, i32::MAX]) {
             // SAFETY: a plain value; the result is a static string.
-            let object_type2string = unsafe { ffi::git_object_type2string(raw) };
+            let object_type2string = unsafe { sys::git_object_type2string(raw) };
             // SAFETY: as above.
             let c_name = unsafe { CStr::from_ptr(object_type2string) };
             let rust_name = ObjectType::from_raw(raw).map_or("", ObjectType::name);
             assert_eq!(c_name.to_str().unwrap(), rust_name, "{raw}");
             // SAFETY: a plain value.
-            let c_valid = unsafe { ffi::git_object_type_is_valid(raw) } != 0;
+            let c_valid = unsafe { sys::git_object_type_is_valid(raw) } != 0;
             assert_eq!(type_is_valid(raw), c_valid, "{raw}");
         }
         let mut names: Vec<String> = ["", " ", "any", "invalid", "ofs_delta", "ref_delta"]
@@ -1177,9 +1177,9 @@ mod types_and_contents {
             let c_copy = CString::new(name.clone()).unwrap();
             let rust_copy = CString::new(name.clone()).unwrap();
             // SAFETY: a NUL-terminated string, read for the call.
-            let c = unsafe { ffi::git_object_string2type(c_copy.as_ptr()) };
+            let c = unsafe { sys::git_object_string2type(c_copy.as_ptr()) };
             let rust =
-                ObjectType::from_name(&rust_copy).map_or(ffi::GIT_OBJECT_INVALID, ObjectType::raw);
+                ObjectType::from_name(&rust_copy).map_or(sys::GIT_OBJECT_INVALID, ObjectType::raw);
             assert_eq!(rust, c, "{name:?}");
         }
     }
@@ -1244,7 +1244,7 @@ mod types_and_contents {
         // SAFETY: `valid` is writable; `buf` addresses `copy.len()` readable bytes (one
         // for none), read for the call; named types.
         let rc = unsafe {
-            ffi::git_object_rawcontent_is_valid(
+            sys::git_object_rawcontent_is_valid(
                 &raw mut valid,
                 buf,
                 copy.len(),
@@ -1287,10 +1287,10 @@ mod types_and_contents {
             }
         }
         // SAFETY: no arguments; libgit2 is initialised.
-        unsafe { ffi::git_error_clear() };
+        unsafe { sys::git_error_clear() };
         let c: Vec<Seen> = probes.iter().map(|&(b, k, o)| c_check(b, k, o)).collect();
         // SAFETY: as above.
-        unsafe { ffi::git_error_clear() };
+        unsafe { sys::git_error_clear() };
         let rust: Vec<Seen> = probes
             .iter()
             .map(|&(b, k, o)| rust_check(b, k, o))
@@ -1339,10 +1339,10 @@ mod kind_and_short_id {
     use std::path::{Path, PathBuf};
     use std::ptr;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::object::{Object, ObjectArc};
     use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
     use libgit2::libgit2::src::libgit2::repository::Repository;
+    use libgit2::sys::libgit2 as sys;
 
     use super::{BLOB, COMMIT, CSide, TAG, TESTREPO, TREE, c_last, init};
 
@@ -1404,10 +1404,10 @@ mod kind_and_short_id {
     }
 
     /// What one object gave: its type, and its short id or the failure.
-    type Seen = (ffi::git_object_t, Result<String, (c_int, c_int, String)>);
+    type Seen = (sys::git_object_t, Result<String, (c_int, c_int, String)>);
 
-    fn c_seen(object: *mut ffi::git_object) -> Seen {
-        let mut buf = ffi::git_buf {
+    fn c_seen(object: *mut sys::git_object) -> Seen {
+        let mut buf = sys::git_buf {
             ptr: ptr::null_mut(),
             reserved: 0,
             size: 0,
@@ -1415,9 +1415,9 @@ mod kind_and_short_id {
         {
             // SAFETY: a live object of a live repository; `buf` an empty buffer, disposed
             // once read.
-            let kind = unsafe { ffi::git_object_type(object) };
+            let kind = unsafe { sys::git_object_type(object) };
             // SAFETY: as above.
-            let rc = unsafe { ffi::git_object_short_id(&raw mut buf, object) };
+            let rc = unsafe { sys::git_object_short_id(&raw mut buf, object) };
             // SAFETY: as above.
             let short = unsafe {
                 if rc < 0 {
@@ -1432,7 +1432,7 @@ mod kind_and_short_id {
             // SAFETY: as above.
             unsafe {
                 if buf.reserved > 0 {
-                    ffi::git_buf_dispose(&raw mut buf);
+                    sys::git_buf_dispose(&raw mut buf);
                 }
             }
             (kind, short)
@@ -1476,24 +1476,24 @@ mod kind_and_short_id {
             let mut c_first = Vec::new();
             let mut rust_first = Vec::new();
             for hex in IDS {
-                let mut id = ffi::git_oid::default();
+                let mut id = sys::git_oid::default();
                 let c_hex = CString::new(hex).unwrap();
                 let mut out = ptr::null_mut();
                 // SAFETY: writable slots, the side's live repository and a live id.
                 unsafe {
                     assert_eq!(
-                        ffi::git_oid_from_string(&raw mut id, c_hex.as_ptr(), ffi::GIT_OID_SHA1),
+                        sys::git_oid_from_string(&raw mut id, c_hex.as_ptr(), sys::GIT_OID_SHA1),
                         0
                     );
                 };
                 // SAFETY: as above.
                 unsafe {
                     assert_eq!(
-                        ffi::git_object_lookup(
+                        sys::git_object_lookup(
                             &raw mut out,
                             c.repo,
                             &raw const id,
-                            ffi::GIT_OBJECT_ANY
+                            sys::GIT_OBJECT_ANY
                         ),
                         0
                     );
@@ -1509,7 +1509,7 @@ mod kind_and_short_id {
             // Every other object goes; the first one is asked again.
             for o in c.held.drain(1..) {
                 // SAFETY: each reference is released once.
-                unsafe { ffi::git_object_free(o) };
+                unsafe { sys::git_object_free(o) };
             }
             rust.truncate(1);
             let (cs, rs) = (c_seen(c.held[0]), rust_seen(&rust[0]));
@@ -1542,10 +1542,10 @@ mod id_and_owner {
     use std::ffi::{CStr, CString};
     use std::ptr;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::object::{Object, ObjectArc, ObjectType};
     use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
     use libgit2::libgit2::src::libgit2::repository::Repository;
+    use libgit2::sys::libgit2 as sys;
 
     use super::{BLOB, COMMIT, TAG, TESTREPO, TREE, init};
 
@@ -1554,7 +1554,7 @@ mod id_and_owner {
     enum Find {
         Full(&'static str),
         Prefix(&'static str),
-        Peel(&'static str, ffi::git_object_t),
+        Peel(&'static str, sys::git_object_t),
         Path(&'static str, &'static CStr),
     }
 
@@ -1565,21 +1565,21 @@ mod id_and_owner {
         Find::Full(TAG),
         Find::Prefix(COMMIT),
         Find::Prefix(TAG),
-        Find::Peel(TAG, ffi::GIT_OBJECT_TREE),
-        Find::Peel(COMMIT, ffi::GIT_OBJECT_TREE),
+        Find::Peel(TAG, sys::GIT_OBJECT_TREE),
+        Find::Peel(COMMIT, sys::GIT_OBJECT_TREE),
         Find::Path(COMMIT, c"README"),
     ];
 
-    fn sha1(hex: &str) -> ffi::git_oid {
-        let mut id = ffi::git_oid::default();
+    fn sha1(hex: &str) -> sys::git_oid {
+        let mut id = sys::git_oid::default();
         let hex = CString::new(hex).unwrap();
         // SAFETY: a writable id and a NUL-terminated hex string.
-        let rc = unsafe { ffi::git_oid_from_string(&raw mut id, hex.as_ptr(), ffi::GIT_OID_SHA1) };
+        let rc = unsafe { sys::git_oid_from_string(&raw mut id, hex.as_ptr(), sys::GIT_OID_SHA1) };
         assert_eq!(rc, 0);
         id
     }
 
-    fn c_find(repo: *mut ffi::git_repository, find: Find) -> *mut ffi::git_object {
+    fn c_find(repo: *mut sys::git_repository, find: Find) -> *mut sys::git_object {
         let mut out = ptr::null_mut();
         {
             // SAFETY: writable slots, the live repository, live ids and paths; every
@@ -1588,17 +1588,17 @@ mod id_and_owner {
                 Find::Full(hex) => {
                     // SAFETY: as above.
                     unsafe {
-                        ffi::git_object_lookup(&raw mut out, repo, &sha1(hex), ffi::GIT_OBJECT_ANY)
+                        sys::git_object_lookup(&raw mut out, repo, &sha1(hex), sys::GIT_OBJECT_ANY)
                     }
                 }
                 // SAFETY: as above.
                 Find::Prefix(hex) => unsafe {
-                    ffi::git_object_lookup_prefix(
+                    sys::git_object_lookup_prefix(
                         &raw mut out,
                         repo,
                         &sha1(hex),
                         7,
-                        ffi::GIT_OBJECT_ANY,
+                        sys::GIT_OBJECT_ANY,
                     )
                 },
                 Find::Peel(hex, _) | Find::Path(hex, _) => {
@@ -1606,11 +1606,11 @@ mod id_and_owner {
                     assert_eq!(
                         // SAFETY: as above.
                         unsafe {
-                            ffi::git_object_lookup(
+                            sys::git_object_lookup(
                                 &raw mut from,
                                 repo,
                                 &sha1(hex),
-                                ffi::GIT_OBJECT_ANY,
+                                sys::GIT_OBJECT_ANY,
                             )
                         },
                         0
@@ -1618,21 +1618,21 @@ mod id_and_owner {
                     let rc = match find {
                         // SAFETY: as above.
                         Find::Peel(_, kind) => unsafe {
-                            ffi::git_object_peel(&raw mut out, from, kind)
+                            sys::git_object_peel(&raw mut out, from, kind)
                         },
                         // SAFETY: as above.
                         Find::Path(_, path) => unsafe {
-                            ffi::git_object_lookup_bypath(
+                            sys::git_object_lookup_bypath(
                                 &raw mut out,
                                 from,
                                 path.as_ptr(),
-                                ffi::GIT_OBJECT_ANY,
+                                sys::GIT_OBJECT_ANY,
                             )
                         },
                         _ => unreachable!(),
                     };
                     // SAFETY: as above.
-                    unsafe { ffi::git_object_free(from) };
+                    unsafe { sys::git_object_free(from) };
                     rc
                 }
             };
@@ -1641,13 +1641,13 @@ mod id_and_owner {
         out
     }
 
-    fn c_id(object: *const ffi::git_object) -> (String, u8) {
+    fn c_id(object: *const sys::git_object) -> (String, u8) {
         let mut out = [0u8; 65];
         {
             // SAFETY: a live object, whose id lives as long as it; 65 writable bytes.
-            let id = unsafe { ffi::git_object_id(object) };
+            let id = unsafe { sys::git_object_id(object) };
             // SAFETY: as above.
-            unsafe { ffi::git_oid_tostr(out.as_mut_ptr().cast(), out.len(), id) };
+            unsafe { sys::git_oid_tostr(out.as_mut_ptr().cast(), out.len(), id) };
             // SAFETY: as above.
             unsafe {
                 (
@@ -1689,7 +1689,7 @@ mod id_and_owner {
         let path = CString::new(TESTREPO).unwrap();
         let mut c_repo = ptr::null_mut();
         // SAFETY: a writable slot and a NUL-terminated path.
-        let rc = unsafe { ffi::git_repository_open(&raw mut c_repo, path.as_ptr()) };
+        let rc = unsafe { sys::git_repository_open(&raw mut c_repo, path.as_ptr()) };
         assert_eq!(rc, 0);
         let rust_repo = Repository::open(&path).unwrap();
         let repo = rust_repo.as_ref();
@@ -1701,7 +1701,7 @@ mod id_and_owner {
             let rust = (rust_id.to_hex_string().unwrap(), rust_id.raw_kind());
             assert_eq!(rust, c_id(c_object), "{find:?}");
             // SAFETY: a live object, only read.
-            assert_eq!(unsafe { ffi::git_object_owner(c_object) }, c_repo);
+            assert_eq!(unsafe { sys::git_object_owner(c_object) }, c_repo);
             let owner = object.as_ref().owner();
             assert_eq!(
                 owner.path().map(CStr::as_ptr),
@@ -1710,9 +1710,9 @@ mod id_and_owner {
             drop(object);
             assert_eq!(copy.as_ref().id().to_hex_string().unwrap(), rust.0);
             // SAFETY: the object C looked up, freed once.
-            unsafe { ffi::git_object_free(c_object) };
+            unsafe { sys::git_object_free(c_object) };
         }
         // SAFETY: the C side's repository, freed once.
-        unsafe { ffi::git_repository_free(c_repo) };
+        unsafe { sys::git_repository_free(c_repo) };
     }
 }

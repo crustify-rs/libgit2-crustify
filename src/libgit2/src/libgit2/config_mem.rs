@@ -11,7 +11,7 @@ use core::ptr::{self, NonNull};
 
 use ffibox::{CBorrowedPtr, CCell, CMutSeam, CRefSeam};
 
-use crate::ffi;
+use crate::sys::libgit2 as sys;
 
 /// Caller-owned memory backend options, borrowing strings for `'o`.
 ///
@@ -72,7 +72,7 @@ use crate::ffi;
 #[doc(alias = "git_config_backend_memory_options")]
 #[repr(transparent)]
 pub struct BackendMemoryOptions<'o>(
-    pub(crate) ffi::git_config_backend_memory_options,
+    pub(crate) sys::git_config_backend_memory_options,
     pub(crate) PhantomData<(*const (), &'o CStr)>,
 );
 
@@ -92,7 +92,7 @@ pub struct BackendMemoryOptionsMut<'a, 'o>(
 // respectively, with only zero-sized markers and no handle Drop. No handle forms a
 // reference to C memory. Mut is invariant in Self through its exclusive marker.
 unsafe impl<'o> CCell for BackendMemoryOptions<'o> {
-    type C = ffi::git_config_backend_memory_options;
+    type C = sys::git_config_backend_memory_options;
     type Mut<'a>
         = BackendMemoryOptionsMut<'a, 'o>
     where
@@ -150,9 +150,9 @@ impl<'o> BackendMemoryOptions<'o> {
         // SAFETY: raw provides exclusive writable storage; init fills the entire
         // struct for its supported version, without retaining any pointer.
         let rc = unsafe {
-            ffi::git_config_backend_memory_options_init(
+            sys::git_config_backend_memory_options_init(
                 raw.as_mut_ptr(),
-                ffi::GIT_CONFIG_BACKEND_MEMORY_OPTIONS_VERSION,
+                sys::GIT_CONFIG_BACKEND_MEMORY_OPTIONS_VERSION,
             )
         };
         assert_eq!(rc, 0, "memory options init refused its own version");

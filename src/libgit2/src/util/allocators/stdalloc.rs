@@ -21,8 +21,8 @@ pub use ffi_import::allocator;
 
 /// What the module reaches in C: `git_stdalloc_init_allocator`.
 mod ffi_import {
-    use crate::ffi;
     use crate::libgit2::src::util::alloc::Allocator;
+    use crate::sys::libgit2 as sys;
 
     /// libgit2's standard allocator: its forwarders to the C library's `malloc`, `realloc`
     /// and `free`, as C fills a `git_allocator` with them.
@@ -81,12 +81,12 @@ mod ffi_import {
     #[doc(alias = "git_stdalloc_init_allocator")]
     #[must_use]
     pub fn allocator() -> Allocator {
-        let mut raw = ffi::git_allocator::default();
+        let mut raw = sys::git_allocator::default();
         // SAFETY: `raw` is a live, writable `git_allocator` on this frame for the whole
         // call; C writes its three members, reads nothing and keeps no pointer to it.
-        let rc = unsafe { ffi::git_stdalloc_init_allocator(&raw mut raw) };
+        let rc = unsafe { sys::git_stdalloc_init_allocator(&raw mut raw) };
         debug_assert_eq!(rc, 0, "git_stdalloc_init_allocator returns 0 on every path");
-        let ffi::git_allocator {
+        let sys::git_allocator {
             gmalloc: Some(malloc),
             grealloc: Some(realloc),
             gfree: Some(free),

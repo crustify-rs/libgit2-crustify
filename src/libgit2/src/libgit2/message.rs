@@ -5,9 +5,9 @@ use core::ffi::CStr;
 
 use ffibox::CMutSeam;
 
-use crate::ffi;
 use crate::libgit2::src::libgit2::buf::{Buf, BufVal};
 use crate::libgit2::src::util::errors::{ErrorBuf, last, runtime_pinned};
+use crate::sys::libgit2 as sys;
 
 /// `message` cleaned up as git cleans up a commit message: trailing whitespace is
 /// removed from every line, runs of blank lines are collapsed into one, blank lines at
@@ -48,6 +48,6 @@ pub fn prettify(message: &CStr, comment: Option<u8>) -> Result<BufVal, ErrorBuf>
     // SAFETY: `buf` addresses the fresh, empty buffer `out` holds, which libgit2 fills
     // (`git_buf_fromstr`) or leaves empty; `message` is NUL-terminated and read for the
     // call only. The runtime is pinned, so allocations and errors reach live state.
-    let rc = unsafe { ffi::git_message_prettify(buf, message.as_ptr(), strip, comment) };
+    let rc = unsafe { sys::git_message_prettify(buf, message.as_ptr(), strip, comment) };
     if rc < 0 { Err(last()) } else { Ok(out) }
 }

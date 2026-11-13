@@ -31,10 +31,10 @@ mod prune_options {
     use std::sync::Mutex;
     use std::thread;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::worktree::{
         PruneFlag, PruneFlags, PruneOptions, PruneOptionsMut, PruneOptionsRef,
     };
+    use libgit2::sys::libgit2 as sys;
 
     use crate::fixture::isolated;
 
@@ -57,7 +57,7 @@ mod prune_options {
 
     /// The options as C would build them, without calling it: Miri runs these.
     fn options(version: u32, flags: u32) -> PruneOptions {
-        PruneOptions::from(ffi::git_worktree_prune_options { version, flags })
+        PruneOptions::from(sys::git_worktree_prune_options { version, flags })
     }
 
     fn read(r: PruneOptionsRef<'_>) -> (u32, u32) {
@@ -180,7 +180,7 @@ mod prune_options {
         for bits in bit_patterns() {
             let opts = options(u32::MAX, bits);
             assert_eq!(read(opts.as_ref()), (u32::MAX, bits));
-            let back = ffi::git_worktree_prune_options::from(opts);
+            let back = sys::git_worktree_prune_options::from(opts);
             assert_eq!((back.version, back.flags), (u32::MAX, bits));
         }
     }
@@ -704,7 +704,7 @@ mod routines {
         ] {
             assert!(list(repo.as_ref()).unwrap().as_ref().is_empty());
             let e = Worktree::lookup(repo.as_ref(), c"wt").unwrap_err();
-            assert_eq!(e.raw_code(), libgit2::ffi::GIT_ENOTFOUND);
+            assert_eq!(e.raw_code(), libgit2::sys::libgit2::GIT_ENOTFOUND);
             assert!(Worktree::open_from_repository(repo.as_ref()).is_err());
         }
     }
@@ -812,7 +812,7 @@ mod routines {
         })
         .join()
         .unwrap();
-        assert_eq!(error.raw_code(), libgit2::ffi::GIT_ELOCKED);
+        assert_eq!(error.raw_code(), libgit2::sys::libgit2::GIT_ELOCKED);
         assert_eq!(w.as_mut().unlock(), Ok(true));
     }
 

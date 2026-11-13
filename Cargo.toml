@@ -7,12 +7,22 @@ version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish.workspace = true
+# The raw bindings' link metadata, which dependents' build scripts read as `DEP_GIT2_*`.
+links = "git2"
 build = "build.rs"
 
 [features]
 default = ["libgit2"]
 # One feature per link unit; each gates its module in src/lib.rs.
 libgit2 = []
+# Regenerates the raw bindings into OUT_DIR from the headers of the C a build links, in
+# place of the committed ones; campaign mode checks them against the committed ones
+# (crustify's `bindgen` skill, Build modes).
+bindgen = ["dep:bindgen"]
+# Builds `c/` as shared libraries in place of static ones.
+shared = []
+# Links an install of libgit2, found through LIBGIT2_DIR or pkg-config, in place of `c/`.
+system = []
 
 [dependencies]
 # By path, not by Git: trybuild replaces only the paths of dependencies declared by path
@@ -25,7 +35,6 @@ ffibox = { path = "/opt/venv/share/ffibox" }
 # worktrees under crustify/.worktrees resolve too.
 glibc-bindings = { version = "0.1.0", git = "https://github.com/crustify-rs/glibc-crustify", rev = "6180870f2ddbc30a43e5687395eb4f13908b3cbf" }
 pcre2-sys = "0.2"
-libgit2-sys = { version = "0.1.0", path = "libgit2-sys" }
 nix = { version = "0.31.3", features = ["fs", "socket", "net", "poll", "process", "user", "feature", "signal", "mman", "time", "uio", "dir", "hostname"] }
 flate2 = "1.1.11"
 sha2 = "0.11.1"
@@ -38,10 +47,17 @@ rustls = "0.23.46"
 rustls-webpki = "0.103.16"
 pcre2 = "0.2.11"
 
+[build-dependencies]
+# Pinned exactly: the committed bindings are its output.
+bindgen = { version = "=0.73.2", optional = true }
+cc = "1.2"
+pkg-config = "0.3"
+serde_json = "1"
+
 [dev-dependencies]
 # The campaign's tests and gates regenerate the bindings, and check them against the
-# committed ones; the crate's dependents build from the shipped bindings.
-libgit2-sys = { version = "0.1.0", path = "libgit2-sys", features = ["bindgen"] }
+# committed ones; the crate's dependents build from the committed bindings.
+libgit2 = { path = ".", features = ["bindgen"] }
 trybuild = "1.0"
 
 [lints]
@@ -65,7 +81,7 @@ path = "tests/unit_pub/main.rs"
 
 [workspace]
 resolver = "3"
-members = [".", "libgit2-sys"]
+members = ["."]
 
 [workspace.package]
 edition = "2024"

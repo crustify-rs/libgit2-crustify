@@ -53,8 +53,8 @@ use core::ptr::{self, NonNull};
 
 use ffibox::{CDispose, CMutSeam, CRefSeam, CVal, define_ctype};
 
-use crate::ffi;
 use crate::libgit2::src::libgit2::odb::{OdbDataStr, OdbDataStrVec};
+use crate::sys::libgit2 as sys;
 
 define_ctype!(
     /// An array of strings (`git_strarray`): `count` NUL-terminated strings in libgit2's
@@ -72,7 +72,7 @@ define_ctype!(
     StrArray,
     StrArrayRef,
     StrArrayMut,
-    ffi::git_strarray
+    sys::git_strarray
 );
 
 // SAFETY: an owned `StrArray` is a pointer to an array of pointers to strings, all of
@@ -124,7 +124,7 @@ unsafe impl CDispose<StrArray> for StrArrayDispose {
     #[doc(alias = "git_strarray_dispose")]
     #[inline]
     unsafe fn c_dispose(&self, ptr: NonNull<StrArray>) {
-        let raw: *mut ffi::git_strarray = ptr.as_ptr().cast();
+        let raw: *mut sys::git_strarray = ptr.as_ptr().cast();
         // SAFETY: per `c_dispose`'s contract `raw` addresses a live `git_strarray`; the projection
         // forms no reference to it.
         let strings_ptr = unsafe { &raw const (*raw).strings };
@@ -136,7 +136,7 @@ unsafe impl CDispose<StrArray> for StrArrayDispose {
         // SAFETY: `raw` is live and, per the handles' invariant, owns `strings` and its
         // first `count` strings, all from libgit2's allocator; the caller gives the
         // value up, so they are released once.
-        unsafe { ffi::git_strarray_dispose(raw) }
+        unsafe { sys::git_strarray_dispose(raw) }
     }
 }
 
@@ -145,7 +145,7 @@ unsafe impl CDispose<StrArray> for StrArrayDispose {
 pub type StrArrayVal = CVal<StrArray, StrArrayDispose>;
 
 /// The array without a buffer: `git_strarray array = {0}`.
-const EMPTY: ffi::git_strarray = ffi::git_strarray {
+const EMPTY: sys::git_strarray = sys::git_strarray {
     strings: ptr::null_mut(),
     count: 0,
 };
@@ -474,7 +474,7 @@ impl<'a> FromIterator<&'a CStr> for StrArrayView<'a> {
         let raw = if ptrs.is_empty() {
             EMPTY
         } else {
-            ffi::git_strarray {
+            sys::git_strarray {
                 strings: ptrs.as_mut_ptr(),
                 count: ptrs.len(),
             }
@@ -502,9 +502,9 @@ impl fmt::Debug for StrArrayView<'_> {
 // A `StrArray` is a `git_strarray`, so C reads and writes a value Rust holds in place,
 // and the owner adds nothing to it.
 const _: () = assert!(
-    size_of::<StrArray>() == size_of::<ffi::git_strarray>()
-        && align_of::<StrArray>() == align_of::<ffi::git_strarray>()
-        && size_of::<StrArrayVal>() == size_of::<ffi::git_strarray>()
+    size_of::<StrArray>() == size_of::<sys::git_strarray>()
+        && align_of::<StrArray>() == align_of::<sys::git_strarray>()
+        && size_of::<StrArrayVal>() == size_of::<sys::git_strarray>()
 );
 
 #[cfg(test)]
@@ -592,8 +592,8 @@ mod unit_tests {
         // SAFETY: `Allocator` is `#[repr(transparent)]` over `git_allocator`, with every
         // member set; libgit2 copies it before anything is allocated.
         let rc = unsafe {
-            ffi::git_libgit2_opts(
-                ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(),
+            sys::git_libgit2_opts(
+                sys::GIT_OPT_SET_ALLOCATOR.cast_signed(),
                 allocator.as_ref().as_ptr(),
             )
         };
@@ -626,8 +626,8 @@ mod unit_tests {
             }
         }
 
-        fn raw(&mut self) -> ffi::git_strarray {
-            ffi::git_strarray {
+        fn raw(&mut self) -> sys::git_strarray {
+            sys::git_strarray {
                 strings: self.ptrs.as_mut_ptr(),
                 count: self.ptrs.len(),
             }
@@ -636,15 +636,15 @@ mod unit_tests {
 
     #[test]
     fn layout_matches_c() {
-        assert_eq!(size_of::<StrArray>(), size_of::<ffi::git_strarray>());
-        assert_eq!(size_of::<StrArrayVal>(), size_of::<ffi::git_strarray>());
+        assert_eq!(size_of::<StrArray>(), size_of::<sys::git_strarray>());
+        assert_eq!(size_of::<StrArrayVal>(), size_of::<sys::git_strarray>());
         assert_eq!(
             size_of::<StrArrayRef<'_>>(),
-            size_of::<*const ffi::git_strarray>()
+            size_of::<*const sys::git_strarray>()
         );
         assert_eq!(
             size_of::<StrArrayMut<'_>>(),
-            size_of::<*const ffi::git_strarray>()
+            size_of::<*const sys::git_strarray>()
         );
         assert_eq!(size_of::<StrArrayDispose>(), 0);
     }
@@ -683,7 +683,7 @@ mod unit_tests {
         assert!(bare.as_ref().is_empty());
         drop(StrArray::new());
 
-        let mut broken = ffi::git_strarray {
+        let mut broken = sys::git_strarray {
             strings: ptr::null_mut(),
             count: 3,
         };
@@ -907,10 +907,10 @@ mod unit_tests {
     /// # Safety
     ///
     /// `ptr` must address a live `git_strarray` that owns nothing.
-    unsafe fn get_extensions(ptr: *mut ffi::git_strarray) {
+    unsafe fn get_extensions(ptr: *mut sys::git_strarray) {
         // SAFETY: `GIT_OPT_GET_EXTENSIONS` takes a `git_strarray *`, which it overwrites;
         // per this function's contract it held nothing to leak.
-        let rc = unsafe { ffi::git_libgit2_opts(ffi::GIT_OPT_GET_EXTENSIONS.cast_signed(), ptr) };
+        let rc = unsafe { sys::git_libgit2_opts(sys::GIT_OPT_GET_EXTENSIONS.cast_signed(), ptr) };
         assert_eq!(rc, 0);
     }
 
@@ -962,8 +962,8 @@ mod unit_tests {
                 // SAFETY: `GIT_OPT_SET_EXTENSIONS` takes an array of `len` strings, which
                 // it copies; this child owns libgit2's globals.
                 let rc = unsafe {
-                    ffi::git_libgit2_opts(
-                        ffi::GIT_OPT_SET_EXTENSIONS.cast_signed(),
+                    sys::git_libgit2_opts(
+                        sys::GIT_OPT_SET_EXTENSIONS.cast_signed(),
                         ptrs.as_ptr(),
                         ptrs.len(),
                     )
@@ -1012,7 +1012,7 @@ mod unit_tests {
         assert_eq!(contents(r), expected(&["1", "2", "3"]));
         // C releases the strings Rust stored.
         // SAFETY: `raw` owns its strings, from libgit2's allocator, released once.
-        unsafe { ffi::git_strarray_dispose(&raw mut raw) };
+        unsafe { sys::git_strarray_dispose(&raw mut raw) };
         assert_eq!((raw.strings, raw.count), (ptr::null_mut(), 0));
     }
 
@@ -1033,25 +1033,25 @@ mod unit_tests {
             c"src/sub/b.c",
             c"SRC/A.C",
         ];
-        let matches = |spec: *const ffi::git_strarray| -> Vec<(c_int, c_int)> {
+        let matches = |spec: *const sys::git_strarray| -> Vec<(c_int, c_int)> {
             let mut ps = ptr::null_mut();
             // SAFETY: `ps` is a live slot; `spec` is NULL or a live array of live
             // strings, read for the call only.
-            let rc = unsafe { ffi::git_pathspec_new(&raw mut ps, spec) };
+            let rc = unsafe { sys::git_pathspec_new(&raw mut ps, spec) };
             assert_eq!(rc, 0);
             let out = paths
                 .iter()
                 .map(|p| {
-                    let flags = ffi::GIT_PATHSPEC_IGNORE_CASE;
+                    let flags = sys::GIT_PATHSPEC_IGNORE_CASE;
                     // SAFETY: `ps` is a live pathspec and `p` NUL-terminated.
-                    let exact = unsafe { ffi::git_pathspec_matches_path(ps, 0, p.as_ptr()) };
+                    let exact = unsafe { sys::git_pathspec_matches_path(ps, 0, p.as_ptr()) };
                     // SAFETY: as above.
-                    let folded = unsafe { ffi::git_pathspec_matches_path(ps, flags, p.as_ptr()) };
+                    let folded = unsafe { sys::git_pathspec_matches_path(ps, flags, p.as_ptr()) };
                     (exact, folded)
                 })
                 .collect();
             // SAFETY: `ps` is live and released once.
-            unsafe { ffi::git_pathspec_free(ps) };
+            unsafe { sys::git_pathspec_free(ps) };
             out
         };
         let safe_matches = |spec: StrArrayRef<'_>| -> Vec<(c_int, c_int)> {
@@ -1062,12 +1062,12 @@ mod unit_tests {
                     // SAFETY: the safe constructor's owner keeps the compiled pathspec alive;
                     // matching only reads it and the terminated input path.
                     let exact =
-                        unsafe { ffi::git_pathspec_matches_path(ps.as_c_ptr(), 0, p.as_ptr()) };
+                        unsafe { sys::git_pathspec_matches_path(ps.as_c_ptr(), 0, p.as_ptr()) };
                     // SAFETY: as above.
                     let folded = unsafe {
-                        ffi::git_pathspec_matches_path(
+                        sys::git_pathspec_matches_path(
                             ps.as_c_ptr(),
-                            ffi::GIT_PATHSPEC_IGNORE_CASE,
+                            sys::GIT_PATHSPEC_IGNORE_CASE,
                             p.as_ptr(),
                         )
                     };

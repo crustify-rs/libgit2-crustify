@@ -118,17 +118,17 @@ mod refdb_type {
     use std::hint::black_box;
     use std::thread;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::refdb::{RefdbType, UnnamedRefdbType};
+    use libgit2::sys::libgit2 as sys;
 
     /// Every small value, a stride across the rest of `git_refdb_t`, and its ends.
-    fn probes() -> impl Iterator<Item = ffi::git_refdb_t> {
+    fn probes() -> impl Iterator<Item = sys::git_refdb_t> {
         let stride = if cfg!(bsan) || cfg!(miri) { 97 } else { 1 };
         (0..=4096)
             .step_by(stride)
             .chain([1, 2])
-            .chain((0..=ffi::git_refdb_t::MAX).step_by(1 << 24))
-            .chain([ffi::git_refdb_t::MAX - 1, ffi::git_refdb_t::MAX])
+            .chain((0..=sys::git_refdb_t::MAX).step_by(1 << 24))
+            .chain([sys::git_refdb_t::MAX - 1, sys::git_refdb_t::MAX])
     }
 
     #[test]
@@ -138,8 +138,8 @@ mod refdb_type {
                 Some(kind) => {
                     // Matching on the value reads its discriminant.
                     let back = match black_box(kind) {
-                        RefdbType::Files => ffi::GIT_REFDB_FILES,
-                        RefdbType::Reftable => ffi::GIT_REFDB_REFTABLE,
+                        RefdbType::Files => sys::GIT_REFDB_FILES,
+                        RefdbType::Reftable => sys::GIT_REFDB_REFTABLE,
                         _ => unreachable!(),
                     };
                     assert_eq!(back, raw);

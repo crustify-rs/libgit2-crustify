@@ -263,12 +263,12 @@ mod filter_flags {
 mod owner {
     use std::ffi::CString;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::blob::{Blob, BlobArc, BlobRef};
     use libgit2::libgit2::src::libgit2::object::{Object, ObjectArc};
     use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
     use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryError};
     use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+    use libgit2::sys::libgit2 as sys;
 
     /// A copy of the content of the blob an owner holds.
     fn content(blob: &BlobArc<'_>) -> Vec<u8> {
@@ -509,7 +509,7 @@ mod owner {
         let mut blobs = Vec::new();
         for (i, &len) in sizes.iter().enumerate() {
             let data: Vec<u8> = (0..len).map(|b| (b * 31 + i).to_le_bytes()[0]).collect();
-            let id = write_raw(&repo, &data, ffi::GIT_OBJECT_BLOB);
+            let id = write_raw(&repo, &data, sys::GIT_OBJECT_BLOB);
             let blob = Blob::lookup(boxed, id.as_ref()).unwrap();
             assert_eq!(content(&blob), data, "{len}");
             blobs.push((data, blob));
@@ -535,10 +535,10 @@ mod filter_options {
     use std::ptr::NonNull;
     use std::thread;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::blob::{Blob, FilterFlag, FilterFlags, FilterOptions};
     use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
     use libgit2::libgit2::src::libgit2::repository::Repository;
+    use libgit2::sys::libgit2 as sys;
 
     /// [`BlobRef::filter`] of `blob` as `path`, with `opts` (or none): the filtered
     /// bytes, or the code it failed with.
@@ -566,11 +566,11 @@ mod filter_options {
 
     /// Options as C spells them, with a `reserved` pointer nothing may read.
     fn with_dangling_reserved() -> FilterOptions {
-        FilterOptions::from(ffi::git_blob_filter_options {
+        FilterOptions::from(sys::git_blob_filter_options {
             version: 1,
-            flags: ffi::GIT_BLOB_FILTER_CHECK_FOR_BINARY,
+            flags: sys::GIT_BLOB_FILTER_CHECK_FOR_BINARY,
             reserved: NonNull::<u64>::dangling().as_ptr().cast(),
-            attr_commit_id: ffi::git_oid::default(),
+            attr_commit_id: sys::git_oid::default(),
         })
     }
 
@@ -610,7 +610,7 @@ mod filter_options {
         }
         assert_eq!(owned.as_ref().id(), [0xFF; 32]);
         assert_eq!(owned.as_ref().raw_kind(), u8::MAX);
-        let back: ffi::git_blob_filter_options = copy.into();
+        let back: sys::git_blob_filter_options = copy.into();
         assert_eq!(back.version, 1);
         assert_eq!(format!("{:?}", copy.as_ref()), format!("{copy:?}"));
     }

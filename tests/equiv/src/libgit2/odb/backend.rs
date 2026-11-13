@@ -29,22 +29,22 @@ use std::process::{Command, Stdio};
 use std::{fs, ptr};
 
 use ffibox::CRefSeam;
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::odb::{
     ForeachCallback, OdbBackend, OdbBackendBox, OdbBackendRef, OdbError,
 };
 use libgit2::libgit2::src::libgit2::oid::{Oid, OidRef};
 use libgit2::libgit2::src::util::errors::ErrorClass;
+use libgit2::sys::libgit2 as sys;
 
 // The fixture's raw constructors; their options are NULL, which both accept.
 unsafe extern "C" {
     fn git_odb_backend_pack(
-        out: *mut *mut ffi::git_odb_backend,
+        out: *mut *mut sys::git_odb_backend,
         objects_dir: *const c_char,
         opts: *const c_void,
     ) -> c_int;
     fn git_odb_backend_loose(
-        out: *mut *mut ffi::git_odb_backend,
+        out: *mut *mut sys::git_odb_backend,
         objects_dir: *const c_char,
         opts: *mut c_void,
     ) -> c_int;
@@ -59,7 +59,7 @@ fn init() {
 fn c_last() -> (c_int, String) {
     // SAFETY: libgit2 is initialised; the result is a static error or this thread's
     // error state, live until the next libgit2 call on this thread.
-    let e = unsafe { ffi::git_error_last() };
+    let e = unsafe { sys::git_error_last() };
     assert!(!e.is_null());
     // SAFETY: `e` is live (above); its fields are copied out before any other call.
     let klass = unsafe { (*e).klass };
@@ -191,7 +191,7 @@ enum Kind {
 }
 
 /// A backend C owns, called through its members.
-fn c_backend(kind: Kind, dir: &CStr) -> *mut ffi::git_odb_backend {
+fn c_backend(kind: Kind, dir: &CStr) -> *mut sys::git_odb_backend {
     let mut out = ptr::null_mut();
     let rc = match kind {
         // SAFETY: `out` is writable and `dir` live for the call; NULL options are
@@ -215,7 +215,7 @@ fn rust_backend(kind: Kind, dir: &CStr) -> OdbBackendBox {
 
 /// What the getters read, as C reads the fields: the version, whether an odb holds
 /// it, and which members are set.
-fn c_getters(c: *mut ffi::git_odb_backend) -> (u32, bool, [bool; 14]) {
+fn c_getters(c: *mut sys::git_odb_backend) -> (u32, bool, [bool; 14]) {
     // SAFETY: `c` is a live backend; the fields are copied out.
     let b = unsafe { c.read() };
     (
@@ -271,7 +271,7 @@ struct CWalk {
     code: c_int,
 }
 
-unsafe extern "C" fn c_collect(id: *const ffi::git_oid, payload: *mut c_void) -> c_int {
+unsafe extern "C" fn c_collect(id: *const sys::git_oid, payload: *mut c_void) -> c_int {
     // SAFETY: `payload` is the walk's live `CWalk`, used by nothing else meanwhile.
     let walk = unsafe { &mut *payload.cast::<CWalk>() };
     // SAFETY: the backend lends a live id for the call.
@@ -285,7 +285,7 @@ unsafe extern "C" fn c_collect(id: *const ffi::git_oid, payload: *mut c_void) ->
 }
 
 /// Walks `c` through its `foreach` member: the return, and the ids seen.
-fn c_foreach(c: *mut ffi::git_odb_backend, stop_after: usize, code: c_int) -> (c_int, Vec<Oid>) {
+fn c_foreach(c: *mut sys::git_odb_backend, stop_after: usize, code: c_int) -> (c_int, Vec<Oid>) {
     let mut walk = CWalk {
         seen: Vec::new(),
         stop_after,
@@ -323,7 +323,7 @@ fn rust_foreach(rust: &mut OdbBackendBox, stop_after: usize, code: c_int) -> (c_
 }
 
 /// Calls `c`'s `refresh` or `writemidx` member.
-fn c_member(c: *mut ffi::git_odb_backend, midx: bool) -> c_int {
+fn c_member(c: *mut sys::git_odb_backend, midx: bool) -> c_int {
     // SAFETY: `c` is a live backend; it is copied out.
     let backend = unsafe { c.read() };
     let member = if midx {
@@ -335,7 +335,7 @@ fn c_member(c: *mut ffi::git_odb_backend, midx: bool) -> c_int {
     unsafe { member.unwrap()(c) }
 }
 
-fn free_c(c: *mut ffi::git_odb_backend) {
+fn free_c(c: *mut sys::git_odb_backend) {
     // SAFETY: `c` is a live backend; its member is copied out.
     let free = unsafe { (*c).free }.unwrap();
     // SAFETY: `c` is a live backend C owns, released once, through its own member.
@@ -346,12 +346,12 @@ fn free_c(c: *mut ffi::git_odb_backend) {
 #[cfg_attr(miri, ignore = "calls C")]
 fn the_template_matches_git_odb_init_backend() {
     init();
-    let mut c = ffi::git_odb_backend::default();
+    let mut c = sys::git_odb_backend::default();
     // SAFETY: `c` is a writable backend for the call.
-    let rc = unsafe { ffi::git_odb_init_backend(&raw mut c, ffi::GIT_ODB_BACKEND_VERSION) };
+    let rc = unsafe { sys::git_odb_init_backend(&raw mut c, sys::GIT_ODB_BACKEND_VERSION) };
     assert_eq!(rc, 0);
     let rust = OdbBackend::new();
-    let size = size_of::<ffi::git_odb_backend>();
+    let size = size_of::<sys::git_odb_backend>();
     // SAFETY: `c` is a live local of `size` bytes, read only.
     let c_bytes = unsafe { std::slice::from_raw_parts(ptr::from_ref(&c).cast::<u8>(), size) };
     // SAFETY: `rust` is a live local of the same layout and size, read only.
@@ -404,7 +404,7 @@ fn the_packed_backend_matches_c() {
     let c_err = c_fail(c_member(c, false), &fixture.dir("c"));
     let r_err = rust.as_mut().refresh().unwrap_err();
     assert_eq!(rust_fail(&r_err, &fixture.dir("rust")), c_err);
-    assert_eq!(c_err.0, ffi::GIT_ENOTFOUND);
+    assert_eq!(c_err.0, sys::GIT_ENOTFOUND);
 
     free_c(c);
     drop(rust);

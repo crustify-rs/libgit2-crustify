@@ -53,7 +53,6 @@ use std::sync::Mutex;
 use std::thread;
 
 use ffibox::CZeroable;
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::branch::BranchType;
 use libgit2::libgit2::src::libgit2::object::{NotAnObjectType, ObjectType};
 use libgit2::libgit2::src::libgit2::refs::{NotAReferenceType, ReferenceType};
@@ -62,6 +61,7 @@ use libgit2::libgit2::src::libgit2::submodule::{
     SubmoduleIgnore, SubmoduleRecurse, SubmoduleUpdate,
 };
 use libgit2::libgit2::src::libgit2::tree::FileMode;
+use libgit2::sys::libgit2 as sys;
 
 /// Every value around the declared ones, then a coarse stride across the whole
 /// type; `BorrowSanitizer` instruments each comparison, so the probe set stays small.
@@ -165,21 +165,21 @@ fn values_cross_threads() {
 
 /// Every value around the declared ones, then a coarse stride across the whole type;
 /// `BorrowSanitizer` instruments each comparison, so the probe set stays small.
-fn object_probes() -> impl Iterator<Item = ffi::git_object_t> {
+fn object_probes() -> impl Iterator<Item = sys::git_object_t> {
     (-300..=300)
-        .chain((ffi::git_object_t::MIN..=ffi::git_object_t::MAX).step_by(1 << 26))
+        .chain((sys::git_object_t::MIN..=sys::git_object_t::MAX).step_by(1 << 26))
         .chain([
-            ffi::git_object_t::MIN + 1,
-            ffi::git_object_t::MAX - 1,
-            ffi::git_object_t::MAX,
+            sys::git_object_t::MIN + 1,
+            sys::git_object_t::MAX - 1,
+            sys::git_object_t::MAX,
         ])
 }
 
 /// As [`object_probes`], over the unsigned `git_reference_t`.
-fn reference_probes() -> impl Iterator<Item = ffi::git_reference_t> {
+fn reference_probes() -> impl Iterator<Item = sys::git_reference_t> {
     (0..=300)
-        .chain((0..=ffi::git_reference_t::MAX).step_by(1 << 26))
-        .chain([ffi::git_reference_t::MAX - 1, ffi::git_reference_t::MAX])
+        .chain((0..=sys::git_reference_t::MAX).step_by(1 << 26))
+        .chain([sys::git_reference_t::MAX - 1, sys::git_reference_t::MAX])
 }
 
 #[test]
@@ -230,7 +230,7 @@ fn object_and_reference_option_niches_hold() {
         assert_eq!(kind.map_or(raw, ObjectType::raw), raw);
         // The "any" filter is the one value `None` maps back to.
         let filter = black_box(ObjectType::raw_or_any(kind));
-        assert_eq!(filter, kind.map_or(ffi::GIT_OBJECT_ANY, ObjectType::raw));
+        assert_eq!(filter, kind.map_or(sys::GIT_OBJECT_ANY, ObjectType::raw));
     }
     for raw in reference_probes() {
         let kind = black_box(ReferenceType::from_raw(raw));
@@ -241,11 +241,11 @@ fn object_and_reference_option_niches_hold() {
 #[test]
 fn errors_format_every_extreme() {
     // Formatting the signed and unsigned extremes overflows nothing.
-    for raw in [ffi::git_object_t::MIN, -1, 0, ffi::git_object_t::MAX] {
+    for raw in [sys::git_object_t::MIN, -1, 0, sys::git_object_t::MAX] {
         let e = black_box(ObjectType::try_from(raw)).unwrap_err();
         assert!(e.to_string().contains(&raw.to_string()));
     }
-    for raw in [0, 3, ffi::git_reference_t::MAX] {
+    for raw in [0, 3, sys::git_reference_t::MAX] {
         let e = black_box(ReferenceType::try_from(raw)).unwrap_err();
         assert!(e.to_string().contains(&raw.to_string()));
     }
@@ -364,14 +364,14 @@ fn copies_are_independent() {
 #[test]
 fn raw_values_convert_both_ways() {
     for sign in SIGNS {
-        let raw = ffi::git_time {
+        let raw = sys::git_time {
             time: -7,
             offset: 330,
             sign: sign.cast_signed(),
         };
         let time = Time::from(raw);
         assert_eq!(read(time.as_ref()), (-7, 330, sign));
-        let back = ffi::git_time::from(time);
+        let back = sys::git_time::from(time);
         assert_eq!(
             (back.time, back.offset, back.sign.cast_unsigned()),
             (-7, 330, sign)
@@ -381,9 +381,9 @@ fn raw_values_convert_both_ways() {
 
 #[test]
 fn equality_and_hash_never_read_padding() {
-    // `ffi::git_time` built by value leaves its padding unspecified; equal fields must
+    // `sys::git_time` built by value leaves its padding unspecified; equal fields must
     // compare and hash equal anyway, and Miri checks no padding byte is read.
-    let a = Time::from(ffi::git_time {
+    let a = Time::from(sys::git_time {
         time: 9,
         offset: -9,
         sign: b'-'.cast_signed(),
@@ -461,7 +461,7 @@ fn a_locked_time_has_one_writer_at_a_time() {
 /// Every type nibble with the permission bits git trees spell, the values around
 /// the declared ones, a coarse stride across the whole type and its extremes;
 /// `BorrowSanitizer` instruments each comparison, so the probe set stays small.
-fn mode_probes() -> impl Iterator<Item = ffi::git_filemode_t> {
+fn mode_probes() -> impl Iterator<Item = sys::git_filemode_t> {
     let kinds = (0..16)
         .flat_map(|t| [0, 0o644, 0o755, 0o664, 0o777, 0o001, 0o100].map(move |p| (t << 12) | p));
     let named = [
@@ -472,12 +472,12 @@ fn mode_probes() -> impl Iterator<Item = ffi::git_filemode_t> {
         .flat_map(|m: u32| [m.wrapping_sub(1), m, m + 1]);
     kinds
         .chain(around)
-        .chain((0..=ffi::git_filemode_t::MAX).step_by(1 << 26))
+        .chain((0..=sys::git_filemode_t::MAX).step_by(1 << 26))
         .chain([
             0o177_777,
             0o200_000,
-            ffi::git_filemode_t::MAX - 1,
-            ffi::git_filemode_t::MAX,
+            sys::git_filemode_t::MAX - 1,
+            sys::git_filemode_t::MAX,
         ])
 }
 
@@ -801,7 +801,7 @@ fn submodule_ignore_conversions_never_build_an_invalid_variant() {
     let values = (-260..260).chain([i32::MIN, i32::MIN + 1, i32::MAX - 1, i32::MAX]);
     let mut named = 0;
     for raw in values {
-        let raw: ffi::git_submodule_ignore_t = raw;
+        let raw: sys::git_submodule_ignore_t = raw;
         if let Some(v) = SubmoduleIgnore::from_raw(raw) {
             named += 1;
             assert_eq!(v.raw(), raw);
@@ -849,7 +849,7 @@ fn every_raw_value_converts_to_a_variant_or_none() {
         }
         assert_eq!(BranchType::try_from(raw).ok(), BranchType::from_raw(raw));
     }
-    assert_eq!(BranchType::All.raw(), ffi::GIT_BRANCH_ALL);
+    assert_eq!(BranchType::All.raw(), sys::GIT_BRANCH_ALL);
 }
 
 #[test]

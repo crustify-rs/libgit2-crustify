@@ -93,8 +93,8 @@ mod ffi_import {
     use core::ffi::{c_char, c_int, c_void};
     use core::ptr;
 
-    use crate::ffi;
     use crate::libgit2::src::util::alloc::Allocator;
+    use crate::sys::libgit2 as sys;
 
     /// The largest request the guards pass to C: no Rust allocation spans more, and C's
     /// `len + size_of::<usize>()` does not wrap up to it.
@@ -102,12 +102,12 @@ mod ffi_import {
 
     /// The family's routines, as `git_debugalloc_init_allocator` writes them, and its
     /// status.
-    fn family() -> (c_int, ffi::git_allocator) {
-        let mut raw = ffi::git_allocator::default();
+    fn family() -> (c_int, sys::git_allocator) {
+        let mut raw = sys::git_allocator::default();
         // SAFETY: `raw` is a live, writable `git_allocator`, which the routine only
         // writes: it stores its three routines in `gmalloc`, `grealloc` and `gfree`,
         // keeps no pointer to it, touches no other state, allocates nothing, and returns 0.
-        let rc = unsafe { ffi::git_debugalloc_init_allocator(&raw mut raw) };
+        let rc = unsafe { sys::git_debugalloc_init_allocator(&raw mut raw) };
         (rc, raw)
     }
 

@@ -20,13 +20,13 @@ use std::sync::OnceLock;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::SeqCst;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::settings::set_allocator;
 use libgit2::libgit2::src::util::alloc::{
     AllocVec, Allocator, ArrayFree, FreeFn, MallocFn, ReallocFn, StrFree,
 };
 use libgit2::libgit2::src::util::allocators::stdalloc;
 use libgit2::libgit2::src::util::errors;
+use libgit2::sys::libgit2 as sys;
 
 // --- values -------------------------------------------------------------------------
 
@@ -46,7 +46,7 @@ unsafe extern "C" fn other_realloc(
 unsafe extern "C" fn other_free(_: *mut c_void) {}
 
 /// The members' addresses, `0` for an unset one.
-fn raw_members(raw: &ffi::git_allocator) -> [usize; 3] {
+fn raw_members(raw: &sys::git_allocator) -> [usize; 3] {
     [
         raw.gmalloc.map_or(0, |f| f as usize),
         raw.grealloc.map_or(0, |f| f as usize),
@@ -64,9 +64,9 @@ fn members(a: Allocator) -> [usize; 3] {
 }
 
 /// `git_stdalloc_init_allocator` over `raw`, which must return 0.
-fn c_init(raw: &mut ffi::git_allocator) {
+fn c_init(raw: &mut sys::git_allocator) {
     // SAFETY: `raw` is a live, writable `git_allocator` for the call, which C only writes.
-    let rc = unsafe { ffi::git_stdalloc_init_allocator(raw) };
+    let rc = unsafe { sys::git_stdalloc_init_allocator(raw) };
     assert_eq!(rc, 0);
 }
 
@@ -76,9 +76,9 @@ fn values_match_c_init_step_by_step() {
     // Every member C writes, over an unset raw value and over one holding other functions.
     let (malloc, realloc, free): (MallocFn, ReallocFn, FreeFn) =
         (other_malloc, other_realloc, other_free);
-    let mut unset = ffi::git_allocator::default();
+    let mut unset = sys::git_allocator::default();
     c_init(&mut unset);
-    let mut raw = ffi::git_allocator {
+    let mut raw = sys::git_allocator {
         gmalloc: Some(malloc),
         grealloc: Some(realloc),
         gfree: Some(free),
@@ -163,16 +163,16 @@ fn install(side: &str) {
             unsafe { set_allocator(Some(oom.as_ref())) };
         }
         "c" => {
-            let mut raw = ffi::git_allocator::default();
+            let mut raw = sys::git_allocator::default();
             c_init(&mut raw);
             STANDARD
                 .set((raw.gmalloc.unwrap(), raw.grealloc.unwrap()))
                 .unwrap();
             raw.gmalloc = Some(oom_malloc);
             raw.grealloc = Some(oom_realloc);
-            let opt = c_int::try_from(ffi::GIT_OPT_SET_ALLOCATOR).unwrap();
+            let opt = c_int::try_from(sys::GIT_OPT_SET_ALLOCATOR).unwrap();
             // SAFETY: as above; `GIT_OPT_SET_ALLOCATOR` copies the live `raw` it is passed.
-            let rc = unsafe { ffi::git_libgit2_opts(opt, &raw const raw) };
+            let rc = unsafe { sys::git_libgit2_opts(opt, &raw const raw) };
             assert_eq!(rc, 0);
         }
         _ => unreachable!("unknown side {side}"),
@@ -188,9 +188,9 @@ fn restore_default(side: &str) {
         // alone, on its only thread calling libgit2.
         "rust" => unsafe { set_allocator(None) },
         "c" => {
-            let opt = c_int::try_from(ffi::GIT_OPT_SET_ALLOCATOR).unwrap();
+            let opt = c_int::try_from(sys::GIT_OPT_SET_ALLOCATOR).unwrap();
             // SAFETY: as above; `GIT_OPT_SET_ALLOCATOR` reads NULL as the default allocator.
-            let rc = unsafe { ffi::git_libgit2_opts(opt, ptr::null::<ffi::git_allocator>()) };
+            let rc = unsafe { sys::git_libgit2_opts(opt, ptr::null::<sys::git_allocator>()) };
             assert_eq!(rc, 0);
         }
         _ => unreachable!("unknown side {side}"),

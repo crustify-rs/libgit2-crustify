@@ -10,10 +10,10 @@ use core::ptr::{self};
 
 use ffibox::{CMutSeam, CRefSeam, define_ctype};
 
-use crate::ffi;
 use crate::libgit2::src::libgit2::diff::{Diff, DiffBox, DiffError, constructed};
 use crate::libgit2::src::libgit2::oid::OidType;
 use crate::libgit2::src::util::errors::runtime_pinned;
+use crate::sys::libgit2 as sys;
 
 impl Diff<'static> {
     /// Parse Git patch bytes; paths, hunk lines and binary data are copied by C. Empty input is an
@@ -35,7 +35,7 @@ impl Diff<'static> {
         // SAFETY: content is readable for its length, including the non-null empty
         // slice; out is writable. C copies the data used after parsing; retained
         // input cursors are never dereferenced again (see the module docs).
-        let rc = unsafe { ffi::git_diff_from_buffer(&raw mut out, data, content.len()) };
+        let rc = unsafe { sys::git_diff_from_buffer(&raw mut out, data, content.len()) };
         // SAFETY: successful parsing hands out a fresh sole reference with no repository,
         // released by DiffFree; every failure leaves `out` NULL (adopted as None).
         constructed(rc, unsafe { DiffBox::from_c(out) })
@@ -73,14 +73,14 @@ impl Diff<'static> {
         if !runtime_pinned() {
             return Err(DiffError::from_libgit2(-1));
         }
-        let mut opts = ffi::git_diff_parse_options::from(opts);
+        let mut opts = sys::git_diff_parse_options::from(opts);
         let mut out = ptr::null_mut();
         // SAFETY: options and bytes live through parsing; C only reads the options' two
         // scalars, and the oid type is 0 or a named type (`DiffParseOptions` holds no other).
         // C copies paths/lines/data; the retained parse cursor is never dereferenced after
         // parsing finishes.
         let rc = unsafe {
-            ffi::git_diff_from_buffer_ext(
+            sys::git_diff_from_buffer_ext(
                 &raw mut out,
                 content.as_ptr().cast(),
                 content.len(),
@@ -146,7 +146,7 @@ define_ctype!(
     DiffParseOptions,
     DiffParseOptionsRef,
     DiffParseOptionsMut,
-    ffi::git_diff_parse_options
+    sys::git_diff_parse_options
 );
 
 // SAFETY: a `DiffParseOptions` is 8 plain bytes: no pointer, no interior mutability, no
@@ -173,7 +173,7 @@ unsafe impl Sync for DiffParseOptionsMut<'_> {}
 impl DiffParseOptions {
     /// The structure version this crate's header declares
     /// (`GIT_DIFF_PARSE_OPTIONS_VERSION`).
-    pub const VERSION: u32 = ffi::GIT_DIFF_PARSE_OPTIONS_VERSION;
+    pub const VERSION: u32 = sys::GIT_DIFF_PARSE_OPTIONS_VERSION;
 
     /// The default options, as `GIT_DIFF_PARSE_OPTIONS_INIT` spells them: the current
     /// version, and `oid_type` 0, which libgit2 reads as SHA-1. libgit2 has no init routine
@@ -181,7 +181,7 @@ impl DiffParseOptions {
     #[must_use]
     pub const fn new() -> DiffParseOptions {
         DiffParseOptions(
-            ffi::git_diff_parse_options {
+            sys::git_diff_parse_options {
                 version: Self::VERSION,
                 oid_type: 0,
             },
@@ -206,8 +206,8 @@ impl Default for DiffParseOptions {
 }
 
 /// The `git_diff_parse_options` value, for code that passes one by value.
-impl From<DiffParseOptions> for ffi::git_diff_parse_options {
-    fn from(opts: DiffParseOptions) -> ffi::git_diff_parse_options {
+impl From<DiffParseOptions> for sys::git_diff_parse_options {
+    fn from(opts: DiffParseOptions) -> sys::git_diff_parse_options {
         opts.0
     }
 }
@@ -339,8 +339,8 @@ impl Hash for DiffParseOptions {
 
 // A `DiffParseOptions` is a `git_diff_parse_options`, so C reads a value Rust holds in place.
 const _: () = assert!(
-    size_of::<DiffParseOptions>() == size_of::<ffi::git_diff_parse_options>()
-        && align_of::<DiffParseOptions>() == align_of::<ffi::git_diff_parse_options>()
+    size_of::<DiffParseOptions>() == size_of::<sys::git_diff_parse_options>()
+        && align_of::<DiffParseOptions>() == align_of::<sys::git_diff_parse_options>()
 );
 
 #[cfg(test)]
@@ -358,8 +358,8 @@ mod unit_tests {
     #[test]
     fn new_spells_the_header_initializer() {
         const OPTS: DiffParseOptions = DiffParseOptions::new();
-        let raw = ffi::git_diff_parse_options::from(OPTS);
-        assert_eq!(raw.version, ffi::GIT_DIFF_PARSE_OPTIONS_VERSION);
+        let raw = sys::git_diff_parse_options::from(OPTS);
+        assert_eq!(raw.version, sys::GIT_DIFF_PARSE_OPTIONS_VERSION);
         assert_eq!(raw.oid_type, 0);
         assert_eq!(OPTS, DiffParseOptions::default());
         assert_eq!(OPTS.as_ref().oid_type(), None);
@@ -373,7 +373,7 @@ mod unit_tests {
             opts.as_mut().set_oid_type(kind);
             assert_eq!(opts.as_ref().oid_type(), kind);
             assert_eq!(
-                ffi::git_diff_parse_options::from(opts).oid_type,
+                sys::git_diff_parse_options::from(opts).oid_type,
                 kind.map_or(0, OidType::raw)
             );
         }
@@ -381,7 +381,7 @@ mod unit_tests {
             let mut m = opts.as_mut();
             m.set_version(version);
             assert_eq!(m.as_ref().version(), version);
-            assert_eq!(ffi::git_diff_parse_options::from(opts).version, version);
+            assert_eq!(sys::git_diff_parse_options::from(opts).version, version);
         }
     }
 

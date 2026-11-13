@@ -13,10 +13,10 @@ use std::ffi::CStr;
 use std::mem::size_of;
 use std::ptr;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::commit::{
     CommitArray, CommitArrayRef, CommitArrayVal, CommitRef,
 };
+use libgit2::sys::libgit2 as sys;
 
 const HEAD: &str = "a65fedf39aefe402d3bb6e24df4d4f5fe4547750";
 const MERGED: [&str; 2] = [
@@ -25,10 +25,10 @@ const MERGED: [&str; 2] = [
 ];
 
 /// Opens the fixture repository `name` under `tests/resources`.
-fn open(name: &str) -> *mut ffi::git_repository {
+fn open(name: &str) -> *mut sys::git_repository {
     // SAFETY: no arguments; libgit2 counts initialisations under its own lock. The
     // reference dies with the process.
-    assert!(unsafe { ffi::git_libgit2_init() } > 0);
+    assert!(unsafe { sys::git_libgit2_init() } > 0);
     let path = std::ffi::CString::new(format!(
         "{}/c/tests/resources/{name}",
         env!("CARGO_MANIFEST_DIR")
@@ -37,10 +37,10 @@ fn open(name: &str) -> *mut ffi::git_repository {
     let mut repo = ptr::null_mut();
     // SAFETY: a live slot and a NUL-terminated path; no ceiling directories.
     let rc = unsafe {
-        ffi::git_repository_open_ext(
+        sys::git_repository_open_ext(
             &raw mut repo,
             path.as_ptr(),
-            ffi::GIT_REPOSITORY_OPEN_NO_SEARCH,
+            sys::GIT_REPOSITORY_OPEN_NO_SEARCH,
             ptr::null(),
         )
     };
@@ -48,18 +48,18 @@ fn open(name: &str) -> *mut ffi::git_repository {
     repo
 }
 
-fn free_repo(repo: *mut ffi::git_repository) {
+fn free_repo(repo: *mut sys::git_repository) {
     // SAFETY: the tests free each repository they open once.
-    unsafe { ffi::git_repository_free(repo) };
+    unsafe { sys::git_repository_free(repo) };
 }
 
 fn hex(commit: CommitRef<'_, '_>) -> String {
     let commit = commit.to_commit();
     let mut out = [0u8; 41];
     // SAFETY: a commit its owner keeps alive; 41 writable bytes.
-    let commit_id = unsafe { ffi::git_commit_id(commit.as_c_ptr()) };
+    let commit_id = unsafe { sys::git_commit_id(commit.as_c_ptr()) };
     // SAFETY: as above.
-    unsafe { ffi::git_oid_tostr(out.as_mut_ptr().cast(), out.len(), commit_id) };
+    unsafe { sys::git_oid_tostr(out.as_mut_ptr().cast(), out.len(), commit_id) };
     CStr::from_bytes_until_nul(&out)
         .unwrap()
         .to_str()
@@ -72,23 +72,23 @@ fn ids(array: CommitArrayRef<'_, '_>) -> Vec<String> {
 }
 
 /// `git_repository_commit_parents` into a zeroed struct.
-fn parents(repo: *mut ffi::git_repository) -> ffi::git_commitarray {
-    let mut raw = ffi::git_commitarray::default();
+fn parents(repo: *mut sys::git_repository) -> sys::git_commitarray {
+    let mut raw = sys::git_commitarray::default();
     // SAFETY: a zeroed array and an open repository.
-    let rc = unsafe { ffi::git_repository_commit_parents(&raw mut raw, repo) };
+    let rc = unsafe { sys::git_repository_commit_parents(&raw mut raw, repo) };
     assert_eq!(rc, 0);
     raw
 }
 
 /// A new reference to the commit `hex` in `repo`.
-fn lookup(repo: *mut ffi::git_repository, hex: &CStr) -> *mut ffi::git_commit {
-    let mut id = ffi::git_oid::default();
+fn lookup(repo: *mut sys::git_repository, hex: &CStr) -> *mut sys::git_commit {
+    let mut id = sys::git_oid::default();
     // SAFETY: a writable oid and a NUL-terminated hex string.
-    let rc = unsafe { ffi::git_oid_from_string(&raw mut id, hex.as_ptr(), ffi::GIT_OID_SHA1) };
+    let rc = unsafe { sys::git_oid_from_string(&raw mut id, hex.as_ptr(), sys::GIT_OID_SHA1) };
     assert_eq!(rc, 0);
     let mut commit = ptr::null_mut();
     // SAFETY: a live slot, an open repository and a live oid.
-    let ret = unsafe { ffi::git_commit_lookup(&raw mut commit, repo, &raw const id) };
+    let ret = unsafe { sys::git_commit_lookup(&raw mut commit, repo, &raw const id) };
     assert_eq!(ret, 0);
     commit
 }
@@ -96,13 +96,13 @@ fn lookup(repo: *mut ffi::git_repository, hex: &CStr) -> *mut ffi::git_commit {
 /// A buffer of libgit2's allocator for `slots` commit pointers, the first `commits`
 /// filled from `commits`, the rest NULL: as C code builds an array (with spare
 /// capacity when `slots` is larger).
-fn c_built(commits: &[*mut ffi::git_commit], slots: usize) -> ffi::git_commitarray {
+fn c_built(commits: &[*mut sys::git_commit], slots: usize) -> sys::git_commitarray {
     assert!(slots >= commits.len() && slots > 0);
     // SAFETY: the routine ignores `backend`; the runtime is initialised.
     let buf = unsafe {
-        ffi::git_odb_backend_data_alloc(ptr::null_mut(), slots * size_of::<*mut ffi::git_commit>())
+        sys::git_odb_backend_data_alloc(ptr::null_mut(), slots * size_of::<*mut sys::git_commit>())
     }
-    .cast::<*mut ffi::git_commit>();
+    .cast::<*mut sys::git_commit>();
     assert!(!buf.is_null());
     for i in 0..slots {
         let commit = commits.get(i).copied().unwrap_or(ptr::null_mut());
@@ -112,7 +112,7 @@ fn c_built(commits: &[*mut ffi::git_commit], slots: usize) -> ffi::git_commitarr
         // SAFETY: as above.
         unsafe { add.write(commit) };
     }
-    ffi::git_commitarray {
+    sys::git_commitarray {
         commits: buf,
         count: commits.len(),
     }
@@ -141,7 +141,7 @@ fn adopts_what_libgit2_fills() {
         let mut raw = array.into_inner().into_raw();
         assert!(raw.commits.is_null() && raw.count == 0);
         // SAFETY: `raw` is empty, so nothing is overwritten unreleased.
-        let rc = unsafe { ffi::git_repository_commit_parents(&raw mut raw, repo) };
+        let rc = unsafe { sys::git_repository_commit_parents(&raw mut raw, repo) };
         assert_eq!(rc, 0);
         // SAFETY: as above: libgit2 refilled it.
         let mut again: CommitArrayVal<'_> = unsafe { CommitArray::from_raw(raw) };
@@ -199,7 +199,7 @@ fn adopts_what_c_code_builds() {
     let mut back = adopted.into_inner().into_raw();
     assert_eq!(back.count, 1);
     // SAFETY: `back` owns its commit and buffer again, released once by C.
-    unsafe { ffi::git_commitarray_dispose(&raw mut back) };
+    unsafe { sys::git_commitarray_dispose(&raw mut back) };
     assert!(back.commits.is_null() && back.count == 0);
     free_repo(repo);
 }
@@ -211,7 +211,7 @@ fn adopts_a_null_buffer_with_any_count() {
     for count in [0, 1, 7, usize::MAX] {
         // SAFETY: `commits` is NULL.
         let mut array: CommitArrayVal<'static> = unsafe {
-            CommitArray::from_raw(ffi::git_commitarray {
+            CommitArray::from_raw(sys::git_commitarray {
                 commits: ptr::null(),
                 count,
             })

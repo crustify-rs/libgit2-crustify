@@ -363,32 +363,26 @@ dependencies = [
 name = "libgit2"
 version = "0.1.0"
 dependencies = [
+ "bindgen",
+ "cc",
  "des",
  "ffibox",
  "flate2",
  "getrandom 0.4.3",
  "glibc-bindings",
  "hmac",
- "libgit2-sys",
+ "libgit2",
  "md-5",
  "md4",
  "nix",
  "pcre2",
  "pcre2-sys",
+ "pkg-config",
  "rustls",
  "rustls-webpki",
+ "serde_json",
  "sha2",
  "trybuild",
-]
-
-[[package]]
-name = "libgit2-sys"
-version = "0.1.0"
-dependencies = [
- "bindgen",
- "cc",
- "pkg-config",
- "serde_json",
 ]
 
 [[package]]

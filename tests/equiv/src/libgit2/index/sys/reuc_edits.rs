@@ -52,10 +52,10 @@ fn raw_mode(side: Option<ReucSide<'_>>) -> c_int {
 /// Both indexes' counts, then their files once written.
 fn compare(files: &Files, c: &IndexBox, rust: &IndexBox) {
     // SAFETY: a live index, only read.
-    let count = unsafe { ffi::git_index_reuc_entrycount(c.as_c_ptr()) };
+    let count = unsafe { sys::git_index_reuc_entrycount(c.as_c_ptr()) };
     assert_eq!(count, rust.as_ref().reuc_entry_count());
     // SAFETY: a live file-backed index.
-    assert_eq!(unsafe { ffi::git_index_write(c.as_c_ptr()) }, 0);
+    assert_eq!(unsafe { sys::git_index_write(c.as_c_ptr()) }, 0);
     rust.as_ref().write().unwrap();
     assert_eq!(files.bytes("c"), files.bytes("r"));
 }
@@ -101,12 +101,12 @@ fn reuc_sequences_match() {
         let ids = [ancestor, ours, theirs].map(|s| s.map(|s| s.id.to_oid()));
         let ptrs = ids.each_ref().map(|i| {
             i.as_ref()
-                .map_or(ptr::null(), |i| ptr::from_ref(i).cast::<ffi::git_oid>())
+                .map_or(ptr::null(), |i| ptr::from_ref(i).cast::<sys::git_oid>())
         });
         // SAFETY: a live index; the path and each id (or NULL with mode 0) are read and
         // copied for the call.
         let rc = unsafe {
-            ffi::git_index_reuc_add(
+            sys::git_index_reuc_add(
                 c.as_c_ptr(),
                 path.as_ptr(),
                 modes[0],
@@ -126,7 +126,7 @@ fn reuc_sequences_match() {
     let find = |c: &IndexBox, rust: &mut IndexBox, path: &CStr| {
         let mut at = usize::MAX;
         // SAFETY: a live index and writable slot; the path is read for the call.
-        let rc = unsafe { ffi::git_index_reuc_find(&raw mut at, c.as_c_ptr(), path.as_ptr()) };
+        let rc = unsafe { sys::git_index_reuc_find(&raw mut at, c.as_c_ptr(), path.as_ptr()) };
         assert_eq!(
             (rc == 0).then_some(at),
             rust.as_mut().find_reuc(path),
@@ -138,7 +138,7 @@ fn reuc_sequences_match() {
     }
     // Case-insensitive lookups once the index ignores case.
     // SAFETY: a live index.
-    assert_eq!(unsafe { ffi::git_index_set_caps(c.as_c_ptr(), 1) }, 0);
+    assert_eq!(unsafe { sys::git_index_set_caps(c.as_c_ptr(), 1) }, 0);
     rust.as_mut()
         .set_caps(CapabilitySetting::Explicit(Capabilities::IGNORE_CASE))
         .unwrap();
@@ -147,21 +147,21 @@ fn reuc_sequences_match() {
     }
     for position in [1, 0, 100, usize::MAX, 3] {
         // SAFETY: a live index; C bounds-checks the position.
-        let rc = unsafe { ffi::git_index_reuc_remove(c.as_c_ptr(), position) };
+        let rc = unsafe { sys::git_index_reuc_remove(c.as_c_ptr(), position) };
         let result = rust.as_mut().remove_reuc(position);
         assert_eq!(rc == 0, result.is_ok(), "{position}");
         if rc != 0 {
-            assert_eq!(rc, ffi::GIT_ENOTFOUND);
+            assert_eq!(rc, sys::GIT_ENOTFOUND);
         }
         compare(&files, &c, &rust);
     }
     // SAFETY: a live index.
-    assert_eq!(unsafe { ffi::git_index_reuc_clear(c.as_c_ptr()) }, 0);
+    assert_eq!(unsafe { sys::git_index_reuc_clear(c.as_c_ptr()) }, 0);
     rust.as_mut().clear_reuc().unwrap();
     compare(&files, &c, &rust);
     // Reading the files back yields equal records.
     // SAFETY: a live file-backed index.
-    assert_eq!(unsafe { ffi::git_index_read(c.as_c_ptr(), 1) }, 0);
+    assert_eq!(unsafe { sys::git_index_read(c.as_c_ptr(), 1) }, 0);
     rust.as_mut().read(true).unwrap();
     compare(&files, &c, &rust);
 }
@@ -192,7 +192,7 @@ fn reuc_records_read_from_a_file_match() {
     for path in [c"p", c"q", c"r/s", c"r"] {
         let mut at = usize::MAX;
         // SAFETY: a live index and writable slot; the path is read for the call.
-        let rc = unsafe { ffi::git_index_reuc_find(&raw mut at, c.as_c_ptr(), path.as_ptr()) };
+        let rc = unsafe { sys::git_index_reuc_find(&raw mut at, c.as_c_ptr(), path.as_ptr()) };
         assert_eq!((rc == 0).then_some(at), rust.as_mut().find_reuc(path));
     }
     compare(&files, &c, &rust);

@@ -40,9 +40,9 @@ use std::ptr;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::odb::OdbDataStrVec;
 use libgit2::libgit2::src::libgit2::strarray::{StrArray, StrArrayRef, StrArrayVal, StrArrayView};
+use libgit2::sys::libgit2 as sys;
 
 const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 
@@ -126,7 +126,7 @@ unsafe extern "C" fn traced_free(ptr: *mut c_void) {
 
 /// Installs the tracing allocator, then initialises libgit2 on top of it.
 fn install_tracing_allocator() {
-    let mut allocator = ffi::git_allocator {
+    let mut allocator = sys::git_allocator {
         gmalloc: Some(traced_malloc),
         grealloc: Some(traced_realloc),
         gfree: Some(traced_free),
@@ -134,11 +134,11 @@ fn install_tracing_allocator() {
     // SAFETY: `GIT_OPT_SET_ALLOCATOR` takes a `git_allocator *` with every member set,
     // which it copies; nothing is allocated yet, so no storage changes allocator.
     let rc = unsafe {
-        ffi::git_libgit2_opts(ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(), &raw mut allocator)
+        sys::git_libgit2_opts(sys::GIT_OPT_SET_ALLOCATOR.cast_signed(), &raw mut allocator)
     };
     assert_eq!(rc, 0);
     // SAFETY: no arguments; refcounted, never released in this process.
-    assert!(unsafe { ffi::git_libgit2_init() } > 0);
+    assert!(unsafe { sys::git_libgit2_init() } > 0);
 }
 
 /// One allocator event, with pointers replaced by the number of their allocation.
@@ -208,13 +208,13 @@ fn compare(c: &Recorder, rust: &Recorder) {
 
 // --- the C side --------------------------------------------------------------
 
-const EMPTY: ffi::git_strarray = ffi::git_strarray {
+const EMPTY: sys::git_strarray = sys::git_strarray {
     strings: ptr::null_mut(),
     count: 0,
 };
 
 /// The strings of a raw array, read as C code indexes them.
-fn c_contents(array: &ffi::git_strarray) -> Vec<Vec<u8>> {
+fn c_contents(array: &sys::git_strarray) -> Vec<Vec<u8>> {
     (0..array.count)
         .map(|i| {
             // SAFETY: `strings` holds at least `count` live strings whenever `count` is
@@ -232,7 +232,7 @@ fn c_contents(array: &ffi::git_strarray) -> Vec<Vec<u8>> {
 /// `git__malloc` over the exported allocator; libgit2 is initialised.
 fn c_alloc(len: usize) -> *mut c_void {
     // SAFETY: the routine ignores its backend; libgit2 is initialised.
-    let p = unsafe { ffi::git_odb_backend_data_alloc(ptr::null_mut(), len) };
+    let p = unsafe { sys::git_odb_backend_data_alloc(ptr::null_mut(), len) };
     assert!(!p.is_null());
     p
 }
@@ -240,11 +240,11 @@ fn c_alloc(len: usize) -> *mut c_void {
 /// `git__free` over the exported allocator.
 fn c_free(p: *mut c_void) {
     // SAFETY: `p` is a live `git__malloc` allocation the caller gives up.
-    unsafe { ffi::git_odb_backend_data_free(ptr::null_mut(), p) }
+    unsafe { sys::git_odb_backend_data_free(ptr::null_mut(), p) }
 }
 
 /// `git_strarray_copy`, as `strarray.c` writes it, over the exported allocator.
-fn c_copy(src: &ffi::git_strarray) -> ffi::git_strarray {
+fn c_copy(src: &sys::git_strarray) -> sys::git_strarray {
     let mut tgt = EMPTY;
     if src.count == 0 {
         return tgt;
@@ -275,7 +275,7 @@ fn c_copy(src: &ffi::git_strarray) -> ffi::git_strarray {
 }
 
 /// C code shortening an owned array: the dropped strings freed, then `count` lowered.
-fn c_truncate(array: &mut ffi::git_strarray, len: usize) {
+fn c_truncate(array: &mut sys::git_strarray, len: usize) {
     if len >= array.count {
         return;
     }
@@ -288,23 +288,23 @@ fn c_truncate(array: &mut ffi::git_strarray, len: usize) {
     array.count = len;
 }
 
-fn c_dispose(array: &mut ffi::git_strarray) {
+fn c_dispose(array: &mut sys::git_strarray) {
     // SAFETY: `array` owns its array and strings (NULL, or libgit2's allocations),
     // released once here; it is zeroed afterwards.
-    unsafe { ffi::git_strarray_dispose(array) }
+    unsafe { sys::git_strarray_dispose(array) }
 }
 
 /// C code moving the strings out, leaving the struct zeroed.
-fn c_take(array: &mut ffi::git_strarray) -> ffi::git_strarray {
+fn c_take(array: &mut sys::git_strarray) -> sys::git_strarray {
     std::mem::replace(array, EMPTY)
 }
 
 /// `GIT_OPT_GET_EXTENSIONS` into a fresh struct.
-fn c_extensions() -> ffi::git_strarray {
+fn c_extensions() -> sys::git_strarray {
     let mut out = EMPTY;
     // SAFETY: `GIT_OPT_GET_EXTENSIONS` takes a `git_strarray *`, which it fills.
     let rc =
-        unsafe { ffi::git_libgit2_opts(ffi::GIT_OPT_GET_EXTENSIONS.cast_signed(), &raw mut out) };
+        unsafe { sys::git_libgit2_opts(sys::GIT_OPT_GET_EXTENSIONS.cast_signed(), &raw mut out) };
     assert_eq!(rc, 0);
     out
 }
@@ -314,8 +314,8 @@ fn set_extensions(names: &[&CStr]) {
     let ptrs: Vec<*const c_char> = names.iter().map(|s| s.as_ptr()).collect();
     // SAFETY: an array of `len` strings, which libgit2 copies.
     let rc = unsafe {
-        ffi::git_libgit2_opts(
-            ffi::GIT_OPT_SET_EXTENSIONS.cast_signed(),
+        sys::git_libgit2_opts(
+            sys::GIT_OPT_SET_EXTENSIONS.cast_signed(),
             ptrs.as_ptr(),
             ptrs.len(),
         )
@@ -339,11 +339,11 @@ impl CArgs {
         }
     }
 
-    fn raw(&mut self) -> ffi::git_strarray {
+    fn raw(&mut self) -> sys::git_strarray {
         if self.ptrs.is_empty() {
             return EMPTY;
         }
-        ffi::git_strarray {
+        sys::git_strarray {
             strings: self.ptrs.as_mut_ptr(),
             count: self.ptrs.len(),
         }
@@ -607,7 +607,7 @@ fn copies_build_edit_and_release_alike() {
                 rust.step(|| {
                     let (strings, count) =
                         b.take().unwrap().as_mut().take_strings().into_raw_parts();
-                    let mut raw = ffi::git_strarray { strings, count };
+                    let mut raw = sys::git_strarray { strings, count };
                     c_dispose(&mut raw);
                     c_contents(&raw)
                 });

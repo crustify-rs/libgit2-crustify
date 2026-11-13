@@ -160,8 +160,8 @@ mod items_and_open_flags {
     use std::hint::black_box;
     use std::thread;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::repository::{Item, OpenFlag, OpenFlags};
+    use libgit2::sys::libgit2 as raw;
 
     use crate::fixture::{TempRepo, item_path};
 
@@ -190,7 +190,7 @@ mod items_and_open_flags {
             if let Some(item) = Item::from_raw(black_box(raw)) {
                 // Reading the discriminant back validates it.
                 assert_eq!(item.raw(), raw);
-                assert!(item.raw() < ffi::GIT_REPOSITORY_ITEM__LAST);
+                assert!(item.raw() < raw::GIT_REPOSITORY_ITEM__LAST);
                 assert_ne!(format!("{item:?}"), "");
                 seen.insert(item);
             } else {
@@ -285,7 +285,7 @@ mod items_and_open_flags {
             match item_path(&repo, item) {
                 Ok(path) => assert!(path.starts_with(repo.path.to_str().unwrap()), "{path}"),
                 // The bare fixture has no working directory.
-                Err(rc) => assert_eq!((item, rc), (Item::WorkDir, ffi::GIT_ENOTFOUND)),
+                Err(rc) => assert_eq!((item, rc), (Item::WorkDir, raw::GIT_ENOTFOUND)),
             }
         }
     }
@@ -303,12 +303,12 @@ mod state {
     use std::hint::black_box;
     use std::thread;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::repository::{RepositoryState, UnnamedRepositoryState};
+    use libgit2::sys::libgit2 as raw;
 
     /// Every value around the declared ones, and the extremes; `u32::MAX` is the `-1`
     /// `git_repository_state` returns on failure.
-    fn probes() -> impl Iterator<Item = ffi::git_repository_state_t> {
+    fn probes() -> impl Iterator<Item = raw::git_repository_state_t> {
         (0..=300).chain([1 << 31, u32::MAX - 1, u32::MAX])
     }
 

@@ -23,10 +23,10 @@ use std::process::Command;
 use std::ptr::{self, NonNull};
 
 use ffibox::{CAlloc, CDrop, CLenAlloc, CLenDrop};
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::settings::set_allocator;
 use libgit2::libgit2::src::util::alloc::{Alloc, Allocator};
 use libgit2::libgit2::src::util::allocators::failalloc::{FailAlloc, FailArrayAlloc};
+use libgit2::sys::libgit2 as sys;
 
 const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 
@@ -94,7 +94,7 @@ fn allocations_fail_as_c_does() {
     for len in SIZES {
         for (file, line) in SITES {
             // SAFETY: `file` is NULL or a C string live for the call.
-            let c = NonNull::new(unsafe { ffi::git_failalloc_malloc(len, site(file), line) });
+            let c = NonNull::new(unsafe { sys::git_failalloc_malloc(len, site(file), line) });
             assert_eq!(c, None, "C malloc({len})");
             assert_eq!(FailAlloc::malloc(len, file, line), c.map(NonNull::cast));
             // SAFETY: as above; the member is C's routine itself.
@@ -105,7 +105,7 @@ fn allocations_fail_as_c_does() {
 
             // SAFETY: a NULL `ptr` asks for a fresh allocation, of any size.
             let c = NonNull::new(unsafe {
-                ffi::git_failalloc_realloc(ptr::null_mut(), len, site(file), line)
+                sys::git_failalloc_realloc(ptr::null_mut(), len, site(file), line)
             });
             assert_eq!(c, None, "C realloc(NULL, {len})");
             // SAFETY: `None` asks for a fresh allocation, of any size.
@@ -129,7 +129,7 @@ fn resizes(len: usize, seed: u8) -> [(bool, Left); 3] {
     // SAFETY: a live buffer this test owns, borrowed for the call: the routine reads
     // nothing and fails, so it keeps nothing and the buffer stays the test's.
     let from_c =
-        unsafe { ffi::git_failalloc_realloc(c.as_mut_ptr().cast(), 2 * len, ptr::null(), 0) };
+        unsafe { sys::git_failalloc_realloc(c.as_mut_ptr().cast(), 2 * len, ptr::null(), 0) };
     // SAFETY: as above, through the strategy.
     let from_rust =
         unsafe { FailAlloc::realloc(NonNull::new(rust.as_mut_ptr()), 2 * len, None, 0) };
@@ -150,7 +150,7 @@ fn releases(len: usize, seed: u8) -> [Left; 5] {
     let mut by_free = buffer(len, seed);
     let mut by_member = buffer(len, seed);
     // SAFETY: a live buffer the test owns, handed for the call; the family keeps nothing.
-    unsafe { ffi::git_failalloc_free(by_c.as_mut_ptr().cast()) };
+    unsafe { sys::git_failalloc_free(by_c.as_mut_ptr().cast()) };
     // SAFETY: as above.
     unsafe { FailAlloc.c_drop(NonNull::new(by_drop.as_mut_ptr()).unwrap()) };
     // SAFETY: as above; `len` bytes of it are in use.
@@ -182,7 +182,7 @@ fn resizes_and_releases_leave_buffers_as_c_does() {
     }
     // NULL, which every release accepts.
     // SAFETY: NULL is always accepted.
-    unsafe { ffi::git_failalloc_free(ptr::null_mut()) };
+    unsafe { sys::git_failalloc_free(ptr::null_mut()) };
     let free = FAIL.as_ref().free().unwrap();
     // SAFETY: as above, through the member.
     unsafe { free(ptr::null_mut()) };
@@ -197,7 +197,7 @@ fn installed_free(buf: Option<&mut [u8]>) -> Option<Left> {
         .map_or(ptr::null_mut(), |b| b.as_ptr().cast_mut());
     // SAFETY: the backend is never read (`GIT_UNUSED`); `ptr` is NULL or a live buffer
     // this test owns, which the installed family's free ignores (see the module docs).
-    unsafe { ffi::git_odb_backend_data_free(ptr::null_mut(), ptr.cast::<c_void>()) };
+    unsafe { sys::git_odb_backend_data_free(ptr::null_mut(), ptr.cast::<c_void>()) };
     buf.map(|b| b.to_vec())
 }
 
@@ -205,15 +205,15 @@ fn installed_free(buf: Option<&mut [u8]>) -> Option<Left> {
 /// and whether `git__malloc` then allocates.
 fn after_init() -> (i32, bool) {
     // SAFETY: this child runs one test on one thread, and initialises libgit2 once.
-    let count = unsafe { ffi::git_libgit2_init() };
+    let count = unsafe { sys::git_libgit2_init() };
     // SAFETY: the backend is never read; any size may be asked for.
-    let data = unsafe { ffi::git_odb_backend_data_alloc(ptr::null_mut(), 64) };
+    let data = unsafe { sys::git_odb_backend_data_alloc(ptr::null_mut(), 64) };
     let allocated = !data.is_null();
     if allocated {
         // SAFETY: `data` addresses 64 fresh bytes of the installed allocator.
         unsafe { data.cast::<[u8; 64]>().write([7; 64]) };
         // SAFETY: `data` is the installed allocator's, released once.
-        unsafe { ffi::git_odb_backend_data_free(ptr::null_mut(), data) };
+        unsafe { sys::git_odb_backend_data_free(ptr::null_mut(), data) };
     }
     (count, allocated)
 }
@@ -237,7 +237,7 @@ fn cs_initial_family_releases_nothing_and_gives_way_to_init() {
             }
             assert_eq!(after_init(), (1, true));
             // SAFETY: balances the one `git_libgit2_init`.
-            assert_eq!(unsafe { ffi::git_libgit2_shutdown() }, 0);
+            assert_eq!(unsafe { sys::git_libgit2_shutdown() }, 0);
         },
     );
 }
@@ -279,18 +279,18 @@ fn rust_family_installed_before_init_behaves_as_cs_initial_one() {
             // libgit2 holds is one it can resize and release; one thread.
             unsafe { set_allocator(Some(FAIL.as_ref())) };
             // SAFETY: the backend is never read; any size may be asked for.
-            let data = unsafe { ffi::git_odb_backend_data_alloc(ptr::null_mut(), 64) };
+            let data = unsafe { sys::git_odb_backend_data_alloc(ptr::null_mut(), 64) };
             assert!(data.is_null());
             // SAFETY: the standard allocator back, which made every allocation libgit2
             // holds; one thread.
             unsafe { set_allocator(None) };
             // SAFETY: the backend is never read; any size may be asked for.
-            let data = unsafe { ffi::git_odb_backend_data_alloc(ptr::null_mut(), 64) };
+            let data = unsafe { sys::git_odb_backend_data_alloc(ptr::null_mut(), 64) };
             assert!(!data.is_null());
             // SAFETY: the standard allocator's, released once.
-            unsafe { ffi::git_odb_backend_data_free(ptr::null_mut(), data) };
+            unsafe { sys::git_odb_backend_data_free(ptr::null_mut(), data) };
             // SAFETY: balances the one `git_libgit2_init`.
-            assert_eq!(unsafe { ffi::git_libgit2_shutdown() }, 0);
+            assert_eq!(unsafe { sys::git_libgit2_shutdown() }, 0);
         },
     );
 }

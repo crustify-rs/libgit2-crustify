@@ -10,7 +10,6 @@ use core::ptr::{self, NonNull};
 
 use ffibox::{CDrop, CRefClone, CRefSeam};
 
-use crate::ffi;
 use crate::libgit2::src::libgit2::blob::{Blob, BlobArc, BlobRef};
 use crate::libgit2::src::libgit2::commit::{Commit, CommitArc, CommitRef};
 use crate::libgit2::src::libgit2::object::id_fits;
@@ -20,6 +19,7 @@ use crate::libgit2::src::libgit2::signature::{SignatureBox, SignatureRef};
 use crate::libgit2::src::libgit2::tag::{Tag, TagArc, TagRef};
 use crate::libgit2::src::libgit2::tree::{Tree, TreeArc, TreeRef};
 use crate::libgit2::src::util::errors::{ErrorBuf, ErrorClass, last, set};
+use crate::sys::libgit2 as sys;
 
 impl<'a, 'r> BlobRef<'a, 'r> {
     /// Another counted reference to the blob, as `git_blob_dup` takes one: the same
@@ -55,7 +55,7 @@ impl<'a, 'r> BlobRef<'a, 'r> {
     pub fn id(&self) -> OidRef<'a> {
         // SAFETY: the handle addresses a live blob for `'a`; libgit2 only reads it, and
         // returns the address of the id cached in its object (`&obj->cached.oid`).
-        let id = unsafe { ffi::git_blob_id(self.as_ptr()) };
+        let id = unsafe { sys::git_blob_id(self.as_ptr()) };
         // SAFETY: the id is part of the blob, so it is non-NULL and lives as long as the
         // blob, past `'a`; nothing writes it once the blob is returned.
         unsafe { OidRef::from_ptr(id.cast_mut()) }.expect("a live blob has an id")
@@ -88,7 +88,7 @@ impl<'a, 'r> BlobRef<'a, 'r> {
     #[must_use]
     pub fn owner(&self) -> RepositoryRef<'r> {
         // SAFETY: the handle addresses a live blob for `'a`, which libgit2 only reads.
-        let repo = unsafe { ffi::git_blob_owner(self.as_ptr()) };
+        let repo = unsafe { sys::git_blob_owner(self.as_ptr()) };
         // SAFETY: `obj->repo` is the repository the blob was looked up in, stored
         // without a count and never cleared. A `Blob<'r>` is only built from a
         // `RepositoryRef<'r>` (`lookup`, `lookup_prefix`) or from an `Object<'r>`, so
@@ -119,7 +119,7 @@ unsafe impl<'r> CDrop<Blob<'r>> for BlobFree {
     unsafe fn c_drop(&self, ptr: NonNull<Blob<'r>>) {
         // SAFETY: per `c_drop`'s contract, `ptr` addresses a live blob of which the
         // caller gives up one reference; `Blob` is transparent over `git_blob`.
-        unsafe { ffi::git_blob_free(ptr.as_ptr().cast()) }
+        unsafe { sys::git_blob_free(ptr.as_ptr().cast()) }
     }
 }
 
@@ -135,7 +135,7 @@ unsafe impl<'r> CRefClone<Blob<'r>> for BlobFree {
         let mut out = ptr::null_mut();
         // SAFETY: `out` is a writable slot; `ptr` addresses a live blob whose reference
         // the caller holds, per `c_up_ref`'s contract.
-        let rc = unsafe { ffi::git_blob_dup(&raw mut out, ptr.as_ptr().cast()) };
+        let rc = unsafe { sys::git_blob_dup(&raw mut out, ptr.as_ptr().cast()) };
         debug_assert_eq!(out, ptr.as_ptr().cast());
         rc == 0
     }
@@ -191,7 +191,7 @@ impl<'r> Blob<'r> {
         // and fills through this shared handle, as `RepositoryRef` allows; `id` is a
         // live id of the repository's type (checked above), read for the call only.
         let rc =
-            unsafe { ffi::git_blob_lookup(&raw mut out, repo.as_ptr().cast_mut(), id.as_ptr()) };
+            unsafe { sys::git_blob_lookup(&raw mut out, repo.as_ptr().cast_mut(), id.as_ptr()) };
         if rc < 0 {
             return Err(RepositoryError::from_libgit2(rc));
         }
@@ -238,7 +238,7 @@ impl<'r> Blob<'r> {
         // copies at most `(len + 1) / 2` of `id`'s `GIT_OID_MAX_SIZE` bytes, with its
         // type, into the key it searches with.
         let rc = unsafe {
-            ffi::git_blob_lookup_prefix(&raw mut out, repo.as_ptr().cast_mut(), id.as_ptr(), len)
+            sys::git_blob_lookup_prefix(&raw mut out, repo.as_ptr().cast_mut(), id.as_ptr(), len)
         };
         if rc < 0 {
             return Err(RepositoryError::from_libgit2(rc));
@@ -253,9 +253,9 @@ impl<'r> Blob<'r> {
 
 // A `Blob` is a `git_blob`, never held by value; the owner is one pointer.
 const _: () = assert!(
-    size_of::<Blob<'static>>() == size_of::<ffi::git_blob>()
-        && size_of::<BlobArc<'static>>() == size_of::<*mut ffi::git_blob>()
-        && size_of::<Option<BlobArc<'static>>>() == size_of::<*mut ffi::git_blob>()
+    size_of::<Blob<'static>>() == size_of::<sys::git_blob>()
+        && size_of::<BlobArc<'static>>() == size_of::<*mut sys::git_blob>()
+        && size_of::<Option<BlobArc<'static>>>() == size_of::<*mut sys::git_blob>()
 );
 
 impl<'a, 'r> CommitRef<'a, 'r> {
@@ -285,7 +285,7 @@ impl<'a, 'r> CommitRef<'a, 'r> {
     pub fn id(&self) -> OidRef<'a> {
         // SAFETY: the handle addresses a live commit for `'a`; libgit2 only reads it, and
         // returns the address of the id cached in its object (`&obj->cached.oid`).
-        let id = unsafe { ffi::git_commit_id(self.as_ptr()) };
+        let id = unsafe { sys::git_commit_id(self.as_ptr()) };
         // SAFETY: the id is part of the commit, so it is non-NULL and lives as long as
         // the commit, past `'a`; nothing writes it once the commit is cached or returned.
         unsafe { OidRef::from_ptr(id.cast_mut()) }.expect("a live commit has an id")
@@ -319,7 +319,7 @@ impl<'a, 'r> CommitRef<'a, 'r> {
     #[must_use]
     pub fn owner(&self) -> RepositoryRef<'r> {
         // SAFETY: the handle addresses a live commit for `'a`, which libgit2 only reads.
-        let repo = unsafe { ffi::git_commit_owner(self.as_ptr()) };
+        let repo = unsafe { sys::git_commit_owner(self.as_ptr()) };
         // SAFETY: `object.repo`, stored uncounted and never cleared, is the repository
         // the commit was looked up in. A `Commit<'r>` is only built from a
         // `RepositoryRef<'r>`, from a `Commit<'r>` or `Object<'r>` of it, or adopted under
@@ -351,7 +351,7 @@ unsafe impl<'r> CDrop<Commit<'r>> for CommitFree {
     unsafe fn c_drop(&self, ptr: NonNull<Commit<'r>>) {
         // SAFETY: per `c_drop`'s contract, `ptr` addresses a live commit of which the
         // caller gives up one reference; `Commit` is transparent over `git_commit`.
-        unsafe { ffi::git_commit_free(ptr.as_ptr().cast()) }
+        unsafe { sys::git_commit_free(ptr.as_ptr().cast()) }
     }
 }
 
@@ -367,7 +367,7 @@ unsafe impl<'r> CRefClone<Commit<'r>> for CommitFree {
         let mut out = ptr::null_mut();
         // SAFETY: `out` is a writable slot; `ptr` addresses a live commit whose
         // reference the caller holds, per `c_up_ref`'s contract.
-        let rc = unsafe { ffi::git_commit_dup(&raw mut out, ptr.as_ptr().cast()) };
+        let rc = unsafe { sys::git_commit_dup(&raw mut out, ptr.as_ptr().cast()) };
         debug_assert_eq!(out, ptr.as_ptr().cast());
         rc == 0
     }
@@ -428,7 +428,7 @@ impl<'r> Commit<'r> {
         // through this shared handle, as `RepositoryRef` allows; `id` is a live id of
         // the repository's type (checked above), read for the call only.
         let rc =
-            unsafe { ffi::git_commit_lookup(&raw mut out, repo.as_ptr().cast_mut(), id.as_ptr()) };
+            unsafe { sys::git_commit_lookup(&raw mut out, repo.as_ptr().cast_mut(), id.as_ptr()) };
         if rc < 0 {
             return Err(RepositoryError::from_libgit2(rc));
         }
@@ -474,7 +474,7 @@ impl<'r> Commit<'r> {
         // copies at most `(len + 1) / 2` of `id`'s `GIT_OID_MAX_SIZE` bytes, with its
         // type, into the key it searches with.
         let rc = unsafe {
-            ffi::git_commit_lookup_prefix(&raw mut out, repo.as_ptr().cast_mut(), id.as_ptr(), len)
+            sys::git_commit_lookup_prefix(&raw mut out, repo.as_ptr().cast_mut(), id.as_ptr(), len)
         };
         if rc < 0 {
             return Err(RepositoryError::from_libgit2(rc));
@@ -487,9 +487,9 @@ impl<'r> Commit<'r> {
 
 // A `Commit` is a `git_commit`, never held by value; the owner is one pointer.
 const _: () = assert!(
-    size_of::<Commit<'static>>() == size_of::<ffi::git_commit>()
-        && size_of::<CommitArc<'static>>() == size_of::<*mut ffi::git_commit>()
-        && size_of::<Option<CommitArc<'static>>>() == size_of::<*mut ffi::git_commit>()
+    size_of::<Commit<'static>>() == size_of::<sys::git_commit>()
+        && size_of::<CommitArc<'static>>() == size_of::<*mut sys::git_commit>()
+        && size_of::<Option<CommitArc<'static>>>() == size_of::<*mut sys::git_commit>()
 );
 
 /// `Ok` for a signature whose name and email libgit2's mailmap can resolve; for one
@@ -559,7 +559,7 @@ unsafe impl<'r> CDrop<Tag<'r>> for TagFree {
     unsafe fn c_drop(&self, ptr: NonNull<Tag<'r>>) {
         // SAFETY: per `c_drop`'s contract, `ptr` addresses a live tag of which the
         // caller gives up one reference; `Tag` is transparent over `git_tag`.
-        unsafe { ffi::git_tag_free(ptr.as_ptr().cast()) }
+        unsafe { sys::git_tag_free(ptr.as_ptr().cast()) }
     }
 }
 
@@ -575,7 +575,7 @@ unsafe impl<'r> CRefClone<Tag<'r>> for TagFree {
         let mut out = ptr::null_mut();
         // SAFETY: `out` is a writable slot; `ptr` addresses a live tag whose reference
         // the caller holds, per `c_up_ref`'s contract.
-        let rc = unsafe { ffi::git_tag_dup(&raw mut out, ptr.as_ptr().cast()) };
+        let rc = unsafe { sys::git_tag_dup(&raw mut out, ptr.as_ptr().cast()) };
         debug_assert_eq!(out, ptr.as_ptr().cast());
         rc == 0
     }
@@ -613,7 +613,7 @@ impl<'r> Tag<'r> {
         // through this shared handle, as `RepositoryRef` allows; `id` is a live id of
         // the repository's type (checked above), read for the call only.
         let rc =
-            unsafe { ffi::git_tag_lookup(&raw mut out, repo.as_ptr().cast_mut(), id.as_ptr()) };
+            unsafe { sys::git_tag_lookup(&raw mut out, repo.as_ptr().cast_mut(), id.as_ptr()) };
         if rc < 0 {
             return Err(RepositoryError::from_libgit2(rc));
         }
@@ -655,7 +655,7 @@ impl<'r> Tag<'r> {
         // SAFETY: as in `lookup`; libgit2 clamps `len` to the repository's length, and
         // copies at most `(len + 1) / 2` of `id`'s bytes, with its type, into its key.
         let rc = unsafe {
-            ffi::git_tag_lookup_prefix(&raw mut out, repo.as_ptr().cast_mut(), id.as_ptr(), len)
+            sys::git_tag_lookup_prefix(&raw mut out, repo.as_ptr().cast_mut(), id.as_ptr(), len)
         };
         if rc < 0 {
             return Err(RepositoryError::from_libgit2(rc));
@@ -669,9 +669,9 @@ impl<'r> Tag<'r> {
 
 // A `Tag` is a `git_tag`, never held by value; the owner is one pointer.
 const _: () = assert!(
-    size_of::<Tag<'static>>() == size_of::<ffi::git_tag>()
-        && size_of::<TagArc<'static>>() == size_of::<*mut ffi::git_tag>()
-        && size_of::<Option<TagArc<'static>>>() == size_of::<*mut ffi::git_tag>()
+    size_of::<Tag<'static>>() == size_of::<sys::git_tag>()
+        && size_of::<TagArc<'static>>() == size_of::<*mut sys::git_tag>()
+        && size_of::<Option<TagArc<'static>>>() == size_of::<*mut sys::git_tag>()
 );
 
 impl<'a, 'r> TagRef<'a, 'r> {
@@ -690,7 +690,7 @@ impl<'a, 'r> TagRef<'a, 'r> {
         // SAFETY: the handle addresses a live tag for `'a`; `git_tag_id` is
         // `git_object_id` behind a cast, which only reads it and returns the address of
         // the id cached in it (`&obj->cached.oid`).
-        let id = unsafe { ffi::git_tag_id(self.as_ptr()) };
+        let id = unsafe { sys::git_tag_id(self.as_ptr()) };
         // SAFETY: the id is part of the tag, so it is non-NULL and lives as long as the
         // tag, past `'a`; nothing writes it once the tag is cached or returned.
         unsafe { OidRef::from_ptr(id.cast_mut()) }.expect("a live tag has an id")
@@ -723,7 +723,7 @@ impl<'a, 'r> TagRef<'a, 'r> {
     pub fn owner(&self) -> RepositoryRef<'r> {
         // SAFETY: the handle addresses a live tag for `'a`; `git_tag_owner` is
         // `git_object_owner` behind a cast, which only reads it.
-        let repo = unsafe { ffi::git_tag_owner(self.as_ptr()) };
+        let repo = unsafe { sys::git_tag_owner(self.as_ptr()) };
         // SAFETY: `obj->repo` is the repository the tag was looked up in, stored without
         // a count and never cleared. A `Tag<'r>` is only built from a
         // `RepositoryRef<'r>` (`lookup`, `lookup_prefix`) or from an `Object<'r>` of
@@ -776,7 +776,7 @@ unsafe impl<'r> CDrop<Tree<'r>> for TreeFree {
     unsafe fn c_drop(&self, ptr: NonNull<Tree<'r>>) {
         // SAFETY: per `c_drop`'s contract, `ptr` addresses a live tree of which the
         // caller gives up one reference; `Tree` is transparent over `git_tree`.
-        unsafe { ffi::git_tree_free(ptr.as_ptr().cast()) }
+        unsafe { sys::git_tree_free(ptr.as_ptr().cast()) }
     }
 }
 
@@ -792,7 +792,7 @@ unsafe impl<'r> CRefClone<Tree<'r>> for TreeFree {
         let mut out = ptr::null_mut();
         // SAFETY: `out` is a writable slot; `ptr` addresses a live tree whose reference
         // the caller holds, per `c_up_ref`'s contract.
-        let rc = unsafe { ffi::git_tree_dup(&raw mut out, ptr.as_ptr().cast()) };
+        let rc = unsafe { sys::git_tree_dup(&raw mut out, ptr.as_ptr().cast()) };
         debug_assert_eq!(out, ptr.as_ptr().cast());
         rc == 0
     }
@@ -830,7 +830,7 @@ impl<'r> Tree<'r> {
         // through this shared handle, as `RepositoryRef` allows; `id` is a live id of
         // the repository's type (checked above), read for the call only.
         let rc =
-            unsafe { ffi::git_tree_lookup(&raw mut out, repo.as_ptr().cast_mut(), id.as_ptr()) };
+            unsafe { sys::git_tree_lookup(&raw mut out, repo.as_ptr().cast_mut(), id.as_ptr()) };
         if rc < 0 {
             return Err(RepositoryError::from_libgit2(rc));
         }
@@ -873,7 +873,7 @@ impl<'r> Tree<'r> {
         // SAFETY: as in `lookup`; libgit2 clamps `len` to the repository's length, and
         // copies at most `(len + 1) / 2` of `id`'s bytes, with its type, into its key.
         let rc = unsafe {
-            ffi::git_tree_lookup_prefix(&raw mut out, repo.as_ptr().cast_mut(), id.as_ptr(), len)
+            sys::git_tree_lookup_prefix(&raw mut out, repo.as_ptr().cast_mut(), id.as_ptr(), len)
         };
         if rc < 0 {
             return Err(RepositoryError::from_libgit2(rc));
@@ -888,9 +888,9 @@ impl<'r> Tree<'r> {
 
 // A `Tree` is a `git_tree`, never held by value; the owner is one pointer.
 const _: () = assert!(
-    size_of::<Tree<'static>>() == size_of::<ffi::git_tree>()
-        && size_of::<TreeArc<'static>>() == size_of::<*mut ffi::git_tree>()
-        && size_of::<Option<TreeArc<'static>>>() == size_of::<*mut ffi::git_tree>()
+    size_of::<Tree<'static>>() == size_of::<sys::git_tree>()
+        && size_of::<TreeArc<'static>>() == size_of::<*mut sys::git_tree>()
+        && size_of::<Option<TreeArc<'static>>>() == size_of::<*mut sys::git_tree>()
 );
 
 impl<'a, 'r> TreeRef<'a, 'r> {
@@ -908,7 +908,7 @@ impl<'a, 'r> TreeRef<'a, 'r> {
     pub fn id(&self) -> OidRef<'a> {
         // SAFETY: the handle addresses a live tree for `'a`; libgit2 only reads it, and
         // returns the address of the id cached in its object (`&obj->cached.oid`).
-        let id = unsafe { ffi::git_tree_id(self.as_ptr()) };
+        let id = unsafe { sys::git_tree_id(self.as_ptr()) };
         // SAFETY: the id is part of the tree, so it is non-NULL and lives as long as the
         // tree, past `'a`; nothing writes it once the tree is cached or returned.
         unsafe { OidRef::from_ptr(id.cast_mut()) }.expect("a live tree has an id")
@@ -942,7 +942,7 @@ impl<'a, 'r> TreeRef<'a, 'r> {
     #[must_use]
     pub fn owner(&self) -> RepositoryRef<'r> {
         // SAFETY: the handle addresses a live tree for `'a`, which libgit2 only reads.
-        let repo = unsafe { ffi::git_tree_owner(self.as_ptr()) };
+        let repo = unsafe { sys::git_tree_owner(self.as_ptr()) };
         // SAFETY: `object.repo`, stored uncounted and never cleared, is the repository
         // the tree was looked up in, through a `RepositoryRef<'r>` (`lookup*`, or an
         // object of it: `from_object`, a commit's tree), its `'r` only ever shrunk: it

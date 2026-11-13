@@ -47,8 +47,8 @@ use core::str::Utf8Error;
 
 use ffibox::{CDispose, CMutSeam, CRefSeam, CVal, define_ctype};
 
-use crate::ffi;
 use crate::libgit2::src::libgit2::odb::{OdbDataArrayFree, OdbDataStr, OdbDataVec};
+use crate::sys::libgit2 as sys;
 
 define_ctype!(
     /// A buffer libgit2 returns data through (`git_buf`): [`len`](BufRef::len) bytes,
@@ -64,7 +64,7 @@ define_ctype!(
     Buf,
     BufRef,
     BufMut,
-    ffi::git_buf
+    sys::git_buf
 );
 
 // SAFETY: a `Buf` owns its allocation exclusively, or points at nothing it owns (NULL,
@@ -92,7 +92,7 @@ unsafe impl Sync for BufRef<'_> {}
 unsafe impl Sync for BufMut<'_> {}
 
 /// The empty buffer, `GIT_BUF_INIT`.
-const INIT: ffi::git_buf = ffi::git_buf {
+const INIT: sys::git_buf = sys::git_buf {
     ptr: ptr::null_mut(),
     reserved: 0,
     size: 0,
@@ -118,7 +118,7 @@ unsafe impl CDispose<Buf> for BufDispose {
     #[doc(alias = "git_buf_dispose")]
     #[inline]
     unsafe fn c_dispose(&self, ptr: NonNull<Buf>) {
-        let raw: *mut ffi::git_buf = ptr.as_ptr().cast();
+        let raw: *mut sys::git_buf = ptr.as_ptr().cast();
         // SAFETY: per `c_dispose`'s contract `raw` addresses a live `git_buf`.
         let reserved_ptr = unsafe { addr_of!((*raw).reserved) };
         // SAFETY: as above.
@@ -129,7 +129,7 @@ unsafe impl CDispose<Buf> for BufDispose {
         // SAFETY: `raw` is live and, per the handles' invariant, owns `ptr`, an
         // allocation of libgit2's allocator; the caller gives the value up, so it is
         // released once.
-        unsafe { ffi::git_buf_dispose(raw) }
+        unsafe { sys::git_buf_dispose(raw) }
     }
 }
 
@@ -167,7 +167,7 @@ impl Buf {
         }
         dst[bytes.len()] = MaybeUninit::new(0);
         let (data, _) = storage.into_raw_parts();
-        let raw = ffi::git_buf {
+        let raw = sys::git_buf {
             ptr: data.cast(),
             reserved,
             size: bytes.len(),
@@ -193,7 +193,7 @@ impl Buf {
     /// they filled. Nothing else may read or write the allocation while the result lives.
     /// With `raw.reserved == 0` there is no requirement: `raw.ptr` and `raw.size` are
     /// never read through.
-    pub unsafe fn from_raw(raw: ffi::git_buf) -> BufVal {
+    pub unsafe fn from_raw(raw: sys::git_buf) -> BufVal {
         // SAFETY: the caller gives up `raw`, which owns what it points at (this
         // function's contract).
         unsafe { CVal::new(Self(raw, PhantomData)) }
@@ -202,7 +202,7 @@ impl Buf {
     /// The raw `git_buf`, ownership included: C code releases it with `git_buf_dispose`
     /// or passes it to a libgit2 routine to fill again.
     #[must_use]
-    pub fn into_raw(self) -> ffi::git_buf {
+    pub fn into_raw(self) -> sys::git_buf {
         self.0
     }
 }
@@ -334,7 +334,7 @@ impl BufMut<'_> {
     /// # Safety
     ///
     /// `raw` keeps the handles' invariant, and its allocation, if any, is handed over.
-    unsafe fn replace_raw(&mut self, raw: ffi::git_buf) {
+    unsafe fn replace_raw(&mut self, raw: sys::git_buf) {
         drop(self.take());
         // SAFETY: a write through the exclusive handle's pointer to a live `git_buf`,
         // whose previous allocation `take` released; `raw` keeps the invariant, per this
@@ -421,7 +421,7 @@ impl BufMut<'_> {
     pub fn set_str(&mut self, s: OdbDataStr) {
         let size = s.len();
         let data = s.into_raw();
-        let raw = ffi::git_buf {
+        let raw = sys::git_buf {
             ptr: data,
             reserved: size + 1,
             size,
@@ -477,9 +477,9 @@ impl BufMut<'_> {
 // A `Buf` is a `git_buf`, so C reads and writes a value Rust holds in place, and the
 // owner adds nothing to it.
 const _: () = assert!(
-    size_of::<Buf>() == size_of::<ffi::git_buf>()
-        && align_of::<Buf>() == align_of::<ffi::git_buf>()
-        && size_of::<BufVal>() == size_of::<ffi::git_buf>()
+    size_of::<Buf>() == size_of::<sys::git_buf>()
+        && align_of::<Buf>() == align_of::<sys::git_buf>()
+        && size_of::<BufVal>() == size_of::<sys::git_buf>()
 );
 
 // `ptr` is a `char *`, which the owners of libgit2's allocator hold as bytes.
@@ -566,8 +566,8 @@ mod unit_tests {
         // SAFETY: `Allocator` is `#[repr(transparent)]` over `git_allocator`, with every
         // member set; libgit2 copies it before anything is allocated.
         let rc = unsafe {
-            ffi::git_libgit2_opts(
-                ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(),
+            sys::git_libgit2_opts(
+                sys::GIT_OPT_SET_ALLOCATOR.cast_signed(),
                 allocator.as_ref().as_ptr(),
             )
         };
@@ -575,17 +575,17 @@ mod unit_tests {
     }
 
     /// The raw struct a handle addresses, read through its pointer.
-    fn raw(buf: BufRef<'_>) -> ffi::git_buf {
+    fn raw(buf: BufRef<'_>) -> sys::git_buf {
         // SAFETY: a read through the shared handle's pointer to a live `git_buf`.
         unsafe { buf.as_ptr().read() }
     }
 
     #[test]
     fn layout_matches_c() {
-        assert_eq!(size_of::<Buf>(), size_of::<ffi::git_buf>());
-        assert_eq!(size_of::<BufVal>(), size_of::<ffi::git_buf>());
-        assert_eq!(size_of::<BufRef<'_>>(), size_of::<*const ffi::git_buf>());
-        assert_eq!(size_of::<BufMut<'_>>(), size_of::<*const ffi::git_buf>());
+        assert_eq!(size_of::<Buf>(), size_of::<sys::git_buf>());
+        assert_eq!(size_of::<BufVal>(), size_of::<sys::git_buf>());
+        assert_eq!(size_of::<BufRef<'_>>(), size_of::<*const sys::git_buf>());
+        assert_eq!(size_of::<BufMut<'_>>(), size_of::<*const sys::git_buf>());
         assert_eq!(size_of::<BufDispose>(), 0);
     }
 
@@ -620,7 +620,7 @@ mod unit_tests {
     /// build would crash, so this proves the drop makes none).
     #[test]
     fn unowned_buffer_reads_empty_and_disposes_without_c() {
-        let stray = ffi::git_buf {
+        let stray = sys::git_buf {
             ptr: NonNull::<c_char>::dangling().as_ptr(),
             reserved: 0,
             size: 5,
@@ -651,7 +651,7 @@ mod unit_tests {
     fn handles_over_rust_storage() {
         let mut storage = *b"hello\0\xff\xff";
         let base = storage.as_mut_ptr();
-        let mut raw_buf = ffi::git_buf {
+        let mut raw_buf = sys::git_buf {
             ptr: base.cast(),
             reserved: 8,
             size: 5,
@@ -770,43 +770,43 @@ mod unit_tests {
                 assert!(runtime_pinned());
                 let opt = |opt: u32, s: *const c_char| {
                     // SAFETY: both options copy the string, or restore the default for NULL.
-                    assert_eq!(unsafe { ffi::git_libgit2_opts(opt.cast_signed(), s) }, 0);
+                    assert_eq!(unsafe { sys::git_libgit2_opts(opt.cast_signed(), s) }, 0);
                 };
                 let get = |opt: u32, buf: &mut BufVal| {
                     let mut raw = buf.as_mut().take().into_inner().into_raw();
                     // SAFETY: both options take a `git_buf *` that is zeroed or owns a
                     // libgit2 allocation, which they reuse or replace.
-                    let rc = unsafe { ffi::git_libgit2_opts(opt.cast_signed(), &raw mut raw) };
+                    let rc = unsafe { sys::git_libgit2_opts(opt.cast_signed(), &raw mut raw) };
                     assert_eq!(rc, 0);
                     // SAFETY: `raw` is as libgit2 left it.
                     buf.as_mut().set(unsafe { Buf::from_raw(raw) });
                 };
 
-                opt(ffi::GIT_OPT_SET_USER_AGENT, c"crustify/1.0".as_ptr());
+                opt(sys::GIT_OPT_SET_USER_AGENT, c"crustify/1.0".as_ptr());
                 let mut buf = Buf::new();
-                get(ffi::GIT_OPT_GET_USER_AGENT, &mut buf);
+                get(sys::GIT_OPT_GET_USER_AGENT, &mut buf);
                 assert_eq!(buf.as_ref().to_str(), Ok("crustify/1.0"));
                 assert!(buf.as_ref().capacity() > buf.as_ref().len());
 
                 // Passed in again, an allocation is reused (and grown), whoever made it.
                 let mut ours = Buf::from_bytes(b"0123456789abcdef0123").unwrap();
                 let before = raw(ours.as_ref()).ptr;
-                get(ffi::GIT_OPT_GET_USER_AGENT, &mut ours);
+                get(sys::GIT_OPT_GET_USER_AGENT, &mut ours);
                 assert_eq!(ours.as_ref().to_str(), Ok("crustify/1.0"));
                 assert_eq!(raw(ours.as_ref()).ptr, before, "fits: reused in place");
                 opt(
-                    ffi::GIT_OPT_SET_USER_AGENT,
+                    sys::GIT_OPT_SET_USER_AGENT,
                     c"a much longer user agent than before".as_ptr(),
                 );
-                get(ffi::GIT_OPT_GET_USER_AGENT, &mut ours);
+                get(sys::GIT_OPT_GET_USER_AGENT, &mut ours);
                 assert_eq!(
                     ours.as_ref().as_c_str(),
                     c"a much longer user agent than before"
                 );
 
-                opt(ffi::GIT_OPT_SET_TEMPLATE_PATH, c"".as_ptr());
+                opt(sys::GIT_OPT_SET_TEMPLATE_PATH, c"".as_ptr());
                 let mut empty = Buf::new();
-                get(ffi::GIT_OPT_GET_TEMPLATE_PATH, &mut empty);
+                get(sys::GIT_OPT_GET_TEMPLATE_PATH, &mut empty);
                 let filled = raw(empty.as_ref());
                 assert!(
                     !filled.ptr.is_null() && filled.reserved == 0,
@@ -815,16 +815,16 @@ mod unit_tests {
                 assert_eq!((empty.as_ref().len(), empty.as_ref().capacity()), (0, 0));
                 assert_eq!(empty.as_ref().as_c_str(), c"");
                 assert!(empty.as_mut().take_str().is_none());
-                get(ffi::GIT_OPT_GET_TEMPLATE_PATH, &mut empty);
+                get(sys::GIT_OPT_GET_TEMPLATE_PATH, &mut empty);
                 drop(empty);
 
                 // An owned buffer passed in for an empty result keeps its allocation.
-                get(ffi::GIT_OPT_GET_TEMPLATE_PATH, &mut buf);
+                get(sys::GIT_OPT_GET_TEMPLATE_PATH, &mut buf);
                 assert!(buf.as_ref().is_empty() && buf.as_ref().capacity() > 0);
                 assert_eq!(buf.as_ref().as_c_str(), c"");
 
-                opt(ffi::GIT_OPT_SET_TEMPLATE_PATH, ptr::null());
-                opt(ffi::GIT_OPT_SET_USER_AGENT, ptr::null());
+                opt(sys::GIT_OPT_SET_TEMPLATE_PATH, ptr::null());
+                opt(sys::GIT_OPT_SET_USER_AGENT, ptr::null());
             },
         );
     }

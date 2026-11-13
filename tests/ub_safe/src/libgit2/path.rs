@@ -12,14 +12,14 @@ use std::collections::HashSet;
 use std::hint::black_box;
 use std::thread;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::path::GitFile;
+use libgit2::sys::libgit2 as sys;
 
 /// Every value around the declared ones, then a coarse stride across the whole type.
-fn probes() -> impl Iterator<Item = ffi::git_path_gitfile> {
+fn probes() -> impl Iterator<Item = sys::git_path_gitfile> {
     (0..=300)
-        .chain((0..=ffi::git_path_gitfile::MAX).step_by(1 << 26))
-        .chain([ffi::git_path_gitfile::MAX - 1, ffi::git_path_gitfile::MAX])
+        .chain((0..=sys::git_path_gitfile::MAX).step_by(1 << 26))
+        .chain([sys::git_path_gitfile::MAX - 1, sys::git_path_gitfile::MAX])
 }
 
 #[test]
@@ -30,7 +30,7 @@ fn from_raw_yields_only_valid_files() {
         if let Some(file) = GitFile::from_raw(black_box(raw)) {
             // Reading the discriminant back validates it.
             assert_eq!(file.raw(), raw);
-            assert_eq!(ffi::git_path_gitfile::from(file), raw);
+            assert_eq!(sys::git_path_gitfile::from(file), raw);
             assert_ne!(format!("{file:?}"), "");
             seen.insert(file);
         } else {
@@ -71,8 +71,8 @@ mod filesystem {
     //! [`Filesystem`] (`git_path_fs`): its raw conversions yield only valid variants
     //! (Miri checks the enum's validity), and it crosses threads.
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::path::Filesystem;
+    use libgit2::sys::libgit2 as sys;
 
     #[test]
     fn every_raw_value_converts_to_a_variant_or_none() {
@@ -86,7 +86,7 @@ mod filesystem {
                         Filesystem::Generic | Filesystem::Ntfs | Filesystem::Hfs
                     ));
                 }
-                None => assert!(raw > ffi::GIT_PATH_FS_HFS),
+                None => assert!(raw > sys::GIT_PATH_FS_HFS),
             }
             assert_eq!(Filesystem::try_from(raw).ok(), Filesystem::from_raw(raw));
         }

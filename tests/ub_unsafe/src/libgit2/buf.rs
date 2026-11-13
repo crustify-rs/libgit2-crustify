@@ -12,9 +12,9 @@ use std::process::Command;
 use std::ptr::{self, NonNull};
 use std::thread;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::buf::{Buf, BufVal};
 use libgit2::libgit2::src::libgit2::odb::{OdbDataStr, OdbDataStrFree};
+use libgit2::sys::libgit2 as sys;
 
 const CHILD: &str = "CRUSTIFY_UB_UNSAFE_CHILD";
 
@@ -42,11 +42,11 @@ fn isolated(test: &str, body: fn()) {
 /// reference dies with the process.
 fn init() {
     // SAFETY: no arguments; libgit2 counts initialisations under its own lock.
-    assert!(unsafe { ffi::git_libgit2_init() } > 0);
+    assert!(unsafe { sys::git_libgit2_init() } > 0);
 }
 
-fn zeroed_buf() -> ffi::git_buf {
-    ffi::git_buf {
+fn zeroed_buf() -> sys::git_buf {
+    sys::git_buf {
         ptr: ptr::null_mut(),
         reserved: 0,
         size: 0,
@@ -56,24 +56,24 @@ fn zeroed_buf() -> ffi::git_buf {
 fn set_option(option: u32, value: *const c_char) {
     // SAFETY: the string options copy their `const char *`, or restore their default
     // for NULL.
-    let ret = unsafe { ffi::git_libgit2_opts(option.cast_signed(), value) };
+    let ret = unsafe { sys::git_libgit2_opts(option.cast_signed(), value) };
     assert_eq!(ret, 0);
 }
 
 /// A `GIT_OPT_GET_*` option taking a `git_buf *` into `buf`.
-fn get_option(option: u32, buf: &mut ffi::git_buf) {
+fn get_option(option: u32, buf: &mut sys::git_buf) {
     // SAFETY: the option takes a `git_buf *` that is zeroed, disposed or as a libgit2
     // routine left it, which it fills.
-    let rc = unsafe { ffi::git_libgit2_opts(option.cast_signed(), &raw mut *buf) };
+    let rc = unsafe { sys::git_libgit2_opts(option.cast_signed(), &raw mut *buf) };
     assert_eq!(rc, 0);
 }
 
 /// An allocation of libgit2's of `reserved` bytes holding `bytes` and a NUL, as C code
 /// filling a buffer makes one.
-fn c_buf(bytes: &[u8], reserved: usize) -> ffi::git_buf {
+fn c_buf(bytes: &[u8], reserved: usize) -> sys::git_buf {
     assert!(reserved > bytes.len());
     // SAFETY: the routine ignores `backend`; any length.
-    let p = unsafe { ffi::git_odb_backend_data_alloc(ptr::null_mut(), reserved) }.cast::<u8>();
+    let p = unsafe { sys::git_odb_backend_data_alloc(ptr::null_mut(), reserved) }.cast::<u8>();
     assert!(!p.is_null());
     // SAFETY: `p` holds `reserved` writable bytes, distinct from `bytes`.
     unsafe { p.copy_from_nonoverlapping(bytes.as_ptr(), bytes.len()) };
@@ -81,7 +81,7 @@ fn c_buf(bytes: &[u8], reserved: usize) -> ffi::git_buf {
     let value2 = unsafe { p.add(bytes.len()) };
     // SAFETY: as above.
     unsafe { value2.write(0) };
-    ffi::git_buf {
+    sys::git_buf {
         ptr: p.cast(),
         reserved,
         size: bytes.len(),
@@ -102,22 +102,22 @@ fn adopting_git_buf_init_owns_nothing() {
 #[test]
 fn adopting_an_unowned_buffer_never_reads_or_frees_it() {
     let shapes = [
-        ffi::git_buf {
+        sys::git_buf {
             ptr: NonNull::<c_char>::dangling().as_ptr(),
             reserved: 0,
             size: 0,
         },
-        ffi::git_buf {
+        sys::git_buf {
             ptr: NonNull::<c_char>::dangling().as_ptr(),
             reserved: 0,
             size: usize::MAX,
         },
-        ffi::git_buf {
+        sys::git_buf {
             ptr: ptr::null_mut(),
             reserved: 0,
             size: 7,
         },
-        ffi::git_buf {
+        sys::git_buf {
             ptr: ptr::without_provenance_mut(0x1001),
             reserved: 0,
             size: 1,
@@ -203,8 +203,8 @@ fn adopting_what_libgit2_leaves() {
         concat!(module_path!(), "::adopting_what_libgit2_leaves"),
         || {
             init();
-            let (ua, tp) = (ffi::GIT_OPT_GET_USER_AGENT, ffi::GIT_OPT_GET_TEMPLATE_PATH);
-            set_option(ffi::GIT_OPT_SET_TEMPLATE_PATH, c"".as_ptr());
+            let (ua, tp) = (sys::GIT_OPT_GET_USER_AGENT, sys::GIT_OPT_GET_TEMPLATE_PATH);
+            set_option(sys::GIT_OPT_SET_TEMPLATE_PATH, c"".as_ptr());
 
             let mut raw = zeroed_buf();
             get_option(ua, &mut raw);
@@ -238,7 +238,7 @@ fn adopting_what_libgit2_leaves() {
             let mut raw = zeroed_buf();
             get_option(ua, &mut raw);
             // SAFETY: `raw` owns a libgit2 allocation.
-            unsafe { ffi::git_buf_dispose(&raw mut raw) };
+            unsafe { sys::git_buf_dispose(&raw mut raw) };
             assert!(!raw.ptr.is_null() && raw.reserved == 0);
             // SAFETY: `raw` is as `git_buf_dispose` left it.
             drop(unsafe { Buf::from_raw(raw) });
@@ -268,7 +268,7 @@ fn adopting_what_libgit2_leaves() {
             let buf = unsafe { Buf::from_raw(raw) };
             assert_eq!(buf.as_ref().as_c_str(), taken[0].as_c_str());
 
-            set_option(ffi::GIT_OPT_SET_TEMPLATE_PATH, ptr::null());
+            set_option(sys::GIT_OPT_SET_TEMPLATE_PATH, ptr::null());
             // Adopted buffers and taken strings cross threads.
             let n = thread::spawn(move || {
                 let n = buf.as_ref().len();
@@ -291,7 +291,7 @@ fn adopted_buffers_handed_back_to_c() {
     let buf = unsafe { Buf::from_raw(c_buf(b"abc", 9)) };
     let mut raw = buf.into_inner().into_raw();
     // SAFETY: `raw` owns its allocation, which C now releases.
-    unsafe { ffi::git_buf_dispose(&raw mut raw) };
+    unsafe { sys::git_buf_dispose(&raw mut raw) };
     // SAFETY: `raw` is as `git_buf_dispose` left it: the static empty string.
     let buf = unsafe { Buf::from_raw(raw) };
     assert_eq!((buf.as_ref().as_c_str(), buf.as_ref().capacity()), (c"", 0));

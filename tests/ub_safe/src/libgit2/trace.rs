@@ -19,15 +19,15 @@ use std::collections::HashSet;
 use std::hint::black_box;
 use std::thread;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::trace::TraceLevel;
+use libgit2::sys::libgit2 as sys;
 
 /// Every value around the declared ones, then a coarse stride across the whole type;
 /// `BorrowSanitizer` instruments each comparison, so the probe set stays small.
-fn probes() -> impl Iterator<Item = ffi::git_trace_level_t> {
+fn probes() -> impl Iterator<Item = sys::git_trace_level_t> {
     (0..=64)
-        .chain((0..=ffi::git_trace_level_t::MAX).step_by(1 << 26))
-        .chain([ffi::git_trace_level_t::MAX - 1, ffi::git_trace_level_t::MAX])
+        .chain((0..=sys::git_trace_level_t::MAX).step_by(1 << 26))
+        .chain([sys::git_trace_level_t::MAX - 1, sys::git_trace_level_t::MAX])
 }
 
 #[test]

@@ -8,4 +8,3 @@ publish = false
 
 [dependencies]
 libgit2 = { path = "../../../../../.." }
-libgit2-sys = { path = "../../../../../../libgit2-sys" }

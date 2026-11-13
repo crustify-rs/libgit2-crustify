@@ -32,11 +32,11 @@ use std::sync::atomic::Ordering::SeqCst;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 
 use ffibox::CZeroable;
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::odb::OdbDataStrFree;
 use libgit2::libgit2::src::util::alloc::{
     Alloc, AllocBox, AllocStr, AllocVec, Allocator, ArrayFree, FreeFn, MallocFn, ReallocFn, StrFree,
 };
+use libgit2::sys::libgit2 as sys;
 
 const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 
@@ -97,7 +97,7 @@ fn same<F: Copy>(a: Option<F>, b: Option<F>, addr: fn(F) -> usize) -> bool {
     a.map(addr) == b.map(addr)
 }
 
-fn assert_same_members(rust: &Allocator, c: &ffi::git_allocator) {
+fn assert_same_members(rust: &Allocator, c: &sys::git_allocator) {
     let r = rust.as_ref();
     assert!(same(r.malloc(), c.gmalloc, |f: MallocFn| f as usize));
     assert!(same(r.realloc(), c.grealloc, |f: ReallocFn| f as usize));
@@ -112,7 +112,7 @@ fn member_writes_match_a_raw_allocator() {
     let (fa, fb): (FreeFn, FreeFn) = (free_a, free_b);
 
     let mut rust = Allocator::from_fns(ma, ra, fa);
-    let mut c = ffi::git_allocator {
+    let mut c = sys::git_allocator {
         gmalloc: Some(ma),
         grealloc: Some(ra),
         gfree: Some(fa),
@@ -383,7 +383,7 @@ fn last_error() -> (c_int, CString) {
     {
         // SAFETY: `git_error_last` never returns NULL; the error is copied out before the
         // next libgit2 call on this thread.
-        let e = unsafe { ffi::git_error_last() };
+        let e = unsafe { sys::git_error_last() };
         // SAFETY: as above.
         let klass = unsafe { (*e).klass };
         // SAFETY: as above.
@@ -393,16 +393,16 @@ fn last_error() -> (c_int, CString) {
     }
 }
 
-fn set_str(class: ffi::git_error_t, message: &CStr) -> c_int {
+fn set_str(class: sys::git_error_t, message: &CStr) -> c_int {
     // SAFETY: `message` is a live C string, which libgit2 copies.
-    unsafe { ffi::git_error_set_str(class.cast_signed(), message.as_ptr()) }
+    unsafe { sys::git_error_set_str(class.cast_signed(), message.as_ptr()) }
 }
 
-fn install(allocator: *const ffi::git_allocator) {
+fn install(allocator: *const sys::git_allocator) {
     // SAFETY: `allocator` is NULL (the default allocator) or addresses a
     // `git_allocator` with every member set, which libgit2 copies; every family
     // installed here is libc-backed, so live blocks stay valid across the switch.
-    let rc = unsafe { ffi::git_libgit2_opts(ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(), allocator) };
+    let rc = unsafe { sys::git_libgit2_opts(sys::GIT_OPT_SET_ALLOCATOR.cast_signed(), allocator) };
     assert_eq!(rc, 0);
 }
 
@@ -426,9 +426,9 @@ fn workload() -> Vec<Step> {
         };
         let long = CString::new("libgit2 grows its message buffer ".repeat(64)).unwrap();
         // The thread's error state is allocated, then its message buffer grows.
-        step(&mut || set_str(ffi::GIT_ERROR_CONFIG, c"short"));
-        step(&mut || set_str(ffi::GIT_ERROR_ODB, &long));
-        step(&mut || set_str(ffi::GIT_ERROR_INDEX, c"shrinks back"));
+        step(&mut || set_str(sys::GIT_ERROR_CONFIG, c"short"));
+        step(&mut || set_str(sys::GIT_ERROR_ODB, &long));
+        step(&mut || set_str(sys::GIT_ERROR_INDEX, c"shrinks back"));
         // An allocation libgit2 makes and frees for the caller.
         step(&mut || {
             OdbDataStrFree::dup(c"a string").map_or(-1, |s| i32::try_from(s.len()).unwrap())
@@ -438,22 +438,22 @@ fn workload() -> Vec<Step> {
             {
                 // SAFETY: the routines ignore `backend`; a NULL result owns nothing, and a
                 // block is released once.
-                let p = unsafe { ffi::git_odb_backend_data_alloc(ptr::null_mut(), 0) };
+                let p = unsafe { sys::git_odb_backend_data_alloc(ptr::null_mut(), 0) };
                 let got = !p.is_null();
                 // SAFETY: as above.
-                unsafe { ffi::git_odb_backend_data_free(ptr::null_mut(), p) };
+                unsafe { sys::git_odb_backend_data_free(ptr::null_mut(), p) };
                 c_int::from(got)
             }
         });
         // A refused allocation, reported as out of memory.
         step(&mut || {
             // SAFETY: the routine ignores `backend`; a NULL result owns nothing.
-            let p = unsafe { ffi::git_odb_backend_data_alloc(ptr::null_mut(), REFUSED) };
+            let p = unsafe { sys::git_odb_backend_data_alloc(ptr::null_mut(), REFUSED) };
             c_int::from(p.is_null())
         });
         step(&mut || {
             // SAFETY: no arguments.
-            unsafe { ffi::git_error_clear() };
+            unsafe { sys::git_error_clear() };
             0
         });
         // Trace the thread's exit, which frees its error state after this returns.
@@ -479,7 +479,7 @@ fn libgit2_drives_both_allocators_alike() {
     isolated(
         concat!(module_path!(), "::libgit2_drives_both_allocators_alike"),
         || {
-            let c_side = ffi::git_allocator {
+            let c_side = sys::git_allocator {
                 gmalloc: Some(c_traced_malloc),
                 grealloc: Some(c_traced_realloc),
                 gfree: Some(c_traced_free),
@@ -487,9 +487,9 @@ fn libgit2_drives_both_allocators_alike() {
             let rust_side = Allocator::new::<Traced>();
             install(&raw const c_side);
             // SAFETY: no arguments; refcounted, never released in this process.
-            assert!(unsafe { ffi::git_libgit2_init() } > 0);
+            assert!(unsafe { sys::git_libgit2_init() } > 0);
 
-            let run = |allocator: *const ffi::git_allocator| {
+            let run = |allocator: *const sys::git_allocator| {
                 install(allocator);
                 workload()
             };
@@ -541,7 +541,7 @@ fn libgit2_drives_both_allocators_alike() {
                 "{:?}",
                 c_steps[4].events
             );
-            assert_eq!(c_steps[5].error.0, ffi::GIT_ERROR_NOMEMORY.cast_signed());
+            assert_eq!(c_steps[5].error.0, sys::GIT_ERROR_NOMEMORY.cast_signed());
         },
     );
 }
@@ -622,18 +622,18 @@ unsafe fn bytes_at(p: *const c_void, len: usize) -> Vec<u8> {
 /// Makes `req` on `side`: 1 and what it holds when it made something, -1 when it was
 /// refused.
 fn request(side: Side, req: Req) -> (c_int, Vec<u8>, Option<Made>) {
-    let sig = size_of::<ffi::git_signature>();
+    let sig = size_of::<sys::git_signature>();
     let (made, held) = match (side, req) {
         // Each side fills its uninitialised signature, untraced, so that every box
         // released holds one.
         (Side::C, Req::Malloc) => {
             // SAFETY: any size.
-            let p = unsafe { ffi::git__malloc(sig) };
+            let p = unsafe { sys::git__malloc(sig) };
             if !p.is_null() {
                 // SAFETY: a fresh allocation of `sig` bytes, aligned for the struct.
                 unsafe {
-                    p.cast::<ffi::git_signature>()
-                        .write(ffi::git_signature::default());
+                    p.cast::<sys::git_signature>()
+                        .write(sys::git_signature::default());
                 }
             }
             (NonNull::new(p).map(|p| Made::Box(p.as_ptr())), Vec::new())
@@ -641,7 +641,7 @@ fn request(side: Side, req: Req) -> (c_int, Vec<u8>, Option<Made>) {
         (Side::Rust, Req::Malloc) => (
             AllocBox::<Sig>::new_uninit().map(|mut b| {
                 // SAFETY: the box's fresh storage for one `git_signature`.
-                unsafe { b.as_c_ptr().write(ffi::git_signature::default()) };
+                unsafe { b.as_c_ptr().write(sys::git_signature::default()) };
                 // SAFETY: just filled.
                 Made::Box(unsafe { b.assume_init() }.into_raw().cast())
             }),
@@ -649,7 +649,7 @@ fn request(side: Side, req: Req) -> (c_int, Vec<u8>, Option<Made>) {
         ),
         (Side::C, Req::CallocOne) => {
             // SAFETY: any sizes.
-            let p = unsafe { ffi::git__calloc(1, sig) };
+            let p = unsafe { sys::git__calloc(1, sig) };
             // SAFETY: a non-NULL `p` holds `sig` zeroed bytes.
             let held = unsafe { bytes_at(p, sig) };
             (NonNull::new(p).map(|p| Made::Box(p.as_ptr())), held)
@@ -664,7 +664,7 @@ fn request(side: Side, req: Req) -> (c_int, Vec<u8>, Option<Made>) {
         },
         (Side::C, Req::CallocRun(n)) => {
             // SAFETY: any sizes, an overflowing product refused.
-            let p = unsafe { ffi::git__calloc(n, 8) };
+            let p = unsafe { sys::git__calloc(n, 8) };
             // SAFETY: a non-NULL `p` holds `8 * n` zeroed bytes, a product that does not
             // overflow then; a NULL one is never read.
             let held = unsafe { bytes_at(p, n.wrapping_mul(8)) };
@@ -680,7 +680,7 @@ fn request(side: Side, req: Req) -> (c_int, Vec<u8>, Option<Made>) {
         },
         (Side::C, Req::MallocArray(n)) => {
             // SAFETY: any sizes, an overflowing product refused.
-            let p = unsafe { ffi::git__mallocarray(n, 4) };
+            let p = unsafe { sys::git__mallocarray(n, 4) };
             (
                 NonNull::new(p).map(|p| Made::Run(p.as_ptr(), n)),
                 Vec::new(),
@@ -695,7 +695,7 @@ fn request(side: Side, req: Req) -> (c_int, Vec<u8>, Option<Made>) {
         ),
         (Side::C, Req::Strdup(s) | Req::StrClone(s)) => {
             // SAFETY: a live C string, read for the call.
-            str_made(unsafe { ffi::git__strdup(s.as_ptr()) }, None)
+            str_made(unsafe { sys::git__strdup(s.as_ptr()) }, None)
         }
         (Side::Rust, Req::Strdup(s)) => str_made(
             StrFree::dup(s).map_or(ptr::null_mut(), AllocStr::into_raw),
@@ -716,7 +716,7 @@ fn request(side: Side, req: Req) -> (c_int, Vec<u8>, Option<Made>) {
         }
         (Side::C, Req::Strndup(run)) => {
             // SAFETY: C reads at most `run.len()` bytes, all in `run`.
-            str_made(unsafe { ffi::git__strndup(run_ptr(run), run.len()) }, None)
+            str_made(unsafe { sys::git__strndup(run_ptr(run), run.len()) }, None)
         }
         (Side::Rust, Req::Strndup(run)) => str_made(
             StrFree::dup_prefix(run).map_or(ptr::null_mut(), AllocStr::into_raw),
@@ -724,7 +724,7 @@ fn request(side: Side, req: Req) -> (c_int, Vec<u8>, Option<Made>) {
         ),
         (Side::C, Req::Substrdup(run)) => str_made(
             // SAFETY: C copies exactly `run.len()` bytes, all in `run`.
-            unsafe { ffi::git__substrdup(run_ptr(run), run.len()) },
+            unsafe { sys::git__substrdup(run_ptr(run), run.len()) },
             Some(run.len() + 1),
         ),
         (Side::Rust, Req::Substrdup(run)) => str_made(
@@ -755,11 +755,11 @@ fn release(side: Side, made: Made) -> c_int {
     match (side, made) {
         (Side::C, Made::Box(p) | Made::Run(p, _)) => {
             // SAFETY: a live allocation of libgit2's allocator, given up.
-            unsafe { ffi::git__free(p) }
+            unsafe { sys::git__free(p) }
         }
         (Side::C, Made::Str(p)) => {
             // SAFETY: as above.
-            unsafe { ffi::git__free(p.cast()) }
+            unsafe { sys::git__free(p.cast()) }
         }
         (Side::Rust, Made::Box(p)) => {
             // SAFETY: a live `git_signature` in libgit2's allocator, given up to the box,
@@ -781,8 +781,8 @@ fn release(side: Side, made: Made) -> c_int {
 
 /// The requests the primitives' workload makes, and the size whose refusal fails each.
 const REQUESTS: [(Req, usize); 14] = [
-    (Req::Malloc, size_of::<ffi::git_signature>()),
-    (Req::CallocOne, size_of::<ffi::git_signature>()),
+    (Req::Malloc, size_of::<sys::git_signature>()),
+    (Req::CallocOne, size_of::<sys::git_signature>()),
     (Req::CallocRun(5), 40),
     (Req::CallocRun(0), 0),
     (Req::MallocArray(3), 12),
@@ -804,7 +804,7 @@ fn primitive_workload(make: Side, free: Side) -> (Vec<Step>, Vec<Vec<u8>>) {
     let mut numbering = Numbering::default();
     let mut steps = Vec::new();
     let mut step = |f: &mut dyn FnMut() -> c_int| {
-        set_str(ffi::GIT_ERROR_INVALID, c"marker");
+        set_str(sys::GIT_ERROR_INVALID, c"marker");
         TRACE.lock().unwrap().clear();
         TRACING.store(true, SeqCst);
         let result = f();
@@ -856,16 +856,16 @@ fn strategies_match_their_primitives() {
     isolated(
         concat!(module_path!(), "::strategies_match_their_primitives"),
         || {
-            let c_side = ffi::git_allocator {
+            let c_side = sys::git_allocator {
                 gmalloc: Some(c_traced_malloc),
                 grealloc: Some(c_traced_realloc),
                 gfree: Some(c_traced_free),
             };
             install(&raw const c_side);
             // SAFETY: no arguments; refcounted, never released in this process.
-            assert!(unsafe { ffi::git_libgit2_init() } > 0);
+            assert!(unsafe { sys::git_libgit2_init() } > 0);
             // The thread's error state is allocated before any step.
-            set_str(ffi::GIT_ERROR_INVALID, c"marker");
+            set_str(sys::GIT_ERROR_INVALID, c"marker");
 
             let (c_steps, c_held) = primitive_workload(Side::C, Side::C);
             for (make, free) in [
@@ -885,7 +885,7 @@ fn strategies_match_their_primitives() {
             // The comparison saw what it is about: requests through `gmalloc` and, for
             // `git__mallocarray`, `grealloc`; zero-byte blocks; refusals and overflows
             // reported as out of memory; and one release per block made.
-            let sig = size_of::<ffi::git_signature>();
+            let sig = size_of::<sys::git_signature>();
             let malloc = |s: &Step| match s.events[..] {
                 [Event::Malloc { len, got, .. }] => Some((len, got.is_some())),
                 _ => None,
@@ -919,7 +919,7 @@ fn strategies_match_their_primitives() {
             assert!(
                 failures
                     .iter()
-                    .all(|s| s.result == -1 && s.error.0 == ffi::GIT_ERROR_NOMEMORY.cast_signed())
+                    .all(|s| s.result == -1 && s.error.0 == sys::GIT_ERROR_NOMEMORY.cast_signed())
             );
             // The overflows asked the allocator nothing.
             assert!(failures[refused..].iter().all(|s| s.events.is_empty()));
@@ -934,7 +934,7 @@ fn strategies_match_their_primitives() {
     );
 }
 
-ffibox::define_ctype!(Sig, SigRef, SigMut, ffi::git_signature);
+ffibox::define_ctype!(Sig, SigRef, SigMut, sys::git_signature);
 
 // SAFETY: all zero is two NULL strings and a zero time, which `git_signature_free` and
 // `rust_free` accept, and which nothing reads before it is filled.
@@ -964,11 +964,11 @@ const NAME: &CStr = c"  Ann Example ";
 const EMAIL: &CStr = c" ann@example.org; ";
 
 /// `git_signature_new(NAME, EMAIL, 1234, -90)`, as the side builds it.
-fn sig_new(side: Side, out: &mut *mut ffi::git_signature) -> c_int {
+fn sig_new(side: Side, out: &mut *mut sys::git_signature) -> c_int {
     match side {
         Side::C => {
             // SAFETY: `out` is writable; both strings are live C strings.
-            unsafe { ffi::git_signature_new(out, NAME.as_ptr(), EMAIL.as_ptr(), 1234, -90) }
+            unsafe { sys::git_signature_new(out, NAME.as_ptr(), EMAIL.as_ptr(), 1234, -90) }
         }
         Side::Rust => {
             let Some(sig) = AllocBox::<Sig>::new_zeroed() else {
@@ -976,7 +976,7 @@ fn sig_new(side: Side, out: &mut *mut ffi::git_signature) -> c_int {
             };
             let name = StrFree::dup_bytes(trimmed(NAME.to_bytes())).unwrap();
             let email = StrFree::dup_bytes(trimmed(EMAIL.to_bytes())).unwrap();
-            let when = ffi::git_time {
+            let when = sys::git_time {
                 time: 1234,
                 offset: -90,
                 sign: b'-'.cast_signed(),
@@ -992,10 +992,10 @@ fn fill(
     sig: AllocBox<Sig>,
     name: AllocStr,
     email: AllocStr,
-    when: ffi::git_time,
-) -> *mut ffi::git_signature {
+    when: sys::git_time,
+) -> *mut sys::git_signature {
     let p = sig.into_c();
-    let filled = ffi::git_signature {
+    let filled = sys::git_signature {
         name: name.into_raw(),
         email: email.into_raw(),
         when,
@@ -1007,10 +1007,10 @@ fn fill(
 }
 
 /// `git_signature_dup(src)`, as the side copies it.
-fn sig_dup(side: Side, out: &mut *mut ffi::git_signature, src: *const ffi::git_signature) -> c_int {
+fn sig_dup(side: Side, out: &mut *mut sys::git_signature, src: *const sys::git_signature) -> c_int {
     match side {
         // SAFETY: `out` is writable; `src` is a live signature.
-        Side::C => unsafe { ffi::git_signature_dup(out, src) },
+        Side::C => unsafe { sys::git_signature_dup(out, src) },
         Side::Rust => {
             let Some(sig) = AllocBox::<Sig>::new_zeroed() else {
                 return -1;
@@ -1028,10 +1028,10 @@ fn sig_dup(side: Side, out: &mut *mut ffi::git_signature, src: *const ffi::git_s
 }
 
 /// `git_signature_free(sig)`, as the side releases it.
-fn sig_free(side: Side, sig: *mut ffi::git_signature) -> c_int {
+fn sig_free(side: Side, sig: *mut sys::git_signature) -> c_int {
     match side {
         // SAFETY: `sig` is a live signature of libgit2's allocator, given up.
-        Side::C => unsafe { ffi::git_signature_free(sig) },
+        Side::C => unsafe { sys::git_signature_free(sig) },
         Side::Rust => {
             // SAFETY: `sig` is a live signature.
             let raw = unsafe { sig.read() };
@@ -1050,7 +1050,7 @@ fn sig_free(side: Side, sig: *mut ffi::git_signature) -> c_int {
 }
 
 /// What a signature holds.
-fn contents(sig: *const ffi::git_signature) -> Contents {
+fn contents(sig: *const sys::git_signature) -> Contents {
     // SAFETY: `sig` is a live signature.
     let sig = unsafe { sig.read() };
     // SAFETY: its strings are live and NUL-terminated.
@@ -1069,7 +1069,7 @@ fn signature_workload(new: Side, dup: Side, free: Side) -> (Vec<Step>, Vec<Conte
     let mut steps = Vec::new();
     let mut step = |f: &mut dyn FnMut() -> c_int| {
         // A marker error, which a step that reports nothing leaves in place.
-        set_str(ffi::GIT_ERROR_INVALID, c"marker");
+        set_str(sys::GIT_ERROR_INVALID, c"marker");
         TRACE.lock().unwrap().clear();
         TRACING.store(true, SeqCst);
         let result = f();
@@ -1086,7 +1086,7 @@ fn signature_workload(new: Side, dup: Side, free: Side) -> (Vec<Step>, Vec<Conte
     step(&mut || sig_dup(dup, &mut q, p));
     let built = vec![contents(p), contents(q)];
     // The first allocation refused: nothing is built, out of memory is reported.
-    REFUSE.store(size_of::<ffi::git_signature>(), SeqCst);
+    REFUSE.store(size_of::<sys::git_signature>(), SeqCst);
     step(&mut || sig_new(new, &mut r));
     step(&mut || sig_dup(dup, &mut r, p));
     REFUSE.store(0, SeqCst);
@@ -1105,16 +1105,16 @@ fn strategies_allocate_and_release_as_libgit2_does() {
             "::strategies_allocate_and_release_as_libgit2_does"
         ),
         || {
-            let c_side = ffi::git_allocator {
+            let c_side = sys::git_allocator {
                 gmalloc: Some(c_traced_malloc),
                 grealloc: Some(c_traced_realloc),
                 gfree: Some(c_traced_free),
             };
             install(&raw const c_side);
             // SAFETY: no arguments; refcounted, never released in this process.
-            assert!(unsafe { ffi::git_libgit2_init() } > 0);
+            assert!(unsafe { sys::git_libgit2_init() } > 0);
             // The thread's error state is allocated before any step.
-            set_str(ffi::GIT_ERROR_INVALID, c"marker");
+            set_str(sys::GIT_ERROR_INVALID, c"marker");
 
             let (c_steps, c_built) = signature_workload(Side::C, Side::C, Side::C);
             for (new, dup, free) in [
@@ -1134,7 +1134,7 @@ fn strategies_allocate_and_release_as_libgit2_does() {
             install(ptr::null());
 
             // The comparison saw what it is about.
-            let sig = size_of::<ffi::git_signature>();
+            let sig = size_of::<sys::git_signature>();
             let lens = |s: &Step| {
                 s.events
                     .iter()
@@ -1151,7 +1151,7 @@ fn strategies_allocate_and_release_as_libgit2_does() {
             assert_eq!(lens(&c_steps[4]), [(0, true); 3]);
             assert_eq!(c_steps[0].error.1.as_c_str(), c"marker");
             assert_eq!(c_steps[2].result, -1);
-            assert_eq!(c_steps[2].error.0, ffi::GIT_ERROR_NOMEMORY.cast_signed());
+            assert_eq!(c_steps[2].error.0, sys::GIT_ERROR_NOMEMORY.cast_signed());
             assert_eq!(
                 c_built[0],
                 (
@@ -1183,10 +1183,10 @@ mod resizes {
     use std::mem::MaybeUninit;
     use std::ptr::{self, NonNull};
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::settings::set_allocator;
     use libgit2::libgit2::src::util::alloc::{Alloc, AllocVec, Allocator, ArrayFree};
     use libgit2::libgit2::src::util::errors;
+    use libgit2::sys::libgit2 as sys;
 
     use super::isolated;
 
@@ -1237,7 +1237,7 @@ mod resizes {
     /// The class of the thread's last libgit2 error, read after a failed C call.
     fn c_error_class() -> c_int {
         // SAFETY: no arguments.
-        let e = unsafe { ffi::git_error_last() };
+        let e = unsafe { sys::git_error_last() };
         // SAFETY: `git_error_last` never returns NULL; the class is read at once.
         unsafe { (*e).klass }
     }
@@ -1251,7 +1251,7 @@ mod resizes {
             ptr::null_mut()
         } else {
             // SAFETY: any sizes; a fresh run of `start` elements.
-            unsafe { ffi::git__mallocarray(start, 4) }
+            unsafe { sys::git__mallocarray(start, 4) }
         };
         let mut c = CRun { data, len: start };
         let mut rust = if start == 0 {
@@ -1266,10 +1266,10 @@ mod resizes {
             let resized = if bytes {
                 // SAFETY: `c.data` is NULL or the live run, given up on success; the size
                 // is non-zero.
-                unsafe { ffi::git__realloc(c.data, len * 4) }
+                unsafe { sys::git__realloc(c.data, len * 4) }
             } else {
                 // SAFETY: as above.
-                unsafe { ffi::git__reallocarray(c.data, len, 4) }
+                unsafe { sys::git__reallocarray(c.data, len, 4) }
             };
             let c_class = resized.is_null().then(c_error_class);
             let rust_out = if bytes {
@@ -1312,7 +1312,7 @@ mod resizes {
             );
         }
         // SAFETY: the live run, given up once.
-        unsafe { ffi::git__free(c.data) };
+        unsafe { sys::git__free(c.data) };
         drop(rust);
     }
 
@@ -1404,17 +1404,17 @@ mod resizes {
 // failing one, leaves storage alone, so each may replace any other.
 
 mod installed {
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::settings::set_allocator;
     use libgit2::libgit2::src::util::alloc::{Allocator, global_init, installed};
     use libgit2::libgit2::src::util::allocators::failalloc::FailAlloc;
+    use libgit2::sys::libgit2 as sys;
 
     use super::isolated;
 
     /// The global's members as C reads them, by address.
     fn c_reads() -> [usize; 3] {
         // SAFETY: a read of the global, which no other thread writes in this process.
-        let g = unsafe { (&raw const ffi::git__allocator).read() };
+        let g = unsafe { (&raw const sys::git__allocator).read() };
         [
             g.gmalloc.map_or(0, |f| f as usize),
             g.grealloc.map_or(0, |f| f as usize),
@@ -1433,9 +1433,9 @@ mod installed {
     }
 
     /// The raw value of `a`, for C's routines to copy.
-    fn raw(a: &Allocator) -> ffi::git_allocator {
+    fn raw(a: &Allocator) -> sys::git_allocator {
         let r = a.as_ref();
-        ffi::git_allocator {
+        sys::git_allocator {
             gmalloc: r.malloc(),
             grealloc: r.realloc(),
             gfree: r.free(),
@@ -1463,17 +1463,17 @@ mod installed {
         let mut failing = raw(&FAIL);
         // SAFETY: no other thread runs, and every family installed here shares libc's storage
         // or leaves storage alone, so any may replace any other; C copies the live value.
-        unsafe { ffi::git_allocator_setup(&raw mut failing) };
+        unsafe { sys::git_allocator_setup(&raw mut failing) };
         // SAFETY: as above.
         unsafe { set_allocator(allocator.map(Allocator::as_ref)) };
         let rust = rust_reads();
         assert_eq!(rust, c_reads());
         // SAFETY: as above.
-        unsafe { ffi::git_allocator_setup(&raw mut failing) };
+        unsafe { sys::git_allocator_setup(&raw mut failing) };
         let mut copy = allocator.map(raw);
         let arg = copy.as_mut().map_or(std::ptr::null_mut(), |c| &raw mut *c);
         // SAFETY: as above; `arg` is NULL or a live value C copies.
-        let rc = unsafe { ffi::git_allocator_setup(arg) };
+        let rc = unsafe { sys::git_allocator_setup(arg) };
         assert_eq!(rc, 0);
         (rust, c_reads())
     }
@@ -1483,14 +1483,14 @@ mod installed {
     fn both_global_inits(from: &Allocator) -> ([usize; 3], [usize; 3]) {
         let mut start = raw(from);
         // SAFETY: as in `both_setups`.
-        unsafe { ffi::git_allocator_setup(&raw mut start) };
+        unsafe { sys::git_allocator_setup(&raw mut start) };
         // SAFETY: as above.
         unsafe { global_init() };
         let rust = rust_reads();
         // SAFETY: as above.
-        unsafe { ffi::git_allocator_setup(&raw mut start) };
+        unsafe { sys::git_allocator_setup(&raw mut start) };
         // SAFETY: as above.
-        let rc = unsafe { ffi::git_allocator_global_init() };
+        let rc = unsafe { sys::git_allocator_global_init() };
         assert_eq!(rc, 0);
         (rust, c_reads())
     }

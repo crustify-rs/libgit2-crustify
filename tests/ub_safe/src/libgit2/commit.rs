@@ -525,7 +525,7 @@ mod commit {
         let as_object: ObjectArc<'_> = commit.as_ref().as_object().to_object();
         assert_eq!(
             object_view(&as_object),
-            (COMMITS[1].into(), libgit2::ffi::GIT_OBJECT_COMMIT)
+            (COMMITS[1].into(), libgit2::sys::libgit2::GIT_OBJECT_COMMIT)
         );
         let back = Commit::into_object(commit);
         drop(from_view);
@@ -619,7 +619,7 @@ mod commit {
         drop(derived);
         assert_eq!(
             object_view(&Tree::into_object(tree)).1,
-            libgit2::ffi::GIT_OBJECT_TREE
+            libgit2::sys::libgit2::GIT_OBJECT_TREE
         );
     }
 
@@ -691,10 +691,10 @@ mod commit {
 mod getters {
     use std::ffi::{CStr, CString};
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::commit::{Commit, CommitArc, CommitArray};
     use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
     use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+    use libgit2::sys::libgit2 as raw;
 
     use crate::fixture::TempRepo;
     use crate::fixture::object_and_tree_entry::{open_testrepo, repository, write_raw};
@@ -863,7 +863,7 @@ mod getters {
         ];
         let mut held = Vec::new();
         for (raw, message, encoding, summary) in &cases {
-            let oid = write_raw(&tmp, raw.as_bytes(), ffi::GIT_OBJECT_COMMIT);
+            let oid = write_raw(&tmp, raw.as_bytes(), raw::GIT_OBJECT_COMMIT);
             let commit = Commit::lookup(repository(&tmp), oid.as_ref()).unwrap();
             let c = commit.as_ref();
             assert_eq!(
@@ -1707,11 +1707,11 @@ mod signatures {
     use std::ffi::{CStr, CString};
     use std::thread;
 
-    use libgit2::ffi;
     use libgit2::libgit2::src::libgit2::commit::{create_with_signature, extract_signature};
     use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
     use libgit2::libgit2::src::libgit2::repository::Repository;
     use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+    use libgit2::sys::libgit2 as raw;
 
     use crate::fixture::TempRepo;
     use crate::fixture::object_and_tree_entry::{repository, write_raw};
@@ -1739,7 +1739,7 @@ mod signatures {
     /// A bare repository holding the empty tree.
     fn repo_with_tree(tag: &str) -> (TempRepo, Oid) {
         let repo = TempRepo::new(&format!("signatures-{tag}"));
-        let tree = write_raw(&repo, b"", ffi::GIT_OBJECT_TREE);
+        let tree = write_raw(&repo, b"", raw::GIT_OBJECT_TREE);
         (repo, tree)
     }
 
@@ -1812,7 +1812,7 @@ mod signatures {
         assert_eq!((e.raw_code(), e.class()), (-1, Some(ErrorClass::Object)));
         assert_eq!(e.message(), c"malformed header");
 
-        let blob = write_raw(&temp, b"not a commit", ffi::GIT_OBJECT_BLOB);
+        let blob = write_raw(&temp, b"not a commit", raw::GIT_OBJECT_BLOB);
         let e = extract_signature(repo, blob.as_ref(), None).unwrap_err();
         assert_eq!(
             (e.code(), e.class()),

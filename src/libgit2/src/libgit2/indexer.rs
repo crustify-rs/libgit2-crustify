@@ -43,8 +43,8 @@ use std::panic::{self, AssertUnwindSafe};
 
 use ffibox::{CMutSeam, CRefSeam, CZeroable, define_ctype};
 
-use crate::ffi;
 use crate::libgit2::src::util::errors::ErrorCode;
+use crate::sys::libgit2 as sys;
 
 define_ctype!(
     /// The progress of indexing a packfile (`git_indexer_progress`): how many objects and
@@ -63,7 +63,7 @@ define_ctype!(
     IndexerProgress,
     IndexerProgressRef,
     IndexerProgressMut,
-    ffi::git_indexer_progress
+    sys::git_indexer_progress
 );
 
 // SAFETY: every field is a plain integer, so all zero is every counter at 0, a value every
@@ -100,15 +100,15 @@ impl Default for IndexerProgress {
 }
 
 /// The `git_indexer_progress` value as it is, for code that already holds one by value.
-impl From<ffi::git_indexer_progress> for IndexerProgress {
-    fn from(raw: ffi::git_indexer_progress) -> IndexerProgress {
+impl From<sys::git_indexer_progress> for IndexerProgress {
+    fn from(raw: sys::git_indexer_progress) -> IndexerProgress {
         IndexerProgress(raw, PhantomData)
     }
 }
 
 /// The `git_indexer_progress` value, for code that passes one by value.
-impl From<IndexerProgress> for ffi::git_indexer_progress {
-    fn from(progress: IndexerProgress) -> ffi::git_indexer_progress {
+impl From<IndexerProgress> for sys::git_indexer_progress {
+    fn from(progress: IndexerProgress) -> sys::git_indexer_progress {
         progress.0
     }
 }
@@ -217,7 +217,7 @@ impl IndexerProgressRef<'_> {
     /// borrows.
     #[must_use]
     pub fn to_progress(&self) -> IndexerProgress {
-        IndexerProgress::from(ffi::git_indexer_progress {
+        IndexerProgress::from(sys::git_indexer_progress {
             total_objects: self.total_objects(),
             indexed_objects: self.indexed_objects(),
             received_objects: self.received_objects(),
@@ -392,8 +392,8 @@ impl Hash for IndexerProgress {
 // An `IndexerProgress` is a `git_indexer_progress`, so C reads and writes a value Rust holds in
 // place.
 const _: () = assert!(
-    size_of::<IndexerProgress>() == size_of::<ffi::git_indexer_progress>()
-        && align_of::<IndexerProgress>() == align_of::<ffi::git_indexer_progress>()
+    size_of::<IndexerProgress>() == size_of::<sys::git_indexer_progress>()
+        && align_of::<IndexerProgress>() == align_of::<sys::git_indexer_progress>()
 );
 
 /// The closure behind a [`ProgressCallback`].
@@ -489,7 +489,7 @@ impl<'f> ProgressCallback<'f> {
     /// otherwise cancel and resume from.
     pub(crate) fn walk_with<R>(
         &mut self,
-        walk: impl FnOnce(ffi::git_indexer_progress_cb, *mut c_void) -> R,
+        walk: impl FnOnce(sys::git_indexer_progress_cb, *mut c_void) -> R,
     ) -> R {
         self.panic = None;
         let result = walk(Some(progress_with), ptr::from_mut(self).cast());
@@ -515,7 +515,7 @@ impl fmt::Debug for ProgressCallback<'_> {
 /// `payload` must address a live [`ProgressCallback`] that nothing else uses during the
 /// call, and `stats` be NULL or a `git_indexer_progress` live and unchanged for the call.
 unsafe extern "C" fn progress_with(
-    stats: *const ffi::git_indexer_progress,
+    stats: *const sys::git_indexer_progress,
     payload: *mut c_void,
 ) -> c_int {
     // SAFETY: per this function's contract, `payload` is a live callback borrowed for the
@@ -553,8 +553,8 @@ mod unit_tests {
     use crate::libgit2::src::libgit2::odb::{Odb, OdbArc};
     use crate::libgit2::src::util::errors;
 
-    fn raw(seed: u32) -> ffi::git_indexer_progress {
-        ffi::git_indexer_progress {
+    fn raw(seed: u32) -> sys::git_indexer_progress {
+        sys::git_indexer_progress {
             total_objects: seed,
             indexed_objects: seed.wrapping_add(1),
             received_objects: seed.wrapping_add(2),
@@ -602,7 +602,7 @@ mod unit_tests {
             assert_eq!(r.total_deltas(), seed.wrapping_add(4));
             assert_eq!(r.indexed_deltas(), seed.wrapping_add(5));
             assert_eq!(r.received_bytes(), usize::MAX - seed as usize);
-            let back = ffi::git_indexer_progress::from(progress);
+            let back = sys::git_indexer_progress::from(progress);
             let expected = raw(seed);
             assert_eq!(
                 (
@@ -633,7 +633,7 @@ mod unit_tests {
         let copy = progress.as_ref().to_progress();
         assert_eq!(copy, progress);
         assert_eq!(
-            ffi::git_indexer_progress::from(copy).received_bytes,
+            sys::git_indexer_progress::from(copy).received_bytes,
             usize::MAX - 7
         );
     }
@@ -748,7 +748,7 @@ mod unit_tests {
         odb: &OdbArc<'_>,
         pack: &[u8],
         piece: usize,
-        callback: ffi::git_indexer_progress_cb,
+        callback: sys::git_indexer_progress_cb,
         payload: *mut c_void,
     ) -> Run {
         let mut wp = ptr::null_mut();
@@ -756,7 +756,7 @@ mod unit_tests {
         // backends open the writepack; the callback and its payload stay valid until the
         // writepack is freed below, within the caller's `walk_with`.
         let rc = unsafe {
-            ffi::git_odb_write_pack(
+            sys::git_odb_write_pack(
                 &raw mut wp,
                 odb.as_ref().as_ptr().cast_mut(),
                 callback,

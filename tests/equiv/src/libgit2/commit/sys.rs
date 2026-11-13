@@ -24,13 +24,13 @@ use std::ffi::{CStr, CString, c_int, c_void};
 use std::path::PathBuf;
 use std::ptr;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::commit::{
     ParentCallback, create_from_callback, create_from_ids,
 };
 use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
 use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryError};
 use libgit2::libgit2::src::libgit2::signature::{SignatureView, Time};
+use libgit2::sys::libgit2 as sys;
 
 const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 const MISSING: &str = "dededededededededededededededededededede";
@@ -95,7 +95,7 @@ type Outcome = Result<String, (c_int, c_int, String)>;
 
 fn init() {
     // SAFETY: no arguments; the reference is never released.
-    assert!(unsafe { ffi::git_libgit2_init() } >= 1);
+    assert!(unsafe { sys::git_libgit2_init() } >= 1);
 }
 
 fn scratch(side: &str) -> (PathBuf, CString) {
@@ -125,44 +125,44 @@ fn hex(id: &Id, written: &[String]) -> String {
 }
 
 /// The parents a C callback hands out, with the count.
-struct Parents(Vec<ffi::git_oid>);
+struct Parents(Vec<sys::git_oid>);
 
-unsafe extern "C" fn c_parent(idx: usize, payload: *mut c_void) -> *const ffi::git_oid {
+unsafe extern "C" fn c_parent(idx: usize, payload: *mut c_void) -> *const sys::git_oid {
     // SAFETY: the payload is the live `Parents` of the call, only read.
     let parents = unsafe { &*payload.cast::<Parents>() };
     parents.0.get(idx).map_or(ptr::null(), ptr::from_ref)
 }
 
-fn c_oid(hex: &str) -> ffi::git_oid {
-    let mut id = ffi::git_oid::default();
+fn c_oid(hex: &str) -> sys::git_oid {
+    let mut id = sys::git_oid::default();
     let h = CString::new(hex).unwrap();
     // SAFETY: a writable id and 40 hex digits.
-    let rc = unsafe { ffi::git_oid_from_string(&raw mut id, h.as_ptr(), ffi::GIT_OID_SHA1) };
+    let rc = unsafe { sys::git_oid_from_string(&raw mut id, h.as_ptr(), sys::GIT_OID_SHA1) };
     assert_eq!(rc, 0);
     id
 }
 
-fn c_run(repo: *mut ffi::git_repository, written: &mut Vec<String>, step: &Step) -> Outcome {
+fn c_run(repo: *mut sys::git_repository, written: &mut Vec<String>, step: &Step) -> Outcome {
     let (by_callback, update_ref, tree, parents, message) = *step;
-    let sig = ffi::git_signature {
+    let sig = sys::git_signature {
         name: c"A U Thor".as_ptr().cast_mut(),
         email: c"a@example.com".as_ptr().cast_mut(),
-        when: ffi::git_time {
+        when: sys::git_time {
             time: 1_700_000_000,
             offset: 90,
             sign: b'+'.cast_signed(),
         },
     };
     let tree = c_oid(&hex(&tree, written));
-    let ids: Vec<ffi::git_oid> = parents.iter().map(|p| c_oid(&hex(p, written))).collect();
-    let mut out = ffi::git_oid::default();
+    let ids: Vec<sys::git_oid> = parents.iter().map(|p| c_oid(&hex(p, written))).collect();
+    let mut out = sys::git_oid::default();
     let update_ref = update_ref.map_or(ptr::null(), CStr::as_ptr);
     let rc = if by_callback {
         let mut payload = Parents(ids);
         // SAFETY: a writable id, the live repository, a signature over static strings,
         // NULL or NUL-terminated strings, and a callback over the live payload.
         unsafe {
-            ffi::git_commit_create_from_callback(
+            sys::git_commit_create_from_callback(
                 &raw mut out,
                 repo,
                 update_ref,
@@ -176,10 +176,10 @@ fn c_run(repo: *mut ffi::git_repository, written: &mut Vec<String>, step: &Step)
             )
         }
     } else {
-        let mut ptrs: Vec<*const ffi::git_oid> = ids.iter().map(ptr::from_ref).collect();
+        let mut ptrs: Vec<*const sys::git_oid> = ids.iter().map(ptr::from_ref).collect();
         // SAFETY: as above, with `ptrs.len()` live ids.
         unsafe {
-            ffi::git_commit_create_from_ids(
+            sys::git_commit_create_from_ids(
                 &raw mut out,
                 repo,
                 update_ref,
@@ -197,7 +197,7 @@ fn c_run(repo: *mut ffi::git_repository, written: &mut Vec<String>, step: &Step)
         let (class, msg) = {
             // SAFETY: after init `git_error_last` never returns NULL; its message is copied
             // at once.
-            let e = unsafe { ffi::git_error_last() };
+            let e = unsafe { sys::git_error_last() };
             // SAFETY: as above.
             let klass = unsafe { (*e).klass };
             // SAFETY: as above.
@@ -214,7 +214,7 @@ fn c_run(repo: *mut ffi::git_repository, written: &mut Vec<String>, step: &Step)
     }
     let mut buf = [0u8; 41];
     // SAFETY: the id just written; 41 writable bytes, NUL included.
-    unsafe { ffi::git_oid_tostr(buf.as_mut_ptr().cast(), buf.len(), &raw const out) };
+    unsafe { sys::git_oid_tostr(buf.as_mut_ptr().cast(), buf.len(), &raw const out) };
     let h = CStr::from_bytes_until_nul(&buf)
         .unwrap()
         .to_str()
@@ -317,7 +317,7 @@ fn creation_by_id_scripts_match_body() {
     let (c_dir, c_path) = scratch("c");
     let mut c_repo = ptr::null_mut();
     // SAFETY: a writable slot and a NUL-terminated path.
-    let rc = unsafe { ffi::git_repository_init(&raw mut c_repo, c_path.as_ptr(), 1) };
+    let rc = unsafe { sys::git_repository_init(&raw mut c_repo, c_path.as_ptr(), 1) };
     assert_eq!(rc, 0);
     let (dir, path) = scratch("rust");
     let rust = Repository::init(&path, true).unwrap();
@@ -334,7 +334,7 @@ fn creation_by_id_scripts_match_body() {
     assert_eq!(failures, 5);
     drop(rust);
     // SAFETY: the C side's repository, released once.
-    unsafe { ffi::git_repository_free(c_repo) };
+    unsafe { sys::git_repository_free(c_repo) };
     drop(std::fs::remove_dir_all(dir));
     drop(std::fs::remove_dir_all(c_dir));
 }
@@ -382,7 +382,7 @@ fn unwritable_object_databases_fail_alike_body() {
     let (c_dir, c_path) = scratch("c");
     let mut c_repo = ptr::null_mut();
     // SAFETY: a writable slot and a NUL-terminated path.
-    let rc = unsafe { ffi::git_repository_init(&raw mut c_repo, c_path.as_ptr(), 1) };
+    let rc = unsafe { sys::git_repository_init(&raw mut c_repo, c_path.as_ptr(), 1) };
     assert_eq!(rc, 0);
     let (dir, path) = scratch("rust");
     let rust = Repository::init(&path, true).unwrap();
@@ -401,7 +401,7 @@ fn unwritable_object_databases_fail_alike_body() {
     }
     drop(rust);
     // SAFETY: the C side's repository, released once.
-    unsafe { ffi::git_repository_free(c_repo) };
+    unsafe { sys::git_repository_free(c_repo) };
     drop(std::fs::remove_dir_all(dir));
     drop(std::fs::remove_dir_all(c_dir));
 }

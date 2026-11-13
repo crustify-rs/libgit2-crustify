@@ -11,12 +11,12 @@ use std::ffi::CString;
 
 use ffibox::{CDrop, CMutSeam, CRefSeam, CZeroable};
 
-use crate::ffi;
 use crate::libgit2::src::libgit2::commit::{Commit, CommitRef};
 use crate::libgit2::src::libgit2::iterator::{NoteIterator, NoteIteratorBox};
 use crate::libgit2::src::libgit2::oid::Oid;
 use crate::libgit2::src::libgit2::repository::{RepositoryError, RepositoryRef};
 use crate::libgit2::src::util::errors::ErrorCode;
+use crate::sys::libgit2 as sys;
 
 /// Releases the iterator's owned traversal storage and tree references through C.
 /// No external state is needed and no repository reference is released.
@@ -32,7 +32,7 @@ unsafe impl<'r> CDrop<NoteIterator<'r>> for NoteIteratorFree {
     unsafe fn c_drop(&self, ptr: NonNull<NoteIterator<'r>>) {
         // SAFETY: the caller transfers the live allocation once; transparent
         // NoteIterator preserves its C pointer and the repository is still live.
-        unsafe { ffi::git_note_iterator_free(ptr.as_ptr().cast()) }
+        unsafe { sys::git_note_iterator_free(ptr.as_ptr().cast()) }
     }
 }
 
@@ -90,7 +90,7 @@ impl<'r> NoteIterator<'r> {
         // thread and `name` a NUL string read for the call only. Raw seam until
         // `git_reference_name_to_id` has a safe wrapper.
         let rc = unsafe {
-            ffi::git_reference_name_to_id(
+            sys::git_reference_name_to_id(
                 id.as_mut().as_mut_ptr(),
                 repo.as_ptr().cast_mut(),
                 name.as_ptr(),
@@ -133,7 +133,7 @@ impl<'r> NoteIterator<'r> {
         // `tree`, held until it returns, in the cache or rereads it, so it fails
         // only in the C defect documented above.
         let rc =
-            unsafe { ffi::git_note_commit_iterator_new(&raw mut out, commit.as_ptr().cast_mut()) };
+            unsafe { sys::git_note_commit_iterator_new(&raw mut out, commit.as_ptr().cast_mut()) };
         drop(tree);
         if rc < 0 {
             return Err(RepositoryError::from_libgit2(rc));
@@ -181,16 +181,16 @@ mod unit_tests {
         // accepts a missing tree, so use the raw object writer only for this fixture.
         let content = b"tree 1111111111111111111111111111111111111111\nauthor A <a@b> 1 +0000\ncommitter A <a@b> 1 +0000\n\nnotes\n";
         let odb = repo.as_ref().odb().unwrap();
-        let mut raw_id = ffi::git_oid::default();
+        let mut raw_id = sys::git_oid::default();
         // SAFETY: odb is live, content readable for its length, and raw_id writable.
         // The ODB accepts arbitrary bytes; the commit parser validates them below.
         let rc = unsafe {
-            ffi::git_odb_write(
+            sys::git_odb_write(
                 &raw mut raw_id,
                 odb.as_c_ptr(),
                 content.as_ptr().cast(),
                 content.len(),
-                ffi::GIT_OBJECT_COMMIT,
+                sys::GIT_OBJECT_COMMIT,
             )
         };
         assert_eq!(rc, 0);

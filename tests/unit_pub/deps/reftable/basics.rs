@@ -15,12 +15,12 @@ use std::mem::MaybeUninit;
 use std::panic;
 
 use ffibox::CZeroable;
-use libgit2::ffi;
 use libgit2::libgit2::deps::reftable::basics::{
     Buf, BufMut, BufRef, BufVal, Error, HashId, LenOutOfRange, Names, NamesRef, NamesVec,
     ReftableArrayFree, ReftableBox, ReftableStr, ReftableVec, UnnamedHashId, binsearch,
     parse_names,
 };
+use libgit2::sys::libgit2 as sys;
 
 #[test]
 fn hash_id_converts_from_and_to_its_c_value() {
@@ -28,7 +28,7 @@ fn hash_id_converts_from_and_to_its_c_value() {
     assert_eq!(HashId::from_raw(247), Some(HashId::Sha256));
     assert_eq!(HashId::Sha1.raw(), 89);
     assert_eq!(HashId::Sha256.raw(), 247);
-    assert_eq!(ffi::reftable_hash::from(HashId::Sha256), 247);
+    assert_eq!(sys::reftable_hash::from(HashId::Sha256), 247);
     assert_eq!(HashId::try_from(89), Ok(HashId::Sha1));
 }
 
@@ -455,22 +455,22 @@ fn errors_carry_reftable_codes_and_messages() {
     for (error, code, message) in [
         (
             Error::Format,
-            ffi::REFTABLE_FORMAT_ERROR,
+            sys::REFTABLE_FORMAT_ERROR,
             "corrupt reftable file",
         ),
         (
             Error::Api,
-            ffi::REFTABLE_API_ERROR,
+            sys::REFTABLE_API_ERROR,
             "misuse of the reftable API",
         ),
         (
             Error::OutOfMemory,
-            ffi::REFTABLE_OUT_OF_MEMORY_ERROR,
+            sys::REFTABLE_OUT_OF_MEMORY_ERROR,
             "out of memory",
         ),
         (
             Error::Other(-2),
-            ffi::REFTABLE_IO_ERROR,
+            sys::REFTABLE_IO_ERROR,
             "reftable error code -2",
         ),
     ] {

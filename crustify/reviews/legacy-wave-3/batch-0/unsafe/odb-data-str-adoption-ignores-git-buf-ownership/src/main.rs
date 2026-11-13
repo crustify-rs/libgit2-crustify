@@ -11,19 +11,19 @@
 use std::ffi::{c_char, c_int};
 use std::ptr;
 
-use libgit2::ffi;
+use libgit2::sys::libgit2 as sys;
 use libgit2::libgit2::raw::OdbDataStr;
 
 fn main() {
     // SAFETY: no arguments; the reference dies with the process.
-    assert!(unsafe { ffi::git_libgit2_init() } > 0);
+    assert!(unsafe { sys::git_libgit2_init() } > 0);
     // SAFETY: `GIT_OPT_SET_TEMPLATE_PATH` takes a `const char *`, which it copies.
-    let rc = unsafe { ffi::git_libgit2_opts(ffi::GIT_OPT_SET_TEMPLATE_PATH as c_int, c"".as_ptr()) };
+    let rc = unsafe { sys::git_libgit2_opts(sys::GIT_OPT_SET_TEMPLATE_PATH as c_int, c"".as_ptr()) };
     assert_eq!(rc, 0);
 
-    let mut out = ffi::git_buf { ptr: ptr::null_mut(), reserved: 0, size: 0 };
+    let mut out = sys::git_buf { ptr: ptr::null_mut(), reserved: 0, size: 0 };
     // SAFETY: `GIT_OPT_GET_TEMPLATE_PATH` takes a zeroed `git_buf *`, which it fills.
-    let rc = unsafe { ffi::git_libgit2_opts(ffi::GIT_OPT_GET_TEMPLATE_PATH as c_int, &raw mut out) };
+    let rc = unsafe { sys::git_libgit2_opts(sys::GIT_OPT_GET_TEMPLATE_PATH as c_int, &raw mut out) };
     assert_eq!(rc, 0);
     assert!(!out.ptr.is_null(), "libgit2 points an empty buffer at its static empty string");
     assert_eq!((out.reserved, out.size), (0, 0), "the buffer owns no allocation");

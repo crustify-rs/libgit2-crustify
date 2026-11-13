@@ -9,9 +9,9 @@
 use core::ffi::{CStr, c_char};
 use core::ptr;
 
-use libgit2::ffi;
 use libgit2::libgit2::src::util::alloc::{AllocStr, StrFree};
 use libgit2::libgit2::src::util::strlist::{NullStrList, NullStrListFree, StrList, StrListFree};
+use libgit2::sys::libgit2 as sys;
 
 fn strs(list: &[AllocStr]) -> Vec<&CStr> {
     list.iter().map(AllocStr::as_c_str).collect()
@@ -58,7 +58,7 @@ mod str_list_from_raw_parts {
         drop(StrListFree::copy(&[c"init"]).unwrap());
         let mut out: *mut *mut c_char = ptr::null_mut();
         // SAFETY: two live strings borrowed for the call; `out` is a writable slot.
-        let rc = unsafe { ffi::git_strlist_copy(&raw mut out, source.as_ptr().cast_mut(), 2) };
+        let rc = unsafe { sys::git_strlist_copy(&raw mut out, source.as_ptr().cast_mut(), 2) };
         assert_eq!(rc, 0);
         // SAFETY: `out` is the copy's array of two strings, given up to the list.
         let list = unsafe { StrList::from_raw_parts(out, 2) }.unwrap();
@@ -151,7 +151,7 @@ mod null_str_list_from_raw {
             // SAFETY: live strings borrowed for the call (none read when empty); `out` is a
             // writable slot.
             let rc = unsafe {
-                ffi::git_strlist_copy_with_null(
+                sys::git_strlist_copy_with_null(
                     &raw mut out,
                     source.as_ptr().cast_mut(),
                     source.len(),

@@ -46,9 +46,9 @@ use ffibox::{
     CBorrowedPtr, CBox, CCell, CDrop, CDupClone, CMutSeam, CRefSeam, define_ctype, impl_cdrop,
 };
 
-use crate::ffi;
 use crate::libgit2::src::libgit2::oid::OidRef;
 use crate::libgit2::src::util::errors::{ErrorBuf, last, runtime_pinned};
+use crate::sys::libgit2 as sys;
 
 /// The kind of a Git reference: whether it points at an object id or at another
 /// reference.
@@ -64,40 +64,40 @@ use crate::libgit2::src::util::errors::{ErrorBuf, last, runtime_pinned};
 #[non_exhaustive]
 pub enum ReferenceType {
     /// A reference that points at an object id.
-    Direct = ffi::GIT_REFERENCE_DIRECT,
+    Direct = sys::GIT_REFERENCE_DIRECT,
     /// A reference that points at another reference.
-    Symbolic = ffi::GIT_REFERENCE_SYMBOLIC,
+    Symbolic = sys::GIT_REFERENCE_SYMBOLIC,
 }
 
 impl ReferenceType {
     /// The variant whose C value is `raw`; `None` for `GIT_REFERENCE_INVALID`,
     /// `GIT_REFERENCE_ALL` and every value the header does not name.
     #[must_use]
-    pub const fn from_raw(raw: ffi::git_reference_t) -> Option<Self> {
+    pub const fn from_raw(raw: sys::git_reference_t) -> Option<Self> {
         match raw {
-            ffi::GIT_REFERENCE_DIRECT => Some(Self::Direct),
-            ffi::GIT_REFERENCE_SYMBOLIC => Some(Self::Symbolic),
+            sys::GIT_REFERENCE_DIRECT => Some(Self::Direct),
+            sys::GIT_REFERENCE_SYMBOLIC => Some(Self::Symbolic),
             _ => None,
         }
     }
 
     /// The C value, as libgit2's functions return it.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_reference_t {
-        self as ffi::git_reference_t
+    pub const fn raw(self) -> sys::git_reference_t {
+        self as sys::git_reference_t
     }
 }
 
-impl TryFrom<ffi::git_reference_t> for ReferenceType {
+impl TryFrom<sys::git_reference_t> for ReferenceType {
     type Error = NotAReferenceType;
 
-    fn try_from(raw: ffi::git_reference_t) -> Result<Self, NotAReferenceType> {
+    fn try_from(raw: sys::git_reference_t) -> Result<Self, NotAReferenceType> {
         Self::from_raw(raw).ok_or(NotAReferenceType(raw))
     }
 }
 
-impl From<ReferenceType> for ffi::git_reference_t {
-    fn from(value: ReferenceType) -> ffi::git_reference_t {
+impl From<ReferenceType> for sys::git_reference_t {
+    fn from(value: ReferenceType) -> sys::git_reference_t {
         value.raw()
     }
 }
@@ -106,12 +106,12 @@ impl From<ReferenceType> for ffi::git_reference_t {
 /// `GIT_REFERENCE_ALL`, or a value the header does not name. [`raw`](Self::raw) has
 /// it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct NotAReferenceType(ffi::git_reference_t);
+pub struct NotAReferenceType(sys::git_reference_t);
 
 impl NotAReferenceType {
     /// The value, as it was converted.
     #[must_use]
-    pub const fn raw(self) -> ffi::git_reference_t {
+    pub const fn raw(self) -> sys::git_reference_t {
         self.0
     }
 }
@@ -161,7 +161,7 @@ impl std::error::Error for NotAReferenceType {}
 /// Wraps `st::git_reference`
 #[doc(alias = "git_reference")]
 #[repr(transparent)]
-pub struct Reference<'r>(ffi::git_reference, PhantomData<(*const (), &'r ())>);
+pub struct Reference<'r>(sys::git_reference, PhantomData<(*const (), &'r ())>);
 
 /// Shared borrow of a [`Reference`]. `Copy`, like `&T`.
 #[repr(transparent)]
@@ -184,7 +184,7 @@ pub struct ReferenceMut<'a, 'r>(
 // `ReferenceMut` is invariant in the reference through its
 // `PhantomData<&'a mut Reference<'r>>`.
 unsafe impl<'r> CCell for Reference<'r> {
-    type C = ffi::git_reference;
+    type C = sys::git_reference;
     type Mut<'a>
         = ReferenceMut<'a, 'r>
     where
@@ -256,7 +256,7 @@ define_ctype!(
     UnattachedReference,
     UnattachedReferenceRef,
     UnattachedReferenceMut,
-    ffi::git_reference
+    sys::git_reference
 );
 
 // SAFETY: an unattached reference is one `git__calloc`'d struct, with its name inline,
@@ -306,7 +306,7 @@ unsafe impl<'r> CDrop<Reference<'r>> for ReferenceFree {
         // SAFETY: per `c_drop`'s contract, `ptr` addresses a live reference whose
         // ownership the caller gives up; `Reference` is transparent over
         // `git_reference`.
-        unsafe { ffi::git_reference_free(ptr.as_ptr().cast()) }
+        unsafe { sys::git_reference_free(ptr.as_ptr().cast()) }
     }
 }
 
@@ -329,7 +329,7 @@ unsafe impl<'r> CDupClone<Reference<'r>> for ReferenceFree {
         // `c_dup`'s contract and `Reference`'s invariant, read and its database count
         // incremented for the call only. The runtime is pinned, so a failure is reported
         // on live thread-local state.
-        let rc = unsafe { ffi::git_reference_dup(&raw mut out, ptr.as_ptr().cast()) };
+        let rc = unsafe { sys::git_reference_dup(&raw mut out, ptr.as_ptr().cast()) };
         if rc < 0 {
             return None;
         }
@@ -342,7 +342,7 @@ impl_cdrop!(
     #[doc(alias = "git_reference_free")]
     ReferenceFree,
     UnattachedReference,
-    ffi::git_reference_free
+    sys::git_reference_free
 );
 
 /// An owned [`Reference`], freed by `git_reference_free` on drop and copied by
@@ -379,7 +379,7 @@ impl UnattachedReference {
         // as libgit2 asserts, and `peel` NULL or a live `git_oid`; all are copied for
         // the call only. The result is NULL or a fresh reference the caller owns. The
         // runtime is pinned, so a failure is reported on live thread-local state.
-        let reference = unsafe { ffi::git_reference__alloc(name.as_ptr(), target.as_ptr(), peel) };
+        let reference = unsafe { sys::git_reference__alloc(name.as_ptr(), target.as_ptr(), peel) };
         // SAFETY: NULL, or a fresh reference with no database that nothing else
         // references, released by `git_reference_free` as `ReferenceFree` does.
         unsafe { UnattachedReferenceBox::from_c(reference) }.ok_or_else(last)
@@ -405,7 +405,7 @@ impl UnattachedReference {
         // when the target's copy fails) or a fresh reference the caller owns. The
         // runtime is pinned, so a failure is reported on live thread-local state.
         let reference =
-            unsafe { ffi::git_reference__alloc_symbolic(name.as_ptr(), target.as_ptr()) };
+            unsafe { sys::git_reference__alloc_symbolic(name.as_ptr(), target.as_ptr()) };
         // SAFETY: NULL, or a fresh reference with no database that nothing else
         // references, released by `git_reference_free` as `ReferenceFree` does.
         unsafe { UnattachedReferenceBox::from_c(reference) }.ok_or_else(last)
@@ -514,8 +514,8 @@ mod unit_tests {
         // SAFETY: `Allocator` is `#[repr(transparent)]` over `git_allocator`, with every
         // member set; libgit2 copies it before anything is allocated.
         let rc = unsafe {
-            ffi::git_libgit2_opts(
-                ffi::GIT_OPT_SET_ALLOCATOR.cast_signed(),
+            sys::git_libgit2_opts(
+                sys::GIT_OPT_SET_ALLOCATOR.cast_signed(),
                 allocator.as_ref().as_ptr(),
             )
         };
@@ -526,7 +526,7 @@ mod unit_tests {
     /// stands in for the `git_repository` wrapper.
     struct TempRepo {
         path: PathBuf,
-        repo: *mut ffi::git_repository,
+        repo: *mut sys::git_repository,
     }
 
     impl TempRepo {
@@ -536,21 +536,21 @@ mod unit_tests {
                 .join(format!("crustify-refs-unit-{}-{tag}", std::process::id()));
             drop(std::fs::remove_dir_all(&path));
             let c_path = CString::new(path.as_os_str().as_bytes()).unwrap();
-            let mut opts = ffi::git_repository_init_options::default();
+            let mut opts = sys::git_repository_init_options::default();
             // SAFETY: `opts` is a live options struct, filled with the version's defaults.
             let rc = unsafe {
-                ffi::git_repository_init_options_init(
+                sys::git_repository_init_options_init(
                     &raw mut opts,
-                    ffi::GIT_REPOSITORY_INIT_OPTIONS_VERSION,
+                    sys::GIT_REPOSITORY_INIT_OPTIONS_VERSION,
                 )
             };
             assert_eq!(rc, 0);
-            opts.flags = ffi::GIT_REPOSITORY_INIT_BARE | ffi::GIT_REPOSITORY_INIT_MKDIR;
+            opts.flags = sys::GIT_REPOSITORY_INIT_BARE | sys::GIT_REPOSITORY_INIT_MKDIR;
             let mut repo = ptr::null_mut();
             // SAFETY: `repo` is a live slot, `c_path` NUL-terminated and `opts` a live
             // options struct, all read for the call only.
             let rc = unsafe {
-                ffi::git_repository_init_ext(&raw mut repo, c_path.as_ptr(), &raw mut opts)
+                sys::git_repository_init_ext(&raw mut repo, c_path.as_ptr(), &raw mut opts)
             };
             assert_eq!(rc, 0, "{:?}", last());
             Self { path, repo }
@@ -562,7 +562,7 @@ mod unit_tests {
             let mut out = ptr::null_mut();
             // SAFETY: `out` is a live slot, `self.repo` live and `name` NUL-terminated,
             // read for the call only.
-            let rc = unsafe { ffi::git_reference_lookup(&raw mut out, self.repo, name.as_ptr()) };
+            let rc = unsafe { sys::git_reference_lookup(&raw mut out, self.repo, name.as_ptr()) };
             assert_eq!(rc, 0, "{:?}", last());
             // SAFETY: a fresh attached reference the caller owns, released by
             // `git_reference_free`; it borrows `self`, which frees the repository.
@@ -574,22 +574,22 @@ mod unit_tests {
         fn drop(&mut self) {
             // SAFETY: the live repository `new` produced, freed once; every reference
             // read from it borrowed `self` and is gone.
-            unsafe { ffi::git_repository_free(self.repo) };
+            unsafe { sys::git_repository_free(self.repo) };
             drop(std::fs::remove_dir_all(&self.path));
         }
     }
 
-    fn name(reference: *const ffi::git_reference) -> CString {
+    fn name(reference: *const sys::git_reference) -> CString {
         // SAFETY: `reference` is a live reference; its NUL-terminated name lives as
         // long as it.
-        let reference_name = unsafe { ffi::git_reference_name(reference) };
+        let reference_name = unsafe { sys::git_reference_name(reference) };
         // SAFETY: as above.
         unsafe { CStr::from_ptr(reference_name) }.to_owned()
     }
 
-    fn symbolic_target(reference: *const ffi::git_reference) -> Option<CString> {
+    fn symbolic_target(reference: *const sys::git_reference) -> Option<CString> {
         // SAFETY: `reference` is a live reference; the target lives as long as it.
-        let target = unsafe { ffi::git_reference_symbolic_target(reference) };
+        let target = unsafe { sys::git_reference_symbolic_target(reference) };
         // SAFETY: NULL, or the reference's NUL-terminated target.
         (!target.is_null()).then(|| unsafe { CStr::from_ptr(target) }.to_owned())
     }
@@ -600,8 +600,8 @@ mod unit_tests {
 
     #[test]
     fn layout_matches_c() {
-        let pointer = size_of::<*mut ffi::git_reference>();
-        assert_eq!(size_of::<Reference<'_>>(), size_of::<ffi::git_reference>());
+        let pointer = size_of::<*mut sys::git_reference>();
+        assert_eq!(size_of::<Reference<'_>>(), size_of::<sys::git_reference>());
         assert_eq!(size_of::<ReferenceRef<'_, '_>>(), pointer);
         assert_eq!(size_of::<ReferenceMut<'_, '_>>(), pointer);
         assert_eq!(size_of::<ReferenceBox<'_>>(), pointer);
@@ -664,18 +664,18 @@ mod unit_tests {
             assert_eq!(name(p).as_c_str(), c"HEAD");
             assert_eq!(symbolic_target(p), symbolic_target(h));
             // SAFETY: both are live references.
-            assert_eq!(unsafe { ffi::git_reference_cmp(h, p) }, 0);
+            assert_eq!(unsafe { sys::git_reference_cmp(h, p) }, 0);
             // SAFETY: both are live attached references of `repo`.
-            let reference_owner = unsafe { ffi::git_reference_owner(p) };
+            let reference_owner = unsafe { sys::git_reference_owner(p) };
             // SAFETY: as above.
-            let owners = unsafe { (reference_owner, ffi::git_reference_owner(h)) };
+            let owners = unsafe { (reference_owner, sys::git_reference_owner(h)) };
             assert_eq!(owners.0, owners.1);
         }
         drop(head);
         drop(copy);
         // The last copy keeps its database: it still reaches the repository.
         // SAFETY: `c2` is live and attached.
-        assert_eq!(unsafe { ffi::git_reference_owner(c2) }, repo.repo);
+        assert_eq!(unsafe { sys::git_reference_owner(c2) }, repo.repo);
         assert_eq!(name(c2).as_c_str(), c"HEAD");
     }
 
@@ -689,7 +689,7 @@ mod unit_tests {
         // SAFETY: NUL-terminated name and a live id, copied; the result is a fresh
         // reference the caller owns.
         let raw = unsafe {
-            ffi::git_reference__alloc(
+            sys::git_reference__alloc(
                 c"refs/heads/raw".as_ptr(),
                 id.as_ref().as_ptr(),
                 ptr::null(),
@@ -727,12 +727,12 @@ mod unit_tests {
         let p = direct.as_ref().as_ptr();
         assert_eq!(name(p).as_c_str(), c"refs/tags/v1");
         // SAFETY: `p` is live.
-        let kind = unsafe { ffi::git_reference_type(p) };
-        assert_eq!(kind, ffi::GIT_REFERENCE_DIRECT);
+        let kind = unsafe { sys::git_reference_type(p) };
+        assert_eq!(kind, sys::GIT_REFERENCE_DIRECT);
         // SAFETY: `p` is live and direct.
-        let target = unsafe { ffi::git_reference_target(p) };
+        let target = unsafe { sys::git_reference_target(p) };
         // SAFETY: as above.
-        let peel = unsafe { ffi::git_reference_target_peel(p) };
+        let peel = unsafe { sys::git_reference_target_peel(p) };
         // SAFETY: the ids live as long as `p`.
         let target = unsafe { *target };
         // SAFETY: as above.
@@ -745,8 +745,8 @@ mod unit_tests {
         let p = symbolic.as_ref().as_ptr();
         assert_eq!(name(p).as_c_str(), c"HEAD");
         // SAFETY: `p` is live.
-        let kind = unsafe { ffi::git_reference_type(p) };
-        assert_eq!(kind, ffi::GIT_REFERENCE_SYMBOLIC);
+        let kind = unsafe { sys::git_reference_type(p) };
+        assert_eq!(kind, sys::GIT_REFERENCE_SYMBOLIC);
         assert_eq!(symbolic_target(p).as_deref(), Some(c"refs/heads/main"));
     }
 

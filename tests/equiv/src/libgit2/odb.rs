@@ -32,13 +32,13 @@ use std::path::{Path, PathBuf};
 use std::{fs, ptr};
 
 use ffibox::CZeroable;
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::object::ObjectType;
 use libgit2::libgit2::src::libgit2::odb::{
     LookupFlags, Odb, OdbArc, OdbError, OdbExpandId, OdbOptions, OdbRef,
 };
 use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
 use libgit2::libgit2::src::util::errors::ErrorBuf;
+use libgit2::sys::libgit2 as raw;
 
 /// Takes a `git_libgit2_init` reference that is never released.
 fn init() {
@@ -49,7 +49,7 @@ fn init() {
 fn c_last() -> (c_int, String) {
     // SAFETY: libgit2 is initialised; the result is a static error or this thread's
     // error state, live until the next libgit2 call on this thread.
-    let e = unsafe { ffi::git_error_last() };
+    let e = unsafe { raw::git_error_last() };
     assert!(!e.is_null());
     // SAFETY: `e` is live (above), with a NUL-terminated message; both are copied out
     // before any other libgit2 call.
@@ -102,17 +102,17 @@ fn c_path(path: &Path) -> CString {
 }
 
 /// One reference to an odb a C constructor built, released on drop.
-struct COdb(*mut ffi::git_odb);
+struct COdb(*mut raw::git_odb);
 
 impl Drop for COdb {
     fn drop(&mut self) {
         // SAFETY: `self.0` is the reference the constructor returned, released once.
-        unsafe { ffi::git_odb_free(self.0) };
+        unsafe { raw::git_odb_free(self.0) };
     }
 }
 
 /// A C constructor's result, as the Rust constructors report theirs.
-fn c_built(rc: c_int, out: *mut ffi::git_odb) -> Result<COdb, (c_int, String)> {
+fn c_built(rc: c_int, out: *mut raw::git_odb) -> Result<COdb, (c_int, String)> {
     if rc < 0 {
         assert!(out.is_null(), "a failed constructor left an odb");
         Err(c_last())
@@ -126,38 +126,38 @@ fn c_built(rc: c_int, out: *mut ffi::git_odb) -> Result<COdb, (c_int, String)> {
 fn c_new() -> Result<COdb, (c_int, String)> {
     let mut out = ptr::null_mut();
     // SAFETY: `out` is a writable slot, filled with a fresh reference on success.
-    let rc = unsafe { ffi::git_odb_new(&raw mut out) };
+    let rc = unsafe { raw::git_odb_new(&raw mut out) };
     c_built(rc, out)
 }
 
-fn c_options(oid_type: ffi::git_oid_t) -> ffi::git_odb_options {
-    ffi::git_odb_options {
-        version: ffi::GIT_ODB_OPTIONS_VERSION,
+fn c_options(oid_type: raw::git_oid_t) -> raw::git_odb_options {
+    raw::git_odb_options {
+        version: raw::GIT_ODB_OPTIONS_VERSION,
         oid_type,
     }
 }
 
-fn c_new_ext(opts: Option<&ffi::git_odb_options>) -> Result<COdb, (c_int, String)> {
+fn c_new_ext(opts: Option<&raw::git_odb_options>) -> Result<COdb, (c_int, String)> {
     let mut out = ptr::null_mut();
     let opts = opts.map_or(ptr::null(), ptr::from_ref);
     // SAFETY: `out` is a writable slot; `opts` is NULL or a live options struct, read
     // for the call only.
-    let rc = unsafe { ffi::git_odb_new_ext(&raw mut out, opts) };
+    let rc = unsafe { raw::git_odb_new_ext(&raw mut out, opts) };
     c_built(rc, out)
 }
 
 fn c_open(dir: &CStr) -> Result<COdb, (c_int, String)> {
     let mut out = ptr::null_mut();
     // SAFETY: `out` is a writable slot; `dir` is NUL-terminated, read for the call.
-    let rc = unsafe { ffi::git_odb_open(&raw mut out, dir.as_ptr()) };
+    let rc = unsafe { raw::git_odb_open(&raw mut out, dir.as_ptr()) };
     c_built(rc, out)
 }
 
-fn c_open_ext(dir: &CStr, opts: Option<&ffi::git_odb_options>) -> Result<COdb, (c_int, String)> {
+fn c_open_ext(dir: &CStr, opts: Option<&raw::git_odb_options>) -> Result<COdb, (c_int, String)> {
     let mut out = ptr::null_mut();
     let opts = opts.map_or(ptr::null(), ptr::from_ref);
     // SAFETY: as `c_open`; `opts` is NULL or a live options struct, read for the call.
-    let rc = unsafe { ffi::git_odb_open_ext(&raw mut out, dir.as_ptr(), opts) };
+    let rc = unsafe { raw::git_odb_open_ext(&raw mut out, dir.as_ptr(), opts) };
     c_built(rc, out)
 }
 
@@ -185,11 +185,11 @@ enum Op<'a> {
 enum Seen {
     Backends(usize),
     Written(Id),
-    Header(ffi::git_object_t, usize),
+    Header(raw::git_object_t, usize),
     Exists(c_int),
     Object {
         id: Id,
-        kind: ffi::git_object_t,
+        kind: raw::git_object_t,
         data: Vec<u8>,
         dup_is_same: bool,
     },
@@ -219,23 +219,23 @@ fn normalized(mut message: String) -> String {
 }
 
 /// Runs `op` on the live odb `odb`, through C.
-fn step(odb: *mut ffi::git_odb, op: Op<'_>) -> Seen {
+fn step(odb: *mut raw::git_odb, op: Op<'_>) -> Seen {
     match op {
         Op::Backends => {
             // SAFETY: `odb` is live; the routine reads its backend count under its lock.
-            Seen::Backends(unsafe { ffi::git_odb_num_backends(odb) })
+            Seen::Backends(unsafe { raw::git_odb_num_backends(odb) })
         }
         Op::Write(data) => {
-            let mut id = ffi::git_oid::default();
+            let mut id = raw::git_oid::default();
             // SAFETY: `id` is a writable `git_oid`; `data` is live for its length,
             // read for the call only.
             let rc = unsafe {
-                ffi::git_odb_write(
+                raw::git_odb_write(
                     &raw mut id,
                     odb,
                     data.as_ptr().cast(),
                     data.len(),
-                    ffi::GIT_OBJECT_BLOB,
+                    raw::GIT_OBJECT_BLOB,
                 )
             };
             if rc == 0 {
@@ -245,11 +245,11 @@ fn step(odb: *mut ffi::git_odb, op: Op<'_>) -> Seen {
             }
         }
         Op::Header((type_, id)) => {
-            let id = ffi::git_oid { type_, id };
-            let (mut len, mut kind) = (usize::MAX, ffi::git_object_t::MAX);
+            let id = raw::git_oid { type_, id };
+            let (mut len, mut kind) = (usize::MAX, raw::git_object_t::MAX);
             // SAFETY: `len` and `kind` are writable slots; `id` is a live `git_oid`.
             let rc = unsafe {
-                ffi::git_odb_read_header(&raw mut len, &raw mut kind, odb, &raw const id)
+                raw::git_odb_read_header(&raw mut len, &raw mut kind, odb, &raw const id)
             };
             if rc == 0 {
                 Seen::Header(kind, len)
@@ -258,20 +258,20 @@ fn step(odb: *mut ffi::git_odb, op: Op<'_>) -> Seen {
             }
         }
         Op::Exists((type_, id)) => {
-            let id = ffi::git_oid { type_, id };
+            let id = raw::git_oid { type_, id };
             // SAFETY: `id` is a live `git_oid`, read for the call only.
-            Seen::Exists(unsafe { ffi::git_odb_exists(odb, &raw const id) })
+            Seen::Exists(unsafe { raw::git_odb_exists(odb, &raw const id) })
         }
         Op::ExistsExt((type_, id), flags) => {
-            let id = ffi::git_oid { type_, id };
+            let id = raw::git_oid { type_, id };
             // SAFETY: as for `Exists`; `flags` is plain bits.
-            Seen::Exists(unsafe { ffi::git_odb_exists_ext(odb, &raw const id, flags) })
+            Seen::Exists(unsafe { raw::git_odb_exists_ext(odb, &raw const id, flags) })
         }
         Op::ExistsPrefix((type_, id), len) => {
-            let id = ffi::git_oid { type_, id };
-            let mut out = ffi::git_oid::default();
+            let id = raw::git_oid { type_, id };
+            let mut out = raw::git_oid::default();
             // SAFETY: `out` is a writable `git_oid`; `id` a live one of the odb's type.
-            let rc = unsafe { ffi::git_odb_exists_prefix(&raw mut out, odb, &raw const id, len) };
+            let rc = unsafe { raw::git_odb_exists_prefix(&raw mut out, odb, &raw const id, len) };
             if rc == 0 {
                 Seen::Found((out.type_, out.id))
             } else {
@@ -279,22 +279,22 @@ fn step(odb: *mut ffi::git_odb, op: Op<'_>) -> Seen {
             }
         }
         Op::Read((type_, id)) => {
-            let id = ffi::git_oid { type_, id };
+            let id = raw::git_oid { type_, id };
             let mut object = ptr::null_mut();
             // SAFETY: `object` is a writable slot; `id` a live id of the odb's type.
-            let rc = unsafe { ffi::git_odb_read(&raw mut object, odb, &raw const id) };
+            let rc = unsafe { raw::git_odb_read(&raw mut object, odb, &raw const id) };
             c_object(rc, object)
         }
         Op::ReadPrefix((type_, id), len) => {
-            let id = ffi::git_oid { type_, id };
+            let id = raw::git_oid { type_, id };
             let mut object = ptr::null_mut();
             // SAFETY: as for `Read`.
-            let rc = unsafe { ffi::git_odb_read_prefix(&raw mut object, odb, &raw const id, len) };
+            let rc = unsafe { raw::git_odb_read_prefix(&raw mut object, odb, &raw const id, len) };
             c_object(rc, object)
         }
         Op::Refresh => {
             // SAFETY: `odb` is live.
-            let rc = unsafe { ffi::git_odb_refresh(odb) };
+            let rc = unsafe { raw::git_odb_refresh(odb) };
             if rc == 0 {
                 Seen::Done
             } else {
@@ -306,18 +306,18 @@ fn step(odb: *mut ffi::git_odb, op: Op<'_>) -> Seen {
 
 /// What a C read returned `rc` for: the object in `object`, observed through
 /// `git_odb_object_*` and duplicated once, then released.
-fn c_object(rc: c_int, object: *mut ffi::git_odb_object) -> Seen {
+fn c_object(rc: c_int, object: *mut raw::git_odb_object) -> Seen {
     if rc != 0 {
         return Seen::Failed(rc, c_last());
     }
     // SAFETY: `object` is the live object the read returned; it is released below.
-    let id = unsafe { ffi::git_odb_object_id(object) };
+    let id = unsafe { raw::git_odb_object_id(object) };
     // SAFETY: the object's own id, live while the object is.
     let id = unsafe { id.read() };
     // SAFETY: as above.
-    let size = unsafe { ffi::git_odb_object_size(object) };
+    let size = unsafe { raw::git_odb_object_size(object) };
     // SAFETY: as above.
-    let data = unsafe { ffi::git_odb_object_data(object) }.cast::<u8>();
+    let data = unsafe { raw::git_odb_object_data(object) }.cast::<u8>();
     let data = if size == 0 {
         Vec::new()
     } else {
@@ -325,15 +325,15 @@ fn c_object(rc: c_int, object: *mut ffi::git_odb_object) -> Seen {
         unsafe { std::slice::from_raw_parts(data, size) }.to_vec()
     };
     // SAFETY: as above.
-    let kind = unsafe { ffi::git_odb_object_type(object) };
+    let kind = unsafe { raw::git_odb_object_type(object) };
     let mut dup = ptr::null_mut();
     // SAFETY: `dup` is a writable slot; `object` is live.
-    assert_eq!(unsafe { ffi::git_odb_object_dup(&raw mut dup, object) }, 0);
+    assert_eq!(unsafe { raw::git_odb_object_dup(&raw mut dup, object) }, 0);
     let dup_is_same = dup == object;
     // SAFETY: the duplicate's reference, released once.
-    unsafe { ffi::git_odb_object_free(dup) };
+    unsafe { raw::git_odb_object_free(dup) };
     // SAFETY: the read's reference, released once.
-    unsafe { ffi::git_odb_object_free(object) };
+    unsafe { raw::git_odb_object_free(object) };
     Seen::Object {
         id: (id.type_, id.id),
         kind,
@@ -379,7 +379,7 @@ fn rust_step(odb: OdbRef<'_, '_>, op: Op<'_>) -> Seen {
         let dup_is_same = libgit2::libgit2::src::libgit2::odb::OdbObjectArc::ptr_eq(&dup, &object);
         Seen::Object {
             id: id_of(&o.id().to_oid()),
-            kind: o.kind().map_or(ffi::GIT_OBJECT_INVALID, ObjectType::raw),
+            kind: o.kind().map_or(raw::GIT_OBJECT_INVALID, ObjectType::raw),
             data: o.data().to_vec(),
             dup_is_same,
         }
@@ -396,7 +396,7 @@ fn rust_step(odb: OdbRef<'_, '_>, op: Op<'_>) -> Seen {
             }
         },
         Op::Header(id) => rust_seen(odb.read_header(oid(id).as_ref()), |(len, kind)| {
-            Seen::Header(kind.map_or(ffi::GIT_OBJECT_INVALID, ObjectType::raw), len)
+            Seen::Header(kind.map_or(raw::GIT_OBJECT_INVALID, ObjectType::raw), len)
         }),
         Op::Exists(id) => Seen::Exists(odb.exists(oid(id).as_ref()).into()),
         Op::ExistsExt(id, flags) => Seen::Exists(
@@ -427,7 +427,7 @@ fn blank(seen: Seen, dir: Option<&CStr>) -> Seen {
 /// the writes produce feed the later steps, beside the zero id of `kind`, the odbs'
 /// type. `dirs` names the directories each side opened, which failures blank.
 fn compare_in(
-    c: *mut ffi::git_odb,
+    c: *mut raw::git_odb,
     rust: &OdbArc<'_>,
     kind: OidType,
     dirs: Option<(&CStr, &CStr)>,
@@ -454,7 +454,7 @@ fn compare_in(
         both(Op::Header(id));
         both(Op::Exists(id));
         both(Op::ExistsExt(id, 0));
-        both(Op::ExistsExt(id, ffi::GIT_ODB_LOOKUP_NO_REFRESH));
+        both(Op::ExistsExt(id, raw::GIT_ODB_LOOKUP_NO_REFRESH));
         both(Op::Read(id));
         for len in [3, 4, 9, hex - 1, hex, hex + 3] {
             both(Op::ReadPrefix(id, len));
@@ -479,12 +479,12 @@ fn blobs() -> Vec<Vec<u8>> {
     ]
 }
 
-fn compare_blobs(c: *mut ffi::git_odb, rust: &OdbArc<'_>, kind: OidType) {
+fn compare_blobs(c: *mut raw::git_odb, rust: &OdbArc<'_>, kind: OidType) {
     compare_blobs_in(c, rust, kind, None);
 }
 
 fn compare_blobs_in(
-    c: *mut ffi::git_odb,
+    c: *mut raw::git_odb,
     rust: &OdbArc<'_>,
     kind: OidType,
     dirs: Option<(&CStr, &CStr)>,
@@ -656,15 +656,15 @@ fn open_follows_alternates_as_git_odb_open_does() {
 }
 
 /// One repository over an odb, freed on drop.
-struct Repo(*mut ffi::git_repository);
+struct Repo(*mut raw::git_repository);
 
 impl Repo {
     /// `git_repository_wrap_odb` over a live odb, which the repository takes a
     /// reference to.
-    fn wrap(odb: *mut ffi::git_odb) -> Self {
+    fn wrap(odb: *mut raw::git_odb) -> Self {
         let mut repo = ptr::null_mut();
         // SAFETY: `repo` is a writable slot; `odb` is live.
-        let ret = unsafe { ffi::git_repository_wrap_odb(&raw mut repo, odb) };
+        let ret = unsafe { raw::git_repository_wrap_odb(&raw mut repo, odb) };
         assert_eq!(ret, 0);
         Self(repo)
     }
@@ -673,7 +673,7 @@ impl Repo {
     fn odb(&self) -> COdb {
         let mut odb = ptr::null_mut();
         // SAFETY: `self.0` is live; the result is a new reference to its odb.
-        assert_eq!(unsafe { ffi::git_repository_odb(&raw mut odb, self.0) }, 0);
+        assert_eq!(unsafe { raw::git_repository_odb(&raw mut odb, self.0) }, 0);
         COdb(odb)
     }
 }
@@ -681,7 +681,7 @@ impl Repo {
 impl Drop for Repo {
     fn drop(&mut self) {
         // SAFETY: `self.0` is the live repository `wrap` made, freed once.
-        unsafe { ffi::git_repository_free(self.0) };
+        unsafe { raw::git_repository_free(self.0) };
     }
 }
 
@@ -759,9 +759,9 @@ fn add_disk_alternate_adds_what_c_adds() {
     let seed = seeded(&shared.0.join("objects"), b"from the added alternate");
     let alternate = c_path(&shared.0.join("objects"));
     let missing = shared.c_path("missing/objects");
-    let add = |c: *mut ffi::git_odb, rust: &OdbArc<'_>, path: &CStr| {
+    let add = |c: *mut raw::git_odb, rust: &OdbArc<'_>, path: &CStr| {
         // SAFETY: `c` is live; `path` NUL-terminated, read for the call.
-        let rc = unsafe { ffi::git_odb_add_disk_alternate(c, path.as_ptr()) };
+        let rc = unsafe { raw::git_odb_add_disk_alternate(c, path.as_ptr()) };
         let c_seen = if rc == 0 {
             Seen::Done
         } else {
@@ -792,7 +792,7 @@ fn add_disk_alternate_adds_what_c_adds() {
     // Each side's own directory, as the other side sees it: both skip their own.
     let (c_self, rust_self) = (dirs.c.clone(), dirs.rust.clone());
     // SAFETY: as in `add`.
-    let rc = unsafe { ffi::git_odb_add_disk_alternate(c.0, c_self.as_ptr()) };
+    let rc = unsafe { raw::git_odb_add_disk_alternate(c.0, c_self.as_ptr()) };
     assert_eq!(rc, 0);
     rust.as_ref().add_disk_alternate(&rust_self).unwrap();
     add(c.0, &rust, &alternate);
@@ -847,9 +847,9 @@ fn write_multi_pack_index_writes_what_c_writes() {
     }
     let c = c_open(&dirs.c).unwrap();
     let rust = Odb::open(&dirs.rust).unwrap();
-    let write = |c: *mut ffi::git_odb, rust: &OdbArc<'_>| {
+    let write = |c: *mut raw::git_odb, rust: &OdbArc<'_>| {
         // SAFETY: `c` is live and used by this thread alone.
-        let rc = unsafe { ffi::git_odb_write_multi_pack_index(c) };
+        let rc = unsafe { raw::git_odb_write_multi_pack_index(c) };
         let c_seen = if rc == 0 {
             Seen::Done
         } else {
@@ -877,7 +877,7 @@ fn write_multi_pack_index_writes_what_c_writes() {
     let (c, rust) = (c_new().unwrap(), Odb::new().unwrap());
     write(c.0, &rust);
     // SAFETY: as in `add_disk_alternate_adds_what_c_adds`.
-    let rc = unsafe { ffi::git_odb_add_disk_alternate(c.0, dirs.c.as_ptr()) };
+    let rc = unsafe { raw::git_odb_add_disk_alternate(c.0, dirs.c.as_ptr()) };
     assert_eq!(rc, 0);
     rust.as_ref().add_disk_alternate(&dirs.rust).unwrap();
     write(c.0, &rust);
@@ -890,9 +890,9 @@ fn write_multi_pack_index_writes_what_c_writes() {
 fn clear_commit_graph_clears_what_c_clears() {
     init();
     let dirs = testrepo_pair("cgraph");
-    let clear = |c: *mut ffi::git_odb, rust: &OdbArc<'_>| {
+    let clear = |c: *mut raw::git_odb, rust: &OdbArc<'_>| {
         // SAFETY: `c` is live and used by this thread alone.
-        let rc = unsafe { ffi::git_odb_set_commit_graph(c, ptr::null_mut()) };
+        let rc = unsafe { raw::git_odb_set_commit_graph(c, ptr::null_mut()) };
         let c_seen = if rc == 0 {
             Seen::Done
         } else {
@@ -920,13 +920,13 @@ fn clear_commit_graph_clears_what_c_clears() {
 }
 
 /// `git_odb_options_init` into a fresh `git_odb_options`: the return and what it wrote.
-fn c_options_init(version: u32) -> (c_int, ffi::git_odb_options) {
-    let mut opts = ffi::git_odb_options {
+fn c_options_init(version: u32) -> (c_int, raw::git_odb_options) {
+    let mut opts = raw::git_odb_options {
         version: 0xDEAD,
         oid_type: 0xBEEF,
     };
     // SAFETY: `opts` is a live `git_odb_options` the routine may write, not retained.
-    let rc = unsafe { ffi::git_odb_options_init(&raw mut opts, version) };
+    let rc = unsafe { raw::git_odb_options_init(&raw mut opts, version) };
     (rc, opts)
 }
 
@@ -937,9 +937,9 @@ fn c_options_init(version: u32) -> (c_int, ffi::git_odb_options) {
 #[cfg_attr(miri, ignore = "calls libgit2")]
 fn odb_options_are_what_c_initialises_and_reads() {
     init();
-    let (rc, c) = c_options_init(ffi::GIT_ODB_OPTIONS_VERSION);
+    let (rc, c) = c_options_init(raw::GIT_ODB_OPTIONS_VERSION);
     assert_eq!(rc, 0);
-    let rust = ffi::git_odb_options::from(OdbOptions::new());
+    let rust = raw::git_odb_options::from(OdbOptions::new());
     assert_eq!((rust.version, rust.oid_type), (c.version, c.oid_type));
     assert_eq!(
         (rust.version, rust.oid_type),
@@ -955,20 +955,20 @@ fn odb_options_are_what_c_initialises_and_reads() {
     for kind in kinds {
         opts.as_mut().set_oid_type(kind);
         let c = c_new_ext(Some(&c_options(kind.map_or(0, OidType::raw)))).unwrap();
-        let rust = c_new_ext(Some(&ffi::git_odb_options::from(opts))).unwrap();
+        let rust = c_new_ext(Some(&raw::git_odb_options::from(opts))).unwrap();
         // SAFETY: `rust.0` is the one reference `git_odb_new_ext` returned, given up to
         // the owner here.
         let rust = unsafe { OdbArc::from_c(rust.into_raw()) }.unwrap();
         compare_blobs(c.0, &rust, kind.unwrap_or_default());
     }
-    for version in [0, 2, u32::MAX, ffi::GIT_ODB_OPTIONS_VERSION] {
+    for version in [0, 2, u32::MAX, raw::GIT_ODB_OPTIONS_VERSION] {
         opts.as_mut().set_version(version);
-        let c_opts = ffi::git_odb_options {
+        let c_opts = raw::git_odb_options {
             version,
-            oid_type: ffi::GIT_OID_SHA256,
+            oid_type: raw::GIT_OID_SHA256,
         };
         let c = c_new_ext(Some(&c_opts)).map(drop);
-        let rust = c_new_ext(Some(&ffi::git_odb_options::from(opts))).map(drop);
+        let rust = c_new_ext(Some(&raw::git_odb_options::from(opts))).map(drop);
         assert_eq!(rust, c, "version {version}");
         assert_eq!(c.is_ok(), version == 1, "version {version}");
         let c_init = c_options_init(version);
@@ -978,15 +978,15 @@ fn odb_options_are_what_c_initialises_and_reads() {
 
 impl COdb {
     /// Gives the reference up, unreleased.
-    fn into_raw(self) -> *mut ffi::git_odb {
+    fn into_raw(self) -> *mut raw::git_odb {
         core::mem::ManuallyDrop::new(self).0
     }
 }
 
 /// One query's fields: the id's type byte and bytes, the length and the type.
-type QueryFields = (u8, [u8; 32], u16, ffi::git_object_t);
+type QueryFields = (u8, [u8; 32], u16, raw::git_object_t);
 
-fn c_fields(q: &ffi::git_odb_expand_id) -> QueryFields {
+fn c_fields(q: &raw::git_odb_expand_id) -> QueryFields {
     (q.id.type_, q.id.id, q.length, q.type_)
 }
 
@@ -1002,12 +1002,12 @@ fn rust_fields(q: &OdbExpandId) -> QueryFields {
 ///
 /// `odb` is live, and `ids` addresses `count` writable `git_odb_expand_id`s.
 unsafe fn expand(
-    odb: *mut ffi::git_odb,
-    ids: *mut ffi::git_odb_expand_id,
+    odb: *mut raw::git_odb,
+    ids: *mut raw::git_odb_expand_id,
     count: usize,
 ) -> Result<(), (c_int, (c_int, String))> {
     // SAFETY: per the contract.
-    let rc = unsafe { ffi::git_odb_expand_ids(odb, ids, count) };
+    let rc = unsafe { raw::git_odb_expand_ids(odb, ids, count) };
     if rc == 0 { Ok(()) } else { Err((rc, c_last())) }
 }
 
@@ -1020,9 +1020,9 @@ type Expanded = (
 /// [`expand`] over the first `count` queries of each run (all of them for `None`): the C
 /// ones on `c_odb`, the Rust ones on `rust_odb`.
 fn expand_both(
-    c_odb: *mut ffi::git_odb,
+    c_odb: *mut raw::git_odb,
     rust_odb: &OdbArc<'_>,
-    c: &mut [ffi::git_odb_expand_id],
+    c: &mut [raw::git_odb_expand_id],
     rust: &mut [OdbExpandId],
     count: Option<usize>,
 ) -> Expanded {
@@ -1041,7 +1041,7 @@ fn expand_both(
 /// The C queries and their Rust twins, built independently from the same description:
 /// the C ones as struct literals, the Rust ones through [`OdbExpandId::new`] and the
 /// setters.
-fn queries(kind: OidType, stored: &[Id]) -> (Vec<ffi::git_odb_expand_id>, Vec<OdbExpandId>) {
+fn queries(kind: OidType, stored: &[Id]) -> (Vec<raw::git_odb_expand_id>, Vec<OdbExpandId>) {
     let hex = u16::try_from(kind.hex_size()).unwrap();
     let missing = {
         let mut id = stored[0];
@@ -1049,35 +1049,35 @@ fn queries(kind: OidType, stored: &[Id]) -> (Vec<ffi::git_odb_expand_id>, Vec<Od
         id
     };
     // (id, length, the type as C stores it, the type the Rust setter takes)
-    let mut plan: Vec<(Id, u16, ffi::git_object_t, Option<Option<ObjectType>>)> = Vec::new();
+    let mut plan: Vec<(Id, u16, raw::git_object_t, Option<Option<ObjectType>>)> = Vec::new();
     for &id in stored {
         plan.extend([
-            (id, hex, ffi::GIT_OBJECT_ANY, Some(None)),
-            (id, hex, ffi::GIT_OBJECT_BLOB, Some(Some(ObjectType::Blob))),
+            (id, hex, raw::GIT_OBJECT_ANY, Some(None)),
+            (id, hex, raw::GIT_OBJECT_BLOB, Some(Some(ObjectType::Blob))),
             (
                 id,
                 hex,
-                ffi::GIT_OBJECT_COMMIT,
+                raw::GIT_OBJECT_COMMIT,
                 Some(Some(ObjectType::Commit)),
             ),
             (id, 8, 0, None),
-            (id, 8, ffi::GIT_OBJECT_BLOB, Some(Some(ObjectType::Blob))),
-            (id, 8, ffi::GIT_OBJECT_TREE, Some(Some(ObjectType::Tree))),
-            (id, 4, ffi::GIT_OBJECT_ANY, Some(None)),
-            (id, 3, ffi::GIT_OBJECT_ANY, Some(None)),
-            (id, hex - 1, ffi::GIT_OBJECT_ANY, Some(None)),
-            (id, u16::MAX, ffi::GIT_OBJECT_ANY, Some(None)),
+            (id, 8, raw::GIT_OBJECT_BLOB, Some(Some(ObjectType::Blob))),
+            (id, 8, raw::GIT_OBJECT_TREE, Some(Some(ObjectType::Tree))),
+            (id, 4, raw::GIT_OBJECT_ANY, Some(None)),
+            (id, 3, raw::GIT_OBJECT_ANY, Some(None)),
+            (id, hex - 1, raw::GIT_OBJECT_ANY, Some(None)),
+            (id, u16::MAX, raw::GIT_OBJECT_ANY, Some(None)),
         ]);
     }
     plan.extend([
-        (missing, hex, ffi::GIT_OBJECT_ANY, Some(None)),
-        (missing, 8, ffi::GIT_OBJECT_ANY, Some(None)),
+        (missing, hex, raw::GIT_OBJECT_ANY, Some(None)),
+        (missing, 8, raw::GIT_OBJECT_ANY, Some(None)),
         ((0, [0; 32]), 0, 0, None),
     ]);
     let c = plan
         .iter()
-        .map(|&((type_, id), length, kind, _)| ffi::git_odb_expand_id {
-            id: ffi::git_oid { type_, id },
+        .map(|&((type_, id), length, kind, _)| raw::git_odb_expand_id {
+            id: raw::git_oid { type_, id },
             length,
             type_: kind,
         })
@@ -1101,7 +1101,7 @@ fn queries(kind: OidType, stored: &[Id]) -> (Vec<ffi::git_odb_expand_id>, Vec<Od
                 q.as_mut().set_length(length);
             } else if kind.is_none() {
                 // Leave the type 0, as the C query does: the routine reads it as any.
-                let mut raw_q = ffi::git_odb_expand_id::from(q);
+                let mut raw_q = raw::git_odb_expand_id::from(q);
                 raw_q.type_ = 0;
                 q = OdbExpandId::from(raw_q);
             }
@@ -1115,7 +1115,7 @@ fn queries(kind: OidType, stored: &[Id]) -> (Vec<ffi::git_odb_expand_id>, Vec<Od
 /// narrowing every query to an 8-digit prefix of any type, comparing every query's
 /// fields and the routine's result after each pass.
 fn compare_expand(
-    c_odb: *mut ffi::git_odb,
+    c_odb: *mut raw::git_odb,
     rust_odb: &OdbArc<'_>,
     kind: OidType,
     stored: &[Id],
@@ -1123,7 +1123,7 @@ fn compare_expand(
 ) {
     let (mut c, mut rust) = queries(kind, stored);
     assert_eq!(c.len(), rust.len());
-    let compare = |c: &[ffi::git_odb_expand_id], rust: &[OdbExpandId], pass: &str| {
+    let compare = |c: &[raw::git_odb_expand_id], rust: &[OdbExpandId], pass: &str| {
         for (i, (c, rust)) in c.iter().zip(rust).enumerate() {
             assert_eq!(rust_fields(rust), c_fields(c), "{pass}: query {i}");
         }
@@ -1165,7 +1165,7 @@ fn compare_expand(
     }
     for (c, rust) in c.iter_mut().zip(&mut rust) {
         c.length = 8;
-        c.type_ = ffi::GIT_OBJECT_ANY;
+        c.type_ = raw::GIT_OBJECT_ANY;
         let mut m = rust.as_mut();
         m.set_length(8);
         m.set_kind(None);

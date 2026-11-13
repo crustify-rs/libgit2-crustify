@@ -21,7 +21,6 @@ use std::process::{Command, Stdio};
 use std::{fs, ptr};
 
 use ffibox::CRefSeam;
-use libgit2::ffi;
 use libgit2::libgit2::src::libgit2::filter::StreamError;
 use libgit2::libgit2::src::libgit2::indexer::IndexerProgress;
 use libgit2::libgit2::src::libgit2::object::ObjectType;
@@ -29,6 +28,7 @@ use libgit2::libgit2::src::libgit2::odb::{
     Odb, OdbArc, OdbStreamBox, OdbStreamRef, OdbWritepack, OdbWritepackBox,
 };
 use libgit2::libgit2::src::libgit2::oid::{Oid, OidType, UnnamedOidType};
+use libgit2::sys::libgit2 as sys;
 
 /// Takes a `git_libgit2_init` reference that is never released.
 fn init() {
@@ -39,7 +39,7 @@ fn init() {
 fn c_last() -> (c_int, String) {
     // SAFETY: libgit2 is initialised; the result is a static error or this thread's
     // error state, live until the next libgit2 call on this thread.
-    let e = unsafe { ffi::git_error_last() };
+    let e = unsafe { sys::git_error_last() };
     assert!(!e.is_null());
     // SAFETY: `e` is live (above); its fields are copied out before any other call.
     let klass = unsafe { (*e).klass };
@@ -98,29 +98,29 @@ impl Drop for TempDir {
 }
 
 /// An odb C owns, freed on drop.
-struct COdb(*mut ffi::git_odb);
+struct COdb(*mut sys::git_odb);
 
 impl COdb {
     fn open(dir: &CStr, kind: OidType) -> Self {
-        let opts = ffi::git_odb_options {
-            version: ffi::GIT_ODB_OPTIONS_VERSION,
+        let opts = sys::git_odb_options {
+            version: sys::GIT_ODB_OPTIONS_VERSION,
             oid_type: kind.raw(),
         };
         let mut out = ptr::null_mut();
         // SAFETY: `out` is writable; `dir` and `opts` are live for the call.
-        let rc = unsafe { ffi::git_odb_open_ext(&raw mut out, dir.as_ptr(), &raw const opts) };
+        let rc = unsafe { sys::git_odb_open_ext(&raw mut out, dir.as_ptr(), &raw const opts) };
         assert_eq!(rc, 0);
         Self(out)
     }
 
     fn new(kind: OidType) -> Self {
-        let opts = ffi::git_odb_options {
-            version: ffi::GIT_ODB_OPTIONS_VERSION,
+        let opts = sys::git_odb_options {
+            version: sys::GIT_ODB_OPTIONS_VERSION,
             oid_type: kind.raw(),
         };
         let mut out = ptr::null_mut();
         // SAFETY: `out` is writable; `opts` is live for the call.
-        let rc = unsafe { ffi::git_odb_new_ext(&raw mut out, &raw const opts) };
+        let rc = unsafe { sys::git_odb_new_ext(&raw mut out, &raw const opts) };
         assert_eq!(rc, 0);
         Self(out)
     }
@@ -129,17 +129,17 @@ impl COdb {
 impl Drop for COdb {
     fn drop(&mut self) {
         // SAFETY: the odb this owner holds, freed once.
-        unsafe { ffi::git_odb_free(self.0) }
+        unsafe { sys::git_odb_free(self.0) }
     }
 }
 
 /// A stream C owns, freed with `git_odb_stream_free` on drop.
-struct CStream(*mut ffi::git_odb_stream);
+struct CStream(*mut sys::git_odb_stream);
 
 impl Drop for CStream {
     fn drop(&mut self) {
         // SAFETY: the stream this owner holds, freed once.
-        unsafe { ffi::git_odb_stream_free(self.0) }
+        unsafe { sys::git_odb_stream_free(self.0) }
     }
 }
 
@@ -162,7 +162,7 @@ struct Fields {
 }
 
 /// The fields of C's stream, read directly.
-fn c_fields(s: *mut ffi::git_odb_stream) -> Fields {
+fn c_fields(s: *mut sys::git_odb_stream) -> Fields {
     // SAFETY: `s` is a live stream libgit2 opened; it is copied out, with no reference
     // held.
     let raw = unsafe { s.read() };
@@ -195,16 +195,16 @@ fn rust_fields(s: OdbStreamRef<'_, '_>) -> Fields {
 }
 
 /// `git_odb_stream_write`, on either stream: the code.
-fn write(s: *mut ffi::git_odb_stream, data: &[u8]) -> c_int {
+fn write(s: *mut sys::git_odb_stream, data: &[u8]) -> c_int {
     // SAFETY: `s` is a live write stream; `data` is read for the call only.
-    unsafe { ffi::git_odb_stream_write(s, data.as_ptr().cast(), data.len()) }
+    unsafe { sys::git_odb_stream_write(s, data.as_ptr().cast(), data.len()) }
 }
 
 /// `git_odb_stream_finalize_write`, on either stream: the id, or the code.
-fn finalize(s: *mut ffi::git_odb_stream) -> Result<(u8, [u8; 32]), c_int> {
-    let mut id = ffi::git_oid::default();
+fn finalize(s: *mut sys::git_odb_stream) -> Result<(u8, [u8; 32]), c_int> {
+    let mut id = sys::git_oid::default();
     // SAFETY: `s` is a live write stream; `id` is writable.
-    let rc = unsafe { ffi::git_odb_stream_finalize_write(&raw mut id, s) };
+    let rc = unsafe { sys::git_odb_stream_finalize_write(&raw mut id, s) };
     if rc == 0 {
         Ok((id.type_, id.id))
     } else {
@@ -213,12 +213,12 @@ fn finalize(s: *mut ffi::git_odb_stream) -> Result<(u8, [u8; 32]), c_int> {
 }
 
 /// Reads a read stream to its end in pieces of `piece` bytes: the content, or the code.
-fn read_all(s: *mut ffi::git_odb_stream, piece: usize) -> Result<Vec<u8>, c_int> {
+fn read_all(s: *mut sys::git_odb_stream, piece: usize) -> Result<Vec<u8>, c_int> {
     let mut out = Vec::new();
     let mut buf = vec![0_u8; piece];
     loop {
         // SAFETY: `s` is a live read stream; `buf` is writable for its length.
-        let rc = unsafe { ffi::git_odb_stream_read(s, buf.as_mut_ptr().cast(), buf.len()) };
+        let rc = unsafe { sys::git_odb_stream_read(s, buf.as_mut_ptr().cast(), buf.len()) };
         match usize::try_from(rc) {
             Ok(0) => return Ok(out),
             Ok(n) => out.extend_from_slice(&buf[..n]),
@@ -235,7 +235,7 @@ fn c_open_wstream(
 ) -> Result<CStream, (c_int, c_int, String)> {
     let mut out = ptr::null_mut();
     // SAFETY: `out` is writable; the odb is live.
-    let rc = unsafe { ffi::git_odb_open_wstream(&raw mut out, odb.0, size, kind.raw()) };
+    let rc = unsafe { sys::git_odb_open_wstream(&raw mut out, odb.0, size, kind.raw()) };
     if rc < 0 {
         Err(c_fail(rc))
     } else {
@@ -247,11 +247,11 @@ fn c_open_wstream(
 fn c_open_rstream(
     odb: &COdb,
     id: &Oid,
-) -> Result<(CStream, usize, ffi::git_object_t), (c_int, c_int, String)> {
-    let (mut out, mut len, mut kind) = (ptr::null_mut(), 0, ffi::GIT_OBJECT_INVALID);
+) -> Result<(CStream, usize, sys::git_object_t), (c_int, c_int, String)> {
+    let (mut out, mut len, mut kind) = (ptr::null_mut(), 0, sys::GIT_OBJECT_INVALID);
     // SAFETY: the out slots are writable; the odb is live; `id` is a live `git_oid`.
     let rc = unsafe {
-        ffi::git_odb_open_rstream(
+        sys::git_odb_open_rstream(
             &raw mut out,
             &raw mut len,
             &raw mut kind,
@@ -473,10 +473,10 @@ fn git_pack(dir: &Path, blobs: &[&[u8]], kind: OidType) -> (Vec<u8>, Vec<String>
 }
 
 /// `git_odb_write_pack` with no progress callback, on a raw odb.
-fn raw_write_pack(odb: *mut ffi::git_odb) -> *mut ffi::git_odb_writepack {
+fn raw_write_pack(odb: *mut sys::git_odb) -> *mut sys::git_odb_writepack {
     let mut out = ptr::null_mut();
     // SAFETY: `out` is writable; the odb is live; no callback, so no payload.
-    let rc = unsafe { ffi::git_odb_write_pack(&raw mut out, odb, None, ptr::null_mut()) };
+    let rc = unsafe { sys::git_odb_write_pack(&raw mut out, odb, None, ptr::null_mut()) };
     assert_eq!(rc, 0);
     assert!(!out.is_null());
     out
@@ -484,9 +484,9 @@ fn raw_write_pack(odb: *mut ffi::git_odb) -> *mut ffi::git_odb_writepack {
 
 /// C's `append` member call.
 fn c_append(
-    wp: *mut ffi::git_odb_writepack,
+    wp: *mut sys::git_odb_writepack,
     data: &[u8],
-    stats: &mut ffi::git_indexer_progress,
+    stats: &mut sys::git_indexer_progress,
 ) -> c_int {
     // SAFETY: `wp` is a live writepack libgit2 opened, its members set.
     let append = unsafe { (*wp).append }.unwrap();
@@ -495,7 +495,7 @@ fn c_append(
 }
 
 /// C's `commit` member call, then its `free` member.
-fn c_commit(wp: *mut ffi::git_odb_writepack, stats: &mut ffi::git_indexer_progress) -> c_int {
+fn c_commit(wp: *mut sys::git_odb_writepack, stats: &mut sys::git_indexer_progress) -> c_int {
     // SAFETY: as in `c_append`.
     let commit = unsafe { (*wp).commit }.unwrap();
     // SAFETY: as above.
@@ -508,12 +508,12 @@ fn c_commit(wp: *mut ffi::git_odb_writepack, stats: &mut ffi::git_indexer_progre
 }
 
 /// The Rust writepack's progress as C's struct.
-fn progress(p: &IndexerProgress) -> ffi::git_indexer_progress {
-    ffi::git_indexer_progress::from(*p)
+fn progress(p: &IndexerProgress) -> sys::git_indexer_progress {
+    sys::git_indexer_progress::from(*p)
 }
 
 /// The progress as comparable counters.
-fn counters(p: &ffi::git_indexer_progress) -> [usize; 7] {
+fn counters(p: &sys::git_indexer_progress) -> [usize; 7] {
     [
         p.total_objects as usize,
         p.indexed_objects as usize,
@@ -528,12 +528,12 @@ fn counters(p: &ffi::git_indexer_progress) -> [usize; 7] {
 /// Appends `chunks` to both writepacks and commits both (unless `commit` is false, when
 /// both are dropped), comparing after each step.
 fn compare_pack_sequence(
-    c: *mut ffi::git_odb_writepack,
+    c: *mut sys::git_odb_writepack,
     mut rust: OdbWritepackBox<'_>,
     chunks: &[&[u8]],
     commit: bool,
 ) {
-    let mut c_stats = ffi::git_indexer_progress::default();
+    let mut c_stats = sys::git_indexer_progress::default();
     let mut r_stats = IndexerProgress::default();
     for chunk in chunks {
         let r = rust.as_mut().append(chunk, r_stats.as_mut());
@@ -602,9 +602,9 @@ fn writepack_members_behave_as_in_c() {
             let id = Oid::from_string(&CString::new(hex).unwrap(), kind).unwrap();
             let id = id.as_ref().as_ptr();
             // SAFETY: the odb is live; `id` is a live `git_oid`, read for the call.
-            let c_has = unsafe { ffi::git_odb_exists(c.0, id) };
+            let c_has = unsafe { sys::git_odb_exists(c.0, id) };
             // SAFETY: as above.
-            let r_has = unsafe { ffi::git_odb_exists(rust.as_c_ptr(), id) };
+            let r_has = unsafe { sys::git_odb_exists(rust.as_c_ptr(), id) };
             assert_eq!((c_has, r_has), (1, 1));
         }
     }
