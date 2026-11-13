@@ -2,4 +2,5 @@
 //! vendors.
 
 mod llhttp;
+mod ntlmclient;
 mod reftable;
