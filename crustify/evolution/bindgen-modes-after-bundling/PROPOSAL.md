@@ -1,6 +1,6 @@
 # The bindgen skill's build modes, as the bundling migration met them
 
-Status: `open`.
+Status: `landed`, as crustify `437159f` on `libgit2-crustify/devel` (2026-11-13), once review-2 approved it.
 
 ## Signal
 
@@ -75,5 +75,6 @@ allowlist's claim (both generated files, not every Layout file), the executable'
 its consequence and handling, the cross-unit exception moved out of the numbered steps with the
 `src/sys.rs` re-export, and the C's license files in the package. All eight items had evidence;
 five reran as stated; nothing weakens a check. Fixed in `437159f`, on `81ece02` (`ce6445d`
-rebased onto `7e35c25`). review-2 pending.
+rebased onto `7e35c25`). 
 
+review-2 (`crustify/artifacts/evolution/bindgen-modes-after-bundling/review-2`), of `437159f`: **approved**; review-1's five fixes resolved against the code (`build.rs`, `src/sys.rs`, `Cargo.toml`), its advisories on `6aa6dc4` taken, `compose.py build` unchanged, no weakening. Advisories not taken: "in a port campaign" before the `main` unit's export rule, and the Dockerfile's override holding in campaign mode only.

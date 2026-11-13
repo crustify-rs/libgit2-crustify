@@ -1,0 +1,7 @@
+{"backend": "claude", "billing": "subscription", "args": ["--model", "claude-opus-5-5"],
+ "revisions": {"crustify": "6aa6dc4", "wavefront": "bf21e16", "ffibox": "7af1232", "ffimap": "9aa2ef1"},
+ "component": "crustify",
+ "changes": [
+  {"branch": "libgit2-crustify/evolution/ffibox-canonical-path", "commit": "7e35c25", "proposal": "crustify/evolution/ffibox-canonical-path"},
+  {"branch": "libgit2-crustify/evolution/bindgen-modes-after-bundling", "commit": "437159f", "proposal": "crustify/evolution/bindgen-modes-after-bundling"}
+ ]}

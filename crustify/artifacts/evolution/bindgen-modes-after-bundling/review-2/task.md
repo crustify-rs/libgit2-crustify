@@ -1,0 +1,8 @@
+This run is not a review batch: it reviews two changes to Crustify's spec again, after review-1 rejected them, as the `evolution` skill's Review section describes, one verdict per change; it changes, commits and lands nothing. You run under Crustify's `libgit2-crustify/devel` (`6aa6dc4`, which now holds review-1's approved LLVM pin).
+
+Review-1's report, with its required fixes: the final `result` of `/target/libgit2-crustify/crustify/artifacts/evolution/bindgen-modes-after-bundling/review-1/stream.jsonl`. The proposals' Review and Change sections record it: `/target/libgit2-crustify/crustify/evolution/{ffibox-canonical-path,bindgen-modes-after-bundling}/PROPOSAL.md`.
+
+1. ffibox-canonical-path: `git -C /opt/crustify diff 6aa6dc4 7e35c25` (`b3ebca7`, reviewed, plus the fix `7e35c25`).
+2. bindgen-modes-after-bundling: `git -C /opt/crustify diff 7e35c25 437159f` (`81ece02`, which is `ce6445d` rebased with no content change, plus the fix `437159f`, which also takes review-1's advisories on `6aa6dc4`).
+
+Read them in `/opt/crustify.wt/spec-fixes` (read-only) or with git; the campaign code they describe is `/target/libgit2-crustify` at crustify/devel (`build.rs`, `src/sys.rs`, `Cargo.toml`, `sys/`). Check that each required fix of review-1 is resolved (cite file and line), that the fixes introduce nothing that contradicts the code or the rest of the spec, that `python3 -I providers/claude/compose.py build` in a `git archive 437159f` copy leaves `providers/claude/` unchanged, and whether anything weakens a check. Read only as deeply as the fixes reach; what review-1 approved of the rest need not be re-derived. Verdict per change, approved or rejected with the fixes required, briefly, in your final message. Remove any build directory you create.

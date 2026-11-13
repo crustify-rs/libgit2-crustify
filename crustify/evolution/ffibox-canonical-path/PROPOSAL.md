@@ -1,6 +1,6 @@
 # ffibox is declared by its canonical path
 
-Status: `open`.
+Status: `landed`, as crustify `7e35c25` on `libgit2-crustify/devel` (2026-11-13), once review-2 approved it.
 
 ## Signal
 
@@ -35,5 +35,6 @@ review-1 (`crustify/artifacts/evolution/bindgen-modes-after-bundling/review-1`),
 `/opt/venv/share/ffibox`, which the image makes a symlink, as the path to name, and the
 Dockerfile and the image README called it the manifest's path. The mechanism held (trybuild
 canonicalizes path dependencies; the five snapshots pass with `$FFIBOX`). Fixed in `7e35c25`:
-all three name `/crustify-rs/ffibox`. review-2 pending.
+all three name `/crustify-rs/ffibox`. 
 
+review-2 (`crustify/artifacts/evolution/bindgen-modes-after-bundling/review-2`), of `7e35c25`: **approved**; every review-1 fix resolved (the skill's example, the Dockerfile and the image README name `/crustify-rs/ffibox`, a real directory in the image; the campaign's `Cargo.toml` and `[patch]` agree); documentation only, no weakening.
