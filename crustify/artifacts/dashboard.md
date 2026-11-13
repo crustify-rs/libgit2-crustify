@@ -57,7 +57,7 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip `<sha>`; `main` shipped at `<sha>`; crustify `4605156`, ffibox `7950244` (`main`), wavefront `db28284`
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `18820` non-test, `99732` tests; **C LoC** — `89080`
+- **Rust LoC** — `18820` non-test, `99734` tests; **C LoC** — `89080`
 
 ### Coverage stats
 
@@ -606,6 +606,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/reftable/basics.c` | `169` | `5` | review | `+2` (`+0.00`/`+0.01` pp) | `+0` (`-0.01`/`-0.06` pp) | `+0` (`+0.02`/`-0.16` pp) | `+3` (`+0.01`/`+0.01` pp) |
 | `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | review | `+0` (`+0.02`/`+0.00` pp) | `+0` (`-0.02`/`+0.00` pp) | `+0` (`-0.01`/`+0.00` pp) | `+0` (`-0.01`/`+0.00` pp) |
 | `libgit2/src/util/strnlen.h` | `225` | `0` | first | `+0` (`+0.04`/`-0.03` pp) | `+0` (`+0.02`/`+0.00` pp) | `+2` (`+0.00`/`+0.01` pp) | `+6` (`-0.02`/`+0.01` pp) |
+| `libgit2/src/util/strnlen.h` | `225` | `1` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) |
 | **Σ first** |  |  |  | **`+345` (`+10.35`/`+5.99` pp)** | **`+40` (`+3.37`/`-5.95` pp)** | **`+225` (`+9.07`/`+13.69` pp)** | **`+324` (`+12.05`/`-33.48` pp)** |
 | **Σ review** |  |  |  | **`+18` (`+0.31`/`-1.51` pp)** | **`+8` (`-0.80`/`+0.59` pp)** | **`+23` (`+0.09`/`-0.54` pp)** | **`+45` (`+2.44`/`+7.64` pp)** |
 
@@ -637,6 +638,7 @@ Deterministic `ffimap`; no model.
 | `libgit2/src/util/allocators/debugalloc.c` | `183` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+1` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+2` | `-0.02` pp | `+0` |
 | `libgit2/src/util/strlist.c` | `184` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `-3` | `-0.06` pp | `-3` |
 | `libgit2/src/util/strnlen.h` | `225` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.00` pp | `+0` |
+| `libgit2/src/util/strnlen.h` | `225` | `1` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
 | **Σ first** |  |  |  |  | **`+4`** | **`+0`** | **`+24`** | **`+0`** | **`+1`** | **`+0.52` pp** | **`+3`** | **`+1`** | **`+0`** | **`+0`** | **`+0`** | **`+48`** | **`-0.34` pp** | **`+95`** |
 | **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`-1`** | **`+0`** | **`+1`** | **`+0.00` pp** | **`+0`** | **`-1`** | **`+0`** | **`+6`** | **`+0`** | **`+0`** | **`-0.11` pp** | **`-2`** |
 
@@ -658,8 +660,9 @@ Deterministic `ffimap api`; no model.
 | `libgit2/src/util/allocators/debugalloc.c` | `183` | `1` | wrap | review | `1` | `0` | `0` | `0` | `0` | `0` | — | `fn::git_debugalloc_init_allocator`: signature kept; its `malloc`/`realloc` members became size guards (soundness fix, `debug-size-obligation-unenforceable`) |
 | `libgit2/src/util/strlist.c` | `184` | `1` | wrap | review | `4` | `2` | `0` | `0` | `0` | `3` | — | — |
 | `libgit2/src/util/strnlen.h` | `225` | `0` | port | first | `0` | `0` | `0` | `0` | `1` | `0` | — | — |
+| `libgit2/src/util/strnlen.h` | `225` | `1` | port | review | `1` | `0` | `0` | `0` | `0` | `0` | — | — |
 | **Σ first** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`22`** | **`0`** |  |  |
-| **Σ review** |  |  |  |  | **`32`** | **`2`** | **`1`** | **`0`** | **`0`** | **`3`** |  |  |
+| **Σ review** |  |  |  |  | **`33`** | **`2`** | **`1`** | **`0`** | **`0`** | **`3`** |  |  |
 
 ### Batches — review: PoC + reports
 
@@ -720,7 +723,8 @@ review cost.
 | `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | `0` | `1` | `+82/-67` | `$12.85` | `46.60M` | `1h22m16s` |
 | `libgit2/src/util/allocators/debugalloc.c` | `183` | `1` | `0` | `1` | `+336/-75` | `$15.62` | `43.77M` | `1h33m16s` |
 | `libgit2/src/util/strlist.c` | `184` | `1` | `0` | `6` | `+408/-142` | `$21.71` | `81.05M` | `1h33m47s` |
-| **Σ** |  |  | **`1`** | **`77`** | **`+1578/-462`** | **`$129.88`** | **`426.29M`** | — |
+| `libgit2/src/util/strnlen.h` | `225` | `1` | `0` | `1` | `+22/-8` | — | — | — |
+| **Σ** |  |  | **`1`** | **`78`** | **`+1600/-470`** | **`$129.88`** | **`426.29M`** | — |
 
 ### Passes: PoC + reports
 
@@ -735,6 +739,7 @@ review cost.
 | `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `+0` | `1` |
 | `libgit2/src/util/allocators/debugalloc.c` | `183` | `1` | `+0` | `+0` | `+2` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `2` |
 | `libgit2/src/util/strlist.c` | `184` | `1` | `+0` | `+0` | `+1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+2` | `+1` | `+0` | `+0` | `+0` | `4` |
+| `libgit2/src/util/strnlen.h` | `225` | `1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `0` |
 | **Σ** |  |  | **`+0`** | **`+1`** | **`+5`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+2`** | **`+1`** | **`+0`** | **`+1`** | **`+4`** | **`14`** |
 
 ## Notes
@@ -3315,4 +3320,49 @@ there and stop at `git_libgit2_init` (`calls libgit2`). The coverage runs ran ev
 both trees on the nightly; only the known `CommitBuilder` compile-fail doctest fails, on both.
 TSan and BSan have no obligation: the batch adds no unsafe code, no `Send` or `Sync` claim and
 no thread. No raw binding or C changed, so the packaging gate does not apply. Usage cells are
+the assistant's.
+
+### `libgit2/src/util/strnlen.h` wave 225 batch 1: module pass
+
+The module pass, and the module's only review, over batch 0's three paths, for every objective
+with `fix`. It files no finding. `strnlen` is `p_strnlen`'s length for every input: the slice
+is the pointer and its bound, and `CStr::from_bytes_until_nul` is core's `memchr`, a byte loop
+below 16 bytes and word-wise above, as the docs say. It is `const`, safe and anchored
+`Replaces` `mac::p_strnlen` with its alias, and no Rust in the crate counts a bounded length by
+hand. The equivalence tests reach C's expansion through `git__strndup`, which `StrFree::dup_prefix`
+calls on its own copy of the bytes. No C test references the macro, and the ownership store
+holds nothing on it. Porting the macro once is sound under `porting-symbols`' Macros section:
+the body computes on its arguments alone, both branches give the same length, and libc's
+`strnlen` takes its `std` route. The pass adds that evidence to
+`crustify/evolution/config-branches-of-one-result`, which stays open.
+
+Gates ran on `end-gates` snapshots under the worktree's `crustify/tmp/`, at 48 jobs, the four
+`indexer.c` BSan skips checked against each binary's `--list`. On the wave tip `7ef895eb2`:
+plain passes the whole workspace (`lib` 840, `equiv` 528, `ub_safe` 762, `ub_unsafe` 120,
+`unit_pub` 67, `hidden_symbols` 1, doctests 72 and 378). ASan+UBSan and TSan pass it too, except
+the known `compile_fail` snapshots and the `CommitBuilder` doctest. Miri passes every binary
+(`lib` 392, `ub_safe` 194, `equiv` 38, `unit_pub` 32, `ub_unsafe` 19 passed, the rest marked).
+BSan passes `lib` 833, `ub_safe` 757, `ub_unsafe` 120 and `hidden_symbols`, but times out at
+5400 s on `unit_pub` and `equiv`, each on one of this module's sweeps,
+`every_nul_position_in_every_bound` and `every_nul_position_matches_the_c`, every other test of
+both having passed. Alone, the `unit_pub` sweep kept one core busy as its memory grew about
+8 MB/s: BorrowSanitizer's cost per access to one buffer grows with its borrow history (its
+second word offset took 420 s against the first's 90 s, flat at 103 s with a buffer per offset;
+`crustify/evolution/bsan-borrow-history-grows`). The fix, `095f69596`, gives each offset its
+own buffer, and under `cfg(bsan)` sweeps bounds up to 24 bytes, past `memchr`'s 16. Every other
+build sweeps to 70. On `095f69596` plain, ASan+UBSan, TSan and Miri give the tip's results,
+and BSan passes `unit_pub` (67, 71 s) and `equiv` (519, 8 ignored under BSan as before, the
+indexer skip, 3246 s). The diff touches those two binaries' test files alone, so BSan's other
+binaries keep the tip's results.
+
+The safety audit scan (ffimap `9aa2ef1`, flags as batch 0's) differs from batch 0's only in
+`code.tests.loc.total` (`+2`), which moves the Overview's tests LoC. `ffimap api`: `src/` is
+unchanged from the tip, so one rustdoc JSON (nightly `2026-10-08`, ffibox's with private items)
+serves both sides: `mac::p_strnlen` and every unattributed module are `kept`. Coverage was not
+measured again: only the BSan build runs the tests differently, and the coverage cells stand as
+batch 0 measured them. No raw binding or C changed, so the packaging gate does not apply.
+
+Proposals: `bsan-sized-tests` (testing-gates: a test BSan cannot finish is sized for it, on
+crustify's `libgit2-crustify/evolution/bsan-sized-tests` at `6336c30`, awaiting review) and
+`bsan-borrow-history-grows` (BorrowSanitizer, upstream, with its reproducer). Usage cells are
 the assistant's.

@@ -22,6 +22,16 @@ shared with C. The task message had to settle it: "Port what this build defines,
 its docs what the other branch is." The batch ported a native `const fn strnlen(&[u8])`, by
 `CStr::from_bytes_until_nul`, and documented the `NO_STRNLEN` branch on it.
 
+The module pass, `wave-225/batch-1/run-1`, judged the port against `porting-symbols`'
+Macros section and filed no finding: the body computes on its arguments alone, so it takes
+the `const` function form, and libc's `strnlen` is reached by its `std` route. The reading
+the shim exception invites is unclear twice over: what selects the branch here is the
+target platform (`__APPLE__`, `__sun`, `__MINGW32__`, `__MidnightBSD__`, `_MSC_VER`), which
+Rust's own `cfg(target_os, target_env)` does see, and a port reimplements the body instead
+of reaching the C's expansion, so a shim over the C would make the port a binding. The
+section should say which configurations the exception means, and that it applies only
+where the branches differ in what they compute.
+
 ## Destination
 
 The spec: `porting-symbols`' Macros section.

@@ -1,0 +1,7 @@
+[package]
+name = "bsan-borrow-history-grows"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
