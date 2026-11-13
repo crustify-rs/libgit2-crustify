@@ -50,6 +50,11 @@ bindgen = ["dep:bindgen"]
 shared = []
 # Links an install of libgit2, found through LIBGIT2_DIR or pkg-config, in place of `c/`.
 system = []
+# The export features: one per ported module not yet switched from C, which compiles its
+# `ffi_export` gateway, the bare-named exports through which the remaining C calls it. Each
+# stays off until its module switches, so that the exports never collide with the C they
+# replace, and the switch deletes it (crustify's conventions, Export features).
+ffi-export-src-util-utf8-c = []
 
 [dependencies]
 # By path, not by Git: trybuild replaces only the paths of dependencies declared by path

@@ -782,3 +782,9 @@ function git_strlist_copy
 function git_strlist_copy_with_null
 function git_strlist_free
 function git_strlist_free_with_null
+
+# wave-229/batch-0: src/util/utf8.c (src/util/utf8.h), for its equivalence tests and its
+# exports' signature checks
+function git_utf8_char_length
+function git_utf8_iterate
+function git_utf8_valid_buf_length

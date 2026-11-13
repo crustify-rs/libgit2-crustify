@@ -1,1 +1,356 @@
 //! `src/util/utf8.c`: UTF-8 character lengths, iteration and validation, ported to Rust.
+//!
+//! libgit2 reads UTF-8 in two strengths, both from utf8proc's class table
+//! (`UTF8_CLASS`):
+//!
+//! - **Structure.** [`char_count`] and [`valid_prefix_len`] split bytes into sequences by their
+//!   lead byte's class and its continuation bytes alone, as `utf8_charlen` does: an overlong form,
+//!   a surrogate or a code point past U+10FFFF whose bytes are well formed counts as one sequence.
+//!   These are not [`str::from_utf8`]'s rules, which reject those.
+//! - **Code points.** [`decode_char`] also refuses what `git_utf8_iterate` refuses: overlong forms,
+//!   surrogates, code points past U+10FFFF and the noncharacters U+FDD0 to U+FDEF and U+*n*FFFE,
+//!   U+*n*FFFF of every plane. What it accepts is therefore always a [`char`].
+//!
+//! Every function reads its argument alone and holds no state, so the module is native Rust.
+//! The C that remains calls the three `git_utf8_*` functions (`src/libgit2/path.c` and
+//! `src/libgit2/diff_xdiff.c`, and on Windows `src/util/fs_path.c`), which reach this module
+//! through its exports once it has switched; until then the exports compile only under the
+//! `ffi-export-src-util-utf8-c` feature.
+
+use core::error::Error;
+use core::fmt;
+
+/// The length of the UTF-8 sequence each lead byte starts, by its value: 1 for ASCII, 2, 3
+/// or 4 for a multi-byte lead (`0xC0` to `0xDF`, `0xE0` to `0xEF`, `0xF0` to `0xF7`), and 0
+/// for a byte no sequence starts with, a continuation byte (`0x80` to `0xBF`) or `0xF8` to
+/// `0xFF`.
+///
+/// This is utf8proc's table, which libgit2 copies: its class of `0xC0` and `0xC1`, which
+/// start only overlong forms, is 2, and of `0xF5` to `0xF7`, which start only code points past
+/// U+10FFFF, is 4, so that [`decode_char`] refuses those by their value, as C does.
+///
+/// Replaces `glb::utf8proc_utf8class`
+#[doc(alias = "utf8proc_utf8class")]
+static UTF8_CLASS: [u8; 256] = class_table();
+
+/// [`UTF8_CLASS`], from the ranges of lead bytes it classifies.
+const fn class_table() -> [u8; 256] {
+    let mut table = [0; 256];
+    let mut byte = 0;
+    while byte < table.len() {
+        table[byte] = match byte {
+            0x00..=0x7F => 1,
+            0xC0..=0xDF => 2,
+            0xE0..=0xEF => 3,
+            0xF0..=0xF7 => 4,
+            _ => 0,
+        };
+        byte += 1;
+    }
+    table
+}
+
+/// The length of the UTF-8 sequence at the start of `bytes`, by structure alone: its lead
+/// byte's class, when `bytes` hold that many bytes and every byte after the lead is a
+/// continuation byte (`0b10xx_xxxx`); `None` when `bytes` are empty, the lead starts no
+/// sequence or the sequence is cut short or broken.
+///
+/// `utf8_charlen(str, str_len)` reads past `str_len` when it is 0, from a caller that never
+/// passes it: here no length is unbounded, and empty bytes hold none.
+///
+/// Replaces `fn::utf8_charlen`
+#[doc(alias = "utf8_charlen")]
+fn sequence_len(bytes: &[u8]) -> Option<usize> {
+    let (&lead, rest) = bytes.split_first()?;
+    let len = usize::from(UTF8_CLASS[usize::from(lead)]);
+    let continuation = rest.get(..len.checked_sub(1)?)?;
+    continuation
+        .iter()
+        .all(|&b| b & 0xC0 == 0x80)
+        .then_some(len)
+}
+
+/// The error of [`decode_char`]: the bytes it was given start with no valid code point, or
+/// are empty.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct InvalidCodePoint;
+
+impl fmt::Display for InvalidCodePoint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("invalid UTF-8 code point")
+    }
+}
+
+impl Error for InvalidCodePoint {}
+
+/// The code point at the start of `bytes`, with the length of its sequence in bytes, which
+/// is how far its caller advances to read the next one.
+///
+/// A sequence is refused, as [`InvalidCodePoint`], when it is broken or cut short, when it
+/// is overlong (`C0 80` for U+0000), when it encodes a surrogate (U+D800 to U+DFFF) or a
+/// code point past U+10FFFF, and when it encodes a noncharacter: U+FDD0 to U+FDEF, or the
+/// last two code points of any plane, U+FFFE and U+FFFF to U+10FFFE and U+10FFFF. Only the
+/// bytes of the first sequence are read.
+///
+/// `git_utf8_iterate(&out, str, 0)` reads `str` as if it were unbounded; empty `bytes`
+/// here hold no code point, and are refused.
+///
+/// ```
+/// use libgit2_crustify::libgit2::src::util::utf8::{InvalidCodePoint, decode_char};
+///
+/// assert_eq!(decode_char(b"$x"), Ok(('$', 1)));
+/// assert_eq!(decode_char("¢".as_bytes()), Ok(('¢', 2)));
+/// assert_eq!(decode_char("𐍈".as_bytes()), Ok(('𐍈', 4)));
+/// // Overlong, cut short, and a noncharacter.
+/// assert_eq!(decode_char(b"\xC0\x80"), Err(InvalidCodePoint));
+/// assert_eq!(decode_char(b"\xE2\x82"), Err(InvalidCodePoint));
+/// assert_eq!(decode_char("\u{FFFE}".as_bytes()), Err(InvalidCodePoint));
+/// ```
+///
+/// # Errors
+///
+/// [`InvalidCodePoint`] when `bytes` start with no valid code point, as above.
+///
+/// Replaces `fn::git_utf8_iterate`
+#[doc(alias = "git_utf8_iterate")]
+pub fn decode_char(bytes: &[u8]) -> Result<(char, usize), InvalidCodePoint> {
+    let len = sequence_len(bytes).ok_or(InvalidCodePoint)?;
+    let tail = |b: u8| u32::from(b & 0x3F);
+    let code_point = match bytes[..len] {
+        [a] => Some(u32::from(a)),
+        [a, b] => Some((u32::from(a & 0x1F) << 6) + tail(b)).filter(|&c| c >= 0x80),
+        [a, b, c] => Some((u32::from(a & 0x0F) << 12) + (tail(b) << 6) + tail(c))
+            .filter(|&c| c >= 0x800 && !(0xD800..0xE000).contains(&c))
+            .filter(|c| !(0xFDD0..0xFDF0).contains(c)),
+        [a, b, c, d] => {
+            Some((u32::from(a & 0x07) << 18) + (tail(b) << 12) + (tail(c) << 6) + tail(d))
+                .filter(|c| (0x1_0000..0x11_0000).contains(c))
+        }
+        _ => None,
+    };
+    code_point
+        .filter(|&c| c & 0xFFFF < 0xFFFE)
+        .and_then(char::from_u32)
+        .map(|c| (c, len))
+        .ok_or(InvalidCodePoint)
+}
+
+/// The number of characters in `bytes`: their well-formed sequences, by structure alone, and
+/// each byte that starts none, which counts as a character of its own.
+///
+/// ```
+/// use libgit2_crustify::libgit2::src::util::utf8::char_count;
+///
+/// assert_eq!(char_count(b"$"), 1);
+/// assert_eq!(char_count("$¢".as_bytes()), 2);
+/// assert_eq!(char_count("𐍈".as_bytes()), 1);
+/// // `$`, two bytes that start no sequence, and `4`.
+/// assert_eq!(char_count(b"\x24\xC0\xC1\x34"), 4);
+/// ```
+///
+/// Replaces `fn::git_utf8_char_length`
+#[doc(alias = "git_utf8_char_length")]
+#[must_use]
+pub fn char_count(bytes: &[u8]) -> usize {
+    let mut rest = bytes;
+    let mut count = 0;
+    while !rest.is_empty() {
+        let len = sequence_len(rest).unwrap_or(1);
+        rest = &rest[len..];
+        count += 1;
+    }
+    count
+}
+
+/// The length in bytes of the longest prefix of `bytes` made of well-formed sequences, by
+/// structure alone: the offset of the first byte that starts no sequence, or of the first
+/// sequence broken or cut short, or `bytes.len()`.
+///
+/// ```
+/// use libgit2_crustify::libgit2::src::util::utf8::valid_prefix_len;
+///
+/// assert_eq!(valid_prefix_len("$¢".as_bytes()), 3);
+/// assert_eq!(valid_prefix_len(b"ab\xFFcd"), 2);
+/// // A sequence cut short by the end of the bytes.
+/// assert_eq!(valid_prefix_len(b"ab\xE2\x82"), 2);
+/// ```
+///
+/// Replaces `fn::git_utf8_valid_buf_length`
+#[doc(alias = "git_utf8_valid_buf_length")]
+#[must_use]
+pub fn valid_prefix_len(bytes: &[u8]) -> usize {
+    let mut offset = 0;
+    while let Some(len) = sequence_len(&bytes[offset..]) {
+        offset += len;
+    }
+    offset
+}
+
+/// The gateway through which the C that remains calls this module once it has switched:
+/// `git_utf8_iterate`, `git_utf8_char_length` and `git_utf8_valid_buf_length`, each
+/// checked against its raw binding's signature, so that a C declaration that drifts fails
+/// to build.
+#[cfg(feature = "ffi-export-src-util-utf8-c")]
+mod ffi_export {
+    use core::ffi::{c_char, c_int};
+    use core::slice;
+
+    use ffibox::callback::barrier;
+
+    use super::{char_count, decode_char, valid_prefix_len};
+    use crate::sys::libgit2 as sys;
+
+    // Each export has its raw binding's type: the array's elements coerce to one function
+    // pointer type only when their signatures agree.
+    const _: () = {
+        let _ = [sys::git_utf8_iterate, git_utf8_iterate];
+        let _ = [sys::git_utf8_char_length, git_utf8_char_length];
+        let _ = [sys::git_utf8_valid_buf_length, git_utf8_valid_buf_length];
+    };
+
+    /// The `str_len` bytes at `str`, as C passes a string and its size; no bytes when
+    /// `str_len` is 0, whatever `str` is, NULL included.
+    ///
+    /// # Safety
+    ///
+    /// When `str_len` is not 0, `str` is valid for reads of `str_len` bytes, which nothing
+    /// writes while the returned slice lives.
+    unsafe fn bytes<'a>(str: *const c_char, str_len: usize) -> &'a [u8] {
+        if str_len == 0 {
+            return &[];
+        }
+        // SAFETY: `str_len` is not 0, so the caller guarantees that `str` is valid for reads
+        // of `str_len` bytes nothing writes while the slice lives, which is the call that
+        // receives it; `u8` and `c_char` have one size and alignment.
+        unsafe { slice::from_raw_parts(str.cast::<u8>(), str_len) }
+    }
+
+    /// `git_utf8_iterate`: [`decode_char`] of the `str_len` bytes at `str`, its code point
+    /// written through `out` and its length returned; on a refusal, 0 is written and -1
+    /// returned, as C does. A panic is reported as a refusal.
+    ///
+    /// With `str_len` 0, C reads `str` as if it were unbounded; here it holds no code point,
+    /// and the call is refused without reading `str`.
+    ///
+    /// # Safety
+    ///
+    /// `out` is valid for a write of a `u32`, and `str` for reads of `str_len` bytes.
+    #[unsafe(no_mangle)]
+    unsafe extern "C" fn git_utf8_iterate(
+        out: *mut u32,
+        str: *const c_char,
+        str_len: usize,
+    ) -> c_int {
+        // SAFETY: the caller guarantees that `str` is valid for reads of `str_len` bytes,
+        // which C does not change during the call.
+        let bytes = unsafe { bytes(str, str_len) };
+        let (code_point, len) = barrier(
+            || match decode_char(bytes) {
+                Ok((c, len)) => (u32::from(c), c_int::try_from(len).unwrap_or(-1)),
+                Err(_) => (0, -1),
+            },
+            || (0, -1),
+        );
+        // SAFETY: the caller guarantees that `out` is valid for a write of a `u32`.
+        unsafe { out.write(code_point) };
+        len
+    }
+
+    /// `git_utf8_char_length`: [`char_count`] of the `str_len` bytes at `str`. It cannot
+    /// fail, so a panic aborts.
+    ///
+    /// # Safety
+    ///
+    /// `str` is valid for reads of `str_len` bytes.
+    #[unsafe(no_mangle)]
+    unsafe extern "C" fn git_utf8_char_length(str: *const c_char, str_len: usize) -> usize {
+        // SAFETY: the caller guarantees that `str` is valid for reads of `str_len` bytes,
+        // which C does not change during the call.
+        let bytes = unsafe { bytes(str, str_len) };
+        barrier(|| char_count(bytes), || std::process::abort())
+    }
+
+    /// `git_utf8_valid_buf_length`: [`valid_prefix_len`] of the `str_len` bytes at `str`. It
+    /// cannot fail, so a panic aborts.
+    ///
+    /// # Safety
+    ///
+    /// `str` is valid for reads of `str_len` bytes.
+    #[unsafe(no_mangle)]
+    unsafe extern "C" fn git_utf8_valid_buf_length(str: *const c_char, str_len: usize) -> usize {
+        // SAFETY: the caller guarantees that `str` is valid for reads of `str_len` bytes,
+        // which C does not change during the call.
+        let bytes = unsafe { bytes(str, str_len) };
+        barrier(|| valid_prefix_len(bytes), || std::process::abort())
+    }
+}
+
+#[cfg(test)]
+mod unit_priv {
+    use super::{UTF8_CLASS, class_table, sequence_len};
+
+    /// utf8proc's table, as `src/util/utf8.c` writes it.
+    #[rustfmt::skip]
+    const C_TABLE: [u8; 256] = [
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+        2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+        3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+        4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0,
+    ];
+
+    /// The table built from its ranges is C's, entry by entry: the static, which the compiler
+    /// evaluates, and the builder run again at run time, which coverage then counts.
+    #[test]
+    fn the_class_table_is_utf8procs() {
+        assert_eq!(UTF8_CLASS, C_TABLE);
+        assert_eq!(std::hint::black_box(class_table)(), C_TABLE);
+    }
+
+    /// No bytes hold no sequence, where `utf8_charlen(str, 0)` would read past them.
+    #[test]
+    fn empty_bytes_hold_no_sequence() {
+        assert_eq!(sequence_len(b""), None);
+    }
+
+    /// Every lead byte, alone and followed by enough continuation bytes: a sequence of its
+    /// class's length when it starts one, and none when it is cut short or starts none.
+    #[test]
+    fn every_lead_byte_starts_its_class() {
+        for lead in 0..=u8::MAX {
+            let class = usize::from(C_TABLE[usize::from(lead)]);
+            let mut seq = vec![lead];
+            seq.extend([0x80; 3]);
+            let expected = (class != 0).then_some(class);
+            assert_eq!(sequence_len(&seq), expected, "{lead:#04X}");
+            for cut in 1..class {
+                assert_eq!(sequence_len(&seq[..cut]), None, "{lead:#04X} cut to {cut}");
+            }
+        }
+    }
+
+    /// A byte after the lead that is no continuation byte breaks the sequence, wherever it
+    /// is; bytes past the sequence are not read.
+    #[test]
+    fn a_broken_continuation_breaks_the_sequence() {
+        assert_eq!(sequence_len(b"\xF0\x90\x8D\x88"), Some(4));
+        assert_eq!(sequence_len(b"\xF0\x41\x8D\x88"), None);
+        assert_eq!(sequence_len(b"\xF0\x90\xC0\x88"), None);
+        assert_eq!(sequence_len(b"\xF0\x90\x8D\xFF"), None);
+        assert_eq!(sequence_len(b"\xC2\xA2\xFF"), Some(2));
+        // Structure alone: an overlong form and a surrogate are well formed.
+        assert_eq!(sequence_len(b"\xC0\x80"), Some(2));
+        assert_eq!(sequence_len(b"\xED\xA0\x80"), Some(3));
+    }
+}
