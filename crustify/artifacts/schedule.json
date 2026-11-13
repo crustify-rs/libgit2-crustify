@@ -118926,7 +118926,7 @@
           "module": "src/cli/opt.c",
           "foundational": false,
           "kind": "port",
-          "status": "wip",
+          "status": "done",
           "items": [
             {
               "name": "spec_included",
@@ -119010,6 +119010,83 @@
             },
             {
               "name": "validate_required",
+              "defined_in": "src/cli/opt.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            }
+          ],
+          "commits": [
+            "64431c07a86596009f822f65a127c75b1b25b3e1"
+          ]
+        },
+        {
+          "index": 5,
+          "link_unit": "git2",
+          "module": "src/cli/opt.c",
+          "foundational": false,
+          "kind": "port",
+          "status": "wip",
+          "items": [
+            {
+              "name": "parse_arg",
+              "defined_in": "src/cli/opt.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            },
+            {
+              "name": "parse_long",
+              "defined_in": "src/cli/opt.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            },
+            {
+              "name": "parse_short",
+              "defined_in": "src/cli/opt.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            },
+            {
+              "name": "spec_for_sort",
+              "defined_in": "src/cli/opt.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            },
+            {
+              "name": "sort_gnu_style",
+              "defined_in": "src/cli/opt.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            },
+            {
+              "name": "cli_opt_parser_next",
+              "defined_in": "src/cli/opt.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            },
+            {
+              "name": "cli_opt_foreach",
+              "defined_in": "src/cli/opt.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            },
+            {
+              "name": "cli_opt_parse",
               "defined_in": "src/cli/opt.c",
               "kind": "function",
               "field_users": [],
@@ -121496,7 +121573,7 @@
           "module": "deps/llhttp/api.c",
           "foundational": false,
           "kind": "port",
-          "status": "wip",
+          "status": "done",
           "items": [
             {
               "name": "HTTP_ERRNO_GEN",
@@ -121723,7 +121800,292 @@
               "home": "src/libgit2/deps/llhttp/api.rs"
             }
           ],
+          "commits": [
+            "2a51ccb3fc46280feffd592b7862e3cb217a9514"
+          ]
+        },
+        {
+          "index": 4,
+          "link_unit": "libgit2",
+          "module": "deps/llhttp/api.c",
+          "foundational": false,
+          "kind": "port",
+          "status": "wip",
+          "items": [
+            {
+              "name": "CALLBACK_MAYBE",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "SPAN_CALLBACK_MAYBE",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp_errno_name",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp_init",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp_method_name",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp_reset",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp_settings_init",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp_status_name",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp__on_body",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp__on_chunk_complete",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp__on_chunk_extension_name",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp__on_chunk_extension_name_complete",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp__on_chunk_extension_value",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp__on_chunk_extension_value_complete",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp__on_chunk_header",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp__on_header_field",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp__on_header_field_complete",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp__on_header_value",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp__on_header_value_complete",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp__on_headers_complete",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp__on_message_begin",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp__on_message_complete",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp__on_method",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp__on_method_complete",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp__on_reset",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp__on_status",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp__on_status_complete",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp__on_url",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp__on_url_complete",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp__on_version",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp__on_version_complete",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            },
+            {
+              "name": "llhttp_finish",
+              "defined_in": "deps/llhttp/api.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/api.rs"
+            }
+          ],
           "commits": []
+        },
+        {
+          "index": 5,
+          "link_unit": "libgit2",
+          "module": "deps/llhttp/api.c",
+          "foundational": false,
+          "kind": "review",
+          "status": "done",
+          "reviews": [
+            0,
+            2
+          ],
+          "commits": [
+            "eecb24588d1b8e18eca79e72aa010fd0ab3f4541",
+            "f58d38aa9c1db7a20fed3244a269a5e6ccd9b818"
+          ]
         }
       ]
     },

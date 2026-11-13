@@ -241,7 +241,13 @@
       "crate": "std",
       "rust_api": "core::debug_assert"
      },
-     "confirmation": null
+     "confirmation": {
+      "batch": "wave-186/batch-4",
+      "route": "recommended",
+      "crate": "std",
+      "rust_api": "core::debug_assert",
+      "note": "needs no Rust code: the export aborts on NULL, and the build defines NDEBUG"
+     }
     },
     {
      "c_name": "__bswap_16",
@@ -7169,7 +7175,13 @@
       "crate": null,
       "rust_api": null
      },
-     "confirmation": null
+     "confirmation": {
+      "batch": "wave-186/batch-4",
+      "route": "recommended",
+      "crate": null,
+      "rust_api": "glibc_bindings::libc::libio::genops::FileRef",
+      "note": "holds; the wrapper's FileRef writes only &str, so the export replaces bytes that are not UTF-8 with U+FFFD until the wrapper has a byte-exact write (proposal fileref-prints-bytes)"
+     }
     },
     {
      "c_name": "fflush",
@@ -7302,7 +7314,13 @@
       "crate": null,
       "rust_api": null
      },
-     "confirmation": null
+     "confirmation": {
+      "batch": "wave-186/batch-4",
+      "route": "recommended",
+      "crate": null,
+      "rust_api": "glibc_bindings::libc::stdio_common::fprintf (FileRef::print, write_fmt)",
+      "note": "holds, with the same gap as _IO_FILE: a byte-exact write is missing"
+     }
     },
     {
      "c_name": "fputc",
@@ -7663,7 +7681,13 @@
       "crate": null,
       "rust_api": null
      },
-     "confirmation": null
+     "confirmation": {
+      "batch": "wave-194/batch-3",
+      "route": "recommended",
+      "crate": null,
+      "rust_api": "glibc_bindings::libc::libio::stdio::stderr",
+      "note": "the trace goes through C's own locked stderr stream, to stay in order with what the remaining C writes there; std::io::stderr writes the descriptor directly"
+     }
     },
     {
      "c_name": "stdin",
@@ -9801,7 +9825,13 @@
       "crate": "std",
       "rust_api": "core::slice::<[T]>::fill"
      },
-     "confirmation": null
+     "confirmation": {
+      "batch": "wave-186/batch-4",
+      "route": "recommended",
+      "crate": "std",
+      "rust_api": "core::slice::<[T]>::fill",
+      "note": "CZeroable::zeroed, checked byte for byte against C's parser"
+     }
     },
     {
      "c_name": "strchr",
@@ -10002,7 +10032,13 @@
       "crate": "std",
       "rust_api": "core::slice::<[u8]>::iter().position"
      },
-     "confirmation": null
+     "confirmation": {
+      "batch": "wave-186/batch-4",
+      "route": "recommended",
+      "crate": "std",
+      "rust_api": "core::slice::<[u8]>::iter().position",
+      "note": "byte-slice comparisons and CStr::to_bytes"
+     }
     },
     {
      "c_name": "strcmp",
@@ -10338,7 +10374,13 @@
       "crate": "std",
       "rust_api": "core::ffi::CStr::cmp"
      },
-     "confirmation": null
+     "confirmation": {
+      "batch": "wave-186/batch-4",
+      "route": "recommended",
+      "crate": "std",
+      "rust_api": "core::ffi::CStr::cmp",
+      "note": "byte-slice comparisons and CStr::to_bytes"
+     }
     },
     {
      "c_name": "strcpy",
@@ -10909,7 +10951,13 @@
       "crate": "std",
       "rust_api": "core::ffi::CStr::count_bytes"
      },
-     "confirmation": null
+     "confirmation": {
+      "batch": "wave-186/batch-4",
+      "route": "recommended",
+      "crate": "std",
+      "rust_api": "core::ffi::CStr::count_bytes",
+      "note": "byte-slice comparisons and CStr::to_bytes"
+     }
     },
     {
      "c_name": "strncmp",
@@ -11055,7 +11103,13 @@
       "crate": "std",
       "rust_api": "core::cmp::Ord::cmp"
      },
-     "confirmation": null
+     "confirmation": {
+      "batch": "wave-186/batch-4",
+      "route": "recommended",
+      "crate": "std",
+      "rust_api": "core::cmp::Ord::cmp",
+      "note": "byte-slice comparisons and CStr::to_bytes"
+     }
     },
     {
      "c_name": "strncpy",
@@ -16325,7 +16379,7 @@
    },
    "crustify_campaign": {
     "repository": "crustify-rs/glibc-crustify",
-    "pin": "1e601306ae89637bfed780c2f7ff2f01b6fc306a"
+    "pin": "24da93fc31a1788e73443cf4333d5037435d2d3f"
    }
   },
   {
