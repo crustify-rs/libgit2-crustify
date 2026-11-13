@@ -118910,10 +118910,112 @@
           "module": "src/cli/opt.c",
           "foundational": false,
           "kind": "review",
-          "status": "wip",
+          "status": "done",
           "reviews": [
             0,
             2
+          ],
+          "commits": [
+            "77e6925d825083e4a11c6d5ea035b6a76c45ab15",
+            "3829c7a0616bd1bbd68c41da3e55fc3cdbbe4ee6"
+          ]
+        },
+        {
+          "index": 4,
+          "link_unit": "git2",
+          "module": "src/cli/opt.c",
+          "foundational": false,
+          "kind": "port",
+          "status": "wip",
+          "items": [
+            {
+              "name": "spec_included",
+              "defined_in": "src/cli/opt.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            },
+            {
+              "name": "spec_is_choice",
+              "defined_in": "src/cli/opt.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            },
+            {
+              "name": "spec_name_fprint",
+              "defined_in": "src/cli/opt.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            },
+            {
+              "name": "cli_opt_parser_init",
+              "defined_in": "src/cli/opt.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            },
+            {
+              "name": "cli_opt_status_fprint",
+              "defined_in": "src/cli/opt.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            },
+            {
+              "name": "consume_choices",
+              "defined_in": "src/cli/opt.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            },
+            {
+              "name": "int (*)(cli_opt *, void *)",
+              "defined_in": "src/cli/opt.c",
+              "kind": "function_pointer",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            },
+            {
+              "name": "spec_for_arg",
+              "defined_in": "src/cli/opt.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            },
+            {
+              "name": "spec_for_long",
+              "defined_in": "src/cli/opt.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            },
+            {
+              "name": "spec_for_short",
+              "defined_in": "src/cli/opt.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            },
+            {
+              "name": "validate_required",
+              "defined_in": "src/cli/opt.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            }
           ],
           "commits": []
         }
