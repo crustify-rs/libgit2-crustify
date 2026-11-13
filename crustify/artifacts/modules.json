@@ -681,7 +681,7 @@
         {
           "index": 7,
           "name": "deps/llhttp/llhttp.c",
-          "status": "todo",
+          "status": "frozen",
           "foundational": false,
           "depends_on": [
             {
@@ -816,7 +816,7 @@
         {
           "index": 8,
           "name": "deps/llhttp/api.c",
-          "status": "todo",
+          "status": "frozen",
           "foundational": false,
           "depends_on": [
             {
@@ -933,7 +933,7 @@
         {
           "index": 9,
           "name": "deps/llhttp/http.c",
-          "status": "todo",
+          "status": "frozen",
           "foundational": false,
           "depends_on": [
             {
@@ -9554,7 +9554,7 @@
         {
           "index": 53,
           "name": "src/util/utf8.c",
-          "status": "todo",
+          "status": "frozen",
           "foundational": false,
           "depends_on": [],
           "translation_unit": {
@@ -54618,7 +54618,7 @@
         {
           "index": 201,
           "name": "deps/ntlmclient/compat.h",
-          "status": "todo",
+          "status": "frozen",
           "foundational": false,
           "depends_on": [],
           "translation_unit": null,
