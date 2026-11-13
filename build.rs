@@ -286,6 +286,12 @@ fn build_c(root: &Path, shared: bool) -> PathBuf {
     }
     let cmake = env::var_os("CMAKE").unwrap_or_else(|| "cmake".into());
     let build = PathBuf::from(env::var("OUT_DIR").unwrap()).join("c");
+    // A build configured from another source dir, the same crate's at another path (its
+    // packaged copy, say), cannot be reconfigured: it is started afresh.
+    let cache = build.join("CMakeCache.txt");
+    if cache.exists() && cache_var(&cache, "CMAKE_HOME_DIRECTORY:") != c.display().to_string() {
+        fs::remove_dir_all(&build).unwrap();
+    }
     fs::create_dir_all(&build).unwrap();
     // The compiler the C wrappers are compiled with, so that both halves agree.
     let compiler = cc::Build::new().get_compiler();
@@ -567,8 +573,18 @@ fn extern_items(bindings: &Path) -> Vec<String> {
         fs::read_to_string(bindings).unwrap_or_else(|e| panic!("{}: {e}", bindings.display()));
     let mut items = Vec::new();
     let mut renamed = false;
+    let mut in_extern = false;
     for line in text.lines() {
         let t = line.trim();
+        if line.ends_with("extern \"C\" {") && !line.starts_with(' ') {
+            in_extern = true;
+            continue;
+        } else if line == "}" {
+            in_extern = false;
+            continue;
+        } else if !in_extern {
+            continue;
+        }
         if t.starts_with("#[link_name") {
             renamed = true;
             continue;
@@ -577,9 +593,7 @@ fn extern_items(bindings: &Path) -> Vec<String> {
             .strip_prefix("pub fn ")
             .or_else(|| t.strip_prefix("pub static mut "))
             .or_else(|| t.strip_prefix("pub static "));
-        if let Some(decl) = decl
-            && line.starts_with("    ")
-        {
+        if let Some(decl) = decl {
             let name: String = decl
                 .chars()
                 .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
@@ -1019,8 +1033,10 @@ fn cache_var(cache: &Path, name: &str) -> String {
     let text = fs::read_to_string(cache).unwrap_or_else(|e| panic!("{}: {e}", cache.display()));
     text.lines()
         .find_map(|l| l.strip_prefix(name).and_then(|r| r.split_once('=')))
-        .map(|(_, v)| v.to_string())
-        .unwrap_or_else(|| panic!("{} records no {name}", cache.display()))
+        .map_or_else(
+            || panic!("{} records no {name}", cache.display()),
+            |(_, v)| v.to_string(),
+        )
 }
 
 /// The compiler of a campaign variant, and the instrumentation flags of its C flags, as its

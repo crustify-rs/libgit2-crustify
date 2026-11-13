@@ -1,7 +1,8 @@
 # crustify-libgit2
 
-Safe Rust wrappers over libgit2's public C API; the raw bindings live in the
-`libgit2-sys` crate.
+Safe Rust wrappers over libgit2's public C API, the `libgit2-crustify` crate. It bundles
+libgit2's C, built statically by default, and its raw bindings, the public `sys` module,
+through which the C that is not wrapped yet is reached.
 
 ## How it was made
 

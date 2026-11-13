@@ -33,7 +33,7 @@ and are outside the rule: `wave-176/batch-1` compares them so in the test proces
   `git__substrdup`, `git__free`) through the strategies of `src/libgit2/src/util/alloc.rs`:
   `Free` / `AllocBox`, `ArrayFree` / `AllocVec` and `StrFree` / `AllocStr`, which call
   those primitives through their raw bindings, the two `static inline` ones through the
-  wrappers in `libgit2-sys/src/static_fns.c`. New owners of memory libgit2 frees with
+  wrappers in `sys/libgit2/static_fns.c`. New owners of memory libgit2 frees with
   `git__free` use those policies, not new ones over `git_odb_backend_data_alloc` /
   `git_odb_backend_data_free`, whose bodies are `git__malloc` / `git__free` but which are
   odb.c's exports and loop back through the strategies once odb.c is ported.

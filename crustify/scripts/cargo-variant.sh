@@ -5,10 +5,10 @@
 #
 # <variant> is a `variants` key of crustify/artifacts/build.json: plain, coverage, asan-ubsan,
 # tsan or bsan. Each variant uses its own target dir under target/.
-# libgit2-sys links the variant's static archive (its `static` in build.json) into each test
-# binary, so the C runs under the instrumentation the Rust is built with here, one runtime
-# serving both. Set CRUSTIFY_BUILD_DIR to a private build of the variant, which carries the
-# same archive, to link it instead of the shared one.
+# The safe crate's build script, in campaign mode, links the variant's static archive (its
+# `static` in build.json) into each test binary, so the C runs under the instrumentation the
+# Rust is built with here, one runtime serving both. Set CRUSTIFY_BUILD_DIR to a private build
+# of the variant, which carries the same archive, to link it instead of the shared one.
 set -euo pipefail
 variant=${1:?usage: cargo-variant.sh <variant> <cargo subcommand> [args...]}
 shift
@@ -17,8 +17,13 @@ host=x86_64-unknown-linux-gnu
 export CRUSTIFY_BUILD_VARIANT=$variant
 export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$here/target/$variant}
 # pcre2-sys links the variant's side-campaign PCRE2, the one libgit2's C links, rather than
-# building its vendored copy, which would shadow it in every test binary.
-export PKG_CONFIG_PATH="$here/../pcre2-bindings/crustify/builds/$variant/install/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+# building its vendored copy, which would shadow it in every test binary. The side campaigns'
+# clones sit where the variant's build found their installs, beside the repository whose
+# crustify/builds holds it (build.json's configure takes them from `$PWD/../../../..` in
+# crustify/builds/<variant>): resolved physically through crustify/builds, which a worktree or
+# a gate snapshot links to that repository's, so that every checkout finds the same ones.
+side=$(realpath -m "$here/crustify/builds/$variant/../../../..")
+export PKG_CONFIG_PATH="$side/pcre2-bindings/crustify/builds/$variant/install/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 cd "$here"
 # The nightly the workspace pins, for the sanitizers that need it.
 nightly=$(sed -n 's/^nightly = "\(.*\)"$/\1/p' Cargo.toml)

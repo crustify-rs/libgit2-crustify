@@ -10,6 +10,26 @@ publish.workspace = true
 # The raw bindings' link metadata, which dependents' build scripts read as `DEP_GIT2_*`.
 links = "git2"
 build = "build.rs"
+# The packaged crate: the safe crate, its raw bindings and the C its bundled build reads
+# (crustify's `bindgen` skill, Publishing).
+include = [
+    "/Cargo.toml",
+    "/build.rs",
+    "/README.md",
+    "/src/**",
+    "/sys/**",
+    "/c/COPYING",
+    "/c/CMakeLists.txt",
+    "/c/cmake/**",
+    "/c/include/**",
+    "/c/src/CMakeLists.txt",
+    "/c/src/libgit2/**",
+    "/c/src/util/**",
+    "/c/deps/llhttp/**",
+    "/c/deps/ntlmclient/**",
+    "/c/deps/reftable/**",
+    "/c/deps/xdiff/**",
+]
 
 [features]
 default = ["libgit2"]
@@ -31,7 +51,7 @@ system = []
 # prints the path as declared, so a path through the link leaves the snapshots' paths
 # absolute. glibc-bindings takes it by Git, which the [patch] below points at this path,
 # so the graph holds one ffibox.
-ffibox = { path = "/crustify-rs/ffibox" }
+ffibox = { version = "0.1.1", path = "/crustify-rs/ffibox" }
 # libc's wrapper, the crustify-rs/glibc-crustify side campaign: pinned to a commit
 # (`wrapper.pin` in crustify/artifacts/dependencies.json), and patched below to its clone
 # beside this repository while the campaign extends it, by absolute path, which the batch
