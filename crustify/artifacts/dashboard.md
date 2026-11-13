@@ -57,19 +57,19 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip the integration of `libgit2/src/util/strnlen.h`, `30176475c`; `main` at `c58bc5de8`, nothing shipped yet; crustify `cc84106`, ffibox `9c22a73`, wavefront `bf21e16`, ffimap `9aa2ef1` (each on its `libgit2-crustify/devel`, wavefront and ffimap on `devel`)
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `18820` non-test, `99734` tests; **C LoC** — `89080`
+- **Rust LoC** — `18978` non-test, `99995` tests; **C LoC** — `89080`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `762` | — | `27.96`% | `79.18`% |
-| UB unsafe tests | `120` | — | `19.09`% | `14.38`% |
-| Equiv tests | `528` | — | `42.52`% | `74.96`% |
-| Unit tests | `908` | — | `31.35`% | `87.75`% |
-| **Total tests** | **`2318`** | — | **`45.02`%** | **`98.81`%** |
+| UB safe tests | `762` | — | `27.91`% | `78.74`% |
+| UB unsafe tests | `120` | — | `19.06`% | `14.30`% |
+| Equiv tests | `532` | — | `42.51`% | `74.66`% |
+| Unit tests | `920` | — | `31.34`% | `87.82`% |
+| **Total tests** | **`2334`** | — | **`44.96`%** | **`98.81`%** |
 | total types | `258` | — | — | — |
-| ported types | `0` | `0.00`% | — | — |
+| ported types | `4` | `1.55`% | — | — |
 | wrapped types | `107` | `41.47`% | — | — |
 | total symbols | `979` | — | — | — |
 | ported symbols | `23` | `2.35`% | — | — |
@@ -233,6 +233,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/diff_parse.c` | `62` | `0` | wrap | first | `1` | `2` | `+756/-8` | — | `$3.11` | `7.21M` | `15m29s` | `$3.11` | `$1.55` |
 | `libgit2/src/libgit2/checkout.c` | `125` | `1` | wrap | first | `1` | `3` | `+490/-4` | — | `$4.39` | `11.97M` | `17m30s` | `$4.39` | `$1.46` |
 | `libgit2/src/libgit2/checkout.c` | `125` | `0` | wrap | first | `1` | `20` | `+1435/-433` | `45.87`% / `98.93`% | `$12.11` | `36.14M` | `41m32s` | `$12.11` | `$0.61` |
+| `git2/src/cli/opt.c` | `186` | `0` | port | first | `4` | `0` | `+806/-0` | `44.96`% / `98.81`% | — | — | — | — | — |
 | `libgit2/util` | `legacy-6` | `0` | wrap | review | `2` | `5` | `+172/-15` | `1.63`% / `99.74`% | `$20.66` | `23.31M` | `48m16s` | `$10.33` | `$4.13` |
 | `libgit2/util` | `legacy-6` | `1` | wrap | review | `2` | `0` | `+149/-12` | `1.63`% / `98.42`% | `$7.58` | `10.10M` | `18m18s` | `$3.79` | — |
 | `libgit2/oid` | `legacy-11` | `0` | wrap | review | `2` | `2` | `+224/-6` | `7.81`% / `99.48`% | `$14.93` | `18.05M` | `29m10s` | `$7.46` | `$7.46` |
@@ -260,7 +261,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `0` | wrap | review | `1` | `3` | `+103/-5` | — | `$3.73` | `10.13M` | `16m05s` | `$3.73` | `$1.24` |
 | `libgit2/src/libgit2/checkout.c` | `legacy-335` | `0` | wrap | review | `1` | `20` | `+106/-17` | `45.92`% / `98.92`% | `$7.76` | `16.62M` | `33m19s` | `$7.76` | `$0.39` |
 | `libgit2/deps/reftable/basics.c` | `169` | `3` | wrap | review | `2` | `3` | `+134/-4` | `45.90`% / `98.92`% | `$9.26` | `30.25M` | `24m42s` | `$4.63` | `$3.09` |
-| **Σ first** |  |  |  |  | **`107`** | **`215`** | **`+98491/-2532`** | **`45.90`% / `98.91`%** | **`$598.14`** | **`1471.91M`** | — | **`$5.59`** | **`$2.78`** |
+| **Σ first** |  |  |  |  | **`111`** | **`215`** | **`+99297/-2532`** | **`44.96`% / `98.81`%** | **`$598.14`** | **`1471.91M`** | — | **`$5.59`** | **`$2.78`** |
 | **Σ review** |  |  |  |  | **`107`** | **`215`** | **`+9726/-2089`** | **`45.90`% / `98.92`%** | **`$426.90`** | **`715.94M`** | — | **`$3.99`** | **`$1.99`** |
 
 ### Batches: tests
@@ -336,6 +337,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/diff_parse.c` | `62` | `0` | first | `+4` (—/— pp) | `+0` (—/— pp) | `+3` (—/— pp) | `+5` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `125` | `1` | first | `+2` (—/— pp) | `+0` (—/— pp) | `+1` (—/— pp) | `+5` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `125` | `0` | first | `+6` (`+0.27`/`+0.47` pp) | `-9` (`-2.75`/`-0.68` pp) | `+0` (`+0.00`/`-0.33` pp) | `+4` (`+0.01`/`+0.12` pp) |
+| `git2/src/cli/opt.c` | `186` | `0` | first | `+0` (`+0.00`/`-0.44` pp) | `+0` (`-0.00`/`-0.08` pp) | `+4` (`-0.02`/`-0.30` pp) | `+12` (`-0.05`/`+0.07` pp) |
 | `libgit2/util` | `legacy-6` | `0` | review | `+0` (`+0.00`/`+0.00` pp) | `+1` (`+0.00`/`+0.00` pp) | `+0` (`+0.00`/`+0.00` pp) | `+2` (`+0.00`/`+0.00` pp) |
 | `libgit2/util` | `legacy-6` | `1` | review | `+0` (`+0.00`/`-0.44` pp) | `+0` (`+0.00`/`-0.79` pp) | `+1` (`+0.27`/`-0.49` pp) | `+1` (`+0.00`/`+0.20` pp) |
 | `libgit2/oid` | `legacy-11` | `0` | review | `+1` (`+0.00`/`+0.32` pp) | `+0` (`+0.00`/`-0.39` pp) | `+1` (`+0.00`/`-0.61` pp) | `+4` (`+0.00`/`+0.57` pp) |
@@ -363,7 +365,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `0` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+1` (—/— pp) | `+0` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `legacy-335` | `0` | review | `+0` (`+0.06`/`+0.02` pp) | `+0` (`+0.02`/`-0.01` pp) | `+0` (`-0.02`/`-0.07` pp) | `+1` (`+0.02`/`+0.00` pp) |
 | `libgit2/deps/reftable/basics.c` | `169` | `3` | review | `+1` (`+0.02`/`-0.02` pp) | `+0` (`+0.00`/`+0.00` pp) | `+0` (`-0.01`/`-0.02` pp) | `+2` (`+0.02`/`+0.01` pp) |
-| **Σ first** |  |  |  | **`+465` (`+25.11`/`-2.31` pp)** | **`+46` (`+14.02`/`-52.96` pp)** | **`+261` (`+31.13`/`-25.27` pp)** | **`+489` (`+12.62`/`+24.61` pp)** |
+| **Σ first** |  |  |  | **`+465` (`+25.11`/`-2.75` pp)** | **`+46` (`+14.02`/`-53.04` pp)** | **`+265` (`+31.11`/`-25.57` pp)** | **`+501` (`+12.57`/`+24.68` pp)** |
 | **Σ review** |  |  |  | **`+36` (`+0.45`/`+2.20` pp)** | **`+3` (`-0.38`/`-5.37` pp)** | **`+23` (`+2.68`/`-1.30` pp)** | **`+42` (`+4.70`/`+2.37` pp)** |
 
 ### Batches: safety audit
@@ -373,8 +375,9 @@ Deterministic `ffimap`; no model.
 | module | wave | batch | objective | pass | pub raw ptr | pub void ptr | pub unsafe fn | &cell | C by value | celled % | raw→std | unmanaged ptr types | ptr Drop | Send/Sync | raw deref | FFI calls | unsafe loc % | unsafe blocks |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | `libgit2/deps/reftable/basics.c` | `169` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | `+1` | `+0.00` pp | `+2` | `+0` | `+0` | `+0` | `+3` | `+0` | `-0.06` pp | `+10` |
+| `git2/src/cli/opt.c` | `186` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.08` pp | `+0` |
 | `libgit2/deps/reftable/basics.c` | `169` | `3` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+6` | `+0` | `+0` | `-0.01` pp | `+0` |
-| **Σ first** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+1`** | **`+0.00` pp** | **`+2`** | **`+0`** | **`+0`** | **`+0`** | **`+3`** | **`+0`** | **`-0.06` pp** | **`+10`** |
+| **Σ first** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+1`** | **`+0.00` pp** | **`+2`** | **`+0`** | **`+0`** | **`+0`** | **`+3`** | **`+0`** | **`-0.14` pp** | **`+10`** |
 | **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+6`** | **`+0`** | **`+0`** | **`-0.01` pp** | **`+0`** |
 
 ### Batches: API stability
@@ -383,7 +386,8 @@ Deterministic `ffimap api`; no model.
 
 | module | wave | batch | objective | pass | kept | extended | changed | removed | new | →Replaces | unattributed | reasons |
 |---|---|---|---|---|---:|---:|---:|---:|---:|---:|---|---|
-| **Σ first** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** |  |  |
+| `git2/src/cli/opt.c` | `186` | `0` | port | first | `0` | `0` | `0` | `0` | `27` | `0` | `sys::git2` extended | — |
+| **Σ first** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`27`** | **`0`** |  |  |
 | **Σ review** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** |  |  |
 
 ### Batches — review: PoC + reports
@@ -3379,3 +3383,60 @@ rounds of BSan over the workspace, the first lost to a 5400 s timeout. From 2026
 over the workspace only before a ship point, and otherwise on small things (`990d7033a`,
 `22ace3a00`). `Module stats` gains the module's row, the first of a per-TU module: the
 foundational modules have none there, so its `Σ` rows hold the legacy modules and this one.
+
+
+### `git2/src/cli/opt.c` wave 186 batch 0: `opt.h`'s enums
+
+The first batch of the `git2` link unit, the CLI. It ports `src/cli/opt.h`'s four enums into
+`src/git2/src/cli/opt.rs`, as native Rust that keeps C's values. `enm::cli_opt_type_t` is
+`Kind` and `enm::cli_opt_status_t` is `Status`: closed enums, as the plan judges them (their
+`port/layout` is wave 2404). Each is `#[repr(u32)]` with C's discriminants, and has
+crate-private `from_raw` / `raw` conversions for the gateways the module's later batches
+write. Each conversion carries a `dead_code` expectation outside tests until a gateway calls
+it (`crustify/evolution/enum-integer-form-crate-private`). `enm::cli_opt_usage_t` is `Usage`
+and `enm::cli_opt_flag_t` is `ParseFlags`: `#[repr(transparent)]` bit sets over `u32` that
+keep unnamed bits, as the spec tables' `HIDDEN | STOP_PARSING` and `CHOICE | SHOW_LONG` need.
+Each of the 23 constants is anchored on its variant or associated constant. The file holds no
+unsafe region and carries `#![forbid(unsafe_code)]`. Nothing is exported: `opt.h` keeps the C
+definitions for `cmd_*.c`, `common.c`, `main.c` and `opt_usage.c`. The enums hold no pointer,
+so wavefront has no ownership finding or lifecycle to submit for them. `sys/git2/allowlist.txt`
+gains the four typedefs, and its bindings were regenerated in campaign mode; they are
+constants alone, so nothing new links.
+
+Tests: eight `unit_pub` tests. They cover each flag being its own bit, the spec tables'
+combinations under `contains`, `intersects`, `&` and `|`, the assigning operators, unnamed
+bits retained, the closed enums' C values in `opt.h`'s order, and the derived traits. Four
+`equiv` tests compare every variant's discriminant and every flag's bits with `sys::git2`'s
+constants, and four `equiv_priv` tests in `lib` round-trip the conversions through those
+constants and refuse values past them. The CLI has no C tests to carry over. The test counts
+are by binary, so `lib`'s four are in the unit column. The API stability row counts the
+worklist's 27 anchors, the four enums and their 23 constants, all `new`. Of the unattributed
+modules, `sys::git2` is `extended` by the raw constants and the other 18 are `kept`.
+
+Coverage was measured with `crustify/scripts/coverage/run.sh` on a `git archive` of the wave
+tip `2216b0cd0` and on this tree, and read with `report.py` (`C=@c` over the `coverage`
+variant's `libcrustify.a`, Rust over the scratch tree's `src/`). The unit column merges `lib`
+and `unit_pub`. Per `coverage-report-relative-rows`, the base was read from `src/libgit2`, but
+the tree from `src/`: `opt.rs` now holds counted regions, so `llvm-cov`'s common prefix is
+`src/`. `opt.rs` is covered in full: 81 of 81 lines, 22 of 22 functions and 81 of 81 regions.
+A first measurement left `ParseFlags`' binary `&` unrun, and a test was added for it. The C
+shifts (`-0.02` pp `equiv`, `-0.05` pp unit) come from suites whose new tests run no C, so
+they are run-to-run variation. The Rust shifts are the denominator's 81 new lines. The
+Overview's Rust LoC moves by ffimap's `code.loc.total` (`+158`, the regenerated bindings
+included) and `code.tests.loc.total` (`+261`). `+LoC` counts every `.rs` line, `bindings.rs`'s
+89 among them. `ported types` counts the four enums against the recorded total.
+
+The safety audit scans (ffimap `9aa2ef1`, `--ffibox`, `--sys-crates pcre2_sys`, the 13 seams,
+`--regions ffi_import,ffi_export`, no export feature in the manifest) move only `unsafe loc %`
+(`-0.08` pp, from the new safe lines). The boundary scan's sites hold none in the changeset.
+
+Gates, on the base `2216b0cd0`: the workspace is formatted, and `clippy --all-targets` passes
+with warnings denied. The module's tests pass on `plain` and under ASan+UBSan, and all 16
+pass under Miri: they read constants alone. The coverage runs ran every suite of both trees
+(`lib` 844 and 1 ignored, `ub_safe` 761, `ub_unsafe` 120, `equiv` 532, `unit_pub` 75,
+`hidden_symbols` 1, doctests 377 merged). Only the known `CommitBuilder` compile-fail
+doctest fails, on both trees. TSan and BSan have no obligation: there is no unsafe code, no
+`Send` or `Sync` claim and no thread. The raw bindings changed, so the crate was packaged in
+bundled mode (698 files) and verified. That took the unpublished wrappers patched on
+`crates-io` and the side campaigns' installs on `CMAKE_PREFIX_PATH`, colon-separated
+(`crustify/evolution/packaging-gate-procedure`). Usage cells are the assistant's.
