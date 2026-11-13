@@ -57314,7 +57314,7 @@
         {
           "index": 13,
           "name": "src/cli/opt.c",
-          "status": "todo",
+          "status": "frozen",
           "foundational": false,
           "depends_on": [
             {
