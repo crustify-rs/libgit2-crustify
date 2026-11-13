@@ -1,0 +1,60 @@
+{
+  "objective": "wrap",
+  "wave": 194,
+  "batch": 2,
+  "link_unit": "libgit2",
+  "module": "deps/llhttp/api.c",
+  "foundational": false,
+  "base_branch": "refs/heads/crustify/waves/wave-194",
+  "backend": "claude",
+  "billing": "api",
+  "model_proxy": "openrouter",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "cc84106",
+    "wavefront": "bf21e16",
+    "ffimap": "9aa2ef1",
+    "ffibox": "9c22a73"
+  },
+  "items": [
+    {
+      "name": "llhttp_settings_s",
+      "defined_in": "deps/llhttp/llhttp.h",
+      "kind": "struct",
+      "field_users": [
+        "on_reset",
+        "on_chunk_complete",
+        "on_chunk_extension_value_complete",
+        "on_chunk_extension_value",
+        "on_chunk_extension_name_complete",
+        "on_chunk_extension_name",
+        "on_chunk_header",
+        "on_body",
+        "on_message_complete",
+        "on_headers_complete",
+        "on_header_value_complete",
+        "on_header_value",
+        "on_header_field_complete",
+        "on_header_field",
+        "on_version_complete",
+        "on_version",
+        "on_method_complete",
+        "on_method",
+        "on_status_complete",
+        "on_status",
+        "on_url_complete",
+        "on_url",
+        "on_message_begin"
+      ],
+      "typedefs": [
+        "git_http_parser_settings",
+        "llhttp_settings_t"
+      ],
+      "home": "src/libgit2/deps/llhttp/api.rs"
+    }
+  ],
+  "session_id": "08361882-f831-428c-9dc1-b19d86983d5f"
+}

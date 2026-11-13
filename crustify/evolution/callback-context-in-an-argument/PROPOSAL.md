@@ -1,6 +1,6 @@
 # A callback whose context is reached through an argument has no sound C form
 
-Status: `open`.
+Status: `open` (weighed by `wave-194/batch-2/run-1`; the spec change is not made).
 
 ## Signal
 
@@ -31,11 +31,43 @@ The spec: `binding-symbols`, Function pointers, its three cases that shape the t
 
 ## Change
 
-Not made: the evidence does not yet show which form serves. Two candidates, for the next
-batch that binds the table holding such callbacks to weigh: the C half bound to the
-argument that carries its context (a callable read from an object's table calls only with
-that object, its constructor's contract being the table's), or no safe `call` for the C
-half, the C function reached only through the routine of the object that dispatches it.
+Not made yet. `wave-194/batch-2/run-1`, the next batch that binds the table holding such
+callbacks, weighed the two candidates and took the first, which needs no new primitive:
+
+- the callable type's C half keeps the strong contract, sound with any argument whatever
+  context it carries, and a C function that reads its context from an argument is never
+  one, so `call` stays safe;
+- a table of callables, bound as a layout whose slots are set only from the callable types,
+  is sound with any object, and the object's setter that stores it is safe, taking a
+  `'static` borrow where C keeps its address (`ParserMut::set_settings(Option<&'static
+  Settings>)`);
+- a table C builds of functions that read their context from the object is stored only
+  through the object's `unsafe` setter, whose contract vouches for the object's context
+  (`set_settings_ptr`), and is read back from the object as the address it holds, not as the
+  table's handle, whose getters would hand out callables callable with any object; its
+  functions are reached only through the routine of the object that dispatches them (api.c's
+  `CALLBACK_MAYBE`, `port` in wave 195), with that object.
+
+In `binding-symbols` § Function pointers, as a fourth case after "one without a context
+parameter carries no captured state":
+
+> - one whose context C reaches through another argument, such as the object it is
+>   handed, has a C half only for functions sound with any such argument. A C function
+>   that reads its context there is reached only through the object that holds it, by the
+>   routine that dispatches it with that object, never as the callable type: a field or
+>   table that holds such functions is set from C, or through an `unsafe` setter whose
+>   contract carries the object's context, and read back as no callable.
+
+## Evidence (`wave-194/batch-2/run-1`)
+
+`llhttp_settings_s`, bound as `Settings` in `src/libgit2/deps/llhttp/api.rs`: its 23 slots
+are set from `Callback` / `DataCallback` only, read back as them through the handles'
+invariant (each non-NULL slot is one `from_fn` accepts), and `Settings` is `Send` and
+`Sync`, so that a `static` holds one, as libgit2's `httpclient.c` does in C. `ParserRef`'s
+`settings` getter stays the raw address: `transports/httpclient.c`'s `on_header_field`,
+`on_body` and the others cast `parser->data` to `http_parser_context *`, so a
+`SettingsRef` over that table would let `Settings`' getter return a `DataCallback` whose
+safe `call(Parser::new().as_mut(), …)` hands them a NULL context.
 
 ## Validation
 

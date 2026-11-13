@@ -15168,6 +15168,9 @@ unsafe extern "C" {
     pub fn llhttp_get_upgrade(parser: *mut llhttp_t) -> u8;
 }
 unsafe extern "C" {
+    pub fn llhttp_reset(parser: *mut llhttp_t);
+}
+unsafe extern "C" {
     pub fn llhttp_settings_init(settings: *mut llhttp_settings_t);
 }
 unsafe extern "C" {
@@ -15176,6 +15179,9 @@ unsafe extern "C" {
         data: *const ::std::os::raw::c_char,
         len: usize,
     ) -> llhttp_errno_t;
+}
+unsafe extern "C" {
+    pub fn llhttp_finish(parser: *mut llhttp_t) -> llhttp_errno_t;
 }
 unsafe extern "C" {
     pub fn llhttp_get_errno(parser: *const llhttp_t) -> llhttp_errno_t;

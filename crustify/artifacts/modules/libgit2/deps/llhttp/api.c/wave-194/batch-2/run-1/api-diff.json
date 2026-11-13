@@ -1,0 +1,229 @@
+{
+ "after": {
+  "crate": "libgit2_crustify",
+  "crate_version": "0.1.0",
+  "deps": [
+   "ffibox"
+  ],
+  "format_version": 61,
+  "plumbing": [
+   "ffibox"
+  ]
+ },
+ "anchor_moves": {},
+ "api": 2,
+ "before": {
+  "crate": "libgit2_crustify",
+  "crate_version": "0.1.0",
+  "deps": [
+   "ffibox"
+  ],
+  "format_version": 61,
+  "plumbing": [
+   "ffibox"
+  ]
+ },
+ "items": {
+  "fld::llhttp__internal_s.settings": {
+   "changes": [
+    {
+     "change": "added",
+     "item": "method::set_settings",
+     "part": "contract",
+     "severity": "extended"
+    }
+   ],
+   "status": "extended"
+  },
+  "fld::llhttp_settings_s.on_body": {
+   "status": "new"
+  },
+  "fld::llhttp_settings_s.on_chunk_complete": {
+   "status": "new"
+  },
+  "fld::llhttp_settings_s.on_chunk_extension_name": {
+   "status": "new"
+  },
+  "fld::llhttp_settings_s.on_chunk_extension_name_complete": {
+   "status": "new"
+  },
+  "fld::llhttp_settings_s.on_chunk_extension_value": {
+   "status": "new"
+  },
+  "fld::llhttp_settings_s.on_chunk_extension_value_complete": {
+   "status": "new"
+  },
+  "fld::llhttp_settings_s.on_chunk_header": {
+   "status": "new"
+  },
+  "fld::llhttp_settings_s.on_header_field": {
+   "status": "new"
+  },
+  "fld::llhttp_settings_s.on_header_field_complete": {
+   "status": "new"
+  },
+  "fld::llhttp_settings_s.on_header_value": {
+   "status": "new"
+  },
+  "fld::llhttp_settings_s.on_header_value_complete": {
+   "status": "new"
+  },
+  "fld::llhttp_settings_s.on_headers_complete": {
+   "status": "new"
+  },
+  "fld::llhttp_settings_s.on_message_begin": {
+   "status": "new"
+  },
+  "fld::llhttp_settings_s.on_message_complete": {
+   "status": "new"
+  },
+  "fld::llhttp_settings_s.on_method": {
+   "status": "new"
+  },
+  "fld::llhttp_settings_s.on_method_complete": {
+   "status": "new"
+  },
+  "fld::llhttp_settings_s.on_reset": {
+   "status": "new"
+  },
+  "fld::llhttp_settings_s.on_status": {
+   "status": "new"
+  },
+  "fld::llhttp_settings_s.on_status_complete": {
+   "status": "new"
+  },
+  "fld::llhttp_settings_s.on_url": {
+   "status": "new"
+  },
+  "fld::llhttp_settings_s.on_url_complete": {
+   "status": "new"
+  },
+  "fld::llhttp_settings_s.on_version": {
+   "status": "new"
+  },
+  "fld::llhttp_settings_s.on_version_complete": {
+   "status": "new"
+  },
+  "fn::llhttp_settings_init": {
+   "status": "new"
+  },
+  "st::llhttp_settings_s": {
+   "status": "new"
+  },
+  "tdf::git_http_parser_settings": {
+   "status": "new"
+  },
+  "tdf::llhttp_settings_t": {
+   "status": "new"
+  }
+ },
+ "missing": [],
+ "rekeyed": 0,
+ "retargeted": 0,
+ "totals": {
+  "changed": 0,
+  "extended": 1,
+  "kept": 0,
+  "new": 27,
+  "removed": 0
+ },
+ "unattributed": {
+  "modules": {
+   "libgit2_crustify::libgit2::deps::llhttp::llhttp": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::deps::reftable::basics": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::checkout": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::commit": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::config": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::diff": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::filter": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::index": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::libgit2": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::odb": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::repository": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::settings": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::signature": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::strarray": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::trace": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::tree": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::worktree": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::util::errors": {
+    "status": "kept"
+   },
+   "libgit2_crustify::sys::git2": {
+    "status": "kept"
+   },
+   "libgit2_crustify::sys::libgit2": {
+    "changes": [
+     {
+      "change": "added",
+      "item": "libgit2_crustify::sys::libgit2::llhttp_finish",
+      "part": "item",
+      "severity": "extended"
+     },
+     {
+      "change": "added",
+      "item": "libgit2_crustify::sys::libgit2::llhttp_reset",
+      "part": "item",
+      "severity": "extended"
+     },
+     {
+      "change": "removed",
+      "item": "libgit2_crustify::sys::libgit2::llhttp_settings_s",
+      "part": "item",
+      "severity": "changed"
+     },
+     {
+      "change": "removed",
+      "item": "libgit2_crustify::sys::libgit2::llhttp_settings_t",
+      "part": "item",
+      "severity": "changed"
+     }
+    ],
+    "status": "changed"
+   }
+  },
+  "totals": {
+   "changed": 1,
+   "extended": 0,
+   "kept": 19,
+   "new": 0,
+   "removed": 0
+  }
+ },
+ "unresolved": 0,
+ "view": "contract"
+}

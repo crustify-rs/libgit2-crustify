@@ -820,3 +820,9 @@ function llhttp__internal_init
 function llhttp_errno_name
 function llhttp_method_name
 function llhttp_status_name
+
+# wave-194/batch-2: api.c's finisher, which calls the settings table's `on_message_complete`,
+# and its reset, which keeps the table, through which the equivalence tests compare a table
+# set by the safe setter with one llhttp_init sets
+function llhttp_finish
+function llhttp_reset

@@ -3981,6 +3981,450 @@
    ]
   },
   {
+   "name": "llhttp_settings_s",
+   "defined_in": "deps/llhttp/llhttp.h",
+   "_comment_user": "wave-194/batch-2: llhttp's table of callbacks, 23 nullable function pointers. It owns nothing and holds no context: each callback is handed the parser, whose data is its context. No routine allocates or frees one: libgit2's httpclient.c holds a static, filled field by field on first use; llhttp_settings_init memsets one in place; llhttp_init stores its address in parser->settings (const, kept by llhttp_reset, zeroed by llhttp__internal_init), and api.c's CALLBACK_MAYBE/SPAN_CALLBACK_MAYBE (llhttp__on_* and llhttp_finish) read it on every event and call a non-NULL slot with the parser. C never writes a table it is given. A C callback that reads parser->data as its context (httpclient.c's) is sound only with the parsers whose data it expects.",
+   "fields": [
+    {
+     "name": "on_body",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function pointer, llhttp_data_cb (parser, run start, run length): the callback api.c's llhttp__on_body dispatcher calls with the parser being parsed; NULL calls nothing (the dispatcher returns 0). Set by the table's owner before the table is given to a parser; never written by llhttp."
+     },
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "on_chunk_complete",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function pointer, llhttp_cb (parser): the callback api.c's llhttp__on_chunk_complete dispatcher calls with the parser being parsed; NULL calls nothing (the dispatcher returns 0). Set by the table's owner before the table is given to a parser; never written by llhttp."
+     },
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "on_chunk_extension_name",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function pointer, llhttp_data_cb (parser, run start, run length): the callback api.c's llhttp__on_chunk_extension_name dispatcher calls with the parser being parsed; NULL calls nothing (the dispatcher returns 0). Set by the table's owner before the table is given to a parser; never written by llhttp."
+     },
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "on_chunk_extension_name_complete",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function pointer, llhttp_cb (parser): the callback api.c's llhttp__on_chunk_extension_name_complete dispatcher calls with the parser being parsed; NULL calls nothing (the dispatcher returns 0). Set by the table's owner before the table is given to a parser; never written by llhttp."
+     },
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "on_chunk_extension_value",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function pointer, llhttp_data_cb (parser, run start, run length): the callback api.c's llhttp__on_chunk_extension_value dispatcher calls with the parser being parsed; NULL calls nothing (the dispatcher returns 0). Set by the table's owner before the table is given to a parser; never written by llhttp."
+     },
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "on_chunk_extension_value_complete",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function pointer, llhttp_cb (parser): the callback api.c's llhttp__on_chunk_extension_value_complete dispatcher calls with the parser being parsed; NULL calls nothing (the dispatcher returns 0). Set by the table's owner before the table is given to a parser; never written by llhttp."
+     },
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "on_chunk_header",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function pointer, llhttp_cb (parser): the callback api.c's llhttp__on_chunk_header dispatcher calls with the parser being parsed; NULL calls nothing (the dispatcher returns 0). Set by the table's owner before the table is given to a parser; never written by llhttp."
+     },
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "on_header_field",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function pointer, llhttp_data_cb (parser, run start, run length): the callback api.c's llhttp__on_header_field dispatcher calls with the parser being parsed; NULL calls nothing (the dispatcher returns 0). Set by the table's owner before the table is given to a parser; never written by llhttp."
+     },
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "on_header_field_complete",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function pointer, llhttp_cb (parser): the callback api.c's llhttp__on_header_field_complete dispatcher calls with the parser being parsed; NULL calls nothing (the dispatcher returns 0). Set by the table's owner before the table is given to a parser; never written by llhttp."
+     },
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "on_header_value",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function pointer, llhttp_data_cb (parser, run start, run length): the callback api.c's llhttp__on_header_value dispatcher calls with the parser being parsed; NULL calls nothing (the dispatcher returns 0). Set by the table's owner before the table is given to a parser; never written by llhttp."
+     },
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "on_header_value_complete",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function pointer, llhttp_cb (parser): the callback api.c's llhttp__on_header_value_complete dispatcher calls with the parser being parsed; NULL calls nothing (the dispatcher returns 0). Set by the table's owner before the table is given to a parser; never written by llhttp."
+     },
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "on_headers_complete",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function pointer, llhttp_cb (parser): the callback api.c's llhttp__on_headers_complete dispatcher calls with the parser being parsed; NULL calls nothing (the dispatcher returns 0). Set by the table's owner before the table is given to a parser; never written by llhttp."
+     },
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "on_message_begin",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function pointer, llhttp_cb (parser): the callback api.c's llhttp__on_message_begin dispatcher calls with the parser being parsed; NULL calls nothing (the dispatcher returns 0). Set by the table's owner before the table is given to a parser; never written by llhttp."
+     },
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "on_message_complete",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function pointer, llhttp_cb (parser): the callback api.c's llhttp__on_message_complete and llhttp_finish dispatcher calls with the parser being parsed; NULL calls nothing (the dispatcher returns 0). Set by the table's owner before the table is given to a parser; never written by llhttp."
+     },
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "on_method",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function pointer, llhttp_data_cb (parser, run start, run length): the callback api.c's llhttp__on_method dispatcher calls with the parser being parsed; NULL calls nothing (the dispatcher returns 0). Set by the table's owner before the table is given to a parser; never written by llhttp."
+     },
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "on_method_complete",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function pointer, llhttp_cb (parser): the callback api.c's llhttp__on_method_complete dispatcher calls with the parser being parsed; NULL calls nothing (the dispatcher returns 0). Set by the table's owner before the table is given to a parser; never written by llhttp."
+     },
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "on_reset",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function pointer, llhttp_cb (parser): the callback api.c's llhttp__on_reset dispatcher calls with the parser being parsed; NULL calls nothing (the dispatcher returns 0). Set by the table's owner before the table is given to a parser; never written by llhttp."
+     },
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "on_status",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function pointer, llhttp_data_cb (parser, run start, run length): the callback api.c's llhttp__on_status dispatcher calls with the parser being parsed; NULL calls nothing (the dispatcher returns 0). Set by the table's owner before the table is given to a parser; never written by llhttp."
+     },
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "on_status_complete",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function pointer, llhttp_cb (parser): the callback api.c's llhttp__on_status_complete dispatcher calls with the parser being parsed; NULL calls nothing (the dispatcher returns 0). Set by the table's owner before the table is given to a parser; never written by llhttp."
+     },
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "on_url",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function pointer, llhttp_data_cb (parser, run start, run length): the callback api.c's llhttp__on_url dispatcher calls with the parser being parsed; NULL calls nothing (the dispatcher returns 0). Set by the table's owner before the table is given to a parser; never written by llhttp."
+     },
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "on_url_complete",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function pointer, llhttp_cb (parser): the callback api.c's llhttp__on_url_complete dispatcher calls with the parser being parsed; NULL calls nothing (the dispatcher returns 0). Set by the table's owner before the table is given to a parser; never written by llhttp."
+     },
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "on_version",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function pointer, llhttp_data_cb (parser, run start, run length): the callback api.c's llhttp__on_version dispatcher calls with the parser being parsed; NULL calls nothing (the dispatcher returns 0). Set by the table's owner before the table is given to a parser; never written by llhttp."
+     },
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "on_version_complete",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function pointer, llhttp_cb (parser): the callback api.c's llhttp__on_version_complete dispatcher calls with the parser being parsed; NULL calls nothing (the dispatcher returns 0). Set by the table's owner before the table is given to a parser; never written by llhttp."
+     },
+     "refcount": false,
+     "locked_by": null
+    }
+   ]
+  },
+  {
    "name": "reftable_buf",
    "defined_in": "deps/reftable/reftable-basics.h",
    "_comment_user": "A growable byte buffer (basics.c). States: unallocated (alloc == 0: owns nothing; buf NULL and len 0 after REFTABLE_BUF_INIT, reftable_buf_init, _release or _detach; no C path leaves alloc == 0 with a non-NULL buf or a non-zero len) and allocated (alloc > 0: buf is a live reftable_malloc/realloc allocation of alloc bytes that the struct owns, len < alloc, buf[0..=len] written). Transitions: _add grows unallocated -> allocated (REFTABLE_ALLOC_GROW: alloc*2+1 or newlen+1) and leaves the buffer unchanged on OOM; _setlen shrinks len only and writes buf[len] = 0; _reset sets len 0 and buf[0] = 0 only when allocated; _release frees buf and reinitialises; _detach hands buf to the caller and reinitialises. buf[len] == 0 holds after every basics.c routine, but not after a direct len write: block_writer_init stores last_key.len = 0 without touching buf[0], so readers must not assume the terminator. Held by value: on the stack, embedded in block_writer/block_iter/writer/stack records, and copied by value as a borrow (block_writer_add's `last`, reftable_encode_key's prev_key/key parameters), never released through the copy. block_source_from_buf keeps the buffer's address in bs->arg, read by reftable_buf_size/_read_data for the source's life. All-zero is the initial state (REFTABLE_BUF_INIT is { 0 }).",
@@ -27647,6 +28091,39 @@
       "nullable": true,
       "mutable": false,
       "note": "Stored in parser->settings, which keeps it beyond the call: llhttp.h requires it to live at least as long as the parser. NULL runs no callback."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_settings_init",
+   "defined_in": "deps/llhttp/api.c",
+   "lifetime": {
+    "for": "settings",
+    "is_dropper": false,
+    "is_disposer": false,
+    "is_cloner": null,
+    "is_constructor": {
+     "alloc": false,
+     "init": true
+    }
+   },
+   "ptr_args": [
+    {
+     "name": "settings",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:settings"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Caller-provided storage for one llhttp_settings_t, memset to zero in place (every slot NULL); not kept after the call. wave-194/batch-2 binds it as Settings::new."
      }
     }
    ]

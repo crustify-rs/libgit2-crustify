@@ -51,8 +51,10 @@
 //! The error position points into the input of the `llhttp_execute` call that failed, which
 //! the caller may since have freed, so it is never followed: [`ParserRef::error_offset`]
 //! compares it with the input it is given. `data` and `settings` are read as the addresses
-//! they hold, and written only through `unsafe` setters, since the callbacks read them as
-//! the types they expect, beyond any lifetime the parser could carry.
+//! they hold, since the callbacks read them as the types they expect, beyond any lifetime the
+//! parser could carry. `data` is written only through an `unsafe` setter, and `settings` too,
+//! but for a table Rust built, api.c's [`Settings`](super::api::Settings), which
+//! [`ParserMut::set_settings`] stores safely: its callbacks are sound with any parser.
 //!
 //! # Parsing
 //!
@@ -80,7 +82,8 @@
 //! is reached through a trampoline that converts C's arguments and catches a panic; a C one
 //! is made only inside the crate, through an `unsafe` constructor. Either is called safely
 //! with [`Callback::call`] and [`DataCallback::call`], as api.c's dispatchers call them. The
-//! settings table that holds them, `llhttp_settings_s`, is api.c's, and is bound with it.
+//! settings table that holds them, `llhttp_settings_s`, is api.c's
+//! [`Settings`](super::api::Settings), whose slots hold only these two types.
 //!
 //! # The X-macros
 //!
@@ -1677,6 +1680,7 @@ mod ffi_import {
     use ffibox::{CMutSeam, CRefSeam, CZeroable, callback, define_ctype};
 
     use super::{DataHandler, Errno, EventHandler, ParseError, Parsed, ParserType};
+    use crate::libgit2::deps::llhttp::api::SettingsRef;
     use crate::sys::libgit2 as sys;
 
     define_ctype!(
@@ -1857,8 +1861,14 @@ mod ffi_import {
         }
 
         /// The address of the parser's callbacks, `settings`: the `llhttp_settings_t`
-        /// `llhttp_init` stored, which api.c's dispatchers read on every event; NULL when
-        /// none is stored, in which case no callback runs.
+        /// `llhttp_init` or a setter stored, which api.c's dispatchers read on every event;
+        /// NULL when none is stored, in which case no callback runs.
+        ///
+        /// It is read as an address, not as a [`SettingsRef`](super::super::api::SettingsRef):
+        /// the table may be one C built, stored through
+        /// [`set_settings_ptr`](ParserMut::set_settings_ptr), whose callbacks are sound only
+        /// with the parsers whose `data` they expect, where a `SettingsRef`'s getters hand out
+        /// callbacks callable with any parser.
         ///
         /// Wraps `fld::llhttp__internal_s.settings`
         #[doc(alias = "llhttp__internal_s.settings")]
@@ -2031,6 +2041,79 @@ mod ffi_import {
         #[doc(alias = "llhttp__internal_s.settings")]
         pub unsafe fn set_settings_ptr(&mut self, settings: *const sys::llhttp_settings_t) {
             set!(self, settings, settings.cast_mut().cast::<c_void>());
+        }
+
+        /// Stores the parser's callbacks in `settings`, as `llhttp_init` does, which
+        /// `llhttp_reset` keeps; `None` runs no callback.
+        ///
+        /// The table is lent for `'static`, `SETTINGS.as_ref()` of a `static` or of a leaked
+        /// table, since the parser keeps its address however long it lives and wherever it
+        /// moves, and api.c's dispatchers read it on every event: a table under a `'static`
+        /// shared borrow neither moves, changes nor goes while they may. Its callbacks are
+        /// [`Callback`]s and [`DataCallback`]s, each sound with any parser whatever its `data`
+        /// holds, so the parser's `data` takes any value beside it.
+        ///
+        /// ```
+        /// use std::cell::Cell;
+        /// use std::ffi::c_int;
+        /// use std::sync::LazyLock;
+        ///
+        /// use libgit2_crustify::libgit2::deps::llhttp::api::Settings;
+        /// use libgit2_crustify::libgit2::deps::llhttp::llhttp::{
+        ///     Callback, EventHandler, Parsed, Parser, ParserMut,
+        /// };
+        ///
+        /// thread_local!(static COMPLETE: Cell<u32> = const { Cell::new(0) });
+        ///
+        /// struct Counting;
+        ///
+        /// impl EventHandler for Counting {
+        ///     fn on_event(_: ParserMut<'_>) -> c_int {
+        ///         COMPLETE.set(COMPLETE.get() + 1);
+        ///         0
+        ///     }
+        /// }
+        ///
+        /// static SETTINGS: LazyLock<Settings> = LazyLock::new(|| {
+        ///     let mut settings = Settings::new();
+        ///     settings
+        ///         .as_mut()
+        ///         .set_on_message_complete(Some(Callback::new::<Counting>()));
+        ///     settings
+        /// });
+        ///
+        /// let mut parser = Parser::new();
+        /// parser.as_mut().set_settings(Some(SETTINGS.as_ref()));
+        /// let responses = b"HTTP/1.1 204 No Content\r\n\r\nHTTP/1.1 204 No Content\r\n\r\n";
+        /// assert_eq!(parser.as_mut().parse(responses), Ok(Parsed::All));
+        /// assert_eq!(COMPLETE.get(), 2);
+        /// ```
+        ///
+        /// The table cannot be written once a parser holds it:
+        ///
+        /// ```compile_fail,E0502
+        /// use libgit2_crustify::libgit2::deps::llhttp::api::Settings;
+        /// use libgit2_crustify::libgit2::deps::llhttp::llhttp::Parser;
+        ///
+        /// let settings: &'static mut Settings = Box::leak(Box::default());
+        /// let mut parser = Parser::new();
+        /// parser.as_mut().set_settings(Some(settings.as_ref()));
+        /// settings.as_mut().set_on_body(None);
+        /// ```
+        ///
+        /// Wraps `fld::llhttp__internal_s.settings`
+        #[doc(alias = "llhttp__internal_s.settings")]
+        pub fn set_settings(&mut self, settings: Option<SettingsRef<'static>>) {
+            let settings = settings.map_or(core::ptr::null(), |s| s.as_ptr());
+            // SAFETY: `settings` is NULL or comes from a `SettingsRef<'static>`, which
+            // addresses a table live for the rest of the program, unmoved, and which no
+            // exclusive handle writes while that shared borrow exists, which is forever (the
+            // handle's invariant), and C never writes: it stays live and unchanged for as long
+            // as the parser can execute with it. Each of its slots is NULL or a `Callback` or
+            // `DataCallback` (`SettingsRef`'s invariant), sound to call with any live parser
+            // whatever its `data` and `settings` hold (`Callback::from_fn`'s contract, which
+            // `new`'s trampolines meet), on the thread that executes it.
+            unsafe { self.set_settings_ptr(settings.cast()) };
         }
 
         /// Sets the lenient flags, `lenient_flags`, as `llhttp_set_lenient_headers` and
@@ -2337,13 +2420,11 @@ mod ffi_import {
         /// For as long as this value or a copy of it lives, `f` must be sound to call with
         /// every live, exclusively held parser, in any state and whatever its `data` and
         /// `settings` hold, on the thread that holds the parser, and must not unwind: those
-        /// are the calls [`call`](Self::call) makes. A C callback that reads the parser's
-        /// `data` as its own context does not meet this, and is reached through the
-        /// settings its parser executes with instead, whose contract vouches for it.
-        #[expect(
-            dead_code,
-            reason = "the C form, which api.c's settings binding builds"
-        )]
+        /// are the calls [`call`](Self::call) makes, and those of the parsers a
+        /// [`Settings`](crate::libgit2::deps::llhttp::api::Settings) holding it is given. A C
+        /// callback that reads the parser's `data` as its own context does not meet this,
+        /// and is reached through the settings its parser executes with instead, stored by
+        /// [`ParserMut::set_settings_ptr`], whose contract vouches for it.
         pub(crate) const unsafe fn from_fn(f: CallbackFn) -> Self {
             Self(f)
         }
@@ -2439,10 +2520,6 @@ mod ffi_import {
         /// As [`Callback::from_fn`]'s, the calls being [`call`](Self::call)'s: with every
         /// live, exclusively held parser, and a run of bytes live and unchanged for the
         /// call, its start and its length.
-        #[expect(
-            dead_code,
-            reason = "the C form, which api.c's settings binding builds"
-        )]
         pub(crate) const unsafe fn from_fn(f: DataCallbackFn) -> Self {
             Self(f)
         }
