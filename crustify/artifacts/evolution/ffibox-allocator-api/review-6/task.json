@@ -1,0 +1,6 @@
+{"backend": "claude", "billing": "subscription", "args": ["--model", "claude-opus-5-5"],
+ "revisions": {"crustify": "a7bc141", "wavefront": "bf21e16", "ffibox": "4fa703c", "ffimap": "9aa2ef1"},
+ "changes": [
+  {"component": "crustify", "branch": "libgit2-crustify/evolution/native-owners-over-c-allocators", "commit": "40649d0", "proposal": "crustify/evolution/ffibox-allocator-api"},
+  {"component": "ffibox", "branch": "libgit2-crustify/evolution/try-box-zero-size", "commit": "9c22a73", "proposal": "crustify/evolution/ffibox-allocator-api"}
+ ]}

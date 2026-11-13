@@ -211,3 +211,49 @@ The entry for Crustify's `EVOLUTION.md`, committed by the assistant when the cha
 It weakens no check: no test, lint, gate or contract is relaxed. The `Allocator` docs relax
 the standard *fits* for this allocator alone, which is a stated contract of new code, not a
 loosened check; the review should judge it.
+
+## Follow-up: try_box and zero-sized types
+
+**Signal.** Review-4 of the porting rule found a defect in the landed change (`4fa703c` on
+ffibox's `libgit2-crustify/devel`): `CAllocator::try_box` accepted a zero-sized `T`, so
+`try_box(())` followed by `Box::into_raw_with_allocator` handed out the dangling `0x1` for C's
+`free`. Meanwhile `docs/ownership.md` said zero-sized types are "refused at compile time on
+every path". Review-2's nits came with it: no compile-fail test showed a policy that is not
+`Copy` refused as an `Allocator`, and the `Allocator` SAFETY comment left out "or back to C".
+
+**Change.** ffibox `801e06c` on `libgit2-crustify/evolution/try-box-zero-size`, forked at
+`4fa703c`:
+- `try_box` takes its layout from `object_layout`, which refuses a zero-sized or
+  over-aligned `T` at compile time, as the conversions do. A `compile_fail,E0080` doc test
+  covers `try_box(())`, and a `compile_fail,E0277` one covers `Box::new_in` over a
+  `CAllocator` whose policy is not `Copy`.
+- The zero-size claim is scoped, in `CAllocator`'s docs and in `docs/ownership.md`, to the
+  paths ffibox offers (`try_box`, the policy impls, the conversions). std's own `Box::new_in`
+  and `Vec::new_in` accept a zero-sized type, as they do for any allocator, and their
+  pointer reaches C's free from a `Box` over `CAllocator` only for a non-zero-sized `T`, and a run only through `CVec::try_from` and `into_raw_parts` (as `9c22a73` words it), never as a raw pointer the consumer
+  takes out of them.
+- The SAFETY comment now names giving a block back to C.
+- `a_box_of_a_zero_sized_type_allocates_nothing` now builds its box with `Box::new_in` only.
+
+**Validation** at `801e06c`:
+
+| command | result |
+|---|---|
+| `cargo +1.100.0 test` | 336 passed, 0 failed, 33 ignored |
+| `cargo +nightly-2026-10-08 test` | 335 passed, 1 failed (`shared::CArc::lock`'s compile-fail doctest, the same failure as at `7af1232`) |
+| clippy `-D warnings`: all targets, and `--lib` without default features and with `alloc` | clean |
+| `fmt --check` on both toolchains, rustdoc | clean |
+| Miri on `tests/allocator.rs`, strict provenance, Stacked and Tree Borrows | 32 passed, 1 ignored (the subprocess test), no UB |
+
+The `Copy` variant of the non-`Copy` doc test compiles, so that test fails only on the
+missing bound.
+
+**Record row draft:**
+
+| change | from | landed as | signal answered | recurrence signal | status |
+|---|---|---|---|---|---|
+| `CAllocator::try_box` refuses a zero-sized `T`; the zero-size claim is scoped to ffibox's own paths | `libgit2-crustify`, `ffibox-allocator-api` (follow-up) | ffibox `801e06c`, `9c22a73` | review-4 found `try_box(())` handing C's `free` a dangling pointer, against the docs' "every path" | a finding of C handed the dangling pointer of a zero-sized `Box`, or of an empty `Vec`, over `CAllocator` | watched |
+
+review-5 (`crustify/artifacts/evolution/ffibox-allocator-api/review-5`), of `801e06c`: **rejected**: the code fix right and its validation reproduced, but the reworded docs ("a `Box` or `Vec` reaches C only as a `CBox` or `CVec`") cannot hold for a native-layout `T`, which reaches C only through `Box::into_raw_with_allocator`, and the row's `test` overreached (std's constructors reach C too). Fixed in `9c22a73` (the docs warn when such a pointer may go to C's free) and the row made `watched`. Of crustify `c6bff46`: **rejected**: the fallback read "meets none" for "misses any"; fixed in `40649d0`, which also names a reference-counted owner. 
+
+review-6 (`crustify/artifacts/evolution/ffibox-allocator-api/review-6`), of ffibox `9c22a73` and crustify `40649d0`: **approved** both; review-5's fixes resolved, the two changes agree with each other and with ffibox's code, `cargo doc` warns of nothing, `compose.py build` unchanged, no weakening. Landed: ffibox `801e06c`, `9c22a73` on ffibox's `libgit2-crustify/devel`; crustify `455f5e4` … `40649d0` (the porting rule for native-layout structs in C's allocator) on Crustify's. Optional cleanups not taken: "the only way" for `Box::into_raw_with_allocator` (also `into_non_null_with_allocator`, `leak`); the ffibox skill's `try_box` line naming only the alignment refusal.
