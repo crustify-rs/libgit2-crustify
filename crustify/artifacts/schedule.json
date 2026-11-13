@@ -121379,7 +121379,7 @@
           "module": "deps/llhttp/api.c",
           "foundational": false,
           "kind": "wrap",
-          "status": "wip",
+          "status": "done",
           "items": [
             {
               "name": "HTTP_ALL_METHOD_MAP",
@@ -121436,6 +121436,54 @@
               "field_users": [],
               "typedefs": [],
               "home": "src/libgit2/deps/llhttp/llhttp.rs"
+            }
+          ],
+          "commits": [
+            "2c69341c3b017ddd1c401940a00cdac2b2d11063"
+          ]
+        },
+        {
+          "index": 2,
+          "link_unit": "libgit2",
+          "module": "deps/llhttp/api.c",
+          "foundational": false,
+          "kind": "wrap",
+          "status": "wip",
+          "items": [
+            {
+              "name": "llhttp_settings_s",
+              "defined_in": "deps/llhttp/llhttp.h",
+              "kind": "struct",
+              "field_users": [
+                "on_reset",
+                "on_chunk_complete",
+                "on_chunk_extension_value_complete",
+                "on_chunk_extension_value",
+                "on_chunk_extension_name_complete",
+                "on_chunk_extension_name",
+                "on_chunk_header",
+                "on_body",
+                "on_message_complete",
+                "on_headers_complete",
+                "on_header_value_complete",
+                "on_header_value",
+                "on_header_field_complete",
+                "on_header_field",
+                "on_version_complete",
+                "on_version",
+                "on_method_complete",
+                "on_method",
+                "on_status_complete",
+                "on_status",
+                "on_url_complete",
+                "on_url",
+                "on_message_begin"
+              ],
+              "typedefs": [
+                "git_http_parser_settings",
+                "llhttp_settings_t"
+              ],
+              "home": "src/libgit2/deps/llhttp/api.rs"
             }
           ],
           "commits": []
@@ -133056,7 +133104,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 0,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [],
         "cut": []
@@ -133158,10 +133206,13 @@
           "module": "src/util/utf8.c",
           "foundational": false,
           "kind": "review",
-          "status": "wip",
+          "status": "done",
           "reviews": [],
           "module_pass": true,
-          "commits": []
+          "commits": [
+            "4e49fdbb0b6dc11861903cddd975b82201b1b874",
+            "3e3c1dadcac40e0bfec5918ee78d43ef4b537336"
+          ]
         }
       ]
     },
@@ -133172,7 +133223,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 1,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [
           229
@@ -133229,7 +133280,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 2,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [
           230
