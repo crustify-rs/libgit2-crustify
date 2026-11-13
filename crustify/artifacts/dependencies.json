@@ -11126,7 +11126,13 @@
       "crate": "std",
       "rust_api": "core::slice::<[u8]>::iter().position"
      },
-     "confirmation": null
+     "confirmation": {
+      "batch": "wave-225/batch-0",
+      "route": "recommended",
+      "crate": "std",
+      "rust_api": "core::ffi::CStr::from_bytes_until_nul",
+      "note": "the std route held; reached through CStr::from_bytes_until_nul rather than iter().position, which is not const, so that the port is a const fn"
+     }
     },
     {
      "c_name": "strrchr",
