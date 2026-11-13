@@ -61,13 +61,40 @@
 //! paused states only from the state each expects, the ten lenient setters, each of which
 //! sets or clears one bit of the lenient flags, and [`ParserRef::debug_trace`]
 //! (`llhttp__debug`), the trace llhttp's generated parser writes to C's `stderr` when it is
-//! generated in debug mode, which this build's is not.
+//! generated in debug mode, which this build's is not. The parser's lifecycle is here too:
+//! [`ParserMut::init`] (`llhttp_init`) starts it afresh with a type and a table,
+//! [`ParserMut::reset`] (`llhttp_reset`) starts it afresh between two connections' messages,
+//! keeping its type, table, `data` and lenient flags, and [`ParserMut::finish`]
+//! (`llhttp_finish`) tells it the input has ended. The name functions `llhttp_errno_name`,
+//! `llhttp_method_name` and `llhttp_status_name` are the maps' [`Errno::constant_name`],
+//! [`Method::map_string`] and [`Status::map_string`], whose `abort` on a value no entry names
+//! an enum cannot reach.
 //!
-//! C outside api.c calls six of them, libgit2's `transports/httpparser.c` and the macros of
-//! `transports/httpparser.h`, which `transports/httpclient.c` expands: `llhttp_execute`,
-//! `llhttp_get_error_pos`, `llhttp_get_error_reason`, `llhttp_pause`, `llhttp_resume` and
-//! `llhttp_resume_after_upgrade`. They are exported, under the module's export feature,
-//! `ffi-export-deps-llhttp-api-c`, which stays off until api.c switches from C.
+//! # The dispatchers
+//!
+//! llhttp's generated parser signals each event of a message through one of api.c's 23
+//! dispatchers, `llhttp__on_<slot>`, which call the slot of the parser's table of the same
+//! name with the parser, or return `0` when the parser has no table or the slot is NULL. The
+//! macro `CALLBACK_MAYBE` makes the 14 that signal an event, such as
+//! [`ParserMut::on_message_begin`], and `SPAN_CALLBACK_MAYBE` the 9 that hand over a run of the
+//! input, such as [`ParserMut::on_url`], which also turn the callback's `-1` into `HPE_USER`,
+//! with the reason `"Span callback error in <slot>"`. They are the parser's methods of the
+//! same name, each over one of two private functions that stand in for the macros.
+//!
+//! The table they read is the one the parser holds, which C may have built of callbacks that
+//! read the parser's `data` as their context: they reach it through the parser alone, so
+//! that each callback is called only with the parser whose table holds it, as the contracts
+//! of [`ParserMut::set_settings_ptr`] and [`ParserMut::set_data`] promise it may be.
+//!
+//! # The exports
+//!
+//! C outside api.c calls nine of these functions and the 23 dispatchers. libgit2's
+//! `transports/httpparser.c` calls `llhttp_execute`, `llhttp_finish`, `llhttp_get_error_pos`
+//! and `llhttp_resume_after_upgrade`, and the macros of `transports/httpparser.h`, which
+//! `transports/httpclient.c` expands, `llhttp_init`, `llhttp_pause`, `llhttp_resume` and
+//! `llhttp_get_error_reason`; `llhttp.c`'s generated parser calls the dispatchers. They are
+//! exported, under the module's export feature, `ffi-export-deps-llhttp-api-c`, which stays
+//! off until api.c switches from C.
 //!
 //! [`Callback`]: super::llhttp::Callback
 //! [`DataCallback`]: super::llhttp::DataCallback
@@ -89,18 +116,121 @@
 //! [`Errno::constant_name`]: super::llhttp::Errno::constant_name
 //! [`Method::map_string`]: super::llhttp::Method::map_string
 //! [`Status::map_string`]: super::llhttp::Status::map_string
+//! [`ParserMut::set_data`]: super::llhttp::ParserMut::set_data
 
 // The workspace does not set `unsafe_code` yet; this module confines its unsafe code to
 // `ffi_import`, which takes the lint back, and holds it to that here.
 #![warn(unsafe_code)]
 
+use core::ffi::{CStr, c_int};
+use core::fmt;
+use core::num::NonZero;
 use std::io;
 
-use ffibox::CRefSeam;
+use ffibox::{CRefSeam, CZeroable};
 
 pub use self::ffi_import::{Settings, SettingsMut, SettingsRef};
-use super::llhttp::{Errno, ParseError, Parsed, ParserMut, ParserRef};
+use super::llhttp::{Errno, ParseError, Parsed, ParserMut, ParserRef, ParserType, UnnamedErrno};
 use crate::sys::libgit2 as sys;
+
+/// Hands `$then!` api.c's 23 dispatchers, `llhttp__on_<slot>`, in api.c's order within each
+/// kind: those `SPAN_CALLBACK_MAYBE` makes, which hand a run of the input to a data slot, then
+/// those `CALLBACK_MAYBE` makes, which signal an event to an event slot. Each is its export's
+/// name, its slot, which names its method too, and its slot's variant of [`SpanSlot`] or
+/// [`EventSlot`], with its method's anchor and what it signals. The native methods, the
+/// region's reads of each slot and the gateway's exports are made from this one list.
+macro_rules! with_dispatchers {
+    ($then:ident) => {
+        $then! {
+            spans {
+                /// Replaces `fn::llhttp__on_url`
+                #[doc(alias = "llhttp__on_url")]
+                llhttp__on_url, on_url, Url: "a run of a request's URL";
+                /// Replaces `fn::llhttp__on_status`
+                #[doc(alias = "llhttp__on_status")]
+                llhttp__on_status, on_status, Status: "a run of a response's status text";
+                /// Replaces `fn::llhttp__on_method`
+                #[doc(alias = "llhttp__on_method")]
+                llhttp__on_method, on_method, Method: "a run of a request's method";
+                /// Replaces `fn::llhttp__on_version`
+                #[doc(alias = "llhttp__on_version")]
+                llhttp__on_version, on_version, Version: "a run of the message's HTTP version";
+                /// Replaces `fn::llhttp__on_header_field`
+                #[doc(alias = "llhttp__on_header_field")]
+                llhttp__on_header_field, on_header_field, HeaderField: "a run of a header's name";
+                /// Replaces `fn::llhttp__on_header_value`
+                #[doc(alias = "llhttp__on_header_value")]
+                llhttp__on_header_value, on_header_value, HeaderValue: "a run of a header's value";
+                /// Replaces `fn::llhttp__on_body`
+                #[doc(alias = "llhttp__on_body")]
+                llhttp__on_body, on_body, Body: "a run of the message's body";
+                /// Replaces `fn::llhttp__on_chunk_extension_name`
+                #[doc(alias = "llhttp__on_chunk_extension_name")]
+                llhttp__on_chunk_extension_name, on_chunk_extension_name, ChunkExtensionName:
+                    "a run of a chunk extension's name";
+                /// Replaces `fn::llhttp__on_chunk_extension_value`
+                #[doc(alias = "llhttp__on_chunk_extension_value")]
+                llhttp__on_chunk_extension_value, on_chunk_extension_value, ChunkExtensionValue:
+                    "a run of a chunk extension's value";
+            }
+            events {
+                /// Replaces `fn::llhttp__on_message_begin`
+                #[doc(alias = "llhttp__on_message_begin")]
+                llhttp__on_message_begin, on_message_begin, MessageBegin:
+                    "the start of a message";
+                /// Replaces `fn::llhttp__on_url_complete`
+                #[doc(alias = "llhttp__on_url_complete")]
+                llhttp__on_url_complete, on_url_complete, UrlComplete: "the end of a request's URL";
+                /// Replaces `fn::llhttp__on_status_complete`
+                #[doc(alias = "llhttp__on_status_complete")]
+                llhttp__on_status_complete, on_status_complete, StatusComplete:
+                    "the end of a response's status text";
+                /// Replaces `fn::llhttp__on_method_complete`
+                #[doc(alias = "llhttp__on_method_complete")]
+                llhttp__on_method_complete, on_method_complete, MethodComplete:
+                    "the end of a request's method";
+                /// Replaces `fn::llhttp__on_version_complete`
+                #[doc(alias = "llhttp__on_version_complete")]
+                llhttp__on_version_complete, on_version_complete, VersionComplete:
+                    "the end of the message's HTTP version";
+                /// Replaces `fn::llhttp__on_header_field_complete`
+                #[doc(alias = "llhttp__on_header_field_complete")]
+                llhttp__on_header_field_complete, on_header_field_complete, HeaderFieldComplete:
+                    "the end of a header's name";
+                /// Replaces `fn::llhttp__on_header_value_complete`
+                #[doc(alias = "llhttp__on_header_value_complete")]
+                llhttp__on_header_value_complete, on_header_value_complete, HeaderValueComplete:
+                    "the end of a header's value";
+                /// Replaces `fn::llhttp__on_headers_complete`
+                #[doc(alias = "llhttp__on_headers_complete")]
+                llhttp__on_headers_complete, on_headers_complete, HeadersComplete:
+                    "the end of the message's headers";
+                /// Replaces `fn::llhttp__on_message_complete`
+                #[doc(alias = "llhttp__on_message_complete")]
+                llhttp__on_message_complete, on_message_complete, MessageComplete:
+                    "the end of a message";
+                /// Replaces `fn::llhttp__on_chunk_header`
+                #[doc(alias = "llhttp__on_chunk_header")]
+                llhttp__on_chunk_header, on_chunk_header, ChunkHeader: "a chunk's header";
+                /// Replaces `fn::llhttp__on_chunk_extension_name_complete`
+                #[doc(alias = "llhttp__on_chunk_extension_name_complete")]
+                llhttp__on_chunk_extension_name_complete, on_chunk_extension_name_complete,
+                    ChunkExtensionNameComplete: "the end of a chunk extension's name";
+                /// Replaces `fn::llhttp__on_chunk_extension_value_complete`
+                #[doc(alias = "llhttp__on_chunk_extension_value_complete")]
+                llhttp__on_chunk_extension_value_complete, on_chunk_extension_value_complete,
+                    ChunkExtensionValueComplete: "the end of a chunk extension's value";
+                /// Replaces `fn::llhttp__on_chunk_complete`
+                #[doc(alias = "llhttp__on_chunk_complete")]
+                llhttp__on_chunk_complete, on_chunk_complete, ChunkComplete: "the end of a chunk";
+                /// Replaces `fn::llhttp__on_reset`
+                #[doc(alias = "llhttp__on_reset")]
+                llhttp__on_reset, on_reset, Reset:
+                    "the reset of the parser between two messages of one input";
+            }
+        }
+    };
+}
 
 /// `struct llhttp_settings_s` under the name `llhttp.h` gives it beside its tag,
 /// `llhttp_settings_t`.
@@ -383,11 +513,346 @@ fn push_hex(line: &mut String, value: usize, digits: usize) {
     }
 }
 
+// --- The table's constructor -------------------------------------------------------------
+
+impl Settings {
+    /// An empty table: every slot NULL, so that a parser given it runs no callback, as
+    /// `llhttp_settings_init` leaves the table it is given, which it `memset`s to zero.
+    ///
+    /// ```
+    /// use libgit2_crustify::libgit2::deps::llhttp::api::Settings;
+    ///
+    /// let settings = Settings::new();
+    /// assert!(settings.as_ref().on_body().is_none());
+    /// assert!(settings.as_ref().on_message_complete().is_none());
+    /// ```
+    ///
+    /// Replaces `fn::llhttp_settings_init`
+    #[doc(alias = "llhttp_settings_init")]
+    #[must_use]
+    pub fn new() -> Self {
+        // All-zero is the table `memset` leaves, every slot NULL (`Settings`' `CZeroable`).
+        <Self as CZeroable>::zeroed()
+    }
+}
+
+impl Default for Settings {
+    /// [`Settings::new`].
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// --- The parser's lifecycle ------------------------------------------------------------
+
+impl ParserMut<'_> {
+    /// Initialises the parser, in place, to read messages of `parser_type` and signal their
+    /// events to `settings`: as [`reinit`](Self::reinit) leaves it, every field zero but its
+    /// start state, `data` included, then its type and its table stored, which `reset` keeps.
+    ///
+    /// ```
+    /// use libgit2_crustify::libgit2::deps::llhttp::api::Settings;
+    /// use libgit2_crustify::libgit2::deps::llhttp::llhttp::{Parsed, Parser, ParserType};
+    ///
+    /// static SETTINGS: std::sync::LazyLock<Settings> = std::sync::LazyLock::new(Settings::new);
+    ///
+    /// let mut parser = Parser::new();
+    /// parser
+    ///     .as_mut()
+    ///     .init(ParserType::Request, Some(SETTINGS.as_ref()));
+    /// assert_eq!(parser.as_ref().parser_type(), Ok(ParserType::Request));
+    /// assert_eq!(
+    ///     parser.as_mut().execute(b"GET / HTTP/1.1\r\n\r\n"),
+    ///     Ok(Parsed::All)
+    /// );
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// As [`reinit`](Self::reinit): when a callback of the parser's own parse calls it.
+    ///
+    /// Replaces `fn::llhttp_init`
+    #[doc(alias = "llhttp_init")]
+    pub fn init(&mut self, parser_type: ParserType, settings: Option<SettingsRef<'static>>) {
+        self.reinit();
+        self.set_parser_type(parser_type);
+        self.set_settings(settings);
+    }
+
+    /// Initialises the parser again, in place, as [`init`](Self::init) does, but keeping its
+    /// type, its table, its `data` and its lenient flags: for the next message of another
+    /// input, with the parser's error, reason and the state of its message cleared.
+    ///
+    /// ```
+    /// use libgit2_crustify::libgit2::deps::llhttp::llhttp::{Parsed, Parser, ParserType};
+    ///
+    /// let mut parser = Parser::new();
+    /// parser.as_mut().init(ParserType::Response, None);
+    /// parser.as_mut().set_lenient_version(true);
+    /// assert!(parser.as_mut().execute(b"GET / HTTP/1.1\r\n").is_err());
+    /// parser.as_mut().reset();
+    /// assert_eq!(parser.as_ref().parser_type(), Ok(ParserType::Response));
+    /// assert_eq!(parser.as_ref().reason(), None);
+    /// assert_eq!(
+    ///     parser.as_mut().execute(b"HTTP/3.7 200 OK\r\n"),
+    ///     Ok(Parsed::All)
+    /// );
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// As [`reinit`](Self::reinit): when a callback of the parser's own parse calls it.
+    ///
+    /// Replaces `fn::llhttp_reset`
+    #[doc(alias = "llhttp_reset")]
+    pub fn reset(&mut self) {
+        let parser_type = self.as_ref().parser_type_raw();
+        let lenient_flags = self.as_ref().lenient_flags_raw();
+        self.reinit_keeping_context();
+        self.set_parser_type_byte(parser_type);
+        self.set_lenient_flags_raw(lenient_flags);
+    }
+
+    /// Tells the parser that its input has ended, as at the close of the connection it reads.
+    /// A message whose end only the input's marks, such as a response with neither a
+    /// `Content-Length` nor chunks, ends here, and its table's `on_message_complete` runs.
+    ///
+    /// The outcome follows the parser's `finish` state, which its parse keeps: between two
+    /// messages, or inside one that needs nothing more, the input may end, and the parser
+    /// finishes; inside a message whose end must be read, it may not.
+    ///
+    /// A parser that has an error, a pause among them, finishes at once, without a callback,
+    /// and keeps its error.
+    ///
+    /// ```
+    /// use libgit2_crustify::libgit2::deps::llhttp::api::FinishError;
+    /// use libgit2_crustify::libgit2::deps::llhttp::llhttp::{Parsed, Parser};
+    ///
+    /// let mut parser = Parser::new();
+    /// let response = b"HTTP/1.1 200 OK\r\n\r\nthe body runs to the end of the input";
+    /// assert_eq!(parser.as_mut().execute(response), Ok(Parsed::All));
+    /// assert_eq!(parser.as_mut().finish(), Ok(()));
+    ///
+    /// parser.as_mut().reinit();
+    /// assert_eq!(parser.as_mut().execute(b"HTTP/1.1 200"), Ok(Parsed::All));
+    /// assert_eq!(parser.as_mut().finish(), Err(FinishError::InvalidEofState));
+    /// assert_eq!(parser.as_ref().reason(), Some(c"Invalid EOF state"));
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// [`FinishError::InvalidEofState`] when the input ended inside a message, with the
+    /// reason `"Invalid EOF state"`, and [`FinishError::Callback`] when `on_message_complete`
+    /// returned a value other than `0`. The parser's error is left as it was.
+    ///
+    /// # Panics
+    ///
+    /// When the parser's `finish` state is no `llhttp_finish`, as only
+    /// [`set_finish_raw`](Self::set_finish_raw) stores, where C would abort.
+    ///
+    /// Replaces `fn::llhttp_finish`
+    #[doc(alias = "llhttp_finish")]
+    pub fn finish(&mut self) -> Result<(), FinishError> {
+        // We're in an error state. Don't bother doing anything.
+        if self.as_ref().error_raw() != 0 {
+            return Ok(());
+        }
+        match u32::from(self.as_ref().finish_raw()) {
+            sys::HTTP_FINISH_SAFE_WITH_CB => {
+                match NonZero::new(self.callback_maybe(EventSlot::MessageComplete)) {
+                    None => Ok(()),
+                    Some(code) => Err(FinishError::Callback(code)),
+                }
+            }
+            sys::HTTP_FINISH_SAFE => Ok(()),
+            sys::HTTP_FINISH_UNSAFE => {
+                self.set_reason(Some(c"Invalid EOF state"));
+                Err(FinishError::InvalidEofState)
+            }
+            _ => panic!("the llhttp parser's finish state is no `llhttp_finish`"),
+        }
+    }
+}
+
+/// Why [`ParserMut::finish`] refused the end of the input, as `llhttp_finish` reports it: an
+/// `llhttp_errno_t` other than `HPE_OK`, which the parser does not keep as its error.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum FinishError {
+    /// `HPE_INVALID_EOF_STATE`: the input ended inside a message whose end must be read,
+    /// such as one whose `Content-Length` it had not reached.
+    InvalidEofState,
+    /// The value `on_message_complete` returned, ending the message the input's end ended:
+    /// `-1` for an error, `HPE_PAUSED` for a pause, or any other.
+    Callback(NonZero<c_int>),
+}
+
+impl FinishError {
+    /// The `llhttp_errno_t` `llhttp_finish` returns, as an `int`: `HPE_INVALID_EOF_STATE`, or
+    /// the callback's value.
+    #[must_use]
+    pub const fn code(self) -> c_int {
+        match self {
+            Self::InvalidEofState => Errno::InvalidEofState.raw().cast_signed(),
+            Self::Callback(code) => code.get(),
+        }
+    }
+
+    /// The error as llhttp's enum.
+    ///
+    /// # Errors
+    ///
+    /// [`UnnamedErrno`] when the code is no `llhttp_errno`: a callback's own value, its bits
+    /// as C's conversion to the unsigned enum gives them.
+    pub fn errno(self) -> Result<Errno, UnnamedErrno> {
+        Errno::try_from(self.code().cast_unsigned())
+    }
+}
+
+impl fmt::Display for FinishError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidEofState => {
+                f.write_str("the llhttp parser's input ended inside a message")
+            }
+            Self::Callback(code) => {
+                f.write_str("llhttp's on_message_complete refused the end of the input: ")?;
+                fmt::Display::fmt(code, f)
+            }
+        }
+    }
+}
+
+impl std::error::Error for FinishError {}
+
+// --- The dispatchers -------------------------------------------------------------------
+
+/// The NUL-terminated `text`, as a C string, at compile time.
+const fn c_str(text: &'static str) -> &'static CStr {
+    match CStr::from_bytes_with_nul(text.as_bytes()) {
+        Ok(text) => text,
+        Err(_) => panic!("a dispatcher's reason holds a NUL or lacks its terminator"),
+    }
+}
+
+/// The two kinds of dispatcher, their slots and their methods.
+macro_rules! dispatchers {
+    (
+        spans {
+            $(
+                $(#[$span_anchor:meta])*
+                $span_export:ident, $span:ident, $span_slot:ident: $span_what:literal;
+            )*
+        }
+        events {
+            $(
+                $(#[$event_anchor:meta])*
+                $event_export:ident, $event:ident, $event_slot:ident: $event_what:literal;
+            )*
+        }
+    ) => {
+        /// A slot of a parser's table that holds a data callback, one per span dispatcher.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        enum SpanSlot {
+            $(
+                #[doc = concat!("`", stringify!($span), "`.")]
+                $span_slot,
+            )*
+        }
+
+        impl SpanSlot {
+            /// The reason the slot's dispatcher gives the parser when its callback returns
+            /// `-1`: `SPAN_CALLBACK_MAYBE`'s `"Span callback error in " #NAME`.
+            const fn error_reason(self) -> &'static CStr {
+                match self {
+                    $(
+                        Self::$span_slot => const {
+                            c_str(concat!("Span callback error in ", stringify!($span), "\0"))
+                        },
+                    )*
+                }
+            }
+        }
+
+        /// A slot of a parser's table that holds an event callback, one per event dispatcher.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        enum EventSlot {
+            $(
+                #[doc = concat!("`", stringify!($event), "`.")]
+                $event_slot,
+            )*
+        }
+
+        impl ParserMut<'_> {
+            $(
+                #[doc = concat!("Signals ", $span_what, ", `span`, to the parser's table: calls \
+                                 its `", stringify!($span), "` with the parser and `span`, and \
+                                 returns what it returns, `-1` as `HPE_USER` with the reason \
+                                 `\"Span callback error in ", stringify!($span), "\"`; `0` \
+                                 when the parser has no table or the slot is NULL.")]
+                ///
+                /// llhttp's generated parser calls it with each run of the part it reads,
+                /// from where the part starts in the input, or the input's start, to where it
+                /// ends, or the input's end, and stops its parse with any value other than
+                /// `0`, pausing it at `HPE_PAUSED`.
+                ///
+                $(#[$span_anchor])*
+                pub fn $span(&mut self, span: &[u8]) -> c_int {
+                    self.span_callback_maybe(SpanSlot::$span_slot, span)
+                }
+            )*
+            $(
+                #[doc = concat!("Signals ", $event_what, " to the parser's table: calls its `",
+                                stringify!($event), "` with the parser, and returns what it \
+                                returns; `0` when the parser has no table or the slot is NULL.")]
+                ///
+                /// llhttp's generated parser calls it as the event happens, and stops its
+                /// parse with any value other than `0`, pausing it at `HPE_PAUSED`, but where
+                /// the slot's own documentation gives the value another meaning.
+                ///
+                $(#[$event_anchor])*
+                pub fn $event(&mut self) -> c_int {
+                    self.callback_maybe(EventSlot::$event_slot)
+                }
+            )*
+        }
+    };
+}
+
+with_dispatchers!(dispatchers);
+
+impl ParserMut<'_> {
+    /// Calls the callback the parser's table holds in `slot` with the parser, and returns
+    /// what it returns; `0` when the parser has no table or the slot is NULL.
+    ///
+    /// Replaces `mac::CALLBACK_MAYBE`
+    #[doc(alias = "CALLBACK_MAYBE")]
+    fn callback_maybe(&mut self, slot: EventSlot) -> c_int {
+        self.call_event(slot).unwrap_or(0)
+    }
+
+    /// Calls the callback the parser's table holds in `slot` with the parser and `span`, and
+    /// returns what it returns, `-1` as `HPE_USER` with the slot's reason; `0` when the
+    /// parser has no table or the slot is NULL.
+    ///
+    /// Replaces `mac::SPAN_CALLBACK_MAYBE`
+    #[doc(alias = "SPAN_CALLBACK_MAYBE")]
+    fn span_callback_maybe(&mut self, slot: SpanSlot, span: &[u8]) -> c_int {
+        match self.call_span(slot, span) {
+            None => 0,
+            Some(-1) => {
+                self.set_reason(Some(slot.error_reason()));
+                Errno::User.raw().cast_signed()
+            }
+            Some(err) => err,
+        }
+    }
+}
+
 #[cfg(test)]
 mod unit_priv {
     use ffibox::{CRefSeam, CZeroable};
 
-    use super::lenient;
+    use super::{SpanSlot, c_str, lenient};
     use crate::libgit2::deps::llhttp::llhttp::{Parser, ParserType};
     use crate::sys::libgit2 as sys;
 
@@ -438,22 +903,150 @@ mod unit_priv {
     fn a_flag_wider_than_lenient_flags_is_refused() {
         let _ = lenient(0x1_0000);
     }
+
+    #[test]
+    fn each_span_slots_reason_names_its_slot() {
+        assert_eq!(
+            c_str("Span callback error in on_url\0"),
+            c"Span callback error in on_url"
+        );
+        assert_eq!(
+            SpanSlot::Url.error_reason(),
+            c"Span callback error in on_url"
+        );
+        assert_eq!(
+            SpanSlot::ChunkExtensionValue.error_reason(),
+            c"Span callback error in on_chunk_extension_value"
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "holds a NUL or lacks its terminator")]
+    fn a_reason_without_its_terminator_is_refused() {
+        let _ = c_str("on_url");
+    }
 }
 
 #[expect(
     unsafe_code,
-    reason = "reads and writes llhttp_settings_s's slots through its handles' pointers, calls \
-              llhttp_settings_init, asserts the table's `Send` and `Sync`, and borrows C's \
-              `stderr`"
+    reason = "reads and writes llhttp_settings_s's slots through its handles' pointers, asserts \
+              the table's `Send` and `Sync`, borrows C's `stderr`, and reads and calls the slots \
+              of the table a parser holds, restoring its context and type"
 )]
 mod ffi_import {
+    use core::ffi::c_int;
     use std::io;
 
     use ffibox::{CMutSeam, CRefSeam, CZeroable, define_ctype};
     use glibc_bindings::libc::libio::stdio::stderr;
 
-    use crate::libgit2::deps::llhttp::llhttp::{Callback, DataCallback};
+    use super::{EventSlot, SpanSlot};
+    use crate::libgit2::deps::llhttp::llhttp::{Callback, DataCallback, ParserMut};
     use crate::sys::libgit2 as sys;
+
+    /// The slot of `table` that each [`SpanSlot`] and [`EventSlot`] names.
+    macro_rules! slot_reads {
+        (
+            spans {
+                $(
+                    $(#[$span_anchor:meta])*
+                    $span_export:ident, $span:ident, $span_slot:ident: $span_what:literal;
+                )*
+            }
+            events {
+                $(
+                    $(#[$event_anchor:meta])*
+                    $event_export:ident, $event:ident, $event_slot:ident: $event_what:literal;
+                )*
+            }
+        ) => {
+            impl SpanSlot {
+                /// What `table` holds in this slot.
+                fn read(self, table: &sys::llhttp_settings_s) -> sys::llhttp_data_cb {
+                    match self {
+                        $(Self::$span_slot => table.$span,)*
+                    }
+                }
+            }
+
+            impl EventSlot {
+                /// What `table` holds in this slot.
+                fn read(self, table: &sys::llhttp_settings_s) -> sys::llhttp_cb {
+                    match self {
+                        $(Self::$event_slot => table.$event,)*
+                    }
+                }
+            }
+        };
+    }
+
+    with_dispatchers!(slot_reads);
+
+    impl ParserMut<'_> {
+        /// The parser's table, the one its `settings` addresses; `None` when it is NULL.
+        fn table(&self) -> Option<&sys::llhttp_settings_s> {
+            let table = self.as_ref().settings_ptr();
+            // SAFETY: a non-NULL `settings` addresses an `llhttp_settings_t` that stays live,
+            // and that nothing writes, for as long as the parser holds it: the contract of
+            // `set_settings_ptr`, which `set_settings` meets with a `SettingsRef<'static>` and
+            // C's callers of api.c's functions with their own tables (llhttp never writes one),
+            // and which this handle's parser meets for its borrow, which the reference's is.
+            unsafe { table.as_ref() }
+        }
+
+        /// Calls the callback the parser's table holds in `slot` with the parser, and returns
+        /// what it returns; `None` when the parser has no table or the slot is NULL.
+        pub(super) fn call_event(&mut self, slot: EventSlot) -> Option<c_int> {
+            let callback = slot.read(self.table()?)?;
+            // SAFETY: `callback` is a callback of the table this parser holds, read from it
+            // just now, which is sound to call with this parser and the `data` it holds, at any
+            // time and in any order while it holds the table (`set_settings_ptr`'s and
+            // `set_data`'s contracts; a `Callback` of a table `set_settings` stored is sound
+            // with any parser). The pointer is the handle's, exclusive for the call, as llhttp's
+            // own calls hand it.
+            Some(unsafe { callback(self.as_mut_ptr()) })
+        }
+
+        /// Calls the callback the parser's table holds in `slot` with the parser and `span`,
+        /// and returns what it returns; `None` when the parser has no table or the slot is
+        /// NULL.
+        pub(super) fn call_span(&mut self, slot: SpanSlot, span: &[u8]) -> Option<c_int> {
+            let callback = slot.read(self.table()?)?;
+            // SAFETY: as `call_event`'s, `callback` being a data callback of the table this
+            // parser holds; `span` is a run of `span.len()` initialised bytes, live and
+            // unchanged for the call, the run a data callback is handed.
+            Some(unsafe { callback(self.as_mut_ptr(), span.as_ptr().cast(), span.len()) })
+        }
+
+        /// Stores `byte` in the parser's `type`, as C's `llhttp_init` stores the
+        /// `llhttp_type_t` it is given and `llhttp_reset` the one it kept, whatever its value.
+        pub(super) fn set_parser_type_byte(&mut self, byte: u8) {
+            let raw = self.as_mut_ptr();
+            // SAFETY: the handle addresses a live parser, which it alone accesses for its
+            // borrow; `type` is a `uint8_t`, which every value is valid for, and llhttp.c only
+            // switches on it, with a `default` for any value no `llhttp_type` names.
+            unsafe { (*raw).type_ = byte };
+        }
+
+        /// Initialises the parser again, as [`reinit`](ParserMut::reinit) does, and stores back
+        /// the `data` and `settings` it held, as `llhttp_reset` keeps them.
+        ///
+        /// # Panics
+        ///
+        /// As `reinit`, before it changes anything.
+        pub(super) fn reinit_keeping_context(&mut self) {
+            let data = self.as_ref().data();
+            let settings = self.as_ref().settings_ptr();
+            self.reinit();
+            // SAFETY: `data` is what this parser held beside `settings` before `reinit`, so it
+            // met `set_data`'s contract for this parser and these settings then, and still
+            // does: the parser, its table and the context its callbacks expect are the same.
+            unsafe { self.set_data(data) };
+            // SAFETY: likewise, `settings` is the table this parser held beside `data`, which
+            // met `set_settings_ptr`'s contract for it, and still does.
+            unsafe { self.set_settings_ptr(settings) };
+        }
+    }
 
     /// Writes `text` to C's standard error stream, `stderr`, in one `fprintf` under the
     /// stream's lock, as `llhttp__debug`'s `fprintf(stderr, …)` does.
@@ -559,40 +1152,6 @@ mod ffi_import {
     // `settings` as `const`). So threads sharing a table only read the same pointers, and
     // calling one from several threads at once is what `Callback` and `DataCallback` allow.
     unsafe impl Sync for Settings {}
-
-    impl Settings {
-        /// An empty table: every slot NULL, so that a parser given it runs no callback, as
-        /// `llhttp_settings_init` leaves it.
-        ///
-        /// ```
-        /// use libgit2_crustify::libgit2::deps::llhttp::api::Settings;
-        ///
-        /// let settings = Settings::new();
-        /// assert!(settings.as_ref().on_body().is_none());
-        /// assert!(settings.as_ref().on_message_complete().is_none());
-        /// ```
-        ///
-        /// Wraps `fn::llhttp_settings_init`
-        #[doc(alias = "llhttp_settings_init")]
-        #[must_use]
-        pub fn new() -> Self {
-            let mut settings = <Self as CZeroable>::zeroed();
-            let raw = settings.as_mut().as_mut_ptr();
-            // SAFETY: `raw` comes from the exclusive handle of `settings`, a live table Rust
-            // owns, which nothing else accesses for the call. `llhttp_settings_init` only
-            // `memset`s it to zero, which is a table every handle reads (`CZeroable`), and
-            // keeps no pointer to it.
-            unsafe { sys::llhttp_settings_init(raw) };
-            settings
-        }
-    }
-
-    impl Default for Settings {
-        /// [`Settings::new`].
-        fn default() -> Self {
-            Self::new()
-        }
-    }
 
     impl core::fmt::Debug for Settings {
         /// The slots that hold a callback, by their field names.
@@ -861,21 +1420,23 @@ mod ffi_import {
               C passes"
 )]
 mod ffi_export {
-    use core::ffi::{CStr, c_char};
+    use core::ffi::{CStr, c_char, c_int, c_uchar};
     use core::slice;
 
     use ffibox::callback::barrier;
     use ffibox::{CMutSeam, CRefSeam};
 
-    use super::{Errno, Parsed, ParserMut, ParserRef};
+    use super::{Errno, FinishError, Parsed, ParserMut, ParserRef};
     use crate::sys::libgit2 as sys;
 
     // Each export has its raw binding's type: the array's elements coerce to one function
     // pointer type only when their signatures agree.
     const _: () = {
         let _ = [sys::llhttp_execute, llhttp_execute];
+        let _ = [sys::llhttp_finish, llhttp_finish];
         let _ = [sys::llhttp_get_error_pos, llhttp_get_error_pos];
         let _ = [sys::llhttp_get_error_reason, llhttp_get_error_reason];
+        let _ = [sys::llhttp_init, llhttp_init];
         let _ = [sys::llhttp_pause, llhttp_pause];
         let _ = [sys::llhttp_resume, llhttp_resume];
         let _ = [
@@ -883,6 +1444,154 @@ mod ffi_export {
             llhttp_resume_after_upgrade,
         ];
     };
+
+    /// A dispatcher's type as `llhttp.c` declares the 23 it calls, `int
+    /// llhttp__on_<slot>(llhttp__internal_t* s, const unsigned char* p, const unsigned char*
+    /// endp)`: no header declares them, so they have no raw binding, and each export is
+    /// checked against this type instead. api.c defines them over `llhttp_t` and `const char*`,
+    /// the same types to the ABI.
+    type Dispatcher =
+        unsafe extern "C" fn(*mut sys::llhttp__internal_t, *const c_uchar, *const c_uchar) -> c_int;
+
+    /// The `int` a dispatcher or `llhttp_finish` returns for a panic of the Rust behind it:
+    /// `HPE_INTERNAL`, which stops the parse.
+    const INTERNAL: c_int = Errno::Internal.raw().cast_signed();
+
+    /// The run of bytes from `p` to `endp`: empty when they are equal, both NULL included.
+    ///
+    /// # Safety
+    ///
+    /// `p` and `endp` are equal, or `p` is at or before `endp` in one allocation and the bytes
+    /// between them are initialised, and live and unchanged for `'a`: a span llhttp.c passes,
+    /// from its start in the input to where it ended or the input's end.
+    unsafe fn span<'a>(p: *const c_uchar, endp: *const c_uchar) -> &'a [u8] {
+        if p == endp {
+            return &[];
+        }
+        // SAFETY: the caller guarantees that `p` is at or before `endp` in one allocation.
+        let len = unsafe { endp.offset_from_unsigned(p) };
+        // SAFETY: the caller guarantees that the `len` bytes from `p` are initialised, live and
+        // unchanged for `'a`; `u8` is aligned to 1.
+        unsafe { slice::from_raw_parts(p, len) }
+    }
+
+    /// `llhttp_init`: initialises the parser at `parser` as [`ParserMut::init`] does, with the
+    /// table C passes stored as its address and the type as its low byte, as C stores them.
+    /// It cannot fail, so a panic, which `reinit` raises for a callback of the parser's own
+    /// parse, aborts, as `llhttp_init` there would corrupt the parse.
+    ///
+    /// # Safety
+    ///
+    /// `parser` points at storage for an `llhttp_t`, initialised or not, which nothing else
+    /// accesses during the call; `settings` is NULL or meets
+    /// [`ParserMut::set_settings_ptr`]'s contract for the parser and the `data` C stores in it
+    /// before it executes it.
+    #[unsafe(no_mangle)]
+    unsafe extern "C" fn llhttp_init(
+        parser: *mut sys::llhttp_t,
+        type_: sys::llhttp_type_t,
+        settings: *const sys::llhttp_settings_t,
+    ) {
+        // SAFETY: the caller guarantees that `parser` is storage for a parser nothing else
+        // accesses during the call. The handle reads none of it before `reinit` initialises
+        // it: `reinit` only compares its address with the parses this thread runs.
+        let mut parser = unsafe { parser_mut(parser) };
+        barrier(
+            || {
+                parser.reinit();
+                parser.set_parser_type_byte(type_.to_le_bytes()[0]);
+                // SAFETY: the caller guarantees `set_settings_ptr`'s contract for `settings`.
+                unsafe { parser.set_settings_ptr(settings) };
+            },
+            || std::process::abort(),
+        );
+    }
+
+    /// `llhttp_finish`: [`ParserMut::finish`], its outcome returned as C's `llhttp_errno_t`:
+    /// `HPE_OK`, `HPE_INVALID_EOF_STATE` or `on_message_complete`'s value. A panic, which
+    /// `finish` raises where C would abort, is reported as `HPE_INTERNAL`.
+    ///
+    /// # Safety
+    ///
+    /// `parser` as `parser_mut` requires.
+    #[unsafe(no_mangle)]
+    unsafe extern "C" fn llhttp_finish(parser: *mut sys::llhttp_t) -> sys::llhttp_errno_t {
+        // SAFETY: the caller guarantees `parser_mut`'s contract.
+        let mut parser = unsafe { parser_mut(parser) };
+        barrier(
+            || parser.finish().map_or_else(FinishError::code, |()| 0),
+            || INTERNAL,
+        )
+        .cast_unsigned()
+    }
+
+    /// The 23 dispatchers' exports, each over its method.
+    macro_rules! dispatcher_exports {
+        (
+            spans {
+                $(
+                    $(#[$span_anchor:meta])*
+                    $span_export:ident, $span:ident, $span_slot:ident: $span_what:literal;
+                )*
+            }
+            events {
+                $(
+                    $(#[$event_anchor:meta])*
+                    $event_export:ident, $event:ident, $event_slot:ident: $event_what:literal;
+                )*
+            }
+        ) => {
+            const _: () = {
+                $(let _: Dispatcher = $span_export;)*
+                $(let _: Dispatcher = $event_export;)*
+            };
+
+            $(
+                #[doc = concat!("`", stringify!($span_export), "`: [`ParserMut::",
+                                stringify!($span), "`] over the run from `p` to `endp`. A \
+                                panic is reported as `HPE_INTERNAL`.")]
+                ///
+                /// # Safety
+                ///
+                /// `s` as `parser_mut` requires, and `p` and `endp` as `span` requires.
+                #[unsafe(no_mangle)]
+                unsafe extern "C" fn $span_export(
+                    s: *mut sys::llhttp__internal_t,
+                    p: *const c_uchar,
+                    endp: *const c_uchar,
+                ) -> c_int {
+                    // SAFETY: the caller guarantees `span`'s contract for the call.
+                    let span = unsafe { span(p, endp) };
+                    // SAFETY: the caller guarantees `parser_mut`'s contract.
+                    let mut parser = unsafe { parser_mut(s) };
+                    barrier(|| parser.$span(span), || INTERNAL)
+                }
+            )*
+
+            $(
+                #[doc = concat!("`", stringify!($event_export), "`: [`ParserMut::",
+                                stringify!($event), "`]; `p` and `endp`, where the parse is in \
+                                its input, are not read. A panic is reported as \
+                                `HPE_INTERNAL`.")]
+                ///
+                /// # Safety
+                ///
+                /// `s` as `parser_mut` requires.
+                #[unsafe(no_mangle)]
+                unsafe extern "C" fn $event_export(
+                    s: *mut sys::llhttp__internal_t,
+                    _p: *const c_uchar,
+                    _endp: *const c_uchar,
+                ) -> c_int {
+                    // SAFETY: the caller guarantees `parser_mut`'s contract.
+                    let mut parser = unsafe { parser_mut(s) };
+                    barrier(|| parser.$event(), || INTERNAL)
+                }
+            )*
+        };
+    }
+
+    with_dispatchers!(dispatcher_exports);
 
     /// The exclusive handle of the parser C passes.
     ///
@@ -1007,5 +1716,191 @@ mod ffi_export {
         // SAFETY: the caller guarantees `parser_mut`'s contract.
         let mut parser = unsafe { parser_mut(parser) };
         barrier(|| parser.resume_after_upgrade(), || std::process::abort());
+    }
+
+    /// The exports called as C calls them, over parsers and tables Rust builds: what each
+    /// hands its method and what it returns to C. They compile with the gateway, under the
+    /// export feature, and run with it linked in place of api.c's C.
+    #[cfg(test)]
+    mod unit_priv {
+        use core::ffi::c_int;
+        use core::mem::MaybeUninit;
+        use std::cell::RefCell;
+        use std::sync::LazyLock;
+
+        use ffibox::{CMutSeam, CRefSeam, CZeroable};
+
+        use super::{
+            llhttp__on_body, llhttp__on_message_begin, llhttp__on_url, llhttp_finish, llhttp_init,
+        };
+        use crate::libgit2::deps::llhttp::api::Settings;
+        use crate::libgit2::deps::llhttp::llhttp::{
+            Callback, DataCallback, DataHandler, Errno, EventHandler, Parser, ParserMut,
+        };
+        use crate::sys::libgit2 as sys;
+
+        thread_local! {
+            /// The runs `Url` was handed and the events `Begin` saw, in order.
+            static LOG: RefCell<Vec<Vec<u8>>> = const { RefCell::new(Vec::new()) };
+        }
+
+        /// Logs its run and returns `0`.
+        struct Url;
+
+        impl DataHandler for Url {
+            fn on_data(_: ParserMut<'_>, data: &[u8]) -> c_int {
+                LOG.with_borrow_mut(|log| log.push(data.to_vec()));
+                0
+            }
+        }
+
+        /// Refuses its run with `-1`.
+        struct Refusing;
+
+        impl DataHandler for Refusing {
+            fn on_data(_: ParserMut<'_>, _: &[u8]) -> c_int {
+                -1
+            }
+        }
+
+        /// Logs an empty entry and returns `7`.
+        struct Begin;
+
+        impl EventHandler for Begin {
+            fn on_event(_: ParserMut<'_>) -> c_int {
+                LOG.with_borrow_mut(|log| log.push(Vec::new()));
+                7
+            }
+        }
+
+        static SETTINGS: LazyLock<Settings> = LazyLock::new(|| {
+            let mut settings = Settings::new();
+            let mut m = settings.as_mut();
+            m.set_on_url(Some(DataCallback::new::<Url>()));
+            m.set_on_body(Some(DataCallback::new::<Refusing>()));
+            m.set_on_message_begin(Some(Callback::new::<Begin>()));
+            m.set_on_message_complete(Some(Callback::new::<Begin>()));
+            settings
+        });
+
+        /// A zeroed parser holding `SETTINGS`: the dispatchers and `llhttp_finish` read only
+        /// its table, error and finish state, so it needs no C.
+        fn parser() -> Parser {
+            let mut parser = Parser::zeroed();
+            parser.as_mut().set_settings(Some(SETTINGS.as_ref()));
+            parser
+        }
+
+        #[test]
+        fn a_span_export_hands_its_method_the_run_from_p_to_endp() {
+            let mut parser = parser();
+            let input = Box::<[u8]>::from(*b"/index.html");
+            let raw = parser.as_mut().as_mut_ptr();
+            let run = input.as_ptr_range();
+            // SAFETY: the parser is live and exclusively ours; the run is `input`.
+            let ret = unsafe { llhttp__on_url(raw, run.start, run.end) };
+            assert_eq!(ret, 0);
+            // The last byte alone, ending at the allocation's end.
+            let run = input[10..].as_ptr_range();
+            // SAFETY: as above.
+            let ret = unsafe { llhttp__on_url(raw, run.start, run.end) };
+            assert_eq!(ret, 0);
+            assert_eq!(LOG.take(), [b"/index.html".to_vec(), b"l".to_vec()]);
+        }
+
+        #[test]
+        fn an_empty_span_reads_nothing_null_or_dangling() {
+            let mut parser = parser();
+            let dangling = core::ptr::NonNull::<u8>::dangling().as_ptr().cast_const();
+            for p in [core::ptr::null(), dangling] {
+                // SAFETY: the parser is live and exclusively ours; the run is empty.
+                let ret = unsafe { llhttp__on_url(parser.as_mut().as_mut_ptr(), p, p) };
+                assert_eq!(ret, 0);
+            }
+            assert_eq!(LOG.take(), [Vec::new(), Vec::new()]);
+        }
+
+        #[test]
+        fn a_span_exports_minus_one_is_hpe_user_with_its_reason() {
+            let mut parser = parser();
+            let body = *b"x";
+            let run = body.as_ptr_range();
+            let raw = parser.as_mut().as_mut_ptr();
+            // SAFETY: the parser is live and exclusively ours; the run is `body`.
+            let ret = unsafe { llhttp__on_body(raw, run.start, run.end) };
+            assert_eq!(ret, Errno::User.raw().cast_signed());
+            assert_eq!(
+                parser.as_ref().reason(),
+                Some(c"Span callback error in on_body")
+            );
+        }
+
+        #[test]
+        fn an_event_export_reads_neither_p_nor_endp() {
+            let mut parser = parser();
+            let dangling = core::ptr::NonNull::<u8>::dangling().as_ptr().cast_const();
+            // SAFETY: the parser is live and exclusively ours; `p` and `endp` are not read.
+            let ret = unsafe {
+                llhttp__on_message_begin(parser.as_mut().as_mut_ptr(), dangling, core::ptr::null())
+            };
+            assert_eq!(ret, 7);
+            assert_eq!(LOG.take(), [Vec::new()]);
+            let mut bare = Parser::zeroed();
+            // SAFETY: as above; a parser with no table returns `0`.
+            let ret =
+                unsafe { llhttp__on_message_begin(bare.as_mut().as_mut_ptr(), dangling, dangling) };
+            assert_eq!(ret, 0);
+        }
+
+        #[test]
+        #[cfg_attr(miri, ignore = "calls C")]
+        fn llhttp_init_initialises_storage_and_stores_what_c_passes() {
+            let mut storage = MaybeUninit::<sys::llhttp_t>::uninit();
+            // SAFETY: filling the storage with garbage, as C's would hold, writes only bytes.
+            unsafe {
+                storage
+                    .as_mut_ptr()
+                    .cast::<u8>()
+                    .write_bytes(0xA5, size_of::<sys::llhttp_t>());
+            }
+            let table = SETTINGS.as_ref().as_ptr();
+            // SAFETY: `storage` is a parser's storage, ours alone; `table` is a `'static` table
+            // of callbacks sound with any parser.
+            unsafe { llhttp_init(storage.as_mut_ptr(), sys::HTTP_RESPONSE, table) };
+            // SAFETY: `llhttp_init` initialised every byte.
+            let mut parser = unsafe { storage.assume_init() };
+            assert_eq!(parser.type_, 2);
+            assert_eq!(parser.settings.cast_const().cast(), table);
+            assert!(parser.data.is_null());
+            assert_eq!(parser.error, 0);
+            // An unnamed type is stored as its low byte, as C's `uint8_t` field takes it.
+            // SAFETY: as above, over the initialised parser, with no table.
+            unsafe { llhttp_init(&raw mut parser, 0x0103, core::ptr::null()) };
+            assert_eq!(parser.type_, 3);
+            assert!(parser.settings.is_null());
+        }
+
+        #[test]
+        fn llhttp_finish_returns_cs_codes() {
+            let mut parser = parser();
+            let raw = parser.as_mut().as_mut_ptr();
+            // SAFETY: the parser is live and exclusively ours, for each call below.
+            assert_eq!(unsafe { llhttp_finish(raw) }, sys::HPE_OK);
+            parser.as_mut().set_finish_raw(1);
+            let raw = parser.as_mut().as_mut_ptr();
+            // `on_message_complete`'s value, unchanged.
+            // SAFETY: as above.
+            assert_eq!(unsafe { llhttp_finish(raw) }, 7);
+            parser.as_mut().set_finish_raw(2);
+            let raw = parser.as_mut().as_mut_ptr();
+            // SAFETY: as above.
+            assert_eq!(unsafe { llhttp_finish(raw) }, sys::HPE_INVALID_EOF_STATE);
+            // A finish state no `llhttp_finish` names, where C aborts, is `HPE_INTERNAL`.
+            parser.as_mut().set_finish_raw(9);
+            let raw = parser.as_mut().as_mut_ptr();
+            // SAFETY: as above.
+            assert_eq!(unsafe { llhttp_finish(raw) }, sys::HPE_INTERNAL);
+            LOG.take();
+        }
     }
 }

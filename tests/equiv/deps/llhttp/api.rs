@@ -16,9 +16,19 @@
 //! interleaved with pauses and resumptions; the ten lenient setters against theirs, `int`
 //! flags C reads as true included; and [`ParserMut::set_reason`] against
 //! `llhttp_set_error_reason`.
+//!
+//! The lifecycle the same way: [`ParserMut::init`] against `llhttp_init` for each parser type,
+//! [`ParserMut::reset`] against `llhttp_reset`, and [`ParserMut::finish`] against
+//! `llhttp_finish` with `on_message_complete` returning `0`, `-1` and `HPE_PAUSED`, each from
+//! a parser fresh, inside a message, between two, failed, paused at an upgrade and of both kinds
+//! settled on a request, `data` and the lenient flags set, the whole parser compared after
+//! each call and the next message parsed through C and Rust. The 23 dispatchers are compared
+//! with api.c's, declared here since no header declares them, over tables that record, refuse
+//! with `-1`, pause and return any other value, and with no table: their returns, the slots
+//! they call with each run, and the whole parser after each call.
 
 use std::cell::RefCell;
-use std::ffi::{CStr, c_int};
+use std::ffi::{CStr, c_char, c_int};
 use std::mem::MaybeUninit;
 use std::sync::Mutex;
 
@@ -620,5 +630,398 @@ fn set_reason_stores_the_string_as_llhttp_set_error_reason_does() {
             fields(&raw_parser(rust.as_ref())),
             fields(&raw_parser(c.as_ref()))
         );
+    }
+}
+
+// --- The parser's lifecycle -------------------------------------------------------------
+
+/// The states init, reset and finish are compared from, each a response parser fed its input
+/// through C from `Parser::new`: fresh, inside a message, between two, failed, paused, and
+/// a parser of both kinds that settled on a request.
+const STARTS: [(ParserType, &[u8]); 6] = [
+    (ParserType::Response, b""),
+    (
+        ParserType::Response,
+        b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhi",
+    ),
+    (ParserType::Response, b"HTTP/1.1 204 No Content\r\n\r\n"),
+    (ParserType::Response, b"HTTP/9"),
+    (
+        ParserType::Response,
+        b"HTTP/1.1 101 Switching Protocols\r\nConnection: upgrade\r\nUpgrade: x\r\n\r\n",
+    ),
+    (ParserType::Both, b"GET / HTTP/1.1\r\n\r\n"),
+];
+
+/// A parser brought to `start` through C, with the table `settings`, lenient flags and a
+/// `data` no callback reads.
+fn started((parser_type, input): (ParserType, &[u8]), settings: &'static Settings) -> Parser {
+    let mut parser = Parser::new();
+    parser.as_mut().set_parser_type(parser_type);
+    parser.as_mut().set_settings(Some(settings.as_ref()));
+    parser.as_mut().set_lenient_keep_alive(true);
+    parser.as_mut().set_lenient_version(true);
+    // SAFETY: the table's callbacks are Rust handlers that never read `data`, so any value
+    // meets `set_data`'s contract; this one is only compared.
+    unsafe { parser.as_mut().set_data(core::ptr::dangling_mut()) };
+    // SAFETY: the parser is initialised, its table `'static` and of Rust handlers; `input` is
+    // live for the call.
+    unsafe {
+        sys::llhttp_execute(
+            parser.as_mut().as_mut_ptr(),
+            input.as_ptr().cast(),
+            input.len(),
+        )
+    };
+    LOG.take();
+    parser
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn init_leaves_the_parser_as_llhttp_init_does() {
+    let settings = leaked((1 << 23) - 1);
+    let other = leaked(0x55_5555);
+    for start in STARTS {
+        for parser_type in [ParserType::Both, ParserType::Request, ParserType::Response] {
+            let (mut c, mut rust) = (started(start, settings), started(start, settings));
+            // SAFETY: the parser is live and Rust's; `other` is `'static` and of Rust handlers.
+            unsafe {
+                sys::llhttp_init(
+                    c.as_mut().as_mut_ptr(),
+                    parser_type.raw(),
+                    other.as_ref().as_ptr(),
+                );
+            };
+            rust.as_mut().init(parser_type, Some(other.as_ref()));
+            assert_eq!(
+                state(rust.as_ref()),
+                state(c.as_ref()),
+                "{start:?} {parser_type:?}"
+            );
+            // Both parse the same next message.
+            let next = b"HTTP/1.1 200 OK\r\n\r\n";
+            assert_eq!(rust_runs(&mut rust, &[next]), c_runs(&mut c, &[next]));
+        }
+    }
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn reset_leaves_the_parser_as_llhttp_reset_does() {
+    let settings = leaked((1 << 23) - 1);
+    for start in STARTS {
+        let (mut c, mut rust) = (started(start, settings), started(start, settings));
+        // SAFETY: the parser is live and Rust's, its table `'static` and of Rust handlers.
+        unsafe { sys::llhttp_reset(c.as_mut().as_mut_ptr()) };
+        rust.as_mut().reset();
+        assert_eq!(state(rust.as_ref()), state(c.as_ref()), "{start:?}");
+        assert!(!rust.as_ref().data().is_null());
+        let next = b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nx";
+        assert_eq!(
+            rust_runs(&mut rust, &[next]),
+            c_runs(&mut c, &[next]),
+            "{start:?}"
+        );
+    }
+}
+
+/// Returns `R` from `on_message_complete`, recording it as slot 11.
+struct CompleteReturn<const R: c_int>;
+
+impl<const R: c_int> EventHandler for CompleteReturn<R> {
+    fn on_event(_: ParserMut<'_>) -> c_int {
+        LOG.with_borrow_mut(|log| log.push((11, Vec::new())));
+        R
+    }
+}
+
+/// A kept table that records every slot, its `on_message_complete` returning `R`.
+fn completing<const R: c_int>() -> &'static Settings {
+    let settings = kept();
+    let mut c = c_settings_init();
+    fill_both((1 << 23) - 1, settings, &mut c);
+    settings
+        .as_mut()
+        .set_on_message_complete(Some(Callback::new::<CompleteReturn<R>>()));
+    settings
+}
+
+/// `ParserMut::finish` on `parser`, through `llhttp_finish`'s convention.
+fn rust_finish(parser: &mut Parser) -> Step {
+    let errno = match parser.as_mut().finish() {
+        Ok(()) => sys::HPE_OK,
+        Err(error) => error.code().cast_unsigned(),
+    };
+    (errno, LOG.take())
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn finish_finishes_the_parser_as_llhttp_finish_does() {
+    let tables = [completing::<0>(), completing::<-1>(), completing::<21>()];
+    let ends: [&[u8]; 3] = [
+        b"",
+        b"HTTP/1.0 200 OK\r\n\r\nto the end",
+        b"HTTP/1.1 200 OK\r\n",
+    ];
+    for settings in tables {
+        for start in STARTS
+            .into_iter()
+            .chain(ends.map(|end| (ParserType::Response, end)))
+        {
+            let (mut c, mut rust) = (started(start, settings), started(start, settings));
+            // Twice: a finish that ended a message leaves one that may end again.
+            for _ in 0..2 {
+                assert_eq!(rust_finish(&mut rust), c_finish(&mut c), "{start:?}");
+                assert_eq!(state(rust.as_ref()), state(c.as_ref()), "{start:?}");
+            }
+            // A finish state no `llhttp_finish` names is refused, where C aborts; the others
+            // are each reached above or here.
+            for finish in 0..3 {
+                rust.as_mut().set_finish_raw(finish);
+                c.as_mut().set_finish_raw(finish);
+                assert_eq!(
+                    rust_finish(&mut rust),
+                    c_finish(&mut c),
+                    "{start:?} {finish}"
+                );
+                assert_eq!(
+                    state(rust.as_ref()),
+                    state(c.as_ref()),
+                    "{start:?} {finish}"
+                );
+            }
+        }
+    }
+}
+
+// --- The dispatchers ---------------------------------------------------------------------
+
+// api.c's dispatchers, which no header declares (`llhttp.c` declares them for itself), so
+// that the raw bindings have none: declared here as api.c defines them, to call its C.
+unsafe extern "C" {
+    fn llhttp__on_message_begin(
+        s: *mut sys::llhttp_t,
+        p: *const c_char,
+        endp: *const c_char,
+    ) -> c_int;
+    fn llhttp__on_url(s: *mut sys::llhttp_t, p: *const c_char, endp: *const c_char) -> c_int;
+    fn llhttp__on_url_complete(
+        s: *mut sys::llhttp_t,
+        p: *const c_char,
+        endp: *const c_char,
+    ) -> c_int;
+    fn llhttp__on_status(s: *mut sys::llhttp_t, p: *const c_char, endp: *const c_char) -> c_int;
+    fn llhttp__on_status_complete(
+        s: *mut sys::llhttp_t,
+        p: *const c_char,
+        endp: *const c_char,
+    ) -> c_int;
+    fn llhttp__on_method(s: *mut sys::llhttp_t, p: *const c_char, endp: *const c_char) -> c_int;
+    fn llhttp__on_method_complete(
+        s: *mut sys::llhttp_t,
+        p: *const c_char,
+        endp: *const c_char,
+    ) -> c_int;
+    fn llhttp__on_version(s: *mut sys::llhttp_t, p: *const c_char, endp: *const c_char) -> c_int;
+    fn llhttp__on_version_complete(
+        s: *mut sys::llhttp_t,
+        p: *const c_char,
+        endp: *const c_char,
+    ) -> c_int;
+    fn llhttp__on_header_field(
+        s: *mut sys::llhttp_t,
+        p: *const c_char,
+        endp: *const c_char,
+    ) -> c_int;
+    fn llhttp__on_header_field_complete(
+        s: *mut sys::llhttp_t,
+        p: *const c_char,
+        endp: *const c_char,
+    ) -> c_int;
+    fn llhttp__on_header_value(
+        s: *mut sys::llhttp_t,
+        p: *const c_char,
+        endp: *const c_char,
+    ) -> c_int;
+    fn llhttp__on_header_value_complete(
+        s: *mut sys::llhttp_t,
+        p: *const c_char,
+        endp: *const c_char,
+    ) -> c_int;
+    fn llhttp__on_headers_complete(
+        s: *mut sys::llhttp_t,
+        p: *const c_char,
+        endp: *const c_char,
+    ) -> c_int;
+    fn llhttp__on_message_complete(
+        s: *mut sys::llhttp_t,
+        p: *const c_char,
+        endp: *const c_char,
+    ) -> c_int;
+    fn llhttp__on_body(s: *mut sys::llhttp_t, p: *const c_char, endp: *const c_char) -> c_int;
+    fn llhttp__on_chunk_header(
+        s: *mut sys::llhttp_t,
+        p: *const c_char,
+        endp: *const c_char,
+    ) -> c_int;
+    fn llhttp__on_chunk_extension_name(
+        s: *mut sys::llhttp_t,
+        p: *const c_char,
+        endp: *const c_char,
+    ) -> c_int;
+    fn llhttp__on_chunk_extension_name_complete(
+        s: *mut sys::llhttp_t,
+        p: *const c_char,
+        endp: *const c_char,
+    ) -> c_int;
+    fn llhttp__on_chunk_extension_value(
+        s: *mut sys::llhttp_t,
+        p: *const c_char,
+        endp: *const c_char,
+    ) -> c_int;
+    fn llhttp__on_chunk_extension_value_complete(
+        s: *mut sys::llhttp_t,
+        p: *const c_char,
+        endp: *const c_char,
+    ) -> c_int;
+    fn llhttp__on_chunk_complete(
+        s: *mut sys::llhttp_t,
+        p: *const c_char,
+        endp: *const c_char,
+    ) -> c_int;
+    fn llhttp__on_reset(s: *mut sys::llhttp_t, p: *const c_char, endp: *const c_char) -> c_int;
+}
+
+/// Calls `$m!(c dispatcher, method, kind)` for each of api.c's dispatchers.
+macro_rules! for_each_dispatcher {
+    ($m:ident) => {
+        $m!(llhttp__on_message_begin, on_message_begin, event);
+        $m!(llhttp__on_url, on_url, data);
+        $m!(llhttp__on_url_complete, on_url_complete, event);
+        $m!(llhttp__on_status, on_status, data);
+        $m!(llhttp__on_status_complete, on_status_complete, event);
+        $m!(llhttp__on_method, on_method, data);
+        $m!(llhttp__on_method_complete, on_method_complete, event);
+        $m!(llhttp__on_version, on_version, data);
+        $m!(llhttp__on_version_complete, on_version_complete, event);
+        $m!(llhttp__on_header_field, on_header_field, data);
+        $m!(
+            llhttp__on_header_field_complete,
+            on_header_field_complete,
+            event
+        );
+        $m!(llhttp__on_header_value, on_header_value, data);
+        $m!(
+            llhttp__on_header_value_complete,
+            on_header_value_complete,
+            event
+        );
+        $m!(llhttp__on_headers_complete, on_headers_complete, event);
+        $m!(llhttp__on_message_complete, on_message_complete, event);
+        $m!(llhttp__on_body, on_body, data);
+        $m!(llhttp__on_chunk_header, on_chunk_header, event);
+        $m!(
+            llhttp__on_chunk_extension_name,
+            on_chunk_extension_name,
+            data
+        );
+        $m!(
+            llhttp__on_chunk_extension_name_complete,
+            on_chunk_extension_name_complete,
+            event
+        );
+        $m!(
+            llhttp__on_chunk_extension_value,
+            on_chunk_extension_value,
+            data
+        );
+        $m!(
+            llhttp__on_chunk_extension_value_complete,
+            on_chunk_extension_value_complete,
+            event
+        );
+        $m!(llhttp__on_chunk_complete, on_chunk_complete, event);
+        $m!(llhttp__on_reset, on_reset, event);
+    };
+}
+
+/// Returns `R` from every slot, recording each call as `fill_both`'s handlers do.
+struct Returning<const R: c_int>;
+
+impl<const R: c_int> EventHandler for Returning<R> {
+    fn on_event(_: ParserMut<'_>) -> c_int {
+        LOG.with_borrow_mut(|log| log.push((usize::MAX, Vec::new())));
+        R
+    }
+}
+
+impl<const R: c_int> DataHandler for Returning<R> {
+    fn on_data(_: ParserMut<'_>, data: &[u8]) -> c_int {
+        LOG.with_borrow_mut(|log| log.push((usize::MAX, data.to_vec())));
+        R
+    }
+}
+
+/// A kept table every slot of which returns `R`.
+fn returning<const R: c_int>() -> &'static Settings {
+    let settings = kept();
+    let mut m = settings.as_mut();
+    macro_rules! set {
+        ($i:expr, $field:ident, $set:ident,event) => {
+            m.$set(Some(Callback::new::<Returning<R>>()));
+        };
+        ($i:expr, $field:ident, $set:ident,data) => {
+            m.$set(Some(DataCallback::new::<Returning<R>>()));
+        };
+    }
+    for_each_slot!(set);
+    settings
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn the_dispatchers_call_the_parsers_table_as_api_cs_do() {
+    let tables = [
+        leaked((1 << 23) - 1),
+        leaked(0x55_5555),
+        returning::<-1>(),
+        returning::<21>(),
+        returning::<-7>(),
+    ];
+    let input = b"a run of the input";
+    let runs: [&[u8]; 3] = [b"", b"x", input];
+    for settings in tables.into_iter().map(Some).chain([None]) {
+        let fresh = || {
+            let mut parser = Parser::new();
+            parser.as_mut().set_settings(settings.map(Settings::as_ref));
+            parser
+        };
+        let (mut c, mut rust) = (fresh(), fresh());
+        macro_rules! compare {
+            ($c:ident, $method:ident,event) => {
+                let (raw, ptr) = (c.as_mut().as_mut_ptr(), input.as_ptr_range());
+                // SAFETY: the parser is live and Rust's, its table NULL or `'static` and of
+                // Rust handlers; an event dispatcher reads neither `p` nor `endp`.
+                let c_ret = unsafe { $c(raw, ptr.start.cast(), ptr.end.cast()) };
+                let c_log = LOG.take();
+                let rust_ret = rust.as_mut().$method();
+                assert_eq!((rust_ret, LOG.take()), (c_ret, c_log), stringify!($method));
+                assert_eq!(state(rust.as_ref()), state(c.as_ref()), stringify!($method));
+            };
+            ($c:ident, $method:ident,data) => {
+                for run in runs {
+                    let (raw, ptr) = (c.as_mut().as_mut_ptr(), run.as_ptr_range());
+                    // SAFETY: as above; `p` to `endp` is `run`, live for the call.
+                    let c_ret = unsafe { $c(raw, ptr.start.cast(), ptr.end.cast()) };
+                    let c_log = LOG.take();
+                    let rust_ret = rust.as_mut().$method(run);
+                    assert_eq!((rust_ret, LOG.take()), (c_ret, c_log), stringify!($method));
+                    assert_eq!(state(rust.as_ref()), state(c.as_ref()), stringify!($method));
+                }
+            };
+        }
+        for_each_dispatcher!(compare);
     }
 }

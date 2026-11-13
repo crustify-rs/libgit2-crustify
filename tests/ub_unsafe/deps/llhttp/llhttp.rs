@@ -90,13 +90,14 @@ unsafe extern "C" fn on_message_complete(parser: *mut sys::llhttp_t) -> c_int {
 
 /// A table whose callbacks read `data` as a [`Seen`].
 fn counting_settings() -> sys::llhttp_settings_t {
-    let mut settings = sys::llhttp_settings_t::default();
-    // SAFETY: `settings` is a live table, which `llhttp_settings_init` zeroes.
-    unsafe { sys::llhttp_settings_init(&raw mut settings) };
-    settings.on_body = Some(on_body);
-    settings.on_header_value_complete = Some(on_header_value_complete);
-    settings.on_message_complete = Some(on_message_complete);
-    settings
+    // Every other slot NULL, as `llhttp_settings_init` leaves a table: its port has no export,
+    // so the fixture does not call its C, which leaves the link at api.c's switch.
+    sys::llhttp_settings_t {
+        on_body: Some(on_body),
+        on_header_value_complete: Some(on_header_value_complete),
+        on_message_complete: Some(on_message_complete),
+        ..Default::default()
+    }
 }
 
 const RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\nA: 1\r\nContent-Length: 4\r\n\r\nbody";
@@ -210,10 +211,9 @@ mod set_settings_ptr {
     #[test]
     #[cfg_attr(miri, ignore = "calls C")]
     fn a_table_whose_callbacks_ignore_data_takes_any_data() {
-        let mut settings = sys::llhttp_settings_t::default();
-        // SAFETY: `settings` is a live table, which `llhttp_settings_init` zeroes: it
-        // installs no callback, so none reads `data`.
-        unsafe { sys::llhttp_settings_init(&raw mut settings) };
+        // Every slot NULL, as `llhttp_settings_init` leaves a table: it installs no
+        // callback, so none reads `data`.
+        let settings = sys::llhttp_settings_t::default();
         let mut parser = c_init(ParserType::Request);
         // SAFETY: no callback of the table reads `data`.
         unsafe { parser.as_mut().set_data(ptr::dangling_mut::<u8>().cast()) };
@@ -260,10 +260,11 @@ mod set_settings_ptr {
     #[test]
     #[cfg_attr(miri, ignore = "calls C")]
     fn a_reason_its_callbacks_set_is_read_while_the_parser_holds_it() {
-        let mut settings = sys::llhttp_settings_t::default();
-        // SAFETY: `settings` is a live table, which `llhttp_settings_init` zeroes.
-        unsafe { sys::llhttp_settings_init(&raw mut settings) };
-        settings.on_url = Some(refuse_url);
+        // Every other slot NULL, as `llhttp_settings_init` leaves a table.
+        let settings = sys::llhttp_settings_t {
+            on_url: Some(refuse_url),
+            ..Default::default()
+        };
         let mut refusal = Refusal {
             reason: c"the context refuses the URL".to_owned(),
         };

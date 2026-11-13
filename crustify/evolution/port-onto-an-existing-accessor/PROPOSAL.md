@@ -32,6 +32,15 @@ function's `Replaces` anchor and alias to the existing accessor beside the membe
 their home `api.rs`, and wrote native code only for the items with logic of their own
 (`execute`, `pause`, the resumptions, the lenient setters, `debug_trace`).
 
+`wave-194/batch-4/run-1` met the case again with three functions whose whole body is a map's
+text: `llhttp_errno_name`, `llhttp_method_name` and `llhttp_status_name` are each a `switch` of
+the `case`s `HTTP_ERRNO_GEN`, `HTTP_METHOD_GEN` and `HTTP_STATUS_GEN` make, with a `default:
+abort();` no Rust enum reaches. It ported them as `Errno::constant_name`, `Method::map_string`
+and `Status::map_string`, which now carry a third anchor each (the map's, the generator's and
+the function's), in `llhttp.rs`, as batch 3 did for the generators. So the rule should also
+cover a function whose body only maps an enum's value to what an existing item of the safe API
+already returns for it, and say that a third or later anchor on one item is expected.
+
 ## Destination
 
 The spec: `porting-symbols` § Functions (the translator's to evolve), and the

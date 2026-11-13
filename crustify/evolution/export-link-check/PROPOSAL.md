@@ -34,6 +34,24 @@ tests that remain are the first to call it.
 - The module pass added the gateway's own `unit_priv` tests, which compile only under the
   feature, and ran them by hand with it on, under Miri too.
 
+- `wave-194/batch-4/run-1` (`deps/llhttp/api.c`, its last `port` batch) ran it by hand again,
+  as its task message asked, on `plain` and `asan-ubsan`: private build dirs under
+  `crustify/tmp/linkcheck/<variant>` linking to the variant's entries, with a copy of
+  `libcrustify.a` less `api.c.o` (211 objects), named by `CRUSTIFY_BUILD_DIR`, and the tests
+  run with `--features ffi-export-deps-llhttp-api-c`. Two things the procedure must say came
+  out of it. First, not every test binary can link: the module's `equiv` binary calls 19 of
+  api.c's functions that no remaining C calls and that therefore have no export
+  (`llhttp_get_type`, the lenient setters, `llhttp_reset`, …), so it fails to link
+  (`undefined symbol`), by design, since it compares with that C; the check runs the other
+  binaries and the doctests, and the undefined symbols of `equiv` are the list of the module's
+  unexported functions, every one of which should be api.c's own. Second, a test outside
+  `equiv` that calls such a function through its raw binding fails to link too, and would
+  fail at the switch: `ub_unsafe`'s llhttp fixtures called `llhttp_settings_init`, which the
+  batch replaced with the zeroed table it makes. The rest passed (`lib` 858 with the gateway's
+  six tests, `ub_safe` 785, `ub_unsafe` 134, `unit_pub` 156, doctests 92 and 387; under
+  ASan+UBSan the same but for the known nightly `compile_fail` snapshots and `CommitBuilder`
+  doctest), `nm` showing the exports defined and api.c's other symbols absent.
+
 ## Destination
 
 The spec: `testing-gates`' Regressions section, the export checks of a `port` batch, with a

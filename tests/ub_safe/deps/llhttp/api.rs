@@ -10,8 +10,10 @@
 //! from inside the callbacks of a parse, on the parser being parsed: the pause, the
 //! resumptions, the lenient setters and the trace, which change what the parse reads next
 //! but not where it stands, and [`ParserMut::execute`], which is refused there, as
-//! `ParserMut::parse` is. The tests that build a table with `Settings::new` or parse call C,
-//! and are ignored under Miri; the rest runs there.
+//! `ParserMut::parse` is. So are [`ParserMut::init`] and [`ParserMut::reset`], which would
+//! restart the parse under it; the dispatchers and [`ParserMut::finish`], which call the
+//! parser's table with the parser and leave where the parse stands, run there. The tests
+//! that parse call C, and are ignored under Miri; the rest runs there.
 
 use std::cell::{Cell, RefCell};
 use std::ffi::c_int;
@@ -341,4 +343,101 @@ fn a_callback_cannot_execute_the_parser_whose_parse_runs_it() {
         .execute(b"HTTP/1.1 204 No Content\r\n\r\n")
         .unwrap_err();
     assert_eq!(error.errno(), Ok(Errno::CbMessageBegin));
+}
+
+// --- The lifecycle and the dispatchers inside a parse -----------------------------------
+
+/// Initialises its own parser again, which is refused.
+struct Reinitialising;
+
+impl EventHandler for Reinitialising {
+    fn on_event(mut parser: ParserMut<'_>) -> c_int {
+        parser.init(ParserType::Request, None);
+        0
+    }
+}
+
+/// Resets its own parser, which is refused.
+struct Resetting;
+
+impl EventHandler for Resetting {
+    fn on_event(mut parser: ParserMut<'_>) -> c_int {
+        parser.reset();
+        0
+    }
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn a_callback_cannot_init_or_reset_the_parser_whose_parse_runs_it() {
+    for settings in [every_event::<Reinitialising>(), every_event::<Resetting>()] {
+        let mut parser = Parser::new();
+        parser
+            .as_mut()
+            .init(ParserType::Response, Some(settings.as_ref()));
+        // The refusal panics before the parser changes, and the trampoline turns the panic
+        // into the callback's `-1`, which stops the parse at its first event.
+        let error = parser
+            .as_mut()
+            .execute(b"HTTP/1.1 204 No Content\r\n\r\n")
+            .unwrap_err();
+        assert_eq!(error.errno(), Ok(Errno::CbMessageBegin));
+        assert_eq!(parser.as_ref().parser_type(), Ok(ParserType::Response));
+        assert_eq!(
+            parser.as_ref().settings_ptr().addr(),
+            std::ptr::from_ref(settings).addr()
+        );
+        // Outside its parse, the parser may be reset and parse again.
+        parser.as_mut().reset();
+        parser.as_mut().set_settings(None);
+        assert_eq!(
+            parser.as_mut().execute(b"HTTP/1.1 204 No Content\r\n\r\n"),
+            Ok(Parsed::All)
+        );
+    }
+}
+
+/// Hands its parser's table a run of its own, and finishes its parser, at each event it
+/// signals, then goes on.
+struct Dispatching;
+
+impl EventHandler for Dispatching {
+    fn on_event(mut parser: ParserMut<'_>) -> c_int {
+        let run = b"!".to_vec();
+        let ret = parser.on_body(&run);
+        drop(run);
+        let _ = parser.finish();
+        ret
+    }
+}
+
+static DISPATCHING: LazyLock<Settings> = LazyLock::new(|| {
+    let mut settings = Settings::new();
+    let mut m = settings.as_mut();
+    record(&mut m);
+    m.set_on_message_begin(Some(Callback::new::<Dispatching>()));
+    m.set_on_headers_complete(Some(Callback::new::<Dispatching>()));
+    settings
+});
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn callbacks_dispatch_to_and_finish_their_parser_mid_parse() {
+    BODY.take();
+    COMPLETE.set(0);
+    let mut parser = Parser::new();
+    parser
+        .as_mut()
+        .init(ParserType::Response, Some(DISPATCHING.as_ref()));
+    let input = response(b"hello");
+    for run in input.chunks(4) {
+        assert_eq!(parser.as_mut().execute(run), Ok(Parsed::All));
+    }
+    // Each of the two events handed the table a `!`, and the parse its body; neither
+    // `finish` inside the message signalled its end, which the parse did once.
+    assert_eq!(BODY.take(), b"!!hello");
+    assert_eq!(COMPLETE.get(), 1);
+    assert_eq!(parser.as_ref().status_code(), 200);
+    assert_eq!(parser.as_ref().reason(), Some(c"Invalid EOF state"));
+    assert_eq!(parser.as_mut().finish(), Ok(()));
 }

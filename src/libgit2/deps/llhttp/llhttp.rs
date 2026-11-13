@@ -1365,6 +1365,11 @@ impl Errno {
     ///
     /// Replaces `mac::HTTP_ERRNO_GEN`
     #[doc(alias = "HTTP_ERRNO_GEN")]
+    /// It is api.c's `llhttp_errno_name` too, a `switch` of those `case`s, whose `default:
+    /// abort();` no `Errno` reaches.
+    ///
+    /// Replaces `fn::llhttp_errno_name`
+    #[doc(alias = "llhttp_errno_name")]
     #[must_use]
     pub const fn constant_name(self) -> &'static CStr {
         self.constant_cstr()
@@ -1417,6 +1422,11 @@ impl Method {
     ///
     /// Replaces `mac::HTTP_METHOD_GEN`
     #[doc(alias = "HTTP_METHOD_GEN")]
+    /// It is api.c's `llhttp_method_name` too, a `switch` of those `case`s, whose `default:
+    /// abort();` no `Method` reaches.
+    ///
+    /// Replaces `fn::llhttp_method_name`
+    #[doc(alias = "llhttp_method_name")]
     #[must_use]
     pub const fn map_string(self) -> &'static CStr {
         match self.string_override() {
@@ -1478,6 +1488,11 @@ impl Status {
     ///
     /// Replaces `mac::HTTP_STATUS_GEN`
     #[doc(alias = "HTTP_STATUS_GEN")]
+    /// It is api.c's `llhttp_status_name` too, a `switch` of those `case`s, whose `default:
+    /// abort();` no `Status` reaches.
+    ///
+    /// Replaces `fn::llhttp_status_name`
+    #[doc(alias = "llhttp_status_name")]
     #[must_use]
     pub const fn map_string(self) -> &'static CStr {
         match self.string_override() {
@@ -2082,8 +2097,11 @@ mod ffi_import {
         ///
         /// The callbacks of the parser's settings read `data` as their own context: while
         /// the parser executes with those settings, `data` must be what they expect it to
-        /// be, valid for each access they make through it. A parser whose settings are NULL,
-        /// or whose callbacks never read `data`, takes any value.
+        /// be, valid for each access they make through it. The parser executes with them
+        /// whenever one of its parses, its `finish` or one of api.c's dispatchers
+        /// (`ParserMut::on_url` and the others) calls them, which the safe API allows at any
+        /// time. A parser whose settings are NULL, or whose callbacks never read `data`, takes
+        /// any value.
         ///
         /// Wraps `fld::llhttp__internal_s.data`
         #[doc(alias = "llhttp__internal_s.data")]
@@ -2100,6 +2118,9 @@ mod ffi_import {
         /// unchanged, and whose callbacks are sound to call with this parser and its `data`,
         /// for as long as the parser executes with it: api.c's dispatchers read it on every
         /// event of `llhttp_execute` and `llhttp_finish`, and call each callback it sets.
+        /// The dispatchers are the parser's safe methods (`ParserMut::on_url` and the others),
+        /// so a callback is sound to call at any time while the parser holds the table, in any
+        /// order and, for a data callback, with any run of bytes.
         ///
         /// A callback that sets the parser's `reason`, as `llhttp_set_error_reason` lets it,
         /// must set it NULL or to a NUL-terminated string that stays live and unchanged for as

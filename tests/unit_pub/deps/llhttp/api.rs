@@ -8,16 +8,21 @@
 //! the ten lenient setters, each against the bit it owns, and [`ParserRef::debug_trace`]'s
 //! write and refusal. llhttp has no C tests in the tree, so none is carried over.
 //!
-//! The constructor and the parses call C, and are ignored under Miri; the slots' tests on a
-//! zeroed table, and the pause, resume and lenient tests on a zeroed parser, run there.
+//! The parser's lifecycle: [`ParserMut::init`] and [`ParserMut::reset`], each against the
+//! fields it sets and keeps, and [`ParserMut::finish`] from each finish state, its outcomes and
+//! errors; and the 23 dispatchers, each against the slot it calls, what it returns, and the
+//! span dispatchers' `HPE_USER` and reason.
+//!
+//! The parses call C, and are ignored under Miri; the tests on a zeroed parser and on tables
+//! [`Settings::new`] builds, which calls none since `llhttp_settings_init`'s port, run there.
 
 use std::cell::RefCell;
 use std::ffi::c_int;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 
 use ffibox::CZeroable;
 use libgit2_crustify::libgit2::deps::llhttp::api::{
-    HttpParserSettings, Settings, SettingsMut, SettingsRef, SettingsT,
+    FinishError, HttpParserSettings, Settings, SettingsMut, SettingsRef, SettingsT,
 };
 use libgit2_crustify::libgit2::deps::llhttp::llhttp::{
     Callback, DataCallback, DataHandler, Errno, EventHandler, Parsed, Parser, ParserMut, ParserRef,
@@ -210,7 +215,6 @@ fn recording() -> &'static Settings {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "calls C")]
 fn new_and_default_are_empty_tables() {
     for settings in [Settings::new(), Settings::default()] {
         assert_eq!(held(settings.as_ref()), [None; 23]);
@@ -821,4 +825,354 @@ fn debug_trace_writes_to_stderr_and_refuses_a_nul() {
     trace.debug_trace(b"\x80", "unit_pub: next=80").unwrap();
     let error = trace.debug_trace(b"H", "a\0b").unwrap_err();
     assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+}
+
+// --- The parser's lifecycle --------------------------------------------------------------
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn init_starts_a_used_parser_afresh_with_its_type_and_table() {
+    let table = recording();
+    let mut parser = Parser::new();
+    parser.as_mut().set_lenient_headers(true);
+    assert!(parser.as_mut().execute(b"garbage").is_err());
+    parser
+        .as_mut()
+        .init(ParserType::Request, Some(table.as_ref()));
+    let this = parser.as_ref();
+    assert_eq!(this.parser_type(), Ok(ParserType::Request));
+    assert_eq!(this.settings_ptr().addr(), std::ptr::from_ref(table).addr());
+    assert_eq!(this.error(), Ok(Errno::Ok));
+    assert_eq!(this.reason(), None);
+    assert_eq!(this.lenient_flags_raw(), 0);
+    assert!(this.data().is_null());
+    assert_eq!(
+        parser.as_mut().execute(b"GET / HTTP/1.1\r\n\r\n"),
+        Ok(Parsed::All)
+    );
+    assert_eq!(named(&take_log())[0], ("on_message_begin", Vec::new()));
+    // A request parser refuses a response, once the table has seen its message begin.
+    assert!(parser.as_mut().execute(b"HTTP/1.1 200 OK\r\n").is_err());
+    let log = named(&take_log());
+    assert_eq!(
+        log,
+        [("on_reset", Vec::new()), ("on_message_begin", Vec::new())]
+    );
+    parser.as_mut().init(ParserType::Response, None);
+    assert!(parser.as_ref().settings_ptr().is_null());
+    assert_eq!(
+        parser.as_mut().execute(b"HTTP/1.1 200 OK\r\n"),
+        Ok(Parsed::All)
+    );
+    assert_eq!(take_log(), Vec::new());
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn reset_keeps_the_type_table_and_lenient_flags_and_clears_the_rest() {
+    let table = recording();
+    let mut parser = Parser::new();
+    parser
+        .as_mut()
+        .init(ParserType::Response, Some(table.as_ref()));
+    parser.as_mut().set_lenient_version(true);
+    parser.as_mut().set_lenient_keep_alive(true);
+    let flags = parser.as_ref().lenient_flags_raw();
+    let error = parser.as_mut().execute(b"GET / HTTP/1.1\r\n").unwrap_err();
+    assert_eq!(error.errno(), Ok(Errno::InvalidConstant));
+    take_log();
+    parser.as_mut().reset();
+    let this = parser.as_ref();
+    assert_eq!(this.parser_type(), Ok(ParserType::Response));
+    assert_eq!(this.settings_ptr().addr(), std::ptr::from_ref(table).addr());
+    assert_eq!(this.lenient_flags_raw(), flags);
+    assert_eq!(this.error(), Ok(Errno::Ok));
+    assert_eq!(this.reason(), None);
+    assert_eq!(this.error_offset(b""), None);
+    // The kept table runs again, and the kept flag relaxes the version check.
+    assert_eq!(
+        parser.as_mut().execute(b"HTTP/9.9 204 No Content\r\n\r\n"),
+        Ok(Parsed::All)
+    );
+    assert_eq!(parser.as_ref().http_major(), 9);
+    assert_eq!(
+        named(&take_log()).last(),
+        Some(&("on_message_complete", Vec::new()))
+    );
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn reset_keeps_the_type_a_parser_of_both_kinds_settled_on() {
+    // A parser of both kinds takes the type of the first message it reads, and keeps it.
+    let mut parser = Parser::new();
+    assert_eq!(parser.as_ref().parser_type(), Ok(ParserType::Both));
+    assert_eq!(
+        parser.as_mut().execute(b"GET / HTTP/1.1\r\n\r\n"),
+        Ok(Parsed::All)
+    );
+    assert_eq!(parser.as_ref().parser_type(), Ok(ParserType::Request));
+    parser.as_mut().reset();
+    assert_eq!(parser.as_ref().parser_type(), Ok(ParserType::Request));
+    parser.as_mut().reinit();
+    assert_eq!(parser.as_ref().parser_type(), Ok(ParserType::Both));
+}
+
+// --- Finishing ---------------------------------------------------------------------------
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn finish_ends_a_message_the_end_of_the_input_marks() {
+    let mut parser = Parser::new();
+    parser
+        .as_mut()
+        .init(ParserType::Response, Some(recording().as_ref()));
+    let response = b"HTTP/1.1 200 OK\r\n\r\nall of it";
+    assert_eq!(parser.as_mut().execute(response), Ok(Parsed::All));
+    let log = named(&take_log());
+    assert_eq!(log.last(), Some(&("on_body", b"all of it".to_vec())));
+    assert_eq!(parser.as_mut().finish(), Ok(()));
+    assert_eq!(named(&take_log()), [("on_message_complete", Vec::new())]);
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn finish_between_messages_runs_no_callback() {
+    let mut parser = Parser::new();
+    parser
+        .as_mut()
+        .init(ParserType::Response, Some(recording().as_ref()));
+    assert_eq!(parser.as_mut().finish(), Ok(()));
+    let response = b"HTTP/1.1 204 No Content\r\n\r\n";
+    assert_eq!(parser.as_mut().execute(response), Ok(Parsed::All));
+    take_log();
+    assert_eq!(parser.as_mut().finish(), Ok(()));
+    assert_eq!(take_log(), Vec::new());
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn finish_inside_a_message_is_an_invalid_eof_state_the_parser_does_not_keep() {
+    let mut parser = Parser::new();
+    let head = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhi";
+    assert_eq!(parser.as_mut().execute(head), Ok(Parsed::All));
+    let error = parser.as_mut().finish().unwrap_err();
+    assert_eq!(error, FinishError::InvalidEofState);
+    assert_eq!(error.code(), 14);
+    assert_eq!(error.errno(), Ok(Errno::InvalidEofState));
+    assert_eq!(parser.as_ref().reason(), Some(c"Invalid EOF state"));
+    assert_eq!(parser.as_ref().error(), Ok(Errno::Ok));
+    // The rest of the body may still come.
+    assert_eq!(parser.as_mut().execute(b"llo"), Ok(Parsed::All));
+    assert_eq!(parser.as_mut().finish(), Ok(()));
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn finish_leaves_a_parser_with_an_error_as_it_is() {
+    let mut parser = Parser::new();
+    parser
+        .as_mut()
+        .init(ParserType::Response, Some(recording().as_ref()));
+    assert_eq!(
+        parser.as_mut().execute(b"HTTP/1.1 200 OK\r\n\r\nbody"),
+        Ok(Parsed::All)
+    );
+    take_log();
+    parser.as_mut().pause();
+    assert_eq!(parser.as_mut().finish(), Ok(()));
+    assert_eq!(parser.as_ref().error(), Ok(Errno::Paused));
+    assert_eq!(take_log(), Vec::new());
+    parser.as_mut().resume();
+    assert_eq!(parser.as_mut().finish(), Ok(()));
+    assert_eq!(named(&take_log()), [("on_message_complete", Vec::new())]);
+}
+
+/// Returns `R` from `on_message_complete`.
+struct CompleteReturn<const R: c_int>;
+
+impl<const R: c_int> EventHandler for CompleteReturn<R> {
+    fn on_event(_: ParserMut<'_>) -> c_int {
+        R
+    }
+}
+
+/// A kept table whose `on_message_complete` returns `R`.
+fn completing<const R: c_int>() -> &'static Settings {
+    let settings: &'static mut Settings = kept();
+    settings
+        .as_mut()
+        .set_on_message_complete(Some(Callback::new::<CompleteReturn<R>>()));
+    settings
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn finish_returns_on_message_completes_value() {
+    let paused = Errno::Paused.raw().cast_signed();
+    for (settings, code) in [(completing::<-1>(), -1), (completing::<21>(), paused)] {
+        let mut parser = Parser::new();
+        parser
+            .as_mut()
+            .init(ParserType::Response, Some(settings.as_ref()));
+        assert_eq!(
+            parser.as_mut().execute(b"HTTP/1.1 200 OK\r\n\r\nx"),
+            Ok(Parsed::All)
+        );
+        let error = parser.as_mut().finish().unwrap_err();
+        assert_eq!(error, FinishError::Callback(code.try_into().unwrap()));
+        assert_eq!(error.code(), code);
+        assert_eq!(parser.as_ref().error(), Ok(Errno::Ok));
+        assert_eq!(parser.as_ref().reason(), None);
+    }
+    let error = FinishError::Callback((-1).try_into().unwrap());
+    assert!(error.errno().is_err());
+    assert_eq!(
+        error.to_string(),
+        "llhttp's on_message_complete refused the end of the input: -1"
+    );
+    assert_eq!(
+        FinishError::InvalidEofState.to_string(),
+        "the llhttp parser's input ended inside a message"
+    );
+}
+
+#[test]
+#[should_panic(expected = "finish state is no `llhttp_finish`")]
+fn finish_refuses_a_finish_state_no_llhttp_finish_names() {
+    let mut parser = Parser::zeroed();
+    parser.as_mut().set_finish_raw(3);
+    let _ = parser.as_mut().finish();
+}
+
+#[test]
+fn finish_reads_the_finish_state_of_a_zeroed_parser() {
+    let mut parser = Parser::zeroed();
+    assert_eq!(parser.as_mut().finish(), Ok(()));
+    parser.as_mut().set_finish_raw(2);
+    assert_eq!(parser.as_mut().finish(), Err(FinishError::InvalidEofState));
+}
+
+// --- The dispatchers ---------------------------------------------------------------------
+
+/// Calls each dispatcher of `parser`, in `SLOTS`' order, each data one with its slot's name,
+/// and returns what each returned.
+fn dispatch_all(parser: &mut ParserMut<'_>) -> [c_int; 23] {
+    let mut out = [0; 23];
+    macro_rules! call {
+        ($i:expr, $get:ident, $set:ident,event) => {
+            out[$i] = parser.$get();
+        };
+        ($i:expr, $get:ident, $set:ident,data) => {
+            out[$i] = parser.$get(stringify!($get).as_bytes());
+        };
+    }
+    for_each_slot!(call);
+    out
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn each_dispatcher_calls_its_own_slot_with_its_run() {
+    let mut parser = Parser::new();
+    parser.as_mut().set_settings(Some(recording().as_ref()));
+    assert_eq!(dispatch_all(&mut parser.as_mut()), [0; 23]);
+    let log = take_log();
+    let expected: Vec<(usize, Vec<u8>)> = SLOTS
+        .iter()
+        .enumerate()
+        .map(|(i, (name, data))| {
+            (
+                i,
+                if *data {
+                    name.as_bytes().to_vec()
+                } else {
+                    Vec::new()
+                },
+            )
+        })
+        .collect();
+    assert_eq!(log, expected);
+    assert_eq!(parser.as_ref().reason(), None);
+}
+
+#[test]
+fn a_dispatcher_returns_0_without_a_table_or_a_slot() {
+    static EMPTY: LazyLock<Settings> = LazyLock::new(Settings::new);
+    let mut parser = Parser::zeroed();
+    assert_eq!(dispatch_all(&mut parser.as_mut()), [0; 23]);
+    parser.as_mut().set_settings(Some(EMPTY.as_ref()));
+    assert_eq!(dispatch_all(&mut parser.as_mut()), [0; 23]);
+    assert_eq!(parser.as_ref().reason(), None);
+}
+
+/// Returns `R` from every slot, as a data or an event callback.
+struct Returning<const R: c_int>;
+
+impl<const R: c_int> EventHandler for Returning<R> {
+    fn on_event(_: ParserMut<'_>) -> c_int {
+        R
+    }
+}
+
+impl<const R: c_int> DataHandler for Returning<R> {
+    fn on_data(_: ParserMut<'_>, _: &[u8]) -> c_int {
+        R
+    }
+}
+
+/// A table every slot of which returns `R`.
+fn returning<const R: c_int>() -> Settings {
+    let mut settings = Settings::new();
+    let mut m = settings.as_mut();
+    macro_rules! set {
+        ($i:expr, $get:ident, $set:ident,event) => {
+            m.$set(Some(Callback::new::<Returning<R>>()));
+        };
+        ($i:expr, $get:ident, $set:ident,data) => {
+            m.$set(Some(DataCallback::new::<Returning<R>>()));
+        };
+    }
+    for_each_slot!(set);
+    settings
+}
+
+#[test]
+fn a_span_dispatchers_minus_one_is_hpe_user_with_its_slots_reason() {
+    static REFUSING: LazyLock<Settings> = LazyLock::new(returning::<-1>);
+    let user = Errno::User.raw().cast_signed();
+    let mut parser = Parser::zeroed();
+    parser.as_mut().set_settings(Some(REFUSING.as_ref()));
+    macro_rules! check {
+        ($i:expr, $get:ident, $set:ident,event) => {
+            parser.as_mut().set_reason(None);
+            // `CALLBACK_MAYBE` hands the value back as it is, and gives no reason.
+            assert_eq!(parser.as_mut().$get(), -1);
+            assert_eq!(parser.as_ref().reason(), None);
+        };
+        ($i:expr, $get:ident, $set:ident,data) => {
+            parser.as_mut().set_reason(None);
+            assert_eq!(parser.as_mut().$get(b"x"), user);
+            let reason = concat!("Span callback error in ", stringify!($get));
+            assert_eq!(
+                parser.as_ref().reason().map(|r| r.to_str().unwrap()),
+                Some(reason)
+            );
+        };
+    }
+    for_each_slot!(check);
+    // The parser's error is the parse's to set, from the value: the dispatcher sets none.
+    assert_eq!(parser.as_ref().error(), Ok(Errno::Ok));
+}
+
+#[test]
+fn a_dispatcher_hands_back_any_other_value_unchanged() {
+    static PAUSING: LazyLock<Settings> = LazyLock::new(returning::<21>);
+    static ODD: LazyLock<Settings> = LazyLock::new(returning::<-2>);
+    let mut parser = Parser::zeroed();
+    for (settings, value) in [(&PAUSING, 21), (&ODD, -2)] {
+        parser.as_mut().set_settings(Some(settings.as_ref()));
+        assert_eq!(dispatch_all(&mut parser.as_mut()), [value; 23]);
+        assert_eq!(parser.as_ref().reason(), None);
+    }
 }
