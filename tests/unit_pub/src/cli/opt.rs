@@ -434,6 +434,43 @@ fn spec_fields_round_trip() {
     );
 }
 
+/// The builders set what the setters set, a zero alias leaving the spec without one, and
+/// their specs chain into a table as C's initialisers do.
+#[test]
+fn builders_set_what_the_setters_set() {
+    let mode = Cell::new(0);
+    let built = Spec::new(Target::Switch(Some(&mode)))
+        .with_name(c"read")
+        .with_alias(b'r')
+        .with_switch_value(2)
+        .with_usage(Usage::CHOICE | Usage::SHOW_LONG)
+        .with_value_name(c"mode")
+        .with_help(c"read the mode");
+    let mut set = Spec::new(Target::Switch(Some(&mode)));
+    let mut m = set.as_mut();
+    m.set_name(Some(c"read"));
+    m.set_alias(NonZero::new(b'r'));
+    m.set_switch_value(2);
+    m.set_usage(Usage::CHOICE | Usage::SHOW_LONG);
+    m.set_value_name(Some(c"mode"));
+    m.set_help(Some(c"read the mode"));
+    let (b, s) = (built.as_ref(), set.as_ref());
+    assert_eq!(b.kind(), s.kind());
+    assert_eq!(b.name(), s.name());
+    assert_eq!(b.alias(), s.alias());
+    assert_eq!(b.switch_value(), s.switch_value());
+    assert_eq!(b.usage(), s.usage());
+    assert_eq!(b.value_name(), s.value_name());
+    assert_eq!(b.help(), s.help());
+    assert_eq!(format!("{built:?}"), format!("{set:?}"));
+
+    assert_eq!(Spec::default().with_alias(0).as_ref().alias(), None);
+    let specs = [built, Spec::new(Target::Literal), Spec::default()];
+    let table = SpecTable::new(&specs).expect("ended");
+    assert_eq!(table.len(), 2);
+    assert_eq!(table.get(0).and_then(|s| s.name()), Some(c"read"));
+}
+
 /// An alias above ASCII keeps its byte, as C's `char` holds it.
 #[test]
 fn a_non_ascii_alias_keeps_its_byte() {

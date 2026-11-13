@@ -40,8 +40,9 @@
 //! parses on the thread that holds them, so none of them is `Send` or `Sync`.
 
 use core::cell::Cell;
-use core::ffi::c_int;
+use core::ffi::{CStr, c_int};
 use core::fmt;
+use core::num::NonZero;
 use core::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign};
 
 pub use ffi_import::{
@@ -508,6 +509,91 @@ impl Target<'_> {
     }
 }
 
+/// A spec's fields set one by one, each taking and returning the spec, so that a spec reads as
+/// C's initialiser does, and a table as C's array of them, ended by the zeroed
+/// [`Spec::default`]:
+///
+/// ```
+/// use core::cell::Cell;
+///
+/// use libgit2_crustify::git2::src::cli::opt::{Spec, SpecTable, Target, Usage};
+///
+/// let debug = Cell::new(0);
+/// let specs = [
+///     Spec::new(Target::Bool(Some(&debug)))
+///         .with_name(c"debug")
+///         .with_alias(b'd')
+///         .with_help(c"show debugging output"),
+///     Spec::new(Target::Literal).with_usage(Usage::HIDDEN),
+///     Spec::default(),
+/// ];
+/// let table = SpecTable::new(&specs).unwrap();
+/// assert_eq!(table.get(0).and_then(|s| s.name()), Some(c"debug"));
+/// ```
+impl<'p> Spec<'p> {
+    /// The spec with the long option's name, without its dashes.
+    ///
+    /// Wraps `fld::cli_opt_spec.name`
+    #[doc(alias = "cli_opt_spec.name")]
+    #[must_use]
+    pub fn with_name(mut self, name: &'p CStr) -> Self {
+        self.as_mut().set_name(Some(name));
+        self
+    }
+
+    /// The spec with the short option's one-character alias, as `b'd'` for `-d`; `0`, as C's
+    /// `'\0'`, leaves it without one.
+    ///
+    /// Wraps `fld::cli_opt_spec.alias`
+    #[doc(alias = "cli_opt_spec.alias")]
+    #[must_use]
+    pub fn with_alias(mut self, alias: u8) -> Self {
+        self.as_mut().set_alias(NonZero::new(alias));
+        self
+    }
+
+    /// The spec with the value a [`Kind::Switch`] spec sets, or a [`Kind::Accumulator`] spec
+    /// adds.
+    ///
+    /// Wraps `fld::cli_opt_spec.switch_value`
+    #[doc(alias = "cli_opt_spec.switch_value")]
+    #[must_use]
+    pub fn with_switch_value(mut self, switch_value: c_int) -> Self {
+        self.as_mut().set_switch_value(switch_value);
+        self
+    }
+
+    /// The spec with how it is parsed and shown in usage.
+    ///
+    /// Wraps `fld::cli_opt_spec.usage`
+    #[doc(alias = "cli_opt_spec.usage")]
+    #[must_use]
+    pub fn with_usage(mut self, usage: Usage) -> Self {
+        self.as_mut().set_usage(usage);
+        self
+    }
+
+    /// The spec with the name usage shows for its value.
+    ///
+    /// Wraps `fld::cli_opt_spec.value_name`
+    #[doc(alias = "cli_opt_spec.value_name")]
+    #[must_use]
+    pub fn with_value_name(mut self, value_name: &'p CStr) -> Self {
+        self.as_mut().set_value_name(Some(value_name));
+        self
+    }
+
+    /// The spec with the one-line description usage shows for it.
+    ///
+    /// Wraps `fld::cli_opt_spec.help`
+    #[doc(alias = "cli_opt_spec.help")]
+    #[must_use]
+    pub fn with_help(mut self, help: &'p CStr) -> Self {
+        self.as_mut().set_help(Some(help));
+        self
+    }
+}
+
 /// The variable a [`Kind::Args`] spec writes: where, in the argument array of the parse that
 /// matched it, the arguments it took start, as C's `char **`.
 ///
@@ -699,6 +785,18 @@ mod ffi_import {
         /// let spec: Spec<'static> = Spec::zeroed();
         /// std::thread::spawn(move || drop(spec));
         /// ```
+        ///
+        /// # Adoption
+        ///
+        /// A handle adopted from a pointer, through [`CRefSeam::from_ptr`] or
+        /// [`CMutSeam::from_ptr`], is read as a `Spec<'p>` for the `'p` its caller names, and
+        /// its getters lend what the spec points at for that `'p`, beyond the handle's own
+        /// borrow. Those seams' contract, a live, initialised `cli_opt_spec` that outlives the
+        /// handle, does not cover it, so their caller also vouches that the spec is a valid
+        /// `Spec<'p>`: its `name`, `value_name` and `help` are each `NULL` or a NUL-terminated
+        /// string that lives, unchanged, for `'p`, and its `value` is `NULL` or addresses, for
+        /// `'p`, a live variable of the type its `type` writes, as [`Target`] lists them, which
+        /// only a parse writes.
         ///
         /// Wraps `st::cli_opt_spec`
         ///
@@ -1166,6 +1264,14 @@ mod ffi_import {
         /// std::thread::spawn(move || drop(opt));
         /// ```
         ///
+        /// # Adoption
+        ///
+        /// As for a [`Spec`]: the caller of [`CRefSeam::from_ptr`] or [`CMutSeam::from_ptr`]
+        /// also vouches that the outcome is a valid `Opt<'p>` for the `'p` it names: its `spec`
+        /// is `NULL` or addresses a valid `Spec<'p>`, as `Spec`'s adoption asks, that lives,
+        /// unchanged, for `'p`, and its `arg` and `value` are each `NULL` or a NUL-terminated
+        /// string that lives, unchanged, for `'p`.
+        ///
         /// Wraps `st::cli_opt`
         ///
         /// Wraps `tdf::cli_opt`
@@ -1403,6 +1509,17 @@ mod ffi_import {
         /// let parser: Parser<'static> = Parser::zeroed();
         /// std::thread::spawn(move || drop(parser));
         /// ```
+        ///
+        /// # Adoption
+        ///
+        /// As for a [`Spec`]: the caller of [`CRefSeam::from_ptr`] or [`CMutSeam::from_ptr`]
+        /// also vouches that the parser is a valid `Parser<'p>` for the `'p` it names: its
+        /// `specs` is `NULL` or addresses a run of valid `Spec<'p>`s, as `Spec`'s adoption asks,
+        /// ended by one of kind `CLI_OPT_TYPE_NONE`, that lives, unchanged, for `'p`; and its
+        /// `args` is `NULL`, its `args_len` is `0`, or it addresses `args_len` non-null
+        /// arguments, each a NUL-terminated string that lives, unchanged, for `'p`, in an
+        /// array that nothing but the parser's handles, and C given the parser, reaches for
+        /// `'p`.
         ///
         /// Wraps `st::cli_opt_parser`
         ///

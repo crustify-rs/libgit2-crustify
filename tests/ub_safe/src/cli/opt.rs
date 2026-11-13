@@ -35,15 +35,12 @@ fn a_parser_reads_back_what_c_stored() {
     let debug = Cell::new(0);
     let output = Cell::new(None);
     let rest = ArgsSlot::new();
-    let mut specs = [
-        Spec::new(Target::Bool(Some(&debug))),
-        Spec::new(Target::Value(Some(&output))),
-        Spec::new(Target::Args(Some(&rest))),
+    let specs = [
+        Spec::new(Target::Bool(Some(&debug))).with_name(c"debug"),
+        Spec::new(Target::Value(Some(&output))).with_alias(b'o'),
+        Spec::new(Target::Args(Some(&rest))).with_usage(Usage::REQUIRED),
         Spec::zeroed(),
     ];
-    specs[0].as_mut().set_name(Some(c"debug"));
-    specs[1].as_mut().set_alias(NonZero::new(b'o'));
-    specs[2].as_mut().set_usage(Usage::REQUIRED);
     let table = SpecTable::new(&specs).expect("ended");
     let mut args = [Arg::new(c"-o"), Arg::new(c"out"), Arg::new(c"rest")];
     let parser = Parser::new(table, &mut args, ParseFlags::DEFAULT);
@@ -139,8 +136,10 @@ fn reordering_keeps_the_strings_taken() {
 #[cfg_attr(miri, ignore = "calls C")]
 fn variables_are_written_through_the_table() {
     let count = Cell::new(1);
-    let mut specs = [Spec::new(Target::Accumulator(Some(&count))), Spec::zeroed()];
-    specs[0].as_mut().set_switch_value(2);
+    let specs = [
+        Spec::new(Target::Accumulator(Some(&count))).with_switch_value(2),
+        Spec::zeroed(),
+    ];
     let table = SpecTable::new(&specs).expect("ended");
     let mut args = [Arg::new(c"-v")];
     let parser = Parser::new(table, &mut args, ParseFlags::DEFAULT);

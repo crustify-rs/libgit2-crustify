@@ -57,17 +57,17 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip the integration of `libgit2/src/util/strnlen.h`, `30176475c`; `main` at `c58bc5de8`, nothing shipped yet; crustify `cc84106`, ffibox `9c22a73`, wavefront `bf21e16`, ffimap `9aa2ef1` (each on its `libgit2-crustify/devel`, wavefront and ffimap on `devel`)
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `20206` non-test, `101000` tests; **C LoC** — `89080`
+- **Rust LoC** — `20232` non-test, `101145` tests; **C LoC** — `89080`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `768` | — | `27.96`% | `78.30`% |
-| UB unsafe tests | `120` | — | `19.06`% | `13.86`% |
-| Equiv tests | `539` | — | `42.83`% | `74.14`% |
-| Unit tests | `943` | — | `31.37`% | `88.11`% |
-| **Total tests** | **`2370`** | — | **`45.29`%** | **`98.84`%** |
+| UB safe tests | `768` | — | `27.95`% | `78.28`% |
+| UB unsafe tests | `125` | — | `19.07`% | `16.10`% |
+| Equiv tests | `539` | — | `42.87`% | `74.13`% |
+| Unit tests | `944` | — | `31.37`% | `88.13`% |
+| **Total tests** | **`2376`** | — | **`45.33`%** | **`98.85`%** |
 | total types | `258` | — | — | — |
 | ported types | `4` | `1.55`% | — | — |
 | wrapped types | `110` | `42.64`% | — | — |
@@ -262,8 +262,9 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `0` | wrap | review | `1` | `3` | `+103/-5` | — | `$3.73` | `10.13M` | `16m05s` | `$3.73` | `$1.24` |
 | `libgit2/src/libgit2/checkout.c` | `legacy-335` | `0` | wrap | review | `1` | `20` | `+106/-17` | `45.92`% / `98.92`% | `$7.76` | `16.62M` | `33m19s` | `$7.76` | `$0.39` |
 | `libgit2/deps/reftable/basics.c` | `169` | `3` | wrap | review | `2` | `3` | `+134/-4` | `45.90`% / `98.92`% | `$9.26` | `30.25M` | `24m42s` | `$4.63` | `$3.09` |
+| `git2/src/cli/opt.c` | `186` | `3` | port, wrap | review | `7` | `23` | `+357/-42` | `45.33`% / `98.85`% | — | — | — | — | — |
 | **Σ first** |  |  |  |  | **`114`** | **`238`** | **`+101631/-2572`** | **`45.29`% / `98.84`%** | **`$598.14`** | **`1471.91M`** | — | **`$5.59`** | **`$2.78`** |
-| **Σ review** |  |  |  |  | **`107`** | **`215`** | **`+9726/-2089`** | **`45.90`% / `98.92`%** | **`$426.90`** | **`715.94M`** | — | **`$3.99`** | **`$1.99`** |
+| **Σ review** |  |  |  |  | **`114`** | **`238`** | **`+10083/-2131`** | **`45.33`% / `98.85`%** | **`$426.90`** | **`715.94M`** | — | **`$3.99`** | **`$1.99`** |
 
 ### Batches: tests
 
@@ -367,8 +368,9 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `0` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+1` (—/— pp) | `+0` (—/— pp) |
 | `libgit2/src/libgit2/checkout.c` | `legacy-335` | `0` | review | `+0` (`+0.06`/`+0.02` pp) | `+0` (`+0.02`/`-0.01` pp) | `+0` (`-0.02`/`-0.07` pp) | `+1` (`+0.02`/`+0.00` pp) |
 | `libgit2/deps/reftable/basics.c` | `169` | `3` | review | `+1` (`+0.02`/`-0.02` pp) | `+0` (`+0.00`/`+0.00` pp) | `+0` (`-0.01`/`-0.02` pp) | `+2` (`+0.02`/`+0.01` pp) |
+| `git2/src/cli/opt.c` | `186` | `3` | review | `+0` (`-0.01`/`-0.02` pp) | `+5` (`+0.01`/`+2.24` pp) | `+0` (`+0.04`/`-0.01` pp) | `+1` (`+0.00`/`+0.02` pp) |
 | **Σ first** |  |  |  | **`+471` (`+25.14`/`-3.14` pp)** | **`+46` (`+14.01`/`-53.47` pp)** | **`+270` (`+31.31`/`-26.13` pp)** | **`+518` (`+12.58`/`+24.97` pp)** |
-| **Σ review** |  |  |  | **`+36` (`+0.45`/`+2.20` pp)** | **`+3` (`-0.38`/`-5.37` pp)** | **`+23` (`+2.68`/`-1.30` pp)** | **`+42` (`+4.70`/`+2.37` pp)** |
+| **Σ review** |  |  |  | **`+36` (`+0.44`/`+2.18` pp)** | **`+8` (`-0.37`/`-3.13` pp)** | **`+23` (`+2.72`/`-1.31` pp)** | **`+43` (`+4.70`/`+2.39` pp)** |
 
 ### Batches: safety audit
 
@@ -380,8 +382,9 @@ Deterministic `ffimap`; no model.
 | `git2/src/cli/opt.c` | `186` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.08` pp | `+0` |
 | `git2/src/cli/opt.c` | `186` | `2` | wrap | first | `+0` | `+0` | `+0` | `+1` | `+9` | `+0.00` pp | `+10` | `+0` | `+0` | `+0` | `+46` | `+1` | `+0.25` pp | `+123` |
 | `libgit2/deps/reftable/basics.c` | `169` | `3` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+6` | `+0` | `+0` | `-0.01` pp | `+0` |
+| `git2/src/cli/opt.c` | `186` | `3` | port, wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.01` pp | `+0` |
 | **Σ first** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+1`** | **`+10`** | **`+0.00` pp** | **`+12`** | **`+0`** | **`+0`** | **`+0`** | **`+49`** | **`+1`** | **`+0.11` pp** | **`+133`** |
-| **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+6`** | **`+0`** | **`+0`** | **`-0.01` pp** | **`+0`** |
+| **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+6`** | **`+0`** | **`+0`** | **`-0.02` pp** | **`+0`** |
 
 ### Batches: API stability
 
@@ -391,8 +394,9 @@ Deterministic `ffimap api`; no model.
 |---|---|---|---|---|---:|---:|---:|---:|---:|---:|---|---|
 | `git2/src/cli/opt.c` | `186` | `0` | port | first | `0` | `0` | `0` | `0` | `27` | `0` | `sys::git2` extended | — |
 | `git2/src/cli/opt.c` | `186` | `2` | wrap | first | `0` | `0` | `0` | `0` | `30` | `0` | `git2::src::cli::opt` new, `sys::git2` changed | `sys::git2`: `cli_opt`, `cli_opt_parser`, `cli_opt_spec` leave the unattributed set, now tied to their layouts' anchors |
+| `git2/src/cli/opt.c` | `186` | `3` | port, wrap | review | `51` | `6` | `0` | `0` | `0` | `0` | all 20 modules kept | — |
 | **Σ first** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`57`** | **`0`** |  |  |
-| **Σ review** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** | **`0`** |  |  |
+| **Σ review** |  |  |  |  | **`51`** | **`6`** | **`0`** | **`0`** | **`0`** | **`0`** |  |  |
 
 ### Batches — review: PoC + reports
 
@@ -427,7 +431,8 @@ Deterministic `ffimap api`; no model.
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
 | `libgit2/src/libgit2/checkout.c` | `legacy-335` | `0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
 | `libgit2/deps/reftable/basics.c` | `169` | `3` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
-| **Σ** |  |  | **`+7`** | **`+9`** | **`+3`** | **`+1`** | **`+3`** | **`+3`** | **`+15`** | **`+59`** | **`100`** |
+| `git2/src/cli/opt.c` | `186` | `3` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+2` | `2` |
+| **Σ** |  |  | **`+7`** | **`+9`** | **`+3`** | **`+1`** | **`+3`** | **`+3`** | **`+15`** | **`+61`** | **`102`** |
 
 ## Symbols
 
@@ -3598,3 +3603,62 @@ bindings changed, so the crate was packaged in bundled mode (698 files) and veri
 0's command. Proposals: `type-erased-field-tagged-by-a-sibling` (`binding-types`, crustify
 `755ff2c` on its evolution branch) and `compile-fail-doctest-codes-unchecked-on-stable`
 (`testing`). Usage cells are the assistant's.
+
+### `git2/src/cli/opt.c` wave 186 batch 3: review of batches 0 and 2
+
+Batch 3 reviews the type route of opt.c's folded waves: batch 0 (`8a149ac08`), the four enums
+ported as `Kind`, `Status`, `Usage` and `ParseFlags`, and batch 2 (`fe6b85bfa`), the three
+structs wrapped as `Spec<'p>`, `Opt<'p>` and `Parser<'p>` with `Target`, `Arg`, `ArgsSlot` and
+`SpecTable`. It ran every objective, `fix` included. The enums are ported for good and were
+reviewed in full. The structs are reviewed on their public API, since their `port/layout` is
+planned (waves 1988 and 2404). The row counts the 7 types and the structs' 23 fields. It filed
+two reports, both counted under `+misc`, since the table has no `contracts` or `ergonomics`
+column:
+
+- `contracts/ffi_import/adopted-handles-outlive-their-borrows` (reproducer). A handle adopted
+  through ffibox's `CRefSeam::from_ptr` / `CMutSeam::from_ptr`, within the contract those seams
+  state, lends its strings, variables, table and arguments for whatever `'p` its adopter names.
+  At `'static`, `SpecRef::name` outlives its `CString`, and Miri reports a dangling reference.
+  `Spec`, `Opt` and `Parser` now each carry an `# Adoption` section stating what an adopter
+  also vouches. The five `ub_unsafe` tests adopt each handle within it. The generic contract
+  is ffibox's: proposal `ffibox-adoption-of-lifetime-cells`.
+- `ergonomics/spec-built-one-setter-at-a-time`. A spec took one `as_mut()` setter per field,
+  patched by index after its table was built. `Spec` gains by-value builders (`with_name`,
+  `with_alias`, `with_switch_value`, `with_usage`, `with_value_name`, `with_help`), each
+  anchored to its field, and the module's `equiv` and `ub_safe` tables are declared with them.
+
+The other objectives found nothing. `unsafety`: no public raw pointer or `unsafe fn` in the
+workset. `ub`: the getters' borrows are tied to `'p` or the handle's borrow; `Spec`, `Opt` and
+`Parser` are invariant in `'p`; `Target` keeps a spec's `type` and `value` written together;
+`ArgsSlot` is never read through. `equiv`: the enums' C values and `cli_opt_parser_init`'s
+state are compared, and the `Option` conversions follow `binding-types`' Enums section.
+`logic`: the variants' documented effects match `opt.c`'s parse (`switch_value` `0` counting
+`1`, `--no-` writing `0`). `idiom` and `conventions`: none in the workset. `test-adequacy`:
+`opt.rs` is now 562 of 563 lines and 120 of 120 functions under all suites. The one line left
+is `ArgsSlot::get_in`'s refusal of a misaligned offset, which no safe code or C stores.
+
+Coverage was measured with `crustify/scripts/coverage/run.sh` on this tree and read with
+`report.py` from the scratch tree's `src/` (`C=@c` over the `coverage` variant's
+`libcrustify.a`, `Rust=.`), the unit column merging `lib` and `unit_pub`. The base is batch 2's
+measurement of `fe6b85bfa`, recorded in `Coverage stats`, not measured again. `ub_unsafe`'s
+`+2.24` pp Rust is the accessors its new tests reach. The C shifts are run-to-run variation,
+since none of the new tests calls C. The Overview's Rust LoC moves by ffimap's
+`code.loc.total` (`+26`) and `code.tests.loc.total` (`+145`). The safety audit scan (ffimap
+`9aa2ef1`, `--ffibox`, `--sys-crates pcre2_sys`, the 13 seams, `--regions
+ffi_import,ffi_export`, no export feature) is compared with batch 2's scan of `fe6b85bfa`.
+Only `unsafe loc %` moves, by the native builders. The boundary scan's sites hold none in the
+changeset. `ffimap api diff` against `fe6b85bfa`, with ffibox's private rustdoc JSON (nightly
+`2026-10-08`), finds the six builder fields' keys `extended` and the other 51 keys of the
+worklist `kept`, and all 20 unattributed modules `kept`.
+
+Gates, on `fe6b85bfa` plus this batch: the workspace is formatted (the pinned nightly's
+rustfmt), and `clippy --all-targets --all-features` passes with warnings denied. The module's
+tests pass on `plain` and under ASan+UBSan (`lib` 4, `equiv` 11, `ub_safe` 6, `ub_unsafe` 5,
+`unit_pub` 32, doctests 3 merged and 7 compile-fail, whose codes nightly checks). Under Miri
+the module's `ub_unsafe` (5), `unit_pub` (31) and `ub_safe` (1) tests pass. The attribute skips
+the six marked `calls C` or `spawns a process`. The coverage run ran every suite
+of the workspace (`lib` 844 and 1 ignored, `ub_safe` 767, `ub_unsafe` 125, `equiv` 539,
+`unit_pub` 99, `hidden_symbols` 1, doctests 75 merged and 385 standalone). Its only failure is
+the known `CommitBuilder` compile-fail doctest. TSan has no obligation, with no `Send` or
+`Sync` claim and no thread. BSan is no gate of this batch, and was not run. The raw bindings
+did not change, so the crate was not packaged. Usage cells are the assistant's.

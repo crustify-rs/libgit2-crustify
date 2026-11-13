@@ -24,7 +24,6 @@
 //!   call C, so Miri stops there.
 
 use core::cell::Cell;
-use core::num::NonZero;
 use std::ffi::{CStr, CString, c_char, c_uint};
 use std::process::Command;
 use std::{mem, ptr};
@@ -355,25 +354,24 @@ fn c_parses_a_table_built_in_rust() {
     let output = Cell::new(None);
     let file = Cell::new(None);
     let rest = ArgsSlot::new();
-    let mut specs = [
-        Spec::new(Target::Bool(Some(&debug))),
-        Spec::new(Target::Switch(Some(&mode))),
-        Spec::new(Target::Switch(Some(&mode))),
-        Spec::new(Target::Accumulator(Some(&verbose))),
-        Spec::new(Target::Value(Some(&output))),
+    let specs = [
+        Spec::new(Target::Bool(Some(&debug)))
+            .with_name(c"debug")
+            .with_alias(b'd'),
+        Spec::new(Target::Switch(Some(&mode)))
+            .with_name(c"read")
+            .with_switch_value(1),
+        Spec::new(Target::Switch(Some(&mode)))
+            .with_name(c"write")
+            .with_switch_value(2),
+        Spec::new(Target::Accumulator(Some(&verbose))).with_alias(b'v'),
+        Spec::new(Target::Value(Some(&output)))
+            .with_name(c"output")
+            .with_alias(b'o'),
         Spec::new(Target::Arg(Some(&file))),
         Spec::new(Target::Args(Some(&rest))),
         Spec::zeroed(),
     ];
-    specs[0].as_mut().set_name(Some(c"debug"));
-    specs[0].as_mut().set_alias(NonZero::new(b'd'));
-    specs[1].as_mut().set_name(Some(c"read"));
-    specs[1].as_mut().set_switch_value(1);
-    specs[2].as_mut().set_name(Some(c"write"));
-    specs[2].as_mut().set_switch_value(2);
-    specs[3].as_mut().set_alias(NonZero::new(b'v'));
-    specs[4].as_mut().set_name(Some(c"output"));
-    specs[4].as_mut().set_alias(NonZero::new(b'o'));
     let table = SpecTable::new(&specs).expect("ended");
     let mut args = [
         c"--debug",
@@ -453,15 +451,13 @@ fn c_reorders_the_arguments_rust_lent() {
     let output = Cell::new(None);
     let file = Cell::new(None);
     let rest = ArgsSlot::new();
-    let mut specs = [
-        Spec::new(Target::Bool(Some(&debug))),
-        Spec::new(Target::Value(Some(&output))),
+    let specs = [
+        Spec::new(Target::Bool(Some(&debug))).with_name(c"debug"),
+        Spec::new(Target::Value(Some(&output))).with_alias(b'o'),
         Spec::new(Target::Arg(Some(&file))),
         Spec::new(Target::Args(Some(&rest))),
         Spec::zeroed(),
     ];
-    specs[0].as_mut().set_name(Some(c"debug"));
-    specs[1].as_mut().set_alias(NonZero::new(b'o'));
     let table = SpecTable::new(&specs).expect("ended");
     let mut args = [c"file", c"--debug", c"-o", c"out", c"more"].map(Arg::new);
     let mut parser = Parser::new(table, &mut args, ParseFlags::FORCE_GNU);
@@ -500,15 +496,14 @@ fn c_reads_the_state_rust_set() {
     let debug = Cell::new(0);
     let verbose = Cell::new(0);
     let file = Cell::new(None);
-    let mut specs = [
-        Spec::new(Target::Bool(Some(&debug))),
-        Spec::new(Target::Accumulator(Some(&verbose))),
+    let specs = [
+        Spec::new(Target::Bool(Some(&debug)))
+            .with_name(c"debug")
+            .with_alias(b'd'),
+        Spec::new(Target::Accumulator(Some(&verbose))).with_alias(b'v'),
         Spec::new(Target::Arg(Some(&file))),
         Spec::zeroed(),
     ];
-    specs[0].as_mut().set_name(Some(c"debug"));
-    specs[0].as_mut().set_alias(NonZero::new(b'd'));
-    specs[1].as_mut().set_alias(NonZero::new(b'v'));
     let table = SpecTable::new(&specs).expect("ended");
     let mut opt = Opt::zeroed();
 
@@ -557,13 +552,11 @@ type Case<'a> = (&'a [&'a CStr], Status, Option<usize>, Option<&'a CStr>);
 fn c_parse_reports_failures_through_the_outcome() {
     let output = Cell::new(None);
     let file = Cell::new(None);
-    let mut specs = [
-        Spec::new(Target::Value(Some(&output))),
-        Spec::new(Target::Arg(Some(&file))),
+    let specs = [
+        Spec::new(Target::Value(Some(&output))).with_name(c"output"),
+        Spec::new(Target::Arg(Some(&file))).with_usage(Usage::REQUIRED),
         Spec::zeroed(),
     ];
-    specs[0].as_mut().set_name(Some(c"output"));
-    specs[1].as_mut().set_usage(Usage::REQUIRED);
     let table = SpecTable::new(&specs).expect("ended");
     let c_table = table.get(0).expect("a spec").as_ptr();
 
