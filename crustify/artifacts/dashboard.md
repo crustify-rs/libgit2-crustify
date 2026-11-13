@@ -57,7 +57,7 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip the integration of `libgit2/src/util/strnlen.h`, `30176475c`; `main` at `c58bc5de8`, nothing shipped yet; crustify `cc84106`, ffibox `9c22a73`, wavefront `bf21e16`, ffimap `9aa2ef1` (each on its `libgit2-crustify/devel`, wavefront and ffimap on `devel`)
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `18823` non-test, `99823` tests; **C LoC** — `89080`
+- **Rust LoC** — `18823` non-test, `99818` tests; **C LoC** — `89080`
 
 ### Coverage stats
 
@@ -609,6 +609,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | review | `+0` (`+0.02`/`+0.00` pp) | `+0` (`-0.02`/`+0.00` pp) | `+0` (`-0.01`/`+0.00` pp) | `+0` (`-0.01`/`+0.00` pp) |
 | `libgit2/deps/ntlmclient/compat.h` | `200` | `0` | first | `+0` (`+0.03`/`-0.02` pp) | `+0` (`-0.01`/`-0.00` pp) | `+0` (`+0.01`/`-0.02` pp) | `+6` (`-0.01`/`+0.00` pp) |
 | `libgit2/src/util/strnlen.h` | `225` | `0` | first | `+0` (`+0.04`/`-0.03` pp) | `+0` (`+0.02`/`+0.00` pp) | `+2` (`+0.00`/`+0.01` pp) | `+6` (`-0.02`/`+0.01` pp) |
+| `libgit2/deps/ntlmclient/compat.h` | `200` | `1` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) |
 | `libgit2/src/util/strnlen.h` | `225` | `1` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) |
 | **Σ first** |  |  |  | **`+345` (`+10.38`/`+5.97` pp)** | **`+40` (`+3.36`/`-5.95` pp)** | **`+225` (`+9.08`/`+13.67` pp)** | **`+330` (`+12.04`/`-33.48` pp)** |
 | **Σ review** |  |  |  | **`+18` (`+0.31`/`-1.51` pp)** | **`+8` (`-0.80`/`+0.59` pp)** | **`+23` (`+0.09`/`-0.54` pp)** | **`+45` (`+2.44`/`+7.64` pp)** |
@@ -642,6 +643,7 @@ Deterministic `ffimap`; no model.
 | `libgit2/src/util/strlist.c` | `184` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `-3` | `-0.06` pp | `-3` |
 | `libgit2/deps/ntlmclient/compat.h` | `200` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.00` pp | `+0` |
 | `libgit2/src/util/strnlen.h` | `225` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.00` pp | `+0` |
+| `libgit2/deps/ntlmclient/compat.h` | `200` | `1` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
 | `libgit2/src/util/strnlen.h` | `225` | `1` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
 | **Σ first** |  |  |  |  | **`+4`** | **`+0`** | **`+24`** | **`+0`** | **`+1`** | **`+0.52` pp** | **`+3`** | **`+1`** | **`+0`** | **`+0`** | **`+0`** | **`+48`** | **`-0.34` pp** | **`+95`** |
 | **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`-1`** | **`+0`** | **`+1`** | **`+0.00` pp** | **`+0`** | **`-1`** | **`+0`** | **`+6`** | **`+0`** | **`+0`** | **`-0.11` pp** | **`-2`** |
@@ -665,9 +667,10 @@ Deterministic `ffimap api`; no model.
 | `libgit2/src/util/strlist.c` | `184` | `1` | wrap | review | `4` | `2` | `0` | `0` | `0` | `3` | — | — |
 | `libgit2/deps/ntlmclient/compat.h` | `200` | `0` | port | first | `0` | `0` | `0` | `0` | `1` | `0` | — | — |
 | `libgit2/src/util/strnlen.h` | `225` | `0` | port | first | `0` | `0` | `0` | `0` | `1` | `0` | — | — |
+| `libgit2/deps/ntlmclient/compat.h` | `200` | `1` | port | review | `1` | `0` | `0` | `0` | `0` | `0` | — | — |
 | `libgit2/src/util/strnlen.h` | `225` | `1` | port | review | `1` | `0` | `0` | `0` | `0` | `0` | — | — |
 | **Σ first** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`23`** | **`0`** |  |  |
-| **Σ review** |  |  |  |  | **`33`** | **`2`** | **`1`** | **`0`** | **`0`** | **`3`** |  |  |
+| **Σ review** |  |  |  |  | **`34`** | **`2`** | **`1`** | **`0`** | **`0`** | **`3`** |  |  |
 
 ### Batches — review: PoC + reports
 
@@ -728,8 +731,9 @@ review cost.
 | `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | `0` | `1` | `+82/-67` | `$12.85` | `46.60M` | `1h22m16s` |
 | `libgit2/src/util/allocators/debugalloc.c` | `183` | `1` | `0` | `1` | `+336/-75` | `$15.62` | `43.77M` | `1h33m16s` |
 | `libgit2/src/util/strlist.c` | `184` | `1` | `0` | `6` | `+408/-142` | `$21.71` | `81.05M` | `1h33m47s` |
+| `libgit2/deps/ntlmclient/compat.h` | `200` | `1` | `0` | `1` | `+7/-10` | — | — | — |
 | `libgit2/src/util/strnlen.h` | `225` | `1` | `0` | `1` | `+22/-8` | `$9.34` | `19.72M` | `3h34m56s` |
-| **Σ** |  |  | **`1`** | **`78`** | **`+1600/-470`** | **`$139.22`** | **`446.01M`** | — |
+| **Σ** |  |  | **`1`** | **`79`** | **`+1607/-480`** | **`$139.22`** | **`446.01M`** | — |
 
 ### Passes: PoC + reports
 
@@ -744,8 +748,9 @@ review cost.
 | `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `+0` | `1` |
 | `libgit2/src/util/allocators/debugalloc.c` | `183` | `1` | `+0` | `+0` | `+2` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `2` |
 | `libgit2/src/util/strlist.c` | `184` | `1` | `+0` | `+0` | `+1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+2` | `+1` | `+0` | `+0` | `+0` | `4` |
+| `libgit2/deps/ntlmclient/compat.h` | `200` | `1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
 | `libgit2/src/util/strnlen.h` | `225` | `1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `0` |
-| **Σ** |  |  | **`+0`** | **`+1`** | **`+5`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+2`** | **`+1`** | **`+0`** | **`+1`** | **`+4`** | **`14`** |
+| **Σ** |  |  | **`+0`** | **`+1`** | **`+5`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+2`** | **`+1`** | **`+0`** | **`+1`** | **`+5`** | **`15`** |
 
 ## Notes
 
@@ -3434,3 +3439,56 @@ doctest pass under ASan+UBSan and under Miri. The coverage runs ran every suite 
 the nightly; only the known `CommitBuilder` compile-fail doctest fails, on both. TSan and BSan
 have no obligation: the batch adds no unsafe code, no `Send` or `Sync` claim and no thread. No
 raw binding or C changed, so the packaging gate does not apply. Usage cells are the assistant's.
+
+### `libgit2/deps/ntlmclient/compat.h` wave 200 batch 1: module pass
+
+The module pass, and the module's only review, over batch 0 (`4b6e5a4db`), for every objective,
+`fix` included. `mac::MIN` has no finding. `min` is the macro's replacement list over any
+`PartialOrd` type. Its docs are accurate: ties and NaN give `y`, as C's `<` does, and an `Ord`
+type gets `core::cmp::min`'s result up to which of two equal values it returns. They name both
+departures, one operand type and single evaluation. The anchor, alias, home,
+`#![forbid(unsafe_code)]` and test placement follow the conventions, and ffimap's review sites
+hold none in the workset. The preprocessed `ntlm.c` expands `compat.h`'s own `MIN`, not
+`<sys/param.h>`'s. Wavefront's users of it are `des_key_from_password` and
+`generate_lm_hash` alone, and no C test references it.
+
+Judged against `porting-symbols`' Macros section, the function form holds: the macro's second
+evaluation is no part of its meaning at any site. `const` is unavailable to a generic
+comparison on Rust 1.100 (E0658 for `[const] PartialOrd`, E0015 for a plain bound), and the
+batch kept the type-generic body. The pass records this reading in
+`macro-incidental-double-evaluation`, which stays open. Judged against `testing`, the missing
+`equiv` test holds too: no raw binding reaches a function that expands the macro, and its
+`unit_pub` tests check the replacement list at `ntlm.c`'s sites. `testing` states no rule for
+that case, so the pass files `equiv-unreachable-macro-sites`, on `testing`. Coverage was not
+measured again: batch 0's run gives `compat_h.rs` 3 of 3 lines, 5 of 5 regions and 1 of 1
+function, and the pass adds no test.
+
+The wave's TSan gate found one true positive outside the module, filed as
+`misc/checkout-progress-fixture-races-the-first-filter-load` with its trace and disclosure.
+`checkout.rs`'s unit-test fixture `progress_callback::Staged` staged files through raw
+`git_index_add_bypath` with a `OnceLock` priming of its own. Its first filter load therefore
+raced a blob test's `filter::initialise_builtin_filters`, libgit2's `filter_initialize` writing
+under the registry's read lock. The two tests alone, at two threads, failed 6 runs of 6, and
+the `lib` binary 2 of 2. The race depends on scheduling: the strnlen.h pass, at 48 threads,
+passed on an ancestor with the same code. The fix (`67edb478b`) has the fixture pin the
+runtime and call `initialise_builtin_filters()` before staging. The pair then passes 8 of 8,
+and the `lib` binary 3 of 3.
+
+Gates ran on `end-gates` snapshots at 24 jobs and 24 test threads, without BSan, as the
+settings' `sanitizers` answer has it. On the wave tip `4b6e5a4db`, plain passes the workspace
+(`lib` 840 and 1 ignored, `equiv` 528, `hidden_symbols` 1, `ub_safe` 762, `ub_unsafe` 120,
+`unit_pub` 73, doctests 73 and 378). ASan+UBSan passes but for the known nightly failures.
+Those are one `compile_fail` test holding 9 mismatched snapshots, the six `checkout_*`,
+`diff_parse_options_no_raw_conversion`, `odb_options_no_raw_conversion` and
+`progress_callback_not_send`, and the `CommitBuilder` doctest. TSan fails `lib` on the race
+above, besides the same known failures. Miri passes every binary (`lib` 392, `ub_safe` 194,
+`equiv` 38, `unit_pub` 38, `ub_unsafe` 19 passed, the rest marked). On `67edb478b`, plain,
+ASan+UBSan and Miri give the tip's results, and TSan passes `lib` (840), leaving only the known
+failures. `fmt --check` and `clippy --workspace --all-targets -D warnings` pass on `plain`.
+
+The safety audit scan (ffimap `9aa2ef1`, flags as batch 0's) of the landed tree differs from
+the tip's only in `code.tests.loc.total` (`-5`) and `code.tests.fn` (`-1`), which move the
+Overview's tests LoC. `ffimap api` (nightly `2026-10-08`, ffibox's private rustdoc JSON): the
+fix touches test code alone, so one JSON serves both sides, and `mac::MIN` and every
+unattributed module are `kept`. No raw binding or C changed, so the packaging gate does not
+apply. Usage cells are the assistant's.

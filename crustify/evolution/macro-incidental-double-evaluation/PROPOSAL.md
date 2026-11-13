@@ -30,6 +30,20 @@ evaluation: one that re-reads an argument it also writes, or evaluates an argume
 one branch, as an `assert`- or `likely`-style macro, or a short-circuiting one, does. It
 needs to say that the evaluation counts only where a caller depends on it.
 
+The module pass, `wave-200/batch-1/run-1`, judged the port against `porting-symbols`' Macros
+section and `testing` and filed no finding. Its reading of the exception agrees with the
+batch's: the list names what a function cannot express of a macro's meaning, and `MIN`'s
+second evaluation is no part of its meaning, since each operand at each site is the same
+value every time it is evaluated, `plaintext_len`, `password_len`, `7` and `14`. The
+preprocessed `ntlm.c` (the `plain` variant's flags) expands `compat.h`'s own definition, not
+`<sys/param.h>`'s, which wavefront also records (`merge`'s, outside the closure), so the
+`#ifndef MIN` guard selects no other body. The same section's "`const` where its body computes
+on its arguments alone" is the second reading the batch settled by hand: a generic
+comparison cannot be `const` on Rust 1.100 (`[const] PartialOrd` is E0658, `const_cmp`; a
+plain bound is E0015), and the batch kept the macro's type-generic body over a `const fn` on
+`usize`, which `ntlm.c`'s three sites would also take. The section could say which wins
+when the two conflict; this proposal's sentence does not need to.
+
 ## Destination
 
 The spec: `porting-symbols`' Macros section, which this role evolves; `binding-symbols`'
