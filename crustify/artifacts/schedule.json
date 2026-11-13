@@ -130007,7 +130007,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 0,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [],
         "cut": []
@@ -130089,10 +130089,13 @@
           "module": "src/util/strnlen.h",
           "foundational": false,
           "kind": "review",
-          "status": "wip",
+          "status": "done",
           "reviews": [],
           "module_pass": true,
-          "commits": []
+          "commits": [
+            "095f69596380f10332198e595298517202902d30",
+            "330e804d6fe6d8cd9423eea39a83f5988e215ef6"
+          ]
         }
       ]
     },
