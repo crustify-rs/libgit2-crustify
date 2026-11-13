@@ -49,11 +49,17 @@ The spec: `bindgen` (Generation, Build modes, Publishing).
 
 ## Change
 
-To be drafted: shared mode joins system mode's rule (it cannot serve once the bindings reach
-what the shared library hides, and the build fails naming it); the doctests are compiled from a
-copy of the bindings with C comments as plain comments; the package holds the layout, `src/`,
-the files of `c/` the bundled build reads, and the files cargo itself adds; bundled mode finds
-the out-of-tree libraries as the target's build system does, and says so when one is missing.
+crustify `81ece02` and `437159f` (bindgen; setup's Builds): shared mode, like system
+mode, cannot serve once the bindings reach what a shared library hides, and fails naming it; an
+executable link unit's objects are compiled and archived by bundled mode, taken from the
+variant's one archive by campaign mode, and refused by shared and system modes, with the
+consequence of its `main` and how its unit is ported meanwhile; doctests come from an `OUT_DIR`
+copy of the bindings with plain comments, which `src/sys.rs` includes under `cfg(doctest)`; an
+empty allowlist leaves the banner and an empty `static_fns.c`; a type another link unit owns
+joins `external.txt`, the owner's allowlist and a re-export in `src/sys.rs`; bundled mode finds
+the out-of-tree libraries through the build system's own search paths; the package holds the
+C's license files, the README and what cargo adds. Setup's Builds archives every link unit's
+objects, a library's or an executable's, once each.
 
 ## Validation
 
@@ -63,4 +69,11 @@ side campaigns' installs on the search paths.
 
 ## Review
 
-Pending.
+review-1 (`crustify/artifacts/evolution/bindgen-modes-after-bundling/review-1`), of crustify `ce6445d`: **rejected** on five fixes: the doctest copy's place
+(OUT_DIR, from whichever bindings the build uses, included by `src/sys.rs`), the empty
+allowlist's claim (both generated files, not every Layout file), the executable's `main` stated by
+its consequence and handling, the cross-unit exception moved out of the numbered steps with the
+`src/sys.rs` re-export, and the C's license files in the package. All eight items had evidence;
+five reran as stated; nothing weakens a check. Fixed in `437159f`, on `81ece02` (`ce6445d`
+rebased onto `7e35c25`). review-2 pending.
+

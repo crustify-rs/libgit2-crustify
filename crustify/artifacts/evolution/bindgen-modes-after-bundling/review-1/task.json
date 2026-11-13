@@ -1,0 +1,8 @@
+{"backend": "claude", "billing": "subscription", "args": ["--model", "claude-opus-5-5"],
+ "revisions": {"crustify": "63b92be", "wavefront": "bf21e16", "ffibox": "7af1232", "ffimap": "9aa2ef1"},
+ "component": "crustify",
+ "changes": [
+  {"branch": "libgit2-crustify/evolution/bindgen-llvm-pin", "commit": "6aa6dc4", "proposal": "crustify/evolution/bsan-regenerates-other-bindings"},
+  {"branch": "libgit2-crustify/evolution/ffibox-canonical-path", "commit": "b3ebca7", "proposal": "crustify/evolution/ffibox-canonical-path"},
+  {"branch": "libgit2-crustify/evolution/bindgen-modes-after-bundling", "commit": "ce6445d", "proposal": "crustify/evolution/bindgen-modes-after-bundling"}
+ ]}

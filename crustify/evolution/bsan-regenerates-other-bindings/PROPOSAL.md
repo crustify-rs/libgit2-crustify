@@ -1,6 +1,6 @@
 # BSan builds regenerate different bindings, so campaign mode fails under BSan
 
-Status: `open`: the campaign's fix landed as `47b4662c9`; the spec's half is to be made and reviewed.
+Status: `landed`: the campaign's fix as `47b4662c9`, the spec's as crustify `6aa6dc4` on `libgit2-crustify/devel` (2026-11-13).
 
 ## Signal
 
@@ -56,4 +56,9 @@ set to 23.1.3 fails the build naming the pinned and found versions.
 
 ## Review
 
-Pending.
+review-1 (`crustify/artifacts/evolution/bindgen-modes-after-bundling/review-1`), of crustify `6aa6dc4`: **approved**; it weakens no check (the comparison is
+unchanged and the pin only adds a failure; a dependent's regeneration was never compared). It
+reran BSan's `--no-run` without `CRUSTIFY_BINDINGS_UPDATE`. Its advisories (the LLVM among the
+inputs the bindings follow from, the manifest keys named, the Dockerfile's bsan note) are taken in
+`bindgen-modes-after-bundling`'s rework.
+

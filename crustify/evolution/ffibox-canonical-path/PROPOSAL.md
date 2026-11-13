@@ -20,8 +20,10 @@ The spec: the `ffibox` tool skill.
 
 ## Change
 
-To be drafted: the path dependency names ffibox's checkout by its canonical path (no symlink on
-it), so that compile-fail snapshots normalize it.
+crustify `b3ebca7` and `7e35c25`: the `ffibox` skill's Rust tree section names the
+checkout's canonical path, `/crustify-rs/ffibox` in Crustify's image, with no symbolic link on
+it, and a `[patch]` of another ffibox source names the same; the Dockerfile and the image README
+say the same, keeping `/opt/venv/share/<tool>` as a symlink for older manifests.
 
 ## Validation
 
@@ -29,4 +31,9 @@ it), so that compile-fail snapshots normalize it.
 
 ## Review
 
-Pending.
+review-1 (`crustify/artifacts/evolution/bindgen-modes-after-bundling/review-1`), of crustify `b3ebca7`: **rejected**: the skill still gave
+`/opt/venv/share/ffibox`, which the image makes a symlink, as the path to name, and the
+Dockerfile and the image README called it the manifest's path. The mechanism held (trybuild
+canonicalizes path dependencies; the five snapshots pass with `$FFIBOX`). Fixed in `7e35c25`:
+all three name `/crustify-rs/ffibox`. review-2 pending.
+
