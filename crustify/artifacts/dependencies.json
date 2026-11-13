@@ -16325,7 +16325,7 @@
    },
    "crustify_campaign": {
     "repository": "crustify-rs/glibc-crustify",
-    "pin": "6180870f2ddbc30a43e5687395eb4f13908b3cbf"
+    "pin": "1e601306ae89637bfed780c2f7ff2f01b6fc306a"
    }
   },
   {
