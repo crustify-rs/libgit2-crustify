@@ -57,22 +57,22 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip `<sha>`; `main` shipped at `<sha>`; crustify `4605156`, ffibox `7950244` (`main`), wavefront `db28284`
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `18813` non-test, `99632` tests; **C LoC** — `86833`
+- **Rust LoC** — `18820` non-test, `99732` tests; **C LoC** — `89080`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `762` | — | `28.41`% | `79.87`% |
-| UB unsafe tests | `120` | — | `19.37`% | `12.41`% |
-| Equiv tests | `526` | — | `43.40`% | `75.71`% |
-| Unit tests | `900` | — | `31.98`% | `87.42`% |
-| **Total tests** | **`2308`** | — | **`45.88`%** | **`98.89`%** |
+| UB safe tests | `762` | — | `27.96`% | `79.18`% |
+| UB unsafe tests | `120` | — | `19.09`% | `14.38`% |
+| Equiv tests | `528` | — | `42.52`% | `74.96`% |
+| Unit tests | `908` | — | `31.35`% | `87.75`% |
+| **Total tests** | **`2318`** | — | **`45.02`%** | **`98.81`%** |
 | total types | `258` | — | — | — |
 | ported types | `0` | `0.00`% | — | — |
 | wrapped types | `107` | `41.47`% | — | — |
 | total symbols | `979` | — | — | — |
-| ported symbols | `22` | `2.25`% | — | — |
+| ported symbols | `23` | `2.35`% | — | — |
 | wrapped symbols | `493` | `50.36`% | — | — |
 
 ### Module stats
@@ -480,6 +480,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `0` | wrap | first | `3` | `18` | `+727/-6` | `45.83`% / `77.00`% | `$12.77` | `42.14M` | `37m48s` | `$4.26` | `$0.71` |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `1` | wrap | first | `3` | `18` | `+524/-165` | `45.88`% / `98.92`% | `$10.66` | `30.55M` | `57m49s` | `$3.55` | `$0.59` |
 | `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `0` | wrap | first | `1` | `5` | `+429/-0` | `45.88`% / `98.87`% | `$8.04` | `26.46M` | `22m4s` | `$8.04` | `$1.61` |
+| `libgit2/src/util/strnlen.h` | `225` | `0` | port | first | `1` | `0` | `+184/-0` | `45.02`% / `98.81`% | — | — | — | — | — |
 | `libgit2/raw-lifetime-void` | `legacy-1` | `0` | wrap | review | `2` | — | `+80/-1` | — | `$7.89` | `10.78M` | `18m36s` | `$3.94` | — |
 | `libgit2/raw-lifetime-string` | `legacy-3` | `0` | wrap | review | `2` | — | `+345/-23` | — | `$10.89` | `14.41M` | `22m03s` | `$5.45` | — |
 | `libgit2/src/util/alloc.c` | `12` | `3` | wrap | review | `7` | — | `+57/-20` | — / `98.90`% | `$15.18` | `40.96M` | `1h31m33s` | `$2.17` | — |
@@ -511,7 +512,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | wrap | review | `2` | — | `+217/-15` | — | `$11.03` | `25.98M` | `47m17s` | `$5.51` | — |
 | `libgit2/deps/reftable/basics.c` | `169` | `4` | wrap | review | `43` | — | `+110/-16` | `45.99`% / `98.92`% | `$13.42` | `46.17M` | `40m4s` | `$0.31` | — |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | wrap | review | `3` | — | `+11/-7` | `45.88`% / `98.92`% | `$5.87` | `16.61M` | `16m58s` | `$1.96` | — |
-| **Σ first** |  |  |  |  | **`499`** | **`9066`** | **`+79898/-3634`** | **`45.88`% / `98.90`%** | **`$581.72`** | **`1824.00M`** | — | **`$1.17`** | **`$0.06`** |
+| **Σ first** |  |  |  |  | **`500`** | **`9066`** | **`+80082/-3634`** | **`45.02`% / `98.81`%** | **`$581.72`** | **`1824.00M`** | — | **`$1.17`** | **`$0.06`** |
 | **Σ review** |  |  |  |  | **`468`** | — | **`+7252/-1369`** | **`45.93`% / `98.90`%** | **`$373.87`** | **`734.99M`** | — | **`$0.80`** | — |
 
 ### Batches: tests
@@ -604,7 +605,8 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/reftable/basics.c` | `169` | `4` | review | `+0` (`-0.00`/`-0.01` pp) | `+1` (`+0.00`/`+0.00` pp) | `+1` (`+0.03`/`+0.10` pp) | `+0` (`+0.01`/`+0.01` pp) |
 | `libgit2/deps/reftable/basics.c` | `169` | `5` | review | `+2` (`+0.00`/`+0.01` pp) | `+0` (`-0.01`/`-0.06` pp) | `+0` (`+0.02`/`-0.16` pp) | `+3` (`+0.01`/`+0.01` pp) |
 | `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | review | `+0` (`+0.02`/`+0.00` pp) | `+0` (`-0.02`/`+0.00` pp) | `+0` (`-0.01`/`+0.00` pp) | `+0` (`-0.01`/`+0.00` pp) |
-| **Σ first** |  |  |  | **`+345` (`+10.31`/`+6.02` pp)** | **`+40` (`+3.35`/`-5.95` pp)** | **`+223` (`+9.07`/`+13.68` pp)** | **`+318` (`+12.07`/`-33.49` pp)** |
+| `libgit2/src/util/strnlen.h` | `225` | `0` | first | `+0` (`+0.04`/`-0.03` pp) | `+0` (`+0.02`/`+0.00` pp) | `+2` (`+0.00`/`+0.01` pp) | `+6` (`-0.02`/`+0.01` pp) |
+| **Σ first** |  |  |  | **`+345` (`+10.35`/`+5.99` pp)** | **`+40` (`+3.37`/`-5.95` pp)** | **`+225` (`+9.07`/`+13.69` pp)** | **`+324` (`+12.05`/`-33.48` pp)** |
 | **Σ review** |  |  |  | **`+18` (`+0.31`/`-1.51` pp)** | **`+8` (`-0.80`/`+0.59` pp)** | **`+23` (`+0.09`/`-0.54` pp)** | **`+45` (`+2.44`/`+7.64` pp)** |
 
 ### Batches: safety audit
@@ -634,6 +636,7 @@ Deterministic `ffimap`; no model.
 | `libgit2/src/util/allocators/stdalloc.c` | `181` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
 | `libgit2/src/util/allocators/debugalloc.c` | `183` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+1` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+2` | `-0.02` pp | `+0` |
 | `libgit2/src/util/strlist.c` | `184` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `-3` | `-0.06` pp | `-3` |
+| `libgit2/src/util/strnlen.h` | `225` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.00` pp | `+0` |
 | **Σ first** |  |  |  |  | **`+4`** | **`+0`** | **`+24`** | **`+0`** | **`+1`** | **`+0.52` pp** | **`+3`** | **`+1`** | **`+0`** | **`+0`** | **`+0`** | **`+48`** | **`-0.34` pp** | **`+95`** |
 | **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`-1`** | **`+0`** | **`+1`** | **`+0.00` pp** | **`+0`** | **`-1`** | **`+0`** | **`+6`** | **`+0`** | **`+0`** | **`-0.11` pp** | **`-2`** |
 
@@ -654,7 +657,8 @@ Deterministic `ffimap api`; no model.
 | `libgit2/src/util/allocators/stdalloc.c` | `181` | `1` | wrap | review | `1` | `0` | `0` | `0` | `0` | `0` | — | — |
 | `libgit2/src/util/allocators/debugalloc.c` | `183` | `1` | wrap | review | `1` | `0` | `0` | `0` | `0` | `0` | — | `fn::git_debugalloc_init_allocator`: signature kept; its `malloc`/`realloc` members became size guards (soundness fix, `debug-size-obligation-unenforceable`) |
 | `libgit2/src/util/strlist.c` | `184` | `1` | wrap | review | `4` | `2` | `0` | `0` | `0` | `3` | — | — |
-| **Σ first** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`21`** | **`0`** |  |  |
+| `libgit2/src/util/strnlen.h` | `225` | `0` | port | first | `0` | `0` | `0` | `0` | `1` | `0` | — | — |
+| **Σ first** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`22`** | **`0`** |  |  |
 | **Σ review** |  |  |  |  | **`32`** | **`2`** | **`1`** | **`0`** | **`0`** | **`3`** |  |  |
 
 ### Batches — review: PoC + reports
@@ -3257,3 +3261,58 @@ Each fix has a test, and those tests fail on the old code. On the scoped gates
 (plain, asan-ubsan, tsan, clippy, fmt), only lib's count changed, 81 to 83, and Miri
 passes the two new tests. The audit's missing primitives are filed as
 `ffibox-lifetime-ctypes` and `ffibox-vtables` (`694546abf`).
+
+
+### `libgit2/src/util/strnlen.h` wave 225 batch 0: `p_strnlen`
+
+The campaign's first `port` batch outside the foundational modules. `src/util/strnlen.h` is a
+header with no translation unit, and on this build its one item is `#define p_strnlen
+strnlen`, libc's; the `GIT_INLINE` body over `memchr` is compiled only under `NO_STRNLEN`,
+which no variant defines. `mac::p_strnlen` is the native `const fn strnlen(&[u8]) -> usize`
+in `src/libgit2/src/util/strnlen_h.rs`, over `CStr::from_bytes_until_nul` (core's `memchr`),
+the pointer and its bound one slice; its docs name the `NO_STRNLEN` branch, which computes
+the same length. The file holds no unsafe region and carries `#![forbid(unsafe_code)]`. No C
+reaches it and the macro has no export: it stays in its header for `alloc.c`, `index.c`,
+`midx.c` and `refdb_reftable.c`, which expand it to libc's `strnlen`. libc's `strnlen` takes
+its recommended `std` route; nothing of its state crosses to C. The `loc` cell is wavefront's
+`query dag --loc`, `0` for a macro.
+
+Tests: six `unit_pub` tests (empty bound, first NUL, no NUL within the bound, bytes past
+ASCII, every NUL position in every bound up to 70 bytes from each start within a word, and
+`const` evaluation), a doctest, and two `equiv` tests comparing the port with the C's
+expansion through `git__strndup` (`StrFree::dup_prefix`), which copies `p_strnlen(s, n)`
+bytes. The module has no C tests to carry over.
+
+Coverage was measured with `crustify/scripts/coverage/run.sh` on a `git archive` of the wave
+tip `50c93dd23` and on this tree, each suite alone, and read with `report.py` (`C=@c` over the
+`coverage` variant's `libcrustify.a`, 89,080 lines, and Rust over the scratch tree's `src/`),
+the unit column merging `lib` and `unit_pub`. `report.py`'s scope check fails from the
+repository's root, since `llvm-cov` prints rows relative to their common prefix
+(`crustify/evolution/coverage-report-relative-rows`); it was run from the scratch tree's
+`src/libgit2`. The archive is the 2026-11-13 tree's, so `C LoC` and the Coverage stats
+percentages move from the recorded figures, which were measured on the earlier archive and
+method; the pp cells are against this run's own tip measurement. The tip's `unit` count was
+902, not the recorded 900. The C suites' shifts, `+0.04` pp in `ub_safe` and `-0.02` pp in
+`unit`, which this batch's tests do not run, are run-to-run variation. Worklist: Rust
+`strnlen_h.rs` 5 of 5 lines, 5 of 5 regions and 1 of 1 function; C `git__strndup`'s
+`p_strnlen` line reached 109k times by `equiv`; `strnlen` itself is glibc's, outside the
+archive. The Overview's Rust LoC moves by ffimap's `code.loc.total` (`+7`) and
+`code.tests.loc.total` (`+100`).
+
+The safety audit scans (ffimap `9aa2ef1`, `--ffibox`, `--sys-crates pcre2_sys`, the raw
+bindings being the crate's own `sys` module since 2026-11-13, the 13 seams with `into_raw`,
+`--regions ffi_import,ffi_export`, no export feature in the manifest) move only the line
+totals; the boundary scan's sites hold none in the changeset. `ffimap api` against the tip,
+with ffibox's private rustdoc JSON (nightly `2026-10-08`): `mac::p_strnlen` is `new`, and
+every unattributed module `kept`.
+
+Gates, on the base `50c93dd23`, which the wave branch still pointed at when the batch landed:
+the workspace is formatted, and `clippy --all-targets` passes with warnings denied on
+`plain`. The whole workspace passes on `plain` (`lib` 840 and 1 ignored, `ub_safe` 762,
+`ub_unsafe` 120, `equiv` 528, `unit_pub` 67, `hidden_symbols` 1, doctests 72 merged and 378 standalone). The module's tests pass
+under ASan+UBSan, and the six unit tests under Miri; the two `equiv` tests were each run alone
+there and stop at `git_libgit2_init` (`calls libgit2`). The coverage runs ran every suite of
+both trees on the nightly; only the known `CommitBuilder` compile-fail doctest fails, on both.
+TSan and BSan have no obligation: the batch adds no unsafe code, no `Send` or `Sync` claim and
+no thread. No raw binding or C changed, so the packaging gate does not apply. Usage cells are
+the assistant's.
