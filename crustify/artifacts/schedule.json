@@ -121173,7 +121173,7 @@
           "module": "deps/llhttp/api.c",
           "foundational": false,
           "kind": "wrap",
-          "status": "wip",
+          "status": "done",
           "items": [
             {
               "name": "llhttp__internal_s",
@@ -121247,6 +121247,75 @@
               "typedefs": [
                 "llhttp_type_t"
               ],
+              "home": "src/libgit2/deps/llhttp/llhttp.rs"
+            }
+          ],
+          "commits": [
+            "1ead111ee5c5d00c06e38980184a4c19b50d06d0"
+          ]
+        },
+        {
+          "index": 1,
+          "link_unit": "libgit2",
+          "module": "deps/llhttp/api.c",
+          "foundational": false,
+          "kind": "wrap",
+          "status": "wip",
+          "items": [
+            {
+              "name": "HTTP_ALL_METHOD_MAP",
+              "defined_in": "deps/llhttp/llhttp.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/llhttp.rs"
+            },
+            {
+              "name": "HTTP_ERRNO_MAP",
+              "defined_in": "deps/llhttp/llhttp.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/llhttp.rs"
+            },
+            {
+              "name": "HTTP_STATUS_MAP",
+              "defined_in": "deps/llhttp/llhttp.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/llhttp.rs"
+            },
+            {
+              "name": "llhttp__internal_init",
+              "defined_in": "deps/llhttp/llhttp.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/llhttp.rs"
+            },
+            {
+              "name": "llhttp_cb",
+              "defined_in": "deps/llhttp/llhttp.h",
+              "kind": "function_pointer",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/llhttp.rs"
+            },
+            {
+              "name": "llhttp_data_cb",
+              "defined_in": "deps/llhttp/llhttp.h",
+              "kind": "function_pointer",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/llhttp/llhttp.rs"
+            },
+            {
+              "name": "llhttp__internal_execute",
+              "defined_in": "deps/llhttp/llhttp.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
               "home": "src/libgit2/deps/llhttp/llhttp.rs"
             }
           ],
@@ -122674,7 +122743,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 0,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [],
         "cut": []
@@ -122744,10 +122813,14 @@
           "module": "deps/ntlmclient/compat.h",
           "foundational": false,
           "kind": "review",
-          "status": "wip",
+          "status": "done",
           "reviews": [],
           "module_pass": true,
-          "commits": []
+          "commits": [
+            "b49aab34be295c45f16a35b9f0cc8eb711e3133a",
+            "67edb478befbcda0635a46b4caa11bff160ce1d0",
+            "1959a34b593f1c46e9a45a8773bc6d604ddb8b00"
+          ]
         }
       ]
     },
