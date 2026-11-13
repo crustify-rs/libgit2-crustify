@@ -4,3 +4,4 @@ pub mod alloc;
 pub mod allocators;
 pub mod errors;
 pub mod strlist;
+pub mod strnlen_h;

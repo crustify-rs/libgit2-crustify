@@ -54497,7 +54497,7 @@
         {
           "index": 199,
           "name": "src/util/strnlen.h",
-          "status": "todo",
+          "status": "frozen",
           "foundational": false,
           "depends_on": [],
           "translation_unit": null,
