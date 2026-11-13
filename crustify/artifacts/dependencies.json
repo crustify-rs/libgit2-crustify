@@ -82,7 +82,13 @@
       "crate": "std",
       "rust_api": "alloc::vec::Vec"
      },
-     "confirmation": null
+     "confirmation": {
+      "batch": "wave-186/batch-5",
+      "route": "recommended",
+      "crate": "std",
+      "rust_api": "alloc::vec::Vec",
+      "note": "a Vec, which also removes the bound cli_opt_parse's alloca'd array overflowed"
+     }
     },
     {
      "c_name": "inet_pton",
