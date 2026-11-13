@@ -1,17 +1,19 @@
-//! Unit tests for `deps/llhttp/llhttp.c`'s types, bound ahead of their consumers: the four
-//! enums' conversions and their errors, and the parser [`Parser`] through its handles, decided
-//! by Rust assertions.
+//! Unit tests for `deps/llhttp/llhttp.c`'s items, bound ahead of their consumers: the four
+//! enums' conversions and their errors, the parser [`Parser`] through its handles, its
+//! constructor and its parse, the two callback types, and the X-macros' entries, decided by
+//! Rust assertions.
 //!
-//! None calls C, so all run under Miri.
+//! The parses call C, and are ignored under Miri; the rest runs there.
 
 use std::collections::HashSet;
 use std::error::Error as _;
+use std::ffi::{CStr, c_int};
 
 use ffibox::CZeroable;
 use libgit2_crustify::libgit2::deps::llhttp::llhttp::{
-    Errno, ErrnoT, HttpParser, InternalT, LlhttpT, Method, MethodT, Parser, ParserMut, ParserRef,
-    ParserType, ParserTypeT, Status, StatusT, UnnamedErrno, UnnamedMethod, UnnamedParserType,
-    UnnamedStatus,
+    Callback, DataCallback, DataHandler, Errno, ErrnoT, EventHandler, HttpParser, InternalT,
+    LlhttpT, Method, MethodT, ParseError, Parsed, Parser, ParserMut, ParserRef, ParserType,
+    ParserTypeT, Status, StatusT, UnnamedErrno, UnnamedMethod, UnnamedParserType, UnnamedStatus,
 };
 use libgit2_crustify::sys::libgit2 as sys;
 
@@ -270,4 +272,345 @@ fn a_parser_moves_with_its_state() {
     parser.as_mut().set_error(Errno::User);
     let moved = Box::new(parser);
     assert_eq!(Parser::as_ref(&moved).error(), Ok(Errno::User));
+}
+
+// --- The X-macros ----------------------------------------------------------------------
+
+/// Checks one X-macro's entries: `all` in order, each entry's `NAME` its constant's name less
+/// `prefix`, its `STRING` its `NAME` but where `strings` gives another, and every text a
+/// C identifier's or a method's spelling.
+fn check_map<T: Copy + PartialEq + std::fmt::Debug>(
+    map: &[T],
+    all: &[T],
+    prefix: &str,
+    columns: impl Fn(T) -> (&'static CStr, &'static CStr, &'static CStr),
+    strings: &[(T, &CStr)],
+) {
+    assert_eq!(map, all);
+    for &entry in map {
+        let (name, string, constant) = columns(entry);
+        let (name, constant) = (name.to_str().unwrap(), constant.to_str().unwrap());
+        assert_eq!(constant, format!("{prefix}{name}"), "{entry:?}");
+        assert!(
+            name.bytes()
+                .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_'),
+            "{entry:?}: {name}"
+        );
+        let expected = strings
+            .iter()
+            .find(|(e, _)| *e == entry)
+            .map_or(name.as_bytes(), |(_, s)| s.to_bytes());
+        assert_eq!(string.to_bytes(), expected, "{entry:?}");
+    }
+}
+
+#[test]
+fn errno_map_lists_every_errno_as_hpe_constants() {
+    let all: Vec<Errno> = named(64, Errno::from_raw, Errno::raw)
+        .into_iter()
+        .map(|raw| Errno::from_raw(raw).unwrap())
+        .collect();
+    let mut sorted = Errno::MAP.to_vec();
+    sorted.sort_by_key(|e| e.raw());
+    assert_eq!(sorted, all);
+    check_map(
+        Errno::MAP,
+        Errno::MAP,
+        "HPE_",
+        |e| (e.map_name(), e.map_string(), e.constant_name()),
+        &[],
+    );
+    // The map's order is the header's, not the codes': CR_EXPECTED (25) follows STRICT (2).
+    assert_eq!(
+        &Errno::MAP[..4],
+        &[Errno::Ok, Errno::Internal, Errno::Strict, Errno::CrExpected]
+    );
+    assert_eq!(Errno::CbReset.constant_name(), c"HPE_CB_RESET");
+    assert_eq!(Errno::MAP.last(), Some(&Errno::CbReset));
+}
+
+#[test]
+fn all_method_map_lists_every_method_and_spells_m_search() {
+    let all: Vec<Method> = (0..47).map(|raw| Method::from_raw(raw).unwrap()).collect();
+    check_map(
+        Method::MAP,
+        &all,
+        "HTTP_",
+        |m| (m.map_name(), m.map_string(), m.constant_name()),
+        &[(Method::MSearch, c"M-SEARCH")],
+    );
+    assert_eq!(Method::Get.map_string(), c"GET");
+    assert_eq!(Method::Query.constant_name(), c"HTTP_QUERY");
+}
+
+#[test]
+fn status_map_lists_every_status_by_increasing_code() {
+    let all: Vec<Status> = named(999, Status::from_raw, Status::raw)
+        .into_iter()
+        .map(|raw| Status::from_raw(raw).unwrap())
+        .collect();
+    check_map(
+        Status::MAP,
+        &all,
+        "HTTP_STATUS_",
+        |s| (s.map_name(), s.map_string(), s.constant_name()),
+        &[],
+    );
+    assert_eq!(Status::NotFound.map_string(), c"NOT_FOUND");
+    assert_eq!(Status::MAP.last().map(|s| s.raw()), Some(599));
+}
+
+// --- The parser ------------------------------------------------------------------------
+
+const RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nbody";
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn new_is_a_parser_at_its_start() {
+    let parser = Parser::new();
+    let r = parser.as_ref();
+    assert_eq!(r.parser_type(), Ok(ParserType::Both));
+    assert_eq!(r.error(), Ok(Errno::Ok));
+    assert_eq!(r.reason(), None);
+    assert!(r.data().is_null());
+    assert!(r.settings_ptr().is_null());
+    assert_eq!(
+        (
+            r.content_length(),
+            r.http_major(),
+            r.http_minor(),
+            r.status_code()
+        ),
+        (0, 0, 0, 0)
+    );
+    assert_eq!(
+        (r.flags_raw(), r.lenient_flags_raw(), r.finish_raw()),
+        (0, 0, 0)
+    );
+    assert!(!r.upgrade());
+    let default = Parser::default();
+    assert_eq!(default.as_ref().error(), Ok(Errno::Ok));
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn a_response_parses_in_any_number_of_runs() {
+    for size in 1..=RESPONSE.len() {
+        let mut parser = Parser::new();
+        parser.as_mut().set_parser_type(ParserType::Response);
+        for run in RESPONSE.chunks(size) {
+            assert_eq!(
+                parser.as_mut().parse(run),
+                Ok(Parsed::All),
+                "runs of {size}"
+            );
+        }
+        let r = parser.as_ref();
+        assert_eq!(
+            (r.status_code(), r.http_major(), r.http_minor()),
+            (200, 1, 1)
+        );
+        assert_eq!(r.content_length(), 0, "the body was read");
+    }
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn an_empty_run_parses_nothing() {
+    let mut parser = Parser::new();
+    assert_eq!(parser.as_mut().parse(&[]), Ok(Parsed::All));
+    assert_eq!(parser.as_mut().parse(b"HTTP/1.1 2"), Ok(Parsed::All));
+    assert_eq!(parser.as_mut().parse(&[]), Ok(Parsed::All));
+    assert_eq!(
+        parser.as_mut().parse(b"04 No Content\r\n\r\n"),
+        Ok(Parsed::All)
+    );
+    assert_eq!(parser.as_ref().status_code(), 204);
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn an_error_is_kept_until_the_parser_is_initialised_again() {
+    let mut parser = Parser::new();
+    parser.as_mut().set_parser_type(ParserType::Request);
+    let error = parser
+        .as_mut()
+        .parse(b"GET / HTTP/1.1\r\nA B: c\r\n")
+        .unwrap_err();
+    assert_eq!(error.errno(), Ok(Errno::InvalidHeaderToken));
+    assert_eq!(error.code(), 10);
+    assert_eq!(parser.as_ref().error(), Ok(Errno::InvalidHeaderToken));
+    assert!(parser.as_ref().reason().is_some());
+    assert_eq!(parser.as_mut().parse(b"GET / HTTP/1.1\r\n\r\n"), Err(error));
+    parser.as_mut().reinit();
+    assert_eq!(parser.as_ref().parser_type(), Ok(ParserType::Both));
+    assert_eq!(parser.as_ref().error(), Ok(Errno::Ok));
+    assert_eq!(parser.as_ref().reason(), None);
+    assert_eq!(
+        parser.as_mut().parse(b"GET / HTTP/1.1\r\n\r\n"),
+        Ok(Parsed::All)
+    );
+    assert_eq!(parser.as_ref().method(), Ok(Method::Get));
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn a_paused_parser_reads_nothing_until_resumed() {
+    let mut parser = Parser::new();
+    assert_eq!(
+        parser.as_mut().parse(b"HTTP/1.1 200 OK\r\n"),
+        Ok(Parsed::All)
+    );
+    parser.as_mut().set_error(Errno::Paused);
+    assert_eq!(parser.as_mut().parse(b"A: b\r\n"), Ok(Parsed::Paused));
+    assert_eq!(parser.as_mut().parse(b"A: b\r\n"), Ok(Parsed::Paused));
+    parser.as_mut().set_error(Errno::Ok);
+    assert_eq!(
+        parser.as_mut().parse(b"Content-Length: 0\r\n\r\n"),
+        Ok(Parsed::All)
+    );
+    assert_eq!(parser.as_ref().status_code(), 200);
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn an_upgrade_pauses_where_the_new_protocol_starts() {
+    let request = b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\n\r\nTLS";
+    let mut parser = Parser::new();
+    assert_eq!(parser.as_mut().parse(request), Ok(Parsed::PausedUpgrade));
+    assert!(parser.as_ref().upgrade());
+    assert_eq!(parser.as_ref().method(), Ok(Method::Connect));
+    assert_eq!(
+        parser.as_ref().error_offset(request),
+        Some(request.len() - 3)
+    );
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn the_http2_preface_stops_the_parse_for_good() {
+    let mut parser = Parser::new();
+    let error = parser
+        .as_mut()
+        .parse(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
+        .unwrap_err();
+    assert_eq!(error.errno(), Ok(Errno::PausedH2Upgrade));
+    assert_eq!(parser.as_mut().parse(b"x"), Err(error));
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+#[should_panic(expected = "no state to run from")]
+fn a_parser_cleared_of_an_error_it_cannot_resume_from_panics() {
+    let mut parser = Parser::new();
+    let _ = parser.as_mut().parse(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n");
+    parser.as_mut().set_error(Errno::Ok);
+    let _ = parser.as_mut().parse(b"x");
+}
+
+#[test]
+#[should_panic(expected = "no state to run from")]
+fn a_zeroed_parser_does_not_parse() {
+    let mut parser = Parser::zeroed();
+    let _ = parser.as_mut().parse(b"GET / HTTP/1.1\r\n");
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn a_zeroed_parser_with_an_error_returns_it() {
+    // C returns a kept error before it runs, so a parser with an error has no state to need.
+    let mut parser = Parser::zeroed();
+    parser.as_mut().set_error(Errno::Paused);
+    assert_eq!(parser.as_mut().parse(b"x"), Ok(Parsed::Paused));
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn a_parse_error_names_its_errno() {
+    // A callback's own value, which no errno names, is the equivalence tests': only C sets
+    // one.
+    let mut parser = Parser::zeroed();
+    parser.as_mut().set_error(Errno::User);
+    let error: ParseError = parser.as_mut().parse(b"x").unwrap_err();
+    assert_eq!((error.code(), error.errno()), (24, Ok(Errno::User)));
+    assert_eq!(error.to_string(), "llhttp stopped at HPE_USER");
+    assert!(error.source().is_none());
+    // Every kept error is returned as it is, but the pauses, which are no error.
+    for &errno in &Errno::MAP[1..] {
+        parser.as_mut().set_error(errno);
+        match parser.as_mut().parse(b"x") {
+            Ok(parsed) => assert!(matches!(
+                (errno, parsed),
+                (Errno::Paused, Parsed::Paused) | (Errno::PausedUpgrade, Parsed::PausedUpgrade)
+            )),
+            Err(error) => assert_eq!(error.errno(), Ok(errno)),
+        }
+    }
+}
+
+// --- Callbacks -------------------------------------------------------------------------
+
+struct Upgrading;
+
+impl EventHandler for Upgrading {
+    fn on_event(mut parser: ParserMut<'_>) -> c_int {
+        parser.set_upgrade(true);
+        7
+    }
+}
+
+struct Panicking;
+
+impl EventHandler for Panicking {
+    fn on_event(_: ParserMut<'_>) -> c_int {
+        panic!("a handler's panic");
+    }
+}
+
+impl DataHandler for Panicking {
+    fn on_data(_: ParserMut<'_>, _: &[u8]) -> c_int {
+        panic!("a handler's panic");
+    }
+}
+
+/// Returns the length of the run it is handed, and records it as the parser's content
+/// length's stand-in, the flags word.
+struct Measuring;
+
+impl DataHandler for Measuring {
+    fn on_data(mut parser: ParserMut<'_>, data: &[u8]) -> c_int {
+        parser.set_flags_raw(u16::try_from(data.len()).unwrap());
+        c_int::try_from(data.iter().map(|&b| u32::from(b)).sum::<u32>()).unwrap()
+    }
+}
+
+#[test]
+fn a_callback_hands_its_handler_the_parser_and_returns_its_value() {
+    let callback = Callback::new::<Upgrading>();
+    let copy = callback;
+    let mut parser = Parser::zeroed();
+    assert_eq!(copy.call(parser.as_mut()), 7);
+    assert!(parser.as_ref().upgrade());
+    assert!(callback.raw().is_some());
+    assert!(format!("{callback:?}").starts_with("Callback("));
+}
+
+#[test]
+fn a_data_callback_hands_its_handler_the_run() {
+    let callback = DataCallback::new::<Measuring>();
+    let mut parser = Parser::zeroed();
+    assert_eq!(callback.call(parser.as_mut(), b"\x01\x02\x03"), 6);
+    assert_eq!(parser.as_ref().flags_raw(), 3);
+    assert_eq!(callback.call(parser.as_mut(), &[]), 0);
+    assert_eq!(parser.as_ref().flags_raw(), 0);
+    assert!(callback.raw().is_some());
+    assert!(format!("{callback:?}").starts_with("DataCallback("));
+}
+
+#[test]
+fn a_handlers_panic_is_the_callbacks_error() {
+    let mut parser = Parser::zeroed();
+    let event = Callback::new::<Panicking>().call(parser.as_mut());
+    let data = DataCallback::new::<Panicking>().call(parser.as_mut(), b"x");
+    assert_eq!((event, data), (-1, -1));
 }

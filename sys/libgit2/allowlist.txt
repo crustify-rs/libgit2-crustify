@@ -809,3 +809,14 @@ function llhttp_get_type
 function llhttp_get_upgrade
 function llhttp_init
 function llhttp_settings_init
+
+# wave-194/batch-1: deps/llhttp/llhttp.c's initialiser, executor and callback types, wrapped
+# ahead of api.c's port, and api.c's three name functions, which expand llhttp.h's X-macros,
+# through which the equivalence tests compare the maps with the C
+type llhttp_cb
+type llhttp_data_cb
+function llhttp__internal_execute
+function llhttp__internal_init
+function llhttp_errno_name
+function llhttp_method_name
+function llhttp_status_name

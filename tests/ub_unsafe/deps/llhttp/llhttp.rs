@@ -8,12 +8,19 @@
 //! that `ASan` and `UBSan` see every access C makes through what the setters stored, and the
 //! edges of each contract: NULL, a value replaced between calls, a parser reset to new
 //! settings, a table whose callbacks never read `data`.
+//!
+//! `set_settings_ptr`'s suite also installs Rust handlers, through [`Callback`] and
+//! [`DataCallback`], and parses with [`ParserMut::parse`], so that C calls the trampolines:
+//! handlers that collect each run, pause, return their own error, panic, parse another
+//! parser, and try to parse or initialise the parser whose parse runs them.
 
 use std::ffi::{c_char, c_int, c_void};
 use std::ptr;
 
 use ffibox::{CMutSeam, CZeroable};
-use libgit2_crustify::libgit2::deps::llhttp::llhttp::{Parser, ParserType};
+use libgit2_crustify::libgit2::deps::llhttp::llhttp::{
+    Callback, DataCallback, DataHandler, Errno, EventHandler, Parsed, Parser, ParserMut, ParserType,
+};
 use libgit2_crustify::sys::libgit2 as sys;
 
 /// A parser `llhttp_init` initialised with no settings.
@@ -216,5 +223,328 @@ mod set_settings_ptr {
             sys::HPE_OK
         );
         assert_eq!(parser.as_ref().status_code(), 0);
+    }
+}
+
+/// Rust handlers C calls through the trampolines, recording what they see on the test's
+/// thread.
+mod handlers {
+    use std::cell::RefCell;
+
+    use super::*;
+
+    thread_local! {
+        /// Each event and run the handlers saw, in order.
+        static SEEN: RefCell<Vec<(&'static str, Vec<u8>)>> = const { RefCell::new(Vec::new()) };
+    }
+
+    /// The events and runs seen since the last call, runs of one part joined.
+    pub(super) fn take() -> Vec<(&'static str, Vec<u8>)> {
+        let seen = SEEN.with(RefCell::take);
+        let mut joined: Vec<(&'static str, Vec<u8>)> = Vec::new();
+        for (what, run) in seen {
+            match joined.last_mut() {
+                Some((last, data)) if *last == what && !run.is_empty() => data.extend(run),
+                _ => joined.push((what, run)),
+            }
+        }
+        joined
+    }
+
+    fn record(what: &'static str, data: &[u8]) {
+        SEEN.with_borrow_mut(|seen| seen.push((what, data.to_vec())));
+    }
+
+    macro_rules! data_handler {
+        ($name:ident, $what:literal) => {
+            pub(super) struct $name;
+
+            impl DataHandler for $name {
+                fn on_data(_: ParserMut<'_>, data: &[u8]) -> c_int {
+                    // A parse that ends where a span does hands it an empty run.
+                    if !data.is_empty() {
+                        record($what, data);
+                    }
+                    0
+                }
+            }
+        };
+    }
+
+    data_handler!(Url, "url");
+    data_handler!(Status, "status");
+    data_handler!(HeaderField, "field");
+    data_handler!(HeaderValue, "value");
+    data_handler!(Body, "body");
+
+    pub(super) struct MessageComplete;
+
+    impl EventHandler for MessageComplete {
+        fn on_event(parser: ParserMut<'_>) -> c_int {
+            let code = parser.as_ref().status_code().to_string();
+            record("complete", code.as_bytes());
+            0
+        }
+    }
+
+    /// Pauses at the end of the headers, as libgit2's HTTP client does.
+    pub(super) struct PausingAtHeaders;
+
+    impl EventHandler for PausingAtHeaders {
+        fn on_event(_: ParserMut<'_>) -> c_int {
+            record("headers", b"");
+            c_int::try_from(sys::HPE_PAUSED).unwrap()
+        }
+    }
+
+    /// Stops the parse with a code no errno names.
+    pub(super) struct Refusing;
+
+    impl DataHandler for Refusing {
+        fn on_data(_: ParserMut<'_>, _: &[u8]) -> c_int {
+            1000
+        }
+    }
+
+    /// Panics.
+    pub(super) struct Panicking;
+
+    impl EventHandler for Panicking {
+        fn on_event(_: ParserMut<'_>) -> c_int {
+            panic!("a handler panicked under C");
+        }
+    }
+
+    /// Parses the parser whose parse runs it, which panics.
+    pub(super) struct Reentering;
+
+    impl DataHandler for Reentering {
+        fn on_data(mut parser: ParserMut<'_>, _: &[u8]) -> c_int {
+            record("reentering", b"");
+            let _ = parser.parse(b"HTTP/1.1 200 OK\r\n\r\n");
+            record("reentered", b"");
+            0
+        }
+    }
+
+    /// Initialises the parser whose parse runs it, which panics.
+    pub(super) struct Reinitialising;
+
+    impl EventHandler for Reinitialising {
+        fn on_event(mut parser: ParserMut<'_>) -> c_int {
+            parser.reinit();
+            record("reinitialised", b"");
+            0
+        }
+    }
+
+    /// Parses a parser of its own, with the same handlers, while its parser's parse runs.
+    pub(super) struct ParsingAnother;
+
+    impl EventHandler for ParsingAnother {
+        fn on_event(_: ParserMut<'_>) -> c_int {
+            let settings = collecting();
+            let mut other = Parser::new();
+            // SAFETY: `settings` outlives `other`'s parse, and its handlers read no `data`.
+            unsafe { other.as_mut().set_settings_ptr(&raw const settings) };
+            match other
+                .as_mut()
+                .parse(b"HTTP/1.1 201 Created\r\nContent-Length: 0\r\n\r\n")
+            {
+                Ok(Parsed::All) => 0,
+                _ => -1,
+            }
+        }
+    }
+
+    /// A table of the collecting handlers.
+    pub(super) fn collecting() -> sys::llhttp_settings_t {
+        sys::llhttp_settings_t {
+            on_url: DataCallback::new::<Url>().raw(),
+            on_status: DataCallback::new::<Status>().raw(),
+            on_header_field: DataCallback::new::<HeaderField>().raw(),
+            on_header_value: DataCallback::new::<HeaderValue>().raw(),
+            on_body: DataCallback::new::<Body>().raw(),
+            on_message_complete: Callback::new::<MessageComplete>().raw(),
+            ..sys::llhttp_settings_t::default()
+        }
+    }
+}
+
+mod rust_handlers {
+    use super::handlers::{self, collecting};
+    use super::*;
+
+    /// A parser whose settings are `settings`, which the handlers' `data` is not read by.
+    ///
+    /// # Safety
+    ///
+    /// `settings` outlives every parse of the parser.
+    unsafe fn with(settings: &sys::llhttp_settings_t) -> Parser {
+        let mut parser = Parser::new();
+        // SAFETY: the caller keeps `settings` live; its handlers are Rust's, which read no
+        // `data`.
+        unsafe { parser.as_mut().set_settings_ptr(settings) };
+        parser
+    }
+
+    fn owned(seen: &[(&'static str, &[u8])]) -> Vec<(&'static str, Vec<u8>)> {
+        seen.iter().map(|(w, d)| (*w, d.to_vec())).collect()
+    }
+
+    const RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\nHost: x\r\nContent-Length: 4\r\n\r\nbody";
+
+    #[test]
+    #[cfg_attr(miri, ignore = "calls C")]
+    fn c_calls_the_handlers_with_each_run_in_any_number_of_parses() {
+        let settings = collecting();
+        let expected = owned(&[
+            ("status", b"OK"),
+            ("field", b"Host"),
+            ("value", b"x"),
+            ("field", b"Content-Length"),
+            ("value", b"4"),
+            ("body", b"body"),
+            ("complete", b"200"),
+        ]);
+        for size in 1..=RESPONSE.len() {
+            // SAFETY: `settings` outlives the parser.
+            let mut parser = unsafe { with(&settings) };
+            for run in RESPONSE.chunks(size) {
+                assert_eq!(parser.as_mut().parse(run), Ok(Parsed::All));
+            }
+            assert_eq!(handlers::take(), expected, "runs of {size}");
+        }
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore = "calls C")]
+    fn a_pause_resumes_where_it_stopped() {
+        let mut settings = collecting();
+        settings.on_headers_complete = Callback::new::<handlers::PausingAtHeaders>().raw();
+        // SAFETY: `settings` outlives the parser.
+        let mut parser = unsafe { with(&settings) };
+        assert_eq!(parser.as_mut().parse(RESPONSE), Ok(Parsed::Paused));
+        let at = parser.as_ref().error_offset(RESPONSE).unwrap();
+        assert_eq!(&RESPONSE[at..], b"body");
+        assert_eq!(parser.as_mut().parse(&RESPONSE[at..]), Ok(Parsed::Paused));
+        parser.as_mut().set_error(Errno::Ok);
+        assert_eq!(parser.as_mut().parse(&RESPONSE[at..]), Ok(Parsed::All));
+        let seen = handlers::take();
+        assert_eq!(seen[5], ("headers", Vec::new()));
+        assert_eq!(
+            &seen[6..],
+            owned(&[("body", b"body"), ("complete", b"200")])
+        );
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore = "calls C")]
+    fn a_handlers_own_code_is_the_parse_error() {
+        let settings = sys::llhttp_settings_t {
+            on_header_field: DataCallback::new::<handlers::Refusing>().raw(),
+            ..collecting()
+        };
+        // SAFETY: `settings` outlives the parser.
+        let mut parser = unsafe { with(&settings) };
+        let error = parser.as_mut().parse(RESPONSE).unwrap_err();
+        assert_eq!(error.code(), 1000);
+        assert_eq!(error.errno().unwrap_err().raw(), 1000);
+        assert_eq!(
+            error.to_string(),
+            "llhttp stopped at a callback's error 1000"
+        );
+        assert_eq!(parser.as_ref().error_raw(), 1000);
+        assert_eq!(parser.as_mut().parse(b"more"), Err(error));
+        assert_eq!(handlers::take(), owned(&[("status", b"OK")]));
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore = "calls C")]
+    fn a_handlers_panic_stops_the_parse_with_its_events_error() {
+        let settings = sys::llhttp_settings_t {
+            on_message_begin: Callback::new::<handlers::Panicking>().raw(),
+            ..collecting()
+        };
+        // SAFETY: `settings` outlives the parser.
+        let mut parser = unsafe { with(&settings) };
+        let error = parser.as_mut().parse(RESPONSE).unwrap_err();
+        assert_eq!(error.errno(), Ok(Errno::CbMessageBegin));
+        assert_eq!(handlers::take(), Vec::new());
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore = "calls C")]
+    fn a_handler_cannot_parse_the_parser_whose_parse_runs_it() {
+        let settings = sys::llhttp_settings_t {
+            on_status: DataCallback::new::<handlers::Reentering>().raw(),
+            ..collecting()
+        };
+        // SAFETY: `settings` outlives the parser.
+        let mut parser = unsafe { with(&settings) };
+        let error = parser.as_mut().parse(RESPONSE).unwrap_err();
+        // api.c's dispatcher turns the span callback's -1 into `HPE_USER`.
+        assert_eq!(error.errno(), Ok(Errno::User));
+        assert_eq!(
+            parser.as_ref().reason(),
+            Some(c"Span callback error in on_status")
+        );
+        assert_eq!(handlers::take(), owned(&[("reentering", b"")]));
+        // The refused parse registered nothing: once the parse is over, the parser parses.
+        parser.as_mut().reinit();
+        assert_eq!(
+            parser.as_mut().parse(b"HTTP/1.1 204 No Content\r\n\r\n"),
+            Ok(Parsed::All)
+        );
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore = "calls C")]
+    fn a_handler_cannot_initialise_the_parser_whose_parse_runs_it() {
+        let settings = sys::llhttp_settings_t {
+            on_message_begin: Callback::new::<handlers::Reinitialising>().raw(),
+            ..collecting()
+        };
+        // SAFETY: `settings` outlives the parser.
+        let mut parser = unsafe { with(&settings) };
+        let error = parser.as_mut().parse(RESPONSE).unwrap_err();
+        assert_eq!(error.errno(), Ok(Errno::CbMessageBegin));
+        assert_eq!(handlers::take(), Vec::new());
+        assert_eq!(parser.as_ref().settings_ptr(), &raw const settings);
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore = "calls C")]
+    fn a_handler_may_parse_another_parser() {
+        let settings = sys::llhttp_settings_t {
+            on_message_begin: Callback::new::<handlers::ParsingAnother>().raw(),
+            ..collecting()
+        };
+        // SAFETY: `settings` outlives the parser.
+        let mut parser = unsafe { with(&settings) };
+        assert_eq!(parser.as_mut().parse(RESPONSE), Ok(Parsed::All));
+        let seen = handlers::take();
+        assert_eq!(
+            &seen[..2],
+            owned(&[("status", b"Created"), ("field", b"Content-Length")])
+        );
+        assert_eq!(seen.last(), Some(&("complete", b"200".to_vec())));
+        assert_eq!(seen.iter().filter(|(w, _)| *w == "complete").count(), 2);
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore = "calls C")]
+    fn a_request_hands_its_url_and_a_null_table_runs_nothing() {
+        let settings = collecting();
+        // SAFETY: `settings` outlives the parser.
+        let mut parser = unsafe { with(&settings) };
+        assert_eq!(
+            parser.as_mut().parse(b"GET /a/b?c HTTP/1.1\r\n"),
+            Ok(Parsed::All)
+        );
+        // SAFETY: NULL is always allowed.
+        unsafe { parser.as_mut().set_settings_ptr(ptr::null()) };
+        assert_eq!(parser.as_mut().parse(b"Host: x\r\n\r\n"), Ok(Parsed::All));
+        assert_eq!(handlers::take(), owned(&[("url", b"/a/b?c")]));
     }
 }

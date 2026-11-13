@@ -14822,6 +14822,16 @@ impl Default for llhttp__internal_s {
         }
     }
 }
+unsafe extern "C" {
+    pub fn llhttp__internal_init(s: *mut llhttp__internal_t) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn llhttp__internal_execute(
+        s: *mut llhttp__internal_t,
+        p: *const ::std::os::raw::c_char,
+        endp: *const ::std::os::raw::c_char,
+    ) -> ::std::os::raw::c_int;
+}
 pub const HPE_OK: llhttp_errno = 0;
 pub const HPE_INTERNAL: llhttp_errno = 1;
 pub const HPE_STRICT: llhttp_errno = 2;
@@ -15179,6 +15189,15 @@ unsafe extern "C" {
     pub fn llhttp_get_error_pos(
         parser: *const llhttp_t,
     ) -> *const ::std::os::raw::c_char;
+}
+unsafe extern "C" {
+    pub fn llhttp_errno_name(err: llhttp_errno_t) -> *const ::std::os::raw::c_char;
+}
+unsafe extern "C" {
+    pub fn llhttp_method_name(method: llhttp_method_t) -> *const ::std::os::raw::c_char;
+}
+unsafe extern "C" {
+    pub fn llhttp_status_name(status: llhttp_status_t) -> *const ::std::os::raw::c_char;
 }
 pub const REFTABLE_IO_ERROR: reftable_error = -2;
 pub const REFTABLE_FORMAT_ERROR: reftable_error = -3;

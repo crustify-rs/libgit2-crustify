@@ -27449,6 +27449,63 @@
    ]
   },
   {
+   "name": "llhttp__internal_execute",
+   "defined_in": "deps/llhttp/llhttp.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "One past the run's end, never read. Stored as error_pos when the closing span callback fails."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "The start of the run of input, bounded by endp: read only within [p, endp). Address retention: _span_pos0 and error_pos keep pointers into the run past the call, but neither is followed after it: the next call restarts an open span at its own p before reading it, and a span still open at endp is handed to its callback before the call returns; error_pos is only subtracted from the caller's data by llhttp_get_error_pos's users. An empty run may be any pointer equal to endp; run returns at p == endp before reading."
+     }
+    },
+    {
+     "name": "state",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:state"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser, initialised by llhttp__internal_init, advanced in place over [p, endp). Handed, for the call only, to api.c's llhttp__on_* dispatchers and http.c's hooks, which pass it to the settings' callbacks: a callback that executes or initialises the same parser again corrupts the state the outer call resumes from (a span pointing into another input, _index past a sequence), so the Rust binding refuses both. Not kept after the call. A parser whose _current is s_error (0) with no error, as a zeroed one or one cleared after HPE_PAUSED_H2_UPGRADE, reaches run's default: abort()."
+     }
+    }
+   ]
+  },
+  {
    "name": "llhttp__internal_init",
    "defined_in": "deps/llhttp/llhttp.c",
    "lifetime": {
@@ -27477,6 +27534,69 @@
       "nullable": false,
       "mutable": true,
       "note": "Caller-provided storage, zeroed with memset and given the start state; not kept after the call."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_cb",
+   "defined_in": null,
+   "ptr_args": [
+    {
+     "name": "arg0",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:arg0"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser being executed (llhttp_execute through api.c's CALLBACK_MAYBE) or finished (llhttp_finish), lent for the call; the callback reads its fields and its data, the user's context, and may write them, as libgit2's on_headers_complete pauses it through llhttp_pause. No context parameter: the parser's data is the context. Return: 0 to go on, -1 or another value for an error (HPE_CB_* in the generated code), HPE_PAUSED to pause, and for on_headers_complete 1 and 2 to skip the body."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_data_cb",
+   "defined_in": null,
+   "ptr_args": [
+    {
+     "name": "arg0",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:arg0"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser being executed, lent for the call (api.c's SPAN_CALLBACK_MAYBE), as llhttp_cb's."
+     }
+    },
+    {
+     "name": "arg1",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:arg1"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "A run of the input of the current execute, `length` bytes from the span's start, read only during the call: not NUL-terminated, and possibly empty (a run that ends where the span started hands length 0). Return: 0 to go on, HPE_PAUSED to pause, -1 becoming HPE_USER, any other value kept as the parser's error."
      }
     }
    ]
