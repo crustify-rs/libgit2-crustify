@@ -29088,6 +29088,115 @@
      }
     }
    ]
+  },
+  {
+   "name": "git_utf8_char_length",
+   "defined_in": "src/util/utf8.c",
+   "ptr_args": [
+    {
+     "name": "_str",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:_str"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "A buffer of str_len bytes, read for the call only, never past str_len; not NUL-terminated (the callers pass sizes, refs/basic.c strlen's). Not read when str_len is 0, so NULL is tolerated then; the export maps that to an empty slice. Ported as a &[u8]."
+     }
+    }
+   ]
+  },
+  {
+   "name": "git_utf8_iterate",
+   "defined_in": "src/util/utf8.c",
+   "ptr_args": [
+    {
+     "name": "_str",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:_str"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "The str_len bytes left in the string, read for the call only, at most the 4 bytes of the first sequence; not NUL-terminated. str[0] is read unconditionally, so with str_len 0 utf8_charlen reads past the given size (a defect: no caller passes 0; the port refuses empty bytes). Ported as a &[u8]."
+     }
+    },
+    {
+     "name": "out",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:out"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Out-parameter, written once on every path: 0 first, then the decoded code point on success; never read. Ported as the Ok value of decode_char."
+     }
+    }
+   ]
+  },
+  {
+   "name": "git_utf8_valid_buf_length",
+   "defined_in": "src/util/utf8.c",
+   "ptr_args": [
+    {
+     "name": "_str",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:_str"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "A buffer of str_len bytes, read for the call only, never past str_len (git_xdiff_cb's hunk header); not read when str_len is 0. Ported as a &[u8]."
+     }
+    }
+   ]
+  },
+  {
+   "name": "utf8_charlen",
+   "defined_in": "src/util/utf8.c",
+   "ptr_args": [
+    {
+     "name": "str",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:str"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "The bytes left from an offset, str_len of them; reads the lead byte and at most class-1 continuation bytes. With str_len 0 the bound check is skipped and up to 4 bytes are read regardless; only git_utf8_iterate can pass 0. Ported as sequence_len(&[u8])."
+     }
+    }
+   ]
   }
  ]
 }

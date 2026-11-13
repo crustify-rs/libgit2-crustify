@@ -121,3 +121,20 @@ and are outside the rule: `wave-176/batch-1` compares them so in the test proces
   `crustify/evolution/reftable-error-wrapped-ahead-of-basics`).
 - **Scope.** The batch of wave 217 that ports `enm::reftable_error` and
   `fn::reftable_error_str`, and every reftable module's batch until then.
+
+## A libgit2 module's switch removes its file from `c/` and changes no CMake file
+
+- **Rule.** libgit2's CMake globs each directory's sources (`file(GLOB …)` in
+  `src/util/CMakeLists.txt`, `src/libgit2/CMakeLists.txt`, `src/cli/CMakeLists.txt` and the
+  tests'), so a module's switch removes its TU, and the tied C tests that reach its internals,
+  from `c/` on the fork's `fork/main`, and edits no `CMakeLists.txt`: the C that remains
+  already links the Rust's static library wherever it links (`LIBGIT2_RUST_LIBRARY`,
+  `c/cmake/SelectRust.cmake`). A glob is read at `configure` only, so the variants are
+  configured afresh, as a new generation (`crustify/scripts/build-variants.sh`), never
+  rebuilt in place: a build that only reran `cmake --build` would still list the removed file
+  as an input, and fail on it.
+- **Evidence.** `src/util/utf8.c`'s switch (`modules/libgit2/src/util/utf8.c/integration/run-1`,
+  the fork's `1b37e3d08`): removing the file was the whole C change of the module, beside the
+  one-time CMake change; `crustify/builds.gen1`'s archives hold 212 objects where the previous
+  generation's held 213, `utf8.c.o` gone.
+- **Scope.** Every later module's switch, and every rebuild of the variants after one.

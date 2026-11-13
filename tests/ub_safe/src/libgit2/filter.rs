@@ -18,11 +18,11 @@
 //! several threads each loading and dropping lists of their own repository exercise
 //! libgit2's filter registry (under its read lock) and allocator under `TSan`. libgit2
 //! marks a filter initialised under that *read* lock the first time a list selects it;
-//! the constructors initialise the built-in filters once, before their first load (see
-//! `filter.rs`'s module docs), so threads loading their first lists at once in a fresh
-//! process do not race (`TSan`). libgit2's own routines that load lists internally (the
-//! other modules' fixtures add files to an index through raw calls) do not go through
-//! that, so each test here runs alone in a child process.
+//! pinning the runtime initialises the built-in filters once, before any repository
+//! exists (see `filter.rs`'s module docs), so threads loading their first lists at once
+//! in a fresh process do not race (`TSan`), whether this module's constructors load them
+//! or libgit2's own routines do, as `git_repository_hashfile` does. Each test here runs
+//! alone in a child process, so that its loads are the process's first.
 //!
 //! The blob forms, [`with_blob`], take an object handle that must be a blob: libgit2
 //! reads only the blob's id, which each filter's `check` sees during the load and the
@@ -118,6 +118,43 @@ fn failed_loads_build_nothing() {
                     .unwrap_err();
                 assert_eq!(error.class(), Some(ErrorClass::Internal));
             }
+        },
+    );
+}
+
+/// Two threads, each with a repository of its own, hash a file the `crlf` filter applies
+/// to at once, the process's first filter loads, through `git_repository_hashfile`, which
+/// loads its list inside libgit2: neither writes the filter's `initialized` flag while
+/// the other reads it (`TSan`), since pinning the runtime set it before either repository
+/// existed. Regression test of `first-filter-loads-race-on-builtin-filter-flags`
+/// (`wave-229/batch-1`).
+#[test]
+#[cfg_attr(miri, ignore = "calls libgit2")]
+fn first_loads_on_two_threads_do_not_race() {
+    use std::sync::{Arc, Barrier};
+
+    use libgit2_crustify::libgit2::src::libgit2::object::ObjectType;
+
+    isolated(
+        concat!(module_path!(), "::first_loads_on_two_threads_do_not_race"),
+        || {
+            let barrier = Arc::new(Barrier::new(2));
+            let threads: Vec<_> = ["first-a", "first-b"]
+                .into_iter()
+                .map(|tag| {
+                    let barrier = Arc::clone(&barrier);
+                    std::thread::spawn(move || {
+                        let wd = Workdir::new(tag);
+                        std::fs::write(wd.path.join("a.txt"), "one\r\ntwo\r\n").unwrap();
+                        barrier.wait();
+                        wd.repo()
+                            .hash_file(c"a.txt", ObjectType::Blob, None)
+                            .unwrap()
+                    })
+                })
+                .collect();
+            let ids: Vec<_> = threads.into_iter().map(|t| t.join().unwrap()).collect();
+            assert_eq!(ids[0], ids[1], "one content, filtered alike, one id");
         },
     );
 }

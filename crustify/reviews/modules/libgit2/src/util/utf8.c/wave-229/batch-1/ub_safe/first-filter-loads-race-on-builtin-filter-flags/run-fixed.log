@@ -1,0 +1,3 @@
+$ CARGO_TARGET_DIR=crustify/tmp/target-repro-tsan crustify/scripts/cargo-variant.sh tsan run -q --manifest-path crustify/reviews/modules/libgit2/src/util/utf8.c/wave-229/batch-1/ub_safe/first-filter-loads-race-on-builtin-filter-flags/Cargo.toml
+hashed Oid { kind: Sha1, id: 814f4a422927b82f5f8a43f8fab6d3839e3983f2000000000000000000000000 } on both threads
+exit 0
