@@ -433,7 +433,7 @@ impl core::iter::FusedIterator for FilterFlagsIter {}
 /// the [module docs](self#blobs)). The lifetime only shrinks:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::blob::BlobArc;
+/// use libgit2_crustify::libgit2::src::libgit2::blob::BlobArc;
 ///
 /// fn widen<'r>(blob: BlobArc<'r>) -> BlobArc<'static> {
 ///     blob
@@ -443,7 +443,7 @@ impl core::iter::FusedIterator for FilterFlagsIter {}
 /// and a blob stays on the thread that looked it up:
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::blob::BlobArc;
+/// use libgit2_crustify::libgit2::src::libgit2::blob::BlobArc;
 ///
 /// fn send<T: Send>(_: T) {}
 /// fn move_out(blob: BlobArc<'static>) {
@@ -461,7 +461,7 @@ pub struct Blob<'r>(sys::git_blob, PhantomData<(*const (), &'r ())>);
 /// It stays on the thread of the blob's repository, as the owner does:
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::blob::BlobRef;
+/// use libgit2_crustify::libgit2::src::libgit2::blob::BlobRef;
 ///
 /// fn send<T: Send>(_: T) {}
 /// fn move_out(handle: BlobRef<'static, 'static>) {
@@ -550,9 +550,9 @@ impl<'a, 'r> BlobRef<'a, 'r> {
     /// The content lives no longer than the blob's borrow:
     ///
     /// ```compile_fail,E0505
-    /// # use libgit2::libgit2::src::libgit2::blob::Blob;
-    /// # use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    /// # use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// # use libgit2_crustify::libgit2::src::libgit2::blob::Blob;
+    /// # use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    /// # use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     /// let repo = Repository::open(c".").unwrap();
     /// let id = Oid::zero(OidType::Sha1);
     /// let blob = Blob::lookup(repo.as_ref(), id.as_ref()).unwrap();
@@ -710,7 +710,7 @@ impl fmt::Debug for BlobMut<'_, '_> {
 /// Its handles borrow it, so none outlives it:
 ///
 /// ```compile_fail,E0505
-/// use {libgit2::libgit2::src::libgit2::blob::BlobArc, libgit2::libgit2::src::libgit2::blob::BlobRef};
+/// use {libgit2_crustify::libgit2::src::libgit2::blob::BlobArc, libgit2_crustify::libgit2::src::libgit2::blob::BlobRef};
 ///
 /// fn escape<'r>(blob: BlobArc<'r>) -> BlobRef<'static, 'r> {
 ///     let r = blob.as_ref();
@@ -723,10 +723,10 @@ impl fmt::Debug for BlobMut<'_, '_> {
 ///
 /// ```
 /// # if cfg!(miri) { return; }
-/// # use libgit2::libgit2::src::libgit2::blob::Blob;
-/// # use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-/// # use libgit2::libgit2::src::libgit2::repository::Repository;
-/// # let _init = libgit2::libgit2::src::libgit2::libgit2::init().unwrap();
+/// # use libgit2_crustify::libgit2::src::libgit2::blob::Blob;
+/// # use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+/// # use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
+/// # let _init = libgit2_crustify::libgit2::src::libgit2::libgit2::init().unwrap();
 /// # let path = concat!(env!("CARGO_MANIFEST_DIR"), "/c/tests/resources/testrepo.git\0");
 /// # let repo = Repository::open(std::ffi::CStr::from_bytes_with_nul(path.as_bytes()).unwrap()).unwrap();
 /// # let id = Oid::from_string(c"a8233120f6ad708f843d861ce2b7228ec4e3dec6", OidType::Sha1).unwrap();
@@ -787,7 +787,7 @@ define_ctype!(
     /// A handle cannot outlive the options:
     ///
     /// ```compile_fail,E0597
-    /// use libgit2::libgit2::src::libgit2::blob::FilterOptions;
+    /// use libgit2_crustify::libgit2::src::libgit2::blob::FilterOptions;
     ///
     /// let handle = {
     ///     let opts = FilterOptions::new();
@@ -799,7 +799,7 @@ define_ctype!(
     /// nor coexist with an exclusive one:
     ///
     /// ```compile_fail,E0502
-    /// use {libgit2::libgit2::src::libgit2::blob::FilterFlags, libgit2::libgit2::src::libgit2::blob::FilterOptions};
+    /// use {libgit2_crustify::libgit2::src::libgit2::blob::FilterFlags, libgit2_crustify::libgit2::src::libgit2::blob::FilterOptions};
     ///
     /// let mut opts = FilterOptions::new();
     /// let mut m = opts.as_mut();
@@ -811,7 +811,7 @@ define_ctype!(
     /// and the commit id it lends lives no longer than the handle's borrow:
     ///
     /// ```compile_fail,E0502
-    /// use {libgit2::libgit2::src::libgit2::blob::FilterFlags, libgit2::libgit2::src::libgit2::blob::FilterOptions};
+    /// use {libgit2_crustify::libgit2::src::libgit2::blob::FilterFlags, libgit2_crustify::libgit2::src::libgit2::blob::FilterOptions};
     ///
     /// let mut opts = FilterOptions::new();
     /// let id = opts.as_ref().attr_commit_id();
@@ -1159,7 +1159,7 @@ const _: () = assert!(
 ///
 /// ```
 /// # if cfg!(miri) { return; }
-/// use libgit2::libgit2::src::libgit2::blob::data_is_binary;
+/// use libgit2_crustify::libgit2::src::libgit2::blob::data_is_binary;
 ///
 /// assert!(!data_is_binary(b"hello, world\n"));
 /// assert!(data_is_binary(b"hello\0world"));
@@ -1245,8 +1245,8 @@ fn filter_path(path: &CStr) -> Result<(), RepositoryError> {
 ///
 /// ```
 /// # if cfg!(miri) { return; }
-/// use libgit2::libgit2::src::libgit2::blob::create_from_buffer;
-/// use libgit2::libgit2::src::libgit2::repository::Repository;
+/// use libgit2_crustify::libgit2::src::libgit2::blob::create_from_buffer;
+/// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
 ///
 /// let dir = std::env::temp_dir().join(format!("blob-doc-{}", std::process::id()));
 /// let path = std::ffi::CString::new(dir.to_str().unwrap()).unwrap();
@@ -1356,8 +1356,8 @@ pub fn create_from_disk(repo: RepositoryRef<'_>, path: &CStr) -> Result<Oid, Rep
 /// than this borrow of it:
 ///
 /// ```compile_fail,E0505
-/// use libgit2::libgit2::src::libgit2::blob::create_from_stream;
-/// use libgit2::libgit2::src::libgit2::repository::Repository;
+/// use libgit2_crustify::libgit2::src::libgit2::blob::create_from_stream;
+/// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
 ///
 /// let repo = Repository::open(c".").unwrap();
 /// let mut writer = create_from_stream(repo.as_ref(), None).unwrap();
@@ -1419,7 +1419,7 @@ pub fn create_from_stream<'r>(
 /// on that repository's thread:
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::blob::BlobWriter;
+/// use libgit2_crustify::libgit2::src::libgit2::blob::BlobWriter;
 ///
 /// fn send<T: Send>(_: T) {}
 /// fn move_out(writer: BlobWriter<'static>) {

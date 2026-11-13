@@ -1,7 +1,7 @@
 // Every tag and tree is shared with its repository's cache: no owner lends an
 // exclusive handle.
-use {libgit2::libgit2::src::libgit2::tag::TagArc, libgit2::libgit2::src::libgit2::tag::TagMut};
-use {libgit2::libgit2::src::libgit2::tree::TreeArc, libgit2::libgit2::src::libgit2::tree::TreeMut};
+use {libgit2_crustify::libgit2::src::libgit2::tag::TagArc, libgit2_crustify::libgit2::src::libgit2::tag::TagMut};
+use {libgit2_crustify::libgit2::src::libgit2::tree::TreeArc, libgit2_crustify::libgit2::src::libgit2::tree::TreeMut};
 
 fn tag<'a>(tag: &'a mut TagArc<'static>) -> TagMut<'a, 'static> {
     tag.as_mut()

@@ -8,4 +8,4 @@ publish = false
 
 [dependencies]
 ffibox = { path = "/opt/venv/share/ffibox" }
-libgit2 = { path = "../../../../../.." }
+libgit2 = { package = "libgit2-crustify", path = "../../../../../.." }

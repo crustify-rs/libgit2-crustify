@@ -100,7 +100,7 @@ use crate::sys::libgit2 as sys;
 /// [`as_mut`](Self::as_mut) one.
 ///
 /// ```
-/// use libgit2::libgit2::src::libgit2::trailer::MessageTrailer;
+/// use libgit2_crustify::libgit2::src::libgit2::trailer::MessageTrailer;
 ///
 /// let mut trailer = MessageTrailer::new(c"Signed-off-by", c"A U Thor <a@example.com>");
 /// assert_eq!(trailer.as_ref().key(), c"Signed-off-by");
@@ -111,7 +111,7 @@ use crate::sys::libgit2 as sys;
 /// The strings must outlive the trailer:
 ///
 /// ```compile_fail,E0597
-/// use libgit2::libgit2::src::libgit2::trailer::MessageTrailer;
+/// use libgit2_crustify::libgit2::src::libgit2::trailer::MessageTrailer;
 /// use std::ffi::CString;
 ///
 /// let trailer = {
@@ -124,7 +124,7 @@ use crate::sys::libgit2 as sys;
 /// and a string read from it lives as long as they do, not longer:
 ///
 /// ```compile_fail,E0505
-/// use libgit2::libgit2::src::libgit2::trailer::MessageTrailer;
+/// use libgit2_crustify::libgit2::src::libgit2::trailer::MessageTrailer;
 /// use std::ffi::CString;
 ///
 /// let key = CString::new("Acked-by").unwrap();
@@ -138,7 +138,7 @@ use crate::sys::libgit2 as sys;
 /// shorter-lived string than its trailer was built for:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::trailer::MessageTrailerMut;
+/// use libgit2_crustify::libgit2::src::libgit2::trailer::MessageTrailerMut;
 ///
 /// fn shrink<'a, 't>(m: MessageTrailerMut<'a, 'static>) -> MessageTrailerMut<'a, 't> {
 ///     m
@@ -148,7 +148,7 @@ use crate::sys::libgit2 as sys;
 /// The shared handle only reads:
 ///
 /// ```compile_fail,E0599
-/// use libgit2::libgit2::src::libgit2::trailer::MessageTrailer;
+/// use libgit2_crustify::libgit2::src::libgit2::trailer::MessageTrailer;
 ///
 /// let trailer = MessageTrailer::new(c"Signed-off-by", c"A U Thor");
 /// trailer.as_ref().set_key(c"Acked-by");
@@ -402,7 +402,7 @@ define_ctype!(
     /// [`as_ref`](CVal::as_ref) handle:
     ///
     /// ```
-    /// use libgit2::libgit2::src::libgit2::trailer::MessageTrailerArray;
+    /// use libgit2_crustify::libgit2::src::libgit2::trailer::MessageTrailerArray;
     ///
     /// # if cfg!(miri) { return; }
     /// let message = c"Subject\n\nBody.\n\nSigned-off-by: A U Thor <a@example.com>\n";
@@ -420,7 +420,7 @@ define_ctype!(
     /// string read from one outlives the array:
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::libgit2::src::libgit2::trailer::MessageTrailerArray;
+    /// use libgit2_crustify::libgit2::src::libgit2::trailer::MessageTrailerArray;
     ///
     /// let array = MessageTrailerArray::parse(c"S\n\nKey: value\n").unwrap();
     /// let key = array.as_ref().trailers().get(0).unwrap().key();
@@ -431,7 +431,7 @@ define_ctype!(
     /// nor survives the array being emptied or replaced through its exclusive handle:
     ///
     /// ```compile_fail,E0502
-    /// use libgit2::libgit2::src::libgit2::trailer::MessageTrailerArray;
+    /// use libgit2_crustify::libgit2::src::libgit2::trailer::MessageTrailerArray;
     ///
     /// let mut array = MessageTrailerArray::parse(c"S\n\nKey: value\n").unwrap();
     /// let trailers = array.as_ref().trailers();
@@ -443,7 +443,7 @@ define_ctype!(
     /// that does not live as long as the block, and the run is a shared one.
     ///
     /// ```compile_fail,E0599
-    /// use libgit2::libgit2::src::libgit2::trailer::MessageTrailerArray;
+    /// use libgit2_crustify::libgit2::src::libgit2::trailer::MessageTrailerArray;
     ///
     /// let mut array = MessageTrailerArray::parse(c"S\n\nKey: value\n").unwrap();
     /// let _ = array.as_mut().trailers_mut();
@@ -452,7 +452,7 @@ define_ctype!(
     /// Not `Clone`: it owns its buffers, and libgit2 has no copy routine.
     ///
     /// ```compile_fail,E0599
-    /// use {libgit2::libgit2::src::libgit2::trailer::MessageTrailerArray, libgit2::libgit2::src::libgit2::trailer::MessageTrailerArrayVal};
+    /// use {libgit2_crustify::libgit2::src::libgit2::trailer::MessageTrailerArray, libgit2_crustify::libgit2::src::libgit2::trailer::MessageTrailerArrayVal};
     ///
     /// let array = MessageTrailerArray::new();
     /// let copy: MessageTrailerArrayVal = array.clone();

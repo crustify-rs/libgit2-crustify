@@ -1,6 +1,6 @@
 // Replacing the ids frees the old buffer, so no run over it may still be live.
-use libgit2::libgit2::src::libgit2::oidarray::OidArray;
-use libgit2::libgit2::src::libgit2::odb::OdbDataVec;
+use libgit2_crustify::libgit2::src::libgit2::oidarray::OidArray;
+use libgit2_crustify::libgit2::src::libgit2::odb::OdbDataVec;
 
 fn main() {
     let mut array = OidArray::new();

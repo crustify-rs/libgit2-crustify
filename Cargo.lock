@@ -360,7 +360,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "libgit2"
+name = "libgit2-crustify"
 version = "0.1.0"
 dependencies = [
  "bindgen",
@@ -371,7 +371,7 @@ dependencies = [
  "getrandom 0.4.3",
  "glibc-bindings",
  "hmac",
- "libgit2",
+ "libgit2-crustify",
  "md-5",
  "md4",
  "nix",

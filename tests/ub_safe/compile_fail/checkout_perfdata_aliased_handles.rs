@@ -1,5 +1,5 @@
 // A shared handle cannot coexist with the exclusive one of the same counts.
-use libgit2::libgit2::src::libgit2::checkout::CheckoutPerfdata;
+use libgit2_crustify::libgit2::src::libgit2::checkout::CheckoutPerfdata;
 
 fn main() {
     let mut counts = CheckoutPerfdata::default();

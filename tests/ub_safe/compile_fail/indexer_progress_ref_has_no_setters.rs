@@ -1,6 +1,6 @@
 // The shared handle only reads: setters live on `IndexerProgressMut`.
 use ffibox::CZeroable;
-use libgit2::libgit2::src::libgit2::indexer::IndexerProgress;
+use libgit2_crustify::libgit2::src::libgit2::indexer::IndexerProgress;
 
 fn main() {
     let progress = IndexerProgress::zeroed();

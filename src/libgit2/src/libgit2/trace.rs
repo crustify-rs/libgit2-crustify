@@ -148,7 +148,7 @@ pub trait Tracer {
     /// ```compile_fail,E0521
     /// use std::ffi::CStr;
     /// use std::sync::Mutex;
-    /// use libgit2::libgit2::src::libgit2::trace::{TraceLevel, Tracer};
+    /// use libgit2_crustify::libgit2::src::libgit2::trace::{TraceLevel, Tracer};
     ///
     /// static KEPT: Mutex<Option<&'static CStr>> = Mutex::new(None);
     ///
@@ -176,7 +176,7 @@ pub trait Tracer {
 /// ```
 /// use std::ffi::CStr;
 ///
-/// use libgit2::libgit2::src::libgit2::trace::{TraceCallback, TraceLevel, Tracer};
+/// use libgit2_crustify::libgit2::src::libgit2::trace::{TraceCallback, TraceLevel, Tracer};
 ///
 /// struct Stderr;
 ///
@@ -195,7 +195,7 @@ pub trait Tracer {
 ///
 /// ```compile_fail,E0423
 /// use std::ffi::c_char;
-/// use {libgit2::sys::libgit2 as sys, libgit2::libgit2::src::libgit2::trace::TraceCallback};
+/// use {libgit2_crustify::sys::libgit2 as sys, libgit2_crustify::libgit2::src::libgit2::trace::TraceCallback};
 ///
 /// unsafe extern "C" fn c_tracer(_: sys::git_trace_level_t, _: *const c_char) {}
 /// let _ = TraceCallback(c_tracer);
@@ -292,7 +292,7 @@ unsafe extern "C" fn trace_with<T: Tracer>(level: sys::git_trace_level_t, msg: *
 /// at `None` only.
 ///
 /// ```compile_fail,E0308
-/// use libgit2::libgit2::src::libgit2::trace::{self, TraceLevel};
+/// use libgit2_crustify::libgit2::src::libgit2::trace::{self, TraceLevel};
 ///
 /// // SAFETY: (not reached) no other thread calls into libgit2.
 /// unsafe { trace::set(TraceLevel::Debug, None) };

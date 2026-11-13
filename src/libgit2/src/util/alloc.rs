@@ -252,7 +252,7 @@ mod ffi_import {
         /// use core::ffi::{CStr, c_void};
         /// use core::ptr::NonNull;
         ///
-        /// use libgit2::libgit2::src::util::alloc::{Alloc, Allocator};
+        /// use libgit2_crustify::libgit2::src::util::alloc::{Alloc, Allocator};
         ///
         /// unsafe extern "C" {
         ///     fn malloc(n: usize) -> *mut c_void;
@@ -724,7 +724,7 @@ mod ffi_import {
     /// A type aligned beyond what the allocator vouches for, 16 bytes included, is rejected:
     ///
     /// ```compile_fail,E0080
-    /// use libgit2::libgit2::src::util::alloc::AllocBox;
+    /// use libgit2_crustify::libgit2::src::util::alloc::AllocBox;
     ///
     /// #[repr(C, align(16))]
     /// pub struct wide_st { pub x: u8 }
@@ -736,7 +736,7 @@ mod ffi_import {
     /// Zeroed storage needs a type that vouches all-zero is valid:
     ///
     /// ```compile_fail,E0277
-    /// use libgit2::libgit2::src::util::alloc::AllocBox;
+    /// use libgit2_crustify::libgit2::src::util::alloc::AllocBox;
     ///
     /// #[repr(C)]
     /// pub struct frame_st { pub format: i32 }
@@ -748,8 +748,8 @@ mod ffi_import {
     /// A handle borrows its box, so it cannot outlive it:
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::libgit2::src::libgit2::oid::Oid;
-    /// use libgit2::libgit2::src::util::alloc::AllocBox;
+    /// use libgit2_crustify::libgit2::src::libgit2::oid::Oid;
+    /// use libgit2_crustify::libgit2::src::util::alloc::AllocBox;
     ///
     /// let id = AllocBox::<Oid>::new_zeroed().unwrap();
     /// let handle = id.as_ref();
@@ -833,23 +833,23 @@ mod ffi_import {
     /// storage is not, whichever constructor would build the run:
     ///
     /// ```compile_fail,E0080
-    /// use libgit2::libgit2::src::util::alloc::AllocVec;
+    /// use libgit2_crustify::libgit2::src::util::alloc::AllocVec;
     ///
     /// let _ = AllocVec::<u128>::from_slice(&[1, 2]);
     /// ```
     ///
     /// ```compile_fail,E0080
-    /// use libgit2::libgit2::src::util::alloc::AllocVec;
+    /// use libgit2_crustify::libgit2::src::util::alloc::AllocVec;
     ///
     /// let _ = AllocVec::<u128>::from_fn(2, |i| i as u128);
     /// ```
     ///
     /// ```compile_fail,E0080
-    /// let _ = libgit2::libgit2::src::util::alloc::ArrayFree::new_zeroed::<u128>(2);
+    /// let _ = libgit2_crustify::libgit2::src::util::alloc::ArrayFree::new_zeroed::<u128>(2);
     /// ```
     ///
     /// ```compile_fail,E0080
-    /// let _ = libgit2::libgit2::src::util::alloc::ArrayFree::new_uninit::<()>(4);
+    /// let _ = libgit2_crustify::libgit2::src::util::alloc::ArrayFree::new_uninit::<()>(4);
     /// ```
     #[derive(Clone, Copy, Debug, Default)]
     pub struct ArrayFree;
@@ -972,7 +972,7 @@ mod ffi_import {
         /// ```
         /// use core::mem::MaybeUninit;
         ///
-        /// use libgit2::libgit2::src::util::alloc::ArrayFree;
+        /// use libgit2_crustify::libgit2::src::util::alloc::ArrayFree;
         ///
         /// let mut run = ArrayFree::new_uninit::<u32>(2).unwrap();
         /// run.as_mut_slice()[0].write(7);
@@ -988,7 +988,7 @@ mod ffi_import {
         /// zero-sized ones are:
         ///
         /// ```compile_fail,E0080
-        /// use libgit2::libgit2::src::util::alloc::{AllocVec, ArrayFree};
+        /// use libgit2_crustify::libgit2::src::util::alloc::{AllocVec, ArrayFree};
         ///
         /// let _ = ArrayFree::resize(&mut AllocVec::<core::mem::MaybeUninit<u128>>::empty(), 1);
         /// ```
@@ -1140,7 +1140,7 @@ mod ffi_import {
     /// A borrow of the string ends with its owner:
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::libgit2::src::util::alloc::StrFree;
+    /// use libgit2_crustify::libgit2::src::util::alloc::StrFree;
     ///
     /// let s = StrFree::dup(c"tied").unwrap();
     /// let view = s.as_c_str();
@@ -1255,7 +1255,7 @@ mod ffi_import {
     /// thread, and copies of it shared freely.
     ///
     /// ```
-    /// use libgit2::libgit2::src::util::alloc::installed;
+    /// use libgit2_crustify::libgit2::src::util::alloc::installed;
     ///
     /// let global = installed().expect("libgit2 initialises");
     /// // Initialisation installed the standard allocator, which allocates.
@@ -1304,7 +1304,7 @@ mod ffi_import {
     /// It writes a global C reads unsynchronised, so no safe call reaches it:
     ///
     /// ```compile_fail,E0133
-    /// libgit2::libgit2::src::util::alloc::global_init();
+    /// libgit2_crustify::libgit2::src::util::alloc::global_init();
     /// ```
     ///
     /// # Safety

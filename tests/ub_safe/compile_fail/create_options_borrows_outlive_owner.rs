@@ -1,6 +1,6 @@
 // The options borrow their signatures, strings and headers for `'o`: none may go first.
-use libgit2::libgit2::src::libgit2::signature::Signature;
-use {libgit2::libgit2::src::libgit2::commit::CreateOptions, libgit2::libgit2::src::libgit2::commit::Header};
+use libgit2_crustify::libgit2::src::libgit2::signature::Signature;
+use {libgit2_crustify::libgit2::src::libgit2::commit::CreateOptions, libgit2_crustify::libgit2::src::libgit2::commit::Header};
 use std::ffi::CString;
 
 fn main() {

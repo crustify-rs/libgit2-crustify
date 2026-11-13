@@ -24,13 +24,13 @@ use std::ffi::{CStr, CString, c_int, c_void};
 use std::path::PathBuf;
 use std::ptr;
 
-use libgit2::libgit2::src::libgit2::commit::{
+use libgit2_crustify::libgit2::src::libgit2::commit::{
     ParentCallback, create_from_callback, create_from_ids,
 };
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryError};
-use libgit2::libgit2::src::libgit2::signature::{SignatureView, Time};
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryError};
+use libgit2_crustify::libgit2::src::libgit2::signature::{SignatureView, Time};
+use libgit2_crustify::sys::libgit2 as sys;
 
 const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 const MISSING: &str = "dededededededededededededededededededede";
@@ -225,7 +225,7 @@ fn c_run(repo: *mut sys::git_repository, written: &mut Vec<String>, step: &Step)
 }
 
 fn rust_run(
-    repo: &libgit2::libgit2::src::libgit2::repository::RepositoryBox,
+    repo: &libgit2_crustify::libgit2::src::libgit2::repository::RepositoryBox,
     written: &mut Vec<String>,
     step: &Step,
 ) -> Outcome {

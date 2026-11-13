@@ -41,16 +41,16 @@
 
 use std::ffi::{CStr, CString};
 
-use libgit2::libgit2::src::libgit2::object::{
+use libgit2_crustify::libgit2::src::libgit2::object::{
     Object, ObjectArc, ObjectIdOptions, ObjectIdOptionsMut, ObjectType, id_from_buffer,
     id_from_file,
 };
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-use libgit2::libgit2::src::libgit2::repository::{
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+use libgit2_crustify::libgit2::src::libgit2::repository::{
     Repository, RepositoryBox, RepositoryError, RepositoryRef,
 };
-use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode};
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+use libgit2_crustify::sys::libgit2 as sys;
 
 use crate::fixture::TempRepo;
 use crate::fixture::object_and_tree_entry::{object_view, open_testrepo, repository, write_raw};
@@ -648,10 +648,10 @@ mod kinds_short_ids_and_contents {
     use std::ffi::CString;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::object::{
+    use libgit2_crustify::libgit2::src::libgit2::object::{
         Object, ObjectArc, ObjectType, content_is_valid, type_is_valid,
     };
-    use libgit2::libgit2::src::libgit2::oid::OidType;
+    use libgit2_crustify::libgit2::src::libgit2::oid::OidType;
 
     use super::{BLOB, COMMIT, MANY, TAG, TREE, id};
     use crate::fixture::isolated;

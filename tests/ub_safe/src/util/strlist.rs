@@ -10,8 +10,8 @@
 use std::ffi::{CStr, CString};
 use std::thread;
 
-use libgit2::libgit2::src::util::alloc::{AllocStr, StrFree};
-use libgit2::libgit2::src::util::strlist::{
+use libgit2_crustify::libgit2::src::util::alloc::{AllocStr, StrFree};
+use libgit2_crustify::libgit2::src::util::strlist::{
     NullStrList, NullStrListFree, StrList, StrListFree, contains_key, contains_prefix,
 };
 

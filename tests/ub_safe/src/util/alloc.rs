@@ -17,8 +17,8 @@ use std::ffi::{CStr, CString};
 use std::mem::{MaybeUninit, align_of};
 use std::thread;
 
-use libgit2::libgit2::src::libgit2::oid::Oid;
-use libgit2::libgit2::src::util::alloc::{
+use libgit2_crustify::libgit2::src::libgit2::oid::Oid;
+use libgit2_crustify::libgit2::src::util::alloc::{
     AllocBox, AllocStr, AllocVec, ArrayFree, StrFree, installed,
 };
 

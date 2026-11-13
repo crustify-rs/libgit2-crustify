@@ -18,8 +18,8 @@
 
 use std::ffi::{CStr, CString, c_int};
 
-use libgit2::libgit2::src::libgit2::tag::name_is_valid;
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::tag::name_is_valid;
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// Initialises libgit2; never released.
 fn init() {
@@ -210,15 +210,17 @@ mod tag_object {
     //! repository's is refused by the wrappers (code `-1`, `GIT_ERROR_INVALID`), where the
     //! C routines format it out of bounds; the unit tests of `tag.rs` hold the refusal.
     //!
-    //! [`TagRef::to_tag`]: libgit2::libgit2::src::libgit2::tag::TagRef::to_tag
+    //! [`TagRef::to_tag`]: libgit2_crustify::libgit2::src::libgit2::tag::TagRef::to_tag
 
     use std::ffi::{CStr, CString, c_int};
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox, RepositoryError};
-    use libgit2::libgit2::src::libgit2::tag::{Tag, TagArc};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
+        Repository, RepositoryBox, RepositoryError,
+    };
+    use libgit2_crustify::libgit2::src::libgit2::tag::{Tag, TagArc};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use super::{c_last, init};
 
@@ -655,16 +657,18 @@ mod repository_tags {
     use std::path::{Path, PathBuf};
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::object::{Object, ObjectArc};
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidRef, OidType};
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox, RepositoryError};
-    use libgit2::libgit2::src::libgit2::signature::{SignatureView, Time};
-    use libgit2::libgit2::src::libgit2::tag::{
+    use libgit2_crustify::libgit2::src::libgit2::object::{Object, ObjectArc};
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidRef, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
+        Repository, RepositoryBox, RepositoryError,
+    };
+    use libgit2_crustify::libgit2::src::libgit2::signature::{SignatureView, Time};
+    use libgit2_crustify::libgit2::src::libgit2::tag::{
         ForeachCallback, Tag, create, create_annotation, create_from_buffer, create_lightweight,
         delete, foreach, list, list_match,
     };
-    use libgit2::libgit2::src::util::errors::last;
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::util::errors::last;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use super::{c_last, init};
 
@@ -1258,7 +1262,10 @@ mod repository_tags {
     }
 
     fn rust_list(
-        result: Result<libgit2::libgit2::src::libgit2::strarray::StrArrayVal, RepositoryError>,
+        result: Result<
+            libgit2_crustify::libgit2::src::libgit2::strarray::StrArrayVal,
+            RepositoryError,
+        >,
     ) -> Outcome {
         match result {
             Ok(names) => Outcome::Names(
@@ -1816,17 +1823,19 @@ mod tag_accessors {
     //! bytes, the owner (each side's own repository), and the target and peel (their id
     //! and type, or the code, error class and message).
     //!
-    //! [`TagRef::id`]: libgit2::libgit2::src::libgit2::tag::TagRef::id
+    //! [`TagRef::id`]: libgit2_crustify::libgit2::src::libgit2::tag::TagRef::id
 
     use std::ffi::{CStr, CString, c_int};
     use std::path::{Path, PathBuf};
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::object::ObjectArc;
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryError, RepositoryRef};
-    use libgit2::libgit2::src::libgit2::tag::{Tag, TagRef};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::object::ObjectArc;
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
+        Repository, RepositoryError, RepositoryRef,
+    };
+    use libgit2_crustify::libgit2::src::libgit2::tag::{Tag, TagRef};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use super::{c_last, init};
 

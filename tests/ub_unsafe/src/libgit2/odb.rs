@@ -11,11 +11,11 @@ use std::fs;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
-use libgit2::libgit2::src::libgit2::object::{Object, ObjectType};
-use libgit2::libgit2::src::libgit2::odb::{Odb, OdbArc};
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-use libgit2::libgit2::src::libgit2::repository::Repository;
-use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+use libgit2_crustify::libgit2::src::libgit2::object::{Object, ObjectType};
+use libgit2_crustify::libgit2::src::libgit2::odb::{Odb, OdbArc};
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
+use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, ErrorCode};
 
 /// A directory of its own under the temporary directory, removed on drop.
 struct Scratch(PathBuf);

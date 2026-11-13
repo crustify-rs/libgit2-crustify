@@ -9,8 +9,8 @@ use std::ffi::{CStr, c_char};
 use std::mem::size_of;
 use std::{ptr, thread};
 
-use libgit2::libgit2::src::libgit2::odb::{OdbDataStr, OdbDataStrFree, OdbDataStrVec};
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::odb::{OdbDataStr, OdbDataStrFree, OdbDataStrVec};
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// The raw C calls below allocate, which needs an initialised libgit2; the extra
 /// reference dies with the process.

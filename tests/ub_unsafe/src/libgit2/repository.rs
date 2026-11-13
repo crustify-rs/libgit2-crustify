@@ -16,8 +16,8 @@ use std::fs;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
-use libgit2::libgit2::src::libgit2::refdb::{Refdb, RefdbArc};
-use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
+use libgit2_crustify::libgit2::src::libgit2::refdb::{Refdb, RefdbArc};
+use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
 
 /// A scratch directory of its own under the temp dir, removed when dropped.
 struct Scratch(PathBuf);

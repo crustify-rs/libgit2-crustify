@@ -19,12 +19,12 @@ use std::ffi::CString;
 use std::ptr::{self, NonNull};
 use std::sync::Mutex;
 
-use libgit2::libgit2::src::libgit2::refdb::{Refdb, RefdbArc, RefdbBox, RefdbType};
-use libgit2::libgit2::src::libgit2::repository::{
+use libgit2_crustify::libgit2::src::libgit2::refdb::{Refdb, RefdbArc, RefdbBox, RefdbType};
+use libgit2_crustify::libgit2::src::libgit2::repository::{
     InitFlag, InitOptions, Repository, RepositoryBox,
 };
-use libgit2::libgit2::src::util::errors::ErrorClass;
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::util::errors::ErrorClass;
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// A fresh bare repository with reference storage `format`, freed and removed on drop.
 struct Repo {
@@ -72,7 +72,7 @@ impl Repo {
     unsafe fn with_backend(
         &self,
         backend: NonNull<sys::git_refdb_backend>,
-    ) -> Result<RefdbBox<'_>, libgit2::libgit2::src::util::errors::ErrorBuf> {
+    ) -> Result<RefdbBox<'_>, libgit2_crustify::libgit2::src::util::errors::ErrorBuf> {
         // SAFETY: a backend of this repository per this function's contract.
         unsafe { Refdb::new(self.repo.as_ref(), backend) }
     }

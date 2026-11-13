@@ -3,8 +3,8 @@
 use std::ffi::{CStr, CString};
 use std::mem::MaybeUninit;
 
-use libgit2::libgit2::src::libgit2::config_mem::BackendMemoryOptions;
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::config_mem::BackendMemoryOptions;
+use libgit2_crustify::sys::libgit2 as sys;
 
 type Observation = (u32, Option<Vec<u8>>, Option<Vec<u8>>);
 
@@ -83,10 +83,10 @@ mod backend_entries {
     use std::ffi::{CStr, CString};
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::config::{
+    use libgit2_crustify::libgit2::src::libgit2::config::{
         BackendEntry, BackendEntryArc, Config, ConfigLevel,
     };
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     #[derive(Debug, PartialEq, Eq)]
     struct Record {
@@ -346,8 +346,10 @@ mod backend_entries {
 mod iterators {
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::config::{Config, ConfigLevel, EntryRef, IteratorBox};
-    use libgit2::libgit2::src::util::errors::{clear, last};
+    use libgit2_crustify::libgit2::src::libgit2::config::{
+        Config, ConfigLevel, EntryRef, IteratorBox,
+    };
+    use libgit2_crustify::libgit2::src::util::errors::{clear, last};
 
     use super::*;
 
@@ -738,7 +740,7 @@ mod iterators {
 }
 
 mod backends {
-    use libgit2::libgit2::src::libgit2::config::Backend;
+    use libgit2_crustify::libgit2::src::libgit2::config::Backend;
 
     use super::*;
 
@@ -775,13 +777,13 @@ mod custom_backends {
     use std::ptr::{self, addr_of_mut};
     use std::rc::Rc;
 
-    use libgit2::libgit2::src::libgit2::config::{
+    use libgit2_crustify::libgit2::src::libgit2::config::{
         BackendEntry, BackendEntryArc, Config, ConfigBox, ConfigError, ConfigLevel, CustomBackend,
         EntryOrigin, UnopenedBackend,
     };
-    use libgit2::libgit2::src::libgit2::repository::RepositoryRef;
-    use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode, clear, last};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::repository::RepositoryRef;
+    use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, ErrorCode, clear, last};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     type Pairs = Vec<(CString, CString)>;
     /// A store's failure: code, class, message.

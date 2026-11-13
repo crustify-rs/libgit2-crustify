@@ -216,7 +216,7 @@ impl<'a> OidArrayRef<'a> {
     /// The owner itself has no `Clone`: a byte copy would dispose the ids twice.
     ///
     /// ```compile_fail,E0599
-    /// use libgit2::libgit2::src::libgit2::oidarray::{OidArray, OidArrayVal};
+    /// use libgit2_crustify::libgit2::src::libgit2::oidarray::{OidArray, OidArrayVal};
     ///
     /// let array = OidArray::new();
     /// let copy: OidArrayVal = array.clone();

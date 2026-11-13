@@ -3,7 +3,7 @@
 // a callback.
 use std::ops::ControlFlow;
 
-use libgit2::libgit2::src::libgit2::checkout::{CheckoutNotification, NotifyCallback};
+use libgit2_crustify::libgit2::src::libgit2::checkout::{CheckoutNotification, NotifyCallback};
 
 fn keep<'k>(kept: &mut Option<CheckoutNotification<'k>>) {
     let mut f = |n: CheckoutNotification<'k>| {

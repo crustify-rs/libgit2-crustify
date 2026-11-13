@@ -26,8 +26,8 @@
 //! failure and the error it leaves are the same. `signature.rs`'s unit tests count the
 //! leaked blocks.
 //!
-//! [`Signature::default`]: libgit2::libgit2::src::libgit2::signature::Signature::default
-//! [`Signature::default_from_env`]: libgit2::libgit2::src::libgit2::signature::Signature::default_from_env
+//! [`Signature::default`]: libgit2_crustify::libgit2::src::libgit2::signature::Signature::default
+//! [`Signature::default_from_env`]: libgit2_crustify::libgit2::src::libgit2::signature::Signature::default_from_env
 
 mod types;
 
@@ -35,10 +35,10 @@ use std::ffi::{CStr, CString, c_int};
 use std::path::PathBuf;
 use std::ptr;
 
-use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryError};
-use libgit2::libgit2::src::libgit2::settings::{SearchPathLevel, set_search_path};
-use libgit2::libgit2::src::libgit2::signature::{Signature, SignatureBox};
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryError};
+use libgit2_crustify::libgit2::src::libgit2::settings::{SearchPathLevel, set_search_path};
+use libgit2_crustify::libgit2::src::libgit2::signature::{Signature, SignatureBox};
+use libgit2_crustify::sys::libgit2 as sys;
 
 const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 
@@ -189,7 +189,9 @@ fn c_calls(repo: *mut sys::git_repository) -> Vec<Outcome> {
 }
 
 /// The four calls, Rust's.
-fn rust_calls(repo: &libgit2::libgit2::src::libgit2::repository::RepositoryBox) -> Vec<Outcome> {
+fn rust_calls(
+    repo: &libgit2_crustify::libgit2::src::libgit2::repository::RepositoryBox,
+) -> Vec<Outcome> {
     let r = repo.as_ref();
     let one = |result: Result<SignatureBox, RepositoryError>| match result {
         Ok(sig) => Ok(vec![rust_seen(&sig)]),

@@ -3,18 +3,18 @@
 
 use core::ptr;
 
-use libgit2::libgit2::src::libgit2::diff::{Diff, DiffBox};
-use libgit2::libgit2::src::libgit2::index::{Index, IndexBox};
-use libgit2::libgit2::src::libgit2::pathspec::{MatchList, MatchListRef, PathspecFlags};
-use libgit2::libgit2::src::libgit2::tree::FileMode;
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::diff::{Diff, DiffBox};
+use libgit2_crustify::libgit2::src::libgit2::index::{Index, IndexBox};
+use libgit2_crustify::libgit2::src::libgit2::pathspec::{MatchList, MatchListRef, PathspecFlags};
+use libgit2_crustify::libgit2::src::libgit2::tree::FileMode;
+use libgit2_crustify::sys::libgit2 as sys;
 #[path = "../../../../support/pathspec_match_list.rs"]
 mod support;
 use std::ffi::{CStr, CString};
 
-use libgit2::libgit2::src::libgit2::blob::create_from_buffer;
-use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryError};
-use libgit2::libgit2::src::libgit2::tree::{Tree, TreeBuilder};
+use libgit2_crustify::libgit2::src::libgit2::blob::create_from_buffer;
+use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryError};
+use libgit2_crustify::libgit2::src::libgit2::tree::{Tree, TreeBuilder};
 use support::patterns;
 
 fn index(paths: &[&CStr]) -> IndexBox {

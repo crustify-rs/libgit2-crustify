@@ -3,7 +3,7 @@
 //! this test calls `deps/reftable/basics.c`'s buffer functions, which `nm -D libgit2.so`
 //! does not list, through their raw bindings.
 
-use libgit2::sys::libgit2::{
+use libgit2_crustify::sys::libgit2::{
     reftable_buf, reftable_buf_add, reftable_buf_init, reftable_buf_release,
 };
 

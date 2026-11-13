@@ -31,10 +31,10 @@ use std::ffi::{CStr, CString, c_char};
 use std::mem::MaybeUninit;
 use std::thread;
 
-use libgit2::libgit2::src::libgit2::trailer::{
+use libgit2_crustify::libgit2::src::libgit2::trailer::{
     MessageTrailer, MessageTrailerArray, MessageTrailerArrayRef, MessageTrailerArrayVal,
 };
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// Takes a `git_libgit2_init` reference that is never released.
 fn init() {

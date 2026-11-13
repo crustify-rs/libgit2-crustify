@@ -25,10 +25,10 @@ mod prune_options {
     use std::path::PathBuf;
     use std::{fs, ptr};
 
-    use libgit2::libgit2::src::libgit2::worktree::{
+    use libgit2_crustify::libgit2::src::libgit2::worktree::{
         PruneFlag, PruneFlags, PruneOptions, UnnamedPruneFlag,
     };
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     /// Every `git_worktree_prune_t` constant and the variant carrying it.
     const FLAGS: [(sys::git_worktree_prune_t, PruneFlag); 3] = [
@@ -595,8 +595,8 @@ mod worktree_box {
     use std::sync::Mutex;
     use std::{fs, ptr};
 
-    use libgit2::libgit2::src::libgit2::worktree::WorktreeBox;
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::worktree::WorktreeBox;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 
@@ -1077,10 +1077,10 @@ mod add_options {
     use std::path::{Path, PathBuf};
     use std::{fs, ptr};
 
-    use libgit2::libgit2::src::libgit2::refs::ReferenceBox;
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
-    use libgit2::libgit2::src::libgit2::worktree::{AddOptions, AddOptionsRef, Worktree};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::refs::ReferenceBox;
+    use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
+    use libgit2_crustify::libgit2::src::libgit2::worktree::{AddOptions, AddOptionsRef, Worktree};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     /// Initialises libgit2, whose error state the consumers write; never released.
     fn init() {
@@ -2076,12 +2076,12 @@ mod routines {
     use std::path::PathBuf;
     use std::{fs, ptr};
 
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
-    use libgit2::libgit2::src::libgit2::worktree::{
+    use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
+    use libgit2_crustify::libgit2::src::libgit2::worktree::{
         PruneFlag, PruneFlags, PruneOptions, Worktree, WorktreeBox, WorktreeError, list,
     };
-    use libgit2::libgit2::src::util::errors::last;
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::util::errors::last;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     const NAMES: [&str; 2] = ["wt1", "wt2"];
 

@@ -173,7 +173,7 @@ use crate::sys::libgit2 as sys;
 /// cannot outlive it. The lifetime only shrinks:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::odb::OdbArc;
+/// use libgit2_crustify::libgit2::src::libgit2::odb::OdbArc;
 ///
 /// fn widen<'r>(odb: OdbArc<'r>) -> OdbArc<'static> {
 ///     odb
@@ -183,7 +183,7 @@ use crate::sys::libgit2 as sys;
 /// and the exclusive handle is invariant in it, as `&mut` is in its pointee:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::odb::OdbMut;
+/// use libgit2_crustify::libgit2::src::libgit2::odb::OdbMut;
 ///
 /// fn shrink<'a, 'r>(m: OdbMut<'a, 'static>) -> OdbMut<'a, 'r> {
 ///     m
@@ -348,8 +348,8 @@ unsafe impl CNew<Odb<'static>> for OdbFree {
 /// repository, so neither it nor a handle it lends outlives the repository:
 ///
 /// ```compile_fail,E0505
-/// use libgit2::libgit2::src::libgit2::odb::OdbArc;
-/// use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryRef};
+/// use libgit2_crustify::libgit2::src::libgit2::odb::OdbArc;
+/// use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryRef};
 ///
 /// // What the wrapper of `git_repository_odb` returns.
 /// fn odb_of<'r>(repo: RepositoryRef<'r>) -> OdbArc<'r> {
@@ -363,7 +363,7 @@ unsafe impl CNew<Odb<'static>> for OdbFree {
 /// ```
 ///
 /// ```
-/// use libgit2::libgit2::src::libgit2::odb::Odb;
+/// use libgit2_crustify::libgit2::src::libgit2::odb::Odb;
 ///
 /// # if cfg!(miri) { return; } // Miri cannot call libgit2.
 /// let odb = Odb::new().unwrap();
@@ -376,7 +376,7 @@ unsafe impl CNew<Odb<'static>> for OdbFree {
 /// A handle borrows the reference it came from:
 ///
 /// ```compile_fail,E0597
-/// use libgit2::libgit2::src::libgit2::odb::Odb;
+/// use libgit2_crustify::libgit2::src::libgit2::odb::Odb;
 ///
 /// let handle = {
 ///     let odb = Odb::new().unwrap();
@@ -388,14 +388,14 @@ unsafe impl CNew<Odb<'static>> for OdbFree {
 /// It neither clones nor lends an exclusive handle:
 ///
 /// ```compile_fail,E0599
-/// use libgit2::libgit2::src::libgit2::odb::Odb;
+/// use libgit2_crustify::libgit2::src::libgit2::odb::Odb;
 ///
 /// let odb = Odb::new().unwrap();
 /// let _again = odb.clone();
 /// ```
 ///
 /// ```compile_fail,E0599
-/// use libgit2::libgit2::src::libgit2::odb::Odb;
+/// use libgit2_crustify::libgit2::src::libgit2::odb::Odb;
 ///
 /// let mut odb = Odb::new().unwrap();
 /// let _exclusive = odb.get_mut();
@@ -528,8 +528,8 @@ define_ctype!(
     /// [`as_ref`](Self::as_ref) / [`as_mut`](Self::as_mut):
     ///
     /// ```
-    /// use libgit2::libgit2::src::libgit2::odb::OdbOptions;
-    /// use libgit2::libgit2::src::libgit2::oid::OidType;
+    /// use libgit2_crustify::libgit2::src::libgit2::odb::OdbOptions;
+    /// use libgit2_crustify::libgit2::src::libgit2::oid::OidType;
     ///
     /// let mut opts = OdbOptions::new();
     /// assert_eq!(opts.as_ref().oid_type(), None);
@@ -547,7 +547,7 @@ define_ctype!(
     /// A handle borrows the value, so it cannot outlive it:
     ///
     /// ```compile_fail,E0597
-    /// use libgit2::libgit2::src::libgit2::odb::OdbOptions;
+    /// use libgit2_crustify::libgit2::src::libgit2::odb::OdbOptions;
     ///
     /// let handle = {
     ///     let opts = OdbOptions::new();
@@ -559,7 +559,7 @@ define_ctype!(
     /// and the shared handle only reads:
     ///
     /// ```compile_fail,E0599
-    /// use libgit2::libgit2::src::libgit2::odb::OdbOptions;
+    /// use libgit2_crustify::libgit2::src::libgit2::odb::OdbOptions;
     ///
     /// let opts = OdbOptions::new();
     /// opts.as_ref().set_oid_type(None);
@@ -805,9 +805,9 @@ define_ctype!(
     /// is not of the odb's type.
     ///
     /// ```
-    /// use libgit2::libgit2::src::libgit2::object::ObjectType;
-    /// use libgit2::libgit2::src::libgit2::odb::OdbExpandId;
-    /// use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
+    /// use libgit2_crustify::libgit2::src::libgit2::object::ObjectType;
+    /// use libgit2_crustify::libgit2::src::libgit2::odb::OdbExpandId;
+    /// use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
     ///
     /// # if cfg!(miri) { return; } // Miri cannot call libgit2.
     /// let prefix = Oid::from_prefix(b"4a202b34", OidType::Sha1).unwrap();
@@ -816,7 +816,7 @@ define_ctype!(
     /// query.as_mut().set_kind(None);
     /// assert_eq!(
     ///     query.as_ref().raw_kind(),
-    ///     libgit2::sys::libgit2::GIT_OBJECT_ANY
+    ///     libgit2_crustify::sys::libgit2::GIT_OBJECT_ANY
     /// );
     /// ```
     ///
@@ -1674,8 +1674,8 @@ impl<'a> OdbObjectRef<'a> {
     /// The content lives no longer than the object's borrow:
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::libgit2::src::libgit2::object::ObjectType;
-    /// use libgit2::libgit2::src::libgit2::odb::Odb;
+    /// use libgit2_crustify::libgit2::src::libgit2::object::ObjectType;
+    /// use libgit2_crustify::libgit2::src::libgit2::odb::Odb;
     ///
     /// let odb = Odb::open(c".git/objects").unwrap();
     /// let id = odb.as_ref().write(b"x", ObjectType::Blob).unwrap();
@@ -1794,8 +1794,8 @@ unsafe impl CRefClone<OdbObject> for OdbObjectFree {
 /// copies an object.
 ///
 /// ```
-/// use libgit2::libgit2::src::libgit2::object::ObjectType;
-/// use libgit2::libgit2::src::libgit2::odb::Odb;
+/// use libgit2_crustify::libgit2::src::libgit2::object::ObjectType;
+/// use libgit2_crustify::libgit2::src::libgit2::odb::Odb;
 ///
 /// # if cfg!(miri) { return; } // Miri cannot call libgit2.
 /// let dir = std::env::temp_dir().join(format!("odb-object-doc-{}", std::process::id()));
@@ -1834,8 +1834,8 @@ type ForeachFn<'f> = dyn FnMut(OidRef<'_>) -> ControlFlow<NonZero<c_int>> + 'f;
 /// ```
 /// use std::ops::ControlFlow;
 ///
-/// use libgit2::libgit2::src::libgit2::odb::ForeachCallback;
-/// use libgit2::libgit2::src::libgit2::oid::{Oid, OidRef, OidType};
+/// use libgit2_crustify::libgit2::src::libgit2::odb::ForeachCallback;
+/// use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidRef, OidType};
 ///
 /// # if cfg!(miri) { return; } // Miri cannot call libgit2.
 /// let mut seen = Vec::new();
@@ -1854,8 +1854,8 @@ type ForeachFn<'f> = dyn FnMut(OidRef<'_>) -> ControlFlow<NonZero<c_int>> + 'f;
 ///
 /// ```compile_fail,E0521
 /// use std::ops::ControlFlow;
-/// use libgit2::libgit2::src::libgit2::odb::ForeachCallback;
-/// use libgit2::libgit2::src::libgit2::oid::OidRef;
+/// use libgit2_crustify::libgit2::src::libgit2::odb::ForeachCallback;
+/// use libgit2_crustify::libgit2::src::libgit2::oid::OidRef;
 ///
 /// fn keep<'k>(kept: &mut Option<OidRef<'k>>) {
 ///     let mut f = |id: OidRef<'_>| {
@@ -1871,8 +1871,8 @@ type ForeachFn<'f> = dyn FnMut(OidRef<'_>) -> ControlFlow<NonZero<c_int>> + 'f;
 ///
 /// ```compile_fail,E0277
 /// use std::ops::ControlFlow;
-/// use libgit2::libgit2::src::libgit2::odb::ForeachCallback;
-/// use libgit2::libgit2::src::libgit2::oid::OidRef;
+/// use libgit2_crustify::libgit2::src::libgit2::odb::ForeachCallback;
+/// use libgit2_crustify::libgit2::src::libgit2::oid::OidRef;
 ///
 /// fn send<T: Send>(_: T) {}
 /// let mut f = |_: OidRef<'_>| ControlFlow::Continue(());
@@ -2028,7 +2028,7 @@ unsafe fn data_free(data: *mut u8) {
 /// A type aligned beyond what the allocator vouches for is rejected:
 ///
 /// ```compile_fail,E0080
-/// use libgit2::libgit2::src::libgit2::odb::OdbDataBox;
+/// use libgit2_crustify::libgit2::src::libgit2::odb::OdbDataBox;
 ///
 /// #[repr(C, align(64))]
 /// pub struct wide_st { pub x: u8 }
@@ -2040,7 +2040,7 @@ unsafe fn data_free(data: *mut u8) {
 /// Zeroed storage needs a type that vouches all-zero is valid:
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::odb::OdbDataBox;
+/// use libgit2_crustify::libgit2::src::libgit2::odb::OdbDataBox;
 ///
 /// #[repr(C)]
 /// pub struct frame_st { pub format: i32 }
@@ -2115,7 +2115,7 @@ unsafe impl<T: CZeroable> CAllocZeroed<T> for OdbDataFree {
 /// zero-sized ones, which need no storage:
 ///
 /// ```compile_fail,E0080
-/// use libgit2::libgit2::src::libgit2::odb::OdbDataVec;
+/// use libgit2_crustify::libgit2::src::libgit2::odb::OdbDataVec;
 ///
 /// #[derive(Clone, Copy)]
 /// #[repr(align(64))]
@@ -2125,7 +2125,7 @@ unsafe impl<T: CZeroable> CAllocZeroed<T> for OdbDataFree {
 /// ```
 ///
 /// ```compile_fail,E0080
-/// let _ = libgit2::libgit2::src::libgit2::odb::OdbDataArrayFree::new_uninit::<()>(4);
+/// let _ = libgit2_crustify::libgit2::src::libgit2::odb::OdbDataArrayFree::new_uninit::<()>(4);
 /// ```
 ///
 /// [`new_uninit`]: Self::new_uninit
@@ -2530,8 +2530,8 @@ impl fmt::Debug for OdbDataStrVec {
 /// outlives `'o`: [`backend`](OdbStreamRef::backend) lends it.
 ///
 /// ```compile_fail,E0597
-/// use libgit2::libgit2::src::libgit2::object::ObjectType;
-/// use libgit2::libgit2::src::libgit2::odb::Odb;
+/// use libgit2_crustify::libgit2::src::libgit2::object::ObjectType;
+/// use libgit2_crustify::libgit2::src::libgit2::odb::Odb;
 ///
 /// let stream = {
 ///     let odb = Odb::new().unwrap();
@@ -2544,7 +2544,7 @@ impl fmt::Debug for OdbDataStrVec {
 /// in its pointee:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::odb::OdbStreamMut;
+/// use libgit2_crustify::libgit2::src::libgit2::odb::OdbStreamMut;
 ///
 /// fn shrink<'a, 'o>(m: OdbStreamMut<'a, 'static>) -> OdbStreamMut<'a, 'o> {
 ///     m
@@ -2556,7 +2556,7 @@ impl fmt::Debug for OdbDataStrVec {
 /// about moving one.
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::odb::OdbStreamBox;
+/// use libgit2_crustify::libgit2::src::libgit2::odb::OdbStreamBox;
 ///
 /// fn send<T: Send>(_: T) {}
 /// fn forward(stream: OdbStreamBox<'static>) {
@@ -2990,7 +2990,7 @@ fn passed() -> StreamError {
 /// is invariant in `'o`:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::odb::OdbWritepackMut;
+/// use libgit2_crustify::libgit2::src::libgit2::odb::OdbWritepackMut;
 ///
 /// fn shrink<'a, 'o>(m: OdbWritepackMut<'a, 'static>) -> OdbWritepackMut<'a, 'o> {
 ///     m
@@ -3001,7 +3001,7 @@ fn passed() -> StreamError {
 /// progress callback, which may be tied to its thread, from whichever thread appends.
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::odb::OdbWritepackBox;
+/// use libgit2_crustify::libgit2::src::libgit2::odb::OdbWritepackBox;
 ///
 /// fn send<T: Send>(_: T) {}
 /// fn forward(writepack: OdbWritepackBox<'static>) {
@@ -3310,7 +3310,7 @@ define_ctype!(
     /// members may run on another thread, or on two at once.
     ///
     /// ```compile_fail,E0277
-    /// use libgit2::libgit2::src::libgit2::odb::OdbBackendBox;
+    /// use libgit2_crustify::libgit2::src::libgit2::odb::OdbBackendBox;
     ///
     /// fn send<T: Send>(_: T) {}
     /// fn forward(backend: OdbBackendBox) {
@@ -3336,7 +3336,7 @@ impl OdbBackend {
     /// (but `refresh`, which has nothing to rescan).
     ///
     /// ```
-    /// use libgit2::libgit2::src::libgit2::odb::OdbBackend;
+    /// use libgit2_crustify::libgit2::src::libgit2::odb::OdbBackend;
     ///
     /// # if cfg!(miri) { return; } // Miri cannot call libgit2.
     /// let backend = OdbBackend::new();

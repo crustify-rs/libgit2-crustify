@@ -41,14 +41,16 @@ use std::path::PathBuf;
 use std::{fs, ptr};
 
 use ffibox::CZeroable;
-use libgit2::libgit2::src::libgit2::annotated_commit::{AnnotatedCommit, AnnotatedCommitBox};
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-use libgit2::libgit2::src::libgit2::refs::ReferenceBox;
-use libgit2::libgit2::src::libgit2::repository::{
+use libgit2_crustify::libgit2::src::libgit2::annotated_commit::{
+    AnnotatedCommit, AnnotatedCommitBox,
+};
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+use libgit2_crustify::libgit2::src::libgit2::refs::ReferenceBox;
+use libgit2_crustify::libgit2::src::libgit2::repository::{
     InitFlag, InitOptions, Repository, RepositoryBox, RepositoryRef,
 };
-use libgit2::libgit2::src::util::errors::ErrorBuf;
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::util::errors::ErrorBuf;
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// Initialises libgit2; never released.
 fn init() {

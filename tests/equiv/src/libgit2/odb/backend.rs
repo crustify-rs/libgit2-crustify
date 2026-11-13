@@ -29,12 +29,12 @@ use std::process::{Command, Stdio};
 use std::{fs, ptr};
 
 use ffibox::CRefSeam;
-use libgit2::libgit2::src::libgit2::odb::{
+use libgit2_crustify::libgit2::src::libgit2::odb::{
     ForeachCallback, OdbBackend, OdbBackendBox, OdbBackendRef, OdbError,
 };
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidRef};
-use libgit2::libgit2::src::util::errors::ErrorClass;
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidRef};
+use libgit2_crustify::libgit2::src::util::errors::ErrorClass;
+use libgit2_crustify::sys::libgit2 as sys;
 
 // The fixture's raw constructors; their options are NULL, which both accept.
 unsafe extern "C" {
@@ -52,7 +52,9 @@ unsafe extern "C" {
 
 /// Takes a `git_libgit2_init` reference that is never released.
 fn init() {
-    let _ = core::mem::ManuallyDrop::new(libgit2::libgit2::src::libgit2::libgit2::init().unwrap());
+    let _ = core::mem::ManuallyDrop::new(
+        libgit2_crustify::libgit2::src::libgit2::libgit2::init().unwrap(),
+    );
 }
 
 /// The thread's last libgit2 error, read through C: its class and message.

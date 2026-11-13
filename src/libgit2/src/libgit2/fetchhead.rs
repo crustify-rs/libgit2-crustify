@@ -36,7 +36,7 @@ impl RepositoryRef<'_> {
     ///
     /// ```compile_fail,E0502
     /// use std::ops::ControlFlow;
-    /// use libgit2::libgit2::src::libgit2::repository::{
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::{
     ///     FetchheadEntry, FetchheadForeachCallback, RepositoryBox,
     /// };
     ///

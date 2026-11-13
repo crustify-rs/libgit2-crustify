@@ -109,7 +109,7 @@ use crate::sys::libgit2 as sys;
 ///
 /// ```
 /// # if cfg!(miri) { return; }
-/// use libgit2::libgit2::src::libgit2::tag::name_is_valid;
+/// use libgit2_crustify::libgit2::src::libgit2::tag::name_is_valid;
 ///
 /// assert_eq!(name_is_valid(c"v1.0"), Ok(true));
 /// assert_eq!(name_is_valid(c"release/2024"), Ok(true));
@@ -153,7 +153,7 @@ pub fn name_is_valid(name: &CStr) -> Result<bool, ErrorBuf> {
 /// the [module docs](self#tag-objects)). The lifetime only shrinks:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::tag::TagArc;
+/// use libgit2_crustify::libgit2::src::libgit2::tag::TagArc;
 ///
 /// fn widen<'r>(tag: TagArc<'r>) -> TagArc<'static> {
 ///     tag
@@ -163,7 +163,7 @@ pub fn name_is_valid(name: &CStr) -> Result<bool, ErrorBuf> {
 /// and a tag stays on the thread that looked it up:
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::tag::TagArc;
+/// use libgit2_crustify::libgit2::src::libgit2::tag::TagArc;
 ///
 /// fn send<T: Send>(_: T) {}
 /// fn move_out(tag: TagArc<'static>) {
@@ -181,7 +181,7 @@ pub struct Tag<'r>(sys::git_tag, PhantomData<(*const (), &'r ())>);
 /// It stays on the thread of the tag's repository, as the owner does:
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::tag::TagRef;
+/// use libgit2_crustify::libgit2::src::libgit2::tag::TagRef;
 ///
 /// fn sync<T: Sync>() {}
 /// sync::<TagRef<'static, 'static>>();
@@ -342,9 +342,9 @@ impl<'a, 'r> TagRef<'a, 'r> {
     /// copies it into the tag, which frees it with itself, so it outlives no owner:
     ///
     /// ```compile_fail,E0505
-    /// # use libgit2::libgit2::src::libgit2::tag::Tag;
-    /// # use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    /// # use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// # use libgit2_crustify::libgit2::src::libgit2::tag::Tag;
+    /// # use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    /// # use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     /// let repo = Repository::open(c".").unwrap();
     /// let id = Oid::zero(OidType::Sha1);
     /// let tag = Tag::lookup(repo.as_ref(), id.as_ref()).unwrap();
@@ -395,9 +395,9 @@ impl<'a, 'r> TagRef<'a, 'r> {
     /// the tag:
     ///
     /// ```compile_fail,E0505
-    /// # use libgit2::libgit2::src::libgit2::tag::Tag;
-    /// # use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    /// # use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// # use libgit2_crustify::libgit2::src::libgit2::tag::Tag;
+    /// # use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    /// # use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     /// let repo = Repository::open(c".").unwrap();
     /// let id = Oid::zero(OidType::Sha1);
     /// let tag = Tag::lookup(repo.as_ref(), id.as_ref()).unwrap();
@@ -1000,8 +1000,8 @@ type ForeachFn<'f> = dyn FnMut(&CStr, OidRef<'_>) -> ControlFlow<NonZero<c_int>>
 /// ```
 /// use std::ops::ControlFlow;
 ///
-/// use libgit2::libgit2::src::libgit2::oid::{Oid, OidRef, OidType};
-/// use libgit2::libgit2::src::libgit2::tag::ForeachCallback;
+/// use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidRef, OidType};
+/// use libgit2_crustify::libgit2::src::libgit2::tag::ForeachCallback;
 ///
 /// # if cfg!(miri) { return; } // Miri cannot call libgit2.
 /// let mut seen = Vec::new();
@@ -1024,8 +1024,8 @@ type ForeachFn<'f> = dyn FnMut(&CStr, OidRef<'_>) -> ControlFlow<NonZero<c_int>>
 /// ```compile_fail,E0521
 /// use std::ffi::CStr;
 /// use std::ops::ControlFlow;
-/// use libgit2::libgit2::src::libgit2::tag::ForeachCallback;
-/// use libgit2::libgit2::src::libgit2::oid::OidRef;
+/// use libgit2_crustify::libgit2::src::libgit2::tag::ForeachCallback;
+/// use libgit2_crustify::libgit2::src::libgit2::oid::OidRef;
 ///
 /// fn keep<'k>(kept: &mut Option<OidRef<'k>>) {
 ///     let mut f = |_: &CStr, id: OidRef<'_>| {
@@ -1039,8 +1039,8 @@ type ForeachFn<'f> = dyn FnMut(&CStr, OidRef<'_>) -> ControlFlow<NonZero<c_int>>
 /// ```compile_fail,E0521
 /// use std::ffi::CStr;
 /// use std::ops::ControlFlow;
-/// use libgit2::libgit2::src::libgit2::tag::ForeachCallback;
-/// use libgit2::libgit2::src::libgit2::oid::OidRef;
+/// use libgit2_crustify::libgit2::src::libgit2::tag::ForeachCallback;
+/// use libgit2_crustify::libgit2::src::libgit2::oid::OidRef;
 ///
 /// fn keep<'k>(kept: &mut Option<&'k CStr>) {
 ///     let mut f = |name: &CStr, _: OidRef<'_>| {
@@ -1057,8 +1057,8 @@ type ForeachFn<'f> = dyn FnMut(&CStr, OidRef<'_>) -> ControlFlow<NonZero<c_int>>
 /// ```compile_fail,E0277
 /// use std::ffi::CStr;
 /// use std::ops::ControlFlow;
-/// use libgit2::libgit2::src::libgit2::tag::ForeachCallback;
-/// use libgit2::libgit2::src::libgit2::oid::OidRef;
+/// use libgit2_crustify::libgit2::src::libgit2::tag::ForeachCallback;
+/// use libgit2_crustify::libgit2::src::libgit2::oid::OidRef;
 ///
 /// fn send<T: Send>(_: T) {}
 /// let mut f = |_: &CStr, _: OidRef<'_>| ControlFlow::Continue(());

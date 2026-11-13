@@ -435,7 +435,7 @@ define_ctype!(
     /// There is no bare value to hold: one would leak its strings when dropped.
     ///
     /// ```compile_fail,E0277
-    /// use libgit2::libgit2::src::libgit2::signature::Signature;
+    /// use libgit2_crustify::libgit2::src::libgit2::signature::Signature;
     ///
     /// let _ = <Signature as ffibox::CZeroable>::zeroed();
     /// ```
@@ -881,7 +881,7 @@ impl Eq for SignatureRef<'_> {}
 /// There is no exclusive handle:
 ///
 /// ```compile_fail,E0599
-/// use {libgit2::libgit2::src::libgit2::signature::SignatureView, libgit2::libgit2::src::libgit2::signature::Time};
+/// use {libgit2_crustify::libgit2::src::libgit2::signature::SignatureView, libgit2_crustify::libgit2::src::libgit2::signature::Time};
 ///
 /// let mut view = SignatureView::new(c"A", c"a@b", Time::new(0, 0));
 /// let _ = view.as_mut();

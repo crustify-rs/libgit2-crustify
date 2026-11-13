@@ -19,8 +19,8 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 use std::{fs, ptr};
 
-use libgit2::libgit2::src::libgit2::tree::{UnnamedWalkMode, WalkMode};
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::tree::{UnnamedWalkMode, WalkMode};
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// Every `git_treewalk_mode` constant, beside the variant that must carry it.
 const MODES: [(sys::git_treewalk_mode, WalkMode); 2] = [
@@ -414,18 +414,19 @@ mod builder {
     //!
     //! - Builders: [`TreeBuilder::new`] and [`TreeBuilder::from_tree`] must build what
     //!   `git_treebuilder_new` builds (with a NULL source and with a tree), and
-    //!   [`clear`](libgit2::libgit2::src::libgit2::tree::TreeBuilderMut::clear) must leave what
-    //!   `git_treebuilder_clear` leaves. Each side runs the same steps over a bare repository of
-    //!   its own, built identically, with source trees looked up in a fixture repository it opened
-    //!   itself; after every step the builder's state is recorded (its entry count, the file mode
-    //!   of every name either side ever held, and the id `git_treebuilder_write` gives, or the
+    //!   [`clear`](libgit2_crustify::libgit2::src::libgit2::tree::TreeBuilderMut::clear) must leave
+    //!   what `git_treebuilder_clear` leaves. Each side runs the same steps over a bare repository
+    //!   of its own, built identically, with source trees looked up in a fixture repository it
+    //!   opened itself; after every step the builder's state is recorded (its entry count, the file
+    //!   mode of every name either side ever held, and the id `git_treebuilder_write` gives, or the
     //!   error it reports) and compared. The C side runs `git_treebuilder_insert`, `_get`,
     //!   `_write`, `_entrycount` and `git_tree_entry_filemode_raw` raw, the Rust side their
     //!   wrappers ([`TreeBuilderRef::len`] for the count, `TreeEntryRef::filemode_raw` for an
     //!   entry's mode). The builder routines' failures and the walk callback are compared in
     //!   [`routines`].
     //!
-    //!   [`TreeBuilderRef::len`]: libgit2::libgit2::src::libgit2::tree::TreeBuilderRef::len
+    //!   [`TreeBuilderRef::len`]:
+    //! libgit2_crustify::libgit2::src::libgit2::tree::TreeBuilderRef::len
     //! - Allocation failures: libgit2's allocator is made to fail its `k`-th allocation inside the
     //!   constructor, for each `k` until the constructor succeeds; both sides must fail at the same
     //!   `k` with the same error class and message, and then build the same builder. This runs
@@ -454,14 +455,14 @@ mod builder {
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering::SeqCst;
 
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
-    use libgit2::libgit2::src::libgit2::tree::{
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
+    use libgit2_crustify::libgit2::src::libgit2::tree::{
         FileMode, Tree, TreeArc, TreeBuilder, TreeBuilderBox, TreeEntryBox, TreeRef, TreeUpdate,
         UpdateAction,
     };
-    use libgit2::libgit2::src::util::errors::ErrorBuf;
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::util::errors::ErrorBuf;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     const RESOURCES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/c/tests/resources");
     const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
@@ -643,10 +644,10 @@ mod builder {
     }
 
     /// The Rust side of [`state`]: the file modes through
-    /// [`get`](libgit2::libgit2::src::libgit2::tree::TreeBuilderRef::get) (read from a copy of
-    /// each entry, standing in for its file-mode getter), and the id through
-    /// [`write`](libgit2::libgit2::src::libgit2::tree::TreeBuilderMut::write); the entry count
-    /// raw.
+    /// [`get`](libgit2_crustify::libgit2::src::libgit2::tree::TreeBuilderRef::get) (read from a
+    /// copy of each entry, standing in for its file-mode getter), and the id through
+    /// [`write`](libgit2_crustify::libgit2::src::libgit2::tree::TreeBuilderMut::write); the entry
+    /// count raw.
     fn rust_state(builder: &mut TreeBuilderBox<'_>, names: &BTreeSet<CString>) -> State {
         let count = builder.as_ref().len();
         let modes = names
@@ -723,9 +724,9 @@ mod builder {
     }
 
     /// The Rust side of [`c_run`]: [`TreeBuilder::new`] or [`TreeBuilder::from_tree`],
-    /// [`insert`](libgit2::libgit2::src::libgit2::tree::TreeBuilderMut::insert) and
-    /// [`clear`](libgit2::libgit2::src::libgit2::tree::TreeBuilderMut::clear), read through
-    /// [`rust_state`].
+    /// [`insert`](libgit2_crustify::libgit2::src::libgit2::tree::TreeBuilderMut::insert) and
+    /// [`clear`](libgit2_crustify::libgit2::src::libgit2::tree::TreeBuilderMut::clear), read
+    /// through [`rust_state`].
     fn rust_run(
         repo: &RepositoryBox,
         source: Option<TreeRef<'_, '_>>,
@@ -898,10 +899,10 @@ mod builder {
         use std::ffi::c_char;
         use std::ops::ControlFlow;
 
-        use libgit2::libgit2::src::libgit2::tree::{
+        use libgit2_crustify::libgit2::src::libgit2::tree::{
             TreeBuilderFilter, TreeEntryRef, WalkAction, WalkCallback, WalkMode,
         };
-        use libgit2::libgit2::src::util::errors::ErrorCode;
+        use libgit2_crustify::libgit2::src::util::errors::ErrorCode;
 
         use super::*;
 
@@ -1505,7 +1506,7 @@ mod builder {
         /// `Continue` as 0, `Break` as `GIT_EUSER`, a failure as its code, whose error
         /// must be the thread's.
         ///
-        /// [`TreeRef::walk`]: libgit2::libgit2::src::libgit2::tree::TreeRef::walk
+        /// [`TreeRef::walk`]: libgit2_crustify::libgit2::src::libgit2::tree::TreeRef::walk
         fn public_walk(tree: TreeRef<'_, '_>, mode: sys::git_treewalk_mode, rule: Rule) -> Walked {
             let mut visits = Vec::new();
             let mut f = |root: &CStr, entry: TreeEntryRef<'_>| {
@@ -1544,7 +1545,7 @@ mod builder {
         /// continue, skip and stop, twice over; and the same failure for a subtree the
         /// object database lacks.
         ///
-        /// [`TreeRef::walk`]: libgit2::libgit2::src::libgit2::tree::TreeRef::walk
+        /// [`TreeRef::walk`]: libgit2_crustify::libgit2::src::libgit2::tree::TreeRef::walk
         #[test]
         #[cfg_attr(miri, ignore = "calls libgit2")]
         fn public_walks_match_c_walks() {
@@ -1643,7 +1644,7 @@ mod builder {
         /// keep nothing, pick by name, mode and id, and finally remove everything; the
         /// builders are filled again in between.
         ///
-        /// [`TreeBuilderMut::remove_if`]: libgit2::libgit2::src::libgit2::tree::TreeBuilderMut::remove_if
+        /// [`TreeBuilderMut::remove_if`]: libgit2_crustify::libgit2::src::libgit2::tree::TreeBuilderMut::remove_if
         #[test]
         #[cfg_attr(miri, ignore = "calls libgit2")]
         fn filters_match_c() {
@@ -2463,19 +2464,21 @@ mod tree_entry {
     //! the repository's is refused by `to_object`, where C formats the id out of
     //! bounds; `tree.rs`'s unit tests hold the refusal.
     //!
-    //! [`TreeEntryRef::to_tree_entry`]: libgit2::libgit2::src::libgit2::tree::TreeEntryRef::to_tree_entry
-    //! [`TreeEntryRef::name`]: libgit2::libgit2::src::libgit2::tree::TreeEntryRef::name
-    //! [`TreeEntryRef::cmp_in_tree`]: libgit2::libgit2::src::libgit2::tree::TreeEntryRef::cmp_in_tree
-    //! [`TreeEntryRef::to_object`]: libgit2::libgit2::src::libgit2::tree::TreeEntryRef::to_object
+    //! [`TreeEntryRef::to_tree_entry`]: libgit2_crustify::libgit2::src::libgit2::tree::TreeEntryRef::to_tree_entry
+    //! [`TreeEntryRef::name`]: libgit2_crustify::libgit2::src::libgit2::tree::TreeEntryRef::name
+    //! [`TreeEntryRef::cmp_in_tree`]: libgit2_crustify::libgit2::src::libgit2::tree::TreeEntryRef::cmp_in_tree
+    //! [`TreeEntryRef::to_object`]: libgit2_crustify::libgit2::src::libgit2::tree::TreeEntryRef::to_object
 
     use std::ffi::{CStr, CString, c_int};
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::object::{Object, ObjectArc};
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryError, RepositoryRef};
-    use libgit2::libgit2::src::libgit2::tree::{Tree, TreeEntry, TreeEntryBox, TreeRef};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::object::{Object, ObjectArc};
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
+        Repository, RepositoryError, RepositoryRef,
+    };
+    use libgit2_crustify::libgit2::src::libgit2::tree::{Tree, TreeEntry, TreeEntryBox, TreeRef};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     const TESTREPO: &str = concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -3060,15 +3063,17 @@ mod tree_object {
     //! longer or shorter than the tree's and past 65535 bytes, and ids of another type or
     //! tail: the entries found, the misses, and the thread's error after each call.
     //!
-    //! [`TreeRef::to_tree`]: libgit2::libgit2::src::libgit2::tree::TreeRef::to_tree
+    //! [`TreeRef::to_tree`]: libgit2_crustify::libgit2::src::libgit2::tree::TreeRef::to_tree
 
     use std::ffi::{CStr, CString, c_int};
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox, RepositoryError};
-    use libgit2::libgit2::src::libgit2::tree::{Tree, TreeArc, TreeEntryRef, TreeRef};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
+        Repository, RepositoryBox, RepositoryError,
+    };
+    use libgit2_crustify::libgit2::src::libgit2::tree::{Tree, TreeArc, TreeEntryRef, TreeRef};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use super::{init, last_error};
 
@@ -3645,7 +3650,7 @@ mod tree_object {
     /// misses, and the same thread error after each call (the "path too long" error an
     /// overlong name leaves included). Then again with only a copy of each tree alive.
     ///
-    /// [`TreeRef::id`]: libgit2::libgit2::src::libgit2::tree::TreeRef::id
+    /// [`TreeRef::id`]: libgit2_crustify::libgit2::src::libgit2::tree::TreeRef::id
     #[test]
     #[cfg_attr(miri, ignore = "calls C")]
     fn getters_match_c() {
@@ -3720,10 +3725,10 @@ mod tree_updates {
     use std::path::{Path, PathBuf};
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
-    use libgit2::libgit2::src::libgit2::tree::{FileMode, Tree, TreeUpdate, UpdateAction};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
+    use libgit2_crustify::libgit2::src::libgit2::tree::{FileMode, Tree, TreeUpdate, UpdateAction};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use super::{init, last_error};
 

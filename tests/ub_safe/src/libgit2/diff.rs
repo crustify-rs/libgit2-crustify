@@ -3,12 +3,12 @@
 mod support;
 use std::ffi::CString;
 
-use libgit2::libgit2::src::libgit2::diff::{Diff, DiffArc};
-use libgit2::libgit2::src::libgit2::index::Index;
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-use libgit2::libgit2::src::libgit2::repository::{InitFlag, InitOptions, Repository};
-use libgit2::libgit2::src::libgit2::tree::Tree;
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::diff::{Diff, DiffArc};
+use libgit2_crustify::libgit2::src::libgit2::index::Index;
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+use libgit2_crustify::libgit2::src::libgit2::repository::{InitFlag, InitOptions, Repository};
+use libgit2_crustify::libgit2::src::libgit2::tree::Tree;
+use libgit2_crustify::sys::libgit2 as sys;
 use support::{PATCH, RENAME, Repo};
 
 #[test]

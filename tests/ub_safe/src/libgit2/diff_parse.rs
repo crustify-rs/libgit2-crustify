@@ -7,9 +7,9 @@
 //! every id type and with versions libgit2 does not read hand back diffs that outlive
 //! their input and options, and drop on other threads (`ASan`, `LSan`).
 #![forbid(unsafe_code)]
-use libgit2::libgit2::src::libgit2::diff::{Diff, DiffArc};
-use libgit2::libgit2::src::libgit2::diff_parse::{DiffParseOptions, DiffParseOptionsRef};
-use libgit2::libgit2::src::libgit2::oid::OidType;
+use libgit2_crustify::libgit2::src::libgit2::diff::{Diff, DiffArc};
+use libgit2_crustify::libgit2::src::libgit2::diff_parse::{DiffParseOptions, DiffParseOptionsRef};
+use libgit2_crustify::libgit2::src::libgit2::oid::OidType;
 
 /// A git patch with abbreviated ids.
 const PATCH: &[u8] = b"diff --git a/file b/file\nindex 1111111..2222222 100644\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n";

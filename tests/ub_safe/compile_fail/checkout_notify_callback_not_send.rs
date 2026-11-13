@@ -3,7 +3,7 @@
 use std::ops::ControlFlow;
 use std::thread;
 
-use libgit2::libgit2::src::libgit2::checkout::{CheckoutNotification, NotifyCallback};
+use libgit2_crustify::libgit2::src::libgit2::checkout::{CheckoutNotification, NotifyCallback};
 
 fn main() {
     let mut f = |_: CheckoutNotification<'_>| ControlFlow::Continue(());

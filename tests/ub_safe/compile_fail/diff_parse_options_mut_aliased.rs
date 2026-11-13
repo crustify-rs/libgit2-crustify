@@ -1,5 +1,5 @@
 // Two exclusive handles to one `DiffParseOptions` cannot coexist, nor a shared one beside them.
-use libgit2::libgit2::src::libgit2::diff_parse::DiffParseOptions;
+use libgit2_crustify::libgit2::src::libgit2::diff_parse::DiffParseOptions;
 
 fn main() {
     let mut opts = DiffParseOptions::new();

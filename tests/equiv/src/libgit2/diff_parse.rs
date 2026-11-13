@@ -5,11 +5,13 @@
 
 use core::ptr;
 
-use libgit2::libgit2::src::libgit2::diff::{Diff, DiffBox, DiffDeltaRef, DiffError, DiffFileRef};
-use libgit2::libgit2::src::libgit2::diff_parse::DiffParseOptions;
-use libgit2::libgit2::src::libgit2::oid::OidType;
-use libgit2::libgit2::src::util::errors::last;
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::diff::{
+    Diff, DiffBox, DiffDeltaRef, DiffError, DiffFileRef,
+};
+use libgit2_crustify::libgit2::src::libgit2::diff_parse::DiffParseOptions;
+use libgit2_crustify::libgit2::src::libgit2::oid::OidType;
+use libgit2_crustify::libgit2::src::util::errors::last;
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// A git patch with abbreviated ids.
 const PATCH: &[u8] = b"diff --git a/file b/file\nindex 1111111..2222222 100644\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n";

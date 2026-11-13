@@ -1,5 +1,5 @@
 // Two exclusive handles to one signature cannot coexist.
-use {libgit2::libgit2::src::libgit2::signature::Signature, libgit2::libgit2::src::libgit2::signature::Time};
+use {libgit2_crustify::libgit2::src::libgit2::signature::Signature, libgit2_crustify::libgit2::src::libgit2::signature::Time};
 
 fn main() {
     let mut sig = Signature::new(c"A", c"a@b", 0, 0).unwrap();

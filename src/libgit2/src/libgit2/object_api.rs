@@ -68,9 +68,9 @@ impl<'a, 'r> BlobRef<'a, 'r> {
     /// The result outlives the blob, but not the repository's borrow:
     ///
     /// ```compile_fail,E0505
-    /// # use libgit2::libgit2::src::libgit2::blob::Blob;
-    /// # use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    /// # use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// # use libgit2_crustify::libgit2::src::libgit2::blob::Blob;
+    /// # use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    /// # use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     /// let repo = Repository::open(c".").unwrap();
     /// let id = Oid::zero(OidType::Sha1);
     /// let blob = Blob::lookup(repo.as_ref(), id.as_ref()).unwrap();
@@ -151,9 +151,9 @@ impl<'r> Blob<'r> {
     /// this borrow of it:
     ///
     /// ```compile_fail,E0505
-    /// # use libgit2::libgit2::src::libgit2::blob::Blob;
-    /// # use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    /// # use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// # use libgit2_crustify::libgit2::src::libgit2::blob::Blob;
+    /// # use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    /// # use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     /// let repo = Repository::open(c".").unwrap();
     /// let id = Oid::zero(OidType::Sha1);
     /// let blob = Blob::lookup(repo.as_ref(), id.as_ref()).unwrap();
@@ -264,9 +264,9 @@ impl<'a, 'r> CommitRef<'a, 'r> {
     /// it once, when it is parsed.
     ///
     /// ```compile_fail,E0505
-    /// # use libgit2::libgit2::src::libgit2::commit::Commit;
-    /// # use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    /// # use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// # use libgit2_crustify::libgit2::src::libgit2::commit::Commit;
+    /// # use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    /// # use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     /// let repo = Repository::open(c".").unwrap();
     /// let id = Oid::zero(OidType::Sha1);
     /// let commit = Commit::lookup(repo.as_ref(), id.as_ref()).unwrap();
@@ -299,9 +299,9 @@ impl<'a, 'r> CommitRef<'a, 'r> {
     /// lookups do not: it outlives the commit, but not the repository's borrow.
     ///
     /// ```compile_fail,E0505
-    /// # use libgit2::libgit2::src::libgit2::commit::Commit;
-    /// # use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    /// # use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// # use libgit2_crustify::libgit2::src::libgit2::commit::Commit;
+    /// # use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    /// # use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     /// let repo = Repository::open(c".").unwrap();
     /// let id = Oid::zero(OidType::Sha1);
     /// let commit = Commit::lookup(repo.as_ref(), id.as_ref()).unwrap();
@@ -385,9 +385,9 @@ impl<'r> Commit<'r> {
     /// this borrow of it:
     ///
     /// ```compile_fail,E0505
-    /// # use libgit2::libgit2::src::libgit2::commit::Commit;
-    /// # use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    /// # use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// # use libgit2_crustify::libgit2::src::libgit2::commit::Commit;
+    /// # use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    /// # use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     /// let repo = Repository::open(c".").unwrap();
     /// let id = Oid::zero(OidType::Sha1);
     /// let commit = Commit::lookup(repo.as_ref(), id.as_ref()).unwrap();
@@ -702,9 +702,9 @@ impl<'a, 'r> TagRef<'a, 'r> {
     /// the tag's object.
     ///
     /// ```compile_fail,E0505
-    /// # use libgit2::libgit2::src::libgit2::tag::Tag;
-    /// # use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    /// # use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// # use libgit2_crustify::libgit2::src::libgit2::tag::Tag;
+    /// # use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    /// # use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     /// let repo = Repository::open(c".").unwrap();
     /// let id = Oid::zero(OidType::Sha1);
     /// let tag = Tag::lookup(repo.as_ref(), id.as_ref()).unwrap();
@@ -921,9 +921,9 @@ impl<'a, 'r> TreeRef<'a, 'r> {
     /// lookups do not: it outlives the tree, but not the repository's borrow.
     ///
     /// ```compile_fail,E0505
-    /// # use libgit2::libgit2::src::libgit2::tree::Tree;
-    /// # use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    /// # use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// # use libgit2_crustify::libgit2::src::libgit2::tree::Tree;
+    /// # use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    /// # use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     /// let repo = Repository::open(c".").unwrap();
     /// let id = Oid::zero(OidType::Sha1);
     /// let tree = Tree::lookup(repo.as_ref(), id.as_ref()).unwrap();

@@ -35,11 +35,11 @@ use std::ffi::{CStr, CString, c_char, c_int, c_ulong};
 use std::process::Command;
 use std::ptr;
 
-use libgit2::libgit2::src::libgit2::libgit2::{Feature, Features, UnnamedFeature};
-use libgit2::libgit2::src::libgit2::settings::{
+use libgit2_crustify::libgit2::src::libgit2::libgit2::{Feature, Features, UnnamedFeature};
+use libgit2_crustify::libgit2::src::libgit2::settings::{
     BuildInfo, LibraryOption, UnnamedBuildInfo, UnnamedLibraryOption,
 };
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// Every `git_feature_t` constant and the variant carrying it.
 const FEATURES: [(sys::git_feature_t, Feature); 13] = [
@@ -966,10 +966,12 @@ mod options {
     use std::process::Command;
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::settings;
-    use libgit2::libgit2::src::libgit2::settings::{CachedMemory, SearchPathLevel, Version};
-    use libgit2::libgit2::src::util::errors::ErrorBuf;
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::settings;
+    use libgit2_crustify::libgit2::src::libgit2::settings::{
+        CachedMemory, SearchPathLevel, Version,
+    };
+    use libgit2_crustify::libgit2::src::util::errors::ErrorBuf;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 
@@ -1058,7 +1060,7 @@ mod options {
         // SAFETY: three live out-parameters.
         let rc = unsafe { sys::git_libgit2_version(&raw mut major, &raw mut minor, &raw mut rev) };
         assert_eq!(rc, 0);
-        let v = libgit2::libgit2::src::libgit2::libgit2::version();
+        let v = libgit2_crustify::libgit2::src::libgit2::libgit2::version();
         assert_eq!(
             v,
             Version {
@@ -1082,7 +1084,10 @@ mod options {
             )
         );
         for _ in 0..3 {
-            assert_eq!(libgit2::libgit2::src::libgit2::libgit2::version(), v);
+            assert_eq!(
+                libgit2_crustify::libgit2::src::libgit2::libgit2::version(),
+                v
+            );
         }
     }
 
@@ -1091,7 +1096,7 @@ mod options {
     fn prerelease_matches_c() {
         // SAFETY: no arguments.
         let c = unsafe { sys::git_libgit2_prerelease() };
-        let rust = libgit2::libgit2::src::libgit2::libgit2::prerelease();
+        let rust = libgit2_crustify::libgit2::src::libgit2::libgit2::prerelease();
         assert_eq!(
             rust.map_or(ptr::null(), CStr::as_ptr),
             c,
@@ -1106,12 +1111,12 @@ mod options {
         // SAFETY: no arguments.
         let c = unsafe { sys::git_libgit2_features() };
         assert_eq!(
-            libgit2::libgit2::src::libgit2::libgit2::features().bits(),
+            libgit2_crustify::libgit2::src::libgit2::libgit2::features().bits(),
             c
         );
         assert_eq!(
-            libgit2::libgit2::src::libgit2::libgit2::features(),
-            libgit2::libgit2::src::libgit2::libgit2::features()
+            libgit2_crustify::libgit2::src::libgit2::libgit2::features(),
+            libgit2_crustify::libgit2::src::libgit2::libgit2::features()
         );
     }
 
@@ -1120,13 +1125,14 @@ mod options {
     #[test]
     #[cfg_attr(miri, ignore = "calls libgit2")]
     fn feature_backend_matches_c() {
-        use libgit2::libgit2::src::libgit2::libgit2::Feature;
-        let set = libgit2::libgit2::src::libgit2::libgit2::features();
+        use libgit2_crustify::libgit2::src::libgit2::libgit2::Feature;
+        let set = libgit2_crustify::libgit2::src::libgit2::libgit2::features();
         for _ in 0..3 {
             for feature in Feature::ALL {
                 // SAFETY: a named feature, by value; no state is read.
                 let c = unsafe { sys::git_libgit2_feature_backend(feature.raw()) };
-                let rust = libgit2::libgit2::src::libgit2::libgit2::feature_backend(feature);
+                let rust =
+                    libgit2_crustify::libgit2::src::libgit2::libgit2::feature_backend(feature);
                 assert_eq!(rust.map_or(ptr::null(), CStr::as_ptr), c, "{feature:?}");
                 if let Some(backend) = rust {
                     assert!(set.contains(feature), "{feature:?}: {backend:?}");
@@ -1138,7 +1144,7 @@ mod options {
             }
         }
         assert_eq!(
-            libgit2::libgit2::src::libgit2::libgit2::feature_backend(Feature::Http),
+            libgit2_crustify::libgit2::src::libgit2::libgit2::feature_backend(Feature::Http),
             None
         );
         // The campaign's builds (`crustify/build.json`).
@@ -1154,14 +1160,14 @@ mod options {
             (Feature::Sha256, c"openssl"),
         ] {
             assert_eq!(
-                libgit2::libgit2::src::libgit2::libgit2::feature_backend(feature),
+                libgit2_crustify::libgit2::src::libgit2::libgit2::feature_backend(feature),
                 Some(backend),
                 "{feature:?}"
             );
         }
         for feature in [Feature::Ssh, Feature::I18n, Feature::AuthNegotiate] {
             assert_eq!(
-                libgit2::libgit2::src::libgit2::libgit2::feature_backend(feature),
+                libgit2_crustify::libgit2::src::libgit2::libgit2::feature_backend(feature),
                 None,
                 "{feature:?}"
             );
@@ -1172,7 +1178,7 @@ mod options {
     #[test]
     #[cfg_attr(miri, ignore = "calls libgit2")]
     fn build_info_matches_c() {
-        use libgit2::libgit2::src::libgit2::settings::BuildInfo;
+        use libgit2_crustify::libgit2::src::libgit2::settings::BuildInfo;
         for _ in 0..3 {
             for item in [BuildInfo::Cpu, BuildInfo::Commit] {
                 // SAFETY: a named item, by value; no state is read.
@@ -1776,8 +1782,8 @@ mod options {
                     }
                 }
                 for kind in [
-                    libgit2::libgit2::src::libgit2::object::ObjectType::Commit,
-                    libgit2::libgit2::src::libgit2::object::ObjectType::Blob,
+                    libgit2_crustify::libgit2::src::libgit2::object::ObjectType::Commit,
+                    libgit2_crustify::libgit2::src::libgit2::object::ObjectType::Blob,
                 ] {
                     // SAFETY: an `int` type and a `size_t`; this child runs one thread.
                     let rc = unsafe {

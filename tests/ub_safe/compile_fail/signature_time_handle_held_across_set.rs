@@ -1,7 +1,7 @@
 // The time handle projected out of a signature reborrows the exclusive handle it came
 // from, so no other write to the signature may happen while it is held.
-use libgit2::libgit2::src::libgit2::signature::Signature;
-use libgit2::libgit2::src::libgit2::odb::OdbDataStrFree;
+use libgit2_crustify::libgit2::src::libgit2::signature::Signature;
+use libgit2_crustify::libgit2::src::libgit2::odb::OdbDataStrFree;
 
 fn main() {
     let mut sig = Signature::new(c"A", c"a@b", 0, 0).unwrap();

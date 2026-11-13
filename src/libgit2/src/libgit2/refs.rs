@@ -140,7 +140,7 @@ impl std::error::Error for NotAReferenceType {}
 /// lifetime only shrinks:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::refs::ReferenceBox;
+/// use libgit2_crustify::libgit2::src::libgit2::refs::ReferenceBox;
 ///
 /// fn widen<'r>(reference: ReferenceBox<'r>) -> ReferenceBox<'static> {
 ///     reference
@@ -150,7 +150,7 @@ impl std::error::Error for NotAReferenceType {}
 /// and a reference stays on the thread that read it:
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::refs::ReferenceBox;
+/// use libgit2_crustify::libgit2::src::libgit2::refs::ReferenceBox;
 ///
 /// fn send<T: Send>(_: T) {}
 /// fn move_out(reference: ReferenceBox<'static>) {
@@ -243,8 +243,8 @@ define_ctype!(
     /// database.
     ///
     /// ```compile_fail,E0599
-    /// use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    /// use libgit2::libgit2::src::libgit2::refs::UnattachedReference;
+    /// use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    /// use libgit2_crustify::libgit2::src::libgit2::refs::UnattachedReference;
     ///
     /// let id = Oid::from_raw(&[0x11; 20], OidType::Sha1).unwrap();
     /// let reference = UnattachedReference::direct(c"refs/heads/main", id.as_ref(), None).unwrap();

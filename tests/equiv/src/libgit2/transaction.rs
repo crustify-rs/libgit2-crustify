@@ -3,10 +3,10 @@
 use core::ptr;
 use std::ffi::{CStr, CString};
 
-use libgit2::libgit2::src::libgit2::config::Config;
-use libgit2::libgit2::src::libgit2::repository::Repository;
-use libgit2::libgit2::src::libgit2::transaction::Transaction;
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::config::Config;
+use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
+use libgit2_crustify::libgit2::src::libgit2::transaction::Transaction;
+use libgit2_crustify::sys::libgit2 as sys;
 
 fn path(tag: &str) -> (std::path::PathBuf, CString) {
     let p = std::env::temp_dir().join(format!("crustify-equiv-tx-{}-{tag}", std::process::id()));
@@ -238,40 +238,41 @@ fn config_lock_codes_match_c() {
     let c_paths: Vec<_> = c_files.iter().map(|(p, _)| p.clone()).collect();
 
     let mut steps = 0;
-    let mut compare = |rust: &mut libgit2::libgit2::src::libgit2::config::ConfigBox<'static>| {
-        let rust_record: LockRecord = match rust.as_mut().lock() {
-            Ok(tx) => {
-                let held = locked(&rust_paths);
-                drop(tx);
+    let mut compare =
+        |rust: &mut libgit2_crustify::libgit2::src::libgit2::config::ConfigBox<'static>| {
+            let rust_record: LockRecord = match rust.as_mut().lock() {
+                Ok(tx) => {
+                    let held = locked(&rust_paths);
+                    drop(tx);
+                    (0, None, held)
+                }
+                Err(e) => {
+                    let message = e.message().to_string_lossy().replace(&rust_prefix, "<p>");
+                    (e.raw_code(), Some((e.raw_class(), message)), vec![])
+                }
+            };
+            let mut tx = ptr::null_mut();
+            // SAFETY: a live config and a writable slot.
+            let rc = unsafe { sys::git_config_lock(&raw mut tx, raw) };
+            let c_record: LockRecord = if rc == 0 {
+                let held = locked(&c_paths);
+                // SAFETY: the transaction just handed out, released once (aborting).
+                unsafe { sys::git_transaction_free(tx) };
                 (0, None, held)
+            } else {
+                let e = libgit2_crustify::libgit2::src::util::errors::last();
+                let message = e.message().to_string_lossy().replace(&c_prefix, "<p>");
+                (rc, Some((e.raw_class(), message)), vec![])
+            };
+            assert_eq!(rust_record, c_record, "step {steps}");
+            steps += 1;
+            if rust_record.0 == 0 {
+                // Every abort releases the lock it took, on both sides.
+                assert_eq!(locked(&rust_paths), [false, false]);
+                assert_eq!(locked(&c_paths), [false, false]);
             }
-            Err(e) => {
-                let message = e.message().to_string_lossy().replace(&rust_prefix, "<p>");
-                (e.raw_code(), Some((e.raw_class(), message)), vec![])
-            }
+            rust_record
         };
-        let mut tx = ptr::null_mut();
-        // SAFETY: a live config and a writable slot.
-        let rc = unsafe { sys::git_config_lock(&raw mut tx, raw) };
-        let c_record: LockRecord = if rc == 0 {
-            let held = locked(&c_paths);
-            // SAFETY: the transaction just handed out, released once (aborting).
-            unsafe { sys::git_transaction_free(tx) };
-            (0, None, held)
-        } else {
-            let e = libgit2::libgit2::src::util::errors::last();
-            let message = e.message().to_string_lossy().replace(&c_prefix, "<p>");
-            (rc, Some((e.raw_class(), message)), vec![])
-        };
-        assert_eq!(rust_record, c_record, "step {steps}");
-        steps += 1;
-        if rust_record.0 == 0 {
-            // Every abort releases the lock it took, on both sides.
-            assert_eq!(locked(&rust_paths), [false, false]);
-            assert_eq!(locked(&c_paths), [false, false]);
-        }
-        rust_record
-    };
 
     assert_eq!(compare(&mut rust).0, sys::GIT_EREADONLY);
     add_file(rust_raw, &rust_files[0].1, sys::GIT_CONFIG_LEVEL_LOCAL);

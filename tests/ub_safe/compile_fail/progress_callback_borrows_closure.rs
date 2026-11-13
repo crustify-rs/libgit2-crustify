@@ -2,7 +2,7 @@
 // read while the callback can still run it.
 use std::ops::ControlFlow;
 
-use libgit2::libgit2::src::libgit2::indexer::{IndexerProgress, IndexerProgressRef, ProgressCallback};
+use libgit2_crustify::libgit2::src::libgit2::indexer::{IndexerProgress, IndexerProgressRef, ProgressCallback};
 
 fn main() {
     let mut seen = Vec::new();

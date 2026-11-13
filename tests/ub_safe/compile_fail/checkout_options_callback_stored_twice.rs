@@ -1,5 +1,5 @@
 // One callback cannot be stored in two options at once: each borrows it exclusively.
-use libgit2::libgit2::src::libgit2::checkout::{
+use libgit2_crustify::libgit2::src::libgit2::checkout::{
     CheckoutOptions, CheckoutPerfdataRef, PerfdataCallback,
 };
 

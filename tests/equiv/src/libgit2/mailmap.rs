@@ -27,10 +27,10 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::{fs, ptr};
 
-use libgit2::libgit2::src::libgit2::mailmap::{Mailmap, MailmapBox};
-use libgit2::libgit2::src::libgit2::repository::Repository;
-use libgit2::libgit2::src::util::errors::{ErrorClass, last};
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::mailmap::{Mailmap, MailmapBox};
+use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
+use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, last};
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// Takes a `git_libgit2_init` reference that is never released.
 fn init() {
@@ -503,8 +503,8 @@ mod entries {
     use std::ffi::{CStr, c_char, c_int};
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::mailmap::{Mailmap, MailmapRef};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::mailmap::{Mailmap, MailmapRef};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use super::{MAILMAP, c_error, init};
 
@@ -678,15 +678,17 @@ mod entries {
 /// cannot carry, and a signature missing its name or email, which the wrapper refuses
 /// before libgit2's assertion (`mailmap.rs`'s unit tests).
 ///
-/// [`MailmapRef::resolve_signature`]: libgit2::libgit2::src::libgit2::mailmap::MailmapRef::resolve_signature
-/// [`SignatureView`]: libgit2::libgit2::src::libgit2::signature::SignatureView
+/// [`MailmapRef::resolve_signature`]: libgit2_crustify::libgit2::src::libgit2::mailmap::MailmapRef::resolve_signature
+/// [`SignatureView`]: libgit2_crustify::libgit2::src::libgit2::signature::SignatureView
 mod signatures {
     use std::ffi::{CStr, c_int};
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::mailmap::{Mailmap, MailmapRef};
-    use libgit2::libgit2::src::libgit2::signature::{Signature, SignatureRef, SignatureView, Time};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::mailmap::{Mailmap, MailmapRef};
+    use libgit2_crustify::libgit2::src::libgit2::signature::{
+        Signature, SignatureRef, SignatureView, Time,
+    };
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use super::{MAILMAP, c_error, init};
 

@@ -31,11 +31,11 @@ use std::mem::MaybeUninit;
 use std::{ptr, slice};
 
 use ffibox::{CRefSeam, CZeroable};
-use libgit2::libgit2::deps::reftable::basics::{
+use libgit2_crustify::libgit2::deps::reftable::basics::{
     Buf, BufRef, BufVal, Error, HASH_SIZE_MAX, HASH_SIZE_SHA1, HASH_SIZE_SHA256, HashId, NamesVec,
     ReftableArrayFree, ReftableStr, ReftableVec, binsearch, parse_names,
 };
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::sys::libgit2 as sys;
 
 #[test]
 fn hash_id_names_exactly_the_constants_of_reftable_basics_h() {

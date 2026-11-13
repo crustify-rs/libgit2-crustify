@@ -16,11 +16,11 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::SeqCst;
 use std::thread;
 
-use libgit2::libgit2::src::libgit2::object::ObjectType;
-use libgit2::libgit2::src::libgit2::settings;
-use libgit2::libgit2::src::libgit2::settings::SearchPathLevel;
-use libgit2::libgit2::src::util::alloc::{Alloc, Allocator};
-use libgit2::libgit2::src::util::errors::{ErrorBuf, ErrorClass};
+use libgit2_crustify::libgit2::src::libgit2::object::ObjectType;
+use libgit2_crustify::libgit2::src::libgit2::settings;
+use libgit2_crustify::libgit2::src::libgit2::settings::SearchPathLevel;
+use libgit2_crustify::libgit2::src::util::alloc::{Alloc, Allocator};
+use libgit2_crustify::libgit2::src::util::errors::{ErrorBuf, ErrorClass};
 
 const CHILD: &str = "CRUSTIFY_UB_UNSAFE_CHILD";
 

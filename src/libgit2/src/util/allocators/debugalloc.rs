@@ -10,7 +10,7 @@
 //! [`set_allocator`] installs it as libgit2's allocator.
 //!
 //! ```
-//! use libgit2::libgit2::src::util::alloc::Allocator;
+//! use libgit2_crustify::libgit2::src::util::alloc::Allocator;
 //!
 //! let debug = Allocator::debug();
 //! let free = debug.as_ref().free().unwrap();
@@ -24,7 +24,7 @@
 //! The value is held by the caller, and its handles borrow it:
 //!
 //! ```compile_fail,E0716
-//! use libgit2::libgit2::src::util::alloc::Allocator;
+//! use libgit2_crustify::libgit2::src::util::alloc::Allocator;
 //!
 //! let handle = Allocator::debug().as_ref();
 //! let _ = handle.malloc();

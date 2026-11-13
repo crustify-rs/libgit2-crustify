@@ -2,7 +2,7 @@
 // while they may still call it.
 use std::ffi::CStr;
 
-use libgit2::libgit2::src::libgit2::checkout::{CheckoutOptions, ProgressCallback};
+use libgit2_crustify::libgit2::src::libgit2::checkout::{CheckoutOptions, ProgressCallback};
 
 fn main() {
     let mut record = |_: Option<&CStr>, _: usize, _: usize| {};

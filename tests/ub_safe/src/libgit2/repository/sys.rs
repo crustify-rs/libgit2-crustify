@@ -25,11 +25,11 @@ mod new_options {
     use std::sync::Mutex;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::oid::OidType;
-    use libgit2::libgit2::src::libgit2::repository::{
+    use libgit2_crustify::libgit2::src::libgit2::oid::OidType;
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
         NewOptions, NewOptionsMut, NewOptionsRef, Repository,
     };
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use crate::fixture::{init, isolated};
 
@@ -310,7 +310,7 @@ mod submodule_cache {
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
 
-    use libgit2::libgit2::src::libgit2::repository::Repository;
+    use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
 
     use crate::fixture::submodule::ModulesRepo;
 

@@ -414,7 +414,7 @@ type ProgressFn<'f> = dyn FnMut(IndexerProgressRef<'_>) -> ControlFlow<()> + 'f;
 /// ```
 /// use std::ops::ControlFlow;
 ///
-/// use libgit2::libgit2::src::libgit2::indexer::{
+/// use libgit2_crustify::libgit2::src::libgit2::indexer::{
 ///     IndexerProgress, IndexerProgressRef, ProgressCallback,
 /// };
 ///

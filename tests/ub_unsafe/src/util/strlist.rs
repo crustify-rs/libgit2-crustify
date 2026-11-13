@@ -9,9 +9,11 @@
 use core::ffi::{CStr, c_char};
 use core::ptr;
 
-use libgit2::libgit2::src::util::alloc::{AllocStr, StrFree};
-use libgit2::libgit2::src::util::strlist::{NullStrList, NullStrListFree, StrList, StrListFree};
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::util::alloc::{AllocStr, StrFree};
+use libgit2_crustify::libgit2::src::util::strlist::{
+    NullStrList, NullStrListFree, StrList, StrListFree,
+};
+use libgit2_crustify::sys::libgit2 as sys;
 
 fn strs(list: &[AllocStr]) -> Vec<&CStr> {
     list.iter().map(AllocStr::as_c_str).collect()

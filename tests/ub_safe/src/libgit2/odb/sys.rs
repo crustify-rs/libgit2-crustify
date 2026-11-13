@@ -6,7 +6,7 @@ use std::ffi::{CStr, CString};
 use std::mem::{MaybeUninit, align_of};
 use std::thread;
 
-use libgit2::libgit2::src::libgit2::odb::{
+use libgit2_crustify::libgit2::src::libgit2::odb::{
     OdbDataArrayFree, OdbDataBox, OdbDataStr, OdbDataStrFree, OdbDataStrVec, OdbDataVec,
 };
 

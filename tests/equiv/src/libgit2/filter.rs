@@ -42,12 +42,12 @@ use std::path::PathBuf;
 use std::ptr::{self, NonNull};
 use std::sync::OnceLock;
 
-use libgit2::libgit2::src::libgit2::filter::{FilterList, FilterListBox};
-use libgit2::libgit2::src::libgit2::object::{Object, ObjectArc, ObjectRef, ObjectType};
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
-use libgit2::libgit2::src::util::errors::ErrorBuf;
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::filter::{FilterList, FilterListBox};
+use libgit2_crustify::libgit2::src::libgit2::object::{Object, ObjectArc, ObjectRef, ObjectType};
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
+use libgit2_crustify::libgit2::src::util::errors::ErrorBuf;
+use libgit2_crustify::sys::libgit2 as sys;
 
 const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 

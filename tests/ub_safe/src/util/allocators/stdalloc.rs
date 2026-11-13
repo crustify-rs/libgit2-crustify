@@ -7,8 +7,8 @@
 use std::sync::Barrier;
 use std::thread;
 
-use libgit2::libgit2::src::util::alloc::Allocator;
-use libgit2::libgit2::src::util::allocators::stdalloc;
+use libgit2_crustify::libgit2::src::util::alloc::Allocator;
+use libgit2_crustify::libgit2::src::util::allocators::stdalloc;
 
 /// The members' addresses, the only part of a value safe code can observe beyond calling them.
 fn members(a: Allocator) -> [usize; 3] {

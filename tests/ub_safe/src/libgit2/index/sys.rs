@@ -7,9 +7,9 @@ mod reuc;
 
 use std::ffi::CString;
 
-use libgit2::libgit2::src::libgit2::index::Index;
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-use libgit2::libgit2::src::util::errors::ErrorClass;
+use libgit2_crustify::libgit2::src::libgit2::index::Index;
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+use libgit2_crustify::libgit2::src::util::errors::ErrorClass;
 use reuc::{IndexFile, Record, extension_bytes, snapshot, sorted};
 
 use crate::fixture::index::{add_reuc, clear_reuc, remove_reuc, set_ignore_case};

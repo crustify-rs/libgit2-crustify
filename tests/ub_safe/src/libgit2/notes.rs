@@ -1,10 +1,10 @@
 //! The safe note-iterator lifecycle: C-owned tree references and repository borrows.
 #![forbid(unsafe_code)]
-use libgit2::libgit2::src::libgit2::blob;
-use libgit2::libgit2::src::libgit2::commit::Commit;
-use libgit2::libgit2::src::libgit2::iterator::NoteIterator;
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-use libgit2::libgit2::src::libgit2::repository::Repository;
+use libgit2_crustify::libgit2::src::libgit2::blob;
+use libgit2_crustify::libgit2::src::libgit2::commit::Commit;
+use libgit2_crustify::libgit2::src::libgit2::iterator::NoteIterator;
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
 
 #[test]
 #[cfg_attr(miri, ignore = "calls libgit2")]
@@ -55,7 +55,7 @@ fn independent_iterators_on_threads() {
 #[test]
 #[cfg_attr(miri, ignore = "calls libgit2")]
 fn non_commit_targets_are_refused() {
-    use libgit2::libgit2::src::util::errors::ErrorCode;
+    use libgit2_crustify::libgit2::src::util::errors::ErrorCode;
     let path = std::env::temp_dir().join(format!("crustify-ub-notes-{}", std::process::id()));
     drop(std::fs::remove_dir_all(&path));
     let cpath = std::ffi::CString::new(path.to_str().unwrap()).unwrap();

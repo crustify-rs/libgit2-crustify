@@ -32,11 +32,11 @@ use std::sync::atomic::Ordering::SeqCst;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 
 use ffibox::CZeroable;
-use libgit2::libgit2::src::libgit2::odb::OdbDataStrFree;
-use libgit2::libgit2::src::util::alloc::{
+use libgit2_crustify::libgit2::src::libgit2::odb::OdbDataStrFree;
+use libgit2_crustify::libgit2::src::util::alloc::{
     Alloc, AllocBox, AllocStr, AllocVec, Allocator, ArrayFree, FreeFn, MallocFn, ReallocFn, StrFree,
 };
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::sys::libgit2 as sys;
 
 const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 
@@ -1183,10 +1183,10 @@ mod resizes {
     use std::mem::MaybeUninit;
     use std::ptr::{self, NonNull};
 
-    use libgit2::libgit2::src::libgit2::settings::set_allocator;
-    use libgit2::libgit2::src::util::alloc::{Alloc, AllocVec, Allocator, ArrayFree};
-    use libgit2::libgit2::src::util::errors;
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::settings::set_allocator;
+    use libgit2_crustify::libgit2::src::util::alloc::{Alloc, AllocVec, Allocator, ArrayFree};
+    use libgit2_crustify::libgit2::src::util::errors;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use super::isolated;
 
@@ -1404,10 +1404,10 @@ mod resizes {
 // failing one, leaves storage alone, so each may replace any other.
 
 mod installed {
-    use libgit2::libgit2::src::libgit2::settings::set_allocator;
-    use libgit2::libgit2::src::util::alloc::{Allocator, global_init, installed};
-    use libgit2::libgit2::src::util::allocators::failalloc::FailAlloc;
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::settings::set_allocator;
+    use libgit2_crustify::libgit2::src::util::alloc::{Allocator, global_init, installed};
+    use libgit2_crustify::libgit2::src::util::allocators::failalloc::FailAlloc;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use super::isolated;
 

@@ -28,10 +28,10 @@ use std::path::PathBuf;
 use std::{fs, ptr};
 
 use ffibox::CZeroable;
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-use libgit2::libgit2::src::libgit2::refs::{ReferenceBox, UnattachedReference};
-use libgit2::libgit2::src::libgit2::repository::{InitFlag, InitOptions, Repository};
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+use libgit2_crustify::libgit2::src::libgit2::refs::{ReferenceBox, UnattachedReference};
+use libgit2_crustify::libgit2::src::libgit2::repository::{InitFlag, InitOptions, Repository};
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// Initialises libgit2; never released.
 fn init() {

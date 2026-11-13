@@ -1,7 +1,7 @@
 // A blob, and every clone or copy of it, reads its repository: none outlives it.
-use {libgit2::libgit2::src::libgit2::blob::Blob, libgit2::libgit2::src::libgit2::blob::BlobArc};
-use {libgit2::libgit2::src::libgit2::oid::Oid, libgit2::libgit2::src::libgit2::oid::OidType};
-use libgit2::libgit2::src::libgit2::repository::Repository;
+use {libgit2_crustify::libgit2::src::libgit2::blob::Blob, libgit2_crustify::libgit2::src::libgit2::blob::BlobArc};
+use {libgit2_crustify::libgit2::src::libgit2::oid::Oid, libgit2_crustify::libgit2::src::libgit2::oid::OidType};
+use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
 
 fn copies() -> (BlobArc<'static>, BlobArc<'static>) {
     let repo = Repository::open(c".").unwrap();

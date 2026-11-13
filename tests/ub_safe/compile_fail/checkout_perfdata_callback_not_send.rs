@@ -2,7 +2,7 @@
 // synchronously, on the thread running the checkout, and the closure need not be `Send`.
 use std::thread;
 
-use libgit2::libgit2::src::libgit2::checkout::{CheckoutPerfdataRef, PerfdataCallback};
+use libgit2_crustify::libgit2::src::libgit2::checkout::{CheckoutPerfdataRef, PerfdataCallback};
 
 fn main() {
     let mut f = |_: CheckoutPerfdataRef<'_>| {};

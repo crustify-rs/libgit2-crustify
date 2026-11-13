@@ -7,8 +7,8 @@
 
 use std::ffi::CString;
 
-use libgit2::libgit2::src::libgit2::index::{Index, IndexArc};
-use libgit2::libgit2::src::libgit2::repository::Repository;
+use libgit2_crustify::libgit2::src::libgit2::index::{Index, IndexArc};
+use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
 
 use super::Scratch;
 use crate::fixture::{init, isolated};

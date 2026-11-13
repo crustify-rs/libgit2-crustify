@@ -20,10 +20,10 @@ mod sys;
 use std::sync::Barrier;
 use std::thread;
 
-use libgit2::libgit2::src::libgit2::commit::{
+use libgit2_crustify::libgit2::src::libgit2::commit::{
     CommitArray, CommitArrayRef, CommitArrayVal, CommitRef,
 };
-use libgit2::libgit2::src::libgit2::config::Config;
+use libgit2_crustify::libgit2::src::libgit2::config::Config;
 
 use crate::fixture::commit_and_config::{EMPTY, MERGEDREPO, OpenRepo, TESTREPO, commit_parents};
 use crate::fixture::isolated;
@@ -228,7 +228,7 @@ mod header {
     use std::sync::Mutex;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::commit::{Header, HeaderMut, HeaderRef};
+    use libgit2_crustify::libgit2::src::libgit2::commit::{Header, HeaderMut, HeaderRef};
 
     static STATIC: Header<'static> = Header::new(c"static", c"header");
 
@@ -377,12 +377,14 @@ mod header {
 mod commit {
     use std::ffi::CString;
 
-    use libgit2::libgit2::src::libgit2::commit::{Commit, CommitArc, CommitArray, CommitRef};
-    use libgit2::libgit2::src::libgit2::object::{Object, ObjectArc, ObjectType};
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryError};
-    use libgit2::libgit2::src::libgit2::tree::Tree;
-    use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+    use libgit2_crustify::libgit2::src::libgit2::commit::{
+        Commit, CommitArc, CommitArray, CommitRef,
+    };
+    use libgit2_crustify::libgit2::src::libgit2::object::{Object, ObjectArc, ObjectType};
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryError};
+    use libgit2_crustify::libgit2::src::libgit2::tree::Tree;
+    use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, ErrorCode};
 
     use super::commit_id;
     use crate::fixture::object_and_tree_entry::{object_view, open_testrepo};
@@ -525,7 +527,10 @@ mod commit {
         let as_object: ObjectArc<'_> = commit.as_ref().as_object().to_object();
         assert_eq!(
             object_view(&as_object),
-            (COMMITS[1].into(), libgit2::sys::libgit2::GIT_OBJECT_COMMIT)
+            (
+                COMMITS[1].into(),
+                libgit2_crustify::sys::libgit2::GIT_OBJECT_COMMIT
+            )
         );
         let back = Commit::into_object(commit);
         drop(from_view);
@@ -619,7 +624,7 @@ mod commit {
         drop(derived);
         assert_eq!(
             object_view(&Tree::into_object(tree)).1,
-            libgit2::sys::libgit2::GIT_OBJECT_TREE
+            libgit2_crustify::sys::libgit2::GIT_OBJECT_TREE
         );
     }
 
@@ -691,10 +696,10 @@ mod commit {
 mod getters {
     use std::ffi::{CStr, CString};
 
-    use libgit2::libgit2::src::libgit2::commit::{Commit, CommitArc, CommitArray};
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode};
-    use libgit2::sys::libgit2 as raw;
+    use libgit2_crustify::libgit2::src::libgit2::commit::{Commit, CommitArc, CommitArray};
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+    use libgit2_crustify::sys::libgit2 as raw;
 
     use crate::fixture::TempRepo;
     use crate::fixture::object_and_tree_entry::{open_testrepo, repository, write_raw};
@@ -910,7 +915,7 @@ mod getters {
 mod create_ext_options {
     use std::ffi::{CStr, CString};
 
-    use libgit2::libgit2::src::libgit2::commit::{
+    use libgit2_crustify::libgit2::src::libgit2::commit::{
         CreateExtOptions, CreateExtOptionsMut, CreateExtOptionsRef, Header,
     };
 
@@ -1053,18 +1058,18 @@ mod create_options {
     use std::panic::{AssertUnwindSafe, catch_unwind};
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::commit::{
+    use libgit2_crustify::libgit2::src::libgit2::commit::{
         Commit, CommitBuilderMut, CreateOptions, CreateOptionsMut, CreateOptionsRef, Header,
         SignatureCallback, amend_from_tree, create_from_tree,
     };
-    use libgit2::libgit2::src::libgit2::filter::StreamError;
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::RepositoryRef;
-    use libgit2::libgit2::src::libgit2::signature::{
+    use libgit2_crustify::libgit2::src::libgit2::filter::StreamError;
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::RepositoryRef;
+    use libgit2_crustify::libgit2::src::libgit2::signature::{
         Signature, SignatureBox, SignatureRef, SignatureView, Time,
     };
-    use libgit2::libgit2::src::libgit2::tree::{Tree, TreeArc};
-    use libgit2::libgit2::src::util::errors::ErrorCode;
+    use libgit2_crustify::libgit2::src::libgit2::tree::{Tree, TreeArc};
+    use libgit2_crustify::libgit2::src::util::errors::ErrorCode;
 
     use crate::fixture::object_and_tree_entry::repository;
     use crate::fixture::{TempRepo, isolated};
@@ -1373,7 +1378,7 @@ mod create_options {
                         assert!(!content.to_bytes().windows(6).any(|w| w == b"gpgsig"));
                         match calls.get() {
                             3 => Err(StreamError::new(
-                                libgit2::libgit2::src::util::errors::ErrorClass::Callback,
+                                libgit2_crustify::libgit2::src::util::errors::ErrorClass::Callback,
                                 c"refused",
                             )
                             .with_code(ErrorCode::Ambiguous)),
@@ -1472,16 +1477,18 @@ mod committing_on_head {
     use std::ffi::{CStr, CString};
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::blob::create_from_buffer;
-    use libgit2::libgit2::src::libgit2::commit::{
+    use libgit2_crustify::libgit2::src::libgit2::blob::create_from_buffer;
+    use libgit2_crustify::libgit2::src::libgit2::commit::{
         CommitBuilderMut, CreateOptions, Header, SignatureCallback, amend_from_stage,
         amend_from_tree, create_from_stage, create_from_tree,
     };
-    use libgit2::libgit2::src::libgit2::filter::StreamError;
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryError, RepositoryRef};
-    use libgit2::libgit2::src::libgit2::signature::{SignatureView, Time};
-    use libgit2::libgit2::src::libgit2::tree::{FileMode, Tree, TreeArc, TreeBuilder};
-    use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+    use libgit2_crustify::libgit2::src::libgit2::filter::StreamError;
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
+        Repository, RepositoryError, RepositoryRef,
+    };
+    use libgit2_crustify::libgit2::src::libgit2::signature::{SignatureView, Time};
+    use libgit2_crustify::libgit2::src::libgit2::tree::{FileMode, Tree, TreeArc, TreeBuilder};
+    use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, ErrorCode};
 
     use super::create_options::{empty_tree, text};
     use crate::fixture::object_and_tree_entry::repository;
@@ -1707,11 +1714,13 @@ mod signatures {
     use std::ffi::{CStr, CString};
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::commit::{create_with_signature, extract_signature};
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::Repository;
-    use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode};
-    use libgit2::sys::libgit2 as raw;
+    use libgit2_crustify::libgit2::src::libgit2::commit::{
+        create_with_signature, extract_signature,
+    };
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
+    use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+    use libgit2_crustify::sys::libgit2 as raw;
 
     use crate::fixture::TempRepo;
     use crate::fixture::object_and_tree_entry::{repository, write_raw};
@@ -1881,12 +1890,12 @@ mod signers {
     use std::panic::{AssertUnwindSafe, catch_unwind};
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::commit::{
+    use libgit2_crustify::libgit2::src::libgit2::commit::{
         CommitBuilderMut, CreateExtOptions, Header, SignatureCallback,
     };
-    use libgit2::libgit2::src::libgit2::filter::StreamError;
-    use libgit2::libgit2::src::libgit2::repository::RepositoryRef;
-    use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+    use libgit2_crustify::libgit2::src::libgit2::filter::StreamError;
+    use libgit2_crustify::libgit2::src::libgit2::repository::RepositoryRef;
+    use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, ErrorCode};
 
     use crate::fixture::TempRepo;
     use crate::fixture::create_ext::create;
@@ -2078,11 +2087,11 @@ mod reading {
     use std::ffi::{CStr, CString};
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::commit::{Commit, CommitRef, create};
-    use libgit2::libgit2::src::libgit2::mailmap::Mailmap;
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::signature::{SignatureRef, SignatureView, Time};
-    use libgit2::libgit2::src::libgit2::tree::Tree;
+    use libgit2_crustify::libgit2::src::libgit2::commit::{Commit, CommitRef, create};
+    use libgit2_crustify::libgit2::src::libgit2::mailmap::Mailmap;
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::signature::{SignatureRef, SignatureView, Time};
+    use libgit2_crustify::libgit2::src::libgit2::tree::Tree;
 
     use crate::fixture::TempRepo;
     use crate::fixture::object_and_tree_entry::repository;
@@ -2334,14 +2343,14 @@ mod creating {
     use std::ffi::{CStr, CString};
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::commit::{
+    use libgit2_crustify::libgit2::src::libgit2::commit::{
         Commit, CommitArc, CommitRef, CreateExtOptions, Header, MAX_ARRAY_PARENTS, create,
         create_buffer, create_ext, create_from_array,
     };
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::signature::{SignatureView, Time};
-    use libgit2::libgit2::src::libgit2::tree::Tree;
-    use libgit2::libgit2::src::util::errors::ErrorClass;
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::signature::{SignatureView, Time};
+    use libgit2_crustify::libgit2::src::libgit2::tree::Tree;
+    use libgit2_crustify::libgit2::src::util::errors::ErrorClass;
 
     use super::reading::EMPTY_TREE;
     use crate::fixture::object_and_tree_entry::repository;
@@ -2699,12 +2708,14 @@ mod create_callback {
     use std::ffi::{CStr, CString};
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
-    use libgit2::libgit2::src::libgit2::commit::{Commit, CommitRef, CreateCallback, create};
-    use libgit2::libgit2::src::libgit2::filter::StreamError;
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::signature::{SignatureRef, SignatureView, Time};
-    use libgit2::libgit2::src::libgit2::tree::{Tree, TreeRef};
-    use libgit2::libgit2::src::util::errors::ErrorClass;
+    use libgit2_crustify::libgit2::src::libgit2::commit::{
+        Commit, CommitRef, CreateCallback, create,
+    };
+    use libgit2_crustify::libgit2::src::libgit2::filter::StreamError;
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::signature::{SignatureRef, SignatureView, Time};
+    use libgit2_crustify::libgit2::src::libgit2::tree::{Tree, TreeRef};
+    use libgit2_crustify::libgit2::src::util::errors::ErrorClass;
 
     use super::reading::EMPTY_TREE;
     use crate::fixture::TempRepo;

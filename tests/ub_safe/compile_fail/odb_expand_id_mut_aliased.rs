@@ -1,7 +1,7 @@
 // The id lent in place by `id_mut` borrows the query exclusively: no other handle to the query
 // coexists with it.
 use ffibox::CZeroable;
-use libgit2::libgit2::src::libgit2::odb::OdbExpandId;
+use libgit2_crustify::libgit2::src::libgit2::odb::OdbExpandId;
 
 fn main() {
     let mut query = OdbExpandId::zeroed();

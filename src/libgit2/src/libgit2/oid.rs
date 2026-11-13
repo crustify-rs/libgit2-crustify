@@ -785,7 +785,7 @@ impl OidMut<'_> {
     ///
     /// ```compile_fail,E0502
     /// use ffibox::CZeroable;
-    /// use libgit2::libgit2::src::libgit2::oid::Oid;
+    /// use libgit2_crustify::libgit2::src::libgit2::oid::Oid;
     ///
     /// let mut oid = Oid::zeroed();
     /// let src = oid.as_ref();
@@ -817,7 +817,7 @@ impl OidMut<'_> {
 /// shrunk to accept a shorter-lived string than its owner was built for:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::oid::OidShortenerMut;
+/// use libgit2_crustify::libgit2::src::libgit2::oid::OidShortenerMut;
 ///
 /// fn shrink<'a, 's>(m: OidShortenerMut<'a, 'static>) -> OidShortenerMut<'a, 's> {
 ///     m

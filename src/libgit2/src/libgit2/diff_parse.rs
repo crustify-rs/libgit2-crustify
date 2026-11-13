@@ -103,8 +103,8 @@ define_ctype!(
     /// [`Diff::from_buffer_with_options`]:
     ///
     /// ```
-    /// use libgit2::libgit2::src::libgit2::diff_parse::DiffParseOptions;
-    /// use libgit2::libgit2::src::libgit2::oid::OidType;
+    /// use libgit2_crustify::libgit2::src::libgit2::diff_parse::DiffParseOptions;
+    /// use libgit2_crustify::libgit2::src::libgit2::oid::OidType;
     ///
     /// let mut opts = DiffParseOptions::new();
     /// assert_eq!(opts.as_ref().oid_type(), None);
@@ -122,7 +122,7 @@ define_ctype!(
     /// A handle borrows the value, so it cannot outlive it:
     ///
     /// ```compile_fail,E0597
-    /// use libgit2::libgit2::src::libgit2::diff_parse::DiffParseOptions;
+    /// use libgit2_crustify::libgit2::src::libgit2::diff_parse::DiffParseOptions;
     ///
     /// let handle = {
     ///     let opts = DiffParseOptions::new();
@@ -134,7 +134,7 @@ define_ctype!(
     /// and the shared handle only reads:
     ///
     /// ```compile_fail,E0599
-    /// use libgit2::libgit2::src::libgit2::diff_parse::DiffParseOptions;
+    /// use libgit2_crustify::libgit2::src::libgit2::diff_parse::DiffParseOptions;
     ///
     /// let opts = DiffParseOptions::new();
     /// opts.as_ref().set_oid_type(None);

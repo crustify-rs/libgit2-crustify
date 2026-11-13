@@ -8,15 +8,17 @@
 use std::ffi::{CStr, CString};
 
 use ffibox::CZeroable;
-use libgit2::libgit2::src::libgit2::blob::create_from_buffer;
-use libgit2::libgit2::src::libgit2::index::{
+use libgit2_crustify::libgit2::src::libgit2::blob::create_from_buffer;
+use libgit2_crustify::libgit2::src::libgit2::index::{
     ConflictIterator, EntryExtendedFlags, EntryFlags, Index, IndexArc, IndexBox, IndexEntry,
     IndexEntryBuf, IndexIterator, Stage,
 };
-use libgit2::libgit2::src::libgit2::object::ObjectType;
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox, RepositoryRef};
-use libgit2::libgit2::src::libgit2::tree::{FileMode, Tree, TreeArc, TreeBuilder};
+use libgit2_crustify::libgit2::src::libgit2::object::ObjectType;
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+use libgit2_crustify::libgit2::src::libgit2::repository::{
+    Repository, RepositoryBox, RepositoryRef,
+};
+use libgit2_crustify::libgit2::src::libgit2::tree::{FileMode, Tree, TreeArc, TreeBuilder};
 
 use super::{Scratch, c_path};
 use crate::fixture::index::isolated_tolerating_leaks;
@@ -311,7 +313,7 @@ fn tree_reads_free_previous_contents_once() {
 
     // A SHA-256 repository's tree, into a SHA-1 index and a SHA-256 one.
     let sha256_dir = Scratch::new("entries-read-tree-256");
-    let mut opts = libgit2::libgit2::src::libgit2::repository::InitOptions::new();
+    let mut opts = libgit2_crustify::libgit2::src::libgit2::repository::InitOptions::new();
     opts.as_mut().set_oid_type(Some(OidType::Sha256));
     let sha256 = Repository::init_ext(&c_path(&sha256_dir.0), opts.as_mut()).unwrap();
     let foreign = tree(sha256.as_ref(), &["a", "k/l"]);

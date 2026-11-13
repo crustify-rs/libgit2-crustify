@@ -13,8 +13,8 @@ use core::ffi::{CStr, c_char};
 use core::ptr::{self, NonNull};
 
 use ffibox::CDrop;
-use libgit2::libgit2::src::util::alloc::{Alloc, Allocator};
-use libgit2::libgit2::src::util::allocators::failalloc::FailAlloc;
+use libgit2_crustify::libgit2::src::util::alloc::{Alloc, Allocator};
+use libgit2_crustify::libgit2::src::util::allocators::failalloc::FailAlloc;
 
 /// The `git_allocator` over the family: C's three routines.
 static FAIL: Allocator = Allocator::new::<FailAlloc>();
@@ -68,7 +68,7 @@ mod c_drop {
 
 mod c_drop_len {
     use ffibox::CLenDrop;
-    use libgit2::libgit2::src::util::allocators::failalloc::FailArrayAlloc;
+    use libgit2_crustify::libgit2::src::util::allocators::failalloc::FailArrayAlloc;
 
     #[test]
     #[cfg_attr(miri, ignore = "calls C")]

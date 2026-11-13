@@ -258,7 +258,7 @@ use crate::sys::libgit2 as sys;
 /// than the borrow (see the [module docs](self#commits)). The lifetime only shrinks:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::commit::CommitArc;
+/// use libgit2_crustify::libgit2::src::libgit2::commit::CommitArc;
 ///
 /// fn widen<'r>(commit: CommitArc<'r>) -> CommitArc<'static> {
 ///     commit
@@ -268,7 +268,7 @@ use crate::sys::libgit2 as sys;
 /// and a commit stays on the thread that looked it up:
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::commit::CommitArc;
+/// use libgit2_crustify::libgit2::src::libgit2::commit::CommitArc;
 ///
 /// fn send<T: Send>(_: T) {}
 /// fn move_out(commit: CommitArc<'static>) {
@@ -286,7 +286,7 @@ pub struct Commit<'r>(sys::git_commit, PhantomData<(*const (), &'r ())>);
 /// It stays on the thread of the commit's repository, as the owner does:
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::commit::CommitRef;
+/// use libgit2_crustify::libgit2::src::libgit2::commit::CommitRef;
 ///
 /// fn send<T: Send>(_: T) {}
 /// fn move_out(handle: CommitRef<'static, 'static>) {
@@ -339,9 +339,9 @@ impl<'a, 'r> CommitRef<'a, 'r> {
     /// but not the repository.
     ///
     /// ```compile_fail,E0505
-    /// # use libgit2::libgit2::src::libgit2::commit::Commit;
-    /// # use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    /// # use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// # use libgit2_crustify::libgit2::src::libgit2::commit::Commit;
+    /// # use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    /// # use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     /// let repo = Repository::open(c".").unwrap();
     /// let id = Oid::zero(OidType::Sha1);
     /// let commit = Commit::lookup(repo.as_ref(), id.as_ref()).unwrap();
@@ -403,9 +403,9 @@ impl<'a, 'r> CommitRef<'a, 'r> {
     /// does, but may outlive this handle and the commit's owner.
     ///
     /// ```compile_fail,E0505
-    /// # use libgit2::libgit2::src::libgit2::commit::Commit;
-    /// # use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    /// # use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// # use libgit2_crustify::libgit2::src::libgit2::commit::Commit;
+    /// # use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    /// # use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     /// let repo = Repository::open(c".").unwrap();
     /// let id = Oid::zero(OidType::Sha1);
     /// let commit = Commit::lookup(repo.as_ref(), id.as_ref()).unwrap();
@@ -494,9 +494,9 @@ impl<'a, 'r> CommitRef<'a, 'r> {
     /// does, but may outlive this handle and the commit's owner.
     ///
     /// ```compile_fail,E0505
-    /// # use libgit2::libgit2::src::libgit2::commit::Commit;
-    /// # use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    /// # use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// # use libgit2_crustify::libgit2::src::libgit2::commit::Commit;
+    /// # use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    /// # use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     /// let repo = Repository::open(c".").unwrap();
     /// let id = Oid::zero(OidType::Sha1);
     /// let commit = Commit::lookup(repo.as_ref(), id.as_ref()).unwrap();
@@ -541,9 +541,9 @@ impl<'a, 'r> CommitRef<'a, 'r> {
     /// commit, as no string a getter returns can:
     ///
     /// ```compile_fail,E0505
-    /// # use libgit2::libgit2::src::libgit2::commit::Commit;
-    /// # use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    /// # use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// # use libgit2_crustify::libgit2::src::libgit2::commit::Commit;
+    /// # use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    /// # use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     /// let repo = Repository::open(c".").unwrap();
     /// let id = Oid::zero(OidType::Sha1);
     /// let commit = Commit::lookup(repo.as_ref(), id.as_ref()).unwrap();
@@ -845,9 +845,9 @@ impl<'a> CommitRef<'a, '_> {
     /// The signature lives no longer than the commit's borrow:
     ///
     /// ```compile_fail,E0505
-    /// # use libgit2::libgit2::src::libgit2::commit::Commit;
-    /// # use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    /// # use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// # use libgit2_crustify::libgit2::src::libgit2::commit::Commit;
+    /// # use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    /// # use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     /// let repo = Repository::open(c".").unwrap();
     /// let id = Oid::zero(OidType::Sha1);
     /// let commit = Commit::lookup(repo.as_ref(), id.as_ref()).unwrap();
@@ -988,7 +988,7 @@ impl<'a> CommitRef<'a, '_> {
 /// no copy routine.
 ///
 /// ```compile_fail,E0599
-/// use {libgit2::libgit2::src::libgit2::commit::CommitArray, libgit2::libgit2::src::libgit2::commit::CommitArrayVal};
+/// use {libgit2_crustify::libgit2::src::libgit2::commit::CommitArray, libgit2_crustify::libgit2::src::libgit2::commit::CommitArrayVal};
 ///
 /// let array: CommitArrayVal<'static> = CommitArray::new();
 /// let copy: CommitArrayVal<'static> = array.clone();
@@ -997,7 +997,7 @@ impl<'a> CommitRef<'a, '_> {
 /// Nor `Send`: the commits it owns are not.
 ///
 /// ```compile_fail,E0277
-/// use {libgit2::libgit2::src::libgit2::commit::CommitArray, libgit2::libgit2::src::libgit2::commit::CommitArrayVal};
+/// use {libgit2_crustify::libgit2::src::libgit2::commit::CommitArray, libgit2_crustify::libgit2::src::libgit2::commit::CommitArrayVal};
 ///
 /// let array: CommitArrayVal<'static> = CommitArray::new();
 /// std::thread::spawn(move || drop(array));
@@ -1008,7 +1008,7 @@ impl<'a> CommitRef<'a, '_> {
 /// commits in, is invariant in it:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::commit::CommitArrayMut;
+/// use libgit2_crustify::libgit2::src::libgit2::commit::CommitArrayMut;
 ///
 /// fn shrink<'a, 'r>(m: CommitArrayMut<'a, 'static>) -> CommitArrayMut<'a, 'r> {
 ///     m
@@ -1213,7 +1213,7 @@ impl<'a, 'r> CommitArrayRef<'a, 'r> {
     /// its own.
     ///
     /// ```compile_fail,E0505
-    /// use {libgit2::libgit2::src::libgit2::commit::CommitArray, libgit2::libgit2::src::libgit2::commit::CommitArrayVal};
+    /// use {libgit2_crustify::libgit2::src::libgit2::commit::CommitArray, libgit2_crustify::libgit2::src::libgit2::commit::CommitArrayVal};
     ///
     /// let array: CommitArrayVal<'static> = CommitArray::new();
     /// let first = array.as_ref().get(0);
@@ -1321,7 +1321,7 @@ impl<'r> CommitArrayMut<'_, 'r> {
     /// The commits must be of the array's own repository borrow `'r`:
     ///
     /// ```compile_fail,E0521
-    /// use {libgit2::libgit2::src::libgit2::commit::CommitArc, libgit2::libgit2::src::libgit2::commit::CommitArrayMut};
+    /// use {libgit2_crustify::libgit2::src::libgit2::commit::CommitArc, libgit2_crustify::libgit2::src::libgit2::commit::CommitArrayMut};
     ///
     /// fn store<'r>(mut array: CommitArrayMut<'_, 'static>, commit: CommitArc<'r>) {
     ///     let _ = array.set_commits(vec![commit]);
@@ -1431,7 +1431,7 @@ define_ctype!(
     /// is no public way to make one.
     ///
     /// ```compile_fail,E0624
-    /// use libgit2::libgit2::src::libgit2::commit::CommitBuilderMut;
+    /// use libgit2_crustify::libgit2::src::libgit2::commit::CommitBuilderMut;
     ///
     /// let mut slot = 0u64;
     /// let _ = unsafe { CommitBuilderMut::from_ptr(core::ptr::from_mut(&mut slot).cast()) };
@@ -1440,7 +1440,7 @@ define_ctype!(
     /// The exclusive handle does not alias, as `&mut` does not:
     ///
     /// ```compile_fail,E0499
-    /// use libgit2::libgit2::src::libgit2::commit::CommitBuilderMut;
+    /// use libgit2_crustify::libgit2::src::libgit2::commit::CommitBuilderMut;
     ///
     /// fn alias(mut builder: CommitBuilderMut<'_>) {
     ///     let a = builder.as_mut();
@@ -1452,7 +1452,7 @@ define_ctype!(
     /// and stays on the thread writing the commit:
     ///
     /// ```compile_fail,E0277
-    /// use libgit2::libgit2::src::libgit2::commit::CommitBuilderMut;
+    /// use libgit2_crustify::libgit2::src::libgit2::commit::CommitBuilderMut;
     ///
     /// fn send<T: Send>(_: T) {}
     /// fn move_out(builder: CommitBuilderMut<'_>) {
@@ -1548,9 +1548,9 @@ type SignFn<'f> =
 /// The handles cannot outlive the call:
 ///
 /// ```compile_fail,E0521
-/// use libgit2::libgit2::src::libgit2::filter::StreamError;
-/// use {libgit2::libgit2::src::libgit2::commit::CommitBuilderMut, libgit2::libgit2::src::libgit2::commit::SignatureCallback};
-/// use libgit2::libgit2::src::libgit2::repository::RepositoryRef;
+/// use libgit2_crustify::libgit2::src::libgit2::filter::StreamError;
+/// use {libgit2_crustify::libgit2::src::libgit2::commit::CommitBuilderMut, libgit2_crustify::libgit2::src::libgit2::commit::SignatureCallback};
+/// use libgit2_crustify::libgit2::src::libgit2::repository::RepositoryRef;
 ///
 /// fn keep<'k>(kept: &mut Option<CommitBuilderMut<'k>>) {
 ///     let mut f = |builder: CommitBuilderMut<'_>, _: RepositoryRef<'_>, _: &core::ffi::CStr| {
@@ -1565,9 +1565,9 @@ type SignFn<'f> =
 /// synchronously, and the closure need not be `Send`.
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::filter::StreamError;
-/// use {libgit2::libgit2::src::libgit2::commit::CommitBuilderMut, libgit2::libgit2::src::libgit2::commit::SignatureCallback};
-/// use libgit2::libgit2::src::libgit2::repository::RepositoryRef;
+/// use libgit2_crustify::libgit2::src::libgit2::filter::StreamError;
+/// use {libgit2_crustify::libgit2::src::libgit2::commit::CommitBuilderMut, libgit2_crustify::libgit2::src::libgit2::commit::SignatureCallback};
+/// use libgit2_crustify::libgit2::src::libgit2::repository::RepositoryRef;
 ///
 /// fn send<T: Send>(_: T) {}
 /// let mut f = |_: CommitBuilderMut<'_>, _: RepositoryRef<'_>, _: &core::ffi::CStr| Ok::<(), StreamError>(());
@@ -1888,11 +1888,11 @@ fn creatable(
 ///
 /// ```
 /// # if cfg!(miri) { return; }
-/// use libgit2::libgit2::src::libgit2::commit::{Commit, create};
-/// use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-/// use libgit2::libgit2::src::libgit2::repository::Repository;
-/// use libgit2::libgit2::src::libgit2::signature::{SignatureView, Time};
-/// use libgit2::libgit2::src::libgit2::tree::Tree;
+/// use libgit2_crustify::libgit2::src::libgit2::commit::{Commit, create};
+/// use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+/// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
+/// use libgit2_crustify::libgit2::src::libgit2::signature::{SignatureView, Time};
+/// use libgit2_crustify::libgit2::src::libgit2::tree::Tree;
 ///
 /// let dir = std::env::temp_dir().join(format!("commit-create-doc-{}", std::process::id()));
 /// let path = std::ffi::CString::new(dir.to_str().unwrap()).unwrap();
@@ -1991,7 +1991,7 @@ pub const MAX_ARRAY_PARENTS: usize = 16;
 /// More parents than that do not compile:
 ///
 /// ```compile_fail,E0080
-/// use libgit2::libgit2::src::libgit2::commit::create_from_array;
+/// use libgit2_crustify::libgit2::src::libgit2::commit::create_from_array;
 ///
 /// let octopus = create_from_array::<17>;
 /// # let _ = octopus as fn(_, _, _, _, _, _, _, _) -> _;
@@ -2402,10 +2402,12 @@ fn commit_on_head<'r>(
 ///
 /// ```
 /// # if cfg!(miri) { return; }
-/// use libgit2::libgit2::src::libgit2::commit::{Commit, CreateOptions, create_from_stage};
-/// use libgit2::libgit2::src::libgit2::repository::Repository;
-/// use libgit2::libgit2::src::libgit2::signature::{SignatureView, Time};
-/// use libgit2::libgit2::src::util::errors::ErrorCode;
+/// use libgit2_crustify::libgit2::src::libgit2::commit::{
+///     Commit, CreateOptions, create_from_stage,
+/// };
+/// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
+/// use libgit2_crustify::libgit2::src::libgit2::signature::{SignatureView, Time};
+/// use libgit2_crustify::libgit2::src::util::errors::ErrorCode;
 ///
 /// let dir = std::env::temp_dir().join(format!("commit-stage-doc-{}", std::process::id()));
 /// let path = std::ffi::CString::new(dir.to_str().unwrap()).unwrap();
@@ -2639,13 +2641,13 @@ pub fn amend_from_stage(
 ///
 /// ```
 /// # if cfg!(miri) { return; }
-/// use libgit2::libgit2::src::libgit2::commit::{
+/// use libgit2_crustify::libgit2::src::libgit2::commit::{
 ///     Commit, CreateOptions, amend_from_tree, create_from_tree,
 /// };
-/// use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-/// use libgit2::libgit2::src::libgit2::repository::Repository;
-/// use libgit2::libgit2::src::libgit2::signature::{SignatureView, Time};
-/// use libgit2::libgit2::src::libgit2::tree::Tree;
+/// use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+/// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
+/// use libgit2_crustify::libgit2::src::libgit2::signature::{SignatureView, Time};
+/// use libgit2_crustify::libgit2::src::libgit2::tree::Tree;
 ///
 /// let dir = std::env::temp_dir().join(format!("commit-amend-doc-{}", std::process::id()));
 /// let path = std::ffi::CString::new(dir.to_str().unwrap()).unwrap();
@@ -2738,11 +2740,11 @@ type CreateFn<'f> = dyn for<'c> FnMut(
 ///
 /// ```
 /// # if cfg!(miri) { return; }
-/// use libgit2::libgit2::src::libgit2::commit::{CommitRef, CreateCallback};
-/// use libgit2::libgit2::src::libgit2::filter::StreamError;
-/// use libgit2::libgit2::src::libgit2::oid::Oid;
-/// use libgit2::libgit2::src::libgit2::signature::SignatureRef;
-/// use libgit2::libgit2::src::libgit2::tree::TreeRef;
+/// use libgit2_crustify::libgit2::src::libgit2::commit::{CommitRef, CreateCallback};
+/// use libgit2_crustify::libgit2::src::libgit2::filter::StreamError;
+/// use libgit2_crustify::libgit2::src::libgit2::oid::Oid;
+/// use libgit2_crustify::libgit2::src::libgit2::signature::SignatureRef;
+/// use libgit2_crustify::libgit2::src::libgit2::tree::TreeRef;
 ///
 /// let mut seen = 0;
 /// let mut f = |_: SignatureRef<'_>,
@@ -2761,10 +2763,10 @@ type CreateFn<'f> = dyn for<'c> FnMut(
 /// The handles cannot outlive the call:
 ///
 /// ```compile_fail
-/// use {libgit2::libgit2::src::libgit2::signature::SignatureRef, libgit2::libgit2::src::libgit2::filter::StreamError};
-/// use {libgit2::libgit2::src::libgit2::commit::CommitRef, libgit2::libgit2::src::libgit2::commit::CreateCallback};
-/// use libgit2::libgit2::src::libgit2::tree::TreeRef;
-/// use libgit2::libgit2::src::libgit2::oid::Oid;
+/// use {libgit2_crustify::libgit2::src::libgit2::signature::SignatureRef, libgit2_crustify::libgit2::src::libgit2::filter::StreamError};
+/// use {libgit2_crustify::libgit2::src::libgit2::commit::CommitRef, libgit2_crustify::libgit2::src::libgit2::commit::CreateCallback};
+/// use libgit2_crustify::libgit2::src::libgit2::tree::TreeRef;
+/// use libgit2_crustify::libgit2::src::libgit2::oid::Oid;
 ///
 /// fn keep<'k>(kept: &mut Option<TreeRef<'k, 'k>>) {
 ///     let mut f = |_: SignatureRef<'_>, _: SignatureRef<'_>, _: Option<&core::ffi::CStr>,
@@ -2780,10 +2782,10 @@ type CreateFn<'f> = dyn for<'c> FnMut(
 /// synchronously, and the closure need not be `Send`.
 ///
 /// ```compile_fail,E0277
-/// use {libgit2::libgit2::src::libgit2::signature::SignatureRef, libgit2::libgit2::src::libgit2::filter::StreamError};
-/// use {libgit2::libgit2::src::libgit2::commit::CommitRef, libgit2::libgit2::src::libgit2::commit::CreateCallback};
-/// use libgit2::libgit2::src::libgit2::tree::TreeRef;
-/// use libgit2::libgit2::src::libgit2::oid::Oid;
+/// use {libgit2_crustify::libgit2::src::libgit2::signature::SignatureRef, libgit2_crustify::libgit2::src::libgit2::filter::StreamError};
+/// use {libgit2_crustify::libgit2::src::libgit2::commit::CommitRef, libgit2_crustify::libgit2::src::libgit2::commit::CreateCallback};
+/// use libgit2_crustify::libgit2::src::libgit2::tree::TreeRef;
+/// use libgit2_crustify::libgit2::src::libgit2::oid::Oid;
 ///
 /// fn send<T: Send>(_: T) {}
 /// let mut f = |_: SignatureRef<'_>, _: SignatureRef<'_>, _: Option<&core::ffi::CStr>,
@@ -2994,7 +2996,7 @@ unsafe extern "C" fn create_with_closure(
 /// through [`as_mut`](Self::as_mut):
 ///
 /// ```
-/// use libgit2::libgit2::src::libgit2::commit::Header;
+/// use libgit2_crustify::libgit2::src::libgit2::commit::Header;
 ///
 /// let mut header = Header::new(c"line_one", c"First extra header");
 /// assert_eq!(header.as_ref().field(), c"line_one");
@@ -3014,7 +3016,7 @@ unsafe extern "C" fn create_with_closure(
 /// is the lifetime of the strings it points at, so a header cannot outlive them:
 ///
 /// ```compile_fail,E0597
-/// use libgit2::libgit2::src::libgit2::commit::Header;
+/// use libgit2_crustify::libgit2::src::libgit2::commit::Header;
 /// use std::ffi::CString;
 ///
 /// let header;
@@ -3029,7 +3031,7 @@ unsafe extern "C" fn create_with_closure(
 /// shorter-lived string than its header was built for:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::commit::HeaderMut;
+/// use libgit2_crustify::libgit2::src::libgit2::commit::HeaderMut;
 ///
 /// fn shrink<'a, 'h>(m: HeaderMut<'a, 'static>) -> HeaderMut<'a, 'h> {
 ///     m
@@ -3039,7 +3041,7 @@ unsafe extern "C" fn create_with_closure(
 /// The shared handle only reads:
 ///
 /// ```compile_fail,E0599
-/// use libgit2::libgit2::src::libgit2::commit::Header;
+/// use libgit2_crustify::libgit2::src::libgit2::commit::Header;
 ///
 /// let header = Header::new(c"field", c"value");
 /// header.as_ref().set_value(c"other");
@@ -3277,7 +3279,7 @@ const _: () = assert!(
 /// [`as_ref`](Self::as_ref) and change it through [`as_mut`](Self::as_mut):
 ///
 /// ```
-/// use libgit2::libgit2::src::libgit2::commit::{CreateExtOptions, Header};
+/// use libgit2_crustify::libgit2::src::libgit2::commit::{CreateExtOptions, Header};
 ///
 /// const HEADERS: [Header<'static>; 1] = [Header::new(c"x-tool", c"crustify")];
 /// let mut options = CreateExtOptions::new();
@@ -3295,7 +3297,7 @@ const _: () = assert!(
 /// the options cannot outlive them:
 ///
 /// ```compile_fail,E0597
-/// use libgit2::libgit2::src::libgit2::commit::CreateExtOptions;
+/// use libgit2_crustify::libgit2::src::libgit2::commit::CreateExtOptions;
 /// use std::ffi::CString;
 ///
 /// let mut options = CreateExtOptions::new();
@@ -3310,7 +3312,7 @@ const _: () = assert!(
 /// shorter-lived borrow than its options were built for:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::commit::CreateExtOptionsMut;
+/// use libgit2_crustify::libgit2::src::libgit2::commit::CreateExtOptionsMut;
 ///
 /// fn shrink<'a, 'o>(m: CreateExtOptionsMut<'a, 'static>) -> CreateExtOptionsMut<'a, 'o> {
 ///     m
@@ -3323,7 +3325,7 @@ const _: () = assert!(
 /// writing the commit.
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::commit::CreateExtOptions;
+/// use libgit2_crustify::libgit2::src::libgit2::commit::CreateExtOptions;
 ///
 /// let options = CreateExtOptions::new();
 /// std::thread::spawn(move || drop(options));
@@ -3672,9 +3674,9 @@ impl<'o> CreateExtOptionsMut<'_, 'o> {
     /// another way).
     ///
     /// ```compile_fail,E0499
-    /// use libgit2::libgit2::src::libgit2::filter::StreamError;
-    /// use {libgit2::libgit2::src::libgit2::commit::CommitBuilderMut, libgit2::libgit2::src::libgit2::commit::CreateExtOptions, libgit2::libgit2::src::libgit2::commit::SignatureCallback};
-    /// use libgit2::libgit2::src::libgit2::repository::RepositoryRef;
+    /// use libgit2_crustify::libgit2::src::libgit2::filter::StreamError;
+    /// use {libgit2_crustify::libgit2::src::libgit2::commit::CommitBuilderMut, libgit2_crustify::libgit2::src::libgit2::commit::CreateExtOptions, libgit2_crustify::libgit2::src::libgit2::commit::SignatureCallback};
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::RepositoryRef;
     ///
     /// let mut f = |_: CommitBuilderMut<'_>, _: RepositoryRef<'_>, _: &core::ffi::CStr| Ok::<(), StreamError>(());
     /// let mut signer = SignatureCallback::new(&mut f);
@@ -3755,8 +3757,8 @@ const _: () = assert!(
 /// [`as_mut`](Self::as_mut):
 ///
 /// ```
-/// use libgit2::libgit2::src::libgit2::commit::{CreateOptions, Header};
-/// use libgit2::libgit2::src::libgit2::signature::{SignatureView, Time};
+/// use libgit2_crustify::libgit2::src::libgit2::commit::{CreateOptions, Header};
+/// use libgit2_crustify::libgit2::src::libgit2::signature::{SignatureView, Time};
 ///
 /// const HEADERS: [Header<'static>; 1] = [Header::new(c"x-tool", c"crustify")];
 /// let author = SignatureView::new(c"A U Thor", c"author@example.com", Time::new(0, 0));
@@ -3778,8 +3780,8 @@ const _: () = assert!(
 /// for `'o`, so the options cannot outlive them:
 ///
 /// ```compile_fail,E0597
-/// use {libgit2::libgit2::src::libgit2::signature::SignatureView, libgit2::libgit2::src::libgit2::signature::Time};
-/// use libgit2::libgit2::src::libgit2::commit::CreateOptions;
+/// use {libgit2_crustify::libgit2::src::libgit2::signature::SignatureView, libgit2_crustify::libgit2::src::libgit2::signature::Time};
+/// use libgit2_crustify::libgit2::src::libgit2::commit::CreateOptions;
 ///
 /// let mut options = CreateOptions::new();
 /// {
@@ -3793,7 +3795,7 @@ const _: () = assert!(
 /// shorter-lived borrow than its options were built for:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::commit::CreateOptionsMut;
+/// use libgit2_crustify::libgit2::src::libgit2::commit::CreateOptionsMut;
 ///
 /// fn shrink<'a, 'o>(m: CreateOptionsMut<'a, 'static>) -> CreateOptionsMut<'a, 'o> {
 ///     m
@@ -3806,7 +3808,7 @@ const _: () = assert!(
 /// writing the commit.
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::commit::CreateOptions;
+/// use libgit2_crustify::libgit2::src::libgit2::commit::CreateOptions;
 ///
 /// let options = CreateOptions::new();
 /// std::thread::spawn(move || drop(options));
@@ -4228,9 +4230,9 @@ impl<'o> CreateOptionsMut<'_, 'o> {
     /// options lent to C another way).
     ///
     /// ```compile_fail,E0499
-    /// use libgit2::libgit2::src::libgit2::filter::StreamError;
-    /// use {libgit2::libgit2::src::libgit2::commit::CommitBuilderMut, libgit2::libgit2::src::libgit2::commit::CreateOptions, libgit2::libgit2::src::libgit2::commit::SignatureCallback};
-    /// use libgit2::libgit2::src::libgit2::repository::RepositoryRef;
+    /// use libgit2_crustify::libgit2::src::libgit2::filter::StreamError;
+    /// use {libgit2_crustify::libgit2::src::libgit2::commit::CommitBuilderMut, libgit2_crustify::libgit2::src::libgit2::commit::CreateOptions, libgit2_crustify::libgit2::src::libgit2::commit::SignatureCallback};
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::RepositoryRef;
     ///
     /// let mut f = |_: CommitBuilderMut<'_>, _: RepositoryRef<'_>, _: &core::ffi::CStr| Ok::<(), StreamError>(());
     /// let mut signer = SignatureCallback::new(&mut f);
@@ -4377,8 +4379,8 @@ type ParentFn<'f> = dyn FnMut(usize) -> Option<Oid> + 'f;
 /// resumes once `call` is back in Rust.
 ///
 /// ```
-/// use libgit2::libgit2::src::libgit2::commit::ParentCallback;
-/// use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
+/// use libgit2_crustify::libgit2::src::libgit2::commit::ParentCallback;
+/// use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
 ///
 /// # if cfg!(miri) { return; } // Miri cannot call libgit2.
 /// let parents =
@@ -4392,8 +4394,8 @@ type ParentFn<'f> = dyn FnMut(usize) -> Option<Oid> + 'f;
 /// An id it returns lives until it is called again:
 ///
 /// ```compile_fail,E0499
-/// use libgit2::libgit2::src::libgit2::commit::ParentCallback;
-/// use libgit2::libgit2::src::libgit2::oid::Oid;
+/// use libgit2_crustify::libgit2::src::libgit2::commit::ParentCallback;
+/// use libgit2_crustify::libgit2::src::libgit2::oid::Oid;
 ///
 /// fn twice(callback: &mut ParentCallback<'_>) {
 ///     let first = callback.call(0);
@@ -4406,8 +4408,8 @@ type ParentFn<'f> = dyn FnMut(usize) -> Option<Oid> + 'f;
 /// synchronously, and the closure need not be `Send`.
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::commit::ParentCallback;
-/// use libgit2::libgit2::src::libgit2::oid::Oid;
+/// use libgit2_crustify::libgit2::src::libgit2::commit::ParentCallback;
+/// use libgit2_crustify::libgit2::src::libgit2::oid::Oid;
 ///
 /// fn send<T: Send>(_: T) {}
 /// let mut f = |_: usize| None::<Oid>;

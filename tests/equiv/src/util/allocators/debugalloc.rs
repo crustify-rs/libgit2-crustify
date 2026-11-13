@@ -20,13 +20,13 @@ use std::ffi::{c_char, c_int, c_void};
 use std::process::Command;
 use std::ptr;
 
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidShortener, OidType};
-use libgit2::libgit2::src::libgit2::settings::set_allocator;
-use libgit2::libgit2::src::util::alloc::{
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidShortener, OidType};
+use libgit2_crustify::libgit2::src::libgit2::settings::set_allocator;
+use libgit2_crustify::libgit2::src::util::alloc::{
     AllocBox, AllocVec, Allocator, ArrayFree, FreeFn, MallocFn, ReallocFn, StrFree,
 };
-use libgit2::libgit2::src::util::errors::{ErrorClass, clear, last};
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, clear, last};
+use libgit2_crustify::sys::libgit2 as sys;
 
 const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 

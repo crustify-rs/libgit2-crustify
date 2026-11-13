@@ -4,9 +4,11 @@
 
 use std::ffi::CString;
 
-use libgit2::libgit2::src::libgit2::index::{Capabilities, CapabilitySetting, Index, ReucSide};
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-use libgit2::libgit2::src::libgit2::tree::FileMode;
+use libgit2_crustify::libgit2::src::libgit2::index::{
+    Capabilities, CapabilitySetting, Index, ReucSide,
+};
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+use libgit2_crustify::libgit2::src::libgit2::tree::FileMode;
 
 use crate::fixture::init;
 

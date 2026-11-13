@@ -23,10 +23,10 @@ use std::process::Command;
 use std::ptr::{self, NonNull};
 
 use ffibox::{CAlloc, CDrop, CLenAlloc, CLenDrop};
-use libgit2::libgit2::src::libgit2::settings::set_allocator;
-use libgit2::libgit2::src::util::alloc::{Alloc, Allocator};
-use libgit2::libgit2::src::util::allocators::failalloc::{FailAlloc, FailArrayAlloc};
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::settings::set_allocator;
+use libgit2_crustify::libgit2::src::util::alloc::{Alloc, Allocator};
+use libgit2_crustify::libgit2::src::util::allocators::failalloc::{FailAlloc, FailArrayAlloc};
+use libgit2_crustify::sys::libgit2 as sys;
 
 const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 

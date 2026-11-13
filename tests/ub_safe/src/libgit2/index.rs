@@ -9,8 +9,8 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
 use ffibox::{CArc, CBox};
-use libgit2::libgit2::src::libgit2::index::{Index, IndexArc, IndexBox};
-use libgit2::libgit2::src::libgit2::oid::OidType;
+use libgit2_crustify::libgit2::src::libgit2::index::{Index, IndexArc, IndexBox};
+use libgit2_crustify::libgit2::src::libgit2::oid::OidType;
 
 use crate::fixture::index::{
     add, add_intent_to_add, isolated_tolerating_leaks, path, repository_index,
@@ -478,7 +478,7 @@ fn owners_are_pointer_sized() {
     assert_eq!(size_of::<Option<IndexBox>>(), size_of::<*mut u8>());
     assert_eq!(size_of::<IndexArc>(), size_of::<*mut u8>());
     assert_eq!(
-        size_of::<Option<CBox<Index, libgit2::libgit2::src::libgit2::index::IndexFree>>>(),
+        size_of::<Option<CBox<Index, libgit2_crustify::libgit2::src::libgit2::index::IndexFree>>>(),
         size_of::<usize>()
     );
 }
@@ -487,7 +487,9 @@ fn owners_are_pointer_sized() {
 /// extreme integer input; these tests can also run under Miri without C calls.
 #[test]
 fn scalar_options_exhaustive() {
-    use libgit2::libgit2::src::libgit2::index::{AddFlags, Capabilities, CapabilitySetting};
+    use libgit2_crustify::libgit2::src::libgit2::index::{
+        AddFlags, Capabilities, CapabilitySetting,
+    };
 
     for a in 0..8 {
         for b in 0..8 {
@@ -527,7 +529,9 @@ fn scalar_options_exhaustive() {
 /// hidden foreign state. Shared readers cannot observe writes to another copy.
 #[test]
 fn scalar_options_threads() {
-    use libgit2::libgit2::src::libgit2::index::{AddFlags, Capabilities, CapabilitySetting};
+    use libgit2_crustify::libgit2::src::libgit2::index::{
+        AddFlags, Capabilities, CapabilitySetting,
+    };
 
     let flags = AddFlags::FORCE | AddFlags::CHECK_PATHSPEC | AddFlags::DISABLE_PATHSPEC_MATCH;
     let caps = Capabilities::IGNORE_CASE | Capabilities::NO_FILEMODE | Capabilities::NO_SYMLINKS;
@@ -553,7 +557,7 @@ mod matched_path_callback {
     use std::ffi::{CStr, CString};
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
-    use libgit2::libgit2::src::libgit2::index::{MatchedPathCallback, MatchedPathResult};
+    use libgit2_crustify::libgit2::src::libgit2::index::{MatchedPathCallback, MatchedPathResult};
 
     #[test]
     fn borrowed_strings_payload_reborrows_and_nested_callbacks() {
@@ -618,7 +622,7 @@ mod matched_path_callback {
 /// Stage decoding is pure Rust, including extreme/unknown discriminants.
 #[test]
 fn stage_decoding_is_total() {
-    use libgit2::libgit2::src::libgit2::index::Stage;
+    use libgit2_crustify::libgit2::src::libgit2::index::Stage;
     for n in [i32::MIN, -2, -1, 0, 1, 2, 3, 4, i32::MAX] {
         let decoded = Stage::from_raw(n);
         assert_eq!(decoded.is_some(), (-1..=3).contains(&n));
@@ -633,7 +637,7 @@ fn stage_decoding_is_total() {
 #[test]
 #[cfg_attr(miri, ignore = "calls libgit2")]
 fn iterator_snapshot_owners_and_reborrows() {
-    use libgit2::libgit2::src::libgit2::index::{IndexIterator, IndexIteratorRef};
+    use libgit2_crustify::libgit2::src::libgit2::index::{IndexIterator, IndexIteratorRef};
 
     fn read(_: IndexIteratorRef<'_>) {}
     for populated in [false, true] {
@@ -676,7 +680,7 @@ fn iterator_snapshot_owners_and_reborrows() {
 
 #[test]
 fn entry_flags_all_storage_bits() {
-    use libgit2::libgit2::src::libgit2::index::EntryFlags;
+    use libgit2_crustify::libgit2::src::libgit2::index::EntryFlags;
     for bits in 0..=u16::MAX {
         let mut flags = EntryFlags::from_bits_retain(u32::from(bits));
         flags.insert(EntryFlags::EXTENDED);
@@ -689,7 +693,9 @@ fn entry_flags_all_storage_bits() {
 /// covers C memory, and the owner releases the cursor before releasing its index.
 mod conflict_cursor {
     #![forbid(unsafe_code)]
-    use libgit2::libgit2::src::libgit2::index::{ConflictIterator, EntryExtendedFlags, Index};
+    use libgit2_crustify::libgit2::src::libgit2::index::{
+        ConflictIterator, EntryExtendedFlags, Index,
+    };
 
     #[test]
     #[cfg_attr(miri, ignore = "calls libgit2")]
@@ -726,7 +732,7 @@ mod conflict_cursor {
 
 #[test]
 fn timestamp_extremes_and_reborrows() {
-    use libgit2::libgit2::src::libgit2::index::IndexTime;
+    use libgit2_crustify::libgit2::src::libgit2::index::IndexTime;
     let mut value = IndexTime::default();
     for seconds in [i32::MIN, -1, 0, 1, i32::MAX] {
         for nanos in [0, 1, 999_999_999, 1_000_000_000, u32::MAX] {
@@ -752,12 +758,12 @@ mod entry_value {
     use std::ffi::{CStr, CString};
 
     use ffibox::CZeroable;
-    use libgit2::libgit2::src::libgit2::index::{
+    use libgit2_crustify::libgit2::src::libgit2::index::{
         AnyStageError, EntryExtendedFlags, EntryFlags, IndexEntry, IndexEntryMut, IndexEntryRef,
         IndexTime, Stage,
     };
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::tree::FileMode;
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::tree::FileMode;
 
     fn id(kind: OidType, byte: u8) -> Oid {
         let mut oid = Oid::zero(kind);
@@ -1014,8 +1020,8 @@ mod options_value {
     //! handles and reborrows, the indexes built from it, and values shared and built
     //! across threads.
 
-    use libgit2::libgit2::src::libgit2::index::{Index, IndexOptions, IndexOptionsRef};
-    use libgit2::libgit2::src::libgit2::oid::OidType;
+    use libgit2_crustify::libgit2::src::libgit2::index::{Index, IndexOptions, IndexOptionsRef};
+    use libgit2_crustify::libgit2::src::libgit2::oid::OidType;
 
     /// Defaults, typed options and every setter value read back through shared and
     /// exclusive reborrows; the C-built value matches the one Rust compares it with.
@@ -1074,8 +1080,8 @@ mod routines {
 
     use std::ffi::{CStr, CString};
 
-    use libgit2::libgit2::src::libgit2::index::{Capabilities, Index, IndexArc, IndexBox};
-    use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+    use libgit2_crustify::libgit2::src::libgit2::index::{Capabilities, Index, IndexArc, IndexBox};
+    use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, ErrorCode};
 
     use super::{Scratch, all_extensions, c_path, index_bytes};
     use crate::fixture::TempRepo;

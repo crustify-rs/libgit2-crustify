@@ -23,8 +23,8 @@ use crate::sys::libgit2 as sys;
 /// handles therefore cannot escape the repository's borrow:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::transaction::{Transaction, TransactionBox};
-/// use libgit2::libgit2::src::libgit2::repository::Repository;
+/// use libgit2_crustify::libgit2::src::libgit2::transaction::{Transaction, TransactionBox};
+/// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
 /// fn escape() -> TransactionBox<'static> {
 ///     let repo = Repository::open(c".").unwrap();
 ///     Transaction::new(repo.as_ref()).unwrap()
@@ -32,20 +32,20 @@ use crate::sys::libgit2 as sys;
 /// ```
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::transaction::TransactionMut;
+/// use libgit2_crustify::libgit2::src::libgit2::transaction::TransactionMut;
 /// fn shrink<'a, 'r>(m: TransactionMut<'a, 'static>) -> TransactionMut<'a, 'r> { m }
 /// ```
 ///
 /// Neither an owner nor a shared owner crosses threads:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::transaction::TransactionBox;
+/// use libgit2_crustify::libgit2::src::libgit2::transaction::TransactionBox;
 /// fn require_send<T: Send>() {}
 /// require_send::<TransactionBox<'static>>();
 /// ```
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::transaction::TransactionBox;
+/// use libgit2_crustify::libgit2::src::libgit2::transaction::TransactionBox;
 /// fn require_sync<T: Sync>() {}
 /// require_sync::<TransactionBox<'static>>();
 /// ```
@@ -175,7 +175,7 @@ impl<'r> Transaction<'r> {
 /// Its borrow cannot outlive the config, and cannot be aliased:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::config::Config;
+/// use libgit2_crustify::libgit2::src::libgit2::config::Config;
 /// let mut config = Config::new().unwrap();
 /// let tx = config.as_mut().lock().unwrap();
 /// drop(config);
@@ -183,7 +183,7 @@ impl<'r> Transaction<'r> {
 /// ```
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::config::Config;
+/// use libgit2_crustify::libgit2::src::libgit2::config::Config;
 /// let mut config = Config::new().unwrap();
 /// let tx = config.as_mut().lock().unwrap();
 /// let _alias = config.as_mut();

@@ -115,7 +115,7 @@ use crate::sys::libgit2 as sys;
 /// none is `Config<'static>`, and the lifetime only shrinks:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::config::ConfigArc;
+/// use libgit2_crustify::libgit2::src::libgit2::config::ConfigArc;
 ///
 /// fn widen<'r>(config: ConfigArc<'r>) -> ConfigArc<'static> {
 ///     config
@@ -125,7 +125,7 @@ use crate::sys::libgit2 as sys;
 /// while the exclusive handle is invariant in it, as `&mut` is in its pointee:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::config::ConfigMut;
+/// use libgit2_crustify::libgit2::src::libgit2::config::ConfigMut;
 ///
 /// fn shrink<'a, 'r>(m: ConfigMut<'a, 'static>) -> ConfigMut<'a, 'r> {
 ///     m
@@ -133,7 +133,7 @@ use crate::sys::libgit2 as sys;
 /// ```
 ///
 /// ```compile_fail,E0599
-/// use libgit2::libgit2::src::libgit2::config::{Config, ConfigArc};
+/// use libgit2_crustify::libgit2::src::libgit2::config::{Config, ConfigArc};
 ///
 /// let shared = ConfigArc::from(Config::new().unwrap());
 /// let _ = shared.clone();
@@ -142,7 +142,7 @@ use crate::sys::libgit2 as sys;
 /// A shared reference has no exclusive handle, since others may use the config:
 ///
 /// ```compile_fail,E0599
-/// use libgit2::libgit2::src::libgit2::config::{Config, ConfigArc};
+/// use libgit2_crustify::libgit2::src::libgit2::config::{Config, ConfigArc};
 ///
 /// let mut shared = ConfigArc::from(Config::new().unwrap());
 /// let _ = shared.as_mut();
@@ -151,14 +151,14 @@ use crate::sys::libgit2 as sys;
 /// Neither owner crosses threads:
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::config::Config;
+/// use libgit2_crustify::libgit2::src::libgit2::config::Config;
 ///
 /// let sole = Config::new().unwrap();
 /// std::thread::spawn(move || drop(sole));
 /// ```
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::config::{Config, ConfigArc};
+/// use libgit2_crustify::libgit2::src::libgit2::config::{Config, ConfigArc};
 ///
 /// let shared = ConfigArc::from(Config::new().unwrap());
 /// std::thread::spawn(move || drop(shared));
@@ -167,7 +167,7 @@ use crate::sys::libgit2 as sys;
 /// and no handle outlives its owner:
 ///
 /// ```compile_fail,E0505
-/// use libgit2::libgit2::src::libgit2::config::Config;
+/// use libgit2_crustify::libgit2::src::libgit2::config::Config;
 ///
 /// let config = Config::new().unwrap();
 /// let handle = config.as_ref();
@@ -271,13 +271,13 @@ impl ConfigMut<'_, '_> {
     /// configurations without a writer return C's code and copied error.
     ///
     /// ```compile_fail
-    /// use libgit2::libgit2::src::libgit2::config::Config;
+    /// use libgit2_crustify::libgit2::src::libgit2::config::Config;
     /// let config = Config::new().unwrap();
     /// config.as_ref().set_string(c"a.b", c"value");
     /// ```
     ///
     /// ```compile_fail
-    /// use libgit2::libgit2::src::libgit2::config::Config;
+    /// use libgit2_crustify::libgit2::src::libgit2::config::Config;
     /// let mut config = Config::new().unwrap();
     /// let shared = config.as_ref();
     /// config.as_mut().set_string(c"a.b", c"value");
@@ -448,7 +448,7 @@ pub type ConfigBox<'r> = CBox<Config<'r>, ConfigFree>;
 /// neither it nor a handle it lends outlives the repository:
 ///
 /// ```compile_fail,E0505
-/// use libgit2::libgit2::src::libgit2::repository::Repository;
+/// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
 ///
 /// let repo = Repository::open(c".").unwrap();
 /// let config = repo.as_ref().config().unwrap();
@@ -1196,7 +1196,7 @@ pub fn parse_path(value: &CStr) -> Result<crate::libgit2::src::libgit2::buf::Buf
 /// Pins libgit2's runtime before calling C, including on error paths.
 ///
 /// ```compile_fail,E0308
-/// use libgit2::libgit2::src::libgit2::config::parse_bool;
+/// use libgit2_crustify::libgit2::src::libgit2::config::parse_bool;
 /// // Only NUL-terminated strings can cross the C boundary.
 /// parse_bool(Some("true"));
 /// ```
@@ -1559,12 +1559,12 @@ define_ctype!(
     /// release callback may be thread-bound.
     ///
     /// ```compile_fail
-    /// use libgit2::libgit2::src::libgit2::config::EntryArc;
+    /// use libgit2_crustify::libgit2::src::libgit2::config::EntryArc;
     /// fn mutate(mut entry: EntryArc) { entry.as_mut(); }
     /// ```
     ///
     /// ```compile_fail
-    /// use libgit2::libgit2::src::libgit2::config::EntryArc;
+    /// use libgit2_crustify::libgit2::src::libgit2::config::EntryArc;
     /// fn escape(entry: EntryArc) {
     ///     let name = entry.as_ref().name();
     ///     drop(entry);
@@ -1573,12 +1573,12 @@ define_ctype!(
     /// ```
     ///
     /// ```compile_fail
-    /// use libgit2::libgit2::src::libgit2::config::EntryArc;
+    /// use libgit2_crustify::libgit2::src::libgit2::config::EntryArc;
     /// fn send(entry: EntryArc) { std::thread::spawn(move || drop(entry)); }
     /// ```
     ///
     /// ```compile_fail
-    /// use libgit2::libgit2::src::libgit2::config::EntryArc;
+    /// use libgit2_crustify::libgit2::src::libgit2::config::EntryArc;
     /// fn clone(entry: EntryArc) { let _ = entry.clone(); }
     /// ```
     ///
@@ -1743,7 +1743,7 @@ impl IteratorMut<'_, '_> {
     /// The entry cannot survive another advance, even through the backend API:
     ///
     /// ```compile_fail,E0499
-    /// use libgit2::libgit2::src::libgit2::config::Config;
+    /// use libgit2_crustify::libgit2::src::libgit2::config::Config;
     /// let config = Config::new().unwrap();
     /// let mut iter = config.as_ref().iterator().unwrap();
     /// let mut m = iter.as_mut();
@@ -1755,7 +1755,7 @@ impl IteratorMut<'_, '_> {
     /// Nor can its owner be dropped first:
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::libgit2::src::libgit2::config::Config;
+    /// use libgit2_crustify::libgit2::src::libgit2::config::Config;
     /// let config = Config::new().unwrap();
     /// let mut iter = config.as_ref().iterator().unwrap();
     /// let mut m = iter.as_mut();
@@ -1981,7 +1981,7 @@ impl ConfigRef<'_, '_> {
     ///
     /// Entry borrows cannot escape a walk:
     /// ```compile_fail
-    /// use libgit2::libgit2::src::libgit2::config::{Config, EntryRef, ForeachCallback};
+    /// use libgit2_crustify::libgit2::src::libgit2::config::{Config, EntryRef, ForeachCallback};
     /// use std::ops::ControlFlow;
     /// let config = Config::new().unwrap();
     /// let mut kept = None;
@@ -1994,7 +1994,7 @@ impl ConfigRef<'_, '_> {
     ///
     /// A callback cannot drop or mutate the configuration being walked:
     /// ```compile_fail
-    /// use libgit2::libgit2::src::libgit2::config::{Config, EntryRef, ForeachCallback};
+    /// use libgit2_crustify::libgit2::src::libgit2::config::{Config, EntryRef, ForeachCallback};
     /// use std::ops::ControlFlow;
     /// let mut config = Config::new().unwrap();
     /// let view = config.as_ref();
@@ -2006,7 +2006,7 @@ impl ConfigRef<'_, '_> {
     /// ```
     ///
     /// ```compile_fail
-    /// use libgit2::libgit2::src::libgit2::config::{Config, EntryRef, ForeachCallback};
+    /// use libgit2_crustify::libgit2::src::libgit2::config::{Config, EntryRef, ForeachCallback};
     /// use std::ops::ControlFlow;
     /// let mut config = Some(Config::new().unwrap());
     /// let view = config.as_ref().unwrap().as_ref();
@@ -2373,7 +2373,7 @@ type ForeachFn<'f> = dyn for<'e> FnMut(EntryRef<'e>) -> ControlFlow<NonZero<c_in
 ///
 /// An entry cannot escape into the closure's captured state:
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::config::{EntryRef, ForeachCallback};
+/// use libgit2_crustify::libgit2::src::libgit2::config::{EntryRef, ForeachCallback};
 /// use std::ops::ControlFlow;
 /// let mut kept = None;
 /// let mut f = |entry: EntryRef<'_>| {
@@ -2385,7 +2385,7 @@ type ForeachFn<'f> = dyn for<'e> FnMut(EntryRef<'e>) -> ControlFlow<NonZero<c_in
 ///
 /// Captured mutable state cannot be accessed while the callback is used:
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::config::{EntryRef, ForeachCallback};
+/// use libgit2_crustify::libgit2::src::libgit2::config::{EntryRef, ForeachCallback};
 /// use std::ops::ControlFlow;
 /// let mut count = 0;
 /// let mut f = |_: EntryRef<'_>| { count += 1; ControlFlow::Continue(()) };
@@ -2397,7 +2397,7 @@ type ForeachFn<'f> = dyn for<'e> FnMut(EntryRef<'e>) -> ControlFlow<NonZero<c_in
 /// Neither concurrent calls nor moving a borrowed callback to another thread
 /// is permitted:
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::config::{EntryRef, ForeachCallback};
+/// use libgit2_crustify::libgit2::src::libgit2::config::{EntryRef, ForeachCallback};
 /// use std::ops::ControlFlow;
 /// let mut f = |_: EntryRef<'_>| ControlFlow::Continue(());
 /// let callback = ForeachCallback::new(&mut f);
@@ -2677,7 +2677,7 @@ impl MapMatch<'_> {
 /// be a `static`, as C's are:
 ///
 /// ```
-/// use libgit2::libgit2::src::libgit2::config::{ConfigMap, MapMatch};
+/// use libgit2_crustify::libgit2::src::libgit2::config::{ConfigMap, MapMatch};
 /// static AUTOCRLF: [ConfigMap<'static>; 3] = [
 ///     ConfigMap::new(MapMatch::False, 0),
 ///     ConfigMap::new(MapMatch::True, 1),
@@ -2689,7 +2689,7 @@ impl MapMatch<'_> {
 /// Records cross threads, but only with a string that outlives the thread:
 ///
 /// ```compile_fail,E0597
-/// use libgit2::libgit2::src::libgit2::config::{ConfigMap, MapMatch};
+/// use libgit2_crustify::libgit2::src::libgit2::config::{ConfigMap, MapMatch};
 /// use std::ffi::CString;
 /// let text = CString::new("temporary").unwrap();
 /// let map = ConfigMap::new(MapMatch::String(&text), 1);
@@ -2697,7 +2697,7 @@ impl MapMatch<'_> {
 /// ```
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::config::{ConfigMap, MapMatch};
+/// use libgit2_crustify::libgit2::src::libgit2::config::{ConfigMap, MapMatch};
 /// use std::ffi::CString;
 /// let map;
 /// { let text = CString::new("temporary").unwrap();
@@ -2706,7 +2706,7 @@ impl MapMatch<'_> {
 /// ```
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::config::{ConfigMap, MapMatch};
+/// use libgit2_crustify::libgit2::src::libgit2::config::{ConfigMap, MapMatch};
 /// let mut map = ConfigMap::new(MapMatch::String(c"one"), 1);
 /// let mut m = map.as_mut();
 /// let view = m.as_ref().str_match();
@@ -2715,12 +2715,12 @@ impl MapMatch<'_> {
 /// ```
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::config::ConfigMapMut;
+/// use libgit2_crustify::libgit2::src::libgit2::config::ConfigMapMut;
 /// fn shrink<'a, 's>(m: ConfigMapMut<'a, 'static>) -> ConfigMapMut<'a, 's> { m }
 /// ```
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::config::{ConfigMap, MapMatch};
+/// use libgit2_crustify::libgit2::src::libgit2::config::{ConfigMap, MapMatch};
 /// let map = ConfigMap::new(MapMatch::String(c"live"), 1);
 /// let text = map.as_ref().str_match();
 /// drop(map);
@@ -2992,17 +2992,17 @@ define_ctype!(
     /// taken back as a box:
     ///
     /// ```compile_fail,E0599
-    /// use libgit2::libgit2::src::libgit2::config::BackendEntryArc;
+    /// use libgit2_crustify::libgit2::src::libgit2::config::BackendEntryArc;
     /// fn mutate(mut entry: BackendEntryArc) { let _ = entry.get_mut(); }
     /// ```
     ///
     /// ```compile_fail,E0599
-    /// use libgit2::libgit2::src::libgit2::config::BackendEntryArc;
+    /// use libgit2_crustify::libgit2::src::libgit2::config::BackendEntryArc;
     /// fn unshare(entry: BackendEntryArc) { let _ = entry.try_into_box(); }
     /// ```
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::libgit2::src::libgit2::config::BackendEntryArc;
+    /// use libgit2_crustify::libgit2::src::libgit2::config::BackendEntryArc;
     /// fn escape(entry: BackendEntryArc) {
     ///     let name = entry.as_ref().entry().name();
     ///     drop(entry);
@@ -3011,12 +3011,12 @@ define_ctype!(
     /// ```
     ///
     /// ```compile_fail,E0599
-    /// use libgit2::libgit2::src::libgit2::config::BackendEntryArc;
+    /// use libgit2_crustify::libgit2::src::libgit2::config::BackendEntryArc;
     /// fn clone(entry: BackendEntryArc) { let _ = entry.clone(); }
     /// ```
     ///
     /// ```compile_fail,E0277
-    /// use libgit2::libgit2::src::libgit2::config::BackendEntryArc;
+    /// use libgit2_crustify::libgit2::src::libgit2::config::BackendEntryArc;
     /// fn send(entry: BackendEntryArc) { std::thread::spawn(move || drop(entry)); }
     /// ```
     ///
@@ -3214,7 +3214,7 @@ impl BackendEntryMut<'_> {
     /// (not an acquired backend lookup reference) can supply this handle.
     ///
     /// ```compile_fail,E0499
-    /// use libgit2::libgit2::src::libgit2::config::BackendEntryMut;
+    /// use libgit2_crustify::libgit2::src::libgit2::config::BackendEntryMut;
     /// fn alias(mut parent: BackendEntryMut<'_>) {
     ///     let mut child = parent.entry_mut();
     ///     let other = parent.as_mut();
@@ -3244,7 +3244,7 @@ impl BackendEntryFree {
     /// This is also what dropping the owner does; borrowed handles cannot call it.
     ///
     /// ```compile_fail,E0308
-    /// use {libgit2::libgit2::src::libgit2::config::BackendEntryFree, libgit2::libgit2::src::libgit2::config::BackendEntryRef};
+    /// use {libgit2_crustify::libgit2::src::libgit2::config::BackendEntryFree, libgit2_crustify::libgit2::src::libgit2::config::BackendEntryRef};
     /// fn free_borrowed(entry: BackendEntryRef<'_>) { BackendEntryFree.release(entry); }
     /// ```
     pub fn release(self, entry: BackendEntryArc) {
@@ -3283,7 +3283,7 @@ impl fmt::Debug for BackendEntryMut<'_> {
 /// identity, not replaceable user hooks.
 ///
 /// ```compile_fail,E0505
-/// use libgit2::libgit2::src::libgit2::config::Config;
+/// use libgit2_crustify::libgit2::src::libgit2::config::Config;
 /// let config = Config::new().unwrap();
 /// let iter = config.as_ref().iterator().unwrap();
 /// drop(config);
@@ -3291,7 +3291,7 @@ impl fmt::Debug for BackendEntryMut<'_> {
 /// ```
 ///
 /// ```compile_fail,E0499
-/// use libgit2::libgit2::src::libgit2::config::Config;
+/// use libgit2_crustify::libgit2::src::libgit2::config::Config;
 /// let config = Config::new().unwrap();
 /// let mut iter = config.as_ref().iterator().unwrap();
 /// let mut m = iter.as_mut();
@@ -3301,7 +3301,7 @@ impl fmt::Debug for BackendEntryMut<'_> {
 /// ```
 ///
 /// ```compile_fail,E0505
-/// use libgit2::libgit2::src::libgit2::config::Config;
+/// use libgit2_crustify::libgit2::src::libgit2::config::Config;
 /// let config = Config::new().unwrap();
 /// let mut iter = config.as_ref().iterator().unwrap();
 /// let mut m = iter.as_mut();
@@ -3311,19 +3311,19 @@ impl fmt::Debug for BackendEntryMut<'_> {
 /// ```
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::config::IteratorBox;
+/// use libgit2_crustify::libgit2::src::libgit2::config::IteratorBox;
 /// fn send(iter: IteratorBox<'static>) { std::thread::spawn(move || drop(iter)); }
 /// ```
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::config::IteratorMut;
+/// use libgit2_crustify::libgit2::src::libgit2::config::IteratorMut;
 /// fn shrink<'a, 'c>(m: IteratorMut<'a, 'static>) -> IteratorMut<'a, 'c> { m }
 /// ```
 ///
 /// An iterator also freezes mutation of the borrowed config:
 ///
 /// ```compile_fail,E0502
-/// use libgit2::libgit2::src::libgit2::config::Config;
+/// use libgit2_crustify::libgit2::src::libgit2::config::Config;
 /// let mut config = Config::new().unwrap();
 /// let iter = config.as_ref().iterator().unwrap();
 /// config.as_mut().set_string(c"a.b", c"changed").unwrap();
@@ -3331,12 +3331,12 @@ impl fmt::Debug for BackendEntryMut<'_> {
 /// ```
 ///
 /// ```compile_fail,E0308
-/// use {libgit2::libgit2::src::libgit2::config::IteratorFree, libgit2::libgit2::src::libgit2::config::IteratorRef};
+/// use {libgit2_crustify::libgit2::src::libgit2::config::IteratorFree, libgit2_crustify::libgit2::src::libgit2::config::IteratorRef};
 /// fn free_borrowed(iter: IteratorRef<'_, '_>) { IteratorFree.release(iter); }
 /// ```
 ///
 /// ```compile_fail,E0599
-/// use libgit2::libgit2::src::libgit2::config::IteratorBox;
+/// use libgit2_crustify::libgit2::src::libgit2::config::IteratorBox;
 /// fn copy(iter: IteratorBox<'_>) { let _ = iter.clone(); }
 /// ```
 ///
@@ -3517,8 +3517,8 @@ impl<'c> IteratorMut<'_, 'c> {
     /// borrow already guarantees liveness through the dependency lifetime.
     ///
     /// ```compile_fail
-    /// use libgit2::libgit2::src::libgit2::config::Config;
-    /// use libgit2::libgit2::src::libgit2::config::Backend;
+    /// use libgit2_crustify::libgit2::src::libgit2::config::Config;
+    /// use libgit2_crustify::libgit2::src::libgit2::config::Backend;
     /// let config = Config::new().unwrap();
     /// let mut iter = config.as_ref().iterator().unwrap();
     /// {
@@ -3824,12 +3824,12 @@ unsafe impl CDrop<Backend> for BackendFree {
 /// use a lifetime-carrying owner instead for storage that retains such borrows.
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::config::BackendBox;
+/// use libgit2_crustify::libgit2::src::libgit2::config::BackendBox;
 /// fn send(backend: BackendBox) { std::thread::spawn(move || drop(backend)); }
 /// ```
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::config::BackendBox;
+/// use libgit2_crustify::libgit2::src::libgit2::config::BackendBox;
 /// fn duplicate(backend: BackendBox) { let _ = backend.clone(); }
 /// ```
 pub type BackendBox = CBox<Backend, BackendFree>;
@@ -3920,8 +3920,8 @@ impl UnopenedBackend {
     ///
     /// ```compile_fail,E0597
     /// use std::ffi::CStr;
-    /// use libgit2::libgit2::src::libgit2::config::ConfigError;
-    /// use {libgit2::libgit2::src::libgit2::config::BackendEntryArc, libgit2::libgit2::src::libgit2::config::CustomBackend, libgit2::libgit2::src::libgit2::config::UnopenedBackend};
+    /// use libgit2_crustify::libgit2::src::libgit2::config::ConfigError;
+    /// use {libgit2_crustify::libgit2::src::libgit2::config::BackendEntryArc, libgit2_crustify::libgit2::src::libgit2::config::CustomBackend, libgit2_crustify::libgit2::src::libgit2::config::UnopenedBackend};
     ///
     /// struct Borrowing<'a>(&'a str);
     /// impl CustomBackend for Borrowing<'static> {
@@ -3940,7 +3940,7 @@ impl UnopenedBackend {
     /// The backend stays on its thread, whatever the store:
     ///
     /// ```compile_fail,E0277
-    /// use libgit2::libgit2::src::libgit2::config::UnopenedBackend;
+    /// use libgit2_crustify::libgit2::src::libgit2::config::UnopenedBackend;
     /// fn send(backend: UnopenedBackend) { std::thread::spawn(move || drop(backend)); }
     /// ```
     ///
@@ -4186,7 +4186,7 @@ impl BackendMut<'_> {
     /// lent by the iterator cannot alias a subsequent advance or backend write.
     ///
     /// ```compile_fail
-    /// use libgit2::libgit2::src::libgit2::config::BackendMut;
+    /// use libgit2_crustify::libgit2::src::libgit2::config::BackendMut;
     /// fn alias(mut backend: BackendMut<'_>) {
     ///     let iter = backend.iterator().unwrap();
     ///     backend.set(c"a.b", c"new").unwrap();
@@ -4368,7 +4368,7 @@ impl BackendMut<'_> {
 /// mutable backend handle (which would allow reentrant locking).
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::config::BackendMut;
+/// use libgit2_crustify::libgit2::src::libgit2::config::BackendMut;
 /// fn reenter(mut backend: BackendMut<'_>) {
 ///     let transaction = backend.lock().unwrap();
 ///     backend.lock().unwrap();
@@ -4502,7 +4502,7 @@ impl Drop for BackendTransaction<'_> {
 /// use std::collections::BTreeMap;
 /// use std::ffi::{CStr, CString};
 ///
-/// use libgit2::libgit2::src::libgit2::config::{
+/// use libgit2_crustify::libgit2::src::libgit2::config::{
 ///     BackendEntry, BackendEntryArc, Config, ConfigError, ConfigLevel, CustomBackend,
 ///     EntryOrigin, UnopenedBackend,
 /// };
@@ -4573,8 +4573,8 @@ pub trait CustomBackend: 'static {
     ///
     /// ```compile_fail
     /// use std::ffi::CStr;
-    /// use libgit2::libgit2::src::libgit2::config::ConfigError;
-    /// use {libgit2::libgit2::src::libgit2::config::BackendEntryArc, libgit2::libgit2::src::libgit2::config::CustomBackend, libgit2::libgit2::src::libgit2::config::UnopenedBackend};
+    /// use libgit2_crustify::libgit2::src::libgit2::config::ConfigError;
+    /// use {libgit2_crustify::libgit2::src::libgit2::config::BackendEntryArc, libgit2_crustify::libgit2::src::libgit2::config::CustomBackend, libgit2_crustify::libgit2::src::libgit2::config::UnopenedBackend};
     ///
     /// struct Keeping(Option<&'static CStr>);
     /// impl CustomBackend for Keeping {

@@ -4,10 +4,12 @@
 use core::ffi::CStr;
 use core::ptr;
 
-use libgit2::libgit2::src::libgit2::index::Index;
-use libgit2::libgit2::src::libgit2::pathspec::{MatchList, Pathspec, PathspecArc, PathspecFlags};
-use libgit2::libgit2::src::libgit2::strarray::StrArrayView;
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::index::Index;
+use libgit2_crustify::libgit2::src::libgit2::pathspec::{
+    MatchList, Pathspec, PathspecArc, PathspecFlags,
+};
+use libgit2_crustify::libgit2::src::libgit2::strarray::StrArrayView;
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// The C result for one path, which is only ever 0 or 1 for non-null arguments.
 fn raw_matches(raw: *const sys::git_pathspec, flags: PathspecFlags, path: &CStr) -> bool {

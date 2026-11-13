@@ -3,7 +3,7 @@
 use std::ffi::CStr;
 use std::thread;
 
-use libgit2::libgit2::src::libgit2::checkout::ProgressCallback;
+use libgit2_crustify::libgit2::src::libgit2::checkout::ProgressCallback;
 
 fn main() {
     let mut f = |_: Option<&CStr>, _: usize, _: usize| {};

@@ -26,7 +26,7 @@ use std::panic::{self, AssertUnwindSafe};
 use std::thread;
 
 use ffibox::CZeroable;
-use libgit2::libgit2::src::libgit2::indexer::{
+use libgit2_crustify::libgit2::src::libgit2::indexer::{
     IndexerProgress, IndexerProgressMut, IndexerProgressRef, ProgressCallback,
 };
 
@@ -142,7 +142,7 @@ fn reborrows_keep_one_writer() {
 #[test]
 fn copies_are_independent() {
     let c = {
-        let a = IndexerProgress::from(libgit2::sys::libgit2::git_indexer_progress {
+        let a = IndexerProgress::from(libgit2_crustify::sys::libgit2::git_indexer_progress {
             total_objects: 3,
             ..Default::default()
         });

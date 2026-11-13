@@ -7,7 +7,7 @@
 
 use std::ffi::CString;
 
-use libgit2::libgit2::src::libgit2::config_mem::BackendMemoryOptions;
+use libgit2_crustify::libgit2::src::libgit2::config_mem::BackendMemoryOptions;
 
 #[test]
 #[cfg_attr(
@@ -102,7 +102,7 @@ fn memory_options_cross_threads() {
 mod backend_entries {
     use std::ffi::CString;
 
-    use libgit2::libgit2::src::libgit2::config::{BackendEntry, BackendEntryArc, Config};
+    use libgit2_crustify::libgit2::src::libgit2::config::{BackendEntry, BackendEntryArc, Config};
 
     #[test]
     #[cfg_attr(miri, ignore = "acquisition and release call libgit2")]
@@ -207,7 +207,7 @@ mod backend_entries {
 mod iterators {
     use std::ffi::CString;
 
-    use libgit2::libgit2::src::libgit2::config::{Config, ConfigLevel, IteratorNext};
+    use libgit2_crustify::libgit2::src::libgit2::config::{Config, ConfigLevel, IteratorNext};
 
     #[test]
     #[cfg_attr(miri, ignore = "calls libgit2")]
@@ -467,13 +467,13 @@ mod custom_backends {
     use std::ops::ControlFlow;
     use std::rc::Rc;
 
-    use libgit2::libgit2::src::libgit2::config::{
+    use libgit2_crustify::libgit2::src::libgit2::config::{
         BackendEntry, BackendEntryArc, Config, ConfigArc, ConfigError, ConfigLevel, CustomBackend,
         EntryOrigin, EntryRef, ForeachCallback, UnopenedBackend,
     };
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryRef};
-    use libgit2::libgit2::src::libgit2::signature::Signature;
-    use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryRef};
+    use libgit2_crustify::libgit2::src::libgit2::signature::Signature;
+    use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, ErrorCode};
 
     /// The calls a store saw, and its releases, shared with the test.
     #[derive(Default)]
@@ -737,7 +737,7 @@ mod custom_backends {
     fn registered(
         store: Store,
         readonly: bool,
-    ) -> libgit2::libgit2::src::libgit2::config::ConfigBox<'static> {
+    ) -> libgit2_crustify::libgit2::src::libgit2::config::ConfigBox<'static> {
         let mut config = Config::new().unwrap();
         let backend = if readonly {
             UnopenedBackend::new_readonly(store)
@@ -752,7 +752,7 @@ mod custom_backends {
     }
 
     fn names(
-        config: &libgit2::libgit2::src::libgit2::config::ConfigBox<'_>,
+        config: &libgit2_crustify::libgit2::src::libgit2::config::ConfigBox<'_>,
     ) -> Vec<(CString, CString)> {
         let mut iter = config.as_ref().iterator().unwrap();
         let mut m = iter.as_mut();

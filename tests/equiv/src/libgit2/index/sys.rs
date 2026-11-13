@@ -6,9 +6,9 @@ mod reuc;
 use std::ffi::{CStr, CString, c_int};
 use std::ptr;
 
-use libgit2::libgit2::src::libgit2::index::{Index, IndexBox};
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::index::{Index, IndexBox};
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+use libgit2_crustify::sys::libgit2 as sys;
 use reuc::{IndexFile, Record, Snapshot, snapshot, sorted};
 
 mod reuc_edits;

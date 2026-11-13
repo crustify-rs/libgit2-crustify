@@ -1,5 +1,5 @@
 // A trailer cannot outlive the strings it borrows.
-use libgit2::libgit2::src::libgit2::trailer::MessageTrailer;
+use libgit2_crustify::libgit2::src::libgit2::trailer::MessageTrailer;
 use std::ffi::CString;
 
 fn main() {

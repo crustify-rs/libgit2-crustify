@@ -56,9 +56,11 @@ use std::path::PathBuf;
 use std::{fs, ptr, thread};
 
 use ffibox::CZeroable;
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidRef, OidShortener, OidType, UnnamedOidType};
-use libgit2::libgit2::src::util::errors::ErrorBuf;
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::oid::{
+    Oid, OidRef, OidShortener, OidType, UnnamedOidType,
+};
+use libgit2_crustify::libgit2::src::util::errors::ErrorBuf;
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// Every `git_oid_t` constant, beside the variant that must carry it.
 const TYPES: [(sys::git_oid_t, OidType); 2] = [

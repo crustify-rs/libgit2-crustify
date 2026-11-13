@@ -17,11 +17,11 @@ use std::ffi::{CStr, c_int};
 use std::sync::Barrier;
 use std::thread;
 
-use libgit2::libgit2::src::libgit2::config::{
+use libgit2_crustify::libgit2::src::libgit2::config::{
     Config, ConfigArc, ConfigBox, ConfigLevel, ConfigRef,
 };
-use libgit2::libgit2::src::libgit2::repository::Repository;
-use libgit2::libgit2::src::util::errors::ErrorCode;
+use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
+use libgit2_crustify::libgit2::src::util::errors::ErrorCode;
 
 use crate::fixture::commit_and_config::{OpenRepo, TESTREPO, config};
 use crate::fixture::isolated;
@@ -178,8 +178,8 @@ fn first_configs_race_to_init() {
 mod parsers {
     use std::ffi::{CStr, CString};
 
-    use libgit2::libgit2::src::libgit2::config::{parse_bool, parse_i32, parse_i64};
-    use libgit2::libgit2::src::util::errors::{ErrorClass, clear, set_str};
+    use libgit2_crustify::libgit2::src::libgit2::config::{parse_bool, parse_i32, parse_i64};
+    use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, clear, set_str};
 
     use super::*;
 
@@ -328,7 +328,7 @@ mod parsers {
 /// extreme/unknown values are never interpreted as Rust enum discriminants.
 #[test]
 fn config_level_values_and_threads() {
-    use libgit2::libgit2::src::libgit2::config::ConfigLevel;
+    use libgit2_crustify::libgit2::src::libgit2::config::ConfigLevel;
     let levels = [
         ConfigLevel::SYSTEM,
         ConfigLevel::XDG,
@@ -351,7 +351,7 @@ fn config_level_values_and_threads() {
 /// Unknown mapping-mode values are rejected, never transmuted into the enum.
 #[test]
 fn mapping_modes_are_checked() {
-    use libgit2::libgit2::src::libgit2::config::MapType;
+    use libgit2_crustify::libgit2::src::libgit2::config::MapType;
     for mode in MapType::ALL {
         assert_eq!(MapType::from_raw(mode.raw()), Some(mode));
     }
@@ -363,11 +363,11 @@ fn mapping_modes_are_checked() {
 mod entry_and_map_types {
     use std::ffi::CString;
 
-    use libgit2::libgit2::src::libgit2::config::{
+    use libgit2_crustify::libgit2::src::libgit2::config::{
         Config, ConfigLevel, ConfigMap, EntryArc, MapMatch,
     };
-    use libgit2::libgit2::src::libgit2::repository::Repository;
-    use libgit2::libgit2::src::util::errors::ErrorCode;
+    use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
+    use libgit2_crustify::libgit2::src::util::errors::ErrorCode;
 
     #[test]
     #[cfg_attr(miri, ignore = "calls libgit2")]
@@ -584,7 +584,7 @@ mod entry_and_map_types {
 mod file_access {
     use std::ffi::CString;
 
-    use libgit2::libgit2::src::libgit2::config::{
+    use libgit2_crustify::libgit2::src::libgit2::config::{
         ConfigLevel, find_global, find_system, find_xdg, parse_path,
     };
 
@@ -885,7 +885,7 @@ mod file_access {
 
         // The explicit annotation narrows Config::new's covariant static owner.
         fn bound<'r>(
-            repo: libgit2::libgit2::src::libgit2::repository::RepositoryRef<'r>,
+            repo: libgit2_crustify::libgit2::src::libgit2::repository::RepositoryRef<'r>,
             file: &CStr,
         ) -> ConfigBox<'r> {
             let mut cfg: ConfigBox<'r> = Config::new().unwrap();
@@ -1054,7 +1054,7 @@ mod writes_and_snapshots {
     #[test]
     #[cfg_attr(miri, ignore = "calls libgit2")]
     fn readonly_delete_errors_are_owned() {
-        use libgit2::libgit2::src::util::errors::{ErrorClass, set_str};
+        use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, set_str};
         let mut empty = Config::new().unwrap();
         let mut snapshot = empty.as_ref().snapshot().unwrap();
         let name = CString::new("a.temporary").unwrap();
@@ -1100,7 +1100,7 @@ mod mapping_callbacks {
     use std::ops::ControlFlow;
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
-    use libgit2::libgit2::src::libgit2::config::{
+    use libgit2_crustify::libgit2::src::libgit2::config::{
         ConfigMap, EntryRef, ForeachCallback, MapMatch, lookup_map_value,
     };
 
@@ -1223,7 +1223,7 @@ mod mapping_callbacks {
     #[test]
     #[cfg_attr(miri, ignore = "calls libgit2")]
     fn mapped_lower_backend_failure_preserves_the_previous_error() {
-        use libgit2::libgit2::src::util::errors::{ErrorClass, clear, last, set};
+        use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, clear, last, set};
         let lower = scratch("mapped-lower");
         let upper = scratch("mapped-upper");
         for seeded in [false, true] {
@@ -1259,7 +1259,7 @@ mod enumeration {
     use std::ops::ControlFlow;
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
-    use libgit2::libgit2::src::libgit2::config::{EntryRef, ForeachCallback};
+    use libgit2_crustify::libgit2::src::libgit2::config::{EntryRef, ForeachCallback};
 
     use super::*;
 

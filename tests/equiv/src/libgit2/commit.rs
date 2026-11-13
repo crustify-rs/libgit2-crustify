@@ -26,10 +26,10 @@ mod sys;
 use std::ffi::{CStr, c_int};
 use std::ptr;
 
-use libgit2::libgit2::src::libgit2::commit::{
+use libgit2_crustify::libgit2::src::libgit2::commit::{
     CommitArray, CommitArrayRef, CommitArrayVal, CommitRef,
 };
-use libgit2::sys::libgit2 as raw;
+use libgit2_crustify::sys::libgit2 as raw;
 
 const TESTREPO: &CStr = c"tests/resources/testrepo.git";
 const MERGEDREPO: &CStr = c"tests/resources/mergedrepo/.gitted";
@@ -207,8 +207,8 @@ mod header {
     use std::path::PathBuf;
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::commit::Header;
-    use libgit2::sys::libgit2 as raw;
+    use libgit2_crustify::libgit2::src::libgit2::commit::Header;
+    use libgit2_crustify::sys::libgit2 as raw;
 
     use super::init;
 
@@ -521,11 +521,13 @@ mod commit_owner {
     use std::ffi::{CStr, CString, c_int};
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::commit::{Commit, CommitArc, CommitRef};
-    use libgit2::libgit2::src::libgit2::object::{Object, ObjectArc};
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox, RepositoryError};
-    use libgit2::sys::libgit2 as raw;
+    use libgit2_crustify::libgit2::src::libgit2::commit::{Commit, CommitArc, CommitRef};
+    use libgit2_crustify::libgit2::src::libgit2::object::{Object, ObjectArc};
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
+        Repository, RepositoryBox, RepositoryError,
+    };
+    use libgit2_crustify::sys::libgit2 as raw;
 
     use super::{init, open};
 
@@ -822,10 +824,10 @@ mod getters {
     use std::path::PathBuf;
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::commit::{Commit, CommitArc, CommitRef};
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidRef, OidType};
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
-    use libgit2::sys::libgit2 as raw;
+    use libgit2_crustify::libgit2::src::libgit2::commit::{Commit, CommitArc, CommitRef};
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidRef, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
+    use libgit2_crustify::sys::libgit2 as raw;
 
     use super::{init, open};
 
@@ -1249,11 +1251,13 @@ mod navigation {
     use std::path::PathBuf;
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::commit::{Commit, CommitArc};
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox, RepositoryError};
-    use libgit2::libgit2::src::libgit2::tree::TreeArc;
-    use libgit2::sys::libgit2 as raw;
+    use libgit2_crustify::libgit2::src::libgit2::commit::{Commit, CommitArc};
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
+        Repository, RepositoryBox, RepositoryError,
+    };
+    use libgit2_crustify::libgit2::src::libgit2::tree::TreeArc;
+    use libgit2_crustify::sys::libgit2 as raw;
 
     use super::{init, open};
 
@@ -1654,10 +1658,10 @@ mod array_moves {
     use std::mem::size_of;
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::commit::{Commit, CommitArc, CommitArray};
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::Repository;
-    use libgit2::sys::libgit2 as raw;
+    use libgit2_crustify::libgit2::src::libgit2::commit::{Commit, CommitArc, CommitArray};
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
+    use libgit2_crustify::sys::libgit2 as raw;
 
     use super::{Record, c_record, hex, init, open, rust_hex, rust_record};
 
@@ -1759,7 +1763,7 @@ mod array_moves {
             })
             .collect();
         let compare = |c: &raw::git_commitarray,
-                       r: &libgit2::libgit2::src::libgit2::commit::CommitArrayVal<'_>,
+                       r: &libgit2_crustify::libgit2::src::libgit2::commit::CommitArrayVal<'_>,
                        step: &str| {
             let expected: Record = c_record(c);
             assert_eq!(rust_record(r.as_ref()), expected, "{step}");
@@ -1836,13 +1840,13 @@ mod create_ext_options {
     use std::ptr;
     use std::rc::Rc;
 
-    use libgit2::libgit2::src::libgit2::commit::{
+    use libgit2_crustify::libgit2::src::libgit2::commit::{
         CommitBuilderMut, CreateExtOptions, Header, SignatureCallback,
     };
-    use libgit2::libgit2::src::libgit2::filter::StreamError;
-    use libgit2::libgit2::src::libgit2::repository::RepositoryRef;
-    use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode};
-    use libgit2::sys::libgit2 as raw;
+    use libgit2_crustify::libgit2::src::libgit2::filter::StreamError;
+    use libgit2_crustify::libgit2::src::libgit2::repository::RepositoryRef;
+    use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+    use libgit2_crustify::sys::libgit2 as raw;
 
     use super::init;
 
@@ -2367,25 +2371,27 @@ mod create_ext_options {
 ///   (`create_from_tree`) or writes unchecked (`amend_from_tree`); the unit tests of `commit.rs`
 ///   hold them.
 ///
-/// [`create_from_tree`]: libgit2::libgit2::src::libgit2::commit::create_from_tree
-/// [`create_from_stage`]: libgit2::libgit2::src::libgit2::commit::create_from_stage
-/// [`amend_from_tree`]: libgit2::libgit2::src::libgit2::commit::amend_from_tree
-/// [`amend_from_stage`]: libgit2::libgit2::src::libgit2::commit::amend_from_stage
+/// [`create_from_tree`]: libgit2_crustify::libgit2::src::libgit2::commit::create_from_tree
+/// [`create_from_stage`]: libgit2_crustify::libgit2::src::libgit2::commit::create_from_stage
+/// [`amend_from_tree`]: libgit2_crustify::libgit2::src::libgit2::commit::amend_from_tree
+/// [`amend_from_stage`]: libgit2_crustify::libgit2::src::libgit2::commit::amend_from_stage
 mod create_options {
     use std::ffi::{CStr, CString, c_int};
     use std::path::PathBuf;
     use std::ptr;
     use std::rc::Rc;
 
-    use libgit2::libgit2::src::libgit2::commit::{
+    use libgit2_crustify::libgit2::src::libgit2::commit::{
         CommitBuilderMut, CreateOptions, Header, SignatureCallback, amend_from_stage,
         amend_from_tree, create_from_stage, create_from_tree,
     };
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox, RepositoryRef};
-    use libgit2::libgit2::src::libgit2::signature::{Signature, SignatureView, Time};
-    use libgit2::libgit2::src::libgit2::tree::Tree;
-    use libgit2::sys::libgit2 as raw;
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
+        Repository, RepositoryBox, RepositoryRef,
+    };
+    use libgit2_crustify::libgit2::src::libgit2::signature::{Signature, SignatureView, Time};
+    use libgit2_crustify::libgit2::src::libgit2::tree::Tree;
+    use libgit2_crustify::sys::libgit2 as raw;
 
     use super::create_ext_options::{Signer, rust_sign, sign};
     use super::init;
@@ -3315,10 +3321,12 @@ mod signatures {
     use std::path::PathBuf;
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::commit::{create_with_signature, extract_signature};
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
-    use libgit2::sys::libgit2 as raw;
+    use libgit2_crustify::libgit2::src::libgit2::commit::{
+        create_with_signature, extract_signature,
+    };
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
+    use libgit2_crustify::sys::libgit2 as raw;
 
     use super::init;
 
@@ -3706,19 +3714,19 @@ fn isolated(test: &str, body: fn()) {
 /// computes it on the first call and keeps it), and the copies a mailmap of their own
 /// resolves (or the failure), comparing after every commit.
 ///
-/// [`CommitRef::author`]: libgit2::libgit2::src::libgit2::commit::CommitRef::author
-/// [`CommitRef::committer`]: libgit2::libgit2::src::libgit2::commit::CommitRef::committer
-/// [`CommitRef::body`]: libgit2::libgit2::src::libgit2::commit::CommitRef::body
+/// [`CommitRef::author`]: libgit2_crustify::libgit2::src::libgit2::commit::CommitRef::author
+/// [`CommitRef::committer`]: libgit2_crustify::libgit2::src::libgit2::commit::CommitRef::committer
+/// [`CommitRef::body`]: libgit2_crustify::libgit2::src::libgit2::commit::CommitRef::body
 mod reading {
     use std::ffi::{CStr, CString, c_int};
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::commit::Commit;
-    use libgit2::libgit2::src::libgit2::mailmap::Mailmap;
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::Repository;
-    use libgit2::libgit2::src::libgit2::signature::SignatureRef;
-    use libgit2::sys::libgit2 as raw;
+    use libgit2_crustify::libgit2::src::libgit2::commit::Commit;
+    use libgit2_crustify::libgit2::src::libgit2::mailmap::Mailmap;
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
+    use libgit2_crustify::libgit2::src::libgit2::signature::SignatureRef;
+    use libgit2_crustify::sys::libgit2 as raw;
 
     use super::{TESTREPO, open};
 
@@ -3914,25 +3922,27 @@ mod reading {
 /// without its name or email, or whose offset is `i32::MIN` minutes); the unit tests of
 /// `commit.rs` hold the refusals.
 ///
-/// [`create`]: libgit2::libgit2::src::libgit2::commit::create
-/// [`create_from_array`]: libgit2::libgit2::src::libgit2::commit::create_from_array
-/// [`create_buffer`]: libgit2::libgit2::src::libgit2::commit::create_buffer
-/// [`create_ext`]: libgit2::libgit2::src::libgit2::commit::create_ext
-/// [`CommitRef::amend`]: libgit2::libgit2::src::libgit2::commit::CommitRef::amend
+/// [`create`]: libgit2_crustify::libgit2::src::libgit2::commit::create
+/// [`create_from_array`]: libgit2_crustify::libgit2::src::libgit2::commit::create_from_array
+/// [`create_buffer`]: libgit2_crustify::libgit2::src::libgit2::commit::create_buffer
+/// [`create_ext`]: libgit2_crustify::libgit2::src::libgit2::commit::create_ext
+/// [`CommitRef::amend`]: libgit2_crustify::libgit2::src::libgit2::commit::CommitRef::amend
 mod creating {
     use std::ffi::{CStr, CString, c_int};
     use std::path::PathBuf;
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::commit::{
+    use libgit2_crustify::libgit2::src::libgit2::commit::{
         Commit, CommitArc, CommitRef, CreateExtOptions, Header, create, create_buffer, create_ext,
         create_from_array,
     };
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox, RepositoryError};
-    use libgit2::libgit2::src::libgit2::signature::{SignatureView, Time};
-    use libgit2::libgit2::src::libgit2::tree::Tree;
-    use libgit2::sys::libgit2 as raw;
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
+        Repository, RepositoryBox, RepositoryError,
+    };
+    use libgit2_crustify::libgit2::src::libgit2::signature::{SignatureView, Time};
+    use libgit2_crustify::libgit2::src::libgit2::tree::Tree;
+    use libgit2_crustify::sys::libgit2 as raw;
 
     use super::init;
 

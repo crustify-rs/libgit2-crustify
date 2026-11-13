@@ -116,7 +116,7 @@ define_ctype!(
     /// a filter session that belongs to its thread.
     ///
     /// ```compile_fail,E0277
-    /// use libgit2::libgit2::src::libgit2::filter::WriteStreamBox;
+    /// use libgit2_crustify::libgit2::src::libgit2::filter::WriteStreamBox;
     ///
     /// fn send<T: Send>(_: T) {}
     /// fn forward(stream: WriteStreamBox) {
@@ -331,7 +331,7 @@ pub(crate) struct Repr<W> {
 /// hands one to libgit2, which frees it); dropping either drops the writer.
 ///
 /// ```
-/// use libgit2::libgit2::src::libgit2::filter::RustWriteStream;
+/// use libgit2_crustify::libgit2::src::libgit2::filter::RustWriteStream;
 ///
 /// let mut stream = RustWriteStream::new(Vec::new());
 /// stream.as_mut().write(b"hello, ").unwrap();
@@ -342,7 +342,7 @@ pub(crate) struct Repr<W> {
 /// A handle borrows the stream, and an erased one cannot borrow anything:
 ///
 /// ```compile_fail,E0597
-/// use libgit2::libgit2::src::libgit2::filter::RustWriteStream;
+/// use libgit2_crustify::libgit2::src::libgit2::filter::RustWriteStream;
 ///
 /// let mut out = Vec::new();
 /// let stream = RustWriteStream::new(&mut out);
@@ -354,7 +354,7 @@ pub(crate) struct Repr<W> {
 /// ```compile_fail,E0277
 /// use std::rc::Rc;
 ///
-/// use {libgit2::libgit2::src::libgit2::filter::RustWriteStream, libgit2::libgit2::src::libgit2::filter::StreamError, libgit2::libgit2::src::libgit2::filter::StreamWriter};
+/// use {libgit2_crustify::libgit2::src::libgit2::filter::RustWriteStream, libgit2_crustify::libgit2::src::libgit2::filter::StreamError, libgit2_crustify::libgit2::src::libgit2::filter::StreamWriter};
 ///
 /// struct Shared(Rc<()>);
 ///
@@ -693,7 +693,7 @@ impl std::error::Error for StreamError {}
 /// A list has no copy:
 ///
 /// ```compile_fail,E0599
-/// use libgit2::libgit2::src::libgit2::filter::FilterListBox;
+/// use libgit2_crustify::libgit2::src::libgit2::filter::FilterListBox;
 ///
 /// fn copy(list: FilterListBox<'_>) {
 ///     let _copy = list.clone();
@@ -703,7 +703,7 @@ impl std::error::Error for StreamError {}
 /// The exclusive handle is invariant in `'r`, as `&mut` is in its pointee:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::filter::FilterListMut;
+/// use libgit2_crustify::libgit2::src::libgit2::filter::FilterListMut;
 ///
 /// fn shrink<'a, 'r>(m: FilterListMut<'a, 'static>) -> FilterListMut<'a, 'r> {
 ///     m
@@ -713,7 +713,7 @@ impl std::error::Error for StreamError {}
 /// An owner cannot outlive the repository it borrows:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::filter::FilterListBox;
+/// use libgit2_crustify::libgit2::src::libgit2::filter::FilterListBox;
 ///
 /// fn keep<'r>(list: FilterListBox<'r>) -> FilterListBox<'static> {
 ///     list
@@ -723,7 +723,7 @@ impl std::error::Error for StreamError {}
 /// A handle cannot outlive its owner, nor alias an exclusive one:
 ///
 /// ```compile_fail,E0597
-/// use libgit2::libgit2::src::libgit2::filter::{FilterListBox, FilterListRef};
+/// use libgit2_crustify::libgit2::src::libgit2::filter::{FilterListBox, FilterListRef};
 ///
 /// fn escape(make: impl Fn() -> FilterListBox<'static>) {
 ///     let r: FilterListRef<'_, 'static>;
@@ -736,7 +736,7 @@ impl std::error::Error for StreamError {}
 /// ```
 ///
 /// ```compile_fail,E0499
-/// use libgit2::libgit2::src::libgit2::filter::FilterListBox;
+/// use libgit2_crustify::libgit2::src::libgit2::filter::FilterListBox;
 ///
 /// fn alias(mut list: FilterListBox<'static>) {
 ///     let a = list.as_mut();
@@ -748,7 +748,7 @@ impl std::error::Error for StreamError {}
 /// No list crosses threads:
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::filter::FilterListBox;
+/// use libgit2_crustify::libgit2::src::libgit2::filter::FilterListBox;
 ///
 /// fn send<T: Send>(_: T) {}
 /// fn check(list: FilterListBox<'static>) {
@@ -918,9 +918,9 @@ impl<'r> FilterList<'r> {
     /// `repo` for `'r`, and the repository cannot go first:
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::sys::libgit2 as sys;
-    /// use libgit2::libgit2::src::libgit2::filter::FilterList;
-    /// use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// use libgit2_crustify::sys::libgit2 as sys;
+    /// use libgit2_crustify::libgit2::src::libgit2::filter::FilterList;
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     ///
     /// let repo = Repository::new().unwrap();
     /// let list = FilterList::new(repo.as_ref(), sys::GIT_FILTER_TO_ODB, 0).unwrap();
@@ -980,9 +980,9 @@ impl<'r> FilterList<'r> {
     /// The list keeps `repo`, as [`new`](Self::new) does:
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::sys::libgit2 as sys;
-    /// use libgit2::libgit2::src::libgit2::filter::FilterList;
-    /// use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// use libgit2_crustify::sys::libgit2 as sys;
+    /// use libgit2_crustify::libgit2::src::libgit2::filter::FilterList;
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     ///
     /// let repo = Repository::open(c".").unwrap();
     /// let list = FilterList::load(repo.as_ref(), c"a.txt", sys::GIT_FILTER_TO_ODB, 0);

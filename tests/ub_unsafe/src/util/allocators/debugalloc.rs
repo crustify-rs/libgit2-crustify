@@ -9,11 +9,11 @@ use std::ffi::CString;
 use std::fs;
 use std::process::Command;
 
-use libgit2::libgit2::src::libgit2::odb::Odb;
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-use libgit2::libgit2::src::libgit2::settings::set_allocator;
-use libgit2::libgit2::src::util::alloc::Allocator;
-use libgit2::libgit2::src::util::errors::ErrorClass;
+use libgit2_crustify::libgit2::src::libgit2::odb::Odb;
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+use libgit2_crustify::libgit2::src::libgit2::settings::set_allocator;
+use libgit2_crustify::libgit2::src::util::alloc::Allocator;
+use libgit2_crustify::libgit2::src::util::errors::ErrorClass;
 
 const CHILD: &str = "CRUSTIFY_UB_UNSAFE_CHILD";
 

@@ -1,7 +1,7 @@
 // An `int` cannot become an object or reference type by a cast or an infallible
 // conversion: `from_raw` / `try_from` are the only ways in, and they reject values
 // without a variant.
-use {libgit2::libgit2::src::libgit2::object::ObjectType, libgit2::libgit2::src::libgit2::refs::ReferenceType};
+use {libgit2_crustify::libgit2::src::libgit2::object::ObjectType, libgit2_crustify::libgit2::src::libgit2::refs::ReferenceType};
 
 fn main() {
     let raw: i32 = -2;

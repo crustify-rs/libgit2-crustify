@@ -15,12 +15,12 @@ use std::mem::MaybeUninit;
 use std::panic;
 
 use ffibox::CZeroable;
-use libgit2::libgit2::deps::reftable::basics::{
+use libgit2_crustify::libgit2::deps::reftable::basics::{
     Buf, BufMut, BufRef, BufVal, Error, HashId, LenOutOfRange, Names, NamesRef, NamesVec,
     ReftableArrayFree, ReftableBox, ReftableStr, ReftableVec, UnnamedHashId, binsearch,
     parse_names,
 };
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::sys::libgit2 as sys;
 
 #[test]
 fn hash_id_converts_from_and_to_its_c_value() {
@@ -88,7 +88,7 @@ fn buf_debug_shows_length_capacity_and_escaped_bytes() {
 #[test]
 #[cfg_attr(miri, ignore = "calls C")]
 fn hash_ids_report_their_id_sizes() {
-    use libgit2::libgit2::deps::reftable::basics::{HASH_SIZE_SHA1, HASH_SIZE_SHA256};
+    use libgit2_crustify::libgit2::deps::reftable::basics::{HASH_SIZE_SHA1, HASH_SIZE_SHA256};
 
     assert_eq!(HashId::Sha1.size(), 20);
     assert_eq!(HashId::Sha256.size(), 32);
@@ -485,7 +485,7 @@ fn errors_carry_reftable_codes_and_messages() {
 
 #[test]
 fn hash_sizes_are_those_of_sha1_and_sha256_ids() {
-    use libgit2::libgit2::deps::reftable::basics::{
+    use libgit2_crustify::libgit2::deps::reftable::basics::{
         HASH_SIZE_MAX, HASH_SIZE_SHA1, HASH_SIZE_SHA256,
     };
 
@@ -499,7 +499,9 @@ fn hash_sizes_are_those_of_sha1_and_sha256_ids() {
 
 #[test]
 fn format_ids_are_their_names_read_big_endian() {
-    use libgit2::libgit2::deps::reftable::basics::{FORMAT_ID_SHA1, FORMAT_ID_SHA256, get_be32};
+    use libgit2_crustify::libgit2::deps::reftable::basics::{
+        FORMAT_ID_SHA1, FORMAT_ID_SHA256, get_be32,
+    };
 
     // `basics.h`'s values, which are on disk.
     assert_eq!(FORMAT_ID_SHA1, 0x7368_6131);
@@ -512,7 +514,9 @@ fn format_ids_are_their_names_read_big_endian() {
 
 #[test]
 fn big_endian_helpers_write_the_most_significant_byte_first() {
-    use libgit2::libgit2::deps::reftable::basics::{put_be16, put_be24, put_be32, put_be64};
+    use libgit2_crustify::libgit2::deps::reftable::basics::{
+        put_be16, put_be24, put_be32, put_be64,
+    };
 
     let mut b2 = [0u8; 2];
     put_be16(&mut b2, 0x0102);
@@ -530,7 +534,7 @@ fn big_endian_helpers_write_the_most_significant_byte_first() {
 
 #[test]
 fn put_be24_drops_the_top_byte() {
-    use libgit2::libgit2::deps::reftable::basics::{get_be24, put_be24};
+    use libgit2_crustify::libgit2::deps::reftable::basics::{get_be24, put_be24};
 
     let mut out = [0xAAu8; 3];
     put_be24(&mut out, 0xFF12_3456);
@@ -542,7 +546,7 @@ fn put_be24_drops_the_top_byte() {
 
 #[test]
 fn big_endian_helpers_round_trip_at_their_edges() {
-    use libgit2::libgit2::deps::reftable::basics::{
+    use libgit2_crustify::libgit2::deps::reftable::basics::{
         get_be16, get_be24, get_be32, get_be64, put_be16, put_be24, put_be32, put_be64,
     };
 
@@ -572,7 +576,9 @@ fn big_endian_helpers_round_trip_at_their_edges() {
 
 #[test]
 fn big_endian_helpers_read_every_byte_into_its_place() {
-    use libgit2::libgit2::deps::reftable::basics::{get_be16, get_be24, get_be32, get_be64};
+    use libgit2_crustify::libgit2::deps::reftable::basics::{
+        get_be16, get_be24, get_be32, get_be64,
+    };
 
     assert_eq!(get_be16(&[0xFF, 0x00]), 0xFF00);
     assert_eq!(get_be24(&[0x00, 0xFF, 0x00]), 0x00_FF00);
@@ -585,7 +591,7 @@ fn big_endian_helpers_read_every_byte_into_its_place() {
 
 #[test]
 fn big_endian_helpers_evaluate_at_compile_time() {
-    use libgit2::libgit2::deps::reftable::basics::{get_be24, put_be24};
+    use libgit2_crustify::libgit2::deps::reftable::basics::{get_be24, put_be24};
 
     const ENCODED: [u8; 3] = {
         let mut out = [0; 3];
@@ -599,7 +605,7 @@ fn big_endian_helpers_evaluate_at_compile_time() {
 
 #[test]
 fn alloc_size_multiplies_or_reports_overflow() {
-    use libgit2::libgit2::deps::reftable::basics::alloc_size;
+    use libgit2_crustify::libgit2::deps::reftable::basics::alloc_size;
 
     assert_eq!(alloc_size(0, 0), Some(0));
     assert_eq!(alloc_size(0, usize::MAX), Some(0));
@@ -617,7 +623,7 @@ fn alloc_size_multiplies_or_reports_overflow() {
 
 #[test]
 fn swap_exchanges_values_of_one_type() {
-    use libgit2::libgit2::deps::reftable::basics::swap;
+    use libgit2_crustify::libgit2::deps::reftable::basics::swap;
 
     let (mut a, mut b) = (1u32, 2u32);
     swap(&mut a, &mut b);
@@ -633,7 +639,7 @@ fn swap_exchanges_values_of_one_type() {
 fn free_and_null_drops_what_the_slot_owns_once() {
     use std::rc::Rc;
 
-    use libgit2::libgit2::deps::reftable::basics::free_and_null;
+    use libgit2_crustify::libgit2::deps::reftable::basics::free_and_null;
 
     let owned = Rc::new(());
     let mut slot = Some(Rc::clone(&owned));
@@ -663,7 +669,7 @@ fn buf_init_is_the_empty_buffer() {
 #[test]
 #[cfg_attr(miri, ignore = "calls C")]
 fn names_count_their_entries() {
-    use libgit2::libgit2::deps::reftable::basics::NamesVec;
+    use libgit2_crustify::libgit2::deps::reftable::basics::NamesVec;
 
     let none = NamesVec::new([]);
     assert_eq!(none.as_ref().len(), 0);
@@ -678,7 +684,7 @@ fn names_count_their_entries() {
 
 #[test]
 fn names_iterate_in_order() {
-    use libgit2::libgit2::deps::reftable::basics::NamesVec;
+    use libgit2_crustify::libgit2::deps::reftable::basics::NamesVec;
 
     let names = [c"a.ref", c"", c"b.ref"];
     let list = NamesVec::from(&names[..]);
@@ -695,7 +701,7 @@ fn names_iterate_in_order() {
 #[test]
 #[cfg_attr(miri, ignore = "calls C")]
 fn names_compare_by_content_and_order() {
-    use libgit2::libgit2::deps::reftable::basics::NamesVec;
+    use libgit2_crustify::libgit2::deps::reftable::basics::NamesVec;
 
     let a: NamesVec<'_> = [c"t1.ref", c"t2.ref"].into_iter().collect();
     let same_content = [c"t1.ref".to_owned(), c"t2.ref".to_owned()];
@@ -769,7 +775,7 @@ fn grow_or_clear_grows_or_leaves_nothing_to_free() {
 #[test]
 #[cfg_attr(miri, ignore = "calls C")]
 fn parsed_names_compare_with_names_built_in_rust() {
-    use libgit2::libgit2::deps::reftable::basics::NamesVec;
+    use libgit2_crustify::libgit2::deps::reftable::basics::NamesVec;
 
     let parsed = parse_names(b"t1.ref\n\nt2.ref\n").unwrap();
     assert_eq!(parsed.as_ref().len(), 2);

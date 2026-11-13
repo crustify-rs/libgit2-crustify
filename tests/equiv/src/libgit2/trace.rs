@@ -15,15 +15,15 @@
 //! messages (`callback` below), and [`trace::set`] / [`trace::clear`] against
 //! `git_trace_set` (`config` below).
 //!
-//! [`TraceCallback`]: libgit2::libgit2::src::libgit2::trace::TraceCallback
-//! [`trace::set`]: libgit2::libgit2::src::libgit2::trace::set
-//! [`trace::clear`]: libgit2::libgit2::src::libgit2::trace::clear
+//! [`TraceCallback`]: libgit2_crustify::libgit2::src::libgit2::trace::TraceCallback
+//! [`trace::set`]: libgit2_crustify::libgit2::src::libgit2::trace::set
+//! [`trace::clear`]: libgit2_crustify::libgit2::src::libgit2::trace::clear
 
 use std::ffi::{CStr, c_char};
 use std::sync::Mutex;
 
-use libgit2::libgit2::src::libgit2::trace::{TraceLevel, UnnamedTraceLevel};
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::trace::{TraceLevel, UnnamedTraceLevel};
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// Every `git_trace_level_t` constant, beside the variant that must carry it.
 const LEVELS: [(sys::git_trace_level_t, TraceLevel); 7] = [
@@ -166,8 +166,8 @@ mod callback {
     use std::sync::Mutex;
     use std::{ptr, thread};
 
-    use libgit2::libgit2::src::libgit2::trace::{TraceCallback, TraceLevel, Tracer};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::trace::{TraceCallback, TraceLevel, Tracer};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 
@@ -393,9 +393,9 @@ mod config {
     use std::ffi::{CStr, CString, c_char, c_int};
     use std::sync::Mutex;
 
-    use libgit2::libgit2::src::libgit2::trace;
-    use libgit2::libgit2::src::libgit2::trace::{TraceCallback, TraceLevel, Tracer};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::trace;
+    use libgit2_crustify::libgit2::src::libgit2::trace::{TraceCallback, TraceLevel, Tracer};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use super::callback::{connect, init, isolated, serve};
 

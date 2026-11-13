@@ -42,16 +42,16 @@ use std::{fs, ptr};
 
 use ffibox::{CMutSeam, CRefSeam};
 use glibc_bindings::libc::ffi as libc;
-use libgit2::libgit2::src::libgit2::checkout::{
+use libgit2_crustify::libgit2::src::libgit2::checkout::{
     CallbackSlot, CheckoutNotification, CheckoutOptions, CheckoutOptionsMut, CheckoutOptionsRef,
     CheckoutPerfdata, CheckoutPerfdataRef, NotifyCallback, PerfdataCallback, ProgressCallback,
 };
-use libgit2::libgit2::src::libgit2::diff::DiffFileRef;
-use libgit2::libgit2::src::libgit2::index::IndexArc;
-use libgit2::libgit2::src::libgit2::repository::{InitFlag, InitOptions, Repository};
-use libgit2::libgit2::src::libgit2::strarray::StrArrayView;
-use libgit2::libgit2::src::libgit2::tree::TreeArc;
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::diff::DiffFileRef;
+use libgit2_crustify::libgit2::src::libgit2::index::IndexArc;
+use libgit2_crustify::libgit2::src::libgit2::repository::{InitFlag, InitOptions, Repository};
+use libgit2_crustify::libgit2::src::libgit2::strarray::StrArrayView;
+use libgit2_crustify::libgit2::src::libgit2::tree::TreeArc;
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// `git_checkout_strategy_t` bits, from `git2/checkout.h`: the `-sys` crate does not bind
 /// the enum, whose header comment bindgen copies into a doc comment rustdoc would run as

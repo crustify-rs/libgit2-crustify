@@ -35,11 +35,11 @@ use std::hint::black_box;
 use std::{panic, thread};
 
 use ffibox::CZeroable;
-use libgit2::libgit2::deps::reftable::basics::{
+use libgit2_crustify::libgit2::deps::reftable::basics::{
     Buf, BufMut, BufRef, BufVal, Error, HashId, NamesRef, NamesVec, ReftableArrayFree, ReftableBox,
     ReftableStr, ReftableVec, binsearch, free_and_null, parse_names,
 };
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// Every value around the declared ones, then a coarse stride across the whole type and
 /// its top; `BorrowSanitizer` instruments each comparison, so the probe set stays small.

@@ -3,9 +3,9 @@
 // `HEAD` borrows them exclusively.
 use std::cell::Cell;
 
-use libgit2::libgit2::src::libgit2::filter::StreamError;
-use {libgit2::libgit2::src::libgit2::commit::CommitBuilderMut, libgit2::libgit2::src::libgit2::commit::CreateOptions, libgit2::libgit2::src::libgit2::commit::SignatureCallback, libgit2::libgit2::src::libgit2::commit::amend_from_stage};
-use libgit2::libgit2::src::libgit2::repository::RepositoryRef;
+use libgit2_crustify::libgit2::src::libgit2::filter::StreamError;
+use {libgit2_crustify::libgit2::src::libgit2::commit::CommitBuilderMut, libgit2_crustify::libgit2::src::libgit2::commit::CreateOptions, libgit2_crustify::libgit2::src::libgit2::commit::SignatureCallback, libgit2_crustify::libgit2::src::libgit2::commit::amend_from_stage};
+use libgit2_crustify::libgit2::src::libgit2::repository::RepositoryRef;
 
 fn commit(repo: RepositoryRef<'_>) {
     let reached: Cell<Option<&CreateOptions<'_>>> = Cell::new(None);

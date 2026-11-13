@@ -3,7 +3,7 @@
 // seam trait in scope, and the exclusive handle does not alias. (That neither handle is
 // `Send` is a doctest on `CommitBuilder`: the toolchains word that error differently.)
 use ffibox::CMutSeam;
-use libgit2::libgit2::src::libgit2::commit::CommitBuilderMut;
+use libgit2_crustify::libgit2::src::libgit2::commit::CommitBuilderMut;
 
 fn alias(mut builder: CommitBuilderMut<'_>) {
     let shared = builder.as_ref();

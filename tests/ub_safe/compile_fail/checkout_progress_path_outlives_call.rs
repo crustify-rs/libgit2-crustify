@@ -2,7 +2,7 @@
 // that would keep it, by taking a path of a lifetime it outlives, is not a callback.
 use std::ffi::CStr;
 
-use libgit2::libgit2::src::libgit2::checkout::ProgressCallback;
+use libgit2_crustify::libgit2::src::libgit2::checkout::ProgressCallback;
 
 fn keep<'k>(kept: &mut Option<&'k CStr>) {
     let mut f = |path: Option<&'k CStr>, _: usize, _: usize| *kept = path;

@@ -32,10 +32,10 @@ use std::ptr;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use libgit2::libgit2::src::libgit2::odb::{
+use libgit2_crustify::libgit2::src::libgit2::odb::{
     OdbDataArrayFree, OdbDataBox, OdbDataStrFree, OdbDataStrVec, OdbDataVec,
 };
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::sys::libgit2 as sys;
 
 #[repr(C)]
 #[expect(

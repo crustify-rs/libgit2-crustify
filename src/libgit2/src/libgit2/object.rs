@@ -207,7 +207,7 @@ impl std::error::Error for NotAnObjectType {}
 /// shrinks:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::object::ObjectArc;
+/// use libgit2_crustify::libgit2::src::libgit2::object::ObjectArc;
 ///
 /// fn widen<'r>(object: ObjectArc<'r>) -> ObjectArc<'static> {
 ///     object
@@ -217,7 +217,7 @@ impl std::error::Error for NotAnObjectType {}
 /// and an object stays on the thread that looked it up:
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::object::ObjectArc;
+/// use libgit2_crustify::libgit2::src::libgit2::object::ObjectArc;
 ///
 /// fn send<T: Send>(_: T) {}
 /// fn move_out(object: ObjectArc<'static>) {
@@ -235,7 +235,7 @@ pub struct Object<'r>(sys::git_object, PhantomData<(*const (), &'r ())>);
 /// It stays on the thread of the object's repository, as the owner does:
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::object::ObjectRef;
+/// use libgit2_crustify::libgit2::src::libgit2::object::ObjectRef;
 ///
 /// fn send<T: Send>(_: T) {}
 /// fn move_out(handle: ObjectRef<'static, 'static>) {
@@ -288,9 +288,9 @@ impl<'a, 'r> ObjectRef<'a, 'r> {
     /// but not the repository.
     ///
     /// ```compile_fail,E0505
-    /// # use libgit2::libgit2::src::libgit2::object::Object;
-    /// # use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    /// # use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// # use libgit2_crustify::libgit2::src::libgit2::object::Object;
+    /// # use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    /// # use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     /// let repo = Repository::open(c".").unwrap();
     /// let id = Oid::zero(OidType::Sha1);
     /// let object = Object::lookup(repo.as_ref(), id.as_ref(), None).unwrap();
@@ -343,9 +343,9 @@ impl<'a, 'r> ObjectRef<'a, 'r> {
     /// lookups do not: it outlives the object, but not the repository's borrow.
     ///
     /// ```compile_fail,E0505
-    /// # use libgit2::libgit2::src::libgit2::object::Object;
-    /// # use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    /// # use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// # use libgit2_crustify::libgit2::src::libgit2::object::Object;
+    /// # use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    /// # use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     /// let repo = Repository::open(c".").unwrap();
     /// let id = Oid::zero(OidType::Sha1);
     /// let object = Object::lookup(repo.as_ref(), id.as_ref(), None).unwrap();
@@ -613,9 +613,9 @@ impl<'r> Object<'r> {
     /// this borrow of it:
     ///
     /// ```compile_fail,E0505
-    /// # use libgit2::libgit2::src::libgit2::object::Object;
-    /// # use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    /// # use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// # use libgit2_crustify::libgit2::src::libgit2::object::Object;
+    /// # use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    /// # use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     /// let repo = Repository::open(c".").unwrap();
     /// let id = Oid::zero(OidType::Sha1);
     /// let object = Object::lookup(repo.as_ref(), id.as_ref(), None).unwrap();
@@ -751,8 +751,8 @@ pub(crate) fn id_fits(repo: RepositoryRef<'_>, id: OidRef<'_>) -> Result<(), Rep
 /// [`as_ref`](Self::as_ref) and change it through [`as_mut`](Self::as_mut):
 ///
 /// ```
-/// use libgit2::libgit2::src::libgit2::object::{ObjectIdOptions, ObjectType};
-/// use libgit2::libgit2::src::libgit2::oid::OidType;
+/// use libgit2_crustify::libgit2::src::libgit2::object::{ObjectIdOptions, ObjectType};
+/// use libgit2_crustify::libgit2::src::libgit2::oid::OidType;
 ///
 /// # if cfg!(miri) { return; }
 /// let mut opts = ObjectIdOptions::new();
@@ -770,10 +770,10 @@ pub(crate) fn id_fits(repo: RepositoryRef<'_>, id: OidRef<'_>) -> Result<(), Rep
 /// outlive neither the list:
 ///
 /// ```compile_fail,E0597
-/// use libgit2::sys::libgit2 as sys;
-/// use libgit2::libgit2::src::libgit2::filter::FilterList;
-/// use libgit2::libgit2::src::libgit2::object::ObjectIdOptions;
-/// use libgit2::libgit2::src::libgit2::repository::Repository;
+/// use libgit2_crustify::sys::libgit2 as sys;
+/// use libgit2_crustify::libgit2::src::libgit2::filter::FilterList;
+/// use libgit2_crustify::libgit2::src::libgit2::object::ObjectIdOptions;
+/// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
 ///
 /// let repo = Repository::new().unwrap();
 /// let mut opts = ObjectIdOptions::new();
@@ -787,10 +787,10 @@ pub(crate) fn id_fits(repo: RepositoryRef<'_>, id: OidRef<'_>) -> Result<(), Rep
 /// nor the repository the list borrows:
 ///
 /// ```compile_fail,E0505
-/// use libgit2::sys::libgit2 as sys;
-/// use libgit2::libgit2::src::libgit2::filter::FilterList;
-/// use libgit2::libgit2::src::libgit2::object::ObjectIdOptions;
-/// use libgit2::libgit2::src::libgit2::repository::Repository;
+/// use libgit2_crustify::sys::libgit2 as sys;
+/// use libgit2_crustify::libgit2::src::libgit2::filter::FilterList;
+/// use libgit2_crustify::libgit2::src::libgit2::object::ObjectIdOptions;
+/// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
 ///
 /// let repo = Repository::new().unwrap();
 /// let mut list = FilterList::new(repo.as_ref(), sys::GIT_FILTER_TO_ODB, 0).unwrap();
@@ -804,10 +804,10 @@ pub(crate) fn id_fits(repo: RepositoryRef<'_>, id: OidRef<'_>) -> Result<(), Rep
 /// exclusive:
 ///
 /// ```compile_fail,E0502
-/// use libgit2::sys::libgit2 as sys;
-/// use libgit2::libgit2::src::libgit2::filter::FilterList;
-/// use libgit2::libgit2::src::libgit2::object::ObjectIdOptions;
-/// use libgit2::libgit2::src::libgit2::repository::Repository;
+/// use libgit2_crustify::sys::libgit2 as sys;
+/// use libgit2_crustify::libgit2::src::libgit2::filter::FilterList;
+/// use libgit2_crustify::libgit2::src::libgit2::object::ObjectIdOptions;
+/// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
 ///
 /// let repo = Repository::new().unwrap();
 /// let mut list = FilterList::new(repo.as_ref(), sys::GIT_FILTER_TO_ODB, 0).unwrap();
@@ -821,10 +821,10 @@ pub(crate) fn id_fits(repo: RepositoryRef<'_>, id: OidRef<'_>) -> Result<(), Rep
 /// it cannot be held while they are changed:
 ///
 /// ```compile_fail,E0502
-/// use libgit2::sys::libgit2 as sys;
-/// use libgit2::libgit2::src::libgit2::filter::FilterList;
-/// use libgit2::libgit2::src::libgit2::object::ObjectIdOptions;
-/// use libgit2::libgit2::src::libgit2::repository::Repository;
+/// use libgit2_crustify::sys::libgit2 as sys;
+/// use libgit2_crustify::libgit2::src::libgit2::filter::FilterList;
+/// use libgit2_crustify::libgit2::src::libgit2::object::ObjectIdOptions;
+/// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
 ///
 /// let repo = Repository::new().unwrap();
 /// let mut list = FilterList::new(repo.as_ref(), sys::GIT_FILTER_TO_ODB, 0).unwrap();
@@ -839,7 +839,7 @@ pub(crate) fn id_fits(repo: RepositoryRef<'_>, id: OidRef<'_>) -> Result<(), Rep
 /// shorter borrow than its options were built for:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::object::ObjectIdOptionsMut;
+/// use libgit2_crustify::libgit2::src::libgit2::object::ObjectIdOptionsMut;
 ///
 /// fn shrink<'a, 'f>(m: ObjectIdOptionsMut<'a, 'static>) -> ObjectIdOptionsMut<'a, 'f> {
 ///     m
@@ -849,7 +849,7 @@ pub(crate) fn id_fits(repo: RepositoryRef<'_>, id: OidRef<'_>) -> Result<(), Rep
 /// Neither `Send` nor `Sync`, as the filter list it borrows is not:
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::object::ObjectIdOptions;
+/// use libgit2_crustify::libgit2::src::libgit2::object::ObjectIdOptions;
 ///
 /// fn send<T: Send>(_: T) {}
 /// send(ObjectIdOptions::new());
@@ -859,7 +859,7 @@ pub(crate) fn id_fits(repo: RepositoryRef<'_>, id: OidRef<'_>) -> Result<(), Rep
 /// [`new`](Self::new).
 ///
 /// ```compile_fail,E0599
-/// use libgit2::libgit2::src::libgit2::object::ObjectIdOptions;
+/// use libgit2_crustify::libgit2::src::libgit2::object::ObjectIdOptions;
 ///
 /// let opts = ObjectIdOptions::new();
 /// let _copy = opts.clone();
@@ -1150,7 +1150,7 @@ impl ObjectType {
     ///
     /// ```
     /// # if cfg!(miri) { return; } // Miri cannot call libgit2.
-    /// use libgit2::libgit2::src::libgit2::object::ObjectType;
+    /// use libgit2_crustify::libgit2::src::libgit2::object::ObjectType;
     ///
     /// assert_eq!(ObjectType::Commit.name(), "commit");
     /// assert_eq!(ObjectType::from_name(c"tag"), Some(ObjectType::Tag));
@@ -1212,8 +1212,8 @@ pub fn type_is_valid(raw: sys::git_object_t) -> bool {
 ///
 /// ```
 /// # if cfg!(miri) { return; } // Miri cannot call libgit2.
-/// use libgit2::libgit2::src::libgit2::object::{ObjectType, content_is_valid};
-/// use libgit2::libgit2::src::libgit2::oid::OidType;
+/// use libgit2_crustify::libgit2::src::libgit2::object::{ObjectType, content_is_valid};
+/// use libgit2_crustify::libgit2::src::libgit2::oid::OidType;
 ///
 /// let tag = b"object a65fedf39aefe402d3bb6e24df4d4f5fe4547750\ntype commit\ntag v1\n";
 /// assert_eq!(
@@ -1294,8 +1294,10 @@ pub fn content_is_valid(
 ///
 /// ```
 /// # if cfg!(miri) { return; } // Miri cannot call libgit2.
-/// use libgit2::libgit2::src::libgit2::object::{ObjectIdOptions, ObjectType, id_from_buffer};
-/// use libgit2::libgit2::src::libgit2::oid::OidType;
+/// use libgit2_crustify::libgit2::src::libgit2::object::{
+///     ObjectIdOptions, ObjectType, id_from_buffer,
+/// };
+/// use libgit2_crustify::libgit2::src::libgit2::oid::OidType;
 ///
 /// let blob = id_from_buffer(b"hello\n", None).unwrap();
 /// assert_eq!(

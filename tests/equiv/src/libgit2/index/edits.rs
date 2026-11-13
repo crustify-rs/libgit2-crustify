@@ -8,13 +8,13 @@
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use libgit2::libgit2::src::libgit2::blob::create_from_buffer;
-use libgit2::libgit2::src::libgit2::index::{
+use libgit2_crustify::libgit2::src::libgit2::blob::create_from_buffer;
+use libgit2_crustify::libgit2::src::libgit2::index::{
     Capabilities, CapabilitySetting, IndexRef, MatchedPathCallback, MatchedPathResult, Stage,
 };
-use libgit2::libgit2::src::libgit2::oid::Oid;
-use libgit2::libgit2::src::libgit2::repository::RepositoryError;
-use libgit2::libgit2::src::libgit2::strarray::StrArrayView;
+use libgit2_crustify::libgit2::src::libgit2::oid::Oid;
+use libgit2_crustify::libgit2::src::libgit2::repository::RepositoryError;
+use libgit2_crustify::libgit2::src::libgit2::strarray::StrArrayView;
 
 use super::*;
 

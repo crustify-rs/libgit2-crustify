@@ -51,8 +51,8 @@ mod ffi_import {
     /// first, initialising libgit2 on the first call.
     ///
     /// ```
-    /// use libgit2::libgit2::src::util::allocators::win32_leakcheck::allocator;
-    /// use libgit2::libgit2::src::util::errors::ErrorClass;
+    /// use libgit2_crustify::libgit2::src::util::allocators::win32_leakcheck::allocator;
+    /// use libgit2_crustify::libgit2::src::util::errors::ErrorClass;
     ///
     /// // This build has no leak-checking allocator.
     /// let error = allocator().unwrap_err();

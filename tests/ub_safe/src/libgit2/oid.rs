@@ -26,11 +26,11 @@ use std::hint::black_box;
 use std::thread;
 
 use ffibox::CZeroable;
-use libgit2::libgit2::src::libgit2::oid::{
+use libgit2_crustify::libgit2::src::libgit2::oid::{
     Oid, OidShortener, OidShortenerBox, OidShortenerMut, OidType,
 };
-use libgit2::libgit2::src::util::errors::ErrorClass;
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::util::errors::ErrorClass;
+use libgit2_crustify::sys::libgit2 as sys;
 
 use crate::fixture::isolated;
 
@@ -56,7 +56,7 @@ fn from_raw_yields_only_valid_types() {
         } else {
             assert_eq!(
                 OidType::try_from(raw)
-                    .map_err(libgit2::libgit2::src::libgit2::oid::UnnamedOidType::raw),
+                    .map_err(libgit2_crustify::libgit2::src::libgit2::oid::UnnamedOidType::raw),
                 Err(raw)
             );
         }

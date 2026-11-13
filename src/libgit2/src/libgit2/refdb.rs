@@ -90,7 +90,7 @@ use crate::sys::libgit2 as sys;
 /// The exclusive handle is invariant in `'r`, as `&mut` is in its pointee:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::refdb::RefdbMut;
+/// use libgit2_crustify::libgit2::src::libgit2::refdb::RefdbMut;
 ///
 /// fn shrink<'a, 'r>(m: RefdbMut<'a, 'static>) -> RefdbMut<'a, 'r> {
 ///     m
@@ -100,7 +100,7 @@ use crate::sys::libgit2 as sys;
 /// An owner cannot outlive the repository it borrows:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::refdb::RefdbBox;
+/// use libgit2_crustify::libgit2::src::libgit2::refdb::RefdbBox;
 ///
 /// fn keep<'r>(db: RefdbBox<'r>) -> RefdbBox<'static> {
 ///     db
@@ -110,7 +110,7 @@ use crate::sys::libgit2 as sys;
 /// A handle cannot outlive its owner, nor alias an exclusive one:
 ///
 /// ```compile_fail,E0597
-/// use libgit2::libgit2::src::libgit2::refdb::{RefdbBox, RefdbRef};
+/// use libgit2_crustify::libgit2::src::libgit2::refdb::{RefdbBox, RefdbRef};
 ///
 /// fn escape(make: impl Fn() -> RefdbBox<'static>) {
 ///     let r: RefdbRef<'_, 'static>;
@@ -123,7 +123,7 @@ use crate::sys::libgit2 as sys;
 /// ```
 ///
 /// ```compile_fail,E0499
-/// use libgit2::libgit2::src::libgit2::refdb::RefdbBox;
+/// use libgit2_crustify::libgit2::src::libgit2::refdb::RefdbBox;
 ///
 /// fn alias(mut db: RefdbBox<'static>) {
 ///     let a = db.as_mut();
@@ -135,7 +135,7 @@ use crate::sys::libgit2 as sys;
 /// No refdb crosses threads: libgit2's backends reach the repository unsynchronised.
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::refdb::RefdbBox;
+/// use libgit2_crustify::libgit2::src::libgit2::refdb::RefdbBox;
 ///
 /// fn send<T: Send>(_: T) {}
 /// fn check(db: RefdbBox<'static>) {
@@ -259,8 +259,8 @@ impl<'r> Refdb<'r> {
     /// `Send`, stays on the repository's thread. The repository cannot go first:
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::libgit2::src::libgit2::refdb::Refdb;
-    /// use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// use libgit2_crustify::libgit2::src::libgit2::refdb::Refdb;
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     ///
     /// let repo = Repository::new().unwrap();
     /// let db = Refdb::open(repo.as_ref()).unwrap();

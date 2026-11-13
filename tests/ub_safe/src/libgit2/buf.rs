@@ -12,8 +12,8 @@
 use std::sync::Barrier;
 use std::thread;
 
-use libgit2::libgit2::src::libgit2::buf::{Buf, BufMut, BufRef, BufVal};
-use libgit2::libgit2::src::libgit2::odb::{OdbDataStrFree, OdbDataVec};
+use libgit2_crustify::libgit2::src::libgit2::buf::{Buf, BufMut, BufRef, BufVal};
+use libgit2_crustify::libgit2::src::libgit2::odb::{OdbDataStrFree, OdbDataVec};
 
 use crate::fixture::isolated;
 

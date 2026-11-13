@@ -98,12 +98,12 @@ impl std::error::Error for DiffError {}
 /// Neither the layout nor its shared handle is `Sync`:
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::diff::Diff;
+/// use libgit2_crustify::libgit2::src::libgit2::diff::Diff;
 /// fn sync<T: Sync>() {}
 /// sync::<Diff<'static>>();
 /// ```
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::diff::DiffRef;
+/// use libgit2_crustify::libgit2::src::libgit2::diff::DiffRef;
 /// fn sync<T: Sync>() {}
 /// sync::<DiffRef<'static, 'static>>();
 /// ```
@@ -205,21 +205,21 @@ unsafe impl<'r> CDrop<Diff<'r>> for DiffFree {
 /// A fresh diff's sole reference. Borrows exclude release or mutable reborrowing.
 ///
 /// ```compile_fail,E0505
-/// use libgit2::libgit2::src::libgit2::diff::Diff;
+/// use libgit2_crustify::libgit2::src::libgit2::diff::Diff;
 /// let d = Diff::from_buffer(b"").unwrap();
 /// let r = d.as_ref();
 /// drop(d);
 /// r.len();
 /// ```
 /// ```compile_fail,E0502
-/// use libgit2::libgit2::src::libgit2::diff::Diff;
+/// use libgit2_crustify::libgit2::src::libgit2::diff::Diff;
 /// let mut d = Diff::from_buffer(b"").unwrap();
 /// let r = d.as_ref();
 /// let m = d.as_mut();
 /// r.len();
 /// ```
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::diff::Diff;
+/// use libgit2_crustify::libgit2::src::libgit2::diff::Diff;
 /// let d = Diff::from_buffer(b"").unwrap();
 /// std::thread::spawn(move || drop(d));
 /// ```

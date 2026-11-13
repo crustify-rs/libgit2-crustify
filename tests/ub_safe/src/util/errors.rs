@@ -22,7 +22,7 @@ use std::hint::black_box;
 use std::sync::Barrier;
 use std::thread;
 
-use libgit2::libgit2::src::util::errors::{
+use libgit2_crustify::libgit2::src::util::errors::{
     ErrorBuf, ErrorClass, ErrorCode, clear, last, set, set_oom, set_str,
 };
 
@@ -49,7 +49,7 @@ fn from_raw_yields_only_valid_codes() {
         } else {
             assert_eq!(
                 ErrorCode::try_from(raw)
-                    .map_err(libgit2::libgit2::src::util::errors::UnnamedErrorCode::raw),
+                    .map_err(libgit2_crustify::libgit2::src::util::errors::UnnamedErrorCode::raw),
                 Err(raw)
             );
         }
@@ -68,7 +68,7 @@ fn from_raw_yields_only_valid_classes() {
         } else {
             assert_eq!(
                 ErrorClass::try_from(raw)
-                    .map_err(libgit2::libgit2::src::util::errors::UnnamedErrorClass::raw),
+                    .map_err(libgit2_crustify::libgit2::src::util::errors::UnnamedErrorClass::raw),
                 Err(raw)
             );
         }

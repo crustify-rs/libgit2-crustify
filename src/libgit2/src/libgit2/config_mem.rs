@@ -16,7 +16,7 @@ use crate::sys::libgit2 as sys;
 /// Caller-owned memory backend options, borrowing strings for `'o`.
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::config_mem::BackendMemoryOptions;
+/// use libgit2_crustify::libgit2::src::libgit2::config_mem::BackendMemoryOptions;
 /// use std::ffi::CString;
 /// let mut options = BackendMemoryOptions::new();
 /// {
@@ -29,7 +29,7 @@ use crate::sys::libgit2 as sys;
 /// A mutable handle cannot shrink the stored-borrow lifetime:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::config_mem::BackendMemoryOptionsMut;
+/// use libgit2_crustify::libgit2::src::libgit2::config_mem::BackendMemoryOptionsMut;
 /// fn shrink<'a, 'o>(m: BackendMemoryOptionsMut<'a, 'static>)
 ///     -> BackendMemoryOptionsMut<'a, 'o> { m }
 /// ```
@@ -37,7 +37,7 @@ use crate::sys::libgit2 as sys;
 /// Neither a handle nor a string view can outlive the options:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::config_mem::BackendMemoryOptions;
+/// use libgit2_crustify::libgit2::src::libgit2::config_mem::BackendMemoryOptions;
 /// let mut options = BackendMemoryOptions::new();
 /// options.as_mut().set_backend_type(Some(c"label"));
 /// let view = options.as_ref().backend_type();
@@ -48,7 +48,7 @@ use crate::sys::libgit2 as sys;
 /// Shared string views prevent a concurrent mutable reborrow:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::config_mem::BackendMemoryOptions;
+/// use libgit2_crustify::libgit2::src::libgit2::config_mem::BackendMemoryOptions;
 /// let mut options = BackendMemoryOptions::new();
 /// options.as_mut().set_origin_path(Some(c"origin"));
 /// let shared = options.as_ref();
@@ -60,7 +60,7 @@ use crate::sys::libgit2 as sys;
 /// The options cross threads, but only with borrows that outlive the thread:
 ///
 /// ```compile_fail,E0597
-/// use libgit2::libgit2::src::libgit2::config_mem::BackendMemoryOptions;
+/// use libgit2_crustify::libgit2::src::libgit2::config_mem::BackendMemoryOptions;
 /// use std::ffi::CString;
 /// let label = CString::new("temporary").unwrap();
 /// let mut options = BackendMemoryOptions::new();

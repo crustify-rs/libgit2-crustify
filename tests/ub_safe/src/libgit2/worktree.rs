@@ -31,10 +31,10 @@ mod prune_options {
     use std::sync::Mutex;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::worktree::{
+    use libgit2_crustify::libgit2::src::libgit2::worktree::{
         PruneFlag, PruneFlags, PruneOptions, PruneOptionsMut, PruneOptionsRef,
     };
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use crate::fixture::isolated;
 
@@ -81,8 +81,9 @@ mod prune_options {
                 seen.insert(flag);
             } else {
                 assert_eq!(
-                    PruneFlag::try_from(raw)
-                        .map_err(libgit2::libgit2::src::libgit2::worktree::UnnamedPruneFlag::raw),
+                    PruneFlag::try_from(raw).map_err(
+                        libgit2_crustify::libgit2::src::libgit2::worktree::UnnamedPruneFlag::raw
+                    ),
                     Err(raw)
                 );
             }
@@ -313,7 +314,7 @@ mod worktree_box {
     use std::sync::Barrier;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::worktree::{
+    use libgit2_crustify::libgit2::src::libgit2::worktree::{
         Worktree, WorktreeBox, WorktreeFree, WorktreeMut, WorktreeRef,
     };
 
@@ -475,7 +476,9 @@ mod add_options {
     use std::fs;
     use std::hint::black_box;
 
-    use libgit2::libgit2::src::libgit2::worktree::{AddOptions, AddOptionsMut, AddOptionsRef};
+    use libgit2_crustify::libgit2::src::libgit2::worktree::{
+        AddOptions, AddOptionsMut, AddOptionsRef,
+    };
 
     use crate::fixture::isolated;
     use crate::fixture::worktree_add::AddRepo;
@@ -614,9 +617,9 @@ mod routines {
     use std::sync::Barrier;
     use std::{fs, thread};
 
-    use libgit2::libgit2::src::libgit2::repository::Repository;
-    use libgit2::libgit2::src::libgit2::strarray::StrArrayVal;
-    use libgit2::libgit2::src::libgit2::worktree::{
+    use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
+    use libgit2_crustify::libgit2::src::libgit2::strarray::StrArrayVal;
+    use libgit2_crustify::libgit2::src::libgit2::worktree::{
         PruneFlag, PruneOptions, Worktree, WorktreeError, list,
     };
 
@@ -697,14 +700,14 @@ mod routines {
     #[cfg_attr(miri, ignore = "calls libgit2")]
     fn repositories_without_paths_are_refused_before_c() {
         crate::fixture::init();
-        let odb = libgit2::libgit2::src::libgit2::odb::Odb::new().unwrap();
+        let odb = libgit2_crustify::libgit2::src::libgit2::odb::Odb::new().unwrap();
         for repo in [
             Repository::new().unwrap(),
             Repository::wrap_odb(odb).unwrap(),
         ] {
             assert!(list(repo.as_ref()).unwrap().as_ref().is_empty());
             let e = Worktree::lookup(repo.as_ref(), c"wt").unwrap_err();
-            assert_eq!(e.raw_code(), libgit2::sys::libgit2::GIT_ENOTFOUND);
+            assert_eq!(e.raw_code(), libgit2_crustify::sys::libgit2::GIT_ENOTFOUND);
             assert!(Worktree::open_from_repository(repo.as_ref()).is_err());
         }
     }
@@ -812,7 +815,10 @@ mod routines {
         })
         .join()
         .unwrap();
-        assert_eq!(error.raw_code(), libgit2::sys::libgit2::GIT_ELOCKED);
+        assert_eq!(
+            error.raw_code(),
+            libgit2_crustify::sys::libgit2::GIT_ELOCKED
+        );
         assert_eq!(w.as_mut().unlock(), Ok(true));
     }
 
@@ -854,8 +860,8 @@ mod adding {
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
 
-    use libgit2::libgit2::src::libgit2::worktree::Worktree;
-    use libgit2::libgit2::src::util::errors::ErrorCode;
+    use libgit2_crustify::libgit2::src::libgit2::worktree::Worktree;
+    use libgit2_crustify::libgit2::src::util::errors::ErrorCode;
 
     use crate::fixture::isolated;
     use crate::fixture::worktree_add::AddRepo;

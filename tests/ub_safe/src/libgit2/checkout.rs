@@ -31,12 +31,12 @@ use std::sync::Barrier;
 use std::thread;
 
 use ffibox::CZeroable;
-use libgit2::libgit2::src::libgit2::checkout::{
+use libgit2_crustify::libgit2::src::libgit2::checkout::{
     CallbackSlot, CheckoutOptions, CheckoutOptionsMut, CheckoutOptionsRef, CheckoutPerfdata,
     CheckoutPerfdataMut, CheckoutPerfdataRef,
 };
-use libgit2::libgit2::src::libgit2::libgit2 as global;
-use libgit2::libgit2::src::libgit2::strarray::{StrArray, StrArrayView};
+use libgit2_crustify::libgit2::src::libgit2::libgit2 as global;
+use libgit2_crustify::libgit2::src::libgit2::strarray::{StrArray, StrArrayView};
 
 use crate::fixture::isolated;
 
@@ -358,7 +358,7 @@ mod progress_callback {
     use std::sync::Mutex;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::checkout::ProgressCallback;
+    use libgit2_crustify::libgit2::src::libgit2::checkout::ProgressCallback;
 
     type Seen = Vec<(Option<CString>, usize, usize)>;
 
@@ -526,12 +526,12 @@ mod notify_callback {
     use std::sync::Mutex;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::checkout::{
+    use libgit2_crustify::libgit2::src::libgit2::checkout::{
         CheckoutNotification, CheckoutPerfdata, CheckoutPerfdataRef, NotifyCallback,
         PerfdataCallback,
     };
-    use libgit2::libgit2::src::libgit2::diff::{Diff, DiffFileRef};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::diff::{Diff, DiffFileRef};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     const CONFLICT: u32 = sys::GIT_CHECKOUT_NOTIFY_CONFLICT;
     const UPDATED: u32 = sys::GIT_CHECKOUT_NOTIFY_UPDATED;
@@ -797,7 +797,7 @@ mod perfdata_callback {
     use std::sync::Mutex;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::checkout::{
+    use libgit2_crustify::libgit2::src::libgit2::checkout::{
         CheckoutPerfdata, CheckoutPerfdataRef, PerfdataCallback,
     };
 
@@ -930,12 +930,12 @@ mod stored_callbacks {
     use std::panic::{self, AssertUnwindSafe};
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::checkout::{
+    use libgit2_crustify::libgit2::src::libgit2::checkout::{
         CallbackSlot, CheckoutNotification, CheckoutOptions, CheckoutPerfdataRef, NotifyCallback,
         PerfdataCallback, ProgressCallback,
     };
-    use libgit2::libgit2::src::libgit2::worktree::AddOptions;
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::worktree::AddOptions;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use crate::fixture::isolated;
     use crate::fixture::worktree_add::AddRepo;

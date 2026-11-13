@@ -1,5 +1,5 @@
 //! Positions come from the exclusive handle: libgit2 sorts the entries to find one.
-use libgit2::libgit2::src::libgit2::index::Index;
+use libgit2_crustify::libgit2::src::libgit2::index::Index;
 
 fn main() {
     let index = Index::new().unwrap();

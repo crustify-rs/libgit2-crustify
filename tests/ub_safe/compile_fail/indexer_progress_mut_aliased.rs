@@ -1,6 +1,6 @@
 // Two exclusive handles to one `IndexerProgress` cannot coexist, nor a shared one beside them.
 use ffibox::CZeroable;
-use libgit2::libgit2::src::libgit2::indexer::IndexerProgress;
+use libgit2_crustify::libgit2::src::libgit2::indexer::IndexerProgress;
 
 fn main() {
     let mut progress = IndexerProgress::zeroed();

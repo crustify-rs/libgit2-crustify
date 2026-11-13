@@ -1,9 +1,9 @@
 // A filter list keeps a bare pointer to the repository it was built for, which its
 // filters read when it is applied: it cannot be dropped after the repository, whichever
 // constructor built it, nor escape the repository's borrow.
-use libgit2::sys::libgit2 as sys;
-use {libgit2::libgit2::src::libgit2::filter::FilterList, libgit2::libgit2::src::libgit2::filter::FilterListBox};
-use libgit2::libgit2::src::libgit2::repository::Repository;
+use libgit2_crustify::sys::libgit2 as sys;
+use {libgit2_crustify::libgit2::src::libgit2::filter::FilterList, libgit2_crustify::libgit2::src::libgit2::filter::FilterListBox};
+use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
 
 fn escape() -> FilterListBox<'static> {
     let repo = Repository::new().unwrap();

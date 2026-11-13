@@ -19,8 +19,8 @@ use std::collections::HashSet;
 use std::hint::black_box;
 use std::thread;
 
-use libgit2::libgit2::src::libgit2::trace::TraceLevel;
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::trace::TraceLevel;
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// Every value around the declared ones, then a coarse stride across the whole type;
 /// `BorrowSanitizer` instruments each comparison, so the probe set stays small.
@@ -42,8 +42,9 @@ fn from_raw_yields_only_valid_levels() {
             seen.insert(level);
         } else {
             assert_eq!(
-                TraceLevel::try_from(raw)
-                    .map_err(libgit2::libgit2::src::libgit2::trace::UnnamedTraceLevel::raw),
+                TraceLevel::try_from(raw).map_err(
+                    libgit2_crustify::libgit2::src::libgit2::trace::UnnamedTraceLevel::raw
+                ),
                 Err(raw)
             );
         }
@@ -73,7 +74,7 @@ mod callback {
     use std::sync::atomic::Ordering::SeqCst;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::trace::{TraceCallback, TraceLevel, Tracer};
+    use libgit2_crustify::libgit2::src::libgit2::trace::{TraceCallback, TraceLevel, Tracer};
 
     /// Copies every message into one shared log.
     struct Copying;

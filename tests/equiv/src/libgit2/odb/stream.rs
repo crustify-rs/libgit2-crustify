@@ -10,9 +10,9 @@
 //! of its members on two writepacks over two odbs, comparing the result and the
 //! progress after each step, and what the odb holds at the end.
 //!
-//! [`OdbRef::open_write_stream`]: libgit2::libgit2::src::libgit2::odb::OdbRef::open_write_stream
-//! [`OdbRef::open_read_stream`]: libgit2::libgit2::src::libgit2::odb::OdbRef::open_read_stream
-//! [`OdbWritepackMut::append`]: libgit2::libgit2::src::libgit2::odb::OdbWritepackMut::append
+//! [`OdbRef::open_write_stream`]: libgit2_crustify::libgit2::src::libgit2::odb::OdbRef::open_write_stream
+//! [`OdbRef::open_read_stream`]: libgit2_crustify::libgit2::src::libgit2::odb::OdbRef::open_read_stream
+//! [`OdbWritepackMut::append`]: libgit2_crustify::libgit2::src::libgit2::odb::OdbWritepackMut::append
 
 use std::ffi::{CStr, CString, c_int};
 use std::io::Write as _;
@@ -21,18 +21,20 @@ use std::process::{Command, Stdio};
 use std::{fs, ptr};
 
 use ffibox::CRefSeam;
-use libgit2::libgit2::src::libgit2::filter::StreamError;
-use libgit2::libgit2::src::libgit2::indexer::IndexerProgress;
-use libgit2::libgit2::src::libgit2::object::ObjectType;
-use libgit2::libgit2::src::libgit2::odb::{
+use libgit2_crustify::libgit2::src::libgit2::filter::StreamError;
+use libgit2_crustify::libgit2::src::libgit2::indexer::IndexerProgress;
+use libgit2_crustify::libgit2::src::libgit2::object::ObjectType;
+use libgit2_crustify::libgit2::src::libgit2::odb::{
     Odb, OdbArc, OdbStreamBox, OdbStreamRef, OdbWritepack, OdbWritepackBox,
 };
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidType, UnnamedOidType};
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType, UnnamedOidType};
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// Takes a `git_libgit2_init` reference that is never released.
 fn init() {
-    let _ = core::mem::ManuallyDrop::new(libgit2::libgit2::src::libgit2::libgit2::init().unwrap());
+    let _ = core::mem::ManuallyDrop::new(
+        libgit2_crustify::libgit2::src::libgit2::libgit2::init().unwrap(),
+    );
 }
 
 /// The thread's last libgit2 error, read through C: its class and message.

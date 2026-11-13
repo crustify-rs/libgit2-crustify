@@ -16,7 +16,7 @@
 
 use std::thread;
 
-use libgit2::libgit2::src::libgit2::refdb::{RefdbArc, RefdbBox, RefdbMut, RefdbRef};
+use libgit2_crustify::libgit2::src::libgit2::refdb::{RefdbArc, RefdbBox, RefdbMut, RefdbRef};
 
 use crate::fixture::TempRepo;
 
@@ -118,8 +118,8 @@ mod refdb_type {
     use std::hint::black_box;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::refdb::{RefdbType, UnnamedRefdbType};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::refdb::{RefdbType, UnnamedRefdbType};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     /// Every small value, a stride across the rest of `git_refdb_t`, and its ends.
     fn probes() -> impl Iterator<Item = sys::git_refdb_t> {

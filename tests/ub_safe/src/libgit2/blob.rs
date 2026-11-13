@@ -11,7 +11,7 @@
 
 use std::thread;
 
-use libgit2::libgit2::src::libgit2::blob::data_is_binary;
+use libgit2_crustify::libgit2::src::libgit2::blob::data_is_binary;
 
 /// `bytes` in a heap buffer of exactly its length.
 fn exact(bytes: &[u8]) -> Box<[u8]> {
@@ -137,7 +137,7 @@ mod filter_flags {
     use std::hint::black_box;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::blob::{FilterFlag, FilterFlags};
+    use libgit2_crustify::libgit2::src::libgit2::blob::{FilterFlag, FilterFlags};
 
     /// Every value around the declared ones, each single bit, and a coarse stride
     /// across the whole type.
@@ -168,8 +168,9 @@ mod filter_flags {
                 seen.insert(flag);
             } else {
                 assert_eq!(
-                    FilterFlag::try_from(raw)
-                        .map_err(libgit2::libgit2::src::libgit2::blob::UnnamedFilterFlag::raw),
+                    FilterFlag::try_from(raw).map_err(
+                        libgit2_crustify::libgit2::src::libgit2::blob::UnnamedFilterFlag::raw
+                    ),
                     Err(raw)
                 );
             }
@@ -263,12 +264,12 @@ mod filter_flags {
 mod owner {
     use std::ffi::CString;
 
-    use libgit2::libgit2::src::libgit2::blob::{Blob, BlobArc, BlobRef};
-    use libgit2::libgit2::src::libgit2::object::{Object, ObjectArc};
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryError};
-    use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::blob::{Blob, BlobArc, BlobRef};
+    use libgit2_crustify::libgit2::src::libgit2::object::{Object, ObjectArc};
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryError};
+    use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     /// A copy of the content of the blob an owner holds.
     fn content(blob: &BlobArc<'_>) -> Vec<u8> {
@@ -535,15 +536,17 @@ mod filter_options {
     use std::ptr::NonNull;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::blob::{Blob, FilterFlag, FilterFlags, FilterOptions};
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::Repository;
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::blob::{
+        Blob, FilterFlag, FilterFlags, FilterOptions,
+    };
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     /// [`BlobRef::filter`] of `blob` as `path`, with `opts` (or none): the filtered
     /// bytes, or the code it failed with.
     fn filter(
-        blob: &libgit2::libgit2::src::libgit2::blob::BlobArc<'_>,
+        blob: &libgit2_crustify::libgit2::src::libgit2::blob::BlobArc<'_>,
         path: &CStr,
         opts: Option<&mut FilterOptions>,
     ) -> Result<Vec<u8>, std::ffi::c_int> {
@@ -741,14 +744,14 @@ mod writing {
     use std::path::PathBuf;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::blob::{
+    use libgit2_crustify::libgit2::src::libgit2::blob::{
         create_from_buffer, create_from_disk, create_from_stream, create_from_workdir,
     };
-    use libgit2::libgit2::src::libgit2::oid::Oid;
-    use libgit2::libgit2::src::libgit2::repository::{
+    use libgit2_crustify::libgit2::src::libgit2::oid::Oid;
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
         Repository, RepositoryBox, RepositoryError, RepositoryRef,
     };
-    use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+    use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, ErrorCode};
 
     use crate::fixture::isolated;
 
@@ -1101,11 +1104,11 @@ mod reading {
     use std::ffi::{CStr, CString};
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::blob::{
+    use libgit2_crustify::libgit2::src::libgit2::blob::{
         Blob, BlobRef, FilterFlag, FilterOptions, create_from_buffer, data_is_binary,
     };
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::Repository;
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
 
     use crate::fixture::object_and_tree_entry::repository;
     use crate::fixture::{TempRepo, init, isolated};

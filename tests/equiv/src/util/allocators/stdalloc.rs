@@ -20,13 +20,13 @@ use std::sync::OnceLock;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::SeqCst;
 
-use libgit2::libgit2::src::libgit2::settings::set_allocator;
-use libgit2::libgit2::src::util::alloc::{
+use libgit2_crustify::libgit2::src::libgit2::settings::set_allocator;
+use libgit2_crustify::libgit2::src::util::alloc::{
     AllocVec, Allocator, ArrayFree, FreeFn, MallocFn, ReallocFn, StrFree,
 };
-use libgit2::libgit2::src::util::allocators::stdalloc;
-use libgit2::libgit2::src::util::errors;
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::util::allocators::stdalloc;
+use libgit2_crustify::libgit2::src::util::errors;
+use libgit2_crustify::sys::libgit2 as sys;
 
 // --- values -------------------------------------------------------------------------
 

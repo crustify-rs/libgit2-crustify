@@ -1,4 +1,4 @@
-use libgit2::libgit2::src::libgit2::diff::Diff;
+use libgit2_crustify::libgit2::src::libgit2::diff::Diff;
 fn main() {
     let mut d = Diff::from_buffer(b"").unwrap();
     let mut m = d.as_mut();

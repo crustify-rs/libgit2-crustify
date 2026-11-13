@@ -54,7 +54,7 @@
 //! `Sync`:
 //!
 //! ```compile_fail,E0277
-//! use libgit2::libgit2::src::libgit2::index::Index;
+//! use libgit2_crustify::libgit2::src::libgit2::index::Index;
 //!
 //! let index = Index::new().unwrap();
 //! std::thread::spawn(move || drop(index));
@@ -111,7 +111,7 @@ define_ctype!(
     /// There is no value to hold: the layout is libgit2's own.
     ///
     /// ```compile_fail,E0423
-    /// use libgit2::libgit2::src::libgit2::index::Index;
+    /// use libgit2_crustify::libgit2::src::libgit2::index::Index;
     ///
     /// let _ = Index(Default::default(), core::marker::PhantomData);
     /// ```
@@ -162,7 +162,7 @@ unsafe impl CNew<Index> for IndexFree {
 /// Its handles borrow it, so neither outlives it:
 ///
 /// ```compile_fail,E0505
-/// use libgit2::libgit2::src::libgit2::index::Index;
+/// use libgit2_crustify::libgit2::src::libgit2::index::Index;
 ///
 /// let index = Index::new().unwrap();
 /// let handle = index.as_ref();
@@ -173,7 +173,7 @@ unsafe impl CNew<Index> for IndexFree {
 /// and its exclusive handle is exclusive:
 ///
 /// ```compile_fail,E0499
-/// use libgit2::libgit2::src::libgit2::index::Index;
+/// use libgit2_crustify::libgit2::src::libgit2::index::Index;
 ///
 /// let mut index = Index::new().unwrap();
 /// let first = index.as_mut();
@@ -184,7 +184,7 @@ unsafe impl CNew<Index> for IndexFree {
 /// It has no `Clone`: libgit2 publishes no copy routine.
 ///
 /// ```compile_fail,E0599
-/// use libgit2::libgit2::src::libgit2::index::Index;
+/// use libgit2_crustify::libgit2::src::libgit2::index::Index;
 ///
 /// let _ = Index::new().unwrap().clone();
 /// ```
@@ -195,14 +195,14 @@ pub type IndexBox = CBox<Index, IndexFree>;
 /// publishes no `up_ref` to count a copy with.
 ///
 /// ```compile_fail,E0599
-/// use libgit2::libgit2::src::libgit2::index::{Index, IndexArc};
+/// use libgit2_crustify::libgit2::src::libgit2::index::{Index, IndexArc};
 ///
 /// let mut index: IndexArc = Index::new().unwrap().into();
 /// let _ = index.get_mut();
 /// ```
 ///
 /// ```compile_fail,E0599
-/// use libgit2::libgit2::src::libgit2::index::{Index, IndexArc};
+/// use libgit2_crustify::libgit2::src::libgit2::index::{Index, IndexArc};
 ///
 /// let index: IndexArc = Index::new().unwrap().into();
 /// let _ = index.clone();
@@ -212,7 +212,7 @@ pub type IndexBox = CBox<Index, IndexFree>;
 /// only one.
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::index::{Index, IndexArc, IndexBox};
+/// use libgit2_crustify::libgit2::src::libgit2::index::{Index, IndexArc, IndexBox};
 ///
 /// let index: IndexArc = Index::new().unwrap().into();
 /// let _ = IndexBox::try_from(index);
@@ -235,8 +235,8 @@ define_ctype!(
     /// [`as_ref`](Self::as_ref) / [`as_mut`](Self::as_mut):
     ///
     /// ```
-    /// use libgit2::libgit2::src::libgit2::index::IndexOptions;
-    /// use libgit2::libgit2::src::libgit2::oid::OidType;
+    /// use libgit2_crustify::libgit2::src::libgit2::index::IndexOptions;
+    /// use libgit2_crustify::libgit2::src::libgit2::oid::OidType;
     ///
     /// # if cfg!(miri) { return; }
     /// let mut options = IndexOptions::new();
@@ -253,7 +253,7 @@ define_ctype!(
     /// Its handles borrow it:
     ///
     /// ```compile_fail,E0597
-    /// use libgit2::libgit2::src::libgit2::index::IndexOptions;
+    /// use libgit2_crustify::libgit2::src::libgit2::index::IndexOptions;
     ///
     /// let handle;
     /// {
@@ -266,7 +266,7 @@ define_ctype!(
     /// The shared handle only reads:
     ///
     /// ```compile_fail,E0599
-    /// use libgit2::libgit2::src::libgit2::index::IndexOptions;
+    /// use libgit2_crustify::libgit2::src::libgit2::index::IndexOptions;
     ///
     /// let options = IndexOptions::new();
     /// options.as_ref().set_oid_type(None);
@@ -1190,7 +1190,7 @@ impl core::ops::BitOrAssign for Capabilities {
 /// reports an error otherwise. Unlike explicit sets, this command cannot be `ORed`:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::index::{Capabilities, CapabilitySetting};
+/// use libgit2_crustify::libgit2::src::libgit2::index::{Capabilities, CapabilitySetting};
 /// let _ = CapabilitySetting::FromOwner | Capabilities::IGNORE_CASE;
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -1267,7 +1267,7 @@ type MatchedPathFn<'f> = dyn FnMut(&CStr, Option<&CStr>) -> MatchedPathResult + 
 /// Neither argument may escape the callback:
 /// ```compile_fail
 /// use std::ffi::CStr;
-/// use libgit2::libgit2::src::libgit2::index::{MatchedPathCallback, MatchedPathResult};
+/// use libgit2_crustify::libgit2::src::libgit2::index::{MatchedPathCallback, MatchedPathResult};
 /// let mut kept = None;
 /// let mut f = |path: &CStr, _: Option<&CStr>| {
 ///     kept = Some(path);
@@ -1277,7 +1277,7 @@ type MatchedPathFn<'f> = dyn FnMut(&CStr, Option<&CStr>) -> MatchedPathResult + 
 /// ```
 /// ```compile_fail
 /// use std::ffi::CStr;
-/// use libgit2::libgit2::src::libgit2::index::{MatchedPathCallback, MatchedPathResult};
+/// use libgit2_crustify::libgit2::src::libgit2::index::{MatchedPathCallback, MatchedPathResult};
 /// let mut kept = None;
 /// let mut f = |_: &CStr, pattern: Option<&CStr>| {
 ///     kept = pattern;
@@ -1288,7 +1288,7 @@ type MatchedPathFn<'f> = dyn FnMut(&CStr, Option<&CStr>) -> MatchedPathResult + 
 /// The closure and its captured state must outlive the handle:
 /// ```compile_fail
 /// use std::ffi::CStr;
-/// use libgit2::libgit2::src::libgit2::index::{MatchedPathCallback, MatchedPathResult};
+/// use libgit2_crustify::libgit2::src::libgit2::index::{MatchedPathCallback, MatchedPathResult};
 /// let mut owned = Vec::new();
 /// let mut f = move |_: &CStr, _: Option<&CStr>| {
 ///     owned.push(1);
@@ -1301,7 +1301,7 @@ type MatchedPathFn<'f> = dyn FnMut(&CStr, Option<&CStr>) -> MatchedPathResult + 
 /// Exclusive calls cannot overlap:
 /// ```compile_fail
 /// use std::ffi::CStr;
-/// use libgit2::libgit2::src::libgit2::index::{MatchedPathCallback, MatchedPathResult};
+/// use libgit2_crustify::libgit2::src::libgit2::index::{MatchedPathCallback, MatchedPathResult};
 /// let mut f = |_: &CStr, _: Option<&CStr>| MatchedPathResult::APPLY;
 /// let mut callback = MatchedPathCallback::new(&mut f);
 /// let first = &mut callback;
@@ -1310,7 +1310,7 @@ type MatchedPathFn<'f> = dyn FnMut(&CStr, Option<&CStr>) -> MatchedPathResult + 
 /// ```
 /// ```compile_fail
 /// use std::ffi::CStr;
-/// use libgit2::libgit2::src::libgit2::index::{MatchedPathCallback, MatchedPathResult};
+/// use libgit2_crustify::libgit2::src::libgit2::index::{MatchedPathCallback, MatchedPathResult};
 /// let mut f = |_: &CStr, _: Option<&CStr>| MatchedPathResult::APPLY;
 /// let callback = MatchedPathCallback::new(&mut f);
 /// std::thread::scope(|s| { s.spawn(move || drop(callback)); });
@@ -1611,7 +1611,7 @@ impl<'a> IndexRef<'a> {
     /// and frees with it, so it lives as long as this handle's borrow of the owner:
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::libgit2::src::libgit2::index::Index;
+    /// use libgit2_crustify::libgit2::src::libgit2::index::Index;
     ///
     /// let index = Index::open(c"/tmp/index").unwrap();
     /// let path = index.as_ref().path();
@@ -1920,8 +1920,8 @@ impl IndexMut<'_> {
     ///
     /// ```compile_fail,E0499
     /// use std::ffi::CStr;
-    /// use libgit2::libgit2::src::libgit2::strarray::StrArrayView;
-    /// use libgit2::libgit2::src::libgit2::index::{Index, MatchedPathCallback, MatchedPathResult};
+    /// use libgit2_crustify::libgit2::src::libgit2::strarray::StrArrayView;
+    /// use libgit2_crustify::libgit2::src::libgit2::index::{Index, MatchedPathCallback, MatchedPathResult};
     ///
     /// let mut index = Index::new().unwrap();
     /// let mut handle = index.as_mut();
@@ -2024,7 +2024,7 @@ impl IndexMut<'_> {
 /// longer. Neither `Send` nor `Sync`, as its entries are not:
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::index::Conflict;
+/// use libgit2_crustify::libgit2::src::libgit2::index::Conflict;
 ///
 /// fn send<T: Send>() {}
 /// send::<Conflict<'static>>();
@@ -2096,7 +2096,7 @@ impl IndexMut<'_> {
     /// routines that free, replace or reorder entries take the handle exclusively.
     ///
     /// ```compile_fail,E0502
-    /// use libgit2::libgit2::src::libgit2::index::Index;
+    /// use libgit2_crustify::libgit2::src::libgit2::index::Index;
     ///
     /// let mut index = Index::new().unwrap();
     /// let mut handle = index.as_mut();
@@ -2109,7 +2109,7 @@ impl IndexMut<'_> {
     /// no entries; an [`IndexIterator`] copies them out of a snapshot instead.
     ///
     /// ```compile_fail,E0599
-    /// use libgit2::libgit2::src::libgit2::index::{Index, IndexArc};
+    /// use libgit2_crustify::libgit2::src::libgit2::index::{Index, IndexArc};
     ///
     /// let index: IndexArc = Index::new().unwrap().into();
     /// let _ = index.as_ref().entry(0);
@@ -2453,7 +2453,7 @@ impl_cdrop!(
 /// it; neither can outlive it. The retained index may be dropped first.
 ///
 /// ```compile_fail,E0505
-/// use libgit2::libgit2::src::libgit2::index::{Index, IndexArc, IndexIterator};
+/// use libgit2_crustify::libgit2::src::libgit2::index::{Index, IndexArc, IndexIterator};
 /// let index: IndexArc = Index::new().unwrap().into();
 /// let iterator = IndexIterator::new(&index).unwrap();
 /// let handle = iterator.as_ref();
@@ -2462,7 +2462,7 @@ impl_cdrop!(
 /// ```
 ///
 /// ```compile_fail,E0502
-/// use libgit2::libgit2::src::libgit2::index::{Index, IndexArc, IndexIterator};
+/// use libgit2_crustify::libgit2::src::libgit2::index::{Index, IndexArc, IndexIterator};
 /// let index: IndexArc = Index::new().unwrap().into();
 /// let mut iterator = IndexIterator::new(&index).unwrap();
 /// let mut handle = iterator.as_mut();
@@ -2472,7 +2472,7 @@ impl_cdrop!(
 /// ```
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::index::{Index, IndexArc, IndexIterator};
+/// use libgit2_crustify::libgit2::src::libgit2::index::{Index, IndexArc, IndexIterator};
 /// let index: IndexArc = Index::new().unwrap().into();
 /// let iterator = IndexIterator::new(&index).unwrap();
 /// std::thread::spawn(move || drop(iterator));
@@ -2492,7 +2492,7 @@ impl IndexIterator {
     /// A sole-owner borrow cannot be retained:
     ///
     /// ```compile_fail,E0308
-    /// use libgit2::libgit2::src::libgit2::index::{Index, IndexIterator};
+    /// use libgit2_crustify::libgit2::src::libgit2::index::{Index, IndexIterator};
     /// let index = Index::new().unwrap();
     /// let _ = IndexIterator::new(&index);
     /// ```
@@ -2528,7 +2528,7 @@ impl IndexIterator {
 /// [`IndexIteratorBox`] is the iterator, and yields a copy of each entry, path included.
 ///
 /// ```
-/// use libgit2::libgit2::src::libgit2::index::{Index, IndexArc, IndexIterator};
+/// use libgit2_crustify::libgit2::src::libgit2::index::{Index, IndexArc, IndexIterator};
 ///
 /// # if cfg!(miri) { return; }
 /// let index: IndexArc = Index::new().unwrap().into();
@@ -2576,7 +2576,7 @@ impl Iterator for IndexIteratorMut<'_> {
 ///
 /// The index cannot be dropped first:
 /// ```compile_fail,E0505
-/// use libgit2::libgit2::src::libgit2::index::{Index, ConflictIterator};
+/// use libgit2_crustify::libgit2::src::libgit2::index::{Index, ConflictIterator};
 /// let mut index = Index::new().unwrap();
 /// let cursor = ConflictIterator::new(index.as_mut()).unwrap();
 /// drop(index);
@@ -2584,7 +2584,7 @@ impl Iterator for IndexIteratorMut<'_> {
 /// ```
 /// Nor borrowed again while iteration is live:
 /// ```compile_fail,E0499
-/// use libgit2::libgit2::src::libgit2::index::{Index, ConflictIterator};
+/// use libgit2_crustify::libgit2::src::libgit2::index::{Index, ConflictIterator};
 /// let mut index = Index::new().unwrap();
 /// let cursor = ConflictIterator::new(index.as_mut()).unwrap();
 /// let second = index.as_mut();
@@ -2592,7 +2592,7 @@ impl Iterator for IndexIteratorMut<'_> {
 /// ```
 /// A shared index cannot guarantee that another C holder leaves entries alone:
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::index::{Index, IndexArc, ConflictIterator};
+/// use libgit2_crustify::libgit2::src::libgit2::index::{Index, IndexArc, ConflictIterator};
 /// let index: IndexArc = Index::new().unwrap().into();
 /// let cursor = ConflictIterator::new(index.as_ref());
 /// ```
@@ -2613,7 +2613,7 @@ pub struct ConflictIteratorRef<'a, 'index>(CBorrowedPtr<'a, ConflictIterator<'in
 /// Exclusive cursor handle. Reborrowing freezes the original handle.
 ///
 /// ```compile_fail,E0502
-/// use libgit2::libgit2::src::libgit2::index::{Index, ConflictIterator};
+/// use libgit2_crustify::libgit2::src::libgit2::index::{Index, ConflictIterator};
 /// let mut index = Index::new().unwrap();
 /// let mut cursor = ConflictIterator::new(index.as_mut()).unwrap();
 /// let mut handle = cursor.as_mut();
@@ -2623,7 +2623,7 @@ pub struct ConflictIteratorRef<'a, 'index>(CBorrowedPtr<'a, ConflictIterator<'in
 /// ```
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::index::ConflictIteratorMut;
+/// use libgit2_crustify::libgit2::src::libgit2::index::ConflictIteratorMut;
 /// fn shorten<'a, 'i>(m: ConflictIteratorMut<'a, 'static>) -> ConflictIteratorMut<'a, 'i> { m }
 /// ```
 #[repr(transparent)]
@@ -2689,17 +2689,17 @@ unsafe impl<'index> ffibox::CDrop<ConflictIterator<'index>> for ConflictIterator
 /// Neither owners nor handles can cross threads.
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::index::ConflictIteratorBox;
+/// use libgit2_crustify::libgit2::src::libgit2::index::ConflictIteratorBox;
 /// fn send<T: Send>() {}
 /// send::<ConflictIteratorBox<'static>>();
 /// ```
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::index::ConflictIteratorBox;
+/// use libgit2_crustify::libgit2::src::libgit2::index::ConflictIteratorBox;
 /// fn sync<T: Sync>() {}
 /// sync::<ConflictIteratorBox<'static>>();
 /// ```
 /// ```compile_fail,E0505
-/// use libgit2::libgit2::src::libgit2::index::{Index, ConflictIterator};
+/// use libgit2_crustify::libgit2::src::libgit2::index::{Index, ConflictIterator};
 /// let mut index = Index::new().unwrap();
 /// let cursor = ConflictIterator::new(index.as_mut()).unwrap();
 /// let handle = cursor.as_ref();
@@ -2741,7 +2741,7 @@ impl<'index> ConflictIterator<'index> {
 /// past the cursor itself:
 ///
 /// ```
-/// use libgit2::libgit2::src::libgit2::index::{ConflictIterator, Index};
+/// use libgit2_crustify::libgit2::src::libgit2::index::{ConflictIterator, Index};
 ///
 /// # if cfg!(miri) { return; }
 /// let mut index = Index::new().unwrap();
@@ -2752,7 +2752,7 @@ impl<'index> ConflictIterator<'index> {
 /// ```
 ///
 /// ```compile_fail,E0499
-/// use libgit2::libgit2::src::libgit2::index::{ConflictIterator, Index};
+/// use libgit2_crustify::libgit2::src::libgit2::index::{ConflictIterator, Index};
 ///
 /// let mut index = Index::new().unwrap();
 /// let mut cursor = ConflictIterator::new(index.as_mut()).unwrap();
@@ -2861,7 +2861,7 @@ define_ctype!(
     /// owns no resources and needs no C constructor or destructor.
     ///
     /// ```compile_fail,E0502
-    /// use libgit2::libgit2::src::libgit2::index::IndexTime;
+    /// use libgit2_crustify::libgit2::src::libgit2::index::IndexTime;
     /// let mut time = IndexTime::new(1, 2);
     /// let shared = time.as_ref();
     /// time.as_mut().set_seconds(3);
@@ -2869,7 +2869,7 @@ define_ctype!(
     /// ```
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::libgit2::src::libgit2::index::IndexTime;
+    /// use libgit2_crustify::libgit2::src::libgit2::index::IndexTime;
     /// let time = IndexTime::new(1, 2);
     /// let shared = time.as_ref();
     /// drop(time);
@@ -2982,9 +2982,11 @@ impl IndexTimeMut<'_> {
 ///
 /// ```
 /// use ffibox::CZeroable;
-/// use libgit2::libgit2::src::libgit2::index::{EntryExtendedFlags, IndexEntry, IndexTime, Stage};
-/// use libgit2::libgit2::src::libgit2::oid::Oid;
-/// use libgit2::libgit2::src::libgit2::tree::FileMode;
+/// use libgit2_crustify::libgit2::src::libgit2::index::{
+///     EntryExtendedFlags, IndexEntry, IndexTime, Stage,
+/// };
+/// use libgit2_crustify::libgit2::src::libgit2::oid::Oid;
+/// use libgit2_crustify::libgit2::src::libgit2::tree::FileMode;
 ///
 /// let mut entry = IndexEntry::new(c"src/lib.rs", Oid::zeroed().as_ref(), FileMode::Blob);
 /// assert_eq!(entry.as_ref().path(), c"src/lib.rs");
@@ -3005,9 +3007,9 @@ impl IndexTimeMut<'_> {
 /// an entry cannot outlive it:
 ///
 /// ```compile_fail,E0597
-/// use libgit2::libgit2::src::libgit2::tree::FileMode;
-/// use libgit2::libgit2::src::libgit2::index::IndexEntry;
-/// use libgit2::libgit2::src::libgit2::oid::Oid;
+/// use libgit2_crustify::libgit2::src::libgit2::tree::FileMode;
+/// use libgit2_crustify::libgit2::src::libgit2::index::IndexEntry;
+/// use libgit2_crustify::libgit2::src::libgit2::oid::Oid;
 /// use ffibox::CZeroable;
 /// use std::ffi::CString;
 ///
@@ -3023,7 +3025,7 @@ impl IndexTimeMut<'_> {
 /// shorter-lived path than its entry was built for:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::index::IndexEntryMut;
+/// use libgit2_crustify::libgit2::src::libgit2::index::IndexEntryMut;
 ///
 /// fn shrink<'a, 'p>(m: IndexEntryMut<'a, 'static>) -> IndexEntryMut<'a, 'p> {
 ///     m
@@ -3033,9 +3035,9 @@ impl IndexTimeMut<'_> {
 /// The shared handle only reads:
 ///
 /// ```compile_fail,E0599
-/// use libgit2::libgit2::src::libgit2::tree::FileMode;
-/// use libgit2::libgit2::src::libgit2::index::IndexEntry;
-/// use libgit2::libgit2::src::libgit2::oid::Oid;
+/// use libgit2_crustify::libgit2::src::libgit2::tree::FileMode;
+/// use libgit2_crustify::libgit2::src::libgit2::index::IndexEntry;
+/// use libgit2_crustify::libgit2::src::libgit2::oid::Oid;
 /// use ffibox::CZeroable;
 ///
 /// let entry = IndexEntry::new(c"a", Oid::zeroed().as_ref(), FileMode::Blob);
@@ -3058,7 +3060,7 @@ impl IndexTimeMut<'_> {
 /// across threads:
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::index::IndexEntryRef;
+/// use libgit2_crustify::libgit2::src::libgit2::index::IndexEntryRef;
 ///
 /// fn send<T: Send>() {}
 /// send::<IndexEntryRef<'static, 'static>>();
@@ -3078,9 +3080,9 @@ pub struct IndexEntry<'p>(sys::git_index_entry, PhantomData<&'p CStr>);
 /// Neither the handle nor the fields it projects in place outlive the entry:
 ///
 /// ```compile_fail,E0597
-/// use libgit2::libgit2::src::libgit2::tree::FileMode;
-/// use libgit2::libgit2::src::libgit2::index::IndexEntry;
-/// use libgit2::libgit2::src::libgit2::oid::Oid;
+/// use libgit2_crustify::libgit2::src::libgit2::tree::FileMode;
+/// use libgit2_crustify::libgit2::src::libgit2::index::IndexEntry;
+/// use libgit2_crustify::libgit2::src::libgit2::oid::Oid;
 /// use ffibox::CZeroable;
 ///
 /// let id;
@@ -3100,9 +3102,9 @@ pub struct IndexEntryRef<'a, 'p>(CBorrowedPtr<'a, IndexEntry<'p>>);
 /// A shared reborrow freezes it until the reborrow's last use:
 ///
 /// ```compile_fail,E0502
-/// use libgit2::libgit2::src::libgit2::tree::FileMode;
-/// use libgit2::libgit2::src::libgit2::index::IndexEntry;
-/// use libgit2::libgit2::src::libgit2::oid::Oid;
+/// use libgit2_crustify::libgit2::src::libgit2::tree::FileMode;
+/// use libgit2_crustify::libgit2::src::libgit2::index::IndexEntry;
+/// use libgit2_crustify::libgit2::src::libgit2::oid::Oid;
 /// use ffibox::CZeroable;
 ///
 /// let mut entry = IndexEntry::new(c"a", Oid::zeroed().as_ref(), FileMode::Blob);
@@ -3711,9 +3713,9 @@ impl<'p> IndexEntryMut<'_, 'p> {
     /// Only the exclusive handle restages an entry:
     ///
     /// ```compile_fail,E0599
-    /// use libgit2::libgit2::src::libgit2::tree::FileMode;
-    /// use libgit2::libgit2::src::libgit2::index::{IndexEntry, Stage};
-    /// use libgit2::libgit2::src::libgit2::oid::Oid;
+    /// use libgit2_crustify::libgit2::src::libgit2::tree::FileMode;
+    /// use libgit2_crustify::libgit2::src::libgit2::index::{IndexEntry, Stage};
+    /// use libgit2_crustify::libgit2::src::libgit2::oid::Oid;
     /// use ffibox::CZeroable;
     ///
     /// let entry = IndexEntry::new(c"a", Oid::zeroed().as_ref(), FileMode::Blob);
@@ -3785,9 +3787,9 @@ impl fmt::Debug for IndexEntryMut<'_, '_> {
 ///
 /// ```
 /// use ffibox::CZeroable;
-/// use libgit2::libgit2::src::libgit2::index::{Index, IndexEntry, Stage};
-/// use libgit2::libgit2::src::libgit2::oid::Oid;
-/// use libgit2::libgit2::src::libgit2::tree::FileMode;
+/// use libgit2_crustify::libgit2::src::libgit2::index::{Index, IndexEntry, Stage};
+/// use libgit2_crustify::libgit2::src::libgit2::oid::Oid;
+/// use libgit2_crustify::libgit2::src::libgit2::tree::FileMode;
 ///
 /// # if cfg!(miri) { return; }
 /// let mut index = Index::new().unwrap();
@@ -3808,9 +3810,9 @@ impl fmt::Debug for IndexEntryMut<'_, '_> {
 /// [`IndexEntryRef::to_index_entry`] to change it.
 ///
 /// ```compile_fail,E0505
-/// use libgit2::libgit2::src::libgit2::tree::FileMode;
-/// use libgit2::libgit2::src::libgit2::index::IndexEntry;
-/// use libgit2::libgit2::src::libgit2::oid::Oid;
+/// use libgit2_crustify::libgit2::src::libgit2::tree::FileMode;
+/// use libgit2_crustify::libgit2::src::libgit2::index::IndexEntry;
+/// use libgit2_crustify::libgit2::src::libgit2::oid::Oid;
 /// use ffibox::CZeroable;
 ///
 /// let buf = IndexEntry::new(c"a", Oid::zeroed().as_ref(), FileMode::Blob).as_ref().to_entry_buf();
@@ -3970,7 +3972,7 @@ define_ctype!(
     /// Like the index, a record never crosses threads:
     ///
     /// ```compile_fail,E0277
-    /// use libgit2::libgit2::src::libgit2::index::Index;
+    /// use libgit2_crustify::libgit2::src::libgit2::index::Index;
     /// let mut index = Index::new().unwrap();
     /// let handle = index.as_mut();
     /// let entry = handle.reuc_entry(0).unwrap();
@@ -4180,7 +4182,7 @@ impl IndexMut<'_> {
     /// mutation through another index handle.
     ///
     /// ```compile_fail,E0499
-    /// use libgit2::libgit2::src::libgit2::index::Index;
+    /// use libgit2_crustify::libgit2::src::libgit2::index::Index;
     /// let mut index = Index::new().unwrap();
     /// let mut handle = index.as_mut();
     /// let entry = handle.name_entry(0).unwrap();
@@ -4189,7 +4191,7 @@ impl IndexMut<'_> {
     /// ```
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::libgit2::src::libgit2::index::Index;
+    /// use libgit2_crustify::libgit2::src::libgit2::index::Index;
     /// let mut index = Index::new().unwrap();
     /// let mut handle = index.as_mut();
     /// let name = handle.name_entry(0).unwrap().ours().unwrap();
@@ -4214,7 +4216,7 @@ impl IndexMut<'_> {
     /// release.
     ///
     /// ```compile_fail,E0502
-    /// use libgit2::libgit2::src::libgit2::index::Index;
+    /// use libgit2_crustify::libgit2::src::libgit2::index::Index;
     /// let mut index = Index::new().unwrap();
     /// let mut handle = index.as_mut();
     /// let entry = handle.reuc_entry(0).unwrap();
@@ -4223,7 +4225,7 @@ impl IndexMut<'_> {
     /// ```
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::libgit2::src::libgit2::index::Index;
+    /// use libgit2_crustify::libgit2::src::libgit2::index::Index;
     /// let mut index = Index::new().unwrap();
     /// let handle = index.as_mut();
     /// let path = handle.reuc_entry(0).unwrap().path();
@@ -4235,7 +4237,7 @@ impl IndexMut<'_> {
     /// lends no records:
     ///
     /// ```compile_fail,E0599
-    /// use libgit2::libgit2::src::libgit2::index::{Index, IndexArc};
+    /// use libgit2_crustify::libgit2::src::libgit2::index::{Index, IndexArc};
     /// let index: IndexArc = Index::new().unwrap().into();
     /// let _ = index.as_ref().reuc_entry(0);
     /// ```

@@ -61,7 +61,7 @@ define_ctype!(
     /// copy: libgit2 has none, so the box is not `Clone`.
     ///
     /// ```compile_fail,E0599
-    /// use libgit2::libgit2::src::libgit2::mailmap::Mailmap;
+    /// use libgit2_crustify::libgit2::src::libgit2::mailmap::Mailmap;
     ///
     /// let mailmap = Mailmap::new().unwrap();
     /// let _copy = mailmap.clone();
@@ -70,7 +70,7 @@ define_ctype!(
     /// A handle cannot outlive the box:
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::libgit2::src::libgit2::mailmap::Mailmap;
+    /// use libgit2_crustify::libgit2::src::libgit2::mailmap::Mailmap;
     ///
     /// let mailmap = Mailmap::new().unwrap();
     /// let handle = mailmap.as_ref();
@@ -81,7 +81,7 @@ define_ctype!(
     /// nor be used while an exclusive one lives:
     ///
     /// ```compile_fail,E0502
-    /// use libgit2::libgit2::src::libgit2::mailmap::Mailmap;
+    /// use libgit2_crustify::libgit2::src::libgit2::mailmap::Mailmap;
     ///
     /// let mut mailmap = Mailmap::new().unwrap();
     /// let writer = mailmap.as_mut();
@@ -308,7 +308,7 @@ impl<'a> MailmapRef<'a> {
     ///
     /// ```
     /// # if cfg!(miri) { return; }
-    /// use libgit2::libgit2::src::libgit2::mailmap::Mailmap;
+    /// use libgit2_crustify::libgit2::src::libgit2::mailmap::Mailmap;
     ///
     /// let mailmap =
     ///     Mailmap::from_buffer(b"Real Name <real@example.com> <old@example.com>\n").unwrap();
@@ -321,7 +321,7 @@ impl<'a> MailmapRef<'a> {
     /// ```
     ///
     /// ```compile_fail,E0502
-    /// use libgit2::libgit2::src::libgit2::mailmap::Mailmap;
+    /// use libgit2_crustify::libgit2::src::libgit2::mailmap::Mailmap;
     ///
     /// let mut mailmap = Mailmap::new().unwrap();
     /// let (name, _) = mailmap.as_ref().resolve(c"A", c"a@example.com");
@@ -375,8 +375,8 @@ impl<'a> MailmapRef<'a> {
     ///
     /// ```
     /// # if cfg!(miri) { return; }
-    /// use libgit2::libgit2::src::libgit2::mailmap::Mailmap;
-    /// use libgit2::libgit2::src::libgit2::signature::Signature;
+    /// use libgit2_crustify::libgit2::src::libgit2::mailmap::Mailmap;
+    /// use libgit2_crustify::libgit2::src::libgit2::signature::Signature;
     ///
     /// let mailmap =
     ///     Mailmap::from_buffer(b"Real Name <real@example.com> <old@example.com>\n").unwrap();
@@ -440,7 +440,7 @@ impl MailmapMut<'_> {
     ///
     /// ```
     /// # if cfg!(miri) { return; }
-    /// use libgit2::libgit2::src::libgit2::mailmap::Mailmap;
+    /// use libgit2_crustify::libgit2::src::libgit2::mailmap::Mailmap;
     ///
     /// let mut mailmap = Mailmap::new().unwrap();
     /// mailmap

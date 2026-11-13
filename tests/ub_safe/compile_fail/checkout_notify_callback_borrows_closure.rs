@@ -2,7 +2,7 @@
 // cannot be read while the callback can still run it.
 use std::ops::ControlFlow;
 
-use libgit2::libgit2::src::libgit2::checkout::{CheckoutNotification, NotifyCallback};
+use libgit2_crustify::libgit2::src::libgit2::checkout::{CheckoutNotification, NotifyCallback};
 
 fn main() {
     let mut whys = Vec::new();

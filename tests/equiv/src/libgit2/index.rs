@@ -10,12 +10,14 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::ptr;
 
-use libgit2::libgit2::src::libgit2::index::{Index, IndexArc, IndexBox};
-use libgit2::libgit2::src::libgit2::repository::{InitFlag, InitOptions, Repository};
-use libgit2::sys::libgit2 as raw;
+use libgit2_crustify::libgit2::src::libgit2::index::{Index, IndexArc, IndexBox};
+use libgit2_crustify::libgit2::src::libgit2::repository::{InitFlag, InitOptions, Repository};
+use libgit2_crustify::sys::libgit2 as raw;
 
 fn init() {
-    let _ = core::mem::ManuallyDrop::new(libgit2::libgit2::src::libgit2::libgit2::init().unwrap());
+    let _ = core::mem::ManuallyDrop::new(
+        libgit2_crustify::libgit2::src::libgit2::libgit2::init().unwrap(),
+    );
 }
 
 fn clear() {
@@ -671,7 +673,7 @@ fn shared_index_lifecycle_matches_git_index_free() {
 /// `Index::with_oid_type` / `Index::open_with_oid_type` against `git_index_new_ext` /
 /// `git_index_open_ext` (repository wave 0 type review).
 mod oid_types {
-    use libgit2::libgit2::src::libgit2::oid::OidType;
+    use libgit2_crustify::libgit2::src::libgit2::oid::OidType;
 
     use super::*;
 
@@ -865,7 +867,9 @@ mod oid_types {
 /// published by the C header, including the signed owner-command sentinel.
 #[test]
 fn scalar_options_match_c_values() {
-    use libgit2::libgit2::src::libgit2::index::{AddFlags, Capabilities, CapabilitySetting};
+    use libgit2_crustify::libgit2::src::libgit2::index::{
+        AddFlags, Capabilities, CapabilitySetting,
+    };
 
     assert_eq!(AddFlags::DEFAULT.bits(), raw::GIT_INDEX_ADD_DEFAULT);
     let add = [
@@ -915,7 +919,7 @@ fn scalar_options_match_c_values() {
 #[test]
 #[cfg_attr(miri, ignore = "calls libgit2")]
 fn scalar_capabilities_c_state_sequence() {
-    use libgit2::libgit2::src::libgit2::index::{Capabilities, CapabilitySetting};
+    use libgit2_crustify::libgit2::src::libgit2::index::{Capabilities, CapabilitySetting};
 
     let typed = Index::new().unwrap();
     let reference = Index::new().unwrap();
@@ -963,7 +967,7 @@ fn scalar_capabilities_c_state_sequence() {
 #[test]
 #[cfg_attr(miri, ignore = "calls libgit2")]
 fn scalar_capabilities_from_owner() {
-    use libgit2::libgit2::src::libgit2::index::{Capabilities, CapabilitySetting};
+    use libgit2_crustify::libgit2::src::libgit2::index::{Capabilities, CapabilitySetting};
 
     let typed_repo = Repo::new("scalar-caps-typed");
     let raw_repo = Repo::new("scalar-caps-raw");
@@ -1011,7 +1015,7 @@ mod entries;
 mod matched_path_callback {
     use std::ffi::{c_char, c_void};
 
-    use libgit2::libgit2::src::libgit2::index::{MatchedPathCallback, MatchedPathResult};
+    use libgit2_crustify::libgit2::src::libgit2::index::{MatchedPathCallback, MatchedPathResult};
 
     use super::*;
 
@@ -1159,7 +1163,7 @@ mod matched_path_callback {
 #[test]
 #[cfg_attr(miri, ignore = "calls libgit2")]
 fn stage_values_match_c() {
-    use libgit2::libgit2::src::libgit2::index::Stage;
+    use libgit2_crustify::libgit2::src::libgit2::index::Stage;
     for stage in [
         Stage::Any,
         Stage::Normal,
@@ -1187,7 +1191,7 @@ fn stage_values_match_c() {
 #[test]
 #[cfg_attr(miri, ignore = "calls libgit2")]
 fn iterator_snapshot_lifecycle_matches_c() {
-    use libgit2::libgit2::src::libgit2::index::IndexIterator;
+    use libgit2_crustify::libgit2::src::libgit2::index::IndexIterator;
 
     struct CIterator(*mut raw::git_index_iterator);
     impl Drop for CIterator {
@@ -1273,7 +1277,7 @@ fn iterator_snapshot_lifecycle_matches_c() {
 
 #[test]
 fn entry_flags_match_c_enum_and_preserve_other_fields() {
-    use libgit2::libgit2::src::libgit2::index::EntryFlags;
+    use libgit2_crustify::libgit2::src::libgit2::index::EntryFlags;
     assert_eq!(EntryFlags::EXTENDED.bits(), raw::GIT_INDEX_ENTRY_EXTENDED);
     assert_eq!(EntryFlags::VALID.bits(), raw::GIT_INDEX_ENTRY_VALID);
     for bits in 0..=u16::MAX {
@@ -1291,7 +1295,9 @@ fn entry_flags_match_c_enum_and_preserve_other_fields() {
 }
 
 mod conflict_cursor {
-    use libgit2::libgit2::src::libgit2::index::{ConflictIterator, EntryExtendedFlags as F};
+    use libgit2_crustify::libgit2::src::libgit2::index::{
+        ConflictIterator, EntryExtendedFlags as F,
+    };
 
     use super::*;
 
@@ -1452,11 +1458,11 @@ mod conflict_cursor {
 /// whose times were set through the safe [`IndexTime`] API and one built from raw
 /// integers read back the same after every step.
 ///
-/// [`IndexTime`]: libgit2::libgit2::src::libgit2::index::IndexTime
+/// [`IndexTime`]: libgit2_crustify::libgit2::src::libgit2::index::IndexTime
 #[test]
 #[cfg_attr(miri, ignore = "calls libgit2")]
 fn timestamp_entry_roundtrips() {
-    use libgit2::libgit2::src::libgit2::index::{IndexTime, IndexTimeRef};
+    use libgit2_crustify::libgit2::src::libgit2::index::{IndexTime, IndexTimeRef};
     let raw = |time: IndexTimeRef<'_>| raw::git_index_time {
         seconds: time.seconds(),
         nanoseconds: time.nanoseconds(),
@@ -1537,11 +1543,11 @@ mod entry_and_options {
     //! same when they are handed to independently owned indexes, step after step.
 
     use ffibox::CZeroable;
-    use libgit2::libgit2::src::libgit2::index::{
+    use libgit2_crustify::libgit2::src::libgit2::index::{
         EntryExtendedFlags, EntryFlags, IndexEntry, IndexOptions, IndexTime,
     };
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::tree::FileMode;
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::tree::FileMode;
 
     use super::*;
 
@@ -1881,9 +1887,11 @@ mod entry_and_options {
 /// what libgit2 makes of the entries each side staged.
 mod entry_stage {
     use ffibox::CZeroable;
-    use libgit2::libgit2::src::libgit2::index::{AnyStageError, EntryFlags, IndexEntry, Stage};
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::tree::FileMode;
+    use libgit2_crustify::libgit2::src::libgit2::index::{
+        AnyStageError, EntryFlags, IndexEntry, Stage,
+    };
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::tree::FileMode;
 
     use super::*;
 
@@ -2082,10 +2090,12 @@ mod routines {
     use std::cell::RefCell;
     use std::ffi::{c_char, c_void};
 
-    use libgit2::libgit2::src::libgit2::index::{AddFlags, MatchedPathCallback, MatchedPathResult};
-    use libgit2::libgit2::src::libgit2::repository::{RepositoryBox, RepositoryError};
-    use libgit2::libgit2::src::libgit2::strarray::StrArrayView;
-    use libgit2::libgit2::src::util::errors::{ErrorBuf, ErrorCode};
+    use libgit2_crustify::libgit2::src::libgit2::index::{
+        AddFlags, MatchedPathCallback, MatchedPathResult,
+    };
+    use libgit2_crustify::libgit2::src::libgit2::repository::{RepositoryBox, RepositoryError};
+    use libgit2_crustify::libgit2::src::libgit2::strarray::StrArrayView;
+    use libgit2_crustify::libgit2::src::util::errors::{ErrorBuf, ErrorCode};
 
     use super::*;
 
@@ -2627,8 +2637,8 @@ mod routines {
     /// A repository nested in `work`'s working directory at `name`, with an empty
     /// initial commit (of fixed signatures, so twins' ids match) when `committed`.
     fn nested(work: &WorkRepo, name: &str, committed: bool) {
-        use libgit2::libgit2::src::libgit2::commit::{CreateOptions, create_from_stage};
-        use libgit2::libgit2::src::libgit2::signature::{SignatureView, Time};
+        use libgit2_crustify::libgit2::src::libgit2::commit::{CreateOptions, create_from_stage};
+        use libgit2_crustify::libgit2::src::libgit2::signature::{SignatureView, Time};
         let sub = Repository::init(&c_path(&work.dir.0.join(name)), false).unwrap();
         if committed {
             let me = SignatureView::new(

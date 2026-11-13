@@ -14,9 +14,9 @@ use std::ffi::{CStr, CString};
 use std::sync::Barrier;
 use std::thread;
 
-use libgit2::libgit2::src::libgit2::odb::{OdbDataStrFree, OdbDataStrVec};
-use libgit2::libgit2::src::libgit2::settings;
-use libgit2::libgit2::src::libgit2::strarray::{
+use libgit2_crustify::libgit2::src::libgit2::odb::{OdbDataStrFree, OdbDataStrVec};
+use libgit2_crustify::libgit2::src::libgit2::settings;
+use libgit2_crustify::libgit2::src::libgit2::strarray::{
     Iter, StrArray, StrArrayMut, StrArrayRef, StrArrayVal, StrArrayView,
 };
 

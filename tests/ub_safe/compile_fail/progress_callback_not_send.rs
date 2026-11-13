@@ -3,7 +3,7 @@
 use std::ops::ControlFlow;
 use std::thread;
 
-use libgit2::libgit2::src::libgit2::indexer::{IndexerProgressRef, ProgressCallback};
+use libgit2_crustify::libgit2::src::libgit2::indexer::{IndexerProgressRef, ProgressCallback};
 
 fn main() {
     let mut f = |_: IndexerProgressRef<'_>| ControlFlow::Continue(());

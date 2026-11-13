@@ -1,4 +1,4 @@
-use libgit2::libgit2::src::libgit2::settings;
+use libgit2_crustify::libgit2::src::libgit2::settings;
 // The option setters write libgit2 globals its other routines read without
 // synchronisation, so safe code cannot call them, nor `cached_memory`.
 

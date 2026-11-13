@@ -382,9 +382,9 @@ type WalkFn<'f> = dyn FnMut(&CStr, TreeEntryRef<'_>) -> WalkAction + 'f;
 /// ```
 /// use core::ffi::CStr;
 ///
-/// use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-/// use libgit2::libgit2::src::libgit2::repository::Repository;
-/// use libgit2::libgit2::src::libgit2::tree::{
+/// use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+/// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
+/// use libgit2_crustify::libgit2::src::libgit2::tree::{
 ///     FileMode, TreeBuilder, TreeEntryRef, WalkAction, WalkCallback,
 /// };
 ///
@@ -414,7 +414,7 @@ type WalkFn<'f> = dyn FnMut(&CStr, TreeEntryRef<'_>) -> WalkAction + 'f;
 ///
 /// ```compile_fail,E0521
 /// use core::ffi::CStr;
-/// use {libgit2::libgit2::src::libgit2::tree::TreeEntryRef, libgit2::libgit2::src::libgit2::tree::WalkAction, libgit2::libgit2::src::libgit2::tree::WalkCallback};
+/// use {libgit2_crustify::libgit2::src::libgit2::tree::TreeEntryRef, libgit2_crustify::libgit2::src::libgit2::tree::WalkAction, libgit2_crustify::libgit2::src::libgit2::tree::WalkCallback};
 ///
 /// fn keep<'k>(kept: &mut Option<TreeEntryRef<'k>>) {
 ///     let mut f = |_: &CStr, entry: TreeEntryRef<'_>| {
@@ -427,7 +427,7 @@ type WalkFn<'f> = dyn FnMut(&CStr, TreeEntryRef<'_>) -> WalkAction + 'f;
 ///
 /// ```compile_fail,E0521
 /// use core::ffi::CStr;
-/// use {libgit2::libgit2::src::libgit2::tree::TreeEntryRef, libgit2::libgit2::src::libgit2::tree::WalkAction, libgit2::libgit2::src::libgit2::tree::WalkCallback};
+/// use {libgit2_crustify::libgit2::src::libgit2::tree::TreeEntryRef, libgit2_crustify::libgit2::src::libgit2::tree::WalkAction, libgit2_crustify::libgit2::src::libgit2::tree::WalkCallback};
 ///
 /// fn keep<'k>(kept: &mut Option<&'k CStr>) {
 ///     let mut f = |root: &CStr, _: TreeEntryRef<'_>| {
@@ -443,7 +443,7 @@ type WalkFn<'f> = dyn FnMut(&CStr, TreeEntryRef<'_>) -> WalkAction + 'f;
 ///
 /// ```compile_fail,E0277
 /// use core::ffi::CStr;
-/// use {libgit2::libgit2::src::libgit2::tree::TreeEntryRef, libgit2::libgit2::src::libgit2::tree::WalkAction, libgit2::libgit2::src::libgit2::tree::WalkCallback};
+/// use {libgit2_crustify::libgit2::src::libgit2::tree::TreeEntryRef, libgit2_crustify::libgit2::src::libgit2::tree::WalkAction, libgit2_crustify::libgit2::src::libgit2::tree::WalkCallback};
 ///
 /// fn send<T: Send>(_: T) {}
 /// let mut f = |_: &CStr, _: TreeEntryRef<'_>| WalkAction::Continue;
@@ -657,8 +657,8 @@ const _: () = assert!(
 ///
 /// ```
 /// use ffibox::CZeroable;
-/// use libgit2::libgit2::src::libgit2::oid::Oid;
-/// use libgit2::libgit2::src::libgit2::tree::{FileMode, TreeUpdate, UpdateAction};
+/// use libgit2_crustify::libgit2::src::libgit2::oid::Oid;
+/// use libgit2_crustify::libgit2::src::libgit2::tree::{FileMode, TreeUpdate, UpdateAction};
 ///
 /// let id = Oid::zeroed();
 /// let mut update = TreeUpdate::upsert(c"dir/file.txt", id.as_ref(), FileMode::Blob);
@@ -680,7 +680,7 @@ const _: () = assert!(
 /// is the lifetime of the path it points at, so an update cannot outlive it:
 ///
 /// ```compile_fail,E0597
-/// use libgit2::libgit2::src::libgit2::tree::TreeUpdate;
+/// use libgit2_crustify::libgit2::src::libgit2::tree::TreeUpdate;
 /// use std::ffi::CString;
 ///
 /// let update;
@@ -695,7 +695,7 @@ const _: () = assert!(
 /// shorter-lived path than its update was built for:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::tree::TreeUpdateMut;
+/// use libgit2_crustify::libgit2::src::libgit2::tree::TreeUpdateMut;
 ///
 /// fn shrink<'a, 'p>(m: TreeUpdateMut<'a, 'static>) -> TreeUpdateMut<'a, 'p> {
 ///     m
@@ -705,7 +705,7 @@ const _: () = assert!(
 /// The shared handle only reads:
 ///
 /// ```compile_fail,E0599
-/// use libgit2::libgit2::src::libgit2::tree::TreeUpdate;
+/// use libgit2_crustify::libgit2::src::libgit2::tree::TreeUpdate;
 ///
 /// let update = TreeUpdate::remove(c"README");
 /// update.as_ref().set_path(c"other");
@@ -1099,7 +1099,7 @@ const _: () = assert!(
 /// (see the [module docs](self#trees)). The lifetime only shrinks:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::tree::TreeArc;
+/// use libgit2_crustify::libgit2::src::libgit2::tree::TreeArc;
 ///
 /// fn widen<'r>(tree: TreeArc<'r>) -> TreeArc<'static> {
 ///     tree
@@ -1109,7 +1109,7 @@ const _: () = assert!(
 /// and a tree stays on the thread that looked it up:
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::tree::TreeArc;
+/// use libgit2_crustify::libgit2::src::libgit2::tree::TreeArc;
 ///
 /// fn send<T: Send>(_: T) {}
 /// fn move_out(tree: TreeArc<'static>) {
@@ -1127,7 +1127,7 @@ pub struct Tree<'r>(sys::git_tree, PhantomData<(*const (), &'r ())>);
 /// It stays on the thread of the tree's repository, as the owner does:
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::tree::TreeRef;
+/// use libgit2_crustify::libgit2::src::libgit2::tree::TreeRef;
 ///
 /// fn sync<T: Sync>() {}
 /// sync::<TreeRef<'static, 'static>>();
@@ -1395,7 +1395,7 @@ impl<'a, 'r> TreeRef<'a, 'r> {
     /// [`to_tree_entry`](TreeEntryRef::to_tree_entry) copies it to keep.
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::libgit2::src::libgit2::tree::TreeArc;
+    /// use libgit2_crustify::libgit2::src::libgit2::tree::TreeArc;
     ///
     /// fn escape(tree: TreeArc<'_>) {
     ///     let handle = tree.as_ref();
@@ -1488,9 +1488,9 @@ impl<'a, 'r> TreeRef<'a, 'r> {
     ///
     /// ```compile_fail,E0502
     /// use core::ffi::CStr;
-    /// use {libgit2::libgit2::src::libgit2::tree::Tree, libgit2::libgit2::src::libgit2::tree::TreeEntryRef, libgit2::libgit2::src::libgit2::tree::WalkAction, libgit2::libgit2::src::libgit2::tree::WalkCallback, libgit2::libgit2::src::libgit2::tree::WalkMode};
-    /// use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    /// use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// use {libgit2_crustify::libgit2::src::libgit2::tree::Tree, libgit2_crustify::libgit2::src::libgit2::tree::TreeEntryRef, libgit2_crustify::libgit2::src::libgit2::tree::WalkAction, libgit2_crustify::libgit2::src::libgit2::tree::WalkCallback, libgit2_crustify::libgit2::src::libgit2::tree::WalkMode};
+    /// use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     ///
     /// let mut repo = Repository::open(c".").unwrap();
     /// let id = Oid::zero(OidType::Sha1);
@@ -1508,9 +1508,9 @@ impl<'a, 'r> TreeRef<'a, 'r> {
     /// use core::ffi::CStr;
     /// use std::ops::ControlFlow;
     ///
-    /// use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    /// use libgit2::libgit2::src::libgit2::repository::Repository;
-    /// use libgit2::libgit2::src::libgit2::tree::{
+    /// use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
+    /// use libgit2_crustify::libgit2::src::libgit2::tree::{
     ///     Tree, TreeEntryRef, WalkAction, WalkCallback, WalkMode,
     /// };
     ///
@@ -1622,8 +1622,8 @@ impl FusedIterator for TreeEntries<'_, '_> {}
 /// does not outlive it:
 ///
 /// ```compile_fail,E0505
-/// use libgit2::libgit2::src::libgit2::tree::TreeBuilder;
-/// use libgit2::libgit2::src::libgit2::repository::Repository;
+/// use libgit2_crustify::libgit2::src::libgit2::tree::TreeBuilder;
+/// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
 ///
 /// let repo = Repository::new().unwrap();
 /// let builder = TreeBuilder::new(repo.as_ref()).unwrap();
@@ -1634,7 +1634,7 @@ impl FusedIterator for TreeEntries<'_, '_> {}
 /// nor does a handle outlive its owner:
 ///
 /// ```compile_fail,E0505
-/// use libgit2::libgit2::src::libgit2::tree::TreeBuilderBox;
+/// use libgit2_crustify::libgit2::src::libgit2::tree::TreeBuilderBox;
 ///
 /// fn escape(builder: TreeBuilderBox<'_>) {
 ///     let handle = builder.as_ref();
@@ -1646,8 +1646,8 @@ impl FusedIterator for TreeEntries<'_, '_> {}
 /// The repository lends no exclusive handle while a builder borrows it:
 ///
 /// ```compile_fail,E0502
-/// use libgit2::libgit2::src::libgit2::tree::TreeBuilder;
-/// use libgit2::libgit2::src::libgit2::repository::Repository;
+/// use libgit2_crustify::libgit2::src::libgit2::tree::TreeBuilder;
+/// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
 ///
 /// let mut repo = Repository::new().unwrap();
 /// let builder = TreeBuilder::new(repo.as_ref()).unwrap();
@@ -1659,7 +1659,7 @@ impl FusedIterator for TreeEntries<'_, '_> {}
 /// handle crosses threads:
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::tree::TreeBuilderBox;
+/// use libgit2_crustify::libgit2::src::libgit2::tree::TreeBuilderBox;
 ///
 /// fn send<T: Send>(_: T) {}
 /// fn move_out(builder: TreeBuilderBox<'static>) {
@@ -1668,7 +1668,7 @@ impl FusedIterator for TreeEntries<'_, '_> {}
 /// ```
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::tree::TreeBuilderRef;
+/// use libgit2_crustify::libgit2::src::libgit2::tree::TreeBuilderRef;
 ///
 /// fn sync<T: Sync>() {}
 /// sync::<TreeBuilderRef<'static, 'static>>();
@@ -1677,7 +1677,7 @@ impl FusedIterator for TreeEntries<'_, '_> {}
 /// There is no copy routine, so the owner is not `Clone`:
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::tree::TreeBuilderBox;
+/// use libgit2_crustify::libgit2::src::libgit2::tree::TreeBuilderBox;
 ///
 /// fn copyable<T: Clone>() {}
 /// copyable::<TreeBuilderBox<'static>>();
@@ -1916,7 +1916,7 @@ impl<'a> TreeBuilderRef<'a, '_> {
     /// [`to_tree_entry`](TreeEntryRef::to_tree_entry) copies it to keep.
     ///
     /// ```compile_fail,E0502
-    /// use libgit2::libgit2::src::libgit2::tree::TreeBuilderBox;
+    /// use libgit2_crustify::libgit2::src::libgit2::tree::TreeBuilderBox;
     ///
     /// fn stale(mut builder: TreeBuilderBox<'_>) {
     ///     let entry = builder.as_ref().get(c"README");
@@ -1991,9 +1991,9 @@ impl TreeBuilderMut<'_, '_> {
     /// copies it to keep.
     ///
     /// ```compile_fail,E0499
-    /// use libgit2::libgit2::src::libgit2::tree::FileMode;
-    /// use libgit2::libgit2::src::libgit2::tree::TreeBuilderMut;
-    /// use libgit2::libgit2::src::libgit2::oid::OidRef;
+    /// use libgit2_crustify::libgit2::src::libgit2::tree::FileMode;
+    /// use libgit2_crustify::libgit2::src::libgit2::tree::TreeBuilderMut;
+    /// use libgit2_crustify::libgit2::src::libgit2::oid::OidRef;
     ///
     /// fn stale(mut builder: TreeBuilderMut<'_, '_>, id: OidRef<'_>) {
     ///     let entry = builder.insert_entry(c"a", id, FileMode::Commit).unwrap();
@@ -2123,7 +2123,7 @@ impl TreeBuilderMut<'_, '_> {
     /// it nor an entry it lent before:
     ///
     /// ```compile_fail,E0502
-    /// use {libgit2::libgit2::src::libgit2::tree::TreeBuilderBox, libgit2::libgit2::src::libgit2::tree::TreeBuilderFilter, libgit2::libgit2::src::libgit2::tree::TreeEntryRef};
+    /// use {libgit2_crustify::libgit2::src::libgit2::tree::TreeBuilderBox, libgit2_crustify::libgit2::src::libgit2::tree::TreeBuilderFilter, libgit2_crustify::libgit2::src::libgit2::tree::TreeEntryRef};
     ///
     /// fn reenter(mut builder: TreeBuilderBox<'_>) {
     ///     let mut f = |_: TreeEntryRef<'_>| builder.as_ref().len() > 1;
@@ -2134,9 +2134,9 @@ impl TreeBuilderMut<'_, '_> {
     ///
     /// ```
     /// # if cfg!(miri) { return; } // Miri cannot call libgit2.
-    /// use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    /// use libgit2::libgit2::src::libgit2::repository::Repository;
-    /// use libgit2::libgit2::src::libgit2::tree::{
+    /// use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
+    /// use libgit2_crustify::libgit2::src::libgit2::tree::{
     ///     FileMode, TreeBuilder, TreeBuilderFilter, TreeEntryRef,
     /// };
     ///
@@ -2187,7 +2187,7 @@ define_ctype!(
     /// A borrowed entry lives no longer than its owner:
     ///
     /// ```compile_fail,E0505
-    /// use {libgit2::libgit2::src::libgit2::tree::TreeEntryBox, libgit2::libgit2::src::libgit2::tree::TreeEntryRef};
+    /// use {libgit2_crustify::libgit2::src::libgit2::tree::TreeEntryBox, libgit2_crustify::libgit2::src::libgit2::tree::TreeEntryRef};
     ///
     /// fn escape(entry: TreeEntryBox) -> TreeEntryRef<'static> {
     ///     let handle = entry.as_ref();
@@ -2501,9 +2501,9 @@ type FilterFn<'f> = dyn FnMut(TreeEntryRef<'_>) -> bool + 'f;
 ///
 /// ```
 /// # if cfg!(miri) { return; } // Miri cannot call libgit2.
-/// use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-/// use libgit2::libgit2::src::libgit2::repository::Repository;
-/// use libgit2::libgit2::src::libgit2::tree::{Tree, TreeBuilderFilter, TreeEntry};
+/// use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+/// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
+/// use libgit2_crustify::libgit2::src::libgit2::tree::{Tree, TreeBuilderFilter, TreeEntry};
 ///
 /// let repo = Repository::open(c"c/tests/resources/testrepo.git").unwrap();
 /// let id = Oid::from_string(c"944c0f6e4dfa41595e6eb3ceecdb14f50fe18162", OidType::Sha1);
@@ -2511,10 +2511,11 @@ type FilterFn<'f> = dyn FnMut(TreeEntryRef<'_>) -> bool + 'f;
 /// let readme = TreeEntry::bypath(tree.as_ref(), c"README").unwrap();
 ///
 /// let mut seen = Vec::new();
-/// let mut readme_only = |entry: libgit2::libgit2::src::libgit2::tree::TreeEntryRef<'_>| {
-///     seen.push(entry.name().to_owned());
-///     entry.name() == c"README"
-/// };
+/// let mut readme_only =
+///     |entry: libgit2_crustify::libgit2::src::libgit2::tree::TreeEntryRef<'_>| {
+///         seen.push(entry.name().to_owned());
+///         entry.name() == c"README"
+///     };
 /// let mut filter = TreeBuilderFilter::new(&mut readme_only);
 /// assert!(filter.call(readme.as_ref()));
 /// drop(filter);
@@ -2524,7 +2525,7 @@ type FilterFn<'f> = dyn FnMut(TreeEntryRef<'_>) -> bool + 'f;
 /// The entry cannot outlive the call:
 ///
 /// ```compile_fail,E0521
-/// use {libgit2::libgit2::src::libgit2::tree::TreeBuilderFilter, libgit2::libgit2::src::libgit2::tree::TreeEntryRef};
+/// use {libgit2_crustify::libgit2::src::libgit2::tree::TreeBuilderFilter, libgit2_crustify::libgit2::src::libgit2::tree::TreeEntryRef};
 ///
 /// fn keep<'k>(kept: &mut Option<TreeEntryRef<'k>>) {
 ///     let mut f = |entry: TreeEntryRef<'_>| {
@@ -2539,7 +2540,7 @@ type FilterFn<'f> = dyn FnMut(TreeEntryRef<'_>) -> bool + 'f;
 /// synchronously, and the closure need not be `Send`.
 ///
 /// ```compile_fail,E0277
-/// use {libgit2::libgit2::src::libgit2::tree::TreeBuilderFilter, libgit2::libgit2::src::libgit2::tree::TreeEntryRef};
+/// use {libgit2_crustify::libgit2::src::libgit2::tree::TreeBuilderFilter, libgit2_crustify::libgit2::src::libgit2::tree::TreeEntryRef};
 ///
 /// fn send<T: Send>(_: T) {}
 /// let mut f = |_: TreeEntryRef<'_>| false;

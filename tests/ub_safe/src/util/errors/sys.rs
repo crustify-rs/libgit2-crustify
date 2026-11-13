@@ -11,8 +11,8 @@ use std::ffi::{CString, c_int};
 use std::sync::Barrier;
 use std::thread;
 
-use libgit2::libgit2::src::util::errors;
-use libgit2::libgit2::src::util::errors::{ErrorClass, last};
+use libgit2_crustify::libgit2::src::util::errors;
+use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, last};
 
 use crate::fixture::isolated;
 

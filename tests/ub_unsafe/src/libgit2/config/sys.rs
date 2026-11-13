@@ -1,5 +1,5 @@
 //! Allocation-specific compatibility for the typed stored backend seam.
-use libgit2::libgit2::src::libgit2::config::{Backend, Config};
+use libgit2_crustify::libgit2::src::libgit2::config::{Backend, Config};
 
 #[test]
 #[cfg_attr(miri, ignore = "calls C constructor and destructor")]

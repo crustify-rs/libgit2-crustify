@@ -34,16 +34,18 @@
 //! filter list initialises libgit2's filters unsynchronised (see `filter.rs`), so the
 //! script runs alone in a child process.
 //!
-//! [`id_from_buffer`]: libgit2::libgit2::src::libgit2::object::id_from_buffer
-//! [`id_from_file`]: libgit2::libgit2::src::libgit2::object::id_from_file
+//! [`id_from_buffer`]: libgit2_crustify::libgit2::src::libgit2::object::id_from_buffer
+//! [`id_from_file`]: libgit2_crustify::libgit2::src::libgit2::object::id_from_file
 
 use std::ffi::{CStr, CString, c_int};
 use std::ptr;
 
-use libgit2::libgit2::src::libgit2::object::{Object, ObjectArc, ObjectType};
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox, RepositoryError};
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::object::{Object, ObjectArc, ObjectType};
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+use libgit2_crustify::libgit2::src::libgit2::repository::{
+    Repository, RepositoryBox, RepositoryError,
+};
+use libgit2_crustify::sys::libgit2 as sys;
 
 const TESTREPO: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -469,16 +471,16 @@ mod peel_and_bypath {
     //! reference on it). Each side then releases the bases first, reads every derived
     //! object back, and releases those.
     //!
-    //! [`ObjectRef::peel`]: libgit2::libgit2::src::libgit2::object::ObjectRef::peel
-    //! [`ObjectRef::lookup_bypath`]: libgit2::libgit2::src::libgit2::object::ObjectRef::lookup_bypath
+    //! [`ObjectRef::peel`]: libgit2_crustify::libgit2::src::libgit2::object::ObjectRef::peel
+    //! [`ObjectRef::lookup_bypath`]: libgit2_crustify::libgit2::src::libgit2::object::ObjectRef::lookup_bypath
 
     use std::ffi::CStr;
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::object::{Object, ObjectArc, ObjectType};
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::Repository;
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::object::{Object, ObjectArc, ObjectType};
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use super::{BLOB, COMMIT, CSide, Outcome, TESTREPO, TREE, c_last, found, init, outcome};
 
@@ -673,13 +675,15 @@ mod id_options {
     use std::ffi::{CStr, CString, c_int};
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::filter::{FilterList, FilterListBox};
-    use libgit2::libgit2::src::libgit2::object::{
+    use libgit2_crustify::libgit2::src::libgit2::filter::{FilterList, FilterListBox};
+    use libgit2_crustify::libgit2::src::libgit2::object::{
         ObjectIdOptions, ObjectType, id_from_buffer, id_from_file,
     };
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox, RepositoryError};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
+        Repository, RepositoryBox, RepositoryError,
+    };
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use super::{c_last, init};
 
@@ -1126,14 +1130,16 @@ mod types_and_contents {
     //! cannot carry them. Out-of-memory failures are compared in `object.rs`'s unit
     //! tests.
     //!
-    //! [`ObjectType::name`]: libgit2::libgit2::src::libgit2::object::ObjectType::name
-    //! [`ObjectType::from_name`]: libgit2::libgit2::src::libgit2::object::ObjectType::from_name
+    //! [`ObjectType::name`]: libgit2_crustify::libgit2::src::libgit2::object::ObjectType::name
+    //! [`ObjectType::from_name`]: libgit2_crustify::libgit2::src::libgit2::object::ObjectType::from_name
 
     use std::ffi::{CStr, CString, c_int};
 
-    use libgit2::libgit2::src::libgit2::object::{ObjectType, content_is_valid, type_is_valid};
-    use libgit2::libgit2::src::libgit2::oid::OidType;
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::object::{
+        ObjectType, content_is_valid, type_is_valid,
+    };
+    use libgit2_crustify::libgit2::src::libgit2::oid::OidType;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use super::{c_last, init};
 
@@ -1332,17 +1338,17 @@ mod kind_and_short_id {
     //! turn, the type, and the short id or the failure (code, error class and message).
     //! Each side then asks again after releasing every other object, and compares again.
     //!
-    //! [`ObjectRef::kind`]: libgit2::libgit2::src::libgit2::object::ObjectRef::kind
-    //! [`ObjectRef::short_id`]: libgit2::libgit2::src::libgit2::object::ObjectRef::short_id
+    //! [`ObjectRef::kind`]: libgit2_crustify::libgit2::src::libgit2::object::ObjectRef::kind
+    //! [`ObjectRef::short_id`]: libgit2_crustify::libgit2::src::libgit2::object::ObjectRef::short_id
 
     use std::ffi::{CStr, CString, c_int};
     use std::path::{Path, PathBuf};
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::object::{Object, ObjectArc};
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::Repository;
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::object::{Object, ObjectArc};
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use super::{BLOB, COMMIT, CSide, TAG, TESTREPO, TREE, c_last, init};
 
@@ -1542,10 +1548,10 @@ mod id_and_owner {
     use std::ffi::{CStr, CString};
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::object::{Object, ObjectArc, ObjectType};
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::Repository;
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::object::{Object, ObjectArc, ObjectType};
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use super::{BLOB, COMMIT, TAG, TESTREPO, TREE, init};
 
@@ -1663,7 +1669,7 @@ mod id_and_owner {
     }
 
     fn rust_find(
-        repo: libgit2::libgit2::src::libgit2::repository::RepositoryRef<'_>,
+        repo: libgit2_crustify::libgit2::src::libgit2::repository::RepositoryRef<'_>,
         find: Find,
     ) -> ObjectArc<'_> {
         let id = |hex: &str| Oid::from_string(&CString::new(hex).unwrap(), OidType::Sha1).unwrap();

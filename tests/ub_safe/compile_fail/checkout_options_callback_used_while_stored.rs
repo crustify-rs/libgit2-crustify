@@ -3,7 +3,7 @@
 use std::ffi::CStr;
 use std::ops::ControlFlow;
 
-use libgit2::libgit2::src::libgit2::checkout::{
+use libgit2_crustify::libgit2::src::libgit2::checkout::{
     CheckoutNotification, CheckoutOptions, NotifyCallback,
 };
 

@@ -15,11 +15,11 @@ use core::ffi::{CStr, c_void};
 use core::ptr::{self, NonNull};
 use core::slice;
 
-use libgit2::libgit2::src::libgit2::settings::set_allocator;
-use libgit2::libgit2::src::util::alloc::{
+use libgit2_crustify::libgit2::src::libgit2::settings::set_allocator;
+use libgit2_crustify::libgit2::src::util::alloc::{
     Alloc, Allocator, AllocatorRef, FreeFn, MallocFn, ReallocFn, StrFree, global_init, installed,
 };
-use libgit2::libgit2::src::util::allocators::failalloc::FailAlloc;
+use libgit2_crustify::libgit2::src::util::allocators::failalloc::FailAlloc;
 
 unsafe extern "C" {
     fn malloc(n: usize) -> *mut c_void;
@@ -278,7 +278,7 @@ static FAIL: Allocator = Allocator::new::<FailAlloc>();
 fn unpinned() -> [usize; 3] {
     // SAFETY: a read of the C global, live for the whole process, which no other thread
     // writes in the child processes these tests run in.
-    let g = unsafe { (&raw const libgit2::sys::libgit2::git__allocator).read() };
+    let g = unsafe { (&raw const libgit2_crustify::sys::libgit2::git__allocator).read() };
     [
         g.gmalloc.map_or(0, |f| f as usize),
         g.grealloc.map_or(0, |f| f as usize),

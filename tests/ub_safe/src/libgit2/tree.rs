@@ -16,8 +16,8 @@ use std::collections::HashSet;
 use std::hint::black_box;
 use std::thread;
 
-use libgit2::libgit2::src::libgit2::tree::{UnnamedWalkMode, WalkMode};
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::tree::{UnnamedWalkMode, WalkMode};
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// Every small value, a stride across the rest of `git_treewalk_mode`, and its ends.
 fn probes() -> impl Iterator<Item = sys::git_treewalk_mode> {
@@ -107,13 +107,13 @@ mod builder {
     use std::sync::Barrier;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::object::Object;
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
-    use libgit2::libgit2::src::libgit2::tree::{
+    use libgit2_crustify::libgit2::src::libgit2::object::Object;
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
+    use libgit2_crustify::libgit2::src::libgit2::tree::{
         FileMode, Tree, TreeArc, TreeBuilder, TreeBuilderBox, TreeBuilderMut, TreeRef,
     };
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use crate::fixture::init;
     use crate::fixture::tree::{count, entries, id, mode_of};
@@ -512,14 +512,14 @@ mod routines {
     use std::path::PathBuf;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::object::ObjectArc;
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
-    use libgit2::libgit2::src::libgit2::tree::{
+    use libgit2_crustify::libgit2::src::libgit2::object::ObjectArc;
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
+    use libgit2_crustify::libgit2::src::libgit2::tree::{
         FileMode, Tree, TreeBuilder, TreeBuilderBox, TreeEntry, TreeEntryBox, TreeEntryRef,
         WalkAction, WalkCallback,
     };
-    use libgit2::libgit2::src::util::errors::{ErrorBuf, ErrorClass};
+    use libgit2_crustify::libgit2::src::util::errors::{ErrorBuf, ErrorClass};
 
     use crate::fixture::init;
     use crate::fixture::object_and_tree_entry::{entry_view, object_view, write_blob};
@@ -1103,15 +1103,15 @@ mod tree_entry {
     use std::sync::Barrier;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::object::{Object, ObjectType};
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::RepositoryRef;
-    use libgit2::libgit2::src::libgit2::tree::{
+    use libgit2_crustify::libgit2::src::libgit2::object::{Object, ObjectType};
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::RepositoryRef;
+    use libgit2_crustify::libgit2::src::libgit2::tree::{
         FileMode, Tree, TreeArc, TreeBuilder, TreeBuilderFilter, TreeEntry, TreeEntryBox,
         TreeEntryRef, TreeRef,
     };
-    use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use crate::fixture::TempRepo;
     use crate::fixture::object_and_tree_entry::{
@@ -1597,8 +1597,10 @@ mod tree_update {
     use std::thread;
 
     use ffibox::CZeroable;
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::tree::{FileMode, TreeUpdate, TreeUpdateMut, UpdateAction};
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::tree::{
+        FileMode, TreeUpdate, TreeUpdateMut, UpdateAction,
+    };
 
     const MODES: [FileMode; 6] = [
         FileMode::Unreadable,
@@ -1843,12 +1845,12 @@ mod tree_object {
     use std::ffi::CString;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::object::{Object, ObjectArc, ObjectType};
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryError};
-    use libgit2::libgit2::src::libgit2::tree::{Tree, TreeArc, TreeEntry, TreeRef};
-    use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::object::{Object, ObjectArc, ObjectType};
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryError};
+    use libgit2_crustify::libgit2::src::libgit2::tree::{Tree, TreeArc, TreeEntry, TreeRef};
+    use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use crate::fixture::TempRepo;
     use crate::fixture::object_and_tree_entry::{
@@ -2199,15 +2201,15 @@ mod tree_reads {
     use std::panic::{self, AssertUnwindSafe};
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::object::ObjectType;
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::RepositoryBox;
-    use libgit2::libgit2::src::libgit2::tree::{
+    use libgit2_crustify::libgit2::src::libgit2::object::ObjectType;
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::RepositoryBox;
+    use libgit2_crustify::libgit2::src::libgit2::tree::{
         FileMode, Tree, TreeArc, TreeBuilder, TreeBuilderBox, TreeBuilderFilter, TreeEntryBox,
         TreeEntryRef, TreeRef, WalkAction, WalkCallback, WalkMode,
     };
-    use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode, last};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, ErrorCode, last};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use crate::fixture::TempRepo;
     use crate::fixture::object_and_tree_entry::{entry_view, open_testrepo, repository, write_raw};
@@ -2616,14 +2618,14 @@ mod updates {
     use std::path::{Path, PathBuf};
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::{
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
         InitFlag, InitOptions, Repository, RepositoryBox,
     };
-    use libgit2::libgit2::src::libgit2::tree::{
+    use libgit2_crustify::libgit2::src::libgit2::tree::{
         FileMode, Tree, TreeBuilder, TreeEntry, TreeUpdate, UpdateAction,
     };
-    use libgit2::libgit2::src::util::errors::ErrorClass;
+    use libgit2_crustify::libgit2::src::util::errors::ErrorClass;
 
     use crate::fixture::init;
 

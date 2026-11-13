@@ -11,10 +11,10 @@
 use std::sync::Barrier;
 use std::thread;
 
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-use libgit2::libgit2::src::util::alloc::{AllocVec, StrFree};
-use libgit2::libgit2::src::util::allocators::win32_leakcheck::allocator;
-use libgit2::libgit2::src::util::errors::{ErrorClass, last};
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+use libgit2_crustify::libgit2::src::util::alloc::{AllocVec, StrFree};
+use libgit2_crustify::libgit2::src::util::allocators::win32_leakcheck::allocator;
+use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, last};
 
 use crate::fixture::isolated;
 

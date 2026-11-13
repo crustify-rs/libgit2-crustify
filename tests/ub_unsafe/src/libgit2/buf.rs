@@ -12,9 +12,9 @@ use std::process::Command;
 use std::ptr::{self, NonNull};
 use std::thread;
 
-use libgit2::libgit2::src::libgit2::buf::{Buf, BufVal};
-use libgit2::libgit2::src::libgit2::odb::{OdbDataStr, OdbDataStrFree};
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::buf::{Buf, BufVal};
+use libgit2_crustify::libgit2::src::libgit2::odb::{OdbDataStr, OdbDataStrFree};
+use libgit2_crustify::sys::libgit2 as sys;
 
 const CHILD: &str = "CRUSTIFY_UB_UNSAFE_CHILD";
 

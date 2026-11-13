@@ -1,6 +1,6 @@
 // Closing consumes the owner: a closed stream accepts nothing but `free`, so it can
 // no longer be written.
-use {libgit2::libgit2::src::libgit2::filter::RustWriteStream, libgit2::libgit2::src::libgit2::filter::WriteStream};
+use {libgit2_crustify::libgit2::src::libgit2::filter::RustWriteStream, libgit2_crustify::libgit2::src::libgit2::filter::WriteStream};
 
 fn main() {
     let mut stream = RustWriteStream::new(Vec::new()).into_box();

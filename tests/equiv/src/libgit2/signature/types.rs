@@ -124,17 +124,17 @@ use std::path::PathBuf;
 use std::{fs, ptr};
 
 use ffibox::CZeroable;
-use libgit2::libgit2::src::libgit2::branch::BranchType;
-use libgit2::libgit2::src::libgit2::buf::Buf;
-use libgit2::libgit2::src::libgit2::object::{NotAnObjectType, ObjectType};
-use libgit2::libgit2::src::libgit2::refs::{NotAReferenceType, ReferenceType};
-use libgit2::libgit2::src::libgit2::signature::Time;
-use libgit2::libgit2::src::libgit2::submodule::{
+use libgit2_crustify::libgit2::src::libgit2::branch::BranchType;
+use libgit2_crustify::libgit2::src::libgit2::buf::Buf;
+use libgit2_crustify::libgit2::src::libgit2::object::{NotAnObjectType, ObjectType};
+use libgit2_crustify::libgit2::src::libgit2::refs::{NotAReferenceType, ReferenceType};
+use libgit2_crustify::libgit2::src::libgit2::signature::Time;
+use libgit2_crustify::libgit2::src::libgit2::submodule::{
     SubmoduleIgnore, SubmoduleRecurse, SubmoduleUpdate, UnnamedSubmoduleRecurse,
     UnnamedSubmoduleUpdate,
 };
-use libgit2::libgit2::src::libgit2::tree::{FileMode, UnnamedFileMode};
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::tree::{FileMode, UnnamedFileMode};
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// Every `git_submodule_recurse_t` constant, beside the variant that must carry it.
 const RECURSE: [(sys::git_submodule_recurse_t, SubmoduleRecurse); 3] = [
@@ -1722,11 +1722,11 @@ mod write_streams {
     use std::sync::OnceLock;
     use std::{ptr, thread};
 
-    use libgit2::libgit2::src::libgit2::filter::{
+    use libgit2_crustify::libgit2::src::libgit2::filter::{
         RustWriteStream, StreamError, StreamWriter, WriteStream, WriteStreamBox,
     };
-    use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode, last};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, ErrorCode, last};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     fn init() {
         // SAFETY: no arguments; the reference is kept for the rest of the process.
@@ -2839,8 +2839,8 @@ mod signatures {
     //! allocation failure is refused by [`Signature::parse`] (pinned in the crate's unit
     //! tests, which can make libgit2's allocator fail).
 
-    use libgit2::libgit2::src::libgit2::odb::OdbDataStrFree;
-    use libgit2::libgit2::src::libgit2::signature::{
+    use libgit2_crustify::libgit2::src::libgit2::odb::OdbDataStrFree;
+    use libgit2_crustify::libgit2::src::libgit2::signature::{
         Signature, SignatureBox, SignatureRef, SignatureView,
     };
 
@@ -2935,12 +2935,12 @@ mod signatures {
         clippy::needless_pass_by_value,
         reason = "the helper consumes what it reports, as its callers hand it over"
     )]
-    fn failure(error: libgit2::libgit2::src::util::errors::ErrorBuf) -> Failure {
+    fn failure(error: libgit2_crustify::libgit2::src::util::errors::ErrorBuf) -> Failure {
         (error.raw_class(), error.message().to_owned())
     }
 
     fn rust_outcome(
-        r: Result<SignatureBox, libgit2::libgit2::src::util::errors::ErrorBuf>,
+        r: Result<SignatureBox, libgit2_crustify::libgit2::src::util::errors::ErrorBuf>,
     ) -> Result<Fields, Failure> {
         r.map(|s| fields(s.as_ref())).map_err(failure)
     }

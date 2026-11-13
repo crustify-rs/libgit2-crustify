@@ -19,9 +19,9 @@
 //!
 //! ```
 //! use ffibox::{CBox, CVec};
-//! use libgit2::libgit2::src::util::alloc::{Allocator, MallocFn};
-//! use libgit2::libgit2::src::util::allocators::failalloc::{FailAlloc, FailArrayAlloc};
-//! use libgit2::sys::libgit2 as sys;
+//! use libgit2_crustify::libgit2::src::util::alloc::{Allocator, MallocFn};
+//! use libgit2_crustify::libgit2::src::util::allocators::failalloc::{FailAlloc, FailArrayAlloc};
+//! use libgit2_crustify::sys::libgit2 as sys;
 //!
 //! # ffibox::define_ctype!(Point, PointRef, PointMut, point_st);
 //! # #[repr(C)] pub struct point_st { x: i32 }

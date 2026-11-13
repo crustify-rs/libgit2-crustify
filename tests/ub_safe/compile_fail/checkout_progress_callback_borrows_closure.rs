@@ -2,7 +2,7 @@
 // cannot be read while the callback can still run it.
 use std::ffi::CStr;
 
-use libgit2::libgit2::src::libgit2::checkout::ProgressCallback;
+use libgit2_crustify::libgit2::src::libgit2::checkout::ProgressCallback;
 
 fn main() {
     let mut steps = Vec::new();

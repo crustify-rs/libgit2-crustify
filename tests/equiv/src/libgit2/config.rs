@@ -28,11 +28,11 @@ use std::ffi::{CStr, CString, c_int};
 use std::path::{Path, PathBuf};
 use std::ptr;
 
-use libgit2::libgit2::src::libgit2::config::{
+use libgit2_crustify::libgit2::src::libgit2::config::{
     Config, ConfigArc, ConfigBox, ConfigError, ConfigLevel, ConfigRef,
 };
-use libgit2::libgit2::src::util::errors::last;
-use libgit2::sys::libgit2 as raw;
+use libgit2_crustify::libgit2::src::util::errors::last;
+use libgit2_crustify::sys::libgit2 as raw;
 
 /// Pins the process runtime through the safe config constructor before reference C calls.
 fn init() {
@@ -230,7 +230,7 @@ fn shared_configs_match() {
 #[test]
 #[cfg_attr(miri, ignore = "calls libgit2")]
 fn repository_configs_match() {
-    use libgit2::libgit2::src::libgit2::repository::Repository;
+    use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     init();
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -283,8 +283,8 @@ fn repository_configs_match() {
 /// libgit2 leaves silent (text after a size suffix) itself.
 #[cfg(not(miri))]
 mod parsers {
-    use libgit2::libgit2::src::libgit2::config::{parse_bool, parse_i32, parse_i64};
-    use libgit2::libgit2::src::util::errors::{ErrorBuf, ErrorClass, clear, set_str};
+    use libgit2_crustify::libgit2::src::libgit2::config::{parse_bool, parse_i32, parse_i64};
+    use libgit2_crustify::libgit2::src::util::errors::{ErrorBuf, ErrorClass, clear, set_str};
 
     use super::*;
 
@@ -508,7 +508,7 @@ mod parsers {
 /// The signed sentinel and application-defined values survive a C-value round trip.
 #[test]
 fn config_level_values_match_c() {
-    use libgit2::libgit2::src::libgit2::config::ConfigLevel;
+    use libgit2_crustify::libgit2::src::libgit2::config::ConfigLevel;
     for (rust, c) in [
         (ConfigLevel::SYSTEM, raw::GIT_CONFIG_LEVEL_SYSTEM),
         (ConfigLevel::XDG, raw::GIT_CONFIG_LEVEL_XDG),
@@ -529,7 +529,7 @@ fn config_level_values_match_c() {
 #[test]
 #[cfg_attr(miri, ignore = "calls libgit2")]
 fn mapping_mode_values_match_c_behavior() {
-    use libgit2::libgit2::src::libgit2::config::MapType;
+    use libgit2_crustify::libgit2::src::libgit2::config::MapType;
     let _runtime = Config::new().unwrap();
     for (rust_mode, c_mode, value) in [
         (MapType::False, raw::GIT_CONFIGMAP_FALSE, c"false"),
@@ -571,10 +571,10 @@ fn mapping_mode_values_match_c_behavior() {
 mod entry_and_map_types {
     use core::ptr::addr_of;
 
-    use libgit2::libgit2::src::libgit2::config::{
+    use libgit2_crustify::libgit2::src::libgit2::config::{
         ConfigLevel, ConfigMap, ConfigRef, MapMatch, lookup_map_value,
     };
-    use libgit2::libgit2::src::libgit2::repository::Repository;
+    use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
 
     use super::*;
 
@@ -805,13 +805,13 @@ mod entry_and_map_types {
                 0
             );
             let expected = if rule == MapMatch::Int32 {
-                libgit2::libgit2::src::libgit2::config::parse_i32(Some(input)).unwrap()
+                libgit2_crustify::libgit2::src::libgit2::config::parse_i32(Some(input)).unwrap()
             } else {
                 map.as_ref().map_value()
             };
             assert_eq!(c_out, expected);
             // Non-string modes may retain ignored borrowed strings as well.
-            if rule.map_type() != libgit2::libgit2::src::libgit2::config::MapType::String {
+            if rule.map_type() != libgit2_crustify::libgit2::src::libgit2::config::MapType::String {
                 map.as_mut().set_str_match(&rust_text);
                 c_map.str_match = c_text.as_ptr();
                 assert_eq!(
@@ -984,7 +984,7 @@ mod entry_and_map_types {
         }
     }
 
-    fn rust_fields(entry: libgit2::libgit2::src::libgit2::config::EntryRef<'_>) -> Fields {
+    fn rust_fields(entry: libgit2_crustify::libgit2::src::libgit2::config::EntryRef<'_>) -> Fields {
         let owned = |s: Option<&CStr>| s.map(|s| s.to_bytes().to_vec());
         (
             owned(entry.name()),
@@ -1193,11 +1193,11 @@ mod entry_and_map_types {
 
 #[cfg(not(miri))]
 mod file_access {
-    use libgit2::libgit2::src::libgit2::buf::BufVal;
-    use libgit2::libgit2::src::libgit2::config::{
+    use libgit2_crustify::libgit2::src::libgit2::buf::BufVal;
+    use libgit2_crustify::libgit2::src::libgit2::config::{
         ConfigError, ConfigLevel, find_global, find_system, find_xdg, parse_path,
     };
-    use libgit2::libgit2::src::util::errors::clear;
+    use libgit2_crustify::libgit2::src::util::errors::clear;
 
     use super::*;
 
@@ -1580,7 +1580,7 @@ mod file_access {
         reason = "one scenario, its steps run and compared in order"
     )]
     fn snapshot_strings_and_readonly_mutations_match_c() {
-        use libgit2::libgit2::src::libgit2::repository::Repository;
+        use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
         clear();
         let dirs = [
             scratch("snapshot-file", "c"),
@@ -1883,8 +1883,8 @@ mod file_access {
 }
 
 mod writes_and_snapshots {
-    use libgit2::libgit2::src::libgit2::config::{ConfigBox, ConfigError, ConfigLevel};
-    use libgit2::libgit2::src::util::errors::ErrorCode;
+    use libgit2_crustify::libgit2::src::libgit2::config::{ConfigBox, ConfigError, ConfigLevel};
+    use libgit2_crustify::libgit2::src::util::errors::ErrorCode;
 
     use super::*;
 
@@ -2138,10 +2138,10 @@ mod mapping_callbacks {
     use std::num::NonZero;
     use std::ops::ControlFlow;
 
-    use libgit2::libgit2::src::libgit2::config::{
+    use libgit2_crustify::libgit2::src::libgit2::config::{
         ConfigMap, EntryRef, ForeachCallback, MapMatch, lookup_map_value,
     };
-    use libgit2::libgit2::src::util::errors::{ErrorClass, clear, set};
+    use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, clear, set};
 
     use super::*;
 
@@ -2581,8 +2581,8 @@ mod enumeration {
     use std::num::NonZero;
     use std::ops::ControlFlow;
 
-    use libgit2::libgit2::src::libgit2::config::{EntryRef, ForeachCallback};
-    use libgit2::libgit2::src::util::errors::{ErrorClass, clear, set};
+    use libgit2_crustify::libgit2::src::libgit2::config::{EntryRef, ForeachCallback};
+    use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, clear, set};
 
     use super::*;
 
@@ -2651,7 +2651,7 @@ mod enumeration {
         // paired with ConfigFree, and no repository borrow is involved.
         unsafe { ConfigBox::from_c(out) }.unwrap()
     }
-    fn error_record(e: &libgit2::libgit2::src::util::errors::ErrorBuf) -> (c_int, String) {
+    fn error_record(e: &libgit2_crustify::libgit2::src::util::errors::ErrorBuf) -> (c_int, String) {
         // Each side owns its own backend files; only those fixture paths differ.
         (
             e.raw_class(),
@@ -3029,8 +3029,8 @@ mod enumeration {
 }
 
 mod iterator_entries {
-    use libgit2::libgit2::src::libgit2::config::{EntryRef, IteratorBox};
-    use libgit2::libgit2::src::libgit2::repository::Repository;
+    use libgit2_crustify::libgit2::src::libgit2::config::{EntryRef, IteratorBox};
+    use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
 
     use super::*;
 

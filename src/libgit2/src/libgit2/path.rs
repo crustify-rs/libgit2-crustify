@@ -180,7 +180,7 @@ impl std::error::Error for UnnamedFilesystem {}
 ///
 /// ```
 /// # if cfg!(miri) { return; }
-/// use libgit2::libgit2::src::libgit2::path::{Filesystem, GitFile, is_gitfile};
+/// use libgit2_crustify::libgit2::src::libgit2::path::{Filesystem, GitFile, is_gitfile};
 ///
 /// assert!(is_gitfile(
 ///     c"GITMOD~1",

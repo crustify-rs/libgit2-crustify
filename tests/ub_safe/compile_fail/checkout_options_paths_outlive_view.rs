@@ -1,6 +1,6 @@
 // The options cannot outlive the path array their setter borrowed.
-use libgit2::libgit2::src::libgit2::strarray::StrArrayView;
-use libgit2::libgit2::src::libgit2::checkout::CheckoutOptions;
+use libgit2_crustify::libgit2::src::libgit2::strarray::StrArrayView;
+use libgit2_crustify::libgit2::src::libgit2::checkout::CheckoutOptions;
 
 fn main() {
     let mut options = CheckoutOptions::new();

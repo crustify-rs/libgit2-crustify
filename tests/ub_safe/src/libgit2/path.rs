@@ -12,8 +12,8 @@ use std::collections::HashSet;
 use std::hint::black_box;
 use std::thread;
 
-use libgit2::libgit2::src::libgit2::path::GitFile;
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::path::GitFile;
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// Every value around the declared ones, then a coarse stride across the whole type.
 fn probes() -> impl Iterator<Item = sys::git_path_gitfile> {
@@ -71,8 +71,8 @@ mod filesystem {
     //! [`Filesystem`] (`git_path_fs`): its raw conversions yield only valid variants
     //! (Miri checks the enum's validity), and it crosses threads.
 
-    use libgit2::libgit2::src::libgit2::path::Filesystem;
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::path::Filesystem;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     #[test]
     fn every_raw_value_converts_to_a_variant_or_none() {
@@ -110,7 +110,7 @@ mod is_gitfile {
     use std::ffi::{CStr, CString};
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::path::{Filesystem, GitFile, is_gitfile};
+    use libgit2_crustify::libgit2::src::libgit2::path::{Filesystem, GitFile, is_gitfile};
 
     use crate::fixture::isolated;
 

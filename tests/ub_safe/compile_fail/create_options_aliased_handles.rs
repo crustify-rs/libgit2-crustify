@@ -1,7 +1,7 @@
 // A shared handle cannot coexist with the exclusive one of the same options, nor a
 // signature or a run of headers it lent with a change of them.
-use {libgit2::libgit2::src::libgit2::signature::Signature, libgit2::libgit2::src::libgit2::signature::Time};
-use {libgit2::libgit2::src::libgit2::commit::CreateOptions, libgit2::libgit2::src::libgit2::commit::Header};
+use {libgit2_crustify::libgit2::src::libgit2::signature::Signature, libgit2_crustify::libgit2::src::libgit2::signature::Time};
+use {libgit2_crustify::libgit2::src::libgit2::commit::CreateOptions, libgit2_crustify::libgit2::src::libgit2::commit::Header};
 
 fn main() {
     let mut options = CreateOptions::new();

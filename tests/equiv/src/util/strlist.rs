@@ -15,12 +15,12 @@
 use std::ffi::{CStr, CString, c_char};
 use std::ptr;
 
-use libgit2::libgit2::src::libgit2::libgit2::init;
-use libgit2::libgit2::src::util::alloc::{AllocStr, StrFree};
-use libgit2::libgit2::src::util::strlist::{
+use libgit2_crustify::libgit2::src::libgit2::libgit2::init;
+use libgit2_crustify::libgit2::src::util::alloc::{AllocStr, StrFree};
+use libgit2_crustify::libgit2::src::util::strlist::{
     NullStrListFree, StrListFree, contains_key, contains_prefix,
 };
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// A list C copied and owns: `len` strings of libgit2's allocator, released on drop.
 struct CList {

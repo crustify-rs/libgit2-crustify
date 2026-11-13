@@ -12,7 +12,7 @@ use std::mem::MaybeUninit;
 use std::thread;
 
 use ffibox::{CBox, CStrBox, CVec};
-use libgit2::libgit2::src::util::allocators::failalloc::{FailAlloc, FailArrayAlloc};
+use libgit2_crustify::libgit2::src::util::allocators::failalloc::{FailAlloc, FailArrayAlloc};
 
 use crate::fixture::Pair;
 

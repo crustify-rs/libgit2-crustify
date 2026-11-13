@@ -39,10 +39,12 @@
 use std::ffi::CString;
 use std::path::PathBuf;
 
-use libgit2::libgit2::src::libgit2::filter::FilterList;
-use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox, RepositoryRef};
-use libgit2::libgit2::src::util::errors::ErrorClass;
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::filter::FilterList;
+use libgit2_crustify::libgit2::src::libgit2::repository::{
+    Repository, RepositoryBox, RepositoryRef,
+};
+use libgit2_crustify::libgit2::src::util::errors::ErrorClass;
+use libgit2_crustify::sys::libgit2 as sys;
 
 use crate::fixture::{init, isolated};
 

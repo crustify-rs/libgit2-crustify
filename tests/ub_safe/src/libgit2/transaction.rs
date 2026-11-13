@@ -1,8 +1,8 @@
 //! Public transaction lifecycle and keepalive tests. No unsafe transaction adoption.
 //! Illegal parent drops, aliasing, and thread transfer are compile-fail cases.
-use libgit2::libgit2::src::libgit2::config::{Config, ConfigLevel};
-use libgit2::libgit2::src::libgit2::repository::Repository;
-use libgit2::libgit2::src::libgit2::transaction::Transaction;
+use libgit2_crustify::libgit2::src::libgit2::config::{Config, ConfigLevel};
+use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
+use libgit2_crustify::libgit2::src::libgit2::transaction::Transaction;
 
 #[test]
 #[cfg_attr(miri, ignore = "calls libgit2")]

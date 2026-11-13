@@ -16,11 +16,11 @@ use std::process::Command;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::SeqCst;
 
-use libgit2::libgit2::deps::reftable::basics::{
+use libgit2_crustify::libgit2::deps::reftable::basics::{
     Alloc, Buf, Error, ReftableArrayFree, ReftableBox, ReftableStr, ReftableVec, parse_names,
     set_alloc, set_default_alloc,
 };
-use libgit2::libgit2::src::libgit2::libgit2::{Runtime, init};
+use libgit2_crustify::libgit2::src::libgit2::libgit2::{Runtime, init};
 
 const CHILD: &str = "CRUSTIFY_UB_UNSAFE_CHILD";
 

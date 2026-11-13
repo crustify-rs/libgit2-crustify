@@ -10,9 +10,9 @@
 
 use std::thread;
 
-use libgit2::libgit2::src::libgit2::libgit2::{Runtime, init};
-use libgit2::libgit2::src::libgit2::settings;
-use libgit2::libgit2::src::util::errors::last;
+use libgit2_crustify::libgit2::src::libgit2::libgit2::{Runtime, init};
+use libgit2_crustify::libgit2::src::libgit2::settings;
+use libgit2_crustify::libgit2::src::util::errors::last;
 
 use crate::fixture::isolated;
 
@@ -127,8 +127,8 @@ fn cycling_races_pinning() {
             s.spawn(|| {
                 for _ in 0..30 {
                     let _ = settings::mwindow_size();
-                    let _ = libgit2::libgit2::src::libgit2::libgit2::version();
-                    let _ = libgit2::libgit2::src::libgit2::libgit2::features();
+                    let _ = libgit2_crustify::libgit2::src::libgit2::libgit2::version();
+                    let _ = libgit2_crustify::libgit2::src::libgit2::libgit2::features();
                 }
             });
             s.spawn(|| {

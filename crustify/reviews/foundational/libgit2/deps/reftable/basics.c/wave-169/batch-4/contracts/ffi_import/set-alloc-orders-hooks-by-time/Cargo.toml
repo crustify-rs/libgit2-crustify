@@ -7,7 +7,7 @@ publish = false
 [workspace]
 
 [dependencies]
-libgit2 = { path = "../../../../../../../../../../../.." }
+libgit2 = { package = "libgit2-crustify", path = "../../../../../../../../../../../.." }
 
 [patch."https://github.com/crustify-rs/glibc-bindings"]
 glibc-bindings = { path = "/target/glibc-bindings" }

@@ -13,8 +13,8 @@
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use libgit2::libgit2::src::libgit2::commit::ParentCallback;
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
+use libgit2_crustify::libgit2::src::libgit2::commit::ParentCallback;
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
 
 fn id(byte: u8, kind: OidType) -> Oid {
     let mut id = Oid::zero(kind);
@@ -89,12 +89,12 @@ mod creating {
     use std::ffi::{CStr, CString};
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::commit::{
+    use libgit2_crustify::libgit2::src::libgit2::commit::{
         ParentCallback, create_from_callback, create_from_ids,
     };
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidRef, OidType};
-    use libgit2::libgit2::src::libgit2::signature::{SignatureView, Time};
-    use libgit2::libgit2::src::util::errors::ErrorClass;
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidRef, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::signature::{SignatureView, Time};
+    use libgit2_crustify::libgit2::src::util::errors::ErrorClass;
 
     use crate::fixture::TempRepo;
     use crate::fixture::object_and_tree_entry::repository;

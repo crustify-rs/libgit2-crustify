@@ -1,7 +1,7 @@
 // The safe setters take Rust callbacks only; a C callback is stored through the raw seam,
 // whose pointer only an `unsafe` write goes through.
 use ffibox::CMutSeam;
-use libgit2::libgit2::src::libgit2::checkout::CheckoutOptions;
+use libgit2_crustify::libgit2::src::libgit2::checkout::CheckoutOptions;
 
 fn main() {
     let mut options = CheckoutOptions::new();

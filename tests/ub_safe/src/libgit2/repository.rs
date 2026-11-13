@@ -23,7 +23,7 @@ mod init_flags_and_modes {
     use std::hint::black_box;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::repository::{InitFlag, InitFlags, InitMode};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{InitFlag, InitFlags, InitMode};
 
     /// Every value around the declared ones, each single bit, and a coarse stride
     /// across the whole type; `BorrowSanitizer` instruments each comparison, so the probe
@@ -55,8 +55,9 @@ mod init_flags_and_modes {
                 seen.insert(flag);
             } else {
                 assert_eq!(
-                    InitFlag::try_from(raw)
-                        .map_err(libgit2::libgit2::src::libgit2::repository::UnnamedInitFlag::raw),
+                    InitFlag::try_from(raw).map_err(
+                        libgit2_crustify::libgit2::src::libgit2::repository::UnnamedInitFlag::raw
+                    ),
                     Err(raw)
                 );
             }
@@ -160,8 +161,8 @@ mod items_and_open_flags {
     use std::hint::black_box;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::repository::{Item, OpenFlag, OpenFlags};
-    use libgit2::sys::libgit2 as raw;
+    use libgit2_crustify::libgit2::src::libgit2::repository::{Item, OpenFlag, OpenFlags};
+    use libgit2_crustify::sys::libgit2 as raw;
 
     use crate::fixture::{TempRepo, item_path};
 
@@ -195,8 +196,9 @@ mod items_and_open_flags {
                 seen.insert(item);
             } else {
                 assert_eq!(
-                    Item::try_from(raw)
-                        .map_err(libgit2::libgit2::src::libgit2::repository::UnnamedItem::raw),
+                    Item::try_from(raw).map_err(
+                        libgit2_crustify::libgit2::src::libgit2::repository::UnnamedItem::raw
+                    ),
                     Err(raw)
                 );
             }
@@ -214,8 +216,9 @@ mod items_and_open_flags {
                 seen.insert(flag);
             } else {
                 assert_eq!(
-                    OpenFlag::try_from(raw)
-                        .map_err(libgit2::libgit2::src::libgit2::repository::UnnamedOpenFlag::raw),
+                    OpenFlag::try_from(raw).map_err(
+                        libgit2_crustify::libgit2::src::libgit2::repository::UnnamedOpenFlag::raw
+                    ),
                     Err(raw)
                 );
             }
@@ -303,8 +306,10 @@ mod state {
     use std::hint::black_box;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::repository::{RepositoryState, UnnamedRepositoryState};
-    use libgit2::sys::libgit2 as raw;
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
+        RepositoryState, UnnamedRepositoryState,
+    };
+    use libgit2_crustify::sys::libgit2 as raw;
 
     /// Every value around the declared ones, and the extremes; `u32::MAX` is the `-1`
     /// `git_repository_state` returns on failure.
@@ -375,11 +380,11 @@ mod repository_owner {
     use std::sync::Barrier;
     use std::{fs, thread};
 
-    use libgit2::libgit2::src::libgit2::oid::OidType;
-    use libgit2::libgit2::src::libgit2::repository::{
+    use libgit2_crustify::libgit2::src::libgit2::oid::OidType;
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
         Repository, RepositoryBox, RepositoryMut, RepositoryRef,
     };
-    use libgit2::libgit2::src::util::errors::ErrorCode;
+    use libgit2_crustify::libgit2::src::util::errors::ErrorCode;
 
     use crate::fixture::isolated;
 
@@ -662,12 +667,12 @@ mod init_options {
     use std::sync::{Barrier, Mutex};
     use std::{fs, thread};
 
-    use libgit2::libgit2::src::libgit2::oid::OidType;
-    use libgit2::libgit2::src::libgit2::refdb::RefdbType;
-    use libgit2::libgit2::src::libgit2::repository::{
+    use libgit2_crustify::libgit2::src::libgit2::oid::OidType;
+    use libgit2_crustify::libgit2::src::libgit2::refdb::RefdbType;
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
         InitFlag, InitFlags, InitMode, InitOptions, InitOptionsMut, InitOptionsRef, Repository,
     };
-    use libgit2::libgit2::src::util::errors::ErrorCode;
+    use libgit2_crustify::libgit2::src::util::errors::ErrorCode;
 
     use crate::fixture::{init, isolated};
 
@@ -1135,10 +1140,10 @@ mod routines {
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    use libgit2::libgit2::src::libgit2::object::ObjectType;
-    use libgit2::libgit2::src::libgit2::odb::Odb;
-    use libgit2::libgit2::src::libgit2::oid::OidType;
-    use libgit2::libgit2::src::libgit2::repository::Repository;
+    use libgit2_crustify::libgit2::src::libgit2::object::ObjectType;
+    use libgit2_crustify::libgit2::src::libgit2::odb::Odb;
+    use libgit2_crustify::libgit2::src::libgit2::oid::OidType;
+    use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
 
     use crate::fixture::odb::Repo;
 
@@ -1255,17 +1260,17 @@ mod heads_and_parts {
     use std::process::Command;
     use std::{fs, thread};
 
-    use libgit2::libgit2::src::libgit2::annotated_commit::AnnotatedCommit;
-    use libgit2::libgit2::src::libgit2::config::{Config, ConfigArc};
-    use libgit2::libgit2::src::libgit2::index::{Index, IndexArc};
-    use libgit2::libgit2::src::libgit2::object::ObjectType;
-    use libgit2::libgit2::src::libgit2::odb::{Odb, OdbArc};
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidRef, OidType};
-    use libgit2::libgit2::src::libgit2::repository::{
+    use libgit2_crustify::libgit2::src::libgit2::annotated_commit::AnnotatedCommit;
+    use libgit2_crustify::libgit2::src::libgit2::config::{Config, ConfigArc};
+    use libgit2_crustify::libgit2::src::libgit2::index::{Index, IndexArc};
+    use libgit2_crustify::libgit2::src::libgit2::object::ObjectType;
+    use libgit2_crustify::libgit2::src::libgit2::odb::{Odb, OdbArc};
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidRef, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
         MergeheadCallback, OpenFlag, OpenFlags, Repository, RepositoryBox, RepositoryError,
         RepositoryState,
     };
-    use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+    use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, ErrorCode};
 
     use crate::fixture::isolated;
     use crate::fixture::worktree::WorktreeRepo;
@@ -1838,12 +1843,12 @@ mod head_and_lookups {
     use std::ops::ControlFlow;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::commit::CommitArrayVal;
-    use libgit2::libgit2::src::libgit2::object::ObjectType;
-    use libgit2::libgit2::src::libgit2::repository::{
+    use libgit2_crustify::libgit2::src::libgit2::commit::CommitArrayVal;
+    use libgit2_crustify::libgit2::src::libgit2::object::ObjectType;
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
         FetchheadEntry, FetchheadForeachCallback, Item, Repository, RepositoryBox, discover,
     };
-    use libgit2::libgit2::src::util::errors::ErrorCode;
+    use libgit2_crustify::libgit2::src::util::errors::ErrorCode;
 
     use crate::fixture::head_and_lookups::Sandbox;
     use crate::fixture::isolated;

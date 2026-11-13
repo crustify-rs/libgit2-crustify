@@ -330,7 +330,7 @@ define_ctype!(
     /// that error belongs to its thread:
     ///
     /// ```compile_fail,E0277
-    /// use libgit2::libgit2::src::util::errors::ErrorRef;
+    /// use libgit2_crustify::libgit2::src::util::errors::ErrorRef;
     ///
     /// fn send<T: Send>(_: T) {}
     /// fn forward(error: ErrorRef<'static>) {
@@ -592,13 +592,13 @@ pub fn clear() {
 ///
 /// ```compile_fail,E0308
 /// // The message must be NUL-terminated: a `&str` is not.
-/// use libgit2::libgit2::src::util::errors::ErrorClass;
-/// libgit2::libgit2::src::util::errors::set(ErrorClass::Invalid, "bad");
+/// use libgit2_crustify::libgit2::src::util::errors::ErrorClass;
+/// libgit2_crustify::libgit2::src::util::errors::set(ErrorClass::Invalid, "bad");
 /// ```
 ///
 /// ```compile_fail,E0308
 /// // The class is a named one, not the `int` libgit2 stores.
-/// libgit2::libgit2::src::util::errors::set(libgit2::sys::libgit2::GIT_ERROR_INVALID, c"bad");
+/// libgit2_crustify::libgit2::src::util::errors::set(libgit2_crustify::sys::libgit2::GIT_ERROR_INVALID, c"bad");
 /// ```
 ///
 /// Wraps `fn::git_error_set`

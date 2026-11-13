@@ -16,9 +16,9 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::SeqCst;
 use std::thread;
 
-use libgit2::libgit2::src::libgit2::trace;
-use libgit2::libgit2::src::libgit2::trace::{TraceCallback, TraceLevel, Tracer};
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::trace;
+use libgit2_crustify::libgit2::src::libgit2::trace::{TraceCallback, TraceLevel, Tracer};
+use libgit2_crustify::sys::libgit2 as sys;
 
 const CHILD: &str = "CRUSTIFY_UB_UNSAFE_CHILD";
 
@@ -323,9 +323,9 @@ mod config {
     use std::sync::atomic::Ordering::SeqCst;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::trace;
-    use libgit2::libgit2::src::libgit2::trace::{TraceCallback, TraceLevel, Tracer};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::trace;
+    use libgit2_crustify::libgit2::src::libgit2::trace::{TraceCallback, TraceLevel, Tracer};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use super::{connect, isolated, serve_404};
 

@@ -5,8 +5,8 @@
 
 use std::mem::MaybeUninit;
 
-use libgit2::libgit2::src::util::alloc::{AllocVec, ArrayFree};
-use libgit2::libgit2::src::util::errors::{self, ErrorClass};
+use libgit2_crustify::libgit2::src::util::alloc::{AllocVec, ArrayFree};
+use libgit2_crustify::libgit2::src::util::errors::{self, ErrorClass};
 
 /// Where C would ask its allocator for a zero-byte resize, which C leaves
 /// implementation-defined, the run is released and held without storage.

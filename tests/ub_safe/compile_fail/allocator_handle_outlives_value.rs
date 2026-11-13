@@ -1,5 +1,5 @@
 // A handle cannot outlive the `Allocator` value it borrows.
-use {libgit2::libgit2::src::util::alloc::Alloc, libgit2::libgit2::src::util::alloc::Allocator};
+use {libgit2_crustify::libgit2::src::util::alloc::Alloc, libgit2_crustify::libgit2::src::util::alloc::Allocator};
 
 struct Refuse;
 // SAFETY: refuses every request, which `Alloc` allows; nothing is ever live.

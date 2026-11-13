@@ -2,11 +2,11 @@
 //! constructors.
 use std::ffi::{CStr, CString};
 
-use libgit2::libgit2::src::libgit2::index::Index;
-use libgit2::libgit2::src::libgit2::pathspec::{
+use libgit2_crustify::libgit2::src::libgit2::index::Index;
+use libgit2_crustify::libgit2::src::libgit2::pathspec::{
     MatchList, Pathspec, PathspecArc, PathspecFlags, PathspecMut, PathspecRef,
 };
-use libgit2::libgit2::src::libgit2::strarray::{StrArray, StrArrayView};
+use libgit2_crustify::libgit2::src::libgit2::strarray::{StrArray, StrArrayView};
 
 fn shared(_: PathspecRef<'_>) {}
 fn exclusive(mut handle: PathspecMut<'_>) {

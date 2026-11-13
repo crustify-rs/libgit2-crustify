@@ -409,7 +409,7 @@ define_ctype!(
     /// through [`as_ref`](Self::as_ref) / [`as_mut`](Self::as_mut):
     ///
     /// ```
-    /// use libgit2::libgit2::src::libgit2::worktree::{PruneFlag, PruneOptions};
+    /// use libgit2_crustify::libgit2::src::libgit2::worktree::{PruneFlag, PruneOptions};
     ///
     /// let mut opts = PruneOptions::new();
     /// opts.as_mut()
@@ -421,7 +421,7 @@ define_ctype!(
     /// A handle borrows the value, so it cannot outlive it:
     ///
     /// ```compile_fail,E0597
-    /// use libgit2::libgit2::src::libgit2::worktree::PruneOptions;
+    /// use libgit2_crustify::libgit2::src::libgit2::worktree::PruneOptions;
     ///
     /// let handle = {
     ///     let opts = PruneOptions::new();
@@ -433,7 +433,7 @@ define_ctype!(
     /// nor coexist with an exclusive one:
     ///
     /// ```compile_fail,E0502
-    /// use libgit2::libgit2::src::libgit2::worktree::{PruneFlags, PruneOptions};
+    /// use libgit2_crustify::libgit2::src::libgit2::worktree::{PruneFlags, PruneOptions};
     ///
     /// let mut opts = PruneOptions::new();
     /// let mut m = opts.as_mut();
@@ -445,7 +445,7 @@ define_ctype!(
     /// and the shared handle only reads:
     ///
     /// ```compile_fail,E0599
-    /// use libgit2::libgit2::src::libgit2::worktree::{PruneFlags, PruneOptions};
+    /// use libgit2_crustify::libgit2::src::libgit2::worktree::{PruneFlags, PruneOptions};
     ///
     /// let opts = PruneOptions::new();
     /// opts.as_ref().set_flags(PruneFlags::empty());
@@ -675,7 +675,7 @@ define_ctype!(
     /// builds a worktree, and the header does not publish its layout.
     ///
     /// ```compile_fail,E0277
-    /// use libgit2::libgit2::src::libgit2::worktree::Worktree;
+    /// use libgit2_crustify::libgit2::src::libgit2::worktree::Worktree;
     ///
     /// let _ = <Worktree as ffibox::CZeroable>::zeroed();
     /// ```
@@ -732,7 +732,7 @@ impl_cdrop!(
 /// Not `Clone`: libgit2 cannot copy a worktree. Look it up again for a second owner.
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::worktree::WorktreeBox;
+/// use libgit2_crustify::libgit2::src::libgit2::worktree::WorktreeBox;
 ///
 /// fn copyable<T: Clone>() {}
 /// copyable::<WorktreeBox>();
@@ -741,7 +741,7 @@ impl_cdrop!(
 /// Its handles borrow it, so none outlives it:
 ///
 /// ```compile_fail,E0505
-/// use libgit2::libgit2::src::libgit2::worktree::{WorktreeBox, WorktreeRef};
+/// use libgit2_crustify::libgit2::src::libgit2::worktree::{WorktreeBox, WorktreeRef};
 ///
 /// fn escape(w: WorktreeBox) -> WorktreeRef<'static> {
 ///     let r = w.as_ref();
@@ -753,7 +753,7 @@ impl_cdrop!(
 /// and an exclusive handle excludes every other:
 ///
 /// ```compile_fail,E0499
-/// use libgit2::libgit2::src::libgit2::worktree::WorktreeBox;
+/// use libgit2_crustify::libgit2::src::libgit2::worktree::WorktreeBox;
 ///
 /// fn alias(w: &mut WorktreeBox) {
 ///     let a = w.as_mut();
@@ -763,7 +763,7 @@ impl_cdrop!(
 /// ```
 ///
 /// ```compile_fail,E0502
-/// use libgit2::libgit2::src::libgit2::worktree::WorktreeBox;
+/// use libgit2_crustify::libgit2::src::libgit2::worktree::WorktreeBox;
 ///
 /// fn alias(w: &mut WorktreeBox) {
 ///     let shared = w.as_ref();
@@ -783,7 +783,7 @@ pub type WorktreeBox = CBox<Worktree, WorktreeFree>;
 /// [`as_ref`](Self::as_ref) and change it through [`as_mut`](Self::as_mut):
 ///
 /// ```
-/// use libgit2::libgit2::src::libgit2::worktree::AddOptions;
+/// use libgit2_crustify::libgit2::src::libgit2::worktree::AddOptions;
 ///
 /// # if cfg!(miri) { return; }
 /// let mut opts = AddOptions::new();
@@ -801,8 +801,8 @@ pub type WorktreeBox = CBox<Worktree, WorktreeFree>;
 /// The options therefore outlive neither the reference:
 ///
 /// ```compile_fail,E0505
-/// use libgit2::libgit2::src::libgit2::refs::ReferenceBox;
-/// use libgit2::libgit2::src::libgit2::worktree::AddOptions;
+/// use libgit2_crustify::libgit2::src::libgit2::refs::ReferenceBox;
+/// use libgit2_crustify::libgit2::src::libgit2::worktree::AddOptions;
 ///
 /// fn escape(branch: ReferenceBox<'_>) {
 ///     let mut opts = AddOptions::new();
@@ -815,9 +815,9 @@ pub type WorktreeBox = CBox<Worktree, WorktreeFree>;
 /// nor the repository the reference was read through:
 ///
 /// ```compile_fail,E0505
-/// use libgit2::libgit2::src::libgit2::refs::ReferenceBox;
-/// use libgit2::libgit2::src::libgit2::repository::RepositoryBox;
-/// use libgit2::libgit2::src::libgit2::worktree::AddOptions;
+/// use libgit2_crustify::libgit2::src::libgit2::refs::ReferenceBox;
+/// use libgit2_crustify::libgit2::src::libgit2::repository::RepositoryBox;
+/// use libgit2_crustify::libgit2::src::libgit2::worktree::AddOptions;
 ///
 /// fn escape(repo: RepositoryBox, lookup: fn(&RepositoryBox) -> ReferenceBox<'_>) {
 ///     let branch = lookup(&repo);
@@ -831,8 +831,8 @@ pub type WorktreeBox = CBox<Worktree, WorktreeFree>;
 /// and no exclusive handle to the reference exists while the options borrow it:
 ///
 /// ```compile_fail,E0502
-/// use libgit2::libgit2::src::libgit2::refs::ReferenceBox;
-/// use libgit2::libgit2::src::libgit2::worktree::AddOptions;
+/// use libgit2_crustify::libgit2::src::libgit2::refs::ReferenceBox;
+/// use libgit2_crustify::libgit2::src::libgit2::worktree::AddOptions;
 ///
 /// fn alias(mut branch: ReferenceBox<'_>) {
 ///     let mut opts = AddOptions::new();
@@ -846,7 +846,7 @@ pub type WorktreeBox = CBox<Worktree, WorktreeFree>;
 /// shorter-lived borrow than its options were built for:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::worktree::AddOptionsMut;
+/// use libgit2_crustify::libgit2::src::libgit2::worktree::AddOptionsMut;
 ///
 /// fn shrink<'a, 'o>(m: AddOptionsMut<'a, 'static>) -> AddOptionsMut<'a, 'o> {
 ///     m
@@ -858,7 +858,7 @@ pub type WorktreeBox = CBox<Worktree, WorktreeFree>;
 /// carry payloads) are:
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::worktree::AddOptions;
+/// use libgit2_crustify::libgit2::src::libgit2::worktree::AddOptions;
 ///
 /// fn send<T: Send>(_: T) {}
 /// send(AddOptions::new());
@@ -868,7 +868,7 @@ pub type WorktreeBox = CBox<Worktree, WorktreeFree>;
 /// borrows, which a copy would alias. Build another with [`new`](Self::new).
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::worktree::AddOptions;
+/// use libgit2_crustify::libgit2::src::libgit2::worktree::AddOptions;
 ///
 /// fn needs<T: Clone>() {}
 /// needs::<AddOptions<'static>>();
@@ -1660,7 +1660,7 @@ impl<'a> WorktreeRef<'a> {
     ///
     /// ```compile_fail,E0505
     /// use core::ffi::CStr;
-    /// use libgit2::libgit2::src::libgit2::worktree::WorktreeBox;
+    /// use libgit2_crustify::libgit2::src::libgit2::worktree::WorktreeBox;
     ///
     /// fn escape(w: WorktreeBox) -> &'static CStr {
     ///     let name = w.as_ref().name();
@@ -1834,7 +1834,7 @@ impl WorktreeMut<'_> {
     /// It writes the worktree, so a shared handle cannot lock it:
     ///
     /// ```compile_fail,E0599
-    /// use libgit2::libgit2::src::libgit2::worktree::WorktreeBox;
+    /// use libgit2_crustify::libgit2::src::libgit2::worktree::WorktreeBox;
     ///
     /// fn lock(w: &WorktreeBox) {
     ///     let _ = w.as_ref().lock(None);

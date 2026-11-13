@@ -25,13 +25,13 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use libgit2::libgit2::src::libgit2::object::ObjectType;
-use libgit2::libgit2::src::libgit2::odb::{
+use libgit2_crustify::libgit2::src::libgit2::object::ObjectType;
+use libgit2_crustify::libgit2::src::libgit2::odb::{
     ForeachCallback, LookupFlags, Odb, OdbArc, OdbError, OdbExpandId, OdbObject, OdbObjectArc,
     OdbObjectRef, OdbOptions, OdbRef,
 };
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, ErrorCode};
 
 use crate::fixture::odb::Repo;
 use crate::fixture::{init, isolated};
@@ -651,7 +651,7 @@ fn the_foreach_callback_breaks_and_carries_panics() {
         })
         .collect();
     let mut seen = Vec::new();
-    let mut count = |id: libgit2::libgit2::src::libgit2::oid::OidRef<'_>| {
+    let mut count = |id: libgit2_crustify::libgit2::src::libgit2::oid::OidRef<'_>| {
         seen.push(id.to_oid());
         if seen.len() == 3 {
             ControlFlow::Break(NonZero::new(-42).unwrap())
@@ -673,9 +673,10 @@ fn the_foreach_callback_breaks_and_carries_panics() {
         ]
     );
     assert_eq!(seen, ids);
-    let mut panics = |_: libgit2::libgit2::src::libgit2::oid::OidRef<'_>| -> ControlFlow<_> {
-        panic!("from the closure")
-    };
+    let mut panics =
+        |_: libgit2_crustify::libgit2::src::libgit2::oid::OidRef<'_>| -> ControlFlow<_> {
+            panic!("from the closure")
+        };
     let mut callback = ForeachCallback::new(&mut panics);
     let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         callback.call(ids[0].as_ref())

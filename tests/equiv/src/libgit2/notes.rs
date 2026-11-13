@@ -1,12 +1,12 @@
 //! Independent C/Rust note iterators, compared through multi-step C traversal.
 use core::ptr;
 
-use libgit2::libgit2::src::libgit2::commit::Commit;
-use libgit2::libgit2::src::libgit2::iterator::{NoteIterator, NoteIteratorBox};
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
-use libgit2::libgit2::src::util::errors::last;
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::commit::Commit;
+use libgit2_crustify::libgit2::src::libgit2::iterator::{NoteIterator, NoteIteratorBox};
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
+use libgit2_crustify::libgit2::src::util::errors::last;
+use libgit2_crustify::sys::libgit2 as sys;
 
 const FIXTURE: &str = "c/tests/resources/testrepo.git";
 

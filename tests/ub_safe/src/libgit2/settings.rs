@@ -35,9 +35,9 @@ use std::ffi::c_int;
 use std::hint::black_box;
 use std::thread;
 
-use libgit2::libgit2::src::libgit2::libgit2::{Feature, Features};
-use libgit2::libgit2::src::libgit2::settings::{BuildInfo, LibraryOption};
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::libgit2::{Feature, Features};
+use libgit2_crustify::libgit2::src::libgit2::settings::{BuildInfo, LibraryOption};
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// Every value around the declared ones, each single bit, and a coarse stride across
 /// the whole type; `BorrowSanitizer` instruments each comparison, so the probe set stays
@@ -69,7 +69,7 @@ fn feature_from_raw_yields_only_valid_features() {
         } else {
             assert_eq!(
                 Feature::try_from(raw)
-                    .map_err(libgit2::libgit2::src::libgit2::libgit2::UnnamedFeature::raw),
+                    .map_err(libgit2_crustify::libgit2::src::libgit2::libgit2::UnnamedFeature::raw),
                 Err(raw)
             );
         }
@@ -87,8 +87,9 @@ fn build_info_from_raw_yields_only_valid_items() {
             seen.insert(info);
         } else {
             assert_eq!(
-                BuildInfo::try_from(raw)
-                    .map_err(libgit2::libgit2::src::libgit2::settings::UnnamedBuildInfo::raw),
+                BuildInfo::try_from(raw).map_err(
+                    libgit2_crustify::libgit2::src::libgit2::settings::UnnamedBuildInfo::raw
+                ),
                 Err(raw)
             );
         }
@@ -179,8 +180,9 @@ fn from_raw_yields_only_valid_options() {
             seen.insert(opt);
         } else {
             assert_eq!(
-                LibraryOption::try_from(raw)
-                    .map_err(libgit2::libgit2::src::libgit2::settings::UnnamedLibraryOption::raw),
+                LibraryOption::try_from(raw).map_err(
+                    libgit2_crustify::libgit2::src::libgit2::settings::UnnamedLibraryOption::raw
+                ),
                 Err(raw)
             );
         }
@@ -236,20 +238,22 @@ mod options {
     use std::ffi::CStr;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::libgit2::Feature;
-    use libgit2::libgit2::src::libgit2::settings::{BuildInfo, SearchPathLevel};
-    use libgit2::libgit2::src::libgit2::{libgit2 as global, settings};
+    use libgit2_crustify::libgit2::src::libgit2::libgit2::Feature;
+    use libgit2_crustify::libgit2::src::libgit2::settings::{BuildInfo, SearchPathLevel};
+    use libgit2_crustify::libgit2::src::libgit2::{libgit2 as global, settings};
 
     use crate::fixture::isolated;
 
     /// Every safe getter, once; panics on none of them.
     fn read_all() {
-        let v = libgit2::libgit2::src::libgit2::libgit2::version();
+        let v = libgit2_crustify::libgit2::src::libgit2::libgit2::version();
         assert!(v.major >= 1, "{v}");
-        let _ = libgit2::libgit2::src::libgit2::libgit2::prerelease();
-        assert!(libgit2::libgit2::src::libgit2::libgit2::features().contains(Feature::Sha1));
+        let _ = libgit2_crustify::libgit2::src::libgit2::libgit2::prerelease();
+        assert!(
+            libgit2_crustify::libgit2::src::libgit2::libgit2::features().contains(Feature::Sha1)
+        );
         for feature in Feature::ALL {
-            let _ = libgit2::libgit2::src::libgit2::libgit2::feature_backend(feature)
+            let _ = libgit2_crustify::libgit2::src::libgit2::libgit2::feature_backend(feature)
                 .map(CStr::to_bytes);
         }
         assert!(settings::build_info(BuildInfo::Cpu).is_some());
@@ -319,8 +323,8 @@ mod options {
         isolated(
             concat!(module_path!(), "::getters_before_initialisation"),
             || {
-                let _ = libgit2::libgit2::src::libgit2::libgit2::version();
-                let _ = libgit2::libgit2::src::libgit2::libgit2::features();
+                let _ = libgit2_crustify::libgit2::src::libgit2::libgit2::version();
+                let _ = libgit2_crustify::libgit2::src::libgit2::libgit2::features();
                 let _ = settings::mwindow_size();
                 let _ = settings::owner_validation();
                 let _ = settings::windows_sharemode();
@@ -348,7 +352,7 @@ mod options {
                         .map(|_| {
                             s.spawn(|| {
                                 let backends = Feature::ALL
-                                    .map(libgit2::libgit2::src::libgit2::libgit2::feature_backend);
+                                    .map(libgit2_crustify::libgit2::src::libgit2::libgit2::feature_backend);
                                 let infos =
                                     [BuildInfo::Cpu, BuildInfo::Commit].map(settings::build_info);
                                 (backends, infos)
@@ -373,7 +377,8 @@ mod options {
                 assert_eq!(runtime.count().get(), 1);
                 assert_eq!(
                     answers[0].0,
-                    Feature::ALL.map(libgit2::libgit2::src::libgit2::libgit2::feature_backend)
+                    Feature::ALL
+                        .map(libgit2_crustify::libgit2::src::libgit2::libgit2::feature_backend)
                 );
                 assert_eq!(runtime.shutdown().unwrap(), 0);
                 // Nor after the last shutdown.
@@ -407,7 +412,7 @@ mod options {
         let extensions = settings::extensions().unwrap();
         let agent = settings::user_agent().unwrap();
         read_all();
-        let prerelease = libgit2::libgit2::src::libgit2::libgit2::prerelease();
+        let prerelease = libgit2_crustify::libgit2::src::libgit2::libgit2::prerelease();
         thread::spawn(move || {
             assert!(extensions.as_ref().iter().any(|e| e == c"objectformat"));
             assert!(agent.to_bytes().starts_with(b"libgit2"));

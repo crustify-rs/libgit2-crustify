@@ -514,7 +514,7 @@ impl core::iter::FusedIterator for InitFlagsIter {}
 /// setgid bit, and [`InitFlag::Mkpath`]'s ancestors no world-write bit either.
 ///
 /// ```compile_fail,E0423
-/// use libgit2::libgit2::src::libgit2::repository::{CustomMode, InitMode};
+/// use libgit2_crustify::libgit2::src::libgit2::repository::{CustomMode, InitMode};
 /// // A custom mode comes from `from_raw` only, which names the shared modes.
 /// let _ = InitMode::Custom(CustomMode(0o2775));
 /// ```
@@ -599,7 +599,7 @@ impl CustomMode {
 /// change it through [`as_mut`](Self::as_mut):
 ///
 /// ```
-/// use libgit2::libgit2::src::libgit2::repository::{InitFlag, InitMode, InitOptions};
+/// use libgit2_crustify::libgit2::src::libgit2::repository::{InitFlag, InitMode, InitOptions};
 ///
 /// # if cfg!(miri) { return; }
 /// let head = c"main";
@@ -617,7 +617,7 @@ impl CustomMode {
 /// it points at, which its setters borrow, so the options cannot outlive them:
 ///
 /// ```compile_fail,E0597
-/// use libgit2::libgit2::src::libgit2::repository::InitOptions;
+/// use libgit2_crustify::libgit2::src::libgit2::repository::InitOptions;
 /// use std::ffi::CString;
 ///
 /// let mut opts = InitOptions::new();
@@ -632,7 +632,7 @@ impl CustomMode {
 /// shorter-lived borrow than its options were built for:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::repository::InitOptionsMut;
+/// use libgit2_crustify::libgit2::src::libgit2::repository::InitOptionsMut;
 ///
 /// fn shrink<'a, 'o>(m: InitOptionsMut<'a, 'static>) -> InitOptionsMut<'a, 'o> {
 ///     m
@@ -642,7 +642,7 @@ impl CustomMode {
 /// The shared handle only reads:
 ///
 /// ```compile_fail,E0599
-/// use libgit2::libgit2::src::libgit2::repository::{InitFlags, InitOptions};
+/// use libgit2_crustify::libgit2::src::libgit2::repository::{InitFlags, InitOptions};
 ///
 /// let opts = InitOptions::new();
 /// opts.as_ref().set_flags(InitFlags::empty());
@@ -1769,7 +1769,7 @@ define_ctype!(
     /// There is no copy: libgit2 has none, so the box is not `Clone`.
     ///
     /// ```compile_fail,E0599
-    /// use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     ///
     /// let repo = Repository::new().unwrap();
     /// let _copy = repo.clone();
@@ -1780,7 +1780,7 @@ define_ctype!(
     /// borrow its handles; a handle cannot outlive the box:
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     ///
     /// let repo = Repository::new().unwrap();
     /// let handle = repo.as_ref();
@@ -1796,7 +1796,7 @@ define_ctype!(
     /// those caches is sound through the shared [`RepositoryRef`], as a `Cell` is.
     ///
     /// ```compile_fail,E0277
-    /// use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     ///
     /// fn send<T: Send>(_: T) {}
     /// send(Repository::new().unwrap());
@@ -2122,7 +2122,7 @@ impl Repository {
     /// options were refused for their version), as they would after a first call in C.
     ///
     /// ```
-    /// use libgit2::libgit2::src::libgit2::repository::{InitFlag, InitOptions, Repository};
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::{InitFlag, InitOptions, Repository};
     ///
     /// # if cfg!(miri) { return; }
     /// let dir = std::env::temp_dir().join(format!("init-ext-doc-{}", std::process::id()));
@@ -2188,8 +2188,8 @@ impl Repository {
     /// An odb a repository lent (`OdbArc<'r>`) is not accepted:
     ///
     /// ```compile_fail
-    /// use libgit2::libgit2::src::libgit2::odb::OdbArc;
-    /// use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// use libgit2_crustify::libgit2::src::libgit2::odb::OdbArc;
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     ///
     /// fn rewrap<'r>(odb: OdbArc<'r>) {
     ///     let _ = Repository::wrap_odb(odb);
@@ -2231,7 +2231,7 @@ impl<'a> RepositoryRef<'a> {
     ///
     /// ```compile_fail,E0505
     /// use core::ffi::CStr;
-    /// use libgit2::libgit2::src::libgit2::repository::RepositoryBox;
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::RepositoryBox;
     ///
     /// fn escape(repo: RepositoryBox) -> Option<&'static CStr> {
     ///     let workdir = repo.as_ref().workdir();
@@ -2266,7 +2266,7 @@ impl RepositoryMut<'_> {
     /// It removes files through the exclusive handle alone:
     ///
     /// ```compile_fail,E0599
-    /// use libgit2::libgit2::src::libgit2::repository::RepositoryBox;
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::RepositoryBox;
     ///
     /// fn cleanup(repo: &RepositoryBox) {
     ///     let _ = repo.as_ref().cleanup_state();
@@ -2499,7 +2499,7 @@ impl<'a> RepositoryRef<'a> {
     /// so it lives as long as the borrow of the repository:
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     ///
     /// let repo = Repository::open(c".").unwrap();
     /// let path = repo.as_ref().path();
@@ -2548,7 +2548,7 @@ impl<'a> RepositoryRef<'a> {
     /// with any other holder, on any thread, as long as the repository lives:
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     ///
     /// let repo = Repository::open(c".").unwrap();
     /// let odb = repo.as_ref().odb().unwrap();
@@ -2590,7 +2590,7 @@ impl<'a> RepositoryRef<'a> {
     /// borrows (see [`Refdb`](crate::libgit2::src::libgit2::refdb::Refdb)):
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     ///
     /// let repo = Repository::open(c".").unwrap();
     /// let refdb = repo.as_ref().refdb().unwrap();
@@ -2912,12 +2912,12 @@ type MergeheadFn<'f> = dyn FnMut(OidRef<'_>) -> ControlFlow<NonZero<c_int>> + 'f
 /// ```
 /// use std::ops::ControlFlow;
 ///
-/// use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-/// use libgit2::libgit2::src::libgit2::repository::MergeheadCallback;
+/// use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+/// use libgit2_crustify::libgit2::src::libgit2::repository::MergeheadCallback;
 ///
 /// # if cfg!(miri) { return; } // Miri cannot call libgit2.
 /// let mut seen = Vec::new();
-/// let mut collect = |id: libgit2::libgit2::src::libgit2::oid::OidRef<'_>| {
+/// let mut collect = |id: libgit2_crustify::libgit2::src::libgit2::oid::OidRef<'_>| {
 ///     seen.push(id.to_hex_string().unwrap());
 ///     ControlFlow::Continue(())
 /// };
@@ -2932,8 +2932,8 @@ type MergeheadFn<'f> = dyn FnMut(OidRef<'_>) -> ControlFlow<NonZero<c_int>> + 'f
 ///
 /// ```compile_fail,E0521
 /// use std::ops::ControlFlow;
-/// use libgit2::libgit2::src::libgit2::oid::OidRef;
-/// use libgit2::libgit2::src::libgit2::repository::MergeheadCallback;
+/// use libgit2_crustify::libgit2::src::libgit2::oid::OidRef;
+/// use libgit2_crustify::libgit2::src::libgit2::repository::MergeheadCallback;
 ///
 /// fn keep<'k>(kept: &mut Option<OidRef<'k>>) {
 ///     let mut f = |id: OidRef<'_>| {
@@ -2949,8 +2949,8 @@ type MergeheadFn<'f> = dyn FnMut(OidRef<'_>) -> ControlFlow<NonZero<c_int>> + 'f
 ///
 /// ```compile_fail,E0277
 /// use std::ops::ControlFlow;
-/// use libgit2::libgit2::src::libgit2::oid::OidRef;
-/// use libgit2::libgit2::src::libgit2::repository::MergeheadCallback;
+/// use libgit2_crustify::libgit2::src::libgit2::oid::OidRef;
+/// use libgit2_crustify::libgit2::src::libgit2::repository::MergeheadCallback;
 ///
 /// fn send<T: Send>(_: T) {}
 /// let mut f = |_: OidRef<'_>| ControlFlow::Continue(());
@@ -3074,8 +3074,8 @@ fn answered(rc: c_int) -> Result<bool, RepositoryError> {
 ///
 /// ```
 /// # if cfg!(miri) { return; }
-/// use libgit2::libgit2::src::libgit2::repository::discover;
-/// use libgit2::libgit2::src::util::errors::ErrorCode;
+/// use libgit2_crustify::libgit2::src::libgit2::repository::discover;
+/// use libgit2_crustify::libgit2::src::util::errors::ErrorCode;
 ///
 /// // `/` holds no repository here, nor does anything above it.
 /// let error = discover(c"/", false, None).unwrap_err();
@@ -3170,7 +3170,7 @@ impl<'a> RepositoryRef<'a> {
     /// repository is freed:
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     ///
     /// let repo = Repository::new().unwrap();
     /// let namespace = repo.as_ref().namespace();
@@ -3261,7 +3261,7 @@ impl<'a> RepositoryRef<'a> {
     /// as long as the repository lives:
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     ///
     /// let repo = Repository::open(c".").unwrap();
     /// let config = repo.as_ref().config().unwrap();
@@ -3385,7 +3385,7 @@ impl<'a> RepositoryRef<'a> {
     /// this borrow of it:
     ///
     /// ```compile_fail,E0505
-    /// # use libgit2::libgit2::src::libgit2::repository::RepositoryBox;
+    /// # use libgit2_crustify::libgit2::src::libgit2::repository::RepositoryBox;
     /// fn escape(repo: RepositoryBox) {
     ///     let head = repo.as_ref().head().unwrap();
     ///     drop(repo);
@@ -3749,8 +3749,10 @@ type FetchheadFn<'f> = dyn FnMut(FetchheadEntry<'_>) -> ControlFlow<()> + 'f;
 /// ```
 /// use std::ops::ControlFlow;
 ///
-/// use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-/// use libgit2::libgit2::src::libgit2::repository::{FetchheadEntry, FetchheadForeachCallback};
+/// use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+/// use libgit2_crustify::libgit2::src::libgit2::repository::{
+///     FetchheadEntry, FetchheadForeachCallback,
+/// };
 ///
 /// let mut merged = 0;
 /// let mut count = |entry: FetchheadEntry<'_>| {
@@ -3774,7 +3776,7 @@ type FetchheadFn<'f> = dyn FnMut(FetchheadEntry<'_>) -> ControlFlow<()> + 'f;
 ///
 /// ```compile_fail,E0521
 /// use std::ops::ControlFlow;
-/// use libgit2::libgit2::src::libgit2::repository::{FetchheadEntry, FetchheadForeachCallback};
+/// use libgit2_crustify::libgit2::src::libgit2::repository::{FetchheadEntry, FetchheadForeachCallback};
 ///
 /// let mut kept = None;
 /// let mut keep = |entry: FetchheadEntry<'_>| {
@@ -3932,8 +3934,8 @@ define_ctype!(
     /// through [`as_ref`](Self::as_ref) / [`as_mut`](Self::as_mut):
     ///
     /// ```
-    /// use libgit2::libgit2::src::libgit2::oid::OidType;
-    /// use libgit2::libgit2::src::libgit2::repository::NewOptions;
+    /// use libgit2_crustify::libgit2::src::libgit2::oid::OidType;
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::NewOptions;
     ///
     /// # if cfg!(miri) { return; }
     /// let mut opts = NewOptions::new();
@@ -3946,7 +3948,7 @@ define_ctype!(
     /// A handle borrows the value, so it cannot outlive it:
     ///
     /// ```compile_fail,E0597
-    /// use libgit2::libgit2::src::libgit2::repository::NewOptions;
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::NewOptions;
     ///
     /// let handle = {
     ///     let opts = NewOptions::new();
@@ -3958,7 +3960,7 @@ define_ctype!(
     /// nor coexist with an exclusive one:
     ///
     /// ```compile_fail,E0502
-    /// use libgit2::libgit2::src::libgit2::repository::NewOptions;
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::NewOptions;
     ///
     /// let mut opts = NewOptions::new();
     /// let mut m = opts.as_mut();
@@ -3970,7 +3972,7 @@ define_ctype!(
     /// and the shared handle only reads:
     ///
     /// ```compile_fail,E0599
-    /// use libgit2::libgit2::src::libgit2::repository::NewOptions;
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::NewOptions;
     ///
     /// let opts = NewOptions::new();
     /// opts.as_ref().set_oid_type(None);
@@ -4204,8 +4206,8 @@ impl Repository {
     /// base for wiring custom backends into.
     ///
     /// ```
-    /// use libgit2::libgit2::src::libgit2::oid::OidType;
-    /// use libgit2::libgit2::src::libgit2::repository::{NewOptions, Repository};
+    /// use libgit2_crustify::libgit2::src::libgit2::oid::OidType;
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::{NewOptions, Repository};
     ///
     /// # if cfg!(miri) { return; }
     /// let mut opts = NewOptions::new();
@@ -4257,7 +4259,7 @@ impl RepositoryMut<'_> {
     /// A shared handle can neither load nor clear the cache:
     ///
     /// ```compile_fail,E0599
-    /// use libgit2::libgit2::src::libgit2::repository::RepositoryBox;
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::RepositoryBox;
     ///
     /// fn reload(repo: &RepositoryBox) {
     ///     let _ = repo.as_ref().cache_submodules();
@@ -4265,7 +4267,7 @@ impl RepositoryMut<'_> {
     /// ```
     ///
     /// ```compile_fail,E0599
-    /// use libgit2::libgit2::src::libgit2::repository::RepositoryBox;
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::RepositoryBox;
     ///
     /// fn clear(repo: &RepositoryBox) {
     ///     repo.as_ref().clear_submodule_cache();
@@ -4367,7 +4369,7 @@ impl RepositoryMut<'_> {
     /// one may outlive, and is refused at compile time:
     ///
     /// ```compile_fail,E0597
-    /// use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     ///
     /// let mut target = Repository::new().unwrap();
     /// let source = Repository::open(c".").unwrap();
@@ -4412,7 +4414,7 @@ impl RepositoryMut<'_> {
     /// arc a repository lent borrows that repository and is refused at compile time:
     ///
     /// ```compile_fail,E0597
-    /// use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     ///
     /// let mut target = Repository::new().unwrap();
     /// let source = Repository::new().unwrap();
@@ -4530,7 +4532,7 @@ impl RepositoryMut<'_> {
     /// It takes the repository exclusively, so nothing borrowed from it is in use:
     ///
     /// ```compile_fail,E0502
-    /// use libgit2::libgit2::src::libgit2::repository::Repository;
+    /// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
     ///
     /// let mut repo = Repository::new().unwrap();
     /// let commondir = repo.as_ref().commondir();

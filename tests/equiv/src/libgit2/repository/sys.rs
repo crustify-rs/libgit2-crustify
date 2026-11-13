@@ -14,17 +14,19 @@
 /// [`Repository::with_oid_type`], which builds its options through [`NewOptions`], must
 /// match `git_repository_new_ext` with C's.
 ///
-/// [`NewOptions`]: libgit2::libgit2::src::libgit2::repository::NewOptions
-/// [`NewOptions::new`]: libgit2::libgit2::src::libgit2::repository::NewOptions::new
-/// [`Repository::new_ext`]: libgit2::libgit2::src::libgit2::repository::Repository::new_ext
-/// [`Repository::with_oid_type`]: libgit2::libgit2::src::libgit2::repository::Repository::with_oid_type
+/// [`NewOptions`]: libgit2_crustify::libgit2::src::libgit2::repository::NewOptions
+/// [`NewOptions::new`]: libgit2_crustify::libgit2::src::libgit2::repository::NewOptions::new
+/// [`Repository::new_ext`]: libgit2_crustify::libgit2::src::libgit2::repository::Repository::new_ext
+/// [`Repository::with_oid_type`]: libgit2_crustify::libgit2::src::libgit2::repository::Repository::with_oid_type
 mod new_options {
     use std::ffi::{CStr, c_int};
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::oid::OidType;
-    use libgit2::libgit2::src::libgit2::repository::{NewOptions, NewOptionsRef, Repository};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::oid::OidType;
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
+        NewOptions, NewOptionsRef, Repository,
+    };
+    use libgit2_crustify::sys::libgit2 as sys;
 
     fn init() {
         // SAFETY: no arguments; the reference is never released.
@@ -262,8 +264,8 @@ mod submodule_cache {
     use std::path::PathBuf;
     use std::{fs, ptr};
 
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     #[derive(Clone, Copy, Debug)]
     enum Step {

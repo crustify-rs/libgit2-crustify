@@ -18,9 +18,9 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::{fs, thread};
 
-use libgit2::libgit2::src::libgit2::mailmap::{Mailmap, MailmapBox, MailmapRef};
-use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
-use libgit2::libgit2::src::util::errors::ErrorClass;
+use libgit2_crustify::libgit2::src::libgit2::mailmap::{Mailmap, MailmapBox, MailmapRef};
+use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
+use libgit2_crustify::libgit2::src::util::errors::ErrorClass;
 
 /// libgit2's own mailmap test file (`tests/resources/mailmap/.mailmap`).
 const MAILMAP: &[u8] = b"\
@@ -274,8 +274,8 @@ mod lookups {
     use std::ffi::{CStr, CString};
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::mailmap::Mailmap;
-    use libgit2::libgit2::src::util::errors::ErrorClass;
+    use libgit2_crustify::libgit2::src::libgit2::mailmap::Mailmap;
+    use libgit2_crustify::libgit2::src::util::errors::ErrorClass;
 
     fn exact(s: &str) -> Box<CStr> {
         CString::new(s).unwrap().into_boxed_c_str()
@@ -374,15 +374,17 @@ mod lookups {
 /// once trimmed), which leave nothing behind. A mailmap is `Sync`: signatures are
 /// resolved against one from several threads at once (`TSan`).
 ///
-/// [`MailmapRef::resolve_signature`]: libgit2::libgit2::src::libgit2::mailmap::MailmapRef::resolve_signature
-/// [`SignatureView`]: libgit2::libgit2::src::libgit2::signature::SignatureView
+/// [`MailmapRef::resolve_signature`]: libgit2_crustify::libgit2::src::libgit2::mailmap::MailmapRef::resolve_signature
+/// [`SignatureView`]: libgit2_crustify::libgit2::src::libgit2::signature::SignatureView
 mod signatures {
     use std::ffi::{CStr, CString};
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::mailmap::Mailmap;
-    use libgit2::libgit2::src::libgit2::signature::{Signature, SignatureBox, SignatureView, Time};
-    use libgit2::libgit2::src::util::errors::ErrorClass;
+    use libgit2_crustify::libgit2::src::libgit2::mailmap::Mailmap;
+    use libgit2_crustify::libgit2::src::libgit2::signature::{
+        Signature, SignatureBox, SignatureView, Time,
+    };
+    use libgit2_crustify::libgit2::src::util::errors::ErrorClass;
 
     use super::MAILMAP;
 

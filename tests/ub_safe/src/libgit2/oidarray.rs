@@ -11,9 +11,11 @@ use std::sync::Barrier;
 use std::thread;
 
 use ffibox::CZeroable;
-use libgit2::libgit2::src::libgit2::odb::OdbDataVec;
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidRef, OidType};
-use libgit2::libgit2::src::libgit2::oidarray::{OidArray, OidArrayMut, OidArrayRef, OidArrayVal};
+use libgit2_crustify::libgit2::src::libgit2::odb::OdbDataVec;
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidRef, OidType};
+use libgit2_crustify::libgit2::src::libgit2::oidarray::{
+    OidArray, OidArrayMut, OidArrayRef, OidArrayVal,
+};
 
 use crate::fixture::isolated;
 

@@ -13,10 +13,10 @@ use std::ffi::CStr;
 use std::mem::size_of;
 use std::ptr;
 
-use libgit2::libgit2::src::libgit2::commit::{
+use libgit2_crustify::libgit2::src::libgit2::commit::{
     CommitArray, CommitArrayRef, CommitArrayVal, CommitRef,
 };
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::sys::libgit2 as sys;
 
 const HEAD: &str = "a65fedf39aefe402d3bb6e24df4d4f5fe4547750";
 const MERGED: [&str; 2] = [

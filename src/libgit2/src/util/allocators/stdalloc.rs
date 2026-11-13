@@ -43,8 +43,8 @@ mod ffi_import {
     /// use std::ptr;
     /// use std::sync::OnceLock;
     ///
-    /// use libgit2::libgit2::src::util::alloc::Allocator;
-    /// use libgit2::libgit2::src::util::allocators::stdalloc;
+    /// use libgit2_crustify::libgit2::src::util::alloc::Allocator;
+    /// use libgit2_crustify::libgit2::src::util::allocators::stdalloc;
     ///
     /// static STANDARD: OnceLock<Allocator> = OnceLock::new();
     ///

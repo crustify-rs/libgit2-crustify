@@ -32,17 +32,19 @@ use std::path::{Path, PathBuf};
 use std::{fs, ptr};
 
 use ffibox::CZeroable;
-use libgit2::libgit2::src::libgit2::object::ObjectType;
-use libgit2::libgit2::src::libgit2::odb::{
+use libgit2_crustify::libgit2::src::libgit2::object::ObjectType;
+use libgit2_crustify::libgit2::src::libgit2::odb::{
     LookupFlags, Odb, OdbArc, OdbError, OdbExpandId, OdbOptions, OdbRef,
 };
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-use libgit2::libgit2::src::util::errors::ErrorBuf;
-use libgit2::sys::libgit2 as raw;
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+use libgit2_crustify::libgit2::src::util::errors::ErrorBuf;
+use libgit2_crustify::sys::libgit2 as raw;
 
 /// Takes a `git_libgit2_init` reference that is never released.
 fn init() {
-    let _ = core::mem::ManuallyDrop::new(libgit2::libgit2::src::libgit2::libgit2::init().unwrap());
+    let _ = core::mem::ManuallyDrop::new(
+        libgit2_crustify::libgit2::src::libgit2::libgit2::init().unwrap(),
+    );
 }
 
 /// The thread's last libgit2 error, read through C: its class and message.
@@ -373,10 +375,11 @@ fn rust_seen<T>(result: Result<T, OdbError>, seen: impl FnOnce(T) -> Seen) -> Se
 
 /// Runs `op` on `odb` through the Rust wrappers.
 fn rust_step(odb: OdbRef<'_, '_>, op: Op<'_>) -> Seen {
-    let object = |object: libgit2::libgit2::src::libgit2::odb::OdbObjectArc| {
+    let object = |object: libgit2_crustify::libgit2::src::libgit2::odb::OdbObjectArc| {
         let o = object.as_ref();
         let dup = object.clone();
-        let dup_is_same = libgit2::libgit2::src::libgit2::odb::OdbObjectArc::ptr_eq(&dup, &object);
+        let dup_is_same =
+            libgit2_crustify::libgit2::src::libgit2::odb::OdbObjectArc::ptr_eq(&dup, &object);
         Seen::Object {
             id: id_of(&o.id().to_oid()),
             kind: o.kind().map_or(raw::GIT_OBJECT_INVALID, ObjectType::raw),

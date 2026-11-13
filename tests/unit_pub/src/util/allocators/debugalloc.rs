@@ -3,7 +3,7 @@
 
 use std::ptr;
 
-use libgit2::libgit2::src::util::alloc::Allocator;
+use libgit2_crustify::libgit2::src::util::alloc::Allocator;
 
 /// The three members' addresses, each read once from one value.
 fn addresses(a: Allocator) -> [usize; 3] {

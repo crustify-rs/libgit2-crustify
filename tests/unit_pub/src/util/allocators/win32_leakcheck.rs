@@ -8,8 +8,8 @@
 
 use std::ffi::CStr;
 
-use libgit2::libgit2::src::util::allocators::win32_leakcheck::allocator;
-use libgit2::libgit2::src::util::errors::{ErrorClass, clear, last, set_str};
+use libgit2_crustify::libgit2::src::util::allocators::win32_leakcheck::allocator;
+use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, clear, last, set_str};
 
 const MESSAGE: &CStr = c"leakcheck memory allocator not available";
 

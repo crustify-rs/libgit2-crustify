@@ -17,10 +17,10 @@
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::thread;
 
-use libgit2::libgit2::src::util::alloc::StrFree;
-use libgit2::libgit2::src::util::allocators::win32_leakcheck::allocator;
-use libgit2::libgit2::src::util::errors::{ErrorClass, last, set_str};
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::util::alloc::StrFree;
+use libgit2_crustify::libgit2::src::util::allocators::win32_leakcheck::allocator;
+use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, last, set_str};
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// What one step observed: whether the call failed, whether it built an allocator, and
 /// the message of the thread's last error after it; each side checks its class itself.

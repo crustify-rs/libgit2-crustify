@@ -9,9 +9,9 @@
 use std::num::NonZero;
 use std::ops::ControlFlow;
 
-use libgit2::libgit2::src::libgit2::odb::{ForeachCallback, Odb, OdbBackend};
-use libgit2::libgit2::src::libgit2::oid::OidRef;
-use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode};
+use libgit2_crustify::libgit2::src::libgit2::odb::{ForeachCallback, Odb, OdbBackend};
+use libgit2_crustify::libgit2::src::libgit2::oid::OidRef;
+use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, ErrorCode};
 
 use crate::fixture::init;
 

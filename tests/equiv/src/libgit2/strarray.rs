@@ -40,9 +40,11 @@ use std::ptr;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use libgit2::libgit2::src::libgit2::odb::OdbDataStrVec;
-use libgit2::libgit2::src::libgit2::strarray::{StrArray, StrArrayRef, StrArrayVal, StrArrayView};
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::odb::OdbDataStrVec;
+use libgit2_crustify::libgit2::src::libgit2::strarray::{
+    StrArray, StrArrayRef, StrArrayVal, StrArrayView,
+};
+use libgit2_crustify::sys::libgit2 as sys;
 
 const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 

@@ -1,5 +1,5 @@
 // Two exclusive handles to one `OdbOptions` cannot coexist, nor a shared one beside them.
-use libgit2::libgit2::src::libgit2::odb::OdbOptions;
+use libgit2_crustify::libgit2::src::libgit2::odb::OdbOptions;
 
 fn main() {
     let mut opts = OdbOptions::new();

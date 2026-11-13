@@ -25,7 +25,7 @@
 use std::ffi::{CStr, CString};
 use std::thread;
 
-use libgit2::libgit2::src::libgit2::trailer::{
+use libgit2_crustify::libgit2::src::libgit2::trailer::{
     MessageTrailer, MessageTrailerArray, MessageTrailerArrayMut, MessageTrailerArrayRef,
     MessageTrailerArrayVal, MessageTrailerMut,
 };
@@ -326,7 +326,7 @@ mod prettify {
     use std::ffi::{CStr, CString};
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::message::prettify;
+    use libgit2_crustify::libgit2::src::libgit2::message::prettify;
 
     fn exact(bytes: &[u8]) -> Box<CStr> {
         CString::new(bytes).unwrap().into_boxed_c_str()

@@ -19,8 +19,8 @@ use crate::sys::libgit2 as sys;
 /// state and reaches the thread-bound repository.
 ///
 /// ```compile_fail,E0505
-/// use libgit2::libgit2::src::libgit2::iterator::NoteIterator;
-/// use libgit2::libgit2::src::libgit2::repository::Repository;
+/// use libgit2_crustify::libgit2::src::libgit2::iterator::NoteIterator;
+/// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
 /// let repo = Repository::open(c".").unwrap();
 /// let it = NoteIterator::new(repo.as_ref(), None).unwrap();
 /// drop(repo);
@@ -28,7 +28,7 @@ use crate::sys::libgit2 as sys;
 /// ```
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::iterator::NoteIteratorBox;
+/// use libgit2_crustify::libgit2::src::libgit2::iterator::NoteIteratorBox;
 /// fn send<T: Send>() {}
 /// send::<NoteIteratorBox<'static>>();
 /// ```
@@ -90,7 +90,7 @@ impl<'r> NoteIteratorMut<'_, 'r> {
 /// Sole owner of a note iterator, borrowing its repository for `'r`.
 ///
 /// ```compile_fail,E0502
-/// use libgit2::libgit2::src::libgit2::iterator::NoteIteratorBox;
+/// use libgit2_crustify::libgit2::src::libgit2::iterator::NoteIteratorBox;
 /// fn alias(mut it: NoteIteratorBox<'_>) {
 ///     let mut exclusive = it.as_mut();
 ///     let shared = exclusive.as_ref();

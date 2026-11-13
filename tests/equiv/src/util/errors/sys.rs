@@ -22,9 +22,9 @@ use std::ptr;
 
 use glibc_bindings::libc::csu::errno_loc::{errno, set_errno};
 use glibc_bindings::libc::ffi as libc;
-use libgit2::libgit2::src::util::errors;
-use libgit2::libgit2::src::util::errors::ErrorClass;
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::util::errors;
+use libgit2_crustify::libgit2::src::util::errors::ErrorClass;
+use libgit2_crustify::sys::libgit2 as sys;
 
 const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 

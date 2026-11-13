@@ -1,8 +1,8 @@
 // A clone or a handle's copy of an object is the same object, tied to the same
 // repository.
-use {libgit2::libgit2::src::libgit2::object::Object, libgit2::libgit2::src::libgit2::object::ObjectArc};
-use {libgit2::libgit2::src::libgit2::oid::Oid, libgit2::libgit2::src::libgit2::oid::OidType};
-use libgit2::libgit2::src::libgit2::repository::RepositoryBox;
+use {libgit2_crustify::libgit2::src::libgit2::object::Object, libgit2_crustify::libgit2::src::libgit2::object::ObjectArc};
+use {libgit2_crustify::libgit2::src::libgit2::oid::Oid, libgit2_crustify::libgit2::src::libgit2::oid::OidType};
+use libgit2_crustify::libgit2::src::libgit2::repository::RepositoryBox;
 
 fn escape(repo: RepositoryBox) -> (ObjectArc<'static>, ObjectArc<'static>) {
     let id = Oid::zero(OidType::Sha1);

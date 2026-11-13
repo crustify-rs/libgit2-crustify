@@ -35,8 +35,8 @@ use std::ffi::{CStr, CString, c_char};
 use std::mem::MaybeUninit;
 
 use glibc_bindings::libc::ffi as libc;
-use libgit2::libgit2::src::libgit2::trailer::{MessageTrailer, MessageTrailerArray};
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::trailer::{MessageTrailer, MessageTrailerArray};
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// Takes a `git_libgit2_init` reference that is never released.
 fn init() {
@@ -207,9 +207,11 @@ mod allocator {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-    use libgit2::libgit2::src::libgit2::trailer::{MessageTrailerArray, MessageTrailerArrayVal};
-    use libgit2::libgit2::src::util::errors::last;
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::trailer::{
+        MessageTrailerArray, MessageTrailerArrayVal,
+    };
+    use libgit2_crustify::libgit2::src::util::errors::last;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use super::{ArrayView, MESSAGES, c_array};
 
@@ -533,8 +535,8 @@ mod allocator {
 mod prettify {
     use std::ffi::CString;
 
-    use libgit2::libgit2::src::libgit2::message::prettify;
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::message::prettify;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use super::init;
 

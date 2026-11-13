@@ -30,8 +30,8 @@ mod init_flags_and_modes {
     use std::process::Command;
     use std::{fs, ptr};
 
-    use libgit2::libgit2::src::libgit2::repository::{InitFlag, InitFlags, InitMode};
-    use libgit2::sys::libgit2 as raw;
+    use libgit2_crustify::libgit2::src::libgit2::repository::{InitFlag, InitFlags, InitMode};
+    use libgit2_crustify::sys::libgit2 as raw;
 
     /// Every `git_repository_init_flag_t` constant and the variant carrying it.
     const FLAGS: [(raw::git_repository_init_flag_t, InitFlag); 6] = [
@@ -84,8 +84,9 @@ mod init_flags_and_modes {
             let c = FLAGS.iter().find(|(c, _)| *c == raw).map(|&(_, f)| f);
             assert_eq!(InitFlag::from_raw(raw), c, "{raw:#x}");
             assert_eq!(
-                InitFlag::try_from(raw)
-                    .map_err(libgit2::libgit2::src::libgit2::repository::UnnamedInitFlag::raw),
+                InitFlag::try_from(raw).map_err(
+                    libgit2_crustify::libgit2::src::libgit2::repository::UnnamedInitFlag::raw
+                ),
                 c.ok_or(raw),
                 "{raw:#x}"
             );
@@ -652,10 +653,10 @@ mod items_and_open_flags {
     use std::path::{Path, PathBuf};
     use std::{fs, ptr};
 
-    use libgit2::libgit2::src::libgit2::repository::{
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
         Item, OpenFlag, OpenFlags, UnnamedItem, UnnamedOpenFlag,
     };
-    use libgit2::sys::libgit2 as raw;
+    use libgit2_crustify::sys::libgit2 as raw;
 
     /// Every `git_repository_item_t` constant but the sentinel, and its variant.
     const ITEMS: [(raw::git_repository_item_t, Item); 15] = [
@@ -1412,8 +1413,8 @@ mod state {
     use std::path::{Path, PathBuf};
     use std::{fs, ptr};
 
-    use libgit2::libgit2::src::libgit2::repository::RepositoryState;
-    use libgit2::sys::libgit2 as raw;
+    use libgit2_crustify::libgit2::src::libgit2::repository::RepositoryState;
+    use libgit2_crustify::sys::libgit2 as raw;
 
     /// Every `git_repository_state_t` constant, beside the variant that must carry it.
     const STATES: [(raw::git_repository_state_t, RepositoryState); 12] = [
@@ -1653,9 +1654,11 @@ mod repository_owner {
     use std::process::Command;
     use std::{fs, ptr, thread};
 
-    use libgit2::libgit2::src::libgit2::oid::OidType;
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox, RepositoryError};
-    use libgit2::sys::libgit2 as raw;
+    use libgit2_crustify::libgit2::src::libgit2::oid::OidType;
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
+        Repository, RepositoryBox, RepositoryError,
+    };
+    use libgit2_crustify::sys::libgit2 as raw;
 
     /// libgit2's bare test repository, only ever opened read-only.
     const TESTREPO: &str = concat!(
@@ -2060,10 +2063,10 @@ mod repository_owner {
 /// before a call (a deliberate divergence, see the unit tests) are the ones C would
 /// recompute.
 ///
-/// [`Repository::init_ext`]: libgit2::libgit2::src::libgit2::repository::Repository::init_ext
+/// [`Repository::init_ext`]: libgit2_crustify::libgit2::src::libgit2::repository::Repository::init_ext
 ///
-/// [`InitOptions`]: libgit2::libgit2::src::libgit2::repository::InitOptions
-/// [`InitOptions::new`]: libgit2::libgit2::src::libgit2::repository::InitOptions::new
+/// [`InitOptions`]: libgit2_crustify::libgit2::src::libgit2::repository::InitOptions
+/// [`InitOptions::new`]: libgit2_crustify::libgit2::src::libgit2::repository::InitOptions::new
 mod init_options {
     use std::collections::BTreeMap;
     use std::ffi::{CStr, CString, c_int};
@@ -2073,12 +2076,12 @@ mod init_options {
     use std::process::Command;
     use std::{fs, ptr};
 
-    use libgit2::libgit2::src::libgit2::oid::OidType;
-    use libgit2::libgit2::src::libgit2::refdb::RefdbType;
-    use libgit2::libgit2::src::libgit2::repository::{
+    use libgit2_crustify::libgit2::src::libgit2::oid::OidType;
+    use libgit2_crustify::libgit2::src::libgit2::refdb::RefdbType;
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
         InitFlag, InitFlags, InitMode, InitOptions, InitOptionsMut, InitOptionsRef, Repository,
     };
-    use libgit2::sys::libgit2 as raw;
+    use libgit2_crustify::sys::libgit2 as raw;
 
     fn init() {
         // SAFETY: no arguments; the reference is never released.
@@ -2899,10 +2902,10 @@ mod routines {
     use std::path::{Path, PathBuf};
     use std::{fs, ptr};
 
-    use libgit2::libgit2::src::libgit2::odb::Odb;
-    use libgit2::libgit2::src::libgit2::oid::OidType;
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
-    use libgit2::sys::libgit2 as raw;
+    use libgit2_crustify::libgit2::src::libgit2::odb::Odb;
+    use libgit2_crustify::libgit2::src::libgit2::oid::OidType;
+    use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
+    use libgit2_crustify::sys::libgit2 as raw;
 
     fn init() {
         // SAFETY: no arguments; the reference is never released.
@@ -3354,16 +3357,16 @@ mod heads_and_parts {
     use std::path::{Path, PathBuf};
     use std::{fs, ptr};
 
-    use libgit2::libgit2::src::libgit2::annotated_commit::AnnotatedCommit;
-    use libgit2::libgit2::src::libgit2::config::{Config, ConfigArc};
-    use libgit2::libgit2::src::libgit2::index::{Index, IndexArc};
-    use libgit2::libgit2::src::libgit2::odb::Odb;
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidRef, OidType};
-    use libgit2::libgit2::src::libgit2::repository::{
+    use libgit2_crustify::libgit2::src::libgit2::annotated_commit::AnnotatedCommit;
+    use libgit2_crustify::libgit2::src::libgit2::config::{Config, ConfigArc};
+    use libgit2_crustify::libgit2::src::libgit2::index::{Index, IndexArc};
+    use libgit2_crustify::libgit2::src::libgit2::odb::Odb;
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidRef, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
         MergeheadCallback, OpenFlag, OpenFlags, Repository, RepositoryBox, RepositoryError,
     };
-    use libgit2::libgit2::src::libgit2::worktree::WorktreeBox;
-    use libgit2::sys::libgit2 as raw;
+    use libgit2_crustify::libgit2::src::libgit2::worktree::WorktreeBox;
+    use libgit2_crustify::sys::libgit2 as raw;
 
     fn init() {
         // SAFETY: no arguments; the reference is never released.
@@ -4701,12 +4704,12 @@ mod head_and_lookups {
     use std::sync::atomic::Ordering::SeqCst;
     use std::{fs, ptr, thread};
 
-    use libgit2::libgit2::src::libgit2::object::ObjectType;
-    use libgit2::libgit2::src::libgit2::repository::{
+    use libgit2_crustify::libgit2::src::libgit2::object::ObjectType;
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
         FetchheadEntry, FetchheadForeachCallback, Item, Repository, RepositoryBox, RepositoryError,
         discover,
     };
-    use libgit2::sys::libgit2 as raw;
+    use libgit2_crustify::sys::libgit2 as raw;
 
     const RESOURCES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/c/tests/resources");
 

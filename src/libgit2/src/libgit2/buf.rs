@@ -305,7 +305,7 @@ impl<'a> BufRef<'a> {
     /// The owner itself has no `Clone`: a byte copy would dispose the allocation twice.
     ///
     /// ```compile_fail,E0599
-    /// use libgit2::libgit2::src::libgit2::buf::{Buf, BufVal};
+    /// use libgit2_crustify::libgit2::src::libgit2::buf::{Buf, BufVal};
     ///
     /// let buf = Buf::new();
     /// let copy: BufVal = buf.clone();

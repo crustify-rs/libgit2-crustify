@@ -53,15 +53,15 @@ use std::sync::Mutex;
 use std::thread;
 
 use ffibox::CZeroable;
-use libgit2::libgit2::src::libgit2::branch::BranchType;
-use libgit2::libgit2::src::libgit2::object::{NotAnObjectType, ObjectType};
-use libgit2::libgit2::src::libgit2::refs::{NotAReferenceType, ReferenceType};
-use libgit2::libgit2::src::libgit2::signature::{Time, TimeMut, TimeRef};
-use libgit2::libgit2::src::libgit2::submodule::{
+use libgit2_crustify::libgit2::src::libgit2::branch::BranchType;
+use libgit2_crustify::libgit2::src::libgit2::object::{NotAnObjectType, ObjectType};
+use libgit2_crustify::libgit2::src::libgit2::refs::{NotAReferenceType, ReferenceType};
+use libgit2_crustify::libgit2::src::libgit2::signature::{Time, TimeMut, TimeRef};
+use libgit2_crustify::libgit2::src::libgit2::submodule::{
     SubmoduleIgnore, SubmoduleRecurse, SubmoduleUpdate,
 };
-use libgit2::libgit2::src::libgit2::tree::FileMode;
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::tree::FileMode;
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// Every value around the declared ones, then a coarse stride across the whole
 /// type; `BorrowSanitizer` instruments each comparison, so the probe set stays small.
@@ -88,7 +88,7 @@ fn from_raw_yields_only_valid_variants() {
             }
             None => assert_eq!(
                 SubmoduleRecurse::try_from(raw).map_err(
-                    libgit2::libgit2::src::libgit2::submodule::UnnamedSubmoduleRecurse::raw
+                    libgit2_crustify::libgit2::src::libgit2::submodule::UnnamedSubmoduleRecurse::raw
                 ),
                 Err(raw)
             ),
@@ -101,7 +101,7 @@ fn from_raw_yields_only_valid_variants() {
             }
             None => assert_eq!(
                 SubmoduleUpdate::try_from(raw).map_err(
-                    libgit2::libgit2::src::libgit2::submodule::UnnamedSubmoduleUpdate::raw
+                    libgit2_crustify::libgit2::src::libgit2::submodule::UnnamedSubmoduleUpdate::raw
                 ),
                 Err(raw)
             ),
@@ -494,7 +494,7 @@ fn from_raw_yields_only_valid_modes() {
         } else {
             assert_eq!(
                 FileMode::try_from(raw)
-                    .map_err(libgit2::libgit2::src::libgit2::tree::UnnamedFileMode::raw),
+                    .map_err(libgit2_crustify::libgit2::src::libgit2::tree::UnnamedFileMode::raw),
                 Err(raw)
             );
         }
@@ -549,10 +549,10 @@ mod write_streams {
     use std::sync::atomic::Ordering::SeqCst;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::filter::{
+    use libgit2_crustify::libgit2::src::libgit2::filter::{
         RustWriteStream, StreamError, StreamWriter, WriteStream,
     };
-    use libgit2::libgit2::src::util::errors::{ErrorClass, ErrorCode, last};
+    use libgit2_crustify::libgit2::src::util::errors::{ErrorClass, ErrorCode, last};
 
     use crate::fixture::isolated;
 
@@ -882,11 +882,11 @@ mod signatures {
     use std::sync::Barrier;
     use std::thread;
 
-    use libgit2::libgit2::src::libgit2::odb::{OdbDataStr, OdbDataStrFree};
-    use libgit2::libgit2::src::libgit2::signature::{
+    use libgit2_crustify::libgit2::src::libgit2::odb::{OdbDataStr, OdbDataStrFree};
+    use libgit2_crustify::libgit2::src::libgit2::signature::{
         Signature, SignatureBox, SignatureMut, SignatureRef, SignatureView, Time,
     };
-    use libgit2::libgit2::src::util::errors::ErrorClass;
+    use libgit2_crustify::libgit2::src::util::errors::ErrorClass;
 
     use crate::fixture::{init, isolated};
 

@@ -1,5 +1,5 @@
 [package]
-name = "libgit2"
+name = "libgit2-crustify"
 description = "Safe Rust wrappers over libgit2's public API."
 edition.workspace = true
 rust-version.workspace = true
@@ -60,7 +60,7 @@ serde_json = "1"
 [dev-dependencies]
 # The campaign's tests and gates regenerate the bindings, and check them against the
 # committed ones; the crate's dependents build from the committed bindings.
-libgit2 = { path = ".", features = ["bindgen"] }
+libgit2-crustify = { path = ".", features = ["bindgen"] }
 trybuild = "1.0"
 
 [lints]

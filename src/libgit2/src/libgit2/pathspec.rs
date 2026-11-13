@@ -66,7 +66,7 @@ impl_cdrop!(
 ///
 /// Handles cannot survive their owner:
 /// ```compile_fail,E0505
-/// use libgit2::libgit2::src::libgit2::pathspec::PathspecBox;
+/// use libgit2_crustify::libgit2::src::libgit2::pathspec::PathspecBox;
 /// fn invalid(owner: PathspecBox) {
 ///     let view = owner.as_ref();
 ///     drop(owner);
@@ -75,7 +75,7 @@ impl_cdrop!(
 /// ```
 /// An exclusive reborrow freezes its parent:
 /// ```compile_fail,E0499
-/// use libgit2::libgit2::src::libgit2::pathspec::PathspecBox;
+/// use libgit2_crustify::libgit2::src::libgit2::pathspec::PathspecBox;
 /// fn invalid(mut owner: PathspecBox) {
 ///     let mut parent = owner.as_mut();
 ///     let child = parent.as_mut();
@@ -85,7 +85,7 @@ impl_cdrop!(
 /// ```
 /// A shared reborrow also excludes a mutable one:
 /// ```compile_fail,E0502
-/// use libgit2::libgit2::src::libgit2::pathspec::PathspecBox;
+/// use libgit2_crustify::libgit2::src::libgit2::pathspec::PathspecBox;
 /// fn invalid(mut owner: PathspecBox) {
 ///     let mut parent = owner.as_mut();
 ///     let shared = parent.as_ref();
@@ -99,16 +99,16 @@ pub type PathspecBox = CBox<Pathspec, PathspecFree>;
 /// handles are available; no public routine can clone it or prove sole ownership.
 ///
 /// ```compile_fail,E0599
-/// use libgit2::libgit2::src::libgit2::pathspec::PathspecArc;
+/// use libgit2_crustify::libgit2::src::libgit2::pathspec::PathspecArc;
 /// fn invalid(mut owner: PathspecArc) { let _ = owner.get_mut(); }
 /// ```
 /// ```compile_fail,E0599
-/// use libgit2::libgit2::src::libgit2::pathspec::PathspecArc;
+/// use libgit2_crustify::libgit2::src::libgit2::pathspec::PathspecArc;
 /// fn invalid(owner: PathspecArc) { let _ = owner.clone(); }
 /// ```
 /// Owners and handles remain thread-bound:
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::pathspec::PathspecArc;
+/// use libgit2_crustify::libgit2::src::libgit2::pathspec::PathspecArc;
 /// fn invalid(owner: PathspecArc) { std::thread::spawn(move || drop(owner)); }
 /// ```
 pub type PathspecArc = CArc<Pathspec, PathspecFree>;
@@ -280,7 +280,7 @@ impl BitAndAssign for PathspecFlags {
 ///
 /// A string cannot outlive its list:
 /// ```compile_fail,E0505
-/// use libgit2::libgit2::src::libgit2::pathspec::MatchListBox;
+/// use libgit2_crustify::libgit2::src::libgit2::pathspec::MatchListBox;
 /// fn invalid(list: MatchListBox<'static>) {
 ///     let entry = list.as_ref().entry(0).unwrap();
 ///     drop(list);
@@ -289,7 +289,7 @@ impl BitAndAssign for PathspecFlags {
 /// ```
 /// Exclusive reborrows exclude shared access:
 /// ```compile_fail,E0502
-/// use libgit2::libgit2::src::libgit2::pathspec::MatchListBox;
+/// use libgit2_crustify::libgit2::src::libgit2::pathspec::MatchListBox;
 /// fn invalid(mut list: MatchListBox<'static>) {
 ///     let exclusive = list.as_mut();
 ///     let shared = list.as_ref();
@@ -298,12 +298,12 @@ impl BitAndAssign for PathspecFlags {
 /// ```
 /// Exclusive handles are invariant in the diff lifetime:
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::pathspec::MatchListMut;
+/// use libgit2_crustify::libgit2::src::libgit2::pathspec::MatchListMut;
 /// fn invalid<'a, 'd>(m: MatchListMut<'a, 'static>) -> MatchListMut<'a, 'd> { m }
 /// ```
 /// Owners remain thread-bound:
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::pathspec::MatchListBox;
+/// use libgit2_crustify::libgit2::src::libgit2::pathspec::MatchListBox;
 /// fn invalid(list: MatchListBox<'static>) {
 ///     std::thread::spawn(move || drop(list));
 /// }
@@ -461,8 +461,8 @@ impl MatchList<'static> {
     ///
     /// A sole owner is not accepted as is:
     /// ```compile_fail,E0308
-    /// use libgit2::libgit2::src::libgit2::index::IndexMut;
-    /// use libgit2::libgit2::src::libgit2::pathspec::{MatchList, PathspecBox, PathspecFlags};
+    /// use libgit2_crustify::libgit2::src::libgit2::index::IndexMut;
+    /// use libgit2_crustify::libgit2::src::libgit2::pathspec::{MatchList, PathspecBox, PathspecFlags};
     /// fn invalid(index: IndexMut<'_>, sole: PathspecBox) {
     ///     let _ = MatchList::from_index(index, &sole, PathspecFlags::DEFAULT);
     /// }
@@ -575,9 +575,9 @@ impl<'diff> MatchList<'diff> {
     ///
     /// A source diff must outlive a returned list, including its destructor:
     /// ```compile_fail,E0597
-    /// use libgit2::libgit2::src::libgit2::strarray::StrArrayView;
-    /// use libgit2::libgit2::src::libgit2::diff::Diff;
-    /// use libgit2::libgit2::src::libgit2::pathspec::{MatchList, Pathspec, PathspecArc, PathspecFlags};
+    /// use libgit2_crustify::libgit2::src::libgit2::strarray::StrArrayView;
+    /// use libgit2_crustify::libgit2::src::libgit2::diff::Diff;
+    /// use libgit2_crustify::libgit2::src::libgit2::pathspec::{MatchList, Pathspec, PathspecArc, PathspecFlags};
     /// let ps: PathspecArc = Pathspec::new(StrArrayView::default().as_ref()).unwrap().into();
     /// let list;
     /// {

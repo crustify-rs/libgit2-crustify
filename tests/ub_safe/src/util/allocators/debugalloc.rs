@@ -9,7 +9,7 @@
 use std::sync::{Barrier, OnceLock};
 use std::thread;
 
-use libgit2::libgit2::src::util::alloc::{Allocator, StrFree};
+use libgit2_crustify::libgit2::src::util::alloc::{Allocator, StrFree};
 
 /// The three members' addresses.
 fn addresses(a: Allocator) -> [usize; 3] {

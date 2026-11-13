@@ -110,7 +110,7 @@ use crate::sys::libgit2 as sys;
 /// for it, as for every value without a variant, and is the only way in from an integer:
 ///
 /// ```compile_fail,E0605
-/// use libgit2::libgit2::deps::reftable::basics::HashId;
+/// use libgit2_crustify::libgit2::deps::reftable::basics::HashId;
 ///
 /// let raw: u32 = 0;
 /// let _ = raw as HashId;
@@ -626,7 +626,7 @@ mod ffi_import {
         ///
         /// ```compile_fail,E0499
         /// use ffibox::CZeroable;
-        /// use libgit2::libgit2::deps::reftable::basics::Buf;
+        /// use libgit2_crustify::libgit2::deps::reftable::basics::Buf;
         ///
         /// let mut buf = Buf::zeroed();
         /// let a = buf.as_mut();
@@ -638,7 +638,7 @@ mod ffi_import {
         ///
         /// ```compile_fail,E0502
         /// use ffibox::CZeroable;
-        /// use libgit2::libgit2::deps::reftable::basics::Buf;
+        /// use libgit2_crustify::libgit2::deps::reftable::basics::Buf;
         ///
         /// let mut buf = Buf::zeroed();
         /// let m = buf.as_mut();
@@ -709,7 +709,7 @@ mod ffi_import {
     /// outlive the array:
     ///
     /// ```compile_fail,E0597
-    /// use libgit2::libgit2::deps::reftable::basics::NamesVec;
+    /// use libgit2_crustify::libgit2::deps::reftable::basics::NamesVec;
     ///
     /// let names = {
     ///     let list = NamesVec::new([c"a.ref"]);
@@ -723,7 +723,7 @@ mod ffi_import {
     /// ```compile_fail,E0716
     /// use std::ffi::CString;
     ///
-    /// use libgit2::libgit2::deps::reftable::basics::NamesVec;
+    /// use libgit2_crustify::libgit2::deps::reftable::basics::NamesVec;
     ///
     /// let list = NamesVec::new([CString::new("a.ref").unwrap().as_c_str()]);
     /// let _ = list.as_ref().len();
@@ -913,7 +913,7 @@ mod ffi_import {
         ///
         /// ```compile_fail,E0597
         /// use ffibox::CZeroable;
-        /// use libgit2::libgit2::deps::reftable::basics::Buf;
+        /// use libgit2_crustify::libgit2::deps::reftable::basics::Buf;
         ///
         /// let bytes = {
         ///     let buf = Buf::zeroed();
@@ -927,7 +927,7 @@ mod ffi_import {
         ///
         /// ```compile_fail,E0597
         /// use ffibox::CZeroable;
-        /// use libgit2::libgit2::deps::reftable::basics::Buf;
+        /// use libgit2_crustify::libgit2::deps::reftable::basics::Buf;
         ///
         /// let mut buf = Buf::zeroed();
         /// let bytes = {
@@ -941,7 +941,7 @@ mod ffi_import {
         ///
         /// ```compile_fail,E0502
         /// use ffibox::CZeroable;
-        /// use libgit2::libgit2::deps::reftable::basics::Buf;
+        /// use libgit2_crustify::libgit2::deps::reftable::basics::Buf;
         ///
         /// let mut buf = Buf::zeroed();
         /// let bytes = buf.as_ref().as_bytes();
@@ -974,7 +974,7 @@ mod ffi_import {
         ///
         /// ```compile_fail,E0502
         /// use ffibox::CZeroable;
-        /// use libgit2::libgit2::deps::reftable::basics::Buf;
+        /// use libgit2_crustify::libgit2::deps::reftable::basics::Buf;
         ///
         /// let mut buf = Buf::zeroed();
         /// let c_str = buf.as_ref().as_c_str();
@@ -1053,7 +1053,7 @@ mod ffi_import {
     /// Types aligned beyond what the allocator vouches for are rejected:
     ///
     /// ```compile_fail,E0080
-    /// use libgit2::libgit2::deps::reftable::basics::ReftableBox;
+    /// use libgit2_crustify::libgit2::deps::reftable::basics::ReftableBox;
     ///
     /// #[repr(C, align(64))]
     /// pub struct wide_st { pub x: u8 }
@@ -1132,7 +1132,7 @@ mod ffi_import {
     /// zero-sized ones, which need no storage:
     ///
     /// ```compile_fail,E0080
-    /// use libgit2::libgit2::deps::reftable::basics::ReftableVec;
+    /// use libgit2_crustify::libgit2::deps::reftable::basics::ReftableVec;
     ///
     /// #[derive(Clone, Copy)]
     /// #[repr(align(64))]
@@ -1142,7 +1142,7 @@ mod ffi_import {
     /// ```
     ///
     /// ```compile_fail,E0080
-    /// let _ = libgit2::libgit2::deps::reftable::basics::ReftableArrayFree::new_zeroed::<()>(4);
+    /// let _ = libgit2_crustify::libgit2::deps::reftable::basics::ReftableArrayFree::new_zeroed::<()>(4);
     /// ```
     #[derive(Clone, Copy, Debug, Default)]
     pub struct ReftableArrayFree;
@@ -1440,7 +1440,7 @@ mod ffi_import {
     /// names borrow the array, which cannot be released while one is read:
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::libgit2::deps::reftable::basics::parse_names;
+    /// use libgit2_crustify::libgit2::deps::reftable::basics::parse_names;
     ///
     /// let names = parse_names(b"a\n").unwrap();
     /// let first = names.get(0).unwrap();
@@ -1766,7 +1766,7 @@ mod ffi_import {
     /// Not `Clone`: a byte copy would release the allocation twice.
     ///
     /// ```compile_fail,E0599
-    /// use libgit2::libgit2::deps::reftable::basics::{Buf, BufVal};
+    /// use libgit2_crustify::libgit2::deps::reftable::basics::{Buf, BufVal};
     ///
     /// let buf = Buf::new();
     /// let copy: BufVal = buf.clone();
@@ -1949,7 +1949,7 @@ mod ffi_import {
         /// The contents cannot be read past it, through a borrow taken before:
         ///
         /// ```compile_fail,E0502
-        /// use libgit2::libgit2::deps::reftable::basics::Buf;
+        /// use libgit2_crustify::libgit2::deps::reftable::basics::Buf;
         ///
         /// let mut buf = Buf::new();
         /// buf.as_mut().add(b"name").unwrap();

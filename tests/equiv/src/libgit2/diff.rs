@@ -4,14 +4,14 @@ use core::ffi::CStr;
 use core::ptr;
 use std::ffi::CString;
 
-use libgit2::libgit2::src::libgit2::blob;
-use libgit2::libgit2::src::libgit2::diff::{Diff, DiffBox, DiffError};
-use libgit2::libgit2::src::libgit2::index::Index;
-use libgit2::libgit2::src::libgit2::oid::OidType;
-use libgit2::libgit2::src::libgit2::repository::Repository;
-use libgit2::libgit2::src::libgit2::tree::{FileMode, Tree, TreeArc, TreeBuilder};
-use libgit2::libgit2::src::util::errors::last;
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::blob;
+use libgit2_crustify::libgit2::src::libgit2::diff::{Diff, DiffBox, DiffError};
+use libgit2_crustify::libgit2::src::libgit2::index::Index;
+use libgit2_crustify::libgit2::src::libgit2::oid::OidType;
+use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
+use libgit2_crustify::libgit2::src::libgit2::tree::{FileMode, Tree, TreeArc, TreeBuilder};
+use libgit2_crustify::libgit2::src::util::errors::last;
+use libgit2_crustify::sys::libgit2 as sys;
 use support::{DeltaSnapshot, FileSnapshot, PATCH, RENAME, Repo};
 
 struct RawDiff(*mut sys::git_diff);
@@ -285,13 +285,13 @@ fn progress_cancellation_codes_match_c() {
         rust_opts.payload = (&raw const rust_code).cast_mut().cast();
         c_opts.progress_cb = Some(cancel);
         c_opts.payload = (&raw const c_code).cast_mut().cast();
-        libgit2::libgit2::src::util::errors::clear();
+        libgit2_crustify::libgit2::src::util::errors::clear();
         // SAFETY: initialized defaults with a static non-unwinding callback and
         // matching live read-only payload; repo, options and referents outlive result.
         let safe = unsafe {
             Diff::generate_with_options(
                 rust.get().as_ref(),
-                libgit2::libgit2::src::libgit2::diff::DiffInputs::Trees {
+                libgit2_crustify::libgit2::src::libgit2::diff::DiffInputs::Trees {
                     old: None,
                     new: Some(rust_tree.as_ref()),
                 },
@@ -300,7 +300,7 @@ fn progress_cancellation_codes_match_c() {
         }
         .err()
         .unwrap();
-        libgit2::libgit2::src::util::errors::clear();
+        libgit2_crustify::libgit2::src::util::errors::clear();
         let mut out = ptr::null_mut();
         // SAFETY: independent valid inputs; callback payload is live and read only.
         let rc = unsafe {

@@ -123,7 +123,7 @@ use crate::sys::libgit2 as sys;
 /// cannot outlive them:
 ///
 /// ```compile_fail,E0597
-/// use libgit2::libgit2::src::libgit2::checkout::CheckoutOptions;
+/// use libgit2_crustify::libgit2::src::libgit2::checkout::CheckoutOptions;
 /// use std::ffi::CString;
 ///
 /// let mut options = CheckoutOptions::new();
@@ -138,7 +138,7 @@ use crate::sys::libgit2 as sys;
 /// shorter-lived borrow than its options were built for:
 ///
 /// ```compile_fail
-/// use libgit2::libgit2::src::libgit2::checkout::CheckoutOptionsMut;
+/// use libgit2_crustify::libgit2::src::libgit2::checkout::CheckoutOptionsMut;
 ///
 /// fn shrink<'a, 'o>(m: CheckoutOptionsMut<'a, 'static>) -> CheckoutOptionsMut<'a, 'o> {
 ///     m
@@ -150,7 +150,7 @@ use crate::sys::libgit2 as sys;
 /// affinity the caller alone knows.
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::checkout::CheckoutOptions;
+/// use libgit2_crustify::libgit2::src::libgit2::checkout::CheckoutOptions;
 ///
 /// let options = CheckoutOptions::new();
 /// std::thread::spawn(move || drop(options));
@@ -842,7 +842,7 @@ impl<'o> CheckoutOptionsMut<'_, 'o> {
     /// ```
     /// use std::ops::ControlFlow;
     ///
-    /// use libgit2::libgit2::src::libgit2::checkout::{
+    /// use libgit2_crustify::libgit2::src::libgit2::checkout::{
     ///     CallbackSlot, CheckoutNotification, CheckoutOptions, NotifyCallback,
     /// };
     ///
@@ -1415,7 +1415,7 @@ type ProgressFn<'f> = dyn FnMut(Option<&CStr>, usize, usize) + 'f;
 /// ```
 /// use std::ffi::CStr;
 ///
-/// use libgit2::libgit2::src::libgit2::checkout::ProgressCallback;
+/// use libgit2_crustify::libgit2::src::libgit2::checkout::ProgressCallback;
 ///
 /// let mut seen = Vec::new();
 /// let mut record = |path: Option<&CStr>, completed: usize, total: usize| {
@@ -1626,8 +1626,8 @@ type NotifyFn<'f> = dyn FnMut(CheckoutNotification<'_>) -> ControlFlow<()> + 'f;
 /// use std::ffi::CStr;
 /// use std::ops::ControlFlow;
 ///
-/// use libgit2::libgit2::src::libgit2::checkout::{CheckoutNotification, NotifyCallback};
-/// use libgit2::sys::libgit2 as sys;
+/// use libgit2_crustify::libgit2::src::libgit2::checkout::{CheckoutNotification, NotifyCallback};
+/// use libgit2_crustify::sys::libgit2 as sys;
 ///
 /// let mut dirty = Vec::new();
 /// let mut refuse_dirty = |n: CheckoutNotification<'_>| {
@@ -1832,7 +1832,7 @@ type PerfdataFn<'f> = dyn FnMut(CheckoutPerfdataRef<'_>) + 'f;
 /// back in Rust, from [`call`](Self::call) or from the wrapper that ran the checkout.
 ///
 /// ```
-/// use libgit2::libgit2::src::libgit2::checkout::{
+/// use libgit2_crustify::libgit2::src::libgit2::checkout::{
 ///     CheckoutPerfdata, CheckoutPerfdataRef, PerfdataCallback,
 /// };
 ///

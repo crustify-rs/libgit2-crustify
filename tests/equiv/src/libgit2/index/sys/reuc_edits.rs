@@ -7,9 +7,9 @@ use std::ffi::c_int;
 use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 
-use libgit2::libgit2::src::libgit2::index::{Capabilities, CapabilitySetting, ReucSide};
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-use libgit2::libgit2::src::libgit2::tree::FileMode;
+use libgit2_crustify::libgit2::src::libgit2::index::{Capabilities, CapabilitySetting, ReucSide};
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+use libgit2_crustify::libgit2::src::libgit2::tree::FileMode;
 
 use super::*;
 

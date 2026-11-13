@@ -15,10 +15,10 @@ use std::ffi::{CStr, c_int};
 use std::process::Command;
 use std::ptr::NonNull;
 
-use libgit2::libgit2::src::libgit2::libgit2::{InitError, Runtime, init};
-use libgit2::libgit2::src::libgit2::settings;
-use libgit2::libgit2::src::util::alloc::{Alloc, Allocator};
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::libgit2::{InitError, Runtime, init};
+use libgit2_crustify::libgit2::src::libgit2::settings;
+use libgit2_crustify::libgit2::src::util::alloc::{Alloc, Allocator};
+use libgit2_crustify::sys::libgit2 as sys;
 
 const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 

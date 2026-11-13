@@ -36,10 +36,10 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use ffibox::CZeroable;
-use libgit2::libgit2::src::libgit2::odb::OdbDataVec;
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidRef, OidType};
-use libgit2::libgit2::src::libgit2::oidarray::{OidArray, OidArrayRef};
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::odb::OdbDataVec;
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidRef, OidType};
+use libgit2_crustify::libgit2::src::libgit2::oidarray::{OidArray, OidArrayRef};
+use libgit2_crustify::sys::libgit2 as sys;
 
 const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 
@@ -280,7 +280,7 @@ fn contents(array: OidArrayRef<'_>) -> Vec<(u8, [u8; 32])> {
 }
 
 /// The safe API's reversal: swaps through the exclusive run's handles.
-fn reverse(array: &mut libgit2::libgit2::src::libgit2::oidarray::OidArrayVal) {
+fn reverse(array: &mut libgit2_crustify::libgit2::src::libgit2::oidarray::OidArrayVal) {
     let mut m = array.as_mut();
     let mut ids = m.ids_mut();
     let n = ids.len();

@@ -27,10 +27,10 @@ use std::ptr;
 
 use glibc_bindings::libc::csu::errno_loc::{errno, set_errno};
 use glibc_bindings::libc::ffi as libc;
-use libgit2::libgit2::src::util::errors::{
+use libgit2_crustify::libgit2::src::util::errors::{
     ErrorClass, ErrorCode, UnnamedErrorClass, UnnamedErrorCode, clear, last, set_str,
 };
-use libgit2::sys::libgit2 as raw;
+use libgit2_crustify::sys::libgit2 as raw;
 
 /// Every `git_error_code` constant, beside the variant that must carry it.
 const CODES: [(raw::git_error_code, ErrorCode); 35] = [

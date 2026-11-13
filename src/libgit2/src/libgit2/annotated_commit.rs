@@ -58,8 +58,8 @@ use crate::sys::libgit2 as sys;
 /// consumers reach through it; the owner does not outlive it:
 ///
 /// ```compile_fail,E0505
-/// use libgit2::libgit2::src::libgit2::annotated_commit::AnnotatedCommit;
-/// use libgit2::libgit2::src::libgit2::repository::Repository;
+/// use libgit2_crustify::libgit2::src::libgit2::annotated_commit::AnnotatedCommit;
+/// use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
 ///
 /// let repo = Repository::open(c".").unwrap();
 /// let commit = AnnotatedCommit::from_revspec(repo.as_ref(), c"HEAD").unwrap();
@@ -70,7 +70,7 @@ use crate::sys::libgit2 as sys;
 /// and a handle does not outlive its owner:
 ///
 /// ```compile_fail,E0505
-/// use libgit2::libgit2::src::libgit2::annotated_commit::AnnotatedCommitBox;
+/// use libgit2_crustify::libgit2::src::libgit2::annotated_commit::AnnotatedCommitBox;
 ///
 /// fn escape(commit: AnnotatedCommitBox<'_>) {
 ///     let handle = commit.as_ref();
@@ -84,7 +84,7 @@ use crate::sys::libgit2 as sys;
 /// shared handle may cross threads.
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::annotated_commit::AnnotatedCommitBox;
+/// use libgit2_crustify::libgit2::src::libgit2::annotated_commit::AnnotatedCommitBox;
 ///
 /// fn shared(commit: &AnnotatedCommitBox<'_>) {
 ///     std::thread::scope(|s| {
@@ -96,7 +96,7 @@ use crate::sys::libgit2 as sys;
 /// There is no copy routine, so the owner is not `Clone`:
 ///
 /// ```compile_fail,E0277
-/// use libgit2::libgit2::src::libgit2::annotated_commit::AnnotatedCommitBox;
+/// use libgit2_crustify::libgit2::src::libgit2::annotated_commit::AnnotatedCommitBox;
 ///
 /// fn copyable<T: Clone>() {}
 /// copyable::<AnnotatedCommitBox<'static>>();

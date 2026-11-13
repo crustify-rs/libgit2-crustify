@@ -3,7 +3,7 @@
 
 use std::ptr;
 
-use libgit2::libgit2::src::util::allocators::stdalloc;
+use libgit2_crustify::libgit2::src::util::allocators::stdalloc;
 
 #[test]
 #[cfg_attr(miri, ignore = "calls C")]

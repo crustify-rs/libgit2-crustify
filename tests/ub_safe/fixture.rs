@@ -45,11 +45,13 @@ impl PairRef<'_> {}
 use std::ffi::CString;
 use std::path::PathBuf;
 
-use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
+use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
 
 /// Takes a `git_libgit2_init` reference that is never released.
 pub(crate) fn init() {
-    let _ = core::mem::ManuallyDrop::new(libgit2::libgit2::src::libgit2::libgit2::init().unwrap());
+    let _ = core::mem::ManuallyDrop::new(
+        libgit2_crustify::libgit2::src::libgit2::libgit2::init().unwrap(),
+    );
 }
 
 /// A fresh bare repository in a temporary directory, freed and removed on drop.
@@ -92,9 +94,9 @@ thread_local! {
 
 // --- `git2/repository.h`: `git_repository_item_t` -----------------------------------
 
-use libgit2::libgit2::src::libgit2::repository::Item;
+use libgit2_crustify::libgit2::src::libgit2::repository::Item;
 
-/// [`RepositoryRef::item_path`](libgit2::libgit2::src::libgit2::repository::RepositoryRef::item_path)
+/// [`RepositoryRef::item_path`](libgit2_crustify::libgit2::src::libgit2::repository::RepositoryRef::item_path)
 /// as a string: the path, or the return.
 pub(crate) fn item_path(repo: &TempRepo, item: Item) -> Result<String, c_int> {
     match repo.repo.as_ref().unwrap().as_ref().item_path(item) {
@@ -108,9 +110,9 @@ pub(crate) fn item_path(repo: &TempRepo, item: Item) -> Result<String, c_int> {
 /// Fixtures over the repositories that hand out commit arrays and configs, through the
 /// safe wrappers.
 pub(crate) mod commit_and_config {
-    use libgit2::libgit2::src::libgit2::commit::CommitArrayVal;
-    use libgit2::libgit2::src::libgit2::config::ConfigArc;
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
+    use libgit2_crustify::libgit2::src::libgit2::commit::CommitArrayVal;
+    use libgit2_crustify::libgit2::src::libgit2::config::ConfigArc;
+    use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
 
     /// A fixture repository opened read-only, freed on drop.
     pub(crate) struct OpenRepo(RepositoryBox);
@@ -152,10 +154,10 @@ pub(crate) mod commit_and_config {
 pub(crate) mod create_ext {
     use std::ffi::c_int;
 
-    use libgit2::libgit2::src::libgit2::commit::{CreateExtOptions, create_ext};
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::signature::{SignatureView, Time};
-    use libgit2::libgit2::src::libgit2::tree::Tree;
+    use libgit2_crustify::libgit2::src::libgit2::commit::{CreateExtOptions, create_ext};
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::signature::{SignatureView, Time};
+    use libgit2_crustify::libgit2::src::libgit2::tree::Tree;
 
     use super::TempRepo;
 
@@ -188,7 +190,7 @@ pub(crate) mod create_ext {
 
 // --- `git2/refdb.h`: `git_refdb` ---------------------------------------------------
 
-use libgit2::libgit2::src::libgit2::refdb::{Refdb, RefdbBox};
+use libgit2_crustify::libgit2::src::libgit2::refdb::{Refdb, RefdbBox};
 
 impl TempRepo {
     /// A refdb of this repository, through [`Refdb::open`]. The borrow of the fixture is
@@ -203,15 +205,15 @@ impl TempRepo {
 pub(crate) mod odb {
     //! A repository over an odb, for the tests that share one with it.
 
-    use libgit2::libgit2::src::libgit2::odb::OdbArc;
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
+    use libgit2_crustify::libgit2::src::libgit2::odb::OdbArc;
+    use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
 
     /// A repository over an odb ([`Repository::wrap_odb`]), which holds a reference of
     /// its own and becomes the odb's owner; freed on drop. [`odb`](Self::odb) stands in
     /// for the `git_repository_odb` wrapper, which lends the odb back, borrowing the
     /// repository.
     ///
-    /// [`Repository::wrap_odb`]: libgit2::libgit2::src::libgit2::repository::Repository::wrap_odb
+    /// [`Repository::wrap_odb`]: libgit2_crustify::libgit2::src::libgit2::repository::Repository::wrap_odb
     pub(crate) struct Repo(RepositoryBox);
 
     impl Repo {
@@ -236,14 +238,14 @@ pub(crate) mod index {
     use std::ffi::{CStr, CString, c_int};
 
     use ffibox::CZeroable;
-    use libgit2::libgit2::src::libgit2::index::{
+    use libgit2_crustify::libgit2::src::libgit2::index::{
         Capabilities, EntryExtendedFlags, EntryFlags, IndexArc, IndexBox, IndexEntry, IndexRef,
         ReucSide,
     };
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::RepositoryError;
-    use libgit2::libgit2::src::libgit2::tree::FileMode;
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::RepositoryError;
+    use libgit2_crustify::libgit2::src::libgit2::tree::FileMode;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use super::{CHILD, TempRepo};
 
@@ -420,8 +422,10 @@ pub(crate) mod worktree {
     use std::os::unix::ffi::OsStrExt;
     use std::path::PathBuf;
 
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox, RepositoryRef};
-    use libgit2::libgit2::src::libgit2::worktree::{Worktree, WorktreeBox};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
+        Repository, RepositoryBox, RepositoryRef,
+    };
+    use libgit2_crustify::libgit2::src::libgit2::worktree::{Worktree, WorktreeBox};
 
     /// A non-bare repository in a temporary directory, to which [`add`](Self::add) lays
     /// out linked worktrees on disk as `git_worktree_add` would; freed and removed on
@@ -505,9 +509,9 @@ pub(crate) mod worktree_add {
     use std::os::unix::ffi::OsStrExt;
     use std::path::PathBuf;
 
-    use libgit2::libgit2::src::libgit2::object::ObjectType;
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
-    use libgit2::libgit2::src::libgit2::worktree::{AddOptions, Worktree, WorktreeBox};
+    use libgit2_crustify::libgit2::src::libgit2::object::ObjectType;
+    use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
+    use libgit2_crustify::libgit2::src::libgit2::worktree::{AddOptions, Worktree, WorktreeBox};
 
     /// A fresh non-bare repository at `<base>/repo` whose `HEAD` is `main`, a commit of
     /// the empty tree (so a checkout loads no filter), with the branches `feature` and
@@ -628,7 +632,7 @@ pub(crate) mod submodule {
     use std::os::unix::ffi::OsStrExt;
     use std::path::PathBuf;
 
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
 
     /// A non-bare repository whose `.gitmodules` configures the submodule `sub`;
     /// removed on drop.
@@ -681,7 +685,7 @@ pub(crate) mod head_and_lookups {
     use std::os::unix::ffi::OsStrExt;
     use std::path::{Path, PathBuf};
 
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{Repository, RepositoryBox};
 
     const RESOURCES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/c/tests/resources");
 
@@ -754,9 +758,9 @@ pub(crate) mod head_and_lookups {
 pub(crate) mod tree {
     use std::ffi::{CStr, CString};
 
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::tree::{TreeArc, TreeBuilderBox};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::tree::{TreeArc, TreeBuilderBox};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     /// Each entry's name and raw file mode, of `tree`, through the safe getters.
     pub(crate) fn entries(tree: &TreeArc<'_>) -> Vec<(CString, sys::git_filemode_t)> {
@@ -795,12 +799,14 @@ pub(crate) mod tree {
 pub(crate) mod object_and_tree_entry {
     use std::ffi::CString;
 
-    use libgit2::libgit2::src::libgit2::blob::create_from_buffer;
-    use libgit2::libgit2::src::libgit2::object::{Object, ObjectArc, ObjectType};
-    use libgit2::libgit2::src::libgit2::oid::Oid;
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox, RepositoryRef};
-    use libgit2::libgit2::src::libgit2::tree::{FileMode, TreeBuilder, TreeEntryBox};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::blob::create_from_buffer;
+    use libgit2_crustify::libgit2::src::libgit2::object::{Object, ObjectArc, ObjectType};
+    use libgit2_crustify::libgit2::src::libgit2::oid::Oid;
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
+        Repository, RepositoryBox, RepositoryRef,
+    };
+    use libgit2_crustify::libgit2::src::libgit2::tree::{FileMode, TreeBuilder, TreeEntryBox};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use super::TempRepo;
 
@@ -887,8 +893,10 @@ pub(crate) mod filter_probe {
 
 /// An index holding a regular-file entry at each of `paths`, added through
 /// `IndexMut::add`.
-pub(crate) fn match_list_index(paths: &[&CStr]) -> libgit2::libgit2::src::libgit2::index::IndexBox {
-    let mut index = libgit2::libgit2::src::libgit2::index::Index::new().unwrap();
+pub(crate) fn match_list_index(
+    paths: &[&CStr],
+) -> libgit2_crustify::libgit2::src::libgit2::index::IndexBox {
+    let mut index = libgit2_crustify::libgit2::src::libgit2::index::Index::new().unwrap();
     for path in paths {
         assert_eq!(index::add(&mut index, path), 0);
     }

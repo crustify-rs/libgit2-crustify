@@ -1,5 +1,5 @@
 // The borrowed contents cannot outlive the buffer that owns them.
-use libgit2::libgit2::src::libgit2::buf::Buf;
+use libgit2_crustify::libgit2::src::libgit2::buf::Buf;
 
 fn main() {
     let bytes = {

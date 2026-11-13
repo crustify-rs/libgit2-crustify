@@ -1,6 +1,6 @@
 // A checkout performance-data callback lends its closure the counters for the call only:
 // a closure that would keep the handle, rather than a copy, is not a callback.
-use libgit2::libgit2::src::libgit2::checkout::{
+use libgit2_crustify::libgit2::src::libgit2::checkout::{
     CheckoutPerfdata, CheckoutPerfdataRef, PerfdataCallback,
 };
 

@@ -27,8 +27,8 @@
 
 use std::ffi::{CStr, c_int};
 
-use libgit2::libgit2::src::libgit2::blob::data_is_binary;
-use libgit2::sys::libgit2 as sys;
+use libgit2_crustify::libgit2::src::libgit2::blob::data_is_binary;
+use libgit2_crustify::sys::libgit2 as sys;
 
 /// Initialises libgit2; never released.
 fn init() {
@@ -264,11 +264,11 @@ mod filter_flags {
     use std::ptr;
     use std::sync::OnceLock;
 
-    use libgit2::libgit2::src::libgit2::blob::{
+    use libgit2_crustify::libgit2::src::libgit2::blob::{
         FilterFlag, FilterFlags, FilterOptions, UnnamedFilterFlag,
     };
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use super::init;
 
@@ -597,7 +597,7 @@ mod filter_flags {
     /// with versions libgit2 refuses, comparing the code, the bytes and the thread's
     /// error after every call.
     ///
-    /// [`BlobRef::filter`]: libgit2::libgit2::src::libgit2::blob::BlobRef::filter
+    /// [`BlobRef::filter`]: libgit2_crustify::libgit2::src::libgit2::blob::BlobRef::filter
     #[test]
     #[cfg_attr(miri, ignore = "calls libgit2")]
     fn blob_filter_matches_git_blob_filter() {
@@ -636,8 +636,8 @@ mod filter_flags {
     }
 
     fn blob_filter_matches_git_blob_filter_body() {
-        use libgit2::libgit2::src::libgit2::blob::Blob;
-        use libgit2::libgit2::src::libgit2::repository::Repository;
+        use libgit2_crustify::libgit2::src::libgit2::blob::Blob;
+        use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
 
         let mut c = Side::open();
         let path = CString::new(concat!(
@@ -751,11 +751,13 @@ mod owner {
     use std::ffi::{CStr, CString, c_int};
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::blob::{Blob, BlobArc, BlobRef};
-    use libgit2::libgit2::src::libgit2::object::Object;
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox, RepositoryError};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::blob::{Blob, BlobArc, BlobRef};
+    use libgit2_crustify::libgit2::src::libgit2::object::Object;
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
+        Repository, RepositoryBox, RepositoryError,
+    };
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use super::{c_last, init};
 
@@ -1214,8 +1216,11 @@ mod owner {
             if let Outcome::Found(_, _, _, (_, _, path)) = &mut expected {
                 *path = path.as_ref().map(|p| p.replace("-c/", "-rust/"));
             }
-            let rid = libgit2::libgit2::src::libgit2::blob::create_from_buffer(rust.as_ref(), data)
-                .unwrap();
+            let rid = libgit2_crustify::libgit2::src::libgit2::blob::create_from_buffer(
+                rust.as_ref(),
+                data,
+            )
+            .unwrap();
             let rblob = Blob::lookup(rust.as_ref(), rid.as_ref()).unwrap();
             assert_eq!(rust_found(rblob.as_ref()), expected, "{}", data.len());
             assert_eq!(rust_found(rblob.as_ref()), expected);
@@ -1243,9 +1248,9 @@ mod filter_options {
     use std::ffi::c_int;
     use std::ptr::NonNull;
 
-    use libgit2::libgit2::src::libgit2::blob::{FilterFlags, FilterOptions};
-    use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::blob::{FilterFlags, FilterOptions};
+    use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use super::{c_last, init};
 
@@ -1390,12 +1395,14 @@ mod writing {
     use std::path::{Path, PathBuf};
     use std::ptr;
 
-    use libgit2::libgit2::src::libgit2::blob::{
+    use libgit2_crustify::libgit2::src::libgit2::blob::{
         create_from_buffer, create_from_disk, create_from_stream, create_from_workdir,
     };
-    use libgit2::libgit2::src::libgit2::oid::Oid;
-    use libgit2::libgit2::src::libgit2::repository::{Repository, RepositoryBox, RepositoryError};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::oid::Oid;
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
+        Repository, RepositoryBox, RepositoryError,
+    };
+    use libgit2_crustify::sys::libgit2 as sys;
 
     use super::init;
 

@@ -14,14 +14,18 @@
 //! here.
 
 use ffibox::CZeroable;
-use libgit2::libgit2::src::libgit2::blob;
-use libgit2::libgit2::src::libgit2::index::{
+use libgit2_crustify::libgit2::src::libgit2::blob;
+use libgit2_crustify::libgit2::src::libgit2::index::{
     Capabilities, ConflictIterator, EntryExtendedFlags, EntryFlags, IndexEntry, IndexEntryRef,
     IndexIterator, IndexMut, Stage,
 };
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-use libgit2::libgit2::src::libgit2::repository::{RepositoryBox, RepositoryError, RepositoryRef};
-use libgit2::libgit2::src::libgit2::tree::{FileMode, Tree, TreeArc, TreeBuilder, TreeBuilderBox};
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+use libgit2_crustify::libgit2::src::libgit2::repository::{
+    RepositoryBox, RepositoryError, RepositoryRef,
+};
+use libgit2_crustify::libgit2::src::libgit2::tree::{
+    FileMode, Tree, TreeArc, TreeBuilder, TreeBuilderBox,
+};
 
 use super::*;
 
@@ -830,8 +834,9 @@ fn read_tree_sequences_match() {
     });
     let trees = [sha256[0].tree(&["a", "k/l"]), sha256[1].tree(&["a", "k/l"])];
     let c256 = {
-        let opts =
-            libgit2::libgit2::src::libgit2::index::IndexOptions::with_oid_type(OidType::Sha256);
+        let opts = libgit2_crustify::libgit2::src::libgit2::index::IndexOptions::with_oid_type(
+            OidType::Sha256,
+        );
         let mut out = ptr::null_mut();
         let raw = opts.into_raw();
         // SAFETY: a writable slot and live options of this version, read for the call.

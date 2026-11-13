@@ -5,10 +5,10 @@
 //! stream operations and `git_odb_write_pack`, which are not wrapped yet: they come with
 //! those wrappers.
 
-use libgit2::libgit2::src::libgit2::object::ObjectType;
-use libgit2::libgit2::src::libgit2::odb::Odb;
-use libgit2::libgit2::src::libgit2::oid::{Oid, OidType};
-use libgit2::libgit2::src::util::errors::ErrorClass;
+use libgit2_crustify::libgit2::src::libgit2::object::ObjectType;
+use libgit2_crustify::libgit2::src::libgit2::odb::Odb;
+use libgit2_crustify::libgit2::src::libgit2::oid::{Oid, OidType};
+use libgit2_crustify::libgit2::src::util::errors::ErrorClass;
 
 use crate::fixture::init;
 

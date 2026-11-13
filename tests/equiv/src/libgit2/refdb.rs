@@ -27,12 +27,12 @@ mod owner {
     use std::process::Command;
     use std::ptr::{self, NonNull};
 
-    use libgit2::libgit2::src::libgit2::refdb::{Refdb, RefdbBox, RefdbType};
-    use libgit2::libgit2::src::libgit2::repository::{
+    use libgit2_crustify::libgit2::src::libgit2::refdb::{Refdb, RefdbBox, RefdbType};
+    use libgit2_crustify::libgit2::src::libgit2::repository::{
         InitFlag, InitOptions, Repository, RepositoryBox,
     };
-    use libgit2::libgit2::src::util::errors::ErrorBuf;
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::util::errors::ErrorBuf;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     const CHILD: &str = "CRUSTIFY_EQUIV_CHILD";
 
@@ -434,8 +434,8 @@ mod refdb_type {
     use std::path::PathBuf;
     use std::{fs, ptr};
 
-    use libgit2::libgit2::src::libgit2::refdb::RefdbType;
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::refdb::RefdbType;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     /// Initialises libgit2; never released.
     fn init() {

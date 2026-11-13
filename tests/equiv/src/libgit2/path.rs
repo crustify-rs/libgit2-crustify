@@ -11,8 +11,8 @@
 mod git_file {
     use std::ffi::{CStr, c_int};
 
-    use libgit2::libgit2::src::libgit2::path::GitFile;
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::path::GitFile;
+    use libgit2_crustify::sys::libgit2 as sys;
 
     fn init() {
         // SAFETY: balanced by nothing: the reference lives for the process.
@@ -125,13 +125,14 @@ mod filesystem {
     use std::ffi::{CStr, CString, c_int};
 
     use glibc_bindings::libc::csu::errno_loc::set_errno;
-    use libgit2::libgit2::src::libgit2::path::{Filesystem, GitFile, UnnamedFilesystem};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::path::{Filesystem, GitFile, UnnamedFilesystem};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     /// Takes a `git_libgit2_init` reference that is never released.
     fn init() {
-        let _ =
-            core::mem::ManuallyDrop::new(libgit2::libgit2::src::libgit2::libgit2::init().unwrap());
+        let _ = core::mem::ManuallyDrop::new(
+            libgit2_crustify::libgit2::src::libgit2::libgit2::init().unwrap(),
+        );
     }
 
     /// `git_path_is_gitfile(name, gitfile, fs)`, with the thread's error on failure.
@@ -242,8 +243,8 @@ mod filesystem {
 mod is_gitfile {
     use std::ffi::{CStr, CString};
 
-    use libgit2::libgit2::src::libgit2::path::{Filesystem, GitFile, is_gitfile};
-    use libgit2::sys::libgit2 as sys;
+    use libgit2_crustify::libgit2::src::libgit2::path::{Filesystem, GitFile, is_gitfile};
+    use libgit2_crustify::sys::libgit2 as sys;
 
     const FILES: [GitFile; 3] = [
         GitFile::Gitignore,

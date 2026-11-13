@@ -1,5 +1,5 @@
 // A handle borrows the counts it reads: it cannot outlive them.
-use libgit2::libgit2::src::libgit2::checkout::{CheckoutPerfdata, CheckoutPerfdataRef};
+use libgit2_crustify::libgit2::src::libgit2::checkout::{CheckoutPerfdata, CheckoutPerfdataRef};
 
 fn main() {
     let handle: CheckoutPerfdataRef<'_>;

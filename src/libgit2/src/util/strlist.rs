@@ -66,7 +66,7 @@ use crate::libgit2::src::util::alloc::{AllocStr, ArrayFree, StrFree};
 /// the answer is then always `false`, as in C.
 ///
 /// ```
-/// use libgit2::libgit2::src::util::strlist::contains_key;
+/// use libgit2_crustify::libgit2::src::util::strlist::contains_key;
 ///
 /// let env = [c"HOME=/root", c"FOOBAR=2"];
 /// assert!(contains_key(&env, c"HOME=/home/me", b'='));
@@ -269,7 +269,7 @@ mod ffi_import {
     /// A borrow of an element ends with its list:
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::libgit2::src::util::strlist::StrListFree;
+    /// use libgit2_crustify::libgit2::src::util::strlist::StrListFree;
     ///
     /// let list = StrListFree::copy(&[c"tied"]).unwrap();
     /// let first = &list[0];
@@ -280,7 +280,7 @@ mod ffi_import {
     /// No code outside this module makes a value of the policy:
     ///
     /// ```compile_fail,E0423
-    /// let _ = libgit2::libgit2::src::util::strlist::StrListFree(());
+    /// let _ = libgit2_crustify::libgit2::src::util::strlist::StrListFree(());
     /// ```
     #[derive(Clone, Copy, Debug)]
     pub struct StrListFree(());
@@ -314,7 +314,7 @@ mod ffi_import {
         /// module docs).
         ///
         /// ```
-        /// use libgit2::libgit2::src::util::strlist::StrListFree;
+        /// use libgit2_crustify::libgit2::src::util::strlist::StrListFree;
         ///
         /// let list = StrListFree::copy(&[c"core.bare=false", c"user.name=me"]).unwrap();
         /// assert_eq!(list.len(), 2);
@@ -342,8 +342,8 @@ mod ffi_import {
     /// as it does; an empty one without an array is [`new`](Self::new).
     ///
     /// ```
-    /// use libgit2::libgit2::src::util::alloc::StrFree;
-    /// use libgit2::libgit2::src::util::strlist::StrListFree;
+    /// use libgit2_crustify::libgit2::src::util::alloc::StrFree;
+    /// use libgit2_crustify::libgit2::src::util::strlist::StrListFree;
     ///
     /// let mut list = StrListFree::copy(&[c"a", c"b"]).unwrap();
     /// list[0] = StrFree::dup(c"z").unwrap();
@@ -485,7 +485,7 @@ mod ffi_import {
     /// A borrow of an element ends with its list:
     ///
     /// ```compile_fail,E0505
-    /// use libgit2::libgit2::src::util::strlist::NullStrListFree;
+    /// use libgit2_crustify::libgit2::src::util::strlist::NullStrListFree;
     ///
     /// let list = NullStrListFree::copy(&[c"PATH=/bin"]).unwrap();
     /// let first = &list[0];
@@ -497,11 +497,11 @@ mod ffi_import {
     /// array:
     ///
     /// ```compile_fail,E0423
-    /// let _ = libgit2::libgit2::src::util::strlist::NullStrListFree(());
+    /// let _ = libgit2_crustify::libgit2::src::util::strlist::NullStrListFree(());
     /// ```
     ///
     /// ```compile_fail,E0599
-    /// let _ = libgit2::libgit2::src::util::strlist::NullStrList::default();
+    /// let _ = libgit2_crustify::libgit2::src::util::strlist::NullStrList::default();
     /// ```
     #[derive(Clone, Copy, Debug)]
     pub struct NullStrListFree(());
@@ -535,7 +535,7 @@ mod ffi_import {
         /// the copies made before it, where C leaks them (see the module docs).
         ///
         /// ```
-        /// use libgit2::libgit2::src::util::strlist::NullStrListFree;
+        /// use libgit2_crustify::libgit2::src::util::strlist::NullStrListFree;
         ///
         /// let argv = NullStrListFree::copy(&[c"/bin/sh", c"-c", c"true"]).unwrap();
         /// assert_eq!(argv.len(), 3);
@@ -686,7 +686,7 @@ mod ffi_import {
     /// non-empty run, and nothing is found in an empty one.
     ///
     /// ```
-    /// use libgit2::libgit2::src::util::strlist::contains_prefix;
+    /// use libgit2_crustify::libgit2::src::util::strlist::contains_prefix;
     ///
     /// let env = [c"HOME=/root", c"PATH=/bin"];
     /// assert!(contains_prefix(&env, b"PATH="));

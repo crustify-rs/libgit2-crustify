@@ -3,17 +3,17 @@
 //! Every constructor is safe; no unsafe operation is permitted in these tests.
 #![forbid(unsafe_code)]
 
-use libgit2::libgit2::src::libgit2::diff::Diff;
-use libgit2::libgit2::src::libgit2::index::Index;
-use libgit2::libgit2::src::libgit2::pathspec::{MatchList, MatchListBox, PathspecFlags};
-use libgit2::libgit2::src::libgit2::tree::FileMode;
+use libgit2_crustify::libgit2::src::libgit2::diff::Diff;
+use libgit2_crustify::libgit2::src::libgit2::index::Index;
+use libgit2_crustify::libgit2::src::libgit2::pathspec::{MatchList, MatchListBox, PathspecFlags};
+use libgit2_crustify::libgit2::src::libgit2::tree::FileMode;
 #[path = "../../../../support/pathspec_match_list.rs"]
 mod support;
 use std::ffi::CString;
 
-use libgit2::libgit2::src::libgit2::blob::create_from_buffer;
-use libgit2::libgit2::src::libgit2::repository::Repository;
-use libgit2::libgit2::src::libgit2::tree::{Tree, TreeBuilder};
+use libgit2_crustify::libgit2::src::libgit2::blob::create_from_buffer;
+use libgit2_crustify::libgit2::src::libgit2::repository::Repository;
+use libgit2_crustify::libgit2::src::libgit2::tree::{Tree, TreeBuilder};
 use support::patterns;
 
 const PATCH: &[u8] = b"diff --git a/a.txt b/a.txt\nnew file mode 100644\nindex 0000000..7898192\n--- /dev/null\n+++ b/a.txt\n@@ -0,0 +1 @@\n+a\n";
@@ -90,7 +90,10 @@ fn empty_large_failure_lists_and_flags() {
     bounds_and_reborrows(&mut list);
     let error =
         MatchList::from_index(index.as_mut(), &empty, PathspecFlags::NO_MATCH_ERROR).unwrap_err();
-    assert_eq!(error.raw_code(), libgit2::sys::libgit2::GIT_ENOTFOUND);
+    assert_eq!(
+        error.raw_code(),
+        libgit2_crustify::sys::libgit2::GIT_ENOTFOUND
+    );
 }
 
 #[test]
@@ -119,7 +122,7 @@ fn borrowed_diff_deltas_and_independent_failures() {
         MatchList::from_diff(diff.as_ref(), &ps, PathspecFlags::NO_MATCH_ERROR,)
             .unwrap_err()
             .raw_code(),
-        libgit2::sys::libgit2::GIT_ENOTFOUND
+        libgit2_crustify::sys::libgit2::GIT_ENOTFOUND
     );
     let mut list = MatchList::from_diff(
         diff.as_ref(),
@@ -150,7 +153,7 @@ fn tree_and_workdir_lists_release_sources() {
         MatchList::from_workdir(repo.as_mut(), &missing, PathspecFlags::NO_MATCH_ERROR,)
             .unwrap_err()
             .raw_code(),
-        libgit2::sys::libgit2::GIT_ENOTFOUND
+        libgit2_crustify::sys::libgit2::GIT_ENOTFOUND
     );
     let blob = create_from_buffer(repo.as_ref(), b"tree text").unwrap();
     let mut builder = TreeBuilder::new(repo.as_ref()).unwrap();
@@ -174,7 +177,7 @@ fn tree_and_workdir_lists_release_sources() {
         MatchList::from_tree(tree.as_ref(), &missing, PathspecFlags::NO_MATCH_ERROR,)
             .unwrap_err()
             .raw_code(),
-        libgit2::sys::libgit2::GIT_ENOTFOUND
+        libgit2_crustify::sys::libgit2::GIT_ENOTFOUND
     );
     drop(tree);
     drop(ps);

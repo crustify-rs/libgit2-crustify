@@ -237,7 +237,7 @@ impl<'a> StrArrayRef<'a> {
     /// The owner itself has no `Clone`: a byte copy would dispose the strings twice.
     ///
     /// ```compile_fail,E0599
-    /// use libgit2::libgit2::src::libgit2::strarray::{StrArray, StrArrayVal};
+    /// use libgit2_crustify::libgit2::src::libgit2::strarray::{StrArray, StrArrayVal};
     ///
     /// let array = StrArray::new();
     /// let copy: StrArrayVal = array.clone();
@@ -433,7 +433,7 @@ impl StrArrayMut<'_> {
 /// There is no exclusive handle, so nothing can replace or free the borrowed strings:
 ///
 /// ```compile_fail,E0599
-/// use libgit2::libgit2::src::libgit2::strarray::StrArrayView;
+/// use libgit2_crustify::libgit2::src::libgit2::strarray::StrArrayView;
 ///
 /// let mut view = StrArrayView::default();
 /// view.as_mut().truncate(0);

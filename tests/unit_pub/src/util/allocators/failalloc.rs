@@ -10,8 +10,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 use ffibox::{CAlloc, CLenAlloc};
-use libgit2::libgit2::src::util::alloc::{Alloc, Allocator};
-use libgit2::libgit2::src::util::allocators::failalloc::{FailAlloc, FailArrayAlloc};
+use libgit2_crustify::libgit2::src::util::alloc::{Alloc, Allocator};
+use libgit2_crustify::libgit2::src::util::allocators::failalloc::{FailAlloc, FailArrayAlloc};
 
 /// A layout type for the singleton policy to allocate; any `CCell` does.
 #[repr(C)]

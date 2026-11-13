@@ -20,7 +20,7 @@ use crate::sys::libgit2 as sys;
 ///
 /// ```
 /// # if cfg!(miri) { return; }
-/// use libgit2::libgit2::src::libgit2::message::prettify;
+/// use libgit2_crustify::libgit2::src::libgit2::message::prettify;
 ///
 /// let message = prettify(c"\n\nsubject  \n\n\n# comment\nbody\t\n\n", Some(b'#')).unwrap();
 /// assert_eq!(message.as_ref().as_bytes(), b"subject\n\nbody\n");
