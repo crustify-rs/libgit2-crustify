@@ -11,3 +11,6 @@ pub mod sys;
 
 #[cfg(feature = "libgit2")]
 pub mod libgit2;
+
+#[cfg(feature = "git2")]
+pub mod git2;

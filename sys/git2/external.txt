@@ -1,0 +1,4 @@
+git_error
+git_indexer_progress
+git_repository
+git_str

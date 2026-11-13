@@ -60,3 +60,56 @@ pub mod libgit2 {
     #[cfg(doctest)]
     include!(concat!(env!("OUT_DIR"), "/libgit2/bindings.doctest.rs"));
 }
+
+/// Raw bindings to the CLI's headers (`src/cli/*.h`), the `git2` link unit (the `git2`
+/// executable), as its TUs see them. The types of libgit2 and `src/util` they name are
+/// [`libgit2`]'s, re-exported here under their C names, as `sys/git2/external.txt` lists
+/// them.
+#[cfg(feature = "git2")]
+#[expect(
+    clippy::allow_attributes,
+    reason = "bindgen's output follows C's names and shapes, so the generated module is exempt \
+              from the workspace's lints"
+)]
+#[allow(
+    nonstandard_style,
+    unsafe_op_in_unsafe_fn,
+    missing_docs,
+    rust_2018_idioms,
+    unreachable_pub,
+    unused_qualifications,
+    unused_lifetimes,
+    let_underscore_drop,
+    trivial_casts,
+    trivial_numeric_casts,
+    dead_code,
+    unused_imports,
+    clippy::correctness,
+    clippy::all,
+    clippy::pedantic,
+    clippy::cargo,
+    clippy::undocumented_unsafe_blocks,
+    clippy::multiple_unsafe_ops_per_block,
+    clippy::missing_safety_doc,
+    clippy::unnecessary_safety_comment,
+    clippy::unnecessary_safety_doc,
+    clippy::mem_forget,
+    clippy::allow_attributes_without_reason
+)]
+#[rustfmt::skip]
+pub mod git2 {
+    /// The version of libgit2 whose CLI the bindings match, as its `pkg-config` file records it.
+    pub const C_VERSION: &str = env!("CRUSTIFY_C_VERSION_GIT2");
+
+    /// The types `sys/git2/external.txt` lists, which the `libgit2` link unit's bindings own.
+    pub use super::libgit2::{git_error, git_indexer_progress, git_repository, git_str};
+
+    #[cfg(all(not(crustify_regenerated), not(doctest)))]
+    include!("../sys/git2/bindings.rs");
+    #[cfg(all(crustify_regenerated, not(doctest)))]
+    include!(concat!(env!("OUT_DIR"), "/git2/bindings.rs"));
+    // The C comments bindgen keeps hold C: rustdoc collects doctests from a copy of the
+    // bindings that holds them as plain comments.
+    #[cfg(doctest)]
+    include!(concat!(env!("OUT_DIR"), "/git2/bindings.doctest.rs"));
+}

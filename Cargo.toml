@@ -23,6 +23,7 @@ include = [
     "/c/cmake/**",
     "/c/include/**",
     "/c/src/CMakeLists.txt",
+    "/c/src/cli/**",
     "/c/src/libgit2/**",
     "/c/src/util/**",
     "/c/deps/llhttp/**",
@@ -32,9 +33,15 @@ include = [
 ]
 
 [features]
-default = ["libgit2"]
-# One feature per link unit; each gates its module in src/lib.rs.
+# Every link unit, so that the campaign's builds, lints and tests, which take the default
+# features, cover each one the campaign ports.
+default = ["libgit2", "git2"]
+# One feature per link unit; each gates its module in src/lib.rs, and src/sys.rs's when the
+# link unit is optional.
 libgit2 = []
+# The CLI (src/cli), whose C links libgit2's: the bundled build compiles its objects, and
+# the `shared` and `system` modes, whose libraries hold none, refuse it.
+git2 = ["libgit2"]
 # Regenerates the raw bindings into OUT_DIR from the headers of the C a build links, in
 # place of the committed ones; campaign mode checks them against the committed ones
 # (crustify's `bindgen` skill, Build modes).

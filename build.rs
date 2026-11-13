@@ -4,9 +4,11 @@
 //!
 //! - Bundled, by default: `c/` built statically into `OUT_DIR` by libgit2's own `CMake`, in the
 //!   configuration of the campaign's `plain` variant ([`CMAKE_OPTIONS`]), linking the system's
-//!   OpenSSL, PCRE2 and zlib, with no rpath.
+//!   OpenSSL, PCRE2 and zlib, with no rpath; under the `git2` feature, the CLI's TUs are compiled
+//!   and archived too, and its executable left unlinked ([`built_executable_objects`]).
 //! - Shared, under the `shared` feature: `c/` built the same way as shared libraries, which the
-//!   crate's binaries find beside them through an `$ORIGIN` rpath.
+//!   crate's binaries find beside them through an `$ORIGIN` rpath. No library holds an executable
+//!   link unit's objects, so this mode and the next refuse the `git2` feature.
 //! - System, under the `system` feature: an install, found through `<LIB>_DIR` (an install prefix),
 //!   then `pkg-config`, which must be the version the bindings were generated from. An install
 //!   lacks the internal headers and the functions its shared library does not export, so this mode
@@ -14,12 +16,12 @@
 //! - Campaign, when `CRUSTIFY_BUILD_VARIANT` names a variant of `crustify/artifacts/build.json`, or
 //!   `CRUSTIFY_BUILD_DIR` a private build: the variant's build. libgit2 builds with
 //!   `-fvisibility=hidden`, so its shared library exports only the `GIT_EXTERN` API: a variant that
-//!   records a `static` archive, the objects its link units link (`crustify/scripts/
-//!   static-archive.sh`), has it linked statically, unbundled, so that the Rust reaches libgit2's
-//!   internal functions, with the libraries the link unit links, as its `build.ninja` link edge
-//!   records them; only the side campaigns' installs among those take an rpath. A variant that
-//!   records none has its shared library linked, with an rpath to it. A private build follows the
-//!   record of the variant `CRUSTIFY_BUILD_VARIANT` names.
+//!   records a `static` archive, the objects all its link units link (`crustify/scripts/
+//!   static-archive.sh`), has it linked statically, once, unbundled, so that the Rust reaches
+//!   libgit2's internal functions, with the libraries the link unit links, as its `build.ninja`
+//!   link edge records them; only the side campaigns' installs among those take an rpath. A variant
+//!   that records none has its shared library linked, with an rpath to it. A private build follows
+//!   the record of the variant `CRUSTIFY_BUILD_VARIANT` names.
 //!
 //! Every mode uses the committed `sys/<link-unit>/bindings.rs` unless the `bindgen` feature
 //! regenerates the bindings into `OUT_DIR` from the headers of the C it links, with the include
@@ -39,13 +41,24 @@ use std::{env, fs};
 
 /// A link unit: one library or executable of the C, bound by one public module of `src/sys.rs`.
 struct LinkUnit {
-    /// Its module in `src/sys.rs`, and its directory under `sys/`.
+    /// Its module in `src/sys.rs`, its directory under `sys/`, and its argument to
+    /// `crustify/scripts/static-archive.sh`.
     name: &'static str,
-    /// Its library's file stem, which is also its `pkg-config` module.
-    lib: &'static str,
+    /// The Cargo feature that builds it, for a link unit the crate can leave out; its
+    /// modules in `src/sys.rs` and `src/lib.rs` are gated on the same feature.
+    feature: Option<&'static str>,
+    /// The file a variant's build links for it, as its `build.ninja` names it: a shared
+    /// library, or an executable.
+    artifact: &'static str,
+    /// The library an install, a shared build or the bundled one gives it, by its file stem,
+    /// which is also its `pkg-config` module: none for an executable, whose objects only the
+    /// bundled build and the variants' static archive hold.
+    lib: Option<&'static str>,
     /// The `CMake` target whose objects its own TUs compile into, under
     /// `CMakeFiles/<target>.dir/`: their include dirs and definitions are those of the bindings.
     target: &'static str,
+    /// The `pkg-config` file of the build that records its version.
+    version_pc: &'static str,
     /// The version of the C the committed bindings were generated from.
     c_version: &'static str,
     /// The preprocessor definitions its bindings and wrappers are built with against an
@@ -54,36 +67,79 @@ struct LinkUnit {
 }
 
 impl LinkUnit {
-    /// Its library's link name, `git2` for `libgit2`.
-    fn link_name(&self) -> &'static str {
-        self.lib.strip_prefix("lib").unwrap_or(self.lib)
+    /// Its library's file stem, which only a library link unit has.
+    fn library(&self) -> &'static str {
+        self.lib
+            .unwrap_or_else(|| panic!("the `{}` link unit is an executable", self.name))
     }
 
-    /// The file its build links, as the variant's `build.ninja` names it.
-    fn artifact(&self) -> String {
-        format!("{}.so", self.lib)
+    /// Its library's link name, `git2` for `libgit2`.
+    fn link_name(&self) -> &'static str {
+        let lib = self.library();
+        lib.strip_prefix("lib").unwrap_or(lib)
     }
 
     /// Its directory of `sys/`.
     fn sys_dir(&self, root: &Path) -> PathBuf {
         root.join("sys").join(self.name)
     }
+
+    /// Whether the build includes it: always, or when its feature is on.
+    fn enabled(&self) -> bool {
+        self.feature.is_none_or(|f| {
+            env::var_os(format!(
+                "CARGO_FEATURE_{}",
+                f.to_uppercase().replace('-', "_")
+            ))
+            .is_some()
+        })
+    }
 }
 
-/// The link units of the C, one module of `src/sys.rs` each.
-const UNITS: &[LinkUnit] = &[LinkUnit {
-    name: "libgit2",
-    lib: "libgit2",
-    target: "libgit2",
-    c_version: "1.9.0",
-    defines: &["GIT_DEPRECATE_HARD"],
-}];
+/// The link units of the C, one module of `src/sys.rs` each, in link order: a link unit's
+/// bindings may re-export the types of one before it, as its `external.txt` lists them.
+///
+/// The `git2` link unit is the CLI executable, `src/cli`, whose objects the variants' static
+/// archive holds beside libgit2's and the bundled build compiles under the `git2` feature.
+/// Its `main.c.o` defines `main`, besides the globals `cli_cmds`, `cli_common_opts`,
+/// `cli_opt__show_help` and `cli_opt__use_pager`, which `cmd.c` and every `cmd_*.c` reference.
+/// An archive member is linked only when a symbol it defines is referenced, so a test binary
+/// links the C's `main` as soon as it references a `main.c` symbol, directly or through a
+/// `cmd_*.c` or `cmd.c` one: the link then fails with two definitions of `main`, the C's and
+/// the test harness's (or a Rust binary's). The other TUs (`opt.c`, `opt_usage.c`,
+/// `common.c`, `progress.c`, `unix/sighandler.c`) reference none, and link alone. The port of
+/// `main.c` has to deal with it: its globals move to Rust exports first, so that the
+/// `cmd_*.c` that remain no longer pull it, and `main` itself becomes the Rust `git2`
+/// binary's, its C leaving with the switch; until then a test reaches `main.c` and the
+/// `cmd_*.c` only through the C executable the variant built, as a child process.
+const UNITS: &[LinkUnit] = &[
+    LinkUnit {
+        name: "libgit2",
+        feature: None,
+        artifact: "libgit2.so",
+        lib: Some("libgit2"),
+        target: "libgit2",
+        version_pc: "libgit2",
+        c_version: "1.9.0",
+        defines: &["GIT_DEPRECATE_HARD"],
+    },
+    LinkUnit {
+        name: "git2",
+        feature: Some("git2"),
+        artifact: "git2",
+        lib: None,
+        target: "git2_cli",
+        version_pc: "libgit2",
+        c_version: "1.9.0",
+        defines: &["GIT_DEPRECATE_HARD"],
+    },
+];
 
 /// The configure options of the bundled and shared builds: those of the `plain` variant in
 /// `crustify/artifacts/build.json`, without its generator and compiler, for which `CMake`'s
 /// defaults and the C wrappers' compiler (`CC`, or the system's) stand in, its side campaigns'
-/// installs, for which the system's OpenSSL, PCRE2 and zlib do, and its tests and CLI, which a
-/// dependent does not build. `BUILD_SHARED_LIBS` follows the mode.
+/// installs, for which the system's OpenSSL, PCRE2 and zlib do, and its tests, which a dependent
+/// does not build. `BUILD_SHARED_LIBS` follows the mode, and `BUILD_CLI` the `git2` link unit.
 const CMAKE_OPTIONS: &[&str] = &[
     "-DUSE_HTTPS=OpenSSL",
     "-DUSE_SHA1=builtin",
@@ -98,7 +154,6 @@ const CMAKE_OPTIONS: &[&str] = &[
     "-DUSE_THREADS=ON",
     "-DDEPRECATE_HARD=ON",
     "-DBUILD_TESTS=OFF",
-    "-DBUILD_CLI=OFF",
     "-DBUILD_EXAMPLES=OFF",
     "-DBUILD_FUZZERS=OFF",
     "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
@@ -156,22 +211,47 @@ fn main() {
 
     let mode = mode();
     let regenerate = cfg!(feature = "bindgen");
+    let units: Vec<&LinkUnit> = UNITS.iter().filter(|u| u.enabled()).collect();
+    if matches!(mode, Mode::System | Mode::Shared) {
+        // An install, or a shared build, has a library for each library link unit, and none
+        // for an executable's objects.
+        let executables: Vec<&str> = units
+            .iter()
+            .filter(|u| u.lib.is_none())
+            .map(|u| u.name)
+            .collect();
+        let feature = if mode == Mode::System {
+            "system"
+        } else {
+            "shared"
+        };
+        assert!(
+            executables.is_empty(),
+            "the `{feature}` feature links libraries, and no library holds the objects of the \
+             executable link units {executables:?}: build the bundled C, or leave out their \
+             features (`--no-default-features --features libgit2,{feature}`)"
+        );
+    }
     let libraries: Vec<Library> = match mode {
-        Mode::Campaign => campaign_libraries(&root),
-        Mode::System => UNITS
+        Mode::Campaign => campaign_libraries(&root, &units),
+        Mode::System => units
             .iter()
             .map(|unit| installed_library(unit, &root))
             .collect(),
         Mode::Bundled | Mode::Shared => {
             let shared = mode == Mode::Shared;
-            let build = build_c(&root, shared);
-            UNITS
+            let cli = units.iter().any(|u| u.lib.is_none());
+            let build = build_c(&root, shared, cli);
+            units
                 .iter()
-                .map(|unit| built_library(unit, &root, &build, shared, regenerate))
+                .map(|unit| match unit.lib {
+                    Some(_) => built_library(unit, &root, &build, shared, regenerate),
+                    None => built_executable_objects(unit, &root, &build),
+                })
                 .collect()
         }
     };
-    for (unit, lib) in UNITS.iter().zip(&libraries) {
+    for (unit, lib) in units.iter().zip(&libraries) {
         bindings(unit, &root, lib, mode, regenerate);
     }
     if regenerate && mode != Mode::Campaign {
@@ -214,10 +294,10 @@ fn bindings(unit: &LinkUnit, root: &Path, lib: &Library, mode: Mode, regenerate:
         regenerate || lib.version == unit.c_version,
         "{} {} found, but the bindings were generated from {}: build {} {}, or enable the \
          `bindgen` feature to regenerate them",
-        unit.lib,
+        unit.name,
         lib.version,
         unit.c_version,
-        unit.lib,
+        unit.name,
         unit.c_version
     );
 
@@ -276,7 +356,12 @@ fn write_doctest_bindings(bindings: &Path, doctest: &Path) {
 
 /// Builds `c/` into `OUT_DIR` with its own `CMake`, static or shared, and returns the build
 /// directory.
-fn build_c(root: &Path, shared: bool) -> PathBuf {
+///
+/// Only the library is built (`libgit2package`, `CMake`'s target of `libgit2.a` or
+/// `libgit2.so`). With `cli`, the CLI is configured too, so that `compile_commands.json`
+/// records how its TUs compile, for [`built_executable_objects`], but its executable, which
+/// links the C's `main`, is not built.
+fn build_c(root: &Path, shared: bool, cli: bool) -> PathBuf {
     let c = root.join("c");
     for f in C_INPUTS {
         println!("cargo:rerun-if-changed={}", c.join(f).display());
@@ -306,11 +391,16 @@ fn build_c(root: &Path, shared: bool) -> PathBuf {
             "-DBUILD_SHARED_LIBS={}",
             if shared { "ON" } else { "OFF" }
         ))
+        .arg(format!("-DBUILD_CLI={}", if cli { "ON" } else { "OFF" }))
         .arg(format!("-DCMAKE_C_COMPILER={}", compiler.path().display()))
         .current_dir(&build);
     run(&mut configure);
     let mut compile = Command::new(&cmake);
-    compile.arg("--build").arg(&build).current_dir(&build);
+    compile
+        .arg("--build")
+        .arg(&build)
+        .args(["--target", "libgit2package"])
+        .current_dir(&build);
     // CMake reads CMAKE_BUILD_PARALLEL_LEVEL itself; otherwise the build takes cargo's jobs.
     if env::var_os("CMAKE_BUILD_PARALLEL_LEVEL").is_none()
         && let Ok(jobs) = env::var("NUM_JOBS")
@@ -337,10 +427,10 @@ fn built_library(
     shared: bool,
     regenerate: bool,
 ) -> Library {
-    let pc = build.join(format!("{}.pc", unit.lib));
+    let pc = build.join(format!("{}.pc", unit.version_pc));
     println!("cargo:rustc-link-search=native={}", build.display());
     if shared {
-        let so = build.join(unit.artifact());
+        let so = build.join(unit.artifact);
         refuse_unexported(unit, root, &so, regenerate, "shared");
         println!("cargo:rustc-link-lib=dylib={}", unit.link_name());
         println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN");
@@ -365,9 +455,59 @@ fn built_library(
     }
 }
 
-/// The include dirs and definitions of the first of a link unit's TUs that a `CMake` build's
-/// `compile_commands.json` records.
-fn compile_commands_flags(build: &Path, unit: &LinkUnit) -> (Vec<PathBuf>, Vec<String>) {
+/// A link unit's executable as the bundled build makes it: not linked, since it links the C's
+/// `main`, but its own TUs compiled, each by the command `CMake`'s `compile_commands.json`
+/// records for it, run as the build system would run it, and their objects archived into
+/// `libcrustify_<link-unit>.a`, linked statically, as the variants' static archive holds them.
+/// The objects of the libraries the executable links besides are the library link units'.
+/// `main.c.o` is archived too, and is linked only when referenced, as [`UNITS`] describes.
+fn built_executable_objects(unit: &LinkUnit, root: &Path, build: &Path) -> Library {
+    let commands = unit_compile_commands(build, unit);
+    let mut objects = Vec::new();
+    for c in &commands {
+        let object = c.directory.join(&c.output);
+        fs::create_dir_all(object.parent().unwrap()).unwrap();
+        run(Command::new("sh")
+            .arg("-c")
+            .arg(&c.command)
+            .current_dir(&c.directory));
+        objects.push(object);
+    }
+    let archive = build.join(format!("libcrustify_{}.a", unit.name));
+    fs::remove_file(&archive).ok();
+    // The archiver cc would use, run as a plain command, whose failure names no environment.
+    let ar = cc::Build::new().get_archiver().get_program().to_owned();
+    run(Command::new(ar).arg("crs").arg(&archive).args(&objects));
+    println!("cargo:rustc-link-search=native={}", build.display());
+    println!("cargo:rustc-link-lib=static=crustify_{}", unit.name);
+    let mut include = vec![root.join("c/include")];
+    for dir in include_dirs(&commands[0].command)
+        .into_iter()
+        .map(PathBuf::from)
+    {
+        if !include.contains(&dir) {
+            include.push(dir);
+        }
+    }
+    Library {
+        include,
+        defines: define_flags(&commands[0].command),
+        version: pc_field(&build.join(format!("{}.pc", unit.version_pc)), "Version"),
+        cc: None,
+    }
+}
+
+/// One TU's entry of a `CMake` build's `compile_commands.json`.
+struct CompileCommand {
+    directory: PathBuf,
+    command: String,
+    /// The object it writes, relative to `directory`.
+    output: String,
+}
+
+/// The entries of a link unit's own TUs, those compiled under `CMakeFiles/<target>.dir/`, in
+/// the order `compile_commands.json` records them.
+fn unit_compile_commands(build: &Path, unit: &LinkUnit) -> Vec<CompileCommand> {
     let path = build.join("compile_commands.json");
     let commands: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap_or_else(|e| {
@@ -375,13 +515,37 @@ fn compile_commands_flags(build: &Path, unit: &LinkUnit) -> (Vec<PathBuf>, Vec<S
         }))
         .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let dir = format!("CMakeFiles/{}.dir/", unit.target);
-    let command = commands
+    let entries: Vec<CompileCommand> = commands
         .as_array()
         .into_iter()
         .flatten()
-        .filter_map(|c| c["command"].as_str())
-        .find(|c| c.contains(&dir))
-        .unwrap_or_else(|| panic!("{} compiles no object under {dir}", path.display()));
+        .filter_map(|c| {
+            let command = c["command"].as_str()?.to_string();
+            // The entry's `output` is relative to the build's top dir, its command's `-o`
+            // to the entry's `directory`, where the command runs.
+            let mut words = command.split_whitespace();
+            words.find(|w| *w == "-o")?;
+            let output = words.next()?.to_string();
+            output.contains(&dir).then(|| CompileCommand {
+                directory: PathBuf::from(c["directory"].as_str().unwrap_or_default()),
+                command,
+                output,
+            })
+        })
+        .collect();
+    assert!(
+        !entries.is_empty(),
+        "{} compiles no object under {dir}",
+        path.display()
+    );
+    entries
+}
+
+/// The include dirs and definitions of the first of a link unit's TUs that a `CMake` build's
+/// `compile_commands.json` records.
+fn compile_commands_flags(build: &Path, unit: &LinkUnit) -> (Vec<PathBuf>, Vec<String>) {
+    let commands = unit_compile_commands(build, unit);
+    let command = &commands[0].command;
     let include = include_dirs(command)
         .into_iter()
         .map(PathBuf::from)
@@ -409,7 +573,7 @@ fn link_private_dependencies(unit: &LinkUnit, pc: &Path) {
         }
         pkg_config::Config::new()
             .probe(module)
-            .unwrap_or_else(|e| panic!("{module}, which {} links, is not found: {e}", unit.lib));
+            .unwrap_or_else(|e| panic!("{module}, which {} links, is not found: {e}", unit.name));
     }
 }
 
@@ -448,34 +612,33 @@ fn ship_beside_binaries(so: &Path) {
 /// A link unit's library as an installed system finds it: under `<LIB>_DIR`, or through
 /// `pkg-config`.
 fn installed_library(unit: &LinkUnit, root: &Path) -> Library {
+    let lib = unit.library();
     // An install holds the C of every module; one switched to Rust would be linked twice, as
     // that C and as the Rust that replaces it.
     let (switched, enabled) = gateways(root);
     assert!(
         switched.is_empty() && enabled.is_empty(),
-        "the `system` feature links an install of {}, which holds the C of the modules switched \
-         to Rust ({switched:?}) and of those whose exports are enabled ({enabled:?}): build the \
-         bundled C instead",
-        unit.lib
+        "the `system` feature links an install of {lib}, which holds the C of the modules \
+         switched to Rust ({switched:?}) and of those whose exports are enabled ({enabled:?}): \
+         build the bundled C instead"
     );
     // An install carries no internal header.
     let internal = internal_headers(&unit.sys_dir(root).join("wrapper.h"));
     assert!(
         internal.is_empty(),
-        "the `system` feature links an install of {}, which lacks the internal headers the \
+        "the `system` feature links an install of {lib}, which lacks the internal headers the \
          bindings reach ({}): build the bundled C instead",
-        unit.lib,
         internal.join(", ")
     );
     let regenerate = cfg!(feature = "bindgen");
-    let dir_var = format!("{}_DIR", unit.lib.to_uppercase());
+    let dir_var = format!("{}_DIR", lib.to_uppercase());
     println!("cargo:rerun-if-env-changed={dir_var}");
     if let Some(dir) = env::var_os(&dir_var).map(PathBuf::from) {
         let lib_dir = dir.join("lib");
         refuse_unexported(
             unit,
             root,
-            &lib_dir.join(unit.artifact()),
+            &lib_dir.join(unit.artifact),
             regenerate,
             "system",
         );
@@ -484,22 +647,14 @@ fn installed_library(unit: &LinkUnit, root: &Path) -> Library {
         return Library {
             include: vec![dir.join("include")],
             defines: unit.defines.iter().map(|d| (*d).to_string()).collect(),
-            version: pc_field(
-                &lib_dir.join(format!("pkgconfig/{}.pc", unit.lib)),
-                "Version",
-            ),
+            version: pc_field(&lib_dir.join(format!("pkgconfig/{lib}.pc")), "Version"),
             cc: None,
         };
     }
     let found = pkg_config::Config::new()
         .cargo_metadata(false)
-        .probe(unit.lib)
-        .unwrap_or_else(|e| {
-            panic!(
-                "{} not found: set {dir_var} to its install prefix ({e})",
-                unit.lib
-            )
-        });
+        .probe(lib)
+        .unwrap_or_else(|e| panic!("{lib} not found: set {dir_var} to its install prefix ({e})"));
     let system_dirs = [
         "/usr/lib/x86_64-linux-gnu",
         "/lib/x86_64-linux-gnu",
@@ -510,12 +665,12 @@ fn installed_library(unit: &LinkUnit, root: &Path) -> Library {
         .iter()
         .map(PathBuf::as_path)
         .chain(system_dirs.iter().map(Path::new))
-        .map(|d| d.join(unit.artifact()))
+        .map(|d| d.join(unit.artifact))
         .find(|so| so.exists())
     {
         refuse_unexported(unit, root, &so, regenerate, "system");
     }
-    pkg_config::Config::new().probe(unit.lib).unwrap();
+    pkg_config::Config::new().probe(lib).unwrap();
     Library {
         include: found.include_paths,
         defines: unit.defines.iter().map(|d| (*d).to_string()).collect(),
@@ -664,7 +819,7 @@ fn dynamic_symbols(so: &Path) -> BTreeSet<String> {
 /// variant `CRUSTIFY_BUILD_VARIANT` names, and must carry the same archive. Either way, the
 /// libraries each link unit links, and the include dirs and definitions its own TUs compile
 /// with, are read from the build's `build.ninja`.
-fn campaign_libraries(root: &Path) -> Vec<Library> {
+fn campaign_libraries(root: &Path, units: &[&LinkUnit]) -> Vec<Library> {
     let variant = env::var("CRUSTIFY_BUILD_VARIANT").unwrap_or_default();
     let record = (!variant.is_empty()).then(|| {
         let path = root.join("crustify/artifacts/build.json");
@@ -697,8 +852,9 @@ fn campaign_libraries(root: &Path) -> Vec<Library> {
     let mut libraries = Vec::new();
     let mut rpath = Vec::new();
     let mut linked = Vec::new();
-    for unit in UNITS {
-        let link = ninja.link_edge(&unit.artifact());
+    let mut archived = false;
+    for unit in units {
+        let link = ninja.link_edge(unit.artifact);
         let artifact = build.join(&link.output);
         assert!(
             artifact.exists(),
@@ -707,11 +863,19 @@ fn campaign_libraries(root: &Path) -> Vec<Library> {
         );
         println!("cargo:rerun-if-changed={}", artifact.display());
         if let Some((rel, archive)) = &archive {
-            if linked.is_empty() {
+            // One archive holds every link unit's objects: it is linked once.
+            if !archived {
                 link_static(rel, archive, &build);
+                archived = true;
             }
             check_archived(archive, &artifact);
         } else {
+            assert!(
+                unit.lib.is_some(),
+                "the `{}` link unit is an executable, whose objects only a variant's static \
+                 archive holds: record a `static` archive for the variant in build.json",
+                unit.name
+            );
             println!("cargo:rustc-link-search=native={}", build.display());
             println!("cargo:rustc-link-lib=dylib={}", unit.link_name());
             println!("cargo:rustc-link-arg=-Wl,-rpath,{}", build.display());
@@ -791,7 +955,7 @@ fn campaign_headers(
             compile.var("DEFINES"),
             compile.var("FLAGS")
         )),
-        version: pc_field(&build.join(format!("{}.pc", unit.lib)), "Version"),
+        version: pc_field(&build.join(format!("{}.pc", unit.version_pc)), "Version"),
         cc: Some(variant_cc(&build.join("CMakeCache.txt"))),
     }
 }
@@ -1137,11 +1301,8 @@ fn check_or_update(path: &Path, content: &str, out: &Path) {
         return;
     }
     if env::var_os("CRUSTIFY_BINDINGS_UPDATE").is_some() {
-        if content.is_empty() {
-            fs::remove_file(path).ok();
-        } else {
-            fs::write(path, content).unwrap();
-        }
+        // Empty or not: the layout holds each generated file.
+        fs::write(path, content).unwrap();
         return;
     }
     let generated = out.join(path.file_name().unwrap());
