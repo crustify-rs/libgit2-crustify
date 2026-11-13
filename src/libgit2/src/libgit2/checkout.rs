@@ -3415,7 +3415,6 @@ mod unit_tests {
     /// The progress callback's tests.
     mod progress_callback {
         use std::path::PathBuf;
-        use std::sync::OnceLock;
         use std::{fs, process};
 
         use super::*;
@@ -3437,17 +3436,15 @@ mod unit_tests {
 
         impl Staged {
             pub(super) fn new(tag: &str, files: &[(&str, &str)]) -> Self {
-                // libgit2 marks a filter initialised on its first load outside the registry
-                // lock (`filter_initialize`), so concurrent first loads race (TSan): the
-                // first fixture, whose staging loads the filters, is built alone.
-                static PRIMED: OnceLock<()> = OnceLock::new();
-                PRIMED.get_or_init(|| drop(Self::build("prime", FILES)));
-                Self::build(tag, files)
-            }
-
-            fn build(tag: &str, files: &[(&str, &str)]) -> Self {
                 // SAFETY: initialising libgit2 has no precondition; the reference is kept.
                 assert!(unsafe { sys::git_libgit2_init() } >= 1);
+                // libgit2 marks a filter initialised on its first load under only the
+                // registry's read lock (`filter_initialize`), so concurrent first loads race
+                // (TSan), here and in every other test of the binary that loads a list. The
+                // staging below loads the filters through raw `git_index_add_bypath`, so,
+                // with the runtime pinned, it first waits on the crate's one initialisation,
+                // as the filter constructors and blob writers do.
+                crate::libgit2::src::libgit2::filter::initialise_builtin_filters();
                 let dir = std::env::temp_dir()
                     .join(format!("crustify-checkout-unit-{tag}-{}", process::id()));
                 drop(fs::remove_dir_all(&dir));
