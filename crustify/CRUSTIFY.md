@@ -22,11 +22,11 @@ for campaign decisions that remain unresolved.
 
 4. **Which agent CLI and billing should do the translation work?**
    (`id: translate-agent`)
-   - Answer: `claude, subscription, args: --model claude-opus-5-5`
+   - Answer: `claude, api, proxy: openrouter, args: --model claude-opus-5-5`
 
 5. **Do you want agentic review after translated work lands? If so, which
    agent CLI and billing should perform each review?** (`id: review-agent`)
-   - Answer: `claude, subscription, args: --model claude-opus-5-5`, after each wave
+   - Answer: `claude, api, proxy: openrouter, args: --model claude-opus-5-5`, after each wave
 
 6. **Should I run fully autonomously end to end?** (`id: autonomy`)
    - Answer: `no`
@@ -40,7 +40,7 @@ Unanswered optional questions use their defaults.
 7. **Which agent CLI and billing should plan the campaign, and how many planner runs
    should it make? Each run emits what the plan lacks and corrects what the runs
    before it committed.** (`id: plan-agent`)
-   - Answer: `claude, subscription, args: --model claude-opus-5-5, runs: 2`
+   - Answer: `claude, api, proxy: openrouter, args: --model claude-opus-5-5, runs: 2`
 
 8. **Should batches and parallelism be capped? Each wave's batches are packed when it
    starts, sized by its items, the agents and the host; a cap bounds every batch, or the
