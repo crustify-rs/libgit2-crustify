@@ -71,7 +71,7 @@ anyway, so that the change is written from more than one module:
 
 | module | Rust of the module (line) | reference C reached by `equiv` | by the C's own tests | whole-crate C / Rust, and what moved it | coverage's share of batch tool time |
 |---|---|---|---|---|---|
-| `src/util/strnlen.h` | 5/5 | 1 line, in `git__strndup` (a macro: no lines of its own) | no C tests tied to it | `45.02`% / `98.81`%; C moved by the archive's new objects, not by tests | 147 s of 510 s (batch 0) |
+| `src/util/strnlen.h` | 5/5 | 1 line, in `git__strndup` (a macro: no lines of its own) | no C tests tied to it | `45.02`% / `98.81`%; C moved by the archive's new objects, not by tests | 147 s of 510 s (batch 0); the module pass did not measure it again |
 
 What to read from the rows: whether the per-module figures told the batch or its reviewer
 something they acted on (a gap filled, a path reported unreachable); whether the

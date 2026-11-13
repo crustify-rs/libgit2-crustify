@@ -55,7 +55,7 @@ in Notes.
 
 ## Overview
 
-- **branch** — `crustify/devel`, tip `<sha>`; `main` shipped at `<sha>`; crustify `4605156`, ffibox `7950244` (`main`), wavefront `db28284`
+- **branch** — `crustify/devel`, tip the integration of `libgit2/src/util/strnlen.h`, `30176475c`; `main` at `c58bc5de8`, nothing shipped yet; crustify `cc84106`, ffibox `9c22a73`, wavefront `bf21e16`, ffimap `9aa2ef1` (each on its `libgit2-crustify/devel`, wavefront and ffimap on `devel`)
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
 - **Rust LoC** — `18820` non-test, `99734` tests; **C LoC** — `89080`
 
@@ -91,11 +91,12 @@ Implementation `openrouter/anthropic/claude-opus-5.5` via `claude`, `openrouter/
 | `libgit2/object` | `legacy-21` | `152` | `12h10m54s` | `$279.41` | `887.00M` | `$13.31` | `$1.84` | `$232.10` | `320.59M` | `$11.05` | `$1.53` | `$511.51` | `1207.59M` | `$24.36` | `$3.37` |
 | `libgit2/config` | `legacy-9` | `47` | `6h09m05s` | `$36.16` | `129.17M` | `$4.02` | `$0.77` | `$94.07` | `265.11M` | `$10.45` | `$2.00` | `$130.23` | `394.28M` | `$14.47` | `$2.77` |
 | `libgit2/index` | `legacy-18` | `75` | `10h41m03s` | `$195.65` | `307.26M` | `$10.87` | `$2.61` | `$67.64` | `186.28M` | `$3.76` | `$0.90` | `$263.29` | `493.54M` | `$14.63` | `$3.51` |
+| `libgit2/src/util/strnlen.h` | `0` | `1` | `4h33m44s` | `$5.42` | `13.67M` | — | `$5.42` | `$9.34` | `19.72M` | — | `$9.34` | `$14.76` | `33.39M` | — | `$14.76` |
 | side campaigns | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
 | planners | — | — | `3h08m22s` | — | — | — | — | — | — | — | — | `$74.83` | `198.12M` | — | — |
 | assistant | — | — | — | — | — | — | — | — | — | — | — | `$438.96` | `337.45M` | — | — |
-| **Σ recorded agents** | **`95`** | **`389`** | **`54h09m`** | **`$896.34`** | **`2391.61M`** | **`$9.44`** | **`$2.30`** | **`$701.91`** | **`1175.51M`** | **`$7.39`** | **`$1.80`** | **`$1673.08`** | **`3765.24M`** | **`$17.17`** | **`$4.19`** |
-| **Σ campaign** | **`95`** | **`389`** | **`54h09m`** | **`$896.34`** | **`2391.61M`** | — | — | **`$701.91`** | **`1175.51M`** | — | — | **`$2112.04`** | **`4102.69M`** | — | — |
+| **Σ recorded agents** | **`95`** | **`390`** | **`58h43m`** | **`$901.76`** | **`2405.28M`** | **`$9.49`** | **`$2.31`** | **`$711.25`** | **`1195.23M`** | **`$7.49`** | **`$1.82`** | **`$1687.84`** | **`3798.63M`** | **`$17.77`** | **`$4.33`** |
+| **Σ campaign** | **`95`** | **`390`** | **`58h43m`** | **`$901.76`** | **`2405.28M`** | — | — | **`$711.25`** | **`1195.23M`** | — | — | **`$2126.80`** | **`4136.08M`** | — | — |
 
 ## Safety audit
 
@@ -480,7 +481,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `0` | wrap | first | `3` | `18` | `+727/-6` | `45.83`% / `77.00`% | `$12.77` | `42.14M` | `37m48s` | `$4.26` | `$0.71` |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `1` | wrap | first | `3` | `18` | `+524/-165` | `45.88`% / `98.92`% | `$10.66` | `30.55M` | `57m49s` | `$3.55` | `$0.59` |
 | `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `0` | wrap | first | `1` | `5` | `+429/-0` | `45.88`% / `98.87`% | `$8.04` | `26.46M` | `22m4s` | `$8.04` | `$1.61` |
-| `libgit2/src/util/strnlen.h` | `225` | `0` | port | first | `1` | `0` | `+184/-0` | `45.02`% / `98.81`% | — | — | — | — | — |
+| `libgit2/src/util/strnlen.h` | `225` | `0` | port | first | `1` | `0` | `+184/-0` | `45.02`% / `98.81`% | `$5.42` | `13.67M` | `19m47s` | `$5.42` | — |
 | `libgit2/raw-lifetime-void` | `legacy-1` | `0` | wrap | review | `2` | — | `+80/-1` | — | `$7.89` | `10.78M` | `18m36s` | `$3.94` | — |
 | `libgit2/raw-lifetime-string` | `legacy-3` | `0` | wrap | review | `2` | — | `+345/-23` | — | `$10.89` | `14.41M` | `22m03s` | `$5.45` | — |
 | `libgit2/src/util/alloc.c` | `12` | `3` | wrap | review | `7` | — | `+57/-20` | — / `98.90`% | `$15.18` | `40.96M` | `1h31m33s` | `$2.17` | — |
@@ -512,7 +513,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | wrap | review | `2` | — | `+217/-15` | — | `$11.03` | `25.98M` | `47m17s` | `$5.51` | — |
 | `libgit2/deps/reftable/basics.c` | `169` | `4` | wrap | review | `43` | — | `+110/-16` | `45.99`% / `98.92`% | `$13.42` | `46.17M` | `40m4s` | `$0.31` | — |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | wrap | review | `3` | — | `+11/-7` | `45.88`% / `98.92`% | `$5.87` | `16.61M` | `16m58s` | `$1.96` | — |
-| **Σ first** |  |  |  |  | **`500`** | **`9066`** | **`+80082/-3634`** | **`45.02`% / `98.81`%** | **`$581.72`** | **`1824.00M`** | — | **`$1.17`** | **`$0.06`** |
+| **Σ first** |  |  |  |  | **`500`** | **`9066`** | **`+80082/-3634`** | **`45.02`% / `98.81`%** | **`$587.14`** | **`1837.67M`** | — | **`$1.17`** | **`$0.06`** |
 | **Σ review** |  |  |  |  | **`468`** | — | **`+7252/-1369`** | **`45.93`% / `98.90`%** | **`$373.87`** | **`734.99M`** | — | **`$0.80`** | — |
 
 ### Batches: tests
@@ -723,8 +724,8 @@ review cost.
 | `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | `0` | `1` | `+82/-67` | `$12.85` | `46.60M` | `1h22m16s` |
 | `libgit2/src/util/allocators/debugalloc.c` | `183` | `1` | `0` | `1` | `+336/-75` | `$15.62` | `43.77M` | `1h33m16s` |
 | `libgit2/src/util/strlist.c` | `184` | `1` | `0` | `6` | `+408/-142` | `$21.71` | `81.05M` | `1h33m47s` |
-| `libgit2/src/util/strnlen.h` | `225` | `1` | `0` | `1` | `+22/-8` | — | — | — |
-| **Σ** |  |  | **`1`** | **`78`** | **`+1600/-470`** | **`$129.88`** | **`426.29M`** | — |
+| `libgit2/src/util/strnlen.h` | `225` | `1` | `0` | `1` | `+22/-8` | `$9.34` | `19.72M` | `3h34m56s` |
+| **Σ** |  |  | **`1`** | **`78`** | **`+1600/-470`** | **`$139.22`** | **`446.01M`** | — |
 
 ### Passes: PoC + reports
 
@@ -3366,3 +3367,15 @@ Proposals: `bsan-sized-tests` (testing-gates: a test BSan cannot finish is sized
 crustify's `libgit2-crustify/evolution/bsan-sized-tests` at `6336c30`, awaiting review) and
 `bsan-borrow-history-grows` (BorrowSanitizer, upstream, with its reproducer). Usage cells are
 the assistant's.
+
+### `libgit2/src/util/strnlen.h` integrated (2026-11-13)
+
+The pilot of the harness for `port` modules: wave 225's translation batch and module pass ran as
+processes of their own through `providers/claude/spawn.py`, on `claude-opus-5-5` through
+OpenRouter under `api` billing (`46f68906e`). The module is integrated as `30176475c`; its switch
+changes no C, the header having no translation unit, export or tied C test. Usage: batch 0
+`$5.42`, `13.67M`, `19m47s`; the module pass `$9.34`, `19.72M`, `3h34m56s`, most of it two
+rounds of BSan over the workspace, the first lost to a 5400 s timeout. From 2026-11-13 BSan runs
+over the workspace only before a ship point, and otherwise on small things (`990d7033a`,
+`22ace3a00`). `Module stats` gains the module's row, the first of a per-TU module: the
+foundational modules have none there, so its `Σ` rows hold the legacy modules and this one.
