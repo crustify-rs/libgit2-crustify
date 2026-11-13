@@ -2104,7 +2104,7 @@ mod reading {
         let (name, email, seconds, offset) = signature(c.author());
         let committer = signature(c.committer());
         assert_eq!(committer.0, name);
-        let body = c.body().map(|b| b.to_bytes().to_vec()).unwrap_or_default();
+        let body = c.body().map_or_default(|b| b.to_bytes().to_vec());
         (name, email, seconds, offset, body)
     }
 

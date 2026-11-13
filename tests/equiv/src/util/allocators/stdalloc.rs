@@ -217,7 +217,7 @@ fn workload(side: &str) -> Vec<String> {
         let run = AllocVec::<u8>::from_slice(&vec![7; len]);
         steps.push(format!(
             "malloc {len}: {} oom={}",
-            run.as_deref().map(<[u8]>::len).unwrap_or_default(),
+            run.as_deref().map_or_default(<[u8]>::len),
             run.is_none() && last_is_oom()
         ));
         // `git__mallocarray`, `git__realloc(NULL, ..)`: the family's `realloc`.
