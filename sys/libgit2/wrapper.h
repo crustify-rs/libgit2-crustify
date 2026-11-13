@@ -37,5 +37,6 @@
 #include "reftable-error.h" /* deps/reftable */
 #include "str.h" /* src/util */
 #include "strlist.h" /* src/util */
+#include "utf8.h" /* src/util */
 
 #include "shims.h"

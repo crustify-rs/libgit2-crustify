@@ -21,7 +21,13 @@
 //!   libgit2's internal functions, with the libraries the link unit links, as its `build.ninja`
 //!   link edge records them; only the side campaigns' installs among those take an rpath. A variant
 //!   that records none has its shared library linked, with an rpath to it. A private build follows
-//!   the record of the variant `CRUSTIFY_BUILD_VARIANT` names.
+//!   the record of the variant `CRUSTIFY_BUILD_VARIANT` names. The Rust library a variant's own C
+//!   links, from the first module's switch on, is the crate built as a `staticlib` in campaign
+//!   mode with `CRUSTIFY_STATICLIB` set (`crustify/scripts/rust-staticlib.sh`): it reads the
+//!   variant's configured build for its headers, definitions and compiler, and links none of
+//!   it, so that it carries no C of the target's; the variant's link edges list it among their
+//!   libraries (`LIBGIT2_RUST_LIBRARY`), and every other campaign build leaves it out of the
+//!   link, so that no binary holds the Rust twice.
 //!
 //! Every mode uses the committed `sys/<link-unit>/bindings.rs` unless the `bindgen` feature
 //! regenerates the bindings into `OUT_DIR` from the headers of the C it links, with the include
@@ -205,6 +211,7 @@ fn main() {
         "CRUSTIFY_BUILD_VARIANT",
         "CRUSTIFY_BUILD_DIR",
         "CRUSTIFY_BINDINGS_UPDATE",
+        "CRUSTIFY_STATICLIB",
     ] {
         println!("cargo:rerun-if-env-changed={v}");
     }
@@ -880,8 +887,13 @@ fn dynamic_symbols(so: &Path) -> BTreeSet<String> {
 /// and each link unit's shared library otherwise; a private build follows the record of the
 /// variant `CRUSTIFY_BUILD_VARIANT` names, and must carry the same archive. Either way, the
 /// libraries each link unit links, and the include dirs and definitions its own TUs compile
-/// with, are read from the build's `build.ninja`.
+/// with, are read from the build's `build.ninja`, but for the Rust library the build's C links
+/// (its `LIBGIT2_RUST_LIBRARY`), which is this crate.
+///
+/// With `CRUSTIFY_STATICLIB` set, the crate is that Rust library, built before the build's C
+/// is linked: only the build's configuration is read, and nothing of it is linked.
 fn campaign_libraries(root: &Path, units: &[&LinkUnit]) -> Vec<Library> {
+    let staticlib = env::var_os("CRUSTIFY_STATICLIB").is_some_and(|v| !v.is_empty());
     let variant = env::var("CRUSTIFY_BUILD_VARIANT").unwrap_or_default();
     let record = (!variant.is_empty()).then(|| {
         let path = root.join("crustify/artifacts/build.json");
@@ -911,6 +923,11 @@ fn campaign_libraries(root: &Path, units: &[&LinkUnit]) -> Vec<Library> {
         .and_then(|r| r["static"].as_str())
         .map(|rel| (rel, build.join(rel)));
     let ninja = Ninja::read(&build);
+    if staticlib {
+        return staticlib_libraries(root, units, &build, &ninja, &variant);
+    }
+    let rust = cache_entry(&build.join("CMakeCache.txt"), "LIBGIT2_RUST_LIBRARY:")
+        .map(|lib| build.join(lib));
     let mut libraries = Vec::new();
     let mut rpath = Vec::new();
     let mut linked = Vec::new();
@@ -949,7 +966,7 @@ fn campaign_libraries(root: &Path, units: &[&LinkUnit]) -> Vec<Library> {
         // one loads them through its own rpath; the installs' dirs go on the rpath either way,
         // and to dependents (`DEP_GIT2_DEP_LIB_DIRS`) for theirs, so that a binary loads the
         // very libraries the build was linked with.
-        let libs = LinkLibraries::parse(&link.var("LINK_LIBRARIES"));
+        let libs = LinkLibraries::parse(&link.var("LINK_LIBRARIES"), &build, rust.as_deref());
         for dir in &libs.search {
             println!("cargo:rustc-link-search=native={dir}");
         }
@@ -982,6 +999,25 @@ fn campaign_libraries(root: &Path, units: &[&LinkUnit]) -> Vec<Library> {
             "shared"
         }
     );
+    println!("cargo:variant={variant}");
+    println!("cargo:build_dir={}", build.display());
+    libraries
+}
+
+/// Each link unit's headers, definitions and version in a campaign build, read from its
+/// configured build, for the Rust library that build's own C links: nothing of the build is
+/// linked, and it need not be built yet.
+fn staticlib_libraries(
+    root: &Path,
+    units: &[&LinkUnit],
+    build: &Path,
+    ninja: &Ninja,
+    variant: &str,
+) -> Vec<Library> {
+    let libraries = units
+        .iter()
+        .map(|unit| campaign_headers(unit, root, build, ninja, ninja.link_edge(unit.artifact)))
+        .collect();
     println!("cargo:variant={variant}");
     println!("cargo:build_dir={}", build.display());
     libraries
@@ -1212,7 +1248,10 @@ struct LinkLibraries {
 }
 
 impl LinkLibraries {
-    fn parse(value: &str) -> Self {
+    /// The libraries of `value`, but `rust`, the crate's own static library, which the
+    /// build's C links in its place, and which `value` may name relative to `build`, and
+    /// either may reach through a link.
+    fn parse(value: &str, build: &Path, rust: Option<&Path>) -> Self {
         let mut this = Self {
             search: Vec::new(),
             libs: Vec::new(),
@@ -1224,6 +1263,9 @@ impl LinkLibraries {
             }
         };
         for word in value.split_whitespace() {
+            if rust.is_some_and(|r| same_file(&build.join(word), r)) {
+                continue;
+            }
             if let Some(dirs) = word.strip_prefix("-Wl,-rpath,") {
                 for dir in dirs.split(':') {
                     push(&mut this.rpath, dir);
@@ -1253,15 +1295,26 @@ impl LinkLibraries {
     }
 }
 
+/// Whether two paths name the same file, through any links, or are the same path.
+fn same_file(a: &Path, b: &Path) -> bool {
+    match (fs::canonicalize(a), fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
+}
+
 /// A value of a `CMake` cache, by its `NAME:` prefix.
 fn cache_var(cache: &Path, name: &str) -> String {
+    cache_entry(cache, name).unwrap_or_else(|| panic!("{} records no {name}", cache.display()))
+}
+
+/// A value of a `CMake` cache, by its `NAME:` prefix, when it records one that is not empty.
+fn cache_entry(cache: &Path, name: &str) -> Option<String> {
     let text = fs::read_to_string(cache).unwrap_or_else(|e| panic!("{}: {e}", cache.display()));
     text.lines()
         .find_map(|l| l.strip_prefix(name).and_then(|r| r.split_once('=')))
-        .map_or_else(
-            || panic!("{} records no {name}", cache.display()),
-            |(_, v)| v.to_string(),
-        )
+        .map(|(_, v)| v.to_string())
+        .filter(|v| !v.is_empty())
 }
 
 /// The compiler of a campaign variant, and the instrumentation flags of its C flags, as its

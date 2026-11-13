@@ -15254,6 +15254,47 @@ unsafe extern "C" {
     pub fn git_strlist_free_with_null(strings: *mut *mut ::std::os::raw::c_char);
 }
 unsafe extern "C" {
+    pub fn git_utf8_iterate(
+        out: *mut u32,
+        str_: *const ::std::os::raw::c_char,
+        str_len: usize,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    /** Returns the number of characters in the given string.
+
+ This function will count invalid codepoints; if any given byte is
+ not part of a valid UTF-8 codepoint, then it will be counted toward
+ the length in characters.
+
+ In other words:
+   0x24 (U+0024 "$") has length 1
+   0xc2 0xa2 (U+00A2 "¢") has length 1
+   0x24 0xc2 0xa2 (U+0024 U+00A2 "$¢") has length 2
+   0xf0 0x90 0x8d 0x88 (U+10348 "𐍈") has length 1
+   0x24 0xc0 0xc1 0x34 (U+0024 <invalid> <invalid> "4) has length 4
+
+ @param str string to scan
+ @param str_len size of the string
+ @return length in characters of the string*/
+    pub fn git_utf8_char_length(
+        str_: *const ::std::os::raw::c_char,
+        str_len: usize,
+    ) -> usize;
+}
+unsafe extern "C" {
+    /** Iterate through an UTF-8 string and stops after finding any invalid UTF-8
+ codepoints.
+
+ @param str string to scan
+ @param str_len size of the string
+ @return length in bytes of the string that contains valid data*/
+    pub fn git_utf8_valid_buf_length(
+        str_: *const ::std::os::raw::c_char,
+        str_len: usize,
+    ) -> usize;
+}
+unsafe extern "C" {
     pub fn crustify_GIT_OID_DEFAULT() -> git_oid_t;
 }
 unsafe extern "C" {

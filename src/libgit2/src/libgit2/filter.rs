@@ -42,16 +42,14 @@
 //! libgit2 marks a registered filter initialised the first time a list selects it
 //! (`filter_initialize`, writing `fdef->initialized` under the registry's *read* lock,
 //! or none from `git_filter_list_push`), so two threads loading their first lists at
-//! once race on that flag, whatever repositories they use. The constructors here close
-//! that race among themselves for libgit2's built-in filters, `crlf` and `ident`: the
-//! first of them initialises both, once, before it loads anything, and the others wait
-//! for it. libgit2's other routines that load a list internally
-//! (`git_repository_hashfile`, `git_index_add_bypath`, checkout, ...) do not go through
-//! that, so their first loads still race with each other and with this module's first
-//! one: libgit2's defect, which only initialising the filters when the runtime is pinned
-//! would close for the whole crate. A filter registered later through
-//! `git2/sys/filter.h` is initialised by the first load that selects it: the wrapper of
-//! `git_filter_register` must settle that.
+//! once race on that flag, whatever repositories they use: libgit2's defect. The crate
+//! closes it for libgit2's built-in filters, `crlf` and `ident`, whichever routine loads
+//! the list, this module's constructors or libgit2's own (`git_repository_hashfile`,
+//! `git_index_add_bypath`, checkout, ...): pinning the runtime, which every safe
+//! constructor does first, initialises both, once, before any repository exists, so
+//! every load is ordered after the flags were written and finds them set. A filter
+//! registered later through `git2/sys/filter.h` is initialised by the first load that
+//! selects it: the wrapper of `git_filter_register` must settle that.
 //!
 //! ## Raw seams
 //!
@@ -1134,41 +1132,26 @@ impl<'r> FilterList<'r> {
 }
 
 /// Marks libgit2's built-in filters (`crlf`, `ident`) initialised, once per process:
-/// pushes each onto a scratch list, which runs `filter_initialize` for it, then frees the
-/// list.
+/// looks each up, which runs `filter_initialize` for a filter not yet initialised, as
+/// `git_filter_lookup` does. Neither has an `initialize` callback, so nothing is
+/// allocated.
 ///
 /// libgit2 initialises a filter, unsynchronised, the first time a list selects it (see
-/// the [module docs](self#threads)). Every constructor calls this, with the runtime
-/// pinned, before it loads a list, as do the wrappers of routines that load one
-/// internally (the blob writers of `object::blob`): the first call does the work, and
-/// the others wait for it, so the flag is written before any of their loads reads it. A
-/// failure (an allocation) leaves the filters to their first load, as libgit2 would.
+/// the [module docs](self#threads)). Pinning the runtime calls this, once libgit2 is
+/// initialised and before any repository exists, so the flags are written before any
+/// load reads them; the constructors here and the blob writers of `object::blob` call
+/// it again, which returns at once. A lookup that cannot take the registry's lock leaves
+/// its filter to its first load, as libgit2 would.
 pub(crate) fn initialise_builtin_filters() {
     static DONE: Once = Once::new();
     DONE.call_once(|| {
-        let mut list = ptr::null_mut();
-        // SAFETY: `list` is a writable slot, left NULL on failure; no repository, which
-        // the list only keeps, and it is never applied. The caller pinned the runtime.
-        let rc = unsafe {
-            sys::git_filter_list_new(&raw mut list, ptr::null_mut(), sys::GIT_FILTER_TO_ODB, 0)
-        };
-        if rc < 0 || list.is_null() {
-            return;
-        }
         for name in [c"crlf", c"ident"] {
-            // SAFETY: a NUL-terminated name; libgit2 looks it up under its registry lock
-            // and returns the registered filter, which the registry keeps, or NULL.
-            let filter = unsafe { sys::git_filter_lookup(name.as_ptr()) };
-            if !filter.is_null() {
-                // SAFETY: the live scratch list and a registered filter, with no payload;
-                // libgit2 initialises the filter and appends an entry, or fails without
-                // one. No constructor here loads meanwhile: they wait on `DONE`.
-                unsafe { sys::git_filter_list_push(list, filter, ptr::null_mut()) };
-            }
+            // SAFETY: a NUL-terminated name, read for the call; libgit2 looks it up under
+            // its registry's lock and returns the registered filter, which the registry
+            // keeps and nothing here reads, or NULL. The caller pinned the runtime, so the
+            // registry exists.
+            let _ = unsafe { sys::git_filter_lookup(name.as_ptr()) };
         }
-        // SAFETY: the scratch list, released once; its entries have no payload, which
-        // the built-in filters' `cleanup` accepts.
-        unsafe { sys::git_filter_list_free(list) };
     });
 }
 
