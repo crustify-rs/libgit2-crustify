@@ -57,17 +57,17 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip the integration of `libgit2/src/util/strnlen.h`, `30176475c`; `main` at `c58bc5de8`, nothing shipped yet; crustify `cc84106`, ffibox `9c22a73`, wavefront `bf21e16`, ffimap `9aa2ef1` (each on its `libgit2-crustify/devel`, wavefront and ffimap on `devel`)
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `21114` non-test, `104186` tests; **C LoC** — `89009`
+- **Rust LoC** — `21122` non-test, `104319` tests; **C LoC** — `89009`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `774` | — | `27.91`% | `78.64`% |
-| UB unsafe tests | `127` | — | `19.13`% | `15.74`% |
-| Equiv tests | `544` | — | `42.96`% | `75.41`% |
-| Unit tests | `1020` | — | `31.72`% | `88.45`% |
-| **Total tests** | **`2465`** | — | **`45.42`%** | **`98.80`%** |
+| UB safe tests | `774` | — | `27.91`% | `78.65`% |
+| UB unsafe tests | `127` | — | `19.11`% | `15.73`% |
+| Equiv tests | `544` | — | `42.97`% | `75.42`% |
+| Unit tests | `1021` | — | `31.68`% | `88.46`% |
+| **Total tests** | **`2466`** | — | **`45.39`%** | **`98.80`%** |
 | total types | `258` | — | — | — |
 | ported types | `4` | `1.55`% | — | — |
 | wrapped types | `110` | `42.64`% | — | — |
@@ -531,8 +531,9 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | wrap | review | `2` | — | `+217/-15` | — | `$11.03` | `25.98M` | `47m17s` | `$5.51` | — |
 | `libgit2/deps/reftable/basics.c` | `169` | `4` | wrap | review | `43` | — | `+110/-16` | `45.99`% / `98.92`% | `$13.42` | `46.17M` | `40m4s` | `$0.31` | — |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | wrap | review | `3` | — | `+11/-7` | `45.88`% / `98.92`% | `$5.87` | `16.61M` | `16m58s` | `$1.96` | — |
+| `git2/src/cli/opt.c` | `186` | `6` | port | review | `21` | — | `+335/-27` | `45.39`% / `98.80`% | — | — | — | — | — |
 | **Σ first** |  |  |  |  | **`527`** | **`9729`** | **`+86981/-3794`** | **`45.42`% / `98.80`%** | **`$587.14`** | **`1837.67M`** | — | **`$1.17`** | **`$0.06`** |
-| **Σ review** |  |  |  |  | **`468`** | — | **`+7252/-1369`** | **`45.93`% / `98.90`%** | **`$373.87`** | **`734.99M`** | — | **`$0.80`** | — |
+| **Σ review** |  |  |  |  | **`489`** | — | **`+7587/-1396`** | **`45.39`% / `98.80`%** | **`$373.87`** | **`734.99M`** | — | **`$0.80`** | — |
 
 ### Batches: tests
 
@@ -629,12 +630,13 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `git2/src/cli/opt.c` | `186` | `1` | first | `+0` (`+0.02`/`-0.05` pp) | `+0` (`+0.01`/`-0.01` pp) | `+2` (`+0.12`/`+0.04` pp) | `+6` (`+0.02`/`+0.00` pp) |
 | `git2/src/cli/opt.c` | `186` | `4` | first | `+2` (`-0.02`/`-0.48` pp) | `+2` (`+0.00`/`-0.10` pp) | `+2` (`+0.08`/`-0.09` pp) | `+33` (`+0.36`/`+0.20` pp) |
 | `git2/src/cli/opt.c` | `186` | `5` | first | `+3` (`-0.02`/`+1.05` pp) | `+0` (`-0.01`/`-0.25` pp) | `+3` (`+0.05`/`+1.54` pp) | `+18` (`+0.03`/`+0.15` pp) |
+| `git2/src/cli/opt.c` | `186` | `6` | review | `+0` (`+0.00`/`+0.01` pp) | `+0` (`-0.02`/`-0.01` pp) | `+0` (`+0.01`/`+0.01` pp) | `+1` (`-0.04`/`+0.01` pp) |
 | `libgit2/deps/ntlmclient/compat.h` | `200` | `1` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) |
 | `libgit2/src/util/strnlen.h` | `225` | `1` | review | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) | `+0` (—/— pp) |
 | `libgit2/src/util/utf8.c` | `229` | `0` | first | `+0` (`-0.03`/`-0.32` pp) | `+0` (`-0.02`/`-0.06` pp) | `+6` (`+0.04`/`-0.02` pp) | `+15` (`+0.03`/`+0.04` pp) |
 | `libgit2/src/util/utf8.c` | `229` | `1` | review | `+1` (`+0.00`/`+0.00` pp) | `+0` (`+0.04`/`+0.09` pp) | `+0` (`+0.00`/`+0.01` pp) | `+0` (`-0.05`/`+0.01` pp) |
 | **Σ first** |  |  |  | **`+350` (`+10.33`/`+6.17` pp)** | **`+42` (`+3.34`/`-6.37` pp)** | **`+238` (`+9.37`/`+15.14` pp)** | **`+402` (`+12.48`/`-33.09` pp)** |
-| **Σ review** |  |  |  | **`+19` (`+0.31`/`-1.51` pp)** | **`+8` (`-0.76`/`+0.68` pp)** | **`+23` (`+0.09`/`-0.53` pp)** | **`+45` (`+2.39`/`+7.65` pp)** |
+| **Σ review** |  |  |  | **`+19` (`+0.31`/`-1.50` pp)** | **`+8` (`-0.78`/`+0.67` pp)** | **`+23` (`+0.10`/`-0.52` pp)** | **`+46` (`+2.35`/`+7.66` pp)** |
 
 ### Batches: safety audit
 
@@ -668,6 +670,7 @@ Deterministic `ffimap`; no model.
 | `git2/src/cli/opt.c` | `186` | `1` | port | first | `+0` | `+0` | `+10` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+30` | `+0` | `+0.04` pp | `+37` |
 | `git2/src/cli/opt.c` | `186` | `4` | port | first | `+0` | `+0` | `+1` | `+0` | `+0` | `+0.00` pp | `+3` | `+0` | `+0` | `+0` | `+0` | `-1` | `-0.19` pp | `+1` |
 | `git2/src/cli/opt.c` | `186` | `5` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+1` | `+0` | `+0` | `+0` | `+2` | `+0` | `-0.11` pp | `+8` |
+| `git2/src/cli/opt.c` | `186` | `6` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.00` pp | `+0` |
 | `libgit2/deps/ntlmclient/compat.h` | `200` | `1` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
 | `libgit2/src/util/strnlen.h` | `225` | `1` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
 | `libgit2/src/util/utf8.c` | `229` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+1` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.05` pp | `+1` |
@@ -697,12 +700,13 @@ Deterministic `ffimap api`; no model.
 | `git2/src/cli/opt.c` | `186` | `1` | port | first | `0` | `0` | `0` | `0` | `2` | `0` | `sys::git2` extended | — |
 | `git2/src/cli/opt.c` | `186` | `4` | port | first | `1` | `0` | `0` | `0` | `2` | `1` | `git2::src::cli::opt` extended, `sys::git2` extended | — |
 | `git2/src/cli/opt.c` | `186` | `5` | port | first | `0` | `0` | `0` | `0` | `3` | `0` | all 21 modules kept | — |
+| `git2/src/cli/opt.c` | `186` | `6` | port | review | `8` | `0` | `0` | `0` | `0` | `0` | — | — |
 | `libgit2/deps/ntlmclient/compat.h` | `200` | `1` | port | review | `1` | `0` | `0` | `0` | `0` | `0` | — | — |
 | `libgit2/src/util/strnlen.h` | `225` | `1` | port | review | `1` | `0` | `0` | `0` | `0` | `0` | — | — |
 | `libgit2/src/util/utf8.c` | `229` | `0` | port | first | `0` | `0` | `0` | `0` | `3` | `0` | `utf8` new (`InvalidCodePoint`); `sys::libgit2` extended (`+3` bindings) | — |
 | `libgit2/src/util/utf8.c` | `229` | `1` | port | review | `3` | `0` | `0` | `0` | `0` | `0` | — | — |
 | **Σ first** |  |  |  |  | **`1`** | **`0`** | **`0`** | **`0`** | **`33`** | **`1`** |  |  |
-| **Σ review** |  |  |  |  | **`37`** | **`2`** | **`1`** | **`0`** | **`0`** | **`3`** |  |  |
+| **Σ review** |  |  |  |  | **`45`** | **`2`** | **`1`** | **`0`** | **`0`** | **`3`** |  |  |
 
 ### Batches — review: PoC + reports
 
@@ -742,7 +746,8 @@ Deterministic `ffimap api`; no model.
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+2` | `2` |
 | — (`tests/ub_safe`) | `legacy-526` | `0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
 | `libgit2/deps/reftable/basics.c` | `169` | `4` | `+0` | `+0` | `+0` | `+0` | `+1` | `+1` | `+1` | `+2` | `5` |
-| **Σ** |  |  | **`+1`** | **`+5`** | **`+4`** | **`+1`** | **`+4`** | **`+6`** | **`+12`** | **`+57`** | **`90`** |
+| `git2/src/cli/opt.c` | `186` | `6` | `+0` | `+0` | `+0` | `+0` | `+1` | `+0` | `+0` | `+0` | `1` |
+| **Σ** |  |  | **`+1`** | **`+5`** | **`+4`** | **`+1`** | **`+5`** | **`+6`** | **`+12`** | **`+57`** | **`91`** |
 
 ## Module passes
 
@@ -3935,6 +3940,110 @@ under ASan+UBSan. Under Miri, the module's `unit_pub` (but the one marked `spawn
 are the CLI's other C modules, which have no Rust tests yet. TSan has no obligation, with no
 `Send` or `Sync` claim and no thread, and BSan is no gate of this batch, and was not run. No raw
 binding or C changed, so the packaging gate does not apply. Usage cells are the assistant's.
+
+### `git2/src/cli/opt.c` wave 186 batch 6: review of batches 1, 4 and 5
+
+Batch 6 reviews the `symbol` route of opt.c's folded waves (186 to 193), the module's whole
+`port` of its symbols in `src/git2/src/cli/opt.rs`: batch 1 (`29ec3ab87`, `Kind::is_option` and
+`uses_gnu_style`), batch 4 (`64431c07a`, eleven items) and batch 5 (`c62dee857`, eight), 21
+symbols, with the five exports under `ffi-export-src-cli-opt-c`, off. It ran every objective,
+`fix` included. The module switches from C after its module pass, and the CLI's remaining C
+(`main.c`, the `cmd_*.c`, `common.c`, `opt_usage.c`) then calls the exports, so they were
+reviewed thoroughly, for what that C relies on: `main.c` reads `optparser.idx` after the loop
+and reorders `argv` by it, the `cmd_*.c` read their specs' variables, an `Args` spec's
+`char **` pointing into `argv`, and describe a failing outcome through `cli_opt_usage_error`,
+whose `cli_opt_status_fprint` reads the choices after the outcome's spec, and `common.c`'s
+`parse_option` reads each outcome's spec, alias and value. Each holds.
+
+The fix the batch was asked for: `FileWriter`, the export's `io::Write` over the C stream, now
+writes through glibc-bindings' `FileRef::write_all` (`24da93f`, pinned by `ac1f36519`), one
+locked `fwrite` of the bytes as they are, and the U+FFFD departure and its documentation are
+gone. The command is written as its bytes too, through a private
+`OptRef::write_status_bytes` that `write_status` calls, where the export had passed it through
+`to_string_lossy`. `FileWriter` implements `io::Write::write_all` as that one `fwrite`. Its
+`write`, which nothing calls, fails whenever the `fwrite` fails, though part of the bytes may
+be out: `write_all` does not report `fwrite`'s count, so the trait's rule that a failed
+`write` wrote nothing cannot hold. The type's documentation says so. The proposal
+`fileref-prints-bytes` is recorded `landed`, with its answer.
+
+One report, `equiv/status-export-rewrites-an-interrupted-write` (reproducer). The trait's
+default `write_all`, which `FileWriter` had kept, writes what is left again after an
+`ErrorKind::Interrupted` failure. A piece whose `write(2)` fails with `EINTR` part way was
+therefore written again, whole, and the message reported written (export 0), where C's
+`fprintf` fails and `cli_opt_status_fprint` returns -1. A `write` over `FileRef::write_all`
+alone, the move as asked, keeps the defect. The reproducer compiles C's `opt.c` under other
+names beside the exports and compares both on a `fopencookie` stream whose first write takes
+three bytes and fails with `EINTR`. It exits 1 on `17401d831` (export: `gitgit2: unknown option:
+--nope\n`, 0; C: `git`, -1) and 0 on the fix. It becomes the inline `equiv_priv` test
+`an_interrupted_write_fails_both_and_is_written_once`, which fails on the old writer and on the
+bare move, and `the_export_writes_what_c_writes` now compares a non-UTF-8 argument and command
+byte for byte. The disclosure is for the crate's own tracker: the defect is the export's.
+
+The seven C defects the batches did not carry over, each judged as a deliberate divergence:
+documented on the routine that departs, kept by a unit test, and correcting the C, so none is
+an `equiv` finding. Their four reproducers rerun as recorded on this tree's C. `cli_opt_parse`'s
+`alloca` overflow (ASan `dynamic-stack-buffer-overflow`) and the read past an argument after an
+unknown option inside a bundle (`heap-buffer-overflow`) are out-of-bounds accesses. Each `-dx foo`
+command then reports `-dx` unknown, as C does, and `common.c`'s `cli_opt_foreach` goes on from the
+next argument's start. Literal arguments reordered after `--` (`status 0 d 0 first -d second a`)
+contradict `opt.h`'s "everything after this is literal": after the switch, `git2 init -- dir -q`
+takes `dir` as the directory and reports the literal `-q`, an argument too many, where C took
+`-q` as the directory. Bare arguments dropped before a last optional-value option
+(`status 4 spec file file (null)`): after the switch `commit`'s `-S` last keeps the arguments
+before it. The nameless bool's `--no-` (`strcmp(NULL)`) and `consume_choices` stepping before
+the table read through a null pointer and before an array. The CLI's tables have neither, so
+the remaining C sees no change. The bare `-`: the C matches the first spec without an alias and
+reads `arg[2]` past the string, so `git2 -` ran `help`, and the port reports `unknown option: -`
+with the usage, as git's own top level does (`git -`). GNU `getopt_long`, whose style `opt.h`
+cites for reordering, and git's `parse-options` take a lone `-` as an operand. No CLI command
+gives it a meaning (none reads standard input through `-`), so this was not filed, and is the
+module pass's to weigh if one does. The exports' panic handling
+(`export-panic-without-a-failure-outcome`): `cli_opt_parser_next` and `cli_opt_parse` abort, as
+the proposal's drafted rule has it, since a zeroed failure outcome would have `main.c` and the
+commands print `unknown option: (null)`. No panic was found reachable on the C's inputs:
+`reorder_gnu_style`'s rotation stays within its run, since its insert point never passes its
+scan.
+
+The other objectives found nothing. `unsafety`: the boundary scan's one site in the workset is
+`SpecTable::from_ptr`, an adoption no safe variant replaces. `contracts`: `SpecTable::from_ptr`,
+`ForeachCallbackFn::from_c`, `adopt_args`, `write_outcome` and `Parser::into_args` were tried and
+hold; each gateway's `# Safety` asks what `main.c`, the commands and `common.c` give. `ub`: the
+`&mut [Arg]` over `argv` lives for one export call, which no C reaches meanwhile, and `ArgsSlot`
+is never read through. `logic`, `idiom`, `ergonomics` and `conventions`: none in the workset,
+the bare `-` aside. `test-adequacy`: the export's write failures on an interrupted stream were
+unreached; the new test reaches them.
+
+Tests: 1 in `lib`, the `equiv_priv` test above, which declares `fopencookie`, absent from libc's
+raw bindings, in its region. Worklist coverage under all suites: `opt.rs` 1029 of 1038 lines,
+170 of 170 functions and 1137 of 1157 regions, the nine lines left being batch 5's; C `opt.c`
+396 of 403 lines (98.26%), as at batch 5. Coverage was measured with `run.sh` on this tree and
+read with `report.py` from the scratch tree's `src/` (`C=@c` over the `coverage` variant's
+`libcrustify.a`, `Rust=.`), the unit column merging `lib` and `unit_pub`. The base is batch 5's
+measurement, which `Coverage stats` recorded, since the wave's tip changes no line of the
+crate. Its C shifts, `-0.03` pp in all, are run-to-run variation: the one C path the new test
+adds, `cli_opt_status_fprint`'s failed first piece, the read-only stream test already reached.
+The Overview's Rust LoC moves by ffimap's `code.loc.total` (`+8`) and `code.tests.loc.total`
+(`+133`); `+LoC` counts every `.rs` line, the reproducer's 152 among them.
+
+The safety audit scan (ffimap `9aa2ef1`, flags as batch 5's, the export feature named) differs
+from batch 5's, whose tree the tip's crate is, only in its line and function counts, so the row
+is `+0` but for `unsafe loc %`'s `-0.004` pp. `ffimap api diff` against the tip (rustdoc JSON on
+nightly `2026-10-08`, with ffibox's private one): the eight items with a public API `kept`,
+the thirteen private helpers `missing`, every unattributed module (21) `kept`.
+
+Gates, on the base `17401d831`: the workspace is formatted, and `clippy --workspace
+--all-targets` passes with warnings denied with the export feature off, on, and with
+`--all-features`. The module's tests pass on `plain` with the feature off (`lib` 33, `equiv` 16,
+`ub_safe` 11, `ub_unsafe` 7, `unit_pub` 55, doctests 9 and 10) and on, the exports linked in place
+of the archive's `opt.c` (no C static of `opt.c` in the binaries): all 16 `equiv` tests pass,
+where the base fails `the_export_writes_what_c_writes` there on the U+FFFD departure. Both pass
+under ASan+UBSan. Under Miri the new test, run alone, stops at `fopencookie` (`calls C`). The
+whole workspace passes under the coverage run (`lib` 881 and 1 ignored, `ub_safe` 773,
+`ub_unsafe` 127, `equiv` 544, `unit_pub` 139, `hidden_symbols` 1, doctests 85 and 387), but for
+the known nightly `CommitBuilder` doctest (E0624). The module's dependents are the CLI's
+other C modules, which have no Rust tests yet. TSan has no obligation, and BSan, no gate here,
+was not run. No raw binding or C changed, so the packaging gate does not apply. Usage cells are
+the assistant's.
 
 ### `libgit2/src/util/utf8.c` wave 229 batch 0: the module's `port`
 

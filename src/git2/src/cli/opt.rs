@@ -1555,6 +1555,17 @@ impl<'p> OptRef<'_, 'p> {
         command: Option<&str>,
         specs: SpecTable<'p>,
     ) -> io::Result<()> {
+        self.write_status_bytes(out, command.map(str::as_bytes), specs)
+    }
+
+    /// [`write_status`](Self::write_status) after a `command` of any bytes, as C's `%s` writes the
+    /// C string it is given: the export's, whose `command` need not be UTF-8.
+    fn write_status_bytes<W: io::Write + ?Sized>(
+        self,
+        out: &mut W,
+        command: Option<&[u8]>,
+        specs: SpecTable<'p>,
+    ) -> io::Result<()> {
         let message = match (self.status(), self.spec()) {
             (Some(Status::Done), _) => Message::Done,
             (Some(Status::Ok), _) => Message::Ok,
@@ -1570,7 +1581,7 @@ impl<'p> OptRef<'_, 'p> {
             (None, _) => Message::Unnamed(c_int::from_ne_bytes(self.raw_status().to_ne_bytes())),
         };
         if let Some(command) = command {
-            out.write_all(&[command.as_bytes(), b": "].concat())?;
+            out.write_all(&[command, b": "].concat())?;
         }
         match message {
             Message::Done => out.write_all(b"finished processing arguments (no error)\n"),
@@ -1648,24 +1659,30 @@ fn write_choices<W: io::Write + ?Sized>(
     out.write_all(b" is required.\n")
 }
 
-/// A C stream as an [`io::Write`], each write one locked `fprintf(stream, "%s", text)` of its
-/// bytes, as C's `fprintf` calls write the status message, in order with the C that shares the
-/// stream.
+/// A C stream as an [`io::Write`], each write one locked `fwrite` of its bytes as they are
+/// ([`FileRef::write_all`](glibc_bindings::libc::libio::genops::FileRef::write_all)), as C's
+/// `fprintf` calls write the status message's pieces, in order with the C that shares the stream.
 ///
-/// libc's wrapper writes text, a `&str`: bytes that are not UTF-8, which an argument can hold,
-/// are written with each invalid sequence replaced by U+FFFD, the one place the export's message
-/// departs from C's.
+/// A failed write is not retried, as C's `fprintf` is not: its [`write_all`](io::Write::write_all)
+/// is that one `fwrite`. The trait's own `write_all` writes the whole of what is left again after
+/// an [`io::ErrorKind::Interrupted`] failure, which an `EINTR` part way through the bytes reports,
+/// so that the bytes already out would be written twice, and the message reported written, where
+/// C's `fprintf` fails. For the same reason [`write`](io::Write::write) fails whenever the `fwrite`
+/// does, though part of `buf` may have reached the stream: `fwrite`'s count is not reported, and
+/// the trait's documentation, that a failed `write` wrote nothing, does not hold of it. The export
+/// writes only through `write_all`.
 #[cfg(any(test, feature = "ffi-export-src-cli-opt-c"))]
 struct FileWriter<'a>(glibc_bindings::libc::libio::genops::FileRef<'a>);
 
 #[cfg(any(test, feature = "ffi-export-src-cli-opt-c"))]
 impl io::Write for FileWriter<'_> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        match core::str::from_utf8(buf) {
-            Ok(text) => self.0.print(text)?,
-            Err(_) => self.0.print(&String::from_utf8_lossy(buf))?,
-        };
+        self.0.write_all(buf)?;
         Ok(buf.len())
+    }
+
+    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
+        self.0.write_all(buf)
     }
 
     /// Nothing: C's `cli_opt_status_fprint` leaves the stream's buffer to its buffering mode.
@@ -3640,23 +3657,23 @@ mod ffi_import {
             (stream.close(), rc)
         }
 
-        /// What the export writes for `opt`: [`OptRef::write_status`](super::OptRef::write_status)
-        /// through a [`FileWriter`] over a C stream.
-        fn rust_status<'p>(opt: &Opt<'p>, command: Option<&str>, table: SpecTable<'p>) -> Vec<u8> {
+        /// What the export writes for `opt`: [`OptRef::write_status`](super::OptRef::write_status),
+        /// after a `command` of any bytes, through a [`FileWriter`] over a C stream.
+        fn rust_status<'p>(opt: &Opt<'p>, command: Option<&CStr>, table: SpecTable<'p>) -> Vec<u8> {
             let stream = MemStream::open();
             {
                 // SAFETY: an open stream, which only this handle reaches until it is closed.
                 let file = unsafe { FileRef::from_ptr(stream.file) }.unwrap();
                 opt.as_ref()
-                    .write_status(&mut FileWriter(file), command, table)
+                    .write_status_bytes(&mut FileWriter(file), command.map(CStr::to_bytes), table)
                     .unwrap();
             }
             stream.close()
         }
 
         /// The stream the export writes through holds what C's `fprintf` calls write, for each
-        /// status of an outcome and its spec's choices; an argument that is not UTF-8 is written
-        /// with U+FFFD in place of each invalid sequence, where C writes its bytes.
+        /// status of an outcome and its spec's choices, byte for byte: an argument and a command
+        /// that are not UTF-8 included.
         #[test]
         #[cfg_attr(miri, ignore = "calls C")]
         fn the_export_writes_what_c_writes() {
@@ -3689,7 +3706,7 @@ mod ffi_import {
                 for command in [None, Some(c"git2")] {
                     let (c, rc) = c_status(&opt, command);
                     assert!(rc >= 0);
-                    let rust = rust_status(&opt, command.map(|c| c.to_str().unwrap()), table);
+                    let rust = rust_status(&opt, command, table);
                     assert_eq!(rust, c, "{status:?} {spec:?} {command:?}");
                 }
             }
@@ -3698,10 +3715,148 @@ mod ffi_import {
             opt.as_mut().set_arg(Some(c"--caf\xe9"));
             let (c, _) = c_status(&opt, None);
             assert_eq!(c, b"unknown option: --caf\xe9\n");
-            assert_eq!(
-                rust_status(&opt, None, table),
-                "unknown option: --caf\u{fffd}\n".as_bytes()
-            );
+            assert_eq!(rust_status(&opt, None, table), c);
+            let (c, _) = c_status(&opt, Some(c"g\xefe"));
+            assert_eq!(c, b"g\xefe: unknown option: --caf\xe9\n");
+            assert_eq!(rust_status(&opt, Some(c"g\xefe"), table), c);
+        }
+
+        /// A stream of `fopencookie`'s, unbuffered, whose first write takes three bytes and fails
+        /// with `EINTR`, as a `write` a signal interrupts part way does, and whose later writes
+        /// take everything: what it was given, kept until it is closed.
+        struct Interrupted {
+            file: *mut libc::FILE,
+            /// The stream's [`Sink`], a `Box` given up while the stream may write to it.
+            sink: *mut Sink,
+        }
+
+        /// What an [`Interrupted`] stream's writes were given, and whether the next one fails.
+        struct Sink {
+            bytes: Vec<u8>,
+            fail: bool,
+        }
+
+        /// `cookie_io_functions_t`, which libc's raw bindings do not declare.
+        #[repr(C)]
+        struct CookieIo {
+            read: Option<unsafe extern "C" fn(*mut c_void, *mut c_char, usize) -> isize>,
+            write: Option<unsafe extern "C" fn(*mut c_void, *const c_char, usize) -> isize>,
+            seek: Option<unsafe extern "C" fn(*mut c_void, *mut i64, c_int) -> c_int>,
+            close: Option<unsafe extern "C" fn(*mut c_void) -> c_int>,
+        }
+
+        unsafe extern "C" {
+            /// glibc's `fopencookie`, which libc's raw bindings do not declare.
+            fn fopencookie(
+                cookie: *mut c_void,
+                mode: *const c_char,
+                io: CookieIo,
+            ) -> *mut libc::FILE;
+        }
+
+        /// The write function of an [`Interrupted`] stream.
+        ///
+        /// # Safety
+        ///
+        /// `cookie` is the stream's [`Sink`], which only the stream reaches while it is open, and
+        /// `buf` addresses `size` readable bytes.
+        unsafe extern "C" fn take(cookie: *mut c_void, buf: *const c_char, size: usize) -> isize {
+            // SAFETY: the caller's contract: the sink is live, and reached by this call alone.
+            let sink = unsafe { &mut *cookie.cast::<Sink>() };
+            // SAFETY: the caller's contract: `buf` holds `size` bytes.
+            let bytes = unsafe { core::slice::from_raw_parts(buf.cast::<u8>(), size) };
+            let taken = if sink.fail { size.min(3) } else { size };
+            sink.bytes.extend_from_slice(&bytes[..taken]);
+            if taken < size {
+                sink.fail = false;
+                glibc_bindings::libc::csu::errno_loc::set_errno(libc::EINTR);
+            }
+            isize::try_from(taken).unwrap_or(isize::MAX)
+        }
+
+        impl Interrupted {
+            fn open() -> Self {
+                let sink = Box::into_raw(Box::new(Sink {
+                    bytes: Vec::new(),
+                    fail: true,
+                }));
+                let io = CookieIo {
+                    read: None,
+                    write: Some(take),
+                    seek: None,
+                    close: None,
+                };
+                // SAFETY: the sink stays put, and is reached by the stream alone, until `close`
+                // takes it back; the mode is a C string.
+                let file = unsafe { fopencookie(sink.cast(), c"w".as_ptr(), io) };
+                assert!(!file.is_null());
+                // SAFETY: an open stream nothing has written yet; `_IONBF` takes no buffer.
+                let unbuffered = unsafe { libc::setvbuf(file, ptr::null_mut(), libc::_IONBF, 0) };
+                assert_eq!(unbuffered, 0);
+                Self { file, sink }
+            }
+
+            /// Closes the stream and returns what its writes took.
+            fn close(self) -> Vec<u8> {
+                // SAFETY: the stream is open, and nothing uses it after this; an unbuffered
+                // stream holds nothing to flush.
+                unsafe { libc::fclose(self.file) };
+                // SAFETY: `open`'s box, which the closed stream no longer reaches, taken back
+                // once.
+                unsafe { Box::from_raw(self.sink) }.bytes
+            }
+        }
+
+        /// A write that `EINTR` interrupts part way fails C's `fprintf`, which writes nothing
+        /// more, and fails the export's write, which is not written again: both streams take the
+        /// same three bytes, both report the failure, and `errno` holds `EINTR` after each.
+        #[test]
+        #[cfg_attr(miri, ignore = "calls C")]
+        fn an_interrupted_write_fails_both_and_is_written_once() {
+            use glibc_bindings::libc::csu::errno_loc::errno;
+
+            let specs = [
+                Spec::new(Target::Switch(None)).with_alias(b'f'),
+                Spec::default(),
+            ];
+            let table = SpecTable::new(&specs).unwrap();
+            let mut opt = Opt::zeroed();
+            opt.as_mut().set_status(Status::UnknownOption);
+            opt.as_mut().set_arg(Some(c"--nope"));
+            for command in [None, Some(c"git2")] {
+                let stream = Interrupted::open();
+                // SAFETY: an open stream, the command `NULL` or a C string, and an outcome with
+                // no spec, all live for the call.
+                let rc = unsafe {
+                    sys::cli_opt_status_fprint(
+                        stream.file,
+                        command.map_or(ptr::null(), CStr::as_ptr),
+                        opt.as_ref().as_ptr(),
+                    )
+                };
+                let c_errno = errno();
+                let c = stream.close();
+                assert!(rc < 0, "{command:?}");
+                assert_eq!(c_errno, libc::EINTR);
+
+                let stream = Interrupted::open();
+                let written = {
+                    // SAFETY: an open stream, which only this handle reaches until it is closed.
+                    let file = unsafe { FileRef::from_ptr(stream.file) }.unwrap();
+                    opt.as_ref().write_status_bytes(
+                        &mut FileWriter(file),
+                        command.map(CStr::to_bytes),
+                        table,
+                    )
+                };
+                let rust_errno = errno();
+                let rust = stream.close();
+                let e = written.unwrap_err();
+                assert_eq!(e.kind(), std::io::ErrorKind::Interrupted);
+                assert_eq!(rust_errno, libc::EINTR);
+                assert_eq!(rust, c, "{command:?}");
+                assert_eq!(c.len(), 3);
+            }
         }
 
         /// A stream that refuses writes fails C's first `fprintf` and the export's first write
@@ -4006,9 +4161,10 @@ mod ffi_export {
     /// outcome the message cannot name, a missing value or argument with no spec, whose spec the
     /// C reads through a null pointer. A panic is reported as a failure.
     ///
-    /// The C returns the count of its last piece's `fprintf` on success: no caller reads it. A
-    /// `command` or an argument that is not UTF-8 is written with each invalid sequence replaced
-    /// by U+FFFD, since libc's wrapper writes text: [`FileWriter`]'s departure.
+    /// The C returns the count of its last piece's `fprintf` on success: no caller reads it. The
+    /// `command`, the argument and the names are written as their bytes, through [`FileWriter`],
+    /// each piece in one `fwrite`, which a failure, `EINTR` included, ends unretried, as it ends
+    /// C's `fprintf`.
     ///
     /// # Safety
     ///
@@ -4049,9 +4205,9 @@ mod ffi_export {
             set_errno(Errno::EINVAL as c_int);
             return -1;
         };
-        let command = command.map(CStr::to_string_lossy);
+        let command = command.map(CStr::to_bytes);
         let written = barrier(
-            || opt.write_status(&mut FileWriter(file), command.as_deref(), specs),
+            || opt.write_status_bytes(&mut FileWriter(file), command, specs),
             || Err(std::io::Error::other("panicked")),
         );
         match written {

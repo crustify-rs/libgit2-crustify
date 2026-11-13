@@ -1,6 +1,10 @@
 # libc's wrapper writes text, not the bytes C streams carry
 
-Status: `open`.
+Status: `landed`, as glibc-crustify `24da93f` on its `crustify/devel` (its second advance,
+`libio/iofwrite.c`): `FileRef::write_all(&self, &[u8]) -> io::Result<()>`, a byte-exact `fwrite`
+under the stream's lock, a short write being an error, rather than the `print_c_str` drafted
+below. The campaign pins it since `ac1f36519`, and `wave-186/batch-6/run-1` moved the export's
+`FileWriter` onto it: the departure, and its documentation, are gone.
 
 ## Signal
 
@@ -50,4 +54,20 @@ comparison once the export writes through it.
 
 ## Review
 
-None yet.
+None in this campaign: the change was the side campaign's, reviewed there.
+
+## Answer
+
+`wave-186/batch-6/run-1` (the review of the module's `symbol` route) writes each piece of the
+export's message through `FileRef::write_all`, the command's bytes included, which the export
+had turned to text with `to_string_lossy`. `FileWriter` overrides `io::Write::write_all` with
+that one call: the trait's own retries a write that failed with `ErrorKind::Interrupted` from the
+start of what is left, so an `EINTR` part way through a piece would have it written twice and
+the message reported written, where C's `fprintf` fails (the batch's finding
+`equiv/status-export-rewrites-an-interrupted-write`, which the `print`-based writer had too).
+Its `write`, which no caller uses, fails whenever the `fwrite` does, though part of the bytes may
+be out: the trait documents a failed `write` as writing nothing, which no `io::Write` over
+`write_all` can keep, since `write_all` does not report `fwrite`'s count. The inline test
+`the_export_writes_what_c_writes` now compares a non-UTF-8 argument and command byte for byte,
+and all sixteen of the module's `equiv` tests pass with the exports linked in place of C's
+`opt.c`.
