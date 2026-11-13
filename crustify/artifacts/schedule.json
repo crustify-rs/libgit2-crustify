@@ -118343,7 +118343,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 0,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [],
         "cut": []
@@ -118760,7 +118760,78 @@
         }
       ],
       "packed_with": null,
-      "batches": []
+      "batches": [
+        {
+          "index": 0,
+          "link_unit": "git2",
+          "module": "src/cli/opt.c",
+          "foundational": false,
+          "kind": "port",
+          "status": "wip",
+          "items": [
+            {
+              "name": "cli_opt_flag_t",
+              "defined_in": "src/cli/opt.h",
+              "kind": "enum",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            },
+            {
+              "name": "cli_opt_status_t",
+              "defined_in": "src/cli/opt.h",
+              "kind": "enum",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            },
+            {
+              "name": "cli_opt_type_t",
+              "defined_in": "src/cli/opt.h",
+              "kind": "enum",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            },
+            {
+              "name": "cli_opt_usage_t",
+              "defined_in": "src/cli/opt.h",
+              "kind": "enum",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            }
+          ],
+          "commits": []
+        },
+        {
+          "index": 1,
+          "link_unit": "git2",
+          "module": "src/cli/opt.c",
+          "foundational": false,
+          "kind": "port",
+          "status": "wip",
+          "items": [
+            {
+              "name": "spec_is_option_type",
+              "defined_in": "src/cli/opt.c",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            },
+            {
+              "name": "support_gnu_style",
+              "defined_in": "src/cli/opt.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/git2/src/cli/opt.rs"
+            }
+          ],
+          "commits": []
+        }
+      ]
     },
     {
       "index": 187,
@@ -118769,7 +118840,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 1,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           186
@@ -118899,7 +118970,7 @@
           "unreferenced_after": null
         }
       ],
-      "packed_with": null,
+      "packed_with": 186,
       "batches": []
     },
     {
@@ -118909,7 +118980,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 2,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           186,
@@ -119211,7 +119282,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 186,
       "batches": []
     },
     {
@@ -119221,7 +119292,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 3,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           186,
@@ -119518,7 +119589,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 186,
       "batches": []
     },
     {
@@ -119528,7 +119599,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 4,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           186,
@@ -119676,7 +119747,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 186,
       "batches": []
     },
     {
@@ -119686,7 +119757,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 5,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           187,
@@ -119731,7 +119802,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 186,
       "batches": []
     },
     {
@@ -119741,7 +119812,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 6,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           186,
@@ -119792,7 +119863,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 186,
       "batches": []
     },
     {
@@ -119802,7 +119873,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 7,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           186,
@@ -119928,7 +119999,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 186,
       "batches": []
     },
     {
@@ -119938,7 +120009,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 0,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [],
         "cut": [
@@ -121026,7 +121097,93 @@
         }
       ],
       "packed_with": null,
-      "batches": []
+      "batches": [
+        {
+          "index": 0,
+          "link_unit": "libgit2",
+          "module": "deps/llhttp/api.c",
+          "foundational": false,
+          "kind": "wrap",
+          "status": "wip",
+          "items": [
+            {
+              "name": "llhttp__internal_s",
+              "defined_in": "deps/llhttp/llhttp.h",
+              "kind": "struct",
+              "field_users": [
+                "type",
+                "error",
+                "finish",
+                "data",
+                "flags",
+                "method",
+                "settings",
+                "reason",
+                "lenient_flags",
+                "initial_message_completed",
+                "status_code",
+                "upgrade",
+                "header_state",
+                "http_minor",
+                "http_major",
+                "content_length",
+                "_current",
+                "error_pos",
+                "_span_cb0",
+                "_span_pos0",
+                "_index"
+              ],
+              "typedefs": [
+                "git_http_parser",
+                "llhttp__internal_t",
+                "llhttp_t"
+              ],
+              "home": "src/libgit2/deps/llhttp/llhttp.rs"
+            },
+            {
+              "name": "llhttp_errno",
+              "defined_in": "deps/llhttp/llhttp.h",
+              "kind": "enum",
+              "field_users": [],
+              "typedefs": [
+                "llhttp_errno_t"
+              ],
+              "home": "src/libgit2/deps/llhttp/llhttp.rs"
+            },
+            {
+              "name": "llhttp_method",
+              "defined_in": "deps/llhttp/llhttp.h",
+              "kind": "enum",
+              "field_users": [],
+              "typedefs": [
+                "llhttp_method_t"
+              ],
+              "home": "src/libgit2/deps/llhttp/llhttp.rs"
+            },
+            {
+              "name": "llhttp_status",
+              "defined_in": "deps/llhttp/llhttp.h",
+              "kind": "enum",
+              "field_users": [],
+              "typedefs": [
+                "llhttp_status_t"
+              ],
+              "home": "src/libgit2/deps/llhttp/llhttp.rs"
+            },
+            {
+              "name": "llhttp_type",
+              "defined_in": "deps/llhttp/llhttp.h",
+              "kind": "enum",
+              "field_users": [],
+              "typedefs": [
+                "llhttp_type_t"
+              ],
+              "home": "src/libgit2/deps/llhttp/llhttp.rs"
+            }
+          ],
+          "commits": []
+        }
+      ]
     },
     {
       "index": 195,
@@ -121035,7 +121192,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 1,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           194
@@ -121363,7 +121520,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 194,
       "batches": []
     },
     {
@@ -121373,7 +121530,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 2,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           194,
@@ -122202,7 +122359,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 194,
       "batches": []
     },
     {
@@ -122448,7 +122605,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 0,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [],
         "cut": []
@@ -122490,7 +122647,27 @@
         }
       ],
       "packed_with": null,
-      "batches": []
+      "batches": [
+        {
+          "index": 0,
+          "link_unit": "libgit2",
+          "module": "deps/ntlmclient/compat.h",
+          "foundational": false,
+          "kind": "port",
+          "status": "wip",
+          "items": [
+            {
+              "name": "MIN",
+              "defined_in": "deps/ntlmclient/compat.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/deps/ntlmclient/compat_h.rs"
+            }
+          ],
+          "commits": []
+        }
+      ]
     },
     {
       "index": 201,
@@ -132605,7 +132782,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 0,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [],
         "cut": []
@@ -132647,7 +132824,59 @@
         }
       ],
       "packed_with": null,
-      "batches": []
+      "batches": [
+        {
+          "index": 0,
+          "link_unit": "libgit2",
+          "module": "src/util/utf8.c",
+          "foundational": false,
+          "kind": "port",
+          "status": "wip",
+          "items": [
+            {
+              "name": "utf8proc_utf8class",
+              "defined_in": "src/util/utf8.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/utf8.rs"
+            },
+            {
+              "name": "utf8_charlen",
+              "defined_in": "src/util/utf8.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/utf8.rs"
+            },
+            {
+              "name": "git_utf8_char_length",
+              "defined_in": "src/util/utf8.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/utf8.rs"
+            },
+            {
+              "name": "git_utf8_iterate",
+              "defined_in": "src/util/utf8.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/utf8.rs"
+            },
+            {
+              "name": "git_utf8_valid_buf_length",
+              "defined_in": "src/util/utf8.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/utf8.rs"
+            }
+          ],
+          "commits": []
+        }
+      ]
     },
     {
       "index": 230,
@@ -132656,7 +132885,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 1,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           229
@@ -132703,7 +132932,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 229,
       "batches": []
     },
     {
@@ -132713,7 +132942,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 2,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           230
@@ -132824,7 +133053,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 229,
       "batches": []
     },
     {
