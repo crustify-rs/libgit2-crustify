@@ -11,3 +11,9 @@ CRUSTIFY_BUILD_VARIANT = "plain"
 # repository's own: the kernel resolves the `..` past that link, so that every checkout
 # reaches the clone beside the repository holding the builds.
 PKG_CONFIG_PATH = { value = "crustify/builds/plain/../../../../pcre2-bindings/crustify/builds/plain/install/lib/pkgconfig", relative = true }
+
+# Dependency cooldown: the resolver holds back crate versions published in the last three
+# days, so that an update never takes a release before the ecosystem has seen it. The
+# committed Cargo.lock is unaffected; it applies to resolution only.
+[registry]
+global-min-publish-age = "3 days"

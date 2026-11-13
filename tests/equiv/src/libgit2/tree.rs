@@ -769,8 +769,7 @@ mod builder {
         let rust_tree =
             seed.map(|(_, hex, kind)| lookup_object(rust_fixture.as_ref().unwrap(), hex, kind));
 
-        let mut all: BTreeSet<CString> =
-            c_tree.map(names).unwrap_or_default().into_iter().collect();
+        let mut all: BTreeSet<CString> = c_tree.map_or_default(names).into_iter().collect();
         all.extend(steps.iter().filter_map(|s| match s {
             Step::Insert(name, _) => Some((*name).to_owned()),
             Step::Clear => None,
