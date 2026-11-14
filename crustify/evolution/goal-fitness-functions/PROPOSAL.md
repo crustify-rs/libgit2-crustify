@@ -3,7 +3,7 @@
 Status: `open`: the change is made on Crustify's `libgit2-crustify/evolution/goal-fitness-functions`
 (`bca1d35`, `ac41d76` with review-1's fixes, `754e2ce` with review-2's), at the user's
 direction on 2026-11-14; reviews 1 and 2 each rejected the commit they read, and review-3
-reads the third. `GOALS.md` changes
+approved the third, `754e2ce`. It has not landed: `GOALS.md` takes it on the user's approval. `GOALS.md` changes
 only with the user's approval: the user asked for this change, and reads the result before
 it lands.
 
@@ -113,4 +113,13 @@ and 3 of review-1 hold, and it weakens no check. Required, and made in `754e2ce`
 - E. "items land after what they depend on" contradicted `scheduling` for a cut dependency,
   which lands after its user and is reached through its binding.
 
-`review-3`: pending, on `754e2ce`.
+`review-3` (session `063d06bd-6af5-412f-b87f-b9c5d035c4d5`, Opus 5.5, `$0.68`, 2m32s), on `754e2ce`: **approved**; review-2's
+five fixes are in, nothing contradicts the rest of Crustify, the record's recurrence signal
+is not met on landing, and it weakens no check. Not required, and not taken, since a commit
+after the verdict would be reviewed again: a pair for reuse an agent chooses where a
+primitive does not fit, a reflowed line in Verification, and one phrase in this proposal's
+Signal (the pilot was five modules after `strnlen.h`'s smoke test, six with it).
+
+The three reviews cost `$3.97` and 16 minutes, and each rejection named a defect the author
+had not seen: the change broke its own pairing rule twice, and its evidence carried two
+figures that did not reproduce.
