@@ -12,10 +12,11 @@
 //!   U+*n*FFFF of every plane. What it accepts is therefore always a [`char`].
 //!
 //! Every function reads its argument alone and holds no state, so the module is native Rust.
-//! The C that remains calls the three `git_utf8_*` functions (`src/libgit2/path.c` and
-//! `src/libgit2/diff_xdiff.c`, and on Windows `src/util/fs_path.c`), which reach this module
-//! through its exports: the module has switched from C, and `src/util/utf8.c` has left the
-//! build.
+//! The module has switched from C, and `src/util/utf8.c` has left the build. The C that
+//! remains calls `git_utf8_iterate` (`src/libgit2/path.c`) and `git_utf8_valid_buf_length`
+//! (`src/libgit2/diff_xdiff.c`), which reach this module through its exports.
+//! `git_utf8_char_length` has none: only `GIT_WIN32` code, which no build of the campaign
+//! compiles, still calls it, and [`char_count`] replaces it.
 
 use core::error::Error;
 use core::fmt;
@@ -187,23 +188,21 @@ pub fn valid_prefix_len(bytes: &[u8]) -> usize {
 }
 
 /// The gateway through which the C that remains calls this module:
-/// `git_utf8_iterate`, `git_utf8_char_length` and `git_utf8_valid_buf_length`, each
-/// checked against its raw binding's signature, so that a C declaration that drifts fails
-/// to build.
+/// `git_utf8_iterate` and `git_utf8_valid_buf_length`, each checked against its raw
+/// binding's signature, so that a C declaration that drifts fails to build.
 mod ffi_export {
     use core::ffi::{c_char, c_int};
     use core::slice;
 
     use ffibox::callback::barrier;
 
-    use super::{char_count, decode_char, valid_prefix_len};
+    use super::{decode_char, valid_prefix_len};
     use crate::sys::libgit2 as sys;
 
     // Each export has its raw binding's type: the array's elements coerce to one function
     // pointer type only when their signatures agree.
     const _: () = {
         let _ = [sys::git_utf8_iterate, git_utf8_iterate];
-        let _ = [sys::git_utf8_char_length, git_utf8_char_length];
         let _ = [sys::git_utf8_valid_buf_length, git_utf8_valid_buf_length];
     };
 
@@ -256,20 +255,6 @@ mod ffi_export {
         len
     }
 
-    /// `git_utf8_char_length`: [`char_count`] of the `str_len` bytes at `str`. It cannot
-    /// fail, so a panic aborts.
-    ///
-    /// # Safety
-    ///
-    /// `str` is valid for reads of `str_len` bytes.
-    #[unsafe(no_mangle)]
-    unsafe extern "C" fn git_utf8_char_length(str: *const c_char, str_len: usize) -> usize {
-        // SAFETY: the caller guarantees that `str` is valid for reads of `str_len` bytes,
-        // which C does not change during the call.
-        let bytes = unsafe { bytes(str, str_len) };
-        barrier(|| char_count(bytes), || std::process::abort())
-    }
-
     /// `git_utf8_valid_buf_length`: [`valid_prefix_len`] of the `str_len` bytes at `str`. It
     /// cannot fail, so a panic aborts.
     ///
@@ -284,17 +269,17 @@ mod ffi_export {
         barrier(|| valid_prefix_len(bytes), || std::process::abort())
     }
 
-    /// The exports as their C callers call them: `next_hfs_char`'s walk by `git_utf8_iterate`,
-    /// `git_xdiff_cb`'s prefix and `fs_path.c`'s count, each reading only the `str_len` bytes
-    /// it is given, from an allocation of exactly that size, so that Miri reports a read past
-    /// them. They compile with the gateway.
+    /// The exports as their C callers call them: `next_hfs_char`'s walk by `git_utf8_iterate`
+    /// and `git_xdiff_cb`'s prefix, each reading only the `str_len` bytes it is given, from an
+    /// allocation of exactly that size, so that Miri reports a read past them. They compile
+    /// with the gateway.
     #[cfg(test)]
     mod unit_priv {
         use core::ffi::{c_char, c_int};
         use core::ptr;
 
-        use super::{git_utf8_char_length, git_utf8_iterate, git_utf8_valid_buf_length};
-        use crate::libgit2::src::util::utf8::{char_count, decode_char, valid_prefix_len};
+        use super::{git_utf8_iterate, git_utf8_valid_buf_length};
+        use crate::libgit2::src::util::utf8::{decode_char, valid_prefix_len};
 
         /// Inputs of every outcome: each length, cut short, broken, overlong, a surrogate, a
         /// noncharacter, a code point past U+10FFFF and bytes that start no sequence.
@@ -330,14 +315,11 @@ mod ffi_export {
             (out, len)
         }
 
-        /// `git_utf8_char_length` and `git_utf8_valid_buf_length` of `bytes`, held as above.
-        fn lengths(bytes: &[u8]) -> (usize, usize) {
+        /// `git_utf8_valid_buf_length` of `bytes`, held as above.
+        fn prefix(bytes: &[u8]) -> usize {
             let exact: Box<[u8]> = bytes.into();
             // SAFETY: `exact` holds `exact.len()` bytes, which nothing writes during the call.
-            let count = unsafe { git_utf8_char_length(exact.as_ptr().cast(), exact.len()) };
-            // SAFETY: as above.
-            let prefix = unsafe { git_utf8_valid_buf_length(exact.as_ptr().cast(), exact.len()) };
-            (count, prefix)
+            unsafe { git_utf8_valid_buf_length(exact.as_ptr().cast(), exact.len()) }
         }
 
         /// `git_utf8_iterate` writes the code point `decode_char` reads and returns its
@@ -373,26 +355,20 @@ mod ffi_export {
             assert_eq!(chars, expected);
         }
 
-        /// `git_utf8_char_length` and `git_utf8_valid_buf_length` are `char_count` and
-        /// `valid_prefix_len`; a prefix stops before a sequence its size cuts short, as
-        /// `git_xdiff_cb` relies on when it truncates a hunk header.
+        /// `git_utf8_valid_buf_length` is `valid_prefix_len`; a prefix stops before a sequence
+        /// its size cuts short, as `git_xdiff_cb` relies on when it truncates a hunk header.
         #[test]
-        fn lengths_are_the_native_counts() {
+        fn prefix_is_the_native_prefix() {
             for bytes in CASES {
-                assert_eq!(
-                    lengths(bytes),
-                    (char_count(bytes), valid_prefix_len(bytes)),
-                    "{bytes:02X?}"
-                );
+                assert_eq!(prefix(bytes), valid_prefix_len(bytes), "{bytes:02X?}");
             }
-            assert_eq!(lengths(b"\x24\xC2\xC2\xA2"), (3, 1));
-            assert_eq!(lengths(b"ab\xE2\x82"), (4, 2));
-            assert_eq!(lengths(b""), (0, 0));
+            assert_eq!(prefix(b"\x24\xC2\xC2\xA2"), 1);
+            assert_eq!(prefix(b"ab\xE2\x82"), 2);
+            assert_eq!(prefix(b""), 0);
         }
 
-        /// With `str_len` 0, `str` is not read, whether it is NULL or dangling: the count and
-        /// the prefix are 0, and `git_utf8_iterate` refuses, writing 0, where C would read
-        /// past the size.
+        /// With `str_len` 0, `str` is not read, whether it is NULL or dangling: the prefix is
+        /// 0, and `git_utf8_iterate` refuses, writing 0, where C would read past the size.
         #[test]
         fn empty_input_is_not_read() {
             for str in [ptr::null(), ptr::dangling::<c_char>()] {
@@ -402,8 +378,6 @@ mod ffi_export {
                 let len = unsafe { git_utf8_iterate(&raw mut out, str, 0) };
                 assert_eq!((out, len), (0, -1));
                 // SAFETY: `str_len` is 0, for which the export reads nothing at `str`.
-                assert_eq!(unsafe { git_utf8_char_length(str, 0) }, 0);
-                // SAFETY: as above.
                 assert_eq!(unsafe { git_utf8_valid_buf_length(str, 0) }, 0);
             }
         }

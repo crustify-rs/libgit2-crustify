@@ -835,7 +835,7 @@ function llhttp_message_needs_eof
 function llhttp_should_keep_alive
 
 # wave-229/batch-0: src/util/utf8.c (src/util/utf8.h), switched to Rust: they reach its
-# exports, and check their signatures
-function git_utf8_char_length
+# exports, and check their signatures; git_utf8_char_length's went with its export
+# (wave-232/batch-0, port/unexport)
 function git_utf8_iterate
 function git_utf8_valid_buf_length
