@@ -134181,7 +134181,7 @@
           "module": "src/util/utf8.c",
           "foundational": false,
           "kind": "port/unexport",
-          "status": "wip",
+          "status": "done",
           "items": [
             {
               "name": "git_utf8_char_length",
@@ -134191,6 +134191,20 @@
               "typedefs": [],
               "home": "src/libgit2/src/util/utf8.rs"
             }
+          ],
+          "commits": [
+            "d48feaced1c142566dad5cf93e9fb3d2e4486dc8"
+          ]
+        },
+        {
+          "index": 1,
+          "link_unit": "libgit2",
+          "module": "src/util/utf8.c",
+          "foundational": false,
+          "kind": "review",
+          "status": "wip",
+          "reviews": [
+            0
           ],
           "commits": []
         }
