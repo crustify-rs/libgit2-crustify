@@ -903,6 +903,18 @@ which units a review schedule dropped and why; which subsystems the Overview
 lists but no table details, and the cost that leaves unaccounted; and any column
 a campaign could not fill, said once rather than left as a field of em-dashes.
 
+### `C by value` and `celled %` since the bindings became a module
+
+Since 2026-11-13 the raw bindings are `crate::sys`, a module of the crate, and ffimap takes
+its `-sys` inventory from crates alone. The batches since then scanned with `--sys-crates
+pcre2_sys`, so their inventory is PCRE2's (21 C types, 222 C functions, where the scan of
+2026-11-10 read 120 and 723), and the two cells that read it, `C by value` and `celled %`,
+are taken over PCRE2's types alone. Their `+0` and `+0.00 pp` on the rows of waves 186, 194,
+197, 200, 225, 229 and 232 are not measures of what those batches did with a libgit2 type.
+The other safety audit cells do not read the inventory. Measured on 2026-11-14
+(`crustify/evolution/ffimap-sys-inventory-in-crate`); the rows are taken again once ffimap
+names a module of the crate.
+
 ### C test baseline
 
 Every offline `libgit2_tests` suite and every `util_tests` suite ran in isolation
