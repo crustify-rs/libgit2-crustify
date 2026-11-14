@@ -101,7 +101,10 @@ Unanswered optional questions use their defaults.
     campaign's own, and reach the component's `devel` only with your approval.**
     (`id: evolution`)
     - Answer: `evolve`, on the campaign's working branches (`libgit2-crustify/devel` of each
-      component, which the campaign's checkouts are on since 2026-11-12): a change lands
+      component, checked out since 2026-11-14 in a worktree of its own beside the
+      component's checkout, `/crustify-rs/<component>.libgit2-crustify`, the component's
+      own checkout being on `devel`; a session of this campaign loads Crustify from that
+      worktree, `--plugin-dir /crustify-rs/crustify.libgit2-crustify`): a change lands
       there once its review approves it, and each component's `devel` takes the working
       branch only with the user's approval, as crustify `c2f21a0`'s model has it. The
       former `unattended: the whole campaign` is retired with it.
