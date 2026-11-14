@@ -1,0 +1,19 @@
+{
+ "backend": "claude",
+ "billing": "api",
+ "model_proxy": "openrouter",
+ "args": [
+  "--model",
+  "claude-opus-5-5"
+ ],
+ "revisions": {
+  "crustify": "e6cc1ba",
+  "wavefront": "bf21e16",
+  "ffibox": "9b9047f",
+  "ffimap": "c3203c7"
+ },
+ "component": "ffimap",
+ "branch": "libgit2-crustify/evolution/ffimap-sys-inventory-in-crate",
+ "commit": "8cd7a26",
+ "proposal": "crustify/evolution/ffimap-sys-inventory-in-crate"
+}
