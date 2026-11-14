@@ -1,6 +1,8 @@
 # build.rs reads a gateway as switched when a multi-line attribute follows its `cfg`
 
-Status: `open`.
+Status: `landed` in the campaign as `6d3c7873c` on `crustify/devel`, on 2026-11-14, by the assistant at the
+user's word. It changes the campaign's `build.rs` alone; no rule of Crustify changes, so the
+record takes no row.
 
 ## Signal
 
@@ -83,7 +85,10 @@ assert gateways(cfg_last) == ['DEPS_LLHTTP_HTTP_C']
 
 ## Validation
 
-None yet: the reproducer above shows the defect; the change's test is its two cases.
+`6d3c7873c`: the parser moved to `build/gateways.rs`, where `tests/unit_pub/build_script.rs` reaches it;
+it tracks an attribute until its brackets close. Five tests, the reproducer's two cases among
+them, now both reading the feature. Gates on the change: the format check, the lints with
+warnings denied, and the plain suite over the workspace (every binary passed).
 
 ## Review
 
