@@ -1,6 +1,9 @@
 # A function that is one field's read or write is ported onto that field's accessor
 
-Status: `open` (the rule `wave-194/batch-3/run-1` followed; the spec change is not made).
+Status: `open`: the change is crustify `0b77b97` on `libgit2-crustify/evolution/port-onto-an-existing-accessor`, made on
+2026-11-14 after the triage of open proposals, awaiting its review.
+
+Goal: Consistency: the one pattern a kind of item takes; and Idiomatic Rust.
 
 ## Signal
 
@@ -48,7 +51,7 @@ conventions' Anchors § Several stand-ins, which should name the case.
 
 ## Change
 
-Not made: no review run was available to this batch. In `porting-symbols` § Functions,
+Made. In `porting-symbols` § Functions,
 after the first paragraph:
 
 > A function whose body only reads or writes one member, or returns a value an existing
@@ -59,6 +62,14 @@ after the first paragraph:
 
 And in the conventions' § 3.2, beside the symbol alias: "and the existing accessor or
 method a ported function is, as `porting-symbols`' Functions section describes".
+
+## Record
+
+The row for `EVOLUTION.md`, copied in when the change lands:
+
+| change | from | landed as | signal answered | recurrence signal | status |
+|---|---|---|---|---|---|
+| a function that only reads or writes one member, or returns what an existing item of the safe API gives, is ported as that item, which carries its anchor and alias | `libgit2-crustify`, `port-onto-an-existing-accessor` | crustify `0b77b97` | ports of one-field functions wrote a second API beside an accessor, or anchored the accessor outside the function's home, each batch choosing by hand | a review finding of a ported function that duplicates an existing accessor, or a plan correction on where such a function's anchor sits | watched |
 
 ## Validation
 

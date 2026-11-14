@@ -1,6 +1,9 @@
 # A macro whose expansions no binding reaches is checked against its body
 
-Status: `open`.
+Status: `open`: the change is crustify `73b731e` on `libgit2-crustify/evolution/equiv-unreachable-macro-sites`, made on
+2026-11-14 after the triage of open proposals, awaiting its review.
+
+Goal: Equivalence: its tests compare the Rust with the C.
 
 ## Signal
 
@@ -48,6 +51,14 @@ Append to the paragraph that ends "is compared through the functions that call i
 
 Its record entry's recurrence signal: a task message, report or plan correction that settles
 again what stands in for a macro's equivalence tests.
+
+## Record
+
+The row for `EVOLUTION.md`, copied in when the change lands:
+
+| change | from | landed as | signal answered | recurrence signal | status |
+|---|---|---|---|---|---|
+| a macro is compared where it expands; one whose expansion sites no raw binding reaches has no equivalence test, is checked by unit tests against its replacement list, and is reported as unreached until its sites' module is ported | `libgit2-crustify`, `equiv-unreachable-macro-sites` | crustify `73b731e` | four runs settled by hand what stands in for a macro's equivalence tests when the bindings reach none of its expansion sites | a task message, report or plan correction that settles again what stands in for a macro's equivalence tests | watched |
 
 ## Validation
 
