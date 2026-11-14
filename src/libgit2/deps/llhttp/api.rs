@@ -1621,7 +1621,11 @@ mod ffi_export {
     /// run's [`Parsed`], or the error the parser stopped at. A panic, which `execute` raises
     /// where C would abort or corrupt the parser, is reported as `HPE_INTERNAL`.
     ///
-    /// With `len` 0, `data` may be NULL, as C's `data + len` allows: no bytes are read.
+    /// The run is the `len` bytes at `data` themselves, an empty one included: the parser
+    /// restarts a span the previous run left open at `data` and keeps `data + len` as its
+    /// error position when that span's callback refuses it, as C's `llhttp_execute` does, so
+    /// that `llhttp_get_error_pos` stays relative to `data`. With `len` 0, `data` may be NULL,
+    /// which C's `data + len` does not allow: the run is then empty at no address of C's.
     ///
     /// # Safety
     ///
@@ -1633,12 +1637,12 @@ mod ffi_export {
         data: *const c_char,
         len: usize,
     ) -> sys::llhttp_errno_t {
-        let bytes: &[u8] = if len == 0 {
+        let bytes: &[u8] = if data.is_null() {
             &[]
         } else {
             // SAFETY: the caller guarantees that `data` is valid for reads of `len` bytes,
-            // which nothing writes during the call; `u8` and `c_char` have one size and
-            // alignment.
+            // which nothing writes during the call, and it is not NULL, so it is valid for a
+            // run of 0 bytes too; `u8` and `c_char` have one size and alignment.
             unsafe { slice::from_raw_parts(data.cast::<u8>(), len) }
         };
         // SAFETY: the caller guarantees `parser_mut`'s contract.
@@ -1737,7 +1741,8 @@ mod ffi_export {
         use ffibox::{CMutSeam, CRefSeam, CZeroable};
 
         use super::{
-            llhttp__on_body, llhttp__on_message_begin, llhttp__on_url, llhttp_finish, llhttp_init,
+            llhttp__on_body, llhttp__on_message_begin, llhttp__on_url, llhttp_execute,
+            llhttp_finish, llhttp_get_error_pos, llhttp_init,
         };
         use crate::libgit2::deps::llhttp::api::Settings;
         use crate::libgit2::deps::llhttp::llhttp::{
@@ -1841,6 +1846,89 @@ mod ffi_export {
             );
         }
 
+        /// Records its run, or `event` for an event, and returns `0`.
+        struct Recording;
+
+        impl DataHandler for Recording {
+            fn on_data(_: ParserMut<'_>, data: &[u8]) -> c_int {
+                LOG.with_borrow_mut(|log| log.push(data.to_vec()));
+                0
+            }
+        }
+
+        impl EventHandler for Recording {
+            fn on_event(_: ParserMut<'_>) -> c_int {
+                LOG.with_borrow_mut(|log| log.push(b"event".to_vec()));
+                0
+            }
+        }
+
+        /// Each of the 23 exports, which `llhttp.c` calls by name, calls its own slot: with a
+        /// table that holds that slot alone, it calls it, and with one that holds every other,
+        /// none. Carries over what `equiv`'s `the_dispatchers_call_the_parsers_table_as_api_cs_do`
+        /// established of the exports, which retires with api.c's C.
+        #[test]
+        fn each_dispatcher_export_calls_its_own_slot() {
+            macro_rules! each_export {
+                (
+                    spans {
+                        $(
+                            $(#[$span_anchor:meta])*
+                            $span_export:ident, $span:ident, $span_slot:ident: $span_what:literal;
+                        )*
+                    }
+                    events {
+                        $(
+                            $(#[$event_anchor:meta])*
+                            $event_export:ident, $event:ident, $event_slot:ident: $event_what:literal;
+                        )*
+                    }
+                ) => {
+                    let mut all = sys::llhttp_settings_s::default();
+                    $(all.$span = DataCallback::new::<Recording>().raw();)*
+                    $(all.$event = Callback::new::<Recording>().raw();)*
+                    $(
+                        let run = stringify!($span).as_bytes();
+                        let mut only = sys::llhttp_settings_s::default();
+                        only.$span = all.$span;
+                        let mut others = all;
+                        others.$span = None;
+                        for (table, called) in [(&only, vec![run.to_vec()]), (&others, Vec::new())] {
+                            let mut parser = Parser::zeroed();
+                            // SAFETY: `table` outlives the parser, and its slots are Rust handlers,
+                            // sound with any parser whatever its `data`.
+                            unsafe { parser.as_mut().set_settings_ptr(table) };
+                            let range = run.as_ptr_range();
+                            // SAFETY: the parser is live and exclusively ours; the run is `run`.
+                            let ret = unsafe {
+                                super::$span_export(parser.as_mut().as_mut_ptr(), range.start, range.end)
+                            };
+                            assert_eq!((ret, LOG.take()), (0, called), stringify!($span_export));
+                        }
+                    )*
+                    $(
+                        let mut only = sys::llhttp_settings_s::default();
+                        only.$event = all.$event;
+                        let mut others = all;
+                        others.$event = None;
+                        for (table, called) in [(&only, vec![b"event".to_vec()]), (&others, Vec::new())] {
+                            let mut parser = Parser::zeroed();
+                            // SAFETY: as above.
+                            unsafe { parser.as_mut().set_settings_ptr(table) };
+                            let null = core::ptr::null();
+                            // SAFETY: the parser is live and exclusively ours; `p` and `endp` are
+                            // not read.
+                            let ret = unsafe {
+                                super::$event_export(parser.as_mut().as_mut_ptr(), null, null)
+                            };
+                            assert_eq!((ret, LOG.take()), (0, called), stringify!($event_export));
+                        }
+                    )*
+                };
+            }
+            with_dispatchers!(each_export);
+        }
+
         #[test]
         fn an_event_export_reads_neither_p_nor_endp() {
             let mut parser = parser();
@@ -1884,6 +1972,57 @@ mod ffi_export {
             unsafe { llhttp_init(&raw mut parser, 0x0103, core::ptr::null()) };
             assert_eq!(parser.type_, 3);
             assert!(parser.settings.is_null());
+        }
+
+        /// Refuses an empty run with `7`, and takes every other.
+        struct RefusingEmpty;
+
+        impl DataHandler for RefusingEmpty {
+            fn on_data(_: ParserMut<'_>, data: &[u8]) -> c_int {
+                if data.is_empty() { 7 } else { 0 }
+            }
+        }
+
+        static REFUSING_EMPTY: LazyLock<Settings> = LazyLock::new(|| {
+            let mut settings = Settings::new();
+            settings
+                .as_mut()
+                .set_on_header_field(Some(DataCallback::new::<RefusingEmpty>()));
+            settings
+        });
+
+        /// The regression test of
+        /// `equiv/execute-export-moves-an-empty-runs-error-pos` (`wave-194/batch-7`).
+        #[test]
+        #[cfg_attr(miri, ignore = "calls C")]
+        fn llhttp_execute_keeps_an_empty_runs_error_pos_at_data() {
+            let mut parser = Parser::new();
+            parser.as_mut().init(
+                crate::libgit2::deps::llhttp::llhttp::ParserType::Response,
+                Some(REFUSING_EMPTY.as_ref()),
+            );
+            let raw = parser.as_mut().as_mut_ptr();
+            let head = b"HTTP/1.1 200 OK\r\nConten";
+            // SAFETY: the parser is live and exclusively ours, its table `'static`; `head` is
+            // live for the call. The run leaves the header's name open.
+            let ret = unsafe { llhttp_execute(raw, head.as_ptr().cast(), head.len()) };
+            assert_eq!(ret, sys::HPE_OK);
+            let tail = *b"t-Length: 0\r\n\r\n";
+            let data = tail.as_ptr().cast();
+            // SAFETY: as above, over a run of 0 bytes at `data`, where the open name ends,
+            // which its callback refuses.
+            let ret = unsafe { llhttp_execute(raw, data, 0) };
+            assert_eq!(ret, 7);
+            // SAFETY: the parser is live; the getter reads its `error_pos`.
+            assert_eq!(unsafe { llhttp_get_error_pos(raw) }, data);
+            // A NULL run of 0 bytes is read as empty, its callback refusing it too.
+            parser.as_mut().reset();
+            let raw = parser.as_mut().as_mut_ptr();
+            // SAFETY: as above.
+            let ret = unsafe { llhttp_execute(raw, head.as_ptr().cast(), head.len()) };
+            assert_eq!(ret, sys::HPE_OK);
+            // SAFETY: as above; a NULL `data` with `len` 0 is read as an empty run.
+            assert_eq!(unsafe { llhttp_execute(raw, core::ptr::null(), 0) }, 7);
         }
 
         #[test]

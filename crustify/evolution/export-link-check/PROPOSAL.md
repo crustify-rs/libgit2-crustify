@@ -52,6 +52,18 @@ tests that remain are the first to call it.
   ASan+UBSan the same but for the known nightly `compile_fail` snapshots and `CommitBuilder`
   doctest), `nm` showing the exports defined and api.c's other symbols absent.
 
+- `wave-194/batch-7/run-1`, api.c's module pass, found that leaving `equiv` out of the check
+  is itself a gap. `equiv` is one binary for every module, and `llhttp.c`'s equivalence
+  tests (`tests/equiv/deps/llhttp/llhttp.rs`), which stay, also called 10 of api.c's
+  unexported functions, so retiring api.c's own equivalence file at the switch would still
+  have left `equiv` unlinked
+  (`misc/llhttp-equiv-tests-call-api-c-functions-without-exports`). `rust-lld` lists only
+  20 undefined symbols by default, so the full list needs its `--error-limit=0`. The
+  pass moved those tests into api.c's file, then ran the check over a scratch tree with that
+  file retired, as the switch will: `equiv` linked, 532 passing on `plain`, ASan+UBSan and
+  TSan. So the check must link `equiv` too, with only the module's own equivalence files
+  retired, and fail on any undefined symbol it references from another module's file.
+
 ## Destination
 
 The spec: `testing-gates`' Regressions section, the export checks of a `port` batch, with a

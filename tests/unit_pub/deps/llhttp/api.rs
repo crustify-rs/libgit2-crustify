@@ -13,6 +13,11 @@
 //! errors; and the 23 dispatchers, each against the slot it calls, what it returns, and the
 //! span dispatchers' `HPE_USER` and reason.
 //!
+//! What api.c's equivalence tests established of its getters, ported onto `llhttp.rs`'s
+//! accessors, is kept here past api.c's switch, which retires them with its C: what a parse
+//! leaves the getters reading, a request's method and upgrade, where an error is in the
+//! slices it is located in, a callback's own error, and what the setters decide.
+//!
 //! The parses call C, and are ignored under Miri; the tests on a zeroed parser and on tables
 //! [`Settings::new`] builds, which calls none since `llhttp_settings_init`'s port, run there.
 
@@ -25,8 +30,8 @@ use libgit2_crustify::libgit2::deps::llhttp::api::{
     FinishError, HttpParserSettings, Settings, SettingsMut, SettingsRef, SettingsT,
 };
 use libgit2_crustify::libgit2::deps::llhttp::llhttp::{
-    Callback, DataCallback, DataHandler, Errno, EventHandler, Parsed, Parser, ParserMut, ParserRef,
-    ParserType,
+    Callback, DataCallback, DataHandler, Errno, EventHandler, Method, Parsed, Parser, ParserMut,
+    ParserRef, ParserType, Status,
 };
 use libgit2_crustify::sys::libgit2 as sys;
 
@@ -1175,4 +1180,172 @@ fn a_dispatcher_hands_back_any_other_value_unchanged() {
         assert_eq!(dispatch_all(&mut parser.as_mut()), [value; 23]);
         assert_eq!(parser.as_ref().reason(), None);
     }
+}
+
+// --- The getters, past api.c's switch -----------------------------------------------------
+
+/// Carries over `equiv`'s `a_response_read_in_pieces_reads_alike` and
+/// `a_status_code_llhttp_status_does_not_name_reads_alike`.
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn the_getters_read_what_a_response_read_in_pieces_leaves() {
+    let mut parser = Parser::new();
+    parser.as_mut().init(ParserType::Response, None);
+    let pieces: [&[u8]; 5] = [
+        b"HTTP/1.",
+        b"1 404 Not Fou",
+        b"nd\r\nContent-Length: 5\r\n",
+        b"\r\nab",
+        b"cde",
+    ];
+    for piece in pieces {
+        assert_eq!(parser.as_mut().execute(piece), Ok(Parsed::All));
+        assert_eq!(parser.as_ref().error(), Ok(Errno::Ok));
+    }
+    let p = parser.as_ref();
+    assert_eq!(p.parser_type(), Ok(ParserType::Response));
+    assert_eq!(
+        Status::from_raw(u32::from(p.status_code())),
+        Some(Status::NotFound)
+    );
+    assert_eq!((p.http_major(), p.http_minor()), (1, 1));
+    assert!(!p.upgrade());
+    assert_eq!(p.reason(), None);
+    assert_eq!(p.error_offset(b"cde"), None);
+    // A response sets no method: it stays as `llhttp__internal_init` left it.
+    assert_eq!(p.method(), Ok(Method::Delete));
+
+    // A code `llhttp_status` does not name is read as the parser stored it.
+    parser.as_mut().init(ParserType::Response, None);
+    assert_eq!(
+        parser.as_mut().execute(b"HTTP/1.0 209 Odd\r\n\r\n"),
+        Ok(Parsed::All)
+    );
+    assert_eq!(parser.as_ref().status_code(), 209);
+    assert_eq!(Status::from_raw(209), None);
+    assert_eq!(
+        (parser.as_ref().http_major(), parser.as_ref().http_minor()),
+        (1, 0)
+    );
+}
+
+/// Carries over `equiv`'s `requests_read_their_method_and_upgrade_alike`.
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn the_getters_read_a_requests_method_and_upgrade() {
+    let mut parser = Parser::new();
+    parser.as_mut().init(ParserType::Request, None);
+    assert_eq!(
+        parser
+            .as_mut()
+            .execute(b"POST /x HTTP/1.1\r\nHost: a\r\n\r\n"),
+        Ok(Parsed::All)
+    );
+    assert_eq!(parser.as_ref().method(), Ok(Method::Post));
+    assert!(!parser.as_ref().upgrade());
+
+    // A `CONNECT` request upgrades the connection, and a parser of both kinds takes the type of
+    // the first message it reads.
+    parser.as_mut().init(ParserType::Both, None);
+    assert_eq!(
+        parser
+            .as_mut()
+            .execute(b"CONNECT a:443 HTTP/1.1\r\nHost: a\r\n\r\n"),
+        Ok(Parsed::PausedUpgrade)
+    );
+    let p = parser.as_ref();
+    assert_eq!(p.method(), Ok(Method::Connect));
+    assert!(p.upgrade());
+    assert_eq!(p.error(), Ok(Errno::PausedUpgrade));
+    assert_eq!(p.parser_type(), Ok(ParserType::Request));
+
+    parser.as_mut().init(ParserType::Request, None);
+    assert_eq!(
+        parser.as_mut().execute(b"M-SEARCH * HTTP/1.1\r\n\r\n"),
+        Ok(Parsed::All)
+    );
+    assert_eq!(parser.as_ref().method(), Ok(Method::MSearch));
+}
+
+/// Carries over `equiv`'s `an_invalid_message_reports_its_error_alike_and_keeps_it`.
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn an_error_is_located_in_the_slices_it_is_counted_from() {
+    let input: &[u8] = b"HTTP/1.1 200 OK\r\nBad Header: x\r\n\r\n";
+    let mut parser = Parser::new();
+    parser.as_mut().init(ParserType::Response, None);
+    let error = parser.as_mut().execute(input).unwrap_err();
+    assert_eq!(error.errno(), Ok(Errno::InvalidHeaderToken));
+    // The next run keeps the error without reading, and the position still points into the
+    // first input, where the space of the header's name is.
+    assert_eq!(parser.as_mut().execute(b"more"), Err(error));
+    let p = parser.as_ref();
+    assert_eq!(p.error(), Ok(Errno::InvalidHeaderToken));
+    assert!(p.reason().is_some());
+    assert_eq!(p.error_offset(input), Some(20));
+    assert_eq!(p.error_offset(b"more"), None);
+    // Offsets are counted from the slice given: the position may be its end, but neither
+    // before its start nor past its end.
+    assert_eq!(p.error_offset(&input[3..]), Some(17));
+    assert_eq!(p.error_offset(&input[..20]), Some(20));
+    assert_eq!(p.error_offset(&input[..19]), None);
+    assert_eq!(p.error_offset(&input[21..]), None);
+}
+
+/// A header-name callback that fails with its own value, `1000`.
+struct Failing;
+
+impl DataHandler for Failing {
+    fn on_data(_: ParserMut<'_>, _: &[u8]) -> c_int {
+        1000
+    }
+}
+
+/// Carries over `equiv`'s `a_callbacks_own_error_reads_as_unnamed_alike`.
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn a_callbacks_own_error_is_kept_and_read_as_unnamed() {
+    static FAILING: LazyLock<Settings> = LazyLock::new(|| {
+        let mut settings = Settings::new();
+        settings
+            .as_mut()
+            .set_on_header_field(Some(DataCallback::new::<Failing>()));
+        settings
+    });
+    let input: &[u8] = b"HTTP/1.1 200 OK\r\nX: y\r\n\r\n";
+    let mut parser = Parser::new();
+    parser
+        .as_mut()
+        .init(ParserType::Response, Some(FAILING.as_ref()));
+    let error = parser.as_mut().execute(input).unwrap_err();
+    assert_eq!(error.code(), 1000);
+    assert_eq!(error.errno().unwrap_err().raw(), 1000);
+    assert_eq!(
+        error.to_string(),
+        "llhttp stopped at a callback's error 1000"
+    );
+    let p = parser.as_ref();
+    assert_eq!(p.error_raw(), 1000);
+    assert_eq!(p.error().unwrap_err().raw(), 1000);
+    // The field's span ends at its colon; llhttp reports the byte after it.
+    assert_eq!(p.error_offset(input), Some(19));
+    assert_eq!(parser.as_mut().execute(input), Err(error));
+}
+
+/// Carries over `equiv`'s `the_setters_write_what_api_c_reads`.
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn the_type_and_upgrade_set_are_what_the_getters_read() {
+    let mut parser = Parser::new();
+    parser.as_mut().init(ParserType::Request, None);
+    parser.as_mut().set_parser_type(ParserType::Response);
+    parser.as_mut().set_upgrade(true);
+    assert_eq!(parser.as_ref().parser_type_raw(), 2);
+    assert!(parser.as_ref().upgrade());
+    // The type set decides what the parser reads next.
+    assert_eq!(
+        parser.as_mut().execute(b"HTTP/1.1 100 Continue\r\n\r\n"),
+        Ok(Parsed::All)
+    );
+    assert_eq!(parser.as_ref().status_code(), 100);
 }
