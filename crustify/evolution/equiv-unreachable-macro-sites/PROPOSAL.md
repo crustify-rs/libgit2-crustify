@@ -1,6 +1,6 @@
 # A macro whose expansions no binding reaches is checked against its body
 
-Status: `open`: the change is crustify `73b731e` on `libgit2-crustify/evolution/equiv-unreachable-macro-sites`, made on
+Status: `open`: the change is crustify `e99130a` on `libgit2-crustify/evolution/equiv-unreachable-macro-sites`, made on
 2026-11-14 after the triage of open proposals, awaiting its review.
 
 Goal: Equivalence: its tests compare the Rust with the C.
@@ -58,7 +58,7 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| a macro is compared where it expands; one whose expansion sites no raw binding reaches has no equivalence test, is checked by unit tests against its replacement list, and is reported as unreached until its sites' module is ported | `libgit2-crustify`, `equiv-unreachable-macro-sites` | crustify `73b731e` | four runs settled by hand what stands in for a macro's equivalence tests when the bindings reach none of its expansion sites | a task message, report or plan correction that settles again what stands in for a macro's equivalence tests | watched |
+| a macro that implements logic is compared where it expands; one whose expansions no function the raw bindings reach runs has no equivalence test, is checked by unit tests against its replacement list, and is reported as unreached until its sites' module is ported | `libgit2-crustify`, `equiv-unreachable-macro-sites` | crustify `e99130a` | two runs settled by hand what stands in for a macro's equivalence tests when the bindings reach none of its expansion sites | a task message, report, commit message, dashboard note or plan correction that settles again what stands in for a macro's equivalence tests | watched |
 
 ## Validation
 
@@ -70,3 +70,13 @@ first half and keeps its `equiv` tests. No run was repeated, since neither batch
 ## Review
 
 None yet.
+
+## Review of the change
+
+`review-1` (Opus 5.5, `$1.44`), on `73b731e`: **rejected**, three fixes, made as `e99130a`. "Reach" had two
+senses, and in the preceding sentence's sense the text exempted any macro whose expansions sit
+in internal functions, though bound callers run them: it now says no function the raw
+bindings reach runs any expansion, directly or through what it calls. `unit_pub` clashed with
+where tests of private items go, and is "unit tests". "A macro" covered constant macros, and
+is "a macro that implements logic". The rule now carries its reason. With the first fix it
+weakens no check: it puts the comparison off to the port of the module that holds the sites.
