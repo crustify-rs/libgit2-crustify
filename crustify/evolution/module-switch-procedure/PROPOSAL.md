@@ -1,6 +1,8 @@
 # A module's switch: variant generations, the C's Rust library, and the C test gate
 
-Status: `open`.
+Status: `superseded`, on 2026-11-14, by the nine proposals its seventeen items were split into, and
+three lessons, as `MAP.md` beside this file lists them: `c-link-unused-rust`, `equiv-tests-without-c`, `reproducers-of-deleted-feature`, `rust-library-per-variant`, `switch-archive-check`, `switch-c-tests-baseline`, `switch-gate-beyond-c-tests`, `switch-step-order`, `variant-generations`.
+The text below is kept as filed.
 
 ## Signal
 

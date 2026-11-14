@@ -14,6 +14,7 @@ the assistant alone, as each batch's proposals land.
 | `bsan-sized-tests` | A test BSan cannot finish is sized for it, not skipped | `landed` | `wave-225/batch-1` | — |
 | `build-scripts-watch-missing-inputs` | Build scripts watch inputs that do not exist, so every cargo run rebuilds the crate | `open` | `wave-232/batch-1` | — |
 | `bundled-pcre2-shadows-the-side-campaign` | pcre2-sys's vendored PCRE2 shadows the side campaign's for libgit2's C | `landed` | — | — |
+| `c-link-unused-rust` | The C library's link keeps Rust that the C never calls | `open` | `module-switch-procedure`'s switches | — |
 | `callback-context-in-an-argument` | A callback whose context is reached through an argument has no sound C form | `landed` | `wave-194/batch-1`, `wave-194/batch-2` | — |
 | `callback-reenters-its-caller` | A callback can re-enter the function that calls it, through the object it is handed | `landed` | `wave-194/batch-1` | — |
 | `carried-over-test-cases` | The test cases a `port/unexport` carries over, in the schedule | `landed` | — | — |
@@ -34,6 +35,7 @@ the assistant alone, as each batch's proposals land.
 | `end-gates-skip-names` | `end-gates` cannot skip a test whose name is a prefix of another's, and checks a variant stage's skip against one binary | `landed` | `gates-slow-list`'s review-1 | — |
 | `enum-integer-form-crate-private` | A closed enum's integer-form conversions are crate-private | `landed` | `wave-186/batch-0` | — |
 | `equiv-c-side-meets-the-c-preconditions` | The C side of an equivalence test meets the C's preconditions | `landed` | `wave-169/batch-5` | — |
+| `equiv-tests-without-c` | An equivalence test that calls no C is carried over at the switch | `open` | `module-switch-procedure`'s switches | — |
 | `equiv-unreachable-macro-sites` | A macro whose expansions no binding reaches is checked against its body | `landed` | `wave-200/batch-0`, `wave-200/batch-1`, `wave-225/batch-0`, `wave-225/batch-1` | — |
 | `evolution-protocol-research` | The evolution protocol against existing practice | `deferred` | — | — |
 | `evolution-record-and-lessons` | The record holds every signal; lessons are reviewed entries; protected paths | `landed` | — | its own row |
@@ -72,7 +74,7 @@ the assistant alone, as each batch's proposals land.
 | `macro-incidental-double-evaluation` | A macro that evaluates an operand twice only as a hazard is a function | `landed` | `wave-200/batch-0`, `wave-200/batch-1` | — |
 | `merge-left-conflict-markers` | A merge into a wave branch is checked before it is committed | `landed` | `wave-169/batch-2` | — |
 | `module-end-gate-runner` | A script for the wave's and the module's end gates | `landed` | `wave-176/batch-3`, `wave-177/batch-1` | — |
-| `module-switch-procedure` | A module's switch: variant generations, the C's Rust library, and the C test gate | `open` | `wave-186/batch-7`, `wave-194/batch-7` | — |
+| `module-switch-procedure` | A module's switch: variant generations, the C's Rust library, and the C test gate | `superseded` | `wave-186/batch-7`, `wave-194/batch-7` | — |
 | `obligation-spans-what-the-holder-keeps` | An `unsafe` setter's obligation lasts as long as its object holds what it stored | `landed` | `wave-194/batch-5`, `wave-194/batch-6` | — |
 | `package-gate-procedure` | The packaging gate's procedure, for a crate whose dependencies are unpublished | `open` | `wave-229/batch-0` | — |
 | `packaging-gate-procedure` | The packaging gate's command is worked out by hand | `superseded` | `wave-186/batch-0` | — |
@@ -81,19 +83,26 @@ the assistant alone, as each batch's proposals land.
 | `rebase-with-unchanged-diff` | A rebased commit whose diff is unchanged is sent back to review | `landed` | — | — |
 | `reftable-error-wrapped-ahead-of-basics` | Wrap `enum reftable_error` ahead of its first consumer, `deps/reftable/basics.c` | `landed` | `wave-169/batch-2`, `wave-169/batch-4` | — |
 | `reproducer-repeats-the-workspace-patches` | A reproducer package repeats the affected workspace's `[patch]` tables | `open` | `wave-4/batch-1`, `wave-186/batch-6` | — |
+| `reproducers-of-deleted-feature` | Nothing says what a switch does with a review reproducer that names its deleted export feature | `open` | `module-switch-procedure`'s switches | — |
 | `review-reports-refused-by-the-host` | Review reports the host refuses to let a reviewer write | `landed` | `wave-0/batch-0`, `wave-176/batch-2`, `wave-176/batch-3` | — |
 | `reviewed-evolution` | Every change is reviewed, recorded and watched | `landed` | — | — |
+| `rust-library-per-variant` | Campaign mode builds the Rust library the remaining C links, once per variant | `open` | `module-switch-procedure`'s switches | — |
 | `scratch-shared-between-agents` | Scratch a host shares between concurrent agents | `landed` | `wave-12/batch-2`, `wave-169/batch-1`, `wave-169/batch-2`, `wave-176/batch-1` | — |
 | `soundness-patterns` | The UB patterns the campaigns met recur across modules, and no skill lists them | `landed` | — | — |
 | `spec-consistency-2026-11-12` | Consistency fixes to the spec, made in another workspace | `landed` | — | — |
 | `spec-language` | The spec's language; the goals rewritten under it | `landed` | — | its own row |
 | `stage-points-count-staying-tests` | The C tests that stay, in a `port/unexport`'s release point | `landed` | — | — |
 | `std-macro-expansions-outside-regions` | The standard library's own macro expansions count as unsafe code outside the regions | `open` | `wave-194/batch-0`, `wave-194/batch-1`, `wave-194/batch-3` | — |
+| `switch-archive-check` | A switch checks its static archive by the removed unit's symbols, not by member names | `open` | `module-switch-procedure`'s switches | — |
+| `switch-c-tests-baseline` | A switch's C tests run per variant by a tracked script and are compared with the baseline | `open` | `module-switch-procedure`'s switches | — |
+| `switch-gate-beyond-c-tests` | A switch whose exports no baseline C test reaches is gated by the C's own programs, old build beside new | `open` | `module-switch-procedure`'s switches | — |
+| `switch-step-order` | A switch's Rust side lands before its builds, and removes every mention of the export feature | `open` | `module-switch-procedure`'s switches | — |
 | `symbol-alias-anchors` | Where a symbol alias's anchor goes | `landed` | `wave-177/batch-0` | — |
 | `sys-bindings-layout` | The raw bindings sit under `sys/<link-unit>/`, as the public `sys` module | `landed` | — | — |
 | `test-only-exports-and-the-harness` | Exports only the C tests reach, and the test harness's own references | `landed` | — | — |
 | `type-erased-field-tagged-by-a-sibling` | A type-erased field whose type a sibling tag selects is one tagged enum with its tag | `landed` | `wave-186/batch-2` | — |
 | `unexported-lifecycle-primitives` | Lifecycle primitives the library does not export | `declined` | `wave-3/batch-0`, `wave-176/batch-0` | — |
+| `variant-generations` | The build variants are built in generations, not rebuilt in place | `open` | `module-switch-procedure`'s switches | — |
 | `wavefront-enum-constant-uses` | wavefront records no use of an enum constant | `landed` | `wave-186/batch-1` | — |
 | `wavefront-test-tables` | wavefront's suite runs without CodeQL by default | `landed` | — | — |
 | `wavefront-two-prototypes-one-signature` | wavefront composes a function's definition and a differently typed prototype into one signature | `open` | `wave-194/batch-6` | — |

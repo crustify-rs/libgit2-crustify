@@ -160,3 +160,89 @@ and are outside the rule: `wave-176/batch-1` compares them so in the test proces
   reordering).
 - **Scope.** Every module of the `git2` link unit, at its module pass and its switch, until the
   CLI has tests of its own.
+
+## cmake-property-naming-a-removed-source
+
+Status: provisional
+
+**Rule.** When a module's switch removes a C file that a `CMakeLists.txt` names only in a
+source-file property, the `CMakeLists.txt` is left unchanged. CMake ignores a property of a
+source no target lists. This extends the lesson "A libgit2 module's switch removes its file
+from `c/` and changes no CMake file": the switch still edits no CMake file. The dangling
+name stays until the last file the property names goes.
+
+**Evidence.** Item 13 of `module-switch-procedure`. `deps/llhttp/CMakeLists.txt` globs its
+sources, as the lesson has it, and also sets
+`set_source_files_properties(api.c http.c llhttp.c PROPERTIES COMPILE_FLAGS …)`. At
+`deps/llhttp/api.c`'s switch (`modules/libgit2/deps/llhttp/api.c/integration/run-1`) the
+file was left unchanged, and gen3's five `configure`s and builds passed with it. At
+`deps/llhttp/http.c`'s switch (`modules/libgit2/deps/llhttp/http.c/integration/run-1`) the
+property names `api.c` and `http.c`, both gone, and `llhttp.c`; the file is unchanged, and
+gen5's five `configure`s and builds passed with it.
+
+Scope: the switches of `deps/llhttp/*.c`, and any later module whose `CMakeLists.txt` names its file in `set_source_files_properties`.
+
+## http-exports-gated-through-a-local-remote
+
+Status: provisional
+
+**Rule.** No offline C test drives libgit2's HTTP client: `httpparser.c`, `httpclient.c` and
+`llhttp.c`'s generated parser call llhttp's exports only in a fetch, clone or push over
+HTTP, whose suites (`online::*`) the baseline disables, since they need the network. The
+switch of a module whose exports only the HTTP client reaches therefore runs
+`crustify/scripts/http-gate.sh` on the previous generation and on the new one, on plain,
+ASan+UBSan and TSan, and compares the two `results.txt` with `diff`. On the new generation's
+coverage variant, the run also records which of the module's exports the gate calls.
+`http-gate.sh` starts two remotes from `crustify/scripts/http-remote.py`, one open and one
+asking for Basic credentials. It runs a variant's `git2 clone` of two repositories through
+each framing, three clones that fail, and `libgit2_tests -sonline::push
+-sonline::clone::credentials` with `GITTEST_REMOTE_URL` at the guarded remote.
+
+**Evidence.** Item 11 of `module-switch-procedure`, met at `deps/llhttp/api.c`'s switch
+(`modules/libgit2/deps/llhttp/api.c/integration/run-1`, the fork's `c54c0c180`). That no
+offline C test drives the client is the module pass's finding; the 31 exports are api.c's.
+libgit2's own CI runs part of the online suites offline, against servers on localhost named
+by `GITTEST_REMOTE_URL` (`ci/test.sh`'s `auth_clone_and_push`, `-sonline::clone::push
+-sonline::push`). The run added `http-remote.py`, `git http-backend` behind a persistent
+HTTP/1.1 front that frames each response by its path (`Content-Length`, chunked in 1, 7,
+4096 and 65536-byte chunks, chunked with chunk extensions, or close-delimited), with an
+optional Basic challenge, and `http-gate.sh`, whose `results.txt` is free of times, ports
+and paths. Gen2's C and gen3's Rust give the same `results.txt` on plain, ASan+UBSan and
+TSan, and on gen3's coverage variant the run calls 24 of the 31 exports. A mutant of an
+export was not built, so whether the comparison catches a departure rests on the coverage
+alone. At `deps/llhttp/http.c`'s switch
+(`modules/libgit2/deps/llhttp/http.c/integration/run-1`), `http-gate.sh` over gen4's C and
+gen5's Rust, on plain, ASan+UBSan and TSan, gives the same `results.txt`, and on gen5's
+coverage variant the run calls all four exports. The rule without libgit2's names is the
+proposal `switch-gate-beyond-c-tests`.
+
+Scope: the switch of every module whose exports libgit2 calls only through its HTTP client: `deps/llhttp/*.c`, `src/libgit2/transports/httpparser.c` and `httpclient.c`.
+
+## http-gate-tallies-connections
+
+Status: provisional
+
+**Rule.** `http-gate.sh`'s comparison includes the connections the client opened to each
+remote, by framing (`connections <side> <framing> count=<n>`), beside the requests each
+remote answered. The request lines, by method, framing and status, do not change when the
+client stops reusing its connections, so they alone do not check
+`llhttp_should_keep_alive`. A switch whose exports change what the gate's lines cannot show
+adds a line that shows it, after the existing lines, which stay unchanged.
+
+**Evidence.** Item 16 of `module-switch-procedure`, met at `deps/llhttp/http.c`'s switch
+(`modules/libgit2/deps/llhttp/http.c/integration/run-1`, the fork's `230c9dbdb`).
+`http-gate.sh`'s `results.txt` tallied the requests each remote answered by method, framing
+and status: `llhttp_should_keep_alive`, the export of this switch that libgit2's client
+calls, could have returned `0` always, and every line would have matched. The run made
+`http-remote.py` log each request's place on its connection (`conn=<n>`) and `http-gate.sh`
+tally the connections the client opened to each remote by framing, lines added after the
+request lines, which are unchanged. Four runs over gen4 (plain twice, ASan+UBSan, TSan) gave
+the same connection tally, 9 connections to the open remote for its 15 requests and 73 to
+the guarded one for its 610, and the same request lines as api.c's record; gen5's equal
+them. A mutant of `llhttp_should_keep_alive` was not built, so that the tally catches one
+rests on the client reading the export once per response (`httpclient.c`'s
+`on_headers_complete`). The change is in `http-remote.py`'s log and `http-gate.sh`'s
+`results.txt`, in the campaign only, validated by the four identical runs over gen4 and
+gen5's equal ones.
+
+Scope: every run of `crustify/scripts/http-gate.sh`, and every change to it or to `crustify/scripts/http-remote.py`.
