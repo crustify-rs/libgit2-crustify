@@ -1,9 +1,10 @@
 # The record holds every signal; lessons are reviewed entries; protected paths
 
 Status: `open`: the change is made on Crustify's
-`libgit2-crustify/evolution/evolution-record-and-lessons` (`74f960c`), at the user's direction on
-2026-11-14, and awaits its review. It touches protected paths (the `evolution` and
-`reviewing` skills), so it lands only with the user's approval.
+`libgit2-crustify/evolution/evolution-record-and-lessons` (`74f960c`, then `d3eace2` with
+review-1's fixes), at the user's direction on 2026-11-14; review-1 rejected the first commit
+and review-2 reads the second. It touches protected paths, so it lands only with the user's
+approval.
 
 ## Signal
 
@@ -21,26 +22,37 @@ what was redone, which a fix reviewed before the next wave reduces.
 
 ## Evidence
 
-- The pilot of 2026-11-13 and 14 (40 runs): 50 proposals filed, 48 left open; three signals
-  filed two or three times (`packaging-gate-procedure` and `package-gate-procedure`;
-  `doc-alias-equal-to-the-name` here and `doc-alias-equal-to-name` in glibc-crustify;
-  `reproducer-repeats-the-workspace-patches` here and
-  `reproducer-carries-the-workspace-patches` there); eight finished spec changes waited for
-  a review while later batches worked around what they fixed (three batches renamed items
-  around the alias rule; three packaged by hand).
-- The record's 49 rows were all `watched` at the pilot's end; no module's end read them, and
-  at least three had recurred (`wavefront-enum-constant-uses`, the coverage scripts,
-  `ffibox-canonical-path` in the side campaign).
-- Lessons: this campaign's `LESSONS.md` holds 8 and glibc-crustify's 4, each written by a
-  run in its landing commit and read by every later run; four successive runs rewrote the
-  side campaign's gates lesson, and no review batch was asked to read any of them.
-- The goals' soundness measure (`goal-fitness-functions`) marks the tier that caught a
-  defect as not taken yet: the pilot's one soundness escape, `opt.c`'s dead borrow, was
-  identified by hand from two runs' reports.
+Counted on 2026-11-14 by a script over both repositories (each `PROPOSAL.md`'s `Status:`
+line, and the date of the commit that added it, `git log --diff-filter=A`), and over the
+last cell of each row of Crustify's `EVOLUTION.md`:
+
+- Proposals filed since 2026-11-13 12:00 UTC, the pilot and the day after it: 42 in this
+  repository (40 `open`, 2 `landed`) and 12 in glibc-crustify (11 `open`, 1 `landed`).
+  This repository holds 84 in all: 42 `landed`, 40 `open`, 2 `declined`.
+- Three signals were filed two or three times: `packaging-gate-procedure` and
+  `package-gate-procedure` here; `doc-alias-equal-to-the-name` here and
+  `doc-alias-equal-to-name` in glibc-crustify; `reproducer-repeats-the-workspace-patches`
+  here and `reproducer-carries-the-workspace-patches` there.
+- Eight evolution branches of Crustify hold finished changes no review has read
+  (`git -C /crustify-rs/crustify branch --list 'libgit2-crustify/evolution/*'`, less this
+  change's and `spec-language`'s). Meanwhile three batches renamed items around the alias
+  rule and three packaged by hand, by their reports; review-1 did not check those two counts.
+- The record holds 50 rows: 47 `watched`, and 3 with no status (`test` or `none`). No
+  module's end read them during the pilot. The assistant took three for recurred
+  (`wavefront-enum-constant-uses`, the coverage scripts, `ffibox-canonical-path`); review-1
+  could not confirm any of the three from the artifacts, and they are not claimed here.
+- Lessons: this campaign's `LESSONS.md` holds 8 and glibc-crustify's 4. Each was written by
+  a run in its landing commit. Review batches read the file, and four of glibc-crustify's
+  eight lesson edits were made by review batches (`6e892ea`, `238650a`, `a5448ee`,
+  `2fe3ab2`); what no run was asked for is a review of each lesson against its evidence and
+  its scope.
+- The goals' soundness measure marks the tier that caught a defect as not taken yet: the
+  pilot's one soundness escape, `opt.c`'s dead borrow, was identified by hand from two runs'
+  reports.
 - `crustify/evolution/evolution-protocol-research/RESEARCH.md`: the survey behind
   recommendations 1, 2, 4, 5 and 6, with its sources. Its recommendation 3, a
-  machine-checkable key per row, is not taken: the user and the assistant judged it too
-  strict, a key catching only an exact repeat; the match is made when a signal is indexed.
+  machine-checkable key per row, is not taken: a key catches only an exact repeat, and the
+  match is made when a signal is indexed.
 
 ## Destination
 
@@ -50,41 +62,68 @@ The spec: `evolution` (Proposals, Lessons, Review, Autonomy, Adoption, Record),
 
 ## Change
 
-Crustify `74f960c`:
+Crustify `74f960c` and `d3eace2`:
 
-- **The record** takes a row when a proposal is first filed, with the runs that met its
-  signal; its statuses are the proposal's (`open`, `deferred`, `declined`, `superseded`)
-  until the change lands, then `watched`, `recurred` or `confirmed`. It has one writer per
-  campaign. A new signal is matched against the rows when it is indexed: a repeat adds an
-  occurrence, and a match to a landed row marks it `recurred`. The rows still `watched` are
-  read at each ship point.
-- **A proposal** names the goal it serves and the measure it expects to move, as the user
-  asked, and is filed once: a run that meets a recorded signal adds its evidence to that
-  proposal.
-- **A lesson** is an entry with an id, a status (`provisional`, `held`, `retired`) and a
-  scope line. A review batch of its wave reads it; an edit changes one entry; the lessons
-  are reconciled at each ship point and whenever five have been added or changed.
-- **A finished change** is reviewed before the next wave of its campaign launches.
-- **A review report** names the tier that caught its finding and the tiers that passed it;
-  a finding caught by a later tier than the first that had it in scope is an escape.
-- **The protected paths**, `GOALS.md`, the `evolution`, `reviewing`, `testing`,
-  `testing-builds` and `testing-gates` skills with their scripts, the reviewer's role, the
-  lints, and a provider's permission settings, change only with the user's approval. The
-  repair of a defect that blocks the campaign lands once its review approves it and finds it
-  weakens no check, and is put to the user at the next ship point.
+- **The index.** The campaign keeps `crustify/evolution/INDEX.md`, one row per proposal:
+  its slug, its signal, its status, the runs that met it, and the record's row it matches.
+  It has one writer and holds every proposal before a wave launches. A run reads it in its
+  worktree before it files, with the record: a signal either holds is not filed again. The
+  run adds its evidence to the indexed proposal when that is in its own repository, and
+  otherwise reports the occurrence, which the writer records. The user chose this over
+  rows of open signals in `EVOLUTION.md`, whose commits would have moved the working branch
+  under every change awaiting its review.
+- **The record** stays the record of what landed. A change's row is drafted in its proposal
+  and copied in by the record's one writer when the change lands, so that no evolution
+  branch edits `EVOLUTION.md`. The record and how evolution evolves are a skill of their own,
+  `evolution-record`, the `evolution` skill having outgrown its size.
+- **When the watched rows are read.** When a proposal is indexed, and at a period the
+  campaign sets from its state, by default after every fifth module it integrates, and
+  always at a ship point and an audit's end. The user chose the period over each module's
+  end; it weakens that check, and the row says so.
+- **A proposal** names the goal it serves and the measure it expects to move, and may be
+  `deferred` or `superseded`.
+- **A lesson** is an entry under a slug, with a status and a scope line. The first review
+  batch that holds its commit reads it, or the next review batch launched when none does;
+  that batch marks it `held`, or files what is wrong with it as a finding. An edit changes
+  one entry. The lessons are reconciled at each ship point and whenever five have been
+  added or changed.
+- **A finished change**, one whose proposal names its commit, is reviewed before the next
+  wave of its campaign launches.
+- **A review report** names the tier that caught its finding and those that passed it. A
+  finding a switch, a ship point's gates or a consumer catches is filed by the review batch
+  it is handed to.
+- **The protected paths** are listed as paths of Crustify's repository: `GOALS.md`;
+  `skills/crustify/evolution/**`; `skills/verification/**`; `task-schema`; the Lints section
+  of `toolchain`; the Testing, Reviewing and Audit sections of the tool skills;
+  `agents/common.md`, `agents/reviewer.md` and the assistant's Evolution section; and the
+  provider files that build the reviewer's prompt or launch a run. A change whose diff
+  touches one lands only with the user's approval. The repair of a defect that blocks the
+  campaign lands once its review finds that it weakens no check, leaves every existing test
+  of the check unchanged and adds a test of its own; it goes to the user at the next
+  module's end.
+- The reviewer's role gains the lessons step; the assistant's role, `agents/common.md`,
+  `layout`, the plugin's manifest and both settings templates follow.
 
-Not in this change: the rows of the proposals open today, which the assistant indexes once
-it lands; the lessons' ids and statuses in the two campaigns' files, likewise; and the
-gates rule (`testing-gates`), a change of its own.
+Not in this change: the gates rule (`testing-gates`), a change of its own; and the lessons'
+slugs and statuses in the two campaigns' files, which the assistant gives them once it
+lands.
 
-The `evolution` skill grows from 2,938 to 3,395 words, at or past the size `authoring` gives
-a skill (about 4,500 tokens): the review is asked whether it must be split, and where.
+## Record
+
+The row for `EVOLUTION.md`, copied in when the change lands:
+
+| change | from | landed as | signal answered | recurrence signal | status |
+|---|---|---|---|---|---|
+| a campaign indexes its proposals, each filed once and naming its goal and measure; lessons are entries under a slug, read by a review batch and reconciled at ship points; a finished change is reviewed before the next wave; a review report names the tier that caught its finding; the protected paths change only with the user's approval; a change's row is drafted in its proposal; the record is `evolution-record`'s | `libgit2-crustify`, `evolution-record-and-lessons` | crustify `74f960c`, `d3eace2` | a pilot whose runs filed three signals twice, left eight finished changes unreviewed while later runs worked around what they fixed, read the record at no module's end, and wrote lessons no run was asked to review | by a run launched under this change: a signal the index held, filed again under a new slug; a wave launched while a finished change waited for its review; a lesson still `provisional` after the reviews of its wave landed; a review report that names no tier | watched; weakens a check: the watched rows are read at a period, by default every fifth module, not at each module's end; changes what checks the rest |
 
 ## Validation
 
-No single failure prompted it. Its rules are stated from what the pilot's runs did by hand:
-several added their evidence to an open proposal rather than filing again, which is the
-occurrence rule; none could have read the record for open signals, which held none.
+A dry run of the index, which review-1 asked for: a script wrote
+`crustify/evolution/INDEX.md` from this repository's 84 proposals, each row with the runs
+its proposal cites. Read against it, the read-before-filing rule has something to read from
+the day the change lands, and the three duplicated signals sit two rows apart or name each
+other's repository. The index is committed as the campaign's, to be kept by the assistant;
+glibc-crustify's is written when the change lands.
 
 ## Review
 
@@ -120,5 +159,8 @@ review batches did read lessons, and what is missing is a review of each lesson;
 three recurrences are not confirmed from the artifacts. It ran no validation: a dry index of
 the open proposals would have shown the read-before-filing rule has nothing to read yet.
 
-The fixes to 1 and to the weakened check are choices of the user's, put to the user on
-2026-11-14 before a second commit.
+The user chose, on 2026-11-14: the index in the campaign's repository, and a periodic
+reading of the watched rows whose period the campaign adjusts. `d3eace2` makes the nine
+fixes under those choices.
+
+`review-2`: pending, on `d3eace2`.
