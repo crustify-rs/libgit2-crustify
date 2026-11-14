@@ -68,7 +68,7 @@ ffibox = { version = "0.1.1", path = "/crustify-rs/ffibox" }
 # (`wrapper.pin` in crustify/artifacts/dependencies.json), and patched below to its clone
 # beside this repository while the campaign extends it, by absolute path, which the batch
 # worktrees under crustify/.worktrees resolve too.
-glibc-bindings = { version = "0.1.0", git = "https://github.com/crustify-rs/glibc-crustify", rev = "1e601306ae89637bfed780c2f7ff2f01b6fc306a" }
+glibc-bindings = { version = "0.1.0", git = "https://github.com/crustify-rs/glibc-crustify", rev = "24da93fc31a1788e73443cf4333d5037435d2d3f" }
 pcre2-sys = "0.2"
 nix = { version = "0.31.3", features = ["fs", "socket", "net", "poll", "process", "user", "feature", "signal", "mman", "time", "uio", "dir", "hostname"] }
 flate2 = "1.1.11"
