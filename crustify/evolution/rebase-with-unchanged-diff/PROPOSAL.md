@@ -1,7 +1,7 @@
 # A rebased commit whose diff is unchanged needs no new review
 
 Status: `open`: the change is made on crustify's
-`libgit2-crustify/evolution/rebase-with-unchanged-diff` (`e64f119`), awaiting its review. It changes
+`libgit2-crustify/evolution/rebase-with-unchanged-diff` (`e64f119`), approved by review-3. It changes
 `skills/crustify/evolution/**`, a protected path, and a rule of the review itself, so it lands
 only with the user's approval.
 
@@ -73,3 +73,6 @@ the check, are not said.
 programs, the providers' and the scripts beside skills, which review-1's third fix meant to
 leave out. Made as `e64f119`: the text of skills, agents or templates alone. The first two fixes
 held, and the five landings pass the clause.
+
+`review-3` (Opus 5.5, `$0.23`), on `e64f119`: **approved**: the fix is made as review-2 asked and nothing
+else changed. It is still marked as weakening a check.
