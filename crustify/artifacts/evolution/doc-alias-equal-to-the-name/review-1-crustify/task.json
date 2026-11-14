@@ -1,0 +1,19 @@
+{
+ "backend": "claude",
+ "billing": "api",
+ "model_proxy": "openrouter",
+ "args": [
+  "--model",
+  "claude-opus-5-5"
+ ],
+ "revisions": {
+  "crustify": "e6cc1ba",
+  "wavefront": "bf21e16",
+  "ffibox": "9b9047f",
+  "ffimap": "9aa2ef1"
+ },
+ "component": "crustify",
+ "branch": "libgit2-crustify/evolution/doc-alias-equal-to-the-name",
+ "commit": "a5ae2ea",
+ "proposal": "crustify/evolution/doc-alias-equal-to-the-name"
+}

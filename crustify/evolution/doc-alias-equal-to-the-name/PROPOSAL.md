@@ -1,6 +1,10 @@
 # An anchor's alias that equals its item's name
 
-Status: `open`.
+Status: `open`: the change is crustify `a5ae2ea` and ffimap `c3203c7`, each on its
+`libgit2-crustify/evolution/doc-alias-equal-to-the-name`, made on 2026-11-14, awaiting review.
+It takes in glibc-crustify's `doc-alias-equal-to-name`, the same signal.
+
+Goal: Idiomatic Rust: an item keeps the name the Naming section gives it.
 
 ## Signal
 
@@ -44,21 +48,56 @@ ports a module's helpers meets it as a rule of the module's whole route, not of 
 `take_bare`, `find_for_sort` and `reorder_gnu_style` with their anchors and aliases kept: every
 static function of `opt.c` that the route ported has needed it.
 
+## The second campaign
+
+glibc-crustify's `wave-4/batch-0/run-1` met it on a public item: the global `stderr`, bound
+as `pub fn stderr()`, whose alias rustc rejects the same way. It kept the name and dropped
+the alias, and `ffimap api` then listed the item under `anchors.without_alias`.
+
+## Decision
+
+The two campaigns took opposite ways out: this one renamed its thirteen private helpers and
+kept each alias, glibc-crustify kept the name and dropped the alias. The user chose, on
+2026-11-14: the alias is dropped, for such an item alone. A rename changes the product to
+suit a documentation tool, and suits a public item badly; a mangled alias would not match
+the search the alias serves. The thirteen helpers already renamed stay as they are.
+
 ## Destination
 
-The spec: the conventions' Anchors section (`rust/conventions`), which the translator and
-binder do not evolve.
+The spec: `conventions`' Anchors section. And a tool: `ffimap api`'s
+`anchors.without_alias`.
 
 ## Change
 
-Add, after the paragraph on the alias:
+In `conventions`, after "…a label in the alias would no longer match that search.":
 
-> rustdoc rejects an alias equal to its item's name. A stand-in whose Rust name would equal
-> its C name is therefore named otherwise, by the Naming section's rules, the idiomatic Rust
-> term preferred, such as a predicate's `is_`, `has_` or `uses_` form, so that the alias, and
-> the search it serves, is kept on every annotated item.
+> An item whose own name is that path, a name of the source the Rust keeps, carries no alias:
+> rustdoc rejects an alias equal to its item's name, and the name already answers the search.
+> Its anchor is unchanged.
+
+In ffimap, `api`'s extractor leaves out of `without_alias` an anchor whose path is its item's
+own name, `docs/api.md` says so, and the `api` fixture holds such an item, `same_name`, which
+the old check reports.
+
+Not made, and known: the driver's `fn.ffibox.wrapper` counters read a wrapper from its alias
+alone (`docs/schema.md`), so a function that wraps a C function and keeps its name, with no
+alias, is not counted, and the share of C functions with a wrapper reads lower by each one.
+No campaign has such a function today: glibc-crustify's item is a global, which those
+counters do not read, and this campaign's were renamed. Counting it needs the driver to read
+the anchor, and is filed apart, as `ffimap-wrapper-without-alias`.
+
+## Record
+
+The row for `EVOLUTION.md`, copied in when the change lands:
+
+| change | from | landed as | signal answered | recurrence signal | status |
+|---|---|---|---|---|---|
+| an item whose own name is its anchor's path carries no alias, and `ffimap api` does not report it as lacking one | `libgit2-crustify`, `doc-alias-equal-to-the-name` | crustify `a5ae2ea`; ffimap `c3203c7` | rustdoc rejects an alias equal to its item's name: two campaigns met it, on fourteen items, and chose opposite ways out | a batch that renames an item, or mangles an alias, because its alias would equal its name; or `ffimap api` listing such an item under `without_alias` | watched |
 
 ## Validation
 
 `wave-186/batch-1/run-1` builds with the rename and the alias kept; with the alias equal to
 the name the library fails to build (above).
+
+The ffimap change: its whole suite passes (145 tests), and the fixture's `same_name` fails the
+old check.
