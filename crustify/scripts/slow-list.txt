@@ -5,10 +5,6 @@
 #
 # Started 2026-11-14 from the BSan timing run of that day (crustify/devel at 69c8efa79), whose
 # `equiv` list is incomplete: 17 of its tests were still running at the 30-minute cap.
-# Left out, since `end-gates` refuses a name that is a prefix of another test's
-# (evolution/end-gates-skip-names): the two equiv tests named below.
-#   equiv src::libgit2::annotated_commit::constructors_build_and_fail_as_c
-#   equiv src::libgit2::repository::heads_and_parts::from_env_opens_match_c
 bsan lib libgit2::src::libgit2::indexer::unit_tests::a_break_cancels_the_indexing_with_git_euser
 bsan lib libgit2::src::libgit2::indexer::unit_tests::a_panic_cancels_then_resumes_after_the_walk
 bsan lib libgit2::src::libgit2::indexer::unit_tests::libgit2_calls_the_closure_with_its_progress
@@ -114,3 +110,5 @@ bsan equiv src::libgit2::repository::items_and_open_flags::open_ext_follows_the_
 bsan equiv src::libgit2::repository::repository_owner::init_creates_and_reopens_what_c_does
 bsan equiv src::libgit2::repository::routines::cleanup_state_matches_c
 bsan equiv src::libgit2::settings::from_raw_names_exactly_the_c_keys
+bsan equiv src::libgit2::annotated_commit::constructors_build_and_fail_as_c
+bsan equiv src::libgit2::repository::heads_and_parts::from_env_opens_match_c

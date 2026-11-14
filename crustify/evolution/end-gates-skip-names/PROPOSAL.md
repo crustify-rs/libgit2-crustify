@@ -1,8 +1,8 @@
 # `end-gates` cannot skip some tests, and checks a variant stage's skip against one binary
 
-Status: `open`: the change is crustify `01064ed` on `libgit2-crustify/evolution/end-gates-skip-names`,
-awaiting its review. It changes a script under `skills/verification/**`, a protected path, so
-it lands only with the user's approval.
+Status: `landed` as crustify `7b5c603` (record `215a692`) on `libgit2-crustify/devel`, with the user's
+approval on 2026-11-14, which covered landing the approved `01064ed` rebased, its diff
+unchanged, without a new review; its 10 tests were rerun on it and pass.
 
 Goal: Safety, its soundness measure: a test the slow list cannot name either holds an end's
 gate past its timeout or is left off the list by hand.
@@ -56,7 +56,7 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| `end-gates` skips a test by its exact name, and refuses a variant stage's skip that more than one binary of the workspace holds | `libgit2-crustify`, `end-gates-skip-names` | crustify `01064ed` | a test whose name begins another's could not be put on the slow list, and a variant stage's skip was checked against one binary and applied to all | test | |
+| `end-gates` skips a test by its exact name, and refuses a variant stage's skip that more than one binary of the workspace holds | `libgit2-crustify`, `end-gates-skip-names` | crustify `7b5c603` | a test whose name begins another's could not be put on the slow list, and a variant stage's skip was checked against one binary and applied to all | test | |
 
 ## Validation
 
