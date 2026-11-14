@@ -67,4 +67,12 @@ replaces the test that such a skip is refused.
 
 ## Review
 
-None yet.
+`review-1` (Opus 5.5, `$1.35`), on `01064ed`: **approved**, no fix required; it weakens no check. It ran
+the 10 tests, showed three fail on the old script, and checked by hand a workspace with a
+second package, a doctest and prefix-named tests: `--exact` skips neither more nor fewer tests
+than the file names, Miri's `compile_fail` skip included, and the row's `test` is right.
+Listed apart: no test covers Miri's `compile_fail` naming; the refusal's message misleads
+where a test is compiled out under a variant; a build failure in the workspace listing
+refuses the whole run where it failed one stage; the slow list's comment and its two
+left-out `equiv` tests follow once this lands. The working branch has moved since, and the
+change holds a script, so its rebase is reviewed again or lands with the user's word.
