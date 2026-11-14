@@ -84,4 +84,11 @@ It found all nine of the author's settled readings allowed by the old text, two 
 alone. Its optional wordings are taken where cheap: five sentences over the default length
 are split, a measure is not called a count, "escape" stays a noun.
 
-`review-2`: pending, on `437cc1d`.
+`review-2` (session `dceee456-d61e-448a-816e-1fad7483835b`, Opus 5.5, `$0.92`, 4m33s), on `437cc1d`: **rejected**, on six
+small fixes; review-1's fixes 2, 3, 4, 5 and 7 hold, and nothing weakens a check. Its report
+is the longest `result` of `crustify/artifacts/evolution/spec-language/review-2/stream.jsonl`.
+Among its required fixes: rule 3 as reworded puts its condition after its consequence, and
+its two sentences overlap, "short" and "clause" being unbounded (A, B); splitting goal 11's
+pair left its reason on one of the two measures only (C); goal 3's pair changed meaning when
+its restriction became a sentence of its own (D); the scope still reads as a full list and
+leaves texts out (E). Not yet made: the session ended before a third commit.
