@@ -1,7 +1,7 @@
 # A soundness skill: the UB patterns the campaigns met, grown from their findings
 
 Status: `open`: the change is crustify `3571a9e` on
-`libgit2-crustify/evolution/soundness-patterns`, in its second review. It adds one sentence to
+`libgit2-crustify/evolution/soundness-patterns`, approved by review-2. It adds one sentence to
 `skills/verification/reviewing`, a protected path, so it lands only with the user's approval.
 
 Goal: Safety, its soundness measure: the defects a reproducer proves, by kind. The change
@@ -77,3 +77,6 @@ denominator is not recorded yet, so the skill says so and compares modules taken
 Listed apart, not required: the "caught by" column is partly inferred; two patterns overlap
 on one finding; `failure-leaves-state`'s "does not reuse the object" is broader than its
 pattern.
+
+`review-2` (Opus 5.5, `$0.33`), on `3571a9e`: **approved**: the five fixes are made and nothing else
+changed. It weakens no check.
