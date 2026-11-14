@@ -21,6 +21,22 @@ doctests). There, the known `CommitBuilder` doctest (`src/libgit2/src/libgit2/co
 `E0624`) is the one recorded failure. So a wrong code a batch writes is caught, if at all, at a
 later gate, as a known nightly failure.
 
+## Occurrences
+
+- `fixes/gates-green/batch-0` (`misc/commit-builder-doctest-expects-a-private-seam`): the
+  `CommitBuilder` doctest named above expected `E0624` for a `from_ptr` that is not private
+  but a public unsafe trait method (`ffibox::CMutSeam`); the snippet failed only for want of
+  the trait's import (`E0599`), so it proved nothing. Stable passed it from the batch that wrote
+  it on; the nightly failed it at every wave's end since, as a "known nightly failure".
+- The same run (`misc/compile-fail-expectations-of-one-toolchain`), against this proposal's
+  Destination, which says "a `trybuild` case's `.stderr` is checked on stable and needs no
+  such step": nine of `ub_safe`'s `compile_fail` expectations, recorded on stable, failed on
+  the nightly the sanitizer variants run them on. Six quoted the standard library's source in
+  their notes only on the nightly, which has `rust-src`; three were worded differently there
+  (`E0521` on stable, `E0277` on the nightly, for one rejection). So a `.stderr` is checked
+  on stable only too, and a batch's `compile_fail` cases, doctests and trybuild alike, would
+  need checking on the pinned nightly before landing for a later gate not to fail on them.
+
 ## Destination
 
 The spec: `testing`'s UB tests section, beside "When the type system should reject a
