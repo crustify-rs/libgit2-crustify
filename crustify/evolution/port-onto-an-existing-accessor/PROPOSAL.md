@@ -1,6 +1,6 @@
 # A function that is one field's read or write is ported onto that field's accessor
 
-Status: `open`: the change is crustify `0b77b97` on `libgit2-crustify/evolution/port-onto-an-existing-accessor`, made on
+Status: `open`: the change is crustify `50eb634` on `libgit2-crustify/evolution/port-onto-an-existing-accessor`, made on
 2026-11-14 after the triage of open proposals, awaiting its review.
 
 Goal: Consistency: the one pattern a kind of item takes; and Idiomatic Rust.
@@ -69,7 +69,7 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| a function that only reads or writes one member, or returns what an existing item of the safe API gives, is ported as that item, which carries its anchor and alias | `libgit2-crustify`, `port-onto-an-existing-accessor` | crustify `0b77b97` | ports of one-field functions wrote a second API beside an accessor, or anchored the accessor outside the function's home, each batch choosing by hand | a review finding of a ported function that duplicates an existing accessor, or a plan correction on where such a function's anchor sits | watched |
+| a function no wrapper gives an API yet, which only reads or writes one member or only returns what an existing item of its own module's safe API gives, is ported as that item, which carries its anchor and alias | `libgit2-crustify`, `port-onto-an-existing-accessor` | crustify `50eb634` | ports of one-field functions wrote a second API beside an accessor, or anchored the accessor outside the function's home, each batch choosing by hand | a review finding of a ported function that duplicates an existing accessor, or a plan correction on where such a function's anchor sits | watched |
 
 ## Validation
 
@@ -92,3 +92,12 @@ rule is narrowed to an item of the function's own module, which leaves the case 
 it unanswered, or `task-schema`, a protected path, states the exception. That choice is put
 to the user; the change waits for it, fixes 1 and 2 not yet made.
 
+The user chose, on 2026-11-14: the rule holds within the function's own module. The case where
+the accessor is another module's stays a judgement of its batch, until it recurs. Made as
+`50eb634`, with fixes 1 and 2: the `conventions` clause is gone, and the paragraph reads:
+
+> A function no wrapper gives an API yet, whose body only reads or writes one member, or only
+> returns a value an existing item of its own module's safe API already gives, is ported as
+> that item, so that the port writes no second API: the accessor or method carries the
+> function's `Replaces` anchor and alias beside its own. Its export, where remaining C calls
+> it, is written in the module's gateway, over that item.
