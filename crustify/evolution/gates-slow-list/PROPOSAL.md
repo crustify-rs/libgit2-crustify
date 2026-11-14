@@ -1,9 +1,7 @@
 # End gates run every stage less a slow list; full runs periodically
 
-Status: `open`: the change is made on Crustify's
-`libgit2-crustify/evolution/gates-slow-list` (`4557a8f`), at the user's direction on
-2026-11-14, and review-1 approved it. It changes `skills/verification/**`, a protected path, so it
-lands only with the user's approval.
+Status: `landed` as crustify `4557a8f` (record `336fdf4`) on `libgit2-crustify/devel`, with the
+user's approval on 2026-11-14, which its protected path, `skills/verification/**`, needs.
 
 ## Signal
 
