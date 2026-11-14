@@ -1,6 +1,6 @@
 # ffimap takes its `-sys` inventory from extern crates alone, so in-crate raw bindings have none
 
-Status: `open`: the change is ffimap `8cd7a26` on `libgit2-crustify/evolution/`, made on 2026-11-14 at
+Status: `open`: the change is ffimap `a0797e6` on `libgit2-crustify/evolution/`, made on 2026-11-14 at
 the user's word, awaiting its review.
 
 Goal: Safety, the unsafe surface's measures; Attribution.
@@ -24,9 +24,16 @@ dashboard records (`--ffibox --sys-crates libgit2_sys,pcre2_sys`, the regions an
 What is left is PCRE2's, the one `-sys` crate that is still a crate. The batches since the
 bindings moved scanned with `--sys-crates pcre2_sys` and record the same 21 and 222
 (`wave-194`, `wave-197`, `wave-225`, `wave-229`, `wave-232`'s `ffimap.json`). The dashboard's
-`C by value` and `celled %` cells read `ty.ffibox.sys`, so for those batches they are taken
-over PCRE2's types alone: each shows `+0` and `+0.00 pp`, whatever the batch did with a
-libgit2 type. The scan is `crustify/tmp/assistant/ffimap-scan/scan.json`.
+`celled %` cell reads the inventory (`…raw_ptr_in_sys.of_which.wrapped` over `….used`), so
+for those batches it is taken over PCRE2's types alone, 2 of 5, and its delta reads `+0.00 pp`
+whatever the batch did with a libgit2 type.
+
+A second defect came with the same move, and reaches further. The bindings' own code, bindgen's
+derives, its `Default` impls and its declarations, is now code of the scanned crate, and
+counts as the crate's wherever a counter does not skip a generated file: `ty.ffibox.sys.as`,
+which the `C by value` cell reads, went from 111 on 2026-11-10 to 355, with or without the
+module named, and `ty.impl_trait`, the `unsafe` counters and `fn.total` rose with it.
+The scan is `crustify/tmp/assistant/ffimap-scan/scan.json`.
 
 ## Destination
 
@@ -35,15 +42,20 @@ A tool: ffimap's driver and `--sys-crates`, or the `ffimap` tool skill's account
 ## Change
 
 In the driver: an entry of `--sys-crates` written `crate::<path>` names a module of the scanned
-crate (`sys_modules`). `count_sys_types` takes the module's definitions, and those of the
-modules below it (`in_sys_module`), into the inventory through the same arms as a named
-crate's items. The counters the inventory gates are emitted when a crate or a module is
-named. The CLI's help, `README.md`, `docs/analysis.md` and `docs/schema.md` state the form,
-and one difference: a named crate gives the items a dependent can reach, a named module every
-item it defines.
+crate (`sys_modules`). Its definitions, and those of the modules below it (`in_sys_module`,
+which resolves the named modules once), are read as a named crate's items are:
 
-The `cells` fixture gains `raw/bindings.rs`, a module of the crate with one struct and two
-functions, and `test_a_module_of_the_crate_joins_the_inventory_when_named`.
+- `count_sys_types` takes them into the inventory, through the same arms as a crate's; and
+- every other walk over the crate's definitions and bodies, thirteen of them, `named_defs`
+  among them, leaves them out, so that the bindings' own code is not the crate's and does not
+  count as a use of the types it declares.
+
+The CLI's help, `README.md`, `docs/analysis.md` and `docs/schema.md` state the form.
+The `cells` fixture gains `src/raw.rs` under a feature, bindings as bindgen writes them, and
+two tests.
+
+Its other half is one paragraph of Crustify's `ffimap` tool skill, crustify `3dcc464`: a
+campaign whose raw bindings are a module of its crate names them to the scan.
 
 ## Record
 
@@ -51,30 +63,43 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| `--sys-crates` names a module of the scanned crate as `crate::<path>`, whose raw bindings then join the `-sys` inventory | `libgit2-crustify`, `` | ffimap `8cd7a26` | once this campaign's raw bindings became a module of its crate, its scans read PCRE2's inventory alone, and two dashboard cells measured nothing of its batches | a scan whose `ty.ffibox.sys.total` or `fn.ffibox.sys.total` falls by an order of magnitude from the scan before it with no binding removed, or a campaign whose bindings are a module scanning without naming it | watched |
+| `--sys-crates` names a module of the scanned crate as `crate::<path>`: its raw bindings join the `-sys` inventory and leave every other counter, and the `ffimap` skill has a scan name them | `libgit2-crustify`, `ffimap-sys-inventory-in-crate` | ffimap `a0797e6`; crustify `3dcc464` | once this campaign's raw bindings became a module of its crate, its scans read PCRE2's inventory alone and counted the bindings' own code as the crate's, so `celled %` and `C by value` measured nothing of its batches | a scan whose `ty.ffibox.sys.total` or `fn.ffibox.sys.total` falls by an order of magnitude from the scan before it with no binding removed; a counter with a site inside a generated bindings file; or a campaign whose bindings are a module scanning without naming it | watched |
 
 ## Validation
 
-- ffimap's suite, in its own checkout, outside any Cargo workspace: 146 tests pass. The new test
-  expects one more C type, behind a pointer, two more functions and one more wrapper when
-  `crate::raw` is named beside `cells-sys`, and the 21 other driver tests are unchanged, the
-  module unnamed there.
-- On real code, libgit2-crustify at `6d3c7873c`, the campaign's options with
-  `--sys-crates crate::sys,pcre2_sys` against `libgit2_sys,pcre2_sys` on the old driver: 22 of
-  767 values move, every one the inventory's or a wrapper counter's.
+- ffimap's suite, in its own checkout, outside any Cargo workspace: 147 tests pass. Two are new.
+  One expects, with `crate::raw` named, one more C type behind a pointer, two more functions
+  and one more wrapper, and no other inventory or wrapper counter moved, `used` included. The
+  other expects that the module's code counts as the crate's while unnamed, that named, no
+  counter but the inventory's has a site in it, and that every counter then reads what the
+  crate reads without the module. The 21 other driver tests are unchanged.
+- On real code, libgit2-crustify at `6d3c7873c`, the campaign's options:
 
-  | | old driver | new driver, `crate::sys` named | 2026-11-10 |
+  | | 2026-11-10, bindings a crate | bindings a module, old driver | new driver, `crate::sys` named |
   |---|---|---|---|
-  | `ty.ffibox.sys.total` | 21 | 128 | 120 |
-  | `…raw_ptr_in_sys.of_which.used` | 5 | 106 | 78 |
-  | `…raw_ptr_in_sys.of_which.wrapped` | 2 | 77 | 70 |
-  | `fn.ffibox.sys.total` | 222 | 785 | 723 |
-  | `fn.ffibox.sys.of_which.used` | 6 | 509 | 452 |
-  | `fn.ffibox.wrapper.total` | 0 | 590 | not read |
-  | `ty.ffibox.wrapper.fields.total` | 0 | 528 | not read |
+  | `ty.ffibox.sys.total` | 120 | 21 | 128 |
+  | `…raw_ptr_in_sys.total` | 115 | 21 | 122 |
+  | `…raw_ptr_in_sys.of_which.used` | 78 | 5 | 85 |
+  | `…raw_ptr_in_sys.of_which.wrapped` | 70 | 2 | 77 |
+  | `ty.ffibox.sys.as.total` | 111 | 355 | 122 |
+  | `ty.ffibox.sys.as.by_val.total` | 111 | 219 | 119 |
+  | `fn.ffibox.sys.total` | 723 | 222 | 785 |
+  | `fn.ffibox.sys.of_which.used` | 452 | 6 | 509 |
+  | `fn.ffibox.wrapper.total` | 511 | 0 | 590 |
 
-  The scans are `crustify/tmp/assistant/ffimap-scan/scan.json` and `scan-new.json`.
+  84 of 767 values move against the old driver: the inventory's, the wrapper counters', and the
+  counters the bindings' own code had inflated. `celled %` reads 77 of 85, where 2026-11-10
+  read 70 of 78. The scans are `crustify/tmp/assistant/ffimap-scan/scan.json` (old driver) and
+  `scan-new2.json`; `scan-new.json` is review-1's commit, which read 106 used.
 
 ## Review
 
-None yet.
+`review-1` (Opus 5.5, `$2.63`), on ffimap `8cd7a26`: **rejected**, four fixes required; it weakens no
+check. A named crate was unchanged, the module walk took the right items, and the totals
+checked against the bindings. The fixes, made as `a0797e6`: (1) the bindings' own declarations
+counted as uses of their types, so `used` read 106 and `celled %` a wrong ratio; (2) the
+bindings' own code counts as the crate's, a second signal, which the change now answers by
+having a named module leave every other counter; (3) this proposal's evidence was wrong about
+`C by value`, which does not read the inventory; (4) no run would name the module unless the
+`ffimap` skill says so, which crustify `3dcc464` adds. Its sturdier matching of the module is
+taken too.

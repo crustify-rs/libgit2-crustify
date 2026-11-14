@@ -905,15 +905,17 @@ a campaign could not fill, said once rather than left as a field of em-dashes.
 
 ### `C by value` and `celled %` since the bindings became a module
 
-Since 2026-11-13 the raw bindings are `crate::sys`, a module of the crate, and ffimap takes
-its `-sys` inventory from crates alone. The batches since then scanned with `--sys-crates
-pcre2_sys`, so their inventory is PCRE2's (21 C types, 222 C functions, where the scan of
-2026-11-10 read 120 and 723), and the two cells that read it, `C by value` and `celled %`,
-are taken over PCRE2's types alone. Their `+0` and `+0.00 pp` on the rows of waves 186, 194,
-197, 200, 225, 229 and 232 are not measures of what those batches did with a libgit2 type.
-The other safety audit cells do not read the inventory. Measured on 2026-11-14
-(`crustify/evolution/ffimap-sys-inventory-in-crate`); the rows are taken again once ffimap
-names a module of the crate.
+Since 2026-11-13 the raw bindings are `crate::sys`, a module of the crate. Two things follow
+for the scans of waves 186, 194, 197, 200, 225, 229 and 232, which named `--sys-crates
+pcre2_sys`. ffimap took its `-sys` inventory from crates alone, so theirs is PCRE2's (21 C
+types, 222 C functions, where the scan of 2026-11-10 read 120 and 723), and `celled %` is taken
+over PCRE2's types, 2 of 5. And the bindings' own code, bindgen's derives and `Default` impls,
+counted as the crate's: `ty.ffibox.sys.as`, which `C by value` reads, was 355 where 2026-11-10
+read 111. Both cells' `+0` and `+0.00 pp` on those rows are deltas of figures that measured
+neither the crate's own types nor its own code. The cells that read `ty.impl_trait`, the
+`unsafe` counters or function totals carry the bindings' code too. Measured on 2026-11-14
+(`crustify/evolution/ffimap-sys-inventory-in-crate`): with ffimap's fix and `crate::sys` named,
+the tip reads 77 of 85 celled and 119 by value. The rows are taken again once the fix lands.
 
 ### C test baseline
 
