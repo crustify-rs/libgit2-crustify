@@ -14,7 +14,7 @@ the assistant alone, as each batch's proposals land.
 | `bsan-sized-tests` | A test BSan cannot finish is sized for it, not skipped | `landed` | `wave-225/batch-1` | — |
 | `build-scripts-watch-missing-inputs` | Build scripts watch inputs that do not exist, so every cargo run rebuilds the crate | `open` | `wave-232/batch-1` | — |
 | `bundled-pcre2-shadows-the-side-campaign` | pcre2-sys's vendored PCRE2 shadows the side campaign's for libgit2's C | `landed` | — | — |
-| `callback-context-in-an-argument` | A callback whose context is reached through an argument has no sound C form | `open` | `wave-194/batch-1`, `wave-194/batch-2` | — |
+| `callback-context-in-an-argument` | A callback whose context is reached through an argument has no sound C form | `landed` | `wave-194/batch-1`, `wave-194/batch-2` | — |
 | `callback-reenters-its-caller` | A callback can re-enter the function that calls it, through the object it is handed | `open` | `wave-194/batch-1` | — |
 | `carried-over-test-cases` | The test cases a `port/unexport` carries over, in the schedule | `landed` | — | — |
 | `compile-fail-doctest-codes-unchecked-on-stable` | A compile-fail doctest's error code is checked only on nightly | `open` | `wave-186/batch-2` | — |

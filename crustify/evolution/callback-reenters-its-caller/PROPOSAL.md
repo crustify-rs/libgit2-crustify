@@ -1,6 +1,6 @@
 # A callback can re-enter the function that calls it, through the object it is handed
 
-Status: `open`: the change is crustify `f69abd3` on `libgit2-crustify/evolution/callback-reenters-its-caller`, made on
+Status: `open`: the change is crustify `95b594a` on `libgit2-crustify/evolution/callback-reenters-its-caller`, made on
 2026-11-14 at the user's direction after the triage of open proposals, awaiting its review.
 
 Goal: Safety, its soundness measure.
@@ -37,17 +37,15 @@ The spec: `binding-symbols`, Function pointers, beside the trampoline's re-entry
 
 ## Change
 
-Not made yet. In `binding-symbols` § Function pointers, after the paragraph on the
-trampoline's re-entry refusal:
+In `binding-symbols` § Function pointers, after the case list:
 
-> A function that calls a callback with an object it is working on lends that object to
-> the callback. The analysis establishes which of the object's routines C allows from
-> within the callback; a routine it does not, the function itself or one that resets the
-> state the function resumes from, is refused there by the binding, on the thread that
-> runs the function, since the callback holds an exclusive handle the borrow checker
-> cannot tell from any other.
+> A function that calls a callback with an object it is working on lends that object to the
+> callback. The analysis establishes which of the object's routines C allows from within the
+> callback. One it does not allow, such as the function itself or one that resets the state
+> the function resumes from, is refused there by the binding, since the callback holds an
+> exclusive handle the borrow checker cannot tell from any other.
 
-In `analysis` § Findings, under states and transitions: "the calls a callback may make on
+In `analysis` § Findings, under states and transitions: "with the calls a callback may make on
 the object its caller lends it, and those that would corrupt the caller's state".
 
 ## Record
@@ -56,17 +54,13 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| a function that hands a callback the object it is working on lends it; the analysis establishes which of the object's routines C allows from the callback, and the binding refuses the others there | `libgit2-crustify`, `callback-reenters-its-caller` | crustify `f69abd3` | a callback could re-enter or reset the function running it through the object it was handed, C undefined behaviour reachable from safe Rust | a finding where a callback calls, on the object its caller lent it, a routine C does not allow there | watched |
+| a function that hands a callback the object it is working on lends it; the analysis establishes which of the object's routines C allows from the callback, and the binding refuses the others there | `libgit2-crustify`, `callback-reenters-its-caller` | crustify `95b594a` | a callback could re-enter or reset the function running it through the object it was handed, C undefined behaviour reachable from safe Rust | a finding where a callback calls, on the object its caller lent it, a routine C does not allow there | watched |
 
 ## Validation
 
 None run: the rule is the one this batch followed; a rerun of the batch under it would
 produce the same binding. The batch's two UB tests above, run under ASan+UBSan, Miri (they
 stop at the foreign call) and BSan alone, are its evidence that the refusal holds.
-
-## Review
-
-None yet.
 
 ## Review
 
@@ -77,3 +71,7 @@ weakened. Two of its unrequired notes are taken, by removal, as `f69abd3`: the e
 as", and "on the thread that runs the function", one implementation, is gone. Listed apart:
 the reason assumes the callback gets the general exclusive handle; `testing`'s UB-test list
 has no matching item, which is a protected path and a proposal of its own.
+
+`review-2` (Opus 5.5, `$0.30`), on `f69abd3`: **approved**. The two changes beneath it in
+`binding-symbols` were then fixed by their own reviews, so the file under it changed and it is
+reviewed once more, as `95b594a`.

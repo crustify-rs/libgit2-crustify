@@ -1,7 +1,7 @@
 # A callback whose context is reached through an argument has no sound C form
 
-Status: `open`: the change is crustify `4a9557a` on `libgit2-crustify/evolution/callback-context-in-an-argument`, made on
-2026-11-14 at the user's direction after the triage of open proposals, awaiting its review.
+Status: `landed` as crustify `a43b6b8` (record `98ed4a1`) on `libgit2-crustify/devel`, on 2026-11-14, once its
+review approved it.
 
 Goal: Safety, its soundness measure.
 
@@ -79,15 +79,11 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| a function pointer whose context C reaches through another argument has a callable C half only for functions sound with any such argument; one that reads its context there is reached only through its object | `libgit2-crustify`, `callback-context-in-an-argument` | crustify `4a9557a` | a table of callbacks that read their context from the object they are handed: a callable handle over it would let a safe call hand them another object's, or no, context | a `ub` or `contracts` finding on a callable type whose C function reads its context from an argument | watched |
+| a function pointer whose context C reaches through another argument has a callable C half only for functions sound with any such argument; one that reads its context there is reached only through its object | `libgit2-crustify`, `callback-context-in-an-argument` | crustify `a43b6b8` | a table of callbacks that read their context from the object they are handed: a callable handle over it would let a safe call hand them another object's, or no, context | a `ub` or `contracts` finding on a callable type whose C function reads its context from an argument | watched |
 
 ## Validation
 
 None run.
-
-## Review
-
-None yet.
 
 ## Review
 
@@ -97,3 +93,6 @@ its type alone, for the ported routine that dispatches such functions. Fixed as 
 routine, bound or ported, calls it through its raw binding. One unrequired rewording is taken
 at the same length, so that the restriction falls on the functions, not on every setter of
 the field. Evidence, goal, placement and row held; it weakens no check.
+
+`review-2` (Opus 5.5, `$0.33`), on `4a9557a`: **approved**. It landed as `a43b6b8`, that commit rebased, its
+file the same in the commit and its parent.
