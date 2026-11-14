@@ -1,7 +1,8 @@
 # ffimap does not count a wrapper that keeps its C function's name
 
-Status: `deferred`, on 2026-11-14, at the user's word: it waits for the first wrapper that keeps
-its C function's name. Until then the counters read low by none.
+Status: `open`. It was deferred on 2026-11-14 until the first wrapper that keeps its C function's
+name; a review found that day that the campaign has two already, so the deferral is put back
+to the user.
 
 Goal: Safety, the unsafe surface's measures: the share of C functions with a wrapper.
 
@@ -15,9 +16,11 @@ A tool that reports what the source contradicts, once `doc-alias-equal-to-the-na
 ## Evidence
 
 Read from the driver, `src/ffimap/driver/src/main.rs` at `9aa2ef1`: the counters loop over
-`doc_aliases` of each function. No campaign has an affected function yet: glibc-crustify's
-`stderr` is a global, and libgit2-crustify's helpers were renamed. The first wrapper of a C
-function that keeps its name would go uncounted.
+`doc_aliases` of each function. This campaign has two affected functions: `binsearch` and `parse_names` in
+`src/libgit2/deps/reftable/basics.rs` (`wave-169/batch-2`, `2032628fd`), each `Wraps
+fn::<name>` with no alias, and both declared by the raw bindings. Whether the counters read
+low by them depends on `--sys-crates` reaching bindings that are a module of the crate, which
+is not yet run.
 
 ## Destination
 

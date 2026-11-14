@@ -1,6 +1,8 @@
 # `end-gates` cannot skip some tests, and checks a variant stage's skip against one binary
 
-Status: `open`. No change is made yet.
+Status: `open`: the change is crustify `01064ed` on `libgit2-crustify/evolution/end-gates-skip-names`,
+awaiting its review. It changes a script under `skills/verification/**`, a protected path, so
+it lands only with the user's approval.
 
 Goal: Safety, its soundness measure: a test the slow list cannot name either holds an end's
 gate past its timeout or is left off the list by hand.
@@ -35,13 +37,33 @@ A tool: `end-gates` and its tests, `test_end_gates.py`.
 
 ## Change
 
-Not made. One way for both: run a variant stage per test binary, as Miri and BSan already
-run, and pass each binary its skips with `--exact` handled per name, so that a skip names one
-test of one binary. Each defect's reproducer becomes a test.
+In `end-gates` and `test_end_gates.py`:
+
+1. A run with skips passes libtest `--exact`, so that each skip takes the one test it names,
+   and a name that begins another test's is no longer refused. Under `--exact` Miri's
+   `compile_fail` skip would be exact too, so for a binary with skips it is passed as the
+   names of that binary's tests that hold it.
+2. A variant stage still runs the workspace in one invocation, which hands every binary the
+   same skips. Before any stage runs, each of its skips is counted over the workspace's
+   whole test list, and one that more than one binary holds is refused.
+
+Running a variant stage per test binary, as first sketched here, was not taken: it would
+drop the workspace's other packages and its doctests from the stage.
+
+## Record
+
+The row for `EVOLUTION.md`, copied in when the change lands:
+
+| change | from | landed as | signal answered | recurrence signal | status |
+|---|---|---|---|---|---|
+| `end-gates` skips a test by its exact name, and refuses a variant stage's skip that more than one binary of the workspace holds | `libgit2-crustify`, `end-gates-skip-names` | crustify `01064ed` | a test whose name begins another's could not be put on the slow list, and a variant stage's skip was checked against one binary and applied to all | test |
 
 ## Validation
 
-None yet.
+`python3 -m unittest test_end_gates`: 10 tests pass. Two are new: a skip whose name begins
+another test's skips it alone, under a variant stage and a per-binary one, and a variant
+stage's skip that two binaries hold is refused, where a per-binary stage takes it. The first
+replaces the test that such a skip is refused.
 
 ## Review
 

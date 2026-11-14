@@ -54,6 +54,14 @@ glibc-crustify's `wave-4/batch-0/run-1` met it on a public item: the global `std
 as `pub fn stderr()`, whose alias rustc rejects the same way. It kept the name and dropped
 the alias, and `ffimap api` then listed the item under `anchors.without_alias`.
 
+## A third occurrence, in this campaign
+
+`wave-169/batch-2` (`2032628fd`) landed two wrappers that keep their C function's name and
+carry no alias, `binsearch` and `parse_names` in `src/libgit2/deps/reftable/basics.rs`, each
+`Wraps fn::<name>`: glibc-crustify's way out, taken here before either proposal was filed.
+`ffimap api` lists exactly these two under `without_alias` today. The ffimap half's review
+found them.
+
 ## Decision
 
 The two campaigns took opposite ways out: this one renamed its thirteen private helpers and
@@ -82,8 +90,9 @@ the old check reports.
 Not made, and known: the driver's `fn.ffibox.wrapper` counters read a wrapper from its alias
 alone (`docs/schema.md`), so a function that wraps a C function and keeps its name, with no
 alias, is not counted, and the share of C functions with a wrapper reads lower by each one.
-No campaign has such a function today: glibc-crustify's item is a global, which those
-counters do not read, and this campaign's were renamed. Counting it needs the driver to read
+This campaign has two such functions already, `binsearch` and `parse_names` above, so its
+counters may read low by two; whether they do depends on `--sys-crates` reaching bindings that
+are a module of the crate, which was not run. Counting it needs the driver to read
 the anchor, and is filed apart, as `ffimap-wrapper-without-alias`.
 
 ## Record
@@ -92,7 +101,7 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| an item whose own name is its anchor's path carries no alias, and `ffimap api` does not report it as lacking one | `libgit2-crustify`, `doc-alias-equal-to-the-name` | crustify `1b0d20d`; ffimap `c3203c7` | rustdoc rejects an alias equal to its item's name: two campaigns met it, on fourteen items, and chose opposite ways out | a batch that renames an item, or mangles an alias, because its alias would equal its name; or `ffimap api` listing such an item under `without_alias` | watched |
+| an item whose own name is its anchor's path carries no alias, and `ffimap api` does not report it as lacking one | `libgit2-crustify`, `doc-alias-equal-to-the-name` | crustify `1b0d20d`; ffimap `c3203c7` | rustdoc rejects an alias equal to its item's name: two campaigns met it, on sixteen items, and chose opposite ways out | a batch that renames an item, or mangles an alias, because its alias would equal its name; or `ffimap api` listing such an item under `without_alias` | watched |
 
 ## Validation
 
@@ -109,3 +118,9 @@ It landed as `1b0d20d`, that commit rebased, its file the same in the commit and
 is recorded once the ffimap half lands. Listed apart: `conventions` § 3.2's "the same anchor
 and alias" could say "where it carries one"; ffimap's `docs/schema.md` still calls the alias
 the one the conventions require.
+
+`review-1-ffimap` (Opus 5.5, `$1.56`), on ffimap `c3203c7`: **rejected**, for this proposal's text
+alone: it said no campaign had a wrapper that keeps its C name without an alias, and this
+campaign has two. Corrected above; the code, its tests and its fit with ffimap's goals held,
+and it weakens no check. On this campaign's rustdoc output, `without_alias` goes from those two
+entries to none, the 1227 item records unchanged.
