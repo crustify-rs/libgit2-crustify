@@ -42,7 +42,7 @@ the assistant alone, as each batch's proposals land.
 | `export-panic-without-a-failure-outcome` | An export whose failure needs an outcome a panic cannot give | `open` | `wave-186/batch-5` | — |
 | `export-signature-check` | How a gateway checks an export against its raw binding | `landed` | `wave-229/batch-0` | — |
 | `exports-without-a-header-declaration` | An export whose C declaration no header holds has no raw binding to be checked against | `open` | `wave-194/batch-4`, `wave-197/batch-0` | — |
-| `ffibox-adoption-of-lifetime-cells` | Adopting a handle over a layout type with a lifetime vouches for nothing about that lifetime | `open` | `wave-186/batch-3` | — |
+| `ffibox-adoption-of-lifetime-cells` | Adopting a handle over a layout type with a lifetime vouches for nothing about that lifetime | `landed` | `wave-186/batch-3` | — |
 | `ffibox-allocator-api` | `Box` and `Vec` over a C allocator: ffibox adopts the standard `Allocator` | `landed` | — | — |
 | `ffibox-canonical-path` | ffibox is declared by its canonical path | `landed` | — | — |
 | `ffibox-cclosure-failed-during-invocation` | `CClosure::failed()` reads the panic slot an invocation holds mutably | `landed` | — | — |

@@ -1,7 +1,7 @@
 # Adopting a handle over a layout type with a lifetime vouches for nothing about that lifetime
 
-Status: `open`: the change is ffibox `9b9047f` on `libgit2-crustify/evolution/ffibox-adoption-of-lifetime-cells`, made on
-2026-11-14 at the user's direction after the triage of open proposals, awaiting its review.
+Status: `landed` as ffibox `9b9047f` on its `libgit2-crustify/devel` (record: crustify `e6cc1ba`), on
+2026-11-14, once its review approved it.
 
 Goal: Safety, its soundness measure; ffibox's G9 and G12.
 
@@ -82,3 +82,6 @@ each asks for a valid `T`, as `CCell::ref_from_ptr` asks. The owners' contracts,
 Rust type, hold as they are. Validation: the documentation builds without a warning and the 58
 doctests pass; the reproducer becomes no test, since after the change it breaks the contract.
 It weakens no check.
+
+`review-2` (Opus 5.5, `$0.29`), on `9b9047f`: **approved**: all four contracts ask for a valid `T`, and nothing
+else changed.
