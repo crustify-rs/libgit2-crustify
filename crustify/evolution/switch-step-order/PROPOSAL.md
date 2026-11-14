@@ -1,6 +1,6 @@
 # A switch's Rust side lands before its builds, and removes every mention of the export feature
 
-Status: `open`: the change is crustify `663ed2d` on `libgit2-crustify/evolution/switch-step-order`, made on 2026-11-14,
+Status: `open`: the change is crustify `d3e56f0` on `libgit2-crustify/evolution/switch-step-order`, made on 2026-11-14,
 awaiting its review. Split from `module-switch-procedure` that day.
 
 Goal: Incremental migration without breaking consumers. Its measure counts the landed trees
@@ -84,7 +84,8 @@ is read as binding, it would follow.
 Made, in `porting-workflow`'s Builds section, as an ordered list of the step's four parts after
 the paragraph that describes the switch. The sentence "The shared variants are rebuilt from the
 C that remains once the integration lands" is removed: the list's third part states the
-builds, and how the shared variants take them is `variant-generations`' to say. What was
+builds, and `setup`'s and `testing-builds`' Builds sections already say the shared variants are
+rebuilt after a landing that changes the compiled target. What was
 drafted first:
 
 `porting-workflow`'s Builds section would state a switch's steps in the order they run:
@@ -113,7 +114,7 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| a switch's parts run in order, the Rust side first, then the C side, the builds and the gates, and deleting the export feature removes every mention of its name in the crate | `libgit2-crustify`, `switch-step-order` | crustify `663ed2d` | `porting-workflow` listed a switch's steps in an order that cannot run, the builds checking bindings not yet committed, and "the export feature is deleted" read as fewer edits than the lints need | an integration run that reorders a switch's parts by hand, or whose lints fail on a mention of a deleted export feature | watched |
+| a switch's Rust side and C side both come before its builds, and the gates after, and deleting the export feature removes every mention of its name in the crate | `libgit2-crustify`, `switch-step-order` | crustify `d3e56f0` | `porting-workflow` listed a switch's steps in an order that cannot run, the builds checking bindings not yet committed, and "the export feature is deleted" read as fewer edits than the lints need | an integration run whose builds precede its Rust side, or whose lints fail on a mention of a deleted export feature | watched |
 
 ## Validation
 
@@ -129,3 +130,17 @@ skill's text is not written.
 ## Review
 
 None yet.
+
+## Review
+
+`review-1` (Opus 5.5, `$1.72`), on `663ed2d`: **rejected**, three fixes; it weakens no check. It read both
+switches' transcripts for the order they ran. (1) The reason the list gave for the order was
+wrong: the switch does not change the headers, so the bindings check passes either way; what
+forces the order is that the remaining C links the module's exports, which the Rust library
+holds only once the feature is deleted. (2) "Each needing the one before" was false between the
+Rust and the C side, which one of the two switches committed in the other order; the row's
+signal is narrowed with it. Both made as `d3e56f0`. (3) `testing-gates`' Regressions section lists
+the parts in the opposite order, a signal this proposal noticed and left unfiled: it is now
+`switch-order-in-testing-gates`. Listed apart: the list leaves out retiring the module's
+equivalence tests and listing the C test cases nothing carries over; "removes or rewrites"
+gives no direction for a `cfg(not(…))`.
