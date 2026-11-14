@@ -1,6 +1,6 @@
 # ffimap's driver does not build under a directory that holds a Cargo workspace, and its suite then skips
 
-Status: `open`: the change is ffimap `5ac9ec5` on `libgit2-crustify/evolution/ffimap-driver-builds-under-a-workspace`, made on 2026-11-14,
+Status: `open`: the change is ffimap `b5c043c` on `libgit2-crustify/evolution/ffimap-driver-builds-under-a-workspace`, made on 2026-11-14,
 awaiting its review.
 
 Goal: Verification: a gate result a run reports is one its tree reproduces.
@@ -20,7 +20,7 @@ A tool: ffimap's driver `Cargo.toml`, and its tests' skip condition.
 ## Change
 
 In `src/ffimap/driver/Cargo.toml`, an empty `[workspace]` table. In `measure.py`,
-`driver_prerequisites`: `cargo`, `rustup` and the dated nightly present. The four driver
+`driver_prerequisites`: `cargo`, `rustup` and the dated nightly present. The five driver
 suites skip on that alone and then build the driver, so a build that fails raises at import
 and fails the module. `tests/test_scan.py` gains a test that a copy of the driver below
 another workspace resolves (`cargo metadata`), which fails without the table.
@@ -31,7 +31,7 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| ffimap's driver does not build under a directory that holds a Cargo workspace, and its suite then skips: fixed | `libgit2-crustify`, `ffimap-driver-builds-under-a-workspace` | ffimap `5ac9ec5` | under a directory holding a Cargo workspace the driver did not build, and ffimap's suite reported success with 75 of 145 tests skipped; two reviews ran it so | test | |
+| ffimap's driver does not build under a directory that holds a Cargo workspace, and its suite then skips: fixed | `libgit2-crustify`, `ffimap-driver-builds-under-a-workspace` | ffimap `b5c043c` | under a directory holding a Cargo workspace the driver did not build, and ffimap's suite reported success with 75 of 145 tests skipped; two reviews ran it so | test | |
 
 ## Validation
 
@@ -41,3 +41,12 @@ workspace test fails without the manifest's table.
 ## Review
 
 None yet.
+
+`review-1` (Opus 5.5, `$1.34`), on ffimap `5ac9ec5`: **rejected**, two fixes, made as `b5c043c`; it weakens no
+check. It reproduced the signal (the parent, below the campaign's workspace: OK with 77 of 147
+skipped) and showed the change run 148 with none skipped there, skip cleanly without the
+toolchain, and leave the installed package's build unchanged. The fixes: a fifth driver suite,
+`test_registry`, still swallowed a build failure, and no test checked the new skip conditions,
+so the row's `test` claimed too much. `tests/test_scan.py` now lists the driver suites, and
+checks that each fails where the toolchain is present and the driver does not build, and
+skips without the toolchain.
