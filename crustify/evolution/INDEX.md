@@ -78,7 +78,7 @@ the assistant alone, as each batch's proposals land.
 | `reviewed-evolution` | Every change is reviewed, recorded and watched | `landed` | — | — |
 | `scratch-shared-between-agents` | Scratch a host shares between concurrent agents | `landed` | `wave-12/batch-2`, `wave-169/batch-1`, `wave-169/batch-2`, `wave-176/batch-1` | — |
 | `spec-consistency-2026-11-12` | Consistency fixes to the spec, made in another workspace | `landed` | — | — |
-| `spec-language` | The spec's language; the goals rewritten under it | `open` | — | — |
+| `spec-language` | The spec's language; the goals rewritten under it | `landed` | — | its own row |
 | `stage-points-count-staying-tests` | The C tests that stay, in a `port/unexport`'s release point | `landed` | — | — |
 | `std-macro-expansions-outside-regions` | The standard library's own macro expansions count as unsafe code outside the regions | `open` | `wave-194/batch-0`, `wave-194/batch-1`, `wave-194/batch-3` | — |
 | `symbol-alias-anchors` | Where a symbol alias's anchor goes | `landed` | `wave-177/batch-0` | — |

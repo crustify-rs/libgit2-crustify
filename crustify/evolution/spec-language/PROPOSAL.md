@@ -1,10 +1,8 @@
 # The spec's language; the goals rewritten under it
 
-Status: `open`: the change is one commit on Crustify's
-`libgit2-crustify/evolution/spec-language`, `f20edc9`, at the user's direction on 2026-11-14,
-and awaits review-4. Four earlier commits (`73ca306`, `01830f8`, `437cc1d`, `44186d8`), which
-three reviews rejected, are replaced by it. It rewrites `GOALS.md`, a protected path, so it
-lands only with the user's approval.
+Status: `landed`, as crustify `f20edc9`, with the user's approval on 2026-11-14 after review-4
+approved it; its row is in the record as crustify `4a0e778`. Four earlier commits (`73ca306`,
+`01830f8`, `437cc1d`, `44186d8`), which three reviews rejected, were replaced by it.
 
 ## Signal
 
