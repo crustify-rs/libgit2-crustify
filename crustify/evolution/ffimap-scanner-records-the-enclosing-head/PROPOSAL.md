@@ -1,7 +1,8 @@
 # ffimap records the enclosing repository's HEAD as its own version
 
-Status: `open`: the change is ffimap `50a800e` on `libgit2-crustify/evolution/ffimap-scanner-records-the-enclosing-head`, made on 2026-11-14,
-awaiting its review.
+Status: `landed` as ffimap `50a800e` on its `libgit2-crustify/devel` (record: crustify `e02c54c`), on
+2026-11-14, once its review approved it. ffimap's `devel` takes it once the rescans of that
+day have finished.
 
 Goal: Attribution: every figure names the revision that produced it.
 
@@ -71,3 +72,6 @@ review-1's first fix are made, the new tests fail on the parent, and no skill us
 diff`. Listed apart: the hash covers tracked changes only. The working branch had taken
 `ffimap-driver-builds-under-a-workspace` meanwhile, which adds classes to the same test file,
 so the commit is rebased as `50a800e`, both sets of classes kept, and reviewed once more.
+
+`review-3` (Opus 5.5, `$0.28`), on ffimap `50a800e`: **approved**: it is `1075740` but for the test file's
+merge, and its 155 tests pass.
