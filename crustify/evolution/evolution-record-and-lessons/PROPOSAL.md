@@ -36,7 +36,7 @@ last cell of each row of Crustify's `EVOLUTION.md`:
 - Eight evolution branches of Crustify hold finished changes no review has read
   (`git -C /crustify-rs/crustify branch --list 'libgit2-crustify/evolution/*'`, less this
   change's and `spec-language`'s). Meanwhile three batches renamed items around the alias
-  rule and three packaged by hand, by their reports; review-1 did not check those two counts.
+  rule and two packaged by hand (`wave-186/batch-0`, `wave-229/batch-0`), by their reports.
 - The record holds 50 rows: 47 `watched`, and 3 with no status (`test` or `none`). No
   module's end read them during the pilot. The assistant took three for recurred
   (`wavefront-enum-constant-uses`, the coverage scripts, `ffibox-canonical-path`); review-1
@@ -114,15 +114,16 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| a campaign indexes its proposals, each filed once and naming its goal and measure; lessons are entries under a slug, read by a review batch and reconciled at ship points; a finished change is reviewed before the next wave; a review report names the tier that caught its finding; the protected paths change only with the user's approval; a change's row is drafted in its proposal; the record is `evolution-record`'s | `libgit2-crustify`, `evolution-record-and-lessons` | crustify `74f960c`, `d3eace2` | a pilot whose runs filed three signals twice, left eight finished changes unreviewed while later runs worked around what they fixed, read the record at no module's end, and wrote lessons no run was asked to review | by a run launched under this change: a signal the index held, filed again under a new slug; a wave launched while a finished change waited for its review; a lesson still `provisional` after the reviews of its wave landed; a review report that names no tier | watched; weakens a check: the watched rows are read at a period, by default every fifth module, not at each module's end; changes what checks the rest |
+| a campaign indexes its proposals, each filed once while it waits and naming its goal and measure, campaigns that share a working branch reading each other's index; lessons are entries under a slug, read by a review batch and reconciled at ship points; a finished change is reviewed before the next wave; a review report names the tier that caught its finding; the protected paths change only with the user's approval; a change's row is drafted in its proposal; the record is `evolution-record`'s | `libgit2-crustify`, `evolution-record-and-lessons` | crustify `74f960c`, `d3eace2`, `479c29f` | a pilot whose runs filed three signals twice, left eight finished changes unreviewed while later runs worked around what they fixed, read the record at no module's end, and wrote lessons no run was asked to review | by a run launched under this change: a signal an index the run reads held open, filed again under a new slug; a signal that met a landed row's recurrence signal and was not filed; a wave the assistant launched under this change while a finished change waited for its review; a lesson still `provisional` after the review batch that should have read it has landed; a review report that names no tier | watched; weakens a check: the watched rows are read at a period, by default every fifth module, not at each module's end; changes what checks the rest |
 
 ## Validation
 
 A dry run of the index, which review-1 asked for: a script wrote
 `crustify/evolution/INDEX.md` from this repository's 84 proposals, each row with the runs
 its proposal cites. Read against it, the read-before-filing rule has something to read from
-the day the change lands, and the three duplicated signals sit two rows apart or name each
-other's repository. The index is committed as the campaign's, to be kept by the assistant;
+the day the change lands, and one of the three duplicated signals sits two rows apart in it.
+The other two cross to glibc-crustify, whose proposals this index does not hold: campaigns
+that share a working branch reading each other's index is what catches those. The index is committed as the campaign's, to be kept by the assistant;
 glibc-crustify's is written when the change lands.
 
 ## Review
@@ -184,5 +185,8 @@ user's two choices are carried through, and fixes 1, 6, 7 and 8 of review-1 hold
   spec.
 
 Two of the recounted figures were still off: glibc-crustify's lesson edits are 4 of 9
-commits, and two batches packaged by hand, not three. Not yet made: the fixes wait for the
-user's word on R2 and R5.
+commits, and two batches packaged by hand, not three. Made in `479c29f`, with the user's answers of 2026-11-14: campaigns that share a
+working branch read each other's index (R2); the exception covers protected code alone, and a
+protected text always waits for the user (R5); and the entry for a tool's repository, which no
+diff could be matched against, is dropped rather than made precise, at the user's word that
+the rule was growing past its use.

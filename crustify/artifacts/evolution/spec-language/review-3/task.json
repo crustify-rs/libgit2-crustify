@@ -1,0 +1,19 @@
+{
+ "backend": "claude",
+ "billing": "api",
+ "model_proxy": "openrouter",
+ "args": [
+  "--model",
+  "claude-opus-5-5"
+ ],
+ "revisions": {
+  "crustify": "5933a5d",
+  "wavefront": "bf21e16",
+  "ffibox": "9c22a73",
+  "ffimap": "9aa2ef1"
+ },
+ "component": "crustify",
+ "branch": "libgit2-crustify/evolution/spec-language",
+ "commit": "44186d8",
+ "proposal": "crustify/evolution/spec-language"
+}
