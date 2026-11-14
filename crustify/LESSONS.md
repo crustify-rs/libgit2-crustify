@@ -138,3 +138,25 @@ and are outside the rule: `wave-176/batch-1` compares them so in the test proces
   one-time CMake change; `crustify/builds.gen1`'s archives hold 212 objects where the previous
   generation's held 213, `utf8.c.o` gone.
 - **Scope.** Every later module's switch, and every rebuild of the variants after one.
+
+## A `git2` module's exports are checked through the CLI
+
+- **Rule.** No C test reaches the `git2` link unit, the CLI under `src/cli/`: its modules'
+  `tests` are empty, and no suite under `c/tests` builds or runs `src/cli`. Its exports are
+  therefore checked, before the module's switch, by the gateway's own tests, written after the
+  CLI's C that calls them and run with the export feature on against a private build whose
+  archive lacks the module's object, and under Miri; and by the CLI itself: the variant's
+  `git2` relinked from its `build.ninja` edge (`build git2: C_EXECUTABLE_LINKER__git2_cli_…`),
+  without the module's `src/cli/CMakeFiles/git2_cli.dir/<tu>.o` and with the crate built as a
+  `staticlib` with the feature on (`CRUSTIFY_STATICLIB=1`, `CRUSTIFY_BUILD_DIR` the private
+  build, a `CARGO_TARGET_DIR` of its own), then run beside the stock `git2` over the commands'
+  usual and failing command lines in scratch repositories, every difference in exit status,
+  output or files written either a departure the module records or a finding. After the
+  switch, the relinked CLI is the variants' own, and the same command lines check it.
+- **Evidence.** `wave-186/batch-7/run-1`, `src/cli/opt.c`'s module pass: its gateway tests
+  under Miri found `ub_export/args-slot-handed-to-c-through-a-dead-borrow`, and its relinked
+  `git2`, over the 66 command lines of its run dir's `cli-smoke.py`, matched the stock one on 62,
+  the 4 others the parser's recorded departures (the bare `-`, and the literal `--`'s
+  reordering).
+- **Scope.** Every module of the `git2` link unit, at its module pass and its switch, until the
+  CLI has tests of its own.

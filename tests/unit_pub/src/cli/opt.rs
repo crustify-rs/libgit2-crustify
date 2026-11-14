@@ -1372,28 +1372,57 @@ fn a_parser_ends_and_refuses_without_reading_past() {
     assert_eq!(statuses, [unknown, unknown, unknown, Some(Status::Done)]);
 }
 
-/// The bare `-` is an unknown option, in either style, where the C matches the first spec
-/// without an alias, the CLI's `--help`, and reads past the argument.
+/// The bare `-` is a bare argument, in either style, as POSIX `getopt` and GNU `getopt_long` take
+/// it, where the C matches the first spec without an alias, the CLI's `--help`, and reads past the
+/// argument: it takes an argument spec, stays among the bare arguments a GNU-style parse moves an
+/// option ahead of, and is unknown once the argument specs are taken, as any bare argument is.
+///
+/// The regression test of `logic/bare-dash-is-an-operand` (`wave-186/batch-7`).
 #[test]
-fn a_bare_dash_is_unknown() {
+fn a_bare_dash_is_a_bare_argument() {
     let help = Cell::new(0);
     for flags in [ParseFlags::DEFAULT, ParseFlags::FORCE_GNU] {
-        let mut args = [c"a", c"-"].map(Arg::new);
-        let mut alone = [c"-"].map(Arg::new);
+        let (quiet, file) = (Cell::new(0), Cell::new(None));
         let specs = [
             Spec::new(Target::Switch(Some(&help)))
                 .with_name(c"help")
                 .with_switch_value(1)
                 .with_usage(Usage::HIDDEN | Usage::STOP_PARSING),
-            Spec::new(Target::Args(None)),
+            Spec::new(Target::Bool(Some(&quiet))).with_alias(b'q'),
+            Spec::new(Target::Arg(Some(&file))),
             Spec::default(),
         ];
         let table = SpecTable::new(&specs).unwrap();
-        let mut parser = Parser::new(table, &mut args, flags);
-        parser.as_mut().set_idx(1);
+
+        let mut alone = [c"-"].map(Arg::new);
+        let mut parser = Parser::new(table, &mut alone, flags);
+        let bare = (Some(Status::Ok), Some(2), Some(c"-"), None);
+        let done = (Some(Status::Done), None, None, None);
+        assert_eq!(steps(&mut parser, table), [bare, done], "{flags:?}");
+        assert_eq!(file.get().map(Arg::as_c_str), Some(c"-"), "{flags:?}");
+
+        file.set(None);
+        let mut after = [c"-q", c"-"].map(Arg::new);
+        assert!(parse(table, &mut after, flags).is_ok(), "{flags:?}");
+        assert_eq!(
+            (quiet.get(), file.get().map(Arg::as_c_str)),
+            (1, Some(c"-"))
+        );
+
+        file.set(None);
+        quiet.set(0);
+        let mut before = [c"-", c"-q"].map(Arg::new);
+        let (_, left) = parse(table, &mut before, ParseFlags::FORCE_GNU).unwrap();
+        assert_eq!(strings(left), [c"-q", c"-"]);
+        assert_eq!(
+            (quiet.get(), file.get().map(Arg::as_c_str)),
+            (1, Some(c"-"))
+        );
+
+        let mut two = [c"a", c"-"].map(Arg::new);
+        let mut parser = Parser::new(table, &mut two, flags);
         let unknown = (Some(Status::UnknownOption), None, Some(c"-"), None);
-        assert_eq!(steps(&mut parser, table)[0], unknown, "{flags:?}");
-        assert!(parse(table, &mut alone, flags).is_err());
+        assert_eq!(steps(&mut parser, table)[1], unknown, "{flags:?}");
     }
     assert_eq!(help.get(), 0);
 }

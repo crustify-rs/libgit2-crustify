@@ -29,7 +29,8 @@
 //! The parser corrects the C's defects, each
 //! documented on the routine that departs: it reads no string past its end, nor through a null
 //! pointer, and keeps any number of the specs a parse gives, where the C writes past a stack
-//! array of one per argument; an unknown option ends its bundle; and GNU-style reordering moves
+//! array of one per argument; the bare `-` is a bare argument, as `getopt` takes it, where the C
+//! parses it as an option; an unknown option ends its bundle; and GNU-style reordering moves
 //! nothing after a literal `--`, and loses no bare argument before an option whose value is
 //! optional.
 //!
@@ -1249,6 +1250,8 @@ impl<'p> ParserMut<'_, 'p> {
     /// `-ovalue`: each is looked up among the table's options, and one the table does not have is
     /// [`Status::UnknownOption`]. A [`Kind::Value`] option given no value takes the next
     /// argument, or is [`Status::MissingValue`] when none is left and its value is not optional.
+    /// The bare `-` is no option: it is a bare argument, as POSIX `getopt` and GNU
+    /// `getopt_long` take it, conventionally standard input or a path named `-`.
     /// Any other argument is bare, as is every argument after a literal `--`: it takes the next of
     /// the table's [`Kind::Arg`] specs, in order, or a [`Kind::Args`] spec, which takes every
     /// argument left; once they are taken, a bare argument is [`Status::UnknownOption`]. An
@@ -1288,7 +1291,8 @@ impl<'p> ParserMut<'_, 'p> {
     /// The C defects [`find_long`], [`find_short`], [`skip_choice_args`], [`take_short`] and
     /// [`reorder_gnu_style`] list are not carried over: a parser that has no table, as a zeroed
     /// one, finds no spec, and its arguments are unknown, where the C reads through a null
-    /// pointer.
+    /// pointer; and the bare `-` is a bare argument, where the C parses it as a short option,
+    /// which selects the table's first spec without an alias and reads past the argument's end.
     ///
     /// Replaces `fn::cli_opt_parser_next`
     #[doc(alias = "cli_opt_parser_next")]
@@ -1306,7 +1310,7 @@ impl<'p> ParserMut<'_, 'p> {
             if bytes.starts_with(b"--") && !in_short && !in_literal {
                 return take_long(self);
             }
-            if in_short || (bytes.starts_with(b"-") && !in_literal) {
+            if in_short || (bytes.starts_with(b"-") && bytes != b"-" && !in_literal) {
                 return take_short(self);
             }
             if !(state.needs_sort() && reorder_gnu_style(self)) {
@@ -3929,7 +3933,7 @@ mod ffi_export {
 
     use super::{
         Arg, FileWriter, ForeachCallbackFn, Opt, OptRef, ParseFlags, Parser, ParserMut, Spec,
-        SpecTable, for_each, parse,
+        SpecTable, Target, for_each, parse,
     };
     use crate::sys::git2 as sys;
 
@@ -3969,6 +3973,37 @@ mod ffi_export {
         // meanwhile, by the caller's contract: valid `Arg`s, which are `#[repr(transparent)]` over
         // a non-null `char *`, borrowed exclusively for as long.
         unsafe { slice::from_raw_parts_mut(args.cast::<Arg<'p>>(), args_len) }
+    }
+
+    /// Rewrites each position a parse stored in the variable of a [`Kind::Args`](super::Kind::Args)
+    /// spec of `table`, when it is within the `len` arguments at `args`, as C's own pointer:
+    /// `args` plus the position's index, the `&args[idx]` C stores.
+    ///
+    /// The parse takes the position from its borrow of the array, and a pointer so taken grants
+    /// access only while nothing else takes the array: the parse's own later borrow of it, or
+    /// another export's, as `common.c`'s `cli_opt_foreach` over the same `argv`, takes that
+    /// access away, and C reads the variable after the call has returned, as
+    /// `cmd_hash_object.c` walks its files to `argv`'s `NULL`. C's own pointer keeps the access
+    /// C gave. A position outside the array, a variable an earlier parse wrote for another
+    /// one, is left as it is.
+    fn rebase_args_slots<'p>(table: SpecTable<'p>, args: *mut *mut c_char, len: usize) {
+        let base = args.cast::<Arg<'p>>();
+        for spec in table.iter() {
+            let Some(Target::Args(Some(slot))) = spec.target() else {
+                continue;
+            };
+            let stored = slot.0.get();
+            if stored.is_null() {
+                continue;
+            }
+            let Some(offset) = stored.addr().checked_sub(base.addr()) else {
+                continue;
+            };
+            let index = offset / size_of::<Arg<'p>>();
+            if offset % size_of::<Arg<'p>>() == 0 && index <= len {
+                slot.0.set(base.wrapping_add(index));
+            }
+        }
     }
 
     /// Writes `opt` to `*out` and returns its status, as C's parser fills the outcome its caller
@@ -4020,6 +4055,7 @@ mod ffi_export {
         let Some(table) = (unsafe { SpecTable::from_ptr(specs) }) else {
             std::process::abort();
         };
+        let c_args = args;
         // SAFETY: the caller's contract: `args` addresses `args_len` arguments that live, the
         // strings unchanged, while C uses the parser, which only that parse reaches meanwhile.
         let args = unsafe { adopt_args(args, args_len) };
@@ -4029,6 +4065,13 @@ mod ffi_export {
         // caller's contract; `Parser` is `#[repr(transparent)]` over it, and the write reads
         // nothing of the old value, which needs no drop.
         unsafe { parser.cast::<Parser<'_>>().write(new) };
+        // The parser keeps C's own pointer to the arguments, as C stores it, so that the
+        // positions its parse stores for C are C's, as `rebase_args_slots` makes them; it
+        // addresses what the adopted array did.
+        // SAFETY: `parser` was just written whole; the projection forms no reference to it.
+        let args_ptr = unsafe { &raw mut (*parser).args };
+        // SAFETY: a write of a plain field of that live parser, which needs no drop.
+        unsafe { args_ptr.write(c_args) };
     }
 
     /// `cli_opt_parser_next`: [`ParserMut::parse_next`] of `*parser`, whose outcome it writes to
@@ -4048,6 +4091,7 @@ mod ffi_export {
         opt: *mut sys::cli_opt,
         parser: *mut sys::cli_opt_parser,
     ) -> sys::cli_opt_status_t {
+        let raw = parser;
         // SAFETY: the caller's contract: `parser` is a valid parser that nothing else reaches
         // during the call, whose table and arguments live while C uses it and its outcomes, the
         // lifetime this adoption takes.
@@ -4055,6 +4099,14 @@ mod ffi_export {
             std::process::abort();
         };
         let next = barrier(|| parser.parse_next(), || std::process::abort());
+        if let Some(table) = parser.as_ref().specs() {
+            // SAFETY: `raw` is the live parser the handle adopted; the projection forms no
+            // reference to it.
+            let args_ptr = unsafe { &raw const (*raw).args };
+            // SAFETY: a read of a plain field of that live parser.
+            let c_args = unsafe { args_ptr.read() };
+            rebase_args_slots(table, c_args, parser.as_ref().args_len());
+        }
         // SAFETY: the caller's contract: `opt` is valid for a write of a `cli_opt`.
         unsafe { write_outcome(opt, next) }
     }
@@ -4089,6 +4141,7 @@ mod ffi_export {
         let Some(table) = (unsafe { SpecTable::from_ptr(specs) }) else {
             std::process::abort();
         };
+        let c_args = args;
         // SAFETY: the caller's contract: `args` addresses `args_len` arguments that live, the
         // strings unchanged, as long, which only this parse reaches during the call.
         let args = unsafe { adopt_args(args, args_len) };
@@ -4100,6 +4153,7 @@ mod ffi_export {
             },
             || std::process::abort(),
         );
+        rebase_args_slots(table, c_args, args_len);
         // SAFETY: the caller's contract: `opt`, non-null, is valid for a write of a `cli_opt`.
         unsafe { write_outcome(opt, outcome) }
     }
@@ -4137,6 +4191,7 @@ mod ffi_export {
         let Some(callback) = callback else {
             std::process::abort();
         };
+        let c_args = args;
         // SAFETY: the caller's contract: `args` addresses `args_len` arguments that live, the
         // strings unchanged, as long, which only this parse reaches during the call.
         let args = unsafe { adopt_args(args, args_len) };
@@ -4145,13 +4200,15 @@ mod ffi_export {
         // thread, during this call, which the callable does not outlive, with outcomes it only
         // reads and does not keep.
         let callback = unsafe { ForeachCallbackFn::from_c(callback, callback_data) };
-        barrier(
+        let rc = barrier(
             || match for_each(table, args, flags, callback) {
                 ControlFlow::Continue(()) => 0,
                 ControlFlow::Break(code) => code.get(),
             },
             || -1,
-        )
+        );
+        rebase_args_slots(table, c_args, args_len);
+        rc
     }
 
     /// `cli_opt_status_fprint`: [`OptRef::write_status`] of `*opt` to the stream `file`, after
@@ -4220,6 +4277,569 @@ mod ffi_export {
                 }
                 -1
             }
+        }
+    }
+
+    /// The exports as the CLI's remaining C calls them once the module has switched, each
+    /// called by its C name over C's own forms: a `NULL`-terminated `argv` of C strings, a spec
+    /// table ended by its zeroed spec whose variables C reads after the parse, and outcomes and a
+    /// parser in storage the export overwrites whole. Each asserts what that C reads afterwards:
+    /// `main.c` the parser's position and the command's string, each `cmd_*.c` its variables, an
+    /// `Args` spec's `char **` walked to `argv`'s `NULL`, and a failure's outcome, `common.c` each
+    /// outcome its callback is lent, and `opt_usage.c` what the status message writes.
+    #[cfg(test)]
+    mod unit_priv {
+        use core::cell::Cell;
+        use core::ffi::{CStr, c_char, c_int, c_void};
+        use core::mem::MaybeUninit;
+        use core::ptr;
+        use std::ffi::CString;
+
+        use glibc_bindings::libc::csu::errno_loc::{errno, set_errno};
+        use glibc_bindings::libc::ffi as libc;
+
+        use super::super::{Arg, ArgsSlot, Spec, Target, Usage};
+        use super::{
+            cli_opt_foreach, cli_opt_parse, cli_opt_parser_init, cli_opt_parser_next,
+            cli_opt_status_fprint,
+        };
+        use crate::sys::git2 as sys;
+
+        /// An `argv` as `main` receives it: the strings, and the `NULL`-terminated array of their
+        /// pointers, which the exports reorder in place.
+        struct Argv {
+            _strings: Vec<CString>,
+            ptrs: Vec<*mut c_char>,
+        }
+
+        impl Argv {
+            fn new(args: &[&str]) -> Self {
+                let strings: Vec<_> = args.iter().map(|a| CString::new(*a).unwrap()).collect();
+                let ptrs = strings
+                    .iter()
+                    .map(|s| s.as_ptr().cast_mut())
+                    .chain([ptr::null_mut()])
+                    .collect();
+                Self {
+                    _strings: strings,
+                    ptrs,
+                }
+            }
+
+            /// The arguments after the program's name, `argv + 1`, and their count, `argc - 1`.
+            fn tail(&mut self) -> (*mut *mut c_char, usize) {
+                let len = self.ptrs.len() - 2;
+                (self.ptrs[1..].as_mut_ptr(), len)
+            }
+
+            /// The strings of `argv`, in their current order, to its `NULL`.
+            fn strings(&self) -> Vec<&str> {
+                self.ptrs
+                    .iter()
+                    .take_while(|p| !p.is_null())
+                    // SAFETY: each element before the `NULL` is one of `_strings`' pointers.
+                    .map(|&p| unsafe { CStr::from_ptr(p) }.to_str().unwrap())
+                    .collect()
+            }
+        }
+
+        /// The string at a pointer C reads, `None` for `NULL`.
+        ///
+        /// # Safety
+        ///
+        /// `p` is `NULL` or a C string that outlives the result.
+        unsafe fn text<'s>(p: *const c_char) -> Option<&'s str> {
+            // SAFETY: the caller's contract.
+            (!p.is_null()).then(|| unsafe { CStr::from_ptr(p) }.to_str().unwrap())
+        }
+
+        /// Storage C hands an export to fill, every byte set first so that a field the export
+        /// leaves unwritten shows.
+        fn scribbled<T>() -> MaybeUninit<T> {
+            let mut storage = MaybeUninit::uninit();
+            // SAFETY: `storage` is valid for writes of one `T`'s bytes.
+            unsafe { ptr::write_bytes(storage.as_mut_ptr(), 0xA5, 1) };
+            storage
+        }
+
+        /// `main.c`'s loop: it sets a parser up over `argv + 1` against its common options,
+        /// GNU style, steps it until the command is taken, then reads the parser's position to
+        /// move the command ahead of the options GNU style moved before it.
+        #[test]
+        fn main_c_steps_a_parser_to_its_command() {
+            let (help, pager, version) = (Cell::new(0), Cell::new(1), Cell::new(0));
+            let (command, rest) = (Cell::new(None), ArgsSlot::new());
+            let specs = [
+                Spec::new(Target::Switch(Some(&help)))
+                    .with_name(c"help")
+                    .with_switch_value(1)
+                    .with_usage(Usage::HIDDEN | Usage::STOP_PARSING),
+                Spec::new(Target::Value(None)).with_alias(b'c'),
+                Spec::new(Target::Value(None)).with_name(c"config-env"),
+                Spec::new(Target::Switch(Some(&pager))).with_name(c"no-pager"),
+                Spec::new(Target::Switch(Some(&version)))
+                    .with_name(c"version")
+                    .with_switch_value(1),
+                Spec::new(Target::Arg(Some(&command))).with_usage(Usage::REQUIRED),
+                Spec::new(Target::Args(Some(&rest))),
+                Spec::default(),
+            ];
+            let table = specs.as_ptr().cast::<sys::cli_opt_spec>();
+            let mut argv = Argv::new(&["git2", "-cx=y", "status", "--no-pager", "-s", "f"]);
+            let status_ptr = argv.ptrs[2];
+            let (tail, len) = argv.tail();
+            let mut parser = scribbled::<sys::cli_opt_parser>();
+            // SAFETY: the parser's storage is writable; the table is a spec array ended by its
+            // zeroed spec, and `tail` the `len` arguments after the program's name, all of which
+            // outlive the parse.
+            unsafe {
+                cli_opt_parser_init(
+                    parser.as_mut_ptr(),
+                    table,
+                    tail,
+                    len,
+                    sys::CLI_OPT_PARSE_GNU,
+                );
+            }
+            let mut steps = Vec::new();
+            loop {
+                let mut opt = scribbled::<sys::cli_opt>();
+                // SAFETY: the outcome's storage is writable, and the parser is the one
+                // `cli_opt_parser_init` set up, which nothing else reaches meanwhile.
+                let status = unsafe { cli_opt_parser_next(opt.as_mut_ptr(), parser.as_mut_ptr()) };
+                // SAFETY: the export wrote the outcome whole.
+                let opt = unsafe { opt.assume_init() };
+                assert_eq!(opt.status, status);
+                // SAFETY: the outcome's argument is `NULL` or one of the arguments' strings.
+                let arg = unsafe { text(opt.arg) };
+                // SAFETY: its value is `NULL` or a suffix of one.
+                let value = unsafe { text(opt.value) };
+                steps.push((status, (arg, value)));
+                if status == sys::CLI_OPT_STATUS_DONE || command.get().is_some() {
+                    assert!(!opt.spec.is_null());
+                    assert_eq!(opt.args_len, 0);
+                    break;
+                }
+            }
+            let ok = sys::CLI_OPT_STATUS_OK;
+            assert_eq!(
+                steps,
+                [
+                    (ok, (Some("-cx=y"), Some("x=y"))),
+                    (ok, (Some("--no-pager"), None)),
+                    (ok, (Some("status"), None)),
+                ]
+            );
+            // SAFETY: the export set the parser up whole, and the parse moved it on.
+            let parser = unsafe { parser.assume_init() };
+            assert_eq!((parser.idx, parser.args_len, parser.in_short), (3, 5, 0));
+            assert_eq!(parser.args, tail);
+            assert_eq!(
+                argv.strings(),
+                ["git2", "-cx=y", "--no-pager", "status", "-s", "f"]
+            );
+            assert_eq!(argv.ptrs.last(), Some(&ptr::null_mut()));
+            assert_eq!(
+                command.get().map(|c| c.as_c_str().as_ptr()),
+                Some(status_ptr.cast_const())
+            );
+            assert_eq!((help.get(), pager.get(), version.get()), (0, 0, 0));
+            assert!(!rest.is_set());
+        }
+
+        /// A command's `cli_opt_parse` of `argv + 1`, as `cmd_hash_object.c`'s: the variables
+        /// hold what the arguments gave, the `Args` spec's `char **` points into `argv`, after
+        /// the reordering, and is walked to its `NULL`; each failure is its outcome, with the
+        /// spec and argument `cli_opt_usage_error` describes.
+        #[test]
+        fn a_command_parses_its_argv_in_place() {
+            let (help, write, stdin) = (Cell::new(0), Cell::new(0), Cell::new(0));
+            let (kind, files) = (Cell::new(None), ArgsSlot::new());
+            let specs = [
+                Spec::new(Target::Switch(Some(&help)))
+                    .with_name(c"help")
+                    .with_switch_value(1)
+                    .with_usage(Usage::HIDDEN | Usage::STOP_PARSING),
+                Spec::new(Target::Value(Some(&kind))).with_alias(b't'),
+                Spec::new(Target::Switch(Some(&write)))
+                    .with_alias(b'w')
+                    .with_switch_value(1),
+                Spec::new(Target::Switch(Some(&stdin)))
+                    .with_name(c"stdin")
+                    .with_switch_value(1)
+                    .with_usage(Usage::REQUIRED),
+                Spec::new(Target::Args(Some(&files)))
+                    .with_value_name(c"file")
+                    .with_usage(Usage::CHOICE),
+                Spec::default(),
+            ];
+            let table = specs.as_ptr().cast::<sys::cli_opt_spec>();
+            let parse = |argv: &mut Argv| {
+                let (tail, len) = argv.tail();
+                let mut opt = scribbled::<sys::cli_opt>();
+                // SAFETY: as `cli_opt_parse` reads them: the outcome's storage is writable, the
+                // table ended by its zeroed spec, and `tail` the `len` arguments after the
+                // command's name, all of which outlive the parse and what it wrote.
+                let status = unsafe {
+                    cli_opt_parse(opt.as_mut_ptr(), table, tail, len, sys::CLI_OPT_PARSE_GNU)
+                };
+                // SAFETY: the export wrote the outcome whole.
+                let opt = unsafe { opt.assume_init() };
+                assert_eq!(opt.status, status);
+                opt
+            };
+
+            let mut argv = Argv::new(&["hash-object", "a.txt", "-w", "-tblob", "b.txt"]);
+            let done = parse(&mut argv);
+            assert_eq!(done.status, sys::CLI_OPT_STATUS_DONE);
+            assert!(done.spec.is_null());
+            assert_eq!(done.args_len, 2);
+            assert_eq!(
+                argv.strings(),
+                ["hash-object", "-w", "-tblob", "a.txt", "b.txt"]
+            );
+            assert_eq!(write.get(), 1);
+            assert_eq!(kind.get().map(Arg::as_c_str), Some(c"blob"));
+            // What `cmd_hash_object.c` walks: the slot's `char **`, up to `argv`'s `NULL`.
+            // SAFETY: an `ArgsSlot` is `#[repr(transparent)]` over the `char **` C reads.
+            let walk: *const *mut c_char =
+                unsafe { ptr::from_ref(&files).cast::<*const *mut c_char>().read() };
+            assert_eq!(walk, argv.ptrs[3..].as_ptr());
+            let mut walked = Vec::new();
+            let mut at = walk;
+            loop {
+                // SAFETY: `at` stays within `argv`, which its `NULL` ends.
+                let file = unsafe { at.read() };
+                // SAFETY: an element of `argv`: `NULL`, or one of its strings.
+                let Some(file) = (unsafe { text(file) }) else {
+                    break;
+                };
+                walked.push(file);
+                at = at.wrapping_add(1);
+            }
+            assert_eq!(walked, ["a.txt", "b.txt"]);
+
+            let mut argv = Argv::new(&["hash-object", "-w", "--nope", "x"]);
+            let unknown = parse(&mut argv);
+            assert_eq!(unknown.status, sys::CLI_OPT_STATUS_UNKNOWN_OPTION);
+            assert!(unknown.spec.is_null());
+            assert_eq!(unknown.arg, argv.ptrs[2]);
+
+            let mut argv = Argv::new(&["hash-object", "-t"]);
+            let missing = parse(&mut argv);
+            assert_eq!(missing.status, sys::CLI_OPT_STATUS_MISSING_VALUE);
+            assert_eq!(missing.spec, table.wrapping_add(1));
+
+            let mut argv = Argv::new(&["hash-object", "-w"]);
+            let required = parse(&mut argv);
+            assert_eq!(required.status, sys::CLI_OPT_STATUS_MISSING_ARGUMENT);
+            assert_eq!(required.spec, table.wrapping_add(3));
+
+            let mut argv = Argv::new(&["hash-object", "--help", "--nope"]);
+            let stopped = parse(&mut argv);
+            assert_eq!(stopped.status, sys::CLI_OPT_STATUS_DONE);
+            assert_eq!(stopped.spec, table);
+            assert_eq!(help.get(), 1);
+
+            let mut argv = Argv::new(&["hash-object"]);
+            let (tail, _) = argv.tail();
+            let mut opt = scribbled::<sys::cli_opt>();
+            // SAFETY: as `parse`, over no argument.
+            let status =
+                unsafe { cli_opt_parse(opt.as_mut_ptr(), table, tail, 0, sys::CLI_OPT_PARSE_GNU) };
+            assert_eq!(status, sys::CLI_OPT_STATUS_MISSING_ARGUMENT);
+            assert_eq!(stdin.get(), 0);
+        }
+
+        /// What [`parse_option`] saw of each outcome, its spec's alias and name and its value,
+        /// and the outcome it fails at.
+        struct Seen {
+            outcomes: Vec<(Option<u8>, Option<String>, Option<String>)>,
+            fail_at: usize,
+        }
+
+        /// `common.c`'s `parse_option`: it reads each outcome's spec, alias and value, keeps them
+        /// in the `Seen` its context points at, and fails with `-5` at its `fail_at`th.
+        unsafe extern "C" fn parse_option(opt: *mut sys::cli_opt, data: *mut c_void) -> c_int {
+            // SAFETY: `data` is the test's `Seen`, which nothing else uses during the call.
+            let seen = unsafe { &mut *data.cast::<Seen>() };
+            // SAFETY: `opt` is the live outcome the parse lends for the call.
+            let opt = unsafe { opt.read() };
+            // SAFETY: its value is `NULL` or a suffix of one of the arguments.
+            let value = unsafe { text(opt.value) };
+            let (alias, name) = if opt.spec.is_null() {
+                (None, None)
+            } else {
+                // SAFETY: a spec the outcome names is one of the live table's.
+                let spec = unsafe { opt.spec.read() };
+                // SAFETY: its name is `NULL` or a string the table's caller keeps.
+                let (alias, name) = (spec.alias, unsafe { text(spec.name) });
+                (
+                    (alias != 0).then(|| u8::from_ne_bytes(alias.to_ne_bytes())),
+                    name,
+                )
+            };
+            seen.outcomes
+                .push((alias, name.map(str::to_owned), value.map(str::to_owned)));
+            if seen.outcomes.len() == seen.fail_at {
+                -5
+            } else {
+                0
+            }
+        }
+
+        /// `common.c`'s `cli_opt_foreach` over a command's arguments, GNU style, against the
+        /// configuration options alone: its callback is lent every outcome, the unknown ones
+        /// without a spec, and the parse stops with what the callback fails with.
+        #[test]
+        fn common_c_reads_each_outcome_its_callback_is_lent() {
+            let specs = [
+                Spec::new(Target::Value(None)).with_alias(b'c'),
+                Spec::new(Target::Value(None)).with_name(c"config-env"),
+                Spec::default(),
+            ];
+            let table = specs.as_ptr().cast::<sys::cli_opt_spec>();
+            let mut argv = Argv::new(&["init", "dir", "-cuser.name=me", "-q", "--config-env=a=B"]);
+            let (tail, len) = argv.tail();
+            let mut seen = Seen {
+                outcomes: Vec::new(),
+                fail_at: usize::MAX,
+            };
+            // SAFETY: the table is ended by its zeroed spec, `tail` the `len` arguments, and
+            // `parse_option` only reads each outcome, for the call alone, with `seen` as its
+            // context, all of which outlive the parse.
+            let rc = unsafe {
+                cli_opt_foreach(
+                    table,
+                    tail,
+                    len,
+                    sys::CLI_OPT_PARSE_GNU,
+                    Some(parse_option),
+                    ptr::from_mut(&mut seen).cast(),
+                )
+            };
+            assert_eq!(rc, 0);
+            let config = |alias, name: Option<&str>, value: &str| {
+                (alias, name.map(str::to_owned), Some(value.to_owned()))
+            };
+            assert_eq!(
+                seen.outcomes,
+                [
+                    config(Some(b'c'), None, "user.name=me"),
+                    config(None, Some("config-env"), "a=B"),
+                    (None, None, None),
+                    (None, None, None),
+                ]
+            );
+            assert_eq!(
+                argv.strings(),
+                ["init", "-cuser.name=me", "--config-env=a=B", "dir", "-q"]
+            );
+
+            let mut argv = Argv::new(&["init", "-ca=1", "-cb=2", "-cc=3", "-cd=4"]);
+            let (tail, len) = argv.tail();
+            let mut seen = Seen {
+                outcomes: Vec::new(),
+                fail_at: 3,
+            };
+            // SAFETY: as above.
+            let rc = unsafe {
+                cli_opt_foreach(
+                    table,
+                    tail,
+                    len,
+                    sys::CLI_OPT_PARSE_GNU,
+                    Some(parse_option),
+                    ptr::from_mut(&mut seen).cast(),
+                )
+            };
+            assert_eq!((rc, seen.outcomes.len()), (-5, 3));
+        }
+
+        /// A memory stream, `open_memstream`'s, and the bytes it holds once closed.
+        struct MemStream {
+            file: *mut libc::FILE,
+            buf: Box<(*mut c_char, usize)>,
+        }
+
+        impl MemStream {
+            fn open() -> Self {
+                let mut buf = Box::new((ptr::null_mut(), 0));
+                // SAFETY: both locations are boxed, so they stay put until `close` reads them.
+                let file = unsafe { libc::open_memstream(&raw mut buf.0, &raw mut buf.1) };
+                assert!(!file.is_null());
+                Self { file, buf }
+            }
+
+            /// Closes the stream and returns what was written to it.
+            fn close(self) -> Vec<u8> {
+                // SAFETY: the stream is open, and nothing uses it after this.
+                assert_eq!(unsafe { libc::fclose(self.file) }, 0);
+                // SAFETY: `fclose` left the buffer holding `size` bytes, which `free` releases.
+                let bytes =
+                    unsafe { core::slice::from_raw_parts(self.buf.0.cast::<u8>(), self.buf.1) }
+                        .to_vec();
+                // SAFETY: the buffer is `open_memstream`'s, freed once, with `free`.
+                unsafe { libc::free(self.buf.0.cast()) };
+                bytes
+            }
+        }
+
+        /// `opt_usage.c`'s `cli_opt_usage_error` and `main.c` describe a failed parse's
+        /// outcome on a stream: the message, and 0; an outcome the message cannot name fails with
+        /// -1 and `EINVAL`, writing nothing.
+        #[test]
+        #[cfg_attr(miri, ignore = "calls C")]
+        fn the_status_message_describes_a_failed_parse() {
+            let specs = [
+                Spec::new(Target::Switch(None)).with_alias(b'f'),
+                Spec::new(Target::Switch(None))
+                    .with_name(c"bar")
+                    .with_usage(Usage::CHOICE),
+                Spec::new(Target::Value(None)).with_alias(b'o'),
+                Spec::default(),
+            ];
+            let table = specs.as_ptr().cast::<sys::cli_opt_spec>();
+            let describe = |opt: &sys::cli_opt, command: Option<&CStr>| {
+                let stream = MemStream::open();
+                // SAFETY: an open stream, the command `NULL` or a C string, and an outcome whose
+                // spec is `NULL` or in the live table, all live for the call.
+                let rc = unsafe {
+                    cli_opt_status_fprint(
+                        stream.file,
+                        command.map_or(ptr::null(), CStr::as_ptr),
+                        opt,
+                    )
+                };
+                (rc, stream.close())
+            };
+            let mut argv = Argv::new(&["git2", "--nope"]);
+            let (tail, len) = argv.tail();
+            let mut opt = scribbled::<sys::cli_opt>();
+            // SAFETY: as `cli_opt_parse` reads them, all live for the parse and the message.
+            unsafe { cli_opt_parse(opt.as_mut_ptr(), table, tail, len, sys::CLI_OPT_PARSE_GNU) };
+            // SAFETY: the export wrote the outcome whole.
+            let unknown = unsafe { opt.assume_init() };
+            let message = describe(&unknown, Some(c"git2"));
+            assert_eq!(message, (0, b"git2: unknown option: --nope\n".to_vec()));
+
+            let mut missing = unknown;
+            missing.status = sys::CLI_OPT_STATUS_MISSING_ARGUMENT;
+            missing.spec = table;
+            let message = describe(&missing, None);
+            assert_eq!(
+                message,
+                (0, b"either '-f' or '--bar' is required.\n".to_vec())
+            );
+            missing.status = sys::CLI_OPT_STATUS_MISSING_VALUE;
+            missing.spec = table.wrapping_add(2);
+            let message = describe(&missing, Some(c"cat-file"));
+            assert_eq!(
+                message,
+                (0, b"cat-file: argument '-o' requires a value.\n".to_vec())
+            );
+
+            missing.spec = ptr::null();
+            set_errno(0);
+            let (rc, written) = describe(&missing, Some(c"git2"));
+            let einval = nix::errno::Errno::EINVAL as c_int;
+            assert_eq!((rc, errno(), written.len()), (-1, einval, 0));
+        }
+
+        /// `cmd_hash_object.c -w`: the files its parse stores are walked after `common.c` has
+        /// parsed the same `argv + 1` again for its configuration options, so the `char **` the
+        /// parse stored still reaches the array once both exports have borrowed it, which Miri
+        /// checks: it is C's own pointer into `argv`.
+        ///
+        /// The regression test of `ub_export/args-slot-handed-to-c-through-a-dead-borrow`
+        /// (`wave-186/batch-7`).
+        #[test]
+        fn the_files_a_parse_stores_outlive_a_later_parse_of_its_argv() {
+            let (write, files) = (Cell::new(0), ArgsSlot::new());
+            let specs = [
+                Spec::new(Target::Value(None)).with_alias(b'c'),
+                Spec::new(Target::Switch(Some(&write)))
+                    .with_alias(b'w')
+                    .with_switch_value(1),
+                Spec::new(Target::Args(Some(&files))).with_usage(Usage::REQUIRED),
+                Spec::default(),
+            ];
+            let common = [
+                Spec::new(Target::Value(None)).with_alias(b'c'),
+                Spec::default(),
+            ];
+            let mut argv = Argv::new(&["hash-object", "a.txt", "-w", "-cx=y", "b.txt"]);
+            let (tail, len) = argv.tail();
+            let mut opt = scribbled::<sys::cli_opt>();
+            // SAFETY: as `cli_opt_parse` reads them: a writable outcome, the table ended by its
+            // zeroed spec, and `len` C strings at `tail`, all of which outlive the parse.
+            let status = unsafe {
+                cli_opt_parse(
+                    opt.as_mut_ptr(),
+                    specs.as_ptr().cast(),
+                    tail,
+                    len,
+                    sys::CLI_OPT_PARSE_GNU,
+                )
+            };
+            assert_eq!(status, sys::CLI_OPT_STATUS_DONE);
+            let mut seen = Seen {
+                outcomes: Vec::new(),
+                fail_at: usize::MAX,
+            };
+            // SAFETY: as above, with `parse_option`, which only reads what it is lent.
+            let rc = unsafe {
+                cli_opt_foreach(
+                    common.as_ptr().cast(),
+                    tail,
+                    len,
+                    sys::CLI_OPT_PARSE_GNU,
+                    Some(parse_option),
+                    ptr::from_mut(&mut seen).cast(),
+                )
+            };
+            assert_eq!(rc, 0);
+            // SAFETY: an `ArgsSlot` is `#[repr(transparent)]` over the `char **` C reads.
+            let mut at = unsafe { ptr::from_ref(&files).cast::<*const *mut c_char>().read() };
+            let mut walked = Vec::new();
+            loop {
+                // SAFETY: `at` stays within `argv`, which its `NULL` ends.
+                let file = unsafe { at.read() };
+                // SAFETY: an element of `argv`: `NULL`, or one of its strings.
+                let Some(file) = (unsafe { text(file) }) else {
+                    break;
+                };
+                walked.push(file);
+                at = at.wrapping_add(1);
+            }
+            assert_eq!(walked, ["a.txt", "b.txt"]);
+            assert_eq!(write.get(), 1);
+        }
+
+        /// The bare `-` reaches a command as its argument through the exports, and `main.c`'s
+        /// parser takes it as the command, which `main.c` then reports as no command of its own.
+        #[test]
+        fn a_bare_dash_reaches_the_command_as_an_argument() {
+            let (help, command) = (Cell::new(0), Cell::new(None));
+            let specs = [
+                Spec::new(Target::Switch(Some(&help)))
+                    .with_name(c"help")
+                    .with_switch_value(1)
+                    .with_usage(Usage::HIDDEN | Usage::STOP_PARSING),
+                Spec::new(Target::Arg(Some(&command))).with_usage(Usage::REQUIRED),
+                Spec::default(),
+            ];
+            let table = specs.as_ptr().cast::<sys::cli_opt_spec>();
+            let mut argv = Argv::new(&["init", "-"]);
+            let (tail, len) = argv.tail();
+            let mut opt = scribbled::<sys::cli_opt>();
+            // SAFETY: as `cli_opt_parse` reads them, all live for the parse.
+            let status = unsafe {
+                cli_opt_parse(opt.as_mut_ptr(), table, tail, len, sys::CLI_OPT_PARSE_GNU)
+            };
+            assert_eq!(status, sys::CLI_OPT_STATUS_DONE);
+            assert_eq!(command.get().map(Arg::as_c_str), Some(c"-"));
+            assert_eq!(help.get(), 0);
         }
     }
 }
