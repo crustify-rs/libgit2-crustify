@@ -45,6 +45,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, fs};
 
+#[path = "build/gateways.rs"]
+mod gateway_parse;
+
 /// A link unit: one library or executable of the C, bound by one public module of `src/sys.rs`.
 struct LinkUnit {
     /// Its module in `src/sys.rs`, its directory under `sys/`, and its argument to
@@ -1466,32 +1469,11 @@ fn gateway_lines(root: &Path) -> Vec<(PathBuf, Option<String>, Vec<String>)> {
     println!("cargo:rerun-if-changed={}", src.display());
     let mut files = Vec::new();
     rust_files(&src, &mut files);
-    let braces =
-        |s: &str| s.matches('{').count().cast_signed() - s.matches('}').count().cast_signed();
     let mut gateways = Vec::new();
     for file in files {
         let text = fs::read_to_string(&file).unwrap();
-        let mut gate: Option<String> = None;
-        let mut open: Option<(Option<String>, isize, Vec<String>)> = None;
-        for line in text.lines() {
-            let t = line.trim();
-            if let Some((_, depth, lines)) = open.as_mut() {
-                lines.push(t.to_string());
-                *depth += braces(t);
-                if *depth <= 0 {
-                    let (g, _, lines) = open.take().unwrap();
-                    gateways.push((file.clone(), g, lines));
-                }
-            } else if let Some(feature) = t
-                .strip_prefix("#[cfg(feature = \"ffi-export-")
-                .and_then(|r| r.strip_suffix("\")]"))
-            {
-                gate = Some(feature.to_uppercase().replace('-', "_"));
-            } else if t.starts_with("mod ffi_export") || t.starts_with("pub mod ffi_export") {
-                open = Some((gate.take(), braces(t), Vec::new()));
-            } else if !t.starts_with("#[") && !t.starts_with("//") && !t.is_empty() {
-                gate = None;
-            }
+        for (gate, lines) in gateway_parse::gateways_of(&text) {
+            gateways.push((file.clone(), gate, lines));
         }
     }
     gateways
