@@ -1,7 +1,8 @@
 # A switch's Rust side lands before its builds, and removes every mention of the export feature
 
-Status: `open`: the change is crustify `d3e56f0` on `libgit2-crustify/evolution/switch-step-order`, made on 2026-11-14,
-awaiting its review. Split from `module-switch-procedure` that day.
+Status: `landed` as crustify `10500c9` (record `91ea0cc`) on `libgit2-crustify/devel`, on 2026-11-14: the
+approved `d3e56f0` rebased, its file the same in the commit and its parent. Split from
+`module-switch-procedure` that day.
 
 Goal: Incremental migration without breaking consumers. Its measure counts the landed trees
 that failed a gate.
@@ -114,7 +115,7 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| a switch's Rust side and C side both come before its builds, and the gates after, and deleting the export feature removes every mention of its name in the crate | `libgit2-crustify`, `switch-step-order` | crustify `d3e56f0` | `porting-workflow` listed a switch's steps in an order that cannot run, the builds checking bindings not yet committed, and "the export feature is deleted" read as fewer edits than the lints need | an integration run whose builds precede its Rust side, or whose lints fail on a mention of a deleted export feature | watched |
+| a switch's Rust side and C side both come before its builds, and the gates after, and deleting the export feature removes every mention of its name in the crate | `libgit2-crustify`, `switch-step-order` | crustify `10500c9` | `porting-workflow` had the variants rebuilt once the integration lands, though the remaining C links exports the Rust library holds only once the feature is deleted, and "the export feature is deleted" read as fewer edits than the lints need | an integration run whose builds precede its Rust side, or whose lints fail on a mention of a deleted export feature | watched |
 
 ## Validation
 
@@ -144,3 +145,6 @@ the parts in the opposite order, a signal this proposal noticed and left unfiled
 `switch-order-in-testing-gates`. Listed apart: the list leaves out retiring the module's
 equivalence tests and listing the C test cases nothing carries over; "removes or rewrites"
 gives no direction for a `cfg(not(…))`.
+
+`review-2` (Opus 5.5, `$0.46`), on `d3e56f0`: the commit is right as it stands; one fix to the row, whose
+"signal answered" still gave the cause review-1 disproved, made above.

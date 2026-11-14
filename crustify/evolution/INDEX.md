@@ -97,7 +97,7 @@ the assistant alone, as each batch's proposals land.
 | `switch-c-tests-baseline` | A switch's C tests run per variant by a tracked script and are compared with the baseline | `open` | `module-switch-procedure`'s switches | — |
 | `switch-gate-beyond-c-tests` | A switch whose exports no baseline C test reaches is gated by the C's own programs, old build beside new | `open` | `module-switch-procedure`'s switches | — |
 | `switch-order-in-testing-gates` | `testing-gates` restates a switch's parts in an order `porting-workflow` contradicts | `open` | `switch-step-order`'s review-1 | — |
-| `switch-step-order` | A switch's Rust side lands before its builds, and removes every mention of the export feature | `open` | `module-switch-procedure`'s switches | — |
+| `switch-step-order` | A switch's Rust side lands before its builds, and removes every mention of the export feature | `landed` | `module-switch-procedure`'s switches | — |
 | `symbol-alias-anchors` | Where a symbol alias's anchor goes | `landed` | `wave-177/batch-0` | — |
 | `sys-bindings-layout` | The raw bindings sit under `sys/<link-unit>/`, as the public `sys` module | `landed` | — | — |
 | `test-only-exports-and-the-harness` | Exports only the C tests reach, and the test harness's own references | `landed` | — | — |

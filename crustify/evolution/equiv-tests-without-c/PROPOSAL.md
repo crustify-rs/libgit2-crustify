@@ -1,6 +1,7 @@
 # An equivalence test that calls no C is carried over at the switch
 
-Status: `open`. Split from `module-switch-procedure` on 2026-11-14. No change is made yet.
+Status: `open`: the change is crustify `11a7f05` on `libgit2-crustify/evolution/equiv-tests-without-c`, made on 2026-11-14,
+awaiting its review. Split from `module-switch-procedure` that day.
 
 Goal: Equivalence. Its measure counts the inputs and states on which the Rust is compared
 with the C it replaces; a comparison that still runs after the switch should not be lost.
@@ -54,7 +55,7 @@ Protected: none. `porting-workflow` is not protected.
 
 ## Change
 
-Not made in the skill. In the campaign, one switch carried two tests over by hand.
+Made in the skill as drafted below. In the campaign, one switch carried two tests over by hand.
 
 `porting-workflow`'s One language per module section would add, where it retires the
 equivalence tests:
@@ -66,6 +67,14 @@ equivalence tests:
 
 No script moves with this proposal. The check is one `grep` for the marker beside a count of
 the file's tests.
+
+## Record
+
+The row for `EVOLUTION.md`, copied in when the change lands:
+
+| change | from | landed as | signal answered | recurrence signal | status |
+|---|---|---|---|---|---|
+| before a module's equivalence file is retired at its switch, each of its tests that calls no C is carried over to its unit tests; the candidates are those without the Miri gate's marker of a test that calls C | `libgit2-crustify`, `equiv-tests-without-c` | crustify `11a7f05` | retiring a module's equivalence tests by file lost those that run no C, and one switch carried two over by hand | a review or test-adequacy finding of behaviour only a retired equivalence test checked, or a switch that carries tests over by hand without the rule | watched |
 
 ## Validation
 

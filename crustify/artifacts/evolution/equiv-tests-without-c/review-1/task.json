@@ -1,0 +1,19 @@
+{
+ "backend": "claude",
+ "billing": "api",
+ "model_proxy": "openrouter",
+ "args": [
+  "--model",
+  "claude-opus-5-5"
+ ],
+ "revisions": {
+  "crustify": "91ea0cc",
+  "wavefront": "bf21e16",
+  "ffibox": "568bcb5",
+  "ffimap": "a0797e6"
+ },
+ "component": "crustify",
+ "branch": "libgit2-crustify/evolution/equiv-tests-without-c",
+ "commit": "11a7f05",
+ "proposal": "crustify/evolution/equiv-tests-without-c"
+}
