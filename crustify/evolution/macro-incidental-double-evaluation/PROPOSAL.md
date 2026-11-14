@@ -1,7 +1,7 @@
 # A macro that evaluates an operand twice only as a hazard is a function
 
-Status: `open`: the change is crustify `e32ac8f` on `libgit2-crustify/evolution/macro-incidental-double-evaluation`, made on
-2026-11-14 after the triage of open proposals, awaiting its review.
+Status: `landed` as crustify `e32ac8f` (record `a49c1b1`) on `libgit2-crustify/devel`, on 2026-11-14, once its
+review approved it.
 
 Goal: Idiomatic Rust: a function where a function expresses the macro.
 
@@ -90,3 +90,5 @@ argument evaluated lazily, which the test does not fit: one the C sometimes does
 can have no side effect and still fail when evaluated up front. Made as `e32ac8f`: the sentence
 speaks of one evaluated more than once, and the row drops the lazy case. It weakens no check;
 the condition is the analysis's to establish, over every expansion site.
+
+`review-2` (Opus 5.5, `$0.22`), on `e32ac8f`: **approved**.

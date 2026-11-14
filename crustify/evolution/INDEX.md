@@ -66,7 +66,7 @@ the assistant alone, as each batch's proposals land.
 | `internal-symbols-unlinkable` | The variants must let the Rust link the internal symbols it binds | `landed` | `wave-169/batch-0`, `wave-176/batch-0` | — |
 | `io-write-over-write-all` | An `io::Write` over the libc wrapper's `write_all` must implement `write_all` itself | `deferred` | `wave-186/batch-6` | — |
 | `later-stage-c-changes` | What a `port/unexport` changes in `c/` | `landed` | `wave-232/batch-0` | — |
-| `macro-incidental-double-evaluation` | A macro that evaluates an operand twice only as a hazard is a function | `open` | `wave-200/batch-0`, `wave-200/batch-1` | — |
+| `macro-incidental-double-evaluation` | A macro that evaluates an operand twice only as a hazard is a function | `landed` | `wave-200/batch-0`, `wave-200/batch-1` | — |
 | `merge-left-conflict-markers` | A merge into a wave branch is checked before it is committed | `landed` | `wave-169/batch-2` | — |
 | `module-end-gate-runner` | A script for the wave's and the module's end gates | `landed` | `wave-176/batch-3`, `wave-177/batch-1` | — |
 | `module-switch-procedure` | A module's switch: variant generations, the C's Rust library, and the C test gate | `open` | `wave-186/batch-7`, `wave-194/batch-7` | — |
