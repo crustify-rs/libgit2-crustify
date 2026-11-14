@@ -80,6 +80,7 @@ the assistant alone, as each batch's proposals land.
 | `review-reports-refused-by-the-host` | Review reports the host refuses to let a reviewer write | `landed` | `wave-0/batch-0`, `wave-176/batch-2`, `wave-176/batch-3` | — |
 | `reviewed-evolution` | Every change is reviewed, recorded and watched | `landed` | — | — |
 | `scratch-shared-between-agents` | Scratch a host shares between concurrent agents | `landed` | `wave-12/batch-2`, `wave-169/batch-1`, `wave-169/batch-2`, `wave-176/batch-1` | — |
+| `soundness-patterns` | The UB patterns the campaigns met recur across modules, and no skill lists them | `open` | — | — |
 | `spec-consistency-2026-11-12` | Consistency fixes to the spec, made in another workspace | `landed` | — | — |
 | `spec-language` | The spec's language; the goals rewritten under it | `landed` | — | its own row |
 | `stage-points-count-staying-tests` | The C tests that stay, in a `port/unexport`'s release point | `landed` | — | — |
