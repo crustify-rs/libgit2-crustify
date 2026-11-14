@@ -1,9 +1,10 @@
 # The spec's language; the goals rewritten under it
 
-Status: `open`: the change is made on Crustify's `libgit2-crustify/evolution/spec-language`
-(`73ca306`, by a subagent the assistant briefed, `01830f8` and `437cc1d`, the assistant's), at the
-user's direction on 2026-11-14, and awaits its review. It rewrites `GOALS.md`, a protected
-path, so it lands only with the user's approval.
+Status: `open`: the change is one commit on Crustify's
+`libgit2-crustify/evolution/spec-language`, `f20edc9`, at the user's direction on 2026-11-14,
+and awaits review-4. Four earlier commits (`73ca306`, `01830f8`, `437cc1d`, `44186d8`), which
+three reviews rejected, are replaced by it. It rewrites `GOALS.md`, a protected path, so it
+lands only with the user's approval.
 
 ## Signal
 
@@ -39,23 +40,31 @@ The spec: `authoring`, a new Language section; `GOALS.md`, its first application
 
 ## Change
 
-Crustify `73ca306` and `01830f8`:
+Crustify `f20edc9`:
 
-- `authoring` §5, Language: four firm rules (one term per thing, defined on first use; a
-  condition before its consequence; three or more parallel phrases or clauses as a list; a
-  pronoun's referent in the same sentence or the one before) and three defaults (one main
-  claim per sentence, with its reason or qualification; 25 words as the aim; a rule keeps
-  its reason); the test of a rewrite, that every fact of the old text is in the new one; and
-  that existing text is brought to the rules when a change touches it, not rewritten
-  wholesale.
-- Two refinements the rewrite showed were needed, for the user to accept or strike: a
-  restriction that begins "only where" or "only when" may follow what it restricts, and a
-  series of single words or short names stays inline.
-- `GOALS.md` rewritten under the rules: a heading per goal, its statement, then **Measure**,
-  **Paired with** and **Not taken yet** entries; "pair", "tier" and "escape" defined once,
-  in the opening. The rewrite's checklist matched 96 facts of the old text to lines of the
-  new. One sentence states what the old text did not: "A *tier* is one of the checks that
-  code meets one after another."
+- `authoring` §5, Language, one paragraph: Crustify's texts and a campaign's are written
+  plainly, as the Google developer documentation style guide describes (one term per thing,
+  short sentences, a condition before its consequence, lists for parallel items); a rule
+  keeps its reason; a rewrite keeps every fact of the old text, which its review checks.
+  `authoring`'s description names the language and sends a run that files a proposal or a
+  lesson to it.
+- `GOALS.md` rewritten: a heading per goal, its statement, then **Measure**, **Paired with**
+  and **Not taken yet** entries; "pair", "tier" and "escape" defined once, in the opening.
+  It is the text reviews 1 to 3 read, at `44186d8`, with two sentences back in their old
+  order (goals 5 and 7).
+
+The earlier commits gave the section seven numbered rules, four of them firm. Three reviews
+rejected them on what "clause" and "condition" cover, each fix adding a definition the next
+review found an edge in. The user judged the section too complicated on 2026-11-14 and chose
+a public standard in its place, with the two rules that guide lacks.
+
+## Record
+
+The row for `EVOLUTION.md`, copied in when the change lands:
+
+| change | from | landed as | signal answered | recurrence signal | status |
+|---|---|---|---|---|---|
+| `authoring` gains a Language section: texts are written plainly, as the Google developer documentation style guide describes, a rule keeps its reason, and a rewrite keeps every fact; `GOALS.md` is rewritten under it, every goal, measure, pair and marker kept | `libgit2-crustify`, `spec-language` | crustify `f20edc9` | the user's direction: the spec's language should be simple, consistent and not bloated, without losing information; the goals were written in long periodic sentences | a review finding, or a user's correction, that a rewrite dropped a fact or a rule's reason | watched |
 
 ## Validation
 
@@ -91,4 +100,12 @@ Among its required fixes: rule 3 as reworded puts its condition after its conseq
 its two sentences overlap, "short" and "clause" being unbounded (A, B); splitting goal 11's
 pair left its reason on one of the two measures only (C); goal 3's pair changed meaning when
 its restriction became a sentence of its own (D); the scope still reads as a full list and
-leaves texts out (E). Not yet made: the session ended before a third commit.
+leaves texts out (E). Made in `44186d8`.
+
+`review-3` (session `5fdd3f2e-09a0-4e12-8429-6db7b85f945e`, Opus 5.5), on `44186d8`:
+**rejected**, on six fixes: three goal sentences that broke rule 3 as reworded, and three
+gaps in the new wording of rules 2 and 3. Every fact of the old `GOALS.md` was kept and
+nothing weakened a check. Its report is the longest `result` of
+`crustify/artifacts/evolution/spec-language/review-3/stream.jsonl`. The fixes are not made:
+the user replaced the numbered rules with the reference to a public guide, as `f20edc9`, and
+the rules the fixes were on are gone.
