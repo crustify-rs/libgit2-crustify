@@ -1,7 +1,7 @@
 # A rebased commit whose diff is unchanged needs no new review
 
 Status: `open`: the change is made on crustify's
-`libgit2-crustify/evolution/rebase-with-unchanged-diff` (`602c028`), awaiting its review. It changes
+`libgit2-crustify/evolution/rebase-with-unchanged-diff` (`e64f119`), awaiting its review. It changes
 `skills/crustify/evolution/**`, a protected path, and a rule of the review itself, so it lands
 only with the user's approval.
 
@@ -36,11 +36,12 @@ The spec: the `evolution` skill's Review section.
 ## Change
 
 > ... a commit added after the verdict, or one a rebase or cherry-pick makes, is reviewed
-> again. A rebase of a change to the spec is the exception, where each file the commit
-> changes is the same in the rebased commit and its parent as in the reviewed commit and its
-> parent: the review then read the same diff against the same text.
+> again. A rebase of a change to the text of skills, agents or templates alone, no script or
+> program among its files, is the exception, where each file the commit changes is the same
+> in the rebased commit and its parent as in the reviewed commit and its parent: the review
+> then read the same diff against the same text.
 
-It covers the spec alone: a tool's change is validated by its suite on the combined tree,
+It covers text alone: a program's change, a tool's or a script's beside a skill, is validated by its suite on the combined tree,
 which two changes to different files can still break. A cherry-pick is not covered.
 
 ## Record
@@ -49,7 +50,7 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| a rebase of a reviewed spec change lands without a new review where each file it changes is the same in the rebased commit and its parent as in the reviewed commit and its parent | `libgit2-crustify`, `rebase-with-unchanged-diff` | crustify `602c028` | seven approved changes on one tip: each landing rebased the rest, which the rule sent back to review with identical diffs | a landed change that contradicts a rule another change landed between its review and its landing | watched; weakens a check: a rebased spec change lands unread where it was reviewed again, so two changes approved on one tip that contradict each other across files are no longer caught by the second's review |
+| a rebase of a reviewed change to the text of skills, agents or templates alone lands without a new review where each file it changes is the same in the rebased commit and its parent as in the reviewed commit and its parent | `libgit2-crustify`, `rebase-with-unchanged-diff` | crustify `e64f119` | seven approved changes on one tip: each landing rebased the rest, which the rule sent back to review with identical diffs | a landed change that contradicts a rule another change landed between its review and its landing | watched; weakens a check: a rebased text change lands unread where it was reviewed again, so two changes approved on one tip that contradict each other across files are no longer caught by the second's review |
 
 ## Validation
 
@@ -59,7 +60,7 @@ None is possible by rerun: the rule changes when a review is asked for. The five
 ## Review
 
 `review-1` (Opus 5.5, `$1.11`), on `6051f8c`: **rejected**, three fixes required, all made as
-`602c028`: `git patch-id` ignores whitespace, so the clause no longer names it and asks for the
+`e64f119`: `git patch-id` ignores whitespace, so the clause no longer names it and asks for the
 same files; "changes since the review" had no clear start, so the clause compares each file in
 the commit and its parent before and after the rebase; and the clause covered a tool's code,
 which the evidence does not reach, so it is narrowed to the spec. It recomputed the patch-ids
@@ -67,3 +68,8 @@ of the five landings, which match, and marked the change as weakening a check. L
 not required: the saving is a narrow review's cost, about `$0.3`, not a first review's;
 whether the user's approval of a protected change carries over its rebase, and who records
 the check, are not said.
+
+`review-2` (Opus 5.5, `$0.43`), on `602c028`: **rejected**, one fix: "the spec" also holds
+programs, the providers' and the scripts beside skills, which review-1's third fix meant to
+leave out. Made as `e64f119`: the text of skills, agents or templates alone. The first two fixes
+held, and the five landings pass the clause.
