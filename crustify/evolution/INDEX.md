@@ -29,7 +29,7 @@ the assistant alone, as each batch's proposals land.
 | `dashboard-tables-follow-the-template` | A template change that adds a dashboard table reaches the dashboard before batches fill it | `landed` | `wave-181/batch-0`, `wave-182/batch-0`, `wave-183/batch-0`, `wave-184/batch-0` | — |
 | `doc-alias-equal-to-the-name` | An anchor's alias that equals its item's name | `open` | `wave-186/batch-1`, `wave-186/batch-4`, `wave-186/batch-5` | — |
 | `elementwise-releasers` | Releasers that free a container's elements with it | `landed` | — | — |
-| `end-gates-lint-stage` | `end-gates` runs the format and lint gates over the committed tree | `open` | `wave-35/batch-0`, `wave-49/batch-0`, `wave-197/batch-0`, `wave-197/batch-1` | — |
+| `end-gates-lint-stage` | `end-gates` runs the format and lint gates over the committed tree | `landed` | `wave-35/batch-0`, `wave-49/batch-0`, `wave-197/batch-0`, `wave-197/batch-1` | — |
 | `end-gates-runner` | A runner for a wave's and a module's end gates | `landed` | `wave-169/batch-5`, `wave-181/batch-0`, `wave-181/batch-1` | — |
 | `end-gates-skip-names` | `end-gates` cannot skip a test whose name is a prefix of another's, and checks a variant stage's skip against one binary | `open` | `gates-slow-list`'s review-1 | — |
 | `enum-integer-form-crate-private` | A closed enum's integer-form conversions are crate-private | `landed` | `wave-186/batch-0` | — |

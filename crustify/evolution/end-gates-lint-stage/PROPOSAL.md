@@ -1,8 +1,8 @@
 # `end-gates` runs the format and lint gates over the committed tree
 
-Status: `open`: the change is crustify `888b582` on
-`libgit2-crustify/evolution/end-gates-lint-stage`, approved by its review. It touches a protected path, so it
-lands only with the user's approval.
+Status: `landed` as crustify `888b582` (record `f307cc7`) on `libgit2-crustify/devel`, with the user's
+approval on 2026-11-14, which its protected path needs, and which covered landing the
+restacked commit without a new review; its 9 tests were rerun on it and pass.
 
 Goal: Verification: a gate result a run reports is one its landed tree reproduces.
 
