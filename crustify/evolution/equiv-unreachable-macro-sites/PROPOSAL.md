@@ -1,7 +1,8 @@
 # A macro whose expansions no binding reaches is checked against its body
 
-Status: `open`: the change is crustify `e99130a` on `libgit2-crustify/evolution/equiv-unreachable-macro-sites`, made on
-2026-11-14 after the triage of open proposals, awaiting its review.
+Status: `landed` as crustify `9780804` (record `58a4115`) on `libgit2-crustify/devel`, with the user's
+approval on 2026-11-14, which its protected path needs: the approved `e99130a` rebased, its
+file the same in the commit and its parent.
 
 Goal: Equivalence: its tests compare the Rust with the C.
 
@@ -58,7 +59,7 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| a macro that implements logic is compared where it expands; one whose expansions no function the raw bindings reach runs has no equivalence test, is checked by unit tests against its replacement list, and is reported as unreached until its sites' module is ported | `libgit2-crustify`, `equiv-unreachable-macro-sites` | crustify `e99130a` | two runs settled by hand what stands in for a macro's equivalence tests when the bindings reach none of its expansion sites | a task message, report, commit message, dashboard note or plan correction that settles again what stands in for a macro's equivalence tests | watched |
+| a macro that implements logic is compared where it expands; one whose expansions no function the raw bindings reach runs has no equivalence test, is checked by unit tests against its replacement list, and is reported as unreached until its sites' module is ported | `libgit2-crustify`, `equiv-unreachable-macro-sites` | crustify `9780804` | two runs settled by hand what stands in for a macro's equivalence tests when the bindings reach none of its expansion sites | a task message, report, commit message, dashboard note or plan correction that settles again what stands in for a macro's equivalence tests | watched |
 
 ## Validation
 
