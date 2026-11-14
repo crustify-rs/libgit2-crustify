@@ -22,9 +22,9 @@
 //! [`OptRef::write_status`] (`cli_opt_status_fprint`) describes an outcome, as the CLI shows it on
 //! its standard error. The CLI's remaining C calls all five: `main.c` sets a parser up, steps it
 //! and describes its failures, each `cmd_*.c` parses its own arguments, `common.c` reads the
-//! configuration options, and `opt_usage.c` describes failures. So each has an export, compiled
-//! under the module's export feature, `ffi-export-src-cli-opt-c`, which stays off until the
-//! module switches from C.
+//! configuration options, and `opt_usage.c` describes failures. So each has an export, through
+//! which that C reaches this module: the module has switched from C, and `src/cli/opt.c` has
+//! left the build.
 //!
 //! The parser corrects the C's defects, each
 //! documented on the routine that departs: it reads no string past its end, nor through a null
@@ -1675,10 +1675,8 @@ fn write_choices<W: io::Write + ?Sized>(
 /// does, though part of `buf` may have reached the stream: `fwrite`'s count is not reported, and
 /// the trait's documentation, that a failed `write` wrote nothing, does not hold of it. The export
 /// writes only through `write_all`.
-#[cfg(any(test, feature = "ffi-export-src-cli-opt-c"))]
 struct FileWriter<'a>(glibc_bindings::libc::libio::genops::FileRef<'a>);
 
-#[cfg(any(test, feature = "ffi-export-src-cli-opt-c"))]
 impl io::Write for FileWriter<'_> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0.write_all(buf)?;
@@ -3080,10 +3078,6 @@ mod ffi_import {
         /// calling thread, until `'f` ends; each call passes it an outcome that lends what it
         /// points at for `'p`, which `f` only reads, and whose address it does not keep once it
         /// returns, as `common.c`'s `parse_option` does.
-        #[cfg_attr(
-            not(any(test, feature = "ffi-export-src-cli-opt-c")),
-            expect(dead_code, reason = "the export of `cli_opt_foreach` calls it")
-        )]
         pub(crate) unsafe fn from_c(f: ForeachCallbackC, ctx: *mut c_void) -> Self {
             // SAFETY: the caller's contract, for `'f`.
             Self(ForeachInner::C(unsafe { CFn::new(f, ctx) }))
@@ -3910,12 +3904,11 @@ mod ffi_import {
     }
 }
 
-/// The gateway through which the CLI's remaining C calls this module once it has switched:
+/// The gateway through which the CLI's remaining C calls this module:
 /// `cli_opt_parser_init` and `cli_opt_parser_next`, which `main.c` calls, `cli_opt_parse`, which
 /// each `cmd_*.c` calls, `cli_opt_foreach`, which `common.c` calls, and `cli_opt_status_fprint`,
 /// which `main.c` and `opt_usage.c` call, each checked against its raw binding's signature, so
 /// that a C declaration that drifts fails to build.
-#[cfg(feature = "ffi-export-src-cli-opt-c")]
 #[expect(
     unsafe_code,
     reason = "the C ABI exports of opt.c's entry points, which adopt the pointers C passes"
@@ -4280,13 +4273,13 @@ mod ffi_export {
         }
     }
 
-    /// The exports as the CLI's remaining C calls them once the module has switched, each
-    /// called by its C name over C's own forms: a `NULL`-terminated `argv` of C strings, a spec
-    /// table ended by its zeroed spec whose variables C reads after the parse, and outcomes and a
-    /// parser in storage the export overwrites whole. Each asserts what that C reads afterwards:
-    /// `main.c` the parser's position and the command's string, each `cmd_*.c` its variables, an
-    /// `Args` spec's `char **` walked to `argv`'s `NULL`, and a failure's outcome, `common.c` each
-    /// outcome its callback is lent, and `opt_usage.c` what the status message writes.
+    /// The exports as the CLI's remaining C calls them, each called by its C name over C's own
+    /// forms: a `NULL`-terminated `argv` of C strings, a spec table ended by its zeroed spec whose
+    /// variables C reads after the parse, and outcomes and a parser in storage the export
+    /// overwrites whole. Each asserts what that C reads afterwards: `main.c` the parser's position
+    /// and the command's string, each `cmd_*.c` its variables, an `Args` spec's `char **` walked to
+    /// `argv`'s `NULL`, and a failure's outcome, `common.c` each outcome its callback is lent, and
+    /// `opt_usage.c` what the status message writes.
     #[cfg(test)]
     mod unit_priv {
         use core::cell::Cell;
@@ -4700,6 +4693,9 @@ mod ffi_export {
                 Spec::default(),
             ];
             let table = specs.as_ptr().cast::<sys::cli_opt_spec>();
+            // The `errno` the export left, read before closing the stream, whose `fclose` and
+            // `free` may change it: under TSan, their interceptors leave `EBADF` there.
+            let left = Cell::new(0);
             let describe = |opt: &sys::cli_opt, command: Option<&CStr>| {
                 let stream = MemStream::open();
                 // SAFETY: an open stream, the command `NULL` or a C string, and an outcome whose
@@ -4711,6 +4707,7 @@ mod ffi_export {
                         opt,
                     )
                 };
+                left.set(errno());
                 (rc, stream.close())
             };
             let mut argv = Argv::new(&["git2", "--nope"]);
@@ -4743,7 +4740,7 @@ mod ffi_export {
             set_errno(0);
             let (rc, written) = describe(&missing, Some(c"git2"));
             let einval = nix::errno::Errno::EINVAL as c_int;
-            assert_eq!((rc, errno(), written.len()), (-1, einval, 0));
+            assert_eq!((rc, left.get(), written.len()), (-1, einval, 0));
         }
 
         /// `cmd_hash_object.c -w`: the files its parse stores are walked after `common.c` has

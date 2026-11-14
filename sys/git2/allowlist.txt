@@ -1,6 +1,8 @@
 # Agent-owned bindgen allowlist: one `function|type|var <regex>` per line, matched against
 # C names. Add only the items a batch needs; keep each kind's entries sorted.
 
+# src/cli/opt.c (src/cli/opt.h), switched to Rust: its five functions reach its exports, and
+# check their signatures; its types keep the layouts the CLI's C builds and reads
 function cli_opt_foreach
 function cli_opt_parse
 function cli_opt_parser_init

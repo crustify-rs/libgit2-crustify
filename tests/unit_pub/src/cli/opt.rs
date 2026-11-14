@@ -8,11 +8,11 @@
 //! message `OptRef::write_status`, the port of `cli_opt_status_fprint`, writes for each outcome,
 //! and the callback `ForeachCallbackFn` over a Rust closure.
 //!
-//! None reaches C. `uses_gnu_style` reads `POSIXLY_CORRECT`, which a test does not set in its
-//! own process: setting the environment is unsafe while other threads may read it, as the
-//! harness's do. The test that depends on it runs its body in a child process of its own
-//! binary, whose environment the parent sets, and Miri, which spawns no process, ignores it;
-//! it runs all the others.
+//! None reaches C: the flags' C values are `opt.h`'s constants, which the raw bindings read.
+//! `uses_gnu_style` reads `POSIXLY_CORRECT`, which a test does not set in its own process:
+//! setting the environment is unsafe while other threads may read it, as the harness's do. The test
+//! that depends on it runs its body in a child process of its own binary, whose environment the
+//! parent sets, and Miri, which spawns no process, ignores it; it runs all the others.
 
 use core::cell::Cell;
 use core::ffi::{CStr, c_int};
@@ -26,6 +26,7 @@ use libgit2_crustify::git2::src::cli::opt::{
     Arg, ArgsSlot, ForeachCallbackFn, Kind, Opt, OptRef, ParseFlags, Parser, Spec, SpecTable,
     Status, Target, Usage, for_each, parse, uses_gnu_style,
 };
+use libgit2_crustify::sys::git2 as sys;
 
 /// Every usage flag a constant names, `DEFAULT` aside.
 const USAGE_FLAGS: [Usage; 6] = [
@@ -173,6 +174,53 @@ fn statuses_keep_their_c_values() {
     for (value, status) in (0_u32..).zip(statuses) {
         assert_eq!(status as u32, value, "{status:?}");
     }
+}
+
+/// Each usage flag's bits are its `CLI_OPT_USAGE_*` constant's value, as the raw bindings read
+/// it from `opt.h`, and the combinations the CLI's spec tables spell are C's `|` of them: the
+/// tables, which stay C, set these bits, and the parser reads them. Carried over from the
+/// equivalence test the module's switch retired.
+#[test]
+fn usage_flags_keep_their_c_values() {
+    for (flag, c) in [
+        (Usage::DEFAULT, sys::CLI_OPT_USAGE_DEFAULT),
+        (Usage::REQUIRED, sys::CLI_OPT_USAGE_REQUIRED),
+        (Usage::CHOICE, sys::CLI_OPT_USAGE_CHOICE),
+        (Usage::STOP_PARSING, sys::CLI_OPT_USAGE_STOP_PARSING),
+        (Usage::VALUE_OPTIONAL, sys::CLI_OPT_USAGE_VALUE_OPTIONAL),
+        (Usage::HIDDEN, sys::CLI_OPT_USAGE_HIDDEN),
+        (Usage::SHOW_LONG, sys::CLI_OPT_USAGE_SHOW_LONG),
+    ] {
+        assert_eq!(flag.bits(), c, "{flag:?}");
+        assert_eq!(Usage::from_bits_retain(c), flag, "{c}");
+    }
+    assert_eq!(
+        (Usage::HIDDEN | Usage::STOP_PARSING).bits(),
+        sys::CLI_OPT_USAGE_HIDDEN | sys::CLI_OPT_USAGE_STOP_PARSING
+    );
+    assert_eq!(
+        (Usage::CHOICE | Usage::SHOW_LONG).bits(),
+        sys::CLI_OPT_USAGE_CHOICE | sys::CLI_OPT_USAGE_SHOW_LONG
+    );
+}
+
+/// Each parse flag's bits are its `CLI_OPT_PARSE_*` constant's value, as the raw bindings read it
+/// from `opt.h`: the CLI's C passes them to the exports. Carried over from the equivalence test
+/// the module's switch retired.
+#[test]
+fn parse_flags_keep_their_c_values() {
+    for (flag, c) in [
+        (ParseFlags::DEFAULT, sys::CLI_OPT_PARSE_DEFAULT),
+        (ParseFlags::GNU, sys::CLI_OPT_PARSE_GNU),
+        (ParseFlags::FORCE_GNU, sys::CLI_OPT_PARSE_FORCE_GNU),
+    ] {
+        assert_eq!(flag.bits(), c, "{flag:?}");
+        assert_eq!(ParseFlags::from_bits_retain(c), flag, "{c}");
+    }
+    assert_eq!(
+        (ParseFlags::GNU | ParseFlags::FORCE_GNU).bits(),
+        sys::CLI_OPT_PARSE_GNU | sys::CLI_OPT_PARSE_FORCE_GNU
+    );
 }
 
 /// The derived traits: copies compare equal, distinct variants do not, and `Debug` names the
