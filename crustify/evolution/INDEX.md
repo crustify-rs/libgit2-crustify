@@ -31,6 +31,7 @@ the assistant alone, as each batch's proposals land.
 | `elementwise-releasers` | Releasers that free a container's elements with it | `landed` | — | — |
 | `end-gates-lint-stage` | `end-gates` runs the format and lint gates over the committed tree | `open` | `wave-35/batch-0`, `wave-49/batch-0`, `wave-197/batch-0`, `wave-197/batch-1` | — |
 | `end-gates-runner` | A runner for a wave's and a module's end gates | `landed` | `wave-169/batch-5`, `wave-181/batch-0`, `wave-181/batch-1` | — |
+| `end-gates-skip-names` | `end-gates` cannot skip a test whose name is a prefix of another's, and checks a variant stage's skip against one binary | `open` | `gates-slow-list`'s review-1 | — |
 | `enum-integer-form-crate-private` | A closed enum's integer-form conversions are crate-private | `landed` | `wave-186/batch-0` | — |
 | `equiv-c-side-meets-the-c-preconditions` | The C side of an equivalence test meets the C's preconditions | `landed` | `wave-169/batch-5` | — |
 | `equiv-unreachable-macro-sites` | A macro whose expansions no binding reaches is checked against its body | `open` | `wave-200/batch-0`, `wave-200/batch-1`, `wave-225/batch-0`, `wave-225/batch-1` | — |
@@ -73,6 +74,7 @@ the assistant alone, as each batch's proposals land.
 | `packaging-gate-procedure` | The packaging gate's command is worked out by hand | `open` | `wave-186/batch-0` | — |
 | `port-coverage-figures` | Coverage figures that mean something in a port | `open` | `wave-225/batch-0` | — |
 | `port-onto-an-existing-accessor` | A function that is one field's read or write is ported onto that field's accessor | `open` | `wave-194/batch-0`, `wave-194/batch-3`, `wave-194/batch-4` | — |
+| `rebase-with-unchanged-diff` | A rebased commit whose diff is unchanged is sent back to review | `open` | — | — |
 | `reftable-error-wrapped-ahead-of-basics` | Wrap `enum reftable_error` ahead of its first consumer, `deps/reftable/basics.c` | `landed` | `wave-169/batch-2`, `wave-169/batch-4` | — |
 | `reproducer-repeats-the-workspace-patches` | A reproducer package repeats the affected workspace's `[patch]` tables | `open` | `wave-4/batch-1`, `wave-186/batch-6` | — |
 | `review-reports-refused-by-the-host` | Review reports the host refuses to let a reviewer write | `landed` | `wave-0/batch-0`, `wave-176/batch-2`, `wave-176/batch-3` | — |
