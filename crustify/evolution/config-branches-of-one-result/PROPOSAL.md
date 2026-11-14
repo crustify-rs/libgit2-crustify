@@ -1,6 +1,10 @@
 # A macro whose configured branches compute one result is ported once
 
-Status: `open`.
+Status: `open`: the change is crustify `769d102` on `libgit2-crustify/evolution/config-branches-of-one-result`, made on
+2026-11-14 after the triage of open proposals, awaiting its review.
+
+Goal: Idiomatic Rust, and Least constraint: a shim where the Rust can state the result is a
+constraint without a reason.
 
 ## Signal
 
@@ -46,6 +50,14 @@ Add, after its first paragraph:
 > compute keeps `binding-symbols`' shim. A symbol alias of an out-of-tree library's entity
 > is ported as that entity's route reaches it, as `dependencies`' Confirmation section
 > checks it: through the standard library, it is a native function.
+
+## Record
+
+The row for `EVOLUTION.md`, copied in when the change lands:
+
+| change | from | landed as | signal answered | recurrence signal | status |
+|---|---|---|---|---|---|
+| a macro whose configured branches compute one result for every input is ported once, its documentation naming the branches not taken; only one whose branches differ keeps the shim | `libgit2-crustify`, `config-branches-of-one-result` | crustify `769d102` | the shim exception, read literally, made the port of a platform-selected macro a binding of libc; a task message had to settle it | a task message or plan correction that settles again whether a configuration-dependent macro is ported or shimmed, or a review finding of a shim over branches that compute the same | watched |
 
 ## Validation
 
