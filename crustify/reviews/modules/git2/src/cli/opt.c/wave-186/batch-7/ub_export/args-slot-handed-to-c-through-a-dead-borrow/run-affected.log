@@ -1,0 +1,24 @@
+error: Undefined Behavior: attempting a read access using <8387> at alloc1467[0x10], but that tag does not exist in the borrow stack for this location
+  --> src/main.rs:78:29
+   |
+78 |         let file = unsafe { at.read() };
+   |                             ^^^^^^^^^ this error occurs as part of an access at alloc1467[0x10..0x18]
+   |
+   = help: this indicates a potential bug in the program: it performed an invalid operation, but the Stacked Borrows rules it violated are still experimental
+   = help: see https://github.com/rust-lang/unsafe-code-guidelines/blob/master/wip/stacked-borrows.md for further information
+help: <8387> was created by a SharedReadOnly retag at offsets [0x10..0x20]
+  --> src/main.rs:53:9
+   |
+53 |         sys::cli_opt_parse(opt.as_mut_ptr(), specs.as_ptr().cast(), args, len, sys::CLI_OPT_PARSE_GNU)
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: <8387> was later invalidated at offsets [0x8..0x20] by a Unique retag
+  --> src/main.rs:53:9
+   |
+53 |         sys::cli_opt_parse(opt.as_mut_ptr(), specs.as_ptr().cast(), args, len, sys::CLI_OPT_PARSE_GNU)
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: some details are omitted, run with `MIRIFLAGS=-Zmiri-backtrace=full` for a verbose backtrace
+
+error: aborting due to 1 previous error
+
+exit 1

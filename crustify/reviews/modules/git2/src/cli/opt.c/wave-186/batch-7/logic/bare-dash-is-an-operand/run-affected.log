@@ -1,0 +1,6 @@
+["-"] ParseFlags(0): argument None, failure Some((Some(UnknownOption), Some("-")))
+["-"] ParseFlags(2): argument None, failure Some((Some(UnknownOption), Some("-")))
+["-q", "-"] ParseFlags(0): argument None, failure Some((Some(UnknownOption), Some("-")))
+["-", "-q"] ParseFlags(2): argument None, failure Some((Some(UnknownOption), Some("-")))
+the bare `-` is not taken as an operand
+exit 1
