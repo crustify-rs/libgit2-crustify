@@ -1,8 +1,10 @@
 # `end-gates` runs the format and lint gates over the committed tree
 
-Status: `open`: the change is crustify `3b3316c` on
+Status: `open`: the change is crustify `dcefd39` on
 `libgit2-crustify/evolution/end-gates-lint-stage`, awaiting its review. It touches a protected path, so it
 lands only with the user's approval.
+
+Goal: Verification: a gate result a run reports is one its landed tree reproduces.
 
 ## Signal
 
@@ -59,12 +61,11 @@ The change adds a check and weakens none.
 ## Record
 
 The row for `EVOLUTION.md`, copied in when the change lands. The change was made as crustify
-`28a5e51`, which also edited `EVOLUTION.md`; on 2026-11-14 it was rebased onto the working
-branch as `3b3316c`, without that edit, since a change's row is drafted in its proposal. Its sentence of `testing-gates` was merged with the slow list's wording of `gates-slow-list`, which landed first; `test_end_gates` passes on it (9 tests).
+`28a5e51`, which also edited `EVOLUTION.md`; on 2026-11-14 it was rebased as `dcefd39`, without that edit, since a change's row is drafted in its proposal. Its sentence of `testing-gates` was merged with the slow list's wording of `gates-slow-list`, which landed first; `test_end_gates` passes on it (9 tests).
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| `end-gates` runs the format and lint gates over the committed tree, once per export-feature set | `libgit2-crustify`, `end-gates-lint-stage` | crustify `3b3316c` | three reviews found a landed tree failing the lint gate with warnings denied, which every landing passes and which `end-gates` did not run: `legacy-wave-35/batch-0`, `legacy-wave-49/batch-0` and `wave-197/batch-1`, whose batch recorded it as passing | a review finding of a landed tree that fails the format or lint gate, run by `end-gates` or recorded as passing by its batch | watched |
+| `end-gates` runs the format and lint gates over the committed tree, once per export-feature set | `libgit2-crustify`, `end-gates-lint-stage` | crustify `dcefd39` | three reviews found a landed tree failing the lint gate with warnings denied, which every landing passes and which `end-gates` did not run: `legacy-wave-35/batch-0`, `legacy-wave-49/batch-0` and `wave-197/batch-1`, whose batch recorded it as passing | a review finding of a landed tree that fails the format or lint gate, run by `end-gates` or recorded as passing by its batch | watched |
 
 ## Validation
 
@@ -82,4 +83,10 @@ branch as `3b3316c`, without that edit, since a change's row is drafted in its p
 
 ## Review
 
-Pending.
+`review-1` (Opus 5.5, `$1.10`), on `3b3316c`: **approved**; it weakens no check. `dcefd39` is
+that commit restacked with its diff unchanged (the same `git patch-id`), after the change
+beneath it was fixed. It ran the tests (9 pass; the new one fails on the old script) and read
+the stage. Listed apart, not required: "once per export-feature set the batch checks" is
+unclear at an end, where the script's own words are clearer; a package-qualified feature
+crashes the log's name; a `lint` skip is accepted and ignored; the docstring says "committed
+tree" though `--working-tree` lints the working tree.

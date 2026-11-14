@@ -1,8 +1,11 @@
 # A gate's true positive is the batch's finding, wherever it lies
 
-Status: `open`: the change is crustify `9f42026` on
+Status: `open`: the change is crustify `ecfa4fb` on
 `libgit2-crustify/evolution/gate-findings-outside-the-workset`, awaiting its review. It touches a protected path, so it
 lands only with the user's approval.
+
+Goal: Safety, its soundness measure, and Verification: a defect a gate proves is filed among
+the reports.
 
 ## Signal
 
@@ -46,7 +49,7 @@ branch as `9f42026`, without that edit, since a change's row is drafted in its p
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| a gate's true positive is the batch's finding, patched under `fix`, wherever it lies | `libgit2-crustify`, `gate-findings-outside-the-workset` | crustify `9f42026` | the reviewing skill filed a gate's true positive only without `fix`, and its workset rule left one outside the workset to no one | a review whose gate found a true positive it neither filed nor patched, or left to a later batch, as outside its workset | watched |
+| a gate's true positive in the reviewed codebase is the batch's finding, patched under `fix`, wherever it lies | `libgit2-crustify`, `gate-findings-outside-the-workset` | crustify `ecfa4fb` | the reviewing skill filed a gate's true positive only without `fix`, and its workset rule left one outside the workset to no one | a review whose gate found a true positive it neither filed nor patched, or left to a later batch, as outside its workset | watched |
 
 ## Validation
 
@@ -56,4 +59,10 @@ test passes under TSan with the fix and fails with the race without it.
 
 ## Review
 
-Pending.
+`review-1` (Opus 5.5, `$1.08`), on `9f42026`: **rejected**, one fix required: the sentence had a
+review under `fix` patch a gate's report inside a tool's code, which the Reports section makes a
+proposal. Fixed as `ecfa4fb`: "each true positive a gate finds in the reviewed codebase". Its
+evidence, placement, validation and row held, and it weakens no check. Listed apart, not
+required: the BSan sentence after it is now a special case; "filed as a UB report" does not
+fit a plain test's or a lint's failure; without `fix` a known defect is filed again at each
+end; a batch without `ub` is still told to patch.
