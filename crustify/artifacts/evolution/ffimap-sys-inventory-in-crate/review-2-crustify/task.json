@@ -1,0 +1,19 @@
+{
+ "backend": "claude",
+ "billing": "api",
+ "model_proxy": "openrouter",
+ "args": [
+  "--model",
+  "claude-opus-5-5"
+ ],
+ "revisions": {
+  "crustify": "a49c1b1",
+  "wavefront": "bf21e16",
+  "ffibox": "568bcb5",
+  "ffimap": "c3203c7"
+ },
+ "component": "crustify",
+ "branch": "libgit2-crustify/evolution/ffimap-skill-names-in-crate-bindings",
+ "commit": "9885b23",
+ "proposal": "crustify/evolution/ffimap-sys-inventory-in-crate"
+}

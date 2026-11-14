@@ -54,7 +54,7 @@ The CLI's help, `README.md`, `docs/analysis.md` and `docs/schema.md` state the f
 The `cells` fixture gains `src/raw.rs` under a feature, bindings as bindgen writes them, and
 two tests.
 
-Its other half is one paragraph of Crustify's `ffimap` tool skill, crustify `3dcc464`: a
+Its other half is one paragraph of Crustify's `ffimap` tool skill, crustify `9885b23`: a
 campaign whose raw bindings are a module of its crate names them to the scan.
 
 ## Record
@@ -63,7 +63,7 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| `--sys-crates` names a module of the scanned crate as `crate::<path>`: its raw bindings join the `-sys` inventory and leave every other counter, and the `ffimap` skill has a scan name them | `libgit2-crustify`, `ffimap-sys-inventory-in-crate` | ffimap `a0797e6`; crustify `3dcc464` | once this campaign's raw bindings became a module of its crate, its scans read PCRE2's inventory alone and counted the bindings' own code as the crate's, so `celled %` and `C by value` measured nothing of its batches | a scan whose `ty.ffibox.sys.total` or `fn.ffibox.sys.total` falls by an order of magnitude from the scan before it with no binding removed; a counter with a site inside a generated bindings file; or a campaign whose bindings are a module scanning without naming it | watched |
+| `--sys-crates` names a module of the scanned crate as `crate::<path>`: its raw bindings join the `-sys` inventory and leave every other counter, and the `ffimap` skill has a scan name them | `libgit2-crustify`, `ffimap-sys-inventory-in-crate` | ffimap `a0797e6`; crustify `9885b23` | once this campaign's raw bindings became a module of its crate, its scans read PCRE2's inventory alone and counted the bindings' own code as the crate's, so `celled %` and `C by value` measured nothing of its batches | a scan whose `ty.ffibox.sys.total` or `fn.ffibox.sys.total` falls by an order of magnitude from the scan before it with no binding removed; a counter with a site inside a generated bindings file; or a campaign whose bindings are a module scanning without naming it | watched |
 
 ## Validation
 
@@ -101,5 +101,12 @@ counted as uses of their types, so `used` read 106 and `celled %` a wrong ratio;
 bindings' own code counts as the crate's, a second signal, which the change now answers by
 having a named module leave every other counter; (3) this proposal's evidence was wrong about
 `C by value`, which does not read the inventory; (4) no run would name the module unless the
-`ffimap` skill says so, which crustify `3dcc464` adds. Its sturdier matching of the module is
+`ffimap` skill says so, which crustify `9885b23` adds. Its sturdier matching of the module is
 taken too.
+
+`review-1-crustify` (Opus 5.5, `$1.13`), on crustify `3dcc464`: **rejected**, one fix: the paragraph
+named every in-crate bindings module, and in an audit a hand-written `mod ffi` so named would
+leave the scan unseen. Made as `9885b23`: it is limited to bindings generated as `bindgen` describes,
+says a named module leaves every other counter, and leaves a module with hand-written code
+unnamed. The paragraph sits in a section that describes a scan a landing passes, a protected
+path: the user reads it before it lands, after the ffimap half.
