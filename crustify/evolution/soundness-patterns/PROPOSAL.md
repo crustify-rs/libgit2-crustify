@@ -1,6 +1,6 @@
 # A soundness skill: the UB patterns the campaigns met, grown from their findings
 
-Status: `open`: the change is crustify `3571a9e` on
+Status: `open`: the change is crustify `62bd8e6` on
 `libgit2-crustify/evolution/soundness-patterns`, approved by review-2. It adds one sentence to
 `skills/verification/reviewing`, a protected path, so it lands only with the user's approval.
 
@@ -55,7 +55,7 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| a `soundness` skill lists the patterns by which safe Rust over C reached undefined behaviour, each from a proven finding, and a `ub` or `contracts` finding names its pattern or `new` | `libgit2-crustify`, `soundness-patterns` | crustify `3571a9e` | the user's direction; 115 soundness findings of three campaigns fell into groups that recurred across modules and campaigns, which no skill listed | the modules integrated since it landed, taken together, showing no fewer findings of known patterns per module than the modules before it | watched |
+| a `soundness` skill lists the patterns by which safe Rust over C reached undefined behaviour, each from a proven finding, and a `ub` or `contracts` finding names its pattern or `new` | `libgit2-crustify`, `soundness-patterns` | crustify `62bd8e6` | the user's direction; 115 soundness findings of three campaigns fell into groups that recurred across modules and campaigns, which no skill listed | the modules integrated since it landed, taken together, showing no fewer findings of known patterns per module than the modules before it | watched |
 
 ## Validation
 
@@ -80,3 +80,6 @@ pattern.
 
 `review-2` (Opus 5.5, `$0.33`), on `3571a9e`: **approved**: the five fixes are made and nothing else
 changed. It weakens no check.
+
+On 2026-11-14 the approved `3571a9e` was rebased as `62bd8e6`, each of its files the same in the
+commit and its parent as review-2 read, which needs no new review.

@@ -1,9 +1,8 @@
 # A rebased commit whose diff is unchanged needs no new review
 
-Status: `open`: the change is made on crustify's
-`libgit2-crustify/evolution/rebase-with-unchanged-diff` (`e64f119`), approved by review-3. It changes
-`skills/crustify/evolution/**`, a protected path, and a rule of the review itself, so it lands
-only with the user's approval.
+Status: `landed` as crustify `39fa135` (record `d1859e2`) on `libgit2-crustify/devel`, with the user's
+approval on 2026-11-14: the approved `e64f119` rebased, its one file the same in the commit
+and its parent as review-3 read.
 
 Goal: Performance, the harness: the cost per item, reviews included. A review buys nothing
 where it reads the diff another review approved against the same text.
@@ -50,7 +49,7 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| a rebase of a reviewed change to the text of skills, agents or templates alone lands without a new review where each file it changes is the same in the rebased commit and its parent as in the reviewed commit and its parent | `libgit2-crustify`, `rebase-with-unchanged-diff` | crustify `e64f119` | seven approved changes on one tip: each landing rebased the rest, which the rule sent back to review with identical diffs | a landed change that contradicts a rule another change landed between its review and its landing | watched; weakens a check: a rebased text change lands unread where it was reviewed again, so two changes approved on one tip that contradict each other across files are no longer caught by the second's review |
+| a rebase of a reviewed change to the text of skills, agents or templates alone lands without a new review where each file it changes is the same in the rebased commit and its parent as in the reviewed commit and its parent | `libgit2-crustify`, `rebase-with-unchanged-diff` | crustify `39fa135` | seven approved changes on one tip: each landing rebased the rest, which the rule sent back to review with identical diffs | a landed change that contradicts a rule another change landed between its review and its landing | watched; weakens a check: a rebased text change lands unread where it was reviewed again, so two changes approved on one tip that contradict each other across files are no longer caught by the second's review |
 
 ## Validation
 
