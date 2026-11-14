@@ -2095,13 +2095,14 @@ mod ffi_import {
         ///
         /// # Safety
         ///
-        /// The callbacks of the parser's settings read `data` as their own context: while
-        /// the parser executes with those settings, `data` must be what they expect it to
-        /// be, valid for each access they make through it. The parser executes with them
-        /// whenever one of its parses, its `finish` or one of api.c's dispatchers
-        /// (`ParserMut::on_url` and the others) calls them, which the safe API allows at any
-        /// time. A parser whose settings are NULL, or whose callbacks never read `data`, takes
-        /// any value.
+        /// The callbacks of the parser's settings read `data` as their own context: for as
+        /// long as the parser holds both `data` and those settings, `data` must be what they
+        /// expect it to be, valid for each access they make through it. The safe API calls
+        /// them at any time while the parser holds them, not only while it parses: through
+        /// its parses, its `finish` and api.c's dispatchers (`ParserMut::on_url` and the
+        /// others), which are safe. A parser whose settings are NULL, or whose callbacks never
+        /// read `data`, takes any value; so a context that goes before the parser does is
+        /// given up by clearing or replacing those settings first, then `data`.
         ///
         /// Wraps `fld::llhttp__internal_s.data`
         #[doc(alias = "llhttp__internal_s.data")]
@@ -2116,11 +2117,14 @@ mod ffi_import {
         ///
         /// `settings` must be NULL, or point at an `llhttp_settings_t` that stays live and
         /// unchanged, and whose callbacks are sound to call with this parser and its `data`,
-        /// for as long as the parser executes with it: api.c's dispatchers read it on every
-        /// event of `llhttp_execute` and `llhttp_finish`, and call each callback it sets.
-        /// The dispatchers are the parser's safe methods (`ParserMut::on_url` and the others),
-        /// so a callback is sound to call at any time while the parser holds the table, in any
-        /// order and, for a data callback, with any run of bytes.
+        /// for as long as the parser holds it: until another table or NULL replaces it
+        /// (this setter, [`set_settings`](Self::set_settings), `init`) or
+        /// [`reinit`](Self::reinit) clears it, which `reset` does not, or else for as long as
+        /// the parser lives. api.c's dispatchers read it on every event of a parse and of
+        /// `finish`, and call each callback it sets; and they are the parser's safe methods
+        /// (`ParserMut::on_url` and the others), which read it and call its callbacks at any
+        /// time while the parser holds it, in any order and, for a data callback, with any run
+        /// of bytes, a parse or none.
         ///
         /// A callback that sets the parser's `reason`, as `llhttp_set_error_reason` lets it,
         /// must set it NULL or to a NUL-terminated string that stays live and unchanged for as

@@ -1,0 +1,27 @@
+{
+  "commits": [
+    "2c69341c3b017ddd1c401940a00cdac2b2d11063",
+    "2a51ccb3fc46280feffd592b7862e3cb217a9514",
+    "b3d6b9b37599e6343b8cf70e97c0babb775cfa0a"
+  ],
+  "wave": 194,
+  "batch": 6,
+  "link_unit": "libgit2",
+  "module": "deps/llhttp/api.c",
+  "foundational": false,
+  "base_branch": "refs/heads/crustify/waves/wave-194",
+  "backend": "claude",
+  "billing": "api",
+  "model_proxy": "openrouter",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "cc84106",
+    "wavefront": "bf21e16",
+    "ffimap": "9aa2ef1",
+    "ffibox": "9c22a73"
+  },
+  "session_id": "74e11ac8-0c12-4009-8da0-8cfa42f27deb"
+}

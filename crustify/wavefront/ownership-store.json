@@ -28143,6 +28143,1317 @@
    ]
   },
   {
+   "name": "llhttp__on_body",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "One past the run's last byte, in the same input as `p` and at or after it; only subtracted from, never read. The run's length is `endp - p`."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The start of the run, within the input of the llhttp_execute call that runs the parse: where the span starts, or the input's start. Read for the call alone, `endp - p` bytes, and handed to the slot's callback; not kept. NULL only for an empty run (endp == p) of a NULL input."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, whose table's `on_body` is called with it for the call, and whose `reason` is set on a `-1`; not kept. Ported as ParserMut::on_body(&[u8])."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__on_chunk_complete",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The end of the parse's input; never read. The export ignores it."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Where the parse is in its input; never read, the event having no run. The export ignores it."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, whose table's `on_chunk_complete` is called with it for the call; not kept. Ported as ParserMut::on_chunk_complete()."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__on_chunk_extension_name",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "One past the run's last byte, in the same input as `p` and at or after it; only subtracted from, never read. The run's length is `endp - p`."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The start of the run, within the input of the llhttp_execute call that runs the parse: where the span starts, or the input's start. Read for the call alone, `endp - p` bytes, and handed to the slot's callback; not kept. NULL only for an empty run (endp == p) of a NULL input."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, whose table's `on_chunk_extension_name` is called with it for the call, and whose `reason` is set on a `-1`; not kept. Ported as ParserMut::on_chunk_extension_name(&[u8])."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__on_chunk_extension_name_complete",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The end of the parse's input; never read. The export ignores it."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Where the parse is in its input; never read, the event having no run. The export ignores it."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, whose table's `on_chunk_extension_name_complete` is called with it for the call; not kept. Ported as ParserMut::on_chunk_extension_name_complete()."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__on_chunk_extension_value",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "One past the run's last byte, in the same input as `p` and at or after it; only subtracted from, never read. The run's length is `endp - p`."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The start of the run, within the input of the llhttp_execute call that runs the parse: where the span starts, or the input's start. Read for the call alone, `endp - p` bytes, and handed to the slot's callback; not kept. NULL only for an empty run (endp == p) of a NULL input."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, whose table's `on_chunk_extension_value` is called with it for the call, and whose `reason` is set on a `-1`; not kept. Ported as ParserMut::on_chunk_extension_value(&[u8])."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__on_chunk_extension_value_complete",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The end of the parse's input; never read. The export ignores it."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Where the parse is in its input; never read, the event having no run. The export ignores it."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, whose table's `on_chunk_extension_value_complete` is called with it for the call; not kept. Ported as ParserMut::on_chunk_extension_value_complete()."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__on_chunk_header",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The end of the parse's input; never read. The export ignores it."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Where the parse is in its input; never read, the event having no run. The export ignores it."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, whose table's `on_chunk_header` is called with it for the call; not kept. Ported as ParserMut::on_chunk_header()."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__on_header_field",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "One past the run's last byte, in the same input as `p` and at or after it; only subtracted from, never read. The run's length is `endp - p`."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The start of the run, within the input of the llhttp_execute call that runs the parse: where the span starts, or the input's start. Read for the call alone, `endp - p` bytes, and handed to the slot's callback; not kept. NULL only for an empty run (endp == p) of a NULL input."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, whose table's `on_header_field` is called with it for the call, and whose `reason` is set on a `-1`; not kept. Ported as ParserMut::on_header_field(&[u8])."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__on_header_field_complete",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The end of the parse's input; never read. The export ignores it."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Where the parse is in its input; never read, the event having no run. The export ignores it."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, whose table's `on_header_field_complete` is called with it for the call; not kept. Ported as ParserMut::on_header_field_complete()."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__on_header_value",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "One past the run's last byte, in the same input as `p` and at or after it; only subtracted from, never read. The run's length is `endp - p`."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The start of the run, within the input of the llhttp_execute call that runs the parse: where the span starts, or the input's start. Read for the call alone, `endp - p` bytes, and handed to the slot's callback; not kept. NULL only for an empty run (endp == p) of a NULL input."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, whose table's `on_header_value` is called with it for the call, and whose `reason` is set on a `-1`; not kept. Ported as ParserMut::on_header_value(&[u8])."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__on_header_value_complete",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The end of the parse's input; never read. The export ignores it."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Where the parse is in its input; never read, the event having no run. The export ignores it."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, whose table's `on_header_value_complete` is called with it for the call; not kept. Ported as ParserMut::on_header_value_complete()."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__on_headers_complete",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The end of the parse's input; never read. The export ignores it."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Where the parse is in its input; never read, the event having no run. The export ignores it."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, whose table's `on_headers_complete` is called with it for the call; not kept. Ported as ParserMut::on_headers_complete()."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__on_message_begin",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The end of the parse's input; never read. The export ignores it."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Where the parse is in its input; never read, the event having no run. The export ignores it."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, whose table's `on_message_begin` is called with it for the call; not kept. Ported as ParserMut::on_message_begin()."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__on_message_complete",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The end of the parse's input; never read. The export ignores it."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Where the parse is in its input; never read, the event having no run. The export ignores it."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, whose table's `on_message_complete` is called with it for the call; not kept. Ported as ParserMut::on_message_complete()."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__on_method",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "One past the run's last byte, in the same input as `p` and at or after it; only subtracted from, never read. The run's length is `endp - p`."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The start of the run, within the input of the llhttp_execute call that runs the parse: where the span starts, or the input's start. Read for the call alone, `endp - p` bytes, and handed to the slot's callback; not kept. NULL only for an empty run (endp == p) of a NULL input."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, whose table's `on_method` is called with it for the call, and whose `reason` is set on a `-1`; not kept. Ported as ParserMut::on_method(&[u8])."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__on_method_complete",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The end of the parse's input; never read. The export ignores it."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Where the parse is in its input; never read, the event having no run. The export ignores it."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, whose table's `on_method_complete` is called with it for the call; not kept. Ported as ParserMut::on_method_complete()."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__on_reset",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The end of the parse's input; never read. The export ignores it."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Where the parse is in its input; never read, the event having no run. The export ignores it."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, whose table's `on_reset` is called with it for the call; not kept. Ported as ParserMut::on_reset()."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__on_status",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "One past the run's last byte, in the same input as `p` and at or after it; only subtracted from, never read. The run's length is `endp - p`."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The start of the run, within the input of the llhttp_execute call that runs the parse: where the span starts, or the input's start. Read for the call alone, `endp - p` bytes, and handed to the slot's callback; not kept. NULL only for an empty run (endp == p) of a NULL input."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, whose table's `on_status` is called with it for the call, and whose `reason` is set on a `-1`; not kept. Ported as ParserMut::on_status(&[u8])."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__on_status_complete",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The end of the parse's input; never read. The export ignores it."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Where the parse is in its input; never read, the event having no run. The export ignores it."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, whose table's `on_status_complete` is called with it for the call; not kept. Ported as ParserMut::on_status_complete()."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__on_url",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "One past the run's last byte, in the same input as `p` and at or after it; only subtracted from, never read. The run's length is `endp - p`."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The start of the run, within the input of the llhttp_execute call that runs the parse: where the span starts, or the input's start. Read for the call alone, `endp - p` bytes, and handed to the slot's callback; not kept. NULL only for an empty run (endp == p) of a NULL input."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, whose table's `on_url` is called with it for the call, and whose `reason` is set on a `-1`; not kept. Ported as ParserMut::on_url(&[u8])."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__on_url_complete",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The end of the parse's input; never read. The export ignores it."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Where the parse is in its input; never read, the event having no run. The export ignores it."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, whose table's `on_url_complete` is called with it for the call; not kept. Ported as ParserMut::on_url_complete()."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__on_version",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "One past the run's last byte, in the same input as `p` and at or after it; only subtracted from, never read. The run's length is `endp - p`."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The start of the run, within the input of the llhttp_execute call that runs the parse: where the span starts, or the input's start. Read for the call alone, `endp - p` bytes, and handed to the slot's callback; not kept. NULL only for an empty run (endp == p) of a NULL input."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, whose table's `on_version` is called with it for the call, and whose `reason` is set on a `-1`; not kept. Ported as ParserMut::on_version(&[u8])."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__on_version_complete",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The end of the parse's input; never read. The export ignores it."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Where the parse is in its input; never read, the event having no run. The export ignores it."
+     }
+    },
+    {
+     "name": "s",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:s"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, whose table's `on_version_complete` is called with it for the call; not kept. Ported as ParserMut::on_version_complete()."
+     }
+    }
+   ]
+  },
+  {
    "name": "llhttp_cb",
    "defined_in": null,
    "ptr_args": [
@@ -28206,6 +29517,24 @@
    ]
   },
   {
+   "name": "llhttp_errno_name",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_ret": {
+    "ptr": {
+     "scalar": null,
+     "array": null,
+     "string": true,
+     "owned": false,
+     "borrowed": {
+      "lifetime": "static"
+     },
+     "nullable": false,
+     "mutable": false,
+     "note": "A string literal of api.c, \"HPE_\" #NAME, the errno's constant name; Errno::constant_name. Never NULL: a value no entry names aborts. Not owned; never freed."
+    }
+   }
+  },
+  {
    "name": "llhttp_execute",
    "defined_in": "deps/llhttp/api.c",
    "ptr_args": [
@@ -28241,6 +29570,29 @@
       "nullable": false,
       "mutable": true,
       "note": "The parser advanced over the run; handed to each settings callback for the call; not kept beyond it."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_finish",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser told its input has ended: its `finish` state is read, its table's `on_message_complete` called with it on HTTP_FINISH_SAFE_WITH_CB, and its `reason` set on HTTP_FINISH_UNSAFE; not kept. Its error is left as it was. Ported as ParserMut::finish()."
      }
     }
    ]
@@ -28535,6 +29887,24 @@
    ]
   },
   {
+   "name": "llhttp_method_name",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_ret": {
+    "ptr": {
+     "scalar": null,
+     "array": null,
+     "string": true,
+     "owned": false,
+     "borrowed": {
+      "lifetime": "static"
+     },
+     "nullable": false,
+     "mutable": false,
+     "note": "A string literal of api.c, #STRING of HTTP_ALL_METHOD_MAP's entry; Method::map_string. Never NULL: a value no entry names aborts. Not owned; never freed."
+    }
+   }
+  },
+  {
    "name": "llhttp_pause",
    "defined_in": "deps/llhttp/api.c",
    "ptr_args": [
@@ -28553,6 +29923,29 @@
       "nullable": false,
       "mutable": true,
       "note": "The parser llhttp_pause sets `error` to HPE_PAUSED and `reason` to a literal on, when it has no error, for the call; not kept."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_reset",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "An initialised parser, re-initialised in place by llhttp__internal_init, keeping its type, settings, data and lenient flags, which it reads first: so no initialiser of raw storage, unlike llhttp_init. Not kept. Ported as ParserMut::reset()."
      }
     }
    ]
@@ -28905,6 +30298,24 @@
      }
     }
    ]
+  },
+  {
+   "name": "llhttp_status_name",
+   "defined_in": "deps/llhttp/api.c",
+   "ptr_ret": {
+    "ptr": {
+     "scalar": null,
+     "array": null,
+     "string": true,
+     "owned": false,
+     "borrowed": {
+      "lifetime": "static"
+     },
+     "nullable": false,
+     "mutable": false,
+     "note": "A string literal of api.c, #STRING of HTTP_STATUS_MAP's entry; Status::map_string. Never NULL: a value no entry names aborts. Not owned; never freed."
+    }
+   }
   },
   {
    "name": "loose_backend__free",

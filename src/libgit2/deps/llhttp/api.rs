@@ -988,9 +988,10 @@ mod ffi_import {
             let table = self.as_ref().settings_ptr();
             // SAFETY: a non-NULL `settings` addresses an `llhttp_settings_t` that stays live,
             // and that nothing writes, for as long as the parser holds it: the contract of
-            // `set_settings_ptr`, which `set_settings` meets with a `SettingsRef<'static>` and
-            // C's callers of api.c's functions with their own tables (llhttp never writes one),
-            // and which this handle's parser meets for its borrow, which the reference's is.
+            // `set_settings_ptr`, which `set_settings` meets with a `SettingsRef<'static>`, and
+            // which a handle the gateway builds over C's parser meets for its call alone, its
+            // lifetime, C's caller keeping its table for the call (`parser_mut`). llhttp never
+            // writes a table. The reference lives for this handle's borrow, within either.
             unsafe { table.as_ref() }
         }
 
@@ -1603,10 +1604,15 @@ mod ffi_export {
     /// expect: the contract of api.c's functions.
     unsafe fn parser_mut<'a>(parser: *mut sys::llhttp_t) -> ParserMut<'a> {
         // SAFETY: the caller guarantees that `parser` is a live parser, exclusively held for
-        // the handle's lifetime. Its `reason` is NULL or one of llhttp's literals, which live
-        // as long as the program, since the remaining C sets it only through llhttp; and its
-        // `settings` and `data` meet `set_settings_ptr`'s and `set_data`'s contracts, which
-        // is what C's own callers of `llhttp_execute` promise: the handle's invariant.
+        // the handle's lifetime, which is the export's call: each export makes its one
+        // operation with the handle and drops it before returning. Its `reason` is NULL or one
+        // of llhttp's literals, which live as long as the program, since the remaining C sets
+        // it only through llhttp. Its `settings` and `data` meet `set_settings_ptr`'s and
+        // `set_data`'s contracts for that call, which is all C promises: a C caller keeps its
+        // table, and the context its callbacks read through `data`, for its own calls into
+        // llhttp, and no longer. libgit2's HTTP client leaves its table installed with `data`
+        // NULL between calls (`transports/httpclient.c`), where its callbacks would follow
+        // NULL, so no handle over a C parser may outlive the call that builds it.
         unsafe { ParserMut::from_ptr(parser) }.expect("api.c's functions take a parser")
     }
 

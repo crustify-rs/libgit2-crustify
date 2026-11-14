@@ -7,7 +7,9 @@
 //! callbacks the settings install, which read the parser's `data` as their context, so
 //! that `ASan` and `UBSan` see every access C makes through what the setters stored, and the
 //! edges of each contract: NULL, a value replaced between calls, a parser reset to new
-//! settings, a table whose callbacks never read `data`.
+//! settings, a table whose callbacks never read `data`, and the safe dispatchers
+//! (`ParserMut::on_url` and the others), which call the callbacks outside any parse, at any
+//! time while the parser holds them.
 //!
 //! `set_settings_ptr`'s suite also installs Rust handlers, through [`Callback`] and
 //! [`DataCallback`], and parses with [`ParserMut::parse`], so that C calls the trampolines:
@@ -165,6 +167,43 @@ mod set_data {
             assert_eq!(parser.as_ref().data(), value);
         }
     }
+    // A context reached through the safe dispatchers, outside any parse, at any time while the
+    // parser holds it and the table whose callbacks read it, as `set_data`'s contract has it:
+    // replaced between two calls, then given up after the table.
+    #[test]
+    #[cfg_attr(miri, ignore = "calls C")]
+    fn the_dispatchers_read_the_context_it_stores_outside_a_parse() {
+        let settings = counting_settings();
+        let mut first = Seen::default();
+        let mut second = Seen::default();
+        let mut parser = c_init(ParserType::Response);
+        // SAFETY: `settings` is live and unchanged while the parser holds it, until NULL
+        // replaces it below, and its callbacks are sound with this parser at any time while its
+        // `data` is a live `Seen`, which it is while the parser holds the table.
+        unsafe { parser.as_mut().set_settings_ptr(&raw const settings) };
+        // SAFETY: `first` is a live `Seen`, until `second` replaces it.
+        unsafe { parser.as_mut().set_data((&raw mut first).cast()) };
+        assert_eq!(parser.as_mut().on_body(b"to the first"), 0);
+        assert_eq!(parser.as_mut().on_message_complete(), 0);
+        // SAFETY: `second` is a live `Seen`, until `data` is cleared below, after the table.
+        unsafe { parser.as_mut().set_data((&raw mut second).cast()) };
+        assert_eq!(parser.as_mut().on_body(b"to the second"), 0);
+        assert_eq!(parser.as_mut().on_header_value_complete(), 0);
+        // SAFETY: NULL runs no callback, so nothing reads `data` from here on.
+        unsafe { parser.as_mut().set_settings_ptr(ptr::null()) };
+        // SAFETY: as above.
+        unsafe { parser.as_mut().set_data(ptr::null_mut()) };
+        assert_eq!(parser.as_mut().on_body(b"to none"), 0);
+        assert_eq!(parser.as_mut().on_message_complete(), 0);
+        assert_eq!(
+            (first.headers, first.messages, first.body.as_slice()),
+            (0, 1, &b"to the first"[..])
+        );
+        assert_eq!(
+            (second.headers, second.messages, second.body.as_slice()),
+            (1, 0, &b"to the second"[..])
+        );
+    }
 }
 
 mod set_settings_ptr {
@@ -231,8 +270,11 @@ mod set_settings_ptr {
         reason: std::ffi::CString,
     }
 
-    /// An `on_url` that refuses the URL with the reason its context owns, through
-    /// `llhttp_set_error_reason`, as llhttp asks a callback to before returning its error.
+    /// An `on_url` that refuses the URL with the reason its context owns, as llhttp asks a
+    /// callback to before returning its error: it stores the reason as
+    /// `llhttp_set_error_reason`'s body does, `parser->reason = reason;`, since that function
+    /// has no export (no C outside api.c calls it), so a call to it would leave this suite
+    /// unlinked at api.c's switch.
     ///
     /// # Safety
     ///
@@ -248,9 +290,10 @@ mod set_settings_ptr {
         // SAFETY: as above, `refusal` is a live `Refusal`, which nothing writes during the
         // callback, so it may be borrowed for the read.
         let reason = unsafe { (*refusal).reason.as_ptr() };
-        // SAFETY: `parser` is live; llhttp keeps the pointer as the parser's reason, which the
-        // refusal outlives while the parser holds it (the test's contract).
-        unsafe { sys::llhttp_set_error_reason(parser, reason) };
+        // SAFETY: `parser` is live, lent to the callback alone; the parser keeps the pointer as
+        // its reason, which the refusal outlives while the parser holds it (the test's
+        // contract).
+        unsafe { (*parser).reason = reason };
         sys::HPE_USER.cast_signed()
     }
 
@@ -295,6 +338,52 @@ mod set_settings_ptr {
         parser.as_mut().set_reason(None);
         drop(refusal);
         assert_eq!(parser.as_ref().reason(), None);
+    }
+    // The regression test of
+    // `contracts/ffi_import/settings-ptr-bounds-a-table-by-later-safe-calls`: a table on the
+    // heap, whose callbacks the safe dispatchers call outside any parse, in an order llhttp
+    // never uses and with runs of the test's own, empty included, while the parser holds it,
+    // `reset` keeping it; the parser gives it up before it goes, and the dispatchers then call
+    // nothing.
+    #[test]
+    #[cfg_attr(miri, ignore = "calls C")]
+    fn the_dispatchers_call_its_callbacks_at_any_time_while_the_parser_holds_it() {
+        let table = Box::new(counting_settings());
+        let mut seen = Seen::default();
+        let mut parser = c_init(ParserType::Response);
+        // SAFETY: `seen` is the `Seen` the callbacks read, live until `data` is cleared below,
+        // after the table.
+        unsafe { parser.as_mut().set_data((&raw mut seen).cast()) };
+        // SAFETY: `table` is live and unchanged while the parser holds it, until NULL replaces
+        // it below, and its callbacks are sound with this parser and `seen` at any time, in any
+        // order and with any run.
+        unsafe { parser.as_mut().set_settings_ptr(&raw const *table) };
+        assert_eq!(parser.as_mut().parse(RESPONSE), Ok(Parsed::All));
+        // Outside the parse: a message's end, a body of the test's own, an empty run, a
+        // header's end after them; and a slot the table leaves NULL, which calls nothing.
+        assert_eq!(parser.as_mut().on_message_complete(), 0);
+        assert_eq!(parser.as_mut().on_body(b"more"), 0);
+        assert_eq!(parser.as_mut().on_body(b""), 0);
+        assert_eq!(parser.as_mut().on_header_value_complete(), 0);
+        assert_eq!(parser.as_mut().on_url(b"/"), 0);
+        // `reset` keeps the table and `data`, so the parser still holds them.
+        parser.as_mut().reset();
+        assert_eq!(parser.as_ref().settings_ptr(), &raw const *table);
+        assert_eq!(parser.as_mut().on_message_complete(), 0);
+        assert_eq!(
+            (seen.headers, seen.messages, seen.body.as_slice()),
+            (3, 3, &b"bodymore"[..])
+        );
+        // The parser gives the table up before it goes.
+        // SAFETY: NULL runs no callback.
+        unsafe { parser.as_mut().set_settings_ptr(ptr::null()) };
+        drop(table);
+        assert_eq!(parser.as_mut().on_message_complete(), 0);
+        assert_eq!(parser.as_mut().on_body(b"after"), 0);
+        assert_eq!(parser.as_mut().finish(), Ok(()));
+        // SAFETY: with no table, nothing reads `data`.
+        unsafe { parser.as_mut().set_data(ptr::null_mut()) };
+        assert_eq!((seen.messages, seen.body.as_slice()), (3, &b"bodymore"[..]));
     }
 }
 
