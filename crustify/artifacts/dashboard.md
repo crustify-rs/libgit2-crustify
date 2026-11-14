@@ -57,17 +57,17 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip the integration of `libgit2/src/util/strnlen.h`, `30176475c`; `main` at `c58bc5de8`, nothing shipped yet; crustify `cc84106`, ffibox `9c22a73`, wavefront `bf21e16`, ffimap `9aa2ef1` (each on its `libgit2-crustify/devel`, wavefront and ffimap on `devel`)
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `22910` non-test, `108853` tests; **C LoC** — `88938`
+- **Rust LoC** — `22899` non-test, `108846` tests; **C LoC** — `88938`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `796` | — | `29.55`% | `78.40`% |
-| UB unsafe tests | `144` | — | `20.11`% | `15.31`% |
-| Equiv tests | `563` | — | `44.56`% | `74.82`% |
-| Unit tests | `1108` | — | `34.02`% | `88.00`% |
-| **Total tests** | **`2611`** | — | **`47.24`%** | **`98.69`%** |
+| UB safe tests | `796` | — | `29.73`% | `77.20`% |
+| UB unsafe tests | `144` | — | `20.16`% | `16.86`% |
+| Equiv tests | `532` | — | `43.78`% | `68.23`% |
+| Unit tests | `1120` | — | `34.16`% | `87.99`% |
+| **Total tests** | **`2592`** | — | **`47.21`%** | **`98.02`%** |
 | total types | `258` | — | — | — |
 | ported types | `4` | `1.55`% | — | — |
 | wrapped types | `116` | `43.80`% | — | — |
@@ -516,6 +516,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `git2/src/cli/opt.c` | `186` | `4` | port | first | `11` | `246` | `+2656/-66` | `45.41`% / `98.84`% | — | — | — | — | — |
 | `git2/src/cli/opt.c` | `186` | `5` | port | first | `8` | `310` | `+2082/-83` | `45.42`% / `98.80`% | — | — | — | — | — |
 | `libgit2/src/util/utf8.c` | `229` | `0` | port | first | `5` | `89` | `+764/-0` | `44.97`% / `98.81`% | — | — | — | — | — |
+| `libgit2/src/util/utf8.c` | `232` | `0` | port/unexport | first | `1` | `16` | `+31/-55` | `47.21`% / `98.02`% | — | — | — | — | — |
 | `libgit2/raw-lifetime-void` | `legacy-1` | `0` | wrap | review | `2` | — | `+80/-1` | — | `$7.89` | `10.78M` | `18m36s` | `$3.94` | — |
 | `libgit2/raw-lifetime-string` | `legacy-3` | `0` | wrap | review | `2` | — | `+345/-23` | — | `$10.89` | `14.41M` | `22m03s` | `$5.45` | — |
 | `libgit2/src/util/alloc.c` | `12` | `3` | wrap | review | `7` | — | `+57/-20` | — / `98.90`% | `$15.18` | `40.96M` | `1h31m33s` | `$2.17` | — |
@@ -549,7 +550,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | wrap | review | `3` | — | `+11/-7` | `45.88`% / `98.92`% | `$5.87` | `16.61M` | `16m58s` | `$1.96` | — |
 | `libgit2/deps/llhttp/api.c` | `194` | `6` | port | review | `67` | — | `+191/-25` | `47.25`% / `98.69`% | — | — | — | — | — |
 | `git2/src/cli/opt.c` | `186` | `6` | port | review | `21` | — | `+335/-27` | `45.39`% / `98.80`% | — | — | — | — | — |
-| **Σ first** |  |  |  |  | **`594`** | **`10085`** | **`+92198/-3902`** | **`47.29`% / `98.65`%** | **`$587.14`** | **`1837.67M`** | — | **`$1.17`** | **`$0.06`** |
+| **Σ first** |  |  |  |  | **`595`** | **`10101`** | **`+92229/-3957`** | **`47.21`% / `98.02`%** | **`$587.14`** | **`1837.67M`** | — | **`$1.17`** | **`$0.06`** |
 | **Σ review** |  |  |  |  | **`556`** | — | **`+7778/-1421`** | **`47.25`% / `98.69`%** | **`$373.87`** | **`734.99M`** | — | **`$0.80`** | — |
 
 ### Batches: tests
@@ -658,7 +659,8 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/llhttp/api.c` | `194` | `7` | review | `+0` (`-0.03`/`+0.00` pp) | `+0` (`+0.01`/`+0.00` pp) | `+0` (`-0.01`/`+0.00` pp) | `+5` (`+0.05`/`+0.01` pp) |
 | `libgit2/src/util/utf8.c` | `229` | `0` | first | `+0` (`-0.03`/`-0.32` pp) | `+0` (`-0.02`/`-0.06` pp) | `+6` (`+0.04`/`-0.02` pp) | `+15` (`+0.03`/`+0.04` pp) |
 | `libgit2/src/util/utf8.c` | `229` | `1` | review | `+1` (`+0.00`/`+0.00` pp) | `+0` (`+0.04`/`+0.09` pp) | `+0` (`+0.00`/`+0.01` pp) | `+0` (`-0.05`/`+0.01` pp) |
-| **Σ first** |  |  |  | **`+361` (`+11.90`/`+5.72` pp)** | **`+50` (`+3.60`/`-5.88` pp)** | **`+251` (`+9.81`/`+15.03` pp)** | **`+452` (`+14.63`/`-32.98` pp)** |
+| `libgit2/src/util/utf8.c` | `232` | `0` | first | `+0` (`+0.03`/`+0.03` pp) | `+0` (`+0.01`/`+0.01` pp) | `+0` (`-0.00`/`+0.03` pp) | `+0` (`-0.03`/`+0.00` pp) |
+| **Σ first** |  |  |  | **`+361` (`+11.93`/`+5.75` pp)** | **`+50` (`+3.61`/`-5.87` pp)** | **`+251` (`+9.81`/`+15.06` pp)** | **`+452` (`+14.60`/`-32.98` pp)** |
 | **Σ review** |  |  |  | **`+19` (`+0.30`/`-1.50` pp)** | **`+10` (`-0.79`/`+1.13` pp)** | **`+23` (`+0.03`/`-0.52` pp)** | **`+51` (`+2.39`/`+7.70` pp)** |
 
 ### Batches: safety audit
@@ -704,6 +706,7 @@ Deterministic `ffimap`; no model.
 | `libgit2/deps/llhttp/api.c` | `194` | `7` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
 | `libgit2/src/util/utf8.c` | `229` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+1` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.05` pp | `+1` |
 | `libgit2/src/util/utf8.c` | `229` | `1` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `-3` | `-0.02` pp | `-3` |
+| `libgit2/src/util/utf8.c` | `232` | `0` | port/unexport | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
 | **Σ first** |  |  |  |  | **`+4`** | **`+0`** | **`+35`** | **`+0`** | **`+1`** | **`+0.52` pp** | **`+12`** | **`+1`** | **`+0`** | **`+0`** | **`+35`** | **`+52`** | **`-0.75` pp** | **`+158`** |
 | **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`-1`** | **`+0`** | **`+1`** | **`+0.00` pp** | **`+0`** | **`-1`** | **`+0`** | **`+6`** | **`+2`** | **`-3`** | **`-0.13` pp** | **`-5`** |
 
@@ -740,7 +743,8 @@ Deterministic `ffimap api`; no model.
 | `libgit2/deps/llhttp/api.c` | `194` | `7` | port | review | `65` | `0` | `0` | `0` | `0` | `0` | — | — |
 | `libgit2/src/util/utf8.c` | `229` | `0` | port | first | `0` | `0` | `0` | `0` | `3` | `0` | `utf8` new (`InvalidCodePoint`); `sys::libgit2` extended (`+3` bindings) | — |
 | `libgit2/src/util/utf8.c` | `229` | `1` | port | review | `3` | `0` | `0` | `0` | `0` | `0` | — | — |
-| **Σ first** |  |  |  |  | **`2`** | **`0`** | **`0`** | **`0`** | **`97`** | **`2`** |  |  |
+| `libgit2/src/util/utf8.c` | `232` | `0` | port/unexport | first | `1` | `0` | `0` | `0` | `0` | `0` | `sys::libgit2` changed (`git_utf8_char_length` removed) | `sys::libgit2::git_utf8_char_length` removed: the raw binding goes with its export (`port/unexport`) |
+| **Σ first** |  |  |  |  | **`3`** | **`0`** | **`0`** | **`0`** | **`97`** | **`2`** |  |  |
 | **Σ review** |  |  |  |  | **`190`** | **`2`** | **`1`** | **`0`** | **`0`** | **`3`** |  |  |
 
 ### Batches — review: PoC + reports
@@ -5341,6 +5345,104 @@ figures lose its 71 lines. This run did not measure coverage. The procedure this
 worked out, which every later switch repeats, is proposed for the spec
 (`crustify/evolution/module-switch-procedure`). That libgit2's switch removes a file and no
 CMake line is a lesson. Usage cells are the assistant's.
+
+### `libgit2/src/util/utf8.c` wave 232 batch 0: `git_utf8_char_length`'s `port/unexport`
+
+The campaign's first later stage, forked from the working branch (`8f7af1223`): the export of
+`fn::git_utf8_char_length` goes, with its raw binding and its allowlist entry, and its one C test
+case leaves `c/`. Its port, `char_count`, keeps its API and its `Replaces` anchor. No C the
+variants build calls it: its remaining callers, `fs_path.c`'s two sites, `fs_path.h`'s
+`git_fs_path_validate_filesystem_with_suffix` and `tests/libgit2/refs/basic.c`'s
+`test_refs_basic__longpaths`, are all under `GIT_WIN32`, which no variant defines, so the plan
+counts no referrer. `utf8.rs`'s gateway keeps `git_utf8_iterate` and `git_utf8_valid_buf_length`
+(waves 860 and 1531) and their signature checks. Its `unit_priv` tests lose their calls of the
+removed export: `lengths_are_the_native_counts` becomes `prefix_is_the_native_prefix`, and
+`empty_input_is_not_read` checks the two exports left. The module's and the gateway's docs no
+longer name the export. `bindings.rs` was regenerated without the binding (`-22` lines), against
+gen3, whose headers differ from gen4's only in the declaration the allowlist no longer reaches.
+
+The C change is the fork's `9859ed5e7`, `unexport git_utf8_char_length`, on the local
+`fork/main` after `c54c0c180`, not pushed; the superproject records it. It deletes
+`tests/util/utf8.c`, whose only case is `test_utf8__char_length`, and removes the function's
+declaration from `src/util/utf8.h`, a comment saying why in its place. The declaration went
+because it no longer declares anything a build defines: an export serves only the remaining C
+the target builds (the conventions' Exports section), and a header declares its module's
+exports. A `GIT_WIN32` build of the fork would now meet the function undeclared at its four call
+sites: under libgit2's default C90, an implicit-declaration warning (an error with
+`ENABLE_WERROR` or a C99 compiler that refuses implicit declarations), then an undefined
+reference to `git_utf8_char_length` at the link of `libgit2` and `libgit2_tests`. Had the
+declaration stayed, it would have compiled and failed at the same link. Either way no Windows
+binary links, as none did before, since no build of the campaign compiles that code; a port of
+the Windows paths would call `char_count`. `tests/util/CMakeLists.txt` globs its sources, so no
+CMake file changes. The spec ruled a later stage's C change out (`porting-workflow`'s Later
+stages section), against `testing`'s carried-over cases, and said nothing of the declaration:
+`crustify/evolution/later-stage-c-changes` proposes the rule, made on crustify's
+`libgit2-crustify/evolution/later-stage-c-changes` (`86d8b2f`) and awaiting review.
+
+The carried-over case: `char_count_carries_over_the_c_test` (`tests/unit_pub/src/util/utf8.rs`),
+written by wave 229, holds `test_utf8__char_length`'s ten assertions with its inputs and counts
+unchanged, each C string and size the bytes of one byte string, and names the case and its file,
+as `testing`'s C tests carried over section asks. No assertion needed adapting, and none is left
+uncarried. `test_refs_basic__longpaths` is compiled empty under the configured build, so it is out
+of scope (the porting workflow's Tests follow their modules section) and is not carried over. The
+`modules.json` record's `tests` still names `tests/util/utf8.c`, which is the plan's to correct.
+
+The variants were rebuilt as `crustify/builds.gen4` from `9859ed5e7` with `build-variants.sh`,
+at 6 jobs each so that the five stayed within the 32 the run was capped at. This worktree's
+`crustify/builds` links to gen4, and gen3 was left untouched. Each archive holds 210 objects, as
+gen3's did: the change removes no library object. `libgit2.so`, `git2`, `libgit2_tests`,
+`util_tests` and the Rust library define `git_utf8_iterate` and `git_utf8_valid_buf_length` and no
+`git_utf8_char_length`, where gen3's defined all three. `util_tests` lists 53 suites where gen3's
+listed 54. `libgit2.so`'s dynamic symbol table defines the same 907 symbols. `util_tests -sutf8`,
+the earlier switches' smoke test, no longer exists; `c-tests.sh` ran every suite instead.
+
+The C tests ran over gen4 through `c-tests.sh` on plain, ASan+UBSan, TSan and coverage. Each
+gave the baseline's record less the one case, and nothing else moved: plain, ASan+UBSan and TSan
+3442 passed and 55 skipped of 3497, coverage 3443 and 54. TSan's 10 non-zero suites are the
+baseline's, and `ctest` fails `offline` there on its 49 lock-order inversions and `tzset` race
+alone, as at the three switches; `ctest` passes both targets on the other three. So
+`c-baseline.json` moves for that case alone: every variant's `passed` and `total` drop by 1. That
+is 3443 to 3442 and 3498 to 3497 for plain, ASan+UBSan and TSan, 3444 to 3443 and 3498 to 3497
+for coverage, and 3432 to 3431 and 3487 to 3486 for bsan. Skips, failures and non-zero suites are
+unchanged. The bsan record is derived, not run, as the settings' `sanitizers` answer has it, and
+a comment line of the file says so. The Overview's baseline line is a campaign cell, left to the
+assistant.
+
+Gates, on the base `8f7af1223` over gen4, at 32 jobs. The workspace is formatted, and `clippy
+--workspace --all-targets` passes with warnings denied. Plain passes the whole workspace: `lib`
+901 and 1 ignored, `equiv` 532, `ub_safe` 796, `ub_unsafe` 144, `unit_pub` 218, `hidden_symbols`
+1, doctests 101 and 397. ASan+UBSan passes the tests of the module and its dependents' modules
+(`util::utf8`, `path`, `diff_xdiff`, `ntlm`): `lib` 54, `equiv` 29, `ub_safe` 38, `ub_unsafe` 2,
+`unit_pub` 17. Miri passes the module's 19 tests, the gateway's four and `unit_priv`'s four in
+`lib` and `unit_pub`'s eleven. No test was added, so no other sanitizer has an obligation, and
+BSan was not run. `c/` and the raw bindings changed, so the crate was packaged as
+`package-gate-procedure` has it, with the workspace's Git patch of ffibox: 695 files, and it
+builds alone in bundled mode, its `libgit2.a` leaving the two remaining exports undefined. Its
+`lib` tests: 843 pass, the module's among them. The other 58 need `c/tests/resources`, as at the
+switches.
+
+Coverage: `run.sh` on a `git archive` of the base over gen3 and on this tree over gen4, read with
+`report.py` from each scratch tree's `src/libgit2`, the unit column merging `lib` and `unit_pub`.
+Only the known `CommitBuilder` doctest failed, on both. The totals move from `47.23`% / `98.02`%
+to `47.21`% / `98.02`%: the Rust loses the export's 6 lines, 5 of them covered, and the C shifts of
+a few hundredths are run-to-run variation, since the library's C is unchanged. The Coverage stats
+counts are the binaries' own test lists, `equiv` 532 and unit 1120 (`lib` 902, `unit_pub` 218),
+where the table still held earlier counts. Worklist: `char_count` is fully covered. `utf8.rs` is
+at 79 of 86 lines, 18 of 21 functions and 104 of 113 regions, from 84 of 92 lines. Its gaps are
+`decode_char`'s unreachable `_` arm, the `git_utf8_iterate` barrier's panic fallback, and
+`git_utf8_valid_buf_length`'s body, which `llvm-cov show` reads as unrun on both trees, though
+`prefix_is_the_native_prefix` calls it, under its warning of functions with mismatched data
+across the binaries. The module has no C left to cover. The Overview's Rust LoC moves by ffimap's
+`code.loc.total` (`-11`) and `code.tests.loc.total` (`-7`). `+LoC` leaves out `bindings.rs`
+(`-22`). The `loc` cell is wavefront's `query dag --loc` of the item, 16.
+
+The safety audit scans (ffimap `9aa2ef1`, wave 229's flags, no export feature left) differ only
+inside the gateway, so every metric is `+0`: one `ffi_export` unsafe block, one `extern "C"`
+function and one `barrier` call fewer, and `unsafe loc %` `+0.0015` pp. The boundary scan's
+sites hold none in the changeset. `ffimap api` over the worklist, nightly `2026-10-08` with
+ffibox's private rustdoc JSON: `fn::git_utf8_char_length` is `kept`. Of the unattributed modules,
+`sys::libgit2` is `changed`, its `git_utf8_char_length` binding removed, which the stage
+removes by design; the other 22 are `kept`. Usage cells are the assistant's.
 
 ### `libgit2/deps/ntlmclient/compat.h` wave 200 batch 0: `MIN`
 

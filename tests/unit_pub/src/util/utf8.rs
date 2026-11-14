@@ -3,14 +3,16 @@
 //! against their contracts.
 //!
 //! `char_count_carries_over_the_c_test` carries over the module's one C test
-//! case, `test_utf8__char_length` (`tests/util/utf8.c`); the others cover the boundaries of
-//! each sequence length and what `decode_char` refuses. None reaches C, so Miri runs them all.
+//! case, `test_utf8__char_length` (`tests/util/utf8.c`), which left the C with
+//! `git_utf8_char_length`'s export; the others cover the boundaries of each sequence length
+//! and what `decode_char` refuses. None reaches C, so Miri runs them all.
 
 use libgit2_crustify::libgit2::src::util::utf8::{
     InvalidCodePoint, char_count, decode_char, valid_prefix_len,
 };
 
-/// Carries over `test_utf8__char_length`: its inputs and counts, unchanged.
+/// Carries over `test_utf8__char_length` (`tests/util/utf8.c`): its ten inputs and counts,
+/// unchanged, each C string and size as the bytes of one byte string.
 #[test]
 fn char_count_carries_over_the_c_test() {
     assert_eq!(char_count(b""), 0);

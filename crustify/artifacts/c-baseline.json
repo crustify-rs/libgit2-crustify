@@ -7,36 +7,37 @@
   "Sanitizer-only nonzero suites are pre-existing C findings; post-campaign runs must match this record.",
   "build.json version 3 (2026-10-24): every variant links OpenSSL, PCRE2 and zlib from the side campaigns' installs",
   "of the same variant; every variant ran again against them and matches its version-1 record exactly. Under bsan the",
-  "wrappers are built uninstrumented; blame::simple, merge::trees::renames and perf::merge timed out under load in its rerun and pass alone."
+  "wrappers are built uninstrumented; blame::simple, merge::trees::renames and perf::merge timed out under load in its rerun and pass alone.",
+  "2026-11-14, wave-232/batch-0 (src/util/utf8.c's port/unexport of git_utf8_char_length, the fork's 9859ed5e7, crustify/builds.gen4): util_tests' utf8 suite, its one case test_utf8__char_length, left c/, carried over by tests/unit_pub/src/util/utf8.rs; every variant's passed and total drop by 1. plain, coverage, asan-ubsan and tsan were run (crustify/scripts/c-tests.sh) and match; bsan's record is derived, not run, as the settings' sanitizers answer has it."
  ],
  "build_json_version": 3,
  "variants": {
   "plain": {
-   "passed": 3443,
+   "passed": 3442,
    "failed": 0,
    "skipped": 55,
-   "total": 3498,
+   "total": 3497,
    "nonzero_suites": []
   },
   "coverage": {
-   "passed": 3444,
+   "passed": 3443,
    "failed": 0,
    "skipped": 54,
-   "total": 3498,
+   "total": 3497,
    "nonzero_suites": []
   },
   "asan-ubsan": {
-   "passed": 3443,
+   "passed": 3442,
    "failed": 0,
    "skipped": 55,
-   "total": 3498,
+   "total": 3497,
    "nonzero_suites": []
   },
   "tsan": {
-   "passed": 3443,
+   "passed": 3442,
    "failed": 0,
    "skipped": 55,
-   "total": 3498,
+   "total": 3497,
    "nonzero_suites": [
     {
      "binary": "libgit2_tests",
@@ -141,10 +142,10 @@
    ]
   },
   "bsan": {
-   "passed": 3432,
+   "passed": 3431,
    "failed": 0,
    "skipped": 55,
-   "total": 3487,
+   "total": 3486,
    "nonzero_suites": [
     {
      "binary": "libgit2_tests",
