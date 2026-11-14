@@ -1427,14 +1427,15 @@ define_ctype!(
     /// libgit2 neither allocates nor frees one: the routine writing the commit keeps it
     /// on its stack while the callback runs, so it is never held by value, boxed or
     /// owned in Rust. It is reached only through the [`CommitBuilderMut`] the callback's
-    /// wrapper lends for the call (see the [module docs](self#the-commit-builder)); there
-    /// is no public way to make one.
+    /// wrapper lends for the call (see the [module docs](self#the-commit-builder)); safe
+    /// code has no way to make one, since the handle's raw seam is unsafe:
     ///
-    /// ```compile_fail,E0624
+    /// ```compile_fail,E0133
+    /// use ffibox::CMutSeam;
     /// use libgit2_crustify::libgit2::src::libgit2::commit::CommitBuilderMut;
     ///
     /// let mut slot = 0u64;
-    /// let _ = unsafe { CommitBuilderMut::from_ptr(core::ptr::from_mut(&mut slot).cast()) };
+    /// let _ = CommitBuilderMut::from_ptr(core::ptr::from_mut(&mut slot).cast());
     /// ```
     ///
     /// The exclusive handle does not alias, as `&mut` does not:
