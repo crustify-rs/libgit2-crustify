@@ -92,11 +92,15 @@ Implementation `openrouter/anthropic/claude-opus-5.5` via `claude`, `openrouter/
 | `libgit2/config` | `legacy-9` | `47` | `6h09m05s` | `$36.16` | `129.17M` | `$4.02` | `$0.77` | `$94.07` | `265.11M` | `$10.45` | `$2.00` | `$130.23` | `394.28M` | `$14.47` | `$2.77` |
 | `libgit2/index` | `legacy-18` | `75` | `10h41m03s` | `$195.65` | `307.26M` | `$10.87` | `$2.61` | `$67.64` | `186.28M` | `$3.76` | `$0.90` | `$263.29` | `493.54M` | `$14.63` | `$3.51` |
 | `libgit2/src/util/strnlen.h` | `0` | `1` | `4h33m44s` | `$5.42` | `13.67M` | — | `$5.42` | `$9.34` | `19.72M` | — | `$9.34` | `$14.76` | `33.39M` | — | `$14.76` |
+| `libgit2/deps/ntlmclient/compat.h` | `0` | `1` | `1h03m17s` | `$4.18` | `11.28M` | — | `$4.18` | `$8.38` | `22.30M` | — | `$8.38` | `$12.56` | `33.58M` | — | `$12.56` |
+| `libgit2/src/util/utf8.c` | `0` | `5` | `4h32m58s` | `$33.45` | `83.47M` | — | `$6.69` | `$28.15` | `61.50M` | — | `$5.63` | `$61.60` | `144.97M` | — | `$12.32` |
+| `git2/src/cli/opt.c` | `7` | `21` | `8h59m54s` | `$88.14` | `251.87M` | `$12.59` | `$4.20` | `$37.54` | `105.81M` | `$5.36` | `$1.79` | `$125.67` | `357.68M` | `$17.95` | `$5.98` |
+| `libgit2/deps/llhttp/api.c` | `6` | `67` | `8h38m00s` | `$89.38` | `264.89M` | `$14.90` | `$1.33` | `$36.13` | `110.01M` | `$6.02` | `$0.54` | `$125.52` | `374.90M` | `$20.92` | `$1.87` |
 | side campaigns | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
 | planners | — | — | `3h08m22s` | — | — | — | — | — | — | — | — | `$74.83` | `198.12M` | — | — |
 | assistant | — | — | — | — | — | — | — | — | — | — | — | `$438.96` | `337.45M` | — | — |
-| **Σ recorded agents** | **`95`** | **`390`** | **`58h43m`** | **`$901.76`** | **`2405.28M`** | **`$9.49`** | **`$2.31`** | **`$711.25`** | **`1195.23M`** | **`$7.49`** | **`$1.82`** | **`$1687.84`** | **`3798.63M`** | **`$17.77`** | **`$4.33`** |
-| **Σ campaign** | **`95`** | **`390`** | **`58h43m`** | **`$901.76`** | **`2405.28M`** | — | — | **`$711.25`** | **`1195.23M`** | — | — | **`$2126.80`** | **`4136.08M`** | — | — |
+| **Σ recorded agents** | **`108`** | **`484`** | **`81h57m`** | **`$1116.91`** | **`3016.80M`** | **`$10.34`** | **`$2.31`** | **`$821.45`** | **`1494.84M`** | **`$7.61`** | **`$1.70`** | **`$2013.19`** | **`4709.76M`** | **`$18.64`** | **`$4.16`** |
+| **Σ campaign** | **`108`** | **`484`** | **`81h57m`** | **`$1116.91`** | **`3016.80M`** | — | — | **`$821.45`** | **`1494.84M`** | — | — | **`$2452.15`** | **`5047.21M`** | — | — |
 
 ## Safety audit
 
@@ -233,10 +237,10 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/diff_parse.c` | `62` | `0` | wrap | first | `1` | `2` | `+756/-8` | — | `$3.11` | `7.21M` | `15m29s` | `$3.11` | `$1.55` |
 | `libgit2/src/libgit2/checkout.c` | `125` | `1` | wrap | first | `1` | `3` | `+490/-4` | — | `$4.39` | `11.97M` | `17m30s` | `$4.39` | `$1.46` |
 | `libgit2/src/libgit2/checkout.c` | `125` | `0` | wrap | first | `1` | `20` | `+1435/-433` | `45.87`% / `98.93`% | `$12.11` | `36.14M` | `41m32s` | `$12.11` | `$0.61` |
-| `libgit2/deps/llhttp/api.c` | `194` | `0` | wrap | first | `5` | `21` | `+3019/-0` | `46.10`% / `98.82`% | — | — | — | — | — |
-| `libgit2/deps/llhttp/api.c` | `194` | `2` | wrap | first | `1` | `23` | `+1737/-16` | `47.05`% / `98.71`% | — | — | — | — | — |
-| `git2/src/cli/opt.c` | `186` | `0` | port | first | `4` | `0` | `+806/-0` | `44.96`% / `98.81`% | — | — | — | — | — |
-| `git2/src/cli/opt.c` | `186` | `2` | wrap | first | `3` | `23` | `+2334/-40` | `45.29`% / `98.84`% | — | — | — | — | — |
+| `libgit2/deps/llhttp/api.c` | `194` | `0` | wrap | first | `5` | `21` | `+3019/-0` | `46.10`% / `98.82`% | `$14.49` | `41.37M` | `53m58s` | `$2.90` | `$0.69` |
+| `libgit2/deps/llhttp/api.c` | `194` | `2` | wrap | first | `1` | `23` | `+1737/-16` | `47.05`% / `98.71`% | `$15.07` | `43.34M` | `1h9m24s` | `$15.07` | `$0.66` |
+| `git2/src/cli/opt.c` | `186` | `0` | port | first | `4` | `0` | `+806/-0` | `44.96`% / `98.81`% | `$7.68` | `23.41M` | `35m37s` | `$1.92` | — |
+| `git2/src/cli/opt.c` | `186` | `2` | wrap | first | `3` | `23` | `+2334/-40` | `45.29`% / `98.84`% | `$16.08` | `52.07M` | `52m33s` | `$5.36` | `$0.70` |
 | `libgit2/util` | `legacy-6` | `0` | wrap | review | `2` | `5` | `+172/-15` | `1.63`% / `99.74`% | `$20.66` | `23.31M` | `48m16s` | `$10.33` | `$4.13` |
 | `libgit2/util` | `legacy-6` | `1` | wrap | review | `2` | `0` | `+149/-12` | `1.63`% / `98.42`% | `$7.58` | `10.10M` | `18m18s` | `$3.79` | — |
 | `libgit2/oid` | `legacy-11` | `0` | wrap | review | `2` | `2` | `+224/-6` | `7.81`% / `99.48`% | `$14.93` | `18.05M` | `29m10s` | `$7.46` | `$7.46` |
@@ -264,10 +268,10 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/checkout.c` | `legacy-331` | `0` | wrap | review | `1` | `3` | `+103/-5` | — | `$3.73` | `10.13M` | `16m05s` | `$3.73` | `$1.24` |
 | `libgit2/src/libgit2/checkout.c` | `legacy-335` | `0` | wrap | review | `1` | `20` | `+106/-17` | `45.92`% / `98.92`% | `$7.76` | `16.62M` | `33m19s` | `$7.76` | `$0.39` |
 | `libgit2/deps/reftable/basics.c` | `169` | `3` | wrap | review | `2` | `3` | `+134/-4` | `45.90`% / `98.92`% | `$9.26` | `30.25M` | `24m42s` | `$4.63` | `$3.09` |
-| `libgit2/deps/llhttp/api.c` | `194` | `5` | wrap | review | `6` | `44` | `+194/-7` | `47.18`% / `98.68`% | — | — | — | — | — |
-| `git2/src/cli/opt.c` | `186` | `3` | port, wrap | review | `7` | `23` | `+357/-42` | `45.33`% / `98.85`% | — | — | — | — | — |
-| **Σ first** |  |  |  |  | **`120`** | **`282`** | **`+106387/-2588`** | **`47.05`% / `98.71`%** | **`$598.14`** | **`1471.91M`** | — | **`$5.59`** | **`$2.78`** |
-| **Σ review** |  |  |  |  | **`120`** | **`282`** | **`+10277/-2138`** | **`47.18`% / `98.68`%** | **`$426.90`** | **`715.94M`** | — | **`$3.99`** | **`$1.99`** |
+| `libgit2/deps/llhttp/api.c` | `194` | `5` | wrap | review | `6` | `44` | `+194/-7` | `47.18`% / `98.68`% | `$8.60` | `26.26M` | `28m22s` | `$1.43` | `$0.20` |
+| `git2/src/cli/opt.c` | `186` | `3` | port, wrap | review | `7` | `23` | `+357/-42` | `45.33`% / `98.85`% | `$8.18` | `24.53M` | `24m53s` | `$1.17` | `$0.36` |
+| **Σ first** |  |  |  |  | **`120`** | **`282`** | **`+106387/-2588`** | **`47.05`% / `98.71`%** | **`$651.45`** | **`1632.11M`** | — | **`$5.59`** | **`$2.78`** |
+| **Σ review** |  |  |  |  | **`120`** | **`282`** | **`+10277/-2138`** | **`47.18`% / `98.68`%** | **`$443.69`** | **`766.73M`** | — | **`$3.99`** | **`$1.99`** |
 
 ### Batches: tests
 
@@ -507,16 +511,16 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `0` | wrap | first | `3` | `18` | `+727/-6` | `45.83`% / `77.00`% | `$12.77` | `42.14M` | `37m48s` | `$4.26` | `$0.71` |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `1` | wrap | first | `3` | `18` | `+524/-165` | `45.88`% / `98.92`% | `$10.66` | `30.55M` | `57m49s` | `$3.55` | `$0.59` |
 | `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `0` | wrap | first | `1` | `5` | `+429/-0` | `45.88`% / `98.87`% | `$8.04` | `26.46M` | `22m4s` | `$8.04` | `$1.61` |
-| `libgit2/deps/ntlmclient/compat.h` | `200` | `0` | port | first | `1` | `0` | `+167/-0` | `45.00`% / `98.81`% | — | — | — | — | — |
+| `libgit2/deps/ntlmclient/compat.h` | `200` | `0` | port | first | `1` | `0` | `+167/-0` | `45.00`% / `98.81`% | `$4.18` | `11.28M` | `23m40s` | `$4.18` | — |
 | `libgit2/src/util/strnlen.h` | `225` | `0` | port | first | `1` | `0` | `+184/-0` | `45.02`% / `98.81`% | `$5.42` | `13.67M` | `19m47s` | `$5.42` | — |
-| `libgit2/deps/llhttp/api.c` | `194` | `1` | wrap | first | `7` | `38` | `+2114/-23` | `46.45`% / `98.66`% | — | — | — | — | — |
-| `libgit2/deps/llhttp/api.c` | `194` | `3` | port | first | `28` | `134` | `+1256/-11` | `47.21`% / `98.68`% | — | — | — | — | — |
-| `libgit2/deps/llhttp/api.c` | `194` | `4` | port | first | `32` | `184` | `+1847/-74` | `47.29`% / `98.65`% | — | — | — | — | — |
-| `git2/src/cli/opt.c` | `186` | `1` | port | first | `2` | `18` | `+1230/-11` | `45.07`% / `98.82`% | — | — | — | — | — |
-| `git2/src/cli/opt.c` | `186` | `4` | port | first | `11` | `246` | `+2656/-66` | `45.41`% / `98.84`% | — | — | — | — | — |
-| `git2/src/cli/opt.c` | `186` | `5` | port | first | `8` | `310` | `+2082/-83` | `45.42`% / `98.80`% | — | — | — | — | — |
-| `libgit2/src/util/utf8.c` | `229` | `0` | port | first | `5` | `89` | `+764/-0` | `44.97`% / `98.81`% | — | — | — | — | — |
-| `libgit2/src/util/utf8.c` | `232` | `0` | port/unexport | first | `1` | `16` | `+31/-55` | `47.21`% / `98.02`% | — | — | — | — | — |
+| `libgit2/deps/llhttp/api.c` | `194` | `1` | wrap | first | `7` | `38` | `+2114/-23` | `46.45`% / `98.66`% | `$17.56` | `52.33M` | `1h13m58s` | `$2.51` | `$0.46` |
+| `libgit2/deps/llhttp/api.c` | `194` | `3` | port | first | `28` | `134` | `+1256/-11` | `47.21`% / `98.68`% | `$15.00` | `52.37M` | `54m13s` | `$0.54` | `$0.11` |
+| `libgit2/deps/llhttp/api.c` | `194` | `4` | port | first | `32` | `184` | `+1847/-74` | `47.29`% / `98.65`% | `$17.93` | `52.50M` | `1h21m12s` | `$0.56` | `$0.10` |
+| `git2/src/cli/opt.c` | `186` | `1` | port | first | `2` | `18` | `+1230/-11` | `45.07`% / `98.82`% | `$13.19` | `34.56M` | `1h19m25s` | `$6.60` | `$0.73` |
+| `git2/src/cli/opt.c` | `186` | `4` | port | first | `11` | `246` | `+2656/-66` | `45.41`% / `98.84`% | `$27.82` | `77.86M` | `1h51m21s` | `$2.53` | `$0.11` |
+| `git2/src/cli/opt.c` | `186` | `5` | port | first | `8` | `310` | `+2082/-83` | `45.42`% / `98.80`% | `$15.35` | `48.35M` | `1h5m7s` | `$1.92` | `$0.05` |
+| `libgit2/src/util/utf8.c` | `229` | `0` | port | first | `5` | `89` | `+764/-0` | `44.97`% / `98.81`% | `$9.09` | `28.03M` | `47m31s` | `$1.82` | `$0.10` |
+| `libgit2/src/util/utf8.c` | `232` | `0` | port/unexport | first | `1` | `16` | `+31/-55` | `47.21`% / `98.02`% | `$10.43` | `26.64M` | `41m30s` | `$10.43` | `$0.65` |
 | `libgit2/raw-lifetime-void` | `legacy-1` | `0` | wrap | review | `2` | — | `+80/-1` | — | `$7.89` | `10.78M` | `18m36s` | `$3.94` | — |
 | `libgit2/raw-lifetime-string` | `legacy-3` | `0` | wrap | review | `2` | — | `+345/-23` | — | `$10.89` | `14.41M` | `22m03s` | `$5.45` | — |
 | `libgit2/src/util/alloc.c` | `12` | `3` | wrap | review | `7` | — | `+57/-20` | — / `98.90`% | `$15.18` | `40.96M` | `1h31m33s` | `$2.17` | — |
@@ -548,11 +552,11 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/libgit2/checkout.c` | `legacy-333` | `0` | wrap | review | `2` | — | `+217/-15` | — | `$11.03` | `25.98M` | `47m17s` | `$5.51` | — |
 | `libgit2/deps/reftable/basics.c` | `169` | `4` | wrap | review | `43` | — | `+110/-16` | `45.99`% / `98.92`% | `$13.42` | `46.17M` | `40m4s` | `$0.31` | — |
 | `libgit2/src/util/allocators/failalloc.c` | `176` | `2` | wrap | review | `3` | — | `+11/-7` | `45.88`% / `98.92`% | `$5.87` | `16.61M` | `16m58s` | `$1.96` | — |
-| `libgit2/deps/llhttp/api.c` | `194` | `6` | port | review | `67` | — | `+191/-25` | `47.25`% / `98.69`% | — | — | — | — | — |
-| `git2/src/cli/opt.c` | `186` | `6` | port | review | `21` | — | `+335/-27` | `45.39`% / `98.80`% | — | — | — | — | — |
-| `libgit2/src/util/utf8.c` | `232` | `1` | port/unexport | review | `1` | — | `+28/-1` | `47.21`% / `98.02`% | — | — | — | — | — |
-| **Σ first** |  |  |  |  | **`595`** | **`10101`** | **`+92229/-3957`** | **`47.21`% / `98.02`%** | **`$587.14`** | **`1837.67M`** | — | **`$1.17`** | **`$0.06`** |
-| **Σ review** |  |  |  |  | **`557`** | — | **`+7806/-1422`** | **`47.21`% / `98.02`%** | **`$373.87`** | **`734.99M`** | — | **`$0.80`** | — |
+| `libgit2/deps/llhttp/api.c` | `194` | `6` | port | review | `67` | — | `+191/-25` | `47.25`% / `98.69`% | `$12.72` | `41.32M` | `41m52s` | `$0.19` | — |
+| `git2/src/cli/opt.c` | `186` | `6` | port | review | `21` | — | `+335/-27` | `45.39`% / `98.80`% | `$10.52` | `33.81M` | `33m35s` | `$0.50` | — |
+| `libgit2/src/util/utf8.c` | `232` | `1` | port/unexport | review | `1` | — | `+28/-1` | `47.21`% / `98.02`% | `$7.61` | `17.60M` | `44m56s` | `$7.61` | — |
+| **Σ first** |  |  |  |  | **`595`** | **`10101`** | **`+92229/-3957`** | **`47.21`% / `98.02`%** | **`$717.69`** | **`2221.59M`** | — | **`$1.17`** | **`$0.06`** |
+| **Σ review** |  |  |  |  | **`557`** | — | **`+7806/-1422`** | **`47.21`% / `98.02`%** | **`$404.72`** | **`827.72M`** | — | **`$0.80`** | — |
 
 ### Batches: tests
 
@@ -813,12 +817,12 @@ review cost.
 | `libgit2/src/util/allocators/win32_leakcheck.c` | `182` | `1` | `0` | `1` | `+82/-67` | `$12.85` | `46.60M` | `1h22m16s` |
 | `libgit2/src/util/allocators/debugalloc.c` | `183` | `1` | `0` | `1` | `+336/-75` | `$15.62` | `43.77M` | `1h33m16s` |
 | `libgit2/src/util/strlist.c` | `184` | `1` | `0` | `6` | `+408/-142` | `$21.71` | `81.05M` | `1h33m47s` |
-| `libgit2/deps/llhttp/api.c` | `194` | `7` | `1` | `60` | `+696/-369` | — | — | — |
-| `git2/src/cli/opt.c` | `186` | `7` | `7` | `21` | `+799/-16` | — | — | — |
-| `libgit2/deps/ntlmclient/compat.h` | `200` | `1` | `0` | `1` | `+7/-10` | — | — | — |
+| `libgit2/deps/llhttp/api.c` | `194` | `7` | `1` | `60` | `+696/-369` | `$14.81` | `42.43M` | `56m26s` |
+| `git2/src/cli/opt.c` | `186` | `7` | `7` | `21` | `+799/-16` | `$18.83` | `47.47M` | `1h16m16s` |
+| `libgit2/deps/ntlmclient/compat.h` | `200` | `1` | `0` | `1` | `+7/-10` | `$8.38` | `22.30M` | `39m37s` |
 | `libgit2/src/util/strnlen.h` | `225` | `1` | `0` | `1` | `+22/-8` | `$9.34` | `19.72M` | `3h34m56s` |
-| `libgit2/src/util/utf8.c` | `229` | `1` | `0` | `5` | `+206/-45` | — | — | — |
-| **Σ** |  |  | **`9`** | **`165`** | **`+3308/-910`** | **`$139.22`** | **`446.01M`** | — |
+| `libgit2/src/util/utf8.c` | `229` | `1` | `0` | `5` | `+206/-45` | `$20.54` | `43.89M` | `1h24m1s` |
+| **Σ** |  |  | **`9`** | **`165`** | **`+3308/-910`** | **`$201.78`** | **`602.10M`** | — |
 
 ### Passes: PoC + reports
 
@@ -5647,3 +5651,16 @@ Overview's tests LoC. `ffimap api` (nightly `2026-10-08`, ffibox's private rustd
 fix touches test code alone, so one JSON serves both sides, and `mac::MIN` and every
 unattributed module are `kept`. No raw binding or C changed, so the packaging gate does not
 apply. Usage cells are the assistant's.
+
+### Usage of the pilot's modules (2026-11-14)
+
+The usage cells of `compat.h`, `utf8.c`, `opt.c` and `api.c`'s batches, reviews and module passes
+are filled from `crustify usage` over each run's transcript, priced through OpenRouter, with
+their `Σ` cells; `http.c`'s follow its integration. `Module stats` gains the four modules' rows:
+`cost` holds a module's translation batches and its switch run, `review cost` its review batches
+and module pass, and `nr types` / `nr symbols` the items of its own waves and those bound ahead
+in its run (`api.c`'s 12 units of `llhttp.c`); `utf8.c`'s row includes its later stage, wave 232.
+A switch has no table of its own: `libgit2/src/util/utf8.c` `$13.93`, `28.80M`, `55m0s`; `git2/src/cli/opt.c` `$8.02`, `15.61M`, `1h1m7s`; `libgit2/deps/llhttp/api.c` `$9.34`, `22.99M`, `58m35s`.
+The libc side campaign's runs of this session (two planner runs, four `wrap` batches, four module
+passes: `$56.39` by the CLI's totals) are in `glibc-crustify`'s own dashboard, whose usage cells
+and this dashboard's `Side campaigns` row are not filled yet.
