@@ -66,6 +66,17 @@ On crustify's `libgit2-crustify/evolution/later-stage-c-changes`, `86d8b2f`:
   hand, or a `port/unexport` that leaves its function declared or holds an export for
   configured-out C.
 
+## Record
+
+The row for `EVOLUTION.md`, copied in when the change lands. The change was made as crustify
+`86d8b2f`, which also edited `EVOLUTION.md`; on 2026-11-14 it was put on the working branch's
+tip as `0bec1f0`, the same diff without that edit, since a change's row is drafted in its
+proposal. It sits on crustify `27f80ba`, and its review reads `0bec1f0`.
+
+| change | from | landed as | signal answered | recurrence signal | status |
+|---|---|---|---|---|---|
+| a `port/unexport` changes `c/`: it removes the C test cases it carries over and the export's header declaration, and C only an unbuilt configuration compiles holds no export back | `libgit2-crustify`, `later-stage-c-changes` | crustify `0bec1f0` | `porting-workflow` had every later stage change no C, against `testing`'s carried-over cases, and no skill said what becomes of an unexported function's declaration, or of its callers under a configuration the target is built without | a task message granting a later stage its C change by hand, or a `port/unexport` that leaves its function declared in a header or holds an export for configured-out C | watched |
+
 ## Validation
 
 No failure prompted the change: the run followed the amended rule, as its task message allowed.

@@ -40,6 +40,17 @@ crustify `dfd557c`: one sentence after the panic rule, naming the constant, why 
 drift, and that the binding is allowlisted for it where the bindings lack it; and its
 `EVOLUTION.md` entry.
 
+## Record
+
+The row for `EVOLUTION.md`, copied in when the change lands. The change was made as crustify
+`dfd557c`, which also edited `EVOLUTION.md`; on 2026-11-14 it was put on the working branch's
+tip as `27f80ba`, the same diff without that edit, since a change's row is drafted in its
+proposal. It sits on crustify `83374c5`, and its review reads `27f80ba`.
+
+| change | from | landed as | signal answered | recurrence signal | status |
+|---|---|---|---|---|---|
+| how a gateway checks an export against its raw binding | `libgit2-crustify`, `export-signature-check` | crustify `27f80ba` | the first export of a port campaign had to work out how the compile-time check `testing-gates` asks for is written | a gateway whose exports have no signature check against their raw bindings, or one written another way per module | watched |
+
 ## Validation
 
 The batch above, which followed the rule before it was written: the mutation fails to
