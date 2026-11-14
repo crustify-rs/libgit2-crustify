@@ -39,6 +39,17 @@ since the stage keeps the safe API. It also says that a conversion no crate code
 carries a `dead_code` expectation that holds outside tests, and that an `equiv_priv` test
 compares it with the C's constants. The change drafts its `EVOLUTION.md` entry.
 
+## Record
+
+The row for `EVOLUTION.md`, copied in when the change lands. The change was made as crustify
+`3d1691a`, which also edited `EVOLUTION.md`; on 2026-11-14 it was put on the working branch's
+tip as `166d8fd`, the same diff without that edit, since a change's row is drafted in its
+proposal. It sits on crustify `4a0e778`, and its review reads `166d8fd`.
+
+| change | from | landed as | signal answered | recurrence signal | status |
+|---|---|---|---|---|---|
+| a closed enum's integer-form conversions are crate-private, kept against `dead_code` until a gateway calls them | `libgit2-crustify`, `enum-integer-form-crate-private` | crustify `166d8fd` | `porting-types` has `port/layout` remove an enum's conversions while `porting` has later stages keep the safe API, and a port of enums ahead of their gateways meets `dead_code`: the batch worked out their visibility by hand | a ported closed enum whose `from_raw`/`raw` or `TryFrom`/`From` integer conversions are public, or a `port/layout` whose API stability row reports a conversion `removed` or `changed` | watched |
+
 ## Validation
 
 No failure prompted the change, and its effect is not in doubt: this batch's `opt.rs` is

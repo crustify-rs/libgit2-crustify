@@ -40,6 +40,17 @@ presented as a union is: one tagged enum over the tag and the pointer, each vari
 its type's safe form, read from both and written together, so that no setter writes the tag
 alone. The change drafts its `EVOLUTION.md` entry.
 
+## Record
+
+The row for `EVOLUTION.md`, copied in when the change lands. The change was made as crustify
+`755ff2c`, which also edited `EVOLUTION.md`; on 2026-11-14 it was put on the working branch's
+tip as `7b738b9`, the same diff without that edit, since a change's row is drafted in its
+proposal. It sits on crustify `166d8fd`, and its review reads `7b738b9`.
+
+| change | from | landed as | signal answered | recurrence signal | status |
+|---|---|---|---|---|---|
+| a type-erased field whose type a sibling tag selects is one tagged enum with its tag | `libgit2-crustify`, `type-erased-field-tagged-by-a-sibling` | crustify `7b738b9` | `binding-types` had a type-erased field take one element type or the untyped strategy, and left a `void *` whose pointee a sibling kind field selects to be worked out by hand | a binding of such a field with a setter that writes its tag or its pointer alone, or a review finding of its pointer read as the wrong type after a tag write | watched |
+
 ## Validation
 
 No failure prompted the change, and this batch's `Spec` is the case. Its `unit_pub` tests
