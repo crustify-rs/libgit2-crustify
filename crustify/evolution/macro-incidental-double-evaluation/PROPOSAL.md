@@ -1,6 +1,6 @@
 # A macro that evaluates an operand twice only as a hazard is a function
 
-Status: `open`: the change is crustify `4a69dd7` on `libgit2-crustify/evolution/macro-incidental-double-evaluation`, made on
+Status: `open`: the change is crustify `e32ac8f` on `libgit2-crustify/evolution/macro-incidental-double-evaluation`, made on
 2026-11-14 after the triage of open proposals, awaiting its review.
 
 Goal: Idiomatic Rust: a function where a function expresses the macro.
@@ -68,7 +68,7 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| a macro that evaluates an argument lazily or more than once is a `macro_rules!` only where a caller depends on it; where every expansion site passes an argument without side effects it is a function, its documentation naming the difference | `libgit2-crustify`, `macro-incidental-double-evaluation` | crustify `4a69dd7` | "evaluated more than once" read literally makes every `MIN` and `MAX` a `macro_rules!`; two batches settled it by hand | a review finding of a `macro_rules!` that a function expresses, or of a function whose macro's caller depended on the repeated or lazy evaluation | watched |
+| a macro that evaluates an argument more than once is a `macro_rules!` only where a caller depends on it; where every expansion site passes an argument without side effects it is a function, its documentation naming the difference | `libgit2-crustify`, `macro-incidental-double-evaluation` | crustify `e32ac8f` | "evaluated more than once" read literally makes every `MIN` and `MAX` a `macro_rules!`; two batches settled it by hand | a review finding of a `macro_rules!` that a function expresses, or of a function whose macro's caller depended on the repeated evaluation | watched |
 
 ## Validation
 
@@ -84,3 +84,9 @@ None yet.
 The change is made in `binding-symbols`' Macros section alone, where the list's fourth case
 states the exception: `porting-symbols`' Macros section takes its forms from there, so one
 sentence serves both. The sentence first drafted for `porting-symbols` is not added.
+
+`review-1` (Opus 5.5, `$0.93`), on `4a69dd7`: **rejected**, one fix: "that last case" also took in an
+argument evaluated lazily, which the test does not fit: one the C sometimes does not evaluate
+can have no side effect and still fail when evaluated up front. Made as `e32ac8f`: the sentence
+speaks of one evaluated more than once, and the row drops the lazy case. It weakens no check;
+the condition is the analysis's to establish, over every expansion site.
