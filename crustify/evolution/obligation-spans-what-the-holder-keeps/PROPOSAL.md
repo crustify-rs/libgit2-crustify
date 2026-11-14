@@ -1,7 +1,7 @@
 # An `unsafe` setter's obligation lasts as long as its object holds what it stored
 
-Status: `open`: the change is crustify `1da6e44` on `libgit2-crustify/evolution/obligation-spans-what-the-holder-keeps`, made on
-2026-11-14 at the user's direction after the triage of open proposals, awaiting its review.
+Status: `landed` as crustify `1da6e44` (record `0228246`) on `libgit2-crustify/devel`, on 2026-11-14, once its
+review approved it.
 
 Goal: Safety, its soundness measure.
 
@@ -53,7 +53,7 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| an `unsafe` function that stores a value its object keeps has an obligation lasting as long as the object holds it, never bounded by the calls that use it | `libgit2-crustify`, `obligation-spans-what-the-holder-keeps` | crustify `1da6e44` | an `unsafe` setter's obligation was stated as "while it executes", which safe calls made after it extend: a use-after-free from safe code, twice in one module | a `ub` or `contracts` finding of the `hidden-dependency` pattern on an `unsafe` setter whose contract bounds its obligation by a span of calls, or by one holder where the C copies the value | watched |
+| an `unsafe fn` that stores a value C keeps has an obligation lasting as long as C holds it, in the object or in any copy C makes of it, never bounded by the calls that use it | `libgit2-crustify`, `obligation-spans-what-the-holder-keeps` | crustify `1da6e44` | an `unsafe` setter's obligation was stated as "while it executes", which safe calls made after it extend: a use-after-free from safe code, twice in one module | a `ub` or `contracts` finding of the `hidden-dependency` pattern on an `unsafe` setter whose contract bounds its obligation by a span of calls, or by one holder where the C copies the value | watched |
 
 ## Validation
 
@@ -71,3 +71,5 @@ the C copies the value into another holder. Fixed as `1da6e44`: as long as C hol
 object or in any copy. Evidence, goal, placement and row held; it weakens no check. Listed
 apart: the second finding's value was stored by a callback the setter installs, which the
 `soundness` skill's closing rule covers.
+
+`review-2` (Opus 5.5, `$0.31`), on `1da6e44`: **approved**; the row's change cell, stale, is corrected here.

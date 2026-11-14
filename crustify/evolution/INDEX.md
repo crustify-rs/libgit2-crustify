@@ -69,7 +69,7 @@ the assistant alone, as each batch's proposals land.
 | `merge-left-conflict-markers` | A merge into a wave branch is checked before it is committed | `landed` | `wave-169/batch-2` | — |
 | `module-end-gate-runner` | A script for the wave's and the module's end gates | `landed` | `wave-176/batch-3`, `wave-177/batch-1` | — |
 | `module-switch-procedure` | A module's switch: variant generations, the C's Rust library, and the C test gate | `open` | `wave-186/batch-7`, `wave-194/batch-7` | — |
-| `obligation-spans-what-the-holder-keeps` | An `unsafe` setter's obligation lasts as long as its object holds what it stored | `open` | `wave-194/batch-5`, `wave-194/batch-6` | — |
+| `obligation-spans-what-the-holder-keeps` | An `unsafe` setter's obligation lasts as long as its object holds what it stored | `landed` | `wave-194/batch-5`, `wave-194/batch-6` | — |
 | `package-gate-procedure` | The packaging gate's procedure, for a crate whose dependencies are unpublished | `open` | `wave-229/batch-0` | — |
 | `packaging-gate-procedure` | The packaging gate's command is worked out by hand | `superseded` | `wave-186/batch-0` | — |
 | `port-coverage-figures` | Coverage figures that mean something in a port | `open` | `wave-225/batch-0` | — |
