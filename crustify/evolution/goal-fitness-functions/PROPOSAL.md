@@ -1,8 +1,9 @@
 # Each goal names its fitness
 
 Status: `open`: the change is made on Crustify's `libgit2-crustify/evolution/goal-fitness-functions`
-(`bca1d35`, then `ac41d76` with review-1's fixes), at the user's direction on 2026-11-14;
-review-1 rejected the first commit, and review-2 reads the second. `GOALS.md` changes
+(`bca1d35`, `ac41d76` with review-1's fixes, `754e2ce` with review-2's), at the user's
+direction on 2026-11-14; reviews 1 and 2 each rejected the commit they read, and review-3
+reads the third. `GOALS.md` changes
 only with the user's approval: the user asked for this change, and reads the result before
 it lands.
 
@@ -21,7 +22,7 @@ figures that would have served were scattered or missing.
   borrow, which the module pass caught after the symbols review. Nothing records where a
   defect was caught: the count was made by hand from the runs' reports, and the dashboard's
   review tables file contracts findings under `+misc` and `+internal` (83 of the 219
-  reports under `crustify/reviews/` sit in `misc`).
+  review batches' reports under `crustify/reviews/` sit in `misc`).
 - Incremental migration and Verification: two link breaks at `api.c`'s switch escaped the
   batches' link checks and were caught by its symbols review and its module pass;
   `wave-186/batch-1` met two dependencies the plan had placed in its own wave, and waited
@@ -31,9 +32,10 @@ figures that would have served were scattered or missing.
   public unit suite passed both; only the internal table test caught them, and the public
   suite is the one that outlives the internals.
 - Performance: the pilot's cost per item was worked out by hand, from the CLI's totals of
-  its 30 parent runs (`$312.73`) over the 108 items they landed (1, 1, 5, 28 and 73 by
-  module): `$2.90`, a figure the dashboard does not hold, and one that leaves out what was
-  redone: `alloc.c`'s and `failalloc.c`'s batches bound again, `opt.c` integrated twice
+  the 30 runs of its six modules (`$373.42`: `strnlen.h`, `compat.h`, `utf8.c` with wave
+  232, `opt.c`, `api.c` and `http.c`, their batches, reviews, module passes and switches)
+  over the 113 items they landed (1, 1, 5, 28, 73 and 5): `$3.30`, a figure the dashboard
+  does not hold as one, and one that leaves out what was redone: `alloc.c`'s and `failalloc.c`'s batches bound again, `opt.c` integrated twice
   (`6d823f4d7`, `c80c8a527`). The emitted Rust's own performance is measured nowhere.
 - Consistency: three batches met the alias rule (`doc-alias-equal-to-the-name`) and took the
   same route, renaming the item and keeping the alias, with names each chose its own way;
@@ -49,7 +51,7 @@ by the two names that change.
 
 ## Change
 
-Crustify `bca1d35` and `ac41d76`:
+Crustify `bca1d35`, `ac41d76` and `754e2ce`:
 
 - a paragraph after the goals' opening: each goal names its fitness, read from what the
   runs produce anyway or from a rerun the reviews already make; a measure worse work could
@@ -98,4 +100,17 @@ Its optional wordings are taken too: unsafe code outside its regions is zero thr
 the emitted Rust's performance names its pair, a rerun the reviews already make counts as
 what the runs produce, and the record's row says which goal was goal 11.
 
-`review-2`: pending, on `ac41d76`.
+`review-2` (session `f70c4eef-d2af-4806-8e0c-d5dd21ea791c`, Opus 5.5, `$1.41`, 5m37s), on `ac41d76`: **rejected**; fixes 1
+and 3 of review-1 hold, and it weakens no check. Required, and made in `754e2ce`:
+
+- A. Consistency's measure named no pair, and the stated departures no artifact records
+  were unmarked;
+- B. Idiomatic Rust's pair needs the tier that made a finding, which is not taken yet;
+- C. this proposal's cost per item did not reproduce: corrected above to the 30 runs of the
+  six modules, `$373.42` over 113 items;
+- D. Verification's unreproduced gate results named no artifact: the review reports hold
+  them;
+- E. "items land after what they depend on" contradicted `scheduling` for a cut dependency,
+  which lands after its user and is reached through its binding.
+
+`review-3`: pending, on `754e2ce`.

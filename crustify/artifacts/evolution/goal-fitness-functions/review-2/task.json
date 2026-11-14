@@ -1,0 +1,20 @@
+{
+ "backend": "claude",
+ "billing": "api",
+ "model_proxy": "openrouter",
+ "args": [
+  "--model",
+  "claude-opus-5-5"
+ ],
+ "revisions": {
+  "crustify": "cc84106",
+  "wavefront": "bf21e16",
+  "ffibox": "9c22a73",
+  "ffimap": "9aa2ef1"
+ },
+ "component": "crustify",
+ "branch": "libgit2-crustify/evolution/goal-fitness-functions",
+ "commit": "ac41d76",
+ "proposal": "crustify/evolution/goal-fitness-functions",
+ "session_id": "f70c4eef-d2af-4806-8e0c-d5dd21ea791c"
+}
