@@ -1,6 +1,7 @@
 # A switch's Rust side lands before its builds, and removes every mention of the export feature
 
-Status: `open`. Split from `module-switch-procedure` on 2026-11-14. No change is made yet.
+Status: `open`: the change is crustify `663ed2d` on `libgit2-crustify/evolution/switch-step-order`, made on 2026-11-14,
+awaiting its review. Split from `module-switch-procedure` that day.
 
 Goal: Incremental migration without breaking consumers. Its measure counts the landed trees
 that failed a gate.
@@ -80,7 +81,11 @@ is read as binding, it would follow.
 
 ## Change
 
-Not made.
+Made, in `porting-workflow`'s Builds section, as an ordered list of the step's four parts after
+the paragraph that describes the switch. The sentence "The shared variants are rebuilt from the
+C that remains once the integration lands" is removed: the list's third part states the
+builds, and how the shared variants take them is `variant-generations`' to say. What was
+drafted first:
 
 `porting-workflow`'s Builds section would state a switch's steps in the order they run:
 
@@ -101,6 +106,14 @@ Not made.
 5. The gates run over the new builds.
 
 No script moves with this proposal.
+
+## Record
+
+The row for `EVOLUTION.md`, copied in when the change lands:
+
+| change | from | landed as | signal answered | recurrence signal | status |
+|---|---|---|---|---|---|
+| a switch's parts run in order, the Rust side first, then the C side, the builds and the gates, and deleting the export feature removes every mention of its name in the crate | `libgit2-crustify`, `switch-step-order` | crustify `663ed2d` | `porting-workflow` listed a switch's steps in an order that cannot run, the builds checking bindings not yet committed, and "the export feature is deleted" read as fewer edits than the lints need | an integration run that reorders a switch's parts by hand, or whose lints fail on a mention of a deleted export feature | watched |
 
 ## Validation
 

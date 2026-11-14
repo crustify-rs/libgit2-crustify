@@ -1,0 +1,19 @@
+{
+ "backend": "claude",
+ "billing": "api",
+ "model_proxy": "openrouter",
+ "args": [
+  "--model",
+  "claude-opus-5-5"
+ ],
+ "revisions": {
+  "crustify": "aac2eca",
+  "wavefront": "bf21e16",
+  "ffibox": "568bcb5",
+  "ffimap": "a0797e6"
+ },
+ "component": "crustify",
+ "branch": "libgit2-crustify/evolution/switch-step-order",
+ "commit": "663ed2d",
+ "proposal": "crustify/evolution/switch-step-order"
+}
