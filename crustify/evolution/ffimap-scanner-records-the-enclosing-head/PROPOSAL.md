@@ -44,3 +44,12 @@ workspace test fails without the manifest's table.
 ## Review
 
 None yet.
+
+`review-1` (Opus 5.5, `$1.47`), on ffimap `a73eb55`: **rejected**, two fixes required; it weakens no check.
+Every install kind attributes rightly, and the base reproduces the defect. (1) `+dirty` does not
+identify a scanner: two different edits give the same string, and `ffimap diff` then reports
+the scanners as the same; every copy that is no checkout of its own records the version alone.
+The form must name the changes, `ffimap diff` must not report equal scanners where either is
+no bare commit, the documents must say so, with a test. (2) This proposal's Validation and
+Destination were another proposal's words. Not yet made.
+

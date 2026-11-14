@@ -53,7 +53,7 @@ the assistant alone, as each batch's proposals land.
 | `ffibox-usage-docs` | ffibox documentation that led agents to hand-write what ffibox covers | `landed` | — | — |
 | `ffibox-vtables` | Function-pointer tables a library calls into, implemented by a Rust trait | `landed` | — | — |
 | `ffimap-api-namespaces-share-a-path` | `ffimap api` reads a type and a function of one path as one item | `open` | `wave-194/batch-4` | — |
-| `ffimap-driver-builds-under-a-workspace` | ffimap's driver does not build under a Cargo workspace, and its suite then skips half its tests | `open` | the reviews of `doc-alias-equal-to-the-name` and `ffimap-wrapper-without-alias` | — |
+| `ffimap-driver-builds-under-a-workspace` | ffimap's driver does not build under a Cargo workspace, and its suite then skips half its tests | `landed` | the reviews of `doc-alias-equal-to-the-name` and `ffimap-wrapper-without-alias` | — |
 | `ffimap-scanner-records-the-enclosing-head` | ffimap records the enclosing repository's HEAD as its own version | `open` | `ffimap-sys-inventory-in-crate`'s review-2 | — |
 | `ffimap-seams-into-raw` | The seam list names `from_raw` but not its inverse `into_raw` | `landed` | — | — |
 | `ffimap-sys-inventory-in-crate` | ffimap takes its `-sys` inventory from extern crates alone, so in-crate raw bindings have none | `landed` | — | — |

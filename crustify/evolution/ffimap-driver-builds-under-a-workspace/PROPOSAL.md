@@ -1,7 +1,8 @@
 # ffimap's driver does not build under a directory that holds a Cargo workspace, and its suite then skips
 
-Status: `open`: the change is ffimap `b5c043c` on `libgit2-crustify/evolution/ffimap-driver-builds-under-a-workspace`, made on 2026-11-14,
-awaiting its review.
+Status: `landed` as ffimap `b5c043c` on its `libgit2-crustify/devel` (record: crustify `0bd4787`), on
+2026-11-14, once its review approved it. ffimap's `devel`, which the shared install runs, takes
+it once the rescans of that day have finished.
 
 Goal: Verification: a gate result a run reports is one its tree reproduces.
 
@@ -50,3 +51,6 @@ toolchain, and leave the installed package's build unchanged. The fixes: a fifth
 so the row's `test` claimed too much. `tests/test_scan.py` now lists the driver suites, and
 checks that each fails where the toolchain is present and the driver does not build, and
 skips without the toolchain.
+
+`review-2` (Opus 5.5, `$0.37`), on ffimap `b5c043c`: **approved**: both fixes made, and the new tests fail when
+one suite's check is put back.
