@@ -1,0 +1,236 @@
+[
+ {
+  "wave": 186,
+  "batch": 0,
+  "module": "src/cli/opt.c",
+  "link_unit": "git2",
+  "base": "2216b0cd0dd7732691ffecf1c56e2dd07697e315",
+  "tip": "8a149ac08ad0cbd3caf187bc785182d3fa0b8518",
+  "feature": ""
+ },
+ {
+  "wave": 186,
+  "batch": 1,
+  "module": "src/cli/opt.c",
+  "link_unit": "git2",
+  "base": "8a149ac08ad0cbd3caf187bc785182d3fa0b8518",
+  "tip": "29ec3ab87a7e8b51fbb6e67caabaa89f51c606ed",
+  "feature": ""
+ },
+ {
+  "wave": 186,
+  "batch": 2,
+  "module": "src/cli/opt.c",
+  "link_unit": "git2",
+  "base": "29ec3ab87a7e8b51fbb6e67caabaa89f51c606ed",
+  "tip": "fe6b85bfa029d37fe1b6e149b523f950bd9869d1",
+  "feature": ""
+ },
+ {
+  "wave": 186,
+  "batch": 3,
+  "module": "src/cli/opt.c",
+  "link_unit": "git2",
+  "base": "fe6b85bfa029d37fe1b6e149b523f950bd9869d1",
+  "tip": "3829c7a0616bd1bbd68c41da3e55fc3cdbbe4ee6",
+  "feature": ""
+ },
+ {
+  "wave": 186,
+  "batch": 4,
+  "module": "src/cli/opt.c",
+  "link_unit": "git2",
+  "base": "4800c0ae299e2605ee6762dc6dfd0ac3ee0472e1",
+  "tip": "64431c07a86596009f822f65a127c75b1b25b3e1",
+  "feature": "ffi-export-src-cli-opt-c"
+ },
+ {
+  "wave": 186,
+  "batch": 5,
+  "module": "src/cli/opt.c",
+  "link_unit": "git2",
+  "base": "2f25988a3645bbe9fffe70ea22f01b663d093939",
+  "tip": "c62dee8573c1ff0a13954526599682383d8d843b",
+  "feature": "ffi-export-src-cli-opt-c"
+ },
+ {
+  "wave": 186,
+  "batch": 6,
+  "module": "src/cli/opt.c",
+  "link_unit": "git2",
+  "base": "17401d8311709df976d0417f7ddf473207043280",
+  "tip": "961150dd973bed336a402b1df677e8e1ec14d5b1",
+  "feature": "ffi-export-src-cli-opt-c"
+ },
+ {
+  "wave": 186,
+  "batch": 7,
+  "module": "src/cli/opt.c",
+  "link_unit": "git2",
+  "base": "961150dd973bed336a402b1df677e8e1ec14d5b1",
+  "tip": "63a4b8d1dc1e6526fb1f3f6c648182335e659ca5",
+  "feature": "ffi-export-src-cli-opt-c"
+ },
+ {
+  "wave": 194,
+  "batch": 0,
+  "module": "deps/llhttp/api.c",
+  "link_unit": "libgit2",
+  "base": "2216b0cd0dd7732691ffecf1c56e2dd07697e315",
+  "tip": "1ead111ee5c5d00c06e38980184a4c19b50d06d0",
+  "feature": ""
+ },
+ {
+  "wave": 194,
+  "batch": 1,
+  "module": "deps/llhttp/api.c",
+  "link_unit": "libgit2",
+  "base": "1ead111ee5c5d00c06e38980184a4c19b50d06d0",
+  "tip": "2c69341c3b017ddd1c401940a00cdac2b2d11063",
+  "feature": ""
+ },
+ {
+  "wave": 194,
+  "batch": 2,
+  "module": "deps/llhttp/api.c",
+  "link_unit": "libgit2",
+  "base": "f1eced216a349c72c2940a9a9eb6d25af7d323d2",
+  "tip": "97dea9da3743a172abb1e9b545c4eabe9ca383e2",
+  "feature": ""
+ },
+ {
+  "wave": 194,
+  "batch": 3,
+  "module": "deps/llhttp/api.c",
+  "link_unit": "libgit2",
+  "base": "300c14dfc5f60e7edbf41fa692447bc913131fb5",
+  "tip": "2a51ccb3fc46280feffd592b7862e3cb217a9514",
+  "feature": "ffi-export-deps-llhttp-api-c"
+ },
+ {
+  "wave": 194,
+  "batch": 4,
+  "module": "deps/llhttp/api.c",
+  "link_unit": "libgit2",
+  "base": "f58d38aa9c1db7a20fed3244a269a5e6ccd9b818",
+  "tip": "b3d6b9b37599e6343b8cf70e97c0babb775cfa0a",
+  "feature": "ffi-export-deps-llhttp-api-c"
+ },
+ {
+  "wave": 194,
+  "batch": 5,
+  "module": "deps/llhttp/api.c",
+  "link_unit": "libgit2",
+  "base": "2a51ccb3fc46280feffd592b7862e3cb217a9514",
+  "tip": "f58d38aa9c1db7a20fed3244a269a5e6ccd9b818",
+  "feature": "ffi-export-deps-llhttp-api-c"
+ },
+ {
+  "wave": 194,
+  "batch": 6,
+  "module": "deps/llhttp/api.c",
+  "link_unit": "libgit2",
+  "base": "b3d6b9b37599e6343b8cf70e97c0babb775cfa0a",
+  "tip": "2f0cf42656458109587d1ad5254304dbe86fc528",
+  "feature": "ffi-export-deps-llhttp-api-c"
+ },
+ {
+  "wave": 194,
+  "batch": 7,
+  "module": "deps/llhttp/api.c",
+  "link_unit": "libgit2",
+  "base": "9124cc5a6da7e1081e49db45daadf190b737cd7c",
+  "tip": "245185caaf0e03a5449ddcf835ed38cf09eedd0a",
+  "feature": "ffi-export-deps-llhttp-api-c"
+ },
+ {
+  "wave": 197,
+  "batch": 0,
+  "module": "deps/llhttp/http.c",
+  "link_unit": "libgit2",
+  "base": "42689957b76a00097e5c47f605d68eedd476cc9b",
+  "tip": "a81dc310371d47f016090d83857c644ae8e1b790",
+  "feature": "ffi-export-deps-llhttp-http-c"
+ },
+ {
+  "wave": 197,
+  "batch": 1,
+  "module": "deps/llhttp/http.c",
+  "link_unit": "libgit2",
+  "base": "a81dc310371d47f016090d83857c644ae8e1b790",
+  "tip": "f1ffed455072f6fd321f51377c06dcbb4750321c",
+  "feature": "ffi-export-deps-llhttp-http-c"
+ },
+ {
+  "wave": 200,
+  "batch": 0,
+  "module": "deps/ntlmclient/compat.h",
+  "link_unit": "libgit2",
+  "base": "2216b0cd0dd7732691ffecf1c56e2dd07697e315",
+  "tip": "4b6e5a4db08d1cae714504081882bec6cac44072",
+  "feature": ""
+ },
+ {
+  "wave": 200,
+  "batch": 1,
+  "module": "deps/ntlmclient/compat.h",
+  "link_unit": "libgit2",
+  "base": "4b6e5a4db08d1cae714504081882bec6cac44072",
+  "tip": "1959a34b593f1c46e9a45a8773bc6d604ddb8b00",
+  "feature": ""
+ },
+ {
+  "wave": 225,
+  "batch": 0,
+  "module": "src/util/strnlen.h",
+  "link_unit": "libgit2",
+  "base": "50c93dd239bbad51619212b00eb66b0aebd73426",
+  "tip": "7ef895eb2fa5803383f3908de4d8e3e18cc69d42",
+  "feature": ""
+ },
+ {
+  "wave": 225,
+  "batch": 1,
+  "module": "src/util/strnlen.h",
+  "link_unit": "libgit2",
+  "base": "7ef895eb2fa5803383f3908de4d8e3e18cc69d42",
+  "tip": "330e804d6fe6d8cd9423eea39a83f5988e215ef6",
+  "feature": ""
+ },
+ {
+  "wave": 229,
+  "batch": 0,
+  "module": "src/util/utf8.c",
+  "link_unit": "libgit2",
+  "base": "2216b0cd0dd7732691ffecf1c56e2dd07697e315",
+  "tip": "680ac73bf4cc9c6f7002ad150a5f040cde7985fb",
+  "feature": "ffi-export-src-util-utf8-c"
+ },
+ {
+  "wave": 229,
+  "batch": 1,
+  "module": "src/util/utf8.c",
+  "link_unit": "libgit2",
+  "base": "680ac73bf4cc9c6f7002ad150a5f040cde7985fb",
+  "tip": "3e3c1dadcac40e0bfec5918ee78d43ef4b537336",
+  "feature": "ffi-export-src-util-utf8-c"
+ },
+ {
+  "wave": 232,
+  "batch": 0,
+  "module": "src/util/utf8.c",
+  "link_unit": "libgit2",
+  "base": "8f7af1223cf8917a71bd1e58e83fabd794664472",
+  "tip": "d48feaced1c142566dad5cf93e9fb3d2e4486dc8",
+  "feature": ""
+ },
+ {
+  "wave": 232,
+  "batch": 1,
+  "module": "src/util/utf8.c",
+  "link_unit": "libgit2",
+  "base": "d48feaced1c142566dad5cf93e9fb3d2e4486dc8",
+  "tip": "158e0b9319e1de5694ab1275d9d8cc9e24f671b3",
+  "feature": ""
+ }
+]

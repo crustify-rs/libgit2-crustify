@@ -390,13 +390,13 @@ Deterministic `ffimap`; no model.
 | module | wave | batch | objective | pass | pub raw ptr | pub void ptr | pub unsafe fn | &cell | C by value | celled % | raw→std | unmanaged ptr types | ptr Drop | Send/Sync | raw deref | FFI calls | unsafe loc % | unsafe blocks |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | `libgit2/deps/reftable/basics.c` | `169` | `0` | wrap | first | `+0` | `+0` | `+0` | `+0` | `+1` | `+0.00` pp | `+2` | `+0` | `+0` | `+0` | `+3` | `+0` | `-0.06` pp | `+10` |
-| `libgit2/deps/llhttp/api.c` | `194` | `0` | wrap | first | `+2` | `+2` | `+2` | `+0` | `+3` | `+0.00` pp | `+1` | `+0` | `+0` | `+0` | `+24` | `+0` | `-0.25` pp | `+52` |
-| `libgit2/deps/llhttp/api.c` | `194` | `2` | wrap | first | `+0` | `+0` | `+0` | `+0` | `+3` | `+0.00` pp | `+0` | `+0` | `+0` | `+2` | `+46` | `+1` | `+0.37` pp | `+119` |
-| `git2/src/cli/opt.c` | `186` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.08` pp | `+0` |
-| `git2/src/cli/opt.c` | `186` | `2` | wrap | first | `+0` | `+0` | `+0` | `+1` | `+9` | `+0.00` pp | `+10` | `+0` | `+0` | `+0` | `+46` | `+1` | `+0.25` pp | `+123` |
+| `libgit2/deps/llhttp/api.c` | `194` | `0` | wrap | first | `+2` | `+2` | `+2` | `+0` | `+1` | `-0.98` pp | `+1` | `+0` | `+0` | `+0` | `+24` | `+0` | `-0.16` pp | `+51` |
+| `libgit2/deps/llhttp/api.c` | `194` | `2` | wrap | first | `+0` | `+0` | `+0` | `+0` | `+1` | `+1.22` pp | `+0` | `+0` | `+0` | `+2` | `+46` | `+1` | `+0.48` pp | `+119` |
+| `git2/src/cli/opt.c` | `186` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.11` pp | `+0` |
+| `git2/src/cli/opt.c` | `186` | `2` | wrap | first | `+0` | `+0` | `+0` | `+1` | `+3` | `+0.36` pp | `+10` | `+0` | `+0` | `+0` | `+46` | `+1` | `+0.26` pp | `+123` |
 | `libgit2/deps/reftable/basics.c` | `169` | `3` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+6` | `+0` | `+0` | `-0.01` pp | `+0` |
 | `libgit2/deps/llhttp/api.c` | `194` | `5` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
-| `git2/src/cli/opt.c` | `186` | `3` | port, wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.01` pp | `+0` |
+| `git2/src/cli/opt.c` | `186` | `3` | port, wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.02` pp | `+0` |
 | **Σ first** |  |  |  |  | **`+2`** | **`+2`** | **`+2`** | **`+1`** | **`+16`** | **`+0.00` pp** | **`+13`** | **`+0`** | **`+0`** | **`+2`** | **`+119`** | **`+2`** | **`+0.23` pp** | **`+304`** |
 | **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+6`** | **`+0`** | **`+0`** | **`-0.02` pp** | **`+0`** |
 
@@ -701,25 +701,25 @@ Deterministic `ffimap`; no model.
 | `libgit2/src/util/allocators/debugalloc.c` | `183` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+1` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+2` | `-0.02` pp | `+0` |
 | `libgit2/src/util/strlist.c` | `184` | `1` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `-3` | `-0.06` pp | `-3` |
 | `libgit2/deps/ntlmclient/compat.h` | `200` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.00` pp | `+0` |
-| `libgit2/src/util/strnlen.h` | `225` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.00` pp | `+0` |
-| `git2/src/cli/opt.c` | `186` | `1` | port | first | `+0` | `+0` | `+10` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+30` | `+0` | `+0.04` pp | `+37` |
-| `git2/src/cli/opt.c` | `186` | `4` | port | first | `+0` | `+0` | `+1` | `+0` | `+0` | `+0.00` pp | `+3` | `+0` | `+0` | `+0` | `+0` | `-1` | `-0.19` pp | `+1` |
-| `git2/src/cli/opt.c` | `186` | `5` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+1` | `+0` | `+0` | `+0` | `+2` | `+0` | `-0.11` pp | `+8` |
-| `git2/src/cli/opt.c` | `186` | `6` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.00` pp | `+0` |
+| `libgit2/src/util/strnlen.h` | `225` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.01` pp | `+0` |
+| `git2/src/cli/opt.c` | `186` | `1` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.01` pp | `+0` |
+| `git2/src/cli/opt.c` | `186` | `4` | port | first | `+0` | `+0` | `+1` | `+0` | `+0` | `+0.00` pp | `+3` | `+0` | `+0` | `+0` | `+0` | `-1` | `-0.30` pp | `+1` |
+| `git2/src/cli/opt.c` | `186` | `5` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+1` | `+0` | `+0` | `+0` | `+2` | `+0` | `-0.20` pp | `+8` |
+| `git2/src/cli/opt.c` | `186` | `6` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.01` pp | `+0` |
 | `libgit2/src/util/utf8.c` | `232` | `1` | port/unexport | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
-| `git2/src/cli/opt.c` | `186` | `7` | port, wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+2` | `+0` | `-0.00` pp | `+0` |
+| `git2/src/cli/opt.c` | `186` | `7` | port, wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+2` | `+0` | `-0.01` pp | `+0` |
 | `libgit2/deps/ntlmclient/compat.h` | `200` | `1` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
 | `libgit2/src/util/strnlen.h` | `225` | `1` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
-| `libgit2/deps/llhttp/api.c` | `194` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+1` | `+0` | `+0` | `+0` | `+1` | `+4` | `-0.09` pp | `+7` |
+| `libgit2/deps/llhttp/api.c` | `194` | `1` | wrap | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+1` | `+0` | `+0` | `+0` | `+1` | `+4` | `-0.15` pp | `+7` |
 | `libgit2/deps/llhttp/api.c` | `194` | `3` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+1` | `+0` | `+0` | `+0` | `+1` | `+0` | `-0.09` pp | `+2` |
-| `libgit2/deps/llhttp/api.c` | `194` | `4` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+2` | `+0` | `+0` | `+0` | `+1` | `+1` | `+0.08` pp | `+7` |
-| `libgit2/deps/llhttp/http.c` | `197` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.08` pp | `+1` |
+| `libgit2/deps/llhttp/api.c` | `194` | `4` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+2` | `+0` | `+0` | `+0` | `+1` | `+1` | `+0.09` pp | `+7` |
+| `libgit2/deps/llhttp/http.c` | `197` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.12` pp | `+1` |
 | `libgit2/deps/llhttp/http.c` | `197` | `1` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
 | `libgit2/deps/llhttp/api.c` | `194` | `6` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
 | `libgit2/deps/llhttp/api.c` | `194` | `7` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
-| `libgit2/src/util/utf8.c` | `229` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+1` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.05` pp | `+1` |
+| `libgit2/src/util/utf8.c` | `229` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+1` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.07` pp | `+1` |
 | `libgit2/src/util/utf8.c` | `229` | `1` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `-3` | `-0.02` pp | `-3` |
-| `libgit2/src/util/utf8.c` | `232` | `0` | port/unexport | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
+| `libgit2/src/util/utf8.c` | `232` | `0` | port/unexport | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.00` pp | `+0` |
 | **Σ first** |  |  |  |  | **`+4`** | **`+0`** | **`+35`** | **`+0`** | **`+1`** | **`+0.52` pp** | **`+12`** | **`+1`** | **`+0`** | **`+0`** | **`+35`** | **`+52`** | **`-0.83` pp** | **`+159`** |
 | **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`-1`** | **`+0`** | **`+1`** | **`+0.00` pp** | **`+0`** | **`-1`** | **`+0`** | **`+6`** | **`+2`** | **`-3`** | **`-0.13` pp** | **`-5`** |
 
@@ -903,19 +903,24 @@ which units a review schedule dropped and why; which subsystems the Overview
 lists but no table details, and the cost that leaves unaccounted; and any column
 a campaign could not fill, said once rather than left as a field of em-dashes.
 
-### `C by value` and `celled %` since the bindings became a module
+### Safety audit cells re-measured after the bindings became a module
 
-Since 2026-11-13 the raw bindings are `crate::sys`, a module of the crate. Two things follow
-for the scans of waves 186, 194, 197, 200, 225, 229 and 232, which named `--sys-crates
-pcre2_sys`. ffimap took its `-sys` inventory from crates alone, so theirs is PCRE2's (21 C
-types, 222 C functions, where the scan of 2026-11-10 read 120 and 723), and `celled %` is taken
-over PCRE2's types, 2 of 5. And the bindings' own code, bindgen's derives and `Default` impls,
-counted as the crate's: `ty.ffibox.sys.as`, which `C by value` reads, was 355 where 2026-11-10
-read 111. Both cells' `+0` and `+0.00 pp` on those rows are deltas of figures that measured
-neither the crate's own types nor its own code. The cells that read `ty.impl_trait`, the
-`unsafe` counters or function totals carry the bindings' code too. Measured on 2026-11-14
-(`crustify/evolution/ffimap-sys-inventory-in-crate`): with ffimap's fix and `crate::sys` named,
-the tip reads 77 of 85 celled and 119 by value. The rows are taken again once the fix lands.
+Since 2026-11-13 the raw bindings are `crate::sys`, a module of the crate. The batches of waves
+186, 194, 197, 200, 225, 229 and 232 scanned with `--sys-crates pcre2_sys`, and ffimap then
+took its `-sys` inventory from crates alone and counted the bindings' own code, bindgen's
+derives, `Default` impls and declarations, as the crate's. Their safety audit rows were
+re-measured on 2026-11-14 with ffimap `a0797e6` and `--sys-crates crate::sys,pcre2_sys`, each
+batch's base and tip scanned with the export feature its own scan named: sixteen of the
+twenty-six rows changed and are rewritten above. `celled %` and `C by value` moved on the three
+wrap batches that grew the bindings (186/2, 194/0, 194/2); wave 186's batch 1 loses the `+10`
+public unsafe functions, `+30` raw dereferences and `+37` unsafe blocks that were its new raw
+bindings; one row's unsafe blocks moved by one; and `unsafe loc %` moved by up to 0.11 pp on
+all sixteen, its total no longer counting the bindings' lines. The crate is about 90 %
+celled throughout (77 of 85 at `6d3c7873c`). Each run dir's `ffimap.json` is the batch's own
+scan, as it was; the re-measured scans, the plan and the cells are in
+`crustify/artifacts/assistant/rescan-2026-11-14/` (`cells.json`; the scans themselves under `crustify/tmp/assistant/rescan/`), and the defect is
+`crustify/evolution/ffimap-sys-inventory-in-crate`. A scan of this crate names `crate::sys`
+from here on, as the `ffimap` skill now says.
 
 ### C test baseline
 
