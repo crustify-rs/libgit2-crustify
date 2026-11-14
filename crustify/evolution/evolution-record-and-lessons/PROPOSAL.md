@@ -1,9 +1,9 @@
 # The record holds every signal; lessons are reviewed entries; protected paths
 
 Status: `open`: the change is made on Crustify's
-`libgit2-crustify/evolution/evolution-record-and-lessons` (`74f960c`, then `d3eace2` with
-review-1's fixes), at the user's direction on 2026-11-14; review-1 rejected the first commit
-and review-2 reads the second. It touches protected paths, so it lands only with the user's
+`libgit2-crustify/evolution/evolution-record-and-lessons` (`74f960c`, then `d3eace2`, `479c29f` and
+`122f1f2` with the fixes of reviews 1 to 3), at the user's direction on 2026-11-14; review-4
+reads `122f1f2`. It touches protected paths, so it lands only with the user's
 approval.
 
 ## Signal
@@ -93,14 +93,16 @@ Crustify `74f960c` and `d3eace2`:
   finding a switch, a ship point's gates or a consumer catches is filed by the review batch
   it is handed to.
 - **The protected paths** are listed as paths of Crustify's repository: `GOALS.md`;
-  `skills/crustify/evolution/**`; `skills/verification/**`; `task-schema`; the Lints section
-  of `toolchain`; the Testing, Reviewing and Audit sections of the tool skills;
-  `agents/common.md`, `agents/reviewer.md` and the assistant's Evolution section; and the
-  provider files that build the reviewer's prompt or launch a run. A change whose diff
-  touches one lands only with the user's approval. The repair of a defect that blocks the
-  campaign lands once its review finds that it weakens no check, leaves every existing test
-  of the check unchanged and adds a test of its own; it goes to the user at the next
-  module's end.
+  `skills/crustify/evolution/**`; `skills/verification/**`; `task-schema`; the Lints and
+  Unsafe code sections of `toolchain`; the Testing, Reviewing and Audit sections of the tool
+  skills, and their landing scans; `agents/common.md`, `agents/reviewer.md` and the
+  assistant's Evolution section; the templates' `evolution` question; the plugin's manifest;
+  and the provider files that build an agent's prompt or launch a run. A change whose diff
+  touches one lands only with the user's approval. The repair of a defect in protected code
+  that blocks the campaign lands once its review finds that it weakens no check, leaves every
+  existing test of the code unchanged and adds a test of its own; it goes to the user at the
+  next module's end. A protected text always waits for the user. A tool's repository has no
+  protected paths.
 - The reviewer's role gains the lessons step; the assistant's role, `agents/common.md`,
   `layout`, the plugin's manifest and both settings templates follow.
 
@@ -114,7 +116,7 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| a campaign indexes its proposals, each filed once while it waits and naming its goal and measure, campaigns that share a working branch reading each other's index; lessons are entries under a slug, read by a review batch and reconciled at ship points; a finished change is reviewed before the next wave; a review report names the tier that caught its finding; the protected paths change only with the user's approval; a change's row is drafted in its proposal; the record is `evolution-record`'s | `libgit2-crustify`, `evolution-record-and-lessons` | crustify `74f960c`, `d3eace2`, `479c29f` | a pilot whose runs filed three signals twice, left eight finished changes unreviewed while later runs worked around what they fixed, read the record at no module's end, and wrote lessons no run was asked to review | by a run launched under this change: a signal an index the run reads held open, filed again under a new slug; a signal that met a landed row's recurrence signal and was not filed; a wave the assistant launched under this change while a finished change waited for its review; a lesson still `provisional` after the review batch that should have read it has landed; a review report that names no tier | watched; weakens a check: the watched rows are read at a period, by default every fifth module, not at each module's end; changes what checks the rest |
+| a campaign indexes its proposals, each filed once while it waits and naming its goal and measure, campaigns that share a working branch reading each other's index; lessons are entries under a slug, read by a review batch and reconciled at ship points; a finished change is reviewed before the next wave; a review report names the tier that caught its finding; the protected paths change only with the user's approval; a change's row is drafted in its proposal; the record is `evolution-record`'s | `libgit2-crustify`, `evolution-record-and-lessons` | crustify `74f960c`, `d3eace2`, `479c29f`, `122f1f2` | a pilot whose runs filed three signals twice, left eight finished changes unreviewed while later runs worked around what they fixed, read the record at no module's end, and wrote lessons no run was asked to review | by a run launched under this change: a signal an index the run reads held open, filed again under a new slug; a signal that met a landed row's recurrence signal and was not filed; a wave the assistant launched under this change while a finished change waited for its review; a lesson still `provisional` after the review batch that should have read it has landed; a review report that names no tier | watched; weakens a check: the watched rows are read at a period, by default every fifth module, not at each module's end; changes what checks the rest |
 
 ## Validation
 
@@ -190,3 +192,12 @@ working branch read each other's index (R2); the exception covers protected code
 protected text always waits for the user (R5); and the entry for a tool's repository, which no
 diff could be matched against, is dropped rather than made precise, at the user's word that
 the rule was growing past its use.
+
+`review-3` (session `470670b8-1dfb-47a3-a09b-b87b25bf55d1`, Opus 5.5, `$0.74`, 2m27s), on `479c29f`: **rejected**, on one fix.
+R1 to R5 hold, the provider build is clean and nothing weakens a check beyond what the row
+marks. Its task carried the user's instruction to require only what would lead a run wrong,
+leave a signal unfiled, weaken a check unseen or contradict another rule, and to list the
+rest apart. Required, and made in `122f1f2`: the settings templates said a protected path
+waits for the user "at any level", against the blocking-defect exception; they name the
+Autonomy section now. Of what it listed apart, one is taken: the Proposals section's second
+case begins "otherwise".
