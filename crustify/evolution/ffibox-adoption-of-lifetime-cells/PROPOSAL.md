@@ -1,6 +1,6 @@
 # Adopting a handle over a layout type with a lifetime vouches for nothing about that lifetime
 
-Status: `open`: the change is ffibox `45c3ed1` on `libgit2-crustify/evolution/ffibox-adoption-of-lifetime-cells`, made on
+Status: `open`: the change is ffibox `9b9047f` on `libgit2-crustify/evolution/ffibox-adoption-of-lifetime-cells`, made on
 2026-11-14 at the user's direction after the triage of open proposals, awaiting its review.
 
 Goal: Safety, its soundness measure; ffibox's G9 and G12.
@@ -60,7 +60,7 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| adopting a pointer as a handle vouches for a valid `Self`, the borrows its lifetimes name included, not only an initialised C object | `libgit2-crustify`, `ffibox-adoption-of-lifetime-cells` | ffibox `45c3ed1` | a handle adopted with a `'static` lifetime over an object that borrows shorter-lived memory kept `ref_from_ptr`'s contract and dangled under Miri | a `ub` or `contracts` finding on a handle adopted over a layout type with a lifetime, whose adopter vouched for nothing of that lifetime | watched |
+| adopting a pointer as a handle vouches for a valid `Self`, the borrows its lifetimes name included, not only an initialised C object | `libgit2-crustify`, `ffibox-adoption-of-lifetime-cells` | ffibox `9b9047f` | a handle adopted with a `'static` lifetime over an object that borrows shorter-lived memory kept `ref_from_ptr`'s contract and dangled under Miri | a `ub` or `contracts` finding on a handle adopted over a layout type with a lifetime, whose adopter vouched for nothing of that lifetime | watched |
 
 ## Validation
 
@@ -71,3 +71,14 @@ extended contract, and Miri and ASan pass it.
 ## Review
 
 None yet.
+
+## Review of the change
+
+`review-1` (Opus 5.5, `$1.52`), on `45c3ed1`: **rejected**, one fix required: three other inbound
+adoptions keep the weak wording and let a caller keep their contract and dangle, two shown
+under Miri: `CSlice::from_raw_parts` and `CSliceMut::from_raw_parts` ("initialised `T`"),
+`CNullTerminated::from_ptr` and `CGuardedRef::from_ptr` ("a live `T::C`"). Made as `9b9047f`:
+each asks for a valid `T`, as `CCell::ref_from_ptr` asks. The owners' contracts, which name the
+Rust type, hold as they are. Validation: the documentation builds without a warning and the 58
+doctests pass; the reproducer becomes no test, since after the change it breaks the contract.
+It weakens no check.
