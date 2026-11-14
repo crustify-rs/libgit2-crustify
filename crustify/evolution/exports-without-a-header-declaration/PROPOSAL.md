@@ -33,6 +33,14 @@ batch exported all 23 under `ffi-export-deps-llhttp-api-c` and
   `unsafe extern "C"` block of the 23 prototypes, written by hand in the test, outside the
   raw bindings.
 
+- `wave-197/batch-0/run-1` (`deps/llhttp/http.c`) met it again for the three hooks
+  `llhttp.c` calls, `llhttp__before_headers_complete`, `llhttp__after_headers_complete` and
+  `llhttp__after_message_complete` (`llhttp.c`, lines 711, 753 and 761), and took the same
+  workaround: a `Hook` function-pointer type transcribed in `http.rs`'s gateway, and an
+  `extern` block of the three prototypes in `tests/equiv/deps/llhttp/http.rs`. Of its two other
+  functions, which `llhttp.h` declares and the batch allowlisted, the exported one,
+  `llhttp_should_keep_alive`, is checked against its binding.
+
 ## Destination
 
 The spec: `bindgen`'s Extending section, and `porting-symbols`' Functions section, which

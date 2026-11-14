@@ -14870,6 +14870,16 @@ pub const HPE_CB_CHUNK_EXTENSION_VALUE_COMPLETE: llhttp_errno = 35;
 pub const HPE_CB_RESET: llhttp_errno = 31;
 pub type llhttp_errno = ::std::os::raw::c_uint;
 pub use self::llhttp_errno as llhttp_errno_t;
+pub const F_CONNECTION_KEEP_ALIVE: llhttp_flags = 1;
+pub const F_CONNECTION_CLOSE: llhttp_flags = 2;
+pub const F_CONNECTION_UPGRADE: llhttp_flags = 4;
+pub const F_CHUNKED: llhttp_flags = 8;
+pub const F_UPGRADE: llhttp_flags = 16;
+pub const F_CONTENT_LENGTH: llhttp_flags = 32;
+pub const F_SKIPBODY: llhttp_flags = 64;
+pub const F_TRAILING: llhttp_flags = 128;
+pub const F_TRANSFER_ENCODING: llhttp_flags = 512;
+pub type llhttp_flags = ::std::os::raw::c_uint;
 pub const LENIENT_HEADERS: llhttp_lenient_flags = 1;
 pub const LENIENT_CHUNKED_LENGTH: llhttp_lenient_flags = 2;
 pub const LENIENT_KEEP_ALIVE: llhttp_lenient_flags = 4;
@@ -15173,6 +15183,12 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn llhttp_finish(parser: *mut llhttp_t) -> llhttp_errno_t;
+}
+unsafe extern "C" {
+    pub fn llhttp_message_needs_eof(parser: *const llhttp_t) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn llhttp_should_keep_alive(parser: *const llhttp_t) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
     pub fn llhttp_pause(parser: *mut llhttp_t);

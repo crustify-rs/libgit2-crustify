@@ -82,6 +82,22 @@ tests that remain are the first to call it.
   TSan. So the check must link `equiv` too, with only the module's own equivalence files
   retired, and fail on any undefined symbol it references from another module's file.
 
+- `wave-197/batch-0/run-1` (`deps/llhttp/http.c`, its whole `port`) ran the check by hand
+  again, as its task message asked, on `plain` and `asan-ubsan`, over a scratch tree with its
+  own equivalence file retired: every binary linked, `equiv` included (532), and passed but
+  for the known nightly failures under ASan+UBSan. Removing the module's object by name would
+  have removed the wrong one: the archive holds two `http.c.o` members,
+  `src/libgit2/transports/http.c`'s (the 154th) and `deps/llhttp/http.c`'s (the 168th), and
+  `ar d libcrustify.a http.c.o` deletes the first; the batch used `ar dN 2` and checked with
+  `nm` that the member left defines `git_smart_subtransport_http`. So the script must take
+  the module's objects by their `build.ninja` paths, as the `util_tests` evidence above found
+  for a link's inputs, and pick an archive member by position, never by its base name alone.
+  It also relinked the variants' `git2` and `libgit2_tests` from their `build.ninja` edges,
+  without `deps/llhttp/CMakeFiles/llhttp.dir/http.c.o` and with the crate's static library
+  built with the feature on, and ran `crustify/scripts/http-gate.sh` over them on `plain`,
+  `asan-ubsan` and `coverage`, the module's only C callers being the HTTP client and
+  `llhttp.c`, which no offline C test reaches.
+
 ## Destination
 
 The spec: `testing-gates`' Regressions section, the export checks of a `port` batch, with a

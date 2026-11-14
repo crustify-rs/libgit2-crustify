@@ -28445,6 +28445,177 @@
    ]
   },
   {
+   "name": "llhttp__after_headers_complete",
+   "defined_in": "deps/llhttp/http.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The end of the parse's input; never read. The export ignores it."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Where the parse is in its input; never read. The export ignores it."
+     }
+    },
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "The parser llhttp's generated parser is executing, once on_headers_complete has run: its flags, type, status code, method, lenient flags, upgrade and content_length are read, never written, for the call; not kept. C takes it non-const, but the body only reads it: ported as ParserRef::after_headers_complete(), whose Body and InvalidTransferEncoding are the six codes."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__after_message_complete",
+   "defined_in": "deps/llhttp/http.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The end of the parse's input; never read. The export ignores it."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Where the parse is in its input; never read. The export ignores it."
+     }
+    },
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, once on_message_complete has run: its version and flags are read (llhttp_should_keep_alive), then its `finish` set to HTTP_FINISH_SAFE and its flags cleared, for the call; not kept. Ported as ParserMut::after_message_complete()."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp__before_headers_complete",
+   "defined_in": "deps/llhttp/http.c",
+   "ptr_args": [
+    {
+     "name": "endp",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:endp"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "The end of the parse's input; never read. The export ignores it."
+     }
+    },
+    {
+     "name": "p",
+     "ptr": {
+      "scalar": null,
+      "array": {
+       "by_val": true
+      },
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:p"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Where the parse is in its input; never read. The export ignores it."
+     }
+    },
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The parser llhttp's generated parser is executing, once its headers are read: its flags, type, status code and method are read and its `upgrade` written, for the call; not kept. Ported as ParserMut::before_headers_complete()."
+     }
+    }
+   ]
+  },
+  {
    "name": "llhttp__debug",
    "defined_in": "deps/llhttp/api.c",
    "ptr_args": [
@@ -30353,6 +30524,29 @@
    ]
   },
   {
+   "name": "llhttp_message_needs_eof",
+   "defined_in": "deps/llhttp/http.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "The parser whose type, status code and flags are read, for the call; not kept. Called only by http.c's own routines. Ported as ParserRef::message_needs_eof()."
+     }
+    }
+   ]
+  },
+  {
    "name": "llhttp_method_name",
    "defined_in": "deps/llhttp/api.c",
    "ptr_ret": {
@@ -30761,6 +30955,29 @@
       "nullable": false,
       "mutable": true,
       "note": "Caller-provided storage for one llhttp_settings_t, memset to zero in place (every slot NULL); not kept after the call. wave-194/batch-2 binds it as Settings::new."
+     }
+    }
+   ]
+  },
+  {
+   "name": "llhttp_should_keep_alive",
+   "defined_in": "deps/llhttp/http.c",
+   "ptr_args": [
+    {
+     "name": "parser",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:parser"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "The parser whose version and flags are read, and llhttp_message_needs_eof's fields, for the call; not kept. libgit2's HTTP client calls it at on_headers_complete (httpparser.h's git_http_parser_keep_alive). Ported as ParserRef::should_keep_alive()."
      }
     }
    ]
