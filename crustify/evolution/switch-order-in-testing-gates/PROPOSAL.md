@@ -1,10 +1,10 @@
 # `testing-gates` restates a switch's parts in an order `porting-workflow` contradicts
 
-Status: `open`: the change is crustify `6868367` on `libgit2-crustify/evolution/switch-order-in-testing-gates`, made on 2026-11-14 at
-the user's word, awaiting its review. Its destination is a protected path: it lands only with
-the user's approval.
+Status: `landed` as crustify `6868367` (record `57005de`) on `libgit2-crustify/devel`, with the user's
+approval on 2026-11-14, which its protected path needs.
 
-Goal: Consistency; and Verification, whose gates a run must be able to carry out as written.
+Goal: Maintainability: each rule has one place. Its measure is the rules stated in more than
+one skill.
 
 ## Signal
 
@@ -12,7 +12,7 @@ Skills that contradict each other. `testing-gates`' Regressions section says a m
 "removes its translation unit …, rebuilds the variants from the C that remains and deletes the
 module's export feature". Read as a sequence, that is the C change, then the variants, then
 the feature, the order `module-switch-procedure`'s item 10 found cannot run.
-`porting-workflow`'s Builds section, once `switch-step-order` lands, gives the parts in the
+`porting-workflow`'s Builds section, since `switch-step-order` landed (`10500c9`), gives the parts in the
 order that runs: both sides, then the builds, then the gates.
 
 ## Evidence
@@ -45,8 +45,13 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 ## Validation
 
-None yet.
+None is needed: no run failed by this text, both switches having run in the order that works,
+and the effect of removing a restated list is not in doubt.
 
 ## Review
 
-None yet.
+`review-1` (Opus 5.5, `$0.98`), on `6868367`: **approved**, no fix required; it weakens no check. No run
+loses a rule it needs, the three removed parts being in `porting-workflow`'s Builds section in
+the order that works; the gates of a switch mean what they did; and "the variants built from
+the C that remains" agrees with `setup` and `testing-builds`. Its notes on this proposal's
+goal, validation and signal are taken above.
