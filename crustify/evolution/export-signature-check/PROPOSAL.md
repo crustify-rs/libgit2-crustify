@@ -45,11 +45,11 @@ drift, and that the binding is allowlisted for it where the bindings lack it; an
 The row for `EVOLUTION.md`, copied in when the change lands. The change was made as crustify
 `dfd557c`, which also edited `EVOLUTION.md`; on 2026-11-14 it was put on the working branch's
 tip as `27f80ba`, the same diff without that edit, since a change's row is drafted in its
-proposal. It sits on crustify `83374c5`, and its review reads `27f80ba`.
+proposal. Review-1 read `27f80ba`; the commit is now `c59838e`.
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| how a gateway checks an export against its raw binding | `libgit2-crustify`, `export-signature-check` | crustify `27f80ba` | the first export of a port campaign had to work out how the compile-time check `testing-gates` asks for is written | a gateway whose exports have no signature check against their raw bindings, or one written another way per module | watched |
+| how a gateway checks an export against its raw binding | `libgit2-crustify`, `export-signature-check` | crustify `c59838e` | the first export of a port campaign had to work out how the compile-time check `testing-gates` asks for is written | a gateway whose exports have no signature check against their raw bindings, or one written another way per module | watched |
 
 ## Validation
 
@@ -59,3 +59,6 @@ build, the gateway as landed builds and lints.
 ## Review
 
 Pending.
+
+`review-1` (session `b787f0b3-9a40-4bda-bcf9-060b5f2d8989`, Opus 5.5, `$1.32`, 5m07s), on `27f80ba`: **approved**, with no fix required. It reran the validation: a drifted parameter type fails the build with E0308 at the check line. Not required: globals and variadic exports are not covered. On 2026-11-14 the commit was put second in the stack, on `144259c`, as `c59838e`, its diff unchanged (the same `git patch-id`).
+Its report is the longest `result` of `crustify/artifacts/evolution/export-signature-check/review-1/stream.jsonl`.

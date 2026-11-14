@@ -71,11 +71,11 @@ On crustify's `libgit2-crustify/evolution/later-stage-c-changes`, `86d8b2f`:
 The row for `EVOLUTION.md`, copied in when the change lands. The change was made as crustify
 `86d8b2f`, which also edited `EVOLUTION.md`; on 2026-11-14 it was put on the working branch's
 tip as `0bec1f0`, the same diff without that edit, since a change's row is drafted in its
-proposal. It sits on crustify `27f80ba`, and its review reads `0bec1f0`.
+proposal. Review-1 read `0bec1f0`; the commit is now `180fd67`.
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| a `port/unexport` changes `c/`: it removes the C test cases it carries over and the export's header declaration, and C only an unbuilt configuration compiles holds no export back | `libgit2-crustify`, `later-stage-c-changes` | crustify `0bec1f0` | `porting-workflow` had every later stage change no C, against `testing`'s carried-over cases, and no skill said what becomes of an unexported function's declaration, or of its callers under a configuration the target is built without | a task message granting a later stage its C change by hand, or a `port/unexport` that leaves its function declared in a header or holds an export for configured-out C | watched |
+| a `port/unexport` changes `c/`: it removes the C test cases it carries over and the export's header declaration, and C only an unbuilt configuration compiles holds no export back | `libgit2-crustify`, `later-stage-c-changes` | crustify `180fd67` | `porting-workflow` had every later stage change no C, against `testing`'s carried-over cases, and no skill said what becomes of an unexported function's declaration, or of its callers under a configuration the target is built without | a task message granting a later stage its C change by hand, or a `port/unexport` that leaves its function declared in a header or holds an export for configured-out C | watched |
 
 ## Validation
 
@@ -88,3 +88,6 @@ builds for Windows.
 ## Review
 
 Pending.
+
+`review-1` (session `cb79c1a3-2051-4435-8b13-e197a710a5d4`, Opus 5.5, `$1.78`, 5m50s), on `0bec1f0`: **rejected**, on two contradictions, both fixed by removing text: the exception's list left out the test harness, which `scheduling` has a `port/unexport` adapt, and `versioning` said no batch changes the C. Made as `180fd67`, on `2c21af3`: the list is gone, and so is `versioning`'s clause. Not required, and the gap most likely to be met: batches of one wave that each commit on the fork's `main` from one base, which task messages settle until a rule does.
+Its report is the longest `result` of `crustify/artifacts/evolution/later-stage-c-changes/review-1/stream.jsonl`.

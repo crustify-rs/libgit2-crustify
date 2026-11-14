@@ -44,11 +44,11 @@ compares it with the C's constants. The change drafts its `EVOLUTION.md` entry.
 The row for `EVOLUTION.md`, copied in when the change lands. The change was made as crustify
 `3d1691a`, which also edited `EVOLUTION.md`; on 2026-11-14 it was put on the working branch's
 tip as `166d8fd`, the same diff without that edit, since a change's row is drafted in its
-proposal. It sits on crustify `4a0e778`, and its review reads `166d8fd`.
+proposal. Review-1 read `166d8fd`; the commit is now `c461f16`.
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| a closed enum's integer-form conversions are crate-private, kept against `dead_code` until a gateway calls them | `libgit2-crustify`, `enum-integer-form-crate-private` | crustify `166d8fd` | `porting-types` has `port/layout` remove an enum's conversions while `porting` has later stages keep the safe API, and a port of enums ahead of their gateways meets `dead_code`: the batch worked out their visibility by hand | a ported closed enum whose `from_raw`/`raw` or `TryFrom`/`From` integer conversions are public, or a `port/layout` whose API stability row reports a conversion `removed` or `changed` | watched |
+| the integer-form conversions a port writes for a closed enum no wrapper gave a safe API are crate-private | `libgit2-crustify`, `enum-integer-form-crate-private` | crustify `c461f16` | `porting-types` has `port/layout` remove an enum's conversions while `porting` has later stages keep the safe API, and a port of enums ahead of their gateways meets `dead_code`: the batch worked out their visibility by hand | a closed enum whose first safe API a port wrote, with public `from_raw`/`raw` or `TryFrom`/`From` integer conversions, or its `port/layout` reporting a conversion `removed` or `changed` in its API stability row | watched |
 
 ## Validation
 
@@ -60,3 +60,6 @@ the case. It builds and lints with warnings denied, both with and without `cfg(t
 ## Review
 
 None yet.
+
+`review-1` (session `aefe14bc-222f-4cc7-8b16-8ae56ed9e941`, Opus 5.5, `$1.99`, 7m03s), on `166d8fd`: **rejected**, on three fixes: the rule contradicted `porting` for an enum wrapped before its port, whose public conversions the port keeps; the `dead_code` expectation as stated fails the lint with the export feature on; and the row's recurrence signal fired on those wrapped enums. Made as `c461f16`, on `180fd67`: the rule covers the conversions a port writes for an enum no wrapper gave a safe API, the expectation's sentence is gone, and the row is scoped.
+Its report is the longest `result` of `crustify/artifacts/evolution/enum-integer-form-crate-private/review-1/stream.jsonl`.

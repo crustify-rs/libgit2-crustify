@@ -45,11 +45,11 @@ alone. The change drafts its `EVOLUTION.md` entry.
 The row for `EVOLUTION.md`, copied in when the change lands. The change was made as crustify
 `755ff2c`, which also edited `EVOLUTION.md`; on 2026-11-14 it was put on the working branch's
 tip as `7b738b9`, the same diff without that edit, since a change's row is drafted in its
-proposal. It sits on crustify `166d8fd`, and its review reads `7b738b9`.
+proposal. Review-1 read `7b738b9`; the commit is now `144259c`.
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| a type-erased field whose type a sibling tag selects is one tagged enum with its tag | `libgit2-crustify`, `type-erased-field-tagged-by-a-sibling` | crustify `7b738b9` | `binding-types` had a type-erased field take one element type or the untyped strategy, and left a `void *` whose pointee a sibling kind field selects to be worked out by hand | a binding of such a field with a setter that writes its tag or its pointer alone, or a review finding of its pointer read as the wrong type after a tag write | watched |
+| a type-erased field whose type a sibling tag selects is one tagged enum with its tag | `libgit2-crustify`, `type-erased-field-tagged-by-a-sibling` | crustify `144259c` | `binding-types` had a type-erased field take one element type or the untyped strategy, and left a `void *` whose pointee a sibling kind field selects to be worked out by hand | a binding of such a field with a setter that writes its tag or its pointer alone, or a review finding of its pointer read as the wrong type after a tag write | watched |
 
 ## Validation
 
@@ -63,3 +63,6 @@ ASan+UBSan, and the Rust-only ones under Miri.
 ## Review
 
 None yet.
+
+`review-1` (session `af7ac7fb-e754-446c-8e4c-1d7fac5bfbbe`, Opus 5.5, `$1.88`, 6m10s), on `7b738b9`: **approved**, with no fix required. It reran the two `unit_pub` tests the proposal cites, which passed; the `equiv` test left with the module's switch and could not be rerun cheaply. On 2026-11-14 the commit was put first in the stack, on crustify `4a0e778`, as `144259c`, its diff unchanged (the same `git patch-id`).
+Its report is the longest `result` of `crustify/artifacts/evolution/type-erased-field-tagged-by-a-sibling/review-1/stream.jsonl`.
