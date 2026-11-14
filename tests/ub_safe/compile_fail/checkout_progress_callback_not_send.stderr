@@ -1,28 +1,24 @@
 error[E0277]: `dyn for<'a> FnMut(Option<&'a CStr>, usize, usize)` cannot be sent between threads safely
-  --> tests/ub_safe/compile_fail/checkout_progress_callback_not_send.rs:12:17
+  --> tests/ub_safe/compile_fail/checkout_progress_callback_not_send.rs:12:10
    |
-12 |         s.spawn(move || drop(callback));
-   |           ----- -------^^^^^^^^^^^^^^^
-   |           |     |
-   |           |     `dyn for<'a> FnMut(Option<&'a CStr>, usize, usize)` cannot be sent between threads safely
-   |           |     within this `{closure@$DIR/tests/ub_safe/compile_fail/checkout_progress_callback_not_send.rs:12:17: 12:24}`
-   |           required by a bound introduced by this call
+12 |     send(callback);
+   |     ---- ^^^^^^^^ `dyn for<'a> FnMut(Option<&'a CStr>, usize, usize)` cannot be sent between threads safely
+   |     |
+   |     required by a bound introduced by this call
    |
-   = help: within `{closure@$DIR/tests/ub_safe/compile_fail/checkout_progress_callback_not_send.rs:12:17: 12:24}`, the trait `Send` is not implemented for `dyn for<'a> FnMut(Option<&'a CStr>, usize, usize)`
+   = help: within `libgit2_crustify::libgit2::src::libgit2::checkout::ProgressCallback<'_>`, the trait `Send` is not implemented for `dyn for<'a> FnMut(Option<&'a CStr>, usize, usize)`
    = note: required because it appears within the type `&mut dyn for<'a> FnMut(Option<&'a CStr>, usize, usize)`
 note: required because it appears within the type `libgit2_crustify::libgit2::src::libgit2::checkout::ProgressCallback<'_>`
   --> src/libgit2/src/libgit2/checkout.rs
    |
    | pub struct ProgressCallback<'f> {
    |            ^^^^^^^^^^^^^^^^
-note: required because `callback` is used within this closure
-  --> tests/ub_safe/compile_fail/checkout_progress_callback_not_send.rs:12:30
+note: required by a bound in `send`
+  --> tests/ub_safe/compile_fail/checkout_progress_callback_not_send.rs:7:12
    |
-12 |         s.spawn(move || drop(callback));
-   |                              ^^^^^^^^
-note: required by a bound in `Scope::<'scope, 'env>::spawn`
-  --> $RUST/std/src/thread/scoped.rs
+ 7 | fn send<T: Send>(_: T) {}
+   |            ^^^^ required by this bound in `send`
 help: use parentheses to call this trait object
    |
-12 |         s.spawn((move || drop(callback))(/* Option<&CStr> */, /* usize */, /* usize */));
-   |                 +                      ++++++++++++++++++++++++++++++++++++++++++++++++
+12 |     send(callback(/* Option<&CStr> */, /* usize */, /* usize */));
+   |                  +++++++++++++++++++++++++++++++++++++++++++++++

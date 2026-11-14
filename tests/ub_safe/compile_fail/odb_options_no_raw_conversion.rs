@@ -3,10 +3,14 @@
 use libgit2_crustify::sys::libgit2 as sys;
 use libgit2_crustify::libgit2::src::libgit2::odb::OdbOptions;
 
+fn from_raw<T: From<sys::git_odb_options>>(raw: sys::git_odb_options) -> T {
+    T::from(raw)
+}
+
 fn main() {
     let raw = sys::git_odb_options {
         version: sys::GIT_ODB_OPTIONS_VERSION,
         oid_type: 7,
     };
-    let _ = OdbOptions::from(raw);
+    let _: OdbOptions = from_raw(raw);
 }

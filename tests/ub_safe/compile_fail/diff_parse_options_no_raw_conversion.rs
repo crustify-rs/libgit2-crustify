@@ -3,10 +3,14 @@
 use libgit2_crustify::sys::libgit2 as sys;
 use libgit2_crustify::libgit2::src::libgit2::diff_parse::DiffParseOptions;
 
+fn from_raw<T: From<sys::git_diff_parse_options>>(raw: sys::git_diff_parse_options) -> T {
+    T::from(raw)
+}
+
 fn main() {
     let raw = sys::git_diff_parse_options {
         version: sys::GIT_DIFF_PARSE_OPTIONS_VERSION,
         oid_type: 7,
     };
-    let _ = DiffParseOptions::from(raw);
+    let _: DiffParseOptions = from_raw(raw);
 }

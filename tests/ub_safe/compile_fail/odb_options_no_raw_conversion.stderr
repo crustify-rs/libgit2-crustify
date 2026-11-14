@@ -1,10 +1,11 @@
-error[E0308]: mismatched types
-  --> tests/ub_safe/compile_fail/odb_options_no_raw_conversion.rs:11:30
+error[E0277]: the trait bound `OdbOptions: From<git_odb_options>` is not satisfied
+  --> tests/ub_safe/compile_fail/odb_options_no_raw_conversion.rs:15:25
    |
-11 |     let _ = OdbOptions::from(raw);
-   |             ---------------- ^^^ expected `OdbOptions`, found `git_odb_options`
-   |             |
-   |             arguments to this function are incorrect
+15 |     let _: OdbOptions = from_raw(raw);
+   |                         ^^^^^^^^^^^^^ the trait `From<git_odb_options>` is not implemented for `OdbOptions`
    |
-note: associated function defined here
-  --> $RUST/core/src/convert/mod.rs
+note: required by a bound in `from_raw`
+  --> tests/ub_safe/compile_fail/odb_options_no_raw_conversion.rs:6:16
+   |
+ 6 | fn from_raw<T: From<sys::git_odb_options>>(raw: sys::git_odb_options) -> T {
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `from_raw`

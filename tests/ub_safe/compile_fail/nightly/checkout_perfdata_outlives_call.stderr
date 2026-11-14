@@ -1,0 +1,20 @@
+error[E0277]: expected an `FnMut(CheckoutPerfdataRef<'_>)` closure, found `{closure@$DIR/tests/ub_safe/compile_fail/nightly/checkout_perfdata_outlives_call.rs:8:17: 8:45}`
+ --> tests/ub_safe/compile_fail/nightly/checkout_perfdata_outlives_call.rs:9:46
+  |
+9 |     let mut callback = PerfdataCallback::new(&mut f);
+  |                        --------------------- ^^^^^^ expected an `FnMut(CheckoutPerfdataRef<'_>)` closure, found `{closure@$DIR/tests/ub_safe/compile_fail/nightly/checkout_perfdata_outlives_call.rs:8:17: 8:45}`
+  |                        |
+  |                        required by a bound introduced by this call
+  |
+  = help: the trait `for<'a> FnMut(CheckoutPerfdataRef<'a>)` is not implemented for closure `{closure@$DIR/tests/ub_safe/compile_fail/nightly/checkout_perfdata_outlives_call.rs:8:17: 8:45}`
+  = note: expected a closure with signature `for<'a> fn(CheckoutPerfdataRef<'a>)`
+             found a closure with signature `fn(CheckoutPerfdataRef<'k>)`
+note: required by a bound in `PerfdataCallback::<'f>::new`
+ --> src/libgit2/src/libgit2/checkout.rs
+  |
+  | impl<'f> PerfdataCallback<'f> {
+  |     /// The callback that calls `f` with each checkout's counters.
+  |     pub fn new<F>(f: &'f mut F) -> Self
+  |     where
+  |         F: FnMut(CheckoutPerfdataRef<'_>) + 'f,
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `PerfdataCallback::<'f>::new`

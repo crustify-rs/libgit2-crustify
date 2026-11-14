@@ -1,10 +1,11 @@
-error[E0308]: mismatched types
-  --> tests/ub_safe/compile_fail/diff_parse_options_no_raw_conversion.rs:11:36
+error[E0277]: the trait bound `DiffParseOptions: From<git_diff_parse_options>` is not satisfied
+  --> tests/ub_safe/compile_fail/diff_parse_options_no_raw_conversion.rs:15:31
    |
-11 |     let _ = DiffParseOptions::from(raw);
-   |             ---------------------- ^^^ expected `DiffParseOptions`, found `git_diff_parse_options`
-   |             |
-   |             arguments to this function are incorrect
+15 |     let _: DiffParseOptions = from_raw(raw);
+   |                               ^^^^^^^^^^^^^ the trait `From<git_diff_parse_options>` is not implemented for `DiffParseOptions`
    |
-note: associated function defined here
-  --> $RUST/core/src/convert/mod.rs
+note: required by a bound in `from_raw`
+  --> tests/ub_safe/compile_fail/diff_parse_options_no_raw_conversion.rs:6:16
+   |
+ 6 | fn from_raw<T: From<sys::git_diff_parse_options>>(raw: sys::git_diff_parse_options) -> T {
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `from_raw`

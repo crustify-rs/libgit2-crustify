@@ -1,28 +1,24 @@
 error[E0277]: `dyn for<'a> FnMut(CheckoutNotification<'a>) -> ControlFlow<()>` cannot be sent between threads safely
-  --> tests/ub_safe/compile_fail/checkout_notify_callback_not_send.rs:12:17
+  --> tests/ub_safe/compile_fail/checkout_notify_callback_not_send.rs:12:10
    |
-12 |         s.spawn(move || drop(callback));
-   |           ----- -------^^^^^^^^^^^^^^^
-   |           |     |
-   |           |     `dyn for<'a> FnMut(CheckoutNotification<'a>) -> ControlFlow<()>` cannot be sent between threads safely
-   |           |     within this `{closure@$DIR/tests/ub_safe/compile_fail/checkout_notify_callback_not_send.rs:12:17: 12:24}`
-   |           required by a bound introduced by this call
+12 |     send(callback);
+   |     ---- ^^^^^^^^ `dyn for<'a> FnMut(CheckoutNotification<'a>) -> ControlFlow<()>` cannot be sent between threads safely
+   |     |
+   |     required by a bound introduced by this call
    |
-   = help: within `{closure@$DIR/tests/ub_safe/compile_fail/checkout_notify_callback_not_send.rs:12:17: 12:24}`, the trait `Send` is not implemented for `dyn for<'a> FnMut(CheckoutNotification<'a>) -> ControlFlow<()>`
+   = help: within `NotifyCallback<'_>`, the trait `Send` is not implemented for `dyn for<'a> FnMut(CheckoutNotification<'a>) -> ControlFlow<()>`
    = note: required because it appears within the type `&mut dyn for<'a> FnMut(CheckoutNotification<'a>) -> ControlFlow<()>`
 note: required because it appears within the type `NotifyCallback<'_>`
   --> src/libgit2/src/libgit2/checkout.rs
    |
    | pub struct NotifyCallback<'f> {
    |            ^^^^^^^^^^^^^^
-note: required because `callback` is used within this closure
-  --> tests/ub_safe/compile_fail/checkout_notify_callback_not_send.rs:12:30
+note: required by a bound in `send`
+  --> tests/ub_safe/compile_fail/checkout_notify_callback_not_send.rs:7:12
    |
-12 |         s.spawn(move || drop(callback));
-   |                              ^^^^^^^^
-note: required by a bound in `Scope::<'scope, 'env>::spawn`
-  --> $RUST/std/src/thread/scoped.rs
+ 7 | fn send<T: Send>(_: T) {}
+   |            ^^^^ required by this bound in `send`
 help: use parentheses to call this trait object
    |
-12 |         s.spawn((move || drop(callback))(/* CheckoutNotification<'_> */));
-   |                 +                      +++++++++++++++++++++++++++++++++
+12 |     send(callback(/* CheckoutNotification<'_> */));
+   |                  ++++++++++++++++++++++++++++++++
