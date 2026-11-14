@@ -1,0 +1,19 @@
+{
+ "backend": "claude",
+ "billing": "api",
+ "model_proxy": "openrouter",
+ "args": [
+  "--model",
+  "claude-opus-5-5"
+ ],
+ "revisions": {
+  "crustify": "e8e55af",
+  "wavefront": "bf21e16",
+  "ffibox": "9c22a73",
+  "ffimap": "9aa2ef1"
+ },
+ "component": "ffibox",
+ "branch": "libgit2-crustify/evolution/ffibox-adoption-of-lifetime-cells",
+ "commit": "45c3ed1",
+ "proposal": "crustify/evolution/ffibox-adoption-of-lifetime-cells"
+}

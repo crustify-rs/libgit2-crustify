@@ -1,7 +1,9 @@
 # Adopting a handle over a layout type with a lifetime vouches for nothing about that lifetime
 
-Status: `open`: no change made. The destination is ffibox, which a reviewer proposes changes
-to and does not evolve.
+Status: `open`: the change is ffibox `45c3ed1` on `libgit2-crustify/evolution/ffibox-adoption-of-lifetime-cells`, made on
+2026-11-14 at the user's direction after the triage of open proposals, awaiting its review.
+
+Goal: Safety, its soundness measure; ffibox's G9 and G12.
 
 ## Signal
 
@@ -51,6 +53,14 @@ it. Say in `define_ctype!`'s `phantom` paragraph that a type whose layout points
 it borrows documents that invariant, for its adopters, in an `# Adoption` section, as
 opt.rs's `Spec`, `Opt` and `Parser` now do. The wording only makes explicit what the
 existing `SAFETY:` examples already assume. No signature changes.
+
+## Record
+
+The row for `EVOLUTION.md`, copied in when the change lands:
+
+| change | from | landed as | signal answered | recurrence signal | status |
+|---|---|---|---|---|---|
+| adopting a pointer as a handle vouches for a valid `Self`, the borrows its lifetimes name included, not only an initialised C object | `libgit2-crustify`, `ffibox-adoption-of-lifetime-cells` | ffibox `45c3ed1` | a handle adopted with a `'static` lifetime over an object that borrows shorter-lived memory kept `ref_from_ptr`'s contract and dangled under Miri | a `ub` or `contracts` finding on a handle adopted over a layout type with a lifetime, whose adopter vouched for nothing of that lifetime | watched |
 
 ## Validation
 
