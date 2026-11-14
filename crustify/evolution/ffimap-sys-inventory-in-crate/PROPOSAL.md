@@ -1,7 +1,8 @@
 # ffimap takes its `-sys` inventory from extern crates alone, so in-crate raw bindings have none
 
-Status: `open`: the change is ffimap `a0797e6` on `libgit2-crustify/evolution/`, made on 2026-11-14 at
-the user's word, awaiting its review.
+Status: `landed` as ffimap `a0797e6`, which ffimap's `devel` took, and crustify `9885b23`, each on its
+`libgit2-crustify/devel` (record: crustify `aac2eca`), on 2026-11-14, with the user's approval of the
+skill's paragraph and of ffimap's `devel`. Nothing is pushed.
 
 Goal: Safety, the unsafe surface's measures; Attribution.
 
@@ -19,7 +20,7 @@ dashboard records (`--ffibox --sys-crates libgit2_sys,pcre2_sys`, the regions an
 |---|---|---|
 | `ty.ffibox.sys.total` | 120 | 21 |
 | `fn.ffibox.sys.total` | 723 | 222 |
-| `fn.ffibox.wrapper.total` | not read | 0 |
+| `fn.ffibox.wrapper.total` | 511 | 0 |
 
 What is left is PCRE2's, the one `-sys` crate that is still a crate. The batches since the
 bindings moved scanned with `--sys-crates pcre2_sys` and record the same 21 and 222
@@ -31,8 +32,8 @@ whatever the batch did with a libgit2 type.
 A second defect came with the same move, and reaches further. The bindings' own code, bindgen's
 derives, its `Default` impls and its declarations, is now code of the scanned crate, and
 counts as the crate's wherever a counter does not skip a generated file: `ty.ffibox.sys.as`,
-which the `C by value` cell reads, went from 111 on 2026-11-10 to 355, with or without the
-module named, and `ty.impl_trait`, the `unsafe` counters and `fn.total` rose with it.
+went from 111 on 2026-11-10 to 355, with or without the module named, and its `by_val`
+share, which the `C by value` cell reads, from 111 to 219, and `ty.impl_trait`, the `unsafe` counters and `fn.total` rose with it.
 The scan is `crustify/tmp/assistant/ffimap-scan/scan.json`.
 
 ## Destination
@@ -63,7 +64,7 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| `--sys-crates` names a module of the scanned crate as `crate::<path>`: its raw bindings join the `-sys` inventory and leave every other counter, and the `ffimap` skill has a scan name them | `libgit2-crustify`, `ffimap-sys-inventory-in-crate` | ffimap `a0797e6`; crustify `9885b23` | once this campaign's raw bindings became a module of its crate, its scans read PCRE2's inventory alone and counted the bindings' own code as the crate's, so `celled %` and `C by value` measured nothing of its batches | a scan whose `ty.ffibox.sys.total` or `fn.ffibox.sys.total` falls by an order of magnitude from the scan before it with no binding removed; a counter with a site inside a generated bindings file; or a campaign whose bindings are a module scanning without naming it | watched |
+| `--sys-crates` names a module of the scanned crate as `crate::<path>`: its raw bindings join the `-sys` inventory and leave every other counter, and the `ffimap` skill has a scan name them | `libgit2-crustify`, `ffimap-sys-inventory-in-crate` | ffimap `a0797e6`; crustify `9885b23` | once this campaign's raw bindings became a module of its crate, its scans read PCRE2's inventory alone and counted the bindings' own code as the crate's, so `celled %` was taken over another library's types and `C by value` was inflated | a scan whose `ty.ffibox.sys.total` or `fn.ffibox.sys.total` falls by an order of magnitude from the scan before it with no binding removed; a counter other than the `-sys` inventory's with a site inside the named bindings; or a campaign whose bindings are a module scanning without naming it | watched |
 
 ## Validation
 
@@ -113,3 +114,12 @@ path: the user reads it before it lands, after the ffimap half.
 
 `review-2-crustify` (Opus 5.5, `$0.22`), on crustify `9885b23`: **approved**; it weakens no check. It waits for
 the ffimap half, and for the user's approval.
+
+`review-2` (Opus 5.5, `$3.45`), on ffimap `a0797e6`: **approved**, the commit as it stands; it weakens no
+check. One fix to the row, made above: its recurrence signal's second clause would fire on any
+correct scan, the inventory's sites being in the bindings. It ran the 147 tests, showed the two
+new ones fail on review-1's driver, found no walk unfiltered, and rescanned libgit2-crustify
+from an archive of the commit: its 767 values are `scan-new2.json`'s. Listed apart: no test
+checks that a crate's use of a module binding still counts as `used`, which it probed by
+hand; a mistyped `crate::` path gives zeros, not an error; `docs/schema.md`'s
+`ty.ffibox.sys.total` row still says crates only.
