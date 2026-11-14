@@ -8,9 +8,10 @@
 //! [`DataCallback`] and [`Callback`]. The X-macros are compared with what C expands them
 //! to, their text in `llhttp.h`.
 //!
-//! None here calls api.c's functions directly. The C parse reaches api.c's dispatchers, which
-//! are its Rust exports since api.c switched from C, so these compare llhttp.c's port with its
-//! C running over the ported dispatchers. The accessors and maps api.c's getters and name
+//! None here calls api.c's or http.c's functions directly. The C parse reaches api.c's
+//! dispatchers and http.c's three hooks, which are their Rust exports since the two modules
+//! switched from C, so these compare llhttp.c's port with its C running over the ported
+//! dispatchers and hooks. The accessors and maps api.c's getters and name
 //! functions are ported onto were compared with those functions until api.c's switch, which
 //! retired those tests with its C, and are kept by `unit_pub`'s.
 

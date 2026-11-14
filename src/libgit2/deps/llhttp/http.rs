@@ -46,9 +46,9 @@
 //!
 //! The C that remains calls four of these functions: `llhttp.c`'s generated parser the three
 //! hooks, which no header declares, and libgit2's HTTP client `llhttp_should_keep_alive`.
-//! They are exported under their C names, compiled under the export feature
-//! `ffi-export-deps-llhttp-http-c` until the module switches from C. `llhttp_message_needs_eof`
-//! has no C caller outside http.c, so it has no export and leaves with http.c's C.
+//! They are exported under their C names, which no C defines since http.c switched from C: the
+//! remaining C reaches the module through them. `llhttp_message_needs_eof` has no C caller
+//! outside http.c, so it has no export, and left with http.c's C.
 //!
 //! [`ParserMut::before_headers_complete`]: super::llhttp::ParserMut::before_headers_complete
 //! [`ParserMut::after_message_complete`]: super::llhttp::ParserMut::after_message_complete
@@ -371,13 +371,6 @@ impl ParserMut<'_> {
 
 /// The `int` `llhttp__after_headers_complete` returns for `outcome`, which llhttp's generated
 /// parser switches on.
-#[cfg_attr(
-    not(any(test, feature = "ffi-export-deps-llhttp-http-c")),
-    expect(
-        dead_code,
-        reason = "only the export feature's gateway hands C the code"
-    )
-)]
 const fn headers_code(outcome: Result<Body, InvalidTransferEncoding>) -> core::ffi::c_int {
     match outcome {
         Ok(Body::Empty) => 0,
@@ -414,13 +407,10 @@ mod unit_priv {
     }
 }
 
-// The feature's `cfg` is the attribute right above the module, as build.rs's `gateway_lines`
-// reads a gateway's feature from the lines before it.
 #[expect(
     unsafe_code,
     reason = "exports http.c's functions the remaining C calls, adopting the parser C passes"
 )]
-#[cfg(feature = "ffi-export-deps-llhttp-http-c")]
 mod ffi_export {
     use core::ffi::{c_int, c_uchar};
 
@@ -569,8 +559,8 @@ mod ffi_export {
     }
 
     /// The exports called as C calls them, over parsers Rust builds: what each reads and
-    /// writes of the parser, and the `int` it returns. They compile with the gateway, under
-    /// the export feature, and link only where http.c's C is out of the link.
+    /// writes of the parser, and the `int` it returns. They compile with the gateway, which the
+    /// tests link in place of http.c's C, gone from the build since the module's switch.
     #[cfg(test)]
     mod unit_priv {
         use core::ffi::c_int;

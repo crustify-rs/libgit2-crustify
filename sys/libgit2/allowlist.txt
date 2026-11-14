@@ -826,12 +826,11 @@ function llhttp_resume_after_upgrade
 # wave-194/batch-4: llhttp.h's finish states, which llhttp_finish's port matches on
 type llhttp_finish
 
-# wave-197/batch-0: deps/llhttp/http.c's predicates, which llhttp.h declares: the keep-alive
-# one reaches its export, which libgit2's HTTP client calls, and checks its signature; the
-# EOF one, which only http.c calls, has no export and leaves with its C; and llhttp.h's
-# message flags, whose bits http.c's routines test
+# wave-197/batch-0: deps/llhttp/http.c's keep-alive predicate, which llhttp.h declares and
+# libgit2's HTTP client calls. deps/llhttp/http.c switched to Rust: it reaches its export and
+# checks its signature, the EOF predicate, which only http.c called, having left with its C;
+# and llhttp.h's message flags, whose bits http.c's routines test
 type llhttp_flags
-function llhttp_message_needs_eof
 function llhttp_should_keep_alive
 
 # wave-229/batch-0: src/util/utf8.c (src/util/utf8.h), switched to Rust: they reach its

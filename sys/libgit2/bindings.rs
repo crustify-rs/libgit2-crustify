@@ -15185,9 +15185,6 @@ unsafe extern "C" {
     pub fn llhttp_finish(parser: *mut llhttp_t) -> llhttp_errno_t;
 }
 unsafe extern "C" {
-    pub fn llhttp_message_needs_eof(parser: *const llhttp_t) -> ::std::os::raw::c_int;
-}
-unsafe extern "C" {
     pub fn llhttp_should_keep_alive(parser: *const llhttp_t) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
