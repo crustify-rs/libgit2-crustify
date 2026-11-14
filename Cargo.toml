@@ -60,12 +60,14 @@ system = []
 
 [dependencies]
 # By path, not by Git: trybuild replaces only the paths of dependencies declared by path
-# with `$FFIBOX` in compile-fail snapshots. By the checkout's canonical path, which
-# /opt/venv/share/ffibox links to: trybuild replaces the canonicalized path, while rustc
-# prints the path as declared, so a path through the link leaves the snapshots' paths
-# absolute. glibc-bindings takes it by Git, which the [patch] below points at this path,
+# with `$FFIBOX` in compile-fail snapshots. By the canonical path of the campaign's own
+# checkout of ffibox, the worktree of its working branch, `libgit2-crustify/devel`, so that
+# the crate builds against the ffibox the campaign has changed, not against `devel`'s, which
+# /crustify-rs/ffibox and the /opt/venv/share/ffibox link hold. Canonical, since trybuild
+# replaces the canonicalized path while rustc prints the path as declared: a path through a
+# link leaves the snapshots' paths absolute. glibc-bindings takes it by Git, which the [patch] below points at this path,
 # so the graph holds one ffibox.
-ffibox = { version = "0.1.1", path = "/crustify-rs/ffibox" }
+ffibox = { version = "0.1.1", path = "/crustify-rs/ffibox.libgit2-crustify" }
 # libc's wrapper, the crustify-rs/glibc-crustify side campaign: pinned to a commit
 # (`wrapper.pin` in crustify/artifacts/dependencies.json), and patched below to its clone
 # beside this repository while the campaign extends it, by absolute path, which the batch
@@ -132,7 +134,7 @@ publish = false
 glibc-bindings = { path = "/target/glibc-crustify" }
 
 [patch."https://github.com/crustify-rs/ffibox"]
-ffibox = { path = "/crustify-rs/ffibox" }
+ffibox = { path = "/crustify-rs/ffibox.libgit2-crustify" }
 
 [workspace.metadata.crustify]
 nightly = "nightly-2026-10-08"
