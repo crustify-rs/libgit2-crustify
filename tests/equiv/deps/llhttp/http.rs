@@ -61,23 +61,26 @@ impl State {
         let mut parser = Parser::zeroed();
         let raw = parser.as_mut().as_mut_ptr();
         // SAFETY: `raw` addresses the live parser, which nothing else accesses until the
-        // value is returned; every field is an integer, for which any value is valid.
-        unsafe {
-            *raw = sys::llhttp__internal_s {
-                _index: 0x5A5A,
-                type_: self.parser_type,
-                flags: self.flags,
-                status_code: self.status_code,
-                method: self.method,
-                http_major: self.version.0,
-                http_minor: self.version.1,
-                content_length: self.content_length,
-                lenient_flags: self.lenient_flags,
-                upgrade: self.upgrade,
-                finish: self.finish,
-                ..raw.read()
-            };
-        }
+        // value is returned; `llhttp__internal_s` is `Copy`, its fields integers and
+        // pointers, so a copy of it forms nothing it does not hold.
+        let zeroed = unsafe { raw.read() };
+        let state = sys::llhttp__internal_s {
+            _index: 0x5A5A,
+            type_: self.parser_type,
+            flags: self.flags,
+            status_code: self.status_code,
+            method: self.method,
+            http_major: self.version.0,
+            http_minor: self.version.1,
+            content_length: self.content_length,
+            lenient_flags: self.lenient_flags,
+            upgrade: self.upgrade,
+            finish: self.finish,
+            ..zeroed
+        };
+        // SAFETY: as above; every field is an integer or a pointer, for which any value is
+        // valid, and the write drops nothing.
+        unsafe { raw.write(state) };
         parser
     }
 }

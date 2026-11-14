@@ -29,6 +29,9 @@ whether or not the feature is on.
   the C defined.
 - `wave-197/batch-0/run-1` (`deps/llhttp/http.c`) wrote its gateway with the `cfg` right
   above `mod ffi_export`, after the `expect`, with a comment saying why.
+- `wave-197/batch-1/run-1`, the module's pass, read `build.rs`'s `gateway_lines` at `a81dc3103`
+  (lines 1464 to 1498) against the reproducer: the transcription is the function's
+  feature logic line for line, and the reproducer's two assertions hold.
 
 ## Destination
 

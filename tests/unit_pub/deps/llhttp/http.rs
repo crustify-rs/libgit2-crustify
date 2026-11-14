@@ -57,6 +57,9 @@ fn a_response_needs_eof_without_a_length_or_a_final_chunked() {
         (sys::F_SKIPBODY, false),
         (sys::F_SKIPBODY | sys::F_TRANSFER_ENCODING, false),
         (sys::F_CONNECTION_KEEP_ALIVE | sys::F_CONNECTION_CLOSE, true),
+        // The bits llhttp leaves unused decide nothing.
+        (0x100 | 0x8000, true),
+        (sys::F_CONTENT_LENGTH | 0x100 | 0x8000, false),
     ];
     for (flags, needs_eof) in cases {
         for parser_type in [ParserType::Response, ParserType::Both] {
@@ -100,16 +103,36 @@ fn http_0_0_keeps_alive_only_with_keep_alive() {
     }
 }
 
+/// A zeroed parser's type, flags, lenient flags and upgrade, and what
+/// `after_headers_complete` decides for them.
+type HeadersCase = (
+    ParserType,
+    u32,
+    u32,
+    bool,
+    Result<Body, InvalidTransferEncoding>,
+);
+
+/// Decides each case on a zeroed parser, which `after_headers_complete` only reads.
+fn assert_after_headers_complete(cases: &[HeadersCase]) {
+    for &(parser_type, flags, lenient, upgrade, body) in cases {
+        let mut parser = zeroed(parser_type, flags, lenient);
+        parser.as_mut().set_upgrade(upgrade);
+        assert_eq!(
+            parser.as_ref().after_headers_complete(),
+            body,
+            "{parser_type:?} {flags:#x} {lenient:#x} {upgrade}"
+        );
+        // It only reads the parser.
+        assert_eq!(u32::from(parser.as_ref().flags_raw()), flags);
+        assert_eq!(parser.as_ref().upgrade(), upgrade);
+    }
+}
+
 #[test]
 fn after_headers_complete_on_a_zeroed_parser() {
     let te = sys::F_TRANSFER_ENCODING;
-    let cases: [(
-        ParserType,
-        u32,
-        u32,
-        bool,
-        Result<Body, InvalidTransferEncoding>,
-    ); 16] = [
+    let cases: [HeadersCase; 16] = [
         (ParserType::Request, 0, 0, false, Ok(Body::Empty)),
         (
             ParserType::Request,
@@ -196,18 +219,33 @@ fn after_headers_complete_on_a_zeroed_parser() {
         ),
         (ParserType::Both, sys::F_SKIPBODY, 0, false, Ok(Body::Empty)),
     ];
-    for (parser_type, flags, lenient, upgrade, body) in cases {
-        let mut parser = zeroed(parser_type, flags, lenient);
-        parser.as_mut().set_upgrade(upgrade);
-        assert_eq!(
-            parser.as_ref().after_headers_complete(),
-            body,
-            "{parser_type:?} {flags:#x} {lenient:#x} {upgrade}"
-        );
-        // It only reads the parser.
-        assert_eq!(u32::from(parser.as_ref().flags_raw()), flags);
-        assert_eq!(parser.as_ref().upgrade(), upgrade);
-    }
+    assert_after_headers_complete(&cases);
+}
+
+#[test]
+fn after_headers_complete_on_a_zeroed_parser_s_rarer_states() {
+    let te = sys::F_TRANSFER_ENCODING;
+    assert_after_headers_complete(&[
+        // A skipped body upgrades at once, even a chunked one.
+        (
+            ParserType::Request,
+            sys::F_CHUNKED | sys::F_SKIPBODY,
+            0,
+            true,
+            Ok(Body::Upgrade),
+        ),
+        // Only a request is refused: a parser that has not settled on one reads to the end,
+        // as a response does.
+        (ParserType::Both, te, 0, false, Ok(Body::UntilEof)),
+        (ParserType::Both, 0, 0, false, Ok(Body::UntilEof)),
+        (
+            ParserType::Both,
+            sys::F_CONTENT_LENGTH,
+            0,
+            false,
+            Ok(Body::Empty),
+        ),
+    ]);
 }
 
 #[test]
@@ -385,7 +423,7 @@ const fn seen(
 #[cfg_attr(miri, ignore = "calls C")]
 fn the_headers_of_responses_decide_their_bodies() {
     let empty = Ok(Body::Empty);
-    let cases: [(&[u8], Seen); 14] = [
+    let cases: [(&[u8], Seen); 18] = [
         (
             b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\n",
             seen(Ok(Body::Length), false, false, true),
@@ -411,6 +449,23 @@ fn the_headers_of_responses_decide_their_bodies() {
         (b"HTTP/1.1 100 Continue\r\n\r\n", seen(empty, false, false, true)),
         (b"HTTP/1.1 102 Processing\r\n\r\n", seen(empty, false, false, true)),
         (b"HTTP/1.1 103 Early Hints\r\n\r\n", seen(empty, false, false, true)),
+        // Any other 1xx has no body either, for want of a length that the input's end gives.
+        (b"HTTP/1.1 199 Other\r\n\r\n", seen(empty, false, false, true)),
+        // The status overrides a length.
+        (
+            b"HTTP/1.1 304 Not Modified\r\nContent-Length: 10\r\n\r\n",
+            seen(empty, false, false, true),
+        ),
+        // A 101 switches protocols without its upgrade headers too, though it does not set
+        // the upgrade.
+        (
+            b"HTTP/1.1 101 Switching Protocols\r\n\r\n",
+            seen(Ok(Body::Upgrade), false, false, true),
+        ),
+        (
+            b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n\r\n",
+            seen(Ok(Body::Upgrade), false, false, true),
+        ),
         (
             b"HTTP/1.1 101 Switching Protocols\r\nConnection: upgrade\r\nUpgrade: websocket\r\n\r\n",
             seen(Ok(Body::Upgrade), true, false, true),
@@ -439,7 +494,7 @@ fn the_headers_of_responses_decide_their_bodies() {
 #[cfg_attr(miri, ignore = "calls C")]
 fn the_headers_of_requests_decide_their_bodies() {
     let te = b"POST / HTTP/1.1\r\nTransfer-Encoding: gzip\r\n\r\n";
-    let cases: [(&[u8], u32, Seen); 7] = [
+    let cases: [(&[u8], u32, Seen); 8] = [
         (
             b"GET / HTTP/1.1\r\n\r\n",
             0,
@@ -452,6 +507,12 @@ fn the_headers_of_requests_decide_their_bodies() {
         ),
         (
             b"CONNECT example.com:443 HTTP/1.1\r\n\r\n",
+            0,
+            seen(Ok(Body::Upgrade), true, false, true),
+        ),
+        // A `CONNECT` upgrades before its body, which is the tunnel's.
+        (
+            b"CONNECT example.com:443 HTTP/1.1\r\nContent-Length: 5\r\n\r\n",
             0,
             seen(Ok(Body::Upgrade), true, false, true),
         ),
@@ -564,6 +625,87 @@ fn after_message_complete_clears_the_flags_for_the_next_message() {
         u32::from(parser.as_ref().finish_raw()),
         sys::HTTP_FINISH_SAFE
     );
+    // It clears the flags alone of what the message's start line and headers set.
+    let ended = parser.as_ref();
+    assert_eq!(ended.status_code(), 200);
+    assert_eq!((ended.http_major(), ended.http_minor()), (1, 1));
+    assert_eq!(ended.content_length(), 5);
+    assert_eq!(ended.parser_type(), Ok(ParserType::Response));
+    assert_eq!(ended.error(), Ok(Errno::Ok));
     // The input may now end where the parser is.
     assert!(parser.as_mut().finish().is_ok());
+}
+
+/// What `should_keep_alive` and `after_message_complete` settle for a response of `version`,
+/// whose `Content-Length` of 0 ends its body, so that only the version and the `Connection`
+/// header decide: the first as `on_headers_complete` and `on_message_complete` ask it, the
+/// second called on a parser that has read every header line but the empty one.
+fn keep_alive(version: &str, connection: &str) -> (bool, bool) {
+    let input = format!("HTTP/{version} 200 OK\r\n{connection}Content-Length: 0\r\n\r\n");
+    let (outcome, headers, messages) = parse(ParserType::Response, 0, 0, input.as_bytes());
+    assert_eq!(outcome, Ok(Parsed::All), "{input}");
+    let mut parser = Parser::new();
+    parser.as_mut().init(ParserType::Response, None);
+    parser
+        .as_mut()
+        .execute(&input.as_bytes()[..input.len() - 2])
+        .unwrap();
+    let after = parser.as_mut().after_message_complete();
+    assert_eq!(messages[0].keep_alive, headers[0].keep_alive, "{input}");
+    (headers[0].keep_alive, after)
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn http_1_1_keeps_alive_unless_it_closes() {
+    assert_eq!(keep_alive("1.1", ""), (true, true));
+    assert_eq!(keep_alive("1.1", "Connection: close\r\n"), (false, false));
+    // `keep-alive` is no exception to a close.
+    assert_eq!(
+        keep_alive("1.1", "Connection: close, keep-alive\r\n"),
+        (false, false)
+    );
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn http_1_0_keeps_alive_only_with_keep_alive() {
+    assert_eq!(keep_alive("1.0", ""), (false, false));
+    assert_eq!(
+        keep_alive("1.0", "Connection: keep-alive\r\n"),
+        (true, true)
+    );
+    // `close` is read only from HTTP/1.1 on.
+    assert_eq!(
+        keep_alive("1.0", "Connection: keep-alive, close\r\n"),
+        (true, true)
+    );
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn http_0_9_keeps_alive_only_with_keep_alive() {
+    // A minor above zero is not HTTP/1.1 without a major above zero.
+    assert_eq!(keep_alive("0.9", ""), (false, false));
+    assert_eq!(
+        keep_alive("0.9", "Connection: keep-alive\r\n"),
+        (true, true)
+    );
+}
+
+/// The departure the port keeps from llhttp, documented on `should_keep_alive`: a version is
+/// HTTP/1.1 or later only when both its major and its minor are above zero, so HTTP/2.0 is
+/// read as HTTP/1.0 is, where RFC 9112's "HTTP/1.1 (or later)" would keep it alive.
+#[test]
+#[cfg_attr(miri, ignore = "calls C")]
+fn http_2_0_is_read_as_an_earlier_version_for_keep_alive() {
+    assert_eq!(keep_alive("2.0", ""), (false, false));
+    assert_eq!(
+        keep_alive("2.0", "Connection: keep-alive\r\n"),
+        (true, true)
+    );
+    assert_eq!(
+        keep_alive("2.0", "Connection: keep-alive, close\r\n"),
+        (true, true)
+    );
 }

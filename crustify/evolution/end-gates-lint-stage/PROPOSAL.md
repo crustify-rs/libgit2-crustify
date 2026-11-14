@@ -1,0 +1,75 @@
+# `end-gates` runs the format and lint gates over the committed tree
+
+Status: `open`. The change is `28a5e51` on crustify's
+`libgit2-crustify/evolution/end-gates-lint-stage`, forked from `libgit2-crustify/devel` at
+`cc84106`. It awaits its review.
+
+## Signal
+
+A review finding that recurs: a landed tree that fails the lint gate every landing passes.
+`testing-gates`' Regressions section has every batch format and lint the workspace "on the
+tree it lands, with warnings denied", and `end-gates` runs a wave's and a module's end gates
+over a snapshot of the committed tree, so that what they record is that tree's. Its stages
+were the tests alone. Each batch ran `cargo fmt` and `cargo clippy` by hand, on its working
+tree, and nothing tied the result it recorded to the commit it landed.
+
+## Evidence
+
+- `wave-197/batch-1/run-1`, `deps/llhttp/http.c`'s module pass,
+  `misc/lint-gate-fails-on-the-batchs-own-tests`: the wave's tip `a81dc3103`, which
+  `wave-197/batch-0` landed, fails `clippy --workspace --all-targets -- -D warnings` with the
+  export feature off and on: `clippy::too_many_lines` and `clippy::type_complexity` in
+  `tests/unit_pub/deps/llhttp/http.rs`, and the denied `multiple_unsafe_ops_per_block` in
+  `tests/equiv/deps/llhttp/http.rs`. The batch's notes record "`clippy --workspace
+  --all-targets` passes with warnings denied with the export feature off and on".
+- `legacy-wave-35/batch-0`, `misc/memory-options-tests-drop-non-drop`: on the review wave's
+  base, clippy printed three `drop_non_drop` warnings, which "kept `-D warnings` from
+  passing".
+- `legacy-wave-49/batch-0`, `conventions/undocumented-unsafe-blocks`: a landed block "also
+  fails the workspace lint `clippy::undocumented_unsafe_blocks`".
+
+## Destination
+
+The spec's tool: `end-gates`, the script beside the `testing-gates` skill, and the skill's
+paragraph that describes it.
+
+## Change
+
+- `end-gates` gains the stage `lint`, first among its default stages. Over the snapshot it
+  runs `cargo +<nightly> fmt --all --check`, then `<runner> plain clippy --workspace
+  --all-targets [--features <features>] -- -D warnings`, once with no feature and once for
+  each `--lint-features` (repeatable), such as a port's unswitched export features. Each run
+  is logged and summarised as the other stages' are (`lint-fmt`,
+  `lint-clippy[-<features>]`). `--nightly` now names the formatter's toolchain too, since the
+  workspace's `rustfmt.toml` sets unstable options (`toolchain`'s Formatting section).
+- `testing-gates`' Regressions section: `end-gates` runs the format check and the lints once
+  per export-feature set the batch checks, and a batch's own format and lint gates run the
+  same way, over the commit it lands, so that the result it records is that tree's.
+- `test_end_gates.py` gains `test_lint_checks_the_commit_once_per_feature_set`. A tiny
+  workspace formats and lints clean with no feature, and its feature `extra` adds a
+  `needless_return`. With an unformatted edit left uncommitted, `lint-fmt` and `lint-clippy`
+  pass and `lint-clippy-extra` fails. Once the edit is committed, `lint-fmt` fails. Without
+  the change, `--lint-features` is refused and `lint` would run as a variant.
+- `EVOLUTION.md` gains the change's entry, recurrence signal "a review finding of a landed
+  tree that fails the format or lint gate, run by `end-gates` or recorded as passing by its
+  batch".
+
+The change adds a check and weakens none.
+
+## Validation
+
+- `python3 -I test_end_gates.py -v` in the change's `skills/verification/testing/gates/`:
+  9 tests pass, the new one among them.
+- The failing case, rerun under the change from `wave-197/batch-1`'s worktree:
+  `end-gates . --logs crustify/tmp/logs-lint-base --stages lint --lint-features
+  ffi-export-deps-llhttp-http-c --rev a81dc3103 --label lintbase --link crustify/builds`
+  exits 1. `lint-fmt` passes in 3.6 s. `lint-clippy` and
+  `lint-clippy-ffi-export-deps-llhttp-http-c` exit 101 on the finding's three errors and no
+  other (`tests/unit_pub/deps/llhttp/http.rs:104` and `:106`,
+  `tests/equiv/deps/llhttp/http.rs:65`).
+- The same over the batch's fixed tree (`--working-tree`) exits 0: all three runs pass, in
+  3.4, 48.9 and 34.6 s at 24 jobs.
+
+## Review
+
+Pending.

@@ -1,0 +1,30 @@
+{
+  "paths": [
+    "src/libgit2/deps/llhttp/http.rs",
+    "tests/equiv/deps/llhttp/http.rs",
+    "tests/ub_safe/deps/llhttp/http.rs",
+    "tests/unit_pub/deps/llhttp/http.rs"
+  ],
+  "wave_gates": true,
+  "module_pass": true,
+  "wave": 197,
+  "batch": 1,
+  "link_unit": "libgit2",
+  "module": "deps/llhttp/http.c",
+  "foundational": false,
+  "base_branch": "refs/heads/crustify/waves/wave-197",
+  "backend": "claude",
+  "billing": "api",
+  "model_proxy": "openrouter",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "cc84106",
+    "wavefront": "bf21e16",
+    "ffimap": "9aa2ef1",
+    "ffibox": "9c22a73"
+  },
+  "session_id": "be51ad91-d9cf-4521-ab63-bacf2b4c4066"
+}
