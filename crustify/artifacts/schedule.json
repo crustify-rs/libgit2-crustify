@@ -134118,7 +134118,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 3,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           231
@@ -134174,7 +134174,27 @@
         }
       ],
       "packed_with": null,
-      "batches": []
+      "batches": [
+        {
+          "index": 0,
+          "link_unit": "libgit2",
+          "module": "src/util/utf8.c",
+          "foundational": false,
+          "kind": "port/unexport",
+          "status": "wip",
+          "items": [
+            {
+              "name": "git_utf8_char_length",
+              "defined_in": "src/util/utf8.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/utf8.rs"
+            }
+          ],
+          "commits": []
+        }
+      ]
     },
     {
       "index": 233,
