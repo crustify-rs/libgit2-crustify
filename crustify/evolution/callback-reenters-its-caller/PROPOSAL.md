@@ -1,6 +1,6 @@
 # A callback can re-enter the function that calls it, through the object it is handed
 
-Status: `open`: the change is crustify `6ad1ea5` on `libgit2-crustify/evolution/callback-reenters-its-caller`, made on
+Status: `open`: the change is crustify `f69abd3` on `libgit2-crustify/evolution/callback-reenters-its-caller`, made on
 2026-11-14 at the user's direction after the triage of open proposals, awaiting its review.
 
 Goal: Safety, its soundness measure.
@@ -56,7 +56,7 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| a function that hands a callback the object it is working on lends it; the analysis establishes which of the object's routines C allows from the callback, and the binding refuses the others there | `libgit2-crustify`, `callback-reenters-its-caller` | crustify `6ad1ea5` | a callback could re-enter or reset the function running it through the object it was handed, C undefined behaviour reachable from safe Rust | a `ub` finding of the `callback-state` pattern where a callback calls a routine of the object its caller lent it | watched |
+| a function that hands a callback the object it is working on lends it; the analysis establishes which of the object's routines C allows from the callback, and the binding refuses the others there | `libgit2-crustify`, `callback-reenters-its-caller` | crustify `f69abd3` | a callback could re-enter or reset the function running it through the object it was handed, C undefined behaviour reachable from safe Rust | a finding where a callback calls, on the object its caller lent it, a routine C does not allow there | watched |
 
 ## Validation
 
@@ -67,3 +67,13 @@ stop at the foreign call) and BSan alone, are its evidence that the refusal hold
 ## Review
 
 None yet.
+
+## Review
+
+`review-1` (Opus 5.5, `$0.92`), on `6ad1ea5`: **rejected**, one fix required, to the row: its
+recurrence signal named the `callback-state` pattern, which this case is not, so a recurrence
+would not match it. Fixed here. The rule itself held: evidence, goal, placement, no check
+weakened. Two of its unrequired notes are taken, by removal, as `f69abd3`: the examples read "such
+as", and "on the thread that runs the function", one implementation, is gone. Listed apart:
+the reason assumes the callback gets the general exclusive handle; `testing`'s UB-test list
+has no matching item, which is a protected path and a proposal of its own.
