@@ -1,6 +1,6 @@
 # A callback whose context is reached through an argument has no sound C form
 
-Status: `open`: the change is crustify `15845fd` on `libgit2-crustify/evolution/callback-context-in-an-argument`, made on
+Status: `open`: the change is crustify `4a9557a` on `libgit2-crustify/evolution/callback-context-in-an-argument`, made on
 2026-11-14 at the user's direction after the triage of open proposals, awaiting its review.
 
 Goal: Safety, its soundness measure.
@@ -34,7 +34,7 @@ The spec: `binding-symbols`, Function pointers, its three cases that shape the t
 
 ## Change
 
-Not made yet. `wave-194/batch-2/run-1`, the next batch that binds the table holding such
+`wave-194/batch-2/run-1`, the next batch that binds the table holding such
 callbacks, weighed the two candidates and took the first, which needs no new primitive:
 
 - the callable type's C half keeps the strong contract, sound with any argument whatever
@@ -51,15 +51,16 @@ callbacks, weighed the two candidates and took the first, which needs no new pri
   functions are reached only through the routine of the object that dispatches them (api.c's
   `CALLBACK_MAYBE`, `port` in wave 195), with that object.
 
-In `binding-symbols` § Function pointers, as a fourth case after "one without a context
-parameter carries no captured state":
+Made, in `binding-symbols` § Function pointers, as a fourth case after "one C compares with a
+known function":
 
-> - one whose context C reaches through another argument, such as the object it is
->   handed, has a C half only for functions sound with any such argument. A C function
->   that reads its context there is reached only through the object that holds it, by the
->   routine that dispatches it with that object, never as the callable type: a field or
->   table that holds such functions is set from C, or through an `unsafe` setter whose
->   contract carries the object's context, and read back as no callable.
+> - one whose context C reaches through another argument, such as the object it is handed,
+>   has a C half only for functions sound with any such argument. A C function that reads its
+>   context there is reached only through the object that holds it, by the routine that
+>   dispatches it with that object, bound or ported, which calls it through its raw binding,
+>   and never as the callable type, whose safe call could hand it another object. Such a
+>   function is stored only from C, or through an `unsafe` setter whose contract carries the
+>   object's context, and is read back as its address, no callable.
 
 ## Evidence (`wave-194/batch-2/run-1`)
 
@@ -78,7 +79,7 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| a function pointer whose context C reaches through another argument has a callable C half only for functions sound with any such argument; one that reads its context there is reached only through its object | `libgit2-crustify`, `callback-context-in-an-argument` | crustify `15845fd` | a table of callbacks that read their context from the object they are handed: a callable handle over it would let a safe call hand them another object's, or no, context | a `ub` or `contracts` finding on a callable type whose C function reads its context from an argument | watched |
+| a function pointer whose context C reaches through another argument has a callable C half only for functions sound with any such argument; one that reads its context there is reached only through its object | `libgit2-crustify`, `callback-context-in-an-argument` | crustify `4a9557a` | a table of callbacks that read their context from the object they are handed: a callable handle over it would let a safe call hand them another object's, or no, context | a `ub` or `contracts` finding on a callable type whose C function reads its context from an argument | watched |
 
 ## Validation
 
@@ -87,3 +88,12 @@ None run.
 ## Review
 
 None yet.
+
+## Review
+
+`review-1` (Opus 5.5, `$1.19`), on `15845fd`: **rejected**, one fix required: "never as the callable
+type" contradicted `porting-symbols` § 3, by which ported code calls a function pointer through
+its type alone, for the ported routine that dispatches such functions. Fixed as `4a9557a`: that
+routine, bound or ported, calls it through its raw binding. One unrequired rewording is taken
+at the same length, so that the restriction falls on the functions, not on every setter of
+the field. Evidence, goal, placement and row held; it weakens no check.
