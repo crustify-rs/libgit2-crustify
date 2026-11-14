@@ -91,3 +91,7 @@ Pending.
 
 `review-1` (session `cb79c1a3-2051-4435-8b13-e197a710a5d4`, Opus 5.5, `$1.78`, 5m50s), on `0bec1f0`: **rejected**, on two contradictions, both fixed by removing text: the exception's list left out the test harness, which `scheduling` has a `port/unexport` adapt, and `versioning` said no batch changes the C. Made as `180fd67`, on `2c21af3`: the list is gone, and so is `versioning`'s clause. Not required, and the gap most likely to be met: batches of one wave that each commit on the fork's `main` from one base, which task messages settle until a rule does.
 Its report is the longest `result` of `crustify/artifacts/evolution/later-stage-c-changes/review-1/stream.jsonl`.
+
+`review-2` (session `e4fe76a9-38ba-4ce6-a315-049b905d534f`, Opus 5.5, `$0.33`, 49s), on `180fd67`: **approved**. Each required fix of
+review-1 is resolved, the fix opened no contradiction and the row matches the change.
+Not required: without its list, the exception also reads over configured-out callers, which `porting-symbols` leaves alone.
