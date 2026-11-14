@@ -51,7 +51,10 @@ the assistant alone, as each batch's proposals land.
 | `ffibox-usage-docs` | ffibox documentation that led agents to hand-write what ffibox covers | `landed` | — | — |
 | `ffibox-vtables` | Function-pointer tables a library calls into, implemented by a Rust trait | `landed` | — | — |
 | `ffimap-api-namespaces-share-a-path` | `ffimap api` reads a type and a function of one path as one item | `open` | `wave-194/batch-4` | — |
+| `ffimap-driver-builds-under-a-workspace` | ffimap's driver does not build under a Cargo workspace, and its suite then skips half its tests | `open` | — | — |
+| `ffimap-scanner-records-the-enclosing-head` | ffimap records the enclosing repository's HEAD as its own version | `open` | — | — |
 | `ffimap-seams-into-raw` | The seam list names `from_raw` but not its inverse `into_raw` | `landed` | — | — |
+| `ffimap-sys-inventory-in-crate` | ffimap takes its `-sys` inventory from extern crates alone, so in-crate raw bindings have none | `open` | — | — |
 | `ffimap-wrapper-without-alias` | ffimap does not count a wrapper that keeps its C function's name, which carries no alias | `open` | `wave-169/batch-2` | — |
 | `fileref-prints-bytes` | libc's wrapper writes text, not the bytes C streams carry | `landed` | `wave-186/batch-4`, `wave-186/batch-6` | — |
 | `gate-findings-outside-the-workset` | A gate's true positive is the batch's finding, wherever it lies | `landed` | `wave-49/batch-1`, `wave-229/batch-1` | — |

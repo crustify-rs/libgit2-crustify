@@ -1,7 +1,7 @@
 # ffimap does not count a wrapper that keeps its C function's name
 
 Status: `open`: the change is ffimap `2a2aa1e` on `libgit2-crustify/evolution/ffimap-wrapper-without-alias`,
-made on 2026-11-14 at the user's word ("fix now"), awaiting its review.
+made on 2026-11-14 at the user's word ("fix now"), rejected by review-1; whether to finish it is put back to the user.
 
 Goal: Safety, the unsafe surface's measures: the share of C functions with a wrapper.
 
@@ -61,4 +61,21 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 ## Review
 
-None yet.
+`review-1` (Opus 5.5, `$2.65`), on ffimap `2a2aa1e`: **rejected**, four fixes required; it weakens no
+check. It ran the suite (145 pass; the changed test fails on the old driver, `4 != 5`) and
+probed 19 forms of the anchor against `api.py`'s `anchors`.
+
+1. The change moves nothing on any real crate today. The driver takes its `-sys` inventory from
+   extern crates alone, and libgit2-crustify's raw bindings are `crate::sys`, a module of the
+   crate: neither driver can count `binsearch` or `parse_names`. The row's "missed two landed
+   wrappers" overstates, and the signal that `--sys-crates` cannot name a module of the scanned
+   crate was unfiled: it is now `ffimap-sys-inventory-in-crate`.
+2. The row's `test` is wrong: the fixture checks `Wraps` on a free function only, and dropping
+   `Replaces` still passes.
+3. The driver does not read the form `ffimap api` reads for a block doc comment, whose ` * `
+   prefix rustdoc strips and the driver keeps.
+4. The driver now keys on Crustify's anchor grammar, a departure from ffimap's G8 that
+   `goals.md` records for `api` alone, and G10 asks the commit to say what moved on `examples/`.
+
+The user's "fix now" rested on the count reading low by two, which fix 1 shows it does not.
+The change is not landed, and whether to finish it is put back to the user.
