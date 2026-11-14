@@ -1,9 +1,8 @@
 # An anchor's alias that equals its item's name
 
 Status: `landed` as crustify `1b0d20d` and ffimap `c3203c7`, each on its `libgit2-crustify/devel`
-(record: crustify `0504357`), on 2026-11-14. ffimap is installed from its shared checkout, on
-`devel`, which another campaign runs too: the campaign's runs see the ffimap half once `devel`
-takes it, with the user's approval.
+(record: crustify `0504357`), on 2026-11-14. ffimap's `devel` took the ffimap half on 2026-11-14, with the user's approval (`c3203c7`, a
+fast-forward, not pushed), so the shared install runs it.
 
 Goal: Idiomatic Rust: an item keeps the name the Naming section gives it.
 
