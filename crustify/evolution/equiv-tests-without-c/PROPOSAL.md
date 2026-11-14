@@ -1,6 +1,6 @@
 # An equivalence test that calls no C is carried over at the switch
 
-Status: `open`: the change is crustify `11a7f05` on `libgit2-crustify/evolution/equiv-tests-without-c`, made on 2026-11-14,
+Status: `open`: the change is crustify `7da3744` on `libgit2-crustify/evolution/equiv-tests-without-c`, made on 2026-11-14,
 awaiting its review. Split from `module-switch-procedure` that day.
 
 Goal: Equivalence. Its measure counts the inputs and states on which the Rust is compared
@@ -74,7 +74,7 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| before a module's equivalence file is retired at its switch, each of its tests that calls no C is carried over to its unit tests; the candidates are those without the Miri gate's marker of a test that calls C | `libgit2-crustify`, `equiv-tests-without-c` | crustify `11a7f05` | retiring a module's equivalence tests by file lost those that run no C, and one switch carried two over by hand | a review or test-adequacy finding of behaviour only a retired equivalence test checked, or a switch that carries tests over by hand without the rule | watched |
+| before a module's equivalence tests are retired at its switch, in the Rust side's commit, each that needs no C is carried over to its unit tests, where what it compares with stays | `libgit2-crustify`, `equiv-tests-without-c` | crustify `7da3744` | retiring a module's equivalence tests by file lost those that run no C, and one switch carried two over by hand | a review or test-adequacy finding of behaviour only a retired equivalence test checked, or a switch that carries tests over by hand without the rule | watched |
 
 ## Validation
 
@@ -92,3 +92,15 @@ of 21 at the third, none of six at the fourth.
 ## Review
 
 None yet.
+
+## Review of the change
+
+`review-1` (Opus 5.5, `$0.99`), on `11a7f05`: **rejected**, two fixes, made as `7da3744`; it weakens no check.
+(1) The candidates were told by a reason string the skills never fix: this campaign's tests
+say `calls libgit2` 1370 times and `calls C` 236, and a test that reads a C global calls no C
+and still needs it. The sentence is removed and the rule reads "needs no C". (2) The rule
+left out the equivalence tests that sit inline in a module's file, and named no point of the
+switch: it now speaks of the module's equivalence tests, and the Rust side's part of the
+switch lists the retirement, the carry-over first. Listed apart: a carried test that holds
+unsafe code cannot go to `unit_pub`; such tests should not be written into equivalence files
+at all, which is `testing`'s, a protected path.
