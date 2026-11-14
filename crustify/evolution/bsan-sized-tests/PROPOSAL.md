@@ -1,7 +1,7 @@
 # A test BSan cannot finish is sized for it, not skipped
 
 Status: `open`: the change is crustify `2309e83` on
-`libgit2-crustify/evolution/bsan-sized-tests`, awaiting its review. It touches a protected path, so it
+`libgit2-crustify/evolution/bsan-sized-tests`, approved by its review. It touches a protected path, so it
 lands only with the user's approval.
 
 Goal: Safety, its soundness measure: BSan keeps checking a test's paths.
@@ -77,3 +77,6 @@ as the review listed. It did not rerun the validation, on the task's instruction
 from the record. Listed apart, not required: "every path it checks" could say "of the code
 it tests"; a full run's BSan timeout is not stated; who sizes a test is not said; the eleven
 existing ignores and four skips stay until the campaign sizes them.
+
+`review-2` (Opus 5.5, `$0.26`), on `2309e83`: **approved**: the fix is made as review-1 asked and
+nothing else changed.

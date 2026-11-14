@@ -1,7 +1,7 @@
 # A gate's true positive is the batch's finding, wherever it lies
 
 Status: `open`: the change is crustify `ecfa4fb` on
-`libgit2-crustify/evolution/gate-findings-outside-the-workset`, awaiting its review. It touches a protected path, so it
+`libgit2-crustify/evolution/gate-findings-outside-the-workset`, approved by its review. It touches a protected path, so it
 lands only with the user's approval.
 
 Goal: Safety, its soundness measure, and Verification: a defect a gate proves is filed among
@@ -66,3 +66,6 @@ evidence, placement, validation and row held, and it weakens no check. Listed ap
 required: the BSan sentence after it is now a special case; "filed as a UB report" does not
 fit a plain test's or a lint's failure; without `fix` a known defect is filed again at each
 end; a batch without `ub` is still told to patch.
+
+`review-2` (Opus 5.5, `$0.20`), on `ecfa4fb`: **approved**: the fix is made as review-1 asked and
+nothing else changed.

@@ -1,7 +1,7 @@
 # `end-gates` runs the format and lint gates over the committed tree
 
 Status: `open`: the change is crustify `dcefd39` on
-`libgit2-crustify/evolution/end-gates-lint-stage`, awaiting its review. It touches a protected path, so it
+`libgit2-crustify/evolution/end-gates-lint-stage`, approved by its review. It touches a protected path, so it
 lands only with the user's approval.
 
 Goal: Verification: a gate result a run reports is one its landed tree reproduces.
