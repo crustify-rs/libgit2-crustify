@@ -20,8 +20,9 @@ periodic full run bounds.
 ## Evidence
 
 - The settings of this campaign and of ffmpeg-crustify both depart from the Regressions
-  section (`crustify/CRUSTIFY.md`, the `sanitizers` answer; ffmpeg-crustify's the same, from
-  2026-11-14): workspace-wide sanitizer, Miri and BSan runs only before a ship point.
+  section, in their `sanitizers` answers. Here, from 2026-11-13, BSan runs over the workspace
+  only before a ship point. In ffmpeg-crustify, from 2026-11-14, so do the workspace-wide
+  ASan/UBSan and TSan runs and the Miri gate.
 - A timing run of the end gates on `crustify/devel` at `69c8efa79`, with a 30-minute cap per
   BSan binary (`crustify/tmp/assistant/gates-timing/summary.txt`): ASan/UBSan 160.6 s, TSan
   232.7 s, Miri 40.1 s to 366.6 s per binary, side by side. BSan finished two binaries
