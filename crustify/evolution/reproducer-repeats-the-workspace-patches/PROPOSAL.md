@@ -26,6 +26,12 @@ Not made. As proposed: a reproducer's `Cargo.toml` repeats the `[patch]` tables 
 workspace whose crate it depends on, and its `Cargo.lock` is copied from it, so that it
 builds the dependency graph the affected commit builds.
 
+From glibc-crustify's `reproducer-carries-the-workspace-patches`, which this proposal
+supersedes, the sentence for `reviewing` § 5: after "…depends on the affected crate through a
+relative `path`", add ", and repeats the affected workspace's `[patch]` tables, which apply
+only from the root of the workspace being built, so that it builds against the dependencies
+the affected commit builds with".
+
 ## Validation
 
 None yet.

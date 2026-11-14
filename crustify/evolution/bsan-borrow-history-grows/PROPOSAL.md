@@ -1,6 +1,8 @@
 # BorrowSanitizer's cost per access to one allocation grows with its borrow history
 
-Status: `open`.
+Status: `superseded` by `bsan-sized-tests` (crustify `c18c8a8`), on 2026-11-14: a test BSan cannot
+finish is sized for it, which answers the campaign's side. What remains asks nothing of
+Crustify: a report to BorrowSanitizer upstream, the user's to send, with `reproducer/` here.
 
 ## Signal
 

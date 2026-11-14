@@ -1,7 +1,6 @@
 # An `io::Write` over the libc wrapper's `write_all` must implement `write_all` itself
 
-Status: `open`. Filed by the assistant on 2026-11-13 for `wave-186/batch-6`, which noticed it
-after its two commits had landed.
+Status: `deferred`, on 2026-11-14: it waits for glibc-crustify's next advance, which owns the fix.
 
 ## Signal
 

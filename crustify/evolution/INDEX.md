@@ -9,7 +9,7 @@ the assistant alone, as each batch's proposals land.
 |---|---|---|---|---|
 | `bindgen-modes-after-bundling` | The bindgen skill's build modes, as the bundling migration met them | `landed` | — | — |
 | `binding-c-defects` | How a binding keeps a C defect out of its safe API | `landed` | — | — |
-| `bsan-borrow-history-grows` | BorrowSanitizer's cost per access to one allocation grows with its borrow history | `open` | `wave-225/batch-1` | — |
+| `bsan-borrow-history-grows` | BorrowSanitizer's cost per access to one allocation grows with its borrow history | `superseded` | `wave-225/batch-1` | `bsan-sized-tests` |
 | `bsan-regenerates-other-bindings` | BSan builds regenerate different bindings, so campaign mode fails under BSan | `landed` | — | — |
 | `bsan-sized-tests` | A test BSan cannot finish is sized for it, not skipped | `landed` | `wave-225/batch-1` | — |
 | `build-scripts-watch-missing-inputs` | Build scripts watch inputs that do not exist, so every cargo run rebuilds the crate | `open` | `wave-232/batch-1` | — |
@@ -35,7 +35,7 @@ the assistant alone, as each batch's proposals land.
 | `enum-integer-form-crate-private` | A closed enum's integer-form conversions are crate-private | `landed` | `wave-186/batch-0` | — |
 | `equiv-c-side-meets-the-c-preconditions` | The C side of an equivalence test meets the C's preconditions | `landed` | `wave-169/batch-5` | — |
 | `equiv-unreachable-macro-sites` | A macro whose expansions no binding reaches is checked against its body | `open` | `wave-200/batch-0`, `wave-200/batch-1`, `wave-225/batch-0`, `wave-225/batch-1` | — |
-| `evolution-protocol-research` | The evolution protocol against existing practice | `open` | — | — |
+| `evolution-protocol-research` | The evolution protocol against existing practice | `deferred` | — | — |
 | `evolution-record-and-lessons` | The record holds every signal; lessons are reviewed entries; protected paths | `landed` | — | its own row |
 | `export-adoptions-and-the-safe-boundary` | What an `ffi_import` region may expose to its module's `ffi_export` | `open` | `wave-186/batch-4` | — |
 | `export-link-check` | A port batch runs its module's tests with its exports linked in place of its C | `open` | `wave-186/batch-5`, `wave-186/batch-6`, `wave-186/batch-7`, `wave-194/batch-4`, `wave-194/batch-7`, `wave-197/batch-0` and more | — |
@@ -63,7 +63,7 @@ the assistant alone, as each batch's proposals land.
 | `integration-merge-helpers` | The additive conflicts of an integration merge, settled by scripts | `open` | — | — |
 | `internal-headers-in-the-bindings` | Where the bindings find an internal header's include path and definitions | `landed` | `wave-12/batch-2`, `wave-169/batch-1`, `wave-169/batch-2`, `wave-176/batch-1`, `wave-181/batch-0`, `wave-182/batch-0` and more | — |
 | `internal-symbols-unlinkable` | The variants must let the Rust link the internal symbols it binds | `landed` | `wave-169/batch-0`, `wave-176/batch-0` | — |
-| `io-write-over-write-all` | An `io::Write` over the libc wrapper's `write_all` must implement `write_all` itself | `open` | `wave-186/batch-6` | — |
+| `io-write-over-write-all` | An `io::Write` over the libc wrapper's `write_all` must implement `write_all` itself | `deferred` | `wave-186/batch-6` | — |
 | `later-stage-c-changes` | What a `port/unexport` changes in `c/` | `landed` | `wave-232/batch-0` | — |
 | `macro-incidental-double-evaluation` | A macro that evaluates an operand twice only as a hazard is a function | `open` | `wave-200/batch-0`, `wave-200/batch-1` | — |
 | `merge-left-conflict-markers` | A merge into a wave branch is checked before it is committed | `landed` | `wave-169/batch-2` | — |
@@ -71,7 +71,7 @@ the assistant alone, as each batch's proposals land.
 | `module-switch-procedure` | A module's switch: variant generations, the C's Rust library, and the C test gate | `open` | `wave-186/batch-7`, `wave-194/batch-7` | — |
 | `obligation-spans-what-the-holder-keeps` | An `unsafe` setter's obligation lasts as long as its object holds what it stored | `open` | `wave-194/batch-5`, `wave-194/batch-6` | — |
 | `package-gate-procedure` | The packaging gate's procedure, for a crate whose dependencies are unpublished | `open` | `wave-229/batch-0` | — |
-| `packaging-gate-procedure` | The packaging gate's command is worked out by hand | `open` | `wave-186/batch-0` | — |
+| `packaging-gate-procedure` | The packaging gate's command is worked out by hand | `superseded` | `wave-186/batch-0` | — |
 | `port-coverage-figures` | Coverage figures that mean something in a port | `open` | `wave-225/batch-0` | — |
 | `port-onto-an-existing-accessor` | A function that is one field's read or write is ported onto that field's accessor | `open` | `wave-194/batch-0`, `wave-194/batch-3`, `wave-194/batch-4` | — |
 | `rebase-with-unchanged-diff` | A rebased commit whose diff is unchanged is sent back to review | `landed` | — | — |

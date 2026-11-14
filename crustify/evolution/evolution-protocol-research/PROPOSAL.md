@@ -1,8 +1,7 @@
 # The evolution protocol against existing practice
 
-Status: `open`. Filed by the assistant on 2026-11-14: the user asked for a research run on
-existing self-improvement protocols, and its report is `RESEARCH.md` beside this file. No
-change is made; the user decides which recommendations become changes.
+Status: `deferred`, on 2026-11-14: a research report, `RESEARCH.md`, with changes to adopt and to
+trial, none drafted. It waits for the user to choose which, if any, become proposals.
 
 ## Signal
 

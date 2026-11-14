@@ -1,6 +1,7 @@
 # The packaging gate's command is worked out by hand
 
-Status: `open`.
+Status: `superseded` by `package-gate-procedure`, on 2026-11-14: the same signal, which that
+proposal states more widely. The command that passed here is copied into it.
 
 ## Signal
 

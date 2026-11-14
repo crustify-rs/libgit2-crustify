@@ -62,6 +62,20 @@ and builds it with no variant, in a scratch dir it removes.
 Not made: the gate is not a translator's to change. The section would name the script,
 and say that the patches and search paths stand in for what a dependent's host supplies.
 
+From `packaging-gate-procedure`, which this proposal supersedes: the command that packaged and
+verified the tree of `wave-186/batch-0`, after two forms that failed:
+
+```bash
+S=$(realpath -m crustify/builds/plain/../../../..)
+I() { echo "$S/$1-bindings/crustify/builds/plain/install"; }
+CRUSTIFY_BUILD_VARIANT= OPENSSL_ROOT_DIR=$(I openssl) \
+CMAKE_PREFIX_PATH="$(I openssl):$(I pcre2):$(I zlib)" \
+PKG_CONFIG_PATH="$(I pcre2)/lib/pkgconfig:$(I zlib)/lib/pkgconfig" \
+cargo package --allow-dirty \
+  --config 'patch.crates-io.glibc-bindings.path="/target/glibc-crustify"' \
+  --config 'patch.crates-io.ffibox.path="/crustify-rs/ffibox"'
+```
+
 ## Validation
 
 The run above, step by step: step 1 fails as quoted, steps 2 and 3 pass. A script is
