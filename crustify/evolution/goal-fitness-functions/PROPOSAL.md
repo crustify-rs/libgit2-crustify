@@ -1,11 +1,8 @@
 # Each goal names its fitness
 
-Status: `open`: the change is made on Crustify's `libgit2-crustify/evolution/goal-fitness-functions`
-(`bca1d35`, `ac41d76` with review-1's fixes, `754e2ce` with review-2's), at the user's
-direction on 2026-11-14; reviews 1 and 2 each rejected the commit they read, and review-3
-approved the third, `754e2ce`. It has not landed: `GOALS.md` takes it on the user's approval. `GOALS.md` changes
-only with the user's approval: the user asked for this change, and reads the result before
-it lands.
+Status: `landed`, as crustify `bca1d35`, `ac41d76` and `754e2ce` on `libgit2-crustify/devel`, on
+2026-11-14, with the user's approval, once review-3 approved it. Crustify's `devel` takes it
+with the rest of the working branch, on the user's approval.
 
 ## Signal
 
