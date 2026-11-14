@@ -1,10 +1,8 @@
 # The record holds every signal; lessons are reviewed entries; protected paths
 
-Status: `open`: the change is made on Crustify's
-`libgit2-crustify/evolution/evolution-record-and-lessons` (`74f960c`, then `d3eace2`, `479c29f` and
-`122f1f2` with the fixes of reviews 1 to 3), at the user's direction on 2026-11-14; review-4
-reads `122f1f2`. It touches protected paths, so it lands only with the user's
-approval.
+Status: `landed`, as crustify `74f960c`, `d3eace2`, `479c29f` and `122f1f2`, with the user's
+approval on 2026-11-14 after review-4 approved `122f1f2`; its row is in the record as
+crustify `8b52186`.
 
 ## Signal
 

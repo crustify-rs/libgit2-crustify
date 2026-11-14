@@ -35,7 +35,7 @@ the assistant alone, as each batch's proposals land.
 | `equiv-c-side-meets-the-c-preconditions` | The C side of an equivalence test meets the C's preconditions | `landed` | `wave-169/batch-5` | — |
 | `equiv-unreachable-macro-sites` | A macro whose expansions no binding reaches is checked against its body | `open` | `wave-200/batch-0`, `wave-200/batch-1`, `wave-225/batch-0`, `wave-225/batch-1` | — |
 | `evolution-protocol-research` | The evolution protocol against existing practice | `open` | — | — |
-| `evolution-record-and-lessons` | The record holds every signal; lessons are reviewed entries; protected paths | `open` | — | — |
+| `evolution-record-and-lessons` | The record holds every signal; lessons are reviewed entries; protected paths | `landed` | — | its own row |
 | `export-adoptions-and-the-safe-boundary` | What an `ffi_import` region may expose to its module's `ffi_export` | `open` | `wave-186/batch-4` | — |
 | `export-link-check` | A port batch runs its module's tests with its exports linked in place of its C | `open` | `wave-186/batch-5`, `wave-186/batch-6`, `wave-186/batch-7`, `wave-194/batch-4`, `wave-194/batch-7`, `wave-197/batch-0` and more | — |
 | `export-panic-without-a-failure-outcome` | An export whose failure needs an outcome a panic cannot give | `open` | `wave-186/batch-5` | — |
