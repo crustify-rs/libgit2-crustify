@@ -1,7 +1,7 @@
 # The spec's language; the goals rewritten under it
 
 Status: `open`: the change is made on Crustify's `libgit2-crustify/evolution/spec-language`
-(`73ca306`, by a subagent the assistant briefed, and `01830f8`, the assistant's), at the
+(`73ca306`, by a subagent the assistant briefed, `01830f8` and `437cc1d`, the assistant's), at the
 user's direction on 2026-11-14, and awaits its review. It rewrites `GOALS.md`, a protected
 path, so it lands only with the user's approval.
 
@@ -64,4 +64,24 @@ assistant's session of 2026-11-14); the review checks it again.
 
 ## Review
 
-None yet.
+`review-1` (session `2fcced49-5794-4bd5-8dcf-ed8f2ca10aa8`, Opus 5.5, `$1.38`, 6m58s), on `01830f8`: **rejected**, with seven
+small fixes; every fact of the old `GOALS.md` is in the new one by its own list of about 65,
+and the change weakens no check. Required, and made in `437cc1d`:
+
+1. the rewrite broke rule 3 in five series, and the section's own opening broke the
+   refinement: the rule now lists clauses and may leave short names inline;
+2. "escape" was used before it was defined;
+3. "regions" named both unsafe regions and coverage: the second is "region coverage";
+4. the record's row misstated rule 4 and left out the refinements;
+5. `authoring`'s description did not send a run that files a proposal to the rules;
+6. the scope fell short of "any text": it names every prose text now;
+7. readings the rewrite settled without the author: "the later tiers are" closed a list
+   the old text left open, and is "later tiers include" again; the other four are the
+   author's.
+
+It found all nine of the author's settled readings allowed by the old text, two of them
+(which counts fall; "a rule was loosened") no more likely than another reading on the text
+alone. Its optional wordings are taken where cheap: five sentences over the default length
+are split, a measure is not called a count, "escape" stays a noun.
+
+`review-2`: pending, on `437cc1d`.
