@@ -10,6 +10,7 @@ the assistant alone, as each batch's proposals land.
 | `bindgen-modes-after-bundling` | The bindgen skill's build modes, as the bundling migration met them | `landed` | — | — |
 | `binding-c-defects` | How a binding keeps a C defect out of its safe API | `landed` | — | — |
 | `bsan-borrow-history-grows` | BorrowSanitizer's cost per access to one allocation grows with its borrow history | `superseded` | `wave-225/batch-1` | `bsan-sized-tests` |
+| `bsan-cost-in-the-fixture` | `testing-gates` sizes a test BSan cannot finish by its inputs, without first finding what its cost grows with | `open` | `fixes/gates-green/batch-0` | — |
 | `bsan-regenerates-other-bindings` | BSan builds regenerate different bindings, so campaign mode fails under BSan | `landed` | — | — |
 | `bsan-sized-tests` | A test BSan cannot finish is sized for it, not skipped | `landed` | `wave-225/batch-1` | — |
 | `build-scripts-watch-missing-inputs` | Build scripts watch inputs that do not exist, so every cargo run rebuilds the crate | `open` | `wave-232/batch-1` | — |
@@ -18,7 +19,7 @@ the assistant alone, as each batch's proposals land.
 | `callback-context-in-an-argument` | A callback whose context is reached through an argument has no sound C form | `landed` | `wave-194/batch-1`, `wave-194/batch-2` | — |
 | `callback-reenters-its-caller` | A callback can re-enter the function that calls it, through the object it is handed | `landed` | `wave-194/batch-1` | — |
 | `carried-over-test-cases` | The test cases a `port/unexport` carries over, in the schedule | `landed` | — | — |
-| `compile-fail-doctest-codes-unchecked-on-stable` | A compile-fail doctest's error code is checked only on nightly | `open` | `wave-186/batch-2` | — |
+| `compile-fail-doctest-codes-unchecked-on-stable` | A compile-fail doctest's error code is checked only on nightly | `open` | `wave-186/batch-2`, `fixes/gates-green/batch-0` | — |
 | `config-branches-of-one-result` | A macro whose configured branches compute one result is ported once | `landed` | `wave-225/batch-0`, `wave-225/batch-1` | — |
 | `contracts-unrefusable-c-arguments` | Which of C's arguments a gateway refuses, and which it trusts | `landed` | `wave-177/batch-1` | — |
 | `coverage-c-scope-matches-no-path` | The coverage report's C scope names the paths the archive records | `landed` | `wave-169/batch-1`, `wave-169/batch-2` | — |

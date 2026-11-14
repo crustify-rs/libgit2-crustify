@@ -1,6 +1,6 @@
 # fixes/gates-green/run-1: the tests that keep the end gates and the full runs from passing
 
-- Repository: your worktree, `/target/libgit2-crustify/crustify/.worktrees/fixes/gates-green`, checked out on `crustify/fixes/gates-green` at `bd127a6d8`,
+- Repository: your worktree, `/target/libgit2-crustify/crustify/.worktrees/fixes/gates-green`, checked out on `crustify/fixes/gates-green` at `3ed770062`,
   the working branch's tip. Its `c/` is the fork at `230c9dbdb`, and `crustify/builds` links to
   the variants built from it (`builds.gen5`).
 - Run dir: `crustify/artifacts/fixes/gates-green/run-1/`, with `task.json`. Reviews dir:
