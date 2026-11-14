@@ -169,7 +169,9 @@ Status: provisional
 source-file property, the `CMakeLists.txt` is left unchanged. CMake ignores a property of a
 source no target lists. This extends the lesson "A libgit2 module's switch removes its file
 from `c/` and changes no CMake file": the switch still edits no CMake file. The dangling
-name stays until the last file the property names goes.
+names stay while the directory keeps a C source. The switch that removes its last one is
+outside this rule: the directory's library target is then left with no source to compile,
+and CMake fails to generate, so that switch edits CMake.
 
 **Evidence.** Item 13 of `module-switch-procedure`. `deps/llhttp/CMakeLists.txt` globs its
 sources, as the lesson has it, and also sets
@@ -178,9 +180,13 @@ sources, as the lesson has it, and also sets
 file was left unchanged, and gen3's five `configure`s and builds passed with it. At
 `deps/llhttp/http.c`'s switch (`modules/libgit2/deps/llhttp/http.c/integration/run-1`) the
 property names `api.c` and `http.c`, both gone, and `llhttp.c`; the file is unchanged, and
-gen5's five `configure`s and builds passed with it.
+gen5's five `configure`s and builds passed with it, each variant's `build.ninja` still
+compiling `llhttp.c` with the property's flags. A copy of the fork at `230c9dbdb` with
+`llhttp.c` removed and the file unchanged fails `cmake` (`CMake can not determine linker
+language for target: llhttp`), where the copy with it configures (`fixes/gates-green/batch-0`,
+`misc/lesson-cmake-property-takes-the-last-source`).
 
-Scope: the switches of `deps/llhttp/*.c`, and any later module whose `CMakeLists.txt` names its file in `set_source_files_properties`.
+Scope: the switches of `deps/llhttp/api.c` and `http.c`, and of any later module whose `CMakeLists.txt` names its file in `set_source_files_properties` and whose directory keeps a C source after it; not `deps/llhttp/llhttp.c`'s.
 
 ## http-exports-gated-through-a-local-remote
 
@@ -195,8 +201,10 @@ ASan+UBSan and TSan, and compares the two `results.txt` with `diff`. On the new 
 coverage variant, the run also records which of the module's exports the gate calls.
 `http-gate.sh` starts two remotes from `crustify/scripts/http-remote.py`, one open and one
 asking for Basic credentials. It runs a variant's `git2 clone` of two repositories through
-each framing, three clones that fail, and `libgit2_tests -sonline::push
--sonline::clone::credentials` with `GITTEST_REMOTE_URL` at the guarded remote.
+each framing libgit2 reads to its end (`Content-Length`, chunked, chunked with extensions),
+four clones that fail (close-delimited, malformed, a missing repository, the guarded remote
+without credentials), and `libgit2_tests -sonline::push -sonline::clone::credentials` with
+`GITTEST_REMOTE_URL` at the guarded remote, through each of those three framings.
 
 **Evidence.** Item 11 of `module-switch-procedure`, met at `deps/llhttp/api.c`'s switch
 (`modules/libgit2/deps/llhttp/api.c/integration/run-1`, the fork's `c54c0c180`). That no
@@ -213,14 +221,16 @@ export was not built, so whether the comparison catches a departure rests on the
 alone. At `deps/llhttp/http.c`'s switch
 (`modules/libgit2/deps/llhttp/http.c/integration/run-1`), `http-gate.sh` over gen4's C and
 gen5's Rust, on plain, ASan+UBSan and TSan, gives the same `results.txt`, and on gen5's
-coverage variant the run calls all four exports. The rule without libgit2's names is the
-proposal `switch-gate-beyond-c-tests`.
+coverage variant the run calls all four exports. Both switches' `http-gate.sh` (`0c1bd7a0d`,
+`46055d7c3`) run four failing clones, and http.c's recorded `http-gate-results.txt` lists
+them (`fixes/gates-green/batch-0`, `misc/lesson-http-gate-miscounts-failing-clones`). The rule
+without libgit2's names is the proposal `switch-gate-beyond-c-tests`.
 
 Scope: the switch of every module whose exports libgit2 calls only through its HTTP client: `deps/llhttp/*.c`, `src/libgit2/transports/httpparser.c` and `httpclient.c`.
 
 ## http-gate-tallies-connections
 
-Status: provisional
+Status: held
 
 **Rule.** `http-gate.sh`'s comparison includes the connections the client opened to each
 remote, by framing (`connections <side> <framing> count=<n>`), beside the requests each
