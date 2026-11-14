@@ -1,7 +1,9 @@
 # ffimap does not count a wrapper that keeps its C function's name
 
-Status: `open`: the change is ffimap `2a2aa1e` on `libgit2-crustify/evolution/ffimap-wrapper-without-alias`,
-made on 2026-11-14 at the user's word ("fix now"), rejected by review-1; whether to finish it is put back to the user.
+Status: `deferred`, on 2026-11-14, at the user's word: it waits for `ffimap-sys-inventory-in-crate`,
+without which the counters see none of this campaign's C functions. The change so far is
+ffimap `2a2aa1e`, kept on `libgit2-crustify/evolution/ffimap-wrapper-without-alias`, rejected
+by review-1 with three fixes still to make (2 to 4 below).
 
 Goal: Safety, the unsafe surface's measures: the share of C functions with a wrapper.
 
