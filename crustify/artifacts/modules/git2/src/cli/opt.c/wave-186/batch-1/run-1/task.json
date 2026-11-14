@@ -1,0 +1,41 @@
+{
+  "objective": "port",
+  "wave": 186,
+  "batch": 1,
+  "link_unit": "git2",
+  "module": "src/cli/opt.c",
+  "foundational": false,
+  "base_branch": "refs/heads/crustify/waves/wave-186",
+  "backend": "claude",
+  "billing": "api",
+  "model_proxy": "openrouter",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "cc84106",
+    "wavefront": "bf21e16",
+    "ffimap": "9aa2ef1",
+    "ffibox": "9c22a73"
+  },
+  "items": [
+    {
+      "name": "spec_is_option_type",
+      "defined_in": "src/cli/opt.c",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/git2/src/cli/opt.rs"
+    },
+    {
+      "name": "support_gnu_style",
+      "defined_in": "src/cli/opt.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/git2/src/cli/opt.rs"
+    }
+  ],
+  "session_id": "f7eaede9-d101-4c55-a22d-4d35a132bfca"
+}

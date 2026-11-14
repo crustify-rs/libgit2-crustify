@@ -1,0 +1,6 @@
+["-"] ParseFlags(0): argument Some("-"), failure None
+["-"] ParseFlags(2): argument Some("-"), failure None
+["-q", "-"] ParseFlags(0): argument Some("-"), failure None
+["-", "-q"] ParseFlags(2): argument Some("-"), failure None
+the bare `-` is an operand
+exit 0

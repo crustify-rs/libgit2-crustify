@@ -1,0 +1,4 @@
+C:      returned -1, errno 4, wrote "git"
+export: returned 0, errno 4, wrote "gitgit2: unknown option: --nope\n"
+the export departs from C
+exit 1

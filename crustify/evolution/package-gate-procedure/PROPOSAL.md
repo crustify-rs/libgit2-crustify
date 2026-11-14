@@ -33,6 +33,21 @@ direct form fails, and the steps that pass were found by trial.
    `CMAKE_PREFIX_PATH=<openssl install>:<pcre2 install>:<zlib install>`, the package
    builds alone: cmake builds `libgit2.a` and `libcrustify_git2.a` into `OUT_DIR`.
 
+`modules/git2/src/cli/opt.c/integration/run-1` (the switch of `src/cli/opt.c`, on
+`f68ea8660`), the next packaging gate, followed steps 2 and 3 and failed to compile the
+package's `lib`: two copies of ffibox, `0.1.1` by path for the crate and `0.1.0` by Git
+(`40621a2`) for `glibc-bindings`, whose manifest takes ffibox by Git. The workspace patches
+that Git source too (`[patch."https://github.com/crustify-rs/ffibox"]`), and step 2's
+`[patch.crates-io]` does not stand for it. `opt.rs`'s gateway, which compiles from this switch
+on, is the first code of the crate to pass a `glibc_bindings` `FileRef` through the crate's
+own ffibox traits (`FileRef::from_ptr`, E0599 four times), so `utf8.c`'s gate could not have
+met it. With the workspace's Git patch copied into the package's manifest as well, and the
+lockfile the first attempt wrote removed, so that the patch applies, the graph holds one
+ffibox and the package builds alone (696 files). Its `lib` tests: 829 pass and 58 fail, the
+58 needing `c/tests/resources`, as at `utf8.c`'s gate. So the script copies every `[patch]`
+table of the workspace, the Git sources' as well as crates.io's, and resolves with no
+lockfile.
+
 ## Destination
 
 The spec: `testing-gates`' Regressions section, with a script beside it, as `authoring`

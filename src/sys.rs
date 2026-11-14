@@ -103,6 +103,12 @@ pub mod git2 {
 
     /// The types `sys/git2/external.txt` lists, which the `libgit2` link unit's bindings own.
     pub use super::libgit2::{git_error, git_indexer_progress, git_repository, git_str};
+    /// The C stream, `FILE`, with the types its layout names, which libc's wrapper binds:
+    /// `sys/git2/external.txt` lists them, so that the CLI's functions that write to a stream
+    /// take the type that wrapper's `FileRef` borrows.
+    pub use glibc_bindings::libc::ffi::{
+        FILE, _IO_FILE, _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data, __off_t, __off64_t,
+    };
 
     #[cfg(all(not(crustify_regenerated), not(doctest)))]
     include!("../sys/git2/bindings.rs");

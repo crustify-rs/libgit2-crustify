@@ -1,0 +1,1815 @@
+[
+ {
+  "args": [],
+  "same": true,
+  "C": [
+   0,
+   "usage: git2 [--help] [-c <key=value>] [--config-env=<key=value>] [--no-pager]\n             [--version] <command> [<args>...]\n\nThese are the git2 commands available:\n\n   blame        Show the origin of each line of a file\n   cat-file     Display an object in the repository\n   clone        Clone a repository into a new directory\n   commit       Commit the current contents of the index\n   config       View or set configuration values \n   hash-object  Hash a raw object and product its object ID\n   help         Display help information\n   index-pack   Create an index for a packfile\n   init         Create a new git repository\n   version      Show application version information\n\nSee 'git2 help <command>' for more information on a specific command.\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "usage: git2 [--help] [-c <key=value>] [--config-env=<key=value>] [--no-pager]\n             [--version] <command> [<args>...]\n\nThese are the git2 commands available:\n\n   blame        Show the origin of each line of a file\n   cat-file     Display an object in the repository\n   clone        Clone a repository into a new directory\n   commit       Commit the current contents of the index\n   config       View or set configuration values \n   hash-object  Hash a raw object and product its object ID\n   help         Display help information\n   index-pack   Create an index for a packfile\n   init         Create a new git repository\n   version      Show application version information\n\nSee 'git2 help <command>' for more information on a specific command.\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "--help"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "usage: git2 [--help] [-c <key=value>] [--config-env=<key=value>] [--no-pager]\n             [--version] <command> [<args>...]\n\nThese are the git2 commands available:\n\n   blame        Show the origin of each line of a file\n   cat-file     Display an object in the repository\n   clone        Clone a repository into a new directory\n   commit       Commit the current contents of the index\n   config       View or set configuration values \n   hash-object  Hash a raw object and product its object ID\n   help         Display help information\n   index-pack   Create an index for a packfile\n   init         Create a new git repository\n   version      Show application version information\n\nSee 'git2 help <command>' for more information on a specific command.\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "usage: git2 [--help] [-c <key=value>] [--config-env=<key=value>] [--no-pager]\n             [--version] <command> [<args>...]\n\nThese are the git2 commands available:\n\n   blame        Show the origin of each line of a file\n   cat-file     Display an object in the repository\n   clone        Clone a repository into a new directory\n   commit       Commit the current contents of the index\n   config       View or set configuration values \n   hash-object  Hash a raw object and product its object ID\n   help         Display help information\n   index-pack   Create an index for a packfile\n   init         Create a new git repository\n   version      Show application version information\n\nSee 'git2 help <command>' for more information on a specific command.\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "--version"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "git2 version 1.9.0\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "git2 version 1.9.0\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "version"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "git2 version 1.9.0\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "git2 version 1.9.0\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "-"
+  ],
+  "same": false,
+  "C": [
+   129,
+   "",
+   "git2: unknown option: -\nusage: git2 [--help] [-c <key=value>] [--config-env=<key=value>] [--no-pager]\n             [--version] <command> [<args>...]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   1,
+   "",
+   "git2: '-' is not a git2 command. See 'git2 help'.\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "--nope"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: unknown option: --nope\nusage: git2 [--help] [-c <key=value>] [--config-env=<key=value>] [--no-pager]\n             [--version] <command> [<args>...]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: unknown option: --nope\nusage: git2 [--help] [-c <key=value>] [--config-env=<key=value>] [--no-pager]\n             [--version] <command> [<args>...]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "-x"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: unknown option: -x\nusage: git2 [--help] [-c <key=value>] [--config-env=<key=value>] [--no-pager]\n             [--version] <command> [<args>...]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: unknown option: -x\nusage: git2 [--help] [-c <key=value>] [--config-env=<key=value>] [--no-pager]\n             [--version] <command> [<args>...]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "nosuch"
+  ],
+  "same": true,
+  "C": [
+   1,
+   "",
+   "git2: 'nosuch' is not a git2 command. See 'git2 help'.\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   1,
+   "",
+   "git2: 'nosuch' is not a git2 command. See 'git2 help'.\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "help"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "usage: git2 [--help] [-c <key=value>] [--config-env=<key=value>] [--no-pager]\n             [--version] <command> [<args>...]\n\nThese are the git2 commands available:\n\n   blame        Show the origin of each line of a file\n   cat-file     Display an object in the repository\n   clone        Clone a repository into a new directory\n   commit       Commit the current contents of the index\n   config       View or set configuration values \n   hash-object  Hash a raw object and product its object ID\n   help         Display help information\n   index-pack   Create an index for a packfile\n   init         Create a new git repository\n   version      Show application version information\n\nSee 'git2 help <command>' for more information on a specific command.\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "usage: git2 [--help] [-c <key=value>] [--config-env=<key=value>] [--no-pager]\n             [--version] <command> [<args>...]\n\nThese are the git2 commands available:\n\n   blame        Show the origin of each line of a file\n   cat-file     Display an object in the repository\n   clone        Clone a repository into a new directory\n   commit       Commit the current contents of the index\n   config       View or set configuration values \n   hash-object  Hash a raw object and product its object ID\n   help         Display help information\n   index-pack   Create an index for a packfile\n   init         Create a new git repository\n   version      Show application version information\n\nSee 'git2 help <command>' for more information on a specific command.\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "help",
+   "init"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "    -q, --quiet\n        quiet mode; don't display informational messages\n    --bare\n        don't create a working directory\n    -b <name>, --initial-branch=<name>\n        initial branch name\n    --separate-git-dir=<git-dir>\n        path to separate git directory\n    --template=<template-dir>\n        path to git directory templates\n    <directory>\n        directory to create repository in\nusage: git2 init [-q] [--bare] [-b <name>] [--separate-git-dir=<git-dir>]\n                  [--template=<template-dir>] [--] [<directory>]\n\nCreate a new git repository.\n\nOptions:\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "    -q, --quiet\n        quiet mode; don't display informational messages\n    --bare\n        don't create a working directory\n    -b <name>, --initial-branch=<name>\n        initial branch name\n    --separate-git-dir=<git-dir>\n        path to separate git directory\n    --template=<template-dir>\n        path to git directory templates\n    <directory>\n        directory to create repository in\nusage: git2 init [-q] [--bare] [-b <name>] [--separate-git-dir=<git-dir>]\n                  [--template=<template-dir>] [--] [<directory>]\n\nCreate a new git repository.\n\nOptions:\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "init",
+   "--help"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "    -q, --quiet\n        quiet mode; don't display informational messages\n    --bare\n        don't create a working directory\n    -b <name>, --initial-branch=<name>\n        initial branch name\n    --separate-git-dir=<git-dir>\n        path to separate git directory\n    --template=<template-dir>\n        path to git directory templates\n    <directory>\n        directory to create repository in\nusage: git2 init [-q] [--bare] [-b <name>] [--separate-git-dir=<git-dir>]\n                  [--template=<template-dir>] [--] [<directory>]\n\nCreate a new git repository.\n\nOptions:\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "    -q, --quiet\n        quiet mode; don't display informational messages\n    --bare\n        don't create a working directory\n    -b <name>, --initial-branch=<name>\n        initial branch name\n    --separate-git-dir=<git-dir>\n        path to separate git directory\n    --template=<template-dir>\n        path to git directory templates\n    <directory>\n        directory to create repository in\nusage: git2 init [-q] [--bare] [-b <name>] [--separate-git-dir=<git-dir>]\n                  [--template=<template-dir>] [--] [<directory>]\n\nCreate a new git repository.\n\nOptions:\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "init",
+   "-q",
+   "d1"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "",
+   "",
+   [
+    ".git",
+    "d1",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "",
+   "",
+   [
+    ".git",
+    "d1",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "init",
+   "d2",
+   "-q"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "",
+   "",
+   [
+    ".git",
+    "d2",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "",
+   "",
+   [
+    ".git",
+    "d2",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "init",
+   "--",
+   "d3"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "Initialized empty Git repository in <d>/d3/.git/\n",
+   "",
+   [
+    ".git",
+    "d3",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "Initialized empty Git repository in <d>/d3/.git/\n",
+   "",
+   [
+    ".git",
+    "d3",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "init",
+   "--",
+   "d4",
+   "-q"
+  ],
+  "same": false,
+  "C": [
+   129,
+   "",
+   "git2: unknown option: d4\nusage: git2 init [-q] [--bare] [-b <name>] [--separate-git-dir=<git-dir>]\n                  [--template=<template-dir>] [--] [<directory>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: unknown option: -q\nusage: git2 init [-q] [--bare] [-b <name>] [--separate-git-dir=<git-dir>]\n                  [--template=<template-dir>] [--] [<directory>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "init",
+   "-"
+  ],
+  "same": false,
+  "C": [
+   0,
+   "    -q, --quiet\n        quiet mode; don't display informational messages\n    --bare\n        don't create a working directory\n    -b <name>, --initial-branch=<name>\n        initial branch name\n    --separate-git-dir=<git-dir>\n        path to separate git directory\n    --template=<template-dir>\n        path to git directory templates\n    <directory>\n        directory to create repository in\nusage: git2 init [-q] [--bare] [-b <name>] [--separate-git-dir=<git-dir>]\n                  [--template=<template-dir>] [--] [<directory>]\n\nCreate a new git repository.\n\nOptions:\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "Initialized empty Git repository in <d>/-/.git/\n",
+   "",
+   [
+    "-",
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "init",
+   "--bare",
+   "d5"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "Initialized empty Git repository in <d>/d5/\n",
+   "",
+   [
+    ".git",
+    "d5",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "Initialized empty Git repository in <d>/d5/\n",
+   "",
+   [
+    ".git",
+    "d5",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "init",
+   "d6",
+   "extra"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: unknown option: extra\nusage: git2 init [-q] [--bare] [-b <name>] [--separate-git-dir=<git-dir>]\n                  [--template=<template-dir>] [--] [<directory>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: unknown option: extra\nusage: git2 init [-q] [--bare] [-b <name>] [--separate-git-dir=<git-dir>]\n                  [--template=<template-dir>] [--] [<directory>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "--no-pager",
+   "init",
+   "d7"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "Initialized empty Git repository in <d>/d7/.git/\n",
+   "",
+   [
+    ".git",
+    "d7",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "Initialized empty Git repository in <d>/d7/.git/\n",
+   "",
+   [
+    ".git",
+    "d7",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "cat-file"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: one of '-t', '-s', '-e', '-p' or 'type' is required.\nusage: git2 cat-file (-t|-s|-e|-p|<type>) <object>\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: one of '-t', '-s', '-e', '-p' or 'type' is required.\nusage: git2 cat-file (-t|-s|-e|-p|<type>) <object>\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "cat-file",
+   "-t",
+   "HEAD"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "commit\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "commit\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "cat-file",
+   "-p",
+   "HEAD"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "tree 25c5d1e1ad777bee29fcffd1c1de4b0adbb2fb7f\nauthor a <a@b> 1794614603 +0000\ncommitter a <a@b> 1794614603 +0000\n\nc\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "tree 25c5d1e1ad777bee29fcffd1c1de4b0adbb2fb7f\nauthor a <a@b> 1794614603 +0000\ncommitter a <a@b> 1794614603 +0000\n\nc\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "cat-file",
+   "-s",
+   "HEAD"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "116\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "116\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "cat-file",
+   "commit",
+   "HEAD"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "tree 25c5d1e1ad777bee29fcffd1c1de4b0adbb2fb7f\nauthor a <a@b> 1794614603 +0000\ncommitter a <a@b> 1794614603 +0000\n\nc\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "tree 25c5d1e1ad777bee29fcffd1c1de4b0adbb2fb7f\nauthor a <a@b> 1794614603 +0000\ncommitter a <a@b> 1794614603 +0000\n\nc\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "cat-file",
+   "-t"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: argument 'object' is required.\nusage: git2 cat-file (-t|-s|-e|-p|<type>) <object>\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: argument 'object' is required.\nusage: git2 cat-file (-t|-s|-e|-p|<type>) <object>\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "cat-file",
+   "--nope",
+   "HEAD"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: unknown option: --nope\nusage: git2 cat-file (-t|-s|-e|-p|<type>) <object>\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: unknown option: --nope\nusage: git2 cat-file (-t|-s|-e|-p|<type>) <object>\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "cat-file",
+   "HEAD",
+   "-t"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "commit\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "commit\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "cat-file",
+   "-tp",
+   "HEAD"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: unknown option: HEAD\nusage: git2 cat-file (-t|-s|-e|-p|<type>) <object>\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: unknown option: HEAD\nusage: git2 cat-file (-t|-s|-e|-p|<type>) <object>\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "hash-object"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: either '--stdin' or 'file' is required.\nusage: git2 hash-object [-t <type>] [-w] [--literally] (--stdin|<file>...)\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: either '--stdin' or 'file' is required.\nusage: git2 hash-object [-t <type>] [-w] [--literally] (--stdin|<file>...)\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "hash-object",
+   "f1"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "5626abf0f72e58d7a153368ba57db4c673c0e171\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "5626abf0f72e58d7a153368ba57db4c673c0e171\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "hash-object",
+   "f1",
+   "f2"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "5626abf0f72e58d7a153368ba57db4c673c0e171\nf719efd430d52bcfc8566a43b2eb655688d38871\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "5626abf0f72e58d7a153368ba57db4c673c0e171\nf719efd430d52bcfc8566a43b2eb655688d38871\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "hash-object",
+   "-w",
+   "f1"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "5626abf0f72e58d7a153368ba57db4c673c0e171\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "5626abf0f72e58d7a153368ba57db4c673c0e171\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "hash-object",
+   "f1",
+   "-w",
+   "f2"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "5626abf0f72e58d7a153368ba57db4c673c0e171\nf719efd430d52bcfc8566a43b2eb655688d38871\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "5626abf0f72e58d7a153368ba57db4c673c0e171\nf719efd430d52bcfc8566a43b2eb655688d38871\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "hash-object",
+   "-t",
+   "blob",
+   "f1"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "5626abf0f72e58d7a153368ba57db4c673c0e171\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "5626abf0f72e58d7a153368ba57db4c673c0e171\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "hash-object",
+   "-tblob",
+   "f1"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "5626abf0f72e58d7a153368ba57db4c673c0e171\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "5626abf0f72e58d7a153368ba57db4c673c0e171\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "hash-object",
+   "-t"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: argument '-t' requires a value.\nusage: git2 hash-object [-t <type>] [-w] [--literally] (--stdin|<file>...)\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: argument '-t' requires a value.\nusage: git2 hash-object [-t <type>] [-w] [--literally] (--stdin|<file>...)\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "hash-object",
+   "--stdin"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "60fbcb4b554c0d1d885621e5a6e5cc1762ff3684\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "60fbcb4b554c0d1d885621e5a6e5cc1762ff3684\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "hash-object",
+   "-w",
+   "-c",
+   "core.x=1",
+   "f1",
+   "f2"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "5626abf0f72e58d7a153368ba57db4c673c0e171\nf719efd430d52bcfc8566a43b2eb655688d38871\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "5626abf0f72e58d7a153368ba57db4c673c0e171\nf719efd430d52bcfc8566a43b2eb655688d38871\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "hash-object",
+   "-"
+  ],
+  "same": false,
+  "C": [
+   0,
+   "    --stdin\n        read content from stdin\n    <file>...\n        the file (or files) to read and hash\n    -t <type>\n        the type of object to hash (default: \"blob\")\n    -w\n        write the object to the object database\n    --literally\n        do not validate the object contents\nusage: git2 hash-object [-t <type>] [-w] [--literally] (--stdin|<file>...)\n\nCompute the object ID for a given file and optionally write that file\nto the object database.\n\nOptions:\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   128,
+   "",
+   "git2: could not find '-' to stat: No such file or directory\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "hash-object",
+   "--",
+   "-w"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: unknown option: --\nusage: git2 hash-object [-t <type>] [-w] [--literally] (--stdin|<file>...)\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: unknown option: --\nusage: git2 hash-object [-t <type>] [-w] [--literally] (--stdin|<file>...)\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "hash-object",
+   "--literally",
+   "f1"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "5626abf0f72e58d7a153368ba57db4c673c0e171\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "5626abf0f72e58d7a153368ba57db4c673c0e171\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "config",
+   "user.name"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: one of '--get', '--add', '--replace-all' or '--list' is required.\nusage: git2 config [-z] [--system|--global|--local|--file=<filename>]\n                    (--get|--add|--replace-all|--list) [--show-origin]\n                    [--show-scope] [<name>] [<value>] [<regexp>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: one of '--get', '--add', '--replace-all' or '--list' is required.\nusage: git2 config [-z] [--system|--global|--local|--file=<filename>]\n                    (--get|--add|--replace-all|--list) [--show-origin]\n                    [--show-scope] [<name>] [<value>] [<regexp>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "config",
+   "--list"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "core.repositoryformatversion=0\ncore.filemode=true\ncore.bare=false\ncore.logallrefupdates=true\nuser.name=Cfg\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "core.repositoryformatversion=0\ncore.filemode=true\ncore.bare=false\ncore.logallrefupdates=true\nuser.name=Cfg\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "-c",
+   "user.name=X",
+   "config",
+   "user.name"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: one of '--get', '--add', '--replace-all' or '--list' is required.\nusage: git2 config [-z] [--system|--global|--local|--file=<filename>]\n                    (--get|--add|--replace-all|--list) [--show-origin]\n                    [--show-scope] [<name>] [<value>] [<regexp>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: one of '--get', '--add', '--replace-all' or '--list' is required.\nusage: git2 config [-z] [--system|--global|--local|--file=<filename>]\n                    (--get|--add|--replace-all|--list) [--show-origin]\n                    [--show-scope] [<name>] [<value>] [<regexp>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "config",
+   "-c",
+   "user.name=Y",
+   "user.name"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: one of '--get', '--add', '--replace-all' or '--list' is required.\nusage: git2 config [-z] [--system|--global|--local|--file=<filename>]\n                    (--get|--add|--replace-all|--list) [--show-origin]\n                    [--show-scope] [<name>] [<value>] [<regexp>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: one of '--get', '--add', '--replace-all' or '--list' is required.\nusage: git2 config [-z] [--system|--global|--local|--file=<filename>]\n                    (--get|--add|--replace-all|--list) [--show-origin]\n                    [--show-scope] [<name>] [<value>] [<regexp>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "-cuser.name=Z",
+   "config",
+   "user.name"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: one of '--get', '--add', '--replace-all' or '--list' is required.\nusage: git2 config [-z] [--system|--global|--local|--file=<filename>]\n                    (--get|--add|--replace-all|--list) [--show-origin]\n                    [--show-scope] [<name>] [<value>] [<regexp>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: one of '--get', '--add', '--replace-all' or '--list' is required.\nusage: git2 config [-z] [--system|--global|--local|--file=<filename>]\n                    (--get|--add|--replace-all|--list) [--show-origin]\n                    [--show-scope] [<name>] [<value>] [<regexp>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "--config-env=user.name=ENVV",
+   "config",
+   "user.name"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: one of '--get', '--add', '--replace-all' or '--list' is required.\nusage: git2 config [-z] [--system|--global|--local|--file=<filename>]\n                    (--get|--add|--replace-all|--list) [--show-origin]\n                    [--show-scope] [<name>] [<value>] [<regexp>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: one of '--get', '--add', '--replace-all' or '--list' is required.\nusage: git2 config [-z] [--system|--global|--local|--file=<filename>]\n                    (--get|--add|--replace-all|--list) [--show-origin]\n                    [--show-scope] [<name>] [<value>] [<regexp>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "config",
+   "--config-env",
+   "user.name=ENVV",
+   "user.name"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: one of '--get', '--add', '--replace-all' or '--list' is required.\nusage: git2 config [-z] [--system|--global|--local|--file=<filename>]\n                    (--get|--add|--replace-all|--list) [--show-origin]\n                    [--show-scope] [<name>] [<value>] [<regexp>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: one of '--get', '--add', '--replace-all' or '--list' is required.\nusage: git2 config [-z] [--system|--global|--local|--file=<filename>]\n                    (--get|--add|--replace-all|--list) [--show-origin]\n                    [--show-scope] [<name>] [<value>] [<regexp>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "--no-pager",
+   "config",
+   "user.name"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: one of '--get', '--add', '--replace-all' or '--list' is required.\nusage: git2 config [-z] [--system|--global|--local|--file=<filename>]\n                    (--get|--add|--replace-all|--list) [--show-origin]\n                    [--show-scope] [<name>] [<value>] [<regexp>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: one of '--get', '--add', '--replace-all' or '--list' is required.\nusage: git2 config [-z] [--system|--global|--local|--file=<filename>]\n                    (--get|--add|--replace-all|--list) [--show-origin]\n                    [--show-scope] [<name>] [<value>] [<regexp>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "config"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: one of '--get', '--add', '--replace-all' or '--list' is required.\nusage: git2 config [-z] [--system|--global|--local|--file=<filename>]\n                    (--get|--add|--replace-all|--list) [--show-origin]\n                    [--show-scope] [<name>] [<value>] [<regexp>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: one of '--get', '--add', '--replace-all' or '--list' is required.\nusage: git2 config [-z] [--system|--global|--local|--file=<filename>]\n                    (--get|--add|--replace-all|--list) [--show-origin]\n                    [--show-scope] [<name>] [<value>] [<regexp>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "config",
+   "--get"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: config --get requires an argument\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: config --get requires an argument\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "config",
+   "--nope"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: unknown option: --nope\nusage: git2 config [-z] [--system|--global|--local|--file=<filename>]\n                    (--get|--add|--replace-all|--list) [--show-origin]\n                    [--show-scope] [<name>] [<value>] [<regexp>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: unknown option: --nope\nusage: git2 config [-z] [--system|--global|--local|--file=<filename>]\n                    (--get|--add|--replace-all|--list) [--show-origin]\n                    [--show-scope] [<name>] [<value>] [<regexp>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "blame"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: argument 'file' is required.\nusage: git2 blame [-p] [--line-porcelain] [--] <file>\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: argument 'file' is required.\nusage: git2 blame [-p] [--line-porcelain] [--] <file>\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "blame",
+   "f1"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "^68801ca ( 2026-11-14 00:03:25 +0000 1) one\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "^68801ca ( 2026-11-14 00:03:25 +0000 1) one\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "blame",
+   "--nope",
+   "f1"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: unknown option: --nope\nusage: git2 blame [-p] [--line-porcelain] [--] <file>\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: unknown option: --nope\nusage: git2 blame [-p] [--line-porcelain] [--] <file>\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "commit",
+   "--help"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "    -m <message>\n        specify the commit message\n    -t <file>, --template=<file>\n        the original text for the commit message\n    --amend\n        allow commits that have no changes\n    --allow-empty\n        allow commits that have no changes\n    --allow-empty-message\n        allow commit message\n    -S [<keyid>], --gpg-sign[=<keyid>]\n        sign the commit\n    --no-gpg-sign\n        do not sign the commit\nusage: git2 commit [-m <message>] [-t <file>] [--amend] [--allow-empty]\n                    [--allow-empty-message] [-S [<keyid>]|--no-gpg-sign]\n\nCommit the current contents of the index.\n\nOptions:\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "    -m <message>\n        specify the commit message\n    -t <file>, --template=<file>\n        the original text for the commit message\n    --amend\n        allow commits that have no changes\n    --allow-empty\n        allow commits that have no changes\n    --allow-empty-message\n        allow commit message\n    -S [<keyid>], --gpg-sign[=<keyid>]\n        sign the commit\n    --no-gpg-sign\n        do not sign the commit\nusage: git2 commit [-m <message>] [-t <file>] [--amend] [--allow-empty]\n                    [--allow-empty-message] [-S [<keyid>]|--no-gpg-sign]\n\nCommit the current contents of the index.\n\nOptions:\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "commit",
+   "-m"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: argument '-m' requires a value.\nusage: git2 commit [-m <message>] [-t <file>] [--amend] [--allow-empty]\n                    [--allow-empty-message] [-S [<keyid>]|--no-gpg-sign]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: argument '-m' requires a value.\nusage: git2 commit [-m <message>] [-t <file>] [--amend] [--allow-empty]\n                    [--allow-empty-message] [-S [<keyid>]|--no-gpg-sign]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "clone"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: argument 'repository' is required.\nusage: git2 clone [-q] [-n] [--bare] [-b <name>] [--depth=<depth>] [--]\n                   <repository> [<directory>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: argument 'repository' is required.\nusage: git2 clone [-q] [-n] [--bare] [-b <name>] [--depth=<depth>] [--]\n                   <repository> [<directory>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "clone",
+   "--help"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "    <repository>\n        repository path\n    -q, --quiet\n        display the type of the object\n    -n, --no-checkout\n        don't checkout HEAD\n    --bare\n        don't create a working directory\n    -b <name>, --branch=<name>\n        branch to check out\n    --depth=<depth>\n        commit depth to check out \n    <directory>\n        directory to clone into\nusage: git2 clone [-q] [-n] [--bare] [-b <name>] [--depth=<depth>] [--]\n                   <repository> [<directory>]\n\nClone a repository into a new directory.\n\nOptions:\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "    <repository>\n        repository path\n    -q, --quiet\n        display the type of the object\n    -n, --no-checkout\n        don't checkout HEAD\n    --bare\n        don't create a working directory\n    -b <name>, --branch=<name>\n        branch to check out\n    --depth=<depth>\n        commit depth to check out \n    <directory>\n        directory to clone into\nusage: git2 clone [-q] [-n] [--bare] [-b <name>] [--depth=<depth>] [--]\n                   <repository> [<directory>]\n\nClone a repository into a new directory.\n\nOptions:\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "index-pack"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: either '--stdin' or 'pack-file' is required.\nusage: git2 index-pack [-v] [--] (--stdin|<pack-file>)\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: either '--stdin' or 'pack-file' is required.\nusage: git2 index-pack [-v] [--] (--stdin|<pack-file>)\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "index-pack",
+   "--help"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "    --stdin\n        read from stdin\n    <pack-file>\n        packfile path\n    -v, --verbose\n        display progress output\nusage: git2 index-pack [-v] [--] (--stdin|<pack-file>)\n\nIndexes a packfile and writes the index to disk.\n\nOptions:\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "    --stdin\n        read from stdin\n    <pack-file>\n        packfile path\n    -v, --verbose\n        display progress output\nusage: git2 index-pack [-v] [--] (--stdin|<pack-file>)\n\nIndexes a packfile and writes the index to disk.\n\nOptions:\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "cat-file",
+   "-h"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: unknown option: -h\nusage: git2 cat-file (-t|-s|-e|-p|<type>) <object>\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: unknown option: -h\nusage: git2 cat-file (-t|-s|-e|-p|<type>) <object>\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "hash-object",
+   "--help",
+   "--nope"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "    --stdin\n        read content from stdin\n    <file>...\n        the file (or files) to read and hash\n    -t <type>\n        the type of object to hash (default: \"blob\")\n    -w\n        write the object to the object database\n    --literally\n        do not validate the object contents\nusage: git2 hash-object [-t <type>] [-w] [--literally] (--stdin|<file>...)\n\nCompute the object ID for a given file and optionally write that file\nto the object database.\n\nOptions:\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "    --stdin\n        read content from stdin\n    <file>...\n        the file (or files) to read and hash\n    -t <type>\n        the type of object to hash (default: \"blob\")\n    -w\n        write the object to the object database\n    --literally\n        do not validate the object contents\nusage: git2 hash-object [-t <type>] [-w] [--literally] (--stdin|<file>...)\n\nCompute the object ID for a given file and optionally write that file\nto the object database.\n\nOptions:\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "-c"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "usage: git2 [--help] [-c <key=value>] [--config-env=<key=value>] [--no-pager]\n             [--version] <command> [<args>...]\n\nThese are the git2 commands available:\n\n   blame        Show the origin of each line of a file\n   cat-file     Display an object in the repository\n   clone        Clone a repository into a new directory\n   commit       Commit the current contents of the index\n   config       View or set configuration values \n   hash-object  Hash a raw object and product its object ID\n   help         Display help information\n   index-pack   Create an index for a packfile\n   init         Create a new git repository\n   version      Show application version information\n\nSee 'git2 help <command>' for more information on a specific command.\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "usage: git2 [--help] [-c <key=value>] [--config-env=<key=value>] [--no-pager]\n             [--version] <command> [<args>...]\n\nThese are the git2 commands available:\n\n   blame        Show the origin of each line of a file\n   cat-file     Display an object in the repository\n   clone        Clone a repository into a new directory\n   commit       Commit the current contents of the index\n   config       View or set configuration values \n   hash-object  Hash a raw object and product its object ID\n   help         Display help information\n   index-pack   Create an index for a packfile\n   init         Create a new git repository\n   version      Show application version information\n\nSee 'git2 help <command>' for more information on a specific command.\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "--config-env"
+  ],
+  "same": true,
+  "C": [
+   0,
+   "usage: git2 [--help] [-c <key=value>] [--config-env=<key=value>] [--no-pager]\n             [--version] <command> [<args>...]\n\nThese are the git2 commands available:\n\n   blame        Show the origin of each line of a file\n   cat-file     Display an object in the repository\n   clone        Clone a repository into a new directory\n   commit       Commit the current contents of the index\n   config       View or set configuration values \n   hash-object  Hash a raw object and product its object ID\n   help         Display help information\n   index-pack   Create an index for a packfile\n   init         Create a new git repository\n   version      Show application version information\n\nSee 'git2 help <command>' for more information on a specific command.\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   0,
+   "usage: git2 [--help] [-c <key=value>] [--config-env=<key=value>] [--no-pager]\n             [--version] <command> [<args>...]\n\nThese are the git2 commands available:\n\n   blame        Show the origin of each line of a file\n   cat-file     Display an object in the repository\n   clone        Clone a repository into a new directory\n   commit       Commit the current contents of the index\n   config       View or set configuration values \n   hash-object  Hash a raw object and product its object ID\n   help         Display help information\n   index-pack   Create an index for a packfile\n   init         Create a new git repository\n   version      Show application version information\n\nSee 'git2 help <command>' for more information on a specific command.\n",
+   "",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ },
+ {
+  "args": [
+   "help",
+   "--nope"
+  ],
+  "same": true,
+  "C": [
+   129,
+   "",
+   "git2: unknown option: --nope\nusage: git2 help [<command>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ],
+  "Rust": [
+   129,
+   "",
+   "git2: unknown option: --nope\nusage: git2 help [<command>]\n",
+   [
+    ".git",
+    "f1",
+    "f2"
+   ]
+  ]
+ }
+]

@@ -1,0 +1,89 @@
+{
+  "objective": "port",
+  "wave": 186,
+  "batch": 5,
+  "link_unit": "git2",
+  "module": "src/cli/opt.c",
+  "foundational": false,
+  "base_branch": "refs/heads/crustify/waves/wave-186",
+  "backend": "claude",
+  "billing": "api",
+  "model_proxy": "openrouter",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "cc84106",
+    "wavefront": "bf21e16",
+    "ffimap": "9aa2ef1",
+    "ffibox": "9c22a73"
+  },
+  "items": [
+    {
+      "name": "parse_arg",
+      "defined_in": "src/cli/opt.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/git2/src/cli/opt.rs"
+    },
+    {
+      "name": "parse_long",
+      "defined_in": "src/cli/opt.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/git2/src/cli/opt.rs"
+    },
+    {
+      "name": "parse_short",
+      "defined_in": "src/cli/opt.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/git2/src/cli/opt.rs"
+    },
+    {
+      "name": "spec_for_sort",
+      "defined_in": "src/cli/opt.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/git2/src/cli/opt.rs"
+    },
+    {
+      "name": "sort_gnu_style",
+      "defined_in": "src/cli/opt.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/git2/src/cli/opt.rs"
+    },
+    {
+      "name": "cli_opt_parser_next",
+      "defined_in": "src/cli/opt.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/git2/src/cli/opt.rs"
+    },
+    {
+      "name": "cli_opt_foreach",
+      "defined_in": "src/cli/opt.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/git2/src/cli/opt.rs"
+    },
+    {
+      "name": "cli_opt_parse",
+      "defined_in": "src/cli/opt.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/git2/src/cli/opt.rs"
+    }
+  ],
+  "session_id": "5b0a96e2-fb55-4589-ad6e-02f70ed8dfde"
+}

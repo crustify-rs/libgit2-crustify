@@ -1,0 +1,173 @@
+{
+ "after": {
+  "crate": "libgit2_crustify",
+  "crate_version": "0.1.0",
+  "deps": [
+   "ffibox"
+  ],
+  "format_version": 61,
+  "plumbing": [
+   "ffibox"
+  ]
+ },
+ "anchor_moves": {},
+ "api": 2,
+ "before": {
+  "crate": "libgit2_crustify",
+  "crate_version": "0.1.0",
+  "deps": [
+   "ffibox"
+  ],
+  "format_version": 61,
+  "plumbing": [
+   "ffibox"
+  ]
+ },
+ "items": {
+  "enm::cli_opt_flag_t": {
+   "status": "kept"
+  },
+  "enm::cli_opt_status_t": {
+   "status": "kept"
+  },
+  "enm::cli_opt_type_t": {
+   "status": "kept"
+  },
+  "enm::cli_opt_usage_t": {
+   "status": "kept"
+  },
+  "fn::cli_opt_foreach": {
+   "status": "kept"
+  },
+  "fn::cli_opt_parse": {
+   "status": "kept"
+  },
+  "fn::cli_opt_parser_init": {
+   "status": "kept"
+  },
+  "fn::cli_opt_parser_next": {
+   "status": "kept"
+  },
+  "fn::cli_opt_status_fprint": {
+   "status": "kept"
+  },
+  "fn::support_gnu_style": {
+   "status": "kept"
+  },
+  "fnp::cli_opt_foreach.callback": {
+   "status": "kept"
+  },
+  "mac::spec_is_option_type": {
+   "status": "kept"
+  },
+  "st::cli_opt": {
+   "status": "kept"
+  },
+  "st::cli_opt_parser": {
+   "status": "kept"
+  },
+  "st::cli_opt_spec": {
+   "status": "kept"
+  }
+ },
+ "missing": [
+  "fn::consume_choices",
+  "fn::parse_arg",
+  "fn::parse_long",
+  "fn::parse_short",
+  "fn::sort_gnu_style",
+  "fn::spec_for_arg",
+  "fn::spec_for_long",
+  "fn::spec_for_short",
+  "fn::spec_for_sort",
+  "fn::spec_included",
+  "fn::spec_is_choice",
+  "fn::spec_name_fprint",
+  "fn::validate_required"
+ ],
+ "rekeyed": 0,
+ "retargeted": 0,
+ "totals": {
+  "changed": 0,
+  "extended": 0,
+  "kept": 15,
+  "new": 0,
+  "removed": 0
+ },
+ "unattributed": {
+  "modules": {
+   "libgit2_crustify::git2::src::cli::opt": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::deps::reftable::basics": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::checkout": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::commit": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::config": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::diff": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::filter": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::index": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::libgit2": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::odb": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::repository": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::settings": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::signature": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::strarray": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::trace": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::tree": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::worktree": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::util::errors": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::util::utf8": {
+    "status": "kept"
+   },
+   "libgit2_crustify::sys::git2": {
+    "status": "kept"
+   },
+   "libgit2_crustify::sys::libgit2": {
+    "status": "kept"
+   }
+  },
+  "totals": {
+   "changed": 0,
+   "extended": 0,
+   "kept": 21,
+   "new": 0,
+   "removed": 0
+  }
+ },
+ "unresolved": 0,
+ "view": "contract"
+}

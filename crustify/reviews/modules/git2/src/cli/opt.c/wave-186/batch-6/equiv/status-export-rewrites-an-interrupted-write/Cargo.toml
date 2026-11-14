@@ -1,0 +1,20 @@
+[package]
+name = "status-export-rewrites-an-interrupted-write"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+libgit2 = { package = "libgit2-crustify", path = "../../../../../../../../../../..", features = ["ffi-export-src-cli-opt-c"] }
+
+[build-dependencies]
+cc = "1"
+
+# The safe crate's own patches, so that the graph holds its one ffibox and its libc wrapper.
+[patch."https://github.com/crustify-rs/glibc-crustify"]
+glibc-bindings = { path = "/target/glibc-crustify" }
+
+[patch."https://github.com/crustify-rs/ffibox"]
+ffibox = { path = "/crustify-rs/ffibox" }

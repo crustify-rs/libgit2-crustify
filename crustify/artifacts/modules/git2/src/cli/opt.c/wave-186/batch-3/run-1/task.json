@@ -1,0 +1,26 @@
+{
+  "commits": [
+    "8a149ac08ad0cbd3caf187bc785182d3fa0b8518",
+    "fe6b85bfa029d37fe1b6e149b523f950bd9869d1"
+  ],
+  "wave": 186,
+  "batch": 3,
+  "link_unit": "git2",
+  "module": "src/cli/opt.c",
+  "foundational": false,
+  "base_branch": "refs/heads/crustify/waves/wave-186",
+  "backend": "claude",
+  "billing": "api",
+  "model_proxy": "openrouter",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "cc84106",
+    "wavefront": "bf21e16",
+    "ffimap": "9aa2ef1",
+    "ffibox": "9c22a73"
+  },
+  "session_id": "646eeeb0-686c-4e99-949f-b7b2ed0d5d6a"
+}

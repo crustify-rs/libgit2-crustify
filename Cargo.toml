@@ -54,6 +54,7 @@ system = []
 # `ffi_export` gateway, the bare-named exports through which the remaining C calls it. Each
 # stays off until its module switches, so that the exports never collide with the C they
 # replace, and the switch deletes it (crustify's conventions, Export features).
+# `src/util/utf8.c` switched first, and `src/cli/opt.c`, the CLI's first, next.
 ffi-export-deps-llhttp-api-c = []
 
 [dependencies]
