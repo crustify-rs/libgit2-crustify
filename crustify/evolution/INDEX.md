@@ -53,6 +53,7 @@ the assistant alone, as each batch's proposals land.
 | `ffimap-seams-into-raw` | The seam list names `from_raw` but not its inverse `into_raw` | `landed` | — | — |
 | `fileref-prints-bytes` | libc's wrapper writes text, not the bytes C streams carry | `landed` | `wave-186/batch-4`, `wave-186/batch-6` | — |
 | `gate-findings-outside-the-workset` | A gate's true positive is the batch's finding, wherever it lies | `open` | `wave-49/batch-1`, `wave-229/batch-1` | — |
+| `gates-slow-list` | End gates run every stage less a slow list; full runs periodically | `open` | — | — |
 | `gateway-feature-across-a-multiline-attribute` | build.rs reads a gateway as switched when a multi-line attribute follows its `cfg` | `open` | `wave-194/batch-4`, `wave-197/batch-0`, `wave-197/batch-1` | — |
 | `goal-fitness-functions` | Each goal names its fitness | `landed` | `wave-186/batch-1`, `wave-186/batch-3`, `wave-194/batch-5`, `wave-197/batch-0`, `wave-232/batch-1` | — |
 | `header-macros-after-their-expansions` | A header macro that implements logic is scheduled after the symbols it expands to | `landed` | `wave-169/batch-1`, `wave-169/batch-2` | — |
