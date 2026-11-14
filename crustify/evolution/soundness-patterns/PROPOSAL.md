@@ -1,8 +1,7 @@
 # A soundness skill: the UB patterns the campaigns met, grown from their findings
 
-Status: `open`: the change is crustify `62bd8e6` on
-`libgit2-crustify/evolution/soundness-patterns`, approved by review-2. It adds one sentence to
-`skills/verification/reviewing`, a protected path, so it lands only with the user's approval.
+Status: `landed` as crustify `62bd8e6` (record `e8e55af`) on `libgit2-crustify/devel`, with the user's
+approval on 2026-11-14, which its protected path needs.
 
 Goal: Safety, its soundness measure: the defects a reproducer proves, by kind. The change
 names the kinds, and its measure is the findings of known patterns per module.
