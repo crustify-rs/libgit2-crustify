@@ -74,7 +74,7 @@ the assistant alone, as each batch's proposals land.
 | `package-gate-procedure` | The packaging gate's procedure, for a crate whose dependencies are unpublished | `open` | `wave-229/batch-0` | — |
 | `packaging-gate-procedure` | The packaging gate's command is worked out by hand | `superseded` | `wave-186/batch-0` | — |
 | `port-coverage-figures` | Coverage figures that mean something in a port | `open` | `wave-225/batch-0` | — |
-| `port-onto-an-existing-accessor` | A function that is one field's read or write is ported onto that field's accessor | `open` | `wave-194/batch-0`, `wave-194/batch-3`, `wave-194/batch-4` | — |
+| `port-onto-an-existing-accessor` | A function that is one field's read or write is ported onto that field's accessor | `landed` | `wave-194/batch-0`, `wave-194/batch-3`, `wave-194/batch-4` | — |
 | `rebase-with-unchanged-diff` | A rebased commit whose diff is unchanged is sent back to review | `landed` | — | — |
 | `reftable-error-wrapped-ahead-of-basics` | Wrap `enum reftable_error` ahead of its first consumer, `deps/reftable/basics.c` | `landed` | `wave-169/batch-2`, `wave-169/batch-4` | — |
 | `reproducer-repeats-the-workspace-patches` | A reproducer package repeats the affected workspace's `[patch]` tables | `open` | `wave-4/batch-1`, `wave-186/batch-6` | — |

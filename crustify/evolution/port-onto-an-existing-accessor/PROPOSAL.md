@@ -1,7 +1,7 @@
 # A function that is one field's read or write is ported onto that field's accessor
 
-Status: `open`: the change is crustify `50eb634` on `libgit2-crustify/evolution/port-onto-an-existing-accessor`, made on
-2026-11-14 after the triage of open proposals, awaiting its review.
+Status: `landed` as crustify `50eb634` (record `235aeac`) on `libgit2-crustify/devel`, on 2026-11-14, once its
+review approved it.
 
 Goal: Consistency: the one pattern a kind of item takes; and Idiomatic Rust.
 
@@ -46,22 +46,13 @@ already returns for it, and say that a third or later anchor on one item is expe
 
 ## Destination
 
-The spec: `porting-symbols` § Functions (the translator's to evolve), and the
-conventions' Anchors § Several stand-ins, which should name the case.
+The spec: `porting-symbols` § Functions.
 
 ## Change
 
-Made. In `porting-symbols` § Functions,
-after the first paragraph:
-
-> A function whose body only reads or writes one member, or returns a value an existing
-> item of the safe API already gives, is ported as that item: the accessor or method
-> carries the function's `Replaces` anchor and alias beside its own, wherever it is
-> homed, and the port writes no second API. Its export, where remaining C calls it, is
-> written in its own module's gateway, over that item.
-
-And in the conventions' § 3.2, beside the symbol alias: "and the existing accessor or
-method a ported function is, as `porting-symbols`' Functions section describes".
+As landed, the paragraph the Review section below quotes: the rule holds for a function no
+wrapper gives an API yet, and for an item of its own module. The clause first added to
+`conventions` § 3.2 was removed by review.
 
 ## Record
 
@@ -75,10 +66,6 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 None run: the rule is the one this batch followed; a rerun under it would produce the
 same port.
-
-## Review
-
-None yet.
 
 ## Review
 
@@ -101,3 +88,5 @@ the accessor is another module's stays a judgement of its batch, until it recurs
 > that item, so that the port writes no second API: the accessor or method carries the
 > function's `Replaces` anchor and alias beside its own. Its export, where remaining C calls
 > it, is written in the module's gateway, over that item.
+
+`review-2` (Opus 5.5, `$0.24`), on `50eb634`: **approved**.
