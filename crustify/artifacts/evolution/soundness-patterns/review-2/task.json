@@ -14,6 +14,6 @@
  },
  "component": "crustify",
  "branch": "libgit2-crustify/evolution/soundness-patterns",
- "commit": "6752f5c",
+ "commit": "3571a9e",
  "proposal": "crustify/evolution/soundness-patterns"
 }

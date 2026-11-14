@@ -1,6 +1,6 @@
 # A soundness skill: the UB patterns the campaigns met, grown from their findings
 
-Status: `open`: the change is crustify `6752f5c` on
+Status: `open`: the change is crustify `3571a9e` on
 `libgit2-crustify/evolution/soundness-patterns`, in its second review. It adds one sentence to
 `skills/verification/reviewing`, a protected path, so it lands only with the user's approval.
 
@@ -55,7 +55,7 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| a `soundness` skill lists the patterns by which safe Rust over C reached undefined behaviour, each from a proven finding, and a `ub` or `contracts` finding names its pattern or `new` | `libgit2-crustify`, `soundness-patterns` | crustify `6752f5c` | the user's direction; 115 soundness findings of three campaigns fell into groups that recurred across modules and campaigns, which no skill listed | the modules integrated since it landed, taken together, showing no fewer findings of known patterns per module than the modules before it | watched |
+| a `soundness` skill lists the patterns by which safe Rust over C reached undefined behaviour, each from a proven finding, and a `ub` or `contracts` finding names its pattern or `new` | `libgit2-crustify`, `soundness-patterns` | crustify `3571a9e` | the user's direction; 115 soundness findings of three campaigns fell into groups that recurred across modules and campaigns, which no skill listed | the modules integrated since it landed, taken together, showing no fewer findings of known patterns per module than the modules before it | watched |
 
 ## Validation
 
@@ -67,7 +67,7 @@ which this does not repeat.
 
 ## Review
 
-`review-1` (Opus 5.5, `$2.25`), on `9ee085d`: **rejected**, five fixes required, all made as `6752f5c`,
+`review-1` (Opus 5.5, `$2.25`), on `9ee085d`: **rejected**, five fixes required, all made as `3571a9e`,
 which is also rebased onto the working branch's tip. It found a finding for each of the
 fifteen patterns, no target's name, and the skill written as `authoring` describes. The fixes:
 three cells contradicted another skill and were cut or narrowed (`callback-state`'s contract
