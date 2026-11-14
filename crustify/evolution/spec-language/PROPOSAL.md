@@ -109,3 +109,11 @@ nothing weakened a check. Its report is the longest `result` of
 `crustify/artifacts/evolution/spec-language/review-3/stream.jsonl`. The fixes are not made:
 the user replaced the numbered rules with the reference to a public guide, as `f20edc9`, and
 the rules the fixes were on are gone.
+
+`review-4` (session `b2fd3b94-7460-43fb-a815-23297e99e159`, Opus 5.5, `$0.85`, 3m05s), on `f20edc9`: **approved**, with
+no fix required. `GOALS.md` keeps every fact of `5933a5d`, the two restored sentences match it
+word for word, the provider build is clean and nothing weakens a check. Listed apart, not
+required: the guide asks for unnumbered headings and a serial comma, which Crustify's texts
+do not follow, the guide itself putting a project's own usage first; and the texts no review
+reads are not checked for kept facts. `GOALS.md` is protected: the change waits for the
+user's approval.
