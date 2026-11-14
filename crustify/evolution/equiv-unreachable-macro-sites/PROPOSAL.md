@@ -80,3 +80,6 @@ bindings reach runs any expansion, directly or through what it calls. `unit_pub`
 where tests of private items go, and is "unit tests". "A macro" covered constant macros, and
 is "a macro that implements logic". The rule now carries its reason. With the first fix it
 weakens no check: it puts the comparison off to the port of the module that holds the sites.
+
+`review-2` (Opus 5.5, `$0.41`), on `e99130a`: **approved**; it weakens no check. It edits `testing`, a
+protected path, and waits for the user's approval.
