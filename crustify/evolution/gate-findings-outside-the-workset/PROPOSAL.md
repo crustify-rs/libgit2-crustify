@@ -1,7 +1,8 @@
 # A gate's true positive is the batch's finding, wherever it lies
 
-Status: `open`: made as crustify `1423c7f` on `libgit2-crustify/evolution/gate-findings-outside-the-workset`,
-awaiting its review.
+Status: `open`: the change is crustify `9f42026` on
+`libgit2-crustify/evolution/gate-findings-outside-the-workset`, awaiting its review. It touches a protected path, so it
+lands only with the user's approval.
 
 ## Signal
 
@@ -36,6 +37,16 @@ crustify `1423c7f`: the section's sentence becomes "Each true positive a gate fi
 finding of the batch, filed as a UB report and, under `fix`, patched, whether or not the
 workset holds the code it reaches: the gate is the batch's, and a report it leaves to no one
 is lost."; and its `EVOLUTION.md` entry.
+
+## Record
+
+The row for `EVOLUTION.md`, copied in when the change lands. The change was made as crustify
+`1423c7f`, which also edited `EVOLUTION.md`; on 2026-11-14 it was rebased onto the working
+branch as `9f42026`, without that edit, since a change's row is drafted in its proposal.
+
+| change | from | landed as | signal answered | recurrence signal | status |
+|---|---|---|---|---|---|
+| a gate's true positive is the batch's finding, patched under `fix`, wherever it lies | `libgit2-crustify`, `gate-findings-outside-the-workset` | crustify `9f42026` | the reviewing skill filed a gate's true positive only without `fix`, and its workset rule left one outside the workset to no one | a review whose gate found a true positive it neither filed nor patched, or left to a later batch, as outside its workset | watched |
 
 ## Validation
 

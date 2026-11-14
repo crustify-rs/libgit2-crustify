@@ -1,7 +1,8 @@
 # A test BSan cannot finish is sized for it, not skipped
 
-Status: `open`, on crustify's `libgit2-crustify/evolution/bsan-sized-tests` at `6336c30`,
-awaiting review.
+Status: `open`: the change is crustify `23c0f41` on
+`libgit2-crustify/evolution/bsan-sized-tests`, awaiting its review. It touches a protected path, so it
+lands only with the user's approval.
 
 ## Signal
 
@@ -38,15 +39,25 @@ The spec: `testing-gates`' Regressions section, after its BSan runs.
 
 ## Change
 
-> A test that BSan cannot finish within that `timeout` holds its whole binary past it, so the
-> gate cannot pass. Such a test is sized for BSan rather than skipped: in the configuration
-> BSan's build sets, it runs fewer inputs, chosen to keep reaching every path it checks, while
-> every other build runs it whole. A skip by exact name is kept for a test that no smaller
-> input lets finish, and names the module whose batch is to size it.
+> The slow list keeps a slow test out of the ends, not out of a full run, which a test BSan
+> cannot finish within that `timeout` fails every time. Such a test is sized for BSan: in the
+> configuration BSan's build sets, it runs fewer inputs, chosen to keep reaching every path
+> it checks, while every other build runs it whole. One that no smaller input lets finish is
+> ignored under BSan alone, with its reason beside it.
 
-The record's entry is in the change. It does not weaken a check: a test sized so runs under
-BSan where a skip ran nothing, and runs whole everywhere else. A reviewer should still weigh
+The record's entry is below. Sizing weakens no check: a test sized so runs under
+BSan where a skip ran nothing, and runs whole everywhere else. The ignore of the last sentence does, and the row marks it. A reviewer should still weigh
 that a sized test checks fewer inputs under BSan than a test that could run whole would.
+
+## Record
+
+The row for `EVOLUTION.md`, copied in when the change lands. The change was made as crustify
+`6336c30`, which also edited `EVOLUTION.md`; on 2026-11-14 it was rebased onto the working
+branch as `23c0f41`, without that edit, since a change's row is drafted in its proposal. It was reworded there to fit `gates-slow-list`, which landed first: the slow list keeps a slow test out of the ends, so this rule is for the test that cannot finish in a full run either, and the skip by name it kept as a last resort is an ignore under BSan, since the skip file no longer applies in a full run.
+
+| change | from | landed as | signal answered | recurrence signal | status |
+|---|---|---|---|---|---|
+| a test BSan cannot finish within its timeout is sized for BSan, and ignored under BSan alone only where no smaller input lets it finish | `libgit2-crustify`, `bsan-sized-tests` | crustify `23c0f41` | three modules' tests held their BSan binaries past the gate's timeout, two skipped by name and left unchecked | a BSan binary timing out in a full run on a test, or a test ignored under BSan that a smaller input would let finish | watched; weakens a check: a test no smaller input lets finish is ignored under BSan, where the gate failed on it |
 
 ## Validation
 

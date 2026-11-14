@@ -1,8 +1,8 @@
 # `end-gates` runs the format and lint gates over the committed tree
 
-Status: `open`. The change is `28a5e51` on crustify's
-`libgit2-crustify/evolution/end-gates-lint-stage`, forked from `libgit2-crustify/devel` at
-`cc84106`. It awaits its review.
+Status: `open`: the change is crustify `3b3316c` on
+`libgit2-crustify/evolution/end-gates-lint-stage`, awaiting its review. It touches a protected path, so it
+lands only with the user's approval.
 
 ## Signal
 
@@ -55,6 +55,16 @@ paragraph that describes it.
   batch".
 
 The change adds a check and weakens none.
+
+## Record
+
+The row for `EVOLUTION.md`, copied in when the change lands. The change was made as crustify
+`28a5e51`, which also edited `EVOLUTION.md`; on 2026-11-14 it was rebased onto the working
+branch as `3b3316c`, without that edit, since a change's row is drafted in its proposal. Its sentence of `testing-gates` was merged with the slow list's wording of `gates-slow-list`, which landed first; `test_end_gates` passes on it (9 tests).
+
+| change | from | landed as | signal answered | recurrence signal | status |
+|---|---|---|---|---|---|
+| `end-gates` runs the format and lint gates over the committed tree, once per export-feature set | `libgit2-crustify`, `end-gates-lint-stage` | crustify `3b3316c` | three reviews found a landed tree failing the lint gate with warnings denied, which every landing passes and which `end-gates` did not run: `legacy-wave-35/batch-0`, `legacy-wave-49/batch-0` and `wave-197/batch-1`, whose batch recorded it as passing | a review finding of a landed tree that fails the format or lint gate, run by `end-gates` or recorded as passing by its batch | watched |
 
 ## Validation
 
