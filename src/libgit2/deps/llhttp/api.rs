@@ -88,13 +88,13 @@
 //!
 //! # The exports
 //!
-//! C outside api.c calls nine of these functions and the 23 dispatchers. libgit2's
+//! C outside api.c calls eight of these functions and the 23 dispatchers. libgit2's
 //! `transports/httpparser.c` calls `llhttp_execute`, `llhttp_finish`, `llhttp_get_error_pos`
 //! and `llhttp_resume_after_upgrade`, and the macros of `transports/httpparser.h`, which
 //! `transports/httpclient.c` expands, `llhttp_init`, `llhttp_pause`, `llhttp_resume` and
 //! `llhttp_get_error_reason`; `llhttp.c`'s generated parser calls the dispatchers. They are
-//! exported, under the module's export feature, `ffi-export-deps-llhttp-api-c`, which stays
-//! off until api.c switches from C.
+//! exported under their C names, which no C defines since api.c switched from C: the
+//! remaining C reaches the module through them.
 //!
 //! [`Callback`]: super::llhttp::Callback
 //! [`DataCallback`]: super::llhttp::DataCallback
@@ -1414,7 +1414,6 @@ mod ffi_import {
     }
 }
 
-#[cfg(feature = "ffi-export-deps-llhttp-api-c")]
 #[expect(
     unsafe_code,
     reason = "exports api.c's functions the remaining C calls, adopting the parser and the input \
@@ -1729,8 +1728,8 @@ mod ffi_export {
     }
 
     /// The exports called as C calls them, over parsers and tables Rust builds: what each
-    /// hands its method and what it returns to C. They compile with the gateway, under the
-    /// export feature, and run with it linked in place of api.c's C.
+    /// hands its method and what it returns to C. They compile with the gateway, which the
+    /// tests link in place of api.c's C, gone from the build since the module's switch.
     #[cfg(test)]
     mod unit_priv {
         use core::ffi::c_int;

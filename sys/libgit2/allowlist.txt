@@ -785,7 +785,9 @@ function git_strlist_free_with_null
 
 # wave-194/batch-0: deps/llhttp/llhttp.h's parser struct, its typedefs and the four enums
 # deps/llhttp/llhttp.c wraps ahead of api.c's port, and api.c's initialiser, executor and
-# getters, through which the equivalence tests compare the parser's fields with the C
+# error getters. deps/llhttp/api.c switched to Rust: its functions bound here are those
+# libgit2's HTTP parser calls, which reach its exports and check their signatures, its
+# getters with no export leaving with its C
 type llhttp__internal_s
 type llhttp__internal_t
 type llhttp_errno
@@ -798,53 +800,28 @@ type llhttp_t
 type llhttp_type
 type llhttp_type_t
 function llhttp_execute
-function llhttp_get_errno
 function llhttp_get_error_pos
 function llhttp_get_error_reason
-function llhttp_get_http_major
-function llhttp_get_http_minor
-function llhttp_get_method
-function llhttp_get_status_code
-function llhttp_get_type
-function llhttp_get_upgrade
 function llhttp_init
-function llhttp_settings_init
 
 # wave-194/batch-1: deps/llhttp/llhttp.c's initialiser, executor and callback types, wrapped
-# ahead of api.c's port, and api.c's three name functions, which expand llhttp.h's X-macros,
-# through which the equivalence tests compare the maps with the C
+# ahead of api.c's port; api.c's three name functions left with its C, having no export
 type llhttp_cb
 type llhttp_data_cb
 function llhttp__internal_execute
 function llhttp__internal_init
-function llhttp_errno_name
-function llhttp_method_name
-function llhttp_status_name
 
 # wave-194/batch-2: api.c's finisher, which calls the settings table's `on_message_complete`,
-# and its reset, which keeps the table, through which the equivalence tests compare a table
-# set by the safe setter with one llhttp_init sets
+# and reaches its export; its reset left with its C, having no export
 function llhttp_finish
-function llhttp_reset
 
-# wave-194/batch-3: api.c's pause, resume, error reason and lenient setters, through which the
-# equivalence tests compare the ports with the C and the gateway checks the exports'
-# signatures, and llhttp.h's lenient flags, whose bits the setters set
+# wave-194/batch-3: api.c's pause and resumes, which reach their exports and check their
+# signatures, and llhttp.h's lenient flags, whose bits the setters set; the error reason's
+# and lenient setters left with api.c's C, having no export
 type llhttp_lenient_flags
 function llhttp_pause
 function llhttp_resume
 function llhttp_resume_after_upgrade
-function llhttp_set_error_reason
-function llhttp_set_lenient_chunked_length
-function llhttp_set_lenient_data_after_close
-function llhttp_set_lenient_headers
-function llhttp_set_lenient_keep_alive
-function llhttp_set_lenient_optional_cr_before_lf
-function llhttp_set_lenient_optional_crlf_after_chunk
-function llhttp_set_lenient_optional_lf_after_cr
-function llhttp_set_lenient_spaces_after_chunk_size
-function llhttp_set_lenient_transfer_encoding
-function llhttp_set_lenient_version
 
 # wave-194/batch-4: llhttp.h's finish states, which llhttp_finish's port matches on
 type llhttp_finish
