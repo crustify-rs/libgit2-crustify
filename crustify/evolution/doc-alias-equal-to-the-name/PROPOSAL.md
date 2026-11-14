@@ -1,6 +1,6 @@
 # An anchor's alias that equals its item's name
 
-Status: `open`: the change is crustify `a5ae2ea` and ffimap `c3203c7`, each on its
+Status: `open`: the change is crustify `1b0d20d` and ffimap `c3203c7`, each on its
 `libgit2-crustify/evolution/doc-alias-equal-to-the-name`, made on 2026-11-14, awaiting review.
 It takes in glibc-crustify's `doc-alias-equal-to-name`, the same signal.
 
@@ -92,7 +92,7 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| an item whose own name is its anchor's path carries no alias, and `ffimap api` does not report it as lacking one | `libgit2-crustify`, `doc-alias-equal-to-the-name` | crustify `a5ae2ea`; ffimap `c3203c7` | rustdoc rejects an alias equal to its item's name: two campaigns met it, on fourteen items, and chose opposite ways out | a batch that renames an item, or mangles an alias, because its alias would equal its name; or `ffimap api` listing such an item under `without_alias` | watched |
+| an item whose own name is its anchor's path carries no alias, and `ffimap api` does not report it as lacking one | `libgit2-crustify`, `doc-alias-equal-to-the-name` | crustify `1b0d20d`; ffimap `c3203c7` | rustdoc rejects an alias equal to its item's name: two campaigns met it, on fourteen items, and chose opposite ways out | a batch that renames an item, or mangles an alias, because its alias would equal its name; or `ffimap api` listing such an item under `without_alias` | watched |
 
 ## Validation
 
@@ -101,3 +101,11 @@ the name the library fails to build (above).
 
 The ffimap change: its whole suite passes (145 tests), and the fixture's `same_name` fails the
 old check.
+
+## Review
+
+`review-1-crustify` (Opus 5.5, `$1.05`), on `a5ae2ea`: **approved**, no fix required; it weakens no check.
+It landed as `1b0d20d`, that commit rebased, its file the same in the commit and its parent. Its row
+is recorded once the ffimap half lands. Listed apart: `conventions` § 3.2's "the same anchor
+and alias" could say "where it carries one"; ffimap's `docs/schema.md` still calls the alias
+the one the conventions require.
