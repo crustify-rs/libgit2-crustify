@@ -88,4 +88,37 @@ occurrence rule; none could have read the record for open signals, which held no
 
 ## Review
 
-None yet.
+`review-1` (session `013f03c8-ef4c-4210-8ab5-fa86b5551b01`, Opus 5.5, `$1.92`, 7m06s), on `74f960c`: **rejected**, its
+direction approved. It weakens a check without marking it: the rows still `watched` would be
+read at ship points, not at each module's end. Required:
+
+1. index rows committed on the working branch as batches land move it under every change
+   awaiting review, which lands by fast-forward of the reviewed commit alone; and a change
+   that drafts its own row is a second writer of the record;
+2. a run cannot always read the record or add to a proposal: `agents/common.md` does not
+   say where the record is, the proposals open today are not in it, and a run of one
+   campaign cannot commit to a proposal of another's repository;
+3. the lesson review has no owner: who marks a lesson `held`, what a reviewer does with a
+   wrong one, who reads lessons a last review batch or the reconciliation adds; ids need a
+   form two batches cannot both take;
+4. the protected paths are not stated as paths a run can match its diff against, and miss
+   what builds the reviewer's prompt, `spawn.py`'s permission mode, the tools' gate code and
+   the record's statuses;
+5. the blocking-defect exception leaves a relaxed gate to one reviewer's judgement until a
+   ship point: such a repair keeps the check's tests and adds its own, and goes to the user
+   at the next module's end;
+6. text elsewhere still describes the old protocol (the skill's description, `authoring`'s
+   table, the `propose` row, the assistant's role on `GOALS.md`, the settings templates);
+7. whether a follow-up change of one proposal takes a row of its own;
+8. the skill is past its size: split Record and Evolving evolution as `evolution-record`;
+9. the record row's recurrence signal is met on the day it lands.
+
+The proposal's Evidence above is wrong in places, by the review's count: 46 of the 49 rows
+are `watched` and 3 have no status; 55 proposals were filed in the pilot's period, 48 open
+and 7 landed; the side campaign's gates lesson was added to by four runs, not rewritten;
+review batches did read lessons, and what is missing is a review of each lesson; and the
+three recurrences are not confirmed from the artifacts. It ran no validation: a dry index of
+the open proposals would have shown the read-before-filing rule has nothing to read yet.
+
+The fixes to 1 and to the weakened check are choices of the user's, put to the user on
+2026-11-14 before a second commit.
