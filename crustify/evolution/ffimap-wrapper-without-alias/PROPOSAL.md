@@ -1,6 +1,7 @@
 # ffimap does not count a wrapper that keeps its C function's name
 
-Status: `open`. No change is made yet.
+Status: `deferred`, on 2026-11-14, at the user's word: it waits for the first wrapper that keeps
+its C function's name. Until then the counters read low by none.
 
 Goal: Safety, the unsafe surface's measures: the share of C functions with a wrapper.
 
@@ -26,7 +27,9 @@ A tool: ffimap's driver, with a fixture and a test.
 
 Not made. The item's name cannot stand for the alias on its own: a port's export has its C
 function's name too, and is no wrapper. The driver would count a function whose name is a
-`-sys` function's and whose doc comment carries the anchor that names it.
+`-sys` function's and whose doc comment carries the anchor that names it, as a fallback
+where no alias does. The anchor's grammar would then live in two parsers, `api`'s and the
+driver's: they share one fixture, so that a drift fails a test.
 
 ## Validation
 
