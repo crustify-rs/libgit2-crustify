@@ -60,6 +60,36 @@ more gaps:
    archive members of the dev-profile `staticlib`, and does not collect unused sections.
    Its exported API does not change.
 
+The third switch, `deps/llhttp/api.c`'s (`modules/libgit2/deps/llhttp/api.c/integration/run-1`),
+ran items 1 to 4's scripts unchanged and met four more gaps:
+
+10. **The switch's Rust side precedes the generation.** It is the first switch that removes
+    raw bindings: 23 functions without an export, with their allowlist entries. Each
+    variant's `build` runs `rust-staticlib.sh`, which builds the crate of the checkout with
+    `--features bindgen` in campaign mode, checking the committed bindings against the
+    variant's headers, and compiles the gateway only once the export feature is gone. So the
+    switch's Rust side, the feature deleted, the allowlist pruned and the bindings
+    regenerated, comes before `build-variants.sh`, not after the C's removal as the
+    procedure's order (the C change, then the variants, then the gates) suggests. The
+    bindings are regenerated against the previous generation, whose headers the switch does
+    not change.
+11. **A module whose exports only an online suite reaches has no C gate.** `c-tests.sh` runs
+    the offline suites the baseline records, and no offline C test drives libgit2's HTTP
+    client (the module pass's finding): `httpparser.c`, `httpclient.c` and `llhttp.c`'s
+    generated parser call the 31 exports only in a fetch, clone or push over HTTP, whose
+    suites (`online::*`) the baseline disables, since they need the network. libgit2's own CI
+    runs part of them offline, against servers on localhost named by `GITTEST_REMOTE_URL`
+    (`ci/test.sh`'s `auth_clone_and_push`, `-sonline::clone::push -sonline::push`).
+12. **The equivalence tests that call no C are marked already.** Item 6's step needs each
+    retiring test's calls checked. A test that calls C carries `#[cfg_attr(miri, ignore =
+    "calls C")]` (the Miri gate's marker), so the tests that lack it are the candidates, a
+    mechanical check; here all 21 carry it, and none is carried over.
+13. **A CMake file may name the removed source in a property.** `deps/llhttp/CMakeLists.txt`
+    globs its sources, as the lesson has it, and also sets
+    `set_source_files_properties(api.c http.c llhttp.c PROPERTIES COMPILE_FLAGS …)`. CMake
+    ignores a property of a source no target lists, so the file was left unchanged and every
+    variant configured and built; the dangling name stays until the last of the three goes.
+
 ## Evidence
 
 The run's commits `012d1d34c` (the switch), and the fork's `1b37e3d08`; its dashboard Notes
@@ -122,6 +152,39 @@ Where `src/cli/opt.c`'s switch went (its commits on the module's branch, the for
   takes the Rust library, or a library built with one codegen unit per export, would keep it
   to what the C calls; not tried.
 
+Where `deps/llhttp/api.c`'s switch went (its commits on the module's branch, the fork's
+`c54c0c180`, and its dashboard Notes entry, `libgit2/deps/llhttp/api.c` integration):
+
+- Items 1 to 4: `build-variants.sh` built `crustify/builds.gen3` from `c54c0c180`, five
+  variants in about 7 minutes at 12 jobs each (item 8's split again, for the 64 the run was
+  capped at), each archive holding 210 objects where gen2's held 211, `api.c.o` gone. In
+  every variant, `libgit2.so`, `git2` and `libgit2_tests` define the 31 exports (`addr2line`
+  puts `llhttp_execute` at `api.rs:1634`) and none of api.c's 23 unexported functions; each
+  passed its smoke test (`util_tests -sutf8`). `libgit2.so` defines the same 907 dynamic
+  symbols as gen2's, and holds 6747 local Rust functions where gen2's held 6337 (item 9).
+  `c-tests.sh` ran unchanged.
+- Item 10: the run deleted the feature, pruned `sys/libgit2/allowlist.txt` of the 23
+  functions and regenerated `bindings.rs` (`CRUSTIFY_BINDINGS_UPDATE=1 cargo-variant.sh plain
+  build --features bindgen --lib`, against gen2), committed that, and only then committed the
+  C change and ran `build-variants.sh`, whose `rust-staticlib.sh` then checked the committed
+  bindings against gen3's headers on every variant.
+- Item 11: the run added `crustify/scripts/http-remote.py`, `git http-backend` behind a
+  persistent HTTP/1.1 front that frames each response by its path (`Content-Length`,
+  chunked in 1, 7, 4096 and 65536-byte chunks, chunked with chunk extensions, or
+  close-delimited), with an optional Basic challenge, and `crustify/scripts/http-gate.sh`,
+  which runs a variant's `git2 clone` of two repositories through each framing, three
+  clones that fail, and `libgit2_tests -sonline::push -sonline::clone::credentials` with
+  `GITTEST_REMOTE_URL` at the guarded remote, into a `results.txt` free of times, ports and
+  paths. Gen2's and gen3's results are compared with `diff` (the dashboard entry).
+- Item 12: `grep -c 'ignore = "calls C"'` over `tests/equiv/deps/llhttp/api.rs` gives 21,
+  its `#[test]` count; the module pass's map (`wave-194/batch-7`'s `misc` report) names the
+  unit tests that keep each.
+- Item 13: `deps/llhttp/CMakeLists.txt` unchanged; gen3's five `configure`s and builds
+  passed with it.
+- Item 7 again: `wave-194/batch-7/equiv/execute-export-moves-an-empty-runs-error-pos`'s
+  reproducer names `ffi-export-deps-llhttp-api-c`, and is left reproducing at the commit its
+  report names.
+
 ## Destination
 
 The spec, where `authoring` places each part, with the scripts beside the skills that name
@@ -151,11 +214,22 @@ them, generalized from libgit2's names (`libgit2_tests`, `util_tests`, the
 - `build-variants.sh` (item 8): a job count, divided among the variants it builds.
 - `bindgen`, Build modes, or the fork's `SelectRust.cmake` (item 9): the C library's link
   collects the Rust it does not call.
+- `porting-workflow`, Builds (item 10): the switch's Rust side, the bindings regenerated,
+  lands before the generation is built, since every variant's build checks them.
+- `testing-gates`, Regressions (item 11): a switch whose exports only the baseline's disabled
+  online suites reach runs those the target's own CI runs against local servers, against a
+  local remote, by the scripts beside `c-tests.sh`, on the new generation and the previous
+  one, compared; `http-remote.py` and `http-gate.sh` generalized from libgit2's suites and
+  variables into arguments.
+- `porting-workflow`, One language per module (item 12): the carry-over candidates are the
+  retiring tests without the Miri `calls C` marker.
+- The `libgit2` CMake lesson (item 13): a property naming the removed file is left.
 
 ## Change
 
 Made in the campaign only: the scripts under `crustify/scripts/`, `build.rs`'s campaign
-mode and `build.json` version 7. The skills are not changed by this run: the change spans
+mode and `build.json` version 7, and, from `deps/llhttp/api.c`'s switch, `http-remote.py`
+and `http-gate.sh` beside `c-tests.sh`. The skills are not changed by this run: the change spans
 `setup`, `bindgen`, `testing-builds` and `testing-gates`, which are not the translator's to
 evolve, and wants its own review.
 
@@ -170,6 +244,15 @@ records. A later switch validates the generalized scripts by running them.
 unchanged, for a second link unit, and its gates over `crustify/builds.gen2` are its
 dashboard entry's. Items 5 to 9 are its evidence, and are not made: `porting-workflow` is the
 translator's to evolve, but item 6 wants review with the rest of this proposal.
+
+`deps/llhttp/api.c`'s switch ran the three scripts unchanged again, for a third module, the
+first whose exports libgit2 itself calls only over the network. Its gates over
+`crustify/builds.gen3` are its dashboard entry's. Item 11's two scripts are made, in the
+campaign only (`crustify/scripts/http-remote.py` and `http-gate.sh`), and validated by that
+run: gen2's C and gen3's Rust give the same `results.txt` on plain, ASan+UBSan and TSan, and on
+gen3's coverage variant the run calls 24 of the 31 exports. A mutant of an export was not
+built, so whether the comparison catches a departure rests on the coverage alone. Items 10,
+12 and 13 are evidence, and are not made: they want review with the rest of this proposal.
 
 ## Review
 

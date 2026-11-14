@@ -4204,6 +4204,111 @@ anchored keys are `kept`, the two private macro ports `missing`, and every unatt
 counts the five `unit_pub` tests; the gateway's two compile out with the feature off.
 Usage cells are the assistant's.
 
+### `libgit2/deps/llhttp/api.c` integration: the switch from C
+
+The campaign's third switch, run by `modules/libgit2/deps/llhttp/api.c/integration/run-1` on the
+module's branch, after the merge of the working branch (`a4335ab7a`): `21c5c5f47`, and the fork's
+`c54c0c180`. It followed the procedure of `utf8.c`'s and `opt.c`'s switches
+(`crustify/evolution/module-switch-procedure`) with their scripts unchanged. The export feature
+`ffi-export-deps-llhttp-api-c` is deleted, so `api.rs`'s gateway compiles from now on, and its
+eight `unit_priv` tests run in `lib`. No export feature is left. The remaining C calls the 31
+exports: `transports/httpparser.c` calls `llhttp_execute`, `llhttp_finish`,
+`llhttp_get_error_pos` and `llhttp_resume_after_upgrade`, `httpparser.h`'s macros, which
+`httpclient.c` expands, call `llhttp_init`, `llhttp_pause`, `llhttp_resume` and
+`llhttp_get_error_reason`, and `llhttp.c`'s generated parser calls the 23 `llhttp__on_*`
+dispatchers. The raw bindings of the eight functions stay and reach the exports. The dispatchers
+have no header declaration and no raw binding. The 23 functions bound without an export go with
+their allowlist entries: the seven getters, the three name functions, `llhttp_settings_init`,
+`llhttp_reset`, `llhttp_set_error_reason` and the ten lenient setters. Only api.c's equivalence
+tests called them, and `bindings.rs` was regenerated without them. Removing them changes the
+crate's raw API, `sys::libgit2`, as the porting workflow's switch has it; the safe API does not
+change. The types stay for the layouts `httpparser.c` and `llhttp.c` build and read.
+`deps/llhttp/api.c` leaves `c/` on the local `fork/main` as `integrate deps/llhttp/api.c`,
+which is not pushed. `llhttp.h` stays for `llhttp.c`, `http.c` and the HTTP client.
+`deps/llhttp/CMakeLists.txt` globs its sources and is unchanged; its
+`set_source_files_properties(api.c http.c llhttp.c …)` names the removed file, and CMake ignores
+it. The module has no tied C test. The doc comment that counted nine functions C calls now says
+eight.
+
+The module's 21 `equiv` tests are retired with the C they compared (`tests/equiv/deps/llhttp/api.rs`
+and its `mod api;`). Each calls C, api.c's own or `llhttp.c`'s parse through it, and carries the
+Miri `calls C` marker, so none is carried over. The module pass (`wave-194/batch-7`'s `misc`
+report) maps each to the unit tests that keep its behaviour. What none keeps is the
+differential itself. The parser's private state was compared byte for byte with C's from six
+states, and the lenient setters were shown to read any nonzero `int` as true. Once the C is gone,
+nothing is left to compare with. `tests/equiv/deps/llhttp/llhttp.rs` stays: it compares
+`llhttp.c`'s port with its C, whose parse now runs over the Rust dispatchers.
+
+The Rust side landed before the variants were built: every variant's build runs
+`rust-staticlib.sh`, which checks the committed bindings and compiles the gateway (proposal's
+item 10). The variants were rebuilt as `crustify/builds.gen3` from `c54c0c180` with
+`build-variants.sh`, at 12 jobs each so that the five stayed within the host's 64. This
+worktree's `crustify/builds` links to gen3, and gen2 was left untouched. Each archive holds 210
+objects where gen2's held 211, `api.c.o` gone. In every variant, `libgit2.so`, `git2` and
+`libgit2_tests` define the 31 exports and none of api.c's 23 other functions. `addr2line` puts
+`llhttp_execute` at `api.rs:1634`. Each variant passed its smoke test (`util_tests -sutf8`,
+`git2 --version`). `libgit2.so`'s dynamic symbol table defines the same 907 symbols. It now
+holds 6747 local Rust functions where gen2's held 6337 (proposal's item 9).
+
+Gates, over gen3 from `end-gates` snapshots at 64 jobs. The workspace is formatted, and `clippy
+--workspace --all-targets` passes with warnings denied. Plain passes the whole workspace:
+`lib` 901 and 1 ignored, `equiv` 532, `ub_safe` 796, `ub_unsafe` 144, `unit_pub` 218,
+`hidden_symbols` 1, doctests 101 and 397. ASan+UBSan and TSan pass it but for the known nightly
+failures: the 9 `compile_fail` snapshots, the six `checkout_*`,
+`diff_parse_options_no_raw_conversion`, `odb_options_no_raw_conversion` and
+`progress_callback_not_send`, and the `CommitBuilder` doctest (E0624). Neither printed a
+sanitizer report. The gateway's eight tests pass on plain, ASan+UBSan and TSan, the first time
+under TSan. Miri passes every binary: `lib` 441, `ub_safe` 212, `unit_pub` 141, `equiv` 38,
+`ub_unsafe` 26, the rest marked. The gateway's tests are among them: six pass, and
+`llhttp_init_initialises_storage_and_stores_what_c_passes` and
+`llhttp_execute_keeps_an_empty_runs_error_pos_at_data` are marked `calls C`. The remaining C
+tests ran over the link with the Rust through `c-tests.sh`. Plain, ASan+UBSan and TSan give 3443
+passed and 55 skipped of 3498, coverage 3444 and 54, each the baseline's record. Under TSan, the
+same 10 suites as the baseline's report the C's lock-order inversions and races, and no case
+fails; no report has a Rust frame. `ctest` passes both targets on plain, ASan+UBSan and
+coverage. Under TSan it fails `offline` on those reports alone, 49 lock-order inversions and
+glibc's `tzset` race, as at the two switches before. BSan was rebuilt and not run, as the
+settings' `sanitizers` answer has it.
+
+No offline C test drives the HTTP client, and the baseline disables the online suites. So this
+switch checked the exports through libgit2's own C over a smart-HTTP remote on localhost:
+`crustify/scripts/http-remote.py`, `git http-backend` behind an HTTP/1.1 front with persistent
+connections, and `crustify/scripts/http-gate.sh` (proposal's item 11). The front frames each
+response by its path: `Content-Length`, chunked in 1, 7, 4096 and 65536-byte chunks, chunked
+with chunk extensions, close-delimited, or a header block llhttp refuses. One remote asks for
+Basic credentials. The variant's `git2` cloned `testrepo.git` and a three-commit repository of
+the source revision's tree through the first three framings, each clone's refs, HEAD, checkout
+and `fsck --connectivity-only` checked. It also ran four clones that fail: close-delimited ("could
+not read refs from remote repository"), malformed ("http parser error: Invalid header token",
+the reason read through `llhttp_get_error_reason`), 404 and 401. Through each of the first three
+framings, `libgit2_tests -sonline::push -sonline::clone::credentials` ran against the guarded
+remote with `GITTEST_REMOTE_URL`, as libgit2's CI runs `auth_clone_and_push`, and passed 23 with
+1 skipped. Gen2's C and gen3's Rust give the same `results.txt` on plain, ASan+UBSan and TSan, and
+gen3's coverage variant gives it too: every outcome, every clone's refs, and the requests each
+remote answered, by method, framing and status. No run printed a sanitizer report. On the
+coverage variant, the run called 24 of the 31 exports, the chunk-extension dispatchers
+included, and covered `api.rs`'s 128 of 175 lines and 31 of 44 functions. The seven it never
+calls are `on_url` and `on_method` and their `_complete`s, which only a request parse calls,
+`on_reset` and `llhttp_resume_after_upgrade`, which need pipelined or upgraded messages, and
+`llhttp_finish`, which libgit2 calls only when the socket ends inside a body. The gateway's
+`unit_priv` tests call six of them: `each_dispatcher_export_calls_its_own_slot` calls every
+dispatcher and `llhttp_finish_returns_cs_codes` calls `llhttp_finish`. None calls
+`llhttp_resume_after_upgrade`, whose body is `ParserMut::resume_after_upgrade` in a `barrier`;
+`unit_pub`'s `resume_after_upgrade_clears_only_an_upgrades_pause` tests that method. The results are kept in the run dir
+(`http-gate-results.txt`), for the switches of `http.c` and `llhttp.c` to compare with.
+
+`c/` changed, so the crate was packaged as `package-gate-procedure` has it, with the workspace's
+Git patch of ffibox, as at `opt.c`'s switch. It has 695 files, `api.c` out, and builds alone in
+bundled mode, where `llhttp.c`'s dispatchers resolve to the Rust. Its `lib` tests: 843 pass, the
+gateway's eight among them. The other 58 need the fixture repositories of `c/tests/resources`,
+as at the two switches before.
+
+From the switch on, the module's coverage is its Rust's, and the C figures lose `api.c`'s 283
+lines. This run did not measure the workspace's coverage. What this switch shows the procedure
+lacks is added to `crustify/evolution/module-switch-procedure` (items 10 to 13). The review
+reproducer that enables the deleted feature (`wave-194/batch-7/equiv/execute-export-moves-an-empty-runs-error-pos`)
+is left as it is, reproducing at the commit its report names. Usage cells are the assistant's.
+
 ### `git2/src/cli/opt.c` wave 186 batch 0: `opt.h`'s enums
 
 The first batch of the `git2` link unit, the CLI. It ports `src/cli/opt.h`'s four enums into
