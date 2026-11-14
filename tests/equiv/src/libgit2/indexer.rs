@@ -102,11 +102,19 @@ impl Drop for Scratch {
 }
 
 /// A pack holding three blobs, two of them alike enough for one to be stored as a delta,
-/// from `git pack-objects` over SHA-1 ids.
+/// from `git pack-objects` over SHA-1 ids. The base is pushed a line at a time, not a byte at
+/// a time: `BorrowSanitizer`'s cost per access to one buffer grows with the borrows of it
+/// already made, and its 40 KB pushed a byte at a time would take hours to build under it.
 fn git_pack(dir: &Path) -> Vec<u8> {
-    let base: Vec<u8> = (0..4096u32)
-        .flat_map(|i| format!("line {i}\n").into_bytes())
-        .collect();
+    let mut base = String::new();
+    for i in 0..4096u32 {
+        #[expect(
+            clippy::format_push_string,
+            reason = "one push per line: `write!` pushes each line in pieces, which BorrowSanitizer pays for"
+        )]
+        base.push_str(&format!("line {i}\n"));
+    }
+    let base = base.into_bytes();
     let mut edited = base.clone();
     edited.extend_from_slice(b"one more line\n");
     let blobs = [base, edited, b"hello".to_vec()];

@@ -5,9 +5,6 @@
 #
 # Started 2026-11-14 from the BSan timing run of that day (crustify/devel at 69c8efa79), whose
 # `equiv` list is incomplete: 17 of its tests were still running at the 30-minute cap.
-bsan lib libgit2::src::libgit2::indexer::unit_tests::a_break_cancels_the_indexing_with_git_euser
-bsan lib libgit2::src::libgit2::indexer::unit_tests::a_panic_cancels_then_resumes_after_the_walk
-bsan lib libgit2::src::libgit2::indexer::unit_tests::libgit2_calls_the_closure_with_its_progress
 bsan ub_safe src::libgit2::diff::foreign_object_id_type_inputs_stay_in_bounds
 bsan ub_safe src::libgit2::index::entries::additions_free_what_they_replace_once
 bsan ub_safe src::libgit2::index::entry_value::stages_round_trip_through_reborrows_and_copies
@@ -52,7 +49,6 @@ bsan equiv src::libgit2::index::entries::stage_bits_match
 bsan equiv src::libgit2::index::entry_flags_match_c_enum_and_preserve_other_fields
 bsan equiv src::libgit2::index::entry_stage::stages_set_and_read_match_the_macros_for_every_flag_value
 bsan equiv src::libgit2::index::open_matches_on_every_version_and_extension
-bsan equiv src::libgit2::indexer::a_progress_callback_sees_and_cancels_as_a_c_callback
 bsan equiv src::libgit2::mailmap::buffers_match
 bsan equiv src::libgit2::mailmap::empty_replaced_emails_are_skipped_where_c_fails
 bsan equiv src::libgit2::mailmap::new_mailmaps_match
