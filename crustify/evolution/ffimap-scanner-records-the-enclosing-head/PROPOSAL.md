@@ -1,6 +1,7 @@
 # ffimap records the enclosing repository's HEAD as its own version
 
-Status: `open`. No change is made yet.
+Status: `open`: the change is ffimap `a73eb55` on `libgit2-crustify/evolution/ffimap-scanner-records-the-enclosing-head`, made on 2026-11-14,
+awaiting its review.
 
 Goal: Attribution: every figure names the revision that produced it.
 
@@ -22,11 +23,23 @@ A tool: ffimap's scanner version, `scan.py`.
 
 ## Change
 
-Not made. The version is read from ffimap's own checkout or package, and is absent, not another repository's, where neither gives one.
+In `measure.py`, `own_revision`: the commit counts only where the repository's top is ffimap's
+own, two levels above the package, and carries `+dirty` with tracked changes not committed.
+`scanner` falls back to the package's version otherwise, as before. Three tests in
+`tests/test_scan.py`; `docs/analysis.md` states the forms.
+
+## Record
+
+The row for `EVOLUTION.md`, copied in when the change lands:
+
+| change | from | landed as | signal answered | recurrence signal | status |
+|---|---|---|---|---|---|
+| ffimap records the enclosing repository's HEAD as its own version: fixed | `libgit2-crustify`, `ffimap-scanner-records-the-enclosing-head` | ffimap `a73eb55` | a scan from a copy nested in another repository recorded that repository's HEAD as ffimap's, and a scan from a checkout with uncommitted changes the commit below them | test | |
 
 ## Validation
 
-None yet.
+ffimap's suite passes in its own checkout with the change, the new tests among them; the
+workspace test fails without the manifest's table.
 
 ## Review
 
