@@ -1,0 +1,39 @@
+clone testrepo-length rc=0 refs=74a9a6c1e979d0a4 head=a65fedf39aefe402d3bb6e24df4d4f5fe4547750 status=e3b0c44298fc1c14 fsck=ok reports=0
+clone big-length rc=0 refs=9154d840f9e02252 head=cbfcf17770cc36d3dfe5df96baa654cdbfbd27c9 status=e3b0c44298fc1c14 fsck=ok reports=0
+clone testrepo-chunked rc=0 refs=74a9a6c1e979d0a4 head=a65fedf39aefe402d3bb6e24df4d4f5fe4547750 status=e3b0c44298fc1c14 fsck=ok reports=0
+clone big-chunked rc=0 refs=9154d840f9e02252 head=cbfcf17770cc36d3dfe5df96baa654cdbfbd27c9 status=e3b0c44298fc1c14 fsck=ok reports=0
+clone testrepo-chunked-ext rc=0 refs=74a9a6c1e979d0a4 head=a65fedf39aefe402d3bb6e24df4d4f5fe4547750 status=e3b0c44298fc1c14 fsck=ok reports=0
+clone big-chunked-ext rc=0 refs=9154d840f9e02252 head=cbfcf17770cc36d3dfe5df96baa654cdbfbd27c9 status=e3b0c44298fc1c14 fsck=ok reports=0
+clone testrepo-close rc=128 error="git2: could not read refs from remote repository" reports=0
+clone testrepo-malformed rc=128 error="git2: http parser error: Invalid header token" reports=0
+clone missing rc=128 error="git2: unexpected http status code: 404" reports=0
+clone unauthorised rc=128 error="git2: remote authentication required but no callback set" reports=0
+suites length rc=0 ok=23 not_ok=0 skip=1 reports=0
+suites chunked rc=0 ok=23 not_ok=0 skip=1 reports=0
+suites chunked-ext rc=0 ok=23 not_ok=0 skip=1 reports=0
+requests open GET chunked 200 count=2
+requests open GET chunked-ext 200 count=2
+requests open GET close 200 count=1
+requests open GET length 200 count=2
+requests open GET length 404 count=1
+requests open GET malformed 200 count=1
+requests open POST chunked 200 count=2
+requests open POST chunked-ext 200 count=2
+requests open POST length 200 count=2
+requests guarded GET chunked 200 count=78
+requests guarded GET chunked 401 count=79
+requests guarded GET chunked-ext 200 count=78
+requests guarded GET chunked-ext 401 count=79
+requests guarded GET length 200 count=78
+requests guarded GET length 401 count=80
+requests guarded POST chunked 200 count=46
+requests guarded POST chunked-ext 200 count=46
+requests guarded POST length 200 count=46
+connections open chunked count=2
+connections open chunked-ext count=2
+connections open close count=1
+connections open length count=3
+connections open malformed count=1
+connections guarded chunked count=24
+connections guarded chunked-ext count=24
+connections guarded length count=25

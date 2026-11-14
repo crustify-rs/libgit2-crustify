@@ -1,0 +1,20 @@
+{
+  "link_unit": "libgit2",
+  "module": "deps/llhttp/http.c",
+  "foundational": false,
+  "base_branch": "refs/heads/crustify/modules/libgit2/deps/llhttp/http.c",
+  "backend": "claude",
+  "billing": "api",
+  "model_proxy": "openrouter",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "cc84106",
+    "wavefront": "bf21e16",
+    "ffimap": "9aa2ef1",
+    "ffibox": "9c22a73"
+  },
+  "session_id": "3c59c8f9-7024-4da5-b692-4527807561a5"
+}

@@ -25,7 +25,10 @@ naming the repository under <root>, so that one remote serves every framing llht
 With `--auth`, every request without that user's Basic credentials is answered 401 with a
 `WWW-Authenticate: Basic` challenge, a body and the connection kept, before the backend
 runs. A path that names no repository is the backend's 404. Requests are logged to
-`--log`, one line each, method, path and status, for the caller to compare.
+`--log`, one line each, method, path, status and the request's place on its connection
+(`conn=1` for the first, which opened it), for the caller to compare: how many connections
+the client opened shows whether it kept them alive, as llhttp's `llhttp_should_keep_alive`
+tells libgit2's client to.
 
 Crustify's campaign check of a module whose exports libgit2's HTTP client reaches, at its
 switch from C (crustify/evolution/module-switch-procedure): run it with `python3 -I`.
@@ -65,13 +68,18 @@ def main(argv):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
+        def setup(self):
+            super().setup()
+            # The requests this connection has carried, the one being served included.
+            self.served = 0
+
         def log_message(self, fmt, *a):
             pass
 
         def record(self, status):
             if log_file:
                 with log_lock:
-                    log_file.write(f"{self.command} {self.path} {status}\n")
+                    log_file.write(f"{self.command} {self.path} {status} conn={self.served}\n")
 
         def read_body(self):
             if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
@@ -118,6 +126,7 @@ def main(argv):
             self.wfile.flush()
 
         def serve(self):
+            self.served += 1
             body = self.read_body() if self.command == "POST" else b""
             path, _, query = self.path.partition("?")
             framing, _, rest = path.lstrip("/").partition("/")

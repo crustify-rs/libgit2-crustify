@@ -22,6 +22,9 @@
 #    C tests of a push and a clone over GITTEST_REMOTE_URL, against the guarded remote with
 #    foo:bar, through the Content-Length and chunked framings: its TAP tally.
 #
+# 3. the requests each remote answered, by method, framing and status, and the connections the
+#    client opened to it, by framing.
+#
 # <out dir>/results.txt is one line per case, free of times, ports and paths, so that two
 # generations' results compare with `diff`; every process's output is kept beside it, and each
 # line counts the sanitizer reports that process printed (`reports=`). The exit status is 0
@@ -125,9 +128,16 @@ done
 
 # The requests the remotes answered, by method, framing and status; the connections a client
 # reset or closed mid-request (`error` lines) depend on timing, and stay in the logs alone.
+# Then the connections the client opened, by framing: a request that is the first on its
+# connection opened it, so that a client that stops keeping connections alive, as
+# `llhttp_should_keep_alive` tells libgit2's to, opens more.
 for side in open guarded; do
-  grep -v '^error ' "$out/$side.log" | sed -E 's/\?.*( [0-9]+)$/\1/' | awk -v s="$side" '{split($2, p, "/"); print "requests " s " " $1 " " p[2] " " $3}' |
+  grep -v '^error ' "$out/$side.log" | awk -v s="$side" '{split($2, p, "/"); print "requests " s " " $1 " " p[2] " " $3}' |
     sort | uniq -c | awk '{print $2, $3, $4, $5, $6, "count=" $1}' >>"$results"
+done
+for side in open guarded; do
+  grep -v '^error ' "$out/$side.log" | awk -v s="$side" '$4 == "conn=1" {split($2, p, "/"); print "connections " s " " p[2]}' |
+    sort | uniq -c | awk '{print $2, $3, $4, "count=" $1}' >>"$results"
 done
 cat "$results"
 exit $status

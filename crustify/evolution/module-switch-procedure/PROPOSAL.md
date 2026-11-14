@@ -90,6 +90,43 @@ ran items 1 to 4's scripts unchanged and met four more gaps:
     ignores a property of a source no target lists, so the file was left unchanged and every
     variant configured and built; the dangling name stays until the last of the three goes.
 
+The fourth switch, `deps/llhttp/http.c`'s (`modules/libgit2/deps/llhttp/http.c/integration/run-1`),
+llhttp's second, ran items 1 to 4's scripts and item 11's unchanged but for item 16, and met four
+more gaps:
+
+14. **The export feature is named outside the gateway's `cfg`.** The switch deletes "the
+    module's export feature", which reads as the `Cargo.toml` entry and the gateway's
+    `#[cfg(feature = …)]`. http.c's `headers_code`, which only the gateway calls, also carried
+    `#[cfg_attr(not(any(test, feature = "ffi-export-deps-llhttp-http-c")), expect(dead_code))]`:
+    with the feature gone, the unknown `cfg` and the expectation left unmet fail clippy with
+    warnings denied. The module pass foresaw it, so the switch did not fail; nothing in the
+    procedure would have. The step is mechanical: every mention of the feature's name in the
+    crate (`src/`, `tests/`, `Cargo.toml`, `build.rs`) is removed or rewritten, a `cfg_attr`
+    or `cfg(any(…))` that names it as much as the gateway's attribute, so that only the run
+    records and the reviews' reproducers (item 7) still name it.
+15. **An archive's member names are not unique.** `static-archive.sh` archives the objects
+    `libgit2.so` links by their file names, and `libcrustify.a` held two `http.c.o`, llhttp's
+    and the HTTP transport's (`src/libgit2/transports/http.c`). The count the earlier switches
+    compared (210 to 209) and the diff of `ar t` (one `http.c.o` fewer) do not say which left:
+    `nm -A` over the archive does, the member left defining `git_smart_subtransport_http` and
+    no `llhttp_*` symbol. The module pass's link check had to remove the member by position
+    (`ar dN 2`). The archive's check would be unambiguous by object path, as `build.ninja`
+    names them (`deps/llhttp/CMakeFiles/llhttp.dir/http.c.o`), or by the symbols the removed
+    TU defined, which the switch checks anyway.
+16. **The HTTP gate did not see keep-alive.** `http-gate.sh`'s `results.txt` tallied the
+    requests each remote answered by method, framing and status, which do not change when the
+    client stops reusing its connections: `llhttp_should_keep_alive`, the export of this
+    switch that libgit2's client calls, could have returned `0` always, and every line would
+    have matched. The run made `http-remote.py` log each request's place on its connection
+    (`conn=<n>`) and `http-gate.sh` tally the connections the client opened to each remote by
+    framing (`connections <side> <framing> count=<n>`), lines added after the request lines,
+    which are unchanged.
+17. **The variants' smoke test is gone.** The earlier switches smoke-tested each variant with
+    `util_tests -sutf8`, which has found no suite since `git_utf8_char_length`'s
+    `port/unexport` (wave 232) carried its C test over, gen4 included. Nothing names the smoke
+    test, so each switch picks one; a suite of a module that stays C the longest, or
+    `build.json`'s own, would keep it from leaving with a module.
+
 ## Evidence
 
 The run's commits `012d1d34c` (the switch), and the fork's `1b37e3d08`; its dashboard Notes
@@ -185,6 +222,36 @@ Where `deps/llhttp/api.c`'s switch went (its commits on the module's branch, the
   reproducer names `ffi-export-deps-llhttp-api-c`, and is left reproducing at the commit its
   report names.
 
+Where `deps/llhttp/http.c`'s switch went (its commits on the module's branch, the fork's
+`230c9dbdb`, and its dashboard Notes entry, `libgit2/deps/llhttp/http.c` integration):
+
+- Items 1 to 4: `build-variants.sh` built `crustify/builds.gen5` from `230c9dbdb`, five
+  variants in about 6 minutes at 12 jobs each (item 8's split, for the run's cap of 64), each
+  archive holding 209 objects where gen4's held 210. In every variant, `libgit2.so`, `git2` and
+  `libgit2_tests` define the four exports (`addr2line` puts `llhttp_should_keep_alive` at
+  `http.rs:545`) and no `llhttp_message_needs_eof`; each passed `util_tests -sstr` and
+  `git2 --version` (item 17). `c-tests.sh` ran unchanged.
+- Item 10 again: the run deleted the feature, pruned the allowlist of
+  `llhttp_message_needs_eof` and regenerated `bindings.rs` against gen4, committed that with the
+  submodule at the fork's new commit, and only then ran `build-variants.sh`.
+- Item 11 again: `http-gate.sh` over gen4's C and gen5's Rust, on plain, ASan+UBSan and TSan,
+  gives the same `results.txt`, and on gen5's coverage variant the run calls all four exports.
+- Item 12 again: all six of `tests/equiv/deps/llhttp/http.rs`'s tests carry the `calls C`
+  marker; the module pass's `equiv-retirement.md` maps each to the unit tests that keep it.
+- Item 13 again: `deps/llhttp/CMakeLists.txt`'s property names `api.c` and `http.c`, both
+  gone, and `llhttp.c`; unchanged, and gen5's five `configure`s and builds passed with it.
+- Item 14: `grep -rn ffi-export-deps-llhttp-http-c` over `src`, `tests`, `Cargo.toml` and
+  `build.rs` found the `Cargo.toml` entry, the gateway's `cfg`, `headers_code`'s `cfg_attr` and
+  the module's doc comment; after the switch it finds none there.
+- Item 15: `ar t` of gen4's and gen5's plain `libcrustify.a` differ in one line, an `http.c.o`;
+  `nm -A` of gen5's shows its one `http.c.o` defining `git_smart_subtransport_http`, where
+  gen4's second also defined the three hooks and both predicates.
+- Item 16: four runs over gen4 (plain twice, ASan+UBSan, TSan) gave the same connection
+  tally, 9 connections to the open remote for its 15 requests and 73 to the guarded one for
+  its 610, and the same request lines as api.c's record; gen5's equal them. A mutant of
+  `llhttp_should_keep_alive` was not built, so that the tally catches one rests on the client
+  reading the export once per response (`httpclient.c`'s `on_headers_complete`).
+
 ## Destination
 
 The spec, where `authoring` places each part, with the scripts beside the skills that name
@@ -224,6 +291,14 @@ them, generalized from libgit2's names (`libgit2_tests`, `util_tests`, the
 - `porting-workflow`, One language per module (item 12): the carry-over candidates are the
   retiring tests without the Miri `calls C` marker.
 - The `libgit2` CMake lesson (item 13): a property naming the removed file is left.
+- `porting-workflow`, Builds (item 14): deleting the export feature removes every mention of
+  its name in the crate, not only the gateway's `cfg`.
+- `testing-gates`, Regressions (item 15): a switch checks its archive by the symbols the
+  removed TU defined, or by object path, not by member names.
+- `http-gate.sh` (item 16): connections are tallied beside requests, so that a keep-alive
+  departure shows.
+- `setup`, Builds, or `build.json` (item 17): the variants' smoke test is named once, from
+  C that stays.
 
 ## Change
 
@@ -253,6 +328,11 @@ run: gen2's C and gen3's Rust give the same `results.txt` on plain, ASan+UBSan a
 gen3's coverage variant the run calls 24 of the 31 exports. A mutant of an export was not
 built, so whether the comparison catches a departure rests on the coverage alone. Items 10,
 12 and 13 are evidence, and are not made: they want review with the rest of this proposal.
+
+`deps/llhttp/http.c`'s switch ran the scripts again, for a fourth module, and changed one:
+item 16's connection tally, in `http-remote.py`'s log and `http-gate.sh`'s `results.txt`, in
+the campaign only, validated by four identical runs over gen4 and gen5's equal ones. Items 14,
+15 and 17 are evidence, and are not made.
 
 ## Review
 
