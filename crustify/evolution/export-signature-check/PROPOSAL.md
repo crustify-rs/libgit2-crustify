@@ -1,7 +1,8 @@
 # How a gateway checks an export against its raw binding
 
-Status: `open`: made as crustify `dfd557c` on `libgit2-crustify/evolution/export-signature-check`,
-awaiting its review.
+Status: `landed` as crustify `2594c80` on `libgit2-crustify/devel`, on 2026-11-14, with the
+user's approval: it is the commit its review approved as `c59838e`, rebased with its diff
+unchanged (the same `git patch-id`).
 
 ## Signal
 
@@ -49,7 +50,7 @@ proposal. Review-1 read `27f80ba`; the commit is now `c59838e`.
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| how a gateway checks an export against its raw binding | `libgit2-crustify`, `export-signature-check` | crustify `c59838e` | the first export of a port campaign had to work out how the compile-time check `testing-gates` asks for is written | a gateway whose exports have no signature check against their raw bindings, or one written another way per module | watched |
+| how a gateway checks an export against its raw binding | `libgit2-crustify`, `export-signature-check` | crustify `2594c80` | the first export of a port campaign had to work out how the compile-time check `testing-gates` asks for is written | a gateway whose exports have no signature check against their raw bindings, or one written another way per module | watched |
 
 ## Validation
 

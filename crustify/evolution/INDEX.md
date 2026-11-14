@@ -31,7 +31,7 @@ the assistant alone, as each batch's proposals land.
 | `elementwise-releasers` | Releasers that free a container's elements with it | `landed` | — | — |
 | `end-gates-lint-stage` | `end-gates` runs the format and lint gates over the committed tree | `open` | `wave-35/batch-0`, `wave-49/batch-0`, `wave-197/batch-0`, `wave-197/batch-1` | — |
 | `end-gates-runner` | A runner for a wave's and a module's end gates | `landed` | `wave-169/batch-5`, `wave-181/batch-0`, `wave-181/batch-1` | — |
-| `enum-integer-form-crate-private` | A closed enum's integer-form conversions are crate-private | `open` | `wave-186/batch-0` | — |
+| `enum-integer-form-crate-private` | A closed enum's integer-form conversions are crate-private | `landed` | `wave-186/batch-0` | — |
 | `equiv-c-side-meets-the-c-preconditions` | The C side of an equivalence test meets the C's preconditions | `landed` | `wave-169/batch-5` | — |
 | `equiv-unreachable-macro-sites` | A macro whose expansions no binding reaches is checked against its body | `open` | `wave-200/batch-0`, `wave-200/batch-1`, `wave-225/batch-0`, `wave-225/batch-1` | — |
 | `evolution-protocol-research` | The evolution protocol against existing practice | `open` | — | — |
@@ -39,7 +39,7 @@ the assistant alone, as each batch's proposals land.
 | `export-adoptions-and-the-safe-boundary` | What an `ffi_import` region may expose to its module's `ffi_export` | `open` | `wave-186/batch-4` | — |
 | `export-link-check` | A port batch runs its module's tests with its exports linked in place of its C | `open` | `wave-186/batch-5`, `wave-186/batch-6`, `wave-186/batch-7`, `wave-194/batch-4`, `wave-194/batch-7`, `wave-197/batch-0` and more | — |
 | `export-panic-without-a-failure-outcome` | An export whose failure needs an outcome a panic cannot give | `open` | `wave-186/batch-5` | — |
-| `export-signature-check` | How a gateway checks an export against its raw binding | `open` | `wave-229/batch-0` | — |
+| `export-signature-check` | How a gateway checks an export against its raw binding | `landed` | `wave-229/batch-0` | — |
 | `exports-without-a-header-declaration` | An export whose C declaration no header holds has no raw binding to be checked against | `open` | `wave-194/batch-4`, `wave-197/batch-0` | — |
 | `ffibox-adoption-of-lifetime-cells` | Adopting a handle over a layout type with a lifetime vouches for nothing about that lifetime | `open` | `wave-186/batch-3` | — |
 | `ffibox-allocator-api` | `Box` and `Vec` over a C allocator: ffibox adopts the standard `Allocator` | `landed` | — | — |
@@ -63,7 +63,7 @@ the assistant alone, as each batch's proposals land.
 | `internal-headers-in-the-bindings` | Where the bindings find an internal header's include path and definitions | `landed` | `wave-12/batch-2`, `wave-169/batch-1`, `wave-169/batch-2`, `wave-176/batch-1`, `wave-181/batch-0`, `wave-182/batch-0` and more | — |
 | `internal-symbols-unlinkable` | The variants must let the Rust link the internal symbols it binds | `landed` | `wave-169/batch-0`, `wave-176/batch-0` | — |
 | `io-write-over-write-all` | An `io::Write` over the libc wrapper's `write_all` must implement `write_all` itself | `open` | `wave-186/batch-6` | — |
-| `later-stage-c-changes` | What a `port/unexport` changes in `c/` | `open` | `wave-232/batch-0` | — |
+| `later-stage-c-changes` | What a `port/unexport` changes in `c/` | `landed` | `wave-232/batch-0` | — |
 | `macro-incidental-double-evaluation` | A macro that evaluates an operand twice only as a hazard is a function | `open` | `wave-200/batch-0`, `wave-200/batch-1` | — |
 | `merge-left-conflict-markers` | A merge into a wave branch is checked before it is committed | `landed` | `wave-169/batch-2` | — |
 | `module-end-gate-runner` | A script for the wave's and the module's end gates | `landed` | `wave-176/batch-3`, `wave-177/batch-1` | — |
@@ -85,7 +85,7 @@ the assistant alone, as each batch's proposals land.
 | `symbol-alias-anchors` | Where a symbol alias's anchor goes | `landed` | `wave-177/batch-0` | — |
 | `sys-bindings-layout` | The raw bindings sit under `sys/<link-unit>/`, as the public `sys` module | `landed` | — | — |
 | `test-only-exports-and-the-harness` | Exports only the C tests reach, and the test harness's own references | `landed` | — | — |
-| `type-erased-field-tagged-by-a-sibling` | A type-erased field whose type a sibling tag selects is one tagged enum with its tag | `open` | `wave-186/batch-2` | — |
+| `type-erased-field-tagged-by-a-sibling` | A type-erased field whose type a sibling tag selects is one tagged enum with its tag | `landed` | `wave-186/batch-2` | — |
 | `unexported-lifecycle-primitives` | Lifecycle primitives the library does not export | `declined` | `wave-3/batch-0`, `wave-176/batch-0` | — |
 | `wavefront-enum-constant-uses` | wavefront records no use of an enum constant | `landed` | `wave-186/batch-1` | — |
 | `wavefront-test-tables` | wavefront's suite runs without CodeQL by default | `landed` | — | — |

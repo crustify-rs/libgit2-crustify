@@ -1,7 +1,8 @@
 # What a `port/unexport` changes in `c/`
 
-Status: `open`, the change made on crustify's
-`libgit2-crustify/evolution/later-stage-c-changes` (`86d8b2f`), awaiting review.
+Status: `landed` as crustify `36e4532` on `libgit2-crustify/devel`, on 2026-11-14, with the
+user's approval: it is the commit its review approved as `180fd67`, rebased with its diff
+unchanged (the same `git patch-id`).
 
 ## Signal
 
@@ -75,7 +76,7 @@ proposal. Review-1 read `0bec1f0`; the commit is now `180fd67`.
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| a `port/unexport` changes `c/`: it removes the C test cases it carries over and the export's header declaration, and C only an unbuilt configuration compiles holds no export back | `libgit2-crustify`, `later-stage-c-changes` | crustify `180fd67` | `porting-workflow` had every later stage change no C, against `testing`'s carried-over cases, and no skill said what becomes of an unexported function's declaration, or of its callers under a configuration the target is built without | a task message granting a later stage its C change by hand, or a `port/unexport` that leaves its function declared in a header or holds an export for configured-out C | watched |
+| a `port/unexport` changes `c/`: it removes the C test cases it carries over and the export's header declaration, and C only an unbuilt configuration compiles holds no export back | `libgit2-crustify`, `later-stage-c-changes` | crustify `36e4532` | `porting-workflow` had every later stage change no C, against `testing`'s carried-over cases, and no skill said what becomes of an unexported function's declaration, or of its callers under a configuration the target is built without | a task message granting a later stage its C change by hand, or a `port/unexport` that leaves its function declared in a header or holds an export for configured-out C | watched |
 
 ## Validation
 

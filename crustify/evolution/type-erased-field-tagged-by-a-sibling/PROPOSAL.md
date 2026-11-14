@@ -1,7 +1,8 @@
 # A type-erased field whose type a sibling tag selects is one tagged enum with its tag
 
-Status: `open`: the change is crustify `755ff2c` on
-`libgit2-crustify/evolution/type-erased-field-tagged-by-a-sibling`, awaiting its review.
+Status: `landed` as crustify `3251f5e` on `libgit2-crustify/devel`, on 2026-11-14, with the
+user's approval: it is the commit its review approved as `144259c`, rebased with its diff
+unchanged (the same `git patch-id`).
 
 ## Signal
 
@@ -49,7 +50,7 @@ proposal. Review-1 read `7b738b9`; the commit is now `144259c`.
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| a type-erased field whose type a sibling tag selects is one tagged enum with its tag | `libgit2-crustify`, `type-erased-field-tagged-by-a-sibling` | crustify `144259c` | `binding-types` had a type-erased field take one element type or the untyped strategy, and left a `void *` whose pointee a sibling kind field selects to be worked out by hand | a binding of such a field with a setter that writes its tag or its pointer alone, or a review finding of its pointer read as the wrong type after a tag write | watched |
+| a type-erased field whose type a sibling tag selects is one tagged enum with its tag | `libgit2-crustify`, `type-erased-field-tagged-by-a-sibling` | crustify `3251f5e` | `binding-types` had a type-erased field take one element type or the untyped strategy, and left a `void *` whose pointee a sibling kind field selects to be worked out by hand | a binding of such a field with a setter that writes its tag or its pointer alone, or a review finding of its pointer read as the wrong type after a tag write | watched |
 
 ## Validation
 

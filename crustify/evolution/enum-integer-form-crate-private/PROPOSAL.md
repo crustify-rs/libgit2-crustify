@@ -1,7 +1,8 @@
 # A closed enum's integer-form conversions are crate-private
 
-Status: `open`: the change is crustify `3d1691a` on
-`libgit2-crustify/evolution/enum-integer-form-crate-private`, awaiting its review.
+Status: `landed` as crustify `80325f9` on `libgit2-crustify/devel`, on 2026-11-14, with the
+user's approval: it is the commit its review approved as `c461f16`, rebased with its diff
+unchanged (the same `git patch-id`).
 
 ## Signal
 
@@ -48,7 +49,7 @@ proposal. Review-1 read `166d8fd`; the commit is now `c461f16`.
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| the integer-form conversions a port writes for a closed enum no wrapper gave a safe API are crate-private | `libgit2-crustify`, `enum-integer-form-crate-private` | crustify `c461f16` | `porting-types` has `port/layout` remove an enum's conversions while `porting` has later stages keep the safe API, and a port of enums ahead of their gateways meets `dead_code`: the batch worked out their visibility by hand | a closed enum whose first safe API a port wrote, with public `from_raw`/`raw` or `TryFrom`/`From` integer conversions, or its `port/layout` reporting a conversion `removed` or `changed` in its API stability row | watched |
+| the integer-form conversions a port writes for a closed enum no wrapper gave a safe API are crate-private | `libgit2-crustify`, `enum-integer-form-crate-private` | crustify `80325f9` | `porting-types` has `port/layout` remove an enum's conversions while `porting` has later stages keep the safe API, and a port of enums ahead of their gateways meets `dead_code`: the batch worked out their visibility by hand | a closed enum whose first safe API a port wrote, with public `from_raw`/`raw` or `TryFrom`/`From` integer conversions, or its `port/layout` reporting a conversion `removed` or `changed` in its API stability row | watched |
 
 ## Validation
 
