@@ -1,7 +1,7 @@
 # A callback can re-enter the function that calls it, through the object it is handed
 
-Status: `open`: the change is crustify `95b594a` on `libgit2-crustify/evolution/callback-reenters-its-caller`, made on
-2026-11-14 at the user's direction after the triage of open proposals, awaiting its review.
+Status: `landed` as crustify `95b594a` (record `ae7027b`) on `libgit2-crustify/devel`, on 2026-11-14, once its
+review approved it.
 
 Goal: Safety, its soundness measure.
 
@@ -75,3 +75,6 @@ has no matching item, which is a protected path and a proposal of its own.
 `review-2` (Opus 5.5, `$0.30`), on `f69abd3`: **approved**. The two changes beneath it in
 `binding-symbols` were then fixed by their own reviews, so the file under it changed and it is
 reviewed once more, as `95b594a`.
+
+`review-3` (Opus 5.5, `$0.28`), on `95b594a`: **approved**: its diff is the one review-2 read, and it agrees
+with the two changes landed around it.
