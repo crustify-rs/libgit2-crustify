@@ -1,8 +1,9 @@
 # An anchor's alias that equals its item's name
 
-Status: `open`: the change is crustify `1b0d20d` and ffimap `c3203c7`, each on its
-`libgit2-crustify/evolution/doc-alias-equal-to-the-name`, made on 2026-11-14, awaiting review.
-It takes in glibc-crustify's `doc-alias-equal-to-name`, the same signal.
+Status: `landed` as crustify `1b0d20d` and ffimap `c3203c7`, each on its `libgit2-crustify/devel`
+(record: crustify `0504357`), on 2026-11-14. ffimap is installed from its shared checkout, on
+`devel`, which another campaign runs too: the campaign's runs see the ffimap half once `devel`
+takes it, with the user's approval.
 
 Goal: Idiomatic Rust: an item keeps the name the Naming section gives it.
 
@@ -124,3 +125,5 @@ alone: it said no campaign had a wrapper that keeps its C name without an alias,
 campaign has two. Corrected above; the code, its tests and its fit with ffimap's goals held,
 and it weakens no check. On this campaign's rustdoc output, `without_alias` goes from those two
 entries to none, the 1227 item records unchanged.
+
+`review-2-ffimap` (Opus 5.5, `$0.29`), on ffimap `c3203c7`: **approved**.

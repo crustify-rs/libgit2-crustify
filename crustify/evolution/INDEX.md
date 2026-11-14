@@ -27,7 +27,7 @@ the assistant alone, as each batch's proposals land.
 | `dashboard-lacks-module-passes` | Give the dashboard the template's `Module passes` table | `landed` | `wave-169/batch-5`, `wave-176/batch-3`, `wave-182/batch-1` | — |
 | `dashboard-module-passes` | The dashboard has no `Module passes` tables for a module pass to fill | `landed` | `wave-169/batch-3`, `wave-169/batch-4`, `wave-176/batch-2`, `wave-182/batch-1` | — |
 | `dashboard-tables-follow-the-template` | A template change that adds a dashboard table reaches the dashboard before batches fill it | `landed` | `wave-181/batch-0`, `wave-182/batch-0`, `wave-183/batch-0`, `wave-184/batch-0` | — |
-| `doc-alias-equal-to-the-name` | An anchor's alias that equals its item's name | `open` | `wave-186/batch-1`, `wave-186/batch-4`, `wave-186/batch-5` | — |
+| `doc-alias-equal-to-the-name` | An anchor's alias that equals its item's name | `landed` | `wave-186/batch-1`, `wave-186/batch-4`, `wave-186/batch-5` | — |
 | `elementwise-releasers` | Releasers that free a container's elements with it | `landed` | — | — |
 | `end-gates-lint-stage` | `end-gates` runs the format and lint gates over the committed tree | `landed` | `wave-35/batch-0`, `wave-49/batch-0`, `wave-197/batch-0`, `wave-197/batch-1` | — |
 | `end-gates-runner` | A runner for a wave's and a module's end gates | `landed` | `wave-169/batch-5`, `wave-181/batch-0`, `wave-181/batch-1` | — |
