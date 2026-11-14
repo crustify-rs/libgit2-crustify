@@ -110,3 +110,6 @@ leave the scan unseen. Made as `9885b23`: it is limited to bindings generated as
 says a named module leaves every other counter, and leaves a module with hand-written code
 unnamed. The paragraph sits in a section that describes a scan a landing passes, a protected
 path: the user reads it before it lands, after the ffimap half.
+
+`review-2-crustify` (Opus 5.5, `$0.22`), on crustify `9885b23`: **approved**; it weakens no check. It waits for
+the ffimap half, and for the user's approval.
