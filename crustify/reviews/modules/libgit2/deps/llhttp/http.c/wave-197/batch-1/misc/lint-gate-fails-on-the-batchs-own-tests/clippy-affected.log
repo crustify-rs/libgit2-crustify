@@ -1,0 +1,55 @@
+error: this function has too many lines (102/100)
+   --> tests/unit_pub/deps/llhttp/http.rs:104:1
+    |
+104 | fn after_headers_complete_on_a_zeroed_parser() {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.100.0/index.html#too_many_lines
+    = note: `-D clippy::too-many-lines` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::too_many_lines)]`
+
+error: very complex type used. Consider factoring parts into `type` definitions
+   --> tests/unit_pub/deps/llhttp/http.rs:106:16
+    |
+106 |       let cases: [(
+    |  ________________^
+107 | |         ParserType,
+108 | |         u32,
+109 | |         u32,
+110 | |         bool,
+111 | |         Result<Body, InvalidTransferEncoding>,
+112 | |     ); 16] = [
+    | |__________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.100.0/index.html#type_complexity
+    = note: `-D clippy::type-complexity` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::type_complexity)]`
+
+error: could not compile `libgit2-crustify` (test "unit_pub") due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: this `unsafe` block contains 2 unsafe operations, expected only one
+  --> tests/equiv/deps/llhttp/http.rs:65:9
+   |
+65 | /         unsafe {
+66 | |             *raw = sys::llhttp__internal_s {
+67 | |                 _index: 0x5A5A,
+68 | |                 type_: self.parser_type,
+...  |
+79 | |             };
+80 | |         }
+   | |_________^
+   |
+note: raw pointer dereference occurs here
+  --> tests/equiv/deps/llhttp/http.rs:66:13
+   |
+66 |             *raw = sys::llhttp__internal_s {
+   |             ^^^^
+note: unsafe method call occurs here
+  --> tests/equiv/deps/llhttp/http.rs:78:19
+   |
+78 |                 ..raw.read()
+   |                   ^^^^^^^^^^
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.100.0/index.html#multiple_unsafe_ops_per_block
+   = note: requested on the command line with `-D clippy::multiple-unsafe-ops-per-block`
+
+error: could not compile `libgit2-crustify` (test "equiv") due to 1 previous error
