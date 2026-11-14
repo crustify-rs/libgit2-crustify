@@ -53,7 +53,7 @@ the assistant alone, as each batch's proposals land.
 | `ffimap-api-namespaces-share-a-path` | `ffimap api` reads a type and a function of one path as one item | `open` | `wave-194/batch-4` | — |
 | `ffimap-seams-into-raw` | The seam list names `from_raw` but not its inverse `into_raw` | `landed` | — | — |
 | `fileref-prints-bytes` | libc's wrapper writes text, not the bytes C streams carry | `landed` | `wave-186/batch-4`, `wave-186/batch-6` | — |
-| `gate-findings-outside-the-workset` | A gate's true positive is the batch's finding, wherever it lies | `open` | `wave-49/batch-1`, `wave-229/batch-1` | — |
+| `gate-findings-outside-the-workset` | A gate's true positive is the batch's finding, wherever it lies | `landed` | `wave-49/batch-1`, `wave-229/batch-1` | — |
 | `gates-slow-list` | End gates run every stage less a slow list; full runs periodically | `landed` | — | — |
 | `gateway-feature-across-a-multiline-attribute` | build.rs reads a gateway as switched when a multi-line attribute follows its `cfg` | `open` | `wave-194/batch-4`, `wave-197/batch-0`, `wave-197/batch-1` | — |
 | `goal-fitness-functions` | Each goal names its fitness | `landed` | `wave-186/batch-1`, `wave-186/batch-3`, `wave-194/batch-5`, `wave-197/batch-0`, `wave-232/batch-1` | — |

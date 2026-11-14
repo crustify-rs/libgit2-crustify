@@ -1,8 +1,7 @@
 # A gate's true positive is the batch's finding, wherever it lies
 
-Status: `open`: the change is crustify `ecfa4fb` on
-`libgit2-crustify/evolution/gate-findings-outside-the-workset`, approved by its review. It touches a protected path, so it
-lands only with the user's approval.
+Status: `landed` as crustify `ecfa4fb` (record `62f226e`) on `libgit2-crustify/devel`, with the user's
+approval on 2026-11-14, which its protected path needs.
 
 Goal: Safety, its soundness measure, and Verification: a defect a gate proves is filed among
 the reports.
