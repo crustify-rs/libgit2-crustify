@@ -1,6 +1,9 @@
 # A callback whose context is reached through an argument has no sound C form
 
-Status: `open` (weighed by `wave-194/batch-2/run-1`; the spec change is not made).
+Status: `open`: the change is crustify `15845fd` on `libgit2-crustify/evolution/callback-context-in-an-argument`, made on
+2026-11-14 at the user's direction after the triage of open proposals, awaiting its review.
+
+Goal: Safety, its soundness measure.
 
 ## Signal
 
@@ -68,6 +71,14 @@ invariant (each non-NULL slot is one `from_fn` accepts), and `Settings` is `Send
 `on_body` and the others cast `parser->data` to `http_parser_context *`, so a
 `SettingsRef` over that table would let `Settings`' getter return a `DataCallback` whose
 safe `call(Parser::new().as_mut(), …)` hands them a NULL context.
+
+## Record
+
+The row for `EVOLUTION.md`, copied in when the change lands:
+
+| change | from | landed as | signal answered | recurrence signal | status |
+|---|---|---|---|---|---|
+| a function pointer whose context C reaches through another argument has a callable C half only for functions sound with any such argument; one that reads its context there is reached only through its object | `libgit2-crustify`, `callback-context-in-an-argument` | crustify `15845fd` | a table of callbacks that read their context from the object they are handed: a callable handle over it would let a safe call hand them another object's, or no, context | a `ub` or `contracts` finding on a callable type whose C function reads its context from an argument | watched |
 
 ## Validation
 

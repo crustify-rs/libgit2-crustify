@@ -1,6 +1,9 @@
 # A callback can re-enter the function that calls it, through the object it is handed
 
-Status: `open`.
+Status: `open`: the change is crustify `6ad1ea5` on `libgit2-crustify/evolution/callback-reenters-its-caller`, made on
+2026-11-14 at the user's direction after the triage of open proposals, awaiting its review.
+
+Goal: Safety, its soundness measure.
 
 ## Signal
 
@@ -46,6 +49,14 @@ trampoline's re-entry refusal:
 
 In `analysis` § Findings, under states and transitions: "the calls a callback may make on
 the object its caller lends it, and those that would corrupt the caller's state".
+
+## Record
+
+The row for `EVOLUTION.md`, copied in when the change lands:
+
+| change | from | landed as | signal answered | recurrence signal | status |
+|---|---|---|---|---|---|
+| a function that hands a callback the object it is working on lends it; the analysis establishes which of the object's routines C allows from the callback, and the binding refuses the others there | `libgit2-crustify`, `callback-reenters-its-caller` | crustify `6ad1ea5` | a callback could re-enter or reset the function running it through the object it was handed, C undefined behaviour reachable from safe Rust | a `ub` finding of the `callback-state` pattern where a callback calls a routine of the object its caller lent it | watched |
 
 ## Validation
 

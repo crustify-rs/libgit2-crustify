@@ -1,6 +1,9 @@
 # An `unsafe` setter's obligation lasts as long as its object holds what it stored
 
-Status: `open` (filed by `wave-194/batch-6/run-1`; no change made).
+Status: `open`: the change is crustify `a3552fb` on `libgit2-crustify/evolution/obligation-spans-what-the-holder-keeps`, made on
+2026-11-14 at the user's direction after the triage of open proposals, awaiting its review.
+
+Goal: Safety, its soundness measure.
 
 ## Signal
 
@@ -43,6 +46,14 @@ Not made. In `binding` § Safe boundary, after the paragraph on `unsafe fn`s:
 In `reviewing` § 3.2, beside the case of an obligation stated on code C calls: "an obligation
 whose duration is a span of calls safe code can extend, such as \"while it executes\", rather
 than what the object holds".
+
+## Record
+
+The row for `EVOLUTION.md`, copied in when the change lands:
+
+| change | from | landed as | signal answered | recurrence signal | status |
+|---|---|---|---|---|---|
+| an `unsafe` function that stores a value its object keeps has an obligation lasting as long as the object holds it, never bounded by the calls that use it | `libgit2-crustify`, `obligation-spans-what-the-holder-keeps` | crustify `a3552fb` | an `unsafe` setter's obligation was stated as "while it executes", which safe calls made after it extend: a use-after-free from safe code, twice in one module | a `ub` or `contracts` finding of the `hidden-dependency` pattern on an `unsafe` setter whose contract bounds its obligation by a span of calls | watched |
 
 ## Validation
 
