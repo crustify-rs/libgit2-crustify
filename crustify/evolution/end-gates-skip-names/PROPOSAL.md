@@ -56,7 +56,7 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| `end-gates` skips a test by its exact name, and refuses a variant stage's skip that more than one binary of the workspace holds | `libgit2-crustify`, `end-gates-skip-names` | crustify `01064ed` | a test whose name begins another's could not be put on the slow list, and a variant stage's skip was checked against one binary and applied to all | test |
+| `end-gates` skips a test by its exact name, and refuses a variant stage's skip that more than one binary of the workspace holds | `libgit2-crustify`, `end-gates-skip-names` | crustify `01064ed` | a test whose name begins another's could not be put on the slow list, and a variant stage's skip was checked against one binary and applied to all | test | |
 
 ## Validation
 
