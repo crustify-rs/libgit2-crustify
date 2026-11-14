@@ -1,7 +1,7 @@
 # A macro whose configured branches compute one result is ported once
 
-Status: `open`: the change is crustify `769d102` on `libgit2-crustify/evolution/config-branches-of-one-result`, made on
-2026-11-14 after the triage of open proposals, awaiting its review.
+Status: `landed` as crustify `769d102` (record `36f9c7f`) on `libgit2-crustify/devel`, on 2026-11-14, once its
+review approved it.
 
 Goal: Idiomatic Rust, and Least constraint: a shim where the Rust can state the result is a
 constraint without a reason.
@@ -65,3 +65,12 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 bytes against the standard library's scan, and its equivalence tests compare the port with
 the C's expansion, glibc's `strnlen`, through `git__strndup`. The `NO_STRNLEN` branch is
 not built on this host; its body is the same scan by reading.
+
+## Review
+
+`review-1` (Opus 5.5, `$1.07`), on `769d102`: **approved**, no fix required; it weakens no check. The built
+configuration's equivalence tests still compare the port with the C's expansion; on a
+configuration the campaign never builds, that the branches agree is a judgement made by
+reading, the porter's, which the module pass reads. Listed apart: the rule does not say which
+kinds of configuration the shim exception means; its reason clause sits beside the wrong
+half of the sentence.

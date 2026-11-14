@@ -1,6 +1,9 @@
 # A macro that evaluates an operand twice only as a hazard is a function
 
-Status: `open`.
+Status: `open`: the change is crustify `4a69dd7` on `libgit2-crustify/evolution/macro-incidental-double-evaluation`, made on
+2026-11-14 after the triage of open proposals, awaiting its review.
+
+Goal: Idiomatic Rust: a function where a function expresses the macro.
 
 ## Signal
 
@@ -59,6 +62,14 @@ Add to `porting-symbols`' Macros section, after its first sentence:
 > side effects, whose result is the same evaluated once, the macro is a function, its
 > documentation naming the difference, as a `MIN` or `MAX` of the usual form is.
 
+## Record
+
+The row for `EVOLUTION.md`, copied in when the change lands:
+
+| change | from | landed as | signal answered | recurrence signal | status |
+|---|---|---|---|---|---|
+| a macro that evaluates an argument lazily or more than once is a `macro_rules!` only where a caller depends on it; where every expansion site passes an argument without side effects it is a function, its documentation naming the difference | `libgit2-crustify`, `macro-incidental-double-evaluation` | crustify `4a69dd7` | "evaluated more than once" read literally makes every `MIN` and `MAX` a `macro_rules!`; two batches settled it by hand | a review finding of a `macro_rules!` that a function expresses, or of a function whose macro's caller depended on the repeated or lazy evaluation | watched |
+
 ## Validation
 
 `wave-200/batch-0`'s tests: six `unit_pub` tests check the function against the macro's body,
@@ -69,3 +80,7 @@ and wavefront's `query macros --name MIN` lists no other user of the header's ma
 ## Review
 
 None yet.
+
+The change is made in `binding-symbols`' Macros section alone, where the list's fourth case
+states the exception: `porting-symbols`' Macros section takes its forms from there, so one
+sentence serves both. The sentence first drafted for `porting-symbols` is not added.

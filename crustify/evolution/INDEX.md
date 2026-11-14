@@ -18,7 +18,7 @@ the assistant alone, as each batch's proposals land.
 | `callback-reenters-its-caller` | A callback can re-enter the function that calls it, through the object it is handed | `landed` | `wave-194/batch-1` | — |
 | `carried-over-test-cases` | The test cases a `port/unexport` carries over, in the schedule | `landed` | — | — |
 | `compile-fail-doctest-codes-unchecked-on-stable` | A compile-fail doctest's error code is checked only on nightly | `open` | `wave-186/batch-2` | — |
-| `config-branches-of-one-result` | A macro whose configured branches compute one result is ported once | `open` | `wave-225/batch-0`, `wave-225/batch-1` | — |
+| `config-branches-of-one-result` | A macro whose configured branches compute one result is ported once | `landed` | `wave-225/batch-0`, `wave-225/batch-1` | — |
 | `contracts-unrefusable-c-arguments` | Which of C's arguments a gateway refuses, and which it trusts | `landed` | `wave-177/batch-1` | — |
 | `coverage-c-scope-matches-no-path` | The coverage report's C scope names the paths the archive records | `landed` | `wave-169/batch-1`, `wave-169/batch-2` | — |
 | `coverage-c-scope-unfiltered` | The coverage report's C figures ignore their scope and move with the test binaries | `landed` | `wave-181/batch-0` | — |
