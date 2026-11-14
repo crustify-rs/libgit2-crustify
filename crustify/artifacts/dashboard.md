@@ -96,11 +96,12 @@ Implementation `openrouter/anthropic/claude-opus-5.5` via `claude`, `openrouter/
 | `libgit2/src/util/utf8.c` | `0` | `5` | `4h32m58s` | `$33.45` | `83.47M` | — | `$6.69` | `$28.15` | `61.50M` | — | `$5.63` | `$61.60` | `144.97M` | — | `$12.32` |
 | `git2/src/cli/opt.c` | `7` | `21` | `8h59m54s` | `$88.14` | `251.87M` | `$12.59` | `$4.20` | `$37.54` | `105.81M` | `$5.36` | `$1.79` | `$125.67` | `357.68M` | `$17.95` | `$5.98` |
 | `libgit2/deps/llhttp/api.c` | `6` | `67` | `8h38m00s` | `$89.38` | `264.89M` | `$14.90` | `$1.33` | `$36.13` | `110.01M` | `$6.02` | `$0.54` | `$125.52` | `374.90M` | `$20.92` | `$1.87` |
+| `libgit2/deps/llhttp/http.c` | `0` | `5` | `2h38m56s` | `$19.12` | `60.34M` | — | `$3.82` | `$14.19` | `40.35M` | — | `$2.84` | `$33.31` | `100.69M` | — | `$6.66` |
 | side campaigns | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
 | planners | — | — | `3h08m22s` | — | — | — | — | — | — | — | — | `$74.83` | `198.12M` | — | — |
 | assistant | — | — | — | — | — | — | — | — | — | — | — | `$438.96` | `337.45M` | — | — |
-| **Σ recorded agents** | **`108`** | **`484`** | **`81h57m`** | **`$1116.91`** | **`3016.80M`** | **`$10.34`** | **`$2.31`** | **`$821.45`** | **`1494.84M`** | **`$7.61`** | **`$1.70`** | **`$2013.19`** | **`4709.76M`** | **`$18.64`** | **`$4.16`** |
-| **Σ campaign** | **`108`** | **`484`** | **`81h57m`** | **`$1116.91`** | **`3016.80M`** | — | — | **`$821.45`** | **`1494.84M`** | — | — | **`$2452.15`** | **`5047.21M`** | — | — |
+| **Σ recorded agents** | **`108`** | **`489`** | **`84h35m`** | **`$1136.03`** | **`3077.14M`** | **`$10.52`** | **`$2.32`** | **`$835.64`** | **`1535.19M`** | **`$7.74`** | **`$1.71`** | **`$2046.50`** | **`4810.45M`** | **`$18.95`** | **`$4.19`** |
+| **Σ campaign** | **`108`** | **`489`** | **`84h35m`** | **`$1136.03`** | **`3077.14M`** | — | — | **`$835.64`** | **`1535.19M`** | — | — | **`$2485.46`** | **`5147.90M`** | — | — |
 
 ## Safety audit
 
@@ -516,7 +517,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/llhttp/api.c` | `194` | `1` | wrap | first | `7` | `38` | `+2114/-23` | `46.45`% / `98.66`% | `$17.56` | `52.33M` | `1h13m58s` | `$2.51` | `$0.46` |
 | `libgit2/deps/llhttp/api.c` | `194` | `3` | port | first | `28` | `134` | `+1256/-11` | `47.21`% / `98.68`% | `$15.00` | `52.37M` | `54m13s` | `$0.54` | `$0.11` |
 | `libgit2/deps/llhttp/api.c` | `194` | `4` | port | first | `32` | `184` | `+1847/-74` | `47.29`% / `98.65`% | `$17.93` | `52.50M` | `1h21m12s` | `$0.56` | `$0.10` |
-| `libgit2/deps/llhttp/http.c` | `197` | `0` | port | first | `5` | `141` | `+1829/-0` | `47.49`% / `98.03`% | — | — | — | — | — |
+| `libgit2/deps/llhttp/http.c` | `197` | `0` | port | first | `5` | `141` | `+1829/-0` | `47.49`% / `98.03`% | `$14.36` | `48.79M` | `52m53s` | `$2.87` | `$0.10` |
 | `git2/src/cli/opt.c` | `186` | `1` | port | first | `2` | `18` | `+1230/-11` | `45.07`% / `98.82`% | `$13.19` | `34.56M` | `1h19m25s` | `$6.60` | `$0.73` |
 | `git2/src/cli/opt.c` | `186` | `4` | port | first | `11` | `246` | `+2656/-66` | `45.41`% / `98.84`% | `$27.82` | `77.86M` | `1h51m21s` | `$2.53` | `$0.11` |
 | `git2/src/cli/opt.c` | `186` | `5` | port | first | `8` | `310` | `+2082/-83` | `45.42`% / `98.80`% | `$15.35` | `48.35M` | `1h5m7s` | `$1.92` | `$0.05` |
@@ -556,7 +557,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/llhttp/api.c` | `194` | `6` | port | review | `67` | — | `+191/-25` | `47.25`% / `98.69`% | `$12.72` | `41.32M` | `41m52s` | `$0.19` | — |
 | `git2/src/cli/opt.c` | `186` | `6` | port | review | `21` | — | `+335/-27` | `45.39`% / `98.80`% | `$10.52` | `33.81M` | `33m35s` | `$0.50` | — |
 | `libgit2/src/util/utf8.c` | `232` | `1` | port/unexport | review | `1` | — | `+28/-1` | `47.21`% / `98.02`% | `$7.61` | `17.60M` | `44m56s` | `$7.61` | — |
-| **Σ first** |  |  |  |  | **`600`** | **`10242`** | **`+94058/-3957`** | **`47.49`% / `98.03`%** | **`$717.69`** | **`2221.59M`** | — | **`$1.17`** | **`$0.06`** |
+| **Σ first** |  |  |  |  | **`600`** | **`10242`** | **`+94058/-3957`** | **`47.49`% / `98.03`%** | **`$732.05`** | **`2270.38M`** | — | **`$1.17`** | **`$0.06`** |
 | **Σ review** |  |  |  |  | **`557`** | — | **`+7806/-1422`** | **`47.21`% / `98.02`%** | **`$404.72`** | **`827.72M`** | — | **`$0.80`** | — |
 
 ### Batches: tests
@@ -825,12 +826,12 @@ review cost.
 | `libgit2/src/util/allocators/debugalloc.c` | `183` | `1` | `0` | `1` | `+336/-75` | `$15.62` | `43.77M` | `1h33m16s` |
 | `libgit2/src/util/strlist.c` | `184` | `1` | `0` | `6` | `+408/-142` | `$21.71` | `81.05M` | `1h33m47s` |
 | `libgit2/deps/llhttp/api.c` | `194` | `7` | `1` | `60` | `+696/-369` | `$14.81` | `42.43M` | `56m26s` |
-| `libgit2/deps/llhttp/http.c` | `197` | `1` | `0` | `5` | `+183/-38` | — | — | — |
+| `libgit2/deps/llhttp/http.c` | `197` | `1` | `0` | `5` | `+183/-38` | `$14.19` | `40.35M` | `56m26s` |
 | `git2/src/cli/opt.c` | `186` | `7` | `7` | `21` | `+799/-16` | `$18.83` | `47.47M` | `1h16m16s` |
 | `libgit2/deps/ntlmclient/compat.h` | `200` | `1` | `0` | `1` | `+7/-10` | `$8.38` | `22.30M` | `39m37s` |
 | `libgit2/src/util/strnlen.h` | `225` | `1` | `0` | `1` | `+22/-8` | `$9.34` | `19.72M` | `3h34m56s` |
 | `libgit2/src/util/utf8.c` | `229` | `1` | `0` | `5` | `+206/-45` | `$20.54` | `43.89M` | `1h24m1s` |
-| **Σ** |  |  | **`9`** | **`170`** | **`+3491/-948`** | **`$201.78`** | **`602.10M`** | — |
+| **Σ** |  |  | **`9`** | **`170`** | **`+3491/-948`** | **`$215.97`** | **`642.45M`** | — |
 
 ### Passes: PoC + reports
 
@@ -5978,3 +5979,11 @@ A switch has no table of its own: `libgit2/src/util/utf8.c` `$13.93`, `28.80M`, 
 The libc side campaign's runs of this session (two planner runs, four `wrap` batches, four module
 passes: `$56.39` by the CLI's totals) are in `glibc-crustify`'s own dashboard, whose usage cells
 and this dashboard's `Side campaigns` row are not filled yet.
+
+### `libgit2/deps/llhttp/http.c` integrated and switched (2026-11-14)
+
+The pilot's fifth module: its usage cells and its `Module stats` row are filled, its switch run
+(`$4.76`, `11.55M`, `49m37s`) counted in its `cost`. The working branch holds four switched
+modules (`utf8.c`, `opt.c`, `api.c`, `http.c`), one later stage (wave 232) and two header modules;
+the variants' current generation is `crustify/builds.gen5`, and the fork's local `fork/main` is at
+`230c9dbdb`, five commits past the fork's published `main`.
