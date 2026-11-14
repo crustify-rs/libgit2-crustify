@@ -163,4 +163,26 @@ The user chose, on 2026-11-14: the index in the campaign's repository, and a per
 reading of the watched rows whose period the campaign adjusts. `d3eace2` makes the nine
 fixes under those choices.
 
-`review-2`: pending, on `d3eace2`.
+`review-2` (session `84411ad8-7494-42e9-9696-d871edd1c1a2`, Opus 5.5, `$1.72`, 7m42s), on `d3eace2`: **rejected**. The
+user's two choices are carried through, and fixes 1, 6, 7 and 8 of review-1 hold; fixes 2, 3,
+4, 5 and 9 hold in part. Its report is the longest `result` of
+`crustify/artifacts/evolution/evolution-record-and-lessons/review-2/stream.jsonl`. Required:
+
+- R1. "Files nothing new" where the record holds a signal stops a recurrence of a landed
+  change from being filed, an unmarked weakening: it must apply to proposals the index holds
+  open alone, a signal that meets a landed row's recurrence signal being filed as a new
+  proposal that cites the row.
+- R2. A side campaign that shares the working branch reads its own index alone, so two of
+  the three duplicates the evidence cites would still not be caught; and the validation's
+  claim that the index shows them is wrong.
+- R3. The drafted row's lesson clause is met by correct behaviour, a lesson a wave's last
+  review batch adds being read in a later wave.
+- R4. The protected paths miss the tool skills' safe-boundary scan, `toolchain`'s Unsafe code
+  section, the other generated agents, the plugin's manifest and the templates' `evolution`
+  question; and "the code whose output a gate reads" cannot be matched against a diff.
+- R5. The blocking-defect exception's two test conditions mean nothing for a change to the
+  spec.
+
+Two of the recounted figures were still off: glibc-crustify's lesson edits are 4 of 9
+commits, and two batches packaged by hand, not three. Not yet made: the fixes wait for the
+user's word on R2 and R5.
