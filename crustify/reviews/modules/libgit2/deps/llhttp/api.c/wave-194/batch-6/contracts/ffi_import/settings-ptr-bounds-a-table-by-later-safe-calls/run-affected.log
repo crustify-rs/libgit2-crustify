@@ -1,0 +1,118 @@
+messages after the parse: 1
+=================================================================
+==2383692==ERROR: AddressSanitizer: heap-use-after-free on address 0x76f4d3fe0098 at pc 0x585700852b84 bp 0x7fff33aff510 sp 0x7fff33aff508
+READ of size 8 at 0x76f4d3fe0098 thread T0
+    #0 0x585700852b83 in <libgit2_crustify::libgit2::deps::llhttp::api::EventSlot>::read src/libgit2/deps/llhttp/api.rs:976:48
+    #1 0x5857008516a6 in <libgit2_crustify::libgit2::deps::llhttp::llhttp::ffi_import::ParserMut>::call_event src/libgit2/deps/llhttp/api.rs:1000:33
+    #2 0x5857008520c9 in <libgit2_crustify::libgit2::deps::llhttp::llhttp::ffi_import::ParserMut>::callback_maybe src/libgit2/deps/llhttp/api.rs:830:14
+    #3 0x585700852235 in <libgit2_crustify::libgit2::deps::llhttp::llhttp::ffi_import::ParserMut>::on_message_complete src/libgit2/deps/llhttp/api.rs:814:26
+    #4 0x58570084ff4b in settings_ptr_bounds_a_table_by_later_safe_calls::safe_code crustify/reviews/modules/libgit2/deps/llhttp/api.c/wave-194/batch-6/contracts/ffi_import/settings-ptr-bounds-a-table-by-later-safe-calls/src/main.rs:39:12
+    #5 0x58570084fbb3 in settings_ptr_bounds_a_table_by_later_safe_calls::main crustify/reviews/modules/libgit2/deps/llhttp/api.c/wave-194/batch-6/contracts/ffi_import/settings-ptr-bounds-a-table-by-later-safe-calls/src/main.rs:66:32
+    #6 0x58570085140d in <fn() as core::ops::function::FnOnce<()>>::call_once library/core/src/ops/function.rs:250:5
+    #7 0x585700850ec0 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> library/std/src/sys/backtrace.rs:166:18
+    #8 0x58570084f593 in std::rt::lang_start::<()>::{closure#0} library/std/src/rt.rs:206:18
+    #9 0x585700891c17 in <&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe as core::ops::function::FnOnce<()>>::call_once /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/core/src/ops/function.rs:287:21
+    #10 0x585700891c17 in std::panicking::catch_unwind::do_call::<&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe, i32> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panicking.rs:573:43
+    #11 0x585700891c17 in std::panicking::catch_unwind::<i32, &dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panicking.rs:541:19
+    #12 0x585700891c17 in std::panic::catch_unwind::<&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe, i32> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panic.rs:359:14
+    #13 0x585700891c17 in std::rt::lang_start_internal::{closure#0} /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/rt.rs:175:24
+    #14 0x585700891c17 in std::panicking::catch_unwind::do_call::<std::rt::lang_start_internal::{closure#0}, isize> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panicking.rs:573:43
+    #15 0x585700891c17 in std::panicking::catch_unwind::<isize, std::rt::lang_start_internal::{closure#0}> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panicking.rs:541:19
+    #16 0x585700891c17 in std::panic::catch_unwind::<std::rt::lang_start_internal::{closure#0}, isize> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panic.rs:359:14
+    #17 0x585700891c17 in std::rt::lang_start_internal /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/rt.rs:171:5
+    #18 0x58570084f4ff in std::rt::lang_start::<()> library/std/src/rt.rs:205:5
+    #19 0x58570084ffc0 in main (crustify/tmp/b6/target-repro/x86_64-unknown-linux-gnu/debug/settings-ptr-bounds-a-table-by-later-safe-calls+0x135fc0) (BuildId: 2a462cb330696a64978b6bc530dec790e7c6cf5d)
+    #20 0x79f4d4cb41c9 in __libc_start_call_main csu/../sysdeps/nptl/libc_start_call_main.h:58:16
+    #21 0x79f4d4cb428a in __libc_start_main csu/../csu/libc-start.c:360:3
+    #22 0x585700785734 in _start (crustify/tmp/b6/target-repro/x86_64-unknown-linux-gnu/debug/settings-ptr-bounds-a-table-by-later-safe-calls+0x6b734) (BuildId: 2a462cb330696a64978b6bc530dec790e7c6cf5d)
+
+0x76f4d3fe0098 is located 88 bytes inside of 184-byte region [0x76f4d3fe0040,0x76f4d3fe00f8)
+freed by thread T0 here:
+    #0 0x58570081ce16 in free (crustify/tmp/b6/target-repro/x86_64-unknown-linux-gnu/debug/settings-ptr-bounds-a-table-by-later-safe-calls+0x102e16) (BuildId: 2a462cb330696a64978b6bc530dec790e7c6cf5d)
+    #1 0x585700850831 in alloc::alloc::dealloc_nonnull library/alloc/src/alloc.rs:205:14
+    #2 0x585700850831 in <alloc::alloc::Global>::deallocate_impl_runtime library/alloc/src/alloc.rs:354:22
+    #3 0x585700850831 in <alloc::alloc::Global>::deallocate_impl library/alloc/src/alloc.rs:469:9
+    #4 0x585700850831 in <alloc::alloc::Global as core::alloc::Allocator>::deallocate library/alloc/src/alloc.rs:588:23
+    #5 0x5857008513f8 in <alloc::boxed::Box<libgit2_crustify::sys::libgit2::llhttp_settings_s> as core::ops::drop::Drop>::drop library/alloc/src/boxed.rs:1993:24
+    #6 0x585700851300 in core::ptr::drop_glue::<alloc::boxed::Box<libgit2_crustify::sys::libgit2::llhttp_settings_s>> library/core/src/ptr/mod.rs:848:1
+    #7 0x585700850a2a in core::mem::drop::<alloc::boxed::Box<libgit2_crustify::sys::libgit2::llhttp_settings_s>> library/core/src/mem/mod.rs:1051:1
+    #8 0x58570084fb9a in settings_ptr_bounds_a_table_by_later_safe_calls::main crustify/reviews/modules/libgit2/deps/llhttp/api.c/wave-194/batch-6/contracts/ffi_import/settings-ptr-bounds-a-table-by-later-safe-calls/src/main.rs:63:5
+    #9 0x58570085140d in <fn() as core::ops::function::FnOnce<()>>::call_once library/core/src/ops/function.rs:250:5
+    #10 0x585700850ec0 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> library/std/src/sys/backtrace.rs:166:18
+    #11 0x58570084f593 in std::rt::lang_start::<()>::{closure#0} library/std/src/rt.rs:206:18
+    #12 0x585700891c17 in <&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe as core::ops::function::FnOnce<()>>::call_once /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/core/src/ops/function.rs:287:21
+    #13 0x585700891c17 in std::panicking::catch_unwind::do_call::<&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe, i32> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panicking.rs:573:43
+    #14 0x585700891c17 in std::panicking::catch_unwind::<i32, &dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panicking.rs:541:19
+    #15 0x585700891c17 in std::panic::catch_unwind::<&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe, i32> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panic.rs:359:14
+    #16 0x585700891c17 in std::rt::lang_start_internal::{closure#0} /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/rt.rs:175:24
+    #17 0x585700891c17 in std::panicking::catch_unwind::do_call::<std::rt::lang_start_internal::{closure#0}, isize> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panicking.rs:573:43
+    #18 0x585700891c17 in std::panicking::catch_unwind::<isize, std::rt::lang_start_internal::{closure#0}> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panicking.rs:541:19
+    #19 0x585700891c17 in std::panic::catch_unwind::<std::rt::lang_start_internal::{closure#0}, isize> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panic.rs:359:14
+    #20 0x585700891c17 in std::rt::lang_start_internal /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/rt.rs:171:5
+    #21 0x58570084f4ff in std::rt::lang_start::<()> library/std/src/rt.rs:205:5
+    #22 0x58570084ffc0 in main (crustify/tmp/b6/target-repro/x86_64-unknown-linux-gnu/debug/settings-ptr-bounds-a-table-by-later-safe-calls+0x135fc0) (BuildId: 2a462cb330696a64978b6bc530dec790e7c6cf5d)
+    #23 0x79f4d4cb41c9 in __libc_start_call_main csu/../sysdeps/nptl/libc_start_call_main.h:58:16
+    #24 0x79f4d4cb428a in __libc_start_main csu/../csu/libc-start.c:360:3
+    #25 0x585700785734 in _start (crustify/tmp/b6/target-repro/x86_64-unknown-linux-gnu/debug/settings-ptr-bounds-a-table-by-later-safe-calls+0x6b734) (BuildId: 2a462cb330696a64978b6bc530dec790e7c6cf5d)
+
+previously allocated by thread T0 here:
+    #0 0x58570081d3e4 in malloc (crustify/tmp/b6/target-repro/x86_64-unknown-linux-gnu/debug/settings-ptr-bounds-a-table-by-later-safe-calls+0x1033e4) (BuildId: 2a462cb330696a64978b6bc530dec790e7c6cf5d)
+    #1 0x5857008506c9 in alloc::alloc::alloc library/alloc/src/alloc.rs:158:9
+    #2 0x5857008506c9 in <alloc::alloc::Global>::alloc_impl_runtime library/alloc/src/alloc.rs:335:73
+    #3 0x585700850874 in <alloc::alloc::Global>::alloc_impl library/alloc/src/alloc.rs:457:9
+    #4 0x585700850874 in <alloc::alloc::Global as core::alloc::Allocator>::allocate library/alloc/src/alloc.rs:575:14
+    #5 0x585700850874 in alloc::boxed::box_new_uninit library/alloc/src/boxed.rs:251:18
+    #6 0x58570084f95a in <alloc::boxed::Box<libgit2_crustify::sys::libgit2::llhttp_settings_s>>::new library/alloc/src/boxed.rs:292:19
+    #7 0x58570084f95a in settings_ptr_bounds_a_table_by_later_safe_calls::main crustify/reviews/modules/libgit2/deps/llhttp/api.c/wave-194/batch-6/contracts/ffi_import/settings-ptr-bounds-a-table-by-later-safe-calls/src/main.rs:45:31
+    #8 0x58570085140d in <fn() as core::ops::function::FnOnce<()>>::call_once library/core/src/ops/function.rs:250:5
+    #9 0x585700850ec0 in std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> library/std/src/sys/backtrace.rs:166:18
+    #10 0x58570084f593 in std::rt::lang_start::<()>::{closure#0} library/std/src/rt.rs:206:18
+    #11 0x585700891c17 in <&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe as core::ops::function::FnOnce<()>>::call_once /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/core/src/ops/function.rs:287:21
+    #12 0x585700891c17 in std::panicking::catch_unwind::do_call::<&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe, i32> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panicking.rs:573:43
+    #13 0x585700891c17 in std::panicking::catch_unwind::<i32, &dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panicking.rs:541:19
+    #14 0x585700891c17 in std::panic::catch_unwind::<&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe, i32> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panic.rs:359:14
+    #15 0x585700891c17 in std::rt::lang_start_internal::{closure#0} /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/rt.rs:175:24
+    #16 0x585700891c17 in std::panicking::catch_unwind::do_call::<std::rt::lang_start_internal::{closure#0}, isize> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panicking.rs:573:43
+    #17 0x585700891c17 in std::panicking::catch_unwind::<isize, std::rt::lang_start_internal::{closure#0}> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panicking.rs:541:19
+    #18 0x585700891c17 in std::panic::catch_unwind::<std::rt::lang_start_internal::{closure#0}, isize> /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/panic.rs:359:14
+    #19 0x585700891c17 in std::rt::lang_start_internal /rustc/1d81eb4ad9cd207e3e638bd32b17ec4fce8412a6/library/std/src/rt.rs:171:5
+    #20 0x58570084f4ff in std::rt::lang_start::<()> library/std/src/rt.rs:205:5
+    #21 0x58570084ffc0 in main (crustify/tmp/b6/target-repro/x86_64-unknown-linux-gnu/debug/settings-ptr-bounds-a-table-by-later-safe-calls+0x135fc0) (BuildId: 2a462cb330696a64978b6bc530dec790e7c6cf5d)
+    #22 0x79f4d4cb41c9 in __libc_start_call_main csu/../sysdeps/nptl/libc_start_call_main.h:58:16
+    #23 0x79f4d4cb428a in __libc_start_main csu/../csu/libc-start.c:360:3
+    #24 0x585700785734 in _start (crustify/tmp/b6/target-repro/x86_64-unknown-linux-gnu/debug/settings-ptr-bounds-a-table-by-later-safe-calls+0x6b734) (BuildId: 2a462cb330696a64978b6bc530dec790e7c6cf5d)
+
+SUMMARY: AddressSanitizer: heap-use-after-free src/libgit2/deps/llhttp/api.rs:976:48 in <libgit2_crustify::libgit2::deps::llhttp::api::EventSlot>::read
+Shadow bytes around the buggy address:
+  0x76f4d3fdfe00: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x76f4d3fdfe80: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x76f4d3fdff00: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x76f4d3fdff80: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x76f4d3fe0000: fa fa fa fa fa fa fa fa fd fd fd fd fd fd fd fd
+=>0x76f4d3fe0080: fd fd fd[fd]fd fd fd fd fd fd fd fd fd fd fd fa
+  0x76f4d3fe0100: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x76f4d3fe0180: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x76f4d3fe0200: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x76f4d3fe0280: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x76f4d3fe0300: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+==2383692==ABORTING
+exit 134

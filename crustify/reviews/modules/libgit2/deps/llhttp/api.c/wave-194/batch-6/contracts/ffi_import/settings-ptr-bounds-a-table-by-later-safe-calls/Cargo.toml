@@ -1,0 +1,10 @@
+[package]
+name = "settings-ptr-bounds-a-table-by-later-safe-calls"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+libgit2 = { package = "libgit2-crustify", path = "../../../../../../../../../../../.." }
