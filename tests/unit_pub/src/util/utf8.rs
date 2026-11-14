@@ -5,7 +5,8 @@
 //! `char_count_carries_over_the_c_test` carries over the module's one C test
 //! case, `test_utf8__char_length` (`tests/util/utf8.c`), which left the C with
 //! `git_utf8_char_length`'s export; the others cover the boundaries of each sequence length
-//! and what `decode_char` refuses. None reaches C, so Miri runs them all.
+//! and of each lead byte's class, and what `decode_char` refuses. None reaches C, so Miri
+//! runs them all.
 
 use libgit2_crustify::libgit2::src::util::utf8::{
     InvalidCodePoint, char_count, decode_char, valid_prefix_len,
@@ -44,6 +45,32 @@ fn char_count_splits_by_structure() {
     assert_eq!(char_count(&[0x80; 5]), 5);
     assert_eq!(char_count(&[0xFF; 3]), 3);
     assert_eq!(char_count("aé€𐍈".as_bytes()), 4);
+}
+
+/// Each lead byte, followed by three continuation bytes, starts the sequence utf8proc's class
+/// table gives it, as `git_utf8_char_length` read it: one byte for ASCII, two for `0xC0` to
+/// `0xDF`, three for `0xE0` to `0xEF`, four for `0xF0` to `0xF7`, `0xF5` to `0xF7` included,
+/// though they start only code points past U+10FFFF, and none for continuation bytes and
+/// `0xF8` to `0xFF`, which count one character each. The count is the sequence's and the
+/// continuation bytes it leaves, and the prefix stops at a byte that starts none.
+#[test]
+fn char_count_reads_each_lead_by_its_class() {
+    for lead in 0..=u8::MAX {
+        let class = match lead {
+            0x00..=0x7F => 1,
+            0xC0..=0xDF => 2,
+            0xE0..=0xEF => 3,
+            0xF0..=0xF7 => 4,
+            _ => 0,
+        };
+        let bytes = [lead, 0x80, 0x80, 0x80];
+        let (count, prefix) = match class {
+            0 => (4, 0),
+            len => (1 + 4 - len, len),
+        };
+        assert_eq!(char_count(&bytes), count, "{bytes:02X?}");
+        assert_eq!(valid_prefix_len(&bytes), prefix, "{bytes:02X?}");
+    }
 }
 
 /// Every valid string counts as many characters as the standard library's `chars`.
