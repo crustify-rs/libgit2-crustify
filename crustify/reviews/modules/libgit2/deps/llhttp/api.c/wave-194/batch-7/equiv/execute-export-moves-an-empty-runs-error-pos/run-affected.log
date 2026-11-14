@@ -1,0 +1,10 @@
+llhttp_execute: 7, api.c's body: 7
+error_pos: export 0x1, api.c's body 0x7fffefa54091, data 0x7fffefa54091
+git_http_parser_execute's parsed_len: export 18446603336495578992, api.c's body 0
+
+thread 'main' (2535777) panicked at src/main.rs:81:5:
+assertion `left == right` failed: the export's error position is not relative to `data`
+  left: 0x1
+ right: 0x7fffefa54091
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+exit 101

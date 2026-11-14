@@ -1,0 +1,47 @@
+error: linking with `cc` failed: exit status: 1
+  = note: rust-lld: error: undefined symbol: llhttp_settings_init
+          >>> referenced by api.rs:202 (tests/equiv/deps/llhttp/api.rs:202)
+          >>> referenced by llhttp.rs:250 (tests/equiv/deps/llhttp/llhttp.rs:250)
+          rust-lld: error: undefined symbol: llhttp_reset
+          >>> referenced by api.rs:716 (tests/equiv/deps/llhttp/api.rs:716)
+          >>> referenced by api.rs:279 (tests/equiv/deps/llhttp/api.rs:279)
+          rust-lld: error: undefined symbol: llhttp_set_error_reason
+          >>> referenced by api.rs:627 (tests/equiv/deps/llhttp/api.rs:627)
+          rust-lld: error: undefined symbol: llhttp_set_lenient_headers
+          >>> referenced by 2u31uqxf0hz4luh9qm0sk1tel
+          rust-lld: error: undefined symbol: llhttp_set_lenient_chunked_length
+          >>> referenced by 2u31uqxf0hz4luh9qm0sk1tel
+          rust-lld: error: undefined symbol: llhttp_set_lenient_keep_alive
+          >>> referenced by 2u31uqxf0hz4luh9qm0sk1tel
+          rust-lld: error: undefined symbol: llhttp_set_lenient_transfer_encoding
+          >>> referenced by 2u31uqxf0hz4luh9qm0sk1tel
+          rust-lld: error: undefined symbol: llhttp_set_lenient_version
+          >>> referenced by 2u31uqxf0hz4luh9qm0sk1tel
+          rust-lld: error: undefined symbol: llhttp_set_lenient_data_after_close
+          >>> referenced by 2u31uqxf0hz4luh9qm0sk1tel
+          rust-lld: error: undefined symbol: llhttp_set_lenient_optional_lf_after_cr
+          >>> referenced by 2u31uqxf0hz4luh9qm0sk1tel
+          rust-lld: error: undefined symbol: llhttp_set_lenient_optional_crlf_after_chunk
+          >>> referenced by 2u31uqxf0hz4luh9qm0sk1tel
+          rust-lld: error: undefined symbol: llhttp_set_lenient_optional_cr_before_lf
+          >>> referenced by 2u31uqxf0hz4luh9qm0sk1tel
+          rust-lld: error: undefined symbol: llhttp_set_lenient_spaces_after_chunk_size
+          >>> referenced by 2u31uqxf0hz4luh9qm0sk1tel
+          rust-lld: error: undefined symbol: llhttp_get_type
+          >>> referenced by llhttp.rs:78 (tests/equiv/deps/llhttp/llhttp.rs:78)
+          >>> referenced by llhttp.rs:324 (tests/equiv/deps/llhttp/llhttp.rs:324)
+          rust-lld: error: undefined symbol: llhttp_get_http_major
+          >>> referenced by llhttp.rs:80 (tests/equiv/deps/llhttp/llhttp.rs:80)
+          rust-lld: error: undefined symbol: llhttp_get_http_minor
+          >>> referenced by llhttp.rs:82 (tests/equiv/deps/llhttp/llhttp.rs:82)
+          rust-lld: error: undefined symbol: llhttp_get_method
+          >>> referenced by llhttp.rs:84 (tests/equiv/deps/llhttp/llhttp.rs:84)
+          rust-lld: error: undefined symbol: llhttp_get_status_code
+          >>> referenced by llhttp.rs:86 (tests/equiv/deps/llhttp/llhttp.rs:86)
+          rust-lld: error: undefined symbol: llhttp_get_upgrade
+          >>> referenced by llhttp.rs:88 (tests/equiv/deps/llhttp/llhttp.rs:88)
+          >>> referenced by llhttp.rs:326 (tests/equiv/deps/llhttp/llhttp.rs:326)
+          rust-lld: error: undefined symbol: llhttp_get_errno
+          >>> referenced by llhttp.rs:90 (tests/equiv/deps/llhttp/llhttp.rs:90)
+          rust-lld: error: too many errors emitted, stopping now (use --error-limit=0 to see all errors)
+error: could not compile `libgit2-crustify` (test "equiv") due to 1 previous error
