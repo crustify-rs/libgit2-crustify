@@ -4156,6 +4156,88 @@ No raw binding or C changed, so the packaging gate does not apply. Usage cells a
 assistant's.
 
 
+### `git2/src/cli/opt.c` integration: the switch from C
+
+The campaign's second switch, and the first of the `git2` link unit, the CLI. It was run by
+`modules/git2/src/cli/opt.c/integration/run-1` on the module's branch, after the merge of the
+working branch (`6d823f4d7`): `f68ea8660`, and the fork's `f57e1a616`. It followed
+`utf8.c`'s procedure (`crustify/evolution/module-switch-procedure`) with its scripts unchanged.
+The export feature `ffi-export-src-cli-opt-c` is deleted, so `opt.rs`'s gateway compiles from
+now on, and its six `unit_priv` tests run in `lib`. No export feature is left. The CLI's
+remaining C calls the five exports `cli_opt_parser_init`, `cli_opt_parser_next`,
+`cli_opt_parse`, `cli_opt_foreach` and `cli_opt_status_fprint`: `main.c`, the `cmd_*.c`
+commands, `common.c` and `opt_usage.c`. Their raw bindings stay and reach the exports. The
+module binds no function without an export, so no allowlist entry goes. The types stay for the
+layouts that C builds and reads. `src/cli/opt.c` leaves `c/` on the local `fork/main` as
+`integrate src/cli/opt.c`, which is not pushed. `opt.h` stays for `common.h`. The module has no
+tied C test. The exports are a private module's, so the crate's API does not change.
+
+The module's 16 `equiv` tests are retired with the C they compared (`tests/equiv/src/cli/opt.rs`,
+and `tests/equiv/src/cli.rs` with it). Two of them call no C: `usage_flags_match_the_c_constants`
+and `parse_flags_match_the_c_constants` compare `Usage`'s and `ParseFlags`' bits with `opt.h`'s
+constants through the raw bindings. No unit test kept that, and the CLI's spec tables, which
+stay C, set those bits, so both move to `unit_pub` as `usage_flags_keep_their_c_values` and
+`parse_flags_keep_their_c_values`. The kinds' and statuses' constants were already in
+`unit_priv`. The behaviour no unit test keeps is the differential itself. The C parser's
+outcomes, parser states, argument orders and variables were compared step by step with the
+port's over the `equiv` corpus: two spec tables, both styles and every command line of the
+corpus. `Parser::new` was compared byte for byte, padding included, with `cli_opt_parser_init`'s
+parser. The unit tests assert the port's results case by case, as C gave them, and the
+relinked CLI below checks the whole path. Once the C is gone, nothing is left to compare with.
+
+The CLI's link unit needed no change of its own. `utf8.c`'s `SelectRust.cmake` already links
+the Rust library into the CLI, which takes libgit2's objects statically, and the crate's
+default features include `git2`. So `rust-staticlib.sh`'s library carries the CLI's exports once
+the feature is gone. The variants were rebuilt as `crustify/builds.gen2` from `f57e1a616` with
+`build-variants.sh`, at 10 jobs each so that the five stayed within the host's 48. This
+worktree's `crustify/builds` links to gen2, and gen1 was left untouched. Each archive holds 211
+objects where gen1's held 212, `opt.c.o` gone. Each variant's `git2` defines the five exports as
+global Rust symbols, where gen1's were the C's local ones. Each passed its smoke test
+(`util_tests -sutf8`, `git2 --version`). `libgit2.so`'s dynamic symbol table defines the same
+907 symbols. It now holds 6337 local Rust functions where gen1's held 2608, and imports about 75
+more glibc functions. It calls none of the CLI's exports: the linker takes whole members of the
+dev-profile library and collects no unused sections (proposal's item 9).
+
+Gates, over gen2 from `end-gates` snapshots at 48 jobs. The workspace is formatted, and `clippy
+--workspace --all-targets` passes with warnings denied. Plain passes the whole workspace:
+`lib` 887 and 1 ignored, `equiv` 528, `ub_safe` 774, `ub_unsafe` 127, `unit_pub` 141,
+`hidden_symbols` 1, doctests 85 and 388. ASan+UBSan passes it but for the known nightly
+failures, the 9 `compile_fail` snapshots and the `CommitBuilder` doctest (E0624). On
+`cd7b59007`, TSan failed one more test: the gateway's
+`the_status_message_describes_a_failed_parse`, which had never run under TSan, since it
+compiled only with the feature. It read the export's `errno` after closing its memory stream,
+and TSan's `fclose`/`free` interceptors leave `EBADF` there. It now reads `errno` right after the
+call (`f68ea8660`). `lib`, the only binary that test compiles into, then passed whole on plain,
+ASan+UBSan and TSan (887 and 1 ignored). Miri passes every binary: `lib` 429, `ub_safe` 205,
+`unit_pub` 105, `equiv` 38, `ub_unsafe` 26, the rest marked. The fix changed only a test that
+Miri ignores. The remaining C tests ran over the link with the Rust through `c-tests.sh`. The
+Rust there was built from the switch's tree, and the fix touches only `#[cfg(test)]` code.
+Plain, ASan+UBSan and TSan give 3443 passed and 55 skipped of 3498, coverage 3444 and 54, each
+the baseline's record. Under TSan, the same 10 suites as the baseline's report the C's
+lock-order inversions and races, and no case fails; no report has a Rust frame. `ctest` passes
+both targets on plain, ASan+UBSan and coverage. Under TSan it fails `offline` on those reports
+alone, 49 lock-order inversions and glibc's `tzset` race, as at `utf8.c`'s switch. No C test reaches the CLI, so its exports were checked
+by the module pass's comparison (`wave-186/batch-7/run-1`'s `cli-smoke.py`), gen1's `git2`
+beside gen2's, over its 66 command lines. On plain, ASan+UBSan and TSan alike, 62 are the same
+and 4 differ: the module's recorded departures, the bare `-` three times and the literal `--`'s
+reordering. Neither side gave a sanitizer report. Each of gen2's 66 outcomes is the module
+pass's relinked CLI's, but for three (`cat-file -p HEAD`, `cat-file commit HEAD`, `blame f1`)
+that differ only in the scratch commit's date and id. BSan was rebuilt and not run, as the
+settings' `sanitizers` answer has it.
+
+`c/` changed, so the crate was packaged as `package-gate-procedure` has it: 696 files, `opt.c`
+out. It built alone in bundled mode only once its manifest also took the workspace's Git patch
+of ffibox. Without it, `glibc-bindings`' Git ffibox and the crate's path ffibox are two crates,
+and the gateway's `FileRef::from_ptr` does not compile (E0599). That evidence is added to the
+proposal. Its `lib` tests: 829 pass, the 39 of `cli::opt` among them. The other 58 need the
+fixture repositories of `c/tests/resources`, as at `utf8.c`'s gate.
+
+From the switch on, the module's coverage is its Rust's, and the C figures lose `opt.c`'s 403
+lines. This run did not measure coverage. What this switch shows the procedure lacks is added to
+`crustify/evolution/module-switch-procedure` (items 5 to 9). The two review reproducers that
+enable the deleted feature (`wave-186/batch-6` and `batch-7`) are left as they are, reproducing
+at the commits their reports name. Usage cells are the assistant's.
+
 ### `libgit2/src/util/utf8.c` wave 229 batch 0: the module's `port`
 
 The module's whole `port`, the items of waves 229 to 231 folded into one batch, since each
