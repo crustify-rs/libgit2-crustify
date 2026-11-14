@@ -201,3 +201,8 @@ rest apart. Required, and made in `122f1f2`: the settings templates said a prote
 waits for the user "at any level", against the blocking-defect exception; they name the
 Autonomy section now. Of what it listed apart, one is taken: the Proposals section's second
 case begins "otherwise".
+
+`review-4` (session `0b0f409b-a06a-4ce0-aa26-9fdec68d88c5`, Opus 5.5, `$0.28`, 55s), on `122f1f2`: **approved**. F1 is
+resolved, the reworded bullet changes no rule, the diff touches nothing else, the provider
+build is clean and nothing weakens a check. The change touches protected paths: it waits for
+the user's approval before it lands.
