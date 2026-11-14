@@ -1,8 +1,7 @@
 # A test BSan cannot finish is sized for it, not skipped
 
-Status: `open`: the change is crustify `c18c8a8` on
-`libgit2-crustify/evolution/bsan-sized-tests`, approved by its review. It touches a protected path, so it
-lands only with the user's approval.
+Status: `landed` as crustify `c18c8a8` (record `a44116d`) on `libgit2-crustify/devel`, with the user's
+approval on 2026-11-14, which its protected path needs.
 
 Goal: Safety, its soundness measure: BSan keeps checking a test's paths.
 

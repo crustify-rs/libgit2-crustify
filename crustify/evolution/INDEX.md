@@ -11,7 +11,7 @@ the assistant alone, as each batch's proposals land.
 | `binding-c-defects` | How a binding keeps a C defect out of its safe API | `landed` | — | — |
 | `bsan-borrow-history-grows` | BorrowSanitizer's cost per access to one allocation grows with its borrow history | `open` | `wave-225/batch-1` | — |
 | `bsan-regenerates-other-bindings` | BSan builds regenerate different bindings, so campaign mode fails under BSan | `landed` | — | — |
-| `bsan-sized-tests` | A test BSan cannot finish is sized for it, not skipped | `open` | `wave-225/batch-1` | — |
+| `bsan-sized-tests` | A test BSan cannot finish is sized for it, not skipped | `landed` | `wave-225/batch-1` | — |
 | `build-scripts-watch-missing-inputs` | Build scripts watch inputs that do not exist, so every cargo run rebuilds the crate | `open` | `wave-232/batch-1` | — |
 | `bundled-pcre2-shadows-the-side-campaign` | pcre2-sys's vendored PCRE2 shadows the side campaign's for libgit2's C | `landed` | — | — |
 | `callback-context-in-an-argument` | A callback whose context is reached through an argument has no sound C form | `open` | `wave-194/batch-1`, `wave-194/batch-2` | — |
