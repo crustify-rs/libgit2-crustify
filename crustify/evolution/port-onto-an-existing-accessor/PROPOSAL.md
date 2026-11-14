@@ -79,3 +79,16 @@ same port.
 ## Review
 
 None yet.
+
+## Review
+
+`review-1` (Opus 5.5, `$1.41`), on `0b77b97`: **rejected**, three fixes required. (1) The clause added to
+`conventions` § 3.2 is removed: that section is one C item with several stand-ins, and this
+is the reverse, which § 3 already allows. (2) The paragraph is scoped to a function no wrapper
+gives an API yet, since a wrapped function keeps its wrapper's API when ported. (3) "Wherever
+it is homed" puts a module's item, and the anchor that records its translation, in another
+module's file, against `task-schema` § 6, where `home` is the sole placement input: either the
+rule is narrowed to an item of the function's own module, which leaves the case that prompted
+it unanswered, or `task-schema`, a protected path, states the exception. That choice is put
+to the user; the change waits for it, fixes 1 and 2 not yet made.
+
