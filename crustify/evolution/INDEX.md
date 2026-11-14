@@ -35,7 +35,7 @@ the assistant alone, as each batch's proposals land.
 | `end-gates-skip-names` | `end-gates` cannot skip a test whose name is a prefix of another's, and checks a variant stage's skip against one binary | `landed` | `gates-slow-list`'s review-1 | — |
 | `enum-integer-form-crate-private` | A closed enum's integer-form conversions are crate-private | `landed` | `wave-186/batch-0` | — |
 | `equiv-c-side-meets-the-c-preconditions` | The C side of an equivalence test meets the C's preconditions | `landed` | `wave-169/batch-5` | — |
-| `equiv-tests-without-c` | An equivalence test that calls no C is carried over at the switch | `open` | `module-switch-procedure`'s switches | — |
+| `equiv-tests-without-c` | An equivalence test that calls no C is carried over at the switch | `landed` | `module-switch-procedure`'s switches | — |
 | `equiv-unreachable-macro-sites` | A macro whose expansions no binding reaches is checked against its body | `landed` | `wave-200/batch-0`, `wave-200/batch-1`, `wave-225/batch-0`, `wave-225/batch-1` | — |
 | `evolution-protocol-research` | The evolution protocol against existing practice | `deferred` | — | — |
 | `evolution-record-and-lessons` | The record holds every signal; lessons are reviewed entries; protected paths | `landed` | — | its own row |

@@ -1,7 +1,7 @@
 # An equivalence test that calls no C is carried over at the switch
 
-Status: `open`: the change is crustify `7da3744` on `libgit2-crustify/evolution/equiv-tests-without-c`, made on 2026-11-14,
-awaiting its review. Split from `module-switch-procedure` that day.
+Status: `landed` as crustify `7da3744` (record `6fb272d`) on `libgit2-crustify/devel`, on 2026-11-14, once its
+review approved it. Split from `module-switch-procedure` that day.
 
 Goal: Equivalence. Its measure counts the inputs and states on which the Rust is compared
 with the C it replaces; a comparison that still runs after the switch should not be lost.
@@ -55,7 +55,10 @@ Protected: none. `porting-workflow` is not protected.
 
 ## Change
 
-Made in the skill as drafted below. In the campaign, one switch carried two tests over by hand.
+Made in the skill, as the Review of the change below gives it: the rule speaks of the module's
+equivalence tests that need no C, and the switch's first part lists the carry-over. The
+candidates' sentence first drafted here, and item 12's bullet above, were dropped by review.
+In the campaign, one switch carried two tests over by hand. What was drafted first:
 
 `porting-workflow`'s One language per module section would add, where it retires the
 equivalence tests:
@@ -104,3 +107,5 @@ switch: it now speaks of the module's equivalence tests, and the Rust side's par
 switch lists the retirement, the carry-over first. Listed apart: a carried test that holds
 unsafe code cannot go to `unit_pub`; such tests should not be written into equivalence files
 at all, which is `testing`'s, a protected path.
+
+`review-2` (Opus 5.5, `$0.28`), on `7da3744`: **approved**.
