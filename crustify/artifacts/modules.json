@@ -2595,7 +2595,7 @@
         {
           "index": 27,
           "name": "src/util/integer.h",
-          "status": "todo",
+          "status": "frozen",
           "foundational": false,
           "depends_on": [],
           "translation_unit": null,
