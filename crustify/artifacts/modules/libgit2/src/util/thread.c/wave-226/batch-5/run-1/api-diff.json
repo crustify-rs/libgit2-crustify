@@ -1,0 +1,408 @@
+{
+ "after": {
+  "crate": "libgit2_crustify",
+  "crate_version": "0.1.0",
+  "deps": [
+   "ffibox"
+  ],
+  "format_version": 61,
+  "plumbing": [
+   "ffibox"
+  ]
+ },
+ "anchor_moves": {},
+ "api": 2,
+ "before": {
+  "crate": "libgit2_crustify",
+  "crate_version": "0.1.0",
+  "deps": [
+   "ffibox"
+  ],
+  "format_version": 61,
+  "plumbing": [
+   "ffibox"
+  ]
+ },
+ "items": {
+  "fn::git_atomic32_add": {
+   "status": "kept"
+  },
+  "fn::git_atomic32_dec": {
+   "status": "kept"
+  },
+  "fn::git_atomic32_get": {
+   "status": "kept"
+  },
+  "fn::git_atomic32_inc": {
+   "status": "kept"
+  },
+  "fn::git_atomic32_set": {
+   "status": "kept"
+  },
+  "fn::git_atomic64_add": {
+   "status": "kept"
+  },
+  "fn::git_atomic64_get": {
+   "status": "kept"
+  },
+  "fn::git_atomic64_set": {
+   "status": "kept"
+  },
+  "fn::git_atomic__compare_and_swap": {
+   "status": "kept"
+  },
+  "fn::git_atomic__load": {
+   "status": "kept"
+  },
+  "fn::git_atomic__swap": {
+   "status": "kept"
+  },
+  "fn::git_threads_global_init": {
+   "status": "kept"
+  },
+  "fn::git_tlsdata_dispose": {
+   "status": "kept"
+  },
+  "fn::git_tlsdata_get": {
+   "status": "kept"
+  },
+  "fn::git_tlsdata_init": {
+   "status": "kept"
+  },
+  "fn::git_tlsdata_set": {
+   "status": "kept"
+  },
+  "fnp::git_tlsdata_init.destroy_fn": {
+   "status": "kept",
+   "unresolved": [
+    "libgit2_crustify::libgit2::src::util::thread::TlsdataInitDestroyFn: bounds of impl<T> core::marker::Send for libgit2_crustify::libgit2::src::util::thread::TlsdataInitDestroyFn<T> where fn(T): core::marker::Send",
+    "libgit2_crustify::libgit2::src::util::thread::TlsdataInitDestroyFn: bounds of impl<T> core::marker::Sync for libgit2_crustify::libgit2::src::util::thread::TlsdataInitDestroyFn<T> where fn(T): core::marker::Sync",
+    "libgit2_crustify::libgit2::src::util::thread::TlsdataInitDestroyFn: bounds of impl<T> core::marker::Unpin for libgit2_crustify::libgit2::src::util::thread::TlsdataInitDestroyFn<T> where fn(T): core::marker::Unpin",
+    "libgit2_crustify::libgit2::src::util::thread::TlsdataInitDestroyFn: bounds of impl<T> core::panic::unwind_safe::RefUnwindSafe for libgit2_crustify::libgit2::src::util::thread::TlsdataInitDestroyFn<T> where fn(T): core::panic::unwind_safe::RefUnwindSafe",
+    "libgit2_crustify::libgit2::src::util::thread::TlsdataInitDestroyFn: bounds of impl<T> core::panic::unwind_safe::UnwindSafe for libgit2_crustify::libgit2::src::util::thread::TlsdataInitDestroyFn<T> where fn(T): core::panic::unwind_safe::UnwindSafe"
+   ]
+  },
+  "mac::GIT_MEMORY_BARRIER": {
+   "status": "kept"
+  },
+  "mac::git_atomic_compare_and_swap": {
+   "status": "kept"
+  },
+  "mac::git_atomic_load": {
+   "status": "kept"
+  },
+  "mac::git_atomic_ssize_add": {
+   "status": "kept"
+  },
+  "mac::git_atomic_ssize_get": {
+   "status": "kept"
+  },
+  "mac::git_atomic_swap": {
+   "status": "kept"
+  },
+  "mac::git_cond": {
+   "raw_status": "changed",
+   "status": "kept"
+  },
+  "mac::git_cond_free": {
+   "changes": [
+    {
+     "change": "removed",
+     "item": "<libgit2_crustify::libgit2::src::util::thread::Condvar as core::ops::drop::Drop>::drop",
+     "part": "contract",
+     "severity": "changed"
+    },
+    {
+     "change": "added",
+     "item": "libgit2_crustify::libgit2::src::util::thread::Condvar",
+     "part": "contract",
+     "severity": "extended"
+    }
+   ],
+   "status": "changed"
+  },
+  "mac::git_cond_init": {
+   "status": "kept"
+  },
+  "mac::git_cond_signal": {
+   "status": "kept"
+  },
+  "mac::git_cond_wait": {
+   "status": "kept"
+  },
+  "mac::git_mutex": {
+   "changes": [
+    {
+     "after": "impl<T> libgit2_crustify::libgit2::src::util::thread::Mutex<T> { fn(self) -> std::sync::poison::LockResult<T> }",
+     "change": "added",
+     "item": "libgit2_crustify::libgit2::src::util::thread::Mutex",
+     "name": "into_inner",
+     "part": "member",
+     "severity": "extended",
+     "view": "raw"
+    },
+    {
+     "change": "removed",
+     "item": "libgit2_crustify::libgit2::src::util::thread::Mutex",
+     "name": "impl<T: ?core::marker::Sized> core::ops::drop::Drop for libgit2_crustify::libgit2::src::util::thread::Mutex<T>",
+     "part": "impl",
+     "severity": "changed",
+     "view": "raw"
+    }
+   ],
+   "status": "changed",
+   "unresolved": [
+    "libgit2_crustify::libgit2::src::util::thread::Mutex: bounds of impl<T: ?core::marker::Sized + core::fmt::Debug> core::fmt::Debug for libgit2_crustify::libgit2::src::util::thread::Mutex<T>",
+    "libgit2_crustify::libgit2::src::util::thread::Mutex: bounds of impl<T: core::default::Default> core::default::Default for libgit2_crustify::libgit2::src::util::thread::Mutex<T>",
+    "libgit2_crustify::libgit2::src::util::thread::Mutex: bounds of impl<T> core::marker::Send for libgit2_crustify::libgit2::src::util::thread::Mutex<T> where std::sync::poison::mutex::Mutex<T>: core::marker::Send, T: ?core::marker::Sized",
+    "libgit2_crustify::libgit2::src::util::thread::Mutex: bounds of impl<T> core::marker::Sync for libgit2_crustify::libgit2::src::util::thread::Mutex<T> where std::sync::poison::mutex::Mutex<T>: core::marker::Sync, T: ?core::marker::Sized",
+    "libgit2_crustify::libgit2::src::util::thread::Mutex: bounds of impl<T> core::marker::Unpin for libgit2_crustify::libgit2::src::util::thread::Mutex<T> where std::sync::poison::mutex::Mutex<T>: core::marker::Unpin, T: ?core::marker::Sized",
+    "libgit2_crustify::libgit2::src::util::thread::Mutex: bounds of impl<T> core::panic::unwind_safe::RefUnwindSafe for libgit2_crustify::libgit2::src::util::thread::Mutex<T> where std::sync::poison::mutex::Mutex<T>: core::panic::unwind_safe::RefUnwindSafe, T: ?core::marker::Sized",
+    "libgit2_crustify::libgit2::src::util::thread::Mutex: bounds of impl<T> core::panic::unwind_safe::UnwindSafe for libgit2_crustify::libgit2::src::util::thread::Mutex<T> where std::sync::poison::mutex::Mutex<T>: core::panic::unwind_safe::UnwindSafe, T: ?core::marker::Sized"
+   ]
+  },
+  "mac::git_mutex_free": {
+   "changes": [
+    {
+     "change": "removed",
+     "item": "<libgit2_crustify::libgit2::src::util::thread::Mutex<T> as core::ops::drop::Drop>::drop",
+     "part": "contract",
+     "severity": "changed"
+    },
+    {
+     "change": "added",
+     "item": "libgit2_crustify::libgit2::src::util::thread::Mutex",
+     "part": "contract",
+     "severity": "extended"
+    }
+   ],
+   "status": "changed"
+  },
+  "mac::git_mutex_init": {
+   "status": "kept"
+  },
+  "mac::git_mutex_lock": {
+   "status": "kept"
+  },
+  "mac::git_mutex_unlock": {
+   "status": "kept",
+   "unresolved": [
+    "libgit2_crustify::libgit2::src::util::thread::MutexGuard: T",
+    "libgit2_crustify::libgit2::src::util::thread::MutexGuard: bounds of impl<'a, T> core::marker::Sync for libgit2_crustify::libgit2::src::util::thread::MutexGuard<'a, T> where std::sync::poison::mutex::MutexGuard<'a, T>: core::marker::Sync, T: ?core::marker::Sized",
+    "libgit2_crustify::libgit2::src::util::thread::MutexGuard: bounds of impl<'a, T> core::marker::Unpin for libgit2_crustify::libgit2::src::util::thread::MutexGuard<'a, T> where std::sync::poison::mutex::MutexGuard<'a, T>: core::marker::Unpin, T: ?core::marker::Sized",
+    "libgit2_crustify::libgit2::src::util::thread::MutexGuard: bounds of impl<'a, T> core::panic::unwind_safe::RefUnwindSafe for libgit2_crustify::libgit2::src::util::thread::MutexGuard<'a, T> where std::sync::poison::mutex::MutexGuard<'a, T>: core::panic::unwind_safe::RefUnwindSafe, T: ?core::marker::Sized",
+    "libgit2_crustify::libgit2::src::util::thread::MutexGuard: bounds of impl<'a, T> core::panic::unwind_safe::UnwindSafe for libgit2_crustify::libgit2::src::util::thread::MutexGuard<'a, T> where std::sync::poison::mutex::MutexGuard<'a, T>: core::panic::unwind_safe::UnwindSafe, T: ?core::marker::Sized",
+    "libgit2_crustify::libgit2::src::util::thread::MutexGuard: bounds of impl<T: ?core::marker::Sized + core::fmt::Debug> core::fmt::Debug for libgit2_crustify::libgit2::src::util::thread::MutexGuard<'_, T>"
+   ]
+  },
+  "mac::git_rwlock": {
+   "changes": [
+    {
+     "after": "impl<T> libgit2_crustify::libgit2::src::util::thread::RwLock<T> { fn(self) -> std::sync::poison::LockResult<T> }",
+     "change": "added",
+     "item": "libgit2_crustify::libgit2::src::util::thread::RwLock",
+     "name": "into_inner",
+     "part": "member",
+     "severity": "extended",
+     "view": "raw"
+    },
+    {
+     "change": "removed",
+     "item": "libgit2_crustify::libgit2::src::util::thread::RwLock",
+     "name": "impl<T: ?core::marker::Sized> core::ops::drop::Drop for libgit2_crustify::libgit2::src::util::thread::RwLock<T>",
+     "part": "impl",
+     "severity": "changed",
+     "view": "raw"
+    }
+   ],
+   "status": "changed",
+   "unresolved": [
+    "libgit2_crustify::libgit2::src::util::thread::RwLock: bounds of impl<T: ?core::marker::Sized + core::fmt::Debug> core::fmt::Debug for libgit2_crustify::libgit2::src::util::thread::RwLock<T>",
+    "libgit2_crustify::libgit2::src::util::thread::RwLock: bounds of impl<T: core::default::Default> core::default::Default for libgit2_crustify::libgit2::src::util::thread::RwLock<T>",
+    "libgit2_crustify::libgit2::src::util::thread::RwLock: bounds of impl<T> core::marker::Send for libgit2_crustify::libgit2::src::util::thread::RwLock<T> where std::sync::poison::rwlock::RwLock<T>: core::marker::Send, T: ?core::marker::Sized",
+    "libgit2_crustify::libgit2::src::util::thread::RwLock: bounds of impl<T> core::marker::Sync for libgit2_crustify::libgit2::src::util::thread::RwLock<T> where std::sync::poison::rwlock::RwLock<T>: core::marker::Sync, T: ?core::marker::Sized",
+    "libgit2_crustify::libgit2::src::util::thread::RwLock: bounds of impl<T> core::marker::Unpin for libgit2_crustify::libgit2::src::util::thread::RwLock<T> where std::sync::poison::rwlock::RwLock<T>: core::marker::Unpin, T: ?core::marker::Sized",
+    "libgit2_crustify::libgit2::src::util::thread::RwLock: bounds of impl<T> core::panic::unwind_safe::RefUnwindSafe for libgit2_crustify::libgit2::src::util::thread::RwLock<T> where std::sync::poison::rwlock::RwLock<T>: core::panic::unwind_safe::RefUnwindSafe, T: ?core::marker::Sized",
+    "libgit2_crustify::libgit2::src::util::thread::RwLock: bounds of impl<T> core::panic::unwind_safe::UnwindSafe for libgit2_crustify::libgit2::src::util::thread::RwLock<T> where std::sync::poison::rwlock::RwLock<T>: core::panic::unwind_safe::UnwindSafe, T: ?core::marker::Sized"
+   ]
+  },
+  "mac::git_rwlock_free": {
+   "changes": [
+    {
+     "change": "removed",
+     "item": "<libgit2_crustify::libgit2::src::util::thread::RwLock<T> as core::ops::drop::Drop>::drop",
+     "part": "contract",
+     "severity": "changed"
+    },
+    {
+     "change": "added",
+     "item": "libgit2_crustify::libgit2::src::util::thread::RwLock",
+     "part": "contract",
+     "severity": "extended"
+    }
+   ],
+   "status": "changed"
+  },
+  "mac::git_rwlock_init": {
+   "status": "kept"
+  },
+  "mac::git_rwlock_rdlock": {
+   "status": "kept"
+  },
+  "mac::git_rwlock_rdunlock": {
+   "status": "kept",
+   "unresolved": [
+    "libgit2_crustify::libgit2::src::util::thread::RwLockReadGuard: T",
+    "libgit2_crustify::libgit2::src::util::thread::RwLockReadGuard: bounds of impl<'a, T> core::marker::Sync for libgit2_crustify::libgit2::src::util::thread::RwLockReadGuard<'a, T> where std::sync::poison::rwlock::RwLockReadGuard<'a, T>: core::marker::Sync, T: ?core::marker::Sized",
+    "libgit2_crustify::libgit2::src::util::thread::RwLockReadGuard: bounds of impl<'a, T> core::marker::Unpin for libgit2_crustify::libgit2::src::util::thread::RwLockReadGuard<'a, T> where std::sync::poison::rwlock::RwLockReadGuard<'a, T>: core::marker::Unpin, T: ?core::marker::Sized",
+    "libgit2_crustify::libgit2::src::util::thread::RwLockReadGuard: bounds of impl<'a, T> core::panic::unwind_safe::RefUnwindSafe for libgit2_crustify::libgit2::src::util::thread::RwLockReadGuard<'a, T> where std::sync::poison::rwlock::RwLockReadGuard<'a, T>: core::panic::unwind_safe::RefUnwindSafe, T: ?core::marker::Sized",
+    "libgit2_crustify::libgit2::src::util::thread::RwLockReadGuard: bounds of impl<'a, T> core::panic::unwind_safe::UnwindSafe for libgit2_crustify::libgit2::src::util::thread::RwLockReadGuard<'a, T> where std::sync::poison::rwlock::RwLockReadGuard<'a, T>: core::panic::unwind_safe::UnwindSafe, T: ?core::marker::Sized",
+    "libgit2_crustify::libgit2::src::util::thread::RwLockReadGuard: bounds of impl<T: ?core::marker::Sized + core::fmt::Debug> core::fmt::Debug for libgit2_crustify::libgit2::src::util::thread::RwLockReadGuard<'_, T>"
+   ]
+  },
+  "mac::git_rwlock_wrlock": {
+   "status": "kept"
+  },
+  "mac::git_rwlock_wrunlock": {
+   "status": "kept",
+   "unresolved": [
+    "libgit2_crustify::libgit2::src::util::thread::RwLockWriteGuard: T",
+    "libgit2_crustify::libgit2::src::util::thread::RwLockWriteGuard: bounds of impl<'a, T> core::marker::Sync for libgit2_crustify::libgit2::src::util::thread::RwLockWriteGuard<'a, T> where std::sync::poison::rwlock::RwLockWriteGuard<'a, T>: core::marker::Sync, T: ?core::marker::Sized",
+    "libgit2_crustify::libgit2::src::util::thread::RwLockWriteGuard: bounds of impl<'a, T> core::marker::Unpin for libgit2_crustify::libgit2::src::util::thread::RwLockWriteGuard<'a, T> where std::sync::poison::rwlock::RwLockWriteGuard<'a, T>: core::marker::Unpin, T: ?core::marker::Sized",
+    "libgit2_crustify::libgit2::src::util::thread::RwLockWriteGuard: bounds of impl<'a, T> core::panic::unwind_safe::RefUnwindSafe for libgit2_crustify::libgit2::src::util::thread::RwLockWriteGuard<'a, T> where std::sync::poison::rwlock::RwLockWriteGuard<'a, T>: core::panic::unwind_safe::RefUnwindSafe, T: ?core::marker::Sized",
+    "libgit2_crustify::libgit2::src::util::thread::RwLockWriteGuard: bounds of impl<'a, T> core::panic::unwind_safe::UnwindSafe for libgit2_crustify::libgit2::src::util::thread::RwLockWriteGuard<'a, T> where std::sync::poison::rwlock::RwLockWriteGuard<'a, T>: core::panic::unwind_safe::UnwindSafe, T: ?core::marker::Sized",
+    "libgit2_crustify::libgit2::src::util::thread::RwLockWriteGuard: bounds of impl<T: ?core::marker::Sized + core::fmt::Debug> core::fmt::Debug for libgit2_crustify::libgit2::src::util::thread::RwLockWriteGuard<'_, T>"
+   ]
+  },
+  "mac::git_thread_create": {
+   "status": "kept"
+  },
+  "mac::git_thread_join": {
+   "status": "kept",
+   "unresolved": [
+    "libgit2_crustify::libgit2::src::util::thread::JoinHandle: bounds of impl<T> core::marker::Send for libgit2_crustify::libgit2::src::util::thread::JoinHandle<T> where std::thread::join_handle::JoinHandle<T>: core::marker::Send",
+    "libgit2_crustify::libgit2::src::util::thread::JoinHandle: bounds of impl<T> core::marker::Sync for libgit2_crustify::libgit2::src::util::thread::JoinHandle<T> where std::thread::join_handle::JoinHandle<T>: core::marker::Sync",
+    "libgit2_crustify::libgit2::src::util::thread::JoinHandle: bounds of impl<T> core::marker::Unpin for libgit2_crustify::libgit2::src::util::thread::JoinHandle<T> where std::thread::join_handle::JoinHandle<T>: core::marker::Unpin"
+   ]
+  },
+  "mac::git_tlsdata_key": {
+   "changes": [
+    {
+     "after": "impl<T: 'static> libgit2_crustify::libgit2::src::util::thread::TlsKey<T> { fn<R>(self, impl core::ops::function::FnOnce(core::option::Option<&T>) -> R) -> R }",
+     "change": "added",
+     "item": "libgit2_crustify::libgit2::src::util::thread::TlsKey",
+     "name": "with",
+     "part": "member",
+     "severity": "extended",
+     "view": "raw"
+    }
+   ],
+   "status": "extended",
+   "unresolved": [
+    "libgit2_crustify::libgit2::src::util::thread::TlsKey: bounds of impl<T> core::marker::Send for libgit2_crustify::libgit2::src::util::thread::TlsKey<T> where core::marker::PhantomData<fn() -> T>: core::marker::Send",
+    "libgit2_crustify::libgit2::src::util::thread::TlsKey: bounds of impl<T> core::marker::Sync for libgit2_crustify::libgit2::src::util::thread::TlsKey<T> where core::marker::PhantomData<fn() -> T>: core::marker::Sync",
+    "libgit2_crustify::libgit2::src::util::thread::TlsKey: bounds of impl<T> core::marker::Unpin for libgit2_crustify::libgit2::src::util::thread::TlsKey<T> where core::marker::PhantomData<fn() -> T>: core::marker::Unpin",
+    "libgit2_crustify::libgit2::src::util::thread::TlsKey: bounds of impl<T> core::panic::unwind_safe::RefUnwindSafe for libgit2_crustify::libgit2::src::util::thread::TlsKey<T> where core::marker::PhantomData<fn() -> T>: core::panic::unwind_safe::RefUnwindSafe",
+    "libgit2_crustify::libgit2::src::util::thread::TlsKey: bounds of impl<T> core::panic::unwind_safe::UnwindSafe for libgit2_crustify::libgit2::src::util::thread::TlsKey<T> where core::marker::PhantomData<fn() -> T>: core::panic::unwind_safe::UnwindSafe"
+   ]
+  }
+ },
+ "missing": [],
+ "rekeyed": 0,
+ "retargeted": 0,
+ "totals": {
+  "changed": 5,
+  "extended": 1,
+  "kept": 37,
+  "new": 0,
+  "removed": 0
+ },
+ "unattributed": {
+  "modules": {
+   "libgit2_crustify::git2::src::cli::opt": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::deps::llhttp::api": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::deps::llhttp::http": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::deps::llhttp::llhttp": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::deps::reftable::basics": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::checkout": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::commit": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::config": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::diff": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::filter": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::index": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::libgit2": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::odb": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::repository": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::settings": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::signature": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::strarray": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::trace": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::tree": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::libgit2::worktree": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::util::errors": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::util::thread": {
+    "status": "kept"
+   },
+   "libgit2_crustify::libgit2::src::util::utf8": {
+    "status": "kept"
+   },
+   "libgit2_crustify::sys::git2": {
+    "status": "kept"
+   },
+   "libgit2_crustify::sys::libgit2": {
+    "status": "kept"
+   }
+  },
+  "totals": {
+   "changed": 0,
+   "extended": 0,
+   "kept": 25,
+   "new": 0,
+   "removed": 0
+  }
+ },
+ "unresolved": 8,
+ "view": "contract"
+}

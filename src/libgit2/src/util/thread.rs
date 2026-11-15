@@ -111,8 +111,13 @@
 //! threads, as here; this module reimplements them over the standard library alone: a
 //! registry of the live keys, behind a lock, and one table per thread, in a `thread_local!`
 //! whose destructor runs the keys' destructors when the thread exits, a thread C started
-//! included. The values never leave the thread that stored them, so a key is `Send` and
-//! `Sync` whatever its values are.
+//! included. Each value holds its key's state beside it, so that reading or replacing a value
+//! and a thread's exit take no lock: the lock serves making and disposing of keys and a
+//! thread's first value of a key. A child forked from a threaded process may so run its
+//! thread-local destructors at `exit`, as libgit2's `git_process_start` does when its
+//! `execve` fails, without waiting on a lock that another thread of its parent held. The
+//! values never leave the thread that stored them, so a key is `Send` and `Sync` whatever its
+//! values are.
 //!
 //! A key's value is typed, [`TlsKey<T>`](TlsKey), where C's is a `void *`, and its destructor,
 //! a [`TlsdataInitDestroyFn`], is a plain Rust function of the value. The C that remains
@@ -458,8 +463,9 @@ use std::sync::{LockResult, PoisonError};
 /// [`new`](Self::new) initialises it, as `git_mutex_init` does, [`lock`](Self::lock)
 /// takes it into a [`MutexGuard`], as `git_mutex_lock` does, the guard's drop or
 /// [`MutexGuard::unlock`] releases it, as `git_mutex_unlock` does, and dropping it
-/// destroys it, as `git_mutex_free` does. The [module documentation](self#locks) gives how it
-/// differs from C's.
+/// destroys it, as `git_mutex_free` does: the borrow checker sees that no guard holds it,
+/// which POSIX asks of `pthread_mutex_destroy`'s caller. The [module documentation](self#locks)
+/// gives how it differs from C's.
 ///
 /// ```
 /// use libgit2_crustify::libgit2::src::util::thread::Mutex;
@@ -467,10 +473,13 @@ use std::sync::{LockResult, PoisonError};
 /// let count = Mutex::new(0);
 /// *count.lock().unwrap() += 1;
 /// assert_eq!(*count.lock().unwrap(), 1);
+/// assert_eq!(count.into_inner().unwrap(), 1);
 /// ```
 ///
 /// Replaces `mac::git_mutex`
 #[doc(alias = "git_mutex")]
+/// Replaces `mac::git_mutex_free`
+#[doc(alias = "git_mutex_free")]
 pub struct Mutex<T: ?Sized> {
     inner: std::sync::Mutex<T>,
 }
@@ -493,6 +502,15 @@ impl<T> Mutex<T> {
         Mutex {
             inner: std::sync::Mutex::new(value),
         }
+    }
+
+    /// The data, taking the lock apart, which needs no locking.
+    ///
+    /// # Errors
+    ///
+    /// When the lock is poisoned, the [`PoisonError`] holds the data.
+    pub fn into_inner(self) -> LockResult<T> {
+        self.inner.into_inner()
     }
 }
 
@@ -534,15 +552,6 @@ impl<T: ?Sized> Mutex<T> {
     pub fn get_mut(&mut self) -> LockResult<&mut T> {
         self.inner.get_mut()
     }
-}
-
-impl<T: ?Sized> Drop for Mutex<T> {
-    /// Destroys the lock, as `git_mutex_free` does: the borrow checker sees that no
-    /// guard holds it, which POSIX asks of `pthread_mutex_destroy`'s caller.
-    ///
-    /// Replaces `mac::git_mutex_free`
-    #[doc(alias = "git_mutex_free")]
-    fn drop(&mut self) {}
 }
 
 impl<T: Default> Default for Mutex<T> {
@@ -601,7 +610,8 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for MutexGuard<'_, T> {
 /// [`new`](Self::new) initialises it, as `git_cond_init` does,
 /// [`wait`](Self::wait) releases a [`Mutex`]'s lock and waits on it, as `git_cond_wait`
 /// does, [`notify_one`](Self::notify_one) wakes one waiter, as `git_cond_signal` does,
-/// and dropping it destroys it, as `git_cond_free` does. A wait may also end with no
+/// and dropping it destroys it, as `git_cond_free` does: a waiter borrows it, so none is
+/// left, which POSIX asks of `pthread_cond_destroy`'s caller. A wait may also end with no
 /// notification, as `pthread_cond_wait`'s may, so a waiter tests its condition in a
 /// loop, as libgit2's pack builder does.
 ///
@@ -627,6 +637,8 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for MutexGuard<'_, T> {
 ///
 /// Replaces `mac::git_cond`
 #[doc(alias = "git_cond")]
+/// Replaces `mac::git_cond_free`
+#[doc(alias = "git_cond_free")]
 pub struct Condvar {
     inner: std::sync::Condvar,
 }
@@ -674,15 +686,6 @@ impl Condvar {
     }
 }
 
-impl Drop for Condvar {
-    /// Destroys the condition variable, as `git_cond_free` does: a waiter borrows it,
-    /// so none is left, which POSIX asks of `pthread_cond_destroy`'s caller.
-    ///
-    /// Replaces `mac::git_cond_free`
-    #[doc(alias = "git_cond_free")]
-    fn drop(&mut self) {}
-}
-
 impl Default for Condvar {
     fn default() -> Condvar {
         Condvar::new()
@@ -702,8 +705,9 @@ impl fmt::Debug for Condvar {
 /// and [`write`](Self::write) take it shared and exclusive, as `git_rwlock_rdlock` and
 /// `git_rwlock_wrlock` do, into a [`RwLockReadGuard`] or a [`RwLockWriteGuard`], whose
 /// drop or `unlock` releases it, as `git_rwlock_rdunlock` and `git_rwlock_wrunlock` do,
-/// and dropping it destroys it, as `git_rwlock_free` does. A read lock is not taken
-/// twice by one thread, as `unix/pthread.h` asks.
+/// and dropping it destroys it, as `git_rwlock_free` does: the borrow checker sees that no
+/// guard holds it, which POSIX asks of `pthread_rwlock_destroy`'s caller. A read lock is
+/// not taken twice by one thread, as `unix/pthread.h` asks.
 ///
 /// ```
 /// use libgit2_crustify::libgit2::src::util::thread::RwLock;
@@ -711,10 +715,13 @@ impl fmt::Debug for Condvar {
 /// let cache = RwLock::new(Vec::new());
 /// cache.write().unwrap().push(1);
 /// assert_eq!(*cache.read().unwrap(), [1]);
+/// assert_eq!(cache.into_inner().unwrap(), [1]);
 /// ```
 ///
 /// Replaces `mac::git_rwlock`
 #[doc(alias = "git_rwlock")]
+/// Replaces `mac::git_rwlock_free`
+#[doc(alias = "git_rwlock_free")]
 pub struct RwLock<T: ?Sized> {
     inner: std::sync::RwLock<T>,
 }
@@ -742,6 +749,15 @@ impl<T> RwLock<T> {
         RwLock {
             inner: std::sync::RwLock::new(value),
         }
+    }
+
+    /// The data, taking the lock apart, which needs no locking.
+    ///
+    /// # Errors
+    ///
+    /// When the lock is poisoned, the [`PoisonError`] holds the data.
+    pub fn into_inner(self) -> LockResult<T> {
+        self.inner.into_inner()
     }
 }
 
@@ -803,15 +819,6 @@ impl<T: ?Sized> RwLock<T> {
     pub fn get_mut(&mut self) -> LockResult<&mut T> {
         self.inner.get_mut()
     }
-}
-
-impl<T: ?Sized> Drop for RwLock<T> {
-    /// Destroys the lock, as `git_rwlock_free` does: the borrow checker sees that no
-    /// guard holds it, which POSIX asks of `pthread_rwlock_destroy`'s caller.
-    ///
-    /// Replaces `mac::git_rwlock_free`
-    #[doc(alias = "git_rwlock_free")]
-    fn drop(&mut self) {}
 }
 
 impl<T: Default> Default for RwLock<T> {
@@ -1484,8 +1491,11 @@ mod ffi_import {
         use core::ffi::c_void;
         use core::num::NonZeroUsize;
         use core::ptr::NonNull;
+        use core::sync::atomic::{AtomicI32, Ordering};
         use std::sync::{Mutex, PoisonError};
         use std::thread;
+
+        use nix::unistd::getpid;
 
         use super::super::{TlsError, TlsKey, c_keys};
         use super::{CDestructor, CWord};
@@ -1498,6 +1508,27 @@ mod ffi_import {
             LOG.lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .push(value.addr());
+        }
+
+        /// The test process's id, set before a test forks, by which a destructor tells a forked
+        /// child apart.
+        static PARENT: AtomicI32 = AtomicI32::new(0);
+
+        /// Ends a forked child at once, with status 0, from a destructor it runs at `exit`, so
+        /// that no atexit handler runs after the destructors: a sanitizer's leak check would
+        /// find the memory of the parent's other threads, which the child lacks, unreachable.
+        /// In the test process, it does nothing.
+        fn end_if_child() {
+            if getpid().as_raw() != PARENT.load(Ordering::Relaxed) {
+                // SAFETY: `_exit` ends the process, running nothing more.
+                unsafe { nix::libc::_exit(0) }
+            }
+        }
+
+        /// A C destructor that ends a forked child, and takes no lock that a test beside its
+        /// own may hold when the child is forked.
+        unsafe extern "C" fn end_child(_: *mut c_void) {
+            end_if_child();
         }
 
         /// The addresses recorded, sorted.
@@ -1593,6 +1624,119 @@ mod ffi_import {
                 assert_eq!(c_keys::dispose(id), Err(TlsError::Disposed));
             }
             assert_eq!(rust.get(), Some(1));
+            rust.dispose().expect("disposed");
+        }
+
+        /// A thread that calls `exit` destroys the values it holds of live keys, as the main
+        /// thread does, where POSIX destroys none of them: a forked child, whose one thread
+        /// holds a value of C's key it inherited, runs C's destructor at `exit`, which writes to
+        /// a pipe whose descriptor is the value.
+        #[test]
+        #[cfg_attr(miri, ignore = "forks")]
+        fn a_thread_that_calls_exit_destroys_its_values() {
+            use std::os::fd::AsRawFd;
+
+            use nix::sys::wait::{WaitStatus, waitpid};
+            use nix::unistd::{ForkResult, fork, pipe, read};
+
+            /// Writes one byte to the descriptor the value is, then ends a forked child.
+            unsafe extern "C" fn write_byte(fd: *mut c_void) {
+                let fd = i32::try_from(fd.addr()).expect("a descriptor");
+                // SAFETY: a one-byte write from a static byte, to a descriptor the test made.
+                let _ = unsafe { nix::libc::write(fd, b"d".as_ptr().cast(), 1) };
+                end_if_child();
+            }
+
+            let (reader, writer) = pipe().expect("a pipe");
+            let fd = usize::try_from(writer.as_raw_fd()).expect("a descriptor");
+            // SAFETY: `write_byte` writes to the descriptor it is given, which the words this
+            // key holds are.
+            let c = c_keys::init(Some(unsafe { CDestructor::new(write_byte) })).expect("a key");
+            c_keys::set(c, Some(word(fd))).expect("stored");
+            PARENT.store(getpid().as_raw(), Ordering::Relaxed);
+            // SAFETY: the child calls only `exit`, which runs its thread-local destructors.
+            match unsafe { fork() }.expect("forked") {
+                // SAFETY: as above.
+                ForkResult::Child => unsafe { nix::libc::exit(0) },
+                ForkResult::Parent { child } => {
+                    // The parent's thread holds the value no more, so that its own exit
+                    // writes nothing.
+                    c_keys::set(c, None).expect("removed");
+                    drop(writer);
+                    assert_eq!(waitpid(child, None), Ok(WaitStatus::Exited(child, 0)));
+                    let mut written = [0; 2];
+                    assert_eq!(read(&reader, &mut written), Ok(1));
+                    assert_eq!(&written[..1], b"d");
+                }
+            }
+            c_keys::dispose(c).expect("disposed");
+        }
+
+        /// A child forked while another thread makes and disposes of keys, from a thread that
+        /// holds a value of C's key and one of Rust's, runs its thread-local destructors at
+        /// `exit`, as `git_process_start`'s child does when its `execve` fails, and ends: the
+        /// thread's exit takes no lock another thread of the parent may have held at the fork.
+        /// Each child is given two seconds; with the registry's lock taken at exit, nine
+        /// children in ten hung.
+        #[test]
+        #[cfg_attr(miri, ignore = "forks")]
+        fn a_forked_child_exits_while_other_threads_make_keys() {
+            use core::sync::atomic::AtomicBool;
+            use std::sync::Arc;
+            use std::time::{Duration, Instant};
+
+            use nix::sys::signal::{Signal, kill};
+            use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
+            use nix::unistd::{ForkResult, fork};
+
+            let stop = Arc::new(AtomicBool::new(false));
+            let churn = thread::spawn({
+                let stop = Arc::clone(&stop);
+                move || {
+                    while !stop.load(Ordering::Relaxed) {
+                        let id = c_keys::init(None).expect("a key");
+                        c_keys::dispose(id).expect("disposed");
+                        TlsKey::<u8>::new(None)
+                            .expect("a key")
+                            .dispose()
+                            .expect("disposed");
+                    }
+                }
+            });
+            // SAFETY: `end_child` accepts any pointer, on any thread.
+            let c = c_keys::init(Some(unsafe { CDestructor::new(end_child) })).expect("a key");
+            c_keys::set(c, Some(word(0x80))).expect("stored");
+            let rust = TlsKey::<u8>::new(None).expect("a key");
+            rust.set(Some(1)).expect("stored");
+
+            PARENT.store(getpid().as_raw(), Ordering::Relaxed);
+            let mut hung = 0;
+            for _ in 0..40 {
+                // SAFETY: the child calls only `exit`, which runs its thread-local destructors.
+                match unsafe { fork() }.expect("forked") {
+                    // SAFETY: as above.
+                    ForkResult::Child => unsafe { nix::libc::exit(0) },
+                    ForkResult::Parent { child } => {
+                        let start = Instant::now();
+                        while waitpid(child, Some(WaitPidFlag::WNOHANG)).expect("waited")
+                            == WaitStatus::StillAlive
+                        {
+                            if start.elapsed() > Duration::from_secs(2) {
+                                hung += 1;
+                                kill(child, Signal::SIGKILL).expect("killed");
+                                waitpid(child, None).expect("reaped");
+                                break;
+                            }
+                            thread::sleep(Duration::from_millis(1));
+                        }
+                    }
+                }
+            }
+            stop.store(true, Ordering::Relaxed);
+            churn.join().expect("the thread ends");
+            assert_eq!(hung, 0, "forked children hung in exit");
+            c_keys::set(c, None).expect("removed");
+            c_keys::dispose(c).expect("disposed");
             rust.dispose().expect("disposed");
         }
     }
@@ -1776,6 +1920,39 @@ impl<T: 'static> TlsKey<T> {
         })
     }
 
+    /// Runs `f` on this thread's value of the key, lent, or on `None` where [`get`](Self::get)
+    /// gives `None`, and returns what it returns, as the standard library's
+    /// [`LocalKey::with`](std::thread::LocalKey::with) lends a thread-local: the value is
+    /// neither cloned nor moved.
+    ///
+    /// `f` runs while the thread's table is borrowed: it reads any key's value, and storing a
+    /// value of any key fails, with [`TlsError::Unavailable`].
+    ///
+    /// ```
+    /// use libgit2_crustify::libgit2::src::util::thread::TlsKey;
+    ///
+    /// let key = TlsKey::<Vec<u8>>::new(None)?;
+    /// key.set(Some(vec![1, 2, 3]))?;
+    /// assert_eq!(key.with(|bytes| bytes.map(Vec::len)), Some(3));
+    /// key.dispose()?;
+    /// assert!(key.with(|bytes| bytes.is_none()));
+    /// # Ok::<(), libgit2_crustify::libgit2::src::util::thread::TlsError>(())
+    /// ```
+    pub fn with<R>(self, f: impl FnOnce(Option<&T>) -> R) -> R {
+        let mut f = Some(f);
+        let found = get_value(self.id.get(), Self::kind(), |value| match value {
+            Value::Rust(value) => value
+                .downcast_ref::<T>()
+                .and_then(|value| f.take().map(|f| f(Some(value)))),
+            Value::C(_) => None,
+        });
+        match (found, f) {
+            (Some(found), _) => found,
+            (None, Some(f)) => f(None),
+            (None, None) => unreachable!("`f` ran and returned a value"),
+        }
+    }
+
     /// Disposes of the key (`git_tlsdata_dispose`): no copy of it names a key from then on.
     /// No destructor runs, on this thread or any other: the values the threads still hold are
     /// dropped as each thread next reaches its storage, or exits, as POSIX leaves them to
@@ -1927,7 +2104,7 @@ mod tls {
     use core::cell::RefCell;
     use core::mem;
     use core::num::NonZeroU32;
-    use core::sync::atomic::{AtomicU64, Ordering};
+    use core::sync::atomic::{AtomicBool, Ordering};
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
     use std::thread::LocalKey;
@@ -1937,7 +2114,7 @@ mod tls {
 
     /// A Rust destructor, the typed function of a
     /// [`TlsdataInitDestroyFn`](super::TlsdataInitDestroyFn) over the boxed value, which it
-    /// unboxes; shared, so that a thread runs it without the registry's lock.
+    /// unboxes; shared between the registry and the values stored under its key.
     pub(super) type RustDestructor = Arc<dyn Fn(Box<dyn Any>) + Send + Sync>;
 
     /// What a key holds: Rust values of one type, or C's pointers.
@@ -1980,12 +2157,32 @@ mod tls {
         C(CWord),
     }
 
+    /// A key's state, which the registry holds while the key is live, and each value a thread
+    /// stores under it holds beside it, so that a thread reads it without the registry's lock.
+    pub(super) struct Key {
+        /// The key's id.
+        id: u32,
+        /// Which values the key holds.
+        kind: Kind,
+        /// Whether the key is live: cleared, once, when it is disposed of.
+        live: AtomicBool,
+        /// What runs on a value at its thread's exit, while the key is live.
+        destructor: Destructor,
+    }
+
+    impl Key {
+        /// Whether the key is live and holds values of `kind`.
+        fn holds(&self, kind: Kind) -> bool {
+            self.kind == kind && self.live.load(Ordering::Acquire)
+        }
+    }
+
     /// The live keys, by id, and the next id to hand out.
     pub(super) struct Registry {
         /// The next id; 0 once every id has been handed out.
         next: u32,
-        /// The live keys' destructors, by id.
-        live: BTreeMap<u32, Destructor>,
+        /// The live keys, by id.
+        live: BTreeMap<u32, Arc<Key>>,
     }
 
     impl Registry {
@@ -2002,24 +2199,31 @@ mod tls {
             let id = NonZeroU32::new(self.next).ok_or(TlsError::KeysExhausted)?;
             // `u32::MAX` wraps to 0, which hands out nothing from then on.
             self.next = self.next.wrapping_add(1);
-            self.live.insert(id.get(), destructor);
+            let key = Key {
+                id: id.get(),
+                kind: destructor.kind(),
+                live: AtomicBool::new(true),
+                destructor,
+            };
+            self.live.insert(id.get(), Arc::new(key));
             Ok(id)
+        }
+
+        /// The live key `id`, if it holds values of `kind`.
+        fn key(&self, id: u32, kind: Kind) -> Option<&Arc<Key>> {
+            self.live.get(&id).filter(|key| key.holds(kind))
         }
 
         /// Whether `id` is a live key holding values of `kind`.
         fn holds(&self, id: u32, kind: Kind) -> bool {
-            self.live
-                .get(&id)
-                .is_some_and(|destructor| destructor.kind() == kind)
+            self.key(id, kind).is_some()
         }
     }
 
-    /// The registry, shared by every thread.
+    /// The registry, shared by every thread. A thread takes its lock to make or dispose of a
+    /// key, and to store a first value under one; reading a value, replacing it, and a thread's
+    /// exit take none.
     static REGISTRY: Mutex<Registry> = Mutex::new(Registry::new());
-
-    /// How many keys have been disposed of: a thread's table looks for the entries of disposed
-    /// keys only once this has moved since it last looked.
-    static DISPOSALS: AtomicU64 = AtomicU64::new(0);
 
     /// The registry, locked. Nothing panics while holding it, so a poisoned lock still holds
     /// a consistent registry.
@@ -2029,72 +2233,59 @@ mod tls {
 
     /// One thread's values, one entry per key it holds a value of.
     pub(super) struct Table {
-        /// [`DISPOSALS`] when the table last dropped the entries of disposed keys.
-        seen: u64,
-        /// The values, each with its key's id and kind, checked against the registry when the
-        /// entry was made.
-        entries: Vec<(u32, Kind, Value)>,
+        /// The values, each with its key, live and of the value's kind when the entry was
+        /// made.
+        entries: Vec<(Arc<Key>, Value)>,
     }
 
     impl Table {
         /// A table with no value, as a thread starts with.
         pub(super) const fn new() -> Table {
             Table {
-                seen: 0,
                 entries: Vec::new(),
             }
         }
 
-        /// Takes out the entries of the keys disposed of since the table last looked, for the
-        /// caller to drop once it has released the table, since a Rust value's drop may reach
-        /// it.
-        fn prune(&mut self) -> Vec<(u32, Kind, Value)> {
-            let disposals = DISPOSALS.load(Ordering::Acquire);
-            if disposals == self.seen {
+        /// Takes out the entries of the keys disposed of since they were made, for the caller
+        /// to drop once it has released the table, since a Rust value's drop may reach it.
+        fn prune(&mut self) -> Vec<(Arc<Key>, Value)> {
+            if self
+                .entries
+                .iter()
+                .all(|(key, _)| key.live.load(Ordering::Acquire))
+            {
                 return Vec::new();
             }
-            self.seen = disposals;
-            let registry = registry();
             let (live, dead) = mem::take(&mut self.entries)
                 .into_iter()
-                .partition(|(id, kind, _)| registry.holds(*id, *kind));
+                .partition(|(key, _)| key.live.load(Ordering::Acquire));
             self.entries = live;
             dead
         }
 
         /// The index of `id`'s entry.
         fn position(&self, id: u32) -> Option<usize> {
-            self.entries.iter().position(|(entry, _, _)| *entry == id)
+            self.entries.iter().position(|(key, _)| key.id == id)
         }
     }
 
     /// At the thread's exit, each value of a live key goes to its key's destructor, and every
     /// other value is dropped; a C value without a destructor, or of a disposed key, is left as
-    /// POSIX leaves it, to C. The destructors run without the registry's lock, and with the
-    /// table out of reach, so that a destructor that stores a value fails to.
+    /// POSIX leaves it, to C. It takes no lock, so that a child forked from a threaded process,
+    /// which runs its thread-local destructors at `exit` (libgit2's `git_process_start` does,
+    /// when its `execve` fails), cannot wait on a lock that another thread of its parent held.
+    /// The destructors run with the table out of reach, so that a destructor that stores a
+    /// value fails to.
     impl Drop for Table {
         fn drop(&mut self) {
-            let entries = mem::take(&mut self.entries);
-            if entries.is_empty() {
-                return;
-            }
-            let destructors: Vec<Option<Destructor>> = {
-                let registry = registry();
-                entries
-                    .iter()
-                    .map(|(id, kind, _)| {
-                        registry.live.get(id).filter(|d| d.kind() == *kind).cloned()
-                    })
-                    .collect()
-            };
-            for ((_, _, value), destructor) in entries.into_iter().zip(destructors) {
-                match (value, destructor) {
-                    (Value::Rust(value), Some(Destructor::Rust { run: Some(run), .. })) => {
-                        run(value);
-                    }
-                    (Value::C(word), Some(Destructor::C(Some(destructor)))) => {
-                        destructor.destroy(word);
-                    }
+            for (key, value) in mem::take(&mut self.entries) {
+                if !key.live.load(Ordering::Acquire) {
+                    drop(value);
+                    continue;
+                }
+                match (value, &key.destructor) {
+                    (Value::Rust(value), Destructor::Rust { run: Some(run), .. }) => run(value),
+                    (Value::C(word), Destructor::C(Some(destructor))) => destructor.destroy(word),
                     (value, _) => drop(value),
                 }
             }
@@ -2120,18 +2311,18 @@ mod tls {
             };
             let dead = table.prune();
             let result = match (table.position(id), value) {
-                // An entry's key was live, and of its kind, when the table last looked.
-                (Some(index), value) if table.entries[index].1 == kind => match value {
-                    Some(value) => Ok(Some(mem::replace(&mut table.entries[index].2, value))),
-                    None => Ok(Some(table.entries.swap_remove(index).2)),
+                // An entry's key is live, since the table has just been pruned.
+                (Some(index), value) if table.entries[index].0.kind == kind => match value {
+                    Some(value) => Ok(Some(mem::replace(&mut table.entries[index].1, value))),
+                    None => Ok(Some(table.entries.swap_remove(index).1)),
                 },
                 (Some(_), value) => return (Err(TlsError::Disposed), dead, value),
                 (None, value) => {
-                    if !registry().holds(id, kind) {
+                    let Some(key) = registry().key(id, kind).cloned() else {
                         return (Err(TlsError::Disposed), dead, value);
-                    }
+                    };
                     if let Some(value) = value {
-                        table.entries.push((id, kind, value));
+                        table.entries.push((key, value));
                     }
                     Ok(None)
                 }
@@ -2159,17 +2350,12 @@ mod tls {
         table()
             .try_with(|table| {
                 // The entries of disposed keys go first, when the table is free; a `Clone`
-                // that reads it while it is borrowed checks the registry instead.
-                let dead = match table.try_borrow_mut() {
-                    Ok(mut table) => Some(table.prune()),
-                    Err(_) => None,
-                };
+                // that reads it while it is borrowed finds them by their key's state.
+                let dead = table.try_borrow_mut().map(|mut table| table.prune());
                 let found = table.try_borrow().ok().and_then(|table| {
                     let index = table.position(id)?;
-                    let (_, entry_kind, value) = &table.entries[index];
-                    let live =
-                        *entry_kind == kind && (dead.is_some() || registry().holds(id, kind));
-                    if live { read(value) } else { None }
+                    let (key, value) = &table.entries[index];
+                    if key.holds(kind) { read(value) } else { None }
                 });
                 drop(dead);
                 found
@@ -2184,8 +2370,9 @@ mod tls {
         if !registry.holds(id, kind) {
             return Err(TlsError::Disposed);
         }
-        registry.live.remove(&id);
-        DISPOSALS.fetch_add(1, Ordering::Release);
+        if let Some(key) = registry.live.remove(&id) {
+            key.live.store(false, Ordering::Release);
+        }
         Ok(())
     }
 

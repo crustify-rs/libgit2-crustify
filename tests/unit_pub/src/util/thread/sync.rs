@@ -136,6 +136,46 @@ fn a_mutex_builds_and_lends_its_data() {
     assert_eq!(format!("{:?}", lock.lock().unwrap()), "4");
 }
 
+/// A lock hands back its data when taken apart, as the standard locks do, and reports a
+/// poisoned lock's data as poisoned.
+#[test]
+fn locks_hand_back_their_data() {
+    let lock = Mutex::new(vec![1]);
+    lock.lock().unwrap().push(2);
+    assert_eq!(lock.into_inner().unwrap(), [1, 2]);
+    let lock = RwLock::new(String::from("a"));
+    lock.write().unwrap().push('b');
+    assert_eq!(lock.into_inner().unwrap(), "ab");
+
+    let lock = Arc::new(Mutex::new(5));
+    let theirs = Arc::clone(&lock);
+    thread::spawn(move || {
+        let _guard = theirs.lock().unwrap();
+        panic::resume_unwind(Box::new("poisons the lock"));
+    })
+    .join()
+    .unwrap_err();
+    let lock = Arc::into_inner(lock).unwrap();
+    assert_eq!(lock.into_inner().unwrap_err().into_inner(), 5);
+}
+
+/// A lock over a borrow may be dropped after what it borrows, in the same scope, as the
+/// standard locks may: dropping one runs no code that could use the borrow.
+#[test]
+#[expect(
+    clippy::needless_late_init,
+    reason = "the locks are declared before what they borrow, so that they drop after it"
+)]
+fn a_lock_over_a_borrow_drops_after_what_it_borrows() {
+    let mutex;
+    let rwlock;
+    let value = 7;
+    mutex = Mutex::new(&value);
+    rwlock = RwLock::new(&value);
+    assert_eq!(**mutex.lock().unwrap(), 7);
+    assert_eq!(**rwlock.read().unwrap(), 7);
+}
+
 /// A notification wakes the thread that waits for it, which finds the condition its
 /// notifier set under the lock, and the waiter's reply wakes the notifier in turn: the pack
 /// builder's hand-off of work between its threads (`threaded_find_deltas`), each side waiting

@@ -376,6 +376,40 @@ fn a_clone_run_by_get_reads_but_cannot_store() {
     other.dispose().expect("disposed");
 }
 
+/// `with` lends this thread's value, of a type that need not be `Clone`, without moving it,
+/// and lends `None` where `get` would give it: before a value is stored, once `None` is, and
+/// once the key is disposed of. Inside it, another key's value is read, and a store fails.
+#[test]
+fn with_lends_the_value_where_get_would_clone_it() {
+    /// A value that is not `Clone`.
+    struct Buffer(Vec<u8>);
+    let key = TlsKey::<Buffer>::new(None).expect("a key");
+    let other = TlsKey::<u8>::new(None).expect("a key");
+    assert!(key.with(|buffer| buffer.is_none()));
+    key.set(Some(Buffer(vec![1, 2]))).expect("stored");
+    other.set(Some(5)).expect("stored");
+    let lent = key.with(|buffer| {
+        let buffer = buffer.expect("a value");
+        (buffer.0.clone(), other.get(), other.set(Some(6)))
+    });
+    assert_eq!(lent, (vec![1, 2], Some(5), Err(TlsError::Unavailable)));
+    assert_eq!(other.get(), Some(5));
+    // The value stays where `with` found it.
+    assert_eq!(
+        key.with(|buffer| buffer.map(|buffer| buffer.0.len())),
+        Some(2)
+    );
+    thread::spawn(move || key.with(|buffer| assert!(buffer.is_none())))
+        .join()
+        .expect("the thread ends");
+    assert!(key.set(None).expect("removed").is_some());
+    assert!(key.with(|buffer| buffer.is_none()));
+    key.set(Some(Buffer(Vec::new()))).expect("stored");
+    key.dispose().expect("disposed");
+    assert!(key.with(|buffer| buffer.is_none()));
+    other.dispose().expect("disposed");
+}
+
 /// The failures say what failed, as errors.
 #[test]
 fn errors_describe_the_failure() {
