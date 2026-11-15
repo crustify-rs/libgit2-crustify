@@ -134235,6 +134235,113 @@
             "8e114c56fbba9ec8ea79b58ed56fbe7e13b35f7c",
             "58d3dc711cede816d476f808d7f21a184195c7de"
           ]
+        },
+        {
+          "index": 6,
+          "link_unit": "libgit2",
+          "module": "src/util/thread.c",
+          "foundational": false,
+          "kind": "port",
+          "status": "wip",
+          "items": [
+            {
+              "name": "git_atomic__compare_and_swap",
+              "defined_in": "src/util/thread.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic__load",
+              "defined_in": "src/util/thread.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic__swap",
+              "defined_in": "src/util/thread.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_threads_global_init",
+              "defined_in": "src/util/unix/pthread.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic32_add",
+              "defined_in": "src/util/thread.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic32_dec",
+              "defined_in": "src/util/thread.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic32_get",
+              "defined_in": "src/util/thread.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic32_inc",
+              "defined_in": "src/util/thread.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic32_set",
+              "defined_in": "src/util/thread.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic64_add",
+              "defined_in": "src/util/thread.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic64_get",
+              "defined_in": "src/util/thread.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic64_set",
+              "defined_in": "src/util/thread.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            }
+          ],
+          "commits": []
         }
       ]
     },
