@@ -57,22 +57,22 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip the integration of `libgit2/src/util/strnlen.h`, `30176475c`; `main` at `c58bc5de8`, nothing shipped yet; crustify `cc84106`, ffibox `9c22a73`, wavefront `bf21e16`, ffimap `9aa2ef1` (each on its `libgit2-crustify/devel`, wavefront and ffimap on `devel`)
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `23112` non-test, `110008` tests; **C LoC** — `88938`
+- **Rust LoC** — `23136` non-test, `110219` tests; **C LoC** — `88226`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `798` | — | `30.41`% | `77.24`% |
-| UB unsafe tests | `144` | — | `20.16`% | `16.76`% |
-| Equiv tests | `538` | — | `43.81`% | `68.59`% |
-| Unit tests | `1140` | — | `34.45`% | `88.06`% |
-| **Total tests** | **`2620`** | — | **`47.51`%** | **`98.03`%** |
+| UB safe tests | `798` | — | `30.36`% | `77.20`% |
+| UB unsafe tests | `144` | — | `20.10`% | `17.62`% |
+| Equiv tests | `537` | — | `43.75`% | `68.64`% |
+| Unit tests | `1160` | — | `34.36`% | `88.26`% |
+| **Total tests** | **`2639`** | — | **`47.46`%** | **`98.21`%** |
 | total types | `258` | — | — | — |
 | ported types | `4` | `1.55`% | — | — |
 | wrapped types | `116` | `43.80`% | — | — |
 | total symbols | `979` | — | — | — |
-| ported symbols | `118` | `12.05`% | — | — |
+| ported symbols | `126` | `12.87`% | — | — |
 | wrapped symbols | `497` | `50.77`% | — | — |
 
 ### Module stats
@@ -523,6 +523,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `git2/src/cli/opt.c` | `186` | `5` | port | first | `8` | `310` | `+2082/-83` | `45.42`% / `98.80`% | `$15.35` | `48.35M` | `1h5m7s` | `$1.92` | `$0.05` |
 | `libgit2/src/util/utf8.c` | `229` | `0` | port | first | `5` | `89` | `+764/-0` | `44.97`% / `98.81`% | `$9.09` | `28.03M` | `47m31s` | `$1.82` | `$0.10` |
 | `libgit2/src/util/utf8.c` | `232` | `0` | port/unexport | first | `1` | `16` | `+31/-55` | `47.21`% / `98.02`% | `$10.43` | `26.64M` | `41m30s` | `$10.43` | `$0.65` |
+| `libgit2/src/util/ctype_compat.h` | `220` | `0` | port | first | `8` | `0` | `+511/-0` | `47.46`% / `98.21`% | — | — | — | — | — |
 | `libgit2/raw-lifetime-void` | `legacy-1` | `0` | wrap | review | `2` | — | `+80/-1` | — | `$7.89` | `10.78M` | `18m36s` | `$3.94` | — |
 | `libgit2/raw-lifetime-string` | `legacy-3` | `0` | wrap | review | `2` | — | `+345/-23` | — | `$10.89` | `14.41M` | `22m03s` | `$5.45` | — |
 | `libgit2/src/util/alloc.c` | `12` | `3` | wrap | review | `7` | — | `+57/-20` | — / `98.90`% | `$15.18` | `40.96M` | `1h31m33s` | `$2.17` | — |
@@ -557,7 +558,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/llhttp/api.c` | `194` | `6` | port | review | `67` | — | `+191/-25` | `47.25`% / `98.69`% | `$12.72` | `41.32M` | `41m52s` | `$0.19` | — |
 | `git2/src/cli/opt.c` | `186` | `6` | port | review | `21` | — | `+335/-27` | `45.39`% / `98.80`% | `$10.52` | `33.81M` | `33m35s` | `$0.50` | — |
 | `libgit2/src/util/utf8.c` | `232` | `1` | port/unexport | review | `1` | — | `+28/-1` | `47.21`% / `98.02`% | `$7.61` | `17.60M` | `44m56s` | `$7.61` | — |
-| **Σ first** |  |  |  |  | **`600`** | **`10242`** | **`+94058/-3957`** | **`47.49`% / `98.03`%** | **`$732.05`** | **`2270.38M`** | — | **`$1.17`** | **`$0.06`** |
+| **Σ first** |  |  |  |  | **`608`** | **`10242`** | **`+94569/-3957`** | **`47.46`% / `98.21`%** | **`$732.05`** | **`2270.38M`** | — | **`$1.17`** | **`$0.06`** |
 | **Σ review** |  |  |  |  | **`557`** | — | **`+7806/-1422`** | **`47.21`% / `98.02`%** | **`$404.72`** | **`827.72M`** | — | **`$0.80`** | — |
 
 ### Batches: tests
@@ -670,7 +671,8 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/util/utf8.c` | `229` | `0` | first | `+0` (`-0.03`/`-0.32` pp) | `+0` (`-0.02`/`-0.06` pp) | `+6` (`+0.04`/`-0.02` pp) | `+15` (`+0.03`/`+0.04` pp) |
 | `libgit2/src/util/utf8.c` | `229` | `1` | review | `+1` (`+0.00`/`+0.00` pp) | `+0` (`+0.04`/`+0.09` pp) | `+0` (`+0.00`/`+0.01` pp) | `+0` (`-0.05`/`+0.01` pp) |
 | `libgit2/src/util/utf8.c` | `232` | `0` | first | `+0` (`+0.03`/`+0.03` pp) | `+0` (`+0.01`/`+0.01` pp) | `+0` (`-0.00`/`+0.03` pp) | `+0` (`-0.03`/`+0.00` pp) |
-| **Σ first** |  |  |  | **`+363` (`+12.66`/`+5.82` pp)** | **`+50` (`+3.68`/`-5.97` pp)** | **`+257` (`+9.82`/`+15.44` pp)** | **`+466` (`+14.80`/`-32.91` pp)** |
+| `libgit2/src/util/ctype_compat.h` | `220` | `0` | first | `+0` (`-0.01`/`-0.11` pp) | `+0` (`-0.00`/`-0.03` pp) | `+5` (`+0.01`/`+0.05` pp) | `+11` (`-0.04`/`+0.02` pp) |
+| **Σ first** |  |  |  | **`+363` (`+12.65`/`+5.71` pp)** | **`+50` (`+3.68`/`-6.00` pp)** | **`+262` (`+9.83`/`+15.49` pp)** | **`+477` (`+14.76`/`-32.89` pp)** |
 | **Σ review** |  |  |  | **`+19` (`+0.26`/`-1.50` pp)** | **`+10` (`-0.84`/`+1.13` pp)** | **`+23` (`+0.05`/`-0.52` pp)** | **`+57` (`+2.47`/`+7.70` pp)** |
 
 ### Batches: safety audit
@@ -720,7 +722,8 @@ Deterministic `ffimap`; no model.
 | `libgit2/src/util/utf8.c` | `229` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+1` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.07` pp | `+1` |
 | `libgit2/src/util/utf8.c` | `229` | `1` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `-3` | `-0.02` pp | `-3` |
 | `libgit2/src/util/utf8.c` | `232` | `0` | port/unexport | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.00` pp | `+0` |
-| **Σ first** |  |  |  |  | **`+4`** | **`+0`** | **`+35`** | **`+0`** | **`+1`** | **`+0.52` pp** | **`+12`** | **`+1`** | **`+0`** | **`+0`** | **`+35`** | **`+52`** | **`-0.83` pp** | **`+159`** |
+| `libgit2/src/util/ctype_compat.h` | `220` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.02` pp | `+0` |
+| **Σ first** |  |  |  |  | **`+4`** | **`+0`** | **`+35`** | **`+0`** | **`+1`** | **`+0.52` pp** | **`+12`** | **`+1`** | **`+0`** | **`+0`** | **`+35`** | **`+52`** | **`-0.85` pp** | **`+159`** |
 | **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`-1`** | **`+0`** | **`+1`** | **`+0.00` pp** | **`+0`** | **`-1`** | **`+0`** | **`+6`** | **`+2`** | **`-3`** | **`-0.13` pp** | **`-5`** |
 
 ### Batches: API stability
@@ -760,7 +763,8 @@ Deterministic `ffimap api`; no model.
 | `libgit2/src/util/utf8.c` | `229` | `0` | port | first | `0` | `0` | `0` | `0` | `3` | `0` | `utf8` new (`InvalidCodePoint`); `sys::libgit2` extended (`+3` bindings) | — |
 | `libgit2/src/util/utf8.c` | `229` | `1` | port | review | `3` | `0` | `0` | `0` | `0` | `0` | — | — |
 | `libgit2/src/util/utf8.c` | `232` | `0` | port/unexport | first | `1` | `0` | `0` | `0` | `0` | `0` | `sys::libgit2` changed (`git_utf8_char_length` removed) | `sys::libgit2::git_utf8_char_length` removed: the raw binding goes with its export (`port/unexport`) |
-| **Σ first** |  |  |  |  | **`3`** | **`0`** | **`0`** | **`0`** | **`102`** | **`2`** |  |  |
+| `libgit2/src/util/ctype_compat.h` | `220` | `0` | port | first | `0` | `0` | `0` | `0` | `8` | `0` | — | — |
+| **Σ first** |  |  |  |  | **`3`** | **`0`** | **`0`** | **`0`** | **`110`** | **`2`** |  |  |
 | **Σ review** |  |  |  |  | **`196`** | **`2`** | **`1`** | **`0`** | **`0`** | **`3`** |  |  |
 
 ### Batches — review: PoC + reports
@@ -6006,3 +6010,64 @@ The pilot's fifth module: its usage cells and its `Module stats` row are filled,
 modules (`utf8.c`, `opt.c`, `api.c`, `http.c`), one later stage (wave 232) and two header modules;
 the variants' current generation is `crustify/builds.gen5`, and the fork's local `fork/main` is at
 `230c9dbdb`, five commits past the fork's published `main`.
+
+### `libgit2/src/util/ctype_compat.h` wave 220 batch 0: the eight `git__is*` and `git__to*` macros
+
+`src/util/ctype_compat.h` is a header with no translation unit. On this build each macro is
+`<ctype.h>`'s function over its argument cast to `unsigned char` (`(!!isalpha((unsigned
+char)(a)))`, `tolower((unsigned char)(a))`); under `GIT_WIN32` the header defines them as
+`GIT_INLINE` comparisons with ASCII ranges. The eight are native `const fn`s over `u8` in
+`src/libgit2/src/util/ctype_compat_h.rs`: `is_alnum`, `is_alpha`, `is_digit`, `is_print`,
+`is_space`, `is_xdigit`, `to_lower` and `to_upper`, each over `u8`'s ASCII class, with
+`is_space` adding the vertical tab to `is_ascii_whitespace` and `is_print` the space to
+`is_ascii_graphic`. For every byte the two branches give one result, the C locale's and
+glibc's `C.UTF-8`'s alike; they part only on an `int` outside a byte, which the Rust callers'
+own `as u8` reduces, and on a locale an embedding program sets, which `<ctype.h>` follows and
+the port does not. The module docs name both. The file holds no unsafe region and carries
+`#![forbid(unsafe_code)]`. The macros have no export: they stay in the header for the 33 files
+of `src/` and the three C tests that expand them. `<ctype.h>`'s eight entities take their
+recommended `std` route. The `loc` cell is wavefront's, `0` for a macro.
+
+Tests: eleven `unit_pub` tests (each class against the C standard's C-locale set for every
+byte, no byte past ASCII in a class, the case maps, a C caller's `int` reduced to its byte, and
+`const` evaluation), eight doctests, and five `equiv` tests. Two compare the ports with glibc's
+`<ctype.h>` functions, the macros' replacement lists, for every `int` from -300 to 600 through
+the cast. Three compare them where the C expands them: `git__isspace` through
+`git_blob_data_is_binary` and `git_config_parse_int64`, and `git__isalnum` through
+`git_message_trailers`. The other macros' sites take no single byte from a bound function and
+are reported unreached: `git__isalpha`, `git__isdigit` and `git__toupper` expand in `date.c`,
+`git__isprint` and `git__isxdigit` in `smart_pkt.c` and `str.c`'s `git_str_decode_percent`, and
+`git__tolower` in case-insensitive comparisons of names. A mutant `is_space` without the
+vertical tab fails three of the `equiv` tests. The module has no C tests to carry over.
+
+Coverage was measured with `crustify/scripts/coverage/run.sh` on a `git archive` of the base
+`88cf10718` and on this tree, each suite alone, and read with `report.py` from the scratch
+tree's `src/libgit2` (`C=@c` over the `coverage` variant's `libcrustify.a`, 88,226 lines; Rust
+over the scratch tree's `src/`). The unit column merges `lib` and `unit_pub`. The Coverage
+stats counts are this tree's `--list` counts. The recorded ones differed on the base already:
+the base's `equiv` count was 532 where 538 was recorded, and its unit count 1149 where 1140
+was. The C shifts in suites these tests do not run (`lib` `-32` lines, `ub_safe` `-12`) are
+run-to-run variation. Worklist: Rust `ctype_compat_h.rs` 24 of 24 lines, 26 of 26 regions and
+8 of 8 functions, under `unit_pub`, `equiv` and the doctests each. The macros have no C lines of
+their own. The Overview's Rust LoC moves by ffimap's `code.loc.total` (`+24`) and
+`code.tests.loc.total` (`+211`).
+
+The safety audit scans (ffimap `50a800e`, `--ffibox`, `--sys-crates crate::sys,pcre2_sys`, the
+13 seams, `--regions ffi_import,ffi_export`, no export feature) move only the line totals and
+the safe public fns (`+8`). The boundary scan's sites hold none in the changeset. `ffimap api`
+against the base, with ffibox's private rustdoc JSON (nightly `2026-10-08`), has the eight items
+`new` and every unattributed module `kept`.
+
+Gates, on the base `88cf10718`: the workspace is formatted, and `clippy --workspace
+--all-targets` passes with warnings denied on `plain`; no export feature exists to lint with.
+The batch's tests pass on `plain` and ASan+UBSan (`equiv` 5, `unit_pub` 11, doctests 8). Under
+Miri the unit tests and doctests pass, and each `equiv` test, run alone with its mark lifted,
+stops at its first foreign call (`git_libgit2_init`, `git_blob_data_is_binary`, `isalnum`,
+`tolower`). BSan passes each of the 16 new tests by exact name and alone. The coverage runs
+passed every suite of the workspace on both trees (`lib` 907, `ub_safe` 797, `ub_unsafe` 144,
+`equiv` 537, `unit_pub` 252, doctests). No item asserts `Send` or `Sync` or runs a thread, so
+TSan is not run.
+
+The raw bindings and `c/` are unchanged, so the packaging gate does not apply. Usage cells are
+the assistant's. Proposal: `config-branches-over-the-rust-domain` (`porting-symbols`' Macros
+section), citing `config-branches-of-one-result`'s recurrence signal.
