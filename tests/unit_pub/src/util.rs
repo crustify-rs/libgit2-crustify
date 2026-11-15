@@ -3,4 +3,5 @@
 mod alloc;
 mod allocators;
 mod strnlen_h;
+mod thread;
 mod utf8;

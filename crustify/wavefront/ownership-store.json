@@ -320,6 +320,30 @@
    "_comment_user": "Opaque in the public API (forward-declared in include/git2/types.h); built only by annotated_commit.c's constructors (REAL: git__calloc + git_commit_dup + git__strdup) and merge.c's create_virtual_base (VIRTUAL: index + parents), released only by git_annotated_commit_free, which switches on `type` (REAL frees commit, tree, description, ref_name, remote_url; VIRTUAL frees index and the parents array; anything else aborts). No dup/clone routine exists. merge.c casts `const git_annotated_commit **` heads to mutable and lazily caches `tree` (annotated_commit_tree), so a const pointer does not mean read-only. The embedded commit is a counted reference into the repository's object cache (atomic refcount); freeing it never touches the repository."
   },
   {
+   "name": "git_atomic32",
+   "defined_in": "src/util/thread.h",
+   "_comment_user": "wave-226/batch-0 (wrap): a plain value C embeds in counted objects (git_refcount, git_cached_obj, git_pack_file, git_index readers, transports' cancelled) and keeps as globals (runtime.c's init_count, shutdown_callback_count). No lifecycle routine: zeroed storage or {0} initialises it, nothing releases it. Under GIT_THREADS every write is a SEQ_CST __atomic builtin of thread.h (git_atomic32_set/inc/add/dec); reads are git_atomic32_get, except plain volatile reads of .val in smart.c and smart_protocol.c (t->cancelled.val), which race with an atomic write from another thread in C. Shared-mutable through shared access: bound with its val lent as AtomicI32 over an UnsafeCell layout.",
+   "fields": [
+    {
+     "name": "val",
+     "refcount": false,
+     "locked_by": null
+    }
+   ]
+  },
+  {
+   "name": "git_atomic64",
+   "defined_in": "src/util/thread.h",
+   "_comment_user": "wave-226/batch-0 (wrap): defined under GIT_ARCH_64, and typedef'd as git_atomic_ssize there. C keeps one global, cache.c's git_cache__current_storage, changed by git_atomic_ssize_add (git_atomic64_add, SEQ_CST) and read by git_atomic_ssize_get, and plainly as .val by settings.c's git_libgit2_opts(GIT_OPT_GET_CACHED_MEMORY). No lifecycle routine. Bound as git_atomic32 is, its val lent as AtomicI64.",
+   "fields": [
+    {
+     "name": "val",
+     "refcount": false,
+     "locked_by": null
+    }
+   ]
+  },
+  {
    "name": "git_blob",
    "defined_in": "src/libgit2/blob.h",
    "fields": [
@@ -3624,6 +3648,18 @@
     }
    ],
    "_comment_user": "git_tag is a git_object of type tag (first member `object`; casts both ways in object_api.c). It is opaque in the public API and refcounted through the embedded git_cached_obj (git_tag_free/git_tag_dup are git_object_free/git_object_dup). Every field is written by tag_parse before git_object_lookup publishes the object and never written afterwards, so shared handles read immutable state; the object keeps its repository uncounted (object.repo). Wrapped as Tag<'r> / TagArc<'r> in object/tag.rs (batch object wave-1 batch-3)."
+  },
+  {
+   "name": "git_thread",
+   "defined_in": "src/util/unix/pthread.h",
+   "_comment_user": "wave-226/batch-0 (wrap): unix/pthread.h's { pthread_t thread; }. Its lifecycle is two macros, git_thread_create (pthread_create(&t->thread, NULL, start, arg): init into caller storage, the id written during the call) and git_thread_join (pthread_join(t->thread, status): ends the thread, the id stale after); git_thread_currentid and git_thread_exit do not touch it. C holds it by value: pack-objects.c's thread_params array, which ll_find_deltas git__calloc's, and the C tests' locals. The id joins once: not Clone or Copy; a join through the object follows the stored id, so its setter is unsafe. C keeps no pointer to it.",
+   "fields": [
+    {
+     "name": "thread",
+     "refcount": false,
+     "locked_by": null
+    }
+   ]
   },
   {
    "name": "git_time",

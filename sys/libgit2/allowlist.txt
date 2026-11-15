@@ -548,6 +548,9 @@ function git_odb_stream_write
 function git_odb_write_pack
 
 type git_allocator
+type git_atomic32
+type git_atomic64
+type git_atomic_ssize
 type git_blob_filter_flag_t
 type git_blob_filter_options
 type git_branch_t
@@ -616,6 +619,7 @@ type git_submodule_ignore_t
 type git_submodule_recurse_t
 type git_submodule_update_t
 type git_tag_foreach_cb
+type git_thread
 type git_time
 type git_trace_level_t
 type git_transaction

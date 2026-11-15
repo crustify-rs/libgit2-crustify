@@ -1,0 +1,5 @@
+error[E0599]: no method named `clone` found for struct `libgit2_crustify::libgit2::src::util::thread::Thread` in the current scope
+ --> tests/ub_safe/compile_fail/thread_not_clone.rs:6:24
+  |
+6 |     let _copy = thread.clone();
+  |                        ^^^^^ method not found in `libgit2_crustify::libgit2::src::util::thread::Thread`

@@ -1,0 +1,10 @@
+[package]
+name = "ffibox-atomic-layout-types"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+ffibox = { path = "/crustify-rs/ffibox.libgit2-crustify" }
+
+[workspace]

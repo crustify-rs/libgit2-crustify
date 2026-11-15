@@ -539,6 +539,7 @@ pub const REFTABLE_HASH_SIZE_SHA256: u32 = 32;
 pub const REFTABLE_HASH_SIZE_MAX: u32 = 32;
 pub type __mode_t = ::std::os::raw::c_uint;
 pub type mode_t = __mode_t;
+pub type pthread_t = ::std::os::raw::c_ulong;
 unsafe extern "C" {
     /** Return the version of the libgit2 library
  being currently used.
@@ -14458,6 +14459,46 @@ const _: () = {
     [
         "Offset of field: git_transport::free",
     ][::std::mem::offset_of!(git_transport, free) - 104usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct git_atomic32 {
+    pub val: ::std::os::raw::c_int,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of git_atomic32"][::std::mem::size_of::<git_atomic32>() - 4usize];
+    ["Alignment of git_atomic32"][::std::mem::align_of::<git_atomic32>() - 4usize];
+    [
+        "Offset of field: git_atomic32::val",
+    ][::std::mem::offset_of!(git_atomic32, val) - 0usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct git_atomic64 {
+    pub val: i64,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of git_atomic64"][::std::mem::size_of::<git_atomic64>() - 8usize];
+    ["Alignment of git_atomic64"][::std::mem::align_of::<git_atomic64>() - 8usize];
+    [
+        "Offset of field: git_atomic64::val",
+    ][::std::mem::offset_of!(git_atomic64, val) - 0usize];
+};
+pub type git_atomic_ssize = git_atomic64;
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct git_thread {
+    pub thread: pthread_t,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of git_thread"][::std::mem::size_of::<git_thread>() - 8usize];
+    ["Alignment of git_thread"][::std::mem::align_of::<git_thread>() - 8usize];
+    [
+        "Offset of field: git_thread::thread",
+    ][::std::mem::offset_of!(git_thread, thread) - 0usize];
 };
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]

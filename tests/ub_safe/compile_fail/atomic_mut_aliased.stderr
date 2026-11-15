@@ -1,0 +1,9 @@
+error[E0502]: cannot borrow `size` as mutable because it is also borrowed as immutable
+ --> tests/ub_safe/compile_fail/atomic_mut_aliased.rs:7:21
+  |
+6 |     let shared = size.as_ref();
+  |                  ---- immutable borrow occurs here
+7 |     let exclusive = size.as_mut();
+  |                     ^^^^^^^^^^^^^ mutable borrow occurs here
+8 |     let _ = (shared.val(), exclusive);
+  |              ------ immutable borrow later used here

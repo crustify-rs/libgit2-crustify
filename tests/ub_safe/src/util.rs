@@ -4,3 +4,4 @@ mod alloc;
 mod allocators;
 mod errors;
 mod strlist;
+mod thread;

@@ -1,0 +1,159 @@
+error[E0277]: `NonNull<libgit2_crustify::libgit2::src::util::thread::Thread>` cannot be sent between threads safely
+ --> tests/ub_safe/compile_fail/stable/thread_handles_not_send.rs:9:10
+  |
+9 |     send(thread.as_ref());
+  |     ---- ^^^^^^^^^^^^^^^ `NonNull<libgit2_crustify::libgit2::src::util::thread::Thread>` cannot be sent between threads safely
+  |     |
+  |     required by a bound introduced by this call
+  |
+  = help: within `ThreadRef<'_>`, the trait `Send` is not implemented for `NonNull<libgit2_crustify::libgit2::src::util::thread::Thread>`
+note: required because it appears within the type `ffibox::refs::CBorrowedPtr<'_, libgit2_crustify::libgit2::src::util::thread::Thread>`
+ --> $FFIBOX/src/refs.rs
+  |
+  | pub struct CBorrowedPtr<'a, T> {
+  |            ^^^^^^^^^^^^
+note: required because it appears within the type `ThreadRef<'_>`
+ --> src/libgit2/src/util/thread.rs
+  |
+  |         ThreadRef,
+  |         ^^^^^^^^^
+note: required by a bound in `send`
+ --> tests/ub_safe/compile_fail/stable/thread_handles_not_send.rs:5:12
+  |
+5 | fn send<T: Send>(_: T) {}
+  |            ^^^^ required by this bound in `send`
+
+error[E0277]: `*const ()` cannot be shared between threads safely
+ --> tests/ub_safe/compile_fail/stable/thread_handles_not_send.rs:9:10
+  |
+9 |     send(thread.as_ref());
+  |     ---- ^^^^^^^^^^^^^^^ `*const ()` cannot be shared between threads safely
+  |     |
+  |     required by a bound introduced by this call
+  |
+  = help: within `libgit2_crustify::libgit2::src::util::thread::Thread`, the trait `Sync` is not implemented for `*const ()`
+note: required because it appears within the type `PhantomData<*const ()>`
+ --> $RUST/core/src/marker.rs
+note: required because it appears within the type `libgit2_crustify::libgit2::src::util::thread::Thread`
+ --> src/libgit2/src/util/thread.rs
+  |
+  |         Thread,
+  |         ^^^^^^
+  = note: required for `&libgit2_crustify::libgit2::src::util::thread::Thread` to implement `Send`
+note: required because it appears within the type `PhantomData<&libgit2_crustify::libgit2::src::util::thread::Thread>`
+ --> $RUST/core/src/marker.rs
+note: required because it appears within the type `ffibox::refs::CBorrowedPtr<'_, libgit2_crustify::libgit2::src::util::thread::Thread>`
+ --> $FFIBOX/src/refs.rs
+  |
+  | pub struct CBorrowedPtr<'a, T> {
+  |            ^^^^^^^^^^^^
+note: required because it appears within the type `ThreadRef<'_>`
+ --> src/libgit2/src/util/thread.rs
+  |
+  |         ThreadRef,
+  |         ^^^^^^^^^
+note: required by a bound in `send`
+ --> tests/ub_safe/compile_fail/stable/thread_handles_not_send.rs:5:12
+  |
+5 | fn send<T: Send>(_: T) {}
+  |            ^^^^ required by this bound in `send`
+
+error[E0277]: `NonNull<libgit2_crustify::libgit2::src::util::thread::Thread>` cannot be sent between threads safely
+  --> tests/ub_safe/compile_fail/stable/thread_handles_not_send.rs:10:10
+   |
+10 |     send(thread.as_mut());
+   |     ---- ^^^^^^^^^^^^^^^ `NonNull<libgit2_crustify::libgit2::src::util::thread::Thread>` cannot be sent between threads safely
+   |     |
+   |     required by a bound introduced by this call
+   |
+   = help: within `ThreadMut<'_>`, the trait `Send` is not implemented for `NonNull<libgit2_crustify::libgit2::src::util::thread::Thread>`
+note: required because it appears within the type `ffibox::refs::CBorrowedPtr<'_, libgit2_crustify::libgit2::src::util::thread::Thread>`
+  --> $FFIBOX/src/refs.rs
+   |
+   | pub struct CBorrowedPtr<'a, T> {
+   |            ^^^^^^^^^^^^
+note: required because it appears within the type `ThreadRef<'_>`
+  --> src/libgit2/src/util/thread.rs
+   |
+   |         ThreadRef,
+   |         ^^^^^^^^^
+note: required because it appears within the type `ThreadMut<'_>`
+  --> src/libgit2/src/util/thread.rs
+   |
+   |         ThreadMut,
+   |         ^^^^^^^^^
+note: required by a bound in `send`
+  --> tests/ub_safe/compile_fail/stable/thread_handles_not_send.rs:5:12
+   |
+ 5 | fn send<T: Send>(_: T) {}
+   |            ^^^^ required by this bound in `send`
+
+error[E0277]: `*const ()` cannot be sent between threads safely
+  --> tests/ub_safe/compile_fail/stable/thread_handles_not_send.rs:10:10
+   |
+10 |     send(thread.as_mut());
+   |     ---- ^^^^^^^^^^^^^^^ `*const ()` cannot be sent between threads safely
+   |     |
+   |     required by a bound introduced by this call
+   |
+   = help: within `ThreadMut<'_>`, the trait `Send` is not implemented for `*const ()`
+note: required because it appears within the type `PhantomData<*const ()>`
+  --> $RUST/core/src/marker.rs
+note: required because it appears within the type `libgit2_crustify::libgit2::src::util::thread::Thread`
+  --> src/libgit2/src/util/thread.rs
+   |
+   |         Thread,
+   |         ^^^^^^
+   = note: required because it appears within the type `&mut libgit2_crustify::libgit2::src::util::thread::Thread`
+note: required because it appears within the type `PhantomData<&mut libgit2_crustify::libgit2::src::util::thread::Thread>`
+  --> $RUST/core/src/marker.rs
+note: required because it appears within the type `ThreadMut<'_>`
+  --> src/libgit2/src/util/thread.rs
+   |
+   |         ThreadMut,
+   |         ^^^^^^^^^
+note: required by a bound in `send`
+  --> tests/ub_safe/compile_fail/stable/thread_handles_not_send.rs:5:12
+   |
+ 5 | fn send<T: Send>(_: T) {}
+   |            ^^^^ required by this bound in `send`
+
+error[E0277]: `*const ()` cannot be shared between threads safely
+  --> tests/ub_safe/compile_fail/stable/thread_handles_not_send.rs:10:10
+   |
+10 |     send(thread.as_mut());
+   |     ---- ^^^^^^^^^^^^^^^ `*const ()` cannot be shared between threads safely
+   |     |
+   |     required by a bound introduced by this call
+   |
+   = help: within `libgit2_crustify::libgit2::src::util::thread::Thread`, the trait `Sync` is not implemented for `*const ()`
+note: required because it appears within the type `PhantomData<*const ()>`
+  --> $RUST/core/src/marker.rs
+note: required because it appears within the type `libgit2_crustify::libgit2::src::util::thread::Thread`
+  --> src/libgit2/src/util/thread.rs
+   |
+   |         Thread,
+   |         ^^^^^^
+   = note: required for `&libgit2_crustify::libgit2::src::util::thread::Thread` to implement `Send`
+note: required because it appears within the type `PhantomData<&libgit2_crustify::libgit2::src::util::thread::Thread>`
+  --> $RUST/core/src/marker.rs
+note: required because it appears within the type `ffibox::refs::CBorrowedPtr<'_, libgit2_crustify::libgit2::src::util::thread::Thread>`
+  --> $FFIBOX/src/refs.rs
+   |
+   | pub struct CBorrowedPtr<'a, T> {
+   |            ^^^^^^^^^^^^
+note: required because it appears within the type `ThreadRef<'_>`
+  --> src/libgit2/src/util/thread.rs
+   |
+   |         ThreadRef,
+   |         ^^^^^^^^^
+note: required because it appears within the type `ThreadMut<'_>`
+  --> src/libgit2/src/util/thread.rs
+   |
+   |         ThreadMut,
+   |         ^^^^^^^^^
+note: required by a bound in `send`
+  --> tests/ub_safe/compile_fail/stable/thread_handles_not_send.rs:5:12
+   |
+ 5 | fn send<T: Send>(_: T) {}
+   |            ^^^^ required by this bound in `send`

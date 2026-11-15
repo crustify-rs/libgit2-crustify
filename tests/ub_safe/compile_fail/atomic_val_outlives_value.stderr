@@ -1,0 +1,11 @@
+error[E0597]: `count` does not live long enough
+ --> tests/ub_safe/compile_fail/atomic_val_outlives_value.rs:7:9
+  |
+5 |     let val = {
+  |         --- borrow later stored here
+6 |         let count = Atomic32::new(1);
+  |             ----- binding `count` declared here
+7 |         count.as_ref().val()
+  |         ^^^^^ borrowed value does not live long enough
+8 |     };
+  |     - `count` dropped here while still borrowed

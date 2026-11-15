@@ -1,0 +1,57 @@
+{
+  "objective": "wrap",
+  "wave": 226,
+  "batch": 0,
+  "link_unit": "libgit2",
+  "module": "src/util/thread.c",
+  "foundational": false,
+  "base_branch": "refs/heads/crustify/waves/wave-226",
+  "backend": "claude",
+  "billing": "api",
+  "model_proxy": "openrouter",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "57005de",
+    "wavefront": "bf21e16",
+    "ffimap": "50a800e",
+    "ffibox": "568bcb5"
+  },
+  "items": [
+    {
+      "name": "git_atomic32",
+      "defined_in": "src/util/thread.h",
+      "kind": "struct",
+      "field_users": [
+        "val"
+      ],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_atomic64",
+      "defined_in": "src/util/thread.h",
+      "kind": "struct",
+      "field_users": [
+        "val"
+      ],
+      "typedefs": [
+        "git_atomic_ssize"
+      ],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_thread",
+      "defined_in": "src/util/unix/pthread.h",
+      "kind": "struct",
+      "field_users": [
+        "thread"
+      ],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    }
+  ],
+  "session_id": "4f6b87d5-c346-477b-afe3-1bece9a6e58a"
+}
