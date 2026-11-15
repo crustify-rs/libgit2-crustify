@@ -1,31 +1,31 @@
-//! Equivalence of `src/util/integer.h`'s range checks and overflow checks with their ports.
+//! Equivalence of `src/util/integer.h`'s overflow checks with their ports.
 //!
-//! - The range checks, `static inline`, are reached through their raw bindings, the wrappers
-//!   `static_fns.c` compiles over the header: each is compared with its port over its parameter's
-//!   bounds. Where the C's round trip keeps a value its range does not hold (`git__is_ssizet` past
-//!   `SSIZE_MAX`, `git__is_sizet` and `git__is_ulong` of a negative value, on this 64-bit build),
-//!   the C's answer is asserted beside the port's refusal: the correction the module's docs record.
-//!   A `uint64_t` a C caller passes through the `int64_t` parameter is compared at its own type.
-//! - The macros are compared where they expand, through C the raw bindings reach:
-//!   `git__multiply_sizet_overflow` through `GIT_MULTIPLY_SIZET_OVERFLOW` in `git__calloc`,
-//!   `git__mallocarray` and `git__reallocarray` (`src/util/alloc.c`), `git__add_sizet_overflow`
-//!   through `GIT_ERROR_CHECK_ALLOC_ADD` in `git_strlist_copy_with_null` (`src/util/strlist.c`),
-//!   and `git__multiply_int64_overflow` and `git__add_int64_overflow` through
-//!   `git_config_parse_int64` (`src/libgit2/config.c`), whose `git__strntol64` (`src/util/util.c`)
-//!   accumulates each digit with both and whose unit suffixes multiply by 1024 with the first.
-//!   `git__add_int_overflow` and `git__sub_int_overflow` expand only in `patch_parse.c`'s
-//!   `parse_hunk_body`, which `git_diff_from_buffer` (`diff_parse.c`) reaches through
-//!   `git_patch_parse`: they are compared through which hunks it refuses, with `git__is_int` at
-//!   `parse_int`, which reads each of the hunk header's numbers.
+//! The header's macros stay for the C that still expands them, and are compared where they
+//! expand, through C the raw bindings reach: `git__multiply_sizet_overflow` through
+//! `GIT_MULTIPLY_SIZET_OVERFLOW` in `git__calloc`, `git__mallocarray` and `git__reallocarray`
+//! (`src/util/alloc.c`), `git__add_sizet_overflow` through `GIT_ERROR_CHECK_ALLOC_ADD` in
+//! `git_strlist_copy_with_null` (`src/util/strlist.c`), and `git__multiply_int64_overflow` and
+//! `git__add_int64_overflow` through `git_config_parse_int64` (`src/libgit2/config.c`), whose
+//! `git__strntol64` (`src/util/util.c`) accumulates each digit with both and whose unit
+//! suffixes multiply by 1024 with the first. `git__add_int_overflow` and `git__sub_int_overflow`
+//! expand only in `patch_parse.c`'s `parse_hunk_body`, which `git_diff_from_buffer`
+//! (`diff_parse.c`) reaches through `git_patch_parse`: they are compared through which hunks it
+//! refuses, with `git__is_int` at `parse_int`, which reads each of the hunk header's numbers
+//! and calls the module's export.
+//!
+//! The range checks' equivalence tests were retired at the module's switch, when the header's
+//! `static inline` definitions became prototypes of the module's exports: their raw bindings
+//! reach the Rust since, and the unit tests (`tests/unit_pub/src/util/integer_h.rs`) keep what
+//! the comparisons established.
 
-use core::ffi::{CStr, c_int, c_ulong};
+use core::ffi::{CStr, c_int};
 use std::ffi::CString;
 
 use libgit2_crustify::libgit2::src::libgit2::diff::Diff;
 use libgit2_crustify::libgit2::src::util::errors::{self, ErrorClass};
 use libgit2_crustify::libgit2::src::util::integer_h::{
     checked_add_c_int, checked_add_i64, checked_add_usize, checked_mul_i64, checked_mul_usize,
-    checked_sub_c_int, fits_c_int, fits_c_ulong, fits_isize, fits_u16, fits_u32, fits_usize,
+    checked_sub_c_int, fits_c_int,
 };
 use libgit2_crustify::sys::libgit2 as sys;
 
@@ -34,113 +34,6 @@ fn init() {
     let _ = core::mem::ManuallyDrop::new(
         libgit2_crustify::libgit2::src::libgit2::libgit2::init().unwrap(),
     );
-}
-
-/// The `int64_t` values probed: each bound of the types the checks convert to, with its
-/// neighbours, and values between.
-fn i64_probes() -> Vec<i64> {
-    let mut probes = vec![0, 0x1234_5678_9ABC, -0x1234_5678_9ABC];
-    for bound in [
-        i64::MIN,
-        i64::MAX,
-        i64::from(c_int::MIN),
-        i64::from(c_int::MAX),
-        i64::from(u16::MAX),
-        i64::from(u32::MAX),
-        0,
-    ] {
-        for delta in -2..=2 {
-            probes.extend(bound.checked_add(delta));
-        }
-    }
-    probes
-}
-
-/// The `size_t` values probed, as [`i64_probes`].
-fn usize_probes() -> Vec<usize> {
-    let mut probes = vec![0x1234_5678];
-    for bound in [
-        0,
-        usize::from(u16::MAX),
-        usize::try_from(u32::MAX).unwrap(),
-        isize::MAX.unsigned_abs(),
-        usize::MAX,
-    ] {
-        for delta in -2_isize..=2 {
-            probes.extend(bound.checked_add_signed(delta));
-        }
-    }
-    probes
-}
-
-/// `git__is_int`, `git__is_uint16` and `git__is_uint32` narrow, so their round trips keep
-/// their ranges: their ports agree with them on every probe.
-#[test]
-#[cfg_attr(miri, ignore = "calls C")]
-fn narrowing_checks_match_the_c() {
-    for p in i64_probes() {
-        // SAFETY: a pure function of its argument.
-        let c = unsafe { sys::git__is_int(p) } != 0;
-        assert_eq!(fits_c_int(p), c, "git__is_int({p})");
-    }
-    for p in usize_probes() {
-        // SAFETY: a pure function of its argument.
-        let c = unsafe { sys::git__is_uint16(p) } != 0;
-        assert_eq!(fits_u16(p), c, "git__is_uint16({p})");
-        // SAFETY: a pure function of its argument.
-        let c = unsafe { sys::git__is_uint32(p) } != 0;
-        assert_eq!(fits_u32(p), c, "git__is_uint32({p})");
-    }
-}
-
-/// `git__is_sizet` and `git__is_ulong` agree with their ports on every non-negative
-/// `int64_t`, and accept every negative one, which the ports refuse; for each `uint64_t` a C
-/// caller passes through the parameter, the ports at its own type give the C's answer.
-#[test]
-#[cfg_attr(miri, ignore = "calls C")]
-fn widening_checks_match_the_c_but_for_negative_values() {
-    for p in i64_probes() {
-        // SAFETY: a pure function of its argument.
-        let sizet = unsafe { sys::git__is_sizet(p) } != 0;
-        // SAFETY: a pure function of its argument.
-        let ulong = unsafe { sys::git__is_ulong(p) } != 0;
-        if p >= 0 {
-            assert_eq!(fits_usize(p), sizet, "git__is_sizet({p})");
-            assert_eq!(fits_c_ulong(p), ulong, "git__is_ulong({p})");
-        } else {
-            assert!(sizet && !fits_usize(p), "git__is_sizet({p})");
-            assert!(ulong && !fits_c_ulong(p), "git__is_ulong({p})");
-        }
-    }
-    for p in usize_probes()
-        .into_iter()
-        .map(|p| u64::try_from(p).unwrap())
-    {
-        // SAFETY: a pure function of its argument.
-        let sizet = unsafe { sys::git__is_sizet(p.cast_signed()) } != 0;
-        // SAFETY: a pure function of its argument.
-        let ulong = unsafe { sys::git__is_ulong(p.cast_signed()) } != 0;
-        assert_eq!(fits_usize(p), sizet, "git__is_sizet({p}_u64)");
-        assert_eq!(fits_c_ulong(p), ulong, "git__is_ulong({p}_u64)");
-        assert_eq!(c_ulong::try_from(p).is_ok(), ulong);
-    }
-}
-
-/// `git__is_ssizet` accepts every `size_t`; its port agrees up to `SSIZE_MAX` and refuses
-/// the rest.
-#[test]
-#[cfg_attr(miri, ignore = "calls C")]
-fn ssizet_check_matches_the_c_up_to_ssize_max() {
-    for p in usize_probes() {
-        // SAFETY: a pure function of its argument.
-        let c = unsafe { sys::git__is_ssizet(p) } != 0;
-        assert!(c, "git__is_ssizet({p})");
-        assert_eq!(
-            fits_isize(p),
-            p <= isize::MAX.unsigned_abs(),
-            "git__is_ssizet({p})"
-        );
-    }
 }
 
 /// The largest product the allocation probes ask libgit2's allocator for.
