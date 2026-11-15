@@ -134242,7 +134242,7 @@
           "module": "src/util/thread.c",
           "foundational": false,
           "kind": "port",
-          "status": "wip",
+          "status": "done",
           "items": [
             {
               "name": "git_atomic__compare_and_swap",
@@ -134341,6 +134341,21 @@
               "home": "src/libgit2/src/util/thread.rs"
             }
           ],
+          "commits": [
+            "2f2ffb73d1c1e38e3366b4240f515b97d93836c8"
+          ]
+        },
+        {
+          "index": 7,
+          "link_unit": "libgit2",
+          "module": "src/util/thread.c",
+          "foundational": false,
+          "kind": "review",
+          "status": "wip",
+          "reviews": [
+            6
+          ],
+          "module_pass": true,
           "commits": []
         }
       ]

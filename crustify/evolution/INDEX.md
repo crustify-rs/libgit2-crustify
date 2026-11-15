@@ -15,7 +15,7 @@ the assistant alone, as each batch's proposals land.
 | `bsan-sized-tests` | A test BSan cannot finish is sized for it, not skipped | `landed` | `wave-225/batch-1` | — |
 | `build-scripts-watch-missing-inputs` | Build scripts watch inputs that do not exist, so every cargo run rebuilds the crate | `open` | `wave-232/batch-1` | — |
 | `bundled-pcre2-shadows-the-side-campaign` | pcre2-sys's vendored PCRE2 shadows the side campaign's for libgit2's C | `landed` | — | — |
-| `c-link-rust-on-the-dev-profile` | The Rust library the remaining C links is built unoptimised, and no event measures what that costs | `open` | `src/util/hash/sha1dc/ubc_check.c`'s switch | — |
+| `c-link-rust-on-the-dev-profile` | The Rust library the remaining C links is built unoptimised, and no event measures what that costs | `open` | `src/util/hash/sha1dc/ubc_check.c`'s switch, `wave-226/batch-6` | — |
 | `c-link-unused-rust` | The C library's link keeps Rust that the C never calls | `open` | `module-switch-procedure`'s switches | — |
 | `callback-context-in-an-argument` | A callback whose context is reached through an argument has no sound C form | `landed` | `wave-194/batch-1`, `wave-194/batch-2` | — |
 | `callback-reenters-its-caller` | A callback can re-enter the function that calls it, through the object it is handed | `landed` | `wave-194/batch-1` | — |
@@ -72,7 +72,7 @@ the assistant alone, as each batch's proposals land.
 | `gateway-feature-across-a-multiline-attribute` | build.rs reads a gateway as switched when a multi-line attribute follows its `cfg` | `landed` | `wave-194/batch-4`, `wave-197/batch-0`, `wave-197/batch-1` | — |
 | `goal-fitness-functions` | Each goal names its fitness | `landed` | `wave-186/batch-1`, `wave-186/batch-3`, `wave-194/batch-5`, `wave-197/batch-0`, `wave-232/batch-1` | — |
 | `header-macros-after-their-expansions` | A header macro that implements logic is scheduled after the symbols it expands to | `landed` | `wave-169/batch-1`, `wave-169/batch-2` | — |
-| `header-module-exports` | A header module's `static inline` functions are exported, under a feature named for its header | `open` | `wave-223/batch-1` | — |
+| `header-module-exports` | A header module's `static inline` functions are exported, under a feature named for its header | `open` | `wave-223/batch-1`, `wave-226/batch-6` | — |
 | `hidden-lifecycle-primitives` | Lifecycle primitives the target's shared library hides | `declined` | `wave-3/batch-0` | — |
 | `integration-merge-dashboard-sums` | Recomputing the dashboard's `Σ` rows in an integration merge | `landed` | — | — |
 | `integration-merge-helpers` | The additive conflicts of an integration merge, settled by scripts | `open` | — | — |
