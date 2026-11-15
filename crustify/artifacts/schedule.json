@@ -130826,7 +130826,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 0,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [],
         "cut": []
@@ -131541,10 +131541,13 @@
           "module": "src/util/integer.h",
           "foundational": false,
           "kind": "review",
-          "status": "wip",
+          "status": "done",
           "reviews": [],
           "module_pass": true,
-          "commits": []
+          "commits": [
+            "be184ab92639c61f15c4d4113a1f7c0e30b46a84",
+            "9e5a391830afd60cbea016770a1fd0fb0f160a01"
+          ]
         }
       ]
     },
