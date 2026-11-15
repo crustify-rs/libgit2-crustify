@@ -23,6 +23,7 @@ the assistant alone, as each batch's proposals land.
 | `config-branches-of-one-result` | A macro whose configured branches compute one result is ported once | `landed` | `wave-225/batch-0`, `wave-225/batch-1` | — |
 | `config-branches-over-the-rust-domain` | A macro's configured branches are compared over the arguments its Rust form takes | `open` | `wave-220/batch-0`, `wave-220/batch-1` | `config-branches-of-one-result` |
 | `config-branches-rust-cfg` | A macro whose configured branches differ, under conditions Rust's `cfg` sees, has no route | `open` | `wave-219/batch-1` | `config-branches-of-one-result` |
+| `config-branches-the-target-never-builds` | A macro's branches for compilers and platforms the crate never targets do not shim it | `open` | `wave-223/batch-0`, `wave-223/batch-1` | `config-branches-of-one-result` |
 | `contracts-unrefusable-c-arguments` | Which of C's arguments a gateway refuses, and which it trusts | `landed` | `wave-177/batch-1` | — |
 | `coverage-c-scope-matches-no-path` | The coverage report's C scope names the paths the archive records | `landed` | `wave-169/batch-1`, `wave-169/batch-2` | — |
 | `coverage-c-scope-unfiltered` | The coverage report's C figures ignore their scope and move with the test binaries | `landed` | `wave-181/batch-0` | — |
@@ -69,6 +70,7 @@ the assistant alone, as each batch's proposals land.
 | `gateway-feature-across-a-multiline-attribute` | build.rs reads a gateway as switched when a multi-line attribute follows its `cfg` | `landed` | `wave-194/batch-4`, `wave-197/batch-0`, `wave-197/batch-1` | — |
 | `goal-fitness-functions` | Each goal names its fitness | `landed` | `wave-186/batch-1`, `wave-186/batch-3`, `wave-194/batch-5`, `wave-197/batch-0`, `wave-232/batch-1` | — |
 | `header-macros-after-their-expansions` | A header macro that implements logic is scheduled after the symbols it expands to | `landed` | `wave-169/batch-1`, `wave-169/batch-2` | — |
+| `header-module-exports` | A header module's `static inline` functions are exported, under a feature named for its header | `open` | `wave-223/batch-1` | — |
 | `hidden-lifecycle-primitives` | Lifecycle primitives the target's shared library hides | `declined` | `wave-3/batch-0` | — |
 | `integration-merge-dashboard-sums` | Recomputing the dashboard's `Σ` rows in an integration merge | `landed` | — | — |
 | `integration-merge-helpers` | The additive conflicts of an integration merge, settled by scripts | `open` | — | — |
@@ -101,6 +103,7 @@ the assistant alone, as each batch's proposals land.
 | `switch-archive-check` | A switch checks its static archive by the removed unit's symbols, not by member names | `open` | `module-switch-procedure`'s switches | — |
 | `switch-c-tests-baseline` | A switch's C tests run per variant by a tracked script and are compared with the baseline | `open` | `module-switch-procedure`'s switches | — |
 | `switch-gate-beyond-c-tests` | A switch whose exports no baseline C test reaches is gated by the C's own programs, old build beside new | `open` | `module-switch-procedure`'s switches | — |
+| `switch-header-change-before-bindings` | A switch whose C side changes a header makes it before the bindings are regenerated | `open` | `src/util/integer.h`'s switch | — |
 | `switch-order-in-testing-gates` | `testing-gates` restates a switch's parts in an order `porting-workflow` contradicts | `landed` | `switch-step-order`'s review-1 | — |
 | `switch-step-order` | A switch's Rust side lands before its builds, and removes every mention of the export feature | `landed` | `module-switch-procedure`'s switches | — |
 | `symbol-alias-anchors` | Where a symbol alias's anchor goes | `landed` | `wave-177/batch-0` | — |

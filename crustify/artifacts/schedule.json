@@ -134138,7 +134138,7 @@
           "module": "src/util/thread.c",
           "foundational": false,
           "kind": "port",
-          "status": "wip",
+          "status": "done",
           "items": [
             {
               "name": "git_threads_global_init",
@@ -134197,7 +134197,9 @@
               "home": "src/libgit2/src/util/thread.rs"
             }
           ],
-          "commits": []
+          "commits": [
+            "d3d90f565c103aab9bcdcec3943b9a3cbf84f2a7"
+          ]
         },
         {
           "index": 4,
@@ -134212,6 +134214,23 @@
           "commits": [
             "b9239845967fd314fc6a9eb4232fbc456eecf6a0",
             "5c7b62f0ee435ae86bc8e006d865d337781cdd21"
+          ]
+        },
+        {
+          "index": 5,
+          "link_unit": "libgit2",
+          "module": "src/util/thread.c",
+          "foundational": false,
+          "kind": "review",
+          "status": "done",
+          "reviews": [
+            1,
+            2,
+            3
+          ],
+          "commits": [
+            "8e114c56fbba9ec8ea79b58ed56fbe7e13b35f7c",
+            "58d3dc711cede816d476f808d7f21a184195c7de"
           ]
         }
       ]
