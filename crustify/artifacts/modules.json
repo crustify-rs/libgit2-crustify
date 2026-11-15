@@ -2440,7 +2440,7 @@
         {
           "index": 25,
           "name": "src/util/hash/sha1dc/ubc_check.c",
-          "status": "todo",
+          "status": "frozen",
           "foundational": false,
           "depends_on": [],
           "translation_unit": {

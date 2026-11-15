@@ -5,6 +5,7 @@ pub mod allocators;
 pub mod cc_compat_h;
 pub mod ctype_compat_h;
 pub mod errors;
+pub mod hash;
 pub mod strlist;
 pub mod strnlen_h;
 pub mod utf8;
