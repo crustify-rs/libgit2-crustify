@@ -5,7 +5,6 @@ mod allocators;
 mod cc_compat_h;
 mod ctype_compat_h;
 mod errors;
-mod hash;
 mod integer_h;
 mod strlist;
 mod strnlen_h;

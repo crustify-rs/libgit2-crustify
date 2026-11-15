@@ -574,7 +574,7 @@ const ONE_BIT_CHANGES: [(u64, u32); 32] = [
 /// block that selects a vector meets each of its conditions, so a change that fails one alone
 /// clears its bit, and a condition read from the wrong word or bit, or compared the wrong way,
 /// changes some mask. Carries over the equivalence test
-/// `ubc_check_matches_c_on_each_one_bit_change_of_a_selecting_block`, which retires with the
+/// `ubc_check_matches_c_on_each_one_bit_change_of_a_selecting_block`, which retired with the
 /// C at the module's switch. Miri and `BSan` check the witness of `II(52,0)` alone, the vector
 /// of the shattered attack: 960 blocks, where all 30,720 would take them minutes.
 #[test]
@@ -600,7 +600,7 @@ fn ubc_check_of_each_one_bit_change_of_a_witness_is_cs() {
 
 /// The masks of the first 65,536 seeded blocks, folded in order by 64-bit FNV-1a, the count of
 /// non-zero masks and their union: the values `ubc_check.c`'s C gives. Carries over the
-/// equivalence test `ubc_check_matches_c_on_seeded_blocks`, which retires with the C at the
+/// equivalence test `ubc_check_matches_c_on_seeded_blocks`, which retired with the C at the
 /// module's switch: some of these blocks fail a condition that no one-bit change of a witness
 /// fails alone, since another condition of its vector reads the same bit. Miri and `BSan` fold
 /// the first 64.
@@ -623,7 +623,7 @@ fn ubc_check_of_many_seeded_blocks_folds_as_c_does() {
 
 /// 512 seeded blocks, each mask folded in turn, `fold = fold.rotate_left(5) ^ mask`: the value,
 /// the count of non-zero masks and their union C gives. 512, so that Miri runs it in seconds;
-/// the equivalence tests compare two million blocks with C.
+/// the equivalence tests, retired at the module's switch, compared two million blocks with C.
 #[test]
 fn ubc_check_over_seeded_blocks_folds_as_c_does() {
     let (mut fold, mut selecting, mut selected) = (0_u32, 0, 0);
