@@ -4,6 +4,9 @@
 //! `git_thread_*` macros) are their port batches', with the C tests that check them
 //! (`tests/libgit2/threads/atomic.c`). None of these reaches C, so Miri runs them all.
 
+// The thread-local storage's tests (wave-226/batch-3).
+mod tlsdata;
+
 use core::sync::atomic::Ordering::SeqCst;
 
 use ffibox::CZeroable;

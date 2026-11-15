@@ -25949,6 +25949,89 @@
    ]
   },
   {
+   "name": "git_tlsdata_get",
+   "defined_in": "src/util/thread.c",
+   "ptr_ret": {
+    "ptr": {
+     "scalar": {
+      "by_val": true
+     },
+     "array": null,
+     "string": false,
+     "owned": false,
+     "borrowed": {
+      "lifetime": "other"
+     },
+     "nullable": true,
+     "mutable": false,
+     "note": "This thread's value of the key, as git_tlsdata_set stored it; NULL until stored, after NULL is stored, and on a disposed key (glibc's seq check; the port: an id is never reused). The key keeps it; its callers write through errors.c's error_threadstate and oid.c's string, thread.c never does. Ported as TlsKey<T>::get, a clone of the value (T: Clone)."
+    }
+   }
+  },
+  {
+   "name": "git_tlsdata_init",
+   "defined_in": "src/util/thread.c",
+   "ptr_args": [
+    {
+     "name": "destroy_fn",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "static"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A function, kept with the key for as long as it lives and called on each thread's non-NULL value at that thread's exit, never on disposal (POSIX). NULL for none (the C tests). errors.c's threadstate_free and oid.c's thread_str_free free the value they are given, so they are sound only with the values C stores under their own key. Ported as TlsdataInitDestroyFn<T> (a plain fn(T)); C's reach Rust through the export alone, kept with their key."
+     }
+    },
+    {
+     "name": "key",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:key"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "Out-parameter: pthread_key_create writes the new key on success only, and nothing reads it; errors.c and oid.c pass a static, the C tests a local. Ported as the Ok value of TlsKey::new; the export writes the id through it on success only."
+     }
+    }
+   ]
+  },
+  {
+   "name": "git_tlsdata_set",
+   "defined_in": "src/util/thread.c",
+   "ptr_args": [
+    {
+     "name": "value",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": true,
+      "borrowed": {
+       "lifetime": "other"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "Type-erased: stored as this thread's value of the key, never read or written through by thread.c. Owned on errors.c's and oid.c's paths, whose key's destructor frees it at the thread's exit (a heap error_threadstate, a git__malloc'd string); borrowed elsewhere, the C tests storing an integer or a local's address under a key without a destructor. NULL removes the value, and no destructor runs on it. The value it replaces is not destroyed. Ported as TlsKey<T>::set(Option<T>), returning the replaced value; the export keeps C's pointers as CWords."
+     }
+    }
+   ]
+  },
+  {
    "name": "git_trace_cb",
    "defined_in": null,
    "ptr_args": [

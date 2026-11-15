@@ -18,6 +18,9 @@ running `ONLY=unit report.py …`; that directory is then one more suite for any
 `report.py` run without `ONLY`, so `ALL` would count `lib` and `unit_pub` twice in its
 profile list (harmless for a union, but a trap for anything that sums).
 
+`wave-226/batch-3/run-1` merged them again by hand, linking both suites' profiles into a
+`prof/unit/` of its coverage run and running `ONLY=unit report.py …`.
+
 ## Destination
 
 A campaign artifact the assistant owns: `crustify/scripts/coverage/report.py` (and the

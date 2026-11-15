@@ -857,3 +857,10 @@ function git_atomic64_set
 function git_atomic__compare_and_swap
 function git_atomic__load
 function git_atomic__swap
+
+# wave-226/batch-3: src/util/thread.c's thread-local storage (src/util/thread.h), ported to
+# Rust: its exports check their signatures against these, and the equivalence tests call C's
+function git_tlsdata_dispose
+function git_tlsdata_get
+function git_tlsdata_init
+function git_tlsdata_set

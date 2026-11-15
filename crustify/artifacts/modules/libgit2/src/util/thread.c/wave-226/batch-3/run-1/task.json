@@ -1,0 +1,81 @@
+{
+  "objective": "port",
+  "wave": 226,
+  "batch": 3,
+  "link_unit": "libgit2",
+  "module": "src/util/thread.c",
+  "foundational": false,
+  "base_branch": "refs/heads/crustify/waves/wave-226",
+  "backend": "claude",
+  "billing": "api",
+  "model_proxy": "openrouter",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "57005de",
+    "wavefront": "bf21e16",
+    "ffimap": "50a800e",
+    "ffibox": "568bcb5"
+  },
+  "items": [
+    {
+      "name": "git_threads_global_init",
+      "defined_in": "src/util/unix/pthread.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_tlsdata_dispose",
+      "defined_in": "src/util/thread.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_tlsdata_get",
+      "defined_in": "src/util/thread.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_tlsdata_key",
+      "defined_in": "src/util/thread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_tlsdata_set",
+      "defined_in": "src/util/thread.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "void (*)(void *)",
+      "defined_in": "src/util/thread.c",
+      "kind": "function_pointer",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_tlsdata_init",
+      "defined_in": "src/util/thread.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    }
+  ],
+  "session_id": "f1b00526-2910-402f-a192-0b2384bfd11d"
+}

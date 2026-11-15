@@ -100,6 +100,49 @@
 //! an `unsigned int` and each operation `git__noop_args`, returning 0, which excludes nothing
 //! because no second thread exists, and its `git_thread_create` and `git_thread_join` are only
 //! expanded under `#ifdef GIT_THREADS`.
+//!
+//! # Thread-local storage
+//!
+//! A [`TlsKey`] is a `git_tlsdata_key` (`thread.h`): a key made at run time, under which each
+//! thread keeps a value of its own, with a destructor that runs on each thread's value at that
+//! thread's exit. C keeps two, made at `git_libgit2_init`: `errors.c`'s, for each thread's
+//! error state, and `oid.c`'s, for `git_oid_tostr_s`'s per-thread string. C's `thread.c` builds
+//! them on POSIX keys (`pthread_key_create` and its siblings) where libgit2 is built with
+//! threads, as here; this module reimplements them over the standard library alone: a
+//! registry of the live keys, behind a lock, and one table per thread, in a `thread_local!`
+//! whose destructor runs the keys' destructors when the thread exits, a thread C started
+//! included. The values never leave the thread that stored them, so a key is `Send` and
+//! `Sync` whatever its values are.
+//!
+//! A key's value is typed, [`TlsKey<T>`](TlsKey), where C's is a `void *`, and its destructor,
+//! a [`TlsdataInitDestroyFn`], is a plain Rust function of the value. The C that remains
+//! reaches the same keys through the module's exports, `git_tlsdata_init`, `git_tlsdata_set`,
+//! `git_tlsdata_get` and `git_tlsdata_dispose`, once the module has switched; until then they
+//! compile only under the `ffi-export-src-util-thread-c` feature. A key C makes holds C's
+//! pointers and C's destructor, and no safe Rust reaches it: a [`TlsKey`] is made only by
+//! [`TlsKey::new`]. They keep POSIX's behaviour where C's callers can see it: a value is
+//! absent until a thread stores one, storing one destroys nothing, the destructor runs at a
+//! thread's exit on the values it still holds of the keys still live, and disposing of a key
+//! runs no destructor, on any thread. They depart from it where nothing in libgit2 relies on
+//! it:
+//!
+//! - no key is 0, and a key is never reused, so a key's copy that outlives its disposal, or the
+//!   zeroed `static` a C caller has not initialised yet, names no key: reading it gives nothing and
+//!   storing under it fails. C's `threadstate_get` reads its key before `git_error_global_init` has
+//!   made it, which on POSIX reads whatever another component keeps under key 0
+//!   (`crustify/LESSONS.md`); here it reads nothing;
+//! - a destructor that stores a value again, while its thread exits, fails to store it, where POSIX
+//!   would run the destructors again, up to `PTHREAD_DESTRUCTOR_ITERATIONS` times; the destructors
+//!   C passes, `errors.c`'s `threadstate_free` and `oid.c`'s `thread_str_free`, store nothing;
+//! - the number of live keys is bounded by the ids alone, 2³² − 1 over the process's life, where
+//!   glibc bounds the live keys by `PTHREAD_KEYS_MAX`, 1024; and
+//! - the main thread's values are destroyed at `exit` too, as the standard library's thread-locals
+//!   are on glibc, where POSIX destroys none of the main thread's.
+//!
+//! The configurations this build does not take differ in what disposing of a key does: without
+//! threads (`!GIT_THREADS`) C keeps one value per key, in a table of 16, and runs the
+//! destructor on it when the key is disposed of; on Windows (`FlsAlloc`) disposing of a key
+//! runs its destructor on every fiber's value.
 
 // The workspace does not set `unsafe_code` yet; this module confines its unsafe code to
 // `ffi_import`, which takes the lint back, and holds it to that here.
@@ -922,10 +965,12 @@ impl<T> fmt::Debug for JoinHandle<T> {
     unsafe_code,
     reason = "lays out git_atomic32 and git_atomic64 by hand, with their handles, lends their \
               values as standard atomics, and reads and writes git_thread's field through its \
-              handles' pointers"
+              handles' pointers; keeps each thread's table of thread-local values \
+              (`thread_local!`) and calls the destructors C gives its keys"
 )]
 mod ffi_import {
-    use core::cell::UnsafeCell;
+    use core::cell::{RefCell, UnsafeCell};
+    use core::ffi::c_void;
     use core::fmt;
     use core::marker::PhantomData;
     use core::ptr::NonNull;
@@ -933,6 +978,7 @@ mod ffi_import {
     #[cfg(target_pointer_width = "64")]
     use core::sync::atomic::AtomicI64;
     use std::os::unix::thread::RawPthread;
+    use std::thread::LocalKey;
 
     use ffibox::{CBorrowedPtr, CCell, CMutSeam, CRefSeam, CZeroable, define_ctype};
 
@@ -1338,6 +1384,1041 @@ mod ffi_import {
             // which no other handle reaches while this one lives; the caller vouches for what
             // a join through the object makes of the id.
             unsafe { slot.write(thread) }
+        }
+    }
+
+    // Thread-local storage (wave-226/batch-3): the C forms of the keys C makes, a destructor
+    // and the values it destroys, which the module's native code holds and pairs by key.
+
+    /// A destructor C gave `git_tlsdata_init` (`void (*)(void *)`), which Rust calls on each
+    /// value C stored under its key, at the exit of the thread that stored it.
+    ///
+    /// It is called only through [`destroy`](Self::destroy), with a [`CWord`] C stored under
+    /// the key it was registered for: the module's native code pairs the two by the key's id,
+    /// and never hands either to safe code outside the module.
+    #[derive(Clone, Copy, Debug)]
+    pub(super) struct CDestructor(unsafe extern "C" fn(*mut c_void));
+
+    impl CDestructor {
+        /// The destructor `f`, for the key `git_tlsdata_init` registers it with.
+        ///
+        /// # Safety
+        ///
+        /// `f` may be called once with each [`CWord`] built from a value C stores under that
+        /// key, on the thread that stored it, at that thread's exit, while the key lives: what
+        /// `thread.h` has `git_tlsdata_init`'s caller provide.
+        #[cfg_attr(
+            not(any(test, feature = "ffi-export-src-util-thread-c")),
+            expect(
+                dead_code,
+                reason = "the export gateway alone calls it, under its feature"
+            )
+        )]
+        pub(super) unsafe fn new(f: unsafe extern "C" fn(*mut c_void)) -> CDestructor {
+            CDestructor(f)
+        }
+
+        /// Runs the destructor on `word`, a value C stored under the destructor's key, on the
+        /// thread that stored it, at that thread's exit.
+        pub(super) fn destroy(self, word: CWord) {
+            // SAFETY: the native code calls this only from a thread's table as the thread
+            // exits (`Table`'s `Drop`), once per entry, with the word the entry holds, which C
+            // stored under the key this destructor was registered for (`CWord::new`), while
+            // that key is live: what `CDestructor::new`'s caller vouched `f` accepts.
+            unsafe { (self.0)(word.0.as_ptr()) }
+        }
+    }
+
+    /// A non-null pointer C stored under one of its keys with `git_tlsdata_set`. Rust never
+    /// reads through it: it hands it back to `git_tlsdata_get` and to the key's destructor.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub(super) struct CWord(NonNull<c_void>);
+
+    impl CWord {
+        /// The value `ptr`, for the key C stores it under.
+        ///
+        /// # Safety
+        ///
+        /// `ptr` is stored under the key C passed `git_tlsdata_set` with it, and that key's
+        /// destructor, if it has one, may be called with it at the storing thread's exit, as
+        /// `git_tlsdata_set`'s caller provides.
+        #[cfg_attr(
+            not(any(test, feature = "ffi-export-src-util-thread-c")),
+            expect(
+                dead_code,
+                reason = "the export gateway alone calls it, under its feature"
+            )
+        )]
+        pub(super) unsafe fn new(ptr: NonNull<c_void>) -> CWord {
+            CWord(ptr)
+        }
+
+        /// The pointer, as C stored it.
+        #[cfg_attr(
+            not(any(test, feature = "ffi-export-src-util-thread-c")),
+            expect(
+                dead_code,
+                reason = "the export gateway alone calls it, under its feature"
+            )
+        )]
+        pub(super) fn as_ptr(self) -> *mut c_void {
+            self.0.as_ptr()
+        }
+    }
+
+    std::thread_local! {
+        /// Each thread's values of the thread-local keys, which [`Table`](super::tls::Table)'s
+        /// drop destroys as the thread exits.
+        static TLS_TABLE: RefCell<super::tls::Table> = const {
+            RefCell::new(super::tls::Table::new())
+        };
+    }
+
+    /// This thread's table of thread-local values, for the module's native code.
+    pub(super) fn tls_table() -> &'static LocalKey<RefCell<super::tls::Table>> {
+        &TLS_TABLE
+    }
+
+    #[cfg(test)]
+    mod unit_priv {
+        use core::ffi::c_void;
+        use core::num::NonZeroUsize;
+        use core::ptr::NonNull;
+        use std::sync::{Mutex, PoisonError};
+        use std::thread;
+
+        use super::super::{TlsError, TlsKey, c_keys};
+        use super::{CDestructor, CWord};
+
+        /// The addresses [`record`] was called with.
+        static LOG: Mutex<Vec<usize>> = Mutex::new(Vec::new());
+
+        /// A C destructor that records the address it is given, and reads nothing through it.
+        unsafe extern "C" fn record(value: *mut c_void) {
+            LOG.lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(value.addr());
+        }
+
+        /// The addresses recorded, sorted.
+        fn recorded() -> Vec<usize> {
+            let mut log = LOG.lock().unwrap_or_else(PoisonError::into_inner).clone();
+            log.sort_unstable();
+            log
+        }
+
+        /// A word C would store, at `addr`, which nothing reads through.
+        fn word(addr: usize) -> CWord {
+            let addr = NonZeroUsize::new(addr).expect("not NULL");
+            // SAFETY: `record`, the only destructor these words reach, accepts any pointer.
+            unsafe { CWord::new(NonNull::without_provenance(addr)) }
+        }
+
+        /// The address of the word stored under `id` on this thread.
+        fn stored(id: u32) -> Option<usize> {
+            c_keys::get(id).map(|word| word.as_ptr().addr())
+        }
+
+        /// C's keys store its words, give them back on the thread that stored them, and run
+        /// C's destructor on each word a thread still holds of a live key at its exit: not on
+        /// one it removed, nor once the key is disposed of.
+        #[test]
+        fn c_keys_store_words_and_destroy_them_at_thread_exit() {
+            // SAFETY: `record` may be called with any pointer, on any thread.
+            let destructor = unsafe { CDestructor::new(record) };
+            let id = c_keys::init(Some(destructor)).expect("a key");
+            assert_ne!(id, 0);
+            assert_eq!(stored(id), None);
+            let run = |f: fn(u32)| {
+                thread::spawn(move || f(id))
+                    .join()
+                    .expect("the thread ends");
+            };
+
+            // Held at exit: destroyed.
+            run(|id| {
+                c_keys::set(id, Some(word(0x10))).expect("stored");
+                assert_eq!(stored(id), Some(0x10));
+            });
+            assert_eq!(recorded(), [0x10]);
+
+            // Replaced, then removed: nothing destroyed.
+            run(|id| {
+                c_keys::set(id, Some(word(0x20))).expect("stored");
+                c_keys::set(id, Some(word(0x21))).expect("stored");
+                assert_eq!(stored(id), Some(0x21));
+                c_keys::set(id, None).expect("removed");
+                assert_eq!(stored(id), None);
+            });
+            assert_eq!(recorded(), [0x10]);
+
+            // Held when the key is disposed of: left to C, as POSIX leaves it.
+            c_keys::set(id, Some(word(0x30))).expect("stored");
+            run(|id| {
+                c_keys::set(id, Some(word(0x31))).expect("stored");
+                c_keys::dispose(id).expect("disposed");
+                assert_eq!(stored(id), None);
+            });
+            assert_eq!(recorded(), [0x10]);
+            assert_eq!(stored(id), None);
+            assert_eq!(c_keys::set(id, Some(word(0x32))), Err(TlsError::Disposed));
+            assert_eq!(c_keys::set(id, None), Err(TlsError::Disposed));
+            assert_eq!(c_keys::dispose(id), Err(TlsError::Disposed));
+        }
+
+        /// A key without a destructor keeps C's words and destroys none.
+        #[test]
+        fn a_c_key_without_a_destructor_destroys_nothing() {
+            let id = c_keys::init(None).expect("a key");
+            thread::spawn(move || c_keys::set(id, Some(word(0x40))))
+                .join()
+                .expect("the thread ends")
+                .expect("stored");
+            assert!(!recorded().contains(&0x40));
+            c_keys::dispose(id).expect("disposed");
+        }
+
+        /// C reaches none of Rust's keys, nor an id no key has, 0 included, which names no key:
+        /// reading gives `NULL`, and storing or disposing fails, leaving Rust's values as they
+        /// are.
+        #[test]
+        fn c_reaches_no_rust_key_and_no_unknown_id() {
+            let rust = TlsKey::<u8>::new(None).expect("a key");
+            rust.set(Some(1)).expect("stored");
+            let rust_id = rust.id.get();
+            for id in [0, rust_id, u32::MAX] {
+                assert_eq!(stored(id), None);
+                assert_eq!(c_keys::set(id, Some(word(0x50))), Err(TlsError::Disposed));
+                assert_eq!(c_keys::set(id, None), Err(TlsError::Disposed));
+                assert_eq!(c_keys::dispose(id), Err(TlsError::Disposed));
+            }
+            assert_eq!(rust.get(), Some(1));
+            rust.dispose().expect("disposed");
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Thread-local storage and `git_threads_global_init` (wave-226/batch-3)
+// ---------------------------------------------------------------------------------------------
+
+use core::any::{Any, TypeId};
+use core::marker::PhantomData;
+use core::num::NonZeroU32;
+use std::sync::Arc;
+
+use self::tls::{Destructor, Kind, Value, dispose_key, get_value, registry, set_value};
+
+/// Sets up what libgit2's threads need before its runtime starts (`git_threads_global_init`,
+/// the third routine `git_libgit2_init` runs): nothing, where libgit2 is built with POSIX
+/// threads, as here. It cannot fail, so it returns nothing.
+///
+/// The configurations this build does not take: on Windows it finds the slim reader/writer
+/// lock routines in `kernel32` and makes the fiber-local slot that names a thread, failing
+/// when none is left; without threads it is `git__noop`, which does nothing too.
+///
+/// ```
+/// libgit2_crustify::libgit2::src::util::thread::global_init();
+/// ```
+///
+/// Replaces `fn::git_threads_global_init`
+#[doc(alias = "git_threads_global_init")]
+#[inline]
+pub fn global_init() {}
+
+/// Why a call on a [`TlsKey`] failed. C's routines report a failure as a non-zero return
+/// alone and set no error message, since libgit2 keeps its error state in thread-local storage
+/// itself (`thread.h`); its exports report each of these so.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum TlsError {
+    /// Every key id has been handed out, 2³² − 1 of them over the process's life:
+    /// `pthread_key_create`'s `EAGAIN`.
+    KeysExhausted,
+    /// The key has been disposed of: `pthread_setspecific`'s and `pthread_key_delete`'s
+    /// `EINVAL`. Through the exports, also a key id C passes that names none of C's keys.
+    Disposed,
+    /// The thread cannot store a value now: its storage is being destroyed, as the thread
+    /// exits, or a value's `Clone`, which [`TlsKey::get`] runs, is storing one.
+    Unavailable,
+}
+
+impl fmt::Display for TlsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            TlsError::KeysExhausted => "no thread-local key is left",
+            TlsError::Disposed => "the thread-local key has been disposed of",
+            TlsError::Unavailable => "the thread's local storage is unavailable",
+        })
+    }
+}
+
+impl core::error::Error for TlsError {}
+
+/// A thread-local key (`git_tlsdata_key`): a key made at run time, under which each thread
+/// stores a value of its own, of type `T`, and whose destructor, if it has one, runs on each
+/// thread's value at that thread's exit.
+///
+/// A key is an id, `Copy` as C's `pthread_key_t` is, and every copy names the same key; once
+/// it is [disposed](Self::dispose) of, no copy names one, and no other key takes its id. The
+/// values never leave the thread that stored them, so a key is `Send` and `Sync` whatever `T`
+/// is: a key in a `static` serves every thread, each with its own value.
+///
+/// ```
+/// use std::rc::Rc;
+/// use std::thread;
+///
+/// use libgit2_crustify::libgit2::src::util::thread::TlsKey;
+///
+/// let key = TlsKey::<Rc<String>>::new(None)?;
+/// assert_eq!(key.get(), None);
+/// key.set(Some(Rc::new("main".to_owned())))?;
+/// thread::spawn(move || {
+///     assert_eq!(key.get(), None);
+///     key.set(Some(Rc::new("other".to_owned()))).unwrap();
+///     assert_eq!(key.get().as_deref().map(String::as_str), Some("other"));
+/// })
+/// .join()
+/// .unwrap();
+/// assert_eq!(key.get().as_deref().map(String::as_str), Some("main"));
+/// key.dispose()?;
+/// assert_eq!(key.get(), None);
+/// # Ok::<(), libgit2_crustify::libgit2::src::util::thread::TlsError>(())
+/// ```
+///
+/// A value outlives the thread that stores it only as what it holds, so it is `'static`:
+///
+/// ```compile_fail,E0597
+/// use libgit2_crustify::libgit2::src::util::thread::TlsKey;
+///
+/// let text = String::from("borrowed");
+/// let key = TlsKey::<&str>::new(None).unwrap();
+/// key.set(Some(&text)).unwrap();
+/// ```
+///
+/// Replaces `mac::git_tlsdata_key`
+#[doc(alias = "git_tlsdata_key")]
+pub struct TlsKey<T: 'static> {
+    /// The key's id, as C's `pthread_key_t` would hold it; never 0.
+    id: NonZeroU32,
+    /// Which values the key holds; `fn() -> T` keeps the key `Send` and `Sync`, since no value
+    /// moves between threads.
+    value: PhantomData<fn() -> T>,
+}
+
+impl<T: 'static> TlsKey<T> {
+    /// Makes a key (`git_tlsdata_init`), under which no thread holds a value yet. At each
+    /// thread's exit, `destructor`, if given, runs on the value the thread still holds, and the
+    /// value is dropped otherwise, while the key is live.
+    ///
+    /// # Errors
+    ///
+    /// [`TlsError::KeysExhausted`] when every id has been handed out.
+    ///
+    /// Replaces `fn::git_tlsdata_init`
+    #[doc(alias = "git_tlsdata_init")]
+    pub fn new(destructor: Option<TlsdataInitDestroyFn<T>>) -> Result<TlsKey<T>, TlsError> {
+        let run = destructor.map(|TlsdataInitDestroyFn(f)| -> tls::RustDestructor {
+            Arc::new(move |value: Box<dyn Any>| {
+                if let Ok(value) = value.downcast::<T>() {
+                    f(*value);
+                }
+            })
+        });
+        let id = registry().create(Destructor::Rust {
+            type_id: TypeId::of::<T>(),
+            run,
+        })?;
+        Ok(TlsKey {
+            id,
+            value: PhantomData,
+        })
+    }
+
+    /// Stores `value` as this thread's value of the key (`git_tlsdata_set`), `None` as C's
+    /// `NULL`, and returns the value it replaces, which the destructor does not run on, as C's
+    /// does not.
+    ///
+    /// # Errors
+    ///
+    /// [`TlsError::Disposed`] when the key has been disposed of, and
+    /// [`TlsError::Unavailable`] while the thread exits, from a destructor or a value's drop,
+    /// or from a value's `Clone` that [`get`](Self::get) runs. `value` is dropped.
+    ///
+    /// Replaces `fn::git_tlsdata_set`
+    #[doc(alias = "git_tlsdata_set")]
+    pub fn set(self, value: Option<T>) -> Result<Option<T>, TlsError> {
+        let value = value.map(|value| Value::Rust(Box::new(value)));
+        let previous = set_value(self.id.get(), Self::kind(), value)?;
+        Ok(previous.and_then(|previous| match previous {
+            Value::Rust(previous) => previous.downcast::<T>().ok().map(|previous| *previous),
+            Value::C(_) => None,
+        }))
+    }
+
+    /// A clone of this thread's value of the key (`git_tlsdata_get`), `None` where the thread
+    /// holds none, as C's `NULL`: before the thread stores one, once it stores `None`, once the
+    /// key is disposed of, and while the thread exits.
+    ///
+    /// The value is cloned while the thread's table is borrowed: a `Clone` that stores a
+    /// value of any key fails to, with [`TlsError::Unavailable`].
+    ///
+    /// Replaces `fn::git_tlsdata_get`
+    #[doc(alias = "git_tlsdata_get")]
+    #[must_use]
+    pub fn get(self) -> Option<T>
+    where
+        T: Clone,
+    {
+        get_value(self.id.get(), Self::kind(), |value| match value {
+            Value::Rust(value) => value.downcast_ref::<T>().cloned(),
+            Value::C(_) => None,
+        })
+    }
+
+    /// Disposes of the key (`git_tlsdata_dispose`): no copy of it names a key from then on.
+    /// No destructor runs, on this thread or any other: the values the threads still hold are
+    /// dropped as each thread next reaches its storage, or exits, as POSIX leaves them to
+    /// their holders.
+    ///
+    /// # Errors
+    ///
+    /// [`TlsError::Disposed`] when the key has already been disposed of.
+    ///
+    /// Replaces `fn::git_tlsdata_dispose`
+    #[doc(alias = "git_tlsdata_dispose")]
+    pub fn dispose(self) -> Result<(), TlsError> {
+        dispose_key(self.id.get(), Self::kind())
+    }
+
+    /// The kind of value the key holds, which its registry entry and its values carry.
+    fn kind() -> Kind {
+        Kind::Rust(TypeId::of::<T>())
+    }
+}
+
+impl<T: 'static> Clone for TlsKey<T> {
+    fn clone(&self) -> TlsKey<T> {
+        *self
+    }
+}
+
+// A copy names the same key; `#[derive]` would bound `T`.
+impl<T: 'static> Copy for TlsKey<T> {}
+
+impl<T: 'static> PartialEq for TlsKey<T> {
+    fn eq(&self, other: &TlsKey<T>) -> bool {
+        self.id == other.id
+    }
+}
+
+impl<T: 'static> Eq for TlsKey<T> {}
+
+impl<T: 'static> core::hash::Hash for TlsKey<T> {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
+impl<T: 'static> fmt::Debug for TlsKey<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("TlsKey").field(&self.id).finish()
+    }
+}
+
+/// The destructor of a [`TlsKey`]'s values (`git_tlsdata_init`'s `destroy_fn`), which runs on
+/// the value a thread still holds of a live key at that thread's exit, on that thread. A plain
+/// function, or a closure without captures: like C's, it carries no context of its own.
+///
+/// ```
+/// use libgit2_crustify::libgit2::src::util::thread::{TlsKey, TlsdataInitDestroyFn};
+///
+/// fn flush(lines: Vec<String>) {
+///     for line in lines {
+///         println!("{line}");
+///     }
+/// }
+///
+/// let key = TlsKey::new(Some(TlsdataInitDestroyFn::new(flush)))?;
+/// std::thread::spawn(move || key.set(Some(vec!["at exit".to_owned()])).map(drop))
+///     .join()
+///     .unwrap()?;
+/// # Ok::<(), libgit2_crustify::libgit2::src::util::thread::TlsError>(())
+/// ```
+///
+/// The C functions C passes `git_tlsdata_init` free the value they are given
+/// (`threadstate_free`, `thread_str_free`), so they are sound only with the values C stores
+/// under their own keys: they reach Rust through the export alone, which keeps them with their
+/// key, never as this type, as a C destructor sound with any value would be. No C calls a
+/// destructor, so no trampoline reaches one.
+///
+/// Replaces `fnp::git_tlsdata_init.destroy_fn`
+#[doc(alias = "git_tlsdata_init.destroy_fn")]
+pub struct TlsdataInitDestroyFn<T>(fn(T));
+
+impl<T> TlsdataInitDestroyFn<T> {
+    /// The destructor that calls `f` with the value.
+    #[must_use]
+    pub const fn new(f: fn(T)) -> TlsdataInitDestroyFn<T> {
+        TlsdataInitDestroyFn(f)
+    }
+}
+
+impl<T> Clone for TlsdataInitDestroyFn<T> {
+    fn clone(&self) -> TlsdataInitDestroyFn<T> {
+        *self
+    }
+}
+
+// A copy calls the same function; `#[derive]` would bound `T`.
+impl<T> Copy for TlsdataInitDestroyFn<T> {}
+
+impl<T> fmt::Debug for TlsdataInitDestroyFn<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("TlsdataInitDestroyFn")
+            .finish_non_exhaustive()
+    }
+}
+
+/// The keys C makes, uses and disposes of through the exports, over the same registry and
+/// tables as [`TlsKey`]'s: their values are [`CWord`](ffi_import::CWord)s, and their
+/// destructors C's.
+#[cfg_attr(
+    not(any(test, feature = "ffi-export-src-util-thread-c")),
+    expect(
+        dead_code,
+        reason = "the export gateway alone calls them, under its feature"
+    )
+)]
+mod c_keys {
+    use super::TlsError;
+    use super::ffi_import::{CDestructor, CWord};
+    use super::tls::{Destructor, Kind, Value, dispose_key, get_value, registry, set_value};
+
+    /// `git_tlsdata_init`: a key whose values C stores, with C's `destructor`.
+    pub(super) fn init(destructor: Option<CDestructor>) -> Result<u32, TlsError> {
+        registry()
+            .create(Destructor::C(destructor))
+            .map(core::num::NonZeroU32::get)
+    }
+
+    /// `git_tlsdata_set`: stores `word`, `None` for C's `NULL`, under C's key `id`.
+    pub(super) fn set(id: u32, word: Option<CWord>) -> Result<(), TlsError> {
+        set_value(id, Kind::C, word.map(Value::C)).map(drop)
+    }
+
+    /// `git_tlsdata_get`: this thread's value of C's key `id`, `None` for C's `NULL`.
+    pub(super) fn get(id: u32) -> Option<CWord> {
+        get_value(id, Kind::C, |value| match value {
+            Value::C(word) => Some(*word),
+            Value::Rust(_) => None,
+        })
+    }
+
+    /// `git_tlsdata_dispose`: disposes of C's key `id`.
+    pub(super) fn dispose(id: u32) -> Result<(), TlsError> {
+        dispose_key(id, Kind::C)
+    }
+}
+
+/// The keys' registry and the threads' tables, which [`TlsKey`] and the exports share.
+mod tls {
+    use core::any::{Any, TypeId};
+    use core::cell::RefCell;
+    use core::mem;
+    use core::num::NonZeroU32;
+    use core::sync::atomic::{AtomicU64, Ordering};
+    use std::collections::BTreeMap;
+    use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+    use std::thread::LocalKey;
+
+    use super::TlsError;
+    use super::ffi_import::{CDestructor, CWord};
+
+    /// A Rust destructor, the typed function of a
+    /// [`TlsdataInitDestroyFn`](super::TlsdataInitDestroyFn) over the boxed value, which it
+    /// unboxes; shared, so that a thread runs it without the registry's lock.
+    pub(super) type RustDestructor = Arc<dyn Fn(Box<dyn Any>) + Send + Sync>;
+
+    /// What a key holds: Rust values of one type, or C's pointers.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub(super) enum Kind {
+        /// The values of a [`TlsKey`](super::TlsKey) of the type.
+        Rust(TypeId),
+        /// The pointers of a key C made through `git_tlsdata_init`.
+        C,
+    }
+
+    /// What runs on a live key's value at its thread's exit.
+    #[derive(Clone)]
+    pub(super) enum Destructor {
+        /// A [`TlsKey`](super::TlsKey)'s: its values' type, and the destructor that runs on
+        /// one, which is dropped otherwise.
+        Rust {
+            type_id: TypeId,
+            run: Option<RustDestructor>,
+        },
+        /// A key's C made, with C's destructor, if it gave one.
+        C(Option<CDestructor>),
+    }
+
+    impl Destructor {
+        /// The kind of value the key holds.
+        fn kind(&self) -> Kind {
+            match self {
+                Destructor::Rust { type_id, .. } => Kind::Rust(*type_id),
+                Destructor::C(_) => Kind::C,
+            }
+        }
+    }
+
+    /// A value a thread stores under a key.
+    pub(super) enum Value {
+        /// A [`TlsKey`](super::TlsKey)'s, of its type.
+        Rust(Box<dyn Any>),
+        /// A pointer C stored under one of its keys.
+        C(CWord),
+    }
+
+    /// The live keys, by id, and the next id to hand out.
+    pub(super) struct Registry {
+        /// The next id; 0 once every id has been handed out.
+        next: u32,
+        /// The live keys' destructors, by id.
+        live: BTreeMap<u32, Destructor>,
+    }
+
+    impl Registry {
+        /// A registry with no key, whose first id is 1.
+        const fn new() -> Registry {
+            Registry {
+                next: 1,
+                live: BTreeMap::new(),
+            }
+        }
+
+        /// Registers a key with `destructor`, under an id no key has had.
+        pub(super) fn create(&mut self, destructor: Destructor) -> Result<NonZeroU32, TlsError> {
+            let id = NonZeroU32::new(self.next).ok_or(TlsError::KeysExhausted)?;
+            // `u32::MAX` wraps to 0, which hands out nothing from then on.
+            self.next = self.next.wrapping_add(1);
+            self.live.insert(id.get(), destructor);
+            Ok(id)
+        }
+
+        /// Whether `id` is a live key holding values of `kind`.
+        fn holds(&self, id: u32, kind: Kind) -> bool {
+            self.live
+                .get(&id)
+                .is_some_and(|destructor| destructor.kind() == kind)
+        }
+    }
+
+    /// The registry, shared by every thread.
+    static REGISTRY: Mutex<Registry> = Mutex::new(Registry::new());
+
+    /// How many keys have been disposed of: a thread's table looks for the entries of disposed
+    /// keys only once this has moved since it last looked.
+    static DISPOSALS: AtomicU64 = AtomicU64::new(0);
+
+    /// The registry, locked. Nothing panics while holding it, so a poisoned lock still holds
+    /// a consistent registry.
+    pub(super) fn registry() -> MutexGuard<'static, Registry> {
+        REGISTRY.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// One thread's values, one entry per key it holds a value of.
+    pub(super) struct Table {
+        /// [`DISPOSALS`] when the table last dropped the entries of disposed keys.
+        seen: u64,
+        /// The values, each with its key's id and kind, checked against the registry when the
+        /// entry was made.
+        entries: Vec<(u32, Kind, Value)>,
+    }
+
+    impl Table {
+        /// A table with no value, as a thread starts with.
+        pub(super) const fn new() -> Table {
+            Table {
+                seen: 0,
+                entries: Vec::new(),
+            }
+        }
+
+        /// Takes out the entries of the keys disposed of since the table last looked, for the
+        /// caller to drop once it has released the table, since a Rust value's drop may reach
+        /// it.
+        fn prune(&mut self) -> Vec<(u32, Kind, Value)> {
+            let disposals = DISPOSALS.load(Ordering::Acquire);
+            if disposals == self.seen {
+                return Vec::new();
+            }
+            self.seen = disposals;
+            let registry = registry();
+            let (live, dead) = mem::take(&mut self.entries)
+                .into_iter()
+                .partition(|(id, kind, _)| registry.holds(*id, *kind));
+            self.entries = live;
+            dead
+        }
+
+        /// The index of `id`'s entry.
+        fn position(&self, id: u32) -> Option<usize> {
+            self.entries.iter().position(|(entry, _, _)| *entry == id)
+        }
+    }
+
+    /// At the thread's exit, each value of a live key goes to its key's destructor, and every
+    /// other value is dropped; a C value without a destructor, or of a disposed key, is left as
+    /// POSIX leaves it, to C. The destructors run without the registry's lock, and with the
+    /// table out of reach, so that a destructor that stores a value fails to.
+    impl Drop for Table {
+        fn drop(&mut self) {
+            let entries = mem::take(&mut self.entries);
+            if entries.is_empty() {
+                return;
+            }
+            let destructors: Vec<Option<Destructor>> = {
+                let registry = registry();
+                entries
+                    .iter()
+                    .map(|(id, kind, _)| {
+                        registry.live.get(id).filter(|d| d.kind() == *kind).cloned()
+                    })
+                    .collect()
+            };
+            for ((_, _, value), destructor) in entries.into_iter().zip(destructors) {
+                match (value, destructor) {
+                    (Value::Rust(value), Some(Destructor::Rust { run: Some(run), .. })) => {
+                        run(value);
+                    }
+                    (Value::C(word), Some(Destructor::C(Some(destructor)))) => {
+                        destructor.destroy(word);
+                    }
+                    (value, _) => drop(value),
+                }
+            }
+        }
+    }
+
+    /// This thread's values, which `ffi_import` keeps, since `thread_local!` expands to unsafe
+    /// code.
+    fn table() -> &'static LocalKey<RefCell<Table>> {
+        super::ffi_import::tls_table()
+    }
+
+    /// Stores `value` as this thread's value of the key `id`, of `kind`, `None` removing it,
+    /// and returns the value it replaces.
+    pub(super) fn set_value(
+        id: u32,
+        kind: Kind,
+        value: Option<Value>,
+    ) -> Result<Option<Value>, TlsError> {
+        let stored = table().try_with(|table| {
+            let Ok(mut table) = table.try_borrow_mut() else {
+                return (Err(TlsError::Unavailable), Vec::new(), value);
+            };
+            let dead = table.prune();
+            let result = match (table.position(id), value) {
+                // An entry's key was live, and of its kind, when the table last looked.
+                (Some(index), value) if table.entries[index].1 == kind => match value {
+                    Some(value) => Ok(Some(mem::replace(&mut table.entries[index].2, value))),
+                    None => Ok(Some(table.entries.swap_remove(index).2)),
+                },
+                (Some(_), value) => return (Err(TlsError::Disposed), dead, value),
+                (None, value) => {
+                    if !registry().holds(id, kind) {
+                        return (Err(TlsError::Disposed), dead, value);
+                    }
+                    if let Some(value) = value {
+                        table.entries.push((id, kind, value));
+                    }
+                    Ok(None)
+                }
+            };
+            (result, dead, None)
+        });
+        // The values the call leaves behind, dropped with the table released.
+        match stored {
+            Ok((result, dead, refused)) => {
+                drop(dead);
+                drop(refused);
+                result
+            }
+            Err(_) => Err(TlsError::Unavailable),
+        }
+    }
+
+    /// `read` of this thread's value of the key `id`, of `kind`, with the table borrowed;
+    /// `None` where the thread holds none, or cannot reach its table.
+    pub(super) fn get_value<R>(
+        id: u32,
+        kind: Kind,
+        read: impl FnOnce(&Value) -> Option<R>,
+    ) -> Option<R> {
+        table()
+            .try_with(|table| {
+                // The entries of disposed keys go first, when the table is free; a `Clone`
+                // that reads it while it is borrowed checks the registry instead.
+                let dead = match table.try_borrow_mut() {
+                    Ok(mut table) => Some(table.prune()),
+                    Err(_) => None,
+                };
+                let found = table.try_borrow().ok().and_then(|table| {
+                    let index = table.position(id)?;
+                    let (_, entry_kind, value) = &table.entries[index];
+                    let live =
+                        *entry_kind == kind && (dead.is_some() || registry().holds(id, kind));
+                    if live { read(value) } else { None }
+                });
+                drop(dead);
+                found
+            })
+            .ok()
+            .flatten()
+    }
+
+    /// Disposes of the key `id`, of `kind`.
+    pub(super) fn dispose_key(id: u32, kind: Kind) -> Result<(), TlsError> {
+        let mut registry = registry();
+        if !registry.holds(id, kind) {
+            return Err(TlsError::Disposed);
+        }
+        registry.live.remove(&id);
+        DISPOSALS.fetch_add(1, Ordering::Release);
+        Ok(())
+    }
+
+    #[cfg(test)]
+    mod unit_priv {
+        use core::any::TypeId;
+        use core::num::NonZeroU32;
+
+        use super::{Destructor, Kind, Registry};
+        use crate::libgit2::src::util::thread::TlsError;
+
+        /// A destructor-less Rust key's registry entry.
+        fn plain() -> Destructor {
+            Destructor::Rust {
+                type_id: TypeId::of::<()>(),
+                run: None,
+            }
+        }
+
+        /// Ids start at 1, so that none is 0, the zeroed `static` C has not initialised yet;
+        /// each is handed out once, and once `u32::MAX` has been, none is left.
+        #[test]
+        fn ids_start_at_one_and_run_out_after_the_last() {
+            let mut registry = Registry::new();
+            assert_eq!(registry.create(plain()).map(NonZeroU32::get), Ok(1));
+            assert_eq!(registry.create(plain()).map(NonZeroU32::get), Ok(2));
+            registry.next = u32::MAX;
+            assert_eq!(registry.create(plain()).map(NonZeroU32::get), Ok(u32::MAX));
+            assert_eq!(
+                registry.create(plain()).map(NonZeroU32::get),
+                Err(TlsError::KeysExhausted)
+            );
+            assert_eq!(
+                registry.create(Destructor::C(None)).map(NonZeroU32::get),
+                Err(TlsError::KeysExhausted)
+            );
+            assert_eq!(registry.live.len(), 3);
+        }
+
+        /// A key holds the kind it was made for alone: C's pointers, or one Rust type.
+        #[test]
+        fn a_key_holds_one_kind() {
+            let mut registry = Registry::new();
+            let rust = registry.create(plain()).expect("an id").get();
+            let c = registry.create(Destructor::C(None)).expect("an id").get();
+            assert!(registry.holds(rust, Kind::Rust(TypeId::of::<()>())));
+            assert!(!registry.holds(rust, Kind::Rust(TypeId::of::<u8>())));
+            assert!(!registry.holds(rust, Kind::C));
+            assert!(registry.holds(c, Kind::C));
+            assert!(!registry.holds(c, Kind::Rust(TypeId::of::<()>())));
+            assert!(!registry.holds(0, Kind::C));
+            assert!(!registry.holds(c + 1, Kind::C));
+        }
+    }
+}
+
+/// The gateway through which the C that remains reaches this module's thread-local storage
+/// once it has switched: `git_tlsdata_init`, `git_tlsdata_set`, `git_tlsdata_get` and
+/// `git_tlsdata_dispose`, for `errors.c`, `oid.c` and the C tests of `threads/tlsdata.c`, each
+/// checked against its raw binding's signature, so that a C declaration that drifts fails to
+/// build. `git_threads_global_init` stays `unix/pthread.h`'s `static inline` function, which
+/// `git_libgit2_init` takes the address of, and needs no export.
+#[cfg(feature = "ffi-export-src-util-thread-c")]
+#[expect(
+    unsafe_code,
+    reason = "the bare-named exports through which the remaining C reaches the thread-local \
+              keys, and the out-parameter git_tlsdata_init writes"
+)]
+mod ffi_export {
+    use core::ffi::{c_int, c_void};
+    use core::ptr::{self, NonNull};
+
+    use ffibox::callback::barrier;
+
+    use super::c_keys;
+    use super::ffi_import::{CDestructor, CWord};
+    use crate::sys::libgit2 as sys;
+
+    // Each export has its raw binding's type: the array's elements coerce to one function
+    // pointer type only when their signatures agree.
+    const _: () = {
+        let _ = [sys::git_tlsdata_init, git_tlsdata_init];
+        let _ = [sys::git_tlsdata_set, git_tlsdata_set];
+        let _ = [sys::git_tlsdata_get, git_tlsdata_get];
+        let _ = [sys::git_tlsdata_dispose, git_tlsdata_dispose];
+    };
+
+    /// `git_tlsdata_init`: makes a key whose values C stores, with `destroy_fn` as its
+    /// destructor, and writes its id through `key`, returning 0; returns -1, writing nothing,
+    /// when no id is left. A panic is reported as a failure.
+    ///
+    /// # Safety
+    ///
+    /// `key` is valid and aligned for a write of a `pthread_key_t`. `destroy_fn`, if not
+    /// `NULL`, may be called once with each value C stores under the key, on the thread that
+    /// stored it, at that thread's exit, while the key lives.
+    #[unsafe(no_mangle)]
+    unsafe extern "C" fn git_tlsdata_init(
+        key: *mut sys::pthread_key_t,
+        destroy_fn: Option<unsafe extern "C" fn(*mut c_void)>,
+    ) -> c_int {
+        // SAFETY: the caller vouches for `destroy_fn` with the key it makes, as
+        // `CDestructor::new` asks.
+        let destructor = destroy_fn.map(|f| unsafe { CDestructor::new(f) });
+        match barrier(|| c_keys::init(destructor).ok(), || None) {
+            Some(id) => {
+                // SAFETY: the caller guarantees that `key` is valid for the write.
+                unsafe { key.write(id) };
+                0
+            }
+            None => -1,
+        }
+    }
+
+    /// `git_tlsdata_set`: stores `value` as this thread's value of C's key `key`, `NULL`
+    /// removing it, and returns 0; returns -1 when `key` names none of C's live keys, or while
+    /// the thread exits. The value replaced is left to C, as POSIX leaves it. A panic is
+    /// reported as a failure.
+    ///
+    /// # Safety
+    ///
+    /// `value`, if not `NULL`, may be passed to `key`'s destructor at this thread's exit.
+    #[unsafe(no_mangle)]
+    unsafe extern "C" fn git_tlsdata_set(key: sys::pthread_key_t, value: *mut c_void) -> c_int {
+        // SAFETY: the caller vouches for `value` with `key`'s destructor, as `CWord::new` asks;
+        // the word is stored under `key` alone.
+        let word = NonNull::new(value).map(|value| unsafe { CWord::new(value) });
+        if barrier(|| c_keys::set(key, word).is_ok(), || false) {
+            0
+        } else {
+            -1
+        }
+    }
+
+    /// `git_tlsdata_get`: this thread's value of C's key `key`, `NULL` where it holds none, or
+    /// where `key` names none of C's live keys. A panic is reported as `NULL`.
+    #[unsafe(no_mangle)]
+    extern "C" fn git_tlsdata_get(key: sys::pthread_key_t) -> *mut c_void {
+        barrier(
+            || c_keys::get(key).map_or(ptr::null_mut(), CWord::as_ptr),
+            ptr::null_mut,
+        )
+    }
+
+    /// `git_tlsdata_dispose`: disposes of C's key `key`, running no destructor, and returns 0;
+    /// returns -1 when `key` names none of C's live keys. A panic is reported as a failure.
+    #[unsafe(no_mangle)]
+    extern "C" fn git_tlsdata_dispose(key: sys::pthread_key_t) -> c_int {
+        if barrier(|| c_keys::dispose(key).is_ok(), || false) {
+            0
+        } else {
+            -1
+        }
+    }
+
+    #[cfg(test)]
+    mod unit_priv {
+        use core::ffi::c_void;
+        use core::ptr;
+        use std::sync::{Mutex, PoisonError};
+        use std::thread;
+
+        use super::{git_tlsdata_dispose, git_tlsdata_get, git_tlsdata_init, git_tlsdata_set};
+        use crate::sys::libgit2 as sys;
+
+        /// The addresses [`record`] was called with.
+        static LOG: Mutex<Vec<usize>> = Mutex::new(Vec::new());
+
+        /// A destructor that records the address it is given, and reads nothing through it.
+        unsafe extern "C" fn record(value: *mut c_void) {
+            LOG.lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(value.addr());
+        }
+
+        /// A pointer C would store, at `addr`, which nothing reads through.
+        fn at(addr: usize) -> *mut c_void {
+            ptr::without_provenance_mut(addr)
+        }
+
+        /// A key `git_tlsdata_init` makes, as `errors.c` makes its own.
+        fn init(destroy_fn: Option<unsafe extern "C" fn(*mut c_void)>) -> sys::pthread_key_t {
+            let mut key: sys::pthread_key_t = 0;
+            // SAFETY: `key` is a local, and `record` accepts any pointer on any thread.
+            assert_eq!(unsafe { git_tlsdata_init(&raw mut key, destroy_fn) }, 0);
+            assert_ne!(key, 0);
+            key
+        }
+
+        /// The calls `threads/tlsdata.c` and `errors.c` make, through the exports: a value is
+        /// `NULL` until stored, read back on its thread alone, removed by `NULL`, destroyed
+        /// at its thread's exit while the key is live, and the key disposed of once.
+        #[test]
+        fn the_exports_keep_cs_contract() {
+            let key = init(Some(record));
+            assert!(git_tlsdata_get(key).is_null());
+            // SAFETY: `record` accepts any pointer.
+            assert_eq!(unsafe { git_tlsdata_set(key, at(0x60)) }, 0);
+            assert_eq!(git_tlsdata_get(key), at(0x60));
+            thread::spawn(move || {
+                assert!(git_tlsdata_get(key).is_null());
+                // SAFETY: as above.
+                assert_eq!(unsafe { git_tlsdata_set(key, at(0x61)) }, 0);
+            })
+            .join()
+            .expect("the thread ends");
+            assert_eq!(
+                LOG.lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .as_slice(),
+                [0x61]
+            );
+            // SAFETY: `NULL` reaches no destructor.
+            assert_eq!(unsafe { git_tlsdata_set(key, ptr::null_mut()) }, 0);
+            assert!(git_tlsdata_get(key).is_null());
+            assert_eq!(git_tlsdata_dispose(key), 0);
+            assert_eq!(git_tlsdata_dispose(key), -1);
+            assert!(git_tlsdata_get(key).is_null());
+            // SAFETY: the key is gone, so nothing keeps the pointer.
+            assert_eq!(unsafe { git_tlsdata_set(key, at(0x62)) }, -1);
+        }
+
+        /// The zeroed key a C caller has not initialised names no key: `threadstate_get`'s
+        /// read before `git_error_global_init` gives `NULL`, and its store fails.
+        #[test]
+        fn key_zero_names_no_key() {
+            assert!(git_tlsdata_get(0).is_null());
+            // SAFETY: no key keeps the pointer.
+            assert_eq!(unsafe { git_tlsdata_set(0, at(0x70)) }, -1);
+            assert_eq!(git_tlsdata_dispose(0), -1);
+            let key = init(None);
+            assert!(git_tlsdata_get(0).is_null());
+            assert_eq!(git_tlsdata_dispose(key), 0);
         }
     }
 }

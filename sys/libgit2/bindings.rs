@@ -540,6 +540,7 @@ pub const REFTABLE_HASH_SIZE_MAX: u32 = 32;
 pub type __mode_t = ::std::os::raw::c_uint;
 pub type mode_t = __mode_t;
 pub type pthread_t = ::std::os::raw::c_ulong;
+pub type pthread_key_t = ::std::os::raw::c_uint;
 unsafe extern "C" {
     /** Return the version of the libgit2 library
  being currently used.
@@ -14552,6 +14553,50 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[link_name = "git_atomic64_get__extern"]
     pub fn git_atomic64_get(a: *mut git_atomic64) -> i64;
+}
+unsafe extern "C" {
+    /** Create a thread-local data key.  The destroy function will be
+ called upon thread exit.  On some platforms, it may be called
+ when all threads have deleted their keys.
+
+ Note that the tlsdata functions do not set an error message on
+ failure; this is because the error handling in libgit2 is itself
+ handled by thread-local data storage.
+
+ @param key the tlsdata key
+ @param destroy_fn function pointer called upon thread exit
+ @return 0 on success, non-zero on failure*/
+    pub fn git_tlsdata_init(
+        key: *mut pthread_key_t,
+        destroy_fn: ::std::option::Option<
+            unsafe extern "C" fn(arg1: *mut ::std::os::raw::c_void),
+        >,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    /** Set a the thread-local value for the given key.
+
+ @param key the tlsdata key to store data on
+ @param value the pointer to store
+ @return 0 on success, non-zero on failure*/
+    pub fn git_tlsdata_set(
+        key: pthread_key_t,
+        value: *mut ::std::os::raw::c_void,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    /** Get the thread-local value for the given key.
+
+ @param key the tlsdata key to retrieve the value of
+ @return the pointer stored with git_tlsdata_set*/
+    pub fn git_tlsdata_get(key: pthread_key_t) -> *mut ::std::os::raw::c_void;
+}
+unsafe extern "C" {
+    /** Delete the given thread-local key.
+
+ @param key the tlsdata key to dispose
+ @return 0 on success, non-zero on failure*/
+    pub fn git_tlsdata_dispose(key: pthread_key_t) -> ::std::os::raw::c_int;
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]

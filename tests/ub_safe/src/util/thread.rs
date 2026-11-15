@@ -5,6 +5,9 @@
 //! the types refuse: a lent atomic outliving its value, a shared handle beside an exclusive
 //! one, a `Thread` copied, sent to a thread or written without `unsafe`.
 
+// The thread-local storage's tests (wave-226/batch-3).
+mod tlsdata;
+
 use core::sync::atomic::Ordering::SeqCst;
 use std::thread;
 

@@ -98,6 +98,15 @@ tests that remain are the first to call it.
   `asan-ubsan` and `coverage`, the module's only C callers being the HTTP client and
   `llhttp.c`, which no offline C test reaches.
 
+- `wave-226/batch-3/run-1` (`src/util/thread.c`'s thread-local storage) ran the check by
+  hand, as a scratch run, not a gate: the whole workspace built with
+  `ffi-export-src-util-thread-c` on, on `plain`, links the four `git_tlsdata_*` exports in
+  place of the archive's `thread.c.o`, whose only definitions they are, so that the member
+  is never pulled and no duplicate symbol is reported. Every binary passed (`lib` 914, the
+  gateway's own two tests among them, `equiv` 535, `ub_safe` 808, `ub_unsafe` 148,
+  `unit_pub` 266, doctests 111 and 400), with `errors.c`'s and `oid.c`'s keys on the Rust
+  registry. No C test binary was relinked.
+
 ## Destination
 
 The spec: `testing-gates`' Regressions section, the export checks of a `port` batch, with a

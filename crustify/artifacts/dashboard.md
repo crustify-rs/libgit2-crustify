@@ -57,22 +57,22 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip the integration of `libgit2/src/util/strnlen.h`, `30176475c`; `main` at `c58bc5de8`, nothing shipped yet; crustify `cc84106`, ffibox `9c22a73`, wavefront `bf21e16`, ffimap `9aa2ef1` (each on its `libgit2-crustify/devel`, wavefront and ffimap on `devel`)
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `23429` non-test, `111364` tests; **C LoC** — `88938`
+- **Rust LoC** — `23789` non-test, `112300` tests; **C LoC** — `88938`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `814` | — | `30.40`% | `76.99`% |
-| UB unsafe tests | `148` | — | `20.09`% | `17.45`% |
-| Equiv tests | `538` | — | `43.78`% | `67.93`% |
-| Unit tests | `1199` | — | `34.38`% | `88.38`% |
-| **Total tests** | **`2699`** | — | **`47.48`%** | **`98.23`%** |
+| UB safe tests | `819` | — | `30.36`% | `76.86`% |
+| UB unsafe tests | `148` | — | `20.09`% | `17.27`% |
+| Equiv tests | `542` | — | `43.76`% | `67.79`% |
+| Unit tests | `1220` | — | `34.37`% | `88.47`% |
+| **Total tests** | **`2729`** | — | **`47.47`%** | **`98.21`%** |
 | total types | `258` | — | — | — |
 | ported types | `4` | `1.55`% | — | — |
 | wrapped types | `119` | `46.12`% | — | — |
 | total symbols | `979` | — | — | — |
-| ported symbols | `154` | `15.73`% | — | — |
+| ported symbols | `161` | `16.45`% | — | — |
 | wrapped symbols | `497` | `50.77`% | — | — |
 
 ### Module stats
@@ -534,6 +534,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/util/utf8.c` | `232` | `0` | port/unexport | first | `1` | `16` | `+31/-55` | `47.21`% / `98.02`% | `$10.43` | `26.64M` | `41m30s` | `$10.43` | `$0.65` |
 | `libgit2/src/util/thread.c` | `226` | `1` | port | first | `17` | `126` | `+1098/-1` | `47.48`% / `98.23`% | — | — | — | — | — |
 | `libgit2/src/util/thread.c` | `226` | `2` | port | first | `19` | `0` | `+1255/-0` | `47.48`% / `98.22`% | — | — | — | — | — |
+| `libgit2/src/util/thread.c` | `226` | `3` | port | first | `7` | `22` | `+2040/-2` | `47.47`% / `98.21`% | — | — | — | — | — |
 | `libgit2/raw-lifetime-void` | `legacy-1` | `0` | wrap | review | `2` | — | `+80/-1` | — | `$7.89` | `10.78M` | `18m36s` | `$3.94` | — |
 | `libgit2/raw-lifetime-string` | `legacy-3` | `0` | wrap | review | `2` | — | `+345/-23` | — | `$10.89` | `14.41M` | `22m03s` | `$5.45` | — |
 | `libgit2/src/util/alloc.c` | `12` | `3` | wrap | review | `7` | — | `+57/-20` | — / `98.90`% | `$15.18` | `40.96M` | `1h31m33s` | `$2.17` | — |
@@ -568,7 +569,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/llhttp/api.c` | `194` | `6` | port | review | `67` | — | `+191/-25` | `47.25`% / `98.69`% | `$12.72` | `41.32M` | `41m52s` | `$0.19` | — |
 | `git2/src/cli/opt.c` | `186` | `6` | port | review | `21` | — | `+335/-27` | `45.39`% / `98.80`% | `$10.52` | `33.81M` | `33m35s` | `$0.50` | — |
 | `libgit2/src/util/utf8.c` | `232` | `1` | port/unexport | review | `1` | — | `+28/-1` | `47.21`% / `98.02`% | `$7.61` | `17.60M` | `44m56s` | `$7.61` | — |
-| **Σ first** |  |  |  |  | **`636`** | **`10368`** | **`+96411/-3958`** | **`47.48`% / `98.23`%** | **`$732.05`** | **`2270.38M`** | — | **`$1.17`** | **`$0.06`** |
+| **Σ first** |  |  |  |  | **`643`** | **`10390`** | **`+98451/-3960`** | **`47.47`% / `98.21`%** | **`$732.05`** | **`2270.38M`** | — | **`$1.17`** | **`$0.06`** |
 | **Σ review** |  |  |  |  | **`557`** | — | **`+7806/-1422`** | **`47.21`% / `98.02`%** | **`$404.72`** | **`827.72M`** | — | **`$0.80`** | — |
 
 ### Batches: tests
@@ -683,7 +684,8 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/util/utf8.c` | `232` | `0` | first | `+0` (`+0.03`/`+0.03` pp) | `+0` (`+0.01`/`+0.01` pp) | `+0` (`-0.00`/`+0.03` pp) | `+0` (`-0.03`/`+0.00` pp) |
 | `libgit2/src/util/thread.c` | `226` | `1` | first | `+5` (`+0.03`/`+0.05` pp) | `+0` (`-0.01`/`-0.05` pp) | `+6` (`+0.00`/`+0.14` pp) | `+20` (`+0.03`/`+0.03` pp) |
 | `libgit2/src/util/thread.c` | `226` | `2` | first | `+6` (`-0.01`/`-0.23` pp) | `+0` (`-0.03`/`-0.15` pp) | `+0` (`+0.04`/`-0.57` pp) | `+18` (`-0.01`/`+0.09` pp) |
-| **Σ first** |  |  |  | **`+374` (`+12.68`/`+5.64` pp)** | **`+50` (`+3.64`/`-6.17` pp)** | **`+263` (`+9.86`/`+15.01` pp)** | **`+504` (`+14.82`/`-32.79` pp)** |
+| `libgit2/src/util/thread.c` | `226` | `3` | first | `+5` (`-0.01`/`-0.08` pp) | `+0` (`-0.01`/`-0.23` pp) | `+4` (`-0.02`/`+0.00` pp) | `+21` (`+0.02`/`+0.12` pp) |
+| **Σ first** |  |  |  | **`+379` (`+12.67`/`+5.56` pp)** | **`+50` (`+3.63`/`-6.40` pp)** | **`+267` (`+9.84`/`+15.01` pp)** | **`+525` (`+14.84`/`-32.67` pp)** |
 | **Σ review** |  |  |  | **`+19` (`+0.26`/`-1.50` pp)** | **`+10` (`-0.84`/`+1.13` pp)** | **`+23` (`+0.05`/`-0.52` pp)** | **`+57` (`+2.47`/`+7.70` pp)** |
 
 ### Batches: safety audit
@@ -735,7 +737,8 @@ Deterministic `ffimap`; no model.
 | `libgit2/src/util/utf8.c` | `232` | `0` | port/unexport | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.00` pp | `+0` |
 | `libgit2/src/util/thread.c` | `226` | `1` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.22` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.04` pp | `+0` |
 | `libgit2/src/util/thread.c` | `226` | `2` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.13` pp | `+0` |
-| **Σ first** |  |  |  |  | **`+4`** | **`+0`** | **`+35`** | **`+0`** | **`+1`** | **`+0.74` pp** | **`+12`** | **`+1`** | **`+0`** | **`+0`** | **`+35`** | **`+52`** | **`-1.00` pp** | **`+159`** |
+| `libgit2/src/util/thread.c` | `226` | `3` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+1` | `+0` | `+0` | `+0` | `+1` | `-0.23` pp | `+2` |
+| **Σ first** |  |  |  |  | **`+4`** | **`+0`** | **`+35`** | **`+0`** | **`+1`** | **`+0.74` pp** | **`+12`** | **`+2`** | **`+0`** | **`+0`** | **`+35`** | **`+53`** | **`-1.23` pp** | **`+161`** |
 | **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`-1`** | **`+0`** | **`+1`** | **`+0.00` pp** | **`+0`** | **`-1`** | **`+0`** | **`+6`** | **`+2`** | **`-3`** | **`-0.13` pp** | **`-5`** |
 
 ### Batches: API stability
@@ -777,7 +780,8 @@ Deterministic `ffimap api`; no model.
 | `libgit2/src/util/utf8.c` | `232` | `0` | port/unexport | first | `1` | `0` | `0` | `0` | `0` | `0` | `sys::libgit2` changed (`git_utf8_char_length` removed) | `sys::libgit2::git_utf8_char_length` removed: the raw binding goes with its export (`port/unexport`) |
 | `libgit2/src/util/thread.c` | `226` | `1` | port | first | `0` | `0` | `0` | `0` | `17` | `0` | `thread` new (`AtomicWord`); `sys::libgit2` extended (`+11` bindings) | — |
 | `libgit2/src/util/thread.c` | `226` | `2` | port | first | `0` | `0` | `0` | `0` | `19` | `0` | — | — |
-| **Σ first** |  |  |  |  | **`3`** | **`0`** | **`0`** | **`0`** | **`138`** | **`2`** |  |  |
+| `libgit2/src/util/thread.c` | `226` | `3` | port | first | `0` | `0` | `0` | `0` | `7` | `0` | `thread` new (`TlsError`), `sys::libgit2` extended | — |
+| **Σ first** |  |  |  |  | **`3`** | **`0`** | **`0`** | **`0`** | **`145`** | **`2`** |  |  |
 | **Σ review** |  |  |  |  | **`196`** | **`2`** | **`1`** | **`0`** | **`0`** | **`3`** |  |  |
 
 ### Batches — review: PoC + reports
@@ -6310,3 +6314,113 @@ changeset. The Overview's Rust LoC moves by `code.loc.total` (`+57`) and `code.t
 (`+585`). `ffimap api` over the worklist, against the tip, finds the 17 items `new`.
 Unattributed, `thread` is new (`AtomicWord`) and `sys::libgit2` extended by the eleven
 bindings. Usage cells are the assistant's.
+
+### `libgit2/src/util/thread.c` wave 226 batch 3: thread-local storage and `git_threads_global_init`
+
+A `port` batch of 7 items of `thread.c`, `thread.h` and `unix/pthread.h`, waves 226 and 227 folded
+into one batch: `mac::git_tlsdata_key`, `fn::git_tlsdata_init`, `fn::git_tlsdata_set`,
+`fn::git_tlsdata_get`, `fn::git_tlsdata_dispose`, `fnp::git_tlsdata_init.destroy_fn` and
+`fn::git_threads_global_init`, in a section of their own in `thread.rs`. The keys are native, over
+the standard library alone. A registry of the live keys sits behind a `Mutex`. Each thread keeps a
+table in a `thread_local!`, whose drop runs the keys' destructors as the thread exits, a thread C
+started included. `TlsKey<T>` stands in for the macro: a `Copy` id, `Send` and `Sync` whatever `T`
+is, since no value leaves its thread. Its methods stand in for the four functions:
+`new(Option<TlsdataInitDestroyFn<T>>)`, `set(Option<T>) -> Result<Option<T>, TlsError>`, which
+hands back the value it replaces undestroyed, as C's does, `get() -> Option<T>` for `T: Clone`, and
+`dispose()`. `TlsdataInitDestroyFn<T>` is the destructor, a plain `fn(T)`. `TlsError` reports
+`KeysExhausted`, `Disposed` and `Unavailable`. `git_threads_global_init` is `global_init()`, which
+does nothing on POSIX and returns nothing, since it cannot fail.
+
+The keys keep POSIX's behaviour wherever C's callers can see it. A value is absent until stored and
+after `NULL`. A store destroys nothing. The destructor runs at a thread's exit, on the values of live
+keys alone. Disposing of a key runs no destructor on any thread. The module documentation records
+where they depart from it. No key is 0, and no id is reused, so a zeroed `static` and a disposed
+key's copies name no key. That ends the hazard of `crustify/LESSONS.md`'s first lesson for the
+read: `threadstate_get` reads its key before `git_error_global_init` and, on POSIX, reads whatever
+another component keeps under key 0. A destructor that stores again while its thread exits fails,
+where POSIX would run the destructors again. Live keys are bounded only by 2³² − 1 ids, not by
+`PTHREAD_KEYS_MAX`. The main thread's values are destroyed at `exit` too, as std's thread-locals
+are on glibc. The keys C makes hold its pointers (`CWord`) and its destructor (`CDestructor`), both
+in `ffi_import`, with the `thread_local!` itself, whose expansion is unsafe code. No safe Rust
+reaches them. C's destructors free the value they are given, so they reach Rust through the export
+alone, never as the callable type, as `binding-symbols` has it for a function whose argument is its
+context. ffibox's `CFn` takes a context and is neither `Send` nor `Sync`, so the batch filed
+`crustify/evolution/ffibox-cfn-without-context-on-any-thread`.
+
+The module's export feature, `ffi-export-src-util-thread-c`, is declared off in `Cargo.toml`. Its
+gateway exports the four `git_tlsdata_*` functions for `errors.c`, `oid.c` and
+`threads/tlsdata.c`, each in ffibox's `barrier`, checked against its raw binding by a constant.
+`allowlist.txt` gains the four functions (`bindings.rs` `+45`, with `pthread_key_t`, which `+LoC`
+leaves out). `git_threads_global_init` stays `unix/pthread.h`'s `static inline` function, whose
+address `git_libgit2_init` takes, with no export, as the task message has it. `porting-symbols`'
+Static inline functions section would replace its definition by a prototype and export it at the
+switch. As a scratch check, not a gate, the whole workspace built with the feature on, on `plain`,
+links the exports in place of `thread.c.o`, whose only definitions they are, and passes. `lib`
+has 914 tests, the gateway's two among them, then `equiv` 535, `ub_safe` 808, `ub_unsafe` 148,
+`unit_pub` 266, and doctests 111 and 400. In that run, libgit2's own error state is on the Rust
+keys. The pointer findings of `git_tlsdata_init`, `_set` and `_get` are in the ownership store.
+
+Route confirmation (`dependencies.json`, libc): `pthread_key_create`, `pthread_key_delete`,
+`pthread_getspecific` and `pthread_setspecific` are recommended `crustify-campaign`. glibc's wrapper
+covers none of them, and neither does `nix`. The port uses none of them: the keys' state stays in
+Rust and crosses to C only as the pointers C stores, so the route is `std` (`thread_local!` and
+`Mutex`), as the Standard-library equivalents section gives it.
+
+Tests: 16 `unit_pub` (`tests/unit_pub/src/util/thread/tlsdata.rs`), 5 `ub_safe`
+(`tests/ub_safe/src/util/thread/tlsdata.rs`) and 4 `equiv` (`tests/equiv/src/util/thread/tlsdata.rs`).
+There are also 5 `unit_priv` tests: the registry's ids, and C's keys with a C destructor, in
+`ffi_import`. The gateway's own 2 compile under the feature. There are 4 doctests, 1 of them
+compile-fail (`E0597`). `can_set_and_get` and `threads` carry over
+`tests/libgit2/threads/tlsdata.c`'s two cases. The equivalence tests compare C's POSIX keys with
+`TlsKey` step by step: values, failures, and the values each side's destructor runs on at its
+threads' exits. They make no C call on a disposed key, which POSIX leaves undefined: a first version
+did, and C's `git_tlsdata_set` succeeded, since glibc had given the index to another test's new key.
+A key past `PTHREAD_KEYS_MAX` stands for C's key that names none.
+
+The batch's tests pass plain, under ASan+UBSan and under TSan. Under Miri they all pass but the
+`equiv` ones, each seen to stop at its first C call (`ignore = "calls C"`), and the doctests pass
+too. BSan was not run: no test of this batch passes a pointer that Rust reborrows. The workspace
+passes on `plain`, as do the module's and its 38 dependents' tests under ASan+UBSan, 1,202 of them,
+selected by test path. The format check and the lints pass with the feature off and on. Everything
+was run on the base `3f7f3ab89`, and on the tree rebased onto batch 2's `8aa231a69` the lints, the
+module's tests and Miri passed again. One conflict was additive: the module documentation and
+`ffi_import`'s imports, where batch 2's and batch 4's `use core::fmt;` was kept once. Under the
+landing lock, the batch rebased onto batch 1's `955c56eb7`. The conflicts were additive:
+`allowlist.txt`, whose two sections were both kept, with `bindings.rs` regenerated (this batch's
+`+45` over the tip's), `tests/equiv/src/util/thread.rs`'s two `mod` lines, and the dashboard. Its
+additive sums are batch 1's plus this batch's, and `Coverage stats` takes the merged suites' counts
+with this landing's percentages, which no gate re-measured on the merged tree. On the rebased tree,
+these pass again: the format check, the lints with the feature off and on, the workspace on
+`plain` (`lib` 912 and 1 ignored, `equiv` 542, `ub_safe` 819, `ub_unsafe` 148, `unit_pub` 307,
+`hidden_symbols` 1, doctests 118 merged and 400 standalone), and the module's tests under
+ASan+UBSan, TSan and Miri. The raw bindings changed, so the crate was packaged as
+`package-gate-procedure` has it, with `--no-verify --exclude-lockfile`, the workspace's `[patch]`
+tables and the side campaigns' `plain` installs. The package (702 files) builds alone in bundled
+mode, `libgit2.a` and `libcrustify_git2.a` into `OUT_DIR`, with no variant selected. Its `lib`
+tests were not run.
+
+Coverage: `run.sh` on the rebased tree over gen5, read with `report.py` from the scratch tree's
+`src/libgit2` (`C=@c` over `libcrustify.a`, Rust over the scratch `src/`). The unit column merges
+`lib` and `unit_pub` through a `prof/unit/` of links (`coverage-report-unit-suite`). The pp are taken
+against batch 2's row, whose tree is this base. Worklist: C `thread.c` reads 17 of 18 lines, 12 of
+13 regions, 4 of 4 functions and 5 of 6 branches over the four suites, and the same under `equiv`.
+The line left is `git_tlsdata_init`'s failure, which needs 1024 live keys. `thread.rs`, batches 0,
+2 and 4's included, reads 412 of 419 lines, 424 of 433 regions and 105 of 105 functions. The four
+zero-count lines `llvm-cov show` lists are this batch's: three arms for a value of the other kind
+and a failed downcast, which the registry's kind check makes unreachable. The keys' states are each
+reached: a value absent, stored, replaced or removed, the thread exiting with one, its key disposed
+of elsewhere, a store during exit, and the ids running out on a local registry. The Overview's Rust
+LoC moves by `code.loc.total` (`+360`) and `code.tests.loc.total` (`+936`), from the scan with the
+feature on.
+
+The safety audit scans (ffimap `50a800e`, `--ffibox --sys-crates crate::sys,pcre2_sys --regions
+ffi_import,ffi_export` with the seams) are of the base `8aa231a69`, which declares no export
+feature, and of this tree with `ffi-export-src-util-thread-c`. Most metrics move `+0`. `unmanaged
+ptr types` is `+1`, `CDestructor`'s function pointer. `FFI calls` is `+1`, the destructor's call.
+`unsafe blocks` is `+2`: that call, and the `thread_local!`'s expansion, moved into `ffi_import`
+once the boundary scan listed it outside the regions. `unsafe loc %` is `-0.23` pp. Without the
+feature, the deltas are the same but `unsafe loc %` (`-0.21` pp). The boundary scan's sites hold
+none in the changeset. `ffimap api` over the worklist (nightly `2026-10-08`, ffibox's private rustdoc
+JSON) finds the 7 items `new`. Unattributed, `thread` is new, with `TlsError`, and `sys::libgit2` is
+extended by the four bindings and `pthread_key_t`; every other module is `kept`. Usage cells are the
+assistant's.

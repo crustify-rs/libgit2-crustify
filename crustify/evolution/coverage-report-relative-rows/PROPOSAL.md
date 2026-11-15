@@ -25,6 +25,9 @@ its filters match no source
 reads as outside the scope, though the filter matched. Run from `<out>/tree/src/libgit2`,
 the same command passes and reports the figures the batch recorded.
 
+`wave-226/batch-3/run-1` ran `report.py` from `<out>/tree/src/libgit2`, as its task message
+asked, and it passed there.
+
 ## Destination
 
 A campaign artifact the assistant owns: `crustify/scripts/coverage/report.py`.
