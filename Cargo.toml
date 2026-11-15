@@ -51,7 +51,6 @@ bindgen = ["dep:bindgen"]
 shared = []
 # Links an install of libgit2, found through LIBGIT2_DIR or pkg-config, in place of `c/`.
 system = []
-ffi-export-src-util-thread-c = []
 
 [dependencies]
 # By path, not by Git: trybuild replaces only the paths of dependencies declared by path

@@ -843,10 +843,9 @@ function llhttp_should_keep_alive
 function git_utf8_iterate
 function git_utf8_valid_buf_length
 
-# wave-226/batch-1: src/util/thread.h's atomic operations, `static inline`, compiled into
-# static_fns.c, which the equivalence tests of their ports compare with; the module's exports
-# check their signatures against these (wave-226/batch-6), and reach them once the switch has
-# replaced the header's definitions by prototypes
+# wave-226/batch-1: src/util/thread.h's atomic operations. src/util/thread.c switched to Rust,
+# its header's definitions replaced by prototypes: they reach its exports, and check their
+# signatures (wave-226/batch-6)
 function git_atomic32_add
 function git_atomic32_dec
 function git_atomic32_get
@@ -859,12 +858,13 @@ function git_atomic__compare_and_swap
 function git_atomic__load
 function git_atomic__swap
 
-# wave-226/batch-6: src/util/unix/pthread.h's git_threads_global_init, `static inline`, whose
-# export checks its signature against this
+# wave-226/batch-6: src/util/unix/pthread.h's git_threads_global_init. src/util/thread.c
+# switched to Rust, its definition replaced by a prototype: it reaches its export, and checks
+# its signature
 function git_threads_global_init
 
-# wave-226/batch-3: src/util/thread.c's thread-local storage (src/util/thread.h), ported to
-# Rust: its exports check their signatures against these, and the equivalence tests call C's
+# wave-226/batch-3: src/util/thread.c's thread-local storage (src/util/thread.h). thread.c
+# switched to Rust: they reach its exports, and check their signatures
 function git_tlsdata_dispose
 function git_tlsdata_get
 function git_tlsdata_init

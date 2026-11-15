@@ -36,13 +36,12 @@
 //! `git_atomic_compare_and_swap`, `git_atomic_swap` and `git_atomic_load`, are
 //! [`atomic_compare_and_swap`], [`atomic_swap`] and [`atomic_load`], over a standard
 //! pointer-sized atomic ([`AtomicWord`]), and its fence, `GIT_MEMORY_BARRIER`, is
-//! [`memory_barrier`]. C defines the eleven functions `static inline` in `thread.h`, which its
-//! translation units expand, so until the module's switch the two operate on the same objects
-//! with the same instructions: C11's sequentially consistent atomics, which Rust's
-//! [`SeqCst`](core::sync::atomic::Ordering::SeqCst) are. The switch replaces each definition by
-//! its prototype, and the C that remains, its macros' expansions and `util.h`'s
-//! `GIT_REFCOUNT_INC` and `GIT_REFCOUNT_DEC` included, then calls the module's exports under
-//! the functions' names, which run these operations over the object C passes: a call where C
+//! [`memory_barrier`]. C defined the eleven functions `static inline` in `thread.h`, which its
+//! translation units expanded into C11's sequentially consistent atomics, which Rust's
+//! [`SeqCst`](core::sync::atomic::Ordering::SeqCst) are. The module's switch replaced each
+//! definition by its prototype: the C that remains, its macros' expansions and `util.h`'s
+//! `GIT_REFCOUNT_INC` and `GIT_REFCOUNT_DEC` included, calls the module's exports under the
+//! functions' names, which run these operations over the object C passes: a call where C
 //! inlined one instruction, until cross-language LTO inlines it back. The macros stay in the
 //! header, unexported. The build is threaded (`GIT_THREADS`) with the `__atomic` builtins
 //! (`GIT_BUILTIN_ATOMIC`); its other branches, Windows' `Interlocked` calls, the older `__sync`
@@ -127,8 +126,7 @@
 //! A key's value is typed, [`TlsKey<T>`](TlsKey), where C's is a `void *`, and its destructor,
 //! a [`TlsdataInitDestroyFn`], is a plain Rust function of the value. The C that remains
 //! reaches the same keys through the module's exports, `git_tlsdata_init`, `git_tlsdata_set`,
-//! `git_tlsdata_get` and `git_tlsdata_dispose`, once the module has switched; until then they
-//! compile only under the `ffi-export-src-util-thread-c` feature. A key C makes holds C's
+//! `git_tlsdata_get` and `git_tlsdata_dispose`. A key C makes holds C's
 //! pointers and C's destructor, and no safe Rust reaches it: a [`TlsKey`] is made only by
 //! [`TlsKey::new`]. They keep POSIX's behaviour where C's callers can see it: a value is
 //! absent until a thread stores one, storing one destroys nothing, the destructor runs at a
@@ -1418,14 +1416,7 @@ mod ffi_import {
         ///
         /// `f` may be called once with each [`CWord`] built from a value C stores under that
         /// key, on the thread that stored it, at that thread's exit, while the key lives: what
-        /// `thread.h` has `git_tlsdata_init`'s caller provide.
-        #[cfg_attr(
-            not(any(test, feature = "ffi-export-src-util-thread-c")),
-            expect(
-                dead_code,
-                reason = "the export gateway alone calls it, under its feature"
-            )
-        )]
+        /// `thread.h` has `git_tlsdata_init`'s caller provide.]
         pub(super) unsafe fn new(f: unsafe extern "C" fn(*mut c_void)) -> CDestructor {
             CDestructor(f)
         }
@@ -1453,26 +1444,12 @@ mod ffi_import {
         ///
         /// `ptr` is stored under the key C passed `git_tlsdata_set` with it, and that key's
         /// destructor, if it has one, may be called with it at the storing thread's exit, as
-        /// `git_tlsdata_set`'s caller provides.
-        #[cfg_attr(
-            not(any(test, feature = "ffi-export-src-util-thread-c")),
-            expect(
-                dead_code,
-                reason = "the export gateway alone calls it, under its feature"
-            )
-        )]
+        /// `git_tlsdata_set`'s caller provides.]
         pub(super) unsafe fn new(ptr: NonNull<c_void>) -> CWord {
             CWord(ptr)
         }
 
-        /// The pointer, as C stored it.
-        #[cfg_attr(
-            not(any(test, feature = "ffi-export-src-util-thread-c")),
-            expect(
-                dead_code,
-                reason = "the export gateway alone calls it, under its feature"
-            )
-        )]
+        /// The pointer, as C stored it.]
         pub(super) fn as_ptr(self) -> *mut c_void {
             self.0.as_ptr()
         }
@@ -1783,7 +1760,7 @@ use self::tls::{Destructor, Kind, Value, dispose_key, get_value, registry, set_v
 /// Sets up what libgit2's threads need before its runtime starts (`git_threads_global_init`,
 /// the third routine `git_libgit2_init` runs): nothing, where libgit2 is built with POSIX
 /// threads, as here. It cannot fail, so it returns nothing; its export, which C's table of
-/// initialisers holds once the module has switched, returns 0, the success C's returns.
+/// initialisers holds, returns 0, the success C's returns.
 ///
 /// The configurations this build does not take: on Windows it finds the slim reader/writer
 /// lock routines in `kernel32` and makes the fiber-local slot that names a thread, failing
@@ -2087,14 +2064,7 @@ impl<T> fmt::Debug for TlsdataInitDestroyFn<T> {
 
 /// The keys C makes, uses and disposes of through the exports, over the same registry and
 /// tables as [`TlsKey`]'s: their values are [`CWord`](ffi_import::CWord)s, and their
-/// destructors C's.
-#[cfg_attr(
-    not(any(test, feature = "ffi-export-src-util-thread-c")),
-    expect(
-        dead_code,
-        reason = "the export gateway alone calls them, under its feature"
-    )
-)]
+/// destructors C's.]
 mod c_keys {
     use super::TlsError;
     use super::ffi_import::{CDestructor, CWord};
@@ -2457,7 +2427,7 @@ mod tls {
     }
 }
 
-/// The gateway through which the C that remains reaches this module once it has switched:
+/// The gateway through which the C that remains reaches this module:
 ///
 /// - `thread.h`'s eleven atomic operations, `git_atomic32_get`, `_set`, `_inc`, `_dec` and `_add`,
 ///   `git_atomic64_get`, `_set` and `_add`, and `git_atomic__compare_and_swap`, `__swap` and
@@ -2468,15 +2438,13 @@ mod tls {
 /// - `git_tlsdata_init`, `git_tlsdata_set`, `git_tlsdata_get` and `git_tlsdata_dispose`, for
 ///   `errors.c`, `oid.c` and the C tests of `threads/tlsdata.c`.
 ///
-/// The first twelve are `static inline` in their headers, so each C caller compiles its own
-/// copy of their bodies, which no export reaches: the module's switch replaces each
+/// The first twelve were `static inline` in their headers: the module's switch replaced each
 /// definition by its prototype, as porting's Static inline functions section has it, and the
-/// macros, which stay, then expand to these exports. Each export is checked against its raw
+/// macros, which stay, expand to these exports. Each export is checked against its raw
 /// binding's signature, so that a C declaration that drifts fails to build. Each atomic export
 /// is the one sequentially consistent operation the builtin it replaces is, with the same
 /// wrapping, over the caller's `git_atomic32`, `git_atomic64` or pointer-sized slot, which no
 /// export keeps past the call: they cannot panic, and need no barrier.
-#[cfg(feature = "ffi-export-src-util-thread-c")]
 #[expect(
     unsafe_code,
     reason = "the bare-named exports through which the remaining C reaches the atomics and the \
@@ -3242,203 +3210,6 @@ mod ffi_export {
                     }
                 }
             }
-        }
-    }
-
-    /// The exports beside the header's C, `thread.h`'s `static inline` bodies compiled into
-    /// the raw bindings' wrappers (`static_fns.c`), on one object at once, until the switch
-    /// replaces those bodies by the exports. Each test is in this gateway, which alone
-    /// compiles the exports, beside the C it calls.
-    #[cfg(test)]
-    mod equiv_priv {
-        use core::ffi::c_void;
-        use core::ptr;
-        use std::thread;
-
-        use ffibox::CRefSeam;
-
-        use super::super::Atomic32;
-        #[cfg(target_pointer_width = "64")]
-        use super::super::Atomic64;
-        use super::{
-            git_atomic__compare_and_swap, git_atomic__load, git_atomic__swap, git_atomic32_add,
-            git_atomic32_dec, git_atomic32_get, git_atomic32_inc, git_atomic32_set,
-        };
-        #[cfg(target_pointer_width = "64")]
-        use super::{git_atomic64_add, git_atomic64_get, git_atomic64_set};
-        use crate::sys::libgit2 as sys;
-
-        /// One step on a `git_atomic32`, through the export or the header's C.
-        #[derive(Clone, Copy, Debug)]
-        enum Step {
-            Get,
-            Set(i32),
-            Inc,
-            Dec,
-            Add(i32),
-        }
-
-        const STEPS: [Step; 12] = [
-            Step::Set(0),
-            Step::Inc,
-            Step::Inc,
-            Step::Dec,
-            Step::Add(-9),
-            Step::Get,
-            Step::Set(i32::MAX),
-            Step::Inc,
-            Step::Dec,
-            Step::Add(i32::MIN),
-            Step::Set(i32::MIN),
-            Step::Dec,
-        ];
-
-        /// Runs `step` on `a`, through the exports where `rust`, else through the header's C,
-        /// and returns what it returns, `None` for a store.
-        ///
-        /// # Safety
-        ///
-        /// `a` addresses a live, aligned `git_atomic32`, which every thread writes only
-        /// atomically.
-        unsafe fn run(rust: bool, a: *mut sys::git_atomic32, step: Step) -> Option<i32> {
-            match (rust, step) {
-                // SAFETY: as above.
-                (true, Step::Get) => Some(unsafe { git_atomic32_get(a) }),
-                // SAFETY: as above.
-                (false, Step::Get) => Some(unsafe { sys::git_atomic32_get(a) }),
-                (true, Step::Set(v)) => {
-                    // SAFETY: as above.
-                    unsafe { git_atomic32_set(a, v) };
-                    None
-                }
-                (false, Step::Set(v)) => {
-                    // SAFETY: as above.
-                    unsafe { sys::git_atomic32_set(a, v) };
-                    None
-                }
-                // SAFETY: as above.
-                (true, Step::Inc) => Some(unsafe { git_atomic32_inc(a) }),
-                // SAFETY: as above.
-                (false, Step::Inc) => Some(unsafe { sys::git_atomic32_inc(a) }),
-                // SAFETY: as above.
-                (true, Step::Dec) => Some(unsafe { git_atomic32_dec(a) }),
-                // SAFETY: as above.
-                (false, Step::Dec) => Some(unsafe { sys::git_atomic32_dec(a) }),
-                // SAFETY: as above.
-                (true, Step::Add(n)) => Some(unsafe { git_atomic32_add(a, n) }),
-                // SAFETY: as above.
-                (false, Step::Add(n)) => Some(unsafe { sys::git_atomic32_add(a, n) }),
-            }
-        }
-
-        /// Each step through the export returns what the header's C returns from the same
-        /// value, and leaves the same value, which the other side then reads: two counts run
-        /// the sequence, one through each side, and a third alternates between them.
-        #[test]
-        #[cfg_attr(miri, ignore = "calls C")]
-        fn atomic32_exports_match_the_header() {
-            let (rust, c, mixed) = (Atomic32::new(0), Atomic32::new(0), Atomic32::new(0));
-            let ptr = |v: &Atomic32| v.as_ref().as_ptr().cast_mut();
-            for (i, step) in STEPS.into_iter().enumerate() {
-                // SAFETY: each pointer addresses a count of this test, live, which only these
-                // atomic calls write.
-                let from_rust = unsafe { run(true, ptr(&rust), step) };
-                // SAFETY: as above.
-                let from_c = unsafe { run(false, ptr(&c), step) };
-                // SAFETY: as above.
-                let from_mixed = unsafe { run(i % 2 == 0, ptr(&mixed), step) };
-                assert_eq!(from_rust, from_c, "{step:?}");
-                assert_eq!(from_mixed, from_c, "{step:?}");
-                assert_eq!(rust.as_ref().get(), c.as_ref().get(), "{step:?}");
-                assert_eq!(mixed.as_ref().get(), c.as_ref().get(), "{step:?}");
-            }
-        }
-
-        /// The 64-bit exports return what the header's C returns, on one value they share.
-        #[cfg(target_pointer_width = "64")]
-        #[test]
-        #[cfg_attr(miri, ignore = "calls C")]
-        fn atomic64_exports_match_the_header() {
-            let size = Atomic64::new(0);
-            let a = size.as_ref().as_ptr().cast_mut();
-            // SAFETY: `a` addresses `size`, live for the test, which only these atomic calls
-            // write.
-            unsafe { sys::git_atomic64_set(a, i64::MAX - 1) };
-            // SAFETY: as above.
-            assert_eq!(unsafe { git_atomic64_add(a, 1) }, i64::MAX);
-            // SAFETY: as above.
-            assert_eq!(unsafe { sys::git_atomic64_add(a, 1) }, i64::MIN);
-            // SAFETY: as above.
-            let from_rust = unsafe { git_atomic64_get(a) };
-            // SAFETY: as above.
-            let from_c = unsafe { sys::git_atomic64_get(a) };
-            assert_eq!(from_rust, from_c);
-            // SAFETY: as above.
-            unsafe { git_atomic64_set(a, 12) };
-            // SAFETY: as above.
-            assert_eq!(unsafe { sys::git_atomic64_get(a) }, 12);
-        }
-
-        /// The slot exports and the header's C on one slot: what one stores the other finds,
-        /// a compare-and-swap of either refuses the other's stale value, and both swap out
-        /// what the other stored.
-        #[test]
-        #[cfg_attr(miri, ignore = "calls C")]
-        fn slot_exports_match_the_header() {
-            let (one, two) = (
-                ptr::without_provenance_mut(0x10),
-                ptr::without_provenance_mut(0x20),
-            );
-            let mut slot: *mut c_void = ptr::null_mut();
-            let p = &raw mut slot;
-            // SAFETY: `p` addresses `slot`, a local live for the test, which only these atomic
-            // calls access.
-            assert!(unsafe { git_atomic__compare_and_swap(p, ptr::null_mut(), one) }.is_null());
-            // SAFETY: as above.
-            let found = unsafe { sys::git_atomic__compare_and_swap(p, ptr::null_mut(), two) };
-            assert_eq!(found, one, "C refuses the export's stale value");
-            // SAFETY: as above.
-            let found = unsafe { sys::git_atomic__compare_and_swap(p, one, two) };
-            assert_eq!(found, one);
-            // SAFETY: as above.
-            let found = unsafe { git_atomic__compare_and_swap(p, one, ptr::null_mut()) };
-            assert_eq!(found, two, "the export refuses C's stale value");
-            // SAFETY: as above.
-            let from_rust = unsafe { git_atomic__load(p) };
-            // SAFETY: as above.
-            let from_c = unsafe { sys::git_atomic__load(p) };
-            assert_eq!(from_rust, from_c);
-            // SAFETY: as above.
-            assert_eq!(unsafe { git_atomic__swap(p, one) }, two);
-            // SAFETY: as above.
-            assert_eq!(unsafe { sys::git_atomic__swap(p, ptr::null_mut()) }, one);
-            // SAFETY: as above.
-            assert!(unsafe { git_atomic__load(p) }.is_null());
-        }
-
-        /// C threads and export threads raise and drop one reference count at once and lose
-        /// no update, as `GIT_REFCOUNT_INC` and `GIT_REFCOUNT_DEC` will once the C that
-        /// remains reaches the exports while the header's bodies are still expanded elsewhere.
-        #[test]
-        #[cfg_attr(miri, ignore = "calls C")]
-        fn exports_and_header_share_one_count() {
-            let count = Atomic32::new(1);
-            thread::scope(|scope| {
-                for t in 0..4 {
-                    let count = &count;
-                    scope.spawn(move || {
-                        let a = count.as_ref().as_ptr().cast_mut();
-                        for _ in 0..2000 {
-                            // SAFETY: `a` addresses `count`, live for the scope, which only
-                            // these atomic calls write.
-                            assert!(unsafe { run(t % 2 == 0, a, Step::Inc) } > Some(1));
-                            // SAFETY: as above.
-                            assert!(unsafe { run(t % 2 == 0, a, Step::Dec) } >= Some(1));
-                        }
-                    });
-                }
-            });
-            assert_eq!(count.as_ref().get(), 1);
         }
     }
 }
