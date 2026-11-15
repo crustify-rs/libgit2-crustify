@@ -5905,6 +5905,373 @@
    ]
   },
   {
+   "name": "git_atomic32_add",
+   "defined_in": "src/util/thread.h",
+   "ptr_args": [
+    {
+     "name": "a",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:a"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The git_atomic32 the operation acts on, read and written atomically during the call alone (a sequentially consistent __atomic builtin in this build); C keeps no pointer to it. Callers pass the address of an embedded counter (git_refcount.refcount, a pack's or index's count) or a global (init_count, git_cache__current_storage), never NULL."
+     }
+    }
+   ]
+  },
+  {
+   "name": "git_atomic32_dec",
+   "defined_in": "src/util/thread.h",
+   "ptr_args": [
+    {
+     "name": "a",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:a"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The git_atomic32 the operation acts on, read and written atomically during the call alone (a sequentially consistent __atomic builtin in this build); C keeps no pointer to it. Callers pass the address of an embedded counter (git_refcount.refcount, a pack's or index's count) or a global (init_count, git_cache__current_storage), never NULL."
+     }
+    }
+   ]
+  },
+  {
+   "name": "git_atomic32_get",
+   "defined_in": "src/util/thread.h",
+   "ptr_args": [
+    {
+     "name": "a",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:a"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "The git_atomic32 the operation acts on, read atomically during the call alone (a sequentially consistent __atomic builtin in this build); C keeps no pointer to it. Callers pass the address of an embedded counter (git_refcount.refcount, a pack's or index's count) or a global (init_count, git_cache__current_storage), never NULL."
+     }
+    }
+   ]
+  },
+  {
+   "name": "git_atomic32_inc",
+   "defined_in": "src/util/thread.h",
+   "ptr_args": [
+    {
+     "name": "a",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:a"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The git_atomic32 the operation acts on, read and written atomically during the call alone (a sequentially consistent __atomic builtin in this build); C keeps no pointer to it. Callers pass the address of an embedded counter (git_refcount.refcount, a pack's or index's count) or a global (init_count, git_cache__current_storage), never NULL."
+     }
+    }
+   ]
+  },
+  {
+   "name": "git_atomic32_set",
+   "defined_in": "src/util/thread.h",
+   "ptr_args": [
+    {
+     "name": "a",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:a"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The git_atomic32 the operation acts on, read and written atomically during the call alone (a sequentially consistent __atomic builtin in this build); C keeps no pointer to it. Callers pass the address of an embedded counter (git_refcount.refcount, a pack's or index's count) or a global (init_count, git_cache__current_storage), never NULL."
+     }
+    }
+   ]
+  },
+  {
+   "name": "git_atomic64_add",
+   "defined_in": "src/util/thread.h",
+   "ptr_args": [
+    {
+     "name": "a",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:a"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The git_atomic64 the operation acts on, read and written atomically during the call alone (a sequentially consistent __atomic builtin in this build); C keeps no pointer to it. Callers pass the address of an embedded counter (git_refcount.refcount, a pack's or index's count) or a global (init_count, git_cache__current_storage), never NULL."
+     }
+    }
+   ]
+  },
+  {
+   "name": "git_atomic64_get",
+   "defined_in": "src/util/thread.h",
+   "ptr_args": [
+    {
+     "name": "a",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:a"
+      },
+      "nullable": false,
+      "mutable": false,
+      "note": "The git_atomic64 the operation acts on, read atomically during the call alone (a sequentially consistent __atomic builtin in this build); C keeps no pointer to it. Callers pass the address of an embedded counter (git_refcount.refcount, a pack's or index's count) or a global (init_count, git_cache__current_storage), never NULL."
+     }
+    }
+   ]
+  },
+  {
+   "name": "git_atomic64_set",
+   "defined_in": "src/util/thread.h",
+   "ptr_args": [
+    {
+     "name": "a",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:a"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "The git_atomic64 the operation acts on, read and written atomically during the call alone (a sequentially consistent __atomic builtin in this build); C keeps no pointer to it. Callers pass the address of an embedded counter (git_refcount.refcount, a pack's or index's count) or a global (init_count, git_cache__current_storage), never NULL."
+     }
+    }
+   ]
+  },
+  {
+   "name": "git_atomic__compare_and_swap",
+   "defined_in": "src/util/thread.h",
+   "ptr_args": [
+    {
+     "name": "newval",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "other"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A type-erased value, stored in *ptr, which then holds it for its holder, never dereferenced: a pointer of the slot's type, NULL, or an intptr_t value cast to void *."
+     }
+    },
+    {
+     "name": "oldval",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "other"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A type-erased value, compared with *ptr, never dereferenced: a pointer of the slot's type, NULL, or an intptr_t value cast to void *."
+     }
+    },
+    {
+     "name": "ptr",
+     "ptr": {
+      "scalar": {
+       "by_ref": {
+        "owned": false,
+        "borrowed": {
+         "lifetime": "other"
+        }
+       }
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:ptr"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "A pointer-sized slot, read (and, but for __load, written) atomically during the call alone: a void * field (repo->_odb, repo->attrcache, an attr entry's file), an element of a pointer vector, or an intptr_t cast to void * volatile * (configmap_cache). The value it holds is type-erased and never followed here; whoever holds the slot owns it."
+     }
+    }
+   ],
+   "ptr_ret": {
+    "ptr": {
+     "scalar": {
+      "by_val": true
+     },
+     "array": null,
+     "string": false,
+     "owned": false,
+     "borrowed": {
+      "lifetime": "other"
+     },
+     "nullable": true,
+     "mutable": false,
+     "note": "The value *ptr held, type-erased and returned unfollowed; whether the caller now owns it is the slot's protocol (a swap that takes a cache out of repo hands it to the caller to free), not this function's."
+    }
+   }
+  },
+  {
+   "name": "git_atomic__load",
+   "defined_in": "src/util/thread.h",
+   "ptr_args": [
+    {
+     "name": "ptr",
+     "ptr": {
+      "scalar": {
+       "by_ref": {
+        "owned": false,
+        "borrowed": {
+         "lifetime": "other"
+        }
+       }
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:ptr"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "A pointer-sized slot, read (and, but for __load, written) atomically during the call alone: a void * field (repo->_odb, repo->attrcache, an attr entry's file), an element of a pointer vector, or an intptr_t cast to void * volatile * (configmap_cache). The value it holds is type-erased and never followed here; whoever holds the slot owns it."
+     }
+    }
+   ],
+   "ptr_ret": {
+    "ptr": {
+     "scalar": {
+      "by_val": true
+     },
+     "array": null,
+     "string": false,
+     "owned": false,
+     "borrowed": {
+      "lifetime": "other"
+     },
+     "nullable": true,
+     "mutable": false,
+     "note": "The value *ptr held, type-erased and returned unfollowed; whether the caller now owns it is the slot's protocol (a swap that takes a cache out of repo hands it to the caller to free), not this function's."
+    }
+   }
+  },
+  {
+   "name": "git_atomic__swap",
+   "defined_in": "src/util/thread.h",
+   "ptr_args": [
+    {
+     "name": "newval",
+     "ptr": {
+      "scalar": {
+       "by_val": true
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "other"
+      },
+      "nullable": true,
+      "mutable": false,
+      "note": "A type-erased value, stored in *ptr, which then holds it for its holder, never dereferenced: a pointer of the slot's type, NULL, or an intptr_t value cast to void *."
+     }
+    },
+    {
+     "name": "ptr",
+     "ptr": {
+      "scalar": {
+       "by_ref": {
+        "owned": false,
+        "borrowed": {
+         "lifetime": "other"
+        }
+       }
+      },
+      "array": null,
+      "string": false,
+      "owned": false,
+      "borrowed": {
+       "lifetime": "arg:ptr"
+      },
+      "nullable": false,
+      "mutable": true,
+      "note": "A pointer-sized slot, read (and, but for __load, written) atomically during the call alone: a void * field (repo->_odb, repo->attrcache, an attr entry's file), an element of a pointer vector, or an intptr_t cast to void * volatile * (configmap_cache). The value it holds is type-erased and never followed here; whoever holds the slot owns it."
+     }
+    }
+   ],
+   "ptr_ret": {
+    "ptr": {
+     "scalar": {
+      "by_val": true
+     },
+     "array": null,
+     "string": false,
+     "owned": false,
+     "borrowed": {
+      "lifetime": "other"
+     },
+     "nullable": true,
+     "mutable": false,
+     "note": "The value *ptr held, type-erased and returned unfollowed; whether the caller now owns it is the slot's protocol (a swap that takes a cache out of repo hands it to the caller to free), not this function's."
+    }
+   }
+  },
+  {
    "name": "git_blob_create_from_buffer",
    "defined_in": "src/libgit2/blob.c",
    "ptr_args": [

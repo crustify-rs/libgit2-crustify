@@ -10,6 +10,8 @@ use std::thread;
 
 use libgit2_crustify::libgit2::src::util::thread::{Atomic32, Atomic64, AtomicSsize};
 
+mod atomics;
+
 /// Threads per test, and increments per thread: enough interleavings for `TSan` and Miri
 /// to see, few enough for Miri to finish.
 const THREADS: i32 = 4;

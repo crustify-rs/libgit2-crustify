@@ -842,3 +842,18 @@ function llhttp_should_keep_alive
 # (wave-232/batch-0, port/unexport)
 function git_utf8_iterate
 function git_utf8_valid_buf_length
+
+# wave-226/batch-1: src/util/thread.h's atomic operations, `static inline`, compiled into
+# static_fns.c, which the equivalence tests of their ports compare with; the C that remains
+# expands them from the header, so they have no export
+function git_atomic32_add
+function git_atomic32_dec
+function git_atomic32_get
+function git_atomic32_inc
+function git_atomic32_set
+function git_atomic64_add
+function git_atomic64_get
+function git_atomic64_set
+function git_atomic__compare_and_swap
+function git_atomic__load
+function git_atomic__swap

@@ -14500,6 +14500,59 @@ const _: () = {
         "Offset of field: git_thread::thread",
     ][::std::mem::offset_of!(git_thread, thread) - 0usize];
 };
+unsafe extern "C" {
+    #[link_name = "git_atomic32_set__extern"]
+    pub fn git_atomic32_set(a: *mut git_atomic32, val: ::std::os::raw::c_int);
+}
+unsafe extern "C" {
+    #[link_name = "git_atomic32_inc__extern"]
+    pub fn git_atomic32_inc(a: *mut git_atomic32) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    #[link_name = "git_atomic32_add__extern"]
+    pub fn git_atomic32_add(a: *mut git_atomic32, addend: i32) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    #[link_name = "git_atomic32_dec__extern"]
+    pub fn git_atomic32_dec(a: *mut git_atomic32) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    #[link_name = "git_atomic32_get__extern"]
+    pub fn git_atomic32_get(a: *mut git_atomic32) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    #[link_name = "git_atomic__compare_and_swap__extern"]
+    pub fn git_atomic__compare_and_swap(
+        ptr: *mut *mut ::std::os::raw::c_void,
+        oldval: *mut ::std::os::raw::c_void,
+        newval: *mut ::std::os::raw::c_void,
+    ) -> *mut ::std::os::raw::c_void;
+}
+unsafe extern "C" {
+    #[link_name = "git_atomic__swap__extern"]
+    pub fn git_atomic__swap(
+        ptr: *mut *mut ::std::os::raw::c_void,
+        newval: *mut ::std::os::raw::c_void,
+    ) -> *mut ::std::os::raw::c_void;
+}
+unsafe extern "C" {
+    #[link_name = "git_atomic__load__extern"]
+    pub fn git_atomic__load(
+        ptr: *mut *mut ::std::os::raw::c_void,
+    ) -> *mut ::std::os::raw::c_void;
+}
+unsafe extern "C" {
+    #[link_name = "git_atomic64_add__extern"]
+    pub fn git_atomic64_add(a: *mut git_atomic64, addend: i64) -> i64;
+}
+unsafe extern "C" {
+    #[link_name = "git_atomic64_set__extern"]
+    pub fn git_atomic64_set(a: *mut git_atomic64, val: i64);
+}
+unsafe extern "C" {
+    #[link_name = "git_atomic64_get__extern"]
+    pub fn git_atomic64_get(a: *mut git_atomic64) -> i64;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct git_str {

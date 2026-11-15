@@ -11,6 +11,8 @@ use libgit2_crustify::libgit2::src::util::thread::{
     Atomic32, Atomic32Mut, Atomic32Ref, Atomic64, Atomic64Mut, AtomicSsize, Thread, ThreadRef,
 };
 
+mod atomics;
+
 /// A new value holds what it was built with, and the default is 0, as C's `{0}` and zeroed
 /// storage are.
 #[test]

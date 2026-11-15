@@ -28,6 +28,22 @@
 //! builds it, lives in an [`UnsafeCell`](core::cell::UnsafeCell), so that it may be written
 //! through a shared borrow and a `static` of it is writable.
 //!
+//! `thread.h`'s operations over them are methods of the shared handles, each the one
+//! sequentially consistent operation C's is: [`Atomic32Ref::get`], [`set`](Atomic32Ref::set),
+//! [`inc`](Atomic32Ref::inc), [`dec`](Atomic32Ref::dec) and [`add`](Atomic32Ref::add), which
+//! return the value they leave, as C's do, and [`Atomic64Ref`]'s `get`, `set` and `add`, which
+//! are also `git_atomic_ssize`'s. Its operations over a pointer-sized slot,
+//! `git_atomic_compare_and_swap`, `git_atomic_swap` and `git_atomic_load`, are
+//! [`atomic_compare_and_swap`], [`atomic_swap`] and [`atomic_load`], over a standard
+//! pointer-sized atomic ([`AtomicWord`]), and its fence, `GIT_MEMORY_BARRIER`, is
+//! [`memory_barrier`]. C keeps them `static inline` in `thread.h`, which its own translation
+//! units expand, so the two operate on the same objects with the same instructions: C11's
+//! sequentially consistent atomics, which Rust's [`SeqCst`](core::sync::atomic::Ordering::SeqCst)
+//! are. The build is threaded (`GIT_THREADS`) with the `__atomic` builtins
+//! (`GIT_BUILTIN_ATOMIC`); its other branches, Windows' `Interlocked` calls, the older `__sync`
+//! builtins and the plain reads and writes of a build without threads, compute the same values
+//! for every input, with orderings no stronger than these.
+//!
 //! # Threads
 //!
 //! A [`Thread`] is a `git_thread` (`unix/pthread.h`): the `pthread_t` of a thread that
@@ -109,6 +125,279 @@ pub type AtomicSsize = Atomic64;
 #[doc(alias = "git_atomic_ssize")]
 #[cfg(not(target_pointer_width = "64"))]
 pub type AtomicSsize = Atomic32;
+
+// ---------------------------------------------------------------------------------------------
+// Atomic operations (`thread.h`): `git_atomic32_*`, `git_atomic64_*`, `git_atomic_ssize_*`,
+// the pointer-sized `git_atomic_*` and `GIT_MEMORY_BARRIER`.
+// ---------------------------------------------------------------------------------------------
+
+use core::sync::atomic::Ordering::SeqCst;
+use core::sync::atomic::{AtomicIsize, AtomicPtr, AtomicUsize, fence};
+
+/// A full memory fence, ordering every load and store before it with every one after it, as
+/// `GIT_MEMORY_BARRIER` does: `__atomic_thread_fence(__ATOMIC_SEQ_CST)` in this build,
+/// `MemoryBarrier()` on Windows, `__sync_synchronize()` with the older builtins, and nothing in
+/// a build without threads, where no other thread observes the order.
+///
+/// ```
+/// use libgit2_crustify::libgit2::src::util::thread::memory_barrier;
+///
+/// memory_barrier();
+/// ```
+///
+/// Replaces `mac::GIT_MEMORY_BARRIER`
+#[doc(alias = "GIT_MEMORY_BARRIER")]
+#[inline]
+pub fn memory_barrier() {
+    fence(SeqCst);
+}
+
+impl Atomic32Ref<'_> {
+    /// The value, read atomically.
+    ///
+    /// Replaces `fn::git_atomic32_get`
+    #[doc(alias = "git_atomic32_get")]
+    #[inline]
+    #[must_use]
+    pub fn get(&self) -> i32 {
+        self.val().load(SeqCst)
+    }
+
+    /// Stores `val`, atomically.
+    ///
+    /// Replaces `fn::git_atomic32_set`
+    #[doc(alias = "git_atomic32_set")]
+    #[inline]
+    pub fn set(&self, val: i32) {
+        self.val().store(val, SeqCst);
+    }
+
+    /// Adds 1, atomically, and returns the value it leaves, which wraps from `i32::MAX` to
+    /// `i32::MIN`, as the C builtin does.
+    ///
+    /// ```
+    /// use libgit2_crustify::libgit2::src::util::thread::Atomic32;
+    ///
+    /// let refcount = Atomic32::new(1);
+    /// assert_eq!(refcount.as_ref().inc(), 2);
+    /// assert_eq!(refcount.as_ref().dec(), 1);
+    /// ```
+    ///
+    /// Replaces `fn::git_atomic32_inc`
+    #[doc(alias = "git_atomic32_inc")]
+    #[inline]
+    #[expect(
+        clippy::must_use_candidate,
+        reason = "C callers discard what it returns"
+    )]
+    pub fn inc(&self) -> i32 {
+        self.val().fetch_add(1, SeqCst).wrapping_add(1)
+    }
+
+    /// Subtracts 1, atomically, and returns the value it leaves, which wraps from `i32::MIN` to
+    /// `i32::MAX`, as the C builtin does.
+    ///
+    /// Replaces `fn::git_atomic32_dec`
+    #[doc(alias = "git_atomic32_dec")]
+    #[inline]
+    #[expect(
+        clippy::must_use_candidate,
+        reason = "C callers discard what it returns"
+    )]
+    pub fn dec(&self) -> i32 {
+        self.val().fetch_sub(1, SeqCst).wrapping_sub(1)
+    }
+
+    /// Adds `addend`, atomically, and returns the value it leaves, wrapping on overflow, as the
+    /// C builtin does.
+    ///
+    /// Replaces `fn::git_atomic32_add`
+    #[doc(alias = "git_atomic32_add")]
+    #[inline]
+    #[expect(
+        clippy::must_use_candidate,
+        reason = "C callers discard what it returns"
+    )]
+    pub fn add(&self, addend: i32) -> i32 {
+        self.val().fetch_add(addend, SeqCst).wrapping_add(addend)
+    }
+}
+
+/// `git_atomic64`'s operations, defined where pointers are 64 bits wide (`GIT_ARCH_64`), and
+/// `git_atomic_ssize`'s there, its `git_atomic_ssize_get` and `git_atomic_ssize_add` naming
+/// `git_atomic64_get` and `git_atomic64_add`. Where pointers are narrower, [`AtomicSsize`] is
+/// [`Atomic32`] and the two macros name [`Atomic32Ref`]'s `get` and `add`.
+#[cfg(target_pointer_width = "64")]
+impl Atomic64Ref<'_> {
+    /// The value, read atomically.
+    ///
+    /// Replaces `fn::git_atomic64_get`
+    #[doc(alias = "git_atomic64_get")]
+    /// Replaces `mac::git_atomic_ssize_get`
+    #[doc(alias = "git_atomic_ssize_get")]
+    #[inline]
+    #[must_use]
+    pub fn get(&self) -> i64 {
+        self.val().load(SeqCst)
+    }
+
+    /// Stores `val`, atomically.
+    ///
+    /// Replaces `fn::git_atomic64_set`
+    #[doc(alias = "git_atomic64_set")]
+    #[inline]
+    pub fn set(&self, val: i64) {
+        self.val().store(val, SeqCst);
+    }
+
+    /// Adds `addend`, atomically, and returns the value it leaves, wrapping on overflow, as the
+    /// C builtin does.
+    ///
+    /// ```
+    /// use libgit2_crustify::libgit2::src::util::thread::AtomicSsize;
+    ///
+    /// let storage = AtomicSsize::new(0);
+    /// assert_eq!(storage.as_ref().add(4096), 4096);
+    /// assert_eq!(storage.as_ref().add(-1024), 3072);
+    /// assert_eq!(storage.as_ref().get(), 3072);
+    /// ```
+    ///
+    /// Replaces `fn::git_atomic64_add`
+    #[doc(alias = "git_atomic64_add")]
+    /// Replaces `mac::git_atomic_ssize_add`
+    #[doc(alias = "git_atomic_ssize_add")]
+    #[inline]
+    #[expect(
+        clippy::must_use_candidate,
+        reason = "C callers discard what it returns"
+    )]
+    pub fn add(&self, addend: i64) -> i64 {
+        self.val().fetch_add(addend, SeqCst).wrapping_add(addend)
+    }
+}
+
+mod word {
+    /// The operations [`AtomicWord`](super::AtomicWord) is implemented by, out of reach of
+    /// other crates, so that no other type implements it.
+    pub trait Sealed {
+        /// The value the slot holds: a pointer, or an integer of a pointer's size.
+        type Value: Copy;
+
+        fn compare_and_swap(&self, old: Self::Value, new: Self::Value) -> Self::Value;
+
+        fn swap(&self, new: Self::Value) -> Self::Value;
+
+        fn load(&self) -> Self::Value;
+    }
+}
+
+/// A standard atomic of a pointer's size, the slot `thread.h`'s pointer operations act on:
+/// `git_atomic_compare_and_swap`, `git_atomic_swap` and `git_atomic_load` take "a pointer or a
+/// value that is the same size as a pointer", and C passes them pointer fields and `intptr_t`
+/// ones. An [`AtomicPtr<T>`] holds a pointer, an [`AtomicIsize`] or [`AtomicUsize`] an integer;
+/// a slot C shares is reached as one of these through the accessor of what holds it. Sealed:
+/// no other type implements it.
+pub trait AtomicWord: word::Sealed + Sync {}
+
+macro_rules! atomic_word {
+    ($(#[$attr:meta])* [$($generic:tt)*] $atomic:ty, $value:ty) => {
+        impl<$($generic)*> word::Sealed for $atomic {
+            type Value = $value;
+
+            #[inline]
+            fn compare_and_swap(&self, old: $value, new: $value) -> $value {
+                // Strong, as `__atomic_compare_exchange(…, false, …)` is: it fails only when
+                // the slot holds another value, which it returns.
+                match self.compare_exchange(old, new, SeqCst, SeqCst) {
+                    Ok(found) | Err(found) => found,
+                }
+            }
+
+            #[inline]
+            fn swap(&self, new: $value) -> $value {
+                <$atomic>::swap(self, new, SeqCst)
+            }
+
+            #[inline]
+            fn load(&self) -> $value {
+                <$atomic>::load(self, SeqCst)
+            }
+        }
+
+        $(#[$attr])*
+        impl<$($generic)*> AtomicWord for $atomic {}
+    };
+}
+
+atomic_word!(
+    /// A pointer slot, as C's `void *` fields are.
+    [T] AtomicPtr<T>, *mut T
+);
+atomic_word!(
+    /// An `intptr_t` slot, as `git_repository`'s configuration cache is.
+    [] AtomicIsize, isize
+);
+atomic_word!(
+    /// A `uintptr_t` slot.
+    [] AtomicUsize, usize
+);
+
+/// Stores `new` in `slot` if it holds `old`, atomically, and returns what it held, which is
+/// `old` exactly when it stored `new`, as `git_atomic_compare_and_swap` does: a strong,
+/// sequentially consistent compare-and-swap, which fails only when the slot holds another
+/// value.
+///
+/// ```
+/// use core::ptr;
+/// use core::sync::atomic::AtomicPtr;
+///
+/// use libgit2_crustify::libgit2::src::util::thread::atomic_compare_and_swap;
+///
+/// let mut cache = 7;
+/// let slot = AtomicPtr::new(ptr::null_mut());
+/// // The first to install a value wins; a later one finds it.
+/// assert!(atomic_compare_and_swap(&slot, ptr::null_mut(), &raw mut cache).is_null());
+/// assert_eq!(
+///     atomic_compare_and_swap(&slot, ptr::null_mut(), ptr::null_mut()),
+///     &raw mut cache
+/// );
+/// ```
+///
+/// Replaces `fn::git_atomic__compare_and_swap`
+#[doc(alias = "git_atomic__compare_and_swap")]
+/// Replaces `mac::git_atomic_compare_and_swap`
+#[doc(alias = "git_atomic_compare_and_swap")]
+#[inline]
+pub fn atomic_compare_and_swap<A: AtomicWord>(slot: &A, old: A::Value, new: A::Value) -> A::Value {
+    slot.compare_and_swap(old, new)
+}
+
+/// Stores `new` in `slot`, atomically, and returns what it held, as `git_atomic_swap` does.
+///
+/// Replaces `fn::git_atomic__swap`
+#[doc(alias = "git_atomic__swap")]
+/// Replaces `mac::git_atomic_swap`
+#[doc(alias = "git_atomic_swap")]
+#[inline]
+pub fn atomic_swap<A: AtomicWord>(slot: &A, new: A::Value) -> A::Value {
+    slot.swap(new)
+}
+
+/// What `slot` holds, read atomically, as `git_atomic_load` reads it.
+///
+/// Replaces `fn::git_atomic__load`
+#[doc(alias = "git_atomic__load")]
+/// Replaces `mac::git_atomic_load`
+#[doc(alias = "git_atomic_load")]
+#[inline]
+#[must_use]
+pub fn atomic_load<A: AtomicWord>(slot: &A) -> A::Value {
+    slot.load()
+}
+
+// ---------------------------------------------------------------------------------------------
+// End of the atomic operations.
+// ---------------------------------------------------------------------------------------------
 
 // -----------------------------------------------------------------------------------------
 // Locks, condition variables and threads: `unix/pthread.h`'s `git_mutex`, `git_cond`,

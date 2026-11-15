@@ -1,0 +1,161 @@
+{
+  "objective": "port",
+  "wave": 226,
+  "batch": 1,
+  "link_unit": "libgit2",
+  "module": "src/util/thread.c",
+  "foundational": false,
+  "base_branch": "refs/heads/crustify/waves/wave-226",
+  "backend": "claude",
+  "billing": "api",
+  "model_proxy": "openrouter",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "57005de",
+    "wavefront": "bf21e16",
+    "ffimap": "50a800e",
+    "ffibox": "568bcb5"
+  },
+  "items": [
+    {
+      "name": "GIT_MEMORY_BARRIER",
+      "defined_in": "src/util/thread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_atomic__compare_and_swap",
+      "defined_in": "src/util/thread.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_atomic__load",
+      "defined_in": "src/util/thread.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_atomic__swap",
+      "defined_in": "src/util/thread.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_atomic32_add",
+      "defined_in": "src/util/thread.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_atomic32_dec",
+      "defined_in": "src/util/thread.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_atomic32_get",
+      "defined_in": "src/util/thread.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_atomic32_inc",
+      "defined_in": "src/util/thread.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_atomic32_set",
+      "defined_in": "src/util/thread.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_atomic64_add",
+      "defined_in": "src/util/thread.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_atomic64_get",
+      "defined_in": "src/util/thread.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_atomic64_set",
+      "defined_in": "src/util/thread.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_atomic_compare_and_swap",
+      "defined_in": "src/util/thread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_atomic_load",
+      "defined_in": "src/util/thread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_atomic_swap",
+      "defined_in": "src/util/thread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_atomic_ssize_add",
+      "defined_in": "src/util/thread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_atomic_ssize_get",
+      "defined_in": "src/util/thread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    }
+  ],
+  "session_id": "827df48d-283c-4f15-8f72-8d63eff4ac7d"
+}

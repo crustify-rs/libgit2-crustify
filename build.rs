@@ -1321,7 +1321,9 @@ fn cache_entry(cache: &Path, name: &str) -> Option<String> {
 }
 
 /// The compiler of a campaign variant, and the instrumentation flags of its C flags, as its
-/// `CMake` cache records them.
+/// `CMake` cache records them: its sanitizers and `BorrowSanitizer`'s plugin, and its coverage,
+/// clang's source-based instrumentation as the `coverage` variant's, so that the shims and the
+/// wrappers of `static inline` functions count in its figures as the C they wrap does.
 fn variant_cc(cache: &Path) -> (String, Vec<String>) {
     let text = fs::read_to_string(cache).unwrap_or_else(|e| panic!("{}: {e}", cache.display()));
     let var = |name: &str| {
@@ -1341,6 +1343,8 @@ fn variant_cc(cache: &Path) -> (String, Vec<String>) {
         "-fprofile-arcs",
         "-ftest-coverage",
         "--coverage",
+        "-fprofile-instr-generate",
+        "-fcoverage-mapping",
     ];
     let flags = var("CMAKE_C_FLAGS:")
         .split_whitespace()
