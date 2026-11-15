@@ -6914,3 +6914,15 @@ binding or C changed, so the packaging gate does not apply. Usage cells are the 
 Proposal: `config-branches-rust-cfg` (`porting-symbols`' Macros section). It routes a macro
 whose branches differ under conditions Rust's `cfg` tests to one item per branch, and it cites
 the watched row `config-branches-of-one-result`.
+
+### Settings change of 2026-11-15: BSan over the workspace only at a ship point
+
+The user changed the `sanitizers` answer during `src/util/thread.c`'s run, after the round's
+first four modules (`cc-compat.h`, `ctype_compat.h`, `integer.h`, `hash/sha1dc/ubc_check.c`)
+had integrated with BSan among their end gates. The round's 19 runs spent about 6.5 of
+their 20.3 agent hours on commands that ran BSan (measured from their transcripts, as the
+time a shell command naming BSan or `end-gates` was running, overlaps merged), most of it
+in the module passes and the two switches, where the `equiv` binary alone took 27 to 31
+minutes. From `thread.c`'s module pass on, a wave's and a module's end and a switch run
+every stage but BSan, which runs whole at the ship point; batches and reviews keep it on
+their own tests and reproducers. The same departure held from 2026-11-13 to 2026-11-14.
