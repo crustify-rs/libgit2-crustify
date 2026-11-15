@@ -60,12 +60,16 @@ Unanswered optional questions use their defaults.
     the toolchain supports.** (`id: sanitizers`)
     - Answer: `asan-ubsan, tsan, bsan`, the variants `crustify/artifacts/build.json`
       records; MSan is not built.
-    - From 2026-11-14 BSan runs as the `testing-gates` skill's Regressions section has it,
-      with no departure: for a batch, on the tests its own work adds or changes, each named
-      and alone; at a wave's and a module's end, over the workspace less the slow list,
-      `crustify/scripts/slow-list.txt`; and whole in each full run. The departure of
-      2026-11-13, BSan over the workspace only before a ship point, ended when that rule
-      landed.
+    - From 2026-11-15, the user's decision, a departure from the `testing-gates` skill's
+      Regressions section: BSan runs over the workspace only at a ship point, in its full
+      run. It is no gate of a wave's end, a module's end or switch, or the periodic full
+      runs between ship points, which run every other stage. A batch still runs it on the
+      tests its own work adds or changes, and a review on its reproducers, each named and
+      alone, under a `timeout`. The `bsan` variant is still built with each generation.
+      The round of 2026-11-15 spent about 6.5 of its 20.3 agent hours on commands running
+      BSan. Before it, from 2026-11-14, BSan ran as the skill has it, at every wave's and
+      module's end less the slow list, `crustify/scripts/slow-list.txt`; and from
+      2026-11-13 to 2026-11-14 under this same departure.
     - Miri needs no build and is always on.
 
 12. **How should the target be configured: which of its build features should be

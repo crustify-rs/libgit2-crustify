@@ -1,0 +1,305 @@
+{
+  "objective": "port",
+  "wave": 221,
+  "batch": 1,
+  "link_unit": "libgit2",
+  "module": "src/util/hash/sha1dc/ubc_check.c",
+  "foundational": false,
+  "base_branch": "refs/heads/crustify/waves/wave-221",
+  "backend": "claude",
+  "billing": "api",
+  "model_proxy": "openrouter",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "57005de",
+    "wavefront": "bf21e16",
+    "ffimap": "50a800e",
+    "ffibox": "568bcb5"
+  },
+  "items": [
+    {
+      "name": "DVMASKSIZE",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_II_45_0_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_II_46_0_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_II_46_2_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_II_47_0_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_II_48_0_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_II_49_0_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_II_49_2_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_II_50_0_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_II_50_2_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_II_51_0_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_II_51_2_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_II_52_0_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_II_53_0_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_II_54_0_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_II_55_0_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_II_56_0_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_I_43_0_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_I_44_0_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_I_45_0_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_I_46_0_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_I_46_2_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_I_47_0_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_I_47_2_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_I_48_0_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_I_48_2_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_I_49_0_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_I_49_2_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_I_50_0_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_I_50_2_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_I_51_0_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_I_51_2_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "DV_I_52_0_bit",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "sha1_dvs",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "global",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    },
+    {
+      "name": "ubc_check",
+      "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+    }
+  ],
+  "session_id": "8b7f9663-19b5-4478-85fe-7bc71f57f192"
+}

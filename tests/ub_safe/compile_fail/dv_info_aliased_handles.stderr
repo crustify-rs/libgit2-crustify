@@ -1,0 +1,9 @@
+error[E0502]: cannot borrow `record` as mutable because it is also borrowed as immutable
+ --> tests/ub_safe/compile_fail/dv_info_aliased_handles.rs:7:21
+  |
+6 |     let shared = record.as_ref();
+  |                  ------ immutable borrow occurs here
+7 |     let exclusive = record.as_mut();
+  |                     ^^^^^^^^^^^^^^^ mutable borrow occurs here
+8 |     let _ = shared.dv_type();
+  |             ------ immutable borrow later used here

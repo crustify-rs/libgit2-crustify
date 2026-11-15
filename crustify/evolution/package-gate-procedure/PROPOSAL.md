@@ -48,6 +48,44 @@ ffibox and the package builds alone (696 files). Its `lib` tests: 829 pass and 5
 table of the workspace, the Git sources' as well as crates.io's, and resolves with no
 lockfile.
 
+`wave-221/batch-0/run-1` (`src/util/hash/sha1dc/ubc_check.c`, which allowlists `dv_info_t`
+and adds `ubc_check.h` to `wrapper.h`), on base `267e98c2f`, met the signal again, and the
+superseded command above no longer verifies. `cargo package --offline --allow-dirty` with the
+two `[patch.crates-io]` overrides stopped in CMake (`PCRE2 support was requested but not
+found`); with `OPENSSL_ROOT_DIR` and `CMAKE_PREFIX_PATH` set, in the build script (`zlib, which
+libgit2 links, is not found`: the `[env]` `PKG_CONFIG_PATH` of `.cargo/config.toml` names
+PCRE2's install alone); with `PKG_CONFIG_PATH` set too, in the crate's `lib` (E0599, `from_ptr`
+not found for `FileRef`), the two copies of ffibox `opt.c`'s switch met, since the manifest's
+ffibox is now `/crustify-rs/ffibox.libgit2-crustify`, not `/crustify-rs/ffibox`, and
+`glibc-bindings` takes it by Git. What verified (700 files, `Finished` in the verify build):
+
+```bash
+I() { echo "/target/$1-bindings/crustify/builds/plain/install"; }
+CRUSTIFY_BUILD_VARIANT= OPENSSL_ROOT_DIR=$(I openssl) \
+CMAKE_PREFIX_PATH="$(I openssl):$(I pcre2):$(I zlib)" \
+PKG_CONFIG_PATH="$(I pcre2)/lib/pkgconfig:$(I zlib)/lib/pkgconfig" \
+cargo package --offline --allow-dirty --exclude-lockfile -p libgit2-crustify \
+  --config 'patch.crates-io.glibc-bindings.path="/target/glibc-crustify"' \
+  --config 'patch.crates-io.ffibox.path="/crustify-rs/ffibox.libgit2-crustify"' \
+  --config 'patch."https://github.com/crustify-rs/ffibox".ffibox.path="/crustify-rs/ffibox.libgit2-crustify"'
+```
+
+So the script reads each patch's path from the workspace's manifest rather than repeating
+one, since the ffibox path moved and the copied command went stale with it.
+
+`wave-221/batch-1/run-1` (the same module's `port`, which allowlists `ubc_check` and
+`sha1_dvs`), on base `aa4ec4d3f`, met the signal again: the command above, copied from this
+proposal by hand with a `CARGO_TARGET_DIR` under `crustify/tmp/`, packaged and verified
+unchanged (700 files, `Finished` in the verify build). A command a batch copies from a
+proposal is the procedure the script would run.
+`wave-219/batch-0/run-1` (`src/util/cc-compat.h`, which allowlists three constants), an
+occurrence, on base `f7f0eaaa0`: step 2 packaged 696 files. In the extracted package, the
+manifest took an empty `[workspace]`, the `[patch.crates-io]` entries of step 2 and both of the
+workspace's Git `[patch]` tables, and no lockfile. Then step 3's `cargo build --offline`, with
+no variant and the side installs on `OPENSSL_ROOT_DIR`, `CMAKE_PREFIX_PATH` and
+`PKG_CONFIG_PATH`, built the package alone: cmake built `libgit2.a` and `libcrustify_git2.a`
+into `OUT_DIR`. The batch worked the procedure out again from this proposal's evidence.
+
 ## Destination
 
 The spec: `testing-gates`' Regressions section, with a script beside it, as `authoring`

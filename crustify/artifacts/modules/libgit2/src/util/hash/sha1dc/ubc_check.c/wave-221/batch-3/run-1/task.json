@@ -1,0 +1,30 @@
+{
+  "paths": [
+    "src/libgit2/src/util/hash/sha1dc/ubc_check.rs",
+    "tests/equiv/src/util/hash/sha1dc/ubc_check.rs",
+    "tests/ub_safe/src/util/hash/sha1dc/ubc_check.rs",
+    "tests/unit_pub/src/util/hash/sha1dc/ubc_check.rs"
+  ],
+  "wave_gates": true,
+  "module_pass": true,
+  "wave": 221,
+  "batch": 3,
+  "link_unit": "libgit2",
+  "module": "src/util/hash/sha1dc/ubc_check.c",
+  "foundational": false,
+  "base_branch": "refs/heads/crustify/waves/wave-221",
+  "backend": "claude",
+  "billing": "api",
+  "model_proxy": "openrouter",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "57005de",
+    "wavefront": "bf21e16",
+    "ffimap": "50a800e",
+    "ffibox": "568bcb5"
+  },
+  "session_id": "b2c83241-fc69-4c94-98d8-bfb96e4bbd00"
+}

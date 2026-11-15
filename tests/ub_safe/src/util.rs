@@ -3,5 +3,6 @@
 mod alloc;
 mod allocators;
 mod errors;
+mod hash;
 mod strlist;
 mod thread;

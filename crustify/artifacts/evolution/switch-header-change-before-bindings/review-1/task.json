@@ -1,0 +1,20 @@
+{
+ "backend": "claude",
+ "billing": "api",
+ "model_proxy": "openrouter",
+ "args": [
+  "--model",
+  "claude-opus-5-5"
+ ],
+ "revisions": {
+  "crustify": "57005de",
+  "wavefront": "bf21e16",
+  "ffibox": "568bcb5",
+  "ffimap": "50a800e"
+ },
+ "component": "crustify",
+ "branch": "libgit2-crustify/evolution/switch-header-change-before-bindings",
+ "commit": "5319438",
+ "proposal": "crustify/evolution/switch-header-change-before-bindings",
+ "session_id": "dda779a2-f287-4528-ae52-d52091b8d77b"
+}

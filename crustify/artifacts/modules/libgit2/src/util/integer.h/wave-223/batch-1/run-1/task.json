@@ -1,0 +1,29 @@
+{
+  "paths": [
+    "src/libgit2/src/util/integer_h.rs",
+    "tests/equiv/src/util/integer_h.rs",
+    "tests/unit_pub/src/util/integer_h.rs"
+  ],
+  "wave_gates": true,
+  "module_pass": true,
+  "wave": 223,
+  "batch": 1,
+  "link_unit": "libgit2",
+  "module": "src/util/integer.h",
+  "foundational": false,
+  "base_branch": "refs/heads/crustify/waves/wave-223",
+  "backend": "claude",
+  "billing": "api",
+  "model_proxy": "openrouter",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "57005de",
+    "wavefront": "bf21e16",
+    "ffimap": "50a800e",
+    "ffibox": "568bcb5"
+  },
+  "session_id": "5c9f11de-57ff-4697-b389-40ae426bc98d"
+}

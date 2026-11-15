@@ -2,6 +2,10 @@
 
 mod alloc;
 mod allocators;
+mod cc_compat_h;
+mod ctype_compat_h;
+mod hash;
+mod integer_h;
 mod strnlen_h;
 mod thread;
 mod utf8;

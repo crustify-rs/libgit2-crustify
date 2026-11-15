@@ -1,0 +1,11 @@
+error[E0597]: `record` does not live long enough
+ --> tests/ub_safe/compile_fail/dv_info_difference_outlives_value.rs:7:9
+  |
+5 |     let dm = {
+  |         -- borrow later stored here
+6 |         let record = DvInfo::new(1, 43, 0, 58, 0, 0, [0; 80]).unwrap();
+  |             ------ binding `record` declared here
+7 |         record.as_ref().message_difference()
+  |         ^^^^^^ borrowed value does not live long enough
+8 |     };
+  |     - `record` dropped here while still borrowed

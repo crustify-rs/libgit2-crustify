@@ -171,6 +171,48 @@
    ]
   },
   {
+   "name": "dv_info_t",
+   "defined_in": "src/util/hash/sha1dc/ubc_check.h",
+   "_comment_user": "wave-221/batch-0 (wrap): plain data, six ints and uint32_t dm[80], no pointer field and no lifecycle routine; C builds records only as the static table sha1_dvs (ubc_check.c), ended by a record whose dvType is 0, and writes none. Its one reader, sha1.c's sha1_process, reads dvType (compared with 0), maskb (shifts (uint32_t)1 by it: UB unless 0 <= maskb < 32), dm (80 words XORed into m2) and testt (indexes ctx->states[80][5], out of bounds unless 0 <= testt < 80; sha1_recompression_step aborts on a step without DOSTORESTATE, 58 and 65 here); dvK, dvB and maski are read by no C (DVMASKSIZE is 1, so the mask word is 0). Bound as DvInfo/DvInfoRef/DvInfoMut, Copy, Send and Sync, with a const validating constructor and getters for dvType, testt, maskb and dm.",
+   "fields": [
+    {
+     "name": "dm",
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "dvB",
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "dvK",
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "dvType",
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "maskb",
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "maski",
+     "refcount": false,
+     "locked_by": null
+    },
+    {
+     "name": "testt",
+     "refcount": false,
+     "locked_by": null
+    }
+   ]
+  },
+  {
    "name": "git_allocator",
    "defined_in": "include/git2/sys/alloc.h",
    "fields": [
@@ -32650,6 +32692,11 @@
    }
   },
   {
+   "name": "sha1_dvs",
+   "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+   "locked_by": null
+  },
+  {
    "name": "sort_gnu_style",
    "defined_in": "src/cli/opt.c",
    "ptr_args": [
@@ -33100,6 +33147,10 @@
      "init": false
     }
    }
+  },
+  {
+   "name": "ubc_check",
+   "defined_in": "src/util/hash/sha1dc/ubc_check.c"
   },
   {
    "name": "utf8_charlen",
