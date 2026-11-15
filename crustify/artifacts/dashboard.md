@@ -6212,6 +6212,110 @@ jobs, test binaries ran six side by side at four threads, and the slow list was 
 The raw bindings and `c/` are unchanged, so no packaging gate runs. Usage cells are the
 assistant's.
 
+### `libgit2/src/util/integer.h` integration: the switch from C
+
+The campaign's fifth switch, and the first of a header module, run by
+`modules/libgit2/src/util/integer.h/integration/run-1` on the module's branch, after the merge
+of the working branch (`12dfd634d`): `b95941fa6`, and the fork's `d9a1d699b`. It followed the
+module pass's rehearsal (`wave-223/batch-1/run-1/switch-rehearsal.md`) and http.c's switch,
+with the scripts unchanged. No file leaves `c/`. In `c/src/util/integer.h`, the six
+`GIT_INLINE` definitions, `git__is_sizet`, `git__is_ssizet`, `git__is_uint16`,
+`git__is_uint32`, `git__is_ulong` and `git__is_int`, are replaced by their prototypes, and
+the six overflow macros stay for the C that expands them. That is `integrate
+src/util/integer.h` on the local `fork/main`, which is not pushed. No CMake file changes.
+The export feature `ffi-export-src-util-integer-h` is deleted, so `integer_h.rs`'s gateway
+compiles from now on, and its `unit_priv` test, `exports_report_their_ranges`, runs in `lib`.
+The feature was named only in `Cargo.toml`, the gateway's `cfg` and the module's doc comment;
+after the switch no file of the crate names it. No export feature is left. The review report
+that introduced it (`wave-223/batch-1`'s `conventions/static-inline-functions-without-exports`)
+names it in its text and has no reproducer manifest naming it. The C calls the exports at 31
+sites in 19 files, as the module pass counted. In every variant's `libcrustify.a`, 23 objects
+now hold an undefined `git__is_*`, where gen5's held no `git__is_*` symbol at all.
+
+The bindings follow from the checkout's `c/` headers. So the C side was committed first, and
+`CRUSTIFY_BINDINGS_UPDATE=1 cargo-variant.sh plain build --features bindgen --lib` against gen5,
+the builds in use, then regenerated them. They differ from the committed ones exactly as the
+rehearsal found: `bindings.rs` loses the six `#[link_name = "git__is_<name>__extern"]` lines,
+and `static_fns.c` its six `git__is_*__extern` wrappers. The six raw bindings stay, with
+their allowlist entries, and reach the exports. Their signatures do not change, and the
+safe API does not change: no `pub` item of `src/` changes. In the section's order, the
+regeneration would have come before the C side and changed nothing. Put back with `c/` at
+`d9a1d699b`, those bindings fail campaign mode's check (`build.rs:1428`). That is the proposal
+`switch-header-change-before-bindings`, made on Crustify's evolution branch as `5319438`,
+which waits for its review.
+
+Five equivalence tests are retired: the range checks', which after the switch would compare
+the Rust with itself. Two were in the gateway's `equiv_priv`, `int64_exports_match_the_c` and
+`size_t_exports_match_the_c_but_past_ssize_max`. Three were in
+`tests/equiv/src/util/integer_h.rs`: `narrowing_checks_match_the_c`,
+`widening_checks_match_the_c_but_for_negative_values` and
+`ssizet_check_matches_the_c_up_to_ssize_max`. Each called C and carried the Miri `calls C`
+marker, so none is carried over. `unit_pub`'s `range_checks_accept_exactly_the_range`,
+`out_of_range_values_c_keeps_are_refused` and `unsigned_values_are_judged_at_their_own_type`,
+and the gateway's `exports_report_their_ranges`, keep what they established. What none keeps
+is the differential itself, C's answer at each probe beside the port's. The file's five macro
+tests stay, since the header keeps the macros' C for the remaining C. They compare through
+`git__calloc`, `git__mallocarray`, `git__reallocarray`, `git_strlist_copy_with_null`,
+`git_config_parse_int64` and `git_diff_from_buffer`, and the last now reaches `git__is_int`'s
+export at `parse_int`. The file's doc comment says so. `tests/util/integer.c` stays: its three
+cases compile empty on this build, and test the macros.
+
+The variants were rebuilt as `crustify/builds.gen6` from `d9a1d699b` with `build-variants.sh`,
+at 9 jobs each, in about 8 minutes. This worktree's
+`crustify/builds` links to gen6, and gen5 was left untouched. Each archive holds 209 objects,
+as gen5's did. Each variant's `rust-staticlib.sh` passed the bindings check. In every variant,
+`libgit2.so` defines the six as local text symbols from the Rust, and `git2`, `libgit2_tests`
+and `util_tests` define them globally. None holds a `*__extern` wrapper. `addr2line` puts
+`git__is_ssizet` at `integer_h.rs:390`. Each variant passed `util_tests -sstr`,
+`util_tests -sinteger` and `git2 --version`. `libgit2.so`'s dynamic symbol table defines the
+same 907 symbols as gen5's, and holds 6836 local Rust functions where gen5's held 6811.
+
+Gates, over gen6 from an `end-gates` snapshot of `b95941fa6` (crustify `57005de`), builds at 48
+jobs, Miri's and BSan's binaries six side by side at eight threads, the slow list skipped by
+BSan. The workspace is formatted, and `clippy --workspace --all-targets` passes with warnings
+denied. Plain, ASan+UBSan and TSan pass the whole workspace: `lib` 908 and 1 ignored, `equiv`
+549, `ub_safe` 798, `ub_unsafe` 144, `unit_pub` 272, `hidden_symbols` 1, doctests 128 and 397.
+No log holds a sanitizer report. The gateway's test passes on each, the first time under
+TSan. Miri passes every binary, the gateway's test among them: `lib` 448, `ub_safe` 213,
+`unit_pub` 186, `equiv` 40, `ub_unsafe` 26, the rest marked. BSan passes every binary: `lib` 904
+and 5 ignored, `equiv` 465 and 8 ignored with the slow list's 76 out, `ub_safe` 767 and 4
+ignored with its 27 out, `unit_pub` 271, `ub_unsafe` 144 and `hidden_symbols` 1, each ignored
+test for a reason it records and no borrow report. `equiv` took 27 minutes, most of it
+`src::util::alloc::resizes`' two step-by-step tests, which ran over 15 minutes each and are not
+on the slow list. They are a candidate for it, for the slow list's keeper.
+The remaining C tests ran over the link with the Rust through `c-tests.sh`. Plain, ASan+UBSan
+and TSan give 3442 passed and 55 skipped of 3497, and coverage gives 3443 and 54. Each is the
+baseline's record, and `util::integer`'s three cases pass among them. Under TSan, the same 10
+suites as the baseline's report the C's lock-order inversions and races, and no case fails.
+No report has a Rust frame. `ctest` passes both targets on plain, ASan+UBSan and coverage.
+Under TSan it fails `offline` on those reports alone, 49 lock-order inversions and glibc's
+`tzset` race, as at the switches before. Every gate passed before the switch (the module
+pass's, over gen5), and every one passes after it.
+
+`git__is_ssizet`'s export refuses a count past `SSIZE_MAX`, which C never refused. Its callers
+on this build are `p_read`, whose refusal sets `EINVAL` and returns -1, and
+`git_futils_readbuffer_fd`, whose refusal is a "read too large" error; `p_mmap`'s guard is under
+`NO_MMAP`, which this build does not define. No C test reaches a refusal. Every `p_read` passes a
+buffer's `sizeof`, a checksum's size or a file's `st_size`, as do `tests/util/sha1.c`,
+`sha256.c` and `tests/libgit2/pack/indexer.c`, which call it directly. Every
+`git_futils_readbuffer_fd` passes a file's size: `git_futils_readbuffer_updated`'s `st_size`,
+the sorted cache's, the attribute file's, a diffed workdir file's and `git_object_id_from_fd`'s. A
+size from `stat` is at most `OFF_MAX`, which on this 64-bit build equals `SSIZE_MAX`. So the
+C tests pass the export only counts it accepts, as C's did, which matches their unchanged
+tally. The refusal itself is checked by the gateway's `unit_priv` test alone, at
+`SSIZE_MAX + 1` and `SIZE_MAX`. This rests on reading the call sites: no run recorded the
+export's arguments.
+
+`c/` changed, so the crate was packaged as `package-gate-procedure` has it, with the
+workspace's Git patch of ffibox, as at the switches before. It has 702 files, the changed
+`integer.h` among them, and builds alone in bundled mode, where the C's calls resolve to the
+Rust exports. Its `lib` tests: 850 pass, the gateway's among them. The other 58 open the
+fixture repositories of `c/tests/resources`, which the package leaves out, as at the switches
+before.
+
+From the switch on, the module's coverage is its Rust's, the gateway's lines included. This run
+did not measure the workspace's coverage. Usage cells are the assistant's.
+
 ### `libgit2/src/util/ctype_compat.h` wave 220 batch 0: the eight `git__is*` and `git__to*` macros
 
 `src/util/ctype_compat.h` is a header with no translation unit. On this build each macro is
