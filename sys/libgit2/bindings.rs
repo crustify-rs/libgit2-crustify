@@ -534,6 +534,9 @@ pub const GIT_FILTER_VERSION: u32 = 1;
 pub const GIT_ODB_BACKEND_VERSION: u32 = 1;
 pub const GIT_REFDB_BACKEND_VERSION: u32 = 1;
 pub const GIT_REPOSITORY_NEW_OPTIONS_VERSION: u32 = 1;
+pub const PRIuZ: &[u8; 3] = b"zu\0";
+pub const PRIxZ: &[u8; 3] = b"zx\0";
+pub const PRIdZ: &[u8; 3] = b"zd\0";
 pub const REFTABLE_HASH_SIZE_SHA1: u32 = 20;
 pub const REFTABLE_HASH_SIZE_SHA256: u32 = 32;
 pub const REFTABLE_HASH_SIZE_MAX: u32 = 32;
@@ -14459,6 +14462,30 @@ const _: () = {
         "Offset of field: git_transport::free",
     ][::std::mem::offset_of!(git_transport, free) - 104usize];
 };
+unsafe extern "C" {
+    /// @return true if p fits into the range of a size_t
+    pub fn git__is_sizet(p: i64) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    /// @return true if p fits into the range of an ssize_t
+    pub fn git__is_ssizet(p: usize) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    /// @return true if p fits into the range of a uint16_t
+    pub fn git__is_uint16(p: usize) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    /// @return true if p fits into the range of a uint32_t
+    pub fn git__is_uint32(p: usize) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    /// @return true if p fits into the range of an unsigned long
+    pub fn git__is_ulong(p: i64) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    /// @return true if p fits into the range of an int
+    pub fn git__is_int(p: i64) -> ::std::os::raw::c_int;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct git_str {

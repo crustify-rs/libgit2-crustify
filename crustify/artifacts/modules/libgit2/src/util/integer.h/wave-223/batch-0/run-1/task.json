@@ -1,0 +1,121 @@
+{
+  "objective": "port",
+  "wave": 223,
+  "batch": 0,
+  "link_unit": "libgit2",
+  "module": "src/util/integer.h",
+  "foundational": false,
+  "base_branch": "refs/heads/crustify/waves/wave-223",
+  "backend": "claude",
+  "billing": "api",
+  "model_proxy": "openrouter",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "57005de",
+    "wavefront": "bf21e16",
+    "ffimap": "50a800e",
+    "ffibox": "568bcb5"
+  },
+  "items": [
+    {
+      "name": "git__add_int64_overflow",
+      "defined_in": "src/util/integer.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/integer_h.rs"
+    },
+    {
+      "name": "git__add_int_overflow",
+      "defined_in": "src/util/integer.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/integer_h.rs"
+    },
+    {
+      "name": "git__add_sizet_overflow",
+      "defined_in": "src/util/integer.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/integer_h.rs"
+    },
+    {
+      "name": "git__is_int",
+      "defined_in": "src/util/integer.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/integer_h.rs"
+    },
+    {
+      "name": "git__is_sizet",
+      "defined_in": "src/util/integer.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/integer_h.rs"
+    },
+    {
+      "name": "git__is_ssizet",
+      "defined_in": "src/util/integer.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/integer_h.rs"
+    },
+    {
+      "name": "git__is_uint16",
+      "defined_in": "src/util/integer.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/integer_h.rs"
+    },
+    {
+      "name": "git__is_uint32",
+      "defined_in": "src/util/integer.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/integer_h.rs"
+    },
+    {
+      "name": "git__is_ulong",
+      "defined_in": "src/util/integer.h",
+      "kind": "function",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/integer_h.rs"
+    },
+    {
+      "name": "git__multiply_int64_overflow",
+      "defined_in": "src/util/integer.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/integer_h.rs"
+    },
+    {
+      "name": "git__multiply_sizet_overflow",
+      "defined_in": "src/util/integer.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/integer_h.rs"
+    },
+    {
+      "name": "git__sub_int_overflow",
+      "defined_in": "src/util/integer.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/integer_h.rs"
+    }
+  ],
+  "session_id": "b20a5baf-bd36-4e08-9555-d2d6bc2fb017"
+}

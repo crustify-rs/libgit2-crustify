@@ -108,3 +108,5 @@ bsan equiv src::libgit2::repository::routines::cleanup_state_matches_c
 bsan equiv src::libgit2::settings::from_raw_names_exactly_the_c_keys
 bsan equiv src::libgit2::annotated_commit::constructors_build_and_fail_as_c
 bsan equiv src::libgit2::repository::heads_and_parts::from_env_opens_match_c
+bsan equiv src::util::alloc::resizes::element_resizes_match_reallocarray_step_by_step
+bsan equiv src::util::alloc::resizes::byte_resizes_match_realloc_step_by_step

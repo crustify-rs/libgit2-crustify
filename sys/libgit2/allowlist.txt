@@ -846,3 +846,22 @@ type dv_info_t
 # their exports' checks against the C declarations and the equivalence tests
 function ubc_check
 var sha1_dvs
+
+
+# wave-223/batch-0: src/util/integer.h's range checks, `static inline` and wrapped in
+# static_fns.c, which the module's equivalence tests compare with their ports, and against
+# which its gateway checks its exports (wave-223/batch-1); from the module's switch, which
+# replaces their definitions with prototypes, they reach the exports, and each entry goes
+# with its export
+function git__is_int
+function git__is_sizet
+function git__is_ssizet
+function git__is_uint16
+function git__is_uint32
+function git__is_ulong
+
+# wave-219/batch-0: src/util/cc-compat.h's size_t printf formats, which its port's
+# equivalence tests compare with the header's expansion on this build
+var PRIdZ
+var PRIuZ
+var PRIxZ

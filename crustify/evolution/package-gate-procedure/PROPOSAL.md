@@ -78,6 +78,13 @@ one, since the ffibox path moved and the copied command went stale with it.
 proposal by hand with a `CARGO_TARGET_DIR` under `crustify/tmp/`, packaged and verified
 unchanged (700 files, `Finished` in the verify build). A command a batch copies from a
 proposal is the procedure the script would run.
+`wave-219/batch-0/run-1` (`src/util/cc-compat.h`, which allowlists three constants), an
+occurrence, on base `f7f0eaaa0`: step 2 packaged 696 files. In the extracted package, the
+manifest took an empty `[workspace]`, the `[patch.crates-io]` entries of step 2 and both of the
+workspace's Git `[patch]` tables, and no lockfile. Then step 3's `cargo build --offline`, with
+no variant and the side installs on `OPENSSL_ROOT_DIR`, `CMAKE_PREFIX_PATH` and
+`PKG_CONFIG_PATH`, built the package alone: cmake built `libgit2.a` and `libcrustify_git2.a`
+into `OUT_DIR`. The batch worked the procedure out again from this proposal's evidence.
 
 ## Destination
 

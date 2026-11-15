@@ -1,0 +1,29 @@
+{
+  "paths": [
+    "src/libgit2/src/util/ctype_compat_h.rs",
+    "tests/equiv/src/util/ctype_compat_h.rs",
+    "tests/unit_pub/src/util/ctype_compat_h.rs"
+  ],
+  "wave_gates": true,
+  "module_pass": true,
+  "wave": 220,
+  "batch": 1,
+  "link_unit": "libgit2",
+  "module": "src/util/ctype_compat.h",
+  "foundational": false,
+  "base_branch": "refs/heads/crustify/waves/wave-220",
+  "backend": "claude",
+  "billing": "api",
+  "model_proxy": "openrouter",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "57005de",
+    "wavefront": "bf21e16",
+    "ffimap": "50a800e",
+    "ffibox": "568bcb5"
+  },
+  "session_id": "02dba752-274f-4435-9724-40d4b7d3aec3"
+}
