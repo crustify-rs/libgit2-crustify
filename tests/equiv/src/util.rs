@@ -2,6 +2,7 @@
 
 mod alloc;
 mod allocators;
+mod cc_compat_h;
 mod ctype_compat_h;
 mod errors;
 mod strlist;

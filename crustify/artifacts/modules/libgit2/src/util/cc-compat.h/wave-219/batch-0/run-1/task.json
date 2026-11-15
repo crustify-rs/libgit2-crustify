@@ -1,0 +1,65 @@
+{
+  "objective": "port",
+  "wave": 219,
+  "batch": 0,
+  "link_unit": "libgit2",
+  "module": "src/util/cc-compat.h",
+  "foundational": false,
+  "base_branch": "refs/heads/crustify/waves/wave-219",
+  "backend": "claude",
+  "billing": "api",
+  "model_proxy": "openrouter",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "57005de",
+    "wavefront": "bf21e16",
+    "ffimap": "50a800e",
+    "ffibox": "568bcb5"
+  },
+  "items": [
+    {
+      "name": "GIT_UNUSED",
+      "defined_in": "src/util/cc-compat.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/cc_compat_h.rs"
+    },
+    {
+      "name": "PRIdZ",
+      "defined_in": "src/util/cc-compat.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/cc_compat_h.rs"
+    },
+    {
+      "name": "PRIuZ",
+      "defined_in": "src/util/cc-compat.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/cc_compat_h.rs"
+    },
+    {
+      "name": "PRIxZ",
+      "defined_in": "src/util/cc-compat.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/cc_compat_h.rs"
+    },
+    {
+      "name": "va_copy",
+      "defined_in": "src/util/cc-compat.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/cc_compat_h.rs"
+    }
+  ],
+  "session_id": "0c0be6f6-76a5-4707-80a7-b19d96e3d780"
+}

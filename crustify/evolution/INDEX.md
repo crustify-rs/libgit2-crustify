@@ -21,10 +21,11 @@ the assistant alone, as each batch's proposals land.
 | `carried-over-test-cases` | The test cases a `port/unexport` carries over, in the schedule | `landed` | — | — |
 | `compile-fail-doctest-codes-unchecked-on-stable` | A compile-fail doctest's error code is checked only on nightly | `open` | `wave-186/batch-2`, `fixes/gates-green/batch-0` | — |
 | `config-branches-of-one-result` | A macro whose configured branches compute one result is ported once | `landed` | `wave-225/batch-0`, `wave-225/batch-1` | — |
+| `config-branches-rust-cfg` | A macro whose configured branches differ, under conditions Rust's `cfg` sees, has no route | `open` | `wave-219/batch-1` | `config-branches-of-one-result` |
 | `contracts-unrefusable-c-arguments` | Which of C's arguments a gateway refuses, and which it trusts | `landed` | `wave-177/batch-1` | — |
 | `coverage-c-scope-matches-no-path` | The coverage report's C scope names the paths the archive records | `landed` | `wave-169/batch-1`, `wave-169/batch-2` | — |
 | `coverage-c-scope-unfiltered` | The coverage report's C figures ignore their scope and move with the test binaries | `landed` | `wave-181/batch-0` | — |
-| `coverage-report-relative-rows` | The coverage report checks its Rust scope against paths llvm-cov prints relative | `open` | `wave-225/batch-0` | — |
+| `coverage-report-relative-rows` | The coverage report checks its Rust scope against paths llvm-cov prints relative | `open` | `wave-225/batch-0`, `wave-219/batch-0` | — |
 | `coverage-report-unit-suite` | The coverage report has no unit suite, which each batch merges by hand | `open` | `wave-194/batch-0`, `wave-194/batch-1`, `wave-194/batch-2` | — |
 | `dashboard-lacks-module-passes` | Give the dashboard the template's `Module passes` table | `landed` | `wave-169/batch-5`, `wave-176/batch-3`, `wave-182/batch-1` | — |
 | `dashboard-module-passes` | The dashboard has no `Module passes` tables for a module pass to fill | `landed` | `wave-169/batch-3`, `wave-169/batch-4`, `wave-176/batch-2`, `wave-182/batch-1` | — |
@@ -36,6 +37,7 @@ the assistant alone, as each batch's proposals land.
 | `end-gates-skip-names` | `end-gates` cannot skip a test whose name is a prefix of another's, and checks a variant stage's skip against one binary | `landed` | `gates-slow-list`'s review-1 | — |
 | `enum-integer-form-crate-private` | A closed enum's integer-form conversions are crate-private | `landed` | `wave-186/batch-0` | — |
 | `equiv-c-side-meets-the-c-preconditions` | The C side of an equivalence test meets the C's preconditions | `landed` | `wave-169/batch-5` | — |
+| `equiv-macro-without-effect` | A macro whose expansion computes nothing has no equivalence test to run | `open` | `wave-219/batch-0`, `wave-219/batch-1` | `equiv-unreachable-macro-sites` |
 | `equiv-tests-without-c` | An equivalence test that calls no C is carried over at the switch | `landed` | `module-switch-procedure`'s switches | — |
 | `equiv-unreachable-macro-sites` | A macro whose expansions no binding reaches is checked against its body | `landed` | `wave-200/batch-0`, `wave-200/batch-1`, `wave-225/batch-0`, `wave-225/batch-1` | — |
 | `evolution-protocol-research` | The evolution protocol against existing practice | `deferred` | — | — |
@@ -77,7 +79,7 @@ the assistant alone, as each batch's proposals land.
 | `module-end-gate-runner` | A script for the wave's and the module's end gates | `landed` | `wave-176/batch-3`, `wave-177/batch-1` | — |
 | `module-switch-procedure` | A module's switch: variant generations, the C's Rust library, and the C test gate | `superseded` | `wave-186/batch-7`, `wave-194/batch-7` | — |
 | `obligation-spans-what-the-holder-keeps` | An `unsafe` setter's obligation lasts as long as its object holds what it stored | `landed` | `wave-194/batch-5`, `wave-194/batch-6` | — |
-| `package-gate-procedure` | The packaging gate's procedure, for a crate whose dependencies are unpublished | `open` | `wave-229/batch-0` | — |
+| `package-gate-procedure` | The packaging gate's procedure, for a crate whose dependencies are unpublished | `open` | `wave-229/batch-0`, `wave-219/batch-0` | — |
 | `packaging-gate-procedure` | The packaging gate's command is worked out by hand | `superseded` | `wave-186/batch-0` | — |
 | `port-coverage-figures` | Coverage figures that mean something in a port | `open` | `wave-225/batch-0` | — |
 | `port-onto-an-existing-accessor` | A function that is one field's read or write is ported onto that field's accessor | `landed` | `wave-194/batch-0`, `wave-194/batch-3`, `wave-194/batch-4` | — |
