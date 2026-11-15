@@ -1,0 +1,29 @@
+error: Undefined Behavior: trying to access an allocation that has been freed.
+   --> /target/libgit2-crustify/crustify/builds.gen8/c/src/util/date.c:347:10
+    |
+347 | switch (*end) {
+    |         ^
+
+stack backtrace:
+0: match_digit
+      at /target/libgit2-crustify/crustify/builds.gen8/c/src/util/date.c:347:10
+1: user_from_env
+      at /target/libgit2-crustify/crustify/builds.gen8/c/src/libgit2/signature.c:264:16
+2: git_signature_default_from_env
+      at /target/libgit2-crustify/crustify/builds.gen8/c/src/libgit2/signature.c:299:18
+3: test_commit_signature__from_env
+      at /target/libgit2-crustify/crustify/builds.gen8/c/tests/libgit2/commit/signature.c:224:14
+4: clar_run_test
+      at /target/libgit2-crustify/crustify/builds.gen8/c/deps/clar/clar.c:383:4
+5: clar_run_suite
+      at /target/libgit2-crustify/crustify/builds.gen8/c/deps/clar/clar.c:507:7
+6: clar_test_run
+      at /target/libgit2-crustify/crustify/builds.gen8/c/deps/clar/clar.c:721:66
+7: main
+      at /target/libgit2-crustify/crustify/builds.gen8/c/deps/clar/main.c:33:8
+8: __libc_start_call_main
+      at csu/../sysdeps/nptl/libc_start_call_main.h:74:3
+9: call_init
+      at csu/../csu/libc-start.c:128:20
+10: _start
+      at <null>

@@ -1,0 +1,21 @@
+r1 gen7 clone wall=40.916 user=57.883 sys=20.521 cpu=78.404 maxrss=487448kB status=0
+r1 gen7 blame wall=4.543 user=4.435 sys=0.106 cpu=4.541 maxrss=69328kB status=0
+r1 gen8 clone wall=41.552 user=60.626 sys=20.520 cpu=81.146 maxrss=482832kB status=0
+r1 gen8 blame wall=4.767 user=4.637 sys=0.129 cpu=4.766 maxrss=68268kB status=0
+r2 gen7 clone wall=43.797 user=58.528 sys=22.426 cpu=80.954 maxrss=477768kB status=0
+r2 gen7 blame wall=4.710 user=4.543 sys=0.164 cpu=4.707 maxrss=64776kB status=0
+r2 gen8 clone wall=42.675 user=59.989 sys=21.654 cpu=81.643 maxrss=476452kB status=0
+r2 gen8 blame wall=4.729 user=4.618 sys=0.110 cpu=4.728 maxrss=68164kB status=0
+r3 gen7 clone wall=39.960 user=57.950 sys=20.086 cpu=78.036 maxrss=479336kB status=0
+r3 gen7 blame wall=4.604 user=4.474 sys=0.129 cpu=4.603 maxrss=69288kB status=0
+r3 gen8 clone wall=40.905 user=60.376 sys=19.831 cpu=80.207 maxrss=460648kB status=0
+r3 gen8 blame wall=4.771 user=4.660 sys=0.110 cpu=4.770 maxrss=69360kB status=0
+r4 gen7 clone wall=41.112 user=58.262 sys=20.104 cpu=78.366 maxrss=485204kB status=0
+r4 gen7 blame wall=4.598 user=4.477 sys=0.118 cpu=4.595 maxrss=69364kB status=0
+r4 gen8 clone wall=42.238 user=60.015 sys=21.220 cpu=81.236 maxrss=468316kB status=0
+r4 gen8 blame wall=4.743 user=4.628 sys=0.114 cpu=4.742 maxrss=68108kB status=0
+r5 gen7 clone wall=41.787 user=58.812 sys=20.492 cpu=79.304 maxrss=477000kB status=0
+r5 gen7 blame wall=4.813 user=4.683 sys=0.127 cpu=4.810 maxrss=69268kB status=0
+r5 gen8 clone wall=46.861 user=68.155 sys=24.278 cpu=92.432 maxrss=476372kB status=0
+r5 gen8 blame wall=5.252 user=5.112 sys=0.139 cpu=5.251 maxrss=68224kB status=0
+ 19:43:08 up 33 days,  4:21,  0 user,  load average: 168.43, 163.08, 153.42

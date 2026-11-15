@@ -1,0 +1,33 @@
+error: Undefined Behavior: trying to access an allocation that has been freed.
+   --> /target/libgit2-crustify/crustify/builds.gen8/c/src/libgit2/oid.c:242:2
+    |
+242 | memcpy(out, src, sizeof(git_oid));
+    | ^
+
+stack backtrace:
+0: git_oid_cpy
+      at /target/libgit2-crustify/crustify/builds.gen8/c/src/libgit2/oid.c:242:2
+1: validate_tree_and_parents
+      at /target/libgit2-crustify/crustify/builds.gen8/c/src/libgit2/commit.c:171:3
+2: git_commit__create_internal
+      at /target/libgit2-crustify/crustify/builds.gen8/c/src/libgit2/commit.c:225:53
+3: git_commit_create_v
+      at /target/libgit2-crustify/crustify/builds.gen8/c/src/libgit2/commit.c:321:10
+4: cl_repo_commit_from_index
+      at /target/libgit2-crustify/crustify/builds.gen8/c/deps/clar/clar_libgit2.c:476:14
+5: test_diff_submodules__invalid_cache
+      at /target/libgit2-crustify/crustify/builds.gen8/c/tests/libgit2/diff/submodules.c:329:2
+6: clar_run_test
+      at /target/libgit2-crustify/crustify/builds.gen8/c/deps/clar/clar.c:383:4
+7: clar_run_suite
+      at /target/libgit2-crustify/crustify/builds.gen8/c/deps/clar/clar.c:507:7
+8: clar_test_run
+      at /target/libgit2-crustify/crustify/builds.gen8/c/deps/clar/clar.c:721:66
+9: main
+      at /target/libgit2-crustify/crustify/builds.gen8/c/deps/clar/main.c:33:8
+10: __libc_start_call_main
+      at csu/../sysdeps/nptl/libc_start_call_main.h:74:3
+11: call_init
+      at csu/../csu/libc-start.c:128:20
+
+note: stack trace was truncated after 12 frames; set stacktrace_max_len (e.g. BSAN_OPTIONS=stacktrace_max_len=32) to capture more.

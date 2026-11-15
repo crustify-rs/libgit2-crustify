@@ -36,6 +36,21 @@ C caller, and no gate sees it, since the gates measure only correctness.
   both, too short to show the difference.
 - How it fits: if `ubc_check` costs 3.3 times as much and the whole hash 1.3 times as much,
   then `ubc_check` took about 13% of the C hash.
+- `modules/libgit2/src/util/thread.c/integration/run-1`, the switch of `src/util/thread.c`
+  (commit `d63c80a1f`, the fork's `cc1e40f3e`), measured on `plain`, `crustify/builds.gen7`
+  beside `crustify/builds.gen8`, both linking the dev-profile library. From this switch on,
+  every reference count of the remaining C (`GIT_REFCOUNT_INC` and `GIT_REFCOUNT_DEC`) calls the
+  module's exports where C inlined one `lock`-prefixed instruction. An increment-and-decrement
+  pair of one `git_atomic32` (`wave-226/batch-6/run-1/bench/pair.c`, six alternating rounds of
+  five runs of 5 × 10⁷ pairs) cost a median of 15.47 ns on gen7 and 102.29 ns on gen8, 6.6
+  times as much. Batch 6 measured the same crate's library on the release profile at 21 to
+  27 ns. Whole-library workloads, run through the variant's `git2` CLI, five interleaved
+  rounds: a `file://` clone of the fork's `fork/main` (16458 commits, 134989 objects) took a
+  median of 41.11 s wall and 78.40 s CPU on gen7, and 42.24 s and 81.24 s on gen8, 1.027 and
+  1.036 times. `git2 blame src/util/thread.h` in the clone took 4.60 s and 4.77 s, 1.035
+  times. The load average was 136 to 168 on 144 cores. A second switch on a hot path met the
+  signal. Its cost to whole workloads, about 3 to 4%, is smaller than `ubc_check`'s to hashing.
+  It falls on every operation that takes a reference.
 
 ## Destination
 

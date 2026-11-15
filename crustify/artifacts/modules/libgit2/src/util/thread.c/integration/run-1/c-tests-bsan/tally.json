@@ -1,0 +1,183 @@
+{
+ "passed": 3339,
+ "failed": 0,
+ "skipped": 55,
+ "total": 3394,
+ "nonzero_suites": [
+  {
+   "binary": "libgit2_tests",
+   "suite": "blame::simple",
+   "exit": 124,
+   "failed_cases": [],
+   "signals": []
+  },
+  {
+   "binary": "libgit2_tests",
+   "suite": "clone::nonetwork",
+   "exit": 124,
+   "failed_cases": [],
+   "signals": []
+  },
+  {
+   "binary": "libgit2_tests",
+   "suite": "commit::signature",
+   "exit": 1,
+   "failed_cases": [],
+   "signals": [
+    "error: Undefined Behavior"
+   ]
+  },
+  {
+   "binary": "libgit2_tests",
+   "suite": "diff::submodules",
+   "exit": 1,
+   "failed_cases": [],
+   "signals": [
+    "error: Undefined Behavior"
+   ]
+  },
+  {
+   "binary": "libgit2_tests",
+   "suite": "fetchhead::nonetwork",
+   "exit": 124,
+   "failed_cases": [],
+   "signals": []
+  },
+  {
+   "binary": "libgit2_tests",
+   "suite": "graph::reachable::from::any",
+   "exit": 124,
+   "failed_cases": [],
+   "signals": []
+  },
+  {
+   "binary": "libgit2_tests",
+   "suite": "index::crlf",
+   "exit": 124,
+   "failed_cases": [],
+   "signals": []
+  },
+  {
+   "binary": "libgit2_tests",
+   "suite": "merge::trees::renames",
+   "exit": 124,
+   "failed_cases": [],
+   "signals": []
+  },
+  {
+   "binary": "libgit2_tests",
+   "suite": "merge::workdir::dirty",
+   "exit": 124,
+   "failed_cases": [],
+   "signals": []
+  },
+  {
+   "binary": "libgit2_tests",
+   "suite": "network::fetchlocal",
+   "exit": 124,
+   "failed_cases": [],
+   "signals": []
+  },
+  {
+   "binary": "libgit2_tests",
+   "suite": "network::remote::local",
+   "exit": 124,
+   "failed_cases": [],
+   "signals": []
+  },
+  {
+   "binary": "libgit2_tests",
+   "suite": "object::cache (cache all blobs)",
+   "exit": 1,
+   "failed_cases": [],
+   "signals": [
+    "error: Undefined Behavior"
+   ]
+  },
+  {
+   "binary": "libgit2_tests",
+   "suite": "object::cache (cache no blobs)",
+   "exit": 1,
+   "failed_cases": [],
+   "signals": [
+    "error: Undefined Behavior"
+   ]
+  },
+  {
+   "binary": "libgit2_tests",
+   "suite": "object::cache (cache no trees)",
+   "exit": 1,
+   "failed_cases": [],
+   "signals": [
+    "error: Undefined Behavior"
+   ]
+  },
+  {
+   "binary": "libgit2_tests",
+   "suite": "object::cache (cache tiny blobs)",
+   "exit": 1,
+   "failed_cases": [],
+   "signals": [
+    "error: Undefined Behavior"
+   ]
+  },
+  {
+   "binary": "libgit2_tests",
+   "suite": "pack::threadsafety",
+   "exit": 124,
+   "failed_cases": [],
+   "signals": []
+  },
+  {
+   "binary": "libgit2_tests",
+   "suite": "perf::merge",
+   "exit": 124,
+   "failed_cases": [],
+   "signals": []
+  },
+  {
+   "binary": "libgit2_tests",
+   "suite": "rebase::merge",
+   "exit": 124,
+   "failed_cases": [],
+   "signals": []
+  },
+  {
+   "binary": "libgit2_tests",
+   "suite": "refs::revparse",
+   "exit": 1,
+   "failed_cases": [],
+   "signals": [
+    "error: Undefined Behavior"
+   ]
+  },
+  {
+   "binary": "libgit2_tests",
+   "suite": "stash::apply",
+   "exit": 124,
+   "failed_cases": [],
+   "signals": []
+  },
+  {
+   "binary": "libgit2_tests",
+   "suite": "stash::save",
+   "exit": 124,
+   "failed_cases": [],
+   "signals": []
+  },
+  {
+   "binary": "libgit2_tests",
+   "suite": "stress::diff",
+   "exit": 124,
+   "failed_cases": [],
+   "signals": []
+  },
+  {
+   "binary": "util_tests",
+   "suite": "zstream",
+   "exit": 124,
+   "failed_cases": [],
+   "signals": []
+  }
+ ]
+}

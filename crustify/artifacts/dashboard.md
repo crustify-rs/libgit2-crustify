@@ -6785,6 +6785,165 @@ suites move by `-0.01` to `+0.01` pp, run-to-run variation, and the totals stay 
 `code.loc.total`, one line fewer. `ffimap api diff` against the tip finds the module's 50 items
 and the 25 unattributed modules `kept`. Usage cells are the assistant's.
 
+### `libgit2/src/util/thread.c` integration: the switch from C
+
+The campaign's seventh switch, and its widest. It was run by
+`modules/libgit2/src/util/thread.c/integration/run-1` on the module's branch, after the merge
+of the working branch (`bf9833a37`): `d63c80a1f`, and the fork's `cc1e40f3e`. It followed
+batch 6's rehearsal on `plain` (`wave-226/batch-6/run-1/switch-rehearsal.md`) and the module
+pass's under ASan+UBSan and TSan (`wave-226/batch-7/run-1`), with the scripts unchanged, in the
+section's order: C side, Rust side, builds, gates. The C side is `integrate src/util/thread.c`
+on the local `fork/main`, which is not pushed. It removes `src/util/thread.c` from `c/`. In
+`src/util/thread.h` and `src/util/unix/pthread.h` it replaces the twelve `GIT_INLINE`
+definitions of the threaded build with batch 6's prototypes, each where its definition was,
+its comment kept: the eleven atomics (`git_atomic32_set`, `_inc`, `_add`, `_dec`, `_get`,
+`git_atomic__compare_and_swap`, `__swap`, `__load`, `git_atomic64_add`, `_set`, `_get`) and
+`git_threads_global_init`. That is 14 insertions and 280 deletions, `thread.c`'s 140 lines
+among them. The branch for builds without threads, the macros, the types and the lock and
+thread aliases stay. No CMake file changes. No tied C test leaves: each only calls the
+module, through the macros, the exports or the `git_tlsdata_*` functions, or reads
+`git_atomic32.val`, whose layout the header keeps. From the switch on, every remaining C file
+reaches libgit2's reference counts, error state and runtime initialisation through the
+module's exports. In gen8's `plain` archive, 37 of the 207 objects hold an undefined
+reference to one of the 16. Gen7's archive held none to the twelve, since its C inlined them.
+
+The export feature `ffi-export-src-util-thread-c` is deleted: its `Cargo.toml` entry, the
+gateway's `cfg`, and the four `cfg_attr(not(any(test, feature = …)), expect(dead_code))` on
+`CDestructor::new`, `CWord::new`, `CWord::as_ptr` and `mod c_keys`. The module docs that spoke
+of the switch to come now say it has happened. No file of the crate names the feature now, and
+no export feature is left. `crustify/scripts/rust-staticlib.sh` held no feature flag in the
+merged tree (batch 6's was in its scratch copy), so it is unchanged. The gateway compiles from
+now on. Its nine `unit_priv` tests had run under no gate before, since they compiled only with
+the feature. They now pass on every stage: `plain`, ASan+UBSan and TSan. Under Miri, eight
+pass and `the_atomic_exports_abort_on_a_null_object` is ignored because it forks. Under BSan,
+each of the nine was run alone and passed with no report.
+
+Fourteen equivalence tests are retired, as the module pass's `equiv-retirement.md` maps them.
+They are the ten of `tests/equiv/src/util/thread.rs`, with `thread/atomics.rs` (six) and
+`thread/tlsdata.rs` (four) and `mod thread;` in `tests/equiv/src/util.rs`, and the gateway's
+`equiv_priv` (four). Each called C, which after the switch is the exports, so none is carried
+over. The `unit_pub`, `ub_safe` and `ub_unsafe` tests and the `unit_priv` tests of `ffi_import`
+and the gateway keep what they established, 63 of the pass's 64 seeded faults; the 64th is an
+equivalent mutant. What none keeps is C's builtins and the port sharing one object, which
+ended with the builtins. The bindings were regenerated from `c/` at `cc1e40f3e` against gen7,
+the builds in use, exactly as the rehearsal found. `bindings.rs` loses the twelve
+`#[link_name = "<name>__extern"]` lines, and `static_fns.c` its twelve `<name>__extern`
+wrappers. The raw bindings reach the exports. The twelve allowlist entries and the four `git_tlsdata_*` stay,
+and only their comments change. No `pub` item of `src/` changes.
+
+The variants were rebuilt as `crustify/builds.gen8` from `cc1e40f3e` with `build-variants.sh`,
+at 9 jobs each, in about 5 minutes. This worktree's `crustify/builds` links to gen8, and gen7
+was left untouched. Each archive holds 207 objects where gen7's held 208, with `thread.c.o`
+gone, and each variant's `rust-staticlib.sh` passed the bindings check. In all five variants,
+`nm` shows the twelve and the four `git_tlsdata_*` defined in `git2`, `libgit2_tests` and
+`util_tests` (`T`) and in `libgit2.so` as locals (`t`). No `*__extern` symbol is left.
+`addr2line` puts `git_atomic32_inc`, `git_threads_global_init` and `git_tlsdata_get` at
+`thread.rs:2583`, `:2701` and `:2756`, the gateway's. `libgit2.so`'s dynamic symbol table
+defines the same 907 symbols as gen7's.
+
+Gates, over gen8 from an `end-gates` snapshot of `d63c80a1f` (crustify `6efafd5`), builds at 32
+jobs and tests at 32 threads, so that the C tests could run beside them at 16, and Miri's
+binaries four side by side at eight threads. Under the settings' departure of 2026-11-15, the
+BSan stage did not run over the workspace. The slow list holds BSan's tests alone, so it
+skipped nothing. The workspace is formatted, and `clippy --workspace --all-targets` passes with
+warnings denied. With no export feature left, there is no second lint. Plain, ASan+UBSan and
+TSan pass the whole workspace: `lib` 929 and 1 ignored, `equiv` 549, `ub_safe` 822, `ub_unsafe`
+148, `unit_pub` 361, `hidden_symbols` 1, doctests 142 and 400. No log holds a sanitizer report.
+Miri passes every binary: `lib` 466, `ub_safe` 237, `unit_pub` 273, `equiv` 40, `ub_unsafe` 30,
+the rest marked. Over a minute, by libtest's warning: `ub_safe`'s `compile_fail` on plain,
+ASan+UBSan and TSan, as at the switches before.
+
+The remaining C tests ran over the link with the Rust through `c-tests.sh`, on every variant,
+from gen8's `c/`, a git worktree of the fork, so `cl_fixture("../..")` opens a repository
+(`crustify/LESSONS.md`'s `switch-rehearsal-c-is-a-git-checkout`). Plain, ASan+UBSan and TSan
+give 3442 passed and 55 skipped of 3497, and coverage gives 3443 and 54. Each is the
+baseline's record. BSan's is not, as below. The threading suites pass on every variant: `threads::atomic` 13,
+`threads::basic` 4, `threads::tlsdata` 2, `threads::diff` 2, `threads::refdb` 1,
+`threads::iterator` 1, `pack::sharing` 1, `pack::threadsafety::open_repo_in_multiple_threads`,
+which ran rather than skipped, `util_tests`' `init` 3 (libgit2 has no `core::init` suite), and
+`object::cache`'s 3 in each of its four configurations. Under ASan+UBSan,
+LeakSanitizer finds nothing. Under TSan, the same 10 suites as the baseline's exit non-zero
+on the C's reports: 49 lock-order inversions, glibc's `tzset` race and `filter.c:569`'s lazy
+initialisation. No case fails, and no report has a Rust frame. `ctest` passes both targets on
+plain, ASan+UBSan and coverage. Under TSan it fails `offline` on those reports alone, as at the
+switches before.
+
+**BSan's C tests differ from the baseline, and the switch is held at this gate.** Over
+`builds.gen8/bsan` they give 3339 passed, 0 failed and 55 skipped of 3394, against the
+baseline's 3431, 0 and 55 of 3486. 23 suites exit non-zero, where the baseline has 6. The
+baseline's 6 are there as before: the four `object::cache` on the test's own report, and
+`pack::threadsafety` and `stress::diff` on the timeout. 14 suites newly reach the 30-minute
+timeout: `blame::simple`, `clone::nonetwork`, `fetchhead::nonetwork`,
+`graph::reachable::from::any`, `index::crlf`, `merge::trees::renames`,
+`merge::workdir::dirty`, `network::fetchlocal`, `network::remote::local`, `perf::merge`,
+`rebase::merge`, `stash::apply`, `stash::save` and `util_tests`' `zstream`. Three newly abort
+on a BSan report: `commit::signature`, `diff::submodules` and `refs::revparse`. No case fails.
+`c-tests.sh` itself was stopped by the run's two-hour limit on a background command after
+every suite had ended, so its tally was run by hand (`c-tests-tally.py`, the same comparison).
+BSan's `ctest` was stopped unfinished with it.
+
+Every difference is the switch's: over `builds.gen7/bsan`, `index::crlf` passes its 10 cases
+in 4 s, and the three reporting suites pass in about 3 s each with no report. Gen8's
+`index::crlf`, run alone, finished none of its cases in 51 minutes, at full CPU. Sampled under
+gdb, its time goes to BSan's bookkeeping (`__bsan_retag` → `LocationTree::perform_access`)
+under `tls::Table::position`, `c_keys::get` and `git_tlsdata_get`, which `errors.c`'s
+`threadstate_get` calls from `git_error_clear` on nearly every libgit2 call. Before the
+switch that lookup was `pthread_getspecific`, which BSan does not track. A thread's table is
+one allocation that lives as long as the thread, and BSan's cost per access grows with an
+allocation's borrow history (`bsan-borrow-history-grows`, upstream). A scratch reproducer
+through the public API shows it: one `TlsKey` read 2000 times per chunk on one thread under
+`cargo bsan run` costs 4.3 ms per lookup in the first chunk and 77.7 ms in the eighth,
+linearly in between. The three reports are "an allocation that has been freed", in C frames.
+Two are at `date.c:347`'s `switch (*end)`, where glibc's uninstrumented `strtoul` wrote `end`;
+the third is `oid.c:242`'s `memcpy` in `git_commit_create`'s copy of a parent id. ASan+UBSan
+runs the same suites over gen8 with no report. No report reproduces through the Rust side, so
+by `testing-gates` none is a UB finding. That BSan reads a stale shadow provenance, left on the
+stack by the Rust frames that now run there, is a reading this run did not verify. Proposal
+`bsan-c-tests-after-a-hot-switch`, new: no rule classifies such a difference or says how the
+`bsan` record of `c-baseline.json` follows it. Whether the switch proceeds over it, with the
+`bsan` baseline re-recorded, is the user's and the assistant's to decide. The run dir's `c-tests-bsan/`
+holds the tally, the three reports and the sampled stack, and `measure/` holds the two
+measurements below.
+
+Every other gate passed before the switch (the module pass's and the merge's), and passes
+after it.
+
+`c/` changed, so the crate was packaged as `package-gate-procedure` has it, with the
+workspace's Git patch of ffibox, as at the switches before. It has 700 files, one fewer, since
+`thread.c` is gone and the two headers stay, and it verifies alone in bundled mode. Its `lib`
+tests, run in the extracted package: 871 pass, the gateway's nine among them. The other 58
+open the fixture repositories of `c/tests/resources`, which the package leaves out, as at the
+switches before.
+
+What the switch costs the C that remains, measured on `plain`, gen7 beside gen8, with no
+build setting changed. The C is built at `RelWithDebInfo` (`clang -O2 -g -DNDEBUG`). The Rust
+static library it links comes from `rust-staticlib.sh` on the dev profile: `opt-level` 0, debug
+assertions and overflow checks on, no extra `RUSTFLAGS`, since the workspace sets no
+`[profile]`. Both generations link that profile's library, so the difference is the module's.
+The host's load average was 136 to 168 on 144 cores, from another campaign and this run's
+BSan C tests.
+
+- An increment-and-decrement pair of one `git_atomic32`, as `GIT_REFCOUNT_INC` and
+  `GIT_REFCOUNT_DEC` make it, single-threaded and uncontended: batch 6's `bench/pair.c`,
+  built with the variant's C flags, against gen7's `c/` (12 `lock`-prefixed instructions
+  inlined in `main`) and against gen8's (calls to `git_atomic32_inc`, `_dec` and `_get`).
+  Six alternating rounds of five runs of 5 × 10⁷ pairs gave 15.33 to 15.73 ns per pair on gen7,
+  median 15.47, and 101.86 to 112.17 ns on gen8, median 102.29. That is 6.6 times the inlined
+  cost, about 87 ns more per pair, as batch 6 measured (15.35 to 16.37 against 101.42 to
+  102.75).
+- A whole-library workload: the variant's `git2` CLI cloning a bare copy of the fork's
+  `fork/main` (16458 commits, 134989 objects, a 75 MiB pack) over `file://`, which packs and
+  indexes every object, then `git2 blame src/util/thread.h` in the clone, which walks its
+  history. There were five interleaved rounds, timed with `wait4` (wall, and user plus system
+  CPU over every thread). Clone: gen7 median 41.11 s wall and 78.40 s CPU, gen8 42.24 s and
+  81.24 s, 1.027 and 1.036 times. Blame: gen7 median 4.60 s, gen8 4.77 s, 1.035 times. Both
+  generations give the same blame. The per-pair cost above, diluted by the rest of the
+  library's work, comes to about 3 to 4% of these two workloads.
+
+`c-link-rust-on-the-dev-profile`, open, gains this switch's figures as evidence. A release
+profile or cross-language LTO is the user's to plan later, and no build setting was changed.
+Usage cells are the assistant's.
+
 ### `libgit2/src/util/hash/sha1dc/ubc_check.c` wave 221 batch 0: `dv_info_t`
 
 The module's one type, wrapped ahead of its `port` batch on the same wave branch, since

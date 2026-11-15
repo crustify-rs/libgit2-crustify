@@ -1,0 +1,33 @@
+error: Undefined Behavior: trying to access an allocation that has been freed.
+   --> /target/libgit2-crustify/crustify/builds.gen8/c/src/util/date.c:347:10
+    |
+347 | switch (*end) {
+    |         ^
+
+stack backtrace:
+0: match_digit
+      at /target/libgit2-crustify/crustify/builds.gen8/c/src/util/date.c:347:10
+1: git_date_parse
+      at /target/libgit2-crustify/crustify/builds.gen8/c/src/util/date.c:884:9
+2: handle_at_syntax
+      at /target/libgit2-crustify/crustify/builds.gen8/c/src/libgit2/revparse.c:371:6
+3: test_object_and_ref_inrepo
+      at /target/libgit2-crustify/crustify/builds.gen8/c/tests/libgit2/refs/revparse.c:23:10
+4: test_object
+      at /target/libgit2-crustify/crustify/builds.gen8/c/tests/libgit2/refs/revparse.c:81:41
+5: clar_run_test
+      at /target/libgit2-crustify/crustify/builds.gen8/c/deps/clar/clar.c:383:4
+6: clar_run_suite
+      at /target/libgit2-crustify/crustify/builds.gen8/c/deps/clar/clar.c:507:7
+7: clar_test_run
+      at /target/libgit2-crustify/crustify/builds.gen8/c/deps/clar/clar.c:721:66
+8: main
+      at /target/libgit2-crustify/crustify/builds.gen8/c/deps/clar/main.c:33:8
+9: __libc_start_call_main
+      at csu/../sysdeps/nptl/libc_start_call_main.h:74:3
+10: call_init
+      at csu/../csu/libc-start.c:128:20
+11: _start
+      at <null>
+
+note: stack trace was truncated after 12 frames; set stacktrace_max_len (e.g. BSAN_OPTIONS=stacktrace_max_len=32) to capture more.
