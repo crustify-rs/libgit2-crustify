@@ -110,3 +110,16 @@ bsan equiv src::libgit2::annotated_commit::constructors_build_and_fail_as_c
 bsan equiv src::libgit2::repository::heads_and_parts::from_env_opens_match_c
 bsan equiv src::util::alloc::resizes::element_resizes_match_reallocarray_step_by_step
 bsan equiv src::util::alloc::resizes::byte_resizes_match_realloc_step_by_step
+bsan ub_unsafe src::util::alloc::malloc_member_returns_writable_aligned_blocks
+bsan ub_unsafe src::util::allocators::failalloc::c_drop_len::releases_nothing_of_the_buffer
+bsan ub_unsafe src::util::allocators::failalloc::free::releases_nothing_it_is_handed
+bsan ub_unsafe src::util::allocators::failalloc::realloc::resizes_of_live_storage_fail_and_leave_it_whole
+bsan equiv src::libgit2::tag::short_names_exhaustively
+bsan equiv src::libgit2::worktree::add_options::adds_match_c_built_options_step_by_step
+bsan equiv src::util::cc_compat_h::va_copy_formats_as_git_str_vprintf
+bsan equiv src::util::ctype_compat_h::to_lower_matches_git_path_is_gitfile
+bsan equiv src::util::errors::sys::messages_grow_and_shrink
+bsan equiv src::util::errors::sys::setters_and_clear_in_sequence
+bsan equiv src::util::errors::sys::threads_keep_their_own_errors
+bsan equiv src::util::integer_h::config_parse_int64_overflows_as_the_ports_do
+bsan ub_safe src::libgit2::index::entry_value::stages_of_entry_values_across_threads

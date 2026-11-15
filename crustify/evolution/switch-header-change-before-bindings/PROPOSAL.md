@@ -1,6 +1,6 @@
 # A switch whose C side changes a header makes it before the bindings are regenerated
 
-Status: `open`.
+Status: `landed`.
 
 Goal: Incremental migration without breaking consumers. Its measure counts the landed trees
 that failed a gate.
@@ -56,17 +56,23 @@ protected.
 
 ## Change
 
-In `porting-workflow`'s Builds section, the end of part 1, "and the bindings are regenerated
-against the builds in use, whose headers the switch does not change.", becomes:
+In `porting-workflow`'s Builds section, the list of a switch's parts states one order for
+every switch, the C side first:
 
-> and the bindings are regenerated against the builds in use, whose generated headers the
-> switch does not change. The bindings follow from the checkout's `c/` headers, as
-> [`bindgen`](../../rust/bindgen/SKILL.md)'s Generation section describes: where the C side
-> changes a header they read, such as a `static inline` definition replaced by its
-> prototype, the C side is committed on the fork first, and the regeneration and the
-> submodule's new commit land in this commit.
+> 1. The C side, committed on the fork: the module's TU and the C tests tied to it that reach
+>    its internals leave it, and each of the module's `static inline` functions has its
+>    definition in its header replaced by its prototype, as `porting-symbols`' Static inline
+>    functions section describes.
+> 2. The Rust side, in one commit, which records the submodule at the fork's new commit. […]
+>    the bindings are regenerated from the checkout's `c/` at that commit, as `bindgen`'s
+>    Generation section describes, against the builds in use, whose generated headers the
+>    switch does not change. The C side comes first because the bindings follow from its
+>    headers: a `static inline` definition replaced by its prototype changes them, and
+>    bindings regenerated before it fail the check of every build made after it.
 
-Made as crustify `5319438`, on `libgit2-crustify/evolution/switch-header-change-before-bindings`, in
+Parts 3 and 4, the builds and the gates, are unchanged. Made as crustify `c6fa095`, three
+commits on `libgit2-crustify/evolution/switch-header-change-before-bindings` (the first,
+`5319438`, added a condition inside the old part 1, which review-1 rejected), in
 `skills/workflows/porting-workflow/SKILL.md` alone.
 
 ## Validation
@@ -89,8 +95,22 @@ The row for `EVOLUTION.md`, copied in when the change lands:
 
 | change | from | landed as | signal answered | recurrence signal | status |
 |---|---|---|---|---|---|
-| a switch whose C side changes a header the bindings read commits that C side before regenerating them, in the Rust side's one commit | `libgit2-crustify`, `switch-header-change-before-bindings` | crustify (its commit) | `porting-workflow` regenerated a switch's bindings before its C side, so a header the switch changes left them stale and every variant's bindings check failed | a switch whose committed bindings differ from those its new generation's builds regenerate, or a variant build failing the bindings check after a switch | watched |
+| every switch commits its C side on the fork first, then its Rust side in one commit that regenerates the bindings from that C and records the submodule at it | `libgit2-crustify`, `switch-header-change-before-bindings` | crustify `c6fa095` | `porting-workflow` regenerated a switch's bindings before its C side, so a header the switch changes left them stale and every variant's bindings check failed | a switch whose committed bindings differ from those its new generation's builds regenerate, or a variant build failing the bindings check after a switch | watched |
 
 ## Review
 
-Pending.
+Review-1 (`crustify/artifacts/evolution/switch-header-change-before-bindings/review-1`, of
+crustify `5319438`): rejected. The signal and evidence hold and no check is weakened, but the
+change left a switch two orders, the list's Rust side then C side and a sentence inside it
+the opposite where a header changes, while all five switches committed the C side first.
+Required: one order for every switch, the condition dropped, and this row's change cell
+reworded. Reworked by the assistant as crustify `7a6baf0`.
+
+Review-2 (`review-2`, of `7a6baf0`): rejected for one fix. Review-1's three fixes are made;
+the rework's "each of its headers' `static inline` definitions" tied the replacement to the
+header, where `decomposition` and `porting-symbols` tie it to the function's own module.
+Reworked as crustify `c6fa095`, the branch rebased onto the working branch; 
+
+Review-3 (`review-3`, of `c6fa095`): approved. Every fix of the two reviews before is made, and
+the change weakens no check. Landed on crustify's `libgit2-crustify/devel` as `c6fa095`,
+recorded as `6efafd5`.
