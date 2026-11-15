@@ -73,6 +73,12 @@ cargo package --offline --allow-dirty --exclude-lockfile -p libgit2-crustify \
 So the script reads each patch's path from the workspace's manifest rather than repeating
 one, since the ffibox path moved and the copied command went stale with it.
 
+`wave-221/batch-1/run-1` (the same module's `port`, which allowlists `ubc_check` and
+`sha1_dvs`), on base `aa4ec4d3f`, met the signal again: the command above, copied from this
+proposal by hand with a `CARGO_TARGET_DIR` under `crustify/tmp/`, packaged and verified
+unchanged (700 files, `Finished` in the verify build). A command a batch copies from a
+proposal is the procedure the script would run.
+
 ## Destination
 
 The spec: `testing-gates`' Regressions section, with a script beside it, as `authoring`

@@ -98,6 +98,21 @@ tests that remain are the first to call it.
   `asan-ubsan` and `coverage`, the module's only C callers being the HTTP client and
   `llhttp.c`, which no offline C test reaches.
 
+- `wave-221/batch-1/run-1` (`src/util/hash/sha1dc/ubc_check.c`, its whole `port`, a function
+  and a global, `ubc_check` and `sha1_dvs`, both for `sha1.c`) ran the check by hand, on
+  `plain`, with no private archive: every external symbol of `ubc_check.o` is exported (the
+  rest is `static`), so the linker resolves them all from the Rust and never pulls the
+  archive member; `nm` on the `equiv` binary with the feature on shows one `sha1_dvs`, `R`,
+  and none of the TU's `static const` bit constants, which it shows with the feature off.
+  So a module whose TU defines no symbol beyond its exports needs no archive copy, and the
+  script can tell that case from `nm` of the member. The gateway's two `unit_priv` tests
+  passed with the feature on, plain, under ASan+UBSan and under Miri; on `plain`, so did 74
+  `equiv` tests that hash through `sha1.c` (`libgit2::odb`, `blob`, `indexer`, `tree`, and
+  the module's own, which then compare the exports with the native API). No C test can check
+  the exports before the switch, so a scratch test, not committed, called `sha1.c`'s
+  `SHA1DCInit`, `SHA1DCUpdate` and `SHA1DCFinal` on `shattered-1.pdf` with the feature on
+  and off: the collision was detected both ways, and not once one bit of the file changed.
+
 ## Destination
 
 The spec: `testing-gates`' Regressions section, the export checks of a `port` batch, with a

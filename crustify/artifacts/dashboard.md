@@ -57,22 +57,22 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip the integration of `libgit2/src/util/strnlen.h`, `30176475c`; `main` at `c58bc5de8`, nothing shipped yet; crustify `cc84106`, ffibox `9c22a73`, wavefront `bf21e16`, ffimap `9aa2ef1` (each on its `libgit2-crustify/devel`, wavefront and ffimap on `devel`)
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `23230` non-test, `110322` tests; **C LoC** — `88938`
+- **Rust LoC** — `24296` non-test, `110766` tests; **C LoC** — `88938`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `800` | — | `30.36`% | `77.27`% |
-| UB unsafe tests | `144` | — | `20.18`% | `17.55`% |
-| Equiv tests | `532` | — | `43.75`% | `68.25`% |
-| Unit tests | `1156` | — | `34.38`% | `88.30`% |
-| **Total tests** | **`2632`** | — | **`47.53`%** | **`98.21`%** |
+| UB safe tests | `801` | — | `30.36`% | `77.29`% |
+| UB unsafe tests | `144` | — | `20.13`% | `17.06`% |
+| Equiv tests | `536` | — | `43.76`% | `69.08`% |
+| Unit tests | `1168` | — | `34.39`% | `88.58`% |
+| **Total tests** | **`2649`** | — | **`47.52`%** | **`98.26`%** |
 | total types | `258` | — | — | — |
 | ported types | `4` | `1.55`% | — | — |
 | wrapped types | `117` | `45.35`% | — | — |
 | total symbols | `979` | — | — | — |
-| ported symbols | `118` | `12.05`% | — | — |
+| ported symbols | `153` | `15.63`% | — | — |
 | wrapped symbols | `497` | `50.77`% | — | — |
 
 ### Module stats
@@ -532,6 +532,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `git2/src/cli/opt.c` | `186` | `5` | port | first | `8` | `310` | `+2082/-83` | `45.42`% / `98.80`% | `$15.35` | `48.35M` | `1h5m7s` | `$1.92` | `$0.05` |
 | `libgit2/src/util/utf8.c` | `229` | `0` | port | first | `5` | `89` | `+764/-0` | `44.97`% / `98.81`% | `$9.09` | `28.03M` | `47m31s` | `$1.82` | `$0.10` |
 | `libgit2/src/util/utf8.c` | `232` | `0` | port/unexport | first | `1` | `16` | `+31/-55` | `47.21`% / `98.02`% | `$10.43` | `26.64M` | `41m30s` | `$10.43` | `$0.65` |
+| `libgit2/src/util/hash/sha1dc/ubc_check.c` | `221` | `1` | port | first | `35` | `297` | `+1974/-10` | `47.52`% / `98.26`% | — | — | — | — | — |
 | `libgit2/raw-lifetime-void` | `legacy-1` | `0` | wrap | review | `2` | — | `+80/-1` | — | `$7.89` | `10.78M` | `18m36s` | `$3.94` | — |
 | `libgit2/raw-lifetime-string` | `legacy-3` | `0` | wrap | review | `2` | — | `+345/-23` | — | `$10.89` | `14.41M` | `22m03s` | `$5.45` | — |
 | `libgit2/src/util/alloc.c` | `12` | `3` | wrap | review | `7` | — | `+57/-20` | — / `98.90`% | `$15.18` | `40.96M` | `1h31m33s` | `$2.17` | — |
@@ -566,7 +567,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/llhttp/api.c` | `194` | `6` | port | review | `67` | — | `+191/-25` | `47.25`% / `98.69`% | `$12.72` | `41.32M` | `41m52s` | `$0.19` | — |
 | `git2/src/cli/opt.c` | `186` | `6` | port | review | `21` | — | `+335/-27` | `45.39`% / `98.80`% | `$10.52` | `33.81M` | `33m35s` | `$0.50` | — |
 | `libgit2/src/util/utf8.c` | `232` | `1` | port/unexport | review | `1` | — | `+28/-1` | `47.21`% / `98.02`% | `$7.61` | `17.60M` | `44m56s` | `$7.61` | — |
-| **Σ first** |  |  |  |  | **`600`** | **`10242`** | **`+94058/-3957`** | **`47.49`% / `98.03`%** | **`$732.05`** | **`2270.38M`** | — | **`$1.17`** | **`$0.06`** |
+| **Σ first** |  |  |  |  | **`635`** | **`10539`** | **`+96032/-3967`** | **`47.52`% / `98.26`%** | **`$732.05`** | **`2270.38M`** | — | **`$1.17`** | **`$0.06`** |
 | **Σ review** |  |  |  |  | **`557`** | — | **`+7806/-1422`** | **`47.21`% / `98.02`%** | **`$404.72`** | **`827.72M`** | — | **`$0.80`** | — |
 
 ### Batches: tests
@@ -679,7 +680,8 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/util/utf8.c` | `229` | `0` | first | `+0` (`-0.03`/`-0.32` pp) | `+0` (`-0.02`/`-0.06` pp) | `+6` (`+0.04`/`-0.02` pp) | `+15` (`+0.03`/`+0.04` pp) |
 | `libgit2/src/util/utf8.c` | `229` | `1` | review | `+1` (`+0.00`/`+0.00` pp) | `+0` (`+0.04`/`+0.09` pp) | `+0` (`+0.00`/`+0.01` pp) | `+0` (`-0.05`/`+0.01` pp) |
 | `libgit2/src/util/utf8.c` | `232` | `0` | first | `+0` (`+0.03`/`+0.03` pp) | `+0` (`+0.01`/`+0.01` pp) | `+0` (`-0.00`/`+0.03` pp) | `+0` (`-0.03`/`+0.00` pp) |
-| **Σ first** |  |  |  | **`+363` (`+12.66`/`+5.82` pp)** | **`+50` (`+3.68`/`-5.97` pp)** | **`+257` (`+9.82`/`+15.44` pp)** | **`+466` (`+14.80`/`-32.91` pp)** |
+| `libgit2/src/util/hash/sha1dc/ubc_check.c` | `221` | `1` | first | `+1` (`+0.00`/`+0.02` pp) | `+0` (`-0.05`/`-0.49` pp) | `+4` (`+0.01`/`+0.83` pp) | `+12` (`+0.01`/`+0.28` pp) |
+| **Σ first** |  |  |  | **`+364` (`+12.66`/`+5.84` pp)** | **`+50` (`+3.63`/`-6.46` pp)** | **`+261` (`+9.83`/`+16.27` pp)** | **`+478` (`+14.81`/`-32.63` pp)** |
 | **Σ review** |  |  |  | **`+19` (`+0.26`/`-1.50` pp)** | **`+10` (`-0.84`/`+1.13` pp)** | **`+23` (`+0.05`/`-0.52` pp)** | **`+57` (`+2.47`/`+7.70` pp)** |
 
 ### Batches: safety audit
@@ -729,7 +731,8 @@ Deterministic `ffimap`; no model.
 | `libgit2/src/util/utf8.c` | `229` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+1` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.07` pp | `+1` |
 | `libgit2/src/util/utf8.c` | `229` | `1` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `-3` | `-0.02` pp | `-3` |
 | `libgit2/src/util/utf8.c` | `232` | `0` | port/unexport | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.00` pp | `+0` |
-| **Σ first** |  |  |  |  | **`+4`** | **`+0`** | **`+35`** | **`+0`** | **`+1`** | **`+0.52` pp** | **`+12`** | **`+1`** | **`+0`** | **`+0`** | **`+35`** | **`+52`** | **`-0.83` pp** | **`+159`** |
+| `libgit2/src/util/hash/sha1dc/ubc_check.c` | `221` | `1` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+1` | `+0` | `+0` | `+0` | `+1` | `+0` | `-0.71` pp | `+0` |
+| **Σ first** |  |  |  |  | **`+4`** | **`+0`** | **`+35`** | **`+0`** | **`+1`** | **`+0.52` pp** | **`+13`** | **`+1`** | **`+0`** | **`+0`** | **`+36`** | **`+52`** | **`-1.54` pp** | **`+159`** |
 | **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`-1`** | **`+0`** | **`+1`** | **`+0.00` pp** | **`+0`** | **`-1`** | **`+0`** | **`+6`** | **`+2`** | **`-3`** | **`-0.13` pp** | **`-5`** |
 
 ### Batches: API stability
@@ -769,7 +772,8 @@ Deterministic `ffimap api`; no model.
 | `libgit2/src/util/utf8.c` | `229` | `0` | port | first | `0` | `0` | `0` | `0` | `3` | `0` | `utf8` new (`InvalidCodePoint`); `sys::libgit2` extended (`+3` bindings) | — |
 | `libgit2/src/util/utf8.c` | `229` | `1` | port | review | `3` | `0` | `0` | `0` | `0` | `0` | — | — |
 | `libgit2/src/util/utf8.c` | `232` | `0` | port/unexport | first | `1` | `0` | `0` | `0` | `0` | `0` | `sys::libgit2` changed (`git_utf8_char_length` removed) | `sys::libgit2::git_utf8_char_length` removed: the raw binding goes with its export (`port/unexport`) |
-| **Σ first** |  |  |  |  | **`3`** | **`0`** | **`0`** | **`0`** | **`102`** | **`2`** |  |  |
+| `libgit2/src/util/hash/sha1dc/ubc_check.c` | `221` | `1` | port | first | `0` | `0` | `0` | `0` | `35` | `0` | `sys::libgit2` extended (`+2` bindings: `sha1_dvs`, `ubc_check`); the other 23 modules kept | — |
+| **Σ first** |  |  |  |  | **`3`** | **`0`** | **`0`** | **`0`** | **`137`** | **`2`** |  |  |
 | **Σ review** |  |  |  |  | **`196`** | **`2`** | **`1`** | **`0`** | **`0`** | **`3`** |  |  |
 
 ### Batches — review: PoC + reports
@@ -6081,3 +6085,95 @@ measurement of the same base, and the C shifts are run-to-run variation, as no t
 changed. ffimap (the batch-0 flags) moves only `code.tests.loc.total` (`+11`), the Overview's test
 LoC; `ffimap api` against the base (nightly `2026-10-08`, ffibox's private rustdoc JSON): the 5
 items `kept`, every unattributed module `kept`. Usage cells are the assistant's.
+
+### `libgit2/src/util/hash/sha1dc/ubc_check.c` wave 221 batch 1: the module's `port`
+
+The module's symbols, waves 221 and 222 folded into one batch on wave 221's branch, since
+wave 222's two items use wave 221's: `mac::DVMASKSIZE`, the 32 `glb::DV_*_bit` constants
+(16 of type I, 16 of type II; the task message's "33" counts one too many, `task.json` lists
+32), `glb::sha1_dvs` and `fn::ubc_check`, in `src/libgit2/src/util/hash/sha1dc/ubc_check.rs`
+beside batch 0's `DvInfo`. `DVMASKSIZE` is a `pub const usize` (1), each bit a `pub const u32`
+(`DV_I_43_0_BIT` … `DV_II_56_0_BIT`), the table `SHA1_DVS: [DvInfo; 33]`, a `static` built at
+compile time by a private `const fn dv` over `DvInfo::new`, which fails the build on a record
+`sha1.c` could not read, and `ubc_check(&[u32; 80]) -> [u32; DVMASKSIZE]`, the out-parameter
+returned. `ubc_check` is a statement-for-statement translation of the generated C, made by a
+scratch translator from its expressions, with the C's wrapping 32-bit arithmetic
+(`wrapping_sub`, `wrapping_neg`) and its guards kept, since a guarded condition whose value
+is not all ones outside the guarded bits would clear others unguarded. Analysis: `W` is read
+during the call only, words 35 to 64, and never kept; `dvmask` is written once; nothing fails
+and no state is kept; `sha1_process` passes `ctx->m1`, which `sha1_compression_states` has
+written whole, and its local `ubc_dv_mask`. `sha1_dvs` is read by `sha1_process` alone and
+written by no C, so the table is immutable, in read-only memory. No out-of-tree entity is
+used. The findings are submitted to the ownership store (`ubc_check`'s `lifetime: null`,
+`sha1_dvs`'s `ptr` and `locked_by` null); the two parameters' pointer findings were refused,
+wavefront listing no pointer parameter declared as an array
+(`crustify/evolution/wavefront-array-parameters-are-pointers`).
+
+The gateway, under `ffi-export-src-util-hash-sha1dc-ubc-check-c`, off, declared in
+`Cargo.toml`: `ubc_check` (its body in `barrier`, a panic aborting, as it cannot fail) and
+`sha1_dvs`, for `sha1.c`, which stays C past the first ship point. The table's export is
+its storage, so that the module holds one copy: its data is the private `const DVS`, the
+native `SHA1_DVS` is a `static` under `cfg(not(feature))`, and under the feature the
+gateway's `#[unsafe(no_mangle)] pub static sha1_dvs` is re-exported as `SHA1_DVS`. At the
+switch, deleting the feature removes that `cfg(not(…))` static and the re-export's `cfg`
+(`crustify/evolution/exported-global-storage-before-the-switch`). Checks against the raw
+bindings: `[sys::ubc_check, ubc_check]`, and the element type of `sys::sha1_dvs`
+(`[dv_info_t; 0]`) against `DvInfo`'s `CCell::C`; the allowlist gains `function ubc_check`
+and `var sha1_dvs`, for them and the equivalence tests. As a scratch check, not a gate
+(`crustify/evolution/export-link-check`, whose occurrence this run adds): with the feature
+on, the test binaries take both symbols from the Rust and never pull `ubc_check.c.o` (one
+`sha1_dvs`, `R`, and none of the TU's `static const` bits in `nm`), 74 `equiv` tests that
+hash through `sha1.c` pass, and a scratch test calling `SHA1DCInit`/`SHA1DCUpdate`/
+`SHA1DCFinal` still detects the collision of `shattered-1.pdf`, and does not once one bit of
+the file changes.
+
+Tests: 10 `unit_pub` (the table's order, steps and terminator, each bit constant's record,
+every difference against SHA-1's message expansion, the shifts between `X(k,b)` and
+`X(k+1,b)`, uniform blocks, a block selecting each vector, words outside 35 to 64 changing no
+mask, 512 seeded blocks folded, and `shattered-1.pdf`'s two near-collision blocks selecting
+`II(52,0)`, their masks computed by the C), 2 `unit_priv` (`dv` at run time and its refusal),
+1 `ub_safe` (the table read and its differences lent to `ubc_check` from four threads), 4
+`equiv` (the table record for record, two million seeded blocks and edge blocks, every
+one-bit change of a block selecting each vector, every block of `shattered-1.pdf`), 1 doctest,
+and the gateway's 2 `unit_priv` tests, which compile only with the feature on. The module
+has no C test tied to it, so none is carried over. The C that exercises `ubc_check` and
+`sha1_dvs` once they switch: every SHA-1 the C computes (`GIT_SHA1_BUILTIN`:
+`hash/collisiondetect.c` over `sha1.c`'s `SHA1DCUpdate`, which calls `ubc_check` per block and
+reads `sha1_dvs` when the mask is not zero), so every C suite that hashes an object, and
+`tests/util/sha1.c`, whose `test_sha1__detect_collision_attack` is the only case in which a
+vector's recompression finds a collision, and `test_sha1__sum` a hash that finds none.
+
+Gates, on the base `aa4ec4d3f` (the tip batch 2 landed): formatted, and `clippy --workspace
+--all-targets -D warnings` passes with the export feature off and on; rustdoc reports
+nothing in the module. Every suite of the workspace passes on the coverage variant (`lib` 909
+and 1 ignored, `ub_safe` 800, `ub_unsafe` 144, `equiv` 536, `unit_pub` 258, `hidden_symbols`
+1, doctests 397). The module's tests pass on `plain` and under ASan+UBSan, the gateway's with
+the feature on too; TSan passes its `unit_pub` and `ub_safe` tests, for the table's `Sync`.
+Miri passes its `unit_pub`, `ub_safe` and `unit_priv` tests, the doctest and the gateway's
+tests; each `equiv` test, run alone, stops at the foreign boundary as marked (`reads a C
+global`, `calls libgit2`, `reads a file`). Miri first took 197 s over the `unit_pub` tests:
+the fold over seeded blocks was cut from 4096 blocks to 512, and two tests that read each
+record's `k` and `b` from its `Debug` a thousand times read them from the bit constants'
+table instead, which one test checks against the records' `Debug`, so that Miri takes 25 s,
+10 s at most for one test; coverage was measured before the second change, which reaches no
+other Rust. No BSan run: no test reaches a
+reborrow at the foreign boundary. The module has no Rust dependent. Coverage, one `run.sh`
+over the tree, read with `report.py` from the scratch tree's `src/libgit2`
+(`coverage-report-relative-rows`), the unit column merging `lib` and `unit_pub`, the pp
+against batch 2's figures of the base: `ubc_check.rs` is covered to 100% of its 557 lines,
+891 regions and 15 functions, once `dv`, which only the compiler ran, had its `unit_priv`
+tests; `ubc_check.c` to 100% of its 262 lines and 257 regions under `equiv` alone, which
+compares all of the C's behaviour; no branch is instrumented. The `ub_unsafe` Rust shift is
+the denominator's growth.
+
+The safety audit scans (ffimap `50a800e`, flags as batch 0's) name the export feature on
+this tree and none on the base, batch 2's scan, which declares none: `raw→std` `+1` and `raw
+deref` `+1` are both the gateway's `&*w.cast::<[u32; 80]>()`, and the exports' unsafe blocks
+are `ffi_export`'s. The boundary scan's sites hold none in the
+module. The Overview's Rust LoC moves by `code.loc.total` (`+1066`) and `code.tests.loc.total`
+(`+444`); `+LoC` leaves out the regenerated `bindings.rs` (`+6`); `loc` is wavefront's `query
+dag --loc`. `ffimap api` (nightly `2026-10-08`, ffibox's private rustdoc JSON) over the
+worklist: the 35 items `new`, none without its alias; `sys::libgit2` extended by the two
+bindings, the 23 other modules kept. The raw bindings changed, so the crate was packaged and
+verified alone in bundled mode (700 files) with no variant, by the command
+`crustify/evolution/package-gate-procedure` records. Usage cells are the assistant's.

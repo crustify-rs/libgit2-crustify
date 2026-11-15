@@ -32206,6 +32206,11 @@
    }
   },
   {
+   "name": "sha1_dvs",
+   "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+   "locked_by": null
+  },
+  {
    "name": "sort_gnu_style",
    "defined_in": "src/cli/opt.c",
    "ptr_args": [
@@ -32656,6 +32661,10 @@
      "init": false
     }
    }
+  },
+  {
+   "name": "ubc_check",
+   "defined_in": "src/util/hash/sha1dc/ubc_check.c"
   },
   {
    "name": "utf8_charlen",

@@ -14755,6 +14755,12 @@ impl Default for dv_info_t {
         }
     }
 }
+unsafe extern "C" {
+    pub static mut sha1_dvs: [dv_info_t; 0usize];
+}
+unsafe extern "C" {
+    pub fn ubc_check(W: *const u32, dvmask: *mut u32);
+}
 pub type llhttp__internal_t = llhttp__internal_s;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
