@@ -1,6 +1,6 @@
 # When a ported `static inline` function stays in its header
 
-Status: `open`. The user decided against its change for the twelve functions it was filed
+Status: `declined`. The user decided against its change for the twelve functions it was filed
 for (`wave-226/batch-6/run-1`'s occurrence): the index's writer may decline it.
 
 ## Signal
@@ -123,3 +123,10 @@ the analysis reads it now.
 ## Review
 
 None yet.
+
+## Decision
+
+Declined by the user on 2026-11-15: the `static inline` functions are exported as
+`porting-symbols`' Static inline functions section requires, the cost of the calls to be
+recovered later by a release profile or cross-language LTO (`c-link-rust-on-the-dev-profile`).
+`wave-226/batch-6` (`2f2ffb73d`) added the twelve exports.

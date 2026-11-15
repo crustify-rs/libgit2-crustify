@@ -10,12 +10,13 @@ the assistant alone, as each batch's proposals land.
 | `bindgen-modes-after-bundling` | The bindgen skill's build modes, as the bundling migration met them | `landed` | — | — |
 | `binding-c-defects` | How a binding keeps a C defect out of its safe API | `landed` | — | — |
 | `bsan-borrow-history-grows` | BorrowSanitizer's cost per access to one allocation grows with its borrow history | `superseded` | `wave-225/batch-1` | `bsan-sized-tests` |
+| `bsan-c-tests-after-a-hot-switch` | A switch whose exports the C calls on every operation fails BSan's C-test comparison, and nothing says how to classify it | `open` | `src/util/thread.c`'s switch | `bsan-sized-tests` |
 | `bsan-cost-in-the-fixture` | `testing-gates` sizes a test BSan cannot finish by its inputs, without first finding what its cost grows with | `open` | `fixes/gates-green/batch-0` | — |
 | `bsan-regenerates-other-bindings` | BSan builds regenerate different bindings, so campaign mode fails under BSan | `landed` | — | — |
 | `bsan-sized-tests` | A test BSan cannot finish is sized for it, not skipped | `landed` | `wave-225/batch-1` | — |
 | `build-scripts-watch-missing-inputs` | Build scripts watch inputs that do not exist, so every cargo run rebuilds the crate | `open` | `wave-232/batch-1` | — |
 | `bundled-pcre2-shadows-the-side-campaign` | pcre2-sys's vendored PCRE2 shadows the side campaign's for libgit2's C | `landed` | — | — |
-| `c-link-rust-on-the-dev-profile` | The Rust library the remaining C links is built unoptimised, and no event measures what that costs | `open` | `src/util/hash/sha1dc/ubc_check.c`'s switch, `wave-226/batch-6` | — |
+| `c-link-rust-on-the-dev-profile` | The Rust library the remaining C links is built unoptimised, and no event measures what that costs | `open` | `src/util/hash/sha1dc/ubc_check.c`'s switch, `wave-226/batch-6`, `src/util/thread.c's switch` | — |
 | `c-link-unused-rust` | The C library's link keeps Rust that the C never calls | `open` | `module-switch-procedure`'s switches | — |
 | `callback-context-in-an-argument` | A callback whose context is reached through an argument has no sound C form | `landed` | `wave-194/batch-1`, `wave-194/batch-2` | — |
 | `callback-reenters-its-caller` | A callback can re-enter the function that calls it, through the object it is handed | `landed` | `wave-194/batch-1` | — |
@@ -28,8 +29,8 @@ the assistant alone, as each batch's proposals land.
 | `contracts-unrefusable-c-arguments` | Which of C's arguments a gateway refuses, and which it trusts | `landed` | `wave-177/batch-1` | — |
 | `coverage-c-scope-matches-no-path` | The coverage report's C scope names the paths the archive records | `landed` | `wave-169/batch-1`, `wave-169/batch-2` | — |
 | `coverage-c-scope-unfiltered` | The coverage report's C figures ignore their scope and move with the test binaries | `landed` | `wave-181/batch-0` | — |
-| `coverage-report-relative-rows` | The coverage report checks its Rust scope against paths llvm-cov prints relative | `open` | `wave-225/batch-0`, `wave-219/batch-0`, `wave-220/batch-1` | — |
-| `coverage-report-unit-suite` | The coverage report has no unit suite, which each batch merges by hand | `open` | `wave-194/batch-0`, `wave-194/batch-1`, `wave-194/batch-2`, `wave-220/batch-1` | — |
+| `coverage-report-relative-rows` | The coverage report checks its Rust scope against paths llvm-cov prints relative | `open` | `wave-225/batch-0`, `wave-219/batch-0`, `wave-220/batch-1`, `wave-226/batch-3` | — |
+| `coverage-report-unit-suite` | The coverage report has no unit suite, which each batch merges by hand | `open` | `wave-194/batch-0`, `wave-194/batch-1`, `wave-194/batch-2`, `wave-220/batch-1`, `wave-226/batch-3` | — |
 | `dashboard-lacks-module-passes` | Give the dashboard the template's `Module passes` table | `landed` | `wave-169/batch-5`, `wave-176/batch-3`, `wave-182/batch-1` | — |
 | `dashboard-module-passes` | The dashboard has no `Module passes` tables for a module pass to fill | `landed` | `wave-169/batch-3`, `wave-169/batch-4`, `wave-176/batch-2`, `wave-182/batch-1` | — |
 | `dashboard-tables-follow-the-template` | A template change that adds a dashboard table reaches the dashboard before batches fill it | `landed` | `wave-181/batch-0`, `wave-182/batch-0`, `wave-183/batch-0`, `wave-184/batch-0` | — |
@@ -47,20 +48,23 @@ the assistant alone, as each batch's proposals land.
 | `evolution-protocol-research` | The evolution protocol against existing practice | `deferred` | — | — |
 | `evolution-record-and-lessons` | The record holds every signal; lessons are reviewed entries; protected paths | `landed` | — | its own row |
 | `export-adoptions-and-the-safe-boundary` | What an `ffi_import` region may expose to its module's `ffi_export` | `open` | `wave-186/batch-4` | — |
-| `export-link-check` | A port batch runs its module's tests with its exports linked in place of its C | `open` | `wave-186/batch-5`, `wave-186/batch-6`, `wave-186/batch-7`, `wave-194/batch-4`, `wave-194/batch-7`, `wave-197/batch-0` and more, `wave-221/batch-1`, `wave-221/batch-3` | — |
+| `export-link-check` | A port batch runs its module's tests with its exports linked in place of its C | `open` | `wave-186/batch-5`, `wave-186/batch-6`, `wave-186/batch-7`, `wave-194/batch-4`, `wave-194/batch-7`, `wave-197/batch-0` and more, `wave-221/batch-1`, `wave-221/batch-3`, `wave-226/batch-3`, `wave-226/batch-7` | — |
 | `export-panic-without-a-failure-outcome` | An export whose failure needs an outcome a panic cannot give | `open` | `wave-186/batch-5` | — |
 | `export-signature-check` | How a gateway checks an export against its raw binding | `landed` | `wave-229/batch-0` | — |
 | `exported-global-storage-before-the-switch` | Where an exported global's storage is defined while its export feature is off | `open` | `wave-221/batch-1`, `wave-221/batch-3` | — |
 | `exports-without-a-header-declaration` | An export whose C declaration no header holds has no raw binding to be checked against | `open` | `wave-194/batch-4`, `wave-197/batch-0` | — |
 | `ffibox-adoption-of-lifetime-cells` | Adopting a handle over a layout type with a lifetime vouches for nothing about that lifetime | `landed` | `wave-186/batch-3` | — |
 | `ffibox-allocator-api` | `Box` and `Vec` over a C allocator: ffibox adopts the standard `Allocator` | `landed` | — | — |
+| `ffibox-atomic-layout-types` | Layout types whose state is written through shared access | `open` | `wave-226/batch-0`, `wave-226/batch-4`, `wave-226/batch-6`, `wave-226/batch-7` | — |
 | `ffibox-canonical-path` | ffibox is declared by its canonical path | `landed` | — | — |
 | `ffibox-cclosure-failed-during-invocation` | `CClosure::failed()` reads the panic slot an invocation holds mutably | `landed` | — | — |
+| `ffibox-cfn-without-context-on-any-thread` | ffibox has no C half for a function without context that Rust calls on other threads | `open` | `wave-226/batch-3` | — |
 | `ffibox-goal-g9-immutable-borrows` | ffibox goal G9 and references over immutable C bytes | `landed` | — | — |
 | `ffibox-lifetime-ctypes` | `define_ctype!` for layout types that carry a lifetime | `landed` | — | — |
 | `ffibox-usage-docs` | ffibox documentation that led agents to hand-write what ffibox covers | `landed` | — | — |
 | `ffibox-vtables` | Function-pointer tables a library calls into, implemented by a Rust trait | `landed` | — | — |
 | `ffimap-api-namespaces-share-a-path` | `ffimap api` reads a type and a function of one path as one item | `open` | `wave-194/batch-4` | — |
+| `ffimap-atomic-from-ptr-borrow` | ffimap's std table does not count `Atomic*::from_ptr` as a borrow | `open` | `wave-226/batch-4` | — |
 | `ffimap-driver-builds-under-a-workspace` | ffimap's driver does not build under a Cargo workspace, and its suite then skips half its tests | `landed` | the reviews of `doc-alias-equal-to-the-name` and `ffimap-wrapper-without-alias` | — |
 | `ffimap-scanner-records-the-enclosing-head` | ffimap records the enclosing repository's HEAD as its own version | `landed` | `ffimap-sys-inventory-in-crate`'s review-2 | — |
 | `ffimap-seams-into-raw` | The seam list names `from_raw` but not its inverse `into_raw` | `landed` | — | — |
@@ -83,7 +87,7 @@ the assistant alone, as each batch's proposals land.
 | `macro-incidental-double-evaluation` | A macro that evaluates an operand twice only as a hazard is a function | `landed` | `wave-200/batch-0`, `wave-200/batch-1` | — |
 | `merge-left-conflict-markers` | A merge into a wave branch is checked before it is committed | `landed` | `wave-169/batch-2` | — |
 | `module-end-gate-runner` | A script for the wave's and the module's end gates | `landed` | `wave-176/batch-3`, `wave-177/batch-1` | — |
-| `module-pass-seeds-faults-before-the-switch` | A module pass seeds faults in the ported code before the switch retires its equivalence tests | `open` | `wave-221/batch-3` | `equiv-tests-without-c` |
+| `module-pass-seeds-faults-before-the-switch` | A module pass seeds faults in the ported code before the switch retires its equivalence tests | `open` | `wave-221/batch-3`, `wave-226/batch-7` | `equiv-tests-without-c` |
 | `module-switch-procedure` | A module's switch: variant generations, the C's Rust library, and the C test gate | `superseded` | `wave-186/batch-7`, `wave-194/batch-7` | — |
 | `obligation-spans-what-the-holder-keeps` | An `unsafe` setter's obligation lasts as long as its object holds what it stored | `landed` | `wave-194/batch-5`, `wave-194/batch-6` | — |
 | `package-gate-procedure` | The packaging gate's procedure, for a crate whose dependencies are unpublished | `open` | `wave-229/batch-0`, `wave-219/batch-0`, `wave-221/batch-0`, `wave-221/batch-1` | — |
@@ -102,7 +106,9 @@ the assistant alone, as each batch's proposals land.
 | `spec-consistency-2026-11-12` | Consistency fixes to the spec, made in another workspace | `landed` | — | — |
 | `spec-language` | The spec's language; the goals rewritten under it | `landed` | — | its own row |
 | `stage-points-count-staying-tests` | The C tests that stay, in a `port/unexport`'s release point | `landed` | — | — |
+| `static-inline-functions-kept-in-their-headers` | When a ported `static inline` function stays in its header | `declined` | `wave-226/batch-1`, `wave-226/batch-5`, `wave-226/batch-6` | — |
 | `std-macro-expansions-outside-regions` | The standard library's own macro expansions count as unsafe code outside the regions | `open` | `wave-194/batch-0`, `wave-194/batch-1`, `wave-194/batch-3` | — |
+| `std-symbol-alias-stand-ins` | What stands in for a symbol alias reached through the standard library | `landed` | `wave-226/batch-2`, `wave-226/batch-5` | its own row |
 | `switch-archive-check` | A switch checks its static archive by the removed unit's symbols, not by member names | `open` | `module-switch-procedure`'s switches | — |
 | `switch-c-tests-baseline` | A switch's C tests run per variant by a tracked script and are compared with the baseline | `open` | `module-switch-procedure`'s switches | — |
 | `switch-gate-beyond-c-tests` | A switch whose exports no baseline C test reaches is gated by the C's own programs, old build beside new | `open` | `module-switch-procedure`'s switches | — |

@@ -1,6 +1,6 @@
 # What stands in for a symbol alias reached through the standard library
 
-Status: `open`, Crustify `06c62a2` on `libgit2-crustify/evolution/std-symbol-alias-stand-ins`,
+Status: `landed`, Crustify `c2d357e` (`06c62a2` and its rework) on `libgit2-crustify/devel`,
 awaiting review.
 
 ## Signal
@@ -78,8 +78,21 @@ finds every key of the worklist.
 
 | change | campaign, proposal | landed as | signal | recurrence signal | status |
 |---|---|---|---|---|---|
-| a symbol alias of an out-of-tree entity reached through the standard library stands in as its module's type over the standard one, that type's method, or its `Drop` for the release, carrying the alias's anchor | `libgit2-crustify`, `std-symbol-alias-stand-ins` | crustify `06c62a2` | no skill said which item carries the anchor of a macro aliasing a C library's type or routine whose route is the standard library, whose items carry none | a review finding of such a macro's anchor missing or misplaced, or a port that re-exports or aliases a standard item for one | watched |
+| a symbol alias of an out-of-tree entity reached through the standard library stands in as its module's item that mirrors the standard one: a type over the standard type, which also carries the release's anchor, and for an operation a method of that type, of the guard or handle the standard API returns, or a free function | `libgit2-crustify`, `std-symbol-alias-stand-ins` | crustify `c2d357e` | no skill said which item carries the anchor of a macro aliasing a C library's type or routine whose route is the standard library, whose items carry none | a review finding of such a macro's anchor missing or misplaced, or a port that re-exports or aliases a standard item for one | watched |
 
 ## Review
 
-None yet.
+Review-1 (`crustify/artifacts/evolution/std-symbol-alias-stand-ins/review-1`, of crustify
+`06c62a2`, $0.70): rejected. The rule said "that type's method" where the run anchored the
+unlocks on the guards, `git_thread_create` on the free function `spawn` and
+`git_thread_join` on `JoinHandle`, and it contradicted the conventions' anchor rule for
+macros. It weakens no check. The Change, Occurrences and Validation sections above describe
+that first commit.
+
+Reworked by the assistant as crustify `c2d357e`: an operation's alias is the module's item
+that mirrors the standard one, the release's anchor sits on the type, as `wave-226/batch-5`
+(`58d3dc711`) moved the three `_free` anchors off empty `Drop` impls, and the conventions'
+macro bullet names these stand-ins. The run's 19 macros are placed so since that commit.
+
+Review-2 (`review-2`, of `c2d357e`, $0.48): approved; both fixes made, no check weakened.
+Landed on crustify's `libgit2-crustify/devel` as `c2d357e`, recorded as `010deea`.
