@@ -128680,7 +128680,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 0,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [],
         "cut": []
@@ -129174,10 +129174,13 @@
           "module": "src/util/ctype_compat.h",
           "foundational": false,
           "kind": "review",
-          "status": "wip",
+          "status": "done",
           "reviews": [],
           "module_pass": true,
-          "commits": []
+          "commits": [
+            "9da00f0302e95b413a6aaf8ce467bed2a0ff0c84",
+            "300f9937fe702de979d8dfad10be16bc821da904"
+          ]
         }
       ]
     },
@@ -133818,7 +133821,7 @@
           "module": "src/util/thread.c",
           "foundational": false,
           "kind": "port",
-          "status": "wip",
+          "status": "done",
           "items": [
             {
               "name": "GIT_MEMORY_BARRIER",
@@ -133957,7 +133960,9 @@
               "home": "src/libgit2/src/util/thread.rs"
             }
           ],
-          "commits": []
+          "commits": [
+            "955c56eb7d372c3086a1dea074b64980c16ba3c6"
+          ]
         },
         {
           "index": 2,
