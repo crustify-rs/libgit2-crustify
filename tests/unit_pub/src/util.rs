@@ -2,5 +2,6 @@
 
 mod alloc;
 mod allocators;
+mod integer_h;
 mod strnlen_h;
 mod utf8;

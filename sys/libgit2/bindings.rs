@@ -14459,6 +14459,36 @@ const _: () = {
         "Offset of field: git_transport::free",
     ][::std::mem::offset_of!(git_transport, free) - 104usize];
 };
+unsafe extern "C" {
+    /// @return true if p fits into the range of a size_t
+    #[link_name = "git__is_sizet__extern"]
+    pub fn git__is_sizet(p: i64) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    /// @return true if p fits into the range of an ssize_t
+    #[link_name = "git__is_ssizet__extern"]
+    pub fn git__is_ssizet(p: usize) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    /// @return true if p fits into the range of a uint16_t
+    #[link_name = "git__is_uint16__extern"]
+    pub fn git__is_uint16(p: usize) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    /// @return true if p fits into the range of a uint32_t
+    #[link_name = "git__is_uint32__extern"]
+    pub fn git__is_uint32(p: usize) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    /// @return true if p fits into the range of an unsigned long
+    #[link_name = "git__is_ulong__extern"]
+    pub fn git__is_ulong(p: i64) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    /// @return true if p fits into the range of an int
+    #[link_name = "git__is_int__extern"]
+    pub fn git__is_int(p: i64) -> ::std::os::raw::c_int;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct git_str {

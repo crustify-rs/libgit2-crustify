@@ -838,3 +838,13 @@ function llhttp_should_keep_alive
 # (wave-232/batch-0, port/unexport)
 function git_utf8_iterate
 function git_utf8_valid_buf_length
+
+# wave-223/batch-0: src/util/integer.h's range checks, `static inline` and wrapped in
+# static_fns.c, which the module's equivalence tests compare with their ports; no Rust calls
+# them, and they go with those tests at the module's switch
+function git__is_int
+function git__is_sizet
+function git__is_ssizet
+function git__is_uint16
+function git__is_uint32
+function git__is_ulong
