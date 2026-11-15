@@ -1,0 +1,20 @@
+{
+  "link_unit": "libgit2",
+  "module": "src/util/hash/sha1dc/ubc_check.c",
+  "foundational": false,
+  "base_branch": "refs/heads/crustify/modules/libgit2/src/util/hash/sha1dc/ubc_check.c",
+  "backend": "claude",
+  "billing": "api",
+  "model_proxy": "openrouter",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "57005de",
+    "wavefront": "bf21e16",
+    "ffimap": "50a800e",
+    "ffibox": "568bcb5"
+  },
+  "session_id": "55bedf2b-0a2c-48d1-a186-a3f56cf810d9"
+}

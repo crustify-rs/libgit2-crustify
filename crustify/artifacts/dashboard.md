@@ -6262,6 +6262,110 @@ the 24 unattributed modules `kept`. The tree's scan is the wave's too, in its di
 Usage cells are the assistant's.
 
 
+### `libgit2/src/util/hash/sha1dc/ubc_check.c` integration: the switch from C
+
+The campaign's sixth switch, run by
+`modules/libgit2/src/util/hash/sha1dc/ubc_check.c/integration/run-1` on the module's branch,
+after the merge of the working branch (`494db0118`): `f42cb56c4`, and the fork's `e717996da`.
+It followed integer.h's and http.c's switches, with the scripts unchanged, in the order the
+review of `switch-header-change-before-bindings` asked for: C side, Rust side, builds, gates.
+The C side removes `src/util/hash/sha1dc/ubc_check.c` from `c/`. That is `integrate
+src/util/hash/sha1dc/ubc_check.c` on the local `fork/main`, which is not pushed. `ubc_check.h`
+stays for `sha1.c`. `src/util/CMakeLists.txt`'s glob needs no change, and no CMake file
+changes. No C test is tied to the module.
+
+The export feature `ffi-export-src-util-hash-sha1dc-ubc-check-c` is deleted, so
+`ubc_check.rs`'s gateway compiles from now on, with its two `unit_priv` tests,
+`sha1_dvs_is_the_one_table` and `ubc_check_writes_the_native_mask`. It was the crate's last
+export feature, so `Cargo.toml` loses its line and the comment that listed the switched
+modules. No file of the crate names it now. In `ubc_check.rs`, the `cfg(not(feature))`
+`SHA1_DVS` static goes, with its doc, anchor and alias. `SHA1_DVS` is now the gateway's
+re-export alone, keeping its alias and description. `mod ffi_export` loses its `cfg`, the
+module doc loses its "compiled only under the export feature" paragraph, and `DvInfo`'s doc
+names the table `sha1_dvs`, which this module exports, in place of "the table `ubc_check.c`
+defines". The bindings were regenerated from `c/` at `e717996da` against gen6, the builds in
+use, and are unchanged: no header changes. The allowlist's `ubc_check`, `sha1_dvs` and
+`dv_info_t` stay and reach the exports, and only the comment over the two symbols changes. No
+`pub` item of `src/` changes.
+
+Four equivalence tests are retired with `tests/equiv/src/util/hash/sha1dc/ubc_check.rs`, and
+with them the `mod` files `hash.rs` and `sha1dc.rs` and `mod hash;` in
+`tests/equiv/src/util.rs`. The four are `sha1_dvs_is_the_c_table`,
+`ubc_check_matches_c_on_seeded_blocks`,
+`ubc_check_matches_c_on_each_one_bit_change_of_a_selecting_block` and
+`ubc_check_matches_c_on_shattered_1_pdf`. Each read ubc_check.c's C global or called its C,
+so none is carried over. The module pass's two `unit_pub` tests keep what they established:
+`ubc_check_of_each_one_bit_change_of_a_witness_is_cs` and
+`ubc_check_of_many_seeded_blocks_folds_as_c_does`, whose values the C computed and which catch
+all 558 of the pass's mutants. Their docs now say the tests they carry over retired. What none
+keeps is the differential over two million seeded blocks itself.
+
+The variants were rebuilt as `crustify/builds.gen7` from `e717996da` with
+`build-variants.sh`, at 9 jobs each, in about 12 minutes. This worktree's `crustify/builds`
+links to gen7, and gen6 was left untouched. Each archive holds 208 objects where gen6's held
+209, with `ubc_check.c.o` gone, and each variant's `rust-staticlib.sh` passed the bindings
+check. In all five variants, `nm` shows `git2`, `libgit2_tests` and `util_tests` defining
+`ubc_check` (`T`) and `sha1_dvs` (`R`), and `libgit2.so` defining both as locals (`t`, `r`).
+`addr2line` puts them at `ubc_check.rs:1643` and `:1631`, the gateway's. In gen6,
+`libgit2.so`'s `sha1_dvs` was C's writable `d`; the Rust table is read-only. `libgit2.so`'s
+dynamic symbol table defines the same 907 symbols as gen6's.
+
+Gates, over gen7 from `end-gates` snapshots of `f42cb56c4`, builds at 48 jobs, the slow list
+skipped. Lint and the variants ran at 48 test threads. Miri and BSan ran per test binary, six
+side by side at 8 threads, BSan with `--timeout 3600`. The workspace is formatted, and
+`clippy --workspace --all-targets` passes with warnings denied. With no export feature left,
+there is no second lint. Plain, ASan+UBSan and TSan pass the whole workspace: `lib` 912 and
+1 ignored, `equiv` 549, `ub_safe` 801, `ub_unsafe` 144, `unit_pub` 291, `hidden_symbols` 1,
+doctests 129 and 397. No log holds a sanitizer report. The gateway's two tests pass on each,
+the first time under TSan. Miri passes every binary, the
+gateway's tests among them: `lib` 452, `ub_safe` 216, `unit_pub` 205, `equiv` 40, `ub_unsafe`
+26, the rest marked. BSan passes every binary: `lib` 908 and 5 ignored, `equiv` 463 and 8
+ignored with the slow list's 78 out, `ub_safe` 770 and 4 ignored with its 27 out, `unit_pub`
+290, `ub_unsafe` 144 and `hidden_symbols` 1, with no borrow report, the gateway's tests
+there for the first time. `equiv` took 12 minutes.
+Over a minute, by libtest's warning: `ub_safe`'s `compile_fail` on plain, ASan+UBSan and TSan,
+and under BSan four of `ub_unsafe`'s, eight of `equiv`'s and one of `ub_safe`'s, named in the
+run's final message for the slow list's keeper.
+
+The remaining C tests ran over the link with the Rust through `c-tests.sh`, on every variant.
+Plain, ASan+UBSan and TSan give 3442 passed and 55 skipped of 3497, coverage gives 3443 and
+54, and BSan 3431 and 55 of 3486. Each is the baseline's record. Under BSan, the baseline's 6
+suites exit non-zero: the four `object::cache` suites on a report in the test's own
+`test_object_cache__threadmania` (`cache.c:222`), and `pack::threadsafety` and `stress::diff`
+on the 30-minute timeout. `ctest` fails `offline` on them. `util_tests -ssha1`'s
+`sha1::detect_collision_attack`, the one case in which a recompression finds a collision,
+passes on every variant: `sha1.c` hashes `shattered-1.pdf` through the exported `ubc_check`
+and `sha1_dvs`, and refuses it. Under TSan, the same 10 suites as the baseline's report the
+C's lock-order inversions and races (98 and 3), and no case fails. No report has a Rust frame.
+`ctest` passes both targets on plain, ASan+UBSan and coverage. Under TSan it fails `offline`
+on those reports alone, as at the switches before. Every gate passed before the switch (the
+module pass's, and the merge's), and every one passes after it.
+
+`c/` changed, so the crate was packaged as `package-gate-procedure` has it, with the
+workspace's Git patch of ffibox, as at the switches before. It has 701 files, one fewer, since
+`ubc_check.c` is gone and `ubc_check.h` stays, and it verifies alone in bundled mode. Its `lib`
+tests, run in the extracted package: 854 pass, the gateway's two among them. The other 58 open
+the fixture repositories of `c/tests/resources`, which the package leaves out, as at the
+switches before.
+
+What the switch costs a C consumer, measured once on `plain`, with no build setting changed.
+`libgit2.so`'s C is built at `RelWithDebInfo` (`clang -O2 -g -DNDEBUG`). Its Rust static
+library comes from `rust-staticlib.sh` on the dev profile: `opt-level` 0, debug assertions and
+overflow checks on, no extra `RUSTFLAGS`, since the workspace sets no `[profile]`. A C program
+(`clang -O2`) hashed one 256 MiB blob through `git_object_id_from_buffer`, SHA-1 with
+collision detection. (`git_odb_hash` is deprecated, and `-DDEPRECATE_HARD=ON` leaves it out.)
+It ran 18 times on each generation, interleaved, timing thread CPU time on a host whose load
+average was about 68 from another campaign. Gen6, C's `ubc_check`: 1.544 s minimum, 1.751 s
+median. Gen7, the Rust's: 2.039 s and 2.219 s. That is 1.32 times the minimum and 1.27 times
+the median, about 166 against 126 MiB/s, with the same id. `util_tests -ssha1` takes about
+25 ms of CPU on both, too short to show it. With the module pass's 3.3 times per call, this
+puts `ubc_check` at about 13% of the C hash. The host has no `perf` to confirm that split.
+Proposal `c-link-rust-on-the-dev-profile`, new: no event measures what the dev-profile library
+costs the remaining C, and a shipped build's C would link it unoptimised.
+
+From the switch on, the module's coverage is its Rust's, the gateway's lines included. This
+run did not measure the workspace's coverage. Usage cells are the assistant's.
+
 ### `libgit2/src/util/integer.h` wave 223 batch 0: the range checks and overflow checks
 
 `src/util/integer.h` is a header with no translation unit. Its six `GIT_INLINE` range checks
