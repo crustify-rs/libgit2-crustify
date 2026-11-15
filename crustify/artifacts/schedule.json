@@ -128247,7 +128247,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 0,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [],
         "cut": []
@@ -128603,7 +128603,59 @@
         }
       ],
       "packed_with": null,
-      "batches": []
+      "batches": [
+        {
+          "index": 0,
+          "link_unit": "libgit2",
+          "module": "src/util/cc-compat.h",
+          "foundational": false,
+          "kind": "port",
+          "status": "wip",
+          "items": [
+            {
+              "name": "GIT_UNUSED",
+              "defined_in": "src/util/cc-compat.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/cc_compat_h.rs"
+            },
+            {
+              "name": "PRIdZ",
+              "defined_in": "src/util/cc-compat.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/cc_compat_h.rs"
+            },
+            {
+              "name": "PRIuZ",
+              "defined_in": "src/util/cc-compat.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/cc_compat_h.rs"
+            },
+            {
+              "name": "PRIxZ",
+              "defined_in": "src/util/cc-compat.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/cc_compat_h.rs"
+            },
+            {
+              "name": "va_copy",
+              "defined_in": "src/util/cc-compat.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/cc_compat_h.rs"
+            }
+          ],
+          "commits": []
+        }
+      ]
     },
     {
       "index": 220,
@@ -128612,7 +128664,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 0,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [],
         "cut": []
@@ -129022,7 +129074,83 @@
         }
       ],
       "packed_with": null,
-      "batches": []
+      "batches": [
+        {
+          "index": 0,
+          "link_unit": "libgit2",
+          "module": "src/util/ctype_compat.h",
+          "foundational": false,
+          "kind": "port",
+          "status": "wip",
+          "items": [
+            {
+              "name": "git__isalnum",
+              "defined_in": "src/util/ctype_compat.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/ctype_compat_h.rs"
+            },
+            {
+              "name": "git__isalpha",
+              "defined_in": "src/util/ctype_compat.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/ctype_compat_h.rs"
+            },
+            {
+              "name": "git__isdigit",
+              "defined_in": "src/util/ctype_compat.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/ctype_compat_h.rs"
+            },
+            {
+              "name": "git__isprint",
+              "defined_in": "src/util/ctype_compat.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/ctype_compat_h.rs"
+            },
+            {
+              "name": "git__isspace",
+              "defined_in": "src/util/ctype_compat.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/ctype_compat_h.rs"
+            },
+            {
+              "name": "git__isxdigit",
+              "defined_in": "src/util/ctype_compat.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/ctype_compat_h.rs"
+            },
+            {
+              "name": "git__tolower",
+              "defined_in": "src/util/ctype_compat.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/ctype_compat_h.rs"
+            },
+            {
+              "name": "git__toupper",
+              "defined_in": "src/util/ctype_compat.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/ctype_compat_h.rs"
+            }
+          ],
+          "commits": []
+        }
+      ]
     },
     {
       "index": 221,
@@ -129031,7 +129159,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 0,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [],
         "cut": []
@@ -130222,7 +130350,32 @@
         }
       ],
       "packed_with": null,
-      "batches": []
+      "batches": [
+        {
+          "index": 0,
+          "link_unit": "libgit2",
+          "module": "src/util/hash/sha1dc/ubc_check.c",
+          "foundational": false,
+          "kind": "wrap",
+          "status": "wip",
+          "items": [
+            {
+              "name": "dv_info_t",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.h",
+              "kind": "struct",
+              "field_users": [
+                "dm",
+                "maskb",
+                "testt",
+                "dvType"
+              ],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            }
+          ],
+          "commits": []
+        }
+      ]
     },
     {
       "index": 222,
@@ -130318,7 +130471,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 0,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [],
         "cut": []
@@ -130917,7 +131070,115 @@
         }
       ],
       "packed_with": null,
-      "batches": []
+      "batches": [
+        {
+          "index": 0,
+          "link_unit": "libgit2",
+          "module": "src/util/integer.h",
+          "foundational": false,
+          "kind": "port",
+          "status": "wip",
+          "items": [
+            {
+              "name": "git__add_int64_overflow",
+              "defined_in": "src/util/integer.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/integer_h.rs"
+            },
+            {
+              "name": "git__add_int_overflow",
+              "defined_in": "src/util/integer.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/integer_h.rs"
+            },
+            {
+              "name": "git__add_sizet_overflow",
+              "defined_in": "src/util/integer.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/integer_h.rs"
+            },
+            {
+              "name": "git__is_int",
+              "defined_in": "src/util/integer.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/integer_h.rs"
+            },
+            {
+              "name": "git__is_sizet",
+              "defined_in": "src/util/integer.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/integer_h.rs"
+            },
+            {
+              "name": "git__is_ssizet",
+              "defined_in": "src/util/integer.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/integer_h.rs"
+            },
+            {
+              "name": "git__is_uint16",
+              "defined_in": "src/util/integer.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/integer_h.rs"
+            },
+            {
+              "name": "git__is_uint32",
+              "defined_in": "src/util/integer.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/integer_h.rs"
+            },
+            {
+              "name": "git__is_ulong",
+              "defined_in": "src/util/integer.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/integer_h.rs"
+            },
+            {
+              "name": "git__multiply_int64_overflow",
+              "defined_in": "src/util/integer.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/integer_h.rs"
+            },
+            {
+              "name": "git__multiply_sizet_overflow",
+              "defined_in": "src/util/integer.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/integer_h.rs"
+            },
+            {
+              "name": "git__sub_int_overflow",
+              "defined_in": "src/util/integer.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/integer_h.rs"
+            }
+          ],
+          "commits": []
+        }
+      ]
     },
     {
       "index": 224,
@@ -131338,7 +131599,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 0,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [],
         "cut": []
@@ -133140,7 +133401,51 @@
         }
       ],
       "packed_with": null,
-      "batches": []
+      "batches": [
+        {
+          "index": 0,
+          "link_unit": "libgit2",
+          "module": "src/util/thread.c",
+          "foundational": false,
+          "kind": "wrap",
+          "status": "wip",
+          "items": [
+            {
+              "name": "git_atomic32",
+              "defined_in": "src/util/thread.h",
+              "kind": "struct",
+              "field_users": [
+                "val"
+              ],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic64",
+              "defined_in": "src/util/thread.h",
+              "kind": "struct",
+              "field_users": [
+                "val"
+              ],
+              "typedefs": [
+                "git_atomic_ssize"
+              ],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_thread",
+              "defined_in": "src/util/unix/pthread.h",
+              "kind": "struct",
+              "field_users": [
+                "thread"
+              ],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            }
+          ],
+          "commits": []
+        }
+      ]
     },
     {
       "index": 227,
