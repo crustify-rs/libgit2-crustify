@@ -51,6 +51,19 @@ switch, deleting the feature removes the `cfg(not(…))` static and the `cfg` of
 re-export, and the storage stays the gateway's until the global's `port/unexport` moves it
 back to the native code.
 
+The batch's module pass (`wave-221/batch-3/run-1`) reviewed the pattern, as the Change below
+waits for. It holds where it was meant to: with the feature on, the relinked `libgit2_tests` and
+`util_tests` hold one `sha1_dvs`, `R`, which `sha1.c` reads through every offline C suite (3442
+passed, the `plain` baseline). It missed one thing: the documentation. The native static's
+description and its `#[doc(alias = "sha1_dvs")]` are on the `cfg(not(feature))` static alone,
+and the gateway's static cannot take the alias, rustdoc rejecting one equal to its item's name,
+so with the feature on `SHA1_DVS` lost both, and would have lost them for good at the switch
+(`conventions/sha1-dvs-alias-missing-with-the-export-feature`). The fix put the alias and the
+description on the `cfg(feature)` re-export, which rustdoc shows before the gateway's text. So
+the paragraph the Change drafts should say that the re-export carries the native item's alias
+and description, and the gateway's static the anchor, so that the switch, deleting the
+`cfg(not(…))` static, keeps all three.
+
 ## Goal
 
 Consistency (the same case written the same way in every module) and Interoperability

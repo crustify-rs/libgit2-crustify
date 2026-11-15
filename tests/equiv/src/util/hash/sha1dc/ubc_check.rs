@@ -9,6 +9,13 @@
 //! `shattered-1.pdf`, whose two near-collision blocks select `II(52,0)`. Each block is one
 //! array, which the C reads through its pointer and the Rust borrows, and the C writes its
 //! mask over a slot that starts at `u32::MAX`, as `sha1_process`'s does.
+//!
+//! `BSan`, which does not finish the full tests within its hour, checks fewer: the edge
+//! blocks and 1024 seeded ones, the one-bit changes of the first selecting block in the words
+//! the conditions read, and the first eight blocks of `shattered-1.pdf`, its near-collision
+//! pair among them. Every condition of the C and the Rust runs on each call, so each still
+//! reaches every path the full test checks but the guarded clears of the vectors it does not
+//! select.
 
 use libgit2_crustify::libgit2::src::util::hash::sha1dc::ubc_check::{
     DV_II_52_0_BIT, DVMASKSIZE, DvInfoRef, SHA1_DVS, ubc_check,
@@ -100,14 +107,17 @@ fn ubc_check_matches_c_on_seeded_blocks() {
     for w in &edges {
         same(w, &|| format!("{w:X?}"));
     }
-    let (mut selecting, mut selected) = (0_u32, 0_u32);
-    for seed in 0..(1 << 21) {
+    let seeds: u64 = if cfg!(bsan) { 1 << 10 } else { 1 << 21 };
+    let (mut selecting, mut selected) = (0_u64, 0_u32);
+    for seed in 0..seeds {
         let mask = same(&seeded(seed), &|| format!("seed {seed}"));
-        selecting += u32::from(mask != 0);
+        selecting += u64::from(mask != 0);
         selected |= mask;
     }
-    assert_eq!(selected, u32::MAX);
-    assert!(selecting > 1 << 16, "{selecting}");
+    if !cfg!(bsan) {
+        assert_eq!(selected, u32::MAX);
+    }
+    assert!(selecting > seeds / 32, "{selecting}");
 }
 
 /// For each vector, the first seeded block that selects it, and every one of its one-bit
@@ -115,9 +125,14 @@ fn ubc_check_matches_c_on_seeded_blocks() {
 #[test]
 #[cfg_attr(miri, ignore = "calls libgit2")]
 fn ubc_check_matches_c_on_each_one_bit_change_of_a_selecting_block() {
+    let (wanted, words) = if cfg!(bsan) {
+        (1, 35..=64)
+    } else {
+        (32, 0..=79)
+    };
     let mut witnesses = [None; 32];
     let mut seed = 0;
-    while witnesses.iter().any(Option::is_none) {
+    while witnesses.iter().flatten().count() < wanted {
         let w = seeded(seed);
         let mask = same(&w, &|| format!("seed {seed}"));
         for (bit, slot) in witnesses.iter_mut().enumerate() {
@@ -130,7 +145,7 @@ fn ubc_check_matches_c_on_each_one_bit_change_of_a_selecting_block() {
     let mut changed = 0;
     for (seed, w) in witnesses.into_iter().flatten() {
         let mask = same(&w, &|| format!("seed {seed}"));
-        for word in 0..80 {
+        for word in words.clone() {
             for bit in 0..32 {
                 let mut flipped = w;
                 flipped[word] ^= 1 << bit;
@@ -157,13 +172,17 @@ fn ubc_check_matches_c_on_shattered_1_pdf() {
         "/c/tests/resources/sha1/shattered-1.pdf"
     ))
     .unwrap();
+    let blocks = pdf.as_chunks::<64>().0;
+    let checked = if cfg!(bsan) { &blocks[..8] } else { blocks };
     let mut selecting = 0;
-    for (i, block) in pdf.as_chunks::<64>().0.iter().enumerate() {
+    for (i, block) in checked.iter().enumerate() {
         let mask = same(&expand(block), &|| format!("block {i}"));
         selecting += usize::from(mask != 0);
         if i == 3 || i == 4 {
             assert_eq!(mask, DV_II_52_0_BIT, "block {i}");
         }
     }
-    assert_eq!((pdf.len() / 64, selecting), (6600, 337));
+    if !cfg!(bsan) {
+        assert_eq!((pdf.len() / 64, selecting), (6600, 337));
+    }
 }

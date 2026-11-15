@@ -113,6 +113,20 @@ tests that remain are the first to call it.
   `SHA1DCInit`, `SHA1DCUpdate` and `SHA1DCFinal` on `shattered-1.pdf` with the feature on
   and off: the collision was detected both ways, and not once one bit of the file changed.
 
+- `wave-221/batch-3/run-1`, `ubc_check.c`'s module pass, ran it by hand again, in full, on the
+  tip `e816c88bb`: private build dirs under `crustify/tmp/linkcheck/{plain,asan-ubsan}` whose
+  `libcrustify.a` copies lack `ubc_check.c.o` (208 members, one `ubc_check.c.o` checked before
+  `ar d`), the workspace's tests with the feature on over them on `plain` and `asan-ubsan`
+  (`lib` 911, `equiv` 536, `ub_safe` 801, `ub_unsafe` 144, `unit_pub` 258, doctests 107 and
+  397, all passing), and the variant's `libgit2_tests` and `util_tests` relinked from their
+  `ninja -t commands` lines without `src/util/CMakeFiles/util.dir/hash/sha1dc/ubc_check.c.o`
+  and with the crate's `staticlib` built with the feature on, then `crustify/scripts/c-tests.sh`
+  over a dir holding them: 3442 passed, 55 skipped, matching the `plain` baseline. It also gives
+  the validation this proposal lacked a mutant for: an export writing a zero mask passed the
+  gateway's own test (its 35 blocks all give a zero mask, a gap the pass filled), and failed
+  `sha1::detect_collision_attack` in the relinked `util_tests`, so the relinked C tests catch a
+  wrong export where the module's remaining C is a library C tests reach.
+
 ## Destination
 
 The spec: `testing-gates`' Regressions section, the export checks of a `port` batch, with a

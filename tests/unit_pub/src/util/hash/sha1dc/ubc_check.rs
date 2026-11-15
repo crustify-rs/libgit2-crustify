@@ -532,6 +532,95 @@ fn ubc_check_reads_words_35_to_64_alone() {
     }
 }
 
+/// For each witness of [`WITNESSES`], in bit order, the masks of its 960 one-bit changes in
+/// words 35 to 64, word by word and bit by bit, folded by 64-bit FNV-1a, and the count of those
+/// that differ from the witness's mask: the values `ubc_check.c`'s C gives.
+const ONE_BIT_CHANGES: [(u64, u32); 32] = [
+    (0xDCFF_C5B4_9A2B_67E3, 14),
+    (0xE0AD_284F_FF52_C0F7, 15),
+    (0x8D4D_6541_2645_D9CD, 16),
+    (0x67D2_FE71_9D8D_C9E5, 15),
+    (0x07CE_FA9C_98E3_96E5, 10),
+    (0x3CE5_ECEF_884C_5185, 15),
+    (0x8B65_D91B_A6E8_F925, 10),
+    (0x03EC_D0DA_BA1B_7925, 18),
+    (0x8A66_7570_DAD5_DCB4, 11),
+    (0x00B6_1D83_12F5_2405, 17),
+    (0x7730_760B_70B4_0A25, 11),
+    (0x0E7F_F5C3_65BF_6625, 18),
+    (0xC3FD_09AA_5DEC_9E25, 11),
+    (0x1E57_8E10_1BD6_6E25, 19),
+    (0x1766_5F2A_2BBB_0E25, 14),
+    (0x4E51_FA25_0538_0E25, 17),
+    (0xE876_C5A6_5818_8E25, 16),
+    (0x85B9_2949_8148_8E25, 15),
+    (0x105E_55B5_85AE_8E25, 11),
+    (0x39C7_B3A0_53A2_8E25, 20),
+    (0x8CBF_80DB_B7B2_8E25, 21),
+    (0xB048_2BF6_F742_8E25, 19),
+    (0x19CF_41F5_8B27_9595, 15),
+    (0x32CD_99E2_A922_8E25, 19),
+    (0xCBFA_3BB1_084B_1E25, 15),
+    (0x64D6_6CF4_8862_8E25, 20),
+    (0xA106_18FC_548D_2025, 22),
+    (0x5301_0B09_E6A2_8E25, 22),
+    (0xE85A_C2B0_C7A2_8E25, 20),
+    (0x683B_433A_C7A2_8E25, 21),
+    (0x9861_4154_7CEE_3FE5, 33),
+    (0xC79C_6551_730E_E285, 22),
+];
+
+/// Every one-bit change of the words a witness's conditions read gives the masks C gives: a
+/// block that selects a vector meets each of its conditions, so a change that fails one alone
+/// clears its bit, and a condition read from the wrong word or bit, or compared the wrong way,
+/// changes some mask. Carries over the equivalence test
+/// `ubc_check_matches_c_on_each_one_bit_change_of_a_selecting_block`, which retires with the
+/// C at the module's switch. Miri and `BSan` check the witness of `II(52,0)` alone, the vector
+/// of the shattered attack: 960 blocks, where all 30,720 would take them minutes.
+#[test]
+fn ubc_check_of_each_one_bit_change_of_a_witness_is_cs() {
+    for (bit, ((seed, mask), expected)) in WITNESSES.into_iter().zip(ONE_BIT_CHANGES).enumerate() {
+        if (cfg!(miri) || cfg!(bsan)) && bit != 27 {
+            continue;
+        }
+        let w = seeded(seed);
+        let (mut digest, mut changed) = (0xCBF2_9CE4_8422_2325_u64, 0);
+        for word in 35..=64 {
+            for flip in 0..32 {
+                let mut changed_block = w;
+                changed_block[word] ^= 1 << flip;
+                let [m] = ubc_check(&changed_block);
+                digest = (digest ^ u64::from(m)).wrapping_mul(0x0000_0100_0000_01B3);
+                changed += u32::from(m != mask);
+            }
+        }
+        assert_eq!((digest, changed), expected, "seed {seed}");
+    }
+}
+
+/// The masks of the first 65,536 seeded blocks, folded in order by 64-bit FNV-1a, the count of
+/// non-zero masks and their union: the values `ubc_check.c`'s C gives. Carries over the
+/// equivalence test `ubc_check_matches_c_on_seeded_blocks`, which retires with the C at the
+/// module's switch: some of these blocks fail a condition that no one-bit change of a witness
+/// fails alone, since another condition of its vector reads the same bit. Miri and `BSan` fold
+/// the first 64.
+#[test]
+fn ubc_check_of_many_seeded_blocks_folds_as_c_does() {
+    let (blocks, expected) = if cfg!(miri) || cfg!(bsan) {
+        (64, (0x60DE_4715_E108_B125, 6, 0x0004_0240))
+    } else {
+        (1 << 16, (0x1B1E_3730_24AC_9A00, 3052, u32::MAX))
+    };
+    let (mut digest, mut selecting, mut selected) = (0xCBF2_9CE4_8422_2325_u64, 0, 0);
+    for seed in 0..blocks {
+        let [mask] = ubc_check(&seeded(seed));
+        digest = (digest ^ u64::from(mask)).wrapping_mul(0x0000_0100_0000_01B3);
+        selecting += u32::from(mask != 0);
+        selected |= mask;
+    }
+    assert_eq!((digest, selecting, selected), expected);
+}
+
 /// 512 seeded blocks, each mask folded in turn, `fold = fold.rotate_left(5) ^ mask`: the value,
 /// the count of non-zero masks and their union C gives. 512, so that Miri runs it in seconds;
 /// the equivalence tests compare two million blocks with C.
