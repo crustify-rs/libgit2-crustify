@@ -50,6 +50,20 @@ Correctness of the spec (no two texts disagree), and Idiomatic Rust / performanc
 expands keeps its native code. The fitness measure: no task message contradicts
 `porting-symbols`, and no export is added that only forwards one builtin.
 
+## Occurrences
+
+- `wave-226/batch-5/run-1`, the review of the module's three port batches
+  (`conventions/header-functions-without-exports`), which files the difference as a finding
+  left to the user, unpatched. It adds `unix/pthread.h`'s `git_threads_global_init`, whose body
+  is `return 0` and whose address `libgit2.c`'s `init_fns` takes. `wave-226/batch-3` kept it in
+  its header without an export, under the same task message. The review measured what the
+  export costs. In gen5's `plain` objects, `thread.c.o` left out, 254 atomic read-modify-write
+  and exchange instructions are inlined in 34 objects, an upper bound for `thread.h`'s, its
+  sequentially consistent loads not counted. An increment and a decrement called across
+  translation units, as an export is called, cost about 4.5 ns a pair more than inlined
+  (24.2 to 24.9 ns against 15.4 to 15.7, single-threaded, clang 18 at `-O2`). The report's
+  `measure/` holds both measurements.
+
 ## Destination
 
 The spec: `porting-symbols` § Static inline functions. It is unprotected, and the translator

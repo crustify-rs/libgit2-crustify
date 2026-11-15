@@ -1,0 +1,19 @@
+error[E0597]: `value` does not live long enough
+  --> src/main.rs:12:24
+   |
+11 |     let value = 7;
+   |         ----- binding `value` declared here
+12 |     mutex = Mutex::new(&value);
+   |                        ^^^^^^ borrowed value does not live long enough
+...
+17 | }
+   | -
+   | |
+   | `value` dropped here while still borrowed
+   | borrow might be used here, when `mutex` is dropped and runs the `Drop` code for type `libgit2_crustify::libgit2::src::util::thread::Mutex`
+   |
+   = note: values in a scope are dropped in the opposite order they are defined
+
+For more information about this error, try `rustc --explain E0597`.
+error: could not compile `free-anchors-on-empty-drop-impls` (bin "free-anchors-on-empty-drop-impls") due to 1 previous error
+exit status: 101

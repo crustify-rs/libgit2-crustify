@@ -1,0 +1,17 @@
+[package]
+name = "free-anchors-on-empty-drop-impls"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+libgit2 = { package = "libgit2-crustify", path = "../../../../../../../../../../.." }
+
+# The safe crate's workspace patches, which a package of its own repeats.
+[patch."https://github.com/crustify-rs/glibc-crustify"]
+glibc-bindings = { path = "/target/glibc-crustify" }
+
+[patch."https://github.com/crustify-rs/ffibox"]
+ffibox = { path = "/crustify-rs/ffibox.libgit2-crustify" }

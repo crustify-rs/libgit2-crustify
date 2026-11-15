@@ -1,0 +1,18 @@
+[package]
+name = "forked-child-exit-waits-on-the-key-registry"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+libgit2 = { package = "libgit2-crustify", path = "../../../../../../../../../../.." }
+nix = { version = "0.31.3", features = ["process", "signal"] }
+
+# The safe crate's workspace patches, which a package of its own repeats.
+[patch."https://github.com/crustify-rs/glibc-crustify"]
+glibc-bindings = { path = "/target/glibc-crustify" }
+
+[patch."https://github.com/crustify-rs/ffibox"]
+ffibox = { path = "/crustify-rs/ffibox.libgit2-crustify" }

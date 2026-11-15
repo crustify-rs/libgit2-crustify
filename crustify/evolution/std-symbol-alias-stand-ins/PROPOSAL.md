@@ -43,6 +43,19 @@ measure is the conventions findings per item; the change expects none on such a 
 This is the case's first occurrence, so the proposal corrects the pattern the section gives
 rather than adding one.
 
+## Occurrences
+
+- `wave-226/batch-5/run-1`, the review of the batch above
+  (`conventions/free-anchors-on-empty-drop-impls`), against the Change's last clause, "an alias
+  of the operation that releases it that type's `Drop`". The three empty `impl Drop` blocks that
+  carried `mac::git_mutex_free`, `mac::git_cond_free` and `mac::git_rwlock_free` made
+  `Mutex<&'a T>` and `RwLock<&'a T>` stricter under the drop check than the standard locks:
+  a lock declared before what it borrows fails with `E0597`, where `std::sync::Mutex` compiles.
+  They also kept `into_inner` from being written without unsafe code. The review moved the
+  three anchors onto the types, beside their type macros' anchors, and removed the impls. The
+  rule's release clause should read "the type itself, whose drop releases it", which is also
+  the `conventions`' "item that stands in for it" (§3.1), as this proposal's review asks.
+
 ## Destination
 
 The spec, `porting-symbols`' Macros section, which the translator evolves.

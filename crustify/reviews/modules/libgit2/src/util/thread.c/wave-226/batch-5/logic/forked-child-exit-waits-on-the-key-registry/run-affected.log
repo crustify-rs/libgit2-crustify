@@ -1,0 +1,2 @@
+fork 2 of 100: the child did not end within 2 s, blocked in futex_wait_queue (syscall 202)
+exit status: 1

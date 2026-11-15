@@ -1,0 +1,2 @@
+a lock over a borrow drops after what it borrows
+exit status: 0
