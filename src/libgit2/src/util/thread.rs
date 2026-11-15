@@ -38,6 +38,52 @@
 //! `unsafe`: a join made through the object follows the id it stores. A zeroed value, as
 //! [`Thread::default`] gives, names no thread, as C's storage does before `git_thread_create`.
 //! A `pthread_t` joins once, so a [`Thread`] is neither `Clone` nor `Copy`.
+//!
+//! A thread Rust starts is native: [`spawn`] starts it, as `git_thread_create` does, and
+//! the [`JoinHandle`] it returns owns it, joined once by [`JoinHandle::join`], as
+//! `git_thread_join` joins, whose result is the closure's, as `pthread_join`'s `status` is the
+//! start routine's. A [`Thread`] stays the C form of a thread C starts into storage of its own,
+//! and a [`JoinHandle`] is never turned into one: the standard library cannot join a thread by
+//! its raw id, so only C could join it. The [locks](#locks) describe why these are native.
+//!
+//! # Locks
+//!
+//! [`Mutex`], [`Condvar`] and [`RwLock`] are `unix/pthread.h`'s `git_mutex`, `git_cond` and
+//! `git_rwlock`, which name `pthread_mutex_t`, `pthread_cond_t` and `pthread_rwlock_t`, their
+//! operations each the POSIX function of its name with default attributes. The header keeps
+//! them, and `git_thread_create` and `git_thread_join`, for the C that remains, which embeds its
+//! locks in its own structs and expands the macros where it locks them. The Rust forms are not
+//! linked to that C, and no lock or thread crosses between the two, so they are the standard
+//! library's: [`std::sync::Mutex`], [`std::sync::Condvar`], [`std::sync::RwLock`] and
+//! [`std::thread::Builder::spawn`], each behind a type of this module that carries its C names.
+//!
+//! Where C locks a lock and unlocks it later by name, Rust locks it into a guard, which its
+//! drop or its `unlock` releases: C's rule that a read lock is released with
+//! `git_rwlock_rdunlock` and a write lock with `git_rwlock_wrunlock` is the guard's type. A
+//! guard is not [`Send`], so a lock is released on the thread that took it, as POSIX requires
+//! of a default mutex and read-write lock. A lock guards the data it holds, a `T`, where C's
+//! guard state kept beside them: a lock of C's kind is a `Mutex<()>`.
+//!
+//! The standard locks differ from C's in three ways, none of which libgit2's C relies on:
+//!
+//! - They cannot fail to initialise, where `pthread_mutex_init` and its siblings may report
+//!   `EAGAIN` or `ENOMEM`, which libgit2 reports as an error: `new` is a `const fn`, and a lock may
+//!   be a `static`, as `GIT_RWLOCK_STATIC_INIT` initialises one in C.
+//! - A lock is poisoned when a thread panics while holding it, a state C has no form of: locking it
+//!   then fails with a [`PoisonError`], which hands back the guard, so that a caller that can vouch
+//!   for the data may go on with it. C's lock fails only with the errors POSIX lists, positive
+//!   numbers, which libgit2's callers test with `< 0` and so never see.
+//! - Taking a lock the calling thread already holds, a read lock included, deadlocks or panics,
+//!   where it deadlocks or is undefined in C: `unix/pthread.h` forbids recursive read locks for the
+//!   Windows implementation's sake.
+//!
+//! The macros are `unix/pthread.h`'s because this build defines `GIT_THREADS` and not
+//! `GIT_WIN32`. The branches it does not take compute the same: on Windows, `win32/thread.h`
+//! declares each as a function over a critical section, an event and a slim reader-writer
+//! lock, which exclude and wake as these do; without `GIT_THREADS`, `thread.h` makes each lock
+//! an `unsigned int` and each operation `git__noop_args`, returning 0, which excludes nothing
+//! because no second thread exists, and its `git_thread_create` and `git_thread_join` are only
+//! expanded under `#ifdef GIT_THREADS`.
 
 // The workspace does not set `unsafe_code` yet; this module confines its unsafe code to
 // `ffi_import`, which takes the lint back, and holds it to that here.
@@ -63,6 +109,525 @@ pub type AtomicSsize = Atomic64;
 #[doc(alias = "git_atomic_ssize")]
 #[cfg(not(target_pointer_width = "64"))]
 pub type AtomicSsize = Atomic32;
+
+// -----------------------------------------------------------------------------------------
+// Locks, condition variables and threads: `unix/pthread.h`'s `git_mutex`, `git_cond`,
+// `git_rwlock` and `git_thread_*` macros, native over the standard library.
+// -----------------------------------------------------------------------------------------
+
+use core::fmt;
+use core::ops::{Deref, DerefMut};
+use std::io;
+use std::sync::{LockResult, PoisonError};
+
+/// A mutual-exclusion lock over a `T`: libgit2's `git_mutex`, `pthread_mutex_t` with
+/// default attributes, as a [`std::sync::Mutex`].
+///
+/// [`new`](Self::new) initialises it, as `git_mutex_init` does, [`lock`](Self::lock)
+/// takes it into a [`MutexGuard`], as `git_mutex_lock` does, the guard's drop or
+/// [`MutexGuard::unlock`] releases it, as `git_mutex_unlock` does, and dropping it
+/// destroys it, as `git_mutex_free` does. The [module documentation](self#locks) gives how it
+/// differs from C's.
+///
+/// ```
+/// use libgit2_crustify::libgit2::src::util::thread::Mutex;
+///
+/// let count = Mutex::new(0);
+/// *count.lock().unwrap() += 1;
+/// assert_eq!(*count.lock().unwrap(), 1);
+/// ```
+///
+/// Replaces `mac::git_mutex`
+#[doc(alias = "git_mutex")]
+pub struct Mutex<T: ?Sized> {
+    inner: std::sync::Mutex<T>,
+}
+
+/// The lock of a [`Mutex`], held until it is dropped or passed to
+/// [`unlock`](Self::unlock); it dereferences to the data the lock guards. It is not
+/// [`Send`]: the thread that took the lock releases it.
+pub struct MutexGuard<'a, T: ?Sized + 'a> {
+    inner: std::sync::MutexGuard<'a, T>,
+}
+
+impl<T> Mutex<T> {
+    /// A new, unlocked lock over `value`, as `git_mutex_init` initialises one with
+    /// default attributes; it cannot fail, where `pthread_mutex_init` may.
+    ///
+    /// Replaces `mac::git_mutex_init`
+    #[doc(alias = "git_mutex_init")]
+    #[must_use]
+    pub const fn new(value: T) -> Mutex<T> {
+        Mutex {
+            inner: std::sync::Mutex::new(value),
+        }
+    }
+}
+
+impl<T: ?Sized> Mutex<T> {
+    /// Takes the lock, blocking until no other thread holds it, as `git_mutex_lock`
+    /// does.
+    ///
+    /// Taking it again on a thread that holds it deadlocks or panics, as it deadlocks
+    /// in C.
+    ///
+    /// # Errors
+    ///
+    /// When a thread panicked while holding the lock, the lock is poisoned: it is still
+    /// taken, and the [`PoisonError`] holds the guard
+    /// ([`into_inner`](PoisonError::into_inner)).
+    ///
+    /// Replaces `mac::git_mutex_lock`
+    #[doc(alias = "git_mutex_lock")]
+    pub fn lock(&self) -> LockResult<MutexGuard<'_, T>> {
+        match self.inner.lock() {
+            Ok(inner) => Ok(MutexGuard { inner }),
+            Err(poisoned) => Err(PoisonError::new(MutexGuard {
+                inner: poisoned.into_inner(),
+            })),
+        }
+    }
+
+    /// Whether a thread panicked while holding the lock.
+    #[must_use]
+    pub fn is_poisoned(&self) -> bool {
+        self.inner.is_poisoned()
+    }
+
+    /// The data, through the exclusive borrow of the lock, which needs no locking.
+    ///
+    /// # Errors
+    ///
+    /// When the lock is poisoned, the [`PoisonError`] holds the data.
+    pub fn get_mut(&mut self) -> LockResult<&mut T> {
+        self.inner.get_mut()
+    }
+}
+
+impl<T: ?Sized> Drop for Mutex<T> {
+    /// Destroys the lock, as `git_mutex_free` does: the borrow checker sees that no
+    /// guard holds it, which POSIX asks of `pthread_mutex_destroy`'s caller.
+    ///
+    /// Replaces `mac::git_mutex_free`
+    #[doc(alias = "git_mutex_free")]
+    fn drop(&mut self) {}
+}
+
+impl<T: Default> Default for Mutex<T> {
+    fn default() -> Mutex<T> {
+        Mutex::new(T::default())
+    }
+}
+
+impl<T> From<T> for Mutex<T> {
+    fn from(value: T) -> Mutex<T> {
+        Mutex::new(value)
+    }
+}
+
+impl<T: ?Sized + fmt::Debug> fmt::Debug for Mutex<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.inner, f)
+    }
+}
+
+impl<T: ?Sized> MutexGuard<'_, T> {
+    /// Releases the lock, as `git_mutex_unlock` does; dropping the guard does the same.
+    /// An associated function, `MutexGuard::unlock(guard)`, so that it hides no method
+    /// of the data.
+    ///
+    /// Replaces `mac::git_mutex_unlock`
+    #[doc(alias = "git_mutex_unlock")]
+    pub fn unlock(guard: Self) {
+        drop(guard);
+    }
+}
+
+impl<T: ?Sized> Deref for MutexGuard<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.inner
+    }
+}
+
+impl<T: ?Sized> DerefMut for MutexGuard<'_, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.inner
+    }
+}
+
+impl<T: ?Sized + fmt::Debug> fmt::Debug for MutexGuard<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&*self.inner, f)
+    }
+}
+
+/// A condition variable: libgit2's `git_cond`, `pthread_cond_t` with default
+/// attributes, as a [`std::sync::Condvar`].
+///
+/// [`new`](Self::new) initialises it, as `git_cond_init` does,
+/// [`wait`](Self::wait) releases a [`Mutex`]'s lock and waits on it, as `git_cond_wait`
+/// does, [`notify_one`](Self::notify_one) wakes one waiter, as `git_cond_signal` does,
+/// and dropping it destroys it, as `git_cond_free` does. A wait may also end with no
+/// notification, as `pthread_cond_wait`'s may, so a waiter tests its condition in a
+/// loop, as libgit2's pack builder does.
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use libgit2_crustify::libgit2::src::util::thread::{Condvar, Mutex, spawn};
+///
+/// let shared = Arc::new((Mutex::new(false), Condvar::new()));
+/// let theirs = Arc::clone(&shared);
+/// let thread = spawn(move || {
+///     *theirs.0.lock().unwrap() = true;
+///     theirs.1.notify_one();
+/// })
+/// .unwrap();
+/// let mut ready = shared.0.lock().unwrap();
+/// while !*ready {
+///     ready = shared.1.wait(ready).unwrap();
+/// }
+/// drop(ready);
+/// thread.join().unwrap();
+/// ```
+///
+/// Replaces `mac::git_cond`
+#[doc(alias = "git_cond")]
+pub struct Condvar {
+    inner: std::sync::Condvar,
+}
+
+impl Condvar {
+    /// A new condition variable, which no thread waits on, as `git_cond_init`
+    /// initialises one with default attributes; it cannot fail, where
+    /// `pthread_cond_init` may.
+    ///
+    /// Replaces `mac::git_cond_init`
+    #[doc(alias = "git_cond_init")]
+    #[must_use]
+    pub const fn new() -> Condvar {
+        Condvar {
+            inner: std::sync::Condvar::new(),
+        }
+    }
+
+    /// Releases `guard`'s lock and blocks until this condition variable is notified,
+    /// then takes the lock again and returns its guard, as `git_cond_wait` does. The
+    /// wait may end with no notification, so the caller tests its condition again.
+    ///
+    /// # Errors
+    ///
+    /// When the lock is poisoned once taken again, the [`PoisonError`] holds its guard.
+    ///
+    /// Replaces `mac::git_cond_wait`
+    #[doc(alias = "git_cond_wait")]
+    pub fn wait<'a, T>(&self, guard: MutexGuard<'a, T>) -> LockResult<MutexGuard<'a, T>> {
+        match self.inner.wait(guard.inner) {
+            Ok(inner) => Ok(MutexGuard { inner }),
+            Err(poisoned) => Err(PoisonError::new(MutexGuard {
+                inner: poisoned.into_inner(),
+            })),
+        }
+    }
+
+    /// Wakes one thread waiting on this condition variable, if any waits, as
+    /// `git_cond_signal` does; a notification no thread waits for is lost, as C's is.
+    ///
+    /// Replaces `mac::git_cond_signal`
+    #[doc(alias = "git_cond_signal")]
+    pub fn notify_one(&self) {
+        self.inner.notify_one();
+    }
+}
+
+impl Drop for Condvar {
+    /// Destroys the condition variable, as `git_cond_free` does: a waiter borrows it,
+    /// so none is left, which POSIX asks of `pthread_cond_destroy`'s caller.
+    ///
+    /// Replaces `mac::git_cond_free`
+    #[doc(alias = "git_cond_free")]
+    fn drop(&mut self) {}
+}
+
+impl Default for Condvar {
+    fn default() -> Condvar {
+        Condvar::new()
+    }
+}
+
+impl fmt::Debug for Condvar {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.inner, f)
+    }
+}
+
+/// A read-write lock over a `T`: libgit2's `git_rwlock`, `pthread_rwlock_t` with
+/// default attributes, as a [`std::sync::RwLock`].
+///
+/// [`new`](Self::new) initialises it, as `git_rwlock_init` does, [`read`](Self::read)
+/// and [`write`](Self::write) take it shared and exclusive, as `git_rwlock_rdlock` and
+/// `git_rwlock_wrlock` do, into a [`RwLockReadGuard`] or a [`RwLockWriteGuard`], whose
+/// drop or `unlock` releases it, as `git_rwlock_rdunlock` and `git_rwlock_wrunlock` do,
+/// and dropping it destroys it, as `git_rwlock_free` does. A read lock is not taken
+/// twice by one thread, as `unix/pthread.h` asks.
+///
+/// ```
+/// use libgit2_crustify::libgit2::src::util::thread::RwLock;
+///
+/// let cache = RwLock::new(Vec::new());
+/// cache.write().unwrap().push(1);
+/// assert_eq!(*cache.read().unwrap(), [1]);
+/// ```
+///
+/// Replaces `mac::git_rwlock`
+#[doc(alias = "git_rwlock")]
+pub struct RwLock<T: ?Sized> {
+    inner: std::sync::RwLock<T>,
+}
+
+/// The shared lock of an [`RwLock`], held until it is dropped or passed to
+/// [`unlock`](Self::unlock); it dereferences to the data. It is not [`Send`].
+pub struct RwLockReadGuard<'a, T: ?Sized + 'a> {
+    inner: std::sync::RwLockReadGuard<'a, T>,
+}
+
+/// The exclusive lock of an [`RwLock`], held until it is dropped or passed to
+/// [`unlock`](Self::unlock); it dereferences to the data, mutably. It is not [`Send`].
+pub struct RwLockWriteGuard<'a, T: ?Sized + 'a> {
+    inner: std::sync::RwLockWriteGuard<'a, T>,
+}
+
+impl<T> RwLock<T> {
+    /// A new, unlocked lock over `value`, as `git_rwlock_init` initialises one with
+    /// default attributes; it cannot fail, where `pthread_rwlock_init` may.
+    ///
+    /// Replaces `mac::git_rwlock_init`
+    #[doc(alias = "git_rwlock_init")]
+    #[must_use]
+    pub const fn new(value: T) -> RwLock<T> {
+        RwLock {
+            inner: std::sync::RwLock::new(value),
+        }
+    }
+}
+
+impl<T: ?Sized> RwLock<T> {
+    /// Takes the lock shared, blocking while a thread holds it exclusive, as
+    /// `git_rwlock_rdlock` does; any number of threads hold it shared at once.
+    ///
+    /// Taking it again on a thread that holds it, shared or exclusive, may deadlock or
+    /// panic, as `unix/pthread.h` forbids.
+    ///
+    /// # Errors
+    ///
+    /// When a thread panicked while holding the lock exclusive, the lock is poisoned:
+    /// it is still taken, and the [`PoisonError`] holds the guard.
+    ///
+    /// Replaces `mac::git_rwlock_rdlock`
+    #[doc(alias = "git_rwlock_rdlock")]
+    pub fn read(&self) -> LockResult<RwLockReadGuard<'_, T>> {
+        match self.inner.read() {
+            Ok(inner) => Ok(RwLockReadGuard { inner }),
+            Err(poisoned) => Err(PoisonError::new(RwLockReadGuard {
+                inner: poisoned.into_inner(),
+            })),
+        }
+    }
+
+    /// Takes the lock exclusive, blocking while any thread holds it, as
+    /// `git_rwlock_wrlock` does.
+    ///
+    /// Taking it again on a thread that holds it may deadlock or panic.
+    ///
+    /// # Errors
+    ///
+    /// When a thread panicked while holding the lock exclusive, the lock is poisoned:
+    /// it is still taken, and the [`PoisonError`] holds the guard.
+    ///
+    /// Replaces `mac::git_rwlock_wrlock`
+    #[doc(alias = "git_rwlock_wrlock")]
+    pub fn write(&self) -> LockResult<RwLockWriteGuard<'_, T>> {
+        match self.inner.write() {
+            Ok(inner) => Ok(RwLockWriteGuard { inner }),
+            Err(poisoned) => Err(PoisonError::new(RwLockWriteGuard {
+                inner: poisoned.into_inner(),
+            })),
+        }
+    }
+
+    /// Whether a thread panicked while holding the lock exclusive.
+    #[must_use]
+    pub fn is_poisoned(&self) -> bool {
+        self.inner.is_poisoned()
+    }
+
+    /// The data, through the exclusive borrow of the lock, which needs no locking.
+    ///
+    /// # Errors
+    ///
+    /// When the lock is poisoned, the [`PoisonError`] holds the data.
+    pub fn get_mut(&mut self) -> LockResult<&mut T> {
+        self.inner.get_mut()
+    }
+}
+
+impl<T: ?Sized> Drop for RwLock<T> {
+    /// Destroys the lock, as `git_rwlock_free` does: the borrow checker sees that no
+    /// guard holds it, which POSIX asks of `pthread_rwlock_destroy`'s caller.
+    ///
+    /// Replaces `mac::git_rwlock_free`
+    #[doc(alias = "git_rwlock_free")]
+    fn drop(&mut self) {}
+}
+
+impl<T: Default> Default for RwLock<T> {
+    fn default() -> RwLock<T> {
+        RwLock::new(T::default())
+    }
+}
+
+impl<T> From<T> for RwLock<T> {
+    fn from(value: T) -> RwLock<T> {
+        RwLock::new(value)
+    }
+}
+
+impl<T: ?Sized + fmt::Debug> fmt::Debug for RwLock<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.inner, f)
+    }
+}
+
+impl<T: ?Sized> RwLockReadGuard<'_, T> {
+    /// Releases the shared lock, as `git_rwlock_rdunlock` does; dropping the guard does
+    /// the same. An associated function, so that it hides no method of the data.
+    ///
+    /// Replaces `mac::git_rwlock_rdunlock`
+    #[doc(alias = "git_rwlock_rdunlock")]
+    pub fn unlock(guard: Self) {
+        drop(guard);
+    }
+}
+
+impl<T: ?Sized> Deref for RwLockReadGuard<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.inner
+    }
+}
+
+impl<T: ?Sized + fmt::Debug> fmt::Debug for RwLockReadGuard<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&*self.inner, f)
+    }
+}
+
+impl<T: ?Sized> RwLockWriteGuard<'_, T> {
+    /// Releases the exclusive lock, as `git_rwlock_wrunlock` does; dropping the guard
+    /// does the same. An associated function, so that it hides no method of the data.
+    ///
+    /// Replaces `mac::git_rwlock_wrunlock`
+    #[doc(alias = "git_rwlock_wrunlock")]
+    pub fn unlock(guard: Self) {
+        drop(guard);
+    }
+}
+
+impl<T: ?Sized> Deref for RwLockWriteGuard<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.inner
+    }
+}
+
+impl<T: ?Sized> DerefMut for RwLockWriteGuard<'_, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.inner
+    }
+}
+
+impl<T: ?Sized + fmt::Debug> fmt::Debug for RwLockWriteGuard<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&*self.inner, f)
+    }
+}
+
+/// Starts a thread that runs `f`, as `git_thread_create` starts one that runs its start
+/// routine over its argument, and returns the [`JoinHandle`] that owns it.
+///
+/// The closure owns what it captures (`'static`), where C hands its thread a pointer
+/// that the caller keeps alive until the join; a thread that borrows its caller's data
+/// is started in a [`std::thread::scope`]. A thread nothing joins runs on after its
+/// handle is dropped, detached, where C's runs on unjoined.
+///
+/// # Errors
+///
+/// The system's error when it cannot start a thread, as `pthread_create` reports it
+/// (`EAGAIN` when a resource limit is reached), which libgit2 reports as
+/// `GIT_ERROR_THREAD`.
+///
+/// Replaces `mac::git_thread_create`
+#[doc(alias = "git_thread_create")]
+pub fn spawn<F, T>(f: F) -> io::Result<JoinHandle<T>>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    std::thread::Builder::new()
+        .spawn(f)
+        .map(|inner| JoinHandle { inner })
+}
+
+/// A thread [`spawn`] started, which [`join`](Self::join) waits for and whose result
+/// it returns.
+pub struct JoinHandle<T> {
+    inner: std::thread::JoinHandle<T>,
+}
+
+impl<T> JoinHandle<T> {
+    /// Waits for the thread to end and returns what its closure returned, as
+    /// `git_thread_join` waits and reads the start routine's result through `status`.
+    /// The handle is consumed, so the thread is joined once.
+    ///
+    /// # Errors
+    ///
+    /// When the closure panicked, the panic's payload, which
+    /// [`std::panic::resume_unwind`] can propagate; C's thread has no such ending.
+    ///
+    /// # Panics
+    ///
+    /// When the thread joins itself, through a handle it was given: `pthread_join`
+    /// refuses that with `EDEADLK`.
+    ///
+    /// Replaces `mac::git_thread_join`
+    #[doc(alias = "git_thread_join")]
+    pub fn join(self) -> std::thread::Result<T> {
+        self.inner.join()
+    }
+
+    /// The thread, as the standard library names it.
+    #[must_use]
+    pub fn thread(&self) -> &std::thread::Thread {
+        self.inner.thread()
+    }
+
+    /// Whether the thread's closure has returned or panicked, so that
+    /// [`join`](Self::join) would not block.
+    #[must_use]
+    pub fn is_finished(&self) -> bool {
+        self.inner.is_finished()
+    }
+}
+
+impl<T> fmt::Debug for JoinHandle<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("JoinHandle").finish_non_exhaustive()
+    }
+}
 
 #[expect(
     unsafe_code,

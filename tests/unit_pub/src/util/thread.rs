@@ -164,3 +164,5 @@ fn a_thread_prints_its_id() {
     assert_eq!(format!("{:?}", thread.as_ref()), "Thread { thread: 0 }");
     assert_eq!(format!("{:?}", thread.as_mut()), "Thread { thread: 0 }");
 }
+
+mod sync;

@@ -1,0 +1,11 @@
+error[E0505]: cannot move out of `lock` because it is borrowed
+ --> tests/ub_safe/compile_fail/mutex_dropped_while_locked.rs:8:10
+  |
+6 |     let lock = Mutex::new(1);
+  |         ---- binding `lock` declared here
+7 |     let guard = lock.lock().unwrap();
+  |                 ---- borrow of `lock` occurs here
+8 |     drop(lock);
+  |          ^^^^ move out of `lock` occurs here
+9 |     let _ = *guard;
+  |              ----- borrow later used here

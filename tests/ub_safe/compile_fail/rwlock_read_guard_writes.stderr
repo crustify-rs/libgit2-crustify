@@ -1,0 +1,7 @@
+error[E0594]: cannot assign to data in dereference of `libgit2_crustify::libgit2::src::util::thread::RwLockReadGuard<'_, i32>`
+ --> tests/ub_safe/compile_fail/rwlock_read_guard_writes.rs:7:5
+  |
+7 |     *guard = 2;
+  |     ^^^^^^^^^^ cannot assign
+  |
+  = help: trait `DerefMut` is required to modify through a dereference, but it is not implemented for `libgit2_crustify::libgit2::src::util::thread::RwLockReadGuard<'_, i32>`

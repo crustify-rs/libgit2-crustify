@@ -57,22 +57,22 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip the integration of `libgit2/src/util/strnlen.h`, `30176475c`; `main` at `c58bc5de8`, nothing shipped yet; crustify `cc84106`, ffibox `9c22a73`, wavefront `bf21e16`, ffimap `9aa2ef1` (each on its `libgit2-crustify/devel`, wavefront and ffimap on `devel`)
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `23186` non-test, `110292` tests; **C LoC** — `88938`
+- **Rust LoC** — `23372` non-test, `110779` tests; **C LoC** — `88938`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `803` | — | `30.38`% | `77.17`% |
-| UB unsafe tests | `148` | — | `20.13`% | `17.65`% |
-| Equiv tests | `532` | — | `43.74`% | `68.36`% |
-| Unit tests | `1161` | — | `34.36`% | `88.26`% |
-| **Total tests** | **`2644`** | — | **`47.50`%** | **`98.21`%** |
+| UB safe tests | `809` | — | `30.37`% | `76.94`% |
+| UB unsafe tests | `148` | — | `20.10`% | `17.50`% |
+| Equiv tests | `532` | — | `43.78`% | `67.79`% |
+| Unit tests | `1179` | — | `34.35`% | `88.35`% |
+| **Total tests** | **`2668`** | — | **`47.48`%** | **`98.22`%** |
 | total types | `258` | — | — | — |
 | ported types | `4` | `1.55`% | — | — |
 | wrapped types | `119` | `46.12`% | — | — |
 | total symbols | `979` | — | — | — |
-| ported symbols | `118` | `12.05`% | — | — |
+| ported symbols | `137` | `13.99`% | — | — |
 | wrapped symbols | `497` | `50.77`% | — | — |
 
 ### Module stats
@@ -532,6 +532,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `git2/src/cli/opt.c` | `186` | `5` | port | first | `8` | `310` | `+2082/-83` | `45.42`% / `98.80`% | `$15.35` | `48.35M` | `1h5m7s` | `$1.92` | `$0.05` |
 | `libgit2/src/util/utf8.c` | `229` | `0` | port | first | `5` | `89` | `+764/-0` | `44.97`% / `98.81`% | `$9.09` | `28.03M` | `47m31s` | `$1.82` | `$0.10` |
 | `libgit2/src/util/utf8.c` | `232` | `0` | port/unexport | first | `1` | `16` | `+31/-55` | `47.21`% / `98.02`% | `$10.43` | `26.64M` | `41m30s` | `$10.43` | `$0.65` |
+| `libgit2/src/util/thread.c` | `226` | `2` | port | first | `19` | `0` | `+1255/-0` | `47.48`% / `98.22`% | — | — | — | — | — |
 | `libgit2/raw-lifetime-void` | `legacy-1` | `0` | wrap | review | `2` | — | `+80/-1` | — | `$7.89` | `10.78M` | `18m36s` | `$3.94` | — |
 | `libgit2/raw-lifetime-string` | `legacy-3` | `0` | wrap | review | `2` | — | `+345/-23` | — | `$10.89` | `14.41M` | `22m03s` | `$5.45` | — |
 | `libgit2/src/util/alloc.c` | `12` | `3` | wrap | review | `7` | — | `+57/-20` | — / `98.90`% | `$15.18` | `40.96M` | `1h31m33s` | `$2.17` | — |
@@ -566,7 +567,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/llhttp/api.c` | `194` | `6` | port | review | `67` | — | `+191/-25` | `47.25`% / `98.69`% | `$12.72` | `41.32M` | `41m52s` | `$0.19` | — |
 | `git2/src/cli/opt.c` | `186` | `6` | port | review | `21` | — | `+335/-27` | `45.39`% / `98.80`% | `$10.52` | `33.81M` | `33m35s` | `$0.50` | — |
 | `libgit2/src/util/utf8.c` | `232` | `1` | port/unexport | review | `1` | — | `+28/-1` | `47.21`% / `98.02`% | `$7.61` | `17.60M` | `44m56s` | `$7.61` | — |
-| **Σ first** |  |  |  |  | **`600`** | **`10242`** | **`+94058/-3957`** | **`47.49`% / `98.03`%** | **`$732.05`** | **`2270.38M`** | — | **`$1.17`** | **`$0.06`** |
+| **Σ first** |  |  |  |  | **`619`** | **`10242`** | **`+95313/-3957`** | **`47.48`% / `98.22`%** | **`$732.05`** | **`2270.38M`** | — | **`$1.17`** | **`$0.06`** |
 | **Σ review** |  |  |  |  | **`557`** | — | **`+7806/-1422`** | **`47.21`% / `98.02`%** | **`$404.72`** | **`827.72M`** | — | **`$0.80`** | — |
 
 ### Batches: tests
@@ -679,7 +680,8 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/util/utf8.c` | `229` | `0` | first | `+0` (`-0.03`/`-0.32` pp) | `+0` (`-0.02`/`-0.06` pp) | `+6` (`+0.04`/`-0.02` pp) | `+15` (`+0.03`/`+0.04` pp) |
 | `libgit2/src/util/utf8.c` | `229` | `1` | review | `+1` (`+0.00`/`+0.00` pp) | `+0` (`+0.04`/`+0.09` pp) | `+0` (`+0.00`/`+0.01` pp) | `+0` (`-0.05`/`+0.01` pp) |
 | `libgit2/src/util/utf8.c` | `232` | `0` | first | `+0` (`+0.03`/`+0.03` pp) | `+0` (`+0.01`/`+0.01` pp) | `+0` (`-0.00`/`+0.03` pp) | `+0` (`-0.03`/`+0.00` pp) |
-| **Σ first** |  |  |  | **`+363` (`+12.66`/`+5.82` pp)** | **`+50` (`+3.68`/`-5.97` pp)** | **`+257` (`+9.82`/`+15.44` pp)** | **`+466` (`+14.80`/`-32.91` pp)** |
+| `libgit2/src/util/thread.c` | `226` | `2` | first | `+6` (`-0.01`/`-0.23` pp) | `+0` (`-0.03`/`-0.15` pp) | `+0` (`+0.04`/`-0.57` pp) | `+18` (`-0.01`/`+0.09` pp) |
+| **Σ first** |  |  |  | **`+369` (`+12.65`/`+5.59` pp)** | **`+50` (`+3.65`/`-6.12` pp)** | **`+257` (`+9.86`/`+14.87` pp)** | **`+484` (`+14.79`/`-32.82` pp)** |
 | **Σ review** |  |  |  | **`+19` (`+0.26`/`-1.50` pp)** | **`+10` (`-0.84`/`+1.13` pp)** | **`+23` (`+0.05`/`-0.52` pp)** | **`+57` (`+2.47`/`+7.70` pp)** |
 
 ### Batches: safety audit
@@ -729,7 +731,8 @@ Deterministic `ffimap`; no model.
 | `libgit2/src/util/utf8.c` | `229` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+1` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.07` pp | `+1` |
 | `libgit2/src/util/utf8.c` | `229` | `1` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `-3` | `-0.02` pp | `-3` |
 | `libgit2/src/util/utf8.c` | `232` | `0` | port/unexport | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.00` pp | `+0` |
-| **Σ first** |  |  |  |  | **`+4`** | **`+0`** | **`+35`** | **`+0`** | **`+1`** | **`+0.52` pp** | **`+12`** | **`+1`** | **`+0`** | **`+0`** | **`+35`** | **`+52`** | **`-0.83` pp** | **`+159`** |
+| `libgit2/src/util/thread.c` | `226` | `2` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.13` pp | `+0` |
+| **Σ first** |  |  |  |  | **`+4`** | **`+0`** | **`+35`** | **`+0`** | **`+1`** | **`+0.52` pp** | **`+12`** | **`+1`** | **`+0`** | **`+0`** | **`+35`** | **`+52`** | **`-0.96` pp** | **`+159`** |
 | **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`-1`** | **`+0`** | **`+1`** | **`+0.00` pp** | **`+0`** | **`-1`** | **`+0`** | **`+6`** | **`+2`** | **`-3`** | **`-0.13` pp** | **`-5`** |
 
 ### Batches: API stability
@@ -769,7 +772,8 @@ Deterministic `ffimap api`; no model.
 | `libgit2/src/util/utf8.c` | `229` | `0` | port | first | `0` | `0` | `0` | `0` | `3` | `0` | `utf8` new (`InvalidCodePoint`); `sys::libgit2` extended (`+3` bindings) | — |
 | `libgit2/src/util/utf8.c` | `229` | `1` | port | review | `3` | `0` | `0` | `0` | `0` | `0` | — | — |
 | `libgit2/src/util/utf8.c` | `232` | `0` | port/unexport | first | `1` | `0` | `0` | `0` | `0` | `0` | `sys::libgit2` changed (`git_utf8_char_length` removed) | `sys::libgit2::git_utf8_char_length` removed: the raw binding goes with its export (`port/unexport`) |
-| **Σ first** |  |  |  |  | **`3`** | **`0`** | **`0`** | **`0`** | **`102`** | **`2`** |  |  |
+| `libgit2/src/util/thread.c` | `226` | `2` | port | first | `0` | `0` | `0` | `0` | `19` | `0` | — | — |
+| **Σ first** |  |  |  |  | **`3`** | **`0`** | **`0`** | **`0`** | **`121`** | **`2`** |  |  |
 | **Σ review** |  |  |  |  | **`196`** | **`2`** | **`1`** | **`0`** | **`0`** | **`3`** |  |  |
 
 ### Batches — review: PoC + reports
@@ -6130,3 +6134,85 @@ suite passes. The module's 21 tests pass under Miri and TSan. The coverage run r
 adds is expected to trigger it. The raw bindings did not change, so the crate was not packaged.
 It files the proposal `ffimap-atomic-from-ptr-borrow`: the scan's std table does not count
 `AtomicI32::from_ptr` as a borrow. Usage cells are the assistant's.
+
+### `libgit2/src/util/thread.c` wave 226 batch 2: the locks and threads
+
+A `port` batch of 19 macros of `src/util/unix/pthread.h`: `mac::git_mutex` with `_init`, `_lock`,
+`_unlock` and `_free`, `mac::git_cond` with `_init`, `_wait`, `_signal` and `_free`,
+`mac::git_rwlock` with `_init`, `_rdlock`, `_rdunlock`, `_wrlock`, `_wrunlock` and `_free`, and
+`mac::git_thread_create` and `mac::git_thread_join`. Each names a POSIX entity (`pthread_mutex_t`
+and `pthread_mutex_init` and so on, with default attributes). The header keeps them for the C
+that remains. Its 55 expansion sites, in `odb.c`, `pack.c`, `pack-objects.c`, `cache.c` and the
+others, and the C tests, are all C and stay. So the macros need no export, and their Rust forms
+are linked to no C. They are native, in a section of their own in `thread.rs`, with no unsafe
+code: `Mutex<T>`, `Condvar`, `RwLock<T>` and `JoinHandle<T>`, newtypes over `std::sync`'s and
+`std::thread`'s, with `MutexGuard`, `RwLockReadGuard` and `RwLockWriteGuard`, and the free
+function `spawn`. Each macro is anchored on its stand-in. A type macro is on its type. An
+operation is on its method: `new`, `lock`, `MutexGuard::unlock(guard)`, `wait`, `notify_one`,
+`read`, `write`, and the guards' `unlock`, which are associated functions so that they hide no
+method of the data. `git_thread_create` is on `spawn`, and `git_thread_join` on `JoinHandle::join`.
+Each `_free` is on the type's `Drop::drop`, which is empty, the standard lock releasing nothing of
+its own. No anchor the conventions gave fit an alias reached through the standard library, so the
+batch filed `crustify/evolution/std-symbol-alias-stand-ins`, with Crustify `06c62a2` on its
+evolution branch.
+
+The standard forms differ from C's where libgit2's C does not rely on it, documented in the
+module's `# Locks` section. A lock guards the data it holds (C's kind is a `Mutex<()>`). It
+cannot fail to initialise, and `new` is a `const fn`, so a lock may be a `static`. A panic
+under a lock poisons it, and a lock or wait then fails with a `PoisonError` that hands back the
+guard. A guard is not `Send`, so a lock is released on the thread that took it, as POSIX
+requires. The thread owns what it captures (`'static`), where C hands its thread a pointer its
+caller keeps alive, and `join` returns the closure's result or its panic's payload. The
+module's documentation names the configuration branches the build does not take (`GIT_WIN32`'s
+`win32/thread.h`, and `!GIT_THREADS`'s `git__noop_args`), which compute the same, as
+`porting-symbols` asks of a configuration-dependent macro.
+
+Route confirmation (`dependencies.json`, libc): for `pthread_create` and `pthread_join` the
+recommended `std` holds. For the lock entities (`pthread_mutex_*`, `pthread_cond_*` and
+`pthread_rwlock_*`) the recommendation is `crustify-campaign`, since "the lock lives in C structs
+that remaining C locks". That does not hold for these Rust forms: no lock crosses to C, so they
+take `std`, the route the Standard-library equivalents section gives where no state is shared.
+The shared-state case the note describes is that of a module whose layout embeds a lock that
+both Rust and the remaining C take, such as `git_odb.lock`. Its batch confirms the route again,
+and glibc's wrapper covers no lock yet.
+
+Tests: 18 `unit_pub` tests (`tests/unit_pub/src/util/thread/sync.rs`) and 6 `ub_safe` tests
+(`tests/ub_safe/src/util/thread/sync.rs`), modules of their own, beside 7 compile-fail cases
+(a guard outliving its lock, the guard a wait returns too, a read guard outliving its lock or
+written through, a lock dropped while locked, a guard sent to a thread, and a thread borrowing
+its caller's data). The compile-fail cases read the same on stable and nightly. There are also
+3 doctests. The unit tests carry over `test_threads_basic__exit`'s first half (the result
+424242), `test_threads_basic__set_error` (four threads each set and read back their own error)
+and `test_init__concurrent_init_succeeds` (ten threads, each initialising and shutting down
+twenty times). They mirror `run_in_parallel`, and the pack builder's hand-off in
+`notify_one_wakes_a_waiter`. No equivalence test was written: the macros alias libc's entities,
+so their Rust forms translate no C logic and reach no C, and no function the raw bindings reach
+runs their Rust forms. The 24 tests pass plain, under ASan+UBSan and under TSan, and under Miri
+but for the two that call libgit2. Those two carry `ignore = "calls C"`, each seen to stop at
+`git_libgit2_init` when run alone. The doctests pass under Miri too. BSan was not run: no test
+of this batch passes a pointer between Rust and C. The module's and its 38 dependents' tests
+pass plain and under ASan+UBSan, 1,153 of them, selected by test path, and 1,155 again after the
+rebase onto batch 4, as do the format check, the lints, the compile-fail suite, and the
+module's tests under TSan and Miri.
+
+Coverage: `run.sh` over gen5, read with `report.py` from the scratch tree's `src/libgit2`
+(`C=@c` over `libcrustify.a`, Rust over the scratch `src/`), the unit column merging `lib` and
+`unit_pub`. It was run on this batch's base `3f7f3ab89` plus the change, then again on the tree
+rebased onto batch 4's `5c7b62f0e`, whose figures the cells hold, the pp taken against batch 4's.
+The C moves (`-0.03` to `+0.04` pp) are run-to-run variation: the tests reach no C but libgit2's
+error and runtime routines, which other tests already run. Worklist, on the rebased tree:
+`thread.rs`, batch 0's types included, reads 194 of 195 lines, 192 of 193 regions and 57 of 57
+functions over the four suites, 190 of 195 lines under the unit column and 89 under `ub_safe`;
+it holds no branch. The one line not counted shows no zero-count region in `llvm-cov`'s export
+of the file. The locks' states (unlocked, locked shared or exclusive, poisoned) and the
+thread's (running, finished, joined, detached) are each reached. The Overview's Rust LoC moves by
+`code.loc.total` (`+186`) and `code.tests.loc.total` (`+487`).
+
+The safety audit scans (ffimap `50a800e`, flags as batch 0's, no export feature, since the batch
+declares none) are batch 0's recorded scan of the base and this tree before its rebase, whose
+deltas stand: batch 4 changed only batch 0's types. Every metric is `+0` but
+`unsafe loc %` (`-0.13` pp), which falls as safe lines are added. The boundary scan's sites hold
+none in the changeset: its one site in `thread.rs` is batch 0's `ThreadMut::set_thread`.
+`ffimap api` over the worklist (nightly `2026-10-08`, ffibox's private rustdoc JSON) finds the 19
+items `new`, each with its stand-in, the guards associated, and every other module `kept`. Usage
+cells are the assistant's.

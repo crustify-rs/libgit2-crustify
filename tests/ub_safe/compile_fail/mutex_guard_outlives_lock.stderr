@@ -1,0 +1,11 @@
+error[E0597]: `lock` does not live long enough
+ --> tests/ub_safe/compile_fail/mutex_guard_outlives_lock.rs:7:9
+  |
+5 |     let guard = {
+  |         ----- borrow later stored here
+6 |         let lock = Mutex::new(1);
+  |             ---- binding `lock` declared here
+7 |         lock.lock().unwrap()
+  |         ^^^^ borrowed value does not live long enough
+8 |     };
+  |     - `lock` dropped here while still borrowed

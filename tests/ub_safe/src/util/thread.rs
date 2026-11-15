@@ -116,3 +116,5 @@ fn compare_and_swap_from_many_threads() {
     });
     assert_eq!(count.as_ref().val().load(SeqCst), 1 + THREADS * STEPS);
 }
+
+mod sync;

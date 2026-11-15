@@ -1,0 +1,17 @@
+error[E0373]: closure may outlive the current function, but it borrows `data`, which is owned by the current function
+ --> tests/ub_safe/compile_fail/spawn_borrows_local.rs:7:24
+  |
+7 |     let thread = spawn(|| data.len()).unwrap();
+  |                        ^^ ---- `data` is borrowed here
+  |                        |
+  |                        may outlive borrowed value `data`
+  |
+note: function requires argument type to outlive `'static`
+ --> tests/ub_safe/compile_fail/spawn_borrows_local.rs:7:18
+  |
+7 |     let thread = spawn(|| data.len()).unwrap();
+  |                  ^^^^^^^^^^^^^^^^^^^^
+help: to force the closure to take ownership of `data` (and any other referenced variables), use the `move` keyword
+  |
+7 |     let thread = spawn(move || data.len()).unwrap();
+  |                        ++++

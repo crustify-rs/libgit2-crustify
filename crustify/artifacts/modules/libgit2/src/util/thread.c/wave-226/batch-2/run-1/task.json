@@ -1,0 +1,177 @@
+{
+  "objective": "port",
+  "wave": 226,
+  "batch": 2,
+  "link_unit": "libgit2",
+  "module": "src/util/thread.c",
+  "foundational": false,
+  "base_branch": "refs/heads/crustify/waves/wave-226",
+  "backend": "claude",
+  "billing": "api",
+  "model_proxy": "openrouter",
+  "args": [
+    "--model",
+    "claude-opus-5-5"
+  ],
+  "revisions": {
+    "crustify": "57005de",
+    "wavefront": "bf21e16",
+    "ffimap": "50a800e",
+    "ffibox": "568bcb5"
+  },
+  "items": [
+    {
+      "name": "git_cond",
+      "defined_in": "src/util/unix/pthread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_cond_free",
+      "defined_in": "src/util/unix/pthread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_cond_init",
+      "defined_in": "src/util/unix/pthread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_cond_signal",
+      "defined_in": "src/util/unix/pthread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_cond_wait",
+      "defined_in": "src/util/unix/pthread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_mutex",
+      "defined_in": "src/util/unix/pthread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_mutex_free",
+      "defined_in": "src/util/unix/pthread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_mutex_init",
+      "defined_in": "src/util/unix/pthread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_mutex_lock",
+      "defined_in": "src/util/unix/pthread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_mutex_unlock",
+      "defined_in": "src/util/unix/pthread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_rwlock",
+      "defined_in": "src/util/unix/pthread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_rwlock_free",
+      "defined_in": "src/util/unix/pthread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_rwlock_init",
+      "defined_in": "src/util/unix/pthread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_rwlock_rdlock",
+      "defined_in": "src/util/unix/pthread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_rwlock_rdunlock",
+      "defined_in": "src/util/unix/pthread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_rwlock_wrlock",
+      "defined_in": "src/util/unix/pthread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_rwlock_wrunlock",
+      "defined_in": "src/util/unix/pthread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_thread_create",
+      "defined_in": "src/util/unix/pthread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    },
+    {
+      "name": "git_thread_join",
+      "defined_in": "src/util/unix/pthread.h",
+      "kind": "macro",
+      "field_users": [],
+      "typedefs": [],
+      "home": "src/libgit2/src/util/thread.rs"
+    }
+  ],
+  "session_id": "d99fc431-81d8-4566-8377-6794338a3848"
+}

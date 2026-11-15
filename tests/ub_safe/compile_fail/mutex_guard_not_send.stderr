@@ -1,0 +1,23 @@
+error[E0277]: `std::sync::MutexGuard<'_, {integer}>` cannot be sent between threads safely
+ --> tests/ub_safe/compile_fail/mutex_guard_not_send.rs:9:10
+  |
+9 |     send(lock.lock().unwrap());
+  |     ---- ^^^^^^^^^^^^^^^^^^^^ `std::sync::MutexGuard<'_, {integer}>` cannot be sent between threads safely
+  |     |
+  |     required by a bound introduced by this call
+  |
+  = help: within `libgit2_crustify::libgit2::src::util::thread::MutexGuard<'_, {integer}>`, the trait `Send` is not implemented for `std::sync::MutexGuard<'_, {integer}>`
+note: required because it appears within the type `libgit2_crustify::libgit2::src::util::thread::MutexGuard<'_, {integer}>`
+ --> src/libgit2/src/util/thread.rs
+  |
+  | pub struct MutexGuard<'a, T: ?Sized + 'a> {
+  |            ^^^^^^^^^^
+note: required by a bound in `send`
+ --> tests/ub_safe/compile_fail/mutex_guard_not_send.rs:5:12
+  |
+5 | fn send<T: Send>(_: T) {}
+  |            ^^^^ required by this bound in `send`
+help: consider dereferencing here
+  |
+9 |     send(*lock.lock().unwrap());
+  |          +
