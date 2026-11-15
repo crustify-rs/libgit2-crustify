@@ -25,6 +25,10 @@ its filters match no source
 reads as outside the scope, though the filter matched. Run from `<out>/tree/src/libgit2`,
 the same command passes and reports the figures the batch recorded.
 
+`wave-219/batch-0/run-1` (`src/util/cc-compat.h`), an occurrence: its task message names the
+workaround. Run from `<out>/tree/src/libgit2`, with `"C=@c,Rust=<out>/tree/src"`, the report
+passes on `git archive f7f0eaaa0` and on the batch's tree.
+
 ## Destination
 
 A campaign artifact the assistant owns: `crustify/scripts/coverage/report.py`.
