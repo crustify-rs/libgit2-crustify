@@ -246,6 +246,38 @@ fn a_disposed_key_names_no_key_and_destroys_nothing() {
     assert_eq!(Arc::strong_count(&log), 1);
 }
 
+/// A key disposed of while its thread also holds a value of a live key names no key on that
+/// thread either: storing under it fails, and its value is dropped at once, not at the thread's
+/// exit, while the live key's value stays.
+#[test]
+fn a_key_disposed_beside_a_live_one_names_no_key() {
+    let log = log();
+    let live = logged_key();
+    let gone = logged_key();
+    let logged = |tag| Logged {
+        tag,
+        log: Arc::clone(&log),
+    };
+    live.set(Some(logged(1))).expect("stored");
+    gone.set(Some(logged(2))).expect("stored");
+    gone.dispose().expect("disposed");
+
+    assert_eq!(
+        gone.set(Some(logged(3))).map(|value| value.is_some()),
+        Err(TlsError::Disposed)
+    );
+    assert!(gone.get().is_none());
+    // `live`'s value and the log; `gone`'s two values are dropped, the refused one included.
+    assert_eq!(Arc::strong_count(&log), 2);
+    assert_eq!(live.get().map(|value| value.tag), Some(1));
+    assert_eq!(tags(&log), Vec::<usize>::new());
+    assert_eq!(
+        live.set(None).map(|value| value.map(|v| v.tag)),
+        Ok(Some(1))
+    );
+    assert_eq!(live.dispose(), Ok(()));
+}
+
 /// No key is made with a disposed key's id, so an old copy never reaches a new key's values.
 #[test]
 fn ids_are_never_reused() {

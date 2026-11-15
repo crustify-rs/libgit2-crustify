@@ -256,3 +256,24 @@ rests on the client reading the export once per response (`httpclient.c`'s
 gen5's equal ones.
 
 Scope: every run of `crustify/scripts/http-gate.sh`, and every change to it or to `crustify/scripts/http-remote.py`.
+
+## switch-rehearsal-c-is-a-git-checkout
+
+Status: provisional
+
+**Rule.** A scratch copy of `c/` that a switch rehearsal builds and runs the C tests from is a
+git checkout of the fork at the recorded commit, with its history (a `git clone --shared` of
+the worktree's `c/`, detached at the commit, then edited), never a `git archive` export. Three
+suites open the libgit2 checkout the tests sit in as a repository (`cl_fixture("../..")`):
+without its `.git`, `perf::merge::m1` fails, and `blame::simple::trivial_libgit2`,
+`trivial_libgit2_under_cache_pressure` and `pack::threadsafety::open_repo_in_multiple_threads`
+skip, the last a test tied to `src/util/thread.c`, so `c-tests.sh` reports a difference from
+the baseline that the module did not make, and a tied test that did not run.
+
+**Evidence.** `wave-226/batch-7/run-1`, thread.c's module pass: its rehearsal over a
+`git archive` of `c/` gave 3438 passed, 1 failed, 58 skipped on `asan-ubsan` and `tsan`
+against the baseline's 3442, 0 and 55, the four cases above; the same build with the fork's
+`.git` moved into the copy matched the baseline on both. `wave-226/batch-6/run-1`'s rehearsal
+cloned the fork and matched it on `plain`.
+
+Scope: every switch rehearsal and every scratch build of the variants from a copy of `c/`.

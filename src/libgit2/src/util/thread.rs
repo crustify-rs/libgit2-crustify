@@ -1632,6 +1632,28 @@ mod ffi_import {
             rust.dispose().expect("disposed");
         }
 
+        /// C reaches none of Rust's keys on a thread that holds no value of it either, where a
+        /// store would make the thread's first entry for the key: it fails, and leaves the key
+        /// with no value on that thread.
+        #[test]
+        fn c_reaches_no_rust_key_from_a_thread_that_holds_none() {
+            let rust = TlsKey::<u8>::new(None).expect("a key");
+            let rust_id = rust.id.get();
+            thread::spawn(move || {
+                assert_eq!(
+                    c_keys::set(rust_id, Some(word(0x58))),
+                    Err(TlsError::Disposed)
+                );
+                assert_eq!(stored(rust_id), None);
+                assert_eq!(rust.get(), None);
+                rust.set(Some(2)).expect("stored");
+                assert_eq!(rust.get(), Some(2));
+            })
+            .join()
+            .expect("the thread ends");
+            rust.dispose().expect("disposed");
+        }
+
         /// A thread that calls `exit` destroys the values it holds of live keys, as the main
         /// thread does, where POSIX destroys none of them: a forked child, whose one thread
         /// holds a value of C's key it inherited, runs C's destructor at `exit`, which writes to
@@ -3118,6 +3140,107 @@ mod ffi_export {
                     0,
                     "it may run again, as each git_libgit2_init runs it"
                 );
+            }
+        }
+
+        /// C's builtins fault on a null object, which no caller passes; each atomic export
+        /// aborts on one instead, before it reaches anything through it. Each call runs in a
+        /// forked child, which the abort ends, its core dump turned off.
+        #[test]
+        #[cfg_attr(miri, ignore = "forks")]
+        fn the_atomic_exports_abort_on_a_null_object() {
+            use nix::sys::signal::Signal;
+            use nix::sys::wait::{WaitStatus, waitpid};
+            use nix::unistd::{ForkResult, fork};
+
+            fn get32() {
+                // SAFETY: a null object, which the export refuses before any access.
+                let _ = unsafe { git_atomic32_get(ptr::null_mut()) };
+            }
+            fn set32() {
+                // SAFETY: as `get32`.
+                unsafe { git_atomic32_set(ptr::null_mut(), 1) };
+            }
+            fn inc32() {
+                // SAFETY: as `get32`.
+                let _ = unsafe { git_atomic32_inc(ptr::null_mut()) };
+            }
+            fn dec32() {
+                // SAFETY: as `get32`.
+                let _ = unsafe { git_atomic32_dec(ptr::null_mut()) };
+            }
+            fn add32() {
+                // SAFETY: as `get32`.
+                let _ = unsafe { git_atomic32_add(ptr::null_mut(), 1) };
+            }
+            fn compare_and_swap() {
+                let null = ptr::null_mut();
+                // SAFETY: a null slot, which the export refuses before any access.
+                let _ = unsafe { git_atomic__compare_and_swap(null, null.cast(), null.cast()) };
+            }
+            fn swap() {
+                // SAFETY: as `compare_and_swap`.
+                let _ = unsafe { git_atomic__swap(ptr::null_mut(), ptr::null_mut()) };
+            }
+            fn load() {
+                // SAFETY: as `compare_and_swap`.
+                let _ = unsafe { git_atomic__load(ptr::null_mut()) };
+            }
+            #[cfg(target_pointer_width = "64")]
+            fn get64() {
+                // SAFETY: as `get32`.
+                let _ = unsafe { git_atomic64_get(ptr::null_mut()) };
+            }
+            #[cfg(target_pointer_width = "64")]
+            fn set64() {
+                // SAFETY: as `get32`.
+                unsafe { git_atomic64_set(ptr::null_mut(), 1) };
+            }
+            #[cfg(target_pointer_width = "64")]
+            fn add64() {
+                // SAFETY: as `get32`.
+                let _ = unsafe { git_atomic64_add(ptr::null_mut(), 1) };
+            }
+
+            let mut calls: Vec<(&str, fn())> = vec![
+                ("git_atomic32_get", get32),
+                ("git_atomic32_set", set32),
+                ("git_atomic32_inc", inc32),
+                ("git_atomic32_dec", dec32),
+                ("git_atomic32_add", add32),
+                ("git_atomic__compare_and_swap", compare_and_swap),
+                ("git_atomic__swap", swap),
+                ("git_atomic__load", load),
+            ];
+            #[cfg(target_pointer_width = "64")]
+            calls.extend::<[(&str, fn()); 3]>([
+                ("git_atomic64_get", get64),
+                ("git_atomic64_set", set64),
+                ("git_atomic64_add", add64),
+            ]);
+            let no_core = nix::libc::rlimit {
+                rlim_cur: 0,
+                rlim_max: 0,
+            };
+            for (name, call) in calls {
+                // SAFETY: the child turns its core dump off and makes one call, which aborts;
+                // it reaches `_exit` only if the call returns.
+                match unsafe { fork() }.expect("forked") {
+                    ForkResult::Child => {
+                        // SAFETY: `no_core` is a valid `rlimit`, read for the call.
+                        unsafe { nix::libc::setrlimit(nix::libc::RLIMIT_CORE, &raw const no_core) };
+                        call();
+                        // SAFETY: `_exit` ends the child, running nothing more.
+                        unsafe { nix::libc::_exit(0) }
+                    }
+                    ForkResult::Parent { child } => {
+                        let status = waitpid(child, None).expect("waited");
+                        assert!(
+                            matches!(status, WaitStatus::Signaled(_, Signal::SIGABRT, _)),
+                            "{name}(NULL) ended the child with {status:?}"
+                        );
+                    }
+                }
             }
         }
     }

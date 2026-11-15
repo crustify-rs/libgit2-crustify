@@ -107,6 +107,22 @@ tests that remain are the first to call it.
   `unit_pub` 266, doctests 111 and 400), with `errors.c`'s and `oid.c`'s keys on the Rust
   registry. No C test binary was relinked.
 
+- `wave-226/batch-7/run-1`, thread.c's module pass, ran the check by hand again, as batch 3
+  did, on `plain`, `asan-ubsan` and `tsan`, `--features ffi-export-src-util-thread-c` over the
+  stock variants, no private archive needed: every binary passed (`lib` 927, the gateway's
+  own 13 tests among them, `equiv` 542, `ub_safe` 819, `ub_unsafe` 148, `unit_pub` 310,
+  doctests 119 and 400), and `git_tlsdata_get` in the test binaries is the export. The check
+  cannot reach the module's twelve `static inline` exports: every C caller compiles its own
+  copy of their bodies until the switch replaces them by prototypes, so only a rehearsal of
+  the switch's C edit links C to them. The pass made that rehearsal on `asan-ubsan` and
+  `tsan`, where batch 6 had made it on `plain`: the variants built from a scratch `c/` with
+  `thread.c` removed and the prototypes in place, and the crate's static library built with
+  the feature on, ran `crustify/scripts/c-tests.sh` to the baseline's counts on both
+  (3442 passed, 0 failed, 55 skipped), every reference count of the C on the exports. The
+  pass's fault seeding (`module-pass-seeds-faults-before-the-switch`) found that the
+  gateway's `unit_priv` tests, which no gate runs before the switch, are the only tests that
+  catch 16 of the 18 faults it seeded in the gateway.
+
 ## Destination
 
 The spec: `testing-gates`' Regressions section, the export checks of a `port` batch, with a

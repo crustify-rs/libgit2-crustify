@@ -1,0 +1,99 @@
+{
+ "load-cas": {
+  "kind": "statement",
+  "desc": "load stores the slot's value back by compare-and-swap of a stale guess",
+  "build": 0,
+  "lib": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 70
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 100
+ },
+ "t-prune-any": {
+  "kind": "comparison",
+  "desc": "pruning stops when any entry is live",
+  "build": 0,
+  "lib": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::a_key_disposed_beside_a_live_one_names_no_key"
+   ],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 99
+ },
+ "t-first-store-any": {
+  "kind": "comparison",
+  "desc": "a first store takes any registered id, of any kind",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_import::unit_priv::c_reaches_no_rust_key_from_a_thread_that_holds_none"
+   ],
+   "passed": 20
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 70
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 99
+ }
+}

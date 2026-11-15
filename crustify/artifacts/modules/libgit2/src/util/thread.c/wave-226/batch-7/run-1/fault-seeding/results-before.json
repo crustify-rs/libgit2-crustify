@@ -1,0 +1,2429 @@
+{
+ "a32-inc-old": {
+  "kind": "return",
+  "desc": "inc returns the value it found",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::atomic32_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::equiv_priv::exports_and_header_share_one_count",
+    "libgit2::src::util::thread::ffi_export::unit_priv::atomic32_exports_return_what_they_leave",
+    "libgit2::src::util::thread::ffi_export::unit_priv::exports_lose_no_update_across_threads"
+   ],
+   "passed": 15
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::a_count_rises_and_falls_through_every_handle",
+    "src::util::thread::atomics::atomic32_inc",
+    "src::util::thread::atomics::atomic32_operations_return_what_they_leave_and_wrap"
+   ],
+   "passed": 66
+  },
+  "ub_safe": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::a_refcount_rises_and_falls_from_many_threads"
+   ],
+   "passed": 20
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::atomic32_sequences_match_the_c",
+    "src::util::thread::atomics::c_and_rust_share_one_count"
+   ],
+   "passed": 8
+  },
+  "secs": 95
+ },
+ "a32-inc-by2": {
+  "kind": "constant",
+  "desc": "inc adds 2",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::atomic32_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::equiv_priv::exports_and_header_share_one_count",
+    "libgit2::src::util::thread::ffi_export::unit_priv::atomic32_exports_return_what_they_leave",
+    "libgit2::src::util::thread::ffi_export::unit_priv::exports_lose_no_update_across_threads"
+   ],
+   "passed": 15
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::a_count_rises_and_falls_through_every_handle",
+    "src::util::thread::atomics::atomic32_inc",
+    "src::util::thread::atomics::atomic32_operations_return_what_they_leave_and_wrap"
+   ],
+   "passed": 66
+  },
+  "ub_safe": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::a_refcount_rises_and_falls_from_many_threads"
+   ],
+   "passed": 20
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::atomic32_sequences_match_the_c",
+    "src::util::thread::atomics::c_and_rust_share_one_count"
+   ],
+   "passed": 8
+  },
+  "secs": 95
+ },
+ "a32-inc-sat": {
+  "kind": "operator",
+  "desc": "inc's result saturates",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::atomic32_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::unit_priv::atomic32_exports_return_what_they_leave"
+   ],
+   "passed": 17
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::atomic32_operations_return_what_they_leave_and_wrap"
+   ],
+   "passed": 68
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::atomic32_sequences_match_the_c"
+   ],
+   "passed": 9
+  },
+  "secs": 97
+ },
+ "a32-dec-old": {
+  "kind": "return",
+  "desc": "dec returns the value it found",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::atomic32_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::unit_priv::atomic32_exports_return_what_they_leave"
+   ],
+   "passed": 17
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::a_count_rises_and_falls_through_every_handle",
+    "src::util::thread::atomics::atomic32_dec",
+    "src::util::thread::atomics::atomic32_operations_return_what_they_leave_and_wrap"
+   ],
+   "passed": 66
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::atomic32_sequences_match_the_c"
+   ],
+   "passed": 9
+  },
+  "secs": 97
+ },
+ "a32-dec-add": {
+  "kind": "operator",
+  "desc": "dec adds",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::atomic32_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::equiv_priv::exports_and_header_share_one_count",
+    "libgit2::src::util::thread::ffi_export::unit_priv::atomic32_exports_return_what_they_leave",
+    "libgit2::src::util::thread::ffi_export::unit_priv::exports_lose_no_update_across_threads"
+   ],
+   "passed": 15
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::a_count_rises_and_falls_through_every_handle",
+    "src::util::thread::atomics::atomic32_dec",
+    "src::util::thread::atomics::atomic32_operations_return_what_they_leave_and_wrap"
+   ],
+   "passed": 66
+  },
+  "ub_safe": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::a_refcount_rises_and_falls_from_many_threads"
+   ],
+   "passed": 20
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::atomic32_sequences_match_the_c",
+    "src::util::thread::atomics::c_and_rust_share_one_count"
+   ],
+   "passed": 8
+  },
+  "secs": 96
+ },
+ "a32-dec-sat": {
+  "kind": "operator",
+  "desc": "dec's result saturates",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::atomic32_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::unit_priv::atomic32_exports_return_what_they_leave"
+   ],
+   "passed": 17
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::atomic32_operations_return_what_they_leave_and_wrap"
+   ],
+   "passed": 68
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::atomic32_sequences_match_the_c"
+   ],
+   "passed": 9
+  },
+  "secs": 97
+ },
+ "a32-add-old": {
+  "kind": "return",
+  "desc": "add32 returns the value it found",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::atomic32_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::unit_priv::atomic32_exports_return_what_they_leave"
+   ],
+   "passed": 17
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::atomic32_add",
+    "src::util::thread::atomics::atomic32_operations_return_what_they_leave_and_wrap"
+   ],
+   "passed": 67
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::atomic32_sequences_match_the_c",
+    "src::util::thread::atomics::c_and_rust_share_one_count"
+   ],
+   "passed": 8
+  },
+  "secs": 96
+ },
+ "a32-add-sub": {
+  "kind": "operator",
+  "desc": "add32 subtracts",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::atomic32_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::unit_priv::atomic32_exports_return_what_they_leave"
+   ],
+   "passed": 17
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::atomic32_add",
+    "src::util::thread::atomics::atomic32_operations_return_what_they_leave_and_wrap"
+   ],
+   "passed": 67
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::atomic32_sequences_match_the_c",
+    "src::util::thread::atomics::c_and_rust_share_one_count"
+   ],
+   "passed": 8
+  },
+  "secs": 95
+ },
+ "a32-add-sat": {
+  "kind": "operator",
+  "desc": "add32's result saturates",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::unit_priv::atomic32_exports_return_what_they_leave"
+   ],
+   "passed": 18
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::atomic32_operations_return_what_they_leave_and_wrap"
+   ],
+   "passed": 68
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::atomic32_sequences_match_the_c"
+   ],
+   "passed": 9
+  },
+  "secs": 95
+ },
+ "a32-get-bit": {
+  "kind": "return",
+  "desc": "get32 flips the low bit",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::atomic32_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::equiv_priv::exports_and_header_share_one_count",
+    "libgit2::src::util::thread::ffi_export::unit_priv::atomic32_exports_return_what_they_leave",
+    "libgit2::src::util::thread::ffi_export::unit_priv::exports_lose_no_update_across_threads"
+   ],
+   "passed": 15
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::a_count_rises_and_falls_through_every_handle",
+    "src::util::thread::atomics::a_memory_barrier_keeps_every_value",
+    "src::util::thread::atomics::atomic32_get",
+    "src::util::thread::atomics::atomic32_operations_return_what_they_leave_and_wrap"
+   ],
+   "passed": 65
+  },
+  "ub_safe": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::a_fence_orders_a_value_before_its_flag",
+    "src::util::thread::atomics::a_refcount_rises_and_falls_from_many_threads"
+   ],
+   "passed": 19
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::atomic32_sequences_match_the_c",
+    "src::util::thread::atomics::c_and_rust_share_one_count"
+   ],
+   "passed": 8
+  },
+  "secs": 96
+ },
+ "a32-set-plus1": {
+  "kind": "constant",
+  "desc": "set32 stores val + 1",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::atomic32_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::unit_priv::atomic32_exports_return_what_they_leave"
+   ],
+   "passed": 17
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::a_memory_barrier_keeps_every_value",
+    "src::util::thread::atomics::atomic32_operations_return_what_they_leave_and_wrap",
+    "src::util::thread::atomics::atomic32_set"
+   ],
+   "passed": 66
+  },
+  "ub_safe": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::a_fence_orders_a_value_before_its_flag"
+   ],
+   "passed": 20
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::atomic32_sequences_match_the_c"
+   ],
+   "passed": 9
+  },
+  "secs": 97
+ },
+ "a64-add-old": {
+  "kind": "return",
+  "desc": "add64 returns the value it found",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::atomic64_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::unit_priv::atomic64_exports_return_what_they_leave"
+   ],
+   "passed": 17
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::atomic64_add",
+    "src::util::thread::atomics::atomic64_operations_return_what_they_leave_and_wrap",
+    "src::util::thread::atomics::atomic_ssize_adds_and_reads_back"
+   ],
+   "passed": 66
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::atomic64_sequences_match_the_c"
+   ],
+   "passed": 9
+  },
+  "secs": 99
+ },
+ "a64-add-sat": {
+  "kind": "operator",
+  "desc": "add64's result saturates",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::unit_priv::atomic64_exports_return_what_they_leave"
+   ],
+   "passed": 18
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::atomic64_operations_return_what_they_leave_and_wrap"
+   ],
+   "passed": 68
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::atomic64_sequences_match_the_c"
+   ],
+   "passed": 9
+  },
+  "secs": 98
+ },
+ "a64-get-bit": {
+  "kind": "return",
+  "desc": "get64 flips the low bit",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::atomic64_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::unit_priv::atomic64_exports_return_what_they_leave"
+   ],
+   "passed": 17
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::atomic64_get",
+    "src::util::thread::atomics::atomic64_operations_return_what_they_leave_and_wrap",
+    "src::util::thread::atomics::atomic_ssize_adds_and_reads_back"
+   ],
+   "passed": 66
+  },
+  "ub_safe": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::a_static_total_adds_from_many_threads"
+   ],
+   "passed": 20
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::atomic64_sequences_match_the_c"
+   ],
+   "passed": 9
+  },
+  "secs": 98
+ },
+ "a64-set-plus1": {
+  "kind": "constant",
+  "desc": "set64 stores val + 1",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::atomic64_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::unit_priv::atomic64_exports_return_what_they_leave"
+   ],
+   "passed": 17
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::atomic64_operations_return_what_they_leave_and_wrap",
+    "src::util::thread::atomics::atomic64_set",
+    "src::util::thread::atomics::atomic_ssize_adds_and_reads_back"
+   ],
+   "passed": 66
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::atomic64_sequences_match_the_c"
+   ],
+   "passed": 9
+  },
+  "secs": 95
+ },
+ "cas-new": {
+  "kind": "return",
+  "desc": "a successful compare-and-swap returns the new value",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::slot_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::unit_priv::slot_exports_carry_an_integer",
+    "libgit2::src::util::thread::ffi_export::unit_priv::slot_exports_return_what_the_slot_held"
+   ],
+   "passed": 16
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::cas_intptr",
+    "src::util::thread::atomics::cas_pointer",
+    "src::util::thread::atomics::unsigned_slots_compare_swap_and_load"
+   ],
+   "passed": 66
+  },
+  "ub_safe": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::racing_initialisers_install_one_value"
+   ],
+   "passed": 20
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::intptr_slot_sequences_match_the_c",
+    "src::util::thread::atomics::pointer_slot_sequences_match_the_c"
+   ],
+   "passed": 8
+  },
+  "secs": 98
+ },
+ "cas-old": {
+  "kind": "return",
+  "desc": "a compare-and-swap returns the expected value either way",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::slot_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::unit_priv::slot_exports_return_what_the_slot_held"
+   ],
+   "passed": 17
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::a_compare_and_swap_to_the_same_value_succeeds",
+    "src::util::thread::atomics::cas_intptr",
+    "src::util::thread::atomics::cas_pointer",
+    "src::util::thread::atomics::unsigned_slots_compare_swap_and_load"
+   ],
+   "passed": 65
+  },
+  "ub_safe": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::racing_initialisers_install_one_value"
+   ],
+   "passed": 20
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::c_and_rust_race_to_install_one_value",
+    "src::util::thread::atomics::intptr_slot_sequences_match_the_c",
+    "src::util::thread::atomics::pointer_slot_sequences_match_the_c"
+   ],
+   "passed": 7
+  },
+  "secs": 98
+ },
+ "cas-unconditional": {
+  "kind": "comparison",
+  "desc": "the compare-and-swap stores whatever the slot held",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::slot_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::unit_priv::slot_exports_return_what_the_slot_held"
+   ],
+   "passed": 17
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::a_compare_and_swap_to_the_same_value_succeeds",
+    "src::util::thread::atomics::cas_intptr",
+    "src::util::thread::atomics::cas_pointer",
+    "src::util::thread::atomics::unsigned_slots_compare_swap_and_load"
+   ],
+   "passed": 65
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::intptr_slot_sequences_match_the_c",
+    "src::util::thread::atomics::pointer_slot_sequences_match_the_c"
+   ],
+   "passed": 8
+  },
+  "secs": 96
+ },
+ "swap-new": {
+  "kind": "return",
+  "desc": "swap returns the new value",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::slot_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::unit_priv::exports_lose_no_update_across_threads",
+    "libgit2::src::util::thread::ffi_export::unit_priv::slot_exports_return_what_the_slot_held"
+   ],
+   "passed": 16
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::swap",
+    "src::util::thread::atomics::unsigned_slots_compare_swap_and_load"
+   ],
+   "passed": 67
+  },
+  "ub_safe": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::swaps_from_many_threads_lose_no_value"
+   ],
+   "passed": 20
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::intptr_slot_sequences_match_the_c",
+    "src::util::thread::atomics::pointer_slot_sequences_match_the_c"
+   ],
+   "passed": 8
+  },
+  "secs": 98
+ },
+ "swap-nostore": {
+  "kind": "statement",
+  "desc": "swap does not store",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::slot_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::unit_priv::exports_lose_no_update_across_threads",
+    "libgit2::src::util::thread::ffi_export::unit_priv::slot_exports_return_what_the_slot_held"
+   ],
+   "passed": 16
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::swap",
+    "src::util::thread::atomics::unsigned_slots_compare_swap_and_load"
+   ],
+   "passed": 67
+  },
+  "ub_safe": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::swaps_from_many_threads_lose_no_value"
+   ],
+   "passed": 20
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::atomics::intptr_slot_sequences_match_the_c",
+    "src::util::thread::atomics::pointer_slot_sequences_match_the_c"
+   ],
+   "passed": 8
+  },
+  "secs": 95
+ },
+ "load-cas": {
+  "kind": "statement",
+  "desc": "load stores the slot's value back by compare-and-swap of a stale guess",
+  "build": 0,
+  "lib": {
+   "rc": 0,
+   "failed": [],
+   "passed": 19
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 95
+ },
+ "x-get32": {
+  "kind": "return",
+  "desc": "git_atomic32_get flips the low bit",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::atomic32_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::unit_priv::atomic32_exports_return_what_they_leave",
+    "libgit2::src::util::thread::ffi_export::unit_priv::exports_lose_no_update_across_threads"
+   ],
+   "passed": 16
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 97
+ },
+ "x-set32": {
+  "kind": "constant",
+  "desc": "git_atomic32_set stores val ^ 1",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::atomic32_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::unit_priv::atomic32_exports_return_what_they_leave"
+   ],
+   "passed": 17
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 95
+ },
+ "x-inc32": {
+  "kind": "operator",
+  "desc": "git_atomic32_inc adds 2",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::atomic32_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::equiv_priv::exports_and_header_share_one_count",
+    "libgit2::src::util::thread::ffi_export::unit_priv::atomic32_exports_return_what_they_leave",
+    "libgit2::src::util::thread::ffi_export::unit_priv::exports_lose_no_update_across_threads"
+   ],
+   "passed": 15
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 95
+ },
+ "x-dec32": {
+  "kind": "operator",
+  "desc": "git_atomic32_dec increments",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::atomic32_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::equiv_priv::exports_and_header_share_one_count",
+    "libgit2::src::util::thread::ffi_export::unit_priv::atomic32_exports_return_what_they_leave",
+    "libgit2::src::util::thread::ffi_export::unit_priv::exports_lose_no_update_across_threads"
+   ],
+   "passed": 15
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 93
+ },
+ "x-add32": {
+  "kind": "operator",
+  "desc": "git_atomic32_add subtracts",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::atomic32_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::unit_priv::atomic32_exports_return_what_they_leave"
+   ],
+   "passed": 17
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 94
+ },
+ "x-get64": {
+  "kind": "return",
+  "desc": "git_atomic64_get flips the low bit",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::atomic64_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::unit_priv::atomic64_exports_return_what_they_leave"
+   ],
+   "passed": 17
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 97
+ },
+ "x-set64": {
+  "kind": "constant",
+  "desc": "git_atomic64_set stores val ^ 1",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::atomic64_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::unit_priv::atomic64_exports_return_what_they_leave"
+   ],
+   "passed": 17
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 96
+ },
+ "x-add64": {
+  "kind": "operator",
+  "desc": "git_atomic64_add subtracts",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::atomic64_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::unit_priv::atomic64_exports_return_what_they_leave"
+   ],
+   "passed": 17
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 97
+ },
+ "x-cas": {
+  "kind": "comparison",
+  "desc": "git_atomic__compare_and_swap swaps unconditionally",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::slot_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::unit_priv::slot_exports_return_what_the_slot_held"
+   ],
+   "passed": 17
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 95
+ },
+ "x-swap": {
+  "kind": "statement",
+  "desc": "git_atomic__swap only loads",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::slot_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::unit_priv::exports_lose_no_update_across_threads",
+    "libgit2::src::util::thread::ffi_export::unit_priv::slot_exports_return_what_the_slot_held"
+   ],
+   "passed": 16
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 95
+ },
+ "x-load": {
+  "kind": "statement",
+  "desc": "git_atomic__load empties the slot",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::equiv_priv::slot_exports_match_the_header",
+    "libgit2::src::util::thread::ffi_export::unit_priv::slot_exports_carry_an_integer",
+    "libgit2::src::util::thread::ffi_export::unit_priv::slot_exports_return_what_the_slot_held"
+   ],
+   "passed": 16
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 96
+ },
+ "x-global-init": {
+  "kind": "constant",
+  "desc": "git_threads_global_init returns 1",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::unit_priv::global_init_reports_success"
+   ],
+   "passed": 18
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 97
+ },
+ "x-init-id": {
+  "kind": "constant",
+  "desc": "git_tlsdata_init writes the next id",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::unit_priv::key_zero_names_no_key",
+    "libgit2::src::util::thread::ffi_export::unit_priv::the_exports_keep_cs_contract"
+   ],
+   "passed": 17
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::destructors_run_on_the_values_c_destroys",
+    "src::util::thread::tlsdata::set_get_and_dispose_match_c",
+    "src::util::thread::tlsdata::threads_match_c"
+   ],
+   "passed": 7
+  },
+  "secs": 95
+ },
+ "x-init-nodtor": {
+  "kind": "statement",
+  "desc": "git_tlsdata_init drops the destructor",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::unit_priv::the_exports_keep_cs_contract"
+   ],
+   "passed": 18
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::destructors_run_on_the_values_c_destroys"
+   ],
+   "passed": 9
+  },
+  "secs": 95
+ },
+ "x-set-ok": {
+  "kind": "return",
+  "desc": "git_tlsdata_set reports success on failure",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::unit_priv::key_zero_names_no_key",
+    "libgit2::src::util::thread::ffi_export::unit_priv::the_exports_keep_cs_contract"
+   ],
+   "passed": 17
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::refusals_of_a_key_naming_none_match_c"
+   ],
+   "passed": 9
+  },
+  "secs": 96
+ },
+ "x-set-null": {
+  "kind": "statement",
+  "desc": "git_tlsdata_set stores NULL",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::unit_priv::the_exports_keep_cs_contract"
+   ],
+   "passed": 18
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::sync::each_thread_sets_its_own_error"
+   ],
+   "passed": 68
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::destructors_run_on_the_values_c_destroys",
+    "src::util::thread::tlsdata::set_get_and_dispose_match_c",
+    "src::util::thread::tlsdata::threads_match_c"
+   ],
+   "passed": 7
+  },
+  "secs": 96
+ },
+ "x-get-null": {
+  "kind": "return",
+  "desc": "git_tlsdata_get returns NULL",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::unit_priv::the_exports_keep_cs_contract"
+   ],
+   "passed": 18
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::sync::each_thread_sets_its_own_error"
+   ],
+   "passed": 68
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::destructors_run_on_the_values_c_destroys",
+    "src::util::thread::tlsdata::set_get_and_dispose_match_c",
+    "src::util::thread::tlsdata::threads_match_c"
+   ],
+   "passed": 7
+  },
+  "secs": 96
+ },
+ "x-dispose-ok": {
+  "kind": "return",
+  "desc": "git_tlsdata_dispose reports success on failure",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::unit_priv::key_zero_names_no_key",
+    "libgit2::src::util::thread::ffi_export::unit_priv::the_exports_keep_cs_contract"
+   ],
+   "passed": 17
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::refusals_of_a_key_naming_none_match_c"
+   ],
+   "passed": 9
+  },
+  "secs": 96
+ },
+ "t-drop-no-c": {
+  "kind": "statement",
+  "desc": "a thread's exit runs no C destructor",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::unit_priv::the_exports_keep_cs_contract",
+    "libgit2::src::util::thread::ffi_import::unit_priv::a_thread_that_calls_exit_destroys_its_values",
+    "libgit2::src::util::thread::ffi_import::unit_priv::c_keys_store_words_and_destroy_them_at_thread_exit"
+   ],
+   "passed": 16
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::destructors_run_on_the_values_c_destroys"
+   ],
+   "passed": 9
+  },
+  "secs": 97
+ },
+ "t-drop-no-rust": {
+  "kind": "statement",
+  "desc": "a thread's exit runs no Rust destructor",
+  "build": 0,
+  "lib": {
+   "rc": 0,
+   "failed": [],
+   "passed": 19
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::a_destructor_cannot_store_while_its_thread_exits",
+    "src::util::thread::tlsdata::clones_are_copies",
+    "src::util::thread::tlsdata::the_destructor_runs_at_thread_exit_on_the_values_held"
+   ],
+   "passed": 66
+  },
+  "ub_safe": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::destructors_that_reach_the_storage_at_exit"
+   ],
+   "passed": 20
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::destructors_run_on_the_values_c_destroys"
+   ],
+   "passed": 9
+  },
+  "secs": 98
+ },
+ "t-drop-dead": {
+  "kind": "comparison",
+  "desc": "a thread's exit destroys the values of disposed keys",
+  "build": 0,
+  "lib": {
+   "rc": 0,
+   "failed": [],
+   "passed": 19
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 101,
+   "failed": [],
+   "passed": 13,
+   "tail": "**ptr, void *newval) { return git_atomic__swap(ptr, newval); }\nwarning: libgit2-crustify@0.1.0:       |                                                                    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~\nwarning: libgit2-crustify@0.1.0: /target/libgit2-crustify/crustify/.worktrees/modules/libgit2/src/util/thread.c/wave-226/batch-7/crustify/tmp/mut/sys/libgit2/static_fns.c:13:54: warning: returning 'volatile void *' from a function with result type 'void *' discards qualifiers [-Wincompatible-pointer-types-discards-qualifiers]\nwarning: libgit2-crustify@0.1.0:    13 | void * git_atomic__load__extern(void **ptr) { return git_atomic__load(ptr); }\nwarning: libgit2-crustify@0.1.0:       |                                                      ^~~~~~~~~~~~~~~~~~~~~\nwarning: libgit2-crustify@0.1.0: 2 warnings generated.\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 15.63s\n     Running tests/ub_safe/main.rs (target/plain/debug/build/libgit2-crustify/fd514a01d7e81cb9/out/ub_safe-fd514a01d7e81cb9)\nfatal runtime error: thread local panicked on drop, aborting\nfatal runtime error: thread local panicked on drop, aborting\nerror: test failed, to rerun pass `--test ub_safe`\n\nCaused by:\n  process didn't exit successfully: `/target/libgit2-crustify/crustify/.worktrees/modules/libgit2/src/util/thread.c/wave-226/batch-7/crustify/tmp/mut/target/plain/debug/build/libgit2-crustify/fd514a01d7e81cb9/out/ub_safe-fd514a01d7e81cb9 'util::thread'` (signal: 6, SIGABRT: process abort signal)\n"
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::destructors_run_on_the_values_c_destroys"
+   ],
+   "passed": 9
+  },
+  "secs": 98
+ },
+ "t-replace-none": {
+  "kind": "return",
+  "desc": "replacing a value returns nothing",
+  "build": 0,
+  "lib": {
+   "rc": 0,
+   "failed": [],
+   "passed": 19
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::set_returns_the_value_it_replaces_without_destroying_it"
+   ],
+   "passed": 68
+  },
+  "ub_safe": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::drops_that_reach_the_storage"
+   ],
+   "passed": 20
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 96
+ },
+ "t-remove-keeps": {
+  "kind": "statement",
+  "desc": "storing NULL keeps the value",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::unit_priv::the_exports_keep_cs_contract",
+    "libgit2::src::util::thread::ffi_import::unit_priv::c_keys_store_words_and_destroy_them_at_thread_exit"
+   ],
+   "passed": 17
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::a_value_is_absent_until_stored_and_after_none",
+    "src::util::thread::tlsdata::set_returns_the_value_it_replaces_without_destroying_it",
+    "src::util::thread::tlsdata::the_destructor_runs_at_thread_exit_on_the_values_held",
+    "src::util::thread::tlsdata::with_lends_the_value_where_get_would_clone_it"
+   ],
+   "passed": 65
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::destructors_run_on_the_values_c_destroys",
+    "src::util::thread::tlsdata::set_get_and_dispose_match_c"
+   ],
+   "passed": 8
+  },
+  "secs": 98
+ },
+ "t-set-kind": {
+  "kind": "comparison",
+  "desc": "a store ignores the key's kind",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_import::unit_priv::c_reaches_no_rust_key_and_no_unknown_id"
+   ],
+   "passed": 18
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 98
+ },
+ "t-get-holds": {
+  "kind": "comparison",
+  "desc": "a read ignores the key's state",
+  "build": 0,
+  "lib": {
+   "rc": 0,
+   "failed": [],
+   "passed": 19
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 101,
+   "failed": [],
+   "passed": 19,
+   "tail": "                                       ^~~~~~~~~~~~~~~~~~~~~\nwarning: libgit2-crustify@0.1.0: 2 warnings generated.\nwarning: unused variable: `key`\n    --> src/libgit2/src/util/thread.rs:2363:26\n     |\n2363 |                     let (key, value) = &table.entries[index];\n     |                          ^^^ help: if this is intentional, prefix it with an underscore: `_key`\n     |\n     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default\n\nwarning: unused variable: `kind`\n    --> src/libgit2/src/util/thread.rs:2353:9\n     |\n2353 |         kind: Kind,\n     |         ^^^^ help: if this is intentional, prefix it with an underscore: `_kind`\n\nwarning: `libgit2-crustify` (lib) generated 2 warnings (run `cargo fix --lib -p libgit2-crustify` to apply 2 suggestions)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 15.53s\n     Running tests/ub_safe/main.rs (target/plain/debug/build/libgit2-crustify/fd514a01d7e81cb9/out/ub_safe-fd514a01d7e81cb9)\n\nthread 'src::util::thread::tlsdata::a_clone_that_disposes_of_its_key' (3095637) has overflowed its stack\nfatal runtime error: stack overflow, aborting\nerror: test failed, to rerun pass `--test ub_safe`\n\nCaused by:\n  process didn't exit successfully: `/target/libgit2-crustify/crustify/.worktrees/modules/libgit2/src/util/thread.c/wave-226/batch-7/crustify/tmp/mut/target/plain/debug/build/libgit2-crustify/fd514a01d7e81cb9/out/ub_safe-fd514a01d7e81cb9 'util::thread'` (signal: 6, SIGABRT: process abort signal)\n"
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 102
+ },
+ "t-first-id-0": {
+  "kind": "constant",
+  "desc": "the first id is 0",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::unit_priv::key_zero_names_no_key",
+    "libgit2::src::util::thread::ffi_export::unit_priv::the_exports_keep_cs_contract",
+    "libgit2::src::util::thread::ffi_import::unit_priv::a_c_key_without_a_destructor_destroys_nothing",
+    "libgit2::src::util::thread::ffi_import::unit_priv::a_forked_child_exits_while_other_threads_make_keys",
+    "libgit2::src::util::thread::ffi_import::unit_priv::a_thread_that_calls_exit_destroys_its_values",
+    "libgit2::src::util::thread::ffi_import::unit_priv::c_keys_store_words_and_destroy_them_at_thread_exit",
+    "libgit2::src::util::thread::ffi_import::unit_priv::c_reaches_no_rust_key_and_no_unknown_id",
+    "libgit2::src::util::thread::tls::unit_priv::a_key_holds_one_kind",
+    "libgit2::src::util::thread::tls::unit_priv::ids_start_at_one_and_run_out_after_the_last"
+   ],
+   "passed": 10
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::sync::concurrent_init_succeeds",
+    "src::util::thread::sync::each_thread_sets_its_own_error",
+    "src::util::thread::tlsdata::a_clone_run_by_get_reads_but_cannot_store",
+    "src::util::thread::tlsdata::a_destructor_cannot_store_while_its_thread_exits",
+    "src::util::thread::tlsdata::a_disposed_key_names_no_key_and_destroys_nothing",
+    "src::util::thread::tlsdata::a_key_without_a_destructor_drops_its_values_at_thread_exit",
+    "src::util::thread::tlsdata::a_static_key_serves_every_thread",
+    "src::util::thread::tlsdata::a_value_is_absent_until_stored_and_after_none",
+    "src::util::thread::tlsdata::can_set_and_get",
+    "src::util::thread::tlsdata::clones_are_copies",
+    "src::util::thread::tlsdata::global_init_sets_nothing_up",
+    "src::util::thread::tlsdata::ids_are_never_reused",
+    "src::util::thread::tlsdata::keys_and_destructors_print_and_copy",
+    "src::util::thread::tlsdata::keys_of_different_types_are_independent",
+    "src::util::thread::tlsdata::set_returns_the_value_it_replaces_without_destroying_it",
+    "src::util::thread::tlsdata::the_destructor_runs_at_thread_exit_on_the_values_held",
+    "src::util::thread::tlsdata::threads",
+    "src::util::thread::tlsdata::with_lends_the_value_where_get_would_clone_it"
+   ],
+   "passed": 51
+  },
+  "ub_safe": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::a_clone_that_disposes_of_its_key",
+    "src::util::thread::tlsdata::destructors_that_reach_the_storage_at_exit",
+    "src::util::thread::tlsdata::drops_that_reach_the_storage",
+    "src::util::thread::tlsdata::keys_made_and_disposed_while_threads_share_one",
+    "src::util::thread::tlsdata::values_of_a_key_disposed_elsewhere_are_dropped_once"
+   ],
+   "passed": 16
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::destructors_run_on_the_values_c_destroys",
+    "src::util::thread::tlsdata::refusals_of_a_key_naming_none_match_c",
+    "src::util::thread::tlsdata::set_get_and_dispose_match_c",
+    "src::util::thread::tlsdata::threads_match_c"
+   ],
+   "passed": 6
+  },
+  "secs": 100
+ },
+ "t-reuse-id": {
+  "kind": "statement",
+  "desc": "a disposed key's id is handed out again",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_import::unit_priv::a_forked_child_exits_while_other_threads_make_keys"
+   ],
+   "passed": 18
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::a_destructor_cannot_store_while_its_thread_exits",
+    "src::util::thread::tlsdata::a_disposed_key_names_no_key_and_destroys_nothing",
+    "src::util::thread::tlsdata::ids_are_never_reused"
+   ],
+   "passed": 66
+  },
+  "ub_safe": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::keys_made_and_disposed_while_threads_share_one"
+   ],
+   "passed": 20
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::refusals_of_a_key_naming_none_match_c"
+   ],
+   "passed": 9
+  },
+  "secs": 97
+ },
+ "t-dispose-live": {
+  "kind": "constant",
+  "desc": "disposing leaves the key live",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_import::unit_priv::c_keys_store_words_and_destroy_them_at_thread_exit"
+   ],
+   "passed": 18
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::a_disposed_key_names_no_key_and_destroys_nothing",
+    "src::util::thread::tlsdata::with_lends_the_value_where_get_would_clone_it"
+   ],
+   "passed": 67
+  },
+  "ub_safe": {
+   "rc": 101,
+   "failed": [],
+   "passed": 9,
+   "tail": "**ptr, void *newval) { return git_atomic__swap(ptr, newval); }\nwarning: libgit2-crustify@0.1.0:       |                                                                    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~\nwarning: libgit2-crustify@0.1.0: /target/libgit2-crustify/crustify/.worktrees/modules/libgit2/src/util/thread.c/wave-226/batch-7/crustify/tmp/mut/sys/libgit2/static_fns.c:13:54: warning: returning 'volatile void *' from a function with result type 'void *' discards qualifiers [-Wincompatible-pointer-types-discards-qualifiers]\nwarning: libgit2-crustify@0.1.0:    13 | void * git_atomic__load__extern(void **ptr) { return git_atomic__load(ptr); }\nwarning: libgit2-crustify@0.1.0:       |                                                      ^~~~~~~~~~~~~~~~~~~~~\nwarning: libgit2-crustify@0.1.0: 2 warnings generated.\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 15.75s\n     Running tests/ub_safe/main.rs (target/plain/debug/build/libgit2-crustify/fd514a01d7e81cb9/out/ub_safe-fd514a01d7e81cb9)\nfatal runtime error: thread local panicked on drop, aborting\nfatal runtime error: thread local panicked on drop, aborting\nerror: test failed, to rerun pass `--test ub_safe`\n\nCaused by:\n  process didn't exit successfully: `/target/libgit2-crustify/crustify/.worktrees/modules/libgit2/src/util/thread.c/wave-226/batch-7/crustify/tmp/mut/target/plain/debug/build/libgit2-crustify/fd514a01d7e81cb9/out/ub_safe-fd514a01d7e81cb9 'util::thread'` (signal: 6, SIGABRT: process abort signal)\n"
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::destructors_run_on_the_values_c_destroys"
+   ],
+   "passed": 9
+  },
+  "secs": 98
+ },
+ "t-holds-kind": {
+  "kind": "comparison",
+  "desc": "a key holds any kind",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_import::unit_priv::c_reaches_no_rust_key_and_no_unknown_id",
+    "libgit2::src::util::thread::tls::unit_priv::a_key_holds_one_kind"
+   ],
+   "passed": 17
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 95
+ },
+ "t-holds-live": {
+  "kind": "comparison",
+  "desc": "a disposed key still holds",
+  "build": 0,
+  "lib": {
+   "rc": 0,
+   "failed": [],
+   "passed": 19
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 101,
+   "failed": [],
+   "passed": 18,
+   "tail": "git_atomic__swap(ptr, newval); }\nwarning: libgit2-crustify@0.1.0:       |                                                                    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~\nwarning: libgit2-crustify@0.1.0: /target/libgit2-crustify/crustify/.worktrees/modules/libgit2/src/util/thread.c/wave-226/batch-7/crustify/tmp/mut/sys/libgit2/static_fns.c:13:54: warning: returning 'volatile void *' from a function with result type 'void *' discards qualifiers [-Wincompatible-pointer-types-discards-qualifiers]\nwarning: libgit2-crustify@0.1.0:    13 | void * git_atomic__load__extern(void **ptr) { return git_atomic__load(ptr); }\nwarning: libgit2-crustify@0.1.0:       |                                                      ^~~~~~~~~~~~~~~~~~~~~\nwarning: libgit2-crustify@0.1.0: 2 warnings generated.\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 15.49s\n     Running tests/ub_safe/main.rs (target/plain/debug/build/libgit2-crustify/fd514a01d7e81cb9/out/ub_safe-fd514a01d7e81cb9)\n\nthread 'src::util::thread::tlsdata::a_clone_that_disposes_of_its_key' (3126646) has overflowed its stack\nfatal runtime error: stack overflow, aborting\nerror: test failed, to rerun pass `--test ub_safe`\n\nCaused by:\n  process didn't exit successfully: `/target/libgit2-crustify/crustify/.worktrees/modules/libgit2/src/util/thread.c/wave-226/batch-7/crustify/tmp/mut/target/plain/debug/build/libgit2-crustify/fd514a01d7e81cb9/out/ub_safe-fd514a01d7e81cb9 'util::thread'` (signal: 6, SIGABRT: process abort signal)\n"
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 100
+ },
+ "t-prune-keeps": {
+  "kind": "comparison",
+  "desc": "pruning keeps every entry",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_import::unit_priv::c_keys_store_words_and_destroy_them_at_thread_exit"
+   ],
+   "passed": 18
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::a_disposed_key_names_no_key_and_destroys_nothing"
+   ],
+   "passed": 68
+  },
+  "ub_safe": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::a_clone_that_disposes_of_its_key",
+    "src::util::thread::tlsdata::drops_that_reach_the_storage",
+    "src::util::thread::tlsdata::values_of_a_key_disposed_elsewhere_are_dropped_once"
+   ],
+   "passed": 18
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 95
+ },
+ "t-prune-any": {
+  "kind": "comparison",
+  "desc": "pruning stops when any entry is live",
+  "build": 0,
+  "lib": {
+   "rc": 0,
+   "failed": [],
+   "passed": 19
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 99
+ },
+ "t-first-store-any": {
+  "kind": "comparison",
+  "desc": "a first store takes any registered id, of any kind",
+  "build": 0,
+  "lib": {
+   "rc": 0,
+   "failed": [],
+   "passed": 19
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 97
+ },
+ "t-dispose-twice": {
+  "kind": "comparison",
+  "desc": "disposing of a key twice succeeds",
+  "build": 0,
+  "lib": {
+   "rc": 101,
+   "failed": [
+    "libgit2::src::util::thread::ffi_export::unit_priv::key_zero_names_no_key",
+    "libgit2::src::util::thread::ffi_export::unit_priv::the_exports_keep_cs_contract",
+    "libgit2::src::util::thread::ffi_import::unit_priv::c_keys_store_words_and_destroy_them_at_thread_exit",
+    "libgit2::src::util::thread::ffi_import::unit_priv::c_reaches_no_rust_key_and_no_unknown_id"
+   ],
+   "passed": 15
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::a_disposed_key_names_no_key_and_destroys_nothing"
+   ],
+   "passed": 68
+  },
+  "ub_safe": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::destructors_that_reach_the_storage_at_exit"
+   ],
+   "passed": 20
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::refusals_of_a_key_naming_none_match_c"
+   ],
+   "passed": 9
+  },
+  "secs": 96
+ },
+ "k-set-prev": {
+  "kind": "return",
+  "desc": "TlsKey::set returns no previous value",
+  "build": 0,
+  "lib": {
+   "rc": 0,
+   "failed": [],
+   "passed": 19
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::a_value_is_absent_until_stored_and_after_none",
+    "src::util::thread::tlsdata::set_returns_the_value_it_replaces_without_destroying_it",
+    "src::util::thread::tlsdata::with_lends_the_value_where_get_would_clone_it"
+   ],
+   "passed": 66
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 100
+ },
+ "k-dtor-skip": {
+  "kind": "statement",
+  "desc": "TlsKey's destructor is never called",
+  "build": 0,
+  "lib": {
+   "rc": 0,
+   "failed": [],
+   "passed": 19
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::a_destructor_cannot_store_while_its_thread_exits",
+    "src::util::thread::tlsdata::clones_are_copies",
+    "src::util::thread::tlsdata::the_destructor_runs_at_thread_exit_on_the_values_held"
+   ],
+   "passed": 66
+  },
+  "ub_safe": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::destructors_that_reach_the_storage_at_exit"
+   ],
+   "passed": 20
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::destructors_run_on_the_values_c_destroys"
+   ],
+   "passed": 9
+  },
+  "secs": 97
+ },
+ "k-with-none": {
+  "kind": "return",
+  "desc": "TlsKey::with lends None",
+  "build": 0,
+  "lib": {
+   "rc": 0,
+   "failed": [],
+   "passed": 19
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::tlsdata::with_lends_the_value_where_get_would_clone_it"
+   ],
+   "passed": 68
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 98
+ },
+ "l-notify": {
+  "kind": "statement",
+  "desc": "notify_one wakes nobody",
+  "build": 0,
+  "lib": {
+   "rc": 0,
+   "failed": [],
+   "passed": 19
+  },
+  "unit_pub": {
+   "rc": "timeout",
+   "failed": [],
+   "passed": 67,
+   "tail": "tify/tmp/mut)\n   Compiling glibc-bindings v0.1.0 (/target/glibc-crustify)\nwarning: libgit2-crustify@0.1.0: /target/libgit2-crustify/crustify/.worktrees/modules/libgit2/src/util/thread.c/wave-226/batch-7/crustify/tmp/mut/sys/libgit2/static_fns.c:12:68: warning: returning 'volatile void *' from a function with result type 'void *' discards qualifiers [-Wincompatible-pointer-types-discards-qualifiers]\nwarning: libgit2-crustify@0.1.0:    12 | void * git_atomic__swap__extern(void **ptr, void *newval) { return git_atomic__swap(ptr, newval); }\nwarning: libgit2-crustify@0.1.0:       |                                                                    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~\nwarning: libgit2-crustify@0.1.0: /target/libgit2-crustify/crustify/.worktrees/modules/libgit2/src/util/thread.c/wave-226/batch-7/crustify/tmp/mut/sys/libgit2/static_fns.c:13:54: warning: returning 'volatile void *' from a function with result type 'void *' discards qualifiers [-Wincompatible-pointer-types-discards-qualifiers]\nwarning: libgit2-crustify@0.1.0:    13 | void * git_atomic__load__extern(void **ptr) { return git_atomic__load(ptr); }\nwarning: libgit2-crustify@0.1.0:       |                                                      ^~~~~~~~~~~~~~~~~~~~~\nwarning: libgit2-crustify@0.1.0: 2 warnings generated.\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.59s\n     Running tests/unit_pub/main.rs (target/plain/debug/build/libgit2-crustify/a93a9ff1bf5fcea5/out/unit_pub-a93a9ff1bf5fcea5)\n"
+  },
+  "ub_safe": {
+   "rc": "timeout",
+   "failed": [],
+   "passed": 20,
+   "tail": "ustify/tmp/mut)\n   Compiling glibc-bindings v0.1.0 (/target/glibc-crustify)\nwarning: libgit2-crustify@0.1.0: /target/libgit2-crustify/crustify/.worktrees/modules/libgit2/src/util/thread.c/wave-226/batch-7/crustify/tmp/mut/sys/libgit2/static_fns.c:12:68: warning: returning 'volatile void *' from a function with result type 'void *' discards qualifiers [-Wincompatible-pointer-types-discards-qualifiers]\nwarning: libgit2-crustify@0.1.0:    12 | void * git_atomic__swap__extern(void **ptr, void *newval) { return git_atomic__swap(ptr, newval); }\nwarning: libgit2-crustify@0.1.0:       |                                                                    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~\nwarning: libgit2-crustify@0.1.0: /target/libgit2-crustify/crustify/.worktrees/modules/libgit2/src/util/thread.c/wave-226/batch-7/crustify/tmp/mut/sys/libgit2/static_fns.c:13:54: warning: returning 'volatile void *' from a function with result type 'void *' discards qualifiers [-Wincompatible-pointer-types-discards-qualifiers]\nwarning: libgit2-crustify@0.1.0:    13 | void * git_atomic__load__extern(void **ptr) { return git_atomic__load(ptr); }\nwarning: libgit2-crustify@0.1.0:       |                                                      ^~~~~~~~~~~~~~~~~~~~~\nwarning: libgit2-crustify@0.1.0: 2 warnings generated.\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 15.55s\n     Running tests/ub_safe/main.rs (target/plain/debug/build/libgit2-crustify/fd514a01d7e81cb9/out/ub_safe-fd514a01d7e81cb9)\n"
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 546
+ },
+ "l-mutex-unlock": {
+  "kind": "statement",
+  "desc": "MutexGuard::unlock leaks the guard",
+  "build": 0,
+  "lib": {
+   "rc": 0,
+   "failed": [],
+   "passed": 19
+  },
+  "unit_pub": {
+   "rc": "timeout",
+   "failed": [],
+   "passed": 68,
+   "tail": "tify/tmp/mut)\n   Compiling glibc-bindings v0.1.0 (/target/glibc-crustify)\nwarning: libgit2-crustify@0.1.0: /target/libgit2-crustify/crustify/.worktrees/modules/libgit2/src/util/thread.c/wave-226/batch-7/crustify/tmp/mut/sys/libgit2/static_fns.c:12:68: warning: returning 'volatile void *' from a function with result type 'void *' discards qualifiers [-Wincompatible-pointer-types-discards-qualifiers]\nwarning: libgit2-crustify@0.1.0:    12 | void * git_atomic__swap__extern(void **ptr, void *newval) { return git_atomic__swap(ptr, newval); }\nwarning: libgit2-crustify@0.1.0:       |                                                                    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~\nwarning: libgit2-crustify@0.1.0: /target/libgit2-crustify/crustify/.worktrees/modules/libgit2/src/util/thread.c/wave-226/batch-7/crustify/tmp/mut/sys/libgit2/static_fns.c:13:54: warning: returning 'volatile void *' from a function with result type 'void *' discards qualifiers [-Wincompatible-pointer-types-discards-qualifiers]\nwarning: libgit2-crustify@0.1.0:    13 | void * git_atomic__load__extern(void **ptr) { return git_atomic__load(ptr); }\nwarning: libgit2-crustify@0.1.0:       |                                                      ^~~~~~~~~~~~~~~~~~~~~\nwarning: libgit2-crustify@0.1.0: 2 warnings generated.\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.92s\n     Running tests/unit_pub/main.rs (target/plain/debug/build/libgit2-crustify/a93a9ff1bf5fcea5/out/unit_pub-a93a9ff1bf5fcea5)\n"
+  },
+  "ub_safe": {
+   "rc": "timeout",
+   "failed": [],
+   "passed": 20,
+   "tail": "ustify/tmp/mut)\n   Compiling glibc-bindings v0.1.0 (/target/glibc-crustify)\nwarning: libgit2-crustify@0.1.0: /target/libgit2-crustify/crustify/.worktrees/modules/libgit2/src/util/thread.c/wave-226/batch-7/crustify/tmp/mut/sys/libgit2/static_fns.c:12:68: warning: returning 'volatile void *' from a function with result type 'void *' discards qualifiers [-Wincompatible-pointer-types-discards-qualifiers]\nwarning: libgit2-crustify@0.1.0:    12 | void * git_atomic__swap__extern(void **ptr, void *newval) { return git_atomic__swap(ptr, newval); }\nwarning: libgit2-crustify@0.1.0:       |                                                                    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~\nwarning: libgit2-crustify@0.1.0: /target/libgit2-crustify/crustify/.worktrees/modules/libgit2/src/util/thread.c/wave-226/batch-7/crustify/tmp/mut/sys/libgit2/static_fns.c:13:54: warning: returning 'volatile void *' from a function with result type 'void *' discards qualifiers [-Wincompatible-pointer-types-discards-qualifiers]\nwarning: libgit2-crustify@0.1.0:    13 | void * git_atomic__load__extern(void **ptr) { return git_atomic__load(ptr); }\nwarning: libgit2-crustify@0.1.0:       |                                                      ^~~~~~~~~~~~~~~~~~~~~\nwarning: libgit2-crustify@0.1.0: 2 warnings generated.\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 15.71s\n     Running tests/ub_safe/main.rs (target/plain/debug/build/libgit2-crustify/fd514a01d7e81cb9/out/ub_safe-fd514a01d7e81cb9)\n"
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 545
+ },
+ "l-poisoned": {
+  "kind": "return",
+  "desc": "Mutex::is_poisoned is false",
+  "build": 0,
+  "lib": {
+   "rc": 0,
+   "failed": [],
+   "passed": 19
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::sync::a_panic_under_a_mutex_poisons_it"
+   ],
+   "passed": 68
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 95
+ },
+ "h-set-thread": {
+  "kind": "constant",
+  "desc": "set_thread stores the id ^ 1",
+  "build": 0,
+  "lib": {
+   "rc": 0,
+   "failed": [],
+   "passed": 19
+  },
+  "unit_pub": {
+   "rc": 0,
+   "failed": [],
+   "passed": 69
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::a_later_id_replaces_an_earlier_one",
+    "src::util::thread::each_object_of_an_array_holds_its_own_id",
+    "src::util::thread::stores_ids_that_name_no_thread",
+    "src::util::thread::stores_the_id_of_a_live_thread"
+   ],
+   "passed": 0
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 95
+ },
+ "h-thread": {
+  "kind": "return",
+  "desc": "ThreadRef::thread reads the id ^ 1",
+  "build": 0,
+  "lib": {
+   "rc": 0,
+   "failed": [],
+   "passed": 19
+  },
+  "unit_pub": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::a_thread_prints_its_id",
+    "src::util::thread::a_thread_value_moves_with_its_id",
+    "src::util::thread::a_zeroed_thread_stores_the_id_zero"
+   ],
+   "passed": 66
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 101,
+   "failed": [
+    "src::util::thread::a_later_id_replaces_an_earlier_one",
+    "src::util::thread::each_object_of_an_array_holds_its_own_id",
+    "src::util::thread::stores_ids_that_name_no_thread",
+    "src::util::thread::stores_the_id_of_a_live_thread"
+   ],
+   "passed": 0
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 94
+ },
+ "h-finished": {
+  "kind": "return",
+  "desc": "is_finished is inverted",
+  "build": 0,
+  "lib": {
+   "rc": 0,
+   "failed": [],
+   "passed": 19
+  },
+  "unit_pub": {
+   "rc": "timeout",
+   "failed": [],
+   "passed": 68,
+   "tail": "tify/tmp/mut)\n   Compiling glibc-bindings v0.1.0 (/target/glibc-crustify)\nwarning: libgit2-crustify@0.1.0: /target/libgit2-crustify/crustify/.worktrees/modules/libgit2/src/util/thread.c/wave-226/batch-7/crustify/tmp/mut/sys/libgit2/static_fns.c:12:68: warning: returning 'volatile void *' from a function with result type 'void *' discards qualifiers [-Wincompatible-pointer-types-discards-qualifiers]\nwarning: libgit2-crustify@0.1.0:    12 | void * git_atomic__swap__extern(void **ptr, void *newval) { return git_atomic__swap(ptr, newval); }\nwarning: libgit2-crustify@0.1.0:       |                                                                    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~\nwarning: libgit2-crustify@0.1.0: /target/libgit2-crustify/crustify/.worktrees/modules/libgit2/src/util/thread.c/wave-226/batch-7/crustify/tmp/mut/sys/libgit2/static_fns.c:13:54: warning: returning 'volatile void *' from a function with result type 'void *' discards qualifiers [-Wincompatible-pointer-types-discards-qualifiers]\nwarning: libgit2-crustify@0.1.0:    13 | void * git_atomic__load__extern(void **ptr) { return git_atomic__load(ptr); }\nwarning: libgit2-crustify@0.1.0:       |                                                      ^~~~~~~~~~~~~~~~~~~~~\nwarning: libgit2-crustify@0.1.0: 2 warnings generated.\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.35s\n     Running tests/unit_pub/main.rs (target/plain/debug/build/libgit2-crustify/a93a9ff1bf5fcea5/out/unit_pub-a93a9ff1bf5fcea5)\n"
+  },
+  "ub_safe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 21
+  },
+  "ub_unsafe": {
+   "rc": 0,
+   "failed": [],
+   "passed": 4
+  },
+  "equiv": {
+   "rc": 0,
+   "failed": [],
+   "passed": 10
+  },
+  "secs": 321
+ }
+}
