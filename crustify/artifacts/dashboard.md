@@ -57,17 +57,17 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip the integration of `libgit2/src/util/strnlen.h`, `30176475c`; `main` at `c58bc5de8`, nothing shipped yet; crustify `cc84106`, ffibox `9c22a73`, wavefront `bf21e16`, ffimap `9aa2ef1` (each on its `libgit2-crustify/devel`, wavefront and ffimap on `devel`)
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `23149` non-test, `110640` tests; **C LoC** — `88226`
+- **Rust LoC** — `23179` non-test, `110807` tests; **C LoC** — `88226`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `798` | — | `30.38`% | `77.15`% |
+| UB safe tests | `798` | — | `30.42`% | `77.15`% |
 | UB unsafe tests | `144` | — | `20.11`% | `17.60`% |
-| Equiv tests | `539` | — | `43.75`% | `68.63`% |
-| Unit tests | `1161` | — | `34.38`% | `88.27`% |
-| **Total tests** | **`2642`** | — | **`47.48`%** | **`98.21`%** |
+| Equiv tests | `540` | — | `43.76`% | `68.68`% |
+| Unit tests | `1161` | — | `34.36`% | `88.27`% |
+| **Total tests** | **`2643`** | — | **`47.52`%** | **`98.21`%** |
 | total types | `258` | — | — | — |
 | ported types | `4` | `1.55`% | — | — |
 | wrapped types | `116` | `43.80`% | — | — |
@@ -672,8 +672,9 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/src/util/utf8.c` | `229` | `1` | review | `+1` (`+0.00`/`+0.00` pp) | `+0` (`+0.04`/`+0.09` pp) | `+0` (`+0.00`/`+0.01` pp) | `+0` (`-0.05`/`+0.01` pp) |
 | `libgit2/src/util/utf8.c` | `232` | `0` | first | `+0` (`+0.03`/`+0.03` pp) | `+0` (`+0.01`/`+0.01` pp) | `+0` (`-0.00`/`+0.03` pp) | `+0` (`-0.03`/`+0.00` pp) |
 | `libgit2/src/util/integer.h` | `223` | `0` | first | `+0` (`+0.01`/`-0.17` pp) | `+0` (`-0.03`/`-0.04` pp) | `+7` (`-0.02`/`+0.03` pp) | `+12` (`+0.00`/`+0.03` pp) |
+| `libgit2/src/util/integer.h` | `223` | `1` | review | `+0` (`+0.04`/`+0.00` pp) | `+0` (`+0.00`/`+0.00` pp) | `+1` (`+0.01`/`+0.05` pp) | `+0` (`-0.02`/`+0.00` pp) |
 | **Σ first** |  |  |  | **`+363` (`+12.67`/`+5.65` pp)** | **`+50` (`+3.65`/`-6.01` pp)** | **`+264` (`+9.80`/`+15.47` pp)** | **`+478` (`+14.80`/`-32.88` pp)** |
-| **Σ review** |  |  |  | **`+19` (`+0.26`/`-1.50` pp)** | **`+10` (`-0.84`/`+1.13` pp)** | **`+23` (`+0.05`/`-0.52` pp)** | **`+57` (`+2.47`/`+7.70` pp)** |
+| **Σ review** |  |  |  | **`+19` (`+0.30`/`-1.50` pp)** | **`+10` (`-0.84`/`+1.13` pp)** | **`+24` (`+0.06`/`-0.47` pp)** | **`+57` (`+2.45`/`+7.70` pp)** |
 
 ### Batches: safety audit
 
@@ -723,8 +724,9 @@ Deterministic `ffimap`; no model.
 | `libgit2/src/util/utf8.c` | `229` | `1` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `-3` | `-0.02` pp | `-3` |
 | `libgit2/src/util/utf8.c` | `232` | `0` | port/unexport | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.00` pp | `+0` |
 | `libgit2/src/util/integer.h` | `223` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.03` pp | `+0` |
+| `libgit2/src/util/integer.h` | `223` | `1` | port | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.02` pp | `+0` |
 | **Σ first** |  |  |  |  | **`+4`** | **`+0`** | **`+35`** | **`+0`** | **`+1`** | **`+0.52` pp** | **`+12`** | **`+1`** | **`+0`** | **`+0`** | **`+35`** | **`+52`** | **`-0.86` pp** | **`+159`** |
-| **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`-1`** | **`+0`** | **`+1`** | **`+0.00` pp** | **`+0`** | **`-1`** | **`+0`** | **`+6`** | **`+2`** | **`-3`** | **`-0.13` pp** | **`-5`** |
+| **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`-1`** | **`+0`** | **`+1`** | **`+0.00` pp** | **`+0`** | **`-1`** | **`+0`** | **`+6`** | **`+2`** | **`-3`** | **`-0.15` pp** | **`-5`** |
 
 ### Batches: API stability
 
@@ -764,8 +766,9 @@ Deterministic `ffimap api`; no model.
 | `libgit2/src/util/utf8.c` | `229` | `1` | port | review | `3` | `0` | `0` | `0` | `0` | `0` | — | — |
 | `libgit2/src/util/utf8.c` | `232` | `0` | port/unexport | first | `1` | `0` | `0` | `0` | `0` | `0` | `sys::libgit2` changed (`git_utf8_char_length` removed) | `sys::libgit2::git_utf8_char_length` removed: the raw binding goes with its export (`port/unexport`) |
 | `libgit2/src/util/integer.h` | `223` | `0` | port | first | `0` | `0` | `0` | `0` | `12` | `0` | `sys::libgit2` extended | — |
+| `libgit2/src/util/integer.h` | `223` | `1` | port | review | `12` | `0` | `0` | `0` | `0` | `0` | — | — |
 | **Σ first** |  |  |  |  | **`3`** | **`0`** | **`0`** | **`0`** | **`114`** | **`2`** |  |  |
-| **Σ review** |  |  |  |  | **`196`** | **`2`** | **`1`** | **`0`** | **`0`** | **`3`** |  |  |
+| **Σ review** |  |  |  |  | **`208`** | **`2`** | **`1`** | **`0`** | **`0`** | **`3`** |  |  |
 
 ### Batches — review: PoC + reports
 
@@ -835,7 +838,8 @@ review cost.
 | `libgit2/deps/ntlmclient/compat.h` | `200` | `1` | `0` | `1` | `+7/-10` | `$8.38` | `22.30M` | `39m37s` |
 | `libgit2/src/util/strnlen.h` | `225` | `1` | `0` | `1` | `+22/-8` | `$9.34` | `19.72M` | `3h34m56s` |
 | `libgit2/src/util/utf8.c` | `229` | `1` | `0` | `5` | `+206/-45` | `$20.54` | `43.89M` | `1h24m1s` |
-| **Σ** |  |  | **`9`** | **`170`** | **`+3491/-948`** | **`$215.97`** | **`642.45M`** | — |
+| `libgit2/src/util/integer.h` | `223` | `1` | `0` | `12` | `+335/-16` | — | — | — |
+| **Σ** |  |  | **`9`** | **`182`** | **`+3826/-964`** | **`$215.97`** | **`642.45M`** | — |
 
 ### Passes: PoC + reports
 
@@ -856,7 +860,8 @@ review cost.
 | `libgit2/deps/ntlmclient/compat.h` | `200` | `1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
 | `libgit2/src/util/strnlen.h` | `225` | `1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `0` |
 | `libgit2/src/util/utf8.c` | `229` | `1` | `+0` | `+0` | `+0` | `+0` | `+1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `1` |
-| **Σ** |  |  | **`+0`** | **`+1`** | **`+5`** | **`+0`** | **`+1`** | **`+0`** | **`+1`** | **`+1`** | **`+3`** | **`+1`** | **`+0`** | **`+1`** | **`+7`** | **`21`** |
+| `libgit2/src/util/integer.h` | `223` | `1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `+0` | `1` |
+| **Σ** |  |  | **`+0`** | **`+1`** | **`+5`** | **`+0`** | **`+1`** | **`+0`** | **`+1`** | **`+1`** | **`+3`** | **`+1`** | **`+0`** | **`+2`** | **`+7`** | **`22`** |
 
 ## Notes
 
@@ -6090,3 +6095,104 @@ built alone in bundled mode with no variant, as `package-gate-procedure` records
 holding the six wrappers. Proposal: `config-branches-the-target-never-builds`
 (`porting-symbols`), meeting `config-branches-of-one-result`'s recurrence signal. Usage cells
 are the assistant's.
+
+### `libgit2/src/util/integer.h` wave 223 batch 1: module pass
+
+The module pass, and the module's only review, of batch 0's three paths (`9b43c913d`), for
+every objective with `fix`. It files one finding, `conventions/static-inline-functions-without-exports`,
+fixes it, and fills one test gap.
+
+The three decisions the pass was asked to judge hold:
+
+- **The range checks.** `git__is_ssizet`'s round trip through `ssize_t` keeps every
+  `size_t`, so it never returns false, against its doc comment and against what its callers'
+  guards are for (`p_read`, `git_futils_readbuffer_fd`). That is a C defect.
+  `git__is_sizet` and `git__is_ulong` accept every `int64_t` on this build. A genuinely
+  negative value is accepted only by `pack-objects.c`'s configured sizes, which then become
+  `SIZE_MAX`, and no C test sets one negative. That
+  acceptance is also what makes the `uint64_t` sizes most callers pass through the
+  `int64_t` parameter (object, blob and filter sizes) fit. The native API takes each value at
+  its own type, so a Rust port of such a caller passes the `uint64_t` and gets C's answer:
+  nothing a later port relies on is lost. The exports, which can only see the `int64_t`,
+  keep C's answer, as below.
+- **Overflow results.** Only `try_delta` keeps what an overflowing macro leaves. Under the
+  same cache lock, `delta_cacheable` has just added the same operands with the same macro
+  and returned 0 on overflow, so `try_delta`'s addition never overflows and nothing reads a
+  wrapped sum. `git__strntol64` and `git_config_parse_int64` fail on overflow without reading
+  the result. Returning `None` loses nothing. The module's docs now say so.
+- **`git__multiply_int64_overflow`.** Every variant compiles the intrinsic. The fallback's
+  four differing inputs are documented and asserted by the carried-over edge-case test at
+  this build's answers. The proposal `config-branches-the-target-never-builds` stands.
+
+`tests/util/integer.c`'s three cases are carried over input by input. Every one of the 81
+and 63 products of `multiply_int64_no_overflow` and `multiply_int64_overflow`, with each
+asserted value, is in the same order in `unit_pub`. So are the four of `edge_cases`, asserted
+the other way, as the module's docs record. No case is left uncarried.
+
+The finding. The header's six `static inline` functions were ported with no export, though
+31 call sites in 19 C files call them, `pack.c` and `pack-objects.c` among those that stay
+past the first ship point. The conventions' Exports section and `porting-symbols`' Static
+inline functions section give each an export and replace its definition by a prototype at the
+switch. The batch's task message read only for macros. The fix is `integer_h.rs`'s
+`ffi_export` gateway, under the new feature `ffi-export-src-util-integer-h`, named for the
+header (proposal `header-module-exports`). Its six exports keep the C signatures, checked
+against the raw bindings; a mutated signature fails to build. `git__is_sizet` and
+`git__is_ulong` give C's answer for every `int64_t`, `git__is_ssizet` refuses past
+`SSIZE_MAX`, and the other three are C's. Its two `equiv_priv` tests compare them with
+`static_fns.c`'s wrappers of the C, and its `unit_priv` test checks the ranges. They pass
+on `plain` and under ASan+UBSan with the feature, and Miri passes the unit test. The
+`equiv_priv` pair were seen to stop at the C there. The integration's switch replaces the
+header's six definitions with prototypes, regenerates the bindings, which lose the six
+`link_name` lines and `static_fns.c` its six wrappers, and deletes the feature. That was
+rehearsed in scratch on `plain` (`run-1/switch-rehearsal.md`). `libgit2.so` defined the six
+from the Rust, and the remaining C tests gave 3442 passed and 55 skipped of 3497, the
+baseline.
+
+The gap. `git__add_int_overflow` and `git__sub_int_overflow` were recorded as unreached,
+but `git_diff_from_buffer` reaches their one site, `parse_hunk_body`, through
+`git_patch_parse`. A new `equiv` test compares which of 105 one-hunk patches it refuses,
+starts at `int`'s bound on the old side, the new side and both, against a model over
+`fits_c_int`, `checked_add_c_int` and `checked_sub_c_int`, each refusal a `Patch` error.
+Hunk numbers are never negative, so only the additions can overflow.
+
+The two provisional lessons, `cmake-property-naming-a-removed-source` and
+`http-exports-gated-through-a-local-remote`, hold and are marked so. The first's reproducer
+reran: the fork configures (`rc=0`), and without `llhttp.c` it fails (`rc=1`, `CMake can not
+determine linker language for target: llhttp`). The second's four failing clones and three
+framings are `http-gate.sh`'s and http.c's recorded `http-gate-results.txt`'s.
+
+Coverage: `run.sh` on this tree, read with `report.py` from the scratch tree's `src/libgit2`
+(`C=@c` over the `coverage` variant's `libcrustify.a`), against batch 0's recorded figures for
+the same tip. `equiv` gains its test and `+0.01`/`+0.05` pp. The other shifts (`ub_safe` C
+`+0.04`, unit C `-0.02` pp) are run-to-run variation of suites this batch does not change.
+Worklist: `integer_h.rs` 36 of 36 lines and regions and 12 of 12 functions, in the unit
+and `equiv` suites alone and in the total. The gateway's lines are left out: the feature is off
+in the measured build. The safety audit scans
+(ffimap `50a800e`, the 13 seams, `--regions ffi_import,ffi_export`) set batch 0's recorded
+scan, before any export feature existed, against this tree's with
+`--features ffi-export-src-util-integer-h`. Only `unsafe loc %` moves, `-0.02` pp, by the
+gateway's 30 safe lines, whose only unsafe code is the six `#[unsafe(no_mangle)]` attributes. No
+boundary-scan site is in the changeset. The Overview's LoC moves by `code.loc.total` (`+30`)
+and `code.tests.loc.total` (`+167`). `ffimap api` against the tip, with ffibox's private
+rustdoc JSON: the twelve items and every unattributed module are `kept`.
+
+Gates ran through `end-gates` (crustify `57005de`) on snapshots over gen5. Builds took 24
+jobs, test binaries ran six side by side at four threads, and the slow list was skipped.
+
+- **The wave's tip `9b43c913d`, before any change.** The workspace is formatted, and `clippy
+  --workspace --all-targets` passes with warnings denied. Plain, ASan+UBSan and TSan pass the
+  whole workspace: `lib` 907 and 1 ignored, `equiv` 539, `ub_safe` 798, `ub_unsafe` 144,
+  `unit_pub` 253, `hidden_symbols` 1, doctests 118 and 397. Miri passes every binary. BSan
+  passes every binary but `lib`. That binary died once inside BorrowSanitizer's own
+  allocator (`SEGV` in `SizeClassAllocator64::ReleaseFreeMemoryToOS`), with no borrow report
+  and no Rust frame, and passed whole when run again alone (903, 5 ignored). That is no
+  finding.
+- **This landing's tree `7d49666ed`.** It passes the same gates, the lints also with
+  `--features ffi-export-src-util-integer-h`, and `equiv` has 540 tests. BSan passes every
+  binary: `lib` 903 and 5 ignored, `equiv` 456 and 8 ignored with the slow list's 76 out,
+  `ub_safe` 767 and 4 ignored with its 27 out, `unit_pub` 252, `ub_unsafe` 144. Miri passes
+  every binary: `lib` 447, `ub_safe` 213, `unit_pub` 167, `equiv` 39, `ub_unsafe` 26, the
+  rest marked.
+
+The raw bindings and `c/` are unchanged, so no packaging gate runs. Usage cells are the
+assistant's.

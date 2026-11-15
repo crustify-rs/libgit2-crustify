@@ -54,9 +54,10 @@ system = []
 # The export features: one per ported module not yet switched from C, which compiles its
 # `ffi_export` gateway, the bare-named exports through which the remaining C calls it. Each
 # stays off until its module switches, so that the exports never collide with the C they
-# replace, and the switch deletes it (crustify's conventions, Export features). None is
-# declared while every ported module has switched: those of `src/util/utf8.c`,
-# `src/cli/opt.c`, `deps/llhttp/api.c` and `deps/llhttp/http.c` went at their switches.
+# replace, and the switch deletes it (crustify's conventions, Export features). Those of
+# `src/util/utf8.c`, `src/cli/opt.c`, `deps/llhttp/api.c` and `deps/llhttp/http.c` went at
+# their switches. A header module's is named for its header.
+ffi-export-src-util-integer-h = []
 
 [dependencies]
 # By path, not by Git: trybuild replaces only the paths of dependencies declared by path

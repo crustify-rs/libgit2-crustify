@@ -14,15 +14,18 @@
 //!   `git_config_parse_int64` (`src/libgit2/config.c`), whose `git__strntol64` (`src/util/util.c`)
 //!   accumulates each digit with both and whose unit suffixes multiply by 1024 with the first.
 //!   `git__add_int_overflow` and `git__sub_int_overflow` expand only in `patch_parse.c`'s
-//!   `parse_hunk_body`, which no raw binding reaches: the unit tests check them at its arguments.
+//!   `parse_hunk_body`, which `git_diff_from_buffer` (`diff_parse.c`) reaches through
+//!   `git_patch_parse`: they are compared through which hunks it refuses, with `git__is_int` at
+//!   `parse_int`, which reads each of the hunk header's numbers.
 
 use core::ffi::{CStr, c_int, c_ulong};
 use std::ffi::CString;
 
+use libgit2_crustify::libgit2::src::libgit2::diff::Diff;
 use libgit2_crustify::libgit2::src::util::errors::{self, ErrorClass};
 use libgit2_crustify::libgit2::src::util::integer_h::{
-    checked_add_i64, checked_add_usize, checked_mul_i64, checked_mul_usize, fits_c_int,
-    fits_c_ulong, fits_isize, fits_u16, fits_u32, fits_usize,
+    checked_add_c_int, checked_add_i64, checked_add_usize, checked_mul_i64, checked_mul_usize,
+    checked_sub_c_int, fits_c_int, fits_c_ulong, fits_isize, fits_u16, fits_u32, fits_usize,
 };
 use libgit2_crustify::sys::libgit2 as sys;
 
@@ -354,4 +357,117 @@ fn the_parse_model_overflows_at_each_bound() {
     assert_eq!(rust_parse_int64("0x7fffffffffffffff"), Some(i64::MAX));
     assert_eq!(rust_parse_int64("0777"), Some(0o777));
     assert_eq!(rust_parse_int64("12q"), None);
+}
+
+/// One hunk's header and body: its old and new start and counts, and its body's context,
+/// deleted and added lines, in that order, as many as the counts ask.
+#[derive(Clone, Copy, Debug)]
+struct Hunk {
+    old_start: i64,
+    new_start: i64,
+    context: i64,
+    deleted: i64,
+    added: i64,
+}
+
+impl Hunk {
+    /// A patch of one file holding this hunk alone.
+    fn patch(self) -> Vec<u8> {
+        let mut patch = format!(
+            "diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -{},{} +{},{} @@\n",
+            self.old_start,
+            self.context + self.deleted,
+            self.new_start,
+            self.context + self.added,
+        )
+        .into_bytes();
+        for (count, line) in [
+            (self.context, &b" c\n"[..]),
+            (self.deleted, b"-d\n"),
+            (self.added, b"+a\n"),
+        ] {
+            for _ in 0..count {
+                patch.extend_from_slice(line);
+            }
+        }
+        patch
+    }
+
+    /// Whether `parse_hunk_header` and `parse_hunk_body` accept the hunk, each step through a
+    /// port: `parse_int` refuses a number past `int`'s range, and each line's old and new
+    /// numbers are `start + count - remaining`, the hunk refused where either step
+    /// overflows; `remaining` runs down from the count as the lines consume it.
+    fn accepted(self) -> bool {
+        let numbers = [
+            self.old_start,
+            self.context + self.deleted,
+            self.new_start,
+            self.context + self.added,
+        ];
+        if !numbers.into_iter().all(fits_c_int) {
+            return false;
+        }
+        let [old_start, old_lines, new_start, new_lines] =
+            numbers.map(|n| c_int::try_from(n).unwrap());
+        let (mut old_left, mut new_left) = (old_lines, new_lines);
+        let lines = [
+            (1, 1, self.context),
+            (1, 0, self.deleted),
+            (0, 1, self.added),
+        ];
+        for (old_step, new_step, count) in lines {
+            for _ in 0..count {
+                let old = checked_add_c_int(old_start, old_lines)
+                    .and_then(|sum| checked_sub_c_int(sum, old_left));
+                let new = checked_add_c_int(new_start, new_lines)
+                    .and_then(|sum| checked_sub_c_int(sum, new_left));
+                if old.is_none() || new.is_none() {
+                    return false;
+                }
+                old_left -= old_step;
+                new_left -= new_step;
+            }
+        }
+        true
+    }
+}
+
+/// `git_diff_from_buffer` accepts exactly the hunks whose header numbers `fits_c_int`
+/// accepts and whose line numbers `checked_add_c_int` and `checked_sub_c_int` carry, on
+/// either side, at `int`'s bound; a hunk it refuses for them fails as a patch error.
+#[test]
+#[cfg_attr(miri, ignore = "calls libgit2")]
+fn diff_from_buffer_refuses_the_hunks_the_ports_overflow() {
+    init();
+    let max = i64::from(c_int::MAX);
+    let mut probes = 0;
+    for (context, deleted, added) in [(1, 0, 0), (2, 0, 0), (0, 1, 1), (1, 1, 0), (0, 0, 2)] {
+        let lines = context + deleted.max(added);
+        for start in [
+            1,
+            max - lines - 1,
+            max - lines,
+            max - lines + 1,
+            max - 1,
+            max,
+            max + 1,
+        ] {
+            for (old_start, new_start) in [(start, 1), (1, start), (start, start)] {
+                let hunk = Hunk {
+                    old_start,
+                    new_start,
+                    context,
+                    deleted,
+                    added,
+                };
+                let parsed = Diff::from_buffer(&hunk.patch());
+                assert_eq!(parsed.is_ok(), hunk.accepted(), "{hunk:?}");
+                if let Err(error) = parsed {
+                    assert_eq!(error.class(), Some(ErrorClass::Patch), "{hunk:?}");
+                }
+                probes += 1;
+            }
+        }
+    }
+    assert_eq!(probes, 105);
 }

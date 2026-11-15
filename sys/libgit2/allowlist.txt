@@ -840,8 +840,10 @@ function git_utf8_iterate
 function git_utf8_valid_buf_length
 
 # wave-223/batch-0: src/util/integer.h's range checks, `static inline` and wrapped in
-# static_fns.c, which the module's equivalence tests compare with their ports; no Rust calls
-# them, and they go with those tests at the module's switch
+# static_fns.c, which the module's equivalence tests compare with their ports, and against
+# which its gateway checks its exports (wave-223/batch-1); from the module's switch, which
+# replaces their definitions with prototypes, they reach the exports, and each entry goes
+# with its export
 function git__is_int
 function git__is_sizet
 function git__is_ssizet

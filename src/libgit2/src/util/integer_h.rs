@@ -1,12 +1,16 @@
 //! `src/util/integer.h`: the checked integer conversions and overflow-checked arithmetic
 //! libgit2 names `git__is_*` and `git__*_overflow`, ported to Rust.
 //!
-//! The header has no translation unit and no state: its six `GIT_INLINE` functions and six
-//! macros are native Rust here, reached by no C, so the module has no unsafe regions and no
-//! exports. The header stays, whole, for the C that still includes it, `git2_util.h`, which
-//! every translation unit of libgit2 includes, and `vector.c`: that C expands the macros and
-//! inlines the functions' bodies from it, as porting's Macros and Static inline functions
-//! sections keep a header's items, and none of it calls the Rust.
+//! The header has no translation unit and no state. Its six `GIT_INLINE` functions and six
+//! macros are native Rust here. The header stays for the C that still includes it:
+//! `git2_util.h`, which every translation unit of libgit2 includes, and `vector.c`. That C
+//! keeps expanding the macros from it, as porting's Macros section keeps a header's macros,
+//! and none of them calls the Rust. The functions are `static inline`, so each C caller
+//! compiles its own copy of their bodies, and an export alone does not reach it. At the
+//! module's switch, as porting's Static inline functions section has it, the header's six
+//! definitions are replaced by their prototypes, and the remaining C calls this module's
+//! exports, its `ffi_export` gateway, under the functions' bare names. Until then the gateway
+//! is compiled only under the export feature `ffi-export-src-util-integer-h`.
 //!
 //! # The range checks
 //!
@@ -51,11 +55,27 @@
 //!
 //! What the branches leave in `*out` on overflow differs, and the ports return nothing
 //! then: the intrinsics store the wrapped result, `<intsafe.h>` an error value and the
-//! fallbacks nothing. One C caller reads it, `pack-objects.c`'s `try_delta`, whose
-//! `git__add_sizet_overflow(&pb->delta_cache_size, pb->delta_cache_size, delta_size)` leaves
-//! the wrapped sum in the cache's size on this build before it fails.
-#![forbid(unsafe_code)]
-
+//! fallbacks nothing. One C caller would keep it, `pack-objects.c`'s `try_delta`, whose
+//! `git__add_sizet_overflow(&pb->delta_cache_size, pb->delta_cache_size, delta_size)` would
+//! leave the wrapped sum in the cache's size on this build before it fails. No input reaches
+//! that failure: under the same cache lock, `delta_cacheable` has just computed the same sum
+//! with the same macro and returned 0 on its overflow, so `try_delta` adds only a sum that
+//! fits. No caller relies on what an overflow leaves.
+//!
+//! # The exports
+//!
+//! The gateway's six exports keep the C functions' signatures, `int64_t` or `size_t` in and
+//! `int` out, and serve the C callers that pass `int64_t`, `uint64_t` and `size_t` values
+//! through them. `git__is_sizet` and `git__is_ulong` take an `int64_t` that is a
+//! `uint64_t` for most of their callers: an object's or a blob's size. A negative value is
+//! then a size past `INT64_MAX`, and the exports give C's answer for every `int64_t`, as
+//! [`fits_usize`] and [`fits_c_ulong`] give it for the `uint64_t` the bits hold. A caller
+//! that passes a negative `int64_t` keeps C's acceptance, which the gateway cannot tell from
+//! a large size. That is `pack-objects.c`'s configured sizes, whose ports refuse it.
+//! `git__is_ssizet` returns [`fits_isize`]'s answer, so that the guards of `p_read` and
+//! `git_futils_readbuffer_fd`, and `p_mmap`'s under `NO_MMAP`, refuse a count past
+//! `SSIZE_MAX`, as they are written to. The C function accepts every count. The other three
+//! narrow, and give C's answer.
 use core::ffi::{c_int, c_ulong};
 
 /// Whether `value` is in `usize`'s range: whether it converts to `usize` without loss.
@@ -328,4 +348,186 @@ pub const fn checked_add_i64(one: i64, two: i64) -> Option<i64> {
 #[inline]
 pub const fn checked_mul_i64(one: i64, two: i64) -> Option<i64> {
     one.checked_mul(two)
+}
+
+/// The gateway through which the C that remains calls this module once it has switched:
+/// the six `git__is_*` functions, under their bare names, in place of the bodies the
+/// header's `GIT_INLINE` definitions give every caller until then. Each is checked against
+/// its raw binding's signature, so that a C declaration that drifts fails to build. None
+/// reads memory or can panic, so none is `unsafe` to call or needs a barrier.
+#[cfg(feature = "ffi-export-src-util-integer-h")]
+#[expect(
+    unsafe_code,
+    reason = "exports integer.h's static inline functions under their C names"
+)]
+mod ffi_export {
+    use core::ffi::c_int;
+
+    use super::{fits_c_int, fits_c_ulong, fits_isize, fits_u16, fits_u32, fits_usize};
+    use crate::sys::libgit2 as sys;
+
+    // Each export has its raw binding's type: the array's elements coerce to one function
+    // pointer type only when their signatures agree.
+    const _: () = {
+        let _ = [sys::git__is_sizet, git__is_sizet];
+        let _ = [sys::git__is_ssizet, git__is_ssizet];
+        let _ = [sys::git__is_uint16, git__is_uint16];
+        let _ = [sys::git__is_uint32, git__is_uint32];
+        let _ = [sys::git__is_ulong, git__is_ulong];
+        let _ = [sys::git__is_int, git__is_int];
+    };
+
+    /// `git__is_sizet`: whether the `uint64_t` whose bits `p` holds is in `size_t`'s range,
+    /// which is C's answer for every `int64_t`: a negative `p` passes where `size_t` is 64
+    /// bits wide, as the module's docs describe, and fails where it is 32.
+    #[unsafe(no_mangle)]
+    extern "C" fn git__is_sizet(p: i64) -> c_int {
+        c_int::from(fits_usize(p.cast_unsigned()))
+    }
+
+    /// `git__is_ssizet`: [`fits_isize`], which refuses a `p` past `SSIZE_MAX`, where C's
+    /// round trip accepts it, as the module's docs describe.
+    #[unsafe(no_mangle)]
+    extern "C" fn git__is_ssizet(p: usize) -> c_int {
+        c_int::from(fits_isize(p))
+    }
+
+    /// `git__is_uint16`: [`fits_u16`], C's answer.
+    #[unsafe(no_mangle)]
+    extern "C" fn git__is_uint16(p: usize) -> c_int {
+        c_int::from(fits_u16(p))
+    }
+
+    /// `git__is_uint32`: [`fits_u32`], C's answer.
+    #[unsafe(no_mangle)]
+    extern "C" fn git__is_uint32(p: usize) -> c_int {
+        c_int::from(fits_u32(p))
+    }
+
+    /// `git__is_ulong`: whether the `uint64_t` whose bits `p` holds is in `unsigned long`'s
+    /// range, which is C's answer for every `int64_t`, as for `git__is_sizet`.
+    #[unsafe(no_mangle)]
+    extern "C" fn git__is_ulong(p: i64) -> c_int {
+        c_int::from(fits_c_ulong(p.cast_unsigned()))
+    }
+
+    /// `git__is_int`: [`fits_c_int`], C's answer.
+    #[unsafe(no_mangle)]
+    extern "C" fn git__is_int(p: i64) -> c_int {
+        c_int::from(fits_c_int(p))
+    }
+
+    /// Each export against the C function it replaces, still compiled from the header into
+    /// `static_fns.c`'s wrapper, which its raw binding reaches. Until the switch, both are in
+    /// the test binary.
+    #[cfg(test)]
+    mod equiv_priv {
+        use super::{
+            git__is_int, git__is_sizet, git__is_ssizet, git__is_uint16, git__is_uint32,
+            git__is_ulong,
+        };
+        use crate::sys::libgit2 as sys;
+
+        /// The `int64_t` values probed: the bounds of the types the checks convert to, with
+        /// their neighbours.
+        fn i64_probes() -> Vec<i64> {
+            let mut probes = Vec::new();
+            for bound in [
+                i64::MIN,
+                i64::MAX,
+                -0x1_0000_0000,
+                i64::from(i32::MIN),
+                i64::from(i32::MAX),
+                i64::from(u16::MAX),
+                i64::from(u32::MAX),
+                0,
+            ] {
+                probes.extend((-2..=2).filter_map(|delta| bound.checked_add(delta)));
+            }
+            probes
+        }
+
+        /// The `size_t` values probed, as [`i64_probes`].
+        fn usize_probes() -> Vec<usize> {
+            let mut probes = Vec::new();
+            for bound in [
+                0,
+                usize::from(u16::MAX),
+                usize::try_from(u32::MAX).unwrap(),
+                isize::MAX.unsigned_abs(),
+                usize::MAX,
+            ] {
+                probes.extend((-2..=2).filter_map(|delta| bound.checked_add_signed(delta)));
+            }
+            probes
+        }
+
+        /// `git__is_sizet`, `git__is_ulong` and `git__is_int` give C's answer for every
+        /// `int64_t`, negative values included.
+        #[test]
+        #[cfg_attr(miri, ignore = "calls C")]
+        fn int64_exports_match_the_c() {
+            for p in i64_probes() {
+                // SAFETY: a pure function of its argument.
+                assert_eq!(git__is_sizet(p), unsafe { sys::git__is_sizet(p) }, "{p}");
+                // SAFETY: as above.
+                assert_eq!(git__is_ulong(p), unsafe { sys::git__is_ulong(p) }, "{p}");
+                // SAFETY: as above.
+                assert_eq!(git__is_int(p), unsafe { sys::git__is_int(p) }, "{p}");
+            }
+        }
+
+        /// `git__is_uint16` and `git__is_uint32` give C's answer for every `size_t`;
+        /// `git__is_ssizet` gives it up to `SSIZE_MAX`, and refuses what lies past, which C
+        /// accepts.
+        #[test]
+        #[cfg_attr(miri, ignore = "calls C")]
+        fn size_t_exports_match_the_c_but_past_ssize_max() {
+            for p in usize_probes() {
+                // SAFETY: a pure function of its argument.
+                assert_eq!(git__is_uint16(p), unsafe { sys::git__is_uint16(p) }, "{p}");
+                // SAFETY: as above.
+                assert_eq!(git__is_uint32(p), unsafe { sys::git__is_uint32(p) }, "{p}");
+                // SAFETY: as above.
+                let c = unsafe { sys::git__is_ssizet(p) };
+                assert_eq!(c, 1, "{p}");
+                let fits = p <= isize::MAX.unsigned_abs();
+                assert_eq!(git__is_ssizet(p), i32::from(fits), "{p}");
+            }
+        }
+    }
+
+    /// What each export returns, without the C: 1 where its type holds the value, 0
+    /// elsewhere, at the bounds.
+    #[cfg(test)]
+    mod unit_priv {
+        use super::{
+            git__is_int, git__is_sizet, git__is_ssizet, git__is_uint16, git__is_uint32,
+            git__is_ulong,
+        };
+
+        /// The range each export reports, at its bounds and past them.
+        #[test]
+        fn exports_report_their_ranges() {
+            assert_eq!(git__is_sizet(0), 1);
+            assert_eq!(git__is_sizet(i64::MAX), 1);
+            assert_eq!(git__is_sizet(-1), 1, "u64::MAX, a 64-bit size_t's");
+            assert_eq!(
+                git__is_ulong(i64::MIN),
+                1,
+                "1 << 63, a 64-bit unsigned long's"
+            );
+            assert_eq!(git__is_ssizet(isize::MAX.unsigned_abs()), 1);
+            assert_eq!(git__is_ssizet(isize::MAX.unsigned_abs() + 1), 0);
+            assert_eq!(git__is_ssizet(usize::MAX), 0);
+            assert_eq!(git__is_uint16(0xFFFF), 1);
+            assert_eq!(git__is_uint16(0x1_0000), 0);
+            assert_eq!(git__is_uint32(0xFFFF_FFFF), 1);
+            assert_eq!(git__is_uint32(0x1_0000_0000), 0);
+            assert_eq!(git__is_int(i64::from(i32::MIN)), 1);
+            assert_eq!(git__is_int(i64::from(i32::MAX)), 1);
+            assert_eq!(git__is_int(i64::from(i32::MAX) + 1), 0);
+            assert_eq!(git__is_int(i64::from(i32::MIN) - 1), 0);
+        }
+    }
 }

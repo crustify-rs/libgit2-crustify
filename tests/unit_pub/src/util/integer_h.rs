@@ -213,8 +213,9 @@ fn int64_operations_match_the_exact_arithmetic() {
 /// `patch_parse.c`'s `parse_hunk_body`, the only site that expands `git__add_int_overflow`
 /// and `git__sub_int_overflow`, computes `start + lines - remaining` for each side of a hunk,
 /// from the header's non-negative `int` start and count, and refuses the hunk where either
-/// step overflows; its `remaining` runs from the count down to zero. No raw binding reaches
-/// it, so this checks the chain at its arguments' bounds against the exact arithmetic.
+/// step overflows; its `remaining` runs from the count down to zero. This checks the chain at
+/// its arguments' bounds against the exact arithmetic; the equivalence tests compare it with
+/// the C through `git_diff_from_buffer`, which reaches it.
 #[test]
 fn hunk_line_numbers_match_the_exact_arithmetic() {
     let counts = [0, 1, 2, 0x4000_0000, c_int::MAX - 1, c_int::MAX];
