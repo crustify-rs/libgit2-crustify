@@ -2708,7 +2708,7 @@
         {
           "index": 29,
           "name": "src/util/thread.c",
-          "status": "todo",
+          "status": "frozen",
           "foundational": false,
           "depends_on": [
             {
