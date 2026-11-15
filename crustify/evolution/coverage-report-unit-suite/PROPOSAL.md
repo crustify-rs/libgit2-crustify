@@ -18,6 +18,11 @@ running `ONLY=unit report.py …`; that directory is then one more suite for any
 `report.py` run without `ONLY`, so `ALL` would count `lib` and `unit_pub` twice in its
 profile list (harmless for a union, but a trap for anything that sums).
 
+
+Occurrence: `wave-220/batch-1/run-1` (`ctype_compat.h`'s module pass) merged the unit column by
+hand again, linking `prof/lib` and `prof/unit_pub`'s profiles into a `prof/unit` dir and running
+`report.py` with `ONLY=unit` (C `34.37`%, Rust `88.26`%).
+
 ## Destination
 
 A campaign artifact the assistant owns: `crustify/scripts/coverage/report.py` (and the

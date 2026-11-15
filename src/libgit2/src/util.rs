@@ -9,4 +9,5 @@ pub mod hash;
 pub mod integer_h;
 pub mod strlist;
 pub mod strnlen_h;
+pub mod thread;
 pub mod utf8;
