@@ -17,6 +17,12 @@ conditions: any target; on `955c56eb7` (the atomics), `d3d90f565` (`git_threads_
   of the spec
 - **status**: not patched, at the assistant's instruction: whether the twelve are exported is
   the user's decision
+- **revisit**: fixed by `wave-226/batch-6/run-1` (`2f2ffb73d`), the user's decision: the
+  twelve are exported in the module's gateway, under `ffi-export-src-util-thread-c` until the
+  switch, each checked against its raw binding. `wave-226/batch-7/run-1`, the module pass,
+  found all twelve defined there and, in a rehearsal of the switch with the prototypes in
+  place, called by the remaining C on `asan-ubsan` and `tsan` with its C tests at the
+  baseline (that run's `switch-rehearsal.md`)
 
 ## Finding
 
