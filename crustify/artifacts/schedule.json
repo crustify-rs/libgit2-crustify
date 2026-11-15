@@ -128610,7 +128610,7 @@
           "module": "src/util/cc-compat.h",
           "foundational": false,
           "kind": "port",
-          "status": "wip",
+          "status": "done",
           "items": [
             {
               "name": "GIT_UNUSED",
@@ -128653,6 +128653,19 @@
               "home": "src/libgit2/src/util/cc_compat_h.rs"
             }
           ],
+          "commits": [
+            "f570d2a4e82fd605211576dae9f40349edf6dbce"
+          ]
+        },
+        {
+          "index": 1,
+          "link_unit": "libgit2",
+          "module": "src/util/cc-compat.h",
+          "foundational": false,
+          "kind": "review",
+          "status": "wip",
+          "reviews": [],
+          "module_pass": true,
           "commits": []
         }
       ]
@@ -129081,7 +129094,7 @@
           "module": "src/util/ctype_compat.h",
           "foundational": false,
           "kind": "port",
-          "status": "wip",
+          "status": "done",
           "items": [
             {
               "name": "git__isalnum",
@@ -129148,6 +129161,19 @@
               "home": "src/libgit2/src/util/ctype_compat_h.rs"
             }
           ],
+          "commits": [
+            "a3f4f59583a89b2b8e1b4679e8bd86b8dd765429"
+          ]
+        },
+        {
+          "index": 1,
+          "link_unit": "libgit2",
+          "module": "src/util/ctype_compat.h",
+          "foundational": false,
+          "kind": "review",
+          "status": "wip",
+          "reviews": [],
+          "module_pass": true,
           "commits": []
         }
       ]
@@ -130357,7 +130383,7 @@
           "module": "src/util/hash/sha1dc/ubc_check.c",
           "foundational": false,
           "kind": "wrap",
-          "status": "wip",
+          "status": "done",
           "items": [
             {
               "name": "dv_info_t",
@@ -130373,6 +130399,311 @@
               "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
             }
           ],
+          "commits": [
+            "2492d2a9f6e87fc87a57464de71bcee0ec5b0239"
+          ]
+        },
+        {
+          "index": 1,
+          "link_unit": "libgit2",
+          "module": "src/util/hash/sha1dc/ubc_check.c",
+          "foundational": false,
+          "kind": "port",
+          "status": "wip",
+          "items": [
+            {
+              "name": "DVMASKSIZE",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_II_45_0_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_II_46_0_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_II_46_2_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_II_47_0_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_II_48_0_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_II_49_0_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_II_49_2_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_II_50_0_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_II_50_2_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_II_51_0_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_II_51_2_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_II_52_0_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_II_53_0_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_II_54_0_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_II_55_0_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_II_56_0_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_I_43_0_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_I_44_0_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_I_45_0_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_I_46_0_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_I_46_2_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_I_47_0_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_I_47_2_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_I_48_0_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_I_48_2_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_I_49_0_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_I_49_2_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_I_50_0_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_I_50_2_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_I_51_0_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_I_51_2_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "DV_I_52_0_bit",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "sha1_dvs",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "global",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            },
+            {
+              "name": "ubc_check",
+              "defined_in": "src/util/hash/sha1dc/ubc_check.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/hash/sha1dc/ubc_check.rs"
+            }
+          ],
+          "commits": []
+        },
+        {
+          "index": 2,
+          "link_unit": "libgit2",
+          "module": "src/util/hash/sha1dc/ubc_check.c",
+          "foundational": false,
+          "kind": "review",
+          "status": "wip",
+          "reviews": [
+            0
+          ],
           "commits": []
         }
       ]
@@ -130384,7 +130715,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 1,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           221
@@ -130461,7 +130792,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 221,
       "batches": []
     },
     {
@@ -131077,7 +131408,7 @@
           "module": "src/util/integer.h",
           "foundational": false,
           "kind": "port",
-          "status": "wip",
+          "status": "done",
           "items": [
             {
               "name": "git__add_int64_overflow",
@@ -131176,6 +131507,19 @@
               "home": "src/libgit2/src/util/integer_h.rs"
             }
           ],
+          "commits": [
+            "9b43c913d3eb3c740786ff5e7925b5fe1a57eb70"
+          ]
+        },
+        {
+          "index": 1,
+          "link_unit": "libgit2",
+          "module": "src/util/integer.h",
+          "foundational": false,
+          "kind": "review",
+          "status": "wip",
+          "reviews": [],
+          "module_pass": true,
           "commits": []
         }
       ]
@@ -133408,7 +133752,7 @@
           "module": "src/util/thread.c",
           "foundational": false,
           "kind": "wrap",
-          "status": "wip",
+          "status": "done",
           "items": [
             {
               "name": "git_atomic32",
@@ -133443,6 +133787,397 @@
               "home": "src/libgit2/src/util/thread.rs"
             }
           ],
+          "commits": [
+            "3f7f3ab89b7c3d5caa8d578126b0cc37e6f14b39"
+          ]
+        },
+        {
+          "index": 1,
+          "link_unit": "libgit2",
+          "module": "src/util/thread.c",
+          "foundational": false,
+          "kind": "port",
+          "status": "wip",
+          "items": [
+            {
+              "name": "GIT_MEMORY_BARRIER",
+              "defined_in": "src/util/thread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic__compare_and_swap",
+              "defined_in": "src/util/thread.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic__load",
+              "defined_in": "src/util/thread.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic__swap",
+              "defined_in": "src/util/thread.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic32_add",
+              "defined_in": "src/util/thread.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic32_dec",
+              "defined_in": "src/util/thread.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic32_get",
+              "defined_in": "src/util/thread.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic32_inc",
+              "defined_in": "src/util/thread.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic32_set",
+              "defined_in": "src/util/thread.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic64_add",
+              "defined_in": "src/util/thread.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic64_get",
+              "defined_in": "src/util/thread.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic64_set",
+              "defined_in": "src/util/thread.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic_compare_and_swap",
+              "defined_in": "src/util/thread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic_load",
+              "defined_in": "src/util/thread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic_swap",
+              "defined_in": "src/util/thread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic_ssize_add",
+              "defined_in": "src/util/thread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_atomic_ssize_get",
+              "defined_in": "src/util/thread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            }
+          ],
+          "commits": []
+        },
+        {
+          "index": 2,
+          "link_unit": "libgit2",
+          "module": "src/util/thread.c",
+          "foundational": false,
+          "kind": "port",
+          "status": "wip",
+          "items": [
+            {
+              "name": "git_cond",
+              "defined_in": "src/util/unix/pthread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_cond_free",
+              "defined_in": "src/util/unix/pthread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_cond_init",
+              "defined_in": "src/util/unix/pthread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_cond_signal",
+              "defined_in": "src/util/unix/pthread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_cond_wait",
+              "defined_in": "src/util/unix/pthread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_mutex",
+              "defined_in": "src/util/unix/pthread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_mutex_free",
+              "defined_in": "src/util/unix/pthread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_mutex_init",
+              "defined_in": "src/util/unix/pthread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_mutex_lock",
+              "defined_in": "src/util/unix/pthread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_mutex_unlock",
+              "defined_in": "src/util/unix/pthread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_rwlock",
+              "defined_in": "src/util/unix/pthread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_rwlock_free",
+              "defined_in": "src/util/unix/pthread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_rwlock_init",
+              "defined_in": "src/util/unix/pthread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_rwlock_rdlock",
+              "defined_in": "src/util/unix/pthread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_rwlock_rdunlock",
+              "defined_in": "src/util/unix/pthread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_rwlock_wrlock",
+              "defined_in": "src/util/unix/pthread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_rwlock_wrunlock",
+              "defined_in": "src/util/unix/pthread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_thread_create",
+              "defined_in": "src/util/unix/pthread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_thread_join",
+              "defined_in": "src/util/unix/pthread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            }
+          ],
+          "commits": []
+        },
+        {
+          "index": 3,
+          "link_unit": "libgit2",
+          "module": "src/util/thread.c",
+          "foundational": false,
+          "kind": "port",
+          "status": "wip",
+          "items": [
+            {
+              "name": "git_threads_global_init",
+              "defined_in": "src/util/unix/pthread.h",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_tlsdata_dispose",
+              "defined_in": "src/util/thread.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_tlsdata_get",
+              "defined_in": "src/util/thread.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_tlsdata_key",
+              "defined_in": "src/util/thread.h",
+              "kind": "macro",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_tlsdata_set",
+              "defined_in": "src/util/thread.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "void (*)(void *)",
+              "defined_in": "src/util/thread.c",
+              "kind": "function_pointer",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            },
+            {
+              "name": "git_tlsdata_init",
+              "defined_in": "src/util/thread.c",
+              "kind": "function",
+              "field_users": [],
+              "typedefs": [],
+              "home": "src/libgit2/src/util/thread.rs"
+            }
+          ],
+          "commits": []
+        },
+        {
+          "index": 4,
+          "link_unit": "libgit2",
+          "module": "src/util/thread.c",
+          "foundational": false,
+          "kind": "review",
+          "status": "wip",
+          "reviews": [
+            0
+          ],
           "commits": []
         }
       ]
@@ -133454,7 +134189,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 1,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           226
@@ -134045,7 +134780,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 226,
       "batches": []
     },
     {
@@ -134055,7 +134790,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 2,
-      "status": "todo",
+      "status": "wip",
       "depends_on": {
         "scheduled": [
           227
@@ -134132,7 +134867,7 @@
           }
         }
       ],
-      "packed_with": null,
+      "packed_with": 226,
       "batches": []
     },
     {
