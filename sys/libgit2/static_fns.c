@@ -2,6 +2,7 @@
 
 // Static wrappers
 
+int git_threads_global_init__extern(void) { return git_threads_global_init(); }
 void git_atomic32_set__extern(git_atomic32 *a, int val) { git_atomic32_set(a, val); }
 int git_atomic32_inc__extern(git_atomic32 *a) { return git_atomic32_inc(a); }
 int git_atomic32_add__extern(git_atomic32 *a, int32_t addend) { return git_atomic32_add(a, addend); }

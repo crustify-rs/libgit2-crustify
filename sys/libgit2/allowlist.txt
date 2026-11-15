@@ -844,8 +844,9 @@ function git_utf8_iterate
 function git_utf8_valid_buf_length
 
 # wave-226/batch-1: src/util/thread.h's atomic operations, `static inline`, compiled into
-# static_fns.c, which the equivalence tests of their ports compare with; the C that remains
-# expands them from the header, so they have no export
+# static_fns.c, which the equivalence tests of their ports compare with; the module's exports
+# check their signatures against these (wave-226/batch-6), and reach them once the switch has
+# replaced the header's definitions by prototypes
 function git_atomic32_add
 function git_atomic32_dec
 function git_atomic32_get
@@ -857,6 +858,10 @@ function git_atomic64_set
 function git_atomic__compare_and_swap
 function git_atomic__load
 function git_atomic__swap
+
+# wave-226/batch-6: src/util/unix/pthread.h's git_threads_global_init, `static inline`, whose
+# export checks its signature against this
+function git_threads_global_init
 
 # wave-226/batch-3: src/util/thread.c's thread-local storage (src/util/thread.h), ported to
 # Rust: its exports check their signatures against these, and the equivalence tests call C's

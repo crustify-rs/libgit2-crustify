@@ -61,6 +61,20 @@ The fitness measure: the hand-written `unsafe impl CCell` count in the campaign'
 which this run raised by two. No `ub` or `contracts` finding should appear on a layout
 type written through shared access.
 
+## Occurrences
+
+- `wave-226/batch-6/run-1`, `src/util/thread.c`, which exports `thread.h`'s eleven atomic
+  operations, as the user decided against `static-inline-functions-kept-in-their-headers`,
+  makes the adoption the third evidence item foresaw. Its gateway's `atomic32` and
+  `atomic64` (`src/libgit2/src/util/thread.rs`, `mod ffi_export`) adopt the `git_atomic32 *`
+  or `git_atomic64 *` C passes as an `Atomic32Ref` or `Atomic64Ref` through
+  `CRefSeam::from_ptr` for the call, while other threads, C's and Rust's, change the same
+  count. Their `SAFETY` comments rest on the exception `atomic_type!`'s `unsafe impl CCell`
+  claims, the atomic writes the lent `val` makes, which `ref_from_ptr`'s text does not admit.
+  Change 2 would make that text cover them. The gateway's pointer-sized slots need no
+  handle: they are adopted as `AtomicPtr<c_void>` through the standard `AtomicPtr::from_ptr`,
+  whose contract does admit concurrent atomic access.
+
 ## Destination
 
 ffibox: `define_ctype!` (`src/macros.rs`), `CCell::ref_from_ptr`'s and `CRefSeam::as_ptr`'s

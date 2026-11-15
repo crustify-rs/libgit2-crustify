@@ -14502,6 +14502,10 @@ const _: () = {
     ][::std::mem::offset_of!(git_thread, thread) - 0usize];
 };
 unsafe extern "C" {
+    #[link_name = "git_threads_global_init__extern"]
+    pub fn git_threads_global_init() -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     #[link_name = "git_atomic32_set__extern"]
     pub fn git_atomic32_set(a: *mut git_atomic32, val: ::std::os::raw::c_int);
 }

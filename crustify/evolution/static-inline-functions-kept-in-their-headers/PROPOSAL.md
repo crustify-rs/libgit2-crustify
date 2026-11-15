@@ -1,6 +1,7 @@
 # When a ported `static inline` function stays in its header
 
-Status: `open`.
+Status: `open`. The user decided against its change for the twelve functions it was filed
+for (`wave-226/batch-6/run-1`'s occurrence): the index's writer may decline it.
 
 ## Signal
 
@@ -63,6 +64,24 @@ expands keeps its native code. The fitness measure: no task message contradicts
   translation units, as an export is called, cost about 4.5 ns a pair more than inlined
   (24.2 to 24.9 ns against 15.4 to 15.7, single-threaded, clang 18 at `-O2`). The report's
   `measure/` holds both measurements.
+- `wave-226/batch-6/run-1`, which the user's decision on the review's finding ran: the user
+  decided that the twelve are exported as `porting-symbols` § 4 has it, and that the cost
+  of the calls is to be recovered later by cross-language LTO. That decides the signal
+  against this proposal's change for its own evidence, and leaves the contradiction in the
+  task messages, not in the spec. The run added the twelve exports to the module's gateway
+  (`src/libgit2/src/util/thread.rs`, under `ffi-export-src-util-thread-c`), each checked
+  against its raw binding, and left the native API and both headers unchanged. Its scratch
+  rehearsal of the switch (`crustify/artifacts/modules/libgit2/src/util/thread.c/wave-226/batch-6/run-1/switch-rehearsal.md`)
+  replaced the twelve definitions by prototypes and removed `thread.c`. Built that way, the
+  `plain` variant's C inlines no atomic instruction (gen5's inlines 254 in 34 objects) and
+  calls the exports from 304 sites in 36 objects. Its C tests match the baseline (3442
+  passed, 0 failed, 55 skipped of 3497). An increment and a decrement of one count cost 15.35
+  to 16.37 ns a pair inlined, 101.42 to 102.75 ns through the dev-profile Rust library every
+  variant links (`rust-staticlib.sh`), and 21.03 to 27.14 ns through the same crate built on
+  the release profile, single-threaded, on a host at a load average of about 270. The figure
+  the variants' C tests pay from the switch on is the dev profile's, 6.6 times the inlined
+  cost, until the variants build the Rust library optimised or with cross-language LTO:
+  the working branch's open proposal `c-link-rust-on-the-dev-profile` holds that signal.
 
 ## Destination
 
