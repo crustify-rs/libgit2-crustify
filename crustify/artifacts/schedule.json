@@ -128247,7 +128247,7 @@
       "foundational": false,
       "layer": 0,
       "sublayer": 0,
-      "status": "wip",
+      "status": "done",
       "depends_on": {
         "scheduled": [],
         "cut": []
@@ -128663,10 +128663,13 @@
           "module": "src/util/cc-compat.h",
           "foundational": false,
           "kind": "review",
-          "status": "wip",
+          "status": "done",
           "reviews": [],
           "module_pass": true,
-          "commits": []
+          "commits": [
+            "9b4c4b07c36726608790adb90439e66f463db97b",
+            "ae200514865d424c8fc5c9796fb3302d4798da4f"
+          ]
         }
       ]
     },
@@ -130700,11 +130703,14 @@
           "module": "src/util/hash/sha1dc/ubc_check.c",
           "foundational": false,
           "kind": "review",
-          "status": "wip",
+          "status": "done",
           "reviews": [
             0
           ],
-          "commits": []
+          "commits": [
+            "edfd99a0ecd78e0d2dc58c61cc67f6082a26e8c5",
+            "aa4ec4d3f8e373928f36dbe1d3d5790113e94415"
+          ]
         }
       ]
     },
@@ -133944,7 +133950,7 @@
           "module": "src/util/thread.c",
           "foundational": false,
           "kind": "port",
-          "status": "wip",
+          "status": "done",
           "items": [
             {
               "name": "git_cond",
@@ -134099,7 +134105,9 @@
               "home": "src/libgit2/src/util/thread.rs"
             }
           ],
-          "commits": []
+          "commits": [
+            "8aa231a691fbb3e376411f32f670a40c4ff8fcf8"
+          ]
         },
         {
           "index": 3,
@@ -134174,11 +134182,14 @@
           "module": "src/util/thread.c",
           "foundational": false,
           "kind": "review",
-          "status": "wip",
+          "status": "done",
           "reviews": [
             0
           ],
-          "commits": []
+          "commits": [
+            "b9239845967fd314fc6a9eb4232fbc456eecf6a0",
+            "5c7b62f0ee435ae86bc8e006d865d337781cdd21"
+          ]
         }
       ]
     },
