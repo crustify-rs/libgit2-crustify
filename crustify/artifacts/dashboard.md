@@ -19,7 +19,7 @@ and in Notes.
 - **sanitizers** — `asan-ubsan`, `tsan`, `bsan`; from 2026-11-13 BSan runs over the workspace and as a regression gate only before a ship point, and otherwise on small things alone: an agent's own tests and review reproducers
 - **target-config** — default, deprecated features disabled (`-DDEPRECATE_HARD=ON`), HTTPS through OpenSSL, SSH, Negotiate auth and i18n off, threads on; OpenSSL, PCRE2 and zlib from the side campaigns' installs of each variant; `build.json` version `3`
 - **module-concurrency** — `concurrent` from 2026-11-06, until crustify dropped the question on 2026-11-08: modules always run concurrently
-- **ship** — after the 25 modules of the first point, about 15K lines of integrated C (planned through wave 263), from 2026-11-11; later points about every 15K lines, each confirmed
+- **ship** — after the 25 modules of the first point, about 15K lines of integrated C (planned through wave 263), from 2026-11-11; later points about every 15K lines, each confirmed; from 2026-11-15, the user's choice, after `src/libgit2/repository.c` and the 42 modules of its `depends_on.scheduled` closure, about 15.8K lines of C (planned through wave 781), later points core modules with their closures, each confirmed
 - **evolution** — `evolve` from 2026-11-11, briefly `propose`, the default, when the settings took the template's question
 
 ## Legend
