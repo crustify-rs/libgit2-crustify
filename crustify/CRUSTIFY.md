@@ -78,16 +78,29 @@ Unanswered optional questions use their defaults.
     what the campaign has integrated, with your approval each time: the modules shipped
     are translated, and the C still left is reached only through the wrappers on its
     boundary.** (`id: ship`)
-    - Answer: `after:` `src/cli/opt.c` (git2), `deps/llhttp/api.c`, `deps/llhttp/http.c`,
-      `deps/llhttp/llhttp.c`, `deps/ntlmclient/compat.h`, `deps/ntlmclient/crypt_openssl.c`,
-      `deps/ntlmclient/unicode_builtin.c`, `deps/ntlmclient/utf8.h`, `deps/ntlmclient/util.c`,
-      `deps/ntlmclient/ntlm.c`, `deps/reftable/error.c`, `deps/reftable/record.c`,
-      `deps/xdiff/xmacros.h`, `src/libgit2/common.h`, `src/libgit2/streams/mbedtls.c`,
-      `src/util/cc-compat.h`, `src/util/ctype_compat.h`, `src/util/errors.c`, `src/util/hash/sha1dc/ubc_check.c`,
-      `src/util/hashmap.h`, `src/util/integer.h`, `src/util/staticstr.h`, `src/util/strnlen.h`,
-      `src/util/thread.c`, `src/util/utf8.c`, `src/util/wildmatch.c`: the first ship point,
-      about 15K lines of integrated C (planned through wave 338 since planner run 12, 263 before; `src/util/errors.c` joined it then, since `common.h` and `hashmap.h` expand its error macros). Later points are chosen the
-      same way, about every 15K lines of integrated C, each confirmed with the user.
+    - Answer: `after:` `src/libgit2/repository.c` and every module its `schedule.json`
+      record reaches through `depends_on.scheduled`, 42 modules of about 15.8K lines of C,
+      their `wrap` and `port` waves planned through wave 781: `src/libgit2/buf.c`,
+      `src/libgit2/common.h`, `src/libgit2/config.c`, `src/libgit2/grafts.c`,
+      `src/libgit2/object.c`, `src/libgit2/odb.c`, `src/libgit2/oid.c`,
+      `src/libgit2/oidarray.c`, `src/libgit2/parse.c`, `src/libgit2/refs.c`,
+      `src/libgit2/repository.c`, `src/libgit2/strarray.c`, `src/libgit2/sysdir.c`,
+      `src/util/alloc.c`, `src/util/allocators/failalloc.c`, `src/util/array.h`,
+      `src/util/cc-compat.h`, `src/util/ctype_compat.h`, `src/util/errors.c`,
+      `src/util/filebuf.c`, `src/util/fs_path.c`, `src/util/futils.c`, `src/util/hash.c`,
+      `src/util/hash/collisiondetect.c`, `src/util/hash/openssl.c`,
+      `src/util/hash/sha1dc/sha1.c`, `src/util/hash/sha1dc/ubc_check.c`,
+      `src/util/hashmap.h`, `src/util/hashmap_str.h`, `src/util/integer.h`,
+      `src/util/pool.c`, `src/util/posix.c`, `src/util/rand.c`, `src/util/regexp.c`,
+      `src/util/runtime.c`, `src/util/str.c`, `src/util/thread.c`, `src/util/tsort.c`,
+      `src/util/unix/map.c`, `src/util/unix/realpath.c`, `src/util/util.c`,
+      `src/util/vector.c`: the first ship point, chosen by the user on 2026-11-15 in place
+      of the list by size (about 15K lines of integrated leaves, through wave 338). A
+      re-plan that changes the closure changes this list with it. `src/util/alloc.c` and
+      `src/util/allocators/failalloc.c` are wrapped, not ported, and the dependencies the
+      order cuts stay C behind wrappers at this point. Later points are core modules
+      with their closures too, each confirmed with the user; `src/libgit2/commit.c`, nine
+      modules further, is the candidate for the second.
     - `decide after planning`: once the plan is complete, I propose ship points from it,
       with the boundary each would leave, and record your choice here.
     - By default: after every integrated module.
