@@ -57,17 +57,17 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip the integration of `libgit2/src/util/strnlen.h`, `30176475c`; `main` at `c58bc5de8`, nothing shipped yet; crustify `cc84106`, ffibox `9c22a73`, wavefront `bf21e16`, ffimap `9aa2ef1` (each on its `libgit2-crustify/devel`, wavefront and ffimap on `devel`)
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `23230` non-test, `110311` tests; **C LoC** — `88938`
+- **Rust LoC** — `23230` non-test, `110322` tests; **C LoC** — `88938`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `800` | — | `30.40`% | `77.27`% |
-| UB unsafe tests | `144` | — | `20.10`% | `17.55`% |
-| Equiv tests | `532` | — | `43.74`% | `68.25`% |
-| Unit tests | `1156` | — | `34.36`% | `88.30`% |
-| **Total tests** | **`2632`** | — | **`47.47`%** | **`98.21`%** |
+| UB safe tests | `800` | — | `30.36`% | `77.27`% |
+| UB unsafe tests | `144` | — | `20.18`% | `17.55`% |
+| Equiv tests | `532` | — | `43.75`% | `68.25`% |
+| Unit tests | `1156` | — | `34.38`% | `88.30`% |
+| **Total tests** | **`2632`** | — | **`47.53`%** | **`98.21`%** |
 | total types | `258` | — | — | — |
 | ported types | `4` | `1.55`% | — | — |
 | wrapped types | `117` | `45.35`% | — | — |
@@ -272,8 +272,9 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/reftable/basics.c` | `169` | `3` | wrap | review | `2` | `3` | `+134/-4` | `45.90`% / `98.92`% | `$9.26` | `30.25M` | `24m42s` | `$4.63` | `$3.09` |
 | `libgit2/deps/llhttp/api.c` | `194` | `5` | wrap | review | `6` | `44` | `+194/-7` | `47.18`% / `98.68`% | `$8.60` | `26.26M` | `28m22s` | `$1.43` | `$0.20` |
 | `git2/src/cli/opt.c` | `186` | `3` | port, wrap | review | `7` | `23` | `+357/-42` | `45.33`% / `98.85`% | `$8.18` | `24.53M` | `24m53s` | `$1.17` | `$0.36` |
+| `libgit2/src/util/hash/sha1dc/ubc_check.c` | `221` | `2` | wrap | review | `1` | `4` | `+20/-3` | `47.53`% / `98.21`% | — | — | — | — | — |
 | **Σ first** |  |  |  |  | **`121`** | **`286`** | **`+107073/-2588`** | **`47.47`% / `98.21`%** | **`$651.45`** | **`1632.11M`** | — | **`$5.59`** | **`$2.78`** |
-| **Σ review** |  |  |  |  | **`120`** | **`282`** | **`+10277/-2138`** | **`47.18`% / `98.68`%** | **`$443.69`** | **`766.73M`** | — | **`$3.99`** | **`$1.99`** |
+| **Σ review** |  |  |  |  | **`121`** | **`286`** | **`+10297/-2141`** | **`47.53`% / `98.21`%** | **`$443.69`** | **`766.73M`** | — | **`$3.99`** | **`$1.99`** |
 
 ### Batches: tests
 
@@ -382,8 +383,9 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/reftable/basics.c` | `169` | `3` | review | `+1` (`+0.02`/`-0.02` pp) | `+0` (`+0.00`/`+0.00` pp) | `+0` (`-0.01`/`-0.02` pp) | `+2` (`+0.02`/`+0.01` pp) |
 | `libgit2/deps/llhttp/api.c` | `194` | `5` | review | `+0` (`-0.02`/`+0.00` pp) | `+1` (`+0.00`/`+0.03` pp) | `+0` (`+0.01`/`+0.00` pp) | `+0` (`-0.05`/`+0.00` pp) |
 | `git2/src/cli/opt.c` | `186` | `3` | review | `+0` (`-0.01`/`-0.02` pp) | `+5` (`+0.01`/`+2.24` pp) | `+0` (`+0.04`/`-0.01` pp) | `+1` (`+0.00`/`+0.02` pp) |
+| `libgit2/src/util/hash/sha1dc/ubc_check.c` | `221` | `2` | review | `+0` (`-0.04`/`+0.00` pp) | `+0` (`+0.08`/`+0.00` pp) | `+0` (`+0.01`/`+0.00` pp) | `+0` (`+0.02`/`+0.00` pp) |
 | **Σ first** |  |  |  | **`+484` (`+25.25`/`-3.30` pp)** | **`+52` (`+14.74`/`-53.59` pp)** | **`+282` (`+32.95`/`-26.32` pp)** | **`+553` (`+13.14`/`+25.15` pp)** |
-| **Σ review** |  |  |  | **`+36` (`+0.42`/`+2.18` pp)** | **`+9` (`-0.37`/`-3.10` pp)** | **`+23` (`+2.73`/`-1.31` pp)** | **`+43` (`+4.65`/`+2.39` pp)** |
+| **Σ review** |  |  |  | **`+36` (`+0.38`/`+2.18` pp)** | **`+9` (`-0.29`/`-3.10` pp)** | **`+23` (`+2.74`/`-1.31` pp)** | **`+43` (`+4.67`/`+2.39` pp)** |
 
 ### Batches: safety audit
 
@@ -400,6 +402,7 @@ Deterministic `ffimap`; no model.
 | `libgit2/deps/reftable/basics.c` | `169` | `3` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+6` | `+0` | `+0` | `-0.01` pp | `+0` |
 | `libgit2/deps/llhttp/api.c` | `194` | `5` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
 | `git2/src/cli/opt.c` | `186` | `3` | port, wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.02` pp | `+0` |
+| `libgit2/src/util/hash/sha1dc/ubc_check.c` | `221` | `2` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
 | **Σ first** |  |  |  |  | **`+2`** | **`+2`** | **`+2`** | **`+2`** | **`+17`** | **`+0.00` pp** | **`+14`** | **`+0`** | **`+0`** | **`+8`** | **`+124`** | **`+2`** | **`+0.20` pp** | **`+315`** |
 | **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+6`** | **`+0`** | **`+0`** | **`-0.02` pp** | **`+0`** |
 
@@ -416,8 +419,9 @@ Deterministic `ffimap api`; no model.
 | `git2/src/cli/opt.c` | `186` | `2` | wrap | first | `0` | `0` | `0` | `0` | `30` | `0` | `git2::src::cli::opt` new, `sys::git2` changed | `sys::git2`: `cli_opt`, `cli_opt_parser`, `cli_opt_spec` leave the unattributed set, now tied to their layouts' anchors |
 | `libgit2/src/util/hash/sha1dc/ubc_check.c` | `221` | `0` | wrap | first | `0` | `0` | `0` | `0` | `5` | `0` | all 24 modules kept | — |
 | `git2/src/cli/opt.c` | `186` | `3` | port, wrap | review | `51` | `6` | `0` | `0` | `0` | `0` | all 20 modules kept | — |
+| `libgit2/src/util/hash/sha1dc/ubc_check.c` | `221` | `2` | wrap | review | `5` | `0` | `0` | `0` | `0` | `0` | all 24 modules kept | — |
 | **Σ first** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`68`** | **`0`** |  |  |
-| **Σ review** |  |  |  |  | **`90`** | **`6`** | **`0`** | **`0`** | **`0`** | **`0`** |  |  |
+| **Σ review** |  |  |  |  | **`95`** | **`6`** | **`0`** | **`0`** | **`0`** | **`0`** |  |  |
 
 ### Batches — review: PoC + reports
 
@@ -454,7 +458,8 @@ Deterministic `ffimap api`; no model.
 | `libgit2/deps/reftable/basics.c` | `169` | `3` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
 | `libgit2/deps/llhttp/api.c` | `194` | `5` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `+0` | `+0` | `1` |
 | `git2/src/cli/opt.c` | `186` | `3` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+2` | `2` |
-| **Σ** |  |  | **`+7`** | **`+9`** | **`+3`** | **`+1`** | **`+3`** | **`+4`** | **`+15`** | **`+61`** | **`103`** |
+| `libgit2/src/util/hash/sha1dc/ubc_check.c` | `221` | `2` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
+| **Σ** |  |  | **`+7`** | **`+9`** | **`+3`** | **`+1`** | **`+3`** | **`+4`** | **`+15`** | **`+62`** | **`104`** |
 
 ## Symbols
 
@@ -6053,3 +6058,26 @@ with no variant. That took the command `crustify/evolution/package-gate-procedur
 records: the ffibox Git-source patch, at the manifest's `/crustify-rs/ffibox.libgit2-crustify`,
 `--exclude-lockfile`, and the side campaigns' installs on `CMAKE_PREFIX_PATH`,
 `OPENSSL_ROOT_DIR` and `PKG_CONFIG_PATH`. Usage cells are the assistant's.
+
+### `libgit2/src/util/hash/sha1dc/ubc_check.c` wave 221 batch 2: review of batch 0
+
+Reviews `wave-221/batch-0` (`2492d2a9f`), the wrap of `st::dv_info_t` as `DvInfo`, for every
+objective, to the depth of a wrapper its port replaces: its public API. One report,
+`misc/dv-info-step-docs-omit-the-stored-states` (`nit`): `DvInfo`'s documentation gave every
+step in `0..80` as one `sha1.c` saved a state for, where `sha1.c` saves only 58 and 65
+(`ubc_check.h`'s `DOSTORESTATE58`/`DOSTORESTATE65`) and `sha1_recompression_step` aborts on any
+other; the fix is documentation alone, and the API is unchanged. Test adequacy: an equality that
+left out the type, the step or the bit passed `copies_and_equality_cover_every_field` (checked
+by that mutant on `plain`); the test now compares records that differ in each field alone, and
+fails on it. No new test, so the counts stand. The two `provisional` lessons,
+`cmake-property-naming-a-removed-source` and `http-exports-gated-through-a-local-remote`, read
+against `c/deps/llhttp/CMakeLists.txt` and `crustify/scripts/http-gate.sh`, are `held`. Gates:
+`fmt --check` and `clippy --workspace --all-targets -D warnings` on `plain`; the module's
+`unit_pub` and `ub_safe` tests plain, under ASan+UBSan, TSan and Miri; the compile-fail suite
+plain. No BSan run: the change reaches no reborrow. Coverage, one `run.sh` over the tree, read
+with `report.py` from the scratch tree's `src/libgit2` (`C=@c` over `libcrustify.a`, Rust over the
+scratch `src/`), the unit column merging `lib` and `unit_pub`; the pp cells are against batch 0's
+measurement of the same base, and the C shifts are run-to-run variation, as no test reaching C
+changed. ffimap (the batch-0 flags) moves only `code.tests.loc.total` (`+11`), the Overview's test
+LoC; `ffimap api` against the base (nightly `2026-10-08`, ffibox's private rustdoc JSON): the 5
+items `kept`, every unattributed module `kept`. Usage cells are the assistant's.

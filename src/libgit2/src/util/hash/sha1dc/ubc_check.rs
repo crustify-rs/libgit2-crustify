@@ -88,6 +88,11 @@ mod ffi_import {
         /// or a word other than `0`, the one word of `ubc_check`'s mask (`DVMASKSIZE` is 1).
         /// The other fields take any value. `const`, so that a table of records is a
         /// `static`.
+        ///
+        /// Not every step in range is one `sha1.c` recompresses from: it saves the states of
+        /// the steps `ubc_check.h` names (`DOSTORESTATE58` and `DOSTORESTATE65`), and its
+        /// `sha1_recompression_step` aborts the process on any other. A table `sha1.c` reads
+        /// holds those steps alone, as `sha1_dvs`'s records do.
         #[must_use]
         pub const fn new(
             dv_type: i32,
@@ -142,7 +147,7 @@ mod ffi_import {
         }
 
         /// The step `sha1.c` recompresses from, in `0..80`: the index of the state it saved
-        /// at that step.
+        /// at that step, which it saves only for the steps `ubc_check.h` names, 58 and 65.
         ///
         /// # Panics
         ///

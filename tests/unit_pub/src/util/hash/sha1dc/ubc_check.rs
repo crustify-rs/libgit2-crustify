@@ -212,13 +212,25 @@ fn copies_and_equality_cover_every_field() {
     assert_eq!(copy, r);
     assert_eq!(r.as_ref().copied(), r);
     assert_eq!(r.as_ref(), copy.as_ref());
-    // Fields no getter reads still count.
+    // Each record differs from `r` in one field alone, so that equality leaving any field out
+    // fails here; fields no getter reads still count.
+    let other_type = DvInfo::new(2, 43, 0, 58, 0, 0, DM_I_43_0).unwrap();
     let other_k = DvInfo::new(1, 44, 0, 58, 0, 0, DM_I_43_0).unwrap();
     let other_b = DvInfo::new(1, 43, 2, 58, 0, 0, DM_I_43_0).unwrap();
+    let other_step = DvInfo::new(1, 43, 0, 65, 0, 0, DM_I_43_0).unwrap();
+    let other_bit = DvInfo::new(1, 43, 0, 58, 0, 1, DM_I_43_0).unwrap();
     let mut dm = DM_I_43_0;
     dm[79] ^= 1;
     let other_dm = DvInfo::new(1, 43, 0, 58, 0, 0, dm).unwrap();
-    for other in [other_k, other_b, other_dm, terminator()] {
+    for other in [
+        other_type,
+        other_k,
+        other_b,
+        other_step,
+        other_bit,
+        other_dm,
+        terminator(),
+    ] {
         assert_ne!(other, r);
         assert_ne!(other.as_ref(), r.as_ref());
     }
