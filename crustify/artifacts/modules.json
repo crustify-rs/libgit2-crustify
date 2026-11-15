@@ -2440,7 +2440,7 @@
         {
           "index": 25,
           "name": "src/util/hash/sha1dc/ubc_check.c",
-          "status": "todo",
+          "status": "frozen",
           "foundational": false,
           "depends_on": [],
           "translation_unit": {
@@ -2595,7 +2595,7 @@
         {
           "index": 27,
           "name": "src/util/integer.h",
-          "status": "todo",
+          "status": "frozen",
           "foundational": false,
           "depends_on": [],
           "translation_unit": null,
@@ -2708,7 +2708,7 @@
         {
           "index": 29,
           "name": "src/util/thread.c",
-          "status": "todo",
+          "status": "frozen",
           "foundational": false,
           "depends_on": [
             {
@@ -54437,7 +54437,7 @@
         {
           "index": 198,
           "name": "src/util/ctype_compat.h",
-          "status": "todo",
+          "status": "frozen",
           "foundational": false,
           "depends_on": [],
           "translation_unit": null,
