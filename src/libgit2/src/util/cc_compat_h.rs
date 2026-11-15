@@ -16,8 +16,10 @@
 //!
 //! Each is defined, on this build, by the branch the header takes under clang on Linux at
 //! `-std=c90`: `__GNUC__` is defined, `_MSC_VER` and `__MINGW32__` are not, and `<stdarg.h>`
-//! defines `__va_copy` but, in strict C90, not `va_copy`. Every item documents the branches
-//! the build does not take, which compute what this one does.
+//! defines `__va_copy` but, in strict C90, not `va_copy`. `unused` and `va_copy` document the
+//! branches the build does not take, which compute what this one does. The formats' branches
+//! name different strings, under conditions Rust's `cfg` sees, the target's OS and the width
+//! of `size_t`, so each constant takes every branch, as the header does.
 //!
 //! The header's other definitions are not API, and no module owns them: the attribute
 //! macros `GIT_FLEX_ARRAY`, `GIT_ALIGN`, `GIT_UNUSED_ARG` and `GIT_UNUSED_FUNCTION`, MSVC's
@@ -58,38 +60,68 @@ use core::fmt;
 #[inline]
 pub const fn unused<T: ?Sized>(_value: &T) {}
 
-/// The printf length modifier and conversion of a `ssize_t` in decimal, `"zd"`: a C format
-/// string writes it after `%`, as `"%" PRIdZ`.
-///
-/// It is the C99 `z` modifier on this build, which is neither MSVC nor MinGW. There the
-/// header names Microsoft's `I64d` where `size_t` is 64 bits wide and `Id` elsewhere, which
-/// format the same values. Native Rust formats an `isize` with `{}`.
-///
-/// Replaces `mac::PRIdZ`
-#[doc(alias = "PRIdZ")]
-pub const PRI_DZ: &str = "zd";
+/// Defines a `size_t` format as the header does for the target: C99's `z` modifier, `$c99`,
+/// except on Windows, whose compilers the header names (`_MSC_VER`, `__MINGW32__`), where it
+/// is Microsoft's `I64` modifier, `$msvc_64`, if `size_t` is as wide as `unsigned long long`,
+/// 64 bits, and its `I` modifier, `$msvc`, if not. Each target compiles one of the three, so
+/// that its value is the literal the header gives there.
+macro_rules! size_format {
+    ($(#[$attr:meta])* $name:ident = $c99:literal, $msvc_64:literal, $msvc:literal) => {
+        $(#[$attr])*
+        #[cfg(not(windows))]
+        pub const $name: &str = $c99;
 
-/// The printf length modifier and conversion of a `size_t` in decimal, `"zu"`: a C format
-/// string writes it after `%`, as `"%" PRIuZ`.
-///
-/// It is the C99 `z` modifier on this build, which is neither MSVC nor MinGW. There the
-/// header names Microsoft's `I64u` where `size_t` is 64 bits wide and `Iu` elsewhere, which
-/// format the same values. Native Rust formats a `usize` with `{}`.
-///
-/// Replaces `mac::PRIuZ`
-#[doc(alias = "PRIuZ")]
-pub const PRI_UZ: &str = "zu";
+        $(#[$attr])*
+        #[cfg(all(windows, target_pointer_width = "64"))]
+        pub const $name: &str = $msvc_64;
 
-/// The printf length modifier and conversion of a `size_t` in lowercase hexadecimal, `"zx"`:
-/// a C format string writes it after `%`, as `"%" PRIxZ`.
-///
-/// It is the C99 `z` modifier on this build, which is neither MSVC nor MinGW. There the
-/// header names Microsoft's `I64x` where `size_t` is 64 bits wide and `Ix` elsewhere, which
-/// format the same values. Native Rust formats a `usize` with `{:x}`.
-///
-/// Replaces `mac::PRIxZ`
-#[doc(alias = "PRIxZ")]
-pub const PRI_XZ: &str = "zx";
+        $(#[$attr])*
+        #[cfg(all(windows, not(target_pointer_width = "64")))]
+        pub const $name: &str = $msvc;
+    };
+}
+
+size_format! {
+    /// The printf length modifier and conversion of a `ssize_t` in decimal, `"zd"` on this
+    /// build: a C format string writes it after `%`, as `"%" PRIdZ`.
+    ///
+    /// It is the C99 `z` modifier wherever the target is not Windows, as on this build. On
+    /// Windows, MSVC's and MinGW's, it is Microsoft's `"I64d"` where `size_t` is 64 bits wide
+    /// and `"Id"` elsewhere, as the header names it there. Native Rust formats an `isize` with
+    /// `{}`.
+    ///
+    /// Replaces `mac::PRIdZ`
+    #[doc(alias = "PRIdZ")]
+    PRI_DZ = "zd", "I64d", "Id"
+}
+
+size_format! {
+    /// The printf length modifier and conversion of a `size_t` in decimal, `"zu"` on this
+    /// build: a C format string writes it after `%`, as `"%" PRIuZ`.
+    ///
+    /// It is the C99 `z` modifier wherever the target is not Windows, as on this build. On
+    /// Windows, MSVC's and MinGW's, it is Microsoft's `"I64u"` where `size_t` is 64 bits wide
+    /// and `"Iu"` elsewhere, as the header names it there. Native Rust formats a `usize` with
+    /// `{}`.
+    ///
+    /// Replaces `mac::PRIuZ`
+    #[doc(alias = "PRIuZ")]
+    PRI_UZ = "zu", "I64u", "Iu"
+}
+
+size_format! {
+    /// The printf length modifier and conversion of a `size_t` in lowercase hexadecimal,
+    /// `"zx"` on this build: a C format string writes it after `%`, as `"%" PRIxZ`.
+    ///
+    /// It is the C99 `z` modifier wherever the target is not Windows, as on this build. On
+    /// Windows, MSVC's and MinGW's, it is Microsoft's `"I64x"` where `size_t` is 64 bits wide
+    /// and `"Ix"` elsewhere, as the header names it there. Native Rust formats a `usize` with
+    /// `{:x}`.
+    ///
+    /// Replaces `mac::PRIxZ`
+    #[doc(alias = "PRIxZ")]
+    PRI_XZ = "zx", "I64x", "Ix"
+}
 
 /// A copy of a list of formatting arguments, which formats as the original does and leaves
 /// the original to be formatted again.
