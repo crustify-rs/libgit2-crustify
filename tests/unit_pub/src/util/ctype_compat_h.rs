@@ -120,9 +120,10 @@ fn the_case_maps_compose() {
     }
 }
 
-/// A C caller's argument is an `int` the macro casts to `unsigned char`; the caller's cast to
-/// `u8` is that cast, so `EOF` and a negative `char` give their byte's result, as on every
-/// build but `GIT_WIN32`.
+/// A C caller's argument is an `int` the macro casts to `unsigned char`; for a `char` or
+/// `EOF`, the caller's cast to `u8` is that cast, so `EOF` and a negative `char` give their
+/// byte's result, as on every build but `GIT_WIN32`. A value wider than a byte, such as a code
+/// point, is no byte of these classes, as the module's documentation describes.
 #[test]
 fn a_c_callers_int_is_its_byte() {
     let eof: i32 = -1;
@@ -132,7 +133,6 @@ fn a_c_callers_int_is_its_byte() {
     assert_eq!(to_lower(eof.to_le_bytes()[0]), 0xFF);
     assert_eq!(e_acute.cast_unsigned(), 0xE9);
     assert!(!is_alpha(e_acute.cast_unsigned()));
-    assert_eq!(to_lower(0x141_i32.to_le_bytes()[0]), b'a');
 }
 
 /// They are `const fn`s: a class is computed where a constant is needed, as at run time.

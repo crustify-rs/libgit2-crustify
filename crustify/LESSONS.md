@@ -163,7 +163,7 @@ and are outside the rule: `wave-176/batch-1` compares them so in the test proces
 
 ## cmake-property-naming-a-removed-source
 
-Status: provisional
+Status: held
 
 **Rule.** When a module's switch removes a C file that a `CMakeLists.txt` names only in a
 source-file property, the `CMakeLists.txt` is left unchanged. CMake ignores a property of a
@@ -190,7 +190,7 @@ Scope: the switches of `deps/llhttp/api.c` and `http.c`, and of any later module
 
 ## http-exports-gated-through-a-local-remote
 
-Status: provisional
+Status: held
 
 **Rule.** No offline C test drives libgit2's HTTP client: `httpparser.c`, `httpclient.c` and
 `llhttp.c`'s generated parser call llhttp's exports only in a fetch, clone or push over

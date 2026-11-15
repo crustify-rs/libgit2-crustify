@@ -17,16 +17,26 @@
 //! `GIT_INLINE` functions that compare their `int` with ASCII ranges.
 //!
 //! The functions here take that `unsigned char`, a [`u8`], and return what both branches
-//! return for it: a C caller's `git__isspace(c)` is `is_space(c as u8)`, the cast its own.
-//! For every byte, the `GIT_WIN32` comparisons and `<ctype.h>` in the C locale, which libgit2
-//! never leaves, give the same result. The branches part only on what the cast hides: an
-//! `int` outside a byte's range, such as `EOF` or a `char` past ASCII where `char` is
-//! signed, which `GIT_WIN32` compares as given (`git__tolower(-1)` is `-1`) and every other
-//! build reduces to its byte first (`255`), and a process locale that a program embedding
-//! libgit2 sets with `setlocale`, which `<ctype.h>` follows, and these functions do not.
+//! return for it: a C caller's `git__isspace(c)` over a `char`, a byte or `EOF` is
+//! `is_space(c as u8)`, the cast its own. For every byte, the `GIT_WIN32` comparisons and
+//! `<ctype.h>` in the C locale, which libgit2 never leaves, give the same result. The branches
+//! part only on what the cast hides: an `int` outside a byte's range, such as `EOF` or a
+//! `char` past ASCII where `char` is signed, which `GIT_WIN32` compares as given
+//! (`git__tolower(-1)` is `-1`) and every other build reduces to its byte first (`255`), and a
+//! process locale that a program embedding libgit2 sets with `setlocale`, which `<ctype.h>`
+//! follows, and these functions do not.
 //! Under glibc's `C.UTF-8` the classes and case maps are the C locale's for every byte, since
 //! no byte past ASCII is a character there; a single-byte locale, as `ISO-8859-1`'s, may
 //! class some of those bytes as letters, and map their case.
+//!
+//! A value wider than a character is not reduced so. `path.c`'s `next_hfs_char` folds a
+//! Unicode code point with `git__tolower`: `GIT_WIN32` leaves U+0147 (`Ň`) as it is, where
+//! this build's cast folds it as its low byte, `G`, to `g`, so that `git_path_is_gitfile`
+//! takes `.Ňitmodules` for `.gitmodules` under HFS+'s rules, where the code's own comment
+//! has it "only fold characters in the ASCII range", and git, under `core.protectHFS`,
+//! refuses the path `.Git` but not `.Ňit`. A Rust caller holding such a value classes and
+//! maps it only where it is a byte, `u8::try_from(c)`, and otherwise leaves it in no class and
+//! unmapped, as `GIT_WIN32` does; `c as u8` would copy this build's defect.
 //!
 //! Each predicate is the standard library's ASCII class of [`u8`] where it is the C locale's
 //! class, as `crustify/artifacts/dependencies.json` routes `<ctype.h>`: `isspace` adds the

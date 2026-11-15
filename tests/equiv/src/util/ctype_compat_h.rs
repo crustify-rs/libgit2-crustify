@@ -11,14 +11,21 @@
 //! - where the C expands it, through the functions whose result a single byte's class decides:
 //!   `git__isspace` through `git_blob_data_is_binary` (`git_str_is_binary`, for the control bytes
 //!   it does not count as printable) and `git_config_parse_int64` (`git__strntol64`'s leading white
-//!   space), and `git__isalnum` through `git_message_trailers` (a trailer key's characters).
+//!   space), `git__isalnum` through `git_message_trailers` (a trailer key's characters),
+//!   `git__tolower` through `git_path_is_gitfile` (`path.c`'s HFS+ folding of each code point), and
+//!   `git__isxdigit` and `git__isdigit` through `git_diff_from_buffer` (`patch_parse.c`'s object
+//!   ids of an `index` line, and `parse.c`'s `git_parse_advance_digit` in a hunk header).
 //!
-//! The other sites are not reached through a function the bindings give a single byte to:
-//! `git__isalpha`, `git__isdigit` and `git__toupper` expand in `date.c`'s parser, which
-//! libgit2 runs on a commit's date from the environment, `git__isprint` and `git__isxdigit`
-//! in `smart_pkt.c`'s `parse_len` and `str.c`'s `git_str_decode_percent`, which no bound
-//! function calls, and `git__tolower` in case-insensitive comparisons of whole names. Their
-//! comparison with the replacement list covers every argument those sites can pass.
+//! The other sites are not compared. `git__isprint` expands only in `smart_pkt.c`'s
+//! `parse_len`, which a fetch over a smart transport reaches, and no offline test drives one.
+//! `git__toupper` expands only in `date.c`'s parser, and `git__isalpha` there, in `fs_path.c`'s
+//! `git_fs_path_resolve_relative` and in `diff_driver.c`'s function-context lines: libgit2 runs
+//! the parser on a date from the environment (`git_signature_default_from_env`) or a reflog
+//! selector (`git_revparse_single`), whose results a byte decides only together with the
+//! current time and the reflog, and the other two on a path's directory and on a hunk's
+//! preceding lines, which no function the bindings give a single byte to returns. They stay
+//! for a review that sets up that state, in a child process, a reflog or a local remote: the
+//! comparison with the replacement list checks the macros, not those sites.
 //!
 //! The test process never calls `setlocale`, so `<ctype.h>` runs in the C locale, as in
 //! libgit2.
@@ -27,6 +34,8 @@ use std::ffi::{CString, c_int};
 
 use libgit2_crustify::libgit2::src::libgit2::blob::data_is_binary;
 use libgit2_crustify::libgit2::src::libgit2::config::parse_i64;
+use libgit2_crustify::libgit2::src::libgit2::diff::Diff;
+use libgit2_crustify::libgit2::src::libgit2::path::{Filesystem, GitFile, is_gitfile};
 use libgit2_crustify::libgit2::src::libgit2::trailer::MessageTrailerArray;
 use libgit2_crustify::libgit2::src::util::ctype_compat_h::{
     is_alnum, is_alpha, is_digit, is_print, is_space, is_xdigit, to_lower, to_upper,
@@ -151,5 +160,67 @@ fn is_alnum_matches_git_message_trailers() {
             .collect();
         let is_key = trailers == [(vec![b'K', c, b'y'], b"v".to_vec())];
         assert_eq!(is_key, is_alnum(c) || c == b'-', "{c:#04x}");
+    }
+}
+
+/// `path.c`'s HFS+ check folds each code point of a name with `git__tolower` and compares it
+/// with the file's name: `.` and the name with one letter replaced by the code point `c` is the
+/// file exactly when `c` folds to that letter. Every code point up to `0xFF` is tried in place
+/// of every letter of the three names; none of them is one HFS+ ignores.
+#[test]
+#[cfg_attr(miri, ignore = "calls libgit2")]
+fn to_lower_matches_git_path_is_gitfile() {
+    let files = [
+        (GitFile::Gitignore, "gitignore"),
+        (GitFile::Gitmodules, "gitmodules"),
+        (GitFile::Gitattributes, "gitattributes"),
+    ];
+    for (file, name) in files {
+        for (at, letter) in name.bytes().enumerate() {
+            for c in 1..=u8::MAX {
+                let mut component = String::from(".");
+                component.push_str(&name[..at]);
+                component.push(char::from(c));
+                component.push_str(&name[at + 1..]);
+                let component = CString::new(component).expect("no NUL");
+                let matched = is_gitfile(&component, file, Filesystem::Hfs);
+                assert_eq!(matched, to_lower(c) == letter, "{name}[{at}] = U+{c:04X}");
+            }
+        }
+    }
+}
+
+/// A patch whose `index` line gives `git_diff_from_buffer` six hex digits and `c` before `..`:
+/// `patch_parse.c` reads the old id while `git__isxdigit` accepts its digits, so the patch
+/// parses, with an id of seven digits, exactly when `c` is a hex digit; otherwise the id ends
+/// at `c`, where `..` is due.
+#[test]
+#[cfg_attr(miri, ignore = "calls libgit2")]
+fn is_xdigit_matches_git_diff_from_buffer_index_ids() {
+    for c in 1..=u8::MAX {
+        let mut patch = b"diff --git a/f b/f\nindex 123456".to_vec();
+        patch.push(c);
+        patch.extend_from_slice(b"..89abcde 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n");
+        let abbrev = Diff::from_buffer(&patch)
+            .ok()
+            .and_then(|diff| Some(diff.as_ref().get(0)?.old_file().id_abbrev()));
+        let expected = is_xdigit(c).then_some(7);
+        assert_eq!(abbrev, expected, "{c:#04x}");
+    }
+}
+
+/// A hunk header `@@ -<c>1 +1 @@`: `git_parse_advance_digit` reads the old start only when
+/// `git__isdigit` accepts its first character, so `git_diff_from_buffer` parses the patch
+/// exactly when `c` is a decimal digit.
+#[test]
+#[cfg_attr(miri, ignore = "calls libgit2")]
+fn is_digit_matches_git_diff_from_buffer_hunk_headers() {
+    for c in 1..=u8::MAX {
+        let mut patch =
+            b"diff --git a/f b/f\nindex 1234567..89abcde 100644\n--- a/f\n+++ b/f\n@@ -".to_vec();
+        patch.push(c);
+        patch.extend_from_slice(b"1 +1 @@\n-a\n+b\n");
+        let parsed = Diff::from_buffer(&patch).is_ok();
+        assert_eq!(parsed, is_digit(c), "{c:#04x}");
     }
 }

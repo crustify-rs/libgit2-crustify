@@ -43,6 +43,22 @@ out-of-tree library's entity, which `dependencies.json` already records in the e
 `match` and note ("libgit2 runs in the C locale, where glibc's tables agree") and which its
 route's confirmation checks.
 
+### Occurrence: the module pass (`wave-220/batch-1/run-1`)
+
+The module pass judged the port against the rule as it stands, and kept it: the branches
+agree on every `char`, byte and `EOF`, the arguments `<ctype.h>` is defined for, and the shim
+the rule would keep for the rest binds libc for no caller of the Rust form. It met one caller
+the proposed text does not settle. `src/libgit2/path.c`'s `next_hfs_char` passes a decoded
+Unicode code point to `git__tolower`, an `int` past a byte on which the branches part:
+`GIT_WIN32` leaves U+0147 as it is, and this build folds its low byte, `G`, to `g`, so that
+`git_path_is_gitfile` takes `.Ňitmodules` for `.gitmodules` under HFS+'s rules, where git, with
+`core.protectHFS`, accepts `.Ňit` (`misc/code-points-reduced-to-their-low-byte` of that batch).
+The Change's "which its Rust callers make where they call it" would have that caller's port
+write `to_lower(cp as u8)`, and copy the defect. The domain the evidence supports is the
+arguments the expansion's own conversion is meant for, a `char`, a byte or `EOF`; a caller
+holding a wider value reduces nothing, and the documentation says what it does instead, as
+the port's documentation now does.
+
 ## Destination
 
 The spec: `porting-symbols`' Macros section.

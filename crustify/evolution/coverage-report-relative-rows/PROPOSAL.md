@@ -25,6 +25,10 @@ its filters match no source
 reads as outside the scope, though the filter matched. Run from `<out>/tree/src/libgit2`,
 the same command passes and reports the figures the batch recorded.
 
+
+Occurrence: `wave-220/batch-1/run-1` (`ctype_compat.h`'s module pass) ran `report.py` from the
+scratch tree's `src/libgit2`, as its task message asked, for its suites and its worklist's file.
+
 ## Destination
 
 A campaign artifact the assistant owns: `crustify/scripts/coverage/report.py`.

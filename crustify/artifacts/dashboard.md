@@ -57,17 +57,17 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip the integration of `libgit2/src/util/strnlen.h`, `30176475c`; `main` at `c58bc5de8`, nothing shipped yet; crustify `cc84106`, ffibox `9c22a73`, wavefront `bf21e16`, ffimap `9aa2ef1` (each on its `libgit2-crustify/devel`, wavefront and ffimap on `devel`)
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `23136` non-test, `110219` tests; **C LoC** — `88226`
+- **Rust LoC** — `23136` non-test, `110265` tests; **C LoC** — `88226`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `798` | — | `30.36`% | `77.20`% |
+| UB safe tests | `798` | — | `30.41`% | `77.20`% |
 | UB unsafe tests | `144` | — | `20.10`% | `17.62`% |
-| Equiv tests | `537` | — | `43.75`% | `68.64`% |
-| Unit tests | `1160` | — | `34.36`% | `88.26`% |
-| **Total tests** | **`2639`** | — | **`47.46`%** | **`98.21`%** |
+| Equiv tests | `540` | — | `43.76`% | `68.64`% |
+| Unit tests | `1160` | — | `34.37`% | `88.26`% |
+| **Total tests** | **`2642`** | — | **`47.48`%** | **`98.21`%** |
 | total types | `258` | — | — | — |
 | ported types | `4` | `1.55`% | — | — |
 | wrapped types | `116` | `43.80`% | — | — |
@@ -833,9 +833,10 @@ review cost.
 | `libgit2/deps/llhttp/http.c` | `197` | `1` | `0` | `5` | `+183/-38` | `$14.19` | `40.35M` | `56m26s` |
 | `git2/src/cli/opt.c` | `186` | `7` | `7` | `21` | `+799/-16` | `$18.83` | `47.47M` | `1h16m16s` |
 | `libgit2/deps/ntlmclient/compat.h` | `200` | `1` | `0` | `1` | `+7/-10` | `$8.38` | `22.30M` | `39m37s` |
+| `libgit2/src/util/ctype_compat.h` | `220` | `1` | `0` | `8` | `+99/-18` | — | — | — |
 | `libgit2/src/util/strnlen.h` | `225` | `1` | `0` | `1` | `+22/-8` | `$9.34` | `19.72M` | `3h34m56s` |
 | `libgit2/src/util/utf8.c` | `229` | `1` | `0` | `5` | `+206/-45` | `$20.54` | `43.89M` | `1h24m1s` |
-| **Σ** |  |  | **`9`** | **`170`** | **`+3491/-948`** | **`$215.97`** | **`642.45M`** | — |
+| **Σ** |  |  | **`9`** | **`178`** | **`+3590/-966`** | **`$215.97`** | **`642.45M`** | — |
 
 ### Passes: PoC + reports
 
@@ -854,9 +855,10 @@ review cost.
 | `libgit2/deps/llhttp/http.c` | `197` | `1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
 | `git2/src/cli/opt.c` | `186` | `7` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `+0` | `+1` | `+0` | `+0` | `+0` | `+0` | `2` |
 | `libgit2/deps/ntlmclient/compat.h` | `200` | `1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
+| `libgit2/src/util/ctype_compat.h` | `220` | `1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
 | `libgit2/src/util/strnlen.h` | `225` | `1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `0` |
 | `libgit2/src/util/utf8.c` | `229` | `1` | `+0` | `+0` | `+0` | `+0` | `+1` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `1` |
-| **Σ** |  |  | **`+0`** | **`+1`** | **`+5`** | **`+0`** | **`+1`** | **`+0`** | **`+1`** | **`+1`** | **`+3`** | **`+1`** | **`+0`** | **`+1`** | **`+7`** | **`21`** |
+| **Σ** |  |  | **`+0`** | **`+1`** | **`+5`** | **`+0`** | **`+1`** | **`+0`** | **`+1`** | **`+1`** | **`+3`** | **`+1`** | **`+0`** | **`+1`** | **`+8`** | **`22`** |
 
 ## Notes
 
@@ -6071,3 +6073,74 @@ TSan is not run.
 The raw bindings and `c/` are unchanged, so the packaging gate does not apply. Usage cells are
 the assistant's. Proposal: `config-branches-over-the-rust-domain` (`porting-symbols`' Macros
 section), citing `config-branches-of-one-result`'s recurrence signal.
+
+### `libgit2/src/util/ctype_compat.h` wave 220 batch 1: module pass
+
+The module pass, and the module's only review, over batch 0's three paths, for every objective
+with `fix`. The eight `const fn`s are each `<ctype.h>`'s C-locale class or case map for every
+byte, anchored `Replaces` with their aliases, `#![forbid(unsafe_code)]`, no region and no export.
+Porting them once is sound under `porting-symbols`' Macros section as the pass reads it: the
+header's branches agree on every `char`, byte and `EOF`, the arguments `<ctype.h>` is defined
+for, and a shim for the rest would bind libc for no Rust caller. The process locale is the
+`<ctype.h>` route's, and only `tests/util/regexp.c` sets one, a UTF-8 locale, which classes no
+byte past ASCII. `mailmap.rs`'s private `is_space` closure, outside the workset, is
+`git__isspace`'s set exactly, `\v` included; it could call `is_space` now.
+
+One finding, `misc/code-points-reduced-to-their-low-byte` (`nit`): the module docs told every C
+caller's `int` to be reduced with `as u8`, and a unit test asserted it for `0x141`, but
+`path.c`'s `next_hfs_char` passes `git__tolower` a Unicode code point, on which the branches
+part, and the reduction copies this build's C: `git_path_is_gitfile` takes `.Ňitmodules`,
+`.ŧitmodules` and `Įgitmodules` for `.gitmodules` under HFS+'s rules, where git 2.43 with
+`core.protectHFS` accepts `.Ňit` and `.ŧit`. The docs now keep the reduction for a `char`, a
+byte or `EOF` and leave a wider value unreduced (`u8::try_from`); the C's departure is
+`path.c`'s, outside the workset, and is handed to its review.
+
+Test gaps filled: batch 0 had reported five macros' sites as unreached by a criterion of its
+own. Bound functions run three of them, each deciding a public result by one byte, and three
+`equiv` tests now compare them there: `git__tolower` through `git_path_is_gitfile` (every code
+point to `0xFF` in place of each letter of the three names), and `git__isxdigit` and
+`git__isdigit` through `git_diff_from_buffer` (an `index` line's id, a hunk header's start).
+Each fails on a mutant of its port (`to_lower` keeping `I`, `is_xdigit` refusing `F`, `is_digit`
+refusing `7`). `git__isprint` (`smart_pkt.c`), `git__toupper` and `git__isalpha` (`date.c`,
+`fs_path.c`, `diff_driver.c`) stay uncompared at their sites, which a byte decides only under a
+remote, an environment or a reflog the tests do not set up; the `equiv` module docs name them.
+Batch 0's count note holds: on its base `equiv` registered 532 tests and the unit suites 1149
+(`lib` 908, `unit_pub` 241), and on its tree 537 and 1160.
+
+The provisional lessons `cmake-property-naming-a-removed-source` and
+`http-exports-gated-through-a-local-remote` are `held`: a minimal CMake project with
+`deps/llhttp/CMakeLists.txt` configures with `llhttp.c` present, compiling it with the
+property's flags, and fails with it gone (`CMake can not determine linker language for target:
+llhttp`); `http-gate.sh` runs the four failing clones and the three framings the lesson names,
+as http.c's `http-gate-results.txt` lists them.
+
+Coverage, with `crustify/scripts/coverage/run.sh` on this tree and `report.py` from the scratch
+tree's `src/libgit2` (`C=@c` over the `coverage` variant's `libcrustify.a`, Rust over the scratch
+tree's `src/`), the unit column merging `lib` and `unit_pub`'s profiles: `equiv` moves to 540
+tests and `43.76`% of C lines; the other suites' C shifts (`ub_safe` `+0.05` pp) are run-to-run
+variation, their tests unchanged. Worklist: `ctype_compat_h.rs` 24 of 24 lines, 26 of 26
+regions, 8 of 8 functions under `equiv`. The scan (ffimap `50a800e`, batch 0's flags) moves
+`code.tests.loc.total` by `+46`, the Overview's tests LoC; its boundary sites hold none in the
+changeset. `ffimap api` against the tip (nightly `2026-10-08`, ffibox's private rustdoc JSON):
+the eight items and every unattributed module `kept`.
+
+Gates, the wave's and the module's end, on `end-gates` snapshots under the worktree's
+`crustify/tmp/`, at 24 jobs, six binaries side by side for Miri and BSan, the slow list's skips
+checked against each binary's `--list`. On the wave's tip `a3f4f5958`: the format check and
+`clippy --workspace --all-targets -D warnings` pass (no export feature exists to lint with);
+plain, ASan+UBSan and TSan pass the whole workspace (`lib` 907 and 1 ignored, `equiv` 537,
+`hidden_symbols` 1, `ub_safe` 798, `ub_unsafe` 144, `unit_pub` 252, doctests 114 and 397); Miri
+passes every binary (`lib` 447, `ub_safe` 213, `unit_pub` 166, `equiv` 38, `ub_unsafe` 26 passed,
+the rest marked); BSan passes `lib` 903, `ub_safe` 767, `ub_unsafe` 144, `unit_pub` 251,
+`hidden_symbols` 1 and `equiv` 453 (8 ignored under BSan, 76 skipped, 1844 s). On this tree
+(`55d5537c7`, whose dashboard alone this note then changed), every stage passes with the same
+counts but `equiv`'s, 540 on plain, ASan+UBSan and TSan, 38 under Miri with 495 marked, and 456
+under BSan (1600 s). The three new `equiv` tests are marked `calls libgit2`, each run alone under
+Miri with the mark lifted and seen to stop at its first foreign call (`git_path_is_gitfile`,
+`git_libgit2_init`), and BSan passed each alone by exact name. No raw binding or C changed, so
+the packaging gate does not apply.
+
+Proposals: `equiv-macro-sites-reached-under-state` (testing: a macro's site counts as reached
+whatever state decides its result, citing `equiv-unreachable-macro-sites`' recurrence signal),
+and occurrences added to `config-branches-over-the-rust-domain`, `coverage-report-unit-suite`
+and `coverage-report-relative-rows`. Usage cells are the assistant's.
