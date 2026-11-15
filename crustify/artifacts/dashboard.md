@@ -57,17 +57,17 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip the integration of `libgit2/src/util/strnlen.h`, `30176475c`; `main` at `c58bc5de8`, nothing shipped yet; crustify `cc84106`, ffibox `9c22a73`, wavefront `bf21e16`, ffimap `9aa2ef1` (each on its `libgit2-crustify/devel`, wavefront and ffimap on `devel`)
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `23171` non-test, `110266` tests; **C LoC** — `88938`
+- **Rust LoC** — `23186` non-test, `110292` tests; **C LoC** — `88938`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `803` | — | `30.38`% | `77.28`% |
-| UB unsafe tests | `148` | — | `20.10`% | `17.67`% |
-| Equiv tests | `532` | — | `43.75`% | `68.46`% |
-| Unit tests | `1159` | — | `34.38`% | `88.24`% |
-| **Total tests** | **`2642`** | — | **`47.46`%** | **`98.21`%** |
+| UB safe tests | `803` | — | `30.38`% | `77.17`% |
+| UB unsafe tests | `148` | — | `20.13`% | `17.65`% |
+| Equiv tests | `532` | — | `43.74`% | `68.36`% |
+| Unit tests | `1161` | — | `34.36`% | `88.26`% |
+| **Total tests** | **`2644`** | — | **`47.50`%** | **`98.21`%** |
 | total types | `258` | — | — | — |
 | ported types | `4` | `1.55`% | — | — |
 | wrapped types | `119` | `46.12`% | — | — |
@@ -272,8 +272,9 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/reftable/basics.c` | `169` | `3` | wrap | review | `2` | `3` | `+134/-4` | `45.90`% / `98.92`% | `$9.26` | `30.25M` | `24m42s` | `$4.63` | `$3.09` |
 | `libgit2/deps/llhttp/api.c` | `194` | `5` | wrap | review | `6` | `44` | `+194/-7` | `47.18`% / `98.68`% | `$8.60` | `26.26M` | `28m22s` | `$1.43` | `$0.20` |
 | `git2/src/cli/opt.c` | `186` | `3` | port, wrap | review | `7` | `23` | `+357/-42` | `45.33`% / `98.85`% | `$8.18` | `24.53M` | `24m53s` | `$1.17` | `$0.36` |
+| `libgit2/src/util/thread.c` | `226` | `4` | wrap | review | `3` | `3` | `+99/-9` | `47.50`% / `98.21`% | — | — | — | — | — |
 | **Σ first** |  |  |  |  | **`123`** | **`285`** | **`+107208/-2588`** | **`47.46`% / `98.21`%** | **`$651.45`** | **`1632.11M`** | — | **`$5.59`** | **`$2.78`** |
-| **Σ review** |  |  |  |  | **`120`** | **`282`** | **`+10277/-2138`** | **`47.18`% / `98.68`%** | **`$443.69`** | **`766.73M`** | — | **`$3.99`** | **`$1.99`** |
+| **Σ review** |  |  |  |  | **`123`** | **`285`** | **`+10376/-2147`** | **`47.50`% / `98.21`%** | **`$443.69`** | **`766.73M`** | — | **`$3.99`** | **`$1.99`** |
 
 ### Batches: tests
 
@@ -382,8 +383,9 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/reftable/basics.c` | `169` | `3` | review | `+1` (`+0.02`/`-0.02` pp) | `+0` (`+0.00`/`+0.00` pp) | `+0` (`-0.01`/`-0.02` pp) | `+2` (`+0.02`/`+0.01` pp) |
 | `libgit2/deps/llhttp/api.c` | `194` | `5` | review | `+0` (`-0.02`/`+0.00` pp) | `+1` (`+0.00`/`+0.03` pp) | `+0` (`+0.01`/`+0.00` pp) | `+0` (`-0.05`/`+0.00` pp) |
 | `git2/src/cli/opt.c` | `186` | `3` | review | `+0` (`-0.01`/`-0.02` pp) | `+5` (`+0.01`/`+2.24` pp) | `+0` (`+0.04`/`-0.01` pp) | `+1` (`+0.00`/`+0.02` pp) |
+| `libgit2/src/util/thread.c` | `226` | `4` | review | `+0` (`+0.00`/`-0.11` pp) | `+0` (`+0.03`/`-0.02` pp) | `+0` (`-0.01`/`-0.10` pp) | `+2` (`-0.02`/`+0.02` pp) |
 | **Σ first** |  |  |  | **`+487` (`+25.20`/`-3.29` pp)** | **`+56` (`+14.75`/`-53.47` pp)** | **`+282` (`+32.95`/`-26.11` pp)** | **`+556` (`+13.15`/`+25.09` pp)** |
-| **Σ review** |  |  |  | **`+36` (`+0.42`/`+2.18` pp)** | **`+9` (`-0.37`/`-3.10` pp)** | **`+23` (`+2.73`/`-1.31` pp)** | **`+43` (`+4.65`/`+2.39` pp)** |
+| **Σ review** |  |  |  | **`+36` (`+0.42`/`+2.07` pp)** | **`+9` (`-0.34`/`-3.12` pp)** | **`+23` (`+2.72`/`-1.41` pp)** | **`+45` (`+4.63`/`+2.41` pp)** |
 
 ### Batches: safety audit
 
@@ -400,8 +402,9 @@ Deterministic `ffimap`; no model.
 | `libgit2/deps/reftable/basics.c` | `169` | `3` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+6` | `+0` | `+0` | `-0.01` pp | `+0` |
 | `libgit2/deps/llhttp/api.c` | `194` | `5` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
 | `git2/src/cli/opt.c` | `186` | `3` | port, wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.02` pp | `+0` |
+| `libgit2/src/util/thread.c` | `226` | `4` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.01` pp | `+0` |
 | **Σ first** |  |  |  |  | **`+2`** | **`+2`** | **`+3`** | **`+1`** | **`+19`** | **`+0.00` pp** | **`+13`** | **`+0`** | **`+0`** | **`+14`** | **`+123`** | **`+2`** | **`+0.25` pp** | **`+318`** |
-| **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+6`** | **`+0`** | **`+0`** | **`-0.02` pp** | **`+0`** |
+| **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+6`** | **`+0`** | **`+0`** | **`-0.03` pp** | **`+0`** |
 
 ### Batches: API stability
 
@@ -415,9 +418,10 @@ Deterministic `ffimap api`; no model.
 | `git2/src/cli/opt.c` | `186` | `0` | port | first | `0` | `0` | `0` | `0` | `27` | `0` | `sys::git2` extended | — |
 | `git2/src/cli/opt.c` | `186` | `2` | wrap | first | `0` | `0` | `0` | `0` | `30` | `0` | `git2::src::cli::opt` new, `sys::git2` changed | `sys::git2`: `cli_opt`, `cli_opt_parser`, `cli_opt_spec` leave the unattributed set, now tied to their layouts' anchors |
 | `git2/src/cli/opt.c` | `186` | `3` | port, wrap | review | `51` | `6` | `0` | `0` | `0` | `0` | all 20 modules kept | — |
+| `libgit2/src/util/thread.c` | `226` | `4` | wrap | review | `3` | `4` | `0` | `0` | `0` | `0` | all 24 modules kept | — |
 | `libgit2/src/util/thread.c` | `226` | `0` | wrap | first | `0` | `0` | `0` | `0` | `7` | `0` | `sys::libgit2` extended | — |
 | **Σ first** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`70`** | **`0`** |  |  |
-| **Σ review** |  |  |  |  | **`90`** | **`6`** | **`0`** | **`0`** | **`0`** | **`0`** |  |  |
+| **Σ review** |  |  |  |  | **`93`** | **`10`** | **`0`** | **`0`** | **`0`** | **`0`** |  |  |
 
 ### Batches — review: PoC + reports
 
@@ -454,7 +458,8 @@ Deterministic `ffimap api`; no model.
 | `libgit2/deps/reftable/basics.c` | `169` | `3` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `1` |
 | `libgit2/deps/llhttp/api.c` | `194` | `5` | `+0` | `+0` | `+0` | `+0` | `+0` | `+1` | `+0` | `+0` | `1` |
 | `git2/src/cli/opt.c` | `186` | `3` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+2` | `2` |
-| **Σ** |  |  | **`+7`** | **`+9`** | **`+3`** | **`+1`** | **`+3`** | **`+4`** | **`+15`** | **`+61`** | **`103`** |
+| `libgit2/src/util/thread.c` | `226` | `4` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+2` | `2` |
+| **Σ** |  |  | **`+7`** | **`+9`** | **`+3`** | **`+1`** | **`+3`** | **`+4`** | **`+15`** | **`+63`** | **`105`** |
 
 ## Symbols
 
@@ -6067,3 +6072,61 @@ ffibox's private rustdoc JSON) finds the 7 items `new`, `sys::libgit2` extended 
 and every other module `kept`. `wrapped types` counts the three against the recorded `116`, and
 its share is computed from the count, since the recorded `43.80`% was `113`'s. Usage cells are
 the assistant's.
+
+### `libgit2/src/util/thread.c` wave 226 batch 4: review of batch 0
+
+Batch 4 reviews batch 0 (`3f7f3ab89`), the wrap of `st::git_atomic32`, `st::git_atomic64` with
+`tdf::git_atomic_ssize`, and `st::git_thread`. It ran every objective, `fix` included. The
+three types' `port/layout` is planned (waves 1445, 1620 and 2308), so they are reviewed on their
+public API. The row counts the 3 types and their 3 fields. It filed two reports, both counted
+under `+misc`, since the table has no `contracts` or `ergonomics` column:
+
+- `contracts/ffi_import/lent-atomic-justification-omits-plain-c-reads`, a `nit`. `val`'s
+  `// SAFETY:` comment said every access racing the lent atomic is atomic, and its doc that C
+  reads it with `SeqCst` alone. C reads `cancelled.val` (`smart.c`, `smart_protocol.c`) and
+  `git_cache__current_storage.val` (`settings.c`) plainly, as the module documentation says.
+  Both texts now say so, and that the race is the C's. The code does not change.
+- `ergonomics/atomics-and-thread-lack-standard-traits`, a `nit`. The nine types had no `Debug`,
+  and the atomics no `From` their integer, which `AtomicI32` and `AtomicI64` have. The shared
+  handles print the integer as the standard atomic does, `ThreadRef` prints
+  `Thread { thread: <id> }`, and the values and exclusive handles print as their shared
+  handle. Two `unit_pub` tests hold them.
+
+The batch's own decisions hold. The layout written by hand over `UnsafeCell` is what
+`define_ctype!` cannot express. The proposal's reproducer stops under Miri, as filed, and
+under Tree Borrows too. `atomic_type!` keeps `CCell`'s layout contract, and the module's tests
+are clean under Miri and TSan. Lending `&AtomicI32` over memory C writes atomically meets
+`from_ptr`'s contract. It breaks G9's letter only, which `ffibox-atomic-layout-types` proposes
+to widen. `RawPthread` is the bindings' `pthread_t`, a compile-time check. `set_thread` stays
+`unsafe`, rightly: it stores a value C's `git_thread_join` follows, and a handle may cover C's
+`thread_params`. No equivalence test calls C, rightly: the batch adds no C function to compare,
+and the layouts are compared by bindgen's assertions and the module's `const` assertions. The
+other objectives found nothing. `unsafety`: the one public `unsafe fn` is `set_thread`. `ub`:
+the `Send`/`Sync` claims follow from atomic access, and the lent atomic is tied to the value's
+borrow. `equiv`, `logic`, `idiom`, `conventions`: none in the workset. `test-adequacy`:
+`thread.rs` is 57 of 57 lines, 17 of 17 functions and 63 of 63 regions under all suites, with no
+branch. The two provisional lessons, `cmake-property-naming-a-removed-source` and
+`http-exports-gated-through-a-local-remote`, are `held`. Checked against
+`c/deps/llhttp/CMakeLists.txt` and `crustify/scripts/http-gate.sh`.
+
+Coverage: `run.sh` on this tree over gen5, read with `report.py` from the scratch tree's
+`src/libgit2` (`C=@c` over `libcrustify.a`, Rust over the scratch `src/`). The unit column
+merges `lib` and `unit_pub`. The pp cells are taken against batch 0's recorded figures. None of
+the new tests calls C, so the C shifts are run-to-run variation. The Rust shifts are the 23
+instrumented lines the trait impls add. The safety audit scans (ffimap `50a800e`,
+`--sys-crates crate::sys,pcre2_sys`, `--ffibox`, the 13 seams, no export feature) are of
+`3f7f3ab89` and this tree. Only `unsafe loc %` moves, by `code.loc.total`'s `+15`. The
+boundary scan's one site in the module is `set_thread`. The Overview's Rust LoC moves by
+`code.loc.total` (`+15`) and `code.tests.loc.total` (`+26`). `ffimap api diff` against
+`3f7f3ab89`, with ffibox's private rustdoc JSON (nightly `2026-10-08`), finds the 4 types
+`extended`, by `Debug` and `From`, the 3 fields `kept`, and all 24 unattributed modules `kept`.
+
+Gates, on `3f7f3ab89` plus this batch: the workspace is formatted (the pinned nightly's
+rustfmt), and `clippy --workspace --all-targets` passes with warnings denied. The module's and
+its 38 dependents' tests pass plain and under ASan+UBSan, 1,397 of them. The compile-fail
+suite passes. The module's 21 tests pass under Miri and TSan. The coverage run ran every suite
+(`lib` 907 and 1 ignored, `ub_safe` 803, `ub_unsafe` 148, `equiv` 532, `unit_pub` 253,
+`hidden_symbols` 1, doctests 399) with no failure. BSan is no gate of this batch: no test it
+adds is expected to trigger it. The raw bindings did not change, so the crate was not packaged.
+It files the proposal `ffimap-atomic-from-ptr-borrow`: the scan's std table does not count
+`AtomicI32::from_ptr` as a borrow. Usage cells are the assistant's.

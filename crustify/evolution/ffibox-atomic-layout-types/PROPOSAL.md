@@ -26,7 +26,11 @@ a value Rust holds, and a `static` of such a type may be placed in read-only mem
   shared borrow of a type with no `UnsafeCell`. That write is UB. `reproducer/`, beside this
   proposal, does it over ffibox `568bcb5`, and `cargo +nightly-2026-10-08 miri run` stops it:
   "Undefined Behavior: … only grants SharedReadOnly permission", the tag created by
-  `define_ctype!`'s `as_ref`. So
+  `define_ctype!`'s `as_ref`. Under Tree Borrows
+  (`MIRIFLAGS=-Zmiri-tree-borrows`) the same run stops too: "write access through <509> …
+  is forbidden … the conflicting tag <487> has state Frozen" (`wave-226/batch-4/run-1`, its
+  review). The Reference counts the bytes a shared reference points at, outside an
+  `UnsafeCell`, as immutable, so the write is UB in either model. So
   the run hand-wrote both layout types over `UnsafeCell<ffi::git_atomic32>`. It wrote one
   local `macro_rules!`, `atomic_type!` in `src/libgit2/src/util/thread.rs`, of about 140
   lines, which restates `define_ctype!`'s expansion: the layout type, both handles over

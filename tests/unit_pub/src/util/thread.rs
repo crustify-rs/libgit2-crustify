@@ -132,3 +132,35 @@ fn a_thread_value_moves_with_its_id() {
     let moved: Vec<Thread> = threads.into_iter().collect();
     assert!(moved.iter().all(|t| t.as_ref().thread() == 0));
 }
+
+/// A value, and each handle over it, prints the integer as the standard atomic does, and a
+/// value converts from its integer as one does.
+#[test]
+fn atomics_print_and_convert_as_the_standard_atomics_do() {
+    let mut count = Atomic32::from(-7);
+    assert_eq!(
+        format!("{count:?}"),
+        format!("{:?}", core::sync::atomic::AtomicI32::new(-7))
+    );
+    assert_eq!(format!("{:?}", count.as_ref()), "-7");
+    assert_eq!(format!("{:?}", count.as_mut()), "-7");
+    count.as_ref().val().store(3, SeqCst);
+    assert_eq!(format!("{count:?}"), "3");
+
+    let mut size: Atomic64 = (1_i64 << 40).into();
+    assert_eq!(format!("{size:?}"), "1099511627776");
+    assert_eq!(format!("{:?}", size.as_mut()), "1099511627776");
+    assert_eq!(
+        format!("{:?}", AtomicSsize::from(i64::MIN)),
+        i64::MIN.to_string()
+    );
+}
+
+/// A thread, and each handle over it, prints the id it stores.
+#[test]
+fn a_thread_prints_its_id() {
+    let mut thread = Thread::default();
+    assert_eq!(format!("{thread:?}"), "Thread { thread: 0 }");
+    assert_eq!(format!("{:?}", thread.as_ref()), "Thread { thread: 0 }");
+    assert_eq!(format!("{:?}", thread.as_mut()), "Thread { thread: 0 }");
+}

@@ -72,6 +72,7 @@ pub type AtomicSsize = Atomic32;
 )]
 mod ffi_import {
     use core::cell::UnsafeCell;
+    use core::fmt;
     use core::marker::PhantomData;
     use core::ptr::NonNull;
     use core::sync::atomic::AtomicI32;
@@ -222,12 +223,44 @@ mod ffi_import {
                     // nothing.
                     let val = unsafe { &raw mut (*cell.cast::<sys::$c_name>()).val };
                     // SAFETY: `val` is live for `'a`, as the object is, and aligned for
-                    // `$atomic` (asserted above, the field at offset 0). Every access it may
-                    // race with is atomic: the handle's other holders reach the value only
-                    // through this, and C writes it only through `thread.h`'s atomic operations
-                    // (the module documentation), of the same size. The pointer may be written
-                    // through: it comes from C, or from a borrow of a Rust value's `UnsafeCell`.
+                    // `$atomic` (asserted above, the field at offset 0). Every write it may
+                    // race with is atomic, of the same size: the handle's other holders reach
+                    // the value only through this, and C writes it only through `thread.h`'s
+                    // atomic operations. Every Rust read is atomic too. C's few plain reads of
+                    // a shared value (the module documentation) race with any write made on
+                    // another thread, C's own atomic ones as much as one made through this: a
+                    // race of the C's, which lending the atomic neither adds nor can remove.
+                    // The pointer may be written through: it comes from C, or from a borrow of
+                    // a Rust value's `UnsafeCell`.
                     unsafe { <$atomic>::from_ptr(val) }
+                }
+            }
+
+            /// The integer, as the standard atomic's `Debug` prints it.
+            impl fmt::Debug for $rf<'_> {
+                fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    fmt::Debug::fmt(self.val(), f)
+                }
+            }
+
+            /// The integer, as the shared handle prints it.
+            impl fmt::Debug for $mt<'_> {
+                fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    fmt::Debug::fmt(&self.as_ref(), f)
+                }
+            }
+
+            /// The integer, as the shared handle prints it.
+            impl fmt::Debug for $name {
+                fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    fmt::Debug::fmt(&self.as_ref(), f)
+                }
+            }
+
+            /// A value holding `val`, as [`new`](Self::new) builds it.
+            impl From<$int> for $name {
+                fn from(val: $int) -> $name {
+                    $name::new(val)
                 }
             }
 
@@ -280,8 +313,9 @@ mod ffi_import {
         i32,
         val:
         /// The integer, as the atomic it is, borrowed for as long as the handle's object: C
-        /// reads and writes it with sequentially consistent operations
-        /// ([`SeqCst`](core::sync::atomic::Ordering::SeqCst)) alone.
+        /// writes it with sequentially consistent operations
+        /// ([`SeqCst`](core::sync::atomic::Ordering::SeqCst)) alone, and reads it with them
+        /// but for the plain reads the module documentation names.
         ///
         /// ```
         /// use core::sync::atomic::Ordering::SeqCst;
@@ -318,8 +352,9 @@ mod ffi_import {
         i64,
         val:
         /// The integer, as the atomic it is, borrowed for as long as the handle's object: C
-        /// reads and writes it with sequentially consistent operations
-        /// ([`SeqCst`](core::sync::atomic::Ordering::SeqCst)) alone.
+        /// writes it with sequentially consistent operations
+        /// ([`SeqCst`](core::sync::atomic::Ordering::SeqCst)) alone, and reads it with them
+        /// but for the plain reads the module documentation names.
         ///
         /// ```
         /// use core::sync::atomic::Ordering::SeqCst;
@@ -383,6 +418,29 @@ mod ffi_import {
     impl Default for Thread {
         fn default() -> Thread {
             Thread::zeroed()
+        }
+    }
+
+    /// The stored id, as `Thread { thread: <id> }`.
+    impl fmt::Debug for ThreadRef<'_> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.debug_struct("Thread")
+                .field("thread", &self.thread())
+                .finish()
+        }
+    }
+
+    /// As the shared handle prints it.
+    impl fmt::Debug for ThreadMut<'_> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            fmt::Debug::fmt(&self.as_ref(), f)
+        }
+    }
+
+    /// As the shared handle prints it.
+    impl fmt::Debug for Thread {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            fmt::Debug::fmt(&self.as_ref(), f)
         }
     }
 
