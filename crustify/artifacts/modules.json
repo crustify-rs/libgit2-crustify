@@ -54383,7 +54383,7 @@
         {
           "index": 197,
           "name": "src/util/cc-compat.h",
-          "status": "todo",
+          "status": "frozen",
           "foundational": false,
           "depends_on": [],
           "translation_unit": null,
