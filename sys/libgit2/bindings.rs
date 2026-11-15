@@ -14715,6 +14715,46 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn hash_size(id: reftable_hash) -> u32;
 }
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct dv_info_t {
+    pub dvType: ::std::os::raw::c_int,
+    pub dvK: ::std::os::raw::c_int,
+    pub dvB: ::std::os::raw::c_int,
+    pub testt: ::std::os::raw::c_int,
+    pub maski: ::std::os::raw::c_int,
+    pub maskb: ::std::os::raw::c_int,
+    pub dm: [u32; 80usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of dv_info_t"][::std::mem::size_of::<dv_info_t>() - 344usize];
+    ["Alignment of dv_info_t"][::std::mem::align_of::<dv_info_t>() - 4usize];
+    [
+        "Offset of field: dv_info_t::dvType",
+    ][::std::mem::offset_of!(dv_info_t, dvType) - 0usize];
+    ["Offset of field: dv_info_t::dvK"][::std::mem::offset_of!(dv_info_t, dvK) - 4usize];
+    ["Offset of field: dv_info_t::dvB"][::std::mem::offset_of!(dv_info_t, dvB) - 8usize];
+    [
+        "Offset of field: dv_info_t::testt",
+    ][::std::mem::offset_of!(dv_info_t, testt) - 12usize];
+    [
+        "Offset of field: dv_info_t::maski",
+    ][::std::mem::offset_of!(dv_info_t, maski) - 16usize];
+    [
+        "Offset of field: dv_info_t::maskb",
+    ][::std::mem::offset_of!(dv_info_t, maskb) - 20usize];
+    ["Offset of field: dv_info_t::dm"][::std::mem::offset_of!(dv_info_t, dm) - 24usize];
+};
+impl Default for dv_info_t {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
 pub type llhttp__internal_t = llhttp__internal_s;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]

@@ -33,6 +33,7 @@
 #include "allocators/failalloc.h"       /* src/util */
 #include "allocators/win32_leakcheck.h" /* src/util */
 #include "basics.h" /* deps/reftable */
+#include "hash/sha1dc/ubc_check.h" /* src/util */
 #include "llhttp.h" /* deps/llhttp */
 #include "reftable-error.h" /* deps/reftable */
 #include "str.h" /* src/util */

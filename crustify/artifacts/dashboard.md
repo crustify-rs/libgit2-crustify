@@ -57,20 +57,20 @@ in Notes.
 
 - **branch** — `crustify/devel`, tip the integration of `libgit2/src/util/strnlen.h`, `30176475c`; `main` at `c58bc5de8`, nothing shipped yet; crustify `cc84106`, ffibox `9c22a73`, wavefront `bf21e16`, ffimap `9aa2ef1` (each on its `libgit2-crustify/devel`, wavefront and ffimap on `devel`)
 - **C test baseline** — `3443/3498`, `55` skipped; disabled: ctest targets `invasive`, `gitdaemon`, `gitdaemon_namespace`, `gitdaemon_sha256`, `ssh`, `online`, `online_customcert`, `proxy`, `auth_clone`, `auth_clone_and_push`
-- **Rust LoC** — `23112` non-test, `110008` tests; **C LoC** — `88938`
+- **Rust LoC** — `23230` non-test, `110311` tests; **C LoC** — `88938`
 
 ### Coverage stats
 
 | | count | share | C LoC coverage | Rust LoC coverage |
 |---|---:|---:|---:|---:|
-| UB safe tests | `798` | — | `30.41`% | `77.24`% |
-| UB unsafe tests | `144` | — | `20.16`% | `16.76`% |
-| Equiv tests | `538` | — | `43.81`% | `68.59`% |
-| Unit tests | `1140` | — | `34.45`% | `88.06`% |
-| **Total tests** | **`2620`** | — | **`47.51`%** | **`98.03`%** |
+| UB safe tests | `800` | — | `30.40`% | `77.27`% |
+| UB unsafe tests | `144` | — | `20.10`% | `17.55`% |
+| Equiv tests | `532` | — | `43.74`% | `68.25`% |
+| Unit tests | `1156` | — | `34.36`% | `88.30`% |
+| **Total tests** | **`2632`** | — | **`47.47`%** | **`98.21`%** |
 | total types | `258` | — | — | — |
 | ported types | `4` | `1.55`% | — | — |
-| wrapped types | `116` | `43.80`% | — | — |
+| wrapped types | `117` | `45.35`% | — | — |
 | total symbols | `979` | — | — | — |
 | ported symbols | `118` | `12.05`% | — | — |
 | wrapped symbols | `497` | `50.77`% | — | — |
@@ -242,6 +242,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/llhttp/api.c` | `194` | `2` | wrap | first | `1` | `23` | `+1737/-16` | `47.05`% / `98.71`% | `$15.07` | `43.34M` | `1h9m24s` | `$15.07` | `$0.66` |
 | `git2/src/cli/opt.c` | `186` | `0` | port | first | `4` | `0` | `+806/-0` | `44.96`% / `98.81`% | `$7.68` | `23.41M` | `35m37s` | `$1.92` | — |
 | `git2/src/cli/opt.c` | `186` | `2` | wrap | first | `3` | `23` | `+2334/-40` | `45.29`% / `98.84`% | `$16.08` | `52.07M` | `52m33s` | `$5.36` | `$0.70` |
+| `libgit2/src/util/hash/sha1dc/ubc_check.c` | `221` | `0` | wrap | first | `1` | `4` | `+686/-0` | `47.47`% / `98.21`% | — | — | — | — | — |
 | `libgit2/util` | `legacy-6` | `0` | wrap | review | `2` | `5` | `+172/-15` | `1.63`% / `99.74`% | `$20.66` | `23.31M` | `48m16s` | `$10.33` | `$4.13` |
 | `libgit2/util` | `legacy-6` | `1` | wrap | review | `2` | `0` | `+149/-12` | `1.63`% / `98.42`% | `$7.58` | `10.10M` | `18m18s` | `$3.79` | — |
 | `libgit2/oid` | `legacy-11` | `0` | wrap | review | `2` | `2` | `+224/-6` | `7.81`% / `99.48`% | `$14.93` | `18.05M` | `29m10s` | `$7.46` | `$7.46` |
@@ -271,7 +272,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/reftable/basics.c` | `169` | `3` | wrap | review | `2` | `3` | `+134/-4` | `45.90`% / `98.92`% | `$9.26` | `30.25M` | `24m42s` | `$4.63` | `$3.09` |
 | `libgit2/deps/llhttp/api.c` | `194` | `5` | wrap | review | `6` | `44` | `+194/-7` | `47.18`% / `98.68`% | `$8.60` | `26.26M` | `28m22s` | `$1.43` | `$0.20` |
 | `git2/src/cli/opt.c` | `186` | `3` | port, wrap | review | `7` | `23` | `+357/-42` | `45.33`% / `98.85`% | `$8.18` | `24.53M` | `24m53s` | `$1.17` | `$0.36` |
-| **Σ first** |  |  |  |  | **`120`** | **`282`** | **`+106387/-2588`** | **`47.05`% / `98.71`%** | **`$651.45`** | **`1632.11M`** | — | **`$5.59`** | **`$2.78`** |
+| **Σ first** |  |  |  |  | **`121`** | **`286`** | **`+107073/-2588`** | **`47.47`% / `98.21`%** | **`$651.45`** | **`1632.11M`** | — | **`$5.59`** | **`$2.78`** |
 | **Σ review** |  |  |  |  | **`120`** | **`282`** | **`+10277/-2138`** | **`47.18`% / `98.68`%** | **`$443.69`** | **`766.73M`** | — | **`$3.99`** | **`$1.99`** |
 
 ### Batches: tests
@@ -351,6 +352,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/llhttp/api.c` | `194` | `2` | first | `+7` (`+0.04`/`+0.11` pp) | `+0` (`+0.01`/`-0.04` pp) | `+4` (`+0.56`/`+0.09` pp) | `+16` (`+0.57`/`+0.09` pp) |
 | `git2/src/cli/opt.c` | `186` | `0` | first | `+0` (`+0.00`/`-0.44` pp) | `+0` (`-0.00`/`-0.08` pp) | `+4` (`-0.02`/`-0.30` pp) | `+12` (`-0.05`/`+0.07` pp) |
 | `git2/src/cli/opt.c` | `186` | `2` | first | `+6` (`+0.03`/`-0.39` pp) | `+0` (`-0.01`/`-0.43` pp) | `+5` (`+0.20`/`-0.56` pp) | `+17` (`+0.01`/`+0.29` pp) |
+| `libgit2/src/util/hash/sha1dc/ubc_check.c` | `221` | `0` | first | `+2` (`+0.05`/`-0.05` pp) | `+0` (`-0.01`/`-0.09` pp) | `+0` (`+0.00`/`-0.35` pp) | `+7` (`-0.01`/`+0.06` pp) |
 | `libgit2/util` | `legacy-6` | `0` | review | `+0` (`+0.00`/`+0.00` pp) | `+1` (`+0.00`/`+0.00` pp) | `+0` (`+0.00`/`+0.00` pp) | `+2` (`+0.00`/`+0.00` pp) |
 | `libgit2/util` | `legacy-6` | `1` | review | `+0` (`+0.00`/`-0.44` pp) | `+0` (`+0.00`/`-0.79` pp) | `+1` (`+0.27`/`-0.49` pp) | `+1` (`+0.00`/`+0.20` pp) |
 | `libgit2/oid` | `legacy-11` | `0` | review | `+1` (`+0.00`/`+0.32` pp) | `+0` (`+0.00`/`-0.39` pp) | `+1` (`+0.00`/`-0.61` pp) | `+4` (`+0.00`/`+0.57` pp) |
@@ -380,7 +382,7 @@ Review rows: `openrouter/anthropic/claude-fable-5.1` via `claude` through `libgi
 | `libgit2/deps/reftable/basics.c` | `169` | `3` | review | `+1` (`+0.02`/`-0.02` pp) | `+0` (`+0.00`/`+0.00` pp) | `+0` (`-0.01`/`-0.02` pp) | `+2` (`+0.02`/`+0.01` pp) |
 | `libgit2/deps/llhttp/api.c` | `194` | `5` | review | `+0` (`-0.02`/`+0.00` pp) | `+1` (`+0.00`/`+0.03` pp) | `+0` (`+0.01`/`+0.00` pp) | `+0` (`-0.05`/`+0.00` pp) |
 | `git2/src/cli/opt.c` | `186` | `3` | review | `+0` (`-0.01`/`-0.02` pp) | `+5` (`+0.01`/`+2.24` pp) | `+0` (`+0.04`/`-0.01` pp) | `+1` (`+0.00`/`+0.02` pp) |
-| **Σ first** |  |  |  | **`+482` (`+25.20`/`-3.25` pp)** | **`+52` (`+14.75`/`-53.50` pp)** | **`+282` (`+32.95`/`-25.97` pp)** | **`+546` (`+13.15`/`+25.09` pp)** |
+| **Σ first** |  |  |  | **`+484` (`+25.25`/`-3.30` pp)** | **`+52` (`+14.74`/`-53.59` pp)** | **`+282` (`+32.95`/`-26.32` pp)** | **`+553` (`+13.14`/`+25.15` pp)** |
 | **Σ review** |  |  |  | **`+36` (`+0.42`/`+2.18` pp)** | **`+9` (`-0.37`/`-3.10` pp)** | **`+23` (`+2.73`/`-1.31` pp)** | **`+43` (`+4.65`/`+2.39` pp)** |
 
 ### Batches: safety audit
@@ -394,10 +396,11 @@ Deterministic `ffimap`; no model.
 | `libgit2/deps/llhttp/api.c` | `194` | `2` | wrap | first | `+0` | `+0` | `+0` | `+0` | `+1` | `+1.22` pp | `+0` | `+0` | `+0` | `+2` | `+46` | `+1` | `+0.48` pp | `+119` |
 | `git2/src/cli/opt.c` | `186` | `0` | port | first | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.11` pp | `+0` |
 | `git2/src/cli/opt.c` | `186` | `2` | wrap | first | `+0` | `+0` | `+0` | `+1` | `+3` | `+0.36` pp | `+10` | `+0` | `+0` | `+0` | `+46` | `+1` | `+0.26` pp | `+123` |
+| `libgit2/src/util/hash/sha1dc/ubc_check.c` | `221` | `0` | wrap | first | `+0` | `+0` | `+0` | `+1` | `+1` | `+0.00` pp | `+1` | `+0` | `+0` | `+6` | `+5` | `+0` | `-0.03` pp | `+11` |
 | `libgit2/deps/reftable/basics.c` | `169` | `3` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+6` | `+0` | `+0` | `-0.01` pp | `+0` |
 | `libgit2/deps/llhttp/api.c` | `194` | `5` | wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` |
 | `git2/src/cli/opt.c` | `186` | `3` | port, wrap | review | `+0` | `+0` | `+0` | `+0` | `+0` | `+0.00` pp | `+0` | `+0` | `+0` | `+0` | `+0` | `+0` | `-0.02` pp | `+0` |
-| **Σ first** |  |  |  |  | **`+2`** | **`+2`** | **`+2`** | **`+1`** | **`+16`** | **`+0.00` pp** | **`+13`** | **`+0`** | **`+0`** | **`+2`** | **`+119`** | **`+2`** | **`+0.23` pp** | **`+304`** |
+| **Σ first** |  |  |  |  | **`+2`** | **`+2`** | **`+2`** | **`+2`** | **`+17`** | **`+0.00` pp** | **`+14`** | **`+0`** | **`+0`** | **`+8`** | **`+124`** | **`+2`** | **`+0.20` pp** | **`+315`** |
 | **Σ review** |  |  |  |  | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0`** | **`+0.00` pp** | **`+0`** | **`+0`** | **`+0`** | **`+6`** | **`+0`** | **`+0`** | **`-0.02` pp** | **`+0`** |
 
 ### Batches: API stability
@@ -411,8 +414,9 @@ Deterministic `ffimap api`; no model.
 | `libgit2/deps/llhttp/api.c` | `194` | `5` | wrap | review | `39` | `0` | `0` | `0` | `0` | `0` | — | — |
 | `git2/src/cli/opt.c` | `186` | `0` | port | first | `0` | `0` | `0` | `0` | `27` | `0` | `sys::git2` extended | — |
 | `git2/src/cli/opt.c` | `186` | `2` | wrap | first | `0` | `0` | `0` | `0` | `30` | `0` | `git2::src::cli::opt` new, `sys::git2` changed | `sys::git2`: `cli_opt`, `cli_opt_parser`, `cli_opt_spec` leave the unattributed set, now tied to their layouts' anchors |
+| `libgit2/src/util/hash/sha1dc/ubc_check.c` | `221` | `0` | wrap | first | `0` | `0` | `0` | `0` | `5` | `0` | all 24 modules kept | — |
 | `git2/src/cli/opt.c` | `186` | `3` | port, wrap | review | `51` | `6` | `0` | `0` | `0` | `0` | all 20 modules kept | — |
-| **Σ first** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`63`** | **`0`** |  |  |
+| **Σ first** |  |  |  |  | **`0`** | **`0`** | **`0`** | **`0`** | **`68`** | **`0`** |  |  |
 | **Σ review** |  |  |  |  | **`90`** | **`6`** | **`0`** | **`0`** | **`0`** | **`0`** |  |  |
 
 ### Batches — review: PoC + reports
@@ -6006,3 +6010,46 @@ The pilot's fifth module: its usage cells and its `Module stats` row are filled,
 modules (`utf8.c`, `opt.c`, `api.c`, `http.c`), one later stage (wave 232) and two header modules;
 the variants' current generation is `crustify/builds.gen5`, and the fork's local `fork/main` is at
 `230c9dbdb`, five commits past the fork's published `main`.
+
+### `libgit2/src/util/hash/sha1dc/ubc_check.c` wave 221 batch 0: `dv_info_t`
+
+The module's one type, wrapped ahead of its `port` batch on the same wave branch, since
+`sha1.c`'s C reads its layout from the table `sha1_dvs`. `st::dv_info_t` is `DvInfo`, a
+`define_ctype!` layout with `DvInfoRef` and `DvInfoMut`, plain data (six `int`s and 80 words),
+`Copy`, `Send` and `Sync`, so that the port's table can be a `static`. `DvInfo::new` is a
+`const fn` that refuses (`None`) a recompression step outside `0..80` and a mask bit outside
+`0..32`, which `sha1_process` uses unchecked as an index into its saved states and as a
+shift, and a mask word other than `0` (`DVMASKSIZE` is 1). It takes any type and `k`/`b`.
+The four fields `sha1.c` reads have getters (`dv_type`, `recompression_step`, `mask_bit`,
+`message_difference`, the last lending `&'a [u32; 80]`). `copied`, `PartialEq`/`Eq` over
+every field, and `Debug` are Rust-only. The symbols (`DVMASKSIZE`, the `DV_*_bit` constants,
+`sha1_dvs`, `ubc_check`) are left to the port batch. The raw bindings gain `type dv_info_t`,
+and `wrapper.h` gains `hash/sha1dc/ubc_check.h`. The analysis is submitted to the ownership
+store as the type's `_comment_user`: it has no pointer field and no lifecycle routine.
+
+Tests: 7 `unit_pub` and 2 `ub_safe`, beside 2 compile-fail cases (the lent difference
+outliving its record, a shared handle beside the exclusive one). Their data are `sha1_dvs`'s
+first record and its terminator. No equivalence test: C builds no record and has no routine
+over the type, and the only C that reads one does so through `sha1_dvs`, the port's symbol,
+whose equivalence is that batch's. Plain, ASan+UBSan (the compile-fail cases on the nightly
+too), TSan and Miri pass the batch's tests, and BSan passes the reborrow test alone. The
+module has no C tests and no dependent module, so those are its regression tests; `fmt
+--check` and `clippy --workspace --all-targets -D warnings` pass on `plain`. Coverage, from
+two runs of `crustify/scripts/coverage/run.sh` over the base snapshot and the tree: the
+whole workspace's suites pass on both. `ubc_check.rs` is covered to 100% of its 83 lines, 13
+functions and 78 regions, with no branch instrumented. C's coverage moves by noise alone, as
+no C changed. `Unit tests` counts `--lib` and `unit_pub` together, as the merged `unit` suite
+does.
+
+The safety audit scans (ffimap, `--ffibox --sys-crates crate::sys,pcre2_sys --regions
+ffi_import,ffi_export`, the 13 seams, no export feature) of the base snapshot and of the
+tree: no safe-boundary site falls in the changeset. `&cell` `+1` is `PartialEq::eq`'s `other:
+&Self`, as on `CheckoutPerfdata`. `C by value` `+1` is the `define_ctype!` newtype, and
+`raw→std` `+1` the lent difference. The Overview's Rust LoC moves by `code.loc.total` (`+118`)
+and `code.tests.loc.total` (`+303`). `ffimap api` (nightly `2026-10-08`, ffibox's private
+rustdoc JSON): the 5 items are `new`, and every unattributed module is `kept`. The raw
+bindings changed, so the crate was packaged and verified alone in bundled mode (700 files)
+with no variant. That took the command `crustify/evolution/package-gate-procedure` now
+records: the ffibox Git-source patch, at the manifest's `/crustify-rs/ffibox.libgit2-crustify`,
+`--exclude-lockfile`, and the side campaigns' installs on `CMAKE_PREFIX_PATH`,
+`OPENSSL_ROOT_DIR` and `PKG_CONFIG_PATH`. Usage cells are the assistant's.
