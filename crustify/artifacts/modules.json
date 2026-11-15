@@ -54437,7 +54437,7 @@
         {
           "index": 198,
           "name": "src/util/ctype_compat.h",
-          "status": "todo",
+          "status": "frozen",
           "foundational": false,
           "depends_on": [],
           "translation_unit": null,
