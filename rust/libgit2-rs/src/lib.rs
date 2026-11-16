@@ -12,15 +12,25 @@
 pub mod sys;
 pub mod util;
 
+pub mod blob;
 pub mod buf;
 pub mod fs;
+pub mod grafts;
 pub mod hashmap_oid;
+pub mod object;
+pub mod object_api;
 pub mod oid;
 pub mod oidarray;
 pub mod parse;
+pub mod signature;
 pub mod strarray;
+pub mod tag;
 
+pub use blob::Blob;
+pub use object::{Object, ObjectType};
 pub use oid::{Oid, OidShortener, OidType};
+pub use signature::{Signature, Time};
+pub use tag::Tag;
 pub use oidarray::OidArray;
 pub use strarray::StrArray;
 pub use util::errors::{Error, ErrorClass, ErrorCode};

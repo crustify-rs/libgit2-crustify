@@ -41,3 +41,9 @@ src/util/varint.c
 src/libgit2/oid.c
 src/libgit2/oidarray.c
 src/libgit2/parse.c
+src/libgit2/object.c
+src/libgit2/object_api.c
+src/libgit2/blob.c
+src/libgit2/tag.c
+src/libgit2/signature.c
+src/libgit2/grafts.c
