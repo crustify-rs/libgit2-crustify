@@ -2546,3 +2546,163 @@ crate::c_layout_test! {
         "sizeof(git_reference__enable_symbolic_ref_target_validation) == 1",
     ],
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_support;
+
+    fn norm(name: &str, flags: c_uint) -> core::result::Result<String, (ErrorCode, Vec<u8>)> {
+        let mut buf = GitStr::new();
+        match normalize_name(Some(&mut buf), name.as_bytes(), flags) {
+            Ok(()) => Ok(String::from_utf8(buf.as_bytes().to_vec()).unwrap()),
+            Err(e) => {
+                assert!(buf.is_empty());
+                Err((e, errors::last_message().unwrap_or_default()))
+            }
+        }
+    }
+
+    const ONE: c_uint = GIT_REFERENCE_FORMAT_ALLOW_ONELEVEL;
+    const PAT: c_uint = GIT_REFERENCE_FORMAT_REFSPEC_PATTERN;
+    const SHORT: c_uint = GIT_REFERENCE_FORMAT_REFSPEC_SHORTHAND;
+
+    #[test]
+    fn normalize() {
+        let _g = test_support::init();
+        assert_eq!(norm("refs/heads/master", 0).unwrap(), "refs/heads/master");
+        assert_eq!(norm("refs///heads//master", 0).unwrap(), "refs/heads/master");
+        assert_eq!(norm("@", ONE).unwrap(), "HEAD");
+        assert_eq!(norm("@/x", SHORT).unwrap(), "HEAD/x");
+        assert_eq!(norm("HEAD", ONE).unwrap(), "HEAD");
+        assert_eq!(norm("FETCH_HEAD", ONE).unwrap(), "FETCH_HEAD");
+        assert_eq!(norm("refs/heads/*", PAT).unwrap(), "refs/heads/*");
+        assert_eq!(norm("*", ONE | PAT).unwrap(), "*");
+        assert_eq!(norm("master", ONE | SHORT).unwrap(), "master");
+        assert_eq!(norm("^refs/heads/x", 0).unwrap(), "^refs/heads/x");
+        assert_eq!(norm("refs/heads/\u{e9}", 0).unwrap(), "refs/heads/\u{e9}");
+        for (bad, flags) in [
+            ("", ONE),
+            ("/refs/heads/x", 0),
+            ("refs/heads/x/", 0),
+            ("refs/heads/x.", 0),
+            ("refs/heads/.x", 0),
+            ("refs/heads/a..b", 0),
+            ("refs/heads/x.lock", 0),
+            ("refs/heads/a@{b", 0),
+            ("refs/heads/a b", 0),
+            ("refs/heads/a~", 0),
+            ("refs/heads/a\u{7f}", 0),
+            ("refs/heads/*/*", PAT),
+            ("refs/heads/*", 0),
+            ("HEAD", 0),
+            ("lower", ONE),
+            ("_HEAD", ONE),
+            ("HEAD_", ONE),
+            ("HEAD/x", 0),
+            ("refs/^x", 0),
+        ] {
+            let (e, msg) = norm(bad, flags).unwrap_err();
+            assert_eq!(e, ErrorCode::INVALID_SPEC, "{bad:?}");
+            assert_eq!(
+                String::from_utf8(msg).unwrap(),
+                format!("the given reference name '{bad}' is not valid")
+            );
+        }
+        // Without a buffer, an empty segment is invalid.
+        assert_eq!(name_is_valid(b"refs//heads/x", 0), Ok(false));
+        assert_eq!(name_is_valid(b"refs/heads/x", 0), Ok(true));
+        // Validation disabled copies the name, buffer or not.
+        assert_eq!(norm("not valid..", GIT_REFERENCE_FORMAT_VALIDATION_DISABLE).unwrap(), "not valid..");
+        assert_eq!(name_is_valid(b"..", GIT_REFERENCE_FORMAT_VALIDATION_DISABLE), Ok(true));
+        // The bytes after a NUL are not read (C reads a C string).
+        assert_eq!(norm("refs/heads/x\0..", 0).unwrap(), "refs/heads/x");
+    }
+
+    #[test]
+    fn buffers() {
+        let _g = test_support::init();
+        let b = normalize_to_buffer(b"refs/heads/abc", 0, 15).unwrap();
+        assert_eq!(b.as_bytes(), b"refs/heads/abc");
+        assert_eq!(normalize_to_buffer(b"refs/heads/abc", 0, 14).unwrap_err(), ErrorCode::BUFS);
+        assert_eq!(
+            errors::last_message().unwrap(),
+            b"the provided buffer is too short to hold the normalization of 'refs/heads/abc'"
+        );
+    }
+
+    #[test]
+    fn predicates() {
+        assert!(is_branch(b"refs/heads/x") && !is_branch(b"refs/tags/x"));
+        assert!(is_tag(b"refs/tags/x") && is_remote(b"refs/remotes/o/x") && is_note(b"refs/notes/x"));
+        assert!(is_pseudoref(b"FETCH_HEAD") && is_pseudoref(b"MERGE_HEAD") && !is_pseudoref(b"HEAD"));
+        for (n, w) in [
+            ("HEAD", true),
+            ("ORIG_HEAD", true),
+            ("refs/bisect/x", true),
+            ("refs/worktree/x", true),
+            ("refs/rewritten/x", true),
+            ("refs/heads/x", false),
+            ("refs/bisectx", false),
+        ] {
+            assert_eq!(is_per_worktree_ref(n.as_bytes()), w, "{n}");
+        }
+        for (n, s) in [
+            ("refs/heads/a/b", "a/b"),
+            ("refs/tags/t", "t"),
+            ("refs/remotes/o/m", "o/m"),
+            ("refs/notes/n", "notes/n"),
+            ("HEAD", "HEAD"),
+        ] {
+            assert_eq!(&n.as_bytes()[shorthand_offset(n.as_bytes())..], s.as_bytes());
+        }
+    }
+
+    #[test]
+    fn boxes() {
+        let _g = test_support::init();
+        let id = Oid::from_hex(b"a65fedf39aefe402d3bb6e24df4d4f5fe4547750", OidType::Sha1).unwrap();
+        let d = RefBox::new_direct(b"refs/heads/x", &id, None).unwrap();
+        let v = d.view();
+        assert_eq!((v.name(), v.kind(), v.target()), (&b"refs/heads/x"[..], Some(ReferenceType::Direct), Some(&id)));
+        assert!(v.peel().is_zero() && v.peel().kind() == Some(OidType::Sha1));
+        assert!(v.symbolic_target().is_none() && v.db().is_null());
+        let s = RefBox::new_symbolic(b"HEAD", b"refs/heads/x").unwrap();
+        assert_eq!(s.view().symbolic_target(), Some(&b"refs/heads/x"[..]));
+        assert!(s.view().target().is_none());
+        assert!(cmp(s.view(), d.view()) < 0);
+        let s2 = RefBox::new_symbolic(b"HEAD", b"refs/heads/y").unwrap();
+        assert!(cmp(s.view(), s2.view()) < 0);
+        let s3 = RefBox::new_symbolic(b"HEAD", b"refs/heads/x").unwrap();
+        assert_eq!(cmp(s.view(), s3.view()), 0);
+        let dd = RefBox::dup(d.view()).unwrap();
+        assert_eq!(cmp(dd.view(), d.view()), 0);
+        let long = d.rename(b"refs/heads/a-much-longer-name-than-before").unwrap();
+        assert_eq!(long.view().name(), b"refs/heads/a-much-longer-name-than-before");
+        assert_eq!(long.view().target(), Some(&id));
+        let short = long.rename(b"x").unwrap();
+        assert_eq!(short.view().name(), b"x");
+        let raw = short.into_raw();
+        // SAFETY: the reference we just gave up.
+        let back = unsafe { RefBox::from_raw(raw) }.unwrap();
+        assert_eq!(back.view().name(), b"x");
+    }
+
+    #[test]
+    fn loose_files() {
+        let _g = test_support::init();
+        const A: &[u8] = b"a65fedf39aefe402d3bb6e24df4d4f5fe4547750";
+        let sha1 = OidType::Sha1 as c_int;
+        assert!(loose_parse_oid(b"r", A, sha1).is_ok());
+        let mut with_nl = A.to_vec();
+        with_nl.extend_from_slice(b"\n");
+        assert!(loose_parse_oid(b"r", &with_nl, sha1).is_ok());
+        let mut bad = A.to_vec();
+        bad.push(b'x');
+        assert_eq!(loose_parse_oid(b"r", &bad, sha1).unwrap_err(), ErrorCode::GENERIC);
+        assert_eq!(errors::last_message().unwrap(), b"corrupted loose reference file: r");
+        assert!(loose_parse_oid(b"r", &A[..39], sha1).is_err());
+        assert_eq!(loose_parse_symbolic(b"ref: x").unwrap(), b"x");
+        assert!(loose_parse_symbolic(b"ref: ").is_err());
+    }
+}
