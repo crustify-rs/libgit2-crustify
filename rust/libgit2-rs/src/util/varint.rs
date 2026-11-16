@@ -107,15 +107,17 @@ pub mod ffi {
         bufsize: usize,
         value: u64,
     ) -> c_int {
-        let out = if buf.is_null() {
-            None
-        } else if bufsize == 0 {
-            Some(&mut [][..])
-        } else {
-            // SAFETY: `bufsize` writable bytes.
-            Some(unsafe { core::slice::from_raw_parts_mut(buf, bufsize) })
-        };
-        encode(out, value)
+        let mut local = [0u8; 16];
+        let n = encode(Some(&mut local), value);
+        if !buf.is_null() {
+            if bufsize < n as usize {
+                return -1;
+            }
+            // SAFETY: `n <= bufsize` writable bytes (possibly uninitialized,
+            // so written through the pointer), not overlapping the local.
+            unsafe { core::ptr::copy_nonoverlapping(local.as_ptr(), buf, n as usize) };
+        }
+        n
     }
 }
 

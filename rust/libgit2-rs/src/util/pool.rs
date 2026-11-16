@@ -291,11 +291,12 @@ impl GitPool {
             return Err(errors::oom());
         };
         let p = self.malloc(n1)?;
-        // SAFETY: `n1` bytes of the pool, just handed out (disjoint from
-        // `s`), and no reference to them exists.
-        let dst = unsafe { core::slice::from_raw_parts_mut(p.as_ptr(), n1) };
-        dst[..s.len()].copy_from_slice(s);
-        dst[s.len()] = 0;
+        let d = p.as_ptr();
+        // SAFETY: `n1` bytes of the pool, just handed out (uninitialized,
+        // so written through the pointer only), disjoint from `s`.
+        unsafe { ptr::copy_nonoverlapping(s.as_ptr(), d, s.len()) };
+        // SAFETY: the last of those bytes.
+        unsafe { d.wrapping_add(s.len()).write(0) };
         Ok(p.cast())
     }
 
@@ -311,12 +312,15 @@ impl GitPool {
             return Err(errors::oom());
         };
         let p = self.malloc(total)?;
-        // SAFETY: `total` bytes of the pool, just handed out (disjoint from
-        // `a` and `b`), and no reference to them exists.
-        let dst = unsafe { core::slice::from_raw_parts_mut(p.as_ptr(), total) };
-        dst[..a.len()].copy_from_slice(a);
-        dst[a.len()..a.len() + b.len()].copy_from_slice(b);
-        dst[a.len() + b.len()] = 0;
+        let d = p.as_ptr();
+        // SAFETY: `total` bytes of the pool, just handed out (uninitialized,
+        // so written through the pointer only), disjoint from `a` and `b`.
+        unsafe { ptr::copy_nonoverlapping(a.as_ptr(), d, a.len()) };
+        let d = d.wrapping_add(a.len());
+        // SAFETY: as above, after `a`'s bytes.
+        unsafe { ptr::copy_nonoverlapping(b.as_ptr(), d, b.len()) };
+        // SAFETY: the last of the `total` bytes.
+        unsafe { d.wrapping_add(b.len()).write(0) };
         Ok(p.cast())
     }
 

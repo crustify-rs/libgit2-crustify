@@ -1054,25 +1054,33 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `str` is writable for `n` bytes (not aliasing `oid`); `oid` is NULL
-    /// or a valid oid.
+    /// `str` is writable for `n` bytes (it may be uninitialized; not
+    /// aliasing `oid`); `oid` is NULL or a valid oid.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oid_nfmt(str: *mut c_char, n: usize, oid: *const Oid) -> c_int {
         barrier(|| {
-            let out: &mut [u8] = if n == 0 {
-                &mut []
-            } else {
-                // SAFETY: the caller passes `n` writable bytes, unaliased.
-                unsafe { core::slice::from_raw_parts_mut(str.cast(), n) }
-            };
+            let dst = str.cast::<u8>();
             // SAFETY: NULL or a valid oid.
-            match unsafe { oid.as_ref() } {
-                None => {
-                    out.fill(0);
-                    0
-                }
-                Some(oid) => status(oid.nfmt(out)),
+            let Some(oid) = (unsafe { oid.as_ref() }) else {
+                // SAFETY: `n` writable bytes (C's output buffers may be
+                // uninitialized: they are only written, through the pointer).
+                unsafe { ptr::write_bytes(dst, 0, n) };
+                return 0;
+            };
+            let hex_size = oid.hexsize();
+            if hex_size == 0 {
+                return oid_error_invalid("unknown type").raw();
             }
+            let k = n.min(hex_size);
+            let mut buf = [0u8; GIT_OID_MAX_HEXSIZE];
+            fmt_substr(&mut buf[..k], &oid.id, 0, k);
+            // SAFETY: `k <= n` writable bytes, not overlapping the local.
+            unsafe { ptr::copy_nonoverlapping(buf.as_ptr(), dst, k) };
+            if n > hex_size {
+                // SAFETY: the rest of the `n` bytes.
+                unsafe { ptr::write_bytes(dst.wrapping_add(hex_size), 0, n - hex_size) };
+            }
+            0
         })
     }
 
@@ -1080,7 +1088,8 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `oid` is a valid oid; `str` is writable for its hex size.
+    /// `oid` is a valid oid; `str` is writable for its hex size (it may be
+    /// uninitialized).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oid_fmt(str: *mut c_char, oid: *const Oid) -> c_int {
         barrier(|| {
@@ -1090,9 +1099,10 @@ pub mod ffi {
             if hex_size == 0 {
                 return oid_error_invalid("unknown type").raw();
             }
-            // SAFETY: `hex_size` writable bytes.
-            let out = unsafe { core::slice::from_raw_parts_mut(str.cast::<u8>(), hex_size) };
-            fmt_substr(out, &oid.id, 0, hex_size);
+            let mut buf = [0u8; GIT_OID_MAX_HEXSIZE];
+            fmt_substr(&mut buf[..hex_size], &oid.id, 0, hex_size);
+            // SAFETY: `hex_size` writable bytes, not overlapping the local.
+            unsafe { ptr::copy_nonoverlapping(buf.as_ptr(), str.cast::<u8>(), hex_size) };
             0
         })
     }
@@ -1101,7 +1111,8 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `oid` is a valid oid; `str` is writable for its hex size + 1.
+    /// `oid` is a valid oid; `str` is writable for its hex size + 1 (it may
+    /// be uninitialized).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oid_pathfmt(str: *mut c_char, oid: *const Oid) -> c_int {
         barrier(|| {
@@ -1111,9 +1122,10 @@ pub mod ffi {
             if hex_size == 0 {
                 return oid_error_invalid("unknown type").raw();
             }
-            // SAFETY: `hex_size + 1` writable bytes.
-            let out = unsafe { core::slice::from_raw_parts_mut(str.cast::<u8>(), hex_size + 1) };
-            write_path(out, &oid.id, hex_size);
+            let mut buf = [0u8; GIT_OID_MAX_HEXSIZE + 1];
+            write_path(&mut buf[..hex_size + 1], &oid.id, hex_size);
+            // SAFETY: `hex_size + 1` writable bytes, not overlapping the local.
+            unsafe { ptr::copy_nonoverlapping(buf.as_ptr(), str.cast::<u8>(), hex_size + 1) };
             0
         })
     }
@@ -1197,8 +1209,7 @@ pub mod ffi {
             let oid = unsafe { oid.as_ref() };
             let hex_size = oid.map_or(0, Oid::hexsize);
             let n = n.min(hex_size + 1);
-            // SAFETY: `n` is at most the caller's `n` writable bytes.
-            let buf = unsafe { core::slice::from_raw_parts_mut(out.cast::<u8>(), n) };
+            let mut buf = [0u8; GIT_OID_MAX_HEXSIZE + 1];
             match oid {
                 Some(oid) if hex_size == 0 => {
                     // `git_oid_nfmt(out, 0, oid)`: the unknown type's error
@@ -1207,7 +1218,10 @@ pub mod ffi {
                 Some(oid) => fmt_substr(&mut buf[..n - 1], &oid.id, 0, n - 1),
                 None => {}
             }
-            buf[n - 1] = 0;
+            // `buf[n - 1]` is the NUL.
+            // SAFETY: `n` is at most the caller's `n` writable bytes (which
+            // may be uninitialized), not overlapping the local.
+            unsafe { ptr::copy_nonoverlapping(buf.as_ptr(), out.cast::<u8>(), n) };
             out
         })
     }
