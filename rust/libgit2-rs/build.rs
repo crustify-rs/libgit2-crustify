@@ -15,17 +15,25 @@ fn main() {
     if env::var_os("CARGO_FEATURE_LINK_C").is_none() {
         return;
     }
-    let dir = env::var("LIBGIT2_BUILD_DIR")
-        .expect("the link-c feature needs LIBGIT2_BUILD_DIR, a CMake build directory with USE_RUST=ON");
+    let dir = env::var("LIBGIT2_BUILD_DIR").expect(
+        "the link-c feature needs LIBGIT2_BUILD_DIR, a CMake build directory with USE_RUST=ON",
+    );
     let dir = Path::new(&dir);
     let archive = dir.join("libgit2_c_rest.a");
-    assert!(archive.exists(), "{} does not exist; build the git2_c_rest target", archive.display());
+    assert!(
+        archive.exists(),
+        "{} does not exist; build the git2_c_rest target",
+        archive.display()
+    );
     println!("cargo:rerun-if-changed={}", archive.display());
     println!("cargo:rustc-link-search=native={}", dir.display());
     println!("cargo:rustc-link-lib=static:+whole-archive,-bundle=git2_c_rest");
     let libs = dir.join("rust-link-libs.txt");
     println!("cargo:rerun-if-changed={}", libs.display());
-    for lib in fs::read_to_string(&libs).expect("rust-link-libs.txt").lines() {
+    for lib in fs::read_to_string(&libs)
+        .expect("rust-link-libs.txt")
+        .lines()
+    {
         let lib = lib.trim();
         if lib.is_empty() {
             continue;

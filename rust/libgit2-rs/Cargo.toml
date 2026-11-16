@@ -13,6 +13,7 @@ crate-type = ["rlib", "staticlib"]
 [dependencies]
 ffibox = { path = "/work/ffibox" }
 libc = "0.2"
+memchr = "2"
 
 [lints]
 workspace = true
