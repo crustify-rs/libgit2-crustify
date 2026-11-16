@@ -130,12 +130,11 @@ impl Hasher for Fnv {
         // A word at a time (FxHash's step), then the tail byte-wise.
         const K: u64 = 0x517c_c1b7_2722_0a95;
         let mut h = self.0;
-        let mut chunks = bytes.chunks_exact(8);
-        for c in &mut chunks {
-            let w = u64::from_le_bytes([c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]]);
-            h = (h.rotate_left(5) ^ w).wrapping_mul(K);
+        let (words, tail) = bytes.as_chunks::<8>();
+        for w in words {
+            h = (h.rotate_left(5) ^ u64::from_le_bytes(*w)).wrapping_mul(K);
         }
-        for &b in chunks.remainder() {
+        for &b in tail {
             h = (h.rotate_left(5) ^ u64::from(b)).wrapping_mul(K);
         }
         self.0 = h;

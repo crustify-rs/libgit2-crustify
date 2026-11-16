@@ -71,7 +71,7 @@ impl SnapshotBackend {
         match list.get(key) {
             None => ErrorCode::NOT_FOUND.raw(),
             Some(e) => {
-                let p = ConfigList::lend(&list, e);
+                let p = ConfigList::lend(list, e);
                 // SAFETY: `out` is the slot's writable out-parameter.
                 unsafe { out.write(p) };
                 0
