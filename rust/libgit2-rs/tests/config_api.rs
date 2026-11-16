@@ -8,7 +8,10 @@
 
 use std::sync::Mutex;
 
-use libgit2_rs::config::{ConfigMap, GIT_CONFIGMAP_STRING, GIT_CONFIGMAP_TRUE, config_parse_bool, config_parse_i32, config_parse_i64};
+use libgit2_rs::config::{
+    ConfigMap, GIT_CONFIGMAP_STRING, GIT_CONFIGMAP_TRUE, config_parse_bool, config_parse_i32,
+    config_parse_i64,
+};
 use libgit2_rs::util::test_support;
 use libgit2_rs::{Config, ConfigBackend, ConfigEntry, ConfigLevel, Error, ErrorCode};
 
@@ -39,7 +42,10 @@ fn memory_lookups() {
     let err = c.get_string("invalid").unwrap_err();
     assert_eq!(err.code(), ErrorCode::INVALID_SPEC);
     // Read-only: no writer.
-    assert_eq!(c.set_str("core.bare", "true").unwrap_err().code(), ErrorCode::READ_ONLY);
+    assert_eq!(
+        c.set_str("core.bare", "true").unwrap_err().code(),
+        ErrorCode::READ_ONLY
+    );
 }
 
 #[test]
@@ -80,11 +86,22 @@ fn parse_functions() {
     assert_eq!(config_parse_i32("-3k").unwrap(), -3072);
     assert_eq!(config_parse_i64("1g").unwrap(), 1 << 30);
     let e = config_parse_i32("99999999999").unwrap_err();
-    assert_eq!(e.message(), "failed to parse '99999999999' as a 32-bit integer");
+    assert_eq!(
+        e.message(),
+        "failed to parse '99999999999' as a 32-bit integer"
+    );
     let c = memory();
     let maps = [
-        ConfigMap { kind: GIT_CONFIGMAP_TRUE, str_match: None, map_value: 1 },
-        ConfigMap { kind: GIT_CONFIGMAP_STRING, str_match: Some(b"a"), map_value: 7 },
+        ConfigMap {
+            kind: GIT_CONFIGMAP_TRUE,
+            str_match: None,
+            map_value: 1,
+        },
+        ConfigMap {
+            kind: GIT_CONFIGMAP_STRING,
+            str_match: Some(b"a"),
+            map_value: 7,
+        },
     ];
     assert_eq!(c.get_mapped("x.flag", &maps).unwrap(), 1);
 }
@@ -103,7 +120,10 @@ impl ConfigBackend for Vars {
     fn entries(&self) -> Result<Vec<ConfigEntry>, Error> {
         let v = self.0.lock().unwrap();
         Ok(v.iter()
-            .map(|(k, val)| ConfigEntry::new(k.clone(), Some(val.clone()), ConfigLevel::App).with_backend_type("vars"))
+            .map(|(k, val)| {
+                ConfigEntry::new(k.clone(), Some(val.clone()), ConfigLevel::App)
+                    .with_backend_type("vars")
+            })
             .collect())
     }
     fn set(&self, name: &[u8], value: &[u8]) -> Result<(), Error> {
@@ -119,8 +139,12 @@ impl ConfigBackend for Vars {
 fn rust_backend() {
     let _g = test_support::init();
     let c = Config::new();
-    c.add_backend(Vars(Mutex::new(vec![(b"a.b".to_vec(), b"1".to_vec())])), ConfigLevel::App, false)
-        .unwrap();
+    c.add_backend(
+        Vars(Mutex::new(vec![(b"a.b".to_vec(), b"1".to_vec())])),
+        ConfigLevel::App,
+        false,
+    )
+    .unwrap();
     assert_eq!(c.get_i32("a.b").unwrap(), 1);
     c.set_i32("A.c", 5).unwrap();
     assert_eq!(c.get_i32("a.c").unwrap(), 5);
@@ -135,7 +159,10 @@ fn rust_backend() {
     assert!(s.get_i32("a.d").is_err());
     assert_eq!(s.get_i32("a.c").unwrap(), 5);
     // The backend's writes fail as it says.
-    assert_eq!(c.remove("a.b").unwrap_err().message(), "this backend is read-only");
+    assert_eq!(
+        c.remove("a.b").unwrap_err().message(),
+        "this backend is read-only"
+    );
 }
 
 #[test]

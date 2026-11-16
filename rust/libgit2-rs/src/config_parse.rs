@@ -165,7 +165,10 @@ fn parse_name<'l>(
     parser: &ConfigParser<'_>,
     line: &'l [u8],
 ) -> Result<(&'l [u8], Option<&'l [u8]>)> {
-    let name_end = line.iter().position(|&c| !is_namechar(c)).unwrap_or(line.len());
+    let name_end = line
+        .iter()
+        .position(|&c| !is_namechar(c))
+        .unwrap_or(line.len());
     if name_end == 0 {
         return Err(parser.error(0, "invalid configuration key"));
     }
@@ -264,10 +267,9 @@ impl<'a> ConfigParser<'a> {
                     rpos += 1;
                     c = at(l, rpos);
                     if c == 0 {
-                        return Err(self.error(
-                            rpos as i32,
-                            "unexpected end-of-line in section header",
-                        ));
+                        return Err(
+                            self.error(rpos as i32, "unexpected end-of-line in section header")
+                        );
                     }
                 }
                 _ => {}
@@ -555,13 +557,34 @@ mod tests {
     #[test]
     fn errors_match_the_c() {
         let cases: &[(&[u8], &str)] = &[
-            (b"[a\n", "failed to parse config file: missing ']' in section header (in f:1)"),
-            (b"[a!]\n", "failed to parse config file: unexpected character in header (in f:1, column 3)"),
-            (b"[a b]\n", "failed to parse config file: missing quotation marks in section header (in f:1)"),
-            (b"[a \"b]\n", "failed to parse config file: missing closing quotation mark in section header (in f:1)"),
-            (b"[a \"b\" c]\n", "failed to parse config file: unexpected text after closing quotes (in f:1, column 2)"),
-            (b"[a]\n\n=x\n", "failed to parse config file: invalid configuration key (in f:3)"),
-            (b"[a]\nb c\n", "failed to parse config file: invalid configuration key (in f:2)"),
+            (
+                b"[a\n",
+                "failed to parse config file: missing ']' in section header (in f:1)",
+            ),
+            (
+                b"[a!]\n",
+                "failed to parse config file: unexpected character in header (in f:1, column 3)",
+            ),
+            (
+                b"[a b]\n",
+                "failed to parse config file: missing quotation marks in section header (in f:1)",
+            ),
+            (
+                b"[a \"b]\n",
+                "failed to parse config file: missing closing quotation mark in section header (in f:1)",
+            ),
+            (
+                b"[a \"b\" c]\n",
+                "failed to parse config file: unexpected text after closing quotes (in f:1, column 2)",
+            ),
+            (
+                b"[a]\n\n=x\n",
+                "failed to parse config file: invalid configuration key (in f:3)",
+            ),
+            (
+                b"[a]\nb c\n",
+                "failed to parse config file: invalid configuration key (in f:2)",
+            ),
             (b"[a]\nb=\\q\n", "invalid escape at q"),
         ];
         for (input, msg) in cases {

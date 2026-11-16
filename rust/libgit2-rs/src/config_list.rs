@@ -272,7 +272,7 @@ unsafe extern "C" fn list_entry_free(e: *mut git_config_backend_entry) {
     let entry = e.cast::<ListEntry>();
     // SAFETY: `e` is the `base` (first field, `repr(C)`) of a live
     // `ListEntry`, whose `list` was set by `freeze` and never changes.
-    let list = unsafe { (&raw const (*entry).list).read() };
+    let list = unsafe { (*entry).list };
     // SAFETY: `lend` added the reference this releases; `list` is the
     // `Arc`'s data pointer (see `freeze`).
     unsafe { Arc::decrement_strong_count(list) };

@@ -15,15 +15,18 @@ mod raw {
         pub fn git_sysdir_find_global_file(path: *mut GitStr, filename: *const c_char) -> c_int;
         pub fn git_sysdir_find_xdg_file(path: *mut GitStr, filename: *const c_char) -> c_int;
         pub fn git_sysdir_find_system_file(path: *mut GitStr, filename: *const c_char) -> c_int;
-        pub fn git_sysdir_expand_homedir_file(path: *mut GitStr, filename: *const c_char)
-        -> c_int;
+        pub fn git_sysdir_expand_homedir_file(path: *mut GitStr, filename: *const c_char) -> c_int;
         pub fn git_sysdir_get(out: *mut *const GitStr, which: c_int) -> c_int;
     }
 }
 
 /// The C status of a sysdir call as a `Result`, keeping its code.
 fn check(r: c_int) -> Result<()> {
-    if r < 0 { Err(ErrorCode::check(r).unwrap_err()) } else { Ok(()) }
+    if r < 0 {
+        Err(ErrorCode::check(r).unwrap_err())
+    } else {
+        Ok(())
+    }
 }
 
 /// `git_sysdir_find_global_file`.
@@ -59,7 +62,7 @@ pub fn get(which: c_int) -> Result<Option<Vec<u8>>> {
     let mut out: *const GitStr = core::ptr::null();
     // SAFETY: `out` is writable; the C stores a pointer to its own
     // (thread-local or global) path.
-    check(unsafe { raw::git_sysdir_get(&mut out, which) })?;
+    check(unsafe { raw::git_sysdir_get(&raw mut out, which) })?;
     if out.is_null() {
         return Ok(None);
     }

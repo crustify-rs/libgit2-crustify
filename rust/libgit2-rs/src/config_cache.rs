@@ -65,7 +65,11 @@ static SAFECRLF: [ConfigMap<'static>; 3] = [
 static LOGALLREFUPDATES: [ConfigMap<'static>; 3] = [
     map(GIT_CONFIGMAP_FALSE, None, GIT_LOGALLREFUPDATES_FALSE),
     map(GIT_CONFIGMAP_TRUE, None, GIT_LOGALLREFUPDATES_TRUE),
-    map(GIT_CONFIGMAP_STRING, Some(b"always"), GIT_LOGALLREFUPDATES_ALWAYS),
+    map(
+        GIT_CONFIGMAP_STRING,
+        Some(b"always"),
+        GIT_LOGALLREFUPDATES_ALWAYS,
+    ),
 ];
 static ABBREV: [ConfigMap<'static>; 3] = [
     map(GIT_CONFIGMAP_INT32, None, 0),
@@ -82,25 +86,81 @@ struct MapData {
 
 /// `_configmaps`, indexed by `git_configmap_item`.
 static CONFIGMAPS: [MapData; GIT_CONFIGMAP_CACHE_MAX] = [
-    MapData { name: c"core.autocrlf", maps: &AUTOCRLF, default_value: GIT_AUTO_CRLF_FALSE },
-    MapData { name: c"core.eol", maps: &EOL, default_value: GIT_EOL_NATIVE },
-    MapData { name: c"core.symlinks", maps: &[], default_value: GIT_CONFIGMAP_TRUE },
-    MapData { name: c"core.ignorecase", maps: &[], default_value: GIT_CONFIGMAP_FALSE },
-    MapData { name: c"core.filemode", maps: &[], default_value: GIT_CONFIGMAP_TRUE },
-    MapData { name: c"core.ignorestat", maps: &[], default_value: GIT_CONFIGMAP_FALSE },
-    MapData { name: c"core.trustctime", maps: &[], default_value: GIT_CONFIGMAP_TRUE },
-    MapData { name: c"core.abbrev", maps: &ABBREV, default_value: GIT_ABBREV_DEFAULT },
-    MapData { name: c"core.precomposeunicode", maps: &[], default_value: GIT_CONFIGMAP_FALSE },
-    MapData { name: c"core.safecrlf", maps: &SAFECRLF, default_value: GIT_CONFIGMAP_FALSE },
+    MapData {
+        name: c"core.autocrlf",
+        maps: &AUTOCRLF,
+        default_value: GIT_AUTO_CRLF_FALSE,
+    },
+    MapData {
+        name: c"core.eol",
+        maps: &EOL,
+        default_value: GIT_EOL_NATIVE,
+    },
+    MapData {
+        name: c"core.symlinks",
+        maps: &[],
+        default_value: GIT_CONFIGMAP_TRUE,
+    },
+    MapData {
+        name: c"core.ignorecase",
+        maps: &[],
+        default_value: GIT_CONFIGMAP_FALSE,
+    },
+    MapData {
+        name: c"core.filemode",
+        maps: &[],
+        default_value: GIT_CONFIGMAP_TRUE,
+    },
+    MapData {
+        name: c"core.ignorestat",
+        maps: &[],
+        default_value: GIT_CONFIGMAP_FALSE,
+    },
+    MapData {
+        name: c"core.trustctime",
+        maps: &[],
+        default_value: GIT_CONFIGMAP_TRUE,
+    },
+    MapData {
+        name: c"core.abbrev",
+        maps: &ABBREV,
+        default_value: GIT_ABBREV_DEFAULT,
+    },
+    MapData {
+        name: c"core.precomposeunicode",
+        maps: &[],
+        default_value: GIT_CONFIGMAP_FALSE,
+    },
+    MapData {
+        name: c"core.safecrlf",
+        maps: &SAFECRLF,
+        default_value: GIT_CONFIGMAP_FALSE,
+    },
     MapData {
         name: c"core.logallrefupdates",
         maps: &LOGALLREFUPDATES,
         default_value: GIT_LOGALLREFUPDATES_UNSET,
     },
-    MapData { name: c"core.protecthfs", maps: &[], default_value: GIT_CONFIGMAP_FALSE },
-    MapData { name: c"core.protectntfs", maps: &[], default_value: GIT_CONFIGMAP_TRUE },
-    MapData { name: c"core.fsyncobjectfiles", maps: &[], default_value: GIT_CONFIGMAP_FALSE },
-    MapData { name: c"core.longpaths", maps: &[], default_value: GIT_CONFIGMAP_FALSE },
+    MapData {
+        name: c"core.protecthfs",
+        maps: &[],
+        default_value: GIT_CONFIGMAP_FALSE,
+    },
+    MapData {
+        name: c"core.protectntfs",
+        maps: &[],
+        default_value: GIT_CONFIGMAP_TRUE,
+    },
+    MapData {
+        name: c"core.fsyncobjectfiles",
+        maps: &[],
+        default_value: GIT_CONFIGMAP_FALSE,
+    },
+    MapData {
+        name: c"core.longpaths",
+        maps: &[],
+        default_value: GIT_CONFIGMAP_FALSE,
+    },
 ];
 
 /// `git_config__configmap_lookup`: the value of `item` in `config` (its
@@ -165,7 +225,11 @@ pub mod ffi {
     /// `out` is writable; `config` is live; `item` is a
     /// `git_configmap_item`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_config__configmap_lookup(out: *mut c_int, config: *mut GitConfig, item: c_int) -> c_int {
+    pub unsafe extern "C" fn git_config__configmap_lookup(
+        out: *mut c_int,
+        config: *mut GitConfig,
+        item: c_int,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: per the contract.
             let r = configmap_lookup(unsafe { &*config }, item as usize);
@@ -216,7 +280,9 @@ pub mod ffi {
     ///
     /// `repo` is live.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_repository__configmap_lookup_cache_clear(repo: *mut git_repository) {
+    pub unsafe extern "C" fn git_repository__configmap_lookup_cache_clear(
+        repo: *mut git_repository,
+    ) {
         // SAFETY: per the contract.
         barrier(|| unsafe { configmap_lookup_cache_clear(repo) })
     }

@@ -293,7 +293,8 @@ pub fn backend_from_values(
     origin_path: Option<&[u8]>,
 ) -> Result<Backend> {
     let mut v = Vec::new();
-    v.try_reserve_exact(values.len()).map_err(|_| errors::oom())?;
+    v.try_reserve_exact(values.len())
+        .map_err(|_| errors::oom())?;
     for s in values {
         v.push(s.to_vec());
     }
@@ -311,7 +312,9 @@ pub mod ffi {
     /// # Safety
     ///
     /// `opts` is NULL or valid, its strings NULL or NUL-terminated.
-    unsafe fn options<'a>(opts: *const git_config_backend_memory_options) -> (Option<&'a [u8]>, Option<&'a [u8]>) {
+    unsafe fn options<'a>(
+        opts: *const git_config_backend_memory_options,
+    ) -> (Option<&'a [u8]>, Option<&'a [u8]>) {
         if opts.is_null() {
             return (None, None);
         }
@@ -371,7 +374,8 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             // SAFETY: per the contract.
-            let (text, (t, o)) = unsafe { (crate::util::export::bytes(cfg.cast(), len), options(opts)) };
+            let (text, (t, o)) =
+                unsafe { (crate::util::export::bytes(cfg.cast(), len), options(opts)) };
             match backend_from_string(text, t, o) {
                 // SAFETY: `out` is writable.
                 Ok(b) => unsafe {

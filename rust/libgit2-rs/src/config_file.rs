@@ -113,13 +113,14 @@ unsafe impl Sync for FileBackend {}
 /// Whether the table's `readonly` is set (C may have set it).
 fn table_readonly(cfg: *mut git_config_backend) -> bool {
     // SAFETY: the slot's own live table, read raw.
-    unsafe { (&raw const (*cfg).readonly).read() != 0 }
+    unsafe { (*cfg).readonly != 0 }
 }
 
 /// `escape_value`: `value` with its special characters escaped.
 fn escape_value(value: &[u8]) -> Result<Vec<u8>> {
     let mut buf = Vec::new();
-    buf.try_reserve(value.len() + 1).map_err(|_| errors::oom())?;
+    buf.try_reserve(value.len() + 1)
+        .map_err(|_| errors::oom())?;
     for &c in value {
         match ESCAPED.iter().position(|&e| e == c) {
             Some(k) => {
@@ -179,9 +180,18 @@ impl Reader<'_> {
         let mut path = GitStr::new();
         included_path(&mut path, dir.as_bytes(), file)?;
         drop(dir);
-        self.file.includes.try_reserve(1).map_err(|_| errors::oom())?;
-        self.file.includes.push(ConfigFile::new(path.as_bytes().to_vec()));
-        let include = self.file.includes.last_mut().unwrap_or_else(|| unreachable!());
+        self.file
+            .includes
+            .try_reserve(1)
+            .map_err(|_| errors::oom())?;
+        self.file
+            .includes
+            .push(ConfigFile::new(path.as_bytes().to_vec()));
+        let include = self
+            .file
+            .includes
+            .last_mut()
+            .unwrap_or_else(|| unreachable!());
         match read(self.list, self.repo, include, self.level, self.depth + 1) {
             Err(e) if e == ErrorCode::NOT_FOUND => {
                 errors::clear();
@@ -257,7 +267,12 @@ fn at(s: &[u8], i: usize) -> u8 {
 }
 
 /// `do_match_gitdir`.
-fn match_gitdir(repo: *const git_repository, cfg_file: &[u8], condition: &[u8], icase: bool) -> Result<bool> {
+fn match_gitdir(
+    repo: *const git_repository,
+    cfg_file: &[u8],
+    condition: &[u8],
+    icase: bool,
+) -> Result<bool> {
     let mut pattern = GitStr::new();
     // As in C, the failures of these are only seen as an out-of-memory
     // pattern below.
@@ -281,7 +296,11 @@ fn match_gitdir(repo: *const git_repository, cfg_file: &[u8], condition: &[u8], 
     let mut gitdir = GitStr::new();
     // SAFETY: C's contract keeps the backend's repository live.
     unsafe { crate::sys::pending::repository_gitdir(&mut gitdir, repo) }?;
-    if gitdir.as_bytes().last().is_some_and(|&c| fs_path::is_dirsep(c)) {
+    if gitdir
+        .as_bytes()
+        .last()
+        .is_some_and(|&c| fs_path::is_dirsep(c))
+    {
         let n = gitdir.len() - 1;
         gitdir.truncate(n);
     }
@@ -296,14 +315,17 @@ fn match_gitdir(repo: *const git_repository, cfg_file: &[u8], condition: &[u8], 
 fn match_onbranch(repo: *const git_repository, _cfg_file: &[u8], condition: &[u8]) -> Result<bool> {
     // SAFETY: C's contract keeps the backend's repository live.
     let target = unsafe { crate::sys::pending::repository_head_symbolic_target(repo.cast_mut()) }?;
-    let Some(target) = target else { return Ok(false) };
+    let Some(target) = target else {
+        return Ok(false);
+    };
     // C leaves the result unset (uninitialized) for a `HEAD` outside
     // `refs/heads/`: no match here (see DEFECTS.md).
     let Some(branch) = target.strip_prefix(b"refs/heads/") else {
         return Ok(false);
     };
     let mut buf = Vec::new();
-    buf.try_reserve(condition.len() + 2).map_err(|_| errors::oom())?;
+    buf.try_reserve(condition.len() + 2)
+        .map_err(|_| errors::oom())?;
     buf.extend_from_slice(condition);
     if condition.last().is_some_and(|&c| fs_path::is_dirsep(c)) {
         buf.extend_from_slice(b"**");
@@ -321,7 +343,10 @@ fn read_buffer(
     buf: &[u8],
 ) -> Result<()> {
     if depth >= MAX_INCLUDE_DEPTH {
-        return Err(git_error_set!(ErrorClass::CONFIG, "maximum config include depth reached"));
+        return Err(git_error_set!(
+            ErrorClass::CONFIG,
+            "maximum config include depth reached"
+        ));
     }
     // An empty file (or one starting with a NUL): nothing to do.
     if buf.first().copied().unwrap_or(0) == 0 {
@@ -586,7 +611,10 @@ impl FileBackend {
     /// `config_file_set_entries`.
     fn set_entries(&self, cfg: *mut git_config_backend, list: ConfigList) -> Result<()> {
         if table_readonly(cfg) {
-            return Err(git_error_set!(ErrorClass::CONFIG, "this backend is read-only"));
+            return Err(git_error_set!(
+                ErrorClass::CONFIG,
+                "this backend is read-only"
+            ));
         }
         let old = self.lock_values().replace(list.freeze());
         drop(old);
@@ -661,7 +689,11 @@ impl FileBackend {
     }
 
     /// `config_file_get`.
-    fn get(&self, cfg: *mut git_config_backend, key: &[u8]) -> Result<*mut git_config_backend_entry> {
+    fn get(
+        &self,
+        cfg: *mut git_config_backend,
+        key: &[u8],
+    ) -> Result<*mut git_config_backend_entry> {
         if !table_readonly(cfg) {
             self.refresh(cfg)?;
         }
@@ -715,7 +747,11 @@ impl FileBackend {
             Ok(e) => e,
             Err(e) => {
                 if e == ErrorCode::NOT_FOUND {
-                    let _ = git_error_set!(ErrorClass::CONFIG, "could not find key '{}' to delete", Bytes(name));
+                    let _ = git_error_set!(
+                        ErrorClass::CONFIG,
+                        "could not find key '{}' to delete",
+                        Bytes(name)
+                    );
                 }
                 return Err(e);
             }
@@ -725,11 +761,20 @@ impl FileBackend {
     }
 
     /// `config_file_delete_multivar`.
-    fn delete_multivar(&self, cfg: *mut git_config_backend, name: &[u8], regexp: Option<&CStr>) -> Result<()> {
+    fn delete_multivar(
+        &self,
+        cfg: *mut git_config_backend,
+        name: &[u8],
+        regexp: Option<&CStr>,
+    ) -> Result<()> {
         let key = normalize_name(name)?;
         let list = self.take_list();
         if list.get(&key).is_none() {
-            let _ = git_error_set!(ErrorClass::CONFIG, "could not find key '{}' to delete", Bytes(name));
+            let _ = git_error_set!(
+                ErrorClass::CONFIG,
+                "could not find key '{}' to delete",
+                Bytes(name)
+            );
             return Err(ErrorCode::NOT_FOUND);
         }
         let preg = Regexp::compile_opt(regexp, 0)?;
@@ -815,7 +860,8 @@ impl FileBackend {
         }
 
         let mut file = FilebufGuard(Box::new(GitFilebuf::new()));
-        file.0.open(&path, GIT_FILEBUF_HASH_SHA256, GIT_CONFIG_FILE_MODE)?;
+        file.0
+            .open(&path, GIT_FILEBUF_HASH_SHA256, GIT_CONFIG_FILE_MODE)?;
         let cpath = cstring(&path)?;
         let mut contents = GitStr::new();
         match futils::readbuffer(&mut contents, as_cstr(&cpath)) {
@@ -986,7 +1032,13 @@ pub mod ffi {
 mod tests {
     use super::*;
 
-    fn write_one(input: &[u8], orig_key: &[u8], key: &[u8], preg: Option<&Regexp>, value: Option<&[u8]>) -> Vec<u8> {
+    fn write_one(
+        input: &[u8],
+        orig_key: &[u8],
+        key: &[u8],
+        preg: Option<&Regexp>,
+        value: Option<&[u8]>,
+    ) -> Vec<u8> {
         let (section, name) = split_key(key);
         let (orig_section, orig_name) = split_key(orig_key);
         let mut w = Writer {
@@ -1029,7 +1081,10 @@ mod tests {
 
     #[test]
     fn escapes_and_quotes() {
-        assert_eq!(escape_value(b"a\"b\\c\nd\te").unwrap(), b"a\\\"b\\\\c\\nd\\te");
+        assert_eq!(
+            escape_value(b"a\"b\\c\nd\te").unwrap(),
+            b"a\\\"b\\\\c\\nd\\te"
+        );
         assert_eq!(quotes_for_value(b""), b"\"");
         assert_eq!(quotes_for_value(b" a"), b"\"");
         assert_eq!(quotes_for_value(b"a;b"), b"\"");

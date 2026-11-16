@@ -86,8 +86,10 @@ unsafe extern "C" {
         item: core::ffi::c_int,
     ) -> core::ffi::c_int;
     /// `git_repository_refdb`. PENDING(l-repo)
-    pub fn git_repository_refdb(out: *mut *mut git_refdb, repo: *mut git_repository)
-    -> core::ffi::c_int;
+    pub fn git_repository_refdb(
+        out: *mut *mut git_refdb,
+        repo: *mut git_repository,
+    ) -> core::ffi::c_int;
 }
 
 // ---------------------------------------------------------------------------
@@ -137,7 +139,7 @@ pub unsafe fn repository_config_weakptr(
 ) -> crate::util::errors::Result<*mut crate::config::GitConfig> {
     let mut out = core::ptr::null_mut();
     // SAFETY: `out` is writable; `repo` is live (contract).
-    let r = unsafe { git_repository_config__weakptr(&mut out, repo) };
+    let r = unsafe { git_repository_config__weakptr(&raw mut out, repo) };
     crate::util::errors::ErrorCode::check(r)?;
     Ok(out.cast())
 }
