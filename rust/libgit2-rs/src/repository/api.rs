@@ -636,6 +636,9 @@ impl Repository {
 
     /// `git_repository_set_namespace`.
     pub fn set_namespace(&mut self, ns: Option<&[u8]>) -> Result<()> {
+        if ns.is_some_and(|n| n.contains(&0)) {
+            return Err(path_c(Path::new(OsStr::from_bytes(b"\0"))).unwrap_err());
+        }
         let v = ns.map(super::alloc_cstr).transpose()?;
         // SAFETY: `&mut self`: no namespace borrowed from this repository
         // is live.
