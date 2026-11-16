@@ -487,3 +487,7 @@ repository's cleanup frees the config the test still holds). The Rust does
 not have that defect, so the tests' own leak shows. A standalone program
 that drops a `git_repository_config` reference leaks on both builds. Not a
 port leak; integration notes I-9.
+
+Green: `79ef0a8` (Rust and C-fallback clar 436/436, `include/` unchanged,
+cargo test link-c, Miri with strict provenance, clippy both
+configurations, fmt). `97f6111` changes only this log.
