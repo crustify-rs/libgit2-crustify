@@ -95,9 +95,20 @@ triggers it, and the Rust's defined behaviour.
   whole strings.
 - Rust: kept as C (the result is defined, and callers may depend on it).
 
-### util: `git__substrdup` with `n == SIZE_MAX`
-- C: `n + 1` wraps to 0, then `memcpy` of `SIZE_MAX` bytes.
-- Rust: out-of-memory error, NULL.
+### util: `git__substrdup` with `n > PTRDIFF_MAX`
+- C: `n + 1` wraps to 0 for `SIZE_MAX` (then `memcpy` of `SIZE_MAX` bytes);
+  any `n` above `PTRDIFF_MAX` cannot describe readable memory.
+- Rust: the export checks `n` before forming any slice and fails with the
+  out-of-memory error, NULL. (In general, `export::bytes` refuses a length
+  above `isize::MAX` with a panic, which the barrier turns into an internal
+  error, rather than form an invalid slice.)
+
+### str: `git_buf_tostr` of a `git_buf` that holds an out-of-memory string
+- C: `git_buf_sanitize` writes `ptr[0] = '\0'` (into `git_str__oom`) and the
+  `git_str` stays out of memory. (Not a C defect; recorded because the first
+  port got it wrong, review finding F-1.)
+- Rust: the same; a `git_buf` with `git_str__initstr` and `reserved > 0`
+  becomes an empty string with `asize = 0`.
 
 ### vector: `git_vector_set` at `SIZE_MAX`
 - C: `position + 1` wraps to 0, the vector is not grown, and

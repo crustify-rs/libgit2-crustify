@@ -20,19 +20,22 @@ pinned to one CPU. clang -O2 driver, Rust `--release` (opt-level 3).
 The vector workloads are at parity within the noise (min and median ratios
 straddle 1). The string workloads are slower.
 
-## Per call (`str_ops.c`, best of 3 x 5 runs of 5M calls, ns)
+## Per call (`str_ops.c`, best of 4 x 5 runs of 5M calls, ns)
 
-| call | C | Rust | Rust/C |
-|---|---:|---:|---:|
-| git_str_putc | 6.1 | 6.1 | 1.00 |
-| git_str_put (4 bytes) | 11.9 | 15.2 | 1.27 |
-| git_str_puts | 24.2 | 30.6 | 1.27 |
-| git_str_sets | 22.0 | 27.8 | 1.26 |
-| git_str_joinpath | 52.9 | 57.1 | 1.08 |
-| git_str_joinpath(&s, s.ptr, x) | 53.2 | 70.1 | 1.32 |
-| git_str_join_n (3 segments) | 159.7 | 200.6 | 1.26 |
+After review round 1 (F-11): each hot export is a short fast path (a
+`memmove` into the allocation when no growth is needed, as C's) with the
+barrier and the error paths outlined; `git_str_join`/`git_str_join_n` have
+panic-free fast paths.
 
-Before the hot-path work (first port) these were 1.6-2.4x for str_append /
-str_join and join_n 300 ns. Remaining gap: a few nanoseconds per call in the
-export prologue and the C/Rust split of join_n (C shim collects the varargs,
-Rust joins); not closed. See the WP report.
+| call | C | Rust | Rust/C | (round 0) |
+|---|---:|---:|---:|---:|
+| git_str_putc | 6.50 | 4.99 | 0.77 | 1.00 |
+| git_str_put (4 bytes) | 11.45 | 10.53 | 0.92 | 1.27 |
+| git_str_puts | 24.81 | 24.63 | 0.99 | 1.27 |
+| git_str_sets | 22.02 | 19.96 | 0.91 | 1.26 |
+| git_str_joinpath | 52.38 | 47.81 | 0.91 | 1.08 |
+| git_str_joinpath(&s, s.ptr, x) | 50.93 | 49.29 | 0.97 | 1.32 |
+| git_str_join_n (3 segments) | 157.90 | 149.98 | 0.95 | 1.26 |
+
+Build and run: `../../difftest/link.sh str_ops.c out`, then
+`taskset -c N out/str_ops_c` and `out/str_ops_rust`, alternately.

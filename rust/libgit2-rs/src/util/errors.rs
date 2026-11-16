@@ -360,6 +360,19 @@ impl ThreadState {
         self.last.set(Last::Own);
     }
 
+    /// Whether `p` points into this thread's message buffer (so that a C
+    /// caller passed `git_error_last()->message` back in).
+    fn owns_message_ptr(&self, p: *const c_char) -> bool {
+        match self.message.try_borrow() {
+            Ok(m) => {
+                let start = m.as_ptr() as usize;
+                m.capacity() > 0 && (p as usize) >= start && (p as usize) < start + m.capacity()
+            }
+            // Mutably borrowed: we are inside a formatting call.
+            Err(_) => false,
+        }
+    }
+
     /// Replace the message with what `fill` writes, as class `class`; on
     /// allocation failure the error becomes the out-of-memory one.
     fn set_with(&self, class: c_int, fill: impl FnOnce(&mut Vec<u8>) -> bool) {
@@ -371,6 +384,8 @@ impl ThreadState {
             // Re-entered while formatting a message: the outer call sets it.
             return;
         };
+        // Consistent for C while the buffer changes: no error until commit.
+        self.last.set(Last::None);
         message.clear();
         if fill(&mut message) && message.try_reserve(1).is_ok() {
             self.commit_own(class, &mut message);
@@ -442,7 +457,12 @@ fn set_fmt_raw(class: c_int, args: Option<fmt::Arguments<'_>>, os_errno: c_int) 
             return;
         }
         match s.message.try_borrow_mut() {
-            Ok(mut m) => m.clear(),
+            Ok(mut m) => {
+                // While the buffer is rewritten (and an argument's `Display`
+                // may panic), C sees no error rather than a stale pointer.
+                s.last.set(Last::None);
+                m.clear();
+            }
             Err(_) => return,
         }
         let mut ok = true;
@@ -680,7 +700,14 @@ pub fn save() -> SavedError {
             let m = s.message.borrow();
             // SAFETY: as in `last`.
             let klass = unsafe { (*s.error.get()).klass };
-            Saved::Own(klass, m[..m.len().saturating_sub(1)].to_vec())
+            let bytes = &m[..m.len().saturating_sub(1)];
+            let mut v = Vec::new();
+            if v.try_reserve_exact(bytes.len()).is_err() {
+                // As C's `git_error_save` when its copy fails.
+                return Saved::Static(&OOM_ERROR);
+            }
+            v.extend_from_slice(bytes);
+            Saved::Own(klass, v)
         }
     });
     SavedError(s.unwrap_or(Saved::Static(&TLSDATA_ERROR)))
@@ -920,13 +947,23 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_error_set_str(error_class: c_int, string: *const c_char) -> c_int {
         barrier(|| {
-            // SAFETY: the caller passes NULL or a NUL-terminated string.
-            let Some(s) = (unsafe { cstr(string) }) else {
+            if string.is_null() {
                 let _ = assert_arg_failed("string");
                 return -1;
-            };
+            }
             let ok = with_state(|st| {
-                st.set_with(error_class, |m| try_extend(m, s.to_bytes()));
+                if st.owns_message_ptr(string) {
+                    // `git_error_last()->message` passed back: C clears its
+                    // buffer first (`ptr[0] = '\0'`), so the message
+                    // becomes empty. No reference to the buffer is formed.
+                    st.set_with(error_class, |_| true);
+                } else {
+                    // SAFETY: the caller passes a NUL-terminated string,
+                    // which is not this thread's message buffer (checked),
+                    // so nothing writes it while it is borrowed.
+                    let s = unsafe { CStr::from_ptr(string) };
+                    st.set_with(error_class, |m| try_extend(m, s.to_bytes()));
+                }
                 matches!(st.last.get(), Last::Own)
             });
             if ok == Some(true) { 0 } else { -1 }
@@ -1038,29 +1075,28 @@ pub mod ffi {
             Last::Own => {
                 // SAFETY: as in `last`.
                 let klass = unsafe { (*s.error.get()).klass };
-                Ok((klass, s.message.borrow().clone()))
+                // The copy goes straight into `git__allocator`'s memory
+                // (fallible, as C's `git__strdup`); setting the OOM error
+                // only touches `last`, not the borrowed buffer.
+                let m = s.message.borrow();
+                Ok((klass, alloc::substrdup(&m[..m.len().saturating_sub(1)])))
             }
         });
-        let (klass, msg) = match saved {
+        let (klass, copy) = match saved {
             None => return (TLSDATA_ERROR.as_ptr(), -1),
             Some(Err(p)) => return (p, 0),
             Some(Ok(v)) => v,
         };
+        if copy.is_null() {
+            return (OOM_ERROR.as_ptr(), -1);
+        }
         let dup = alloc::malloc(core::mem::size_of::<GitError>()).cast::<GitError>();
         if dup.is_null() {
+            // SAFETY: `copy` was just allocated by `git__allocator` and is
+            // not used again. (C leaks here.)
+            unsafe { alloc::free(copy.cast()) };
             return (OOM_ERROR.as_ptr(), -1);
         }
-        // `msg` holds the message and its NUL.
-        let copy = alloc::malloc(msg.len()).cast::<u8>();
-        if copy.is_null() {
-            // SAFETY: `dup` was just allocated by `git__allocator` and is
-            // not used again. (C leaks it here.)
-            unsafe { alloc::free(dup.cast()) };
-            return (OOM_ERROR.as_ptr(), -1);
-        }
-        // SAFETY: `copy` is a fresh allocation of `msg.len()` bytes,
-        // disjoint from `msg`.
-        unsafe { core::ptr::copy_nonoverlapping(msg.as_ptr(), copy, msg.len()) };
         // SAFETY: `dup` is a fresh allocation of a `GitError`, aligned by the
         // allocator's guarantee (8 bytes).
         unsafe {
@@ -1092,11 +1128,18 @@ pub mod ffi {
             }
             // SAFETY: `error` is a live `git_error` (the caller's contract).
             let GitError { message, klass } = unsafe { error.read() };
-            // SAFETY: a saved error's message is NULL or NUL-terminated.
-            match unsafe { cstr(message) } {
-                Some(m) => set_bytes_raw(klass, m.to_bytes()),
-                None => {
-                    with_state(|s| s.set_with(klass, |_| true));
+            if with_state(|s| s.owns_message_ptr(message)) == Some(true) {
+                // Not a saved copy (outside the contract): C would empty the
+                // message; do so without borrowing the buffer.
+                with_state(|s| s.set_with(klass, |_| true));
+            } else {
+                // SAFETY: a saved error's message is NULL or NUL-terminated,
+                // in its own allocation.
+                match unsafe { cstr(message) } {
+                    Some(m) => set_bytes_raw(klass, m.to_bytes()),
+                    None => {
+                        with_state(|s| s.set_with(klass, |_| true));
+                    }
                 }
             }
             // SAFETY: forwarded: `error` is freed once, here.

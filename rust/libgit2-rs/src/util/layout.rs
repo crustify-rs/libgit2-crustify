@@ -26,12 +26,18 @@
 //! }
 //! ```
 //!
+//! Only the macros are in the library; the generator and the checker are
+//! compiled for tests alone (`cfg(test)`), so the shipped library has no
+//! process-spawning code.
+//!
 //! The tests need `LIBGIT2_BUILD_DIR` and clang, so they run with
 //! `--features link-c` (and are ignored without it and under Miri).
 //! `common.h` (of `src/libgit2`) is always included first.
 
+#[cfg(test)]
 use std::fmt::Write as _;
 
+#[cfg(test)]
 /// A field's place in a Rust type.
 #[derive(Debug)]
 pub struct FieldLayout {
@@ -43,6 +49,7 @@ pub struct FieldLayout {
     pub size: usize,
 }
 
+#[cfg(test)]
 /// A Rust type's layout, and the C type it mirrors.
 #[derive(Debug)]
 pub struct TypeLayout {
@@ -58,6 +65,7 @@ pub struct TypeLayout {
     pub fields: Vec<FieldLayout>,
 }
 
+#[cfg(test)]
 /// The size of the field a projection closure selects.
 pub fn field_size<T, F>(_: fn(&T) -> &F) -> usize {
     size_of::<F>()
@@ -106,6 +114,7 @@ macro_rules! c_layout_test {
     };
 }
 
+#[cfg(test)]
 /// The C source that asserts `types`' layouts.
 pub fn c_source(headers: &[&str], types: &[TypeLayout], asserts: &[&str]) -> String {
     let mut s = String::from("#include \"common.h\"\n#include <stddef.h>\n");
@@ -146,6 +155,7 @@ pub fn c_source(headers: &[&str], types: &[TypeLayout], asserts: &[&str]) -> Str
 
 /// The `INCLUDES`, `DEFINES` and `-D` flags of `src/libgit2`'s objects in the build at
 /// `dir`.
+#[cfg(test)]
 fn build_flags(dir: &std::path::Path) -> Vec<String> {
     let ninja = std::fs::read_to_string(dir.join("build.ninja"))
         .unwrap_or_else(|e| panic!("cannot read {}/build.ninja: {e}", dir.display()));
@@ -182,6 +192,7 @@ fn build_flags(dir: &std::path::Path) -> Vec<String> {
     flags
 }
 
+#[cfg(test)]
 /// Compile the assertions for `types` with clang against the build in
 /// `LIBGIT2_BUILD_DIR`; panic with the compiler's output on a mismatch.
 pub fn check(headers: &[&str], types: &[TypeLayout], asserts: &[&str]) {

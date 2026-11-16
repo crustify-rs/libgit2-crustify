@@ -97,7 +97,12 @@ impl GitBuf {
         if s.is_oom() {
             return Err(ErrorCode::GENERIC);
         }
-        if !s.is_allocated() && !s.is_empty() {
+        if !s.owns_buffer() {
+            // Empty (whatever `ptr` is) or borrowed: nothing to move; the
+            // contents of a borrowed string are copied.
+            if s.is_empty() {
+                return Ok(GitBuf::new());
+            }
             s = GitStr::from_bytes(s.as_bytes())?;
         }
         let mut out = GitBuf::new();
@@ -120,12 +125,18 @@ impl GitBuf {
 
     /// `git_buf_sanitize`: empty the buffer, keeping its allocation.
     pub fn sanitize(&mut self) {
-        if self.reserved > 0 && !self.ptr.is_null() && !is_sentinel(self.ptr) {
-            // SAFETY: a buffer with `reserved > 0` owns an allocation of
-            // `reserved` bytes.
+        if self.reserved > 0 && !self.ptr.is_null() {
+            // As C: `ptr[0] = '\0'`. A buffer with `reserved > 0` owns an
+            // allocation of `reserved` bytes, or (moved from an
+            // out-of-memory `git_str`) holds a sentinel, which is a writable
+            // byte that holds 0.
+            // SAFETY: `ptr` is valid for a write of one byte, as above; a
+            // sentinel is an `UnsafeCell`, so the write is allowed.
             unsafe { self.ptr.write(0) };
         } else {
+            // (NULL with `reserved > 0` would crash the C; reset it.)
             self.ptr = git_str__initstr.as_ptr();
+            self.reserved = 0;
         }
         self.size = 0;
     }
@@ -176,10 +187,16 @@ pub mod ffi {
             // SAFETY: a valid `git_buf`, not otherwise accessed.
             let b = unsafe { &mut *buf };
             b.sanitize();
-            // SAFETY: `b`'s allocation (with `reserved` bytes, now holding
-            // an empty string) becomes the string's: an owned (or empty)
-            // `git_str`.
-            let s = unsafe { GitStr::from_raw_parts(b.ptr, b.reserved, b.size) };
+            let s = if b.ptr == git_str__initstr.as_ptr() || b.reserved == 0 {
+                // Nothing owned: an empty string (C copies `reserved`, but
+                // a non-zero one with `git_str__initstr` cannot arise).
+                GitStr::new()
+            } else {
+                // SAFETY: `b`'s allocation (`reserved` bytes, now holding an
+                // empty string) becomes the string's: an owned `git_str`; or
+                // `ptr` is `git_str__oom`, the out-of-memory state, as C.
+                unsafe { GitStr::from_raw_parts(b.ptr, b.reserved, 0) }
+            };
             // SAFETY: `out` is writable.
             unsafe { out.write(s) };
             b.ptr = git_str__initstr.as_ptr();
