@@ -14,6 +14,7 @@ use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::marker::PhantomData;
 use core::ptr::{self, NonNull};
 
+use crate::git_error_set;
 use crate::oid::Oid;
 use crate::strarray::GitStrArray;
 use crate::sys::diff as d;
@@ -22,7 +23,6 @@ use crate::sys::{ignore, path, pathspec, submodule};
 use crate::tree_cache::TreeSource;
 use crate::util::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
 use crate::util::str::GitStr;
-use crate::git_error_set;
 
 /// A repository: an index's owner (`GIT_REFCOUNT_OWNER`), which outlives
 /// the index, or one C passed in.
@@ -64,7 +64,7 @@ pub fn path_is_valid(repo: Option<Repo>, path: &[u8], file_mode: u16, flags: c_u
     };
     // SAFETY: `s` describes `path`, readable for the call, which C only
     // reads; `repo` is NULL or live (`Repo`).
-    unsafe { path::git_path_str_is_valid(raw(repo), &s, file_mode, flags) }
+    unsafe { path::git_path_str_is_valid(raw(repo), &raw const s, file_mode, flags) }
 }
 
 // ---------------------------------------------------------------------------
@@ -82,7 +82,7 @@ pub const CONFIGMAP_FILEMODE: c_int = 4;
 pub fn configmap_lookup(repo: Repo, item: c_int) -> Result<c_int> {
     let mut v = 0;
     // SAFETY: `repo` is live; `v` is a writable int.
-    let r = unsafe { p::git_repository__configmap_lookup(&mut v, repo.as_ptr(), item) };
+    let r = unsafe { p::git_repository__configmap_lookup(&raw mut v, repo.as_ptr(), item) };
     ErrorCode::check(r).map(|_| v)
 }
 
@@ -109,7 +109,7 @@ pub fn ensure_not_bare(repo: Repo, operation_name: &str) -> Result<()> {
 pub fn workdir_path(repo: Repo, rel: &CStr) -> Result<GitStr> {
     let mut out = GitStr::new();
     // SAFETY: `out` is a valid `git_str`, `rel` a string, `repo` live.
-    let r = unsafe { p::git_repository_workdir_path(&mut out, repo.as_ptr(), rel.as_ptr()) };
+    let r = unsafe { p::git_repository_workdir_path(&raw mut out, repo.as_ptr(), rel.as_ptr()) };
     ErrorCode::check(r).map(|_| out)
 }
 
@@ -118,10 +118,10 @@ pub fn workdir_path(repo: Repo, rel: &CStr) -> Result<GitStr> {
 pub fn head_target_of(path: &CStr) -> Result<Oid> {
     let mut sub = ptr::null_mut();
     // SAFETY: `sub` is writable, `path` a string.
-    ErrorCode::check(unsafe { p::git_repository_open(&mut sub, path.as_ptr()) })?;
+    ErrorCode::check(unsafe { p::git_repository_open(&raw mut sub, path.as_ptr()) })?;
     let mut head = ptr::null_mut();
     // SAFETY: `sub` is the repository just opened; `head` writable.
-    let r = unsafe { p::git_repository_head(&mut head, sub) };
+    let r = unsafe { p::git_repository_head(&raw mut head, sub) };
     if r < 0 {
         // SAFETY: ours (C leaked it here).
         unsafe { p::git_repository_free(sub) };
@@ -130,13 +130,16 @@ pub fn head_target_of(path: &CStr) -> Result<Oid> {
     // SAFETY: `head` is a live reference; its target (NULL for a symbolic
     // one) is read before it is freed.
     let target = unsafe { p::git_reference_target(head) };
-    // SAFETY: as above.
-    let id = if target.is_null() { Oid::default() } else { unsafe { *target } };
+    let id = if target.is_null() {
+        Oid::default()
+    } else {
+        // SAFETY: as above.
+        unsafe { *target }
+    };
     // SAFETY: ours, freed once.
-    unsafe {
-        p::git_reference_free(head);
-        p::git_repository_free(sub);
-    }
+    unsafe { p::git_reference_free(head) };
+    // SAFETY: as above.
+    unsafe { p::git_repository_free(sub) };
     Ok(id)
 }
 
@@ -145,7 +148,7 @@ pub fn head_target_of(path: &CStr) -> Result<Oid> {
 pub fn repository_index(repo: Repo) -> Result<NonNull<super::GitIndex>> {
     let mut out = ptr::null_mut();
     // SAFETY: `out` writable, `repo` live.
-    ErrorCode::check(unsafe { p::git_repository_index__weakptr(&mut out, repo.as_ptr()) })?;
+    ErrorCode::check(unsafe { p::git_repository_index__weakptr(&raw mut out, repo.as_ptr()) })?;
     NonNull::new(out.cast()).ok_or(ErrorCode::GENERIC)
 }
 
@@ -160,7 +163,15 @@ pub fn blob_from_workdir(repo: Repo, rel_path: &CStr, st: &mut libc::stat) -> Re
     let mut id = Oid::default();
     // SAFETY: `id` and `st` are writable, `rel_path` a string, `repo` live.
     let r = unsafe {
-        p::git_blob__create_from_paths(&mut id, st, repo.as_ptr(), ptr::null(), rel_path.as_ptr(), 0, true)
+        p::git_blob__create_from_paths(
+            &raw mut id,
+            st,
+            repo.as_ptr(),
+            ptr::null(),
+            rel_path.as_ptr(),
+            0,
+            true,
+        )
     };
     ErrorCode::check(r).map(|_| id)
 }
@@ -169,7 +180,9 @@ pub fn blob_from_workdir(repo: Repo, rel_path: &CStr, st: &mut libc::stat) -> Re
 pub fn blob_from_buffer(repo: Repo, buf: &[u8]) -> Result<Oid> {
     let mut id = Oid::default();
     // SAFETY: `id` writable, `buf` readable for its length, `repo` live.
-    let r = unsafe { p::git_blob_create_from_buffer(&mut id, repo.as_ptr(), buf.as_ptr().cast(), buf.len()) };
+    let r = unsafe {
+        p::git_blob_create_from_buffer(&raw mut id, repo.as_ptr(), buf.as_ptr().cast(), buf.len())
+    };
     ErrorCode::check(r).map(|_| id)
 }
 
@@ -178,7 +191,9 @@ pub fn type_from_filemode(mode: u32) -> c_int {
     match mode {
         super::GIT_FILEMODE_TREE => 2,
         super::GIT_FILEMODE_COMMIT => 1,
-        super::GIT_FILEMODE_BLOB | super::GIT_FILEMODE_BLOB_EXECUTABLE | super::GIT_FILEMODE_LINK => 3,
+        super::GIT_FILEMODE_BLOB
+        | super::GIT_FILEMODE_BLOB_EXECUTABLE
+        | super::GIT_FILEMODE_LINK => 3,
         _ => -1,
     }
 }
@@ -207,7 +222,7 @@ impl Drop for Submodule {
 pub fn submodule_lookup(repo: Repo, name: &CStr) -> Result<Submodule> {
     let mut out = ptr::null_mut();
     // SAFETY: `out` writable, `name` a string, `repo` live.
-    let r = unsafe { submodule::git_submodule_lookup(&mut out, repo.as_ptr(), name.as_ptr()) };
+    let r = unsafe { submodule::git_submodule_lookup(&raw mut out, repo.as_ptr(), name.as_ptr()) };
     ErrorCode::check(r)?;
     NonNull::new(out).map(Submodule).ok_or(ErrorCode::GENERIC)
 }
@@ -266,7 +281,9 @@ impl TreeSource for CTrees {
 
     fn id(&self, tree: &CTree) -> Oid {
         // SAFETY: a live tree (`CTree`); its id lives as long as it.
-        unsafe { *p::git_tree_id(tree.ptr.as_ptr()) }
+        let id = unsafe { p::git_tree_id(tree.ptr.as_ptr()) };
+        // SAFETY: as above.
+        unsafe { *id }
     }
 
     fn len(&self, tree: &CTree) -> usize {
@@ -277,23 +294,38 @@ impl TreeSource for CTrees {
     fn entry<'t>(&self, tree: &'t CTree, i: usize) -> (bool, &'t [u8], Oid) {
         // SAFETY: as above; `i < len` (the caller), so the entry is the
         // tree's, which lives (unwritten) as long as the tree.
-        unsafe {
-            let e = p::git_tree_entry_byindex(tree.ptr.as_ptr(), i);
-            let is_tree = p::git_tree_entry_filemode(e) == super::GIT_FILEMODE_TREE;
-            let name = CStr::from_ptr(p::git_tree_entry_name(e)).to_bytes();
-            (is_tree, name, *p::git_tree_entry_id(e))
-        }
+        let e = unsafe { p::git_tree_entry_byindex(tree.ptr.as_ptr(), i) };
+        // SAFETY: as above.
+        unsafe { entry_view(e) }
     }
 
     fn lookup(&self, id: &Oid) -> Result<CTree> {
         let mut out = ptr::null_mut();
         // SAFETY: `out` writable; `repo` is the tree's live repository.
-        ErrorCode::check(unsafe { p::git_tree_lookup(&mut out, self.repo, id) })?;
+        ErrorCode::check(unsafe { p::git_tree_lookup(&raw mut out, self.repo, id) })?;
         Ok(CTree {
             ptr: NonNull::new(out).ok_or(ErrorCode::GENERIC)?,
             owned: true,
         })
     }
+}
+
+/// A tree entry's kind (`GIT_FILEMODE_TREE`), name and id.
+///
+/// # Safety
+///
+/// `e` is a live tree entry, unwritten for `'a`.
+unsafe fn entry_view<'a>(e: *const c_void) -> (bool, &'a [u8], Oid) {
+    // SAFETY: the caller's contract.
+    let is_tree = unsafe { p::git_tree_entry_filemode(e) } == super::GIT_FILEMODE_TREE;
+    // SAFETY: as above.
+    let name = unsafe { p::git_tree_entry_name(e) };
+    // SAFETY: as above: the name is a string of the entry.
+    let name = unsafe { crate::util::export::cstr_bytes(name) };
+    // SAFETY: as above.
+    let id = unsafe { p::git_tree_entry_id(e) };
+    // SAFETY: as above.
+    (is_tree, name, unsafe { *id })
 }
 
 /// A tree object the caller passed (`git_index_read_tree`).
@@ -329,22 +361,30 @@ pub struct TreeEntryView<'a> {
 /// `git_tree_walk(tree, GIT_TREEWALK_POST, …)` with a closure, given the
 /// root (the entry's directory, with a trailing slash) and the entry;
 /// non-zero stops the walk.
-pub fn tree_walk_post(tree: TreeRef<'_>, f: &mut dyn FnMut(&[u8], &TreeEntryView<'_>) -> c_int) -> Result<()> {
-    struct Payload<'a, 'b>(&'a mut dyn FnMut(&[u8], &TreeEntryView<'_>) -> c_int, PhantomData<&'b ()>);
-    unsafe extern "C" fn cb(root: *const c_char, entry: *const c_void, payload: *mut c_void) -> c_int {
+pub fn tree_walk_post(
+    tree: TreeRef<'_>,
+    f: &mut dyn FnMut(&[u8], &TreeEntryView<'_>) -> c_int,
+) -> Result<()> {
+    struct Payload<'a, 'b>(
+        &'a mut dyn FnMut(&[u8], &TreeEntryView<'_>) -> c_int,
+        PhantomData<&'b ()>,
+    );
+    unsafe extern "C" fn cb(
+        root: *const c_char,
+        entry: *const c_void,
+        payload: *mut c_void,
+    ) -> c_int {
         crate::util::export::barrier(|| {
             // SAFETY: `payload` is the `Payload` below, live for the walk;
             // `root` a string and `entry` a live tree entry, for the call.
-            unsafe {
-                let pl = &mut *payload.cast::<Payload<'_, '_>>();
-                let root = crate::util::export::cstr_bytes(root);
-                let view = TreeEntryView {
-                    name: CStr::from_ptr(p::git_tree_entry_name(entry)).to_bytes(),
-                    attr: p::git_tree_entry_filemode_raw(entry),
-                    id: *p::git_tree_entry_id(entry),
-                };
-                (pl.0)(root, &view)
-            }
+            let pl = unsafe { &mut *payload.cast::<Payload<'_, '_>>() };
+            // SAFETY: as above.
+            let root = unsafe { crate::util::export::cstr_bytes(root) };
+            // SAFETY: as above.
+            let (_, name, id) = unsafe { entry_view(entry) };
+            // SAFETY: as above.
+            let attr = unsafe { p::git_tree_entry_filemode_raw(entry) };
+            (pl.0)(root, &TreeEntryView { name, attr, id })
         })
     }
     let mut pl = Payload(f, PhantomData);
@@ -363,7 +403,7 @@ pub unsafe fn tree_write_index(index: *mut super::GitIndex, repo: Repo) -> Resul
     let mut id = Oid::default();
     // SAFETY: `id` writable; the caller's contract for `index`; `repo`
     // live.
-    let r = unsafe { p::git_tree__write_index(&mut id, index.cast(), repo.as_ptr()) };
+    let r = unsafe { p::git_tree__write_index(&raw mut id, index.cast(), repo.as_ptr()) };
     ErrorCode::check(r).map(|_| id)
 }
 
@@ -393,7 +433,7 @@ impl<'a> Paths<'a> {
 
     /// An array over `ptrs` (which must stay as they are for `'a`).
     pub fn from_ptrs(arr: &'a GitStrArrayBuf) -> Paths<'a> {
-        Paths(&arr.raw, PhantomData)
+        Paths(&raw const arr.raw, PhantomData)
     }
 
     /// The raw pointer.
@@ -415,7 +455,11 @@ impl GitStrArrayBuf {
         let mut ptrs: Vec<*mut c_char> = strings.iter().map(|s| s.as_ptr().cast_mut()).collect();
         GitStrArrayBuf {
             raw: GitStrArray {
-                strings: if ptrs.is_empty() { ptr::null_mut() } else { ptrs.as_mut_ptr() },
+                strings: if ptrs.is_empty() {
+                    ptr::null_mut()
+                } else {
+                    ptrs.as_mut_ptr()
+                },
                 count: ptrs.len(),
             },
             _ptrs: ptrs,
@@ -453,19 +497,26 @@ impl Pathspec {
         let mut m = ptr::null();
         // SAFETY: the vector is the initialized pathspec's; `path` a
         // string; `m` writable.
-        let ok = unsafe { pathspec::git_pathspec__match(self.vector(), path.as_ptr(), false, casefold, &mut m, ptr::null_mut()) };
+        let ok = unsafe {
+            pathspec::git_pathspec__match(
+                self.vector(),
+                path.as_ptr(),
+                false,
+                casefold,
+                &raw mut m,
+                ptr::null_mut(),
+            )
+        };
         ok.then_some(m)
     }
 
     /// `git_ignore__check_pathspec_for_exact_ignores`.
     pub fn check_exact_ignores(&mut self, repo: Repo, no_fnmatch: bool) -> Result<()> {
+        // SAFETY: initialized by `new`; only the field's address is taken.
+        let v = unsafe { &raw mut (*self.0.as_mut_ptr()).pathspec };
         // SAFETY: as in `matches`; `repo` live. C reads the vector.
         let r = unsafe {
-            ignore::git_ignore__check_pathspec_for_exact_ignores(
-                repo.as_ptr(),
-                &raw mut (*self.0.as_mut_ptr()).pathspec,
-                no_fnmatch,
-            )
+            ignore::git_ignore__check_pathspec_for_exact_ignores(repo.as_ptr(), v, no_fnmatch)
         };
         ErrorCode::check(r).map(|_| ())
     }
@@ -510,12 +561,13 @@ pub struct DeltaView<'a> {
 /// `delta` is a live delta whose paths are strings, for `'a`.
 unsafe fn view<'a>(delta: *const d::GitDiffDelta) -> DeltaView<'a> {
     // SAFETY: the caller's contract.
-    unsafe {
-        DeltaView {
-            old_path: CStr::from_ptr((*delta).old_file.path),
-            new_path: CStr::from_ptr((*delta).new_file.path),
-            new_flags: (*delta).new_file.flags,
-        }
+    let d = unsafe { &*delta };
+    DeltaView {
+        // SAFETY: as above.
+        old_path: unsafe { CStr::from_ptr(d.old_file.path) },
+        // SAFETY: as above.
+        new_path: unsafe { CStr::from_ptr(d.new_file.path) },
+        new_flags: d.new_file.flags,
     }
 }
 
@@ -540,7 +592,9 @@ impl Diff {
         // SAFETY: `out` writable; `opts` a valid options struct whose
         // pathspec strings the caller keeps live; `repo` live; the
         // caller's contract for `index`.
-        let r = unsafe { d::git_diff_index_to_workdir(&mut out, repo.as_ptr(), index.cast(), &opts) };
+        let r = unsafe {
+            d::git_diff_index_to_workdir(&raw mut out, repo.as_ptr(), index.cast(), &raw const opts)
+        };
         ErrorCode::check(r)?;
         NonNull::new(out).map(Diff).ok_or(ErrorCode::GENERIC)
     }
@@ -560,26 +614,28 @@ impl Diff {
     pub fn old_path(&self, i: usize) -> Option<Vec<u8>> {
         // SAFETY: a live diff; the delta lives as long as it, and its path
         // is a string.
-        unsafe {
-            let delta = d::git_diff_get_delta(self.0.as_ptr(), i);
-            if delta.is_null() {
-                return None;
-            }
-            Some(CStr::from_ptr((*delta).old_file.path).to_bytes().to_vec())
+        let delta = unsafe { d::git_diff_get_delta(self.0.as_ptr(), i) };
+        if delta.is_null() {
+            return None;
         }
+        // SAFETY: as above.
+        Some(unsafe { view(delta) }.old_path.to_bytes().to_vec())
     }
 
     /// `git_diff_foreach` with a file callback only.
     pub fn foreach_file(&self, f: &mut dyn FnMut(&DeltaView<'_>) -> c_int) -> c_int {
         struct Payload<'a>(&'a mut dyn FnMut(&DeltaView<'_>) -> c_int);
-        unsafe extern "C" fn cb(delta: *const d::GitDiffDelta, _progress: f32, payload: *mut c_void) -> c_int {
+        unsafe extern "C" fn cb(
+            delta: *const d::GitDiffDelta,
+            _progress: f32,
+            payload: *mut c_void,
+        ) -> c_int {
             crate::util::export::barrier(|| {
                 // SAFETY: `payload` is the `Payload` below, live for the
                 // call; `delta` a live delta for the callback.
-                unsafe {
-                    let pl = &mut *payload.cast::<Payload<'_>>();
-                    (pl.0)(&view(delta))
-                }
+                let pl = unsafe { &mut *payload.cast::<Payload<'_>>() };
+                // SAFETY: as above.
+                (pl.0)(&unsafe { view(delta) })
             })
         }
         let mut pl = Payload(f);

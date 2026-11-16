@@ -337,7 +337,9 @@ pub(crate) unsafe fn entry_path_raw<'a>(e: *const EntryHead) -> &'a [u8] {
 #[inline(always)]
 pub(crate) unsafe fn entry_stage_raw(e: *const EntryHead) -> u32 {
     // SAFETY: the caller's contract.
-    u32::from((unsafe { (*e).entry.flags } & GIT_INDEX_ENTRY_STAGEMASK) >> GIT_INDEX_ENTRY_STAGESHIFT)
+    u32::from(
+        (unsafe { (*e).entry.flags } & GIT_INDEX_ENTRY_STAGEMASK) >> GIT_INDEX_ENTRY_STAGESHIFT,
+    )
 }
 
 /// A pointer to an entry this module allocated (`entry_internal`), which
@@ -400,6 +402,29 @@ pub(crate) fn entry_alloc(path: &[u8]) -> Result<EntryPtr> {
     h.pathlen = path.len();
     h.entry.path = pathp.cast();
     Ok(p)
+}
+
+/// An entry's head, for writing.
+///
+/// # Safety
+///
+/// `e` is a live entry that nothing else borrows during `'a`.
+#[inline(always)]
+pub(crate) unsafe fn ehead<'a>(e: EntryPtr) -> &'a mut EntryHead {
+    // SAFETY: the caller's contract.
+    unsafe { &mut *e.as_ptr() }
+}
+
+/// Invalidate the tree cache along `e`'s path.
+///
+/// # Safety
+///
+/// `tree` is a tree (`tree_cache`'s contract) and `e` a live entry.
+pub(crate) unsafe fn invalidate_entry(tree: *mut GitTreeCache, e: EntryPtr) {
+    // SAFETY: the caller's contract.
+    let p = unsafe { epath(e) };
+    // SAFETY: as above.
+    unsafe { tree_cache::invalidate_path(tree, p) };
 }
 
 /// `index_entry_free`: zero the id and free.
@@ -583,7 +608,9 @@ pub(crate) fn sort_entries(v: &mut GitVector, icase: bool) {
     if v.len() > 1 {
         // SAFETY: the index's entry vectors hold live entries (the index's
         // invariant), not written during the sort.
-        tsort(v.as_mut_slice(), |a, b| unsafe { entry_cmp(as_entry(a), as_entry(b), icase) });
+        tsort(v.as_mut_slice(), |a, b| unsafe {
+            entry_cmp(as_entry(a), as_entry(b), icase)
+        });
     }
     v.set_sorted(true);
 }
@@ -597,12 +624,18 @@ pub(crate) fn find_in_entries(
     icase: bool,
 ) -> core::result::Result<usize, usize> {
     // SAFETY: as in `sort_entries`.
-    bsearch(v.as_slice(), |&e| unsafe { entry_srch(path, stage, as_entry(e), icase) })
+    bsearch(v.as_slice(), |&e| unsafe {
+        entry_srch(path, stage, as_entry(e), icase)
+    })
 }
 
 /// The entry comparison function C sees on an index's vector.
 pub(crate) fn entry_cmp_fn(icase: bool) -> VectorCmp {
-    if icase { ffi::git_index_entry_icmp } else { ffi::git_index_entry_cmp }
+    if icase {
+        ffi::git_index_entry_icmp
+    } else {
+        ffi::git_index_entry_cmp
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -623,7 +656,9 @@ unsafe fn reuc_path<'a>(r: *const GitIndexReucEntry) -> &'a [u8] {
 
 /// `reuc_entry_alloc`.
 fn reuc_alloc(path: &[u8]) -> Option<NonNull<GitIndexReucEntry>> {
-    let alloclen = size_of::<ReucHead>().checked_add(path.len())?.checked_add(1)?;
+    let alloclen = size_of::<ReucHead>()
+        .checked_add(path.len())?
+        .checked_add(1)?;
     let p = NonNull::new(alloc::calloc(1, alloclen).cast::<ReucHead>())?;
     // a fresh zeroed block with room for the head and the path; a zeroed
     // head is valid
@@ -996,7 +1031,8 @@ impl GitIndex {
         self.entries_map.ignore_case = icase;
         self.entries.set_cmp(Some(entry_cmp_fn(icase)));
         self.sort();
-        self.reuc.set_cmp(Some(if icase { reuc_icmp } else { reuc_cmp }));
+        self.reuc
+            .set_cmp(Some(if icase { reuc_icmp } else { reuc_cmp }));
         self.sort_reuc();
     }
 
@@ -1008,7 +1044,9 @@ impl GitIndex {
         let icase = self.reuc_icase();
         if self.reuc.len() > 1 {
             // SAFETY: the vector holds REUC entries (the invariant).
-            tsort(self.reuc.as_mut_slice(), |a, b| unsafe { reuc_cmp_raw(a, b, icase) });
+            tsort(self.reuc.as_mut_slice(), |a, b| unsafe {
+                reuc_cmp_raw(a, b, icase)
+            });
         }
         self.reuc.set_sorted(true);
     }
@@ -1025,7 +1063,9 @@ impl GitIndex {
         }
         if self.names.len() > 1 {
             // SAFETY: the vector holds name entries (the invariant).
-            tsort(self.names.as_mut_slice(), |a, b| unsafe { name_cmp(a.cast(), b.cast()) });
+            tsort(self.names.as_mut_slice(), |a, b| unsafe {
+                name_cmp(a.cast(), b.cast())
+            });
         }
         self.names.set_sorted(true);
     }
@@ -1167,7 +1207,9 @@ impl GitIndex {
                 } else if mp.starts_with(prefix) {
                     best = Some((m, prefix.len()));
                     break;
-                } else if mp.len() >= prefix.len() && mp[..prefix.len()].eq_ignore_ascii_case(prefix) {
+                } else if mp.len() >= prefix.len()
+                    && mp[..prefix.len()].eq_ignore_ascii_case(prefix)
+                {
                     if best.is_none() {
                         best = Some((m, prefix.len()));
                     }
@@ -1188,7 +1230,12 @@ impl GitIndex {
 
     /// `has_file_name`: remove (or refuse) the entries under `entry`'s
     /// path, as a directory, at its stage.
-    fn has_file_name(&mut self, entry: EntryPtr, mut pos: usize, ok_to_replace: bool) -> core::result::Result<(), ()> {
+    fn has_file_name(
+        &mut self,
+        entry: EntryPtr,
+        mut pos: usize,
+        ok_to_replace: bool,
+    ) -> core::result::Result<(), ()> {
         // SAFETY: `entry` is live and not in the index.
         let (name, stage) = unsafe { eps(entry) };
         let name = name.to_vec();
@@ -1222,7 +1269,11 @@ impl GitIndex {
 
     /// `has_dir_name`: remove (or refuse) the entries at the paths of
     /// `entry`'s parent directories, at its stage.
-    fn has_dir_name(&mut self, entry: EntryPtr, ok_to_replace: bool) -> core::result::Result<(), ()> {
+    fn has_dir_name(
+        &mut self,
+        entry: EntryPtr,
+        ok_to_replace: bool,
+    ) -> core::result::Result<(), ()> {
         // SAFETY: `entry` is live and not in the index.
         let (name, stage) = unsafe { eps(entry) };
         let name = name.to_vec();
@@ -1419,7 +1470,8 @@ impl GitIndex {
             match self.find_path(p) {
                 Some(x) => pos = x,
                 None => {
-                    let _ = git_error_set!(ErrorClass::INDEX, "index does not contain {}", Bytes(p));
+                    let _ =
+                        git_error_set!(ErrorClass::INDEX, "index does not contain {}", Bytes(p));
                     return Err(ErrorCode::NOT_FOUND);
                 }
             }
@@ -1445,7 +1497,9 @@ impl GitIndex {
     /// `git_index_has_conflicts`.
     pub(crate) fn has_conflicts(&self) -> bool {
         // SAFETY: live entries of the index.
-        self.entries.iter().any(|e| unsafe { estage(as_entry(e)) } > 0)
+        self.entries
+            .iter()
+            .any(|e| unsafe { estage(as_entry(e)) } > 0)
     }
 
     // ----- removal -----
@@ -1502,7 +1556,11 @@ impl GitIndex {
         };
         let e = self.entry_at(pos)?;
         // SAFETY: a live entry of the index.
-        if unsafe { epath(e) }.starts_with(prefix) { Some(pos) } else { None }
+        if unsafe { epath(e) }.starts_with(prefix) {
+            Some(pos)
+        } else {
+            None
+        }
     }
 
     // ----- NAME entries -----
@@ -1557,7 +1615,12 @@ impl GitIndex {
     // ----- REUC entries -----
 
     /// `git_index_reuc_add`.
-    pub(crate) fn reuc_add(&mut self, path: &[u8], modes: [c_int; 3], oids: [Option<Oid>; 3]) -> Result<()> {
+    pub(crate) fn reuc_add(
+        &mut self,
+        path: &[u8],
+        modes: [c_int; 3],
+        oids: [Option<Oid>; 3],
+    ) -> Result<()> {
         let Some(reuc) = reuc_alloc(path) else {
             return Err(errors::oom());
         };
@@ -1616,7 +1679,9 @@ impl GitIndex {
         // `reuc_search`: strcmp/strcasecmp, by the index's case
         let icase = self.ignore_case();
         // SAFETY: REUC entries.
-        bsearch(self.reuc.as_slice(), |&r| unsafe { reuc_path_cmp(path, reuc_path(r.cast()), icase) })
+        bsearch(self.reuc.as_slice(), |&r| unsafe {
+            reuc_path_cmp(path, reuc_path(r.cast()), icase)
+        })
     }
 
     /// `git_index_reuc_remove`.
@@ -1664,7 +1729,8 @@ impl GitIndex {
         let pos = match self.extension_find(&signature) {
             Ok(p) | Err(p) => p,
         };
-        self.extensions.insert(pos, Extension { signature, data: v });
+        self.extensions
+            .insert(pos, Extension { signature, data: v });
         Ok(())
     }
 
@@ -1877,7 +1943,19 @@ mod layout_rust {
                 assert_eq!(core::mem::offset_of!(GitIndex, $f), core::mem::offset_of!(CPrefix, $f));
             )*};
         }
-        same!(rc, index_file_path, stamp, checksum, entries, oid_type, bits, tree, tree_pool, names, reuc);
+        same!(
+            rc,
+            index_file_path,
+            stamp,
+            checksum,
+            entries,
+            oid_type,
+            bits,
+            tree,
+            tree_pool,
+            names,
+            reuc
+        );
         assert!(core::mem::offset_of!(GitIndex, entries_map) >= size_of::<CPrefix>());
         assert_eq!(core::mem::offset_of!(GitIndex, rc), 0);
         assert_eq!(core::mem::offset_of!(GitIndex, index_file_path), 16);

@@ -25,12 +25,12 @@
 use core::ffi::{c_char, c_int, c_void};
 use core::ptr;
 
+use crate::git_error_set;
 use crate::oid::{Oid, OidType, git_oid_t};
 use crate::util::errors::{self, ErrorClass, ErrorCode, Result};
 use crate::util::pool::GitPool;
 use crate::util::str::GitStr;
 use crate::util::util::strntol32;
-use crate::git_error_set;
 
 /// `git_tree_cache`, mirrored.
 #[repr(C)]
@@ -93,7 +93,11 @@ pub trait NodeAlloc {
 
 impl NodeAlloc for GitPool {
     fn alloc(&mut self, size: usize, zeroed: bool) -> Result<core::ptr::NonNull<u8>> {
-        if zeroed { self.mallocz(size) } else { self.malloc(size) }
+        if zeroed {
+            self.mallocz(size)
+        } else {
+            self.malloc(size)
+        }
     }
 }
 
@@ -127,12 +131,19 @@ pub fn new(name: &[u8], oid_type: git_oid_t, pool: &mut GitPool) -> Result<*mut 
 }
 
 /// [`new`] in any [`NodeAlloc`].
-pub fn new_in<A: NodeAlloc + ?Sized>(name: &[u8], oid_type: git_oid_t, pool: &mut A) -> Result<*mut GitTreeCache> {
+pub fn new_in<A: NodeAlloc + ?Sized>(
+    name: &[u8],
+    oid_type: git_oid_t,
+    pool: &mut A,
+) -> Result<*mut GitTreeCache> {
     let alloc_size = crate::util::integer::alloc_add(size_of::<GitTreeCache>(), name.len())
         .and_then(|n| crate::util::integer::alloc_add(n, 1))?;
     // pool blocks are 8-aligned (the pool's rounding)
     #[allow(clippy::cast_ptr_alignment)]
-    let p = pool.alloc(alloc_size, false)?.as_ptr().cast::<GitTreeCache>();
+    let p = pool
+        .alloc(alloc_size, false)?
+        .as_ptr()
+        .cast::<GitTreeCache>();
     let node = GitTreeCache {
         children: ptr::null_mut(),
         children_count: 0,
@@ -150,7 +161,7 @@ pub fn new_in<A: NodeAlloc + ?Sized>(name: &[u8], oid_type: git_oid_t, pool: &mu
     // SAFETY: as above; `name` is a distinct allocation.
     unsafe { ptr::copy_nonoverlapping(name.as_ptr(), name_ptr, name.len()) };
     // SAFETY: the last byte of the block.
-    unsafe { name_ptr.add(name.len()).write(0) };
+    unsafe { name_ptr.wrapping_add(name.len()).write(0) };
     Ok(p)
 }
 
@@ -161,7 +172,9 @@ pub fn new_in<A: NodeAlloc + ?Sized>(name: &[u8], oid_type: git_oid_t, pool: &mu
 /// `tree` is a non-null node of a tree.
 unsafe fn find_child(tree: *const GitTreeCache, name: &[u8]) -> *mut GitTreeCache {
     // SAFETY: the caller's contract.
-    let children = unsafe { (*tree).children() };
+    let t = unsafe { &*tree };
+    // SAFETY: as above.
+    let children = unsafe { t.children() };
     for &child in children {
         if child.is_null() {
             continue;
@@ -355,7 +368,7 @@ pub fn read_into(
         // SAFETY: `node` is a node of `pool`, only accessed here.
         let slots = unsafe { (*node).children };
         // SAFETY: `node`'s children array has `count` slots, `i < count`.
-        unsafe { slots.add(i).write(child) };
+        unsafe { slots.wrapping_add(i).write(child) };
         if stack.try_reserve(1).is_err() {
             return Err(corrupted());
         }
@@ -393,21 +406,24 @@ fn read_tree_recursive<S: TreeSource, A: NodeAlloc + ?Sized>(
     tree: &S::Tree,
     pool: &mut A,
 ) -> Result<()> {
-    // SAFETY (for every access to `*cache` and `*child` below): the nodes
-    // are fresh blocks of `pool`, made by `new`, that nothing else reaches
-    // until the tree is returned.
-    unsafe { (*cache).oid = src.id(tree) };
+    let id = src.id(tree);
+    // SAFETY: (this and every access to `*cache` and `*child` below) the
+    // nodes are fresh blocks of `pool`, made by `new`, that nothing else
+    // reaches until the tree is returned.
+    unsafe { (*cache).oid = id };
     let nentries = src.len(tree);
     let ntrees = (0..nentries).filter(|&i| src.entry(tree, i).0).count();
-    let alloc_size =
-        crate::util::integer::alloc_multiply(ntrees, size_of::<*mut GitTreeCache>())?;
+    let alloc_size = crate::util::integer::alloc_multiply(ntrees, size_of::<*mut GitTreeCache>())?;
     // SAFETY: as above.
     let oid_type = unsafe { (*cache).oid_type };
     // SAFETY: as above.
     unsafe { (*cache).children_count = ntrees };
     // pool blocks are 8-aligned (the pool's rounding)
     #[allow(clippy::cast_ptr_alignment)]
-    let children = pool.alloc(alloc_size, true)?.as_ptr().cast::<*mut GitTreeCache>();
+    let children = pool
+        .alloc(alloc_size, true)?
+        .as_ptr()
+        .cast::<*mut GitTreeCache>();
     // SAFETY: as above.
     unsafe { (*cache).children = children };
     let mut j = 0;
@@ -420,7 +436,7 @@ fn read_tree_recursive<S: TreeSource, A: NodeAlloc + ?Sized>(
         }
         let child = new_in(name, oid_type, pool)?;
         // SAFETY: `children` has `ntrees` slots and `j < ntrees`.
-        unsafe { children.add(j).write(child) };
+        unsafe { children.wrapping_add(j).write(child) };
         let subtree = src.lookup(&eid)?;
         let r = read_tree_recursive(src, child, &subtree, pool);
         drop(subtree);
@@ -481,7 +497,9 @@ pub unsafe fn write(out: &mut GitStr, tree: *const GitTreeCache) -> Result<()> {
             }
         }
         // SAFETY: as above.
-        let children = unsafe { (*node).children() };
+        let nref = unsafe { &*node };
+        // SAFETY: as above.
+        let children = unsafe { nref.children() };
         if i < children.len() {
             if stack.try_reserve(1).is_err() {
                 return Err(errors::oom());
@@ -499,7 +517,11 @@ pub unsafe fn write(out: &mut GitStr, tree: *const GitTreeCache) -> Result<()> {
             None => break,
         }
     }
-    if out.is_oom() { Err(ErrorCode::GENERIC) } else { Ok(()) }
+    if out.is_oom() {
+        Err(ErrorCode::GENERIC)
+    } else {
+        Ok(())
+    }
 }
 
 /// The C ABI of `tree-cache.c`.
@@ -514,7 +536,10 @@ pub mod ffi {
     /// `out` is a valid `git_str`; `tree` is a non-null tree cache (made by
     /// these functions, in a live pool), not written meanwhile.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_tree_cache_write(out: *mut GitStr, tree: *mut GitTreeCache) -> c_int {
+    pub unsafe extern "C" fn git_tree_cache_write(
+        out: *mut GitStr,
+        tree: *mut GitTreeCache,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: the caller's contract: a valid, unaliased `git_str`.
             let out = unsafe { &mut *out };
@@ -563,7 +588,10 @@ pub mod ffi {
     /// `tree` is NULL or a tree cache not otherwise accessed meanwhile;
     /// `path` is a NUL-terminated string.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_tree_cache_invalidate_path(tree: *mut GitTreeCache, path: *const c_char) {
+    pub unsafe extern "C" fn git_tree_cache_invalidate_path(
+        tree: *mut GitTreeCache,
+        path: *const c_char,
+    ) {
         barrier(|| {
             // SAFETY: the caller's contract.
             let path = unsafe { cstr_bytes(path) };
@@ -686,24 +714,29 @@ mod tests {
         data.extend_from_slice(b"deep\x002 0\n");
         data.extend_from_slice(&[0xbb; 20]);
         let t = read(&data, OidType::Sha1, &mut p).unwrap();
-        // SAFETY: a tree just read, in `p`.
-        unsafe {
-            assert_eq!((*t).entry_count, 3);
-            assert_eq!((*t).children_count, 1);
-            let sub = get(t, b"sub");
-            assert!(!sub.is_null());
-            assert_eq!((*sub).entry_count, -1);
-            let deep = get(t, b"sub/deep");
-            assert_eq!((*deep).entry_count, 2);
-            assert!(get(t, b"sub/").is_null());
-            assert!(get(t, b"nope").is_null());
-            let mut out = GitStr::new();
-            write(&mut out, t).unwrap();
-            assert_eq!(out.as_bytes(), &data[..]);
-            invalidate_path(t, b"sub/deep/file");
-            assert_eq!((*t).entry_count, -1);
-            assert_eq!((*deep).entry_count, -1);
-        }
+        // SAFETY: (all below) a tree just read, in `p`, which outlives it.
+        let node = |x: *const GitTreeCache| unsafe { &*x };
+        assert_eq!(node(t).entry_count, 3);
+        assert_eq!(node(t).children_count, 1);
+        // SAFETY: as above.
+        let sub = unsafe { get(t, b"sub") };
+        assert!(!sub.is_null());
+        assert_eq!(node(sub).entry_count, -1);
+        // SAFETY: as above.
+        let deep = unsafe { get(t, b"sub/deep") };
+        assert_eq!(node(deep).entry_count, 2);
+        // SAFETY: as above.
+        assert!(unsafe { get(t, b"sub/") }.is_null());
+        // SAFETY: as above.
+        assert!(unsafe { get(t, b"nope") }.is_null());
+        let mut out = GitStr::new();
+        // SAFETY: as above.
+        unsafe { write(&mut out, t) }.unwrap();
+        assert_eq!(out.as_bytes(), &data[..]);
+        // SAFETY: as above; no reference is live.
+        unsafe { invalidate_path(t, b"sub/deep/file") };
+        assert_eq!(node(t).entry_count, -1);
+        assert_eq!(node(deep).entry_count, -1);
     }
 
     #[test]

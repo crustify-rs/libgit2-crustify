@@ -60,6 +60,12 @@ pub struct GitDiffOptions {
     pub new_prefix: *const c_char,
 }
 
+impl Default for GitDiffOptions {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GitDiffOptions {
     /// `GIT_DIFF_OPTIONS_INIT`.
     pub const fn new() -> GitDiffOptions {

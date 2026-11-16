@@ -12,18 +12,29 @@ pub mod l_index {
     use crate::util::str::GitStr;
 
     /// `git_treewalk_cb`.
-    pub type TreewalkCb =
-        unsafe extern "C" fn(root: *const c_char, entry: *const c_void, payload: *mut c_void) -> c_int;
+    pub type TreewalkCb = unsafe extern "C" fn(
+        root: *const c_char,
+        entry: *const c_void,
+        payload: *mut c_void,
+    ) -> c_int;
 
     unsafe extern "C" {
         /// `git_repository__configmap_lookup`. PENDING(l-repo)
-        pub fn git_repository__configmap_lookup(out: *mut c_int, repo: *mut c_void, item: c_int) -> c_int;
+        pub fn git_repository__configmap_lookup(
+            out: *mut c_int,
+            repo: *mut c_void,
+            item: c_int,
+        ) -> c_int;
         /// `git_repository_workdir`. PENDING(l-repo)
         pub fn git_repository_workdir(repo: *const c_void) -> *const c_char;
         /// `git_repository_is_bare`. PENDING(l-repo)
         pub fn git_repository_is_bare(repo: *const c_void) -> c_int;
         /// `git_repository_workdir_path`. PENDING(l-repo)
-        pub fn git_repository_workdir_path(out: *mut GitStr, repo: *mut c_void, path: *const c_char) -> c_int;
+        pub fn git_repository_workdir_path(
+            out: *mut GitStr,
+            repo: *mut c_void,
+            path: *const c_char,
+        ) -> c_int;
         /// `git_repository_open`. PENDING(l-repo)
         pub fn git_repository_open(out: *mut *mut c_void, path: *const c_char) -> c_int;
         /// `git_repository_head`. PENDING(l-repo)
@@ -56,10 +67,15 @@ pub mod l_index {
             len: usize,
         ) -> c_int;
         /// `git_object__is_valid`. PENDING(l-obj)
-        pub fn git_object__is_valid(repo: *mut c_void, id: *const Oid, expected_type: c_int) -> bool;
+        pub fn git_object__is_valid(
+            repo: *mut c_void,
+            id: *const Oid,
+            expected_type: c_int,
+        ) -> bool;
 
         /// `git_tree__write_index`. PENDING(l-commit)
-        pub fn git_tree__write_index(oid: *mut Oid, index: *mut c_void, repo: *mut c_void) -> c_int;
+        pub fn git_tree__write_index(oid: *mut Oid, index: *mut c_void, repo: *mut c_void)
+        -> c_int;
         /// `git_tree_walk`. PENDING(l-commit)
         pub fn git_tree_walk(
             tree: *const c_void,

@@ -17,9 +17,9 @@
 use core::ptr::NonNull;
 
 use super::{EntryHead, entry_path_raw, entry_stage_raw};
+use crate::git_error_set;
 use crate::util::errors::{ErrorClass, Result};
 use crate::util::hashmap::GitHashSet;
-use crate::git_error_set;
 
 /// A key: an entry (or a lookup key) that outlives its use in the map.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -83,7 +83,11 @@ impl core::fmt::Debug for EntryMap {
 
 impl EntryMap {
     fn eq(&self) -> fn(&Key, &Key) -> bool {
-        if self.ignore_case { equal_icase } else { equal_default }
+        if self.ignore_case {
+            equal_icase
+        } else {
+            equal_default
+        }
     }
 
     /// `git_index_entrymap_get`: the entry equal to `key`.
@@ -131,7 +135,10 @@ impl EntryMap {
     /// `git_index_entrymap_resize` (C: `count` must fit 32 bits).
     pub(crate) fn resize(&mut self, count: usize) -> Result<()> {
         let Ok(count) = u32::try_from(count) else {
-            return Err(git_error_set!(ErrorClass::INDEX, "index map is out of bounds"));
+            return Err(git_error_set!(
+                ErrorClass::INDEX,
+                "index map is out of bounds"
+            ));
         };
         self.set.resize_with(count, hash)
     }

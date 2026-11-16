@@ -12,10 +12,9 @@ use core::ptr::{self, NonNull};
 use super::foreign::{Paths, Repo, TreeRef};
 use super::ops::{self, MatchedPathCb};
 use super::{
-    GIT_INDEX_OPTIONS_VERSION, GitIndex, GitIndexConflictIterator,
-    GitIndexEntry, GitIndexIterator, GitIndexNameEntry, GitIndexOptions, GitIndexReucEntry,
-    GitIndexWriter, INDEX_VERSION_NUMBER_LB, INDEX_VERSION_NUMBER_UB, IndexPtr, as_entry,
-    entry_srch,
+    GIT_INDEX_OPTIONS_VERSION, GitIndex, GitIndexConflictIterator, GitIndexEntry, GitIndexIterator,
+    GitIndexNameEntry, GitIndexOptions, GitIndexReucEntry, GitIndexWriter, INDEX_VERSION_NUMBER_LB,
+    INDEX_VERSION_NUMBER_UB, IndexPtr, as_entry, entry_srch,
 };
 use crate::oid::{Oid, OidType};
 use crate::strarray::GitStrArray;
@@ -26,8 +25,27 @@ use crate::util::vector::{GitVector, VectorCmp};
 use crate::{git_assert, git_assert_arg, git_error_set};
 
 /// `git_index_matched_path_cb`.
-pub type GitIndexMatchedPathCb =
-    unsafe extern "C" fn(path: *const c_char, matched_pathspec: *const c_char, payload: *mut c_void) -> c_int;
+pub type GitIndexMatchedPathCb = unsafe extern "C" fn(
+    path: *const c_char,
+    matched_pathspec: *const c_char,
+    payload: *mut c_void,
+) -> c_int;
+
+/// A path argument: `path_len` bytes, or a string when 0.
+///
+/// # Safety
+///
+/// `path` is readable for `path_len` bytes, or a string when `path_len` is
+/// 0, for `'a`.
+unsafe fn path_arg<'a>(path: *const c_char, path_len: usize) -> &'a [u8] {
+    if path_len == 0 {
+        // SAFETY: the caller's contract.
+        unsafe { cstr_bytes(path) }
+    } else {
+        // SAFETY: the caller's contract.
+        unsafe { crate::util::export::bytes(path, path_len) }
+    }
+}
 
 /// The handle of a non-null index pointer.
 ///
@@ -52,6 +70,20 @@ macro_rules! index_arg {
             }
         }
     }};
+}
+
+/// `GIT_ASSERT_ARG(index)` for the exports without a result.
+///
+/// # Safety
+///
+/// As [`handle`].
+unsafe fn index_or_assert(index: *const GitIndex) -> Option<IndexPtr> {
+    // SAFETY: the caller's contract: NULL or a live index.
+    let ix = unsafe { handle(index) };
+    if ix.is_none() {
+        let _ = errors::assert_arg_failed("index");
+    }
+    ix
 }
 
 /// A C matched-path callback as the operations call it.
@@ -79,7 +111,9 @@ fn c_callback<'a>(
 /// `e` is a live entry with a string path.
 unsafe fn any_path<'a>(e: *const GitIndexEntry) -> &'a [u8] {
     // SAFETY: the caller's contract.
-    unsafe { cstr_bytes((*e).path) }
+    let p = unsafe { (*e).path };
+    // SAFETY: as above.
+    unsafe { cstr_bytes(p) }
 }
 
 /// `git_index_entry_cmp`.
@@ -91,10 +125,15 @@ unsafe fn any_path<'a>(e: *const GitIndexEntry) -> &'a [u8] {
 pub unsafe extern "C" fn git_index_entry_cmp(a: *const c_void, b: *const c_void) -> c_int {
     let (a, b) = (a.cast::<GitIndexEntry>(), b.cast::<GitIndexEntry>());
     // SAFETY: the caller's contract.
-    unsafe {
-        let d = crate::util::util::strcmp(any_path(a), any_path(b));
-        if d != 0 { d } else { (*a).stage() - (*b).stage() }
-    }
+    let a = unsafe { &*a };
+    // SAFETY: as above.
+    let b = unsafe { &*b };
+    // SAFETY: as above.
+    let pa = unsafe { any_path(a) };
+    // SAFETY: as above.
+    let pb = unsafe { any_path(b) };
+    let d = crate::util::util::strcmp(pa, pb);
+    if d != 0 { d } else { a.stage() - b.stage() }
 }
 
 /// `git_index_entry_icmp`.
@@ -106,10 +145,15 @@ pub unsafe extern "C" fn git_index_entry_cmp(a: *const c_void, b: *const c_void)
 pub unsafe extern "C" fn git_index_entry_icmp(a: *const c_void, b: *const c_void) -> c_int {
     let (a, b) = (a.cast::<GitIndexEntry>(), b.cast::<GitIndexEntry>());
     // SAFETY: the caller's contract.
-    unsafe {
-        let d = crate::util::util::strcasecmp(any_path(a), any_path(b));
-        if d != 0 { d } else { (*a).stage() - (*b).stage() }
-    }
+    let a = unsafe { &*a };
+    // SAFETY: as above.
+    let b = unsafe { &*b };
+    // SAFETY: as above.
+    let pa = unsafe { any_path(a) };
+    // SAFETY: as above.
+    let pb = unsafe { any_path(b) };
+    let d = crate::util::util::strcasecmp(pa, pb);
+    if d != 0 { d } else { a.stage() - b.stage() }
 }
 
 /// `struct entry_srch_key`, mirrored (C makes none itself: this module's
@@ -131,7 +175,10 @@ pub struct EntrySrchKey {
 /// `key` is an [`EntrySrchKey`] whose path is readable for `pathlen`
 /// bytes; `array_member` an index entry (`entry_internal`).
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_entry_srch(key: *const c_void, array_member: *const c_void) -> c_int {
+pub unsafe extern "C" fn git_index_entry_srch(
+    key: *const c_void,
+    array_member: *const c_void,
+) -> c_int {
     // SAFETY: the caller's contract.
     unsafe { srch(key, array_member, false) }
 }
@@ -142,7 +189,10 @@ pub unsafe extern "C" fn git_index_entry_srch(key: *const c_void, array_member: 
 ///
 /// As [`git_index_entry_srch`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_entry_isrch(key: *const c_void, array_member: *const c_void) -> c_int {
+pub unsafe extern "C" fn git_index_entry_isrch(
+    key: *const c_void,
+    array_member: *const c_void,
+) -> c_int {
     // SAFETY: the caller's contract.
     unsafe { srch(key, array_member, true) }
 }
@@ -154,11 +204,11 @@ pub unsafe extern "C" fn git_index_entry_isrch(key: *const c_void, array_member:
 /// As [`git_index_entry_srch`].
 unsafe fn srch(key: *const c_void, member: *const c_void, icase: bool) -> c_int {
     // SAFETY: the caller's contract.
-    unsafe {
-        let k = &*key.cast::<EntrySrchKey>();
-        let path = crate::util::export::bytes(k.path, k.pathlen);
-        entry_srch(path, k.stage, as_entry(member.cast_mut()), icase)
-    }
+    let k = unsafe { &*key.cast::<EntrySrchKey>() };
+    // SAFETY: as above.
+    let path = unsafe { crate::util::export::bytes(k.path, k.pathlen) };
+    // SAFETY: as above.
+    unsafe { entry_srch(path, k.stage, as_entry(member.cast_mut()), icase) }
 }
 
 // ---------------------------------------------------------------------------
@@ -176,7 +226,12 @@ fn check_version(opts: *const GitIndexOptions, expected_max: c_uint, name: &str)
     if actual > 0 && actual <= expected_max {
         return Ok(());
     }
-    Err(git_error_set!(ErrorClass::INVALID, "invalid version {} on {}", actual as c_int, name))
+    Err(git_error_set!(
+        ErrorClass::INVALID,
+        "invalid version {} on {}",
+        actual as c_int,
+        name
+    ))
 }
 
 /// `git_index_options_init`.
@@ -185,11 +240,23 @@ fn check_version(opts: *const GitIndexOptions, expected_max: c_uint, name: &str)
 ///
 /// `opts` is NULL or writable.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_options_init(opts: *mut GitIndexOptions, version: c_uint) -> c_int {
+pub unsafe extern "C" fn git_index_options_init(
+    opts: *mut GitIndexOptions,
+    version: c_uint,
+) -> c_int {
     barrier(|| {
         git_assert_arg!(!opts.is_null(), "opts", -1);
-        let probe = GitIndexOptions { version, oid_type: 0 };
-        if check_version(&probe, GIT_INDEX_OPTIONS_VERSION, "git_index_options").is_err() {
+        let probe = GitIndexOptions {
+            version,
+            oid_type: 0,
+        };
+        if check_version(
+            &raw const probe,
+            GIT_INDEX_OPTIONS_VERSION,
+            "git_index_options",
+        )
+        .is_err()
+        {
             return -1;
         }
         // SAFETY: writable (the contract).
@@ -220,8 +287,12 @@ pub unsafe extern "C" fn git_index_open_ext(
         if check_version(opts, GIT_INDEX_OPTIONS_VERSION, "git_index_options").is_err() {
             return -1;
         }
-        // SAFETY: readable when non-null.
-        let raw_type = if opts.is_null() { 0 } else { unsafe { (*opts).oid_type } };
+        let raw_type = if opts.is_null() {
+            0
+        } else {
+            // SAFETY: readable when non-null.
+            unsafe { (*opts).oid_type }
+        };
         let t = if raw_type != 0 {
             match OidType::from_raw(raw_type) {
                 Some(t) => t,
@@ -252,7 +323,10 @@ pub unsafe extern "C" fn git_index_open_ext(
 ///
 /// As [`git_index_open_ext`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_open(index_out: *mut *mut GitIndex, index_path: *const c_char) -> c_int {
+pub unsafe extern "C" fn git_index_open(
+    index_out: *mut *mut GitIndex,
+    index_path: *const c_char,
+) -> c_int {
     // SAFETY: forwarded.
     unsafe { git_index_open_ext(index_out, index_path, ptr::null()) }
 }
@@ -274,7 +348,10 @@ pub unsafe extern "C" fn git_index_new(out: *mut *mut GitIndex) -> c_int {
 ///
 /// As [`git_index_open_ext`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_new_ext(out: *mut *mut GitIndex, opts: *const GitIndexOptions) -> c_int {
+pub unsafe extern "C" fn git_index_new_ext(
+    out: *mut *mut GitIndex,
+    opts: *const GitIndexOptions,
+) -> c_int {
     // SAFETY: forwarded.
     unsafe { git_index_open_ext(out, ptr::null(), opts) }
 }
@@ -348,9 +425,19 @@ pub unsafe extern "C" fn git_index_caps(index: *const GitIndex) -> c_int {
         let ix = index_arg!(index, 0);
         // SAFETY: no foreign call.
         let i = unsafe { ix.get() };
-        (if i.ignore_case() { super::GIT_INDEX_CAPABILITY_IGNORE_CASE } else { 0 })
-            | (if i.distrust_filemode() { super::GIT_INDEX_CAPABILITY_NO_FILEMODE } else { 0 })
-            | (if i.no_symlinks() { super::GIT_INDEX_CAPABILITY_NO_SYMLINKS } else { 0 })
+        (if i.ignore_case() {
+            super::GIT_INDEX_CAPABILITY_IGNORE_CASE
+        } else {
+            0
+        }) | (if i.distrust_filemode() {
+            super::GIT_INDEX_CAPABILITY_NO_FILEMODE
+        } else {
+            0
+        }) | (if i.no_symlinks() {
+            super::GIT_INDEX_CAPABILITY_NO_SYMLINKS
+        } else {
+            0
+        })
     })
 }
 
@@ -480,7 +567,11 @@ pub unsafe extern "C" fn git_index_write_tree(oid: *mut Oid, index: *mut GitInde
 ///
 /// As [`git_index_write_tree`]; `repo` NULL or a live repository.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_write_tree_to(oid: *mut Oid, index: *mut GitIndex, repo: *mut c_void) -> c_int {
+pub unsafe extern "C" fn git_index_write_tree_to(
+    oid: *mut Oid,
+    index: *mut GitIndex,
+    repo: *mut c_void,
+) -> c_int {
     barrier(|| {
         git_assert_arg!(!oid.is_null(), "oid", -1);
         let ix = index_arg!(index, -1);
@@ -527,13 +618,18 @@ pub unsafe extern "C" fn git_index_entrycount(index: *const GitIndex) -> usize {
 ///
 /// `index` is NULL or a live index.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_get_byindex(index: *mut GitIndex, n: usize) -> *const GitIndexEntry {
+pub unsafe extern "C" fn git_index_get_byindex(
+    index: *mut GitIndex,
+    n: usize,
+) -> *const GitIndexEntry {
     barrier(|| {
         let ix = index_arg!(index, ptr::null());
         // SAFETY: no foreign call.
         let i = unsafe { ix.get() };
         i.sort();
-        i.entry_at(n).map_or(ptr::null(), |e| e.as_ptr().cast::<GitIndexEntry>().cast_const())
+        i.entry_at(n).map_or(ptr::null(), |e| {
+            e.as_ptr().cast::<GitIndexEntry>().cast_const()
+        })
     })
 }
 
@@ -543,7 +639,11 @@ pub unsafe extern "C" fn git_index_get_byindex(index: *mut GitIndex, n: usize) -
 ///
 /// `index` is NULL or a live index; `path` a string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_get_bypath(index: *mut GitIndex, path: *const c_char, stage: c_int) -> *const GitIndexEntry {
+pub unsafe extern "C" fn git_index_get_bypath(
+    index: *mut GitIndex,
+    path: *const c_char,
+    stage: c_int,
+) -> *const GitIndexEntry {
     barrier(|| {
         let ix = index_arg!(index, ptr::null());
         // SAFETY: a string.
@@ -552,7 +652,11 @@ pub unsafe extern "C" fn git_index_get_bypath(index: *mut GitIndex, path: *const
         match unsafe { ix.get() }.get_bypath(path, stage) {
             Some(e) => e.as_ptr().cast::<GitIndexEntry>().cast_const(),
             None => {
-                let _ = git_error_set!(ErrorClass::INDEX, "index does not contain '{}'", Bytes(path));
+                let _ = git_error_set!(
+                    ErrorClass::INDEX,
+                    "index does not contain '{}'",
+                    Bytes(path)
+                );
                 ptr::null()
             }
         }
@@ -565,10 +669,17 @@ pub unsafe extern "C" fn git_index_get_bypath(index: *mut GitIndex, path: *const
 ///
 /// `entry` is writable; `st` readable.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_entry__init_from_stat(entry: *mut GitIndexEntry, st: *mut libc::stat, trust_mode: bool) {
+pub unsafe extern "C" fn git_index_entry__init_from_stat(
+    entry: *mut GitIndexEntry,
+    st: *mut libc::stat,
+    trust_mode: bool,
+) {
     barrier(|| {
         // SAFETY: the contract; C's entry is not otherwise accessed.
-        unsafe { super::init_from_stat(&mut *entry, &*st, trust_mode) }
+        let entry = unsafe { &mut *entry };
+        // SAFETY: as above.
+        let st = unsafe { &*st };
+        super::init_from_stat(entry, st, trust_mode)
     })
 }
 
@@ -626,7 +737,10 @@ unsafe fn source_arg<'a>(source: *const GitIndexEntry) -> Option<(&'a GitIndexEn
 /// `index` NULL or a live index; `source_entry` NULL or a readable entry
 /// whose path is NULL or a string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_add(index: *mut GitIndex, source_entry: *const GitIndexEntry) -> c_int {
+pub unsafe extern "C" fn git_index_add(
+    index: *mut GitIndex,
+    source_entry: *const GitIndexEntry,
+) -> c_int {
     barrier(|| {
         let ix = index_arg!(index, -1);
         // SAFETY: the contract.
@@ -695,7 +809,10 @@ pub unsafe extern "C" fn git_index_add_bypath(index: *mut GitIndex, path: *const
 ///
 /// As [`git_index_add_bypath`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_remove_bypath(index: *mut GitIndex, path: *const c_char) -> c_int {
+pub unsafe extern "C" fn git_index_remove_bypath(
+    index: *mut GitIndex,
+    path: *const c_char,
+) -> c_int {
     barrier(|| {
         let ix = index_arg!(index, -1);
         git_assert_arg!(!path.is_null(), "path", -1);
@@ -713,12 +830,17 @@ pub unsafe extern "C" fn git_index_remove_bypath(index: *mut GitIndex, path: *co
 /// `index` NULL or a live index; `source_entries` a vector of readable
 /// entries with string paths.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index__fill(index: *mut GitIndex, source_entries: *const GitVector) -> c_int {
+pub unsafe extern "C" fn git_index__fill(
+    index: *mut GitIndex,
+    source_entries: *const GitVector,
+) -> c_int {
     barrier(|| {
         let ix = index_arg!(index, -1);
         // SAFETY: a valid vector (the contract); its elements are copied.
-        let v: Vec<*const GitIndexEntry> =
-            unsafe { &*source_entries }.iter().map(|p| p.cast::<GitIndexEntry>().cast_const()).collect();
+        let v: Vec<*const GitIndexEntry> = unsafe { &*source_entries }
+            .iter()
+            .map(|p| p.cast::<GitIndexEntry>().cast_const())
+            .collect();
         status(ops::fill(ix, &v))
     })
 }
@@ -729,7 +851,11 @@ pub unsafe extern "C" fn git_index__fill(index: *mut GitIndex, source_entries: *
 ///
 /// `index` NULL or a live index; `path` NULL or a string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_remove(index: *mut GitIndex, path: *const c_char, stage: c_int) -> c_int {
+pub unsafe extern "C" fn git_index_remove(
+    index: *mut GitIndex,
+    path: *const c_char,
+    stage: c_int,
+) -> c_int {
     barrier(|| {
         let ix = index_arg!(index, -1);
         git_assert_arg!(!path.is_null(), "path", -1);
@@ -746,7 +872,11 @@ pub unsafe extern "C" fn git_index_remove(index: *mut GitIndex, path: *const c_c
 ///
 /// As [`git_index_remove`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_remove_directory(index: *mut GitIndex, dir: *const c_char, stage: c_int) -> c_int {
+pub unsafe extern "C" fn git_index_remove_directory(
+    index: *mut GitIndex,
+    dir: *const c_char,
+    stage: c_int,
+) -> c_int {
     barrier(|| {
         let ix = index_arg!(index, -1);
         git_assert_arg!(!dir.is_null(), "dir", -1);
@@ -769,7 +899,11 @@ pub unsafe extern "C" fn git_index_remove_directory(index: *mut GitIndex, dir: *
 ///
 /// `at_pos` NULL or writable; `index` NULL or live; `prefix` a string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_find_prefix(at_pos: *mut usize, index: *mut GitIndex, prefix: *const c_char) -> c_int {
+pub unsafe extern "C" fn git_index_find_prefix(
+    at_pos: *mut usize,
+    index: *mut GitIndex,
+    prefix: *const c_char,
+) -> c_int {
     barrier(|| {
         let ix = index_arg!(index, -1);
         git_assert_arg!(!prefix.is_null(), "prefix", -1);
@@ -805,9 +939,7 @@ pub unsafe extern "C" fn git_index__find_pos(
         let ix = index_arg!(index, -1);
         git_assert_arg!(!path.is_null(), "path", -1);
         // SAFETY: the contract.
-        let p = unsafe {
-            if path_len == 0 { cstr_bytes(path) } else { crate::util::export::bytes(path, path_len) }
-        };
+        let p = unsafe { path_arg(path, path_len) };
         // SAFETY: no foreign call.
         let r = unsafe { ix.get() }.find(p, stage);
         let (pos, ret) = match r {
@@ -826,7 +958,11 @@ pub unsafe extern "C" fn git_index__find_pos(
 ///
 /// As [`git_index_find_prefix`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_find(at_pos: *mut usize, index: *mut GitIndex, path: *const c_char) -> c_int {
+pub unsafe extern "C" fn git_index_find(
+    at_pos: *mut usize,
+    index: *mut GitIndex,
+    path: *const c_char,
+) -> c_int {
     barrier(|| {
         let ix = index_arg!(index, -1);
         git_assert_arg!(!path.is_null(), "path", -1);
@@ -887,12 +1023,11 @@ pub unsafe extern "C" fn git_index_conflict_add(
 /// # Safety
 ///
 /// The pointers are writable.
-unsafe fn write_conflict(
-    out: [*mut *const GitIndexEntry; 3],
-    sides: [Option<super::EntryPtr>; 3],
-) {
+unsafe fn write_conflict(out: [*mut *const GitIndexEntry; 3], sides: [Option<super::EntryPtr>; 3]) {
     for i in 0..3 {
-        let v = sides[i].map_or(ptr::null(), |e| e.as_ptr().cast::<GitIndexEntry>().cast_const());
+        let v = sides[i].map_or(ptr::null(), |e| {
+            e.as_ptr().cast::<GitIndexEntry>().cast_const()
+        });
         // SAFETY: the caller's contract.
         unsafe { out[i].write(v) };
     }
@@ -941,7 +1076,10 @@ pub unsafe extern "C" fn git_index_conflict_get(
 ///
 /// `index` NULL or live; `path` NULL or a string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_conflict_remove(index: *mut GitIndex, path: *const c_char) -> c_int {
+pub unsafe extern "C" fn git_index_conflict_remove(
+    index: *mut GitIndex,
+    path: *const c_char,
+) -> c_int {
     barrier(|| {
         let ix = index_arg!(index, -1);
         git_assert_arg!(!path.is_null(), "path", -1);
@@ -986,7 +1124,10 @@ pub unsafe extern "C" fn git_index_has_conflicts(index: *const GitIndex) -> c_in
 ///
 /// `index` NULL or live; `path` NULL or a string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index__conflict_to_reuc(index: *mut GitIndex, path: *const c_char) -> c_int {
+pub unsafe extern "C" fn git_index__conflict_to_reuc(
+    index: *mut GitIndex,
+    path: *const c_char,
+) -> c_int {
     barrier(|| {
         let ix = index_arg!(index, -1);
         git_assert_arg!(!path.is_null(), "path", -1);
@@ -1007,13 +1148,20 @@ pub unsafe extern "C" fn git_index__conflict_to_reuc(index: *mut GitIndex, path:
 ///
 /// `iterator_out` NULL or writable; `index` NULL or live.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_iterator_new(iterator_out: *mut *mut GitIndexIterator, index: *mut GitIndex) -> c_int {
+pub unsafe extern "C" fn git_index_iterator_new(
+    iterator_out: *mut *mut GitIndexIterator,
+    index: *mut GitIndex,
+) -> c_int {
     barrier(|| {
         git_assert_arg!(!iterator_out.is_null(), "iterator_out", -1);
         let ix = index_arg!(index, -1);
         match ops::snapshot_new(ix) {
             Ok(snap) => {
-                let it = Box::new(GitIndexIterator { index: ix, snap, cur: 0 });
+                let it = Box::new(GitIndexIterator {
+                    index: ix,
+                    snap,
+                    cur: 0,
+                });
                 // SAFETY: writable.
                 unsafe { iterator_out.write(Box::into_raw(it)) };
                 0
@@ -1030,7 +1178,10 @@ pub unsafe extern "C" fn git_index_iterator_new(iterator_out: *mut *mut GitIndex
 /// `out` NULL or writable; `it` NULL or an iterator of
 /// [`git_index_iterator_new`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_iterator_next(out: *mut *const GitIndexEntry, it: *mut GitIndexIterator) -> c_int {
+pub unsafe extern "C" fn git_index_iterator_next(
+    out: *mut *const GitIndexEntry,
+    it: *mut GitIndexIterator,
+) -> c_int {
     barrier(|| {
         git_assert_arg!(!out.is_null(), "out", -1);
         git_assert_arg!(!it.is_null(), "it", -1);
@@ -1146,7 +1297,10 @@ pub unsafe extern "C" fn git_index_conflict_iterator_free(iterator: *mut GitInde
 /// `snap` writable for a `git_vector` (its old contents are overwritten,
 /// not freed); `index` NULL or live.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_snapshot_new(snap: *mut GitVector, index: *mut GitIndex) -> c_int {
+pub unsafe extern "C" fn git_index_snapshot_new(
+    snap: *mut GitVector,
+    index: *mut GitIndex,
+) -> c_int {
     barrier(|| {
         let ix = index_arg!(index, -1);
         let (v, r) = match ops::snapshot_new(ix) {
@@ -1168,9 +1322,17 @@ pub unsafe extern "C" fn git_index_snapshot_new(snap: *mut GitVector, index: *mu
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_snapshot_release(snap: *mut GitVector, index: *mut GitIndex) {
     barrier(|| {
-        let ix = index_arg!(index, ());
-        // SAFETY: a valid vector (the contract), taken out and left empty.
-        let v = if snap.is_null() { GitVector::new() } else { unsafe { core::mem::take(&mut *snap) } };
+        // SAFETY: the export's contract.
+        let Some(ix) = (unsafe { index_or_assert(index) }) else {
+            return;
+        };
+        let v = if snap.is_null() {
+            GitVector::new()
+        } else {
+            // SAFETY: a valid vector (the contract), taken out and left
+            // empty.
+            core::mem::take(unsafe { &mut *snap })
+        };
         ops::snapshot_release(v, ix);
     })
 }
@@ -1194,21 +1356,24 @@ pub unsafe extern "C" fn git_index_snapshot_find(
 ) -> c_int {
     barrier(|| {
         // SAFETY: the contract.
-        let p = unsafe {
-            if path_len == 0 { cstr_bytes(path) } else { crate::util::export::bytes(path, path_len) }
-        };
+        let p = unsafe { path_arg(path, path_len) };
         // SAFETY: a valid vector, not otherwise accessed.
         let v = unsafe { &mut *snap };
         let f = entry_srch_fn.map(|f| f as usize);
-        let ours = (git_index_entry_srch as VectorCmp as usize, git_index_entry_isrch as VectorCmp as usize);
+        let ours = (
+            git_index_entry_srch as VectorCmp as usize,
+            git_index_entry_isrch as VectorCmp as usize,
+        );
         let own_cmp = |c: Option<VectorCmp>| {
             let c = c.map(|f| f as usize);
-            c == Some(git_index_entry_cmp as VectorCmp as usize) || c == Some(git_index_entry_icmp as VectorCmp as usize)
+            c == Some(git_index_entry_cmp as VectorCmp as usize)
+                || c == Some(git_index_entry_icmp as VectorCmp as usize)
         };
         let r = if (f == Some(ours.0) || f == Some(ours.1)) && own_cmp(v.cmp_fn()) {
             // the Rust search, as `index_find_in_entries` would through
             // the C function pointers
-            let sort_icase = v.cmp_fn().map(|c| c as usize) == Some(git_index_entry_icmp as VectorCmp as usize);
+            let sort_icase =
+                v.cmp_fn().map(|c| c as usize) == Some(git_index_entry_icmp as VectorCmp as usize);
             super::sort_entries(v, sort_icase);
             super::find_in_entries(v, p, stage, f == Some(ours.1))
         } else {
@@ -1219,7 +1384,11 @@ pub unsafe extern "C" fn git_index_snapshot_find(
             if v.cmp_fn().is_none() {
                 return -1;
             }
-            let key = EntrySrchKey { path: p.as_ptr().cast(), pathlen: p.len(), stage };
+            let key = EntrySrchKey {
+                path: p.as_ptr().cast(),
+                pathlen: p.len(),
+                stage,
+            };
             let mut pos = 0;
             // SAFETY: the caller vouches for the functions on the vector.
             let r = unsafe { v.bsearch2(Some(&mut pos), srch, (&raw const key).cast()) };
@@ -1247,7 +1416,10 @@ pub unsafe extern "C" fn git_index_snapshot_find(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index__set_ignore_case(index: *mut GitIndex, ignore_case: bool) {
     barrier(|| {
-        let ix = index_arg!(index, ());
+        // SAFETY: the export's contract.
+        let Some(ix) = (unsafe { index_or_assert(index) }) else {
+            return;
+        };
         // SAFETY: no foreign call.
         unsafe { ix.get() }.set_ignore_case(ignore_case);
     })
@@ -1277,7 +1449,10 @@ pub unsafe extern "C" fn git_index_read_tree(index: *mut GitIndex, tree: *const 
 ///
 /// `index` and `new_index` NULL or live.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_read_index(index: *mut GitIndex, new_index: *const GitIndex) -> c_int {
+pub unsafe extern "C" fn git_index_read_index(
+    index: *mut GitIndex,
+    new_index: *const GitIndex,
+) -> c_int {
     barrier(|| {
         let ix = index_arg!(index, -1);
         let nx = index_arg!(new_index, -1);
@@ -1368,7 +1543,7 @@ unsafe fn sig_arg(s: *const c_char) -> [u8; 4] {
     let mut sig = [0u8; 4];
     for (i, b) in sig.iter_mut().enumerate() {
         // SAFETY: a string: each byte up to its NUL is readable.
-        let c = unsafe { *s.add(i) } as u8;
+        let c = unsafe { *s.wrapping_add(i) } as u8;
         if c == 0 {
             break;
         }
@@ -1392,16 +1567,19 @@ pub struct RawBuf {
 /// `out` NULL or a writable `git_buf`; `index` NULL or live; `signature`
 /// NULL or a string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_extension_lookup(out: *mut RawBuf, index: *mut GitIndex, signature: *const c_char) -> c_int {
+pub unsafe extern "C" fn git_index_extension_lookup(
+    out: *mut RawBuf,
+    index: *mut GitIndex,
+    signature: *const c_char,
+) -> c_int {
     barrier(|| {
         git_assert_arg!(!out.is_null(), "out", -1);
         let ix = index_arg!(index, -1);
         git_assert_arg!(!signature.is_null(), "signature", -1);
         // SAFETY: writable; only `ptr` and `size` are written, as C.
-        unsafe {
-            (*out).size = 0;
-            (*out).ptr = ptr::null_mut();
-        }
+        let out = unsafe { &mut *out };
+        out.size = 0;
+        out.ptr = ptr::null_mut();
         // SAFETY: a string.
         let sig = unsafe { sig_arg(signature) };
         let key = &sig[..sig.iter().position(|&b| b == 0).unwrap_or(4)];
@@ -1417,11 +1595,8 @@ pub unsafe extern "C" fn git_index_extension_lookup(out: *mut RawBuf, index: *mu
         }
         // SAFETY: `p` has room for the data; distinct.
         unsafe { ptr::copy_nonoverlapping(data.as_ptr(), p, data.len()) };
-        // SAFETY: writable.
-        unsafe {
-            (*out).ptr = p.cast();
-            (*out).size = data.len();
-        }
+        out.ptr = p.cast();
+        out.size = data.len();
         0
     })
 }
@@ -1444,7 +1619,9 @@ pub unsafe extern "C" fn git_index_extension_add(
         git_assert_arg!(!signature.is_null(), "signature", -1);
         git_assert!(data_len < u32::MAX as usize, "data_len < UINT32_MAX", -1);
         // SAFETY: the contract.
-        let (sig, data) = unsafe { (sig_arg(signature), crate::util::export::bytes(data, data_len)) };
+        let sig = unsafe { sig_arg(signature) };
+        // SAFETY: the contract.
+        let data = unsafe { crate::util::export::bytes(data, data_len) };
         // SAFETY: no foreign call.
         status(unsafe { ix.get() }.extension_add(sig, data))
     })
@@ -1456,7 +1633,10 @@ pub unsafe extern "C" fn git_index_extension_add(
 ///
 /// `index` NULL or live; `signature` NULL or a string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_extension_remove(index: *mut GitIndex, signature: *const c_char) -> c_int {
+pub unsafe extern "C" fn git_index_extension_remove(
+    index: *mut GitIndex,
+    signature: *const c_char,
+) -> c_int {
     barrier(|| {
         let ix = index_arg!(index, -1);
         git_assert_arg!(!signature.is_null(), "signature", -1);
@@ -1492,13 +1672,18 @@ pub unsafe extern "C" fn git_index_name_entrycount(index: *mut GitIndex) -> usiz
 ///
 /// `index` NULL or live.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_name_get_byindex(index: *mut GitIndex, n: usize) -> *const GitIndexNameEntry {
+pub unsafe extern "C" fn git_index_name_get_byindex(
+    index: *mut GitIndex,
+    n: usize,
+) -> *const GitIndexNameEntry {
     barrier(|| {
         let ix = index_arg!(index, ptr::null());
         // SAFETY: no foreign call.
         let i = unsafe { ix.get() };
         i.sort_names();
-        i.names.get(n).map_or(ptr::null(), |p| p.cast::<GitIndexNameEntry>().cast_const())
+        i.names
+            .get(n)
+            .map_or(ptr::null(), |p| p.cast::<GitIndexNameEntry>().cast_const())
     })
 }
 
@@ -1523,7 +1708,7 @@ pub unsafe extern "C" fn git_index_name_add(
         );
         let ix = index_arg!(index, -1);
         // SAFETY: strings or NULL.
-        let (a, o, t) = unsafe { (cstr(ancestor), cstr(ours), cstr(theirs)) };
+        let [a, o, t] = [ancestor, ours, theirs].map(|p| unsafe { cstr(p) });
         // SAFETY: no foreign call.
         status(unsafe { ix.get() }.name_add(a, o, t))
     })
@@ -1579,7 +1764,7 @@ pub unsafe extern "C" fn git_index_reuc_add(
         let ix = index_arg!(index, -1);
         git_assert_arg!(!path.is_null(), "path", -1);
         // SAFETY: readable or NULL.
-        let oids = unsafe { [ancestor_id.as_ref().copied(), our_id.as_ref().copied(), their_id.as_ref().copied()] };
+        let oids = [ancestor_id, our_id, their_id].map(|p| unsafe { p.as_ref() }.copied());
         // SAFETY: a string, copied (it may be a REUC entry's path).
         let p = unsafe { cstr_bytes(path) }.to_vec();
         // SAFETY: no foreign call.
@@ -1594,7 +1779,11 @@ pub unsafe extern "C" fn git_index_reuc_add(
 /// `at_pos` NULL or writable; `index` NULL or live; `path` NULL or a
 /// string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_reuc_find(at_pos: *mut usize, index: *mut GitIndex, path: *const c_char) -> c_int {
+pub unsafe extern "C" fn git_index_reuc_find(
+    at_pos: *mut usize,
+    index: *mut GitIndex,
+    path: *const c_char,
+) -> c_int {
     barrier(|| {
         let ix = index_arg!(index, -1);
         git_assert_arg!(!path.is_null(), "key", -1);
@@ -1617,7 +1806,10 @@ pub unsafe extern "C" fn git_index_reuc_find(at_pos: *mut usize, index: *mut Git
 ///
 /// `index` NULL or live; `path` NULL or a string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_reuc_get_bypath(index: *mut GitIndex, path: *const c_char) -> *const GitIndexReucEntry {
+pub unsafe extern "C" fn git_index_reuc_get_bypath(
+    index: *mut GitIndex,
+    path: *const c_char,
+) -> *const GitIndexReucEntry {
     barrier(|| {
         let ix = index_arg!(index, ptr::null());
         git_assert_arg!(!path.is_null(), "path", ptr::null());
@@ -1626,11 +1818,18 @@ pub unsafe extern "C" fn git_index_reuc_get_bypath(index: *mut GitIndex, path: *
         if i.reuc.is_empty() {
             return ptr::null();
         }
-        git_assert!(i.reuc.is_sorted(), "git_vector_is_sorted(&index->reuc)", ptr::null());
+        git_assert!(
+            i.reuc.is_sorted(),
+            "git_vector_is_sorted(&index->reuc)",
+            ptr::null()
+        );
         // SAFETY: a string.
         let p = unsafe { cstr_bytes(path) };
         match i.reuc_find(p) {
-            Ok(pos) => i.reuc.get(pos).map_or(ptr::null(), |r| r.cast::<GitIndexReucEntry>().cast_const()),
+            Ok(pos) => i
+                .reuc
+                .get(pos)
+                .map_or(ptr::null(), |r| r.cast::<GitIndexReucEntry>().cast_const()),
             Err(_) => ptr::null(),
         }
     })
@@ -1642,13 +1841,22 @@ pub unsafe extern "C" fn git_index_reuc_get_bypath(index: *mut GitIndex, path: *
 ///
 /// `index` NULL or live.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_reuc_get_byindex(index: *mut GitIndex, n: usize) -> *const GitIndexReucEntry {
+pub unsafe extern "C" fn git_index_reuc_get_byindex(
+    index: *mut GitIndex,
+    n: usize,
+) -> *const GitIndexReucEntry {
     barrier(|| {
         let ix = index_arg!(index, ptr::null());
         // SAFETY: no foreign call.
         let i = unsafe { ix.get() };
-        git_assert!(i.reuc.is_sorted(), "git_vector_is_sorted(&index->reuc)", ptr::null());
-        i.reuc.get(n).map_or(ptr::null(), |r| r.cast::<GitIndexReucEntry>().cast_const())
+        git_assert!(
+            i.reuc.is_sorted(),
+            "git_vector_is_sorted(&index->reuc)",
+            ptr::null()
+        );
+        i.reuc
+            .get(n)
+            .map_or(ptr::null(), |r| r.cast::<GitIndexReucEntry>().cast_const())
     })
 }
 
@@ -1692,7 +1900,10 @@ pub unsafe extern "C" fn git_index_reuc_clear(index: *mut GitIndex) -> c_int {
 /// `writer` a valid `git_indexwriter` (`GIT_INDEXWRITER_INIT`); `index`
 /// NULL or live.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_indexwriter_init(writer: *mut GitIndexWriter, index: *mut GitIndex) -> c_int {
+pub unsafe extern "C" fn git_indexwriter_init(
+    writer: *mut GitIndexWriter,
+    index: *mut GitIndex,
+) -> c_int {
     barrier(|| {
         let ix = index_arg!(index, -1);
         // SAFETY: a valid writer, which only this call accesses.
@@ -1719,7 +1930,11 @@ pub unsafe extern "C" fn git_indexwriter_init_for_operation(
             return -1;
         };
         // SAFETY: valid, unaliased (the contract).
-        status(ops::writer_init_for_operation(unsafe { &mut *writer }, repo, unsafe { &mut *checkout_strategy }))
+        status(ops::writer_init_for_operation(
+            unsafe { &mut *writer },
+            repo,
+            unsafe { &mut *checkout_strategy },
+        ))
     })
 }
 

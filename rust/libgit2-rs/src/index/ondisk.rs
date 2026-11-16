@@ -14,13 +14,15 @@
 
 use core::ffi::c_uint;
 use core::ptr;
+use std::borrow::Cow;
 
 use super::map::EntryMap;
 use super::{
     EntryPtr, Extension, GIT_INDEX_ENTRY_EXTENDED, GIT_INDEX_ENTRY_EXTENDED_FLAGS,
-    GIT_INDEX_ENTRY_NAMEMASK, GitIndex, GitIndexEntry, GitIndexNameEntry, INDEX_VERSION_NUMBER_COMP,
-    INDEX_VERSION_NUMBER_EXT, INDEX_VERSION_NUMBER_LB, INDEX_VERSION_NUMBER_UB, as_entry, entry_alloc,
-    entry_cpy, entry_free, epath, name_free, reuc_alloc, reuc_free, sig_cmp, sort_entries,
+    GIT_INDEX_ENTRY_NAMEMASK, GitIndex, GitIndexEntry, GitIndexNameEntry,
+    INDEX_VERSION_NUMBER_COMP, INDEX_VERSION_NUMBER_EXT, INDEX_VERSION_NUMBER_LB,
+    INDEX_VERSION_NUMBER_UB, as_entry, entry_alloc, entry_cpy, entry_free, epath, name_free,
+    reuc_alloc, reuc_free, sig_cmp, sort_entries,
 };
 use crate::oid::{Oid, OidType};
 use crate::tree_cache::{self, GitTreeCache};
@@ -62,7 +64,13 @@ fn algorithm(t: OidType) -> HashAlgorithm {
 /// `index_entry_path_offset`: where an on-disk entry's path starts.
 #[inline]
 fn path_offset(t: OidType, flags: u16) -> usize {
-    ENTRY_COMMON_SIZE + t.size() + if flags & GIT_INDEX_ENTRY_EXTENDED != 0 { 4 } else { 2 }
+    ENTRY_COMMON_SIZE
+        + t.size()
+        + if flags & GIT_INDEX_ENTRY_EXTENDED != 0 {
+            4
+        } else {
+            2
+        }
 }
 
 /// `index_entry_size`: the on-disk size of an entry (0 on overflow).
@@ -75,7 +83,10 @@ fn entry_size(path_len: usize, varint_len: usize, t: OidType, flags: u16) -> usi
             .and_then(|s| s.checked_add(varint_len))
             .unwrap_or(0)
     } else {
-        offset.checked_add(path_len).and_then(|s| s.checked_add(8)).map_or(0, |s| s & !7)
+        offset
+            .checked_add(path_len)
+            .and_then(|s| s.checked_add(8))
+            .map_or(0, |s| s & !7)
     }
 }
 
@@ -177,7 +188,11 @@ struct RawEntry {
 /// `parse_index`: parse `buf` (the whole file) into `st`. `validate`
 /// checks each path (`git_path_is_valid` with the index's defaults); it is
 /// the only foreign code the parser runs.
-pub fn parse(st: &mut ParseState, buf: &[u8], validate: &mut dyn FnMut(&[u8]) -> bool) -> Result<()> {
+pub fn parse(
+    st: &mut ParseState,
+    buf: &[u8],
+    validate: &mut dyn FnMut(&[u8]) -> bool,
+) -> Result<()> {
     let alg = algorithm(st.oid_type);
     let checksum_size = alg.size();
     if buf.len() < INDEX_HEADER_SIZE + checksum_size {
@@ -208,9 +223,12 @@ pub fn parse(st: &mut ParseState, buf: &[u8], validate: &mut dyn FnMut(&[u8]) ->
     let mut i = 0u32;
     while i < entry_count && buf.len() - pos > checksum_size {
         let rest = &buf[pos..];
-        // SAFETY: `last` is an entry the state holds, not written here.
         let last_path: Option<&[u8]> = if compressed {
-            Some(last.map_or(&b""[..], |e| unsafe { epath(e) }))
+            Some(last.map_or(&b""[..], |e| {
+                // SAFETY: `last` is an entry the state holds, not written
+                // here.
+                unsafe { epath(e) }
+            }))
         } else {
             None
         };
@@ -282,12 +300,12 @@ pub fn parse(st: &mut ParseState, buf: &[u8], validate: &mut dyn FnMut(&[u8]) ->
 /// `read_entry` up to `index_entry_dup`: the entry's fields, its size on
 /// disk, and its path. `rest` starts at the entry and runs to the end of
 /// the file.
-fn read_entry(
-    rest: &[u8],
+fn read_entry<'r>(
+    rest: &'r [u8],
     t: OidType,
     checksum_size: usize,
     last: Option<&[u8]>,
-) -> core::result::Result<(RawEntry, Vec<u8>), ()> {
+) -> core::result::Result<(RawEntry, Cow<'r, [u8]>), ()> {
     let oid_size = t.size();
     let minimal = path_offset(t, 0);
     if checksum_size + minimal > rest.len() {
@@ -304,7 +322,8 @@ fn read_entry(
     entry.uid = be32(rest, 28);
     entry.gid = be32(rest, 32);
     entry.file_size = be32(rest, 36);
-    entry.id = Oid::from_bytes(&rest[ENTRY_COMMON_SIZE..ENTRY_COMMON_SIZE + oid_size], t).ok_or(())?;
+    entry.id =
+        Oid::from_bytes(&rest[ENTRY_COMMON_SIZE..ENTRY_COMMON_SIZE + oid_size], t).ok_or(())?;
     entry.flags = be16(rest, ENTRY_COMMON_SIZE + oid_size);
     let poff = path_offset(t, entry.flags);
     if entry.flags & GIT_INDEX_ENTRY_EXTENDED != 0 {
@@ -328,7 +347,7 @@ fn read_entry(
             let size = entry_size(path_length, 0, t, entry.flags);
             // `entry.path` is the bytes at `poff`, up to their NUL
             let n = strlen_at(rest, poff);
-            (rest[poff..poff + n].to_vec(), size)
+            (Cow::Borrowed(&rest[poff..poff + n]), size)
         }
         Some(last) => {
             let vbytes = &rest[poff..];
@@ -359,7 +378,10 @@ fn read_entry(
             if suffix_len > 0 {
                 p.extend_from_slice(&rest[s..s + suffix_len]);
             }
-            (p, entry_size(suffix_len, varint_len, t, entry.flags))
+            (
+                Cow::Owned(p),
+                entry_size(suffix_len, varint_len, t, entry.flags),
+            )
         }
     };
     if size == 0 {
@@ -407,7 +429,13 @@ fn read_extension(st: &mut ParseState, rest: &[u8], checksum_size: usize) -> Res
                 }
                 Err(p) => {
                     if st.extensions.try_reserve(1).is_ok() {
-                        st.extensions.insert(p, Extension { signature: sig, data: v });
+                        st.extensions.insert(
+                            p,
+                            Extension {
+                                signature: sig,
+                                data: v,
+                            },
+                        );
                     }
                 }
             }
@@ -448,7 +476,9 @@ fn read_reuc(st: &mut ParseState, mut buf: &[u8]) -> Result<()> {
                 // for `*endptr`; whatever it is, a check fails with the
                 // same message)
                 Ok((tmp, used))
-                    if used > 0 && buf.get(used) == Some(&0) && (0..=i64::from(u32::MAX)).contains(&tmp) =>
+                    if used > 0
+                        && buf.get(used) == Some(&0)
+                        && (0..=i64::from(u32::MAX)).contains(&tmp) =>
                 {
                     (tmp, used)
                 }
@@ -515,12 +545,11 @@ fn read_conflict_names(st: &mut ParseState, mut buf: &[u8]) -> Result<()> {
             }
             buf = &buf[len..];
         }
-        // SAFETY: `ne` is fresh and ours.
-        unsafe {
-            (*ne).ancestor = fields[0];
-            (*ne).ours = fields[1];
-            (*ne).theirs = fields[2];
-        }
+        // SAFETY: `ne` is fresh, zeroed and ours.
+        let n = unsafe { &mut *ne };
+        n.ancestor = fields[0];
+        n.ours = fields[1];
+        n.theirs = fields[2];
         if failure.is_none()
             && let Err(e) = st.names.insert(ne.cast())
         {
@@ -558,9 +587,16 @@ fn is_index_extended(ix: &mut GitIndex) -> bool {
 }
 
 /// `write_disk_entry`.
-fn write_disk_entry(file: &mut GitFilebuf, t: OidType, entry: EntryPtr, last: Option<&[u8]>) -> Result<()> {
+fn write_disk_entry(
+    file: &mut GitFilebuf,
+    t: OidType,
+    entry: EntryPtr,
+    last: Option<&[u8]>,
+) -> Result<()> {
     // SAFETY: a live entry of the index, not written during the call.
-    let (e, path) = unsafe { (&(*entry.as_ptr()).entry, epath(entry)) };
+    let e = unsafe { &(*entry.as_ptr()).entry };
+    // SAFETY: as above.
+    let path = unsafe { epath(entry) };
     let mut path_len = path.len();
     let mut same_len = 0;
     let mut varint_len = 0usize;
@@ -592,7 +628,8 @@ fn write_disk_entry(file: &mut GitFilebuf, t: OidType, entry: EntryPtr, last: Op
     put32(mem, 32, e.gid);
     put32(mem, 36, e.file_size);
     let oid_size = t.size();
-    mem[ENTRY_COMMON_SIZE..ENTRY_COMMON_SIZE + oid_size].copy_from_slice(&e.id.raw_id()[..oid_size]);
+    mem[ENTRY_COMMON_SIZE..ENTRY_COMMON_SIZE + oid_size]
+        .copy_from_slice(&e.id.raw_id()[..oid_size]);
     let foff = ENTRY_COMMON_SIZE + oid_size;
     mem[foff..foff + 2].copy_from_slice(&e.flags.to_be_bytes());
     let poff = path_offset(t, e.flags);
@@ -637,9 +674,11 @@ fn write_entries(ix: &mut GitIndex, file: &mut GitFilebuf) -> Result<()> {
     let mut last: Option<EntryPtr> = None;
     for e in entries.iter() {
         let e = as_entry(e);
-        // SAFETY: `last` is a live entry of the index.
         let last_path = if compressed {
-            Some(last.map_or(&b""[..], |l| unsafe { epath(l) }))
+            Some(last.map_or(&b""[..], |l| {
+                // SAFETY: `last` is a live entry of the index.
+                unsafe { epath(l) }
+            }))
         } else {
             None
         };
@@ -665,7 +704,8 @@ fn name_extension_data(ix: &GitIndex, out: &mut GitStr) -> Result<()> {
     for ne in ix.names.iter() {
         let ne = ne.cast::<GitIndexNameEntry>();
         // SAFETY: the index's name entries.
-        let fields = unsafe { [(*ne).ancestor, (*ne).ours, (*ne).theirs] };
+        let n = unsafe { &*ne };
+        let fields = [n.ancestor, n.ours, n.theirs];
         for f in fields {
             // SAFETY: NULL or a string the entry owns.
             match unsafe { crate::util::export::cstr(f) } {
@@ -683,7 +723,10 @@ fn reuc_extension_data(ix: &GitIndex, out: &mut GitStr) -> Result<()> {
     for r in ix.reuc.iter() {
         let r = r.cast::<super::GitIndexReucEntry>();
         // SAFETY: the index's REUC entries.
-        let (path, modes, oids) = unsafe { (super::reuc_path(r), (*r).mode, (*r).oid) };
+        let path = unsafe { super::reuc_path(r) };
+        // SAFETY: as above.
+        let rr = unsafe { &*r };
+        let (modes, oids) = (rr.mode, rr.oid);
         out.put(path)?;
         out.put(b"\0")?;
         for m in modes {
@@ -701,11 +744,18 @@ fn reuc_extension_data(ix: &GitIndex, out: &mut GitStr) -> Result<()> {
 
 /// `write_index`: write the whole file to `file` (still to commit), and
 /// the checksum (its length is the id type's hash size).
-pub(crate) fn write_index(ix: &mut GitIndex, file: &mut GitFilebuf) -> Result<[u8; hash::MAX_SIZE]> {
+pub(crate) fn write_index(
+    ix: &mut GitIndex,
+    file: &mut GitFilebuf,
+) -> Result<[u8; hash::MAX_SIZE]> {
     git_assert!(ix.oid_type != 0, "index->oid_type");
     let checksum_size = algorithm(ix.oid_kind()).size();
     let version = if ix.version <= INDEX_VERSION_NUMBER_EXT {
-        if is_index_extended(ix) { INDEX_VERSION_NUMBER_EXT } else { INDEX_VERSION_NUMBER_LB }
+        if is_index_extended(ix) {
+            INDEX_VERSION_NUMBER_EXT
+        } else {
+            INDEX_VERSION_NUMBER_LB
+        }
     } else {
         ix.version
     };
