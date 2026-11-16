@@ -19,6 +19,9 @@
 
 #include "errors.h"
 #include "str.h"
+#include "posix.h"
+#include "filebuf.h"
+#include "hashmap_str.h"
 
 /* Implemented in Rust (src/util/errors.rs). */
 extern void git_error__set_formatted(
@@ -151,4 +154,70 @@ int git_str_join_n(git_str *buf, char separator, int nbuf, ...)
 		git__free((void *)segments);
 
 	return r;
+}
+
+/* Implemented in Rust (src/util/posix.rs). */
+extern int git__p_open(const char *path, int flags, mode_t mode);
+
+int p_open(const char *path, volatile int flags, ...)
+{
+	mode_t mode = 0;
+
+	if (flags & O_CREAT) {
+		va_list arg_list;
+
+		va_start(arg_list, flags);
+		mode = (mode_t)va_arg(arg_list, int);
+		va_end(arg_list);
+	}
+
+	return git__p_open(path, flags, mode);
+}
+
+/* Implemented in Rust (src/util/filebuf.rs). */
+extern int git_filebuf__printf_formatted(
+	git_filebuf *file, const char *data, int len);
+
+#define FILEBUF_PRINTF_STACK 8192
+
+int git_filebuf_printf(git_filebuf *file, const char *format, ...)
+{
+	char stackbuf[FILEBUF_PRINTF_STACK], *msg = stackbuf;
+	va_list ap;
+	int len, r;
+
+	va_start(ap, format);
+	len = p_vsnprintf(stackbuf, sizeof(stackbuf), format, ap);
+	va_end(ap);
+
+	if (len >= 0 && (size_t)len >= sizeof(stackbuf)) {
+		/* < 0 tells the Rust that formatting (here: memory) failed. */
+		if ((msg = git__malloc((size_t)len + 1)) == NULL)
+			return git_filebuf__printf_formatted(file, NULL, -1);
+
+		va_start(ap, format);
+		len = p_vsnprintf(msg, (size_t)len + 1, format, ap);
+		va_end(ap);
+	}
+
+	r = git_filebuf__printf_formatted(file, msg, len);
+
+	if (msg != stackbuf)
+		git__free(msg);
+
+	return r;
+}
+
+/*
+ * The inline functions of hashmap_str.h, out of line, for the Rust port of
+ * futils.c (git_futils_mkdir_relative's path cache is a C-owned set).
+ */
+int git_hashset_str__contains(git_hashset_str *set, const char *key)
+{
+	return git_hashset_str_contains(set, key);
+}
+
+int git_hashset_str__add(git_hashset_str *set, const char *key)
+{
+	return git_hashset_str_add(set, key);
 }
