@@ -5,16 +5,42 @@
 #![cfg(all(feature = "link-c", not(miri)))]
 #![allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)]
 
-use core::ffi::{c_char, c_void};
+use core::ffi::{c_char, c_int, c_void};
 
 use ffibox::{CBitfield, CBits};
 
-use libgit2_rs::util::errors::{self, ErrorClass};
-use libgit2_rs::util::process::{
-    GitProcess, GitProcessOptions, GitProcessResult, ffi, flags, status,
+use libgit2_rs::__test::util::errors::{self, ErrorClass};
+use libgit2_rs::__test::util::process::{
+    GitProcess, GitProcessOptions, GitProcessResult, flags, status,
 };
-use libgit2_rs::util::str::GitStr;
-use libgit2_rs::util::test_support;
+use libgit2_rs::__test::util::str::GitStr;
+use libgit2_rs::__test::util::test_support;
+
+// The C ABI under test, declared as C declares it (the signatures are the
+// `src` exports').
+// The handles are Rust types C sees as opaque: it only passes pointers to them.
+#[allow(improper_ctypes)]
+unsafe extern "C" {
+    fn git_process_close(process: *mut GitProcess) -> c_int;
+    fn git_process_close_err(process: *mut GitProcess) -> c_int;
+    fn git_process_close_in(process: *mut GitProcess) -> c_int;
+    fn git_process_free(process: *mut GitProcess);
+    fn git_process_id(out: *mut libc::pid_t, process: *mut GitProcess) -> c_int;
+    fn git_process_new(
+        out: *mut *mut GitProcess,
+        args: *const *const c_char,
+        args_len: usize,
+        env: *const *const c_char,
+        env_len: usize,
+        opts: *mut GitProcessOptions,
+    ) -> c_int;
+    fn git_process_read(process: *mut GitProcess, buf: *mut c_void, count: usize) -> isize;
+    fn git_process_read_err(process: *mut GitProcess, buf: *mut c_void, count: usize) -> isize;
+    fn git_process_result_msg(out: *mut GitStr, result: *mut GitProcessResult) -> c_int;
+    fn git_process_start(process: *mut GitProcess) -> c_int;
+    fn git_process_wait(result: *mut GitProcessResult, process: *mut GitProcess) -> c_int;
+    fn git_process_write(process: *mut GitProcess, buf: *const c_void, count: usize) -> isize;
+}
 
 fn msg() -> String {
     String::from_utf8(errors::last_message().unwrap_or_default()).unwrap()
@@ -47,7 +73,7 @@ fn run(
     // SAFETY: valid arrays, options and buffers, as process.h requires.
     unsafe {
         assert_eq!(
-            ffi::git_process_new(
+            git_process_new(
                 &mut p,
                 argv.as_ptr(),
                 argv.len(),
@@ -57,26 +83,26 @@ fn run(
             ),
             0
         );
-        assert_eq!(ffi::git_process_start(p), 0, "{}", msg());
+        assert_eq!(git_process_start(p), 0, "{}", msg());
         if o.flags.is_set(flags::CAPTURE_IN) {
             assert_eq!(
-                ffi::git_process_write(p, input.as_ptr().cast(), input.len()),
+                git_process_write(p, input.as_ptr().cast(), input.len()),
                 input.len() as isize
             );
-            assert_eq!(ffi::git_process_close_in(p), 0);
+            assert_eq!(git_process_close_in(p), 0);
         }
         let mut buf = [0u8; 64];
         loop {
-            let n = ffi::git_process_read(p, buf.as_mut_ptr().cast(), buf.len());
+            let n = git_process_read(p, buf.as_mut_ptr().cast(), buf.len());
             assert!(n >= 0);
             if n == 0 {
                 break;
             }
             out.extend_from_slice(&buf[..n as usize]);
         }
-        assert_eq!(ffi::git_process_wait(&mut r, p), 0);
-        ffi::git_process_close(p);
-        ffi::git_process_free(p);
+        assert_eq!(git_process_wait(&mut r, p), 0);
+        git_process_close(p);
+        git_process_free(p);
     }
     (out, r)
 }
@@ -156,33 +182,33 @@ fn start_failures() {
     // SAFETY: valid arguments.
     unsafe {
         assert_eq!(
-            ffi::git_process_new(&mut p, args.as_ptr(), 1, core::ptr::null(), 0, &mut o),
+            git_process_new(&mut p, args.as_ptr(), 1, core::ptr::null(), 0, &mut o),
             0
         );
-        assert_eq!(ffi::git_process_start(p), -1);
+        assert_eq!(git_process_start(p), -1);
         assert_eq!(
             msg(),
             "cannot run /a/b/z/y/not_found: No such file or directory"
         );
         assert_eq!(errors::last_class(), Some(ErrorClass::SSH));
-        ffi::git_process_free(p);
+        git_process_free(p);
 
         let pwd = [c"/bin/pwd".as_ptr()];
         let mut o = opts(&[flags::CAPTURE_OUT]);
         o.cwd = c"/no/such/dir".as_ptr().cast_mut();
         assert_eq!(
-            ffi::git_process_new(&mut p, pwd.as_ptr(), 1, core::ptr::null(), 0, &mut o),
+            git_process_new(&mut p, pwd.as_ptr(), 1, core::ptr::null(), 0, &mut o),
             0
         );
-        assert_eq!(ffi::git_process_start(p), -1);
+        assert_eq!(git_process_start(p), -1);
         assert_eq!(msg(), "could not chdir: No such file or directory");
         assert_eq!(errors::last_class(), Some(ErrorClass::OS));
         // the pipes were closed, and are not named any more
-        assert_eq!(ffi::git_process_close(p), 0);
+        assert_eq!(git_process_close(p), 0);
         let mut pid = 0;
-        assert_eq!(ffi::git_process_id(&mut pid, p), -1);
+        assert_eq!(git_process_id(&mut pid, p), -1);
         assert_eq!(msg(), "process not running");
-        ffi::git_process_free(p);
+        git_process_free(p);
     }
 }
 
@@ -196,7 +222,7 @@ fn argument_checks_and_messages() {
     // SAFETY: valid (or deliberately NULL) arguments.
     unsafe {
         assert_eq!(
-            ffi::git_process_new(
+            git_process_new(
                 &mut p,
                 args.as_ptr(),
                 0,
@@ -209,7 +235,7 @@ fn argument_checks_and_messages() {
         assert_eq!(msg(), "invalid argument: 'out && args && args_len > 0'");
         assert!(p.is_null());
         assert_eq!(
-            ffi::git_process_new(
+            git_process_new(
                 &mut p,
                 args.as_ptr(),
                 1,
@@ -219,35 +245,29 @@ fn argument_checks_and_messages() {
             ),
             0
         );
-        assert_eq!(
-            ffi::git_process_read(p, (&raw mut c).cast::<c_void>(), 1),
-            -1
-        );
+        assert_eq!(git_process_read(p, (&raw mut c).cast::<c_void>(), 1), -1);
         assert_eq!(
             msg(),
             "unrecoverable internal error: 'process->capture_out'"
         );
-        assert_eq!(
-            ffi::git_process_write(p, (&raw const c).cast::<c_void>(), 1),
-            -1
-        );
+        assert_eq!(git_process_write(p, (&raw const c).cast::<c_void>(), 1), -1);
         assert_eq!(msg(), "unrecoverable internal error: 'process->capture_in'");
         assert_eq!(
-            ffi::git_process_read(core::ptr::null_mut(), (&raw mut c).cast::<c_void>(), 1),
+            git_process_read(core::ptr::null_mut(), (&raw mut c).cast::<c_void>(), 1),
             -1
         );
         assert_eq!(msg(), "invalid argument: 'process'");
-        assert_eq!(ffi::git_process_close_err(p), -1);
+        assert_eq!(git_process_close_err(p), -1);
         assert_eq!(msg(), "error is not open");
         let mut r = GitProcessResult {
             status: 9,
             exitcode: 9,
             signal: 9,
         };
-        assert_eq!(ffi::git_process_wait(&mut r, p), -1);
+        assert_eq!(git_process_wait(&mut r, p), -1);
         assert_eq!(msg(), "process is stopped");
         assert_eq!(r, GitProcessResult::default());
-        ffi::git_process_free(p);
+        git_process_free(p);
     }
 
     for (r, m) in [
@@ -287,7 +307,7 @@ fn argument_checks_and_messages() {
         let mut s = GitStr::new();
         let mut r = r;
         // SAFETY: valid string and result.
-        assert_eq!(unsafe { ffi::git_process_result_msg(&mut s, &mut r) }, 0);
+        assert_eq!(unsafe { git_process_result_msg(&mut s, &mut r) }, 0);
         assert_eq!(s.as_bytes(), m.as_bytes());
     }
 }
@@ -302,16 +322,16 @@ fn write_to_dead_child_is_epipe() {
     // SAFETY: valid arguments.
     unsafe {
         assert_eq!(
-            ffi::git_process_new(&mut p, args.as_ptr(), 1, core::ptr::null(), 0, &mut o),
+            git_process_new(&mut p, args.as_ptr(), 1, core::ptr::null(), 0, &mut o),
             0
         );
-        assert_eq!(ffi::git_process_start(p), 0);
-        assert_eq!(ffi::git_process_wait(core::ptr::null_mut(), p), 0);
+        assert_eq!(git_process_start(p), 0);
+        assert_eq!(git_process_wait(core::ptr::null_mut(), p), 0);
         // SIGPIPE is blocked and consumed: the write fails, the test lives
-        assert_eq!(ffi::git_process_write(p, b"x".as_ptr().cast(), 1), -1);
+        assert_eq!(git_process_write(p, b"x".as_ptr().cast(), 1), -1);
         assert_eq!(msg(), "could not write to child process: Broken pipe");
-        ffi::git_process_close(p);
-        ffi::git_process_free(p);
+        git_process_close(p);
+        git_process_free(p);
     }
 }
 
@@ -333,7 +353,7 @@ fn fd_lock() -> std::sync::MutexGuard<'static, ()> {
 fn no_descriptor_leaks() {
     let _g = test_support::init();
     let _l = fd_lock();
-    let all = libgit2_rs::ProcessOptions {
+    let all = libgit2_rs::__test::util::process::ProcessOptions {
         capture_in: true,
         capture_out: true,
         capture_err: true,
@@ -342,9 +362,13 @@ fn no_descriptor_leaks() {
     let before = open_fds();
     for _ in 0..10 {
         // the safe API: new, start, wait, drop
-        let mut p = libgit2_rs::Process::new(&[b"/bin/true"], &[], &all).unwrap();
+        let mut p =
+            libgit2_rs::__test::util::process::Process::new(&[b"/bin/true"], &[], &all).unwrap();
         p.start().unwrap();
-        assert_eq!(p.wait().unwrap(), libgit2_rs::ProcessStatus::Exited(0));
+        assert_eq!(
+            p.wait().unwrap(),
+            libgit2_rs::__test::util::process::ProcessStatus::Exited(0)
+        );
         drop(p);
         // the C ABI: new, start, wait, free (without git_process_close)
         let args = [c"/bin/true".as_ptr()];
@@ -353,22 +377,25 @@ fn no_descriptor_leaks() {
         // SAFETY: valid arguments.
         unsafe {
             assert_eq!(
-                ffi::git_process_new(&mut p, args.as_ptr(), 1, core::ptr::null(), 0, &mut o),
+                git_process_new(&mut p, args.as_ptr(), 1, core::ptr::null(), 0, &mut o),
                 0
             );
-            assert_eq!(ffi::git_process_start(p), 0);
-            assert_eq!(ffi::git_process_wait(core::ptr::null_mut(), p), 0);
-            ffi::git_process_free(p);
+            assert_eq!(git_process_start(p), 0);
+            assert_eq!(git_process_wait(core::ptr::null_mut(), p), 0);
+            git_process_free(p);
         }
         // failed starts: not found, and a failing chdir after the fork
-        let mut p = libgit2_rs::Process::new(&[b"/no/such/program"], &[], &all).unwrap();
+        let mut p =
+            libgit2_rs::__test::util::process::Process::new(&[b"/no/such/program"], &[], &all)
+                .unwrap();
         assert!(p.start().is_err());
         drop(p);
-        let cwd = libgit2_rs::ProcessOptions {
+        let cwd = libgit2_rs::__test::util::process::ProcessOptions {
             cwd: Some(b"/no/such/dir".to_vec()),
             ..all.clone()
         };
-        let mut p = libgit2_rs::Process::new(&[b"/bin/true"], &[], &cwd).unwrap();
+        let mut p =
+            libgit2_rs::__test::util::process::Process::new(&[b"/bin/true"], &[], &cwd).unwrap();
         assert!(p.start().is_err());
         drop(p);
     }
@@ -387,17 +414,17 @@ fn read_into_uninitialized_buffers() {
     // only the bytes `read` reports are read back.
     unsafe {
         assert_eq!(
-            ffi::git_process_new(&mut p, args.as_ptr(), 1, core::ptr::null(), 0, &mut o),
+            git_process_new(&mut p, args.as_ptr(), 1, core::ptr::null(), 0, &mut o),
             0
         );
-        assert_eq!(ffi::git_process_start(p), 0);
-        let n = ffi::git_process_read(p, buf.as_mut_ptr().cast(), 64);
+        assert_eq!(git_process_start(p), 0);
+        let n = git_process_read(p, buf.as_mut_ptr().cast(), 64);
         assert_eq!(&buf.assume_init_ref()[..n as usize], b"hello\n");
         let mut ebuf = core::mem::MaybeUninit::<[u8; 64]>::uninit();
-        let n = ffi::git_process_read_err(p, ebuf.as_mut_ptr().cast(), 64);
+        let n = git_process_read_err(p, ebuf.as_mut_ptr().cast(), 64);
         assert_eq!(&ebuf.assume_init_ref()[..n as usize], b"oops\n");
-        assert_eq!(ffi::git_process_wait(core::ptr::null_mut(), p), 0);
-        ffi::git_process_free(p);
+        assert_eq!(git_process_wait(core::ptr::null_mut(), p), 0);
+        git_process_free(p);
     }
 }
 
@@ -407,16 +434,21 @@ fn read_into_uninitialized_buffers() {
 fn pipes_do_not_leak_into_other_children() {
     let _g = test_support::init();
     let _l = fd_lock();
-    let io = libgit2_rs::ProcessOptions {
+    let io = libgit2_rs::__test::util::process::ProcessOptions {
         capture_in: true,
         capture_out: true,
         ..Default::default()
     };
-    let mut cat = libgit2_rs::Process::new(&[b"/bin/cat"], &[], &io).unwrap();
+    let mut cat =
+        libgit2_rs::__test::util::process::Process::new(&[b"/bin/cat"], &[], &io).unwrap();
     cat.start().unwrap();
     // a second child, started while `cat`'s pipes are open, lives on
-    let mut sleeper =
-        libgit2_rs::Process::new(&[b"/bin/sleep", b"30"], &[], &Default::default()).unwrap();
+    let mut sleeper = libgit2_rs::__test::util::process::Process::new(
+        &[b"/bin/sleep", b"30"],
+        &[],
+        &Default::default(),
+    )
+    .unwrap();
     sleeper.start().unwrap();
     assert_eq!(cat.write(b"x").unwrap(), 1);
     cat.close_in().unwrap();
@@ -424,13 +456,16 @@ fn pipes_do_not_leak_into_other_children() {
     assert_eq!(cat.read(&mut b).unwrap(), 1);
     // EOF although `sleeper` still runs: it did not inherit our write end
     assert_eq!(cat.read(&mut b).unwrap(), 0);
-    assert_eq!(cat.wait().unwrap(), libgit2_rs::ProcessStatus::Exited(0));
+    assert_eq!(
+        cat.wait().unwrap(),
+        libgit2_rs::__test::util::process::ProcessStatus::Exited(0)
+    );
     let pid = sleeper.id().unwrap();
     // SAFETY: our child.
     unsafe { libc::kill(pid, libc::SIGKILL) };
     assert_eq!(
         sleeper.wait().unwrap(),
-        libgit2_rs::ProcessStatus::Signaled(libc::SIGKILL)
+        libgit2_rs::__test::util::process::ProcessStatus::Signaled(libc::SIGKILL)
     );
 }
 
@@ -458,11 +493,16 @@ fn sigpipe_disposition() {
         "the C ABI keeps the inherited disposition"
     );
 
-    let o = libgit2_rs::ProcessOptions {
+    let o = libgit2_rs::__test::util::process::ProcessOptions {
         capture_out: true,
         ..Default::default()
     };
-    let mut p = libgit2_rs::Process::new(&[b"/bin/cat", b"/proc/self/status"], &[], &o).unwrap();
+    let mut p = libgit2_rs::__test::util::process::Process::new(
+        &[b"/bin/cat", b"/proc/self/status"],
+        &[],
+        &o,
+    )
+    .unwrap();
     p.start().unwrap();
     let mut out = Vec::new();
     let mut b = [0u8; 256];

@@ -305,8 +305,7 @@ pub(crate) fn slot_busy() -> c_int {
 /// A Rust error raised into C's thread state: its code, with its class and
 /// message set.
 pub(crate) fn raise(e: &Error) -> ErrorCode {
-    let _ = errors::set_str(e.class(), e.message_bytes());
-    e.code()
+    e.set_last()
 }
 
 // ---------------------------------------------------------------------------
@@ -375,7 +374,7 @@ mod sealed {
 /// live table for as long as `&self` lives.
 ///
 /// ```compile_fail
-/// use libgit2_rs::config::{BackendCalls, git_config_backend};
+/// use libgit2_rs::__test::config::{BackendCalls, git_config_backend};
 /// struct Bogus;
 /// impl BackendCalls for Bogus {
 ///     fn raw(&self) -> *mut git_config_backend { core::ptr::dangling_mut() }
@@ -1809,7 +1808,7 @@ pub fn parse_path(out: &mut GitStr, value: &[u8]) -> Result<()> {
 
 /// A map of `git_config_get_mapped`, in Rust.
 #[derive(Clone, Copy, Debug)]
-pub struct ConfigMap<'a> {
+pub struct RawConfigMap<'a> {
     /// `type` (`GIT_CONFIGMAP_*`).
     pub kind: c_int,
     /// `str_match`.
@@ -1819,7 +1818,7 @@ pub struct ConfigMap<'a> {
 }
 
 /// `git_config_lookup_map_value`.
-pub fn lookup_map_value(maps: &[ConfigMap<'_>], value: Option<&[u8]>) -> Result<c_int> {
+pub fn lookup_map_value(maps: &[RawConfigMap<'_>], value: Option<&[u8]>) -> Result<c_int> {
     for m in maps {
         match m.kind {
             GIT_CONFIGMAP_FALSE | GIT_CONFIGMAP_TRUE => {
@@ -2876,14 +2875,14 @@ pub mod ffi {
     ///
     /// `maps` is readable for `n` maps whose strings are NULL or
     /// NUL-terminated, for `'a`.
-    unsafe fn configmaps<'a>(maps: *const git_configmap, n: usize) -> Vec<ConfigMap<'a>> {
+    unsafe fn configmaps<'a>(maps: *const git_configmap, n: usize) -> Vec<RawConfigMap<'a>> {
         if n == 0 {
             return Vec::new();
         }
         // SAFETY: per the contract.
         let maps = unsafe { core::slice::from_raw_parts(maps, n) };
         maps.iter()
-            .map(|m| ConfigMap {
+            .map(|m| RawConfigMap {
                 kind: m.type_,
                 // SAFETY: per the contract.
                 str_match: unsafe { c(m.str_match) }.map(CStr::to_bytes),
@@ -3626,7 +3625,7 @@ pub enum ConfigLevel {
 
 impl ConfigLevel {
     /// The C value.
-    pub fn raw(self) -> c_int {
+    pub(crate) fn raw(self) -> c_int {
         match self {
             ConfigLevel::System => GIT_CONFIG_LEVEL_SYSTEM,
             ConfigLevel::Xdg => GIT_CONFIG_LEVEL_XDG,
@@ -3640,7 +3639,7 @@ impl ConfigLevel {
     }
 
     /// From the C value.
-    pub fn from_raw(n: c_int) -> ConfigLevel {
+    pub(crate) fn from_raw(n: c_int) -> ConfigLevel {
         match n {
             GIT_CONFIG_LEVEL_SYSTEM => ConfigLevel::System,
             GIT_CONFIG_LEVEL_XDG => ConfigLevel::Xdg,
@@ -3748,13 +3747,89 @@ impl ConfigEntry {
     }
 }
 
+/// What a [`ConfigMap`] matches (`git_configmap_t`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ConfigMapKind {
+    /// A false boolean (`GIT_CONFIGMAP_FALSE`).
+    False,
+    /// A true boolean (`GIT_CONFIGMAP_TRUE`).
+    True,
+    /// An integer, which is the result (`GIT_CONFIGMAP_INT32`).
+    Int32,
+    /// The string `str_match`, ignoring case (`GIT_CONFIGMAP_STRING`).
+    String,
+}
+
+/// One mapping of [`Config::get_mapped`] (`git_configmap`): a value that
+/// matches `kind` (and `str_match`) maps to `map_value`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ConfigMap<'a> {
+    /// What the value must be.
+    pub kind: ConfigMapKind,
+    /// The string to match, for [`ConfigMapKind::String`].
+    pub str_match: Option<&'a [u8]>,
+    /// The result (ignored for [`ConfigMapKind::Int32`]).
+    pub map_value: i32,
+}
+
+impl<'a> ConfigMap<'a> {
+    /// A false boolean maps to `value`.
+    pub const fn falsy(value: i32) -> ConfigMap<'a> {
+        ConfigMap {
+            kind: ConfigMapKind::False,
+            str_match: None,
+            map_value: value,
+        }
+    }
+
+    /// A true boolean (or a bare name) maps to `value`.
+    pub const fn truthy(value: i32) -> ConfigMap<'a> {
+        ConfigMap {
+            kind: ConfigMapKind::True,
+            str_match: None,
+            map_value: value,
+        }
+    }
+
+    /// An integer maps to itself.
+    pub const fn int32() -> ConfigMap<'a> {
+        ConfigMap {
+            kind: ConfigMapKind::Int32,
+            str_match: None,
+            map_value: 0,
+        }
+    }
+
+    /// The string `s` (ignoring case) maps to `value`.
+    pub const fn string(s: &'a [u8], value: i32) -> ConfigMap<'a> {
+        ConfigMap {
+            kind: ConfigMapKind::String,
+            str_match: Some(s),
+            map_value: value,
+        }
+    }
+
+    fn raw(&self) -> RawConfigMap<'a> {
+        RawConfigMap {
+            kind: match self.kind {
+                ConfigMapKind::False => GIT_CONFIGMAP_FALSE,
+                ConfigMapKind::True => GIT_CONFIGMAP_TRUE,
+                ConfigMapKind::Int32 => GIT_CONFIGMAP_INT32,
+                ConfigMapKind::String => GIT_CONFIGMAP_STRING,
+            },
+            str_match: self.str_match,
+            map_value: self.map_value,
+        }
+    }
+}
+
 type ApiResult<T> = core::result::Result<T, Error>;
 
 /// A NUL-terminated copy of a Rust string argument (`invalid argument` if
 /// it holds a NUL, which C could not pass).
 fn arg(s: &[u8]) -> ApiResult<Vec<u8>> {
     if s.contains(&0) {
-        return Err(Error::new(
+        return Err(Error::with(
             ErrorCode::INVALID,
             ErrorClass::INVALID,
             "a config string argument contains a NUL byte",
@@ -3769,13 +3844,32 @@ fn path_bytes(p: &std::path::Path) -> &[u8] {
     p.as_os_str().as_bytes()
 }
 
+/// A path the library made, as a `PathBuf` (lossless on Unix).
+fn to_path(s: &GitStr) -> std::path::PathBuf {
+    use std::os::unix::ffi::OsStrExt;
+    std::path::PathBuf::from(std::ffi::OsStr::from_bytes(s.as_bytes()))
+}
+
 /// A configuration (`git_config`): backends by level. `Clone` takes another
 /// reference to the same configuration.
+///
+/// Names are bytes (`impl AsRef<[u8]>`: `&str` works), as are values; a
+/// NUL inside one is refused.
 ///
 /// `'r` is the repository the configuration came from (`'static` for one
 /// made alone): a repository's file backends keep the repository for their
 /// include conditions, so the configuration (and its clones, levels and
 /// snapshots) cannot outlive it.
+///
+/// ```
+/// # #[cfg(not(miri))] {
+/// use libgit2_rs::{Config, ConfigLevel};
+/// let c = Config::new();
+/// c.add_memory(b"[core]\n\tbare = true\n", ConfigLevel::Local, false)?;
+/// assert!(c.get_bool("core.bare")?);
+/// # }
+/// # Ok::<(), libgit2_rs::Error>(())
+/// ```
 #[derive(Clone)]
 pub struct Config<'r>(CShared<GitConfig>, core::marker::PhantomData<&'r ()>);
 
@@ -3820,28 +3914,60 @@ impl<'r> Config<'r> {
 
     /// `git_config_new`: an empty configuration.
     pub fn new() -> Config<'static> {
+        // Making the configuration is plain Rust, which cannot fail; the
+        // library is initialized for what is done with it next (an init
+        // that failed fails again, and is reported, there).
+        let _ = crate::libgit2::ensure_init();
         Config::from_box(GitConfig::new())
     }
 
     /// `git_config_open_ondisk`: the file at `path`, at the local level.
-    pub fn open(path: &std::path::Path) -> ApiResult<Config<'static>> {
-        let p = arg(path_bytes(path))?;
+    pub fn open(path: impl AsRef<std::path::Path>) -> ApiResult<Config<'static>> {
+        crate::libgit2::ensure_init()?;
+        let p = arg(path_bytes(path.as_ref()))?;
         Ok(Config::from_box(open_ondisk(as_cstr(&p))?))
     }
 
     /// `git_config_open_default`: the global, XDG and system files.
     pub fn open_default() -> ApiResult<Config<'static>> {
+        crate::libgit2::ensure_init()?;
         Ok(Config::from_box(open_default()?))
+    }
+
+    /// `git_config_find_global`: the global file (`~/.gitconfig`), if it
+    /// exists ([`ErrorCode::NOT_FOUND`] otherwise).
+    pub fn find_global() -> ApiResult<std::path::PathBuf> {
+        crate::libgit2::ensure_init()?;
+        let mut s = GitStr::new();
+        find_global(&mut s)?;
+        Ok(to_path(&s))
+    }
+
+    /// `git_config_find_xdg`: the XDG file (`~/.config/git/config`), if it
+    /// exists.
+    pub fn find_xdg() -> ApiResult<std::path::PathBuf> {
+        crate::libgit2::ensure_init()?;
+        let mut s = GitStr::new();
+        find_xdg(&mut s)?;
+        Ok(to_path(&s))
+    }
+
+    /// `git_config_find_system`: the system file, if it exists.
+    pub fn find_system() -> ApiResult<std::path::PathBuf> {
+        crate::libgit2::ensure_init()?;
+        let mut s = GitStr::new();
+        find_system(&mut s)?;
+        Ok(to_path(&s))
     }
 
     /// `git_config_add_file_ondisk`.
     pub fn add_file(
         &self,
-        path: &std::path::Path,
+        path: impl AsRef<std::path::Path>,
         level: ConfigLevel,
         force: bool,
     ) -> ApiResult<()> {
-        let p = arg(path_bytes(path))?;
+        let p = arg(path_bytes(path.as_ref()))?;
         Ok(add_file(self.inner(), as_cstr(&p), level.raw(), force)?)
     }
 
@@ -3888,51 +4014,71 @@ impl<'r> Config<'r> {
         Ok(self.inner().set_writeorder(&l)?)
     }
 
+    /// `git_config_lock`: lock the backend writes go to (the highest
+    /// writable one), for a transaction. Writes made meanwhile are kept
+    /// until [`ConfigLock::commit`]; dropping the lock discards them
+    /// ([`ErrorCode::READ_ONLY`] if no backend is writable).
+    pub fn lock(&self) -> ApiResult<ConfigLock<'_>> {
+        let Some(instance) = self.inner().writer() else {
+            return Err(Error::with(
+                ErrorCode::READ_ONLY,
+                ErrorClass::CONFIG,
+                "cannot lock: the configuration is read-only",
+            ));
+        };
+        instance.backend.lock()?;
+        Ok(ConfigLock {
+            instance: Some(instance),
+            _config: core::marker::PhantomData,
+        })
+    }
+
     /// `git_config_get_entry`.
-    pub fn get_entry(&self, name: &str) -> ApiResult<ConfigEntry> {
-        let n = arg(name.as_bytes())?;
+    pub fn get_entry(&self, name: impl AsRef<[u8]>) -> ApiResult<ConfigEntry> {
+        let name = name.as_ref();
+        let n = arg(name)?;
         let e = self.inner().get_entry(as_cstr(&n), true, Want::AllErrors)?;
-        let e = e.ok_or_else(|| Error::from(error_notfound(name.as_bytes())))?;
+        let e = e.ok_or_else(|| Error::from(error_notfound(name)))?;
         Ok(ConfigEntry::from_view(&e.view()))
     }
 
     fn with_value<T>(
         &self,
-        name: &str,
+        name: &[u8],
         f: impl FnOnce(Option<&[u8]>) -> Result<T>,
     ) -> ApiResult<T> {
-        let n = arg(name.as_bytes())?;
+        let n = arg(name)?;
         let e = self.inner().get_entry(as_cstr(&n), true, Want::AllErrors)?;
-        let e = e.ok_or_else(|| Error::from(error_notfound(name.as_bytes())))?;
+        let e = e.ok_or_else(|| Error::from(error_notfound(name)))?;
         Ok(f(e.value())?)
     }
 
     /// `git_config_get_bool`.
-    pub fn get_bool(&self, name: &str) -> ApiResult<bool> {
-        self.with_value(name, parse_bool)
+    pub fn get_bool(&self, name: impl AsRef<[u8]>) -> ApiResult<bool> {
+        self.with_value(name.as_ref(), parse_bool)
     }
 
     /// `git_config_get_int32`.
-    pub fn get_i32(&self, name: &str) -> ApiResult<i32> {
-        self.with_value(name, parse_int32)
+    pub fn get_i32(&self, name: impl AsRef<[u8]>) -> ApiResult<i32> {
+        self.with_value(name.as_ref(), parse_int32)
     }
 
     /// `git_config_get_int64`.
-    pub fn get_i64(&self, name: &str) -> ApiResult<i64> {
-        self.with_value(name, parse_int64)
+    pub fn get_i64(&self, name: impl AsRef<[u8]>) -> ApiResult<i64> {
+        self.with_value(name.as_ref(), parse_int64)
     }
 
     /// `git_config_get_string_buf`: the value's bytes (empty for a bare
     /// name).
-    pub fn get_bytes(&self, name: &str) -> ApiResult<Vec<u8>> {
-        self.with_value(name, |v| Ok(v.unwrap_or(b"").to_vec()))
+    pub fn get_bytes(&self, name: impl AsRef<[u8]>) -> ApiResult<Vec<u8>> {
+        self.with_value(name.as_ref(), |v| Ok(v.unwrap_or(b"").to_vec()))
     }
 
     /// The value as a `String` (an error if it is not UTF-8).
-    pub fn get_string(&self, name: &str) -> ApiResult<String> {
+    pub fn get_string(&self, name: impl AsRef<[u8]>) -> ApiResult<String> {
         let v = self.get_bytes(name)?;
         String::from_utf8(v).map_err(|_| {
-            Error::new(
+            Error::with(
                 ErrorCode::GENERIC,
                 ErrorClass::CONFIG,
                 "the config value is not valid UTF-8",
@@ -3941,73 +4087,118 @@ impl<'r> Config<'r> {
     }
 
     /// `git_config_get_path`: the value with `~/` expanded.
-    pub fn get_path(&self, name: &str) -> ApiResult<std::path::PathBuf> {
-        use std::os::unix::ffi::OsStrExt;
+    pub fn get_path(&self, name: impl AsRef<[u8]>) -> ApiResult<std::path::PathBuf> {
         let mut out = GitStr::new();
-        self.with_value(name, |v| match v {
+        self.with_value(name.as_ref(), |v| match v {
             Some(v) => parse_path(&mut out, v),
             None => Err(errors::assert_arg_failed("value")),
         })?;
-        Ok(std::path::PathBuf::from(std::ffi::OsStr::from_bytes(
-            out.as_bytes(),
-        )))
+        Ok(to_path(&out))
     }
 
-    /// `git_config_get_mapped`: the value mapped by `maps`
-    /// (`(GIT_CONFIGMAP_*, str_match, value)` triples).
-    pub fn get_mapped(&self, name: &str, maps: &[ConfigMap<'_>]) -> ApiResult<i32> {
-        self.with_value(name, |v| lookup_map_value(maps, v))
+    /// `git_config_get_mapped`: the value of `name` mapped by the first
+    /// of `maps` it matches (an error if none does).
+    pub fn get_mapped(&self, name: impl AsRef<[u8]>, maps: &[ConfigMap<'_>]) -> ApiResult<i32> {
+        let raw: Vec<RawConfigMap<'_>> = maps.iter().map(ConfigMap::raw).collect();
+        self.with_value(name.as_ref(), |v| lookup_map_value(&raw, v))
+    }
+
+    /// `git_config_lookup_map_value`: `value` mapped by the first of
+    /// `maps` it matches (an error if none does).
+    pub fn lookup_map_value(maps: &[ConfigMap<'_>], value: Option<&[u8]>) -> ApiResult<i32> {
+        crate::libgit2::ensure_init()?;
+        let raw: Vec<RawConfigMap<'_>> = maps.iter().map(ConfigMap::raw).collect();
+        Ok(lookup_map_value(&raw, value)?)
+    }
+
+    /// `git_config_parse_bool`: `true`/`yes`/`on`/a non-zero integer, or
+    /// `false`/`no`/`off`/`0`/empty (ignoring case).
+    pub fn parse_bool(value: impl AsRef<[u8]>) -> ApiResult<bool> {
+        crate::libgit2::ensure_init()?;
+        Ok(parse_bool(Some(value.as_ref()))?)
+    }
+
+    /// `git_config_parse_int32`: an integer with an optional `k`, `m` or
+    /// `g` suffix.
+    pub fn parse_i32(value: impl AsRef<[u8]>) -> ApiResult<i32> {
+        crate::libgit2::ensure_init()?;
+        Ok(parse_int32(Some(value.as_ref()))?)
+    }
+
+    /// `git_config_parse_int64`.
+    pub fn parse_i64(value: impl AsRef<[u8]>) -> ApiResult<i64> {
+        crate::libgit2::ensure_init()?;
+        Ok(parse_int64(Some(value.as_ref()))?)
+    }
+
+    /// `git_config_parse_path`: `value` with a leading `~/` expanded to
+    /// the home directory.
+    pub fn parse_path(value: impl AsRef<[u8]>) -> ApiResult<std::path::PathBuf> {
+        crate::libgit2::ensure_init()?;
+        let v = arg(value.as_ref())?;
+        let mut out = GitStr::new();
+        parse_path(&mut out, until_nul(&v))?;
+        Ok(to_path(&out))
     }
 
     /// `git_config_set_string`.
-    pub fn set_str(&self, name: &str, value: &str) -> ApiResult<()> {
-        self.set_bytes(name, value.as_bytes())
+    pub fn set_str(&self, name: impl AsRef<[u8]>, value: &str) -> ApiResult<()> {
+        self.set_bytes(name, value)
     }
 
     /// `git_config_set_string` of bytes.
-    pub fn set_bytes(&self, name: &str, value: &[u8]) -> ApiResult<()> {
-        let n = arg(name.as_bytes())?;
-        let v = arg(value)?;
+    pub fn set_bytes(&self, name: impl AsRef<[u8]>, value: impl AsRef<[u8]>) -> ApiResult<()> {
+        let n = arg(name.as_ref())?;
+        let v = arg(value.as_ref())?;
         Ok(self.inner().set_string(as_cstr(&n), Some(as_cstr(&v)))?)
     }
 
     /// `git_config_set_bool`.
-    pub fn set_bool(&self, name: &str, value: bool) -> ApiResult<()> {
+    pub fn set_bool(&self, name: impl AsRef<[u8]>, value: bool) -> ApiResult<()> {
         self.set_str(name, if value { "true" } else { "false" })
     }
 
     /// `git_config_set_int32`.
-    pub fn set_i32(&self, name: &str, value: i32) -> ApiResult<()> {
+    pub fn set_i32(&self, name: impl AsRef<[u8]>, value: i32) -> ApiResult<()> {
         self.set_i64(name, i64::from(value))
     }
 
     /// `git_config_set_int64`.
-    pub fn set_i64(&self, name: &str, value: i64) -> ApiResult<()> {
+    pub fn set_i64(&self, name: impl AsRef<[u8]>, value: i64) -> ApiResult<()> {
         self.set_str(name, &value.to_string())
     }
 
     /// `git_config_set_multivar`: set the values of `name` that match
     /// `regexp` (adding one if none does).
-    pub fn set_multivar(&self, name: &str, regexp: &str, value: &str) -> ApiResult<()> {
-        let n = arg(name.as_bytes())?;
-        let r = arg(regexp.as_bytes())?;
-        let v = arg(value.as_bytes())?;
+    pub fn set_multivar(
+        &self,
+        name: impl AsRef<[u8]>,
+        regexp: impl AsRef<[u8]>,
+        value: impl AsRef<[u8]>,
+    ) -> ApiResult<()> {
+        let n = arg(name.as_ref())?;
+        let r = arg(regexp.as_ref())?;
+        let v = arg(value.as_ref())?;
         self.inner()
             .set_multivar(as_cstr(&n), Some(as_cstr(&r)), Some(as_cstr(&v)))?;
         Ok(())
     }
 
     /// `git_config_delete_entry`.
-    pub fn remove(&self, name: &str) -> ApiResult<()> {
-        let n = arg(name.as_bytes())?;
+    pub fn remove(&self, name: impl AsRef<[u8]>) -> ApiResult<()> {
+        let n = arg(name.as_ref())?;
         self.inner().delete_entry(as_cstr(&n))?;
         Ok(())
     }
 
     /// `git_config_delete_multivar`.
-    pub fn remove_multivar(&self, name: &str, regexp: &str) -> ApiResult<()> {
-        let n = arg(name.as_bytes())?;
-        let r = arg(regexp.as_bytes())?;
+    pub fn remove_multivar(
+        &self,
+        name: impl AsRef<[u8]>,
+        regexp: impl AsRef<[u8]>,
+    ) -> ApiResult<()> {
+        let n = arg(name.as_ref())?;
+        let r = arg(regexp.as_ref())?;
         self.inner()
             .delete_multivar(as_cstr(&n), Some(as_cstr(&r)))?;
         Ok(())
@@ -4015,8 +4206,8 @@ impl<'r> Config<'r> {
 
     /// `git_config_iterator_glob_new`: every entry (whose name matches
     /// `glob`, a regular expression), from the lowest level up.
-    pub fn entries(&self, glob: Option<&str>) -> ApiResult<ConfigEntries<'_>> {
-        let g = glob.map(|g| arg(g.as_bytes())).transpose()?;
+    pub fn entries(&self, glob: Option<&[u8]>) -> ApiResult<ConfigEntries<'_>> {
+        let g = glob.map(arg).transpose()?;
         let it = self.inner().iterator(g.as_deref().map(as_cstr))?;
         Ok(ConfigEntries {
             it,
@@ -4026,9 +4217,13 @@ impl<'r> Config<'r> {
 
     /// `git_config_multivar_iterator_new`: the values of `name` (that
     /// match `regexp`).
-    pub fn multivar(&self, name: &str, regexp: Option<&str>) -> ApiResult<ConfigEntries<'_>> {
-        let n = arg(name.as_bytes())?;
-        let r = regexp.map(|r| arg(r.as_bytes())).transpose()?;
+    pub fn multivar(
+        &self,
+        name: impl AsRef<[u8]>,
+        regexp: Option<&[u8]>,
+    ) -> ApiResult<ConfigEntries<'_>> {
+        let n = arg(name.as_ref())?;
+        let r = regexp.map(arg).transpose()?;
         let it = self
             .inner()
             .multivar_iterator(as_cstr(&n), r.as_deref().map(as_cstr))?;
@@ -4036,6 +4231,40 @@ impl<'r> Config<'r> {
             it,
             _config: core::marker::PhantomData,
         })
+    }
+}
+
+/// A transaction on a [`Config`]'s writable backend ([`Config::lock`]):
+/// [`commit`](Self::commit) keeps the writes made while it lives; dropped
+/// without, it discards them.
+pub struct ConfigLock<'c> {
+    instance: Option<Arc<Instance>>,
+    _config: core::marker::PhantomData<&'c ()>,
+}
+
+impl ConfigLock<'_> {
+    /// Unlock the backend, keeping the writes (`git_transaction_commit`).
+    pub fn commit(mut self) -> ApiResult<()> {
+        let Some(instance) = self.instance.take() else {
+            return Ok(());
+        };
+        instance.backend.unlock(1)?;
+        Ok(())
+    }
+}
+
+impl Drop for ConfigLock<'_> {
+    fn drop(&mut self) {
+        if let Some(instance) = self.instance.take() {
+            // A discard cannot be reported from a drop.
+            let _ = instance.backend.unlock(0);
+        }
+    }
+}
+
+impl core::fmt::Debug for ConfigLock<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ConfigLock").finish_non_exhaustive()
     }
 }
 
@@ -4072,26 +4301,17 @@ impl Iterator for ConfigEntries<'_> {
     }
 }
 
-/// `git_config_parse_bool` of a string.
-pub fn config_parse_bool(value: &str) -> ApiResult<bool> {
-    Ok(parse_bool(Some(value.as_bytes()))?)
-}
-
-/// `git_config_parse_int32` of a string.
-pub fn config_parse_i32(value: &str) -> ApiResult<i32> {
-    Ok(parse_int32(Some(value.as_bytes()))?)
-}
-
-/// `git_config_parse_int64` of a string.
-pub fn config_parse_i64(value: &str) -> ApiResult<i64> {
-    Ok(parse_int64(Some(value.as_bytes()))?)
-}
-
 /// A configuration backend implemented in Rust (`git_config_backend`).
 ///
 /// The keys it is asked for are normalized (`section.subsection.name`,
-/// lower-cased but for the subsection). Writing methods default to
-/// "read-only"; `get` and `entries` are required.
+/// lower-cased but for the subsection). Every method has a default, so
+/// that the trait can grow: by default the backend is empty and its
+/// writes fail as read-only. A panic in a method is caught and becomes an
+/// error of class [`ErrorClass::INTERNAL`]. Names it returns must not
+/// contain NUL ([`ErrorCode::INVALID_SPEC`] otherwise). Its `Drop` may
+/// panic: the panic is caught (and its payload leaked), as C frees a
+/// backend where it cannot unwind. A backend that holds a clone of its own
+/// [`Config`] keeps it alive forever (a cycle).
 pub trait ConfigBackend: Send + Sync + 'static {
     /// `open`: called once when the backend is added at `level`.
     fn open(&self, level: ConfigLevel) -> ApiResult<()> {
@@ -4099,11 +4319,17 @@ pub trait ConfigBackend: Send + Sync + 'static {
         Ok(())
     }
 
-    /// `get`: the entry `key` (the last one, for a multivar), or `None`.
-    fn get(&self, key: &[u8]) -> ApiResult<Option<ConfigEntry>>;
+    /// `get`: the entry `key` (the last one, for a multivar), or `None`;
+    /// by default, `None`.
+    fn get(&self, key: &[u8]) -> ApiResult<Option<ConfigEntry>> {
+        let _ = key;
+        Ok(None)
+    }
 
-    /// `iterator`: every entry, in order.
-    fn entries(&self) -> ApiResult<Vec<ConfigEntry>>;
+    /// `iterator`: every entry, in order; by default, none.
+    fn entries(&self) -> ApiResult<Vec<ConfigEntry>> {
+        Ok(Vec::new())
+    }
 
     /// `set` (`name` as the user gave it).
     fn set(&self, name: &[u8], value: &[u8]) -> ApiResult<()> {
@@ -4129,12 +4355,12 @@ pub trait ConfigBackend: Send + Sync + 'static {
         Err(read_only())
     }
 
-    /// `lock`.
+    /// `lock` ([`Config::lock`]).
     fn lock(&self) -> ApiResult<()> {
         Err(read_only())
     }
 
-    /// `unlock`.
+    /// `unlock`: end the transaction, keeping its writes if `commit`.
     fn unlock(&self, commit: bool) -> ApiResult<()> {
         let _ = commit;
         Err(read_only())
@@ -4147,8 +4373,8 @@ pub trait ConfigBackend: Send + Sync + 'static {
 }
 
 /// The error of a read-only backend's writes.
-pub fn read_only() -> Error {
-    Error::new(
+pub(crate) fn read_only() -> Error {
+    Error::with(
         ErrorCode::GENERIC,
         ErrorClass::CONFIG,
         "this backend is read-only",
@@ -4161,7 +4387,7 @@ mod rust_backend {
     use crate::config_list::{ConfigList, EntryMeta};
 
     pub(super) struct State {
-        backend: Box<dyn ConfigBackend>,
+        backend: crate::api::NoUnwindDrop<Box<dyn ConfigBackend>>,
         level: std::sync::atomic::AtomicI32,
     }
 
@@ -4188,6 +4414,15 @@ mod rust_backend {
     fn list_of(entries: &[ConfigEntry]) -> Result<Arc<ConfigList>> {
         let mut l = ConfigList::new();
         for e in entries {
+            // A NUL would cut the name short in C (S-6e): refuse it.
+            if e.name.contains(&0) {
+                let _ = git_error_set!(
+                    ErrorClass::CONFIG,
+                    "the config entry name '{}' from the backend contains a NUL byte",
+                    errors::Bytes(&e.name[..memchr::memchr(0, &e.name).unwrap_or(e.name.len())])
+                );
+                return Err(ErrorCode::INVALID_SPEC);
+            }
             let backend_type = match &e.backend_type {
                 Some(t) => l.intern(t)?,
                 None => l.intern(b"rust")?,
@@ -4324,7 +4559,7 @@ mod rust_backend {
     pub(super) fn new<B: ConfigBackend>(backend: B) -> Backend {
         let readonly = backend.readonly();
         let state = State {
-            backend: Box::new(backend),
+            backend: crate::api::NoUnwindDrop::new(Box::new(backend)),
             level: std::sync::atomic::AtomicI32::new(0),
         };
         let table = CTable::<ConfigBackendCell, State>::new(state);
@@ -4414,17 +4649,17 @@ mod tests {
     fn map_values() {
         let _g = crate::util::test_support::init();
         let maps = [
-            ConfigMap {
+            RawConfigMap {
                 kind: GIT_CONFIGMAP_FALSE,
                 str_match: None,
                 map_value: 10,
             },
-            ConfigMap {
+            RawConfigMap {
                 kind: GIT_CONFIGMAP_TRUE,
                 str_match: None,
                 map_value: 11,
             },
-            ConfigMap {
+            RawConfigMap {
                 kind: GIT_CONFIGMAP_STRING,
                 str_match: Some(b"input"),
                 map_value: 12,

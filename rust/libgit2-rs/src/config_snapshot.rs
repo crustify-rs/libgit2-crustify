@@ -176,7 +176,7 @@ ffibox::impl_cvtable! {
 /// Safe code cannot hand it an arbitrary pointer:
 ///
 /// ```compile_fail
-/// let _ = libgit2_rs::config_snapshot::backend_snapshot(core::ptr::NonNull::dangling());
+/// let _ = libgit2_rs::__test::config_snapshot::backend_snapshot(core::ptr::NonNull::dangling());
 /// ```
 ///
 /// # Safety

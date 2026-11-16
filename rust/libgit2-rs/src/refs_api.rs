@@ -1,22 +1,38 @@
 //! The safe Rust API of references, the reference database and reflogs
 //! (PORTING.md §5): [`Reference`], [`ReferenceType`], [`References`] and
-//! [`ReferenceNames`] (with globs), [`Reflog`] and [`ReflogEntry`], and
-//! [`RefdbBackend`], a reference database backend written in Rust.
+//! [`ReferenceNames`] (with globs), [`Reflog`] and [`ReflogEntry`],
+//! [`Refdb`] (the database handle), and [`RefdbBackend`], a reference
+//! database backend written in Rust.
 //!
 //! It is a thin layer over the same Rust as the C ABI (`refs`, `refdb`,
-//! `refdb_fs`, `reflog`). No C type appears in it.
+//! `refdb_fs`, `reflog`). No C type appears in it. Reference names, globs
+//! and log messages are bytes (`impl AsRef<[u8]>` in, `&[u8]` out): git
+//! allows names that are not UTF-8. A NUL inside one is an error, never a
+//! truncation.
 //!
 //! The repository it works on is the crate's [`Repository`] (`Sync`: the
 //! reference API may be used from several threads on one repository); the
-//! committer of reflog entries is a [`Signature`].
+//! committer of reflog entries is a [`SignatureRef`].
+//!
+//! ```no_run
+//! use libgit2_rs::{Reference, Repository};
+//!
+//! let repo = Repository::open("/path/to/repo")?;
+//! let head = Reference::lookup(&repo, "HEAD")?.resolve()?;
+//! let id = head.target().expect("a direct reference");
+//! Reference::create(&repo, "refs/heads/copy", &id, false, None, Some(b"copy"))?;
+//! assert_eq!(Reference::name_to_id(&repo, "refs/heads/copy")?, id);
+//! # Ok::<(), libgit2_rs::Error>(())
+//! ```
 
-use core::ffi::{CStr, c_char, c_int};
+use core::ffi::{CStr, c_char, c_int, c_void};
 use core::marker::PhantomData;
 use core::ptr::NonNull;
 use std::ffi::CString;
 
 use ffibox::vtable::CTable;
 
+use crate::odb::ObjectType;
 use crate::oid::Oid;
 use crate::refdb::{
     self, GIT_REFDB_BACKEND_VERSION, RefIteratorTable, RefdbBackendTable, RefdbPtr,
@@ -28,9 +44,9 @@ use crate::refs::deps::{RepoPtr, git_signature};
 use crate::refs::{
     self, GIT_REFERENCE_DIRECT, GIT_REFERENCE_SYMBOLIC, GitReference, RefBox, RefIter, RefView,
 };
-pub use crate::signature::Signature;
+pub use crate::repository::handles::Refdb;
+pub use crate::signature::{Signature, SignatureRef};
 use crate::util::errors::{self, Bytes, Error, ErrorClass, ErrorCode};
-use crate::util::fs_path::to_cstring;
 use crate::util::pool::GitPool;
 use crate::util::wildmatch::{WildmatchFlags, wildmatch};
 
@@ -43,12 +59,28 @@ fn rich<T>(r: errors::Result<T>) -> Result<T> {
 /// A name as a C string: an interior NUL makes it an invalid name.
 fn cname(name: &[u8]) -> Result<CString> {
     CString::new(name).map_err(|_| {
-        Error::new(
+        Error::with(
             ErrorCode::INVALID_SPEC,
             ErrorClass::REFERENCE,
             format!("the given reference name '{}' is not valid", Bytes(name)),
         )
     })
+}
+
+/// A log message as a C string: an interior NUL is refused (C would see
+/// a shorter message).
+fn cmsg(message: Option<&[u8]>) -> Result<Option<CString>> {
+    message
+        .map(|m| {
+            CString::new(m).map_err(|_| {
+                Error::with(
+                    ErrorCode::INVALID,
+                    ErrorClass::INVALID,
+                    "the log message contains a NUL byte",
+                )
+            })
+        })
+        .transpose()
 }
 
 // ---------------------------------------------------------------------------
@@ -67,6 +99,86 @@ impl Repository {
         // so the refs code may use it from the threads that share `self`.
         unsafe { RepoPtr::new(p) }
     }
+
+    /// Install `backend` as the backend of the repository's reference
+    /// database (`git_refdb_set_backend` on `git_repository_refdb`); the
+    /// previous backend is freed.
+    ///
+    /// It takes the repository exclusively: the old backend is freed at
+    /// once (as in C, which keeps no count on a backend), so no other
+    /// thread, and no [`Reference`], iterator or [`Refdb`] of the
+    /// repository, may be using it.
+    ///
+    /// ```compile_fail
+    /// # use libgit2_rs::*;
+    /// # fn f<B: RefdbBackend>(mut repo: Repository, b: B) {
+    /// let head = Reference::lookup(&repo, "HEAD").unwrap();
+    /// repo.set_refdb_backend(b).unwrap(); // `repo` is borrowed by `head`
+    /// drop(head);
+    /// # }
+    /// ```
+    pub fn set_refdb_backend<B: RefdbBackend>(&mut self, backend: B) -> Result<()> {
+        let db = RefdbPtr::of_repo(self.ptr()).map_err(Error::from)?;
+        // SAFETY: the repository's database, which `&mut self` keeps from
+        // every other user (all of them borrow the repository).
+        unsafe { install_rust_backend(db, backend, self.oid_type()) }
+    }
+
+    /// Install a new files backend (`git_refdb_backend_fs`, the backend
+    /// of a repository's `refs/` and `packed-refs`) in the repository's
+    /// reference database, e.g. to restore it after
+    /// [`set_refdb_backend`](Self::set_refdb_backend). The previous backend
+    /// is freed; as there, the repository is taken exclusively.
+    pub fn set_refdb_backend_fs(&mut self) -> Result<()> {
+        let repo = self.ptr();
+        let db = RefdbPtr::of_repo(repo).map_err(Error::from)?;
+        // SAFETY: as in `set_refdb_backend`.
+        unsafe { install_fs_backend(db, repo) }
+    }
+}
+
+/// Install a Rust backend in `db`.
+///
+/// # Safety
+///
+/// `db` is live, and nothing uses its current backend now or later (it is
+/// freed).
+pub(crate) unsafe fn install_rust_backend<B: RefdbBackend>(
+    db: RefdbPtr,
+    backend: B,
+    oid_type: crate::oid::OidType,
+) -> Result<()> {
+    let table = CTable::<RefdbBackendTable, RustBackend<B>>::new(RustBackend(
+        crate::api::NoUnwindDrop::new(backend),
+        oid_type,
+    ));
+    let raw = table.into_c().as_ptr();
+    // SAFETY: a live database and a complete backend, whose ownership
+    // passes to the database; the old backend is unused (the contract).
+    let r = unsafe { refdb::set_backend(db, raw) };
+    if let Err(e) = r {
+        // SAFETY: the table was not taken: release it through its slot.
+        unsafe { CTable::<RefdbBackendTable, RustBackend<B>>::release(raw) };
+        return Err(Error::from(e));
+    }
+    Ok(())
+}
+
+/// Install a new files backend of `repo` in `db`.
+///
+/// # Safety
+///
+/// As [`install_rust_backend`]; `db` belongs to `repo`.
+pub(crate) unsafe fn install_fs_backend(db: RefdbPtr, repo: RepoPtr) -> Result<()> {
+    let b = rich(crate::refdb_fs::backend_fs(repo))?;
+    // SAFETY: a live database and a complete backend, whose ownership
+    // passes to the database; the old backend is unused (the contract).
+    if let Err(e) = unsafe { refdb::set_backend(db, b) } {
+        // SAFETY: the backend was not taken: free it (once).
+        unsafe { refdb::free_backend(b) };
+        return Err(Error::from(e));
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -74,6 +186,9 @@ impl Repository {
 // ---------------------------------------------------------------------------
 
 /// A reference of a repository (`git_reference`), freed on drop.
+///
+/// It is a snapshot: the methods that change the reference return the
+/// updated one.
 pub struct Reference<'repo> {
     inner: RefBox,
     _repo: PhantomData<&'repo Repository>,
@@ -93,30 +208,20 @@ impl core::fmt::Debug for Reference<'_> {
     }
 }
 
-/// What a reference can be peeled to (`git_object_t`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PeelTarget {
-    /// Whatever the reference ends at, but a tag (`GIT_OBJECT_ANY`).
-    Any,
-    /// A commit.
-    Commit,
-    /// A tree.
-    Tree,
-    /// A blob.
-    Blob,
-    /// A tag.
-    Tag,
-}
-
-impl PeelTarget {
-    fn raw(self) -> c_int {
-        match self {
-            PeelTarget::Any => -2,
-            PeelTarget::Commit => 1,
-            PeelTarget::Tree => 2,
-            PeelTarget::Blob => 3,
-            PeelTarget::Tag => 4,
-        }
+crate::api::flags::bitflags! {
+    /// The flags of [`Reference::normalize_name`]
+    /// (`git_reference_format_t`).
+    pub struct ReferenceFormat: u32 {
+        /// `GIT_REFERENCE_FORMAT_NORMAL`: no flag.
+        NORMAL = 0;
+        /// `GIT_REFERENCE_FORMAT_ALLOW_ONELEVEL`: names without a `/`
+        /// (`HEAD`, `ORIG_HEAD`, …).
+        ALLOW_ONELEVEL = refs::GIT_REFERENCE_FORMAT_ALLOW_ONELEVEL;
+        /// `GIT_REFERENCE_FORMAT_REFSPEC_PATTERN`: one `*` in the name.
+        REFSPEC_PATTERN = refs::GIT_REFERENCE_FORMAT_REFSPEC_PATTERN;
+        /// `GIT_REFERENCE_FORMAT_REFSPEC_SHORTHAND`: a short name
+        /// (`main`) is valid.
+        REFSPEC_SHORTHAND = refs::GIT_REFERENCE_FORMAT_REFSPEC_SHORTHAND;
     }
 }
 
@@ -133,41 +238,47 @@ impl<'repo> Reference<'repo> {
     }
 
     /// `git_reference_lookup`.
-    pub fn lookup(repo: &'repo Repository, name: &[u8]) -> Result<Reference<'repo>> {
+    pub fn lookup(repo: &'repo Repository, name: impl AsRef<[u8]>) -> Result<Reference<'repo>> {
+        let name = name.as_ref();
         cname(name)?;
         rich(refs::lookup(repo.ptr(), name)).map(Self::wrap)
     }
 
     /// `git_reference_lookup_resolved`: follow symbolic references up to
-    /// `max_nesting` deep (negative: the default).
+    /// `max_nesting` deep (`None`: the default, 5).
     pub fn lookup_resolved(
         repo: &'repo Repository,
-        name: &[u8],
-        max_nesting: i32,
+        name: impl AsRef<[u8]>,
+        max_nesting: Option<u32>,
     ) -> Result<Reference<'repo>> {
+        let name = name.as_ref();
         cname(name)?;
-        rich(refs::lookup_resolved(repo.ptr(), name, max_nesting)).map(Self::wrap)
+        let n = max_nesting.map_or(-1, |n| c_int::try_from(n).unwrap_or(c_int::MAX));
+        rich(refs::lookup_resolved(repo.ptr(), name, n)).map(Self::wrap)
     }
 
     /// `git_reference_dwim`: look a short name up as git does.
-    pub fn dwim(repo: &'repo Repository, shorthand: &[u8]) -> Result<Reference<'repo>> {
+    pub fn dwim(repo: &'repo Repository, shorthand: impl AsRef<[u8]>) -> Result<Reference<'repo>> {
+        let shorthand = shorthand.as_ref();
         cname(shorthand)?;
         rich(refs::dwim(repo.ptr(), shorthand)).map(Self::wrap)
     }
 
-    /// `git_reference_create_matching`: create (or with `force`,
-    /// overwrite) `name` pointing at `id`; with `current`, only if the
-    /// reference is now at that id.
+    /// `git_reference_create_matching` (`git_reference_create` without
+    /// `current`): create (or with `force`, overwrite) `name` pointing at
+    /// `id`; with `current`, only if the reference is now at that id
+    /// ([`ErrorCode::MODIFIED`] otherwise).
     pub fn create(
         repo: &'repo Repository,
-        name: &[u8],
+        name: impl AsRef<[u8]>,
         id: &Oid,
         force: bool,
         current: Option<&Oid>,
-        log_message: Option<&str>,
+        log_message: Option<&[u8]>,
     ) -> Result<Reference<'repo>> {
+        let name = name.as_ref();
         cname(name)?;
-        let msg = log_message.map(|m| to_cstring(m.as_bytes()));
+        let msg = cmsg(log_message)?;
         rich(refs::create_matching(
             repo.ptr(),
             name,
@@ -179,18 +290,20 @@ impl<'repo> Reference<'repo> {
         .map(Self::wrap)
     }
 
-    /// `git_reference_symbolic_create_matching`.
+    /// `git_reference_symbolic_create_matching` (`…_symbolic_create`
+    /// without `current`).
     pub fn symbolic_create(
         repo: &'repo Repository,
-        name: &[u8],
-        target: &[u8],
+        name: impl AsRef<[u8]>,
+        target: impl AsRef<[u8]>,
         force: bool,
         current: Option<&[u8]>,
-        log_message: Option<&str>,
+        log_message: Option<&[u8]>,
     ) -> Result<Reference<'repo>> {
+        let (name, target) = (name.as_ref(), target.as_ref());
         cname(name)?;
         cname(target)?;
-        let msg = log_message.map(|m| to_cstring(m.as_bytes()));
+        let msg = cmsg(log_message)?;
         let cur = current.map(cname).transpose()?;
         rich(refs::symbolic_create_matching(
             repo.ptr(),
@@ -203,7 +316,7 @@ impl<'repo> Reference<'repo> {
         .map(Self::wrap)
     }
 
-    /// The full name.
+    /// The full name (`git_reference_name`).
     pub fn name(&self) -> &[u8] {
         self.view().name()
     }
@@ -219,12 +332,12 @@ impl<'repo> Reference<'repo> {
         &n[refs::shorthand_offset(n)..]
     }
 
-    /// Direct or symbolic.
+    /// Direct or symbolic (`git_reference_type`).
     pub fn kind(&self) -> ReferenceType {
         self.view().kind().unwrap_or(ReferenceType::Direct)
     }
 
-    /// The target of a direct reference.
+    /// The target of a direct reference (`git_reference_target`).
     pub fn target(&self) -> Option<Oid> {
         self.view().target().copied()
     }
@@ -236,27 +349,28 @@ impl<'repo> Reference<'repo> {
         (v.raw_kind() == GIT_REFERENCE_DIRECT && !v.peel().is_zero()).then(|| *v.peel())
     }
 
-    /// The target of a symbolic reference.
+    /// The target of a symbolic reference
+    /// (`git_reference_symbolic_target`).
     pub fn symbolic_target(&self) -> Option<&[u8]> {
         self.view().symbolic_target()
     }
 
-    /// Under `refs/heads/`.
+    /// Under `refs/heads/` (`git_reference_is_branch`).
     pub fn is_branch(&self) -> bool {
         refs::is_branch(self.name())
     }
 
-    /// Under `refs/remotes/`.
+    /// Under `refs/remotes/` (`git_reference_is_remote`).
     pub fn is_remote(&self) -> bool {
         refs::is_remote(self.name())
     }
 
-    /// Under `refs/tags/`.
+    /// Under `refs/tags/` (`git_reference_is_tag`).
     pub fn is_tag(&self) -> bool {
         refs::is_tag(self.name())
     }
 
-    /// Under `refs/notes/`.
+    /// Under `refs/notes/` (`git_reference_is_note`).
     pub fn is_note(&self) -> bool {
         refs::is_note(self.name())
     }
@@ -268,19 +382,20 @@ impl<'repo> Reference<'repo> {
 
     /// `git_reference_set_target`: point this direct reference at `id`
     /// (if it has not moved); the updated reference.
-    pub fn set_target(&self, id: &Oid, log_message: Option<&str>) -> Result<Reference<'repo>> {
-        let msg = log_message.map(|m| to_cstring(m.as_bytes()));
+    pub fn set_target(&self, id: &Oid, log_message: Option<&[u8]>) -> Result<Reference<'repo>> {
+        let msg = cmsg(log_message)?;
         rich(refs::set_target(self.view(), id, msg.as_deref())).map(Self::wrap)
     }
 
     /// `git_reference_symbolic_set_target`.
     pub fn symbolic_set_target(
         &self,
-        target: &[u8],
-        log_message: Option<&str>,
+        target: impl AsRef<[u8]>,
+        log_message: Option<&[u8]>,
     ) -> Result<Reference<'repo>> {
+        let target = target.as_ref();
         cname(target)?;
-        let msg = log_message.map(|m| to_cstring(m.as_bytes()));
+        let msg = cmsg(log_message)?;
         rich(refs::symbolic_set_target(
             self.view(),
             target,
@@ -293,12 +408,13 @@ impl<'repo> Reference<'repo> {
     /// pointing at it follow).
     pub fn rename(
         &self,
-        new_name: &[u8],
+        new_name: impl AsRef<[u8]>,
         force: bool,
-        log_message: Option<&str>,
+        log_message: Option<&[u8]>,
     ) -> Result<Reference<'repo>> {
+        let new_name = new_name.as_ref();
         cname(new_name)?;
-        let msg = log_message.map(|m| to_cstring(m.as_bytes()));
+        let msg = cmsg(log_message)?;
         let mut out = None;
         let r = refs::rename(self.view(), new_name, force, msg.as_deref(), &mut out);
         rich(r)?;
@@ -306,11 +422,13 @@ impl<'repo> Reference<'repo> {
             .ok_or_else(|| Error::from(ErrorCode::GENERIC))
     }
 
-    /// `git_reference_delete` (not HEAD).
-    pub fn delete(&self) -> Result<()> {
+    /// `git_reference_delete`: delete the reference (and its reflog), if
+    /// it still has the value this snapshot has ([`ErrorCode::MODIFIED`]
+    /// otherwise). HEAD cannot be deleted.
+    pub fn delete(self) -> Result<()> {
         let v = self.view();
         if v.name() == b"HEAD" {
-            return Err(Error::new(
+            return Err(Error::with(
                 ErrorCode::GENERIC,
                 ErrorClass::REFERENCE,
                 "cannot delete HEAD",
@@ -326,16 +444,112 @@ impl<'repo> Reference<'repo> {
         rich(unsafe { RefdbPtr::new(db) }.delete(v.name_cstr(), old_id, old_target))
     }
 
-    /// The id of the object this reference peels to
-    /// (`git_reference_peel`).
-    pub fn peel_to_id(&self, target: PeelTarget) -> Result<Oid> {
-        rich(refs::peel(self.view(), target.raw())).map(|o| o.id())
+    /// `git_reference_peel`: the object the reference ends at, peeled
+    /// until it is of type `kind` (`None`: until it is not a tag).
+    pub fn peel(&self, kind: Option<ObjectType>) -> Result<crate::object::Object<'repo>> {
+        let o = rich(refs::peel(self.view(), ObjectType::raw_or_any(kind)))?;
+        let raw = NonNull::new(o.into_raw().cast::<crate::object::GitObject>())
+            .ok_or_else(|| Error::from(ErrorCode::GENERIC))?;
+        // SAFETY: the object the peel looked up, whose reference passes to
+        // the result; of this reference's repository, which outlives
+        // `'repo`.
+        Ok(unsafe { crate::object::Object::adopt(raw) })
     }
 
     /// Whether this is HEAD and its branch has no commit yet
     /// (`git_reference__is_unborn_head`).
-    pub fn is_unborn_head(&self, repo: &'repo Repository) -> Result<bool> {
-        rich(refs::is_unborn_head(self.view(), repo.ptr()))
+    pub fn is_unborn_head(&self) -> Result<bool> {
+        let v = self.view();
+        let db = NonNull::new(v.db()).ok_or_else(|| Error::from(ErrorCode::GENERIC))?;
+        // SAFETY: a reference's database lives while the reference does.
+        let repo = unsafe { RefdbPtr::new(db) }
+            .repo()
+            .ok_or_else(|| Error::from(ErrorCode::GENERIC))?;
+        rich(refs::is_unborn_head(v, repo))
+    }
+
+    /// `git_reference_name_to_id`: the id `name` resolves to.
+    pub fn name_to_id(repo: &Repository, name: impl AsRef<[u8]>) -> Result<Oid> {
+        let name = name.as_ref();
+        cname(name)?;
+        rich(refs::name_to_id(repo.ptr(), name))
+    }
+
+    /// `git_reference_remove`: delete `name` (and its reflog), whatever its
+    /// value.
+    pub fn remove(repo: &Repository, name: impl AsRef<[u8]>) -> Result<()> {
+        let n = cname(name.as_ref())?;
+        rich(RefdbPtr::of_repo(repo.ptr()).and_then(|db| db.delete(&n, None, None)))
+    }
+
+    /// `git_reference_list`: every reference name.
+    pub fn list(repo: &Repository) -> Result<Vec<Vec<u8>>> {
+        ReferenceNames::new(repo)?.collect()
+    }
+
+    /// `git_reference_has_log`: whether `name` has a reflog.
+    pub fn has_log(repo: &Repository, name: impl AsRef<[u8]>) -> Result<bool> {
+        let n = cname(name.as_ref())?;
+        rich(RefdbPtr::of_repo(repo.ptr()).and_then(|db| db.has_log(&n)))
+    }
+
+    /// `git_reference_ensure_log`: make sure `name` has a reflog (the next
+    /// update of it is logged).
+    pub fn ensure_log(repo: &Repository, name: impl AsRef<[u8]>) -> Result<()> {
+        let n = cname(name.as_ref())?;
+        rich(
+            RefdbPtr::of_repo(repo.ptr())
+                .and_then(|db| ErrorCode::check(db.ensure_log(&n)?).map(drop)),
+        )
+    }
+
+    /// `git_reference_normalize_name`: `name` in its canonical form, if it
+    /// is valid under `format` ([`ErrorCode::INVALID_SPEC`] otherwise).
+    pub fn normalize_name(name: impl AsRef<[u8]>, format: ReferenceFormat) -> Result<Vec<u8>> {
+        crate::libgit2::ensure_init()?;
+        let name = name.as_ref();
+        cname(name)?;
+        let mut buf = crate::util::str::GitStr::new();
+        rich(refs::normalize_name(Some(&mut buf), name, format.raw()))?;
+        Ok(buf.as_bytes().to_vec())
+    }
+
+    /// `git_reference_name_is_valid`: whether `name` is a valid reference
+    /// name (one-level names such as `HEAD` included).
+    pub fn is_valid_name(name: impl AsRef<[u8]>) -> bool {
+        let name = name.as_ref();
+        crate::libgit2::ensure_init().is_ok()
+            && !name.contains(&0)
+            && matches!(
+                refs::name_is_valid(name, refs::GIT_REFERENCE_FORMAT_ALLOW_ONELEVEL),
+                Ok(true)
+            )
+    }
+
+    /// `git_reference_foreach_glob` (or `_foreach_name` without a glob):
+    /// call `f` with each name (matching `glob`), until it returns
+    /// `false` (then `Ok`).
+    pub fn foreach_name(
+        repo: &Repository,
+        glob: Option<&[u8]>,
+        mut f: impl FnMut(&[u8]) -> bool,
+    ) -> Result<()> {
+        let g = glob.map(cname).transpose()?;
+        let mut cb = |n: &CStr| -> c_int { if f(n.to_bytes()) { 0 } else { 1 } };
+        let action = if g.is_some() {
+            "git_reference_foreach_glob"
+        } else {
+            "git_reference_foreach_name"
+        };
+        match refs::foreach_name(repo.ptr(), g.as_deref(), action, &mut cb) {
+            Ok(()) => Ok(()),
+            // A stop asked by `f` is not an error.
+            Err(e) if e.raw() == 1 => {
+                errors::clear();
+                Ok(())
+            }
+            Err(e) => Err(Error::from(e)),
+        }
     }
 }
 
@@ -369,82 +583,87 @@ impl Ord for Reference<'_> {
     }
 }
 
-/// `git_reference_name_to_id`: the id `name` resolves to.
-pub fn name_to_id(repo: &Repository, name: &[u8]) -> Result<Oid> {
-    cname(name)?;
-    rich(refs::name_to_id(repo.ptr(), name))
-}
+// ---------------------------------------------------------------------------
+// The database
+// ---------------------------------------------------------------------------
 
-/// `git_reference_remove`: delete `name` (and its reflog).
-pub fn remove(repo: &Repository, name: &[u8]) -> Result<()> {
-    let n = cname(name)?;
-    rich(RefdbPtr::of_repo(repo.ptr()).and_then(|db| db.delete(&n, None, None)))
-}
-
-/// `git_reference_list`: every reference name.
-pub fn list(repo: &Repository) -> Result<Vec<Vec<u8>>> {
-    ReferenceNames::new(repo)?.collect()
-}
-
-/// `git_reference_has_log`.
-pub fn has_log(repo: &Repository, name: &[u8]) -> Result<bool> {
-    let n = cname(name)?;
-    rich(RefdbPtr::of_repo(repo.ptr()).and_then(|db| db.has_log(&n)))
-}
-
-/// `git_reference_ensure_log`.
-pub fn ensure_log(repo: &Repository, name: &[u8]) -> Result<()> {
-    let n = cname(name)?;
-    rich(
-        RefdbPtr::of_repo(repo.ptr()).and_then(|db| ErrorCode::check(db.ensure_log(&n)?).map(drop)),
-    )
-}
-
-/// `git_refdb_compress`: pack the loose references.
-pub fn compress(repo: &Repository) -> Result<()> {
-    rich(RefdbPtr::of_repo(repo.ptr()).and_then(RefdbPtr::compress))
-}
-
-/// The flags of [`normalize_name`] (`git_reference_format_t`).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ReferenceFormat(u32);
-
-impl ReferenceFormat {
-    /// `GIT_REFERENCE_FORMAT_NORMAL`.
-    pub const NORMAL: ReferenceFormat = ReferenceFormat(0);
-    /// `GIT_REFERENCE_FORMAT_ALLOW_ONELEVEL`.
-    pub const ALLOW_ONELEVEL: ReferenceFormat =
-        ReferenceFormat(refs::GIT_REFERENCE_FORMAT_ALLOW_ONELEVEL);
-    /// `GIT_REFERENCE_FORMAT_REFSPEC_PATTERN`.
-    pub const REFSPEC_PATTERN: ReferenceFormat =
-        ReferenceFormat(refs::GIT_REFERENCE_FORMAT_REFSPEC_PATTERN);
-    /// `GIT_REFERENCE_FORMAT_REFSPEC_SHORTHAND`.
-    pub const REFSPEC_SHORTHAND: ReferenceFormat =
-        ReferenceFormat(refs::GIT_REFERENCE_FORMAT_REFSPEC_SHORTHAND);
-}
-
-impl core::ops::BitOr for ReferenceFormat {
-    type Output = ReferenceFormat;
-    fn bitor(self, o: ReferenceFormat) -> ReferenceFormat {
-        ReferenceFormat(self.0 | o.0)
+impl<'r> Refdb<'r> {
+    /// `git_refdb_new`: a reference database of `repo` without a backend
+    /// (not the repository's own: see [`Repository::refdb`]). Give it one
+    /// with [`set_backend`](Self::set_backend) or
+    /// [`set_backend_fs`](Self::set_backend_fs).
+    pub fn new(repo: &'r Repository) -> Result<Refdb<'r>> {
+        crate::libgit2::ensure_init()?;
+        let db = rich(refdb::new_db(repo.raw_ptr().cast()))?;
+        Ok(Refdb::from_shared(db))
     }
-}
 
-/// `git_reference_normalize_name`.
-pub fn normalize_name(name: &[u8], format: ReferenceFormat) -> Result<Vec<u8>> {
-    cname(name)?;
-    let mut buf = crate::util::str::GitStr::new();
-    rich(refs::normalize_name(Some(&mut buf), name, format.0))?;
-    Ok(buf.as_bytes().to_vec())
-}
+    /// `git_refdb_open`: a new reference database of `repo` with the
+    /// backend of its storage format (the files backend, or reftable),
+    /// beside the repository's own.
+    pub fn open(repo: &'r Repository) -> Result<Refdb<'r>> {
+        crate::libgit2::ensure_init()?;
+        let db = rich(refdb::open(repo.ptr()))?;
+        Ok(Refdb::from_shared(db))
+    }
 
-/// `git_reference_name_is_valid`.
-pub fn is_valid_name(name: &[u8]) -> bool {
-    !name.contains(&0)
-        && matches!(
-            refs::name_is_valid(name, refs::GIT_REFERENCE_FORMAT_ALLOW_ONELEVEL),
-            Ok(true)
-        )
+    fn db(&self) -> RefdbPtr {
+        // SAFETY: the live database this handle counts, whose backend the
+        // database owns.
+        unsafe { RefdbPtr::new(self.as_nonnull()) }
+    }
+
+    /// `git_refdb_compress`: let the backend optimise its storage (the
+    /// files backend packs the loose references into `packed-refs`). A
+    /// database without a backend has nothing to do.
+    pub fn compress(&self) -> Result<()> {
+        rich(self.db().compress())
+    }
+
+    /// Whether the database has a backend.
+    pub fn has_backend(&self) -> bool {
+        !self.db().backend().is_null()
+    }
+
+    /// The database, if this handle is its only owner (so nothing else
+    /// can be using its backend).
+    fn exclusive(&mut self) -> Result<RefdbPtr> {
+        if !self.is_unique() {
+            return Err(Error::with(
+                ErrorCode::LOCKED,
+                ErrorClass::REFERENCE,
+                "the reference database is shared: its backend cannot be replaced",
+            ));
+        }
+        Ok(self.db())
+    }
+
+    /// `git_refdb_set_backend` of a Rust backend: the previous backend is
+    /// freed. Only for a database this handle alone owns (one made by
+    /// [`new`](Self::new) or [`open`](Self::open) and not cloned): a shared
+    /// one gives [`ErrorCode::LOCKED`]. For the repository's own database,
+    /// see [`Repository::set_refdb_backend`].
+    pub fn set_backend<B: RefdbBackend>(&mut self, backend: B) -> Result<()> {
+        let db = self.exclusive()?;
+        let repo = db.repo().ok_or_else(|| Error::from(ErrorCode::GENERIC))?;
+        let oid_type = crate::oid::git_oid_t::try_from(repo.oid_type())
+            .ok()
+            .and_then(crate::oid::OidType::from_raw)
+            .unwrap_or(crate::oid::OidType::Sha1);
+        // SAFETY: the database is this handle's alone (`&mut self` and a
+        // count of one): nothing else uses its backend.
+        unsafe { install_rust_backend(db, backend, oid_type) }
+    }
+
+    /// `git_refdb_backend_fs` + `git_refdb_set_backend`: give the database
+    /// a new files backend of its repository; as
+    /// [`set_backend`](Self::set_backend), only for an unshared database.
+    pub fn set_backend_fs(&mut self) -> Result<()> {
+        let db = self.exclusive()?;
+        let repo = db.repo().ok_or_else(|| Error::from(ErrorCode::GENERIC))?;
+        // SAFETY: as in `set_backend`.
+        unsafe { install_fs_backend(db, repo) }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -458,15 +677,22 @@ pub struct References<'repo> {
     _repo: PhantomData<&'repo Repository>,
 }
 
+impl core::fmt::Debug for References<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("References").finish_non_exhaustive()
+    }
+}
+
 impl<'repo> References<'repo> {
     /// Every reference.
     pub fn new(repo: &'repo Repository) -> Result<References<'repo>> {
         Self::make(repo, None)
     }
 
-    /// The references whose names match `glob` (`wildmatch`).
-    pub fn glob(repo: &'repo Repository, glob: &[u8]) -> Result<References<'repo>> {
-        let g = cname(glob)?;
+    /// The references whose names match `glob`
+    /// (`git_reference_iterator_glob_new`, `wildmatch`).
+    pub fn glob(repo: &'repo Repository, glob: impl AsRef<[u8]>) -> Result<References<'repo>> {
+        let g = cname(glob.as_ref())?;
         Self::make(repo, Some(&g))
     }
 
@@ -496,6 +722,12 @@ pub struct ReferenceNames<'repo> {
     _repo: PhantomData<&'repo Repository>,
 }
 
+impl core::fmt::Debug for ReferenceNames<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ReferenceNames").finish_non_exhaustive()
+    }
+}
+
 impl<'repo> ReferenceNames<'repo> {
     /// Every reference's name.
     pub fn new(repo: &'repo Repository) -> Result<ReferenceNames<'repo>> {
@@ -506,8 +738,8 @@ impl<'repo> ReferenceNames<'repo> {
     }
 
     /// The names matching `glob`.
-    pub fn glob(repo: &'repo Repository, glob: &[u8]) -> Result<ReferenceNames<'repo>> {
-        let g = cname(glob)?;
+    pub fn glob(repo: &'repo Repository, glob: impl AsRef<[u8]>) -> Result<ReferenceNames<'repo>> {
+        let g = cname(glob.as_ref())?;
         Ok(ReferenceNames {
             it: rich(RefIter::new(repo.ptr(), Some(&g)))?,
             _repo: PhantomData,
@@ -523,31 +755,6 @@ impl Iterator for ReferenceNames<'_> {
             Err(ErrorCode::ITER_OVER) => None,
             Err(e) => Some(Err(Error::from(e))),
         }
-    }
-}
-
-/// `git_reference_foreach_glob` (or `_foreach_name` without a glob): call
-/// `f` with each name, until it returns `false`.
-pub fn for_each_name(
-    repo: &Repository,
-    glob: Option<&[u8]>,
-    mut f: impl FnMut(&[u8]) -> bool,
-) -> Result<()> {
-    let g = glob.map(cname).transpose()?;
-    let mut cb = |n: &CStr| -> c_int { if f(n.to_bytes()) { 0 } else { 1 } };
-    let action = if g.is_some() {
-        "git_reference_foreach_glob"
-    } else {
-        "git_reference_foreach_name"
-    };
-    match refs::foreach_name(repo.ptr(), g.as_deref(), action, &mut cb) {
-        Ok(()) => Ok(()),
-        // A stop asked by `f` is not an error.
-        Err(e) if e.raw() == 1 => {
-            errors::clear();
-            Ok(())
-        }
-        Err(e) => Err(Error::from(e)),
     }
 }
 
@@ -586,17 +793,17 @@ impl<'a> ReflogEntry<'a> {
         unsafe { self.ptr.as_ref() }
     }
 
-    /// The previous value.
+    /// The previous value (`git_reflog_entry_id_old`).
     pub fn id_old(&self) -> Oid {
         self.get().oid_old
     }
 
-    /// The new value.
+    /// The new value (`git_reflog_entry_id_new`).
     pub fn id_new(&self) -> Oid {
         self.get().oid_cur
     }
 
-    /// The message, if any.
+    /// The message, if any (`git_reflog_entry_message`).
     pub fn message(&self) -> Option<&'a [u8]> {
         let m = self.get().msg;
         if m.is_null() {
@@ -606,9 +813,17 @@ impl<'a> ReflogEntry<'a> {
         Some(unsafe { CStr::from_ptr(m) }.to_bytes())
     }
 
-    /// Who made the change.
-    pub fn committer(&self) -> Option<Signature> {
-        committer_of(self.get().committer)
+    /// The message, if there is one and it is UTF-8.
+    pub fn message_str(&self) -> Option<&'a str> {
+        self.message().and_then(|m| core::str::from_utf8(m).ok())
+    }
+
+    /// Who made the change (`git_reflog_entry_committer`).
+    pub fn committer(&self) -> Option<SignatureRef<'a>> {
+        let p = self.get().committer;
+        // SAFETY: NULL or the entry's signature, whose strings live (and are
+        // not written) as long as the reflog the entry borrows.
+        unsafe { p.as_ref() }.map(|s| unsafe { SignatureRef::from_raw(s) })
     }
 }
 
@@ -625,8 +840,8 @@ impl core::fmt::Debug for ReflogEntry<'_> {
 impl<'repo> Reflog<'repo> {
     /// `git_reflog_read`: the reflog of `name` (empty if it has none, in
     /// which case the filesystem backend creates the file).
-    pub fn read(repo: &'repo Repository, name: &[u8]) -> Result<Reflog<'repo>> {
-        let n = cname(name)?;
+    pub fn read(repo: &'repo Repository, name: impl AsRef<[u8]>) -> Result<Reflog<'repo>> {
+        let n = cname(name.as_ref())?;
         let log = rich(RefdbPtr::of_repo(repo.ptr()).and_then(|db| db.reflog_read(&n)))?;
         // SAFETY: the backend's fresh reflog, ours.
         let inner = unsafe { rl::Reflog::from_raw(log.as_ptr()) }
@@ -642,7 +857,7 @@ impl<'repo> Reflog<'repo> {
         self.inner.name().to_bytes()
     }
 
-    /// The number of entries.
+    /// The number of entries (`git_reflog_entrycount`).
     pub fn len(&self) -> usize {
         // SAFETY: our live reflog.
         unsafe { (*self.inner.as_ptr()).entries.len() }
@@ -653,7 +868,7 @@ impl<'repo> Reflog<'repo> {
         self.len() == 0
     }
 
-    /// The entry at `idx` (0: the newest).
+    /// The entry at `idx` (0: the newest; `git_reflog_entry_byindex`).
     pub fn get(&self, idx: usize) -> Option<ReflogEntry<'_>> {
         // SAFETY: our live reflog.
         let e = unsafe { rl::entry_byindex(self.inner.as_ptr(), idx) };
@@ -669,16 +884,25 @@ impl<'repo> Reflog<'repo> {
     }
 
     /// `git_reflog_append`: a new newest entry to `id` (the message's
-    /// newlines become spaces).
-    pub fn append(
+    /// newlines become spaces; a NUL in it is refused). Kept in memory
+    /// until [`write`](Self::write).
+    pub fn append<'s>(
         &mut self,
         id: &Oid,
-        committer: &Signature,
+        committer: impl Into<SignatureRef<'s>>,
         message: Option<&[u8]>,
     ) -> Result<()> {
-        let msg = message.map(crate::util::fs_path::c_str);
+        let msg = cmsg(message)?;
+        let committer = committer.into().to_signature()?;
         // SAFETY: our reflog, exclusively borrowed; a valid signature.
-        rich(unsafe { rl::append(self.inner.as_ptr(), id, committer.as_raw(), msg) })
+        rich(unsafe {
+            rl::append(
+                self.inner.as_ptr(),
+                id,
+                committer.as_raw(),
+                msg.as_ref().map(|m| m.to_bytes()),
+            )
+        })
     }
 
     /// `git_reflog_drop`: remove entry `idx`; with `rewrite_previous`, keep
@@ -701,14 +925,18 @@ impl<'repo> Reflog<'repo> {
     }
 
     /// `git_reflog_rename`.
-    pub fn rename(repo: &Repository, old_name: &[u8], new_name: &[u8]) -> Result<()> {
-        let (o, n) = (cname(old_name)?, cname(new_name)?);
+    pub fn rename(
+        repo: &Repository,
+        old_name: impl AsRef<[u8]>,
+        new_name: impl AsRef<[u8]>,
+    ) -> Result<()> {
+        let (o, n) = (cname(old_name.as_ref())?, cname(new_name.as_ref())?);
         rich(RefdbPtr::of_repo(repo.ptr()).and_then(|db| db.reflog_rename(&o, &n)))
     }
 
     /// `git_reflog_delete`.
-    pub fn delete(repo: &Repository, name: &[u8]) -> Result<()> {
-        let n = cname(name)?;
+    pub fn delete(repo: &Repository, name: impl AsRef<[u8]>) -> Result<()> {
+        let n = cname(name.as_ref())?;
         rich(RefdbPtr::of_repo(repo.ptr()).and_then(|db| db.reflog_delete(&n)))
     }
 }
@@ -746,27 +974,85 @@ pub struct ReflogRecord {
     pub new: Oid,
     /// Who made the change.
     pub committer: Signature,
-    /// The message.
+    /// The message (cut at a NUL, if it has one, as C reads it).
     pub message: Option<Vec<u8>>,
 }
 
-/// A reference database backend written in Rust (`git_refdb_backend`).
+/// What a [`RefdbBackend::lock`] returns: the backend's own record of the
+/// lock, handed back to [`RefdbBackend::unlock`].
+pub type RefdbLock = Box<dyn core::any::Any + Send>;
+
+/// How a transaction ends for a reference a [`RefdbBackend`] locked
+/// (`git_refdb_backend.unlock`'s `success`).
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum RefdbUnlock<'a> {
+    /// The transaction leaves the reference as it was (`success == 0`).
+    Discard,
+    /// Write the reference (`success == 1`).
+    Write {
+        /// The name.
+        name: &'a [u8],
+        /// The new value.
+        value: RefValue,
+        /// Whether to append to its reflog.
+        update_reflog: bool,
+        /// Who made the change, if the transaction says.
+        committer: Option<SignatureRef<'a>>,
+        /// The reflog message.
+        message: Option<&'a [u8]>,
+    },
+    /// Delete the reference (`success == 2`).
+    Delete {
+        /// The name.
+        name: &'a [u8],
+    },
+}
+
+/// The error of a [`RefdbBackend`] method that is not implemented.
+fn unsupported(what: &str) -> Error {
+    Error::with(
+        ErrorCode::GENERIC,
+        ErrorClass::REFERENCE,
+        format!("the reference database backend does not support {what}"),
+    )
+}
+
+/// A reference database backend written in Rust (`git_refdb_backend`),
+/// installed with [`Repository::set_refdb_backend`] or
+/// [`Refdb::set_backend`].
 ///
 /// libgit2 may call it from several threads at once, and re-entrantly
 /// (writing a reference may look references up): it takes `&self`, and is
-/// `Send + Sync`. A panic is turned into an error (class
-/// `GIT_ERROR_INTERNAL`). Transactions (`lock` / `unlock`) are not offered.
+/// `Send + Sync`. A panic in a method is caught and becomes an error of
+/// class [`ErrorClass::INTERNAL`]. Every method has a default, so that the
+/// trait can grow: by default the backend is empty and read-only. Its
+/// `Drop` may panic: the panic is caught (and its payload leaked), as C
+/// frees a backend where it cannot unwind.
+///
+/// Names and values it returns must not contain NUL (an error of code
+/// [`ErrorCode::INVALID_SPEC`] otherwise). Errors with code
+/// [`ErrorCode::NOT_FOUND`] mean "no such reference"; a success code or
+/// [`ErrorCode::ITER_OVER`] in an error becomes a plain failure.
 pub trait RefdbBackend: Send + Sync + 'static {
-    /// Whether `name` exists.
-    fn exists(&self, name: &[u8]) -> core::result::Result<bool, Error>;
-    /// The value of `name`, `None` if there is none.
-    fn lookup(&self, name: &[u8]) -> core::result::Result<Option<RefValue>, Error>;
+    /// Whether `name` exists; by default, `false`.
+    fn exists(&self, name: &[u8]) -> core::result::Result<bool, Error> {
+        let _ = name;
+        Ok(false)
+    }
+    /// The value of `name`, `None` if there is none; by default, `None`.
+    fn lookup(&self, name: &[u8]) -> core::result::Result<Option<RefValue>, Error> {
+        let _ = name;
+        Ok(None)
+    }
     /// Every reference, in the order iteration returns them (the glob
-    /// filtering is done for the backend).
-    fn list(&self) -> core::result::Result<Vec<(Vec<u8>, RefValue)>, Error>;
+    /// filtering is done for the backend); by default, none.
+    fn list(&self) -> core::result::Result<Vec<(Vec<u8>, RefValue)>, Error> {
+        Ok(Vec::new())
+    }
     /// Write `name`. Unless `force`, it must not exist; with `old_id` /
     /// `old_target`, it must currently have that value
-    /// ([`ErrorCode::MODIFIED`] otherwise).
+    /// ([`ErrorCode::MODIFIED`] otherwise). By default, an error.
     fn write(
         &self,
         name: &[u8],
@@ -775,93 +1061,95 @@ pub trait RefdbBackend: Send + Sync + 'static {
         old_id: Option<&Oid>,
         old_target: Option<&[u8]>,
         message: Option<&[u8]>,
-    ) -> core::result::Result<(), Error>;
-    /// Rename `old_name` to `new_name`, returning its value.
+    ) -> core::result::Result<(), Error> {
+        let _ = (name, value, force, old_id, old_target, message);
+        Err(unsupported("writing references"))
+    }
+    /// Rename `old_name` to `new_name`, returning its value; by default,
+    /// an error.
     fn rename(
         &self,
         old_name: &[u8],
         new_name: &[u8],
         force: bool,
-    ) -> core::result::Result<RefValue, Error>;
+    ) -> core::result::Result<RefValue, Error> {
+        let _ = (old_name, new_name, force);
+        Err(unsupported("renaming references"))
+    }
     /// Delete `name` (and its reflog), with the same conditions as
-    /// [`write`](Self::write).
+    /// [`write`](Self::write); by default, an error.
     fn delete(
         &self,
         name: &[u8],
         old_id: Option<&Oid>,
         old_target: Option<&[u8]>,
-    ) -> core::result::Result<(), Error>;
-    /// Optimise storage (`git_refdb_compress`).
+    ) -> core::result::Result<(), Error> {
+        let _ = (name, old_id, old_target);
+        Err(unsupported("deleting references"))
+    }
+    /// Optimise storage (`git_refdb_compress`); by default, nothing.
     fn compress(&self) -> core::result::Result<(), Error> {
         Ok(())
     }
-    /// Whether `name` has a reflog.
-    fn has_log(&self, _name: &[u8]) -> bool {
+    /// Whether `name` has a reflog; by default, `false`.
+    fn has_log(&self, name: &[u8]) -> bool {
+        let _ = name;
         false
     }
-    /// Make sure `name` has a reflog.
-    fn ensure_log(&self, _name: &[u8]) -> core::result::Result<(), Error> {
+    /// Make sure `name` has a reflog; by default, nothing.
+    fn ensure_log(&self, name: &[u8]) -> core::result::Result<(), Error> {
+        let _ = name;
         Ok(())
     }
-    /// The reflog of `name`, oldest first.
-    fn reflog_read(&self, _name: &[u8]) -> core::result::Result<Vec<ReflogRecord>, Error> {
+    /// The reflog of `name`, oldest first; by default, empty.
+    fn reflog_read(&self, name: &[u8]) -> core::result::Result<Vec<ReflogRecord>, Error> {
+        let _ = name;
         Ok(Vec::new())
     }
-    /// Replace the reflog of `name`.
+    /// Replace the reflog of `name`; by default, nothing.
     fn reflog_write(
         &self,
-        _name: &[u8],
-        _entries: &[ReflogRecord],
+        name: &[u8],
+        entries: &[ReflogRecord],
     ) -> core::result::Result<(), Error> {
+        let _ = (name, entries);
         Ok(())
     }
-    /// Rename a reflog.
-    fn reflog_rename(&self, _old_name: &[u8], _new_name: &[u8]) -> core::result::Result<(), Error> {
+    /// Rename a reflog; by default, nothing.
+    fn reflog_rename(&self, old_name: &[u8], new_name: &[u8]) -> core::result::Result<(), Error> {
+        let _ = (old_name, new_name);
         Ok(())
     }
-    /// Delete a reflog.
-    fn reflog_delete(&self, _name: &[u8]) -> core::result::Result<(), Error> {
+    /// Delete a reflog; by default, nothing.
+    fn reflog_delete(&self, name: &[u8]) -> core::result::Result<(), Error> {
+        let _ = name;
         Ok(())
     }
-}
-
-/// Install `backend` as the reference database backend of `repo`
-/// (`git_refdb_set_backend` on the repository's database); the previous
-/// backend is freed.
-///
-/// It takes the repository exclusively: the old backend is freed at once
-/// (as in C, which keeps no count on a backend), so no other thread, and
-/// no [`Reference`] or iterator of the repository, may be using it.
-///
-/// ```compile_fail
-/// # use libgit2_rs::refs_api::*;
-/// # fn f<B: RefdbBackend>(mut repo: Repository, b: B) {
-/// let head = Reference::lookup(&repo, b"HEAD").unwrap();
-/// set_refdb_backend(&mut repo, b).unwrap(); // `repo` is borrowed by `head`
-/// drop(head);
-/// # }
-/// ```
-pub fn set_refdb_backend<B: RefdbBackend>(repo: &mut Repository, backend: B) -> Result<()> {
-    let db = RefdbPtr::of_repo(repo.ptr()).map_err(Error::from)?;
-    let table = CTable::<RefdbBackendTable, RustBackend<B>>::new(RustBackend(backend));
-    let raw = table.into_c().as_ptr();
-    // SAFETY: a live database and a complete backend, whose ownership
-    // passes to the database.
-    let r = unsafe { refdb::set_backend(db, raw) };
-    if let Err(e) = r {
-        // SAFETY: the table was not taken: release it through its slot.
-        unsafe { CTable::<RefdbBackendTable, RustBackend<B>>::release(raw) };
-        return Err(Error::from(e));
+    /// Lock `name` for a transaction (`git_transaction_lock_ref`, which
+    /// stays C): what the backend returns comes back to
+    /// [`unlock`](Self::unlock), once. By default, locking is not
+    /// supported (the error C gives for a backend without `lock`).
+    fn lock(&self, name: &[u8]) -> core::result::Result<RefdbLock, Error> {
+        let _ = name;
+        Err(Error::with(
+            ErrorCode::GENERIC,
+            ErrorClass::REFERENCE,
+            "backend does not support locking",
+        ))
     }
-    Ok(())
+    /// End the transaction on a reference [`lock`](Self::lock) locked:
+    /// write it, delete it, or leave it. By default, nothing.
+    fn unlock(&self, lock: RefdbLock, how: RefdbUnlock<'_>) -> core::result::Result<(), Error> {
+        let _ = (lock, how);
+        Ok(())
+    }
 }
 
 /// The state behind a Rust backend's table.
-pub struct RustBackend<B>(B);
+pub(crate) struct RustBackend<B>(crate::api::NoUnwindDrop<B>, crate::oid::OidType);
 
 fn fail(e: &Error) -> c_int {
-    let _ = errors::set_str(e.class(), e.message_bytes());
-    e.code().raw()
+    e.set_last().raw()
 }
 
 fn status<T>(r: core::result::Result<T, Error>) -> c_int {
@@ -900,7 +1188,25 @@ unsafe fn opt_bytes<'a>(p: *const c_char) -> Option<&'a [u8]> {
     unsafe { crate::util::export::cstr(p) }.map(CStr::to_bytes)
 }
 
+/// A name or target from a Rust backend: a NUL would cut it short in C
+/// (S-6e), so it is refused.
+fn check_no_nul(b: &[u8], what: &str) -> errors::Result<()> {
+    if b.contains(&0) {
+        let _ = crate::git_error_set!(
+            ErrorClass::REFERENCE,
+            "the {what} '{}' from the backend contains a NUL byte",
+            Bytes(&b[..memchr::memchr(0, b).unwrap_or(b.len())])
+        );
+        return Err(ErrorCode::INVALID_SPEC);
+    }
+    Ok(())
+}
+
 fn make_ref(name: &[u8], v: &RefValue) -> errors::Result<RefBox> {
+    check_no_nul(name, "reference name")?;
+    if let RefValue::Symbolic(t) = v {
+        check_no_nul(t, "symbolic target")?;
+    }
     match v {
         RefValue::Direct { id, peel } => RefBox::new_direct(name, id, peel.as_ref()),
         RefValue::Symbolic(t) => RefBox::new_symbolic(name, t),
@@ -920,7 +1226,7 @@ fn value_of(r: RefView<'_>) -> RefValue {
 }
 
 /// The iterator of a Rust backend: a snapshot of its references.
-pub struct VecIter {
+pub(crate) struct VecIter {
     pool: GitPool,
     items: Vec<(NonNull<c_char>, RefValue)>,
     pos: usize,
@@ -941,8 +1247,8 @@ impl VecIter {
 ffibox::impl_cvtable! {
     // SAFETY: libgit2 passes each slot of a `git_refdb_backend` its
     // backend in the argument marked `@`, and calls only the slots set
-    // here (`free` once); `lock`, `unlock`, `init` are NULL, which the
-    // header allows.
+    // here (`free` once; `unlock` once per `lock` that succeeded, with
+    // the payload it made); `init` is NULL, which the header allows.
     unsafe impl<B: RefdbBackend> CVtable<RustBackend<B>> for RefdbBackendTable {}
     base = git_refdb_backend { version: GIT_REFDB_BACKEND_VERSION, ..Default::default() };
     fn exists(out: *mut c_int, @backend, name: *const c_char) -> c_int {
@@ -996,6 +1302,14 @@ ffibox::impl_cvtable! {
                 Err(e) => return e.raw(),
             };
             for (name, v) in list {
+                if let Err(e) = check_no_nul(&name, "reference name") {
+                    return e.raw();
+                }
+                if let RefValue::Symbolic(t) = &v
+                    && let Err(e) = check_no_nul(t, "symbolic target")
+                {
+                    return e.raw();
+                }
                 if glob.is_some_and(|g| !wildmatch(g, &name, WildmatchFlags::default()).is_match()) {
                     continue;
                 }
@@ -1096,7 +1410,7 @@ ffibox::impl_cvtable! {
                 Ok(r) => r,
                 Err(e) => return fail(&e),
             };
-            let log = match rl::Reflog::alloc(n, crate::oid::OidType::Sha1 as c_int) {
+            let log = match rl::Reflog::alloc(n, s.1 as c_int) {
                 Ok(l) => l,
                 Err(e) => return e.raw(),
             };
@@ -1155,6 +1469,64 @@ ffibox::impl_cvtable! {
         on busy: busy(),
         // SAFETY: a string.
         |s: &RustBackend<B>| status(s.0.reflog_delete(unsafe { bytes_of(name) })),
+    }
+    fn lock(payload_out: *mut *mut c_void, @backend, name: *const c_char) -> c_int {
+        on panic: panicked(),
+        on busy: busy(),
+        |s: &RustBackend<B>| {
+            // SAFETY: a string.
+            match s.0.lock(unsafe { bytes_of(name) }) {
+                Ok(lock) => {
+                    let p = Box::into_raw(Box::new(lock));
+                    // SAFETY: `payload_out` is writable; C hands the
+                    // payload back to `unlock` once.
+                    unsafe { payload_out.write(p.cast()) };
+                    0
+                }
+                Err(e) => fail(&e),
+            }
+        },
+    }
+    fn unlock(
+        @backend,
+        payload: *mut c_void,
+        success: c_int,
+        update_reflog: c_int,
+        r: *const GitReference,
+        sig: *const git_signature,
+        message: *const c_char,
+    ) -> c_int {
+        on panic: panicked(),
+        on busy: busy(),
+        |s: &RustBackend<B>| {
+            if payload.is_null() {
+                return errors::assert_arg_failed("payload").raw();
+            }
+            // SAFETY: the payload our `lock` made (`Box::into_raw`), which
+            // C hands back once.
+            let lock = *unsafe { Box::from_raw(payload.cast::<RefdbLock>()) };
+            let how = if success == 0 || r.is_null() {
+                RefdbUnlock::Discard
+            } else {
+                // SAFETY: a live reference for the call.
+                let v = unsafe { RefView::from_raw(r) };
+                if success == 2 {
+                    RefdbUnlock::Delete { name: v.name() }
+                } else {
+                    RefdbUnlock::Write {
+                        name: v.name(),
+                        value: value_of(v),
+                        update_reflog: update_reflog != 0,
+                        // SAFETY: NULL or a live signature for the call.
+                        committer: unsafe { sig.as_ref() }
+                            .map(|g| unsafe { SignatureRef::from_raw(g) }),
+                        // SAFETY: NULL or a string.
+                        message: unsafe { opt_bytes(message) },
+                    }
+                }
+            };
+            status(s.0.unlock(lock, how))
+        },
     }
     release free;
 }
@@ -1242,7 +1614,7 @@ mod tests {
             Ok(())
         }
         fn rename(&self, _old: &[u8], _new: &[u8], _force: bool) -> Result<RefValue> {
-            Err(Error::new(
+            Err(Error::with(
                 ErrorCode::NOT_FOUND,
                 ErrorClass::REFERENCE,
                 "nope",
@@ -1260,18 +1632,21 @@ mod tests {
     #[test]
     fn rust_backend_slots() {
         let _g = test_support::init();
-        let id = Oid::from_hex(
+        let id = Oid::parse_hex(
             b"a65fedf39aefe402d3bb6e24df4d4f5fe4547750",
             crate::OidType::Sha1,
         )
         .unwrap();
-        let t = CTable::<RefdbBackendTable, RustBackend<Mem>>::new(RustBackend(Mem::default()));
+        let t = CTable::<RefdbBackendTable, RustBackend<Mem>>::new(RustBackend(
+            crate::api::NoUnwindDrop::new(Mem::default()),
+            crate::OidType::Sha1,
+        ));
         let b = t.into_c().as_ptr();
         // SAFETY: libgit2's contract with a backend: its own slots, its
         // table, valid arguments, `free` once.
         unsafe {
             let tb = &*b;
-            assert!(tb.lock.is_none() && tb.unlock.is_none() && tb.init.is_none());
+            assert!(tb.lock.is_some() && tb.unlock.is_some() && tb.init.is_none());
             let r = RefBox::new_direct(b"refs/heads/a", &id, None).unwrap();
             assert_eq!(
                 (tb.write.unwrap())(
@@ -1386,12 +1761,15 @@ mod tests {
     #[test]
     fn rust_backend_two_threads() {
         let _g = test_support::init();
-        let id = Oid::from_hex(
+        let id = Oid::parse_hex(
             b"a65fedf39aefe402d3bb6e24df4d4f5fe4547750",
             crate::OidType::Sha1,
         )
         .unwrap();
-        let t = CTable::<RefdbBackendTable, RustBackend<Mem>>::new(RustBackend(Mem::default()));
+        let t = CTable::<RefdbBackendTable, RustBackend<Mem>>::new(RustBackend(
+            crate::api::NoUnwindDrop::new(Mem::default()),
+            crate::OidType::Sha1,
+        ));
         let b = SendPtr(t.into_c().as_ptr());
         let n = if cfg!(miri) { 4 } else { 200 };
         std::thread::scope(|s| {
@@ -1506,7 +1884,10 @@ mod tests {
             table: std::sync::atomic::AtomicPtr::new(core::ptr::null_mut()),
             dropped: dropped.clone(),
         };
-        let t = CTable::<RefdbBackendTable, RustBackend<Reentrant>>::new(RustBackend(st));
+        let t = CTable::<RefdbBackendTable, RustBackend<Reentrant>>::new(RustBackend(
+            crate::api::NoUnwindDrop::new(st),
+            crate::OidType::Sha1,
+        ));
         // Tell the state where its table is.
         t.state()
             .unwrap()
@@ -1520,5 +1901,163 @@ mod tests {
         assert_eq!(r, 0);
         assert_eq!(e, 1);
         assert!(dropped.load(std::sync::atomic::Ordering::SeqCst));
+    }
+}
+
+/// The transaction hooks of a Rust backend ([`RefdbBackend::lock`] /
+/// [`RefdbBackend::unlock`]), driven by C's `git_transaction` (which stays
+/// C, and has no safe counterpart).
+#[cfg(all(test, feature = "link-c", not(miri)))]
+#[allow(clippy::multiple_unsafe_ops_per_block)]
+mod transaction_tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    /// `git_transaction`, opaque.
+    #[repr(C)]
+    struct Tx {
+        _p: [u8; 0],
+    }
+
+    unsafe extern "C" {
+        fn git_transaction_new(out: *mut *mut Tx, repo: *mut c_void) -> c_int;
+        fn git_transaction_lock_ref(tx: *mut Tx, name: *const c_char) -> c_int;
+        fn git_transaction_set_target(
+            tx: *mut Tx,
+            name: *const c_char,
+            target: *const Oid,
+            sig: *const git_signature,
+            msg: *const c_char,
+        ) -> c_int;
+        fn git_transaction_remove(tx: *mut Tx, name: *const c_char) -> c_int;
+        fn git_transaction_commit(tx: *mut Tx) -> c_int;
+        fn git_transaction_free(tx: *mut Tx);
+    }
+
+    /// What the backend saw.
+    #[derive(Default)]
+    struct Seen(Mutex<Vec<String>>);
+
+    struct Locking(Arc<Seen>);
+
+    impl RefdbBackend for Locking {
+        fn lock(&self, name: &[u8]) -> Result<RefdbLock> {
+            let n = String::from_utf8_lossy(name).into_owned();
+            self.0.0.lock().unwrap().push(format!("lock {n}"));
+            Ok(Box::new(n))
+        }
+        fn unlock(&self, lock: RefdbLock, how: RefdbUnlock<'_>) -> Result<()> {
+            let n = lock.downcast::<String>().unwrap();
+            let what = match how {
+                RefdbUnlock::Discard => "discard".to_owned(),
+                RefdbUnlock::Delete { name } => format!("delete {}", Bytes(name)),
+                RefdbUnlock::Write {
+                    name,
+                    value,
+                    update_reflog,
+                    committer,
+                    message,
+                } => format!(
+                    "write {} {:?} {update_reflog} {:?} {:?}",
+                    Bytes(name),
+                    value,
+                    committer.map(|c| c.name().to_vec()),
+                    message.map(Bytes)
+                ),
+            };
+            self.0.0.lock().unwrap().push(format!("unlock {n}: {what}"));
+            Ok(())
+        }
+    }
+
+    struct NoLocks;
+    impl RefdbBackend for NoLocks {}
+
+    fn repo() -> (Repository, std::path::PathBuf) {
+        let d = std::env::temp_dir().join(format!(
+            "refs-tx-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        (Repository::init(&d, true).unwrap(), d)
+    }
+
+    #[test]
+    fn transactions_reach_the_backend() {
+        let (mut repo, dir) = repo();
+        let seen = Arc::new(Seen::default());
+        repo.set_refdb_backend(Locking(seen.clone())).unwrap();
+        let id = Oid::from_hex(
+            "a65fedf39aefe402d3bb6e24df4d4f5fe4547750",
+            crate::OidType::Sha1,
+        )
+        .unwrap();
+        let who = Signature::new(b"me", b"me@x", crate::Time::new(0, 0)).unwrap();
+        let mut tx = core::ptr::null_mut();
+        // SAFETY: C's transaction API, on a live repository, with live
+        // arguments; the transaction freed once.
+        unsafe {
+            assert_eq!(git_transaction_new(&raw mut tx, repo.raw_ptr().cast()), 0);
+            assert_eq!(git_transaction_lock_ref(tx, c"refs/heads/a".as_ptr()), 0);
+            assert_eq!(git_transaction_lock_ref(tx, c"refs/heads/b".as_ptr()), 0);
+            assert_eq!(git_transaction_lock_ref(tx, c"refs/heads/c".as_ptr()), 0);
+            assert_eq!(
+                git_transaction_set_target(
+                    tx,
+                    c"refs/heads/a".as_ptr(),
+                    &raw const id,
+                    who.as_raw(),
+                    c"moved".as_ptr()
+                ),
+                0
+            );
+            assert_eq!(git_transaction_remove(tx, c"refs/heads/b".as_ptr()), 0);
+            assert_eq!(git_transaction_commit(tx), 0);
+            git_transaction_free(tx);
+        }
+        let seen = seen.0.lock().unwrap().clone();
+        assert_eq!(
+            &seen[..3],
+            [
+                "lock refs/heads/a",
+                "lock refs/heads/b",
+                "lock refs/heads/c"
+            ]
+        );
+        let mut rest = seen[3..].to_vec();
+        rest.sort();
+        assert_eq!(
+            rest,
+            [
+                format!(
+                    "unlock refs/heads/a: write refs/heads/a Direct {{ id: {id:?}, peel: None }} true Some([109, 101]) Some(\"moved\")"
+                ),
+                "unlock refs/heads/b: delete refs/heads/b".to_owned(),
+                "unlock refs/heads/c: discard".to_owned(),
+            ]
+        );
+        drop(repo);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_backend_without_locks_refuses_transactions() {
+        let (mut repo, dir) = repo();
+        repo.set_refdb_backend(NoLocks).unwrap();
+        let mut tx = core::ptr::null_mut();
+        // SAFETY: as above.
+        unsafe {
+            assert_eq!(git_transaction_new(&raw mut tx, repo.raw_ptr().cast()), 0);
+            assert_eq!(git_transaction_lock_ref(tx, c"refs/heads/a".as_ptr()), -1);
+            git_transaction_free(tx);
+        }
+        assert_eq!(
+            errors::last_message().unwrap(),
+            b"backend does not support locking"
+        );
+        assert_eq!(errors::last_class(), Some(ErrorClass::REFERENCE));
+        drop(repo);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

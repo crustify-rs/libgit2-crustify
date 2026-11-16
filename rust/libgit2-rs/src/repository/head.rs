@@ -730,7 +730,7 @@ pub(crate) fn shallow_roots_write(repo: &GitRepository, roots: &[Oid]) -> Result
         b"shallow",
     )?;
     let p = cs(&path).into_owned();
-    let mut file = Filebuf::open(p.to_bytes(), hash_flags, 0o666).map_err(|e| e.code())?;
+    let mut file = Filebuf::open(p.to_bytes(), hash_flags, 0o666).map_err(|e| e.raw_code())?;
     let hexsize = repo.oid_type().hexsize();
     for r in roots {
         // `git_oid_tostr(buf, sizeof(buf), id)`, then `hexsize` bytes of it.

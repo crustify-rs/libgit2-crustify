@@ -665,24 +665,42 @@ pub unsafe fn filter(
 // The safe API
 // ---------------------------------------------------------------------------
 
-/// A blob of a repository.
+/// A blob of a repository: an [`Object`] of type blob.
 #[derive(Clone, Debug)]
+#[repr(transparent)]
 pub struct Blob<'repo>(Object<'repo>);
 
-impl<'repo> Blob<'repo> {
-    pub(crate) fn try_from_object(
-        o: Object<'repo>,
-    ) -> core::result::Result<Blob<'repo>, Object<'repo>> {
+impl<'repo> TryFrom<Object<'repo>> for Blob<'repo> {
+    type Error = Object<'repo>;
+
+    /// The object as a blob, or the object back if it is not one.
+    fn try_from(o: Object<'repo>) -> core::result::Result<Blob<'repo>, Object<'repo>> {
         if o.kind() == ObjectType::Blob {
             Ok(Blob(o))
         } else {
             Err(o)
         }
     }
+}
+
+impl<'repo> From<Blob<'repo>> for Object<'repo> {
+    fn from(b: Blob<'repo>) -> Object<'repo> {
+        b.0
+    }
+}
+
+impl<'repo> Blob<'repo> {
+    /// An object of type blob, borrowed as a blob.
+    pub(crate) fn from_object_ref<'s>(obj: &'s Object<'repo>) -> &'s Blob<'repo> {
+        debug_assert_eq!(obj.kind(), ObjectType::Blob);
+        // SAFETY: `Blob` is a `repr(transparent)` wrapper of `Object`, whose
+        // only invariant (the object is a blob) the caller checked.
+        unsafe { &*ptr::from_ref(obj).cast::<Blob<'repo>>() }
+    }
 
     /// `git_blob_lookup`.
     pub fn lookup(repo: &'repo Repository, id: &Oid) -> core::result::Result<Blob<'repo>, Error> {
-        Ok(Blob(Object::lookup(repo, id, ObjectType::Blob)?))
+        Ok(Blob(Object::lookup(repo, id, Some(ObjectType::Blob))?))
     }
 
     /// `git_blob_lookup_prefix`.
@@ -695,7 +713,7 @@ impl<'repo> Blob<'repo> {
             repo,
             id,
             len,
-            ObjectType::Blob,
+            Some(ObjectType::Blob),
         )?))
     }
 
@@ -740,10 +758,10 @@ impl<'repo> Blob<'repo> {
     /// is binary).
     pub fn filter(
         &self,
-        path: &[u8],
-        opts: &BlobFilterOptions,
+        path: impl AsRef<[u8]>,
+        opts: BlobFilterOptions,
     ) -> core::result::Result<Option<Vec<u8>>, Error> {
-        let path = std::ffi::CString::new(path).map_err(|_| {
+        let path = std::ffi::CString::new(path.as_ref()).map_err(|_| {
             Error::from(git_error_set!(
                 ErrorClass::INVALID,
                 "path contains a NUL byte"
@@ -755,52 +773,77 @@ impl<'repo> Blob<'repo> {
         }
         let mut out = GitBuf::new();
         // SAFETY: a live blob of a repository and a valid `git_buf`.
-        unsafe { filter(&raw mut out, self.0.as_ptr().cast(), &path, &o)? };
+        let mut run = || unsafe { filter(&raw mut out, self.0.as_ptr().cast(), &path, &o) };
+        match self.0.owner() {
+            // The filters read attributes, which C may read from the index.
+            Some(repo) => crate::index::api::with_repository_index_locked(repo, &mut run)?,
+            None => run()?,
+        }
         Ok(Some(out.into_vec()))
     }
 
     /// `git_blob_create_from_buffer`.
-    pub fn create_from_buffer(repo: &Repository, data: &[u8]) -> core::result::Result<Oid, Error> {
+    pub fn create_from_buffer(
+        repo: &Repository,
+        data: impl AsRef<[u8]>,
+    ) -> core::result::Result<Oid, Error> {
         // SAFETY: a live repository.
-        Ok(unsafe { create_from_buffer(crate::object::repo_ptr(repo), data)? })
+        Ok(unsafe { create_from_buffer(crate::object::repo_ptr(repo), data.as_ref())? })
     }
 
     /// `git_blob_create_from_workdir`: a blob of the work-tree file at
-    /// `path` (relative), filtered.
-    pub fn create_from_workdir(repo: &Repository, path: &[u8]) -> core::result::Result<Oid, Error> {
-        let path = std::ffi::CString::new(path).map_err(|_| {
+    /// `path` (relative to the work tree, `/`-separated), filtered.
+    pub fn create_from_workdir(
+        repo: &Repository,
+        path: impl AsRef<[u8]>,
+    ) -> core::result::Result<Oid, Error> {
+        let path = std::ffi::CString::new(path.as_ref()).map_err(|_| {
             Error::from(git_error_set!(
                 ErrorClass::INVALID,
                 "path contains a NUL byte"
             ))
         })?;
-        // SAFETY: a live repository.
-        Ok(unsafe {
-            create_from_paths(
-                None,
-                crate::object::repo_ptr(repo),
-                None,
-                Some(&path),
-                0,
-                true,
-            )?
-        })
+        // The filters read attributes, which C may read from the index.
+        Ok(crate::index::api::with_repository_index_locked(
+            repo.raw(),
+            || {
+                // SAFETY: a live repository.
+                unsafe {
+                    create_from_paths(
+                        None,
+                        crate::object::repo_ptr(repo),
+                        None,
+                        Some(&path),
+                        0,
+                        true,
+                    )
+                }
+            },
+        )?)
     }
 
-    /// `git_blob_create_from_disk`.
+    /// `git_blob_create_from_disk`: a blob of the file at `path` (anywhere),
+    /// filtered as the work-tree file of that path would be if it is in the
+    /// work tree.
     pub fn create_from_disk(
         repo: &Repository,
-        path: &std::path::Path,
+        path: impl AsRef<std::path::Path>,
     ) -> core::result::Result<Oid, Error> {
         use std::os::unix::ffi::OsStrExt as _;
-        let path = std::ffi::CString::new(path.as_os_str().as_bytes()).map_err(|_| {
+        let path = std::ffi::CString::new(path.as_ref().as_os_str().as_bytes()).map_err(|_| {
             Error::from(git_error_set!(
                 ErrorClass::INVALID,
                 "path contains a NUL byte"
             ))
         })?;
-        // SAFETY: a live repository.
-        Ok(unsafe { create_from_disk(crate::object::repo_ptr(repo), &path)? })
+        // The filters read attributes, which C may read from the index.
+        Ok(crate::index::api::with_repository_index_locked(
+            repo.raw(),
+            || {
+                // SAFETY: a live repository.
+                unsafe { create_from_disk(crate::object::repo_ptr(repo), &path) }
+            },
+        )?)
     }
 
     /// `git_blob_create_from_stream`: a writer whose
@@ -820,10 +863,7 @@ impl<'repo> Blob<'repo> {
         };
         // SAFETY: a live repository, which the writer borrows.
         let t = unsafe { create_from_stream(crate::object::repo_ptr(repo), hint.as_deref())? };
-        Ok(BlobWriter {
-            table: t,
-            _repo: core::marker::PhantomData,
-        })
+        Ok(BlobWriter { table: t, repo })
     }
 }
 
@@ -832,11 +872,29 @@ pub fn data_is_binary(data: &[u8]) -> bool {
     crate::util::str::is_binary(data)
 }
 
+impl Blob<'_> {
+    /// `git_blob_data_is_binary`: whether `data` looks binary (as
+    /// [`is_binary`](Blob::is_binary) judges a blob's content).
+    pub fn data_is_binary(data: impl AsRef<[u8]>) -> bool {
+        data_is_binary(data.as_ref())
+    }
+}
+
 /// A blob being written (`git_blob_create_from_stream`).
 pub struct BlobWriter<'repo> {
     table: CTable<WriteStream, BlobWriteStream>,
-    _repo: core::marker::PhantomData<&'repo Repository>,
+    repo: &'repo Repository,
 }
+
+// SAFETY: the writer owns its table alone: the stream's C handle is never
+// handed to C by the safe API (writes go to the state through
+// `state_mut`, the commit takes the state out), so nothing else reaches
+// the table or the state, which is `Send` (a filebuf and a path); the
+// repository is `Sync`.
+unsafe impl Send for BlobWriter<'_> {}
+// SAFETY: no method takes `&BlobWriter` (writes and the commit need
+// `&mut self` / `self`), so a shared reference reaches nothing.
+unsafe impl Sync for BlobWriter<'_> {}
 
 impl BlobWriter<'_> {
     /// Append `data`.
@@ -846,7 +904,12 @@ impl BlobWriter<'_> {
 
     /// `git_blob_create_from_stream_commit`.
     pub fn commit(self) -> core::result::Result<Oid, Error> {
-        Ok(stream_commit(self.table)?)
+        let repo = self.repo;
+        // The filters read attributes, which C may read from the index.
+        Ok(crate::index::api::with_repository_index_locked(
+            repo.raw(),
+            || stream_commit(self.table),
+        )?)
     }
 }
 
@@ -860,8 +923,9 @@ impl std::io::Write for BlobWriter<'_> {
     }
 }
 
-/// Options of [`Blob::filter`] (`git_blob_filter_options`).
-#[derive(Clone, Copy, Debug)]
+/// Options of [`Blob::filter`] (`git_blob_filter_options`): a by-value
+/// builder (`BlobFilterOptions::new().check_for_binary(false)`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BlobFilterOptions {
     flags: u32,
     commit: Oid,
@@ -877,6 +941,12 @@ impl Default for BlobFilterOptions {
 }
 
 impl BlobFilterOptions {
+    /// The defaults: skip binary blobs, system attributes on, attributes
+    /// from the work tree and index.
+    pub fn new() -> BlobFilterOptions {
+        BlobFilterOptions::default()
+    }
+
     /// Skip binary blobs (on by default).
     pub fn check_for_binary(mut self, on: bool) -> Self {
         self.set(GIT_BLOB_FILTER_CHECK_FOR_BINARY, on);

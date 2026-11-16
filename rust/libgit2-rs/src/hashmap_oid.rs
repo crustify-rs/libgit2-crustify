@@ -10,14 +10,14 @@
 //!   whose keys live as long as C says.
 //!
 //! ```
-//! use libgit2_rs::hashmap_oid::OidMap;
+//! use libgit2_rs::__test::hashmap_oid::OidMap;
 //! use libgit2_rs::{Oid, OidType};
-//! # let _g = libgit2_rs::util::test_support::init();
-//! let a = Oid::from_prefix(b"abcd", OidType::Sha1)?;
+//! # let _g = libgit2_rs::__test::util::test_support::init();
+//! let a = Oid::from_prefix(b"abcd", OidType::Sha1).unwrap();
 //! let mut m: OidMap<'_, u32> = OidMap::new();
 //! m.put(&a, 1)?;
 //! assert_eq!(m.get(&&a), Some(&1));
-//! # Ok::<(), libgit2_rs::util::errors::ErrorCode>(())
+//! # Ok::<(), libgit2_rs::__test::util::errors::ErrorCode>(())
 //! ```
 
 use core::ffi::c_void;

@@ -12,7 +12,7 @@
 //!
 //! let repo = Repository::open("/path/to/repo.git")?;
 //! let mut walk = Revwalk::new(&repo)?;
-//! walk.sorting(Sort::TOPOLOGICAL | Sort::TIME)?
+//! walk.sorting(Sort::TOPOLOGICAL | Sort::TIME)
 //!     .push_ref("refs/heads/main")?
 //!     .hide_ref("refs/tags/v1.0")?;
 //! for id in walk {
@@ -46,47 +46,18 @@ fn cstring(b: &[u8]) -> Result<CString> {
     })
 }
 
-/// The order of a walk (`git_sort_t`), combinable with `|`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct Sort(u32);
-
-impl Sort {
-    /// `GIT_SORT_NONE`: the walk's natural order (reverse chronological
-    /// along the parents, as `git log` without options).
-    pub const NONE: Sort = Sort(GIT_SORT_NONE);
-    /// `GIT_SORT_TOPOLOGICAL`: no parent before all of its children.
-    pub const TOPOLOGICAL: Sort = Sort(GIT_SORT_TOPOLOGICAL);
-    /// `GIT_SORT_TIME`: by commit time, newest first.
-    pub const TIME: Sort = Sort(GIT_SORT_TIME);
-    /// `GIT_SORT_REVERSE`: the reverse of the selected order.
-    pub const REVERSE: Sort = Sort(GIT_SORT_REVERSE);
-
-    /// The flags as bits.
-    pub const fn bits(self) -> u32 {
-        self.0
-    }
-
-    /// The flags of `bits` (unknown bits are kept, as C does).
-    pub const fn from_bits(bits: u32) -> Sort {
-        Sort(bits)
-    }
-
-    /// Whether every flag of `other` is set.
-    pub const fn contains(self, other: Sort) -> bool {
-        self.0 & other.0 == other.0
-    }
-}
-
-impl core::ops::BitOr for Sort {
-    type Output = Sort;
-    fn bitor(self, rhs: Sort) -> Sort {
-        Sort(self.0 | rhs.0)
-    }
-}
-
-impl core::ops::BitOrAssign for Sort {
-    fn bitor_assign(&mut self, rhs: Sort) {
-        self.0 |= rhs.0;
+crate::api::flags::bitflags! {
+    /// The order of a walk (`git_sort_t`), combinable with `|`.
+    pub struct Sort: u32 {
+        /// `GIT_SORT_NONE`: the walk's natural order (reverse
+        /// chronological along the parents, as `git log` without options).
+        NONE = GIT_SORT_NONE;
+        /// `GIT_SORT_TOPOLOGICAL`: no parent before all of its children.
+        TOPOLOGICAL = GIT_SORT_TOPOLOGICAL;
+        /// `GIT_SORT_TIME`: by commit time, newest first.
+        TIME = GIT_SORT_TIME;
+        /// `GIT_SORT_REVERSE`: the reverse of the selected order.
+        REVERSE = GIT_SORT_REVERSE;
     }
 }
 
@@ -164,8 +135,9 @@ impl<'repo> Revwalk<'repo> {
         f(w, w.state())
     }
 
-    /// `git_revwalk_next`, and the end of the walk if the hide closure
-    /// panicked during it (the only call that runs the closure).
+    /// `git_revwalk_next`; if the hide closure panicked during it (the
+    /// only call that runs the closure), the walk is reset and the panic
+    /// resumed.
     fn step(&mut self) -> crate::util::errors::Result<Oid> {
         let r = self.with(|w, st| w.next(st));
         let Some(h) = self.hide else { return r };
@@ -175,13 +147,7 @@ impl<'repo> Revwalk<'repo> {
             return r;
         };
         self.with(|w, st| w.reset(st));
-        let msg = p
-            .downcast_ref::<&str>()
-            .map(|s| (*s).to_owned())
-            .or_else(|| p.downcast_ref::<String>().cloned())
-            .unwrap_or_default();
-        let _ = git_error_set!(ErrorClass::INTERNAL, "the hide callback panicked: {msg}");
-        Err(ErrorCode::GENERIC)
+        std::panic::resume_unwind(p)
     }
 
     /// The repository of the walk (`git_revwalk_repository`).
@@ -198,15 +164,15 @@ impl<'repo> Revwalk<'repo> {
     }
 
     /// `git_revwalk_sorting`: set the order (resets a walk in progress).
-    pub fn sorting(&mut self, sort: Sort) -> Result<&mut Self> {
-        self.with(|w, st| w.set_sorting(st, sort.0));
-        Ok(self)
+    pub fn sorting(&mut self, sort: Sort) -> &mut Self {
+        self.with(|w, st| w.set_sorting(st, sort.raw()));
+        self
     }
 
     /// `git_revwalk_simplify_first_parent`: follow only first parents.
-    pub fn simplify_first_parent(&mut self) -> Result<&mut Self> {
+    pub fn simplify_first_parent(&mut self) -> &mut Self {
         self.with(|_, st| st.first_parent.set(true));
-        Ok(self)
+        self
     }
 
     fn push_id(&mut self, id: &Oid, uninteresting: c_int) -> Result<&mut Self> {
@@ -298,10 +264,10 @@ impl<'repo> Revwalk<'repo> {
     /// `git_revwalk_add_hide_cb`: also hide each commit for which `f`
     /// returns `true` (and, in the walk's order, what is only reachable
     /// through it). Replaces a previous callback; resets a walk in
-    /// progress. If `f` panics, the panic is caught: the walk answers "hide"
-    /// for the rest of that step, then resets, and the iteration step
-    /// returns an error of class `ErrorClass::INTERNAL` ("the hide callback
-    /// panicked: …"); the walk can be used again after it.
+    /// progress. If `f` panics, the panic is caught where C calls it: the
+    /// walk answers "hide" for the rest of that step, then resets, and the
+    /// panic is resumed from the iteration step; the walk can be used
+    /// again after it.
     pub fn set_hide_callback(&mut self, f: impl FnMut(&Oid) -> bool + 'repo) -> &mut Self {
         let state = Box::new(HideState {
             f: Box::new(f),

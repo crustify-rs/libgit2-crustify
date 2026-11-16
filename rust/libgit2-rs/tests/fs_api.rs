@@ -1,4 +1,4 @@
-//! The safe API of the filesystem layer (`libgit2_rs::fs`), used as a Rust
+//! The safe API of the filesystem layer (`libgit2_rs::__test::fs`), used as a Rust
 //! consumer would: no `unsafe`.
 
 #![forbid(unsafe_code)]
@@ -6,8 +6,8 @@
 use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 
-use libgit2_rs::fs::{self, DirIter, Filebuf, Filestamp};
-use libgit2_rs::util::test_support;
+use libgit2_rs::__test::fs::{self, DirIter, Filebuf, Filestamp};
+use libgit2_rs::__test::util::test_support;
 use libgit2_rs::{ErrorClass, ErrorCode};
 
 #[test]

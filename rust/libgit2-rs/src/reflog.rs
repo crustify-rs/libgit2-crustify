@@ -396,12 +396,17 @@ pub unsafe fn append(
     let sig = unsafe { p::SigBox::dup(committer) }?;
     entry.get().committer = sig.into_raw();
     if let Some(msg) = msg {
-        let m = alloc::strndup(msg, msg.len());
+        // `strndup` stops at a NUL in `msg` (C's `git__strdup` of a C
+        // string sees no further): only the copy's own length is rewritten
+        // (S-2: a message with a NUL from a Rust refdb backend overflowed).
+        let len = memchr::memchr(0, msg).unwrap_or(msg.len());
+        let m = alloc::strndup(msg, len);
         if m.is_null() {
             return Err(ErrorCode::GENERIC);
         }
-        // SAFETY: `m` holds `msg.len()` bytes and a NUL.
-        let bytes = unsafe { core::slice::from_raw_parts_mut(m.cast::<u8>(), msg.len()) };
+        // SAFETY: `m` holds `len` bytes and a NUL (`strndup` copied the
+        // bytes before the first NUL, which are `len`).
+        let bytes = unsafe { core::slice::from_raw_parts_mut(m.cast::<u8>(), len) };
         for c in bytes {
             if *c == b'\n' {
                 *c = b' ';

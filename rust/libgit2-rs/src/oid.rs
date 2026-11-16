@@ -18,21 +18,20 @@
 //!
 //! ```
 //! use libgit2_rs::{Oid, OidType};
-//! # let _g = libgit2_rs::util::test_support::init();
 //! let id = Oid::from_hex(b"e69de29bb2d1d6434b8b29ae775ad8c2e48c5391", OidType::Sha1)?;
 //! assert_eq!(id, Oid::EMPTY_BLOB_SHA1);
 //! assert_eq!(id.hex().as_str(), "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391");
 //! assert_eq!(id.hex_path()?.as_str(), "e6/9de29bb2d1d6434b8b29ae775ad8c2e48c5391");
 //! let short = Oid::from_prefix(b"e69de", OidType::Sha1)?;
-//! assert!(id.ncmp(&short, 5) == 0);
-//! # Ok::<(), libgit2_rs::util::errors::ErrorCode>(())
+//! assert!(id.ncmp(&short, 5).is_eq());
+//! # Ok::<(), libgit2_rs::Error>(())
 //! ```
 
 use core::ffi::{c_int, c_uint};
 use core::fmt;
 use core::marker::PhantomData;
 
-use crate::util::errors::{self, ErrorClass, ErrorCode, Result};
+use crate::util::errors::{self, Error, ErrorClass, ErrorCode, Result};
 
 /// `GIT_OID_SHA1_SIZE`.
 pub const GIT_OID_SHA1_SIZE: usize = 20;
@@ -74,7 +73,7 @@ impl OidType {
     /// The type of C's `git_oid_t` value, if it is a known one
     /// (`git_oid_type_is_valid`).
     #[inline]
-    pub const fn from_raw(t: git_oid_t) -> Option<OidType> {
+    pub(crate) const fn from_raw(t: git_oid_t) -> Option<OidType> {
         match t {
             GIT_OID_SHA1 => Some(OidType::Sha1),
             GIT_OID_SHA256 => Some(OidType::Sha256),
@@ -84,7 +83,7 @@ impl OidType {
 
     /// The `git_oid_t` value.
     #[inline]
-    pub const fn raw(self) -> git_oid_t {
+    pub(crate) const fn raw(self) -> git_oid_t {
         self as git_oid_t
     }
 
@@ -341,7 +340,7 @@ impl Oid {
 
     /// An id from its raw fields, whatever they are (as C may make one).
     #[inline]
-    pub const fn from_raw_parts(kind: u8, id: [u8; GIT_OID_MAX_SIZE]) -> Oid {
+    pub(crate) const fn from_raw_parts(kind: u8, id: [u8; GIT_OID_MAX_SIZE]) -> Oid {
         Oid { kind, id }
     }
 
@@ -384,7 +383,7 @@ impl Oid {
     ///
     /// Errors (class `GIT_ERROR_INVALID`) as C's: `unable to parse OID -
     /// too short`, `- too long`, `- contains invalid characters`.
-    pub fn from_prefix(s: &[u8], t: OidType) -> Result<Oid> {
+    pub(crate) fn parse_prefix(s: &[u8], t: OidType) -> Result<Oid> {
         let mut out = Oid::NONE;
         prefix_checks(s.len(), t.hexsize())?;
         out.kind = t as u8;
@@ -399,7 +398,7 @@ impl Oid {
     /// The slice is the C string's bytes: if it is shorter, the error is
     /// C's for the NUL it would reach (`contains invalid characters`); if
     /// it is longer, `too long`.
-    pub fn from_hex(s: &[u8], t: OidType) -> Result<Oid> {
+    pub(crate) fn parse_hex(s: &[u8], t: OidType) -> Result<Oid> {
         let hexsize = t.hexsize();
         let mut out = Oid::zero(t);
         // C reads the digits up to the first invalid one, which for a short
@@ -414,9 +413,18 @@ impl Oid {
         Ok(out)
     }
 
-    /// [`from_hex`](Oid::from_hex) of a `&str`.
-    pub fn from_str_hex(s: &str, t: OidType) -> Result<Oid> {
-        Oid::from_hex(s.as_bytes(), t)
+    /// `git_oid_from_string`: the id of type `t` written as exactly
+    /// `t.hexsize()` hex digits (errors as C's: `unable to parse OID -
+    /// contains invalid characters`, `- too long`).
+    pub fn from_hex(s: impl AsRef<[u8]>, t: OidType) -> core::result::Result<Oid, Error> {
+        Ok(Oid::parse_hex(s.as_ref(), t)?)
+    }
+
+    /// `git_oid_from_prefix`: the id of type `t` whose first hex digits are
+    /// `s` (1 to `t.hexsize()` of them), the rest zero: what the `*_prefix`
+    /// lookups take, with the number of digits.
+    pub fn from_prefix(s: impl AsRef<[u8]>, t: OidType) -> core::result::Result<Oid, Error> {
+        Ok(Oid::parse_prefix(s.as_ref(), t)?)
     }
 
     /// The type, if it is a known one (`git_oid_type`).
@@ -427,19 +435,19 @@ impl Oid {
 
     /// The raw type byte.
     #[inline]
-    pub const fn raw_kind(&self) -> u8 {
+    pub(crate) const fn raw_kind(&self) -> u8 {
         self.kind
     }
 
     /// All 32 id bytes (for SHA1, the last 12 are normally zero).
     #[inline]
-    pub const fn raw_id(&self) -> &[u8; GIT_OID_MAX_SIZE] {
+    pub(crate) const fn raw_id(&self) -> &[u8; GIT_OID_MAX_SIZE] {
         &self.id
     }
 
     /// The id bytes, mutable (all 32).
     #[inline]
-    pub fn raw_id_mut(&mut self) -> &mut [u8; GIT_OID_MAX_SIZE] {
+    pub(crate) fn raw_id_mut(&mut self) -> &mut [u8; GIT_OID_MAX_SIZE] {
         &mut self.id
     }
 
@@ -471,7 +479,7 @@ impl Oid {
     /// `git_oid_cmp`: C's `memcmp` of the two structs, with glibc's
     /// result: the difference of the first differing bytes.
     #[inline]
-    pub fn cmp_raw(&self, other: &Oid) -> c_int {
+    pub(crate) fn cmp_raw(&self, other: &Oid) -> c_int {
         if self.kind != other.kind {
             return self.kind as c_int - other.kind as c_int;
         }
@@ -489,7 +497,7 @@ impl Oid {
     /// `git_oid_ncmp`: 0 if the first `len` hex digits are equal; the
     /// difference of the types if they differ, 1 otherwise.
     #[inline]
-    pub fn ncmp(&self, other: &Oid, len: usize) -> c_int {
+    pub(crate) fn ncmp_raw(&self, other: &Oid, len: usize) -> c_int {
         if self.kind != other.kind {
             return self.kind as c_int - other.kind as c_int;
         }
@@ -500,7 +508,7 @@ impl Oid {
     /// its end). A shorter string compares as its prefix (an odd last digit
     /// as the high nibble of a byte whose low nibble is 0); an invalid digit
     /// gives -1; otherwise the difference of the first differing bytes.
-    pub fn strcmp(&self, s: &[u8]) -> c_int {
+    pub(crate) fn strcmp_raw(&self, s: &[u8]) -> c_int {
         self.strcmp_with(|i| s.get(i).copied().unwrap_or(0))
     }
 
@@ -542,8 +550,21 @@ impl Oid {
 
     /// `git_oid_streq`: whether [`strcmp`](Oid::strcmp) is 0.
     #[inline]
-    pub fn streq(&self, s: &[u8]) -> bool {
-        self.strcmp(s) == 0
+    pub fn streq(&self, s: impl AsRef<[u8]>) -> bool {
+        self.strcmp_raw(s.as_ref()) == 0
+    }
+
+    /// `git_oid_ncmp`: the order of the first `len` hex digits (ids of
+    /// different types order by type).
+    pub fn ncmp(&self, other: &Oid, len: usize) -> core::cmp::Ordering {
+        self.ncmp_raw(other, len).cmp(&0)
+    }
+
+    /// `git_oid_strcmp`: the order of this id against the hex string `s`
+    /// (a shorter string compares as its prefix; a string with a non-hex
+    /// digit orders before, as C's -1).
+    pub fn strcmp(&self, s: impl AsRef<[u8]>) -> core::cmp::Ordering {
+        self.strcmp_raw(s.as_ref()).cmp(&0)
     }
 
     /// `git_oid__cpy_prefix`: this id cut to its first `len` hex digits
@@ -565,14 +586,14 @@ impl Oid {
     /// The hash of `hashmap_oid.h` (`git_hashmap_oid_hashcode`): the first
     /// four id bytes as a native-endian `u32`.
     #[inline]
-    pub fn hashcode(&self) -> u32 {
+    pub(crate) fn hashcode(&self) -> u32 {
         u32::from_ne_bytes([self.id[0], self.id[1], self.id[2], self.id[3]])
     }
 
     /// `git_oid_nfmt`: the first `out.len()` hex digits into `out`; bytes
     /// beyond the hex size are set to 0. Error (`unknown type`) for an
     /// unknown type, with `out` untouched.
-    pub fn nfmt(&self, out: &mut [u8]) -> Result<()> {
+    pub(crate) fn nfmt(&self, out: &mut [u8]) -> Result<()> {
         let hex_size = self.hexsize();
         if hex_size == 0 {
             return Err(oid_error_invalid("unknown type"));
@@ -588,7 +609,8 @@ impl Oid {
 
     /// `git_oid_fmt_substr`: hex digits `start..start + out.len()` into
     /// `out`. Panics if the range exceeds `GIT_OID_MAX_HEXSIZE`.
-    pub fn fmt_substr(&self, out: &mut [u8], start: usize) {
+    #[cfg(test)]
+    pub(crate) fn fmt_substr(&self, out: &mut [u8], start: usize) {
         assert!(
             start + out.len() <= GIT_OID_MAX_HEXSIZE,
             "oid digit range out of bounds"
@@ -628,7 +650,7 @@ impl Oid {
 
     /// `git_oid_pathfmt`: `"xx/yyyy…"`, the loose object path. Error
     /// (`unknown type`) for an unknown type.
-    pub fn hex_path(&self) -> Result<HexOid> {
+    pub(crate) fn hex_path_raw(&self) -> Result<HexOid> {
         let hex_size = self.hexsize();
         if hex_size == 0 {
             return Err(oid_error_invalid("unknown type"));
@@ -637,6 +659,26 @@ impl Oid {
         write_path(&mut h.buf[..hex_size + 1], &self.id, hex_size);
         h.len = (hex_size + 1) as u8;
         Ok(h)
+    }
+}
+
+impl Oid {
+    /// `git_oid_pathfmt`: `"xx/yyyy…"`, the loose object path.
+    pub fn hex_path(&self) -> core::result::Result<HexOid, Error> {
+        Ok(self.hex_path_raw()?)
+    }
+}
+
+impl core::str::FromStr for Oid {
+    type Err = Error;
+    /// A full SHA-1 (40 digits) or SHA-256 (64 digits) id.
+    fn from_str(s: &str) -> core::result::Result<Oid, Error> {
+        let t = if s.len() == OidType::Sha256.hexsize() {
+            OidType::Sha256
+        } else {
+            OidType::Sha1
+        };
+        Oid::from_hex(s, t)
     }
 }
 
@@ -725,12 +767,6 @@ impl HexOid {
         // The buffer only ever holds hex digits and '/'.
         core::str::from_utf8(self.as_bytes()).unwrap_or_default()
     }
-
-    /// The digits with their NUL.
-    #[inline]
-    pub fn as_c_str(&self) -> &core::ffi::CStr {
-        core::ffi::CStr::from_bytes_until_nul(&self.buf).unwrap_or_default()
-    }
 }
 
 impl AsRef<[u8]> for HexOid {
@@ -795,11 +831,10 @@ const EMPTY_NODE: TrieNode = TrieNode { children: [0; 16] };
 ///
 /// ```
 /// use libgit2_rs::OidShortener;
-/// # let _g = libgit2_rs::util::test_support::init();
 /// let mut s = OidShortener::new(0);
 /// s.add(b"22596363b3de40b06f981fb85d82312e8c0ed511")?;
 /// assert_eq!(s.add(b"22596363b3de40b06f981fb85d82312e8c0ed512")?, 40);
-/// # Ok::<(), libgit2_rs::util::errors::ErrorCode>(())
+/// # Ok::<(), libgit2_rs::Error>(())
 /// ```
 pub struct OidShortener<'a> {
     nodes: Vec<TrieNode>,
@@ -906,10 +941,10 @@ impl<'a> OidShortener<'a> {
     ///
     /// Errors (class `GIT_ERROR_INVALID`): `unable to shorten OID - invalid
     /// hex value`, `- OID set full`.
-    pub fn add(&mut self, text_id: &'a [u8]) -> Result<usize> {
+    pub fn add(&mut self, text_id: &'a [u8]) -> core::result::Result<usize, Error> {
         let len = text_id.len().min(GIT_OID_SHA1_HEXSIZE);
         // SAFETY: the `len` bytes of the slice are readable for `'a`.
-        unsafe { self.add_raw(text_id.as_ptr(), len) }
+        Ok(unsafe { self.add_raw(text_id.as_ptr(), len) }?)
     }
 
     /// [`add`](OidShortener::add) of the id at `p`, of at most `len`
@@ -1378,7 +1413,7 @@ pub mod ffi {
         let a = unsafe { &*a };
         // SAFETY: as above.
         let b = unsafe { &*b };
-        a.ncmp(b, len)
+        a.ncmp_raw(b, len)
     }
 
     /// `git_oid_strcmp`.
@@ -1608,18 +1643,18 @@ mod tests {
         assert_eq!(b.cmp_raw(&a), 3);
         assert!(a < b);
         assert_eq!(a.cmp_raw(&a), 0);
-        assert_eq!(a.ncmp(&b, 10), 0);
-        assert_eq!(a.ncmp(&b, 11), 0);
-        assert_eq!(a.ncmp(&b, 12), 1);
+        assert_eq!(a.ncmp_raw(&b, 10), 0);
+        assert_eq!(a.ncmp_raw(&b, 11), 0);
+        assert_eq!(a.ncmp_raw(&b, 12), 1);
         let c = Oid::zero(OidType::Sha256);
-        assert_eq!(a.ncmp(&c, 1), -1);
+        assert_eq!(a.ncmp_raw(&c, 1), -1);
         assert_eq!(a.cmp_raw(&c), -1);
         assert!(a.streq(HEX));
         assert!(a.streq(b"ae90"));
         assert!(a.streq(b"ae9"));
         assert!(!a.streq(b"ae91"));
-        assert_eq!(a.strcmp(b"ae91"), 0x90 - 0x91);
-        assert_eq!(a.strcmp(b"zz"), -1);
+        assert_eq!(a.strcmp_raw(b"ae91"), 0x90 - 0x91);
+        assert_eq!(a.strcmp_raw(b"zz"), -1);
         assert!(Oid::SHA1_ZERO.is_zero());
         assert!(Oid::NONE.is_zero());
         assert!(!a.is_zero());
@@ -1772,7 +1807,7 @@ mod tests {
                     assert!((1..=41).contains(&n));
                     ok += 1;
                 }
-                Err(e) => assert_eq!(e, ErrorCode::GENERIC),
+                Err(e) => assert_eq!(e.raw_code(), ErrorCode::GENERIC),
             }
         }
         assert!(ok > 0);
@@ -1801,8 +1836,27 @@ mod tests {
             }
             assert!(n < 40000);
         };
-        assert_eq!(r, ErrorCode::GENERIC);
+        assert_eq!(r.raw_code(), ErrorCode::GENERIC);
         assert!(s.full);
         assert!(s.add(HEX).is_err());
+    }
+}
+
+/// The raw-field helpers, for the crate's own tests of the C ABI (an id of
+/// any type byte, as C may make one). Not in the API.
+#[cfg(feature = "test-internals")]
+pub mod test_raw {
+    use super::*;
+    /// [`Oid::from_raw_parts`].
+    pub fn from_raw_parts(kind: u8, id: [u8; GIT_OID_MAX_SIZE]) -> Oid {
+        Oid::from_raw_parts(kind, id)
+    }
+    /// [`Oid::raw_id`].
+    pub fn raw_id(o: &Oid) -> &[u8; GIT_OID_MAX_SIZE] {
+        o.raw_id()
+    }
+    /// [`Oid::raw_id_mut`].
+    pub fn raw_id_mut(o: &mut Oid) -> &mut [u8; GIT_OID_MAX_SIZE] {
+        o.raw_id_mut()
     }
 }

@@ -172,7 +172,7 @@ fn oid_at(data: &[u8], from: usize, t: OidType) -> Option<Oid> {
     let n = t.hexsize();
     let end = from.checked_add(n)?;
     let s = data.get(from..end)?;
-    Oid::from_prefix(s, t).ok()
+    Oid::parse_prefix(s, t).ok()
 }
 
 /// The body of `packed_reload`: parse `data` (the file, which C reads with
@@ -335,7 +335,7 @@ pub fn packed_search(
                 return Err(Corrupted);
             }
             let oid =
-                Oid::from_prefix(&data[rec..rec + hexsize], oid_type).map_err(|_| Corrupted)?;
+                Oid::parse_prefix(&data[rec..rec + hexsize], oid_type).map_err(|_| Corrupted)?;
             let mut r = rec + hexsize + 1;
             let eol = r + memchr::memchr(b'\n', data.get(r..data_end).ok_or(Corrupted)?)
                 .ok_or(Corrupted)?;
@@ -348,7 +348,8 @@ pub fn packed_search(
                         return Err(Corrupted);
                     }
                     peel = Some(
-                        Oid::from_prefix(&data[r..r + hexsize], oid_type).map_err(|_| Corrupted)?,
+                        Oid::parse_prefix(&data[r..r + hexsize], oid_type)
+                            .map_err(|_| Corrupted)?,
                     );
                 }
             }
@@ -662,12 +663,12 @@ impl FsInner {
         let loaded = match self.refcache.lock_and_load() {
             Ok(None) => return Ok(()),
             Ok(Some(l)) => l,
-            Err(e) if e.code() == ErrorCode::NOT_FOUND => {
+            Err(e) if e.raw_code() == ErrorCode::NOT_FOUND => {
                 self.refcache.write().clear();
                 errors::clear();
                 return Ok(());
             }
-            Err(e) => return Err(e.code()),
+            Err(e) => return Err(e.raw_code()),
         };
         let (mut guard, contents) = loaded;
         guard.clear();
@@ -679,7 +680,7 @@ impl FsInner {
             |name, f| {
                 let item = guard
                     .upsert_with(name, PackRef::default)
-                    .map_err(|e| e.code())?;
+                    .map_err(|e| e.raw_code())?;
                 f(item);
                 Ok(())
             },
@@ -1144,7 +1145,7 @@ impl FsInner {
             let mut g = self.refcache.write();
             match g.index_of(name) {
                 Some(pos) => {
-                    g.remove(pos).map_err(|e| e.code())?;
+                    g.remove(pos).map_err(|e| e.raw_code())?;
                     true
                 }
                 None => false,
@@ -1357,7 +1358,7 @@ impl FsInner {
         let mut g = self.refcache.write();
         let item = g
             .upsert_with(name, PackRef::default)
-            .map_err(|e| e.code())?;
+            .map_err(|e| e.raw_code())?;
         item.oid = oid;
         item.flags = PACKREF_WAS_LOOSE;
         Ok(())
@@ -1794,7 +1795,7 @@ pub fn backend_fs(repo: RepoPtr) -> Result<*mut git_refdb_backend> {
         commonpath.as_deref().unwrap_or_default(),
         GIT_PACKEDREFS_FILE,
     )?;
-    let refcache = SortedCache::new(Some(packed.as_bytes())).map_err(|e| e.code())?;
+    let refcache = SortedCache::new(Some(packed.as_bytes())).map_err(|e| e.raw_code())?;
     let inner = FsInner {
         repo,
         gitpath,

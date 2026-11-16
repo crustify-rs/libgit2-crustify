@@ -5,23 +5,84 @@
 
 #![allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)]
 
-use core::ffi::{c_char, c_int, c_void};
+use core::ffi::{c_char, c_int, c_uint, c_void};
 use core::ptr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use libgit2_rs::cache::{GitCache, GitCachedObj};
-use libgit2_rs::odb::ffi::*;
-use libgit2_rs::odb::{GitOdb, GitOdbBackend, GitOdbObject, GitOdbStream};
-use libgit2_rs::odb_mempack::ffi::*;
-use libgit2_rs::util::alloc;
-use libgit2_rs::util::errors;
-use libgit2_rs::util::test_support;
+use libgit2_rs::__test::cache::{GitCache, GitCachedObj};
+use libgit2_rs::__test::object::git_object_t;
+use libgit2_rs::__test::odb::{
+    GitOdb, GitOdbBackend, GitOdbObject, GitOdbOptions, GitOdbStream, git_object_size_t,
+};
+use libgit2_rs::__test::util::{alloc, errors, test_support};
 use libgit2_rs::{Oid, OidType};
+
+// The C ABI under test, declared as C declares it (the signatures are the
+// `src` exports').
+// The handles are Rust types C sees as opaque: it only passes pointers to them.
+#[allow(improper_ctypes)]
+unsafe extern "C" {
+    fn git_cache_clear(c: *mut GitCache);
+    fn git_cache_dispose(cache: *mut GitCache);
+    fn git_cache_get_any(c: *mut GitCache, oid: *const Oid) -> *mut c_void;
+    fn git_cache_init(cache: *mut GitCache) -> c_int;
+    fn git_cache_set_max_object_size(type_: c_int, size: usize) -> c_int;
+    fn git_cache_size(c: *mut GitCache) -> usize;
+    fn git_cache_store_raw(c: *mut GitCache, entry: *mut c_void) -> *mut c_void;
+    fn git_cached_obj_decref(obj: *mut c_void);
+    fn git_mempack_new(out: *mut *mut GitOdbBackend) -> c_int;
+    fn git_mempack_object_count(out: *mut usize, backend: *mut GitOdbBackend) -> c_int;
+    fn git_mempack_reset(backend: *mut GitOdbBackend) -> c_int;
+    fn git_odb__error_ambiguous(message: *const c_char) -> c_int;
+    fn git_odb__error_mismatch(expected: *const Oid, actual: *const Oid) -> c_int;
+    fn git_odb__error_notfound(message: *const c_char, oid: *const Oid, oid_len: usize) -> c_int;
+    fn git_odb__format_object_header(
+        written: *mut usize,
+        hdr: *mut c_char,
+        hdr_size: usize,
+        obj_len: git_object_size_t,
+        obj_type: git_object_t,
+    ) -> c_int;
+    fn git_odb_add_alternate(
+        odb: *mut GitOdb,
+        backend: *mut GitOdbBackend,
+        priority: c_int,
+    ) -> c_int;
+    fn git_odb_add_backend(odb: *mut GitOdb, backend: *mut GitOdbBackend, priority: c_int)
+    -> c_int;
+    fn git_odb_backend_data_alloc(backend: *mut GitOdbBackend, len: usize) -> *mut c_void;
+    fn git_odb_exists(db: *mut GitOdb, id: *const Oid) -> c_int;
+    fn git_odb_free(db: *mut GitOdb);
+    fn git_odb_get_backend(out: *mut *mut GitOdbBackend, db: *mut GitOdb, pos: usize) -> c_int;
+    fn git_odb_init_backend(backend: *mut GitOdbBackend, version: c_uint) -> c_int;
+    fn git_odb_new(out: *mut *mut GitOdb) -> c_int;
+    fn git_odb_new_ext(out: *mut *mut GitOdb, opts: *const GitOdbOptions) -> c_int;
+    fn git_odb_num_backends(db: *mut GitOdb) -> usize;
+    fn git_odb_object_data(object: *mut GitOdbObject) -> *const c_void;
+    fn git_odb_object_dup(dest: *mut *mut GitOdbObject, source: *mut GitOdbObject) -> c_int;
+    fn git_odb_object_free(object: *mut GitOdbObject);
+    fn git_odb_object_size(object: *mut GitOdbObject) -> usize;
+    fn git_odb_object_type(object: *mut GitOdbObject) -> git_object_t;
+    fn git_odb_open_wstream(
+        stream: *mut *mut GitOdbStream,
+        db: *mut GitOdb,
+        size: git_object_size_t,
+        type_: git_object_t,
+    ) -> c_int;
+    fn git_odb_read(out: *mut *mut GitOdbObject, db: *mut GitOdb, id: *const Oid) -> c_int;
+    fn git_odb_write(
+        oid: *mut Oid,
+        db: *mut GitOdb,
+        data: *const c_void,
+        len: usize,
+        type_: git_object_t,
+    ) -> c_int;
+}
 
 const HELLO: &str = "ce013625030ba8dba906f756967f9e9ca394464a";
 
 fn oid(s: &str) -> Oid {
-    Oid::from_str_hex(s, OidType::Sha1).unwrap()
+    Oid::from_hex(s, OidType::Sha1).unwrap()
 }
 
 fn last_message() -> String {
@@ -181,7 +242,7 @@ fn argument_checks_and_versions() {
     assert_eq!(unsafe { git_odb_new(ptr::null_mut()) }, -1);
     assert_eq!(last_message(), "invalid argument: 'out'");
     let mut db: *mut GitOdb = ptr::null_mut();
-    let bad = libgit2_rs::odb::GitOdbOptions {
+    let bad = libgit2_rs::__test::odb::GitOdbOptions {
         version: 7,
         oid_type: 0,
     };
@@ -361,7 +422,7 @@ fn plain(i: u8, size: usize) -> *mut GitCachedObj {
     // SAFETY: live objects of this test, as the C contract requires.
     unsafe {
         p.write(GitCachedObj {
-            oid: Oid::from_raw_parts(1, id),
+            oid: libgit2_rs::__test::oid::test_raw::from_raw_parts(1, id),
             type_: 1,
             flags: 0,
             size,
@@ -373,7 +434,6 @@ fn plain(i: u8, size: usize) -> *mut GitCachedObj {
 
 #[test]
 fn cache_c_abi_concurrently() {
-    use libgit2_rs::cache::ffi::*;
     let _g = test_support::init();
     let c =
         Box::into_raw(Box::new(core::mem::MaybeUninit::<GitCache>::uninit())).cast::<GitCache>();

@@ -7,9 +7,9 @@
 //! allow reads).
 //!
 //! ```
-//! # let _g = libgit2_rs::util::test_support::init();
+//! # let _g = libgit2_rs::__test::util::test_support::init();
 //! let mut v = [5, 3, 9, 1];
-//! libgit2_rs::util::tsort::tsort(&mut v, |a, b| a - b);
+//! libgit2_rs::__test::util::tsort::tsort(&mut v, |a, b| a - b);
 //! assert_eq!(v, [1, 3, 5, 9]);
 //! ```
 

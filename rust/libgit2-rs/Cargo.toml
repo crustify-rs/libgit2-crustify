@@ -26,3 +26,10 @@ workspace = true
 # Link the rest of libgit2's C (see build.rs). Needed by `cargo test` outside
 # Miri, and by Rust consumers of the safe API.
 link-c = []
+# The crate's internals under the hidden `__test` module, for its own
+# integration tests (enabled by the dev-dependency below). Not an API.
+test-internals = []
+
+[dev-dependencies]
+# The integration tests reach the internals through `__test`.
+libgit2-rs = { path = ".", features = ["test-internals"] }

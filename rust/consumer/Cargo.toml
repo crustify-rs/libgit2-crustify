@@ -1,0 +1,18 @@
+[package]
+name = "libgit2-rs-consumer"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Tests libgit2-rs as a dependent crate sees it: the public API only, linked through cargo's propagation of the build script's directives (review api-r1 A-3, A-4)"
+
+[dependencies]
+# No `test-internals`: only the public API, as any consumer.
+libgit2-rs = { path = "../libgit2-rs" }
+
+[features]
+link-c = ["libgit2-rs/link-c"]
+
+[lints]
+workspace = true

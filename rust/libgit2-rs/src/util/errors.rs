@@ -10,8 +10,8 @@
 //!
 //! Setting an error:
 //!
-//! ```
-//! use libgit2_rs::util::errors::{self, ErrorClass, ErrorCode, Result};
+//! ```ignore
+//! use libgit2_rs::__test::util::errors::{self, ErrorClass, ErrorCode, Result};
 //! use libgit2_rs::git_error_set;
 //!
 //! fn parse(s: &[u8]) -> Result<u32> {
@@ -40,7 +40,6 @@
 use core::cell::{Cell, RefCell, UnsafeCell};
 use core::ffi::{CStr, c_char, c_int};
 use core::fmt;
-use std::borrow::Cow;
 
 use super::runtime;
 
@@ -68,6 +67,18 @@ macro_rules! codes {
             $($(#[$m])* #[doc = concat!("`", $c, "`")] pub const $name: ErrorCode = ErrorCode($v);)*
 
             /// The C name of a known code.
+            pub const fn name(self) -> Option<&'static str> {
+                match self.0 {
+                    $($v => Some($c),)*
+                    _ => None,
+                }
+            }
+        }
+
+        impl crate::api::error::ErrorCode {
+            $($(#[$m])* #[doc = concat!("`", $c, "`")] pub const $name: Self = Self($v);)*
+
+            /// The C name of a known code (`"GIT_ENOTFOUND"`).
             pub const fn name(self) -> Option<&'static str> {
                 match self.0 {
                     $($v => Some($c),)*
@@ -183,6 +194,18 @@ macro_rules! classes {
             $(#[doc = concat!("`", $c, "`")] pub const $name: ErrorClass = ErrorClass($v);)*
 
             /// The C name of a known class.
+            pub const fn name(self) -> Option<&'static str> {
+                match self.0 {
+                    $($v => Some($c),)*
+                    _ => None,
+                }
+            }
+        }
+
+        impl crate::api::error::ErrorClass {
+            $(#[doc = concat!("`", $c, "`")] pub const $name: Self = Self($v);)*
+
+            /// The C name of a known class (`"GIT_ERROR_ODB"`).
             pub const fn name(self) -> Option<&'static str> {
                 match self.0 {
                     $($v => Some($c),)*
@@ -746,79 +769,9 @@ pub fn global_init() -> Result<()> {
 // The rich error of the safe API
 // ---------------------------------------------------------------------------
 
-/// An error of the safe Rust API: the code, the class and the message.
-#[derive(Clone, PartialEq, Eq)]
-pub struct Error {
-    code: ErrorCode,
-    class: ErrorClass,
-    message: Box<[u8]>,
-}
-
-impl Error {
-    /// An error from its parts.
-    pub fn new(code: ErrorCode, class: ErrorClass, message: impl Into<Vec<u8>>) -> Error {
-        Error {
-            code,
-            class,
-            message: message.into().into_boxed_slice(),
-        }
-    }
-
-    /// The error `code` with the class and message of this thread's error
-    /// state (which is left as it is).
-    pub fn last(code: ErrorCode) -> Error {
-        let (class, message) = last();
-        Error {
-            code,
-            class,
-            message: message.into_boxed_slice(),
-        }
-    }
-
-    /// The code.
-    pub fn code(&self) -> ErrorCode {
-        self.code
-    }
-
-    /// The class.
-    pub fn class(&self) -> ErrorClass {
-        self.class
-    }
-
-    /// The message, as bytes (paths in it need not be UTF-8).
-    pub fn message_bytes(&self) -> &[u8] {
-        &self.message
-    }
-
-    /// The message, with invalid UTF-8 replaced.
-    pub fn message(&self) -> Cow<'_, str> {
-        String::from_utf8_lossy(&self.message)
-    }
-}
-
-impl From<ErrorCode> for Error {
-    fn from(code: ErrorCode) -> Error {
-        Error::last(code)
-    }
-}
-
-impl fmt::Debug for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Error")
-            .field("code", &self.code)
-            .field("class", &self.class)
-            .field("message", &self.message())
-            .finish()
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.message())
-    }
-}
-
-impl std::error::Error for Error {}
+/// The safe API's error (`crate::api::error`), named here for the
+/// internals that build one.
+pub use crate::api::error::Error;
 
 // ---------------------------------------------------------------------------
 // Macros
@@ -832,13 +785,15 @@ impl std::error::Error for Error {}
 /// [`ErrorClass::OS`](crate::util::errors::ErrorClass::OS) the `errno`
 /// message is appended as C does.
 ///
-/// ```
+/// ```ignore
+/// // (crate-internal: the unit tests run it)
 /// # use libgit2_rs::{git_error_set, util::errors::{ErrorClass, Result}};
 /// fn f(n: usize) -> Result<()> {
 ///     Err(git_error_set!(ErrorClass::INVALID, "too many: {n}"))
 /// }
 /// ```
 #[macro_export]
+#[doc(hidden)] // crate-internal: expands to crate-private paths, unusable outside
 macro_rules! git_error_set {
     ($class:expr, $($arg:tt)+) => {
         $crate::util::errors::set_fmt($class, ::core::format_args!($($arg)+))
@@ -852,7 +807,8 @@ macro_rules! git_error_set {
 /// arguments the function returns `Err(ErrorCode::GENERIC)`; with a third
 /// it returns that value (`GIT_ASSERT_ARG_WITH_RETVAL`).
 ///
-/// ```
+/// ```ignore
+/// // (crate-internal: the unit tests run it)
 /// # use libgit2_rs::{git_assert_arg, util::errors::Result};
 /// fn f(p: Option<&u8>) -> Result<u8> {
 ///     git_assert_arg!(p.is_some(), "p");
@@ -860,6 +816,7 @@ macro_rules! git_error_set {
 /// }
 /// ```
 #[macro_export]
+#[doc(hidden)] // crate-internal: expands to crate-private paths, unusable outside
 macro_rules! git_assert_arg {
     ($cond:expr, $text:literal) => {
         if !$cond {
@@ -878,6 +835,7 @@ macro_rules! git_assert_arg {
 /// error: '<text>'` (class `GIT_ERROR_INTERNAL`) and return, as
 /// [`git_assert_arg!`](crate::git_assert_arg).
 #[macro_export]
+#[doc(hidden)] // crate-internal: expands to crate-private paths, unusable outside
 macro_rules! git_assert {
     ($cond:expr, $text:literal) => {
         if !$cond {
@@ -1178,4 +1136,37 @@ crate::c_layout_test! {
         StaticError => "git_error" {},
     ],
     asserts: ["GIT_ERROR_GRAFTS == 36", "GIT_EREADONLY == -40"],
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn last_pair() -> (c_int, Vec<u8>) {
+        let (class, message) = last();
+        (class.0, message)
+    }
+
+    #[test]
+    fn assert_macros() {
+        let _g = crate::util::test_support::init();
+        fn f(x: Option<u8>) -> Result<u8> {
+            git_assert_arg!(x.is_some(), "x");
+            git_assert!(x != Some(0), "x != 0");
+            Ok(x.unwrap())
+        }
+        assert_eq!(f(None), Err(ErrorCode::GENERIC));
+        assert_eq!(last_pair(), (3, b"invalid argument: 'x'".to_vec()));
+        assert_eq!(f(Some(0)), Err(ErrorCode::GENERIC));
+        assert_eq!(
+            last_pair(),
+            (35, b"unrecoverable internal error: 'x != 0'".to_vec())
+        );
+        assert_eq!(f(Some(3)), Ok(3));
+        fn g(x: c_int) -> c_int {
+            git_assert_arg!(x > 0, "x > 0", -7);
+            0
+        }
+        assert_eq!(g(0), -7);
+    }
 }

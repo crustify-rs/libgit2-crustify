@@ -10,18 +10,123 @@
     clippy::borrow_as_ptr
 )]
 
-use core::ffi::{CStr, c_char, c_int, c_void};
+use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::ptr::null_mut;
 
-use libgit2_rs::config::ffi::*;
-use libgit2_rs::config::{
+use libgit2_rs::__test::config::git_config_backend_memory_options;
+use libgit2_rs::__test::config::{
     GIT_CONFIG_LEVEL_APP, GIT_CONFIG_LEVEL_GLOBAL, GIT_CONFIG_LEVEL_LOCAL, GitConfig,
     git_config_backend, git_config_backend_entry, git_config_entry, git_config_iterator,
     git_configmap,
 };
-use libgit2_rs::config_mem::ffi::git_config_backend_from_string;
-use libgit2_rs::util::errors::{self, ErrorCode};
-use libgit2_rs::util::test_support;
+use libgit2_rs::__test::repository::GitRepository;
+use libgit2_rs::__test::util::errors::{self, ErrorCode};
+use libgit2_rs::__test::util::test_support;
+
+// The C ABI under test, declared as C declares it (the signatures are the
+// `src` exports').
+// The handles are Rust types C sees as opaque: it only passes pointers to them.
+#[allow(improper_ctypes)]
+unsafe extern "C" {
+    fn git_config__get_bool_force(
+        config: *const GitConfig,
+        key: *const c_char,
+        fallback_value: c_int,
+    ) -> c_int;
+    fn git_config__get_int_force(
+        config: *const GitConfig,
+        key: *const c_char,
+        fallback_value: c_int,
+    ) -> c_int;
+    fn git_config__lookup_entry(
+        out: *mut *mut git_config_entry,
+        config: *const GitConfig,
+        key: *const c_char,
+        no_errors: bool,
+    ) -> c_int;
+    fn git_config__normalize_name(input: *const c_char, out: *mut *mut c_char) -> c_int;
+    fn git_config_add_backend(
+        config: *mut GitConfig,
+        backend: *mut git_config_backend,
+        level: c_int,
+        repo: *const GitRepository,
+        force: c_int,
+    ) -> c_int;
+    fn git_config_backend_foreach_match(
+        backend: *mut git_config_backend,
+        regexp: *const c_char,
+        cb: Option<unsafe extern "C" fn(*const git_config_entry, *mut c_void) -> c_int>,
+        payload: *mut c_void,
+    ) -> c_int;
+    fn git_config_backend_from_string(
+        out: *mut *mut git_config_backend,
+        cfg: *const c_char,
+        len: usize,
+        opts: *mut git_config_backend_memory_options,
+    ) -> c_int;
+    fn git_config_delete_entry(config: *mut GitConfig, name: *const c_char) -> c_int;
+    fn git_config_entry_free(entry: *mut git_config_entry);
+    fn git_config_foreach(
+        config: *const GitConfig,
+        cb: Option<unsafe extern "C" fn(*const git_config_entry, *mut c_void) -> c_int>,
+        payload: *mut c_void,
+    ) -> c_int;
+    fn git_config_free(config: *mut GitConfig);
+    fn git_config_get_bool(out: *mut c_int, config: *const GitConfig, name: *const c_char)
+    -> c_int;
+    fn git_config_get_entry(
+        out: *mut *mut git_config_entry,
+        config: *const GitConfig,
+        name: *const c_char,
+    ) -> c_int;
+    fn git_config_get_int32(out: *mut i32, config: *const GitConfig, name: *const c_char) -> c_int;
+    fn git_config_get_multivar_foreach(
+        config: *const GitConfig,
+        name: *const c_char,
+        regexp: *const c_char,
+        cb: Option<unsafe extern "C" fn(*const git_config_entry, *mut c_void) -> c_int>,
+        payload: *mut c_void,
+    ) -> c_int;
+    fn git_config_get_string(
+        out: *mut *const c_char,
+        config: *const GitConfig,
+        name: *const c_char,
+    ) -> c_int;
+    fn git_config_init_backend(backend: *mut git_config_backend, version: c_uint) -> c_int;
+    fn git_config_iterator_free(iter: *mut git_config_iterator);
+    fn git_config_iterator_new(
+        out: *mut *mut git_config_iterator,
+        config: *const GitConfig,
+    ) -> c_int;
+    fn git_config_lookup_map_enum(
+        type_out: *mut c_int,
+        str_out: *mut *const c_char,
+        maps: *const git_configmap,
+        map_n: usize,
+        enum_val: c_int,
+    ) -> c_int;
+    fn git_config_lookup_map_value(
+        out: *mut c_int,
+        maps: *const git_configmap,
+        map_n: usize,
+        value: *const c_char,
+    ) -> c_int;
+    fn git_config_new(out: *mut *mut GitConfig) -> c_int;
+    fn git_config_next(entry: *mut *mut git_config_entry, iter: *mut git_config_iterator) -> c_int;
+    fn git_config_open_level(
+        out: *mut *mut GitConfig,
+        parent: *const GitConfig,
+        level: c_int,
+    ) -> c_int;
+    fn git_config_parse_bool(out: *mut c_int, value: *const c_char) -> c_int;
+    fn git_config_parse_int64(out: *mut i64, value: *const c_char) -> c_int;
+    fn git_config_set_string(
+        config: *mut GitConfig,
+        name: *const c_char,
+        value: *const c_char,
+    ) -> c_int;
+    fn git_config_snapshot(out: *mut *mut GitConfig, config: *mut GitConfig) -> c_int;
+}
 
 fn last_message() -> String {
     String::from_utf8_lossy(&errors::last().1).into_owned()
@@ -201,7 +306,7 @@ unsafe extern "C" fn c_entry_free(e: *mut git_config_backend_entry) {
 unsafe extern "C" fn c_open(
     _: *mut git_config_backend,
     _: c_int,
-    _: *const libgit2_rs::repository::GitRepository,
+    _: *const libgit2_rs::__test::repository::GitRepository,
 ) -> c_int {
     0
 }
@@ -379,7 +484,7 @@ fn maps_and_parsers() {
         let mut n = null_mut();
         assert_eq!(git_config__normalize_name(c"A.b.C".as_ptr(), &mut n), 0);
         assert_eq!(cs(n), "a.b.c");
-        libgit2_rs::util::alloc::free(n.cast());
+        libgit2_rs::__test::util::alloc::free(n.cast());
     }
 }
 

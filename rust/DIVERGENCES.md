@@ -665,3 +665,45 @@ One entry per difference: component, what differs, why.
   `git_signature_from_buffer`.
 - **object: `git_object_peel` / `git_tag_target` of a tag parsed from raw
   data** fail with an internal error (C crashes, rust/DEFECTS.md).
+
+## api (the safe Rust API, review api-r1)
+
+- **futils: `readbuffer_updated` reads the size of the file it opened**
+  (`fstat` of the descriptor), not of the path it `stat`ed first (S-5). C
+  read the old size from the new file when a writer renamed one over the
+  path in between (`could not read (expected 41 bytes, read 23)`,
+  `corrupted loose reference file: HEAD`); the port reads the opened file
+  whole. The `stat` stays for C's messages and the directory check.
+- **odb: a backend that re-enters its own odb on the same thread** gets an
+  error (`failed to acquire the odb lock: a backend re-entered its own
+  object database`, class `ODB`) where C deadlocks on `db->lock` (S-6a);
+  where the caller cannot fail (`exists`, `freshen`) the answer is "no".
+- **odb backends from Rust: `foreach`** stops calling C's callback once it
+  asked to stop, even if the backend ignores `false` (S-6b); a panic in a
+  Rust backend's slot sets class `INTERNAL` (S-6c); a code a Rust backend
+  returns that is not a failure (0, positive, `GIT_ITEROVER`) is reported
+  as `GIT_ERROR` (S-6g). A panic in a Rust backend's `Drop` (odb, config,
+  refdb) is caught and its payload leaked (S-3; it aborted).
+- **refdb/config backends from Rust: a name with a NUL byte** (a reference
+  name or symbolic target from `RefdbBackend::list`/`lookup`, a config entry
+  name from `ConfigBackend`) is refused with `GIT_EINVALIDSPEC`; it was cut
+  at the NUL (S-6e). A reflog message with a NUL from `reflog_read` is cut at
+  the NUL (S-2: the copy was rewritten past its end). The reflog a Rust
+  refdb backend reads has the repository's oid type (S-6f: it was SHA-1).
+- **The library's lifetime.** The safe API initializes the library on first
+  use and never shuts it down (S-4): `Libgit2::init` takes no count it gives
+  back. C's `git_libgit2_init`/`shutdown` pairs keep their meaning for the
+  C ABI, but cannot bring the count to 0 once the safe API was used.
+- **The index's lock.** Every operation of the safe `Index` takes a
+  re-entrant lock shared by the handles of one index, and so do the safe
+  API's operations whose C may read the repository's index (filters and
+  attributes: `Repository::hashfile`, `Blob::filter`, `Blob::create_from_*`,
+  the blob writer's commit, commits from the index). C has no such lock (an
+  index is single-threaded there); the C ABI does not take it.
+- **The search paths' lock.** The safe `opts::set_search_path`,
+  `set_template_path`, `set_homedir` (and `GIT_OPT_SET_SEARCH_PATH` & co.
+  from C) wait for the Rust readers of the search paths (a read lock in
+  `sys::sysdir`); C's own readers keep C's rule.
+- **`ObjectType::from_name` is exact** (`"commit"`, `"tree"`, `"blob"`,
+  `"tag"`), where `git_object_string2type` accepts any string that starts
+  with a name (`"commitx"` is a commit). The C ABI keeps C's.

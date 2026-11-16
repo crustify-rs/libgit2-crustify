@@ -590,7 +590,7 @@ mod tests {
     use crate::util::test_support;
 
     fn id(s: &str) -> Oid {
-        Oid::from_str_hex(s, OidType::Sha1).unwrap()
+        Oid::parse_hex(s.as_bytes(), OidType::Sha1).unwrap()
     }
 
     const A: &str = "d7224d49d6d5aff6ade596ed74f4bcd4f77b29e2";

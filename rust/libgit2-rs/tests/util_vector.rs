@@ -5,10 +5,52 @@
 #![allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)]
 
 use core::ffi::{c_int, c_void};
-use libgit2_rs::util::errors::{self, ErrorCode};
-use libgit2_rs::util::test_support;
-use libgit2_rs::util::tsort::tsort;
-use libgit2_rs::util::vector::{GitVector, ffi};
+use libgit2_rs::__test::util::errors::{self, ErrorCode};
+use libgit2_rs::__test::util::test_support;
+use libgit2_rs::__test::util::tsort::tsort;
+use libgit2_rs::__test::util::vector::{GitVector, VectorCmp};
+
+// The C ABI under test, declared as C declares it (the signatures are the
+// `src` exports').
+unsafe extern "C" {
+    fn git_vector_bsearch2(
+        at_pos: *mut usize,
+        vec: *mut GitVector,
+        key_lookup: Option<VectorCmp>,
+        key: *const c_void,
+    ) -> c_int;
+    fn git_vector_clear(vec: *mut GitVector);
+    fn git_vector_detach(
+        size: *mut usize,
+        asize: *mut usize,
+        vec: *mut GitVector,
+    ) -> *mut *mut c_void;
+    fn git_vector_dispose(vec: *mut GitVector);
+    fn git_vector_dispose_deep(vec: *mut GitVector);
+    fn git_vector_dup(vec: *mut GitVector, src: *const GitVector, cmp: Option<VectorCmp>) -> c_int;
+    fn git_vector_init(vec: *mut GitVector, initial_size: usize, cmp: Option<VectorCmp>) -> c_int;
+    fn git_vector_insert(vec: *mut GitVector, element: *mut c_void) -> c_int;
+    fn git_vector_remove_matching(
+        vec: *mut GitVector,
+        match_: unsafe extern "C" fn(*const GitVector, usize, *mut c_void) -> c_int,
+        payload: *mut c_void,
+    );
+    fn git_vector_search(at_pos: *mut usize, vec: *const GitVector, entry: *const c_void) -> c_int;
+    fn git_vector_search2(
+        at_pos: *mut usize,
+        vec: *const GitVector,
+        key_lookup: Option<VectorCmp>,
+        key: *const c_void,
+    ) -> c_int;
+    fn git_vector_set(
+        old: *mut *mut c_void,
+        vec: *mut GitVector,
+        position: usize,
+        value: *mut c_void,
+    ) -> c_int;
+    fn git_vector_sort(vec: *mut GitVector);
+    fn git_vector_swap(a: *mut GitVector, b: *mut GitVector);
+}
 
 fn msg() -> String {
     String::from_utf8(errors::last_message().unwrap_or_default()).unwrap()
@@ -147,7 +189,7 @@ fn edits() {
     let (ptr, n, a) = v.detach();
     assert_eq!((n, a), (0, 8));
     // SAFETY: the detached array is a `git__allocator` allocation.
-    unsafe { libgit2_rs::util::alloc::free(ptr.cast()) };
+    unsafe { libgit2_rs::__test::util::alloc::free(ptr.cast()) };
     assert_eq!(v.capacity(), 0);
 }
 
@@ -156,7 +198,7 @@ fn dup_and_cmp() {
     let _g = test_support::init();
     // One function pointer value: comparisons of separately reified Rust
     // functions are not reliable (Miri gives them distinct addresses).
-    let cmp: libgit2_rs::util::vector::VectorCmp = cmp_addr;
+    let cmp: libgit2_rs::__test::util::vector::VectorCmp = cmp_addr;
     let mut v = GitVector::with_capacity(0, Some(cmp)).unwrap();
     v.insert(p(2)).unwrap();
     v.insert(p(1)).unwrap();
@@ -246,45 +288,42 @@ fn ffi_calls() {
     let mut v = core::mem::MaybeUninit::<GitVector>::uninit();
     // SAFETY: as C: init, use, dispose a git_vector on the stack.
     unsafe {
-        assert_eq!(ffi::git_vector_init(v.as_mut_ptr(), 2, Some(cmp_addr)), 0);
+        assert_eq!(git_vector_init(v.as_mut_ptr(), 2, Some(cmp_addr)), 0);
         let vp = v.as_mut_ptr();
         for i in [4, 1, 3, 2, 5] {
-            assert_eq!(ffi::git_vector_insert(vp, p(i)), 0);
+            assert_eq!(git_vector_insert(vp, p(i)), 0);
         }
-        ffi::git_vector_sort(vp);
+        git_vector_sort(vp);
         assert_eq!((*vp).iter().map(ix).collect::<Vec<_>>(), [1, 2, 3, 4, 5]);
         let mut pos = 99;
-        assert_eq!(
-            ffi::git_vector_bsearch2(&mut pos, vp, Some(cmp_addr), p(3)),
-            0
-        );
+        assert_eq!(git_vector_bsearch2(&mut pos, vp, Some(cmp_addr), p(3)), 0);
         assert_eq!(pos, 2);
         assert_eq!(
-            ffi::git_vector_bsearch2(&mut pos, vp, Some(cmp_addr), core::ptr::null()),
+            git_vector_bsearch2(&mut pos, vp, Some(cmp_addr), core::ptr::null()),
             -1
         );
         assert_eq!(msg(), "invalid argument: 'key'");
-        assert_eq!(ffi::git_vector_search2(&mut pos, vp, None, p(3)), -1);
+        assert_eq!(git_vector_search2(&mut pos, vp, None, p(3)), -1);
         assert_eq!(msg(), "unrecoverable internal error: 'key_lookup'");
-        assert_eq!(ffi::git_vector_search(&mut pos, vp, p(5)), 0);
+        assert_eq!(git_vector_search(&mut pos, vp, p(5)), 0);
         assert_eq!(pos, 4);
         let mut count = 0usize;
-        ffi::git_vector_remove_matching(vp, match_odd, (&raw mut count).cast());
+        git_vector_remove_matching(vp, match_odd, (&raw mut count).cast());
         assert_eq!(count, 5);
         assert_eq!((*vp).iter().map(ix).collect::<Vec<_>>(), [2, 4]);
         let mut old = p(0);
-        assert_eq!(ffi::git_vector_set(&mut old, vp, 3, p(8)), 0);
+        assert_eq!(git_vector_set(&mut old, vp, 3, p(8)), 0);
         assert_eq!((*vp).iter().map(ix).collect::<Vec<_>>(), [2, 4, 0, 8]);
         let mut d = core::mem::MaybeUninit::<GitVector>::uninit();
-        assert_eq!(ffi::git_vector_dup(d.as_mut_ptr(), vp, None), 0);
+        assert_eq!(git_vector_dup(d.as_mut_ptr(), vp, None), 0);
         assert_eq!((*d.as_ptr()).len(), 4);
-        ffi::git_vector_swap(vp, d.as_mut_ptr());
-        ffi::git_vector_clear(vp);
+        git_vector_swap(vp, d.as_mut_ptr());
+        git_vector_clear(vp);
         assert!((*vp).is_empty() && (*vp).is_sorted());
-        ffi::git_vector_dispose(d.as_mut_ptr());
-        ffi::git_vector_dispose(vp);
-        ffi::git_vector_dispose(core::ptr::null_mut());
-        assert_eq!(ffi::git_vector_insert(core::ptr::null_mut(), p(1)), -1);
+        git_vector_dispose(d.as_mut_ptr());
+        git_vector_dispose(vp);
+        git_vector_dispose(core::ptr::null_mut());
+        assert_eq!(git_vector_insert(core::ptr::null_mut(), p(1)), -1);
         assert_eq!(msg(), "invalid argument: 'v'");
         d.assume_init_drop();
         v.assume_init_drop();
@@ -293,12 +332,12 @@ fn ffi_calls() {
     let mut z = GitVector::new();
     // SAFETY: as C.
     unsafe {
-        assert_eq!(ffi::git_vector_insert(&mut z, p(1)), 0);
+        assert_eq!(git_vector_insert(&mut z, p(1)), 0);
         let mut size = 0;
         let mut asize = 0;
-        let arr = ffi::git_vector_detach(&mut size, &mut asize, &mut z);
+        let arr = git_vector_detach(&mut size, &mut asize, &mut z);
         assert_eq!((size, asize), (1, 8));
-        libgit2_rs::util::alloc::free(arr.cast());
+        libgit2_rs::__test::util::alloc::free(arr.cast());
     }
 }
 
@@ -307,10 +346,11 @@ fn ffi_dispose_deep() {
     let _g = test_support::init();
     let mut v = GitVector::with_capacity(0, None).unwrap();
     for _ in 0..3 {
-        v.insert(libgit2_rs::util::alloc::malloc(16)).unwrap();
+        v.insert(libgit2_rs::__test::util::alloc::malloc(16))
+            .unwrap();
     }
     v.insert(core::ptr::null_mut()).unwrap();
     // SAFETY: the elements are distinct `git__malloc` allocations or NULL.
-    unsafe { ffi::git_vector_dispose_deep(&mut v) };
+    unsafe { git_vector_dispose_deep(&mut v) };
     assert_eq!(v.len(), 0);
 }

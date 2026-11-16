@@ -46,10 +46,35 @@ fn main() {
             continue;
         }
         if lib.starts_with('/') {
-            println!("cargo:rustc-link-arg={lib}");
+            link_path(Path::new(lib));
         } else {
             println!("cargo:rustc-link-lib=dylib={lib}");
         }
+    }
+}
+
+/// Link the library at an absolute `path` so that cargo passes it on to
+/// the crates that depend on this one (A-3): `rustc-link-arg` applies to
+/// this crate's own targets only, `rustc-link-search` + `rustc-link-lib`
+/// propagate. `/usr/lib/…/libssl.so` → `-L /usr/lib/…` `-l dylib=ssl`
+/// (a static `lib*.a` → `-l static=…`); any other file is passed as is.
+fn link_path(path: &Path) {
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let dir = path.parent().unwrap_or(Path::new("/"));
+    let (kind, stem) = if let Some(s) = name.strip_prefix("lib").and_then(|n| n.strip_suffix(".so"))
+    {
+        ("dylib", Some(s))
+    } else if let Some(s) = name.strip_prefix("lib").and_then(|n| n.strip_suffix(".a")) {
+        ("static", Some(s))
+    } else {
+        ("", None)
+    };
+    match stem {
+        Some(stem) => {
+            println!("cargo:rustc-link-search=native={}", dir.display());
+            println!("cargo:rustc-link-lib={kind}={stem}");
+        }
+        None => println!("cargo:rustc-link-arg={}", path.display()),
     }
 }
 

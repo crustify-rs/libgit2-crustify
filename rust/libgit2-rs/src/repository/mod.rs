@@ -66,7 +66,10 @@ mod open;
 #[cfg(test)]
 mod tests;
 
-pub use api::{Repository, RepositoryInitOptions, RepositoryOpenFlags, RepositoryState};
+pub use api::{
+    RefStorage, Repository, RepositoryInitFlags, RepositoryInitMode, RepositoryInitOptions,
+    RepositoryItem, RepositoryOpenFlags, RepositoryState,
+};
 pub use handles::{Refdb, Reference};
 pub(crate) use head::OwnedRepo;
 
@@ -721,7 +724,11 @@ impl GitRepository {
         // it; C calls `git_index_set_caps` on it the same way (also when
         // another thread published it).
         let ix = unsafe { IndexPtr::new(published) };
-        crate::index::ops::set_caps(ix, GIT_INDEX_CAPABILITY_FROM_OWNER)?;
+        // Under the safe API's lock: when another thread published the
+        // index, it may already be in use through an `Index`.
+        crate::index::api::with_index_locked(published, || {
+            crate::index::ops::set_caps(ix, GIT_INDEX_CAPABILITY_FROM_OWNER)
+        })?;
         Ok(published)
     }
 

@@ -9,8 +9,8 @@
 //! [`Error`]s with libgit2's code, class and message.
 //!
 //! ```
-//! # let _g = libgit2_rs::util::test_support::init();
-//! use libgit2_rs::fs;
+//! # let _g = libgit2_rs::__test::util::test_support::init();
+//! use libgit2_rs::__test::fs;
 //! assert_eq!(fs::dirname(b"a/b/c").unwrap(), b"a/b");
 //! assert_eq!(fs::basename(b"a/b/c/"), b"c");
 //! assert_eq!(fs::resolve_relative(b"a/./b/../c").unwrap(), b"a/c");

@@ -1,9 +1,9 @@
 //! The safe Rust API of `delta.c` (no `unsafe`).
 #![forbid(unsafe_code)]
 
-use libgit2_rs::delta::{self, DeltaIndex};
-use libgit2_rs::util::errors::{self, ErrorCode};
-use libgit2_rs::util::test_support;
+use libgit2_rs::__test::delta::{self, DeltaIndex};
+use libgit2_rs::__test::util::errors::{self, ErrorCode};
+use libgit2_rs::__test::util::test_support;
 
 fn msg() -> String {
     String::from_utf8(errors::last_message().unwrap_or_default()).unwrap()

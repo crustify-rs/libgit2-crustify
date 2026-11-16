@@ -33,9 +33,7 @@ use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::ptr;
 
 use crate::commit::deps::{self as pend, GitObjectHead, git_repository};
-use crate::commit::{
-    OBJ_ANY, OBJ_BLOB, OBJ_COMMIT, OBJ_INVALID, OBJ_TREE, code, object_id, repo_odb,
-};
+use crate::commit::{OBJ_ANY, OBJ_BLOB, OBJ_COMMIT, OBJ_INVALID, OBJ_TREE, code, repo_odb};
 use crate::oid::{Oid, OidType, git_oid_t};
 use crate::util::alloc;
 use crate::util::array::GitArray;
@@ -2224,16 +2222,6 @@ pub mod ffi {
                 Err(e) => e.raw(),
             }
         })
-    }
-
-    /// The object id of a tree, for the safe API.
-    ///
-    /// # Safety
-    ///
-    /// `tree` is a live tree.
-    pub(crate) unsafe fn tree_id(tree: *const GitTree) -> Oid {
-        // SAFETY: the caller's contract.
-        unsafe { object_id(tree) }.unwrap_or_default()
     }
 }
 

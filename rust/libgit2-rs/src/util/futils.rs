@@ -319,8 +319,13 @@ pub fn readbuffer_updated(
     }
     // (C's `git__is_sizet(st_size + 1)` check is always true on LP64.)
     let fd = open_ro(path)?;
+    // The size of the file opened, not of the one `stat` saw: a writer
+    // that renames a new file over `path` in between (a ref update while
+    // another thread reads it) made C read the old size from the new file
+    // ("could not read (expected …)"; S-5, rust/DIVERGENCES.md).
+    let size = posix::fstat(fd).map_or(st.st_size, |f| f.st_size);
     let mut buf = GitStr::new();
-    let r = readbuffer_fd(&mut buf, fd, st.st_size as usize);
+    let r = readbuffer_fd(&mut buf, fd, size as usize);
     // SAFETY: a descriptor this code opened, closed once.
     let _ = unsafe { posix::close(fd) };
     if r.is_err() {

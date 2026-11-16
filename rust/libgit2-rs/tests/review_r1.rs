@@ -6,17 +6,58 @@
 // of each block covers the calls in it.
 #![allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)]
 
-use core::ffi::{CStr, c_char};
-use libgit2_rs::buf::{GitBuf, ffi as buf_ffi};
-use libgit2_rs::util::errors::{self, ErrorClass, ffi as err_ffi};
-use libgit2_rs::util::str::{GitStr, ffi as str_ffi};
-use libgit2_rs::util::test_support;
-use libgit2_rs::util::util::ffi as util_ffi;
+use core::ffi::{CStr, c_char, c_int, c_void};
+use libgit2_rs::__test::buf::GitBuf;
+use libgit2_rs::__test::util::errors::{self, ErrorClass, GitError};
+use libgit2_rs::__test::util::str::GitStr;
+use libgit2_rs::__test::util::test_support;
+
+// The C ABI under test, declared as C declares it (the signatures are the
+// `src` exports').
+unsafe extern "C" {
+    fn git__linenlen(buffer: *const c_char, buffer_len: usize) -> usize;
+    fn git__memmem(
+        haystack: *const c_void,
+        haystacklen: usize,
+        needle: *const c_void,
+        needlelen: usize,
+    ) -> *const c_void;
+    fn git__prefixncmp(s: *const c_char, str_n: usize, prefix: *const c_char) -> c_int;
+    fn git__prefixncmp_icase(s: *const c_char, str_n: usize, prefix: *const c_char) -> c_int;
+    fn git__strncasecmp(a: *const c_char, b: *const c_char, sz: usize) -> c_int;
+    fn git__strntol64(
+        result: *mut i64,
+        nptr: *const c_char,
+        nptr_len: usize,
+        endptr: *mut *const c_char,
+        base: c_int,
+    ) -> c_int;
+    fn git__substrdup(str: *const c_char, n: usize) -> *mut c_char;
+    fn git_buf_fromstr(out: *mut GitBuf, str: *mut GitStr) -> c_int;
+    fn git_buf_tostr(out: *mut GitStr, buf: *mut GitBuf) -> c_int;
+    fn git_error_last() -> *const GitError;
+    fn git_error_restore(error: *mut GitError) -> c_int;
+    fn git_error_save(out: *mut *mut GitError) -> c_int;
+    fn git_error_set_oom();
+    fn git_error_set_str(error_class: c_int, string: *const c_char) -> c_int;
+    fn git_str__join_n(
+        buf: *mut GitStr,
+        separator: c_char,
+        nbuf: c_int,
+        segments: *const *const c_char,
+    ) -> c_int;
+    fn git_str_copy_cstr(data: *mut c_char, datasize: usize, buf: *const GitStr) -> c_int;
+    fn git_str_decode_percent(buf: *mut GitStr, data: *const c_char, len: usize) -> c_int;
+    fn git_str_dispose(buf: *mut GitStr);
+    fn git_str_put(buf: *mut GitStr, data: *const c_char, len: usize) -> c_int;
+    fn git_str_puts(buf: *mut GitStr, string: *const c_char) -> c_int;
+    fn git_str_set(buf: *mut GitStr, data: *const libc::c_void, len: usize) -> c_int;
+}
 
 fn c_last() -> (i32, Vec<u8>) {
     // SAFETY: as C: read the returned error before the next error call.
     unsafe {
-        let e = err_ffi::git_error_last();
+        let e = git_error_last();
         ((*e).klass, CStr::from_ptr((*e).message).to_bytes().to_vec())
     }
 }
@@ -77,31 +118,19 @@ fn str_buf_state_matrix() {
         let mut t = core::mem::MaybeUninit::<GitStr>::uninit();
         // SAFETY: as C's `GIT_BUF_WRAP_PRIVATE`: valid structs throughout.
         unsafe {
-            assert_eq!(
-                buf_ffi::git_buf_fromstr(&mut b, s.as_mut_ptr()),
-                0,
-                "{name}"
-            );
-            assert_eq!(buf_ffi::git_buf_tostr(t.as_mut_ptr(), &mut b), 0, "{name}");
+            assert_eq!(git_buf_fromstr(&mut b, s.as_mut_ptr()), 0, "{name}");
+            assert_eq!(git_buf_tostr(t.as_mut_ptr(), &mut b), 0, "{name}");
             let mut t = t.assume_init();
             assert_eq!(t.is_oom(), oom, "{name}");
             if oom {
                 // As C: every later operation fails; nothing is freed.
-                assert_eq!(
-                    str_ffi::git_str_puts(t.as_mut_ptr(), c"x".as_ptr()),
-                    -1,
-                    "{name}"
-                );
+                assert_eq!(git_str_puts(t.as_mut_ptr(), c"x".as_ptr()), -1, "{name}");
             } else {
                 assert_eq!(t.owns_buffer(), owned, "{name}");
-                assert_eq!(
-                    str_ffi::git_str_puts(t.as_mut_ptr(), c"x".as_ptr()),
-                    0,
-                    "{name}"
-                );
+                assert_eq!(git_str_puts(t.as_mut_ptr(), c"x".as_ptr()), 0, "{name}");
                 assert_eq!(t.as_bytes(), b"x", "{name}");
             }
-            str_ffi::git_str_dispose(t.as_mut_ptr());
+            git_str_dispose(t.as_mut_ptr());
             drop(t);
         }
         // `git_buf_tostr` left `b` empty: dropping it frees nothing.
@@ -119,12 +148,12 @@ fn oom_through_buf_stays_oom() {
     let mut t = core::mem::MaybeUninit::<GitStr>::uninit();
     // SAFETY: as C.
     unsafe {
-        buf_ffi::git_buf_fromstr(&mut b, s.as_mut_ptr());
-        buf_ffi::git_buf_tostr(t.as_mut_ptr(), &mut b);
+        git_buf_fromstr(&mut b, s.as_mut_ptr());
+        git_buf_tostr(t.as_mut_ptr(), &mut b);
         let mut t = t.assume_init();
         assert!(t.is_oom());
-        assert_eq!(str_ffi::git_str_puts(t.as_mut_ptr(), c"x".as_ptr()), -1);
-        str_ffi::git_str_dispose(t.as_mut_ptr());
+        assert_eq!(git_str_puts(t.as_mut_ptr(), c"x".as_ptr()), -1);
+        git_str_dispose(t.as_mut_ptr());
     }
 }
 
@@ -135,17 +164,14 @@ fn set_str_with_own_message() {
     let _g = test_support::init();
     // SAFETY: as C.
     unsafe {
-        assert_eq!(
-            err_ffi::git_error_set_str(3, c"original message".as_ptr()),
-            0
-        );
-        let m = (*err_ffi::git_error_last()).message;
-        assert_eq!(err_ffi::git_error_set_str(7, m), 0);
+        assert_eq!(git_error_set_str(3, c"original message".as_ptr()), 0);
+        let m = (*git_error_last()).message;
+        assert_eq!(git_error_set_str(7, m), 0);
         assert_eq!(c_last(), (7, Vec::new()));
         // A pointer into the middle of the buffer, too.
-        err_ffi::git_error_set_str(3, c"original message".as_ptr());
-        let m = (*err_ffi::git_error_last()).message.add(4);
-        assert_eq!(err_ffi::git_error_set_str(5, m), 0);
+        git_error_set_str(3, c"original message".as_ptr());
+        let m = (*git_error_last()).message.add(4);
+        assert_eq!(git_error_set_str(5, m), 0);
         assert_eq!(c_last(), (5, Vec::new()));
     }
 }
@@ -158,14 +184,14 @@ fn restore_static_and_saved() {
     let mut e = core::ptr::null_mut();
     // SAFETY: as C.
     unsafe {
-        err_ffi::git_error_set_oom();
-        assert_eq!(err_ffi::git_error_save(&mut e), 0);
-        assert_eq!(err_ffi::git_error_restore(e), 0);
+        git_error_set_oom();
+        assert_eq!(git_error_save(&mut e), 0);
+        assert_eq!(git_error_restore(e), 0);
         assert_eq!(c_last().0, ErrorClass::NOMEMORY.0);
-        err_ffi::git_error_set_str(3, c"saved".as_ptr());
-        assert_eq!(err_ffi::git_error_save(&mut e), 0);
-        err_ffi::git_error_set_str(3, c"something else, longer, to grow the buffer".as_ptr());
-        assert_eq!(err_ffi::git_error_restore(e), 0);
+        git_error_set_str(3, c"saved".as_ptr());
+        assert_eq!(git_error_save(&mut e), 0);
+        git_error_set_str(3, c"something else, longer, to grow the buffer".as_ptr());
+        assert_eq!(git_error_restore(e), 0);
         assert_eq!(c_last(), (3, b"saved".to_vec()));
     }
 }
@@ -200,12 +226,9 @@ fn prefixncmp_signed_char() {
     // SAFETY: valid strings, as C.
     unsafe {
         let p = c"ab\xC3".as_ptr();
-        assert_eq!(util_ffi::git__prefixncmp(c"ab".as_ptr(), 2, p), 61);
-        assert_eq!(util_ffi::git__prefixncmp_icase(c"AB".as_ptr(), 2, p), 61);
-        assert_eq!(
-            util_ffi::git__prefixncmp(c"ab".as_ptr(), 2, c"abc".as_ptr()),
-            -99
-        );
+        assert_eq!(git__prefixncmp(c"ab".as_ptr(), 2, p), 61);
+        assert_eq!(git__prefixncmp_icase(c"AB".as_ptr(), 2, p), 61);
+        assert_eq!(git__prefixncmp(c"ab".as_ptr(), 2, c"abc".as_ptr()), -99);
     }
 }
 
@@ -216,7 +239,7 @@ fn substrdup_huge() {
     let _g = test_support::init();
     errors::clear();
     // SAFETY: the length is refused before anything is read.
-    let p = unsafe { libgit2_rs::util::alloc::ffi::git__substrdup(c"x".as_ptr(), usize::MAX) };
+    let p = unsafe { git__substrdup(c"x".as_ptr(), usize::MAX) };
     assert!(p.is_null());
     assert_eq!(errors::last_class(), Some(ErrorClass::NOMEMORY));
 }
@@ -248,7 +271,7 @@ fn copy_cstr_overlapping_without_allocation() {
         // SAFETY: as C: `data` is the string's own buffer, writable for 4.
         unsafe {
             let data = (*p).as_ptr().cast_mut().add(2);
-            assert_eq!(str_ffi::git_str_copy_cstr(data, 4, p), 0);
+            assert_eq!(git_str_copy_cstr(data, 4, p), 0);
             // C writes `data[0] = 0` (contents "ab\0def"), then moves 3
             // bytes ("ab\0") to offset 2 and adds a NUL: "abab".
             assert_eq!(CStr::from_ptr((*p).as_ptr()).to_bytes(), b"abab");
@@ -265,7 +288,7 @@ fn join_n_many_segments() {
     // SAFETY: 20 NUL-terminated segments.
     unsafe {
         assert_eq!(
-            str_ffi::git_str__join_n(s.as_mut_ptr(), b'/' as c_char, 20, segs.as_ptr()),
+            git_str__join_n(s.as_mut_ptr(), b'/' as c_char, 20, segs.as_ptr()),
             0
         )
     };
@@ -314,25 +337,22 @@ fn page_edge_reads() {
             p.cast::<c_char>()
         };
         let a = at_edge(b"abc");
-        assert_eq!(util_ffi::git__strncasecmp(a, c"ABC".as_ptr(), 3), 0);
-        assert_eq!(util_ffi::git__strncasecmp(c"ABC".as_ptr(), a, 3), 0);
+        assert_eq!(git__strncasecmp(a, c"ABC".as_ptr(), 3), 0);
+        assert_eq!(git__strncasecmp(c"ABC".as_ptr(), a, 3), 0);
         let a = at_edge(b"ab");
-        assert_eq!(util_ffi::git__prefixncmp(a, 2, c"abc".as_ptr()), -99);
+        assert_eq!(git__prefixncmp(a, 2, c"abc".as_ptr()), -99);
         // C's last return uses the prefix byte as is (not lowered).
-        assert_eq!(util_ffi::git__prefixncmp_icase(a, 2, c"ABC".as_ptr()), -67);
+        assert_eq!(git__prefixncmp_icase(a, 2, c"ABC".as_ptr()), -67);
         let n = at_edge(b"1234");
         let mut v = 0i64;
-        assert_eq!(
-            util_ffi::git__strntol64(&mut v, n, 4, core::ptr::null_mut(), 10),
-            0
-        );
+        assert_eq!(git__strntol64(&mut v, n, 4, core::ptr::null_mut(), 10), 0);
         assert_eq!(v, 1234);
         let mut s = GitStr::new();
-        assert_eq!(str_ffi::git_str_put(s.as_mut_ptr(), n, 4), 0);
-        assert_eq!(str_ffi::git_str_set(s.as_mut_ptr(), n.cast(), 4), 0);
-        assert_eq!(str_ffi::git_str_decode_percent(s.as_mut_ptr(), n, 4), 0);
-        assert_eq!(util_ffi::git__linenlen(n, 4), 4);
-        assert!(!util_ffi::git__memmem(n.cast(), 4, c"34".as_ptr().cast(), 2).is_null());
+        assert_eq!(git_str_put(s.as_mut_ptr(), n, 4), 0);
+        assert_eq!(git_str_set(s.as_mut_ptr(), n.cast(), 4), 0);
+        assert_eq!(git_str_decode_percent(s.as_mut_ptr(), n, 4), 0);
+        assert_eq!(git__linenlen(n, 4), 4);
+        assert!(!git__memmem(n.cast(), 4, c"34".as_ptr().cast(), 2).is_null());
         libc::munmap(m, 2 * page);
     }
 }

@@ -13,7 +13,7 @@
 //! one (`advance_digit`'s overflow, `advance_oid`'s parse).
 //!
 //! ```
-//! use libgit2_rs::parse::GitParseCtx;
+//! use libgit2_rs::__test::parse::GitParseCtx;
 //! let mut ctx = GitParseCtx::new(b"key = 42\nnext\n");
 //! assert!(ctx.contains(b"key"));
 //! ctx.advance_expected(b"key")?;
@@ -24,7 +24,7 @@
 //! ctx.advance_nl()?;
 //! assert_eq!(ctx.line(), b"next\n");
 //! assert_eq!(ctx.line_num(), 2);
-//! # Ok::<(), libgit2_rs::util::errors::ErrorCode>(())
+//! # Ok::<(), libgit2_rs::__test::util::errors::ErrorCode>(())
 //! ```
 
 use core::marker::PhantomData;
@@ -247,7 +247,7 @@ impl<'a> GitParseCtx<'a> {
         if line.len() < hexsize {
             return Err(ErrorCode::GENERIC);
         }
-        let oid = Oid::from_prefix(&line[..hexsize], t).map_err(|_| ErrorCode::GENERIC)?;
+        let oid = Oid::parse_prefix(&line[..hexsize], t).map_err(|_| ErrorCode::GENERIC)?;
         self.advance_chars(hexsize);
         Ok(oid)
     }

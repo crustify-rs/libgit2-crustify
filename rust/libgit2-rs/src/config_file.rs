@@ -571,7 +571,7 @@ fn split_key(key: &[u8]) -> (&[u8], &[u8]) {
 
 /// The C status of a `Filebuf` result (its message is already set).
 fn fb<T>(r: core::result::Result<T, errors::Error>) -> Result<T> {
-    r.map_err(|e| e.code())
+    r.map_err(|e| e.raw_code())
 }
 
 impl FileBackend {

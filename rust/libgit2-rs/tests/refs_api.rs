@@ -9,21 +9,17 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use libgit2_rs::refs_api::{
-    self, PeelTarget, RefValue, ReferenceFormat, ReferenceNames, ReflogRecord, Repository,
-    set_refdb_backend,
-};
-use libgit2_rs::util::test_support;
 use libgit2_rs::{
-    Error, ErrorClass, ErrorCode, Oid, OidType, RefdbBackend, Reference, ReferenceType, References,
-    Reflog, Signature, Time,
+    Error, ErrorClass, ErrorCode, ObjectType, Oid, OidType, RefValue, Refdb, RefdbBackend,
+    Reference, ReferenceFormat, ReferenceNames, ReferenceType, References, Reflog, ReflogRecord,
+    Repository, Signature, Time,
 };
 
 const MASTER: &str = "a65fedf39aefe402d3bb6e24df4d4f5fe4547750";
 const BR2: &str = "a4a7dce85cf63874e984719f4fdd239f5145052f";
 
 fn oid(s: &str) -> Oid {
-    Oid::from_hex(s.as_bytes(), OidType::Sha1).unwrap()
+    Oid::from_hex(s, OidType::Sha1).unwrap()
 }
 
 fn copy_dir(from: &Path, to: &Path) {
@@ -62,7 +58,6 @@ impl Drop for Sandbox {
 
 #[test]
 fn lookup_and_resolve() {
-    let _g = test_support::init();
     let sb = Sandbox::new("testrepo.git", "lookup");
     let repo = Repository::open(&sb.0).unwrap();
 
@@ -75,9 +70,9 @@ fn lookup_and_resolve() {
     assert_eq!(master.target(), Some(oid(MASTER)));
     assert!(master.is_branch() && !master.is_tag());
     assert_eq!(master.shorthand(), b"master");
-    assert_eq!(refs_api::name_to_id(&repo, b"HEAD").unwrap(), oid(MASTER));
+    assert_eq!(Reference::name_to_id(&repo, b"HEAD").unwrap(), oid(MASTER));
 
-    let r = Reference::lookup_resolved(&repo, b"HEAD", -1).unwrap();
+    let r = Reference::lookup_resolved(&repo, b"HEAD", None).unwrap();
     assert_eq!(r.name(), b"refs/heads/master");
 
     // Packed references.
@@ -119,11 +114,22 @@ fn lookup_and_resolve() {
 
     // Peeling an annotated tag.
     let tag = Reference::lookup(&repo, b"refs/tags/test").unwrap();
-    let commit = tag.peel_to_id(PeelTarget::Commit).unwrap();
-    assert_ne!(Some(commit), tag.target());
+    let commit = tag.peel(Some(ObjectType::Commit)).unwrap();
+    assert_eq!(commit.kind(), ObjectType::Commit);
+    assert_ne!(Some(*commit.id()), tag.target());
+    let t = tag.peel(Some(ObjectType::Tag)).unwrap();
+    assert_eq!(*t.id(), tag.target().unwrap());
+    // `None`: until it is not a tag.
+    assert_eq!(tag.peel(None).unwrap().id(), commit.id());
+    let tree = tag.peel(Some(ObjectType::Tree)).unwrap();
+    assert_eq!(tree.kind(), ObjectType::Tree);
+    let e = tag.peel(Some(ObjectType::Blob)).unwrap_err();
+    assert_eq!(e.code(), ErrorCode::PEEL);
+    // Through a symbolic reference.
+    let head = Reference::lookup(&repo, "HEAD").unwrap();
     assert_eq!(
-        tag.peel_to_id(PeelTarget::Tag).unwrap(),
-        tag.target().unwrap()
+        *head.peel(Some(ObjectType::Commit)).unwrap().id(),
+        oid(MASTER)
     );
 
     // Clone, equality and order.
@@ -134,7 +140,6 @@ fn lookup_and_resolve() {
 
 #[test]
 fn create_update_rename_delete() {
-    let _g = test_support::init();
     let sb = Sandbox::new("testrepo.git", "write");
     let repo = Repository::open(&sb.0).unwrap();
 
@@ -144,7 +149,7 @@ fn create_update_rename_delete() {
         &oid(MASTER),
         false,
         None,
-        Some("made"),
+        Some("made".as_bytes()),
     )
     .unwrap();
     assert_eq!(r.target(), Some(oid(MASTER)));
@@ -181,7 +186,7 @@ fn create_update_rename_delete() {
     )
     .unwrap_err();
     assert_eq!(e.code(), ErrorCode::MODIFIED);
-    let moved = r.set_target(&oid(BR2), Some("move")).unwrap();
+    let moved = r.set_target(&oid(BR2), Some("move".as_bytes())).unwrap();
     assert_eq!(moved.target(), Some(oid(BR2)));
     assert_eq!(
         r.set_target(&oid(MASTER), None).unwrap_err().code(),
@@ -206,7 +211,7 @@ fn create_update_rename_delete() {
     assert_eq!(s2.symbolic_target(), Some(&b"refs/heads/master"[..]));
 
     let renamed = moved
-        .rename(b"refs/heads/renamed", false, Some("rename"))
+        .rename(b"refs/heads/renamed", false, Some("rename".as_bytes()))
         .unwrap();
     assert_eq!(renamed.name(), b"refs/heads/renamed");
     assert!(Reference::lookup(&repo, b"refs/heads/new").is_err());
@@ -220,18 +225,17 @@ fn create_update_rename_delete() {
             .code(),
         ErrorCode::NOT_FOUND
     );
-    refs_api::remove(&repo, b"refs/heads/sym").unwrap();
+    Reference::remove(&repo, b"refs/heads/sym").unwrap();
     let head = Reference::lookup(&repo, b"HEAD").unwrap();
     assert_eq!(head.delete().unwrap_err().message(), "cannot delete HEAD");
 }
 
 #[test]
 fn iterate_glob_and_compress() {
-    let _g = test_support::init();
     let sb = Sandbox::new("testrepo.git", "iter");
     let repo = Repository::open(&sb.0).unwrap();
 
-    let all = refs_api::list(&repo).unwrap();
+    let all = Reference::list(&repo).unwrap();
     assert!(all.contains(&b"refs/heads/master".to_vec()));
     assert!(all.contains(&b"refs/heads/packed".to_vec()));
     let refs: Vec<Reference<'_>> = References::new(&repo)
@@ -245,19 +249,19 @@ fn iterate_glob_and_compress() {
         .unwrap();
     assert!(!tags.is_empty() && tags.iter().all(|t| t.starts_with(b"refs/tags/")));
     let mut seen = Vec::new();
-    refs_api::for_each_name(&repo, Some(b"refs/heads/*"), |n| {
+    Reference::foreach_name(&repo, Some(b"refs/heads/*"), |n| {
         seen.push(n.to_vec());
         seen.len() < 3
     })
     .unwrap();
     assert_eq!(seen.len(), 3);
 
-    refs_api::compress(&repo).unwrap();
+    repo.refdb().unwrap().compress().unwrap();
     assert!(!sb.0.join("refs/heads/master").exists());
     let packed = std::fs::read_to_string(sb.0.join("packed-refs")).unwrap();
     assert!(packed.starts_with("# pack-refs with: peeled fully-peeled sorted \n"));
     assert!(packed.contains(&format!("{MASTER} refs/heads/master\n")));
-    let after = refs_api::list(&repo).unwrap();
+    let after = Reference::list(&repo).unwrap();
     let mut a = all.clone();
     a.sort();
     let mut b = after;
@@ -269,29 +273,27 @@ fn iterate_glob_and_compress() {
 
 #[test]
 fn names() {
-    let _g = test_support::init();
-    let n = refs_api::normalize_name(b"refs//heads///x", ReferenceFormat::NORMAL).unwrap();
+    let n = Reference::normalize_name(b"refs//heads///x", ReferenceFormat::NORMAL).unwrap();
     assert_eq!(n, b"refs/heads/x");
     assert_eq!(
-        refs_api::normalize_name(b"@", ReferenceFormat::ALLOW_ONELEVEL).unwrap(),
+        Reference::normalize_name(b"@", ReferenceFormat::ALLOW_ONELEVEL).unwrap(),
         b"HEAD"
     );
     assert_eq!(
-        refs_api::normalize_name(b"refs/heads/*", ReferenceFormat::REFSPEC_PATTERN).unwrap(),
+        Reference::normalize_name(b"refs/heads/*", ReferenceFormat::REFSPEC_PATTERN).unwrap(),
         b"refs/heads/*"
     );
-    let e = refs_api::normalize_name(b"refs/heads/x.lock", ReferenceFormat::NORMAL).unwrap_err();
+    let e = Reference::normalize_name(b"refs/heads/x.lock", ReferenceFormat::NORMAL).unwrap_err();
     assert_eq!(e.code(), ErrorCode::INVALID_SPEC);
-    assert!(refs_api::is_valid_name(b"HEAD"));
-    assert!(refs_api::is_valid_name(b"refs/heads/ok"));
-    assert!(!refs_api::is_valid_name(b"lower"));
-    assert!(!refs_api::is_valid_name(b"refs/heads/a@{b"));
-    assert!(!refs_api::is_valid_name(b"a\0b"));
+    assert!(Reference::is_valid_name(b"HEAD"));
+    assert!(Reference::is_valid_name(b"refs/heads/ok"));
+    assert!(!Reference::is_valid_name(b"lower"));
+    assert!(!Reference::is_valid_name(b"refs/heads/a@{b"));
+    assert!(!Reference::is_valid_name(b"a\0b"));
 }
 
 #[test]
 fn reflogs() {
-    let _g = test_support::init();
     let sb = Sandbox::new("testrepo.git", "reflog");
     let repo = Repository::open(&sb.0).unwrap();
 
@@ -306,12 +308,13 @@ fn reflogs() {
         Time::new(1_234_567_890, 60),
     )
     .unwrap();
-    log.append(&oid(BR2), &who, Some(b"one\ntwo")).unwrap();
+    log.append(&oid(BR2), &who, Some(b"one\ntwo".as_slice()))
+        .unwrap();
     assert_eq!(log.len(), n + 1);
     let e = log.get(0).unwrap();
     assert_eq!(e.message(), Some(&b"one two"[..]));
     assert_eq!(e.id_new(), oid(BR2));
-    assert_eq!(e.committer().unwrap(), who);
+    assert_eq!(e.committer().unwrap(), who.as_ref());
     log.write().unwrap();
     let text = std::fs::read_to_string(sb.0.join("logs/HEAD")).unwrap();
     assert!(text.ends_with(&format!(
@@ -326,13 +329,13 @@ fn reflogs() {
     assert_eq!(e.message(), "no reflog entry at index 1000");
 
     // A reference without a log gets an empty one.
-    assert!(!refs_api::has_log(&repo, b"refs/heads/br2").unwrap() || true);
-    refs_api::ensure_log(&repo, b"refs/heads/subtrees").unwrap();
-    assert!(refs_api::has_log(&repo, b"refs/heads/subtrees").unwrap());
+    assert!(!Reference::has_log(&repo, b"refs/heads/br2").unwrap() || true);
+    Reference::ensure_log(&repo, b"refs/heads/subtrees").unwrap();
+    assert!(Reference::has_log(&repo, b"refs/heads/subtrees").unwrap());
     Reflog::rename(&repo, b"refs/heads/subtrees", b"refs/heads/sub2").unwrap();
-    assert!(refs_api::has_log(&repo, b"refs/heads/sub2").unwrap());
+    assert!(Reference::has_log(&repo, b"refs/heads/sub2").unwrap());
     Reflog::delete(&repo, b"refs/heads/sub2").unwrap();
-    assert!(!refs_api::has_log(&repo, b"refs/heads/sub2").unwrap());
+    assert!(!Reference::has_log(&repo, b"refs/heads/sub2").unwrap());
 }
 
 /// A backend over a map, as a consumer would write one.
@@ -433,7 +436,6 @@ impl RefdbBackend for MemBackend {
 
 #[test]
 fn rust_backend() {
-    let _g = test_support::init();
     let sb = Sandbox::new("testrepo.git", "backend");
     let mut repo = Repository::open(&sb.0).unwrap();
     let mem = MemBackend::default();
@@ -441,11 +443,11 @@ fn rust_backend() {
         b"HEAD".to_vec(),
         RefValue::Symbolic(b"refs/heads/main".to_vec()),
     );
-    set_refdb_backend(&mut repo, mem).unwrap();
+    repo.set_refdb_backend(mem).unwrap();
 
     // HEAD is dangling until main exists.
     assert_eq!(
-        refs_api::name_to_id(&repo, b"HEAD").unwrap_err().code(),
+        Reference::name_to_id(&repo, b"HEAD").unwrap_err().code(),
         ErrorCode::NOT_FOUND
     );
     Reference::create(
@@ -454,13 +456,13 @@ fn rust_backend() {
         &oid(MASTER),
         false,
         None,
-        Some("init"),
+        Some("init".as_bytes()),
     )
     .unwrap();
-    assert_eq!(refs_api::name_to_id(&repo, b"HEAD").unwrap(), oid(MASTER));
+    assert_eq!(Reference::name_to_id(&repo, b"HEAD").unwrap(), oid(MASTER));
     Reference::create(&repo, b"refs/tags/v1", &oid(BR2), false, None, None).unwrap();
     assert_eq!(
-        refs_api::list(&repo).unwrap(),
+        Reference::list(&repo).unwrap(),
         [&b"HEAD"[..], b"refs/heads/main", b"refs/tags/v1"]
     );
     let tags: Vec<_> = References::glob(&repo, b"refs/tags/*")
@@ -470,7 +472,9 @@ fn rust_backend() {
     assert_eq!(tags.len(), 1);
     let main = Reference::lookup(&repo, b"refs/heads/main").unwrap();
     assert_eq!(
-        main.set_target(&oid(BR2), Some("move")).unwrap().target(),
+        main.set_target(&oid(BR2), Some("move".as_bytes()))
+            .unwrap()
+            .target(),
         Some(oid(BR2))
     );
     assert_eq!(
@@ -484,18 +488,19 @@ fn rust_backend() {
     let mut log = Reflog::read(&repo, b"refs/heads/main").unwrap();
     assert!(log.is_empty());
     let who = Signature::new(b"me", b"me@example.com", Time::new(10, -120)).unwrap();
-    log.append(&oid(MASTER), &who, Some(b"hello")).unwrap();
+    log.append(&oid(MASTER), &who, Some(b"hello".as_slice()))
+        .unwrap();
     log.write().unwrap();
     let log = Reflog::read(&repo, b"refs/heads/main").unwrap();
     assert_eq!(log.len(), 1);
     assert_eq!(log.get(0).unwrap().message(), Some(&b"hello"[..]));
-    assert_eq!(log.get(0).unwrap().committer().unwrap(), who);
-    assert!(refs_api::has_log(&repo, b"refs/heads/main").unwrap());
+    assert_eq!(log.get(0).unwrap().committer().unwrap(), who.as_ref());
+    assert!(Reference::has_log(&repo, b"refs/heads/main").unwrap());
 
     main.rename(b"refs/heads/trunk", false, None).unwrap();
     assert!(Reference::lookup(&repo, b"refs/heads/trunk").is_ok());
-    refs_api::remove(&repo, b"refs/tags/v1").unwrap();
-    assert_eq!(refs_api::list(&repo).unwrap().len(), 2);
+    Reference::remove(&repo, b"refs/tags/v1").unwrap();
+    assert_eq!(Reference::list(&repo).unwrap().len(), 2);
 }
 
 /// A backend that panics: the panic is an error, not an abort.
@@ -532,11 +537,400 @@ impl RefdbBackend for Panicky {
 
 #[test]
 fn panicking_backend() {
-    let _g = test_support::init();
     let sb = Sandbox::new("testrepo.git", "panic");
     let mut repo = Repository::open(&sb.0).unwrap();
-    set_refdb_backend(&mut repo, Panicky).unwrap();
+    repo.set_refdb_backend(Panicky).unwrap();
     let e = Reference::lookup(&repo, b"refs/heads/x").unwrap_err();
     assert_eq!(e.class(), ErrorClass::INTERNAL);
-    assert_eq!(refs_api::list(&repo).unwrap().len(), 0);
+    assert_eq!(Reference::list(&repo).unwrap().len(), 0);
+}
+
+#[test]
+fn names_and_messages_are_bytes() {
+    let sb = Sandbox::new("testrepo.git", "bytes");
+    let repo = Repository::open(&sb.0).unwrap();
+    let name = String::from("refs/heads/master");
+    assert_eq!(
+        Reference::lookup(&repo, &name).unwrap().target(),
+        Some(oid(MASTER))
+    );
+    assert_eq!(
+        Reference::lookup(&repo, name.as_bytes())
+            .unwrap()
+            .name_str(),
+        Some(name.as_str())
+    );
+    assert_eq!(
+        Reference::name_to_id(&repo, name.clone().into_bytes()).unwrap(),
+        oid(MASTER)
+    );
+    // A name that is not UTF-8.
+    let odd = b"refs/heads/caf\xe9".to_vec();
+    let r = Reference::create(&repo, &odd, &oid(MASTER), false, None, None).unwrap();
+    assert_eq!(r.name(), odd.as_slice());
+    assert_eq!(r.name_str(), None);
+    assert!(Reference::list(&repo).unwrap().contains(&odd));
+    // A NUL in a name or a message is an error, never a truncation.
+    let e =
+        Reference::create(&repo, b"refs/heads/a\0b", &oid(MASTER), false, None, None).unwrap_err();
+    assert_eq!(e.code(), ErrorCode::INVALID_SPEC);
+    assert!(Reference::lookup(&repo, "refs/heads/a").is_err());
+    let e = Reference::create(
+        &repo,
+        "refs/heads/msg",
+        &oid(MASTER),
+        false,
+        None,
+        Some(b"a\0b".as_slice()),
+    )
+    .unwrap_err();
+    assert_eq!(
+        (e.code(), e.class()),
+        (ErrorCode::INVALID, ErrorClass::INVALID)
+    );
+    assert!(Reference::lookup(&repo, "refs/heads/msg").is_err());
+    let mut log = Reflog::read(&repo, "HEAD").unwrap();
+    let who = Signature::new(b"a", b"b", Time::new(0, 0)).unwrap();
+    assert!(
+        log.append(&oid(MASTER), &who, Some(b"x\0y".as_slice()))
+            .is_err()
+    );
+    // A borrowed signature works too.
+    log.append(&oid(MASTER), who.as_ref(), None).unwrap();
+    assert_eq!(log.get(0).unwrap().message(), None);
+}
+
+#[test]
+fn delete_consumes_a_snapshot() {
+    let sb = Sandbox::new("testrepo.git", "delete");
+    let repo = Repository::open(&sb.0).unwrap();
+    let r = Reference::create(&repo, "refs/heads/d", &oid(MASTER), false, None, None).unwrap();
+    let stale = r.clone();
+    r.set_target(&oid(BR2), None).unwrap();
+    // The snapshot no longer matches: C's compare-and-delete fails.
+    let e = stale.delete().unwrap_err();
+    assert_eq!(e.code(), ErrorCode::MODIFIED);
+    Reference::lookup(&repo, "refs/heads/d")
+        .unwrap()
+        .delete()
+        .unwrap();
+    assert!(Reference::lookup(&repo, "refs/heads/d").is_err());
+}
+
+#[test]
+fn unborn_head() {
+    let sb = Sandbox::new("testrepo.git", "unborn");
+    let repo = Repository::open(&sb.0).unwrap();
+    let head = Reference::lookup(&repo, "HEAD").unwrap();
+    assert!(!head.is_unborn_head().unwrap());
+    assert!(!head.resolve().unwrap().is_unborn_head().unwrap());
+    let d = std::env::temp_dir().join(format!("l-refs-unborn-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    {
+        let fresh = Repository::init(&d, true).unwrap();
+        let head = Reference::lookup(&fresh, "HEAD").unwrap();
+        assert!(head.is_unborn_head().unwrap());
+        // Another dangling symbolic reference is not HEAD.
+        let other = Reference::symbolic_create(
+            &fresh,
+            "refs/heads/sym",
+            "refs/heads/none",
+            false,
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(!other.is_unborn_head().unwrap());
+    }
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+#[test]
+fn refdb_handles() {
+    let sb = Sandbox::new("testrepo.git", "refdb");
+    let mut repo = Repository::open(&sb.0).unwrap();
+
+    // The repository's own: compress packs the loose references.
+    repo.refdb().unwrap().compress().unwrap();
+    assert!(!sb.0.join("refs/heads/master").exists());
+
+    // `open`: a files database beside the repository's.
+    let opened = Refdb::open(&repo).unwrap();
+    assert!(opened.has_backend());
+    opened.compress().unwrap();
+
+    // `new`: no backend; compressing it does nothing.
+    let mut db = Refdb::new(&repo).unwrap();
+    assert!(!db.has_backend());
+    db.compress().unwrap();
+    // A shared database's backend cannot be replaced.
+    let clone = db.clone();
+    let e = db.set_backend(Counting::default()).unwrap_err();
+    assert_eq!(e.code(), ErrorCode::LOCKED);
+    drop(clone);
+    let c = Counting::default();
+    let n = c.0.clone();
+    db.set_backend(c).unwrap();
+    assert!(db.has_backend());
+    db.compress().unwrap();
+    db.compress().unwrap();
+    assert_eq!(*n.lock().unwrap(), 2);
+    db.set_backend_fs().unwrap();
+    db.compress().unwrap();
+    assert_eq!(*n.lock().unwrap(), 2);
+    let mut own = repo.refdb().unwrap();
+    assert_eq!(own.set_backend_fs().unwrap_err().code(), ErrorCode::LOCKED);
+    drop((own, db, opened));
+
+    // A Rust backend on the repository, then the files backend again.
+    repo.set_refdb_backend(Counting::default()).unwrap();
+    assert!(Reference::lookup(&repo, "refs/heads/master").is_err());
+    repo.set_refdb_backend_fs().unwrap();
+    assert_eq!(
+        Reference::name_to_id(&repo, "refs/heads/master").unwrap(),
+        oid(MASTER)
+    );
+}
+
+/// An empty backend that counts its compressions (the other methods are
+/// the trait's defaults).
+#[derive(Default)]
+struct Counting(std::sync::Arc<Mutex<usize>>);
+
+impl RefdbBackend for Counting {
+    fn compress(&self) -> Result<(), Error> {
+        *self.0.lock().unwrap() += 1;
+        Ok(())
+    }
+}
+
+#[test]
+fn backend_defaults() {
+    let sb = Sandbox::new("testrepo.git", "defaults");
+    let mut repo = Repository::open(&sb.0).unwrap();
+    repo.set_refdb_backend(Counting::default()).unwrap();
+    let e = Reference::lookup(&repo, "HEAD").unwrap_err();
+    assert_eq!(e.code(), ErrorCode::NOT_FOUND);
+    assert!(Reference::list(&repo).unwrap().is_empty());
+    let e = Reference::create(&repo, "refs/heads/x", &oid(MASTER), false, None, None).unwrap_err();
+    assert_eq!(e.class(), ErrorClass::REFERENCE);
+    assert_eq!(
+        e.message(),
+        "the reference database backend does not support writing references"
+    );
+    assert!(!Reference::has_log(&repo, "HEAD").unwrap());
+    assert!(Reflog::read(&repo, "HEAD").unwrap().is_empty());
+}
+
+/// A backend whose answers are odd (review api-r1's probes).
+struct Odd {
+    mode: &'static str,
+    target: Oid,
+}
+
+impl RefdbBackend for Odd {
+    fn exists(&self, _: &[u8]) -> Result<bool, Error> {
+        Ok(true)
+    }
+    fn lookup(&self, name: &[u8]) -> Result<Option<RefValue>, Error> {
+        match self.mode {
+            "iterover" => Err(Error::new(
+                ErrorCode::ITER_OVER,
+                ErrorClass::REFERENCE,
+                "it",
+            )),
+            "selfloop" => Ok(Some(RefValue::Symbolic(name.to_vec()))),
+            "nul" => Ok(Some(RefValue::Symbolic(b"refs/heads/a\0b".to_vec()))),
+            _ => Ok(Some(RefValue::Direct {
+                id: self.target,
+                peel: None,
+            })),
+        }
+    }
+    fn list(&self) -> Result<Vec<(Vec<u8>, RefValue)>, Error> {
+        Ok(vec![
+            (
+                b"refs/heads/a\0hidden".to_vec(),
+                RefValue::Direct {
+                    id: self.target,
+                    peel: None,
+                },
+            ),
+            (
+                b"HEAD".to_vec(),
+                RefValue::Symbolic(b"refs/heads/a".to_vec()),
+            ),
+        ])
+    }
+    fn reflog_read(&self, _: &[u8]) -> Result<Vec<ReflogRecord>, Error> {
+        // S-2: a message with a NUL followed by many newlines.
+        let mut message = b"x\0".to_vec();
+        message.extend(std::iter::repeat_n(b'\n', 4096));
+        Ok(vec![ReflogRecord {
+            old: self.target,
+            new: self.target,
+            committer: Signature::new(b"a", b"b", Time::new(0, 0)).unwrap(),
+            message: Some(message),
+        }])
+    }
+}
+
+fn odd(mode: &'static str, tag: &str) -> (Sandbox, Repository) {
+    let sb = Sandbox::new("testrepo.git", tag);
+    let mut repo = Repository::open(&sb.0).unwrap();
+    repo.set_refdb_backend(Odd {
+        mode,
+        target: oid(MASTER),
+    })
+    .unwrap();
+    (sb, repo)
+}
+
+/// S-6e: a NUL in a name or target from a backend is refused.
+#[test]
+fn nul_from_a_backend_is_invalid_spec() {
+    let (_sb, repo) = odd("nul", "nul");
+    let e = Reference::lookup(&repo, "refs/heads/x").unwrap_err();
+    assert_eq!(e.code(), ErrorCode::INVALID_SPEC);
+    assert_eq!(
+        e.message(),
+        "the symbolic target 'refs/heads/a' from the backend contains a NUL byte"
+    );
+    let e = Reference::list(&repo).unwrap_err();
+    assert_eq!(e.code(), ErrorCode::INVALID_SPEC);
+    assert_eq!(
+        e.message(),
+        "the reference name 'refs/heads/a' from the backend contains a NUL byte"
+    );
+    assert!(References::new(&repo).is_err());
+}
+
+/// S-2: a reflog record whose message has a NUL: no overflow, the message
+/// is cut at the NUL.
+#[test]
+fn reflog_message_with_nul_from_a_backend() {
+    let (_sb, repo) = odd("ok", "s2");
+    let log = Reflog::read(&repo, "HEAD").unwrap();
+    assert_eq!(log.len(), 1);
+    assert_eq!(log.get(0).unwrap().message(), Some(&b"x"[..]));
+}
+
+/// S-6g: codes from the backend that C would misread are failures.
+#[test]
+fn backend_codes_are_sanitized() {
+    let (_sb, repo) = odd("iterover", "iterover");
+    let e = Reference::lookup(&repo, "refs/heads/x").unwrap_err();
+    assert_eq!(e.code(), ErrorCode::GENERIC);
+    assert_eq!(e.message(), "it");
+    // A loop of symbolic references ends.
+    let (_sb, repo) = odd("selfloop", "selfloop");
+    let e = Reference::name_to_id(&repo, "refs/heads/x").unwrap_err();
+    assert_eq!(e.code(), ErrorCode::GENERIC);
+}
+
+/// S-6f: a Rust backend's reflog in a SHA-256 repository.
+#[test]
+fn sha256_reflog_from_a_backend() {
+    struct Log(Oid, Oid);
+    impl RefdbBackend for Log {
+        fn reflog_read(&self, _: &[u8]) -> Result<Vec<ReflogRecord>, Error> {
+            Ok(vec![ReflogRecord {
+                old: self.0,
+                new: self.1,
+                committer: Signature::new(b"a", b"b", Time::new(1, 0)).unwrap(),
+                message: Some(b"sha256".to_vec()),
+            }])
+        }
+    }
+    let sb = Sandbox::new("testrepo_256.git", "sha256");
+    let mut repo = Repository::open(&sb.0).unwrap();
+    assert_eq!(repo.oid_type(), OidType::Sha256);
+    let a = Oid::from_hex("ab".repeat(32), OidType::Sha256).unwrap();
+    let b = Oid::from_hex("cd".repeat(32), OidType::Sha256).unwrap();
+    repo.set_refdb_backend(Log(a, b)).unwrap();
+    let log = Reflog::read(&repo, "HEAD").unwrap();
+    let e = log.get(0).unwrap();
+    assert_eq!((e.id_old(), e.id_new()), (a, b));
+    assert_eq!(e.id_new().kind(), Some(OidType::Sha256));
+    assert_eq!(e.message_str(), Some("sha256"));
+}
+
+/// S-6c: a panic in a backend is an error of class INTERNAL.
+#[test]
+fn panics_are_internal_errors() {
+    struct P;
+    impl RefdbBackend for P {
+        fn lookup(&self, _: &[u8]) -> Result<Option<RefValue>, Error> {
+            panic!("lookup panics")
+        }
+        fn reflog_read(&self, _: &[u8]) -> Result<Vec<ReflogRecord>, Error> {
+            panic!("reflog panics")
+        }
+    }
+    let sb = Sandbox::new("testrepo.git", "panics");
+    let mut repo = Repository::open(&sb.0).unwrap();
+    repo.set_refdb_backend(P).unwrap();
+    for e in [
+        Reference::lookup(&repo, "HEAD").unwrap_err(),
+        Reflog::read(&repo, "HEAD").unwrap_err(),
+    ] {
+        assert_eq!(
+            (e.code(), e.class()),
+            (ErrorCode::GENERIC, ErrorClass::INTERNAL)
+        );
+    }
+}
+
+struct PanicDrop;
+impl Drop for PanicDrop {
+    fn drop(&mut self) {
+        panic!("backend Drop panics");
+    }
+}
+struct DropPanics(#[allow(dead_code)] PanicDrop);
+impl RefdbBackend for DropPanics {}
+
+/// S-3: a backend whose `Drop` panics, replaced and with its repository
+/// dropped: no abort.
+#[test]
+fn backend_drop_panic() {
+    let sb = Sandbox::new("testrepo.git", "droppanic");
+    let mut repo = Repository::open(&sb.0).unwrap();
+    repo.set_refdb_backend(DropPanics(PanicDrop)).unwrap();
+    // Replaced: freed at once.
+    repo.set_refdb_backend(DropPanics(PanicDrop)).unwrap();
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(repo)));
+    assert!(r.is_ok());
+    // A standalone database.
+    let repo = Repository::open(&sb.0).unwrap();
+    let mut db = Refdb::new(&repo).unwrap();
+    db.set_backend(DropPanics(PanicDrop)).unwrap();
+    drop(db);
+}
+
+#[test]
+fn foreach_name_panic_is_resumed() {
+    let sb = Sandbox::new("testrepo.git", "foreachpanic");
+    let repo = Repository::open(&sb.0).unwrap();
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        Reference::foreach_name(&repo, None, |_| panic!("names"))
+    }));
+    assert!(r.is_err());
+    // Mutation during the walk.
+    let mut seen = 0;
+    Reference::foreach_name(&repo, None, |n| {
+        seen += 1;
+        let _ = Reference::lookup(&repo, n).and_then(Reference::delete);
+        let _ = Reference::create(
+            &repo,
+            format!("refs/heads/x{seen}"),
+            &oid(MASTER),
+            true,
+            None,
+            None,
+        );
+        seen < 20
+    })
+    .unwrap();
+    assert!(seen > 0);
 }

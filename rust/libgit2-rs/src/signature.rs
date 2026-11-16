@@ -128,6 +128,112 @@ impl Time {
     }
 }
 
+impl Time {
+    /// From C's value.
+    pub(crate) const fn from_raw(raw: GitTime) -> Time {
+        Time { raw }
+    }
+}
+
+/// A borrowed signature: the name, e-mail and time of an author, committer
+/// or tagger, as an object stores them (what [`Commit::author`],
+/// [`Tag::tagger`] and [`ReflogEntry::committer`] return; [`Signature`]
+/// is the owned form).
+///
+/// [`Commit::author`]: crate::Commit::author
+/// [`Tag::tagger`]: crate::Tag::tagger
+/// [`ReflogEntry::committer`]: crate::ReflogEntry::committer
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SignatureRef<'a> {
+    name: &'a [u8],
+    email: &'a [u8],
+    when: Time,
+}
+
+impl<'a> SignatureRef<'a> {
+    /// A view of `name`, `email` and `when`, taken as they are (no
+    /// trimming or checks: [`Signature::new`] does those).
+    pub const fn new(name: &'a [u8], email: &'a [u8], when: Time) -> SignatureRef<'a> {
+        SignatureRef { name, email, when }
+    }
+
+    /// The view of a C signature.
+    ///
+    /// # Safety
+    ///
+    /// `s`'s strings are NULL (read as empty) or NUL-terminated, and live
+    /// and unwritten for `'a`.
+    pub(crate) unsafe fn from_raw(s: &'a GitSignature) -> SignatureRef<'a> {
+        let b = |p: *const c_char| -> &'a [u8] {
+            if p.is_null() {
+                b""
+            } else {
+                // SAFETY: the caller's contract.
+                unsafe { CStr::from_ptr(p) }.to_bytes()
+            }
+        };
+        SignatureRef {
+            name: b(s.name),
+            email: b(s.email),
+            when: Time { raw: s.when },
+        }
+    }
+
+    /// The name (bytes, usually UTF-8).
+    pub const fn name(&self) -> &'a [u8] {
+        self.name
+    }
+
+    /// The name, if it is UTF-8.
+    pub fn name_str(&self) -> Option<&'a str> {
+        core::str::from_utf8(self.name).ok()
+    }
+
+    /// The e-mail address.
+    pub const fn email(&self) -> &'a [u8] {
+        self.email
+    }
+
+    /// The e-mail address, if it is UTF-8.
+    pub fn email_str(&self) -> Option<&'a str> {
+        core::str::from_utf8(self.email).ok()
+    }
+
+    /// The time.
+    pub const fn when(&self) -> Time {
+        self.when
+    }
+
+    /// An owned copy (`git_signature_dup`), checked as
+    /// [`Signature::new`] checks.
+    pub fn to_signature(&self) -> core::result::Result<Signature, Error> {
+        crate::libgit2::ensure_init()?;
+        Ok(dup_parts(self.name, self.email, self.when.raw)?)
+    }
+}
+
+impl<'a> From<&'a Signature> for SignatureRef<'a> {
+    fn from(s: &'a Signature) -> SignatureRef<'a> {
+        s.as_ref()
+    }
+}
+
+impl fmt::Debug for SignatureRef<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SignatureRef")
+            .field("name", &Bytes(self.name))
+            .field("email", &Bytes(self.email))
+            .field("when", &self.when)
+            .finish()
+    }
+}
+
+impl fmt::Display for SignatureRef<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} <{}>", Bytes(self.name), Bytes(self.email))
+    }
+}
+
 /// An owned signature (`git_signature`), freed on drop.
 ///
 /// Invariant: `name` and `email` are NUL-terminated `git__allocator`
@@ -166,7 +272,13 @@ impl Signature {
     /// leading and trailing "crud": spaces, control characters and
     /// `.,:;<>"\'`) at `time`. Fails if either contains an angle bracket or
     /// is empty once trimmed, or contains a NUL byte.
-    pub fn new(name: &[u8], email: &[u8], time: Time) -> core::result::Result<Signature, Error> {
+    pub fn new(
+        name: impl AsRef<[u8]>,
+        email: impl AsRef<[u8]>,
+        time: Time,
+    ) -> core::result::Result<Signature, Error> {
+        crate::libgit2::ensure_init()?;
+        let (name, email) = (name.as_ref(), email.as_ref());
         let (Some(name), Some(email)) = (no_nul(name), no_nul(email)) else {
             return Err(Error::from(signature_error(
                 "Neither `name` nor `email` should contain NUL bytes.",
@@ -177,14 +289,19 @@ impl Signature {
 
     /// `git_signature_now`: [`new`](Self::new) at the current time and
     /// local timezone.
-    pub fn now(name: &[u8], email: &[u8]) -> core::result::Result<Signature, Error> {
+    pub fn now(
+        name: impl AsRef<[u8]>,
+        email: impl AsRef<[u8]>,
+    ) -> core::result::Result<Signature, Error> {
         let (now, offset) = current_time();
         Signature::new(name, email, Time::new(now, offset))
     }
 
     /// `git_signature_from_buffer`: parse `name <email> time tz` (the text
     /// up to the first NUL byte).
-    pub fn from_buffer(buf: &[u8]) -> core::result::Result<Signature, Error> {
+    pub fn from_buffer(buf: impl AsRef<[u8]>) -> core::result::Result<Signature, Error> {
+        crate::libgit2::ensure_init()?;
+        let buf = buf.as_ref();
         let buf = &buf[..memchr::memchr(0, buf).unwrap_or(buf.len())];
         Ok(parse(buf, None, 0)?.0)
     }
@@ -222,25 +339,38 @@ impl Signature {
         unsafe { CStr::from_ptr(self.0.email) }.to_bytes()
     }
 
-    /// The name, NUL-terminated.
-    pub fn name_c(&self) -> &CStr {
-        // SAFETY: as above.
-        unsafe { CStr::from_ptr(self.0.name) }
-    }
-
-    /// The e-mail, NUL-terminated.
-    pub fn email_c(&self) -> &CStr {
-        // SAFETY: as above.
-        unsafe { CStr::from_ptr(self.0.email) }
-    }
-
     /// The time.
     pub fn when(&self) -> Time {
         Time { raw: self.0.when }
     }
 
-    /// `git_signature_dup` (fallible).
-    pub fn try_clone(&self) -> Result<Signature> {
+    /// The borrowed view.
+    pub fn as_ref(&self) -> SignatureRef<'_> {
+        SignatureRef {
+            name: self.name(),
+            email: self.email(),
+            when: self.when(),
+        }
+    }
+
+    /// The name, if it is UTF-8.
+    pub fn name_str(&self) -> Option<&str> {
+        core::str::from_utf8(self.name()).ok()
+    }
+
+    /// The e-mail address, if it is UTF-8.
+    pub fn email_str(&self) -> Option<&str> {
+        core::str::from_utf8(self.email()).ok()
+    }
+
+    /// `git_signature_dup`: a copy, or the out-of-memory error ([`Clone`]
+    /// panics on that instead).
+    pub fn try_clone(&self) -> core::result::Result<Signature, Error> {
+        Ok(self.try_clone_raw()?)
+    }
+
+    /// `git_signature_dup` with the internal error.
+    pub(crate) fn try_clone_raw(&self) -> Result<Signature> {
         dup_parts(self.name(), self.email(), self.0.when)
     }
 
@@ -306,7 +436,7 @@ impl Signature {
 impl Clone for Signature {
     /// `git_signature_dup`. Panics if out of memory.
     fn clone(&self) -> Signature {
-        self.try_clone()
+        self.try_clone_raw()
             .expect("out of memory duplicating a signature")
     }
 }

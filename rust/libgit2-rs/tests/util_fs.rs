@@ -13,14 +13,14 @@ use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 
-use libgit2_rs::util::errors::{self, ErrorClass, ErrorCode};
-use libgit2_rs::util::filebuf::{self, GitFilebuf, ffi as fb_ffi};
-use libgit2_rs::util::fs_path::{self, GitFsPathDiriter, ffi as fp_ffi};
-use libgit2_rs::util::futils::{self, Filestamp, MkdirOptions, MkdirPerfdata, ffi as fu_ffi};
-use libgit2_rs::util::posix::{self, GitMap, ffi as px_ffi};
-use libgit2_rs::util::str::GitStr;
-use libgit2_rs::util::test_support;
-use libgit2_rs::util::vector::GitVector;
+use libgit2_rs::__test::util::errors::{self, ErrorClass, ErrorCode};
+use libgit2_rs::__test::util::filebuf::{self, GitFilebuf};
+use libgit2_rs::__test::util::fs_path::{self, GitFsPathDiriter};
+use libgit2_rs::__test::util::futils::{self, Filestamp, MkdirOptions, MkdirPerfdata};
+use libgit2_rs::__test::util::posix::{self, GitMap, mode_t};
+use libgit2_rs::__test::util::str::GitStr;
+use libgit2_rs::__test::util::test_support;
+use libgit2_rs::__test::util::vector::GitVector;
 
 /// A scratch directory, removed on drop.
 struct Scratch(PathBuf);
@@ -98,7 +98,7 @@ fn mkdir_variants() {
     let base = t.c("");
     // SAFETY: valid strings and options without a cache.
     let r = unsafe {
-        fu_ffi::git_futils_mkdir_relative(
+        git_futils_mkdir_relative(
             c"p/q/r".as_ptr(),
             base.as_ptr(),
             0o755,
@@ -241,7 +241,7 @@ fn readbuffer_and_writebuffer() {
     // The export's argument checks.
     assert_eq!(
         // SAFETY: a valid git_str, and an empty path.
-        unsafe { fu_ffi::git_futils_readbuffer(&mut b, c"".as_ptr()) },
+        unsafe { git_futils_readbuffer(&mut b, c"".as_ptr()) },
         -1
     );
     assert_eq!(last().1, "invalid argument: 'path && *path'");
@@ -300,8 +300,8 @@ fn filestamps_and_maps() {
     let mut copy = Filestamp::default();
     // SAFETY: valid stamps; source and target may alias.
     unsafe {
-        fu_ffi::git_futils_filestamp_set(&mut copy, &st);
-        fu_ffi::git_futils_filestamp_set(&mut copy, &copy);
+        git_futils_filestamp_set(&mut copy, &st);
+        git_futils_filestamp_set(&mut copy, &copy);
     }
     assert_eq!(copy, st);
     futils::filestamp_set(&mut copy, None);
@@ -324,13 +324,13 @@ fn filestamps_and_maps() {
     let mut m = GitMap::default();
     // SAFETY: a writable map; a NULL map to unmap.
     unsafe {
-        assert_eq!(px_ffi::p_mmap(&mut m, 0, 1, 2, 0, 0), -1);
-        assert_eq!(px_ffi::p_munmap(core::ptr::null_mut()), -1);
+        assert_eq!(p_mmap(&mut m, 0, 1, 2, 0, 0), -1);
+        assert_eq!(p_munmap(core::ptr::null_mut()), -1);
     }
     assert_eq!(last().1, "invalid argument: 'map'");
     let mut page = 0usize;
     // SAFETY: a writable size_t.
-    assert_eq!(unsafe { px_ffi::git__mmap_alignment(&mut page) }, 0);
+    assert_eq!(unsafe { git__mmap_alignment(&mut page) }, 0);
     assert!(page.is_power_of_two());
 }
 
@@ -340,21 +340,21 @@ fn posix_wrappers() {
     let t = Scratch::new("posix");
     let p = t.c("f");
     // SAFETY: a valid path; `p_open`'s mode is read with O_CREAT only.
-    let fd = unsafe { px_ffi::git__p_open(p.as_ptr(), libc::O_CREAT | libc::O_WRONLY, 0o600) };
+    let fd = unsafe { git__p_open(p.as_ptr(), libc::O_CREAT | libc::O_WRONLY, 0o600) };
     assert!(fd >= 0);
     // SAFETY: 3 readable bytes.
-    assert_eq!(unsafe { px_ffi::p_write(fd, b"abc".as_ptr().cast(), 3) }, 0);
+    assert_eq!(unsafe { p_write(fd, b"abc".as_ptr().cast(), 3) }, 0);
     // SAFETY: a descriptor this code opened, closed once.
     unsafe { posix::close(fd) }.unwrap();
     let fd = futils::open_ro(&p).unwrap();
     let mut buf = [0u8; 8];
     // SAFETY: 8 writable bytes.
-    assert_eq!(unsafe { px_ffi::p_read(fd, buf.as_mut_ptr().cast(), 8) }, 3);
+    assert_eq!(unsafe { p_read(fd, buf.as_mut_ptr().cast(), 8) }, 3);
     // An oversized count goes to the kernel, as in C (`git__is_ssizet` is
     // always true on LP64), which refuses it.
     assert_eq!(
         // SAFETY: the kernel checks the buffer before writing past it.
-        unsafe { px_ffi::p_read(fd, buf.as_mut_ptr().cast(), usize::MAX) },
+        unsafe { p_read(fd, buf.as_mut_ptr().cast(), usize::MAX) },
         -1
     );
     // SAFETY: a descriptor this code opened, closed once.
@@ -363,7 +363,7 @@ fn posix_wrappers() {
     futils::writebuffer(b"x", &t.c("g"), 0, 0).unwrap();
     assert_eq!(
         // SAFETY: valid paths.
-        unsafe { px_ffi::p_rename(p.as_ptr(), t.c("g").as_ptr()) },
+        unsafe { p_rename(p.as_ptr(), t.c("g").as_ptr()) },
         0
     );
     assert!(!fs_path::exists(&p));
@@ -371,7 +371,7 @@ fn posix_wrappers() {
     let mut cwd = [0u8; 4096];
     assert_eq!(
         // SAFETY: 4096 writable bytes.
-        unsafe { px_ffi::p_getcwd(cwd.as_mut_ptr().cast(), cwd.len()) },
+        unsafe { p_getcwd(cwd.as_mut_ptr().cast(), cwd.len()) },
         0
     );
     let s = fs_path::c_str(&cwd);
@@ -379,13 +379,13 @@ fn posix_wrappers() {
     let n = s.len();
     let mut exact = vec![0xffu8; n];
     // SAFETY: `n` writable bytes: room for the path and its NUL only.
-    assert_eq!(unsafe { px_ffi::p_getcwd(exact.as_mut_ptr().cast(), n) }, 0);
+    assert_eq!(unsafe { p_getcwd(exact.as_mut_ptr().cast(), n) }, 0);
     assert_eq!(fs_path::c_str(&exact).len(), n - 1);
     // SAFETY: realpath into a git__allocator string, freed once.
     unsafe {
-        let r = px_ffi::p_realpath(t.c("").as_ptr(), core::ptr::null_mut());
+        let r = p_realpath(t.c("").as_ptr(), core::ptr::null_mut());
         assert!(!r.is_null());
-        libgit2_rs::util::alloc::free(r.cast());
+        libgit2_rs::__test::util::alloc::free(r.cast());
     }
     let before = posix::p_fsync__cnt.load(core::sync::atomic::Ordering::Relaxed);
     futils::fsync_dir(&t.c("")).unwrap();
@@ -456,7 +456,7 @@ fn directory_iteration() {
     let c = t.c("");
     // SAFETY: a valid vector and path; the vector's strings are freed below.
     let r = unsafe {
-        fp_ffi::git_fs_path_dirload(
+        git_fs_path_dirload(
             &mut v,
             c.as_ptr(),
             base.len() + 1,
@@ -478,7 +478,7 @@ fn directory_iteration() {
     assert_eq!(&got[..2], &[b".".to_vec(), b"..".to_vec()]);
     for p in v.iter() {
         // SAFETY: freed once.
-        unsafe { libgit2_rs::util::alloc::free(p) };
+        unsafe { libgit2_rs::__test::util::alloc::free(p) };
     }
     v.clear();
     assert!(fs_path::dirload(&mut v, &base, base.len() + 10, 0).is_err());
@@ -514,7 +514,7 @@ fn prettify_and_owner() {
     let p = b.as_ptr();
     assert_eq!(
         // SAFETY: a valid git_str and a C string within it.
-        unsafe { fp_ffi::git_fs_path_prettify(&mut b, p, core::ptr::null()) },
+        unsafe { git_fs_path_prettify(&mut b, p, core::ptr::null()) },
         0
     );
     assert_eq!(b.as_bytes(), &real[..]);
@@ -629,7 +629,7 @@ fn filebuf_exports() {
     // buffers; the filebuf is cleaned up by commit.
     unsafe {
         assert_eq!(
-            fb_ffi::git_filebuf_open(
+            git_filebuf_open(
                 &mut f,
                 target.as_ptr(),
                 filebuf::GIT_FILEBUF_APPEND | (6 << filebuf::GIT_FILEBUF_DEFLATE_SHIFT),
@@ -639,39 +639,30 @@ fn filebuf_exports() {
         );
         for _ in 0..2000 {
             assert_eq!(
-                fb_ffi::git_filebuf_write(&mut f, b"compress me ".as_ptr().cast(), 12),
+                git_filebuf_write(&mut f, b"compress me ".as_ptr().cast(), 12),
                 0
             );
         }
         let mut res: *mut c_void = core::ptr::null_mut();
-        assert_eq!(fb_ffi::git_filebuf_reserve(&mut f, &mut res, 2), 0);
+        assert_eq!(git_filebuf_reserve(&mut f, &mut res, 2), 0);
         assert!(!res.is_null());
         res.cast::<u8>().copy_from_nonoverlapping(b"!!".as_ptr(), 2);
         let (mut mtime, mut size) = (0, 0usize);
-        assert_eq!(fb_ffi::git_filebuf_stats(&mut mtime, &mut size, &mut f), 0);
-        assert_eq!(
-            fb_ffi::git_filebuf_commit_at(&mut f, t.c("final").as_ptr()),
-            0
-        );
+        assert_eq!(git_filebuf_stats(&mut mtime, &mut size, &mut f), 0);
+        assert_eq!(git_filebuf_commit_at(&mut f, t.c("final").as_ptr()), 0);
         assert!(!f.has_buffer() && f.fd() == -1);
         // Without a hash, the assertion.
         let mut out = [0u8; 32];
-        assert_eq!(fb_ffi::git_filebuf_hash(out.as_mut_ptr(), &mut f), -1);
+        assert_eq!(git_filebuf_hash(out.as_mut_ptr(), &mut f), -1);
         assert_eq!(last().1, "invalid argument: 'file->compute_digest'");
         // Formatting failures poison the filebuf.
+        assert_eq!(git_filebuf_open(&mut f, target.as_ptr(), 0, 0o644), 0);
         assert_eq!(
-            fb_ffi::git_filebuf_open(&mut f, target.as_ptr(), 0, 0o644),
-            0
-        );
-        assert_eq!(
-            fb_ffi::git_filebuf__printf_formatted(&mut f, core::ptr::null(), -1),
+            git_filebuf__printf_formatted(&mut f, core::ptr::null(), -1),
             -1
         );
-        assert_eq!(
-            fb_ffi::git_filebuf_write(&mut f, b"x".as_ptr().cast(), 1),
-            -1
-        );
-        fb_ffi::git_filebuf_cleanup(&mut f);
+        assert_eq!(git_filebuf_write(&mut f, b"x".as_ptr().cast(), 1), -1);
+        git_filebuf_cleanup(&mut f);
         assert_eq!(f.fd(), -1);
     }
     let mut b = GitStr::new();
@@ -736,8 +727,75 @@ fn mktmp_and_locks() {
     let _ = c_int::default();
 }
 
+// The handles are Rust types C sees as opaque: it only passes pointers to them.
+#[allow(improper_ctypes)]
 unsafe extern "C" {
     fn git_filebuf_printf(file: *mut c_void, format: *const c_char, ...) -> c_int;
+    fn git__mmap_alignment(alignment: *mut usize) -> c_int;
+    fn git__p_open(path: *const c_char, flags: c_int, mode: mode_t) -> c_int;
+    fn git_filebuf__printf_formatted(
+        file: *mut GitFilebuf,
+        data: *const c_char,
+        len: c_int,
+    ) -> c_int;
+    fn git_filebuf_cleanup(file: *mut GitFilebuf);
+    fn git_filebuf_commit(file: *mut GitFilebuf) -> c_int;
+    fn git_filebuf_commit_at(file: *mut GitFilebuf, path: *const c_char) -> c_int;
+    fn git_filebuf_hash(out: *mut u8, file: *mut GitFilebuf) -> c_int;
+    fn git_filebuf_open(
+        file: *mut GitFilebuf,
+        path: *const c_char,
+        flags: c_int,
+        mode: mode_t,
+    ) -> c_int;
+    fn git_filebuf_open_withsize(
+        file: *mut GitFilebuf,
+        path: *const c_char,
+        flags: c_int,
+        mode: mode_t,
+        size: usize,
+    ) -> c_int;
+    fn git_filebuf_reserve(file: *mut GitFilebuf, buff: *mut *mut c_void, len: usize) -> c_int;
+    fn git_filebuf_stats(
+        mtime: *mut libc::time_t,
+        size: *mut usize,
+        file: *mut GitFilebuf,
+    ) -> c_int;
+    fn git_filebuf_write(file: *mut GitFilebuf, buff: *const c_void, len: usize) -> c_int;
+    fn git_fs_path_dirload(
+        contents: *mut GitVector,
+        path: *const c_char,
+        prefix_len: usize,
+        flags: u32,
+    ) -> c_int;
+    fn git_fs_path_prettify(
+        path_out: *mut GitStr,
+        path: *const c_char,
+        base: *const c_char,
+    ) -> c_int;
+    fn git_futils_filestamp_set(target: *mut Filestamp, source: *const Filestamp);
+    fn git_futils_mkdir_relative(
+        relative_path: *const c_char,
+        base: *const c_char,
+        mode: mode_t,
+        flags: u32,
+        opts: *mut MkdirOptions,
+    ) -> c_int;
+    fn git_futils_readbuffer(buf: *mut GitStr, path: *const c_char) -> c_int;
+    fn p_getcwd(buffer_out: *mut c_char, size: usize) -> c_int;
+    fn p_mmap(
+        out: *mut GitMap,
+        len: usize,
+        prot: c_int,
+        flags: c_int,
+        fd: c_int,
+        offset: i64,
+    ) -> c_int;
+    fn p_munmap(map: *mut GitMap) -> c_int;
+    fn p_read(fd: c_int, buf: *mut c_void, cnt: usize) -> isize;
+    fn p_realpath(pathname: *const c_char, resolved: *mut c_char) -> *mut c_char;
+    fn p_rename(from: *const c_char, to: *const c_char) -> c_int;
+    fn p_write(fd: c_int, buf: *const c_void, cnt: usize) -> c_int;
 }
 
 #[test]
@@ -753,7 +811,7 @@ fn filebuf_printf_placement_and_failures() {
         // formats match their arguments.
         unsafe {
             assert_eq!(
-                fb_ffi::git_filebuf_open_withsize(&mut f, target.as_ptr(), 0, 0o644, size),
+                git_filebuf_open_withsize(&mut f, target.as_ptr(), 0, 0o644, size),
                 0
             );
             // Short, exactly-fitting, and longer than both the shim's stack
@@ -775,7 +833,7 @@ fn filebuf_printf_placement_and_failures() {
                 git_filebuf_printf((&raw mut f).cast(), c"%015d".as_ptr(), 7),
                 0
             );
-            assert_eq!(fb_ffi::git_filebuf_commit(&mut f), 0);
+            assert_eq!(git_filebuf_commit(&mut f), 0);
         }
         let mut b = GitStr::new();
         futils::readbuffer(&mut b, &target).unwrap();
@@ -791,7 +849,7 @@ fn filebuf_printf_placement_and_failures() {
     // SAFETY: as above.
     unsafe {
         assert_eq!(
-            fb_ffi::git_filebuf_open(
+            git_filebuf_open(
                 &mut f,
                 target.as_ptr(),
                 filebuf::GIT_FILEBUF_DO_NOT_BUFFER,
@@ -803,7 +861,7 @@ fn filebuf_printf_placement_and_failures() {
             git_filebuf_printf((&raw mut f).cast(), c"%s!".as_ptr(), c"direct".as_ptr()),
             0
         );
-        assert_eq!(fb_ffi::git_filebuf_commit(&mut f), 0);
+        assert_eq!(git_filebuf_commit(&mut f), 0);
     }
     let mut b = GitStr::new();
     futils::readbuffer(&mut b, &target).unwrap();

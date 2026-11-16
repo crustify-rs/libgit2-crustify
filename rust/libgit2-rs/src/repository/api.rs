@@ -10,12 +10,16 @@
 //! one repository for reference, object and configuration work
 //! (`tests/libgit2/threads`): its lazily made odb, refdb and config are
 //! published with compare-and-swap, its caches are locked or atomic, and
-//! the refdb, odb and config lock their own state. What is single-threaded
-//! takes `&mut self`: the index ([`Repository::index`]), the setters that
-//! replace paths (so no path borrowed from it can dangle), and
-//! [`Repository::reinit_filesystem`] (submodules, which read the index).
+//! the refdb, odb and config lock their own state; the index serialises
+//! its users with its own lock (see [`Index`]). What is single-threaded
+//! takes `&mut self`: the setters that replace paths, strings or the odb,
+//! config and index (so no borrow of the old one can dangle),
+//! [`Repository::cleanup`], the submodule cache, and
+//! [`Repository::reinit_filesystem`] (submodules, which C caches without
+//! synchronisation).
 //!
-//! Paths are bytes: they are `&Path` on Unix (`OsStr` bytes).
+//! File-system paths are `impl AsRef<Path>` in and `&Path`/`PathBuf` out
+//! (`OsStr` bytes on Unix); names and messages are bytes.
 //!
 //! The owners a repository hands out point back to it in C (an odb uses
 //! its owner's object cache, config file backends keep the repository for
@@ -51,33 +55,50 @@
 //!
 //! ```compile_fail
 //! # use libgit2_rs::Repository;
-//! let mut repo = Repository::open("/nonexistent").unwrap();
+//! let repo = Repository::open("/nonexistent").unwrap();
 //! let index = repo.index().unwrap().clone();
-//! drop(repo); // error: `repo` is still (mutably) borrowed by the index
+//! drop(repo); // error: `repo` is still borrowed by the index's clone
 //! drop(index);
 //! ```
 //!
 //! ```compile_fail
 //! # use libgit2_rs::Repository;
-//! let mut repo = Repository::open("/nonexistent").unwrap();
+//! let repo = Repository::open("/nonexistent").unwrap();
 //! let index = repo.index().unwrap();
-//! let _ = repo.head(); // error: the index borrows `repo` exclusively
-//! drop(index);
+//! // error: the index borrows `repo`, so it is not `'static`
+//! std::thread::spawn(move || drop(index));
 //! ```
+//!
+//! The index and the repository are usable together, and from several
+//! threads (I-1):
+//!
+//! ```no_run
+//! # use libgit2_rs::Repository;
+//! let repo = Repository::open("/some/repo").unwrap();
+//! let index = repo.index().unwrap();
+//! let head = repo.head().unwrap(); // fine: the repository is shared
+//! std::thread::scope(|s| {
+//!     s.spawn(|| index.len());
+//!     s.spawn(|| repo.is_empty());
+//! });
+//! # drop(head);
+//! ```
+//!
+//! The setters (`set_odb`, `set_config`, `set_index`, `wrap_odb`) take the object over: it must be made alone and be its only
+//! handle, because the repository becomes its owner (the object then reads
+//! the repository), so no handle that can outlive the repository may be
+//! left. A handle of another repository's object is refused at run time
+//! (that repository owns it); one of this repository's cannot be passed to
+//! a `&mut self` setter while it borrows the repository:
 //!
 //! ```compile_fail
 //! # use libgit2_rs::Repository;
 //! let mut repo = Repository::open("/nonexistent").unwrap();
 //! let index = repo.index().unwrap();
-//! fn send<T: Send>(_: T) {}
-//! send(index); // error: an index is single-threaded
+//! repo.set_index(index); // error: `index` borrows `repo`
 //! ```
-//!
-//! Re-parenting an odb, config or index into another repository
-//! (`git_repository_set_odb` & co., `git_repository_wrap_odb`) is not in the
-//! safe API until the odb/config/index ports can express what C requires.
 
-use core::ffi::{CStr, c_int};
+use core::ffi::{CStr, c_char, c_int};
 use core::ptr::NonNull;
 use std::ffi::{CString, OsStr};
 use std::os::unix::ffi::OsStrExt;
@@ -89,7 +110,6 @@ use super::init::{InitOptions, InitOut};
 use super::*;
 use crate::config::Config;
 use crate::index::Index;
-use crate::libgit2::Libgit2;
 use crate::odb::Odb;
 use crate::oid::{Oid, OidType};
 use crate::refs_api::Reference;
@@ -138,33 +158,7 @@ fn str_path(s: &GitStr) -> PathBuf {
     PathBuf::from(OsStr::from_bytes(crate::util::fs_path::str_c_bytes(s)))
 }
 
-/// A tiny bitflags: a `Copy` newtype over the bits with `|`, `contains`,
-/// `bits` and `empty`.
-macro_rules! bitflags_lite {
-    ($(#[$m:meta])* pub struct $name:ident: $t:ty { $($(#[$fm:meta])* $f:ident = $v:expr;)* }) => {
-        $(#[$m])*
-        #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-        pub struct $name($t);
-        impl $name {
-            $($(#[$fm])* pub const $f: $name = $name($v);)*
-            /// No flag.
-            pub const fn empty() -> $name { $name(0) }
-            /// The raw bits.
-            pub const fn bits(self) -> $t { self.0 }
-            /// Whether all of `other`'s flags are set.
-            pub const fn contains(self, other: $name) -> bool { self.0 & other.0 == other.0 }
-        }
-        impl core::ops::BitOr for $name {
-            type Output = $name;
-            fn bitor(self, o: $name) -> $name { $name(self.0 | o.0) }
-        }
-        impl core::ops::BitOrAssign for $name {
-            fn bitor_assign(&mut self, o: $name) { self.0 |= o.0 }
-        }
-    };
-}
-
-bitflags_lite! {
+crate::api::flags::bitflags! {
     /// `git_repository_open_flag_t`.
     pub struct RepositoryOpenFlags: u32 {
         /// `GIT_REPOSITORY_OPEN_NO_SEARCH`: only open the given path.
@@ -180,7 +174,7 @@ bitflags_lite! {
     }
 }
 
-bitflags_lite! {
+crate::api::flags::bitflags! {
     /// `git_repository_init_flag_t`.
     pub struct RepositoryInitFlags: u32 {
         /// `GIT_REPOSITORY_INIT_BARE`.
@@ -233,8 +227,16 @@ pub enum RefStorage {
     Reftable,
 }
 
-/// Options of [`Repository::init_opts`] (`git_repository_init_options`).
-#[derive(Clone, Debug, Default)]
+/// Options of [`Repository::init_opts`] (`git_repository_init_options`):
+/// a by-value builder.
+///
+/// ```no_run
+/// # use libgit2_rs::{Repository, RepositoryInitOptions};
+/// let o = RepositoryInitOptions::new().bare(true).initial_head("main");
+/// let repo = Repository::init_opts("/tmp/x.git", &o).unwrap();
+/// # drop(repo);
+/// ```
+#[derive(Clone, Debug)]
 pub struct RepositoryInitOptions {
     flags: RepositoryInitFlags,
     mode: RepositoryInitMode,
@@ -247,65 +249,74 @@ pub struct RepositoryInitOptions {
     ref_storage: Option<RefStorage>,
 }
 
+impl Default for RepositoryInitOptions {
+    fn default() -> RepositoryInitOptions {
+        RepositoryInitOptions::new()
+    }
+}
+
 impl RepositoryInitOptions {
     /// The defaults: `MKPATH` (as `git_repository_init`).
     pub fn new() -> RepositoryInitOptions {
         RepositoryInitOptions {
             flags: RepositoryInitFlags::MKPATH,
-            ..Default::default()
+            mode: RepositoryInitMode::SharedUmask,
+            workdir_path: None,
+            description: None,
+            template_path: None,
+            initial_head: None,
+            origin_url: None,
+            oid_type: None,
+            ref_storage: None,
         }
     }
-    /// The flags.
-    pub fn flags(&mut self, f: RepositoryInitFlags) -> &mut Self {
+    /// The flags (replacing those set so far).
+    pub fn flags(mut self, f: RepositoryInitFlags) -> Self {
         self.flags = f;
         self
     }
-    /// A bare repository.
-    pub fn bare(&mut self, bare: bool) -> &mut Self {
-        if bare {
-            self.flags |= RepositoryInitFlags::BARE;
-        } else {
-            self.flags = RepositoryInitFlags(self.flags.0 & !GIT_REPOSITORY_INIT_BARE);
-        }
+    /// A bare repository (`GIT_REPOSITORY_INIT_BARE`).
+    pub fn bare(mut self, bare: bool) -> Self {
+        self.flags.set(RepositoryInitFlags::BARE, bare);
         self
     }
     /// The shared mode.
-    pub fn mode(&mut self, m: RepositoryInitMode) -> &mut Self {
+    pub fn mode(mut self, m: RepositoryInitMode) -> Self {
         self.mode = m;
         self
     }
     /// The working directory.
-    pub fn workdir_path(&mut self, p: impl AsRef<Path>) -> &mut Self {
+    pub fn workdir_path(mut self, p: impl AsRef<Path>) -> Self {
         self.workdir_path = Some(p.as_ref().to_owned());
         self
     }
     /// The description file's contents.
-    pub fn description(&mut self, d: impl AsRef<[u8]>) -> &mut Self {
+    pub fn description(mut self, d: impl AsRef<[u8]>) -> Self {
         self.description = Some(d.as_ref().to_vec());
         self
     }
     /// The template directory.
-    pub fn template_path(&mut self, p: impl AsRef<Path>) -> &mut Self {
+    pub fn template_path(mut self, p: impl AsRef<Path>) -> Self {
         self.template_path = Some(p.as_ref().to_owned());
         self
     }
     /// The initial HEAD (a branch name, or a `refs/…` name).
-    pub fn initial_head(&mut self, h: impl AsRef<[u8]>) -> &mut Self {
+    pub fn initial_head(mut self, h: impl AsRef<[u8]>) -> Self {
         self.initial_head = Some(h.as_ref().to_vec());
         self
     }
     /// Add an `origin` remote with this URL.
-    pub fn origin_url(&mut self, u: impl AsRef<[u8]>) -> &mut Self {
+    pub fn origin_url(mut self, u: impl AsRef<[u8]>) -> Self {
         self.origin_url = Some(u.as_ref().to_vec());
         self
     }
     /// The object id type.
-    pub fn oid_type(&mut self, t: OidType) -> &mut Self {
+    pub fn oid_type(mut self, t: OidType) -> Self {
         self.oid_type = Some(t);
         self
     }
     /// The reference storage.
-    pub fn ref_storage(&mut self, r: RefStorage) -> &mut Self {
+    pub fn ref_storage(mut self, r: RefStorage) -> Self {
         self.ref_storage = Some(r);
         self
     }
@@ -419,11 +430,10 @@ pub enum RepositoryItem {
 
 /// An owned repository (`git_repository`), freed on drop.
 ///
-/// It holds a [`Libgit2`] guard: the library stays initialized while any
-/// repository lives (and while anything borrowed from one does).
+/// The library is initialized on first use and stays so (see
+/// [`Libgit2`](crate::Libgit2)).
 pub struct Repository {
     repo: NonNull<GitRepository>,
-    _lib: Libgit2,
 }
 
 // SAFETY: the repository and what it owns are released from any thread.
@@ -432,10 +442,12 @@ unsafe impl Send for Repository {}
 // (it is `Sync`), and what `&self` reaches is libgit2's thread-safe part:
 // the odb, refdb and config (made lazily and published with compare-and-
 // swap; each locks its own state), the object cache (an rwlock), the
-// configmap cache (atomics), and the files of the git directory. What is
-// not thread-safe is reached through `&mut self` only: the index
-// (`index`), the path setters, `reinit_filesystem`, `set_namespace`,
-// `set_ident`.
+// configmap cache (atomics), and the files of the git directory; the
+// index is reached under its safe-API lock (`Index`, and
+// `with_repository_index_locked` for the C that reads it). What is not
+// thread-safe is reached through `&mut self` only: the path and string
+// setters, `set_odb`/`set_config`/`set_index`, `cleanup`,
+// the submodule cache, `reinit_filesystem`.
 unsafe impl Sync for Repository {}
 
 impl Drop for Repository {
@@ -454,8 +466,8 @@ impl core::fmt::Debug for Repository {
 }
 
 impl Repository {
-    fn from_nonnull(repo: NonNull<GitRepository>, lib: Libgit2) -> Repository {
-        Repository { repo, _lib: lib }
+    fn from_nonnull(repo: NonNull<GitRepository>) -> Repository {
+        Repository { repo }
     }
 
     /// The `git_repository *` (crate-internal: the commit and tree APIs
@@ -483,9 +495,9 @@ impl Repository {
     ) -> Result<Repository> {
         let p = path.map(path_c).transpose()?;
         let ceil = ceiling_list(ceiling_dirs)?;
-        let lib = Libgit2::init()?;
+        crate::libgit2::ensure_init()?;
         match open::open_ext(p.as_deref(), flags.bits(), ceil.as_deref(), true)? {
-            Some(r) => Ok(Repository::from_nonnull(r, lib)),
+            Some(r) => Ok(Repository::from_nonnull(r)),
             None => Err(ErrorCode::GENERIC.into()),
         }
     }
@@ -500,8 +512,8 @@ impl Repository {
     /// `git_repository_open_bare`.
     pub fn open_bare(path: impl AsRef<Path>) -> Result<Repository> {
         let p = path_c(path.as_ref())?;
-        let lib = Libgit2::init()?;
-        Ok(Repository::from_nonnull(open::open_bare(&p)?, lib))
+        crate::libgit2::ensure_init()?;
+        Ok(Repository::from_nonnull(open::open_bare(&p)?))
     }
 
     /// `git_repository_discover`: the git directory of the repository that
@@ -513,26 +525,24 @@ impl Repository {
     ) -> Result<PathBuf> {
         let s = path_c(start.as_ref())?;
         let ceil = ceiling_list(ceiling_dirs)?;
-        let _lib = Libgit2::init()?;
+        crate::libgit2::ensure_init()?;
         let g = open::discover(&s, across_fs, ceil.as_deref())?;
         Ok(str_path(&g))
     }
 
     /// `git_repository_init`.
     pub fn init(path: impl AsRef<Path>, bare: bool) -> Result<Repository> {
-        let mut o = RepositoryInitOptions::new();
-        o.bare(bare);
-        Repository::init_opts(path, &o)
+        Repository::init_opts(path, &RepositoryInitOptions::new().bare(bare))
     }
 
     /// `git_repository_init_ext`.
     pub fn init_opts(path: impl AsRef<Path>, opts: &RepositoryInitOptions) -> Result<Repository> {
         let p = path_c(path.as_ref())?;
         let mut raw = opts.to_raw()?;
-        let lib = Libgit2::init()?;
+        crate::libgit2::ensure_init()?;
         let (r, out) = init::init_ext(&p, &mut raw);
         let repo = match out {
-            InitOut::Repo(p) => Some(Repository::from_nonnull(p, lib)),
+            InitOut::Repo(p) => Some(Repository::from_nonnull(p)),
             _ => None,
         };
         r?;
@@ -541,11 +551,8 @@ impl Repository {
 
     /// `git_repository_new_ext`: a repository with no backends.
     pub fn new_in_memory(oid_type: OidType) -> Result<Repository> {
-        let lib = Libgit2::init()?;
-        Ok(Repository::from_nonnull(
-            open::new_ext(Some(oid_type))?,
-            lib,
-        ))
+        crate::libgit2::ensure_init()?;
+        Ok(Repository::from_nonnull(open::new_ext(Some(oid_type))?))
     }
 
     /// `git_repository_path`: the git directory (with a trailing slash).
@@ -612,9 +619,11 @@ impl Repository {
         Ok(r != 0)
     }
 
-    /// `git_repository_set_head`.
-    pub fn set_head(&self, refname: &str) -> Result<()> {
-        let n = c_string(refname, "reference name")?;
+    /// `git_repository_set_head`: make HEAD point at `refname` (a branch
+    /// that need not exist yet, or any other reference, which detaches
+    /// HEAD at what it points to).
+    pub fn set_head(&self, refname: impl AsRef<[u8]>) -> Result<()> {
+        let n = c_string(refname.as_ref(), "reference name")?;
         Ok(head::set_head(self.raw(), &n)?)
     }
 
@@ -689,13 +698,14 @@ impl Repository {
         Ok(unsafe { Refdb::new_ref(p) })
     }
 
-    /// `git_repository_index`. The index is single-threaded: while it (or
-    /// a clone) lives, the repository is borrowed exclusively.
-    pub fn index(&mut self) -> Result<Index<'_>> {
+    /// `git_repository_index`: the repository's index (loaded on first
+    /// use). It borrows the repository, which stays usable meanwhile: the
+    /// index serialises its own operations, and those of the repository
+    /// whose C reads the index (I-1).
+    pub fn index(&self) -> Result<Index<'_>> {
         let p = self.raw().index_weak()?;
         // SAFETY: the repository's live index; a new reference, bound to the
-        // exclusive borrow of the repository (so no other thread reaches
-        // the index while it lives; `Index` is not `Send`).
+        // borrow of the repository (the index uses its owner).
         Ok(unsafe { Index::new_ref(p) })
     }
 
@@ -745,35 +755,293 @@ impl Repository {
         )
     }
 
-    /// `git_repository_set_ident`.
-    pub fn set_ident(&mut self, name: Option<&str>, email: Option<&str>) -> Result<()> {
+    /// `git_repository_set_ident`: the identity for reflogs (`None`: from
+    /// the configuration), as [`ident`](Self::ident) returns it.
+    pub fn set_ident(&mut self, name: Option<&[u8]>, email: Option<&[u8]>) -> Result<()> {
         let n = name.map(|n| c_string(n, "name")).transpose()?;
         let e = email.map(|e| c_string(e, "email")).transpose()?;
         Ok(self.raw().set_ident(n.as_deref(), e.as_deref())?)
     }
 
-    /// `git_repository_hashfile`: the id `path` would get as an object of
-    /// type `object_type` (`GIT_OBJECT_BLOB` = 3), filtered as `as_path`
-    /// (`Some("")`: no filters; `None`: as `path`).
+    /// `git_repository_hashfile`: the id the file at `path` would get as
+    /// an object of type `kind`, filtered as the working-directory path
+    /// `as_path` (`Some(b"")`: no filters; `None`: as `path`, which is then
+    /// relative to the working directory).
     pub fn hashfile(
         &self,
         path: impl AsRef<Path>,
-        object_type: i32,
-        as_path: Option<&Path>,
+        kind: crate::ObjectType,
+        as_path: Option<&[u8]>,
     ) -> Result<Oid> {
         let p = path_c(path.as_ref())?;
-        let a = as_path.map(path_c).transpose()?;
-        Ok(head::hashfile(self.raw(), &p, object_type, a.as_deref())?)
+        let a = as_path.map(|a| c_string(a, "path")).transpose()?;
+        // The filters read attributes, which C may read from the index.
+        Ok(crate::index::api::with_repository_index_locked(
+            self.raw(),
+            || head::hashfile(self.raw(), &p, kind.raw(), a.as_deref()),
+        )?)
+    }
+
+    /// `git_repository_wrap_odb`: a repository with no directory over
+    /// `odb` (its id type that of the odb; as C, not marked bare).
+    ///
+    /// The repository takes `odb` over: it must be made alone (`'static`)
+    /// and be its only handle (no clone left),
+    /// since the odb then reads the repository's object cache, which no
+    /// handle that can outlive the repository may reach.
+    pub fn wrap_odb(odb: Odb<'static>) -> Result<Repository> {
+        sole(odb.as_raw(), "odb")?;
+        crate::libgit2::ensure_init()?;
+        Ok(Repository::from_nonnull(open::wrap_odb(&odb)?))
+    }
+
+    /// `git_repository_set_odb`: replace the repository's object database.
+    ///
+    /// `odb` must be made alone (`'static`: an odb of a repository is that
+    /// repository's) and be its only handle (no clone left): the repository
+    /// owns it from
+    /// now on (the odb reads the repository's object cache), so no handle
+    /// that may outlive the repository may be left. Get it back with
+    /// [`odb`](Self::odb). `&mut self`: no handle of the old odb is live.
+    pub fn set_odb(&mut self, odb: Odb<'static>) -> Result<()> {
+        let p = odb.as_raw();
+        sole(p, "odb")?;
+        // SAFETY: `odb` is live (we hold its only reference until the end
+        // of the call); `&mut self`: no borrow of the repository, so no
+        // handle or weak pointer of the old odb, is live.
+        unsafe { self.raw().set_odb(Some(p)) };
+        Ok(())
+    }
+
+    /// `git_repository_set_config`: replace the repository's configuration.
+    ///
+    /// As [`set_odb`](Self::set_odb): `config` must be made alone
+    /// (`'static`: a repository's configuration, and its snapshots, keep
+    /// that repository for their include conditions) and be its only
+    /// handle; its owner is the repository from now on (setting a value
+    /// clears the repository's configuration cache).
+    pub fn set_config(&mut self, config: Config<'static>) -> Result<()> {
+        let p = NonNull::from(config.inner());
+        sole(p, "config")?;
+        // SAFETY: as in `set_odb`.
+        unsafe { self.raw().set_config(Some(p)) };
+        Ok(())
+    }
+
+    /// `git_repository_set_index`: replace the repository's index.
+    ///
+    /// As [`set_odb`](Self::set_odb): `index` must be made alone
+    /// ([`Index::new`], [`Index::open`]) and be its only handle (no clone
+    /// or iterator left): the index reads
+    /// its owner's working directory and configuration, so no handle that
+    /// may outlive the repository may be left. Get it back with
+    /// [`index`](Self::index).
+    pub fn set_index(&mut self, index: Index<'static>) -> Result<()> {
+        let p = index.as_nonnull();
+        sole(p, "index")?;
+        // The safe API's lock of the index is held for the change of owner.
+        index.locked(|_| {
+            // SAFETY: as in `set_odb`; and no other thread reaches the
+            // index (ours is its only reference, and its lock is held).
+            unsafe { self.raw().set_index(Some(p)) }
+        });
+        Ok(())
+    }
+
+    /// `git_repository__cleanup`: drop the repository's caches, grafts and
+    /// its odb, configuration, refdb and index (made again on next use).
+    ///
+    /// `&mut self`: no handle of what it drops is live.
+    pub fn cleanup(&mut self) -> Result<()> {
+        // SAFETY: `&mut self`: no borrow of the repository, so no handle,
+        // weak pointer or cache entry of it, is live or used after.
+        Ok(unsafe { self.raw().cleanup() }?)
+    }
+
+    /// `git_repository_submodule_cache_all`: load the submodules into a
+    /// cache that later submodule lookups use (until
+    /// [`submodule_cache_clear`](Self::submodule_cache_clear)).
+    ///
+    /// `&mut self`: C fills the cache without synchronisation, and reads
+    /// the index.
+    pub fn submodule_cache_all(&mut self) -> Result<()> {
+        let r = crate::sys::submodule::cache_init(self.raw());
+        ErrorCode::check(r)?;
+        Ok(())
+    }
+
+    /// `git_repository_submodule_cache_clear`.
+    ///
+    /// `&mut self`: no lookup may use the cache meanwhile.
+    pub fn submodule_cache_clear(&mut self) -> Result<()> {
+        ErrorCode::check(self.raw().submodule_cache_clear())?;
+        Ok(())
+    }
+
+    /// `git_repository_fetchhead_foreach`: `f(ref_name, remote_url, id,
+    /// is_merge)` for each line of `FETCH_HEAD` (the names `None` when the
+    /// line has none); `false` stops (and the call returns `Ok`). A panic
+    /// in `f` stops and is resumed after.
+    pub fn fetchhead_foreach<F>(&self, mut f: F) -> Result<()>
+    where
+        F: FnMut(Option<&[u8]>, Option<&[u8]>, &Oid, bool) -> bool,
+    {
+        type Each<'a> = dyn FnMut(Option<&[u8]>, Option<&[u8]>, &Oid, bool) -> bool + 'a;
+        struct State<'a> {
+            f: &'a mut Each<'a>,
+            cb: CallbackState,
+        }
+        unsafe extern "C" fn each(
+            ref_name: *const c_char,
+            remote_url: *const c_char,
+            oid: *const Oid,
+            is_merge: core::ffi::c_uint,
+            payload: *mut core::ffi::c_void,
+        ) -> c_int {
+            // SAFETY: the payload is the `State` of the running call, used
+            // by nothing else during the callback.
+            let st = unsafe { &mut *payload.cast::<State<'_>>() };
+            // SAFETY: C passes NULL or strings, live for the call.
+            let n = unsafe { crate::util::export::cstr(ref_name) }.map(CStr::to_bytes);
+            // SAFETY: as above.
+            let u = unsafe { crate::util::export::cstr(remote_url) }.map(CStr::to_bytes);
+            // SAFETY: C passes a valid id, live for the call.
+            let id = unsafe { &*oid };
+            let f = &mut st.f;
+            st.cb.call(|| f(n, u, id, is_merge != 0))
+        }
+        let mut st = State {
+            f: &mut f,
+            cb: CallbackState::default(),
+        };
+        // SAFETY: `each` treats the payload as the `State`, which outlives
+        // the call.
+        let r = unsafe {
+            crate::sys::fetchhead::fetchhead_foreach(self.raw(), each, (&raw mut st).cast())
+        };
+        st.cb.finish(r)
+    }
+
+    /// `git_repository_mergehead_foreach`: `f(id)` for each id of
+    /// `MERGE_HEAD`; `false` stops (and the call returns `Ok`). A panic in
+    /// `f` stops and is resumed after.
+    pub fn mergehead_foreach<F>(&self, mut f: F) -> Result<()>
+    where
+        F: FnMut(&Oid) -> bool,
+    {
+        struct State<'a> {
+            f: &'a mut dyn FnMut(&Oid) -> bool,
+            cb: CallbackState,
+        }
+        unsafe extern "C" fn each(oid: *const Oid, payload: *mut core::ffi::c_void) -> c_int {
+            // SAFETY: the payload is the `State` of the running call, used
+            // by nothing else during the callback.
+            let st = unsafe { &mut *payload.cast::<State<'_>>() };
+            // SAFETY: C passes a valid id, live for the call.
+            let id = unsafe { &*oid };
+            let f = &mut st.f;
+            st.cb.call(|| f(id))
+        }
+        let mut st = State {
+            f: &mut f,
+            cb: CallbackState::default(),
+        };
+        // SAFETY: `each` treats the payload as the `State`, which outlives
+        // the call.
+        let r =
+            unsafe { crate::sys::merge::mergehead_foreach(self.raw(), each, (&raw mut st).cast()) };
+        st.cb.finish(r)
+    }
+
+    /// `git_repository_head_for_worktree`: `f` gets the HEAD of the
+    /// worktree `name`, resolved, while that worktree's repository is open
+    /// (C returns the reference after closing that repository, which it
+    /// still points to; so the reference is lent to `f` only).
+    pub fn head_for_worktree<T>(
+        &self,
+        name: impl AsRef<[u8]>,
+        f: impl FnOnce(&Reference<'_>) -> T,
+    ) -> Result<T> {
+        let n = c_string(name.as_ref(), "worktree name")?;
+        let r = head::with_head_for_worktree(self.raw(), &n, |h| {
+            // SAFETY: the reference `with_head_for_worktree` lends, ours to
+            // own for the extent of `f` (its repository is open meanwhile).
+            unsafe { crate::refs::RefBox::from_raw(h.into_raw()) }.map(|b| f(&Reference::wrap(b)))
+        })?;
+        r.ok_or_else(|| ErrorCode::GENERIC.into())
+    }
+
+    /// `git_repository_head_detached_for_worktree`.
+    pub fn head_detached_for_worktree(&self, name: impl AsRef<[u8]>) -> Result<bool> {
+        let n = c_string(name.as_ref(), "worktree name")?;
+        Ok(head::head_detached_for_worktree(self.raw(), &n)?)
     }
 }
 
-/// The extensions this library supports (`GIT_OPT_GET_EXTENSIONS`).
-pub fn extensions() -> Vec<Vec<u8>> {
+/// The extensions this library supports (`GIT_OPT_GET_EXTENSIONS`; the
+/// public form is in `opts`).
+pub(crate) fn extensions() -> Vec<Vec<u8>> {
     open::extensions().unwrap_or_default()
 }
 
 /// Set the extensions this library supports beyond the built-in ones (a
-/// leading `!` rejects one) (`GIT_OPT_SET_EXTENSIONS`).
-pub fn set_extensions(exts: &[&[u8]]) {
+/// leading `!` rejects one) (`GIT_OPT_SET_EXTENSIONS`; the public form is in
+/// `opts`).
+pub(crate) fn set_extensions(exts: &[&[u8]]) {
     open::set_extensions(exts);
+}
+
+/// Whether `p`'s reference (held by the caller) is the only one and no
+/// repository owns the object; otherwise the error of the setters.
+fn sole<T>(p: NonNull<T>, what: &str) -> Result<()> {
+    // SAFETY: `p` is a live refcounted object (`git_refcount` at offset
+    // 0) of which the caller holds a reference.
+    if unsafe { crate::util::thread::GitRefcount::sole(crate::util::thread::refcount_of(p)) } {
+        return Ok(());
+    }
+    Err(Error::with(
+        ErrorCode::GENERIC,
+        crate::util::errors::ErrorClass::INVALID,
+        format!("the {what} is shared: it has another handle, or a repository owns it"),
+    ))
+}
+
+/// The state of a closure called by C: whether it stopped, and its panic.
+#[derive(Default)]
+struct CallbackState {
+    stopped: bool,
+    panic: Option<Box<dyn core::any::Any + Send>>,
+}
+
+impl CallbackState {
+    /// Run the closure (`false` stops), as C's callback status.
+    fn call(&mut self, f: impl FnOnce() -> bool) -> c_int {
+        if self.stopped || self.panic.is_some() {
+            return ErrorCode::USER.raw();
+        }
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+            Ok(true) => 0,
+            Ok(false) => {
+                self.stopped = true;
+                ErrorCode::USER.raw()
+            }
+            Err(p) => {
+                self.panic = Some(p);
+                ErrorCode::USER.raw()
+            }
+        }
+    }
+
+    /// The operation's result `r`: the panic resumed, `Ok` if stopped.
+    fn finish(self, r: c_int) -> Result<()> {
+        if let Some(p) = self.panic {
+            std::panic::resume_unwind(p);
+        }
+        if self.stopped {
+            crate::util::errors::clear();
+            return Ok(());
+        }
+        ErrorCode::check(r)?;
+        Ok(())
+    }
 }

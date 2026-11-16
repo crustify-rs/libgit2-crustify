@@ -255,20 +255,105 @@ API with the capabilities of libgit2's public C API for that component
 C refcounts or duplicates, lifetimes where C requires a parent to outlive a
 child (a `Commit<'repo>`), iterators for C's iterators and `foreach`,
 closures for callbacks, `Result<T, Error>` (with the code, class and message)
-for status codes, `&[u8]`/`&Path`/`&str` for strings as appropriate (paths
-are bytes, not UTF-8). No raw pointer and no `unsafe fn` in it. Its tests
-compile under `#![forbid(unsafe_code)]`.
+for status codes. No raw pointer and no `unsafe fn` in it. Its tests
+compile under `#![forbid(unsafe_code)]`. `rust/API.md` is the guide for
+consumers; these are the rules for the code.
 
 The C ABI and the Rust API are two faces of the same safe Rust: the exports
 are shims over it, the API is a thin layer over it. Design both so that
 neither changes when the rest of libgit2's C is ported later: the API must
 not expose that something is C (no C types in signatures, no `sys` types).
 
-API naming follows libgit2 (`Repository`, `Odb`, `OdbObject`, `Oid`,
-`ObjectType`, `Object`, `Commit`, `Tree`, `TreeEntry`, `Blob`, `Tag`,
-`Signature`, `Reference`, `Reflog`, `Config`, `ConfigEntry`, `Index`,
-`IndexEntry`, `Revwalk`, `Error`, `ErrorCode`, `ErrorClass`), re-exported
-from the crate root.
+### 5.1 The surface
+
+- Every module is `pub(crate)` (`src/lib.rs`). The public API is exactly
+  what the crate root re-exports, plus `libgit2_rs::opts` (the global
+  options). Every type named in a public signature is re-exported from the
+  root, so it can be named.
+- No public item has a raw pointer, an `unsafe fn`, a C type (`c_int`,
+  `c_char`, `CStr` where bytes are meant, `GitStr`, `GitArray`, a `sys`
+  type) or a `#[repr(C)]` mirror with public fields. Conversions to and
+  from C values (`raw()`, `from_raw()`) are `pub(crate)`.
+- The `#[unsafe(no_mangle)]` exports are symbols, not paths. Integration
+  tests that call the C ABI declare it in an `extern "C"` block, as C does.
+  Tests that need an internal use `libgit2_rs::__test::<module>::…`, which
+  exists only with the `test-internals` feature (on for the crate's own
+  tests through its self dev-dependency); never in the default API.
+- Names follow libgit2 (`Repository`, `Odb`, `OdbObject`, `Oid`,
+  `ObjectType`, `Object`, `Commit`, `Tree`, `TreeEntry`, `Blob`, `Tag`,
+  `Signature`, `Reference`, `Reflog`, `Config`, `ConfigEntry`, `Index`,
+  `IndexEntry`, `Revwalk`, `Error`, `ErrorCode`, `ErrorClass`).
+
+### 5.2 One of each
+
+- **Errors.** Every public `Result` is `libgit2_rs::Result<T>` =
+  `Result<T, Error>`; `Error` has the code (`ErrorCode`, libgit2's codes
+  as constants), the class (`ErrorClass`) and the message (bytes). The
+  internal code type (`util::errors::ErrorCode`) is crate-private; `?` on
+  an internal result captures the thread's class and message *there*, so a
+  public `Error` never depends on the thread's state later. Internals build
+  one with `Error::with(code, class, msg)`; users (backends, callbacks) with
+  `Error::new`. An error that user code returns to C goes through
+  `Error::set_last` / `user_code`, which turn success and `GIT_ITEROVER`
+  into `GIT_ERROR`.
+- **Object types.** One `ObjectType { Commit, Tree, Blob, Tag }`; where C
+  takes `GIT_OBJECT_ANY`, the API takes `Option<ObjectType>` (`None` =
+  any). The pack's delta kinds are internal.
+- **Signatures.** `Signature` is the owned one (`Signature::new`, `now`,
+  `from_buffer`); everything an object or reflog stores comes out as the
+  borrowed `SignatureRef<'_>` (`Commit::author`, `Tag::tagger`,
+  `ReflogEntry::committer`); builders take `impl Into<SignatureRef<'_>>`.
+  `Time` is the time with its offset.
+- One `Oid` (`Copy`, `Ord`, `FromStr`, `Display`), one `Reference`, one
+  `Index`, one `Config`, one `Odb`.
+
+### 5.3 Strings and paths
+
+- File-system paths: `impl AsRef<Path>` in, `&Path` / `PathBuf` out
+  (lossless on Unix through `OsStrExt`).
+- Paths inside a repository (index, tree, attributes), reference names,
+  configuration names, messages, e-mail addresses: `impl AsRef<[u8]>` in
+  (so `&str`, `&[u8]`, `String`, `Vec<u8>` all work), `&[u8]` out, with
+  `…_str() -> Option<&str>` conveniences; optional ones are
+  `Option<&[u8]>`. A NUL inside one is an error (class `INVALID`), never a
+  silent truncation.
+
+### 5.4 Flags, options, callbacks
+
+- Flags are `crate::api::flags::bitflags!` newtypes (`empty`, `all`,
+  `bits`, `from_bits`, `contains`, `insert`, `|`, `&`, `-`, `!`); closed
+  sets of values are enums.
+- Options are by-value builders (`Foo::new()` / `Default`, then
+  `.bar(x)` taking and returning `self`) with private fields, so options
+  can grow without a break.
+- Callbacks are closures. "Stop" is `false` (or an enum variant) and the
+  operation then returns `Ok(())`. A panic in a closure is caught where C
+  calls it, the operation is stopped, and the panic is resumed after the
+  operation returns. Trait methods of user-implemented backends all have
+  defaults (so the traits can grow); a backend's `Drop` may panic (the
+  payload is leaked, `api::NoUnwindDrop`).
+
+### 5.5 Lifetimes, initialization, threads
+
+- Objects, references, odb/config/index handles of a repository borrow it
+  (`'repo`); an owner made alone is `'static`.
+- The library initializes itself: every public constructor that does not
+  take an owner calls `crate::libgit2::ensure_init()?` first, and the safe
+  API never shuts the library down (S-4). `Libgit2::init` is the eager form.
+- `Send`/`Sync` are stated, type by type, in `tests/api_send_sync.rs`, and
+  `Sync` only rests on real synchronization. The index is single-threaded
+  in C: the safe `Index` takes a per-index re-entrant lock (kept beside the
+  index, `index::api`) for every operation, so `Repository::index(&self)`
+  and `Index: Send + Sync`; every safe API whose C may read the
+  repository's index (filters and attributes, commit-from-index, …) runs
+  inside `index::api::with_repository_index_locked`.
+
+### 5.6 Tests of the API
+
+The API's tests use only what a consumer sees (`use libgit2_rs::…` root
+items, no `__test`), compile under `#![forbid(unsafe_code)]`, and do not
+call any init (the library initializes itself). `tests/consumer/` is a
+separate crate that depends on `libgit2-rs` as a consumer does (A-3).
 
 ## 6. Tests
 

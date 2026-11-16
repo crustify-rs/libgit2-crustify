@@ -29,7 +29,7 @@
 //! the struct, as in C.
 //!
 //! ```
-//! use libgit2_rs::util::thread::{GitMutex, Atomic32};
+//! use libgit2_rs::__test::util::thread::{GitMutex, Atomic32};
 //! static M: GitMutex = GitMutex::new();
 //! let count = Atomic32::new(0);
 //! {
@@ -144,7 +144,7 @@ impl Default for GitMutex {
 /// A held [`GitMutex`]; unlocks on drop. Not `Send`:
 ///
 /// ```compile_fail
-/// use libgit2_rs::util::thread::GitMutex;
+/// use libgit2_rs::__test::util::thread::GitMutex;
 /// fn send<T: Send>(_: T) {}
 /// static M: GitMutex = GitMutex::new();
 /// send(M.lock());
@@ -635,6 +635,7 @@ pub(crate) unsafe trait StartsWithRefcount: ffibox::CCounted {
 /// field (checked at offset 0), with allocator `$alloc` and, optionally,
 /// a release function replacing the default drop of the box.
 #[macro_export]
+#[doc(hidden)] // crate-internal: expands to crate-private paths, unusable outside
 #[doc(hidden)]
 macro_rules! impl_ccounted {
     ($t:ty, $alloc:ty $(, release = $rel:expr)?) => {
@@ -883,4 +884,73 @@ crate::c_layout_test! {
         GitRefcount => "git_refcount" { refcount, owner },
         TlsdataKey => "git_tlsdata_key" {},
     ],
+}
+
+// ---------------------------------------------------------------------------
+// A re-entrant lock for the safe API
+// ---------------------------------------------------------------------------
+
+/// A non-zero token of the calling thread (the address of a thread-local),
+/// for "is this thread the holder" checks.
+pub(crate) fn thread_token() -> usize {
+    std::thread_local!(static TOKEN: u8 = const { 0 });
+    TOKEN.with(|t| core::ptr::from_ref(t).addr())
+}
+
+/// A lock the holding thread may take again (a callback of an operation
+/// that holds it may call back into the same API): the safe API's
+/// serialization of a single-threaded C object (the index).
+#[derive(Debug, Default)]
+pub(crate) struct ReentrantLock {
+    m: std::sync::Mutex<()>,
+    /// The holder's [`thread_token`], 0 if none.
+    owner: core::sync::atomic::AtomicUsize,
+    /// How many guards the holder has (read and written by the holder only).
+    depth: core::sync::atomic::AtomicUsize,
+}
+
+/// A held [`ReentrantLock`].
+pub(crate) struct ReentrantGuard<'a> {
+    lock: &'a ReentrantLock,
+    _outer: Option<std::sync::MutexGuard<'a, ()>>,
+}
+
+impl ReentrantLock {
+    pub(crate) fn new() -> ReentrantLock {
+        ReentrantLock::default()
+    }
+
+    /// Take the lock (again, on the holding thread).
+    pub(crate) fn lock(&self) -> ReentrantGuard<'_> {
+        let me = thread_token();
+        // Only this thread stores its own token, so equality means this
+        // thread holds the lock.
+        if self.owner.load(Ordering::Acquire) == me {
+            self.depth.fetch_add(1, Ordering::Relaxed);
+            return ReentrantGuard {
+                lock: self,
+                _outer: None,
+            };
+        }
+        let g = self
+            .m
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.depth.store(1, Ordering::Relaxed);
+        self.owner.store(me, Ordering::Release);
+        ReentrantGuard {
+            lock: self,
+            _outer: Some(g),
+        }
+    }
+}
+
+impl Drop for ReentrantGuard<'_> {
+    fn drop(&mut self) {
+        if self.lock.depth.fetch_sub(1, Ordering::Relaxed) == 1 {
+            // The outermost guard: give up ownership before the mutex (the
+            // field, dropped after this) is unlocked.
+            self.lock.owner.store(0, Ordering::Release);
+        }
+    }
 }

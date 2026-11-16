@@ -28,9 +28,17 @@ version = "0.1.0"
 dependencies = [
  "ffibox",
  "libc",
+ "libgit2-rs",
  "libz-rs-sys",
  "memchr",
  "sha1collisiondetection",
+]
+
+[[package]]
+name = "libgit2-rs-consumer"
+version = "0.0.0"
+dependencies = [
+ "libgit2-rs",
 ]
 
 [[package]]

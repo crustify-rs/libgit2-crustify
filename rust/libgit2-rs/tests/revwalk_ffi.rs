@@ -5,19 +5,73 @@
 // each block covers the calls in it.
 #![allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)]
 
-use core::ffi::{c_char, c_int, c_void};
+use core::ffi::{c_char, c_int, c_uint, c_void};
 use core::ptr;
 
-use libgit2_rs::commit_list::ffi::git_commit_list_parse;
-use libgit2_rs::hashsig::ffi as hs;
-use libgit2_rs::repository::GitRepository;
-use libgit2_rs::repository::ffi::{git_repository_free, git_repository_open};
-use libgit2_rs::revwalk::ffi as rw;
-use libgit2_rs::revwalk::node::{CommitListNode, PARSED};
-use libgit2_rs::revwalk::{GIT_SORT_TIME, GitRevwalk, PushOptions};
-use libgit2_rs::util::errors;
-use libgit2_rs::util::test_support;
+use libgit2_rs::__test::commit_list::GitCommitListNode;
+use libgit2_rs::__test::hashsig::ffi::GitHashsig;
+use libgit2_rs::__test::repository::GitRepository;
+use libgit2_rs::__test::revwalk::node::{CommitListNode, PARSED};
+use libgit2_rs::__test::revwalk::{GIT_SORT_TIME, GitRevwalk, HideCb, PushOptions};
+use libgit2_rs::__test::sys::pathspec::git_pathspec;
+use libgit2_rs::__test::util::{errors, test_support};
 use libgit2_rs::{Oid, OidType};
+
+// The C ABI under test, declared as C declares it (the signatures are the
+// `src` exports').
+// The handles are Rust types C sees as opaque: it only passes pointers to them.
+#[allow(improper_ctypes)]
+unsafe extern "C" {
+    fn git_commit_list_parse(walk: *mut GitRevwalk, commit: *mut GitCommitListNode) -> c_int;
+    fn git_hashsig_compare(a: *const GitHashsig, b: *const GitHashsig) -> c_int;
+    fn git_hashsig_create(
+        out: *mut *mut GitHashsig,
+        buf: *const c_char,
+        buflen: usize,
+        opts: c_int,
+    ) -> c_int;
+    fn git_hashsig_create_fromfile(
+        out: *mut *mut GitHashsig,
+        path: *const c_char,
+        opts: c_int,
+    ) -> c_int;
+    fn git_hashsig_free(sig: *mut GitHashsig);
+    fn git_repository_free(repo: *mut GitRepository);
+    fn git_repository_open(repo_out: *mut *mut GitRepository, path: *const c_char) -> c_int;
+    fn git_revwalk__commit_lookup(walk: *mut GitRevwalk, oid: *const Oid) -> *mut CommitListNode;
+    fn git_revwalk__push_commit(
+        walk: *mut GitRevwalk,
+        oid: *const Oid,
+        opts: *const PushOptions,
+    ) -> c_int;
+    fn git_revwalk__push_glob(
+        walk: *mut GitRevwalk,
+        glob: *const c_char,
+        given_opts: *const PushOptions,
+    ) -> c_int;
+    fn git_revwalk__push_ref(
+        walk: *mut GitRevwalk,
+        refname: *const c_char,
+        opts: *const PushOptions,
+    ) -> c_int;
+    fn git_revwalk_add_hide_cb(
+        walk: *mut GitRevwalk,
+        hide_cb: HideCb,
+        payload: *mut c_void,
+    ) -> c_int;
+    fn git_revwalk_free(walk: *mut GitRevwalk);
+    fn git_revwalk_new(out: *mut *mut GitRevwalk, repo: *mut GitRepository) -> c_int;
+    fn git_revwalk_next(oid: *mut Oid, walk: *mut GitRevwalk) -> c_int;
+    fn git_revwalk_pathspec(walk: *mut GitRevwalk, pathspec: *mut git_pathspec) -> c_int;
+    fn git_revwalk_push(walk: *mut GitRevwalk, oid: *const Oid) -> c_int;
+    fn git_revwalk_push_glob(walk: *mut GitRevwalk, glob: *const c_char) -> c_int;
+    fn git_revwalk_push_head(walk: *mut GitRevwalk) -> c_int;
+    fn git_revwalk_push_range(walk: *mut GitRevwalk, range: *const c_char) -> c_int;
+    fn git_revwalk_push_ref(walk: *mut GitRevwalk, refname: *const c_char) -> c_int;
+    fn git_revwalk_repository(walk: *mut GitRevwalk) -> *mut GitRepository;
+    fn git_revwalk_reset(walk: *mut GitRevwalk) -> c_int;
+    fn git_revwalk_sorting(walk: *mut GitRevwalk, sort_mode: c_uint) -> c_int;
+}
 
 fn msg() -> String {
     String::from_utf8(errors::last_message().unwrap_or_default()).unwrap()
@@ -44,7 +98,7 @@ fn drain(w: *mut GitRevwalk) -> Vec<String> {
     let mut id = Oid::NONE;
     loop {
         // SAFETY: a live walk, a writable oid.
-        let e = unsafe { rw::git_revwalk_next(&mut id, w) };
+        let e = unsafe { git_revwalk_next(&mut id, w) };
         if e != 0 {
             break;
         }
@@ -60,65 +114,59 @@ fn walk_lifecycle_and_arguments() {
     // SAFETY: as C calls them.
     unsafe {
         let mut w = ptr::null_mut();
-        assert_eq!(rw::git_revwalk_new(&mut w, repo), 0);
-        assert_eq!(rw::git_revwalk_repository(w), repo);
+        assert_eq!(git_revwalk_new(&mut w, repo), 0);
+        assert_eq!(git_revwalk_repository(w), repo);
         assert_eq!((*w).prefix.repo, repo);
         assert!(!(*w).prefix.odb.is_null());
 
         // nothing pushed
         let mut id = Oid::NONE;
-        assert_eq!(rw::git_revwalk_next(&mut id, w), -31);
+        assert_eq!(git_revwalk_next(&mut id, w), -31);
         assert!(errors::last_message().is_none());
 
-        assert_eq!(rw::git_revwalk_push_head(w), 0);
-        assert_eq!(rw::git_revwalk_sorting(w, GIT_SORT_TIME), 0);
+        assert_eq!(git_revwalk_push_head(w), 0);
+        assert_eq!(git_revwalk_sorting(w, GIT_SORT_TIME), 0);
         // sorting before walking keeps the pushes
         assert_eq!(drain(w).len(), 7);
 
         // arguments
-        assert_eq!(rw::git_revwalk_next(ptr::null_mut(), w), -1);
+        assert_eq!(git_revwalk_next(ptr::null_mut(), w), -1);
         assert_eq!(msg(), "invalid argument: 'oid'");
-        assert_eq!(rw::git_revwalk_next(&mut id, ptr::null_mut()), -1);
+        assert_eq!(git_revwalk_next(&mut id, ptr::null_mut()), -1);
         assert_eq!(msg(), "invalid argument: 'walk'");
-        assert_eq!(rw::git_revwalk_push(w, ptr::null()), -1);
+        assert_eq!(git_revwalk_push(w, ptr::null()), -1);
         assert_eq!(msg(), "invalid argument: 'oid'");
-        assert_eq!(rw::git_revwalk_push_ref(w, ptr::null()), -1);
+        assert_eq!(git_revwalk_push_ref(w, ptr::null()), -1);
         assert_eq!(msg(), "invalid argument: 'refname'");
-        assert_eq!(rw::git_revwalk_push_glob(w, ptr::null()), -1);
+        assert_eq!(git_revwalk_push_glob(w, ptr::null()), -1);
         assert_eq!(msg(), "invalid argument: 'glob'");
-        assert_eq!(rw::git_revwalk_sorting(ptr::null_mut(), 0), -1);
-        assert_eq!(rw::git_revwalk_reset(ptr::null_mut()), -1);
+        assert_eq!(git_revwalk_sorting(ptr::null_mut(), 0), -1);
+        assert_eq!(git_revwalk_reset(ptr::null_mut()), -1);
         assert_eq!(
-            rw::git_revwalk_add_hide_cb(ptr::null_mut(), None, ptr::null_mut()),
+            git_revwalk_add_hide_cb(ptr::null_mut(), None, ptr::null_mut()),
             -1
         );
-        assert_eq!(
-            rw::git_revwalk_pathspec(ptr::null_mut(), ptr::null_mut()),
-            -1
-        );
-        assert!(rw::git_revwalk_repository(ptr::null_mut()).is_null());
+        assert_eq!(git_revwalk_pathspec(ptr::null_mut(), ptr::null_mut()), -1);
+        assert!(git_revwalk_repository(ptr::null_mut()).is_null());
         assert_eq!(msg(), "invalid argument: 'walk'");
 
         // errors of pushes
-        assert_eq!(
-            rw::git_revwalk_push_range(w, c"HEAD~1...HEAD".as_ptr()),
-            -12
-        );
+        assert_eq!(git_revwalk_push_range(w, c"HEAD~1...HEAD".as_ptr()), -12);
         assert_eq!(msg(), "symmetric differences not implemented in revwalk");
-        assert_eq!(rw::git_revwalk_push_range(w, c"HEAD".as_ptr()), -12);
+        assert_eq!(git_revwalk_push_range(w, c"HEAD".as_ptr()), -12);
         assert_eq!(msg(), "invalid revspec: range not provided");
         let tree = hex("944c0f6e4dfa41595e6eb3ceecdb14f50fe18162");
-        assert_eq!(rw::git_revwalk_push(w, &tree), -12);
+        assert_eq!(git_revwalk_push(w, &tree), -12);
         assert_eq!(msg(), "object is not a committish");
-        assert_eq!(rw::git_revwalk_push_ref(w, c"refs/heads/nope".as_ptr()), -1);
+        assert_eq!(git_revwalk_push_ref(w, c"refs/heads/nope".as_ptr()), -1);
         assert_eq!(msg(), "reference 'refs/heads/nope' not found");
 
-        rw::git_revwalk_free(w);
-        rw::git_revwalk_free(ptr::null_mut());
+        git_revwalk_free(w);
+        git_revwalk_free(ptr::null_mut());
 
         // a NULL repository: git_repository_odb's argument check, and -1
         let mut w2 = std::ptr::dangling_mut::<GitRevwalk>();
-        assert_eq!(rw::git_revwalk_new(&mut w2, ptr::null_mut()), -1);
+        assert_eq!(git_revwalk_new(&mut w2, ptr::null_mut()), -1);
         assert_eq!(msg(), "invalid argument: 'repo'");
         assert_eq!(w2, std::ptr::dangling_mut::<GitRevwalk>());
         git_repository_free(repo);
@@ -140,13 +188,13 @@ fn hide_cb_and_internal_pushes() {
     // SAFETY: as C calls them.
     unsafe {
         let mut w = ptr::null_mut();
-        assert_eq!(rw::git_revwalk_new(&mut w, repo), 0);
+        assert_eq!(git_revwalk_new(&mut w, repo), 0);
         let mut calls = 0usize;
         assert_eq!(
-            rw::git_revwalk_add_hide_cb(w, Some(hide_c4), (&raw mut calls).cast()),
+            git_revwalk_add_hide_cb(w, Some(hide_c4), (&raw mut calls).cast()),
             0
         );
-        assert_eq!(rw::git_revwalk_push_head(w), 0);
+        assert_eq!(git_revwalk_push_head(w), 0);
         assert_eq!(
             drain(w),
             [
@@ -160,7 +208,7 @@ fn hide_cb_and_internal_pushes() {
             insert_by_date: 1,
             ..PushOptions::default()
         };
-        assert_eq!(rw::git_revwalk__push_glob(w, c"refs/*".as_ptr(), &opts), 0);
+        assert_eq!(git_revwalk__push_glob(w, c"refs/*".as_ptr(), &opts), 0);
         let mut times = Vec::new();
         let mut l = (*w).prefix.user_input.get();
         while !l.is_null() {
@@ -169,7 +217,7 @@ fn hide_cb_and_internal_pushes() {
         }
         assert!(times.len() > 5);
         assert!(times.windows(2).all(|t| t[0] >= t[1]), "{times:?}");
-        assert_eq!(rw::git_revwalk_reset(w), 0);
+        assert_eq!(git_revwalk_reset(w), 0);
         assert!((*w).prefix.user_input.get().is_null());
 
         // from_glob skips what is missing
@@ -178,20 +226,17 @@ fn hide_cb_and_internal_pushes() {
             ..PushOptions::default()
         };
         assert_eq!(
-            rw::git_revwalk__push_ref(w, c"refs/heads/nope".as_ptr(), &opts),
+            git_revwalk__push_ref(w, c"refs/heads/nope".as_ptr(), &opts),
             0
         );
-        assert_eq!(
-            rw::git_revwalk__push_glob(w, c"tags".as_ptr(), ptr::null()),
-            0
-        );
+        assert_eq!(git_revwalk__push_glob(w, c"tags".as_ptr(), ptr::null()), 0);
         let head = hex("a65fedf39aefe402d3bb6e24df4d4f5fe4547750");
         assert_eq!(
-            rw::git_revwalk__push_commit(w, &head, &PushOptions::default()),
+            git_revwalk__push_commit(w, &head, &PushOptions::default()),
             0
         );
         assert!(!drain(w).is_empty());
-        rw::git_revwalk_free(w);
+        git_revwalk_free(w);
         git_repository_free(repo);
     }
 }
@@ -203,11 +248,11 @@ fn commit_nodes_are_cs() {
     // SAFETY: as C calls them.
     unsafe {
         let mut w = ptr::null_mut();
-        assert_eq!(rw::git_revwalk_new(&mut w, repo), 0);
+        assert_eq!(git_revwalk_new(&mut w, repo), 0);
         let head = hex("a65fedf39aefe402d3bb6e24df4d4f5fe4547750");
-        let n = rw::git_revwalk__commit_lookup(w, &head);
+        let n = git_revwalk__commit_lookup(w, &head);
         assert!(!n.is_null());
-        assert_eq!(rw::git_revwalk__commit_lookup(w, &head), n);
+        assert_eq!(git_revwalk__commit_lookup(w, &head), n);
         assert_eq!((*n).oid, head);
         // C parses it: parents, time, the parsed bit where the Rust reads it
         assert_eq!(git_commit_list_parse(w.cast(), n.cast()), 0);
@@ -215,7 +260,7 @@ fn commit_nodes_are_cs() {
         assert_eq!((*n).out_degree, 1);
         assert_eq!((*n).time, 1_312_943_626);
         let parent: *mut CommitListNode = *(*n).parents;
-        assert_eq!(rw::git_revwalk__commit_lookup(w, &(*parent).oid), parent);
+        assert_eq!(git_revwalk__commit_lookup(w, &(*parent).oid), parent);
         assert_eq!(
             (*parent).oid.to_string(),
             "be3563ae3f795b2b4353bcce3a527ad0a4f7f644"
@@ -223,13 +268,13 @@ fn commit_nodes_are_cs() {
 
         // a node the Rust marks parsed: C does not read the (missing) object
         let bogus = hex("4242424242424242424242424242424242424242");
-        let b = rw::git_revwalk__commit_lookup(w, &bogus);
+        let b = git_revwalk__commit_lookup(w, &bogus);
         assert_eq!(git_commit_list_parse(w.cast(), b.cast()), -3);
         (*b).bits.set_flag(PARSED, true);
         assert_eq!(git_commit_list_parse(w.cast(), b.cast()), 0);
 
-        assert!(rw::git_revwalk__commit_lookup(w, ptr::null()).is_null());
-        rw::git_revwalk_free(w);
+        assert!(git_revwalk__commit_lookup(w, ptr::null()).is_null());
+        git_revwalk_free(w);
         git_repository_free(repo);
     }
 }
@@ -243,7 +288,7 @@ fn hashsig_exports() {
         let mut a = ptr::null_mut();
         let mut b = ptr::null_mut();
         assert_eq!(
-            hs::git_hashsig_create(&mut a, text.as_ptr().cast(), text.len(), 0),
+            git_hashsig_create(&mut a, text.as_ptr().cast(), text.len(), 0),
             0
         );
         let path = format!(
@@ -251,21 +296,21 @@ fn hashsig_exports() {
             env!("CARGO_MANIFEST_DIR")
         );
         assert_eq!(
-            hs::git_hashsig_create_fromfile(&mut b, path.as_ptr().cast::<c_char>(), 0),
+            git_hashsig_create_fromfile(&mut b, path.as_ptr().cast::<c_char>(), 0),
             0
         );
-        assert_eq!(hs::git_hashsig_compare(a, a), 100);
-        assert_eq!(hs::git_hashsig_compare(a, b), 0);
-        hs::git_hashsig_free(a);
-        hs::git_hashsig_free(b);
-        hs::git_hashsig_free(ptr::null_mut());
+        assert_eq!(git_hashsig_compare(a, a), 100);
+        assert_eq!(git_hashsig_compare(a, b), 0);
+        git_hashsig_free(a);
+        git_hashsig_free(b);
+        git_hashsig_free(ptr::null_mut());
 
         let mut c = ptr::null_mut();
-        assert_eq!(hs::git_hashsig_create(&mut c, c"a\n".as_ptr(), 2, 0), -6);
+        assert_eq!(git_hashsig_create(&mut c, c"a\n".as_ptr(), 2, 0), -6);
         assert_eq!(msg(), "file too small for similarity signature calculation");
         assert!(c.is_null());
         assert_eq!(
-            hs::git_hashsig_create_fromfile(&mut c, c"/nonexistent/x".as_ptr(), 0),
+            git_hashsig_create_fromfile(&mut c, c"/nonexistent/x".as_ptr(), 0),
             -3
         );
         assert_eq!(
@@ -273,7 +318,7 @@ fn hashsig_exports() {
             "could not find '/nonexistent/x' to open: No such file or directory"
         );
         assert_eq!(
-            hs::git_hashsig_create(&mut c, text.as_ptr().cast(), text.len(), 3),
+            git_hashsig_create(&mut c, text.as_ptr().cast(), text.len(), 3),
             -1
         );
         assert!(msg().starts_with("unrecoverable internal error"));
@@ -285,7 +330,7 @@ fn hashsig_exports() {
     let r = test_support::with_alloc_limit(&g, 0, || {
         let mut c = ptr::null_mut();
         // SAFETY: as above.
-        unsafe { hs::git_hashsig_create(&mut c, text.as_ptr().cast(), text.len(), 0) }
+        unsafe { git_hashsig_create(&mut c, text.as_ptr().cast(), text.len(), 0) }
     });
     assert_eq!(r, -1);
 }

@@ -7,16 +7,17 @@
 //! `git_array_oid_t` is [`GitArray<Oid>`].
 //!
 //! ```
-//! use libgit2_rs::util::array::GitArray;
-//! use libgit2_rs::{Oid, OidArray, OidType};
-//! # let _g = libgit2_rs::util::test_support::init();
-//! let a = Oid::from_prefix(b"aa", OidType::Sha1)?;
+//! use libgit2_rs::__test::util::array::GitArray;
+//! use libgit2_rs::__test::oidarray::OidArray;
+//! use libgit2_rs::{Oid, OidType};
+//! # let _g = libgit2_rs::__test::util::test_support::init();
+//! let a = Oid::from_prefix(b"aa", OidType::Sha1).unwrap();
 //! let mut arr: GitArray<Oid> = GitArray::new();
-//! libgit2_rs::oidarray::add(&mut arr, &a)?;
-//! libgit2_rs::oidarray::add(&mut arr, &a)?; // already there
+//! libgit2_rs::__test::oidarray::add(&mut arr, &a)?;
+//! libgit2_rs::__test::oidarray::add(&mut arr, &a)?; // already there
 //! let ids = OidArray::from_array(arr);
 //! assert_eq!(&ids[..], &[a]);
-//! # Ok::<(), libgit2_rs::util::errors::ErrorCode>(())
+//! # Ok::<(), libgit2_rs::__test::util::errors::ErrorCode>(())
 //! ```
 
 use core::ptr;
@@ -291,7 +292,7 @@ mod tests {
     fn add_remove_reverse() {
         let _g = crate::util::test_support::init();
         let ids: Vec<Oid> = (0..5u8)
-            .map(|i| Oid::from_prefix(&[b'a' + i], OidType::Sha1).unwrap())
+            .map(|i| Oid::parse_prefix(&[b'a' + i], OidType::Sha1).unwrap())
             .collect();
         let mut arr = GitArray::new();
         for id in ids.iter().chain(ids.iter()) {

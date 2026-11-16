@@ -1,12 +1,11 @@
 //! The safe Rust API of the object database: [`Odb`], [`OdbObject`],
-//! [`ObjectType`], backends ([`Backend`], the [`OdbBackend`] trait,
-//! [`Mempack`]) and streams ([`OdbWriter`]: `Write`, [`OdbReader`]:
-//! `Read`).
+//! [`ObjectType`], backends ([`Backend`], [`BackendRef`], the
+//! [`OdbBackend`] trait, [`Mempack`]) and streams ([`OdbWriter`]: `Write`,
+//! [`OdbReader`]: `Read`, [`OdbPackWriter`]: `Write`).
 //!
 //! ```
 //! # #[cfg(not(miri))] {
 //! use libgit2_rs::{Backend, ObjectType, Odb};
-//! let _g = libgit2_rs::util::test_support::init();
 //! let odb = Odb::new()?;
 //! let (backend, mempack) = Backend::mempack();
 //! odb.add_backend(backend, 1)?;
@@ -21,7 +20,8 @@
 use core::ffi::{c_char, c_int, c_void};
 use core::marker::PhantomData;
 use core::ptr::NonNull;
-use std::sync::Arc;
+use std::path::Path;
+use std::sync::{Arc, Mutex, PoisonError, Weak};
 
 use super::*;
 use crate::odb_mempack::MempackState;
@@ -35,9 +35,15 @@ fn err(code: ErrorCode) -> Error {
 
 /// `path` as a C string; a NUL inside it is refused (C would see a
 /// shorter path).
-fn c_path(path: &[u8]) -> ApiResult<std::ffi::CString> {
+fn c_path(path: &Path) -> ApiResult<std::ffi::CString> {
+    use std::os::unix::ffi::OsStrExt;
+    c_bytes(path.as_os_str().as_bytes())
+}
+
+/// Bytes as a C string, a NUL inside refused.
+fn c_bytes(path: &[u8]) -> ApiResult<std::ffi::CString> {
     std::ffi::CString::new(path).map_err(|_| {
-        Error::new(
+        Error::with(
             ErrorCode::INVALID,
             ErrorClass::INVALID,
             "path contains a NUL byte",
@@ -109,6 +115,7 @@ impl<'r> Odb<'r> {
 
     /// An odb without backends for ids of `oid_type` (`git_odb_new_ext`).
     pub fn with_oid_type(oid_type: OidType) -> ApiResult<Odb<'static>> {
+        crate::libgit2::ensure_init()?;
         let opts = GitOdbOptions {
             version: GIT_ODB_OPTIONS_VERSION,
             oid_type: oid_type.raw(),
@@ -118,8 +125,8 @@ impl<'r> Odb<'r> {
 
     /// The odb of an `objects` directory, with its loose and pack backends
     /// and its alternates (`git_odb_open_ext`).
-    pub fn open(objects_dir: &[u8], oid_type: OidType) -> ApiResult<Odb<'static>> {
-        let dir = c_path(objects_dir)?;
+    pub fn open(objects_dir: impl AsRef<Path>, oid_type: OidType) -> ApiResult<Odb<'static>> {
+        let dir = c_path(objects_dir.as_ref())?;
         let odb = Self::with_oid_type(oid_type)?;
         odb.inner()
             .add_default_backends(&dir, false, 0)
@@ -159,8 +166,8 @@ impl<'r> Odb<'r> {
 
     /// Add the loose and pack backends of another `objects` directory as
     /// alternates (`git_odb_add_disk_alternate`).
-    pub fn add_disk_alternate(&self, path: &[u8]) -> ApiResult<()> {
-        let dir = c_path(path)?;
+    pub fn add_disk_alternate(&self, path: impl AsRef<Path>) -> ApiResult<()> {
+        let dir = c_path(path.as_ref())?;
         self.inner()
             .add_default_backends(&dir, true, 0)
             .map_err(err)
@@ -171,25 +178,73 @@ impl<'r> Odb<'r> {
         self.inner().num_backends()
     }
 
+    /// The backend at `pos` (`git_odb_get_backend`), in priority order
+    /// ([`ErrorCode::NOT_FOUND`] past the end). The odb keeps owning it:
+    /// the handle borrows the odb.
+    pub fn get_backend(&self, pos: usize) -> ApiResult<BackendRef<'_>> {
+        let raw = self.inner().get_backend(pos).map_err(err)?;
+        Ok(BackendRef {
+            raw,
+            _odb: PhantomData,
+        })
+    }
+
+    /// `git_odb_write_pack`: a stream that receives a pack (the bytes of a
+    /// `.pack` file) and indexes it into the first backend that can (the
+    /// pack backend of an [`open`](Self::open)ed odb), on
+    /// [`commit`](OdbPackWriter::commit).
+    pub fn write_pack(&self) -> ApiResult<OdbPackWriter<'_>> {
+        // SAFETY: no progress callback.
+        let wp = unsafe { self.inner().write_pack(None, core::ptr::null_mut()) }.map_err(err)?;
+        let wp = NonNull::new(wp).ok_or_else(|| err(ErrorCode::GENERIC))?;
+        Ok(OdbPackWriter {
+            wp,
+            stats: GitIndexerProgress::default(),
+            _odb: PhantomData,
+        })
+    }
+
+    /// `git_odb_write_multi_pack_index`: write a `multi-pack-index` of the
+    /// packs of the first backend that can (the pack backend).
+    pub fn write_multi_pack_index(&self) -> ApiResult<()> {
+        self.inner().write_multi_pack_index().map_err(err)
+    }
+
+    /// `git_commit_graph_open` + `git_odb_set_commit_graph`: use the
+    /// commit-graph file of `objects_dir` (its `info/commit-graph`, read
+    /// when first needed) to speed up commit walks; `None` drops the
+    /// odb's commit-graph.
+    pub fn set_commit_graph(&self, objects_dir: Option<&Path>) -> ApiResult<()> {
+        let graph = match objects_dir {
+            None => None,
+            Some(d) => {
+                let d = c_path(d)?;
+                Some(
+                    crate::sys::commit_graph::CommitGraph::new(&d, self.oid_type().raw())
+                        .map_err(err)?,
+                )
+            }
+        };
+        self.inner().set_commit_graph(graph);
+        Ok(())
+    }
+
     /// Read an object (`git_odb_read`).
     pub fn read(&self, id: &Oid) -> ApiResult<OdbObject> {
-        self.inner().read(id).map(OdbObject).map_err(err)
+        OdbObject::checked(self.inner().read(id).map_err(err)?)
     }
 
     /// Read the object whose id starts with the first `len` hex digits of
     /// `short_id` (`git_odb_read_prefix`).
     pub fn read_prefix(&self, short_id: &Oid, len: usize) -> ApiResult<OdbObject> {
-        self.inner()
-            .read_prefix(short_id, len)
-            .map(OdbObject)
-            .map_err(err)
+        OdbObject::checked(self.inner().read_prefix(short_id, len).map_err(err)?)
     }
 
     /// An object's size and type, without reading it if a backend can tell
     /// (`git_odb_read_header`).
-    pub fn read_header(&self, id: &Oid) -> ApiResult<(usize, Option<ObjectType>)> {
+    pub fn read_header(&self, id: &Oid) -> ApiResult<(usize, ObjectType)> {
         let (len, t) = self.inner().read_header(id).map_err(err)?;
-        Ok((len, ObjectType::from_raw(t)))
+        Ok((len, valid_type(t)?))
     }
 
     /// Whether the object exists (`git_odb_exists`), refreshing the
@@ -308,28 +363,33 @@ impl<'r> Odb<'r> {
 
     /// A stream to read an object, its size and type
     /// (`git_odb_open_rstream`).
-    pub fn reader(&self, id: &Oid) -> ApiResult<(OdbReader<'_>, usize, Option<ObjectType>)> {
+    pub fn reader(&self, id: &Oid) -> ApiResult<(OdbReader<'_>, usize, ObjectType)> {
         let Some((stream, len, t)) = self.inner().open_rstream(id).map_err(err)? else {
-            return Err(Error::new(
+            return Err(Error::with(
                 ErrorCode::GENERIC,
                 ErrorClass::ODB,
                 "backend returned no stream",
             ));
         };
-        Ok((
-            OdbReader {
-                stream,
-                _odb: PhantomData,
-            },
-            len,
-            ObjectType::from_raw(t),
-        ))
+        let reader = OdbReader {
+            stream,
+            _odb: PhantomData,
+        };
+        Ok((reader, len, valid_type(t)?))
     }
 
     /// The id `data` would have as an object of `kind` (`git_odb_hash`).
     pub fn hash(data: &[u8], kind: ObjectType, oid_type: OidType) -> ApiResult<Oid> {
+        crate::libgit2::ensure_init()?;
         hash_object(Some(data), data.len(), kind.raw(), oid_type.raw()).map_err(err)
     }
+}
+
+/// The type `t` a backend gave, or the error of a type that is not one of
+/// the four (a backend's garbage, which C would hand on).
+fn valid_type(t: git_object_t) -> ApiResult<ObjectType> {
+    ObjectType::from_raw(t)
+        .ok_or_else(|| Error::with(ErrorCode::GENERIC, ErrorClass::ODB, "invalid object type"))
 }
 
 /// A query of [`Odb::expand_ids`] (`git_odb_expand_id`).
@@ -358,6 +418,15 @@ unsafe impl Send for OdbObject {}
 unsafe impl Sync for OdbObject {}
 
 impl OdbObject {
+    /// The handle of the object at `p` (our reference), if its type is
+    /// one of the four (a backend may make one up with hash verification
+    /// off).
+    fn checked(p: NonNull<GitOdbObject>) -> ApiResult<OdbObject> {
+        let o = OdbObject(p);
+        valid_type(git_object_t::from(o.obj().cached.type_))?;
+        Ok(o)
+    }
+
     fn obj(&self) -> &GitOdbObject {
         // SAFETY: the handle holds a reference: the object is live, and
         // only its count (atomic) changes.
@@ -391,10 +460,11 @@ impl OdbObject {
         self.len() == 0
     }
 
-    /// The type (`git_odb_object_type`); `None` for a type a backend made
-    /// up (with hash verification off).
-    pub fn kind(&self) -> Option<ObjectType> {
+    /// The type (`git_odb_object_type`).
+    pub fn kind(&self) -> ObjectType {
+        // `checked` made sure it is one of the four.
         ObjectType::from_raw(git_object_t::from(self.obj().cached.type_))
+            .unwrap_or(ObjectType::Blob)
     }
 }
 
@@ -520,6 +590,145 @@ impl core::fmt::Debug for OdbReader<'_> {
     }
 }
 
+/// `git_indexer_progress`, mirrored (`git2/indexer.h`).
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct GitIndexerProgress {
+    total_objects: core::ffi::c_uint,
+    indexed_objects: core::ffi::c_uint,
+    received_objects: core::ffi::c_uint,
+    local_objects: core::ffi::c_uint,
+    total_deltas: core::ffi::c_uint,
+    indexed_deltas: core::ffi::c_uint,
+    received_bytes: usize,
+}
+
+/// The progress of indexing a pack (`git_indexer_progress`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct IndexerProgress {
+    /// The objects in the pack.
+    pub total_objects: u32,
+    /// The objects indexed.
+    pub indexed_objects: u32,
+    /// The objects received.
+    pub received_objects: u32,
+    /// The objects that a thin pack's deltas needed from the odb.
+    pub local_objects: u32,
+    /// The deltas in the pack.
+    pub total_deltas: u32,
+    /// The deltas resolved.
+    pub indexed_deltas: u32,
+    /// The bytes received.
+    pub received_bytes: usize,
+}
+
+impl From<GitIndexerProgress> for IndexerProgress {
+    fn from(p: GitIndexerProgress) -> IndexerProgress {
+        IndexerProgress {
+            total_objects: p.total_objects,
+            indexed_objects: p.indexed_objects,
+            received_objects: p.received_objects,
+            local_objects: p.local_objects,
+            total_deltas: p.total_deltas,
+            indexed_deltas: p.indexed_deltas,
+            received_bytes: p.received_bytes,
+        }
+    }
+}
+
+/// A stream that writes a pack into an odb (`git_odb_write_pack`'s
+/// `git_odb_writepack`): write the pack's bytes, then
+/// [`commit`](Self::commit); dropped before, the pack is discarded.
+pub struct OdbPackWriter<'odb> {
+    wp: NonNull<GitOdbWritepack>,
+    stats: GitIndexerProgress,
+    _odb: PhantomData<&'odb ()>,
+}
+
+impl OdbPackWriter<'_> {
+    /// The progress so far.
+    pub fn progress(&self) -> IndexerProgress {
+        self.stats.into()
+    }
+
+    /// Finish the pack: resolve its deltas, write its index and make it
+    /// visible to the odb (`git_odb_writepack.commit`); the final
+    /// progress.
+    pub fn commit(mut self) -> ApiResult<IndexerProgress> {
+        let wp = self.wp.as_ptr();
+        // SAFETY: our live writepack; its slots are set by the backend
+        // that made it.
+        let Some(commit) = (unsafe { (*wp).commit }) else {
+            return Err(err(ErrorCode::GENERIC));
+        };
+        // SAFETY: the writepack's own slot, with it and our stats (a
+        // `git_indexer_progress`).
+        let r = unsafe { commit(wp, (&raw mut self.stats).cast()) };
+        if r < 0 {
+            return Err(err(ErrorCode::from_raw(r).unwrap_or(ErrorCode::GENERIC)));
+        }
+        Ok(self.stats.into())
+    }
+}
+
+impl std::io::Write for OdbPackWriter<'_> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let wp = self.wp.as_ptr();
+        // SAFETY: as in `commit`.
+        let Some(append) = (unsafe { (*wp).append }) else {
+            return Err(io_error(ErrorCode::GENERIC.raw()));
+        };
+        // SAFETY: the writepack's own slot; `buf` readable for its length.
+        let r = unsafe {
+            append(
+                wp,
+                buf.as_ptr().cast(),
+                buf.len(),
+                (&raw mut self.stats).cast(),
+            )
+        };
+        if r < 0 {
+            return Err(io_error(r));
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Drop for OdbPackWriter<'_> {
+    fn drop(&mut self) {
+        let wp = self.wp.as_ptr();
+        // SAFETY: our live writepack, freed once through its own slot.
+        if let Some(free) = unsafe { (*wp).free } {
+            // SAFETY: as above.
+            unsafe { free(wp) };
+        }
+    }
+}
+
+impl core::fmt::Debug for OdbPackWriter<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("OdbPackWriter")
+            .field("progress", &self.progress())
+            .finish()
+    }
+}
+
+crate::c_layout_test! {
+    headers: ["git2/indexer.h"],
+    types: [
+        GitIndexerProgress => "git_indexer_progress" {
+            total_objects, indexed_objects, received_objects, local_objects,
+            total_deltas, indexed_deltas, received_bytes
+        },
+    ],
+    asserts: [],
+}
+
 // ---------------------------------------------------------------------------
 // Backends
 // ---------------------------------------------------------------------------
@@ -546,19 +755,21 @@ impl Drop for Backend {
     }
 }
 
-/// Options of the loose backend (`git_odb_backend_loose_options`).
+/// Options of the loose backend (`git_odb_backend_loose_options`): a
+/// by-value builder.
+///
+/// ```
+/// use libgit2_rs::{LooseOptions, OidType};
+/// let o = LooseOptions::new().compression_level(9).fsync(true).oid_type(OidType::Sha1);
+/// # let _ = o;
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LooseOptions {
-    /// zlib's level (0–9); `None` for the default (fastest).
-    pub compression_level: Option<u32>,
-    /// `fsync` each object written.
-    pub fsync: bool,
-    /// Mode of the directories made (`None`: 0777, less the umask).
-    pub dir_mode: Option<u32>,
-    /// Mode of the files written (`None`: 0444).
-    pub file_mode: Option<u32>,
-    /// The type of the ids.
-    pub oid_type: OidType,
+    compression_level: Option<u32>,
+    fsync: bool,
+    dir_mode: Option<u32>,
+    file_mode: Option<u32>,
+    oid_type: OidType,
 }
 
 impl Default for LooseOptions {
@@ -573,10 +784,49 @@ impl Default for LooseOptions {
     }
 }
 
+impl LooseOptions {
+    /// The defaults (`GIT_ODB_BACKEND_LOOSE_OPTIONS_INIT`): zlib's fastest
+    /// level, no `fsync`, modes 0777 / 0444 (less the umask), SHA-1 ids.
+    pub fn new() -> LooseOptions {
+        LooseOptions::default()
+    }
+
+    /// zlib's level, 0 to 9 (more is 9).
+    pub fn compression_level(mut self, level: u32) -> LooseOptions {
+        self.compression_level = Some(level.min(9));
+        self
+    }
+
+    /// `fsync` each object written (`GIT_ODB_BACKEND_LOOSE_FSYNC`).
+    pub fn fsync(mut self, on: bool) -> LooseOptions {
+        self.fsync = on;
+        self
+    }
+
+    /// The mode of the directories made.
+    pub fn dir_mode(mut self, mode: u32) -> LooseOptions {
+        self.dir_mode = Some(mode);
+        self
+    }
+
+    /// The mode of the files written.
+    pub fn file_mode(mut self, mode: u32) -> LooseOptions {
+        self.file_mode = Some(mode);
+        self
+    }
+
+    /// The type of the ids.
+    pub fn oid_type(mut self, t: OidType) -> LooseOptions {
+        self.oid_type = t;
+        self
+    }
+}
+
 impl Backend {
     /// The loose backend of `objects_dir` (`git_odb_backend_loose`).
-    pub fn loose(objects_dir: &[u8], opts: &LooseOptions) -> ApiResult<Backend> {
-        c_path(objects_dir)?;
+    pub fn loose(objects_dir: impl AsRef<Path>, opts: LooseOptions) -> ApiResult<Backend> {
+        crate::libgit2::ensure_init()?;
+        let dir = c_path(objects_dir.as_ref())?;
         let o = GitOdbBackendLooseOptions {
             version: 1,
             flags: if opts.fsync {
@@ -591,20 +841,36 @@ impl Backend {
             file_mode: opts.file_mode.unwrap_or(0),
             oid_type: opts.oid_type.raw(),
         };
-        crate::odb_loose::new_backend(objects_dir, Some(&o))
+        crate::odb_loose::new_backend(dir.to_bytes(), Some(&o))
             .map(Backend)
             .map_err(err)
     }
 
-    /// The pack backend of `objects_dir` (`git_odb_backend_pack`).
-    pub fn pack(objects_dir: &[u8], oid_type: OidType) -> ApiResult<Backend> {
-        let dir = c_path(objects_dir)?;
+    /// The pack backend of `objects_dir`: its `pack/` directory's packs
+    /// and `multi-pack-index` (`git_odb_backend_pack`).
+    pub fn pack(objects_dir: impl AsRef<Path>, oid_type: OidType) -> ApiResult<Backend> {
+        crate::libgit2::ensure_init()?;
+        let dir = c_path(objects_dir.as_ref())?;
         let opts = GitOdbBackendPackOptions {
             version: 1,
             oid_type: oid_type.raw(),
         };
         crate::odb_pack::backend_pack_raw(&dir, &opts)
             .map(Backend)
+            .map_err(err)
+    }
+
+    /// The backend of the one pack whose index is `index_path` (a
+    /// `.idx`, beside its `.pack`; `git_odb_backend_one_pack`).
+    pub fn one_pack(index_path: impl AsRef<Path>, oid_type: OidType) -> ApiResult<Backend> {
+        crate::libgit2::ensure_init()?;
+        let idx = c_path(index_path.as_ref())?;
+        let opts = GitOdbBackendPackOptions {
+            version: 1,
+            oid_type: oid_type.raw(),
+        };
+        crate::odb_pack::backend_one_pack(&idx, Some(&opts))
+            .map(|t| Backend(t.into_c()))
             .map_err(err)
     }
 
@@ -618,14 +884,109 @@ impl Backend {
 
     /// A backend implemented in Rust.
     pub fn custom(backend: impl OdbBackend) -> Backend {
-        Backend(
-            ffibox::CTable::<BackendTable, RustBackend>::new(RustBackend(Box::new(backend)))
-                .into_c(),
-        )
+        let boxed: Box<dyn OdbBackend> = Box::new(backend);
+        let state: *const dyn OdbBackend = &raw const *boxed;
+        let table = ffibox::CTable::<BackendTable, RustBackend>::new(RustBackend(
+            crate::api::NoUnwindDrop::new(boxed),
+        ))
+        .into_c();
+        register(table, Known::Rust(RustState(state)));
+        Backend(table)
     }
 }
 
-/// The objects of a mempack backend ([`Backend::mempack`]).
+// ---------------------------------------------------------------------------
+// Backends of an odb
+// ---------------------------------------------------------------------------
+
+/// A backend the safe API (or `git_mempack_new`) made, by its table.
+enum Known {
+    /// A mempack: its objects.
+    Mempack(Weak<MempackState>),
+    /// A Rust backend: its value, in its table's `Box`.
+    Rust(RustState),
+}
+
+/// The address of a Rust backend's value.
+struct RustState(*const dyn OdbBackend);
+
+// SAFETY: only an address, compared and (by `BackendRef`, under its
+// contract) read as the `Send + Sync` value it points to.
+unsafe impl Send for RustState {}
+
+/// The tables of the backends that are alive, with what they are; an entry
+/// goes when its backend's state is dropped (before the table is freed),
+/// so a table found here is that backend.
+static KNOWN: Mutex<Vec<(usize, Known)>> = Mutex::new(Vec::new());
+
+fn known() -> std::sync::MutexGuard<'static, Vec<(usize, Known)>> {
+    KNOWN.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn register(table: NonNull<GitOdbBackend>, what: Known) {
+    known().push((table.as_ptr() as usize, what));
+}
+
+/// Record that `table` is the mempack of `state` (`git_mempack_new`).
+pub(crate) fn register_mempack(table: NonNull<GitOdbBackend>, state: &Arc<MempackState>) {
+    register(table, Known::Mempack(Arc::downgrade(state)));
+}
+
+/// Forget the mempack of `state` (its table is being freed).
+pub(crate) fn unregister_mempack(state: &Arc<MempackState>) {
+    known().retain(
+        |(_, k)| !matches!(k, Known::Mempack(w) if core::ptr::eq(w.as_ptr(), Arc::as_ptr(state))),
+    );
+}
+
+/// A backend of an odb ([`Odb::get_backend`]), which the odb owns: it
+/// borrows the odb. What the safe API made can be reached back through it
+/// ([`as_mempack`](Self::as_mempack), [`downcast_ref`](Self::downcast_ref)).
+pub struct BackendRef<'odb> {
+    raw: NonNull<GitOdbBackend>,
+    _odb: PhantomData<&'odb ()>,
+}
+
+impl core::fmt::Debug for BackendRef<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("BackendRef").finish_non_exhaustive()
+    }
+}
+
+impl<'odb> BackendRef<'odb> {
+    /// The mempack's handle, if the backend is a mempack
+    /// ([`Backend::mempack`] or `git_mempack_new`).
+    pub fn as_mempack(&self) -> Option<Mempack> {
+        let k = known();
+        k.iter().find_map(|(t, what)| match what {
+            Known::Mempack(w) if *t == self.raw.as_ptr() as usize => w.upgrade().map(Mempack),
+            _ => None,
+        })
+    }
+
+    /// The Rust backend, if the backend is a [`Backend::custom`] of a `T`.
+    pub fn downcast_ref<T: OdbBackend>(&self) -> Option<&'odb T> {
+        let p = {
+            let k = known();
+            k.iter().find_map(|(t, what)| match what {
+                Known::Rust(RustState(p)) if *t == self.raw.as_ptr() as usize => Some(*p),
+                _ => None,
+            })?
+        };
+        // SAFETY: the table is a live Rust backend's (its entry goes before
+        // its state is dropped), owned by the odb this handle borrows: the
+        // odb frees its backends only when its last reference goes, and
+        // the borrowed `Odb` holds one, so the value (in its `Box`, which
+        // does not move) lives for `'odb`. It is only read (`&`), and it is
+        // `Sync`.
+        let b: &'odb dyn OdbBackend = unsafe { &*p };
+        let any: &'odb dyn core::any::Any = b;
+        any.downcast_ref::<T>()
+    }
+}
+
+/// The objects of a mempack backend ([`Backend::mempack`],
+/// [`BackendRef::as_mempack`]).
 #[derive(Clone, Debug)]
 pub struct Mempack(Arc<MempackState>);
 
@@ -650,22 +1011,54 @@ impl Mempack {
     pub fn contains(&self, id: &Oid) -> bool {
         self.0.exists(id)
     }
+
+    /// `git_mempack_dump`: a pack (the bytes of a `.pack` file) of the
+    /// commits written to the mempack, with every object they reach,
+    /// read from `repo`'s odb (which should have the mempack as a
+    /// backend).
+    pub fn dump(&self, repo: &crate::repository::Repository) -> ApiResult<Vec<u8>> {
+        let mut pack = crate::util::str::GitStr::new();
+        // SAFETY: a live repository, borrowed for the call.
+        unsafe { crate::odb_mempack::dump(&mut pack, repo.raw_ptr().cast(), &self.0) }
+            .map_err(err)?;
+        Ok(pack.as_bytes().to_vec())
+    }
 }
 
-/// An odb backend implemented in Rust ([`Backend::custom`]). Errors with
-/// the code [`ErrorCode::NOT_FOUND`] mean "not here"; with
-/// [`ErrorCode::PASSTHROUGH`], "ask the other backends". The odb calls a
-/// backend with its lock held, from any thread: a backend must not call
-/// back into the odb it belongs to (that deadlocks, as in C).
-pub trait OdbBackend: Send + Sync + 'static {
-    /// The data and type of `id`.
-    fn read(&self, id: &Oid) -> ApiResult<(Vec<u8>, ObjectType)>;
+/// An odb backend implemented in Rust ([`Backend::custom`]).
+///
+/// Errors with the code [`ErrorCode::NOT_FOUND`] mean "not here"; with
+/// [`ErrorCode::PASSTHROUGH`], "ask the other backends". A panic in a
+/// method is caught and becomes an error of class
+/// [`ErrorClass::INTERNAL`]; a success code or [`ErrorCode::ITER_OVER`]
+/// in an error becomes a plain failure. Every method has a default (by
+/// default the backend is empty and passes writes on), so that the trait
+/// can grow. Its `Drop` may panic: the panic is caught (and its payload
+/// leaked), as C frees a backend where it cannot unwind.
+///
+/// The odb calls a backend with its lock held, from any thread. A backend
+/// must not call back into the odb it belongs to: that is detected and
+/// fails (C deadlocks). A backend that holds a clone of its own odb keeps
+/// it alive forever (a cycle).
+pub trait OdbBackend: core::any::Any + Send + Sync + 'static {
+    /// The data and type of `id`; by default, not here.
+    fn read(&self, id: &Oid) -> ApiResult<(Vec<u8>, ObjectType)> {
+        let _ = id;
+        Err(Error::with(ErrorCode::NOT_FOUND, ErrorClass::NONE, ""))
+    }
 
-    /// Store an object (whose id the odb computed).
-    fn write(&self, id: &Oid, data: &[u8], kind: ObjectType) -> ApiResult<()>;
+    /// Store an object (whose id the odb computed); by default, passed
+    /// on to the other backends.
+    fn write(&self, id: &Oid, data: &[u8], kind: ObjectType) -> ApiResult<()> {
+        let _ = (id, data, kind);
+        Err(passthrough())
+    }
 
-    /// Whether `id` is here.
-    fn exists(&self, id: &Oid) -> bool;
+    /// Whether `id` is here; by default, `false`.
+    fn exists(&self, id: &Oid) -> bool {
+        let _ = id;
+        false
+    }
 
     /// The size and type of `id`; by default, the odb reads the object.
     fn read_header(&self, id: &Oid) -> ApiResult<(usize, ObjectType)> {
@@ -704,7 +1097,7 @@ pub trait OdbBackend: Send + Sync + 'static {
         if self.exists(id) {
             Ok(())
         } else {
-            Err(Error::new(
+            Err(Error::with(
                 ErrorCode::NOT_FOUND,
                 ErrorClass::ODB,
                 "object not found",
@@ -712,22 +1105,30 @@ pub trait OdbBackend: Send + Sync + 'static {
         }
     }
 }
-
 fn passthrough() -> Error {
-    Error::new(ErrorCode::PASSTHROUGH, ErrorClass::NONE, "")
+    Error::with(ErrorCode::PASSTHROUGH, ErrorClass::NONE, "")
 }
 
 /// A Rust backend's state behind its table.
-struct RustBackend(Box<dyn OdbBackend>);
+struct RustBackend(crate::api::NoUnwindDrop<Box<dyn OdbBackend>>);
+
+impl Drop for RustBackend {
+    fn drop(&mut self) {
+        // Before the value goes (the field is dropped after this).
+        let p: *const dyn OdbBackend = &raw const **self.0;
+        known()
+            .retain(|(_, k)| !matches!(k, Known::Rust(RustState(q)) if core::ptr::addr_eq(*q, p)));
+    }
+}
 
 /// The C status of a Rust backend's error: the message set as C does.
 fn raise(e: &Error) -> c_int {
-    if e.code() != ErrorCode::PASSTHROUGH && e.code() != ErrorCode::NOT_FOUND
+    if e.raw_code() != ErrorCode::PASSTHROUGH && e.raw_code() != ErrorCode::NOT_FOUND
         || !e.message_bytes().is_empty()
     {
-        let _ = errors::set_str(e.class(), e.message_bytes());
+        let _ = errors::set_str(e.raw_class(), e.message_bytes());
     }
-    e.code().raw()
+    e.user_code().raw()
 }
 
 /// Copy `data` into `git__allocator` memory for C (with a NUL).
@@ -750,7 +1151,7 @@ ffibox::impl_cvtable! {
     unsafe impl CVtable<RustBackend> for BackendTable {}
     base = backend_base();
     fn read(buffer_p: *mut *mut c_void, len_p: *mut usize, type_p: *mut git_object_t, @backend, oid: *const Oid) -> c_int {
-        on panic: -1,
+        on panic: { errors::set_panic_error(); -1 },
         on busy: busy(),
         |s: &RustBackend| {
             // SAFETY: C's contract: a readable id.
@@ -772,7 +1173,7 @@ ffibox::impl_cvtable! {
         },
     }
     fn read_prefix(out: *mut Oid, buffer_p: *mut *mut c_void, len_p: *mut usize, type_p: *mut git_object_t, @backend, short: *const Oid, len: usize) -> c_int {
-        on panic: -1,
+        on panic: { errors::set_panic_error(); -1 },
         on busy: busy(),
         |s: &RustBackend| {
             // SAFETY: C's contract: a readable id.
@@ -796,7 +1197,7 @@ ffibox::impl_cvtable! {
         },
     }
     fn read_header(len_p: *mut usize, type_p: *mut git_object_t, @backend, oid: *const Oid) -> c_int {
-        on panic: -1,
+        on panic: { errors::set_panic_error(); -1 },
         on busy: busy(),
         |s: &RustBackend| {
             // SAFETY: C's contract: a readable id.
@@ -813,7 +1214,7 @@ ffibox::impl_cvtable! {
         },
     }
     fn write(@backend, oid: *const Oid, data: *const c_void, len: usize, type_: git_object_t) -> c_int {
-        on panic: -1,
+        on panic: { errors::set_panic_error(); -1 },
         on busy: busy(),
         |s: &RustBackend| {
             let Some(kind) = ObjectType::from_raw(type_) else {
@@ -839,7 +1240,7 @@ ffibox::impl_cvtable! {
         |s: &RustBackend| c_int::from(s.0.exists(unsafe { &*oid })),
     }
     fn exists_prefix(out: *mut Oid, @backend, short: *const Oid, len: usize) -> c_int {
-        on panic: -1,
+        on panic: { errors::set_panic_error(); -1 },
         on busy: busy(),
         |s: &RustBackend| {
             // SAFETY: C's contract: a readable id.
@@ -854,7 +1255,7 @@ ffibox::impl_cvtable! {
         },
     }
     fn refresh(@backend) -> c_int {
-        on panic: -1,
+        on panic: { errors::set_panic_error(); -1 },
         on busy: busy(),
         |s: &RustBackend| match s.0.refresh() {
             Ok(()) => 0,
@@ -862,7 +1263,7 @@ ffibox::impl_cvtable! {
         },
     }
     fn foreach(@backend, cb: ForeachCb, payload: *mut c_void) -> c_int {
-        on panic: -1,
+        on panic: { errors::set_panic_error(); -1 },
         on busy: busy(),
         |s: &RustBackend| {
             let Some(cb) = cb else {
@@ -870,6 +1271,11 @@ ffibox::impl_cvtable! {
             };
             let mut stop = 0;
             let r = s.0.foreach(&mut |id| {
+                // A backend that ignores `false` gets `false` again, and C's
+                // callback is not called after it asked to stop (S-6b).
+                if stop != 0 {
+                    return false;
+                }
                 // SAFETY: C's callback, with its payload.
                 stop = errors::set_after_callback(unsafe { cb(id, payload) }, "git_odb_foreach");
                 stop == 0
@@ -884,7 +1290,7 @@ ffibox::impl_cvtable! {
         },
     }
     fn freshen(@backend, oid: *const Oid) -> c_int {
-        on panic: -1,
+        on panic: { errors::set_panic_error(); -1 },
         on busy: busy(),
         // SAFETY: C's contract: a readable id.
         |s: &RustBackend| match s.0.freshen(unsafe { &*oid }) {

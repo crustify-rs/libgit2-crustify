@@ -11,8 +11,8 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::process::Command;
 
-use libgit2_rs::util::hashmap::{CStrKey, GitHashMap, GitHashSet};
-use libgit2_rs::util::test_support;
+use libgit2_rs::__test::util::hashmap::{CStrKey, GitHashMap, GitHashSet};
+use libgit2_rs::__test::util::test_support;
 
 struct Rng(u64);
 impl Rng {

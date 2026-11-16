@@ -2,11 +2,46 @@
 
 #![allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)]
 
-use core::ffi::c_void;
+use core::ffi::{c_int, c_void};
 use core::ptr;
 
-use libgit2_rs::delta::{self, ffi};
-use libgit2_rs::util::{alloc, errors, test_support};
+use libgit2_rs::__test::delta;
+use libgit2_rs::__test::delta::ffi::git_delta_index;
+use libgit2_rs::__test::util::{alloc, errors, test_support};
+
+// The C ABI under test, declared as C declares it (the signatures are the
+// `src` exports').
+unsafe extern "C" {
+    fn git_delta_apply(
+        out: *mut *mut c_void,
+        out_len: *mut usize,
+        base: *const u8,
+        base_len: usize,
+        delta: *const u8,
+        delta_len: usize,
+    ) -> c_int;
+    fn git_delta_create_from_index(
+        out: *mut *mut c_void,
+        out_size: *mut usize,
+        index: *const git_delta_index,
+        trg_buf: *const c_void,
+        trg_size: usize,
+        max_size: usize,
+    ) -> c_int;
+    fn git_delta_index_free(index: *mut git_delta_index);
+    fn git_delta_index_init(
+        out: *mut *mut git_delta_index,
+        buf: *const c_void,
+        bufsize: usize,
+    ) -> c_int;
+    fn git_delta_index_size(index: *mut git_delta_index) -> usize;
+    fn git_delta_read_header(
+        base_out: *mut usize,
+        result_out: *mut usize,
+        delta: *const u8,
+        delta_len: usize,
+    ) -> c_int;
+}
 
 fn msg() -> Vec<u8> {
     errors::last_message().unwrap_or_default()
@@ -24,7 +59,7 @@ fn apply_and_create() {
     unsafe {
         let mut index = ptr::null_mut();
         assert_eq!(
-            ffi::git_delta_index_init(&mut index, src.as_ptr().cast(), src.len()),
+            git_delta_index_init(&mut index, src.as_ptr().cast(), src.len()),
             0
         );
         assert!(!index.is_null());
@@ -34,12 +69,12 @@ fn apply_and_create() {
             h += 1;
         }
         assert_eq!(
-            ffi::git_delta_index_size(index),
+            git_delta_index_size(index),
             32 + entries * 24 + (1 << h) * 8
         );
         let (mut out, mut out_len) = (ptr::null_mut::<c_void>(), 0usize);
         assert_eq!(
-            ffi::git_delta_create_from_index(
+            git_delta_create_from_index(
                 &mut out,
                 &mut out_len,
                 index,
@@ -53,14 +88,14 @@ fn apply_and_create() {
         assert_eq!(delta::diff(&src, &trg, 0).unwrap().unwrap(), d);
         let (mut b, mut r) = (0usize, 0usize);
         assert_eq!(
-            ffi::git_delta_read_header(&mut b, &mut r, d.as_ptr(), d.len()),
+            git_delta_read_header(&mut b, &mut r, d.as_ptr(), d.len()),
             0
         );
         assert_eq!((b, r), (src.len(), trg.len()));
 
         let (mut res, mut res_len) = (ptr::null_mut::<c_void>(), 1usize);
         assert_eq!(
-            ffi::git_delta_apply(
+            git_delta_apply(
                 &mut res,
                 &mut res_len,
                 src.as_ptr(),
@@ -79,7 +114,7 @@ fn apply_and_create() {
 
         // max_size too small: GIT_EBUFS, NULL.
         assert_eq!(
-            ffi::git_delta_create_from_index(
+            git_delta_create_from_index(
                 &mut out,
                 &mut out_len,
                 index,
@@ -93,16 +128,16 @@ fn apply_and_create() {
         assert_eq!(out_len, 0);
         // Empty target: 0, NULL.
         assert_eq!(
-            ffi::git_delta_create_from_index(&mut out, &mut out_len, index, ptr::null(), 0, 0),
+            git_delta_create_from_index(&mut out, &mut out_len, index, ptr::null(), 0, 0),
             0
         );
         assert!(out.is_null());
-        ffi::git_delta_index_free(index);
-        ffi::git_delta_index_free(ptr::null_mut());
+        git_delta_index_free(index);
+        git_delta_index_free(ptr::null_mut());
 
-        assert_eq!(ffi::git_delta_index_init(&mut index, ptr::null(), 10), 0);
+        assert_eq!(git_delta_index_init(&mut index, ptr::null(), 10), 0);
         assert!(index.is_null());
-        assert_eq!(ffi::git_delta_index_size(ptr::null_mut()), usize::MAX);
+        assert_eq!(git_delta_index_size(ptr::null_mut()), usize::MAX);
         assert_eq!(msg(), b"invalid argument: 'index'");
     }
 }
@@ -116,7 +151,7 @@ fn apply_failures() {
     unsafe {
         let (mut out, mut len) = (ptr::dangling_mut::<c_void>(), 7usize);
         assert_eq!(
-            ffi::git_delta_apply(
+            git_delta_apply(
                 &mut out,
                 &mut len,
                 base.as_ptr(),
@@ -132,7 +167,7 @@ fn apply_failures() {
         let (mut b, mut r) = (0usize, 99usize);
         // The base size is written before the result's fails.
         assert_eq!(
-            ffi::git_delta_read_header(&mut b, &mut r, [0x05u8, 0x80].as_ptr(), 2),
+            git_delta_read_header(&mut b, &mut r, [0x05u8, 0x80].as_ptr(), 2),
             -1
         );
         assert_eq!((b, r), (5, 99));
@@ -150,7 +185,7 @@ fn apply_under_alloc_limit() {
         unsafe {
             let (mut out, mut len) = (ptr::null_mut::<c_void>(), 0usize);
             assert_eq!(
-                ffi::git_delta_apply(
+                git_delta_apply(
                     &mut out,
                     &mut len,
                     base.as_ptr(),
@@ -174,19 +209,12 @@ fn index_freed_with_git_free() {
     unsafe {
         let mut index = ptr::null_mut();
         assert_eq!(
-            ffi::git_delta_index_init(&mut index, src.as_ptr().cast(), src.len()),
+            git_delta_index_init(&mut index, src.as_ptr().cast(), src.len()),
             0
         );
         let (mut out, mut out_len) = (ptr::null_mut::<c_void>(), 0usize);
         assert_eq!(
-            ffi::git_delta_create_from_index(
-                &mut out,
-                &mut out_len,
-                index,
-                src.as_ptr().cast(),
-                500,
-                0
-            ),
+            git_delta_create_from_index(&mut out, &mut out_len, index, src.as_ptr().cast(), 500, 0),
             0
         );
         assert!(out_len >= delta::GIT_DELTA_SIZE_MIN);

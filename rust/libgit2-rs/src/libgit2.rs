@@ -7,9 +7,9 @@
 //! shutdown callbacks. The features are those of the build's
 //! `git2_features.h` (read by `build.rs` into `cfg(git_feature = …)`).
 //!
-//! The safe API is [`Libgit2`], a guard that keeps the library initialized
-//! while it lives, and [`version`], [`features`], [`feature_backend`],
-//! [`buildinfo`].
+//! The safe API is [`Libgit2`] (eager initialization, the version, the
+//! features, the build) and [`ensure_init`], which every public
+//! constructor calls.
 
 use core::ffi::{CStr, c_char, c_int};
 
@@ -283,7 +283,7 @@ fn init_fns() -> [crate::util::runtime::InitFn; 17] {
 }
 
 /// `git_libgit2_init`: the new init count, or a negative error. Crate-
-/// internal: the safe API is [`Libgit2`], whose guards balance it.
+/// internal: the safe API initializes through [`ensure_init`].
 pub(crate) fn init() -> c_int {
     let fns = init_fns();
     // SAFETY: each is a subsystem's global init function, sound to call at
@@ -297,35 +297,155 @@ pub(crate) fn shutdown() -> c_int {
     crate::util::runtime::shutdown()
 }
 
-/// A guard that keeps libgit2 initialized while it lives
-/// (`git_libgit2_init` / `git_libgit2_shutdown`).
-#[derive(Debug)]
+/// Initialize the library once for the process, for the safe API, and
+/// never tear it down from it (S-4): every public constructor calls this,
+/// so no owner outlives the library and no API fails for want of an init.
+/// The count it takes is never released, so a balanced
+/// `git_libgit2_init`/`git_libgit2_shutdown` pair from C leaves the library
+/// up. Fast after the first call (one atomic load).
+pub(crate) fn ensure_init() -> Result<(), Error> {
+    use core::sync::atomic::{AtomicBool, Ordering};
+    static DONE: AtomicBool = AtomicBool::new(false);
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    if DONE.load(Ordering::Acquire) {
+        return Ok(());
+    }
+    let _l = LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if DONE.load(Ordering::Acquire) {
+        return Ok(());
+    }
+    let r = init_for_api();
+    if r < 0 {
+        return Err(Error::last(
+            ErrorCode::check(r).err().unwrap_or(ErrorCode::GENERIC),
+        ));
+    }
+    DONE.store(true, Ordering::Release);
+    Ok(())
+}
+
+/// The whole library's init.
+#[cfg(not(miri))]
+fn init_for_api() -> c_int {
+    init()
+}
+
+/// Under Miri (which cannot call the C that stays), the Rust subsystems the
+/// Miri-tested API uses: the allocator and the error state.
+#[cfg(miri)]
+fn init_for_api() -> c_int {
+    unsafe extern "C" fn alloc_init() -> c_int {
+        crate::util::export::status(crate::util::alloc::global_init())
+    }
+    unsafe extern "C" fn error_init() -> c_int {
+        crate::util::export::status(crate::util::errors::global_init())
+    }
+    // SAFETY: the two init functions are the Rust subsystems' own, sound to
+    // call during initialization (with the runtime's lock held, as `init`).
+    unsafe { crate::util::runtime::init(&[alloc_init, error_init]) }
+}
+
+crate::api::flags::bitflags! {
+    /// The features this build has (`git_feature_t`,
+    /// `git_libgit2_features`).
+    pub struct Features: u32 {
+        /// `GIT_FEATURE_THREADS`.
+        THREADS = 1 << 0;
+        /// `GIT_FEATURE_HTTPS`.
+        HTTPS = 1 << 1;
+        /// `GIT_FEATURE_SSH`.
+        SSH = 1 << 2;
+        /// `GIT_FEATURE_NSEC`.
+        NSEC = 1 << 3;
+        /// `GIT_FEATURE_HTTP_PARSER`.
+        HTTP_PARSER = 1 << 4;
+        /// `GIT_FEATURE_REGEX`.
+        REGEX = 1 << 5;
+        /// `GIT_FEATURE_I18N`.
+        I18N = 1 << 6;
+        /// `GIT_FEATURE_AUTH_NTLM`.
+        AUTH_NTLM = 1 << 7;
+        /// `GIT_FEATURE_AUTH_NEGOTIATE`.
+        AUTH_NEGOTIATE = 1 << 8;
+        /// `GIT_FEATURE_COMPRESSION`.
+        COMPRESSION = 1 << 9;
+        /// `GIT_FEATURE_SHA1`.
+        SHA1 = 1 << 10;
+        /// `GIT_FEATURE_SHA256`.
+        SHA256 = 1 << 11;
+        /// `GIT_FEATURE_HTTP`.
+        HTTP = 1 << 12;
+    }
+}
+
+/// The library: its initialization, version, features and build.
+///
+/// The safe API initializes libgit2 itself, on first use, and never shuts
+/// it down (so no owner ever outlives it). [`Libgit2::init`] does that
+/// eagerly, to see an initialization error early; the value it returns is
+/// only a witness (it has no `Drop`).
+#[derive(Clone, Copy, Debug)]
 pub struct Libgit2 {
     _p: (),
 }
 
 impl Libgit2 {
-    /// Initialize the library (or count one more user).
+    /// Initialize the library now, if it is not already (`git_libgit2_init`).
     pub fn init() -> Result<Libgit2, Error> {
-        let r = init();
-        if r < 0 {
-            return Err(Error::from(
-                ErrorCode::check(r).err().unwrap_or(ErrorCode::GENERIC),
-            ));
-        }
+        ensure_init()?;
         Ok(Libgit2 { _p: () })
     }
-}
 
-impl Drop for Libgit2 {
-    fn drop(&mut self) {
-        shutdown();
+    /// `git_libgit2_version`: (major, minor, revision).
+    pub const fn version() -> (u32, u32, u32) {
+        (
+            VERSION_MAJOR as u32,
+            VERSION_MINOR as u32,
+            VERSION_REVISION as u32,
+        )
     }
-}
 
-/// `git_libgit2_version`: (major, minor, revision).
-pub const fn version() -> (c_int, c_int, c_int) {
-    (VERSION_MAJOR, VERSION_MINOR, VERSION_REVISION)
+    /// The version as a string (`LIBGIT2_VERSION`, `"1.9.0"`).
+    pub const fn version_str() -> &'static str {
+        VERSION
+    }
+
+    /// `git_libgit2_prerelease`: the prerelease name, if any.
+    pub fn prerelease() -> Option<&'static str> {
+        prerelease().and_then(|c| c.to_str().ok())
+    }
+
+    /// `git_libgit2_features`.
+    pub const fn features() -> Features {
+        Features::from_bits_truncate(features() as u32)
+    }
+
+    /// `git_libgit2_feature_backend`: the backend of one feature
+    /// (`"openssl"`, `"pcre2"`, …), `None` if it is not built in. `feature`
+    /// must be a single flag (else `None`).
+    pub fn feature_backend(feature: Features) -> Option<&'static str> {
+        if feature.bits().count_ones() != 1 {
+            return None;
+        }
+        let saved = crate::util::errors::save();
+        let r = feature_backend(feature.bits() as c_int).and_then(|c| c.to_str().ok());
+        crate::util::errors::restore(saved);
+        r
+    }
+
+    /// `git_libgit2_buildinfo(GIT_BUILDINFO_CPU)`: the CPU the library was
+    /// built for.
+    pub fn build_cpu() -> Option<&'static str> {
+        build_cpu().and_then(|c| c.to_str().ok())
+    }
+
+    /// `git_libgit2_buildinfo(GIT_BUILDINFO_COMMIT)`: the commit it was
+    /// built from, if known.
+    pub fn build_commit() -> Option<&'static str> {
+        build_commit().and_then(|c| c.to_str().ok())
+    }
 }
 
 /// The exports of `libgit2.c`.
@@ -422,7 +542,7 @@ mod tests {
 
     #[test]
     fn version_features_buildinfo() {
-        assert_eq!(version(), (1, 9, 0));
+        assert_eq!(Libgit2::version(), (1, 9, 0));
         assert_eq!(VERSION, "1.9.0");
         assert_eq!(prerelease(), None);
         // The reference configuration (PORTING.md §9).
@@ -469,7 +589,7 @@ mod tests {
         // SAFETY: three writable ints.
         let e = unsafe { ffi::git_libgit2_version(&raw mut a, &raw mut b, &raw mut c) };
         assert_eq!(e, 0);
-        assert_eq!((a, b, c), version());
+        assert_eq!((a as u32, b as u32, c as u32), Libgit2::version());
         // SAFETY: no precondition.
         assert!(unsafe { ffi::git_libgit2_prerelease() }.is_null());
         // SAFETY: no precondition.

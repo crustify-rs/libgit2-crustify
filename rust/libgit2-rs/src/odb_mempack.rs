@@ -135,6 +135,13 @@ impl MempackState {
 #[derive(Debug)]
 pub struct MempackBackend(pub(crate) Arc<MempackState>);
 
+impl Drop for MempackBackend {
+    fn drop(&mut self) {
+        // The table is being freed: the safe API no longer finds it.
+        crate::odb::api::unregister_mempack(&self.0);
+    }
+}
+
 ffibox::impl_cvtable! {
     // SAFETY: libgit2 passes each of a backend's slots the backend in the
     // place marked `@`, and calls `free` once; the slots left NULL are
@@ -215,7 +222,9 @@ ffibox::impl_cvtable! {
 
 /// `git_mempack_new`'s table, over `state`.
 pub fn new_backend(state: Arc<MempackState>) -> NonNull<GitOdbBackend> {
-    CTable::<BackendTable, MempackBackend>::new(MempackBackend(state)).into_c()
+    let table = CTable::<BackendTable, MempackBackend>::new(MempackBackend(state.clone())).into_c();
+    crate::odb::api::register_mempack(table, &state);
+    table
 }
 
 /// Run `f` on the state of the mempack table at `backend`; `None` (the
@@ -252,7 +261,7 @@ unsafe fn with_state<R>(
 /// # Safety
 ///
 /// `repo` is a live `git_repository *`.
-unsafe fn dump(
+pub(crate) unsafe fn dump(
     pack: &mut crate::util::str::GitStr,
     repo: *mut c_void,
     state: &MempackState,
@@ -401,8 +410,8 @@ mod tests {
     fn write_read_reset() {
         let _g = crate::util::test_support::init();
         let s = MempackState::default();
-        let a = Oid::from_prefix(b"abcd", OidType::Sha1).unwrap();
-        let b = Oid::from_prefix(b"1234", OidType::Sha1).unwrap();
+        let a = Oid::parse_prefix(b"abcd", OidType::Sha1).unwrap();
+        let b = Oid::parse_prefix(b"1234", OidType::Sha1).unwrap();
         s.write(&a, b"hello", 3).unwrap();
         s.write(&a, b"other", 3).unwrap();
         s.write(&b, b"tree", GIT_OBJECT_COMMIT).unwrap();

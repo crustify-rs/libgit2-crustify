@@ -7,19 +7,44 @@
 // comment of each block covers the calls in it.
 #![allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)]
 
-use core::ffi::{CStr, c_char};
+use core::ffi::{CStr, c_char, c_int};
 use core::mem::MaybeUninit;
 
-use libgit2_rs::util::errors::{self, ErrorClass, ErrorCode};
-use libgit2_rs::util::net::{self, GitNetUrl, ffi};
-use libgit2_rs::util::str::GitStr;
-use libgit2_rs::util::test_support;
+use libgit2_rs::__test::util::errors::{self, ErrorClass, ErrorCode};
+use libgit2_rs::__test::util::net::{self, GitNetUrl};
+use libgit2_rs::__test::util::str::GitStr;
+use libgit2_rs::__test::util::test_support;
+
+// The C ABI under test, declared as C declares it (the signatures are the
+// `src` exports').
+unsafe extern "C" {
+    fn git_net_hostname_matches_cert(hostname: *const c_char, pattern: *const c_char) -> bool;
+    fn git_net_str_is_url(str: *const c_char) -> bool;
+    fn git_net_url_apply_redirect(
+        url: *mut GitNetUrl,
+        redirect_location: *const c_char,
+        allow_offsite: bool,
+        service_suffix: *const c_char,
+    ) -> c_int;
+    fn git_net_url_dispose(url: *mut GitNetUrl);
+    fn git_net_url_dup(out: *mut GitNetUrl, in_: *mut GitNetUrl) -> c_int;
+    fn git_net_url_fmt(buf: *mut GitStr, url: *mut GitNetUrl) -> c_int;
+    fn git_net_url_is_default_port(url: *mut GitNetUrl) -> bool;
+    fn git_net_url_is_ipv6(url: *mut GitNetUrl) -> bool;
+    fn git_net_url_joinpath(out: *mut GitNetUrl, one: *mut GitNetUrl, path: *const c_char)
+    -> c_int;
+    fn git_net_url_matches_pattern_list(url: *mut GitNetUrl, pattern_list: *const c_char) -> bool;
+    fn git_net_url_parse(url: *mut GitNetUrl, str: *const c_char) -> c_int;
+    fn git_net_url_parse_scp(url: *mut GitNetUrl, str: *const c_char) -> c_int;
+    fn git_net_url_swap(a: *mut GitNetUrl, b: *mut GitNetUrl);
+    fn git_net_url_valid(url: *mut GitNetUrl) -> bool;
+}
 
 fn msg() -> String {
     String::from_utf8(errors::last_message().unwrap_or_default()).unwrap()
 }
 
-fn s(f: &Option<libgit2_rs::util::alloc::GitCStr>) -> Option<&str> {
+fn s(f: &Option<libgit2_rs::__test::util::alloc::GitCStr>) -> Option<&str> {
     f.as_ref().map(|c| c.to_str().unwrap())
 }
 
@@ -456,7 +481,7 @@ fn c(s: &str) -> std::ffi::CString {
     std::ffi::CString::new(s).unwrap()
 }
 
-fn cs(p: &Option<libgit2_rs::util::alloc::GitCStr>) -> Option<&CStr> {
+fn cs(p: &Option<libgit2_rs::__test::util::alloc::GitCStr>) -> Option<&CStr> {
     p.as_deref()
 }
 
@@ -474,13 +499,13 @@ fn exports_parse_uninitialized_and_dispose() {
     let url = c("ssh://git@example.com/repo");
     // SAFETY: a writable url and a string.
     unsafe {
-        assert_eq!(ffi::git_net_url_parse(raw.as_mut_ptr(), url.as_ptr()), 0);
+        assert_eq!(git_net_url_parse(raw.as_mut_ptr(), url.as_ptr()), 0);
         let u = &*raw.as_ptr();
         assert_eq!(cs(&u.host).unwrap(), c"example.com");
-        assert!(ffi::git_net_url_valid(raw.as_mut_ptr()));
-        assert!(ffi::git_net_url_is_default_port(raw.as_mut_ptr()));
-        assert!(!ffi::git_net_url_is_ipv6(raw.as_mut_ptr()));
-        ffi::git_net_url_dispose(raw.as_mut_ptr());
+        assert!(git_net_url_valid(raw.as_mut_ptr()));
+        assert!(git_net_url_is_default_port(raw.as_mut_ptr()));
+        assert!(!git_net_url_is_ipv6(raw.as_mut_ptr()));
+        git_net_url_dispose(raw.as_mut_ptr());
         assert!((*raw.as_ptr()).host.is_none());
 
         // a failing parse leaves the url cleared
@@ -488,12 +513,9 @@ fn exports_parse_uninitialized_and_dispose() {
             .cast::<u8>()
             .write_bytes(0xcd, size_of::<GitNetUrl>());
         let bad = c("host");
-        assert_eq!(
-            ffi::git_net_url_parse_scp(raw.as_mut_ptr(), bad.as_ptr()),
-            -12
-        );
+        assert_eq!(git_net_url_parse_scp(raw.as_mut_ptr(), bad.as_ptr()), -12);
         assert!((*raw.as_ptr()).scheme.is_none() && (*raw.as_ptr()).path.is_none());
-        ffi::git_net_url_dispose(raw.as_mut_ptr());
+        git_net_url_dispose(raw.as_mut_ptr());
     }
 }
 
@@ -506,7 +528,7 @@ fn exports_alias_and_asserts() {
     let p = c("c?d");
     // SAFETY: valid urls and strings; aliasing is allowed for these.
     unsafe {
-        assert_eq!(ffi::git_net_url_parse(&mut u, s1.as_ptr()), 0);
+        assert_eq!(git_net_url_parse(&mut u, s1.as_ptr()), 0);
         // dup onto itself: copies, leaking the originals as C does; free
         // them here
         let old: Vec<*mut c_char> = [
@@ -522,26 +544,26 @@ fn exports_alias_and_asserts() {
         .map(|f| f.as_ref().unwrap().as_ptr().cast_mut())
         .collect();
         let up: *mut GitNetUrl = &mut u;
-        assert_eq!(ffi::git_net_url_dup(up, up), 0);
+        assert_eq!(git_net_url_dup(up, up), 0);
         for p in old {
-            libgit2_rs::util::alloc::free(p.cast());
+            libgit2_rs::__test::util::alloc::free(p.cast());
         }
         assert_eq!(cs(&u.host).unwrap(), c"example.com");
         // joinpath onto itself: `out` is disposed first, so `one` is empty
-        assert_eq!(ffi::git_net_url_joinpath(up, up, p.as_ptr()), 0);
+        assert_eq!(git_net_url_joinpath(up, up, p.as_ptr()), 0);
         assert_eq!(cs(&u.path).unwrap(), c"/c");
         assert_eq!(cs(&u.query).unwrap(), c"d");
         assert!(u.host.is_none());
-        ffi::git_net_url_swap(up, up);
+        git_net_url_swap(up, up);
         assert_eq!(cs(&u.path).unwrap(), c"/c");
 
-        assert_eq!(ffi::git_net_url_fmt(&mut b, &mut u), -1);
+        assert_eq!(git_net_url_fmt(&mut b, &mut u), -1);
         assert_eq!(msg(), "invalid argument: 'url->scheme'");
-        assert_eq!(ffi::git_net_url_fmt(&mut b, core::ptr::null_mut()), -1);
+        assert_eq!(git_net_url_fmt(&mut b, core::ptr::null_mut()), -1);
         assert_eq!(msg(), "invalid argument: 'url'");
         let loc = c("/x");
         assert_eq!(
-            ffi::git_net_url_apply_redirect(
+            git_net_url_apply_redirect(
                 core::ptr::null_mut(),
                 loc.as_ptr(),
                 false,
@@ -551,26 +573,27 @@ fn exports_alias_and_asserts() {
         );
         assert_eq!(msg(), "unrecoverable internal error: 'url'");
         assert_eq!(
-            ffi::git_net_url_apply_redirect(&mut u, core::ptr::null(), false, core::ptr::null()),
+            git_net_url_apply_redirect(&mut u, core::ptr::null(), false, core::ptr::null()),
             -1
         );
         assert_eq!(msg(), "unrecoverable internal error: 'redirect_location'");
-        assert!(!ffi::git_net_url_matches_pattern_list(
+        assert!(!git_net_url_matches_pattern_list(
             &mut u,
             core::ptr::null::<c_char>()
         ));
         let h = c("www.example.com");
         let pat = c("*.example.com");
-        assert!(ffi::git_net_hostname_matches_cert(h.as_ptr(), pat.as_ptr()));
-        assert!(ffi::git_net_str_is_url(s1.as_ptr()));
-        ffi::git_net_url_dispose(&mut u);
+        assert!(git_net_hostname_matches_cert(h.as_ptr(), pat.as_ptr()));
+        assert!(git_net_str_is_url(s1.as_ptr()));
+        git_net_url_dispose(&mut u);
     }
 }
 
 #[test]
 fn safe_url_api() {
     let _g = test_support::init();
-    let mut u = libgit2_rs::Url::parse(b"https://user@example.com/repo.git").unwrap();
+    let mut u =
+        libgit2_rs::__test::util::net::Url::parse(b"https://user@example.com/repo.git").unwrap();
     assert_eq!(u.host(), Some(&b"example.com"[..]));
     assert!(u.is_default_port() && !u.port_specified());
     u.set_credentials(Some(b"me"), Some(b"secret")).unwrap();
@@ -578,7 +601,7 @@ fn safe_url_api() {
         u.to_bytes().unwrap(),
         b"https://me:secret@example.com/repo.git"
     );
-    let e = libgit2_rs::Url::parse(b"http://[::1").unwrap_err();
-    assert_eq!(e.code(), ErrorCode::INVALID_SPEC);
-    assert_eq!(e.class(), ErrorClass::NET);
+    let e = libgit2_rs::__test::util::net::Url::parse(b"http://[::1").unwrap_err();
+    assert_eq!(e.code(), ErrorCode::INVALID_SPEC.into());
+    assert_eq!(e.class(), ErrorClass::NET.into());
 }

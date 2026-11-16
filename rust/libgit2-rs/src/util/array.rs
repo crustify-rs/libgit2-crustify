@@ -12,14 +12,14 @@
 //! [`GitArray::dispose`] from Rust, which resets them).
 //!
 //! ```
-//! use libgit2_rs::util::array::GitArray;
-//! # let _g = libgit2_rs::util::test_support::init();
+//! use libgit2_rs::__test::util::array::GitArray;
+//! # let _g = libgit2_rs::__test::util::test_support::init();
 //! let mut a: GitArray<u32> = GitArray::new();
 //! *a.alloc()? = 7;
 //! a.push(9)?;
 //! assert_eq!(a.as_slice(), [7, 9]);
 //! assert_eq!(a.capacity(), 8);
-//! # Ok::<(), libgit2_rs::util::errors::ErrorCode>(())
+//! # Ok::<(), libgit2_rs::__test::util::errors::ErrorCode>(())
 //! ```
 
 use core::ffi::c_int;

@@ -5,15 +5,138 @@
 
 #![allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)]
 
-use core::ffi::{CStr, c_char, c_int, c_void};
+use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::ptr;
 
-use libgit2_rs::index::ffi::*;
-use libgit2_rs::index::{GitIndex, GitIndexEntry, GitIndexWriter};
-use libgit2_rs::util::errors;
-use libgit2_rs::util::test_support;
-use libgit2_rs::util::vector::GitVector;
+use libgit2_rs::__test::index::ffi::{GitIndexMatchedPathCb, RawBuf};
+use libgit2_rs::__test::index::{
+    GitIndex, GitIndexConflictIterator, GitIndexEntry, GitIndexIterator, GitIndexOptions,
+    GitIndexReucEntry, GitIndexWriter,
+};
+use libgit2_rs::__test::strarray::GitStrArray;
+use libgit2_rs::__test::util::vector::{GitVector, VectorCmp};
+use libgit2_rs::__test::util::{errors, test_support};
 use libgit2_rs::{Oid, OidType};
+
+// The C ABI under test, declared as C declares it (the signatures are the
+// `src` exports').
+// The handles are Rust types C sees as opaque: it only passes pointers to them.
+#[allow(improper_ctypes)]
+unsafe extern "C" {
+    fn git_index__conflict_to_reuc(index: *mut GitIndex, path: *const c_char) -> c_int;
+    safe fn git_index__create_mode(mode: c_uint) -> c_uint;
+    fn git_index__find_pos(
+        out: *mut usize,
+        index: *mut GitIndex,
+        path: *const c_char,
+        path_len: usize,
+        stage: c_int,
+    ) -> c_int;
+    fn git_index_add(index: *mut GitIndex, source_entry: *const GitIndexEntry) -> c_int;
+    fn git_index_add_bypath(index: *mut GitIndex, path: *const c_char) -> c_int;
+    fn git_index_caps(index: *const GitIndex) -> c_int;
+    fn git_index_clear(index: *mut GitIndex) -> c_int;
+    fn git_index_conflict_add(
+        index: *mut GitIndex,
+        ancestor_entry: *const GitIndexEntry,
+        our_entry: *const GitIndexEntry,
+        their_entry: *const GitIndexEntry,
+    ) -> c_int;
+    fn git_index_conflict_iterator_free(iterator: *mut GitIndexConflictIterator);
+    fn git_index_conflict_iterator_new(
+        iterator_out: *mut *mut GitIndexConflictIterator,
+        index: *mut GitIndex,
+    ) -> c_int;
+    fn git_index_conflict_next(
+        ancestor_out: *mut *const GitIndexEntry,
+        our_out: *mut *const GitIndexEntry,
+        their_out: *mut *const GitIndexEntry,
+        iterator: *mut GitIndexConflictIterator,
+    ) -> c_int;
+    fn git_index_entry_cmp(a: *const c_void, b: *const c_void) -> c_int;
+    fn git_index_entry_icmp(a: *const c_void, b: *const c_void) -> c_int;
+    fn git_index_entry_is_conflict(entry: *const GitIndexEntry) -> c_int;
+    fn git_index_entry_srch(key: *const c_void, array_member: *const c_void) -> c_int;
+    fn git_index_entry_stage(entry: *const GitIndexEntry) -> c_int;
+    fn git_index_entrycount(index: *const GitIndex) -> usize;
+    fn git_index_extension_add(
+        index: *mut GitIndex,
+        signature: *const c_char,
+        data: *const c_char,
+        data_len: usize,
+    ) -> c_int;
+    fn git_index_extension_lookup(
+        out: *mut RawBuf,
+        index: *mut GitIndex,
+        signature: *const c_char,
+    ) -> c_int;
+    fn git_index_extension_remove(index: *mut GitIndex, signature: *const c_char) -> c_int;
+    fn git_index_find(at_pos: *mut usize, index: *mut GitIndex, path: *const c_char) -> c_int;
+    fn git_index_free(index: *mut GitIndex);
+    fn git_index_get_byindex(index: *mut GitIndex, n: usize) -> *const GitIndexEntry;
+    fn git_index_get_bypath(
+        index: *mut GitIndex,
+        path: *const c_char,
+        stage: c_int,
+    ) -> *const GitIndexEntry;
+    fn git_index_has_conflicts(index: *const GitIndex) -> c_int;
+    fn git_index_iterator_free(it: *mut GitIndexIterator);
+    fn git_index_iterator_new(
+        iterator_out: *mut *mut GitIndexIterator,
+        index: *mut GitIndex,
+    ) -> c_int;
+    fn git_index_iterator_next(out: *mut *const GitIndexEntry, it: *mut GitIndexIterator) -> c_int;
+    fn git_index_name_add(
+        index: *mut GitIndex,
+        ancestor: *const c_char,
+        ours: *const c_char,
+        theirs: *const c_char,
+    ) -> c_int;
+    fn git_index_new(out: *mut *mut GitIndex) -> c_int;
+    fn git_index_new_ext(out: *mut *mut GitIndex, opts: *const GitIndexOptions) -> c_int;
+    fn git_index_open(index_out: *mut *mut GitIndex, index_path: *const c_char) -> c_int;
+    fn git_index_read_index(index: *mut GitIndex, new_index: *const GitIndex) -> c_int;
+    fn git_index_remove(index: *mut GitIndex, path: *const c_char, stage: c_int) -> c_int;
+    fn git_index_remove_all(
+        index: *mut GitIndex,
+        pathspec: *const GitStrArray,
+        cb: Option<GitIndexMatchedPathCb>,
+        payload: *mut c_void,
+    ) -> c_int;
+    fn git_index_reuc_add(
+        index: *mut GitIndex,
+        path: *const c_char,
+        ancestor_mode: c_int,
+        ancestor_id: *const Oid,
+        our_mode: c_int,
+        our_id: *const Oid,
+        their_mode: c_int,
+        their_id: *const Oid,
+    ) -> c_int;
+    fn git_index_reuc_clear(index: *mut GitIndex) -> c_int;
+    fn git_index_reuc_entrycount(index: *mut GitIndex) -> usize;
+    fn git_index_reuc_find(at_pos: *mut usize, index: *mut GitIndex, path: *const c_char) -> c_int;
+    fn git_index_reuc_get_bypath(
+        index: *mut GitIndex,
+        path: *const c_char,
+    ) -> *const GitIndexReucEntry;
+    fn git_index_reuc_remove(index: *mut GitIndex, position: usize) -> c_int;
+    fn git_index_set_version(index: *mut GitIndex, version: c_uint) -> c_int;
+    fn git_index_snapshot_find(
+        out: *mut usize,
+        snap: *mut GitVector,
+        entry_srch_fn: Option<VectorCmp>,
+        path: *const c_char,
+        path_len: usize,
+        stage: c_int,
+    ) -> c_int;
+    fn git_index_snapshot_new(snap: *mut GitVector, index: *mut GitIndex) -> c_int;
+    fn git_index_snapshot_release(snap: *mut GitVector, index: *mut GitIndex);
+    fn git_index_version(index: *mut GitIndex) -> c_uint;
+    fn git_indexwriter_cleanup(writer: *mut GitIndexWriter);
+    fn git_indexwriter_commit(writer: *mut GitIndexWriter) -> c_int;
+    fn git_indexwriter_init(writer: *mut GitIndexWriter, index: *mut GitIndex) -> c_int;
+}
 
 fn last() -> String {
     String::from_utf8_lossy(&errors::last_message().unwrap_or_default()).into_owned()
@@ -49,14 +172,14 @@ fn argument_checks() {
         assert_eq!(git_index_remove(ptr::null_mut(), c"x".as_ptr(), 0), -1);
         assert_eq!(git_index_open(ptr::null_mut(), ptr::null()), -1);
         assert_eq!(last(), "invalid argument: 'index_out'");
-        let opts = libgit2_rs::index::GitIndexOptions {
+        let opts = libgit2_rs::__test::index::GitIndexOptions {
             version: 7,
             oid_type: 0,
         };
         let mut ix = ptr::null_mut();
         assert_eq!(git_index_new_ext(&raw mut ix, &raw const opts), -1);
         assert_eq!(last(), "invalid version 7 on git_index_options");
-        let opts = libgit2_rs::index::GitIndexOptions {
+        let opts = libgit2_rs::__test::index::GitIndexOptions {
             version: 1,
             oid_type: 9,
         };
@@ -227,7 +350,7 @@ fn extensions_and_reuc() {
             core::slice::from_raw_parts(buf.ptr().cast::<u8>(), buf.size()),
             b"xy"
         );
-        libgit2_rs::util::alloc::free(buf.ptr().cast());
+        libgit2_rs::__test::util::alloc::free(buf.ptr().cast());
         assert_eq!(git_index_extension_remove(ix, c"AB".as_ptr()), 0);
         assert_eq!(git_index_extension_remove(ix, c"AB".as_ptr()), -3);
 
@@ -323,7 +446,7 @@ fn callbacks_may_reenter() {
         0
     }
     let s = [c"a/*".as_ptr().cast_mut()];
-    let arr = libgit2_rs::strarray::GitStrArray {
+    let arr = libgit2_rs::__test::strarray::GitStrArray {
         strings: s.as_ptr().cast_mut(),
         count: 1,
     };

@@ -277,7 +277,7 @@ pub unsafe fn free_db(db: *mut GitRefdb) {
 /// # Safety
 ///
 /// `backend` is NULL or a live backend the caller owns and gives up.
-unsafe fn free_backend(backend: *mut git_refdb_backend) {
+pub(crate) unsafe fn free_backend(backend: *mut git_refdb_backend) {
     if backend.is_null() {
         return;
     }
