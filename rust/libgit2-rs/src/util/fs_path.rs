@@ -535,11 +535,11 @@ pub fn join_unrooted(path_out: &mut GitStr, path: &[u8], base: Option<&[u8]>) ->
     let mut r = root(path) as isize;
     match base {
         Some(base) if r < 0 => {
-            path_out.joinpath(base, path)?;
+            joinpath_into(path_out, base, path)?;
             r = base.len() as isize;
         }
         _ => {
-            path_out.sets(path)?;
+            set_bytes(path_out, path)?;
             if r < 0 {
                 r = 0;
             } else if let Some(base) = base
@@ -550,6 +550,41 @@ pub fn join_unrooted(path_out: &mut GitStr, path: &[u8], base: Option<&[u8]>) ->
         }
     }
     Ok(r)
+}
+
+/// `git_str_joinpath(out, a, b)` for `a` and `b` outside `out`: the same
+/// result and growth, written in one pass.
+#[inline]
+fn joinpath_into(out: &mut GitStr, a: &[u8], b: &[u8]) -> Result<()> {
+    if out.is_oom() || (out.capacity() == 0 && !out.is_empty()) {
+        // Out of memory, or borrowed: the general path fails as C does.
+        return out.joinpath(a, b);
+    }
+    let mut b = b;
+    let mut need_sep = 0;
+    if let Some(&last) = a.last() {
+        while let [b'/', rest @ ..] = b {
+            b = rest;
+        }
+        need_sep = (last != b'/') as usize;
+    }
+    let total = alloc_add(alloc_add(a.len(), b.len())?, need_sep)?;
+    let alloc_len = alloc_add(total, 1)?;
+    if alloc_len > out.capacity() {
+        out.grow(alloc_len)?;
+    }
+    out.clear();
+    let spare = out.spare_capacity_mut();
+    spare[..a.len()].write_copy_of_slice(a);
+    if need_sep == 1 {
+        spare[a.len()].write(b'/');
+    }
+    spare[a.len() + need_sep..total].write_copy_of_slice(b);
+    spare[total].write(0);
+    // SAFETY: owned (grown to `alloc_len > total`); its first `total` bytes
+    // were just written, followed by the NUL.
+    unsafe { out.set_len(total) };
+    Ok(())
 }
 
 /// `git_fs_path_squash_slashes`: collapse runs of slashes.
