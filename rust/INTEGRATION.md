@@ -8,6 +8,8 @@ test` passes (with `-Zmiri-strict-provenance`), `cargo clippy --all-targets`
 
 ## Status (latest first)
 
+- **`ff2db8c`** (2026-11-16, after master = `572eede`): I-6 and I-2 done
+  (section 10); fully green. Earlier:
 - **`1172dfc`/`dec005c`** (2026-11-16): merged on `integ`: l-repo, l-odb, l-config,
   l-index, l-pack, l-commit, l-revwalk, l-refs, each with its review fixes
   as of the coordinator's messages (l-config `de91683`, l-index `6aacd37`,
@@ -377,3 +379,6 @@ the `grafts` slots), plus `revwalk::api`'s note that
   and `Sync` or their absence for every public type of the safe API
   (positive with trait bounds, negative with an ambiguity check that fails
   to compile if the type gains the trait).
+
+Green: `ff2db8c` (clar 436/436, cargo test link-c, Miri, clippy both
+configurations, fmt).
