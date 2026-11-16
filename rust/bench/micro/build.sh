@@ -6,7 +6,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SRC_ROOT="$(cd "$HERE/../.." && pwd)"
+SRC_ROOT="$(cd "$HERE/../../.." && pwd)"
 C_BUILD="${C_BUILD:-/work/build-c}"
 RUST_BUILD="${RUST_BUILD:-/work/builds/foundation}"
 CC="${CC:-clang}"
