@@ -1560,6 +1560,28 @@ pub struct RawBuf {
     size: usize,
 }
 
+impl Default for RawBuf {
+    /// `GIT_BUF_INIT`.
+    fn default() -> RawBuf {
+        RawBuf {
+            ptr: ptr::null_mut(),
+            reserved: 0,
+            size: 0,
+        }
+    }
+}
+
+impl RawBuf {
+    /// `ptr`.
+    pub fn ptr(&self) -> *mut c_char {
+        self.ptr
+    }
+    /// `size`.
+    pub fn size(&self) -> usize {
+        self.size
+    }
+}
+
 /// `git_index_extension_lookup`.
 ///
 /// # Safety

@@ -74,7 +74,6 @@ fn corrupted() -> ErrorCode {
 }
 
 impl GitTreeCache {
-
     /// The node's children (NULL slots are possible only while a parser
     /// fills them).
     ///

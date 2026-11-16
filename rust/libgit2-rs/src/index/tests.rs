@@ -33,7 +33,11 @@ fn add(ix: &mut GitIndex, path: &[u8], stage: c_int, id: u8) -> Result<EntryPtr>
 fn paths(ix: &mut GitIndex) -> Vec<(Vec<u8>, c_int)> {
     ix.sort();
     // SAFETY: live entries of the index.
-    ix.entries.iter().map(|e| unsafe { eps(as_entry(e)) }).map(|(p, s)| (p.to_vec(), s)).collect()
+    ix.entries
+        .iter()
+        .map(|e| unsafe { eps(as_entry(e)) })
+        .map(|(p, s)| (p.to_vec(), s))
+        .collect()
 }
 
 fn dispose(mut ix: Box<GitIndex>) {
@@ -51,7 +55,14 @@ fn insert_find_remove() {
     let e = add(&mut ix, b"b", 0, 9).unwrap();
     // SAFETY: live.
     assert_eq!(unsafe { (*e.as_ptr()).entry.id }, oid(9));
-    assert_eq!(paths(&mut ix), vec![(b"a/x".to_vec(), 0), (b"a/y".to_vec(), 0), (b"b".to_vec(), 0)]);
+    assert_eq!(
+        paths(&mut ix),
+        vec![
+            (b"a/x".to_vec(), 0),
+            (b"a/y".to_vec(), 0),
+            (b"b".to_vec(), 0)
+        ]
+    );
     assert_eq!(ix.find_path(b"a/y"), Some(1));
     assert_eq!(ix.find_prefix(b"a/"), Some(0));
     assert!(ix.get_bypath(b"a/x", 0).is_some());
@@ -60,7 +71,10 @@ fn insert_find_remove() {
     add(&mut ix, b"a", 0, 4).unwrap();
     assert_eq!(paths(&mut ix), vec![(b"a".to_vec(), 0), (b"b".to_vec(), 0)]);
     add(&mut ix, b"b/c", 0, 5).unwrap();
-    assert_eq!(paths(&mut ix), vec![(b"a".to_vec(), 0), (b"b/c".to_vec(), 0)]);
+    assert_eq!(
+        paths(&mut ix),
+        vec![(b"a".to_vec(), 0), (b"b/c".to_vec(), 0)]
+    );
     assert!(ix.remove(b"zz", 0).is_err());
     assert_eq!(
         errors::last_message().unwrap(),
@@ -107,10 +121,14 @@ fn conflicts_and_reuc() {
     assert_eq!(ix.reuc.len(), 1);
     assert_eq!(ix.reuc_find(b"c"), Ok(0));
     // a second REUC entry for the path replaces the first
-    ix.reuc_add(b"c", [0o100644, 0, 0], [Some(oid(7)), None, None]).unwrap();
+    ix.reuc_add(b"c", [0o100644, 0, 0], [Some(oid(7)), None, None])
+        .unwrap();
     assert_eq!(ix.reuc.len(), 1);
     // a mode without an id fails C's assertion
-    assert!(ix.reuc_add(b"d", [0, 0o100644, 0], [None, None, None]).is_err());
+    assert!(
+        ix.reuc_add(b"d", [0, 0o100644, 0], [None, None, None])
+            .is_err()
+    );
     assert_eq!(
         errors::last_message().unwrap(),
         b"unrecoverable internal error: 'our_oid'"
@@ -140,7 +158,10 @@ fn names_and_extensions() {
     ix.extension_add(*b"ZZZZ", b"three").unwrap();
     assert_eq!(ix.extensions.len(), 2);
     assert_eq!(ix.extensions[0].signature, *b"AAAA");
-    assert_eq!(ix.extensions[ix.extension_find(b"ZZZZ").unwrap()].data, b"three");
+    assert_eq!(
+        ix.extensions[ix.extension_find(b"ZZZZ").unwrap()].data,
+        b"three"
+    );
     // a short signature compares as C's strncmp
     assert!(ix.extension_find(b"ZZ").is_err());
     ix.extension_remove(b"AAAA").unwrap();
@@ -294,9 +315,21 @@ fn parse(buf: &[u8]) -> (Box<GitIndex>, Result<()>) {
 fn parses_versions_2_3_4() {
     let _g = crate::util::test_support::init();
     let ents = [
-        Ent { path: b"a/b/c", flags_extended: 0, stage: 0 },
-        Ent { path: b"a/b/d", flags_extended: GIT_INDEX_ENTRY_INTENT_TO_ADD, stage: 0 },
-        Ent { path: b"z", flags_extended: 0, stage: 2 },
+        Ent {
+            path: b"a/b/c",
+            flags_extended: 0,
+            stage: 0,
+        },
+        Ent {
+            path: b"a/b/d",
+            flags_extended: GIT_INDEX_ENTRY_INTENT_TO_ADD,
+            stage: 0,
+        },
+        Ent {
+            path: b"z",
+            flags_extended: 0,
+            stage: 2,
+        },
     ];
     for v in [2, 3, 4] {
         let file = encode(v, &ents, b"");
@@ -306,14 +339,21 @@ fn parses_versions_2_3_4() {
         assert!(!ix.dirty());
         assert_eq!(
             paths(&mut ix),
-            vec![(b"a/b/c".to_vec(), 0), (b"a/b/d".to_vec(), 0), (b"z".to_vec(), 2)],
+            vec![
+                (b"a/b/c".to_vec(), 0),
+                (b"a/b/d".to_vec(), 0),
+                (b"z".to_vec(), 2)
+            ],
             "version {v}"
         );
         let e = ix.get_bypath(b"a/b/d", 0).unwrap();
         // SAFETY: live.
         let ent = unsafe { (*e.as_ptr()).entry };
         assert_eq!(ent.flags_extended, GIT_INDEX_ENTRY_INTENT_TO_ADD);
-        assert_eq!((ent.ctime.seconds, ent.mtime.nanoseconds, ent.file_size), (1, 4, 10));
+        assert_eq!(
+            (ent.ctime.seconds, ent.mtime.nanoseconds, ent.file_size),
+            (1, 4, 10)
+        );
         assert_eq!(&ix.checksum[..20], &file[file.len() - 20..]);
         dispose(ix);
     }
@@ -347,7 +387,15 @@ fn parses_extensions() {
         ext.extend_from_slice(&(d.len() as u32).to_be_bytes());
         ext.extend_from_slice(d);
     }
-    let file = encode(2, &[Ent { path: b"f", flags_extended: 0, stage: 0 }], &ext);
+    let file = encode(
+        2,
+        &[Ent {
+            path: b"f",
+            flags_extended: 0,
+            stage: 0,
+        }],
+        &ext,
+    );
     let (ix, r) = parse(&file);
     r.unwrap();
     assert!(!ix.tree.is_null());
@@ -360,43 +408,91 @@ fn parses_extensions() {
     assert_eq!(ix.extensions.len(), 2);
     assert_eq!(ix.extensions[1].data, b"zz");
     // the duplicate's message is left, as C's `extension_ondup` set it
-    assert_eq!(errors::last_message().unwrap(), b"found duplicate extension 'ZZZZ'");
+    assert_eq!(
+        errors::last_message().unwrap(),
+        b"found duplicate extension 'ZZZZ'"
+    );
     dispose(ix);
 }
 
 #[test]
 fn rejects_corrupt_files() {
     let _g = crate::util::test_support::init();
-    let one = [Ent { path: b"f", flags_extended: 0, stage: 0 }];
+    let one = [Ent {
+        path: b"f",
+        flags_extended: 0,
+        stage: 0,
+    }];
     let good = encode(2, &one, b"");
     let cases: Vec<(Vec<u8>, &[u8])> = vec![
-        (good[..20].to_vec(), b"invalid data in index - insufficient buffer space"),
-        ({
-            let mut b = good.clone();
-            b[0] = b'X';
-            b
-        }, b"invalid data in index - incorrect header signature"),
-        (encode(5, &one, b""), b"invalid data in index - incorrect header version"),
-        ({
-            let mut b = good.clone();
-            let n = b.len();
-            b[n - 1] ^= 1;
-            b
-        }, b"invalid data in index - calculated checksum does not match expected"),
-        ({
-            let mut b = encode(2, &one, b"");
-            b[11] = 2;
-            let n = b.len() - 20;
-            let h = hash::hash_buf(&b[..n], HashAlgorithm::Sha1).unwrap();
-            b[n..].copy_from_slice(h.as_bytes());
-            b
-        }, b"invalid data in index - header entries changed while parsing"),
-        (encode(2, &[Ent { path: b".git/x", flags_extended: 0, stage: 0 }], b""), b"invalid data in index - invalid entry"),
-        (encode(2, &one, b"abcd\0\0\0\x01x"), b"unsupported mandatory extension: 'abcd'"),
-        (encode(2, &one, b"ABCD\0\0\x10\0x"), b"invalid data in index - extension is truncated"),
-        (encode(2, &one, b"TREE\0\0\0\x02xx"), b"corrupted TREE extension in index"),
-        (encode(2, &one, b"REUC\0\0\0\x02xx"), b"invalid data in index - reading reuc entries"),
-        (encode(2, &one, b"NAME\0\0\0\x02x\0"), b"invalid data in index - reading conflict name entries"),
+        (
+            good[..20].to_vec(),
+            b"invalid data in index - insufficient buffer space",
+        ),
+        (
+            {
+                let mut b = good.clone();
+                b[0] = b'X';
+                b
+            },
+            b"invalid data in index - incorrect header signature",
+        ),
+        (
+            encode(5, &one, b""),
+            b"invalid data in index - incorrect header version",
+        ),
+        (
+            {
+                let mut b = good.clone();
+                let n = b.len();
+                b[n - 1] ^= 1;
+                b
+            },
+            b"invalid data in index - calculated checksum does not match expected",
+        ),
+        (
+            {
+                let mut b = encode(2, &one, b"");
+                b[11] = 2;
+                let n = b.len() - 20;
+                let h = hash::hash_buf(&b[..n], HashAlgorithm::Sha1).unwrap();
+                b[n..].copy_from_slice(h.as_bytes());
+                b
+            },
+            b"invalid data in index - header entries changed while parsing",
+        ),
+        (
+            encode(
+                2,
+                &[Ent {
+                    path: b".git/x",
+                    flags_extended: 0,
+                    stage: 0,
+                }],
+                b"",
+            ),
+            b"invalid data in index - invalid entry",
+        ),
+        (
+            encode(2, &one, b"abcd\0\0\0\x01x"),
+            b"unsupported mandatory extension: 'abcd'",
+        ),
+        (
+            encode(2, &one, b"ABCD\0\0\x10\0x"),
+            b"invalid data in index - extension is truncated",
+        ),
+        (
+            encode(2, &one, b"TREE\0\0\0\x02xx"),
+            b"corrupted TREE extension in index",
+        ),
+        (
+            encode(2, &one, b"REUC\0\0\0\x02xx"),
+            b"invalid data in index - reading reuc entries",
+        ),
+        (
+            encode(2, &one, b"NAME\0\0\0\x02x\0"),
+            b"invalid data in index - reading conflict name entries",
+        ),
     ];
     for (buf, msg) in cases {
         let (ix, r) = parse(&buf);
@@ -417,7 +513,15 @@ fn rejects_corrupt_files() {
 fn v4_prefix_errors() {
     let _g = crate::util::test_support::init();
     // a strip length longer than the previous path
-    let mut file = encode(4, &[Ent { path: b"ab", flags_extended: 0, stage: 0 }], b"");
+    let mut file = encode(
+        4,
+        &[Ent {
+            path: b"ab",
+            flags_extended: 0,
+            stage: 0,
+        }],
+        b"",
+    );
     // the varint is right after the flags (offset 12 + 62)
     file[12 + 62] = 5;
     let n = file.len() - 20;
@@ -425,7 +529,10 @@ fn v4_prefix_errors() {
     file[n..].copy_from_slice(h.as_bytes());
     let (ix, r) = parse(&file);
     assert!(r.is_err());
-    assert_eq!(errors::last_message().unwrap(), b"invalid data in index - invalid entry");
+    assert_eq!(
+        errors::last_message().unwrap(),
+        b"invalid data in index - invalid entry"
+    );
     dispose(ix);
 }
 
@@ -433,8 +540,16 @@ fn v4_prefix_errors() {
 fn truncated_entries_at_every_length() {
     let _g = crate::util::test_support::init();
     let ents = [
-        Ent { path: b"a", flags_extended: 0, stage: 0 },
-        Ent { path: b"bb", flags_extended: GIT_INDEX_ENTRY_SKIP_WORKTREE, stage: 0 },
+        Ent {
+            path: b"a",
+            flags_extended: 0,
+            stage: 0,
+        },
+        Ent {
+            path: b"bb",
+            flags_extended: GIT_INDEX_ENTRY_SKIP_WORKTREE,
+            stage: 0,
+        },
     ];
     for v in [2, 4] {
         let file = encode(v, &ents, b"");
