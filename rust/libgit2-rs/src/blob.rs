@@ -62,7 +62,8 @@ pub struct GitBlob {
 
 /// Allocate an empty blob (`git__calloc(1, sizeof(git_blob))`).
 pub(crate) fn alloc() -> Result<NonNull<GitBlob>> {
-    let p = NonNull::new(alloc::malloc(size_of::<GitBlob>()).cast::<GitBlob>()).ok_or(ErrorCode::GENERIC)?;
+    let p = NonNull::new(alloc::malloc(size_of::<GitBlob>()).cast::<GitBlob>())
+        .ok_or(ErrorCode::GENERIC)?;
     // SAFETY: a fresh `git__allocator` block of a `GitBlob`'s size,
     // 8-aligned (as `git__allocator`'s memory is, checked by the layout
     // test's alignment).
@@ -277,7 +278,8 @@ unsafe fn write_file_stream(odb: *mut git_odb, path: &CStr, file_size: u64) -> R
 /// `odb` is a live odb.
 unsafe fn write_symlink(odb: *mut git_odb, path: &CStr, link_size: usize) -> Result<Oid> {
     let mut link = Vec::new();
-    link.try_reserve_exact(link_size).map_err(|_| errors::oom())?;
+    link.try_reserve_exact(link_size)
+        .map_err(|_| errors::oom())?;
     link.resize(link_size, 0);
     let ok = matches!(posix::readlink(path, &mut link), Ok(n) if n == link_size);
     if !ok {
@@ -352,7 +354,11 @@ pub unsafe fn create_from_paths(
         *o = st;
     }
     let size = st.st_size as u64;
-    let mode = if hint_mode != 0 { hint_mode } else { st.st_mode };
+    let mode = if hint_mode != 0 {
+        hint_mode
+    } else {
+        st.st_mode
+    };
     if posix::s_islnk(mode) {
         // SAFETY: a live odb.
         return unsafe { write_symlink(odb.0, content_path, size as usize) };
@@ -360,7 +366,15 @@ pub unsafe fn create_from_paths(
     let fl = if try_load_filters {
         let hp = hint_path.unwrap_or(c"");
         // SAFETY: a live repository, no blob.
-        unsafe { FilterList::load(repo, ptr::null_mut(), hp, cfilter::GIT_FILTER_TO_ODB, cfilter::GIT_FILTER_DEFAULT)? }
+        unsafe {
+            FilterList::load(
+                repo,
+                ptr::null_mut(),
+                hp,
+                cfilter::GIT_FILTER_TO_ODB,
+                cfilter::GIT_FILTER_DEFAULT,
+            )?
+        }
     } else {
         None
     };
@@ -499,7 +513,12 @@ pub unsafe fn create_from_stream(
     ErrorCode::check(unsafe { p::git_repository__item_path(&mut path, repo, 4) })?;
     path.joinpath_self(b"streamed")?;
     let mut fbuf = Box::new(GitFilebuf::new());
-    fbuf.open_withsize(path.as_bytes(), GIT_FILEBUF_TEMPORARY, 0o666, 2 * 1024 * 1024)?;
+    fbuf.open_withsize(
+        path.as_bytes(),
+        GIT_FILEBUF_TEMPORARY,
+        0o666,
+        2 * 1024 * 1024,
+    )?;
     Ok(CTable::new(BlobWriteStream {
         fbuf,
         repo,
@@ -592,10 +611,24 @@ pub unsafe fn filter(
     }
     let o = blob.as_ptr().cast::<c_void>();
     // SAFETY: the blob's live repository and the blob.
-    let fl = unsafe { FilterList::load_ext(b.object.repo, o, path, cfilter::GIT_FILTER_TO_WORKTREE, &mut fo)? };
+    let fl = unsafe {
+        FilterList::load_ext(
+            b.object.repo,
+            o,
+            path,
+            cfilter::GIT_FILTER_TO_WORKTREE,
+            &mut fo,
+        )?
+    };
     // SAFETY: a valid `git_buf`, a live blob; a NULL list copies the
     // contents.
-    unsafe { cfilter::apply_to_blob(out, fl.as_ref().map_or(ptr::null_mut(), FilterList::as_ptr), o) }
+    unsafe {
+        cfilter::apply_to_blob(
+            out,
+            fl.as_ref().map_or(ptr::null_mut(), FilterList::as_ptr),
+            o,
+        )
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -607,8 +640,14 @@ pub unsafe fn filter(
 pub struct Blob<'repo>(Object<'repo>);
 
 impl<'repo> Blob<'repo> {
-    pub(crate) fn try_from_object(o: Object<'repo>) -> core::result::Result<Blob<'repo>, Object<'repo>> {
-        if o.kind() == ObjectType::Blob { Ok(Blob(o)) } else { Err(o) }
+    pub(crate) fn try_from_object(
+        o: Object<'repo>,
+    ) -> core::result::Result<Blob<'repo>, Object<'repo>> {
+        if o.kind() == ObjectType::Blob {
+            Ok(Blob(o))
+        } else {
+            Err(o)
+        }
     }
 
     /// `git_blob_lookup`.
@@ -617,8 +656,17 @@ impl<'repo> Blob<'repo> {
     }
 
     /// `git_blob_lookup_prefix`.
-    pub fn lookup_prefix(repo: &'repo Repository, id: &Oid, len: usize) -> core::result::Result<Blob<'repo>, Error> {
-        Ok(Blob(Object::lookup_prefix(repo, id, len, ObjectType::Blob)?))
+    pub fn lookup_prefix(
+        repo: &'repo Repository,
+        id: &Oid,
+        len: usize,
+    ) -> core::result::Result<Blob<'repo>, Error> {
+        Ok(Blob(Object::lookup_prefix(
+            repo,
+            id,
+            len,
+            ObjectType::Blob,
+        )?))
     }
 
     fn raw(&self) -> &GitBlob {
@@ -660,9 +708,17 @@ impl<'repo> Blob<'repo> {
     /// `git_blob_filter`: the contents as they would be checked out at
     /// `path` (`None` when `opts` asks for the binary check and the blob
     /// is binary).
-    pub fn filter(&self, path: &[u8], opts: &BlobFilterOptions) -> core::result::Result<Option<Vec<u8>>, Error> {
-        let path = std::ffi::CString::new(path)
-            .map_err(|_| Error::from(git_error_set!(ErrorClass::INVALID, "path contains a NUL byte")))?;
+    pub fn filter(
+        &self,
+        path: &[u8],
+        opts: &BlobFilterOptions,
+    ) -> core::result::Result<Option<Vec<u8>>, Error> {
+        let path = std::ffi::CString::new(path).map_err(|_| {
+            Error::from(git_error_set!(
+                ErrorClass::INVALID,
+                "path contains a NUL byte"
+            ))
+        })?;
         let o = opts.raw();
         if o.flags & GIT_BLOB_FILTER_CHECK_FOR_BINARY != 0 && self.is_binary() {
             return Ok(None);
@@ -682,29 +738,45 @@ impl<'repo> Blob<'repo> {
     /// `git_blob_create_from_workdir`: a blob of the work-tree file at
     /// `path` (relative), filtered.
     pub fn create_from_workdir(repo: &Repository, path: &[u8]) -> core::result::Result<Oid, Error> {
-        let path = std::ffi::CString::new(path)
-            .map_err(|_| Error::from(git_error_set!(ErrorClass::INVALID, "path contains a NUL byte")))?;
+        let path = std::ffi::CString::new(path).map_err(|_| {
+            Error::from(git_error_set!(
+                ErrorClass::INVALID,
+                "path contains a NUL byte"
+            ))
+        })?;
         // SAFETY: a live repository.
         Ok(unsafe { create_from_paths(None, repo.as_ptr(), None, Some(&path), 0, true)? })
     }
 
     /// `git_blob_create_from_disk`.
-    pub fn create_from_disk(repo: &Repository, path: &std::path::Path) -> core::result::Result<Oid, Error> {
+    pub fn create_from_disk(
+        repo: &Repository,
+        path: &std::path::Path,
+    ) -> core::result::Result<Oid, Error> {
         use std::os::unix::ffi::OsStrExt as _;
-        let path = std::ffi::CString::new(path.as_os_str().as_bytes())
-            .map_err(|_| Error::from(git_error_set!(ErrorClass::INVALID, "path contains a NUL byte")))?;
+        let path = std::ffi::CString::new(path.as_os_str().as_bytes()).map_err(|_| {
+            Error::from(git_error_set!(
+                ErrorClass::INVALID,
+                "path contains a NUL byte"
+            ))
+        })?;
         // SAFETY: a live repository.
         Ok(unsafe { create_from_disk(repo.as_ptr(), &path)? })
     }
 
     /// `git_blob_create_from_stream`: a writer whose
     /// [`commit`](BlobWriter::commit) creates the blob.
-    pub fn writer<'r>(repo: &'r Repository, hintpath: Option<&[u8]>) -> core::result::Result<BlobWriter<'r>, Error> {
+    pub fn writer<'r>(
+        repo: &'r Repository,
+        hintpath: Option<&[u8]>,
+    ) -> core::result::Result<BlobWriter<'r>, Error> {
         let hint = match hintpath {
-            Some(h) => Some(
-                std::ffi::CString::new(h)
-                    .map_err(|_| Error::from(git_error_set!(ErrorClass::INVALID, "path contains a NUL byte")))?,
-            ),
+            Some(h) => Some(std::ffi::CString::new(h).map_err(|_| {
+                Error::from(git_error_set!(
+                    ErrorClass::INVALID,
+                    "path contains a NUL byte"
+                ))
+            })?),
             None => None,
         };
         // SAFETY: a live repository, which the writer borrows.
@@ -934,7 +1006,9 @@ pub mod ffi {
             // SAFETY: NULL or NUL-terminated.
             let h = unsafe { cstr(path) };
             // SAFETY: a live repository.
-            write_oid(id, unsafe { create_from_paths(None, repo, None, h, 0, true) })
+            write_oid(id, unsafe {
+                create_from_paths(None, repo, None, h, 0, true)
+            })
         })
     }
 
@@ -1053,7 +1127,13 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             // SAFETY: a readable `unsigned int`.
-            if let Err(e) = unsafe { check_version(&version, GIT_BLOB_FILTER_OPTIONS_VERSION as c_uint, "git_blob_filter_options") } {
+            if let Err(e) = unsafe {
+                check_version(
+                    &version,
+                    GIT_BLOB_FILTER_OPTIONS_VERSION as c_uint,
+                    "git_blob_filter_options",
+                )
+            } {
                 return e.raw();
             }
             // SAFETY: writable.
@@ -1091,9 +1171,18 @@ pub mod ffi {
                 return e.raw();
             }
             // SAFETY: NULL or valid.
-            let opts = unsafe { given_opts.as_ref() }.copied().unwrap_or(GitBlobFilterOptions::INIT);
+            let opts = unsafe { given_opts.as_ref() }
+                .copied()
+                .unwrap_or(GitBlobFilterOptions::INIT);
             // SAFETY: NUL-terminated; a live blob; a valid `git_buf`.
-            unsafe { status(filter(out, NonNull::new_unchecked(blob), CStr::from_ptr(path), &opts)) }
+            unsafe {
+                status(filter(
+                    out,
+                    NonNull::new_unchecked(blob),
+                    CStr::from_ptr(path),
+                    &opts,
+                ))
+            }
         })
     }
 }

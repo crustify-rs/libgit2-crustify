@@ -252,7 +252,11 @@ impl Grafts {
     /// `git_grafts_oids`: the grafted ids, in the map's order.
     pub fn oids(&self) -> Result<GitArray<Oid>> {
         let n = self.len();
-        let mut a = if n > 0 { GitArray::with_capacity(n)? } else { GitArray::new() };
+        let mut a = if n > 0 {
+            GitArray::with_capacity(n)?
+        } else {
+            GitArray::new()
+        };
         for k in self.commits.keys() {
             a.push(*k.get())?;
         }
@@ -281,7 +285,10 @@ pub mod ffi {
     ///
     /// `out` is NULL or writable.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_grafts_new(out: *mut *mut Grafts, oid_type: crate::oid::git_oid_t) -> c_int {
+    pub unsafe extern "C" fn git_grafts_new(
+        out: *mut *mut Grafts,
+        oid_type: crate::oid::git_oid_t,
+    ) -> c_int {
         barrier(|| {
             git_assert_arg!(!out.is_null() && oid_type != 0, "out && oid_type", -1);
             // (An unknown non-zero type: C keeps it, and every parse fails;
@@ -304,7 +311,11 @@ pub mod ffi {
     ///
     /// `out` is NULL or writable; `path` NULL or NUL-terminated.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_grafts_open(out: *mut *mut Grafts, path: *const c_char, oid_type: crate::oid::git_oid_t) -> c_int {
+    pub unsafe extern "C" fn git_grafts_open(
+        out: *mut *mut Grafts,
+        path: *const c_char,
+        oid_type: crate::oid::git_oid_t,
+    ) -> c_int {
         barrier(|| {
             git_assert_arg!(
                 !out.is_null() && !path.is_null() && oid_type != 0,
@@ -419,7 +430,11 @@ pub mod ffi {
     ///
     /// As [`git_grafts_clear`] (non-NULL); `buf` readable for `len` bytes.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_grafts_parse(grafts: *mut Grafts, buf: *const c_char, len: usize) -> c_int {
+    pub unsafe extern "C" fn git_grafts_parse(
+        grafts: *mut Grafts,
+        buf: *const c_char,
+        len: usize,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: the caller's contract (C does not check for NULL).
             let Some(g) = (unsafe { with(grafts) }) else {
@@ -586,10 +601,19 @@ mod tests {
         let _g = test_support::init();
         let mut g = Grafts::new(OidType::Sha1);
         assert!(g.parse(b"xyz\n").is_err());
-        assert_eq!(errors::last_message().unwrap(), b"invalid graft OID at line 1");
+        assert_eq!(
+            errors::last_message().unwrap(),
+            b"invalid graft OID at line 1"
+        );
         assert!(g.parse(format!("{A}\n{B} zz\n").as_bytes()).is_err());
-        assert_eq!(errors::last_message().unwrap(), b"invalid parent OID at line 2");
+        assert_eq!(
+            errors::last_message().unwrap(),
+            b"invalid parent OID at line 2"
+        );
         assert!(g.parse(format!("{A}x\n").as_bytes()).is_err());
-        assert_eq!(errors::last_message().unwrap(), b"invalid parent OID at line 1");
+        assert_eq!(
+            errors::last_message().unwrap(),
+            b"invalid parent OID at line 1"
+        );
     }
 }

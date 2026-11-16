@@ -183,7 +183,8 @@ impl FilterList {
     ) -> Result<()> {
         // SAFETY: a live list, a valid `git_str`, the caller's `repo`, a
         // NUL-terminated path.
-        let r = unsafe { git_filter_list__apply_to_file(out, self.0.as_ptr(), repo, path.as_ptr()) };
+        let r =
+            unsafe { git_filter_list__apply_to_file(out, self.0.as_ptr(), repo, path.as_ptr()) };
         ErrorCode::check(r).map(|_| ())
     }
 
@@ -224,7 +225,11 @@ pub unsafe fn apply_to_buffer(
 ///
 /// `out` is a valid `git_buf`; `fl` NULL or a live list; `blob` a live
 /// `git_blob`.
-pub unsafe fn apply_to_blob(out: *mut GitBuf, fl: *mut git_filter_list, blob: *mut c_void) -> Result<()> {
+pub unsafe fn apply_to_blob(
+    out: *mut GitBuf,
+    fl: *mut git_filter_list,
+    blob: *mut c_void,
+) -> Result<()> {
     // SAFETY: the caller's contract.
     let r = unsafe { git_filter_list_apply_to_blob(out, fl, blob) };
     ErrorCode::check(r).map(|_| ())

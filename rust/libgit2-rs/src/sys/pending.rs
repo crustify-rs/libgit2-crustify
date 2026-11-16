@@ -109,8 +109,11 @@ unsafe extern "C" {
         kind: c_int,
     ) -> c_int;
     /// `git_odb_stream_write`. PENDING(l-odb)
-    pub fn git_odb_stream_write(stream: *mut git_odb_stream, buffer: *const c_char, len: usize)
-    -> c_int;
+    pub fn git_odb_stream_write(
+        stream: *mut git_odb_stream,
+        buffer: *const c_char,
+        len: usize,
+    ) -> c_int;
     /// `git_odb_stream_finalize_write`. PENDING(l-odb)
     pub fn git_odb_stream_finalize_write(out: *mut Oid, stream: *mut git_odb_stream) -> c_int;
     /// `git_odb_stream_free`. PENDING(l-odb)
@@ -174,8 +177,11 @@ unsafe extern "C" {
 // tree entries, and what peeling and path lookup need).
 unsafe extern "C" {
     /// `git_commit__parse`. PENDING(l-commit)
-    pub fn git_commit__parse(commit: *mut c_void, obj: *mut git_odb_object, oid_type: crate::oid::git_oid_t)
-    -> c_int;
+    pub fn git_commit__parse(
+        commit: *mut c_void,
+        obj: *mut git_odb_object,
+        oid_type: crate::oid::git_oid_t,
+    ) -> c_int;
     /// `git_commit__parse_raw`. PENDING(l-commit)
     pub fn git_commit__parse_raw(
         commit: *mut c_void,
@@ -186,7 +192,11 @@ unsafe extern "C" {
     /// `git_commit__free`. PENDING(l-commit)
     pub fn git_commit__free(commit: *mut c_void);
     /// `git_tree__parse`. PENDING(l-commit)
-    pub fn git_tree__parse(tree: *mut c_void, obj: *mut git_odb_object, oid_type: crate::oid::git_oid_t) -> c_int;
+    pub fn git_tree__parse(
+        tree: *mut c_void,
+        obj: *mut git_odb_object,
+        oid_type: crate::oid::git_oid_t,
+    ) -> c_int;
     /// `git_tree__parse_raw`. PENDING(l-commit)
     pub fn git_tree__parse_raw(
         tree: *mut c_void,

@@ -7,7 +7,9 @@ pub mod ffi {
     use core::ffi::{c_int, c_void};
 
     use crate::object::ffi as o;
-    use crate::object::{GIT_OBJECT_BLOB, GIT_OBJECT_COMMIT, GIT_OBJECT_TAG, GIT_OBJECT_TREE, GitObject};
+    use crate::object::{
+        GIT_OBJECT_BLOB, GIT_OBJECT_COMMIT, GIT_OBJECT_TAG, GIT_OBJECT_TREE, GitObject,
+    };
     use crate::oid::Oid;
     use crate::sys::pending::git_repository;
 
@@ -17,7 +19,11 @@ pub mod ffi {
     ///
     /// As `git_object_lookup`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_commit_lookup(out: *mut *mut c_void, repo: *mut git_repository, id: *const Oid) -> c_int {
+    pub unsafe extern "C" fn git_commit_lookup(
+        out: *mut *mut c_void,
+        repo: *mut git_repository,
+        id: *const Oid,
+    ) -> c_int {
         // SAFETY: forwarded.
         unsafe { o::git_object_lookup(out.cast(), repo, id, GIT_OBJECT_COMMIT) }
     }
@@ -88,7 +94,11 @@ pub mod ffi {
     ///
     /// As `git_object_lookup`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_tree_lookup(out: *mut *mut c_void, repo: *mut git_repository, id: *const Oid) -> c_int {
+    pub unsafe extern "C" fn git_tree_lookup(
+        out: *mut *mut c_void,
+        repo: *mut git_repository,
+        id: *const Oid,
+    ) -> c_int {
         // SAFETY: forwarded.
         unsafe { o::git_object_lookup(out.cast(), repo, id, GIT_OBJECT_TREE) }
     }
@@ -159,7 +169,11 @@ pub mod ffi {
     ///
     /// As `git_object_lookup`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_tag_lookup(out: *mut *mut c_void, repo: *mut git_repository, id: *const Oid) -> c_int {
+    pub unsafe extern "C" fn git_tag_lookup(
+        out: *mut *mut c_void,
+        repo: *mut git_repository,
+        id: *const Oid,
+    ) -> c_int {
         // SAFETY: forwarded.
         unsafe { o::git_object_lookup(out.cast(), repo, id, GIT_OBJECT_TAG) }
     }
@@ -230,7 +244,11 @@ pub mod ffi {
     ///
     /// As `git_object_lookup`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_blob_lookup(out: *mut *mut c_void, repo: *mut git_repository, id: *const Oid) -> c_int {
+    pub unsafe extern "C" fn git_blob_lookup(
+        out: *mut *mut c_void,
+        repo: *mut git_repository,
+        id: *const Oid,
+    ) -> c_int {
         // SAFETY: forwarded.
         unsafe { o::git_object_lookup(out.cast(), repo, id, GIT_OBJECT_BLOB) }
     }

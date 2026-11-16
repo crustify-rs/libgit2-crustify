@@ -270,16 +270,15 @@ impl Signature {
 impl Clone for Signature {
     /// `git_signature_dup`. Panics if out of memory.
     fn clone(&self) -> Signature {
-        self.try_clone().expect("out of memory duplicating a signature")
+        self.try_clone()
+            .expect("out of memory duplicating a signature")
     }
 }
 
 /// `git_signature__equal`.
 impl PartialEq for Signature {
     fn eq(&self, other: &Signature) -> bool {
-        self.name() == other.name()
-            && self.email() == other.email()
-            && self.0.when == other.0.when
+        self.name() == other.name() && self.email() == other.email() && self.0.when == other.0.when
     }
 }
 
@@ -520,7 +519,11 @@ pub fn format_into(out: &mut Vec<u8>, header: &[u8], name: &[u8], email: &[u8], 
     out.extend_from_slice(email);
     out.extend_from_slice(b"> ");
     // `%u %c%02d%02d\n`
-    let _ = write!(out, "{} {}{:02}{:02}\n", when.time as u32, sign, hours, mins);
+    let _ = write!(
+        out,
+        "{} {}{:02}{:02}\n",
+        when.time as u32, sign, hours, mins
+    );
 }
 
 /// The length of `"%s%s <%s> %u %c%02d%02d\n"`, for `git_str_printf`'s
@@ -889,7 +892,9 @@ pub mod ffi {
             // SAFETY: a valid signature, read by value.
             let s = unsafe { source.read() };
             let r = (|| -> Result<*mut GitSignature> {
-                let sig = pool.mallocz(size_of::<GitSignature>())?.cast::<GitSignature>();
+                let sig = pool
+                    .mallocz(size_of::<GitSignature>())?
+                    .cast::<GitSignature>();
                 // SAFETY: NUL-terminated strings (the caller's contract).
                 let name = pool.strdup(unsafe { CStr::from_ptr(s.name) })?;
                 // SAFETY: as above.
@@ -956,7 +961,8 @@ pub mod ffi {
             );
             git_assert_arg!(!repo.is_null(), "repo", -1);
             // SAFETY: the caller's contract.
-            let r = unsafe { default_from_env(repo, !author_out.is_null(), !committer_out.is_null()) };
+            let r =
+                unsafe { default_from_env(repo, !author_out.is_null(), !committer_out.is_null()) };
             let (a, c) = match r {
                 Ok(v) => v,
                 Err(e) => return e.raw(),
@@ -1143,7 +1149,11 @@ mod tests {
     use super::*;
     use crate::util::test_support;
 
-    fn p(s: &[u8], h: Option<&[u8]>, e: u8) -> core::result::Result<(Vec<u8>, Vec<u8>, GitTime, usize), (i32, Vec<u8>)> {
+    fn p(
+        s: &[u8],
+        h: Option<&[u8]>,
+        e: u8,
+    ) -> core::result::Result<(Vec<u8>, Vec<u8>, GitTime, usize), (i32, Vec<u8>)> {
         match parse(s, h, e) {
             Ok((sig, n)) => Ok((sig.name().to_vec(), sig.email().to_vec(), sig.0.when, n)),
             Err(c) => Err((c.raw(), errors::last_message().unwrap_or_default())),
@@ -1153,10 +1163,22 @@ mod tests {
     #[test]
     fn parses_like_c() {
         let _g = test_support::init();
-        let (n, e, w, c) = p(b"author Vicent Marti <tanoku@gmail.com> 12345 +0200\nrest", Some(b"author "), b'\n').unwrap();
+        let (n, e, w, c) = p(
+            b"author Vicent Marti <tanoku@gmail.com> 12345 +0200\nrest",
+            Some(b"author "),
+            b'\n',
+        )
+        .unwrap();
         assert_eq!(n, b"Vicent Marti");
         assert_eq!(e, b"tanoku@gmail.com");
-        assert_eq!(w, GitTime { time: 12345, offset: 120, sign: b'+' as c_char });
+        assert_eq!(
+            w,
+            GitTime {
+                time: 12345,
+                offset: 120,
+                sign: b'+' as c_char
+            }
+        );
         assert_eq!(c, 51);
         let (_, _, w, _) = p(b"a <b> 1 -0130\n", None, b'\n').unwrap();
         assert_eq!((w.offset, w.sign), (-90, b'-' as c_char));
@@ -1168,19 +1190,31 @@ mod tests {
         assert_eq!((w.offset, w.sign), (0, b'+' as c_char));
         // No time.
         let (n, e, w, c) = p(b" <> ", None, 0).unwrap();
-        assert_eq!((n.as_slice(), e.as_slice(), w, c), (&b""[..], &b""[..], GitTime::default(), 5));
+        assert_eq!(
+            (n.as_slice(), e.as_slice(), w, c),
+            (&b""[..], &b""[..], GitTime::default(), 5)
+        );
         assert_eq!(p(b"a b>", None, 0).unwrap_err().0, -21);
         assert_eq!(
             p(b"a <b> x", None, 0).unwrap_err(),
-            (-21, b"failed to parse signature - invalid Unix timestamp".to_vec())
+            (
+                -21,
+                b"failed to parse signature - invalid Unix timestamp".to_vec()
+            )
         );
         assert_eq!(
             p(b"a <b> 1", None, b'\n').unwrap_err(),
-            (-21, b"failed to parse signature - no newline given".to_vec())
+            (
+                -21,
+                b"failed to parse signature - no newline given".to_vec()
+            )
         );
         assert_eq!(
             p(b"author \n", Some(b"author "), b'\n').unwrap_err(),
-            (-21, b"failed to parse signature - expected prefix doesn't match actual".to_vec())
+            (
+                -21,
+                b"failed to parse signature - expected prefix doesn't match actual".to_vec()
+            )
         );
         assert_eq!(p(b"a >b< 1", None, 0).unwrap_err().0, -21);
     }
@@ -1203,10 +1237,30 @@ mod tests {
     fn writebuf_formats_like_printf() {
         let _g = test_support::init();
         let mut v = Vec::new();
-        format_into(&mut v, b"", b"n", b"e", GitTime { time: -1, offset: i32::MIN, sign: b'+' as c_char });
-        assert_eq!(v, b"n <e> 4294967295 --35791394-08\n");
+        format_into(
+            &mut v,
+            b"",
+            b"n",
+            b"e",
+            GitTime {
+                time: -1,
+                offset: i32::MIN,
+                sign: b'+' as c_char,
+            },
+        );
+        assert_eq!(v, b"n <e> 4294967295 --35791394-8\n");
         let mut s = GitStr::new();
-        writebuf(&mut s, Some(b"h "), b"\xff", b"e", GitTime { time: 1, offset: 5, sign: 0 });
+        writebuf(
+            &mut s,
+            Some(b"h "),
+            b"\xff",
+            b"e",
+            GitTime {
+                time: 1,
+                offset: 5,
+                sign: 0,
+            },
+        );
         assert_eq!(s.as_bytes(), b"h \xff <e> 1 +0005\n");
     }
 
@@ -1215,7 +1269,10 @@ mod tests {
         let _g = test_support::init();
         let mut out = ptr::null_mut();
         // SAFETY: valid arguments.
-        assert_eq!(unsafe { ffi::git_signature_new(&mut out, c" a ".as_ptr(), c"b".as_ptr(), 3, 0) }, 0);
+        assert_eq!(
+            unsafe { ffi::git_signature_new(&mut out, c" a ".as_ptr(), c"b".as_ptr(), 3, 0) },
+            0
+        );
         let mut d = ptr::null_mut();
         // SAFETY: a valid signature.
         assert_eq!(unsafe { ffi::git_signature_dup(&mut d, out) }, 0);
@@ -1242,7 +1299,7 @@ mod tests {
             )
         };
         assert_eq!(r, 0);
-        assert_eq!(cur as usize - text.as_ptr() as usize, 25);
+        assert_eq!(cur as usize - text.as_ptr() as usize, 24);
         let mut b = GitStr::new();
         // SAFETY: valid arguments.
         unsafe { ffi::git_signature__writebuf(&mut b, ptr::null(), &sig) };

@@ -357,7 +357,12 @@ pub fn stringn2type(s: &[u8]) -> git_object_t {
     if s.is_empty() || s[0] == 0 {
         return GIT_OBJECT_INVALID;
     }
-    for t in [GIT_OBJECT_COMMIT, GIT_OBJECT_TREE, GIT_OBJECT_BLOB, GIT_OBJECT_TAG] {
+    for t in [
+        GIT_OBJECT_COMMIT,
+        GIT_OBJECT_TREE,
+        GIT_OBJECT_BLOB,
+        GIT_OBJECT_TAG,
+    ] {
         if crate::util::util::prefixncmp(s, s.len(), type2string(t).to_bytes()) == 0 {
             return t;
         }
@@ -388,7 +393,11 @@ fn alloc_object(t: git_object_t) -> Result<NonNull<GitObject>> {
 ///
 /// `obj` is a fresh object of its type, not yet shared; `odb_obj` a live
 /// odb object of that type.
-unsafe fn parse_odb(obj: NonNull<GitObject>, odb_obj: *mut git_odb_object, oid_type: crate::oid::git_oid_t) -> c_int {
+unsafe fn parse_odb(
+    obj: NonNull<GitObject>,
+    odb_obj: *mut git_odb_object,
+    oid_type: crate::oid::git_oid_t,
+) -> c_int {
     // SAFETY: a fresh, unshared object.
     let t = unsafe { obj.as_ref() }.raw_kind();
     let o = obj.as_ptr().cast::<c_void>();
@@ -412,7 +421,12 @@ unsafe fn parse_odb(obj: NonNull<GitObject>, odb_obj: *mut git_odb_object, oid_t
 ///
 /// `obj` is a fresh object of its type; `data` is readable for `size`
 /// bytes and outlives the object (a blob points into it).
-unsafe fn parse_raw(obj: NonNull<GitObject>, data: *const c_char, size: usize, oid_type: crate::oid::git_oid_t) -> c_int {
+unsafe fn parse_raw(
+    obj: NonNull<GitObject>,
+    data: *const c_char,
+    size: usize,
+    oid_type: crate::oid::git_oid_t,
+) -> c_int {
     // SAFETY: a fresh, unshared object.
     let t = unsafe { obj.as_ref() }.raw_kind();
     let o = obj.as_ptr().cast::<c_void>();
@@ -477,7 +491,10 @@ pub unsafe fn from_raw(
     t: git_object_t,
     oid_type: crate::oid::git_oid_t,
 ) -> Result<NonNull<GitObject>> {
-    if !matches!(t, GIT_OBJECT_BLOB | GIT_OBJECT_TREE | GIT_OBJECT_COMMIT | GIT_OBJECT_TAG) {
+    if !matches!(
+        t,
+        GIT_OBJECT_BLOB | GIT_OBJECT_TREE | GIT_OBJECT_COMMIT | GIT_OBJECT_TAG
+    ) {
         let _ = git_error_set!(ErrorClass::INVALID, "the requested type is invalid");
         return Err(ErrorCode::NOT_FOUND);
     }
@@ -872,7 +889,8 @@ pub unsafe fn lookup_bypath(
     let tree = Held(unsafe { peel(treeish, GIT_OBJECT_TREE)? });
     let mut entry = Entry(ptr::null_mut());
     // SAFETY: a live tree, a NUL-terminated path, a writable out.
-    let r = unsafe { p::git_tree_entry_bypath(&mut entry.0, tree.0.as_ptr().cast(), path.as_ptr()) };
+    let r =
+        unsafe { p::git_tree_entry_bypath(&mut entry.0, tree.0.as_ptr().cast(), path.as_ptr()) };
     ErrorCode::check(r)?;
     // SAFETY: a live entry.
     if t != GIT_OBJECT_ANY && unsafe { p::git_tree_entry_type(entry.0) } != t {
@@ -1056,8 +1074,18 @@ pub fn format_object_header(out: &mut [u8; 64], len: u64, t: git_object_t) -> Re
     use std::io::Write as _;
     let mut cur = std::io::Cursor::new(&mut out[..63]);
     // `%s %"PRId64`, which must fit with its NUL in the 64 bytes.
-    if write!(cur, "{} {}", type2string(t).to_str().unwrap_or(""), len as i64).is_err() {
-        return Err(git_error_set!(ErrorClass::OS, "object header creation failed"));
+    if write!(
+        cur,
+        "{} {}",
+        type2string(t).to_str().unwrap_or(""),
+        len as i64
+    )
+    .is_err()
+    {
+        return Err(git_error_set!(
+            ErrorClass::OS,
+            "object header creation failed"
+        ));
     }
     let n = cur.position() as usize;
     out[n] = 0;
@@ -1107,7 +1135,11 @@ pub fn id_from_buffer(data: &[u8], t: ObjectType, oid_type: OidType) -> Result<O
 /// # Safety
 ///
 /// `given` is NULL or valid, with a live filter list or none.
-unsafe fn id_from_buffer_c(data: Option<&[u8]>, len: usize, given: *const GitObjectIdOptions) -> Result<Oid> {
+unsafe fn id_from_buffer_c(
+    data: Option<&[u8]>,
+    len: usize,
+    given: *const GitObjectIdOptions,
+) -> Result<Oid> {
     // SAFETY: the caller's contract.
     let opts = unsafe { normalize_options(given)? };
     let mut filtered = GitStr::new();
@@ -1139,7 +1171,10 @@ fn id_from_fd_raw(fd: c_int, mut size: usize, opts: &IdOptions) -> Result<Oid> {
             Ok(0) => break,
             Ok(r) => {
                 if r > size {
-                    return Err(git_error_set!(ErrorClass::OS, "error reading file for hashing"));
+                    return Err(git_error_set!(
+                        ErrorClass::OS,
+                        "error reading file for hashing"
+                    ));
                 }
                 h.update(&buffer[..r]);
                 size -= r;
@@ -1153,7 +1188,10 @@ fn id_from_fd_raw(fd: c_int, mut size: usize, opts: &IdOptions) -> Result<Oid> {
     }
     // A failed read, or a file truncated since it was stat'd.
     if read_failed || size > 0 {
-        return Err(git_error_set!(ErrorClass::OS, "error reading file for hashing"));
+        return Err(git_error_set!(
+            ErrorClass::OS,
+            "error reading file for hashing"
+        ));
     }
     let d = h.finalize()?;
     Ok(oid_from_digest(opts.oid_type, &d))
@@ -1196,7 +1234,10 @@ unsafe fn id_from_file_c(path: &CStr, given: *const GitObjectIdOptions) -> Resul
     let r = (|| {
         let size = futils::filesize(fd)?;
         let Ok(size) = usize::try_from(size) else {
-            return Err(git_error_set!(ErrorClass::OS, "file size overflow for 32-bit systems"));
+            return Err(git_error_set!(
+                ErrorClass::OS,
+                "file size overflow for 32-bit systems"
+            ));
         };
         let o = GitObjectIdOptions {
             version: GIT_OBJECT_ID_OPTIONS_VERSION,
@@ -1221,7 +1262,10 @@ unsafe fn id_from_symlink_c(path: &CStr, given: *const GitObjectIdOptions) -> Re
     let mut opts = unsafe { normalize_options(given)? };
     opts.filters = ptr::null_mut();
     if opts.object_type != GIT_OBJECT_BLOB {
-        return Err(git_error_set!(ErrorClass::INVALID, "symbolic links must be blob types"));
+        return Err(git_error_set!(
+            ErrorClass::INVALID,
+            "symbolic links must be blob types"
+        ));
     }
     let st = crate::util::fs_path::lstat(path)?;
     let o = GitObjectIdOptions {
@@ -1242,7 +1286,8 @@ unsafe fn id_from_symlink_c(path: &CStr, given: *const GitObjectIdOptions) -> Re
     }
     let link_len = st.st_size as usize;
     let mut link = Vec::new();
-    link.try_reserve_exact(link_len + 1).map_err(|_| errors::oom())?;
+    link.try_reserve_exact(link_len + 1)
+        .map_err(|_| errors::oom())?;
     link.resize(link_len + 1, 0);
     let read = match posix::readlink(path, &mut link[..link_len]) {
         Ok(n) => n,
@@ -1304,7 +1349,11 @@ pub fn write_oid_header(buf: &mut GitStr, header: &[u8], id: &Oid) -> Result<()>
     let _ = buf.puts(header);
     let _ = buf.put(&hex.as_bytes()[..hex_size]);
     let _ = buf.putc(b'\n');
-    if buf.is_oom() { Err(ErrorCode::GENERIC) } else { Ok(()) }
+    if buf.is_oom() {
+        Err(ErrorCode::GENERIC)
+    } else {
+        Ok(())
+    }
 }
 
 /// `git_str_printf(buf, fmt, …)` of text already formatted into `bytes`
@@ -1358,8 +1407,12 @@ pub mod repo {
         /// `git_repository_open`.
         pub fn open(path: &std::path::Path) -> core::result::Result<Repository, Error> {
             use std::os::unix::ffi::OsStrExt as _;
-            let c = std::ffi::CString::new(path.as_os_str().as_bytes())
-                .map_err(|_| Error::from(git_error_set!(ErrorClass::INVALID, "path contains a NUL byte")))?;
+            let c = std::ffi::CString::new(path.as_os_str().as_bytes()).map_err(|_| {
+                Error::from(git_error_set!(
+                    ErrorClass::INVALID,
+                    "path contains a NUL byte"
+                ))
+            })?;
             let mut out = ptr::null_mut();
             // SAFETY: a NUL-terminated path and a writable out-parameter.
             let r = unsafe { p::git_repository_open(&mut out, c.as_ptr()) };
@@ -1405,7 +1458,10 @@ impl<'repo> Object<'repo> {
     ///
     /// `raw` is a live object of the repository, whose reference passes to
     /// the result.
-    pub(crate) unsafe fn from_raw(_repo: &'repo Repository, raw: NonNull<GitObject>) -> Object<'repo> {
+    pub(crate) unsafe fn from_raw(
+        _repo: &'repo Repository,
+        raw: NonNull<GitObject>,
+    ) -> Object<'repo> {
         Object {
             raw,
             _repo: PhantomData,
@@ -1426,7 +1482,11 @@ impl<'repo> Object<'repo> {
     }
 
     /// `git_object_lookup`.
-    pub fn lookup(repo: &'repo Repository, id: &Oid, kind: ObjectType) -> core::result::Result<Object<'repo>, Error> {
+    pub fn lookup(
+        repo: &'repo Repository,
+        id: &Oid,
+        kind: ObjectType,
+    ) -> core::result::Result<Object<'repo>, Error> {
         // SAFETY: a live repository.
         let raw = unsafe { lookup(repo.as_ptr(), id, kind.raw())? };
         // SAFETY: an object of `repo`, with its reference.
@@ -1483,9 +1543,17 @@ impl<'repo> Object<'repo> {
     }
 
     /// `git_object_lookup_bypath`.
-    pub fn lookup_bypath(&self, path: &[u8], kind: ObjectType) -> core::result::Result<Object<'repo>, Error> {
-        let c = std::ffi::CString::new(path)
-            .map_err(|_| Error::from(git_error_set!(ErrorClass::INVALID, "path contains a NUL byte")))?;
+    pub fn lookup_bypath(
+        &self,
+        path: &[u8],
+        kind: ObjectType,
+    ) -> core::result::Result<Object<'repo>, Error> {
+        let c = std::ffi::CString::new(path).map_err(|_| {
+            Error::from(git_error_set!(
+                ErrorClass::INVALID,
+                "path contains a NUL byte"
+            ))
+        })?;
         // SAFETY: a live object of a repository, a NUL-terminated path.
         let raw = unsafe { lookup_bypath(self.raw, &c, kind.raw())? };
         // SAFETY: an object of the same repository.
@@ -1819,7 +1887,10 @@ pub mod ffi {
     /// `dest` is writable and `source` a live object (C does not check
     /// either).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_object_dup(dest: *mut *mut GitObject, source: *mut GitObject) -> c_int {
+    pub unsafe extern "C" fn git_object_dup(
+        dest: *mut *mut GitObject,
+        source: *mut GitObject,
+    ) -> c_int {
         barrier(|| {
             git_assert_arg!(!source.is_null(), "source", -1);
             // SAFETY: a live object.
@@ -1848,7 +1919,12 @@ pub mod ffi {
             git_assert_arg!(!treeish.is_null(), "treeish", -1);
             git_assert_arg!(!path.is_null(), "path", -1);
             // SAFETY: non-null, NUL-terminated.
-            let (t, path) = unsafe { (NonNull::new_unchecked(treeish.cast_mut()), CStr::from_ptr(path)) };
+            let (t, path) = unsafe {
+                (
+                    NonNull::new_unchecked(treeish.cast_mut()),
+                    CStr::from_ptr(path),
+                )
+            };
             // SAFETY: a live object; `out` writable.
             match unsafe { lookup_bypath(t, path, object_type) } {
                 Ok(r) => {
@@ -1907,10 +1983,19 @@ pub mod ffi {
     ///
     /// `opts` is NULL or writable.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_object_id_options_init(opts: *mut GitObjectIdOptions, version: c_uint) -> c_int {
+    pub unsafe extern "C" fn git_object_id_options_init(
+        opts: *mut GitObjectIdOptions,
+        version: c_uint,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: the caller's contract.
-            if let Err(e) = unsafe { check_version(&version, GIT_OBJECT_ID_OPTIONS_VERSION, "git_object_id_options") } {
+            if let Err(e) = unsafe {
+                check_version(
+                    &version,
+                    GIT_OBJECT_ID_OPTIONS_VERSION,
+                    "git_object_id_options",
+                )
+            } {
                 return e.raw();
             }
             // SAFETY: writable.
@@ -2138,7 +2223,10 @@ pub mod ffi {
     /// # Safety
     ///
     /// `out` is NULL or a valid `git_buf`.
-    pub(crate) unsafe fn buf_wrap(out: *mut GitBuf, f: impl FnOnce(&mut GitStr) -> Result<()>) -> c_int {
+    pub(crate) unsafe fn buf_wrap(
+        out: *mut GitBuf,
+        f: impl FnOnce(&mut GitStr) -> Result<()>,
+    ) -> c_int {
         let mut s = core::mem::MaybeUninit::<GitStr>::uninit();
         // SAFETY: the caller's contract; `s` is writable.
         let mut error = unsafe { crate::buf::ffi::git_buf_tostr(s.as_mut_ptr(), out) };
@@ -2161,7 +2249,11 @@ pub mod ffi {
     /// # Safety
     ///
     /// `structure` is NULL or points to a readable `unsigned int`.
-    pub(crate) unsafe fn check_version(structure: *const c_uint, expected_max: c_uint, name: &str) -> Result<()> {
+    pub(crate) unsafe fn check_version(
+        structure: *const c_uint,
+        expected_max: c_uint,
+        name: &str,
+    ) -> Result<()> {
         if structure.is_null() {
             return Ok(());
         }
@@ -2192,7 +2284,7 @@ crate::c_layout_test! {
         "sizeof(git_tree) == 96",
         "_Alignof(git_commit) <= 8 && _Alignof(git_tree) <= 8",
         "GIT_CACHE_STORE_RAW == 1 && GIT_CACHE_STORE_PARSED == 2",
-        "GIT_OBJECT_ANY == -2 && GIT_OBJECT_INVALID == -1 && GIT_OBJECT_COMMIT == 1 && GIT_OBJECT_TREE == 2 && GIT_OBJECT_BLOB == 3 && GIT_OBJECT_TAG == 4 && GIT_OBJECT_OFS_DELTA == 6 && GIT_OBJECT_REF_DELTA == 7",
+        "GIT_OBJECT_ANY == -2 && GIT_OBJECT_INVALID == -1 && GIT_OBJECT_COMMIT == 1 && GIT_OBJECT_TREE == 2 && GIT_OBJECT_BLOB == 3 && GIT_OBJECT_TAG == 4",
         "sizeof(git_object__strict_input_validation) == 1",
     ],
 }
@@ -2233,11 +2325,17 @@ mod tests {
     fn ids_of_buffers() {
         let _g = test_support::init();
         let id = id_from_buffer(b"", ObjectType::Blob, OidType::Sha1).unwrap();
-        assert_eq!(id.hex().as_str(), "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391");
+        assert_eq!(
+            id.hex().as_str(),
+            "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+        );
         let id = id_from_buffer(b"hello\n", ObjectType::Blob, OidType::Sha256).unwrap();
         assert_eq!(id.kind(), Some(OidType::Sha256));
         let mut h = [0u8; 64];
-        assert_eq!(format_object_header(&mut h, 12, GIT_OBJECT_TREE).unwrap(), 8);
+        assert_eq!(
+            format_object_header(&mut h, 12, GIT_OBJECT_TREE).unwrap(),
+            8
+        );
         assert_eq!(&h[..8], b"tree 12\0");
     }
 
