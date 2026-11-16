@@ -344,3 +344,36 @@ grafts, blob creation, tree lookup/free, `git_commit_lookup`/`_free`,
 l-odb's copy of the object type names, `repository::handles::Object`,
 the `grafts` slots), plus `revwalk::api`'s note that
 `git_revwalk_pathspec` has no safe counterpart (C pathspec, stays C).
+
+## 10. Coordinator decisions on I-6 and I-2 (after master = `572eede`)
+
+- **I-6:** `Repository` is `Send + Sync` (justified field by field in
+  `repository/api.rs`). `index(&mut self) -> Index<'_>` and
+  `reinit_filesystem(&mut self)` (submodule foreach reads the index and the
+  submodule cache); the other `&self` methods reach only thread-safe state
+  (odb, refdb, config, object cache, configmap cache, git-directory files).
+  `refs_api::Repository` (l-refs' stand-in, the last PENDING between merged
+  WPs) is gone: `refs_api` and its tests, including the multi-threaded
+  `refs_stress`, use `crate::Repository` (`Repository::ptr` for the refs
+  modules). `Repository::head()` returns `refs_api::Reference<'_>`.
+  - Found while auditing for `Sync`: `refs::update_for_commit` (reached
+    from `CommitBuilder::write` with `update_ref`) computed the reflog
+    summary with `git_commit_summary`, which writes the lazily computed
+    summary into the *cached, shared* commit object: a data race once two
+    threads write the same commit. It now computes the summary without
+    writing the object (`commit::summary_of`). The safe `Commit` caches
+    per handle (`OnceCell`), which is fine.
+- **I-2:** `Odb<'r>`, `Config<'r>`, `Index<'r>` (and `ConfigEntries`,
+  `IndexEntries<'r>`, `IndexConflicts<'r>`) carry the lifetime of the
+  repository they came from (`'static` when made alone); clones,
+  `Config::{open_level, open_global, snapshot}` keep it. `RepoHandle` is
+  gone (`Repository::{odb, config, config_snapshot, index}` return the
+  types directly). `compile_fail` doctests in `repository/api.rs`: an odb
+  clone, a config snapshot, a config moved to a `'static` thread, an index
+  clone outliving the repository; using the repository while an index
+  lives; sending an index. Each was checked to compile without its
+  offending line.
+- **Send/Sync:** `tests/api_send_sync.rs` asserts, at compile time, `Send`
+  and `Sync` or their absence for every public type of the safe API
+  (positive with trait bounds, negative with an ambiguity check that fails
+  to compile if the type gains the trait).

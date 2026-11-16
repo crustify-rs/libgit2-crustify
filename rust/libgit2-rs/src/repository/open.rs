@@ -980,7 +980,7 @@ pub(crate) fn load_config(
     global: Option<&CStr>,
     xdg: Option<&CStr>,
     system: Option<&CStr>,
-) -> Result<Config> {
+) -> Result<Config<'static>> {
     let cfg = Config::new();
     let c = cfg.inner();
     let rp: *const GitRepository = repo.map_or(ptr::null(), ptr::from_ref);
@@ -1070,7 +1070,7 @@ pub(crate) fn config_path_global(out: &mut GitStr, use_env: bool) -> Result<()> 
 }
 
 /// `load_global_config`: the global and system configuration only.
-pub(crate) fn load_global_config(use_env: bool) -> Result<Config> {
+pub(crate) fn load_global_config(use_env: bool) -> Result<Config<'static>> {
     let mut global = GitStr::new();
     let mut xdg = GitStr::new();
     let mut system = GitStr::new();

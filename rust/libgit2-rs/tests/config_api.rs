@@ -17,7 +17,7 @@ use libgit2_rs::{Config, ConfigBackend, ConfigEntry, ConfigLevel, Error, ErrorCo
 
 const TEXT: &[u8] = b"[core]\n\tbare = false\n\tabbrev = 12\n[remote \"Origin\"]\n\turl = a\n\turl = b\n[x]\n\tflag\n\tsize = 2k\n";
 
-fn memory() -> Config {
+fn memory() -> Config<'static> {
     let c = Config::new();
     c.add_memory(TEXT, ConfigLevel::Local, false).unwrap();
     c

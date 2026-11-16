@@ -338,14 +338,18 @@ One entry per difference: component, what differs, why.
   array and every `git_str` use `git__allocator` and fail as C.
 - **`GIT_OPT_*` with a NULL out-pointer** fails with `invalid argument: 'out'`
   instead of crashing (see DEFECTS.md).
-- **The safe `Repository` is `Send`, not `Sync`.** Its setters that replace
-  paths (`set_workdir`, `set_bare`, `set_namespace`, `set_ident`) take
-  `&mut self`. The odb, config and index it returns are the odb, config
-  and index modules' own `Odb`, `Config`, `Index`, each with its own
-  reference, wrapped in a `RepoHandle<'_, T>` that borrows the repository
-  and is neither `Send` nor `Sync` (the C objects point back to it); the
-  refdb and references are still thin types of `repository::handles`
-  (PENDING(l-refs)).
+- **The safe `Repository` is `Send + Sync`** (as libgit2 lets threads share
+  one repository for reference, object and configuration work). What is
+  single-threaded takes `&mut self`: `index()` (the index, and its clones
+  and iterators, borrow the repository exclusively), the path setters
+  (`set_workdir`, `set_bare`, `set_namespace`, `set_ident`) and
+  `reinit_filesystem` (submodules read the index). The odb, config and
+  index it returns are the odb, config and index modules' `Odb<'r>`,
+  `Config<'r>`, `Index<'r>`, bound to the repository's lifetime, as are
+  their clones, levels, snapshots and iterators (free-standing ones are
+  `'static`); `head()` returns the refs API's `Reference<'r>`. The refdb is
+  still a thin handle of `repository::handles`. Every public type's
+  `Send`/`Sync` is asserted in `tests/api_send_sync.rs`.
 - **The C ABI reads the caller's `git_repository_init_options`** once into
   Rust values and writes the internal `GIT_REPOSITORY_INIT__*` bits back
   into its `flags` at the end (C or-ed them in as it went); the caller sees

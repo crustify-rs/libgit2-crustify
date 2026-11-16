@@ -320,15 +320,6 @@ pub mod l_revwalk {
     }
 }
 
-/// Initialize the library once for `refs_api`'s stand-in repository (a
-/// count never dropped: the library stays initialized).
-pub fn libgit2_init_once() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let _ = crate::libgit2::init();
-    });
-}
-
 // ---------------------------------------------------------------------------
 // WP l-refs: what refs.c, refdb.c, refdb_fs.c and reflog.c call in modules
 // that other L WPs are porting.
@@ -770,12 +761,19 @@ impl CommitBox {
         unsafe { crate::commit::ffi::git_commit_parentcount(self.0.as_ptr()) }
     }
 
-    /// `git_commit_summary`, copied (empty if NULL).
+    /// `git_commit_summary`'s value, computed here: C's caches it in the
+    /// commit, a cached object other threads of the (shared) repository may
+    /// hold too; computing it locally writes nothing shared.
     pub fn summary(&self) -> Option<Vec<u8>> {
-        // SAFETY: a live commit; the summary is cached in it.
-        let p = unsafe { crate::commit::ffi::git_commit_summary(self.0.as_ptr()) };
-        // SAFETY: NULL or a NUL-terminated string the commit keeps, read now.
-        (!p.is_null()).then(|| unsafe { CStr::from_ptr(p) }.to_bytes().to_vec())
+        // SAFETY: a live commit; its message is set by the parse and
+        // unchanged after.
+        let m = unsafe { crate::commit::message_ptr(self.0.as_ptr()) };
+        if m.is_null() {
+            return Some(Vec::new());
+        }
+        // SAFETY: the commit's NUL-terminated message, live with the commit.
+        let msg = unsafe { CStr::from_ptr(m) }.to_bytes();
+        Some(crate::commit::summary_of(msg))
     }
 
     /// `git_commit_committer`, alive as long as the commit.

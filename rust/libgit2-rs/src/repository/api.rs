@@ -6,31 +6,71 @@
 //! created odb, configuration, refdb and index come back as owners that
 //! hold their own reference ([`Odb`], [`Config`], [`Refdb`], [`Index`]).
 //!
-//! A `Repository` is `Send`, not `Sync`: libgit2 shares a repository
-//! between threads only for some operations, and the C that stays updates
-//! some of its caches without synchronisation. The setters that replace
-//! the paths take `&mut self`, so no path borrowed from it can dangle.
+//! A `Repository` is `Send` and `Sync`: libgit2 lets several threads use
+//! one repository for reference, object and configuration work
+//! (`tests/libgit2/threads`): its lazily made odb, refdb and config are
+//! published with compare-and-swap, its caches are locked or atomic, and
+//! the refdb, odb and config lock their own state. What is single-threaded
+//! takes `&mut self`: the index ([`Repository::index`]), the setters that
+//! replace paths (so no path borrowed from it can dangle), and
+//! [`Repository::reinit_filesystem`] (submodules, which read the index).
 //!
 //! Paths are bytes: they are `&Path` on Unix (`OsStr` bytes).
 //!
 //! The owners a repository hands out point back to it in C (an odb uses
 //! its owner's object cache, config file backends keep the repository for
-//! their include conditions, a reference's refdb keeps it too), so they
-//! borrow it, and they are neither `Send` nor `Sync`:
+//! their include conditions, an index its owner's capabilities), so they
+//! carry its lifetime, and so do their clones, levels, snapshots and
+//! iterators: none outlives the repository.
 //!
 //! ```compile_fail
 //! # use libgit2_rs::Repository;
 //! let repo = Repository::open("/nonexistent").unwrap();
-//! let odb = repo.odb().unwrap();
-//! drop(repo); // error: `repo` is still borrowed by `odb`
+//! let odb = repo.odb().unwrap().clone();
+//! drop(repo); // error: `repo` is still borrowed by the clone of its odb
 //! drop(odb);
 //! ```
 //!
 //! ```compile_fail
 //! # use libgit2_rs::Repository;
-//! fn send<T: Send>(_: T) {}
 //! let repo = Repository::open("/nonexistent").unwrap();
-//! send(repo.config().unwrap()); // error: `Config` is not `Send`
+//! let cfg = repo.config().unwrap();
+//! let level = cfg.clone().snapshot().unwrap();
+//! drop(cfg);
+//! drop(repo); // error: `repo` is still borrowed by the snapshot
+//! drop(level);
+//! ```
+//!
+//! ```compile_fail
+//! # use libgit2_rs::Repository;
+//! let repo = Repository::open("/nonexistent").unwrap();
+//! let cfg = repo.config().unwrap();
+//! // error: the configuration borrows `repo`, so it is not `'static`
+//! std::thread::spawn(move || drop(cfg));
+//! ```
+//!
+//! ```compile_fail
+//! # use libgit2_rs::Repository;
+//! let mut repo = Repository::open("/nonexistent").unwrap();
+//! let index = repo.index().unwrap().clone();
+//! drop(repo); // error: `repo` is still (mutably) borrowed by the index
+//! drop(index);
+//! ```
+//!
+//! ```compile_fail
+//! # use libgit2_rs::Repository;
+//! let mut repo = Repository::open("/nonexistent").unwrap();
+//! let index = repo.index().unwrap();
+//! let _ = repo.head(); // error: the index borrows `repo` exclusively
+//! drop(index);
+//! ```
+//!
+//! ```compile_fail
+//! # use libgit2_rs::Repository;
+//! let mut repo = Repository::open("/nonexistent").unwrap();
+//! let index = repo.index().unwrap();
+//! fn send<T: Send>(_: T) {}
+//! send(index); // error: an index is single-threaded
 //! ```
 //!
 //! Re-parenting an odb, config or index into another repository
@@ -43,7 +83,7 @@ use std::ffi::{CString, OsStr};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
-use super::handles::{Refdb, Reference};
+use super::handles::Refdb;
 use super::head::{self, state};
 use super::init::{InitOptions, InitOut};
 use super::*;
@@ -52,6 +92,7 @@ use crate::index::Index;
 use crate::libgit2::Libgit2;
 use crate::odb::Odb;
 use crate::oid::{Oid, OidType};
+use crate::refs_api::Reference;
 use crate::util::errors::{Error, ErrorCode};
 use crate::util::str::GitStr;
 
@@ -376,43 +417,6 @@ pub enum RepositoryItem {
     WorktreeConfig,
 }
 
-/// One of a repository's objects (its [`Odb`], [`Config`] or [`Index`]),
-/// borrowing the repository: the C object points back to it (the odb uses
-/// its owner's object cache, the config's file backends keep the
-/// repository for their include conditions), so the handle cannot outlive
-/// it, and it is neither `Send` nor `Sync`. It dereferences to the object.
-///
-/// Known gap: `T` is `Clone` (another reference), and a clone made through
-/// the `Deref` is not bound to the repository (see
-/// `/work/reviews/integration-notes.md`); the owning modules' types need
-/// a lifetime of their own to close it.
-pub struct RepoHandle<'r, T> {
-    inner: T,
-    _repo: core::marker::PhantomData<(&'r Repository, *mut ())>,
-}
-
-impl<T> RepoHandle<'_, T> {
-    fn new(inner: T) -> Self {
-        RepoHandle {
-            inner,
-            _repo: core::marker::PhantomData,
-        }
-    }
-}
-
-impl<T> core::ops::Deref for RepoHandle<'_, T> {
-    type Target = T;
-    fn deref(&self) -> &T {
-        &self.inner
-    }
-}
-
-impl<T: core::fmt::Debug> core::fmt::Debug for RepoHandle<'_, T> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        self.inner.fmt(f)
-    }
-}
-
 /// An owned repository (`git_repository`), freed on drop.
 ///
 /// It holds a [`Libgit2`] guard: the library stays initialized while any
@@ -422,9 +426,17 @@ pub struct Repository {
     _lib: Libgit2,
 }
 
-// SAFETY: the repository and what it owns are released from any thread,
-// and it is used by one owner at a time (it is not `Sync`).
+// SAFETY: the repository and what it owns are released from any thread.
 unsafe impl Send for Repository {}
+// SAFETY: every field of `GitRepository` is atomic or behind its own lock
+// (it is `Sync`), and what `&self` reaches is libgit2's thread-safe part:
+// the odb, refdb and config (made lazily and published with compare-and-
+// swap; each locks its own state), the object cache (an rwlock), the
+// configmap cache (atomics), and the files of the git directory. What is
+// not thread-safe is reached through `&mut self` only: the index
+// (`index`), the path setters, `reinit_filesystem`, `set_namespace`,
+// `set_ident`.
+unsafe impl Sync for Repository {}
 
 impl Drop for Repository {
     fn drop(&mut self) {
@@ -580,7 +592,10 @@ impl Repository {
 
     /// `git_repository_head`.
     pub fn head(&self) -> Result<Reference<'_>> {
-        Ok(head::head(self.raw())?)
+        let h = head::head(self.raw())?;
+        // SAFETY: the reference `git_repository_head` returned, ours to own.
+        let b = unsafe { crate::refs::RefBox::from_raw(h.into_raw()) };
+        Ok(Reference::wrap(b.ok_or(ErrorCode::GENERIC)?))
     }
 
     /// `git_repository_head_detached`.
@@ -646,25 +661,25 @@ impl Repository {
     }
 
     /// `git_repository_odb`.
-    pub fn odb(&self) -> Result<RepoHandle<'_, Odb>> {
+    pub fn odb(&self) -> Result<Odb<'_>> {
         let p = self.raw().odb_weak()?;
-        // SAFETY: the repository's live odb; a new reference.
-        Ok(RepoHandle::new(unsafe { Odb::new_ref(p) }))
+        // SAFETY: the repository's live odb; a new reference, bound to the
+        // repository.
+        Ok(unsafe { Odb::new_ref(p) })
     }
 
     /// `git_repository_config`.
-    pub fn config(&self) -> Result<RepoHandle<'_, Config>> {
+    pub fn config(&self) -> Result<Config<'_>> {
         let c = self.raw().config_weak()?;
-        // SAFETY: the repository's live config; a new reference.
-        Ok(RepoHandle::new(unsafe {
-            Config::new_ref(NonNull::from(c))
-        }))
+        // SAFETY: the repository's live config; a new reference, bound to
+        // the repository.
+        Ok(unsafe { Config::new_ref(NonNull::from(c)) })
     }
 
     /// `git_repository_config_snapshot`.
-    pub fn config_snapshot(&self) -> Result<RepoHandle<'_, Config>> {
+    pub fn config_snapshot(&self) -> Result<Config<'_>> {
         let snap = self.raw().config_weak()?.snapshot()?;
-        Ok(RepoHandle::new(Config::from_box(snap)))
+        Ok(Config::from_box(snap))
     }
 
     /// `git_repository_refdb`.
@@ -674,11 +689,14 @@ impl Repository {
         Ok(unsafe { Refdb::new_ref(p) })
     }
 
-    /// `git_repository_index`.
-    pub fn index(&self) -> Result<RepoHandle<'_, Index>> {
+    /// `git_repository_index`. The index is single-threaded: while it (or
+    /// a clone) lives, the repository is borrowed exclusively.
+    pub fn index(&mut self) -> Result<Index<'_>> {
         let p = self.raw().index_weak()?;
-        // SAFETY: the repository's live index; a new reference.
-        Ok(RepoHandle::new(unsafe { Index::new_ref(p) }))
+        // SAFETY: the repository's live index; a new reference, bound to the
+        // exclusive borrow of the repository (so no other thread reaches
+        // the index while it lives; `Index` is not `Send`).
+        Ok(unsafe { Index::new_ref(p) })
     }
 
     /// `git_repository_set_workdir`.
@@ -696,7 +714,9 @@ impl Repository {
     }
 
     /// `git_repository_reinit_filesystem`.
-    pub fn reinit_filesystem(&self, recurse: bool) -> Result<()> {
+    ///
+    /// `&mut self`: it walks the submodules (which read the index).
+    pub fn reinit_filesystem(&mut self, recurse: bool) -> Result<()> {
         Ok(init::reinit_filesystem(self.raw(), recurse)?)
     }
 
@@ -756,10 +776,4 @@ pub fn extensions() -> Vec<Vec<u8>> {
 /// leading `!` rejects one) (`GIT_OPT_SET_EXTENSIONS`).
 pub fn set_extensions(exts: &[&[u8]]) {
     open::set_extensions(exts);
-}
-
-#[allow(dead_code)]
-fn _assert_send() {
-    fn s<T: Send>() {}
-    s::<Repository>();
 }

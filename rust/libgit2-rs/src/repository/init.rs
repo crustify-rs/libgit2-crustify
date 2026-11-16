@@ -143,7 +143,7 @@ fn repo_local_config(
     config_dir: &mut GitStr,
     repo: Option<&GitRepository>,
     repo_dir: &[u8],
-) -> Result<Config> {
+) -> Result<Config<'static>> {
     config_dir
         .joinpath(repo_dir, GIT_CONFIG_FILENAME_INREPO)
         .map_err(|_| ErrorCode::GENERIC)?;

@@ -3785,41 +3785,52 @@ fn path_bytes(p: &std::path::Path) -> &[u8] {
 
 /// A configuration (`git_config`): backends by level. `Clone` takes another
 /// reference to the same configuration.
-pub struct Config {
+///
+/// `'r` is the repository the configuration came from (`'static` for one
+/// made alone): a repository's file backends keep the repository for their
+/// include conditions, so the configuration (and its clones, levels and
+/// snapshots) cannot outlive it.
+pub struct Config<'r> {
     raw: NonNull<GitConfig>,
+    _parent: core::marker::PhantomData<&'r ()>,
 }
 
 // SAFETY: `GitConfig` is `Send + Sync` (interior mutability under a mutex,
-// atomic refcount); the handle is a counted reference to it.
-unsafe impl Send for Config {}
+// atomic refcount); the handle is a counted reference to it. The
+// repository it borrows (`'r`) is `Sync`.
+unsafe impl Send for Config<'_> {}
 // SAFETY: as above.
-unsafe impl Sync for Config {}
+unsafe impl Sync for Config<'_> {}
 
-impl Clone for Config {
+impl<'r> Clone for Config<'r> {
     fn clone(&self) -> Self {
         self.inner().rc.inc();
-        Config { raw: self.raw }
+        Config {
+            raw: self.raw,
+            _parent: core::marker::PhantomData,
+        }
     }
 }
 
-impl Drop for Config {
+impl Drop for Config<'_> {
     fn drop(&mut self) {
         // SAFETY: the handle's reference, given up once.
         unsafe { ffi::git_config_free(self.raw.as_ptr()) }
     }
 }
 
-impl core::fmt::Debug for Config {
+impl core::fmt::Debug for Config<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Config").finish_non_exhaustive()
     }
 }
 
-impl Config {
+impl<'r> Config<'r> {
     /// A handle of a new config (its one reference).
-    pub(crate) fn from_box(b: Box<GitConfig>) -> Config {
+    pub(crate) fn from_box(b: Box<GitConfig>) -> Config<'r> {
         Config {
             raw: NonNull::from(Box::leak(b)),
+            _parent: core::marker::PhantomData,
         }
     }
 
@@ -3835,8 +3846,11 @@ impl Config {
     ///
     /// `raw` is a live config (from `git_config_new` & co.) and the caller
     /// owns one of its references.
-    pub(crate) unsafe fn from_raw(raw: NonNull<GitConfig>) -> Config {
-        Config { raw }
+    pub(crate) unsafe fn from_raw(raw: NonNull<GitConfig>) -> Config<'r> {
+        Config {
+            raw,
+            _parent: core::marker::PhantomData,
+        }
     }
 
     /// A new reference to `raw` (`GIT_REFCOUNT_INC`).
@@ -3844,10 +3858,13 @@ impl Config {
     /// # Safety
     ///
     /// `raw` is a live config.
-    pub(crate) unsafe fn new_ref(raw: NonNull<GitConfig>) -> Config {
+    pub(crate) unsafe fn new_ref(raw: NonNull<GitConfig>) -> Config<'r> {
         // SAFETY: the caller's contract.
         unsafe { raw.as_ref() }.rc.inc();
-        Config { raw }
+        Config {
+            raw,
+            _parent: core::marker::PhantomData,
+        }
     }
 
     /// Give this handle's reference up, as a `git_config *`.
@@ -3858,18 +3875,18 @@ impl Config {
     }
 
     /// `git_config_new`: an empty configuration.
-    pub fn new() -> Config {
+    pub fn new() -> Config<'static> {
         Config::from_box(GitConfig::new())
     }
 
     /// `git_config_open_ondisk`: the file at `path`, at the local level.
-    pub fn open(path: &std::path::Path) -> ApiResult<Config> {
+    pub fn open(path: &std::path::Path) -> ApiResult<Config<'static>> {
         let p = arg(path_bytes(path))?;
         Ok(Config::from_box(open_ondisk(as_cstr(&p))?))
     }
 
     /// `git_config_open_default`: the global, XDG and system files.
-    pub fn open_default() -> ApiResult<Config> {
+    pub fn open_default() -> ApiResult<Config<'static>> {
         Ok(Config::from_box(open_default()?))
     }
 
@@ -3907,17 +3924,17 @@ impl Config {
     }
 
     /// `git_config_open_level`.
-    pub fn open_level(&self, level: ConfigLevel) -> ApiResult<Config> {
+    pub fn open_level(&self, level: ConfigLevel) -> ApiResult<Config<'r>> {
         Ok(Config::from_box(self.inner().open_level(level.raw())?))
     }
 
     /// `git_config_open_global`.
-    pub fn open_global(&self) -> ApiResult<Config> {
+    pub fn open_global(&self) -> ApiResult<Config<'r>> {
         Ok(Config::from_box(self.inner().open_global()?))
     }
 
     /// `git_config_snapshot`: a read-only copy.
-    pub fn snapshot(&self) -> ApiResult<Config> {
+    pub fn snapshot(&self) -> ApiResult<Config<'r>> {
         Ok(Config::from_box(self.inner().snapshot()?))
     }
 
@@ -4078,7 +4095,7 @@ impl Config {
     }
 }
 
-impl Default for Config {
+impl Default for Config<'static> {
     fn default() -> Self {
         Config::new()
     }
@@ -4087,7 +4104,7 @@ impl Default for Config {
 /// The entries of a [`Config`] (`git_config_iterator`).
 pub struct ConfigEntries<'c> {
     it: IterBox,
-    _config: core::marker::PhantomData<&'c Config>,
+    _config: core::marker::PhantomData<&'c ()>,
 }
 
 impl core::fmt::Debug for ConfigEntries<'_> {

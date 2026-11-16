@@ -61,9 +61,7 @@ mod open;
 #[cfg(test)]
 mod tests;
 
-pub use api::{
-    RepoHandle, Repository, RepositoryInitOptions, RepositoryOpenFlags, RepositoryState,
-};
+pub use api::{Repository, RepositoryInitOptions, RepositoryOpenFlags, RepositoryState};
 pub use handles::{Refdb, Reference};
 pub(crate) use head::OwnedRepo;
 
@@ -856,7 +854,7 @@ pub(crate) fn open_owned(path: &CStr) -> Result<OwnedRepo> {
 }
 
 /// `git_odb_new_ext` for `oid_type`, with the C's errors.
-pub(crate) fn new_odb(oid_type: OidType) -> Result<Odb> {
+pub(crate) fn new_odb(oid_type: OidType) -> Result<Odb<'static>> {
     let opts = crate::odb::GitOdbOptions {
         version: crate::odb::GIT_ODB_OPTIONS_VERSION,
         oid_type: oid_type.raw(),

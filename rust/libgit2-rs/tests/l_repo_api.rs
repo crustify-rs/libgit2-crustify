@@ -107,8 +107,13 @@ fn lazy_owners_and_setters() {
         let _cfg = repo.config().unwrap();
         let _snap = repo.config_snapshot().unwrap();
         let _refdb = repo.refdb().unwrap();
-        let _index = repo.index().unwrap();
         drop(odb);
+    }
+    {
+        // The index is single-threaded: it borrows the repository
+        // exclusively.
+        let index = repo.index().unwrap();
+        let _clone = index.clone();
     }
 
     repo.set_namespace(Some(b"ns")).unwrap();

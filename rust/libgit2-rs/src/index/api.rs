@@ -358,13 +358,17 @@ pub(crate) fn conflict_next(
     None
 }
 
-/// An index (`git_index`).
-pub struct Index {
+/// An index (`git_index`). Single-threaded: neither `Send` nor `Sync`.
+///
+/// `'r` is the repository the index came from (`'static` for one made or
+/// opened alone): a repository's index uses its owner (capabilities,
+/// workdir), so the index and its clones cannot outlive it.
+pub struct Index<'r> {
     ptr: IndexPtr,
-    _not_send: PhantomData<*mut ()>,
+    _not_send: PhantomData<(*mut (), &'r ())>,
 }
 
-impl core::fmt::Debug for Index {
+impl core::fmt::Debug for Index<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Index")
             .field("entries", &self.len())
@@ -372,8 +376,8 @@ impl core::fmt::Debug for Index {
     }
 }
 
-impl Clone for Index {
-    fn clone(&self) -> Index {
+impl<'r> Clone for Index<'r> {
+    fn clone(&self) -> Index<'r> {
         self.ptr.incref();
         Index {
             ptr: self.ptr,
@@ -382,7 +386,7 @@ impl Clone for Index {
     }
 }
 
-impl Drop for Index {
+impl Drop for Index<'_> {
     fn drop(&mut self) {
         // SAFETY: this handle's reference, given up.
         unsafe { self.ptr.decref() };
@@ -392,8 +396,8 @@ impl Drop for Index {
 /// A callback result: 0 to go on, > 0 to skip the path, < 0 to stop.
 pub type MatchResult = i32;
 
-impl Index {
-    fn from_ptr(ptr: IndexPtr) -> Index {
+impl<'r> Index<'r> {
+    fn from_ptr(ptr: IndexPtr) -> Index<'r> {
         Index {
             ptr,
             _not_send: PhantomData,
@@ -407,7 +411,7 @@ impl Index {
     ///
     /// `raw` is a live index of this module, used by one thread at a time
     /// while the handle lives (`IndexPtr::new`'s contract).
-    pub(crate) unsafe fn new_ref(raw: NonNull<GitIndex>) -> Index {
+    pub(crate) unsafe fn new_ref(raw: NonNull<GitIndex>) -> Index<'r> {
         // SAFETY: the caller's contract.
         let ptr = unsafe { IndexPtr::new(raw) };
         ptr.incref();
@@ -424,24 +428,24 @@ impl Index {
     }
 
     /// An in-memory index (`git_index_new`) for SHA-1 ids.
-    pub fn new() -> Result<Index> {
+    pub fn new() -> Result<Index<'static>> {
         Self::new_with(OidType::Sha1)
     }
 
     /// An in-memory index for `oid_type` ids (`git_index_new_ext`).
-    pub fn new_with(oid_type: OidType) -> Result<Index> {
+    pub fn new_with(oid_type: OidType) -> Result<Index<'static>> {
         ops::open_ext(None, oid_type)
             .map(Index::from_ptr)
             .map_err(err)
     }
 
     /// The index at `path`, read if it exists (`git_index_open`).
-    pub fn open(path: &Path) -> Result<Index> {
+    pub fn open(path: &Path) -> Result<Index<'static>> {
         Self::open_with(path, OidType::Sha1)
     }
 
     /// [`open`](Self::open) for `oid_type` ids (`git_index_open_ext`).
-    pub fn open_with(path: &Path, oid_type: OidType) -> Result<Index> {
+    pub fn open_with(path: &Path, oid_type: OidType) -> Result<Index<'static>> {
         let p = c_path(path_bytes(path))?;
         ops::open_ext(Some(&p), oid_type)
             .map(Index::from_ptr)
@@ -509,17 +513,19 @@ impl Index {
     }
 
     /// All the entries, as of now (`git_index_iterator`).
-    pub fn iter(&self) -> IndexEntries {
+    pub fn iter(&self) -> IndexEntries<'r> {
         match ops::snapshot_new(self.ptr) {
             Ok(snap) => IndexEntries {
                 index: Some(self.ptr),
                 snap,
                 cur: 0,
+                _parent: PhantomData,
             },
             Err(_) => IndexEntries {
                 index: None,
                 snap: crate::util::vector::GitVector::new(),
                 cur: 0,
+                _parent: PhantomData,
             },
         }
     }
@@ -686,7 +692,7 @@ impl Index {
     }
 
     /// The conflicts (`git_index_conflict_iterator`).
-    pub fn conflicts(&self) -> IndexConflicts {
+    pub fn conflicts(&self) -> IndexConflicts<'r> {
         IndexConflicts {
             index: self.clone(),
             cur: 0,
@@ -736,7 +742,7 @@ impl Index {
 
     /// Make the entries those of `other`, keeping the cached stat data of
     /// the unchanged ones (`git_index_read_index`).
-    pub fn read_index(&mut self, other: &Index) -> Result<()> {
+    pub fn read_index(&mut self, other: &Index<'_>) -> Result<()> {
         ops::read_index(self.ptr, other.ptr).map_err(err)
     }
 
@@ -870,13 +876,16 @@ impl Index {
 
 /// The entries of an index as they were when it was made, as owned copies
 /// (`git_index_iterator`, over a snapshot).
-pub struct IndexEntries {
+/// It holds a reference to the index (and so, like an [`Index`], cannot
+/// outlive the index's repository `'r`).
+pub struct IndexEntries<'r> {
     index: Option<IndexPtr>,
     snap: crate::util::vector::GitVector,
     cur: usize,
+    _parent: PhantomData<&'r ()>,
 }
 
-impl Iterator for IndexEntries {
+impl Iterator for IndexEntries<'_> {
     type Item = IndexEntry;
 
     fn next(&mut self) -> Option<IndexEntry> {
@@ -888,7 +897,7 @@ impl Iterator for IndexEntries {
     }
 }
 
-impl Drop for IndexEntries {
+impl Drop for IndexEntries<'_> {
     fn drop(&mut self) {
         if let Some(ix) = self.index.take() {
             ops::snapshot_release(core::mem::take(&mut self.snap), ix);
@@ -897,12 +906,12 @@ impl Drop for IndexEntries {
 }
 
 /// The conflicts of an index (`git_index_conflict_iterator`).
-pub struct IndexConflicts {
-    index: Index,
+pub struct IndexConflicts<'r> {
+    index: Index<'r>,
     cur: usize,
 }
 
-impl Iterator for IndexConflicts {
+impl Iterator for IndexConflicts<'_> {
     type Item = ConflictEntries;
 
     fn next(&mut self) -> Option<ConflictEntries> {

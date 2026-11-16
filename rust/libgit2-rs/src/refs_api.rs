@@ -6,15 +6,15 @@
 //! It is a thin layer over the same Rust as the C ABI (`refs`, `refdb`,
 //! `refdb_fs`, `reflog`). No C type appears in it.
 //!
-//! The repository it works on is [`Repository`], a minimal handle until
-//! WP l-repo's lands (PENDING(l-repo)); the committer of reflog entries is
-//! a [`Committer`] until WP l-obj's `Signature` lands (PENDING(l-obj)).
+//! The repository it works on is the crate's [`Repository`] (`Sync`: the
+//! reference API may be used from several threads on one repository); the
+//! committer of reflog entries is a [`Committer`] until WP l-obj's
+//! `Signature` lands (PENDING(l-obj)).
 
 use core::ffi::{CStr, c_char, c_int};
 use core::marker::PhantomData;
 use core::ptr::NonNull;
 use std::ffi::CString;
-use std::path::Path;
 
 use ffibox::vtable::CTable;
 
@@ -28,7 +28,7 @@ pub use crate::refs::ReferenceType;
 use crate::refs::{
     self, GIT_REFERENCE_DIRECT, GIT_REFERENCE_SYMBOLIC, GitReference, RefBox, RefIter, RefView,
 };
-use crate::sys::pending::{self as p, RepoPtr, SigBox, git_signature};
+use crate::sys::pending::{RepoPtr, SigBox, git_signature};
 use crate::util::errors::{self, Bytes, Error, ErrorClass, ErrorCode};
 use crate::util::fs_path::to_cstring;
 use crate::util::pool::GitPool;
@@ -52,78 +52,21 @@ fn cname(name: &[u8]) -> Result<CString> {
 }
 
 // ---------------------------------------------------------------------------
-// The repository (PENDING(l-repo))
+// The repository
 // ---------------------------------------------------------------------------
 
-/// A repository, opened or created, freed on drop. PENDING(l-repo): the
-/// integrated crate uses WP l-repo's `Repository` instead.
-pub struct Repository {
-    repo: RepoPtr,
-}
-
-// SAFETY: libgit2's repositories may move between threads.
-unsafe impl Send for Repository {}
+pub use crate::repository::Repository;
 
 impl Repository {
-    fn adopt(r: c_int, out: *mut p::git_repository) -> Result<Repository> {
-        if r < 0 {
-            return Err(Error::from(ErrorCode::check(r).unwrap_err()));
-        }
-        let ptr = NonNull::new(out).ok_or_else(|| Error::from(ErrorCode::GENERIC))?;
-        // SAFETY: a repository we own until drop.
-        let repo = unsafe { RepoPtr::new(ptr) };
-        Ok(Repository { repo })
-    }
-
-    /// `git_repository_open`.
-    pub fn open(path: impl AsRef<Path>) -> Result<Repository> {
-        p::libgit2_init_once();
-        let p = path_c(path.as_ref())?;
-        let mut out = core::ptr::null_mut();
-        // SAFETY: a NUL-terminated path; `out` writable.
-        let r = unsafe { crate::repository::ffi::git_repository_open(&raw mut out, p.as_ptr()) };
-        Self::adopt(r, out)
-    }
-
-    /// `git_repository_init`.
-    pub fn init(path: impl AsRef<Path>, bare: bool) -> Result<Repository> {
-        p::libgit2_init_once();
-        let p = path_c(path.as_ref())?;
-        let mut out = core::ptr::null_mut();
-        // SAFETY: as above.
-        let r = unsafe {
-            crate::repository::ffi::git_repository_init(&raw mut out, p.as_ptr(), u32::from(bare))
-        };
-        Self::adopt(r, out)
-    }
-
+    /// The repository as the refs modules take it.
     pub(crate) fn ptr(&self) -> RepoPtr {
-        self.repo
+        // SAFETY: an owner's repository pointer is not NULL.
+        let p = unsafe { NonNull::new_unchecked(self.raw_ptr()) };
+        // SAFETY: the repository this owner holds, live while `self` is
+        // borrowed (the references and iterators borrow it); it is `Sync`,
+        // so the refs code may use it from the threads that share `self`.
+        unsafe { RepoPtr::new(p) }
     }
-
-    /// The git directory.
-    pub fn path(&self) -> Vec<u8> {
-        self.repo.gitdir().unwrap_or_default()
-    }
-}
-
-impl Drop for Repository {
-    fn drop(&mut self) {
-        // SAFETY: our repository, freed once; references borrowing it are
-        // gone (`'repo`).
-        unsafe { crate::repository::ffi::git_repository_free(self.repo.as_ptr()) };
-    }
-}
-
-fn path_c(p: &Path) -> Result<CString> {
-    use std::os::unix::ffi::OsStrExt;
-    CString::new(p.as_os_str().as_bytes()).map_err(|_| {
-        Error::new(
-            ErrorCode::INVALID,
-            ErrorClass::INVALID,
-            "path contains a NUL byte",
-        )
-    })
 }
 
 // ---------------------------------------------------------------------------
@@ -178,7 +121,7 @@ impl PeelTarget {
 }
 
 impl<'repo> Reference<'repo> {
-    fn wrap(inner: RefBox) -> Reference<'repo> {
+    pub(crate) fn wrap(inner: RefBox) -> Reference<'repo> {
         Reference {
             inner,
             _repo: PhantomData,

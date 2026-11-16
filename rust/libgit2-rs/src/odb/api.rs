@@ -51,18 +51,24 @@ fn c_path(path: &[u8]) -> ApiResult<std::ffi::CString> {
 
 /// An object database (`git_odb`): refcounted (`Clone` shares it), usable
 /// from several threads at once.
-pub struct Odb {
+pub struct Odb<'r> {
     raw: NonNull<GitOdb>,
+    /// The repository the odb came from (`'static` for one made alone):
+    /// an odb of a repository uses its owner's object cache, so it cannot
+    /// outlive it.
+    _parent: PhantomData<&'r ()>,
 }
 
 // SAFETY: `GitOdb` is `Sync` (its backends are reached under a mutex, its
 // caches under rwlocks, the rest is atomic or immutable), and its count is
-// atomic: a reference may move to, and be dropped on, any thread.
-unsafe impl Send for Odb {}
+// atomic: a reference may move to, and be dropped on, any thread. The
+// repository an odb borrows (`'r`), whose object cache it uses, is `Sync`
+// too.
+unsafe impl Send for Odb<'_> {}
 // SAFETY: as above.
-unsafe impl Sync for Odb {}
+unsafe impl Sync for Odb<'_> {}
 
-impl core::fmt::Debug for Odb {
+impl core::fmt::Debug for Odb<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Odb")
             .field("oid_type", &self.oid_type())
@@ -71,21 +77,24 @@ impl core::fmt::Debug for Odb {
     }
 }
 
-impl Clone for Odb {
-    fn clone(&self) -> Odb {
+impl<'r> Clone for Odb<'r> {
+    fn clone(&self) -> Odb<'r> {
         self.inner().rc.inc();
-        Odb { raw: self.raw }
+        Odb {
+            raw: self.raw,
+            _parent: PhantomData,
+        }
     }
 }
 
-impl Drop for Odb {
+impl Drop for Odb<'_> {
     fn drop(&mut self) {
         // SAFETY: this handle's reference.
         unsafe { odb_decref(self.raw) }
     }
 }
 
-impl Odb {
+impl<'r> Odb<'r> {
     /// The odb (crate-internal: the repository calls it directly).
     pub(crate) fn inner(&self) -> &GitOdb {
         // SAFETY: the handle holds a reference: the odb is live.
@@ -97,8 +106,11 @@ impl Odb {
     /// # Safety
     ///
     /// `raw` is a live odb and the caller owns one of its references.
-    pub(crate) unsafe fn from_raw(raw: NonNull<GitOdb>) -> Odb {
-        Odb { raw }
+    pub(crate) unsafe fn from_raw(raw: NonNull<GitOdb>) -> Odb<'r> {
+        Odb {
+            raw,
+            _parent: PhantomData,
+        }
     }
 
     /// A new reference to `raw` (`GIT_REFCOUNT_INC`).
@@ -106,10 +118,13 @@ impl Odb {
     /// # Safety
     ///
     /// `raw` is a live odb.
-    pub(crate) unsafe fn new_ref(raw: NonNull<GitOdb>) -> Odb {
+    pub(crate) unsafe fn new_ref(raw: NonNull<GitOdb>) -> Odb<'r> {
         // SAFETY: the caller's contract.
         unsafe { raw.as_ref() }.rc.inc();
-        Odb { raw }
+        Odb {
+            raw,
+            _parent: PhantomData,
+        }
     }
 
     /// The `git_odb *` (the reference stays with this handle).
@@ -125,23 +140,26 @@ impl Odb {
     }
 
     /// An odb without backends, for SHA-1 ids (`git_odb_new`).
-    pub fn new() -> ApiResult<Odb> {
+    pub fn new() -> ApiResult<Odb<'static>> {
         Self::with_oid_type(OidType::Sha1)
     }
 
     /// An odb without backends for ids of `oid_type` (`git_odb_new_ext`).
-    pub fn with_oid_type(oid_type: OidType) -> ApiResult<Odb> {
+    pub fn with_oid_type(oid_type: OidType) -> ApiResult<Odb<'static>> {
         let opts = GitOdbOptions {
             version: GIT_ODB_OPTIONS_VERSION,
             oid_type: oid_type.raw(),
         };
         let raw = GitOdb::new(Some(&opts)).map_err(err)?;
-        Ok(Odb { raw })
+        Ok(Odb {
+            raw,
+            _parent: PhantomData,
+        })
     }
 
     /// The odb of an `objects` directory, with its loose and pack backends
     /// and its alternates (`git_odb_open_ext`).
-    pub fn open(objects_dir: &[u8], oid_type: OidType) -> ApiResult<Odb> {
+    pub fn open(objects_dir: &[u8], oid_type: OidType) -> ApiResult<Odb<'static>> {
         let dir = c_path(objects_dir)?;
         let odb = Self::with_oid_type(oid_type)?;
         odb.inner()
@@ -459,7 +477,7 @@ fn io_error(code: c_int) -> std::io::Error {
 /// the declared size, then [`finalize`](Self::finalize).
 pub struct OdbWriter<'odb> {
     stream: NonNull<GitOdbStream>,
-    _odb: PhantomData<&'odb Odb>,
+    _odb: PhantomData<&'odb ()>,
 }
 
 impl OdbWriter<'_> {
@@ -510,7 +528,7 @@ impl core::fmt::Debug for OdbWriter<'_> {
 /// A stream that reads an object (`git_odb_open_rstream`).
 pub struct OdbReader<'odb> {
     stream: NonNull<GitOdbStream>,
-    _odb: PhantomData<&'odb Odb>,
+    _odb: PhantomData<&'odb ()>,
 }
 
 impl std::io::Read for OdbReader<'_> {
