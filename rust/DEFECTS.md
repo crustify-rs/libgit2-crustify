@@ -208,13 +208,15 @@ DIVERGENCES.md).
   status.
 - Rust: retries without counting; terminates the name at the bytes read.
 
-### net: `git_net_hostname_matches_cert` never matches a byte >= 0x80 outside a wildcard
+### net: `git_net_hostname_matches_cert` never matches a pattern byte >= 0x80
 - C: `char c = git__tolower(*pattern++)` keeps a signed `char` (a byte
   >= 0x80 is negative), compared with `git__tolower(*hostname++)`, an
   `int` in 0..255 (`tolower((unsigned char)…)` on Unix): never equal.
-  After a `*`, both sides are `char` and such bytes do match.
-- Trigger: `git_net_hostname_matches_cert("\x80", "\x80")` is false;
-  `("a\xc3", "*\xc3")` is true.
+  After a `*` the search for the next pattern byte compares two `char`s,
+  but the match then resumes at that byte and fails the same way. A `*`
+  still spans host bytes >= 0x80.
+- Trigger: `("\x80", "\x80")` and `("a\xc3", "*\xc3")` are false;
+  `("\xc3\x80b", "*b")` is true.
 - Rust: kept as C (found by the random section of `net_diff.c`).
 
 ### process: `git_process_free` leaks the pipes after `git_process_wait`
