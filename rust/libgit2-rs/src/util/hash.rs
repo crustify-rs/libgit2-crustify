@@ -602,11 +602,17 @@ pub mod ffi {
         barrier(|| {
             // SAFETY: the caller's contract on `hash`.
             let hash = unsafe { bytes(hash.cast::<c_char>(), hash_len) };
-            // SAFETY: the caller's contract on `out`, disjoint from `hash`.
-            let out =
-                unsafe { core::slice::from_raw_parts_mut(out.cast::<u8>(), 2 * hash_len + 1) };
-            fmt_into(out, hash);
-            out[2 * hash_len] = 0;
+            const HEX: &[u8; 16] = b"0123456789abcdef";
+            // SAFETY: the caller's contract on `out` (writable, maybe
+            // uninitialized, so only written), disjoint from `hash`.
+            let out = unsafe {
+                core::slice::from_raw_parts_mut(out.cast::<MaybeUninit<u8>>(), 2 * hash_len + 1)
+            };
+            for (o, b) in out.as_chunks_mut::<2>().0.iter_mut().zip(hash) {
+                o[0].write(HEX[(b >> 4) as usize]);
+                o[1].write(HEX[(b & 0x0f) as usize]);
+            }
+            out[2 * hash_len].write(0);
             0
         })
     }

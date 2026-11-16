@@ -7,6 +7,7 @@
 //! hand its pointer to C and take it back (`git_regexp_dispose`).
 
 use core::ffi::{CStr, c_char, c_int};
+use core::mem::MaybeUninit;
 
 use super::errors::{self, ErrorClass, ErrorCode, Result};
 use crate::git_assert;
@@ -54,12 +55,17 @@ fn match_code(code: Option<CodeRef<'_>>, s: &[u8]) -> Result<()> {
 }
 
 /// `git_regexp_search` on a borrowed pattern.
-fn search_code(code: Option<CodeRef<'_>>, s: &[u8], matches: &mut [RegMatch]) -> Result<()> {
-    git_assert!(
-        matches.len() <= u32::MAX as usize,
-        "given_nmatches <= UINT32_MAX"
-    );
-    let nmatches = matches.len() as u32;
+/// `git_regexp_search` on a borrowed pattern, for `n` groups: on success,
+/// `set(i, m)` is called for every `i < n` (C's output array may be
+/// uninitialized, so the export writes through `MaybeUninit`).
+fn search_code(
+    code: Option<CodeRef<'_>>,
+    s: &[u8],
+    n: usize,
+    mut set: impl FnMut(usize, RegMatch),
+) -> Result<()> {
+    git_assert!(n <= u32::MAX as usize, "given_nmatches <= UINT32_MAX");
+    let nmatches = n as u32;
     let Some(mut md) = pcre2::match_data_create(nmatches) else {
         return Err(errors::oom());
     };
@@ -71,18 +77,23 @@ fn search_code(code: Option<CodeRef<'_>>, s: &[u8], matches: &mut [RegMatch]) ->
         return Err(match_error(rc));
     }
     let mut captures = rc as usize;
-    if captures == 0 || captures > matches.len() {
-        captures = matches.len();
+    if captures == 0 || captures > n {
+        captures = n;
     }
     let ovec = pcre2::ovector(&md);
     let off = |o: usize| if o == PCRE2_UNSET { -1 } else { o as isize };
-    for (i, m) in matches.iter_mut().enumerate() {
-        if i < captures {
-            m.start = off(ovec[2 * i]);
-            m.end = off(ovec[2 * i + 1]);
-        } else {
-            *m = RegMatch { start: -1, end: -1 };
-        }
+    for i in 0..n {
+        set(
+            i,
+            if i < captures {
+                RegMatch {
+                    start: off(ovec[2 * i]),
+                    end: off(ovec[2 * i + 1]),
+                }
+            } else {
+                RegMatch { start: -1, end: -1 }
+            },
+        );
     }
     Ok(())
 }
@@ -143,7 +154,9 @@ impl Regexp {
     /// match and of the first groups (-1 for the groups that did not
     /// match, and those beyond the pattern's).
     pub fn search_into(&self, s: &[u8], matches: &mut [RegMatch]) -> Result<()> {
-        search_code(Some(self.0.as_ref()), s, matches)
+        search_code(Some(self.0.as_ref()), s, matches.len(), |i, m| {
+            matches[i] = m
+        })
     }
 
     /// [`search_into`](Self::search_into) `n` groups.
@@ -252,13 +265,21 @@ pub mod ffi {
             let code = unsafe { code(r) };
             // SAFETY: the caller's contract.
             let s = unsafe { cstr_bytes(string) };
-            let m: &mut [RegMatch] = if nmatches == 0 || matches.is_null() {
+            let m: &mut [MaybeUninit<RegMatch>] = if nmatches == 0 || matches.is_null() {
                 &mut []
             } else {
-                // SAFETY: the caller passes `nmatches` writable entries.
-                unsafe { core::slice::from_raw_parts_mut(matches, nmatches) }
+                // SAFETY: the caller passes `nmatches` writable entries
+                // (maybe uninitialized: they are only written).
+                unsafe {
+                    core::slice::from_raw_parts_mut(
+                        matches.cast::<MaybeUninit<RegMatch>>(),
+                        nmatches,
+                    )
+                }
             };
-            status(search_code(code, s, m))
+            status(search_code(code, s, m.len(), |i, v| {
+                m[i].write(v);
+            }))
         })
     }
 }
