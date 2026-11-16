@@ -122,6 +122,11 @@ pub struct PackedTraits {
     pub sorted: Option<bool>,
 }
 
+/// A `packed-refs` file the parser rejects ("corrupted packed references
+/// file").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Corrupted;
+
 /// `packed_set_peeling_mode`: the header's traits, and the offset after
 /// it (`None` if the header has no end of line: C's NULL).
 pub fn packed_header(data: &[u8]) -> (PackedTraits, Option<usize>) {
@@ -172,30 +177,30 @@ fn oid_at(data: &[u8], from: usize, t: OidType) -> Option<Oid> {
 
 /// The body of `packed_reload`: parse `data` (the file, which C reads with
 /// a NUL after it), calling `upsert(name)` for each record and filling the
-/// item it returns. `Err(())` is "corrupted packed references file".
+/// item it returns. `Err(Corrupted)` is "corrupted packed references file".
 pub fn parse_packed(
     data: &[u8],
     oid_type: OidType,
     mut traits_out: impl FnMut(PackedTraits),
     mut upsert: impl FnMut(&[u8], &mut dyn FnMut(&mut PackRef)) -> Result<()>,
-) -> core::result::Result<(), ()> {
+) -> core::result::Result<(), Corrupted> {
     let hexsize = oid_type.hexsize();
     let eof = data.len();
     let (traits, start) = packed_header(data);
     traits_out(traits);
-    let mut scan = start.ok_or(())?;
+    let mut scan = start.ok_or(Corrupted)?;
     while scan < eof && data[scan] == b'#' {
-        let eol = strchr_nl(data, scan).ok_or(())?;
+        let eol = strchr_nl(data, scan).ok_or(Corrupted)?;
         scan = eol + 1;
     }
     while scan < eof {
-        let oid = oid_at(data, scan, oid_type).ok_or(())?;
+        let oid = oid_at(data, scan, oid_type).ok_or(Corrupted)?;
         scan += hexsize;
         if at(data, scan) != b' ' {
-            return Err(());
+            return Err(Corrupted);
         }
         scan += 1;
-        let eol = strchr_nl(data, scan).ok_or(())?;
+        let eol = strchr_nl(data, scan).ok_or(Corrupted)?;
         let mut name_end = eol;
         if eol > 0 && data[eol - 1] == b'\r' {
             // `eol[-1] = '\0'`: only if it is within the name.
@@ -209,10 +214,10 @@ pub fn parse_packed(
         // empties the cache anyway, so the record is applied whole.
         let mut peel = None;
         if at(data, scan) == b'^' {
-            peel = Some(oid_at(data, scan + 1, oid_type).ok_or(())?);
+            peel = Some(oid_at(data, scan + 1, oid_type).ok_or(Corrupted)?);
             scan += hexsize + 1;
             if scan < eof {
-                let eol = strchr_nl(data, scan).ok_or(())?;
+                let eol = strchr_nl(data, scan).ok_or(Corrupted)?;
                 scan = eol + 1;
             }
         }
@@ -229,7 +234,7 @@ pub fn parse_packed(
                 item.flags |= PACKREF_CANNOT_PEEL;
             }
         })
-        .map_err(|_| ())?;
+        .map_err(|_| Corrupted)?;
     }
     Ok(())
 }
@@ -303,18 +308,18 @@ pub enum Searched {
 }
 
 /// The binary search of `packed_lookup` over a sorted `packed-refs`
-/// mapping. `Err(())` is "corrupted packed references file".
+/// mapping. `Err(Corrupted)` is "corrupted packed references file".
 pub fn packed_search(
     data: &[u8],
     ref_name: &[u8],
     oid_type: OidType,
-) -> core::result::Result<Searched, ()> {
+) -> core::result::Result<Searched, Corrupted> {
     let hexsize = oid_type.hexsize();
     let data_end = data.len();
     let mut left = 0usize;
     let mut right = data_end;
     while left < right && data[left] == b'#' {
-        let i = memchr::memchr(b'\n', &data[left..data_end]).ok_or(())?;
+        let i = memchr::memchr(b'\n', &data[left..data_end]).ok_or(Corrupted)?;
         left += i + 1;
     }
     while left < right {
@@ -327,20 +332,24 @@ pub fn packed_search(
             right = rec;
         } else {
             if data_end - rec < hexsize {
-                return Err(());
+                return Err(Corrupted);
             }
-            let oid = Oid::from_prefix(&data[rec..rec + hexsize], oid_type).map_err(|_| ())?;
+            let oid =
+                Oid::from_prefix(&data[rec..rec + hexsize], oid_type).map_err(|_| Corrupted)?;
             let mut r = rec + hexsize + 1;
-            let eol = r + memchr::memchr(b'\n', data.get(r..data_end).ok_or(())?).ok_or(())?;
+            let eol = r + memchr::memchr(b'\n', data.get(r..data_end).ok_or(Corrupted)?)
+                .ok_or(Corrupted)?;
             let mut peel = None;
             if eol + 1 < data_end {
                 r = eol + 1;
                 if data[r] == b'^' {
                     r += 1;
                     if data_end - r < hexsize {
-                        return Err(());
+                        return Err(Corrupted);
                     }
-                    peel = Some(Oid::from_prefix(&data[r..r + hexsize], oid_type).map_err(|_| ())?);
+                    peel = Some(
+                        Oid::from_prefix(&data[r..r + hexsize], oid_type).map_err(|_| Corrupted)?,
+                    );
                 }
             }
             return Ok(Searched::Found(oid, peel));
@@ -712,7 +721,7 @@ impl FsInner {
         match packed_search(data, name, self.oid_kind()?) {
             Ok(Searched::Found(oid, peel)) => RefBox::new_direct(name, &oid, peel.as_ref()),
             Ok(Searched::NotFound) => Err(ref_error_notfound(name)),
-            Err(()) => Err(git_error_set!(
+            Err(Corrupted) => Err(git_error_set!(
                 ErrorClass::REFERENCE,
                 "corrupted packed references file"
             )),
@@ -842,15 +851,15 @@ impl FsInner {
             return Ok(1);
         }
         let mut cmp = 0;
-        if let Some(id) = old_id {
-            if v.raw_kind() == GIT_REFERENCE_DIRECT {
-                cmp = id.cmp_raw(v.oid_field());
-            }
+        if let Some(id) = old_id
+            && v.raw_kind() == GIT_REFERENCE_DIRECT
+        {
+            cmp = id.cmp_raw(v.oid_field());
         }
-        if let Some(t) = old_target {
-            if v.raw_kind() == GIT_REFERENCE_SYMBOLIC {
-                cmp = strcmp(t, v.symbolic_target().unwrap_or_default());
-            }
+        if let Some(t) = old_target
+            && v.raw_kind() == GIT_REFERENCE_SYMBOLIC
+        {
+            cmp = strcmp(t, v.symbolic_target().unwrap_or_default());
         }
         Ok(cmp)
     }
@@ -1204,9 +1213,8 @@ impl FsInner {
             };
             let original = lock.original_path().unwrap_or(c"").to_owned();
             let mut content = GitStr::new();
-            match futils::readbuffer(&mut content, &original) {
-                Err(ErrorCode::NOT_FOUND) => continue,
-                _ => {}
+            if let Err(ErrorCode::NOT_FOUND) = futils::readbuffer(&mut content, &original) {
+                continue;
             }
             if prefixcmp(content.as_bytes(), GIT_SYMREF) == 0 {
                 continue;
@@ -1592,10 +1600,10 @@ impl FsInner {
             if suffixcmp(&name, b".lock") == 0 {
                 continue;
             }
-            if let Some(g) = &it.glob {
-                if !wildmatch(g.to_bytes(), &name, WildmatchFlags::default()).is_match() {
-                    continue;
-                }
+            if let Some(g) = &it.glob
+                && !wildmatch(g.to_bytes(), &name, WildmatchFlags::default()).is_match()
+            {
+                continue;
             }
             let dup = it.pool.strndup(&name)?;
             it.loose.try_reserve(1).map_err(|_| errors::oom())?;
@@ -1870,7 +1878,7 @@ unsafe fn opt<'a>(p: *const c_char) -> Option<&'a CStr> {
 /// `p` is a live reference for the call.
 unsafe fn refarg<'a>(p: *const GitReference) -> RefView<'a> {
     // SAFETY: per the contract (C dereferences NULL).
-    unsafe { RefView::from_ptr(NonNull::new_unchecked(p.cast_mut())) }
+    unsafe { RefView::from_raw(p) }
 }
 
 /// An optional oid argument of a slot.
@@ -1951,17 +1959,17 @@ ffibox::impl_cvtable! {
     ) -> c_int {
         on panic: panicked(),
         on busy: busy(),
-        // SAFETY: `r` is a live reference, the others NULL or valid.
-        |s: &FsBackend| st(unsafe {
-            s.0.write(
-                refarg(r),
-                force != 0,
-                who,
-                opt(message),
-                oidarg(old_id),
-                opt(old_target).map(CStr::to_bytes),
-            )
-        }),
+        |s: &FsBackend| {
+            // SAFETY: `r` is a live reference.
+            let v = unsafe { refarg(r) };
+            // SAFETY: NULL or a string.
+            let msg = unsafe { opt(message) };
+            // SAFETY: NULL or a valid oid.
+            let old = unsafe { oidarg(old_id) };
+            // SAFETY: NULL or a string.
+            let old_t = unsafe { opt(old_target) };
+            st(s.0.write(v, force != 0, who, msg, old, old_t.map(CStr::to_bytes)))
+        },
     }
     fn rename(
         out: *mut *mut GitReference,
@@ -1976,9 +1984,8 @@ ffibox::impl_cvtable! {
         on busy: busy(),
         |s: &FsBackend| {
             // SAFETY: the names are strings, `message` NULL or one.
-            let r = unsafe {
-                s.0.rename(name(old_name).to_bytes(), name(new_name).to_bytes(), force != 0, who, opt(message))
-            };
+            let (o, n, msg) = (unsafe { name(old_name) }, unsafe { name(new_name) }, unsafe { opt(message) });
+            let r = s.0.rename(o.to_bytes(), n.to_bytes(), force != 0, who, msg);
             match r {
                 Ok(r) => {
                     if !out.is_null() {
@@ -1994,10 +2001,11 @@ ffibox::impl_cvtable! {
     fn del(@backend, ref_name: *const c_char, old_id: *const Oid, old_target: *const c_char) -> c_int {
         on panic: panicked(),
         on busy: busy(),
-        // SAFETY: `ref_name` is a string, the others NULL or valid.
-        |s: &FsBackend| st(unsafe {
-            s.0.delete(name(ref_name).to_bytes(), oidarg(old_id), opt(old_target).map(CStr::to_bytes))
-        }),
+        |s: &FsBackend| {
+            // SAFETY: `ref_name` is a string, the others NULL or valid.
+            let (n, old, old_t) = (unsafe { name(ref_name) }, unsafe { oidarg(old_id) }, unsafe { opt(old_target) });
+            st(s.0.delete(n.to_bytes(), old, old_t.map(CStr::to_bytes)))
+        },
     }
     fn compress(@backend) -> c_int {
         on panic: panicked(),
@@ -2076,7 +2084,8 @@ ffibox::impl_cvtable! {
                 return -1;
             }
             // SAFETY: strings.
-            st(unsafe { s.0.reflog_rename(name(old_name).to_bytes(), name(new_name).to_bytes()) })
+            let (o, n) = (unsafe { name(old_name) }, unsafe { name(new_name) });
+            st(s.0.reflog_rename(o.to_bytes(), n.to_bytes()))
         },
     }
     fn reflog_delete(@backend, ref_name: *const c_char) -> c_int {
@@ -2118,16 +2127,18 @@ ffibox::impl_cvtable! {
         |s: &FsBackend| {
             // SAFETY: the payload our `lock` made, which C hands back once.
             let lock = unsafe { LockFile::from_payload(payload) };
-            // SAFETY: `r` is a live reference, the others NULL or valid.
-            let res = unsafe {
-                if success == 2 {
-                    s.0.delete_tail(lock, refarg(r).name(), None, None)
-                } else if success != 0 {
-                    s.0.write_tail(refarg(r), lock, update_reflog != 0, None, None, sig, opt(message))
-                } else {
-                    drop(lock);
-                    Ok(())
-                }
+            let res = if success == 2 {
+                // SAFETY: `r` is a live reference.
+                let v = unsafe { refarg(r) };
+                s.0.delete_tail(lock, v.name(), None, None)
+            } else if success != 0 {
+                // SAFETY: `r` is a live reference; `message` NULL or a
+                // string.
+                let (v, msg) = (unsafe { refarg(r) }, unsafe { opt(message) });
+                s.0.write_tail(v, lock, update_reflog != 0, None, None, sig, msg)
+            } else {
+                drop(lock);
+                Ok(())
             };
             st(res)
         },
@@ -2223,12 +2234,9 @@ pub mod ffi {
                 unsafe { *out = core::ptr::null_mut() };
             }
             // SAFETY: strings (C dereferences NULL).
-            let (dir, n) = unsafe {
-                (
-                    crate::util::export::cstr_bytes(ref_dir),
-                    crate::util::export::cstr_bytes(ref_name),
-                )
-            };
+            let dir = unsafe { crate::util::export::cstr_bytes(ref_dir) };
+            // SAFETY: as above.
+            let n = unsafe { crate::util::export::cstr_bytes(ref_name) };
             match refs::lookup_loose(dir, n, oid_type, !out.is_null()) {
                 Ok(Some(r)) => {
                     // SAFETY: writable (`want` is `!out.is_null()`).
@@ -2249,7 +2257,9 @@ mod tests {
     const A: &str = "1111111111111111111111111111111111111111";
     const B: &str = "2222222222222222222222222222222222222222";
 
-    fn parse(data: &[u8]) -> core::result::Result<(Vec<(Vec<u8>, PackRef)>, PackedTraits), ()> {
+    type Parsed = (Vec<(Vec<u8>, PackRef)>, PackedTraits);
+
+    fn parse(data: &[u8]) -> core::result::Result<Parsed, Corrupted> {
         let mut items: Vec<(Vec<u8>, PackRef)> = Vec::new();
         let mut traits = None;
         parse_packed(
@@ -2370,7 +2380,7 @@ mod tests {
             packed_search(b"", b"x", OidType::Sha1),
             Ok(Searched::NotFound)
         );
-        assert_eq!(packed_search(b"#abc", b"x", OidType::Sha1), Err(()));
+        assert_eq!(packed_search(b"#abc", b"x", OidType::Sha1), Err(Corrupted));
     }
 
     #[test]

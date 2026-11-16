@@ -245,13 +245,14 @@ ffibox::define_ctype!(
 /// `db` is a live database whose last count is being dropped: nothing
 /// uses it again.
 pub unsafe fn free_db(db: *mut GitRefdb) {
-    // SAFETY: per the contract.
-    unsafe {
-        let backend = (*db).backend.load(Ordering::Acquire);
-        free_backend(backend);
-        core::ptr::write_bytes(db.cast::<u8>(), 0, core::mem::size_of::<GitRefdb>());
-        alloc::free(db.cast());
-    }
+    // SAFETY: per the contract: a live database (its fields are atomics).
+    let backend = unsafe { (*db).backend.load(Ordering::Acquire) };
+    // SAFETY: the database owned its backend; nothing reaches it now.
+    unsafe { free_backend(backend) };
+    // SAFETY: our block, which nothing uses any more.
+    unsafe { core::ptr::write_bytes(db.cast::<u8>(), 0, core::mem::size_of::<GitRefdb>()) };
+    // SAFETY: as above: from `git__calloc`, freed once.
+    unsafe { alloc::free(db.cast()) };
 }
 
 /// Free `backend` through its `free` slot (NULL: nothing).
@@ -265,10 +266,10 @@ unsafe fn free_backend(backend: *mut git_refdb_backend) {
     }
     // SAFETY: a live backend; `free` is required (checked by
     // `git_refdb_set_backend`, set by the built-in backends).
-    unsafe {
-        if let Some(f) = (*backend).free {
-            f(backend);
-        }
+    let free = unsafe { (*backend).free };
+    if let Some(f) = free {
+        // SAFETY: the backend's own `free` slot, called once.
+        unsafe { f(backend) };
     }
 }
 
@@ -319,6 +320,16 @@ impl RefdbPtr {
     /// that use it.
     pub unsafe fn new(db: NonNull<GitRefdb>) -> RefdbPtr {
         RefdbPtr(db)
+    }
+
+    /// The database at `db`, which C dereferences unchecked (the barrier
+    /// turns the panic of a NULL into an error).
+    ///
+    /// # Safety
+    ///
+    /// As [`new`](Self::new), for a non-NULL `db`.
+    pub unsafe fn from_raw(db: *mut GitRefdb) -> RefdbPtr {
+        RefdbPtr(NonNull::new(db).expect("NULL refdb"))
     }
 
     /// The database a repository holds (`git_repository_refdb__weakptr`).
@@ -450,11 +461,7 @@ impl RefdbPtr {
     pub fn iterator(self, glob: Option<&CStr>) -> Result<NonNull<git_reference_iterator>> {
         let b = self.backend();
         // SAFETY: as in `slot`.
-        let f = if b.is_null() {
-            None
-        } else {
-            unsafe { (*b).iterator }
-        };
+        let f = unsafe { b.as_ref() }.and_then(|t| t.iterator);
         let Some(f) = f else {
             return Err(git_error_set!(
                 ErrorClass::REFERENCE,
@@ -508,7 +515,7 @@ impl RefdbPtr {
     }
 
     /// `git_refdb_rename`.
-    pub fn rename(
+    pub(crate) fn rename(
         self,
         old_name: &CStr,
         new_name: &CStr,
@@ -670,7 +677,7 @@ impl RefdbPtr {
             LOGALL_TRUE => {
                 let name = r.name();
                 // C ORs `git_refdb_has_log`'s int: an error (< 0) is true.
-                self.has_log_raw(r.name_cstr()).map_or(true, |v| v != 0)
+                !matches!(self.has_log_raw(r.name_cstr()), Ok(0))
                     || prefixcmp(name, refs::GIT_REFS_HEADS_DIR) == 0
                     || strcmp(name, refs::GIT_HEAD_REF) == 0
                     || prefixcmp(name, refs::GIT_REFS_REMOTES_DIR) == 0
@@ -717,10 +724,9 @@ pub fn new_db(repo: *mut git_repository) -> Result<NonNull<GitRefdb>> {
         .ok_or(ErrorCode::GENERIC)?;
     // SAFETY: a fresh zeroed block, which is a valid `GitRefdb` (atomics
     // and pointers at zero).
-    unsafe {
-        (*db.as_ptr()).repo = repo;
-        (*db.as_ptr()).rc.inc();
-    }
+    unsafe { (*db.as_ptr()).repo = repo };
+    // SAFETY: as above.
+    unsafe { (*db.as_ptr()).rc.inc() };
     Ok(db)
 }
 
@@ -776,14 +782,14 @@ fn reftable_backend(repo: RepoPtr) -> Result<*mut git_refdb_backend> {
 pub unsafe fn set_backend(db: RefdbPtr, backend: *mut git_refdb_backend) -> Result<()> {
     // SAFETY: per the contract.
     let b = unsafe { backend.as_ref() };
-    if let Some(b) = b {
-        if b.version == 0 || b.version > GIT_REFDB_BACKEND_VERSION {
-            return Err(git_error_set!(
-                ErrorClass::INVALID,
-                "invalid version {} on git_refdb_backend",
-                b.version
-            ));
-        }
+    if let Some(b) = b
+        && (b.version == 0 || b.version > GIT_REFDB_BACKEND_VERSION)
+    {
+        return Err(git_error_set!(
+            ErrorClass::INVALID,
+            "invalid version {} on git_refdb_backend",
+            b.version
+        ));
     }
     let complete = b.is_some_and(|b| {
         b.exists.is_some()
@@ -828,14 +834,21 @@ pub fn name_of(r: RefView<'_>) -> Bytes<'_> {
 /// else during the call.
 pub unsafe fn iterator_next(iter: *mut git_reference_iterator) -> Result<RefBox> {
     let mut out = core::ptr::null_mut();
-    // SAFETY: per the contract; `next` is set by every backend.
-    let r = unsafe { ((*iter).next.expect("iterator next is NULL"))(&raw mut out, iter) };
+    // per the contract; `next` is set by every backend.
+    let r = {
+        // SAFETY: a live table, whose slots C does not change while it is used.
+        let f = unsafe { (*iter).next }.expect("iterator next is NULL");
+        // SAFETY: the slot of that table, with its own table and C's arguments.
+        unsafe { f(&raw mut out, iter) }
+    };
     // SAFETY: what the backend handed over, if anything.
     let made = unsafe { RefBox::from_raw(out) };
     ErrorCode::check(r)?;
     let mut made = made.ok_or(ErrorCode::GENERIC)?;
+    // SAFETY: a live iterator.
+    let db = unsafe { (*iter).db };
     // SAFETY: the iterator's database is live (it holds a count).
-    unsafe { made.attach_db((*iter).db) };
+    unsafe { made.attach_db(db) };
     Ok(made)
 }
 
@@ -848,8 +861,13 @@ pub unsafe fn iterator_next_name(
     out: *mut *const c_char,
     iter: *mut git_reference_iterator,
 ) -> c_int {
-    // SAFETY: per the contract.
-    unsafe { ((*iter).next_name.expect("iterator next_name is NULL"))(out, iter) }
+    // per the contract.
+    {
+        // SAFETY: a live table, whose slots C does not change while it is used.
+        let f = unsafe { (*iter).next_name }.expect("iterator next_name is NULL");
+        // SAFETY: the slot of that table, with its own table and C's arguments.
+        unsafe { f(out, iter) }
+    }
 }
 
 /// `git_refdb_iterator_free`: drop the iterator's count on its database,
@@ -859,15 +877,17 @@ pub unsafe fn iterator_next_name(
 ///
 /// `iter` is a live iterator from `git_refdb_iterator`, given up.
 pub unsafe fn iterator_free(iter: *mut git_reference_iterator) {
-    // SAFETY: per the contract: the iterator holds a count on `db`.
-    unsafe {
-        let db = (*iter).db;
-        if !db.is_null() {
-            decref(db);
-        }
-        if let Some(f) = (*iter).free {
-            f(iter);
-        }
+    // SAFETY: per the contract: a live iterator.
+    let db = unsafe { (*iter).db };
+    // SAFETY: as above.
+    let free = unsafe { (*iter).free };
+    if !db.is_null() {
+        // SAFETY: the iterator holds a count on its live database.
+        unsafe { decref(db) };
+    }
+    if let Some(f) = free {
+        // SAFETY: the iterator's own `free` slot, called once.
+        unsafe { f(iter) };
     }
 }
 
@@ -892,7 +912,7 @@ pub mod ffi {
     unsafe fn dbp(db: *mut GitRefdb) -> Result<RefdbPtr> {
         crate::git_assert_arg!(!db.is_null(), "db");
         // SAFETY: per the contract.
-        Ok(unsafe { RefdbPtr::new(NonNull::new_unchecked(db)) })
+        Ok(unsafe { RefdbPtr::from_raw(db) })
     }
 
     /// `git_refdb_new`.
@@ -935,7 +955,7 @@ pub mod ffi {
             // SAFETY: `out` writable.
             unsafe { *out = core::ptr::null_mut() };
             // SAFETY: a live repository (the caller's contract).
-            let repo = unsafe { RepoPtr::new(NonNull::new_unchecked(repo)) };
+            let repo = unsafe { RepoPtr::from_raw(repo) };
             match open(repo) {
                 Ok(db) => {
                     // SAFETY: as above.
@@ -1017,7 +1037,7 @@ pub mod ffi {
         barrier(|| {
             crate::git_assert_arg!(!db.is_null(), "refdb", -1);
             // SAFETY: per the contract.
-            let d = unsafe { RefdbPtr::new(NonNull::new_unchecked(db)) };
+            let d = unsafe { RefdbPtr::from_raw(db) };
             crate::git_assert_arg!(!d.backend().is_null(), "refdb->backend", -1);
             // SAFETY: per the contract.
             status(d.init(unsafe { cstr(head_target) }, mode, flags))
@@ -1039,12 +1059,17 @@ pub mod ffi {
             crate::git_assert_arg!(!exists.is_null(), "exists", -1);
             crate::git_assert_arg!(!db.is_null(), "refdb", -1);
             // SAFETY: per the contract.
-            let d = unsafe { RefdbPtr::new(NonNull::new_unchecked(db)) };
+            let d = unsafe { RefdbPtr::from_raw(db) };
             crate::git_assert_arg!(!d.backend().is_null(), "refdb->backend", -1);
             let b = d.backend();
-            // SAFETY: a live backend and the caller's pointers, passed on
+            // a live backend and the caller's pointers, passed on
             // as C does.
-            unsafe { ((*b).exists.expect("refdb backend slot is NULL"))(exists, b, ref_name) }
+            {
+                // SAFETY: a live table, whose slots C does not change while it is used.
+                let f = unsafe { (*b).exists }.expect("refdb backend slot is NULL");
+                // SAFETY: the slot of that table, with its own table and C's arguments.
+                unsafe { f(exists, b, ref_name) }
+            }
         })
     }
 
@@ -1062,7 +1087,7 @@ pub mod ffi {
         barrier(|| {
             crate::git_assert_arg!(!db.is_null(), "db", -1);
             // SAFETY: per the contract.
-            let d = unsafe { RefdbPtr::new(NonNull::new_unchecked(db)) };
+            let d = unsafe { RefdbPtr::from_raw(db) };
             crate::git_assert_arg!(!d.backend().is_null(), "db->backend", -1);
             crate::git_assert_arg!(!out.is_null(), "out", -1);
             crate::git_assert_arg!(!ref_name.is_null(), "ref_name", -1);
@@ -1096,7 +1121,7 @@ pub mod ffi {
             unsafe { *out = core::ptr::null_mut() };
             crate::git_assert_arg!(!db.is_null(), "db", -1);
             // SAFETY: per the contract.
-            let d = unsafe { RefdbPtr::new(NonNull::new_unchecked(db)) };
+            let d = unsafe { RefdbPtr::from_raw(db) };
             crate::git_assert_arg!(!d.backend().is_null(), "db->backend", -1);
             crate::git_assert_arg!(!ref_name.is_null(), "ref_name", -1);
             // SAFETY: a string.
@@ -1204,17 +1229,18 @@ pub mod ffi {
         barrier(|| {
             crate::git_assert_arg!(!db.is_null(), "db", -1);
             // SAFETY: per the contract.
-            let d = unsafe { RefdbPtr::new(NonNull::new_unchecked(db)) };
+            let d = unsafe { RefdbPtr::from_raw(db) };
             crate::git_assert_arg!(!d.backend().is_null(), "db->backend", -1);
             d.incref();
             // SAFETY: a live reference (C dereferences NULL).
             unsafe { (*r).db = db };
             let b = d.backend();
-            // SAFETY: the backend's slot, with C's arguments passed on.
-            unsafe {
-                ((*b).write.expect("refdb backend slot is NULL"))(
-                    b, r, force, who, message, old_id, old_target,
-                )
+            // the backend's slot, with C's arguments passed on.
+            {
+                // SAFETY: a live table, whose slots C does not change while it is used.
+                let f = unsafe { (*b).write }.expect("refdb backend slot is NULL");
+                // SAFETY: the slot of that table, with its own table and C's arguments.
+                unsafe { f(b, r, force, who, message, old_id, old_target) }
             }
         })
     }
@@ -1237,14 +1263,15 @@ pub mod ffi {
         barrier(|| {
             crate::git_assert_arg!(!db.is_null(), "db", -1);
             // SAFETY: per the contract.
-            let d = unsafe { RefdbPtr::new(NonNull::new_unchecked(db)) };
+            let d = unsafe { RefdbPtr::from_raw(db) };
             crate::git_assert_arg!(!d.backend().is_null(), "db->backend", -1);
             let b = d.backend();
-            // SAFETY: as in `git_refdb_write`.
-            let r = unsafe {
-                ((*b).rename.expect("refdb backend slot is NULL"))(
-                    out, b, old_name, new_name, force, who, message,
-                )
+            // as in `git_refdb_write`.
+            let r = {
+                // SAFETY: a live table, whose slots C does not change while it is used.
+                let f = unsafe { (*b).rename }.expect("refdb backend slot is NULL");
+                // SAFETY: the slot of that table, with its own table and C's arguments.
+                unsafe { f(out, b, old_name, new_name, force, who, message) }
             };
             if r < 0 {
                 return r;
@@ -1277,12 +1304,15 @@ pub mod ffi {
         barrier(|| {
             crate::git_assert_arg!(!db.is_null(), "db", -1);
             // SAFETY: per the contract.
-            let d = unsafe { RefdbPtr::new(NonNull::new_unchecked(db)) };
+            let d = unsafe { RefdbPtr::from_raw(db) };
             crate::git_assert_arg!(!d.backend().is_null(), "db->backend", -1);
             let b = d.backend();
-            // SAFETY: as in `git_refdb_write`.
-            unsafe {
-                ((*b).del.expect("refdb backend slot is NULL"))(b, ref_name, old_id, old_target)
+            // as in `git_refdb_write`.
+            {
+                // SAFETY: a live table, whose slots C does not change while it is used.
+                let f = unsafe { (*b).del }.expect("refdb backend slot is NULL");
+                // SAFETY: the slot of that table, with its own table and C's arguments.
+                unsafe { f(b, ref_name, old_id, old_target) }
             }
         })
     }
@@ -1301,18 +1331,24 @@ pub mod ffi {
         barrier(|| {
             crate::git_assert_arg!(!db.is_null(), "db", -1);
             // SAFETY: per the contract.
-            let d = unsafe { RefdbPtr::new(NonNull::new_unchecked(db)) };
+            let d = unsafe { RefdbPtr::from_raw(db) };
             crate::git_assert_arg!(!d.backend().is_null(), "db->backend", -1);
             let b = d.backend();
-            // SAFETY: as in `git_refdb_write`.
-            let r =
-                unsafe { ((*b).reflog_read.expect("refdb backend slot is NULL"))(out, b, name) };
+            // as in `git_refdb_write`.
+            let r = {
+                // SAFETY: a live table, whose slots C does not change while it is used.
+                let f = unsafe { (*b).reflog_read }.expect("refdb backend slot is NULL");
+                // SAFETY: the slot of that table, with its own table and C's arguments.
+                unsafe { f(out, b, name) }
+            };
             if r < 0 {
                 return r;
             }
             d.incref();
             // SAFETY: on success the backend set `*out` to a fresh reflog.
-            unsafe { (**out).db = db };
+            let log = unsafe { *out };
+            // SAFETY: as above.
+            unsafe { (*log).db = db };
             0
         })
     }
@@ -1330,9 +1366,9 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             // SAFETY: per the contract (C dereferences NULLs).
-            let d = unsafe { RefdbPtr::new(NonNull::new_unchecked(db)) };
+            let d = unsafe { RefdbPtr::from_raw(db) };
             // SAFETY: a live reference for the call.
-            let v = unsafe { RefView::from_ptr(NonNull::new_unchecked(r.cast_mut())) };
+            let v = unsafe { RefView::from_raw(r) };
             match d.should_write_reflog(v) {
                 Ok(w) => {
                     // SAFETY: `out` writable.
@@ -1359,9 +1395,9 @@ pub mod ffi {
             // SAFETY: `out` writable.
             unsafe { *out = 0 };
             // SAFETY: per the contract.
-            let d = unsafe { RefdbPtr::new(NonNull::new_unchecked(db)) };
+            let d = unsafe { RefdbPtr::from_raw(db) };
             // SAFETY: a live reference for the call.
-            let v = unsafe { RefView::from_ptr(NonNull::new_unchecked(r.cast_mut())) };
+            let v = unsafe { RefView::from_raw(r) };
             match d.should_write_head_reflog(v) {
                 Ok(w) => {
                     // SAFETY: `out` writable.
@@ -1384,7 +1420,7 @@ pub mod ffi {
             crate::git_assert_arg!(!db.is_null(), "db", -1);
             crate::git_assert_arg!(!refname.is_null(), "refname", -1);
             // SAFETY: per the contract.
-            let d = unsafe { RefdbPtr::new(NonNull::new_unchecked(db)) };
+            let d = unsafe { RefdbPtr::from_raw(db) };
             // SAFETY: a string.
             match d.has_log_raw(unsafe { CStr::from_ptr(refname) }) {
                 Ok(v) => v,
@@ -1407,7 +1443,7 @@ pub mod ffi {
             crate::git_assert_arg!(!db.is_null(), "db", -1);
             crate::git_assert_arg!(!refname.is_null(), "refname", -1);
             // SAFETY: per the contract.
-            let d = unsafe { RefdbPtr::new(NonNull::new_unchecked(db)) };
+            let d = unsafe { RefdbPtr::from_raw(db) };
             // SAFETY: a string.
             match d.ensure_log(unsafe { CStr::from_ptr(refname) }) {
                 Ok(v) => v,
@@ -1461,7 +1497,7 @@ pub mod ffi {
             crate::git_assert_arg!(!db.is_null(), "db", -1);
             crate::git_assert_arg!(!refname.is_null(), "refname", -1);
             // SAFETY: per the contract.
-            let d = unsafe { RefdbPtr::new(NonNull::new_unchecked(db)) };
+            let d = unsafe { RefdbPtr::from_raw(db) };
             let b = d.backend();
             // SAFETY: a live backend (C dereferences NULL).
             let Some(f) = (unsafe { (*b).lock }) else {
@@ -1491,19 +1527,14 @@ pub mod ffi {
         barrier(|| {
             crate::git_assert_arg!(!db.is_null(), "db", -1);
             // SAFETY: per the contract.
-            let d = unsafe { RefdbPtr::new(NonNull::new_unchecked(db)) };
+            let d = unsafe { RefdbPtr::from_raw(db) };
             let b = d.backend();
-            // SAFETY: the backend's slot (C calls it unconditionally).
-            unsafe {
-                ((*b).unlock.expect("refdb backend slot is NULL"))(
-                    b,
-                    payload,
-                    success,
-                    update_reflog,
-                    r,
-                    sig,
-                    message,
-                )
+            // the backend's slot (C calls it unconditionally).
+            {
+                // SAFETY: a live table, whose slots C does not change while it is used.
+                let f = unsafe { (*b).unlock }.expect("refdb backend slot is NULL");
+                // SAFETY: the slot of that table, with its own table and C's arguments.
+                unsafe { f(b, payload, success, update_reflog, r, sig, message) }
             }
         })
     }

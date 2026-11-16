@@ -58,12 +58,14 @@ pub struct GitReflog {
 ///
 /// `entry` is a live entry from libgit2's allocator, given up.
 pub unsafe fn entry_free(entry: *mut GitReflogEntry) {
-    // SAFETY: per the contract.
-    unsafe {
-        p::git_signature_free((*entry).committer);
-        alloc::free((*entry).msg.cast());
-        alloc::free(entry.cast());
-    }
+    // SAFETY: per the contract: a live entry, ours.
+    let e = unsafe { &mut *entry };
+    // SAFETY: the entry's own signature (or NULL), freed once.
+    unsafe { p::git_signature_free(e.committer) };
+    // SAFETY: the entry's own message (or NULL), freed once.
+    unsafe { alloc::free(e.msg.cast()) };
+    // SAFETY: the entry's block, from `git__allocator`, freed once.
+    unsafe { alloc::free(entry.cast()) };
 }
 
 /// `reflog->ref_name`.
@@ -72,8 +74,10 @@ pub unsafe fn entry_free(entry: *mut GitReflogEntry) {
 ///
 /// `log` is a live reflog that outlives the borrow and keeps its name.
 pub unsafe fn name_of<'a>(log: *const GitReflog) -> &'a CStr {
-    // SAFETY: per the contract: the name is a string the reflog holds.
-    unsafe { CStr::from_ptr((*log).ref_name) }
+    // SAFETY: per the contract: a live reflog.
+    let name = unsafe { (*log).ref_name };
+    // SAFETY: the name is a string the reflog holds.
+    unsafe { CStr::from_ptr(name) }
 }
 
 /// The entries of `log`, oldest first.
@@ -113,7 +117,7 @@ pub unsafe fn entry_byindex(log: *const GitReflog, idx: usize) -> *mut GitReflog
 
 /// `serialize_reflog_entry`: `<old> <new> <signature>\t<message>\n`, the
 /// message's newlines turned into spaces.
-pub fn serialize_entry(
+pub(crate) fn serialize_entry(
     buf: &mut GitStr,
     old: &Oid,
     new: &Oid,
@@ -171,13 +175,16 @@ impl Reflog {
             unsafe { alloc::free(log.as_ptr().cast()) };
             return Err(ErrorCode::GENERIC);
         }
-        // SAFETY: a fresh zeroed block: every field is written before use
-        // (a zeroed `GitVector` is a valid empty one, written over anyway).
-        unsafe {
-            (&raw mut (*log.as_ptr()).ref_name).write(n);
-            (&raw mut (*log.as_ptr()).oid_type).write(oid_type);
-            (&raw mut (*log.as_ptr()).entries).write(GitVector::new());
-        }
+        let l = log.as_ptr();
+        // SAFETY: a fresh zeroed block: every field is written before use.
+        unsafe { (*l).ref_name = n };
+        // SAFETY: as above.
+        unsafe { (*l).oid_type = oid_type };
+        let entries = l
+            .wrapping_byte_add(core::mem::offset_of!(GitReflog, entries))
+            .cast::<GitVector>();
+        // SAFETY: as above; the zeroed vector is written over, not dropped.
+        unsafe { entries.write(GitVector::new()) };
         Ok(Reflog(log))
     }
 
@@ -313,7 +320,7 @@ fn parse_line(parser: &mut GitParseCtx<'_>, t: Option<OidType>) -> Result<Option
         p::git_signature__parse(
             sig,
             &raw mut start,
-            line.as_ptr().add(sig_len).cast(),
+            line.as_ptr().wrapping_add(sig_len).cast(),
             core::ptr::null(),
             0,
         )
@@ -353,19 +360,22 @@ pub unsafe fn free_raw(log: *mut GitReflog) {
     if log.is_null() {
         return;
     }
-    // SAFETY: per the contract.
-    unsafe {
-        let db = (*log).db;
-        if !db.is_null() {
-            refdb::decref(db);
-        }
-        for e in (*log).entries.iter() {
-            entry_free(e.cast());
-        }
-        (*log).entries.dispose();
-        alloc::free((*log).ref_name.cast());
-        alloc::free(log.cast());
+    // SAFETY: per the contract: a live reflog, ours from now on.
+    let l = unsafe { &mut *log };
+    if !l.db.is_null() {
+        // SAFETY: the reflog holds a count on its live database.
+        unsafe { refdb::decref(l.db) };
     }
+    for e in l.entries.iter() {
+        // SAFETY: the reflog's entries are its own, freed once.
+        unsafe { entry_free(e.cast()) };
+    }
+    l.entries.dispose();
+    // SAFETY: the reflog's own name.
+    unsafe { alloc::free(l.ref_name.cast()) };
+    // SAFETY: the reflog's block, from `git__allocator`, freed once (`l`
+    // is not used after).
+    unsafe { alloc::free(log.cast()) };
 }
 
 /// `git_reflog_append`: append an entry to `new_oid`, whose old id is the
@@ -447,15 +457,18 @@ pub unsafe fn drop_entry(
     // SAFETY: per the contract.
     let entry = unsafe { entry_byindex(log, idx - 1) };
     if idx == entrycount - 1 {
-        // SAFETY: a live entry (`idx - 1` < the new count) and reflog.
-        unsafe { (*entry).oid_old = oid_clear((*log).oid_type) };
+        // SAFETY: a live reflog.
+        let t = unsafe { (*log).oid_type };
+        // SAFETY: a live entry (`idx - 1` < the new count).
+        unsafe { (*entry).oid_old = oid_clear(t) };
         return Ok(());
     }
+    // SAFETY: a live reflog; `idx` < the new count.
+    let previous = unsafe { entry_byindex(log, idx) };
+    // SAFETY: a live entry of it.
+    let cur = unsafe { (*previous).oid_cur };
     // SAFETY: as above.
-    unsafe {
-        let previous = entry_byindex(log, idx);
-        (*entry).oid_old = (*previous).oid_cur;
-    }
+    unsafe { (*entry).oid_old = cur };
     Ok(())
 }
 
@@ -514,7 +527,7 @@ pub mod ffi {
             crate::git_assert_arg!(!repo.is_null(), "repo", -1);
             crate::git_assert_arg!(!name.is_null(), "name", -1);
             // SAFETY: per the contract.
-            let repo = unsafe { RepoPtr::new(NonNull::new_unchecked(repo)) };
+            let repo = unsafe { RepoPtr::from_raw(repo) };
             let db = match RefdbPtr::of_repo(repo) {
                 Ok(d) => d,
                 Err(e) => return e.raw(),
@@ -544,7 +557,7 @@ pub mod ffi {
             let db = unsafe { (*reflog).db };
             crate::git_assert_arg!(!db.is_null(), "reflog->db", -1);
             // SAFETY: the reflog's database, counted by it.
-            let d = unsafe { RefdbPtr::new(NonNull::new_unchecked(db)) };
+            let d = unsafe { RefdbPtr::from_raw(db) };
             // SAFETY: a live reflog.
             status(unsafe { d.reflog_write(reflog) })
         })
@@ -567,8 +580,10 @@ pub mod ffi {
             crate::git_assert_arg!(!reflog.is_null(), "reflog", -1);
             crate::git_assert_arg!(!new_oid.is_null(), "new_oid", -1);
             crate::git_assert_arg!(!committer.is_null(), "committer", -1);
-            // SAFETY: per the contract.
-            let r = unsafe { append(reflog, &*new_oid, committer, cstr(msg).map(CStr::to_bytes)) };
+            // SAFETY: a valid oid; NULL or a string.
+            let (id, m) = (unsafe { &*new_oid }, unsafe { cstr(msg) });
+            // SAFETY: a live reflog, exclusively used; a valid signature.
+            let r = unsafe { append(reflog, id, committer, m.map(CStr::to_bytes)) };
             match r {
                 Ok(()) => 0,
                 Err(_) => -1,
@@ -589,15 +604,18 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             // SAFETY: per the contract (C dereferences NULL).
-            let repo = unsafe { RepoPtr::new(NonNull::new_unchecked(repo)) };
+            let repo = unsafe { RepoPtr::from_raw(repo) };
             let db = match refdb_of(repo) {
                 Ok(d) => d,
                 Err(e) => return e.raw(),
             };
             let b = db.backend();
-            // SAFETY: the backend's slot, with C's arguments.
-            unsafe {
-                ((*b).reflog_rename.expect("refdb backend slot is NULL"))(b, old_name, new_name)
+            // the backend's slot, with C's arguments.
+            {
+                // SAFETY: a live table, whose slots C does not change while it is used.
+                let f = unsafe { (*b).reflog_rename }.expect("refdb backend slot is NULL");
+                // SAFETY: the slot of that table, with its own table and C's arguments.
+                unsafe { f(b, old_name, new_name) }
             }
         })
     }
@@ -614,14 +632,19 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             // SAFETY: per the contract.
-            let repo = unsafe { RepoPtr::new(NonNull::new_unchecked(repo)) };
+            let repo = unsafe { RepoPtr::from_raw(repo) };
             let db = match refdb_of(repo) {
                 Ok(d) => d,
                 Err(e) => return e.raw(),
             };
             let b = db.backend();
-            // SAFETY: as above.
-            unsafe { ((*b).reflog_delete.expect("refdb backend slot is NULL"))(b, name) }
+            // as above.
+            {
+                // SAFETY: a live table, whose slots C does not change while it is used.
+                let f = unsafe { (*b).reflog_delete }.expect("refdb backend slot is NULL");
+                // SAFETY: the slot of that table, with its own table and C's arguments.
+                unsafe { f(b, name) }
+            }
         })
     }
 

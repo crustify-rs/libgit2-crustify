@@ -2,6 +2,7 @@
 //! with raw pointers as C would, on edge cases and NULLs.
 
 #![cfg(feature = "link-c")]
+#![allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)]
 
 use core::ffi::{CStr, c_char, c_int, c_void};
 use core::ptr::{null, null_mut};

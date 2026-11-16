@@ -442,3 +442,82 @@ DIVERGENCES.md).
 - C: subtracts `char_cnt` from `line_len` and `remain_len` unchecked; more
   than `line_len` wraps them and later reads run past the content.
 - Rust: advances by at most `line_len`.
+
+## References (WP l-refs: refs, refdb, refdb_fs, reflog)
+
+### refdb_fs: the sorted lookup reads `packed-refs`' mapping after unlocking
+- C: `packed_lookup` calls `packed_map_check` (which takes and releases
+  `prlock`) and then binary-searches `backend->packed_refs_map.data`
+  without the lock; a concurrent `packed_write` (`git_refdb_compress`, a
+  delete of a packed reference) calls `packed_map_free`, which unmaps it.
+- Trigger: one thread looking up references while another deletes a packed
+  one (`tests/libgit2/threads/refdb.c` does both).
+- Rust: the mapping is an `Arc`; a lookup holds it for the search, and it
+  is unmapped when the last holder drops it.
+
+### refdb_fs: the `packed-refs` traits are written by several threads
+- C: `packed_set_peeling_mode` writes `backend->peeling_mode` and
+  `backend->sorted` from `packed_reload` (under the cache's write lock) and
+  from `packed_map_check` (under `prlock`), while lookups read them under
+  neither: a data race.
+- Rust: both are atomics (relaxed): each read sees one of the values a
+  writer stored.
+
+### refdb_fs: an out-of-memory glob makes the iterator "succeed" without one
+- C: `refdb_fs_backend__iterator` sets `error = GIT_ERROR_NOMEMORY` (the
+  error class, 2) when `git_pool_strdup` of the glob fails, and returns it;
+  `git_refdb_iterator` tests `< 0` and dereferences the unset `*out`.
+- Rust: the out-of-memory error (-1).
+
+### refdb_fs: `init` returns 1 when making `refs/heads` or `refs/tags` fails
+- C: `(error = git_futils_mkdir(path.ptr, dmode, 0) < 0)` stores the
+  comparison: a failure returns 1, which `git_repository_init` treats as
+  success.
+- Rust: kept (returns 1, with mkdir's error message set): the closest
+  defined result.
+
+### refdb_fs: `serialize_reflog_entry` reports out of memory as 1
+- C: returns `git_str_oom(buf)` (true: 1); its callers test `< 0`, so an
+  out-of-memory buffer is written to the reflog as if it had succeeded.
+- Rust: the out-of-memory error; `reflog_write` returns 0 there as C does
+  (its `error` is still 0 when it jumps to its cleanup), `reflog_append`
+  fails.
+
+### refdb_fs: `reflog_parse` reads an uninitialized `char`
+- C: `char c;` is set only by `git_parse_peek`; on a line that ends right
+  after the two object ids (`<old> <new>` and nothing else), the loop never
+  peeks and `if (c == '\t')` reads it uninitialized.
+- Rust: `c` starts at NUL: no message (the signature fails to parse there
+  anyway, so the line is skipped).
+
+### refdb_fs: the iterator finds its backend through `iter->db->backend`
+- C: `refdb_fs_backend__iterator_next` takes `GIT_CONTAINER_OF(iter->parent.db->backend,
+  refdb_fs_backend, parent)`: after `git_refdb_set_backend` replaced the
+  backend during an iteration, that is another type (or freed memory).
+- Rust: the iterator holds its own reference to the backend's state.
+
+### refs: `git_reference__normalize_name` without a buffer and with validation disabled
+- C: `git_str_sets(buf, current)` with `buf == NULL` (reached by
+  `git_reference__name_is_valid(…, GIT_REFERENCE_FORMAT__VALIDATION_DISABLE)`)
+  dereferences NULL.
+- Rust: valid, nothing written.
+
+### refs: `git_reference_dup` of a reference without a database
+- C: `GIT_REFCOUNT_INC((*dest)->db)` with `db == NULL` (a reference from
+  `git_reference__alloc` that no refdb returned) dereferences NULL.
+- Rust: the copy has no database either.
+
+### refs: `git_reference__realloc` leaks on failure
+- C: when `git__realloc` fails, `*ptr_to_ref` is set to NULL and the old
+  block is neither returned nor freed.
+- Rust: frees it (with its symbolic target and its count on the refdb).
+
+### refs: `git_reference_list` leaks the names on failure
+- C: `git_vector_dispose(&ref_list)` frees the vector, not the names it
+  holds.
+- Rust: frees them.
+
+### refdb: `git_refdb_set_backend(db, NULL)`
+- C: `GIT_ERROR_CHECK_VERSION` accepts NULL, then `!backend->exists`
+  dereferences it.
+- Rust: "incomplete refdb backend implementation", `GIT_EINVALID`.

@@ -245,6 +245,16 @@ impl RepoPtr {
         RepoPtr(repo)
     }
 
+    /// The repository at `repo`, which C dereferences unchecked (the
+    /// barrier turns the panic of a NULL into an error).
+    ///
+    /// # Safety
+    ///
+    /// As [`new`](Self::new), for a non-NULL `repo`.
+    pub unsafe fn from_raw(repo: *mut git_repository) -> RepoPtr {
+        RepoPtr(NonNull::new(repo).expect("NULL repository"))
+    }
+
     /// The raw pointer.
     pub fn as_ptr(self) -> *mut git_repository {
         self.0.as_ptr()
@@ -289,10 +299,9 @@ impl RepoPtr {
         // it when the repository is opened, before any refdb is made.
         unsafe {
             self.as_ptr()
-                .cast::<u8>()
-                .add(REPO_REFDB_TYPE_OFFSET)
+                .wrapping_byte_add(REPO_REFDB_TYPE_OFFSET)
                 .cast::<c_int>()
-                .read()
+                .read_unaligned()
         }
     }
 
@@ -450,8 +459,10 @@ impl ObjBox {
 
     /// `git_object_id`.
     pub fn id(&self) -> Oid {
-        // SAFETY: a live object, whose id lives as long.
-        unsafe { *git_object_id(self.0.as_ptr()) }
+        // SAFETY: a live object.
+        let id = unsafe { git_object_id(self.0.as_ptr()) };
+        // SAFETY: the object's id, alive as long as it.
+        unsafe { *id }
     }
 
     /// `git_tag_target_id` of a tag object.

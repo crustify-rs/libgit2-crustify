@@ -130,7 +130,9 @@ impl FsIterator {
         let it = self.0.as_ptr();
         // SAFETY: `it` is a live iterator we own; its `cb` table is the
         // filesystem iterator's, whose `advance` is set.
-        let advance = unsafe { (*(*it).cb).advance }?;
+        let cb = unsafe { (*it).cb };
+        // SAFETY: as above.
+        let advance = unsafe { (*cb).advance }?;
         // SAFETY: as above; `entry` is writable.
         if unsafe { advance(&raw mut entry, it) } != 0 || entry.is_null() {
             return None;
@@ -139,14 +141,14 @@ impl FsIterator {
         // `path` (at the layout-tested offset) is a NUL-terminated string
         // owned by the iterator until the next advance; the borrow of
         // `self` (mutable) ends before that.
-        unsafe {
-            let path = entry
-                .cast::<u8>()
-                .add(INDEX_ENTRY_PATH_OFFSET)
+        let path = unsafe {
+            entry
+                .wrapping_byte_add(INDEX_ENTRY_PATH_OFFSET)
                 .cast::<*const c_char>()
-                .read_unaligned();
-            Some(CStr::from_ptr(path))
-        }
+                .read_unaligned()
+        };
+        // SAFETY: as above.
+        Some(unsafe { CStr::from_ptr(path) })
     }
 }
 

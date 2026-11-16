@@ -71,9 +71,8 @@ impl Repository {
         }
         let ptr = NonNull::new(out).ok_or_else(|| Error::from(ErrorCode::GENERIC))?;
         // SAFETY: a repository we own until drop.
-        Ok(Repository {
-            repo: unsafe { RepoPtr::new(ptr) },
-        })
+        let repo = unsafe { RepoPtr::new(ptr) };
+        Ok(Repository { repo })
     }
 
     /// `git_repository_open`.
@@ -773,7 +772,7 @@ impl<'repo> Reflog<'repo> {
         message: Option<&[u8]>,
     ) -> Result<()> {
         let sig = committer.to_sig()?;
-        let msg = message.map(|m| crate::util::fs_path::c_str(m));
+        let msg = message.map(crate::util::fs_path::c_str);
         // SAFETY: our reflog, exclusively borrowed; a valid signature.
         rich(unsafe { rl::append(self.inner.as_ptr(), id, sig.as_ptr(), msg) })
     }
@@ -791,8 +790,10 @@ impl<'repo> Reflog<'repo> {
         let db = unsafe { (*self.inner.as_ptr()).db };
         let db =
             NonNull::new(db).ok_or_else(|| Error::from(errors::assert_arg_failed("reflog->db")))?;
-        // SAFETY: the reflog's database, counted by it; our reflog.
-        rich(unsafe { RefdbPtr::new(db).reflog_write(self.inner.as_ptr()) })
+        // SAFETY: the reflog's database, counted by it.
+        let db = unsafe { RefdbPtr::new(db) };
+        // SAFETY: our reflog.
+        rich(unsafe { db.reflog_write(self.inner.as_ptr()) })
     }
 
     /// `git_reflog_rename`.
@@ -1104,15 +1105,12 @@ ffibox::impl_cvtable! {
         on panic: panicked(),
         on busy: busy(),
         |s: &RustBackend<B>| {
-            // SAFETY: `r` is a live reference; the others NULL or valid.
-            let (v, msg, oid, ot) = unsafe {
-                (
-                    RefView::from_ptr(NonNull::new_unchecked(r.cast_mut())),
-                    opt_bytes(message),
-                    old_id.as_ref(),
-                    opt_bytes(old_target),
-                )
-            };
+            // SAFETY: `r` is a live reference.
+            let v = unsafe { RefView::from_raw(r) };
+            // SAFETY: NULL or strings.
+            let (msg, ot) = (unsafe { opt_bytes(message) }, unsafe { opt_bytes(old_target) });
+            // SAFETY: NULL or a valid oid.
+            let oid = unsafe { old_id.as_ref() };
             status(s.0.write(v.name(), &value_of(v), force != 0, oid, ot, msg))
         },
     }
@@ -1129,7 +1127,7 @@ ffibox::impl_cvtable! {
         on busy: busy(),
         |s: &RustBackend<B>| {
             // SAFETY: strings.
-            let (o, n) = unsafe { (bytes_of(old_name), bytes_of(new_name)) };
+            let (o, n) = (unsafe { bytes_of(old_name) }, unsafe { bytes_of(new_name) });
             match s.0.rename(o, n, force != 0) {
                 Ok(v) => match make_ref(n, &v) {
                     Ok(r) => {
@@ -1148,8 +1146,11 @@ ffibox::impl_cvtable! {
     fn del(@backend, name: *const c_char, old_id: *const Oid, old_target: *const c_char) -> c_int {
         on panic: panicked(),
         on busy: busy(),
-        // SAFETY: a string; the others NULL or valid.
-        |s: &RustBackend<B>| status(unsafe { s.0.delete(bytes_of(name), old_id.as_ref(), opt_bytes(old_target)) }),
+        |s: &RustBackend<B>| {
+            // SAFETY: a string; the others NULL or valid.
+            let (n, old, ot) = (unsafe { bytes_of(name) }, unsafe { old_id.as_ref() }, unsafe { opt_bytes(old_target) });
+            status(s.0.delete(n, old, ot))
+        },
     }
     fn compress(@backend) -> c_int {
         on panic: panicked(),
@@ -1192,8 +1193,10 @@ ffibox::impl_cvtable! {
                     return e.raw();
                 }
                 // `append` chains the old id; keep the record's.
+                // SAFETY: our reflog.
+                let e = unsafe { rl::entry_byindex(log.as_ptr(), 0) };
                 // SAFETY: the entry just appended, of our reflog.
-                unsafe { (*rl::entry_byindex(log.as_ptr(), 0)).oid_old = rec.old };
+                unsafe { (*e).oid_old = rec.old };
             }
             // SAFETY: `out` is writable.
             unsafe { *out = log.into_raw().as_ptr() };
@@ -1205,7 +1208,7 @@ ffibox::impl_cvtable! {
         on busy: busy(),
         |s: &RustBackend<B>| {
             // SAFETY: a live reflog for the call.
-            let (name, entries) = unsafe { (rl::name_of(log), rl::entries_of(log)) };
+            let (name, entries) = (unsafe { rl::name_of(log) }, unsafe { rl::entries_of(log) });
             let mut records = Vec::new();
             for e in entries {
                 // SAFETY: a live entry of the reflog.
@@ -1225,8 +1228,11 @@ ffibox::impl_cvtable! {
     fn reflog_rename(@backend, old_name: *const c_char, new_name: *const c_char) -> c_int {
         on panic: panicked(),
         on busy: busy(),
-        // SAFETY: strings.
-        |s: &RustBackend<B>| status(unsafe { s.0.reflog_rename(bytes_of(old_name), bytes_of(new_name)) }),
+        |s: &RustBackend<B>| {
+            // SAFETY: strings.
+            let (o, n) = (unsafe { bytes_of(old_name) }, unsafe { bytes_of(new_name) });
+            status(s.0.reflog_rename(o, n))
+        },
     }
     fn reflog_delete(@backend, name: *const c_char) -> c_int {
         on panic: panicked(),
@@ -1280,6 +1286,8 @@ ffibox::impl_cvtable! {
 }
 
 #[cfg(test)]
+// The test calls the tables' slots in sequence, as libgit2 would.
+#[allow(clippy::multiple_unsafe_ops_per_block)]
 mod tests {
     //! The Rust backend's tables, called as libgit2 calls them (Miri).
     use super::*;
