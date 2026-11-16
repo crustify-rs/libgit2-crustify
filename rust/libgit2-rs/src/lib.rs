@@ -147,13 +147,13 @@ test_internals! {
 pub use api::opts;
 
 pub use api::error::{Error, ErrorClass, ErrorCode, Result};
-pub use blob::Blob;
-pub use commit::api::{Commit, CommitBuilder};
+pub use blob::{Blob, BlobFilterOptions, BlobWriter};
+pub use commit::api::{AmendOptions, Commit, CommitBuilder, CommitCreateOptions};
 pub use config::{Config, ConfigBackend, ConfigEntries, ConfigEntry, ConfigLevel};
 pub use hashsig::{HashSig, HashSigOptions};
 pub use index::{Index, IndexEntry, IndexTime, Stage};
 pub use libgit2::{Features, Libgit2};
-pub use object::Object;
+pub use object::{Object, ObjectIdOptions};
 pub use odb::{
     Backend, ExpandId, LooseOptions, Mempack, ObjectType, Odb, OdbBackend, OdbObject, OdbReader,
     OdbWriter,
@@ -164,4 +164,6 @@ pub use repository::{Repository, RepositoryInitOptions, RepositoryOpenFlags, Rep
 pub use revwalk::api::{Revwalk, Sort};
 pub use signature::{Signature, SignatureRef, Time};
 pub use tag::Tag;
-pub use tree::api::{Tree, TreeBuilder, TreeEntry, TreeEntryRef};
+pub use tree::api::{
+    Tree, TreeBuilder, TreeEntry, TreeEntryRef, TreeUpdate, TreeWalk, TreeWalkMode,
+};

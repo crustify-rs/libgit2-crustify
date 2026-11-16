@@ -25,7 +25,7 @@ use crate::object::{
     Repository, git_object_t,
 };
 use crate::oid::{Oid, OidType};
-use crate::signature::{self, GitSignature, Signature};
+use crate::signature::{self, GitSignature, Signature, SignatureRef};
 use crate::util::alloc::{self, GitCStr};
 use crate::util::errors::{self, Bytes, Error, ErrorClass, ErrorCode, Result};
 use crate::util::str::GitStr;
@@ -434,6 +434,11 @@ pub struct GitSignatureView<'a> {
 impl<'a> GitSignatureView<'a> {
     /// A view of `sig`.
     pub fn of(sig: &'a Signature) -> GitSignatureView<'a> {
+        GitSignatureView::of_ref(&sig.as_ref())
+    }
+
+    /// A view of a borrowed signature.
+    pub fn of_ref(sig: &SignatureRef<'a>) -> GitSignatureView<'a> {
         GitSignatureView {
             name: sig.name(),
             email: sig.email(),
@@ -753,19 +758,37 @@ pub fn name_is_valid(name: Option<&[u8]>) -> Result<bool> {
 // The safe API
 // ---------------------------------------------------------------------------
 
-/// An annotated tag of a repository.
+/// An annotated tag of a repository: an [`Object`] of type tag.
 #[derive(Clone, Debug)]
+#[repr(transparent)]
 pub struct Tag<'repo>(Object<'repo>);
 
-impl<'repo> Tag<'repo> {
-    pub(crate) fn try_from_object(
-        o: Object<'repo>,
-    ) -> core::result::Result<Tag<'repo>, Object<'repo>> {
+impl<'repo> TryFrom<Object<'repo>> for Tag<'repo> {
+    type Error = Object<'repo>;
+
+    /// The object as a tag, or the object back if it is not one.
+    fn try_from(o: Object<'repo>) -> core::result::Result<Tag<'repo>, Object<'repo>> {
         if o.kind() == ObjectType::Tag {
             Ok(Tag(o))
         } else {
             Err(o)
         }
+    }
+}
+
+impl<'repo> From<Tag<'repo>> for Object<'repo> {
+    fn from(t: Tag<'repo>) -> Object<'repo> {
+        t.0
+    }
+}
+
+impl<'repo> Tag<'repo> {
+    /// An object of type tag, borrowed as a tag.
+    pub(crate) fn from_object_ref<'s>(obj: &'s Object<'repo>) -> &'s Tag<'repo> {
+        debug_assert_eq!(obj.kind(), ObjectType::Tag);
+        // SAFETY: `Tag` is a `repr(transparent)` wrapper of `Object`, whose
+        // only invariant (the object is a tag) the caller checked.
+        unsafe { &*core::ptr::from_ref(obj).cast::<Tag<'repo>>() }
     }
 
     /// `git_tag_lookup`.
@@ -802,6 +825,11 @@ impl<'repo> Tag<'repo> {
         &self.0
     }
 
+    /// The tag as an object.
+    pub fn into_object(self) -> Object<'repo> {
+        self.0
+    }
+
     /// `git_tag_name`.
     pub fn name(&self) -> &[u8] {
         self.raw().name()
@@ -813,7 +841,7 @@ impl<'repo> Tag<'repo> {
     }
 
     /// `git_tag_tagger`.
-    pub fn tagger(&self) -> Option<crate::signature::SignatureRef<'_>> {
+    pub fn tagger(&self) -> Option<SignatureRef<'_>> {
         self.raw().tagger().map(Signature::as_ref)
     }
 
@@ -842,16 +870,19 @@ impl<'repo> Tag<'repo> {
 
     /// `git_tag_create`: an annotated tag `name` of `target`, and its
     /// reference; the tag's id.
-    pub fn create(
+    pub fn create<'s>(
         repo: &Repository,
-        name: &[u8],
+        name: impl AsRef<[u8]>,
         target: &Object<'_>,
-        tagger: &Signature,
-        message: &[u8],
+        tagger: impl Into<SignatureRef<'s>>,
+        message: impl AsRef<[u8]>,
         force: bool,
     ) -> core::result::Result<Oid, Error> {
+        let (name, message) = (name.as_ref(), message.as_ref());
         let mut oid = Oid::NONE;
-        let v = GitSignatureView::of(tagger);
+        let v = GitSignatureView::of_ref(&tagger.into());
+        no_nul(v.name)?;
+        no_nul(v.email)?;
         // SAFETY: a live repository and object (`create_internal` checks
         // that the object is the repository's).
         unsafe {
@@ -868,14 +899,17 @@ impl<'repo> Tag<'repo> {
     }
 
     /// `git_tag_annotation_create`: write the tag object only.
-    pub fn annotation_create(
+    pub fn annotation_create<'s>(
         repo: &Repository,
-        name: &[u8],
+        name: impl AsRef<[u8]>,
         target: &Object<'_>,
-        tagger: &Signature,
-        message: &[u8],
+        tagger: impl Into<SignatureRef<'s>>,
+        message: impl AsRef<[u8]>,
     ) -> core::result::Result<Oid, Error> {
-        let v = GitSignatureView::of(tagger);
+        let (name, message) = (name.as_ref(), message.as_ref());
+        let v = GitSignatureView::of_ref(&tagger.into());
+        no_nul(v.name)?;
+        no_nul(v.email)?;
         // SAFETY: a live repository and object.
         Ok(unsafe {
             write_annotation(
@@ -892,10 +926,11 @@ impl<'repo> Tag<'repo> {
     /// `target`.
     pub fn create_lightweight(
         repo: &Repository,
-        name: &[u8],
+        name: impl AsRef<[u8]>,
         target: &Object<'_>,
         force: bool,
     ) -> core::result::Result<Oid, Error> {
+        let name = name.as_ref();
         let mut oid = Oid::NONE;
         // SAFETY: a live repository and object.
         unsafe {
@@ -914,9 +949,10 @@ impl<'repo> Tag<'repo> {
     /// `git_tag_create_from_buffer`.
     pub fn create_from_buffer(
         repo: &Repository,
-        buffer: &[u8],
+        buffer: impl AsRef<[u8]>,
         force: bool,
     ) -> core::result::Result<Oid, Error> {
+        let buffer = buffer.as_ref();
         let mut oid = Oid::NONE;
         // SAFETY: a live repository.
         unsafe {
@@ -931,7 +967,8 @@ impl<'repo> Tag<'repo> {
     }
 
     /// `git_tag_delete`.
-    pub fn delete(repo: &Repository, name: &[u8]) -> core::result::Result<(), Error> {
+    pub fn delete(repo: &Repository, name: impl AsRef<[u8]>) -> core::result::Result<(), Error> {
+        let name = name.as_ref();
         // SAFETY: a live repository.
         let _: () = unsafe { delete(crate::object::repo_ptr(repo), no_nul(name)?)? };
         Ok(())
@@ -993,8 +1030,8 @@ impl<'repo> Tag<'repo> {
     }
 
     /// `git_tag_name_is_valid`.
-    pub fn name_is_valid(name: &[u8]) -> core::result::Result<bool, Error> {
-        Ok(name_is_valid(Some(no_nul(name)?))?)
+    pub fn name_is_valid(name: impl AsRef<[u8]>) -> core::result::Result<bool, Error> {
+        Ok(name_is_valid(Some(no_nul(name.as_ref())?))?)
     }
 }
 

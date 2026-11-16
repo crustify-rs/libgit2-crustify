@@ -339,18 +339,6 @@ impl Signature {
         unsafe { CStr::from_ptr(self.0.email) }.to_bytes()
     }
 
-    /// The name, NUL-terminated.
-    pub(crate) fn name_c(&self) -> &CStr {
-        // SAFETY: as above.
-        unsafe { CStr::from_ptr(self.0.name) }
-    }
-
-    /// The e-mail, NUL-terminated.
-    pub(crate) fn email_c(&self) -> &CStr {
-        // SAFETY: as above.
-        unsafe { CStr::from_ptr(self.0.email) }
-    }
-
     /// The time.
     pub fn when(&self) -> Time {
         Time { raw: self.0.when }

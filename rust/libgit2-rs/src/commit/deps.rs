@@ -33,9 +33,7 @@ pub type GitCommitParentCallback =
     Option<unsafe extern "C" fn(idx: usize, payload: *mut c_void) -> *const Oid>;
 
 pub use crate::grafts::ffi::git_grafts_get;
-pub use crate::object::ffi::{
-    git_object__from_raw, git_object__is_valid, git_object_dup, git_object_free, git_object_lookup,
-};
+pub use crate::object::ffi::{git_object__is_valid, git_object_lookup};
 pub use crate::signature::ffi::{git_signature_default, git_signature_free};
 
 /// `git_commit_lookup`.
