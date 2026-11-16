@@ -484,7 +484,8 @@ pub fn to_dir(path: &mut GitStr) -> Result<()> {
     let len = path.len();
     if path.capacity() > 0 && len > 0 && path.as_bytes().last().is_some_and(|&c| c != b'/') {
         // `git_str_putc`, in place when the slash and the NUL fit.
-        let spare = path.spare_capacity_mut();
+        // SAFETY: the NUL is written back right away (`spare[1]`).
+        let spare = unsafe { path.spare_with_nul_mut() };
         if spare.len() >= 2 {
             spare[0].write(b'/');
             spare[1].write(0);
@@ -574,7 +575,8 @@ fn joinpath_into(out: &mut GitStr, a: &[u8], b: &[u8]) -> Result<()> {
         out.grow(alloc_len)?;
     }
     out.clear();
-    let spare = out.spare_capacity_mut();
+    // SAFETY: the NUL is written at `total` before the string is used.
+    let spare = unsafe { out.spare_with_nul_mut() };
     spare[..a.len()].write_copy_of_slice(a);
     if need_sep == 1 {
         spare[a.len()].write(b'/');

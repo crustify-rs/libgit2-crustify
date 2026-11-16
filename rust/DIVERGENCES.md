@@ -117,9 +117,8 @@ One entry per difference: component, what differs, why.
   nothing (as both C backends of this configuration).
 - **hash: the backends.** SHA-1 is the `sha1collisiondetection` crate (a
   Rust port of sha1dc, same defaults: safe hash, unavoidable bit conditions,
-  collision detection); SHA-256 is a Rust implementation
-  (`util/hash/sha256.rs`, with an AVX2/BMI path chosen at run time) instead
-  of OpenSSL's `SHA256_*`. Digests, the collision error and the "safe"
+  collision detection); SHA-256 is OpenSSL's `SHA256_*`, as the C's, with
+  `SHA256_CTX` held in place. Digests, the collision error and the "safe"
   digest written on a collision are the C's (rust/difftest/hash_diff.c).
   `git_hash_sha1_*`/`git_hash_sha256_*` are not exported: nothing outside
   `hash.c` called them.
@@ -129,7 +128,12 @@ One entry per difference: component, what differs, why.
   bytes are unchanged. Return codes and messages are zlib's
   (rust/difftest/zstream_diff.c: valid, truncated and corrupted streams).
   zlib-rs allocates its state with Rust's allocator where zlib used
-  `malloc`; neither used `git__allocator`.
+  `malloc`; neither used `git__allocator`. zlib (1.2.9+) rejected a stream
+  that was copied or moved after `inflateInit` (`inflateStateCheck`: its
+  state points back to the stream) with `Z_STREAM_ERROR`; zlib-rs keeps no
+  such pointer and accepts it, so freeing both copies of a copied inflate
+  `git_zstream` frees its state twice. No C that stays copies or moves an
+  initialized `git_zstream`; `git_zstream_init`'s contract forbids it.
 - **rand: the state** is a `std::sync::Mutex` instead of a `git_mutex`, so
   no shutdown callback is registered to free it (one fewer of the
   runtime's 32 slots). Same sequences for the same seed. Under Miri (tests

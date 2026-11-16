@@ -218,7 +218,9 @@ pub fn canonical_mode(raw_mode: mode_t) -> mode_t {
 /// Read `len` bytes from `fd` into the room after the contents of `buf`
 /// (which has at least `len + 1` bytes of room); the count read, or -1.
 fn read_into_spare(buf: &mut GitStr, fd: c_int, len: usize) -> isize {
-    let spare = buf.spare_capacity_mut();
+    // SAFETY: the caller writes the NUL back (`readbuffer_fd`) before the
+    // string is read.
+    let spare = unsafe { buf.spare_with_nul_mut() };
     assert!(spare.len() > len, "room was made for the read");
     // SAFETY: `spare` is writable for more than `len` bytes; `read_raw`
     // writes at most `len` (it only initializes them).
@@ -252,7 +254,9 @@ pub fn readbuffer_fd(buf: &mut GitStr, fd: c_int, len: usize) -> Result<()> {
     }
     let n = read_size as usize;
     // C's `buf->ptr[read_size] = '\0'`: the room has `alloc_len > n` bytes.
-    buf.spare_capacity_mut()[n].write(0);
+    // SAFETY: the NUL is written here.
+    let spare = unsafe { buf.spare_with_nul_mut() };
+    spare[n].write(0);
     // SAFETY: owned (grown above); its first `start + n` bytes are
     // initialized (the old contents, empty, and what `read` wrote), and
     // `start + n < capacity` (followed by the NUL just written).
