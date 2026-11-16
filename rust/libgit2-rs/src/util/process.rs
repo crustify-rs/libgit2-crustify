@@ -1467,6 +1467,13 @@ mod tests {
         String::from_utf8(errors::last_message().unwrap_or_default()).unwrap()
     }
 
+    /// An OS error's message (Miri's `strerror` adds an `(os error N)`).
+    #[track_caller]
+    fn assert_os_msg(expected: &str) {
+        let m = msg();
+        assert!(m.starts_with(expected), "{m:?} vs {expected:?}");
+    }
+
     #[test]
     fn status_protocol() {
         let _g = test_support::init();
@@ -1481,29 +1488,29 @@ mod tests {
         // a report, delivered a byte at a time with EINTRs in between
         let d = status_bytes(-1, libc::ENOENT, 6, b"execve");
         assert_eq!(parse_status(source(d, 1)), Ok(-1));
-        assert_eq!(msg(), "could not execve: No such file or directory");
+        assert_os_msg("could not execve: No such file or directory");
         // fn_len 0 or negative: "(unknown)"
         for len in [0, -5] {
             let d = status_bytes(-1, libc::EACCES, len, b"");
             assert_eq!(parse_status(source(d, 64)), Ok(-1));
-            assert_eq!(msg(), "could not (unknown): Permission denied");
+            assert_os_msg("could not (unknown): Permission denied");
         }
         // fn_len beyond what was sent: the name read so far
         let d = status_bytes(-1, libc::ENOENT, 50, b"chd");
         assert_eq!(parse_status(source(d, 64)), Ok(-1));
-        assert_eq!(msg(), "could not chd: No such file or directory");
+        assert_os_msg("could not chd: No such file or directory");
         // fn_len over 127: truncated to 127 bytes
         let long = vec![b'x'; 300];
         let d = status_bytes(-1, libc::ENOENT, 300, &long);
         assert_eq!(parse_status(source(d, 64)), Ok(-1));
-        assert_eq!(
-            msg(),
-            format!("could not {}: No such file or directory", "x".repeat(127))
-        );
+        assert_os_msg(&format!(
+            "could not {}: No such file or directory",
+            "x".repeat(127)
+        ));
         // an embedded NUL ends the name
         let d = status_bytes(-1, libc::ENOENT, 6, b"ch\0dir");
         assert_eq!(parse_status(source(d, 64)), Ok(-1));
-        assert_eq!(msg(), "could not ch: No such file or directory");
+        assert_os_msg("could not ch: No such file or directory");
         // no failure reported: 0, no message
         let d = status_bytes(0, 0, 0, b"");
         errors::clear();
