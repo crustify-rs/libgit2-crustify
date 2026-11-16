@@ -121,3 +121,82 @@ triggers it, and the Rust's defined behaviour.
 
 ### runtime: `git_runtime_init` with a NULL init function
 - C: calls it. Rust: stops at the first NULL entry.
+
+## net, sortedcache, process (WP u4)
+
+### net: NULL fields dereferenced
+- C: `src/util/net.c`: `git_net_url_is_ipv6` (`strchr(url->host)`),
+  `git_net_url_is_default_port` (`strcmp(url->port, …)` when the scheme has
+  a default port), `matches_pattern` (`git__strlcmp(url->host|port, …)`,
+  `strlen(url->host)`) read NULL fields.
+- Trigger: a URL without a host (`git_net_url_parse(&u, "relative")`) or
+  without a port (`u.port = NULL`), then those calls.
+- Rust: a NULL host has no `:` (`is_ipv6` false); a NULL port is not the
+  default; patterns see NULL as `""` (so only `*`, `.` / `*.` with an empty
+  domain, match a missing host; a pattern with a port never matches a
+  missing port).
+
+### net: `git_net_url_apply_redirect` with a location without scheme or host
+- C: `strcmp(original->scheme, tmp.scheme)` and
+  `git__strcasecmp(original->host, tmp.host)` with `tmp.scheme` / `tmp.host`
+  NULL, after parsing a relative location that does not start with `/`
+  (e.g. `"foo/bar"`).
+- Rust: a NULL scheme or host differs from the original's: the redirect is
+  refused with the C's message, the NULL shown as glibc's printf shows it
+  (`cannot redirect from 'http' to '(null)'`).
+
+### net: `remove_service_suffix` with a NULL path or query
+- C: `strlen(url->path)` with a NULL path (a redirect to a URL without a
+  path, e.g. `"http:"`); `git__strcmp(url->query, …)` with a NULL query
+  when the suffix has a query (`"/info/refs?service=…"`) and the path ends
+  with the suffix's path part; with an empty path and an empty suffix,
+  `url->path[1] = '\0'` writes past the string.
+- Rust: a NULL path leaves the URL unchanged; a NULL query does not match
+  the suffix's query; the truncation never writes past the string.
+
+### sortedcache: none found
+The port keeps C's semantics; its hash map is a Rust map (see
+DIVERGENCES.md).
+
+### process: the child calls `exit(0)` when `chdir` or `execve` fails
+- C: `src/util/unix/process.c`, `git_process_start`: after a failed
+  `chdir` / `execve` the forked child calls `exit(0)`, which is not
+  async-signal-safe: it runs the parent's `atexit` handlers and flushes
+  the parent's stdio buffers a second time (duplicated output; in a
+  multi-threaded parent it may deadlock on a lock held at the fork).
+- Trigger: `git_process_start` of a program `execve` rejects
+  (`ENOEXEC`), or with a `cwd` that does not exist, while stdout has
+  unflushed output.
+- Rust: `_exit(0)` (same status, no handlers, no flush). Between `fork`
+  and `execve` the child only makes async-signal-safe system calls on
+  data prepared before the fork.
+
+### process: `waitpid(0)` after a failed start
+- C: on a failed `read_status`, `waitpid(process->pid, …)` with
+  `process->pid` still 0: it waits for *any* child of the process group
+  (it may reap an unrelated child, or block on another child).
+- Rust: waits for the child just forked.
+
+### process: the status pipe leaks; closed descriptors stay named
+- C: on success the read end of the status pipe is stored in
+  `process->status` (a `git_process_result_status`) and never closed:
+  one descriptor leaks per started process. On a failed start the parent
+  ends of the stdio pipes are closed but stay in `child_in` / `child_out` /
+  `child_err`, so a later `git_process_close` closes those numbers again
+  (possibly another file's).
+- Rust: the status pipe is closed once read; on failure the fields are
+  reset to -1.
+
+### process: `try_read_status` counts `-1` on `EINTR`
+- C: `read_len += ret` also when `read` returned -1 with `EINTR`/`EAGAIN`,
+  so the count goes back by one (or wraps to `SIZE_MAX` from 0, and the
+  status buffer is then read uninitialized). The function name's length is
+  trusted even when fewer bytes were read (`fn[fn_len] = '\0'` after
+  uninitialized bytes).
+- Trigger: a signal delivered while the parent waits for the child's
+  status.
+- Rust: retries without counting; terminates the name at the bytes read.
+
+### process: `git_process_new` leaks on a failed `cwd` copy
+- C: returns -1 without freeing the process when `git__strdup(opts->cwd)`
+  fails. Rust: frees it.
