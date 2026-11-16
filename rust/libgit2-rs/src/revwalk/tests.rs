@@ -597,15 +597,14 @@ fn reentrant_hide_callbacks() {
 /// so that it links. The tests' nodes are parsed and no pathspec is set,
 /// so none is ever called.
 ///
-/// Stand-ins for the C that stays (diff, pathspec) and for l-obj's
-/// object_api.c (PENDING(l-obj)) when the C rest is not linked.
+/// Stand-ins for the C that stays (diff, pathspec) when the C rest is not
+/// linked.
 #[cfg(not(feature = "link-c"))]
 mod c_stubs {
     use core::ffi::{c_char, c_int};
 
-    use crate::oid::Oid;
+    use crate::revwalk::deps::{git_repository, git_tree};
     use crate::sys::diff::{GitDiffDelta as git_diff_delta, git_diff, git_diff_options};
-    use crate::sys::pending::l_revwalk::{git_commit, git_repository, git_tree};
     use crate::util::vector::GitVector;
 
     macro_rules! stubs {
@@ -618,9 +617,6 @@ mod c_stubs {
     }
 
     stubs! {
-        fn git_commit_lookup(o: *mut *mut git_commit, r: *mut git_repository, i: *const Oid) -> c_int;
-        fn git_commit_free(c: *mut git_commit) -> ();
-        fn git_tree_free(t: *mut git_tree) -> ();
         fn git_diff_tree_to_tree(d: *mut *mut git_diff, r: *mut git_repository, a: *mut git_tree, b: *mut git_tree, o: *const git_diff_options) -> c_int;
         fn git_diff_num_deltas(d: *const git_diff) -> usize;
         fn git_diff_get_delta(d: *const git_diff, i: usize) -> *const git_diff_delta;

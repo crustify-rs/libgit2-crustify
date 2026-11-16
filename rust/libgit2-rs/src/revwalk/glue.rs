@@ -1,5 +1,5 @@
 //! The walk's calls into C: objects, references, commits and trees
-//! (other L work packages, `sys::pending::l_revwalk`), and revparse, diff
+//! (the other ported modules, `revwalk::deps`), and revparse, diff
 //! and pathspec (C that stays, `sys::{revparse, diff, pathspec}`), as
 //! small owners and safe functions over them.
 
@@ -9,9 +9,9 @@ use core::ptr::{self, NonNull};
 use super::GitRevwalk;
 use super::node::NodePtr;
 use crate::oid::Oid;
+use crate::revwalk::deps as p;
 use crate::sys::diff as d;
 use crate::sys::pathspec::{self as ps, git_attr_fnmatch, git_pathspec};
-use crate::sys::pending::l_revwalk as p;
 use crate::sys::revparse as rp;
 use crate::util::errors::{ErrorCode, Result};
 use crate::util::vector::GitVector;

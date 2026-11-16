@@ -31,6 +31,7 @@
 //! cells (C never sees them); `user_input` stays a `git_commit_list`.
 
 pub mod api;
+pub(crate) mod deps;
 mod glue;
 pub mod node;
 #[cfg(test)]
@@ -43,8 +44,8 @@ use std::collections::VecDeque;
 
 use crate::hashmap_oid::OidPtr;
 use crate::oid::Oid;
+use crate::revwalk::deps::{GIT_OBJECT_ANY, GIT_OBJECT_COMMIT, git_odb, git_repository};
 use crate::sys::pathspec::git_pathspec;
-use crate::sys::pending::l_revwalk::{GIT_OBJECT_ANY, GIT_OBJECT_COMMIT, git_odb, git_repository};
 use crate::util::errors::{self, ErrorClass, ErrorCode, Result};
 use crate::util::hashmap::GitHashMap;
 use crate::util::pool::GitPool;

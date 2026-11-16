@@ -33,7 +33,7 @@ pub fn ext<'r>(
 
 use core::ffi::c_uint;
 
-use super::pending::l_revwalk::git_object;
+use crate::revwalk::deps::git_object;
 
 /// `git_revspec` (public header, mirrored).
 #[repr(C)]
