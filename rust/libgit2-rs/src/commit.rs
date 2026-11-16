@@ -550,20 +550,28 @@ pub fn body_of(msg: &[u8]) -> Option<&[u8]> {
 /// `git_commit__header_field` over a raw header (as a C string: up to its
 /// first NUL): the value of `field`, continuation lines joined with `\n`.
 pub fn header_field(raw_header: &[u8], field: &[u8], out: &mut GitStr) -> Result<()> {
+    let n = memchr::memchr(0, raw_header).unwrap_or(raw_header.len());
+    header_field_in(&raw_header[..n], field, out)
+}
+
+/// `header_field` over a header that has no NUL (the bytes of a C string),
+/// without the scan for one.
+pub(crate) fn header_field_in(buf: &[u8], field: &[u8], out: &mut GitStr) -> Result<()> {
     out.clear();
-    let buf = &raw_header[..memchr::memchr(0, raw_header).unwrap_or(raw_header.len())];
     let at = |i: usize| buf.get(i).copied().unwrap_or(0);
+    // An empty field matches no line: C's prefix matches, but then wants
+    // the SP that only a (skipped) continuation line starts with.
+    let Some(&first) = field.first() else {
+        return Err(no_such_field(field));
+    };
     let mut pos = 0usize;
     while let Some(eol) = memchr::memchr(b'\n', &buf[pos..]).map(|i| pos + i) {
-        // We can skip continuations here
-        if buf[pos] == b' ' {
-            pos = eol + 1;
-            continue;
-        }
-        // Skip until we find the field we're after (git__prefixcmp: a NUL
-        // in the field ends it)
+        // We can skip continuations here (`first` cannot be SP on a line
+        // that is not one), and skip until we find the field we're after
+        // (git__prefixcmp: a NUL in the field ends it). Most lines already
+        // differ in their first byte, which is compared on its own first.
         let line = &buf[pos..];
-        if !line.starts_with(field) {
+        if line[0] == b' ' || line[0] != first || !line.starts_with(field) {
             pos = eol + 1;
             continue;
         }
@@ -594,12 +602,178 @@ pub fn header_field(raw_header: &[u8], field: &[u8], out: &mut GitStr) -> Result
         }
         return Ok(());
     }
+    Err(no_such_field(field))
+}
+
+/// A position in a NUL-terminated C string that is read a line at a time,
+/// as C's `strchr` walk reads it, without measuring the string first:
+/// `git_commit_header_field` never reads the lines after the one it
+/// returns, which matters for commits whose `mergetag`/`gpgsig` headers
+/// are many times longer than the `tree` and `parent` lines before them
+/// (perf WP: measuring the header first cost 25% on git.git's commits).
+pub(crate) struct CLines<'a> {
+    /// At or before the string's NUL.
+    p: *const c_char,
+    _s: core::marker::PhantomData<&'a CStr>,
+}
+
+impl<'a> CLines<'a> {
+    /// A cursor at the start of `s`.
+    pub(crate) fn new(s: &'a CStr) -> CLines<'a> {
+        // SAFETY: a `CStr` is NUL-terminated, live and unwritten for `'a`.
+        unsafe { CLines::from_ptr(s.as_ptr()) }
+    }
+
+    /// A cursor at the start of the C string at `p`, which is not measured
+    /// (a `CStr` would be: `strlen`).
+    ///
+    /// # Safety
+    ///
+    /// `p` points to a NUL-terminated string that stays live and unwritten
+    /// for `'a`.
+    pub(crate) unsafe fn from_ptr(p: *const c_char) -> CLines<'a> {
+        CLines {
+            p,
+            _s: core::marker::PhantomData,
+        }
+    }
+
+    /// The byte at the position (0 at the end).
+    fn peek(&self) -> u8 {
+        // SAFETY: `p` is at or before the NUL of the string borrowed for
+        // `'a`, so it is readable.
+        unsafe { self.p.read() as u8 }
+    }
+
+    /// Move past one byte, unless at the end.
+    fn skip_byte(&mut self) {
+        if self.peek() != 0 {
+            // Not the NUL: the next byte is at or before it.
+            self.p = self.p.wrapping_add(1);
+        }
+    }
+
+    /// The offset of the next `\n` from the position, if there is one
+    /// before the NUL.
+    #[cfg(not(miri))]
+    fn find_nl(&self) -> Option<usize> {
+        // SAFETY: `p` points into a NUL-terminated string (the invariant),
+        // which `strchr` reads up to that NUL at most.
+        let eol = unsafe { libc::strchr(self.p, c_int::from(b'\n')) };
+        // (`addr` differences: no provenance is needed for a length.)
+        (!eol.is_null()).then(|| eol.addr() - self.p.addr())
+    }
+
+    /// As above, for Miri (which does not run `strchr`).
+    #[cfg(miri)]
+    fn find_nl(&self) -> Option<usize> {
+        let mut n = 0;
+        loop {
+            // SAFETY: bytes `0..n` were neither `\n` nor the NUL, so byte `n`
+            // is at or before the NUL.
+            match unsafe { self.p.wrapping_add(n).read() } as u8 {
+                b'\n' => return Some(n),
+                0 => return None,
+                _ => n += 1,
+            }
+        }
+    }
+
+    /// The line at the position, without its `\n`, moving past it; `None`
+    /// (not moving) if no `\n` comes before the NUL.
+    fn next_line(&mut self) -> Option<&'a [u8]> {
+        let len = self.find_nl()?;
+        // SAFETY: the `len` bytes from `p` come before the `\n` that
+        // `find_nl` found, so before the NUL: part of the string, which is
+        // live and unwritten for `'a`.
+        let line = unsafe { core::slice::from_raw_parts(self.p.cast::<u8>(), len) };
+        // Past the `\n`, which is not the NUL: at or before it.
+        self.p = self.p.wrapping_add(len + 1);
+        Some(line)
+    }
+}
+
+/// [`header_field`] of the C string `raw_header`, read as C reads it: line
+/// by line, up to the field's last line only.
+pub(crate) fn header_field_cstr(raw_header: &CStr, field: &[u8], out: &mut GitStr) -> Result<()> {
+    match header_field_lines(CLines::new(raw_header), field, out) {
+        // A line has no `\n`, so a field with one never matches here; it
+        // can match across lines (and then fail as C does), which the
+        // whole-buffer version handles.
+        Err(ErrorCode::NOT_FOUND) if field.contains(&b'\n') => {
+            errors::clear();
+            header_field_in(raw_header.to_bytes(), field, out)
+        }
+        r => r,
+    }
+}
+
+/// [`header_field_cstr`] of the C string at `raw_header`, which is never
+/// measured.
+///
+/// # Safety
+///
+/// `raw_header` points to a NUL-terminated string, live and unwritten
+/// during the call.
+pub(crate) unsafe fn header_field_raw(
+    raw_header: *const c_char,
+    field: &[u8],
+    out: &mut GitStr,
+) -> Result<()> {
+    // SAFETY: the contract.
+    match header_field_lines(unsafe { CLines::from_ptr(raw_header) }, field, out) {
+        // As in `header_field_cstr`.
+        Err(ErrorCode::NOT_FOUND) if field.contains(&b'\n') => {
+            errors::clear();
+            // SAFETY: the contract.
+            let h = unsafe { CStr::from_ptr(raw_header) };
+            header_field_in(h.to_bytes(), field, out)
+        }
+        r => r,
+    }
+}
+
+/// The search of [`header_field_cstr`], for a field without `\n`.
+fn header_field_lines(mut lines: CLines<'_>, field: &[u8], out: &mut GitStr) -> Result<()> {
+    out.clear();
+    if field.is_empty() {
+        return Err(no_such_field(field));
+    }
+    while let Some(line) = lines.next_line() {
+        // Continuation lines (SP) are skipped; the field must be followed
+        // by SP on its line (a field without `\n` cannot match across
+        // lines). The first byte is compared on its own first.
+        if line.first() != field.first()
+            || line[0] == b' '
+            || line.len() <= field.len()
+            || line[field.len()] != b' '
+            || !line.starts_with(field)
+        {
+            continue;
+        }
+        out.put(&line[field.len() + 1..])?;
+        // If the next line starts with SP, it's multi-line, we must continue
+        while lines.peek() == b' ' {
+            out.putc(b'\n')?;
+            lines.skip_byte();
+            let Some(cont) = lines.next_line() else {
+                return Err(malformed());
+            };
+            out.put(cont)?;
+        }
+        return Ok(());
+    }
+    Err(no_such_field(field))
+}
+
+#[cold]
+fn no_such_field(field: &[u8]) -> ErrorCode {
     let _ = git_error_set!(
         ErrorClass::OBJECT,
         "no such field '{}'",
         errors::Bytes(field)
     );
-    Err(ErrorCode::NOT_FOUND)
+    ErrorCode::NOT_FOUND
 }
 
 fn malformed() -> ErrorCode {
@@ -1112,18 +1286,9 @@ pub mod ffi {
         buf: *mut GitBuf,
         f: impl FnOnce(&mut GitStr) -> Result<()>,
     ) -> c_int {
-        let mut s = GitStr::new();
-        // SAFETY: `s` is writable; `buf` per the contract.
-        let mut error = unsafe { git_buf_tostr(&raw mut s, buf) };
-        if error == 0 {
-            error = code(f(&mut s));
-            if error == 0 {
-                // SAFETY: as above.
-                error = unsafe { git_buf_fromstr(buf, &raw mut s) };
-            }
-        }
-        drop(s);
-        error
+        // SAFETY: `buf` is NULL or a valid `git_buf` (contract), which `f`
+        // does not reach.
+        unsafe { crate::buf::wrap_private(buf, f) }
     }
 
     /// `git_commit__free`.
@@ -2103,12 +2268,15 @@ pub mod ffi {
         }
         // SAFETY: a live commit (contract); `raw_header` set by its parse.
         let h = unsafe { (*commit).raw_header };
-        // SAFETY: NULL (a quick-parsed commit) or NUL-terminated, owned by
-        // the commit.
-        let h = unsafe { opt_cbytes(h) };
         // SAFETY: NUL-terminated (contract).
         let f = unsafe { cstr_bytes(field) };
-        header_field(h.unwrap_or(b""), f, out)
+        if h.is_null() {
+            // A quick-parsed commit.
+            return header_field_cstr(c"", f, out);
+        }
+        // SAFETY: the commit's own NUL-terminated header, unwritten while
+        // it lives (it outlives the call, by the contract).
+        unsafe { header_field_raw(h, f, out) }
     }
 
     /// `git_commit__header_field`.

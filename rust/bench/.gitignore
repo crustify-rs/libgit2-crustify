@@ -2,3 +2,10 @@ build/
 results/
 out/
 micro/out/
+micro/icount/*_c
+micro/icount/*_rs
+micro/icount/icount
+micro/icount/iprof
+micro/icount/sccount
+micro/icount/prof.*.txt
+micro/icount/maps.*.txt
