@@ -5,9 +5,7 @@
 use core::ffi::{CStr, c_int, c_void};
 use core::ptr::{self, NonNull};
 
-use super::handles::{
-    self, Object, Reference, RefIter, check, opt_ptr, refname,
-};
+use super::handles::{self, Object, RefIter, Reference, check, opt_ptr, refname};
 use super::*;
 use crate::oid::Oid;
 use crate::sys::pending::l_repo as c;
@@ -39,7 +37,7 @@ const GIT_OBJECT_TREE: c_int = 2;
 pub(crate) fn lookup(repo: &GitRepository, name: &CStr) -> Result<Reference> {
     let mut out = ptr::null_mut();
     // SAFETY: a live repository, a NUL-terminated name, a local out.
-    check(unsafe { c::git_reference_lookup(&mut out, repo.as_ptr(), name.as_ptr()) })?;
+    check(unsafe { c::git_reference_lookup(&raw mut out, repo.as_ptr(), name.as_ptr()) })?;
     // SAFETY: the reference C returned to us.
     unsafe { Reference::from_raw(out) }.ok_or(ErrorCode::GENERIC)
 }
@@ -48,18 +46,33 @@ pub(crate) fn lookup(repo: &GitRepository, name: &CStr) -> Result<Reference> {
 fn lookup_resolved(repo: &GitRepository, name: &CStr) -> Result<Reference> {
     let mut out = ptr::null_mut();
     // SAFETY: as `lookup`.
-    check(unsafe { c::git_reference_lookup_resolved(&mut out, repo.as_ptr(), name.as_ptr(), -1) })?;
+    check(unsafe {
+        c::git_reference_lookup_resolved(&raw mut out, repo.as_ptr(), name.as_ptr(), -1)
+    })?;
     // SAFETY: as `lookup`.
     unsafe { Reference::from_raw(out) }.ok_or(ErrorCode::GENERIC)
 }
 
 /// `git_reference_create`.
-fn reference_create(repo: &GitRepository, name: &CStr, id: &Oid, force: bool, log: Option<&CStr>) -> Result<()> {
+fn reference_create(
+    repo: &GitRepository,
+    name: &CStr,
+    id: &Oid,
+    force: bool,
+    log: Option<&CStr>,
+) -> Result<()> {
     let mut out = ptr::null_mut();
     // SAFETY: a live repository, NUL-terminated strings (or NULL), a
     // valid id, a local out.
     check(unsafe {
-        c::git_reference_create(&mut out, repo.as_ptr(), name.as_ptr(), id, c_int::from(force), opt_ptr(log))
+        c::git_reference_create(
+            &raw mut out,
+            repo.as_ptr(),
+            name.as_ptr(),
+            id,
+            c_int::from(force),
+            opt_ptr(log),
+        )
     })?;
     // SAFETY: the new reference, ours to free.
     drop(unsafe { Reference::from_raw(out) });
@@ -78,7 +91,7 @@ fn reference_symbolic_create(
     // SAFETY: as `reference_create`.
     check(unsafe {
         c::git_reference_symbolic_create(
-            &mut out,
+            &raw mut out,
             repo.as_ptr(),
             name.as_ptr(),
             target.as_ptr(),
@@ -95,7 +108,7 @@ fn reference_symbolic_create(
 fn object_lookup(repo: &GitRepository, id: &Oid, t: c_int) -> Result<Object> {
     let mut out = ptr::null_mut();
     // SAFETY: a live repository, a valid id, a local out.
-    check(unsafe { c::git_object_lookup(&mut out, repo.as_ptr(), id, t) })?;
+    check(unsafe { c::git_object_lookup(&raw mut out, repo.as_ptr(), id, t) })?;
     // SAFETY: the object C returned to us.
     unsafe { Object::from_raw(out) }.ok_or(ErrorCode::GENERIC)
 }
@@ -106,7 +119,10 @@ pub(crate) fn head(repo: &GitRepository) -> Result<Reference> {
     if head.kind() == handles::GIT_REFERENCE_DIRECT {
         return Ok(head);
     }
-    let target = head.symbolic_target().map(CStr::to_owned).unwrap_or_default();
+    let target = head
+        .symbolic_target()
+        .map(CStr::to_owned)
+        .unwrap_or_default();
     drop(head);
     match lookup_resolved(repo, &target) {
         Err(ErrorCode::NOT_FOUND) => Err(ErrorCode::UNBORN_BRANCH),
@@ -148,7 +164,8 @@ pub(crate) fn open_from_worktree(gitlink_path: Option<&CStr>) -> Result<NonNull<
         return Err(ErrorCode::GENERIC);
     };
     let path = fs_path::to_cstring(path);
-    open::open_ext(Some(&path), GIT_REPOSITORY_OPEN_NO_SEARCH, None, true)?.ok_or(ErrorCode::GENERIC)
+    open::open_ext(Some(&path), GIT_REPOSITORY_OPEN_NO_SEARCH, None, true)?
+        .ok_or(ErrorCode::GENERIC)
 }
 
 /// A repository this module opened and frees.
@@ -161,11 +178,6 @@ impl OwnedRepo {
     pub(crate) fn get(&self) -> &GitRepository {
         // SAFETY: the repository we opened and own, live until drop.
         unsafe { self.0.as_ref() }
-    }
-    pub(crate) fn into_raw(self) -> *mut GitRepository {
-        let p = self.0.as_ptr();
-        core::mem::forget(self);
-        p
     }
 }
 
@@ -182,7 +194,10 @@ pub(crate) fn head_for_worktree(repo: &GitRepository, name: &CStr) -> Result<Ref
     let wrepo = OwnedRepo::new(open_from_worktree(wt.gitlink_path())?);
     let head = lookup(wrepo.get(), GIT_HEAD_REF)?;
     if head.kind() != handles::GIT_REFERENCE_DIRECT {
-        let t = head.symbolic_target().map(CStr::to_owned).unwrap_or_default();
+        let t = head
+            .symbolic_target()
+            .map(CStr::to_owned)
+            .unwrap_or_default();
         return lookup_resolved(wrepo.get(), &t);
     }
     Ok(head)
@@ -196,7 +211,10 @@ pub(crate) fn head_detached_for_worktree(repo: &GitRepository, name: &CStr) -> R
 
 /// `git_repository_foreach_worktree`: `cb` on the main repository and each
 /// worktree's; the first non-zero result stops it and is returned.
-pub(crate) fn foreach_worktree(repo: &GitRepository, cb: &mut dyn FnMut(&GitRepository) -> c_int) -> c_int {
+pub(crate) fn foreach_worktree(
+    repo: &GitRepository,
+    cb: &mut dyn FnMut(&GitRepository) -> c_int,
+) -> c_int {
     let Some(commondir) = repo.commondir() else {
         return cb(repo);
     };
@@ -235,7 +253,7 @@ pub(crate) fn foreach_worktree(repo: &GitRepository, cb: &mut dyn FnMut(&GitRepo
 fn repo_contains_no_reference(repo: &GitRepository) -> c_int {
     let mut it = ptr::null_mut();
     // SAFETY: a live repository and a local out.
-    let e = unsafe { c::git_reference_iterator_new(&mut it, repo.as_ptr()) };
+    let e = unsafe { c::git_reference_iterator_new(&raw mut it, repo.as_ptr()) };
     if e < 0 {
         return e;
     }
@@ -246,9 +264,13 @@ fn repo_contains_no_reference(repo: &GitRepository) -> c_int {
     };
     let mut name = ptr::null();
     // SAFETY: a live iterator and a local out.
-    let e = unsafe { c::git_reference_next_name(&mut name, it.as_ptr()) };
+    let e = unsafe { c::git_reference_next_name(&raw mut name, it.as_ptr()) };
     drop(it);
-    if e == ErrorCode::ITER_OVER.raw() { 1 } else { e }
+    if e == ErrorCode::ITER_OVER.raw() {
+        1
+    } else {
+        e
+    }
 }
 
 /// `git_repository_initialbranch`.
@@ -256,7 +278,9 @@ pub(crate) fn initialbranch(out: &mut GitStr, repo: &GitRepository) -> Result<()
     let config = repo.config_weak()?;
     let entry = config.get_entry(c"init.defaultbranch");
     let branch: Vec<u8> = match &entry {
-        Ok(e) if e.value().is_some_and(|v| !v.is_empty()) => e.value().map(|v| v.to_bytes().to_vec()).unwrap_or_default(),
+        Ok(e) if e.value().is_some_and(|v| !v.is_empty()) => {
+            e.value().map(|v| v.to_bytes().to_vec()).unwrap_or_default()
+        }
         Ok(_) | Err(ErrorCode::NOT_FOUND) => GIT_BRANCH_DEFAULT.to_vec(),
         Err(e) => return Err(*e),
     };
@@ -343,18 +367,17 @@ pub(crate) fn set_head(repo: &GitRepository, name: &CStr) -> Result<()> {
         Err(e) => return Err(e),
     };
 
-    if let Some(r) = &r {
-        if current.is_symbolic()
-            && current.symbolic_target().map(CStr::to_bytes) != Some(r.name().to_bytes())
-            && r.is_branch()
-            && crate::sys::branch::is_checked_out(r) != 0
-        {
-            return Err(git_error_set!(
-                ErrorClass::REPOSITORY,
-                "cannot set HEAD to reference '{}' as it is the current HEAD of a linked repository.",
-                Bytes(r.name().to_bytes())
-            ));
-        }
+    if let Some(r) = &r
+        && current.is_symbolic()
+        && current.symbolic_target().map(CStr::to_bytes) != Some(r.name().to_bytes())
+        && r.is_branch()
+        && crate::sys::branch::is_checked_out(r) != 0
+    {
+        return Err(git_error_set!(
+            ErrorClass::REPOSITORY,
+            "cannot set HEAD to reference '{}' as it is the current HEAD of a linked repository.",
+            Bytes(r.name().to_bytes())
+        ));
     }
 
     match r {
@@ -362,11 +385,17 @@ pub(crate) fn set_head(repo: &GitRepository, name: &CStr) -> Result<()> {
             if r.is_branch() {
                 reference_symbolic_create(repo, GIT_HEAD_REF, r.name(), true, Some(&log))
             } else {
-                let n = if r.is_tag() || r.is_remote() { Some(name) } else { None };
+                let n = if r.is_tag() || r.is_remote() {
+                    Some(name)
+                } else {
+                    None
+                };
                 detach(repo, r.target(), n)
             }
         }
-        None if refname::is_branch(name) => reference_symbolic_create(repo, GIT_HEAD_REF, name, true, Some(&log)),
+        None if refname::is_branch(name) => {
+            reference_symbolic_create(repo, GIT_HEAD_REF, name, true, Some(&log))
+        }
         None => Err(ErrorCode::NOT_FOUND),
     }
 }
@@ -381,14 +410,14 @@ pub(crate) fn set_head_detached(repo: &GitRepository, id: Option<&Oid>) -> Resul
 /// # Safety
 ///
 /// `commit` is a live `git_annotated_commit`.
-pub(crate) unsafe fn set_head_detached_from_annotated(repo: &GitRepository, commit: NonNull<c_void>) -> Result<()> {
+pub(crate) unsafe fn set_head_detached_from_annotated(
+    repo: &GitRepository,
+    commit: NonNull<c_void>,
+) -> Result<()> {
     // SAFETY: the caller's contract.
-    let (id, desc) = unsafe {
-        (
-            crate::sys::annotated_commit::id(commit),
-            crate::sys::annotated_commit::description(commit),
-        )
-    };
+    let id = unsafe { crate::sys::annotated_commit::id(commit) };
+    // SAFETY: the caller's contract.
+    let desc = unsafe { crate::sys::annotated_commit::description(commit) };
     detach(repo, Some(id), desc)
 }
 
@@ -396,7 +425,10 @@ pub(crate) unsafe fn set_head_detached_from_annotated(repo: &GitRepository, comm
 pub(crate) fn detach_head(repo: &GitRepository) -> Result<()> {
     let current = lookup(repo, GIT_HEAD_REF)?;
     let old_head = head(repo)?;
-    let target = old_head.target().copied().ok_or_else(|| errors::assert_arg_failed("id"))?;
+    let target = old_head
+        .target()
+        .copied()
+        .ok_or_else(|| errors::assert_arg_failed("id"))?;
     let object = object_lookup(repo, &target, GIT_OBJECT_COMMIT)?;
     let idstr = fs_path::to_cstring(object.id().hex().as_bytes());
     let mut log = GitStr::new();
@@ -531,8 +563,11 @@ pub(crate) fn state_cleanup(repo: &GitRepository) -> Result<()> {
 /// `git_repository__message`.
 pub(crate) fn message(out: &mut GitStr, repo: &GitRepository) -> Result<()> {
     let mut path = GitStr::new();
-    path.joinpath(repo.gitdir().map(CStr::to_bytes).unwrap_or_default(), GIT_MERGE_MSG_FILE)
-        .map_err(|_| ErrorCode::GENERIC)?;
+    path.joinpath(
+        repo.gitdir().map(CStr::to_bytes).unwrap_or_default(),
+        GIT_MERGE_MSG_FILE,
+    )
+    .map_err(|_| ErrorCode::GENERIC)?;
     let p = cs(&path).into_owned();
     match posix::stat(&p) {
         Err(posix::Errno(e)) => {
@@ -552,7 +587,10 @@ pub(crate) fn message(out: &mut GitStr, repo: &GitRepository) -> Result<()> {
 pub(crate) fn message_remove(repo: &GitRepository) -> c_int {
     let mut path = GitStr::new();
     if path
-        .joinpath(repo.gitdir().map(CStr::to_bytes).unwrap_or_default(), GIT_MERGE_MSG_FILE)
+        .joinpath(
+            repo.gitdir().map(CStr::to_bytes).unwrap_or_default(),
+            GIT_MERGE_MSG_FILE,
+        )
         .is_err()
     {
         return -1;
@@ -576,7 +614,9 @@ pub(crate) fn hashfile(
     let as_path: &[u8] = match as_path {
         Some(a) => a.to_bytes(),
         None => match workdir {
-            Some(w) if u::prefixcmp(full.to_bytes(), w.to_bytes()) == 0 => &full.to_bytes()[w.to_bytes().len()..],
+            Some(w) if u::prefixcmp(full.to_bytes(), w.to_bytes()) == 0 => {
+                &full.to_bytes()[w.to_bytes().len()..]
+            }
             _ => b"",
         },
     };
@@ -603,7 +643,10 @@ pub(crate) fn hashfile(
     let fd = Fd(fd);
     let len = futils::filesize(fd.0)?;
     let Ok(len) = usize::try_from(len) else {
-        return Err(git_error_set!(ErrorClass::OS, "file size overflow for 32-bit systems"));
+        return Err(git_error_set!(
+            ErrorClass::OS,
+            "file size overflow for 32-bit systems"
+        ));
     };
     let mut opts = c::ObjectIdOptions {
         version: 1,
@@ -614,7 +657,7 @@ pub(crate) fn hashfile(
     let mut out = Oid::zero(repo.oid_type());
     // SAFETY: an open descriptor of `len` bytes, valid options whose filter
     // list lives across the call, and a local out-parameter.
-    check(unsafe { c::git_object_id_from_fd(&mut out, fd.0, len, &mut opts) })?;
+    check(unsafe { c::git_object_id_from_fd(&raw mut out, fd.0, len, &raw mut opts) })?;
     Ok(out)
 }
 
@@ -643,7 +686,7 @@ pub(crate) fn shallow_roots(repo: &GitRepository) -> Result<(*mut Oid, usize)> {
     check(unsafe { c::git_grafts_refresh(repo.shallow_grafts_ptr()) })?;
     let (mut out, mut len) = (ptr::null_mut(), 0usize);
     // SAFETY: as above, and local outs.
-    check(unsafe { c::git_grafts_oids(&mut out, &mut len, repo.shallow_grafts_ptr()) })?;
+    check(unsafe { c::git_grafts_oids(&raw mut out, &raw mut len, repo.shallow_grafts_ptr()) })?;
     Ok((out, len))
 }
 
@@ -655,7 +698,10 @@ pub(crate) fn shallow_roots_write(repo: &GitRepository, roots: &[Oid]) -> Result
         OidType::Sha256 => GIT_FILEBUF_HASH_SHA256,
     };
     let mut path = GitStr::new();
-    path.joinpath(repo.gitdir().map(CStr::to_bytes).unwrap_or_default(), b"shallow")?;
+    path.joinpath(
+        repo.gitdir().map(CStr::to_bytes).unwrap_or_default(),
+        b"shallow",
+    )?;
     let p = cs(&path).into_owned();
     let mut file = GitFilebuf::new();
     file.open(p.to_bytes(), hash_flags, 0o666)?;
@@ -685,7 +731,10 @@ pub(crate) fn shallow_roots_write(repo: &GitRepository, roots: &[Oid]) -> Result
 /// `git_repository_is_shallow`.
 pub(crate) fn is_shallow(repo: &GitRepository) -> Result<bool> {
     let mut path = GitStr::new();
-    path.joinpath(repo.commondir().map(CStr::to_bytes).unwrap_or_default(), b"shallow")?;
+    path.joinpath(
+        repo.commondir().map(CStr::to_bytes).unwrap_or_default(),
+        b"shallow",
+    )?;
     match fs_path::lstat(&cs(&path)) {
         Err(ErrorCode::NOT_FOUND) => {
             errors::clear();
@@ -714,7 +763,10 @@ pub(crate) fn abbrev_length(repo: &GitRepository) -> Result<c_int> {
 }
 
 /// `git_repository__set_objectformat`.
-pub(crate) fn set_objectformat(repo: &GitRepository, oid_type: crate::oid::git_oid_t) -> Result<()> {
+pub(crate) fn set_objectformat(
+    repo: &GitRepository,
+    oid_type: crate::oid::git_oid_t,
+) -> Result<()> {
     if oid_type == GIT_OID_DEFAULT {
         return Ok(());
     }
@@ -744,7 +796,10 @@ pub(crate) fn set_objectformat(repo: &GitRepository, oid_type: crate::oid::git_o
 /// `git_repository_workdir_path`.
 pub(crate) fn workdir_path(out: &mut GitStr, repo: &GitRepository, path: &[u8]) -> Result<()> {
     let Some(wd) = repo.workdir_field() else {
-        let _ = git_error_set!(ErrorClass::REPOSITORY, "repository has no working directory");
+        let _ = git_error_set!(
+            ErrorClass::REPOSITORY,
+            "repository has no working directory"
+        );
         return Err(ErrorCode::BARE_REPO);
     };
     out.joinpath(wd.to_bytes(), path)?;
@@ -752,7 +807,9 @@ pub(crate) fn workdir_path(out: &mut GitStr, repo: &GitRepository, path: &[u8]) 
 }
 
 /// `git_repository_commit_parents`: the commits (`git_commit *`, owned).
-pub(crate) fn commit_parents(repo: &GitRepository) -> Result<Vec<NonNull<c_void>, crate::util::alloc::GitAlloc>> {
+pub(crate) fn commit_parents(
+    repo: &GitRepository,
+) -> Result<Vec<NonNull<c_void>, crate::util::alloc::GitAlloc>> {
     let mut parents: Vec<NonNull<c_void>, crate::util::alloc::GitAlloc> =
         Vec::new_in(crate::util::alloc::GIT_ALLOC);
     let (e, first, head_ref) = crate::sys::revparse::ext(repo, c"HEAD");
@@ -779,11 +836,14 @@ pub(crate) fn commit_parents(repo: &GitRepository) -> Result<Vec<NonNull<c_void>
     }
     unsafe extern "C" fn insert_mergehead(oid: *const Oid, payload: *mut c_void) -> c_int {
         crate::util::export::barrier(|| {
-            // SAFETY: the `Data` of the running call, and C's valid id.
-            let (data, oid) = unsafe { (&mut *payload.cast::<Data<'_>>(), &*oid) };
+            // SAFETY: the `Data` of the running call, used by nothing else
+            // during the callback.
+            let data = unsafe { &mut *payload.cast::<Data<'_>>() };
+            // SAFETY: C's valid id.
+            let oid = unsafe { &*oid };
             let mut commit = ptr::null_mut();
             // SAFETY: a live repository, a valid id, a local out.
-            if unsafe { c::git_commit_lookup(&mut commit, data.repo.as_ptr(), oid) } < 0 {
+            if unsafe { c::git_commit_lookup(&raw mut commit, data.repo.as_ptr(), oid) } < 0 {
                 return -1;
             }
             let Some(commit) = NonNull::new(commit) else {
@@ -804,7 +864,9 @@ pub(crate) fn commit_parents(repo: &GitRepository) -> Result<Vec<NonNull<c_void>
     };
     // SAFETY: `insert_mergehead` treats the payload as the `Data` that
     // outlives the call.
-    let e = unsafe { crate::sys::merge::mergehead_foreach(repo, insert_mergehead, (&raw mut data).cast()) };
+    let e = unsafe {
+        crate::sys::merge::mergehead_foreach(repo, insert_mergehead, (&raw mut data).cast())
+    };
     if e != 0 && e != ErrorCode::NOT_FOUND.raw() {
         // C frees the commits with `git__free`, which corrupts the object
         // cache (DEFECTS.md); they are released with `git_object_free`.

@@ -10,6 +10,7 @@ use std::sync::Mutex;
 
 use super::handles::{Config, ConfigEntryView, ConfigRef, Odb};
 use super::*;
+use crate::git_error_set;
 use crate::sys::pending::l_repo as c;
 use crate::util::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
 use crate::util::fs_path::{self, GIT_PATH_LIST_SEPARATOR, GIT_PATH_MAX, c_str, str_c_bytes};
@@ -17,7 +18,6 @@ use crate::util::futils;
 use crate::util::posix;
 use crate::util::str::GitStr;
 use crate::util::util as u;
-use crate::git_error_set;
 
 const GIT_COMMONDIR_FILE: &[u8] = b"commondir";
 const GIT_GITDIR_FILE: &CStr = c"gitdir";
@@ -117,7 +117,11 @@ fn load_config_data(repo: &GitRepository, config: ConfigRef<'_>) -> Result<()> {
 }
 
 /// `load_workdir`.
-fn load_workdir(repo: &GitRepository, config: ConfigRef<'_>, parent_path: &mut GitStr) -> Result<()> {
+fn load_workdir(
+    repo: &GitRepository,
+    config: ConfigRef<'_>,
+    parent_path: &mut GitStr,
+) -> Result<()> {
     if repo.is_bare() {
         return Ok(());
     }
@@ -197,7 +201,7 @@ pub(crate) fn find_ceiling_dir_offset(path: &[u8], ceiling_directories: Option<&
             .map_or(ceil_dirs.len(), |i| start + i);
         let len = sep - start;
         // C tests the root of `ceil`, which runs on past the separator.
-        if !(len == 0 || len >= GIT_PATH_MAX + 1 || fs_path::root(&ceil_dirs[start..]) == -1) {
+        if !(len == 0 || len > GIT_PATH_MAX || fs_path::root(&ceil_dirs[start..]) == -1) {
             let buf = fs_path::to_cstring(&ceil_dirs[start..sep]);
             if let Ok(real) = posix::realpath(&buf) {
                 let mut len = real.len();
@@ -205,7 +209,10 @@ pub(crate) fn find_ceiling_dir_offset(path: &[u8], ceiling_directories: Option<&
                     len -= 1;
                 }
                 let at = |i: usize| path.get(i).copied().unwrap_or(0);
-                if u::strncmp(path, &real, len) == 0 && (at(len) == b'/' || at(len) == 0) && len > max_len {
+                if u::strncmp(path, &real, len) == 0
+                    && (at(len) == b'/' || at(len) == 0)
+                    && len > max_len
+                {
                     max_len = len;
                 }
             }
@@ -250,7 +257,11 @@ fn read_gitfile(path_out: &mut GitStr, file_path: &[u8]) -> Result<()> {
 }
 
 /// `validate_ownership_cb`'s match of one `safe.directory` value.
-pub(crate) fn safe_directory_matches(value: Option<&[u8]>, repo_path: &[u8], is_safe: &mut bool) -> Result<()> {
+pub(crate) fn safe_directory_matches(
+    value: Option<&[u8]>,
+    repo_path: &[u8],
+    is_safe: &mut bool,
+) -> Result<()> {
     let value = match value {
         None | Some(b"") => {
             *is_safe = false;
@@ -383,7 +394,12 @@ fn validate_ownership(repo: &GitRepository) -> Result<()> {
 }
 
 /// `find_repo_traverse`.
-fn find_repo_traverse(out: &mut RepoPaths, start_path: &CStr, ceiling_dirs: Option<&[u8]>, flags: u32) -> Result<()> {
+fn find_repo_traverse(
+    out: &mut RepoPaths,
+    start_path: &CStr,
+    ceiling_dirs: Option<&[u8]>,
+    flags: u32,
+) -> Result<()> {
     let r = find_repo_traverse_inner(out, start_path, ceiling_dirs, flags);
     if r.is_err() {
         *out = RepoPaths::default();
@@ -434,7 +450,8 @@ fn find_repo_traverse_inner(
                     fs_path::to_dir(&mut path)?;
                     out.gitdir.set(path.as_bytes())?;
                     out.gitlink = GitStr::new();
-                    if let Some(link) = crate::sys::worktree::read_link(&cs(&path), GIT_GITDIR_FILE) {
+                    if let Some(link) = crate::sys::worktree::read_link(&cs(&path), GIT_GITDIR_FILE)
+                    {
                         out.gitlink.sets(link.as_bytes())?;
                     }
                     common_link.swap(&mut out.commondir);
@@ -493,7 +510,7 @@ fn find_repo_traverse_inner(
 fn config_parse_bool(value: &CStr) -> Result<bool> {
     let mut v: c_int = 0;
     // SAFETY: a NUL-terminated value and a local out-parameter.
-    let r = unsafe { c::git_config_parse_bool(&mut v, value.as_ptr()) };
+    let r = unsafe { c::git_config_parse_bool(&raw mut v, value.as_ptr()) };
     if r < 0 {
         return Err(ErrorCode::check(r).err().unwrap_or(ErrorCode::GENERIC));
     }
@@ -556,14 +573,21 @@ pub(crate) fn find_repo(
 }
 
 /// `check_repositoryformatversion`.
-pub(crate) fn check_repositoryformatversion(version: &mut i32, config: ConfigRef<'_>) -> Result<()> {
+pub(crate) fn check_repositoryformatversion(
+    version: &mut i32,
+    config: ConfigRef<'_>,
+) -> Result<()> {
     match config.get_int32(c"core.repositoryformatversion") {
         Err(ErrorCode::NOT_FOUND) => return Ok(()),
         Err(_) => return Err(ErrorCode::GENERIC),
         Ok(v) => *version = v,
     }
     if *version < 0 {
-        let _ = git_error_set!(ErrorClass::REPOSITORY, "invalid repository version {}", *version);
+        let _ = git_error_set!(
+            ErrorClass::REPOSITORY,
+            "invalid repository version {}",
+            *version
+        );
     }
     if GIT_REPO_VERSION_MAX < *version {
         return Err(git_error_set!(
@@ -595,7 +619,9 @@ fn user_extensions() -> std::sync::MutexGuard<'static, Vec<Vec<u8>>> {
 
 /// `check_valid_extension` of the entry named `name`.
 pub(crate) fn check_valid_extension(name: &[u8]) -> Result<()> {
-    let matches = |ext: &[u8]| name.len() == 11 + ext.len() && name.starts_with(b"extensions.") && &name[11..] == ext;
+    let matches = |ext: &[u8]| {
+        name.len() == 11 + ext.len() && name.starts_with(b"extensions.") && &name[11..] == ext
+    };
     let fail = || {
         Err(git_error_set!(
             ErrorClass::REPOSITORY,
@@ -651,7 +677,11 @@ fn load_objectformat(repo: &GitRepository, config: ConfigRef<'_>) -> Result<()> 
                 }
                 None => {
                     repo.set_oid_type_raw(0);
-                    let _ = git_error_set!(ErrorClass::REPOSITORY, "unknown object format '{}'", Bytes(v));
+                    let _ = git_error_set!(
+                        ErrorClass::REPOSITORY,
+                        "unknown object format '{}'",
+                        Bytes(v)
+                    );
                     Err(ErrorCode::INVALID)
                 }
             }
@@ -691,7 +721,11 @@ fn load_refstorage_format(repo: &GitRepository, config: ConfigRef<'_>) -> Result
             let t = refdb_type_fromstr(v);
             repo.set_refdb_type(t);
             if t == 0 {
-                let _ = git_error_set!(ErrorClass::REPOSITORY, "unknown refstorage format '{}'", Bytes(v));
+                let _ = git_error_set!(
+                    ErrorClass::REPOSITORY,
+                    "unknown refstorage format '{}'",
+                    Bytes(v)
+                );
                 return Err(ErrorCode::INVALID);
             }
             Ok(())
@@ -754,9 +788,14 @@ pub(crate) fn load_grafts(repo: &GitRepository) -> Result<()> {
 
     path.joinpath_self(b"grafts")?;
     // SAFETY: the grafts slot and a NUL-terminated path.
-    check(unsafe { c::git_grafts_open_or_refresh(repo.grafts_slot(), cs(&path).as_ptr(), oid_type) })?;
+    check(unsafe {
+        c::git_grafts_open_or_refresh(repo.grafts_slot(), cs(&path).as_ptr(), oid_type)
+    })?;
     path.clear();
-    path.joinpath(repo.gitdir().map(CStr::to_bytes).unwrap_or_default(), b"shallow")?;
+    path.joinpath(
+        repo.gitdir().map(CStr::to_bytes).unwrap_or_default(),
+        b"shallow",
+    )?;
     // SAFETY: as above.
     check(unsafe {
         c::git_grafts_open_or_refresh(repo.shallow_grafts_slot(), cs(&path).as_ptr(), oid_type)
@@ -811,14 +850,17 @@ fn repo_load_namespace(repo: &GitRepository) -> Result<()> {
 
 /// `repo_is_worktree`.
 fn repo_is_worktree(repo: &GitRepository) -> Result<bool> {
-    if let (Some(c), Some(g)) = (repo.commondir(), repo.gitdir()) {
-        if c == g {
-            return Ok(false);
-        }
+    if let (Some(c), Some(g)) = (repo.commondir(), repo.gitdir())
+        && c == g
+    {
+        return Ok(false);
     }
     let mut link = GitStr::new();
-    link.joinpath(repo.gitdir().map(CStr::to_bytes).unwrap_or_default(), b"gitdir")
-        .map_err(|_| ErrorCode::GENERIC)?;
+    link.joinpath(
+        repo.gitdir().map(CStr::to_bytes).unwrap_or_default(),
+        b"gitdir",
+    )
+    .map_err(|_| ErrorCode::GENERIC)?;
     Ok(fs_path::exists(&cs(&link)))
 }
 
@@ -908,7 +950,9 @@ pub(crate) fn wrap_odb(odb: &Odb) -> Result<NonNull<GitRepository>> {
         // C leaks the repository here; it is freed.
         // SAFETY: ours alone.
         unsafe { GitRepository::free(repo.as_ptr()) };
-        return Err(errors::assert_failed("git_oid_type_is_valid(odb->options.oid_type)"));
+        return Err(errors::assert_failed(
+            "git_oid_type_is_valid(odb->options.oid_type)",
+        ));
     }
     r.set_oid_type_raw(t);
     r.set_refdb_type(GIT_REFDB_FILES);
@@ -917,9 +961,17 @@ pub(crate) fn wrap_odb(odb: &Odb) -> Result<NonNull<GitRepository>> {
 }
 
 /// `git_repository_discover`: the git directory found from `start_path`.
-pub(crate) fn discover(start_path: &CStr, across_fs: bool, ceiling_dirs: Option<&CStr>) -> Result<GitStr> {
+pub(crate) fn discover(
+    start_path: &CStr,
+    across_fs: bool,
+    ceiling_dirs: Option<&CStr>,
+) -> Result<GitStr> {
     let mut paths = RepoPaths::default();
-    let flags = if across_fs { GIT_REPOSITORY_OPEN_CROSS_FS } else { 0 };
+    let flags = if across_fs {
+        GIT_REPOSITORY_OPEN_CROSS_FS
+    } else {
+        0
+    };
     find_repo(&mut paths, Some(start_path), ceiling_dirs, flags)?;
     Ok(core::mem::take(&mut paths.gitdir))
 }
@@ -1031,7 +1083,7 @@ pub(crate) fn load_global_config(use_env: bool) -> Result<Config> {
     config_path_system(&mut system, use_env)?;
     config_path_global(&mut global, use_env)?;
     // SAFETY: an exclusive `git_str`.
-    unsafe { c::git_config__find_xdg(&mut xdg) };
+    unsafe { c::git_config__find_xdg(&raw mut xdg) };
     load_config(
         None,
         path_unless_empty(&global).as_deref(),
@@ -1086,7 +1138,10 @@ pub(crate) fn extensions() -> Result<Vec<Vec<u8>>> {
     let user = user_extensions();
     let mut out: Vec<Vec<u8>> = Vec::new();
     for b in BUILTIN_EXTENSIONS {
-        if user.iter().any(|u| u.first() == Some(&b'!') && &u[1..] == b) {
+        if user
+            .iter()
+            .any(|u| u.first() == Some(&b'!') && &u[1..] == b)
+        {
             continue;
         }
         out.push(b.to_vec());

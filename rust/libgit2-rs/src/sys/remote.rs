@@ -21,7 +21,7 @@ unsafe extern "C" {
 pub fn create(repo: &GitRepository, name: &CStr, url: &CStr) -> Result<()> {
     let mut r = ptr::null_mut();
     // SAFETY: a live repository, NUL-terminated strings, a local out.
-    check(unsafe { git_remote_create(&mut r, repo.as_ptr(), name.as_ptr(), url.as_ptr()) })?;
+    check(unsafe { git_remote_create(&raw mut r, repo.as_ptr(), name.as_ptr(), url.as_ptr()) })?;
     // SAFETY: the remote C returned to us, freed once.
     unsafe { git_remote_free(r) };
     Ok(())

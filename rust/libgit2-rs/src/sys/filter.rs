@@ -42,7 +42,14 @@ impl FilterList {
         // SAFETY: a live repository, a NUL-terminated path, no blob, a
         // local out-parameter.
         check(unsafe {
-            git_filter_list_load(&mut fl, repo.as_ptr(), ptr::null_mut(), path.as_ptr(), mode, flags)
+            git_filter_list_load(
+                &raw mut fl,
+                repo.as_ptr(),
+                ptr::null_mut(),
+                path.as_ptr(),
+                mode,
+                flags,
+            )
         })?;
         Ok(FilterList(fl))
     }

@@ -40,13 +40,13 @@ use core::mem::MaybeUninit;
 use core::ptr::{self, NonNull};
 use core::sync::atomic::{AtomicI32, AtomicIsize, AtomicPtr, AtomicU32, Ordering};
 
+use crate::git_error_set;
 use crate::oid::{GIT_OID_SHA1, OidType, git_oid_t};
 use crate::sys::pending::l_repo as c;
 use crate::util::alloc::{self, GitCStr};
 use crate::util::errors::{ErrorClass, ErrorCode, Result};
 use crate::util::str::GitStr;
 use crate::util::thread::{self, Atomic32};
-use crate::git_error_set;
 
 pub mod api;
 pub mod ffi;
@@ -231,19 +231,17 @@ impl GitRepository {
         if unsafe { c::git_cache_init(r.objects_ptr()) } < 0 {
             // SAFETY: as above; the cache was not set up, and disposing a
             // zeroed one is what the C does.
-            unsafe {
-                c::git_cache_dispose(r.objects_ptr());
-                alloc::free(repo.cast());
-            }
+            unsafe { c::git_cache_dispose(r.objects_ptr()) };
+            // SAFETY: the allocation above, referenced by nothing else.
+            unsafe { alloc::free(repo.cast()) };
             return ptr::null_mut();
         }
         let names = alloc::mallocarray(4, size_of::<GitStr>()).cast::<GitStr>();
         if names.is_null() {
             // SAFETY: as above.
-            unsafe {
-                c::git_cache_dispose(r.objects_ptr());
-                alloc::free(repo.cast());
-            }
+            unsafe { c::git_cache_dispose(r.objects_ptr()) };
+            // SAFETY: the allocation above, referenced by nothing else.
+            unsafe { alloc::free(repo.cast()) };
             return ptr::null_mut();
         }
         // SAFETY: the array is the repository's alone.
@@ -277,13 +275,18 @@ impl GitRepository {
             // SAFETY: the registry, set by C with compare-and-swap, no
             // longer used.
             unsafe {
-                crate::sys::diff_driver::registry_free(r.diff_drivers.swap(ptr::null_mut(), Ordering::AcqRel))
+                crate::sys::diff_driver::registry_free(
+                    r.diff_drivers.swap(ptr::null_mut(), Ordering::AcqRel),
+                )
             };
             // SAFETY: the repository's own array, no longer used.
             let names = unsafe { &mut *r.reserved_names.get() };
             for i in 0..names.size {
                 // SAFETY: entries `0..size` are initialized strings.
-                unsafe { (*names.ptr.add(i)).dispose() };
+                let name = unsafe { names.ptr.add(i) };
+                // SAFETY: as above; nothing else references it.
+                let name = unsafe { &mut *name };
+                name.dispose();
             }
             // SAFETY: the array's buffer, from `git__allocator`.
             unsafe { alloc::free(names.ptr.cast()) };
@@ -302,10 +305,9 @@ impl GitRepository {
         }
         // SAFETY: the whole allocation, no longer referenced; then freed
         // (`git__memzero` + `git__free`).
-        unsafe {
-            ptr::write_bytes(repo.cast::<u8>(), 0, size_of::<GitRepository>());
-            alloc::free(repo.cast());
-        }
+        unsafe { ptr::write_bytes(repo.cast::<u8>(), 0, size_of::<GitRepository>()) };
+        // SAFETY: as above.
+        unsafe { alloc::free(repo.cast()) };
     }
 
     /// `git_repository__cleanup`: drop the caches, grafts and the
@@ -316,10 +318,9 @@ impl GitRepository {
         unsafe { c::git_cache_clear(self.objects_ptr()) };
         let _ = crate::sys::attrcache::flush(self);
         // SAFETY: the grafts are the repository's; taken out first.
-        unsafe {
-            c::git_grafts_free(self.grafts.swap(ptr::null_mut(), Ordering::AcqRel));
-            c::git_grafts_free(self.shallow_grafts.swap(ptr::null_mut(), Ordering::AcqRel));
-        }
+        unsafe { c::git_grafts_free(self.grafts.swap(ptr::null_mut(), Ordering::AcqRel)) };
+        // SAFETY: as above.
+        unsafe { c::git_grafts_free(self.shallow_grafts.swap(ptr::null_mut(), Ordering::AcqRel)) };
         self.set_config(None);
         self.set_index(None);
         self.set_odb(None);
@@ -378,7 +379,11 @@ impl GitRepository {
     }
     /// `git_repository_workdir`: NULL for a bare repository.
     pub fn workdir(&self) -> Option<&CStr> {
-        if self.is_bare() { None } else { self.workdir_field() }
+        if self.is_bare() {
+            None
+        } else {
+            self.workdir_field()
+        }
     }
     /// `repo->commondir`.
     pub fn commondir(&self) -> Option<&CStr> {
@@ -494,7 +499,7 @@ impl GitRepository {
     pub(crate) fn configmap_lookup(&self, item: c_int) -> Result<c_int> {
         let mut out: c_int = 0;
         // SAFETY: a live repository and a local out-parameter.
-        check(unsafe { c::git_repository__configmap_lookup(&mut out, self.as_ptr(), item) })?;
+        check(unsafe { c::git_repository__configmap_lookup(&raw mut out, self.as_ptr(), item) })?;
         Ok(out)
     }
 
@@ -533,7 +538,12 @@ impl GitRepository {
         });
     }
 
-    fn set_owned(&self, slot: &AtomicPtr<c_void>, new: Option<NonNull<c_void>>, free: impl FnOnce(*mut c_void)) {
+    fn set_owned(
+        &self,
+        slot: &AtomicPtr<c_void>,
+        new: Option<NonNull<c_void>>,
+        free: impl FnOnce(*mut c_void),
+    ) {
         if let Some(p) = new {
             // SAFETY: a live refcounted object (the caller's owner holds a
             // reference).
@@ -584,10 +594,10 @@ impl GitRepository {
             open::config_path_system(&mut system, use_env)?;
             open::config_path_global(&mut global, use_env)?;
             // SAFETY: an exclusive local `git_str`.
-            unsafe { c::git_config__find_xdg(&mut xdg) };
+            unsafe { c::git_config__find_xdg(&raw mut xdg) };
             if global.is_empty() {
                 // SAFETY: as above.
-                unsafe { c::git_config__global_location(&mut global) };
+                unsafe { c::git_config__global_location(&raw mut global) };
             }
             let cfg = open::load_config(
                 Some(self),
@@ -602,10 +612,10 @@ impl GitRepository {
                 })
                 .as_ptr();
         }
-        // SAFETY: the repository's config (non-null: loaded or published),
-        // live while it is set; replacing it is the caller's concern, as
-        // for C's weak pointers.
-        Ok(unsafe { ConfigRef::from_ptr(NonNull::new_unchecked(p)) })
+        let p = NonNull::new(p).ok_or(ErrorCode::GENERIC)?;
+        // SAFETY: the repository's config, live while it is set; replacing
+        // it is the caller's concern, as for C's weak pointers.
+        Ok(unsafe { ConfigRef::from_ptr(p) })
     }
 
     /// `git_repository_odb__weakptr`: the odb pointer (not referenced).
@@ -647,7 +657,7 @@ impl GitRepository {
         if p.is_null() {
             let mut out = ptr::null_mut();
             // SAFETY: a live repository and a local out-parameter.
-            check(unsafe { c::git_refdb_open(&mut out, self.as_ptr()) })?;
+            check(unsafe { c::git_refdb_open(&raw mut out, self.as_ptr()) })?;
             let out = NonNull::new(out).ok_or(ErrorCode::GENERIC)?;
             p = self
                 .publish(&self.refdb, out, |p| {
@@ -666,7 +676,10 @@ impl GitRepository {
         if p.is_null() {
             let mut path = GitStr::new();
             open::repository_index_path(&mut path, self)?;
-            let index = Index::open(&crate::util::fs_path::str_cpath(&path), self.oid_type_raw_or_default())?;
+            let index = Index::open(
+                &crate::util::fs_path::str_cpath(&path),
+                self.oid_type_raw_or_default(),
+            )?;
             p = self
                 .publish(&self.index, index.into_nonnull(), |p| {
                     // SAFETY: the loser's reference, released once.
@@ -674,7 +687,8 @@ impl GitRepository {
                 })
                 .as_ptr();
             // SAFETY: the published index.
-            error = check(unsafe { c::git_index_set_caps(p, GIT_INDEX_CAPABILITY_FROM_OWNER) }).map(drop);
+            error = check(unsafe { c::git_index_set_caps(p, GIT_INDEX_CAPABILITY_FROM_OWNER) })
+                .map(drop);
         }
         error?;
         NonNull::new(p).ok_or(ErrorCode::GENERIC)
@@ -682,9 +696,6 @@ impl GitRepository {
 
     /// The current `_odb`, `_refdb`, `_config` and `_index` pointers (what
     /// C's weak-pointer functions write out, also on failure).
-    pub(crate) fn odb_ptr(&self) -> *mut c_void {
-        load(&self.odb)
-    }
     pub(crate) fn refdb_ptr(&self) -> *mut c_void {
         load(&self.refdb)
     }
@@ -716,7 +727,8 @@ impl GitRepository {
         // SAFETY: the repository's cache, no longer reachable from it after
         // the store below (as the C, which frees then clears).
         let r = unsafe { crate::sys::submodule::cache_free(cache) };
-        self.submodule_cache.store(ptr::null_mut(), Ordering::Release);
+        self.submodule_cache
+            .store(ptr::null_mut(), Ordering::Release);
         r
     }
 
@@ -730,14 +742,19 @@ impl GitRepository {
             Some(e) => Some(alloc_cstr(e.to_bytes())?),
             None => None,
         };
-        let old_n = self.ident_name.swap(n.map_or(ptr::null_mut(), GitCStr::into_raw), Ordering::AcqRel);
-        let old_e = self.ident_email.swap(e.map_or(ptr::null_mut(), GitCStr::into_raw), Ordering::AcqRel);
+        let old_n = self.ident_name.swap(
+            n.map_or(ptr::null_mut(), GitCStr::into_raw),
+            Ordering::AcqRel,
+        );
+        let old_e = self.ident_email.swap(
+            e.map_or(ptr::null_mut(), GitCStr::into_raw),
+            Ordering::AcqRel,
+        );
         // SAFETY: the old strings, owned by the repository (C swaps and
         // frees them the same way).
-        unsafe {
-            alloc::free(old_n.cast());
-            alloc::free(old_e.cast());
-        }
+        unsafe { alloc::free(old_n.cast()) };
+        // SAFETY: as above.
+        unsafe { alloc::free(old_e.cast()) };
         Ok(())
     }
 }
@@ -764,7 +781,11 @@ pub(crate) fn detach(s: &mut GitStr) -> Result<GitCStr> {
 
 /// `path_unless_empty`.
 pub(crate) fn path_unless_empty(s: &GitStr) -> Option<std::borrow::Cow<'_, CStr>> {
-    if s.is_empty() { None } else { Some(crate::util::fs_path::str_cpath(s)) }
+    if s.is_empty() {
+        None
+    } else {
+        Some(crate::util::fs_path::str_cpath(s))
+    }
 }
 
 /// The C string of a `git_str` (as C reads `s->ptr`).
@@ -804,7 +825,12 @@ struct Item {
     directory: bool,
 }
 
-const fn item(parent: ItemT, fallback: ItemT, name: Option<&'static [u8]>, directory: bool) -> Item {
+const fn item(
+    parent: ItemT,
+    fallback: ItemT,
+    name: Option<&'static [u8]>,
+    directory: bool,
+) -> Item {
     Item {
         parent,
         fallback,
@@ -853,12 +879,21 @@ impl GitRepository {
     }
 }
 
-fn resolved_parent_path<'a>(dirs: &ItemDirs<'a>, item: ItemT, fallback: ItemT) -> Result<Option<&'a [u8]>> {
+fn resolved_parent_path<'a>(
+    dirs: &ItemDirs<'a>,
+    item: ItemT,
+    fallback: ItemT,
+) -> Result<Option<&'a [u8]>> {
     let parent = match item {
         ITEM_GITDIR => dirs.gitdir,
         ITEM_WORKDIR => dirs.workdir,
         ITEM_COMMONDIR => dirs.commondir,
-        _ => return Err(git_error_set!(ErrorClass::INVALID, "invalid item directory")),
+        _ => {
+            return Err(git_error_set!(
+                ErrorClass::INVALID,
+                "invalid item directory"
+            ));
+        }
     };
     if parent.is_none() && fallback != ITEM_LAST {
         return resolved_parent_path(dirs, fallback, ITEM_LAST);
@@ -872,11 +907,16 @@ fn resolved_parent_path<'a>(dirs: &ItemDirs<'a>, item: ItemT, fallback: ItemT) -
 /// (the C reads past its table: see DEFECTS.md).
 pub fn item_path(out: &mut GitStr, dirs: &ItemDirs<'_>, item: ItemT) -> Result<()> {
     let Some(it) = ITEMS.get(item as usize) else {
-        return Err(git_error_set!(ErrorClass::INVALID, "invalid item directory"));
+        return Err(git_error_set!(
+            ErrorClass::INVALID,
+            "invalid item directory"
+        ));
     };
     // C: a NULL parent (also after "invalid item directory") is reported
     // as "path cannot exist in repository".
-    let parent = resolved_parent_path(dirs, it.parent, it.fallback).ok().flatten();
+    let parent = resolved_parent_path(dirs, it.parent, it.fallback)
+        .ok()
+        .flatten();
     let Some(parent) = parent else {
         let _ = git_error_set!(ErrorClass::INVALID, "path cannot exist in repository");
         return Err(ErrorCode::NOT_FOUND);

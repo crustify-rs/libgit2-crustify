@@ -23,9 +23,9 @@ pub mod repository;
 pub mod settings;
 pub mod strarray;
 
+pub use libgit2::Libgit2;
 pub use oid::{Oid, OidShortener, OidType};
 pub use oidarray::OidArray;
-pub use libgit2::Libgit2;
 pub use repository::{Repository, RepositoryInitOptions, RepositoryOpenFlags, RepositoryState};
 pub use strarray::StrArray;
 pub use util::errors::{Error, ErrorClass, ErrorCode};

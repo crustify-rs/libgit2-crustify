@@ -8,13 +8,13 @@ use core::ptr::NonNull;
 use super::handles::{Config, ConfigRef, Refdb};
 use super::head::OwnedRepo;
 use super::*;
+use crate::git_error_set;
 use crate::util::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
 use crate::util::fs_path::{self, str_c_bytes};
 use crate::util::futils::{self, MkdirOpts};
 use crate::util::posix;
 use crate::util::str::GitStr;
 use crate::util::util as u;
-use crate::git_error_set;
 
 const GIT_CONFIG_FILENAME_INREPO: &[u8] = b"config";
 const GIT_CONFIG_FILE_MODE: u32 = 0o666;
@@ -55,7 +55,9 @@ pub struct InitOptions {
 use std::ffi::CString;
 
 /// The internal template (`repo_template.h`): path, mode, content.
-const REPO_TEMPLATE: [(&[u8], u32, Option<&[u8]>); 7] = [
+type TemplateItem = (&'static [u8], u32, Option<&'static [u8]>);
+
+const REPO_TEMPLATE: [TemplateItem; 7] = [
     (b"objects/info/", 0o777, None),
     (b"objects/pack/", 0o777, None),
     (b"hooks/", 0o777, None),
@@ -136,7 +138,11 @@ fn create_empty_file(path: &CStr, mode: u32) -> Result<()> {
 /// `repo_local_config`: the repository's own configuration file (made if
 /// missing), opened alone (no repository) or as the local level of the
 /// repository's configuration.
-fn repo_local_config(config_dir: &mut GitStr, repo: Option<&GitRepository>, repo_dir: &[u8]) -> Result<Config> {
+fn repo_local_config(
+    config_dir: &mut GitStr,
+    repo: Option<&GitRepository>,
+    repo_dir: &[u8],
+) -> Result<Config> {
     config_dir
         .joinpath(repo_dir, GIT_CONFIG_FILENAME_INREPO)
         .map_err(|_| ErrorCode::GENERIC)?;
@@ -245,8 +251,12 @@ fn repo_init_config(
 
     if oid_type != GIT_OID_DEFAULT {
         c.set_int32(c"core.repositoryformatversion", 1)?;
-        let name = crate::oid::OidType::from_raw(oid_type).map_or("unknown", crate::oid::OidType::name);
-        c.set_string(c"extensions.objectformat", &fs_path::to_cstring(name.as_bytes()))?;
+        let name =
+            crate::oid::OidType::from_raw(oid_type).map_or("unknown", crate::oid::OidType::name);
+        c.set_string(
+            c"extensions.objectformat",
+            &fs_path::to_cstring(name.as_bytes()),
+        )?;
     }
 
     if refdb_type != GIT_REFDB_FILES {
@@ -258,11 +268,22 @@ fn repo_init_config(
 
 /// `git_repository_reinit_filesystem`.
 pub(crate) fn reinit_filesystem(repo: &GitRepository, recurse: bool) -> Result<()> {
-    let repo_dir = repo.gitdir().map(CStr::to_bytes).unwrap_or_default().to_vec();
+    let repo_dir = repo
+        .gitdir()
+        .map(CStr::to_bytes)
+        .unwrap_or_default()
+        .to_vec();
     let mut path = GitStr::new();
     let r = repo_local_config(&mut path, Some(repo), &repo_dir).and_then(|config| {
         let wd = repo.workdir().map(|w| w.to_bytes().to_vec());
-        repo_init_fs_configs(config.borrow(), &cs(&path), &repo_dir, wd.as_deref(), true, repo.use_env())
+        repo_init_fs_configs(
+            config.borrow(),
+            &cs(&path),
+            &repo_dir,
+            wd.as_deref(),
+            true,
+            repo.use_env(),
+        )
     });
     repo.configmap_cache_clear();
 
@@ -289,15 +310,24 @@ pub(crate) fn reinit_filesystem(repo: &GitRepository, recurse: bool) -> Result<(
             })
         }
         // SAFETY: the callback only uses the submodule C passes.
-        let _ = unsafe { crate::sys::submodule::foreach(repo, reinit_submodule_fs, core::ptr::null_mut()) };
+        let _ = unsafe {
+            crate::sys::submodule::foreach(repo, reinit_submodule_fs, core::ptr::null_mut())
+        };
     }
     r
 }
 
 /// `repo_write_template`.
-fn repo_write_template(git_dir: &[u8], allow_overwrite: bool, file: &[u8], mode: u32, content: &[u8]) -> Result<()> {
+fn repo_write_template(
+    git_dir: &[u8],
+    allow_overwrite: bool,
+    file: &[u8],
+    mode: u32,
+    content: &[u8],
+) -> Result<()> {
     let mut path = GitStr::new();
-    path.joinpath(git_dir, file).map_err(|_| ErrorCode::GENERIC)?;
+    path.joinpath(git_dir, file)
+        .map_err(|_| ErrorCode::GENERIC)?;
     let flags = if allow_overwrite {
         libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC
     } else {
@@ -340,15 +370,15 @@ fn repo_write_gitlink(in_dir: &[u8], to_repo: &[u8], use_relative_path: bool) ->
     }
 
     buf.joinpath(in_dir, DOT_GIT)?;
-    if let Ok(st) = posix::stat(&cs(&buf)) {
-        if st.st_mode & libc::S_IFMT != libc::S_IFREG {
-            let _ = git_error_set!(
-                ErrorClass::REPOSITORY,
-                "cannot overwrite gitlink file into path '{}'",
-                Bytes(in_dir)
-            );
-            return Err(ErrorCode::EXISTS);
-        }
+    if let Ok(st) = posix::stat(&cs(&buf))
+        && st.st_mode & libc::S_IFMT != libc::S_IFREG
+    {
+        let _ = git_error_set!(
+            ErrorClass::REPOSITORY,
+            "cannot overwrite gitlink file into path '{}'",
+            Bytes(in_dir)
+        );
+        return Err(ErrorCode::EXISTS);
     }
     buf.clear();
 
@@ -377,11 +407,14 @@ fn pick_dir_mode(opts: &InitOptions) -> u32 {
 
 /// `repo_init_structure`.
 fn repo_init_structure(repo_dir: &[u8], work_dir: Option<&[u8]>, opts: &InitOptions) -> Result<()> {
-    let mut external_tpl = opts.template_path.is_some() || opts.flags & GIT_REPOSITORY_INIT_EXTERNAL_TEMPLATE != 0;
+    let mut external_tpl =
+        opts.template_path.is_some() || opts.flags & GIT_REPOSITORY_INIT_EXTERNAL_TEMPLATE != 0;
     let dmode = pick_dir_mode(opts);
     let chmod = opts.mode != GIT_REPOSITORY_INIT_SHARED_UMASK;
 
-    if opts.flags & GIT_REPOSITORY_INIT_BARE == 0 && opts.flags & GIT_REPOSITORY_INIT__NATURAL_WD == 0 {
+    if opts.flags & GIT_REPOSITORY_INIT_BARE == 0
+        && opts.flags & GIT_REPOSITORY_INIT__NATURAL_WD == 0
+    {
         match repo_write_gitlink(
             work_dir.unwrap_or_default(),
             repo_dir,
@@ -402,7 +435,11 @@ fn repo_init_structure(repo_dir: &[u8], work_dir: Option<&[u8]>, opts: &InitOpti
         } else {
             match Config::open_default() {
                 Ok(cfg) => {
-                    if cfg.borrow().get_path(&mut template_buf, c"init.templatedir").is_ok() {
+                    if cfg
+                        .borrow()
+                        .get_path(&mut template_buf, c"init.templatedir")
+                        .is_ok()
+                    {
                         tdir = Some(str_c_bytes(&template_buf).to_vec());
                     }
                     errors::clear();
@@ -417,16 +454,16 @@ fn repo_init_structure(repo_dir: &[u8], work_dir: Option<&[u8]>, opts: &InitOpti
             }
             default_template = true;
         }
-        if let Some(t) = tdir.as_deref() {
-            if !t.is_empty() {
-                let mut cpflags = futils::GIT_CPDIR_COPY_SYMLINKS
-                    | futils::GIT_CPDIR_SIMPLE_TO_MODE
-                    | futils::GIT_CPDIR_COPY_DOTFILES;
-                if opts.mode != GIT_REPOSITORY_INIT_SHARED_UMASK {
-                    cpflags |= futils::GIT_CPDIR_CHMOD_DIRS;
-                }
-                error = futils::cp_r(t, repo_dir, cpflags, dmode as libc::mode_t);
+        if let Some(t) = tdir.as_deref()
+            && !t.is_empty()
+        {
+            let mut cpflags = futils::GIT_CPDIR_COPY_SYMLINKS
+                | futils::GIT_CPDIR_SIMPLE_TO_MODE
+                | futils::GIT_CPDIR_COPY_DOTFILES;
+            if opts.mode != GIT_REPOSITORY_INIT_SHARED_UMASK {
+                cpflags |= futils::GIT_CPDIR_CHMOD_DIRS;
             }
+            error = futils::cp_r(t, repo_dir, cpflags, dmode as libc::mode_t);
         }
         if let Err(e) = error {
             if !default_template && e != ErrorCode::NOT_FOUND {
@@ -507,7 +544,8 @@ fn repo_init_directories(
     if !is_bare {
         if let Some(wp) = &opts.workdir_path {
             let base = str_c_bytes(repo_path).to_vec();
-            fs_path::join_unrooted(wd_path, wp.to_bytes(), Some(&base)).map_err(|_| ErrorCode::GENERIC)?;
+            fs_path::join_unrooted(wd_path, wp.to_bytes(), Some(&base))
+                .map_err(|_| ErrorCode::GENERIC)?;
         } else if has_dotgit {
             let rp = str_c_bytes(repo_path).to_vec();
             fs_path::dirname_r(Some(wd_path), Some(&rp)).map_err(|_| ErrorCode::GENERIC)?;
@@ -618,7 +656,9 @@ fn get_initial_head(flags: &mut u32, opts: &InitOptions) -> Result<CString> {
 pub(crate) fn init_ext(given_repo: &CStr, opts: &mut InitOptions) -> (Result<()>, InitOut) {
     match init_prepare(given_repo, opts) {
         Err(e) => (Err(e), InitOut::Unset),
-        Ok((rp, initial_head, refdb_init_flags)) => init_open(&rp, initial_head, refdb_init_flags, opts),
+        Ok((rp, initial_head, refdb_init_flags)) => {
+            init_open(&rp, initial_head, refdb_init_flags, opts)
+        }
     }
 }
 
@@ -632,9 +672,20 @@ pub(crate) enum InitOut {
     Repo(NonNull<GitRepository>),
 }
 
-fn init_prepare(given_repo: &CStr, opts: &mut InitOptions) -> Result<(Vec<u8>, Option<CString>, u32)> {
-    let oid_type = if opts.oid_type != 0 { opts.oid_type } else { GIT_OID_DEFAULT };
-    let refdb_type = if opts.refdb_type != 0 { opts.refdb_type } else { GIT_REFDB_FILES };
+fn init_prepare(
+    given_repo: &CStr,
+    opts: &mut InitOptions,
+) -> Result<(Vec<u8>, Option<CString>, u32)> {
+    let oid_type = if opts.oid_type != 0 {
+        opts.oid_type
+    } else {
+        GIT_OID_DEFAULT
+    };
+    let refdb_type = if opts.refdb_type != 0 {
+        opts.refdb_type
+    } else {
+        GIT_REFDB_FILES
+    };
 
     let mut repo_path = GitStr::new();
     let mut wd_path = GitStr::new();
@@ -661,20 +712,39 @@ fn init_prepare(given_repo: &CStr, opts: &mut InitOptions) -> Result<(Vec<u8>, O
             return Err(ErrorCode::EXISTS);
         }
         opts.flags |= GIT_REPOSITORY_INIT__IS_REINIT;
-        repo_init_config(&rp, wd.as_deref(), opts.flags, opts.mode, oid_type, refdb_type)?;
+        repo_init_config(
+            &rp,
+            wd.as_deref(),
+            opts.flags,
+            opts.mode,
+            oid_type,
+            refdb_type,
+        )?;
         if opts.initial_head.is_some() {
             initial_head = Some(get_initial_head(&mut refdb_init_flags, opts)?);
         }
     } else {
         let dmode = pick_dir_mode(opts);
         repo_init_structure(&rp, wd.as_deref(), opts)?;
-        repo_init_config(&rp, wd.as_deref(), opts.flags, opts.mode, oid_type, refdb_type)?;
+        repo_init_config(
+            &rp,
+            wd.as_deref(),
+            opts.flags,
+            opts.mode,
+            oid_type,
+            refdb_type,
+        )?;
 
         let mut path = GitStr::new();
         path.joinpath(&rp, GIT_HEAD_FILE)?;
         let p = cs(&path).into_owned();
         if !fs_path::exists(&p) {
-            futils::writebuffer(GIT_INVALID_HEAD_CONTENT, &p, 0, GIT_REFS_FILE_MODE as libc::mode_t)?;
+            futils::writebuffer(
+                GIT_INVALID_HEAD_CONTENT,
+                &p,
+                0,
+                GIT_REFS_FILE_MODE as libc::mode_t,
+            )?;
             refdb_init_flags |= GIT_REFDB_BACKEND_INIT_FORCE_HEAD;
         }
         path.joinpath(&rp, GIT_REFS_DIR)?;
@@ -685,7 +755,12 @@ fn init_prepare(given_repo: &CStr, opts: &mut InitOptions) -> Result<(Vec<u8>, O
     Ok((rp, initial_head, refdb_init_flags))
 }
 
-fn init_open(rp: &[u8], initial_head: Option<CString>, refdb_init_flags: u32, opts: &InitOptions) -> (Result<()>, InitOut) {
+fn init_open(
+    rp: &[u8],
+    initial_head: Option<CString>,
+    refdb_init_flags: u32,
+    opts: &InitOptions,
+) -> (Result<()>, InitOut) {
     let rpc = fs_path::to_cstring(rp);
     let repo = match open::open_ext(Some(&rpc), GIT_REPOSITORY_OPEN_NO_SEARCH, None, true) {
         Ok(Some(r)) => r,
@@ -708,7 +783,11 @@ fn init_open(rp: &[u8], initial_head: Option<CString>, refdb_init_flags: u32, op
 }
 
 /// `git_repository_set_workdir`.
-pub(crate) fn set_workdir(repo: &GitRepository, workdir: &CStr, update_gitlink: bool) -> Result<()> {
+pub(crate) fn set_workdir(
+    repo: &GitRepository,
+    workdir: &CStr,
+    update_gitlink: bool,
+) -> Result<()> {
     let mut path = GitStr::new();
     fs_path::prettify_dir(&mut path, workdir, None).map_err(|_| ErrorCode::GENERIC)?;
 
@@ -718,7 +797,10 @@ pub(crate) fn set_workdir(repo: &GitRepository, workdir: &CStr, update_gitlink: 
 
     if update_gitlink {
         let config = repo.config_weak().map_err(|_| ErrorCode::GENERIC)?;
-        let gitdir = repo.gitdir().map(|g| g.to_bytes().to_vec()).unwrap_or_default();
+        let gitdir = repo
+            .gitdir()
+            .map(|g| g.to_bytes().to_vec())
+            .unwrap_or_default();
         let r = match repo_write_gitlink(str_c_bytes(&path), &gitdir, false) {
             Err(ErrorCode::PASSTHROUGH) => config.delete_entry(c"core.worktree"),
             Ok(()) => config.set_string(c"core.worktree", &cs(&path)),

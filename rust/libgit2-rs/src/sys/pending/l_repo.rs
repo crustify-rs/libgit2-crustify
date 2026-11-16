@@ -67,8 +67,11 @@ unsafe extern "C" {
     pub fn git_config_free(cfg: *mut c_void);
     pub fn git_config_open_ondisk(out: *mut *mut c_void, path: *const c_char) -> c_int;
     pub fn git_config_open_default(out: *mut *mut c_void) -> c_int;
-    pub fn git_config_open_level(out: *mut *mut c_void, parent: *const c_void, level: c_int)
-    -> c_int;
+    pub fn git_config_open_level(
+        out: *mut *mut c_void,
+        parent: *const c_void,
+        level: c_int,
+    ) -> c_int;
     pub fn git_config_add_file_ondisk(
         cfg: *mut c_void,
         path: *const c_char,
@@ -132,8 +135,11 @@ unsafe extern "C" {
     pub fn git_config__find_global(path: *mut GitStr) -> c_int;
     pub fn git_config__find_xdg(path: *mut GitStr) -> c_int;
     pub fn git_config__global_location(buf: *mut GitStr) -> c_int;
-    pub fn git_repository__configmap_lookup(out: *mut c_int, repo: *mut c_void, item: c_int)
-    -> c_int;
+    pub fn git_repository__configmap_lookup(
+        out: *mut c_int,
+        repo: *mut c_void,
+        item: c_int,
+    ) -> c_int;
     pub fn git_repository__configmap_lookup_cache_clear(repo: *mut c_void);
 }
 
@@ -192,8 +198,11 @@ unsafe extern "C" {
         mode: libc::mode_t,
         flags: u32,
     ) -> c_int;
-    pub fn git_reference_lookup(out: *mut *mut c_void, repo: *mut c_void, name: *const c_char)
-    -> c_int;
+    pub fn git_reference_lookup(
+        out: *mut *mut c_void,
+        repo: *mut c_void,
+        name: *const c_char,
+    ) -> c_int;
     pub fn git_reference_lookup_resolved(
         out: *mut *mut c_void,
         repo: *mut c_void,

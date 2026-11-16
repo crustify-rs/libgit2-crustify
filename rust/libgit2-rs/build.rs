@@ -55,10 +55,24 @@ fn main() {
 /// environment variables of the crate.
 fn build_config() {
     const REFERENCE: &[&str] = &[
-        "THREADS", "THREADS_PTHREADS", "SHA1_BUILTIN", "SHA256_OPENSSL", "COMPRESSION_ZLIB",
-        "NSEC", "NSEC_MTIM", "REGEX_PCRE2", "SSH", "SSH_LIBSSH2", "HTTP", "HTTPS",
-        "HTTPS_OPENSSL", "HTTPPARSER_HTTPPARSER", "AUTH_NTLM", "AUTH_NTLM_BUILTIN",
-        "AUTH_NEGOTIATE", "AUTH_NEGOTIATE_GSSAPI",
+        "THREADS",
+        "THREADS_PTHREADS",
+        "SHA1_BUILTIN",
+        "SHA256_OPENSSL",
+        "COMPRESSION_ZLIB",
+        "NSEC",
+        "NSEC_MTIM",
+        "REGEX_PCRE2",
+        "SSH",
+        "SSH_LIBSSH2",
+        "HTTP",
+        "HTTPS",
+        "HTTPS_OPENSSL",
+        "HTTPPARSER_HTTPPARSER",
+        "AUTH_NTLM",
+        "AUTH_NTLM_BUILTIN",
+        "AUTH_NEGOTIATE",
+        "AUTH_NEGOTIATE_GSSAPI",
     ];
     println!("cargo::rustc-check-cfg=cfg(git_feature, values(any()))");
     println!("cargo::rustc-check-cfg=cfg(git_build_cpu)");
@@ -85,10 +99,10 @@ fn build_config() {
                     "GIT_BUILD_CPU" => cpu = Some(value.trim_matches('"').to_string()),
                     "GIT_BUILD_COMMIT" => commit = Some(value.trim_matches('"').to_string()),
                     _ => {
-                        if let Some(n) = name.strip_prefix("GIT_") {
-                            if value == "1" {
-                                features.push(n.to_string());
-                            }
+                        if let Some(n) = name.strip_prefix("GIT_")
+                            && value == "1"
+                        {
+                            features.push(n.to_string());
                         }
                     }
                 }
@@ -123,8 +137,11 @@ fn build_config() {
         let Some(name) = w.next() else { continue };
         let value = w.collect::<Vec<_>>().join(" ");
         match name {
-            "LIBGIT2_VERSION" | "LIBGIT2_VERSION_MAJOR" | "LIBGIT2_VERSION_MINOR"
-            | "LIBGIT2_VERSION_REVISION" | "LIBGIT2_VERSION_PRERELEASE" => {
+            "LIBGIT2_VERSION"
+            | "LIBGIT2_VERSION_MAJOR"
+            | "LIBGIT2_VERSION_MINOR"
+            | "LIBGIT2_VERSION_REVISION"
+            | "LIBGIT2_VERSION_PRERELEASE" => {
                 println!("cargo:rustc-env={name}={}", value.trim_matches('"'));
             }
             _ => {}

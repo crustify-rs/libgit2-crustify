@@ -20,7 +20,10 @@ unsafe extern "C" {
 pub fn ext(repo: &GitRepository, spec: &CStr) -> (c_int, Option<Object>, Option<Reference>) {
     let (mut o, mut r) = (ptr::null_mut(), ptr::null_mut());
     // SAFETY: a live repository, a NUL-terminated spec, local outs.
-    let e = unsafe { git_revparse_ext(&mut o, &mut r, repo.as_ptr(), spec.as_ptr()) };
+    let e = unsafe { git_revparse_ext(&raw mut o, &raw mut r, repo.as_ptr(), spec.as_ptr()) };
     // SAFETY: what C wrote is NULL or owned by us.
-    unsafe { (e, Object::from_raw(o), Reference::from_raw(r)) }
+    let o = unsafe { Object::from_raw(o) };
+    // SAFETY: as above.
+    let r = unsafe { Reference::from_raw(r) };
+    (e, o, r)
 }

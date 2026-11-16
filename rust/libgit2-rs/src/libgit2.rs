@@ -132,8 +132,14 @@ pub fn feature_backend(f: c_int) -> Option<&'static CStr> {
         None
     };
     match f {
-        feature::THREADS => first_of!("THREADS_PTHREADS" => c"pthread", "THREADS_WIN32" => c"win32")
-            .or_else(|| unknown(cfg!(git_feature = "THREADS"), "!\"Unknown threads backend\"")),
+        feature::THREADS => {
+            first_of!("THREADS_PTHREADS" => c"pthread", "THREADS_WIN32" => c"win32").or_else(|| {
+                unknown(
+                    cfg!(git_feature = "THREADS"),
+                    "!\"Unknown threads backend\"",
+                )
+            })
+        }
         feature::HTTP => None,
         feature::HTTPS => first_of!(
             "HTTPS_OPENSSL" => c"openssl",
@@ -152,7 +158,12 @@ pub fn feature_backend(f: c_int) -> Option<&'static CStr> {
             "NSEC_MTIME_NSEC" => c"mtime_nsec",
             "NSEC_WIN32" => c"win32",
         )
-        .or_else(|| unknown(cfg!(git_feature = "NSEC"), "!\"Unknown high-resolution time backend\"")),
+        .or_else(|| {
+            unknown(
+                cfg!(git_feature = "NSEC"),
+                "!\"Unknown high-resolution time backend\"",
+            )
+        }),
         feature::HTTP_PARSER => first_of!(
             "HTTPPARSER_HTTPPARSER" => c"httpparser",
             "HTTPPARSER_LLHTTP" => c"llhttp",
@@ -167,18 +178,31 @@ pub fn feature_backend(f: c_int) -> Option<&'static CStr> {
             "REGEX_BUILTIN" => c"builtin",
         )
         .or_else(|| unknown(true, "!\"Unknown regular expression backend\"")),
-        feature::I18N => first_of!("I18N_ICONV" => c"iconv")
-            .or_else(|| unknown(cfg!(git_feature = "I18N"), "!\"Unknown internationalization backend\"")),
-        feature::AUTH_NTLM => first_of!("AUTH_NTLM_BUILTIN" => c"builtin", "AUTH_NTLM_SSPI" => c"sspi")
-            .or_else(|| unknown(cfg!(git_feature = "AUTH_NTLM"), "!\"Unknown NTLM backend\"")),
+        feature::I18N => first_of!("I18N_ICONV" => c"iconv").or_else(|| {
+            unknown(
+                cfg!(git_feature = "I18N"),
+                "!\"Unknown internationalization backend\"",
+            )
+        }),
+        feature::AUTH_NTLM => {
+            first_of!("AUTH_NTLM_BUILTIN" => c"builtin", "AUTH_NTLM_SSPI" => c"sspi")
+                .or_else(|| unknown(cfg!(git_feature = "AUTH_NTLM"), "!\"Unknown NTLM backend\""))
+        }
         feature::AUTH_NEGOTIATE => first_of!(
             "AUTH_NEGOTIATE_GSSFRAMEWORK" => c"gssframework",
             "AUTH_NEGOTIATE_GSSAPI" => c"gssapi",
             "AUTH_NEGOTIATE_SSPI" => c"sspi",
         )
-        .or_else(|| unknown(cfg!(git_feature = "AUTH_NEGOTIATE"), "!\"Unknown Negotiate backend\"")),
-        feature::COMPRESSION => first_of!("COMPRESSION_ZLIB" => c"zlib", "COMPRESSION_BUILTIN" => c"builtin")
-            .or_else(|| unknown(true, "!\"Unknown compression backend\"")),
+        .or_else(|| {
+            unknown(
+                cfg!(git_feature = "AUTH_NEGOTIATE"),
+                "!\"Unknown Negotiate backend\"",
+            )
+        }),
+        feature::COMPRESSION => {
+            first_of!("COMPRESSION_ZLIB" => c"zlib", "COMPRESSION_BUILTIN" => c"builtin")
+                .or_else(|| unknown(true, "!\"Unknown compression backend\""))
+        }
         feature::SHA1 => first_of!(
             "SHA1_BUILTIN" => c"builtin",
             "SHA1_OPENSSL" => c"openssl",
@@ -284,7 +308,9 @@ impl Libgit2 {
     pub fn init() -> Result<Libgit2, Error> {
         let r = init();
         if r < 0 {
-            return Err(Error::from(ErrorCode::check(r).err().unwrap_or(ErrorCode::GENERIC)));
+            return Err(Error::from(
+                ErrorCode::check(r).err().unwrap_or(ErrorCode::GENERIC),
+            ));
         }
         Ok(Libgit2 { _p: () })
     }
@@ -332,14 +358,18 @@ pub mod ffi {
     ///
     /// The three pointers are writable.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_libgit2_version(major: *mut c_int, minor: *mut c_int, rev: *mut c_int) -> c_int {
+    pub unsafe extern "C" fn git_libgit2_version(
+        major: *mut c_int,
+        minor: *mut c_int,
+        rev: *mut c_int,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: the caller's contract.
-            unsafe {
-                major.write(VERSION_MAJOR);
-                minor.write(VERSION_MINOR);
-                rev.write(VERSION_REVISION);
-            }
+            unsafe { major.write(VERSION_MAJOR) };
+            // SAFETY: the caller's contract.
+            unsafe { minor.write(VERSION_MINOR) };
+            // SAFETY: the caller's contract.
+            unsafe { rev.write(VERSION_REVISION) };
             0
         })
     }

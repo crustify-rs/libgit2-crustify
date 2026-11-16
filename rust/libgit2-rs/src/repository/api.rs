@@ -89,7 +89,6 @@ bitflags_lite! {
     }
 }
 
-
 bitflags_lite! {
     /// `git_repository_init_flag_t`.
     pub struct RepositoryInitFlags: u32 {
@@ -345,7 +344,9 @@ impl Drop for Repository {
 
 impl core::fmt::Debug for Repository {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("Repository").field("path", &self.path()).finish()
+        f.debug_struct("Repository")
+            .field("path", &self.path())
+            .finish()
     }
 }
 
@@ -405,7 +406,11 @@ impl Repository {
 
     /// `git_repository_discover`: the git directory of the repository that
     /// contains `start`.
-    pub fn discover(start: impl AsRef<Path>, across_fs: bool, ceiling_dirs: &[&Path]) -> Result<PathBuf> {
+    pub fn discover(
+        start: impl AsRef<Path>,
+        across_fs: bool,
+        ceiling_dirs: &[&Path],
+    ) -> Result<PathBuf> {
         let s = path_c(start.as_ref())?;
         let ceil = if ceiling_dirs.is_empty() {
             None
@@ -571,7 +576,7 @@ impl Repository {
     pub fn config(&self) -> Result<Config> {
         let c = self.raw().config_weak()?;
         // SAFETY: the repository's live config; a new reference.
-        Ok(unsafe { Config::new_ref(NonNull::new_unchecked(c.as_ptr())) })
+        Ok(unsafe { Config::new_ref(c.as_nonnull()) })
     }
 
     /// `git_repository_config_snapshot`.
@@ -648,23 +653,29 @@ impl Repository {
 
     /// `git_repository_set_ident`.
     pub fn set_ident(&mut self, name: Option<&str>, email: Option<&str>) -> Result<()> {
-        let n = name.map(CString::new).transpose().map_err(|_| Error::from(ErrorCode::GENERIC))?;
-        let e = email.map(CString::new).transpose().map_err(|_| Error::from(ErrorCode::GENERIC))?;
+        let n = name
+            .map(CString::new)
+            .transpose()
+            .map_err(|_| Error::from(ErrorCode::GENERIC))?;
+        let e = email
+            .map(CString::new)
+            .transpose()
+            .map_err(|_| Error::from(ErrorCode::GENERIC))?;
         Ok(self.raw().set_ident(n.as_deref(), e.as_deref())?)
     }
 
     /// `git_repository_hashfile`: the id `path` would get as an object of
     /// type `object_type` (`GIT_OBJECT_BLOB` = 3), filtered as `as_path`
     /// (`Some("")`: no filters; `None`: as `path`).
-    pub fn hashfile(&self, path: impl AsRef<Path>, object_type: i32, as_path: Option<&Path>) -> Result<Oid> {
+    pub fn hashfile(
+        &self,
+        path: impl AsRef<Path>,
+        object_type: i32,
+        as_path: Option<&Path>,
+    ) -> Result<Oid> {
         let p = path_c(path.as_ref())?;
         let a = as_path.map(path_c).transpose()?;
         Ok(head::hashfile(self.raw(), &p, object_type, a.as_deref())?)
-    }
-
-    /// The `git_repository *`, for C (still owned).
-    pub(crate) fn as_raw(&self) -> &GitRepository {
-        self.raw()
     }
 }
 

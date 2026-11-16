@@ -35,6 +35,19 @@ pub(crate) unsafe fn refcount<'a>(p: NonNull<c_void>) -> &'a GitRefcount {
     unsafe { p.cast::<GitRefcount>().as_ref() }
 }
 
+/// Read the field of type `T` at byte `offset` of the C struct at `p`.
+///
+/// # Safety
+///
+/// `p` points to a live struct that has an initialized, aligned `T` at
+/// `offset`, which nothing writes during the read.
+pub(crate) unsafe fn read_field<T: Copy>(p: NonNull<c_void>, offset: usize) -> T {
+    // SAFETY: the caller's contract: `offset` is within the struct.
+    let field = unsafe { p.as_ptr().byte_add(offset) }.cast::<T>();
+    // SAFETY: the caller's contract: aligned and initialized.
+    unsafe { field.read() }
+}
+
 /// Turn a C status into a `Result`.
 #[inline]
 pub(crate) fn check(code: c_int) -> Result<c_int> {
@@ -68,6 +81,7 @@ macro_rules! owner {
         #[derive(Debug)]
         pub struct $name(NonNull<c_void>);
 
+        #[allow(dead_code)]
         impl $name {
             /// Adopt a pointer C returned (NULL gives `None`).
             ///
@@ -120,7 +134,7 @@ fn make<T>(
     adopt: unsafe fn(*mut c_void) -> Option<T>,
 ) -> Result<T> {
     let mut out: *mut c_void = ptr::null_mut();
-    check(f(&mut out))?;
+    check(f(&raw mut out))?;
     // SAFETY: on success the constructor gave the caller its reference
     // (or NULL, which is `None`).
     match unsafe { adopt(out) } {
@@ -160,7 +174,10 @@ impl Config {
     /// `git_config_open_default`.
     pub(crate) fn open_default() -> Result<Config> {
         // SAFETY: a local out-parameter.
-        make(|out| unsafe { c::git_config_open_default(out) }, Config::from_raw)
+        make(
+            |out| unsafe { c::git_config_open_default(out) },
+            Config::from_raw,
+        )
     }
 
     /// Another reference to the configuration `p` (`GIT_REFCOUNT_INC`).
@@ -199,12 +216,17 @@ impl<'a> ConfigRef<'a> {
         self.0.as_ptr()
     }
 
+    /// The C pointer, non-null.
+    pub(crate) fn as_nonnull(self) -> NonNull<c_void> {
+        self.0
+    }
+
     /// `git_config_get_bool`.
     pub(crate) fn get_bool(self, name: &CStr) -> Result<bool> {
         let mut v: c_int = 0;
         // SAFETY: a live config (the handle's invariant), a NUL-terminated
         // name and a local out-parameter.
-        check(unsafe { c::git_config_get_bool(&mut v, self.as_ptr(), name.as_ptr()) })?;
+        check(unsafe { c::git_config_get_bool(&raw mut v, self.as_ptr(), name.as_ptr()) })?;
         Ok(v != 0)
     }
 
@@ -212,7 +234,7 @@ impl<'a> ConfigRef<'a> {
     pub(crate) fn get_int32(self, name: &CStr) -> Result<i32> {
         let mut v: i32 = 0;
         // SAFETY: as `get_bool`.
-        check(unsafe { c::git_config_get_int32(&mut v, self.as_ptr(), name.as_ptr()) })?;
+        check(unsafe { c::git_config_get_int32(&raw mut v, self.as_ptr(), name.as_ptr()) })?;
         Ok(v)
     }
 
@@ -220,7 +242,7 @@ impl<'a> ConfigRef<'a> {
     pub(crate) fn get_entry(self, name: &CStr) -> Result<ConfigEntry> {
         let mut e: *mut c::ConfigEntryRaw = ptr::null_mut();
         // SAFETY: as `get_bool`.
-        check(unsafe { c::git_config_get_entry(&mut e, self.as_ptr(), name.as_ptr()) })?;
+        check(unsafe { c::git_config_get_entry(&raw mut e, self.as_ptr(), name.as_ptr()) })?;
         NonNull::new(e).map(ConfigEntry).ok_or(ErrorCode::GENERIC)
     }
 
@@ -229,7 +251,7 @@ impl<'a> ConfigRef<'a> {
         let mut e: *mut c::ConfigEntryRaw = ptr::null_mut();
         // SAFETY: as `get_bool`.
         check(unsafe {
-            c::git_config__lookup_entry(&mut e, self.as_ptr(), key.as_ptr(), no_errors)
+            c::git_config__lookup_entry(&raw mut e, self.as_ptr(), key.as_ptr(), no_errors)
         })?;
         Ok(NonNull::new(e).map(ConfigEntry))
     }
@@ -291,8 +313,7 @@ impl<'a> ConfigRef<'a> {
     /// `git_config__get_string_buf`.
     pub(crate) fn get_string_buf(self, out: &mut GitStr, name: &CStr) -> Result<()> {
         // SAFETY: as `get_path`.
-        check(unsafe { c::git_config__get_string_buf(out, self.as_ptr(), name.as_ptr()) })
-            .map(drop)
+        check(unsafe { c::git_config__get_string_buf(out, self.as_ptr(), name.as_ptr()) }).map(drop)
     }
 
     /// `git_config_add_file_ondisk`.
@@ -321,7 +342,7 @@ impl<'a> ConfigRef<'a> {
     pub(crate) fn set_writeorder(self, level: c_int) -> Result<()> {
         let mut l = level;
         // SAFETY: a live config and a one-element array.
-        check(unsafe { c::git_config_set_writeorder(self.as_ptr(), &mut l, 1) }).map(drop)
+        check(unsafe { c::git_config_set_writeorder(self.as_ptr(), &raw mut l, 1) }).map(drop)
     }
 
     /// `git_config_snapshot`.
@@ -398,7 +419,9 @@ struct Foreach<'f> {
 unsafe extern "C" fn foreach_cb(entry: *const c::ConfigEntryRaw, payload: *mut c_void) -> c_int {
     // SAFETY: `payload` is the `Foreach` of the running call, which nothing
     // else touches during it; `entry` is the live entry C passes.
-    let (data, entry) = unsafe { (&mut *payload.cast::<Foreach<'_>>(), &*entry) };
+    let data = unsafe { &mut *payload.cast::<Foreach<'_>>() };
+    // SAFETY: the live entry C passes for the call.
+    let entry = unsafe { &*entry };
     if data.panic.is_some() {
         return -1;
     }
@@ -439,13 +462,17 @@ impl ConfigEntry {
     /// The entry's name.
     pub fn name(&self) -> &CStr {
         // SAFETY: the entry is live while owned; its name is NUL-terminated.
-        unsafe { opt_cstr(self.0.as_ref().name) }.unwrap_or(c"")
+        let e = unsafe { self.0.as_ref() };
+        // SAFETY: NUL-terminated, owned by the entry.
+        unsafe { opt_cstr(e.name) }.unwrap_or(c"")
     }
 
     /// The entry's value.
     pub fn value(&self) -> Option<&CStr> {
         // SAFETY: as `name`.
-        unsafe { opt_cstr(self.0.as_ref().value) }
+        let e = unsafe { self.0.as_ref() };
+        // SAFETY: NULL or NUL-terminated, owned by the entry.
+        unsafe { opt_cstr(e.value) }
     }
 }
 
@@ -477,7 +504,10 @@ impl Odb {
             oid_type: oid_type.raw(),
         };
         // SAFETY: valid options and a local out-parameter.
-        make(|out| unsafe { c::git_odb_new_ext(out, &opts) }, Odb::from_raw)
+        make(
+            |out| unsafe { c::git_odb_new_ext(out, &raw const opts) },
+            Odb::from_raw,
+        )
     }
 
     /// Another reference to `p` (`GIT_REFCOUNT_INC`).
@@ -506,10 +536,8 @@ impl Odb {
     /// `git_odb__add_default_backends(odb, dir, 0, 0)`.
     pub(crate) fn add_default_backends(&self, dir: &CStr) -> Result<()> {
         // SAFETY: a live odb and a NUL-terminated path.
-        check(unsafe {
-            c::git_odb__add_default_backends(self.as_ptr(), dir.as_ptr(), false, 0)
-        })
-        .map(drop)
+        check(unsafe { c::git_odb__add_default_backends(self.as_ptr(), dir.as_ptr(), false, 0) })
+            .map(drop)
     }
 
     /// `git_odb_exists`.
@@ -526,13 +554,7 @@ impl Odb {
         // SAFETY: a live odb; `options.oid_type` is at byte 60 of
         // `struct git_odb` (checked by the layout test), written only when
         // the odb is created.
-        unsafe {
-            self.as_ptr()
-                .cast::<u8>()
-                .add(ODB_OID_TYPE_OFFSET)
-                .cast::<crate::oid::git_oid_t>()
-                .read()
-        }
+        unsafe { read_field(self.0, ODB_OID_TYPE_OFFSET) }
     }
 }
 
@@ -592,7 +614,7 @@ impl Index {
         };
         // SAFETY: a NUL-terminated path, valid options, a local out.
         make(
-            |out| unsafe { c::git_index_open_ext(out, path.as_ptr(), &opts) },
+            |out| unsafe { c::git_index_open_ext(out, path.as_ptr(), &raw const opts) },
             Index::from_raw,
         )
     }
@@ -636,19 +658,25 @@ impl Reference {
     /// `git_reference_name`.
     pub fn name(&self) -> &CStr {
         // SAFETY: a live reference's name lives as long as it.
-        unsafe { opt_cstr(c::git_reference_name(self.as_ptr())) }.unwrap_or(c"")
+        let p = unsafe { c::git_reference_name(self.as_ptr()) };
+        // SAFETY: the name lives as long as the reference.
+        unsafe { opt_cstr(p) }.unwrap_or(c"")
     }
 
     /// `git_reference_symbolic_target` (`None` for a direct reference).
     pub fn symbolic_target(&self) -> Option<&CStr> {
         // SAFETY: as `name`.
-        unsafe { opt_cstr(c::git_reference_symbolic_target(self.as_ptr())) }
+        let p = unsafe { c::git_reference_symbolic_target(self.as_ptr()) };
+        // SAFETY: as `name`.
+        unsafe { opt_cstr(p) }
     }
 
     /// `git_reference_target` (`None` for a symbolic reference).
     pub fn target(&self) -> Option<&Oid> {
         // SAFETY: NULL or the id inside the live reference.
-        unsafe { c::git_reference_target(self.as_ptr()).as_ref() }
+        let p = unsafe { c::git_reference_target(self.as_ptr()) };
+        // SAFETY: NULL or the id inside the live reference.
+        unsafe { p.as_ref() }
     }
 
     /// The raw `git_reference_target` pointer (NULL for symbolic).
@@ -696,7 +724,9 @@ impl Object {
     /// `git_object_id`.
     pub fn id(&self) -> Oid {
         // SAFETY: a live object's id.
-        unsafe { *c::git_object_id(self.as_ptr()) }
+        let p = unsafe { c::git_object_id(self.as_ptr()) };
+        // SAFETY: the id inside the live object.
+        unsafe { *p }
     }
 
     /// `git_object_peel`.
@@ -738,13 +768,15 @@ pub(crate) mod refname {
     pub fn shorthand(name: &CStr) -> &CStr {
         // SAFETY: the result points into `name` (a suffix), so it lives
         // as long as it.
-        unsafe { opt_cstr(c::git_reference__shorthand(name.as_ptr())) }.unwrap_or(name)
+        let p = unsafe { c::git_reference__shorthand(name.as_ptr()) };
+        // SAFETY: a suffix of `name`.
+        unsafe { opt_cstr(p) }.unwrap_or(name)
     }
     /// `git_reference_name_is_valid`.
     pub fn is_valid(name: &CStr) -> Result<bool> {
         let mut v: c_int = 0;
         // SAFETY: a NUL-terminated name, a local out.
-        check(unsafe { c::git_reference_name_is_valid(&mut v, name.as_ptr()) })?;
+        check(unsafe { c::git_reference_name_is_valid(&raw mut v, name.as_ptr()) })?;
         Ok(v != 0)
     }
 }

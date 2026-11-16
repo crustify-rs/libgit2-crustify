@@ -27,5 +27,9 @@ pub fn validate_str_length(repo: Option<&GitRepository>, path: &GitStr) -> Resul
         return Ok(());
     }
     let b = path.as_bytes();
-    Err(git_error_set!(ErrorClass::FILESYSTEM, "path too long: '{}'", Bytes(b)))
+    Err(git_error_set!(
+        ErrorClass::FILESYSTEM,
+        "path too long: '{}'",
+        Bytes(b)
+    ))
 }

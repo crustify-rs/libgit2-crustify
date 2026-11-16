@@ -21,7 +21,11 @@ unsafe extern "C" {
 /// # Safety
 ///
 /// `cb` is sound to call with `payload` for each merge head.
-pub unsafe fn mergehead_foreach(repo: &GitRepository, cb: MergeheadCb, payload: *mut c_void) -> c_int {
+pub unsafe fn mergehead_foreach(
+    repo: &GitRepository,
+    cb: MergeheadCb,
+    payload: *mut c_void,
+) -> c_int {
     // SAFETY: a live repository and the caller's contract.
     unsafe { git_repository_mergehead_foreach(repo.as_ptr(), cb, payload) }
 }

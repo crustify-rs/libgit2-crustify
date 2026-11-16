@@ -37,7 +37,7 @@ pub fn find_template_dir(out: &mut GitStr) -> Result<()> {
 pub fn get_into(out: &mut GitStr, which: c_int) -> Result<()> {
     let mut s: *const GitStr = ptr::null();
     // SAFETY: a local out-parameter; C points it at its own path buffer.
-    check(unsafe { git_sysdir_get(&mut s, which) })?;
+    check(unsafe { git_sysdir_get(&raw mut s, which) })?;
     // SAFETY: on success `s` is the sysdir's `git_str`, which nothing
     // changes while we copy it (sysdir is set only by the options, which
     // the C does not run concurrently with a get either).

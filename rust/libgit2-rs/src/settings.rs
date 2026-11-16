@@ -17,10 +17,10 @@ use core::ptr;
 use core::sync::atomic::{AtomicPtr, Ordering};
 
 use crate::buf::GitBuf;
+use crate::git_error_set;
 use crate::util::alloc;
 use crate::util::errors::{self, ErrorClass, ErrorCode, Result};
 use crate::util::str::GitStr;
-use crate::git_error_set;
 
 /// `git__user_agent` (`char *`, NULL for the default).
 #[unsafe(no_mangle)]
@@ -85,7 +85,11 @@ pub fn user_agent_product() -> &'static CStr {
 }
 
 extern "C" fn settings_global_shutdown() {
-    for g in [&git__user_agent, &git__user_agent_product, &git__ssl_ciphers] {
+    for g in [
+        &git__user_agent,
+        &git__user_agent_product,
+        &git__ssl_ciphers,
+    ] {
         let old = g.swap(ptr::null_mut(), Ordering::AcqRel);
         // SAFETY: the global's own string, no longer used at shutdown.
         unsafe { alloc::free(old.cast()) };
@@ -100,7 +104,11 @@ fn config_level_to_sysdir(level: c_int) -> Result<c_int> {
         crate::repository::GIT_CONFIG_LEVEL_SYSTEM => Ok(GIT_SYSDIR_SYSTEM),
         crate::repository::GIT_CONFIG_LEVEL_XDG => Ok(GIT_SYSDIR_XDG),
         crate::repository::GIT_CONFIG_LEVEL_GLOBAL => Ok(GIT_SYSDIR_GLOBAL),
-        _ => Err(git_error_set!(ErrorClass::INVALID, "invalid config path selector {}", level)),
+        _ => Err(git_error_set!(
+            ErrorClass::INVALID,
+            "invalid config path selector {}",
+            level
+        )),
     }
 }
 
@@ -183,10 +191,10 @@ pub mod opt {
 unsafe fn buf_out(out: *mut GitBuf, f: impl FnOnce(&mut GitStr) -> Result<()>) -> Result<()> {
     let mut s = GitStr::new();
     // SAFETY: the caller's contract; `s` is local.
-    ErrorCode::check(unsafe { crate::buf::ffi::git_buf_tostr(&mut s, out) })?;
+    ErrorCode::check(unsafe { crate::buf::ffi::git_buf_tostr(&raw mut s, out) })?;
     f(&mut s)?;
     // SAFETY: as above.
-    ErrorCode::check(unsafe { crate::buf::ffi::git_buf_fromstr(out, &mut s) })?;
+    ErrorCode::check(unsafe { crate::buf::ffi::git_buf_fromstr(out, &raw mut s) })?;
     Ok(())
 }
 
@@ -200,11 +208,14 @@ mod globals {
         git_disable_pack_keep_file_checks, git_index__enforce_unsaved_safety,
         git_mwindow__file_limit, git_mwindow__mapped_limit, git_mwindow__window_size,
         git_object__strict_input_validation, git_odb__loose_priority, git_odb__packed_priority,
-        git_odb__strict_hash_verification,
-        git_reference__enable_symbolic_ref_target_validation,
+        git_odb__strict_hash_verification, git_reference__enable_symbolic_ref_target_validation,
     };
-    pub(super) use crate::sys::streams::{git_socket_stream__connect_timeout, git_socket_stream__timeout};
-    pub(super) use crate::sys::transports::{git_http__expect_continue, git_smart__ofs_delta_enabled};
+    pub(super) use crate::sys::streams::{
+        git_socket_stream__connect_timeout, git_socket_stream__timeout,
+    };
+    pub(super) use crate::sys::transports::{
+        git_http__expect_continue, git_smart__ofs_delta_enabled,
+    };
 }
 
 macro_rules! g {
@@ -229,12 +240,6 @@ unsafe fn out<T>(p: *mut c_void, v: T) -> Result<()> {
     Ok(())
 }
 
-/// `git_libgit2_opts(key, …)` with the arguments read.
-///
-/// # Safety
-///
-/// `a` holds the arguments C's `git_libgit2_opts` documents for `key`
-/// (pointers valid for what the option does with them).
 /// An options call's arguments, with the contract of [`opts`].
 struct Args<'a>(&'a OptArgs);
 
@@ -261,6 +266,12 @@ impl Args<'_> {
     }
 }
 
+/// `git_libgit2_opts(key, …)` with the arguments read.
+///
+/// # Safety
+///
+/// `a` holds the arguments C's `git_libgit2_opts` documents for `key`
+/// (pointers valid for what the option does with them).
 pub unsafe fn opts(key: c_int, args: &OptArgs) -> Result<()> {
     use opt::*;
     let r = Ordering::Relaxed;
@@ -284,7 +295,9 @@ pub unsafe fn opts(key: c_int, args: &OptArgs) -> Result<()> {
             SET_CACHE_OBJECT_LIMIT => {
                 // PENDING(l-odb): `crate::cache::set_max_object_size`.
                 // SAFETY: no precondition beyond the library being initialized.
-                ErrorCode::check(unsafe { crate::sys::pending::l_repo::git_cache_set_max_object_size(a.0.i, a.0.sz) })?;
+                ErrorCode::check(unsafe {
+                    crate::sys::pending::l_repo::git_cache_set_max_object_size(a.0.i, a.0.sz)
+                })?;
             }
             SET_CACHE_MAX_SIZE => g!(git_cache__max_storage).store(a.0.ssz, r),
             ENABLE_CACHING => g!(git_cache__enabled).store(a.0.i != 0, r),
@@ -295,25 +308,23 @@ pub unsafe fn opts(key: c_int, args: &OptArgs) -> Result<()> {
             GET_TEMPLATE_PATH => a.buf1(|s| {
                 crate::sys::sysdir::get_into(s, crate::sys::sysdir::GIT_SYSDIR_TEMPLATE)
             })?,
-            SET_TEMPLATE_PATH => crate::sys::sysdir::set(
-                crate::sys::sysdir::GIT_SYSDIR_TEMPLATE,
-                a.cstr1(),
-            )?,
-            SET_SSL_CERT_LOCATIONS => crate::sys::streams::openssl_set_cert_location(
-                a.cstr1(),
-                a.cstr2(),
-            )?,
+            SET_TEMPLATE_PATH => {
+                crate::sys::sysdir::set(crate::sys::sysdir::GIT_SYSDIR_TEMPLATE, a.cstr1())?
+            }
+            SET_SSL_CERT_LOCATIONS => {
+                crate::sys::streams::openssl_set_cert_location(a.cstr1(), a.cstr2())?
+            }
             ADD_SSL_X509_CERT => {
                 // SAFETY: the caller passes an `X509 *` (the option's contract).
                 unsafe { crate::sys::streams::openssl_add_x509_cert(a.0.p1) }?
-            },
+            }
             SET_USER_AGENT => replace(&git__user_agent, a.cstr1())?,
             GET_USER_AGENT => a.buf1(|s| s.puts(user_agent().to_bytes()))?,
-            SET_USER_AGENT_PRODUCT => {
-                replace(&git__user_agent_product, a.cstr1())?
-            }
+            SET_USER_AGENT_PRODUCT => replace(&git__user_agent_product, a.cstr1())?,
             GET_USER_AGENT_PRODUCT => a.buf1(|s| s.puts(user_agent_product().to_bytes()))?,
-            ENABLE_STRICT_OBJECT_CREATION => g!(git_object__strict_input_validation).store(a.0.i != 0, r),
+            ENABLE_STRICT_OBJECT_CREATION => {
+                g!(git_object__strict_input_validation).store(a.0.i != 0, r)
+            }
             ENABLE_STRICT_SYMBOLIC_REF_CREATION => {
                 g!(git_reference__enable_symbolic_ref_target_validation).store(a.0.i != 0, r)
             }
@@ -326,25 +337,37 @@ pub unsafe fn opts(key: c_int, args: &OptArgs) -> Result<()> {
                 }
             }
             ENABLE_OFS_DELTA => g!(git_smart__ofs_delta_enabled).store(a.0.i != 0, r),
-            ENABLE_FSYNC_GITDIR => crate::repository::git_repository__fsync_gitdir.store(a.0.i != 0, r),
+            ENABLE_FSYNC_GITDIR => {
+                crate::repository::git_repository__fsync_gitdir.store(a.0.i != 0, r)
+            }
             GET_WINDOWS_SHAREMODE | SET_WINDOWS_SHAREMODE => {}
-            ENABLE_STRICT_HASH_VERIFICATION => g!(git_odb__strict_hash_verification).store(a.0.i != 0, r),
+            ENABLE_STRICT_HASH_VERIFICATION => {
+                g!(git_odb__strict_hash_verification).store(a.0.i != 0, r)
+            }
             SET_ALLOCATOR => {
                 // SAFETY: NULL or a valid `git_allocator` (the option's contract).
-                ErrorCode::check(unsafe { crate::util::alloc::ffi::git_allocator_setup(a.0.p1.cast()) })?;
+                ErrorCode::check(unsafe {
+                    crate::util::alloc::ffi::git_allocator_setup(a.0.p1.cast())
+                })?;
             }
-            ENABLE_UNSAVED_INDEX_SAFETY => g!(git_index__enforce_unsaved_safety).store(a.0.i != 0, r),
+            ENABLE_UNSAVED_INDEX_SAFETY => {
+                g!(git_index__enforce_unsaved_safety).store(a.0.i != 0, r)
+            }
             SET_PACK_MAX_OBJECTS => g!(git_indexer__max_objects).store(a.0.sz, r),
             GET_PACK_MAX_OBJECTS => a.put1(g!(git_indexer__max_objects).load(r))?,
             SET_PACK_MAX_OBJECT_SIZE => g!(git_indexer__max_object_size).store(a.0.sz, r),
             GET_PACK_MAX_OBJECT_SIZE => a.put1(g!(git_indexer__max_object_size).load(r))?,
-            DISABLE_PACK_KEEP_FILE_CHECKS => g!(git_disable_pack_keep_file_checks).store(a.0.i != 0, r),
+            DISABLE_PACK_KEEP_FILE_CHECKS => {
+                g!(git_disable_pack_keep_file_checks).store(a.0.i != 0, r)
+            }
             ENABLE_HTTP_EXPECT_CONTINUE => g!(git_http__expect_continue).store(a.0.i != 0, r),
             SET_ODB_PACKED_PRIORITY => g!(git_odb__packed_priority).store(a.0.i, r),
             SET_ODB_LOOSE_PRIORITY => g!(git_odb__loose_priority).store(a.0.i, r),
             SET_EXTENSIONS => {
                 // SAFETY: `len` strings at `extensions` (the option's contract).
-                ErrorCode::check(unsafe { crate::repository::ffi::git_repository__set_extensions(a.0.p1.cast(), a.0.sz) })?;
+                ErrorCode::check(unsafe {
+                    crate::repository::ffi::git_repository__set_extensions(a.0.p1.cast(), a.0.sz)
+                })?;
             }
             GET_EXTENSIONS => {
                 let arr = a.0.p1.cast::<crate::strarray::GitStrArray>();
@@ -352,25 +375,32 @@ pub unsafe fn opts(key: c_int, args: &OptArgs) -> Result<()> {
                     return Err(errors::assert_arg_failed("out"));
                 }
                 // SAFETY: a writable `git_strarray` (the option's contract).
+                // SAFETY: a field projection of a valid struct.
+                let strings = unsafe { &raw mut (*arr).strings };
+                // SAFETY: as above.
+                let count = unsafe { &raw mut (*arr).count };
+                // SAFETY: two writable fields.
                 ErrorCode::check(unsafe {
-                    crate::repository::ffi::git_repository__extensions(&raw mut (*arr).strings, &raw mut (*arr).count)
+                    crate::repository::ffi::git_repository__extensions(strings, count)
                 })?;
             }
             GET_OWNER_VALIDATION => a.put1(c_int::from(
                 crate::repository::git_repository__validate_ownership.load(r),
             ))?,
-            SET_OWNER_VALIDATION => crate::repository::git_repository__validate_ownership.store(a.0.i != 0, r),
-            GET_HOMEDIR => a.buf1(|s| {
-                crate::sys::sysdir::get_into(s, crate::sys::sysdir::GIT_SYSDIR_HOME)
-            })?,
-            SET_HOMEDIR => crate::sys::sysdir::set(
-                crate::sys::sysdir::GIT_SYSDIR_HOME,
-                a.cstr1(),
-            )?,
+            SET_OWNER_VALIDATION => {
+                crate::repository::git_repository__validate_ownership.store(a.0.i != 0, r)
+            }
+            GET_HOMEDIR => {
+                a.buf1(|s| crate::sys::sysdir::get_into(s, crate::sys::sysdir::GIT_SYSDIR_HOME))?
+            }
+            SET_HOMEDIR => crate::sys::sysdir::set(crate::sys::sysdir::GIT_SYSDIR_HOME, a.cstr1())?,
             GET_SERVER_CONNECT_TIMEOUT => a.put1(g!(git_socket_stream__connect_timeout).load(r))?,
             SET_SERVER_CONNECT_TIMEOUT => {
                 if a.0.i < 0 {
-                    return Err(git_error_set!(ErrorClass::INVALID, "invalid connect timeout"));
+                    return Err(git_error_set!(
+                        ErrorClass::INVALID,
+                        "invalid connect timeout"
+                    ));
                 }
                 g!(git_socket_stream__connect_timeout).store(a.0.i, r);
             }
@@ -451,7 +481,11 @@ pub mod ffi {
     /// Called from `git_libgit2_init`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_settings_global_init() -> c_int {
-        barrier(|| status(crate::util::runtime::shutdown_register(settings_global_shutdown)))
+        barrier(|| {
+            status(crate::util::runtime::shutdown_register(
+                settings_global_shutdown,
+            ))
+        })
     }
 
     /// `git_settings__user_agent`.
