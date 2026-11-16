@@ -356,3 +356,51 @@ Public API (`compare.sh /work/build-c /work/builds/u2 codec`):
 `strlen` up front), which brought early-failing patterns to 1.0-1.4 of the C
 (from 1.9) and casefold/slash patterns to 0.2-0.8, but recursion-heavy
 patterns (`*[0-9]*` without casefold) stay 1.5x.
+
+## WP l-odb (odb, odb_loose, odb_mempack, cache, delta)
+
+Public API (`compare.sh /work/build-c /work/builds/l-odb odb,delta`,
+BENCH_CPU=none, 3 rounds x 3 reps, load ~290; the pack code is still C):
+
+| workload | C ms | Rust ms | ratio | cpu ratio |
+|---|---:|---:|---:|---:|
+| odb/loose_read | 470.5 | 411.5 | 0.875 | 0.859 |
+| odb/loose_read_header | 307.8 | 387.7 | 1.260 | 1.220 |
+| odb/loose_exists | 184.8 | 188.8 | 1.022 | 1.064 |
+| odb/loose_foreach | 33.3 | 34.4 | 1.031 | 1.021 |
+| odb/loose_write | 554.4 | 584.3 | 1.054 | 0.981 |
+| odb/loose_write_existing | 50.6 | 58.8 | 1.161 | 1.031 |
+| odb/pack_read_random | 959.5 | 847.6 | 0.883 | 0.865 |
+| odb/pack_read_sequential | 923.7 | 888.9 | 0.962 | 0.966 |
+| odb/pack_read_header | 176.3 | 217.4 | 1.233 | 1.280 |
+| odb/pack_exists | 195.8 | 177.4 | 0.906 | 0.989 |
+| odb/pack_exists_prefix | 97.0 | 103.3 | 1.065 | 1.051 |
+| odb/pack_read_prefix | 480.4 | 429.4 | 0.894 | 0.904 |
+| odb/pack_foreach | 206.1 | 257.0 | 1.247 | 1.252 |
+| odb/mempack_write | 279.9 | 251.6 | 0.899 | 0.889 |
+| odb/mempack_read | 497.2 | 464.9 | 0.935 | 0.929 |
+| odb/mempack_reset | 5.6 | 6.4 | 1.151 | 1.131 |
+| delta/read_deltified_random | 813.3 | 728.9 | 0.896 | 0.895 |
+| delta/read_deep_chains | 257.5 | 258.2 | 1.003 | 0.984 |
+| delta/read_header_deltified | 215.4 | 255.7 | 1.187 | 1.192 |
+| delta/indexer_resolve | 1727.7 | 1606.4 | 0.930 | 0.893 |
+
+Geomean 1.022 (wall), 1.012 (cpu). The workloads above 1.1 were rerun
+directly against `/work/build-c`, `/work/builds/master` (C odb on the
+ported util layer) and `/work/builds/l-odb`: `pack_foreach` (C 182-221,
+master 254-263, l-odb 253-264 ms) and `loose_read_header` / `pack_read_header`
+(master 1.1-1.3x the C, l-odb within ~5% of master) are as slow on master,
+whose odb is C: the cost is below the odb (the C pack code on the ported
+util layer; zlib-rs stream setup per header). `loose_foreach` was 1.2-1.45x
+before the loose backend's hex decoding was made table-driven (now 1.0).
+
+Internal API (`micro/odb_bench.c`, `micro/odb_run.sh 5 5`):
+
+| workload | C ms | Rust ms | Rust/C |
+|---|---:|---:|---:|
+| odb_read_cached (cache hit, 409.6k reads) | 55.3 | 48.9 | 0.885 |
+| odb_exists_cached | 54.8 | 44.3 | 0.808 |
+| odb_read_blob_mempack | 1464.0 | 1292.5 | 0.883 |
+| odb_read_header_mempack | 59.3 | 48.9 | 0.826 |
+| odb_write_existing (hash + freshen) | 741.9 | 683.1 | 0.921 |
+| format_object_header (2M) | 516.2 | 141.7 | 0.275 |
