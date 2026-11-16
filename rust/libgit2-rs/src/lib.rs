@@ -15,11 +15,13 @@ pub mod util;
 pub mod buf;
 pub mod fs;
 pub mod hashmap_oid;
+pub mod hashsig;
 pub mod oid;
 pub mod oidarray;
 pub mod parse;
 pub mod strarray;
 
+pub use hashsig::{HashSig, HashSigOptions};
 pub use oid::{Oid, OidShortener, OidType};
 pub use oidarray::OidArray;
 pub use strarray::StrArray;
