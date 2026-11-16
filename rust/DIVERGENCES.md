@@ -296,15 +296,28 @@ One entry per difference: component, what differs, why.
   could pass) the result is the same. The safe API rejects a path with a
   NUL.
 - **Rust-allocator copies that abort on out-of-memory**: the exports copy
-  path arguments that may alias the index's own memory (`to_vec`), and
-  `git_index__fill` copies the source vector's pointers; the parser's
-  version-4 paths and the deferred-deletion and extension lists use
-  `try_reserve` (fallible). `cl_alloc_limit` does not limit these.
+  path arguments that may alias the index's own memory (`to_vec`);
+  `git_index__fill` copies the source vector's pointers;
+  `git_index_read_index` copies the two entry lists (it sorts them in
+  place, with the C's timsort); `canonicalize_directory_path` copies the
+  path (C's `git__strdup`); the index and conflict iterators are `Box`es
+  (C's `git__calloc` failed cleanly). The parser's version-4 paths, the
+  path copies of `add_bypath` and the deferred-deletion and extension
+  lists are fallible. `cl_alloc_limit` limits none of the Rust
+  allocations.
+- **Miri stand-ins.** Under Miri only (`cfg(miri)`, which cannot call C),
+  path validation is `fs_path`'s port of the filesystem checks plus a
+  `.git` component check, and pathspecs are `wildmatch`'s port: the
+  index's own logic, callbacks and re-entrancy run under Miri. The real
+  builds call `path.c` and `pathspec.c`.
+- **`git_index_iterator`** stays mirrored (the tests read its `snap`);
+  `git_index_conflict_iterator` is opaque under `GIT_RUST`.
 - **The safe API** (`Index`, `IndexEntry`, `IndexTime`, `Stage`,
   `IndexEntries`, `IndexConflicts`, …) returns owned copies of entries;
   `Index` is a reference (`Clone` takes another), neither `Send` nor
-  `Sync`. A panic in a callback closure stops the operation with an error
-  of class `GIT_ERROR_INTERNAL`. `read_tree`/`write_tree`/`add_path`'s
+  `Sync`. A panic in a callback closure stops the operation (`add_all`,
+  `update_all` and `remove_all` alike) with an error of class
+  `GIT_ERROR_INTERNAL`. `read_tree`/`write_tree`/`add_path`'s
   submodule cases need the `Tree` and `Repository` types of l-commit and
   l-repo, so the safe API has no `read_tree`/`write_tree` yet (the C ABI
   has them).

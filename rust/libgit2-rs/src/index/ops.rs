@@ -45,11 +45,11 @@ fn owner(ix: IndexPtr) -> Option<Repo> {
 }
 
 /// A NUL-terminated copy of `b` (paths from C have no NUL within).
-fn c_copy(b: &[u8]) -> Result<alloc_cstring::CString> {
+pub(crate) fn c_copy(b: &[u8]) -> Result<alloc_cstring::CString> {
     alloc_cstring::CString::new(b)
 }
 
-mod alloc_cstring {
+pub(crate) mod alloc_cstring {
     //! A small owned C string (fallible allocation).
     use core::ffi::CStr;
 
@@ -604,9 +604,12 @@ fn compare_checksum(path: &CStr, checksum: &[u8]) -> Result<c_int> {
 /// `git_index_read`. `Ok(1)` is C's (odd) result when the file vanished
 /// between its existence check and its `stat`.
 pub(crate) fn read(ix: IndexPtr, force: bool) -> Result<c_int> {
+    // Up to the checksum comparison this is a read path that C runs on one
+    // index from several threads (`threads::diff`, `diff_load_index`):
+    // shared access, the bits atomic (C's bitfield writes race there).
     let (path, mut stamp, checksum) = {
-        // SAFETY: no foreign call in this block.
-        let index = unsafe { ix.get() };
+        // SAFETY: no foreign call in this block; shared access.
+        let index = unsafe { ix.get_ref() };
         let Some(p) = index.file_path() else {
             return Err(index_error(
                 "failed to read index: The index is in-memory only",
@@ -620,17 +623,16 @@ pub(crate) fn read(ix: IndexPtr, force: bool) -> Result<c_int> {
     };
     let path_c = path.as_c_str();
     let on_disk = crate::util::fs_path::exists(path_c);
-    {
-        // SAFETY: no foreign call in this block.
-        let index = unsafe { ix.get() };
-        index.set_on_disk(on_disk);
-        if !on_disk {
-            if force {
-                index.clear()?;
-            }
-            index.set_dirty(false);
-            return Ok(0);
+    // SAFETY: no foreign call; shared access.
+    unsafe { ix.get_ref() }.set_on_disk(on_disk);
+    if !on_disk {
+        if force {
+            // SAFETY: no foreign call.
+            unsafe { ix.get() }.clear()?;
         }
+        // SAFETY: no foreign call; shared access.
+        unsafe { ix.get_ref() }.set_dirty(false);
+        return Ok(0);
     }
     let failed = || {
         git_error_set!(
@@ -1092,7 +1094,8 @@ pub(crate) fn read_index(ix: IndexPtr, new_ix: IndexPtr) -> Result<()> {
         }
         v.extend(index.entries.iter().map(as_entry));
         // SAFETY: live entries of the index.
-        v.sort_by(|&a, &b| unsafe { entry_cmp(a, b, false) }.cmp(&0));
+        // (timsort in place, as the C iterator's `git_vector_sort`)
+        crate::util::tsort::tsort(&mut v, |a, b| unsafe { entry_cmp(a, b, false) });
         Ok(v)
     };
     let release = |p: IndexPtr| {
@@ -1519,10 +1522,11 @@ pub(crate) fn update_all(ix: IndexPtr, paths: Paths<'_>, cb: Option<MatchedPathC
 /// reference and a reader on the index (removals are deferred meanwhile).
 pub(crate) fn snapshot_new(ix: IndexPtr) -> Result<GitVector> {
     ix.incref();
-    // SAFETY: no foreign call.
-    let index = unsafe { ix.get() };
-    index.readers.inc();
-    index.sort();
+    ix.readers().inc();
+    // SAFETY: no foreign call; shared access (C's iterators take snapshots
+    // of one index from several threads: `threads::diff`), exclusive only
+    // for a sort the vector needs.
+    let index = unsafe { ix.sorted() };
     let cmp = index.entries.cmp_fn();
     match index.entries.dup(cmp) {
         Ok(v) => Ok(v),

@@ -100,16 +100,20 @@ struct git_index {
 };
 #endif
 
+/* mirrored by the Rust port (the tests read `snap`) */
 struct git_index_iterator {
 	git_index *index;
 	git_vector snap;
 	size_t cur;
 };
 
+#ifndef GIT_RUST
+/* (opaque to the C under the Rust port) */
 struct git_index_conflict_iterator {
 	git_index *index;
 	size_t cur;
 };
+#endif
 
 extern void git_index_entry__init_from_stat(
 	git_index_entry *entry, struct stat *st, bool trust_mode);

@@ -339,12 +339,52 @@ static void generated(git_oid_t t)
 	git_index_free(ix);
 }
 
+/* TREE names with high-bit bytes, and REUC modes that are negative ints */
+static void bytes_and_modes(void)
+{
+	static const unsigned char tree[] = "\0-1 2\n\xff\xfe\0-1 0\nlatin\xe9\0-1 0\n";
+	unsigned char buf[256];
+	size_t n = 0, tl = sizeof(tree) - 1;
+	char p[4200];
+	git_index *ix;
+	git_oid id;
+	int rc;
+
+	printf("== bytes and modes\n");
+	memcpy(buf, "DIRC\0\0\0\2\0\0\0\0", 12); n = 12;
+	memcpy(buf + n, "TREE", 4); n += 4;
+	buf[n++] = 0; buf[n++] = 0; buf[n++] = 0; buf[n++] = (unsigned char)tl;
+	memcpy(buf + n, tree, tl); n += tl;
+	n += 20;
+	fix_checksum(buf, n, GIT_OID_SHA1);
+	snprintf(p, sizeof(p), "%s/treenames", tmpdir);
+	git_futils_writebuffer(&(git_str){ (char *)buf, 0, n }, p, 0, 0644);
+	if ((rc = git_index_open(&ix, p)) < 0) { show_err("open", rc); return; }
+	dump_tree(ix->tree, 0);
+	rc = git_index_write(ix);
+	printf(" write rc=%d\n", rc);
+	file_hash(p);
+
+	git_oid_from_string(&id, "1111111111111111111111111111111111111111", GIT_OID_SHA1);
+	rc = git_index_reuc_add(ix, "neg", -1, &id, 0, NULL, 0, NULL);
+	printf(" reuc -1 with id rc=%d\n", rc);
+	if (rc < 0) show_err("reuc", rc);
+	rc = git_index_reuc_add(ix, "negnull", -1, NULL, 0, NULL, 0, NULL);
+	printf(" reuc -1 without id rc=%d\n", rc);
+	if (rc < 0) show_err("reuc", rc);
+	rc = git_index_write(ix);
+	printf(" write rc=%d\n", rc);
+	file_hash(p);
+	git_index_free(ix);
+}
+
 int main(void)
 {
 	git_libgit2_init();
 	snprintf(tmpdir, sizeof(tmpdir), "/tmp/index_diff.%d", (int)getpid());
 	mkdir(tmpdir, 0755);
 	walk("tests/resources", 0);
+	bytes_and_modes();
 	generated(GIT_OID_SHA1);
 	generated(GIT_OID_SHA256);
 	corrupt("tests/resources/indexv4/.gitted/index", GIT_OID_SHA1);

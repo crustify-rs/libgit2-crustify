@@ -491,6 +491,27 @@ DIVERGENCES.md).
   level) overflows the stack.
 - Rust: an explicit stack; the same trees, errors and bytes.
 
+### tree-cache: a 22-byte `TREE` record makes the C allocate 16 GiB
+- C: `read_tree_internal` allocates (and zeroes) `children_count` pointers
+  from the pool before reading any child, whatever is left of the data: a
+  record declaring 2147483647 children asks for 16 GiB, and fails as
+  corrupted only after (or out of memory).
+- Trigger: `"\0-1 2147483647\n"` as a `TREE` extension.
+- Rust: each child needs at least 6 bytes (`"\0-1 0\n"`), so a count
+  above what is left / 6 is `corrupted TREE extension in index` before
+  any allocation: C's result whenever its allocation succeeded.
+
+### index: one index read from several threads races in C
+- C: `tests/libgit2/threads/diff.c` diffs one repository index from 32
+  threads: each calls `git_index_read(index, false)`, which writes the
+  `on_disk` and `dirty` bitfields, and takes snapshots, which
+  `git_vector_sort` the entries (a write when unsorted). Plain writes on
+  shared memory from several threads: a data race (TSan reports it).
+- Rust: the read paths take shared access only; the bitfields are an
+  atomic word written only when a bit changes, the reference and readers
+  counts atomics; a sort happens (exclusively) only when the entries are
+  not sorted, which is the C's race again, now confined to that case.
+
 ### index: leaks on failures
 - C: `git_index_read_tree` leaks the entries it made when the tree walk or
   the map fails; `git_index_read_iterator` leaks the copies it made when

@@ -578,7 +578,9 @@ impl Index {
             let path = unsafe { crate::util::export::cstr_bytes(p) }.to_vec();
             // SAFETY: as above.
             let matched = unsafe { crate::util::export::cstr(m) }.map(|m| m.to_bytes().to_vec());
-            f(&path, matched.as_deref())
+            // the closure runs inside a barrier, whichever operation calls
+            // it: a panic stops the operation with an internal error
+            crate::util::export::barrier(|| f(&path, matched.as_deref()))
         };
         let cbr: Option<ops::MatchedPathCb<'_>> = if has_cb { Some(&mut adapter) } else { None };
         check(op(Paths::from_ptrs(&arr), cbr))
