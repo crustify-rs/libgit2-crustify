@@ -533,6 +533,15 @@ impl EntryBox {
         self.0.as_ptr().cast()
     }
 
+    /// The entry's value (`None` for a bare name).
+    pub fn value(&self) -> Option<&[u8]> {
+        // SAFETY: a live entry (owned); its value is NULL or a C string that
+        // lives as long as the entry and that nothing writes.
+        let v = unsafe { (*self.0.as_ptr()).entry.value };
+        // SAFETY: as above.
+        (!v.is_null()).then(|| unsafe { CStr::from_ptr(v) }.to_bytes())
+    }
+
     /// The entry's fields, read once.
     pub fn view(&self) -> EntryView<'_> {
         // SAFETY: a live entry (owned), which nothing writes: its fields
@@ -1018,8 +1027,8 @@ impl GitConfig {
     fn get_entry_inner(&self, name: &CStr, normalize: bool) -> Result<Option<EntryBox>> {
         let normalized;
         let key = if normalize {
-            normalized = cstring(&normalize_name(name.to_bytes())?)?;
-            as_cstr(&normalized)
+            normalized = Key::normalize(name.to_bytes())?;
+            normalized.as_cstr()
         } else {
             name
         };
@@ -1115,7 +1124,7 @@ impl GitConfig {
         only_if_existing: bool,
     ) -> Result<()> {
         let ce = self.get_entry(key, false, Want::NoMissing)?;
-        let old = ce.as_ref().map(|e| e.view().value.map(<[u8]>::to_vec));
+        let old = ce.as_ref().map(|e| e.value().map(<[u8]>::to_vec));
         match (&ce, &old) {
             (None, _) if only_if_existing => return Ok(()),
             (Some(_), _) if !overwrite_existing => return Ok(()),
@@ -1493,6 +1502,13 @@ pub fn normalize_name(input: &[u8]) -> Result<Vec<u8>> {
     name.try_reserve_exact(input.len())
         .map_err(|_| errors::oom())?;
     name.extend_from_slice(input);
+    normalize_in_place(&mut name, input)?;
+    Ok(name)
+}
+
+/// The checks and lower-casing of [`normalize_name`] on `name` (a copy of
+/// `input`, which the error message quotes).
+fn normalize_in_place(name: &mut [u8], input: &[u8]) -> Result<()> {
     let invalid = || {
         let _ = git_error_set!(
             ErrorClass::CONFIG,
@@ -1501,8 +1517,7 @@ pub fn normalize_name(input: &[u8]) -> Result<Vec<u8>> {
         );
         ErrorCode::INVALID_SPEC
     };
-    let (Some(fdot), Some(ldot)) = (memchr::memchr(b'.', &name), memchr::memrchr(b'.', &name))
-    else {
+    let (Some(fdot), Some(ldot)) = (memchr::memchr(b'.', name), memchr::memrchr(b'.', name)) else {
         return Err(invalid());
     };
     if fdot == 0 || ldot + 1 == name.len() {
@@ -1516,7 +1531,36 @@ pub fn normalize_name(input: &[u8]) -> Result<Vec<u8>> {
     if name[fdot..ldot].contains(&b'\n') {
         return Err(invalid());
     }
-    Ok(name)
+    Ok(())
+}
+
+/// A normalized name and its NUL, on the stack when it is short (a lookup
+/// allocates nothing for it).
+enum Key {
+    Stack([u8; 128], usize),
+    Heap(Vec<u8>),
+}
+
+impl Key {
+    /// [`normalize_name`] of `input`.
+    fn normalize(input: &[u8]) -> Result<Key> {
+        let input = until_nul(input);
+        if input.len() < 128 {
+            let mut b = [0u8; 128];
+            b[..input.len()].copy_from_slice(input);
+            normalize_in_place(&mut b[..input.len()], input)?;
+            Ok(Key::Stack(b, input.len()))
+        } else {
+            Ok(Key::Heap(cstring(&normalize_name(input)?)?))
+        }
+    }
+
+    fn as_cstr(&self) -> &CStr {
+        match self {
+            Key::Stack(b, n) => as_cstr(&b[..=*n]),
+            Key::Heap(v) => as_cstr(v),
+        }
+    }
 }
 
 /// What a C string holds: up to its first NUL.
@@ -2650,7 +2694,7 @@ pub mod ffi {
         let name = unsafe { or_null_c(name) };
         let e = config.get_entry(name, true, Want::AllErrors)?;
         let e = e.ok_or(ErrorCode::NOT_FOUND)?;
-        f(e.view().value)
+        f(e.value())
     }
 
     /// `git_config_get_mapped`.
@@ -2963,7 +3007,7 @@ pub mod ffi {
             let fallback_value = unsafe { c(fallback_value) };
             let e = config.get_entry(key, false, Want::NoErrors);
             let e = e.ok().flatten();
-            let v = e.as_ref().and_then(|e| e.view().value.map(<[u8]>::to_vec));
+            let v = e.as_ref().and_then(|e| e.value().map(<[u8]>::to_vec));
             let v = v.or_else(|| fallback_value.map(|f| f.to_bytes().to_vec()));
             match v {
                 Some(v) => crate::util::alloc::substrdup(&v),
@@ -2991,7 +3035,7 @@ pub mod ffi {
             let e = config.get_entry(key, false, Want::NoErrors);
             let mut val = fallback_value;
             if let Ok(Some(e)) = e {
-                match parse_bool(e.view().value) {
+                match parse_bool(e.value()) {
                     Ok(b) => val = c_int::from(b),
                     Err(_) => errors::clear(),
                 }
@@ -3019,7 +3063,7 @@ pub mod ffi {
             let e = config.get_entry(key, false, Want::NoErrors);
             let mut val = fallback_value;
             if let Ok(Some(e)) = e {
-                match parse_int32(e.view().value) {
+                match parse_int32(e.value()) {
                     Ok(n) => val = n,
                     Err(_) => errors::clear(),
                 }
@@ -3713,7 +3757,7 @@ impl Config {
         let n = arg(name.as_bytes())?;
         let e = self.inner().get_entry(as_cstr(&n), true, Want::AllErrors)?;
         let e = e.ok_or_else(|| Error::from(error_notfound(name.as_bytes())))?;
-        Ok(f(e.view().value)?)
+        Ok(f(e.value())?)
     }
 
     /// `git_config_get_bool`.

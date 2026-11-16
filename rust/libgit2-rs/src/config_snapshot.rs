@@ -64,7 +64,8 @@ impl SnapshotBackend {
 
     /// `config_snapshot_get`.
     fn get(&self, key: &[u8], out: *mut *mut git_config_backend_entry) -> c_int {
-        let Some(list) = self.list() else {
+        let g = self.list.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(list) = g.as_ref() else {
             return ErrorCode::NOT_FOUND.raw();
         };
         match list.get(key) {

@@ -117,8 +117,8 @@ impl core::borrow::Borrow<[u8]> for Key {
     }
 }
 
-/// A fast string hash for the name map (FNV-1a, 64-bit): the iteration
-/// order of the map is never observable.
+/// A fast string hash for the name map (FxHash's mixing, a word at a
+/// time): the iteration order of the map is never observable.
 #[derive(Clone, Copy, Default)]
 struct FnvBuild;
 struct Fnv(u64);
@@ -127,10 +127,16 @@ impl Hasher for Fnv {
         self.0
     }
     fn write(&mut self, bytes: &[u8]) {
+        // A word at a time (FxHash's step), then the tail byte-wise.
+        const K: u64 = 0x517c_c1b7_2722_0a95;
         let mut h = self.0;
-        for &b in bytes {
-            h ^= u64::from(b);
-            h = h.wrapping_mul(0x100_0000_01b3);
+        let mut chunks = bytes.chunks_exact(8);
+        for c in &mut chunks {
+            let w = u64::from_le_bytes([c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]]);
+            h = (h.rotate_left(5) ^ w).wrapping_mul(K);
+        }
+        for &b in chunks.remainder() {
+            h = (h.rotate_left(5) ^ u64::from(b)).wrapping_mul(K);
         }
         self.0 = h;
     }

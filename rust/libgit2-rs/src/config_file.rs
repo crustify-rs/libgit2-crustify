@@ -695,10 +695,13 @@ impl FileBackend {
         if !table_readonly(cfg) {
             self.refresh(cfg)?;
         }
-        let list = self.take_list();
+        let values = self.lock_values();
+        let Some(list) = values.as_ref() else {
+            return Err(ErrorCode::NOT_FOUND);
+        };
         match list.get(key) {
             None => Err(ErrorCode::NOT_FOUND),
-            Some(e) => Ok(ConfigList::lend(&list, e)),
+            Some(e) => Ok(ConfigList::lend(list, e)),
         }
     }
 

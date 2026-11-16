@@ -171,7 +171,7 @@ pub fn configmap_lookup(config: &GitConfig, item: usize) -> Result<c_int> {
     let Some(entry) = entry else {
         return Ok(data.default_value);
     };
-    let value = entry.view().value;
+    let value = entry.value();
     if data.maps.is_empty() {
         parse_bool(value).map(c_int::from)
     } else {

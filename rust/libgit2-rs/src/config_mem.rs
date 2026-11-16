@@ -147,7 +147,7 @@ impl MemBackend {
 
     /// `config_memory_get`.
     fn get(&self, key: &[u8], out: *mut *mut git_config_backend_entry) -> c_int {
-        let list = self.list();
+        let list = self.list.lock().unwrap_or_else(|e| e.into_inner());
         match list.get(key) {
             None => ErrorCode::NOT_FOUND.raw(),
             Some(e) => {
