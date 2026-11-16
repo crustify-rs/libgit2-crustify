@@ -90,11 +90,10 @@ pub(crate) unsafe fn parse(blob: NonNull<GitBlob>, odb_obj: *mut git_odb_object)
     };
     let c = odb_obj.cast::<GitCachedObj>();
     // SAFETY: a live odb object starts with its `git_cached_obj`
-    // (PENDING(l-odb)); `git_cached_obj_incref`; the size is read only.
-    let size = unsafe {
-        (*c).refcount.inc();
-        (*c).size
-    };
+    // (PENDING(l-odb)); `git_cached_obj_incref` (the count is atomic).
+    unsafe { (*c).refcount.inc() };
+    // SAFETY: as above; the size is read only.
+    let size = unsafe { (*c).size };
     // SAFETY: a live odb object; its buffer lives as long as it does.
     let data = unsafe { p::git_odb_object_data(odb_obj) }.cast::<u8>();
     // SAFETY: a fresh blob, not shared yet.
@@ -175,7 +174,7 @@ impl OdbStream {
     unsafe fn open(odb: *mut git_odb, size: u64, t: c_int) -> Result<OdbStream> {
         let mut s = ptr::null_mut();
         // SAFETY: a live odb, a writable out.
-        ErrorCode::check(unsafe { p::git_odb_open_wstream(&mut s, odb, size, t) })?;
+        ErrorCode::check(unsafe { p::git_odb_open_wstream(&raw mut s, odb, size, t) })?;
         Ok(OdbStream(s))
     }
 
@@ -207,7 +206,7 @@ impl Drop for OdbStream {
 pub(crate) unsafe fn odb_write(odb: *mut git_odb, data: &[u8], t: c_int) -> Result<Oid> {
     let mut id = Oid::NONE;
     // SAFETY: a live odb, readable data, a writable id.
-    let r = unsafe { p::git_odb_write(&mut id, odb, data.as_ptr().cast(), data.len(), t) };
+    let r = unsafe { p::git_odb_write(&raw mut id, odb, data.as_ptr().cast(), data.len(), t) };
     ErrorCode::check(r)?;
     Ok(id)
 }
@@ -329,7 +328,7 @@ pub unsafe fn create_from_paths(
             let hp = hint_path.map_or(ptr::null(), CStr::as_ptr);
             // SAFETY: a live repository, a valid `git_str`, NULL or a
             // NUL-terminated path.
-            if unsafe { p::git_repository_workdir_path(&mut path, repo, hp) } < 0 {
+            if unsafe { p::git_repository_workdir_path(&raw mut path, repo, hp) } < 0 {
                 return Err(ErrorCode::GENERIC);
             }
             match path.as_c_str() {
@@ -341,7 +340,7 @@ pub unsafe fn create_from_paths(
     let st = crate::util::fs_path::lstat(content_path)?;
     let mut odb = OdbRef(ptr::null_mut());
     // SAFETY: a live repository; the reference is held by `odb`.
-    ErrorCode::check(unsafe { p::git_repository_odb(&mut odb.0, repo) })?;
+    ErrorCode::check(unsafe { p::git_repository_odb(&raw mut odb.0, repo) })?;
     if posix::s_isdir(st.st_mode) {
         let _ = git_error_set!(
             ErrorClass::ODB,
@@ -510,7 +509,7 @@ pub unsafe fn create_from_stream(
     let mut path = GitStr::new();
     // `GIT_REPOSITORY_ITEM_OBJECTS`.
     // SAFETY: a live repository, a valid `git_str`.
-    ErrorCode::check(unsafe { p::git_repository__item_path(&mut path, repo, 4) })?;
+    ErrorCode::check(unsafe { p::git_repository__item_path(&raw mut path, repo, 4) })?;
     path.joinpath_self(b"streamed")?;
     let mut fbuf = Box::new(GitFilebuf::new());
     fbuf.open_withsize(
@@ -725,7 +724,7 @@ impl<'repo> Blob<'repo> {
         }
         let mut out = GitBuf::new();
         // SAFETY: a live blob of a repository and a valid `git_buf`.
-        unsafe { filter(&mut out, self.0.as_ptr().cast(), &path, &o)? };
+        unsafe { filter(&raw mut out, self.0.as_ptr().cast(), &path, &o)? };
         Ok(Some(out.into_vec()))
     }
 
@@ -944,7 +943,9 @@ pub mod ffi {
             // SAFETY: NULL or writable, used only here.
             let st = unsafe { out_st.as_mut() };
             // SAFETY: NULL or NUL-terminated.
-            let (c, h) = unsafe { (cstr(content_path), cstr(hint_path)) };
+            let c = unsafe { cstr(content_path) };
+            // SAFETY: NULL or NUL-terminated.
+            let h = unsafe { cstr(hint_path) };
             // SAFETY: a live repository.
             match unsafe { create_from_paths(st, repo, c, h, hint_mode, try_load_filters) } {
                 Ok(oid) => {
@@ -1129,7 +1130,7 @@ pub mod ffi {
             // SAFETY: a readable `unsigned int`.
             if let Err(e) = unsafe {
                 check_version(
-                    &version,
+                    &raw const version,
                     GIT_BLOB_FILTER_OPTIONS_VERSION as c_uint,
                     "git_blob_filter_options",
                 )
@@ -1174,15 +1175,12 @@ pub mod ffi {
             let opts = unsafe { given_opts.as_ref() }
                 .copied()
                 .unwrap_or(GitBlobFilterOptions::INIT);
-            // SAFETY: NUL-terminated; a live blob; a valid `git_buf`.
-            unsafe {
-                status(filter(
-                    out,
-                    NonNull::new_unchecked(blob),
-                    CStr::from_ptr(path),
-                    &opts,
-                ))
-            }
+            // SAFETY: non-null (checked above).
+            let blob = unsafe { NonNull::new_unchecked(blob) };
+            // SAFETY: NUL-terminated (the caller's contract).
+            let path = unsafe { CStr::from_ptr(path) };
+            // SAFETY: a live blob of a repository; a valid `git_buf`.
+            status(unsafe { filter(out, blob, path, &opts) })
         })
     }
 }

@@ -116,11 +116,11 @@ unsafe fn free_fields(t: &mut GitTag) {
 ///
 /// `tag` is a tag of [`alloc`]'s, with no reference left.
 pub(crate) unsafe fn free(tag: NonNull<GitTag>) {
-    // SAFETY: the tag, no longer shared; its fields and block freed once.
-    unsafe {
-        free_fields(&mut *tag.as_ptr());
-    }
-    // SAFETY: as above.
+    // SAFETY: the tag, no longer shared (the caller's contract).
+    let t = unsafe { &mut *tag.as_ptr() };
+    // SAFETY: its own fields, freed once.
+    unsafe { free_fields(t) };
+    // SAFETY: its block, freed once.
     unsafe { alloc::free(tag.as_ptr().cast()) };
 }
 
@@ -256,13 +256,13 @@ pub(crate) unsafe fn parse_odb(
     oid_type: crate::oid::git_oid_t,
 ) -> c_int {
     let c = odb_obj.cast::<object::GitCachedObj>();
-    // SAFETY: a live odb object (its `git_cached_obj` prefix, PENDING(l-odb));
-    // its buffer holds `size` bytes for its life.
-    let data = unsafe {
-        let size = (*c).size;
-        let d = p::git_odb_object_data(odb_obj);
-        crate::util::export::bytes(d.cast(), size)
-    };
+    // SAFETY: a live odb object (its `git_cached_obj` prefix,
+    // PENDING(l-odb)); the size is read only.
+    let size = unsafe { (*c).size };
+    // SAFETY: a live odb object.
+    let d = unsafe { p::git_odb_object_data(odb_obj) };
+    // SAFETY: its buffer holds `size` bytes, unwritten, for its life.
+    let data = unsafe { crate::util::export::bytes(d.cast(), size) };
     // SAFETY: a fresh tag.
     unsafe { parse_into(tag, data, oid_type) }
 }
@@ -504,7 +504,7 @@ pub unsafe fn create_internal(
     // SAFETY: a live repository, a NUL-terminated name, a valid id.
     let r = unsafe {
         p::git_reference_create(
-            &mut new_ref.0,
+            &raw mut new_ref.0,
             repo,
             as_c(&refname),
             oid,
@@ -539,7 +539,7 @@ pub unsafe fn create_from_buffer(
         // Validate the target.
         let mut target_obj = ptr::null_mut();
         // SAFETY: a live odb, a valid id, a writable out.
-        if unsafe { p::git_odb_read(&mut target_obj, odb, &target) } < 0 {
+        if unsafe { p::git_odb_read(&raw mut target_obj, odb, &raw const target) } < 0 {
             return Err(ErrorCode::GENERIC);
         }
         /// The odb object, freed on drop.
@@ -577,7 +577,7 @@ pub unsafe fn create_from_buffer(
     let mut stream = ptr::null_mut();
     // SAFETY: a live odb, a writable out.
     ErrorCode::check(unsafe {
-        p::git_odb_open_wstream(&mut stream, odb, buffer.len() as u64, GIT_OBJECT_TAG)
+        p::git_odb_open_wstream(&raw mut stream, odb, buffer.len() as u64, GIT_OBJECT_TAG)
     })?;
     // SAFETY: a live stream, readable data.
     let mut error =
@@ -593,7 +593,7 @@ pub unsafe fn create_from_buffer(
     // SAFETY: a live repository, a NUL-terminated name, a valid id.
     let r = unsafe {
         p::git_reference_create(
-            &mut new_ref.0,
+            &raw mut new_ref.0,
             repo,
             as_c(&refname),
             oid,
@@ -613,7 +613,7 @@ pub unsafe fn delete(repo: *mut git_repository, tag_name: &[u8]) -> Result<()> {
     let refname = ref_name(tag_name).map_err(|_| ErrorCode::GENERIC)?;
     let mut r = RefHandle(ptr::null_mut());
     // SAFETY: a live repository, a NUL-terminated name, a writable out.
-    ErrorCode::check(unsafe { p::git_reference_lookup(&mut r.0, repo, as_c(&refname)) })?;
+    ErrorCode::check(unsafe { p::git_reference_lookup(&raw mut r.0, repo, as_c(&refname)) })?;
     // SAFETY: a live reference.
     ErrorCode::check(unsafe { p::git_reference_delete(r.0) }).map(|_| ())
 }
@@ -636,15 +636,17 @@ pub unsafe fn foreach(
     unsafe extern "C" fn tags_cb(name: *const c_char, payload: *mut c_void) -> c_int {
         crate::util::export::barrier(|| {
             // SAFETY: `payload` is the `Data` below, alive and borrowed by
-            // nothing else during the iteration; `name` is a reference
-            // name, NUL-terminated.
-            let (d, name) = unsafe { (&mut *payload.cast::<Data<'_>>(), CStr::from_ptr(name)) };
+            // nothing else during the iteration.
+            let d = unsafe { &mut *payload.cast::<Data<'_>>() };
+            // SAFETY: a reference name, NUL-terminated.
+            let name = unsafe { CStr::from_ptr(name) };
             if crate::util::util::prefixcmp(name.to_bytes(), GIT_REFS_TAGS_DIR) != 0 {
                 return 0; // not a tag
             }
             let mut oid = Oid::NONE;
             // SAFETY: a live repository, a NUL-terminated name, a writable id.
-            let mut error = unsafe { p::git_reference_name_to_id(&mut oid, d.repo, name.as_ptr()) };
+            let mut error =
+                unsafe { p::git_reference_name_to_id(&raw mut oid, d.repo, name.as_ptr()) };
             if error == 0 {
                 error = (d.cb)(name, &oid);
                 if error != 0 {
@@ -658,7 +660,11 @@ pub unsafe fn foreach(
     // SAFETY: a live repository; the callback and its payload live for the
     // call.
     unsafe {
-        p::git_reference_foreach_name(repo, Some(tags_cb), crate::util::export::payload(&mut data))
+        p::git_reference_foreach_name(
+            repo,
+            Some(tags_cb),
+            crate::util::export::payload(&raw mut data),
+        )
     }
 }
 
@@ -714,7 +720,7 @@ pub fn name_is_valid(name: Option<&[u8]>) -> Result<bool> {
     s.puts(name)?;
     let mut valid: c_int = 0;
     // SAFETY: a NUL-terminated name, a writable out.
-    ErrorCode::check(unsafe { p::git_reference_name_is_valid(&mut valid, as_c(&s)) })?;
+    ErrorCode::check(unsafe { p::git_reference_name_is_valid(&raw mut valid, as_c(&s)) })?;
     Ok(valid != 0)
 }
 
@@ -890,7 +896,8 @@ impl<'repo> Tag<'repo> {
     /// `git_tag_delete`.
     pub fn delete(repo: &Repository, name: &[u8]) -> core::result::Result<(), Error> {
         // SAFETY: a live repository.
-        Ok(unsafe { delete(repo.as_ptr(), no_nul(name)?)? })
+        let _: () = unsafe { delete(repo.as_ptr(), no_nul(name)?)? };
+        Ok(())
     }
 
     /// `git_tag_list_match`: the tag names matching `pattern` (`None`: all).
@@ -976,8 +983,10 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!t.is_null(), "t", -1);
+            // SAFETY: non-null (checked above).
+            let nn = unsafe { NonNull::new_unchecked(t.cast_mut()) };
             // SAFETY: a live tag.
-            match unsafe { super::target(NonNull::new_unchecked(t.cast_mut())) } {
+            match unsafe { super::target(nn) } {
                 Ok(o) => {
                     // SAFETY: writable.
                     unsafe { target.write(o.as_ptr()) };
@@ -1093,14 +1102,12 @@ pub mod ffi {
                 "!create_tag_annotation || (tagger && message)",
                 -1
             );
-            // SAFETY: the caller's contract.
-            let (name, msg, t) = unsafe {
-                (
-                    cstr_bytes(tag_name),
-                    cstr_bytes(message),
-                    target_ref(target),
-                )
-            };
+            // SAFETY: NUL-terminated (the caller's contract).
+            let name = unsafe { cstr_bytes(tag_name) };
+            // SAFETY: as above.
+            let msg = unsafe { cstr_bytes(message) };
+            // SAFETY: a live object.
+            let t = unsafe { target_ref(target) };
             // SAFETY: a valid signature, live for the call.
             let v = unsafe { GitSignatureView::from_c(tagger) };
             let Some(t) = t else { return -1 };
@@ -1140,8 +1147,12 @@ pub mod ffi {
             git_assert_arg!(!target.is_null(), "target", -1);
             git_assert_arg!(!tagger.is_null(), "tagger", -1);
             git_assert_arg!(!message.is_null(), "message", -1);
-            // SAFETY: the caller's contract.
-            let (name, msg, t) = unsafe { (cstr_bytes(tag_name), cstr_bytes(message), &*target) };
+            // SAFETY: NUL-terminated (the caller's contract).
+            let name = unsafe { cstr_bytes(tag_name) };
+            // SAFETY: as above.
+            let msg = unsafe { cstr_bytes(message) };
+            // SAFETY: a live object, read only.
+            let t = unsafe { &*target };
             // SAFETY: a valid signature.
             let v = unsafe { GitSignatureView::from_c(tagger) };
             // SAFETY: a live repository and object.
@@ -1172,8 +1183,10 @@ pub mod ffi {
             git_assert_arg!(!repo.is_null(), "repo", -1);
             git_assert_arg!(!tag_name.is_null(), "tag_name", -1);
             git_assert_arg!(!target.is_null(), "target", -1);
-            // SAFETY: the caller's contract.
-            let (name, t) = unsafe { (cstr_bytes(tag_name), &*target) };
+            // SAFETY: NUL-terminated (the caller's contract).
+            let name = unsafe { cstr_bytes(tag_name) };
+            // SAFETY: a live object, read only.
+            let t = unsafe { &*target };
             git_assert_arg!(!oid.is_null(), "oid", -1);
             // SAFETY: a live repository and object; `oid` writable.
             status(unsafe { create_internal(oid, repo, name, t, None, allow_ref_overwrite != 0) })
@@ -1214,8 +1227,10 @@ pub mod ffi {
         tag_name: *const c_char,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            status(unsafe { delete(repo, cstr_bytes(tag_name)) })
+            // SAFETY: NUL-terminated (the caller's contract).
+            let name = unsafe { cstr_bytes(tag_name) };
+            // SAFETY: a live repository.
+            status(unsafe { delete(repo, name) })
         })
     }
 
@@ -1244,7 +1259,7 @@ pub mod ffi {
                 let mut o = *oid;
                 // SAFETY: the user's callback, with its payload, a
                 // NUL-terminated name and a writable id (a copy).
-                unsafe { cb(name.as_ptr(), &mut o, cb_data) }
+                unsafe { cb(name.as_ptr(), &raw mut o, cb_data) }
             };
             // SAFETY: a live repository.
             unsafe { foreach(repo, &mut f) }
@@ -1267,8 +1282,10 @@ pub mod ffi {
             git_assert_arg!(!tag_names.is_null(), "tag_names", -1);
             git_assert_arg!(!repo.is_null(), "repo", -1);
             git_assert_arg!(!pattern.is_null(), "pattern", -1);
-            // SAFETY: NUL-terminated; a live repository.
-            let (strings, count) = unsafe { list_match(repo, cstr_bytes(pattern)) };
+            // SAFETY: NUL-terminated.
+            let pattern = unsafe { cstr_bytes(pattern) };
+            // SAFETY: a live repository.
+            let (strings, count) = unsafe { list_match(repo, pattern) };
             // SAFETY: writable.
             unsafe { tag_names.write(GitStrArray { strings, count }) };
             0
@@ -1436,10 +1453,10 @@ This is a test tag\n";
         // SAFETY: a live tag, read by the export as C would.
         let tagger = unsafe { ffi::git_tag_tagger(t.as_ptr()) };
         // SAFETY: the tagger lives as long as the tag.
-        assert_eq!(
-            unsafe { CStr::from_ptr((*tagger).email) }.to_bytes(),
-            b"vicent@github.com"
-        );
+        let email = unsafe { (*tagger).email };
+        // SAFETY: a NUL-terminated string of the tagger.
+        let email = unsafe { CStr::from_ptr(email) };
+        assert_eq!(email.to_bytes(), b"vicent@github.com");
         // SAFETY: the tag made above, freed once.
         unsafe { free(t) };
     }

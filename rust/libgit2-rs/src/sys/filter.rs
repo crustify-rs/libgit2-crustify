@@ -140,7 +140,8 @@ impl FilterList {
         let mut fl = ptr::null_mut();
         // SAFETY: the caller's contract on `repo` and `blob`; `path` is a
         // NUL-terminated string, `fl` writable.
-        let r = unsafe { git_filter_list_load(&mut fl, repo, blob, path.as_ptr(), mode, flags) };
+        let r =
+            unsafe { git_filter_list_load(&raw mut fl, repo, blob, path.as_ptr(), mode, flags) };
         ErrorCode::check(r)?;
         Ok(NonNull::new(fl).map(FilterList))
     }
@@ -159,7 +160,8 @@ impl FilterList {
     ) -> Result<Option<FilterList>> {
         let mut fl = ptr::null_mut();
         // SAFETY: as in `load`; `opts` is a valid options struct.
-        let r = unsafe { git_filter_list_load_ext(&mut fl, repo, blob, path.as_ptr(), mode, opts) };
+        let r =
+            unsafe { git_filter_list_load_ext(&raw mut fl, repo, blob, path.as_ptr(), mode, opts) };
         ErrorCode::check(r)?;
         Ok(NonNull::new(fl).map(FilterList))
     }

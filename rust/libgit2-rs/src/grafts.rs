@@ -210,9 +210,12 @@ impl Grafts {
                 return Err(e);
             }
         }
+        // The graft's own oid: its first field (`#[repr(C)]`, offset 0, as
+        // the layout test checks).
+        let oid_ptr = graft.cast::<Oid>();
         // SAFETY: the key points at the graft's own oid, which lives in
         // its block (never moved or written) until the entry is removed.
-        let key = unsafe { OidPtr::new(NonNull::from(&(*graft.as_ptr()).oid)) };
+        let key = unsafe { OidPtr::new(oid_ptr) };
         if let Err(e) = self.commits.put(key, graft) {
             // SAFETY: the new graft, not in the map.
             unsafe { unboxed(graft) };
@@ -460,8 +463,11 @@ pub mod ffi {
         let parents = core::mem::ManuallyDrop::new(parents);
         barrier(|| {
             git_assert_arg!(!grafts.is_null() && !oid.is_null(), "grafts && oid", -1);
-            // SAFETY: the caller's contract.
-            let (g, oid) = unsafe { (&mut *grafts, oid.read()) };
+            // SAFETY: live grafts, not otherwise accessed (the caller's
+            // contract).
+            let g = unsafe { &mut *grafts };
+            // SAFETY: a valid oid (the caller's contract).
+            let oid = unsafe { oid.read() };
             status(g.add(&oid, parents.as_slice()))
         })
     }
@@ -475,8 +481,11 @@ pub mod ffi {
     pub unsafe extern "C" fn git_grafts_remove(grafts: *mut Grafts, oid: *const Oid) -> c_int {
         barrier(|| {
             git_assert_arg!(!grafts.is_null() && !oid.is_null(), "grafts && oid", -1);
-            // SAFETY: the caller's contract.
-            let (g, oid) = unsafe { (&mut *grafts, oid.read()) };
+            // SAFETY: live grafts, not otherwise accessed (the caller's
+            // contract).
+            let g = unsafe { &mut *grafts };
+            // SAFETY: a valid oid (the caller's contract).
+            let oid = unsafe { oid.read() };
             status(g.remove(&oid))
         })
     }
@@ -500,8 +509,10 @@ pub mod ffi {
                 "out && grafts && oid",
                 -1
             );
-            // SAFETY: the caller's contract.
-            let (g, oid) = unsafe { (&*grafts, &*oid) };
+            // SAFETY: live grafts, not modified during the call.
+            let g = unsafe { &*grafts };
+            // SAFETY: a valid oid.
+            let oid = unsafe { &*oid };
             match g.get(oid) {
                 Some(graft) => {
                     // SAFETY: writable; the graft's block, which C reads.

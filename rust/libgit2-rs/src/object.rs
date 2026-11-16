@@ -38,7 +38,7 @@
 
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::marker::PhantomData;
-use core::mem::{offset_of, size_of};
+use core::mem::size_of;
 use core::ptr::{self, NonNull};
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -282,14 +282,13 @@ struct CacheMirror {
 /// `repo` is a live repository.
 #[inline]
 pub unsafe fn repo_oid_type(repo: *mut git_repository) -> crate::oid::git_oid_t {
-    // SAFETY: a live repository; `oid_type` is set when it is opened and
+    let p = repo.cast::<RepositoryPrefix>();
+    // SAFETY: a live repository starts with `RepositoryPrefix`'s layout
+    // (the layout test checks the offset); no reference is formed.
+    let field = unsafe { &raw const (*p).oid_type };
+    // SAFETY: as above; `oid_type` is set when the repository is opened and
     // never written after, so the read races with nothing.
-    unsafe {
-        repo.cast::<u8>()
-            .add(offset_of!(RepositoryPrefix, oid_type))
-            .cast::<crate::oid::git_oid_t>()
-            .read()
-    }
+    unsafe { field.read() }
 }
 
 /// `&repo->objects`.
@@ -299,12 +298,10 @@ pub unsafe fn repo_oid_type(repo: *mut git_repository) -> crate::oid::git_oid_t 
 /// `repo` is a live repository.
 #[inline]
 pub unsafe fn repo_objects(repo: *mut git_repository) -> *mut p::git_cache {
-    // SAFETY: a field of the live repository (no reference is formed).
-    unsafe {
-        repo.cast::<u8>()
-            .add(offset_of!(RepositoryPrefix, objects))
-            .cast()
-    }
+    let p = repo.cast::<RepositoryPrefix>();
+    // SAFETY: a field of the live repository, at `RepositoryPrefix`'s offset
+    // (the layout test checks it); no reference is formed.
+    unsafe { (&raw mut (*p).objects).cast() }
 }
 
 /// `git_repository_odb__weakptr`: the repository's odb, owned by it.
@@ -315,7 +312,7 @@ pub unsafe fn repo_objects(repo: *mut git_repository) -> *mut p::git_cache {
 pub unsafe fn repo_odb_weak(repo: *mut git_repository) -> Result<*mut git_odb> {
     let mut odb = ptr::null_mut();
     // SAFETY: a live repository, a writable out-parameter.
-    let r = unsafe { p::git_repository_odb__weakptr(&mut odb, repo) };
+    let r = unsafe { p::git_repository_odb__weakptr(&raw mut odb, repo) };
     ErrorCode::check(r)?;
     Ok(odb)
 }
@@ -465,10 +462,17 @@ pub unsafe fn free_object(obj: *mut GitObject) {
         GIT_OBJECT_COMMIT => unsafe { p::git_commit__free(o) },
         // SAFETY: as above.
         GIT_OBJECT_TREE => unsafe { p::git_tree__free(o) },
-        // SAFETY: a blob / tag of this crate's, freed once.
-        GIT_OBJECT_BLOB => unsafe { crate::blob::free(NonNull::new_unchecked(obj).cast()) },
-        // SAFETY: as above.
-        GIT_OBJECT_TAG => unsafe { crate::tag::free(NonNull::new_unchecked(obj).cast()) },
+        GIT_OBJECT_BLOB | GIT_OBJECT_TAG => {
+            // A live object (the caller's contract) is never NULL.
+            let Some(nn) = NonNull::new(obj) else { return };
+            if t == GIT_OBJECT_BLOB {
+                // SAFETY: a blob of this crate's, freed once.
+                unsafe { crate::blob::free(nn.cast()) }
+            } else {
+                // SAFETY: a tag of this crate's, freed once.
+                unsafe { crate::tag::free(nn.cast()) }
+            }
+        }
         // SAFETY: anything else is a plain `git__allocator` block.
         _ => unsafe { alloc::free(o) },
     }
@@ -514,7 +518,7 @@ pub unsafe fn from_raw(
         Some(unsafe { crate::util::export::bytes(data, size) })
     };
     // SAFETY: options without filters.
-    let id = match unsafe { id_from_buffer_c(d, size, &opts) } {
+    let id = match unsafe { id_from_buffer_c(d, size, &raw const opts) } {
         Ok(id) => id,
         Err(e) => {
             // (C leaks the object here: rust/DEFECTS.md.)
@@ -548,7 +552,12 @@ unsafe fn odb_header(odb_obj: *mut git_odb_object) -> (Oid, git_object_t, usize)
     // SAFETY: a live `git_odb_object` starts with a `git_cached_obj`
     // (PENDING(l-odb)) whose id, type and size are written only before it
     // is shared.
-    unsafe { ((*c).oid, git_object_t::from((*c).kind), (*c).size) }
+    let oid = unsafe { (*c).oid };
+    // SAFETY: as above.
+    let kind = unsafe { (*c).kind };
+    // SAFETY: as above.
+    let size = unsafe { (*c).size };
+    (oid, git_object_t::from(kind), size)
 }
 
 /// `git_object__init_from_odb_object`: a fresh object for `odb_obj`
@@ -606,9 +615,11 @@ pub unsafe fn from_odb_object(
         unsafe { free_object(obj.as_ptr()) };
         return Err(ErrorCode::GENERIC);
     }
+    // SAFETY: a live repository.
+    let cache = unsafe { repo_objects(repo) };
     // SAFETY: a live repository's cache and a parsed object, whose
     // reference passes to the cache, which returns one (non-NULL).
-    let stored = unsafe { p::git_cache_store_parsed(repo_objects(repo), obj.as_ptr().cast()) };
+    let stored = unsafe { p::git_cache_store_parsed(cache, obj.as_ptr().cast()) };
     NonNull::new(stored.cast::<GitObject>()).ok_or(ErrorCode::GENERIC)
 }
 
@@ -682,8 +693,10 @@ pub unsafe fn lookup_prefix(
     let mut odb_obj = ptr::null_mut();
     let r = if len == hexsize {
         // A full id: the cache first.
+        // SAFETY: a live repository.
+        let cache = unsafe { repo_objects(repo) };
         // SAFETY: a live repository's cache and a valid id.
-        let cached = unsafe { p::git_cache_get_any(repo_objects(repo), id) }.cast::<GitCachedObj>();
+        let cached = unsafe { p::git_cache_get_any(cache, id) }.cast::<GitCachedObj>();
         if !cached.is_null() {
             // SAFETY: a cached object, with the reference the cache just
             // gave; its flags are set before it is shared.
@@ -714,12 +727,12 @@ pub unsafe fn lookup_prefix(
             }
         } else {
             // SAFETY: a live odb, a valid id, a writable out-parameter.
-            unsafe { p::git_odb_read(&mut odb_obj, odb, id) }
+            unsafe { p::git_odb_read(&raw mut odb_obj, odb, id) }
         }
     } else {
         let short = Oid::from_raw_parts(oid_type as u8, *id.prefix(len).raw_id());
         // SAFETY: as above.
-        unsafe { p::git_odb_read_prefix(&mut odb_obj, odb, &short, len) }
+        unsafe { p::git_odb_read_prefix(&raw mut odb_obj, odb, &raw const short, len) }
     };
     ErrorCode::check(r)?;
     git_assert!(!odb_obj.is_null(), "odb_obj");
@@ -759,7 +772,7 @@ unsafe fn dereference(obj: NonNull<GitObject>) -> core::result::Result<NonNull<G
         GIT_OBJECT_COMMIT => {
             let mut out = ptr::null_mut();
             // SAFETY: a live commit; a writable out-parameter.
-            let r = unsafe { p::git_commit_tree(&mut out, obj.as_ptr().cast()) };
+            let r = unsafe { p::git_commit_tree(&raw mut out, obj.as_ptr().cast()) };
             if r != 0 {
                 return Err(r);
             }
@@ -817,8 +830,8 @@ pub unsafe fn peel(object: NonNull<GitObject>, target: git_object_t) -> Result<N
         ),
         "target_type == GIT_OBJECT_TAG || target_type == GIT_OBJECT_COMMIT || target_type == GIT_OBJECT_TREE || target_type == GIT_OBJECT_BLOB || target_type == GIT_OBJECT_ANY"
     );
-    // SAFETY: a live object.
     let (otype, oid) = {
+        // SAFETY: a live object, its header read only.
         let o = unsafe { object.as_ref() };
         (o.raw_kind(), o.cached.oid)
     };
@@ -889,8 +902,9 @@ pub unsafe fn lookup_bypath(
     let tree = Held(unsafe { peel(treeish, GIT_OBJECT_TREE)? });
     let mut entry = Entry(ptr::null_mut());
     // SAFETY: a live tree, a NUL-terminated path, a writable out.
-    let r =
-        unsafe { p::git_tree_entry_bypath(&mut entry.0, tree.0.as_ptr().cast(), path.as_ptr()) };
+    let r = unsafe {
+        p::git_tree_entry_bypath(&raw mut entry.0, tree.0.as_ptr().cast(), path.as_ptr())
+    };
     ErrorCode::check(r)?;
     // SAFETY: a live entry.
     if t != GIT_OBJECT_ANY && unsafe { p::git_tree_entry_type(entry.0) } != t {
@@ -903,8 +917,10 @@ pub unsafe fn lookup_bypath(
         return Err(ErrorCode::INVALID_SPEC);
     }
     let mut out = ptr::null_mut();
+    // SAFETY: a live object; `repo` is read only.
+    let repo = unsafe { treeish.as_ref() }.repo;
     // SAFETY: the treeish's repository (live while it is), a live entry.
-    let r = unsafe { p::git_tree_entry_to_object(&mut out, treeish.as_ref().repo, entry.0) };
+    let r = unsafe { p::git_tree_entry_to_object(&raw mut out, repo, entry.0) };
     ErrorCode::check(r)?;
     NonNull::new(out.cast::<GitObject>()).ok_or(ErrorCode::GENERIC)
 }
@@ -925,14 +941,14 @@ pub unsafe fn short_id(out: &mut GitStr, obj: NonNull<GitObject>) -> Result<()> 
     let hexsize = oid::oid_hexsize(oid_type);
     let mut len: c_int = 0;
     // SAFETY: a live repository, a writable out.
-    ErrorCode::check(unsafe { p::git_repository__abbrev_length(&mut len, repo) })?;
+    ErrorCode::check(unsafe { p::git_repository__abbrev_length(&raw mut len, repo) })?;
     if len as usize == hexsize {
         // `git_oid_cpy` copies the type too.
         id = o.cached.oid;
     }
     let mut odb = ptr::null_mut();
     // SAFETY: as above; the odb comes with a reference.
-    ErrorCode::check(unsafe { p::git_repository_odb(&mut odb, repo) })?;
+    ErrorCode::check(unsafe { p::git_repository_odb(&raw mut odb, repo) })?;
     let mut error = 0;
     while (len as usize) < hexsize {
         let l = len as usize;
@@ -944,7 +960,7 @@ pub unsafe fn short_id(out: &mut GitStr, obj: NonNull<GitObject>) -> Result<()> 
             dst[l / 2] &= 0xf0;
         }
         // SAFETY: a live odb, a valid id.
-        error = unsafe { p::git_odb_exists_prefix(ptr::null_mut(), odb, &id, l) };
+        error = unsafe { p::git_odb_exists_prefix(ptr::null_mut(), odb, &raw const id, l) };
         if error != ErrorCode::AMBIGUOUS.raw() {
             break;
         }
@@ -985,7 +1001,7 @@ pub unsafe fn is_valid(repo: *mut git_repository, id: &Oid, expected: git_object
     let mut len = 0usize;
     let mut actual: c_int = 0;
     // SAFETY: a live odb, valid outputs.
-    if unsafe { p::git_odb_read_header(&mut len, &mut actual, odb, id) } < 0 {
+    if unsafe { p::git_odb_read_header(&raw mut len, &raw mut actual, odb, id) } < 0 {
         return false;
     }
     if expected != GIT_OBJECT_ANY && expected != actual {
@@ -1219,7 +1235,7 @@ unsafe fn id_from_fd_c(fd: c_int, size: usize, given: *const GitObjectIdOptions)
         filters: opts.filters,
     };
     // SAFETY: the normalized options, with the caller's filters.
-    unsafe { id_from_buffer_c(Some(raw.as_bytes()), raw.len(), &o) }
+    unsafe { id_from_buffer_c(Some(raw.as_bytes()), raw.len(), &raw const o) }
 }
 
 /// `git_object_id_from_file`.
@@ -1246,7 +1262,7 @@ unsafe fn id_from_file_c(path: &CStr, given: *const GitObjectIdOptions) -> Resul
             filters: opts.filters,
         };
         // SAFETY: the normalized options.
-        unsafe { id_from_fd_c(fd, size, &o) }
+        unsafe { id_from_fd_c(fd, size, &raw const o) }
     })();
     let _ = posix::close(fd);
     r
@@ -1276,7 +1292,7 @@ unsafe fn id_from_symlink_c(path: &CStr, given: *const GitObjectIdOptions) -> Re
     };
     if !posix::s_islnk(st.st_mode) {
         // SAFETY: options without filters.
-        return unsafe { id_from_file_c(path, &o) };
+        return unsafe { id_from_file_c(path, &raw const o) };
     }
     if st.st_size < 0 || st.st_size > i64::from(c_int::MAX) {
         return Err(git_error_set!(
@@ -1415,7 +1431,7 @@ pub mod repo {
             })?;
             let mut out = ptr::null_mut();
             // SAFETY: a NUL-terminated path and a writable out-parameter.
-            let r = unsafe { p::git_repository_open(&mut out, c.as_ptr()) };
+            let r = unsafe { p::git_repository_open(&raw mut out, c.as_ptr()) };
             ErrorCode::check(r)?;
             NonNull::new(out)
                 .map(|raw| Repository { raw })
@@ -1644,8 +1660,10 @@ pub mod ffi {
             git_assert_arg!(!object_out.is_null(), "object_out", -1);
             // SAFETY: writable.
             unsafe { object_out.write(ptr::null_mut()) };
-            // SAFETY: the caller's contract.
-            unsafe { give(object_out, from_raw(data, size, object_type, oid_type)) }
+            // SAFETY: the caller's contract on `data`.
+            let r = unsafe { from_raw(data, size, object_type, oid_type) };
+            // SAFETY: writable.
+            unsafe { give(object_out, r) }
         })
     }
 
@@ -1666,8 +1684,10 @@ pub mod ffi {
             git_assert_arg!(!object_out.is_null(), "object_out", -1);
             // SAFETY: writable.
             unsafe { object_out.write(ptr::null_mut()) };
-            // SAFETY: the caller's contract.
-            unsafe { give(object_out, init_from_odb_object(repo, odb_obj, object_type)) }
+            // SAFETY: the caller's contract on `repo` and `odb_obj`.
+            let r = unsafe { init_from_odb_object(repo, odb_obj, object_type) };
+            // SAFETY: writable.
+            unsafe { give(object_out, r) }
         })
     }
 
@@ -1731,8 +1751,10 @@ pub mod ffi {
             git_assert_arg!(!id.is_null(), "id", -1);
             // SAFETY: valid (oids are read only).
             let id = unsafe { &*id };
-            // SAFETY: a live repository; `object_out` writable.
-            unsafe { give(object_out, lookup_prefix(repo, id, len, object_type)) }
+            // SAFETY: a live repository.
+            let r = unsafe { lookup_prefix(repo, id, len, object_type) };
+            // SAFETY: writable.
+            unsafe { give(object_out, r) }
         })
     }
 
@@ -1893,8 +1915,10 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!source.is_null(), "source", -1);
+            // SAFETY: non-null (checked above).
+            let nn = unsafe { NonNull::new_unchecked(source) };
             // SAFETY: a live object.
-            unsafe { add_ref(NonNull::new_unchecked(source)) };
+            unsafe { add_ref(nn) };
             // SAFETY: writable.
             unsafe { dest.write(source) };
             0
@@ -1918,13 +1942,10 @@ pub mod ffi {
             git_assert_arg!(!out.is_null(), "out", -1);
             git_assert_arg!(!treeish.is_null(), "treeish", -1);
             git_assert_arg!(!path.is_null(), "path", -1);
-            // SAFETY: non-null, NUL-terminated.
-            let (t, path) = unsafe {
-                (
-                    NonNull::new_unchecked(treeish.cast_mut()),
-                    CStr::from_ptr(path),
-                )
-            };
+            // SAFETY: non-null (checked above).
+            let t = unsafe { NonNull::new_unchecked(treeish.cast_mut()) };
+            // SAFETY: NUL-terminated (the caller's contract).
+            let path = unsafe { CStr::from_ptr(path) };
             // SAFETY: a live object; `out` writable.
             match unsafe { lookup_bypath(t, path, object_type) } {
                 Ok(r) => {
@@ -1946,14 +1967,15 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_object_short_id(out: *mut GitBuf, obj: *const GitObject) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            unsafe {
-                buf_wrap(out, |s| {
-                    git_assert_arg!(!obj.is_null(), "obj");
-                    // SAFETY: non-null, a live object.
-                    short_id(s, NonNull::new_unchecked(obj.cast_mut()))
-                })
-            }
+            let f = |s: &mut GitStr| {
+                git_assert_arg!(!obj.is_null(), "obj");
+                // SAFETY: non-null (checked above).
+                let o = unsafe { NonNull::new_unchecked(obj.cast_mut()) };
+                // SAFETY: a live object of a repository.
+                unsafe { short_id(s, o) }
+            };
+            // SAFETY: the caller's contract on `out`.
+            unsafe { buf_wrap(out, f) }
         })
     }
 
@@ -1972,8 +1994,10 @@ pub mod ffi {
             if !strict_input_validation() {
                 return true;
             }
-            // SAFETY: the caller's contract.
-            unsafe { is_valid(repo, &*id, expected_type) }
+            // SAFETY: a valid id (the caller's contract).
+            let id = unsafe { &*id };
+            // SAFETY: a live repository.
+            unsafe { is_valid(repo, id, expected_type) }
         })
     }
 
@@ -1991,7 +2015,7 @@ pub mod ffi {
             // SAFETY: the caller's contract.
             if let Err(e) = unsafe {
                 check_version(
-                    &version,
+                    &raw const version,
                     GIT_OBJECT_ID_OPTIONS_VERSION,
                     "git_object_id_options",
                 )
@@ -2238,7 +2262,7 @@ pub mod ffi {
         error = status(f(&mut s));
         if error == 0 {
             // SAFETY: valid `git_buf` and `git_str`.
-            error = unsafe { crate::buf::ffi::git_buf_fromstr(out, &mut s) };
+            error = unsafe { crate::buf::ffi::git_buf_fromstr(out, &raw mut s) };
         }
         drop(s);
         error
@@ -2299,8 +2323,8 @@ mod tests {
     fn repository_prefix_layout() {
         let a = format!(
             "offsetof(git_repository, objects) == {} && offsetof(git_repository, oid_type) == {} && sizeof(git_cache) == {}",
-            offset_of!(RepositoryPrefix, objects),
-            offset_of!(RepositoryPrefix, oid_type),
+            core::mem::offset_of!(RepositoryPrefix, objects),
+            core::mem::offset_of!(RepositoryPrefix, oid_type),
             size_of::<CacheMirror>()
         );
         crate::util::layout::check(&["repository.h"], &[], &[&a]);
