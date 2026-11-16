@@ -411,3 +411,158 @@ fn backend_foreach() {
         ((*b).free.unwrap())(b);
     }
 }
+
+// A C backend whose iterator, from inside its `next`, frees the outer
+// (config) iterator that is calling it: the release of a table whose slot
+// is running, which must wait until the slot returns.
+static OUTER: std::sync::atomic::AtomicPtr<git_config_iterator> =
+    std::sync::atomic::AtomicPtr::new(null_mut());
+static INNER_FREES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+#[repr(C)]
+struct ReIter {
+    parent: git_config_iterator,
+    entry: Box<CEntry>,
+    done: bool,
+}
+
+unsafe extern "C" fn re_next(
+    out: *mut *mut git_config_backend_entry,
+    it: *mut git_config_iterator,
+) -> c_int {
+    unsafe {
+        let it = it.cast::<ReIter>();
+        if (*it).done {
+            return ErrorCode::ITER_OVER.raw();
+        }
+        (*it).done = true;
+        // Free the iterator that is running us.
+        let outer = OUTER.swap(null_mut(), std::sync::atomic::Ordering::SeqCst);
+        git_config_iterator_free(outer);
+        out.write((&raw mut (*it).entry.base).cast());
+        0
+    }
+}
+
+unsafe extern "C" fn re_iter_free(it: *mut git_config_iterator) {
+    drop(unsafe { Box::from_raw(it.cast::<ReIter>()) });
+    INNER_FREES.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
+
+unsafe extern "C" fn noop_entry_free(_: *mut git_config_backend_entry) {}
+
+unsafe extern "C" fn re_iterator(
+    out: *mut *mut git_config_iterator,
+    _: *mut git_config_backend,
+) -> c_int {
+    let it = Box::new(ReIter {
+        parent: git_config_iterator {
+            next: Some(re_next),
+            free: Some(re_iter_free),
+            ..Default::default()
+        },
+        entry: Box::new(CEntry {
+            base: git_config_backend_entry {
+                entry: git_config_entry {
+                    name: c"re.x".as_ptr(),
+                    value: c"1".as_ptr(),
+                    backend_type: c"c".as_ptr(),
+                    origin_path: core::ptr::null(),
+                    include_depth: 0,
+                    level: GIT_CONFIG_LEVEL_APP,
+                },
+                free: Some(noop_entry_free),
+            },
+        }),
+        done: false,
+    });
+    unsafe { out.write(Box::into_raw(it).cast()) };
+    0
+}
+
+#[test]
+fn iterator_freed_inside_its_own_slot() {
+    let _g = test_support::init();
+    unsafe {
+        let mut cfg = null_mut();
+        assert_eq!(git_config_new(&mut cfg), 0);
+        let mut frees = 0;
+        let b = Box::into_raw(Box::new(CBackend {
+            parent: git_config_backend {
+                open: Some(c_open),
+                get: Some(c_get),
+                iterator: Some(re_iterator),
+                free: Some(c_free),
+                ..Default::default()
+            },
+            frees: &mut frees,
+        }));
+        assert_eq!(
+            git_config_add_backend(cfg, b.cast(), GIT_CONFIG_LEVEL_APP, core::ptr::null(), 0),
+            0
+        );
+        let before = INNER_FREES.load(std::sync::atomic::Ordering::SeqCst);
+        let mut it = null_mut();
+        assert_eq!(git_config_iterator_new(&mut it, cfg), 0);
+        OUTER.store(it, std::sync::atomic::Ordering::SeqCst);
+        let mut e = null_mut();
+        // The outer `next` runs, the inner one frees the outer iterator:
+        // the release waits for the slot, which still returns the entry.
+        assert_eq!(git_config_next(&mut e, it), 0);
+        // The outer iterator is gone now (released when its slot ended),
+        // and with it the inner one; the entry was the inner iterator's.
+        assert_eq!(
+            INNER_FREES.load(std::sync::atomic::Ordering::SeqCst),
+            before + 1
+        );
+        git_config_free(cfg);
+        assert_eq!(frees, 1);
+    }
+}
+
+#[test]
+fn entries_outlive_their_config_and_backend_list() {
+    let _g = test_support::init();
+    unsafe {
+        let cfg = memory_config(b"[a]\nb = one\n", GIT_CONFIG_LEVEL_LOCAL);
+        let mut e: *mut git_config_entry = null_mut();
+        assert_eq!(git_config_get_entry(&mut e, cfg, c"a.b".as_ptr()), 0);
+        // Another thread replaces the backend at that level (force) while
+        // this one holds the entry, then the config is freed.
+        struct SendPtr(*mut GitConfig);
+        // SAFETY: a config may be used from another thread (it is `Sync`).
+        unsafe impl Send for SendPtr {}
+        let p = SendPtr(cfg);
+        std::thread::spawn(move || {
+            let p = p;
+            let cfg = p.0;
+            let text = b"[a]\nb = two\n";
+            let mut b = null_mut();
+            assert_eq!(
+                git_config_backend_from_string(
+                    &mut b,
+                    text.as_ptr().cast(),
+                    text.len(),
+                    null_mut()
+                ),
+                0
+            );
+            assert_eq!(
+                git_config_add_backend(cfg, b, GIT_CONFIG_LEVEL_LOCAL, core::ptr::null(), 1),
+                0
+            );
+        })
+        .join()
+        .unwrap();
+        let mut e2: *mut git_config_entry = null_mut();
+        assert_eq!(git_config_get_entry(&mut e2, cfg, c"a.b".as_ptr()), 0);
+        assert_eq!(cs((*e2).value), "two");
+        git_config_free(cfg);
+        // Both entries still read their backends' lists.
+        assert_eq!(cs((*e).value), "one");
+        assert_eq!(cs((*e).name), "a.b");
+        assert_eq!(cs((*e2).value), "two");
+        git_config_entry_free(e);
+        git_config_entry_free(e2);
+    }
+}

@@ -357,7 +357,7 @@ One entry per difference: component, what differs, why.
   fixed size) abort, where C reported -1. The variable-size buffers use
   `try_reserve` and fail with the out-of-memory error.
 - **config: the backends of a config** are a copy-on-write list (an `Arc`
-  behind a mutex): lookups and iterators take the list as it is when they
+  behind a read-write lock, read in parallel): lookups and iterators take the list as it is when they
   start and keep its backends alive, and no lock is held while a backend
   runs, so a backend may re-enter the config. C read the live vectors (an
   iterator created before `git_config_add_backend` could see the new
@@ -377,12 +377,17 @@ One entry per difference: component, what differs, why.
 - **config: tables.** The file, memory and snapshot backends and every
   iterator are ffibox `CTable`s: a slot called while the table is being
   released (C calling `free` from another thread during a slot) is refused
-  with `the config backend is being released` (C: use after free); a
-  panic in a slot returns -1 with the barrier's internal error.
+  with `the config backend is being released` (C: use after free). An
+  iterator's `next` is exclusive: called while another call of the same
+  iterator runs (re-entrantly, or from another thread) or while it is being
+  released, it fails with `the config iterator is already in use or being
+  released` (C would run it). A panic in a slot returns -1 with the
+  barrier's internal error.
 - **config: `git_config_backend.cfg`** is written when the backend is
   added, as C does; nothing reads it.
 - **config: a memory backend opened twice** reads its text again into a
-  new list; C appended the entries to the list a second time.
+  new list; C appended the entries to the list a second time. A failed
+  `open` keeps the entries read before the error, as C does.
 - **config: `git_config_unlock` without `git_config_lock`** on a file
   backend fails as committing the C's zeroed `git_filebuf` fails (C wrote
   into the zeroed filebuf first, which could crash).

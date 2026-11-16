@@ -172,7 +172,19 @@ ffibox::impl_cvtable! {
 
 /// `git_config_backend_snapshot`: a snapshot of `source`, filled when it
 /// is opened.
-pub fn backend_snapshot(source: NonNull<git_config_backend>) -> Backend {
+///
+/// Safe code cannot hand it an arbitrary pointer:
+///
+/// ```compile_fail
+/// let _ = libgit2_rs::config_snapshot::backend_snapshot(core::ptr::NonNull::dangling());
+/// ```
+///
+/// # Safety
+///
+/// `source` is a live backend table (sys/config.h) until the snapshot is
+/// opened (its `open` slot reads `source` through its `iterator` slot), or
+/// the snapshot is never opened.
+pub unsafe fn backend_snapshot(source: NonNull<git_config_backend>) -> Backend {
     let state = SnapshotBackend {
         source,
         list: Mutex::new(None),
@@ -210,7 +222,9 @@ pub mod ffi {
             let Some(source) = NonNull::new(source) else {
                 return crate::util::errors::assert_arg_failed("source").raw();
             };
-            let b = backend_snapshot(source);
+            // SAFETY: `source` is live until the snapshot is opened (the
+            // contract).
+            let b = unsafe { backend_snapshot(source) };
             // SAFETY: `out` is writable.
             unsafe { out.write(b.into_c().cast()) };
             0

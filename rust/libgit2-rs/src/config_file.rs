@@ -104,12 +104,12 @@ pub struct FileBackend {
     locked: Mutex<Option<Locked>>,
 }
 
-// SAFETY: `repo` is a pointer C's contract keeps live for the backend's
-// life and that libgit2 uses from any thread; the rest is `Send + Sync`
-// (the filebuf is reached only under its mutex).
-unsafe impl Send for FileBackend {}
-// SAFETY: as above.
-unsafe impl Sync for FileBackend {}
+// Every field is `Send + Sync` by itself (no manual impl): checked here, so
+// that a field added later that is not makes this fail to compile.
+const _: fn() = || {
+    fn thread_safe<T: Send + Sync>() {}
+    thread_safe::<FileBackend>();
+};
 
 /// Whether the table's `readonly` is set (C may have set it).
 fn table_readonly(cfg: *mut git_config_backend) -> bool {
@@ -658,17 +658,16 @@ impl FileBackend {
         if table_readonly(cfg) {
             return Ok(());
         }
-        let (modified, file) = {
+        let file = {
             let mut f = self.lock_file();
             match is_modified(&mut f) {
-                Ok(m) => (m, f.without_includes()),
-                Err(e) if e == ErrorCode::NOT_FOUND => (false, f.without_includes()),
+                // The common case allocates nothing.
+                Ok(false) => return Ok(()),
+                Err(e) if e == ErrorCode::NOT_FOUND => return Ok(()),
                 Err(e) => return Err(e),
+                Ok(true) => f.without_includes(),
             }
         };
-        if !modified {
-            return Ok(());
-        }
         let mut file = file;
         let mut list = ConfigList::new();
         let r = read(&mut list, self.repo(), &mut file, self.level(), 0);

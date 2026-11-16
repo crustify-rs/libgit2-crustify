@@ -134,11 +134,10 @@ impl MemBackend {
             Source::Values(v) if !v.is_empty() => self.parse_values(&mut list, v, level),
             _ => Ok(()),
         };
-        if r.is_err() {
-            return -1;
-        }
+        // As C, which appends as it parses, the entries read before a
+        // failure stay.
         *self.list.lock().unwrap_or_else(|e| e.into_inner()) = list.freeze();
-        0
+        if r.is_err() { -1 } else { 0 }
     }
 
     fn list(&self) -> Arc<ConfigList> {

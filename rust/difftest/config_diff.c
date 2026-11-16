@@ -153,6 +153,17 @@ static void show_entries(git_config *cfg, char *first, size_t first_len, int val
 	git_config_iterator_free(it);
 }
 
+static int print_kept(const git_config_entry *e, void *payload)
+{
+	(void)payload;
+	printf("  kept ");
+	put_str(e->name);
+	printf(" = ");
+	put_str(e->value);
+	printf("\n");
+	return 0;
+}
+
 static void memory(const char *data, size_t len)
 {
 	git_config *cfg;
@@ -170,6 +181,10 @@ static void memory(const char *data, size_t len)
 	}
 	if ((rc = git_config_add_backend(cfg, b, GIT_CONFIG_LEVEL_APP, NULL, 0)) < 0) {
 		show_rc(" mem", rc);
+		/* What a failed open kept (C keeps the entries read so far). */
+		rc = git_config_backend_foreach_match(b, NULL, print_kept, NULL);
+		printf(" mem kept rc=%d\n", rc);
+		git_error_clear();
 		b->free(b);
 		git_config_free(cfg);
 		return;
