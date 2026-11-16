@@ -1,10 +1,13 @@
 //! `src/libgit2/indexer.c` (C that stays C): the globals the Rust reads.
 
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::AtomicUsize;
+#[cfg(not(miri))]
+use core::sync::atomic::Ordering;
 
 /// `UINT31_MAX`, `git_indexer__max_object_size`'s initial value.
 pub const DEFAULT_MAX_OBJECT_SIZE: usize = 0x7fff_ffff;
 
+#[cfg_attr(miri, allow(dead_code))]
 unsafe extern "C" {
     /// `size_t git_indexer__max_object_size` (`GIT_OPT_SET_MAX_OBJECT_SIZE`
     /// in `settings.c` writes it). Declared as an `AtomicUsize`, which has
