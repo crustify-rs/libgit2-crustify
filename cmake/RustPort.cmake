@@ -22,6 +22,7 @@ if(USE_RUST)
 		message(FATAL_ERROR "USE_RUST is supported on Unix only; the win32 branches stay in C")
 	endif()
 
+	set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/rust/ported_sources.txt")
 	file(STRINGS "${PROJECT_SOURCE_DIR}/rust/ported_sources.txt" _ported REGEX "^[^#]")
 	foreach(_f ${_ported})
 		string(STRIP "${_f}" _f)
