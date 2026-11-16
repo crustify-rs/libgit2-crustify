@@ -10,14 +10,20 @@ pub mod array;
 pub mod ctype_compat;
 pub mod errors;
 pub mod export;
+pub mod hashmap;
 pub mod integer;
 pub mod layout;
+pub mod pool;
+pub mod pqueue;
 pub mod runtime;
 pub mod str;
+pub mod strlist;
 pub mod thread;
 pub mod tsort;
 #[allow(clippy::module_inception)]
 pub mod util;
+pub mod utf8;
+pub mod varint;
 pub mod vector;
 
 #[doc(hidden)]

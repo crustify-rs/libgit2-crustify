@@ -14,3 +14,11 @@ src/util/util.c
 src/util/vector.c
 src/libgit2/buf.c
 src/libgit2/strarray.c
+src/util/pool.c
+src/util/pqueue.c
+src/util/strlist.c
+src/util/utf8.c
+src/util/varint.c
+src/libgit2/oid.c
+src/libgit2/oidarray.c
+src/libgit2/parse.c

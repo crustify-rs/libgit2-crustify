@@ -13,7 +13,13 @@ pub mod sys;
 pub mod util;
 
 pub mod buf;
+pub mod hashmap_oid;
+pub mod oid;
+pub mod oidarray;
+pub mod parse;
 pub mod strarray;
 
+pub use oid::{Oid, OidShortener, OidType};
+pub use oidarray::OidArray;
 pub use strarray::StrArray;
 pub use util::errors::{Error, ErrorClass, ErrorCode};
