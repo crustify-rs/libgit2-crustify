@@ -73,7 +73,7 @@ impl OidArray {
     }
 
     /// Give the array to C, which frees it with `git_oidarray_dispose`.
-    pub fn into_raw(self) -> GitOidArray {
+    pub(crate) fn into_raw(self) -> GitOidArray {
         let me = core::mem::ManuallyDrop::new(self);
         GitOidArray {
             ids: me.0.ids,
@@ -87,7 +87,8 @@ impl OidArray {
     ///
     /// `raw.ids` is NULL or a `git__allocator` buffer of `raw.count`
     /// initialized oids, owned by the result.
-    pub unsafe fn from_raw(raw: GitOidArray) -> OidArray {
+    #[allow(dead_code)] // for the ports that adopt a C-made `git_oidarray`
+    pub(crate) unsafe fn from_raw(raw: GitOidArray) -> OidArray {
         OidArray(raw)
     }
 

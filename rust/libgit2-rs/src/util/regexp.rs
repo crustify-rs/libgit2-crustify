@@ -8,13 +8,22 @@
 
 use core::ffi::{CStr, c_char, c_int};
 use core::mem::MaybeUninit;
+use core::ops::Range;
 
 use super::errors::{self, ErrorClass, ErrorCode, Result};
 use crate::git_assert;
 use crate::sys::pcre2::{self, CodeBox, CodeRef, PCRE2_CASELESS, PCRE2_ERROR_NOMATCH, PCRE2_UNSET};
 
 /// `GIT_REGEXP_ICASE`.
-pub const GIT_REGEXP_ICASE: c_int = 1 << 0;
+pub(crate) const GIT_REGEXP_ICASE: c_int = 1 << 0;
+
+/// Options of [`Regexp::new`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RegexpFlags {
+    /// Match letters of either case (`GIT_REGEXP_ICASE`, PCRE2's
+    /// `PCRE2_CASELESS`).
+    pub ignore_case: bool,
+}
 
 /// `git_regmatch`, mirrored: a group's byte offsets, -1 when it did not
 /// match.
@@ -100,21 +109,30 @@ fn search_code(
 
 impl Regexp {
     /// `git_regexp_compile`: `pattern` up to its first NUL (C's
-    /// `PCRE2_ZERO_TERMINATED`), with `GIT_REGEXP_ICASE` in `flags` for a
-    /// caseless match. A bad pattern fails with `GIT_EINVALIDSPEC` and
-    /// PCRE2's message (class `GIT_ERROR_REGEX`).
-    pub fn new(pattern: &[u8], flags: c_int) -> Result<Regexp> {
+    /// `PCRE2_ZERO_TERMINATED`). A bad pattern fails with
+    /// `GIT_EINVALIDSPEC` and PCRE2's message (class `GIT_ERROR_REGEX`).
+    pub fn new(pattern: &[u8], flags: RegexpFlags) -> Result<Regexp> {
+        let flags = if flags.ignore_case {
+            GIT_REGEXP_ICASE
+        } else {
+            0
+        };
         let end = memchr::memchr(0, pattern).unwrap_or(pattern.len());
         let mut z = Vec::new();
         z.try_reserve_exact(end + 1).map_err(|_| errors::oom())?;
         z.extend_from_slice(&pattern[..end]);
         z.push(0);
         let pattern = CStr::from_bytes_with_nul(&z).map_err(|_| ErrorCode::INVALID_SPEC)?;
-        Regexp::compile(pattern, flags)
+        Regexp::compile_opt(Some(pattern), flags)
     }
 
     /// As [`new`](Self::new), from a C string.
-    pub fn compile(pattern: &CStr, flags: c_int) -> Result<Regexp> {
+    pub fn compile(pattern: &CStr, flags: RegexpFlags) -> Result<Regexp> {
+        let flags = if flags.ignore_case {
+            GIT_REGEXP_ICASE
+        } else {
+            0
+        };
         Regexp::compile_opt(Some(pattern), flags)
     }
 
@@ -128,8 +146,9 @@ impl Regexp {
         match pcre2::compile(pattern, options) {
             Ok(code) => Ok(Regexp(code)),
             Err(error) => {
-                let msg = pcre2::error_message::<1024>(error);
-                let _ = errors::set_str(ErrorClass::REGEX, msg);
+                // On the stack, as C's.
+                let mut buf = [0u8; 1024];
+                let _ = errors::set_str(ErrorClass::REGEX, pcre2::error_message(error, &mut buf));
                 Err(ErrorCode::INVALID_SPEC)
             }
         }
@@ -150,21 +169,19 @@ impl Regexp {
         }
     }
 
-    /// `git_regexp_search`: fill `matches` with the offsets of the whole
-    /// match and of the first groups (-1 for the groups that did not
-    /// match, and those beyond the pattern's).
-    pub fn search_into(&self, s: &[u8], matches: &mut [RegMatch]) -> Result<()> {
-        search_code(Some(self.0.as_ref()), s, matches.len(), |i, m| {
-            matches[i] = m
-        })
-    }
-
-    /// [`search_into`](Self::search_into) `n` groups.
-    pub fn search(&self, s: &[u8], n: usize) -> Result<Vec<RegMatch>> {
+    /// `git_regexp_search` for `n` groups: the byte ranges of the whole
+    /// match and of the first `n - 1` groups (`None` for the groups that
+    /// did not match, and those beyond the pattern's). `GIT_ENOTFOUND` if
+    /// `s` does not match.
+    pub fn search(&self, s: &[u8], n: usize) -> Result<Vec<Option<Range<usize>>>> {
         let mut v = Vec::new();
         v.try_reserve_exact(n).map_err(|_| errors::oom())?;
-        v.resize(n, RegMatch::default());
-        self.search_into(s, &mut v)?;
+        search_code(Some(self.0.as_ref()), s, n, |_, m| {
+            v.push(match (usize::try_from(m.start), usize::try_from(m.end)) {
+                (Ok(a), Ok(b)) => Some(a..b),
+                _ => None,
+            })
+        })?;
         Ok(v)
     }
 }

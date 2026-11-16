@@ -1178,10 +1178,10 @@ unsafe fn id_from_buffer_c(
 
 /// `id_from_fd`: hash `size` bytes of `fd` as an object (no filters).
 fn id_from_fd_raw(fd: c_int, mut size: usize, opts: &IdOptions) -> Result<Oid> {
-    let mut h = Hasher::new(algorithm(opts.oid_type));
+    let mut h = Hasher::new(algorithm(opts.oid_type))?;
     let mut header = [0u8; 64];
     let n = format_object_header(&mut header, size as u64, opts.object_type)?;
-    h.update(&header[..n]);
+    h.update(&header[..n])?;
     let mut buffer = vec![0u8; GIT_BUFSIZE_FILEIO];
     let mut read_failed = false;
     while size > 0 {
@@ -1194,7 +1194,7 @@ fn id_from_fd_raw(fd: c_int, mut size: usize, opts: &IdOptions) -> Result<Oid> {
                         "error reading file for hashing"
                     ));
                 }
-                h.update(&buffer[..r]);
+                h.update(&buffer[..r])?;
                 size -= r;
             }
             Err(posix::Errno(e)) => {
@@ -1266,7 +1266,8 @@ unsafe fn id_from_file_c(path: &CStr, given: *const GitObjectIdOptions) -> Resul
         // SAFETY: the normalized options.
         unsafe { id_from_fd_c(fd, size, &raw const o) }
     })();
-    let _ = posix::close(fd);
+    // SAFETY: the descriptor opened above, closed once.
+    let _ = unsafe { posix::close(fd) };
     r
 }
 
@@ -1387,11 +1388,16 @@ pub(crate) fn printf_bytes(buf: &mut GitStr, format_len: usize, bytes: &[u8]) ->
     };
     loop {
         let size = buf.len();
-        let spare = buf.spare_capacity_mut();
-        if bytes.len() < spare.len() {
-            spare[..bytes.len()].write_copy_of_slice(bytes);
-            spare[bytes.len()].write(0);
-            // SAFETY: the bytes up to `size + len` were just written.
+        // The room after the contents, the NUL's slot included.
+        let (spare, room) = buf.spare_ptr();
+        if bytes.len() < room {
+            // SAFETY: `room > len` bytes at `spare`, the string's own buffer
+            // (borrowed through `&mut buf`), disjoint from `bytes`.
+            unsafe { ptr::copy_nonoverlapping(bytes.as_ptr(), spare, bytes.len()) };
+            // SAFETY: the byte after them, within `room`.
+            unsafe { spare.add(bytes.len()).write(0) };
+            // SAFETY: the string owns its buffer (`room > 0`), the bytes up
+            // to `size + len` are written and the NUL follows them.
             unsafe { buf.set_len(size + bytes.len()) };
             return Ok(());
         }
@@ -2399,7 +2405,13 @@ mod tests {
         let mut o: *mut GitObject = ptr::null_mut();
         // SAFETY: a readable buffer that outlives the object; a writable out.
         let rc = unsafe {
-            ffi::git_object__from_raw(&raw mut o, text.as_ptr().cast(), text.len(), GIT_OBJECT_TAG, 1)
+            ffi::git_object__from_raw(
+                &raw mut o,
+                text.as_ptr().cast(),
+                text.len(),
+                GIT_OBJECT_TAG,
+                1,
+            )
         };
         assert_eq!(rc, 0);
         let t = o.cast::<crate::tag::GitTag>();
@@ -2407,7 +2419,10 @@ mod tests {
         let name = unsafe { CStr::from_ptr(crate::tag::ffi::git_tag_name(t)) };
         assert_eq!(name.to_bytes(), b"t");
         // SAFETY: a live tag.
-        assert_eq!(unsafe { crate::tag::ffi::git_tag_target_type(t) }, GIT_OBJECT_BLOB);
+        assert_eq!(
+            unsafe { crate::tag::ffi::git_tag_target_type(t) },
+            GIT_OBJECT_BLOB
+        );
         // SAFETY: a live tag.
         assert!(unsafe { crate::tag::ffi::git_tag_tagger(t) }.is_null());
         // SAFETY: a live object.
@@ -2418,24 +2433,45 @@ mod tests {
         let data = b"blob contents";
         // SAFETY: as above.
         let rc = unsafe {
-            ffi::git_object__from_raw(&raw mut o, data.as_ptr().cast(), data.len(), GIT_OBJECT_BLOB, 1)
+            ffi::git_object__from_raw(
+                &raw mut o,
+                data.as_ptr().cast(),
+                data.len(),
+                GIT_OBJECT_BLOB,
+                1,
+            )
         };
         assert_eq!(rc, 0);
         let b = o.cast::<crate::blob::GitBlob>();
         // SAFETY: a live blob.
-        assert_eq!(unsafe { crate::blob::ffi::git_blob_rawsize(b) }, data.len() as u64);
+        assert_eq!(
+            unsafe { crate::blob::ffi::git_blob_rawsize(b) },
+            data.len() as u64
+        );
         // SAFETY: a live blob.
-        assert_eq!(unsafe { crate::blob::ffi::git_blob_rawcontent(b) }, data.as_ptr().cast());
+        assert_eq!(
+            unsafe { crate::blob::ffi::git_blob_rawcontent(b) },
+            data.as_ptr().cast()
+        );
         // SAFETY: a live object.
         let id = unsafe { *ffi::git_object_id(o) };
-        assert_eq!(id, id_from_buffer(data, ObjectType::Blob, OidType::Sha1).unwrap());
+        assert_eq!(
+            id,
+            id_from_buffer(data, ObjectType::Blob, OidType::Sha1).unwrap()
+        );
         // SAFETY: the only reference.
         unsafe { free_object(o) };
 
         // An unknown oid type: C's message, nothing leaked.
         // SAFETY: as above.
         let rc = unsafe {
-            ffi::git_object__from_raw(&raw mut o, data.as_ptr().cast(), data.len(), GIT_OBJECT_BLOB, 9)
+            ffi::git_object__from_raw(
+                &raw mut o,
+                data.as_ptr().cast(),
+                data.len(),
+                GIT_OBJECT_BLOB,
+                9,
+            )
         };
         assert_eq!(rc, -1);
         assert!(o.is_null());

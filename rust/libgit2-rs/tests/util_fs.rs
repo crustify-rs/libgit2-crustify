@@ -51,6 +51,13 @@ impl Drop for Scratch {
     }
 }
 
+/// `GitFilebuf::open` on a local that the test never moves.
+fn open_fb(f: &mut GitFilebuf, path: &[u8], flags: c_int, mode: u32) -> errors::Result<()> {
+    // SAFETY: the tests' filebufs are locals that stay in place until they
+    // are cleaned up (or dropped after cleanup).
+    unsafe { f.open(path, flags, mode) }
+}
+
 fn last() -> (ErrorClass, String) {
     let (c, m) = errors::last();
     (c, String::from_utf8_lossy(&m).into_owned())
@@ -207,7 +214,8 @@ fn readbuffer_and_writebuffer() {
     // More than one block: C kept only the last one (rust/DEFECTS.md).
     let fd = futils::open_ro(&t.c("big")).unwrap();
     futils::readbuffer_fd_full(&mut b, fd).unwrap();
-    posix::close(fd).unwrap();
+    // SAFETY: a descriptor this code opened, closed once.
+    unsafe { posix::close(fd) }.unwrap();
     assert_eq!(b.as_bytes(), &data[..]);
 
     let fd = futils::open_ro(&t.c("big")).unwrap();
@@ -219,7 +227,8 @@ fn readbuffer_and_writebuffer() {
             "could not read (expected 40000 bytes, read 30000)".into()
         )
     );
-    posix::close(fd).unwrap();
+    // SAFETY: a descriptor this code opened, closed once.
+    unsafe { posix::close(fd) }.unwrap();
 
     // SHA-256 checksums (the hash is still C: PENDING(u2)).
     let mut sum = [0u8; 32];
@@ -335,18 +344,21 @@ fn posix_wrappers() {
     assert!(fd >= 0);
     // SAFETY: 3 readable bytes.
     assert_eq!(unsafe { px_ffi::p_write(fd, b"abc".as_ptr().cast(), 3) }, 0);
-    posix::close(fd).unwrap();
+    // SAFETY: a descriptor this code opened, closed once.
+    unsafe { posix::close(fd) }.unwrap();
     let fd = futils::open_ro(&p).unwrap();
     let mut buf = [0u8; 8];
     // SAFETY: 8 writable bytes.
     assert_eq!(unsafe { px_ffi::p_read(fd, buf.as_mut_ptr().cast(), 8) }, 3);
+    // An oversized count goes to the kernel, as in C (`git__is_ssizet` is
+    // always true on LP64), which refuses it.
     assert_eq!(
-        // SAFETY: an oversized count is refused before reading.
+        // SAFETY: the kernel checks the buffer before writing past it.
         unsafe { px_ffi::p_read(fd, buf.as_mut_ptr().cast(), usize::MAX) },
         -1
     );
-    assert_eq!(errors::errno(), libc::EINVAL);
-    posix::close(fd).unwrap();
+    // SAFETY: a descriptor this code opened, closed once.
+    unsafe { posix::close(fd) }.unwrap();
     // p_rename does not replace an existing target with link + unlink...
     futils::writebuffer(b"x", &t.c("g"), 0, 0).unwrap();
     assert_eq!(
@@ -527,7 +539,8 @@ fn filebuf_lifecycle() {
     let t = Scratch::new("filebuf");
     let target = t.path("sub/target");
     let mut f = GitFilebuf::new();
-    f.open(
+    open_fb(
+        &mut f,
         &target,
         filebuf::GIT_FILEBUF_HASH_SHA1 | filebuf::GIT_FILEBUF_CREATE_LEADING_DIRS,
         0o644,
@@ -539,7 +552,7 @@ fn filebuf_lifecycle() {
     );
     // A second writer finds the lock.
     let mut g = GitFilebuf::new();
-    assert_eq!(g.open(&target, 0, 0o644), Err(ErrorCode::LOCKED));
+    assert_eq!(open_fb(&mut g, &target, 0, 0o644), Err(ErrorCode::LOCKED));
     assert!(last().1.starts_with("failed to lock file '"));
     assert_eq!(g.fd(), -1);
     for i in 0..3000 {
@@ -563,15 +576,20 @@ fn filebuf_lifecycle() {
     ));
 
     // A failed reservation poisons the filebuf.
-    f.open(&target, 0, 0o644).unwrap();
+    open_fb(&mut f, &target, 0, 0o644).unwrap();
     assert!(f.reserve(1 << 20).is_err());
     assert!(f.write(b"x").is_err());
     assert_eq!(f.commit(), Err(ErrorCode::GENERIC));
     assert_eq!(last(), (ErrorClass::NOMEMORY, "Out of memory".into()));
 
     // Temporary files cannot be committed; cleanup removes them.
-    f.open(&t.path("tmp"), filebuf::GIT_FILEBUF_TEMPORARY, 0o644)
-        .unwrap();
+    open_fb(
+        &mut f,
+        &t.path("tmp"),
+        filebuf::GIT_FILEBUF_TEMPORARY,
+        0o644,
+    )
+    .unwrap();
     let lock = f.lock_path().unwrap().to_owned();
     assert!(lock.to_bytes().starts_with(&t.path("tmp_git2_")));
     assert_eq!(f.commit(), Err(ErrorCode::GENERIC));
@@ -582,9 +600,13 @@ fn filebuf_lifecycle() {
     f.cleanup();
     assert!(!fs_path::exists(&lock));
 
-    assert_eq!(f.open(&t.path("sub"), 0, 0o644), Err(ErrorCode::DIRECTORY));
+    assert_eq!(
+        open_fb(&mut f, &t.path("sub"), 0, 0o644),
+        Err(ErrorCode::DIRECTORY)
+    );
     assert!(
-        f.open(
+        open_fb(
+            &mut f,
             &t.path("x"),
             99 << filebuf::GIT_FILEBUF_DEFLATE_SHIFT,
             0o644
@@ -668,7 +690,7 @@ fn filebuf_symlinks_are_followed() {
     posix::symlink(c"real", &t.c("l1")).unwrap();
     posix::symlink(c"l1", &t.c("l2")).unwrap();
     let mut f = GitFilebuf::new();
-    f.open(&t.path("l2"), 0, 0o644).unwrap();
+    open_fb(&mut f, &t.path("l2"), 0, 0o644).unwrap();
     assert_eq!(f.original_path().unwrap().to_bytes(), &t.path("real")[..]);
     f.write(b"new").unwrap();
     f.commit().unwrap();
@@ -678,7 +700,7 @@ fn filebuf_symlinks_are_followed() {
     // A loop of links.
     posix::symlink(c"loop2", &t.c("loop1")).unwrap();
     posix::symlink(c"loop1", &t.c("loop2")).unwrap();
-    assert!(f.open(&t.path("loop1"), 0, 0o644).is_err());
+    assert!(open_fb(&mut f, &t.path("loop1"), 0, 0o644).is_err());
     assert_eq!(
         last(),
         (ErrorClass::INVALID, "maximum symlink depth reached".into())
@@ -691,7 +713,8 @@ fn mktmp_and_locks() {
     let t = Scratch::new("mktmp");
     let mut p = GitStr::new();
     let fd = futils::mktmp(&mut p, &t.path("f"), 0o600).unwrap();
-    posix::close(fd).unwrap();
+    // SAFETY: a descriptor this code opened, closed once.
+    unsafe { posix::close(fd) }.unwrap();
     assert_eq!(p.len(), t.path("f").len() + 6 + 16);
     assert_eq!(
         futils::creat_locked(&fs_path::str_cpath(&p), 0o644),
@@ -702,11 +725,116 @@ fn mktmp_and_locks() {
         Err(ErrorCode::NOT_FOUND)
     );
     let fd = futils::creat_locked_withpath(&t.c("no/x"), 0o755, 0o644).unwrap();
-    posix::close(fd).unwrap();
+    // SAFETY: a descriptor this code opened, closed once.
+    unsafe { posix::close(fd) }.unwrap();
     futils::truncate(&t.c("no/x"), 0o644).unwrap();
     let fd = futils::open_ro(&t.c("no/x")).unwrap();
     assert_eq!(futils::filesize(fd), Ok(0));
-    posix::close(fd).unwrap();
+    // SAFETY: a descriptor this code opened, closed once.
+    unsafe { posix::close(fd) }.unwrap();
     assert_eq!(futils::open_ro(&t.c("none")), Err(ErrorCode::NOT_FOUND));
     let _ = c_int::default();
+}
+
+unsafe extern "C" {
+    fn git_filebuf_printf(file: *mut c_void, format: *const c_char, ...) -> c_int;
+}
+
+#[test]
+fn filebuf_printf_placement_and_failures() {
+    let _g = test_support::init();
+    let t = Scratch::new("filebuf-printf");
+    let big = "y".repeat(9000);
+    let cbig = CString::new(big.clone()).unwrap();
+    for size in [16usize, 8192, 10000] {
+        let target = t.c(&format!("p{size}"));
+        let mut f = GitFilebuf::new();
+        // SAFETY: a local filebuf that stays in place until committed; the
+        // formats match their arguments.
+        unsafe {
+            assert_eq!(
+                fb_ffi::git_filebuf_open_withsize(&mut f, target.as_ptr(), 0, 0o644, size),
+                0
+            );
+            // Short, exactly-fitting, and longer than both the shim's stack
+            // (8 KiB) and the buffer.
+            assert_eq!(
+                git_filebuf_printf(
+                    (&raw mut f).cast(),
+                    c"%s-%d\n".as_ptr(),
+                    c"abc".as_ptr(),
+                    42
+                ),
+                0
+            );
+            assert_eq!(
+                git_filebuf_printf((&raw mut f).cast(), c"%s".as_ptr(), cbig.as_ptr()),
+                0
+            );
+            assert_eq!(
+                git_filebuf_printf((&raw mut f).cast(), c"%015d".as_ptr(), 7),
+                0
+            );
+            assert_eq!(fb_ffi::git_filebuf_commit(&mut f), 0);
+        }
+        let mut b = GitStr::new();
+        futils::readbuffer(&mut b, &target).unwrap();
+        assert_eq!(
+            b.as_bytes(),
+            format!("abc-42\n{big}000000000000007").as_bytes()
+        );
+    }
+
+    // DO_NOT_BUFFER + printf: C wrote through NULL (rust/DEFECTS.md).
+    let mut f = GitFilebuf::new();
+    let target = t.c("unbuffered");
+    // SAFETY: as above.
+    unsafe {
+        assert_eq!(
+            fb_ffi::git_filebuf_open(
+                &mut f,
+                target.as_ptr(),
+                filebuf::GIT_FILEBUF_DO_NOT_BUFFER,
+                0o644
+            ),
+            0
+        );
+        assert_eq!(
+            git_filebuf_printf((&raw mut f).cast(), c"%s!".as_ptr(), c"direct".as_ptr()),
+            0
+        );
+        assert_eq!(fb_ffi::git_filebuf_commit(&mut f), 0);
+    }
+    let mut b = GitStr::new();
+    futils::readbuffer(&mut b, &target).unwrap();
+    assert_eq!(b.as_bytes(), b"direct!");
+
+    // A rename that fails: the commit fails with the C's message, and the
+    // lock file goes.
+    let mut f = GitFilebuf::new();
+    open_fb(&mut f, &t.path("r"), 0, 0o644).unwrap();
+    f.write(b"data").unwrap();
+    assert!(f.commit_at(&t.c("missing-dir/r")).is_err());
+    assert!(
+        last().1.starts_with("failed to rename lockfile to '"),
+        "{}",
+        last().1
+    );
+    assert!(!fs_path::exists(&t.c("r.lock")));
+}
+
+#[test]
+fn direach_of_a_borrowed_string() {
+    let _g = test_support::init();
+    let t = Scratch::new("borrowed");
+    futils::writebuffer(b"", &t.c("x"), 0, 0).unwrap();
+    let base = t.path("");
+    let mut b = GitStr::new();
+    // SAFETY: `base` outlives `b`'s use and is not written through it.
+    unsafe { b.attach_notowned(base.as_ptr().cast(), base.len()) };
+    // C appends to the borrowed buffer; the Rust cannot grow it: an error
+    // ("cannot grow a borrowed buffer"), and `base` is untouched.
+    let before = base.clone();
+    assert!(fs_path::direach(&mut b, 0, &mut |_| 0).is_err());
+    assert_eq!(base, before);
 }

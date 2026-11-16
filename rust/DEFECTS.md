@@ -402,6 +402,19 @@ DIVERGENCES.md).
   shorten OID - invalid hex value` (class INVALID), the trie as C would
   leave it before the bad write.
 
+### oid: `git_oid_shorten_add` leaves a leaf behind a positive link
+- C: `src/libgit2/oid.c`, `git_oid_shorten_add`: when the walk reaches a
+  leaf it makes the parent's link positive, and converts the leaf only on
+  the next iteration, after validating that iteration's digit. If that
+  digit is not hex the add fails and the node keeps its `tail` pointer
+  while its link says it is a normal node. Later walks through it read the
+  pointer's bytes as `children[0..3]`: a digit 0..3 follows pointer bits
+  as a node index (out of bounds); 4..f read 0 (zeroed memory).
+- Trigger: add `"abcdef…01"`, then `"ax"`, then `"a0…"`.
+- Rust: the failing add empties that node (C's view of it for digits
+  4..f, also used for 0..3); the leaf's id is dropped, as in C. (Review
+  u1-r1, U1-1: the first port read the union's tail as children here.)
+
 ### oid: `resize_trie` loses the trie on allocation failure
 - C: `self->nodes = git__reallocarray(self->nodes, …)` overwrites the
   pointer with NULL (leak; the next add dereferences NULL).
@@ -429,3 +442,70 @@ DIVERGENCES.md).
 - C: subtracts `char_cnt` from `line_len` and `remain_len` unchecked; more
   than `line_len` wraps them and later reads run past the content.
 - Rust: advances by at most `line_len`.
+
+## l-obj (object, object_api, blob, tag, signature, grafts)
+
+### signature: `git_signature__parse` ignores a failed name or e-mail copy
+- C: `extract_trimmed`'s `git__substrdup` result is not checked; on
+  allocation failure the parse returns 0 with `name` or `email` NULL, which
+  callers (`commit.c`, `refdb_fs.c`, the tag parser) then dereference.
+- Rust: -1 with the out-of-memory error.
+
+### signature: timezone arithmetic overflows `int`
+- C: `hours * 60 + mins` and the negation of the result, for a timezone
+  that `git__strntol32` parses to a large negative number (`+-2147483648`:
+  `hours` = -21474836), overflow a signed `int`.
+- Rust: wrapping arithmetic (the value the C build happens to compute).
+
+### signature: `git_signature__writebuf` of an offset of `INT_MIN`
+- C: `offset = -offset` overflows; the reference build then prints the
+  magnitude 2^31 (`-3579139408`).
+- Rust: the magnitude, as that build prints (difftest `obj_diff.c`).
+
+### signature: leaks and NULL dereferences on failure
+- C: `git_signature_new` leaks the signature (and the name) when a copy
+  fails; `git_signature_dup` leaks on a failed copy and crashes on a NULL
+  `name`/`email`; `git_signature_default_from_env` frees the signatures it
+  made with `git__free` on failure (their strings leak);
+  `git_signature__equal` crashes on a NULL string; `current_time`
+  dereferences NULL when `gmtime_r` fails.
+- Rust: frees everything; copies a NULL string as NULL; a NULL string
+  equals only NULL; an offset of 0 when `gmtime_r` fails.
+
+### signature: `GIT_*_DATE` without a timezone
+- C: `user_from_env` passes `offset` uninitialized to `git_signature_new`
+  when `git_date_offset_parse` takes the approximate parser (which does not
+  set the offset).
+- Rust: offset 0.
+
+### object: `git_object__from_raw` leaks on an id failure
+- C: returns without freeing the object when `git_object_id_from_buffer`
+  fails (an unknown oid type).
+- Rust: frees it.
+
+### object: a cached object with unknown flags
+- C: `git_object_lookup_prefix`'s `GIT_ASSERT` path returns without giving
+  back the cache's reference.
+- Rust: gives it back, then the same error.
+
+### object: NULL arguments C dereferences
+- C: `git_object_lookup` reads `repo->oid_type` before
+  `git_object_lookup_prefix` checks `repo`; `git_object_dup(NULL)`,
+  `git_tag_tagger(NULL)`, `git_tag_create*` with a NULL `oid`,
+  `git_grafts_size(NULL)`, `git_grafts_parse(NULL, …)`,
+  `git_blob_create_from_stream_commit(…, NULL)` crash; `git_tag_target` of
+  a tag parsed from raw data (no repository) dereferences NULL.
+- Rust: `invalid argument: '<name>'` (-1) for the arguments, NULL from
+  `git_tag_tagger`, 0 from `git_grafts_size`, and
+  `unrecoverable internal error: 't->object.repo'` from `git_tag_target`.
+
+### tag: leaks of a failed parse or listing
+- C: `git_tag_create_from_buffer` returns without freeing what `tag_parse`
+  allocated before it failed; `git_tag_list_match` disposes the vector but
+  not the names collected when the iteration fails (it still returns 0).
+- Rust: frees them (the listing still returns 0, with an empty array).
+
+### grafts: `git_grafts_open` leaks on a failed path copy
+- C: `GIT_ERROR_CHECK_ALLOC(grafts->path)` returns without freeing the
+  grafts.
+- Rust: frees them.

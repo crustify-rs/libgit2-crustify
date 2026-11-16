@@ -117,9 +117,8 @@ One entry per difference: component, what differs, why.
   nothing (as both C backends of this configuration).
 - **hash: the backends.** SHA-1 is the `sha1collisiondetection` crate (a
   Rust port of sha1dc, same defaults: safe hash, unavoidable bit conditions,
-  collision detection); SHA-256 is a Rust implementation
-  (`util/hash/sha256.rs`, with an AVX2/BMI path chosen at run time) instead
-  of OpenSSL's `SHA256_*`. Digests, the collision error and the "safe"
+  collision detection); SHA-256 is OpenSSL's `SHA256_*`, as the C's, with
+  `SHA256_CTX` held in place. Digests, the collision error and the "safe"
   digest written on a collision are the C's (rust/difftest/hash_diff.c).
   `git_hash_sha1_*`/`git_hash_sha256_*` are not exported: nothing outside
   `hash.c` called them.
@@ -129,7 +128,12 @@ One entry per difference: component, what differs, why.
   bytes are unchanged. Return codes and messages are zlib's
   (rust/difftest/zstream_diff.c: valid, truncated and corrupted streams).
   zlib-rs allocates its state with Rust's allocator where zlib used
-  `malloc`; neither used `git__allocator`.
+  `malloc`; neither used `git__allocator`. zlib (1.2.9+) rejected a stream
+  that was copied or moved after `inflateInit` (`inflateStateCheck`: its
+  state points back to the stream) with `Z_STREAM_ERROR`; zlib-rs keeps no
+  such pointer and accepts it, so freeing both copies of a copied inflate
+  `git_zstream` frees its state twice. No C that stays copies or moves an
+  initialized `git_zstream`; `git_zstream_init`'s contract forbids it.
 - **rand: the state** is a `std::sync::Mutex` instead of a `git_mutex`, so
   no shutdown callback is registered to free it (one fewer of the
   runtime's 32 slots). Same sequences for the same seed. Under Miri (tests
@@ -171,8 +175,14 @@ One entry per difference: component, what differs, why.
   increments atomically; C's inline `p_fsync` (in the header, for the C
   that stays) still increments it non-atomically, as before.
 - **posix: `p_write` of more than `isize::MAX` bytes** fails with `EINVAL`
-  before any system call, as `p_read` does in C (no buffer can be that
-  large).
+  before any system call (the Rust makes a slice of the bytes, and no
+  buffer can be that large); C called `write(2)`. `p_read`, `read_raw`,
+  `git_futils_readbuffer_fd` and the other `git__is_ssizet`/`git__is_sizet`
+  checks are the C's (always true on LP64: a huge length fails later, as in
+  C, e.g. `readbuffer_fd(…, SIZE_MAX)` with the out-of-memory error).
+- **posix: `p_mmap` failure** leaves `out->data` NULL (and `len` 0); C left
+  `MAP_FAILED` in `data`. Same code and message; no caller reads `data`
+  after a failure.
 - **filebuf: the write buffer is zeroed** (`git__calloc`; C used
   `git__malloc`), so that its bytes are always initialized for the Rust
   (`git_filebuf_reserve` hands out bytes that are flushed as they are). No
@@ -190,17 +200,25 @@ One entry per difference: component, what differs, why.
   (`GIT_PATH_MAX + 1`; C grew a `git_str` to that size), and the APPEND copy
   and `git_futils_cp` use a heap buffer of `GIT_BUFSIZE_FILEIO` (C: the
   stack), with an out-of-memory error if it cannot be had.
-- **futils: `git_futils_readbuffer_fd_full`** reads into a Rust buffer and
-  copies the result into the `git_str` (which grows as the C's did).
-- **futils: the mkdir path cache** (`cache_pool` + `cache_pathset` of
-  `struct git_futils_mkdir_options`, which `checkout.c` owns) is read and
-  extended through out-of-line copies of `hashmap_str.h`'s inline
-  functions (`git_hashset_str__contains`, `git_hashset_str__add`, shims in
-  `rust_shims.c`), so that the set stays exactly the C's.
-- **fs_path / futils: arguments that alias the output `git_str`**
-  (`git_fs_path_dirname_r(&b, b.ptr)`, `git_fs_path_prettify(&b, b.ptr,
-  …)`, …) are copied before the string is written; the results are the
-  C's. A `git_str` that borrows its buffer is not written in place
+- **fs_path / futils: arguments that alias the output `git_str`** are
+  copied before the string is written. Where C's result did not depend on
+  the aliasing (`git_fs_path_dirname_r(&b, b.ptr)`, `basename_r`,
+  `normalize_slashes`, `fromurl`, `mktmp(&b, b.ptr)`, the `git_str_set`
+  of the C idioms) the results are the C's. Where C asserted or read
+  memory it had just overwritten, the Rust gives the result of the
+  unaliased call instead:
+
+  | call | C | Rust |
+  |---|---|---|
+  | `join_unrooted(&b, b.ptr, "/base")` | -1, `invalid argument: 'str_b < buf->ptr \|\| str_b >= buf->ptr + buf->size'` | 0, the join, root 5 |
+  | `join_unrooted(&b, "rel", b.ptr)` | root = `strlen` of the result's start | root = the base's length |
+  | `prettify(&b, b.ptr, base)` (relative `b`) | -1, the same assertion | the prettified join |
+  | `apply_relative(&b, b.ptr + n)` | 1, the same assertion | the applied path |
+  | `git__percent_decode(&b, b.ptr)` | 0, empty (cleared before read) | the decoded input |
+  | `find_executable(&b, b.ptr)` | `GIT_ENOTFOUND` (cleared before use) | the lookup of the name |
+  | `contains*(&dir, <ptr into dir>)` | false (the assertion) | the real check |
+
+  No caller in the tree aliases these. A `git_str` that borrows its buffer is not written in place
   (`git_fs_path_resolve_relative` and `squash_slashes` copy it into an
   owned buffer first, or leave it), as in the foundation.
 - **fs_path: `git_fs_path_walk_up`'s callback** gets the path truncated in
@@ -210,6 +228,20 @@ One entry per difference: component, what differs, why.
   exactly `size` bytes (C read `ptr[size]` too, before testing the length).
 - **fs_path / futils: NULL path arguments** that C passed to the system
   (and crashed on, or got `EFAULT`) are read as `""` by the exports.
+- **fs_path: `git_fs_path_set_error`** prints the action's bytes as they
+  are (`errors::Bytes`).
+- **futils: the mkdir path cache** (checkout's `cache_pool` and
+  `cache_pathset`) is used through u1's `GitPool` and `GitHashSetStr`, the
+  Rust ports of those C types.
+- **Allocations where C had none** (Rust's allocator; an out-of-memory
+  aborts instead of failing): one `CString` per entry in `rmdir_r`'s walk
+  and in `cp_r` (the paths are rewritten during the walks), a copy of
+  `mktmp`'s filename (it may lie in the output), and `CString`s of the
+  `fs` API's paths. Directory iteration, `mkdir`, `filebuf` and
+  `resolve_symlink` borrow their paths.
+- **`libgit2_rs::fs` (the safe API) refuses paths with a NUL byte** (class
+  `INVALID`, "path contains a NUL byte", or `false`), as `std` does; the
+  exports read C strings up to their NUL, as C.
 ## u1 (pool, pqueue, utf8, varint, strlist, hashmap, oid, oidarray, parse)
 
 - **oid: `git_oid_tostr_s`'s buffer** is a 65-byte Rust thread-local (no
@@ -237,3 +269,24 @@ One entry per difference: component, what differs, why.
   where the C would read past the end of the buffer (`git_utf8_iterate`
   with `str_len == 0`, `git_decode_varint` on a truncated varint). The
   exports read exactly what the C read.
+
+## l-obj (object, object_api, blob, tag, signature, grafts)
+
+- **blob: the write stream** of `git_blob_create_from_stream` is a ffibox
+  `CTable` in Rust's allocator (C used `git__calloc`), so `cl_alloc_limit`
+  does not make its allocation fail. Its slots refuse re-entry (-1) and
+  turn a panic into -1 with `GIT_ERROR_INTERNAL`.
+- **object / blob: read buffers.** `id_from_fd` and `write_file_stream`
+  read through a 64 KiB `Vec` (C: a stack array): its allocation aborts
+  on out-of-memory where C could not fail. Symlink targets use
+  `try_reserve`, as C's checked `git__malloc`.
+- **grafts: the graft map's entries** are `git__allocator` blocks owned by
+  the map (C: the same); the `git_grafts` itself is a `git__allocator`
+  block holding a Rust value.
+- **signature / tag / blob: the safe API rejects interior NUL bytes**
+  (`Signature::new`, `Tag::create`, `Blob::create_from_workdir`, …) with
+  `GIT_ERROR_INVALID`, where C, taking C strings, would stop at the NUL.
+  `Signature::from_buffer` stops at the first NUL, as
+  `git_signature_from_buffer`.
+- **object: `git_object_peel` / `git_tag_target` of a tag parsed from raw
+  data** fail with an internal error (C crashes, rust/DEFECTS.md).

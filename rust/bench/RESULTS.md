@@ -325,3 +325,34 @@ Within noise (±10%) for the pool, pqueue, varint and `is_zero`;
 hash maps are not benchmarked against C here: C's maps are inline in the
 C that stays; the Rust map runs the same algorithm (`tests/u1_hashmap_c.rs`
 checks identical states and iteration order).
+
+## WP u2 after review r1 (SHA-256 through OpenSSL, in-place `git_hash_init`, lazy wildmatch)
+
+Internal API (`micro/codec_bench.c`, `run.sh 5 7` / `5 5`):
+
+| workload | C median ms | Rust median ms | Rust/C median | Rust/C min |
+|---|---:|---:|---:|---:|
+| sha1_ctx0_x200k (one ctx: init + final) | 122.5 | 119.7 | 0.98 | 1.02 |
+| sha1_ctx64_x200k (init + 64 B + final) | 235.7 | 182.7 | 0.78 | 1.08 |
+| sha256_ctx0_x200k | 97.5 | 100.8 | 1.03 | 0.77 |
+| sha256_ctx64_x200k | 186.6 | 188.9 | 1.01 | 0.97 |
+| sha1_64m | 611.6 | 588.2 | 0.96 | 0.76 |
+| sha256_64m (OpenSSL in both) | 397.6 | 394.0 | 0.99 | 1.15 |
+| sha1_100b_x200k | 255.1 | 233.7 | 0.92 | 1.02 |
+| sha256_100b_x200k | 188.9 | 220.3 | 1.17 | 0.98 |
+| sha1_1k_x200k | 1793.6 | 1651.4 | 0.92 | 0.93 |
+| sha256_1k_x200k | 1189.7 | 1183.7 | 0.99 | 1.01 |
+
+Public API (`compare.sh /work/build-c /work/builds/u2 codec`):
+
+| workload | C ms | Rust ms | ratio | minrat |
+|---|---:|---:|---:|---:|
+| codec/mempack_hash_64m | 761.7 | 721.7 | 0.95 | 0.99 |
+| codec/mempack_hash_small_x100k | 2213.2 | 2258.0 | 1.02 | 1.18 |
+| codec/repository_hashfile_16m | 180.8 | 175.3 | 0.97 | 1.13 |
+| codec/pathspec_match | 164.9 | 181.9 | 1.10 | 1.37 |
+
+`pathspec_match` is still 1.10: wildmatch now reads C strings lazily (no
+`strlen` up front), which brought early-failing patterns to 1.0-1.4 of the C
+(from 1.9) and casefold/slash patterns to 0.2-0.8, but recursion-heavy
+patterns (`*[0-9]*` without casefold) stay 1.5x.

@@ -77,7 +77,13 @@ fn tag_from_raw_fields_as_c_reads_them() {
     let mut o: *mut GitObject = ptr::null_mut();
     // SAFETY: a readable buffer that outlives the object; a writable out.
     let rc = unsafe {
-        obj::git_object__from_raw(&raw mut o, TAG_TEXT.as_ptr().cast(), TAG_TEXT.len(), GIT_OBJECT_TAG, 1)
+        obj::git_object__from_raw(
+            &raw mut o,
+            TAG_TEXT.as_ptr().cast(),
+            TAG_TEXT.len(),
+            GIT_OBJECT_TAG,
+            1,
+        )
     };
     assert_eq!(rc, 0);
     let t = o.cast::<GitTag>();
@@ -85,9 +91,15 @@ fn tag_from_raw_fields_as_c_reads_them() {
     unsafe {
         assert_eq!((*t).kind, 1);
         assert_eq!(CStr::from_ptr((*t).tag_name).to_bytes(), b"v1.0");
-        assert_eq!(CStr::from_ptr((*(*t).tagger).name).to_bytes(), b"Vicent Marti");
+        assert_eq!(
+            CStr::from_ptr((*(*t).tagger).name).to_bytes(),
+            b"Vicent Marti"
+        );
         assert_eq!((*(*t).tagger).when.offset, 60);
-        assert_eq!(CStr::from_ptr((*t).message).to_bytes(), b"This is a test tag\n");
+        assert_eq!(
+            CStr::from_ptr((*t).message).to_bytes(),
+            b"This is a test tag\n"
+        );
         assert_eq!(tag::git_tag_tagger(t), (*t).tagger.cast_const());
         assert_eq!(obj::git_object_type(o), GIT_OBJECT_TAG);
         assert!(obj::git_object_owner(o).is_null());
@@ -105,21 +117,41 @@ fn tag_from_raw_fields_as_c_reads_them() {
     // Invalid content: GIT_EINVALID, and the out-parameter NULL.
     let mut o = 0x1 as *mut GitObject;
     // SAFETY: as above.
-    let rc = unsafe { obj::git_object__from_raw(&raw mut o, b"object x".as_ptr().cast(), 8, GIT_OBJECT_TAG, 1) };
+    let rc = unsafe {
+        obj::git_object__from_raw(
+            &raw mut o,
+            b"object x".as_ptr().cast(),
+            8,
+            GIT_OBJECT_TAG,
+            1,
+        )
+    };
     assert_eq!(rc, -21);
     assert!(o.is_null());
     assert_eq!(last_message(), b"failed to parse tag: object field invalid");
     let mut valid = -1;
     // SAFETY: valid pointers.
-    let rc = unsafe { obj::git_object_rawcontent_is_valid(&raw mut valid, b"object x".as_ptr().cast(), 8, GIT_OBJECT_TAG, 1) };
+    let rc = unsafe {
+        obj::git_object_rawcontent_is_valid(
+            &raw mut valid,
+            b"object x".as_ptr().cast(),
+            8,
+            GIT_OBJECT_TAG,
+            1,
+        )
+    };
     assert_eq!((rc, valid), (0, 0));
     // SAFETY: as above (a NULL buffer).
-    let rc = unsafe { obj::git_object_rawcontent_is_valid(&raw mut valid, ptr::null(), 0, GIT_OBJECT_TAG, 1) };
+    let rc = unsafe {
+        obj::git_object_rawcontent_is_valid(&raw mut valid, ptr::null(), 0, GIT_OBJECT_TAG, 1)
+    };
     assert_eq!(rc, -1);
     assert_eq!(last_message(), b"invalid argument: 'buf'");
     // A type that is not an object type.
     // SAFETY: as above.
-    let rc = unsafe { obj::git_object__from_raw(&raw mut o, b"x".as_ptr().cast(), 1, GIT_OBJECT_ANY, 1) };
+    let rc = unsafe {
+        obj::git_object__from_raw(&raw mut o, b"x".as_ptr().cast(), 1, GIT_OBJECT_ANY, 1)
+    };
     assert_eq!(rc, -3);
     assert_eq!(last_message(), b"the requested type is invalid");
 }
@@ -136,12 +168,21 @@ fn argument_checks() {
         assert_eq!(blob::git_blob_rawsize(ptr::null()), u64::MAX);
         assert_eq!(blob::git_blob_rawcontent(ptr::null()), ptr::null());
         let mut out = ptr::null_mut();
-        assert_eq!(obj::git_object_lookup(&raw mut out, ptr::null_mut(), ptr::null(), GIT_OBJECT_ANY), -1);
+        assert_eq!(
+            obj::git_object_lookup(&raw mut out, ptr::null_mut(), ptr::null(), GIT_OBJECT_ANY),
+            -1
+        );
         assert_eq!(last_message(), b"invalid argument: 'repo'");
-        assert_eq!(obj::git_object_peel(&raw mut out, ptr::null(), GIT_OBJECT_BLOB), -1);
+        assert_eq!(
+            obj::git_object_peel(&raw mut out, ptr::null(), GIT_OBJECT_BLOB),
+            -1
+        );
         assert_eq!(last_message(), b"invalid argument: 'object'");
         let mut so = ptr::null_mut();
-        assert_eq!(sig::git_signature_new(&raw mut so, ptr::null(), c"e".as_ptr(), 0, 0), -1);
+        assert_eq!(
+            sig::git_signature_new(&raw mut so, ptr::null(), c"e".as_ptr(), 0, 0),
+            -1
+        );
         assert_eq!(last_message(), b"invalid argument: 'name'");
         let mut valid = 7;
         assert_eq!(tag::git_tag_name_is_valid(&raw mut valid, ptr::null()), 0);
@@ -160,10 +201,17 @@ fn argument_checks() {
 fn peel_errors_are_cs() {
     let _g = test_support::init();
     let r = Repo::scratch("peel");
-    let id = Oid::from_str_hex("1385f264afb75a56a5bec74243be9b367ba4ca08", libgit2_rs::OidType::Sha1).unwrap();
+    let id = Oid::from_str_hex(
+        "1385f264afb75a56a5bec74243be9b367ba4ca08",
+        libgit2_rs::OidType::Sha1,
+    )
+    .unwrap();
     let mut o = ptr::null_mut();
     // SAFETY: a live repository, a valid id, a writable out.
-    assert_eq!(unsafe { obj::git_object_lookup(&raw mut o, r.raw, &id, GIT_OBJECT_BLOB) }, 0);
+    assert_eq!(
+        unsafe { obj::git_object_lookup(&raw mut o, r.raw, &id, GIT_OBJECT_BLOB) },
+        0
+    );
     let mut p = ptr::null_mut();
     // SAFETY: a live object.
     let rc = unsafe { obj::git_object_peel(&raw mut p, o, 1) };
@@ -187,7 +235,10 @@ fn write_stream_through_its_table() {
     let r = Repo::scratch("stream");
     let mut s: *mut GitWriteStream = ptr::null_mut();
     // SAFETY: a live repository, a writable out, a NUL-terminated hint.
-    assert_eq!(unsafe { blob::git_blob_create_from_stream(&raw mut s, r.raw, c"hint.txt".as_ptr()) }, 0);
+    assert_eq!(
+        unsafe { blob::git_blob_create_from_stream(&raw mut s, r.raw, c"hint.txt".as_ptr()) },
+        0
+    );
     let data = b"streamed through the C table\n";
     for chunk in data.chunks(5) {
         // SAFETY: the stream's own slot, called with the stream, as C.
@@ -196,16 +247,27 @@ fn write_stream_through_its_table() {
     }
     let mut id = Oid::NONE;
     // SAFETY: a stream of `git_blob_create_from_stream`, not used after.
-    assert_eq!(unsafe { blob::git_blob_create_from_stream_commit(&raw mut id, s) }, 0);
+    assert_eq!(
+        unsafe { blob::git_blob_create_from_stream_commit(&raw mut id, s) },
+        0
+    );
     assert_eq!(
         id,
-        libgit2_rs::object::id_from_buffer(data, libgit2_rs::ObjectType::Blob, libgit2_rs::OidType::Sha1).unwrap()
+        libgit2_rs::object::id_from_buffer(
+            data,
+            libgit2_rs::ObjectType::Blob,
+            libgit2_rs::OidType::Sha1
+        )
+        .unwrap()
     );
 
     // close, then free, as filter.c's users do.
     let mut s: *mut GitWriteStream = ptr::null_mut();
     // SAFETY: as above, no hint.
-    assert_eq!(unsafe { blob::git_blob_create_from_stream(&raw mut s, r.raw, ptr::null()) }, 0);
+    assert_eq!(
+        unsafe { blob::git_blob_create_from_stream(&raw mut s, r.raw, ptr::null()) },
+        0
+    );
     // SAFETY: the stream's slots, each with the stream; `free` last.
     unsafe {
         assert_eq!(((*s).write.unwrap())(s, c"x".as_ptr(), 1), 0);
@@ -224,7 +286,10 @@ fn tag_lists_and_short_ids() {
         count: 0,
     };
     // SAFETY: a writable array, a NUL-terminated pattern, a live repository.
-    assert_eq!(unsafe { tag::git_tag_list_match(&raw mut a, c"e*".as_ptr(), r.raw) }, 0);
+    assert_eq!(
+        unsafe { tag::git_tag_list_match(&raw mut a, c"e*".as_ptr(), r.raw) },
+        0
+    );
     assert_eq!(a.count, 1);
     // SAFETY: the array's first string.
     assert_eq!(unsafe { CStr::from_ptr(*a.strings) }.to_bytes(), b"e90810b");
@@ -238,13 +303,23 @@ fn tag_lists_and_short_ids() {
         0
     }
     // SAFETY: a live repository; the callback and its payload live for the call.
-    assert_eq!(unsafe { tag::git_tag_foreach(r.raw, Some(count), (&raw mut n).cast()) }, 0);
+    assert_eq!(
+        unsafe { tag::git_tag_foreach(r.raw, Some(count), (&raw mut n).cast()) },
+        0
+    );
     assert!(n >= 7);
 
-    let id = Oid::from_str_hex("a65fedf39aefe402d3bb6e24df4d4f5fe4547750", libgit2_rs::OidType::Sha1).unwrap();
+    let id = Oid::from_str_hex(
+        "a65fedf39aefe402d3bb6e24df4d4f5fe4547750",
+        libgit2_rs::OidType::Sha1,
+    )
+    .unwrap();
     let mut o = ptr::null_mut();
     // SAFETY: a live repository, a valid id, a writable out.
-    assert_eq!(unsafe { obj::git_object_lookup(&raw mut o, r.raw, &id, GIT_OBJECT_ANY) }, 0);
+    assert_eq!(
+        unsafe { obj::git_object_lookup(&raw mut o, r.raw, &id, GIT_OBJECT_ANY) },
+        0
+    );
     let mut b = libgit2_rs::buf::GitBuf::new();
     // SAFETY: a valid `git_buf` and a live object.
     assert_eq!(unsafe { obj::git_object_short_id(&raw mut b, o) }, 0);

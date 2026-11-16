@@ -2,16 +2,6 @@
 //! called through their C symbols until both have landed (PORTING.md §3).
 //! Each entry carries a `// PENDING(<wp>)` comment.
 
-use core::ffi::c_void;
-
-// PENDING(pool): `src/util/pool.c` (in PORTING.md §1's list; not yet
-// ported). `git_futils_mkdir_relative`'s path cache allocates from the
-// caller's (C-owned) pool.
-unsafe extern "C" {
-    /// `git_pool_malloc`. PENDING(pool)
-    pub fn git_pool_malloc(pool: *mut c_void, items: usize) -> *mut c_void;
-}
-
 // ---------------------------------------------------------------------------
 // WP l-obj (object, object_api, blob, tag, signature, grafts): the functions
 // of the modules other L WPs port concurrently. The opaque types stand for
@@ -19,7 +9,7 @@ unsafe extern "C" {
 // owning module's Rust type.
 // ---------------------------------------------------------------------------
 
-use core::ffi::{c_char, c_int};
+use core::ffi::{c_char, c_int, c_void};
 
 use crate::oid::Oid;
 use crate::util::str::GitStr;

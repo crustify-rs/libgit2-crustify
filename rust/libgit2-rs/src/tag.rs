@@ -682,7 +682,16 @@ pub unsafe fn list_match(repo: *mut git_repository, pattern: &[u8]) -> (*mut *mu
     let skip = GIT_REFS_TAGS_DIR.len();
     let mut cb = |name: &CStr, _: &Oid| -> c_int {
         let short = &name.to_bytes()[skip..];
-        if pattern.is_empty() || crate::util::wildmatch::wildmatch(pattern, short, 0) == 0 {
+        if pattern.is_empty()
+            || matches!(
+                crate::util::wildmatch::wildmatch(
+                    pattern,
+                    short,
+                    crate::util::wildmatch::WildmatchFlags::default()
+                ),
+                crate::util::wildmatch::WildMatch::Match
+            )
+        {
             let m = alloc::substrdup(short);
             if m.is_null() {
                 return -1;

@@ -257,7 +257,8 @@ unsafe fn write_file_stream(odb: *mut git_odb, path: &CStr, file_size: u64) -> R
             }
         }
     }
-    let _ = posix::close(fd);
+    // SAFETY: the descriptor opened above, closed once.
+    let _ = unsafe { posix::close(fd) };
     if written != file_size || read_failed {
         let _ = git_error_set!(ErrorClass::OS, "failed to read file into stream");
         error = -1;
@@ -512,12 +513,16 @@ pub unsafe fn create_from_stream(
     ErrorCode::check(unsafe { p::git_repository__item_path(&raw mut path, repo, 4) })?;
     path.joinpath_self(b"streamed")?;
     let mut fbuf = Box::new(GitFilebuf::new());
-    fbuf.open_withsize(
-        path.as_bytes(),
-        GIT_FILEBUF_TEMPORARY,
-        0o666,
-        2 * 1024 * 1024,
-    )?;
+    // SAFETY: the filebuf is boxed: it does not move until the stream's
+    // drop cleans it up.
+    unsafe {
+        fbuf.open_withsize(
+            path.as_bytes(),
+            GIT_FILEBUF_TEMPORARY,
+            0o666,
+            2 * 1024 * 1024,
+        )
+    }?;
     Ok(CTable::new(BlobWriteStream {
         fbuf,
         repo,

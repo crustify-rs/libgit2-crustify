@@ -9,7 +9,9 @@ use std::path::{Path, PathBuf};
 use libgit2_rs::grafts::Grafts;
 use libgit2_rs::object::Repository;
 use libgit2_rs::util::test_support;
-use libgit2_rs::{Blob, ErrorClass, ErrorCode, Object, ObjectType, Oid, OidType, Signature, Tag, Time};
+use libgit2_rs::{
+    Blob, ErrorClass, ErrorCode, Object, ObjectType, Oid, OidType, Signature, Tag, Time,
+};
 
 fn resources() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/resources")
@@ -69,7 +71,10 @@ fn lookup_peel_and_ids() {
     // The cache returns the same object; a wrong type is GIT_ENOTFOUND.
     let e = Object::lookup(&repo, &oid(COMMIT), ObjectType::Blob).unwrap_err();
     assert_eq!(e.code(), ErrorCode::NOT_FOUND);
-    assert_eq!(e.message_bytes(), b"the requested type does not match the type in the ODB");
+    assert_eq!(
+        e.message_bytes(),
+        b"the requested type does not match the type in the ODB"
+    );
 
     let t = c.peel(ObjectType::Tree).unwrap();
     assert_eq!(t.kind(), ObjectType::Tree);
@@ -91,7 +96,10 @@ fn lookup_peel_and_ids() {
     assert_eq!(readme.kind(), ObjectType::Blob);
     let e = c.lookup_bypath(b"README", ObjectType::Tree).unwrap_err();
     assert_eq!(e.code(), ErrorCode::INVALID_SPEC);
-    assert_eq!(e.message_bytes(), b"object at path 'README' is not of the asked-for type 2");
+    assert_eq!(
+        e.message_bytes(),
+        b"object at path 'README' is not of the asked-for type 2"
+    );
 
     // Conversions.
     assert!(c.clone().into_blob().is_err());
@@ -119,21 +127,28 @@ fn blobs() {
     assert!(nb.is_binary());
     assert_eq!(nb.filter(b"x", &Default::default()).unwrap(), None);
     assert_eq!(
-        nb.filter(b"x", &libgit2_rs::blob::BlobFilterOptions::default().check_for_binary(false))
-            .unwrap()
-            .unwrap(),
+        nb.filter(
+            b"x",
+            &libgit2_rs::blob::BlobFilterOptions::default().check_for_binary(false)
+        )
+        .unwrap()
+        .unwrap(),
         b"hello\0world"
     );
     assert_eq!(
         id,
-        libgit2_rs::object::id_from_buffer(b"hello\0world", ObjectType::Blob, OidType::Sha1).unwrap()
+        libgit2_rs::object::id_from_buffer(b"hello\0world", ObjectType::Blob, OidType::Sha1)
+            .unwrap()
     );
 
     let mut w = Blob::writer(&repo, Some(b"streamed.txt")).unwrap();
     w.write(b"from a ").unwrap();
     w.write(b"stream\n").unwrap();
     let sid = w.commit().unwrap();
-    assert_eq!(Blob::lookup(&repo, &sid).unwrap().content(), b"from a stream\n");
+    assert_eq!(
+        Blob::lookup(&repo, &sid).unwrap().content(),
+        b"from a stream\n"
+    );
     // A writer dropped without commit leaves nothing behind.
     let mut w = Blob::writer(&repo, None).unwrap();
     w.write(b"abandoned").unwrap();
@@ -174,7 +189,10 @@ fn tags() {
     let mut names = Tag::list(&repo, None).unwrap();
     names.sort();
     assert!(names.contains(&b"e90810b".to_vec()) && names.contains(&b"point_to_blob".to_vec()));
-    assert_eq!(Tag::list(&repo, Some(b"e9*")).unwrap(), vec![b"e90810b".to_vec()]);
+    assert_eq!(
+        Tag::list(&repo, Some(b"e9*")).unwrap(),
+        vec![b"e90810b".to_vec()]
+    );
     let mut seen = 0;
     Tag::foreach(&repo, |name, _| {
         assert!(name.starts_with(b"refs/tags/"));
@@ -200,16 +218,21 @@ fn tags() {
     let lw = Tag::create_lightweight(&repo, b"light", &target, false).unwrap();
     assert_eq!(&lw, target.id());
     Tag::delete(&repo, b"light").unwrap();
-    assert_eq!(Tag::delete(&repo, b"light").unwrap_err().code(), ErrorCode::NOT_FOUND);
-
-    let text = format!(
-        "object {COMMIT}\ntype commit\ntag from-buffer\ntagger A <a@b> 1 +0000\n\nmsg\n"
+    assert_eq!(
+        Tag::delete(&repo, b"light").unwrap_err().code(),
+        ErrorCode::NOT_FOUND
     );
+
+    let text =
+        format!("object {COMMIT}\ntype commit\ntag from-buffer\ntagger A <a@b> 1 +0000\n\nmsg\n");
     let bid = Tag::create_from_buffer(&repo, text.as_bytes(), false).unwrap();
     assert_eq!(Tag::lookup(&repo, &bid).unwrap().name(), b"from-buffer");
     let bad = format!("object {COMMIT}\ntype tree\ntag x\n\nmsg\n");
     let e = Tag::create_from_buffer(&repo, bad.as_bytes(), false).unwrap_err();
-    assert_eq!(e.message_bytes(), b"the type for the given target is invalid");
+    assert_eq!(
+        e.message_bytes(),
+        b"the type for the given target is invalid"
+    );
 
     assert!(Tag::name_is_valid(b"v1.0").unwrap());
     assert!(!Tag::name_is_valid(b"HEAD").unwrap());
@@ -228,12 +251,18 @@ fn signatures() {
     assert_eq!(s.when().seconds(), 1600000000);
     assert_eq!(s.when().offset_minutes(), -90);
     assert_eq!(s.when().sign(), b'-');
-    assert_eq!(s.to_header(b"author "), b"author Name <e@mail> 1600000000 -0130\n");
+    assert_eq!(
+        s.to_header(b"author "),
+        b"author Name <e@mail> 1600000000 -0130\n"
+    );
     assert_eq!(s.to_string(), "Name <e@mail>");
     let e = Signature::from_buffer(b"no email here").unwrap_err();
     assert_eq!(e.code(), ErrorCode::INVALID);
     assert_eq!(e.class(), ErrorClass::INVALID);
-    assert_eq!(e.message_bytes(), b"failed to parse signature - malformed e-mail");
+    assert_eq!(
+        e.message_bytes(),
+        b"failed to parse signature - malformed e-mail"
+    );
     let e = Signature::new(b"a<b", b"c", Time::new(0, 0)).unwrap_err();
     assert_eq!(
         e.message_bytes(),
@@ -274,7 +303,8 @@ fn default_signatures() {
 fn grafts() {
     let _g = test_support::init();
     let mut g = Grafts::new(OidType::Sha1);
-    g.parse(format!("{COMMIT} {TREE}\n{BLOB}\n").as_bytes()).unwrap();
+    g.parse(format!("{COMMIT} {TREE}\n{BLOB}\n").as_bytes())
+        .unwrap();
     assert_eq!(g.len(), 2);
     assert_eq!(g.parents(&oid(COMMIT)).unwrap(), &[oid(TREE)]);
     assert_eq!(g.parents(&oid(BLOB)).unwrap(), &[]);
@@ -314,6 +344,7 @@ fn object_types() {
     assert_eq!(ObjectType::Tree.to_string(), "tree");
     assert!(!ObjectType::Any.is_valid());
     assert!(
-        libgit2_rs::object::rawcontent_is_valid(b"anything", ObjectType::Blob, OidType::Sha1).unwrap()
+        libgit2_rs::object::rawcontent_is_valid(b"anything", ObjectType::Blob, OidType::Sha1)
+            .unwrap()
     );
 }
