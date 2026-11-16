@@ -1009,6 +1009,7 @@ pub type GitHashSetStr<'a> = GitHashSet<CStrKey<'a>>;
 /// for the provided key types) and whose contract the C caller then
 /// upholds.
 #[macro_export]
+#[doc(hidden)] // crate-internal: expands to crate-private paths, unusable outside
 macro_rules! git_hashmap_exports {
     (
         map: $map:ty, key: $k:ty, val: $v:ty,

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["libgit2-rs"]
+members = ["libgit2-rs", "consumer"]
 
 # zlib-rs, vendored with a fix (rust/vendor/zlib-rs, see `libgit2 patch` in
 # src/inflate.rs): an error found by the fast inflate path kept zlib's

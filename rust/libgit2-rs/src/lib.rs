@@ -17,6 +17,28 @@
 //!
 //! The library initializes itself on first use and is never torn down by
 //! the safe API (see [`Libgit2`]).
+//!
+//! The internals are not reachable (review api-r1 S-1: a `pub` C-layout
+//! struct with raw-pointer fields and a safe accessor let safe code read
+//! through a dangling pointer):
+//!
+//! ```compile_fail
+//! use libgit2_rs::tag::GitTag; // error: module `tag` is private
+//! ```
+//!
+//! ```compile_fail
+//! let _ = libgit2_rs::util::alloc::malloc(1); // error: module `util` is private
+//! ```
+//!
+//! ```compile_fail
+//! // The exports are symbols for C, not Rust paths.
+//! let _ = libgit2_rs::odb::ffi::git_odb_new; // error: module `odb` is private
+//! ```
+//!
+//! ```compile_fail
+//! // No conversion of a bare code reads the thread's last error (I-2).
+//! let e = libgit2_rs::Error::from(libgit2_rs::ErrorCode::NOT_FOUND);
+//! ```
 
 // Without `test-internals`, the internal modules' `pub` helpers that only
 // the tests use (the port keeps libgit2's internal API whole) and their

@@ -635,6 +635,7 @@ pub(crate) unsafe trait StartsWithRefcount: ffibox::CCounted {
 /// field (checked at offset 0), with allocator `$alloc` and, optionally,
 /// a release function replacing the default drop of the box.
 #[macro_export]
+#[doc(hidden)] // crate-internal: expands to crate-private paths, unusable outside
 #[doc(hidden)]
 macro_rules! impl_ccounted {
     ($t:ty, $alloc:ty $(, release = $rel:expr)?) => {

@@ -794,6 +794,7 @@ pub use crate::api::error::Error;
 /// }
 /// ```
 #[macro_export]
+#[doc(hidden)] // crate-internal: expands to crate-private paths, unusable outside
 macro_rules! git_error_set {
     ($class:expr, $($arg:tt)+) => {
         $crate::util::errors::set_fmt($class, ::core::format_args!($($arg)+))
@@ -816,6 +817,7 @@ macro_rules! git_error_set {
 /// }
 /// ```
 #[macro_export]
+#[doc(hidden)] // crate-internal: expands to crate-private paths, unusable outside
 macro_rules! git_assert_arg {
     ($cond:expr, $text:literal) => {
         if !$cond {
@@ -834,6 +836,7 @@ macro_rules! git_assert_arg {
 /// error: '<text>'` (class `GIT_ERROR_INTERNAL`) and return, as
 /// [`git_assert_arg!`](crate::git_assert_arg).
 #[macro_export]
+#[doc(hidden)] // crate-internal: expands to crate-private paths, unusable outside
 macro_rules! git_assert {
     ($cond:expr, $text:literal) => {
         if !$cond {

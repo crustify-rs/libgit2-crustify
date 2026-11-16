@@ -73,6 +73,7 @@ pub fn field_size<T, F>(_: fn(&T) -> &F) -> usize {
 
 /// A [`TypeLayout`] for `rust => "c_type" { fields }`.
 #[macro_export]
+#[doc(hidden)] // crate-internal: expands to crate-private paths, unusable outside
 macro_rules! c_layout {
     ($rust:ty => $c:literal { $($field:ident $(as $cname:literal)?),* $(,)? }) => {
         $crate::util::layout::TypeLayout {
@@ -95,6 +96,7 @@ macro_rules! c_layout {
 
 /// Define this module's layout test (see the [module](crate::util::layout)).
 #[macro_export]
+#[doc(hidden)] // crate-internal: expands to crate-private paths, unusable outside
 macro_rules! c_layout_test {
     (
         headers: [$($h:literal),* $(,)?],

@@ -11,7 +11,7 @@
 //! user agents and the TLS ciphers are this module's (`git__user_agent`,
 //! `git__user_agent_product`, `git__ssl_ciphers`, read by C).
 //!
-//! The safe API is the [`opts`] module.
+//! The safe API is `crate::api::opts` (`libgit2_rs::opts`).
 
 use core::ffi::{CStr, c_char, c_int, c_void};
 use core::ptr;
@@ -440,56 +440,14 @@ pub unsafe fn opts(key: c_int, args: &OptArgs) -> Result<()> {
     Ok(())
 }
 
-/// The safe API of the options this module keeps (the others belong to
-/// their modules' APIs).
-pub mod opts {
-    use super::*;
-    use crate::util::errors::Error;
+/// `GIT_OPT_SET_USER_AGENT` (`None`: the default), for the safe API.
+pub(crate) fn set_user_agent(agent: Option<&CStr>) -> Result<()> {
+    replace(&git__user_agent, agent)
+}
 
-    /// `GIT_OPT_GET_USER_AGENT`.
-    pub fn user_agent() -> Vec<u8> {
-        super::user_agent()
-    }
-
-    /// `GIT_OPT_SET_USER_AGENT` (`None`: the default).
-    pub fn set_user_agent(agent: Option<&CStr>) -> core::result::Result<(), Error> {
-        Ok(replace(&git__user_agent, agent)?)
-    }
-
-    /// `GIT_OPT_GET_USER_AGENT_PRODUCT`.
-    pub fn user_agent_product() -> Vec<u8> {
-        super::user_agent_product()
-    }
-
-    /// `GIT_OPT_SET_USER_AGENT_PRODUCT` (`None`: the default).
-    pub fn set_user_agent_product(product: Option<&CStr>) -> core::result::Result<(), Error> {
-        Ok(replace(&git__user_agent_product, product)?)
-    }
-
-    /// `GIT_OPT_GET_OWNER_VALIDATION`.
-    pub fn owner_validation() -> bool {
-        crate::repository::git_repository__validate_ownership.load(Ordering::Relaxed)
-    }
-
-    /// `GIT_OPT_SET_OWNER_VALIDATION`.
-    pub fn set_owner_validation(on: bool) {
-        crate::repository::git_repository__validate_ownership.store(on, Ordering::Relaxed)
-    }
-
-    /// `GIT_OPT_ENABLE_FSYNC_GITDIR`.
-    pub fn set_fsync_gitdir(on: bool) {
-        crate::repository::git_repository__fsync_gitdir.store(on, Ordering::Relaxed)
-    }
-
-    /// `GIT_OPT_GET_EXTENSIONS`.
-    pub fn extensions() -> Vec<Vec<u8>> {
-        crate::repository::api::extensions()
-    }
-
-    /// `GIT_OPT_SET_EXTENSIONS`.
-    pub fn set_extensions(exts: &[&[u8]]) {
-        crate::repository::api::set_extensions(exts)
-    }
+/// `GIT_OPT_SET_USER_AGENT_PRODUCT` (`None`: the default).
+pub(crate) fn set_user_agent_product(product: Option<&CStr>) -> Result<()> {
+    replace(&git__user_agent_product, product)
 }
 
 /// The exports of `settings.c`.

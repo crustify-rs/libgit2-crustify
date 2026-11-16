@@ -35,6 +35,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "libgit2-rs-consumer"
+version = "0.0.0"
+dependencies = [
+ "libgit2-rs",
+]
+
+[[package]]
 name = "libz-rs-sys"
 version = "0.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
