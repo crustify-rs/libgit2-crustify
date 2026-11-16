@@ -711,28 +711,27 @@ impl GitStr {
         Ok(())
     }
 
-    /// Append `len` bytes from `data` when they fit the allocation and lie
-    /// outside it; `false` (nothing done) otherwise. The hot path of
-    /// `git_str_put`, without a panic or an error path.
+    /// Append `len` bytes from `data` when they fit the allocation (no
+    /// growth); `false` (nothing done) otherwise. The hot path of
+    /// `git_str_put`, without a panic or an error path. As no reallocation
+    /// happens, `data` may lie in the buffer itself: the copy is a
+    /// `memmove`, as C's.
     ///
     /// # Safety
     ///
-    /// `data` is readable for `len` bytes.
+    /// `data` is readable and initialized for `len` bytes, and no reference
+    /// covers them.
     #[inline(always)]
     pub(crate) unsafe fn try_put_fast(&mut self, data: *const u8, len: usize) -> bool {
         if !self.owned() || self.size >= self.asize || len >= self.asize - self.size {
             return false;
         }
-        let start = self.ptr as usize;
-        let d = data as usize;
-        if d < start + self.asize && d.wrapping_add(len) > start {
-            return false;
-        }
         let at = self.ptr.cast::<u8>().wrapping_add(self.size);
         // SAFETY: the string owns `asize` bytes at `ptr` (owned), and
         // `size + len < asize`, so `at..at + len + 1` is within them;
-        // `data` (readable for `len` bytes) lies outside the allocation.
-        unsafe { ptr::copy_nonoverlapping(data, at, len) };
+        // `data` is readable for `len` bytes; `copy` allows them to
+        // overlap.
+        unsafe { ptr::copy(data, at, len) };
         // SAFETY: the byte after them, within the allocation (as above).
         unsafe { at.wrapping_add(len).write(0) };
         self.size += len;
@@ -757,26 +756,22 @@ impl GitStr {
     }
 
     /// Replace the contents with `len` bytes from `data` when they fit the
-    /// allocation and lie outside it; `false` (nothing done) otherwise. The
-    /// hot path of `git_str_set`.
+    /// allocation (no growth); `false` (nothing done) otherwise. The hot
+    /// path of `git_str_set`. `data` may lie in the buffer (C's `data ==
+    /// buf->ptr` included: the bytes stay, the size becomes `len`).
     ///
     /// # Safety
     ///
-    /// `data` is readable for `len` bytes.
+    /// As [`try_put_fast`](Self::try_put_fast).
     #[inline(always)]
     pub(crate) unsafe fn try_set_fast(&mut self, data: *const u8, len: usize) -> bool {
         if !self.owned() || len == 0 || len >= self.asize {
             return false;
         }
-        let start = self.ptr as usize;
-        let d = data as usize;
-        if d < start + self.asize && d.wrapping_add(len) > start {
-            return false;
-        }
         let p = self.ptr.cast::<u8>();
-        // SAFETY: the string owns `asize > len` bytes at `ptr`; `data`
-        // (readable for `len` bytes) lies outside them.
-        unsafe { ptr::copy_nonoverlapping(data, p, len) };
+        // SAFETY: the string owns `asize > len` bytes at `ptr`; `data` is
+        // readable for `len` bytes; `copy` allows them to overlap.
+        unsafe { ptr::copy(data, p, len) };
         // SAFETY: byte `len < asize`, within the allocation.
         unsafe { p.wrapping_add(len).write(0) };
         self.size = len;
@@ -2126,6 +2121,18 @@ pub mod ffi {
         if !data.is_null() && unsafe { b.try_set_fast(data.cast(), len) } {
             return 0;
         }
+        // SAFETY: forwarded.
+        unsafe { set_slow(b, data, len) }
+    }
+
+    /// `git_str_set` when the fast path does not apply (out of line).
+    ///
+    /// # Safety
+    ///
+    /// As `git_str_set`.
+    #[cold]
+    #[inline(never)]
+    unsafe fn set_slow(b: &mut GitStr, data: *const libc::c_void, len: usize) -> c_int {
         barrier(|| {
             if len == 0 || data.is_null() {
                 b.clear();
@@ -2160,8 +2167,14 @@ pub mod ffi {
             // SAFETY: a non-null `string` is NUL-terminated.
             unsafe { libc::strlen(string) }
         };
+        // SAFETY: the module's contract.
+        let b = unsafe { s(buf) };
+        // SAFETY: a non-null `string` is readable for `len` bytes.
+        if !string.is_null() && unsafe { b.try_set_fast(string.cast(), len) } {
+            return 0;
+        }
         // SAFETY: forwarded.
-        unsafe { git_str_set(buf, string.cast(), len) }
+        unsafe { set_slow(b, string.cast(), len) }
     }
 
     /// `git_str_putc`.
@@ -2178,6 +2191,12 @@ pub mod ffi {
         if b.try_putc_fast(ch) {
             return 0;
         }
+        putc_slow(b, ch)
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn putc_slow(b: &mut GitStr, ch: u8) -> c_int {
         barrier(|| status(b.putc(ch)))
     }
 
@@ -2214,6 +2233,19 @@ pub mod ffi {
         if !data.is_null() && unsafe { b.try_put_fast(data.cast(), len) } {
             return 0;
         }
+        // SAFETY: forwarded.
+        unsafe { put_slow(b, data, len) }
+    }
+
+    /// `git_str_put` when the fast path does not apply: out of line, so
+    /// that the hot path needs no stack frame for the barrier.
+    ///
+    /// # Safety
+    ///
+    /// As `git_str_put`.
+    #[cold]
+    #[inline(never)]
+    unsafe fn put_slow(b: &mut GitStr, data: *const c_char, len: usize) -> c_int {
         barrier(|| {
             if data.is_null() {
                 let _ = errors::assert_arg_failed("data");
@@ -2237,8 +2269,17 @@ pub mod ffi {
         }
         // SAFETY: `string` is NUL-terminated.
         let len = unsafe { libc::strlen(string) };
+        if len == 0 {
+            return 0;
+        }
+        // SAFETY: the module's contract.
+        let b = unsafe { s(buf) };
+        // SAFETY: `string` is readable for `len` bytes.
+        if unsafe { b.try_put_fast(string.cast(), len) } {
+            return 0;
+        }
         // SAFETY: forwarded.
-        unsafe { git_str_put(buf, string, len) }
+        unsafe { put_slow(b, string, len) }
     }
 
     macro_rules! encode {
@@ -2531,6 +2572,138 @@ pub mod ffi {
         nbuf: c_int,
         segments: *const *const c_char,
     ) -> c_int {
+        // SAFETY: the module's contract.
+        if unsafe { join_n_fast(buf, separator as u8, nbuf, segments) } {
+            return 0;
+        }
+        // SAFETY: forwarded.
+        unsafe { join_n_slow(buf, separator, nbuf, segments) }
+    }
+
+    /// `git_str_join_n`'s hot path, C's two passes over raw pointers: up to
+    /// 8 segments, each outside the allocation or starting within the
+    /// contents, and a result that fits the allocation. `false` (nothing
+    /// done) when it does not apply. No panic; every write is clamped to
+    /// the allocation, so soundness does not rest on pass 1's count.
+    ///
+    /// # Safety
+    ///
+    /// As `git_str__join_n`.
+    #[inline(always)]
+    unsafe fn join_n_fast(
+        buf: *mut GitStr,
+        sep: u8,
+        nbuf: c_int,
+        segments: *const *const c_char,
+    ) -> bool {
+        const MAX: usize = 8;
+        let Ok(n) = usize::try_from(nbuf) else {
+            return false;
+        };
+        if n == 0 || n > MAX {
+            return false;
+        }
+        // SAFETY: the module's contract.
+        let b = unsafe { s(buf) };
+        if !b.owned() || b.size >= b.asize {
+            return false;
+        }
+        let (base, asize, size) = (b.ptr.cast::<u8>(), b.asize, b.size);
+        let (lo, hi) = (base as usize, base as usize + asize);
+        // Pass 1: lengths (`usize::MAX` for NULL) and the total.
+        let mut ptrs = [core::ptr::null::<u8>(); MAX];
+        let mut lens = [usize::MAX; MAX];
+        let last_of = |p: *const u8, len: usize| {
+            // SAFETY: `p` is readable for `len > 0` bytes (callers).
+            unsafe { p.wrapping_add(len - 1).read() }
+        };
+        let mut total = usize::from(size > 0 && last_of(base, size) != sep);
+        for i in 0..n {
+            // SAFETY: the caller passes `nbuf` pointers.
+            let p = unsafe { segments.wrapping_add(i).read() }.cast::<u8>();
+            if p.is_null() {
+                continue;
+            }
+            let pa = p as usize;
+            let len = if size > 0 && pa >= lo && pa < lo + size {
+                // C: the rest of the original contents.
+                size - (pa - lo)
+            } else {
+                // SAFETY: a non-null segment is NUL-terminated.
+                let len = unsafe { libc::strlen(p.cast()) };
+                if pa < hi && pa + len + 1 > lo {
+                    return false;
+                }
+                len
+            };
+            ptrs[i] = p;
+            lens[i] = len;
+            total += len + usize::from(len == 0 || last_of(p, len) != sep);
+        }
+        if total == 0 {
+            return true;
+        }
+        if total >= asize - size {
+            return false;
+        }
+        // Pass 2, as C. Writes go at `out >= size`; contents segments are
+        // read below `size`, so they are not overwritten.
+        let limit = asize - 1;
+        let mut out = size;
+        let mut last = if size > 0 { last_of(base, size) } else { 0 };
+        if size > 0 && last != sep {
+            // SAFETY: `out = size < limit`.
+            unsafe { base.wrapping_add(out).write(sep) };
+            out += 1;
+            last = sep;
+        }
+        for i in 0..n {
+            let (mut p, mut len) = (ptrs[i], lens[i]);
+            if len == usize::MAX {
+                continue;
+            }
+            if out > 0 && last == sep {
+                // SAFETY: `p` is readable for `len` bytes.
+                while len > 0 && unsafe { p.read() } == sep {
+                    p = p.wrapping_add(1);
+                    len -= 1;
+                }
+            }
+            let len = len.min(limit - out);
+            if len > 0 {
+                // SAFETY: `p` is readable for `len` bytes; the target lies
+                // within `out..limit`; `copy` allows a contents segment to
+                // overlap (it does not: it lies below `size <= out`).
+                unsafe { ptr::copy(p, base.wrapping_add(out), len) };
+                out += len;
+                last = last_of(base, out);
+            }
+            if i + 1 < n && out > 0 && last != sep && out < limit {
+                // SAFETY: `out < limit`.
+                unsafe { base.wrapping_add(out).write(sep) };
+                out += 1;
+                last = sep;
+            }
+        }
+        // SAFETY: `out <= limit < asize`.
+        unsafe { base.wrapping_add(out).write(0) };
+        b.size = out;
+        true
+    }
+
+    /// `git_str__join_n` when the fast path does not apply (out of line).
+    ///
+    /// # Safety
+    ///
+    /// As `git_str__join_n`.
+    #[cold]
+    #[inline(never)]
+    unsafe fn join_n_slow(
+        buf: *mut GitStr,
+        separator: c_char,
+        nbuf: c_int,
+        segments: *const *const c_char,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: the module's contract.
             let b = unsafe { s(buf) };
@@ -2630,6 +2803,119 @@ pub mod ffi {
     /// within the buffer's contents.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_join(
+        buf: *mut GitStr,
+        separator: c_char,
+        str_a: *const c_char,
+        str_b: *const c_char,
+    ) -> c_int {
+        // SAFETY: the module's contract; NULL or NUL-terminated strings.
+        if unsafe { join_fast(buf, separator as u8, str_a, str_b) } {
+            return 0;
+        }
+        // SAFETY: forwarded.
+        unsafe { join_slow(buf, separator, str_a, str_b) }
+    }
+
+    /// `git_str_join`'s hot path: the result fits the allocation, and the
+    /// arguments lie outside it (or `str_a` within the contents, the
+    /// `git_str_joinpath(buf, buf->ptr, …)` idiom). Raw copies, no panic;
+    /// `false` (nothing done) when it does not apply.
+    ///
+    /// # Safety
+    ///
+    /// As `git_str_join`.
+    #[inline(always)]
+    unsafe fn join_fast(
+        buf: *mut GitStr,
+        sep: u8,
+        str_a: *const c_char,
+        str_b: *const c_char,
+    ) -> bool {
+        // SAFETY: the module's contract.
+        let b = unsafe { s(buf) };
+        if !b.owned() || b.size >= b.asize || str_b.is_null() {
+            return false;
+        }
+        let (base, asize, size) = (b.ptr.cast::<u8>(), b.asize, b.size);
+        let (lo, hi) = (base as usize, base as usize + asize);
+        // SAFETY: `str_b` is NUL-terminated.
+        let mut lb = unsafe { libc::strlen(str_b) };
+        let pb = str_b as usize;
+        if pb < hi && pb + lb + 1 > lo {
+            return false;
+        }
+        let (la, a_off) = if str_a.is_null() {
+            (0, None)
+        } else {
+            // SAFETY: a non-null `str_a` is NUL-terminated.
+            let la = unsafe { libc::strlen(str_a) };
+            let pa = str_a as usize;
+            if pa < hi && pa + la + 1 > lo {
+                // Within the allocation: only the contents case is fast.
+                if pa < lo || pa - lo + la > size {
+                    return false;
+                }
+                (la, Some(pa - lo))
+            } else {
+                (la, None)
+            }
+        };
+        let mut from_b = str_b.cast::<u8>();
+        let mut need_sep = 0usize;
+        if sep != 0 && la > 0 {
+            // SAFETY: `from_b` stays within `str_b`'s `lb` bytes.
+            while lb > 0 && unsafe { from_b.read() } == sep {
+                from_b = from_b.wrapping_add(1);
+                lb -= 1;
+            }
+            let last_a = match a_off {
+                Some(off) => base.wrapping_add(off + la - 1),
+                None => str_a.cast::<u8>().wrapping_add(la - 1),
+            };
+            // SAFETY: the last byte of `str_a` (contents or external).
+            if unsafe { last_a.read() } != sep {
+                need_sep = 1;
+            }
+        }
+        let total = la + need_sep + lb;
+        if total >= asize {
+            return false;
+        }
+        match a_off {
+            Some(0) => {}
+            Some(off) => {
+                // SAFETY: `off..off + la` lies within the contents, the
+                // target `0..la` within the allocation; `copy` allows overlap.
+                unsafe { ptr::copy(base.wrapping_add(off), base, la) };
+            }
+            None if la > 0 => {
+                // SAFETY: `str_a` (outside the allocation) is readable for
+                // `la` bytes; `la <= total < asize`.
+                unsafe { ptr::copy_nonoverlapping(str_a.cast::<u8>(), base, la) };
+            }
+            None => {}
+        }
+        if need_sep == 1 {
+            // SAFETY: `la < total < asize`.
+            unsafe { base.wrapping_add(la).write(sep) };
+        }
+        // SAFETY: `from_b` (outside the allocation) is readable for `lb`
+        // bytes, written below `total < asize`.
+        unsafe { ptr::copy_nonoverlapping(from_b, base.wrapping_add(la + need_sep), lb) };
+        // SAFETY: `total < asize`.
+        unsafe { base.wrapping_add(total).write(0) };
+        b.size = total;
+        true
+    }
+
+    /// `git_str_join` when the fast path does not apply (out of line).
+    ///
+    /// # Safety
+    ///
+    /// As `git_str_join`.
+    #[cold]
+    #[inline(never)]
+    unsafe fn join_slow(
         buf: *mut GitStr,
         separator: c_char,
         str_a: *const c_char,
