@@ -175,3 +175,58 @@ PENDING(l-pack) `git_mwindow_global_init` (init table now
 (settings uses `crate::mwindow::*` / `crate::pack::*`). `sys::indexer`'s
 unused `Indexer::append` (dead now that `sys` is crate-private) removed;
 `DEFAULT_MAX_OBJECT_SIZE` is Miri-only.
+
+Re-merges: `wp/l-index` review fixes (`076ca1b`, clean); `wp/l-pack`
+review fixes incl. the `GitMutex::try_lock` fix (clean).
+
+## 6. l-commit (merge `e52ac9a`; resolution `b1f31de`; re-merge of its review fixes `e66486d`; `d0eeeed`)
+
+Merge conflicts: `sys/{commit_graph,diff,path}.rs` (both sides declared
+different functions of the same C modules): combined with one declaration
+per C symbol (`path::is_valid` builds l-index's `ConstStr`);
+`src/util/rust_shims.c` and `sys/pending.rs`: the union dropped closing
+braces (fixed by hand). Before the resolution, 40 clar suites crashed
+(SIGSEGV): l-commit read `git_index` at the old C offsets (integration
+notes I-1).
+
+Resolved (PENDING entries between l-commit and l-repo/l-odb/l-index,
+deleted):
+
+- `sys/pending.rs` `l_commit`: the opaque `git_repository`, `git_odb`,
+  `git_odb_object`, `git_index`, `git_tree_cache` are now aliases of
+  `GitRepository`, `GitOdb`, `GitOdbObject`, `GitIndex`, `GitTreeCache`;
+  its `GitCachedObj` and `GitIndexEntry` mirrors are gone
+  (`crate::cache::GitCachedObj`, `crate::index`'s entries).
+- Fixed offsets `REPO_OID_TYPE`, `REPO_GRAFTS`, `REPO_SHALLOW_GRAFTS`
+  (and the branch's later atomic-load helpers `repo_oid_type`,
+  `repo_grafts`), `INDEX_OID_TYPE`, `INDEX_FLAGS`, `INDEX_TREE`,
+  `INDEX_TREE_POOL`, `TREE_CACHE_ENTRY_COUNT`, `TREE_CACHE_OID`: replaced by
+  `GitRepository::{oid_type_raw, grafts_ptr, shallow_grafts_ptr}` and
+  `GitIndex::{oid_type, tree, tree_pool, ignore_case()}` /
+  `GitTreeCache::{entry_count, oid}`; their layout asserts removed.
+- C declarations of `git_odb_read`, `git_odb_object_{free,dup,data,size,id,type}`,
+  `git_odb_write`, `git_odb__freshen`, `git_odb__get_commit_graph_file`,
+  `git_repository_{open,free,odb__weakptr,head_tree,head,commit_parents,index}`,
+  `git_index_{entrycount,get_byindex,has_conflicts,__set_ignore_case,write_tree,free}`,
+  `git_tree_cache_{get,read_tree}`: removed; the call sites call the
+  owning modules' Rust exports (`crate::odb::ffi::…` etc.); `repo_odb` uses
+  `GitRepository::odb_weak`.
+- `pending_repository::Repository` (stand-in for l-repo's): removed;
+  `commit::api` / `tree::api` take `crate::Repository` (new crate-internal
+  `Repository::raw_ptr`).
+- l-index's `l_index` PENDING(l-commit): `git_tree__write_index`,
+  `git_tree_walk`, `git_tree_entrycount`, `git_tree_entry_{byindex,filemode,
+  filemode_raw,name,id}`, `TreewalkCb`: removed; `index::foreign` calls
+  `crate::tree::ffi`.
+
+Left (PENDING): l-commit → l-obj (object lookup/free/dup, `git_object__from_raw`,
+type names, signatures, grafts), → l-refs (reference lookup/update/peel),
+→ l-revwalk (`git_revwalk__commit_lookup`, `git_revwalk` offsets 0/8/56).
+The l-obj/l-refs symbols are declared by several sections with different
+opaque types (`#[allow(clashing_extern_declarations)]` until they land).
+
+`build.rs`: without `link-c`, the system zlib and PCRE2 are linked
+(`8324cc3`): the plain `cargo test` now links and passes the 20 test
+binaries that need no libgit2 C; the lib test binary and 11 integration
+tests (`config_api`, `delta_*`, `l_index_*`, `l_pack_*`, `odb_*`,
+`util_fs`) still need `--features link-c` (they reach the C rest).
