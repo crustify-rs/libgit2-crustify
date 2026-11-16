@@ -695,19 +695,19 @@ pub fn normalize_to_buffer(name: &[u8], flags: c_uint, buffer_size: usize) -> Re
 
 /// `git_reference__is_branch`.
 pub fn is_branch(name: &[u8]) -> bool {
-    prefixcmp(name, GIT_REFS_HEADS_DIR) == 0
+    name.starts_with(GIT_REFS_HEADS_DIR)
 }
 /// `git_reference__is_remote`.
 pub fn is_remote(name: &[u8]) -> bool {
-    prefixcmp(name, GIT_REFS_REMOTES_DIR) == 0
+    name.starts_with(GIT_REFS_REMOTES_DIR)
 }
 /// `git_reference__is_tag`.
 pub fn is_tag(name: &[u8]) -> bool {
-    prefixcmp(name, GIT_REFS_TAGS_DIR) == 0
+    name.starts_with(GIT_REFS_TAGS_DIR)
 }
 /// `git_reference__is_note`.
 pub fn is_note(name: &[u8]) -> bool {
-    prefixcmp(name, GIT_REFS_NOTES_DIR) == 0
+    name.starts_with(GIT_REFS_NOTES_DIR)
 }
 
 /// `git_reference__is_pseudoref`: `MERGE_HEAD` and `FETCH_HEAD`, which are
@@ -719,12 +719,12 @@ pub fn is_pseudoref(name: &[u8]) -> bool {
 /// `git_reference__is_per_worktree_ref`: references outside `refs/`, and
 /// those under `refs/bisect/`, `refs/worktree/` and `refs/rewritten/`.
 pub fn is_per_worktree_ref(name: &[u8]) -> bool {
-    if prefixcmp(name, b"refs/") != 0 {
+    if !name.starts_with(b"refs/") {
         return true;
     }
     [&b"refs/bisect/"[..], b"refs/worktree/", b"refs/rewritten/"]
         .iter()
-        .any(|p| prefixcmp(name, p) == 0)
+        .any(|p| name.starts_with(p))
 }
 
 /// `git_reference__shorthand`: the offset of the short name in `name`.
@@ -735,7 +735,7 @@ pub fn shorthand_offset(name: &[u8]) -> usize {
         GIT_REFS_REMOTES_DIR,
         GIT_REFS_DIR,
     ] {
-        if prefixcmp(name, p) == 0 {
+        if name.starts_with(p) {
             return p.len();
         }
     }
