@@ -271,7 +271,7 @@ impl Ctl {
     ///
     /// `w` is a live window (one of a file's list, or held by a cursor).
     #[allow(clippy::mut_from_ref)]
-    unsafe fn win<'a>(&'a mut self, w: *mut GitMwindow) -> &'a mut GitMwindow {
+    unsafe fn win(&mut self, w: *mut GitMwindow) -> &mut GitMwindow {
         // SAFETY: a live window (the caller), whose fields are reached only
         // with the global mutex held, which `self` proves; `&mut self`
         // makes the reference unique on this thread.
@@ -307,7 +307,7 @@ fn scan_recently_used(
     ctl: &mut Ctl,
     mwf: &GitMwindowFile,
     out_window: &mut *mut GitMwindow,
-    mut out_last: Option<&mut *mut GitMwindow>,
+    out_last: Option<&mut *mut GitMwindow>,
     only_unused: bool,
     comparison_sign: isize,
 ) -> bool {
@@ -351,7 +351,7 @@ fn scan_recently_used(
         return false;
     }
     *out_window = lru_window;
-    if let Some(l) = out_last.as_deref_mut() {
+    if let Some(l) = out_last {
         *l = lru_last;
     }
     true
@@ -388,22 +388,22 @@ fn close_lru_window_locked(ctl: &mut Ctl) -> Result<()> {
             "failed to close memory window; couldn't find LRU"
         ));
     };
-    // SAFETY: `list` is a registered file; `lru_window` (and `lru_last`, if
-    // set) are windows of its list.
-    unsafe {
-        let list = &*list;
-        let (len, next) = {
-            let w = ctl.win(lru_window);
-            (w.window_map.len, w.next)
-        };
-        ctl.ctl().mapped -= len;
-        if lru_last.is_null() {
-            ctl.set_windows(list, next);
-        } else {
-            ctl.win(lru_last).next = next;
-        }
-        free_window(lru_window);
+    // SAFETY: `list` is a registered file.
+    let list = unsafe { &*list };
+    // SAFETY: `lru_window` is a window of `list`.
+    let (len, next) = unsafe {
+        let w = ctl.win(lru_window);
+        (w.window_map.len, w.next)
+    };
+    ctl.ctl().mapped -= len;
+    if lru_last.is_null() {
+        ctl.set_windows(list, next);
+    } else {
+        // SAFETY: `lru_last` is the window before it in `list`.
+        unsafe { ctl.win(lru_last).next = next };
     }
+    // SAFETY: unlinked above; not in use (the scan skips used windows).
+    unsafe { free_window(lru_window) };
     ctl.ctl().open_windows -= 1;
     Ok(())
 }
@@ -415,12 +415,12 @@ fn close_lru_window_locked(ctl: &mut Ctl) -> Result<()> {
 /// `w` came from [`new_window_locked`], is in no list, and no cursor holds
 /// it.
 unsafe fn free_window(w: *mut GitMwindow) {
-    // SAFETY: the caller's contract: this is the window's owner, and no
-    // reference into its mapping lives (no cursor holds it).
-    unsafe {
-        let mut w = Box::from_raw(w);
-        posix::munmap(&mut w.window_map);
-    }
+    // SAFETY: the caller's contract: the window, from `Box::into_raw`,
+    // is ours alone.
+    let mut w = unsafe { Box::from_raw(w) };
+    // SAFETY: the window's own mapping; no reference into it lives (no
+    // cursor holds the window).
+    unsafe { posix::munmap(&mut w.window_map) };
 }
 
 /// `git_mwindow_find_lru_file_locked`: the file all of whose windows are
@@ -438,9 +438,10 @@ fn find_lru_file_locked(ctl: &mut Ctl) -> Result<*const GitMwindowFile> {
         if !scan_recently_used(ctl, unsafe { &*current }, &mut mru_window, None, true, MRU) {
             continue;
         }
-        // SAFETY: both are windows of registered files.
-        let replace = lru_window.is_null()
-            || unsafe { ctl.win(lru_window).last_used > ctl.win(mru_window).last_used };
+        // SAFETY: a window of a registered file.
+        let mru_used = unsafe { ctl.win(mru_window).last_used };
+        // SAFETY: as above.
+        let replace = lru_window.is_null() || unsafe { ctl.win(lru_window).last_used } > mru_used;
         if replace {
             lru_window = mru_window;
             lru_file = current;
@@ -470,9 +471,12 @@ fn new_window_locked(ctl: &mut Ctl, fd: c_int, size: i64, offset: i64) -> Option
     let len = len as usize;
 
     ctl.ctl().mapped = ctl.ctl().mapped.wrapping_add(len);
-    while git_mwindow__mapped_limit.load(Ordering::Relaxed) < ctl.ctl().mapped
-        && close_lru_window_locked(ctl).is_ok()
-    {}
+    // Close LRU windows while over the limit, and there are some.
+    while git_mwindow__mapped_limit.load(Ordering::Relaxed) < ctl.ctl().mapped {
+        if close_lru_window_locked(ctl).is_err() {
+            break;
+        }
+    }
 
     // `mapped_limit` is a soft limit: if no window can be closed, map
     // anyway.
@@ -481,7 +485,9 @@ fn new_window_locked(ctl: &mut Ctl, fd: c_int, size: i64, offset: i64) -> Option
         Err(_) => {
             // The first failure may be fragmentation: free what we can and
             // try again.
-            while close_lru_window_locked(ctl).is_ok() {}
+            while close_lru_window_locked(ctl).is_ok() {
+                continue;
+            }
             match futils::mmap_ro(fd, w_offset, len) {
                 Ok(m) => m,
                 Err(_) => {
@@ -698,7 +704,7 @@ fn free_all_locked(ctl: &mut Ctl, mwf: &GitMwindowFile) -> Result<()> {
     if let Some(i) = found {
         let _ = c.windowfiles.remove(i);
     }
-    if c.windowfiles.len() == 0 {
+    if c.windowfiles.is_empty() {
         c.windowfiles.dispose();
     }
 
@@ -746,7 +752,7 @@ pub fn free_all(mwf: &GitMwindowFile) -> Result<()> {
 pub unsafe fn file_register(mwf: &GitMwindowFile) -> Result<()> {
     let mut ctl = Ctl::lock();
 
-    if ctl.ctl().windowfiles.len() == 0 {
+    if ctl.ctl().windowfiles.is_empty() {
         ctl.ctl().windowfiles = GitVector::with_capacity(8, None)?;
     }
 
@@ -797,7 +803,7 @@ pub fn get_pack(path: &CStr, oid_type: git_oid_t) -> Result<*mut GitPackFile> {
 
     // SAFETY: `packname` is a NUL-terminated string that lives (unwritten)
     // until the lookup is done; the map does not keep the key.
-    let key = unsafe { CStrKey::from_ptr(NonNull::new_unchecked(packname.as_ptr().cast_mut())) };
+    let key = unsafe { CStrKey::from_ptr(NonNull::from(packname.as_c_str()).cast()) };
     let found = ctl.packs().get(&key).copied();
     if let Some(pack) = found {
         drop(packname);
@@ -930,8 +936,10 @@ pub mod ffi {
         left: *mut c_uint,
     ) -> *mut u8 {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            let (mwf, cursor) = unsafe { (&*mwf, Cursor::from_raw_mut(cursor)) };
+            // SAFETY: a live file (the caller's contract), which is `Sync`.
+            let mwf = unsafe { &*mwf };
+            // SAFETY: a valid cursor, used only here (the caller).
+            let cursor = unsafe { Cursor::from_raw_mut(cursor) };
             match cursor.open_raw(mwf, offset, extra) {
                 Some((p, l)) => {
                     if !left.is_null() {
@@ -954,8 +962,10 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_mwindow_file_register(mwf: *mut GitMwindowFile) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract is `file_register`'s.
-            status(unsafe { file_register(&*mwf) })
+            // SAFETY: a live file (the caller's contract).
+            let mwf = unsafe { &*mwf };
+            // SAFETY: it stays put until deregistered (the caller).
+            status(unsafe { file_register(mwf) })
         })
     }
 

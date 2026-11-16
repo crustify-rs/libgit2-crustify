@@ -91,7 +91,7 @@ impl Indexer {
         let path = path.map_or(core::ptr::null(), CStr::as_ptr);
         // SAFETY: `out` and `opts` are writable; C copies what it keeps of
         // `opts`; the odb and callback contract is the caller's.
-        let r = unsafe { git_indexer_new(&mut out, path, opts) };
+        let r = unsafe { git_indexer_new(&raw mut out, path, opts) };
         ErrorCode::check(r)?;
         NonNull::new(out).map(Indexer).ok_or(ErrorCode::GENERIC)
     }

@@ -143,11 +143,11 @@ impl GitBytes {
         let n = alloc_add(data.len(), 1)?;
         let p = alloc::malloc(n).cast::<u8>();
         let ptr = NonNull::new(p).ok_or(ErrorCode::GENERIC)?;
-        // SAFETY: `p` has `n` writable bytes, distinct from `data`.
-        unsafe {
-            ptr::copy_nonoverlapping(data.as_ptr(), p, data.len());
-            p.add(data.len()).write(0);
-        }
+        // SAFETY: `p` has `n = data.len() + 1` writable bytes, distinct
+        // from `data`.
+        unsafe { ptr::copy_nonoverlapping(data.as_ptr(), p, data.len()) };
+        // SAFETY: as above: the last of them.
+        unsafe { p.wrapping_add(data.len()).write(0) };
         Ok(GitBytes {
             ptr,
             len: data.len(),
@@ -1002,7 +1002,7 @@ impl GitPackFile {
         // immutable for the pack's life; the key is used for lookups and
         // kept in the pack cache only while the pack lives (it leaves the
         // cache before it is freed).
-        unsafe { CStrKey::from_ptr(NonNull::new_unchecked(self.pack_name.cast_mut())) }
+        unsafe { CStrKey::from_ptr(NonNull::from(self.name.as_c_str()).cast()) }
     }
 
     fn has_cache(&self) -> bool {
@@ -1290,7 +1290,11 @@ impl GitPackFile {
             // SAFETY: an open stream; `git_delta_read_header_fromstream`
             // reads it with `git_packfile_stream_read` and keeps nothing.
             let r = unsafe {
-                pending::git_delta_read_header_fromstream(&mut base_size, &mut size_out, stream)
+                pending::git_delta_read_header_fromstream(
+                    &raw mut base_size,
+                    &raw mut size_out,
+                    stream,
+                )
             };
             stream.dispose();
             ErrorCode::check(r)?;
@@ -1391,7 +1395,9 @@ impl GitPackFile {
             // unwritten for the call; `data + total` has `bytes` writable
             // bytes (`total + bytes == buffer_len`), distinct from the input
             // and the stream.
-            let r = unsafe { z.0.get_output_chunk(data.as_ptr().add(total), &mut bytes) };
+            let r = unsafe {
+                z.0.get_output_chunk(data.as_ptr().wrapping_add(total), &mut bytes)
+            };
             cursor.close();
             r?;
             let consumed = window_len - z.0.in_len();
@@ -1416,7 +1422,7 @@ impl GitPackFile {
         }
         // SAFETY: zlib wrote `total == size` bytes; the NUL makes all
         // `buffer_len` initialized.
-        unsafe { data.as_ptr().add(size).write(0) };
+        unsafe { data.as_ptr().wrapping_add(size).write(0) };
         core::mem::forget(buf);
         // SAFETY: `data` is ours, `size + 1` initialized bytes.
         Ok(unsafe { GitBytes::from_raw(data, size) })
@@ -1520,8 +1526,8 @@ impl GitPackFile {
                 // allocates the result with `git__malloc`.
                 let r = unsafe {
                     pending::git_delta_apply(
-                        &mut out,
-                        &mut out_len,
+                        &raw mut out,
+                        &raw mut out_len,
                         base.as_ptr(),
                         base.len(),
                         delta.as_bytes().as_ptr(),
@@ -1818,16 +1824,17 @@ impl GitPackfileStream {
         curpos: i64,
     ) -> Result<&'a mut GitPackfileStream> {
         // SAFETY: writable (the caller); C's `memset` then the fields.
-        let s = unsafe {
+        unsafe {
             obj.write(GitPackfileStream {
                 curpos,
                 done: 0,
                 zstream: GitZstream::new(),
                 p: ptr::from_ref(p).cast_mut(),
                 mw: ptr::null_mut(),
-            });
-            &mut *obj
+            })
         };
+        // SAFETY: initialized just above; the caller's for `'a`.
+        let s = unsafe { &mut *obj };
         if s.zstream.init(ZstreamKind::Inflate as c_int).is_err() {
             return Err(git_error_set!(
                 ErrorClass::ZLIB,
@@ -1847,7 +1854,7 @@ impl GitPackfileStream {
         // SAFETY: `p` outlives the stream (`open_in`'s contract).
         let p = unsafe { &*self.p };
         // SAFETY: `mw` is this stream's cursor: NULL or a held window.
-        let cursor = unsafe { Cursor::from_raw_mut(&mut self.mw) };
+        let cursor = unsafe { Cursor::from_raw_mut(&raw mut self.mw) };
         let Some(input) = p.window_open(cursor, self.curpos) else {
             return ErrorCode::BUFS.raw() as isize;
         };
@@ -2123,25 +2130,18 @@ pub mod ffi {
             } else {
                 (hi as usize - 1) * stride + oid_size
             };
-            // SAFETY: the caller's contract: the entries below `hi` are
-            // readable, the last ending at `len`; the prefix has `oid_size`
-            // bytes. An empty table is not read.
-            let (table, prefix) = unsafe {
-                (
-                    if len == 0 {
-                        &[][..]
-                    } else {
-                        core::slice::from_raw_parts(id_lookup_table.cast::<u8>(), len)
-                    },
-                    core::slice::from_raw_parts(
-                        if oid_size == 0 {
-                            NonNull::dangling().as_ptr()
-                        } else {
-                            id_prefix
-                        },
-                        oid_size,
-                    ),
-                )
+            let table = if len == 0 {
+                &[][..]
+            } else {
+                // SAFETY: the caller's contract: the entries below `hi` are
+                // readable, the last ending at `len`.
+                unsafe { core::slice::from_raw_parts(id_lookup_table.cast::<u8>(), len) }
+            };
+            let prefix = if oid_size == 0 {
+                &[][..]
+            } else {
+                // SAFETY: the prefix has `oid_size` bytes (the caller).
+                unsafe { core::slice::from_raw_parts(id_prefix, oid_size) }
             };
             lookup_id(table, stride, lo, hi, prefix, oid_size)
         })
@@ -2164,12 +2164,10 @@ pub mod ffi {
             let mut buf = [0u8; 10];
             match object_header(&mut buf, size, type_) {
                 Ok(n) => {
-                    // SAFETY: `hdr` has room for `n` bytes, `out` is writable
-                    // (the caller).
-                    unsafe {
-                        ptr::copy_nonoverlapping(buf.as_ptr(), hdr, n);
-                        out.write(n);
-                    }
+                    // SAFETY: `hdr` has room for `n` bytes (the caller).
+                    unsafe { ptr::copy_nonoverlapping(buf.as_ptr(), hdr, n) };
+                    // SAFETY: writable (the caller).
+                    unsafe { out.write(n) };
                     0
                 }
                 Err(e) => e.raw(),
@@ -2215,10 +2213,10 @@ pub mod ffi {
         barrier(|| {
             // SAFETY: writable (the caller).
             unsafe { pack_out.write(ptr::null_mut()) };
-            // SAFETY: NULL or NUL-terminated (the caller).
             let path = if path.is_null() {
                 &[][..]
             } else {
+                // SAFETY: NUL-terminated (the caller).
                 unsafe { CStr::from_ptr(path) }.to_bytes()
             };
             match packfile_alloc(path, oid_type) {
@@ -2258,15 +2256,18 @@ pub mod ffi {
         curpos: *mut i64,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            let (p, cursor, curpos) = unsafe { (&*p, Cursor::from_raw_mut(w_curs), &mut *curpos) };
+            // SAFETY: a live pack (the caller), which is `Sync`.
+            let p = unsafe { &*p };
+            // SAFETY: a valid cursor, used only here (the caller).
+            let cursor = unsafe { Cursor::from_raw_mut(w_curs) };
+            // SAFETY: valid (the caller).
+            let curpos = unsafe { &mut *curpos };
             match p.unpack_header(cursor, curpos) {
                 Ok((size, kind)) => {
                     // SAFETY: writable (the caller).
-                    unsafe {
-                        size_p.write(size);
-                        type_p.write(kind);
-                    }
+                    unsafe { size_p.write(size) };
+                    // SAFETY: writable (the caller).
+                    unsafe { type_p.write(kind) };
                     0
                 }
                 Err(e) => e.raw(),
@@ -2291,10 +2292,9 @@ pub mod ffi {
             match unsafe { &*p }.resolve_header(offset) {
                 Ok((size, kind)) => {
                     // SAFETY: writable (the caller).
-                    unsafe {
-                        size_p.write(size);
-                        type_p.write(kind);
-                    }
+                    unsafe { size_p.write(size) };
+                    // SAFETY: writable (the caller).
+                    unsafe { type_p.write(kind) };
                     0
                 }
                 Err(e) => e.raw(),
@@ -2319,8 +2319,12 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!delta_base_out.is_null(), "delta_base_out", -1);
-            // SAFETY: the caller's contract.
-            let (p, cursor, curpos) = unsafe { (&*p, Cursor::from_raw_mut(w_curs), &mut *curpos) };
+            // SAFETY: a live pack (the caller), which is `Sync`.
+            let p = unsafe { &*p };
+            // SAFETY: a valid cursor, used only here (the caller).
+            let cursor = unsafe { Cursor::from_raw_mut(w_curs) };
+            // SAFETY: valid (the caller).
+            let curpos = unsafe { &mut *curpos };
             match p.delta_base(cursor, curpos, type_, delta_obj_offset) {
                 Ok(off) => {
                     // SAFETY: writable (checked not NULL; the caller).
@@ -2344,8 +2348,10 @@ pub mod ffi {
         obj_offset: *mut i64,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            let (p, off) = unsafe { (&*p, &mut *obj_offset) };
+            // SAFETY: a live pack (the caller).
+            let p = unsafe { &*p };
+            // SAFETY: valid (the caller).
+            let off = unsafe { &mut *obj_offset };
             match p.unpack(off) {
                 Ok((d, kind)) => {
                     let (data, len) = d.into_raw();
@@ -2389,8 +2395,10 @@ pub mod ffi {
         curpos: i64,
     ) -> c_int {
         barrier(|| {
+            // SAFETY: a live pack (the caller).
+            let p = unsafe { &*p };
             // SAFETY: the caller's contract is `open_in`'s.
-            status(unsafe { GitPackfileStream::open_in(obj, &*p, curpos) }.map(|_| ()))
+            status(unsafe { GitPackfileStream::open_in(obj, p, curpos) }.map(|_| ()))
         })
     }
 
@@ -2406,19 +2414,19 @@ pub mod ffi {
         len: usize,
     ) -> isize {
         barrier(|| {
-            // SAFETY: the caller's contract; an empty buffer is not read.
-            let (s, buf) = unsafe {
-                (
-                    &mut *obj,
-                    if len == 0 {
-                        &mut [][..]
-                    } else {
-                        core::slice::from_raw_parts_mut(
-                            buffer.cast::<core::mem::MaybeUninit<u8>>(),
-                            len,
-                        )
-                    },
-                )
+            // SAFETY: an open stream (the caller), used only here.
+            let s = unsafe { &mut *obj };
+            let buf = if len == 0 {
+                &mut [][..]
+            } else {
+                // SAFETY: writable for `len` bytes (the caller), maybe
+                // uninitialized.
+                unsafe {
+                    core::slice::from_raw_parts_mut(
+                        buffer.cast::<core::mem::MaybeUninit<u8>>(),
+                        len,
+                    )
+                }
             };
             s.read(buf)
         })
@@ -2449,8 +2457,10 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!p.is_null(), "p", -1);
-            // SAFETY: the caller's contract.
-            let (pack, id) = unsafe { (&*p, &*short_oid) };
+            // SAFETY: a live pack (the caller).
+            let pack = unsafe { &*p };
+            // SAFETY: a valid oid (the caller).
+            let id = unsafe { &*short_oid };
             match pack.entry_find(id, len) {
                 Ok((offset, found)) => {
                     // SAFETY: writable (the caller).

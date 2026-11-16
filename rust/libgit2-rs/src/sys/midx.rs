@@ -102,7 +102,7 @@ impl Midx {
     pub fn open(path: &CStr, oid_type: git_oid_t) -> Result<Midx> {
         let mut out = core::ptr::null_mut();
         // SAFETY: `out` is writable, `path` NUL-terminated; C keeps neither.
-        let r = unsafe { git_midx_open(&mut out, path.as_ptr(), oid_type) };
+        let r = unsafe { git_midx_open(&raw mut out, path.as_ptr(), oid_type) };
         if r < 0 {
             // C frees what it allocated on failure.
             return Err(ErrorCode::from_raw(r).unwrap_or(ErrorCode::GENERIC));
@@ -121,7 +121,7 @@ impl Midx {
         let mut e = GitMidxEntry::default();
         // SAFETY: a live midx, which the lookup only reads (the `*mut` is
         // C's signature); `e` is writable; `short_oid` is valid.
-        let r = unsafe { git_midx_entry_find(&mut e, self.0.as_ptr(), short_oid, len) };
+        let r = unsafe { git_midx_entry_find(&raw mut e, self.0.as_ptr(), short_oid, len) };
         (r, e)
     }
 
@@ -135,12 +135,13 @@ impl Midx {
     /// The `i`th pack name (an `.idx` file name, relative to the pack
     /// directory).
     pub fn packfile_name(&self, i: usize) -> Option<&CStr> {
-        // SAFETY: as in `packfile_count`; the names are NUL-terminated
-        // strings in the mapping, which lives as long as `self`.
-        unsafe {
-            let names = &(*self.0.as_ptr()).packfile_names;
-            names.get(i).map(|p| CStr::from_ptr(p.cast::<c_char>()))
-        }
+        // SAFETY: as in `packfile_count`.
+        let names = unsafe { &(*self.0.as_ptr()).packfile_names };
+        // SAFETY: the names are NUL-terminated strings in the mapping, which
+        // lives as long as `self`.
+        names
+            .get(i)
+            .map(|p| unsafe { CStr::from_ptr(p.cast::<c_char>()) })
     }
 
     /// `git_midx_foreach_entry`.
@@ -178,7 +179,7 @@ impl MidxWriter {
         let dir = pack_dir.map_or(core::ptr::null(), CStr::as_ptr);
         // SAFETY: `out` and `opts` are writable and not kept; `dir` is NULL
         // or NUL-terminated.
-        let r = unsafe { git_midx_writer_new(&mut out, dir, &mut opts) };
+        let r = unsafe { git_midx_writer_new(&raw mut out, dir, &raw mut opts) };
         ErrorCode::check(r)?;
         Ok(MidxWriter(out))
     }

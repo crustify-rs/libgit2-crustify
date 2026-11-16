@@ -289,8 +289,10 @@ impl BackendState {
 unsafe extern "C" fn foreach_trampoline(id: *const Oid, payload: *mut c_void) -> c_int {
     crate::util::export::barrier(|| {
         // SAFETY: `payload` is the `&mut dyn FnMut` `PackBackend::foreach`
-        // passed for this call, and `id` a valid oid for the call.
-        let (f, id) = unsafe { (&mut *payload.cast::<&mut dyn FnMut(&Oid) -> c_int>(), &*id) };
+        // passed for this call, used by this call alone.
+        let f = unsafe { &mut *payload.cast::<&mut dyn FnMut(&Oid) -> c_int>() };
+        // SAFETY: a valid oid for the call (the midx's contract).
+        let id = unsafe { &*id };
         f(id)
     })
 }
@@ -406,10 +408,11 @@ impl PackBackend {
         let last = st.last_found;
 
         let finish = |_: &'s BackendState, e: Option<(i64, Oid, NonNull<GitPackFile>)>| {
-            // SAFETY: the pack of an entry is one the state holds.
             e.map(|(offset, id, p)| Entry {
                 offset,
                 id,
+                // SAFETY: the pack of an entry is one the state (borrowed
+                // for `'s`) holds.
                 p: unsafe { p.as_ref() },
             })
         };
@@ -832,11 +835,11 @@ unsafe fn write_object(
 ) {
     let (data, len) = data.into_raw();
     // SAFETY: writable (the caller); C frees `data` with `git__free`.
-    unsafe {
-        buffer_p.write(data.cast());
-        len_p.write(len);
-        type_p.write(kind);
-    }
+    unsafe { buffer_p.write(data.cast()) };
+    // SAFETY: writable (the caller).
+    unsafe { len_p.write(len) };
+    // SAFETY: writable (the caller).
+    unsafe { type_p.write(kind) };
 }
 
 ffibox::impl_cvtable! {
@@ -880,10 +883,9 @@ ffibox::impl_cvtable! {
             match b.read_prefix(unsafe { &*short_oid }, len) {
                 Ok((id, data, kind)) => {
                     // SAFETY: the out-parameters are writable.
-                    unsafe {
-                        write_object(buffer_p, len_p, type_p, data, kind);
-                        out_oid.write(id);
-                    }
+                    unsafe { write_object(buffer_p, len_p, type_p, data, kind) };
+                    // SAFETY: writable.
+                    unsafe { out_oid.write(id) };
                     0
                 }
                 Err(e) => e.raw(),
@@ -902,10 +904,9 @@ ffibox::impl_cvtable! {
             match b.read_header(unsafe { &*oid }) {
                 Ok((len, kind)) => {
                     // SAFETY: writable (checked not NULL).
-                    unsafe {
-                        len_p.write(len);
-                        type_p.write(kind);
-                    }
+                    unsafe { len_p.write(len) };
+                    // SAFETY: as above.
+                    unsafe { type_p.write(kind) };
                     0
                 }
                 Err(e) => e.raw(),
@@ -1270,8 +1271,10 @@ pub mod ffi {
         opts: *const GitOdbBackendPackOptions,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            let (idx, opts) = unsafe { (CStr::from_ptr(idx), opts.as_ref()) };
+            // SAFETY: NUL-terminated (the caller).
+            let idx = unsafe { CStr::from_ptr(idx) };
+            // SAFETY: NULL or valid (the caller).
+            let opts = unsafe { opts.as_ref() };
             match backend_one_pack(idx, opts) {
                 Ok(t) => {
                     // SAFETY: writable (the caller); the odb frees it
@@ -1297,8 +1300,10 @@ pub mod ffi {
         opts: *const GitOdbBackendPackOptions,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            let (dir, opts) = unsafe { (CStr::from_ptr(objects_dir), opts.as_ref()) };
+            // SAFETY: NUL-terminated (the caller).
+            let dir = unsafe { CStr::from_ptr(objects_dir) };
+            // SAFETY: NULL or valid (the caller).
+            let opts = unsafe { opts.as_ref() };
             let (out, r) = match backend_pack(dir.to_bytes(), opts) {
                 Ok(t) => (t.into_c().as_ptr(), 0),
                 Err(e) => (ptr::null_mut(), e.raw()),
