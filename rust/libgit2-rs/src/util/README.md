@@ -16,7 +16,7 @@ builds on. This is the short version; each module's rustdoc has the rest.
 | a global init / shutdown hook | `runtime::shutdown_register` | `runtime` |
 | strtol, prefix/suffix compares, bsearch, hash, ctype | `util::*`, `ctype_compat::*`, `integer::*` | `util` |
 | timsort (what `git_vector_sort` uses) | `tsort::tsort` | `tsort` |
-| an export | `export::{barrier, status, bytes, cstr}` | `export` |
+| an export | `export::{barrier, status, bytes}`; argument types `cabi::{CStrArg, Out}`, `Option<&T>`, `git_arg!` | `export`, `cabi` |
 | a layout test | `crate::c_layout_test!` | `layout` |
 | test setup | `test_support::{init, exclusive, with_alloc_limit}` | `test_support` |
 | `p_*` system calls (`errno` kept for `GIT_ERROR_OS`), `git_map` | `posix::{open, read, write, lstat, …, mmap}` | `posix` |
@@ -150,29 +150,57 @@ used through `&self` (`lock()` returns a guard). They have no `Drop`
 ## Exports
 
 Each module has `pub mod ffi` with `#[unsafe(no_mangle)] pub unsafe extern
-"C" fn git_…`. The shape:
+"C" fn git_…`. The arguments are converted by the signature
+(`util::cabi`): each type has the ABI of the C pointer, and the export's
+`# Safety` is the proof, so the body reads them with safe code.
 
 ```rust
 /// `git_foo_bar`.
 ///
 /// # Safety
 ///
-/// `out` is writable; `name` is a NUL-terminated string.
+/// `out` is NULL or writable; `foo` is NULL or a live foo, only read
+/// during the call; `name` is NULL or a NUL-terminated string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_foo_bar(out: *mut GitStr, name: *const c_char) -> c_int {
+pub unsafe extern "C" fn git_foo_bar(
+    mut out: Out<'_, c_int>,
+    foo: Option<&GitFoo>,
+    name: CStrArg<'_>,
+) -> c_int {
     barrier(|| {
-        git_assert_arg!(!out.is_null(), "out", -1);
-        // SAFETY: the caller passes a valid, unaliased git_str and string.
-        let (out, name) = unsafe { (&mut *out, cstr_bytes(name)) };
-        status(foo::bar(out, name))
+        let foo = git_arg!(foo, "foo", -1);           // GIT_ASSERT_ARG(foo)
+        let name = git_arg!(name.get(), "name", -1);   // GIT_ASSERT_ARG(name): &CStr
+        match foo.bar(name.to_bytes()) {
+            Ok(v) => { out.write(v); 0 }               // NULL `out`: nothing written
+            Err(e) => e.raw(),
+        }
     })
 }
 ```
 
+| C parameter | Rust parameter | when |
+|---|---|---|
+| `const char *s` | `CStrArg<'_>` (`get`, `to_bytes`, `or_empty`; read lazily) | always, for a string the call only reads |
+| `T *out`, written only | `Out<'_, T>` (`write`; NULL skipped) | the export never reads `*out` |
+| `const T *x` | `Option<&T>` | nothing writes or frees `*x` during the call except through `UnsafeCell` (another thread, a callback, another argument) |
+| `T *x` | `Option<&mut T>` | as above, and nothing else reads it: no other argument may alias it, no callback re-enters with it |
+| a handle type | `Option<Handle>` | the handle is `#[repr(transparent)]` over `NonNull<T>` (`IndexPtr`) |
+| anything else | the raw pointer, converted where it is used | lazily written fields, objects the call frees, C function-pointer slots, buffers C fills, mapped memory |
+
+Rust code calls such an export with safe conversions: `Out::from(&mut x)`,
+`c"name".into()`, `CStrArg::from(opt_cstr)`, `Some(&id)`, `CStrArg::NULL`.
+Raw pointers become these types only through their `unsafe` constructors
+(`CStrArg::from_ptr`, `Out::from_ptr`, `p.as_ref()`), each in its own
+justified block.
+
 - `export::barrier` catches panics (ffibox's `callback::barrier`): the
   export returns -1 / NULL / nothing, with class `GIT_ERROR_INTERNAL`.
-- `status(Result<()>)` → 0 or the code; `bytes(ptr, len)`, `cstr(ptr)`,
-  `cstr_bytes(ptr)`, `write_opt(out, v)` are the justified conversions.
+- `status(Result<()>)` → 0 or the code; `bytes(ptr, len)` is the justified
+  conversion of a `(ptr, len)` pair (`cstr`, `cstr_bytes`, `write_opt` remain
+  for raw pointers that are not parameters).
+- No macro expands to an `unsafe` dereference of an expression its caller
+  passes: a macro that writes a whole export is fine; one that hides
+  `unsafe { &*$p }` lets code reach the dereference without `unsafe`.
 - Variadic functions cannot be defined in Rust: add a shim to
   `src/util/rust_shims.c` (compiled only with `USE_RUST`) that formats with
   `vsnprintf` or collects the arguments and calls a `git_…__` Rust export.

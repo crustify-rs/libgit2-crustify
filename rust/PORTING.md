@@ -191,7 +191,13 @@ function; the shim is the only C a ported module keeps.
   alias, what may run concurrently).
 - An export is a thin shim: check arguments as the C did (same errors),
   convert raw pointers to references/handles/slices in one justified place,
-  call the safe Rust, write out-parameters, convert the result.
+  call the safe Rust, write out-parameters, convert the result. The one
+  place is the signature where the aliasing rules allow it
+  (`util/cabi.rs`): `CStrArg<'_>` for a string, `Out<'_, T>` for a
+  write-only out-parameter, `Option<&T>` / `Option<&mut T>` for an object
+  that a reference may cover for the whole call, `git_arg!` for
+  `GIT_ASSERT_ARG` on them. Each has the ABI of the C pointer; the
+  export's `# Safety` states what makes the value valid.
 - Panics never cross into C. Wrap each export's body in the foundation's
   barrier (ffibox's `callback::barrier` underneath), which maps a panic to
   `GIT_ERROR` with class `GIT_ERROR_INTERNAL`.
@@ -219,7 +225,12 @@ apart from the calls, so that the logic is Miri-tested.
   needs it.
 - Every `unsafe fn` has `# Safety`; every `unsafe {}` block has a
   `// SAFETY:` comment that says why each of its conditions holds *here*.
-  Keep one unsafe operation per block where practical.
+  Keep one unsafe operation per block (`clippy::multiple_unsafe_ops_per_block`
+  is on; test modules may allow it).
+- An `unsafe fn` that only dereferences raw pointer arguments should take
+  references, handles or `cabi` types and be safe; the conversion moves to
+  the caller (ideally an export's signature). No macro expands to an
+  `unsafe` dereference of an expression its caller passes.
 - Safe functions must not be able to cause UB, whatever their arguments.
   A safe function that relies on an invariant of a type gets it from the
   type's constructors, which are the only way to make one.
