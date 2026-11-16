@@ -2988,16 +2988,13 @@ pub mod ffi {
     /// is NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config__get_string_buf(
-        out: *mut GitStr,
+        out: Option<&mut GitStr>,
         config: Option<&GitConfig>,
         name: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!out.is_null(), "out", -1);
+            let out = git_arg!(out, "out", -1);
             git_assert_arg!(config.is_some(), "config", -1);
-            // SAFETY: a valid `git_str` (the contract), not NULL (checked
-            // above), which no other argument reaches.
-            let out = unsafe { &mut *out };
             let r = with_value(config, name, |v| out.puts(v.unwrap_or(b"")));
             crate::util::export::status(r)
         })
@@ -3019,7 +3016,7 @@ pub mod ffi {
             let get = |s: &mut GitStr| {
                 // SAFETY: `s` is a valid `git_str`; `config` and `name` are
                 // as `git_config__get_string_buf` requires (the contract).
-                ErrorCode::check_zero(unsafe { git_config__get_string_buf(s, config, name) })
+                ErrorCode::check_zero(unsafe { git_config__get_string_buf(Some(s), config, name) })
             };
             // SAFETY: `out` is NULL or a valid `git_buf` (the contract).
             unsafe { wrap_buf(out, get) }
@@ -3286,10 +3283,9 @@ pub mod ffi {
     /// `path` is a valid (non-NULL) `git_str`, as C requires (it crashes on
     /// NULL).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_config__find_global(path: *mut GitStr) -> c_int {
+    pub unsafe extern "C" fn git_config__find_global(path: Option<&mut GitStr>) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            let path = unsafe { &mut *path };
+            let path = git_arg!(path, "path", -1);
             crate::util::export::status(find_global(path))
         })
     }
@@ -3318,10 +3314,9 @@ pub mod ffi {
     /// `path` is a valid (non-NULL) `git_str`, as C requires (it crashes on
     /// NULL).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_config__find_xdg(path: *mut GitStr) -> c_int {
+    pub unsafe extern "C" fn git_config__find_xdg(path: Option<&mut GitStr>) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            let path = unsafe { &mut *path };
+            let path = git_arg!(path, "path", -1);
             crate::util::export::status(find_xdg(path))
         })
     }
@@ -3350,10 +3345,9 @@ pub mod ffi {
     /// `path` is a valid (non-NULL) `git_str`, as C requires (it crashes on
     /// NULL).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_config__find_system(path: *mut GitStr) -> c_int {
+    pub unsafe extern "C" fn git_config__find_system(path: Option<&mut GitStr>) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            let path = unsafe { &mut *path };
+            let path = git_arg!(path, "path", -1);
             crate::util::export::status(find_system(path))
         })
     }
@@ -3364,10 +3358,9 @@ pub mod ffi {
     ///
     /// `buf` is a valid (non-NULL) `git_str`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_config__global_location(buf: *mut GitStr) -> c_int {
+    pub unsafe extern "C" fn git_config__global_location(buf: Option<&mut GitStr>) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            let buf = unsafe { &mut *buf };
+            let buf = git_arg!(buf, "buf", -1);
             match global_location(buf) {
                 Ok(()) => 0,
                 Err(_) => -1,

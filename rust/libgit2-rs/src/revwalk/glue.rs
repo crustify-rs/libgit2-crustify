@@ -115,7 +115,7 @@ pub fn object_lookup(repo: Repo, id: &Oid, kind: c_int) -> Result<Object> {
     let mut out = ptr::null_mut();
     // SAFETY: `out` writable; `repo` NULL or live (the invariant); `id`
     // readable.
-    ErrorCode::check(unsafe { p::git_object_lookup(&raw mut out, repo.0, id, kind) })?;
+    ErrorCode::check(unsafe { p::git_object_lookup(&raw mut out, repo.0, Some(id), kind) })?;
     // SAFETY: on success C hands us a new reference.
     unsafe { Object::from_raw(out) }.ok_or(ErrorCode::GENERIC)
 }
@@ -310,7 +310,7 @@ impl Commit {
     fn lookup(repo: Repo, id: &Oid) -> Option<Commit> {
         let mut out = ptr::null_mut();
         // SAFETY: `out` writable; `repo` live; `id` readable.
-        if unsafe { p::git_commit_lookup(&raw mut out, repo.0, id) } != 0 {
+        if unsafe { p::git_commit_lookup(&raw mut out, repo.0, Some(id)) } != 0 {
             return None;
         }
         NonNull::new(out).map(Commit)

@@ -1018,6 +1018,7 @@ impl Process {
 /// by one thread at a time.
 pub mod ffi {
     use super::*;
+    use crate::git_arg;
     use crate::util::cabi::Out;
     use crate::util::export::{barrier, cstr_bytes, status as to_status};
 
@@ -1328,14 +1329,12 @@ pub mod ffi {
     /// `out` is a valid `git_str`, `result` a valid result.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_process_result_msg(
-        out: *mut GitStr,
-        result: *mut GitProcessResult,
+        out: Option<&mut GitStr>,
+        result: Option<&GitProcessResult>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract; distinct objects.
-            let out = unsafe { &mut *out };
-            // SAFETY: as above.
-            let result = unsafe { &*result };
+            let out = git_arg!(out, "out", -1);
+            let result = git_arg!(result, "result", -1);
             to_status(result_msg(out, result))
         })
     }

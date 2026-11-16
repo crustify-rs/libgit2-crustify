@@ -1048,6 +1048,7 @@ unsafe impl Sync for OidShortener<'_> {}
 
 /// The exports of `oid.c`.
 pub mod ffi {
+    use crate::git_arg;
     use core::cell::UnsafeCell;
     use core::ffi::{c_char, c_int, c_uchar};
     use core::ptr;
@@ -1218,10 +1219,9 @@ pub mod ffi {
     /// `oid` is a valid oid; `str` is writable for its hex size (it may be
     /// uninitialized).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_oid_fmt(str: *mut c_char, oid: *const Oid) -> c_int {
+    pub unsafe extern "C" fn git_oid_fmt(str: *mut c_char, oid: Option<&Oid>) -> c_int {
         barrier(|| {
-            // SAFETY: a valid oid.
-            let oid = unsafe { &*oid };
+            let oid = git_arg!(oid, "oid", -1);
             let hex_size = oid.hexsize();
             if hex_size == 0 {
                 return oid_error_invalid("unknown type").raw();
@@ -1241,10 +1241,9 @@ pub mod ffi {
     /// `oid` is a valid oid; `str` is writable for its hex size + 1 (it may
     /// be uninitialized).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_oid_pathfmt(str: *mut c_char, oid: *const Oid) -> c_int {
+    pub unsafe extern "C" fn git_oid_pathfmt(str: *mut c_char, oid: Option<&Oid>) -> c_int {
         barrier(|| {
-            // SAFETY: a valid oid.
-            let oid = unsafe { &*oid };
+            let oid = git_arg!(oid, "oid", -1);
             let (hex_size, id) = (oid.hexsize(), oid.id);
             if hex_size == 0 {
                 return oid_error_invalid("unknown type").raw();
@@ -1292,10 +1291,9 @@ pub mod ffi {
     /// `oid` is a valid oid. The result is overwritten by the next call on
     /// the same thread.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_oid_tostr_s(oid: *const Oid) -> *mut c_char {
+    pub unsafe extern "C" fn git_oid_tostr_s(oid: Option<&Oid>) -> *mut c_char {
         barrier(|| {
-            // SAFETY: a valid oid.
-            let oid = unsafe { &*oid };
+            let oid = git_arg!(oid, "oid", core::ptr::null_mut());
             let p = TOSTR_BUF.with(|b| b.get().cast::<u8>());
             // SAFETY: the thread's own buffer, which only this function
             // writes, and which C reads only between calls (its contract);
@@ -1315,10 +1313,9 @@ pub mod ffi {
     ///
     /// `oid` is a valid oid.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_oid_allocfmt(oid: *const Oid) -> *mut c_char {
+    pub unsafe extern "C" fn git_oid_allocfmt(oid: Option<&Oid>) -> *mut c_char {
         barrier(|| {
-            // SAFETY: a valid oid.
-            let oid = unsafe { &*oid };
+            let oid = git_arg!(oid, "oid", core::ptr::null_mut());
             if oid.hexsize() == 0 {
                 return ptr::null_mut();
             }
@@ -1380,11 +1377,9 @@ pub mod ffi {
     ///
     /// Both are valid oids.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_oid_cmp(a: *const Oid, b: *const Oid) -> c_int {
-        // SAFETY: a valid oid, only read.
-        let a = unsafe { &*a };
-        // SAFETY: as above.
-        let b = unsafe { &*b };
+    pub unsafe extern "C" fn git_oid_cmp(a: Option<&Oid>, b: Option<&Oid>) -> c_int {
+        let a = git_arg!(a, "a", -1);
+        let b = git_arg!(b, "b", -1);
         a.cmp_raw(b)
     }
 
@@ -1394,11 +1389,9 @@ pub mod ffi {
     ///
     /// Both are valid oids.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_oid_equal(a: *const Oid, b: *const Oid) -> c_int {
-        // SAFETY: a valid oid, only read.
-        let a = unsafe { &*a };
-        // SAFETY: as above.
-        let b = unsafe { &*b };
+    pub unsafe extern "C" fn git_oid_equal(a: Option<&Oid>, b: Option<&Oid>) -> c_int {
+        let a = git_arg!(a, "a", -1);
+        let b = git_arg!(b, "b", -1);
         (a == b) as c_int
     }
 
@@ -1408,11 +1401,9 @@ pub mod ffi {
     ///
     /// Both are valid oids.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_oid_ncmp(a: *const Oid, b: *const Oid, len: usize) -> c_int {
-        // SAFETY: a valid oid, only read.
-        let a = unsafe { &*a };
-        // SAFETY: as above.
-        let b = unsafe { &*b };
+    pub unsafe extern "C" fn git_oid_ncmp(a: Option<&Oid>, b: Option<&Oid>, len: usize) -> c_int {
+        let a = git_arg!(a, "a", -1);
+        let b = git_arg!(b, "b", -1);
         a.ncmp_raw(b, len)
     }
 
@@ -1422,10 +1413,9 @@ pub mod ffi {
     ///
     /// `oid` is valid; `str` is a NUL-terminated string.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_oid_strcmp(oid: *const Oid, str: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git_oid_strcmp(oid: Option<&Oid>, str: *const c_char) -> c_int {
         barrier(|| {
-            // SAFETY: a valid oid.
-            let oid = unsafe { &*oid };
+            let oid = git_arg!(oid, "oid", -1);
             let p = str.cast::<u8>();
             // SAFETY: `strcmp_with` reads in order and stops at the NUL:
             // within the string.
@@ -1439,7 +1429,7 @@ pub mod ffi {
     ///
     /// As [`git_oid_strcmp`].
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_oid_streq(oid: *const Oid, str: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git_oid_streq(oid: Option<&Oid>, str: *const c_char) -> c_int {
         // SAFETY: forwarded.
         if unsafe { git_oid_strcmp(oid, str) } == 0 {
             0
@@ -1511,12 +1501,11 @@ pub mod ffi {
     /// later, as C's does).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oid_shorten_add(
-        os: *mut git_oid_shorten,
+        os: Option<&mut git_oid_shorten>,
         text_id: *const c_char,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: a live shortener, exclusively ours for the call.
-            let os = unsafe { &mut *os };
+            let os = git_arg!(os, "os", -1);
             if os.full {
                 return shorten_error("OID set full").raw();
             }
@@ -1567,7 +1556,7 @@ mod tests {
             let mut buf = [core::mem::MaybeUninit::<u8>::uninit(); GIT_OID_MAX_HEXSIZE + 2];
             buf[n].write(0xa5);
             // SAFETY: `n` writable bytes; a valid oid.
-            let r = unsafe { ffi::git_oid_pathfmt(buf.as_mut_ptr().cast(), &raw const id) };
+            let r = unsafe { ffi::git_oid_pathfmt(buf.as_mut_ptr().cast(), Some(&id)) };
             assert_eq!(r, 0);
             // SAFETY: the first `n` bytes were written, and byte `n` above.
             let out: Vec<u8> = buf[..=n]

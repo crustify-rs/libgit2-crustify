@@ -26,7 +26,7 @@ pub use crate::object::ffi::{git_object_free, git_object_id, git_object_lookup, 
 pub unsafe fn git_commit_lookup(
     out: *mut *mut git_commit,
     repo: *mut git_repository,
-    id: *const Oid,
+    id: Option<&Oid>,
 ) -> c_int {
     // SAFETY: the caller's contract.
     unsafe { crate::object_api::ffi::git_commit_lookup(out.cast(), repo, id) }

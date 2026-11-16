@@ -702,14 +702,13 @@ pub unsafe extern "C" fn git_index_get_bypath(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_entry__init_from_stat(
     entry: *mut GitIndexEntry,
-    st: *mut libc::stat,
+    st: Option<&libc::stat>,
     trust_mode: bool,
 ) {
     barrier(|| {
         // SAFETY: the contract; C's entry is not otherwise accessed.
         let entry = unsafe { &mut *entry };
-        // SAFETY: as above.
-        let st = unsafe { &*st };
+        let st = git_arg!(st, "st", ());
         super::init_from_stat(entry, st, trust_mode)
     })
 }
@@ -859,12 +858,12 @@ pub unsafe extern "C" fn git_index_remove_bypath(index: *mut GitIndex, path: CSt
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index__fill(
     index: *mut GitIndex,
-    source_entries: *const GitVector,
+    source_entries: Option<&GitVector>,
 ) -> c_int {
     barrier(|| {
+        let source_entries = git_arg!(source_entries, "source_entries", -1);
         let ix = index_arg!(index, -1);
-        // SAFETY: a valid vector (the contract); its elements are copied.
-        let v: Vec<*const GitIndexEntry> = unsafe { &*source_entries }
+        let v: Vec<*const GitIndexEntry> = source_entries
             .iter()
             .map(|p| p.cast::<GitIndexEntry>().cast_const())
             .collect();
@@ -1364,7 +1363,7 @@ pub unsafe extern "C" fn git_index_snapshot_release(snap: *mut GitVector, index:
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_snapshot_find(
     mut out: Out<'_, usize>,
-    snap: *mut GitVector,
+    snap: Option<&mut GitVector>,
     entry_srch_fn: Option<VectorCmp>,
     path: *const c_char,
     path_len: usize,
@@ -1373,9 +1372,8 @@ pub unsafe extern "C" fn git_index_snapshot_find(
     barrier(|| {
         // SAFETY: the contract.
         let p = unsafe { path_arg(path, path_len) };
-        git_assert_arg!(!snap.is_null(), "v", -1);
-        // SAFETY: a valid vector, not otherwise accessed.
-        let v = unsafe { &mut *snap };
+        let snap = git_arg!(snap, "v", -1);
+        let v = snap;
         let f = entry_srch_fn.map(|f| f as usize);
         let ours = (
             git_index_entry_srch as VectorCmp as usize,
@@ -1606,16 +1604,14 @@ impl RawBuf {
 /// NULL or a string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_extension_lookup(
-    out: *mut RawBuf,
+    out: Option<&mut RawBuf>,
     index: *mut GitIndex,
     signature: *const c_char,
 ) -> c_int {
     barrier(|| {
-        git_assert_arg!(!out.is_null(), "out", -1);
+        let out = git_arg!(out, "out", -1);
         let ix = index_arg!(index, -1);
         git_assert_arg!(!signature.is_null(), "signature", -1);
-        // SAFETY: writable; only `ptr` and `size` are written, as C.
-        let out = unsafe { &mut *out };
         out.size = 0;
         out.ptr = ptr::null_mut();
         // SAFETY: a string.

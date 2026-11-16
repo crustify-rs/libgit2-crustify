@@ -225,7 +225,7 @@ unsafe fn buf_out(out: *mut GitBuf, f: impl FnOnce(&mut GitStr) -> Result<()>) -
     ErrorCode::check(unsafe { crate::buf::ffi::git_buf_tostr(&raw mut s, out) })?;
     f(&mut s)?;
     // SAFETY: as above.
-    ErrorCode::check(unsafe { crate::buf::ffi::git_buf_fromstr(out, &raw mut s) })?;
+    ErrorCode::check(unsafe { crate::buf::ffi::git_buf_fromstr(out, Some(&mut s)) })?;
     Ok(())
 }
 
@@ -453,6 +453,7 @@ pub(crate) fn set_user_agent_product(product: Option<&CStr>) -> Result<()> {
 /// The exports of `settings.c`.
 pub mod ffi {
     use super::*;
+    use crate::git_arg;
     use crate::util::export::{barrier, status};
 
     /// `git_settings_global_init`.
@@ -499,10 +500,10 @@ pub mod ffi {
     /// `args` is valid, and holds what C's `git_libgit2_opts` documents
     /// for `key`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_libgit2__opts(key: c_int, args: *const OptArgs) -> c_int {
+    pub unsafe extern "C" fn git_libgit2__opts(key: c_int, args: Option<&OptArgs>) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            let a = unsafe { &*args };
+            let args = git_arg!(args, "args", -1);
+            let a = args;
             // SAFETY: the caller's contract.
             status(unsafe { opts(key, a) })
         })

@@ -1164,7 +1164,8 @@ pub fn rfc2822(time: i64, offset: i32) -> Result<String> {
 
 pub mod ffi {
     use super::*;
-    use crate::git_assert_arg;
+    use crate::git_arg;
+
     use crate::util::cabi::{CStrArg, Out};
     use crate::util::export::{barrier, status};
 
@@ -1212,14 +1213,12 @@ pub mod ffi {
     /// the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_date_rfc2822_fmt(
-        out: *mut GitStr,
+        out: Option<&mut GitStr>,
         time: i64,
         offset: c_int,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!out.is_null(), "out", -1);
-            // SAFETY: the caller's contract.
-            let out = unsafe { &mut *out };
+            let out = git_arg!(out, "out", -1);
             status(rfc2822_fmt(out, time, offset))
         })
     }

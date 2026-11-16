@@ -203,6 +203,7 @@ pub fn configmap_lookup_cache_clear(repo: &GitRepository) {
 /// The exports of `config_cache.c`.
 pub mod ffi {
     use super::*;
+    use crate::git_arg;
     use crate::util::cabi::Out;
     use crate::util::export::barrier;
 
@@ -215,12 +216,12 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config__configmap_lookup(
         mut out: Out<'_, c_int>,
-        config: *mut GitConfig,
+        config: Option<&GitConfig>,
         item: c_int,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            let r = configmap_lookup(unsafe { &*config }, item as usize);
+            let config = git_arg!(config, "config", -1);
+            let r = configmap_lookup(config, item as usize);
             match r {
                 Ok(v) => {
                     out.write(v);
@@ -240,13 +241,12 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_repository__configmap_lookup(
         mut out: Out<'_, c_int>,
-        repo: *mut GitRepository,
+        repo: Option<&GitRepository>,
         item: c_int,
     ) -> c_int {
         barrier(|| {
             let item = item as usize;
-            // SAFETY: per the contract: a live repository (`Sync`).
-            let repo = unsafe { &*repo };
+            let repo = git_arg!(repo, "repo", -1);
             let cached = repo.configmap_cache()[item].load(Ordering::SeqCst);
             out.write(cached as c_int);
             match repository_configmap_lookup(repo, item) {
@@ -266,10 +266,10 @@ pub mod ffi {
     /// `repo` is live.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_repository__configmap_lookup_cache_clear(
-        repo: *mut GitRepository,
+        repo: Option<&GitRepository>,
     ) {
-        // SAFETY: per the contract: a live repository (`Sync`).
-        barrier(|| configmap_lookup_cache_clear(unsafe { &*repo }))
+        let repo = git_arg!(repo, "repo", ());
+        barrier(|| configmap_lookup_cache_clear(repo))
     }
 }
 

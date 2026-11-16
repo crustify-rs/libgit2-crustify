@@ -535,7 +535,7 @@ pub unsafe fn create_from_stream(
     let mut path = GitStr::new();
     // `GIT_REPOSITORY_ITEM_OBJECTS`.
     // SAFETY: a live repository, a valid `git_str`.
-    ErrorCode::check(unsafe { p::git_repository__item_path(&raw mut path, repo, 4) })?;
+    ErrorCode::check(unsafe { p::git_repository__item_path(Some(&mut path), repo, 4) })?;
     path.joinpath_self(b"streamed")?;
     let mut fbuf = Box::new(GitFilebuf::new());
     // SAFETY: the filebuf is boxed: it does not move until the stream's
@@ -1029,10 +1029,14 @@ pub mod ffi {
     ///
     /// `buffer` is a valid `git_str` and `blob` a live blob.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_blob__getbuf(buffer: *mut GitStr, blob: *mut GitBlob) -> c_int {
+    pub unsafe extern "C" fn git_blob__getbuf(
+        buffer: Option<&mut GitStr>,
+        blob: Option<&GitBlob>,
+    ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract: distinct, valid objects.
-            status(getbuf(unsafe { &mut *buffer }, unsafe { &*blob }))
+            let blob = git_arg!(blob, "blob", -1);
+            let buffer = git_arg!(buffer, "buffer", -1);
+            status(getbuf(buffer, blob))
         })
     }
 
@@ -1203,11 +1207,10 @@ pub mod ffi {
     ///
     /// `blob` is NULL or a live blob.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_blob_is_binary(blob: *const GitBlob) -> c_int {
+    pub unsafe extern "C" fn git_blob_is_binary(blob: Option<&GitBlob>) -> c_int {
         barrier(|| {
-            git_assert_arg!(!blob.is_null(), "blob", -1);
-            // SAFETY: a live blob, read only.
-            c_int::from(content_is_binary(unsafe { &*blob }.content()))
+            let blob = git_arg!(blob, "blob", -1);
+            c_int::from(content_is_binary(blob.content()))
         })
     }
 

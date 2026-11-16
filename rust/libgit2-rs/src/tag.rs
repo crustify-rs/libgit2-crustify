@@ -1244,7 +1244,7 @@ pub mod ffi {
         oid: *mut Oid,
         repo: *mut git_repository,
         tag_name: CStrArg<'_>,
-        target: *const GitObject,
+        target: Option<&GitObject>,
         tagger: *const GitSignature,
         message: CStrArg<'_>,
     ) -> c_int {
@@ -1252,13 +1252,12 @@ pub mod ffi {
             git_assert_arg!(!oid.is_null(), "oid", -1);
             git_assert_arg!(!repo.is_null(), "repo", -1);
             let tag_name = git_arg!(tag_name.get(), "tag_name", -1);
-            git_assert_arg!(!target.is_null(), "target", -1);
+            let target = git_arg!(target, "target", -1);
             git_assert_arg!(!tagger.is_null(), "tagger", -1);
             let message = git_arg!(message.get(), "message", -1);
             let name = tag_name.to_bytes();
             let msg = message.to_bytes();
-            // SAFETY: a live object, read only.
-            let t = unsafe { &*target };
+            let t = target;
             // SAFETY: a valid signature.
             let v = unsafe { GitSignatureView::from_c(tagger) };
             // SAFETY: a live repository and object.
@@ -1282,16 +1281,15 @@ pub mod ffi {
         oid: *mut Oid,
         repo: *mut git_repository,
         tag_name: CStrArg<'_>,
-        target: *const GitObject,
+        target: Option<&GitObject>,
         allow_ref_overwrite: c_int,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!repo.is_null(), "repo", -1);
             let tag_name = git_arg!(tag_name.get(), "tag_name", -1);
-            git_assert_arg!(!target.is_null(), "target", -1);
+            let target = git_arg!(target, "target", -1);
             let name = tag_name.to_bytes();
-            // SAFETY: a live object, read only.
-            let t = unsafe { &*target };
+            let t = target;
             git_assert_arg!(!oid.is_null(), "oid", -1);
             // SAFETY: a live repository and object; `oid` writable.
             status(unsafe { create_internal(oid, repo, name, t, None, allow_ref_overwrite != 0) })

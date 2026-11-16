@@ -966,6 +966,7 @@ pub fn global_init() -> Result<()> {
 /// The exports of `mwindow.c`.
 pub mod ffi {
     use super::*;
+    use crate::git_arg;
     use crate::util::cabi::Out;
     use crate::util::export::{barrier, status};
 
@@ -987,12 +988,12 @@ pub mod ffi {
     /// (the caller holds it in a cursor, or holds `git_mwindow__mutex`).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_mwindow_contains(
-        win: *mut GitMwindow,
+        win: Option<&GitMwindow>,
         offset: i64,
         extra: i64,
     ) -> c_int {
-        // SAFETY: the caller's contract; only read.
-        let w = unsafe { &*win };
+        let win = git_arg!(win, "win", -1);
+        let w = win;
         contains(w, offset, extra) as c_int
     }
 
@@ -1002,10 +1003,10 @@ pub mod ffi {
     ///
     /// `mwf` is a live `git_mwindow_file`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_mwindow_free_all(mwf: *mut GitMwindowFile) -> c_int {
+    pub unsafe extern "C" fn git_mwindow_free_all(mwf: Option<&GitMwindowFile>) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract; the struct is `Sync`.
-            status(free_all(unsafe { &*mwf }))
+            let mwf = git_arg!(mwf, "mwf", -1);
+            status(free_all(mwf))
         })
     }
 
@@ -1020,15 +1021,14 @@ pub mod ffi {
     /// call stored); `left` is NULL or writable.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_mwindow_open(
-        mwf: *mut GitMwindowFile,
+        mwf: Option<&GitMwindowFile>,
         cursor: *mut *mut GitMwindow,
         offset: i64,
         extra: usize,
         mut left: Out<'_, c_uint>,
     ) -> *mut u8 {
         barrier(|| {
-            // SAFETY: a live file (the caller's contract), which is `Sync`.
-            let mwf = unsafe { &*mwf };
+            let mwf = git_arg!(mwf, "mwf", core::ptr::null_mut());
             // SAFETY: a valid cursor, used only here (the caller).
             let cursor = unsafe { Cursor::from_raw_mut(cursor) };
             match cursor.open_raw(mwf, offset, extra) {
@@ -1050,10 +1050,9 @@ pub mod ffi {
     /// `mwf` is a live `git_mwindow_file` that stays at its address until
     /// `git_mwindow_file_deregister` or `git_mwindow_free_all`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_mwindow_file_register(mwf: *mut GitMwindowFile) -> c_int {
+    pub unsafe extern "C" fn git_mwindow_file_register(mwf: Option<&GitMwindowFile>) -> c_int {
         barrier(|| {
-            // SAFETY: a live file (the caller's contract).
-            let mwf = unsafe { &*mwf };
+            let mwf = git_arg!(mwf, "mwf", -1);
             // SAFETY: it stays put until deregistered (the caller).
             status(unsafe { file_register(mwf) })
         })
@@ -1065,9 +1064,9 @@ pub mod ffi {
     ///
     /// `mwf` is a live `git_mwindow_file`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_mwindow_file_deregister(mwf: *mut GitMwindowFile) {
-        // SAFETY: the caller's contract.
-        barrier(|| file_deregister(unsafe { &*mwf }))
+    pub unsafe extern "C" fn git_mwindow_file_deregister(mwf: Option<&GitMwindowFile>) {
+        let mwf = git_arg!(mwf, "mwf", ());
+        barrier(|| file_deregister(mwf))
     }
 
     /// `git_mwindow_close`.

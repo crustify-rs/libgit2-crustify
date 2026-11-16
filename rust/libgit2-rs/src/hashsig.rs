@@ -418,6 +418,7 @@ impl HashSig {
 
 /// The exports of `hashsig.c`.
 pub mod ffi {
+    use crate::git_arg;
     use core::ffi::{c_char, c_int, c_void};
 
     use super::Signature;
@@ -524,17 +525,13 @@ pub mod ffi {
     /// nothing frees during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_hashsig_compare(
-        a: *const GitHashsig,
-        b: *const GitHashsig,
+        a: Option<&GitHashsig>,
+        b: Option<&GitHashsig>,
     ) -> c_int {
         barrier(|| {
             // C dereferences both; a NULL is reported rather than crash.
-            git_assert_arg!(!a.is_null(), "a", -1);
-            git_assert_arg!(!b.is_null(), "b", -1);
-            // SAFETY: live signatures (the caller's contract), only read.
-            let a = unsafe { &*a };
-            // SAFETY: as above.
-            let b = unsafe { &*b };
+            let a = git_arg!(a, "a", -1);
+            let b = git_arg!(b, "b", -1);
             a.compare(b)
         })
     }

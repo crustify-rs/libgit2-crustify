@@ -131,7 +131,7 @@ pub(crate) fn serialize_entry(
     let _ = buf.puts(new.hex().as_bytes());
     // SAFETY: `buf` is a valid `git_str`; `committer` is the caller's
     // signature (C's contract for the reflog writers: valid).
-    unsafe { p::git_signature__writebuf(buf.as_mut_ptr(), c" ".into(), committer) };
+    unsafe { p::git_signature__writebuf(Some(buf), c" ".into(), committer) };
     buf.rtrim();
     if let Some(msg) = msg {
         let _ = buf.putc(b'\t');

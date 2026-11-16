@@ -754,6 +754,7 @@ impl GitVector {
 /// the vector, may read it. No caller in libgit2 does otherwise.
 pub mod ffi {
     use super::*;
+    use crate::git_arg;
     use crate::util::cabi::Out;
     use crate::util::export::{barrier, status};
 
@@ -939,13 +940,12 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_vector_search(
         mut at_pos: Out<'_, usize>,
-        vec: *const GitVector,
+        vec: Option<&GitVector>,
         entry: *const c_void,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!vec.is_null(), "v", -1);
-            // SAFETY: the module's contract: a valid vector, only read.
-            let vv = unsafe { &*vec };
+            let vec = git_arg!(vec, "v", -1);
+            let vv = vec;
             // SAFETY: the module's contract covers the comparison function.
             match unsafe { vv.search(entry) } {
                 Ok(i) => {
@@ -965,19 +965,18 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_vector_search2(
         mut at_pos: Out<'_, usize>,
-        vec: *const GitVector,
+        vec: Option<&GitVector>,
         key_lookup: Option<VectorCmp>,
         key: *const c_void,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!vec.is_null(), "v", -1);
+            let vec = git_arg!(vec, "v", -1);
             git_assert_arg!(!key.is_null(), "key", -1);
             let Some(f) = key_lookup else {
                 git_assert!(false, "key_lookup", -1);
                 unreachable!()
             };
-            // SAFETY: the module's contract: a valid vector, only read.
-            let vv = unsafe { &*vec };
+            let vv = vec;
             // SAFETY: the module's contract covers `key_lookup`.
             match unsafe { vv.search2(f, key) } {
                 Ok(i) => {
@@ -1215,10 +1214,10 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_vector_verify_sorted(vec: *const GitVector) -> c_int {
+    pub unsafe extern "C" fn git_vector_verify_sorted(vec: Option<&GitVector>) -> c_int {
         barrier(|| {
-            // SAFETY: the module's contract: a valid vector, only read.
-            let vv = unsafe { &*vec };
+            let vec = git_arg!(vec, "vec", -1);
+            let vv = vec;
             // SAFETY: the module's contract covers the comparison function.
             unsafe { vv.verify_sorted() }
         })

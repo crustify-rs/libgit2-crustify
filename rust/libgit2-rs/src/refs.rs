@@ -1503,6 +1503,7 @@ pub(crate) mod deps;
 /// time.
 pub mod ffi {
     use super::*;
+    use crate::git_arg;
     use crate::refdb::git_reference_iterator;
     use crate::refs::deps::git_object;
     use crate::strarray::GitStrArray;
@@ -2570,17 +2571,16 @@ pub mod ffi {
     pub unsafe extern "C" fn git_reference__update_terminal(
         repo: *mut git_repository,
         ref_name: CStrArg<'_>,
-        oid: *const Oid,
+        oid: Option<&Oid>,
         sig: *const git_signature,
         log_message: *const c_char,
     ) -> c_int {
         barrier(|| {
+            let oid = git_arg!(oid, "oid", -1);
             // SAFETY: a live repository.
             let repo = unsafe { repo_unchecked(repo) };
             // SAFETY: a string; a valid oid; NULL or a string.
-            let (n, id, msg) = (ref_name.to_bytes(), unsafe { &*oid }, unsafe {
-                cstr(log_message)
-            });
+            let (n, id, msg) = (ref_name.to_bytes(), oid, unsafe { cstr(log_message) });
             let r = update_terminal(repo, n, id, sig, msg);
             status(r)
         })

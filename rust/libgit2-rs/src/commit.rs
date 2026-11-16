@@ -961,7 +961,7 @@ unsafe fn validate_tree_and_parents(
     validate: bool,
 ) -> Result<()> {
     // SAFETY: `repo` is live (contract).
-    if validate && !unsafe { pend::git_object__is_valid(repo, tree, OBJ_TREE) } {
+    if validate && !unsafe { pend::git_object__is_valid(repo, Some(tree), OBJ_TREE) } {
         return Err(ErrorCode::GENERIC);
     }
     let mut i = 0;
@@ -969,7 +969,7 @@ unsafe fn validate_tree_and_parents(
         while let Some(parent) = next(i) {
             if validate
                 // SAFETY: `repo` is live (contract).
-                && !unsafe { pend::git_object__is_valid(repo, &raw const parent, OBJ_COMMIT) }
+                && !unsafe { pend::git_object__is_valid(repo, Some(&parent), OBJ_COMMIT) }
             {
                 return Err(ErrorCode::GENERIC);
             }
@@ -1163,7 +1163,7 @@ pub(crate) unsafe fn create_internal(
         // SAFETY: `repo` is live (contract).
         let odb = unsafe { repo_odb(repo) }?;
         // SAFETY: `odb` is the repository's; the tree id readable.
-        ErrorCode::check(unsafe { crate::odb::ffi::git_odb__freshen(odb, &raw const args.tree) })?;
+        ErrorCode::check(unsafe { crate::odb::ffi::git_odb__freshen(odb, Some(&args.tree)) })?;
         let bytes = buf.as_bytes();
         // SAFETY: `bytes` are readable for its length; `id` writable.
         ErrorCode::check(unsafe {
@@ -2147,11 +2147,12 @@ pub mod ffi {
             git_assert_arg!(!commit.is_null(), "commit", -1);
             // SAFETY: a live commit (contract): its fields set by the parse.
             let repo = unsafe { (*commit).object.repo };
-            // SAFETY: as above.
-            let tree_id = unsafe { &raw const (*commit).tree_id };
+            // SAFETY: as above; the id is not written after the parse and
+            // lives with the commit.
+            let tree_id = unsafe { &(*commit).tree_id };
             // SAFETY: `tree_out` writable; the repository is live while the
             // commit is.
-            unsafe { pend::git_tree_lookup(tree_out, repo, tree_id) }
+            unsafe { pend::git_tree_lookup(tree_out, repo, Some(tree_id)) }
         })
     }
 
@@ -2195,7 +2196,7 @@ pub mod ffi {
             // SAFETY: a live commit (contract); `repo` set by its parse.
             let repo = unsafe { (*commit).object.repo };
             // SAFETY: `parent` writable; the repository live with the commit.
-            unsafe { pend::git_commit_lookup(parent, repo, &raw const id) }
+            unsafe { pend::git_commit_lookup(parent, repo, Some(&id)) }
         })
     }
 
@@ -2294,14 +2295,12 @@ pub mod ffi {
     /// NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_commit__header_field(
-        out: *mut GitStr,
+        out: Option<&mut GitStr>,
         commit: *const GitCommit,
         field: *const c_char,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!out.is_null(), "out", -1);
-            // SAFETY: a valid, unaliased `git_str` (contract).
-            let out = unsafe { &mut *out };
+            let out = git_arg!(out, "out", -1);
             // SAFETY: a live commit; `field` NUL-terminated (contract).
             code(unsafe { header_field_of(out, commit, field) })
         })
@@ -2345,11 +2344,11 @@ pub mod ffi {
             }
             if error == 0 {
                 // SAFETY: as for `git_buf_tostr` above.
-                error = unsafe { git_buf_fromstr(signature_out, &raw mut signature) };
+                error = unsafe { git_buf_fromstr(signature_out, Some(&mut signature)) };
             }
             if error == 0 {
                 // SAFETY: as above.
-                error = unsafe { git_buf_fromstr(signed_data_out, &raw mut signed_data) };
+                error = unsafe { git_buf_fromstr(signed_data_out, Some(&mut signed_data)) };
             }
             error
         })
@@ -2445,7 +2444,7 @@ pub mod ffi {
                 // `git_str`.
                 ErrorCode::check_zero(unsafe {
                     git_commit__create_buffer(
-                        s,
+                        Some(s),
                         repo,
                         author,
                         committer,
@@ -2469,7 +2468,7 @@ pub mod ffi {
     /// `out` a valid `git_str`; the rest as `git_commit_create`'s.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_commit__create_buffer(
-        out: *mut GitStr,
+        out: Option<&mut GitStr>,
         repo: *mut git_repository,
         author: *const GitSignature,
         committer: *const GitSignature,
@@ -2484,7 +2483,7 @@ pub mod ffi {
             // SAFETY: a live tree (contract).
             let owner = unsafe { object_owner(tree) };
             git_assert_arg!(owner == Ok(repo), "git_tree_owner(tree) == repo", -1);
-            git_assert_arg!(!out.is_null(), "out", -1);
+            let out = git_arg!(out, "out", -1);
             // SAFETY: a live tree.
             let tree_id = unsafe { object_id(tree) }.unwrap_or_default();
             // SAFETY: the caller's contract.
@@ -2509,8 +2508,6 @@ pub mod ffi {
                 update_ref: None,
                 validate: true,
             };
-            // SAFETY: a valid, unaliased `git_str` (contract).
-            let out = unsafe { &mut *out };
             code(args_buffer(out, &args, parents_arr.as_slice()))
         })
     }
@@ -2760,7 +2757,7 @@ pub mod ffi {
                     unsafe { crate::index::ffi::git_index_write_tree(&raw mut tree_id, index) };
                 if written < 0
                     // SAFETY: `repo` live; `tree` writable; `tree_id` set.
-                    || unsafe { pend::git_tree_lookup(&raw mut tree, repo, &raw const tree_id) } < 0
+                    || unsafe { pend::git_tree_lookup(&raw mut tree, repo, Some(&tree_id)) } < 0
                 {
                     return -1;
                 }
@@ -2833,7 +2830,7 @@ pub mod ffi {
                 // SAFETY: the index just looked up.
                 || unsafe { crate::index::ffi::git_index_write_tree(&raw mut tree_id, index) } < 0
                 // SAFETY: as above; `tree_id` set.
-                || unsafe { pend::git_tree_lookup(&raw mut tree, repo, &raw const tree_id) } < 0
+                || unsafe { pend::git_tree_lookup(&raw mut tree, repo, Some(&tree_id)) } < 0
             {
                 -1
             } else {

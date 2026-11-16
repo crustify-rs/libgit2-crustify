@@ -385,7 +385,7 @@ impl<'a> Tree<'a> {
             }
             let mut t = ptr::null_mut();
             // SAFETY: the tree's repository (or NULL: the C's assertion).
-            ErrorCode::check(unsafe { pend::git_tree_lookup(&raw mut t, repo, id) })?;
+            ErrorCode::check(unsafe { pend::git_tree_lookup(&raw mut t, repo, Some(id)) })?;
             Ok(t)
         };
         // SAFETY: trees from `lookup`, released once.
@@ -412,7 +412,7 @@ impl<'a> Tree<'a> {
             }
             let mut t = ptr::null_mut();
             // SAFETY: the tree's repository.
-            ErrorCode::check(unsafe { pend::git_tree_lookup(&raw mut t, repo, id) })?;
+            ErrorCode::check(unsafe { pend::git_tree_lookup(&raw mut t, repo, Some(id)) })?;
             Ok(t)
         };
         // SAFETY: trees from `lookup`, released once.

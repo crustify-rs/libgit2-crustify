@@ -63,7 +63,7 @@ pub unsafe fn git_tag_target_id(tag: *const git_object) -> *const Oid {
 pub unsafe fn git_commit_lookup(
     out: *mut *mut git_commit,
     repo: *mut git_repository,
-    id: *const Oid,
+    id: Option<&Oid>,
 ) -> c_int {
     // SAFETY: per the contract.
     unsafe { crate::object_api::ffi::git_commit_lookup(out.cast(), repo, id) }
@@ -297,7 +297,9 @@ impl ObjBox {
     pub fn lookup(repo: RepoPtr, id: &Oid, kind: c_int) -> Result<ObjBox> {
         let mut out = core::ptr::null_mut();
         // SAFETY: a live repository; `id` valid for the call; `out` writable.
-        ErrorCode::check(unsafe { git_object_lookup(&raw mut out, repo.as_ptr(), id, kind) })?;
+        ErrorCode::check(unsafe {
+            git_object_lookup(&raw mut out, repo.as_ptr(), Some(id), kind)
+        })?;
         NonNull::new(out).map(ObjBox).ok_or(ErrorCode::GENERIC)
     }
 
@@ -360,7 +362,7 @@ impl Drop for ObjBox {
 /// `git_object__is_valid(repo, id, kind)`.
 pub fn object_is_valid(repo: RepoPtr, id: &Oid, kind: c_int) -> bool {
     // SAFETY: a live repository; `id` valid for the call.
-    unsafe { git_object__is_valid(repo.as_ptr(), id, kind) }
+    unsafe { git_object__is_valid(repo.as_ptr(), Some(id), kind) }
 }
 
 /// An owned `git_commit` (looked up and freed through object_api.c,
@@ -372,7 +374,7 @@ impl CommitBox {
     pub fn lookup(repo: RepoPtr, id: &Oid) -> Result<CommitBox> {
         let mut out = core::ptr::null_mut();
         // SAFETY: a live repository; `out` writable.
-        ErrorCode::check(unsafe { git_commit_lookup(&raw mut out, repo.as_ptr(), id) })?;
+        ErrorCode::check(unsafe { git_commit_lookup(&raw mut out, repo.as_ptr(), Some(id)) })?;
         NonNull::new(out).map(CommitBox).ok_or(ErrorCode::GENERIC)
     }
 

@@ -1186,17 +1186,16 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_revwalk__push_commit(
         walk: *mut GitRevwalk,
-        oid: *const Oid,
+        oid: Option<&Oid>,
         opts: *const PushOptions,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!walk.is_null(), "walk", -1);
-            git_assert_arg!(!oid.is_null(), "oid", -1);
+            let oid = git_arg!(oid, "oid", -1);
             git_assert_arg!(!opts.is_null(), "opts", -1);
             // SAFETY: the contract.
             let (w, st) = unsafe { walk_of(walk) };
-            // SAFETY: readable (the contract), copied.
-            let oid = unsafe { *oid };
+            let oid = *oid;
             // SAFETY: as above.
             let opts = unsafe { *opts };
             status(w.push_commit(st, &oid, &opts))

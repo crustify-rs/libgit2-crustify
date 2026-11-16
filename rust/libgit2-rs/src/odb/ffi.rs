@@ -458,14 +458,13 @@ pub unsafe extern "C" fn git_odb__get_commit_graph_file(
 ///
 /// `db` is NULL or a live odb; `id` NULL or a readable id.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_odb__freshen(db: *mut GitOdb, id: *const Oid) -> c_int {
+pub unsafe extern "C" fn git_odb__freshen(db: *mut GitOdb, id: Option<&Oid>) -> c_int {
     barrier(|| {
         git_assert_arg!(!db.is_null(), "db", -1);
-        git_assert_arg!(!id.is_null(), "id", -1);
+        let id = git_arg!(id, "id", -1);
         // SAFETY: the caller's contract: a live odb.
         let db = unsafe { odb(db) };
-        // SAFETY: the caller's contract: a readable id.
-        let id_ = unsafe { &*id };
+        let id_ = id;
         c_int::from(db.freshen(id_))
     })
 }
@@ -476,7 +475,7 @@ pub unsafe extern "C" fn git_odb__freshen(db: *mut GitOdb, id: *const Oid) -> c_
 ///
 /// As [`git_odb__freshen`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_odb_exists(db: *mut GitOdb, id: *const Oid) -> c_int {
+pub unsafe extern "C" fn git_odb_exists(db: *mut GitOdb, id: Option<&Oid>) -> c_int {
     // SAFETY: forwarded.
     unsafe { git_odb_exists_ext(db, id, 0) }
 }
@@ -489,16 +488,15 @@ pub unsafe extern "C" fn git_odb_exists(db: *mut GitOdb, id: *const Oid) -> c_in
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_odb_exists_ext(
     db: *mut GitOdb,
-    id: *const Oid,
+    id: Option<&Oid>,
     flags: c_uint,
 ) -> c_int {
     barrier(|| {
         git_assert_arg!(!db.is_null(), "db", -1);
-        git_assert_arg!(!id.is_null(), "id", -1);
+        let id = git_arg!(id, "id", -1);
         // SAFETY: the caller's contract: a live odb.
         let db = unsafe { odb(db) };
-        // SAFETY: the caller's contract: a readable id.
-        let id_ = unsafe { &*id };
+        let id_ = id;
         c_int::from(db.exists_ext(id_, flags))
     })
 }
@@ -568,7 +566,7 @@ pub unsafe extern "C" fn git_odb_read_header(
     len_p: *mut usize,
     type_p: *mut git_object_t,
     db: *mut GitOdb,
-    id: *const Oid,
+    id: Option<&Oid>,
 ) -> c_int {
     let mut obj: *mut GitOdbObject = core::ptr::null_mut();
     // SAFETY: forwarded; `obj` is a local.
@@ -592,11 +590,11 @@ pub unsafe extern "C" fn git_odb__read_header_or_object(
     len_p: *mut usize,
     type_p: *mut git_object_t,
     db: *mut GitOdb,
-    id: *const Oid,
+    id: Option<&Oid>,
 ) -> c_int {
     barrier(|| {
         git_assert_arg!(!db.is_null(), "db", -1);
-        git_assert_arg!(!id.is_null(), "id", -1);
+        let id = git_arg!(id, "id", -1);
         git_assert_arg!(!out.is_null(), "out", -1);
         git_assert_arg!(!len_p.is_null(), "len_p", -1);
         git_assert_arg!(!type_p.is_null(), "type_p", -1);
@@ -604,8 +602,7 @@ pub unsafe extern "C" fn git_odb__read_header_or_object(
         unsafe { out.write(core::ptr::null_mut()) };
         // SAFETY: the caller's contract: a live odb.
         let db = unsafe { odb(db) };
-        // SAFETY: the caller's contract: a readable id.
-        let id_ = unsafe { &*id };
+        let id_ = id;
         match db.read_header_or_object(id_) {
             Ok((len, t, obj)) => {
                 // SAFETY: the caller's contract.
@@ -668,16 +665,16 @@ pub unsafe extern "C" fn git_odb_read(
 pub unsafe extern "C" fn git_odb_read_prefix(
     out: *mut *mut GitOdbObject,
     db: *mut GitOdb,
-    short_id: *const Oid,
+    short_id: Option<&Oid>,
     len: usize,
 ) -> c_int {
     barrier(|| {
+        let short_id = git_arg!(short_id, "short_id", -1);
         git_assert_arg!(!out.is_null(), "out", -1);
         git_assert_arg!(!db.is_null(), "db", -1);
         // SAFETY: the caller's contract: a live odb.
         let db = unsafe { odb(db) };
-        // SAFETY: the caller's contract: a readable id.
-        let short_id_ = unsafe { &*short_id };
+        let short_id_ = short_id;
         match db.read_prefix(short_id_, len) {
             Ok(o) => {
                 // SAFETY: the caller's contract.
@@ -925,15 +922,15 @@ pub unsafe extern "C" fn git_odb_open_rstream(
     mut len: Out<'_, usize>,
     mut type_: Out<'_, git_object_t>,
     db: *mut GitOdb,
-    oid: *const Oid,
+    oid: Option<&Oid>,
 ) -> c_int {
     barrier(|| {
+        let oid = git_arg!(oid, "oid", -1);
         git_assert_arg!(!stream.is_null(), "stream", -1);
         git_assert_arg!(!db.is_null(), "db", -1);
         // SAFETY: the caller's contract: a live odb.
         let db = unsafe { odb(db) };
-        // SAFETY: the caller's contract: a readable id.
-        let oid_ = unsafe { &*oid };
+        let oid_ = oid;
         match db.open_rstream(oid_) {
             // C: 0, with `*stream` as the backend left it (untouched).
             Ok(None) => 0,
@@ -1043,14 +1040,14 @@ pub unsafe extern "C" fn git_odb_refresh(db: *mut GitOdb) -> c_int {
 /// Both ids are readable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_odb__error_mismatch(
-    expected: *const Oid,
-    actual: *const Oid,
+    expected: Option<&Oid>,
+    actual: Option<&Oid>,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: the caller's contract.
-        let e = unsafe { &*expected };
-        // SAFETY: the caller's contract.
-        let a = unsafe { &*actual };
+        let actual = git_arg!(actual, "actual", -1);
+        let expected = git_arg!(expected, "expected", -1);
+        let e = expected;
+        let a = actual;
         error_mismatch(e, a).raw()
     })
 }

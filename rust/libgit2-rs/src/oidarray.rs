@@ -166,6 +166,7 @@ pub fn remove(arr: &mut GitArray<Oid>, id: &Oid) -> bool {
 
 /// The exports of `oidarray.c`.
 pub mod ffi {
+    use crate::git_arg;
     use crate::util::cabi::Out;
     use core::ffi::c_int;
 
@@ -216,10 +217,10 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oidarray__to_array(
         mut out: Out<'_, GitArray<Oid>>,
-        array: *const GitOidArray,
+        array: Option<&GitOidArray>,
     ) {
-        // SAFETY: a valid `git_oidarray`.
-        let a = unsafe { &*array };
+        let array = git_arg!(array, "array", ());
+        let a = array;
         // SAFETY: the new array shares the buffer, as in C (C keeps track
         // of which one frees it).
         let arr = unsafe { GitArray::from_raw_parts(a.ids, a.count, a.count) };
@@ -232,9 +233,9 @@ pub mod ffi {
     ///
     /// `arr` is a valid `git_oidarray`, not used concurrently.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_oidarray__reverse(arr: *mut GitOidArray) {
-        // SAFETY: a valid array: `count` oids at `ids`.
-        let a = unsafe { &*arr };
+    pub unsafe extern "C" fn git_oidarray__reverse(arr: Option<&GitOidArray>) {
+        let arr = git_arg!(arr, "arr", ());
+        let a = arr;
         if a.count > 0 {
             // SAFETY: as above, exclusively ours for the call.
             unsafe { core::slice::from_raw_parts_mut(a.ids, a.count) }.reverse();
@@ -248,10 +249,10 @@ pub mod ffi {
     /// `arr` is a valid `git_array_oid_t`, not used concurrently; `id` a
     /// valid oid (it may be in the array).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_oidarray__add(arr: *mut GitArray<Oid>, id: *const Oid) -> c_int {
+    pub unsafe extern "C" fn git_oidarray__add(arr: *mut GitArray<Oid>, id: Option<&Oid>) -> c_int {
         barrier(|| {
-            // SAFETY: copied before the array may move.
-            let id = unsafe { *id };
+            let id = git_arg!(id, "id", -1);
+            let id = *id;
             // SAFETY: a valid array, exclusively ours.
             status(add(unsafe { &mut *arr }, &id))
         })
@@ -263,10 +264,13 @@ pub mod ffi {
     ///
     /// As [`git_oidarray__add`].
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_oidarray__remove(arr: *mut GitArray<Oid>, id: *const Oid) -> bool {
+    pub unsafe extern "C" fn git_oidarray__remove(
+        arr: *mut GitArray<Oid>,
+        id: Option<&Oid>,
+    ) -> bool {
         barrier(|| {
-            // SAFETY: copied first.
-            let id = unsafe { *id };
+            let id = git_arg!(id, "id", false);
+            let id = *id;
             // SAFETY: a valid array, exclusively ours.
             remove(unsafe { &mut *arr }, &id)
         })
@@ -310,7 +314,7 @@ mod tests {
         // SAFETY: as C would call it.
         unsafe {
             let mut raw = raw;
-            ffi::git_oidarray__reverse(&mut raw);
+            ffi::git_oidarray__reverse(Some(&raw));
             assert_eq!(*raw.ids, ids[0]);
             ffi::git_oidarray_dispose(&mut raw);
         }

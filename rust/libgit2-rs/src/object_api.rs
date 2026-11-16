@@ -23,7 +23,7 @@ pub mod ffi {
     pub unsafe extern "C" fn git_commit_lookup(
         out: *mut *mut c_void,
         repo: *mut git_repository,
-        id: *const Oid,
+        id: Option<&Oid>,
     ) -> c_int {
         // SAFETY: forwarded.
         unsafe { o::git_object_lookup(out.cast(), repo, id, GIT_OBJECT_COMMIT) }
@@ -38,7 +38,7 @@ pub mod ffi {
     pub unsafe extern "C" fn git_commit_lookup_prefix(
         out: *mut *mut c_void,
         repo: *mut git_repository,
-        id: *const Oid,
+        id: Option<&Oid>,
         len: usize,
     ) -> c_int {
         // SAFETY: forwarded.
@@ -100,7 +100,7 @@ pub mod ffi {
     pub unsafe extern "C" fn git_tree_lookup(
         out: *mut *mut c_void,
         repo: *mut git_repository,
-        id: *const Oid,
+        id: Option<&Oid>,
     ) -> c_int {
         // SAFETY: forwarded.
         unsafe { o::git_object_lookup(out.cast(), repo, id, GIT_OBJECT_TREE) }
@@ -115,7 +115,7 @@ pub mod ffi {
     pub unsafe extern "C" fn git_tree_lookup_prefix(
         out: *mut *mut c_void,
         repo: *mut git_repository,
-        id: *const Oid,
+        id: Option<&Oid>,
         len: usize,
     ) -> c_int {
         // SAFETY: forwarded.
@@ -177,7 +177,7 @@ pub mod ffi {
     pub unsafe extern "C" fn git_tag_lookup(
         out: *mut *mut c_void,
         repo: *mut git_repository,
-        id: *const Oid,
+        id: Option<&Oid>,
     ) -> c_int {
         // SAFETY: forwarded.
         unsafe { o::git_object_lookup(out.cast(), repo, id, GIT_OBJECT_TAG) }
@@ -192,7 +192,7 @@ pub mod ffi {
     pub unsafe extern "C" fn git_tag_lookup_prefix(
         out: *mut *mut c_void,
         repo: *mut git_repository,
-        id: *const Oid,
+        id: Option<&Oid>,
         len: usize,
     ) -> c_int {
         // SAFETY: forwarded.
@@ -254,7 +254,7 @@ pub mod ffi {
     pub unsafe extern "C" fn git_blob_lookup(
         out: *mut *mut c_void,
         repo: *mut git_repository,
-        id: *const Oid,
+        id: Option<&Oid>,
     ) -> c_int {
         // SAFETY: forwarded.
         unsafe { o::git_object_lookup(out.cast(), repo, id, GIT_OBJECT_BLOB) }
@@ -269,7 +269,7 @@ pub mod ffi {
     pub unsafe extern "C" fn git_blob_lookup_prefix(
         out: *mut *mut c_void,
         repo: *mut git_repository,
-        id: *const Oid,
+        id: Option<&Oid>,
         len: usize,
     ) -> c_int {
         // SAFETY: forwarded.

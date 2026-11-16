@@ -13,6 +13,7 @@
 //! `workdir`, `commondir` or `get_namespace` is still in use. Out-pointers
 //! are writable; strings are NUL-terminated.
 
+use crate::git_arg;
 use crate::util::cabi::CStrArg;
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::ptr::{self, NonNull};
@@ -73,7 +74,7 @@ unsafe fn buf_wrap(out: *mut GitBuf, f: impl FnOnce(&mut GitStr) -> Result<()>) 
         return e;
     }
     // SAFETY: as above.
-    unsafe { crate::buf::ffi::git_buf_fromstr(out, &raw mut s) }
+    unsafe { crate::buf::ffi::git_buf_fromstr(out, Some(&mut s)) }
 }
 
 /// `git_error__check_version(s, max, name)` of a versioned C struct.
@@ -371,7 +372,7 @@ pub unsafe extern "C" fn git_repository_discover(
         };
         match open::discover(s, across_fs != 0, c) {
             // SAFETY: a valid `git_buf` and our local string.
-            Ok(mut gitdir) => unsafe { crate::buf::ffi::git_buf_fromstr(out, &raw mut gitdir) },
+            Ok(mut gitdir) => unsafe { crate::buf::ffi::git_buf_fromstr(out, Some(&mut gitdir)) },
             Err(e) => e.raw(),
         }
     })
@@ -1300,13 +1301,12 @@ pub unsafe extern "C" fn git_repository_head_unborn(repo_: *mut GitRepository) -
 /// The module's contract; `out` a valid `git_str`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_initialbranch(
-    out: *mut GitStr,
+    out: Option<&mut GitStr>,
     repo_: *mut GitRepository,
 ) -> c_int {
     barrier(|| {
-        git_assert_arg!(!out.is_null(), "out", -1);
-        // SAFETY: a valid `git_str`, not aliased by the repository.
-        let o = unsafe { &mut *out };
+        let out = git_arg!(out, "out", -1);
+        let o = out;
         with_repo!(repo_, "repo", |r| status(head::initialbranch(o, r)))
     })
 }
@@ -1348,14 +1348,13 @@ pub unsafe extern "C" fn git_repository_item_path(
 /// repository's.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository__item_path(
-    out: *mut GitStr,
+    out: Option<&mut GitStr>,
     repo_: *const GitRepository,
     item: ItemT,
 ) -> c_int {
     barrier(|| {
-        git_assert_arg!(!out.is_null(), "out", -1);
-        // SAFETY: a valid `git_str`.
-        let o = unsafe { &mut *out };
+        let out = git_arg!(out, "out", -1);
+        let o = out;
         with_repo!(repo_, "repo", |r: &GitRepository| status(
             r.item_path(o, item)
         ))

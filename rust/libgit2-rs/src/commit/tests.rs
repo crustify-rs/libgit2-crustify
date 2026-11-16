@@ -515,7 +515,7 @@ fn c_abi_parse_and_accessors() {
         );
         let mut out = GitStr::new();
         assert_eq!(
-            ffi::git_commit__header_field(&raw mut out, c.0, c"author".as_ptr()),
+            ffi::git_commit__header_field(Some(&mut out), c.0, c"author".as_ptr()),
             0
         );
         assert_eq!(out.as_bytes(), b"A <a@b> 1 +0000");

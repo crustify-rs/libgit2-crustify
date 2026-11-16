@@ -557,6 +557,7 @@ pub unsafe fn write(out: &mut GitStr, tree: *const GitTreeCache) -> Result<()> {
 /// The C ABI of `tree-cache.c`.
 pub mod ffi {
     use super::*;
+    use crate::git_arg;
     use crate::util::cabi::{CStrArg, Out};
     use crate::util::export::{barrier, status};
 
@@ -568,12 +569,11 @@ pub mod ffi {
     /// these functions, in a live pool), not written meanwhile.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tree_cache_write(
-        out: *mut GitStr,
+        out: Option<&mut GitStr>,
         tree: *mut GitTreeCache,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract: a valid, unaliased `git_str`.
-            let out = unsafe { &mut *out };
+            let out = git_arg!(out, "out", -1);
             // SAFETY: the caller's contract.
             status(unsafe { write(out, tree) })
         })
@@ -592,7 +592,7 @@ pub mod ffi {
         buffer: *const c_char,
         buffer_size: usize,
         oid_type: git_oid_t,
-        pool: *mut GitPool,
+        pool: Option<&mut GitPool>,
     ) -> c_int {
         barrier(|| {
             let Some(t) = OidType::from_raw(oid_type) else {
@@ -600,8 +600,7 @@ pub mod ffi {
             };
             // SAFETY: the caller's contract.
             let buf = unsafe { crate::util::export::bytes(buffer, buffer_size) };
-            // SAFETY: as above.
-            let pool = unsafe { &mut *pool };
+            let pool = git_arg!(pool, "pool", -1);
             let mut t_out = ptr::null_mut();
             let r = read_into(&mut t_out, buf, t, pool);
             if !t_out.is_null() {
@@ -657,12 +656,11 @@ pub mod ffi {
         mut out: Out<'_, *mut GitTreeCache>,
         name: CStrArg<'_>,
         oid_type: git_oid_t,
-        pool: *mut GitPool,
+        pool: Option<&mut GitPool>,
     ) -> c_int {
         barrier(|| {
             let name = name.to_bytes();
-            // SAFETY: as above.
-            let pool = unsafe { &mut *pool };
+            let pool = git_arg!(pool, "pool", -1);
             match new(name, oid_type, pool) {
                 Ok(t) => {
                     out.write(t);

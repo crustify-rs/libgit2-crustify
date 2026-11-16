@@ -534,7 +534,7 @@ unsafe fn check_entry(
     }
     if filemode != FILEMODE_COMMIT
         // SAFETY: `repo` is live.
-        && !unsafe { pend::git_object__is_valid(repo, id, otype_from_mode(filemode)) }
+        && !unsafe { pend::git_object__is_valid(repo, Some(id), otype_from_mode(filemode)) }
     {
         return Err(tree_error(
             "failed to insert entry: invalid object specified",
@@ -1037,7 +1037,7 @@ unsafe fn write_index(
 
     let mut tree = ptr::null_mut();
     // SAFETY: `repo` live; `tree` writable.
-    ErrorCode::check(unsafe { pend::git_tree_lookup(&raw mut tree, repo, oid) })?;
+    ErrorCode::check(unsafe { pend::git_tree_lookup(&raw mut tree, repo, Some(oid)) })?;
     // Read the tree cache into the index
     // SAFETY: the live index's `oid_type`.
     let oid_type: git_oid_t = unsafe { (*index).oid_type };
@@ -1438,7 +1438,7 @@ unsafe fn create_updated(
                 if let Some((_, id)) = entry {
                     // SAFETY: `repo` live; `tree` writable.
                     ErrorCode::check(unsafe {
-                        pend::git_tree_lookup(&raw mut new_entry.tree, repo, &raw const id)
+                        pend::git_tree_lookup(&raw mut new_entry.tree, repo, Some(&id))
                     })?;
                 }
                 // SAFETY: `repo` live; the tree NULL or live.
@@ -1541,14 +1541,12 @@ pub mod ffi {
     /// `e1` and `e2` are live entries.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tree_entry_cmp(
-        e1: *const GitTreeEntry,
-        e2: *const GitTreeEntry,
+        e1: Option<&GitTreeEntry>,
+        e2: Option<&GitTreeEntry>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: a live entry (contract), only read.
-            let e1 = unsafe { &*e1 };
-            // SAFETY: as above.
-            let e2 = unsafe { &*e2 };
+            let e1 = git_arg!(e1, "e1", -1);
+            let e2 = git_arg!(e2, "e2", -1);
             // SAFETY: live entries' names.
             unsafe { entry_sort_cmp(e1, e2) }
         })
@@ -1696,10 +1694,11 @@ pub mod ffi {
         barrier(|| {
             git_assert_arg!(!entry.is_null(), "entry", -1);
             git_assert_arg!(!object_out.is_null(), "object_out", -1);
-            // SAFETY: a live entry (contract).
-            let id = unsafe { &raw const (*entry).oid };
+            // SAFETY: a live entry (contract), whose id is not written while
+            // it lives.
+            let id = unsafe { &(*entry).oid };
             // SAFETY: the caller's contract on `object_out` and `repo`.
-            unsafe { pend::git_object_lookup(object_out, repo, id, OBJ_ANY) }
+            unsafe { pend::git_object_lookup(object_out, repo, Some(id), OBJ_ANY) }
         })
     }
 
@@ -1749,12 +1748,12 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tree_entry_byid(
         tree: *const GitTree,
-        id: *const Oid,
+        id: Option<&Oid>,
     ) -> *const GitTreeEntry {
         barrier(|| {
+            let id = git_arg!(id, "id", core::ptr::null());
             git_assert_arg!(!tree.is_null(), "tree", ptr::null());
-            // SAFETY: readable (contract).
-            let id = unsafe { id.read() };
+            let id = *id;
             // SAFETY: a live tree.
             unsafe { entries(tree) }
                 .iter()
@@ -1913,19 +1912,18 @@ pub mod ffi {
         mut entry_out: Out<'_, *const GitTreeEntry>,
         bld: *mut GitTreebuilder,
         filename: CStrArg<'_>,
-        id: *const Oid,
+        id: Option<&Oid>,
         filemode: c_uint,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!bld.is_null(), "bld", -1);
-            git_assert_arg!(!id.is_null(), "id", -1);
+            let id = git_arg!(id, "id", -1);
             let filename = git_arg!(filename.get(), "filename", -1);
             // SAFETY: a live builder, used by nothing else during the call
             // (no C is called back with it).
             let b = unsafe { &mut *bld };
             let name = filename;
-            // SAFETY: readable (contract).
-            let id = unsafe { id.read() };
+            let id = *id;
             // SAFETY: the builder's repository is live.
             let r = unsafe { b.insert(name, &id, filemode) };
             match r {
@@ -2109,7 +2107,7 @@ pub mod ffi {
             let mut lookup = |id: &Oid| -> Result<*mut GitTree> {
                 let mut t = ptr::null_mut();
                 // SAFETY: `repo` live; `t` writable.
-                ErrorCode::check(unsafe { pend::git_tree_lookup(&raw mut t, repo, id) })?;
+                ErrorCode::check(unsafe { pend::git_tree_lookup(&raw mut t, repo, Some(id)) })?;
                 Ok(t)
             };
             // SAFETY: trees from `lookup`, released once.
@@ -2159,7 +2157,7 @@ pub mod ffi {
             let mut lookup = |id: &Oid| -> Result<*mut GitTree> {
                 let mut t = ptr::null_mut();
                 // SAFETY: `repo` live; `t` writable.
-                ErrorCode::check(unsafe { pend::git_tree_lookup(&raw mut t, repo, id) })?;
+                ErrorCode::check(unsafe { pend::git_tree_lookup(&raw mut t, repo, Some(id)) })?;
                 Ok(t)
             };
             // SAFETY: trees from `lookup`, released once.

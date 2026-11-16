@@ -44,7 +44,7 @@ pub use crate::signature::ffi::{git_signature_default, git_signature_free};
 pub unsafe fn git_commit_lookup(
     out: *mut *mut GitCommit,
     repo: *mut git_repository,
-    id: *const Oid,
+    id: Option<&Oid>,
 ) -> c_int {
     // SAFETY: the caller's contract.
     unsafe { crate::object_api::ffi::git_commit_lookup(out.cast(), repo, id) }
@@ -78,7 +78,7 @@ pub unsafe fn git_commit_dup(out: *mut *mut GitCommit, source: *mut GitCommit) -
 pub unsafe fn git_tree_lookup(
     out: *mut *mut GitTree,
     repo: *mut git_repository,
-    id: *const Oid,
+    id: Option<&Oid>,
 ) -> c_int {
     // SAFETY: the caller's contract.
     unsafe { crate::object_api::ffi::git_tree_lookup(out.cast(), repo, id) }

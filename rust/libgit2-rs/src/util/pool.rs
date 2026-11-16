@@ -432,10 +432,12 @@ pub mod ffi {
     ///
     /// `pool` is a valid pool, not used concurrently.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_pool_malloc(pool: *mut GitPool, items: usize) -> *mut c_void {
+    pub unsafe extern "C" fn git_pool_malloc(
+        pool: Option<&mut GitPool>,
+        items: usize,
+    ) -> *mut c_void {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            let pool = unsafe { &mut *pool };
+            let pool = git_arg!(pool, "pool", core::ptr::null_mut());
             pool.malloc(items)
                 .map_or(ptr::null_mut(), |p| p.as_ptr().cast())
         })
@@ -447,10 +449,12 @@ pub mod ffi {
     ///
     /// As [`git_pool_malloc`].
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_pool_mallocz(pool: *mut GitPool, items: usize) -> *mut c_void {
+    pub unsafe extern "C" fn git_pool_mallocz(
+        pool: Option<&mut GitPool>,
+        items: usize,
+    ) -> *mut c_void {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            let pool = unsafe { &mut *pool };
+            let pool = git_arg!(pool, "pool", core::ptr::null_mut());
             pool.mallocz(items)
                 .map_or(ptr::null_mut(), |p| p.as_ptr().cast())
         })
@@ -465,15 +469,13 @@ pub mod ffi {
     /// or readable for `n` bytes, and not within the pool's unused memory.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_pool_strndup(
-        pool: *mut GitPool,
+        pool: Option<&mut GitPool>,
         str: *const c_char,
         n: usize,
     ) -> *mut c_char {
         barrier(|| {
-            git_assert_arg!(!pool.is_null(), "pool", ptr::null_mut());
+            let pool = git_arg!(pool, "pool", ptr::null_mut());
             git_assert_arg!(!str.is_null(), "str", ptr::null_mut());
-            // SAFETY: a valid pool.
-            let pool = unsafe { &mut *pool };
             git_assert_arg!(
                 pool.item_size == 1,
                 "pool->item_size == sizeof(char)",
@@ -501,12 +503,13 @@ pub mod ffi {
     ///
     /// `pool` as [`git_pool_strndup`]; `str` NULL or a NUL-terminated string.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_pool_strdup(pool: *mut GitPool, str: CStrArg<'_>) -> *mut c_char {
+    pub unsafe extern "C" fn git_pool_strdup(
+        pool: Option<&mut GitPool>,
+        str: CStrArg<'_>,
+    ) -> *mut c_char {
         barrier(|| {
-            git_assert_arg!(!pool.is_null(), "pool", ptr::null_mut());
+            let pool = git_arg!(pool, "pool", ptr::null_mut());
             let str = git_arg!(str.get(), "str", ptr::null_mut());
-            // SAFETY: a valid pool.
-            let pool = unsafe { &mut *pool };
             git_assert_arg!(
                 pool.item_size == 1,
                 "pool->item_size == sizeof(char)",
@@ -525,7 +528,7 @@ pub mod ffi {
     /// As [`git_pool_strdup`].
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_pool_strdup_safe(
-        pool: *mut GitPool,
+        pool: Option<&mut GitPool>,
         str: CStrArg<'_>,
     ) -> *mut c_char {
         if str.is_null() {
@@ -542,14 +545,12 @@ pub mod ffi {
     /// `pool` as [`git_pool_strndup`]; `a` and `b` NULL or NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_pool_strcat(
-        pool: *mut GitPool,
+        pool: Option<&mut GitPool>,
         a: CStrArg<'_>,
         b: CStrArg<'_>,
     ) -> *mut c_char {
         barrier(|| {
-            git_assert_arg!(!pool.is_null(), "pool", ptr::null_mut());
-            // SAFETY: a valid pool.
-            let pool = unsafe { &mut *pool };
+            let pool = git_arg!(pool, "pool", ptr::null_mut());
             git_assert_arg!(
                 pool.item_size == 1,
                 "pool->item_size == sizeof(char)",

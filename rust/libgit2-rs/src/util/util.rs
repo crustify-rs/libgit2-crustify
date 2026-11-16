@@ -636,6 +636,7 @@ pub fn strsep(buf: &mut [u8], pos: &mut usize, sep: &[u8]) -> Option<core::ops::
 /// The exports of `util.c`.
 pub mod ffi {
     use super::*;
+    use crate::git_arg;
     use crate::util::cabi::{CStrArg, Out};
     use crate::util::export::{barrier, bytes, cstr_bytes, status};
 
@@ -1175,10 +1176,9 @@ pub mod ffi {
     ///
     /// `out` is a valid `git_str`; `name` is NUL-terminated.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git__getenv(out: *mut GitStr, name: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git__getenv(out: Option<&mut GitStr>, name: *const c_char) -> c_int {
         barrier(|| {
-            // SAFETY: the caller passes a valid, unaliased `git_str`.
-            let out = unsafe { &mut *out };
+            let out = git_arg!(out, "out", -1);
             // SAFETY: the caller passes a NUL-terminated `name`.
             let name = unsafe { CStr::from_ptr(name) };
             status(getenv(out, name))

@@ -229,7 +229,7 @@ fn entries_alloc_dup() {
             ((*d).attr, (*d).oid, (*d).name()),
             (0o100755, id, &b"name.txt"[..])
         );
-        assert_eq!(ffi::git_tree_entry_cmp(e, d), 0);
+        assert_eq!(ffi::git_tree_entry_cmp(e.as_ref(), d.as_ref()), 0);
         assert_eq!(ffi::git_tree_entry_filemode(d), FILEMODE_BLOB_EXECUTABLE);
         assert_eq!(ffi::git_tree_entry_type(d), OBJ_BLOB);
         ffi::git_tree_entry_free(d);
@@ -441,7 +441,7 @@ fn walks() {
         assert!(ffi::git_tree_entry_byindex(root, 3).is_null());
         let id = Oid::from_bytes(&[0xab; 20], OidType::Sha1).unwrap();
         assert_eq!(
-            ffi::git_tree_entry_byid(root, &raw const id),
+            ffi::git_tree_entry_byid(root, Some(&id)),
             ffi::git_tree_entry_byindex(root, 1)
         );
         assert_eq!(ffi::git_tree_walk(root, 5, None, ptr::null_mut()), -1);

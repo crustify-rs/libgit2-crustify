@@ -2271,6 +2271,7 @@ impl core::fmt::Debug for Pack {
 /// The exports of `pack.c`.
 pub mod ffi {
     use super::*;
+    use crate::git_arg;
     use crate::util::cabi::Out;
     use crate::util::export::{barrier, status};
 
@@ -2415,13 +2416,12 @@ pub mod ffi {
     pub unsafe extern "C" fn git_packfile_unpack_header(
         mut size_p: Out<'_, usize>,
         mut type_p: Out<'_, c_int>,
-        p: *mut GitPackFile,
+        p: Option<&GitPackFile>,
         w_curs: *mut *mut GitMwindow,
         curpos: *mut i64,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: a live pack (the caller), which is `Sync`.
-            let p = unsafe { &*p };
+            let p = git_arg!(p, "p", -1);
             // SAFETY: a valid cursor, used only here (the caller).
             let cursor = unsafe { Cursor::from_raw_mut(w_curs) };
             // SAFETY: valid (the caller).
@@ -2446,12 +2446,12 @@ pub mod ffi {
     pub unsafe extern "C" fn git_packfile_resolve_header(
         mut size_p: Out<'_, usize>,
         mut type_p: Out<'_, c_int>,
-        p: *mut GitPackFile,
+        p: Option<&GitPackFile>,
         offset: i64,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: a live pack (the caller).
-            match unsafe { &*p }.resolve_header(offset) {
+            let p = git_arg!(p, "p", -1);
+            match p.resolve_header(offset) {
                 Ok((size, kind)) => {
                     size_p.write(size);
                     type_p.write(kind);
@@ -2471,7 +2471,7 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn get_delta_base(
         delta_base_out: *mut i64,
-        p: *mut GitPackFile,
+        p: Option<&GitPackFile>,
         w_curs: *mut *mut GitMwindow,
         curpos: *mut i64,
         type_: c_int,
@@ -2479,8 +2479,7 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!delta_base_out.is_null(), "delta_base_out", -1);
-            // SAFETY: a live pack (the caller), which is `Sync`.
-            let p = unsafe { &*p };
+            let p = git_arg!(p, "p", -1);
             // SAFETY: a valid cursor, used only here (the caller).
             let cursor = unsafe { Cursor::from_raw_mut(w_curs) };
             // SAFETY: valid (the caller).
@@ -2504,12 +2503,11 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_packfile_unpack(
         obj: *mut GitRawobj,
-        p: *mut GitPackFile,
+        p: Option<&GitPackFile>,
         obj_offset: *mut i64,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: a live pack (the caller).
-            let p = unsafe { &*p };
+            let p = git_arg!(p, "p", -1);
             // SAFETY: valid (the caller).
             let off = unsafe { &mut *obj_offset };
             match p.unpack(off) {
@@ -2551,12 +2549,11 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_packfile_stream_open(
         obj: *mut GitPackfileStream,
-        p: *mut GitPackFile,
+        p: Option<&GitPackFile>,
         curpos: i64,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: a live pack (the caller).
-            let p = unsafe { &*p };
+            let p = git_arg!(p, "p", -1);
             // SAFETY: the caller's contract is `open_in`'s.
             status(unsafe { GitPackfileStream::open_in(obj, p, curpos) }.map(|_| ()))
         })
@@ -2599,15 +2596,15 @@ pub mod ffi {
     pub unsafe extern "C" fn git_pack_entry_find(
         e: *mut GitPackEntry,
         p: *mut GitPackFile,
-        short_oid: *const Oid,
+        short_oid: Option<&Oid>,
         len: usize,
     ) -> c_int {
         barrier(|| {
+            let short_oid = git_arg!(short_oid, "short_oid", -1);
             git_assert_arg!(!p.is_null(), "p", -1);
             // SAFETY: a live pack (the caller).
             let pack = unsafe { &*p };
-            // SAFETY: a valid oid (the caller).
-            let id = unsafe { &*short_oid };
+            let id = short_oid;
             match pack.entry_find(id, len) {
                 Ok((offset, found)) => {
                     // SAFETY: writable (the caller).
@@ -2633,14 +2630,15 @@ pub mod ffi {
     /// `git_odb_foreach_cb` contract).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_pack_foreach_entry(
-        p: *mut GitPackFile,
+        p: Option<&GitPackFile>,
         cb: crate::sys::midx::OdbForeachCb,
         data: *mut c_void,
     ) -> c_int {
         barrier(|| {
+            let p = git_arg!(p, "p", -1);
             // SAFETY: a live pack (the caller); the callback contract is the
             // caller's, and each id outlives its call.
-            unsafe { &*p }.foreach_entry(|id| unsafe { cb(id, data) })
+            p.foreach_entry(|id| unsafe { cb(id, data) })
         })
     }
 
@@ -2655,13 +2653,13 @@ pub mod ffi {
     /// `p` is a live pack; `cb` may be called with `data`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_pack_foreach_entry_offset(
-        p: *mut GitPackFile,
+        p: Option<&GitPackFile>,
         cb: ForeachEntryOffsetCb,
         data: *mut c_void,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: a live pack (the caller).
-            let r = unsafe { &*p }.foreach_entry_offset(|id, off| {
+            let p = git_arg!(p, "p", -1);
+            let r = p.foreach_entry_offset(|id, off| {
                 // SAFETY: the callback contract is the caller's.
                 unsafe { cb(id, off, data) }
             });

@@ -2069,6 +2069,7 @@ const fn base85_decode_table() -> [i8; 256] {
 /// indeterminate `char`s.
 pub mod ffi {
     use super::*;
+    use crate::git_arg;
     use crate::util::cabi::{CStrArg, Out};
     use crate::util::export::{barrier, bytes, cstr_bytes, status};
     use std::borrow::Cow;
@@ -3186,12 +3187,10 @@ pub mod ffi {
     ///
     /// Both are valid `git_str`s.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_cmp(a: *const GitStr, b: *const GitStr) -> c_int {
+    pub unsafe extern "C" fn git_str_cmp(a: Option<&GitStr>, b: Option<&GitStr>) -> c_int {
         barrier(|| {
-            // SAFETY: a valid `git_str`, only read.
-            let a = unsafe { &*a };
-            // SAFETY: as `a`.
-            let b = unsafe { &*b };
+            let a = git_arg!(a, "a", -1);
+            let b = git_arg!(b, "b", -1);
             a.compare(b)
         })
     }
@@ -3399,9 +3398,9 @@ pub mod ffi {
     ///
     /// `buf` is a valid `git_str`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_is_binary(buf: *const GitStr) -> c_int {
-        // SAFETY: a valid `git_str`, only read.
-        barrier(|| c_int::from(unsafe { &*buf }.is_binary()))
+    pub unsafe extern "C" fn git_str_is_binary(buf: Option<&GitStr>) -> c_int {
+        let buf = git_arg!(buf, "buf", -1);
+        barrier(|| c_int::from(buf.is_binary()))
     }
 
     /// `git_str_contains_nul`.
@@ -3410,9 +3409,9 @@ pub mod ffi {
     ///
     /// `buf` is a valid `git_str`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_contains_nul(buf: *const GitStr) -> c_int {
-        // SAFETY: a valid `git_str`, only read.
-        barrier(|| c_int::from(unsafe { &*buf }.contains_nul()))
+    pub unsafe extern "C" fn git_str_contains_nul(buf: Option<&GitStr>) -> c_int {
+        let buf = git_arg!(buf, "buf", -1);
+        barrier(|| c_int::from(buf.contains_nul()))
     }
 
     /// `git_str_detect_bom`.
@@ -3423,11 +3422,11 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_detect_bom(
         mut bom: Out<'_, Bom>,
-        buf: *const GitStr,
+        buf: Option<&GitStr>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: a valid `git_str`, only read.
-            let (b, n) = unsafe { &*buf }.detect_bom();
+            let buf = git_arg!(buf, "buf", -1);
+            let (b, n) = buf.detect_bom();
             bom.write(b);
             n as c_int
         })
@@ -3441,12 +3440,12 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_gather_text_stats(
         mut stats: Out<'_, TextStats>,
-        buf: *const GitStr,
+        buf: Option<&GitStr>,
         skip_bom: bool,
     ) -> bool {
         barrier(|| {
-            // SAFETY: a valid `git_str`, only read.
-            let (st, bin) = unsafe { &*buf }.gather_text_stats(skip_bom);
+            let buf = git_arg!(buf, "buf", false);
+            let (st, bin) = buf.gather_text_stats(skip_bom);
             stats.write(st);
             bin
         })

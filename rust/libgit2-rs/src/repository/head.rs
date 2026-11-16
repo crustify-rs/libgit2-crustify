@@ -111,7 +111,7 @@ fn reference_symbolic_create(
 fn object_lookup<'r>(repo: &'r GitRepository, id: &Oid, t: c_int) -> Result<Object<'r>> {
     let mut out = ptr::null_mut();
     // SAFETY: a live repository, a valid id, a local out.
-    check(unsafe { crate::object::ffi::git_object_lookup(&raw mut out, rp(repo), id, t) })?;
+    check(unsafe { crate::object::ffi::git_object_lookup(&raw mut out, rp(repo), Some(id), t) })?;
     let out = NonNull::new(out).ok_or(ErrorCode::GENERIC)?;
     // SAFETY: the object the lookup returned to us, of `repo`.
     Ok(unsafe { Object::adopt(out) })
@@ -886,7 +886,7 @@ pub(crate) fn commit_parents(
             let mut commit = ptr::null_mut();
             // SAFETY: a live repository, a valid id, a local out.
             if unsafe {
-                crate::object_api::ffi::git_commit_lookup(&raw mut commit, rp(data.repo), oid)
+                crate::object_api::ffi::git_commit_lookup(&raw mut commit, rp(data.repo), Some(oid))
             } < 0
             {
                 return -1;

@@ -1188,14 +1188,13 @@ pub mod ffi {
     pub unsafe extern "C" fn git_signature__pdup(
         mut dest: Out<'_, *mut GitSignature>,
         source: *const GitSignature,
-        pool: *mut GitPool,
+        pool: Option<&mut GitPool>,
     ) -> c_int {
         barrier(|| {
             if source.is_null() {
                 return 0;
             }
-            // SAFETY: a valid pool, used only here during the call.
-            let pool = unsafe { &mut *pool };
+            let pool = git_arg!(pool, "pool", -1);
             // SAFETY: a valid signature, read by value.
             let s = unsafe { source.read() };
             let r = (|| -> Result<*mut GitSignature> {
@@ -1380,11 +1379,12 @@ pub mod ffi {
     /// `printf`), none of them in `buf`'s buffer.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_signature__writebuf(
-        buf: *mut GitStr,
+        buf: Option<&mut GitStr>,
         header: CStrArg<'_>,
         sig: *const GitSignature,
     ) {
         barrier(|| {
+            let buf = git_arg!(buf, "buf", ());
             // SAFETY: a valid signature, read by value.
             let s = unsafe { sig.read() };
             // SAFETY: NULL or a NUL-terminated string, valid for the call.
@@ -1394,8 +1394,7 @@ pub mod ffi {
             let header = header.get().map(CStr::to_bytes);
             // The text is formatted first, so `buf` may alias nothing that
             // matters; `&mut` covers the `git_str` struct only.
-            // SAFETY: a valid `git_str`, not otherwise accessed.
-            writebuf(unsafe { &mut *buf }, header, name, email, s.when);
+            writebuf(buf, header, name, email, s.when);
         })
     }
 
@@ -1618,7 +1617,7 @@ mod tests {
         assert_eq!(cur as usize - text.as_ptr() as usize, 24);
         let mut b = GitStr::new();
         // SAFETY: valid arguments.
-        unsafe { ffi::git_signature__writebuf(&raw mut b, CStrArg::NULL, &raw const sig) };
+        unsafe { ffi::git_signature__writebuf(Some(&mut b), CStrArg::NULL, &raw const sig) };
         assert_eq!(b.as_bytes(), b"a <b> 1 +0100\n");
         let raw = alloc::malloc(size_of::<GitSignature>()).cast::<GitSignature>();
         // SAFETY: a fresh block; the parsed signature's strings move in.

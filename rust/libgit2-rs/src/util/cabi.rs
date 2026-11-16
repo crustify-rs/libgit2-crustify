@@ -264,6 +264,15 @@ macro_rules! git_arg {
             }
         }
     };
+    ($opt:expr, $text:literal, ()) => {
+        match $opt {
+            ::core::option::Option::Some(v) => v,
+            ::core::option::Option::None => {
+                let _ = $crate::util::errors::assert_arg_failed($text);
+                return;
+            }
+        }
+    };
     ($opt:expr, $text:literal, $ret:expr) => {
         match $opt {
             ::core::option::Option::Some(v) => v,

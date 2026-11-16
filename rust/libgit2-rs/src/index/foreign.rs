@@ -207,7 +207,7 @@ pub fn type_from_filemode(mode: u32) -> c_int {
 /// `git_object__is_valid`.
 pub fn object_is_valid(repo: Repo, id: &Oid, expected_type: c_int) -> bool {
     // SAFETY: `id` readable, `repo` live.
-    unsafe { p::git_object__is_valid(repo.as_ptr(), id, expected_type) }
+    unsafe { p::git_object__is_valid(repo.as_ptr(), Some(id), expected_type) }
 }
 
 // ---------------------------------------------------------------------------
@@ -317,7 +317,7 @@ unsafe impl TreeSource for CTrees {
     fn lookup(&self, id: &Oid) -> Result<CTree> {
         let mut out = ptr::null_mut();
         // SAFETY: `out` writable; `repo` is the tree's live repository.
-        ErrorCode::check(unsafe { p::git_tree_lookup(&raw mut out, self.repo, id) })?;
+        ErrorCode::check(unsafe { p::git_tree_lookup(&raw mut out, self.repo, Some(id)) })?;
         Ok(CTree {
             ptr: NonNull::new(out).ok_or(ErrorCode::GENERIC)?,
             owned: true,
@@ -788,7 +788,7 @@ mod p {
     /// As the export's.
     pub unsafe fn git_object__is_valid(
         repo: *mut c_void,
-        id: *const Oid,
+        id: Option<&Oid>,
         expected_type: c_int,
     ) -> bool {
         // SAFETY: the caller's contract.
@@ -815,7 +815,7 @@ mod p {
     pub unsafe fn git_tree_lookup(
         out: *mut *mut c_void,
         repo: *mut c_void,
-        id: *const Oid,
+        id: Option<&Oid>,
     ) -> c_int {
         // SAFETY: the caller's contract.
         unsafe { crate::object_api::ffi::git_tree_lookup(out, repo.cast(), id) }

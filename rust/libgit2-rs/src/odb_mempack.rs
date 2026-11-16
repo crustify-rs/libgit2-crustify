@@ -355,7 +355,7 @@ pub mod ffi {
                 error = unsafe { with_state(backend, run) }.unwrap_or(-1);
                 if error == 0 {
                     // SAFETY: as above.
-                    error = unsafe { crate::buf::ffi::git_buf_fromstr(pack, &raw mut s) };
+                    error = unsafe { crate::buf::ffi::git_buf_fromstr(pack, Some(&mut s)) };
                 }
             }
             drop(s);

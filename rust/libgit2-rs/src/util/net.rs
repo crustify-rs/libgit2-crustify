@@ -1360,6 +1360,7 @@ pub fn is_url(s: &[u8]) -> bool {
 /// strings of a URL the call writes or frees.
 pub mod ffi {
     use super::*;
+    use crate::git_arg;
     use crate::util::cabi::CStrArg;
     use crate::util::export::{barrier, cstr_bytes, status};
 
@@ -1562,9 +1563,9 @@ pub mod ffi {
     ///
     /// `url` is an initialized URL.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_net_url_valid(url: *mut GitNetUrl) -> bool {
-        // SAFETY: the caller's contract.
-        barrier(|| unsafe { &*url }.is_valid())
+    pub unsafe extern "C" fn git_net_url_valid(url: Option<&GitNetUrl>) -> bool {
+        let url = git_arg!(url, "url", false);
+        barrier(|| url.is_valid())
     }
 
     /// `git_net_url_is_default_port`.
@@ -1573,9 +1574,9 @@ pub mod ffi {
     ///
     /// `url` is an initialized URL.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_net_url_is_default_port(url: *mut GitNetUrl) -> bool {
-        // SAFETY: the caller's contract.
-        barrier(|| unsafe { &*url }.is_default_port())
+    pub unsafe extern "C" fn git_net_url_is_default_port(url: Option<&GitNetUrl>) -> bool {
+        let url = git_arg!(url, "url", false);
+        barrier(|| url.is_default_port())
     }
 
     /// `git_net_url_is_ipv6`.
@@ -1584,9 +1585,9 @@ pub mod ffi {
     ///
     /// `url` is an initialized URL.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_net_url_is_ipv6(url: *mut GitNetUrl) -> bool {
-        // SAFETY: the caller's contract.
-        barrier(|| unsafe { &*url }.is_ipv6())
+    pub unsafe extern "C" fn git_net_url_is_ipv6(url: Option<&GitNetUrl>) -> bool {
+        let url = git_arg!(url, "url", false);
+        barrier(|| url.is_ipv6())
     }
 
     /// `git_net_url_swap`.
@@ -1609,13 +1610,13 @@ pub mod ffi {
     /// `buf` is a valid `git_str`; `url` is NULL or an initialized URL
     /// whose strings are not within `buf`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_net_url_fmt(buf: *mut GitStr, url: *mut GitNetUrl) -> c_int {
+    pub unsafe extern "C" fn git_net_url_fmt(
+        buf: Option<&mut GitStr>,
+        url: Option<&GitNetUrl>,
+    ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!url.is_null(), "url", -1);
-            // SAFETY: the caller's contract; the two do not overlap.
-            let buf = unsafe { &mut *buf };
-            // SAFETY: as above.
-            let url = unsafe { &*url };
+            let url = git_arg!(url, "url", -1);
+            let buf = git_arg!(buf, "buf", -1);
             status(url.fmt(buf))
         })
     }
@@ -1626,12 +1627,13 @@ pub mod ffi {
     ///
     /// As [`git_net_url_fmt`], with `url` not NULL.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_net_url_fmt_path(buf: *mut GitStr, url: *mut GitNetUrl) -> c_int {
+    pub unsafe extern "C" fn git_net_url_fmt_path(
+        buf: Option<&mut GitStr>,
+        url: Option<&GitNetUrl>,
+    ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract; the two do not overlap.
-            let buf = unsafe { &mut *buf };
-            // SAFETY: as above.
-            let url = unsafe { &*url };
+            let buf = git_arg!(buf, "buf", -1);
+            let url = git_arg!(url, "url", -1);
             status(url.fmt_path(buf))
         })
     }
@@ -1643,12 +1645,11 @@ pub mod ffi {
     /// `url` is an initialized URL; `pattern` a NUL-terminated string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_net_url_matches_pattern(
-        url: *mut GitNetUrl,
+        url: Option<&GitNetUrl>,
         pattern: CStrArg<'_>,
     ) -> bool {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            let url = unsafe { &*url };
+            let url = git_arg!(url, "url", false);
             let pattern = pattern.to_bytes();
             url.matches_pattern(pattern)
         })
@@ -1662,12 +1663,11 @@ pub mod ffi {
     /// string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_net_url_matches_pattern_list(
-        url: *mut GitNetUrl,
+        url: Option<&GitNetUrl>,
         pattern_list: CStrArg<'_>,
     ) -> bool {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            let url = unsafe { &*url };
+            let url = git_arg!(url, "url", false);
             let list = pattern_list.to_bytes();
             url.matches_list(list)
         })
@@ -1679,9 +1679,9 @@ pub mod ffi {
     ///
     /// `url` is an initialized URL.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_net_url_dispose(url: *mut GitNetUrl) {
-        // SAFETY: the caller's contract.
-        barrier(|| unsafe { &mut *url }.dispose())
+    pub unsafe extern "C" fn git_net_url_dispose(url: Option<&mut GitNetUrl>) {
+        let url = git_arg!(url, "url", ());
+        barrier(|| url.dispose())
     }
 }
 

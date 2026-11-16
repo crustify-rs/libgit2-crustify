@@ -620,7 +620,7 @@ pub unsafe fn lookup_prefix(
     } else {
         let short = Oid::from_raw_parts(oid_type as u8, *id.prefix(len).raw_id());
         // SAFETY: as above.
-        unsafe { p::git_odb_read_prefix(&raw mut odb_obj, odb, &raw const short, len) }
+        unsafe { p::git_odb_read_prefix(&raw mut odb_obj, odb, Some(&short), len) }
     };
     ErrorCode::check(r)?;
     git_assert!(!odb_obj.is_null(), "odb_obj");
@@ -888,7 +888,7 @@ pub unsafe fn is_valid(repo: *mut git_repository, id: &Oid, expected: git_object
     let mut len = 0usize;
     let mut actual: c_int = 0;
     // SAFETY: a live odb, valid outputs.
-    if unsafe { p::git_odb_read_header(&raw mut len, &raw mut actual, odb, id) } < 0 {
+    if unsafe { p::git_odb_read_header(&raw mut len, &raw mut actual, odb, Some(id)) } < 0 {
         return false;
     }
     if expected != GIT_OBJECT_ANY && expected != actual {
@@ -1865,16 +1865,14 @@ pub mod ffi {
     pub unsafe extern "C" fn git_object_lookup_prefix(
         object_out: *mut *mut GitObject,
         repo: *mut git_repository,
-        id: *const Oid,
+        id: Option<&Oid>,
         len: usize,
         object_type: git_object_t,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!repo.is_null(), "repo", -1);
             git_assert_arg!(!object_out.is_null(), "object_out", -1);
-            git_assert_arg!(!id.is_null(), "id", -1);
-            // SAFETY: valid (oids are read only).
-            let id = unsafe { &*id };
+            let id = git_arg!(id, "id", -1);
             // SAFETY: a live repository.
             let r = unsafe { lookup_prefix(repo, id, len, object_type) };
             // SAFETY: writable.
@@ -1891,7 +1889,7 @@ pub mod ffi {
     pub unsafe extern "C" fn git_object_lookup(
         object_out: *mut *mut GitObject,
         repo: *mut git_repository,
-        id: *const Oid,
+        id: Option<&Oid>,
         object_type: git_object_t,
     ) -> c_int {
         // (C reads `repo->oid_type` before checking `repo`.)
@@ -2108,15 +2106,14 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_object__is_valid(
         repo: *mut git_repository,
-        id: *const Oid,
+        id: Option<&Oid>,
         expected_type: git_object_t,
     ) -> bool {
         barrier(|| {
             if !strict_input_validation() {
                 return true;
             }
-            // SAFETY: a valid id (the caller's contract).
-            let id = unsafe { &*id };
+            let id = git_arg!(id, "id", false);
             // SAFETY: a live repository.
             unsafe { is_valid(repo, id, expected_type) }
         })
@@ -2345,11 +2342,11 @@ pub mod ffi {
     pub unsafe extern "C" fn git_object__write_oid_header(
         buf: *mut GitStr,
         header: *const c_char,
-        oid: *const Oid,
+        oid: Option<&Oid>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: valid, read by value.
-            let id = unsafe { oid.read() };
+            let oid = git_arg!(oid, "oid", -1);
+            let id = *oid;
             // A header inside `buf`'s own buffer (C's `git_str_puts`
             // allows it) is copied first; any other is borrowed.
             // SAFETY: a valid `git_str`, read only here.
@@ -2394,7 +2391,7 @@ pub mod ffi {
         error = status(f(&mut s));
         if error == 0 {
             // SAFETY: valid `git_buf` and `git_str`.
-            error = unsafe { crate::buf::ffi::git_buf_fromstr(out, &raw mut s) };
+            error = unsafe { crate::buf::ffi::git_buf_fromstr(out, Some(&mut s)) };
         }
         drop(s);
         error
@@ -2519,7 +2516,7 @@ mod tests {
         let header = s.as_ptr();
         // SAFETY: a valid `git_str`, its own NUL-terminated contents as the
         // header (as C may pass), a valid id.
-        let rc = unsafe { ffi::git_object__write_oid_header(&raw mut s, header, &raw const id) };
+        let rc = unsafe { ffi::git_object__write_oid_header(&raw mut s, header, Some(&id)) };
         assert_eq!(rc, 0);
         assert_eq!(
             s.as_bytes(),

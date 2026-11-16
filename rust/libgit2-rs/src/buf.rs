@@ -202,6 +202,7 @@ pub(crate) unsafe fn wrap_private(
 /// The exports of `buf.c`.
 pub mod ffi {
     use super::*;
+    use crate::git_arg;
     use crate::git_assert_arg;
     use crate::util::export::barrier;
 
@@ -247,13 +248,12 @@ pub mod ffi {
     /// `out` is NULL or writable (its old contents are overwritten, not
     /// freed); `str` is NULL or a valid `git_str`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_buf_fromstr(out: *mut GitBuf, str: *mut GitStr) -> c_int {
+    pub unsafe extern "C" fn git_buf_fromstr(out: *mut GitBuf, str: Option<&mut GitStr>) -> c_int {
         barrier(|| {
             git_assert_arg!(!out.is_null(), "out", -1);
-            git_assert_arg!(!str.is_null(), "str", -1);
+            let str = git_arg!(str, "str", -1);
             let mut b = GitBuf::new();
-            // SAFETY: a valid `git_str`, not otherwise accessed.
-            fromstr(&mut b, unsafe { &mut *str });
+            fromstr(&mut b, str);
             // SAFETY: `out` is writable; its old contents are not freed.
             unsafe { out.write(b) };
             0
