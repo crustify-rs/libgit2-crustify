@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+"""Post-processing for the libgit2 benchmark suite (standard library only).
+
+  report.py json <builddir> <results.tsv>     results.tsv -> JSON on stdout
+  report.py compare <outdir> <labelA> <labelB>
+      Aggregate the per-round outputs <outdir>/<label>/round*-*.out of two
+      builds, print a table (component, workload, A median, B median, ratio
+      B/A, check), and write <outdir>/compare.tsv and compare.json.
+      Exit status 1 if a check value differs between the builds, is
+      inconsistent across repetitions/rounds, or a workload is missing.
+"""
+import glob
+import json
+import math
+import os
+import statistics
+import sys
+
+FIELDS = ["component", "workload", "reps", "median_ns", "min_ns", "ops", "check", "samples_ns"]
+
+
+def parse_lines(lines):
+    for line in lines:
+        line = line.rstrip("\n")
+        if not line or line.startswith("#") or line.startswith("component\t"):
+            continue
+        parts = line.split("\t")
+        if len(parts) != len(FIELDS):
+            continue
+        rec = dict(zip(FIELDS, parts))
+        rec["reps"] = int(rec["reps"])
+        rec["median_ns"] = int(rec["median_ns"])
+        rec["min_ns"] = int(rec["min_ns"])
+        rec["ops"] = int(rec["ops"])
+        rec["samples_ns"] = [int(x) for x in rec["samples_ns"].split(",") if x]
+        yield rec
+
+
+def cmd_json(builddir, tsv):
+    with open(tsv) as f:
+        recs = list(parse_lines(f))
+    json.dump({"build": builddir, "results": recs}, sys.stdout, indent=1)
+    sys.stdout.write("\n")
+
+
+def load_build(outdir, label):
+    """{(component, workload): {"samples": [...], "checks": set, "ops": n}}"""
+    res = {}
+    order = []
+    for path in sorted(glob.glob(os.path.join(outdir, label, "round*-*.out"))):
+        with open(path) as f:
+            for r in parse_lines(f):
+                key = (r["component"], r["workload"])
+                if key not in res:
+                    res[key] = {"samples": [], "checks": set(), "ops": r["ops"]}
+                    order.append(key)
+                res[key]["samples"].extend(r["samples_ns"])
+                res[key]["checks"].add(r["check"])
+    return res, order
+
+
+def fmt_ms(ns):
+    return "%.3f" % (ns / 1e6)
+
+
+def cmd_compare(outdir, a, b):
+    ra, order_a = load_build(outdir, a)
+    rb, order_b = load_build(outdir, b)
+    order = order_a + [k for k in order_b if k not in ra]
+    rows = []
+    bad = 0
+    for key in order:
+        x, y = ra.get(key), rb.get(key)
+        row = {"component": key[0], "workload": key[1]}
+        flags = []
+        for lab, r in ((a, x), (b, y)):
+            if r is None:
+                flags.append("MISSING(%s)" % lab)
+                continue
+            row[lab] = {
+                "median_ns": int(statistics.median(r["samples"])),
+                "min_ns": min(r["samples"]),
+                "n": len(r["samples"]),
+                "ops": r["ops"],
+                "checks": sorted(r["checks"]),
+            }
+            if len(r["checks"]) != 1 or "INCONSISTENT" in r["checks"]:
+                flags.append("INCONSISTENT(%s)" % lab)
+        if x and y:
+            row["ratio"] = row[b]["median_ns"] / max(row[a]["median_ns"], 1)
+            row["ratio_min"] = row[b]["min_ns"] / max(row[a]["min_ns"], 1)
+            if x["checks"] != y["checks"]:
+                flags.append("CHECK-MISMATCH")
+        row["flags"] = flags
+        if flags:
+            bad += 1
+        rows.append(row)
+
+    hdr = ("component", "workload", "%s_median_ms" % a, "%s_median_ms" % b, "ratio",
+           "%s_min_ms" % a, "%s_min_ms" % b, "ratio_min", "check")
+    tsv_lines = ["\t".join(hdr)]
+    w = max([len(r["workload"]) for r in rows] + [8])
+    print("%-10s %-*s %12s %12s %7s %7s  %s" % ("component", w, "workload", a + " ms", b + " ms",
+                                               "ratio", "minrat", "check"))
+    for r in rows:
+        ma = r[a]["median_ns"] if a in r else None
+        mb = r[b]["median_ns"] if b in r else None
+        status = " ".join(r["flags"]) if r["flags"] else "ok " + (r[a]["checks"][0] if a in r else "")
+        ratio = "%.3f" % r["ratio"] if "ratio" in r else "-"
+        rmin = "%.3f" % r["ratio_min"] if "ratio_min" in r else "-"
+        print("%-10s %-*s %12s %12s %7s %7s  %s" % (
+            r["component"], w, r["workload"], fmt_ms(ma) if ma is not None else "-",
+            fmt_ms(mb) if mb is not None else "-", ratio, rmin, status))
+        tsv_lines.append("\t".join([
+            r["component"], r["workload"],
+            fmt_ms(ma) if ma is not None else "", fmt_ms(mb) if mb is not None else "",
+            ratio if "ratio" in r else "",
+            fmt_ms(r[a]["min_ns"]) if a in r else "", fmt_ms(r[b]["min_ns"]) if b in r else "",
+            rmin if "ratio_min" in r else "", status]))
+
+    ratios = [r["ratio"] for r in rows if "ratio" in r]
+    summary = {}
+    if ratios:
+        logs = [math.log(x) for x in ratios]
+        summary = {
+            "workloads": len(rows),
+            "geomean_ratio": math.exp(sum(logs) / len(logs)),
+            "max_abs_dev": max(abs(x - 1) for x in ratios),
+            "median_abs_dev": statistics.median(abs(x - 1) for x in ratios),
+            "within_5pct": sum(1 for x in ratios if abs(x - 1) <= 0.05),
+            "within_10pct": sum(1 for x in ratios if abs(x - 1) <= 0.10),
+            "flagged": bad,
+        }
+        print()
+        print("%d workloads: geomean ratio %.3f, median |ratio-1| %.3f, max |ratio-1| %.3f, "
+              "within 5%%: %d, within 10%%: %d, flagged: %d" % (
+                  len(rows), summary["geomean_ratio"], summary["median_abs_dev"],
+                  summary["max_abs_dev"], summary["within_5pct"], summary["within_10pct"], bad))
+    with open(os.path.join(outdir, "compare.tsv"), "w") as f:
+        f.write("\n".join(tsv_lines) + "\n")
+    with open(os.path.join(outdir, "compare.json"), "w") as f:
+        json.dump({"a": a, "b": b, "summary": summary, "rows": rows}, f, indent=1)
+    return 1 if bad else 0
+
+
+def main(argv):
+    if len(argv) == 4 and argv[1] == "json":
+        cmd_json(argv[2], argv[3])
+        return 0
+    if len(argv) == 5 and argv[1] == "compare":
+        return cmd_compare(argv[2], argv[3], argv[4])
+    sys.stderr.write(__doc__)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
