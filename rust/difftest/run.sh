@@ -10,8 +10,9 @@ fail=0
 for d in "${drivers[@]}"; do
 	name=$(basename "$d" .c)
 	"$HERE/link.sh" "$d" "$OUT"
-	"$OUT/${name}_c" > "$OUT/$name.c.txt" 2>&1 || echo "$name: C exited $?"
-	"$OUT/${name}_rust" > "$OUT/$name.rust.txt" 2>&1 || echo "$name: Rust exited $?"
+	# Drivers run from the top of the source tree (for tests/resources).
+	(cd "$HERE/../.." && "$OUT/${name}_c") > "$OUT/$name.c.txt" 2>&1 || echo "$name: C exited $?"
+	(cd "$HERE/../.." && "$OUT/${name}_rust") > "$OUT/$name.rust.txt" 2>&1 || echo "$name: Rust exited $?"
 	if cmp -s "$OUT/$name.c.txt" "$OUT/$name.rust.txt"; then
 		echo "$name: same output ($(wc -l < "$OUT/$name.c.txt") lines)"
 	else

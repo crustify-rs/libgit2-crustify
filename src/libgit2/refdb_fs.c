@@ -609,13 +609,13 @@ static int packed_map_check(refdb_fs_backend *backend)
 
 	if (backend->packed_refs_map.data &&
 	    !git_futils_filestamp_check(
-	            &backend->packed_refs_stamp, backend->refcache->path)) {
+	            &backend->packed_refs_stamp, git_sortedcache_path(backend->refcache))) {
 		git_mutex_unlock(&backend->prlock);
 		return error;
 	}
 	packed_map_free(backend);
 
-	fd = git_futils_open_ro(backend->refcache->path);
+	fd = git_futils_open_ro(git_sortedcache_path(backend->refcache));
 	if (fd < 0) {
 		git_mutex_unlock(&backend->prlock);
 		if (fd == GIT_ENOTFOUND) {
@@ -628,7 +628,7 @@ static int packed_map_check(refdb_fs_backend *backend)
 	if (p_fstat(fd, &st) < 0) {
 		p_close(fd);
 		git_mutex_unlock(&backend->prlock);
-		git_error_set(GIT_ERROR_OS, "unable to stat packed-refs '%s'", backend->refcache->path);
+		git_error_set(GIT_ERROR_OS, "unable to stat packed-refs '%s'", git_sortedcache_path(backend->refcache));
 		return -1;
 	}
 

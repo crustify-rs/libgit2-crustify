@@ -19,6 +19,12 @@ builds on. This is the short version; each module's rustdoc has the rest.
 | an export | `export::{barrier, status, bytes, cstr}` | `export` |
 | a layout test | `crate::c_layout_test!` | `layout` |
 | test setup | `test_support::{init, exclusive, with_alloc_limit}` | `test_support` |
+| SHA-1 (collision-detecting) / SHA-256; `git_hash_ctx` embedded in a mirrored struct | `hash::{Hasher, HashAlgorithm, hash_buf, hash_vec, Digest}`; `hash::HashCtx` | `hash` |
+| zlib streams; `git_zstream` embedded in a mirrored struct | `zstream::{ZStream, inflate_buf, deflate_buf}`; `zstream::GitZstream` | `zstream` |
+| `git_regexp` (PCRE2) | `regexp::Regexp` | `regexp` |
+| `wildmatch` | `wildmatch::wildmatch` | `wildmatch` |
+| `git_date_parse`, RFC 2822 dates | `date::{parse, offset_parse, rfc2822_fmt}`, `date::{Clock, UtcClock}` | `date` |
+| `git_rand_next` | `rand::{next, seed}` | `rand` |
 
 ## Errors
 

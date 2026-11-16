@@ -229,7 +229,8 @@ fn prefixcmp_impl(s: &[u8], s_n: usize, prefix: &[u8], icase: bool) -> c_int {
             return sc - pc;
         }
     }
-    -c_int::from(at(prefix, i))
+    // C: `0 - *prefix`, with `char` signed on the port's platforms.
+    -c_int::from(at(prefix, i) as i8)
 }
 
 /// `git__prefixcmp`: 0 if `s` starts with `prefix`, else the difference of
@@ -765,12 +766,19 @@ pub mod ffi {
         sz: usize,
     ) -> c_int {
         barrier(|| {
-            // `sz == 0` compares whole strings (see `strncasecmp`).
-            let bound = if sz == 0 { usize::MAX - 1 } else { sz };
-            // SAFETY: the caller's strings end at a NUL or after `sz` bytes.
-            let a = unsafe { bounded(a, bound) };
+            // C reads at most `sz` bytes of each (the loop stops when
+            // `--sz` reaches 0, before index `sz`); `sz == 0` compares the
+            // whole strings (see `strncasecmp`).
+            let bound = if sz == 0 { usize::MAX } else { sz };
+            // SAFETY: the caller's strings end at a NUL or are readable for
+            // `sz` bytes; `strnlen` reads no further than that.
+            let la = unsafe { libc::strnlen(a, bound) };
             // SAFETY: as for `a`.
-            let b = unsafe { bounded(b, bound) };
+            let lb = unsafe { libc::strnlen(b, bound) };
+            // SAFETY: the `la` bytes just measured are readable.
+            let a = unsafe { bytes(a, la) };
+            // SAFETY: as for `a`.
+            let b = unsafe { bytes(b, lb) };
             strncasecmp(a, b, sz)
         })
     }

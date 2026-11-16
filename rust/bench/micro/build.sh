@@ -4,9 +4,10 @@
 #   RUST_BUILD USE_RUST=ON build dir   (default /work/builds/foundation)
 #   CC         compiler                (default clang)
 set -euo pipefail
+BENCH="${BENCH:-util_bench}"   # which <name>.c to build/run (e.g. u4_bench)
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SRC_ROOT="$(cd "$HERE/../.." && pwd)"
+SRC_ROOT="$(cd "$HERE/../../.." && pwd)"
 C_BUILD="${C_BUILD:-/work/build-c}"
 RUST_BUILD="${RUST_BUILD:-/work/builds/foundation}"
 CC="${CC:-clang}"
@@ -30,8 +31,8 @@ mkdir -p "$OUT"
 CFLAGS=(-O2 -g -D_GNU_SOURCE -DNDEBUG
 	-I "$SRC_ROOT/src/util" -I "$SRC_ROOT/include" -I "$C_BUILD/gen_headers")
 
-echo "[bench] compiling util_bench.o"
-"$CC" "${CFLAGS[@]}" -c "$HERE/util_bench.c" -o "$OUT/util_bench.o"
+echo "[bench] compiling ${BENCH}.o"
+"$CC" "${CFLAGS[@]}" -c "$HERE/${BENCH}.c" -o "$OUT/${BENCH}.o"
 
 # ---- C reference: objects + libs from the util_tests link edge, minus tests/ ----
 link_line="$(awk '/^build util_tests: /{f=1} f{print} f&&/^$/{exit}' "$C_BUILD/build.ninja")"
@@ -44,8 +45,8 @@ for o in "${C_OBJS[@]}"; do [ -f "$o" ] || die "missing object $o (is $C_BUILD b
 
 read -r -a C_LIBS <<<"$(echo "$link_line" | sed -n 's/^ *LINK_LIBRARIES = //p')"
 
-echo "[bench] linking util_bench_c (${#C_OBJS[@]} objects from $C_BUILD)"
-"$CC" -O2 -o "$OUT/util_bench_c" "$OUT/util_bench.o" "${C_OBJS[@]}" \
+echo "[bench] linking ${BENCH}_c (${#C_OBJS[@]} objects from $C_BUILD)"
+"$CC" -O2 -o "$OUT/${BENCH}_c" "$OUT/${BENCH}.o" "${C_OBJS[@]}" \
 	"${C_LIBS[@]}" -ldl -lm -lpthread
 
 # ---- Rust variant ----
@@ -60,9 +61,9 @@ while IFS= read -r l; do
 	esac
 done < "$RUST_LIBS_TXT"
 
-echo "[bench] linking util_bench_rust (against $RUST_BUILD)"
-"$CC" -O2 -o "$OUT/util_bench_rust" "$OUT/util_bench.o" \
+echo "[bench] linking ${BENCH}_rust (against $RUST_BUILD)"
+"$CC" -O2 -o "$OUT/${BENCH}_rust" "$OUT/${BENCH}.o" \
 	-Wl,--whole-archive "$RUST_C_REST" -Wl,--no-whole-archive \
 	"$RUST_LIB" "${RUST_LIBS[@]}" -ldl -lm -lpthread
 
-echo "[bench] built: $OUT/util_bench_c $OUT/util_bench_rust"
+echo "[bench] built: $OUT/${BENCH}_c $OUT/${BENCH}_rust"

@@ -91,38 +91,45 @@ pub fn exclusive() -> ExclusiveGuard {
 // ---------------------------------------------------------------------------
 
 static BYTES_AVAILABLE: AtomicUsize = AtomicUsize::new(0);
-const HDR: usize = core::mem::size_of::<usize>();
+
+/// The blocks the limited allocator handed out, and their sizes. A block
+/// is a plain `malloc` one (no header), so a pointer allocated before the
+/// limit (by the default allocator, `malloc`) can be told apart and freed
+/// as such, and a block allocated under the limit can be freed by the
+/// default allocator after it.
+static BLOCKS: std::sync::Mutex<Option<std::collections::HashMap<usize, usize>>> =
+    std::sync::Mutex::new(None);
+
+fn blocks<R>(f: impl FnOnce(&mut std::collections::HashMap<usize, usize>) -> R) -> R {
+    let mut g = BLOCKS.lock().unwrap_or_else(|e| e.into_inner());
+    f(g.get_or_insert_with(Default::default))
+}
 
 unsafe extern "C" fn cl_malloc(len: usize, _file: *const c_char, _line: c_int) -> *mut c_void {
     if len > BYTES_AVAILABLE.load(Ordering::SeqCst) {
         return core::ptr::null_mut();
     }
-    let Some(total) = len.checked_add(HDR) else {
-        return core::ptr::null_mut();
-    };
-    // SAFETY: `malloc` may be called with any size.
-    let p = unsafe { libc::malloc(total) }.cast::<u8>();
+    // SAFETY: `malloc` may be called with any size (0 is made 1, so that
+    // the block is distinct, as clar's allocator's are).
+    let p = unsafe { libc::malloc(len.max(1)) };
     if p.is_null() {
         return core::ptr::null_mut();
     }
     BYTES_AVAILABLE.fetch_sub(len, Ordering::SeqCst);
-    // SAFETY: `p` holds `HDR + len` bytes; the header is written unaligned.
-    unsafe { p.cast::<usize>().write_unaligned(len) };
-    p.wrapping_add(HDR).cast()
+    blocks(|b| b.insert(p as usize, len));
+    p
 }
 
 unsafe extern "C" fn cl_free(ptr: *mut c_void) {
     if ptr.is_null() {
         return;
     }
-    // `ptr` comes from `cl_malloc`: its block starts `HDR` bytes before it,
-    // with the length.
-    let block = ptr.cast::<u8>().wrapping_sub(HDR);
-    // SAFETY: the block's header.
-    let len = unsafe { block.cast::<usize>().read_unaligned() };
-    // SAFETY: the block, freed once.
-    unsafe { libc::free(block.cast()) };
-    BYTES_AVAILABLE.fetch_add(len, Ordering::SeqCst);
+    if let Some(len) = blocks(|b| b.remove(&(ptr as usize))) {
+        BYTES_AVAILABLE.fetch_add(len, Ordering::SeqCst);
+    }
+    // SAFETY: `ptr` is a `malloc` block: one of ours, or one the default
+    // allocator (`malloc`) made before the limit; freed once.
+    unsafe { libc::free(ptr) };
 }
 
 unsafe extern "C" fn cl_realloc(
@@ -131,24 +138,22 @@ unsafe extern "C" fn cl_realloc(
     file: *const c_char,
     line: c_int,
 ) -> *mut c_void {
-    let copy = if ptr.is_null() {
-        0
-    } else {
-        // SAFETY: as in `cl_free`.
-        unsafe {
-            ptr.cast::<u8>()
-                .wrapping_sub(HDR)
-                .cast::<usize>()
-                .read_unaligned()
-        }
+    if ptr.is_null() {
+        // SAFETY: `cl_malloc` may be called with any size.
+        return unsafe { cl_malloc(size, file, line) };
+    }
+    let Some(old) = blocks(|b| b.get(&(ptr as usize)).copied()) else {
+        // A block from before the limit: moved by `realloc`, uncounted.
+        // SAFETY: a live `malloc` block of the default allocator.
+        return unsafe { libc::realloc(ptr, size) };
     };
     // SAFETY: `cl_malloc` may be called with any size.
     let new = unsafe { cl_malloc(size, file, line) };
-    if !new.is_null() && !ptr.is_null() {
-        // SAFETY: `ptr` holds `copy` bytes, `new` at least `size`; they are
+    if !new.is_null() {
+        // SAFETY: `ptr` holds `old` bytes, `new` at least `size`; they are
         // distinct blocks.
         unsafe {
-            core::ptr::copy_nonoverlapping(ptr.cast::<u8>(), new.cast::<u8>(), copy.min(size))
+            core::ptr::copy_nonoverlapping(ptr.cast::<u8>(), new.cast::<u8>(), old.min(size))
         };
         // SAFETY: `ptr` is freed once.
         unsafe { cl_free(ptr) };
@@ -158,7 +163,14 @@ unsafe extern "C" fn cl_realloc(
 
 /// Run `f` with an allocator that fails once more than `bytes` bytes are
 /// live (`cl_alloc_limit`), then reinstall the default one
-/// (`cl_alloc_reset`). Memory allocated inside `f` must be freed inside it.
+/// (`cl_alloc_reset`).
+///
+/// Memory may cross the boundary either way: the limited allocator makes
+/// plain `malloc` blocks and recognises its own, so memory allocated before
+/// `f` may be freed or resized inside it, and memory allocated inside `f`
+/// may be freed after it. (This relies on the default allocator being
+/// installed on entry, which the exclusive guard ensures in the port's
+/// tests: nothing else replaces it.)
 pub fn with_alloc_limit<R>(_g: &ExclusiveGuard, bytes: usize, f: impl FnOnce() -> R) -> R {
     struct Reset;
     impl Drop for Reset {

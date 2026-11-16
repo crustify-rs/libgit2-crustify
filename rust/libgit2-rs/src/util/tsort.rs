@@ -2,7 +2,9 @@
 //! uses. Stable. The algorithm, its comparisons and its merge buffer
 //! (allocated with `git__allocator`; on allocation failure a merge is
 //! skipped and the array left unsorted, with the out-of-memory error set,
-//! as in C) are the C's.
+//! as in C) are the C's. The comparator must not access the array being
+//! sorted (the Rust holds a reference to it across the calls; C would
+//! allow reads).
 //!
 //! ```
 //! # let _g = libgit2_rs::util::test_support::init();

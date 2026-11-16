@@ -20,7 +20,7 @@ use super::integer::{alloc_add, is_sizet, is_ssizet};
 use super::posix::{self, Errno, GitMap, Stat, mode_t};
 use super::str::GitStr;
 use crate::git_error_set;
-use crate::sys::pending;
+use crate::util::hash;
 
 /// `GIT_FILEMODE_DEFAULT` (of `futils.c`).
 const GIT_FILEMODE_DEFAULT: mode_t = 0o100666;
@@ -112,7 +112,7 @@ pub fn mktmp(path_out: &mut GitStr, filename: &[u8], mode: mode_t) -> Result<c_i
     let flags = libc::O_RDWR | libc::O_CREAT | libc::O_EXCL | libc::O_CLOEXEC;
     let filename = c_str(filename);
     for _ in 0..32 {
-        let rand = pending::rand_next();
+        let rand = crate::util::rand::next();
         let _ = path_out.sets(filename);
         let _ = path_out.puts(b"_git2_");
         let _ = path_out.encode_hexstr(&rand.to_ne_bytes());
@@ -250,10 +250,13 @@ pub fn readbuffer_fd(buf: &mut GitStr, fd: c_int, len: usize) -> Result<()> {
         buf.dispose();
         return Err(ErrorCode::GENERIC);
     }
-    // SAFETY: owned (grown above); `start + read_size` bytes are initialized
-    // (the old contents, empty, and what `read` wrote) and fewer than
-    // `alloc_len <= capacity`.
-    unsafe { buf.set_len(start + read_size as usize) };
+    let n = read_size as usize;
+    // C's `buf->ptr[read_size] = '\0'`: the room has `alloc_len > n` bytes.
+    buf.spare_capacity_mut()[n].write(0);
+    // SAFETY: owned (grown above); its first `start + n` bytes are
+    // initialized (the old contents, empty, and what `read` wrote), and
+    // `start + n < capacity` (followed by the NUL just written).
+    unsafe { buf.set_len(start + n) };
     Ok(())
 }
 
@@ -297,7 +300,7 @@ pub fn readbuffer_fd_full(buf: &mut GitStr, fd: c_int) -> Result<()> {
 pub fn readbuffer_updated(
     out: &mut GitStr,
     path: &CStr,
-    checksum: Option<&mut [u8; pending::GIT_HASH_SHA256_SIZE]>,
+    checksum: Option<&mut [u8; hash::SHA256_SIZE]>,
     mut updated: Option<&mut c_int>,
 ) -> Result<()> {
     if let Some(u) = updated.as_deref_mut() {
@@ -324,7 +327,9 @@ pub fn readbuffer_updated(
         return Err(ErrorCode::GENERIC);
     }
     if let Some(checksum) = checksum {
-        let new = pending::hash_sha256(buf.as_bytes())?;
+        let digest = hash::hash_buf(buf.as_bytes(), hash::HashAlgorithm::Sha256)?;
+        let mut new = [0u8; hash::SHA256_SIZE];
+        new.copy_from_slice(digest.as_bytes());
         if *checksum == new {
             if let Some(u) = updated.as_deref_mut() {
                 *u = 0;
@@ -1289,6 +1294,5 @@ crate::c_layout_test! {
         "GIT_CPDIR_COPY_DOTFILES == 4", "GIT_CPDIR_OVERWRITE == 8", "GIT_CPDIR_CHMOD_DIRS == 16",
         "GIT_CPDIR_SIMPLE_TO_MODE == 32", "GIT_CPDIR_LINK_FILES == 64",
         "O_FSYNC == 04010000", "GIT_BUFSIZE_FILEIO == 65536",
-        "sizeof(git_hash_ctx) == 2408", "_Alignof(git_hash_ctx) == 8",
     ],
 }

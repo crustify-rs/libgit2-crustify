@@ -13,7 +13,11 @@
 typedef struct git_hash_sha1_ctx git_hash_sha1_ctx;
 typedef struct git_hash_sha256_ctx git_hash_sha256_ctx;
 
-#if defined(GIT_SHA1_BUILTIN)
+/*
+ * With the Rust port (GIT_RUST) the backends of this configuration are Rust
+ * (rust/libgit2-rs/src/util/hash.rs): their contexts are not C types.
+ */
+#if defined(GIT_SHA1_BUILTIN) && !defined(GIT_RUST)
 # include "collisiondetect.h"
 #endif
 
@@ -21,12 +25,12 @@ typedef struct git_hash_sha256_ctx git_hash_sha256_ctx;
 # include "common_crypto.h"
 #endif
 
-#if defined(GIT_SHA1_OPENSSL) || \
-    defined(GIT_SHA1_OPENSSL_DYNAMIC) || \
-    defined(GIT_SHA1_OPENSSL_FIPS) || \
-    defined(GIT_SHA256_OPENSSL) || \
-    defined(GIT_SHA256_OPENSSL_DYNAMIC) || \
-    defined(GIT_SHA256_OPENSSL_FIPS)
+#if (defined(GIT_SHA1_OPENSSL) || \
+     defined(GIT_SHA1_OPENSSL_DYNAMIC) || \
+     defined(GIT_SHA1_OPENSSL_FIPS) || \
+     defined(GIT_SHA256_OPENSSL) || \
+     defined(GIT_SHA256_OPENSSL_DYNAMIC) || \
+     defined(GIT_SHA256_OPENSSL_FIPS)) && !defined(GIT_RUST)
 # include "openssl.h"
 #endif
 

@@ -18,3 +18,6 @@ pub mod strarray;
 
 pub use strarray::StrArray;
 pub use util::errors::{Error, ErrorClass, ErrorCode};
+pub use util::net::Url;
+pub use util::process::{Process, ProcessOptions, ProcessStatus};
+pub use util::sortedcache::SortedCache;

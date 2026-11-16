@@ -306,13 +306,19 @@ impl GitStr {
     /// Whether the buffer is an allocation this string owns.
     #[inline]
     fn owned(&self) -> bool {
-        self.asize > 0 && !self.ptr.is_null() && !self.is_oom()
+        self.asize > 0 && !self.ptr.is_null() && !self.is_oom() && self.ptr != initstr()
+    }
+
+    /// Whether the buffer is an allocation this string owns (and frees).
+    #[inline]
+    pub fn owns_buffer(&self) -> bool {
+        self.owned()
     }
 
     /// The contents; empty for an out-of-memory string.
     #[inline]
     pub fn as_bytes(&self) -> &[u8] {
-        if self.size == 0 || self.ptr.is_null() || self.is_oom() {
+        if self.size == 0 || self.ptr.is_null() || self.is_oom() || self.ptr == initstr() {
             return &[];
         }
         let n = if self.asize > 0 {
@@ -382,6 +388,20 @@ impl GitStr {
         self.alloc_mut()[at].write(c);
     }
 
+    /// Check that a `Seg::Own` lies within the contents: the consumers of
+    /// segments read it with raw copies, so they must not trust it.
+    #[inline(always)]
+    fn check_seg(&self, seg: Option<&Seg<'_>>) -> Result<()> {
+        if let Some(&Seg::Own { off, len }) = seg
+            && off
+                .checked_add(len)
+                .is_none_or(|end| end > self.as_bytes().len())
+        {
+            return Err(errors::assert_failed("segment within the contents"));
+        }
+        Ok(())
+    }
+
     /// Copy the segment `seg` to `at` (after the room for it was made).
     #[inline]
     fn write_seg(&mut self, at: usize, seg: Seg<'_>) {
@@ -417,7 +437,7 @@ impl GitStr {
         if self.is_oom() {
             return Err(ErrorCode::GENERIC);
         }
-        if self.asize == 0 && self.size != 0 {
+        if self.capacity_owned() == 0 && self.size != 0 {
             let _ = errors::set_str(ErrorClass::INVALID, "cannot grow a borrowed buffer");
             return Err(ErrorCode::INVALID);
         }
@@ -426,10 +446,10 @@ impl GitStr {
         } else {
             target_size
         };
-        if target <= self.asize {
+        if target <= self.capacity_owned() {
             return Ok(());
         }
-        let (mut new_size, old) = if self.asize == 0 {
+        let (mut new_size, old) = if !self.owned() {
             (target, ptr::null_mut())
         } else {
             let n = self.asize;
@@ -476,6 +496,37 @@ impl GitStr {
         self.ptr = oomstr();
     }
 
+    /// The allocated bytes after the contents, the NUL's included
+    /// (`asize - size` of them, as C writes into `ptr + size`); empty
+    /// unless the string owns its buffer. Commit what is written with
+    /// [`set_len`](Self::set_len).
+    pub fn spare_capacity_mut(&mut self) -> &mut [MaybeUninit<u8>] {
+        if !self.owned() || self.size >= self.asize {
+            return &mut [];
+        }
+        let spare = self.ptr.cast::<MaybeUninit<u8>>().wrapping_add(self.size);
+        // SAFETY: an owned buffer has `asize` bytes, of which the string
+        // uses `size`; the rest (at `spare`) is ours to write through
+        // `&mut self`.
+        unsafe { core::slice::from_raw_parts_mut(spare, self.asize - self.size) }
+    }
+
+    /// Set the length to `len`, after writing the bytes up to it through
+    /// [`spare_capacity_mut`](Self::spare_capacity_mut) (`buf->size = len`).
+    /// No NUL is written.
+    ///
+    /// # Safety
+    ///
+    /// The string owns its buffer, `len <= asize`, and the first `len`
+    /// bytes are initialized. `len == asize` leaves the string without its
+    /// NUL, outside the type's invariant: only as a transient state (C's
+    /// zstream does it), which the next growth (or a smaller `set_len`)
+    /// ends before the string is read as a C string.
+    pub unsafe fn set_len(&mut self, len: usize) {
+        debug_assert!(self.owned() && len <= self.asize);
+        self.size = len;
+    }
+
     /// `git_str_grow`.
     pub fn grow(&mut self, target_size: usize) -> Result<()> {
         self.try_grow(target_size, true)
@@ -496,17 +547,23 @@ impl GitStr {
     /// C's `ENSURE_SIZE`: -1 if out of memory or if growing to `d` fails.
     #[inline]
     fn ensure(&mut self, d: usize) -> Result<()> {
-        if self.is_oom() || (d > self.asize && self.grow(d).is_err()) {
+        if self.is_oom() || (d > self.capacity_owned() && self.grow(d).is_err()) {
             return Err(ErrorCode::GENERIC);
         }
         Ok(())
+    }
+
+    /// `asize` if the buffer is owned, else 0 (what can be written).
+    #[inline(always)]
+    fn capacity_owned(&self) -> usize {
+        if self.owned() { self.asize } else { 0 }
     }
 
     // ----- lifetime -----
 
     /// `git_str_dispose`: free an owned buffer and become empty.
     pub fn dispose(&mut self) {
-        if self.asize > 0 && !self.ptr.is_null() && !self.is_oom() {
+        if self.owned() {
             // SAFETY: the owned allocation, freed once; `ptr` is replaced.
             unsafe { alloc::free(self.ptr.cast()) };
         }
@@ -537,7 +594,7 @@ impl GitStr {
     }
 
     fn detach_raw(&mut self) -> *mut c_char {
-        if self.asize == 0 || self.is_oom() {
+        if !self.owned() {
             return ptr::null_mut();
         }
         let data = self.ptr;
@@ -608,6 +665,7 @@ impl GitStr {
     }
 
     pub(crate) fn set_seg(&mut self, data: Seg<'_>) -> Result<()> {
+        self.check_seg(Some(&data))?;
         let len = data.len();
         if len == 0 {
             self.clear();
@@ -665,6 +723,7 @@ impl GitStr {
 
     #[inline]
     pub(crate) fn put_seg(&mut self, data: Seg<'_>) -> Result<()> {
+        self.check_seg(Some(&data))?;
         let len = data.len();
         if len != 0 {
             let new_size = alloc_add(alloc_add(self.size, len)?, 1)?;
@@ -683,28 +742,27 @@ impl GitStr {
         Ok(())
     }
 
-    /// Append `len` bytes from `data` when they fit the allocation and lie
-    /// outside it; `false` (nothing done) otherwise. The hot path of
-    /// `git_str_put`, without a panic or an error path.
+    /// Append `len` bytes from `data` when they fit the allocation (no
+    /// growth); `false` (nothing done) otherwise. The hot path of
+    /// `git_str_put`, without a panic or an error path. As no reallocation
+    /// happens, `data` may lie in the buffer itself: the copy is a
+    /// `memmove`, as C's.
     ///
     /// # Safety
     ///
-    /// `data` is readable for `len` bytes.
+    /// `data` is readable and initialized for `len` bytes, and no reference
+    /// covers them.
     #[inline(always)]
     pub(crate) unsafe fn try_put_fast(&mut self, data: *const u8, len: usize) -> bool {
         if !self.owned() || self.size >= self.asize || len >= self.asize - self.size {
             return false;
         }
-        let start = self.ptr as usize;
-        let d = data as usize;
-        if d < start + self.asize && d.wrapping_add(len) > start {
-            return false;
-        }
         let at = self.ptr.cast::<u8>().wrapping_add(self.size);
         // SAFETY: the string owns `asize` bytes at `ptr` (owned), and
         // `size + len < asize`, so `at..at + len + 1` is within them;
-        // `data` (readable for `len` bytes) lies outside the allocation.
-        unsafe { ptr::copy_nonoverlapping(data, at, len) };
+        // `data` is readable for `len` bytes; `copy` allows them to
+        // overlap.
+        unsafe { ptr::copy(data, at, len) };
         // SAFETY: the byte after them, within the allocation (as above).
         unsafe { at.wrapping_add(len).write(0) };
         self.size += len;
@@ -729,26 +787,22 @@ impl GitStr {
     }
 
     /// Replace the contents with `len` bytes from `data` when they fit the
-    /// allocation and lie outside it; `false` (nothing done) otherwise. The
-    /// hot path of `git_str_set`.
+    /// allocation (no growth); `false` (nothing done) otherwise. The hot
+    /// path of `git_str_set`. `data` may lie in the buffer (C's `data ==
+    /// buf->ptr` included: the bytes stay, the size becomes `len`).
     ///
     /// # Safety
     ///
-    /// `data` is readable for `len` bytes.
+    /// As [`try_put_fast`](Self::try_put_fast).
     #[inline(always)]
     pub(crate) unsafe fn try_set_fast(&mut self, data: *const u8, len: usize) -> bool {
         if !self.owned() || len == 0 || len >= self.asize {
             return false;
         }
-        let start = self.ptr as usize;
-        let d = data as usize;
-        if d < start + self.asize && d.wrapping_add(len) > start {
-            return false;
-        }
         let p = self.ptr.cast::<u8>();
-        // SAFETY: the string owns `asize > len` bytes at `ptr`; `data`
-        // (readable for `len` bytes) lies outside them.
-        unsafe { ptr::copy_nonoverlapping(data, p, len) };
+        // SAFETY: the string owns `asize > len` bytes at `ptr`; `data` is
+        // readable for `len` bytes; `copy` allows them to overlap.
+        unsafe { ptr::copy(data, p, len) };
         // SAFETY: byte `len < asize`, within the allocation.
         unsafe { p.wrapping_add(len).write(0) };
         self.size = len;
@@ -1148,6 +1202,9 @@ impl GitStr {
 
     /// `git_str_join_n` over the segments `segs`.
     pub(crate) fn join_segs(&mut self, separator: u8, segs: &[Option<Seg<'_>>]) -> Result<()> {
+        for seg in segs {
+            self.check_seg(seg.as_ref())?;
+        }
         if self.is_oom() {
             // C reads a stale byte here, then fails in `git_str_grow_by`.
             return Err(ErrorCode::GENERIC);
@@ -1280,6 +1337,7 @@ impl GitStr {
     }
 
     pub(crate) fn join_seg(&mut self, separator: u8, a: Option<Seg<'_>>, b: &[u8]) -> Result<()> {
+        self.check_seg(a.as_ref())?;
         let strlen_a = a.as_ref().map_or(0, Seg::len);
         let mut b = b;
         let mut need_sep = 0usize;
@@ -1725,8 +1783,8 @@ impl GitStr {
 pub(crate) fn with_segs<'s, R>(
     n: usize,
     seg_at: impl Fn(usize) -> Option<Seg<'s>>,
-    f: impl FnOnce(&[Option<Seg<'s>>]) -> R,
-) -> R {
+    f: impl FnOnce(&[Option<Seg<'s>>]) -> Result<R>,
+) -> Result<R> {
     const STACK: usize = 8;
     if n <= STACK {
         let mut arr: [Option<Seg<'s>>; STACK] = [None; STACK];
@@ -1735,9 +1793,16 @@ pub(crate) fn with_segs<'s, R>(
         }
         f(&arr[..n])
     } else {
-        let v: Vec<Option<Seg<'s>>> = (0..n).map(seg_at).collect();
+        let mut v: Vec<Option<Seg<'s>>> = Vec::new();
+        try_reserve(&mut v, n)?;
+        v.extend((0..n).map(seg_at));
         f(&v)
     }
+}
+
+/// `Vec::try_reserve_exact`, failing with the out-of-memory error.
+pub(crate) fn try_reserve<T>(v: &mut Vec<T>, n: usize) -> Result<()> {
+    v.try_reserve_exact(n).map_err(|_| errors::oom())
 }
 
 /// Formats into the spare room of a buffer, counting what does not fit
@@ -1891,6 +1956,12 @@ const fn base85_decode_table() -> [i8; 256] {
 /// thread accesses during the call; data arguments may point into the
 /// string's own buffer where C allowed it (they are copied first, or
 /// handled in place).
+///
+/// A data argument "readable for `n` bytes" must also be *initialized* for
+/// those bytes. In particular, `git_str_set(buf, buf->ptr, len)` with `len >
+/// size` (C's "in place" case) is allowed only when the bytes up to `len`
+/// were written: Rust later reads the contents as bytes, where C would read
+/// indeterminate `char`s.
 pub mod ffi {
     use super::*;
     use crate::util::export::{barrier, bytes, cstr_bytes, status};
@@ -2081,6 +2152,18 @@ pub mod ffi {
         if !data.is_null() && unsafe { b.try_set_fast(data.cast(), len) } {
             return 0;
         }
+        // SAFETY: forwarded.
+        unsafe { set_slow(b, data, len) }
+    }
+
+    /// `git_str_set` when the fast path does not apply (out of line).
+    ///
+    /// # Safety
+    ///
+    /// As `git_str_set`.
+    #[cold]
+    #[inline(never)]
+    unsafe fn set_slow(b: &mut GitStr, data: *const libc::c_void, len: usize) -> c_int {
         barrier(|| {
             if len == 0 || data.is_null() {
                 b.clear();
@@ -2115,8 +2198,14 @@ pub mod ffi {
             // SAFETY: a non-null `string` is NUL-terminated.
             unsafe { libc::strlen(string) }
         };
+        // SAFETY: the module's contract.
+        let b = unsafe { s(buf) };
+        // SAFETY: a non-null `string` is readable for `len` bytes.
+        if !string.is_null() && unsafe { b.try_set_fast(string.cast(), len) } {
+            return 0;
+        }
         // SAFETY: forwarded.
-        unsafe { git_str_set(buf, string.cast(), len) }
+        unsafe { set_slow(b, string.cast(), len) }
     }
 
     /// `git_str_putc`.
@@ -2133,6 +2222,12 @@ pub mod ffi {
         if b.try_putc_fast(ch) {
             return 0;
         }
+        putc_slow(b, ch)
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn putc_slow(b: &mut GitStr, ch: u8) -> c_int {
         barrier(|| status(b.putc(ch)))
     }
 
@@ -2169,6 +2264,19 @@ pub mod ffi {
         if !data.is_null() && unsafe { b.try_put_fast(data.cast(), len) } {
             return 0;
         }
+        // SAFETY: forwarded.
+        unsafe { put_slow(b, data, len) }
+    }
+
+    /// `git_str_put` when the fast path does not apply: out of line, so
+    /// that the hot path needs no stack frame for the barrier.
+    ///
+    /// # Safety
+    ///
+    /// As `git_str_put`.
+    #[cold]
+    #[inline(never)]
+    unsafe fn put_slow(b: &mut GitStr, data: *const c_char, len: usize) -> c_int {
         barrier(|| {
             if data.is_null() {
                 let _ = errors::assert_arg_failed("data");
@@ -2192,8 +2300,17 @@ pub mod ffi {
         }
         // SAFETY: `string` is NUL-terminated.
         let len = unsafe { libc::strlen(string) };
+        if len == 0 {
+            return 0;
+        }
+        // SAFETY: the module's contract.
+        let b = unsafe { s(buf) };
+        // SAFETY: `string` is readable for `len` bytes.
+        if unsafe { b.try_put_fast(string.cast(), len) } {
+            return 0;
+        }
         // SAFETY: forwarded.
-        unsafe { git_str_put(buf, string, len) }
+        unsafe { put_slow(b, string, len) }
     }
 
     macro_rules! encode {
@@ -2312,34 +2429,28 @@ pub mod ffi {
             crate::git_assert_arg!(!data.is_null(), "data", -1);
             crate::git_assert_arg!(datasize != 0, "datasize", -1);
             crate::git_assert_arg!(!buf.is_null(), "buf", -1);
-            // SAFETY: `buf` is a valid `git_str`, only read here.
-            let b = unsafe { &*buf };
-            let src = b.as_bytes();
-            // C uses `memmove`, so `data` may overlap the contents: then the
-            // contents are copied out before `data` is borrowed mutably.
-            let overlap = {
-                let (s0, s1) = (src.as_ptr() as usize, src.as_ptr() as usize + src.len());
-                let (d0, d1) = (data as usize, data as usize + datasize);
-                !src.is_empty() && s0 < d1 && d0 < s1
-            };
-            if overlap {
-                let tmp = match GitStr::from_bytes(src) {
-                    Ok(t) => t,
-                    Err(e) => return e.raw(),
-                };
-                // SAFETY: `data` is writable for `datasize` bytes, and the
-                // string is not read again (its copy is).
-                let out = unsafe { core::slice::from_raw_parts_mut(data.cast::<u8>(), datasize) };
-                if b.asize == 0 {
-                    out[0] = 0;
-                    return 0;
-                }
-                return status(tmp.copy_cstr(out));
+            // C: `data[0] = 0`, then (unless the string is empty or not
+            // allocated) `memmove` of `min(size, datasize - 1)` bytes and a
+            // NUL. `data` may overlap the contents, so this is done with
+            // raw copies: no reference to either, no allocation.
+            // SAFETY: `buf` is a valid `git_str`; the reference covers the
+            // struct only, which `data` does not overlap.
+            let g = unsafe { &*buf };
+            let (ptr, asize, size) = (g.ptr, g.asize, g.size);
+            let d = data.cast::<u8>();
+            // First, as C (which matters when `data` is the contents).
+            // SAFETY: `data` is writable for `datasize >= 1` bytes.
+            unsafe { d.write(0) };
+            if size == 0 || asize == 0 || ptr == oomstr() || ptr.is_null() {
+                return 0;
             }
-            // SAFETY: `data` is writable for `datasize` bytes, disjoint from
-            // the contents (checked above).
-            let out = unsafe { core::slice::from_raw_parts_mut(data.cast::<u8>(), datasize) };
-            status(b.copy_cstr(out))
+            let n = size.min(asize).min(datasize - 1);
+            // SAFETY: the contents are readable for `size` bytes and `data`
+            // writable for `datasize`; `copy` allows them to overlap.
+            unsafe { ptr::copy(ptr.cast::<u8>(), d, n) };
+            // SAFETY: `n < datasize`.
+            unsafe { d.wrapping_add(n).write(0) };
+            0
         })
     }
 
@@ -2492,6 +2603,138 @@ pub mod ffi {
         nbuf: c_int,
         segments: *const *const c_char,
     ) -> c_int {
+        // SAFETY: the module's contract.
+        if unsafe { join_n_fast(buf, separator as u8, nbuf, segments) } {
+            return 0;
+        }
+        // SAFETY: forwarded.
+        unsafe { join_n_slow(buf, separator, nbuf, segments) }
+    }
+
+    /// `git_str_join_n`'s hot path, C's two passes over raw pointers: up to
+    /// 8 segments, each outside the allocation or starting within the
+    /// contents, and a result that fits the allocation. `false` (nothing
+    /// done) when it does not apply. No panic; every write is clamped to
+    /// the allocation, so soundness does not rest on pass 1's count.
+    ///
+    /// # Safety
+    ///
+    /// As `git_str__join_n`.
+    #[inline(always)]
+    unsafe fn join_n_fast(
+        buf: *mut GitStr,
+        sep: u8,
+        nbuf: c_int,
+        segments: *const *const c_char,
+    ) -> bool {
+        const MAX: usize = 8;
+        let Ok(n) = usize::try_from(nbuf) else {
+            return false;
+        };
+        if n == 0 || n > MAX {
+            return false;
+        }
+        // SAFETY: the module's contract.
+        let b = unsafe { s(buf) };
+        if !b.owned() || b.size >= b.asize {
+            return false;
+        }
+        let (base, asize, size) = (b.ptr.cast::<u8>(), b.asize, b.size);
+        let (lo, hi) = (base as usize, base as usize + asize);
+        // Pass 1: lengths (`usize::MAX` for NULL) and the total.
+        let mut ptrs = [core::ptr::null::<u8>(); MAX];
+        let mut lens = [usize::MAX; MAX];
+        let last_of = |p: *const u8, len: usize| {
+            // SAFETY: `p` is readable for `len > 0` bytes (callers).
+            unsafe { p.wrapping_add(len - 1).read() }
+        };
+        let mut total = usize::from(size > 0 && last_of(base, size) != sep);
+        for i in 0..n {
+            // SAFETY: the caller passes `nbuf` pointers.
+            let p = unsafe { segments.wrapping_add(i).read() }.cast::<u8>();
+            if p.is_null() {
+                continue;
+            }
+            let pa = p as usize;
+            let len = if size > 0 && pa >= lo && pa < lo + size {
+                // C: the rest of the original contents.
+                size - (pa - lo)
+            } else {
+                // SAFETY: a non-null segment is NUL-terminated.
+                let len = unsafe { libc::strlen(p.cast()) };
+                if pa < hi && pa + len + 1 > lo {
+                    return false;
+                }
+                len
+            };
+            ptrs[i] = p;
+            lens[i] = len;
+            total += len + usize::from(len == 0 || last_of(p, len) != sep);
+        }
+        if total == 0 {
+            return true;
+        }
+        if total >= asize - size {
+            return false;
+        }
+        // Pass 2, as C. Writes go at `out >= size`; contents segments are
+        // read below `size`, so they are not overwritten.
+        let limit = asize - 1;
+        let mut out = size;
+        let mut last = if size > 0 { last_of(base, size) } else { 0 };
+        if size > 0 && last != sep {
+            // SAFETY: `out = size < limit`.
+            unsafe { base.wrapping_add(out).write(sep) };
+            out += 1;
+            last = sep;
+        }
+        for i in 0..n {
+            let (mut p, mut len) = (ptrs[i], lens[i]);
+            if len == usize::MAX {
+                continue;
+            }
+            if out > 0 && last == sep {
+                // SAFETY: `p` is readable for `len` bytes.
+                while len > 0 && unsafe { p.read() } == sep {
+                    p = p.wrapping_add(1);
+                    len -= 1;
+                }
+            }
+            let len = len.min(limit - out);
+            if len > 0 {
+                // SAFETY: `p` is readable for `len` bytes; the target lies
+                // within `out..limit`; `copy` allows a contents segment to
+                // overlap (it does not: it lies below `size <= out`).
+                unsafe { ptr::copy(p, base.wrapping_add(out), len) };
+                out += len;
+                last = last_of(base, out);
+            }
+            if i + 1 < n && out > 0 && last != sep && out < limit {
+                // SAFETY: `out < limit`.
+                unsafe { base.wrapping_add(out).write(sep) };
+                out += 1;
+                last = sep;
+            }
+        }
+        // SAFETY: `out <= limit < asize`.
+        unsafe { base.wrapping_add(out).write(0) };
+        b.size = out;
+        true
+    }
+
+    /// `git_str__join_n` when the fast path does not apply (out of line).
+    ///
+    /// # Safety
+    ///
+    /// As `git_str__join_n`.
+    #[cold]
+    #[inline(never)]
+    unsafe fn join_n_slow(
+        buf: *mut GitStr,
+        separator: c_char,
+        nbuf: c_int,
+        segments: *const *const c_char,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: the module's contract.
             let b = unsafe { s(buf) };
@@ -2518,6 +2761,9 @@ pub mod ffi {
             let segs: &mut [Option<Seg<'_>>] = if n <= stack.len() {
                 &mut stack[..n]
             } else {
+                if try_reserve(&mut heap, n).is_err() {
+                    return ErrorCode::GENERIC.raw();
+                }
                 heap.resize(n, None);
                 &mut heap
             };
@@ -2545,26 +2791,36 @@ pub mod ffi {
             if !overlap {
                 return status(b.join_segs(separator as u8, segs));
             }
-            // Rare: copy the segments that overlap the allocation.
-            let copies: Vec<Option<Vec<u8>>> = segs
-                .iter()
-                .map(|sg| match sg {
+            // Rare: copy the segments that overlap the allocation (with
+            // fallible allocations).
+            let mut copies: Vec<Option<Vec<u8>>> = Vec::new();
+            if try_reserve(&mut copies, n).is_err() {
+                return ErrorCode::GENERIC.raw();
+            }
+            for sg in segs.iter() {
+                let c = match sg {
                     Some(Seg::Ext(x))
                         if (x.as_ptr() as usize) < a1 && x.as_ptr() as usize + x.len() + 1 > a0 =>
                     {
-                        Some(x.to_vec())
+                        let mut v = Vec::new();
+                        if try_reserve(&mut v, x.len()).is_err() {
+                            return ErrorCode::GENERIC.raw();
+                        }
+                        v.extend_from_slice(x);
+                        Some(v)
                     }
                     _ => None,
-                })
-                .collect();
-            let fixed: Vec<Option<Seg<'_>>> = segs
-                .iter()
-                .zip(&copies)
-                .map(|(sg, c)| match c {
-                    Some(c) => Some(Seg::Ext(c)),
-                    None => *sg,
-                })
-                .collect();
+                };
+                copies.push(c);
+            }
+            let mut fixed: Vec<Option<Seg<'_>>> = Vec::new();
+            if try_reserve(&mut fixed, n).is_err() {
+                return ErrorCode::GENERIC.raw();
+            }
+            fixed.extend(segs.iter().zip(&copies).map(|(sg, c)| match c {
+                Some(c) => Some(Seg::Ext(c)),
+                None => *sg,
+            }));
             status(b.join_segs(separator as u8, &fixed))
         })
     }
@@ -2578,6 +2834,119 @@ pub mod ffi {
     /// within the buffer's contents.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_join(
+        buf: *mut GitStr,
+        separator: c_char,
+        str_a: *const c_char,
+        str_b: *const c_char,
+    ) -> c_int {
+        // SAFETY: the module's contract; NULL or NUL-terminated strings.
+        if unsafe { join_fast(buf, separator as u8, str_a, str_b) } {
+            return 0;
+        }
+        // SAFETY: forwarded.
+        unsafe { join_slow(buf, separator, str_a, str_b) }
+    }
+
+    /// `git_str_join`'s hot path: the result fits the allocation, and the
+    /// arguments lie outside it (or `str_a` within the contents, the
+    /// `git_str_joinpath(buf, buf->ptr, …)` idiom). Raw copies, no panic;
+    /// `false` (nothing done) when it does not apply.
+    ///
+    /// # Safety
+    ///
+    /// As `git_str_join`.
+    #[inline(always)]
+    unsafe fn join_fast(
+        buf: *mut GitStr,
+        sep: u8,
+        str_a: *const c_char,
+        str_b: *const c_char,
+    ) -> bool {
+        // SAFETY: the module's contract.
+        let b = unsafe { s(buf) };
+        if !b.owned() || b.size >= b.asize || str_b.is_null() {
+            return false;
+        }
+        let (base, asize, size) = (b.ptr.cast::<u8>(), b.asize, b.size);
+        let (lo, hi) = (base as usize, base as usize + asize);
+        // SAFETY: `str_b` is NUL-terminated.
+        let mut lb = unsafe { libc::strlen(str_b) };
+        let pb = str_b as usize;
+        if pb < hi && pb + lb + 1 > lo {
+            return false;
+        }
+        let (la, a_off) = if str_a.is_null() {
+            (0, None)
+        } else {
+            // SAFETY: a non-null `str_a` is NUL-terminated.
+            let la = unsafe { libc::strlen(str_a) };
+            let pa = str_a as usize;
+            if pa < hi && pa + la + 1 > lo {
+                // Within the allocation: only the contents case is fast.
+                if pa < lo || pa - lo + la > size {
+                    return false;
+                }
+                (la, Some(pa - lo))
+            } else {
+                (la, None)
+            }
+        };
+        let mut from_b = str_b.cast::<u8>();
+        let mut need_sep = 0usize;
+        if sep != 0 && la > 0 {
+            // SAFETY: `from_b` stays within `str_b`'s `lb` bytes.
+            while lb > 0 && unsafe { from_b.read() } == sep {
+                from_b = from_b.wrapping_add(1);
+                lb -= 1;
+            }
+            let last_a = match a_off {
+                Some(off) => base.wrapping_add(off + la - 1),
+                None => str_a.cast::<u8>().wrapping_add(la - 1),
+            };
+            // SAFETY: the last byte of `str_a` (contents or external).
+            if unsafe { last_a.read() } != sep {
+                need_sep = 1;
+            }
+        }
+        let total = la + need_sep + lb;
+        if total >= asize {
+            return false;
+        }
+        match a_off {
+            Some(0) => {}
+            Some(off) => {
+                // SAFETY: `off..off + la` lies within the contents, the
+                // target `0..la` within the allocation; `copy` allows overlap.
+                unsafe { ptr::copy(base.wrapping_add(off), base, la) };
+            }
+            None if la > 0 => {
+                // SAFETY: `str_a` (outside the allocation) is readable for
+                // `la` bytes; `la <= total < asize`.
+                unsafe { ptr::copy_nonoverlapping(str_a.cast::<u8>(), base, la) };
+            }
+            None => {}
+        }
+        if need_sep == 1 {
+            // SAFETY: `la < total < asize`.
+            unsafe { base.wrapping_add(la).write(sep) };
+        }
+        // SAFETY: `from_b` (outside the allocation) is readable for `lb`
+        // bytes, written below `total < asize`.
+        unsafe { ptr::copy_nonoverlapping(from_b, base.wrapping_add(la + need_sep), lb) };
+        // SAFETY: `total < asize`.
+        unsafe { base.wrapping_add(total).write(0) };
+        b.size = total;
+        true
+    }
+
+    /// `git_str_join` when the fast path does not apply (out of line).
+    ///
+    /// # Safety
+    ///
+    /// As `git_str_join`.
+    #[cold]
+    #[inline(never)]
+    unsafe fn join_slow(
         buf: *mut GitStr,
         separator: c_char,
         str_a: *const c_char,
@@ -2999,31 +3368,56 @@ impl GitStr {
     pub fn as_mut_bytes(&mut self) -> &mut [u8] {
         self.content_mut()
     }
+}
 
-    /// The room after the contents of an owned buffer (the NUL's place
-    /// included), for writing before [`set_len`](Self::set_len); empty for
-    /// any other state.
-    #[inline]
-    pub fn spare_capacity_mut(&mut self) -> &mut [MaybeUninit<u8>] {
-        let n = self.size;
-        let a = self.alloc_mut();
-        if n >= a.len() { &mut [] } else { &mut a[n..] }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// F-5: segments of the string's own contents are checked, whatever
+    /// the crate-internal caller passes.
+    #[test]
+    fn own_segments_are_bounds_checked() {
+        let _g = crate::util::test_support::init();
+        let mut s = GitStr::with_capacity(64).unwrap();
+        s.puts(b"abc").unwrap();
+        let bad = [
+            Seg::Own {
+                off: 1,
+                len: 1 << 20,
+            },
+            Seg::Own { off: 4, len: 1 },
+            Seg::Own {
+                off: usize::MAX,
+                len: 2,
+            },
+        ];
+        for seg in bad {
+            assert!(s.put_seg(seg).is_err());
+            assert!(s.set_seg(seg).is_err());
+            assert!(s.join_seg(0, Some(seg), b"").is_err());
+            assert!(s.join_segs(b'/', &[Some(seg)]).is_err());
+            assert_eq!(s.as_bytes(), b"abc");
+        }
+        assert_eq!(
+            errors::last_message().unwrap(),
+            b"unrecoverable internal error: 'segment within the contents'"
+        );
+        // In bounds, they work.
+        s.put_seg(Seg::Own { off: 0, len: 3 }).unwrap();
+        assert_eq!(s.as_bytes(), b"abcabc");
     }
 
-    /// Set the size of an owned buffer to `n` and write the NUL after it:
-    /// what C does after reading into `ptr` directly.
-    ///
-    /// # Safety
-    ///
-    /// The buffer is owned, `n < capacity()`, and its bytes `0..n` are
-    /// initialized (the old contents, or written through
-    /// [`spare_capacity_mut`](Self::spare_capacity_mut)).
-    #[inline]
-    pub unsafe fn set_len(&mut self, n: usize) {
-        assert!(
-            self.owned() && n < self.asize,
-            "set_len out of the allocation"
-        );
-        self.set_size_nul(n);
+    /// F-1: `git_str__initstr` with a capacity is never taken as owned.
+    #[test]
+    fn initstr_is_never_owned() {
+        let _g = crate::util::test_support::init();
+        // SAFETY: an invalid state C cannot make, built to check that the
+        // string does not trust it: nothing is read, written or freed.
+        let mut s = unsafe { GitStr::from_raw_parts(initstr(), 8, 0) };
+        assert!(!s.owns_buffer());
+        assert!(s.as_bytes().is_empty());
+        s.puts(b"x").unwrap();
+        assert_eq!(s.as_bytes(), b"x");
     }
 }

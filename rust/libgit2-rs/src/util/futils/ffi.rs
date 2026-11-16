@@ -1,7 +1,7 @@
 //! The C ABI of `futils.c`: thin shims over [`super`].
 
 use super::*;
-use crate::sys::hashmap_str;
+use crate::sys::{hashmap_str, pending};
 use crate::util::export::{barrier, cstr, cstr_bytes, status, write_opt};
 
 /// A path argument as a C string (`c""` for NULL, which C would crash on).
@@ -211,7 +211,7 @@ pub unsafe extern "C" fn git_futils_readbuffer_updated(
         // SAFETY: NULL or 32 readable and writable bytes, apart from `out`.
         let checksum = unsafe {
             checksum
-                .cast::<[u8; pending::GIT_HASH_SHA256_SIZE]>()
+                .cast::<[u8; crate::util::hash::SHA256_SIZE]>()
                 .as_mut()
         };
         // SAFETY: NULL or a writable `int`.

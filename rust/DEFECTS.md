@@ -95,9 +95,20 @@ triggers it, and the Rust's defined behaviour.
   whole strings.
 - Rust: kept as C (the result is defined, and callers may depend on it).
 
-### util: `git__substrdup` with `n == SIZE_MAX`
-- C: `n + 1` wraps to 0, then `memcpy` of `SIZE_MAX` bytes.
-- Rust: out-of-memory error, NULL.
+### util: `git__substrdup` with `n > PTRDIFF_MAX`
+- C: `n + 1` wraps to 0 for `SIZE_MAX` (then `memcpy` of `SIZE_MAX` bytes);
+  any `n` above `PTRDIFF_MAX` cannot describe readable memory.
+- Rust: the export checks `n` before forming any slice and fails with the
+  out-of-memory error, NULL. (In general, `export::bytes` refuses a length
+  above `isize::MAX` with a panic, which the barrier turns into an internal
+  error, rather than form an invalid slice.)
+
+### str: `git_buf_tostr` of a `git_buf` that holds an out-of-memory string
+- C: `git_buf_sanitize` writes `ptr[0] = '\0'` (into `git_str__oom`) and the
+  `git_str` stays out of memory. (Not a C defect; recorded because the first
+  port got it wrong, review finding F-1.)
+- Rust: the same; a `git_buf` with `git_str__initstr` and `reserved > 0`
+  becomes an empty string with `asize = 0`.
 
 ### vector: `git_vector_set` at `SIZE_MAX`
 - C: `position + 1` wraps to 0, the vector is not grown, and
@@ -121,6 +132,132 @@ triggers it, and the Rust's defined behaviour.
 
 ### runtime: `git_runtime_init` with a NULL init function
 - C: calls it. Rust: stops at the first NULL entry.
+
+## net, sortedcache, process (WP u4)
+
+### net: NULL fields dereferenced
+- C: `src/util/net.c`: `git_net_url_is_ipv6` (`strchr(url->host)`),
+  `git_net_url_is_default_port` (`strcmp(url->port, …)` when the scheme has
+  a default port), `matches_pattern` (`git__strlcmp(url->host|port, …)`,
+  `strlen(url->host)`) read NULL fields.
+- Trigger: a URL without a host (`git_net_url_parse(&u, "relative")`) or
+  without a port (`u.port = NULL`), then those calls.
+- Rust: a NULL host has no `:` (`is_ipv6` false); a NULL port is not the
+  default; patterns see NULL as `""` (so only `*`, `.` / `*.` with an empty
+  domain, match a missing host; a pattern with a port never matches a
+  missing port).
+
+### net: `git_net_url_apply_redirect` with a location without scheme or host
+- C: `strcmp(original->scheme, tmp.scheme)` and
+  `git__strcasecmp(original->host, tmp.host)` with `tmp.scheme` / `tmp.host`
+  NULL, after parsing a relative location that does not start with `/`
+  (e.g. `"foo/bar"`).
+- Rust: a NULL scheme or host differs from the original's: the redirect is
+  refused with the C's message, the NULL shown as glibc's printf shows it
+  (`cannot redirect from 'http' to '(null)'`).
+
+### net: `remove_service_suffix` with a NULL path or query
+- C: `strlen(url->path)` with a NULL path (a redirect to a URL without a
+  path, e.g. `"http:"`); `git__strcmp(url->query, …)` with a NULL query
+  when the suffix has a query (`"/info/refs?service=…"`) and the path ends
+  with the suffix's path part; with an empty path and an empty suffix,
+  `url->path[1] = '\0'` writes past the string.
+- Rust: a NULL path leaves the URL unchanged; a NULL query does not match
+  the suffix's query; the truncation never writes past the string.
+
+### sortedcache: none found
+The port keeps C's semantics; its hash map is a Rust map (see
+DIVERGENCES.md).
+
+### process: the child calls `exit(0)` when `chdir` or `execve` fails
+- C: `src/util/unix/process.c`, `git_process_start`: after a failed
+  `chdir` / `execve` the forked child calls `exit(0)`, which is not
+  async-signal-safe: it runs the parent's `atexit` handlers and flushes
+  the parent's stdio buffers a second time (duplicated output; in a
+  multi-threaded parent it may deadlock on a lock held at the fork).
+- Trigger: `git_process_start` of a program `execve` rejects
+  (`ENOEXEC`), or with a `cwd` that does not exist, while stdout has
+  unflushed output.
+- Rust: `_exit(0)` (same status, no handlers, no flush). Between `fork`
+  and `execve` the child only makes async-signal-safe system calls on
+  data prepared before the fork.
+
+### process: `waitpid(0)` after a failed start
+- C: on a failed `read_status`, `waitpid(process->pid, …)` with
+  `process->pid` still 0: it waits for *any* child of the process group
+  (it may reap an unrelated child, or block on another child).
+- Rust: waits for the child just forked.
+
+### process: the status pipe leaks; closed descriptors stay named
+- C: on success the read end of the status pipe is stored in
+  `process->status` (a `git_process_result_status`) and never closed:
+  one descriptor leaks per started process. On a failed start the parent
+  ends of the stdio pipes are closed but stay in `child_in` / `child_out` /
+  `child_err`, so a later `git_process_close` closes those numbers again
+  (possibly another file's).
+- Rust: the status pipe is closed once read; on failure the fields are
+  reset to -1.
+
+### process: `try_read_status` counts `-1` on `EINTR`
+- C: `read_len += ret` also when `read` returned -1 with `EINTR`/`EAGAIN`,
+  so the count goes back by one (or wraps to `SIZE_MAX` from 0, and the
+  status buffer is then read uninitialized). The function name's length is
+  trusted even when fewer bytes were read (`fn[fn_len] = '\0'` after
+  uninitialized bytes).
+- Trigger: a signal delivered while the parent waits for the child's
+  status.
+- Rust: retries without counting; terminates the name at the bytes read.
+
+### process: `git_process_new` leaks on a failed `cwd` copy
+- C: returns -1 without freeing the process when `git__strdup(opts->cwd)`
+  fails. Rust: frees it.
+## hash, zstream, rand, regexp, wildmatch, date (WP u2)
+
+### hash: sha1dc reads input blocks through misaligned `uint32_t` pointers
+- C: `src/util/hash/sha1dc/sha1.c:391` (`SHA1DCUpdate`, with
+  `SHA1DC_ALLOW_UNALIGNED_ACCESS`) casts the input to `const uint32_t *`
+  at any alignment: undefined behaviour (UBSan reports it).
+- Trigger: any `git_hash_update` with an input not 4-byte aligned.
+- Rust: the `sha1collisiondetection` crate copies an unaligned block into
+  its buffer first; same digests.
+
+### hash: a NULL context is dereferenced
+- C: `src/util/hash.c`, `git_hash_ctx_init`/`git_hash_init`/
+  `git_hash_update`/`git_hash_final` read or write `ctx->algorithm` before
+  the backends' `GIT_ASSERT_ARG(ctx)`.
+- Rust: -1 with `invalid argument: 'ctx'` (class `GIT_ERROR_INVALID`).
+
+### zstream: output that fills the buffer exactly is left without its NUL
+- C: `src/util/zstream.c`, `zstream_buf` writes up to `asize - size` bytes
+  (the NUL's byte included) and terminates only `if (out->size <
+  out->asize)`; a `git_str` with `size == asize` has no NUL, and
+  `git_str_cstr` and friends read past its allocation.
+- Trigger: `git_zstream_deflatebuf(&s, "", 0)` (8 bytes into an 8-byte
+  buffer), or inflating `zlib.compress(b"a" * 16)` (16 bytes into 16).
+- Rust: the buffer is grown by one byte and terminated (`asize` then
+  differs from the C's in that case only).
+
+### date: signed `int` overflows
+- C: `src/util/date.c`: `approxidate_alpha` computes `*num - 1`,
+  `diff += 7*n`, `diff * 24 * 60 * 60`, `tm->tm_mon - *num`,
+  `tm->tm_year -= *num` in `int`; `match_tz` `hour * 60 + min`;
+  `git_date_rfc2822_fmt` `offset * 60` and `gmt.tm_year + 1900`. Each
+  overflows (undefined behaviour) on large inputs.
+- Trigger: `git_date_parse(&t, "2147483647 fridays ago")`,
+  `"4294967296 days ago"`, `git_date_rfc2822_fmt(&s, 0, INT_MAX)`.
+- Rust: two's complement wrapping, which is what the C build computes
+  (rust/difftest/date_diff.c gives the same output for these inputs).
+
+### date: an object-header timestamp may not start with 9
+- C: `match_object_header_date` rejects `*date < '0' || '9' <= *date`, so
+  `"@9 +0000"` is not read as a timestamp (it goes on to approxidate).
+- Rust: kept as the C (the result is defined, and callers may depend on it).
+
+### date: "N months ago" loops N/12 times
+- C: `approxidate_alpha` adds 12 to the month (and takes a year) in a loop
+  until it is not negative: `"2147483647 months ago"` iterates 178 million
+  times.
+- Rust: the same result, computed in one step.
 
 ## Filesystem layer (WP u3: posix, unix/map, unix/realpath, futils, fs_path, filebuf)
 

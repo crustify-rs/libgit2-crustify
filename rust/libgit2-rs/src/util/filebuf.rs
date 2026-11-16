@@ -7,15 +7,16 @@
 //! [`GitFilebuf`] is `git_filebuf`, mirrored (kind 3): C embeds it by value
 //! (`GIT_FILEBUF_INIT`, `{0}`) in `git_indexer`, `refdb_fs` lock files,
 //! the index writer, and the tests read `buffer`. Its embedded
-//! `git_hash_ctx` (`digest`) and `z_stream` (`zs`) keep the C layout; the
-//! hash is called through its C symbols until the hash port lands
-//! (`sys::pending`, PENDING(u2)), zlib through `sys::zlib_filebuf`.
+//! `git_hash_ctx` (`digest`: [`HashCtx`], the hash port's) and `z_stream`
+//! (`zs`: zlib's, driven through `sys::zlib`, the system zlib that
+//! `filebuf.c` called) keep the C layout.
 //!
 //! Its invariant (which [`GitFilebuf::new`] and [`GitFilebuf::open`] keep):
 //! `buffer` is NULL or a `git__allocator` allocation of `buf_size`
 //! initialized bytes, `buf_pos <= buf_size`; `z_buf` is NULL or one of
 //! `buf_size` bytes, and `zs` is an initialized deflate stream exactly when
-//! `z_buf` is set; `digest` is initialized exactly when `compute_digest`;
+//! `z_buf` is set; `digest` went through `HashCtx::init` when
+//! `compute_digest`;
 //! the paths are NULL or NUL-terminated `git__allocator` strings; `fd` is
 //! open when `fd_is_open`. A `GitFilebuf` with a deflate stream must not
 //! move between `open` and its cleanup (zlib keeps its address): the safe
@@ -31,8 +32,37 @@ use super::integer::alloc_add;
 use super::posix::{self, Errno, GIT_PATH_MAX, mode_t};
 use super::str::GitStr;
 use crate::git_error_set;
-use crate::sys::pending::{self, GitHashCtx};
-use crate::sys::zlib_filebuf::{self as zlib, ZStream};
+use crate::sys::zlib::{self, z_stream as ZStream};
+use crate::util::hash::{self, HashCtx};
+
+/// zlib's constants that `filebuf.c` uses.
+mod z {
+    use core::ffi::c_int;
+    pub const Z_OK: c_int = 0;
+    pub const Z_STREAM_ERROR: c_int = -2;
+    pub const Z_NO_FLUSH: c_int = 0;
+    pub const Z_FINISH: c_int = 4;
+}
+
+/// A zeroed `z_stream` (C's `{0}`): no state, zlib's default allocator.
+const fn zeroed_stream() -> ZStream {
+    ZStream {
+        next_in: core::ptr::null(),
+        avail_in: 0,
+        total_in: 0,
+        next_out: core::ptr::null_mut(),
+        avail_out: 0,
+        total_out: 0,
+        msg: core::ptr::null_mut(),
+        state: core::ptr::null_mut(),
+        zalloc: None,
+        zfree: None,
+        opaque: core::ptr::null_mut(),
+        data_type: 0,
+        adler: 0,
+        reserved: 0,
+    }
+}
 
 /// `GIT_FILEBUF_HASH_SHA1`.
 pub const GIT_FILEBUF_HASH_SHA1: c_int = 1 << 0;
@@ -82,7 +112,7 @@ pub struct GitFilebuf {
     /// Whether `digest` runs.
     compute_digest: bool,
     /// The running hash.
-    digest: GitHashCtx,
+    digest: HashCtx,
     /// The write buffer.
     buffer: *mut u8,
     /// The deflate output buffer.
@@ -161,10 +191,10 @@ impl GitFilebuf {
             path_lock: core::ptr::null_mut(),
             write: None,
             compute_digest: false,
-            digest: GitHashCtx::zeroed(),
+            digest: HashCtx::zeroed(),
             buffer: core::ptr::null_mut(),
             z_buf: core::ptr::null_mut(),
-            zs: ZStream::zeroed(),
+            zs: zeroed_stream(),
             flush_mode: 0,
             buf_size: 0,
             buf_pos: 0,
@@ -213,11 +243,11 @@ impl GitFilebuf {
 
     fn hash_update(&mut self, data: &[u8]) {
         if self.compute_digest {
-            // SAFETY: `digest` is initialized while `compute_digest` (the
-            // invariant); `data` is readable for its length.
-            unsafe {
-                pending::git_hash_update(&raw mut self.digest, data.as_ptr().cast(), data.len())
-            };
+            // SAFETY: `digest` went through `init` while `compute_digest`
+            // (the invariant).
+            if let Ok(h) = unsafe { self.digest.hasher() } {
+                h.update(data);
+            }
         }
     }
 
@@ -306,17 +336,14 @@ impl GitFilebuf {
         {
             let _ = posix::unlink(lock);
         }
-        if self.compute_digest {
-            // SAFETY: initialized while `compute_digest` (the invariant).
-            unsafe { pending::git_hash_ctx_cleanup(&raw mut self.digest) };
-            self.compute_digest = false;
-        }
+        // (`git_hash_ctx_cleanup` has nothing to release.)
+        self.compute_digest = false;
         free_owned(&mut self.buffer);
         if !self.z_buf.is_null() {
             free_owned(&mut self.z_buf);
             // SAFETY: the stream is initialized while `z_buf` is set (the
             // invariant), and ended once.
-            unsafe { zlib::deflateEnd(&raw mut self.zs) };
+            unsafe { zlib::deflate_end(&mut self.zs) };
         }
         free_owned(&mut self.path_original);
         free_owned(&mut self.path_lock);
@@ -369,7 +396,7 @@ impl GitFilebuf {
     }
 
     fn write_deflate(&mut self, source: &[u8]) -> Result<()> {
-        if !source.is_empty() || self.flush_mode == zlib::Z_FINISH {
+        if !source.is_empty() || self.flush_mode == z::Z_FINISH {
             self.zs.next_in = source.as_ptr();
             self.zs.avail_in = source.len() as u32;
             loop {
@@ -378,9 +405,7 @@ impl GitFilebuf {
                 // SAFETY: the stream is initialized (`z_buf` is set) and has
                 // not moved since (the invariant); `next_in` has `avail_in`
                 // readable bytes, `next_out` `avail_out` writable ones.
-                if unsafe { zlib::deflate(&raw mut self.zs, self.flush_mode) }
-                    == zlib::Z_STREAM_ERROR
-                {
+                if unsafe { zlib::deflate(&mut self.zs, self.flush_mode) } == z::Z_STREAM_ERROR {
                     self.last_error = BUFERR_ZLIB;
                     return Err(ErrorCode::GENERIC);
                 }
@@ -444,19 +469,15 @@ impl GitFilebuf {
             }
         }
         let algorithm = if flags & GIT_FILEBUF_HASH_SHA1 != 0 {
-            pending::GIT_HASH_ALGORITHM_SHA1
+            Some(hash::HashAlgorithm::Sha1)
         } else if flags & GIT_FILEBUF_HASH_SHA256 != 0 {
-            pending::GIT_HASH_ALGORITHM_SHA256
+            Some(hash::HashAlgorithm::Sha256)
         } else {
-            0
+            None
         };
-        if algorithm != 0 {
+        if let Some(a) = algorithm {
             self.compute_digest = true;
-            // SAFETY: `digest` is zeroed storage of `git_hash_ctx`'s size and
-            // alignment, which `git_hash_ctx_init` initializes. On failure
-            // C still cleans it up (as `compute_digest` is set).
-            let r = unsafe { pending::git_hash_ctx_init(&raw mut self.digest, algorithm) };
-            if r < 0 {
+            if self.digest.init(a.raw()).is_err() {
                 return Err(ErrorCode::GENERIC);
             }
         }
@@ -464,7 +485,7 @@ impl GitFilebuf {
         if compression != 0 {
             // SAFETY: `zs` is zeroed and does not move until cleanup (the
             // invariant's requirement on the filebuf's owner).
-            if unsafe { zlib::deflate_init(&raw mut self.zs, compression) } != zlib::Z_OK {
+            if unsafe { zlib::deflate_init(&mut self.zs, compression) } != z::Z_OK {
                 return Err(git_error_set!(
                     ErrorClass::ZLIB,
                     "failed to initialize zlib"
@@ -475,10 +496,10 @@ impl GitFilebuf {
                 // C returns here without ending the stream (a leak):
                 // end it, as cleanup will not (rust/DEFECTS.md).
                 // SAFETY: initialized just above, ended once.
-                unsafe { zlib::deflateEnd(&raw mut self.zs) };
+                unsafe { zlib::deflate_end(&mut self.zs) };
                 return Err(ErrorCode::GENERIC);
             }
-            self.flush_mode = zlib::Z_NO_FLUSH;
+            self.flush_mode = z::Z_NO_FLUSH;
             self.write = Some(ffi::write_deflate);
         } else {
             self.write = Some(ffi::write_normal);
@@ -545,7 +566,7 @@ impl GitFilebuf {
 
     /// `git_filebuf_hash`: the hash of what was written (flushing first);
     /// `out` receives the algorithm's digest (20 or 32 bytes).
-    pub fn hash(&mut self, out: &mut [u8; pending::GIT_HASH_MAX_SIZE]) -> Result<()> {
+    pub fn hash(&mut self, out: &mut [u8; hash::MAX_SIZE]) -> Result<()> {
         // SAFETY: `out` has room for the largest digest.
         unsafe { self.hash_into(out.as_mut_ptr()) }
     }
@@ -559,11 +580,17 @@ impl GitFilebuf {
         crate::git_assert_arg!(self.compute_digest, "file->compute_digest");
         let _ = self.flush_buffer();
         self.verify_last_error()?;
-        // SAFETY: `digest` is initialized (`compute_digest`); `out` has
-        // room for its digest (the caller).
-        unsafe { pending::git_hash_final(out, &raw mut self.digest) };
-        // SAFETY: as above, cleaned up once.
-        unsafe { pending::git_hash_ctx_cleanup(&raw mut self.digest) };
+        // C ignores `git_hash_final`'s result (a SHA-1 collision is
+        // reported only through `git_hash_final`'s return value).
+        // SAFETY: `digest` went through `init` (`compute_digest`).
+        if let Ok(h) = unsafe { self.digest.hasher() } {
+            let mut d = [0u8; hash::MAX_SIZE];
+            let _collision = h.finalize_raw(&mut d);
+            let n = h.algorithm().size();
+            // SAFETY: `out` has room for this algorithm's digest (the
+            // caller); `d` is a distinct local.
+            unsafe { core::ptr::copy_nonoverlapping(d.as_ptr(), out, n) };
+        }
         self.compute_digest = false;
         Ok(())
     }
@@ -588,7 +615,7 @@ impl GitFilebuf {
     }
 
     fn commit_inner(&mut self) -> Result<()> {
-        self.flush_mode = zlib::Z_FINISH;
+        self.flush_mode = z::Z_FINISH;
         let _ = self.flush_buffer();
         self.verify_last_error()?;
         self.fd_is_open = false;
@@ -854,10 +881,8 @@ impl Filebuf {
 
     /// The hash of what was written so far (the filebuf must have been
     /// opened with a hash flag); the digest's bytes.
-    pub fn hash(
-        &mut self,
-    ) -> core::result::Result<[u8; pending::GIT_HASH_MAX_SIZE], errors::Error> {
-        let mut out = [0u8; pending::GIT_HASH_MAX_SIZE];
+    pub fn hash(&mut self) -> core::result::Result<[u8; hash::MAX_SIZE], errors::Error> {
+        let mut out = [0u8; hash::MAX_SIZE];
         self.0.hash(&mut out).map_err(errors::Error::from)?;
         Ok(out)
     }
@@ -891,7 +916,6 @@ crate::c_layout_test! {
             flush_mode, buf_size, buf_pos, fd, fd_is_open, created_lock, did_rename,
             do_not_buffer, do_fsync, last_error
         },
-        GitHashCtx => "git_hash_ctx" {},
         ZStream => "z_stream" {
             next_in, avail_in, total_in, next_out, avail_out, total_out, msg, state,
             zalloc, zfree, opaque, data_type, adler, reserved
