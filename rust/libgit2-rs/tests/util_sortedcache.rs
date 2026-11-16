@@ -8,9 +8,53 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use libgit2_rs::__test::util::errors::{self, ErrorCode};
-use libgit2_rs::__test::util::sortedcache::SortedCache;
-use libgit2_rs::__test::util::sortedcache::{Shared, ffi};
+use libgit2_rs::__test::util::sortedcache::{CopyItemFn, FreeItemFn, Shared, SortedCache};
 use libgit2_rs::__test::util::test_support;
+use libgit2_rs::__test::util::vector::VectorCmp;
+
+// The C ABI under test, declared as C declares it (the signatures are the
+// `src` exports').
+// The handles are Rust types C sees as opaque: it only passes pointers to them.
+#[allow(improper_ctypes)]
+unsafe extern "C" {
+    fn git_sortedcache_clear(sc: *const Shared, wlock: bool) -> c_int;
+    fn git_sortedcache_copy(
+        out: *mut *const Shared,
+        src: *const Shared,
+        lock: bool,
+        copy_item: Option<CopyItemFn>,
+        payload: *mut c_void,
+    ) -> c_int;
+    fn git_sortedcache_entry(sc: *const Shared, pos: usize) -> *mut c_void;
+    fn git_sortedcache_entrycount(sc: *const Shared) -> usize;
+    fn git_sortedcache_free(sc: *const Shared);
+    fn git_sortedcache_incref(sc: *const Shared);
+    fn git_sortedcache_lookup(sc: *const Shared, key: *const c_char) -> *mut c_void;
+    fn git_sortedcache_lookup_index(
+        out: *mut usize,
+        sc: *const Shared,
+        key: *const c_char,
+    ) -> c_int;
+    fn git_sortedcache_new(
+        out: *mut *const Shared,
+        item_path_offset: usize,
+        free_item: Option<FreeItemFn>,
+        free_item_payload: *mut c_void,
+        item_cmp: Option<VectorCmp>,
+        path: *const c_char,
+    ) -> c_int;
+    fn git_sortedcache_path(sc: *const Shared) -> *const c_char;
+    fn git_sortedcache_remove(sc: *const Shared, pos: usize) -> c_int;
+    fn git_sortedcache_rlock(sc: *const Shared) -> c_int;
+    fn git_sortedcache_runlock(sc: *const Shared);
+    fn git_sortedcache_upsert(
+        out: *mut *mut c_void,
+        sc: *const Shared,
+        key: *const c_char,
+    ) -> c_int;
+    fn git_sortedcache_wlock(sc: *const Shared) -> c_int;
+    fn git_sortedcache_wunlock(sc: *const Shared);
+}
 
 fn msg() -> String {
     String::from_utf8(errors::last_message().unwrap_or_default()).unwrap()
@@ -71,7 +115,7 @@ fn name_only() {
     // SAFETY: the cache is used as `sortedcache.h` says.
     unsafe {
         assert_eq!(
-            ffi::git_sortedcache_new(
+            git_sortedcache_new(
                 &mut sc,
                 0,
                 None,
@@ -81,47 +125,41 @@ fn name_only() {
             ),
             0
         );
-        assert_eq!(CStr::from_ptr(ffi::git_sortedcache_path(sc)), c"");
-        assert_eq!(ffi::git_sortedcache_wlock(sc), 0);
+        assert_eq!(CStr::from_ptr(git_sortedcache_path(sc)), c"");
+        assert_eq!(git_sortedcache_wlock(sc), 0);
         for k in [c"aaa", c"bbb", c"zzz", c"mmm", c"iii"] {
-            assert_eq!(ffi::git_sortedcache_upsert(&mut item, sc, k.as_ptr()), 0);
+            assert_eq!(git_sortedcache_upsert(&mut item, sc, k.as_ptr()), 0);
         }
         // the same key again: the same item
         let again = item;
-        assert_eq!(
-            ffi::git_sortedcache_upsert(&mut item, sc, c"iii".as_ptr()),
-            0
-        );
+        assert_eq!(git_sortedcache_upsert(&mut item, sc, c"iii".as_ptr()), 0);
         assert_eq!(item, again);
-        ffi::git_sortedcache_wunlock(sc);
+        git_sortedcache_wunlock(sc);
 
-        assert_eq!(ffi::git_sortedcache_entrycount(sc), 5);
-        assert_eq!(
-            key(ffi::git_sortedcache_lookup(sc, c"mmm".as_ptr()), 0),
-            "mmm"
-        );
-        assert!(ffi::git_sortedcache_lookup(sc, c"qqq".as_ptr()).is_null());
+        assert_eq!(git_sortedcache_entrycount(sc), 5);
+        assert_eq!(key(git_sortedcache_lookup(sc, c"mmm".as_ptr()), 0), "mmm");
+        assert!(git_sortedcache_lookup(sc, c"qqq".as_ptr()).is_null());
         let order: Vec<_> = (0..5)
-            .map(|i| key(ffi::git_sortedcache_entry(sc, i), 0))
+            .map(|i| key(git_sortedcache_entry(sc, i), 0))
             .collect();
         assert_eq!(order, ["aaa", "bbb", "iii", "mmm", "zzz"]);
-        assert!(ffi::git_sortedcache_entry(sc, 5).is_null());
+        assert!(git_sortedcache_entry(sc, 5).is_null());
         assert_eq!(
-            ffi::git_sortedcache_lookup_index(&mut pos, sc, c"iii".as_ptr()),
+            git_sortedcache_lookup_index(&mut pos, sc, c"iii".as_ptr()),
             0
         );
         assert_eq!(pos, 2);
         assert_eq!(
-            ffi::git_sortedcache_lookup_index(&mut pos, sc, c"abc".as_ptr()),
+            git_sortedcache_lookup_index(&mut pos, sc, c"abc".as_ptr()),
             ErrorCode::NOT_FOUND.raw()
         );
         assert_eq!(pos, 1);
 
-        assert_eq!(ffi::git_sortedcache_clear(sc, true), 0);
-        assert_eq!(ffi::git_sortedcache_entrycount(sc), 0);
-        assert!(ffi::git_sortedcache_entry(sc, 0).is_null());
-        ffi::git_sortedcache_free(sc);
-        ffi::git_sortedcache_free(core::ptr::null());
+        assert_eq!(git_sortedcache_clear(sc, true), 0);
+        assert_eq!(git_sortedcache_entrycount(sc), 0);
+        assert!(git_sortedcache_entry(sc, 0).is_null());
+        git_sortedcache_free(sc);
+        git_sortedcache_free(core::ptr::null());
     }
 }
 
@@ -136,7 +174,7 @@ fn in_memory_items_and_callbacks() {
     // SAFETY: as in `name_only`; the callbacks fit the items.
     unsafe {
         assert_eq!(
-            ffi::git_sortedcache_new(
+            git_sortedcache_new(
                 &mut sc,
                 PATH_OFFSET,
                 Some(item_free),
@@ -146,21 +184,21 @@ fn in_memory_items_and_callbacks() {
             ),
             0
         );
-        assert_eq!(CStr::from_ptr(ffi::git_sortedcache_path(sc)), c"some/path");
-        assert_eq!(ffi::git_sortedcache_wlock(sc), 0);
+        assert_eq!(CStr::from_ptr(git_sortedcache_path(sc)), c"some/path");
+        assert_eq!(git_sortedcache_wlock(sc), 0);
         for (k, v) in [(c"testing", 10), (c"again", 20), (c"final", 30)] {
-            assert_eq!(ffi::git_sortedcache_upsert(&mut item, sc, k.as_ptr()), 0);
+            assert_eq!(git_sortedcache_upsert(&mut item, sc, k.as_ptr()), 0);
             // fresh items are zeroed, and 8-aligned
             assert_eq!((*item.cast::<Item>()).value, 0);
             assert_eq!(item.addr() % 8, 0);
             (*item.cast::<Item>()).value = v;
         }
-        ffi::git_sortedcache_wunlock(sc);
+        git_sortedcache_wunlock(sc);
 
-        assert_eq!(ffi::git_sortedcache_rlock(sc), 0);
+        assert_eq!(git_sortedcache_rlock(sc), 0);
         let vals: Vec<_> = (0..3)
             .map(|i| {
-                let it = ffi::git_sortedcache_entry(sc, i);
+                let it = git_sortedcache_entry(sc, i);
                 (key(it, PATH_OFFSET), (*it.cast::<Item>()).value)
             })
             .collect();
@@ -169,39 +207,33 @@ fn in_memory_items_and_callbacks() {
         // a copy, with the default memcpy of the bytes before the key
         let mut copy: *const Shared = core::ptr::null();
         assert_eq!(
-            ffi::git_sortedcache_copy(&mut copy, sc, false, None, core::ptr::null_mut()),
+            git_sortedcache_copy(&mut copy, sc, false, None, core::ptr::null_mut()),
             0
         );
-        ffi::git_sortedcache_runlock(sc);
-        let it = ffi::git_sortedcache_lookup(copy, c"final".as_ptr());
+        git_sortedcache_runlock(sc);
+        let it = git_sortedcache_lookup(copy, c"final".as_ptr());
         assert_eq!((*it.cast::<Item>()).value, 30);
-        assert_eq!(
-            key(ffi::git_sortedcache_entry(copy, 0), PATH_OFFSET),
-            "again"
-        );
-        ffi::git_sortedcache_incref(copy);
-        ffi::git_sortedcache_free(copy);
+        assert_eq!(key(git_sortedcache_entry(copy, 0), PATH_OFFSET), "again");
+        git_sortedcache_incref(copy);
+        git_sortedcache_free(copy);
         assert_eq!(count.load(Ordering::SeqCst), 0);
-        ffi::git_sortedcache_free(copy);
+        git_sortedcache_free(copy);
         // the copy shares the free callback: three items freed
         assert_eq!(count.load(Ordering::SeqCst), 3);
 
-        assert_eq!(ffi::git_sortedcache_wlock(sc), 0);
+        assert_eq!(git_sortedcache_wlock(sc), 0);
         assert_eq!(
-            ffi::git_sortedcache_lookup_index(&mut pos, sc, c"again".as_ptr()),
+            git_sortedcache_lookup_index(&mut pos, sc, c"again".as_ptr()),
             0
         );
-        assert_eq!(ffi::git_sortedcache_remove(sc, pos), 0);
+        assert_eq!(git_sortedcache_remove(sc, pos), 0);
         assert_eq!(count.load(Ordering::SeqCst), 4);
-        assert_eq!(
-            ffi::git_sortedcache_remove(sc, 7),
-            ErrorCode::NOT_FOUND.raw()
-        );
+        assert_eq!(git_sortedcache_remove(sc, 7), ErrorCode::NOT_FOUND.raw());
         assert_eq!(msg(), "removing item out of range");
-        assert_eq!(ffi::git_sortedcache_entrycount(sc), 2);
-        ffi::git_sortedcache_wunlock(sc);
+        assert_eq!(git_sortedcache_entrycount(sc), 2);
+        git_sortedcache_wunlock(sc);
 
-        ffi::git_sortedcache_free(sc);
+        git_sortedcache_free(sc);
         assert_eq!(count.load(Ordering::SeqCst), 6);
     }
 }
@@ -223,7 +255,7 @@ fn copy_failure_and_no_comparison() {
     // SAFETY: as in `name_only`.
     unsafe {
         assert_eq!(
-            ffi::git_sortedcache_new(
+            git_sortedcache_new(
                 &mut sc,
                 0,
                 None,
@@ -233,16 +265,16 @@ fn copy_failure_and_no_comparison() {
             ),
             0
         );
-        assert_eq!(ffi::git_sortedcache_wlock(sc), 0);
+        assert_eq!(git_sortedcache_wlock(sc), 0);
         for k in [c"b", c"a", c"c"] {
-            assert_eq!(ffi::git_sortedcache_upsert(&mut item, sc, k.as_ptr()), 0);
+            assert_eq!(git_sortedcache_upsert(&mut item, sc, k.as_ptr()), 0);
         }
-        ffi::git_sortedcache_wunlock(sc);
+        git_sortedcache_wunlock(sc);
         // without a comparison: insertion order, and lookup_index is -1
-        assert_eq!(key(ffi::git_sortedcache_entry(sc, 0), 0), "b");
+        assert_eq!(key(git_sortedcache_entry(sc, 0), 0), "b");
         errors::clear();
         assert_eq!(
-            ffi::git_sortedcache_lookup_index(&mut pos, sc, c"a".as_ptr()),
+            git_sortedcache_lookup_index(&mut pos, sc, c"a".as_ptr()),
             -1
         );
         assert_eq!(pos, 42);
@@ -250,12 +282,12 @@ fn copy_failure_and_no_comparison() {
 
         let p = (&raw const calls).cast_mut().cast::<c_void>();
         assert_eq!(
-            ffi::git_sortedcache_copy(&mut copy, sc, true, Some(failing_copy), p),
+            git_sortedcache_copy(&mut copy, sc, true, Some(failing_copy), p),
             -7
         );
         assert!(copy.is_null());
         assert_eq!(calls.load(Ordering::SeqCst), 2);
-        ffi::git_sortedcache_free(sc);
+        git_sortedcache_free(sc);
     }
 }
 
@@ -267,7 +299,7 @@ fn upsert_under_alloc_limit() {
     // SAFETY: as in `name_only`.
     unsafe {
         assert_eq!(
-            ffi::git_sortedcache_new(
+            git_sortedcache_new(
                 &mut sc,
                 0,
                 None,
@@ -277,17 +309,14 @@ fn upsert_under_alloc_limit() {
             ),
             0
         );
-        assert_eq!(ffi::git_sortedcache_wlock(sc), 0);
+        assert_eq!(git_sortedcache_wlock(sc), 0);
         test_support::with_alloc_limit(&g, 0, || {
-            assert_eq!(
-                ffi::git_sortedcache_upsert(&mut item, sc, c"x".as_ptr()),
-                -1
-            );
+            assert_eq!(git_sortedcache_upsert(&mut item, sc, c"x".as_ptr()), -1);
         });
         assert!(item.is_null());
-        assert_eq!(ffi::git_sortedcache_entrycount(sc), 0);
-        ffi::git_sortedcache_wunlock(sc);
-        ffi::git_sortedcache_free(sc);
+        assert_eq!(git_sortedcache_entrycount(sc), 0);
+        git_sortedcache_wunlock(sc);
+        git_sortedcache_free(sc);
     }
 }
 
@@ -457,7 +486,7 @@ fn new_cache(cmp: bool) -> Sc {
         if cmp { Some(item_cmp) } else { None };
     // SAFETY: valid arguments.
     let r = unsafe {
-        ffi::git_sortedcache_new(
+        git_sortedcache_new(
             &mut sc,
             PATH_OFFSET,
             None,
@@ -486,13 +515,10 @@ fn c_abi_copy_races_with_writer() {
                 let mut item: *mut c_void = core::ptr::null_mut();
                 // SAFETY: the write lock is held around the upsert.
                 unsafe {
-                    assert_eq!(ffi::git_sortedcache_wlock(sc.0), 0);
-                    assert_eq!(
-                        ffi::git_sortedcache_upsert(&mut item, sc.0, key.as_ptr()),
-                        0
-                    );
+                    assert_eq!(git_sortedcache_wlock(sc.0), 0);
+                    assert_eq!(git_sortedcache_upsert(&mut item, sc.0, key.as_ptr()), 0);
                     (*item.cast::<Item>()).value = i as c_int;
-                    ffi::git_sortedcache_wunlock(sc.0);
+                    git_sortedcache_wunlock(sc.0);
                 }
             }
         });
@@ -503,26 +529,19 @@ fn c_abi_copy_races_with_writer() {
                     // SAFETY: copy takes the read lock; the copy is ours.
                     unsafe {
                         assert_eq!(
-                            ffi::git_sortedcache_copy(
-                                &mut out,
-                                sc.0,
-                                true,
-                                None,
-                                core::ptr::null_mut()
-                            ),
+                            git_sortedcache_copy(&mut out, sc.0, true, None, core::ptr::null_mut()),
                             0
                         );
-                        let n = ffi::git_sortedcache_entrycount(out);
+                        let n = git_sortedcache_entrycount(out);
                         let mut prev: Option<String> = None;
                         for i in 0..n {
-                            let k =
-                                key(ffi::git_sortedcache_entry(out, i), PATH_OFFSET).to_string();
+                            let k = key(git_sortedcache_entry(out, i), PATH_OFFSET).to_string();
                             if let Some(p) = &prev {
                                 assert!(*p < k);
                             }
                             prev = Some(k);
                         }
-                        ffi::git_sortedcache_free(out);
+                        git_sortedcache_free(out);
                     }
                 }
             });
@@ -530,8 +549,8 @@ fn c_abi_copy_races_with_writer() {
     });
     // SAFETY: the last reference.
     unsafe {
-        assert_eq!(ffi::git_sortedcache_entrycount(sc.0), ROUNDS);
-        ffi::git_sortedcache_free(sc.0);
+        assert_eq!(git_sortedcache_entrycount(sc.0), ROUNDS);
+        git_sortedcache_free(sc.0);
     }
 }
 
@@ -545,12 +564,12 @@ fn c_abi_concurrent_readers() {
         let sc = new_cache(with_cmp);
         // SAFETY: the write lock is held around the upserts.
         unsafe {
-            assert_eq!(ffi::git_sortedcache_wlock(sc.0), 0);
+            assert_eq!(git_sortedcache_wlock(sc.0), 0);
             for k in [c"b", c"a", c"d", c"c"] {
                 let mut item: *mut c_void = core::ptr::null_mut();
-                assert_eq!(ffi::git_sortedcache_upsert(&mut item, sc.0, k.as_ptr()), 0);
+                assert_eq!(git_sortedcache_upsert(&mut item, sc.0, k.as_ptr()), 0);
             }
-            ffi::git_sortedcache_wunlock(sc.0);
+            git_sortedcache_wunlock(sc.0);
         }
         let sc = &sc;
         std::thread::scope(|s| {
@@ -558,32 +577,31 @@ fn c_abi_concurrent_readers() {
                 s.spawn(move || {
                     // SAFETY: each thread holds a read lock while reading.
                     unsafe {
-                        assert_eq!(ffi::git_sortedcache_rlock(sc.0), 0);
+                        assert_eq!(git_sortedcache_rlock(sc.0), 0);
                         for _ in 0..ROUNDS / 20 + 1 {
                             let order: Vec<_> = (0..4)
-                                .map(|i| key(ffi::git_sortedcache_entry(sc.0, i), PATH_OFFSET))
+                                .map(|i| key(git_sortedcache_entry(sc.0, i), PATH_OFFSET))
                                 .collect();
                             if with_cmp {
                                 assert_eq!(order, ["a", "b", "c", "d"]);
                             } else {
                                 assert_eq!(order, ["b", "a", "d", "c"]);
                             }
-                            assert!(!ffi::git_sortedcache_lookup(sc.0, c"c".as_ptr()).is_null());
+                            assert!(!git_sortedcache_lookup(sc.0, c"c".as_ptr()).is_null());
                             let mut pos = 0usize;
-                            let r =
-                                ffi::git_sortedcache_lookup_index(&mut pos, sc.0, c"c".as_ptr());
+                            let r = git_sortedcache_lookup_index(&mut pos, sc.0, c"c".as_ptr());
                             if with_cmp {
                                 assert_eq!((r, pos), (0, 2));
                             } else {
                                 assert_eq!(r, -1);
                             }
                         }
-                        ffi::git_sortedcache_runlock(sc.0);
+                        git_sortedcache_runlock(sc.0);
                     }
                 });
             }
         });
         // SAFETY: the last reference.
-        unsafe { ffi::git_sortedcache_free(sc.0) };
+        unsafe { git_sortedcache_free(sc.0) };
     }
 }

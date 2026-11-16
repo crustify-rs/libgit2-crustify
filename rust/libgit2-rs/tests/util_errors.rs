@@ -4,17 +4,38 @@
 // of each block covers the calls in it.
 #![allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)]
 
-use core::ffi::{CStr, c_int};
+use core::ffi::{CStr, c_char, c_int};
 use core::fmt;
-use libgit2_rs::__test::util::errors::{self, Bytes, Error, ErrorClass, ErrorCode, GitError, ffi};
+use libgit2_rs::__test::util::errors::{self, Bytes, Error, ErrorClass, ErrorCode, GitError};
 use libgit2_rs::__test::util::export::barrier;
 use libgit2_rs::__test::util::test_support;
+
+// The C ABI under test, declared as C declares it (the signatures are the
+// `src` exports').
+unsafe extern "C" {
+    fn git_error__set_formatted(
+        error_class: c_int,
+        message: *const c_char,
+        len: usize,
+        os_errno: c_int,
+    );
+    fn git_error_clear();
+    fn git_error_exists() -> bool;
+    fn git_error_free(error: *mut GitError);
+    fn git_error_last() -> *const GitError;
+    fn git_error_restore(error: *mut GitError) -> c_int;
+    fn git_error_save(out: *mut *mut GitError) -> c_int;
+    fn git_error_set_oom();
+    fn git_error_set_str(error_class: c_int, string: *const c_char) -> c_int;
+    fn git_error_system_last() -> c_int;
+    fn git_error_system_set(code: c_int);
+}
 
 /// What `git_error_last` shows, as C reads it.
 fn c_last() -> (c_int, Vec<u8>) {
     // SAFETY: as C: read the returned error before the next error call.
     unsafe {
-        let e: *const GitError = ffi::git_error_last();
+        let e: *const GitError = git_error_last();
         ((*e).klass, CStr::from_ptr((*e).message).to_bytes().to_vec())
     }
 }
@@ -37,22 +58,16 @@ fn set_clear_last() {
     assert_eq!(c_last(), (0, b"no error".to_vec()));
     // SAFETY: as C.
     unsafe {
-        assert_eq!(
-            ffi::git_error_set_str(ErrorClass::TAG.0, c"from C".as_ptr()),
-            0
-        );
+        assert_eq!(git_error_set_str(ErrorClass::TAG.0, c"from C".as_ptr()), 0);
         assert_eq!(c_last(), (13, b"from C".to_vec()));
-        assert_eq!(
-            ffi::git_error_set_str(ErrorClass::TAG.0, core::ptr::null()),
-            -1
-        );
+        assert_eq!(git_error_set_str(ErrorClass::TAG.0, core::ptr::null()), -1);
         assert_eq!(c_last(), (3, b"invalid argument: 'string'".to_vec()));
-        ffi::git_error_set_oom();
-        assert!(ffi::git_error_exists());
-        ffi::git_error_clear();
-        assert!(!ffi::git_error_exists());
+        git_error_set_oom();
+        assert!(git_error_exists());
+        git_error_clear();
+        assert!(!git_error_exists());
         // Any class an int can hold.
-        assert_eq!(ffi::git_error_set_str(1234, c"odd".as_ptr()), 0);
+        assert_eq!(git_error_set_str(1234, c"odd".as_ptr()), 0);
         assert_eq!(c_last(), (1234, b"odd".to_vec()));
     }
 }
@@ -86,11 +101,11 @@ fn formatted_and_os_errors() {
     // The shim's entry point: NULL format, OS class.
     // SAFETY: as the shim calls it.
     unsafe {
-        ffi::git_error__set_formatted(ErrorClass::OS.0, core::ptr::null(), 0, libc::EACCES);
+        git_error__set_formatted(ErrorClass::OS.0, core::ptr::null(), 0, libc::EACCES);
         assert!(c_last().1.starts_with(b"Permission denied"));
-        ffi::git_error__set_formatted(ErrorClass::OS.0, core::ptr::null(), 0, 0);
+        git_error__set_formatted(ErrorClass::OS.0, core::ptr::null(), 0, 0);
         assert_eq!(c_last(), (2, b"".to_vec()));
-        ffi::git_error__set_formatted(ErrorClass::REGEX.0, c"abcdef".as_ptr(), 3, 0);
+        git_error__set_formatted(ErrorClass::REGEX.0, c"abcdef".as_ptr(), 3, 0);
         assert_eq!(c_last(), (8, b"abc".to_vec()));
     }
     // Bytes outside a message is lossy.
@@ -129,25 +144,25 @@ fn save_and_restore() {
     let mut e: *mut GitError = core::ptr::null_mut();
     // SAFETY: as C.
     unsafe {
-        assert_eq!(ffi::git_error_save(&mut e), 0);
-        ffi::git_error_clear();
-        assert_eq!(ffi::git_error_restore(e), 0);
+        assert_eq!(git_error_save(&mut e), 0);
+        git_error_clear();
+        assert_eq!(git_error_restore(e), 0);
         assert_eq!(c_last(), (10, b"saved message".to_vec()));
-        ffi::git_error_set_oom();
-        assert_eq!(ffi::git_error_save(&mut e), 0);
-        ffi::git_error_clear();
-        assert_eq!(ffi::git_error_restore(e), 0);
+        git_error_set_oom();
+        assert_eq!(git_error_save(&mut e), 0);
+        git_error_clear();
+        assert_eq!(git_error_restore(e), 0);
         assert_eq!(c_last(), (1, b"Out of memory".to_vec()));
         // Saving no error, then restoring it, restores "no error" (which
         // then counts as an error set, as in C).
-        ffi::git_error_clear();
-        assert_eq!(ffi::git_error_save(&mut e), 0);
-        assert_eq!(ffi::git_error_restore(e), 0);
-        assert!(ffi::git_error_exists());
+        git_error_clear();
+        assert_eq!(git_error_save(&mut e), 0);
+        assert_eq!(git_error_restore(e), 0);
+        assert!(git_error_exists());
         assert_eq!(c_last(), (0, b"no error".to_vec()));
-        assert_eq!(ffi::git_error_restore(core::ptr::null_mut()), -1);
+        assert_eq!(git_error_restore(core::ptr::null_mut()), -1);
         assert_eq!(c_last(), (3, b"invalid argument: 'error'".to_vec()));
-        ffi::git_error_free(core::ptr::null_mut());
+        git_error_free(core::ptr::null_mut());
     }
 }
 
@@ -204,13 +219,9 @@ fn system_errors() {
     let _g = test_support::init();
     // SAFETY: as C.
     unsafe {
-        ffi::git_error_system_set(libc::EEXIST);
-        assert_eq!(ffi::git_error_system_last(), libc::EEXIST);
-        ffi::git_error_clear();
-        assert_eq!(
-            ffi::git_error_system_last(),
-            0,
-            "git_error_clear resets errno"
-        );
+        git_error_system_set(libc::EEXIST);
+        assert_eq!(git_error_system_last(), libc::EEXIST);
+        git_error_clear();
+        assert_eq!(git_error_system_last(), 0, "git_error_clear resets errno");
     }
 }

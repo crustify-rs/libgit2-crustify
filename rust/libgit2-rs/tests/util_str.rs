@@ -5,10 +5,66 @@
 // of each block covers the calls in it.
 #![allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)]
 
-use core::ffi::{CStr, c_char};
+use core::ffi::{CStr, c_char, c_int};
 use libgit2_rs::__test::util::errors::{self, ErrorClass, ErrorCode};
-use libgit2_rs::__test::util::str::{Bom, GitStr, ffi};
+use libgit2_rs::__test::util::str::{Bom, GitStr};
 use libgit2_rs::__test::util::test_support;
+
+// The C ABI under test, declared as C declares it (the signatures are the
+// `src` exports').
+unsafe extern "C" {
+    fn git_str__join_n(
+        buf: *mut GitStr,
+        separator: c_char,
+        nbuf: c_int,
+        segments: *const *const c_char,
+    ) -> c_int;
+    fn git_str__vprintf_begin(buf: *mut GitStr, format_len: usize) -> c_int;
+    fn git_str__vprintf_written(buf: *mut GitStr, len: c_int) -> c_int;
+    fn git_str_attach(buf: *mut GitStr, ptr: *mut c_char, asize: usize) -> c_int;
+    fn git_str_clear(buf: *mut GitStr);
+    fn git_str_cmp(a: *const GitStr, b: *const GitStr) -> c_int;
+    fn git_str_common_prefix(
+        buf: *mut GitStr,
+        strings: *const *const c_char,
+        count: usize,
+    ) -> c_int;
+    fn git_str_consume(buf: *mut GitStr, end: *const c_char);
+    fn git_str_copy_cstr(data: *mut c_char, datasize: usize, buf: *const GitStr) -> c_int;
+    fn git_str_crlf_to_lf(tgt: *mut GitStr, src: *const GitStr) -> c_int;
+    fn git_str_detach(buf: *mut GitStr) -> *mut c_char;
+    fn git_str_detect_bom(bom: *mut Bom, buf: *const GitStr) -> c_int;
+    fn git_str_dispose(buf: *mut GitStr);
+    fn git_str_grow_by(buf: *mut GitStr, additional_size: usize) -> c_int;
+    fn git_str_init(buf: *mut GitStr, initial_size: usize) -> c_int;
+    fn git_str_is_binary(buf: *const GitStr) -> c_int;
+    fn git_str_join(
+        buf: *mut GitStr,
+        separator: c_char,
+        str_a: *const c_char,
+        str_b: *const c_char,
+    ) -> c_int;
+    fn git_str_join3(
+        buf: *mut GitStr,
+        separator: c_char,
+        str_a: *const c_char,
+        str_b: *const c_char,
+        str_c: *const c_char,
+    ) -> c_int;
+    fn git_str_put(buf: *mut GitStr, data: *const c_char, len: usize) -> c_int;
+    fn git_str_puts(buf: *mut GitStr, string: *const c_char) -> c_int;
+    fn git_str_set(buf: *mut GitStr, data: *const libc::c_void, len: usize) -> c_int;
+    fn git_str_sets(buf: *mut GitStr, string: *const c_char) -> c_int;
+    fn git_str_splice(
+        buf: *mut GitStr,
+        where_: usize,
+        nb_to_remove: usize,
+        data: *const c_char,
+        nb_to_insert: usize,
+    ) -> c_int;
+    fn git_str_swap(str_a: *mut GitStr, str_b: *mut GitStr);
+    fn git_str_try_grow(buf: *mut GitStr, target_size: usize, mark_oom: bool) -> c_int;
+}
 
 fn msg() -> String {
     String::from_utf8(errors::last_message().unwrap_or_default()).unwrap()
@@ -358,20 +414,20 @@ fn ffi_init_dispose_and_states() {
     let mut s = core::mem::MaybeUninit::<GitStr>::uninit();
     // SAFETY: as C: init, use, dispose a git_str on the stack.
     unsafe {
-        assert_eq!(ffi::git_str_init(s.as_mut_ptr(), 0), 0);
+        assert_eq!(git_str_init(s.as_mut_ptr(), 0), 0);
         let p = s.as_mut_ptr();
         assert_eq!((*p).capacity(), 0);
-        assert_eq!(ffi::git_str_puts(p, c"hello".as_ptr()), 0);
-        assert_eq!(ffi::git_str_put(p, c" world".as_ptr(), 6), 0);
+        assert_eq!(git_str_puts(p, c"hello".as_ptr()), 0);
+        assert_eq!(git_str_put(p, c" world".as_ptr(), 6), 0);
         assert_eq!(bytes(&*p), b"hello world");
-        assert_eq!(ffi::git_str_put(p, core::ptr::null(), 0), 0);
-        assert_eq!(ffi::git_str_put(p, core::ptr::null(), 1), -1);
+        assert_eq!(git_str_put(p, core::ptr::null(), 0), 0);
+        assert_eq!(git_str_put(p, core::ptr::null(), 1), -1);
         assert_eq!(msg(), "invalid argument: 'data'");
-        assert_eq!(ffi::git_str_puts(p, core::ptr::null()), -1);
+        assert_eq!(git_str_puts(p, core::ptr::null()), -1);
         assert_eq!(msg(), "invalid argument: 'string'");
-        ffi::git_str_dispose(p);
+        git_str_dispose(p);
         assert_eq!((*p).capacity(), 0);
-        ffi::git_str_dispose(core::ptr::null_mut());
+        git_str_dispose(core::ptr::null_mut());
         s.assume_init_drop();
     }
     // A zeroed git_str (NULL ptr), as C's calloc'd structs hold.
@@ -379,8 +435,8 @@ fn ffi_init_dispose_and_states() {
     // SAFETY: an all-zero git_str is the empty state.
     unsafe {
         let p = z.as_mut_ptr();
-        ffi::git_str_clear(p);
-        assert_eq!(ffi::git_str_sets(p, c"x".as_ptr()), 0);
+        git_str_clear(p);
+        assert_eq!(git_str_sets(p, c"x".as_ptr()), 0);
         assert_eq!(bytes(&*p), b"x");
         z.assume_init_drop();
     }
@@ -396,31 +452,31 @@ fn ffi_aliasing_arguments() {
         // Appending the buffer to itself, through growth.
         for _ in 0..6 {
             let (d, n) = ((*p).as_ptr(), (*p).len());
-            assert_eq!(ffi::git_str_put(p, d, n), 0);
+            assert_eq!(git_str_put(p, d, n), 0);
         }
         assert_eq!((*p).len(), 3 * 64);
         assert!(bytes(&*p).chunks(3).all(|c| c == b"abc"));
         // set from inside.
         let d = (*p).as_ptr().add(3);
-        assert_eq!(ffi::git_str_set(p, d.cast(), 4), 0);
+        assert_eq!(git_str_set(p, d.cast(), 4), 0);
         assert_eq!(bytes(&*p), b"abca");
         // set from ptr itself: a truncation.
-        assert_eq!(ffi::git_str_set(p, (*p).as_ptr().cast(), 2), 0);
+        assert_eq!(git_str_set(p, (*p).as_ptr().cast(), 2), 0);
         assert_eq!(bytes(&*p), b"ab");
         // join with str_a inside (the joinpath idiom), and at an offset.
         assert_eq!(
-            ffi::git_str_join(p, b'/' as c_char, (*p).as_ptr(), c"c".as_ptr()),
+            git_str_join(p, b'/' as c_char, (*p).as_ptr(), c"c".as_ptr()),
             0
         );
         assert_eq!(bytes(&*p), b"ab/c");
         assert_eq!(
-            ffi::git_str_join(p, b'/' as c_char, (*p).as_ptr().add(1), c"d".as_ptr()),
+            git_str_join(p, b'/' as c_char, (*p).as_ptr().add(1), c"d".as_ptr()),
             0
         );
         assert_eq!(bytes(&*p), b"b/c/d");
         // str_b inside is refused.
         assert_eq!(
-            ffi::git_str_join(p, b'/' as c_char, c"x".as_ptr(), (*p).as_ptr()),
+            git_str_join(p, b'/' as c_char, c"x".as_ptr(), (*p).as_ptr()),
             -1
         );
         assert_eq!(
@@ -428,7 +484,7 @@ fn ffi_aliasing_arguments() {
             "invalid argument: 'str_b < buf->ptr || str_b >= buf->ptr + buf->size'"
         );
         assert_eq!(
-            ffi::git_str_join3(
+            git_str_join3(
                 p,
                 b'/' as c_char,
                 (*p).as_ptr(),
@@ -443,11 +499,11 @@ fn ffi_aliasing_arguments() {
         );
         // join_n with a segment inside: C uses the rest of the original contents.
         let segs = [(*p).as_ptr().add(2), c"e".as_ptr()];
-        assert_eq!(ffi::git_str__join_n(p, b'/' as c_char, 2, segs.as_ptr()), 0);
+        assert_eq!(git_str__join_n(p, b'/' as c_char, 2, segs.as_ptr()), 0);
         assert_eq!(bytes(&*p), b"b/c/d/c/d/e");
         // splice with data inside.
         let d = (*p).as_ptr();
-        assert_eq!(ffi::git_str_splice(p, 0, 0, d, 4), 0);
+        assert_eq!(git_str_splice(p, 0, 0, d, 4), 0);
         assert_eq!(bytes(&*p), b"b/c/b/c/d/c/d/e");
     }
 }
@@ -460,40 +516,40 @@ fn ffi_misc() {
     let mut out = [0x55u8; 4];
     // SAFETY: as C.
     unsafe {
-        assert_eq!(ffi::git_str_copy_cstr(out.as_mut_ptr().cast(), 4, p), 0);
+        assert_eq!(git_str_copy_cstr(out.as_mut_ptr().cast(), 4, p), 0);
         assert_eq!(&out, b"012\0");
-        assert_eq!(ffi::git_str_copy_cstr(out.as_mut_ptr().cast(), 0, p), -1);
+        assert_eq!(git_str_copy_cstr(out.as_mut_ptr().cast(), 0, p), -1);
         assert_eq!(msg(), "invalid argument: 'datasize'");
-        ffi::git_str_consume(p, (*p).as_ptr().add(4));
+        git_str_consume(p, (*p).as_ptr().add(4));
         assert_eq!(bytes(&*p), b"456789");
-        ffi::git_str_consume(p, (*p).as_ptr());
+        git_str_consume(p, (*p).as_ptr());
         assert_eq!(bytes(&*p), b"456789");
-        let d = ffi::git_str_detach(p);
+        let d = git_str_detach(p);
         assert_eq!(CStr::from_ptr(d), c"456789");
-        assert_eq!(ffi::git_str_attach(p, d, 0), 0);
+        assert_eq!(git_str_attach(p, d, 0), 0);
         assert_eq!((*p).capacity(), 7);
         let mut other = GitStr::from_bytes(b"other").unwrap();
-        ffi::git_str_swap(p, other.as_mut_ptr());
+        git_str_swap(p, other.as_mut_ptr());
         assert_eq!(bytes(&*p), b"other");
         // `memcmp`'s sign (glibc's magnitude varies by implementation).
-        assert!(ffi::git_str_cmp(p, other.as_mut_ptr()) > 0);
-        assert_eq!(ffi::git_str_cmp(p, p), 0);
-        ffi::git_str_swap(p, p);
+        assert!(git_str_cmp(p, other.as_mut_ptr()) > 0);
+        assert_eq!(git_str_cmp(p, p), 0);
+        git_str_swap(p, p);
         let t = GitStr::from_bytes(b"x\r\ny").unwrap();
-        assert_eq!(ffi::git_str_crlf_to_lf(p, &t), 0);
+        assert_eq!(git_str_crlf_to_lf(p, &t), 0);
         assert_eq!(bytes(&*p), b"x\ny");
-        assert_eq!(ffi::git_str_crlf_to_lf(p, p), -1);
+        assert_eq!(git_str_crlf_to_lf(p, p), -1);
         assert_eq!(msg(), "unrecoverable internal error: 'tgt != src'");
         let strs = [c"abc".as_ptr(), c"abd".as_ptr()];
-        assert_eq!(ffi::git_str_common_prefix(p, strs.as_ptr(), 2), 0);
+        assert_eq!(git_str_common_prefix(p, strs.as_ptr(), 2), 0);
         assert_eq!(bytes(&*p), b"ab");
         let mut bom = Bom::Utf8;
-        assert_eq!(ffi::git_str_detect_bom(&mut bom, p), 0);
+        assert_eq!(git_str_detect_bom(&mut bom, p), 0);
         assert_eq!(bom, Bom::None);
-        assert_eq!(ffi::git_str_is_binary(p), 0);
-        assert_eq!(ffi::git_str_grow_by(p, 100), 0);
+        assert_eq!(git_str_is_binary(p), 0);
+        assert_eq!(git_str_grow_by(p, 100), 0);
         assert!((*p).capacity() >= 102);
-        assert_eq!(ffi::git_str_try_grow(p, 1000, false), 0);
+        assert_eq!(git_str_try_grow(p, 1000, false), 0);
         assert_eq!((*p).capacity(), 1000);
     }
 }
@@ -506,14 +562,14 @@ fn ffi_vprintf_protocol() {
     // SAFETY: as the C shim drives it: begin, then report what vsnprintf
     // wrote.
     unsafe {
-        assert_eq!(ffi::git_str__vprintf_begin(p, 3), 0);
+        assert_eq!(git_str__vprintf_begin(p, 3), 0);
         assert_eq!((*p).capacity(), 8);
         // Pretend vsnprintf wanted 20 bytes: grow and retry.
-        assert_eq!(ffi::git_str__vprintf_written(p, 20), 1);
+        assert_eq!(git_str__vprintf_written(p, 20), 1);
         assert!((*p).capacity() >= 21);
         // Pretend it wrote 0 bytes (and the NUL).
-        assert_eq!(ffi::git_str__vprintf_written(p, 0), 0);
-        assert_eq!(ffi::git_str__vprintf_written(p, -1), -1);
+        assert_eq!(git_str__vprintf_written(p, 0), 0);
+        assert_eq!(git_str__vprintf_written(p, -1), -1);
         assert!((*p).is_oom());
         (*p).dispose();
     }
