@@ -40,6 +40,7 @@ use core::ptr::{self, NonNull};
 use core::sync::atomic::{AtomicI32, AtomicIsize, AtomicPtr, AtomicU32, Ordering};
 
 use crate::cache::GitCache;
+use crate::config::{Config, GitConfig};
 use crate::git_error_set;
 use crate::odb::{GitOdb, Odb};
 use crate::oid::{GIT_OID_SHA1, OidType, git_oid_t};
@@ -59,9 +60,9 @@ mod open;
 mod tests;
 
 pub use api::{Repository, RepositoryInitOptions, RepositoryOpenFlags, RepositoryState};
-pub use handles::{Config, Index, Refdb, Reference};
+pub use handles::{Index, Refdb, Reference};
 
-use handles::{ConfigRef, check};
+use handles::check;
 
 /// `DOT_GIT`.
 pub const DOT_GIT: &[u8] = b".git";
@@ -127,16 +128,10 @@ pub const GIT_ABBREV_MINIMUM: c_int = 4;
 /// `GIT_ABBREV_FALSE` (`GIT_OID_MAX_HEXSIZE`).
 pub const GIT_ABBREV_FALSE: c_int = 64;
 
-/// `GIT_CONFIG_LEVEL_SYSTEM`.
-pub const GIT_CONFIG_LEVEL_SYSTEM: c_int = 2;
-/// `GIT_CONFIG_LEVEL_XDG`.
-pub const GIT_CONFIG_LEVEL_XDG: c_int = 3;
-/// `GIT_CONFIG_LEVEL_GLOBAL`.
-pub const GIT_CONFIG_LEVEL_GLOBAL: c_int = 4;
-/// `GIT_CONFIG_LEVEL_LOCAL`.
-pub const GIT_CONFIG_LEVEL_LOCAL: c_int = 5;
-/// `GIT_CONFIG_LEVEL_WORKTREE`.
-pub const GIT_CONFIG_LEVEL_WORKTREE: c_int = 6;
+pub use crate::config::{
+    GIT_CONFIG_LEVEL_GLOBAL, GIT_CONFIG_LEVEL_LOCAL, GIT_CONFIG_LEVEL_SYSTEM,
+    GIT_CONFIG_LEVEL_WORKTREE, GIT_CONFIG_LEVEL_XDG,
+};
 
 /// `GIT_INDEX_CAPABILITY_FROM_OWNER`.
 const GIT_INDEX_CAPABILITY_FROM_OWNER: c_int = -1;
@@ -163,7 +158,7 @@ struct ReservedNames {
 pub struct GitRepository {
     odb: AtomicPtr<GitOdb>,
     refdb: AtomicPtr<c_void>,
-    config: AtomicPtr<c_void>,
+    config: AtomicPtr<GitConfig>,
     index: AtomicPtr<c_void>,
     /// `git_cache objects`: `Sync` (its map is behind its rwlock).
     objects: GitCache,
@@ -481,20 +476,21 @@ impl GitRepository {
         self.refdb_type.store(t, Ordering::Relaxed)
     }
 
-    /// `git_repository__configmap_lookup_cache_clear` (config_cache.c,
-    /// PENDING(l-config)): every entry to `GIT_CONFIGMAP_NOT_CACHED`.
-    pub(crate) fn configmap_cache_clear(&self) {
-        // SAFETY: a live repository; C stores to its configmap cache
-        // (atomics on this side).
-        unsafe { c::git_repository__configmap_lookup_cache_clear(self.as_ptr()) }
+    /// `repo->configmap_cache`: C reads and writes it atomically.
+    pub(crate) fn configmap_cache(&self) -> &[AtomicIsize; GIT_CONFIGMAP_CACHE_MAX] {
+        &self.configmap_cache
     }
 
-    /// `git_repository__configmap_lookup` (PENDING(l-config)).
+    /// `git_repository__configmap_lookup_cache_clear` (config_cache.c):
+    /// every entry to `GIT_CONFIGMAP_NOT_CACHED`.
+    pub(crate) fn configmap_cache_clear(&self) {
+        crate::config_cache::configmap_lookup_cache_clear(self)
+    }
+
+    /// `git_repository__configmap_lookup` (config_cache.c). `item` is a
+    /// `git_configmap_item` (below `GIT_CONFIGMAP_CACHE_MAX`).
     pub(crate) fn configmap_lookup(&self, item: c_int) -> Result<c_int> {
-        let mut out: c_int = 0;
-        // SAFETY: a live repository and a local out-parameter.
-        check(unsafe { c::git_repository__configmap_lookup(&raw mut out, self.as_ptr(), item) })?;
-        Ok(out)
+        crate::config_cache::repository_configmap_lookup(self, item as usize)
     }
 
     // ----- the lazily created odb, config, refdb and index -----------------
@@ -517,10 +513,10 @@ impl GitRepository {
         });
     }
     /// `set_config`: also clears the configmap cache.
-    pub(crate) fn set_config(&self, config: Option<NonNull<c_void>>) {
+    pub(crate) fn set_config(&self, config: Option<NonNull<GitConfig>>) {
         self.set_owned(&self.config, config, |p| {
             // SAFETY: the reference the repository held.
-            unsafe { c::git_config_free(p.as_ptr()) }
+            drop(unsafe { Config::from_raw(p) })
         });
         self.configmap_cache_clear();
     }
@@ -582,7 +578,7 @@ impl GitRepository {
     }
 
     /// `git_repository_config__weakptr`.
-    pub fn config_weak(&self) -> Result<ConfigRef<'_>> {
+    pub fn config_weak(&self) -> Result<&GitConfig> {
         let mut p = load(&self.config);
         if p.is_null() {
             let use_env = self.use_env();
@@ -591,11 +587,10 @@ impl GitRepository {
             let mut xdg = GitStr::new();
             open::config_path_system(&mut system, use_env)?;
             open::config_path_global(&mut global, use_env)?;
-            // SAFETY: an exclusive local `git_str`.
-            unsafe { c::git_config__find_xdg(&raw mut xdg) };
+            // As C, a missing file is an empty path.
+            let _ = crate::config::find_xdg(&mut xdg);
             if global.is_empty() {
-                // SAFETY: as above.
-                unsafe { c::git_config__global_location(&raw mut global) };
+                let _ = crate::config::global_location(&mut global);
             }
             let cfg = open::load_config(
                 Some(self),
@@ -604,16 +599,17 @@ impl GitRepository {
                 path_unless_empty(&system).as_deref(),
             )?;
             p = self
-                .publish(&self.config, cfg.into_nonnull(), |p| {
+                .publish(&self.config, cfg.into_raw(), |p| {
                     // SAFETY: the loser's reference, released once.
-                    unsafe { c::git_config_free(p.as_ptr()) }
+                    drop(unsafe { Config::from_raw(p) })
                 })
                 .as_ptr();
         }
         let p = NonNull::new(p).ok_or(ErrorCode::GENERIC)?;
-        // SAFETY: the repository's config, live while it is set; replacing
-        // it is the caller's concern, as for C's weak pointers.
-        Ok(unsafe { ConfigRef::from_ptr(p) })
+        // SAFETY: the repository's config, live while it is set (the
+        // repository holds a reference); replacing it is the caller's
+        // concern, as for C's weak pointers. `GitConfig` is `Sync`.
+        Ok(unsafe { p.as_ref() })
     }
 
     /// `git_repository_odb__weakptr`: the odb pointer (not referenced).
@@ -709,7 +705,7 @@ impl GitRepository {
     pub(crate) fn refdb_ptr(&self) -> *mut c_void {
         load(&self.refdb)
     }
-    pub(crate) fn config_ptr(&self) -> *mut c_void {
+    pub(crate) fn config_ptr(&self) -> *mut GitConfig {
         load(&self.config)
     }
     pub(crate) fn index_ptr(&self) -> *mut c_void {
@@ -1053,7 +1049,6 @@ crate::c_layout_test! {
             submodule_cache
         },
         StaticStr => "git_str" { ptr, asize, size },
-        c::ConfigEntryRaw => "git_config_entry" { name, value, backend_type, origin_path, include_depth, level },
         c::OidTypeOptions => "git_index_options" { version, oid_type },
         c::ObjectIdOptions => "git_object_id_options" { version, object_type, oid_type, filters },
     ],

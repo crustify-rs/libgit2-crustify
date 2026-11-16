@@ -16,14 +16,13 @@
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::ptr::{self, NonNull};
 
-use super::handles::Config;
 use super::init::{InitOptions, InitOut};
 use super::*;
 use crate::buf::GitBuf;
+use crate::config::{Config, GitConfig};
 use crate::odb::{GitOdb, Odb};
 use crate::oid::Oid;
 use crate::oidarray::GitOidArray;
-use crate::sys::pending::l_repo as c;
 use crate::util::errors::{self, ErrorCode, Result};
 use crate::util::export::{barrier, cstr, status};
 use crate::util::str::GitStr;
@@ -384,7 +383,7 @@ pub unsafe extern "C" fn git_repository_discover(
 /// The module's contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_config__weakptr(
-    out: *mut *mut c_void,
+    out: *mut *mut GitConfig,
     repo_: *mut GitRepository,
 ) -> c_int {
     // The fast path: already created. Loads and a store only (nothing
@@ -419,7 +418,7 @@ pub unsafe extern "C" fn git_repository_config__weakptr(
 /// The module's contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_config(
-    out: *mut *mut c_void,
+    out: *mut *mut GitConfig,
     repo_: *mut GitRepository,
 ) -> c_int {
     barrier(|| {
@@ -431,9 +430,9 @@ pub unsafe extern "C" fn git_repository_config(
             Ok(c) => {
                 // SAFETY: the repository's live config: a new reference for
                 // the caller.
-                let owned = unsafe { Config::new_ref(c.as_nonnull()) };
+                let owned = unsafe { Config::new_ref(NonNull::from(c)) };
                 // SAFETY: the caller's contract.
-                unsafe { put(out, owned.into_raw()) };
+                unsafe { put(out, owned.into_raw().as_ptr()) };
                 0
             }
             Err(_) => {
@@ -452,7 +451,7 @@ pub unsafe extern "C" fn git_repository_config(
 /// The module's contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_config_snapshot(
-    out: *mut *mut c_void,
+    out: *mut *mut GitConfig,
     repo_: *mut GitRepository,
 ) -> c_int {
     barrier(|| {
@@ -464,8 +463,18 @@ pub unsafe extern "C" fn git_repository_config_snapshot(
             Ok(w) => w,
             Err(e) => return e.raw(),
         };
-        // SAFETY: a live config; `out` is the caller's out-parameter.
-        unsafe { c::git_config_snapshot(out, weak.as_ptr()) }
+        // `git_config_snapshot(out, weak)`: `*out` is NULL on failure.
+        git_assert_arg!(!out.is_null(), "out", -1);
+        // SAFETY: the caller's contract: writable.
+        unsafe { out.write(ptr::null_mut()) };
+        match weak.snapshot() {
+            Ok(snap) => {
+                // SAFETY: as above; the caller owns the new config.
+                unsafe { out.write(Config::from_box(snap).into_raw().as_ptr()) };
+                0
+            }
+            Err(e) => e.raw(),
+        }
     })
 }
 
@@ -477,7 +486,7 @@ pub unsafe extern "C" fn git_repository_config_snapshot(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_set_config(
     repo_: *mut GitRepository,
-    config: *mut c_void,
+    config: *mut GitConfig,
 ) -> c_int {
     barrier(|| {
         // SAFETY: the module's contract.

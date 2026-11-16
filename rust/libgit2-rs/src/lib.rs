@@ -14,7 +14,6 @@ pub mod util;
 
 pub mod buf;
 pub mod cache;
-pub mod delta;
 pub mod config;
 pub mod config_cache;
 pub mod config_file;
@@ -22,6 +21,7 @@ pub mod config_list;
 pub mod config_mem;
 pub mod config_parse;
 pub mod config_snapshot;
+pub mod delta;
 pub mod fs;
 pub mod hashmap_oid;
 pub mod libgit2;
@@ -35,12 +35,12 @@ pub mod repository;
 pub mod settings;
 pub mod strarray;
 
+pub use config::{Config, ConfigBackend, ConfigEntries, ConfigEntry, ConfigLevel};
 pub use libgit2::Libgit2;
 pub use odb::{
     Backend, ExpandId, LooseOptions, Mempack, ObjectType, Odb, OdbBackend, OdbObject, OdbReader,
     OdbWriter,
 };
-pub use config::{Config, ConfigBackend, ConfigEntries, ConfigEntry, ConfigLevel};
 pub use oid::{Oid, OidShortener, OidType};
 pub use oidarray::OidArray;
 pub use repository::{Repository, RepositoryInitOptions, RepositoryOpenFlags, RepositoryState};

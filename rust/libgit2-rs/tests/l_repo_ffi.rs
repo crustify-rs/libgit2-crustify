@@ -7,7 +7,9 @@
 #![allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)]
 
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
+
 use core::ptr;
+use libgit2_rs::config::ffi::{git_config_free, git_config_set_int32, git_config_set_string};
 use std::ffi::CString;
 use std::path::{Path, PathBuf};
 
@@ -23,9 +25,6 @@ unsafe extern "C" {
     fn git_buf_dispose(buf: *mut GitBuf);
     fn git_strarray_dispose(a: *mut GitStrArray);
     fn git_fs_path__set_owner(owner: c_uint);
-    fn git_config_set_string(cfg: *mut c_void, name: *const c_char, value: *const c_char) -> c_int;
-    fn git_config_set_int32(cfg: *mut c_void, name: *const c_char, value: i32) -> c_int;
-    fn git_config_free(cfg: *mut c_void);
     fn git_reference_free(r: *mut c_void);
     fn git_reference_symbolic_target(r: *const c_void) -> *const c_char;
 }
@@ -558,7 +557,7 @@ fn head_target_after_set_head() {
             r::git_repository_set_head(repo, c"refs/heads/main".as_ptr()),
             0
         );
-        let mut cfg: *mut c_void = ptr::null_mut();
+        let mut cfg = ptr::null_mut();
         assert_eq!(r::git_repository_config_snapshot(&mut cfg, repo), 0);
         git_config_free(cfg);
         // HEAD is symbolic to the new branch.

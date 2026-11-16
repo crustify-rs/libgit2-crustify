@@ -48,3 +48,55 @@ Resolved (PENDING entries between l-repo and l-odb, deleted):
   `GIT_OBJECT_{ANY,COMMIT,TREE}` now come from `crate::odb`.
 - C ABI unchanged (`git_repository_odb`, `_odb__weakptr`, `_set_odb`,
   `_wrap_odb` take `git_odb *` typed as `*mut GitOdb`).
+
+Green: `63818f6` (clar 436/436, cargo test link-c, Miri, clippy, fmt).
+
+## 2. l-config (merge `08c61a6`)
+
+Merge conflict: `sys/sysdir.rs` (added by both l-repo and l-config):
+combined into one module (template dir, get/set, find_global/xdg/system,
+expand_homedir). `merge_wp.sh`'s union of `sys/pending.rs` dropped a
+closing brace (fixed by hand).
+
+Resolved (PENDING entries between l-config and l-repo, deleted):
+
+- l-config's `sys/pending.rs` PENDING(l-repo): the opaque
+  `git_repository` (now `crate::repository::GitRepository`),
+  `GIT_REPOSITORY_ITEM_GITDIR`, `GIT_CONFIGMAP_CACHE_MAX`,
+  `GIT_REPOSITORY_CONFIGMAP_CACHE_OFFSET` + `repository_configmap_cache`
+  (fixed offset 272) → `GitRepository::configmap_cache()`;
+  `git_repository_config__weakptr` / `repository_config_weakptr` →
+  `GitRepository::config_weak()`; `git_repository__item_path` /
+  `repository_gitdir` → `GitRepository::item_path(…, ITEM_GITDIR)`;
+  `git_repository_refdb` (in `repository_head_symbolic_target`) →
+  `GitRepository::refdb_weak()`. `config_cache`'s
+  `repository_configmap_lookup` / `configmap_lookup_cache_clear` and
+  `config::rename_section` now take `&GitRepository` (safe).
+- l-repo's `sys/pending/l_repo.rs` PENDING(l-config): every `git_config_*`
+  declaration (new, free, open_ondisk, open_default, open_level,
+  add_file_ondisk, set_writeorder, snapshot, get_bool/int32/entry,
+  __lookup_entry, entry_free, get_multivar_foreach, foreach_match,
+  set_int32/bool/string, delete_entry, __update_entry, __get_path,
+  __get_string_buf, parse_bool, __find_system/global/xdg,
+  __global_location, `git_repository__configmap_lookup`,
+  `_lookup_cache_clear`) and the mirrored `ConfigEntryRaw`: removed.
+- `repository/handles.rs` `Config`, `ConfigRef`, `ConfigEntry`,
+  `ConfigEntryView` (stand-ins over the C symbols): removed. The repository
+  holds `_config: AtomicPtr<GitConfig>`; `config_weak()` returns
+  `&GitConfig`; owners are l-config's safe `crate::Config` (new
+  crate-internal `Config::{from_box, from_raw, new_ref, as_raw, into_raw,
+  inner}`); entries are `config::EntryBox` / `EntryView`. New
+  crate-internal `GitConfig::{with_value, get_bool, get_int32, get_path,
+  get_string_buf, set_bool, set_int32, set_int64, foreach_match_with,
+  multivar_foreach_with}` and `config::{find_global, find_xdg,
+  find_system}`, which the C exports now share. The safe
+  `Repository::config`/`config_snapshot`/`set_config` use `crate::Config`.
+- Duplicated constants: `GIT_CONFIG_LEVEL_*` in `repository` re-export
+  `crate::config`'s.
+- C ABI unchanged (`git_repository_config*`, `_set_config` typed
+  `*mut GitConfig`).
+
+Left (PENDING(l-refs)): `sys/pending.rs` `git_refdb_lookup` and
+`repository_head_symbolic_target` (config_file's `onbranch:` condition;
+uses l_repo's `git_reference_*` declarations, which the duplicates in the
+l-config section were folded into).

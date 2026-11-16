@@ -201,7 +201,7 @@ unsafe extern "C" fn c_entry_free(e: *mut git_config_backend_entry) {
 unsafe extern "C" fn c_open(
     _: *mut git_config_backend,
     _: c_int,
-    _: *const libgit2_rs::sys::pending::git_repository,
+    _: *const libgit2_rs::repository::GitRepository,
 ) -> c_int {
     0
 }

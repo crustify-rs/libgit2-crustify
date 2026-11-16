@@ -5,9 +5,10 @@
 use core::ffi::{CStr, c_int, c_void};
 use core::ptr::NonNull;
 
-use super::handles::{Config, ConfigRef, Refdb};
+use super::handles::Refdb;
 use super::head::OwnedRepo;
 use super::*;
+use crate::config::{Config, GitConfig};
 use crate::git_error_set;
 use crate::util::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
 use crate::util::fs_path::{self, str_c_bytes};
@@ -154,25 +155,37 @@ fn repo_local_config(
     }
 
     let Some(repo) = repo else {
-        return Config::open_ondisk(&cfg_path);
+        return crate::config::open_ondisk(&cfg_path).map(Config::from_box);
     };
 
     let parent = repo.config_weak()?;
     // C frees the weak pointer it got here (`git_config_free(parent)`),
     // dropping a reference it does not own (DEFECTS.md); the Rust does not.
     match parent.open_level(GIT_CONFIG_LEVEL_LOCAL) {
-        Ok(c) => Ok(c),
+        Ok(c) => Ok(Config::from_box(c)),
         Err(_) => {
             errors::clear();
-            parent.add_file_ondisk(&cfg_path, GIT_CONFIG_LEVEL_LOCAL, repo.as_ptr(), false)?;
-            parent.open_level(GIT_CONFIG_LEVEL_LOCAL)
+            // SAFETY: the live repository, which owns `parent` (and so
+            // outlives its file backends), as in C.
+            unsafe {
+                crate::config::add_file_ondisk(
+                    parent,
+                    &cfg_path,
+                    GIT_CONFIG_LEVEL_LOCAL,
+                    repo,
+                    false,
+                )
+            }?;
+            parent
+                .open_level(GIT_CONFIG_LEVEL_LOCAL)
+                .map(Config::from_box)
         }
     }
 }
 
 /// `repo_init_fs_configs`.
 fn repo_init_fs_configs(
-    cfg: ConfigRef<'_>,
+    cfg: &GitConfig,
     cfg_path: &CStr,
     repo_dir: &[u8],
     work_dir: Option<&[u8]>,
@@ -216,7 +229,7 @@ fn repo_init_config(
 
     let mut cfg_path = GitStr::new();
     let config = repo_local_config(&mut cfg_path, None, repo_dir)?;
-    let c = config.borrow();
+    let c = config.inner();
 
     if is_reinit {
         open::check_repositoryformatversion(&mut version, c)?;
@@ -236,7 +249,7 @@ fn repo_init_config(
             if flags & GIT_REPOSITORY_INIT_RELATIVE_GITLINK != 0 {
                 fs_path::make_relative(&mut worktree_path, repo_dir)?;
             }
-            c.set_string(c"core.worktree", &cs(&worktree_path))?;
+            c.set_string(c"core.worktree", Some(&cs(&worktree_path)))?;
         } else if is_reinit && c.delete_entry(c"core.worktree").is_err() {
             errors::clear();
         }
@@ -256,13 +269,16 @@ fn repo_init_config(
             crate::oid::OidType::from_raw(oid_type).map_or("unknown", crate::oid::OidType::name);
         c.set_string(
             c"extensions.objectformat",
-            &fs_path::to_cstring(name.as_bytes()),
+            Some(&fs_path::to_cstring(name.as_bytes())),
         )?;
     }
 
     if refdb_type != GIT_REFDB_FILES {
         c.set_int32(c"core.repositoryformatversion", 1)?;
-        c.set_string(c"extensions.refstorage", open::refdb_type_name(refdb_type))?;
+        c.set_string(
+            c"extensions.refstorage",
+            Some(open::refdb_type_name(refdb_type)),
+        )?;
     }
     Ok(())
 }
@@ -278,7 +294,7 @@ pub(crate) fn reinit_filesystem(repo: &GitRepository, recurse: bool) -> Result<(
     let r = repo_local_config(&mut path, Some(repo), &repo_dir).and_then(|config| {
         let wd = repo.workdir().map(|w| w.to_bytes().to_vec());
         repo_init_fs_configs(
-            config.borrow(),
+            config.inner(),
             &cs(&path),
             &repo_dir,
             wd.as_deref(),
@@ -435,13 +451,9 @@ fn repo_init_structure(repo_dir: &[u8], work_dir: Option<&[u8]>, opts: &InitOpti
         if let Some(t) = &opts.template_path {
             tdir = Some(t.to_bytes().to_vec());
         } else {
-            match Config::open_default() {
+            match crate::config::open_default() {
                 Ok(cfg) => {
-                    if cfg
-                        .borrow()
-                        .get_path(&mut template_buf, c"init.templatedir")
-                        .is_ok()
-                    {
+                    if cfg.get_path(&mut template_buf, c"init.templatedir").is_ok() {
                         tdir = Some(str_c_bytes(&template_buf).to_vec());
                     }
                     errors::clear();
@@ -630,9 +642,8 @@ fn get_initial_head(flags: &mut u32, opts: &InitOptions) -> Result<CString> {
         *flags |= GIT_REFDB_BACKEND_INIT_FORCE_HEAD;
         h.to_bytes().to_vec()
     } else {
-        let from_cfg = Config::open_default().ok().and_then(|cfg| {
-            cfg.borrow()
-                .get_string_buf(&mut cfg_branch, c"init.defaultbranch")
+        let from_cfg = crate::config::open_default().ok().and_then(|cfg| {
+            cfg.get_string_buf(&mut cfg_branch, c"init.defaultbranch")
                 .ok()
                 .filter(|()| !str_c_bytes(&cfg_branch).is_empty())
                 .map(|()| str_c_bytes(&cfg_branch).to_vec())
@@ -804,8 +815,8 @@ pub(crate) fn set_workdir(
             .map(|g| g.to_bytes().to_vec())
             .unwrap_or_default();
         let r = match repo_write_gitlink(str_c_bytes(&path), &gitdir, false) {
-            Err(ErrorCode::PASSTHROUGH) => config.delete_entry(c"core.worktree"),
-            Ok(()) => config.set_string(c"core.worktree", &cs(&path)),
+            Err(ErrorCode::PASSTHROUGH) => config.delete_entry(c"core.worktree").map(drop),
+            Ok(()) => config.set_string(c"core.worktree", Some(&cs(&path))),
             Err(e) => Err(e),
         };
         r?;

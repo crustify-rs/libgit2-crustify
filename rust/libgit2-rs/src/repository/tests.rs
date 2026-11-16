@@ -209,7 +209,10 @@ fn reserved_names_statics() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "reaches C (configmap cache, attrcache, submodule cache)")]
+#[cfg_attr(
+    miri,
+    ignore = "reaches C (configmap cache, attrcache, submodule cache)"
+)]
 fn alloc_and_free() {
     let _g = test_support::init();
     let p = GitRepository::alloc();

@@ -18,7 +18,7 @@ use crate::config::{
 use crate::config_list::{ConfigList, EntryMeta};
 use crate::config_parse::{self, ParseHandler};
 use crate::git_error_set;
-use crate::sys::pending::git_repository;
+use crate::repository::GitRepository as git_repository;
 use crate::util::ctype_compat::tolower;
 use crate::util::errors::{self, ErrorClass, ErrorCode, Result};
 

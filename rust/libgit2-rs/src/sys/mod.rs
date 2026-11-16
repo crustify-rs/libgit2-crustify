@@ -20,7 +20,7 @@ pub mod revparse;
 pub mod streams;
 pub mod submodule;
 pub mod sysdir;
+pub mod transaction;
 pub mod transports;
 pub mod worktree;
-pub mod transaction;
 pub mod zlib;

@@ -19,10 +19,11 @@ use std::ffi::{CString, OsStr};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
-use super::handles::{Config, Index, Refdb, Reference};
+use super::handles::{Index, Refdb, Reference};
 use super::head::{self, state};
 use super::init::{InitOptions, InitOut};
 use super::*;
+use crate::config::Config;
 use crate::odb::Odb;
 use crate::oid::{Oid, OidType};
 use crate::util::errors::{Error, ErrorCode};
@@ -577,12 +578,12 @@ impl Repository {
     pub fn config(&self) -> Result<Config> {
         let c = self.raw().config_weak()?;
         // SAFETY: the repository's live config; a new reference.
-        Ok(unsafe { Config::new_ref(c.as_nonnull()) })
+        Ok(unsafe { Config::new_ref(NonNull::from(c)) })
     }
 
     /// `git_repository_config_snapshot`.
     pub fn config_snapshot(&self) -> Result<Config> {
-        Ok(self.raw().config_weak()?.snapshot()?)
+        Ok(Config::from_box(self.raw().config_weak()?.snapshot()?))
     }
 
     /// `git_repository_refdb`.
@@ -606,7 +607,7 @@ impl Repository {
 
     /// `git_repository_set_config`.
     pub fn set_config(&self, config: &Config) {
-        self.raw().set_config(Some(config.as_nonnull()));
+        self.raw().set_config(Some(config.as_raw()));
     }
 
     /// `git_repository_set_index` (`None` drops the index).

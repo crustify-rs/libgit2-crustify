@@ -17,7 +17,7 @@ use crate::config::{
 };
 use crate::config_list::ConfigList;
 use crate::config_mem::{arg, error_readonly};
-use crate::sys::pending::git_repository;
+use crate::repository::GitRepository as git_repository;
 use crate::util::errors::{ErrorCode, Result};
 
 /// `config_snapshot_backend`.

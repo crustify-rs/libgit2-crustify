@@ -274,10 +274,10 @@ fn repo_contains_no_reference(repo: &GitRepository) -> c_int {
 /// `git_repository_initialbranch`.
 pub(crate) fn initialbranch(out: &mut GitStr, repo: &GitRepository) -> Result<()> {
     let config = repo.config_weak()?;
-    let entry = config.get_entry(c"init.defaultbranch");
+    let entry = config.get_entry(c"init.defaultbranch", true, crate::config::Want::AllErrors);
     let branch: Vec<u8> = match &entry {
-        Ok(e) if e.value().is_some_and(|v| !v.is_empty()) => {
-            e.value().map(|v| v.to_bytes().to_vec()).unwrap_or_default()
+        Ok(Some(e)) if e.value().is_some_and(|v| !v.is_empty()) => {
+            e.value().map(<[u8]>::to_vec).unwrap_or_default()
         }
         Ok(_) | Err(ErrorCode::NOT_FOUND) => GIT_BRANCH_DEFAULT.to_vec(),
         Err(e) => return Err(*e),
@@ -777,7 +777,9 @@ pub(crate) fn set_objectformat(
     let name = OidType::from_raw(oid_type).map_or("unknown", OidType::name);
     let name = fs_path::to_cstring(name.as_bytes());
     if cfg.set_int32(c"core.repositoryformatversion", 1).is_err()
-        || cfg.set_string(c"extensions.objectformat", &name).is_err()
+        || cfg
+            .set_string(c"extensions.objectformat", Some(&name))
+            .is_err()
     {
         return Err(ErrorCode::GENERIC);
     }

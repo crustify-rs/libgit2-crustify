@@ -39,7 +39,7 @@ use ffibox::vtable::CTable;
 use ffibox::{CBox, CRefSeam};
 
 use crate::buf::GitBuf;
-use crate::sys::pending::git_repository;
+use crate::repository::GitRepository as git_repository;
 use crate::util::errors::{self, Bytes, Error, ErrorClass, ErrorCode, Result};
 use crate::util::regexp::Regexp;
 use crate::util::str::GitStr;
@@ -1074,8 +1074,9 @@ impl GitConfig {
             let owner = self.owner();
             if !owner.is_null() {
                 // SAFETY: the owner is a live repository while it owns the
-                // config (it clears the owner before it is freed).
-                unsafe { crate::config_cache::configmap_lookup_cache_clear(owner) };
+                // config (it clears the owner before it is freed); it is
+                // `Sync`.
+                crate::config_cache::configmap_lookup_cache_clear(unsafe { &*owner });
             }
         }
         r.map(drop)
@@ -1282,6 +1283,112 @@ impl GitConfig {
             drop(unsafe { Arc::from_raw(data.cast_const().cast::<Instance>()) });
         }
         r
+    }
+}
+
+/// The typed lookups and stores of the C API (`git_config_get_bool`, …),
+/// for the crate's callers (the repository) and the exports.
+impl GitConfig {
+    /// The value of the entry `name` (normalized), with `f`: the C
+    /// exports' `get_entry(…, GET_ALL_ERRORS)`.
+    pub(crate) fn with_value<T>(
+        &self,
+        name: &CStr,
+        f: impl FnOnce(Option<&[u8]>) -> Result<T>,
+    ) -> Result<T> {
+        let e = self.get_entry(name, true, Want::AllErrors)?;
+        let e = e.ok_or(ErrorCode::NOT_FOUND)?;
+        f(e.value())
+    }
+
+    /// `git_config_get_bool`.
+    pub(crate) fn get_bool(&self, name: &CStr) -> Result<bool> {
+        self.with_value(name, parse_bool)
+    }
+
+    /// `git_config_get_int32`.
+    pub(crate) fn get_int32(&self, name: &CStr) -> Result<i32> {
+        self.with_value(name, parse_int32)
+    }
+
+    /// `git_config__get_path`.
+    pub(crate) fn get_path(&self, out: &mut GitStr, name: &CStr) -> Result<()> {
+        self.with_value(name, |v| {
+            // `GIT_ASSERT_ARG(value)` in `git_config__parse_path`.
+            let Some(v) = v else {
+                return Err(errors::assert_arg_failed("value"));
+            };
+            parse_path(out, v)
+        })
+    }
+
+    /// `git_config__get_string_buf`.
+    pub(crate) fn get_string_buf(&self, out: &mut GitStr, name: &CStr) -> Result<()> {
+        self.with_value(name, |v| out.puts(v.unwrap_or(b"")))
+    }
+
+    /// `git_config_set_bool`.
+    pub(crate) fn set_bool(&self, name: &CStr, value: bool) -> Result<()> {
+        self.set_string(name, Some(if value { c"true" } else { c"false" }))
+    }
+
+    /// `git_config_set_int64`: the decimal value, formatted on the stack
+    /// (C's `char str_value[32]`).
+    pub(crate) fn set_int64(&self, name: &CStr, value: i64) -> Result<()> {
+        use std::io::Write as _;
+        let mut buf = [0u8; 32];
+        let mut w = &mut buf[..31];
+        // An `i64` has at most 20 characters: this cannot fail.
+        let _ = write!(w, "{value}");
+        let len = 31 - w.len();
+        let s = CStr::from_bytes_until_nul(&buf[..=len]).unwrap_or(c"");
+        self.set_string(name, Some(s))
+    }
+
+    /// `git_config_set_int32`.
+    pub(crate) fn set_int32(&self, name: &CStr, value: i32) -> Result<()> {
+        self.set_int64(name, i64::from(value))
+    }
+
+    /// `git_config_foreach_match` with a Rust closure over each entry; its
+    /// error stops the iteration and is the result (as C's callback's).
+    pub(crate) fn foreach_match_with(
+        &self,
+        regexp: Option<&CStr>,
+        mut f: impl FnMut(&EntryView<'_>) -> Result<()>,
+    ) -> Result<()> {
+        let r = self.foreach_match(regexp, |e| {
+            // SAFETY: the entry the iterator holds, live for the call.
+            let e = unsafe { &*e };
+            // SAFETY: as above: its strings are C's, live for the call.
+            let view = unsafe { EntryView::new(e) };
+            match f(&view) {
+                Ok(()) => 0,
+                Err(e) => e.raw(),
+            }
+        });
+        ErrorCode::check(r).map(drop)
+    }
+
+    /// `git_config_get_multivar_foreach` with a Rust closure (as
+    /// [`foreach_match_with`](Self::foreach_match_with)).
+    pub(crate) fn multivar_foreach_with(
+        &self,
+        name: &CStr,
+        regexp: Option<&CStr>,
+        mut f: impl FnMut(&EntryView<'_>) -> Result<()>,
+    ) -> Result<()> {
+        let r = self.get_multivar_foreach(name, regexp, |e| {
+            // SAFETY: the entry the iterator holds, live for the call.
+            let e = unsafe { &*e };
+            // SAFETY: as above: its strings are C's, live for the call.
+            let view = unsafe { EntryView::new(e) };
+            match f(&view) {
+                Ok(()) => 0,
+                Err(e) => e.raw(),
+            }
+        });
+        ErrorCode::check(r).map(drop)
     }
 }
 
@@ -1704,6 +1811,21 @@ pub fn lookup_map_value(maps: &[ConfigMap<'_>], value: Option<&[u8]>) -> Result<
     ))
 }
 
+/// `git_config__find_global`: the global file (`~/.gitconfig`).
+pub fn find_global(path: &mut GitStr) -> Result<()> {
+    crate::sys::sysdir::find_global_file(path, GIT_CONFIG_FILENAME_GLOBAL)
+}
+
+/// `git_config__find_xdg`: the XDG file (`~/.config/git/config`).
+pub fn find_xdg(path: &mut GitStr) -> Result<()> {
+    crate::sys::sysdir::find_xdg_file(path, GIT_CONFIG_FILENAME_XDG)
+}
+
+/// `git_config__find_system`: the system file.
+pub fn find_system(path: &mut GitStr) -> Result<()> {
+    crate::sys::sysdir::find_system_file(path, GIT_CONFIG_FILENAME_SYSTEM)
+}
+
 /// `git_config__global_location`: the first global search path joined with
 /// `.gitconfig` (-1, no message, when there is none).
 pub fn global_location(buf: &mut GitStr) -> Result<()> {
@@ -1802,13 +1924,10 @@ fn str_cstr(s: &GitStr) -> &CStr {
 // ---------------------------------------------------------------------------
 
 /// `git_config_rename_section`: rename every variable of
-/// `old_section_name` (or delete them, with no new name).
-///
-/// # Safety
-///
-/// `repo` is a live repository.
-pub unsafe fn rename_section(
-    repo: *mut git_repository,
+/// `old_section_name` (or delete them, with no new name). A `None`
+/// repository fails as `git_repository_config__weakptr`'s argument check.
+pub fn rename_section(
+    repo: Option<&git_repository>,
     old_section_name: &[u8],
     new_section_name: Option<&[u8]>,
 ) -> c_int {
@@ -1818,13 +1937,13 @@ pub unsafe fn rename_section(
     if let Err(e) = pattern.puts(b"\\..+") {
         return e.raw();
     }
-    // SAFETY: `repo` is live (contract).
-    let config = match unsafe { crate::sys::pending::repository_config_weakptr(repo) } {
+    let Some(repo) = repo else {
+        return errors::assert_arg_failed("repo").raw();
+    };
+    let config = match repo.config_weak() {
         Ok(c) => c,
         Err(e) => return e.raw(),
     };
-    // SAFETY: the repository's config, live while the repository is.
-    let config = unsafe { &*config };
     let old_len = old_section_name.len() + 1;
     if let Err(e) = replace.join(b'.', new_section_name, b"") {
         return e.raw();
@@ -2473,9 +2592,13 @@ pub mod ffi {
         name: *const c_char,
         value: i64,
     ) -> c_int {
-        let s = cstring(value.to_string().as_bytes()).unwrap_or_default();
-        // SAFETY: per the contract; `s` is NUL-terminated.
-        unsafe { git_config_set_string(config, name, s.as_ptr().cast()) }
+        barrier(|| {
+            // SAFETY: `config` is a live config (the contract).
+            let config = unsafe { cfg(config) };
+            // SAFETY: `name` is NULL or NUL-terminated (the contract).
+            let name = unsafe { or_null_c(name) };
+            crate::util::export::status(config.set_int64(name, value))
+        })
     }
 
     /// `git_config_set_int32`.
@@ -2692,9 +2815,7 @@ pub mod ffi {
         let config = unsafe { cfg(config) };
         // SAFETY: per the contract.
         let name = unsafe { or_null_c(name) };
-        let e = config.get_entry(name, true, Want::AllErrors)?;
-        let e = e.ok_or(ErrorCode::NOT_FOUND)?;
-        f(e.value())
+        config.with_value(name, f)
     }
 
     /// `git_config_get_mapped`.
@@ -3257,10 +3378,7 @@ pub mod ffi {
         barrier(|| {
             // SAFETY: per the contract.
             let path = unsafe { &mut *path };
-            crate::util::export::status(crate::sys::sysdir::find_global_file(
-                path,
-                GIT_CONFIG_FILENAME_GLOBAL,
-            ))
+            crate::util::export::status(find_global(path))
         })
     }
 
@@ -3291,10 +3409,7 @@ pub mod ffi {
         barrier(|| {
             // SAFETY: per the contract.
             let path = unsafe { &mut *path };
-            crate::util::export::status(crate::sys::sysdir::find_xdg_file(
-                path,
-                GIT_CONFIG_FILENAME_XDG,
-            ))
+            crate::util::export::status(find_xdg(path))
         })
     }
 
@@ -3325,10 +3440,7 @@ pub mod ffi {
         barrier(|| {
             // SAFETY: per the contract.
             let path = unsafe { &mut *path };
-            crate::util::export::status(crate::sys::sysdir::find_system_file(
-                path,
-                GIT_CONFIG_FILENAME_SYSTEM,
-            ))
+            crate::util::export::status(find_system(path))
         })
     }
 
@@ -3430,8 +3542,10 @@ pub mod ffi {
             let new_section_name = unsafe { c(new_section_name) };
             // SAFETY: `old_section_name` is NUL-terminated (the contract).
             let old = unsafe { cstr_bytes(old_section_name) };
-            // SAFETY: `repo` is a live repository (the contract).
-            unsafe { rename_section(repo, old, new_section_name.map(CStr::to_bytes)) }
+            // SAFETY: `repo` is NULL or a live repository (the contract),
+            // which is `Sync`.
+            let repo = unsafe { repo.as_ref() };
+            rename_section(repo, old, new_section_name.map(CStr::to_bytes))
         })
     }
 
@@ -3660,15 +3774,50 @@ impl core::fmt::Debug for Config {
 }
 
 impl Config {
-    fn from_box(b: Box<GitConfig>) -> Config {
+    /// A handle of a new config (its one reference).
+    pub(crate) fn from_box(b: Box<GitConfig>) -> Config {
         Config {
             raw: NonNull::from(Box::leak(b)),
         }
     }
 
-    fn inner(&self) -> &GitConfig {
+    /// The config (crate-internal: the repository calls it directly).
+    pub(crate) fn inner(&self) -> &GitConfig {
         // SAFETY: the handle holds a reference, so the config is live.
         unsafe { self.raw.as_ref() }
+    }
+
+    /// Adopt a reference to `raw` that the caller gives up.
+    ///
+    /// # Safety
+    ///
+    /// `raw` is a live config (from `git_config_new` & co.) and the caller
+    /// owns one of its references.
+    pub(crate) unsafe fn from_raw(raw: NonNull<GitConfig>) -> Config {
+        Config { raw }
+    }
+
+    /// A new reference to `raw` (`GIT_REFCOUNT_INC`).
+    ///
+    /// # Safety
+    ///
+    /// `raw` is a live config.
+    pub(crate) unsafe fn new_ref(raw: NonNull<GitConfig>) -> Config {
+        // SAFETY: the caller's contract.
+        unsafe { raw.as_ref() }.rc.inc();
+        Config { raw }
+    }
+
+    /// The `git_config *` (the reference stays with this handle).
+    pub(crate) fn as_raw(&self) -> NonNull<GitConfig> {
+        self.raw
+    }
+
+    /// Give this handle's reference up, as a `git_config *`.
+    pub(crate) fn into_raw(self) -> NonNull<GitConfig> {
+        let raw = self.raw;
+        core::mem::forget(self);
+        raw
     }
 
     /// `git_config_new`: an empty configuration.

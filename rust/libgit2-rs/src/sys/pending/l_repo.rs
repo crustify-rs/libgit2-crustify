@@ -5,37 +5,13 @@
 //!
 //! The types are those of the C headers: opaque objects are `c_void`, the
 //! public structs the repository builds (`git_index_options`,
-//! `git_object_id_options`) and reads
-//! (`git_config_entry`) are mirrored in `crate::repository::handles`.
+//! `git_object_id_options`) are mirrored here.
 //! The safe wrappers live there too, on the owner and handle types.
 
 use core::ffi::{c_char, c_int, c_uint, c_void};
 use core::sync::atomic::{AtomicBool, AtomicUsize};
 
 use crate::oid::{Oid, git_oid_t};
-use crate::util::str::GitStr;
-
-/// `git_config_foreach_cb`.
-pub type ConfigForeachCb =
-    unsafe extern "C" fn(entry: *const ConfigEntryRaw, payload: *mut c_void) -> c_int;
-
-/// `git_config_entry` (`include/git2/config.h`), mirrored (public).
-#[repr(C)]
-#[derive(Debug)]
-pub struct ConfigEntryRaw {
-    /// Name of the configuration entry (normalized).
-    pub name: *const c_char,
-    /// Literal (string) value of the entry.
-    pub value: *const c_char,
-    /// The type of backend that this entry exists in (eg, "file").
-    pub backend_type: *const c_char,
-    /// The path to the origin of this entry.
-    pub origin_path: *const c_char,
-    /// Depth of includes where this variable was found.
-    pub include_depth: c_uint,
-    /// Configuration level for the file this was found in.
-    pub level: c_int,
-}
 
 /// `git_index_options`.
 #[repr(C)]
@@ -59,88 +35,6 @@ pub struct ObjectIdOptions {
     pub oid_type: git_oid_t,
     /// `git_filter_list *`.
     pub filters: *mut c_void,
-}
-
-// PENDING(l-config): config.c, config_cache.c.
-unsafe extern "C" {
-    pub fn git_config_new(out: *mut *mut c_void) -> c_int;
-    pub fn git_config_free(cfg: *mut c_void);
-    pub fn git_config_open_ondisk(out: *mut *mut c_void, path: *const c_char) -> c_int;
-    pub fn git_config_open_default(out: *mut *mut c_void) -> c_int;
-    pub fn git_config_open_level(
-        out: *mut *mut c_void,
-        parent: *const c_void,
-        level: c_int,
-    ) -> c_int;
-    pub fn git_config_add_file_ondisk(
-        cfg: *mut c_void,
-        path: *const c_char,
-        level: c_int,
-        repo: *const c_void,
-        force: c_int,
-    ) -> c_int;
-    pub fn git_config_set_writeorder(cfg: *mut c_void, levels: *mut c_int, len: usize) -> c_int;
-    pub fn git_config_snapshot(out: *mut *mut c_void, cfg: *mut c_void) -> c_int;
-    pub fn git_config_get_bool(out: *mut c_int, cfg: *const c_void, name: *const c_char) -> c_int;
-    pub fn git_config_get_int32(out: *mut i32, cfg: *const c_void, name: *const c_char) -> c_int;
-    pub fn git_config_get_entry(
-        out: *mut *mut ConfigEntryRaw,
-        cfg: *const c_void,
-        name: *const c_char,
-    ) -> c_int;
-    pub fn git_config__lookup_entry(
-        out: *mut *mut ConfigEntryRaw,
-        cfg: *const c_void,
-        key: *const c_char,
-        no_errors: bool,
-    ) -> c_int;
-    pub fn git_config_entry_free(entry: *mut ConfigEntryRaw);
-    pub fn git_config_get_multivar_foreach(
-        cfg: *const c_void,
-        name: *const c_char,
-        regexp: *const c_char,
-        cb: ConfigForeachCb,
-        payload: *mut c_void,
-    ) -> c_int;
-    pub fn git_config_foreach_match(
-        cfg: *const c_void,
-        regexp: *const c_char,
-        cb: ConfigForeachCb,
-        payload: *mut c_void,
-    ) -> c_int;
-    pub fn git_config_set_int32(cfg: *mut c_void, name: *const c_char, value: i32) -> c_int;
-    pub fn git_config_set_bool(cfg: *mut c_void, name: *const c_char, value: c_int) -> c_int;
-    pub fn git_config_set_string(
-        cfg: *mut c_void,
-        name: *const c_char,
-        value: *const c_char,
-    ) -> c_int;
-    pub fn git_config_delete_entry(cfg: *mut c_void, name: *const c_char) -> c_int;
-    pub fn git_config__update_entry(
-        cfg: *mut c_void,
-        key: *const c_char,
-        value: *const c_char,
-        overwrite_existing: bool,
-        only_if_existing: bool,
-    ) -> c_int;
-    pub fn git_config__get_path(out: *mut GitStr, cfg: *const c_void, name: *const c_char)
-    -> c_int;
-    pub fn git_config__get_string_buf(
-        out: *mut GitStr,
-        cfg: *const c_void,
-        name: *const c_char,
-    ) -> c_int;
-    pub fn git_config_parse_bool(out: *mut c_int, value: *const c_char) -> c_int;
-    pub fn git_config__find_system(path: *mut GitStr) -> c_int;
-    pub fn git_config__find_global(path: *mut GitStr) -> c_int;
-    pub fn git_config__find_xdg(path: *mut GitStr) -> c_int;
-    pub fn git_config__global_location(buf: *mut GitStr) -> c_int;
-    pub fn git_repository__configmap_lookup(
-        out: *mut c_int,
-        repo: *mut c_void,
-        item: c_int,
-    ) -> c_int;
-    pub fn git_repository__configmap_lookup_cache_clear(repo: *mut c_void);
 }
 
 // PENDING(l-pack): mwindow.c, pack.c.

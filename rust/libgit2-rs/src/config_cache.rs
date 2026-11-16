@@ -2,9 +2,9 @@
 //! `core.*` values (`git_configmap_item`), read through the repository's
 //! config and kept in `repo->configmap_cache`.
 //!
-//! The cache is an array of `intptr_t` in `git_repository` (whose layout
-//! the repository WP owns; reached through a PENDING(l-repo) accessor),
-//! which C reads and writes atomically, as here.
+//! The cache is an array of `intptr_t` in `git_repository`
+//! (`GitRepository::configmap_cache`, atomics), which C reads and writes
+//! atomically, as here.
 
 use core::ffi::c_int;
 use core::sync::atomic::Ordering;
@@ -13,7 +13,7 @@ use crate::config::{
     ConfigMap, GIT_CONFIGMAP_FALSE, GIT_CONFIGMAP_INT32, GIT_CONFIGMAP_STRING, GIT_CONFIGMAP_TRUE,
     GitConfig, Want, lookup_map_value, parse_bool,
 };
-use crate::sys::pending::{GIT_CONFIGMAP_CACHE_MAX, git_repository, repository_configmap_cache};
+use crate::repository::{GIT_CONFIGMAP_CACHE_MAX, GitRepository};
 use crate::util::errors::Result;
 
 /// `GIT_CONFIGMAP_NOT_CACHED`.
@@ -181,34 +181,21 @@ pub fn configmap_lookup(config: &GitConfig, item: usize) -> Result<c_int> {
 
 /// `git_repository__configmap_lookup`: the cached value of `item`, looked
 /// up (and cached) the first time.
-///
-/// # Safety
-///
-/// `repo` is a live repository.
-pub unsafe fn repository_configmap_lookup(repo: *mut git_repository, item: usize) -> Result<c_int> {
-    // SAFETY: `repo` is live (contract).
-    let cache = unsafe { repository_configmap_cache(repo) };
+pub fn repository_configmap_lookup(repo: &GitRepository, item: usize) -> Result<c_int> {
+    let cache = repo.configmap_cache();
     let value = cache[item].load(Ordering::SeqCst);
     if value != GIT_CONFIGMAP_NOT_CACHED {
         return Ok(value as c_int);
     }
-    // SAFETY: as above.
-    let config = unsafe { crate::sys::pending::repository_config_weakptr(repo) }?;
-    // SAFETY: the repository's config, live while the repository is.
-    let out = configmap_lookup(unsafe { &*config }, item)?;
+    let config = repo.config_weak()?;
+    let out = configmap_lookup(config, item)?;
     let _ = cache[item].compare_exchange(value, out as isize, Ordering::SeqCst, Ordering::SeqCst);
     Ok(out)
 }
 
 /// `git_repository__configmap_lookup_cache_clear`.
-///
-/// # Safety
-///
-/// `repo` is a live repository.
-pub unsafe fn configmap_lookup_cache_clear(repo: *mut git_repository) {
-    // SAFETY: `repo` is live (contract).
-    let cache = unsafe { repository_configmap_cache(repo) };
-    for slot in cache {
+pub fn configmap_lookup_cache_clear(repo: &GitRepository) {
+    for slot in repo.configmap_cache() {
         slot.store(GIT_CONFIGMAP_NOT_CACHED, Ordering::SeqCst);
     }
 }
@@ -253,17 +240,17 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_repository__configmap_lookup(
         out: *mut c_int,
-        repo: *mut git_repository,
+        repo: *mut GitRepository,
         item: c_int,
     ) -> c_int {
         barrier(|| {
             let item = item as usize;
-            // SAFETY: per the contract.
-            let cached = unsafe { repository_configmap_cache(repo) }[item].load(Ordering::SeqCst);
+            // SAFETY: per the contract: a live repository (`Sync`).
+            let repo = unsafe { &*repo };
+            let cached = repo.configmap_cache()[item].load(Ordering::SeqCst);
             // SAFETY: `out` is writable.
             unsafe { out.write(cached as c_int) };
-            // SAFETY: per the contract.
-            match unsafe { repository_configmap_lookup(repo, item) } {
+            match repository_configmap_lookup(repo, item) {
                 // SAFETY: `out` is writable.
                 Ok(v) => unsafe {
                     out.write(v);
@@ -281,10 +268,10 @@ pub mod ffi {
     /// `repo` is live.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_repository__configmap_lookup_cache_clear(
-        repo: *mut git_repository,
+        repo: *mut GitRepository,
     ) {
-        // SAFETY: per the contract.
-        barrier(|| unsafe { configmap_lookup_cache_clear(repo) })
+        // SAFETY: per the contract: a live repository (`Sync`).
+        barrier(|| configmap_lookup_cache_clear(unsafe { &*repo }))
     }
 }
 

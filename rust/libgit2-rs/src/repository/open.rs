@@ -3,13 +3,13 @@
 //! repository format and its extensions, and the configuration a
 //! repository loads).
 
-use core::ffi::{CStr, c_int, c_void};
+use core::ffi::{CStr, c_int};
 use core::ptr::{self, NonNull};
 use std::ffi::CString;
 use std::sync::Mutex;
 
-use super::handles::{Config, ConfigEntryView, ConfigRef};
 use super::*;
+use crate::config::{Config, GitConfig, Want};
 use crate::git_error_set;
 use crate::odb::Odb;
 use crate::sys::pending::l_repo as c;
@@ -108,7 +108,7 @@ pub(crate) fn is_valid_repository_path(
 }
 
 /// `load_config_data`: `core.bare`.
-fn load_config_data(repo: &GitRepository, config: ConfigRef<'_>) -> Result<()> {
+fn load_config_data(repo: &GitRepository, config: &GitConfig) -> Result<()> {
     match config.get_bool(c"core.bare") {
         Ok(b) => repo.set_is_bare(b && !repo.is_worktree()),
         Err(ErrorCode::NOT_FOUND) => repo.set_is_bare(false),
@@ -118,11 +118,7 @@ fn load_config_data(repo: &GitRepository, config: ConfigRef<'_>) -> Result<()> {
 }
 
 /// `load_workdir`.
-fn load_workdir(
-    repo: &GitRepository,
-    config: ConfigRef<'_>,
-    parent_path: &mut GitStr,
-) -> Result<()> {
+fn load_workdir(repo: &GitRepository, config: &GitConfig, parent_path: &mut GitStr) -> Result<()> {
     if repo.is_bare() {
         return Ok(());
     }
@@ -139,9 +135,9 @@ fn load_workdir(
 
     let entry;
     if value.is_none() {
-        entry = config.lookup_entry(c"core.worktree", false)?;
+        entry = config.get_entry(c"core.worktree", false, Want::NoMissing)?;
         if let Some(v) = entry.as_ref().and_then(|e| e.value()) {
-            value = Some(v.to_bytes().to_vec());
+            value = Some(v.to_vec());
         }
     }
 
@@ -311,9 +307,9 @@ fn validate_ownership_config(is_safe: &mut bool, path: &[u8], use_env: bool) -> 
         return Ok(());
     };
     let r = config
-        .borrow()
-        .multivar_foreach(c"safe.directory", &mut |e: &ConfigEntryView<'_>| {
-            safe_directory_matches(e.value().map(CStr::to_bytes), path, is_safe)
+        .inner()
+        .multivar_foreach_with(c"safe.directory", None, |e| {
+            safe_directory_matches(e.value, path, is_safe)
         });
     match r {
         Err(ErrorCode::NOT_FOUND) => Ok(()),
@@ -506,16 +502,9 @@ fn find_repo_traverse_inner(
     Ok(())
 }
 
-/// `git_config_parse_bool` (PENDING(l-config)), with its side effect on
-/// the error state.
+/// `git_config_parse_bool`, with its side effect on the error state.
 fn config_parse_bool(value: &CStr) -> Result<bool> {
-    let mut v: c_int = 0;
-    // SAFETY: a NUL-terminated value and a local out-parameter.
-    let r = unsafe { c::git_config_parse_bool(&raw mut v, value.as_ptr()) };
-    if r < 0 {
-        return Err(ErrorCode::check(r).err().unwrap_or(ErrorCode::GENERIC));
-    }
-    Ok(v != 0)
+    crate::config::parse_bool(Some(value.to_bytes()))
 }
 
 /// `find_repo`: `find_repo_traverse`, after the environment of
@@ -574,10 +563,7 @@ pub(crate) fn find_repo(
 }
 
 /// `check_repositoryformatversion`.
-pub(crate) fn check_repositoryformatversion(
-    version: &mut i32,
-    config: ConfigRef<'_>,
-) -> Result<()> {
+pub(crate) fn check_repositoryformatversion(version: &mut i32, config: &GitConfig) -> Result<()> {
     match config.get_int32(c"core.repositoryformatversion") {
         Err(ErrorCode::NOT_FOUND) => return Ok(()),
         Err(_) => return Err(ErrorCode::GENERIC),
@@ -646,7 +632,7 @@ pub(crate) fn check_valid_extension(name: &[u8]) -> Result<()> {
 }
 
 /// `check_extensions`.
-pub(crate) fn check_extensions(config: Option<ConfigRef<'_>>, version: i32) -> Result<()> {
+pub(crate) fn check_extensions(config: Option<&GitConfig>, version: i32) -> Result<()> {
     if version < 1 {
         return Ok(());
     }
@@ -655,22 +641,21 @@ pub(crate) fn check_extensions(config: Option<ConfigRef<'_>>, version: i32) -> R
     let Some(config) = config else {
         return Ok(());
     };
-    config.foreach_match(c"^extensions\\.", &mut |e: &ConfigEntryView<'_>| {
-        check_valid_extension(e.name().to_bytes())
-    })
+    config.foreach_match_with(Some(c"^extensions\\."), |e| check_valid_extension(e.name))
 }
 
 /// `load_objectformat`.
-fn load_objectformat(repo: &GitRepository, config: ConfigRef<'_>) -> Result<()> {
-    match config.get_entry(c"extensions.objectformat") {
+fn load_objectformat(repo: &GitRepository, config: &GitConfig) -> Result<()> {
+    match config.get_entry(c"extensions.objectformat", true, Want::AllErrors) {
         Err(ErrorCode::NOT_FOUND) => {
             repo.set_oid_type_raw(GIT_OID_DEFAULT);
             errors::clear();
             Ok(())
         }
         Err(e) => Err(e),
-        Ok(entry) => {
-            let v = entry.value().map(CStr::to_bytes).unwrap_or_default();
+        Ok(None) => Err(ErrorCode::NOT_FOUND),
+        Ok(Some(entry)) => {
+            let v = entry.value().unwrap_or_default();
             match OidType::from_name(v) {
                 Some(t) => {
                     repo.set_oid_type_raw(t.raw());
@@ -709,16 +694,17 @@ pub(crate) fn refdb_type_name(t: c_int) -> &'static CStr {
 }
 
 /// `load_refstorage_format`.
-fn load_refstorage_format(repo: &GitRepository, config: ConfigRef<'_>) -> Result<()> {
-    match config.get_entry(c"extensions.refstorage") {
+fn load_refstorage_format(repo: &GitRepository, config: &GitConfig) -> Result<()> {
+    match config.get_entry(c"extensions.refstorage", true, Want::AllErrors) {
         Err(ErrorCode::NOT_FOUND) => {
             repo.set_refdb_type(GIT_REFDB_FILES);
             errors::clear();
             Ok(())
         }
         Err(e) => Err(e),
-        Ok(entry) => {
-            let v = entry.value().map(CStr::to_bytes).unwrap_or_default();
+        Ok(None) => Err(ErrorCode::NOT_FOUND),
+        Ok(Some(entry)) => {
+            let v = entry.value().unwrap_or_default();
             let t = refdb_type_fromstr(v);
             repo.set_refdb_type(t);
             if t == 0 {
@@ -738,20 +724,20 @@ fn load_refstorage_format(repo: &GitRepository, config: ConfigRef<'_>) -> Result
 fn read_repository_format(repo: &GitRepository) -> Result<()> {
     let mut config_path = GitStr::new();
     repo.item_path(&mut config_path, ITEM_CONFIG)?;
-    let config = match Config::open_ondisk(&cs(&config_path)) {
+    let config = match crate::config::open_ondisk(&cs(&config_path)).map(Config::from_box) {
         Ok(c) => Some(c),
         Err(ErrorCode::NOT_FOUND) => None,
         Err(e) => return Err(e),
     };
     let mut version = 0;
     if let Some(c) = &config {
-        check_repositoryformatversion(&mut version, c.borrow())?;
+        check_repositoryformatversion(&mut version, c.inner())?;
     }
-    check_extensions(config.as_ref().map(Config::borrow), version)?;
+    check_extensions(config.as_ref().map(Config::inner), version)?;
     match (&config, version > 0) {
         (Some(c), true) => {
-            load_objectformat(repo, c.borrow())?;
-            load_refstorage_format(repo, c.borrow())?;
+            load_objectformat(repo, c.inner())?;
+            load_refstorage_format(repo, c.inner())?;
         }
         _ => {
             repo.set_oid_type_raw(GIT_OID_DEFAULT);
@@ -910,14 +896,14 @@ fn open_ext_fill(repo: &GitRepository, paths: &mut RepoPaths, flags: u32) -> Res
     if flags & GIT_REPOSITORY_OPEN_BARE != 0 {
         repo.set_is_bare(true);
     } else {
-        let config = match repo.config_weak().and_then(ConfigRef::snapshot) {
-            Ok(c) => Some(c),
+        let config = match repo.config_weak().and_then(GitConfig::snapshot) {
+            Ok(c) => Some(Config::from_box(c)),
             Err(ErrorCode::NOT_FOUND) => None,
             Err(e) => return Err(e),
         };
         if let Some(config) = &config {
-            load_config_data(repo, config.borrow())?;
-            load_workdir(repo, config.borrow(), &mut paths.workdir)?;
+            load_config_data(repo, config.inner())?;
+            load_workdir(repo, config.inner(), &mut paths.workdir)?;
         }
     }
 
@@ -978,7 +964,7 @@ pub(crate) fn discover(
 }
 
 /// `has_config_worktree`.
-fn has_config_worktree(cfg: ConfigRef<'_>) -> Result<bool> {
+fn has_config_worktree(cfg: &GitConfig) -> Result<bool> {
     match cfg.get_bool(c"extensions.worktreeconfig") {
         Ok(v) => Ok(v),
         Err(ErrorCode::NOT_FOUND) => Ok(false),
@@ -994,15 +980,21 @@ pub(crate) fn load_config(
     xdg: Option<&CStr>,
     system: Option<&CStr>,
 ) -> Result<Config> {
-    let cfg = Config::new()?;
-    let c = cfg.borrow();
-    let rp: *const c_void = repo.map_or(ptr::null(), |r| r.as_ptr().cast_const());
+    let cfg = Config::new();
+    let c = cfg.inner();
+    let rp: *const GitRepository = repo.map_or(ptr::null(), ptr::from_ref);
+    // `git_config_add_file_ondisk(cfg, path, level, repo, false)`.
+    let add = |path: &CStr, level| {
+        // SAFETY: `rp` is NULL or the live repository being loaded, which
+        // will own this config (and so outlive its file backends), as in C.
+        unsafe { crate::config::add_file_ondisk(c, path, level, rp, false) }
+    };
 
     if let Some(repo) = repo {
         let mut config_path = GitStr::new();
         let dirs = repo.item_dirs();
         let r = item_path(&mut config_path, &dirs, ITEM_CONFIG)
-            .and_then(|()| c.add_file_ondisk(&cs(&config_path), GIT_CONFIG_LEVEL_LOCAL, rp, false));
+            .and_then(|()| add(&cs(&config_path), GIT_CONFIG_LEVEL_LOCAL));
         match r {
             Ok(()) | Err(ErrorCode::NOT_FOUND) => {}
             Err(e) => return Err(e),
@@ -1010,7 +1002,7 @@ pub(crate) fn load_config(
         let r = has_config_worktree(c).and_then(|has| {
             if has {
                 item_path(&mut config_path, &dirs, ITEM_WORKTREE_CONFIG)?;
-                c.add_file_ondisk(&cs(&config_path), GIT_CONFIG_LEVEL_WORKTREE, rp, false)
+                add(&cs(&config_path), GIT_CONFIG_LEVEL_WORKTREE)
             } else {
                 Ok(())
             }
@@ -1027,7 +1019,7 @@ pub(crate) fn load_config(
         (system, GIT_CONFIG_LEVEL_SYSTEM),
     ] {
         if let Some(p) = path {
-            match c.add_file_ondisk(p, level, rp, false) {
+            match add(p, level) {
                 Ok(()) | Err(ErrorCode::NOT_FOUND) => {}
                 Err(e) => return Err(e),
             }
@@ -1035,7 +1027,7 @@ pub(crate) fn load_config(
     }
 
     errors::clear();
-    c.set_writeorder(GIT_CONFIG_LEVEL_LOCAL)?;
+    c.set_writeorder(&[GIT_CONFIG_LEVEL_LOCAL])?;
     Ok(cfg)
 }
 
@@ -1058,8 +1050,8 @@ pub(crate) fn config_path_system(out: &mut GitStr, use_env: bool) -> Result<()> 
             _ => return Ok(()),
         }
     }
-    // SAFETY: an exclusive `git_str`.
-    unsafe { c::git_config__find_system(out) };
+    // As C, a missing file is an empty path.
+    let _ = crate::config::find_system(out);
     Ok(())
 }
 
@@ -1071,8 +1063,8 @@ pub(crate) fn config_path_global(out: &mut GitStr, use_env: bool) -> Result<()> 
             _ => return Ok(()),
         }
     }
-    // SAFETY: an exclusive `git_str`.
-    unsafe { c::git_config__find_global(out) };
+    // As C, a missing file is an empty path.
+    let _ = crate::config::find_global(out);
     Ok(())
 }
 
@@ -1083,8 +1075,8 @@ pub(crate) fn load_global_config(use_env: bool) -> Result<Config> {
     let mut system = GitStr::new();
     config_path_system(&mut system, use_env)?;
     config_path_global(&mut global, use_env)?;
-    // SAFETY: an exclusive `git_str`.
-    unsafe { c::git_config__find_xdg(&raw mut xdg) };
+    // As C, a missing file is an empty path.
+    let _ = crate::config::find_xdg(&mut xdg);
     load_config(
         None,
         path_unless_empty(&global).as_deref(),

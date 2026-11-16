@@ -29,7 +29,7 @@ use crate::config::{
 use crate::config_list::{ConfigList, EntryMeta};
 use crate::config_mem::{arg, entry_name};
 use crate::config_parse::{ESCAPED, ESCAPES, ParseHandler, parse};
-use crate::sys::pending::git_repository;
+use crate::repository::GitRepository as git_repository;
 use crate::sys::sysdir;
 use crate::util::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
 use crate::util::filebuf::{Filebuf, GIT_FILEBUF_HASH_SHA256, GitFilebuf};
@@ -294,8 +294,10 @@ fn match_gitdir(
         return Err(ErrorCode::GENERIC);
     }
     let mut gitdir = GitStr::new();
-    // SAFETY: C's contract keeps the backend's repository live.
-    unsafe { crate::sys::pending::repository_gitdir(&mut gitdir, repo) }?;
+    // SAFETY: C's contract keeps the backend's repository live (non-NULL:
+    // `parse_conditional_include` checked); it is `Sync`.
+    let repo = unsafe { &*repo };
+    repo.item_path(&mut gitdir, crate::repository::ITEM_GITDIR)?;
     if gitdir
         .as_bytes()
         .last()
@@ -313,8 +315,10 @@ fn match_gitdir(
 /// `HEAD` is read from the refdb directly: the higher-level functions read
 /// the repository's config, which is being read.
 fn match_onbranch(repo: *const git_repository, _cfg_file: &[u8], condition: &[u8]) -> Result<bool> {
-    // SAFETY: C's contract keeps the backend's repository live.
-    let target = unsafe { crate::sys::pending::repository_head_symbolic_target(repo.cast_mut()) }?;
+    // SAFETY: C's contract keeps the backend's repository live (non-NULL:
+    // `parse_conditional_include` checked); it is `Sync`.
+    let repo = unsafe { &*repo };
+    let target = crate::sys::pending::repository_head_symbolic_target(repo)?;
     let Some(target) = target else {
         return Ok(false);
     };
