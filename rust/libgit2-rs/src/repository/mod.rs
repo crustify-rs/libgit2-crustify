@@ -45,8 +45,8 @@ use crate::git_error_set;
 use crate::index::{GIT_INDEX_CAPABILITY_FROM_OWNER, GitIndex, IndexPtr};
 use crate::odb::{GitOdb, Odb};
 use crate::oid::{GIT_OID_SHA1, OidType, git_oid_t};
+use crate::grafts::Grafts;
 use crate::refdb::GitRefdb;
-use crate::sys::pending::l_repo as c;
 use crate::util::alloc::{self, GitCStr};
 use crate::util::errors::{ErrorClass, ErrorCode, Result};
 use crate::util::str::GitStr;
@@ -175,8 +175,8 @@ pub struct GitRepository {
     oid_type: AtomicU32,
     refdb_type: AtomicI32,
     lru_counter: AtomicU32,
-    grafts: AtomicPtr<c_void>,
-    shallow_grafts: AtomicPtr<c_void>,
+    grafts: AtomicPtr<Grafts>,
+    shallow_grafts: AtomicPtr<Grafts>,
     attr_session_key: Atomic32,
     configmap_cache: [AtomicIsize; GIT_CONFIGMAP_CACHE_MAX],
     submodule_cache: AtomicPtr<c_void>,
@@ -316,9 +316,11 @@ impl GitRepository {
         self.objects.clear();
         let _ = crate::sys::attrcache::flush(self);
         // SAFETY: the grafts are the repository's; taken out first.
-        unsafe { c::git_grafts_free(self.grafts.swap(ptr::null_mut(), Ordering::AcqRel)) };
+        unsafe { crate::grafts::ffi::git_grafts_free(self.grafts.swap(ptr::null_mut(), Ordering::AcqRel)) };
         // SAFETY: as above.
-        unsafe { c::git_grafts_free(self.shallow_grafts.swap(ptr::null_mut(), Ordering::AcqRel)) };
+        unsafe {
+            crate::grafts::ffi::git_grafts_free(self.shallow_grafts.swap(ptr::null_mut(), Ordering::AcqRel))
+        };
         // SAFETY: the caller's contract: no weak pointer is used after.
         unsafe {
             self.set_config(None);
@@ -793,17 +795,17 @@ impl GitRepository {
     }
 
     /// `repo->grafts`.
-    pub(crate) fn grafts_ptr(&self) -> *mut c_void {
+    pub(crate) fn grafts_ptr(&self) -> *mut Grafts {
         load(&self.grafts)
     }
     /// `repo->shallow_grafts`.
-    pub(crate) fn shallow_grafts_ptr(&self) -> *mut c_void {
+    pub(crate) fn shallow_grafts_ptr(&self) -> *mut Grafts {
         load(&self.shallow_grafts)
     }
-    pub(crate) fn grafts_slot(&self) -> *mut *mut c_void {
+    pub(crate) fn grafts_slot(&self) -> *mut *mut Grafts {
         self.grafts.as_ptr()
     }
-    pub(crate) fn shallow_grafts_slot(&self) -> *mut *mut c_void {
+    pub(crate) fn shallow_grafts_slot(&self) -> *mut *mut Grafts {
         self.shallow_grafts.as_ptr()
     }
 
@@ -1137,7 +1139,6 @@ crate::c_layout_test! {
             submodule_cache
         },
         StaticStr => "git_str" { ptr, asize, size },
-        c::ObjectIdOptions => "git_object_id_options" { version, object_type, oid_type, filters },
     ],
     asserts: [
         "offsetof(git_worktree, gitlink_path) == 16",

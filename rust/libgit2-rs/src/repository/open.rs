@@ -12,7 +12,6 @@ use super::*;
 use crate::config::{Config, GitConfig, Want};
 use crate::git_error_set;
 use crate::odb::Odb;
-use crate::sys::pending::l_repo as c;
 use crate::util::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
 use crate::util::fs_path::{self, GIT_PATH_LIST_SEPARATOR, GIT_PATH_MAX, c_str, str_c_bytes};
 use crate::util::futils;
@@ -751,9 +750,9 @@ fn read_repository_format(repo: &GitRepository) -> Result<()> {
 pub(crate) fn load_grafts(repo: &GitRepository) -> Result<()> {
     if !repo.grafts_ptr().is_null() && !repo.shallow_grafts_ptr().is_null() {
         // SAFETY: the repository's live grafts.
-        check(unsafe { c::git_grafts_refresh(repo.grafts_ptr()) })?;
+        check(unsafe { crate::grafts::ffi::git_grafts_refresh(repo.grafts_ptr()) })?;
         // SAFETY: as above.
-        check(unsafe { c::git_grafts_refresh(repo.shallow_grafts_ptr()) })?;
+        check(unsafe { crate::grafts::ffi::git_grafts_refresh(repo.shallow_grafts_ptr()) })?;
     }
 
     let mut path = GitStr::new();
@@ -764,11 +763,11 @@ pub(crate) fn load_grafts(repo: &GitRepository) -> Result<()> {
         }
         if repo.grafts_ptr().is_null() {
             // SAFETY: the repository's grafts slot, which C fills.
-            check(unsafe { c::git_grafts_new(repo.grafts_slot(), oid_type) })?;
+            check(unsafe { crate::grafts::ffi::git_grafts_new(repo.grafts_slot(), oid_type) })?;
         }
         if repo.shallow_grafts_ptr().is_null() {
             // SAFETY: as above.
-            check(unsafe { c::git_grafts_new(repo.shallow_grafts_slot(), oid_type) })?;
+            check(unsafe { crate::grafts::ffi::git_grafts_new(repo.shallow_grafts_slot(), oid_type) })?;
         }
         return Ok(());
     }
@@ -776,7 +775,7 @@ pub(crate) fn load_grafts(repo: &GitRepository) -> Result<()> {
     path.joinpath_self(b"grafts")?;
     // SAFETY: the grafts slot and a NUL-terminated path.
     check(unsafe {
-        c::git_grafts_open_or_refresh(repo.grafts_slot(), cs(&path).as_ptr(), oid_type)
+        crate::grafts::ffi::git_grafts_open_or_refresh(repo.grafts_slot(), cs(&path).as_ptr(), oid_type)
     })?;
     path.clear();
     path.joinpath(
@@ -785,7 +784,7 @@ pub(crate) fn load_grafts(repo: &GitRepository) -> Result<()> {
     )?;
     // SAFETY: as above.
     check(unsafe {
-        c::git_grafts_open_or_refresh(repo.shallow_grafts_slot(), cs(&path).as_ptr(), oid_type)
+        crate::grafts::ffi::git_grafts_open_or_refresh(repo.shallow_grafts_slot(), cs(&path).as_ptr(), oid_type)
     })?;
     Ok(())
 }

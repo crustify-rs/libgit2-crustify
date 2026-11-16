@@ -1,8 +1,7 @@
 //! Owners of the objects the repository hands out or uses: `Refdb`,
 //! `Reference` and `RefIter` are lifetime-bound owners of the refs modules'
 //! `GitRefdb`, `GitReference` and iterators, used through their exports;
-//! `Object` stands for l-obj's type (PENDING(l-obj)) and reaches the C
-//! through `sys::pending::l_repo`. (The odb, config and index are
+//! objects are `crate::object::Object`. (The odb, config and index are
 //! `crate::odb`'s, `crate::config`'s and `crate::index`'s own types.) They
 //! are thin: a non-null pointer, a `Drop` that releases it, and the few
 //! safe calls the repository makes.
@@ -18,7 +17,7 @@ use core::ptr::{self, NonNull};
 use crate::oid::Oid;
 use crate::refdb::GitRefdb;
 use crate::refs::GitReference;
-use crate::sys::pending::l_repo as c;
+pub use crate::object::Object;
 use crate::util::errors::{ErrorCode, Result};
 use crate::util::thread::GitRefcount;
 
@@ -133,21 +132,6 @@ macro_rules! owner {
     };
 }
 
-/// Run a C constructor `f(&mut out)` and adopt what it wrote.
-fn make<P, T>(
-    f: impl FnOnce(*mut *mut P) -> c_int,
-    adopt: unsafe fn(*mut P) -> Option<T>,
-) -> Result<T> {
-    let mut out: *mut P = ptr::null_mut();
-    check(f(&raw mut out))?;
-    // SAFETY: on success the constructor gave the caller its reference
-    // (or NULL, which is `None`).
-    match unsafe { adopt(out) } {
-        Some(v) => Ok(v),
-        None => Err(ErrorCode::GENERIC),
-    }
-}
-
 owner!(
     /// An owned reference to a `git_refdb` (`git_refdb_free` on drop).
     Refdb: GitRefdb,
@@ -246,39 +230,13 @@ impl<'r> Reference<'r> {
 
     /// `git_reference_peel`.
     pub(crate) fn peel(&self, t: c_int) -> Result<Object<'r>> {
+        let mut out = ptr::null_mut();
         // SAFETY: a live reference, a local out-parameter.
-        make(
-            |out: *mut *mut c_void| unsafe {
-                crate::refs::ffi::git_reference_peel(out.cast(), self.as_ptr(), t)
-            },
-            Object::from_raw,
-        )
-    }
-}
-
-owner!(
-    /// An owned `git_object` (`git_object_free` on drop).
-    /// PENDING(l-obj): `crate::object::Object`.
-    Object: c_void,
-    c::git_object_free
-);
-
-impl<'r> Object<'r> {
-    /// `git_object_id`.
-    pub fn id(&self) -> Oid {
-        // SAFETY: a live object's id.
-        let p = unsafe { c::git_object_id(self.as_ptr()) };
-        // SAFETY: the id inside the live object.
-        unsafe { *p }
-    }
-
-    /// `git_object_peel`.
-    pub(crate) fn peel(&self, t: c_int) -> Result<Object<'r>> {
-        // SAFETY: a live object, a local out-parameter.
-        make(
-            |out| unsafe { c::git_object_peel(out, self.as_ptr(), t) },
-            Object::from_raw,
-        )
+        check(unsafe { crate::refs::ffi::git_reference_peel(&raw mut out, self.as_ptr(), t) })?;
+        let out = NonNull::new(out.cast()).ok_or(ErrorCode::GENERIC)?;
+        // SAFETY: the object the peel returned, ours; of the reference's
+        // repository (which outlives `'r`).
+        Ok(unsafe { Object::adopt(out) })
     }
 }
 

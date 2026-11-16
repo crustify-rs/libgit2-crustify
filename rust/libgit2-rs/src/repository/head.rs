@@ -8,7 +8,6 @@ use core::ptr::{self, NonNull};
 use super::handles::{self, Object, RefIter, Reference, check, opt_ptr, refname};
 use super::*;
 use crate::oid::Oid;
-use crate::sys::pending::l_repo as c;
 use crate::util::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
 use crate::util::fs_path::{self, str_c_bytes};
 use crate::util::futils;
@@ -110,9 +109,10 @@ fn reference_symbolic_create(
 fn object_lookup<'r>(repo: &'r GitRepository, id: &Oid, t: c_int) -> Result<Object<'r>> {
     let mut out = ptr::null_mut();
     // SAFETY: a live repository, a valid id, a local out.
-    check(unsafe { c::git_object_lookup(&raw mut out, repo.as_ptr(), id, t) })?;
-    // SAFETY: the object C returned to us.
-    unsafe { Object::from_raw(out) }.ok_or(ErrorCode::GENERIC)
+    check(unsafe { crate::object::ffi::git_object_lookup(&raw mut out, rp(repo), id, t) })?;
+    let out = NonNull::new(out).ok_or(ErrorCode::GENERIC)?;
+    // SAFETY: the object the lookup returned to us, of `repo`.
+    Ok(unsafe { Object::adopt(out) })
 }
 
 /// `git_repository_head`.
@@ -361,8 +361,8 @@ fn detach(repo: &GitRepository, id: Option<&Oid>, new: Option<&CStr>) -> Result<
     let id = id.ok_or(ErrorCode::GENERIC)?;
     let current = lookup(repo, GIT_HEAD_REF)?;
     let object = object_lookup(repo, id, GIT_OBJECT_ANY)?;
-    let peeled = object.peel(GIT_OBJECT_COMMIT)?;
-    let pid = peeled.id();
+    let peeled = object.peel_raw(GIT_OBJECT_COMMIT)?;
+    let pid = *peeled.id();
     let hex;
     let new = match new {
         Some(n) => n,
@@ -671,16 +671,18 @@ pub(crate) fn hashfile(
             "file size overflow for 32-bit systems"
         ));
     };
-    let mut opts = c::ObjectIdOptions {
-        version: 1,
+    let mut opts = crate::object::GitObjectIdOptions {
+        version: crate::object::GIT_OBJECT_ID_OPTIONS_VERSION,
         object_type,
         oid_type: repo.oid_type_raw(),
-        filters: fl.as_ptr(),
+        filters: fl.as_ptr().cast(),
     };
     let mut out = Oid::zero(repo.oid_type());
     // SAFETY: an open descriptor of `len` bytes, valid options whose filter
     // list lives across the call, and a local out-parameter.
-    check(unsafe { c::git_object_id_from_fd(&raw mut out, fd.0, len, &raw mut opts) })?;
+    check(unsafe {
+        crate::object::ffi::git_object_id_from_fd(&raw mut out, fd.0, len, &raw mut opts)
+    })?;
     Ok(out)
 }
 
@@ -706,10 +708,10 @@ pub(crate) fn shallow_roots(repo: &GitRepository) -> Result<(*mut Oid, usize)> {
         open::load_grafts(repo)?;
     }
     // SAFETY: the repository's live shallow grafts.
-    check(unsafe { c::git_grafts_refresh(repo.shallow_grafts_ptr()) })?;
+    check(unsafe { crate::grafts::ffi::git_grafts_refresh(repo.shallow_grafts_ptr()) })?;
     let (mut out, mut len) = (ptr::null_mut(), 0usize);
     // SAFETY: as above, and local outs.
-    check(unsafe { c::git_grafts_oids(&raw mut out, &raw mut len, repo.shallow_grafts_ptr()) })?;
+    check(unsafe { crate::grafts::ffi::git_grafts_oids(&raw mut out, &raw mut len, repo.shallow_grafts_ptr()) })?;
     Ok((out, len))
 }
 
@@ -859,7 +861,8 @@ pub(crate) fn commit_parents(
     if parents.try_reserve(1).is_err() {
         return Err(errors::oom());
     }
-    parents.push(first.into_nonnull());
+    // SAFETY: an object's pointer is not NULL.
+    parents.push(unsafe { NonNull::new_unchecked(first.into_raw().cast()) });
 
     struct Data<'a> {
         repo: &'a GitRepository,
@@ -874,7 +877,10 @@ pub(crate) fn commit_parents(
             let oid = unsafe { &*oid };
             let mut commit = ptr::null_mut();
             // SAFETY: a live repository, a valid id, a local out.
-            if unsafe { c::git_commit_lookup(&raw mut commit, data.repo.as_ptr(), oid) } < 0 {
+            if unsafe {
+                crate::object_api::ffi::git_commit_lookup(&raw mut commit, rp(data.repo), oid)
+            } < 0
+            {
                 return -1;
             }
             let Some(commit) = NonNull::new(commit) else {
@@ -903,7 +909,7 @@ pub(crate) fn commit_parents(
         // cache (DEFECTS.md); they are released with `git_object_free`.
         while let Some(p) = parents.pop() {
             // SAFETY: the commits we looked up, each released once.
-            unsafe { c::git_object_free(p.as_ptr()) };
+            unsafe { crate::object::ffi::git_object_free(p.as_ptr().cast()) };
         }
         return Err(ErrorCode::check(e).err().unwrap_or(ErrorCode::GENERIC));
     }

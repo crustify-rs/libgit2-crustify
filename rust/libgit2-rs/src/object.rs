@@ -1329,6 +1329,35 @@ impl<'repo> Object<'repo> {
         }
     }
 
+    /// Adopt a reference to an object (crate-internal: the repository's
+    /// C-shaped code, which ties `'repo` to its own borrow).
+    ///
+    /// # Safety
+    ///
+    /// `raw` is a live object whose reference passes to the result, and
+    /// whose repository outlives `'repo`.
+    pub(crate) unsafe fn adopt(raw: NonNull<GitObject>) -> Object<'repo> {
+        Object {
+            raw,
+            _repo: PhantomData,
+        }
+    }
+
+    /// Give the reference up, as a `git_object *`.
+    pub(crate) fn into_raw(self) -> *mut GitObject {
+        let p = self.raw.as_ptr();
+        core::mem::forget(self);
+        p
+    }
+
+    /// `git_object_peel` with C's type and error code (crate-internal).
+    pub(crate) fn peel_raw(&self, kind: git_object_t) -> Result<Object<'repo>> {
+        // SAFETY: a live object of a repository.
+        let raw = unsafe { peel(self.raw, kind)? };
+        // SAFETY: an object of the same repository, with its reference.
+        Ok(unsafe { self.sibling(raw) })
+    }
+
     /// Adopt a reference to an object of the repository an `other` of the
     /// same lifetime belongs to.
     ///

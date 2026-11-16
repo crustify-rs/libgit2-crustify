@@ -233,7 +233,6 @@ unsafe fn buf_out(out: *mut GitBuf, f: impl FnOnce(&mut GitStr) -> Result<()>) -
 /// of the same layout.
 mod globals {
     pub(super) use crate::sys::indexer::*;
-    pub(super) use crate::sys::pending::l_repo::git_object__strict_input_validation;
     pub(super) use crate::sys::streams::{
         git_socket_stream__connect_timeout, git_socket_stream__timeout,
     };
@@ -345,7 +344,7 @@ pub unsafe fn opts(key: c_int, args: &OptArgs) -> Result<()> {
             SET_USER_AGENT_PRODUCT => replace(&git__user_agent_product, a.cstr1())?,
             GET_USER_AGENT_PRODUCT => a.buf1(|s| s.puts(&user_agent_product()))?,
             ENABLE_STRICT_OBJECT_CREATION => {
-                g!(git_object__strict_input_validation).store(a.0.i != 0, r)
+                crate::object::git_object__strict_input_validation.store(a.0.i != 0, r)
             }
             ENABLE_STRICT_SYMBOLIC_REF_CREATION => {
                 crate::refs::git_reference__enable_symbolic_ref_target_validation

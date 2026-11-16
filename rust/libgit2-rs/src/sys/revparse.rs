@@ -1,7 +1,7 @@
 //! `src/libgit2/revparse.c` (C that stays C).
 
 use core::ffi::{CStr, c_char, c_int, c_void};
-use core::ptr;
+use core::ptr::{self, NonNull};
 
 use crate::repository::GitRepository;
 use crate::repository::handles::{Object, Reference};
@@ -24,8 +24,8 @@ pub fn ext<'r>(
     let (mut o, mut r) = (ptr::null_mut(), ptr::null_mut());
     // SAFETY: a live repository, a NUL-terminated spec, local outs.
     let e = unsafe { git_revparse_ext(&raw mut o, &raw mut r, repo.as_ptr(), spec.as_ptr()) };
-    // SAFETY: what C wrote is NULL or owned by us.
-    let o = unsafe { Object::from_raw(o) };
+    // SAFETY: what C wrote is NULL or an object of `repo`, owned by us.
+    let o = NonNull::new(o.cast()).map(|o| unsafe { Object::adopt(o) });
     // SAFETY: as above.
     let r = unsafe { Reference::from_raw(r.cast()) };
     (e, o, r)

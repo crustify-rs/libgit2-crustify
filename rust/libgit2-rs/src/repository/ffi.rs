@@ -776,7 +776,7 @@ pub unsafe extern "C" fn git_repository_set_index(
 /// The module's contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_grafts__weakptr(
-    out: *mut *mut c_void,
+    out: *mut *mut crate::grafts::Grafts,
     repo_: *mut GitRepository,
 ) -> c_int {
     barrier(|| {
@@ -799,7 +799,7 @@ pub unsafe extern "C" fn git_repository_grafts__weakptr(
 /// The module's contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_shallow_grafts__weakptr(
-    out: *mut *mut c_void,
+    out: *mut *mut crate::grafts::Grafts,
     repo_: *mut GitRepository,
 ) -> c_int {
     barrier(|| {
@@ -1524,7 +1524,7 @@ pub unsafe extern "C" fn git_repository_head_commit(
             |r| match head::head_peeled(r, head::PEEL_COMMIT) {
                 Ok(o) => {
                     // SAFETY: the caller's contract.
-                    unsafe { put(commit, o.into_raw()) };
+                    unsafe { put(commit, o.into_raw().cast()) };
                     0
                 }
                 Err(e) => e.raw(),
@@ -1550,7 +1550,7 @@ pub unsafe extern "C" fn git_repository_head_tree(
             |r| match head::head_peeled(r, head::PEEL_TREE) {
                 Ok(o) => {
                     // SAFETY: the caller's contract.
-                    unsafe { put(tree, o.into_raw()) };
+                    unsafe { put(tree, o.into_raw().cast()) };
                     0
                 }
                 Err(e) => e.raw(),

@@ -2,9 +2,6 @@
 //! called through their C symbols until both have landed (PORTING.md §3).
 //! Each entry carries a `// PENDING(<wp>)` comment.
 
-// PENDING(l-obj): what the repository (WP l-repo) calls of grafts.c,
-// object.c and object_api.c.
-pub mod l_repo;
 use core::ffi::c_void;
 
 // ---------------------------------------------------------------------------
