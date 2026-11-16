@@ -19,6 +19,10 @@ builds on. This is the short version; each module's rustdoc has the rest.
 | an export | `export::{barrier, status, bytes, cstr}` | `export` |
 | a layout test | `crate::c_layout_test!` | `layout` |
 | test setup | `test_support::{init, exclusive, with_alloc_limit}` | `test_support` |
+| `p_*` system calls (`errno` kept for `GIT_ERROR_OS`), `git_map` | `posix::{open, read, write, lstat, …, mmap}` | `posix` |
+| paths (`git_fs_path_*`), directory iteration | `fs_path::{dirname_r, join_unrooted, prettify, direach, GitFsPathDiriter, …}` | `fs_path` |
+| whole files, `mkdir -p`, `rm -r`, file stamps | `futils::{readbuffer, writebuffer, mkdir, rmdir_r, Filestamp, …}` | `futils` |
+| lock files (`git_filebuf`) | `filebuf::GitFilebuf` (C-embedded), `filebuf::Filebuf` (Rust) | `filebuf` |
 | SHA-1 (collision-detecting) / SHA-256; `git_hash_ctx` embedded in a mirrored struct | `hash::{Hasher, HashAlgorithm, hash_buf, hash_vec, Digest}`; `hash::HashCtx` | `hash` |
 | zlib streams; `git_zstream` embedded in a mirrored struct | `zstream::{ZStream, inflate_buf, deflate_buf}`; `zstream::GitZstream` | `zstream` |
 | `git_regexp` (PCRE2) | `regexp::Regexp` | `regexp` |
