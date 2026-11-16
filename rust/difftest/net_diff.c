@@ -206,6 +206,31 @@ static void test_hostnames(void)
 	}
 }
 
+/* random hosts and certificate patterns: mixed case, wildcards followed by
+ * upper-case or high-bit bytes, dots */
+static void test_hostnames_random(void)
+{
+	static const char alphabet[] = "aAbBzZ.*-x\x80\xc3\xff";
+	char host[16], pat[16], line[101];
+	int i, n = 0;
+
+	for (i = 0; i < 200000; i++) {
+		size_t hl = rnd() % 12, pl = rnd() % 10, j;
+		for (j = 0; j < hl; j++)
+			host[j] = alphabet[rnd() % (sizeof(alphabet) - 1)];
+		host[hl] = '\0';
+		for (j = 0; j < pl; j++)
+			pat[j] = alphabet[rnd() % (sizeof(alphabet) - 1)];
+		pat[pl] = '\0';
+		line[n++] = '0' + git_net_hostname_matches_cert(host, pat);
+		if (n == 100) {
+			line[n] = '\0';
+			printf("certrnd %s\n", line);
+			n = 0;
+		}
+	}
+}
+
 static void test_joinpath(void)
 {
 	static const char *bases[] = { "http://example.com/a/b", "http://example.com/a/b/",
@@ -305,6 +330,7 @@ int main(void)
 	git_libgit2_init();
 	test_parsers();
 	test_hostnames();
+	test_hostnames_random();
 	test_joinpath();
 	test_redirect();
 	test_swap();

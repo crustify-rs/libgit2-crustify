@@ -208,6 +208,36 @@ DIVERGENCES.md).
   status.
 - Rust: retries without counting; terminates the name at the bytes read.
 
+### net: `git_net_hostname_matches_cert` never matches a byte >= 0x80 outside a wildcard
+- C: `char c = git__tolower(*pattern++)` keeps a signed `char` (a byte
+  >= 0x80 is negative), compared with `git__tolower(*hostname++)`, an
+  `int` in 0..255 (`tolower((unsigned char)…)` on Unix): never equal.
+  After a `*`, both sides are `char` and such bytes do match.
+- Trigger: `git_net_hostname_matches_cert("\x80", "\x80")` is false;
+  `("a\xc3", "*\xc3")` is true.
+- Rust: kept as C (found by the random section of `net_diff.c`).
+
+### process: `git_process_free` leaks the pipes after `git_process_wait`
+- C: `git_process_free` closes the pipes only `if (process->pid)`;
+  `git_process_wait` sets `pid = 0`, so `new`, `start`, `wait`, `free`
+  leaks the three pipe descriptors unless the caller calls
+  `git_process_close` first.
+- Rust: the pipes are always closed on free (closing an already closed
+  pipe, -1, does nothing); the safe `Process` closes them on drop.
+
+### process: pipes are not close-on-exec (atomically, or at all)
+- C: the capture pipes are made with `pipe` (never close-on-exec), and the
+  status pipe gets `FD_CLOEXEC` with a separate `fcntl`. In a threaded
+  parent, a program another thread spawns meanwhile inherits them: it
+  holds our `in[1]` (our child never sees EOF on stdin after
+  `git_process_close_in`), or the status pipe's write end
+  (`git_process_start` blocks until that program exits). The child's own
+  program also inherited the original pipe ends besides 0/1/2.
+- Rust: all four pipes are made with `pipe2(O_CLOEXEC)`; the child's
+  `dup2` onto 0/1/2 clears the flag (and `fcntl(F_SETFD, 0)` when the
+  descriptor already is 0/1/2). The child's program gets 0/1/2 and what
+  the parent had open without close-on-exec, no pipe ends.
+
 ### process: `git_process_new` leaks on a failed `cwd` copy
 - C: returns -1 without freeing the process when `git__strdup(opts->cwd)`
   fails. Rust: frees it.

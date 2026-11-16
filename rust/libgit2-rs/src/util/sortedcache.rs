@@ -320,6 +320,11 @@ impl Core {
 /// The cache: what `git_sortedcache *` points to (an `Arc`'s contents).
 pub struct Shared {
     lock: GitRwLock,
+    /// The configuration, set once by `new` and never written: outside the
+    /// lock-protected cell, so that it can be read without the lock (C's
+    /// `git_sortedcache_copy` reads it before locking).
+    item_path_offset: usize,
+    item_cmp: Option<VectorCmp>,
     free_item: Option<FreeItemFn>,
     free_item_payload: *mut c_void,
     /// `git_vector_length(&items)`, readable without the lock.
@@ -358,6 +363,8 @@ impl Shared {
         let path = CString::new(crate::util::net::c_prefix(path)).unwrap_or_default();
         Ok(Arc::new(Shared {
             lock: GitRwLock::new(),
+            item_path_offset,
+            item_cmp,
             free_item,
             free_item_payload,
             count: AtomicUsize::new(0),
@@ -411,12 +418,22 @@ impl Shared {
         self.count.load(Ordering::Acquire)
     }
 
+    /// `pthread_rwlock_wrlock`: 0, or the (positive) error.
+    fn wrlock_raw(&self) -> c_int {
+        // SAFETY: an initialized rwlock at a stable address (inside the Arc).
+        unsafe { libc::pthread_rwlock_wrlock(self.lock.as_ptr()) }
+    }
+
+    /// `pthread_rwlock_rdlock`: 0, or the (positive) error.
+    fn rdlock_raw(&self) -> c_int {
+        // SAFETY: as above.
+        unsafe { libc::pthread_rwlock_rdlock(self.lock.as_ptr()) }
+    }
+
     /// `git_sortedcache_wlock`. pthread reports failure with a positive
     /// value, which the C's `< 0` test never sees; so here.
     fn wlock(&self) -> Result<()> {
-        // SAFETY: an initialized rwlock at a stable address (inside the Arc).
-        let r = unsafe { libc::pthread_rwlock_wrlock(self.lock.as_ptr()) };
-        if r < 0 {
+        if self.wrlock_raw() < 0 {
             let _ = git_error_set!(ErrorClass::OS, "unable to acquire write lock on cache");
             return Err(ErrorCode::GENERIC);
         }
@@ -442,9 +459,7 @@ impl Shared {
 
     /// `git_sortedcache_rlock`.
     fn rlock(&self) -> Result<()> {
-        // SAFETY: an initialized rwlock at a stable address.
-        let r = unsafe { libc::pthread_rwlock_rdlock(self.lock.as_ptr()) };
-        if r < 0 {
+        if self.rdlock_raw() < 0 {
             let _ = git_error_set!(ErrorClass::OS, "unable to acquire read lock on cache");
             return Err(ErrorCode::GENERIC);
         }
@@ -540,6 +555,17 @@ impl Shared {
     /// sort on the paths that do not return `Ok(true)`).
     unsafe fn lockandload(&self, buf: Option<&mut GitStr>) -> Result<bool> {
         self.wlock()?;
+        // SAFETY: the write lock is held; forwarded.
+        unsafe { self.load_or_unlock(buf) }
+    }
+
+    /// The rest of [`lockandload`](Self::lockandload), with the write lock
+    /// taken.
+    ///
+    /// # Safety
+    ///
+    /// As `lockandload`, and the calling thread holds the write lock.
+    unsafe fn load_or_unlock(&self, buf: Option<&mut GitStr>) -> Result<bool> {
         // SAFETY: forwarded.
         let r = unsafe { self.load_locked(buf) };
         if !matches!(r, Ok(true)) {
@@ -582,14 +608,19 @@ impl Shared {
     ///
     /// # Safety
     ///
-    /// A lock is held; if the items may be unsorted (after upserts, before
-    /// `wunlock`), it is the write lock (or exclusive use). The comparison
+    /// A lock is held. With a comparison, the items are sorted whenever no
+    /// thread holds the write lock (every write unlock and every copy
+    /// sorts); if they may be unsorted (after upserts, before `wunlock`),
+    /// the lock held is the write lock (or exclusive use). The comparison
     /// is sound on the items.
     unsafe fn entry(&self, pos: usize) -> Option<*mut c_void> {
         // SAFETY: a lock is held; the reference ends here.
         let sorted = unsafe { self.core() }.items.is_sorted();
-        if !sorted {
-            // SAFETY: unsorted: the caller holds the write lock.
+        // As `git_vector_sort`: nothing to do without a comparison (such a
+        // vector is never flagged sorted, and readers must not write).
+        if !sorted && self.item_cmp.is_some() {
+            // SAFETY: comparable and unsorted: per the contract above, the
+            // caller holds the write lock (or exclusive use).
             let core = unsafe { self.core_mut() };
             // SAFETY: the comparison is sound on the items.
             unsafe { core.sort() };
@@ -604,17 +635,15 @@ impl Shared {
     ///
     /// As [`entry`](Self::entry).
     unsafe fn lookup_index(&self, key: &[u8]) -> (Result<()>, usize) {
-        let (has_cmp, sorted) = {
-            // SAFETY: as in `entry`; the reference ends here.
-            let core = unsafe { self.core() };
-            (core.items.cmp_fn().is_some(), core.items.is_sorted())
-        };
-        if !has_cmp {
+        if self.item_cmp.is_none() {
             // `git_vector_bsearch2`: -1 with no error.
             return (Err(ErrorCode::GENERIC), 0);
         }
+        // SAFETY: as in `entry`; the reference ends here.
+        let sorted = unsafe { self.core() }.items.is_sorted();
         if !sorted {
-            // SAFETY: unsorted: the caller holds the write lock.
+            // SAFETY: comparable and unsorted: as in `entry`, the caller
+            // holds the write lock.
             let core = unsafe { self.core_mut() };
             // SAFETY: the comparison is sound on the items.
             unsafe { core.sort() };
@@ -679,6 +708,9 @@ fn load_fd(fd: c_int, buf: Option<&mut GitStr>) -> Result<()> {
 /// [`lock_and_load`](Self::lock_and_load). As with `std`'s locks, asking
 /// for the write lock while this thread holds a guard of the same cache
 /// deadlocks or panics.
+///
+/// The items are dropped by a C-ABI callback (the same path C's free
+/// callback takes): a panic in `T`'s `Drop` aborts the process.
 pub struct SortedCache<T> {
     shared: Arc<Shared>,
     _t: PhantomData<T>,
@@ -763,7 +795,10 @@ impl<T> SortedCache<T> {
     /// Take a read lock (`git_sortedcache_rlock`).
     pub fn read(&self) -> ReadGuard<'_, T> {
         let gate = self.shared.gate.read().unwrap_or_else(|e| e.into_inner());
-        let _ = self.shared.rlock();
+        // Unlike the C's `< 0` test, any failure is caught: a guard must
+        // hold its lock.
+        let r = self.shared.rdlock_raw();
+        assert_eq!(r, 0, "pthread_rwlock_rdlock failed");
         ReadGuard {
             cache: self,
             _gate: gate,
@@ -775,7 +810,8 @@ impl<T> SortedCache<T> {
     /// when it is released.
     pub fn write(&self) -> WriteGuard<'_, T> {
         let gate = self.shared.gate.write().unwrap_or_else(|e| e.into_inner());
-        let _ = self.shared.wlock();
+        let r = self.shared.wrlock_raw();
+        assert_eq!(r, 0, "pthread_rwlock_wrlock failed");
         WriteGuard {
             cache: self,
             _gate: gate,
@@ -790,15 +826,18 @@ impl<T> SortedCache<T> {
     pub fn lock_and_load(&self) -> core::result::Result<Option<Loaded<'_, T>>, Error> {
         let mut buf = GitStr::new();
         let gate = self.shared.gate.write().unwrap_or_else(|e| e.into_inner());
-        // SAFETY: the comparison is `typed_cmp::<T>`, sound on our items.
-        match unsafe { self.shared.lockandload(Some(&mut buf)) } {
+        let r = self.shared.wrlock_raw();
+        assert_eq!(r, 0, "pthread_rwlock_wrlock failed");
+        // SAFETY: the write lock is held by this thread; the comparison is
+        // `typed_cmp::<T>`, sound on our items.
+        match unsafe { self.shared.load_or_unlock(Some(&mut buf)) } {
             Ok(true) => Ok(Some((
                 WriteGuard {
                     cache: self,
                     _gate: gate,
                     _not_send: PhantomData,
                 },
-                buf.as_bytes().to_vec(),
+                FileContents(buf),
             ))),
             Ok(false) => Ok(None),
             Err(e) => Err(Error::from(e)),
@@ -825,7 +864,23 @@ impl<T: Clone> SortedCache<T> {
 
 /// What [`SortedCache::lock_and_load`] gives when the file changed: the
 /// write lock and the file's contents.
-pub type Loaded<'a, T> = (WriteGuard<'a, T>, Vec<u8>);
+pub type Loaded<'a, T> = (WriteGuard<'a, T>, FileContents);
+
+/// The contents of a cache's backing file, as read (no copy).
+pub struct FileContents(GitStr);
+
+impl core::ops::Deref for FileContents {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        self.0.as_bytes()
+    }
+}
+
+impl AsRef<[u8]> for FileContents {
+    fn as_ref(&self) -> &[u8] {
+        self
+    }
+}
 
 /// A held read lock of a [`SortedCache`].
 #[must_use]
@@ -1061,11 +1116,9 @@ pub mod ffi {
         barrier(|| {
             // SAFETY: a live cache.
             let s = unsafe { shared(src) };
-            let (cmp, offset) = {
-                // SAFETY: reads fields that never change.
-                let core = unsafe { s.core() };
-                (core.items.cmp_fn(), core.item_path_offset)
-            };
+            // The configuration lives outside the lock-protected core: no
+            // reference into the core is formed before the lock is held.
+            let (cmp, offset) = (s.item_cmp, s.item_path_offset);
             let tgt = match Shared::new(
                 offset,
                 s.free_item,

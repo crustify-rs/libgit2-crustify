@@ -416,7 +416,7 @@ fn lock_and_load_on_disk() {
             return false;
         };
         w.clear();
-        for line in String::from_utf8(data).unwrap().lines() {
+        for line in core::str::from_utf8(&data).unwrap().lines() {
             let (v, k) = line.split_once(' ').unwrap();
             *w.upsert_with(k.as_bytes(), || 0).unwrap() = v.parse().unwrap();
         }
@@ -440,4 +440,150 @@ fn lock_and_load_on_disk() {
     w.updated();
     drop(w);
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+// ----- the C ABI from several threads, as refdb_fs uses it (review U4-1,
+// U4-2); Miri's race detector checks these -----
+
+struct Sc(*const Shared);
+// SAFETY: the cache is shared across threads as the C does, under its lock.
+unsafe impl Send for Sc {}
+// SAFETY: as above.
+unsafe impl Sync for Sc {}
+
+fn new_cache(cmp: bool) -> Sc {
+    let mut sc: *const Shared = core::ptr::null();
+    let f: Option<unsafe extern "C" fn(*const c_void, *const c_void) -> c_int> =
+        if cmp { Some(item_cmp) } else { None };
+    // SAFETY: valid arguments.
+    let r = unsafe {
+        ffi::git_sortedcache_new(
+            &mut sc,
+            PATH_OFFSET,
+            None,
+            core::ptr::null_mut(),
+            f,
+            core::ptr::null(),
+        )
+    };
+    assert_eq!(r, 0);
+    Sc(sc)
+}
+
+const ROUNDS: usize = if cfg!(miri) { 12 } else { 400 };
+
+/// A writer (wlock, upsert, wunlock) against `copy(lock = 1)`, as a refdb
+/// iterator copying the refcache while another thread reloads it.
+#[test]
+fn c_abi_copy_races_with_writer() {
+    let _g = test_support::init();
+    let sc = new_cache(true);
+    let sc = &sc;
+    std::thread::scope(|s| {
+        s.spawn(move || {
+            for i in 0..ROUNDS {
+                let key = std::ffi::CString::new(format!("refs/heads/k{i:04}")).unwrap();
+                let mut item: *mut c_void = core::ptr::null_mut();
+                // SAFETY: the write lock is held around the upsert.
+                unsafe {
+                    assert_eq!(ffi::git_sortedcache_wlock(sc.0), 0);
+                    assert_eq!(
+                        ffi::git_sortedcache_upsert(&mut item, sc.0, key.as_ptr()),
+                        0
+                    );
+                    (*item.cast::<Item>()).value = i as c_int;
+                    ffi::git_sortedcache_wunlock(sc.0);
+                }
+            }
+        });
+        for _ in 0..2 {
+            s.spawn(move || {
+                for _ in 0..ROUNDS / 2 {
+                    let mut out: *const Shared = core::ptr::null();
+                    // SAFETY: copy takes the read lock; the copy is ours.
+                    unsafe {
+                        assert_eq!(
+                            ffi::git_sortedcache_copy(
+                                &mut out,
+                                sc.0,
+                                true,
+                                None,
+                                core::ptr::null_mut()
+                            ),
+                            0
+                        );
+                        let n = ffi::git_sortedcache_entrycount(out);
+                        let mut prev: Option<String> = None;
+                        for i in 0..n {
+                            let k =
+                                key(ffi::git_sortedcache_entry(out, i), PATH_OFFSET).to_string();
+                            if let Some(p) = &prev {
+                                assert!(*p < k);
+                            }
+                            prev = Some(k);
+                        }
+                        ffi::git_sortedcache_free(out);
+                    }
+                }
+            });
+        }
+    });
+    // SAFETY: the last reference.
+    unsafe {
+        assert_eq!(ffi::git_sortedcache_entrycount(sc.0), ROUNDS);
+        ffi::git_sortedcache_free(sc.0);
+    }
+}
+
+/// Readers calling `entry`, `lookup` and `lookup_index` under read locks
+/// concurrently, with and without a comparison (a cache without one is
+/// never flagged sorted: readers must not sort it).
+#[test]
+fn c_abi_concurrent_readers() {
+    let _g = test_support::init();
+    for with_cmp in [false, true] {
+        let sc = new_cache(with_cmp);
+        // SAFETY: the write lock is held around the upserts.
+        unsafe {
+            assert_eq!(ffi::git_sortedcache_wlock(sc.0), 0);
+            for k in [c"b", c"a", c"d", c"c"] {
+                let mut item: *mut c_void = core::ptr::null_mut();
+                assert_eq!(ffi::git_sortedcache_upsert(&mut item, sc.0, k.as_ptr()), 0);
+            }
+            ffi::git_sortedcache_wunlock(sc.0);
+        }
+        let sc = &sc;
+        std::thread::scope(|s| {
+            for _ in 0..3 {
+                s.spawn(move || {
+                    // SAFETY: each thread holds a read lock while reading.
+                    unsafe {
+                        assert_eq!(ffi::git_sortedcache_rlock(sc.0), 0);
+                        for _ in 0..ROUNDS / 20 + 1 {
+                            let order: Vec<_> = (0..4)
+                                .map(|i| key(ffi::git_sortedcache_entry(sc.0, i), PATH_OFFSET))
+                                .collect();
+                            if with_cmp {
+                                assert_eq!(order, ["a", "b", "c", "d"]);
+                            } else {
+                                assert_eq!(order, ["b", "a", "d", "c"]);
+                            }
+                            assert!(!ffi::git_sortedcache_lookup(sc.0, c"c".as_ptr()).is_null());
+                            let mut pos = 0usize;
+                            let r =
+                                ffi::git_sortedcache_lookup_index(&mut pos, sc.0, c"c".as_ptr());
+                            if with_cmp {
+                                assert_eq!((r, pos), (0, 2));
+                            } else {
+                                assert_eq!(r, -1);
+                            }
+                        }
+                        ffi::git_sortedcache_runlock(sc.0);
+                    }
+                });
+            }
+        });
+        // SAFETY: the last reference.
+        unsafe { ffi::git_sortedcache_free(sc.0) };
+    }
 }
