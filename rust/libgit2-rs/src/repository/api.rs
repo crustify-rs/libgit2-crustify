@@ -561,7 +561,7 @@ impl Repository {
     /// `git_repository_item_path`.
     pub fn item_path(&self, item: RepositoryItem) -> Result<PathBuf> {
         let mut s = GitStr::new();
-        item_path(&mut s, &self.raw().item_dirs(), item as ItemT)?;
+        self.raw().item_path(&mut s, item as ItemT)?;
         Ok(str_path(&s))
     }
 

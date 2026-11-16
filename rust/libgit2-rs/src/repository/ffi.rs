@@ -386,6 +386,19 @@ pub unsafe extern "C" fn git_repository_config__weakptr(
     out: *mut *mut c_void,
     repo_: *mut GitRepository,
 ) -> c_int {
+    // The fast path: already created. Loads and a store only (nothing
+    // can panic or allocate), so no barrier.
+    if !out.is_null() {
+        // SAFETY: the module's contract.
+        if let Some(r) = unsafe { repo(repo_) } {
+            let p = r.config_ptr();
+            if !p.is_null() {
+                // SAFETY: writable.
+                unsafe { out.write(p) };
+                return 0;
+            }
+        }
+    }
     barrier(|| {
         // SAFETY: the module's contract.
         let Some(r) = (unsafe { repo(repo_) }) else {
@@ -486,6 +499,19 @@ pub unsafe extern "C" fn git_repository_odb__weakptr(
     out: *mut *mut c_void,
     repo_: *mut GitRepository,
 ) -> c_int {
+    // The fast path: already created. Loads and a store only (nothing
+    // can panic or allocate), so no barrier.
+    if !out.is_null() {
+        // SAFETY: the module's contract.
+        if let Some(r) = unsafe { repo(repo_) } {
+            let p = r.odb_ptr();
+            if !p.is_null() {
+                // SAFETY: writable.
+                unsafe { out.write(p) };
+                return 0;
+            }
+        }
+    }
     barrier(|| {
         // SAFETY: the module's contract.
         let Some(r) = (unsafe { repo(repo_) }) else {
@@ -563,6 +589,19 @@ pub unsafe extern "C" fn git_repository_refdb__weakptr(
     out: *mut *mut c_void,
     repo_: *mut GitRepository,
 ) -> c_int {
+    // The fast path: already created. Loads and a store only (nothing
+    // can panic or allocate), so no barrier.
+    if !out.is_null() {
+        // SAFETY: the module's contract.
+        if let Some(r) = unsafe { repo(repo_) } {
+            let p = r.refdb_ptr();
+            if !p.is_null() {
+                // SAFETY: writable.
+                unsafe { out.write(p) };
+                return 0;
+            }
+        }
+    }
     barrier(|| {
         git_assert_arg!(!out.is_null(), "out", -1);
         // SAFETY: the module's contract.
@@ -634,6 +673,19 @@ pub unsafe extern "C" fn git_repository_index__weakptr(
     out: *mut *mut c_void,
     repo_: *mut GitRepository,
 ) -> c_int {
+    // The fast path: already created. Loads and a store only (nothing
+    // can panic or allocate), so no barrier.
+    if !out.is_null() {
+        // SAFETY: the module's contract.
+        if let Some(r) = unsafe { repo(repo_) } {
+            let p = r.index_ptr();
+            if !p.is_null() {
+                // SAFETY: writable.
+                unsafe { out.write(p) };
+                return 0;
+            }
+        }
+    }
     barrier(|| {
         git_assert_arg!(!out.is_null(), "out", -1);
         // SAFETY: the module's contract.
@@ -1261,7 +1313,7 @@ pub unsafe extern "C" fn git_repository_item_path(
     barrier(|| {
         with_repo!(repo_, "repo", |r: &GitRepository| {
             // SAFETY: a valid `git_buf`.
-            unsafe { buf_wrap(out, |s| item_path(s, &r.item_dirs(), item)) }
+            unsafe { buf_wrap(out, |s| r.item_path(s, item)) }
         })
     })
 }
@@ -1282,11 +1334,9 @@ pub unsafe extern "C" fn git_repository__item_path(
         git_assert_arg!(!out.is_null(), "out", -1);
         // SAFETY: a valid `git_str`.
         let o = unsafe { &mut *out };
-        with_repo!(repo_, "repo", |r: &GitRepository| status(item_path(
-            o,
-            &r.item_dirs(),
-            item
-        )))
+        with_repo!(repo_, "repo", |r: &GitRepository| status(
+            r.item_path(o, item)
+        ))
     })
 }
 
@@ -1299,15 +1349,14 @@ macro_rules! string_getter {
         /// The module's contract.
         #[unsafe(no_mangle)]
         pub unsafe extern "C" fn $name(repo_: *const GitRepository) -> *const c_char {
+            // SAFETY: the module's contract.
+            if let Some(r) = unsafe { repo(repo_) } {
+                // Loads only: nothing can panic, so no barrier.
+                return $get(r);
+            }
             barrier(|| {
-                // SAFETY: the module's contract.
-                match unsafe { repo(repo_) } {
-                    Some(r) => $get(r),
-                    None => {
-                        let _ = errors::assert_arg_failed("repo");
-                        ptr::null()
-                    }
-                }
+                let _ = errors::assert_arg_failed("repo");
+                ptr::null()
             })
         }
     };
@@ -1346,12 +1395,23 @@ pub unsafe extern "C" fn git_repository_workdir_path(
 ) -> c_int {
     barrier(|| {
         git_assert_arg!(!out.is_null(), "out", -1);
-        // SAFETY: a valid `git_str`; `path` NULL or a string (which may
-        // point into `out`: copied first).
-        let p = unsafe { crate::util::export::cstr_bytes(path) }.to_vec();
+        // SAFETY: `path` is NULL or a string.
+        let p = unsafe { crate::util::export::cstr_bytes(path) };
+        // `path` may point into `out`'s buffer: then it is copied first.
+        // SAFETY: a valid `git_str`; only its fields are read.
+        let o_ref = unsafe { &*out };
+        let (base, cap) = (o_ref.as_ptr() as usize, o_ref.capacity());
+        let a = p.as_ptr() as usize;
+        let copy;
+        let p: &[u8] = if a >= base && a < base.wrapping_add(cap) {
+            copy = p.to_vec();
+            &copy
+        } else {
+            p
+        };
         // SAFETY: a valid `git_str`, not otherwise accessed during the call.
         let o = unsafe { &mut *out };
-        with_repo!(repo_, "repo", |r| status(head::workdir_path(o, r, &p)))
+        with_repo!(repo_, "repo", |r| status(head::workdir_path(o, r, p)))
     })
 }
 
@@ -1385,7 +1445,12 @@ pub unsafe extern "C" fn git_repository_set_workdir(
 /// The module's contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_is_bare(repo_: *const GitRepository) -> c_int {
-    barrier(|| with_repo!(repo_, "repo", |r: &GitRepository| c_int::from(r.is_bare())))
+    // SAFETY: the module's contract.
+    if let Some(r) = unsafe { repo(repo_) } {
+        // A load only: nothing can panic, so no barrier.
+        return c_int::from(r.is_bare());
+    }
+    barrier(|| errors::assert_arg_failed("repo").raw())
 }
 
 /// `git_repository_is_worktree`.
@@ -1395,11 +1460,12 @@ pub unsafe extern "C" fn git_repository_is_bare(repo_: *const GitRepository) -> 
 /// The module's contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_is_worktree(repo_: *const GitRepository) -> c_int {
-    barrier(|| {
-        with_repo!(repo_, "repo", |r: &GitRepository| c_int::from(
-            r.is_worktree()
-        ))
-    })
+    // SAFETY: the module's contract.
+    if let Some(r) = unsafe { repo(repo_) } {
+        // A load only: nothing can panic, so no barrier.
+        return c_int::from(r.is_worktree());
+    }
+    barrier(|| errors::assert_arg_failed("repo").raw())
 }
 
 /// `git_repository_set_bare`.

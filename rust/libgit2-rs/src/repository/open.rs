@@ -736,7 +736,7 @@ fn load_refstorage_format(repo: &GitRepository, config: ConfigRef<'_>) -> Result
 /// `read_repository_format`.
 fn read_repository_format(repo: &GitRepository) -> Result<()> {
     let mut config_path = GitStr::new();
-    item_path(&mut config_path, &repo.item_dirs(), ITEM_CONFIG)?;
+    repo.item_path(&mut config_path, ITEM_CONFIG)?;
     let config = match Config::open_ondisk(&cs(&config_path)) {
         Ok(c) => Some(c),
         Err(ErrorCode::NOT_FOUND) => None,
@@ -771,7 +771,7 @@ pub(crate) fn load_grafts(repo: &GitRepository) -> Result<()> {
 
     let mut path = GitStr::new();
     let oid_type = repo.oid_type_raw();
-    if let Err(e) = item_path(&mut path, &repo.item_dirs(), ITEM_INFO) {
+    if let Err(e) = repo.item_path(&mut path, ITEM_INFO) {
         if e != ErrorCode::NOT_FOUND {
             return Err(e);
         }
@@ -1100,7 +1100,7 @@ pub(crate) fn repository_odb_path(out: &mut GitStr, repo: &GitRepository) -> Res
             r => return r,
         }
     }
-    item_path(out, &repo.item_dirs(), ITEM_OBJECTS)
+    repo.item_path(out, ITEM_OBJECTS)
 }
 
 /// `repository_odb_alternates`.
@@ -1130,7 +1130,7 @@ pub(crate) fn repository_index_path(out: &mut GitStr, repo: &GitRepository) -> R
             r => return r,
         }
     }
-    item_path(out, &repo.item_dirs(), ITEM_INDEX)
+    repo.item_path(out, ITEM_INDEX)
 }
 
 /// `git_repository__extensions`: the supported extensions, sorted.

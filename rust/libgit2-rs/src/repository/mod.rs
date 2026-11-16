@@ -696,6 +696,9 @@ impl GitRepository {
 
     /// The current `_odb`, `_refdb`, `_config` and `_index` pointers (what
     /// C's weak-pointer functions write out, also on failure).
+    pub(crate) fn odb_ptr(&self) -> *mut c_void {
+        load(&self.odb)
+    }
     pub(crate) fn refdb_ptr(&self) -> *mut c_void {
         load(&self.refdb)
     }
@@ -880,23 +883,19 @@ impl GitRepository {
 }
 
 fn resolved_parent_path<'a>(
-    dirs: &ItemDirs<'a>,
+    get: &impl Fn(ItemT) -> Option<&'a [u8]>,
     item: ItemT,
     fallback: ItemT,
 ) -> Result<Option<&'a [u8]>> {
-    let parent = match item {
-        ITEM_GITDIR => dirs.gitdir,
-        ITEM_WORKDIR => dirs.workdir,
-        ITEM_COMMONDIR => dirs.commondir,
-        _ => {
-            return Err(git_error_set!(
-                ErrorClass::INVALID,
-                "invalid item directory"
-            ));
-        }
-    };
+    if item > ITEM_COMMONDIR {
+        return Err(git_error_set!(
+            ErrorClass::INVALID,
+            "invalid item directory"
+        ));
+    }
+    let parent = get(item);
     if parent.is_none() && fallback != ITEM_LAST {
-        return resolved_parent_path(dirs, fallback, ITEM_LAST);
+        return resolved_parent_path(get, fallback, ITEM_LAST);
     }
     Ok(parent)
 }
@@ -906,6 +905,20 @@ fn resolved_parent_path<'a>(
 /// An `item` beyond the table is rejected with "invalid item directory"
 /// (the C reads past its table: see DEFECTS.md).
 pub fn item_path(out: &mut GitStr, dirs: &ItemDirs<'_>, item: ItemT) -> Result<()> {
+    item_path_with(out, item, |i| match i {
+        ITEM_GITDIR => dirs.gitdir,
+        ITEM_WORKDIR => dirs.workdir,
+        _ => dirs.commondir,
+    })
+}
+
+/// `git_repository__item_path`, with the directories looked up (lazily) by
+/// `get` (`ITEM_GITDIR`, `ITEM_WORKDIR` or `ITEM_COMMONDIR`).
+fn item_path_with<'a>(
+    out: &mut GitStr,
+    item: ItemT,
+    get: impl Fn(ItemT) -> Option<&'a [u8]>,
+) -> Result<()> {
     let Some(it) = ITEMS.get(item as usize) else {
         return Err(git_error_set!(
             ErrorClass::INVALID,
@@ -914,21 +927,37 @@ pub fn item_path(out: &mut GitStr, dirs: &ItemDirs<'_>, item: ItemT) -> Result<(
     };
     // C: a NULL parent (also after "invalid item directory") is reported
     // as "path cannot exist in repository".
-    let parent = resolved_parent_path(dirs, it.parent, it.fallback)
+    let parent = resolved_parent_path(&get, it.parent, it.fallback)
         .ok()
         .flatten();
     let Some(parent) = parent else {
         let _ = git_error_set!(ErrorClass::INVALID, "path cannot exist in repository");
         return Err(ErrorCode::NOT_FOUND);
     };
-    out.sets(parent)?;
-    if let Some(name) = it.name {
-        out.joinpath(parent, name)?;
+    match it.name {
+        // C's `git_str_sets(out, parent)` then `git_str_joinpath(out,
+        // parent, name)`: the join alone gives the same contents.
+        Some(name) => out.joinpath(parent, name)?,
+        None => out.sets(parent)?,
     }
     if it.directory {
         crate::util::fs_path::to_dir(out)?;
     }
     Ok(())
+}
+
+impl GitRepository {
+    /// `git_repository__item_path` of this repository.
+    pub fn item_path(&self, out: &mut GitStr, item: ItemT) -> Result<()> {
+        item_path_with(out, item, |i| {
+            match i {
+                ITEM_GITDIR => self.gitdir(),
+                ITEM_WORKDIR => self.workdir(),
+                _ => self.commondir(),
+            }
+            .map(CStr::to_bytes)
+        })
+    }
 }
 
 // ---------------------------------------------------------------------------
