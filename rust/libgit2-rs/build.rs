@@ -14,6 +14,12 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     build_config();
     if env::var_os("CARGO_FEATURE_LINK_C").is_none() {
+        // Without the C rest, the Rust still calls the system libraries the
+        // ported util layer uses directly (zlib's deflate, PCRE2); link them
+        // so that the crate's own tests link (with `link-c` they come from
+        // `rust-link-libs.txt`).
+        println!("cargo:rustc-link-lib=dylib=z");
+        println!("cargo:rustc-link-lib=dylib=pcre2-8");
         return;
     }
     let dir = env::var("LIBGIT2_BUILD_DIR").expect(
