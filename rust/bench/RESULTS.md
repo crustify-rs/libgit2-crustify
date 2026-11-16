@@ -884,3 +884,152 @@ it now compares in one pass. `git_signature__writebuf` no longer formats
 into a temporary `Vec`. `write_oid_header` no longer copies its header
 (only when it aliases the buffer); its remaining 7% is the three growth
 checks of `puts`/`put`/`putc`, kept for C's `asize`.
+
+# perf WP: the workloads slower than C on master e77dd77
+
+Targets: every workload with a ratio above 1.04 in the full comparison of
+master against the C reference (`/work/bench-results/full-e77dd77/`,
+`/work/tools/perf_targets.txt`). The machine was loaded throughout (load
+90–200 on 144 CPUs), so each target was first re-measured, interleaved,
+with a filter on it, and then measured without the noise. `perf` is not
+available (`perf_event_paranoid` = 4) and neither are valgrind, strace and
+ltrace, so `micro/icount/` adds:
+
+- `icount`: user-mode instruction counts between two `raise(SIGSTOP)`
+  markers in a harness (ptrace single-step). Deterministic and
+  independent of load.
+- `iprof` + `resolve.py` / `lines.py` / `annot.py`: the same with a
+  histogram of instruction addresses, resolved per function, per source
+  line or per instruction (an exact, if slow, profiler).
+- `sccount` + `scname.sh`: syscalls per region (ptrace `PTRACE_SYSCALL`).
+- `tm_*.c`: CPU time per call, minimum of repetitions, pinned. C and
+  Rust runs alternate, and the minimum of each is taken.
+
+Each harness (`ic_*.c`, `sc_*.c`, `tm_*.c`) is built against both
+libraries by `micro/icount/build.sh`.
+
+## Per-call results (instructions: exact; times: CPU, minimum, ns per call)
+
+Harnesses in `micro/icount/`; "before" is master e77dd77 (`/work/builds/master`), "after" is this branch.
+Times were taken at different moments for different rows (the load
+varied from 90 to 240), so compare within a row only.
+
+| call (harness) | C | before | after | after/C |
+|---|--:|--:|--:|--:|
+| `git_commit_header_field`, fresh `git_buf`, 5,000 commits × {tree, author, committer, parent} (`tm_hf`, ms per 20,000) | 2.90 | 3.80 | 4.91 vs C 5.19 at that moment | 0.95 |
+| same, one reused `git_buf` (`tm_hf`) | 2.64 | 3.92 vs C 2.70 | 3.89 vs C 3.93 | 0.99 |
+| same, per field, 50 commits (`tm_hf3`, ns): tree / parent / author / committer | 185 / 228 / 275 / 301 | – | 188 / 221 / 261 / 281 | 1.02 / 0.97 / 0.95 / 0.93 |
+| same, instructions per call, tree (`ic_hf`) | 541 | – | 523 | 0.97 |
+| `git_commit_header_field` on HEAD, instructions per call, fresh / reused / missing field (`ic_buf`) | 729 / 488 / 614 | 1050 / 794 / 900 | 658 / 454 / 575 | 0.90 / 0.93 / 0.94 |
+| `git_oid_pathfmt` (`ic_oid`, ns) | 27.5 | 45.0 | 14.8 | 0.54 |
+| `git_oid_shorten_add`, 12,000 ids (`ic_oid`, µs) | 261 | 284 | 284 | 1.09 |
+| `git_odb_exists` on git.git's pack, hit / miss (`ic_pack`, ns) | 566 / 23,419 | – | 536 / 23,077 | 0.95 / 0.99 |
+| `git_odb_open` + 50,000 exists (`ic_pack`, ms) | 27.7 | – | 28.6 | 1.03 |
+| `git_mempack_reset` of 20,000 objects (`ic_mp`, µs) | 3,348 | 3,681 | 3,661 | 1.09 |
+| `git_odb_write` of 64 MiB into a mempack (`tm_hash`, ms) | 380 | – | 361 | 0.95 |
+| `git_tree_entry_bypath` (`ic_tree`): instructions / ns per call | 1646 / 390 | 1837 / 397 | 1796 / 393 | 1.09 / 1.01 |
+| `git_index_write` of git-wd's index (`ic_idx`, ms) | 5.09 | – | 4.85 | 0.95 |
+| `git_revwalk` first-parent of master, warm walker (`tm_rw`, ms) | 2.39 | – | 2.47 | 1.03 |
+| `git_reference_name_to_id`, loose/packed/tag/missing mix (`tm_ref`, ns) | 8,707 | – | 8,316 | 0.96 |
+| `git_repository_head` + `_head_detached` on refs.git (`tm_ref`, µs) | 45.0 | – | 44.9 | 1.00 |
+| reference create / delete (loose), `git_repository_init`, loose `git_odb_write` (`sc_fs`, µs CPU) | 332 / 526 / 4,522 / 476 | – | 338 / 528 / 4,609 / 386 | 1.02 / 1.00 / 1.02 / 0.81 |
+
+Syscalls (`sccount`) are identical, call for call, between C and Rust
+for `git_odb_open` + exists (25), `git_index_write` (65), reference
+create (422 for 20) and delete (306 for 20), `git_repository_init` (176)
+and loose writes (341 for 20): none of the file-system workloads does
+extra I/O.
+
+## Causes and fixes
+
+- **`git_commit_header_field`** (util/buf_commit_header_field,
+  util/buf_reuse): (1) the export made a `CStr` of the commit's raw
+  header, i.e. a `strlen` of all of it, and then `header_field` scanned it
+  again for a NUL; C walks the string with `strchr` and stops at the
+  field's line. Merge commits' `mergetag` headers are many times longer
+  than the `tree`/`parent` lines, so this was the 25–30% on git.git's
+  commits. Now `CLines` walks the C string a line at a time with `strchr`
+  (a byte loop under Miri), and only the safe API (which holds a slice)
+  uses the whole-buffer search; a test checks that both agree on result,
+  contents and message on edge cases (continuations, empty and SP fields,
+  fields with a newline, NULs). (2) `starts_with` per line (a `bcmp` call):
+  the first byte is compared first. (3) `GIT_BUF_WRAP_PRIVATE` called the
+  exported `git_buf_tostr`/`git_buf_fromstr`, each with its own barrier
+  and argument checks: `buf::wrap_private` does the same moves directly.
+  (4) `GitStr::put` went through the generic segment path and re-checked
+  ownership four times: a fast path for room in an owned buffer, and one
+  for the first `put` into an empty string (one allocation, the size
+  `try_grow` picks).
+- **`git_oid_pathfmt`** (oid/pathfmt): formatted into a zeroed local and
+  copied out with `memcpy`; the copy's wide loads of bytes just stored in
+  pairs stalled on store forwarding (fewer instructions than C, but 1.6×
+  the time). It now writes the caller's buffer in place, as C does.
+- **`git_tree_entry_bypath`** (objects/tree_entry_bypath): the recursion
+  through `&mut dyn FnMut` closures cost a prologue and two indirect calls
+  per level; it is a loop now with inlined lookup/free (each subtree is
+  released once the walk leaves it), and path components are scanned
+  without `memchr`'s setup. Time at parity; the remaining 9% of
+  instructions is the bounds check and the NULL check of each entry's name
+  in the binary search.
+- **`git_oid_shorten_add`** (oid/shorten): one children borrow per digit
+  and no `try_reserve` call unless the node vector is full; this changed
+  nothing (LLVM had already done it). The remaining 5–9% is a bounds check
+  on `nodes[idx]` per digit (C: 17 instructions per digit, Rust 22), which
+  only unchecked indexing would remove: not done.
+- **`git_mempack_reset`** (odb/mempack_reset): 9–12%, not closed. The free
+  calls are the same (one per object; C allocates the object and its data
+  together, the port allocates only the data); the reset loop is 50
+  instructions per object against C's 31 (each bucket is marked deleted
+  and the size decremented, where C only frees). Marking a whole flag word
+  empty before dropping its entries removed that work but not the time
+  (reverted); the remaining cost is in `free` itself and does not depend
+  on the map's cache footprint (the ratio is the same for 1,000 objects).
+- Not reproduced (re-measured interleaved and per call: at parity or
+  faster, with identical syscalls): repository/head_loose (1.51 on the
+  full run, 0.99 re-measured), repository/head_packed, repository/init_x50,
+  codec/mempack_hash_64m (the 64 MiB copy and SHA-1DC: 0.95 per call),
+  codec/mempack_hash_small_x100k, odb/pack_exists (fewer instructions per
+  lookup than C), odb/pack_read_prefix, odb/loose_write(_existing),
+  refs/name_to_id, refs/delete_loose, index/write_git, index/conflicts,
+  revwalk/reuse_first_parent_x5 (1.03 per walk; the full run's 1.74
+  minimum ratio was one slow sample).
+
+## Public API, interleaved (`compare.sh /work/build-c <build> <targets>`)
+
+Ratios Rust/C as wall / CPU / ratio of minima. The columns are: master's
+full run (`/work/bench-results/full-e77dd77`); master's code (e77dd77)
+re-run with a filter on the 21 targets (3 rounds, load ~100–200);
+this branch at fe3c899 on the same targets (3 rounds). That run predates
+the header line walk and the tree loop, and it overlapped the branch's
+own test runs on the machine. Last, a quiet re-run of the 8 targets still
+above 1.04 at 904f3f0 (5 rounds). Check values match everywhere.
+
+| workload | master, full run | master, re-run | after (fe3c899), targets run | after (904f3f0), quiet re-run |
+|---|--:|--:|--:|--:|
+| repository/head_loose | 1.513 / 1.512 / 0.997 | 0.613 / 0.613 / 0.965 | 0.992 / 0.990 / 0.991 | – |
+| codec/mempack_hash_64m | 1.361 / 1.364 / 0.984 | 0.897 / 0.892 / 0.971 | 1.061 / 1.062 / 0.853 | 1.042 / 1.042 / 0.972 |
+| util/buf_commit_header_field | 1.279 / 1.297 / 1.255 | 1.164 / 1.164 / 1.222 | 1.176 / 1.176 / 1.037 | 0.985 / 0.985 / 1.022 |
+| revwalk/reuse_first_parent_x5 | 1.195 / 1.195 / 1.743 | 0.990 / 0.980 / 1.009 | 1.135 / 1.135 / 0.991 | 0.811 / 0.806 / 0.936 |
+| odb/pack_exists | 1.187 / 1.186 / 1.138 | 1.026 / 1.024 / 1.039 | 0.996 / 0.996 / 0.988 | – |
+| repository/init_x50 | 1.182 / 1.194 / 0.980 | 0.745 / 0.749 / 1.022 | 1.000 / 0.997 / 1.005 | – |
+| objects/tree_entry_bypath | 1.182 / 1.153 / 1.069 | 1.049 / 1.046 / 1.050 | 1.065 / 1.068 / 1.045 | 0.980 / 0.980 / 0.987 |
+| util/buf_reuse | 1.164 / 1.163 / 1.218 | 1.299 / 1.299 / 1.313 | 0.929 / 0.942 / 1.094 | 0.939 / 0.990 / 0.993 |
+| odb/pack_read_prefix | 1.131 / 1.136 / 0.993 | 0.943 / 0.943 / 0.977 | 0.964 / 0.963 / 0.969 | – |
+| odb/mempack_reset | 1.130 / 1.130 / 1.094 | 1.077 / 1.077 / 1.087 | 1.121 / 1.121 / 1.131 | 0.888 / 0.888 / 1.121 |
+| odb/loose_write | 1.122 / 1.078 / 0.964 | 0.981 / 0.986 / 0.998 | 1.017 / 1.013 / 0.975 | – |
+| refs/name_to_id | 1.110 / 1.109 / 0.958 | 0.980 / 0.980 / 0.940 | 1.025 / 1.024 / 1.010 | – |
+| refs/delete_loose | 1.109 / 1.090 / 0.999 | 1.067 / 1.059 / 1.002 | 1.029 / 1.030 / 1.018 | – |
+| odb/loose_write_existing | 1.075 / 1.079 / 0.985 | 1.008 / 1.000 / 1.011 | 0.914 / 0.912 / 0.995 | – |
+| repository/head_packed | 1.068 / 1.070 / 0.949 | 0.960 / 0.960 / 1.073 | 0.940 / 0.939 / 0.970 | – |
+| codec/mempack_hash_small_x100k | 1.067 / 1.070 / 0.943 | 1.014 / 1.012 / 0.935 | 0.915 / 0.915 / 0.939 | – |
+| index/write_git | 1.056 / 1.056 / 1.018 | 1.109 / 1.109 / 1.024 | 0.969 / 0.969 / 0.977 | – |
+| oid/shorten | 1.055 / 1.055 / 1.016 | 1.141 / 1.141 / 1.278 | 1.360 / 1.360 / 1.019 | 1.041 / 1.041 / 1.049 |
+| oid/pathfmt | 1.044 / 1.044 / 0.781 | 1.352 / 1.352 / 1.548 | 0.577 / 0.577 / 0.587 | 0.871 / 0.870 / 0.589 |
+| index/conflicts | 1.044 / 1.043 / 1.022 | 1.023 / 1.023 / 1.007 | 1.004 / 1.004 / 1.006 | – |
+
+Single ratios on this machine move by ±10% between runs (master's own
+re-run moved head_loose from 1.51 to 0.61). The per-call numbers above are
+the evidence; these tables only confirm them. Left above 1.04: oid/shorten
+(1.04; 1.09 per call, see above) and odb/mempack_reset (minimum ratio
+1.12 although the medians are 0.89; 1.09 per call): both are explained
+above and were not closed.

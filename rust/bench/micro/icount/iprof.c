@@ -30,7 +30,7 @@ int main(int argc, char **argv) {
 					char f[64]; sprintf(f, "prof.%d.txt", region); FILE *o = fopen(f, "w");
 					for (int i = 0; i < HS; i++) if (keys[i]) { fprintf(o, "%llx %lld\n", keys[i], vals[i]); }
 					fclose(o); memset(keys, 0, sizeof keys); memset(vals, 0, sizeof vals);
-					char cmd[128]; sprintf(cmd, "cp /proc/%d/maps maps.%d.txt 2>/dev/null", pid, region); system(cmd);
+					char cmd[128]; sprintf(cmd, "cat /proc/%d/maps > maps.%d.txt", pid, region); system(cmd);
 				}
 			}
 			stepping = !stepping; n = 0; continue;
