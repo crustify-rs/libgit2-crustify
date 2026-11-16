@@ -518,9 +518,19 @@ pub mod ffi {
             if unsafe { libc::getcwd(buffer_out, size) }.is_null() {
                 return -1;
             }
-            // SAFETY: as above; `getcwd` NUL-terminated them.
-            let buf = unsafe { core::slice::from_raw_parts_mut(buffer_out.cast::<u8>(), size) };
-            crate::util::fs_path::string_to_dir(buf, size);
+            // SAFETY: `getcwd` wrote a NUL-terminated string into the buffer
+            // (whose other bytes may be uninitialized: no slice is made).
+            let end = unsafe { CStr::from_ptr(buffer_out) }.to_bytes().len();
+            let p = buffer_out.cast::<u8>();
+            // `git_fs_path_string_to_dir`, keeping both bytes in the buffer
+            // (C wrote the NUL at `buffer_out[size]` when only the slash fit).
+            // SAFETY: `end - 1` is within the string when `end > 0`.
+            if end > 0 && end + 1 < size && unsafe { p.wrapping_add(end - 1).read() } != b'/' {
+                // SAFETY: `end + 1 < size`: both bytes are in the buffer.
+                unsafe { p.wrapping_add(end).write(b'/') };
+                // SAFETY: as above.
+                unsafe { p.wrapping_add(end + 1).write(0) };
+            }
             0
         })
     }

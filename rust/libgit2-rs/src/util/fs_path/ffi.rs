@@ -197,10 +197,16 @@ pub unsafe extern "C" fn git_fs_path_string_to_dir(path: *mut c_char, size: usiz
         }
         // SAFETY: a NUL-terminated string.
         let end = unsafe { CStr::from_ptr(path) }.to_bytes().len();
-        // SAFETY: the string and the two bytes from its NUL are writable
-        // (the caller's contract), and nothing else uses them.
-        let b = unsafe { core::slice::from_raw_parts_mut(path.cast::<u8>(), end + 2) };
-        string_to_dir(b, size);
+        let p = path.cast::<u8>();
+        // C's test and writes, with raw writes: the byte after the NUL may
+        // be uninitialized (no slice is made over it).
+        // SAFETY: `end - 1` is within the string when `end > 0`.
+        if end > 0 && end < size && unsafe { p.wrapping_add(end - 1).read() } != b'/' {
+            // SAFETY: the two bytes from the NUL are writable (the contract).
+            unsafe { p.wrapping_add(end).write(b'/') };
+            // SAFETY: as above.
+            unsafe { p.wrapping_add(end + 1).write(0) };
+        }
     })
 }
 

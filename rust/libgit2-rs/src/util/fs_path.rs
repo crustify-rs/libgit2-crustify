@@ -1160,11 +1160,14 @@ impl GitFsPathDiriter {
         }
     }
 
-    /// `git_fs_path_diriter_init`: open the directory `path`. As C, what
-    /// the iterator held before is not released.
+    /// `git_fs_path_diriter_init`: open the directory `path`, releasing
+    /// what the iterator held (the export overwrites a C iterator without
+    /// reading it first, as C's `memset`).
     pub fn init(&mut self, path: &[u8], flags: c_uint) -> Result<()> {
         let path = c_str(path);
-        core::mem::forget(std::mem::take(self));
+        self.free();
+        self.parent_len = 0;
+        self.flags = 0;
         self.path.puts(path)?;
         trim_slashes(&mut self.path);
         if self.path.is_empty() {
