@@ -456,7 +456,7 @@ struct PackedMap {
 
 /// A locked file (`git_filebuf`), cleaned up (the lock removed unless
 /// committed) on drop.
-pub struct LockFile(Box<GitFilebuf>);
+pub struct LockFile(Option<Box<GitFilebuf>>);
 
 impl LockFile {
     fn open(path: &[u8], flags: c_int, mode: u32) -> Result<LockFile> {
@@ -464,34 +464,34 @@ impl LockFile {
         // SAFETY: the box keeps the filebuf in place until it is cleaned
         // up (`Drop`, or the commit); only the box pointer ever moves.
         unsafe { f.open(path, flags, mode) }?;
-        Ok(LockFile(f))
+        Ok(LockFile(Some(f)))
+    }
+
+    fn file(&mut self) -> &mut GitFilebuf {
+        self.0.as_mut().expect("a lock file handed to C")
     }
 
     /// The target path.
     pub fn original_path(&self) -> Option<&CStr> {
-        self.0.original_path()
+        self.0.as_ref().and_then(|f| f.original_path())
     }
 
     fn printf(&mut self, data: &[u8]) -> Result<()> {
-        self.0.printf_formatted(Some(data))
+        self.file().printf_formatted(Some(data))
     }
 
     fn write(&mut self, data: &[u8]) -> Result<()> {
-        self.0.write(data)
+        self.file().write(data)
     }
 
     fn commit(&mut self) -> Result<()> {
-        self.0.commit()
+        self.file().commit()
     }
 
     /// Hand the lock to C as `lock`'s payload.
-    fn into_payload(self) -> *mut c_void {
-        let p = Box::into_raw(core::mem::ManuallyDrop::new(self).take_box());
-        p.cast()
-    }
-
-    fn take_box(&mut self) -> Box<GitFilebuf> {
-        core::mem::replace(&mut self.0, Box::new(GitFilebuf::new()))
+    fn into_payload(mut self) -> *mut c_void {
+        let f = self.0.take().expect("a lock file handed to C");
+        Box::into_raw(f).cast()
     }
 
     /// Adopt a payload `into_payload` made.
@@ -500,14 +500,16 @@ impl LockFile {
     ///
     /// `p` came from `into_payload` and is not used again.
     unsafe fn from_payload(p: *mut c_void) -> LockFile {
-        // SAFETY: per the contract: a `Box<GitFilebuf>` we leaked.
-        LockFile(unsafe { Box::from_raw(p.cast::<GitFilebuf>()) })
+        // SAFETY: per the contract: a `Box<GitFilebuf>` we gave away.
+        LockFile(Some(unsafe { Box::from_raw(p.cast::<GitFilebuf>()) }))
     }
 }
 
 impl Drop for LockFile {
     fn drop(&mut self) {
-        self.0.cleanup();
+        if let Some(f) = self.0.as_mut() {
+            f.cleanup();
+        }
     }
 }
 
