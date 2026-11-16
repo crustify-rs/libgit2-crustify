@@ -1038,6 +1038,45 @@ pub mod ffi {
     }
 }
 
+/// The symbolic target of the repository's `HEAD`, read from its refdb
+/// directly (`None` if `HEAD` is not symbolic): config_file.c's
+/// `conditional_match_onbranch` (the higher-level functions read the
+/// repository's config, which is being read).
+fn repository_head_symbolic_target(
+    repo: &crate::repository::GitRepository,
+) -> crate::util::errors::Result<Option<Vec<u8>>> {
+    use crate::refs::ffi as r;
+    use crate::util::errors::ErrorCode;
+    // C takes a reference (`git_repository_refdb`) and drops it at the
+    // end; the repository keeps the refdb live meanwhile either way.
+    let refdb = repo.refdb_weak()?;
+    let mut head = core::ptr::null_mut();
+    // SAFETY: `head` is writable; `refdb` is the repository's live refdb;
+    // the name is NUL-terminated.
+    ErrorCode::check(unsafe {
+        crate::refdb::ffi::git_refdb_lookup(&raw mut head, refdb.as_ptr(), c"HEAD".as_ptr())
+    })?;
+    // SAFETY: `head` is the live reference just returned.
+    let result = if unsafe { r::git_reference_type(head) }
+        != crate::repository::handles::GIT_REFERENCE_SYMBOLIC
+    {
+        None
+    } else {
+        // SAFETY: as above; the target is NUL-terminated (or NULL) and
+        // lives as long as `head`, which it is copied before.
+        let p = unsafe { r::git_reference_symbolic_target(head) };
+        Some(if p.is_null() {
+            Vec::new()
+        } else {
+            // SAFETY: as above.
+            unsafe { core::ffi::CStr::from_ptr(p) }.to_bytes().to_vec()
+        })
+    };
+    // SAFETY: `head` is ours, released once.
+    unsafe { r::git_reference_free(head) };
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1100,43 +1139,4 @@ mod tests {
         assert_eq!(quotes_for_value(b"a;b"), b"\"");
         assert_eq!(quotes_for_value(b"ab"), b"");
     }
-}
-
-/// The symbolic target of the repository's `HEAD`, read from its refdb
-/// directly (`None` if `HEAD` is not symbolic): config_file.c's
-/// `conditional_match_onbranch` (the higher-level functions read the
-/// repository's config, which is being read).
-fn repository_head_symbolic_target(
-    repo: &crate::repository::GitRepository,
-) -> crate::util::errors::Result<Option<Vec<u8>>> {
-    use crate::refs::ffi as r;
-    use crate::util::errors::ErrorCode;
-    // C takes a reference (`git_repository_refdb`) and drops it at the
-    // end; the repository keeps the refdb live meanwhile either way.
-    let refdb = repo.refdb_weak()?;
-    let mut head = core::ptr::null_mut();
-    // SAFETY: `head` is writable; `refdb` is the repository's live refdb;
-    // the name is NUL-terminated.
-    ErrorCode::check(unsafe {
-        crate::refdb::ffi::git_refdb_lookup(&raw mut head, refdb.as_ptr(), c"HEAD".as_ptr())
-    })?;
-    // SAFETY: `head` is the live reference just returned.
-    let result = if unsafe { r::git_reference_type(head) }
-        != crate::repository::handles::GIT_REFERENCE_SYMBOLIC
-    {
-        None
-    } else {
-        // SAFETY: as above; the target is NUL-terminated (or NULL) and
-        // lives as long as `head`, which it is copied before.
-        let p = unsafe { r::git_reference_symbolic_target(head) };
-        Some(if p.is_null() {
-            Vec::new()
-        } else {
-            // SAFETY: as above.
-            unsafe { core::ffi::CStr::from_ptr(p) }.to_bytes().to_vec()
-        })
-    };
-    // SAFETY: `head` is ours, released once.
-    unsafe { r::git_reference_free(head) };
-    Ok(result)
 }

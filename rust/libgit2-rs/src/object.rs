@@ -2172,7 +2172,6 @@ pub mod ffi {
 crate::c_layout_test! {
     headers: ["object.h", "cache.h", "commit.h", "tree.h", "git2/object.h"],
     types: [
-        GitCachedObj => "git_cached_obj" { oid, kind as "type", flags, size, refcount },
         GitObject => "git_object" { cached, repo },
         GitObjectIdOptions => "git_object_id_options" { version, object_type, oid_type, filters },
         crate::sys::blob_filter::git_filter_options => "git_filter_options" { version, flags, reserved, attr_commit_id },

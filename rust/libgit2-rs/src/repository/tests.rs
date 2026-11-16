@@ -289,6 +289,10 @@ fn publish_races() {
     // SAFETY: all-zero is a valid `GitRepository` (atomics, NULLs).
     let repo: Box<GitRepository> = unsafe { Box::<GitRepository>::new_zeroed().assume_init() };
     let r: &GitRepository = &repo;
+    // A slot of the kind the repository has (`AtomicPtr` to a refcounted
+    // object), outside it.
+    let slot = AtomicPtr::<c_void>::new(ptr::null_mut());
+    let slot = &slot;
     let n = 4;
     let results: Vec<usize> = std::thread::scope(|s| {
         let hs: Vec<_> = (0..n)
@@ -296,7 +300,7 @@ fn publish_races() {
                 s.spawn(move || {
                     let obj = Box::into_raw(Box::new(GitRefcount::new(1)));
                     let p = NonNull::new(obj.cast::<c_void>()).unwrap();
-                    let won = r.publish(&r.grafts, p, |q| {
+                    let won = r.publish(slot, p, |q| {
                         FREED.fetch_add(1, Ordering::SeqCst);
                         // SAFETY: the loser's box.
                         drop(unsafe { Box::from_raw(q.cast::<GitRefcount>().as_ptr()) });
@@ -312,7 +316,7 @@ fn publish_races() {
     });
     assert!(results.windows(2).all(|w| w[0] == w[1]));
     assert_eq!(FREED.load(Ordering::SeqCst), n - 1);
-    let w = r.grafts.swap(ptr::null_mut(), Ordering::SeqCst);
+    let w = slot.swap(ptr::null_mut(), Ordering::SeqCst);
     // SAFETY: the winner, no longer published.
     drop(unsafe { Box::from_raw(w.cast::<GitRefcount>()) });
 }
@@ -339,23 +343,25 @@ fn set_owned_races_publish() {
     // SAFETY: all-zero is a valid `GitRepository`.
     let repo: Box<GitRepository> = unsafe { Box::<GitRepository>::new_zeroed().assume_init() };
     let r: &GitRepository = &repo;
+    let slot = AtomicPtr::<c_void>::new(ptr::null_mut());
+    let slot = &slot;
     let publishers = 3;
     let setters = 2;
     std::thread::scope(|s| {
         for _ in 0..publishers {
             s.spawn(move || {
-                let _ = r.publish(&r.grafts, make(), free);
+                let _ = r.publish(slot, make(), free);
             });
         }
         for _ in 0..setters {
             s.spawn(move || {
                 // SAFETY: a live refcounted object of ours; no thread uses a
                 // pointer read from the slot.
-                unsafe { r.set_owned(&r.grafts, Some(make()), free) };
+                unsafe { r.set_owned(slot, Some(make()), free) };
             });
         }
     });
-    let last = r.grafts.swap(ptr::null_mut(), Ordering::SeqCst);
+    let last = slot.swap(ptr::null_mut(), Ordering::SeqCst);
     assert!(!last.is_null());
     // SAFETY: the object left in the slot, live until `free` below.
     let rc = unsafe { handles::refcount(NonNull::new(last).unwrap()) };
