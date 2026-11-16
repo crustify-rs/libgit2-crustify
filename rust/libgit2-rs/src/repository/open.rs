@@ -25,7 +25,7 @@ const GIT_GITDIR_FILE: &CStr = c"gitdir";
 const GIT_FILE_CONTENT_PREFIX: &[u8] = b"gitdir:";
 const GIT_HEAD_FILE: &[u8] = b"HEAD";
 const GIT_OBJECTS_DIR: &[u8] = b"objects/";
-const GIT_REFS_DIR: &[u8] = b"refs/";
+use crate::refs::GIT_REFS_DIR;
 
 /// `GIT_REPO_VERSION_MAX`.
 pub(crate) const GIT_REPO_VERSION_MAX: i32 = 1;

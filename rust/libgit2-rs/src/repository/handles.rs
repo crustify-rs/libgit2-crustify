@@ -188,10 +188,7 @@ owner!(
     crate::refs::ffi::git_reference_free
 );
 
-/// `GIT_REFERENCE_DIRECT`.
-pub const GIT_REFERENCE_DIRECT: c_int = 1;
-/// `GIT_REFERENCE_SYMBOLIC`.
-pub const GIT_REFERENCE_SYMBOLIC: c_int = 2;
+pub use crate::refs::{GIT_REFERENCE_DIRECT, GIT_REFERENCE_SYMBOLIC};
 
 impl<'r> Reference<'r> {
     /// `git_reference_type`.

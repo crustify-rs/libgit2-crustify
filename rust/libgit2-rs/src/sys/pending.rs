@@ -288,10 +288,7 @@ pub mod l_revwalk {
         git_object;
     }
 
-    /// `GIT_OBJECT_ANY`.
-    pub const GIT_OBJECT_ANY: c_int = -2;
-    /// `GIT_OBJECT_COMMIT`.
-    pub const GIT_OBJECT_COMMIT: c_int = 1;
+    pub use crate::odb::{GIT_OBJECT_ANY, GIT_OBJECT_COMMIT};
 
     // The repository and commits are Rust types C sees as opaque; the
     // l-obj/l-refs symbols are also declared by other sections.

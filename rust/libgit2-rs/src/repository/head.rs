@@ -24,7 +24,7 @@ const GIT_REVERT_HEAD_REF: &CStr = c"REVERT_HEAD";
 const GIT_CHERRYPICK_HEAD_REF: &CStr = c"CHERRY_PICK_HEAD";
 const GIT_MERGE_MSG_FILE: &[u8] = b"MERGE_MSG";
 const GIT_BRANCH_DEFAULT: &[u8] = b"master";
-const GIT_REFS_HEADS_DIR: &[u8] = b"refs/heads/";
+use crate::refs::GIT_REFS_HEADS_DIR;
 
 use crate::odb::{GIT_OBJECT_ANY, GIT_OBJECT_COMMIT, GIT_OBJECT_TREE};
 

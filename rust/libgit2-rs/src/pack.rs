@@ -57,10 +57,8 @@ use crate::{git_assert, git_assert_arg, git_error_set};
 
 /// `GIT_OBJECT_INVALID`.
 pub const GIT_OBJECT_INVALID: c_int = -1;
-/// `GIT_OBJECT_COMMIT`.
-pub const GIT_OBJECT_COMMIT: c_int = 1;
-/// `GIT_OBJECT_TREE`.
-pub const GIT_OBJECT_TREE: c_int = 2;
+pub use crate::odb::GIT_OBJECT_COMMIT;
+pub use crate::odb::GIT_OBJECT_TREE;
 /// `GIT_OBJECT_BLOB`.
 pub const GIT_OBJECT_BLOB: c_int = 3;
 /// `GIT_OBJECT_TAG`.
