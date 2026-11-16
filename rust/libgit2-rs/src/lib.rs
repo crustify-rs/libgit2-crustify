@@ -15,11 +15,14 @@ pub mod util;
 pub mod buf;
 pub mod fs;
 pub mod hashmap_oid;
+pub mod index;
 pub mod oid;
 pub mod oidarray;
 pub mod parse;
 pub mod strarray;
+pub mod tree_cache;
 
+pub use index::{Index, IndexEntry, IndexTime, Stage};
 pub use oid::{Oid, OidShortener, OidType};
 pub use oidarray::OidArray;
 pub use strarray::StrArray;

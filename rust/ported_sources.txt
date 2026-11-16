@@ -41,3 +41,6 @@ src/util/varint.c
 src/libgit2/oid.c
 src/libgit2/oidarray.c
 src/libgit2/parse.c
+src/libgit2/index.c
+src/libgit2/index_map.c
+src/libgit2/tree-cache.c

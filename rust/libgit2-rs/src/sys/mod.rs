@@ -4,3 +4,8 @@ pub mod hashmap_str;
 pub mod pcre2;
 pub mod pending;
 pub mod zlib;
+pub mod diff;
+pub mod path;
+pub mod pathspec;
+pub mod submodule;
+pub mod ignore;

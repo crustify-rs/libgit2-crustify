@@ -1,0 +1,820 @@
+//! The safe Rust API of the index (PORTING.md §5), over the same Rust as
+//! the C ABI.
+//!
+//! [`Index`] is a reference to a `git_index` (as `git_index *`): `Clone`
+//! takes another reference (C refcounts the index) and `Drop` gives it up.
+//! The clones are the same index, so it is neither `Send` nor `Sync`.
+//! Entries come out as owned copies ([`IndexEntry`]), so no borrow of the
+//! index's memory survives a later call (which may free it). Callbacks are
+//! closures; they may use a clone of the index (the operations hold no
+//! borrow while they run). A panic in a callback stops the operation with
+//! an error of class `GIT_ERROR_INTERNAL`.
+
+use core::ffi::{CStr, c_char, c_int, c_uint};
+use core::marker::PhantomData;
+use std::ffi::CString;
+use std::path::Path;
+
+use super::foreign::{GitStrArrayBuf, Paths};
+use super::{
+    EntryPtr, GIT_INDEX_ADD_CHECK_PATHSPEC, GIT_INDEX_ADD_DISABLE_PATHSPEC_MATCH, GIT_INDEX_ADD_FORCE,
+    GIT_INDEX_CAPABILITY_FROM_OWNER, GIT_INDEX_CAPABILITY_IGNORE_CASE, GIT_INDEX_CAPABILITY_NO_FILEMODE,
+    GIT_INDEX_CAPABILITY_NO_SYMLINKS, GIT_INDEX_STAGE_ANY, GitIndex, GitIndexEntry, GitIndexTime, IndexPtr,
+    epath, ops,
+};
+use crate::oid::{Oid, OidType};
+use crate::util::errors::{Error, ErrorCode};
+
+type Result<T> = core::result::Result<T, Error>;
+
+/// The rich error of a failed operation (its code and the thread's
+/// message).
+fn err(code: ErrorCode) -> Error {
+    Error::from(code)
+}
+
+/// A status as a result.
+fn check(code: c_int) -> Result<()> {
+    if code < 0 { Err(err(ErrorCode::from_raw(code).unwrap_or(ErrorCode::GENERIC))) } else { Ok(()) }
+}
+
+/// A path as the index's bytes.
+fn path_bytes(p: &Path) -> &[u8] {
+    use std::os::unix::ffi::OsStrExt;
+    p.as_os_str().as_bytes()
+}
+
+/// A NUL-terminated copy of `b`; a NUL within is an invalid path.
+fn c_path(b: &[u8]) -> Result<CString> {
+    CString::new(b).map_err(|_| Error::new(ErrorCode::GENERIC, crate::ErrorClass::INDEX, format!("invalid path: '{}'", String::from_utf8_lossy(b))))
+}
+
+/// An index stage.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Stage {
+    /// Any stage (`GIT_INDEX_STAGE_ANY`), for lookups.
+    Any,
+    /// A normal staged file (`GIT_INDEX_STAGE_NORMAL`).
+    Normal,
+    /// The ancestor side of a conflict.
+    Ancestor,
+    /// The "ours" side of a conflict.
+    Ours,
+    /// The "theirs" side of a conflict.
+    Theirs,
+}
+
+impl Stage {
+    /// The C value.
+    pub fn raw(self) -> c_int {
+        match self {
+            Stage::Any => GIT_INDEX_STAGE_ANY,
+            Stage::Normal => 0,
+            Stage::Ancestor => 1,
+            Stage::Ours => 2,
+            Stage::Theirs => 3,
+        }
+    }
+
+    /// The stage of a C value (0 to 3).
+    pub fn from_raw(v: c_int) -> Option<Stage> {
+        match v {
+            0 => Some(Stage::Normal),
+            1 => Some(Stage::Ancestor),
+            2 => Some(Stage::Ours),
+            3 => Some(Stage::Theirs),
+            -1 => Some(Stage::Any),
+            _ => None,
+        }
+    }
+}
+
+/// An index entry's time (`git_index_time`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct IndexTime {
+    /// Seconds (truncated to 32 bits).
+    pub seconds: i32,
+    /// Nanoseconds.
+    pub nanoseconds: u32,
+}
+
+impl From<GitIndexTime> for IndexTime {
+    fn from(t: GitIndexTime) -> IndexTime {
+        IndexTime {
+            seconds: t.seconds,
+            nanoseconds: t.nanoseconds,
+        }
+    }
+}
+
+impl From<IndexTime> for GitIndexTime {
+    fn from(t: IndexTime) -> GitIndexTime {
+        GitIndexTime {
+            seconds: t.seconds,
+            nanoseconds: t.nanoseconds,
+        }
+    }
+}
+
+/// An index entry (`git_index_entry`), owned.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct IndexEntry {
+    /// The change time.
+    pub ctime: IndexTime,
+    /// The modification time.
+    pub mtime: IndexTime,
+    /// `dev`.
+    pub dev: u32,
+    /// `ino`.
+    pub ino: u32,
+    /// The file mode.
+    pub mode: u32,
+    /// `uid`.
+    pub uid: u32,
+    /// `gid`.
+    pub gid: u32,
+    /// The size (truncated to 32 bits).
+    pub file_size: u32,
+    /// The object id.
+    pub id: Oid,
+    /// `flags`: the name length, stage, `EXTENDED` and `VALID` bits.
+    pub flags: u16,
+    /// `flags_extended`.
+    pub flags_extended: u16,
+    /// The path (bytes).
+    pub path: Vec<u8>,
+}
+
+impl IndexEntry {
+    /// An entry for `path` with mode `mode` and id `id`, the rest zero.
+    pub fn new(path: impl Into<Vec<u8>>, mode: u32, id: Oid) -> IndexEntry {
+        IndexEntry {
+            ctime: IndexTime::default(),
+            mtime: IndexTime::default(),
+            dev: 0,
+            ino: 0,
+            mode,
+            uid: 0,
+            gid: 0,
+            file_size: 0,
+            id,
+            flags: 0,
+            flags_extended: 0,
+            path: path.into(),
+        }
+    }
+
+    /// The stage (`git_index_entry_stage`).
+    pub fn stage(&self) -> Stage {
+        Stage::from_raw(c_int::from((self.flags & super::GIT_INDEX_ENTRY_STAGEMASK) >> super::GIT_INDEX_ENTRY_STAGESHIFT))
+            .unwrap_or(Stage::Normal)
+    }
+
+    /// Set the stage (`GIT_INDEX_ENTRY_STAGE_SET`); `Any` sets 3, as C's
+    /// mask of -1.
+    pub fn set_stage(&mut self, stage: Stage) {
+        let s = (stage.raw() & 3) as u16;
+        self.flags = (self.flags & !super::GIT_INDEX_ENTRY_STAGEMASK) | (s << super::GIT_INDEX_ENTRY_STAGESHIFT);
+    }
+
+    /// Whether the entry is a side of a conflict
+    /// (`git_index_entry_is_conflict`).
+    pub fn is_conflict(&self) -> bool {
+        !matches!(self.stage(), Stage::Normal)
+    }
+
+    /// A copy of an index entry.
+    fn from_ptr(e: EntryPtr) -> IndexEntry {
+        // SAFETY: the callers pass a live entry of an index, which nothing
+        // writes during the copy (no foreign call).
+        let (r, path) = unsafe { ((*e.as_ptr()).entry, epath(e)) };
+        IndexEntry {
+            ctime: r.ctime.into(),
+            mtime: r.mtime.into(),
+            dev: r.dev,
+            ino: r.ino,
+            mode: r.mode,
+            uid: r.uid,
+            gid: r.gid,
+            file_size: r.file_size,
+            id: r.id,
+            flags: r.flags,
+            flags_extended: r.flags_extended,
+            path: path.to_vec(),
+        }
+    }
+
+    /// The C entry over `path` (a NUL-terminated copy of `self.path`).
+    fn raw(&self, path: &CStr) -> GitIndexEntry {
+        GitIndexEntry {
+            ctime: self.ctime.into(),
+            mtime: self.mtime.into(),
+            dev: self.dev,
+            ino: self.ino,
+            mode: self.mode,
+            uid: self.uid,
+            gid: self.gid,
+            file_size: self.file_size,
+            id: self.id,
+            flags: self.flags,
+            flags_extended: self.flags_extended,
+            path: path.as_ptr(),
+        }
+    }
+}
+
+/// The capabilities of an index (`git_index_capability_t`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct IndexCapability {
+    /// Paths compare without case.
+    pub ignore_case: bool,
+    /// File modes are not trusted.
+    pub no_filemode: bool,
+    /// Symbolic links are not supported.
+    pub no_symlinks: bool,
+}
+
+impl IndexCapability {
+    fn raw(self) -> c_int {
+        (if self.ignore_case { GIT_INDEX_CAPABILITY_IGNORE_CASE } else { 0 })
+            | (if self.no_filemode { GIT_INDEX_CAPABILITY_NO_FILEMODE } else { 0 })
+            | (if self.no_symlinks { GIT_INDEX_CAPABILITY_NO_SYMLINKS } else { 0 })
+    }
+}
+
+/// Flags of [`Index::add_all`] (`git_index_add_option_t`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct IndexAddOption {
+    /// Add ignored files too (`GIT_INDEX_ADD_FORCE`).
+    pub force: bool,
+    /// Match the pathspec exactly (`GIT_INDEX_ADD_DISABLE_PATHSPEC_MATCH`).
+    pub disable_pathspec_match: bool,
+    /// Fail on a pathspec naming an ignored file
+    /// (`GIT_INDEX_ADD_CHECK_PATHSPEC`).
+    pub check_pathspec: bool,
+}
+
+impl IndexAddOption {
+    fn raw(self) -> c_uint {
+        (if self.force { GIT_INDEX_ADD_FORCE } else { 0 })
+            | (if self.disable_pathspec_match { GIT_INDEX_ADD_DISABLE_PATHSPEC_MATCH } else { 0 })
+            | (if self.check_pathspec { GIT_INDEX_ADD_CHECK_PATHSPEC } else { 0 })
+    }
+}
+
+/// The three sides of a conflict.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ConflictEntries {
+    /// The common ancestor.
+    pub ancestor: Option<IndexEntry>,
+    /// Our side.
+    pub our: Option<IndexEntry>,
+    /// Their side.
+    pub their: Option<IndexEntry>,
+}
+
+impl ConflictEntries {
+    fn from_ptrs(s: [Option<EntryPtr>; 3]) -> ConflictEntries {
+        ConflictEntries {
+            ancestor: s[0].map(IndexEntry::from_ptr),
+            our: s[1].map(IndexEntry::from_ptr),
+            their: s[2].map(IndexEntry::from_ptr),
+        }
+    }
+}
+
+/// A resolve-undo record (`git_index_reuc_entry`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReucEntry {
+    /// The path.
+    pub path: Vec<u8>,
+    /// The ancestor's, ours and theirs modes (0: absent).
+    pub mode: [u32; 3],
+    /// Their ids.
+    pub oid: [Oid; 3],
+}
+
+/// A conflict-name record (`git_index_name_entry`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NameEntry {
+    /// The ancestor's path.
+    pub ancestor: Option<Vec<u8>>,
+    /// Our path.
+    pub ours: Option<Vec<u8>>,
+    /// Their path.
+    pub theirs: Option<Vec<u8>>,
+}
+
+/// The next conflict from position `*cur` (`git_index_conflict_next`).
+pub(crate) fn conflict_next(index: &mut GitIndex, cur: &mut usize) -> Option<[Option<EntryPtr>; 3]> {
+    while *cur < index.entries.len() {
+        index.sort();
+        let e = index.entry_at(*cur)?;
+        // SAFETY: a live entry of the index.
+        if unsafe { super::estage(e) } > 0 {
+            let (sides, len) = index.conflict_at(*cur);
+            *cur += len;
+            return Some(sides);
+        }
+        *cur += 1;
+    }
+    None
+}
+
+/// An index (`git_index`).
+pub struct Index {
+    ptr: IndexPtr,
+    _not_send: PhantomData<*mut ()>,
+}
+
+impl core::fmt::Debug for Index {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Index").field("entries", &self.len()).finish()
+    }
+}
+
+impl Clone for Index {
+    fn clone(&self) -> Index {
+        self.ptr.incref();
+        Index {
+            ptr: self.ptr,
+            _not_send: PhantomData,
+        }
+    }
+}
+
+impl Drop for Index {
+    fn drop(&mut self) {
+        // SAFETY: this handle's reference, given up.
+        unsafe { self.ptr.decref() };
+    }
+}
+
+/// A callback result: 0 to go on, > 0 to skip the path, < 0 to stop.
+pub type MatchResult = i32;
+
+impl Index {
+    fn from_ptr(ptr: IndexPtr) -> Index {
+        Index {
+            ptr,
+            _not_send: PhantomData,
+        }
+    }
+
+    /// The index, borrowed for code that makes no foreign call.
+    fn with<R>(&self, f: impl FnOnce(&mut GitIndex) -> R) -> R {
+        // SAFETY: `f` is this module's code over the index's own methods,
+        // which make no foreign call and do not reenter this API; no other
+        // reference is live (the index is not shared across threads, and
+        // no borrow outlives a call).
+        f(unsafe { self.ptr.get() })
+    }
+
+    /// An in-memory index (`git_index_new`) for SHA-1 ids.
+    pub fn new() -> Result<Index> {
+        Self::new_with(OidType::Sha1)
+    }
+
+    /// An in-memory index for `oid_type` ids (`git_index_new_ext`).
+    pub fn new_with(oid_type: OidType) -> Result<Index> {
+        ops::open_ext(None, oid_type).map(Index::from_ptr).map_err(err)
+    }
+
+    /// The index at `path`, read if it exists (`git_index_open`).
+    pub fn open(path: &Path) -> Result<Index> {
+        Self::open_with(path, OidType::Sha1)
+    }
+
+    /// [`open`](Self::open) for `oid_type` ids (`git_index_open_ext`).
+    pub fn open_with(path: &Path, oid_type: OidType) -> Result<Index> {
+        let p = c_path(path_bytes(path))?;
+        ops::open_ext(Some(&p), oid_type).map(Index::from_ptr).map_err(err)
+    }
+
+    /// The file's path (`git_index_path`), or `None` in memory.
+    pub fn path(&self) -> Option<Vec<u8>> {
+        self.with(|i| i.file_path().map(|p| p.to_bytes().to_vec()))
+    }
+
+    /// The id type.
+    pub fn oid_type(&self) -> OidType {
+        self.with(|i| i.oid_kind())
+    }
+
+    /// Re-read the file (`git_index_read`); with `force`, even when it did
+    /// not change, discarding unsaved changes.
+    pub fn read(&mut self, force: bool) -> Result<()> {
+        ops::read(self.ptr, force).map(|_| ()).map_err(err)
+    }
+
+    /// Write the index to its file (`git_index_write`).
+    pub fn write(&mut self) -> Result<()> {
+        ops::write(self.ptr).map_err(err)
+    }
+
+    /// The number of entries (`git_index_entrycount`).
+    pub fn len(&self) -> usize {
+        self.with(|i| i.entries.len())
+    }
+
+    /// Whether there is no entry.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Whether there are unsaved changes.
+    pub fn is_dirty(&self) -> bool {
+        self.with(|i| i.dirty())
+    }
+
+    /// The entry at `n`, in the index's order (`git_index_get_byindex`).
+    pub fn get(&self, n: usize) -> Option<IndexEntry> {
+        self.with(|i| {
+            i.sort();
+            i.entry_at(n).map(IndexEntry::from_ptr)
+        })
+    }
+
+    /// The entry at `path` and `stage` (`git_index_get_bypath`).
+    pub fn get_path(&self, path: &[u8], stage: Stage) -> Option<IndexEntry> {
+        self.with(|i| i.get_bypath(path, stage.raw()).map(IndexEntry::from_ptr))
+    }
+
+    /// The position of the first entry at `path` (`git_index_find`).
+    pub fn find(&self, path: &[u8]) -> Option<usize> {
+        self.with(|i| i.find_path(path))
+    }
+
+    /// The position of the first entry under `prefix`
+    /// (`git_index_find_prefix`).
+    pub fn find_prefix(&self, prefix: &[u8]) -> Option<usize> {
+        self.with(|i| i.find_prefix(prefix))
+    }
+
+    /// All the entries, as of now (`git_index_iterator`).
+    pub fn iter(&self) -> IndexEntries {
+        match ops::snapshot_new(self.ptr) {
+            Ok(snap) => IndexEntries {
+                index: Some(self.ptr),
+                snap,
+                cur: 0,
+            },
+            Err(_) => IndexEntries {
+                index: None,
+                snap: crate::util::vector::GitVector::new(),
+                cur: 0,
+            },
+        }
+    }
+
+    /// Add (or replace) a copy of `entry` (`git_index_add`); its id must
+    /// exist in the repository's object database, if the index has one.
+    pub fn add(&mut self, entry: &IndexEntry) -> Result<()> {
+        let p = c_path(&entry.path)?;
+        ops::add(self.ptr, &entry.raw(&p), p.as_bytes()).map_err(err)
+    }
+
+    /// Write `data` as a blob and add an entry for it
+    /// (`git_index_add_from_buffer`).
+    pub fn add_from_buffer(&mut self, entry: &IndexEntry, data: &[u8]) -> Result<()> {
+        let p = c_path(&entry.path)?;
+        ops::add_from_buffer(self.ptr, &entry.raw(&p), p.as_bytes(), Ok(data)).map_err(err)
+    }
+
+    /// Add the working-directory file at `path` (`git_index_add_bypath`).
+    pub fn add_path(&mut self, path: &Path) -> Result<()> {
+        let p = c_path(path_bytes(path))?;
+        ops::add_bypath(self.ptr, &p).map_err(err)
+    }
+
+    /// Remove the entry at `path` and `stage` (`git_index_remove`).
+    pub fn remove(&mut self, path: &[u8], stage: Stage) -> Result<()> {
+        self.with(|i| i.remove(path, stage.raw())).map_err(err)
+    }
+
+    /// Remove `path` and move its conflict to the REUC
+    /// (`git_index_remove_bypath`).
+    pub fn remove_path(&mut self, path: &[u8]) -> Result<()> {
+        self.with(|i| ops::remove_bypath(i, path)).map_err(err)
+    }
+
+    /// Remove the entries under directory `dir` at `stage`
+    /// (`git_index_remove_directory`).
+    pub fn remove_dir(&mut self, dir: &[u8], stage: Stage) -> Result<()> {
+        let mut pfx = crate::util::str::GitStr::new();
+        pfx.sets(dir).map_err(err)?;
+        crate::util::fs_path::to_dir(&mut pfx).map_err(err)?;
+        self.with(|i| i.remove_directory(pfx.as_bytes(), stage.raw())).map_err(err)
+    }
+
+    /// Remove every entry (`git_index_clear`).
+    pub fn clear(&mut self) -> Result<()> {
+        self.with(|i| i.clear()).map_err(err)
+    }
+
+    /// Run a pathspec operation with an optional closure.
+    fn with_callback<F>(
+        pathspecs: &[&[u8]],
+        cb: Option<F>,
+        op: impl FnOnce(Paths<'_>, Option<ops::MatchedPathCb<'_>>) -> c_int,
+    ) -> Result<()>
+    where
+        F: FnMut(&[u8], Option<&[u8]>) -> MatchResult,
+    {
+        let owned: Vec<CString> = pathspecs.iter().map(|p| c_path(p)).collect::<Result<_>>()?;
+        let refs: Vec<&CStr> = owned.iter().map(|c| c.as_c_str()).collect();
+        let arr = GitStrArrayBuf::new(&refs);
+        let has_cb = cb.is_some();
+        let mut cb = cb;
+        let mut adapter = |p: *const c_char, m: *const c_char| -> c_int {
+            let Some(f) = cb.as_mut() else { return 0 };
+            // the strings are copied before the closure runs (it may change
+            // the index, and free what they point to)
+            // SAFETY: the operation passes a string and a NULL or string,
+            // live for the call.
+            let (path, matched) = unsafe {
+                (
+                    crate::util::export::cstr_bytes(p).to_vec(),
+                    crate::util::export::cstr(m).map(|m| m.to_bytes().to_vec()),
+                )
+            };
+            f(&path, matched.as_deref())
+        };
+        let cbr: Option<ops::MatchedPathCb<'_>> = if has_cb { Some(&mut adapter) } else { None };
+        check(op(Paths::from_ptrs(&arr), cbr))
+    }
+
+    /// Add the working-directory files matching `pathspecs`
+    /// (`git_index_add_all`); `cb` sees each path and the pattern it
+    /// matched.
+    pub fn add_all<F>(&mut self, pathspecs: &[&[u8]], flags: IndexAddOption, cb: Option<F>) -> Result<()>
+    where
+        F: FnMut(&[u8], Option<&[u8]>) -> MatchResult,
+    {
+        let ix = self.ptr;
+        Self::with_callback(pathspecs, cb, |paths, cb| ops::add_all(ix, paths, flags.raw(), cb))
+    }
+
+    /// Update the entries matching `pathspecs` from the working directory
+    /// (`git_index_update_all`).
+    pub fn update_all<F>(&mut self, pathspecs: &[&[u8]], cb: Option<F>) -> Result<()>
+    where
+        F: FnMut(&[u8], Option<&[u8]>) -> MatchResult,
+    {
+        let ix = self.ptr;
+        Self::with_callback(pathspecs, cb, |paths, cb| ops::update_all(ix, paths, cb))
+    }
+
+    /// Remove the entries matching `pathspecs` (`git_index_remove_all`).
+    pub fn remove_all<F>(&mut self, pathspecs: &[&[u8]], cb: Option<F>) -> Result<()>
+    where
+        F: FnMut(&[u8], Option<&[u8]>) -> MatchResult,
+    {
+        let ix = self.ptr;
+        Self::with_callback(pathspecs, cb, |paths, cb| ops::remove_all(ix, paths, cb))
+    }
+
+    /// Whether any entry is a conflict (`git_index_has_conflicts`).
+    pub fn has_conflicts(&self) -> bool {
+        self.with(|i| i.has_conflicts())
+    }
+
+    /// Add a conflict (`git_index_conflict_add`): the given sides, at
+    /// stages 1 to 3, replacing the paths' stage-0 entries.
+    pub fn conflict_add(
+        &mut self,
+        ancestor: Option<&IndexEntry>,
+        ours: Option<&IndexEntry>,
+        theirs: Option<&IndexEntry>,
+    ) -> Result<()> {
+        let paths: Vec<Option<CString>> =
+            [ancestor, ours, theirs].iter().map(|e| e.map(|e| c_path(&e.path)).transpose()).collect::<Result<_>>()?;
+        let raws: Vec<Option<GitIndexEntry>> = [ancestor, ours, theirs]
+            .iter()
+            .zip(&paths)
+            .map(|(e, p)| e.zip(p.as_ref()).map(|(e, p)| e.raw(p)))
+            .collect();
+        let side = |i: usize| raws[i].as_ref().zip(paths[i].as_ref()).map(|(r, p)| (r, p.as_bytes()));
+        ops::conflict_add(self.ptr, [side(0), side(1), side(2)]).map_err(err)
+    }
+
+    /// The conflict at `path` (`git_index_conflict_get`).
+    pub fn conflict_get(&self, path: &[u8]) -> Result<ConflictEntries> {
+        self.with(|i| i.conflict_get(path).map(ConflictEntries::from_ptrs)).map_err(err)
+    }
+
+    /// Remove the conflict at `path` (`git_index_conflict_remove`).
+    pub fn conflict_remove(&mut self, path: &[u8]) -> Result<()> {
+        self.with(|i| i.conflict_remove(Some(path))).map_err(err)
+    }
+
+    /// Remove every conflict (`git_index_conflict_cleanup`).
+    pub fn conflict_cleanup(&mut self) -> Result<()> {
+        self.with(|i| i.conflict_remove(None)).map_err(err)
+    }
+
+    /// The conflicts (`git_index_conflict_iterator`).
+    pub fn conflicts(&self) -> IndexConflicts {
+        IndexConflicts {
+            index: self.clone(),
+            cur: 0,
+        }
+    }
+
+    /// The on-disk format version to write (`git_index_version`).
+    pub fn version(&self) -> u32 {
+        self.with(|i| i.version)
+    }
+
+    /// Set the version to write, 2 to 4 (`git_index_set_version`).
+    pub fn set_version(&mut self, version: u32) -> Result<()> {
+        if !(super::INDEX_VERSION_NUMBER_LB..=super::INDEX_VERSION_NUMBER_UB).contains(&version) {
+            let code = crate::git_error_set!(crate::ErrorClass::INDEX, "invalid version number");
+            return Err(err(code));
+        }
+        self.with(|i| i.version = version);
+        Ok(())
+    }
+
+    /// The capabilities (`git_index_caps`).
+    pub fn caps(&self) -> IndexCapability {
+        self.with(|i| IndexCapability {
+            ignore_case: i.ignore_case(),
+            no_filemode: i.distrust_filemode(),
+            no_symlinks: i.no_symlinks(),
+        })
+    }
+
+    /// Set the capabilities (`git_index_set_caps`).
+    pub fn set_caps(&mut self, caps: IndexCapability) -> Result<()> {
+        ops::set_caps(self.ptr, caps.raw()).map_err(err)
+    }
+
+    /// Take the capabilities from the owning repository's configuration
+    /// (`GIT_INDEX_CAPABILITY_FROM_OWNER`).
+    pub fn set_caps_from_owner(&mut self) -> Result<()> {
+        ops::set_caps(self.ptr, GIT_INDEX_CAPABILITY_FROM_OWNER).map_err(err)
+    }
+
+    /// The checksum of the file last read or written (the id type's hash
+    /// size).
+    pub fn checksum(&self) -> Vec<u8> {
+        self.with(|i| i.checksum[..i.oid_kind().size()].to_vec())
+    }
+
+    /// Make the entries those of `other`, keeping the cached stat data of
+    /// the unchanged ones (`git_index_read_index`).
+    pub fn read_index(&mut self, other: &Index) -> Result<()> {
+        ops::read_index(self.ptr, other.ptr).map_err(err)
+    }
+
+    /// The number of REUC records.
+    pub fn reuc_len(&self) -> usize {
+        self.with(|i| i.reuc.len())
+    }
+
+    /// The REUC record at `n` (`git_index_reuc_get_byindex`).
+    pub fn reuc_get(&self, n: usize) -> Option<ReucEntry> {
+        self.with(|i| {
+            let r = i.reuc.get(n)?.cast::<super::GitIndexReucEntry>();
+            // SAFETY: a live REUC entry of the index.
+            unsafe {
+                Some(ReucEntry {
+                    path: super::reuc_path(r).to_vec(),
+                    mode: (*r).mode,
+                    oid: (*r).oid,
+                })
+            }
+        })
+    }
+
+    /// The position of the REUC record at `path` (`git_index_reuc_find`).
+    pub fn reuc_find(&self, path: &[u8]) -> Option<usize> {
+        self.with(|i| i.reuc_find(path).ok())
+    }
+
+    /// Add a REUC record (`git_index_reuc_add`): a mode of 0 is an absent
+    /// side.
+    pub fn reuc_add(&mut self, path: &[u8], modes: [u32; 3], ids: [Oid; 3]) -> Result<()> {
+        let modes = modes.map(|m| m as c_int);
+        self.with(|i| i.reuc_add(path, modes, ids.map(Some))).map_err(err)
+    }
+
+    /// Remove the REUC record at `n` (`git_index_reuc_remove`).
+    pub fn reuc_remove(&mut self, n: usize) -> Result<()> {
+        self.with(|i| i.reuc_remove(n)).map_err(err)
+    }
+
+    /// Remove every REUC record (`git_index_reuc_clear`).
+    pub fn reuc_clear(&mut self) {
+        self.with(|i| i.reuc_clear())
+    }
+
+    /// The number of conflict-name records.
+    pub fn name_len(&self) -> usize {
+        self.with(|i| i.names.len())
+    }
+
+    /// The conflict-name record at `n` (`git_index_name_get_byindex`).
+    pub fn name_get(&self, n: usize) -> Option<NameEntry> {
+        self.with(|i| {
+            i.sort_names();
+            let ne = i.names.get(n)?.cast::<super::GitIndexNameEntry>();
+            // SAFETY: a live name entry of the index; its fields NULL or
+            // strings.
+            unsafe {
+                let f = |p| crate::util::export::cstr(p).map(|s: &CStr| s.to_bytes().to_vec());
+                Some(NameEntry {
+                    ancestor: f((*ne).ancestor),
+                    ours: f((*ne).ours),
+                    theirs: f((*ne).theirs),
+                })
+            }
+        })
+    }
+
+    /// Add a conflict-name record (`git_index_name_add`): at least two of
+    /// the paths.
+    pub fn name_add(&mut self, ancestor: Option<&[u8]>, ours: Option<&[u8]>, theirs: Option<&[u8]>) -> Result<()> {
+        let n = [ancestor, ours, theirs].iter().filter(|x| x.is_some()).count();
+        if n < 2 {
+            let code = crate::util::errors::assert_arg_failed(
+                "(ancestor && ours) || (ancestor && theirs) || (ours && theirs)",
+            );
+            return Err(err(code));
+        }
+        let c = |x: Option<&[u8]>| x.map(c_path).transpose();
+        let (a, o, t) = (c(ancestor)?, c(ours)?, c(theirs)?);
+        self.with(|i| i.name_add(a.as_deref(), o.as_deref(), t.as_deref())).map_err(err)
+    }
+
+    /// Remove every conflict-name record (`git_index_name_clear`).
+    pub fn name_clear(&mut self) {
+        self.with(|i| i.name_clear())
+    }
+
+    /// The data of the unknown extension `signature`
+    /// (`git_index_extension_lookup`).
+    pub fn extension(&self, signature: &[u8; 4]) -> Option<Vec<u8>> {
+        let key = &signature[..signature.iter().position(|&b| b == 0).unwrap_or(4)];
+        self.with(|i| i.extension_find(key).ok().map(|p| i.extensions[p].data.clone()))
+    }
+
+    /// Add (or replace) an extension, written back with the index
+    /// (`git_index_extension_add`).
+    pub fn extension_add(&mut self, signature: &[u8; 4], data: &[u8]) -> Result<()> {
+        if data.len() >= u32::MAX as usize {
+            return Err(err(crate::util::errors::assert_failed("data_len < UINT32_MAX")));
+        }
+        self.with(|i| i.extension_add(*signature, data)).map_err(err)
+    }
+
+    /// Remove an extension (`git_index_extension_remove`).
+    pub fn extension_remove(&mut self, signature: &[u8; 4]) -> Result<()> {
+        let key = &signature[..signature.iter().position(|&b| b == 0).unwrap_or(4)];
+        self.with(|i| i.extension_remove(key)).map_err(err)
+    }
+}
+
+/// The entries of an index as they were when it was made, as owned copies
+/// (`git_index_iterator`, over a snapshot).
+pub struct IndexEntries {
+    index: Option<IndexPtr>,
+    snap: crate::util::vector::GitVector,
+    cur: usize,
+}
+
+impl Iterator for IndexEntries {
+    type Item = IndexEntry;
+
+    fn next(&mut self) -> Option<IndexEntry> {
+        self.index?;
+        let e = self.snap.get(self.cur)?;
+        self.cur += 1;
+        // a snapshot's entries stay live: the index defers their removal
+        Some(IndexEntry::from_ptr(super::as_entry(e)))
+    }
+}
+
+impl Drop for IndexEntries {
+    fn drop(&mut self) {
+        if let Some(ix) = self.index.take() {
+            ops::snapshot_release(core::mem::take(&mut self.snap), ix);
+        }
+    }
+}
+
+/// The conflicts of an index (`git_index_conflict_iterator`).
+pub struct IndexConflicts {
+    index: Index,
+    cur: usize,
+}
+
+impl Iterator for IndexConflicts {
+    type Item = ConflictEntries;
+
+    fn next(&mut self) -> Option<ConflictEntries> {
+        let cur = &mut self.cur;
+        self.index.with(|i| conflict_next(i, cur).map(ConflictEntries::from_ptrs))
+    }
+}
