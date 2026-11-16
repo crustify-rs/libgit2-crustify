@@ -35,7 +35,7 @@ use crate::util::futils::{
 };
 use crate::util::posix::{self, GitMap};
 use crate::util::str::GitStr;
-use crate::util::zstream::{GitZstream, ZStream, ZstreamKind};
+use crate::util::zstream::{GitZstream, ZStream, ZstreamKind, ZstreamPtr};
 use crate::{git_assert, git_assert_arg, git_error_set};
 
 /// `MAX_HEADER_LEN`.
@@ -372,14 +372,16 @@ impl Loose {
         let header_len = crate::odb::format_object_header(&mut header, data.len() as u64, type_)?;
         let mut final_path = self.tmp_path().map_err(|_| ErrorCode::GENERIC)?;
         let mut fbuf = OpenFilebuf::new();
-        if fbuf
-            .0
-            .open(
+        // SAFETY: the filebuf is boxed: it does not move until cleaned up
+        // (by the commit or `OpenFilebuf`'s drop).
+        if unsafe {
+            fbuf.0.open(
                 final_path.as_bytes(),
                 self.filebuf_flags(),
                 self.options.file_mode,
             )
-            .is_err()
+        }
+        .is_err()
         {
             return Err(ErrorCode::GENERIC);
         }
@@ -633,7 +635,8 @@ fn read_header_loose(loc: &GitStr) -> Result<ObjHdr> {
         }
         Ok(hdr)
     })();
-    let _ = posix::close(fd);
+    // SAFETY: the descriptor opened above, closed once.
+    let _ = unsafe { posix::close(fd) };
     r
 }
 
@@ -701,10 +704,23 @@ struct ReadState {
 // tied to a thread); the stream's input points into the mapping.
 unsafe impl Send for ReadState {}
 
+impl ReadState {
+    /// The inflate stream, reached through one raw pointer (zstream's
+    /// rule), re-derived for each use from the state, which the stream's
+    /// table holds in place (it never moves).
+    fn zs(&mut self) -> ZstreamPtr<'_> {
+        // SAFETY: the stream is valid (zeroed or initialized), reached only
+        // through this pointer while `self` is borrowed, from the thread
+        // holding the state's lock, and never moved (the state lives in
+        // the table's allocation).
+        unsafe { ZstreamPtr::new(&raw mut self.zstream) }
+    }
+}
+
 impl Drop for ReadState {
     fn drop(&mut self) {
         // `git_futils_mmap_free`, `git_zstream_free`.
-        self.zstream.free();
+        self.zs().free();
         // SAFETY: the mapping is this state's (or empty); the stream that
         // read it is freed.
         unsafe { posix::munmap(&mut self.map) };
@@ -747,7 +763,7 @@ ffibox::impl_cvtable! {
                 // SAFETY: the input is the mapping, alive in the state and
                 // never written; `buffer` is writable for `chunk` bytes
                 // (C's contract) and distinct from both.
-                if let Err(e) = unsafe { st.zstream.get_output(buffer, &mut chunk) } {
+                if let Err(e) = unsafe { st.zs().get_output(buffer, &mut chunk) } {
                     return e.raw();
                 }
                 total += chunk;
@@ -779,8 +795,12 @@ impl Loose {
                 .get_mut()
                 .unwrap_or_else(PoisonError::into_inner);
             self.tmp_path().is_ok_and(|p| {
-                f.0.open(p.as_bytes(), self.filebuf_flags(), self.options.file_mode)
-                    .is_ok()
+                // SAFETY: the filebuf is boxed in the stream's state: it does
+                // not move until cleaned up (commit or the stream's release).
+                unsafe {
+                    f.0.open(p.as_bytes(), self.filebuf_flags(), self.options.file_mode)
+                }
+                .is_ok()
                     && f.0.write(&hdr[..hdrlen]).is_ok()
             })
         };
@@ -808,8 +828,20 @@ impl Loose {
                 start_read: 0,
             }),
         });
-        let mut ctx = ctx;
-        ctx.init(crate::odb::oid_algorithm(self.oid_type()))?;
+        let (ctx, _) = Box::into_raw_with_allocator(ctx);
+        // Freed unless handed to the stream.
+        struct Ctx(*mut crate::util::hash::HashCtx);
+        impl Drop for Ctx {
+            fn drop(&mut self) {
+                // SAFETY: a context of ours (`git__allocator`), freed once.
+                unsafe { alloc::free(self.0.cast()) }
+            }
+        }
+        let ctx = Ctx(ctx);
+        // SAFETY: a fresh context of ours, written in place.
+        unsafe {
+            crate::util::hash::HashCtx::init_raw(ctx.0, crate::odb::oid_algorithm(self.oid_type()))
+        }?;
         let mut t = t;
         let hdr = {
             let st = t
@@ -819,7 +851,7 @@ impl Loose {
                 .unwrap_or_else(PoisonError::into_inner);
             st.map = futils::mmap_ro_file(c_path(&path)?)?;
             // In place: the stream does not move until freed.
-            st.zstream.init(ZstreamKind::Inflate as c_int)?;
+            st.zs().init(ZstreamKind::Inflate as c_int)?;
             // SAFETY: the mapping's bytes, read only, alive while the state
             // is (the stream's input points into them until it is freed).
             let data = unsafe { map_bytes(st.map.data, st.map.len) };
@@ -830,7 +862,7 @@ impl Loose {
             }
         };
         let p = t.into_c();
-        let (ctx, _) = Box::into_raw_with_allocator(ctx);
+        let ctx = core::mem::ManuallyDrop::new(ctx).0;
         // SAFETY: the fresh table's fields, before C sees it.
         unsafe { (*p.as_ptr()).hash_ctx = ctx.cast::<c_void>() };
         Ok((p, hdr.size, hdr.type_))
@@ -859,17 +891,17 @@ fn readstream_packlike(st: &mut ReadState, data: &[u8]) -> Result<ObjHdr> {
         ));
     }
     let rest = &data[head_len..];
-    st.zstream.set_input_raw(rest.as_ptr().cast(), rest.len());
+    st.zs().set_input(rest.as_ptr().cast(), rest.len());
     Ok(hdr)
 }
 
 /// `loose_backend__readstream_standard`.
 fn readstream_standard(st: &mut ReadState, data: &[u8]) -> Result<ObjHdr> {
-    st.zstream.set_input_raw(data.as_ptr().cast(), data.len());
+    st.zs().set_input(data.as_ptr().cast(), data.len());
     let mut head = [0u8; MAX_HEADER_LEN];
     let mut init = head.len();
     // SAFETY: the input is the mapping (alive, unwritten); `head` a local.
-    unsafe { st.zstream.get_output(head.as_mut_ptr(), &mut init) }?;
+    unsafe { st.zs().get_output(head.as_mut_ptr(), &mut init) }?;
     let (hdr, head_len) = parse_header(&head[..init])?;
     if !type_is_valid(hdr.type_) {
         return Err(git_error_set!(

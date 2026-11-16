@@ -3,7 +3,9 @@
 //! directories, lock files.
 //!
 //! Paths are bytes (`&[u8]`; on Unix, `std::os::unix::ffi::OsStrExt`
-//! converts a `Path`), read as C strings: a NUL ends them. Failures are
+//! converts a `Path`). A path with a NUL byte is refused (an `INVALID`
+//! error, or `false`), as `std` does, rather than cut at the NUL as the C
+//! would read it; `basename` and `root` read up to the NUL. Failures are
 //! [`Error`]s with libgit2's code, class and message.
 //!
 //! ```
@@ -60,6 +62,21 @@ pub use crate::util::futils::{
     GIT_RMDIR_SKIP_ROOT as RMDIR_SKIP_ROOT, MkdirCache, MkdirPerfdata,
 };
 
+/// Whether `path` has a NUL byte: the safe API refuses such paths (C would
+/// read them up to the NUL), as `std` does.
+fn has_nul(path: &[u8]) -> bool {
+    memchr::memchr(0, path).is_some()
+}
+
+/// The error for a path with a NUL byte (`GIT_ERROR_INVALID`).
+fn nul_error() -> Error {
+    crate::util::errors::set_str(
+        crate::util::errors::ErrorClass::INVALID,
+        "path contains a NUL byte",
+    )
+    .into()
+}
+
 /// The result type of this module.
 pub type Result<T> = core::result::Result<T, Error>;
 
@@ -80,6 +97,9 @@ fn with_str(f: impl FnOnce(&mut GitStr) -> crate::util::errors::Result<()>) -> R
 /// The directory part of `path` (`"."` without a slash, `"/"` for the
 /// root), as POSIX `dirname`.
 pub fn dirname(path: &[u8]) -> Result<Vec<u8>> {
+    if has_nul(path) {
+        return Err(nul_error());
+    }
     with_str(|s| fs_path::dirname_r(Some(s), Some(fs_path::c_str(path))).map(|_| ()))
 }
 
@@ -98,6 +118,9 @@ pub fn root(path: &[u8]) -> Option<usize> {
 
 /// `path` with a trailing slash (unless it has one or is empty).
 pub fn to_dir(path: &[u8]) -> Result<Vec<u8>> {
+    if has_nul(path) {
+        return Err(nul_error());
+    }
     with_str(|s| {
         s.puts(path)?;
         fs_path::to_dir(s)
@@ -107,6 +130,12 @@ pub fn to_dir(path: &[u8]) -> Result<Vec<u8>> {
 /// `path` joined to `base` unless it is rooted, and the offset of the root
 /// in the result.
 pub fn join_unrooted(path: &[u8], base: Option<&[u8]>) -> Result<(Vec<u8>, usize)> {
+    if has_nul(path) {
+        return Err(nul_error());
+    }
+    if base.is_some_and(has_nul) {
+        return Err(nul_error());
+    }
     let mut s = GitStr::new();
     let r = fs_path::join_unrooted(&mut s, fs_path::c_str(path), base.map(fs_path::c_str))?;
     Ok((bytes(&s), r.max(0) as usize))
@@ -114,6 +143,9 @@ pub fn join_unrooted(path: &[u8], base: Option<&[u8]>) -> Result<(Vec<u8>, usize
 
 /// `path` with runs of slashes collapsed.
 pub fn squash_slashes(path: &[u8]) -> Result<Vec<u8>> {
+    if has_nul(path) {
+        return Err(nul_error());
+    }
     with_str(|s| {
         s.puts(path)?;
         fs_path::squash_slashes(s);
@@ -124,6 +156,9 @@ pub fn squash_slashes(path: &[u8]) -> Result<Vec<u8>> {
 /// `path` with its `.` and `..` components resolved, without backing up
 /// over the root (or a URL's `scheme://`).
 pub fn resolve_relative(path: &[u8]) -> Result<Vec<u8>> {
+    if has_nul(path) {
+        return Err(nul_error());
+    }
     with_str(|s| {
         s.puts(path)?;
         fs_path::resolve_relative(s, 0)
@@ -132,6 +167,12 @@ pub fn resolve_relative(path: &[u8]) -> Result<Vec<u8>> {
 
 /// `relpath` applied to `base` (joined, then resolved).
 pub fn apply_relative(base: &[u8], relpath: &[u8]) -> Result<Vec<u8>> {
+    if has_nul(base) {
+        return Err(nul_error());
+    }
+    if has_nul(relpath) {
+        return Err(nul_error());
+    }
     with_str(|s| {
         s.puts(base)?;
         fs_path::apply_relative(s, relpath)
@@ -140,6 +181,12 @@ pub fn apply_relative(base: &[u8], relpath: &[u8]) -> Result<Vec<u8>> {
 
 /// `path` relative to `parent` (`../` for each extra level of `parent`).
 pub fn make_relative(path: &[u8], parent: &[u8]) -> Result<Vec<u8>> {
+    if has_nul(path) {
+        return Err(nul_error());
+    }
+    if has_nul(parent) {
+        return Err(nul_error());
+    }
     with_str(|s| {
         s.puts(path)?;
         fs_path::make_relative(s, parent)
@@ -155,38 +202,65 @@ pub fn common_dirlen(one: &[u8], two: &[u8]) -> usize {
 /// The canonical absolute path of `path` (joined to `base` first when it
 /// is relative); the path must exist.
 pub fn prettify(path: &[u8], base: Option<&[u8]>) -> Result<Vec<u8>> {
+    if has_nul(path) {
+        return Err(nul_error());
+    }
+    if base.is_some_and(has_nul) {
+        return Err(nul_error());
+    }
     let p = fs_path::to_cstring(path);
     with_str(|s| fs_path::prettify(s, &p, base))
 }
 
 /// [`prettify`] with a trailing slash.
 pub fn prettify_dir(path: &[u8], base: Option<&[u8]>) -> Result<Vec<u8>> {
+    if has_nul(path) {
+        return Err(nul_error());
+    }
+    if base.is_some_and(has_nul) {
+        return Err(nul_error());
+    }
     let p = fs_path::to_cstring(path);
     with_str(|s| fs_path::prettify_dir(s, &p, base))
 }
 
 /// `%XX` escapes decoded (invalid ones are kept as they are).
 pub fn percent_decode(input: &[u8]) -> Result<Vec<u8>> {
+    if has_nul(input) {
+        return Err(nul_error());
+    }
     with_str(|s| fs_path::percent_decode(s, input))
 }
 
 /// Whether `url` is a local `file://` URL.
 pub fn is_local_file_url(url: &[u8]) -> bool {
+    if has_nul(url) {
+        return false;
+    }
     fs_path::is_local_file_url(url)
 }
 
 /// The local path of a `file://` URL.
 pub fn from_url(url: &[u8]) -> Result<Vec<u8>> {
+    if has_nul(url) {
+        return Err(nul_error());
+    }
     with_str(|s| fs_path::fromurl(s, url))
 }
 
 /// The local path of a `file://` URL, or the path itself.
 pub fn from_url_or_path(url_or_path: &[u8]) -> Result<Vec<u8>> {
+    if has_nul(url_or_path) {
+        return Err(nul_error());
+    }
     with_str(|s| fs_path::from_url_or_path(s, url_or_path))
 }
 
 /// Whether `path` is valid under `flags` (the `REJECT_*` constants).
 pub fn is_valid(path: &[u8], flags: u32) -> bool {
+    if has_nul(path) {
+        return false;
+    }
     fs_path::is_valid(path, flags)
 }
 
@@ -243,41 +317,65 @@ pub fn walk_up<E>(
 
 /// Whether `path` exists.
 pub fn exists(path: &[u8]) -> bool {
+    if has_nul(path) {
+        return false;
+    }
     fs_path::exists(&fs_path::to_cstring(path))
 }
 
 /// Whether `path` is a directory (following symlinks).
 pub fn is_dir(path: &[u8]) -> bool {
+    if has_nul(path) {
+        return false;
+    }
     fs_path::isdir(&fs_path::to_cstring(path))
 }
 
 /// Whether `path` is a regular file (following symlinks).
 pub fn is_file(path: &[u8]) -> bool {
+    if has_nul(path) {
+        return false;
+    }
     fs_path::isfile(&fs_path::to_cstring(path))
 }
 
 /// Whether `path` is a symlink.
 pub fn is_link(path: &[u8]) -> bool {
+    if has_nul(path) {
+        return false;
+    }
     fs_path::islink(&fs_path::to_cstring(path))
 }
 
 /// Whether `path` is an empty directory.
 pub fn is_empty_dir(path: &[u8]) -> bool {
+    if has_nul(path) {
+        return false;
+    }
     fs_path::is_empty_dir(&fs_path::to_cstring(path))
 }
 
 /// Whether `path` is owned by the current user.
 pub fn owner_is_current_user(path: &[u8]) -> Result<bool> {
+    if has_nul(path) {
+        return Err(nul_error());
+    }
     Ok(fs_path::owner_is_current_user(&fs_path::to_cstring(path))?)
 }
 
 /// The path of `executable` (searched in `$PATH` unless it has a slash).
 pub fn find_executable(executable: &[u8]) -> Result<Vec<u8>> {
+    if has_nul(executable) {
+        return Err(nul_error());
+    }
     with_str(|s| fs_path::find_executable(s, executable))
 }
 
 /// The contents of the file `path`.
 pub fn read(path: &[u8]) -> Result<Vec<u8>> {
+    if has_nul(path) {
+        return Err(nul_error());
+    }
     let p = fs_path::to_cstring(path);
     with_str(|s| futils::readbuffer(s, &p))
 }
@@ -285,6 +383,9 @@ pub fn read(path: &[u8]) -> Result<Vec<u8>> {
 /// The contents of `path` if their SHA-256 differs from `checksum`, which
 /// is then updated; `None` when unchanged.
 pub fn read_if_changed(path: &[u8], checksum: &mut [u8; 32]) -> Result<Option<Vec<u8>>> {
+    if has_nul(path) {
+        return Err(nul_error());
+    }
     let p = fs_path::to_cstring(path);
     let mut s = GitStr::new();
     let mut updated = 0;
@@ -295,6 +396,9 @@ pub fn read_if_changed(path: &[u8], checksum: &mut [u8; 32]) -> Result<Option<Ve
 /// Write `data` to `path` (created or truncated, with `mode`; 0 for
 /// 0666), `fsync`ing it and its directory if `fsync`.
 pub fn write(path: &[u8], data: &[u8], mode: mode_t, fsync: bool) -> Result<()> {
+    if has_nul(path) {
+        return Err(nul_error());
+    }
     let flags =
         libc::O_CREAT | libc::O_TRUNC | libc::O_WRONLY | if fsync { futils::O_FSYNC } else { 0 };
     Ok(futils::writebuffer(
@@ -307,6 +411,9 @@ pub fn write(path: &[u8], data: &[u8], mode: mode_t, fsync: bool) -> Result<()> 
 
 /// Make the directory `path` as `flags` (`MKDIR_*`) say.
 pub fn mkdir(path: &[u8], mode: mode_t, flags: u32) -> Result<()> {
+    if has_nul(path) {
+        return Err(nul_error());
+    }
     Ok(futils::mkdir(path, mode, flags)?)
 }
 
@@ -318,6 +425,12 @@ pub fn mkdir_relative(
     flags: u32,
     cache: Option<&mut dyn MkdirCache>,
 ) -> Result<MkdirPerfdata> {
+    if has_nul(relative) {
+        return Err(nul_error());
+    }
+    if base.is_some_and(has_nul) {
+        return Err(nul_error());
+    }
     let mut opts = futils::MkdirOpts {
         cache,
         perfdata: MkdirPerfdata::default(),
@@ -328,16 +441,31 @@ pub fn mkdir_relative(
 
 /// Make `path` and its parents.
 pub fn mkdir_p(path: &[u8], mode: mode_t) -> Result<()> {
+    if has_nul(path) {
+        return Err(nul_error());
+    }
     Ok(futils::mkdir_r(path, mode)?)
 }
 
 /// Remove `path` (under `base`) as `flags` (`RMDIR_*`) say.
 pub fn rmdir_r(path: &[u8], base: Option<&[u8]>, flags: u32) -> Result<()> {
+    if has_nul(path) {
+        return Err(nul_error());
+    }
+    if base.is_some_and(has_nul) {
+        return Err(nul_error());
+    }
     Ok(futils::rmdir_r(path, base, flags)?)
 }
 
 /// Copy the file `from` to a new file `to`.
 pub fn copy(from: &[u8], to: &[u8], mode: mode_t) -> Result<()> {
+    if has_nul(from) {
+        return Err(nul_error());
+    }
+    if has_nul(to) {
+        return Err(nul_error());
+    }
     Ok(futils::cp(
         &fs_path::to_cstring(from),
         &fs_path::to_cstring(to),
@@ -347,11 +475,23 @@ pub fn copy(from: &[u8], to: &[u8], mode: mode_t) -> Result<()> {
 
 /// Copy the tree `from` to `to` as `flags` (`CPDIR_*`) say.
 pub fn copy_tree(from: &[u8], to: &[u8], flags: u32, dirmode: mode_t) -> Result<()> {
+    if has_nul(from) {
+        return Err(nul_error());
+    }
+    if has_nul(to) {
+        return Err(nul_error());
+    }
     Ok(futils::cp_r(from, to, flags, dirmode)?)
 }
 
 /// Rename `from` to `to`, making `to`'s directories.
 pub fn rename_with_path(from: &[u8], to: &[u8], dirmode: mode_t) -> Result<()> {
+    if has_nul(from) {
+        return Err(nul_error());
+    }
+    if has_nul(to) {
+        return Err(nul_error());
+    }
     Ok(futils::mv_withpath(
         &fs_path::to_cstring(from),
         &fs_path::to_cstring(to),
@@ -362,6 +502,9 @@ pub fn rename_with_path(from: &[u8], to: &[u8], dirmode: mode_t) -> Result<()> {
 /// The paths of the entries of the directory `path`, each without its
 /// first `prefix_len` bytes, in the directory's order.
 pub fn read_dir(path: &[u8], prefix_len: usize) -> Result<Vec<Vec<u8>>> {
+    if has_nul(path) {
+        return Err(nul_error());
+    }
     let mut out = Vec::new();
     for e in DirIter::new(path, 0)? {
         let e = e?;
@@ -377,12 +520,16 @@ impl Filestamp {
     /// Refresh the stamp from `path`: `Ok(true)` if the file changed,
     /// `Ok(false)` if not, an error if it cannot be stat'ed.
     pub fn check(&mut self, path: &[u8]) -> Result<bool> {
-        match futils::filestamp_check(Some(self), &fs_path::to_cstring(path)) {
+        if has_nul(path) {
+            return Err(nul_error());
+        }
+        let p = fs_path::to_cstring(path);
+        match futils::filestamp_check(Some(self), &p) {
             0 => Ok(false),
             1 => Ok(true),
-            e => Err(crate::util::errors::ErrorCode::from_raw(e)
-                .expect("non-zero")
-                .into()),
+            // C sets no error here: say why, rather than report whatever
+            // error the thread last had.
+            _ => Err(fs_path::set_error(crate::util::errors::errno(), path, "stat").into()),
         }
     }
 }
@@ -419,6 +566,9 @@ pub struct DirIter {
 impl DirIter {
     /// Open the directory `path` (`flags`: `GIT_FS_PATH_DIR_*`).
     pub fn new(path: &[u8], flags: u32) -> Result<DirIter> {
+        if has_nul(path) {
+            return Err(nul_error());
+        }
         let mut inner = GitFsPathDiriter::new();
         inner.init(path, flags)?;
         Ok(DirIter { inner, done: false })

@@ -160,6 +160,11 @@ static void test_oid_format(void)
  * they stay alive and unchanged), so each id gets its own buffer. */
 static char shorten_bufs[40000][41];
 
+static int fromhex_digit(char c)
+{
+	return git__fromhex(c);
+}
+
 static void test_shorten(void)
 {
 	git_oid_shorten *os;
@@ -209,6 +214,53 @@ static void test_shorten(void)
 	git_oid_shorten_free(os);
 	printf("new big %p\n", (void *)git_oid_shorten_new((size_t)1 << 40));
 	show_err("new big", 0);
+}
+
+/* Adds that fail mid-walk (an invalid digit right after a leaf was
+ * reached), then more adds through the node they stopped at. C leaves that
+ * node holding its tail pointer, read as children: pointer bits for digits
+ * 0..3 (undefined, DEFECTS.md), zero for 4..f. So the later ids that go
+ * through it use a digit 4..f there. */
+static char mid_bufs[160][41];
+
+static void test_shorten_mid_walk(void)
+{
+	int t, i, k, j;
+	for (t = 0; t < 300; t++) {
+		git_oid_shorten *os = git_oid_shorten_new(0);
+		char prefix[41];
+		int nb = 0, plen = -1;
+		for (i = 0; i < 150; i++) {
+			char *b = mid_bufs[nb++];
+			for (j = 0; j < 40; j++)
+				b[j] = "0123456789abcdef"[rnd() % (t % 3 == 0 ? 16 : 3)];
+			b[40] = '\0';
+			if (plen >= 0 && strncmp(b, prefix, (size_t)plen) == 0 && fromhex_digit(b[plen]) < 4)
+				b[plen] = "456789abcdef"[rnd() % 12];
+			if (i == 20 + t % 30 && plen < 0) {
+				/* a failing add: a known id's first k digits, then 'x' */
+				k = 1 + (int)(rnd() % 4);
+				memcpy(prefix, mid_bufs[rnd() % (unsigned)(nb - 1)], (size_t)k);
+				prefix[k] = '\0';
+				memcpy(b, prefix, (size_t)k);
+				b[k] = (rnd() % 2) ? 'x' : '\0';
+				b[k + 1] = '\0';
+				plen = k;
+				/* ids added before may continue with 0..3 there: re-adding
+				 * them is not done below */
+			}
+			{
+				int rc = git_oid_shorten_add(os, b);
+				if (rc < 0) {
+					const git_error *e = git_error_last();
+					printf("mid %d %d [%s] rc=%d %s\n", t, i, b, rc, e->message);
+					git_error_clear();
+				} else if (i % 10 == 0 || i == 20 + t % 30 + 1)
+					printf("mid %d %d rc=%d\n", t, i, rc);
+			}
+		}
+		git_oid_shorten_free(os);
+	}
 }
 
 static void test_oidarray(void)
@@ -420,6 +472,7 @@ int main(void)
 	test_oid_parse();
 	test_oid_format();
 	test_shorten();
+	test_shorten_mid_walk();
 	test_oidarray();
 	test_utf8();
 	test_varint();

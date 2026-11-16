@@ -166,7 +166,9 @@ unsafe fn slots<'a, T>(p: *const T, n: usize) -> &'a [MaybeUninit<T>] {
 /// `GIT_HASHMAP_STRUCT(name, K, V)`, with an optional field `X` before the
 /// members.
 ///
-/// Invariant: `n_buckets` is 0 (and the pointers NULL) or a power of two
+/// Invariant: `n_buckets` is 0 (`flags` NULL; `keys`/`vals` NULL, or arrays
+/// left by a grow that failed halfway, which the next grow reallocates and
+/// `dispose` frees) or a power of two
 /// ≥ 4 with `flags` an array of `flagsize(n_buckets)` words, and `keys` (and
 /// `vals`, unless `V` is zero-sized, when it stays NULL) arrays of at least
 /// `n_buckets` slots, all from `git__allocator` and owned by the map; a
@@ -870,7 +872,7 @@ pub fn str_hash(s: &[u8]) -> u32 {
 /// NUL-terminated string that lives for `'a`. Hash `git_hashmap_str_hash`,
 /// equality `strcmp`.
 #[repr(transparent)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy)]
 pub struct CStrKey<'a>(NonNull<c_char>, PhantomData<&'a CStr>);
 
 // SAFETY: a shared reference to an immutable string.
@@ -918,6 +920,22 @@ impl<'a> CStrKey<'a> {
 impl core::fmt::Debug for CStrKey<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         core::fmt::Debug::fmt(self.as_c_str(), f)
+    }
+}
+
+/// By content (`strcmp`), as the maps compare keys.
+impl PartialEq for CStrKey<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.key_eq(other)
+    }
+}
+
+impl Eq for CStrKey<'_> {}
+
+/// By content, consistent with `PartialEq`.
+impl core::hash::Hash for CStrKey<'_> {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.as_c_str().hash(state);
     }
 }
 

@@ -662,8 +662,8 @@ fn write_i64(out: &mut [u8], v: i64) -> usize {
 /// `git_oid_algorithm`.
 pub(crate) fn oid_algorithm(t: git_oid_t) -> c_int {
     match OidType::from_raw(t) {
-        Some(OidType::Sha1) => hash::HashAlgorithm::Sha1.raw(),
-        Some(OidType::Sha256) => hash::HashAlgorithm::Sha256.raw(),
+        Some(OidType::Sha1) => hash::raw_algorithm::SHA1,
+        Some(OidType::Sha256) => hash::raw_algorithm::SHA256,
         None => 0,
     }
 }
@@ -1845,15 +1845,14 @@ impl GitOdb {
             .map_err(|_| errors::oom())?;
         let (ctx, _) = Box::into_raw_with_allocator(ctx);
         let r = (|| {
-            // SAFETY: a fresh context.
-            unsafe { &mut *ctx }.init(oid_algorithm(self.options.oid_type))?;
+            // SAFETY: a fresh context of ours, written in place.
+            unsafe { HashCtx::init_raw(ctx, oid_algorithm(self.options.oid_type)) }?;
             let mut header = [0u8; 64];
             let hdrlen = format_object_header(&mut header, size, type_)?;
             // SAFETY: a fresh context, ours.
             let c = unsafe { &mut *ctx };
             // SAFETY: initialized above.
-            unsafe { c.hasher() }?.update(&header[..hdrlen]);
-            Ok(())
+            unsafe { c.hasher() }?.update(&header[..hdrlen])
         })();
         if let Err(e) = r {
             // SAFETY: ours, not handed out.

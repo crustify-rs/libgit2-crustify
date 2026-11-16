@@ -45,10 +45,9 @@ fn contains_key_iter<'a>(
 
 /// The exports of `strlist.c`.
 pub mod ffi {
-    use super::*;
     use crate::util::alloc;
     use crate::util::errors::{self, ErrorCode};
-    use crate::util::export::{barrier, cstr_bytes};
+    use crate::util::export::barrier;
     use crate::util::integer::alloc_add;
     use core::ffi::{CStr, c_char, c_int};
 
@@ -126,30 +125,37 @@ pub mod ffi {
         })
     }
 
-    /// The `len` strings at `strings`, without allocating (C does not).
+    /// `strncmp(a, b, n) == 0`, reading both strings byte by byte in C's
+    /// order: never past the first difference, a NUL, or `n` bytes.
     ///
     /// # Safety
     ///
-    /// `strings` is readable for `len` NUL-terminated strings, which stay
-    /// unwritten for `'a`.
-    unsafe fn list<'a>(
-        strings: *const *const c_char,
-        len: usize,
-    ) -> impl Iterator<Item = &'a CStr> {
-        (0..len).map(move |i| {
-            // SAFETY: `i < len`: within the caller's array.
-            let p = unsafe { strings.wrapping_add(i).read() };
-            // SAFETY: a NUL-terminated string.
-            unsafe { CStr::from_ptr(p) }
-        })
+    /// `a` and `b` are readable that far.
+    unsafe fn strneq_raw(a: *const c_char, b: *const c_char, n: usize) -> bool {
+        for i in 0..n {
+            // SAFETY: before the first difference or NUL, within `n`: the
+            // caller's contract.
+            let x = unsafe { a.wrapping_add(i).read() };
+            // SAFETY: as above.
+            let y = unsafe { b.wrapping_add(i).read() };
+            if x != y {
+                return false;
+            }
+            if x == 0 {
+                return true;
+            }
+        }
+        true
     }
 
-    /// `git_strlist_contains_prefix`.
+    /// `git_strlist_contains_prefix`: whether `strncmp(strings[i], str, n)`
+    /// is 0 for one of the strings.
     ///
     /// # Safety
     ///
-    /// `strings` is readable for `len` NUL-terminated strings; `str` is
-    /// readable up to `n` bytes or a NUL.
+    /// `strings` is readable for `len` pointers to NUL-terminated strings;
+    /// `str` is readable as `strncmp` reads it (up to the first difference
+    /// with each string, a NUL, or `n` bytes).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_strlist_contains_prefix(
         strings: *const *const c_char,
@@ -158,26 +164,23 @@ pub mod ffi {
         n: usize,
     ) -> bool {
         barrier(|| {
-            if len == 0 {
-                // C reads nothing
-                return false;
-            }
-            // SAFETY: `strnlen` reads at most `n` bytes and stops at a NUL.
-            let slen = unsafe { libc::strnlen(str, n) };
-            // SAFETY: those bytes are readable.
-            let s = unsafe { crate::util::export::bytes(str, slen) };
-            // SAFETY: the caller's contract.
-            let strings = unsafe { list(strings, len) };
-            contains_prefix_iter(strings, s, n)
+            (0..len).any(|i| {
+                // SAFETY: `i < len`: within the caller's array.
+                let p = unsafe { strings.wrapping_add(i).read() };
+                // SAFETY: the caller's contract.
+                unsafe { strneq_raw(p, str, n) }
+            })
         })
     }
 
-    /// `git_strlist_contains_key`.
+    /// `git_strlist_contains_key`: whether one of the strings starts with
+    /// the part of `key` before the first `delimiter` (false if none).
     ///
     /// # Safety
     ///
     /// `strings` as for [`git_strlist_contains_prefix`]; `key` is a
-    /// NUL-terminated string.
+    /// NUL-terminated string (read up to the delimiter, then as `strncmp`
+    /// reads it).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_strlist_contains_key(
         strings: *const *const c_char,
@@ -186,11 +189,21 @@ pub mod ffi {
         delimiter: c_char,
     ) -> bool {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            let strings = unsafe { list(strings, len) };
-            // SAFETY: a NUL-terminated string.
-            let key = unsafe { cstr_bytes(key) };
-            contains_key_iter(strings, key, delimiter as u8)
+            let mut n = 0;
+            loop {
+                // SAFETY: up to the delimiter or the NUL, within the string.
+                let c = unsafe { key.wrapping_add(n).read() };
+                if c == 0 {
+                    return false;
+                }
+                if c == delimiter {
+                    break;
+                }
+                n += 1;
+            }
+            // SAFETY: as for `git_strlist_contains_prefix`, with `n` bytes
+            // of `key` known readable.
+            unsafe { git_strlist_contains_prefix(strings, len, key, n) }
         })
     }
 

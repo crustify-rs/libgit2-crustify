@@ -165,6 +165,27 @@ static void bench_sha256_100b(void) { hash_small(GIT_HASH_ALGORITHM_SHA256, 100)
 static void bench_sha1_1k(void) { hash_small(GIT_HASH_ALGORITHM_SHA1, 1000); }
 static void bench_sha256_1k(void) { hash_small(GIT_HASH_ALGORITHM_SHA256, 1000); }
 
+/* The per-object pattern of indexer.c / odb.c: one context, 200000 x
+ * git_hash_init + update(len) + final. */
+static void hash_ctx(git_hash_algorithm_t a, size_t len)
+{
+	git_hash_ctx ctx;
+	unsigned char out[GIT_HASH_MAX_SIZE];
+	size_t i;
+	CHECK(git_hash_ctx_init(&ctx, a));
+	for (i = 0; i < 200000; i++) {
+		CHECK(git_hash_init(&ctx));
+		CHECK(git_hash_update(&ctx, g_random + (i % 4096) * 16, len));
+		CHECK(git_hash_final(out, &ctx));
+		g_sink += out[0];
+	}
+	git_hash_ctx_cleanup(&ctx);
+}
+static void bench_sha1_ctx_0(void) { hash_ctx(GIT_HASH_ALGORITHM_SHA1, 0); }
+static void bench_sha1_ctx_64(void) { hash_ctx(GIT_HASH_ALGORITHM_SHA1, 64); }
+static void bench_sha256_ctx_0(void) { hash_ctx(GIT_HASH_ALGORITHM_SHA256, 0); }
+static void bench_sha256_ctx_64(void) { hash_ctx(GIT_HASH_ALGORITHM_SHA256, 64); }
+
 static void bench_inflate_text(void)
 {
 	git_str out = GIT_STR_INIT;
@@ -297,6 +318,10 @@ int main(int argc, char **argv)
 	RUN("sha256_100b_x200k", setup_random, bench_sha256_100b);
 	RUN("sha1_1k_x200k", setup_random, bench_sha1_1k);
 	RUN("sha256_1k_x200k", setup_random, bench_sha256_1k);
+	RUN("sha1_ctx0_x200k", setup_random, bench_sha1_ctx_0);
+	RUN("sha1_ctx64_x200k", setup_random, bench_sha1_ctx_64);
+	RUN("sha256_ctx0_x200k", setup_random, bench_sha256_ctx_0);
+	RUN("sha256_ctx64_x200k", setup_random, bench_sha256_ctx_64);
 	RUN("inflate_text_16m", setup_inflate, bench_inflate_text);
 	RUN("inflate_stream_16m", setup_inflate, bench_inflate_stream);
 	RUN("inflate_small_x4000", setup_inflate, bench_inflate_small);
