@@ -1529,18 +1529,23 @@ impl GitStr {
         };
         self.sets(first)?;
         for s in &strings[1..] {
-            let common = self
-                .as_bytes()
-                .iter()
-                .zip(s.iter())
-                .take_while(|(a, b)| a == b)
-                .count();
-            self.truncate(common);
+            self.common_prefix_step(s);
             if self.size == 0 {
                 break;
             }
         }
         Ok(())
+    }
+
+    /// Truncate to the common prefix with `s`.
+    fn common_prefix_step(&mut self, s: &[u8]) {
+        let common = self
+            .as_bytes()
+            .iter()
+            .zip(s.iter())
+            .take_while(|(a, b)| a == b)
+            .count();
+        self.truncate(common);
     }
 
     // ----- text classification -----
@@ -2603,8 +2608,9 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the [module](self); `strings` is NULL or holds `count`
-    /// NUL-terminated strings.
+    /// See the [module](self); `strings` is NULL or holds `count` pointers
+    /// to NUL-terminated strings, of which only those up to the point where
+    /// the prefix becomes empty are read (as C reads them).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_common_prefix(
         buf: *mut GitStr,
@@ -2614,25 +2620,31 @@ pub mod ffi {
         barrier(|| {
             // SAFETY: the module's contract.
             let b = unsafe { s(buf) };
+            b.clear();
             if strings.is_null() || count == 0 {
-                b.clear();
                 return 0;
             }
-            // SAFETY: `count` NUL-terminated strings (NULL read as empty);
-            // copied if they overlap the buffer.
-            let ptrs = unsafe { core::slice::from_raw_parts(strings, count) };
-            let owned: Vec<Cow<'_, [u8]>> = ptrs
-                .iter()
-                .map(|&p| {
-                    // SAFETY: each entry is NULL (read as empty) or
-                    // NUL-terminated.
-                    let l = unsafe { cstr_bytes(p) }.len();
-                    // SAFETY: `l` readable bytes, as just measured.
-                    unsafe { seg(b, p, l) }
-                })
-                .collect();
-            let refs: Vec<&[u8]> = owned.iter().map(|c| &**c).collect();
-            status(b.common_prefix(&refs))
+            for i in 0..count {
+                if i > 0 && b.size == 0 {
+                    break;
+                }
+                // SAFETY: entry `i < count` is readable (and, as C reads
+                // them one by one, only those reached are).
+                let p = unsafe { strings.wrapping_add(i).read() };
+                // SAFETY: NULL (read as empty) or NUL-terminated.
+                let l = unsafe { cstr_bytes(p) }.len();
+                // SAFETY: `l` readable bytes, as just measured; copied if
+                // they overlap the buffer.
+                let sb = unsafe { seg(b, p, l) };
+                if i == 0 {
+                    if let Err(e) = b.sets(&sb) {
+                        return e.raw();
+                    }
+                } else {
+                    b.common_prefix_step(&sb);
+                }
+            }
+            0
         })
     }
 
