@@ -269,3 +269,51 @@ One entry per difference: component, what differs, why.
   where the C would read past the end of the buffer (`git_utf8_iterate`
   with `str_len == 0`, `git_decode_varint` on a truncated varint). The
   exports read exactly what the C read.
+
+## config (WP l-config)
+
+- **config_list: shared, immutable lists.** A backend's entries are built
+  once, then frozen in an `Arc` and never changed; an iterator shares the
+  list where C duplicated it (`git_config_list_dup`) for every iteration,
+  and a list's strings are interned once per file read. Entries are freed
+  when the last reference (backend, iterator or entry handed out) goes, as
+  with C's refcount. Not observable but in speed and memory.
+- **config_list: memory.** Entry names, values and the lists are in Rust's
+  allocator (C: `git__allocator`); `cl_alloc_limit` does not make reads
+  fail, and allocation failures of the `Arc`s and iterator tables (small,
+  fixed size) abort, where C reported -1. The variable-size buffers use
+  `try_reserve` and fail with the out-of-memory error.
+- **config: the backends of a config** are a copy-on-write list (an `Arc`
+  behind a mutex): lookups and iterators take the list as it is when they
+  start and keep its backends alive, and no lock is held while a backend
+  runs, so a backend may re-enter the config. C read the live vectors (an
+  iterator created before `git_config_add_backend` could see the new
+  backend, by index).
+- **config_file: the tree of files read** (stamps, checksums, includes) is
+  rebuilt and swapped in after each read instead of being edited in place,
+  and no lock is held while the includes are read (`onbranch:` reads
+  `HEAD`, which may read the repository's config and so this backend
+  again). As in C, a failed reload keeps the stamps and includes read so
+  far and the previous entries.
+- **config_file: concurrent writes.** Each slot takes `&self` (several
+  threads read a repository's config); the lock state of
+  `git_config_lock` is under a mutex. Concurrent writers to one backend
+  were a race in C; here each write is a whole read-modify-write of the
+  file under the file lock (`.lock`), the later writer failing with
+  `GIT_ELOCKED` as in C.
+- **config: tables.** The file, memory and snapshot backends and every
+  iterator are ffibox `CTable`s: a slot called while the table is being
+  released (C calling `free` from another thread during a slot) is refused
+  with `the config backend is being released` (C: use after free); a
+  panic in a slot returns -1 with the barrier's internal error.
+- **config: `git_config_backend.cfg`** is written when the backend is
+  added, as C does; nothing reads it.
+- **config: a memory backend opened twice** reads its text again into a
+  new list; C appended the entries to the list a second time.
+- **config: `git_config_unlock` without `git_config_lock`** on a file
+  backend fails as committing the C's zeroed `git_filebuf` fails (C wrote
+  into the zeroed filebuf first, which could crash).
+- **config: the safe API** (`Config`, `ConfigEntry`, `ConfigEntries`,
+  `ConfigLevel`, `ConfigBackend`) copies entries out (`ConfigEntry` owns its
+  strings) and rejects string arguments with an interior NUL; a Rust
+  `ConfigBackend`'s entries without a backend type get `"rust"`.

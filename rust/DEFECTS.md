@@ -442,3 +442,83 @@ DIVERGENCES.md).
 - C: subtracts `char_cnt` from `line_len` and `remain_len` unchecked; more
   than `line_len` wraps them and later reads run past the content.
 - Rust: advances by at most `line_len`.
+
+## config (WP l-config: config, config_file, config_parse, config_list, config_cache, config_mem, config_snapshot)
+
+### config_file: `onbranch:` leaves the result unset for a `HEAD` outside `refs/heads/`
+- C: `src/libgit2/config_file.c`, `conditional_match_onbranch`: when `HEAD`
+  is symbolic but its target does not start with `refs/heads/`, it returns
+  0 without writing `*matches`; `parse_conditional_include`'s `matches` is
+  uninitialized, so the include is read or not at random.
+- Trigger: `HEAD` → `refs/remotes/origin/main` and an
+  `[includeIf "onbranch:*"]` section.
+- Rust: no match (the include is not read).
+
+### config: `get_entry` hands out an uninitialized entry when a backend fails
+- C: `get_entry` sets `*out = &be->entry` for any result but
+  `GIT_ENOTFOUND`, with `be` uninitialized when the backend failed; with
+  `GET_NO_ERRORS` (`git_config__lookup_entry(..., true)`,
+  `git_config__get_*_force`) the error is cleared and the caller reads and
+  frees that pointer.
+- Trigger: a file backend whose refresh fails (e.g. an include that cannot
+  be parsed after the file changed), then `git_config__get_bool_force`.
+- Rust: `*out` is NULL; the forced getters return their fallback.
+
+### config_file, config: a pattern matched against a value-less variable
+- C: `write_on_variable` (`git_config_set_multivar`,
+  `git_config_delete_multivar`) and `multivar_iter_next`
+  (`git_config_multivar_iterator_new`, `git_config_get_multivar_foreach`)
+  call `git_regexp_match(preg, value)` with `value` NULL for a bare
+  variable (`[a]\n\tb\n`): `strlen(NULL)`, a crash.
+- Trigger: `[a]\n\tb\n` and `git_config_set_multivar(cfg, "a.b", ".*", "x")`
+  (the differential test avoids these writes for that reason).
+- Rust: a missing value is matched as `""` (so `^$` matches it).
+
+### config: NULL slots of a C backend or iterator are called
+- C: `config.c` calls `backend->get`, `->iterator`, `->snapshot`, …,
+  and `iter->next`/`->free` without checking them; a user's backend that
+  leaves one NULL crashes.
+- Rust: the call fails with `the config backend does not implement '<slot>'`
+  (class `GIT_ERROR_CONFIG`, -1); a NULL `free` is skipped.
+
+### config: a NULL foreach callback
+- C: `git_config_foreach_match` and `git_config_get_multivar_foreach`
+  call `cb` unchecked (`git_config_backend_foreach_match` asserts it):
+  crash at the first entry.
+- Rust: `invalid argument: 'cb'` at the first entry (an empty config
+  still succeeds, as in C).
+
+### config_list, config_snapshot: an entry without a backend type
+- C: `git_config_list_dup_entry` interns `entry->backend_type`
+  unconditionally: a user backend's entry with `backend_type` NULL makes
+  `git_config_list_add_string` hash NULL (crash), e.g. in a snapshot.
+- Rust: NULL is kept NULL.
+
+### config_mem: a `-c` value without `=`
+- C: `parse_values` computes `strchr(value, '=') - value` with a NULL
+  `strchr` result (undefined pointer arithmetic); in practice the name is
+  the whole string (`git__strndup` stops at its NUL) and the value NULL.
+- Rust: that result, without the arithmetic.
+
+### config: `git_config_set_writeorder` does not reorder the writers
+- C: it updates each backend's `write_order` and calls
+  `git_vector_sort(&config->writers)`, which does nothing because the
+  writers vector is flagged sorted (`git_vector_insert_sorted` keeps the
+  flag); later inserts binary-search the unsorted vector.
+- Trigger: two writable levels and `git_config_set_writeorder` with both,
+  in an order other than by level.
+- Rust: as C (same writer chosen; no libgit2 caller depends on the order:
+  `repository.c` passes one level).
+
+### config, config_file, config_snapshot: use before open, after a failed open, after free
+- C: a file or snapshot backend's `get` before `open` (or after a failed
+  `open`) dereferences its NULL list; an iterator of `git_config_iterator_new`
+  keeps a bare `git_config *` and reads freed vectors once the config is
+  freed.
+- Rust: the backend has no entries (`GIT_ENOTFOUND`); the iterator holds
+  the backends it iterates alive.
+
+### config_parse: the variable callback is optional but its strings leak
+- C: `git_config_parse` with a NULL `on_variable` leaks each variable's
+  name and value. (No caller passes NULL.)
+- Rust: nothing is allocated for the callback.
