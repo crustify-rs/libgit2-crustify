@@ -12,6 +12,7 @@ a shared harness (`src/bench.h`), and scripts:
 | `compare.sh <builddir-C> <builddir-Rust> [filter]` | runs both, interleaved, prints the comparison table |
 | `report.py` | TSV to JSON, and the aggregation/table of `compare.sh` |
 | `RESULTS.md` | recorded numbers (C-vs-C baseline, later C-vs-Rust) |
+| `baseline-c-vs-c.tsv` | `compare.tsv` of the recorded C-vs-C baseline |
 
 ## Running
 
@@ -43,13 +44,14 @@ Environment:
 | `BENCH_REPS` | 10 (`run.sh`), 3 per round (`compare.sh`) | timed repetitions |
 | `BENCH_WARMUP` | 2 (`run.sh`), 1 per round (`compare.sh`) | untimed warm-up runs |
 | `BENCH_ROUNDS` | 3 | `compare.sh`: rounds per build, interleaved |
+| `BENCH_INTERLEAVE` | `workload` | `compare.sh`: `workload` or `program` |
 | `BENCH_OUT` | `rust/bench/results/<kind>-<timestamp>` | output directory |
 | `BENCH_TMP` | `$TMPDIR` or `/tmp` | parent of the scratch directory |
 | `CC`, `BENCH_CFLAGS` | `clang`, `-O2 -g -std=c11 -Wall -Wextra ...` | compiler |
 
-A whole `run.sh` takes about 15 minutes with the defaults on the reference
-machine; `compare.sh` with the defaults about 40 (both under heavy machine
-load; see RESULTS.md).
+Durations on the reference machine (heavily loaded, see RESULTS.md):
+`run.sh` with 3 repetitions about 13 minutes (the defaults, 10 + 2, take
+about 3 times longer); `compare.sh` with its defaults 37 minutes.
 
 ## Method
 
@@ -57,8 +59,13 @@ For each workload the harness runs `prep()` once (untimed: collecting ids,
 loading inputs), then `BENCH_WARMUP` + `BENCH_REPS` runs; `setup()` and
 `teardown()` around each run are untimed (opening a fresh repository/odb,
 copying an index or config file to a scratch directory, deleting it). The
-timed `run()` is measured with `CLOCK_MONOTONIC`. Reported: the median and
-the minimum wall time, and every sample.
+timed `run()` is measured with `CLOCK_MONOTONIC` (wall time) and
+`CLOCK_PROCESS_CPUTIME_ID` (CPU time, user + system). Reported: the median
+and the minimum wall time, the median and minimum CPU time, and every
+sample. Wall time is the primary figure; CPU time is reported because on a
+shared, oversubscribed machine it is much less affected by preemption (see
+RESULTS.md). It does include system time, so I/O-bound workloads differ
+between the two.
 
 `run()` returns a 64-bit **check value** computed from the results of the
 work (counts, object ids, sizes, sampled content checksums, file contents
@@ -73,18 +80,23 @@ re-hashed). Check values do not depend on scratch paths, process ids or
 times.
 
 Output of a program: one TSV line per workload,
-`component workload reps median_ns min_ns ops check samples_ns`
-(`ops` = operations per run, for per-operation figures); `#` lines are
-comments. `run.sh` concatenates them into `results.tsv` and writes
+`component workload reps median_ns min_ns ops check samples_ns cpu_median_ns cpu_min_ns cpu_samples_ns`
+(`ops` = operations per run, for per-operation figures; samples
+comma-separated); `#` lines are comments. `run.sh` concatenates them into `results.tsv` and writes
 `results.json`. `compare.sh` keeps the raw outputs
 (`<label>/round<r>-<NN>-<program>.out`) and writes `compare.tsv`,
 `compare.json` and `table.txt`; the medians and minima it reports are over
 all samples of all rounds; `ratio` = B median / A median (Rust / C: below 1
-means the port is faster), `minrat` the same for minima.
+means the port is faster), `minrat` the same for minima, `cpurat` the same
+for median CPU time.
 
-Interleaving: for each program, `compare.sh` runs round 1 as A then B,
-round 2 as B then A, and so on, so slow drifts of the machine affect both
-builds alike.
+Interleaving: `compare.sh` runs every workload in its own process, A and B
+back to back (A first in odd positions, B first in even ones, alternating
+again in the next round), and repeats the whole sequence `BENCH_ROUNDS`
+times, so that bursts of load on the machine hit both builds alike. The cost
+is that each workload's `prep()` runs once per process.
+`BENCH_INTERLEAVE=program` interleaves whole programs instead (faster,
+noisier).
 
 Caches: "cold" workloads open a new repository/odb in `setup()`, so
 libgit2's object cache, odb cache and pack delta-base cache start empty; the
