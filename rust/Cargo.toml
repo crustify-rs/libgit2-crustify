@@ -2,6 +2,12 @@
 resolver = "3"
 members = ["libgit2-rs"]
 
+# zlib-rs, vendored with a fix (rust/vendor/zlib-rs, see `libgit2 patch` in
+# src/inflate.rs): an error found by the fast inflate path kept zlib's
+# message instead of "repeated call with bad state".
+[patch.crates-io]
+zlib-rs = { path = "vendor/zlib-rs" }
+
 [workspace.package]
 edition = "2024"
 rust-version = "1.100"
