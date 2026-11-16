@@ -218,6 +218,30 @@ impl GitVector {
         }
     }
 
+    /// The flags (`GIT_VECTOR_SORTED`, and those of users such as
+    /// `git_pqueue`).
+    #[inline]
+    pub fn flags(&self) -> u32 {
+        self.flags
+    }
+
+    /// Set more flags (`flags |= f`).
+    #[inline]
+    pub fn add_flags(&mut self, f: u32) {
+        self.flags |= f;
+    }
+
+    /// Lower `_alloc_size` to `n` without reallocating, as `git_pqueue_init`
+    /// does for a fixed-size queue; only when `length <= n <= capacity()`.
+    pub fn limit_capacity(&mut self, n: usize) -> bool {
+        if self.length <= n && n <= self.alloc_size {
+            self.alloc_size = n;
+            true
+        } else {
+            false
+        }
+    }
+
     /// The comparison function.
     #[inline]
     pub fn cmp_fn(&self) -> Option<VectorCmp> {

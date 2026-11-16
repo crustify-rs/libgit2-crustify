@@ -290,3 +290,142 @@ DIVERGENCES.md).
   until it is not negative: `"2147483647 months ago"` iterates 178 million
   times.
 - Rust: the same result, computed in one step.
+
+## Filesystem layer (WP u3: posix, unix/map, unix/realpath, futils, fs_path, filebuf)
+
+### posix: `p_getcwd` writes one byte past the buffer
+- C: `src/util/posix.c`, `p_getcwd` calls `git_fs_path_string_to_dir(buffer,
+  size)` with the buffer's size, but `git_fs_path_string_to_dir` appends the
+  slash when `strlen < size` and writes the NUL at `path[strlen + 1]`, i.e.
+  at `buffer[size]` when the directory is `size - 1` bytes long.
+- Trigger: `p_getcwd(buf, strlen(cwd) + 1)`.
+- Rust: the slash is appended only when it and the NUL fit the buffer
+  (`git_fs_path_string_to_dir` itself keeps the C's contract, which its
+  test relies on: `size + 1` writable bytes).
+
+### fs_path: `git_fs_path_diriter_init` with an empty path dereferences NULL
+- C: `git_fs_path_diriter_init` `memset`s the iterator (so `path.ptr` is
+  NULL), `git_str_puts(&path, "")` allocates nothing, and
+  `path_trim_slashes` calls `git_fs_path_root(NULL)`.
+- Trigger: `git_fs_path_diriter_init(&it, "", 0)` (or `git_fs_path_dirload`
+  of `""`).
+- Rust: fails with `could not open directory ''` (`GIT_ERROR_FILESYSTEM`),
+  -1, as the C meant to.
+
+### fs_path: `git_fs_path_diriter_next` on an iterator that was never opened
+- C: `readdir(NULL)`.
+- Trigger: `GIT_FS_PATH_DIRITER_INIT`, then `git_fs_path_diriter_next`.
+- Rust: -1 with `unrecoverable internal error: 'diriter->dir'`.
+
+### fs_path: `git_fs_path_dirload` leaks on failure
+- C: on `GIT_ASSERT(name_len > prefix_len)` and on `GIT_ERROR_CHECK_ALLOC`
+  it returns without `git_fs_path_diriter_free` (the `DIR` and the path
+  leak); when `git_vector_insert` fails the copy of the name leaks.
+- Rust: frees the iterator, and the copy, on every path.
+
+### fs_path: `git_fs_path_direach` never returns `GIT_ENOTFOUND`
+- C: it tests `errno == ENOENT` after `git_error_set(GIT_ERROR_OS, …)`,
+  which reset `errno` to 0: a missing directory gives -1.
+- Rust: the same (kept: callers may depend on -1).
+
+### fs_path: `ensure_error_set` is dead code
+- C: `git_fs_path_direach` and `git_fs_path_walk_up` set "filesystem callback
+  returned %d" only when `git_error_last()` is NULL or has no message,
+  which it never is since `git_error_last` returns the static "no error".
+- Rust: does not set it either.
+
+### fs_path: `git_fs_path_apply_relative` returns 1 on failure
+- C: `return git_str_joinpath(…) || git_fs_path_resolve_relative(…);` is 0
+  or 1; `filebuf.c`'s `resolve_symlink` tests `< 0`, so a failure (a symlink
+  target with `..` above the root) is ignored and the loop goes on.
+- Rust: the same (kept).
+
+### fs_path: `git_fs_path_diriter_filename` of an entry of `/`
+- C: the name starts at `parent_len + 1`, which skips its first byte when
+  the parent ends with a slash (only the root keeps one).
+- Rust: the same (kept).
+
+### futils: `git_futils_readbuffer_fd_full` reads every block at the start
+- C: `p_read(fd, buf->ptr, blocksize)` in the loop: for more than 10240
+  bytes, each block overwrites the previous ones and the result (of the
+  total size) ends with uninitialized bytes.
+- Trigger: `git_futils_readbuffer_fd_full` of a pipe or file of more than
+  10240 bytes (`git hash-object --stdin` in the CLI).
+- Rust: the blocks are kept in order: the result is the input.
+
+### filebuf: `git_filebuf_open_withsize` leaks on a late allocation failure
+- C: when `git__malloc` of `z_buf` (or of the lock path) fails it returns
+  -1 without cleaning up; the deflate stream is never ended (cleanup ends it
+  only when `z_buf` is set) and the other buffers leak unless the caller
+  calls `git_filebuf_cleanup`.
+- Rust: ends the stream and cleans up (a later `git_filebuf_cleanup` is a
+  no-op).
+
+### filebuf: `git_filebuf_commit` leaks the descriptor when `fsync` fails
+- C: `fd_is_open` is cleared before the `fsync`, so cleanup does not close.
+- Rust: closes it.
+
+### filebuf: a filebuf that was never opened
+- C: `git_filebuf_write`, `_flush`, `_reserve` and `_printf` on
+  `GIT_FILEBUF_INIT` call the NULL `write` function.
+- Rust: -1 with `unrecoverable internal error: 'file->write'`.
+
+### filebuf: `git_filebuf_printf` with `GIT_FILEBUF_DO_NOT_BUFFER`
+- C: formats into `buffer + buf_pos` with `buffer` NULL and a size of
+  `buf_size` (a write through NULL).
+- Rust: the message is written directly, as `git_filebuf_write` would.
+## u1 (pool, pqueue, utf8, varint, strlist, hashmap, oid, oidarray, parse)
+
+### pool: `alloc_size` overflows
+- C: `src/util/pool.c`, `alloc_size`: `item_size * count` and
+  `(count + 7) & ~7` wrap; `git_pool_strndup(pool, s, SIZE_MAX - 1)` passes
+  the `n == SIZE_MAX` guard, `n + 1` rounds to 0, and `memcpy` copies
+  `SIZE_MAX - 1` bytes into a 0-byte block.
+- Trigger: `git_pool_malloc(pool_of_8_byte_items, SIZE_MAX / 4)`.
+- Rust: checked arithmetic; NULL with the out-of-memory error.
+
+### oid: `git_oid_allocfmt` leaks for an unknown type
+- C: allocates `hex_size + 1` bytes before checking `hex_size`, and returns
+  NULL without freeing them when it is 0.
+- Rust: checks first; allocates nothing; NULL.
+
+### oid: `git_oid_shorten_add` writes out of bounds
+- C: when a leaf is split, the next digit of its stored tail is converted
+  with `git__fromhex` unchecked; a non-hex byte (the tail of an id that
+  had an invalid digit after the point where it became a leaf, or the NUL
+  of an id shorter than 40 digits) gives -1, and `children[-1]` is
+  written (heap overflow). The tail is also a pointer into the caller's
+  string, read later.
+- Trigger: add `"ab"`, then `"abcd"`; or add `"12x…"`, then `"12…"`.
+- Rust: a tail is a bounded slice of the id (at most 40 bytes, borrowed as
+  in C); a non-hex or missing tail digit fails the add with `unable to
+  shorten OID - invalid hex value` (class INVALID), the trie as C would
+  leave it before the bad write.
+
+### oid: `resize_trie` loses the trie on allocation failure
+- C: `self->nodes = git__reallocarray(self->nodes, …)` overwrites the
+  pointer with NULL (leak; the next add dereferences NULL).
+- Rust: the out-of-memory error; the set is unchanged.
+
+### strlist: `git_strlist_copy*` leak on allocation failure
+- C: returns -1 from inside the loop without freeing the copies made so
+  far or the array.
+- Rust: frees them, then the out-of-memory error.
+
+### hashmap: a set's `iterate` does not advance
+- C: `src/util/hashmap.h`, `GIT_HASHSET_FUNCTIONS`' `name##_iterate`
+  returns the entry at `*iter` without incrementing it, so repeated calls
+  (and `name##_foreach`) return the first live key forever. No C caller
+  iterates a set today; the C macro stays as it is.
+- Rust: `GitHashMap::iterate_keys` advances past the key, as the map's
+  `iterate` does.
+
+### hashmap: shrinking assigns a failed `realloc`
+- C: `__resize`'s shrink step assigns `git__reallocarray`'s result to
+  `keys`/`vals` even when it is NULL (leak, then NULL dereference).
+- Rust: keeps the larger arrays (still valid) when shrinking fails.
+
+### parse: `git_parse_advance_chars` past the line
+- C: subtracts `char_cnt` from `line_len` and `remain_len` unchecked; more
+  than `line_len` wraps them and later reads run past the content.
+- Rust: advances by at most `line_len`.

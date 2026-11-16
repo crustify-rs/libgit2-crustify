@@ -32,9 +32,9 @@ use std::ffi::CString;
 use std::sync::Arc;
 
 use crate::git_error_set;
-use crate::sys::pending::{self, FileStamp};
 use crate::util::alloc;
 use crate::util::errors::{self, Error, ErrorClass, ErrorCode, Result};
+use crate::util::futils::{self, Filestamp as FileStamp};
 use crate::util::integer::alloc_add;
 use crate::util::str::GitStr;
 use crate::util::thread::GitRwLock;
@@ -581,12 +581,12 @@ impl Shared {
     unsafe fn load_locked(&self, buf: Option<&mut GitStr>) -> Result<bool> {
         // SAFETY: the write lock is held; the reference ends with the call.
         let stamp = unsafe { &mut *self.stamp.get() };
-        let r = pending::futils_filestamp_check(stamp, &self.path);
+        let r = futils::filestamp_check(Some(stamp), &self.path);
         if r <= 0 {
             return ErrorCode::check(r).map(|_| false);
         }
 
-        let fd = pending::futils_open_ro(&self.path)?;
+        let fd = futils::open_ro(&self.path)?;
         let r = load_fd(fd, buf);
         // SAFETY: `fd` is ours, closed once.
         unsafe { libc::close(fd) };
@@ -601,7 +601,7 @@ impl Shared {
     unsafe fn updated(&self) {
         // SAFETY: the write lock is held.
         let stamp = unsafe { &mut *self.stamp.get() };
-        pending::futils_filestamp_check(stamp, &self.path);
+        futils::filestamp_check(Some(stamp), &self.path);
     }
 
     /// `git_sortedcache_entry`: the item at `pos` (in sorted order).
@@ -690,7 +690,7 @@ fn load_fd(fd: c_int, buf: Option<&mut GitStr>) -> Result<()> {
         return Err(ErrorCode::GENERIC);
     };
     match buf {
-        Some(buf) => pending::futils_readbuffer_fd(buf, fd, size),
+        Some(buf) => futils::readbuffer_fd(buf, fd, size),
         None => Ok(()),
     }
 }

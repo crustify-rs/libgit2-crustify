@@ -356,6 +356,15 @@ const _: () = assert!(core::mem::align_of::<HashCtx>() == 8);
 const _: () = assert!(HASH_CTX_WORDS == 300, "update GIT_HASH_CTX_WORDS in hash.h");
 
 impl HashCtx {
+    /// A zeroed context (C's `{0}`, as in `GIT_FILEBUF_INIT`): no
+    /// algorithm, no computation. (For `git_filebuf`, WP u3.)
+    pub const fn zeroed() -> HashCtx {
+        HashCtx {
+            algorithm: 0,
+            hasher: MaybeUninit::zeroed(),
+        }
+    }
+
     /// A context for `algorithm`, as `git_hash_ctx_init` leaves it (for
     /// Rust mirrors of C structs that embed a `git_hash_ctx`).
     pub fn new(algorithm: HashAlgorithm) -> Result<HashCtx> {
@@ -391,6 +400,20 @@ impl HashCtx {
             (&raw mut (*ctx).hasher).write(MaybeUninit::new(h))
         };
         Ok(())
+    }
+
+    /// `git_hash_ctx_init` with a known algorithm, on a valid context.
+    pub(crate) fn init(&mut self, algorithm: HashAlgorithm) -> Result<()> {
+        // SAFETY: `self` is a valid, exclusive `HashCtx`.
+        unsafe {
+            HashCtx::init_raw(
+                self,
+                match algorithm {
+                    HashAlgorithm::Sha1 => raw_algorithm::SHA1,
+                    HashAlgorithm::Sha256 => raw_algorithm::SHA256,
+                },
+            )
+        }
     }
 
     /// `git_hash_init`: restart the computation of the recorded algorithm,

@@ -514,6 +514,26 @@ impl GitStr {
         unsafe { core::slice::from_raw_parts_mut(spare, self.asize - self.size - 1) }
     }
 
+    /// The room after the contents, the NUL's byte included (C's
+    /// `ptr + size`, `asize - size` bytes); empty unless the string owns
+    /// its buffer.
+    ///
+    /// # Safety
+    ///
+    /// Byte 0 is the string's NUL: until it is written back (or
+    /// [`set_len`](Self::set_len) moves the end and a NUL is written there,
+    /// or [`terminate`](Self::terminate) runs), the string must not be read
+    /// or handed on.
+    pub(crate) unsafe fn spare_with_nul_mut(&mut self) -> &mut [MaybeUninit<u8>] {
+        let (p, n) = self.spare_ptr();
+        if n == 0 {
+            return &mut [];
+        }
+        // SAFETY: `p` and `n` are the owned allocation's bytes from `size`
+        // on, ours through `&mut self`; the caller restores the NUL.
+        unsafe { core::slice::from_raw_parts_mut(p.cast::<MaybeUninit<u8>>(), n) }
+    }
+
     /// C's view of the room after the contents: `ptr + size` and
     /// `asize - size` bytes, the NUL's slot included (NULL and 0 unless
     /// the string owns its buffer). Writing through the pointer is the
@@ -3392,6 +3412,17 @@ crate::c_layout_test! {
         Bom => "git_str_bom_t" {},
     ],
     asserts: ["GIT_STR_BOM_UTF32_BE == 5"],
+}
+
+// In-place access for the filesystem layer (WP u3): writing path bytes in
+// place, and reading into the spare room (`fs_path`, `futils`).
+impl GitStr {
+    /// The contents of an owned buffer, for writing in place (empty for
+    /// any other state: a borrowed buffer is never written).
+    #[inline]
+    pub fn as_mut_bytes(&mut self) -> &mut [u8] {
+        self.content_mut()
+    }
 }
 
 #[cfg(test)]
