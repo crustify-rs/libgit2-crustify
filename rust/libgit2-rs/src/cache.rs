@@ -139,7 +139,10 @@ pub fn set_max_storage(max: isize) {
 
 /// `git_cache_set_max_object_size` (`GIT_OPT_SET_CACHE_OBJECT_LIMIT`).
 pub fn set_max_object_size(type_: c_int, size: usize) -> Result<()> {
-    match usize::try_from(type_).ok().and_then(|t| MAX_OBJECT_SIZE.get(t)) {
+    match usize::try_from(type_)
+        .ok()
+        .and_then(|t| MAX_OBJECT_SIZE.get(t))
+    {
         Some(slot) => {
             slot.store(size, Ordering::Relaxed);
             Ok(())
@@ -179,6 +182,18 @@ fn should_store(type_: i16, size: usize) -> bool {
 pub unsafe fn incref(obj: NonNull<GitCachedObj>) {
     // SAFETY: the caller's contract; the count is atomic.
     unsafe { obj.as_ref() }.refcount.inc();
+}
+
+/// Give up a reference to `drop` and take one to `take`.
+///
+/// # Safety
+///
+/// As [`decref`] for `drop` and [`incref`] for `take`.
+unsafe fn swap_ref(drop: NonNull<GitCachedObj>, take: NonNull<GitCachedObj>) {
+    // SAFETY: the caller's contract.
+    unsafe { decref(drop) };
+    // SAFETY: the caller's contract.
+    unsafe { incref(take) };
 }
 
 /// `git_cached_obj_decref`: drop a reference; the last one frees the
@@ -366,26 +381,23 @@ impl GitCache {
         }
 
         // SAFETY: private to the caller: read without a lock.
-        let (type_, size, flags) = unsafe {
-            let e = entry.as_ptr();
-            ((*e).type_, (*e).size, (*e).flags)
-        };
+        let e = unsafe { &*entry.as_ptr() };
+        let (type_, size, flags) = (e.type_, e.size, e.flags);
         if !should_store(type_, size) {
             return entry;
         }
 
         let _g = self.lock.write();
-        // SAFETY: the write lock is held for both calls.
-        let map = unsafe {
-            if git_cache__current_storage.load(Ordering::SeqCst) > max_storage() {
-                self.evict_locked();
-            }
-            self.map_mut()
-        };
+        if git_cache__current_storage.load(Ordering::SeqCst) > max_storage() {
+            // SAFETY: the write lock is held.
+            unsafe { self.evict_locked() };
+        }
+        // SAFETY: the write lock is held.
+        let map = unsafe { self.map_mut() };
 
         // SAFETY: the entry's oid lives as long as the entry, which the map
         // keeps a reference to while the key is in it.
-        let key = unsafe { OidPtr::new(NonNull::from(&(*entry.as_ptr()).oid)) };
+        let key = unsafe { OidPtr::new(NonNull::from(&e.oid)) };
         let mut result = entry;
         match map.get(&key).copied().and_then(NonNull::new) {
             None => {
@@ -403,25 +415,16 @@ impl GitCache {
                     // SAFETY: the caller's two references to `entry` (its
                     // own, and the one taken above) and the map's to
                     // `stored`.
-                    unsafe {
-                        decref(entry);
-                        incref(stored);
-                    }
+                    unsafe { swap_ref(entry, stored) };
                     result = stored;
                 } else if stored_flags == GIT_CACHE_STORE_RAW && flags == GIT_CACHE_STORE_PARSED {
                     if map.put(key, entry.as_ptr()).is_ok() {
                         // SAFETY: the map gives up `stored`, and takes
                         // `entry`.
-                        unsafe {
-                            decref(stored);
-                            incref(entry);
-                        }
+                        unsafe { swap_ref(stored, entry) };
                     } else {
                         // SAFETY: as in the first branch.
-                        unsafe {
-                            decref(entry);
-                            incref(stored);
-                        }
+                        unsafe { swap_ref(entry, stored) };
                         result = stored;
                     }
                 }
@@ -542,7 +545,10 @@ pub mod ffi {
     /// As [`git_cache_clear`]; `entry` is a live `git_odb_object` private
     /// to the caller, who gives up one reference to it.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_cache_store_raw(c: *mut GitCache, entry: *mut c_void) -> *mut c_void {
+    pub unsafe extern "C" fn git_cache_store_raw(
+        c: *mut GitCache,
+        entry: *mut c_void,
+    ) -> *mut c_void {
         barrier(|| {
             let Some(e) = NonNull::new(entry.cast::<GitCachedObj>()) else {
                 return core::ptr::null_mut();
@@ -550,7 +556,9 @@ pub mod ffi {
             // SAFETY: private to the caller.
             unsafe { (*e.as_ptr()).flags = GIT_CACHE_STORE_RAW };
             // SAFETY: the caller's contract.
-            unsafe { cache(c).store(e) }.as_ptr().cast()
+            let c = unsafe { cache(c) };
+            // SAFETY: the caller's contract.
+            unsafe { c.store(e) }.as_ptr().cast()
         })
     }
 
@@ -560,7 +568,10 @@ pub mod ffi {
     ///
     /// As [`git_cache_store_raw`], for a `git_object`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_cache_store_parsed(c: *mut GitCache, entry: *mut c_void) -> *mut c_void {
+    pub unsafe extern "C" fn git_cache_store_parsed(
+        c: *mut GitCache,
+        entry: *mut c_void,
+    ) -> *mut c_void {
         barrier(|| {
             let Some(e) = NonNull::new(entry.cast::<GitCachedObj>()) else {
                 return core::ptr::null_mut();
@@ -568,15 +579,20 @@ pub mod ffi {
             // SAFETY: private to the caller.
             unsafe { (*e.as_ptr()).flags = GIT_CACHE_STORE_PARSED };
             // SAFETY: the caller's contract.
-            unsafe { cache(c).store(e) }.as_ptr().cast()
+            let c = unsafe { cache(c) };
+            // SAFETY: the caller's contract.
+            unsafe { c.store(e) }.as_ptr().cast()
         })
     }
 
     fn get(c: *mut GitCache, oid: *const Oid, flags: u16) -> *mut c_void {
         barrier(|| {
-            // SAFETY: the exports' contract: a live cache and oid.
-            let (c, oid) = unsafe { (cache(c), &*oid) };
-            c.get(oid, flags).map_or(core::ptr::null_mut(), |e| e.as_ptr().cast())
+            // SAFETY: the exports' contract: a live cache.
+            let c = unsafe { cache(c) };
+            // SAFETY: the exports' contract: a readable oid.
+            let oid = unsafe { &*oid };
+            c.get(oid, flags)
+                .map_or(core::ptr::null_mut(), |e| e.as_ptr().cast())
         })
     }
 
@@ -596,7 +612,10 @@ pub mod ffi {
     ///
     /// As [`git_cache_get_raw`].
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_cache_get_parsed(c: *mut GitCache, oid: *const Oid) -> *mut c_void {
+    pub unsafe extern "C" fn git_cache_get_parsed(
+        c: *mut GitCache,
+        oid: *const Oid,
+    ) -> *mut c_void {
         get(c, oid, GIT_CACHE_STORE_PARSED)
     }
 

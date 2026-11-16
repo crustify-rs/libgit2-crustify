@@ -19,16 +19,20 @@ use std::sync::{Mutex, PoisonError};
 use ffibox::CTable;
 
 use crate::odb::{
-    BackendTable, GIT_OBJECT_DIR_MODE, GIT_OBJECT_FILE_MODE, GIT_ODB_BACKEND_LOOSE_FSYNC, GitOdbBackend,
-    GitOdbBackendLooseOptions, GitOdbStream, StreamTable, backend_base, busy, error_ambiguous,
-    error_notfound, git_object_size_t, git_object_t, stringn2type, type_is_valid,
+    BackendTable, GIT_OBJECT_DIR_MODE, GIT_OBJECT_FILE_MODE, GIT_ODB_BACKEND_LOOSE_FSYNC,
+    GitOdbBackend, GitOdbBackendLooseOptions, GitOdbStream, StreamTable, backend_base, busy,
+    error_ambiguous, error_notfound, git_object_size_t, git_object_t, stringn2type, type_is_valid,
 };
 use crate::oid::{GIT_OID_MINPREFIXLEN, Oid, OidType, git_oid_t, oid_hexsize};
 use crate::util::alloc::{self, GIT_ALLOC, GitAlloc};
 use crate::util::errors::{self, ErrorClass, ErrorCode, Result};
-use crate::util::filebuf::{GIT_FILEBUF_DEFLATE_SHIFT, GIT_FILEBUF_FSYNC, GIT_FILEBUF_TEMPORARY, GitFilebuf};
+use crate::util::filebuf::{
+    GIT_FILEBUF_DEFLATE_SHIFT, GIT_FILEBUF_FSYNC, GIT_FILEBUF_TEMPORARY, GitFilebuf,
+};
 use crate::util::fs_path;
-use crate::util::futils::{self, GIT_MKDIR_PATH, GIT_MKDIR_SKIP_LAST, GIT_MKDIR_VERIFY_DIR, MkdirOpts};
+use crate::util::futils::{
+    self, GIT_MKDIR_PATH, GIT_MKDIR_SKIP_LAST, GIT_MKDIR_VERIFY_DIR, MkdirOpts,
+};
 use crate::util::posix::{self, GitMap};
 use crate::util::str::GitStr;
 use crate::util::zstream::{GitZstream, ZStream, ZstreamKind};
@@ -66,7 +70,8 @@ impl Loose {
     /// options normalized.
     pub fn new(objects_dir: &[u8], opts: Option<&GitOdbBackendLooseOptions>) -> Result<Loose> {
         let mut dir = Vec::new();
-        dir.try_reserve_exact(objects_dir.len() + 2).map_err(|_| errors::oom())?;
+        dir.try_reserve_exact(objects_dir.len() + 2)
+            .map_err(|_| errors::oom())?;
         dir.extend_from_slice(objects_dir);
         // C read `objects_dir[-1]` for an empty directory (rust/DEFECTS.md).
         if dir.last() != Some(&b'/') {
@@ -160,7 +165,12 @@ impl Loose {
 
     /// `locate_object_short_oid`: the path and id of the one object whose
     /// id starts with the first `len` digits of `short_oid`.
-    fn locate_object_short_oid(&self, loc: &mut GitStr, short_oid: &Oid, len: usize) -> Result<Oid> {
+    fn locate_object_short_oid(
+        &self,
+        loc: &mut GitStr,
+        short_oid: &Oid,
+        len: usize,
+    ) -> Result<Oid> {
         let hexsize = self.oid_hexsize;
         let alloc_len = crate::util::integer::alloc_add(self.objects_dir.len(), hexsize)?;
         let alloc_len = crate::util::integer::alloc_add(alloc_len, 3)?;
@@ -235,8 +245,11 @@ impl Loose {
 
     /// `filebuf_flags`.
     fn filebuf_flags(&self) -> c_int {
-        let mut flags = GIT_FILEBUF_TEMPORARY | (self.options.compression_level << GIT_FILEBUF_DEFLATE_SHIFT);
-        if self.options.flags & GIT_ODB_BACKEND_LOOSE_FSYNC != 0 || crate::sys::pending::repository_fsync_gitdir() {
+        let mut flags =
+            GIT_FILEBUF_TEMPORARY | (self.options.compression_level << GIT_FILEBUF_DEFLATE_SHIFT);
+        if self.options.flags & GIT_ODB_BACKEND_LOOSE_FSYNC != 0
+            || crate::sys::pending::repository_fsync_gitdir()
+        {
             flags |= GIT_FILEBUF_FSYNC;
         }
         flags
@@ -303,7 +316,9 @@ impl Loose {
     /// a non-zero return stops the walk and is returned.
     pub fn foreach(&self, cb: &mut dyn FnMut(&Oid) -> c_int) -> c_int {
         let mut buf = GitStr::new();
-        let r = buf.sets(&self.objects_dir).and_then(|()| fs_path::to_dir(&mut buf));
+        let r = buf
+            .sets(&self.objects_dir)
+            .and_then(|()| fs_path::to_dir(&mut buf));
         if r.is_err() || buf.is_oom() {
             return -1;
         }
@@ -359,7 +374,11 @@ impl Loose {
         let mut fbuf = OpenFilebuf::new();
         if fbuf
             .0
-            .open(final_path.as_bytes(), self.filebuf_flags(), self.options.file_mode)
+            .open(
+                final_path.as_bytes(),
+                self.filebuf_flags(),
+                self.options.file_mode,
+            )
             .is_err()
         {
             return Err(ErrorCode::GENERIC);
@@ -391,7 +410,7 @@ struct OpenFilebuf(Box<GitFilebuf>);
 
 impl OpenFilebuf {
     fn new() -> OpenFilebuf {
-        OpenFilebuf(Box::new(GitFilebuf::new()))
+        OpenFilebuf(Box::default())
     }
 }
 
@@ -428,7 +447,10 @@ pub type RawData = (ffibox::CVec<u8, GitAlloc>, usize, git_object_t);
 // ---------------------------------------------------------------------------
 
 fn invalid_header() -> ErrorCode {
-    git_error_set!(ErrorClass::OBJECT, "failed to parse loose object: invalid header")
+    git_error_set!(
+        ErrorClass::OBJECT,
+        "failed to parse loose object: invalid header"
+    )
 }
 
 /// `parse_header_packlike`: the header and its length.
@@ -453,7 +475,13 @@ pub(crate) fn parse_header_packlike(data: &[u8]) -> Result<(ObjHdr, usize)> {
         size = size.wrapping_add((c & 0x7f) << shift);
         shift += 7;
     }
-    Ok((ObjHdr { type_, size: size as usize }, used))
+    Ok((
+        ObjHdr {
+            type_,
+            size: size as usize,
+        },
+        used,
+    ))
 }
 
 /// `parse_header`: `"<type> <size>\0"`; the header and its length.
@@ -504,7 +532,10 @@ fn calloc_buf(n: usize) -> Result<ffibox::CVec<u8, GitAlloc>> {
 fn read_loose_packlike(obj: &[u8]) -> Result<RawData> {
     let (hdr, head_len) = parse_header_packlike(obj)?;
     if !type_is_valid(hdr.type_) || head_len > obj.len() {
-        return Err(git_error_set!(ErrorClass::ODB, "failed to inflate loose object"));
+        return Err(git_error_set!(
+            ErrorClass::ODB,
+            "failed to inflate loose object"
+        ));
     }
     let data = &obj[head_len..];
     let alloc_size = crate::util::integer::alloc_add(hdr.size, 1)?;
@@ -527,7 +558,10 @@ fn read_loose_standard(obj: &[u8]) -> Result<RawData> {
     let (hdr, head_len) = parse_header(&head[..decompressed])?;
     git_assert!(head_len <= decompressed, "head_len <= decompressed");
     if !type_is_valid(hdr.type_) {
-        return Err(git_error_set!(ErrorClass::ODB, "failed to inflate disk object"));
+        return Err(git_error_set!(
+            ErrorClass::ODB,
+            "failed to inflate disk object"
+        ));
     }
     let alloc_size = crate::util::integer::alloc_add(hdr.size, 1)?;
     let mut body = calloc_buf(alloc_size)?;
@@ -592,7 +626,10 @@ fn read_header_loose(loc: &GitStr) -> Result<ObjHdr> {
             parse_header_packlike(obj)?.0
         };
         if !type_is_valid(hdr.type_) {
-            return Err(git_error_set!(ErrorClass::ZLIB, "failed to read loose object header"));
+            return Err(git_error_set!(
+                ErrorClass::ZLIB,
+                "failed to read loose object header"
+            ));
         }
         Ok(hdr)
     })();
@@ -699,10 +736,8 @@ ffibox::impl_cvtable! {
                 let chunk = start_remain.min(buffer_len);
                 // SAFETY: C's contract: `buffer` is writable for
                 // `buffer_len` bytes; `start` is the state's.
-                unsafe {
-                    core::ptr::copy_nonoverlapping(st.start.as_ptr().add(st.start_read), buffer, chunk);
-                    buffer = buffer.add(chunk);
-                }
+                unsafe { core::ptr::copy_nonoverlapping(st.start[st.start_read..].as_ptr(), buffer, chunk) };
+                buffer = buffer.wrapping_add(chunk);
                 st.start_read += chunk;
                 total += chunk;
                 buffer_len -= chunk;
@@ -725,7 +760,11 @@ ffibox::impl_cvtable! {
 
 impl Loose {
     /// `loose_backend__writestream`.
-    fn writestream(self: &std::sync::Arc<Self>, length: git_object_size_t, type_: git_object_t) -> Result<NonNull<GitOdbStream>> {
+    fn writestream(
+        self: &std::sync::Arc<Self>,
+        length: git_object_size_t,
+        type_: git_object_t,
+    ) -> Result<NonNull<GitOdbStream>> {
         let mut hdr = [0u8; MAX_HEADER_LEN];
         let hdrlen = crate::odb::format_object_header(&mut hdr, length, type_)?;
         let t = CTable::<StreamTable, LooseWriteStream>::new(LooseWriteStream {
@@ -734,9 +773,14 @@ impl Loose {
         });
         let mut t = t;
         let ok = {
-            let f = t.state_mut().fbuf.get_mut().unwrap_or_else(PoisonError::into_inner);
+            let f = t
+                .state_mut()
+                .fbuf
+                .get_mut()
+                .unwrap_or_else(PoisonError::into_inner);
             self.tmp_path().is_ok_and(|p| {
-                f.0.open(p.as_bytes(), self.filebuf_flags(), self.options.file_mode).is_ok()
+                f.0.open(p.as_bytes(), self.filebuf_flags(), self.options.file_mode)
+                    .is_ok()
                     && f.0.write(&hdr[..hdrlen]).is_ok()
             })
         };
@@ -768,7 +812,11 @@ impl Loose {
         ctx.init(crate::odb::oid_algorithm(self.oid_type()))?;
         let mut t = t;
         let hdr = {
-            let st = t.state_mut().state.get_mut().unwrap_or_else(PoisonError::into_inner);
+            let st = t
+                .state_mut()
+                .state
+                .get_mut()
+                .unwrap_or_else(PoisonError::into_inner);
             st.map = futils::mmap_ro_file(c_path(&path)?)?;
             // In place: the stream does not move until freed.
             st.zstream.init(ZstreamKind::Inflate as c_int)?;
@@ -805,7 +853,10 @@ unsafe fn map_bytes<'a>(data: *const c_void, len: usize) -> &'a [u8] {
 fn readstream_packlike(st: &mut ReadState, data: &[u8]) -> Result<ObjHdr> {
     let (hdr, head_len) = parse_header_packlike(data)?;
     if !type_is_valid(hdr.type_) {
-        return Err(git_error_set!(ErrorClass::ODB, "failed to inflate loose object"));
+        return Err(git_error_set!(
+            ErrorClass::ODB,
+            "failed to inflate loose object"
+        ));
     }
     let rest = &data[head_len..];
     st.zstream.set_input_raw(rest.as_ptr().cast(), rest.len());
@@ -821,7 +872,10 @@ fn readstream_standard(st: &mut ReadState, data: &[u8]) -> Result<ObjHdr> {
     unsafe { st.zstream.get_output(head.as_mut_ptr(), &mut init) }?;
     let (hdr, head_len) = parse_header(&head[..init])?;
     if !type_is_valid(hdr.type_) {
-        return Err(git_error_set!(ErrorClass::ODB, "failed to inflate disk object"));
+        return Err(git_error_set!(
+            ErrorClass::ODB,
+            "failed to inflate disk object"
+        ));
     }
     if init > head_len {
         st.start_len = init - head_len;
@@ -843,15 +897,20 @@ pub struct LooseBackend(std::sync::Arc<Loose>);
 /// # Safety
 ///
 /// The pointers are writable.
-unsafe fn write_raw(buffer_p: *mut *mut c_void, len_p: *mut usize, type_p: *mut git_object_t, raw: RawData) {
+unsafe fn write_raw(
+    buffer_p: *mut *mut c_void,
+    len_p: *mut usize,
+    type_p: *mut git_object_t,
+    raw: RawData,
+) {
     let (buf, len, t) = raw;
     let (p, _) = buf.into_raw_parts();
     // SAFETY: the caller's contract.
-    unsafe {
-        buffer_p.write(p.cast());
-        len_p.write(len);
-        type_p.write(t);
-    }
+    unsafe { buffer_p.write(p.cast()) };
+    // SAFETY: as above.
+    unsafe { len_p.write(len) };
+    // SAFETY: as above.
+    unsafe { type_p.write(t) };
 }
 
 fn code(r: Result<()>) -> c_int {
@@ -905,10 +964,9 @@ ffibox::impl_cvtable! {
             match s.0.read_prefix(short_oid, len) {
                 Ok((id, raw)) => {
                     // SAFETY: C's contract: writable out-parameters.
-                    unsafe {
-                        out_oid.write(id);
-                        write_raw(buffer_p, len_p, type_p, raw);
-                    }
+                    unsafe { out_oid.write(id) };
+                    // SAFETY: as above.
+                    unsafe { write_raw(buffer_p, len_p, type_p, raw) };
                     0
                 }
                 Err(e) => e.raw(),
@@ -925,10 +983,9 @@ ffibox::impl_cvtable! {
             match s.0.read_header(unsafe { &*oid }) {
                 Ok(h) => {
                     // SAFETY: C's contract: writable out-parameters.
-                    unsafe {
-                        len_p.write(h.size);
-                        type_p.write(h.type_);
-                    }
+                    unsafe { len_p.write(h.size) };
+                    // SAFETY: as above.
+                    unsafe { type_p.write(h.type_) };
                     0
                 }
                 Err(e) => e.raw(),
@@ -940,8 +997,10 @@ ffibox::impl_cvtable! {
         on panic: -1,
         on busy: busy(),
         |s: &LooseBackend| {
-            // SAFETY: C's contract: a readable id and `len` readable bytes.
-            let (oid, data) = unsafe { (&*oid, crate::util::export::bytes(data.cast(), len)) };
+            // SAFETY: C's contract: a readable id.
+            let oid = unsafe { &*oid };
+            // SAFETY: C's contract: `len` readable bytes.
+            let data = unsafe { crate::util::export::bytes(data.cast(), len) };
             code(s.0.write(oid, data, type_))
         },
     }
@@ -956,10 +1015,9 @@ ffibox::impl_cvtable! {
                 Ok(st) => {
                     // SAFETY: the table this slot runs on, live; its field,
                     // before C sees the stream; and C's out-parameter.
-                    unsafe {
-                        (*st.as_ptr()).backend = backend;
-                        stream_out.write(st.as_ptr());
-                    }
+                    unsafe { (*st.as_ptr()).backend = backend };
+                    // SAFETY: as above.
+                    unsafe { stream_out.write(st.as_ptr()) };
                     0
                 }
                 Err(e) => e.raw(),
@@ -976,21 +1034,22 @@ ffibox::impl_cvtable! {
             git_assert_arg!(!type_out.is_null(), "type_out", -1);
             git_assert_arg!(!oid.is_null(), "oid", -1);
             // SAFETY: C's contract: writable out-parameters.
-            unsafe {
-                stream_out.write(core::ptr::null_mut());
-                len_out.write(0);
-                type_out.write(crate::odb::GIT_OBJECT_INVALID);
-            }
+            unsafe { stream_out.write(core::ptr::null_mut()) };
+            // SAFETY: as above.
+            unsafe { len_out.write(0) };
+            // SAFETY: as above.
+            unsafe { type_out.write(crate::odb::GIT_OBJECT_INVALID) };
             // SAFETY: C's contract: a readable id.
             match s.0.readstream(unsafe { &*oid }) {
                 Ok((st, len, t)) => {
                     // SAFETY: as in `writestream`.
-                    unsafe {
-                        (*st.as_ptr()).backend = backend;
-                        stream_out.write(st.as_ptr());
-                        len_out.write(len);
-                        type_out.write(t);
-                    }
+                    unsafe { (*st.as_ptr()).backend = backend };
+                    // SAFETY: as above.
+                    unsafe { stream_out.write(st.as_ptr()) };
+                    // SAFETY: as above.
+                    unsafe { len_out.write(len) };
+                    // SAFETY: as above.
+                    unsafe { type_out.write(t) };
                     0
                 }
                 Err(e) => e.raw(),
@@ -1049,9 +1108,15 @@ ffibox::impl_cvtable! {
 
 /// `git_odb__backend_loose`: a new loose backend table (owned by the
 /// caller, freed through its `free` slot).
-pub fn new_backend(objects_dir: &[u8], opts: Option<&GitOdbBackendLooseOptions>) -> Result<NonNull<GitOdbBackend>> {
+pub fn new_backend(
+    objects_dir: &[u8],
+    opts: Option<&GitOdbBackendLooseOptions>,
+) -> Result<NonNull<GitOdbBackend>> {
     let loose = Loose::new(objects_dir, opts)?;
-    Ok(CTable::<BackendTable, LooseBackend>::new(LooseBackend(std::sync::Arc::new(loose))).into_c())
+    Ok(
+        CTable::<BackendTable, LooseBackend>::new(LooseBackend(std::sync::Arc::new(loose)))
+            .into_c(),
+    )
 }
 
 /// The C ABI of `odb_loose.c`.
@@ -1071,7 +1136,9 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!opts.is_null(), "opts", -1);
-            if let Err(e) = crate::odb::check_version(Some(version), 1, "git_odb_backend_loose_options") {
+            if let Err(e) =
+                crate::odb::check_version(Some(version), 1, "git_odb_backend_loose_options")
+            {
                 return e.raw();
             }
             // SAFETY: the caller's contract.
@@ -1096,7 +1163,9 @@ pub mod ffi {
             git_assert_arg!(!backend_out.is_null(), "backend_out", -1);
             git_assert_arg!(!objects_dir.is_null(), "objects_dir", -1);
             // SAFETY: the caller's contract.
-            let (dir, opts) = unsafe { (cstr_bytes(objects_dir), opts.as_ref()) };
+            let dir = unsafe { cstr_bytes(objects_dir) };
+            // SAFETY: the caller's contract.
+            let opts = unsafe { opts.as_ref() };
             match new_backend(dir, opts) {
                 Ok(b) => {
                     // SAFETY: the caller's contract.
@@ -1137,7 +1206,13 @@ mod tests {
         );
         assert_eq!(
             parse_header_packlike(&[0x95, 0x01]).unwrap(),
-            (ObjHdr { type_: 1, size: 5 + 16 }, 2)
+            (
+                ObjHdr {
+                    type_: 1,
+                    size: 5 + 16
+                },
+                2
+            )
         );
         assert!(parse_header_packlike(&[]).is_err());
         assert!(parse_header_packlike(&[0x95]).is_err());
@@ -1185,10 +1260,22 @@ mod tests {
         let id = Oid::from_hex(b"e69de29bb2d1d6434b8b29ae775ad8c2e48c5391", OidType::Sha1).unwrap();
         let mut s = GitStr::new();
         l.object_file_name(&mut s, &id).unwrap();
-        assert_eq!(s.as_bytes(), b"/tmp/objs/e6/9de29bb2d1d6434b8b29ae775ad8c2e48c5391");
-        assert_eq!(l.filename_to_oid(b"e6/9de29bb2d1d6434b8b29ae775ad8c2e48c5391"), Some(id));
-        assert_eq!(l.filename_to_oid(b"e6/9de29bb2d1d6434b8b29ae775ad8c2e48c539x"), None);
-        assert_eq!(l.filename_to_oid(b"e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"), None);
+        assert_eq!(
+            s.as_bytes(),
+            b"/tmp/objs/e6/9de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+        );
+        assert_eq!(
+            l.filename_to_oid(b"e6/9de29bb2d1d6434b8b29ae775ad8c2e48c5391"),
+            Some(id)
+        );
+        assert_eq!(
+            l.filename_to_oid(b"e6/9de29bb2d1d6434b8b29ae775ad8c2e48c539x"),
+            None
+        );
+        assert_eq!(
+            l.filename_to_oid(b"e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"),
+            None
+        );
         assert_eq!(l.options().compression_level, Z_BEST_SPEED);
         assert_eq!(l.options().dir_mode, 0o777);
         assert_eq!(l.options().file_mode, 0o444);

@@ -99,7 +99,9 @@ impl Odb {
     pub fn open(objects_dir: &[u8], oid_type: OidType) -> ApiResult<Odb> {
         let odb = Self::with_oid_type(oid_type)?;
         let dir = crate::util::fs_path::to_cstring(objects_dir);
-        odb.inner().add_default_backends(&dir, false, 0).map_err(err)?;
+        odb.inner()
+            .add_default_backends(&dir, false, 0)
+            .map_err(err)?;
         Ok(odb)
     }
 
@@ -135,7 +137,9 @@ impl Odb {
     /// alternates (`git_odb_add_disk_alternate`).
     pub fn add_disk_alternate(&self, path: &[u8]) -> ApiResult<()> {
         let dir = crate::util::fs_path::to_cstring(path);
-        self.inner().add_default_backends(&dir, true, 0).map_err(err)
+        self.inner()
+            .add_default_backends(&dir, true, 0)
+            .map_err(err)
     }
 
     /// The number of backends (`git_odb_num_backends`).
@@ -151,7 +155,10 @@ impl Odb {
     /// Read the object whose id starts with the first `len` hex digits of
     /// `short_id` (`git_odb_read_prefix`).
     pub fn read_prefix(&self, short_id: &Oid, len: usize) -> ApiResult<OdbObject> {
-        self.inner().read_prefix(short_id, len).map(OdbObject).map_err(err)
+        self.inner()
+            .read_prefix(short_id, len)
+            .map(OdbObject)
+            .map_err(err)
     }
 
     /// An object's size and type, without reading it if a backend can tell
@@ -184,7 +191,8 @@ impl Odb {
     /// ambiguous.
     pub fn expand_ids(&self, ids: &mut [ExpandId]) -> ApiResult<()> {
         let mut raw = Vec::new();
-        raw.try_reserve_exact(ids.len()).map_err(|_| err(errors::oom()))?;
+        raw.try_reserve_exact(ids.len())
+            .map_err(|_| err(errors::oom()))?;
         raw.extend(ids.iter().map(|q| GitOdbExpandId {
             id: q.id,
             length: q.length,
@@ -216,7 +224,9 @@ impl Odb {
         unsafe extern "C" fn trampoline(id: *const Oid, payload: *mut c_void) -> c_int {
             // SAFETY: the payload below, alive for the walk; the id is
             // the backend's, readable for the call.
-            let (p, id) = unsafe { (&mut *payload.cast::<Payload<'_>>(), &*id) };
+            let p = unsafe { &mut *payload.cast::<Payload<'_>>() };
+            // SAFETY: as above.
+            let id = unsafe { &*id };
             if p.panic.is_some() {
                 return 1;
             }
@@ -258,7 +268,9 @@ impl Odb {
 
     /// Write an object (`git_odb_write`); its id.
     pub fn write(&self, data: &[u8], kind: ObjectType) -> ApiResult<Oid> {
-        self.inner().write(Some(data), data.len(), kind.raw()).map_err(err)
+        self.inner()
+            .write(Some(data), data.len(), kind.raw())
+            .map_err(err)
     }
 
     /// A stream to write an object of `size` bytes (`git_odb_open_wstream`).
@@ -385,7 +397,9 @@ impl core::fmt::Debug for OdbObject {
 // ---------------------------------------------------------------------------
 
 fn io_error(code: c_int) -> std::io::Error {
-    std::io::Error::other(Error::from(ErrorCode::from_raw(code).unwrap_or(ErrorCode::GENERIC)))
+    std::io::Error::other(Error::from(
+        ErrorCode::from_raw(code).unwrap_or(ErrorCode::GENERIC),
+    ))
 }
 
 /// A stream that writes an object (`git_odb_open_wstream`): write exactly
@@ -401,7 +415,8 @@ impl OdbWriter<'_> {
         let mut id = Oid::NONE;
         // SAFETY: our live stream, whose backend belongs to the borrowed
         // odb; `id` a local.
-        let r = unsafe { super::ffi::git_odb_stream_finalize_write(&mut id, self.stream.as_ptr()) };
+        let r =
+            unsafe { super::ffi::git_odb_stream_finalize_write(&raw mut id, self.stream.as_ptr()) };
         if r < 0 {
             return Err(err(ErrorCode::from_raw(r).unwrap_or(ErrorCode::GENERIC)));
         }
@@ -412,7 +427,9 @@ impl OdbWriter<'_> {
 impl std::io::Write for OdbWriter<'_> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         // SAFETY: our live stream; `buf` readable for its length.
-        let r = unsafe { super::ffi::git_odb_stream_write(self.stream.as_ptr(), buf.as_ptr().cast(), buf.len()) };
+        let r = unsafe {
+            super::ffi::git_odb_stream_write(self.stream.as_ptr(), buf.as_ptr().cast(), buf.len())
+        };
         if r < 0 {
             return Err(io_error(r));
         }
@@ -446,7 +463,13 @@ pub struct OdbReader<'odb> {
 impl std::io::Read for OdbReader<'_> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         // SAFETY: our live stream; `buf` writable for its length.
-        let r = unsafe { super::ffi::git_odb_stream_read(self.stream.as_ptr(), buf.as_mut_ptr().cast(), buf.len()) };
+        let r = unsafe {
+            super::ffi::git_odb_stream_read(
+                self.stream.as_ptr(),
+                buf.as_mut_ptr().cast(),
+                buf.len(),
+            )
+        };
         if r < 0 {
             return Err(io_error(r));
         }
@@ -525,7 +548,11 @@ impl Backend {
     pub fn loose(objects_dir: &[u8], opts: &LooseOptions) -> ApiResult<Backend> {
         let o = GitOdbBackendLooseOptions {
             version: 1,
-            flags: if opts.fsync { GIT_ODB_BACKEND_LOOSE_FSYNC } else { 0 },
+            flags: if opts.fsync {
+                GIT_ODB_BACKEND_LOOSE_FSYNC
+            } else {
+                0
+            },
             compression_level: opts
                 .compression_level
                 .map_or(-1, |l| c_int::try_from(l.min(9)).unwrap_or(9)),
@@ -561,7 +588,8 @@ impl Backend {
     /// A backend implemented in Rust.
     pub fn custom(backend: impl OdbBackend) -> Backend {
         Backend(
-            ffibox::CTable::<BackendTable, RustBackend>::new(RustBackend(Box::new(backend))).into_c(),
+            ffibox::CTable::<BackendTable, RustBackend>::new(RustBackend(Box::new(backend)))
+                .into_c(),
         )
     }
 }
@@ -644,7 +672,11 @@ pub trait OdbBackend: Send + Sync + 'static {
         if self.exists(id) {
             Ok(())
         } else {
-            Err(Error::new(ErrorCode::NOT_FOUND, ErrorClass::ODB, "object not found"))
+            Err(Error::new(
+                ErrorCode::NOT_FOUND,
+                ErrorClass::ODB,
+                "object not found",
+            ))
         }
     }
 }
@@ -658,7 +690,9 @@ struct RustBackend(Box<dyn OdbBackend>);
 
 /// The C status of a Rust backend's error: the message set as C does.
 fn raise(e: &Error) -> c_int {
-    if e.code() != ErrorCode::PASSTHROUGH && e.code() != ErrorCode::NOT_FOUND || !e.message_bytes().is_empty() {
+    if e.code() != ErrorCode::PASSTHROUGH && e.code() != ErrorCode::NOT_FOUND
+        || !e.message_bytes().is_empty()
+    {
         let _ = errors::set_str(e.class(), e.message_bytes());
     }
     e.code().raw()
@@ -671,10 +705,9 @@ fn to_c_buffer(data: &[u8]) -> Result<*mut c_void> {
         return Err(ErrorCode::GENERIC);
     }
     // SAFETY: a fresh allocation of `len + 1` bytes.
-    unsafe {
-        core::ptr::copy_nonoverlapping(data.as_ptr(), p, data.len());
-        p.add(data.len()).write(0);
-    }
+    unsafe { core::ptr::copy_nonoverlapping(data.as_ptr(), p, data.len()) };
+    // SAFETY: as above.
+    unsafe { p.wrapping_add(data.len()).write(0) };
     Ok(p.cast())
 }
 
@@ -693,11 +726,11 @@ ffibox::impl_cvtable! {
                 Ok((data, kind)) => match to_c_buffer(&data) {
                     Ok(p) => {
                         // SAFETY: C's contract: writable out-parameters.
-                        unsafe {
-                            buffer_p.write(p);
-                            len_p.write(data.len());
-                            type_p.write(kind.raw());
-                        }
+                        unsafe { buffer_p.write(p) };
+                        // SAFETY: as above.
+                        unsafe { len_p.write(data.len()) };
+                        // SAFETY: as above.
+                        unsafe { type_p.write(kind.raw()) };
                         0
                     }
                     Err(e) => e.raw(),
@@ -715,12 +748,13 @@ ffibox::impl_cvtable! {
                 Ok((id, data, kind)) => match to_c_buffer(&data) {
                     Ok(p) => {
                         // SAFETY: C's contract: writable out-parameters.
-                        unsafe {
-                            out.write(id);
-                            buffer_p.write(p);
-                            len_p.write(data.len());
-                            type_p.write(kind.raw());
-                        }
+                        unsafe { out.write(id) };
+                        // SAFETY: as above.
+                        unsafe { buffer_p.write(p) };
+                        // SAFETY: as above.
+                        unsafe { len_p.write(data.len()) };
+                        // SAFETY: as above.
+                        unsafe { type_p.write(kind.raw()) };
                         0
                     }
                     Err(e) => e.raw(),
@@ -737,10 +771,9 @@ ffibox::impl_cvtable! {
             match s.0.read_header(unsafe { &*oid }) {
                 Ok((len, kind)) => {
                     // SAFETY: C's contract: writable out-parameters.
-                    unsafe {
-                        len_p.write(len);
-                        type_p.write(kind.raw());
-                    }
+                    unsafe { len_p.write(len) };
+                    // SAFETY: as above.
+                    unsafe { type_p.write(kind.raw()) };
                     0
                 }
                 Err(e) => raise(&e),
@@ -754,8 +787,10 @@ ffibox::impl_cvtable! {
             let Some(kind) = ObjectType::from_raw(type_) else {
                 return git_error_set!(ErrorClass::ODB, "invalid object type").raw();
             };
-            // SAFETY: C's contract: a readable id and `len` readable bytes.
-            let (oid, data) = unsafe { (&*oid, crate::util::export::bytes(data.cast(), len)) };
+            // SAFETY: C's contract: a readable id.
+            let oid = unsafe { &*oid };
+            // SAFETY: C's contract: `len` readable bytes.
+            let data = unsafe { crate::util::export::bytes(data.cast(), len) };
             match s.0.write(oid, data, kind) {
                 Ok(()) => 0,
                 Err(e) => raise(&e),

@@ -40,7 +40,7 @@ impl Packbuilder {
     pub unsafe fn new(repo: *mut c_void) -> Result<Packbuilder> {
         let mut out = core::ptr::null_mut();
         // SAFETY: the caller's contract; `out` is writable.
-        ErrorCode::check(unsafe { git_packbuilder_new(&mut out, repo) })?;
+        ErrorCode::check(unsafe { git_packbuilder_new(&raw mut out, repo) })?;
         NonNull::new(out).map(Packbuilder).ok_or(ErrorCode::GENERIC)
     }
 

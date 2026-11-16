@@ -33,7 +33,8 @@ impl CommitGraph {
         let mut out = core::ptr::null_mut();
         // SAFETY: `out` is a writable slot, `objects_dir` a C string alive
         // for the call (C copies it).
-        let r = unsafe { git_commit_graph_new(&mut out, objects_dir.as_ptr(), false, oid_type) };
+        let r =
+            unsafe { git_commit_graph_new(&raw mut out, objects_dir.as_ptr(), false, oid_type) };
         ErrorCode::check(r)?;
         NonNull::new(out).map(CommitGraph).ok_or(ErrorCode::GENERIC)
     }
@@ -51,7 +52,7 @@ impl CommitGraph {
     pub fn get_file(&mut self) -> Result<*mut c_void> {
         let mut out = core::ptr::null_mut();
         // SAFETY: a live graph, used exclusively (`&mut self`).
-        let r = unsafe { git_commit_graph_get_file(&mut out, self.0.as_ptr()) };
+        let r = unsafe { git_commit_graph_get_file(&raw mut out, self.0.as_ptr()) };
         ErrorCode::check_zero(r)?;
         Ok(out)
     }

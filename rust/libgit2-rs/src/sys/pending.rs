@@ -58,10 +58,13 @@ pub const GIT_CONFIGMAP_FSYNCOBJECTFILES: c_int = 13;
 /// # Safety
 ///
 /// `repo` is a live `git_repository *`.
-pub unsafe fn repository_configmap_lookup(repo: *mut c_void, item: c_int) -> crate::util::errors::Result<c_int> {
+pub unsafe fn repository_configmap_lookup(
+    repo: *mut c_void,
+    item: c_int,
+) -> crate::util::errors::Result<c_int> {
     let mut out = 0;
     // SAFETY: the caller's contract; `out` is writable.
-    let r = unsafe { git_repository__configmap_lookup(&mut out, repo, item) };
+    let r = unsafe { git_repository__configmap_lookup(&raw mut out, repo, item) };
     crate::util::errors::ErrorCode::check_zero(r).map(|()| out)
 }
 
@@ -81,7 +84,7 @@ pub fn odb_backend_pack(
     let mut out = core::ptr::null_mut();
     // SAFETY: `out` is writable, `objects_dir` and `opts` are valid for the
     // call (C copies what it keeps).
-    let r = unsafe { git_odb_backend_pack(&mut out, objects_dir.as_ptr(), opts) };
+    let r = unsafe { git_odb_backend_pack(&raw mut out, objects_dir.as_ptr(), opts) };
     crate::util::errors::ErrorCode::check_zero(r)?;
     core::ptr::NonNull::new(out).ok_or(crate::util::errors::ErrorCode::GENERIC)
 }
