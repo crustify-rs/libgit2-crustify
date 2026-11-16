@@ -45,6 +45,8 @@ pub mod foreign;
 pub(crate) mod map;
 pub mod ondisk;
 pub mod ops;
+#[cfg(test)]
+mod tests;
 
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::ptr::{self, NonNull};

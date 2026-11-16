@@ -52,22 +52,28 @@ pub struct GitTreeCache {
     pub name: [c_char; 0],
 }
 
+/// A node's name (through the node's pointer, whose provenance covers the
+/// name that follows the node).
+///
+/// # Safety
+///
+/// `node` is a node made by [`new`] (its `namelen` bytes follow it), not
+/// written during `'a`.
+unsafe fn name_of<'a>(node: *const GitTreeCache) -> &'a [u8] {
+    // SAFETY: the caller's contract.
+    let n = unsafe { (*node).namelen };
+    let p = node.cast::<u8>().wrapping_add(size_of::<GitTreeCache>());
+    // SAFETY: the caller's contract: `namelen` initialized bytes follow the
+    // node, in the same allocation.
+    unsafe { core::slice::from_raw_parts(p, n) }
+}
+
 /// `"corrupted TREE extension in index"`.
 fn corrupted() -> ErrorCode {
     git_error_set!(ErrorClass::INDEX, "corrupted TREE extension in index")
 }
 
 impl GitTreeCache {
-    /// The node's name.
-    ///
-    /// # Safety
-    ///
-    /// `self` is a node made by [`new`] (its `namelen` bytes follow it).
-    unsafe fn name_bytes(&self) -> &[u8] {
-        // SAFETY: the caller's contract: `namelen` initialized bytes follow
-        // the node, in the same allocation, unwritten while borrowed.
-        unsafe { core::slice::from_raw_parts(self.name.as_ptr().cast::<u8>(), self.namelen) }
-    }
 
     /// The node's children (NULL slots are possible only while a parser
     /// fills them).
@@ -182,7 +188,7 @@ unsafe fn find_child(tree: *const GitTreeCache, name: &[u8]) -> *mut GitTreeCach
         // SAFETY: a child of a tree is a node of it.
         let c = unsafe { &*child };
         // SAFETY: as above.
-        if c.namelen == name.len() && name == unsafe { c.name_bytes() } {
+        if c.namelen == name.len() && name == unsafe { name_of(child) } {
             return child;
         }
     }
@@ -478,7 +484,7 @@ pub unsafe fn write(out: &mut GitStr, tree: *const GitTreeCache) -> Result<()> {
             // SAFETY: a node of the tree (the contract).
             let n = unsafe { &*node };
             // SAFETY: as above.
-            let name = unsafe { n.name_bytes() };
+            let name = unsafe { name_of(node) };
             // C: "%s%c%"PRIdZ" %"PRIuZ"\n" (12 characters), `%s` stopping at
             // the name's NUL.
             let name = memchr::memchr(0, name).map_or(name, |z| &name[..z]);
@@ -681,8 +687,9 @@ pub mod ffi {
 crate::c_layout_test! {
     headers: ["tree-cache.h"],
     types: [
-        GitTreeCache => "git_tree_cache" { children, children_count, oid_type, entry_count, oid, namelen, name },
+        GitTreeCache => "git_tree_cache" { children, children_count, oid_type, entry_count, oid, namelen },
     ],
+    asserts: ["offsetof(git_tree_cache, name) == 80"],
 }
 
 #[cfg(test)]
@@ -769,10 +776,15 @@ mod tests {
     }
 
     #[test]
+    fn name_follows_the_node() {
+        assert_eq!(core::mem::offset_of!(GitTreeCache, name), 80);
+    }
+
+    #[test]
     fn deep_nesting_does_not_recurse() {
         let _g = crate::util::test_support::init();
         let mut data = Vec::new();
-        for _ in 0..200_000 {
+        for _ in 0..if cfg!(miri) { 300 } else { 200_000 } {
             data.extend_from_slice(b"d\0-1 1\n");
         }
         data.extend_from_slice(b"d\0-1 0\n");
