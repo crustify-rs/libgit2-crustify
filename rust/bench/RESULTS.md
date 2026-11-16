@@ -461,3 +461,49 @@ Internal API (`micro/odb_bench.c`, `micro/odb_run.sh 5 5`):
 | odb_read_header_mempack | 59.3 | 48.9 | 0.826 |
 | odb_write_existing (hash + freshen) | 741.9 | 683.1 | 0.921 |
 | format_object_header (2M) | 516.2 | 141.7 | 0.275 |
+# WP l-config: config, config_file, config_parse, config_list, config_cache, config_mem, config_snapshot (C reference vs Rust port)
+
+Public API, `compare.sh /work/build-c /work/builds/l-config config`
+(defaults: 3 rounds × 3 repetitions, per-workload interleaving, CPU 2),
+2026-11-16 10:03 UTC, load average 378 / 326 / 293 (very loaded: wall
+times are about 3× those of the C-vs-C baseline, so the CPU-time ratio is
+the steadier figure here). All check values match.
+
+| workload | C ms | Rust ms | ratio | minrat | C cpu ms | Rust cpu ms | cpu ratio |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| config/open_big_x20 | 9726.2 | 4739.6 | 0.49 | 0.50 | 1224.6 | 591.0 | 0.48 |
+| config/open_small_x2000 | 1106.6 | 743.4 | 0.67 | 0.93 | 128.3 | 105.5 | 0.82 |
+| config/get_string_snapshot | 111.0 | 153.0 | 1.38 | 0.79 | 20.3 | 20.0 | 0.98 |
+| config/get_bool_int_snapshot | 288.3 | 266.3 | 0.92 | 1.07 | 39.0 | 37.7 | 0.97 |
+| config/get_entry_live | 1516.5 | 1754.0 | 1.16 | 1.00 | 268.5 | 279.7 | 1.04 |
+| config/iterate_all | 551.7 | 46.6 | 0.08 | 0.06 | 81.9 | 6.2 | 0.08 |
+| config/iterate_glob | 315.5 | 53.2 | 0.17 | 0.13 | 54.1 | 7.5 | 0.14 |
+| config/multivar_iterate | 1343.7 | 72.2 | 0.05 | 0.03 | 168.8 | 9.7 | 0.06 |
+| config/multivar_foreach | 6339.5 | 297.4 | 0.05 | 0.04 | 829.3 | 38.1 | 0.05 |
+| config/snapshot_x5 | 3125.5 | 697.5 | 0.22 | 0.22 | 408.4 | 88.7 | 0.22 |
+| config/set_big_x10 | 4637.9 | 2877.0 | 0.62 | 0.61 | 571.2 | 343.5 | 0.60 |
+| config/set_small_x400 | 4463.1 | 3712.6 | 0.83 | 0.66 | 530.2 | 401.1 | 0.76 |
+| config/delete_big_x10 | 6306.4 | 3633.4 | 0.58 | 0.54 | 740.4 | 442.4 | 0.60 |
+| config/repository_config_x500 | 1126.0 | 1023.9 | 0.91 | 1.09 | 141.9 | 134.7 | 0.95 |
+| config/parse_bool_int | 168.2 | 143.1 | 0.85 | 1.25 | 21.2 | 17.1 | 0.81 |
+
+Geomean wall ratio 0.40, CPU 0.38.
+
+- Iteration (`iterate_*`, `multivar_*`) and `snapshot_x5` are 5-20× faster:
+  a backend's entry list is immutable once read, so an iterator shares it
+  instead of copying all 22,000 entries (C's `git_config_list_dup`) every
+  time, and a snapshot copies plain entries without re-interning.
+- Reads and writes of files (`open_*`, `set_*`, `delete_*`): one allocation
+  per entry (name and value together) and a word-wise hash, where C made
+  up to five (entry, name, value, list node, map head), and the parser
+  works on slices of the content where C copies each line first.
+- Single lookups are at parity in CPU time (0.97-1.04): each one crosses
+  the config's backend list (a mutex and an `Arc` clone, so that no lock is
+  held while a backend runs) and the backend's `CTable` entry (two atomic
+  operations), against C's unguarded vectors. An earlier build that
+  allocated the normalized name twice per lookup and copied the list's
+  `Arc` was 1.5× on `get_bool_int_snapshot`; with the name on the stack
+  and the entry lent under the list's lock, a per-call loop
+  (`git_config_get_bool`/`_int64` on a snapshot of big.config, 200,000
+  calls, CPU 5) gives C 372-433 ns, Rust 384-470 ns, and 494 vs 483 ns for
+  a missing key.

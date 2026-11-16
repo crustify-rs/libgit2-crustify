@@ -22,4 +22,5 @@ pub mod submodule;
 pub mod sysdir;
 pub mod transports;
 pub mod worktree;
+pub mod transaction;
 pub mod zlib;

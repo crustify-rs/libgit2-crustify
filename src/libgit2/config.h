@@ -21,11 +21,22 @@
 #define GIT_CONFIG_FILENAME_INREPO "config"
 #define GIT_CONFIG_FILE_MODE 0666
 
+#ifdef GIT_RUST
+/*
+ * The Rust port's configuration (`GitConfig` in
+ * rust/libgit2-rs/src/config.rs): C sees the reference count only; the
+ * backends follow in Rust state.  C never allocates or sizes it.
+ */
+struct git_config {
+	git_refcount rc;
+};
+#else
 struct git_config {
 	git_refcount rc;
 	git_vector readers;
 	git_vector writers;
 };
+#endif
 
 extern int git_config__global_location(git_str *buf);
 
