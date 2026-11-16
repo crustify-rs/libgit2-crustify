@@ -123,6 +123,10 @@ pub fn status_int(r: Result<c_int>) -> c_int {
 /// The `len` bytes at `ptr` as a slice; empty when `len` is 0, whatever
 /// `ptr` is (C passes NULL with 0).
 ///
+/// A `len` above `isize::MAX` (which no readable range can have, but a C
+/// `size_t` can carry) panics rather than form the slice: the export's
+/// barrier turns it into an internal error.
+///
 /// # Safety
 ///
 /// When `len > 0`, `ptr` must be valid for reads of `len` bytes for `'a`,
@@ -132,6 +136,7 @@ pub unsafe fn bytes<'a>(ptr: *const c_char, len: usize) -> &'a [u8] {
     if len == 0 || ptr.is_null() {
         return &[];
     }
+    assert!(len <= isize::MAX as usize, "length beyond isize::MAX");
     // SAFETY: the caller guarantees `len` readable, unwritten bytes at the
     // non-null `ptr` for `'a`; `u8` has alignment 1.
     unsafe { core::slice::from_raw_parts(ptr.cast::<u8>(), len) }

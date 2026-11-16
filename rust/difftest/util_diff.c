@@ -12,6 +12,7 @@
 #include "git2/errors.h"
 #include "vector.h"
 #include "errors.h"
+#include "buf.h"
 
 static unsigned long seed = 12345;
 static unsigned rnd(void)
@@ -327,6 +328,31 @@ static void test_errors(void)
 	printf("exists %d\n", git_error_exists());
 }
 
+static void test_review_r1(void)
+{
+	const char *pre[] = { "ab\xC3", "abc", "ABC", "ab\x80x", "a", "" };
+	const char *subj[] = { "ab", "AB", "a", "", "abz" };
+	size_t i, j, n;
+	git_str s = GIT_STR_INIT, t;
+	git_buf b;
+	for (i = 0; i < 6; i++) for (j = 0; j < 5; j++) for (n = 0; n < 4; n++)
+		printf("prefixncmp %zu %zu %zu: %d %d\n", i, j, n,
+			git__prefixncmp(subj[j], n, pre[i]), git__prefixncmp_icase(subj[j], n, pre[i]));
+	git_str_puts(&s, "abcdef");
+	printf("copy_cstr overlap %d ", git_str_copy_cstr(s.ptr + 2, 4, &s));
+	printf("[%s]\n", s.ptr);
+	git_str_dispose(&s);
+	git_error_set_str(3, "original message");
+	printf("set_str own %d ", git_error_set_str(7, git_error_last()->message));
+	show_err("", 0);
+	git_str_puts(&s, "hello");
+	git_str_grow(&s, SIZE_MAX);
+	git_buf_fromstr(&b, &s);
+	git_buf_tostr(&t, &b);
+	printf("oom through buf: oom=%d asize=%zu puts=%d\n", git_str_oom(&t), t.asize, git_str_puts(&t, "x"));
+	git_str_dispose(&t);
+}
+
 int main(void)
 {
 	git_libgit2_init();
@@ -339,6 +365,7 @@ int main(void)
 	test_string_helpers();
 	test_vector();
 	test_errors();
+	test_review_r1();
 	git_libgit2_shutdown();
 	printf("after shutdown: %s\n", git_error_last()->message);
 	return 0;

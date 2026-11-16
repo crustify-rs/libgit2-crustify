@@ -51,3 +51,26 @@ One entry per difference: component, what differs, why.
   `printf("%s")` (same output through the same `stdio` stream).
 - **vector: `git_vector_dup`** with a NULL comparison function on a source
   that has one leaves the copy unsorted, as C (it compares the argument).
+
+- **Infallible Rust allocations on rare paths.** These allocate with Rust's
+  allocator (an allocation failure aborts, where C did not allocate or
+  failed with -1): `errors::last()` / `Error::last()` (the safe API's copy
+  of the message); in the `git_str` exports, the copy of a data argument
+  that overlaps the string's own allocation outside its contents
+  (pathological: C reads freed memory there, see DEFECTS.md), and the copy
+  of in-buffer data for the encoders, `splice`, `join3`, `puts_escaped`,
+  `common_prefix`, `crlf_to_lf`/`lf_to_crlf`. `git_error_save`,
+  `errors::save`, and `git_str_join_n` (including more than 8 segments)
+  fail with the out-of-memory error instead.
+- **Callbacks may not read the array they sort.** `git_vector_sort`,
+  `git_vector_insert_sorted`, `git_vector_uniq`, `git_vector_bsearch*` and
+  `git__tsort*` hold a reference to the array across the comparison, `on_dup`
+  and free callbacks, which therefore must not access the vector (C would
+  allow reads). No caller in libgit2 does.
+- **In-buffer data must be initialized.** `git_str_set(buf, buf->ptr, len)`
+  with `len > size` (C's in-place case) requires the bytes up to `len` to
+  have been written: the Rust reads contents as bytes, where C reads
+  indeterminate `char`s.
+- **Lock API (Rust side).** The guards of `GitMutex`/`GitRwLock` are `!Send`;
+  `GitMutex::raw_lock` and `GitCond::wait` are `unsafe` (POSIX rules: no
+  move or relock while held; one mutex per condition variable).

@@ -446,8 +446,16 @@ pub mod ffi {
     /// `str` is readable for `n` bytes.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git__substrdup(str: *const c_char, n: usize) -> *mut c_char {
-        // SAFETY: the caller passes `n` readable bytes.
-        barrier(|| substrdup(unsafe { bytes(str, n) }))
+        barrier(|| {
+            if n > isize::MAX as usize {
+                // C's `malloc(n + 1)` cannot succeed (or wraps to 0 for
+                // `SIZE_MAX`, then copies `n` bytes): fail as out of memory.
+                errors::set_oom();
+                return core::ptr::null_mut();
+            }
+            // SAFETY: the caller passes `n` readable bytes.
+            substrdup(unsafe { bytes(str, n) })
+        })
     }
 
     /// `git_allocator_global_init`.

@@ -722,6 +722,12 @@ impl GitVector {
 /// Every `git_vector *` argument is a valid `git_vector` that no other
 /// thread accesses during the call, and its comparison function (and every
 /// callback passed) is sound to call with its elements and the keys passed.
+///
+/// Stricter than C: the comparison function, `on_dup` and the free callback
+/// of `git_vector_uniq` must not access the vector or its array (the Rust
+/// holds a reference to the array across those calls; C would let them
+/// read it). Only `git_vector_remove_matching`'s callback, which receives
+/// the vector, may read it. No caller in libgit2 does otherwise.
 pub mod ffi {
     use super::*;
     use crate::util::export::{barrier, status, write_opt};

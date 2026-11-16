@@ -16,10 +16,17 @@
 //! that C never sees uses `std::sync` instead.
 //!
 //! The locks are `Sync` and are used through `&self`: C locks them through
-//! the same memory, so they must stay at one address while in use (they
-//! live in C-shared structs on the heap). They are not recursive, and they
-//! have no `Drop`: `git_mutex_free` (`pthread_mutex_destroy`) is called by
-//! whoever disposes the struct, as in C.
+//! the same memory, so they must stay at one address once used (they live
+//! in C-shared structs on the heap; POSIX forbids using a copy, and a held
+//! lock can only be reached through a guard, which borrows it). Their
+//! guards are `!Send`: a lock is released by the thread that took it.
+//!
+//! They are not recursive: locking a [`GitMutex`] again on the thread that
+//! holds it deadlocks (glibc's default mutex, `PTHREAD_MUTEX_INITIALIZER`,
+//! is a normal one), and taking a [`GitRwLock`]'s write lock while holding
+//! its read lock panics (glibc reports `EDEADLK`). They have no `Drop`:
+//! `git_mutex_free` (`pthread_mutex_destroy`) is called by whoever disposes
+//! the struct, as in C.
 //!
 //! ```
 //! use libgit2_rs::util::thread::{GitMutex, Atomic32};
@@ -65,12 +72,20 @@ impl GitMutex {
         // address for the borrow.
         let r = unsafe { libc::pthread_mutex_lock(self.0.get()) };
         assert_eq!(r, 0, "pthread_mutex_lock failed");
-        GitMutexGuard { m: self }
+        GitMutexGuard {
+            m: self,
+            _not_send: core::marker::PhantomData,
+        }
     }
 
     /// Lock as C's `git_mutex_lock` does: 0, or the pthread error. Pair it
     /// with [`raw_unlock`](Self::raw_unlock).
-    pub fn raw_lock(&self) -> c_int {
+    ///
+    /// # Safety
+    ///
+    /// Until the matching `raw_unlock`, on this thread, the mutex is not
+    /// moved, and this thread does not lock it again.
+    pub unsafe fn raw_lock(&self) -> c_int {
         // SAFETY: as in `lock`.
         unsafe { libc::pthread_mutex_lock(self.0.get()) }
     }
@@ -108,10 +123,19 @@ impl Default for GitMutex {
     }
 }
 
-/// A held [`GitMutex`]; unlocks on drop.
+/// A held [`GitMutex`]; unlocks on drop. Not `Send`:
+///
+/// ```compile_fail
+/// use libgit2_rs::util::thread::GitMutex;
+/// fn send<T: Send>(_: T) {}
+/// static M: GitMutex = GitMutex::new();
+/// send(M.lock());
+/// ```
 #[must_use]
 pub struct GitMutexGuard<'a> {
     m: &'a GitMutex,
+    /// `!Send`: the lock is released by the thread that took it.
+    _not_send: core::marker::PhantomData<*const ()>,
 }
 
 impl GitMutexGuard<'_> {
@@ -149,7 +173,10 @@ impl GitRwLock {
         // SAFETY: initialized, at a stable address for the borrow.
         let r = unsafe { libc::pthread_rwlock_rdlock(self.0.get()) };
         assert_eq!(r, 0, "pthread_rwlock_rdlock failed");
-        GitReadGuard { l: self }
+        GitReadGuard {
+            l: self,
+            _not_send: core::marker::PhantomData,
+        }
     }
 
     /// Take the write lock (`git_rwlock_wrlock`).
@@ -157,7 +184,10 @@ impl GitRwLock {
         // SAFETY: as in `read`.
         let r = unsafe { libc::pthread_rwlock_wrlock(self.0.get()) };
         assert_eq!(r, 0, "pthread_rwlock_wrlock failed");
-        GitWriteGuard { l: self }
+        GitWriteGuard {
+            l: self,
+            _not_send: core::marker::PhantomData,
+        }
     }
 
     /// The `pthread_rwlock_t *` for C.
@@ -186,6 +216,8 @@ impl Default for GitRwLock {
 #[must_use]
 pub struct GitReadGuard<'a> {
     l: &'a GitRwLock,
+    /// `!Send`: the lock is released by the thread that took it.
+    _not_send: core::marker::PhantomData<*const ()>,
 }
 
 impl Drop for GitReadGuard<'_> {
@@ -199,6 +231,8 @@ impl Drop for GitReadGuard<'_> {
 #[must_use]
 pub struct GitWriteGuard<'a> {
     l: &'a GitRwLock,
+    /// `!Send`: the lock is released by the thread that took it.
+    _not_send: core::marker::PhantomData<*const ()>,
 }
 
 impl Drop for GitWriteGuard<'_> {
@@ -225,9 +259,16 @@ impl GitCond {
 
     /// Wait (`git_cond_wait`), releasing and retaking `guard`'s mutex.
     /// Wake-ups may be spurious, as with pthreads.
-    pub fn wait(&self, guard: &mut GitMutexGuard<'_>) {
+    ///
+    /// # Safety
+    ///
+    /// Every thread waiting on this condition variable at the same time
+    /// waits with the same mutex (POSIX leaves waiting with different ones
+    /// undefined).
+    pub unsafe fn wait(&self, guard: &mut GitMutexGuard<'_>) {
         // SAFETY: `guard` proves this thread holds the mutex; both objects
-        // are initialized and at stable addresses.
+        // are initialized and at stable addresses; the caller guarantees
+        // the single-mutex rule.
         let r = unsafe { libc::pthread_cond_wait(self.0.get(), guard.m.0.get()) };
         assert_eq!(r, 0, "pthread_cond_wait failed");
     }
@@ -514,7 +555,8 @@ mod tests {
         {
             let mut g = s.m.lock();
             while s.n.get() == 0 {
-                s.c.wait(&mut g);
+                // SAFETY: only this thread waits, with `s.m`.
+                unsafe { s.c.wait(&mut g) };
             }
         }
         t.join().unwrap();
