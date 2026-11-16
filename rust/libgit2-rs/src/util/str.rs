@@ -1060,37 +1060,6 @@ impl GitStr {
         }
     }
 
-    /// The contents of an owned buffer, for writing in place (empty for
-    /// any other state: a borrowed buffer is never written).
-    #[inline]
-    pub fn as_mut_bytes(&mut self) -> &mut [u8] {
-        self.content_mut()
-    }
-
-    /// The room after the contents of an owned buffer (the NUL's place
-    /// included), for writing before [`set_len`](Self::set_len); empty for
-    /// any other state.
-    #[inline]
-    pub fn spare_capacity_mut(&mut self) -> &mut [MaybeUninit<u8>] {
-        let n = self.size;
-        let a = self.alloc_mut();
-        if n >= a.len() { &mut [] } else { &mut a[n..] }
-    }
-
-    /// Set the size of an owned buffer to `n` and write the NUL after it:
-    /// what C does after reading into `ptr` directly.
-    ///
-    /// # Safety
-    ///
-    /// The buffer is owned, `n < capacity()`, and its bytes `0..n` are
-    /// initialized (the old contents, or written through
-    /// [`spare_capacity_mut`](Self::spare_capacity_mut)).
-    #[inline]
-    pub unsafe fn set_len(&mut self, n: usize) {
-        assert!(self.owned() && n < self.asize, "set_len out of the allocation");
-        self.set_size_nul(n);
-    }
-
     /// `git_str_truncate`.
     pub fn truncate(&mut self, len: usize) {
         if len >= self.size {
@@ -3019,4 +2988,42 @@ crate::c_layout_test! {
         Bom => "git_str_bom_t" {},
     ],
     asserts: ["GIT_STR_BOM_UTF32_BE == 5"],
+}
+
+// In-place access for the filesystem layer (WP u3): writing path bytes in
+// place, and reading into the spare room (`fs_path`, `futils`).
+impl GitStr {
+    /// The contents of an owned buffer, for writing in place (empty for
+    /// any other state: a borrowed buffer is never written).
+    #[inline]
+    pub fn as_mut_bytes(&mut self) -> &mut [u8] {
+        self.content_mut()
+    }
+
+    /// The room after the contents of an owned buffer (the NUL's place
+    /// included), for writing before [`set_len`](Self::set_len); empty for
+    /// any other state.
+    #[inline]
+    pub fn spare_capacity_mut(&mut self) -> &mut [MaybeUninit<u8>] {
+        let n = self.size;
+        let a = self.alloc_mut();
+        if n >= a.len() { &mut [] } else { &mut a[n..] }
+    }
+
+    /// Set the size of an owned buffer to `n` and write the NUL after it:
+    /// what C does after reading into `ptr` directly.
+    ///
+    /// # Safety
+    ///
+    /// The buffer is owned, `n < capacity()`, and its bytes `0..n` are
+    /// initialized (the old contents, or written through
+    /// [`spare_capacity_mut`](Self::spare_capacity_mut)).
+    #[inline]
+    pub unsafe fn set_len(&mut self, n: usize) {
+        assert!(
+            self.owned() && n < self.asize,
+            "set_len out of the allocation"
+        );
+        self.set_size_nul(n);
+    }
 }

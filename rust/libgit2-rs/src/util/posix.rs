@@ -116,7 +116,7 @@ pub unsafe fn read_raw(fd: c_int, buf: *mut u8, len: usize) -> isize {
     let mut done = 0usize;
     while done < len {
         // SAFETY: `buf + done` has `len - done` writable bytes (caller).
-        let r = unsafe { libc::read(fd, buf.add(done).cast::<c_void>(), len - done) };
+        let r = unsafe { libc::read(fd, buf.wrapping_add(done).cast::<c_void>(), len - done) };
         if r < 0 {
             let e = errors::errno();
             if e == libc::EINTR || e == libc::EAGAIN {
@@ -136,7 +136,11 @@ pub unsafe fn read_raw(fd: c_int, buf: *mut u8, len: usize) -> isize {
 pub fn read(fd: c_int, buf: &mut [u8]) -> SysResult<usize> {
     // SAFETY: `buf` is writable for its length.
     let r = unsafe { read_raw(fd, buf.as_mut_ptr(), buf.len()) };
-    if r < 0 { Err(last_errno()) } else { Ok(r as usize) }
+    if r < 0 {
+        Err(last_errno())
+    } else {
+        Ok(r as usize)
+    }
 }
 
 /// `p_write`: write all of `buf`, looping on short writes, `EINTR` and
@@ -245,7 +249,11 @@ pub fn symlink(target: &CStr, path: &CStr) -> SysResult<()> {
 pub fn readlink(path: &CStr, buf: &mut [u8]) -> SysResult<usize> {
     // SAFETY: `path` is NUL-terminated, `buf` writable for its length.
     let r = unsafe { libc::readlink(path.as_ptr(), buf.as_mut_ptr().cast(), buf.len()) };
-    if r < 0 { Err(last_errno()) } else { Ok(r as usize) }
+    if r < 0 {
+        Err(last_errno())
+    } else {
+        Ok(r as usize)
+    }
 }
 
 /// `p_utimes`.
@@ -540,7 +548,10 @@ pub mod ffi {
     /// `pathname` is a NUL-terminated string; `resolved` is NULL or valid
     /// for writes of `PATH_MAX` bytes.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn p_realpath(pathname: *const c_char, resolved: *mut c_char) -> *mut c_char {
+    pub unsafe extern "C" fn p_realpath(
+        pathname: *const c_char,
+        resolved: *mut c_char,
+    ) -> *mut c_char {
         barrier(|| {
             // SAFETY: the caller's contract is `realpath`'s.
             let result = unsafe { libc::realpath(pathname, resolved) };
@@ -598,7 +609,11 @@ pub mod ffi {
         offset: i64,
     ) -> c_int {
         barrier(|| {
-            crate::git_assert!(!out.is_null() && len > 0, "out != ((void*)0) && len > 0", -1);
+            crate::git_assert!(
+                !out.is_null() && len > 0,
+                "out != ((void*)0) && len > 0",
+                -1
+            );
             if let Err(e) = mmap_args(len, prot, flags) {
                 return e.raw();
             }
@@ -624,9 +639,11 @@ pub mod ffi {
     pub unsafe extern "C" fn p_munmap(map: *mut GitMap) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!map.is_null(), "map", -1);
-            // SAFETY: the caller passes a mapping from `p_mmap`, used by no
-            // one during the call.
-            unsafe { munmap(&mut *map) };
+            // SAFETY: the caller passes a valid `git_map`, used by no one
+            // during the call.
+            let map = unsafe { &mut *map };
+            // SAFETY: a mapping from `p_mmap` (or empty).
+            unsafe { munmap(map) };
             0
         })
     }
@@ -659,7 +676,10 @@ mod tests {
             mmap_args(1, GIT_PROT_WRITE, GIT_MAP_SHARED),
             Ok((libc::PROT_READ | libc::PROT_WRITE, libc::MAP_SHARED))
         );
-        assert_eq!(mmap_args(1, GIT_PROT_READ, 0), Ok((libc::PROT_READ, libc::MAP_SHARED)));
+        assert_eq!(
+            mmap_args(1, GIT_PROT_READ, 0),
+            Ok((libc::PROT_READ, libc::MAP_SHARED))
+        );
         assert!(mmap_args(0, GIT_PROT_READ, 0).is_err());
         assert_eq!(
             errors::last_message().unwrap(),

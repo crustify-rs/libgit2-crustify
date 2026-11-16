@@ -6,8 +6,9 @@
 //! ([`arg`]).
 
 use super::*;
-use core::ffi::c_void;
 use crate::util::export::{barrier, bytes, cstr, cstr_bytes, status, write_opt};
+use core::ffi::c_void;
+use core::ptr::NonNull;
 
 /// The NUL-terminated string at `p` (empty for NULL), copied when it lies
 /// in `buf`'s allocation, so that writing `buf` cannot change it.
@@ -21,7 +22,8 @@ unsafe fn arg<'a>(buf: *const GitStr, p: *const c_char) -> Cow<'a, [u8]> {
     let b = unsafe { cstr_bytes(p) };
     if !buf.is_null() && !p.is_null() {
         // SAFETY: the caller passes a valid `git_str`, read for a moment.
-        let (start, asize) = unsafe { ((*buf).as_ptr() as usize, (*buf).capacity()) };
+        let s = unsafe { &*buf };
+        let (start, asize) = (s.as_ptr() as usize, s.capacity());
         let a = p as usize;
         if asize > 0 && a >= start && a < start + asize {
             return Cow::Owned(b.to_vec());
@@ -150,8 +152,18 @@ pub unsafe extern "C" fn git_fs_path_basename_offset(buffer: *mut GitStr) -> usi
 /// `path` is a NUL-terminated string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_fs_path_root(path: *const c_char) -> c_int {
-    // SAFETY: the caller passes a NUL-terminated string.
-    barrier(|| root(unsafe { cstr_bytes(path) }))
+    if path.is_null() {
+        return -1;
+    }
+    // Only the bytes C reads: at most the first five, never past the NUL
+    // (`root_with`'s contract), so no `strlen`.
+    barrier(|| {
+        root_with(|i| {
+            // SAFETY: `path` is a NUL-terminated string and `i` is at most
+            // the index of its NUL.
+            unsafe { path.cast::<u8>().add(i).read() }
+        })
+    })
 }
 
 /// `git_fs_path_to_dir`.
@@ -163,7 +175,9 @@ pub unsafe extern "C" fn git_fs_path_root(path: *const c_char) -> c_int {
 pub unsafe extern "C" fn git_fs_path_to_dir(path: *mut GitStr) -> c_int {
     barrier(|| {
         // SAFETY: the caller passes a valid `git_str`.
-        let Some(p) = (unsafe { s(path) }) else { return -1 };
+        let Some(p) = (unsafe { s(path) }) else {
+            return -1;
+        };
         status(to_dir(p))
     })
 }
@@ -207,7 +221,10 @@ pub unsafe extern "C" fn git_fs_path_dirlen(path: *const c_char) -> usize {
 ///
 /// `decoded_out` is a valid `git_str`; `input` a NUL-terminated string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git__percent_decode(decoded_out: *mut GitStr, input: *const c_char) -> c_int {
+pub unsafe extern "C" fn git__percent_decode(
+    decoded_out: *mut GitStr,
+    input: *const c_char,
+) -> c_int {
     barrier(|| {
         crate::git_assert_arg!(!decoded_out.is_null(), "decoded_out", -1);
         crate::git_assert_arg!(!input.is_null(), "input", -1);
@@ -226,7 +243,10 @@ pub unsafe extern "C" fn git__percent_decode(decoded_out: *mut GitStr, input: *c
 /// `local_path_out` is a valid `git_str`; `file_url` a NUL-terminated
 /// string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_fs_path_fromurl(local_path_out: *mut GitStr, file_url: *const c_char) -> c_int {
+pub unsafe extern "C" fn git_fs_path_fromurl(
+    local_path_out: *mut GitStr,
+    file_url: *const c_char,
+) -> c_int {
     barrier(|| {
         crate::git_assert_arg!(!local_path_out.is_null(), "local_path_out", -1);
         crate::git_assert_arg!(!file_url.is_null(), "file_url", -1);
@@ -263,7 +283,9 @@ pub unsafe extern "C" fn git_fs_path_from_url_or_path(
         // SAFETY: the caller's contract.
         let u = unsafe { arg(local_path_out, url_or_path) };
         // SAFETY: as above.
-        let Some(out) = (unsafe { s(local_path_out) }) else { return -1 };
+        let Some(out) = (unsafe { s(local_path_out) }) else {
+            return -1;
+        };
         status(from_url_or_path(out, &u))
     })
 }
@@ -300,11 +322,15 @@ pub unsafe extern "C" fn git_fs_path_direach(
             return -1;
         }
         let mut p = RawPath(path);
-        status(direach(&mut p, flags, &mut |p: &mut RawPath| match callback {
-            // SAFETY: the caller's contract for the callback.
-            Some(cb) => unsafe { cb(payload, p.0) },
-            None => -1,
-        }))
+        status(direach(
+            &mut p,
+            flags,
+            &mut |p: &mut RawPath| match callback {
+                // SAFETY: the caller's contract for the callback.
+                Some(cb) => unsafe { cb(payload, p.0) },
+                None => -1,
+            },
+        ))
     })
 }
 
@@ -335,7 +361,11 @@ pub unsafe extern "C" fn git_fs_path_walk_up(
         // SAFETY: as above, read for a moment.
         let (copy, buf, owned) = unsafe {
             let s = &*path;
-            (s.as_bytes().to_vec(), s.as_ptr().cast_mut(), s.capacity() > s.len())
+            (
+                s.as_bytes().to_vec(),
+                s.as_ptr().cast_mut(),
+                s.capacity() > s.len(),
+            )
         };
         walk_up(&copy, ceiling.as_deref(), |step| match step {
             // SAFETY: the callback's contract.
@@ -437,8 +467,10 @@ pub unsafe extern "C" fn git_fs_path_set_error(
     action: *const c_char,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: the caller passes NUL-terminated strings.
-        let (p, a) = unsafe { (cstr_bytes(path), cstr_bytes(action)) };
+        // SAFETY: a NUL-terminated string.
+        let p = unsafe { cstr_bytes(path) };
+        // SAFETY: a NUL-terminated string.
+        let a = unsafe { cstr_bytes(action) };
         set_error(errno_value, p, &String::from_utf8_lossy(a)).raw()
     })
 }
@@ -476,7 +508,9 @@ macro_rules! contains_fn {
                 // SAFETY: the caller's contract.
                 let i = unsafe { arg(dir, item) };
                 // SAFETY: as above.
-                let Some(d) = (unsafe { s(dir) }) else { return false };
+                let Some(d) = (unsafe { s(dir) }) else {
+                    return false;
+                };
                 $f(d, &i)
             })
         }
@@ -493,9 +527,18 @@ contains_fn!(git_fs_path_contains_file => contains_file);
 ///
 /// `one` and `two` are NUL-terminated strings.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_fs_path_common_dirlen(one: *const c_char, two: *const c_char) -> usize {
-    // SAFETY: the caller passes NUL-terminated strings.
-    barrier(|| common_dirlen(unsafe { cstr_bytes(one) }, unsafe { cstr_bytes(two) }))
+pub unsafe extern "C" fn git_fs_path_common_dirlen(
+    one: *const c_char,
+    two: *const c_char,
+) -> usize {
+    let (Some(one), Some(two)) = (NonNull::new(one.cast_mut()), NonNull::new(two.cast_mut()))
+    else {
+        return 0;
+    };
+    // SAFETY: the caller passes NUL-terminated strings, unwritten during
+    // the call.
+    let (one, two) = unsafe { (RawCStr::new(one), RawCStr::new(two)) };
+    barrier(|| common_dirlen_with(one, two))
 }
 
 /// `git_fs_path_make_relative`.
@@ -504,12 +547,17 @@ pub unsafe extern "C" fn git_fs_path_common_dirlen(one: *const c_char, two: *con
 ///
 /// `path` is a valid `git_str`; `parent` a NUL-terminated string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_fs_path_make_relative(path: *mut GitStr, parent: *const c_char) -> c_int {
+pub unsafe extern "C" fn git_fs_path_make_relative(
+    path: *mut GitStr,
+    parent: *const c_char,
+) -> c_int {
     barrier(|| {
         // SAFETY: the caller's contract.
         let p = unsafe { arg(path, parent) };
         // SAFETY: as above.
-        let Some(b) = (unsafe { s(path) }) else { return -1 };
+        let Some(b) = (unsafe { s(path) }) else {
+            return -1;
+        };
         status(make_relative(b, &p))
     })
 }
@@ -530,8 +578,10 @@ pub unsafe extern "C" fn git_fs_path_join_unrooted(
     barrier(|| {
         crate::git_assert_arg!(!path_out.is_null(), "path_out", -1);
         crate::git_assert_arg!(!path.is_null(), "path", -1);
-        // SAFETY: the caller's contract.
-        let (p, b) = unsafe { (arg(path_out, path), opt_arg(path_out, base)) };
+        // SAFETY: a valid `git_str`, and a string that may lie in it.
+        let p = unsafe { arg(path_out, path) };
+        // SAFETY: as above, or NULL.
+        let b = unsafe { opt_arg(path_out, base) };
         // SAFETY: as above.
         match join_unrooted(unsafe { &mut *path_out }, &p, b.as_deref()) {
             Ok(r) => {
@@ -574,8 +624,10 @@ pub unsafe extern "C" fn git_fs_path_prettify(
     barrier(|| {
         crate::git_assert_arg!(!path_out.is_null(), "path_out", -1);
         crate::git_assert_arg!(!path.is_null(), "path", -1);
-        // SAFETY: the caller's contract.
-        let (p, b) = unsafe { (arg(path_out, path), opt_arg(path_out, base)) };
+        // SAFETY: a valid `git_str`, and a string that may lie in it.
+        let p = unsafe { arg(path_out, path) };
+        // SAFETY: as above, or NULL.
+        let b = unsafe { opt_arg(path_out, base) };
         let p = to_cstring(&p);
         // SAFETY: as above.
         status(prettify(unsafe { &mut *path_out }, &p, b.as_deref()))
@@ -596,8 +648,10 @@ pub unsafe extern "C" fn git_fs_path_prettify_dir(
     barrier(|| {
         crate::git_assert_arg!(!path_out.is_null(), "path_out", -1);
         crate::git_assert_arg!(!path.is_null(), "path", -1);
-        // SAFETY: the caller's contract.
-        let (p, b) = unsafe { (arg(path_out, path), opt_arg(path_out, base)) };
+        // SAFETY: a valid `git_str`, and a string that may lie in it.
+        let p = unsafe { arg(path_out, path) };
+        // SAFETY: as above, or NULL.
+        let b = unsafe { opt_arg(path_out, base) };
         let p = to_cstring(&p);
         // SAFETY: as above.
         status(prettify_dir(unsafe { &mut *path_out }, &p, b.as_deref()))
@@ -613,7 +667,9 @@ pub unsafe extern "C" fn git_fs_path_prettify_dir(
 pub unsafe extern "C" fn git_fs_path_find_dir(dir: *mut GitStr) -> c_int {
     barrier(|| {
         // SAFETY: the caller passes a valid `git_str`.
-        let Some(d) = (unsafe { s(dir) }) else { return -1 };
+        let Some(d) = (unsafe { s(dir) }) else {
+            return -1;
+        };
         status(find_dir(d))
     })
 }
@@ -627,7 +683,9 @@ pub unsafe extern "C" fn git_fs_path_find_dir(dir: *mut GitStr) -> c_int {
 pub unsafe extern "C" fn git_fs_path_resolve_relative(path: *mut GitStr, ceiling: usize) -> c_int {
     barrier(|| {
         // SAFETY: the caller passes NULL or a valid `git_str`.
-        let Some(p) = (unsafe { s(path) }) else { return -1 };
+        let Some(p) = (unsafe { s(path) }) else {
+            return -1;
+        };
         status(resolve_relative(p, ceiling))
     })
 }
@@ -638,12 +696,17 @@ pub unsafe extern "C" fn git_fs_path_resolve_relative(path: *mut GitStr, ceiling
 ///
 /// `target` is a valid `git_str`; `relpath` a NUL-terminated string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_fs_path_apply_relative(target: *mut GitStr, relpath: *const c_char) -> c_int {
+pub unsafe extern "C" fn git_fs_path_apply_relative(
+    target: *mut GitStr,
+    relpath: *const c_char,
+) -> c_int {
     barrier(|| {
         // SAFETY: the caller's contract.
         let r = unsafe { arg(target, relpath) };
         // SAFETY: as above.
-        let Some(t) = (unsafe { s(target) }) else { return 1 };
+        let Some(t) = (unsafe { s(target) }) else {
+            return 1;
+        };
         apply_relative(t, &r).is_err() as c_int
     })
 }
@@ -675,7 +738,9 @@ pub unsafe extern "C" fn git_fs_path_cmp(
         }
         // SAFETY: the caller passes `len + 1` readable bytes of each (C
         // reads the byte after the common length).
-        let (a, b) = unsafe { (bytes(name1, len + 1), bytes(name2, len + 1)) };
+        let a = unsafe { bytes(name1, len + 1) };
+        // SAFETY: as above.
+        let b = unsafe { bytes(name2, len + 1) };
         cmp(a, len, isdir1 != 0, b, len, isdir2 != 0, |_, _, _| 0)
     })
 }
@@ -761,11 +826,10 @@ pub unsafe extern "C" fn git_fs_path_diriter_filename(
         // SAFETY: the caller's contract.
         match unsafe { &*diriter }.filename() {
             Ok(name) => {
-                // SAFETY: writable out-parameters.
-                unsafe {
-                    out.write(name.as_ptr().cast());
-                    out_len.write(name.len());
-                }
+                // SAFETY: a writable out-parameter.
+                unsafe { out.write(name.as_ptr().cast()) };
+                // SAFETY: a writable out-parameter.
+                unsafe { out_len.write(name.len()) };
                 0
             }
             Err(e) => e.raw(),
@@ -790,11 +854,10 @@ pub unsafe extern "C" fn git_fs_path_diriter_fullpath(
         crate::git_assert_arg!(!diriter.is_null(), "diriter", -1);
         // SAFETY: the caller's contract.
         let d = unsafe { &*diriter };
-        // SAFETY: writable out-parameters; C's `path.ptr`.
-        unsafe {
-            out.write(d.path.as_ptr());
-            out_len.write(d.path.len());
-        }
+        // SAFETY: a writable out-parameter; C's `path.ptr`.
+        unsafe { out.write(d.path.as_ptr()) };
+        // SAFETY: a writable out-parameter.
+        unsafe { out_len.write(d.path.len()) };
         0
     })
 }
@@ -805,7 +868,10 @@ pub unsafe extern "C" fn git_fs_path_diriter_fullpath(
 ///
 /// `out` is writable; `diriter` as in [`git_fs_path_diriter_next`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_fs_path_diriter_stat(out: *mut Stat, diriter: *mut GitFsPathDiriter) -> c_int {
+pub unsafe extern "C" fn git_fs_path_diriter_stat(
+    out: *mut Stat,
+    diriter: *mut GitFsPathDiriter,
+) -> c_int {
     barrier(|| {
         crate::git_assert_arg!(!out.is_null(), "out", -1);
         crate::git_assert_arg!(!diriter.is_null(), "diriter", -1);
@@ -852,8 +918,10 @@ pub unsafe extern "C" fn git_fs_path_dirload(
     barrier(|| {
         crate::git_assert_arg!(!contents.is_null(), "contents", -1);
         crate::git_assert_arg!(!path.is_null(), "path", -1);
-        // SAFETY: the caller's contract.
-        let (v, p) = unsafe { (&mut *contents, cstr_bytes(path)) };
+        // SAFETY: a valid vector, used only by this call.
+        let v = unsafe { &mut *contents };
+        // SAFETY: a NUL-terminated string.
+        let p = unsafe { cstr_bytes(path) };
         status(dirload(v, p, prefix_len, flags))
     })
 }
@@ -895,13 +963,6 @@ pub unsafe extern "C" fn git_fs_path_str_is_valid_ext(
         }
         // SAFETY: the caller passes a `git_str`-shaped value.
         let raw = unsafe { &*path.cast::<RawStr>() };
-        let (bytes, sized) = if raw.size == usize::MAX {
-            // SAFETY: a NUL-terminated string (the inline wrappers).
-            (unsafe { cstr_bytes(raw.ptr) }, false)
-        } else {
-            // SAFETY: `size` readable bytes.
-            (unsafe { bytes(raw.ptr, raw.size) }, true)
-        };
         let mut cc = |c: u8| match validate_char_cb {
             // SAFETY: the callback's contract.
             Some(f) => unsafe { f(c as c_char, payload) },
@@ -912,17 +973,31 @@ pub unsafe extern "C" fn git_fs_path_str_is_valid_ext(
             Some(f) => unsafe { f(c.as_ptr().cast(), c.len(), payload) },
             None => true,
         };
-        str_is_valid_ext(
-            bytes,
-            sized,
-            flags,
-            ValidateCallbacks {
-                char_cb: validate_char_cb.is_some().then_some(&mut cc as &mut dyn FnMut(u8) -> bool),
-                component_cb: validate_component_cb
-                    .is_some()
-                    .then_some(&mut comp as &mut dyn FnMut(&[u8]) -> bool),
-            },
-        )
+        let cbs = ValidateCallbacks {
+            char_cb: validate_char_cb
+                .is_some()
+                .then_some(&mut cc as &mut dyn FnMut(u8) -> bool),
+            component_cb: validate_component_cb
+                .is_some()
+                .then_some(&mut comp as &mut dyn FnMut(&[u8]) -> bool),
+        };
+        if raw.size == usize::MAX {
+            // A C string (the inline `git_fs_path_is_valid`), read up to its
+            // NUL as C does, without measuring it first.
+            let Some(p) = NonNull::new(raw.ptr.cast_mut()) else {
+                return false;
+            };
+            // SAFETY: a NUL-terminated string, unwritten during the call.
+            let p = unsafe { RawCStr::new(p) };
+            str_is_valid_with(p, usize::MAX, flags, cbs)
+        } else if raw.size > isize::MAX as usize {
+            // No readable buffer is this large.
+            false
+        } else {
+            // SAFETY: `size` readable bytes.
+            let b = unsafe { bytes(raw.ptr, raw.size) };
+            str_is_valid_with(b, raw.size, flags, cbs)
+        }
     })
 }
 
@@ -945,12 +1020,17 @@ pub unsafe extern "C" fn git_fs_path_validate_str_length_with_suffix(
 ///
 /// `out` is a valid `git_str`; `path` a NUL-terminated string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_fs_path_normalize_slashes(out: *mut GitStr, path: *const c_char) -> c_int {
+pub unsafe extern "C" fn git_fs_path_normalize_slashes(
+    out: *mut GitStr,
+    path: *const c_char,
+) -> c_int {
     barrier(|| {
         // SAFETY: the caller's contract.
         let p = unsafe { arg(out, path) };
         // SAFETY: as above.
-        let Some(o) = (unsafe { s(out) }) else { return -1 };
+        let Some(o) = (unsafe { s(out) }) else {
+            return -1;
+        };
         status(normalize_slashes(o, &p))
     })
 }
@@ -982,7 +1062,11 @@ pub unsafe extern "C" fn git_fs_path__set_owner(owner: c_uint) {
 ///
 /// `out` is writable; `path` a NUL-terminated string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_fs_path_owner_is(out: *mut bool, path: *const c_char, owner_type: c_uint) -> c_int {
+pub unsafe extern "C" fn git_fs_path_owner_is(
+    out: *mut bool,
+    path: *const c_char,
+    owner_type: c_uint,
+) -> c_int {
     barrier(|| {
         // SAFETY: a NUL-terminated string.
         match owner_is(unsafe { cpath(path) }, owner_type) {
@@ -1002,7 +1086,10 @@ pub unsafe extern "C" fn git_fs_path_owner_is(out: *mut bool, path: *const c_cha
 ///
 /// As [`git_fs_path_owner_is`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_fs_path_owner_is_current_user(out: *mut bool, path: *const c_char) -> c_int {
+pub unsafe extern "C" fn git_fs_path_owner_is_current_user(
+    out: *mut bool,
+    path: *const c_char,
+) -> c_int {
     // SAFETY: forwarded.
     unsafe { git_fs_path_owner_is(out, path, GIT_FS_PATH_OWNER_CURRENT_USER) }
 }
@@ -1024,12 +1111,17 @@ pub unsafe extern "C" fn git_fs_path_owner_is_system(out: *mut bool, path: *cons
 ///
 /// `fullpath` is a valid `git_str`; `executable` a NUL-terminated string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_fs_path_find_executable(fullpath: *mut GitStr, executable: *const c_char) -> c_int {
+pub unsafe extern "C" fn git_fs_path_find_executable(
+    fullpath: *mut GitStr,
+    executable: *const c_char,
+) -> c_int {
     barrier(|| {
         // SAFETY: the caller's contract.
         let e = unsafe { arg(fullpath, executable) };
         // SAFETY: as above.
-        let Some(f) = (unsafe { s(fullpath) }) else { return -1 };
+        let Some(f) = (unsafe { s(fullpath) }) else {
+            return -1;
+        };
         status(find_executable(f, &e))
     })
 }

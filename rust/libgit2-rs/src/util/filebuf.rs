@@ -9,7 +9,7 @@
 //! the index writer, and the tests read `buffer`. Its embedded
 //! `git_hash_ctx` (`digest`) and `z_stream` (`zs`) keep the C layout; the
 //! hash is called through its C symbols until the hash port lands
-//! (`sys::pending`, PENDING(u2)), zlib through `sys::zlib`.
+//! (`sys::pending`, PENDING(u2)), zlib through `sys::zlib_filebuf`.
 //!
 //! Its invariant (which [`GitFilebuf::new`] and [`GitFilebuf::open`] keep):
 //! `buffer` is NULL or a `git__allocator` allocation of `buf_size`
@@ -32,7 +32,7 @@ use super::posix::{self, Errno, GIT_PATH_MAX, mode_t};
 use super::str::GitStr;
 use crate::git_error_set;
 use crate::sys::pending::{self, GitHashCtx};
-use crate::sys::zlib::{self, ZStream};
+use crate::sys::zlib_filebuf::{self as zlib, ZStream};
 
 /// `GIT_FILEBUF_HASH_SHA1`.
 pub const GIT_FILEBUF_HASH_SHA1: c_int = 1 << 0;
@@ -201,7 +201,9 @@ impl GitFilebuf {
         if self.compute_digest {
             // SAFETY: `digest` is initialized while `compute_digest` (the
             // invariant); `data` is readable for its length.
-            unsafe { pending::git_hash_update(&raw mut self.digest, data.as_ptr().cast(), data.len()) };
+            unsafe {
+                pending::git_hash_update(&raw mut self.digest, data.as_ptr().cast(), data.len())
+            };
         }
     }
 
@@ -283,12 +285,12 @@ impl GitFilebuf {
         if self.fd_is_open && self.fd >= 0 {
             let _ = posix::close(self.fd);
         }
-        if self.created_lock && !self.did_rename {
-            if let Some(lock) = self.lock_path() {
-                if fs_path::exists(lock) {
-                    let _ = posix::unlink(lock);
-                }
-            }
+        if self.created_lock
+            && !self.did_rename
+            && let Some(lock) = self.lock_path()
+            && fs_path::exists(lock)
+        {
+            let _ = posix::unlink(lock);
         }
         if self.compute_digest {
             // SAFETY: initialized while `compute_digest` (the invariant).
@@ -362,7 +364,9 @@ impl GitFilebuf {
                 // SAFETY: the stream is initialized (`z_buf` is set) and has
                 // not moved since (the invariant); `next_in` has `avail_in`
                 // readable bytes, `next_out` `avail_out` writable ones.
-                if unsafe { zlib::deflate(&raw mut self.zs, self.flush_mode) } == zlib::Z_STREAM_ERROR {
+                if unsafe { zlib::deflate(&raw mut self.zs, self.flush_mode) }
+                    == zlib::Z_STREAM_ERROR
+                {
                     self.last_error = BUFERR_ZLIB;
                     return Err(ErrorCode::GENERIC);
                 }
@@ -393,7 +397,13 @@ impl GitFilebuf {
     /// `git_filebuf_open_withsize`: start writing `path` (through
     /// `path.lock`, or a temporary file `path_git2_*` with
     /// [`GIT_FILEBUF_TEMPORARY`]) with a buffer of `size` bytes.
-    pub fn open_withsize(&mut self, path: &[u8], flags: c_int, mode: mode_t, size: usize) -> Result<()> {
+    pub fn open_withsize(
+        &mut self,
+        path: &[u8],
+        flags: c_int,
+        mode: mode_t,
+        size: usize,
+    ) -> Result<()> {
         crate::git_assert!(self.buffer.is_null(), "file->buffer == ((void*)0)");
         *self = GitFilebuf::new();
         let r = self.open_inner(path, flags, mode, size);
@@ -441,7 +451,10 @@ impl GitFilebuf {
             // SAFETY: `zs` is zeroed and does not move until cleanup (the
             // invariant's requirement on the filebuf's owner).
             if unsafe { zlib::deflate_init(&raw mut self.zs, compression) } != zlib::Z_OK {
-                return Err(git_error_set!(ErrorClass::ZLIB, "failed to initialize zlib"));
+                return Err(git_error_set!(
+                    ErrorClass::ZLIB,
+                    "failed to initialize zlib"
+                ));
             }
             self.z_buf = alloc::malloc(self.buf_size).cast();
             if self.z_buf.is_null() {
@@ -476,7 +489,9 @@ impl GitFilebuf {
             let mut resolved = GitStr::new();
             resolve_symlink(&mut resolved, path)?;
             let path_len = resolved.len();
-            self.path_original = resolved.detach().map_or(core::ptr::null_mut(), |p| p.into_raw());
+            self.path_original = resolved
+                .detach()
+                .map_or(core::ptr::null_mut(), |p| p.into_raw());
             let alloc_len = alloc_add(path_len, GIT_FILELOCK_EXTLENGTH)?;
             let lock = alloc::malloc(alloc_len).cast::<u8>();
             if lock.is_null() {
@@ -485,26 +500,28 @@ impl GitFilebuf {
             if path_len > 0 {
                 // SAFETY: `path_original` holds `path_len` bytes (and its
                 // NUL), `lock` `path_len + 6`; distinct allocations.
-                unsafe { core::ptr::copy_nonoverlapping(self.path_original.cast::<u8>(), lock, path_len) };
+                unsafe {
+                    core::ptr::copy_nonoverlapping(self.path_original.cast::<u8>(), lock, path_len)
+                };
             }
             // SAFETY: the last 6 bytes of `lock`.
             unsafe {
                 core::ptr::copy_nonoverlapping(
                     GIT_FILELOCK_EXTENSION.as_ptr(),
-                    lock.add(path_len),
+                    lock.wrapping_add(path_len),
                     GIT_FILELOCK_EXTLENGTH,
                 )
             };
             self.path_lock = lock.cast();
-            if let Some(orig) = self.original_path() {
-                if fs_path::isdir(orig) {
-                    let _ = git_error_set!(
-                        ErrorClass::FILESYSTEM,
-                        "path '{}' is a directory",
-                        Bytes(orig.to_bytes())
-                    );
-                    return Err(ErrorCode::DIRECTORY);
-                }
+            if let Some(orig) = self.original_path()
+                && fs_path::isdir(orig)
+            {
+                let _ = git_error_set!(
+                    ErrorClass::FILESYSTEM,
+                    "path '{}' is a directory",
+                    Bytes(orig.to_bytes())
+                );
+                return Err(ErrorCode::DIRECTORY);
             }
             self.lock_file(flags, mode)?;
             self.created_lock = true;
@@ -625,7 +642,13 @@ impl GitFilebuf {
         assert!(!self.buffer.is_null() && data.len() <= self.buf_size - self.buf_pos);
         // SAFETY: `buffer` has `buf_size` bytes (the invariant), of which
         // `data.len()` fit at `buf_pos` (checked); `data` lies elsewhere.
-        unsafe { core::ptr::copy_nonoverlapping(data.as_ptr(), self.buffer.add(self.buf_pos), data.len()) };
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                data.as_ptr(),
+                self.buffer.wrapping_add(self.buf_pos),
+                data.len(),
+            )
+        };
         self.buf_pos += data.len();
     }
 
@@ -657,7 +680,7 @@ impl GitFilebuf {
         }
         // SAFETY: `buffer` has `buf_size` initialized bytes (the
         // invariant); `at + len <= buf_size`, borrowed with `self`.
-        Ok(unsafe { core::slice::from_raw_parts_mut(self.buffer.add(at), len) })
+        Ok(unsafe { core::slice::from_raw_parts_mut(self.buffer.wrapping_add(at), len) })
     }
 
     /// `git_filebuf_printf` with the formatted bytes (`None`: C's
@@ -671,14 +694,14 @@ impl GitFilebuf {
             return Err(ErrorCode::GENERIC);
         };
         let len = data.len();
-        if !self.buffer.is_null() && len + 1 <= self.buf_size - self.buf_pos {
+        if !self.buffer.is_null() && len < self.buf_size - self.buf_pos {
             self.add_to_cache(data);
             return Ok(());
         }
         if self.flush_buffer() < 0 {
             return Err(ErrorCode::GENERIC);
         }
-        if !self.buffer.is_null() && len + 1 <= self.buf_size - self.buf_pos {
+        if !self.buffer.is_null() && len < self.buf_size - self.buf_pos {
             self.add_to_cache(data);
             return Ok(());
         }
@@ -741,7 +764,10 @@ fn resolve_symlink(out: &mut GitStr, path: &[u8]) -> Result<()> {
             )
         })?;
         if ret == GIT_PATH_MAX {
-            return Err(git_error_set!(ErrorClass::INVALID, "symlink target too long"));
+            return Err(git_error_set!(
+                ErrorClass::INVALID,
+                "symlink target too long"
+            ));
         }
         let t = c_str(&target[..ret]);
         if fs_path::root(t) >= 0 {
@@ -755,7 +781,10 @@ fn resolve_symlink(out: &mut GitStr, path: &[u8]) -> Result<()> {
             let _ = fs_path::apply_relative(&mut curpath, t);
         }
     }
-    Err(git_error_set!(ErrorClass::INVALID, "maximum symlink depth reached"))
+    Err(git_error_set!(
+        ErrorClass::INVALID,
+        "maximum symlink depth reached"
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -769,7 +798,11 @@ pub struct Filebuf(Box<GitFilebuf>);
 
 impl Filebuf {
     /// Start writing `path` with `flags` (`GIT_FILEBUF_*`) and file `mode`.
-    pub fn open(path: &[u8], flags: c_int, mode: mode_t) -> core::result::Result<Filebuf, errors::Error> {
+    pub fn open(
+        path: &[u8],
+        flags: c_int,
+        mode: mode_t,
+    ) -> core::result::Result<Filebuf, errors::Error> {
         let mut f = Box::new(GitFilebuf::new());
         f.open(path, flags, mode).map_err(errors::Error::from)?;
         Ok(Filebuf(f))
@@ -786,9 +819,14 @@ impl Filebuf {
     }
 
     /// Append formatted text (`git_filebuf_printf`).
-    pub fn write_fmt(&mut self, args: core::fmt::Arguments<'_>) -> core::result::Result<(), errors::Error> {
+    pub fn write_fmt(
+        &mut self,
+        args: core::fmt::Arguments<'_>,
+    ) -> core::result::Result<(), errors::Error> {
         let s = std::fmt::format(args);
-        self.0.printf_formatted(Some(s.as_bytes())).map_err(errors::Error::from)
+        self.0
+            .printf_formatted(Some(s.as_bytes()))
+            .map_err(errors::Error::from)
     }
 
     /// The lock file's path.
@@ -798,7 +836,9 @@ impl Filebuf {
 
     /// The hash of what was written so far (the filebuf must have been
     /// opened with a hash flag); the digest's bytes.
-    pub fn hash(&mut self) -> core::result::Result<[u8; pending::GIT_HASH_MAX_SIZE], errors::Error> {
+    pub fn hash(
+        &mut self,
+    ) -> core::result::Result<[u8; pending::GIT_HASH_MAX_SIZE], errors::Error> {
         let mut out = [0u8; pending::GIT_HASH_MAX_SIZE];
         self.0.hash(&mut out).map_err(errors::Error::from)?;
         Ok(out)

@@ -15,7 +15,7 @@
 use core::ffi::{CStr, c_int, c_uint, c_void};
 
 use super::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
-use super::fs_path::{self, c_str, str_c_bytes, str_cpath, to_cstring, WalkStep};
+use super::fs_path::{self, WalkStep, c_str, str_c_bytes, str_cpath, to_cstring};
 use super::integer::{alloc_add, is_sizet, is_ssizet};
 use super::posix::{self, Errno, GitMap, Stat, mode_t};
 use super::str::GitStr;
@@ -271,7 +271,8 @@ pub fn readbuffer_fd_full(buf: &mut GitStr, fd: c_int) -> Result<()> {
         alloc_len = alloc_add(alloc_len, BLOCKSIZE)?;
         buf.grow(alloc_len)?;
         let total = data.len();
-        data.try_reserve_exact(BLOCKSIZE).map_err(|_| errors::oom())?;
+        data.try_reserve_exact(BLOCKSIZE)
+            .map_err(|_| errors::oom())?;
         data.resize(total + BLOCKSIZE, 0);
         let read_size = match posix::read(fd, &mut data[total..]) {
             Ok(n) => n,
@@ -302,7 +303,8 @@ pub fn readbuffer_updated(
     if let Some(u) = updated.as_deref_mut() {
         *u = 0;
     }
-    let st = posix::stat(path).map_err(|Errno(e)| fs_path::set_error(e, path.to_bytes(), "stat"))?;
+    let st =
+        posix::stat(path).map_err(|Errno(e)| fs_path::set_error(e, path.to_bytes(), "stat"))?;
     if posix::s_isdir(st.st_mode) {
         let _ = git_error_set!(ErrorClass::INVALID, "requested file is a directory");
         return Err(ErrorCode::NOT_FOUND);
@@ -354,7 +356,11 @@ pub fn writebuffer(buf: &[u8], path: &CStr, flags: c_int, mode: mode_t) -> Resul
     };
     let do_fsync = flags & O_FSYNC != 0;
     flags &= !O_FSYNC;
-    let mode = if mode == 0 { GIT_FILEMODE_DEFAULT } else { mode };
+    let mode = if mode == 0 {
+        GIT_FILEMODE_DEFAULT
+    } else {
+        mode
+    };
     let p = Bytes(path.to_bytes());
     let fd = posix::open(path, flags, mode)
         .map_err(|_| git_error_set!(ErrorClass::OS, "could not open '{p}' for writing"))?;
@@ -538,9 +544,12 @@ fn validate_mode(
 
 fn canonicalize(path: &mut GitStr, mut flags: u32) -> Result<()> {
     if path.is_empty() {
-        return Err(git_error_set!(ErrorClass::OS, "attempt to create empty path"));
+        return Err(git_error_set!(
+            ErrorClass::OS,
+            "attempt to create empty path"
+        ));
     }
-    let root_len = match fs_path::root(str_c_bytes(path)) {
+    let root_len = match fs_path::root(path.as_bytes()) {
         r if r < 0 => 0,
         r => r as usize + 1,
     };
@@ -582,7 +591,7 @@ fn mkdir_with(path: &[u8], mode: mode_t, mut flags: u32, opts: &mut MkdirOpts<'_
     if make_path.is_empty() {
         return Ok(());
     }
-    let root_len = fs_path::root(str_c_bytes(&make_path));
+    let root_len = fs_path::root(make_path.as_bytes());
     let mut relative = 0usize;
     let mut depth = 0usize;
     let mut st = zeroed_stat();
@@ -640,6 +649,7 @@ pub fn mkdir_relative(
     opts: &mut MkdirOpts<'_>,
 ) -> Result<()> {
     let mut make_path = GitStr::new();
+    let (relative_path, base) = (c_str(relative_path), base.map(c_str));
     let mut root = fs_path::join_unrooted(&mut make_path, relative_path, base)
         .map_err(|_| ErrorCode::GENERIC)?;
     canonicalize(&mut make_path, flags)?;
@@ -649,7 +659,7 @@ pub fn mkdir_relative(
     if flags & GIT_MKDIR_PATH == 0 {
         root = make_path.rfind(b'/').map_or(-1, |i| i as isize);
     }
-    let min_root_len = fs_path::root(str_c_bytes(&make_path)) as isize;
+    let min_root_len = fs_path::root(make_path.as_bytes()) as isize;
     if root < min_root_len {
         root = min_root_len;
     }
@@ -711,10 +721,10 @@ fn mkdir_component(
 ) -> Result<()> {
     let p = str_cpath(make_path).into_owned();
     st.st_mode = 0;
-    if let Some(cache) = opts.cache.as_deref_mut() {
-        if cache.contains(&p) {
-            return Ok(());
-        }
+    if let Some(cache) = opts.cache.as_deref_mut()
+        && cache.contains(&p)
+    {
+        return Ok(());
     }
     opts.perfdata.stat_calls += 1;
     let mut mkdir_attempted = false;
@@ -833,10 +843,10 @@ fn rmdir_recurs_foreach(data: &mut RmdirData<'_>, path: &mut GitStr) -> c_int {
         data.depth += 1;
         let r = fs_path::direach(path, 0, &mut |p: &mut GitStr| rmdir_recurs_foreach(data, p));
         data.depth -= 1;
-        if let Err(e) = r {
-            if e.raw() < 0 {
-                return e.raw();
-            }
+        if let Err(e) = r
+            && e.raw() < 0
+        {
+            return e.raw();
         }
         let error = match r {
             Ok(()) => 0,
@@ -894,6 +904,7 @@ fn rmdir_empty_parent(data: &RmdirData<'_>, path: &[u8]) -> c_int {
 /// as `flags` say.
 pub fn rmdir_r(path: &[u8], base: Option<&[u8]>, flags: u32) -> Result<()> {
     let mut fullpath = GitStr::new();
+    let (path, base) = (c_str(path), base.map(c_str));
     fs_path::join_unrooted(&mut fullpath, path, base).map_err(|_| ErrorCode::GENERIC)?;
     let base_b = c_str(base.unwrap_or(b""));
     let mut data = RmdirData {
@@ -994,8 +1005,12 @@ pub fn cp(from: &CStr, to: &CStr, filemode: mode_t) -> Result<()> {
 pub fn touch(path: &CStr, when: Option<libc::time_t>) -> Result<()> {
     // SAFETY: `time(NULL)` has no preconditions.
     let t = when.unwrap_or_else(|| unsafe { libc::time(core::ptr::null_mut()) });
-    let tv = libc::timeval { tv_sec: t, tv_usec: 0 };
-    posix::utimes(path, &[tv, tv]).map_err(|Errno(e)| fs_path::set_error(e, path.to_bytes(), "touch"))
+    let tv = libc::timeval {
+        tv_sec: t,
+        tv_usec: 0,
+    };
+    posix::utimes(path, &[tv, tv])
+        .map_err(|Errno(e)| fs_path::set_error(e, path.to_bytes(), "touch"))
 }
 
 fn cp_link(from: &CStr, to: &CStr, link_size: usize) -> Result<()> {
@@ -1087,10 +1102,14 @@ fn cp_r_callback(info: &mut CpRInfo<'_>, from: &mut GitStr) -> Result<()> {
             r = cp_r_mkdir(info, from);
         }
         if r.is_ok() && (!exists || to_st.is_some_and(|s| posix::s_isdir(s.st_mode))) {
-            r = fs_path::direach(from, 0, &mut |p: &mut GitStr| match cp_r_callback(info, p) {
-                Ok(()) => 0,
-                Err(e) => e.raw(),
-            });
+            r = fs_path::direach(
+                from,
+                0,
+                &mut |p: &mut GitStr| match cp_r_callback(info, p) {
+                    Ok(()) => 0,
+                    Err(e) => e.raw(),
+                },
+            );
         }
         if oldmode != 0 {
             info.dirmode = oldmode;
@@ -1231,9 +1250,8 @@ pub fn filestamp_set(target: &mut Filestamp, source: Option<&Filestamp>) {
 /// `git_futils_fsync_dir`.
 pub fn fsync_dir(path: &CStr) -> Result<()> {
     let p = Bytes(path.to_bytes());
-    let fd = posix::open(path, libc::O_RDONLY, 0).map_err(|_| {
-        git_error_set!(ErrorClass::OS, "failed to open directory '{p}' for fsync")
-    })?;
+    let fd = posix::open(path, libc::O_RDONLY, 0)
+        .map_err(|_| git_error_set!(ErrorClass::OS, "failed to open directory '{p}' for fsync"))?;
     let r = posix::fsync(fd)
         .map_err(|_| git_error_set!(ErrorClass::OS, "failed to fsync directory '{p}'"));
     let _ = posix::close(fd);

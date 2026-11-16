@@ -4,7 +4,9 @@
 //!
 //! Paths are bytes. The pure functions take `&[u8]` and treat it as the C
 //! treats a `const char *`: the bytes up to the first NUL (a slice without
-//! NUL is the whole string). Functions that reach the filesystem take
+//! NUL is the whole string). The hottest ones (`basename`, `dirname`,
+//! `dirlen`, `join_unrooted`) take the bytes of a C string, without a NUL,
+//! as the exports and the Rust callers have them ([`c_str`] makes them). Functions that reach the filesystem take
 //! `&CStr`. Functions on a `git_str *` take [`GitStr`] and, as the C, read
 //! its contents as a C string (up to the first NUL).
 //!
@@ -130,6 +132,71 @@ pub fn to_cstring(p: &[u8]) -> CString {
     CString::new(c_str(p)).unwrap_or_default()
 }
 
+/// A C string read byte by byte, as the C loops read it: `at(i)` for each
+/// `i` up to the first NUL, without measuring the string first.
+pub trait CBytes: Copy {
+    /// The byte at `i` (0 at and past the end). Called only for `i` up to
+    /// the index of the first NUL.
+    fn at(self, i: usize) -> u8;
+    /// The bytes `start..end`, all read with [`at`](Self::at) before (so
+    /// none is the NUL).
+    fn seg<'a>(self, start: usize, end: usize) -> &'a [u8]
+    where
+        Self: 'a;
+}
+
+impl CBytes for &[u8] {
+    #[inline(always)]
+    fn at(self, i: usize) -> u8 {
+        self::at(self, i)
+    }
+
+    #[inline(always)]
+    fn seg<'a>(self, start: usize, end: usize) -> &'a [u8]
+    where
+        Self: 'a,
+    {
+        &self[start..end]
+    }
+}
+
+/// A NUL-terminated string behind a raw pointer, as an export receives it
+/// ([`CBytes`] without a `strlen`).
+#[derive(Clone, Copy)]
+pub struct RawCStr<'a>(core::ptr::NonNull<u8>, core::marker::PhantomData<&'a [u8]>);
+
+impl<'a> RawCStr<'a> {
+    /// The string at `p`.
+    ///
+    /// # Safety
+    ///
+    /// `p` points to a NUL-terminated string that stays readable and
+    /// unwritten for `'a`.
+    #[inline(always)]
+    pub unsafe fn new(p: core::ptr::NonNull<c_char>) -> RawCStr<'a> {
+        RawCStr(p.cast(), core::marker::PhantomData)
+    }
+}
+
+impl<'b> CBytes for RawCStr<'b> {
+    #[inline(always)]
+    fn at(self, i: usize) -> u8 {
+        // SAFETY: the string is readable up to its NUL (`new`'s contract),
+        // and `at` is asked only for bytes up to the NUL (the trait's).
+        unsafe { self.0.as_ptr().wrapping_add(i).read() }
+    }
+
+    #[inline(always)]
+    fn seg<'a>(self, start: usize, end: usize) -> &'a [u8]
+    where
+        Self: 'a,
+    {
+        // SAFETY: `start..end` were read with `at`: readable, before the
+        // NUL, and unwritten for `'b: 'a`.
+        unsafe { core::slice::from_raw_parts(self.0.as_ptr().wrapping_add(start), end - start) }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Inline helpers of fs_path.h
 // ---------------------------------------------------------------------------
@@ -228,25 +295,42 @@ impl Piece {
     }
 }
 
-/// The basename of `path` (`None`: C's NULL), as `git_fs_path_basename_r`
-/// finds it.
+/// `git_str_set(buf, data)` with the exports' fast path (one copy when
+/// `data` fits and lies outside the buffer).
+#[inline(always)]
+fn set_bytes(buf: &mut GitStr, data: &[u8]) -> Result<()> {
+    // SAFETY: `data` is readable for its length; the fast path checks that
+    // it lies outside the allocation.
+    if unsafe { buf.try_set_fast(data.as_ptr(), data.len()) } {
+        return Ok(());
+    }
+    buf.set(data)
+}
+
+/// The basename of the C string `path` (`None`: C's NULL), as
+/// `git_fs_path_basename_r` finds it.
 pub fn basename_piece(path: Option<&[u8]>) -> Piece {
-    let path = c_str(path.unwrap_or(b""));
-    if path.is_empty() {
+    let path = path.unwrap_or(b"");
+    let Some(&first) = path.first() else {
         return Piece::Static(b".");
-    }
-    let mut endp = path.len() - 1;
-    while endp > 0 && path[endp] == b'/' {
-        endp -= 1;
-    }
-    if endp == 0 && path[0] == b'/' {
+    };
+    // The last non-slash byte, keeping the first byte (C's `endp > path`).
+    let endp = trailing_slashes_end(path);
+    if endp == 0 && first == b'/' {
         return Piece::Static(b"/");
     }
-    let mut startp = endp;
-    while startp > 0 && path[startp - 1] != b'/' {
-        startp -= 1;
-    }
+    let startp = memchr::memrchr(b'/', &path[..endp]).map_or(0, |i| i + 1);
     Piece::Range(startp, endp - startp + 1)
+}
+
+/// The index of the last byte of `path` (not empty) that is not a
+/// trailing slash, or 0: C's `while (endp > path && *endp == '/') endp--`.
+#[inline(always)]
+fn trailing_slashes_end(path: &[u8]) -> usize {
+    match path[1..].iter().rposition(|&c| c != b'/') {
+        Some(i) => i + 1,
+        None => 0,
+    }
 }
 
 /// `git_fs_path_basename_r`: the basename's length, and the basename in
@@ -256,37 +340,33 @@ pub fn basename_r(buffer: Option<&mut GitStr>, path: Option<&[u8]>) -> Result<c_
     let piece = basename_piece(path);
     let len = piece.len() as c_int;
     if let Some(b) = buffer {
-        b.set(piece.bytes(p))?;
+        set_bytes(b, piece.bytes(p))?;
     }
     Ok(len)
 }
 
-/// The dirname of `path` (`None`: C's NULL), as `git_fs_path_dirname_r`
-/// finds it: a prefix of `path`, or a static string.
+/// The dirname of the C string `path` (`None`: C's NULL), as
+/// `git_fs_path_dirname_r` finds it: a prefix of `path`, or a static
+/// string.
 pub fn dirname_piece(path: Option<&[u8]>) -> Result<Piece> {
-    let path = c_str(path.unwrap_or(b""));
-    if path.is_empty() {
+    let path = path.unwrap_or(b"");
+    let Some(&first) = path.first() else {
         return Ok(Piece::Static(b"."));
-    }
-    let mut endp = path.len() - 1;
-    while endp > 0 && path[endp] == b'/' {
-        endp -= 1;
-    }
+    };
+    let endp = trailing_slashes_end(path);
     if endp + 1 > c_int::MAX as usize {
         return Err(git_error_set!(ErrorClass::INVALID, "path too long"));
     }
-    while endp > 0 && path[endp] != b'/' {
-        endp -= 1;
+    // The last slash before `endp`, not the first byte (C's `endp > path`).
+    let slash = match memchr::memrchr(b'/', &path[1..=endp]) {
+        Some(i) if endp > 0 => i + 1,
+        _ => 0,
+    };
+    if slash == 0 {
+        return Ok(Piece::Static(if first == b'/' { b"/" } else { b"." }));
     }
-    if endp == 0 {
-        return Ok(Piece::Static(if path[0] == b'/' { b"/" } else { b"." }));
-    }
-    loop {
-        endp -= 1;
-        if !(endp > 0 && path[endp] == b'/') {
-            break;
-        }
-    }
+    // Back over the run of slashes, keeping the first byte.
+    let endp = trailing_slashes_end(&path[..slash]);
     if endp + 1 > c_int::MAX as usize {
         return Err(git_error_set!(ErrorClass::INVALID, "path too long"));
     }
@@ -300,7 +380,7 @@ pub fn dirname_r(buffer: Option<&mut GitStr>, path: Option<&[u8]>) -> Result<c_i
     let piece = dirname_piece(path)?;
     let len = piece.len() as c_int;
     if let Some(b) = buffer {
-        b.set(piece.bytes(p))?;
+        set_bytes(b, piece.bytes(p))?;
     }
     Ok(len)
 }
@@ -342,32 +422,43 @@ pub fn basename_offset(buffer: Option<&GitStr>) -> usize {
     }
 }
 
-fn dos_drive_prefix_length(path: &[u8]) -> usize {
-    let c0 = at(path, 0);
+/// `dos_drive_prefix_length` over a byte reader (`at(i)` is the C
+/// string's byte `i`; it is asked only for bytes up to and including the
+/// first NUL).
+#[inline(always)]
+fn dos_drive_prefix_length(at: impl Fn(usize) -> u8) -> usize {
+    let c0 = at(0);
     if c0 & 0x80 == 0 {
-        return if c0 != 0 && at(path, 1) == b':' { 2 } else { 0 };
+        return if c0 != 0 && at(1) == b':' { 2 } else { 0 };
     }
     let mut i = 1;
-    while i < 4 && at(path, i) & 0x80 != 0 {
+    while i < 4 && at(i) & 0x80 != 0 {
         i += 1;
     }
-    if at(path, i) == b':' { i + 1 } else { 0 }
+    if at(i) == b':' { i + 1 } else { 0 }
 }
 
-/// `git_fs_path_root`: the offset of the root slash, or -1 when `path` is
-/// not rooted. (A DOS drive prefix such as `C:` is recognized on every
-/// platform, as in C.)
-pub fn root(path: &[u8]) -> c_int {
-    let offset = dos_drive_prefix_length(path);
-    if at(path, offset) == b'/' {
+/// [`root`] over a byte reader (as [`dos_drive_prefix_length`]'s).
+#[inline(always)]
+pub(crate) fn root_with(at: impl Fn(usize) -> u8) -> c_int {
+    let offset = dos_drive_prefix_length(&at);
+    if at(offset) == b'/' {
         offset as c_int
     } else {
         -1
     }
 }
 
+/// `git_fs_path_root`: the offset of the root slash, or -1 when `path` is
+/// not rooted. (A DOS drive prefix such as `C:` is recognized on every
+/// platform, as in C.) It reads at most five bytes and never past a NUL, so
+/// `path` may extend past its C string.
+pub fn root(path: &[u8]) -> c_int {
+    root_with(|i| self::at(path, i))
+}
+
 fn trim_slashes(path: &mut GitStr) {
-    let ceiling = root(str_c_bytes(path)) + 1;
+    let ceiling = root(path.as_bytes()) + 1;
     if ceiling < 0 {
         return;
     }
@@ -396,7 +487,9 @@ pub fn to_dir(path: &mut GitStr) -> Result<()> {
 /// `path[size]`: callers pass one less than the buffer's size). Nothing is
 /// written past `path`'s end.
 pub fn string_to_dir(path: &mut [u8], size: usize) {
-    let Some(end) = memchr::memchr(0, path) else { return };
+    let Some(end) = memchr::memchr(0, path) else {
+        return;
+    };
     if end > 0 && path[end - 1] != b'/' && end < size && end + 1 < path.len() {
         path[end] = b'/';
         path[end + 1] = 0;
@@ -406,7 +499,6 @@ pub fn string_to_dir(path: &mut [u8], size: usize) {
 /// `git_fs_path_dirlen`: the length without trailing slashes (keeping
 /// one character).
 pub fn dirlen(path: &[u8]) -> usize {
-    let path = c_str(path);
     let mut len = path.len();
     while len > 1 && path[len - 1] == b'/' {
         len -= 1;
@@ -417,11 +509,9 @@ pub fn dirlen(path: &[u8]) -> usize {
 /// `git_fs_path_join_unrooted`: join `path` to `base` unless it is rooted;
 /// the offset of the root in the result.
 pub fn join_unrooted(path_out: &mut GitStr, path: &[u8], base: Option<&[u8]>) -> Result<isize> {
-    let path = c_str(path);
     let mut r = root(path) as isize;
     match base {
         Some(base) if r < 0 => {
-            let base = c_str(base);
             path_out.joinpath(base, path)?;
             r = base.len() as isize;
         }
@@ -429,10 +519,10 @@ pub fn join_unrooted(path_out: &mut GitStr, path: &[u8], base: Option<&[u8]>) ->
             path_out.sets(path)?;
             if r < 0 {
                 r = 0;
-            } else if let Some(base) = base {
-                if let (_, Some(n)) = equal_or_prefixed(base, path) {
-                    r = n;
-                }
+            } else if let Some(base) = base
+                && let (_, Some(n)) = equal_or_prefixed(base, path)
+            {
+                r = n;
             }
         }
     }
@@ -540,7 +630,7 @@ pub fn resolve_relative(path: &mut GitStr, ceiling: usize) -> Result<()> {
     let size = path.len();
     let mut ceiling = ceiling.min(size);
     if ceiling == 0 {
-        ceiling = (root(str_c_bytes(path)) + 1) as usize;
+        ceiling = (root(path.as_bytes()) + 1) as usize;
     }
     let b = path.as_mut_bytes();
     if ceiling == 0 {
@@ -655,17 +745,31 @@ pub fn cmp(
 /// `git_fs_path_common_dirlen`: the length of the common directory
 /// prefix, its slash included.
 pub fn common_dirlen(one: &[u8], two: &[u8]) -> usize {
-    let mut dirsep = None;
+    common_dirlen_with(one, two)
+}
+
+/// [`common_dirlen`] over [`CBytes`].
+pub fn common_dirlen_with(one: impl CBytes, two: impl CBytes) -> usize {
+    // One past the last common slash, 0 for none.
+    let mut dirsep = 0;
     let mut i = 0;
-    while at(one, i) != 0 && at(two, i) != 0 {
-        if one[i] == b'/' && two[i] == b'/' {
-            dirsep = Some(i);
-        } else if one[i] != two[i] {
+    loop {
+        let p = one.at(i);
+        if p == 0 {
+            break;
+        }
+        let q = two.at(i);
+        if q == 0 {
+            break;
+        }
+        if p == b'/' && q == b'/' {
+            dirsep = i + 1;
+        } else if p != q {
             break;
         }
         i += 1;
     }
-    dirsep.map_or(0, |d| d + 1)
+    dirsep
 }
 
 /// `git_fs_path_make_relative`: make `path` relative to `parent`.
@@ -770,14 +874,15 @@ pub fn percent_decode(decoded_out: &mut GitStr, input: &[u8]) -> Result<()> {
     let mut i = 0isize;
     while i < len {
         let mut c = input[i as usize];
-        if c == b'%' && i < len - 2 {
-            if let (Some(hi), Some(lo)) = (
+        if c == b'%'
+            && i < len - 2
+            && let (Some(hi), Some(lo)) = (
                 fromhex(input[i as usize + 1]),
                 fromhex(input[i as usize + 2]),
-            ) {
-                c = (hi << 4) | lo;
-                i += 2;
-            }
+            )
+        {
+            c = (hi << 4) | lo;
+            i += 2;
         }
         decoded_out.putc(c)?;
         i += 1;
@@ -850,7 +955,11 @@ pub enum WalkStep {
 ///
 /// C's ensure-an-error-is-set step after a failing callback has no effect
 /// since `git_error_last` never returns NULL; it is not reproduced.
-pub fn walk_up(path: &[u8], ceiling: Option<&[u8]>, mut cb: impl FnMut(WalkStep) -> c_int) -> c_int {
+pub fn walk_up(
+    path: &[u8],
+    ceiling: Option<&[u8]>,
+    mut cb: impl FnMut(WalkStep) -> c_int,
+) -> c_int {
     let cpath = c_str(path);
     let mut stop = 0usize;
     if let Some(ceiling) = ceiling {
@@ -926,11 +1035,17 @@ impl Dir {
         let de = unsafe { libc::readdir(self.0.as_ptr()) };
         if de.is_null() {
             let e = errors::errno();
-            return if e == 0 { Ok(false) } else { Err(posix::Errno(e)) };
+            return if e == 0 {
+                Ok(false)
+            } else {
+                Err(posix::Errno(e))
+            };
         }
         // SAFETY: `readdir` returned an entry, valid until the next call on
-        // this stream; `d_name` is NUL-terminated.
-        let n = unsafe { CStr::from_ptr((&raw const (*de).d_name).cast::<c_char>()) };
+        // this stream: a place projection, no read.
+        let d_name = unsafe { &raw const (*de).d_name };
+        // SAFETY: as above; `d_name` is NUL-terminated.
+        let n = unsafe { CStr::from_ptr(d_name.cast::<c_char>()) };
         name.clear();
         name.extend_from_slice(n.to_bytes());
         Ok(true)
@@ -1026,7 +1141,7 @@ impl GitFsPathDiriter {
     /// the iterator held before is not released.
     pub fn init(&mut self, path: &[u8], flags: c_uint) -> Result<()> {
         let path = c_str(path);
-        core::mem::forget(core::mem::replace(self, GitFsPathDiriter::new()));
+        core::mem::forget(std::mem::take(self));
         self.path.puts(path)?;
         trim_slashes(&mut self.path);
         if self.path.is_empty() {
@@ -1053,13 +1168,14 @@ impl GitFsPathDiriter {
 
     /// `git_fs_path_diriter_next`: advance to the next entry;
     /// `Err(GIT_ITEROVER)` at the end.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Result<()> {
         git_assert!(!self.dir.is_null(), "diriter->dir");
         let skip_dot = self.flags & GIT_FS_PATH_DIR_INCLUDE_DOT_AND_DOTDOT == 0;
         let mut name = Vec::new();
         // The stream is borrowed for the reads, not owned.
         let mut dir = core::mem::ManuallyDrop::new(Dir(
-            core::ptr::NonNull::new(self.dir).expect("checked above"),
+            core::ptr::NonNull::new(self.dir).expect("checked above")
         ));
         loop {
             match dir.read(&mut name) {
@@ -1235,7 +1351,10 @@ pub fn lstat(path: &CStr) -> Result<Stat> {
 fn check_dir_contents(dir: &mut GitStr, sub: &[u8], predicate: fn(&CStr) -> bool) -> bool {
     let dir_size = dir.len();
     let sub = c_str(sub);
-    let Some(alloc_size) = dir_size.checked_add(sub.len()).and_then(|n| n.checked_add(2)) else {
+    let Some(alloc_size) = dir_size
+        .checked_add(sub.len())
+        .and_then(|n| n.checked_add(2))
+    else {
         let _ = errors::oom();
         return false;
     };
@@ -1291,10 +1410,9 @@ pub fn supports_symlinks(dir: &[u8]) -> bool {
         if posix::close(fd).is_ok()
             && posix::unlink(&p).is_ok()
             && posix::symlink(c"testing", &p).is_ok()
+            && let Ok(st) = posix::lstat(&p)
         {
-            if let Ok(st) = posix::lstat(&p) {
-                supported = posix::s_islnk(st.st_mode);
-            }
+            supported = posix::s_islnk(st.st_mode);
         }
     }
     if !path.is_empty() {
@@ -1369,12 +1487,17 @@ fn validate_component(component: &[u8], flags: c_uint) -> bool {
     true
 }
 
+/// A check of each byte of a path ([`ValidateCallbacks`]).
+pub type CharCheck<'a> = &'a mut dyn FnMut(u8) -> bool;
+/// A check of each component of a path ([`ValidateCallbacks`]).
+pub type ComponentCheck<'a> = &'a mut dyn FnMut(&[u8]) -> bool;
+
 /// The callbacks of [`str_is_valid_ext`].
 pub struct ValidateCallbacks<'a> {
     /// `validate_char_cb`.
-    pub char_cb: Option<&'a mut dyn FnMut(u8) -> bool>,
+    pub char_cb: Option<CharCheck<'a>>,
     /// `validate_component_cb`.
-    pub component_cb: Option<&'a mut dyn FnMut(&[u8]) -> bool>,
+    pub component_cb: Option<ComponentCheck<'a>>,
 }
 
 /// `git_fs_path_str_is_valid_ext`: whether `path` is valid under `flags`.
@@ -1383,7 +1506,25 @@ pub struct ValidateCallbacks<'a> {
 /// within them makes it invalid); otherwise it is a C string
 /// (`git_fs_path_is_valid`, size `SIZE_MAX`) and ends at its first NUL.
 /// `GIT_FS_PATH_REJECT_LONG_PATHS` has no effect on Unix.
-pub fn str_is_valid_ext(path: &[u8], sized: bool, flags: c_uint, cbs: ValidateCallbacks<'_>) -> bool {
+pub fn str_is_valid_ext(
+    path: &[u8],
+    sized: bool,
+    flags: c_uint,
+    cbs: ValidateCallbacks<'_>,
+) -> bool {
+    let limit = if sized { path.len() } else { usize::MAX };
+    str_is_valid_with(path, limit, flags, cbs)
+}
+
+/// [`str_is_valid_ext`] over a [`CBytes`]: the bytes up to the first NUL
+/// or `limit` (a `git_str`'s `size`; `usize::MAX` for a C string), which
+/// must be reached without a NUL for a sized path to be valid.
+pub fn str_is_valid_with<P: CBytes>(
+    path: P,
+    limit: usize,
+    flags: c_uint,
+    cbs: ValidateCallbacks<'_>,
+) -> bool {
     let ValidateCallbacks {
         mut char_cb,
         mut component_cb,
@@ -1393,39 +1534,44 @@ pub fn str_is_valid_ext(path: &[u8], sized: bool, flags: c_uint, cbs: ValidateCa
     }
     let mut start = 0usize;
     let mut i = 0usize;
-    while i < path.len() && path[i] != 0 {
-        let c = path[i];
+    while i < limit {
+        let c = path.at(i);
+        if c == 0 {
+            break;
+        }
         if !validate_char(c, flags) {
             return false;
         }
-        if let Some(cb) = char_cb.as_mut() {
-            if !cb(c) {
-                return false;
-            }
+        if let Some(cb) = char_cb.as_mut()
+            && !cb(c)
+        {
+            return false;
         }
         if c == b'/' {
-            if !validate_component(&path[start..i], flags) {
+            let comp = path.seg(start, i);
+            if !validate_component(comp, flags) {
                 return false;
             }
-            if let Some(cb) = component_cb.as_mut() {
-                if !cb(&path[start..i]) {
-                    return false;
-                }
+            if let Some(cb) = component_cb.as_mut()
+                && !cb(comp)
+            {
+                return false;
             }
             start = i + 1;
         }
         i += 1;
     }
-    if sized && i != path.len() {
+    if limit != usize::MAX && i != limit {
         return false;
     }
-    if !validate_component(&path[start..i], flags) {
+    let comp = path.seg(start, i);
+    if !validate_component(comp, flags) {
         return false;
     }
-    if let Some(cb) = component_cb.as_mut() {
-        if !cb(&path[start..i]) {
-            return false;
-        }
+    if let Some(cb) = component_cb.as_mut()
+        && !cb(comp)
+    {
+        return false;
     }
     true
 }
@@ -1529,7 +1675,8 @@ pub fn find_executable(fullpath: &mut GitStr, executable: &[u8]) -> Result<()> {
     let dirs = str_c_bytes(&path);
     let mut cur = 0usize;
     while cur < dirs.len() {
-        let term = memchr::memchr(GIT_PATH_LIST_SEPARATOR, &dirs[cur..]).map_or(dirs.len(), |i| cur + i);
+        let term =
+            memchr::memchr(GIT_PATH_LIST_SEPARATOR, &dirs[cur..]).map_or(dirs.len(), |i| cur + i);
         fullpath.clear();
         if term == cur {
             fullpath.putc(b'.')?;

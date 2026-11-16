@@ -1,6 +1,10 @@
 //! zlib (a system library the C links), as `git_filebuf` uses it: its
 //! `z_stream` is embedded by value in `git_filebuf`, which C embeds in turn,
 //! so the stream and the calls stay zlib's own.
+//!
+//! PENDING(u2): WP u2 adds `sys/zlib.rs` (its zlib binding) and the Rust
+//! `git_zstream`; when it lands, `filebuf` switches to it and this module
+//! goes.
 
 use core::ffi::{c_char, c_int, c_uint, c_ulong, c_void};
 
@@ -72,7 +76,12 @@ pub const Z_FINISH: c_int = 4;
 #[link(name = "z")]
 unsafe extern "C" {
     fn zlibVersion() -> *const c_char;
-    fn deflateInit_(strm: *mut ZStream, level: c_int, version: *const c_char, stream_size: c_int) -> c_int;
+    fn deflateInit_(
+        strm: *mut ZStream,
+        level: c_int,
+        version: *const c_char,
+        stream_size: c_int,
+    ) -> c_int;
     /// `deflate`.
     pub fn deflate(strm: *mut ZStream, flush: c_int) -> c_int;
     /// `deflateEnd`.
@@ -86,14 +95,16 @@ unsafe extern "C" {
 /// `strm` is a valid, zeroed (or ended) stream that does not move until
 /// `deflateEnd`.
 pub unsafe fn deflate_init(strm: *mut ZStream, level: c_int) -> c_int {
-    // SAFETY: `zlibVersion` has no preconditions; the version it returns
-    // matches the library that is called, and the stream is as zlib's
-    // `z_stream` (the layout test).
+    // SAFETY: `zlibVersion` has no preconditions.
+    let version = unsafe { zlibVersion() };
+    // SAFETY: the version matches the library that is called, the stream
+    // is zlib's `z_stream` (the layout test), and the caller's contract
+    // holds for `strm`.
     unsafe {
         deflateInit_(
             strm,
             level,
-            zlibVersion(),
+            version,
             core::mem::size_of::<ZStream>() as c_int,
         )
     }

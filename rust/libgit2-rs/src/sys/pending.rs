@@ -2,6 +2,11 @@
 //! called through their C symbols until both have landed (PORTING.md §3).
 //! Each entry carries a `// PENDING(<wp>)` comment.
 
+// ===========================================================================
+// BEGIN PENDING(u2) (WP u3's declarations of the hash, for `filebuf` and
+// `futils`; replaced by u2's Rust `git_hash_ctx` and hash API when it lands)
+// ===========================================================================
+
 use core::ffi::{c_int, c_void};
 
 // PENDING(u2): `src/util/hash.c`. `git_hash_ctx` is embedded by value in
@@ -60,6 +65,10 @@ pub fn hash_sha256(data: &[u8]) -> crate::util::errors::Result<[u8; GIT_HASH_SHA
     crate::util::errors::ErrorCode::check(r)?;
     Ok(out)
 }
+
+// ===========================================================================
+// END PENDING(u2)
+// ===========================================================================
 
 // PENDING(rand): `src/util/rand.c` (in PORTING.md §1's list; the WP that
 // ports it was not named in u3's brief).
