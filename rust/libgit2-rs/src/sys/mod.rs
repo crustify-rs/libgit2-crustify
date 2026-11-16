@@ -3,15 +3,15 @@
 pub mod annotated_commit;
 pub mod attrcache;
 pub mod branch;
+pub mod commit_graph;
 pub mod diff_driver;
 pub mod filter;
 pub mod indexer;
 pub mod merge;
 pub mod merge_driver;
 pub mod openssl;
-pub mod path;
-pub mod commit_graph;
 pub mod pack_objects;
+pub mod path;
 pub mod pcre2;
 pub mod pending;
 pub mod refdb_reftable;

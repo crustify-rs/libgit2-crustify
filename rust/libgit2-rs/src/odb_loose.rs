@@ -266,7 +266,7 @@ impl Loose {
         let mut flags =
             GIT_FILEBUF_TEMPORARY | (self.options.compression_level << GIT_FILEBUF_DEFLATE_SHIFT);
         if self.options.flags & GIT_ODB_BACKEND_LOOSE_FSYNC != 0
-            || crate::sys::pending::repository_fsync_gitdir()
+            || crate::repository::fsync_gitdir()
         {
             flags |= GIT_FILEBUF_FSYNC;
         }

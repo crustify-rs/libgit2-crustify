@@ -19,10 +19,11 @@ use std::ffi::{CString, OsStr};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
-use super::handles::{Config, Index, Odb, Refdb, Reference};
+use super::handles::{Config, Index, Refdb, Reference};
 use super::head::{self, state};
 use super::init::{InitOptions, InitOut};
 use super::*;
+use crate::odb::Odb;
 use crate::oid::{Oid, OidType};
 use crate::util::errors::{Error, ErrorCode};
 use crate::util::str::GitStr;
@@ -600,7 +601,7 @@ impl Repository {
 
     /// `git_repository_set_odb`.
     pub fn set_odb(&self, odb: &Odb) {
-        self.raw().set_odb(Some(odb.as_nonnull()));
+        self.raw().set_odb(Some(odb.as_raw()));
     }
 
     /// `git_repository_set_config`.

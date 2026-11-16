@@ -26,12 +26,7 @@ const GIT_MERGE_MSG_FILE: &[u8] = b"MERGE_MSG";
 const GIT_BRANCH_DEFAULT: &[u8] = b"master";
 const GIT_REFS_HEADS_DIR: &[u8] = b"refs/heads/";
 
-/// `GIT_OBJECT_ANY`.
-const GIT_OBJECT_ANY: c_int = -2;
-/// `GIT_OBJECT_COMMIT`.
-const GIT_OBJECT_COMMIT: c_int = 1;
-/// `GIT_OBJECT_TREE`.
-const GIT_OBJECT_TREE: c_int = 2;
+use crate::odb::{GIT_OBJECT_ANY, GIT_OBJECT_COMMIT, GIT_OBJECT_TREE};
 
 /// `git_reference_lookup`.
 pub(crate) fn lookup(repo: &GitRepository, name: &CStr) -> Result<Reference> {
@@ -132,7 +127,7 @@ pub(crate) fn head(repo: &GitRepository) -> Result<Reference> {
 
 /// `git_repository_head_detached`: 1, 0 or -1.
 pub(crate) fn head_detached(repo: &GitRepository) -> c_int {
-    let Ok(odb) = repo.odb_weak() else {
+    let Ok(odb) = repo.odb() else {
         return -1;
     };
     let Ok(r) = lookup(repo, GIT_HEAD_REF) else {
@@ -141,8 +136,11 @@ pub(crate) fn head_detached(repo: &GitRepository) -> c_int {
     if r.is_symbolic() {
         return 0;
     }
-    // SAFETY: the repository's live odb and the reference's id.
-    unsafe { c::git_odb_exists(odb.as_ptr(), r.target_ptr()) }
+    match r.target() {
+        Some(id) => c_int::from(odb.exists_ext(id, 0)),
+        // `git_odb_exists(odb, NULL)` fails its argument check.
+        None => errors::assert_arg_failed("id").raw(),
+    }
 }
 
 /// `git_repository_head_unborn`: 1, 0 or -1.

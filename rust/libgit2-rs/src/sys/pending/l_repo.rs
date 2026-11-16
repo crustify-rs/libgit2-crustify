@@ -4,13 +4,13 @@
 //! integration step replaces them with calls of the Rust ports.
 //!
 //! The types are those of the C headers: opaque objects are `c_void`, the
-//! public structs the repository builds (`git_odb_options`,
-//! `git_index_options`, `git_object_id_options`) and reads
+//! public structs the repository builds (`git_index_options`,
+//! `git_object_id_options`) and reads
 //! (`git_config_entry`) are mirrored in `crate::repository::handles`.
 //! The safe wrappers live there too, on the owner and handle types.
 
 use core::ffi::{c_char, c_int, c_uint, c_void};
-use core::sync::atomic::{AtomicBool, AtomicI32, AtomicIsize, AtomicUsize};
+use core::sync::atomic::{AtomicBool, AtomicUsize};
 
 use crate::oid::{Oid, git_oid_t};
 use crate::util::str::GitStr;
@@ -37,7 +37,7 @@ pub struct ConfigEntryRaw {
     pub level: c_int,
 }
 
-/// `git_odb_options` / `git_index_options` (same layout).
+/// `git_index_options`.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct OidTypeOptions {
@@ -141,38 +141,6 @@ unsafe extern "C" {
         item: c_int,
     ) -> c_int;
     pub fn git_repository__configmap_lookup_cache_clear(repo: *mut c_void);
-}
-
-// PENDING(l-odb): odb.c, cache.c.
-unsafe extern "C" {
-    pub fn git_odb_new_ext(out: *mut *mut c_void, opts: *const OidTypeOptions) -> c_int;
-    pub fn git_odb_free(db: *mut c_void);
-    pub fn git_odb_add_disk_alternate(odb: *mut c_void, path: *const c_char) -> c_int;
-    pub fn git_odb__set_caps(odb: *mut c_void, caps: c_int) -> c_int;
-    pub fn git_odb__add_default_backends(
-        db: *mut c_void,
-        objects_dir: *const c_char,
-        as_alternates: bool,
-        alternate_depth: c_int,
-    ) -> c_int;
-    pub fn git_odb_exists(db: *mut c_void, id: *const Oid) -> c_int;
-    pub fn git_cache_init(cache: *mut c_void) -> c_int;
-    pub fn git_cache_clear(cache: *mut c_void);
-    pub fn git_cache_dispose(cache: *mut c_void);
-    pub fn git_cache_set_max_object_size(object_type: c_int, size: usize) -> c_int;
-
-    /// `git_cache__enabled` (`bool`).
-    pub static git_cache__enabled: AtomicBool;
-    /// `git_cache__max_storage` (`ssize_t`).
-    pub static git_cache__max_storage: AtomicIsize;
-    /// `git_cache__current_storage` (`git_atomic_ssize`).
-    pub static git_cache__current_storage: AtomicIsize;
-    /// `git_odb__strict_hash_verification` (`bool`).
-    pub static git_odb__strict_hash_verification: AtomicBool;
-    /// `git_odb__packed_priority`.
-    pub static git_odb__packed_priority: AtomicI32;
-    /// `git_odb__loose_priority`.
-    pub static git_odb__loose_priority: AtomicI32;
 }
 
 // PENDING(l-pack): mwindow.c, pack.c.

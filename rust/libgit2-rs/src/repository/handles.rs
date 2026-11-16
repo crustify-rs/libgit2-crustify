@@ -1,9 +1,10 @@
 //! Owners of, and borrowed handles to, the objects of the modules that
 //! other L-wave work packages port concurrently (config, odb, refdb,
-//! index, references, objects), as the repository uses them.
+//! index, references, objects), as the repository uses them. (The odb is
+//! `crate::odb`'s own `Odb` / `GitOdb`.)
 //!
-//! PENDING(l-config, l-odb, l-refs, l-index, l-obj, l-commit): each type
-//! here stands for that work package's own Rust type (`Config`, `Odb`,
+//! PENDING(l-config, l-refs, l-index, l-obj, l-commit): each type
+//! here stands for that work package's own Rust type (`Config`,
 //! `Refdb`, `Index`, `Reference`, `Object`) until the integration step,
 //! which replaces it; they reach the C through `sys::pending::l_repo`. They
 //! are thin: a non-null pointer, a `Drop` that calls the C free, and the
@@ -484,84 +485,6 @@ impl Drop for ConfigEntry {
 }
 
 owner!(
-    /// An owned reference to a `git_odb` (`git_odb_free` on drop).
-    /// PENDING(l-odb): `crate::odb::Odb`.
-    Odb,
-    c::git_odb_free
-);
-
-// SAFETY: `git_odb` is refcounted with atomics and locks internally
-// (docs/threading.md: thread-safe).
-unsafe impl Send for Odb {}
-// SAFETY: as above.
-unsafe impl Sync for Odb {}
-
-impl Odb {
-    /// `git_odb_new_ext` with `oid_type`.
-    pub(crate) fn new(oid_type: OidType) -> Result<Odb> {
-        let opts = c::OidTypeOptions {
-            version: 1,
-            oid_type: oid_type.raw(),
-        };
-        // SAFETY: valid options and a local out-parameter.
-        make(
-            |out| unsafe { c::git_odb_new_ext(out, &raw const opts) },
-            Odb::from_raw,
-        )
-    }
-
-    /// Another reference to `p` (`GIT_REFCOUNT_INC`).
-    ///
-    /// # Safety
-    ///
-    /// `p` is a live `git_odb`.
-    pub(crate) unsafe fn new_ref(p: NonNull<c_void>) -> Odb {
-        // SAFETY: the caller's contract.
-        unsafe { refcount(p) }.inc();
-        Odb(p)
-    }
-
-    /// `git_odb_add_disk_alternate`.
-    pub(crate) fn add_disk_alternate(&self, path: &CStr) -> Result<()> {
-        // SAFETY: a live odb and a NUL-terminated path.
-        check(unsafe { c::git_odb_add_disk_alternate(self.as_ptr(), path.as_ptr()) }).map(drop)
-    }
-
-    /// `git_odb__set_caps`.
-    pub(crate) fn set_caps(&self, caps: c_int) -> Result<()> {
-        // SAFETY: a live odb.
-        check(unsafe { c::git_odb__set_caps(self.as_ptr(), caps) }).map(drop)
-    }
-
-    /// `git_odb__add_default_backends(odb, dir, 0, 0)`.
-    pub(crate) fn add_default_backends(&self, dir: &CStr) -> Result<()> {
-        // SAFETY: a live odb and a NUL-terminated path.
-        check(unsafe { c::git_odb__add_default_backends(self.as_ptr(), dir.as_ptr(), false, 0) })
-            .map(drop)
-    }
-
-    /// `git_odb_exists`.
-    pub fn exists(&self, id: &Oid) -> bool {
-        // SAFETY: a live odb and a valid id.
-        unsafe { c::git_odb_exists(self.as_ptr(), id) != 0 }
-    }
-
-    /// The odb's `options.oid_type`.
-    ///
-    /// PENDING(l-odb): a field read of `struct git_odb` (`odb.h`) at the
-    /// offset the layout test of `repository` checks.
-    pub(crate) fn oid_type_raw(&self) -> crate::oid::git_oid_t {
-        // SAFETY: a live odb; `options.oid_type` is at byte 60 of
-        // `struct git_odb` (checked by the layout test), written only when
-        // the odb is created.
-        unsafe { read_field(self.0, ODB_OID_TYPE_OFFSET) }
-    }
-}
-
-/// `offsetof(git_odb, options.oid_type)`.
-pub(crate) const ODB_OID_TYPE_OFFSET: usize = 60;
-
-owner!(
     /// An owned reference to a `git_refdb` (`git_refdb_free` on drop).
     /// PENDING(l-refs): `crate::refdb::Refdb`.
     Refdb,
@@ -677,12 +600,6 @@ impl Reference {
         let p = unsafe { c::git_reference_target(self.as_ptr()) };
         // SAFETY: NULL or the id inside the live reference.
         unsafe { p.as_ref() }
-    }
-
-    /// The raw `git_reference_target` pointer (NULL for symbolic).
-    pub(crate) fn target_ptr(&self) -> *const Oid {
-        // SAFETY: a live reference.
-        unsafe { c::git_reference_target(self.as_ptr()) }
     }
 
     /// `git_reference_is_branch`.

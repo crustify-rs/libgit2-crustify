@@ -86,9 +86,42 @@ impl Drop for Odb {
 }
 
 impl Odb {
-    fn inner(&self) -> &GitOdb {
+    /// The odb (crate-internal: the repository calls it directly).
+    pub(crate) fn inner(&self) -> &GitOdb {
         // SAFETY: the handle holds a reference: the odb is live.
         unsafe { self.raw.as_ref() }
+    }
+
+    /// Adopt a reference to `raw` that the caller gives up.
+    ///
+    /// # Safety
+    ///
+    /// `raw` is a live odb and the caller owns one of its references.
+    pub(crate) unsafe fn from_raw(raw: NonNull<GitOdb>) -> Odb {
+        Odb { raw }
+    }
+
+    /// A new reference to `raw` (`GIT_REFCOUNT_INC`).
+    ///
+    /// # Safety
+    ///
+    /// `raw` is a live odb.
+    pub(crate) unsafe fn new_ref(raw: NonNull<GitOdb>) -> Odb {
+        // SAFETY: the caller's contract.
+        unsafe { raw.as_ref() }.rc.inc();
+        Odb { raw }
+    }
+
+    /// The `git_odb *` (the reference stays with this handle).
+    pub(crate) fn as_raw(&self) -> NonNull<GitOdb> {
+        self.raw
+    }
+
+    /// Give this handle's reference up, as a `git_odb *`.
+    pub(crate) fn into_raw(self) -> NonNull<GitOdb> {
+        let raw = self.raw;
+        core::mem::forget(self);
+        raw
     }
 
     /// An odb without backends, for SHA-1 ids (`git_odb_new`).

@@ -204,11 +204,9 @@ unsafe fn buf_out(out: *mut GitBuf, f: impl FnOnce(&mut GitStr) -> Result<()>) -
 mod globals {
     pub(super) use crate::sys::indexer::*;
     pub(super) use crate::sys::pending::l_repo::{
-        git_cache__current_storage, git_cache__enabled, git_cache__max_storage,
         git_disable_pack_keep_file_checks, git_index__enforce_unsaved_safety,
         git_mwindow__file_limit, git_mwindow__mapped_limit, git_mwindow__window_size,
-        git_object__strict_input_validation, git_odb__loose_priority, git_odb__packed_priority,
-        git_odb__strict_hash_verification, git_reference__enable_symbolic_ref_target_validation,
+        git_object__strict_input_validation, git_reference__enable_symbolic_ref_target_validation,
     };
     pub(super) use crate::sys::streams::{
         git_socket_stream__connect_timeout, git_socket_stream__timeout,
@@ -293,17 +291,13 @@ pub unsafe fn opts(key: c_int, args: &OptArgs) -> Result<()> {
                 crate::sys::sysdir::set(level, a.cstr1())?;
             }
             SET_CACHE_OBJECT_LIMIT => {
-                // PENDING(l-odb): `crate::cache::set_max_object_size`.
-                // SAFETY: no precondition beyond the library being initialized.
-                ErrorCode::check(unsafe {
-                    crate::sys::pending::l_repo::git_cache_set_max_object_size(a.0.i, a.0.sz)
-                })?;
+                crate::cache::set_max_object_size(a.0.i, a.0.sz)?;
             }
-            SET_CACHE_MAX_SIZE => g!(git_cache__max_storage).store(a.0.ssz, r),
-            ENABLE_CACHING => g!(git_cache__enabled).store(a.0.i != 0, r),
+            SET_CACHE_MAX_SIZE => crate::cache::git_cache__max_storage.store(a.0.ssz, r),
+            ENABLE_CACHING => crate::cache::git_cache__enabled.store(a.0.i != 0, r),
             GET_CACHED_MEMORY => {
-                a.put1(g!(git_cache__current_storage).load(Ordering::SeqCst))?;
-                a.put2(g!(git_cache__max_storage).load(r))?;
+                a.put1(crate::cache::git_cache__current_storage.load(Ordering::SeqCst))?;
+                a.put2(crate::cache::git_cache__max_storage.load(r))?;
             }
             GET_TEMPLATE_PATH => a.buf1(|s| {
                 crate::sys::sysdir::get_into(s, crate::sys::sysdir::GIT_SYSDIR_TEMPLATE)
@@ -342,7 +336,7 @@ pub unsafe fn opts(key: c_int, args: &OptArgs) -> Result<()> {
             }
             GET_WINDOWS_SHAREMODE | SET_WINDOWS_SHAREMODE => {}
             ENABLE_STRICT_HASH_VERIFICATION => {
-                g!(git_odb__strict_hash_verification).store(a.0.i != 0, r)
+                crate::odb::git_odb__strict_hash_verification.store(a.0.i != 0, r)
             }
             SET_ALLOCATOR => {
                 // SAFETY: NULL or a valid `git_allocator` (the option's contract).
@@ -361,8 +355,8 @@ pub unsafe fn opts(key: c_int, args: &OptArgs) -> Result<()> {
                 g!(git_disable_pack_keep_file_checks).store(a.0.i != 0, r)
             }
             ENABLE_HTTP_EXPECT_CONTINUE => g!(git_http__expect_continue).store(a.0.i != 0, r),
-            SET_ODB_PACKED_PRIORITY => g!(git_odb__packed_priority).store(a.0.i, r),
-            SET_ODB_LOOSE_PRIORITY => g!(git_odb__loose_priority).store(a.0.i, r),
+            SET_ODB_PACKED_PRIORITY => crate::odb::git_odb__packed_priority.store(a.0.i, r),
+            SET_ODB_LOOSE_PRIORITY => crate::odb::git_odb__loose_priority.store(a.0.i, r),
             SET_EXTENSIONS => {
                 // SAFETY: `len` strings at `extensions` (the option's contract).
                 ErrorCode::check(unsafe {

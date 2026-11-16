@@ -36,11 +36,12 @@
 
 use core::cell::UnsafeCell;
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
-use core::mem::MaybeUninit;
 use core::ptr::{self, NonNull};
 use core::sync::atomic::{AtomicI32, AtomicIsize, AtomicPtr, AtomicU32, Ordering};
 
+use crate::cache::GitCache;
 use crate::git_error_set;
+use crate::odb::{GitOdb, Odb};
 use crate::oid::{GIT_OID_SHA1, OidType, git_oid_t};
 use crate::sys::pending::l_repo as c;
 use crate::util::alloc::{self, GitCStr};
@@ -58,7 +59,7 @@ mod open;
 mod tests;
 
 pub use api::{Repository, RepositoryInitOptions, RepositoryOpenFlags, RepositoryState};
-pub use handles::{Config, Index, Odb, Refdb, Reference};
+pub use handles::{Config, Index, Refdb, Reference};
 
 use handles::{ConfigRef, check};
 
@@ -119,6 +120,8 @@ pub const GIT_CONFIGMAP_CACHE_MAX: usize = 15;
 pub const GIT_CONFIGMAP_IGNORECASE: c_int = 3;
 /// `GIT_CONFIGMAP_ABBREV`.
 pub const GIT_CONFIGMAP_ABBREV: c_int = 7;
+/// `GIT_CONFIGMAP_FSYNCOBJECTFILES`.
+pub const GIT_CONFIGMAP_FSYNCOBJECTFILES: c_int = 13;
 /// `GIT_ABBREV_MINIMUM`.
 pub const GIT_ABBREV_MINIMUM: c_int = 4;
 /// `GIT_ABBREV_FALSE` (`GIT_OID_MAX_HEXSIZE`).
@@ -135,8 +138,6 @@ pub const GIT_CONFIG_LEVEL_LOCAL: c_int = 5;
 /// `GIT_CONFIG_LEVEL_WORKTREE`.
 pub const GIT_CONFIG_LEVEL_WORKTREE: c_int = 6;
 
-/// `GIT_ODB_CAP_FROM_OWNER`.
-const GIT_ODB_CAP_FROM_OWNER: c_int = -1;
 /// `GIT_INDEX_CAPABILITY_FROM_OWNER`.
 const GIT_INDEX_CAPABILITY_FROM_OWNER: c_int = -1;
 
@@ -146,9 +147,6 @@ const BIT_USE_ENV: u32 = 1 << 0;
 const BIT_IS_BARE: u32 = 1 << 1;
 /// Bit of `is_worktree`.
 const BIT_IS_WORKTREE: u32 = 1 << 2;
-
-/// `sizeof(git_cache)` in `u64` words (l-odb's type, embedded by value).
-const GIT_CACHE_WORDS: usize = 13;
 
 /// `git_array_t(git_str)`, the repository's `reserved_names` (only the
 /// Windows build fills it; here it is allocated and freed, as the C).
@@ -163,13 +161,12 @@ struct ReservedNames {
 /// [module documentation](self)).
 #[repr(C)]
 pub struct GitRepository {
-    odb: AtomicPtr<c_void>,
+    odb: AtomicPtr<GitOdb>,
     refdb: AtomicPtr<c_void>,
     config: AtomicPtr<c_void>,
     index: AtomicPtr<c_void>,
-    /// `git_cache objects` (PENDING(l-odb): `crate::cache::GitCache`):
-    /// only `cache.c` touches it, through the pointer.
-    objects: UnsafeCell<MaybeUninit<[u64; GIT_CACHE_WORDS]>>,
+    /// `git_cache objects`: `Sync` (its map is behind its rwlock).
+    objects: GitCache,
     attrcache: AtomicPtr<c_void>,
     diff_drivers: AtomicPtr<c_void>,
     gitlink: AtomicPtr<c_char>,
@@ -224,23 +221,19 @@ impl GitRepository {
             return ptr::null_mut();
         }
         // SAFETY: a fresh, zeroed allocation of the struct's size and
-        // alignment (8, `git__allocator`'s); all-zero bytes are a valid
-        // `GitRepository` (NULL pointers, zero integers).
+        // alignment (8, `git__allocator`'s), no one else sees; the cache
+        // is written in place before any reference is made
+        // (`git_cache_init`, which cannot fail here).
+        let objects = unsafe { &raw mut (*repo).objects };
+        // SAFETY: as above: in bounds, aligned, not yet referenced.
+        unsafe { objects.write(GitCache::new()) };
+        // SAFETY: as above; all-zero bytes are a valid `GitRepository` but
+        // for the cache (NULL pointers, zero integers), set above.
         let r = unsafe { &*repo };
-        // SAFETY: the zeroed `git_cache` of a repository no one else sees.
-        if unsafe { c::git_cache_init(r.objects_ptr()) } < 0 {
-            // SAFETY: as above; the cache was not set up, and disposing a
-            // zeroed one is what the C does.
-            unsafe { c::git_cache_dispose(r.objects_ptr()) };
-            // SAFETY: the allocation above, referenced by nothing else.
-            unsafe { alloc::free(repo.cast()) };
-            return ptr::null_mut();
-        }
         let names = alloc::mallocarray(4, size_of::<GitStr>()).cast::<GitStr>();
         if names.is_null() {
-            // SAFETY: as above.
-            unsafe { c::git_cache_dispose(r.objects_ptr()) };
-            // SAFETY: the allocation above, referenced by nothing else.
+            // SAFETY: the allocation above, referenced by nothing else; the
+            // fresh cache owns nothing (C's `git_cache_dispose`).
             unsafe { alloc::free(repo.cast()) };
             return ptr::null_mut();
         }
@@ -266,12 +259,14 @@ impl GitRepository {
         if repo.is_null() {
             return;
         }
+        // SAFETY: the caller's contract.
+        let _ = unsafe { &*repo }.cleanup();
+        // SAFETY: the caller's contract: nothing else uses the repository,
+        // and no reference to it is live.
+        unsafe { (*repo).objects.dispose() };
         {
             // SAFETY: the caller's contract.
             let r = unsafe { &*repo };
-            let _ = r.cleanup();
-            // SAFETY: the repository's cache, which nothing else uses now.
-            unsafe { c::git_cache_dispose(r.objects_ptr()) };
             // SAFETY: the registry, set by C with compare-and-swap, no
             // longer used.
             unsafe {
@@ -314,8 +309,7 @@ impl GitRepository {
     /// odb, config, refdb and index.
     pub(crate) fn cleanup(&self) -> Result<()> {
         let _ = self.submodule_cache_clear();
-        // SAFETY: the repository's own cache.
-        unsafe { c::git_cache_clear(self.objects_ptr()) };
+        self.objects.clear();
         let _ = crate::sys::attrcache::flush(self);
         // SAFETY: the grafts are the repository's; taken out first.
         unsafe { c::git_grafts_free(self.grafts.swap(ptr::null_mut(), Ordering::AcqRel)) };
@@ -334,10 +328,10 @@ impl GitRepository {
         ptr::from_ref(self).cast_mut().cast()
     }
 
-    /// The `git_cache *` of `objects`.
+    /// `repo->objects`, the cache of parsed and raw objects.
     #[inline]
-    pub(crate) fn objects_ptr(&self) -> *mut c_void {
-        self.objects.get().cast()
+    pub fn objects(&self) -> &GitCache {
+        &self.objects
     }
 
     /// `&repo->submodule_cache`, for C to set.
@@ -507,26 +501,26 @@ impl GitRepository {
 
     /// `set_odb`: own (and take a reference of) `odb`, releasing the old.
     ///
-    /// The new object, when given, is a live `git_odb`: [`Odb::as_nonnull`]
+    /// The new object, when given, is a live `git_odb`: [`Odb::as_raw`]
     /// or a pointer C passed (the export's contract).
-    pub(crate) fn set_odb(&self, odb: Option<NonNull<c_void>>) {
+    pub(crate) fn set_odb(&self, odb: Option<NonNull<GitOdb>>) {
         self.set_owned(&self.odb, odb, |p| {
             // SAFETY: the reference the repository held.
-            unsafe { c::git_odb_free(p) }
+            drop(unsafe { Odb::from_raw(p) })
         });
     }
     /// `set_refdb` (as [`GitRepository::set_odb`]).
     pub(crate) fn set_refdb(&self, refdb: Option<NonNull<c_void>>) {
         self.set_owned(&self.refdb, refdb, |p| {
             // SAFETY: the reference the repository held.
-            unsafe { c::git_refdb_free(p) }
+            unsafe { c::git_refdb_free(p.as_ptr()) }
         });
     }
     /// `set_config`: also clears the configmap cache.
     pub(crate) fn set_config(&self, config: Option<NonNull<c_void>>) {
         self.set_owned(&self.config, config, |p| {
             // SAFETY: the reference the repository held.
-            unsafe { c::git_config_free(p) }
+            unsafe { c::git_config_free(p.as_ptr()) }
         });
         self.configmap_cache_clear();
     }
@@ -534,20 +528,24 @@ impl GitRepository {
     pub(crate) fn set_index(&self, index: Option<NonNull<c_void>>) {
         self.set_owned(&self.index, index, |p| {
             // SAFETY: the reference the repository held.
-            unsafe { c::git_index_free(p) }
+            unsafe { c::git_index_free(p.as_ptr()) }
         });
     }
 
-    fn set_owned(
+    /// Store `new` in `slot`, owned (and referenced) by the repository;
+    /// the old object is disowned and released with `free`. `T` is one of
+    /// the refcounted objects (`git_odb`, `git_config`, `git_refdb`,
+    /// `git_index`), which start with a `git_refcount`.
+    fn set_owned<T>(
         &self,
-        slot: &AtomicPtr<c_void>,
-        new: Option<NonNull<c_void>>,
-        free: impl FnOnce(*mut c_void),
+        slot: &AtomicPtr<T>,
+        new: Option<NonNull<T>>,
+        free: impl FnOnce(NonNull<T>),
     ) {
         if let Some(p) = new {
             // SAFETY: a live refcounted object (the caller's owner holds a
             // reference).
-            let rc = unsafe { handles::refcount(p) };
+            let rc = unsafe { handles::refcount(p.cast()) };
             rc.own(self.as_ptr());
             rc.inc();
         }
@@ -555,28 +553,28 @@ impl GitRepository {
         if let Some(old) = NonNull::new(old) {
             // SAFETY: the object the repository owned and held a reference
             // of.
-            unsafe { handles::refcount(old) }.own(ptr::null_mut());
-            free(old.as_ptr());
+            unsafe { handles::refcount(old.cast()) }.own(ptr::null_mut());
+            free(old);
         }
     }
 
     /// Publish a freshly made object in `slot` unless another thread was
     /// first (C's `git_atomic_compare_and_swap(&slot, NULL, obj)`): the
     /// loser is released. Returns the published object.
-    fn publish(
+    fn publish<T>(
         &self,
-        slot: &AtomicPtr<c_void>,
-        obj: NonNull<c_void>,
-        free: impl FnOnce(*mut c_void),
-    ) -> NonNull<c_void> {
-        // SAFETY: `obj` is the live object the caller made.
-        let rc = unsafe { handles::refcount(obj) };
+        slot: &AtomicPtr<T>,
+        obj: NonNull<T>,
+        free: impl FnOnce(NonNull<T>),
+    ) -> NonNull<T> {
+        // SAFETY: `obj` is the live refcounted object the caller made.
+        let rc = unsafe { handles::refcount(obj.cast()) };
         rc.own(self.as_ptr());
         let prev = thread::compare_and_swap(slot, ptr::null_mut(), obj.as_ptr());
         match NonNull::new(prev) {
             Some(prev) => {
                 rc.own(ptr::null_mut());
-                free(obj.as_ptr());
+                free(obj);
                 prev
             }
             None => obj,
@@ -608,7 +606,7 @@ impl GitRepository {
             p = self
                 .publish(&self.config, cfg.into_nonnull(), |p| {
                     // SAFETY: the loser's reference, released once.
-                    unsafe { c::git_config_free(p) }
+                    unsafe { c::git_config_free(p.as_ptr()) }
                 })
                 .as_ptr();
         }
@@ -619,32 +617,41 @@ impl GitRepository {
     }
 
     /// `git_repository_odb__weakptr`: the odb pointer (not referenced).
-    pub fn odb_weak(&self) -> Result<NonNull<c_void>> {
+    pub fn odb_weak(&self) -> Result<NonNull<GitOdb>> {
         let p = load(&self.odb);
         if let Some(p) = NonNull::new(p) {
             return Ok(p);
         }
         let mut path = GitStr::new();
         open::repository_odb_path(&mut path, self)?;
-        let odb = Odb::new(self.oid_type_raw_or_default())?;
+        let odb = new_odb(self.oid_type_raw_or_default())?;
         open::repository_odb_alternates(&odb, self)?;
-        // SAFETY: the live odb we made.
-        let rc = unsafe { handles::refcount(odb.as_nonnull()) };
+        let db = odb.inner();
         // Owned first: `GIT_ODB_CAP_FROM_OWNER` reads the owner's config.
-        rc.own(self.as_ptr());
-        let r = odb
-            .set_caps(GIT_ODB_CAP_FROM_OWNER)
-            .and_then(|()| odb.add_default_backends(&cs(&path)));
+        db.rc.own(self.as_ptr());
+        let r = db
+            .set_caps(crate::odb::GIT_ODB_CAP_FROM_OWNER)
+            .and_then(|()| db.add_default_backends(&cs(&path), false, 0));
         if let Err(e) = r {
             // C frees the odb with its owner still set, which leaks it
             // (DEFECTS.md): released here.
-            rc.own(ptr::null_mut());
+            db.rc.own(ptr::null_mut());
             return Err(e);
         }
-        Ok(self.publish(&self.odb, odb.into_nonnull(), |p| {
+        Ok(self.publish(&self.odb, odb.into_raw(), |p| {
             // SAFETY: the loser's reference, released once.
-            unsafe { c::git_odb_free(p) }
+            drop(unsafe { Odb::from_raw(p) })
         }))
+    }
+
+    /// The repository's odb, created if needed (`git_repository_odb__weakptr`),
+    /// borrowed for as long as the repository keeps it (replacing it is the
+    /// caller's concern, as for C's weak pointers).
+    pub fn odb(&self) -> Result<&GitOdb> {
+        let p = self.odb_weak()?;
+        // SAFETY: the repository holds a reference to its odb while it is
+        // set; `GitOdb` is `Sync`.
+        Ok(unsafe { p.as_ref() })
     }
 
     fn oid_type_raw_or_default(&self) -> OidType {
@@ -662,7 +669,7 @@ impl GitRepository {
             p = self
                 .publish(&self.refdb, out, |p| {
                     // SAFETY: the loser's reference, released once.
-                    unsafe { c::git_refdb_free(p) }
+                    unsafe { c::git_refdb_free(p.as_ptr()) }
                 })
                 .as_ptr();
         }
@@ -683,7 +690,7 @@ impl GitRepository {
             p = self
                 .publish(&self.index, index.into_nonnull(), |p| {
                     // SAFETY: the loser's reference, released once.
-                    unsafe { c::git_index_free(p) }
+                    unsafe { c::git_index_free(p.as_ptr()) }
                 })
                 .as_ptr();
             // SAFETY: the published index.
@@ -696,7 +703,7 @@ impl GitRepository {
 
     /// The current `_odb`, `_refdb`, `_config` and `_index` pointers (what
     /// C's weak-pointer functions write out, also on failure).
-    pub(crate) fn odb_ptr(&self) -> *mut c_void {
+    pub(crate) fn odb_ptr(&self) -> *mut GitOdb {
         load(&self.odb)
     }
     pub(crate) fn refdb_ptr(&self) -> *mut c_void {
@@ -760,6 +767,17 @@ impl GitRepository {
         unsafe { alloc::free(old_e.cast()) };
         Ok(())
     }
+}
+
+/// `git_odb_new_ext` for `oid_type`, with the C's errors.
+pub(crate) fn new_odb(oid_type: OidType) -> Result<Odb> {
+    let opts = crate::odb::GitOdbOptions {
+        version: crate::odb::GIT_ODB_OPTIONS_VERSION,
+        oid_type: oid_type.raw(),
+    };
+    let raw = GitOdb::new(Some(&opts))?;
+    // SAFETY: a fresh odb with one reference, which is given to the handle.
+    Ok(unsafe { Odb::from_raw(raw) })
 }
 
 /// `git_repository__free_extensions` (settings' shutdown).
@@ -976,6 +994,11 @@ pub static git_repository__validate_ownership: core::sync::atomic::AtomicBool =
 pub static git_repository__fsync_gitdir: core::sync::atomic::AtomicBool =
     core::sync::atomic::AtomicBool::new(false);
 
+/// Whether git-directory files are fsync'd (`git_repository__fsync_gitdir`).
+pub fn fsync_gitdir() -> bool {
+    git_repository__fsync_gitdir.load(core::sync::atomic::Ordering::Relaxed)
+}
+
 /// A static `git_str` (`{ ptr, 0, size }`, borrowed) of the reserved names.
 #[repr(C)]
 pub struct StaticStr {
@@ -1031,11 +1054,10 @@ crate::c_layout_test! {
         },
         StaticStr => "git_str" { ptr, asize, size },
         c::ConfigEntryRaw => "git_config_entry" { name, value, backend_type, origin_path, include_depth, level },
-        c::OidTypeOptions => "git_odb_options" { version, oid_type },
+        c::OidTypeOptions => "git_index_options" { version, oid_type },
         c::ObjectIdOptions => "git_object_id_options" { version, object_type, oid_type, filters },
     ],
     asserts: [
-        "offsetof(git_odb, options) + offsetof(git_odb_options, oid_type) == 60",
         "offsetof(git_worktree, gitlink_path) == 16",
         "offsetof(git_annotated_commit, description) == 56",
         "sizeof(git_cache) == 13 * 8",
@@ -1043,6 +1065,7 @@ crate::c_layout_test! {
         "GIT_REPOSITORY_ITEM__LAST == 15",
         "GIT_CONFIGMAP_IGNORECASE == 3",
         "GIT_CONFIGMAP_ABBREV == 7",
+        "GIT_CONFIGMAP_FSYNCOBJECTFILES == 13",
         "GIT_ABBREV_FALSE == 64",
         "sizeof(git_index_options) == 8 && offsetof(git_index_options, oid_type) == 4",
         "offsetof(git_repository, reserved_names.ptr) == 208",

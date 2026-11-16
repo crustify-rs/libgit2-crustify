@@ -8,9 +8,10 @@ use core::ptr::{self, NonNull};
 use std::ffi::CString;
 use std::sync::Mutex;
 
-use super::handles::{Config, ConfigEntryView, ConfigRef, Odb};
+use super::handles::{Config, ConfigEntryView, ConfigRef};
 use super::*;
 use crate::git_error_set;
+use crate::odb::Odb;
 use crate::sys::pending::l_repo as c;
 use crate::util::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
 use crate::util::fs_path::{self, GIT_PATH_LIST_SEPARATOR, GIT_PATH_MAX, c_str, str_c_bytes};
@@ -945,7 +946,7 @@ pub(crate) fn wrap_odb(odb: &Odb) -> Result<NonNull<GitRepository>> {
     let repo = NonNull::new(GitRepository::alloc()).ok_or(ErrorCode::GENERIC)?;
     // SAFETY: the fresh repository.
     let r = unsafe { repo.as_ref() };
-    let t = odb.oid_type_raw();
+    let t = odb.inner().oid_type();
     if OidType::from_raw(t).is_none() {
         // C leaks the repository here; it is freed.
         // SAFETY: ours alone.
@@ -956,7 +957,7 @@ pub(crate) fn wrap_odb(odb: &Odb) -> Result<NonNull<GitRepository>> {
     }
     r.set_oid_type_raw(t);
     r.set_refdb_type(GIT_REFDB_FILES);
-    r.set_odb(Some(odb.as_nonnull()));
+    r.set_odb(Some(odb.as_raw()));
     Ok(repo)
 }
 
@@ -1117,7 +1118,7 @@ pub(crate) fn repository_odb_alternates(odb: &Odb, repo: &GitRepository) -> Resu
     // As C, a failing alternate is ignored.
     for alt in str_c_bytes(&alternates).split(|&b| b == GIT_PATH_LIST_SEPARATOR) {
         let a = fs_path::to_cstring(alt);
-        let _ = odb.add_disk_alternate(&a);
+        let _ = odb.inner().add_default_backends(&a, true, 0);
     }
     Ok(())
 }

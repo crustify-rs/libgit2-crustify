@@ -872,11 +872,6 @@ impl core::fmt::Debug for GitOdb {
     }
 }
 
-/// The offset of `objects` in `git_repository` (checked by the layout
-/// test). PENDING(l-repo): the repository's cache, read through its offset
-/// until `git_repository` is Rust.
-const REPOSITORY_OBJECTS_OFFSET: usize = 32;
-
 impl GitOdb {
     /// `git_odb_new_ext`: an odb with no backends and one reference.
     pub fn new(opts: Option<&GitOdbOptions>) -> Result<NonNull<GitOdb>> {
@@ -953,12 +948,10 @@ impl GitOdb {
         if owner.is_null() {
             &self.own_cache
         } else {
-            // SAFETY: the owner is a live `git_repository` (it clears the
-            // owner before it goes), whose `objects` cache is at this
-            // offset (the layout test); the cache is `Sync`.
-            let p = unsafe { owner.byte_add(REPOSITORY_OBJECTS_OFFSET) };
-            // SAFETY: as above.
-            unsafe { &*p.cast::<GitCache>() }
+            // SAFETY: the owner of an odb is a live repository (it clears
+            // the owner before it goes); `GitRepository` is `Sync`.
+            let repo = unsafe { &*owner.cast::<crate::repository::GitRepository>() };
+            repo.objects()
         }
     }
 
@@ -1167,13 +1160,12 @@ impl GitOdb {
                     "cannot access repository to set odb caps"
                 ));
             }
-            // SAFETY: the owner is a live repository.
-            if let Ok(val) = unsafe {
-                crate::sys::pending::repository_configmap_lookup(
-                    repo,
-                    crate::sys::pending::GIT_CONFIGMAP_FSYNCOBJECTFILES,
-                )
-            } {
+            // SAFETY: the owner of an odb is a live repository (it clears
+            // the owner before it goes); `GitRepository` is `Sync`.
+            let repo = unsafe { &*repo.cast::<crate::repository::GitRepository>() };
+            if let Ok(val) =
+                repo.configmap_lookup(crate::repository::GIT_CONFIGMAP_FSYNCOBJECTFILES)
+            {
                 self.do_fsync.store(val != 0, Ordering::Relaxed);
             }
         }

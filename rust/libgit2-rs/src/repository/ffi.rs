@@ -16,10 +16,11 @@
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::ptr::{self, NonNull};
 
-use super::handles::{Config, Odb};
+use super::handles::Config;
 use super::init::{InitOptions, InitOut};
 use super::*;
 use crate::buf::GitBuf;
+use crate::odb::{GitOdb, Odb};
 use crate::oid::Oid;
 use crate::oidarray::GitOidArray;
 use crate::sys::pending::l_repo as c;
@@ -328,7 +329,7 @@ pub unsafe extern "C" fn git_repository_open_from_worktree(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_wrap_odb(
     out: *mut *mut GitRepository,
-    odb: *mut c_void,
+    odb: *mut GitOdb,
 ) -> c_int {
     barrier(|| {
         let Some(o) = NonNull::new(odb) else {
@@ -496,7 +497,7 @@ pub unsafe extern "C" fn git_repository_set_config(
 /// The module's contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_odb__weakptr(
-    out: *mut *mut c_void,
+    out: *mut *mut GitOdb,
     repo_: *mut GitRepository,
 ) -> c_int {
     // The fast path: already created. Loads and a store only (nothing
@@ -540,7 +541,7 @@ pub unsafe extern "C" fn git_repository_odb__weakptr(
 /// The module's contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_odb(
-    out: *mut *mut c_void,
+    out: *mut *mut GitOdb,
     repo_: *mut GitRepository,
 ) -> c_int {
     barrier(|| {
@@ -553,7 +554,7 @@ pub unsafe extern "C" fn git_repository_odb(
             return -1;
         };
         // SAFETY: a live odb; the reference goes to the caller.
-        unsafe { handles::refcount(p) }.inc();
+        unsafe { p.as_ref() }.rc.inc();
         0
     })
 }
@@ -566,7 +567,7 @@ pub unsafe extern "C" fn git_repository_odb(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_set_odb(
     repo_: *mut GitRepository,
-    odb: *mut c_void,
+    odb: *mut GitOdb,
 ) -> c_int {
     barrier(|| {
         // SAFETY: the module's contract.
