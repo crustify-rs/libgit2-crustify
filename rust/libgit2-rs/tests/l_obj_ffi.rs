@@ -289,7 +289,7 @@ fn tag_lists_and_short_ids() {
         count: 0,
     };
     // SAFETY: a writable array, a NUL-terminated pattern, a live repository.
-    let rv = unsafe { tag::git_tag_list_match(&raw mut a, c"e*".as_ptr(), r.raw) };
+    let rv = unsafe { tag::git_tag_list_match(&raw mut a, c"e*".as_ptr(), r.raw.cast()) };
     assert_eq!(rv, 0);
     assert_eq!(a.count, 1);
     // SAFETY: the array's first element.

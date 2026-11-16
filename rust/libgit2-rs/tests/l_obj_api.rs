@@ -61,7 +61,7 @@ const TAG: &str = "7b4384978d2493e851f9cca7858815fac9b10980";
 #[cfg_attr(miri, ignore = "reaches C")]
 fn lookup_peel_and_ids() {
     let _g = test_support::init();
-    let repo = Repository::open(&resources().join("testrepo.git")).unwrap();
+    let repo = Repository::open(resources().join("testrepo.git")).unwrap();
     let c = Object::lookup(&repo, &oid(COMMIT), ObjectType::Any).unwrap();
     assert_eq!(c.kind(), ObjectType::Commit);
     assert_eq!(c.id(), &oid(COMMIT));
