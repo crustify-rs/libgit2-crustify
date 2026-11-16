@@ -13,6 +13,7 @@ pub mod sys;
 pub mod util;
 
 pub mod buf;
+pub mod fs;
 pub mod strarray;
 
 pub use strarray::StrArray;

@@ -27,3 +27,9 @@ src/util/rand.c
 src/util/regexp.c
 src/util/wildmatch.c
 src/util/zstream.c
+src/util/posix.c
+src/util/unix/map.c
+src/util/unix/realpath.c
+src/util/futils.c
+src/util/fs_path.c
+src/util/filebuf.c

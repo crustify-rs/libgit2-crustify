@@ -317,6 +317,15 @@ const _: () = assert!(core::mem::align_of::<HashCtx>() == 8);
 const _: () = assert!(HASH_CTX_WORDS == 300, "update GIT_HASH_CTX_WORDS in hash.h");
 
 impl HashCtx {
+    /// A zeroed context (C's `{0}`, as in `GIT_FILEBUF_INIT`): no
+    /// algorithm, no computation. (For `git_filebuf`, WP u3.)
+    pub const fn zeroed() -> HashCtx {
+        HashCtx {
+            algorithm: 0,
+            hasher: MaybeUninit::zeroed(),
+        }
+    }
+
     /// A context for `algorithm`, as `git_hash_ctx_init` leaves it.
     pub fn new(algorithm: HashAlgorithm) -> HashCtx {
         HashCtx {

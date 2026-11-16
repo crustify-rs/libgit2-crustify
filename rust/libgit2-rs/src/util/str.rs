@@ -3359,6 +3359,17 @@ crate::c_layout_test! {
     asserts: ["GIT_STR_BOM_UTF32_BE == 5"],
 }
 
+// In-place access for the filesystem layer (WP u3): writing path bytes in
+// place, and reading into the spare room (`fs_path`, `futils`).
+impl GitStr {
+    /// The contents of an owned buffer, for writing in place (empty for
+    /// any other state: a borrowed buffer is never written).
+    #[inline]
+    pub fn as_mut_bytes(&mut self) -> &mut [u8] {
+        self.content_mut()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

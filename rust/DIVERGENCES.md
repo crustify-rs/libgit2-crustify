@@ -161,3 +161,52 @@ One entry per difference: component, what differs, why.
   a cache without one never write; the configuration (`item_path_offset`,
   the comparison) is read without the lock, outside the lock-protected
   state.
+
+## Filesystem layer (WP u3: posix, unix/map, unix/realpath, futils, fs_path, filebuf)
+
+- **posix: `p_open`** is variadic: a C shim in `rust_shims.c` reads the mode
+  (with `O_CREAT`, as C) and calls the Rust (`git__p_open`). A NULL path
+  fails with `EFAULT` (C passed it to `open`, which does the same).
+- **posix: `p_fsync__cnt`** is an `AtomicUsize` that the Rust's `fsync`
+  increments atomically; C's inline `p_fsync` (in the header, for the C
+  that stays) still increments it non-atomically, as before.
+- **posix: `p_write` of more than `isize::MAX` bytes** fails with `EINVAL`
+  before any system call, as `p_read` does in C (no buffer can be that
+  large).
+- **filebuf: the write buffer is zeroed** (`git__calloc`; C used
+  `git__malloc`), so that its bytes are always initialized for the Rust
+  (`git_filebuf_reserve` hands out bytes that are flushed as they are). No
+  visible effect but the cost of the zeroing.
+- **filebuf: `git_filebuf_printf`** formats once in its C shim (into an
+  8 KiB stack buffer, or a `git__malloc`'d one for longer messages) and
+  hands the bytes to the Rust, which places them as C did (in the buffer if
+  they fit, after a flush if they then fit, else through
+  `git_filebuf_write`). C formatted into the filebuf's buffer, up to twice,
+  and allocated only for messages longer than the buffer: under an
+  allocation limit, a message longer than 8 KiB may fail (`BUFERR_MEM`)
+  where C did not, and the error state is checked after formatting (with
+  the same result).
+- **filebuf: `resolve_symlink`** reads the link into a stack buffer
+  (`GIT_PATH_MAX + 1`; C grew a `git_str` to that size), and the APPEND copy
+  and `git_futils_cp` use a heap buffer of `GIT_BUFSIZE_FILEIO` (C: the
+  stack), with an out-of-memory error if it cannot be had.
+- **futils: `git_futils_readbuffer_fd_full`** reads into a Rust buffer and
+  copies the result into the `git_str` (which grows as the C's did).
+- **futils: the mkdir path cache** (`cache_pool` + `cache_pathset` of
+  `struct git_futils_mkdir_options`, which `checkout.c` owns) is read and
+  extended through out-of-line copies of `hashmap_str.h`'s inline
+  functions (`git_hashset_str__contains`, `git_hashset_str__add`, shims in
+  `rust_shims.c`), so that the set stays exactly the C's.
+- **fs_path / futils: arguments that alias the output `git_str`**
+  (`git_fs_path_dirname_r(&b, b.ptr)`, `git_fs_path_prettify(&b, b.ptr,
+  …)`, …) are copied before the string is written; the results are the
+  C's. A `git_str` that borrows its buffer is not written in place
+  (`git_fs_path_resolve_relative` and `squash_slashes` copy it into an
+  owned buffer first, or leave it), as in the foundation.
+- **fs_path: `git_fs_path_walk_up`'s callback** gets the path truncated in
+  place in the caller's buffer, as C; for a borrowed `git_str` it gets a
+  NUL-terminated copy instead.
+- **fs_path: `git_fs_path_str_is_valid_ext`** on a sized `git_str` reads
+  exactly `size` bytes (C read `ptr[size]` too, before testing the length).
+- **fs_path / futils: NULL path arguments** that C passed to the system
+  (and crashed on, or got `EFAULT`) are read as `""` by the exports.

@@ -19,8 +19,8 @@
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use std::ffi::CString;
 
-use crate::sys::pending;
 use crate::util::errors::{self, Error, ErrorClass, ErrorCode, Result};
+use crate::util::fs_path;
 use crate::util::net::c_prefix;
 use crate::util::str::GitStr;
 use crate::{git_assert, git_assert_arg, git_error_set};
@@ -526,7 +526,10 @@ impl GitProcess {
             return Ok(());
         }
         let mut full_path = GitStr::new();
-        let error = pending::fs_path_find_executable(&mut full_path, &self.args[0]);
+        let error = match fs_path::find_executable(&mut full_path, self.args[0].to_bytes()) {
+            Ok(()) => 0,
+            Err(e) => e.raw(),
+        };
         if error == ErrorCode::NOT_FOUND.raw() {
             let _ = git_error_set!(
                 ErrorClass::SSH,
