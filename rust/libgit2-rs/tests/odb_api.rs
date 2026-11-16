@@ -40,13 +40,20 @@ fn hashing() -> Result<(), Error> {
         Odb::hash(b"hello\n", ObjectType::Blob, OidType::Sha1)?,
         oid(HELLO)
     );
+    let e = Odb::hash(b"xx", ObjectType::OfsDelta, OidType::Sha1).unwrap_err();
+    assert_eq!(e.class(), ErrorClass::INVALID);
+    assert_eq!(e.message(), "invalid object type");
+    Ok(())
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "SHA-256 is OpenSSL's")]
+fn hashing_sha256() -> Result<(), Error> {
+    let _g = test_support::init();
     assert_eq!(
         Odb::hash(b"hello\n", ObjectType::Blob, OidType::Sha256)?.to_string(),
         "2cf8d83d9ee29543b34a87727421fdecb7e3f3a183d337639025de576db9ebb4"
     );
-    let e = Odb::hash(b"x", ObjectType::OfsDelta, OidType::Sha1).unwrap_err();
-    assert_eq!(e.class(), ErrorClass::INVALID);
-    assert_eq!(e.message(), "invalid object type");
     Ok(())
 }
 
