@@ -265,7 +265,11 @@ pub fn raw_ncmp(a: &[u8; GIT_OID_MAX_SIZE], b: &[u8; GIT_OID_MAX_SIZE], len: usi
         if bits == 0 {
             break;
         }
-        let mask = if bits >= 64 { !0u64 } else { !0u64 << (64 - bits) };
+        let mask = if bits >= 64 {
+            !0u64
+        } else {
+            !0u64 << (64 - bits)
+        };
         if (wa[i] ^ wb[i]) & mask != 0 {
             return 1;
         }
@@ -505,7 +509,7 @@ impl Oid {
     fn strcmp_with(&self, mut byte_at: impl FnMut(usize) -> u8) -> c_int {
         let size = self.size();
         let mut p = 0;
-        for a in 0..size {
+        for &byte in &self.id[..size] {
             let c = byte_at(p);
             if c == 0 {
                 break;
@@ -525,8 +529,8 @@ impl Oid {
                 }
                 strval |= hv as u8;
             }
-            if self.id[a] != strval {
-                return self.id[a] as c_int - strval as c_int;
+            if byte != strval {
+                return byte as c_int - strval as c_int;
             }
             if c == 0 {
                 break;

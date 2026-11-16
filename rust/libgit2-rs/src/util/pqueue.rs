@@ -43,6 +43,9 @@ pub const GIT_PQUEUE_FIXED_SIZE: u32 = GIT_VECTOR_FLAG_MAX << 1;
 /// A comparison of two elements, as a Rust closure.
 pub type PqueueCmp<'a> = &'a mut dyn FnMut(*mut c_void, *mut c_void) -> c_int;
 
+/// The comparison type of the calls without one.
+type NoCmp = fn(*mut c_void, *mut c_void) -> c_int;
+
 /// `git_pqueue`: a `git_vector` used as a heap.
 #[repr(transparent)]
 #[derive(Debug, Default)]
@@ -113,7 +116,11 @@ impl GitPqueue {
         self.0.get(i).unwrap_or(ptr::null_mut())
     }
 
-    fn up(&mut self, mut el: usize, cmp: PqueueCmp<'_>) {
+    fn up<F: FnMut(*mut c_void, *mut c_void) -> c_int + ?Sized>(
+        &mut self,
+        mut el: usize,
+        cmp: &mut F,
+    ) {
         let c = self.0.as_mut_slice();
         let Some(&kid) = c.get(el) else { return };
         while el > 0 {
@@ -130,7 +137,11 @@ impl GitPqueue {
 
     /// Sift down from `el`. A NULL element ends it as the end does (C's
     /// `git_vector_get` returns NULL for both).
-    fn down(&mut self, mut el: usize, cmp: PqueueCmp<'_>) {
+    fn down<F: FnMut(*mut c_void, *mut c_void) -> c_int + ?Sized>(
+        &mut self,
+        mut el: usize,
+        cmp: &mut F,
+    ) {
         let c = self.0.as_mut_slice();
         let n = c.len();
         let Some(&parent) = c.get(el) else { return };
@@ -156,7 +167,11 @@ impl GitPqueue {
         c[el] = parent;
     }
 
-    fn insert_impl(&mut self, item: *mut c_void, mut cmp: Option<PqueueCmp<'_>>) -> Result<()> {
+    fn insert_impl<F: FnMut(*mut c_void, *mut c_void) -> c_int + ?Sized>(
+        &mut self,
+        item: *mut c_void,
+        mut cmp: Option<&mut F>,
+    ) -> Result<()> {
         if self.0.flags() & GIT_PQUEUE_FIXED_SIZE != 0 && self.0.len() >= self.0.capacity() {
             // skip the item if below the heap's minimum, or if there is
             // no comparison
@@ -168,7 +183,7 @@ impl GitPqueue {
                     }
                 }
             }
-            let _ = self.pop_impl(cmp.as_mut().map(|c| &mut **c as PqueueCmp<'_>));
+            let _ = self.pop_impl(cmp.as_deref_mut());
         }
         self.0.insert(item)?;
         if let Some(c) = cmp {
@@ -178,7 +193,10 @@ impl GitPqueue {
         Ok(())
     }
 
-    fn pop_impl(&mut self, cmp: Option<PqueueCmp<'_>>) -> *mut c_void {
+    fn pop_impl<F: FnMut(*mut c_void, *mut c_void) -> c_int + ?Sized>(
+        &mut self,
+        cmp: Option<&mut F>,
+    ) -> *mut c_void {
         let rval = match cmp {
             None => self.0.last(),
             Some(_) => self.0.get(0),
@@ -204,7 +222,7 @@ impl GitPqueue {
     /// the queue's elements.
     pub unsafe fn insert(&mut self, item: *mut c_void) -> Result<()> {
         match self.0.cmp_fn() {
-            None => self.insert_impl(item, None),
+            None => self.insert_impl::<NoCmp>(item, None),
             Some(f) => {
                 // SAFETY: the caller's contract.
                 let mut c = |a: *mut c_void, b: *mut c_void| unsafe { f(a, b) };
@@ -222,7 +240,7 @@ impl GitPqueue {
     /// elements.
     pub unsafe fn pop(&mut self) -> *mut c_void {
         match self.0.cmp_fn() {
-            None => self.pop_impl(None),
+            None => self.pop_impl::<NoCmp>(None),
             Some(f) => {
                 // SAFETY: the caller's contract.
                 let mut c = |a: *mut c_void, b: *mut c_void| unsafe { f(a, b) };
@@ -245,12 +263,12 @@ impl GitPqueue {
     /// `git_pqueue_insert` without comparison: push (as a queue with no
     /// comparison function).
     pub fn push_unordered(&mut self, item: *mut c_void) -> Result<()> {
-        self.insert_impl(item, None)
+        self.insert_impl::<NoCmp>(item, None)
     }
 
     /// `git_pqueue_pop` without comparison: the last element.
     pub fn pop_unordered(&mut self) -> *mut c_void {
-        self.pop_impl(None)
+        self.pop_impl::<NoCmp>(None)
     }
 }
 

@@ -28,7 +28,6 @@ fn msg() -> Vec<u8> {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "the error state and allocator reach libc")]
 fn oid_parse_exports() {
     let _g = test_support::init();
     // SAFETY: as C would call them.
@@ -84,7 +83,6 @@ fn oid_parse_exports() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "the error state and allocator reach libc")]
 fn oid_format_exports() {
     let _g = test_support::init();
     let o = Oid::from_hex(HEX.to_bytes(), OidType::Sha1).unwrap();
@@ -132,7 +130,6 @@ fn oid_format_exports() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "the error state and allocator reach libc")]
 fn oid_compare_and_shorten_exports() {
     let _g = test_support::init();
     let a = Oid::from_hex(HEX.to_bytes(), OidType::Sha1).unwrap();
@@ -168,7 +165,6 @@ fn oid_compare_and_shorten_exports() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "the error state and allocator reach libc")]
 fn oidarray_exports() {
     let _g = test_support::init();
     let ids: Vec<Oid> = (1..=3u8).map(|i| Oid::from_sha1([i; 20])).collect();
@@ -193,7 +189,6 @@ fn oidarray_exports() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "the error state and allocator reach libc")]
 fn pool_exports() {
     let _g = test_support::init();
     // SAFETY: as C would call them; the pool is initialized over garbage.
@@ -236,7 +231,6 @@ unsafe extern "C" fn cmp_int(a: *const c_void, b: *const c_void) -> c_int {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "the allocator reaches libc")]
 fn pqueue_exports() {
     let _g = test_support::init();
     let mut vals: Vec<c_int> = (0..100).map(|i| (i * 37) % 101).collect();
@@ -268,7 +262,6 @@ fn pqueue_exports() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "the error state reaches libc")]
 fn parse_exports() {
     let _g = test_support::init();
     let text = b"12 x\n8b137891791fe96927ad78e64b0aad7bded08bdc\n";
@@ -355,7 +348,6 @@ unsafe extern "C" fn count_cb(_k: *const c_char, v: *mut c_void) -> c_int {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "the allocator reaches libc")]
 fn hashmap_exports_macro() {
     let _g = test_support::init();
     let mut m: MaybeUninit<TestMap> = MaybeUninit::zeroed();

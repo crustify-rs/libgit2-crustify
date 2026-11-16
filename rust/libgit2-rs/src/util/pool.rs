@@ -281,6 +281,12 @@ impl GitPool {
     /// pools of 1-byte items.
     pub fn strndup(&mut self, s: &[u8]) -> Result<NonNull<c_char>> {
         git_assert_arg!(self.item_size == 1, "pool->item_size == sizeof(char)");
+        self.strndup_bytes(s)
+    }
+
+    /// [`strndup`](GitPool::strndup), the item size already checked.
+    #[inline]
+    fn strndup_bytes(&mut self, s: &[u8]) -> Result<NonNull<c_char>> {
         let Some(n1) = s.len().checked_add(1) else {
             return Err(errors::oom());
         };
@@ -476,7 +482,8 @@ pub mod ffi {
             // SAFETY: `n` readable bytes, which the allocation below does
             // not write (it hands out memory that is not `str`'s).
             let s = unsafe { core::slice::from_raw_parts(str.cast::<u8>(), n) };
-            pool.strndup(s).map_or(ptr::null_mut(), NonNull::as_ptr)
+            pool.strndup_bytes(s)
+                .map_or(ptr::null_mut(), NonNull::as_ptr)
         })
     }
 
@@ -502,7 +509,8 @@ pub mod ffi {
             );
             // SAFETY: a NUL-terminated string.
             let s = unsafe { cstr_bytes(str) };
-            pool.strndup(s).map_or(ptr::null_mut(), NonNull::as_ptr)
+            pool.strndup_bytes(s)
+                .map_or(ptr::null_mut(), NonNull::as_ptr)
         })
     }
 

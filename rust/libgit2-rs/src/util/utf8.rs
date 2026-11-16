@@ -67,32 +67,34 @@ fn ascii_words(s: &[u8]) -> usize {
 /// in bytes; `None` if it is invalid (overlong, a surrogate, beyond
 /// U+10FFFF, a noncharacter) or `s` is empty.
 pub fn iterate(s: &[u8]) -> Option<(u32, usize)> {
+    let (&b0, _) = s.split_first()?;
+    if b0 < 0x80 {
+        return Some((b0 as u32, 1));
+    }
     let length = charlen(s)?;
-    let b = |i: usize| s[i] as u32;
+    let c = |i: usize| (s[i] & 0x3f) as u32;
+    let b0 = b0 as u32;
     let uc = match length {
-        1 => b(0),
         2 => {
-            let uc = ((b(0) & 0x1f) << 6) + (b(1) & 0x3f);
-            if uc < 0x80 { u32::MAX } else { uc }
+            let uc = ((b0 & 0x1f) << 6) + c(1);
+            if uc < 0x80 {
+                return None;
+            }
+            uc
         }
         3 => {
-            let uc = ((b(0) & 0x0f) << 12) + ((b(1) & 0x3f) << 6) + (b(2) & 0x3f);
+            let uc = ((b0 & 0x0f) << 12) + (c(1) << 6) + c(2);
             if uc < 0x800 || (0xd800..0xe000).contains(&uc) || (0xfdd0..0xfdf0).contains(&uc) {
-                u32::MAX
-            } else {
-                uc
+                return None;
             }
+            uc
         }
         _ => {
-            let uc = ((b(0) & 0x07) << 18)
-                + ((b(1) & 0x3f) << 12)
-                + ((b(2) & 0x3f) << 6)
-                + (b(3) & 0x3f);
+            let uc = ((b0 & 0x07) << 18) + (c(1) << 12) + (c(2) << 6) + c(3);
             if !(0x10000..0x110000).contains(&uc) {
-                u32::MAX
-            } else {
-                uc
+                return None;
             }
+            uc
         }
     };
     if (uc & 0xffff) >= 0xfffe {

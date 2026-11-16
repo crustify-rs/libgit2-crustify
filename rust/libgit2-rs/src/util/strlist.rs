@@ -12,7 +12,11 @@ pub fn contains_prefix(strings: &[&CStr], s: &[u8], n: usize) -> bool {
     contains_prefix_iter(strings.iter().copied(), s, n)
 }
 
-fn contains_prefix_iter<'a>(mut strings: impl Iterator<Item = &'a CStr>, s: &[u8], n: usize) -> bool {
+fn contains_prefix_iter<'a>(
+    mut strings: impl Iterator<Item = &'a CStr>,
+    s: &[u8],
+    n: usize,
+) -> bool {
     strings.any(|x| strncmp(x.to_bytes(), s, n) == 0)
 }
 
@@ -22,7 +26,11 @@ pub fn contains_key(strings: &[&CStr], key: &[u8], delimiter: u8) -> bool {
     contains_key_iter(strings.iter().copied(), key, delimiter)
 }
 
-fn contains_key_iter<'a>(strings: impl Iterator<Item = &'a CStr>, key: &[u8], delimiter: u8) -> bool {
+fn contains_key_iter<'a>(
+    strings: impl Iterator<Item = &'a CStr>,
+    key: &[u8],
+    delimiter: u8,
+) -> bool {
     let key = match memchr::memchr(0, key) {
         Some(n) => &key[..n],
         None => key,
@@ -124,7 +132,10 @@ pub mod ffi {
     ///
     /// `strings` is readable for `len` NUL-terminated strings, which stay
     /// unwritten for `'a`.
-    unsafe fn list<'a>(strings: *const *const c_char, len: usize) -> impl Iterator<Item = &'a CStr> {
+    unsafe fn list<'a>(
+        strings: *const *const c_char,
+        len: usize,
+    ) -> impl Iterator<Item = &'a CStr> {
         (0..len).map(move |i| {
             // SAFETY: `i < len`: within the caller's array.
             let p = unsafe { strings.wrapping_add(i).read() };
