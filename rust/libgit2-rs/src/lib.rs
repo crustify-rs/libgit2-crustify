@@ -13,6 +13,7 @@ pub mod sys;
 pub mod util;
 
 pub mod buf;
+pub mod delta;
 pub mod fs;
 pub mod hashmap_oid;
 pub mod oid;
