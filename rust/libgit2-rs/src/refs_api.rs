@@ -506,6 +506,7 @@ impl<'repo> Reference<'repo> {
     /// `git_reference_normalize_name`: `name` in its canonical form, if it
     /// is valid under `format` ([`ErrorCode::INVALID_SPEC`] otherwise).
     pub fn normalize_name(name: impl AsRef<[u8]>, format: ReferenceFormat) -> Result<Vec<u8>> {
+        crate::libgit2::ensure_init()?;
         let name = name.as_ref();
         cname(name)?;
         let mut buf = crate::util::str::GitStr::new();
@@ -517,7 +518,8 @@ impl<'repo> Reference<'repo> {
     /// name (one-level names such as `HEAD` included).
     pub fn is_valid_name(name: impl AsRef<[u8]>) -> bool {
         let name = name.as_ref();
-        !name.contains(&0)
+        crate::libgit2::ensure_init().is_ok()
+            && !name.contains(&0)
             && matches!(
                 refs::name_is_valid(name, refs::GIT_REFERENCE_FORMAT_ALLOW_ONELEVEL),
                 Ok(true)
@@ -1899,5 +1901,163 @@ mod tests {
         assert_eq!(r, 0);
         assert_eq!(e, 1);
         assert!(dropped.load(std::sync::atomic::Ordering::SeqCst));
+    }
+}
+
+/// The transaction hooks of a Rust backend ([`RefdbBackend::lock`] /
+/// [`RefdbBackend::unlock`]), driven by C's `git_transaction` (which stays
+/// C, and has no safe counterpart).
+#[cfg(all(test, feature = "link-c", not(miri)))]
+#[allow(clippy::multiple_unsafe_ops_per_block)]
+mod transaction_tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    /// `git_transaction`, opaque.
+    #[repr(C)]
+    struct Tx {
+        _p: [u8; 0],
+    }
+
+    unsafe extern "C" {
+        fn git_transaction_new(out: *mut *mut Tx, repo: *mut c_void) -> c_int;
+        fn git_transaction_lock_ref(tx: *mut Tx, name: *const c_char) -> c_int;
+        fn git_transaction_set_target(
+            tx: *mut Tx,
+            name: *const c_char,
+            target: *const Oid,
+            sig: *const git_signature,
+            msg: *const c_char,
+        ) -> c_int;
+        fn git_transaction_remove(tx: *mut Tx, name: *const c_char) -> c_int;
+        fn git_transaction_commit(tx: *mut Tx) -> c_int;
+        fn git_transaction_free(tx: *mut Tx);
+    }
+
+    /// What the backend saw.
+    #[derive(Default)]
+    struct Seen(Mutex<Vec<String>>);
+
+    struct Locking(Arc<Seen>);
+
+    impl RefdbBackend for Locking {
+        fn lock(&self, name: &[u8]) -> Result<RefdbLock> {
+            let n = String::from_utf8_lossy(name).into_owned();
+            self.0.0.lock().unwrap().push(format!("lock {n}"));
+            Ok(Box::new(n))
+        }
+        fn unlock(&self, lock: RefdbLock, how: RefdbUnlock<'_>) -> Result<()> {
+            let n = lock.downcast::<String>().unwrap();
+            let what = match how {
+                RefdbUnlock::Discard => "discard".to_owned(),
+                RefdbUnlock::Delete { name } => format!("delete {}", Bytes(name)),
+                RefdbUnlock::Write {
+                    name,
+                    value,
+                    update_reflog,
+                    committer,
+                    message,
+                } => format!(
+                    "write {} {:?} {update_reflog} {:?} {:?}",
+                    Bytes(name),
+                    value,
+                    committer.map(|c| c.name().to_vec()),
+                    message.map(Bytes)
+                ),
+            };
+            self.0.0.lock().unwrap().push(format!("unlock {n}: {what}"));
+            Ok(())
+        }
+    }
+
+    struct NoLocks;
+    impl RefdbBackend for NoLocks {}
+
+    fn repo() -> (Repository, std::path::PathBuf) {
+        let d = std::env::temp_dir().join(format!(
+            "refs-tx-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        (Repository::init(&d, true).unwrap(), d)
+    }
+
+    #[test]
+    fn transactions_reach_the_backend() {
+        let (mut repo, dir) = repo();
+        let seen = Arc::new(Seen::default());
+        repo.set_refdb_backend(Locking(seen.clone())).unwrap();
+        let id = Oid::from_hex(
+            "a65fedf39aefe402d3bb6e24df4d4f5fe4547750",
+            crate::OidType::Sha1,
+        )
+        .unwrap();
+        let who = Signature::new(b"me", b"me@x", crate::Time::new(0, 0)).unwrap();
+        let mut tx = core::ptr::null_mut();
+        // SAFETY: C's transaction API, on a live repository, with live
+        // arguments; the transaction freed once.
+        unsafe {
+            assert_eq!(git_transaction_new(&raw mut tx, repo.raw_ptr().cast()), 0);
+            assert_eq!(git_transaction_lock_ref(tx, c"refs/heads/a".as_ptr()), 0);
+            assert_eq!(git_transaction_lock_ref(tx, c"refs/heads/b".as_ptr()), 0);
+            assert_eq!(git_transaction_lock_ref(tx, c"refs/heads/c".as_ptr()), 0);
+            assert_eq!(
+                git_transaction_set_target(
+                    tx,
+                    c"refs/heads/a".as_ptr(),
+                    &id,
+                    who.as_raw(),
+                    c"moved".as_ptr()
+                ),
+                0
+            );
+            assert_eq!(git_transaction_remove(tx, c"refs/heads/b".as_ptr()), 0);
+            assert_eq!(git_transaction_commit(tx), 0);
+            git_transaction_free(tx);
+        }
+        let seen = seen.0.lock().unwrap().clone();
+        assert_eq!(
+            &seen[..3],
+            [
+                "lock refs/heads/a",
+                "lock refs/heads/b",
+                "lock refs/heads/c"
+            ]
+        );
+        let mut rest = seen[3..].to_vec();
+        rest.sort();
+        assert_eq!(
+            rest,
+            [
+                format!(
+                    "unlock refs/heads/a: write refs/heads/a Direct {{ id: {id:?}, peel: None }} true Some([109, 101]) Some(\"moved\")"
+                ),
+                "unlock refs/heads/b: delete refs/heads/b".to_owned(),
+                "unlock refs/heads/c: discard".to_owned(),
+            ]
+        );
+        drop(repo);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_backend_without_locks_refuses_transactions() {
+        let (mut repo, dir) = repo();
+        repo.set_refdb_backend(NoLocks).unwrap();
+        let mut tx = core::ptr::null_mut();
+        // SAFETY: as above.
+        unsafe {
+            assert_eq!(git_transaction_new(&raw mut tx, repo.raw_ptr().cast()), 0);
+            assert_eq!(git_transaction_lock_ref(tx, c"refs/heads/a".as_ptr()), -1);
+            git_transaction_free(tx);
+        }
+        assert_eq!(
+            errors::last_message().unwrap(),
+            b"backend does not support locking"
+        );
+        assert_eq!(errors::last_class(), Some(ErrorClass::REFERENCE));
+        drop(repo);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

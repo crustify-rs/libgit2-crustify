@@ -9,15 +9,13 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use libgit2_rs::__test::refs_api::{self, RefValue, Repository, set_refdb_backend};
-use libgit2_rs::__test::util::test_support;
-use libgit2_rs::{Error, ErrorCode, Oid, OidType, RefdbBackend, Reference, References};
+use libgit2_rs::{ErrorCode, Oid, OidType, RefdbBackend, Reference, References, Repository};
 
 const MASTER: &str = "a65fedf39aefe402d3bb6e24df4d4f5fe4547750";
 const BR2: &str = "a4a7dce85cf63874e984719f4fdd239f5145052f";
 
 fn oid(s: &str) -> Oid {
-    Oid::from_hex(s.as_bytes(), OidType::Sha1).unwrap()
+    Oid::from_hex(s, OidType::Sha1).unwrap()
 }
 
 fn copy_dir(from: &Path, to: &Path) {
@@ -43,7 +41,6 @@ fn sandbox(tag: &str) -> PathBuf {
 
 #[test]
 fn lookups_vs_writes_vs_pack() {
-    let _g = test_support::init();
     let dir = sandbox("lwp");
     let repo = Repository::open(&dir).unwrap();
     let stop = AtomicBool::new(false);
@@ -57,7 +54,7 @@ fn lookups_vs_writes_vs_pack() {
                     let id = oid(if i.is_multiple_of(2) { MASTER } else { BR2 });
                     let _ = Reference::create(repo, name.as_bytes(), &id, true, None, None);
                     assert!(Reference::lookup(repo, b"refs/heads/master").is_ok());
-                    let _ = Reference::lookup(repo, name.as_bytes()).map(|r| r.delete());
+                    let _ = Reference::lookup(repo, name.as_bytes()).map(Reference::delete);
                     i += 1;
                 }
             });
@@ -79,7 +76,7 @@ fn lookups_vs_writes_vs_pack() {
             let (repo, stop) = (&repo, &stop);
             s.spawn(move || {
                 while !stop.load(Ordering::Relaxed) {
-                    let _ = refs_api::compress(repo);
+                    let _ = repo.refdb().and_then(|db| db.compress());
                 }
             });
         }
@@ -94,46 +91,19 @@ fn lookups_vs_writes_vs_pack() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// An empty backend (every method is the trait's default).
 struct Empty;
 
-impl RefdbBackend for Empty {
-    fn exists(&self, _: &[u8]) -> Result<bool, Error> {
-        Ok(false)
-    }
-    fn lookup(&self, _: &[u8]) -> Result<Option<RefValue>, Error> {
-        Ok(None)
-    }
-    fn list(&self) -> Result<Vec<(Vec<u8>, RefValue)>, Error> {
-        Ok(Vec::new())
-    }
-    fn write(
-        &self,
-        _: &[u8],
-        _: &RefValue,
-        _: bool,
-        _: Option<&Oid>,
-        _: Option<&[u8]>,
-        _: Option<&[u8]>,
-    ) -> Result<(), Error> {
-        Ok(())
-    }
-    fn rename(&self, _: &[u8], _: &[u8], _: bool) -> Result<RefValue, Error> {
-        Ok(RefValue::Symbolic(b"x".to_vec()))
-    }
-    fn delete(&self, _: &[u8], _: Option<&Oid>, _: Option<&[u8]>) -> Result<(), Error> {
-        Ok(())
-    }
-}
+impl RefdbBackend for Empty {}
 
 /// Replacing the backend takes `&mut Repository`: between replacements,
 /// threads may share the repository, but not across one (a concurrent
-/// replacement no longer compiles; see `set_refdb_backend`'s doctest).
+/// replacement no longer compiles; see `Repository::set_refdb_backend`'s doctest).
 #[test]
 fn set_backend_between_shared_phases() {
-    let _g = test_support::init();
     let dir = sandbox("sb");
     let mut repo = Repository::open(&dir).unwrap();
-    set_refdb_backend(&mut repo, Empty).unwrap();
+    repo.set_refdb_backend(Empty).unwrap();
     for _ in 0..50 {
         std::thread::scope(|s| {
             for _ in 0..3 {
@@ -146,7 +116,7 @@ fn set_backend_between_shared_phases() {
                 });
             }
         });
-        set_refdb_backend(&mut repo, Empty).unwrap();
+        repo.set_refdb_backend(Empty).unwrap();
     }
     drop(repo);
     let _ = std::fs::remove_dir_all(&dir);
