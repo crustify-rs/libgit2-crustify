@@ -771,7 +771,8 @@ impl GitTreebuilder {
         // SAFETY: a live repository (contract).
         let oid_type: git_oid_t = unsafe { (*self.repo).oid_type_raw() };
         self.serialize(buf, crate::oid::oid_size(oid_type))?;
-        let odb = repo_odb(self.repo)?;
+        // SAFETY: the builder's repository is live (contract).
+        let odb = unsafe { repo_odb(self.repo) }?;
         let mut oid = Oid::default();
         let bytes = buf.as_bytes();
         // SAFETY: readable bytes; `oid` writable.
@@ -1084,12 +1085,15 @@ pub(crate) unsafe fn walk(
     // SAFETY: a live tree (contract).
     let n = unsafe { entries(tree) }.len();
     for i in 0..n {
-        // Re-read each time: the callback runs between, and only reads the
-        // tree (as the C's contract).
+        // The entry in the tree's own array, as the C passes it (callers keep
+        // the pointer past the callback and compare it with
+        // `git_tree_entry_byindex`). Nothing writes a parsed tree's entries,
+        // and the tree lives through the walk (the root: the caller's; a
+        // subtree: until `free` below).
         // SAFETY: a live tree; `i < n`.
-        let entry = unsafe { entries(tree) }[i];
+        let entry: &GitTreeEntry = &unsafe { entries(tree) }[i];
         if preorder {
-            match cb(path, &entry) {
+            match cb(path, entry) {
                 WalkResult::Stop(e) => {
                     // negative value stops iteration
                     return errors::set_after_callback(e, "git_tree_walk");
@@ -1121,7 +1125,7 @@ pub(crate) unsafe fn walk(
             }
             path.truncate(path_len);
         }
-        if !preorder && let WalkResult::Stop(e) = cb(path, &entry) {
+        if !preorder && let WalkResult::Stop(e) = cb(path, entry) {
             return errors::set_after_callback(e, "git_tree_walk");
         }
     }
@@ -2012,17 +2016,27 @@ pub mod ffi {
                 return errors::assert_arg_failed("filter").raw();
             };
             let mut it: HashMapIter = 0;
-            // No reference to the builder is held across the callback.
-            while let Some((key, entry)) =
+            // No reference to the builder is held across the callback. The
+            // callback may change the builder (remove this or other entries,
+            // insert): the C then removes by a key that may have been freed;
+            // here the entry is found again by its bucket (or, if the map
+            // moved, by a scan), and nothing is done if it is gone.
+            while let Some(entry) =
                 // SAFETY: a live builder, borrowed only for this call.
-                (unsafe { (*bld).map.iterate(&mut it) }).map(|(k, v)| (*k, *v))
+                (unsafe { (*bld).map.iterate(&mut it) }).map(|(_, v)| *v)
             {
+                let slot = it - 1;
                 // SAFETY: the callback's contract (the caller's).
                 if unsafe { filter(entry, payload) } != 0 {
-                    // SAFETY: a live builder, re-borrowed after the callback;
-                    // the key is the entry's name, still in the map.
+                    // SAFETY: a live builder, re-borrowed after the callback.
                     let b = unsafe { &mut *bld };
-                    if let Some((_, e)) = b.map.remove(&key) {
+                    let at = if b.map.at(slot).is_some_and(|(_, &v)| v == entry) {
+                        Some(slot)
+                    } else {
+                        (0..b.map.buckets())
+                            .find(|&i| b.map.at(i).is_some_and(|(_, &v)| v == entry))
+                    };
+                    if let Some((_, e)) = at.and_then(|i| b.map.remove_at(i)) {
                         // SAFETY: the entry left the map with its key.
                         unsafe { alloc::free(e.cast()) };
                     }
@@ -2070,9 +2084,11 @@ pub mod ffi {
         path: *const c_char,
     ) -> c_int {
         barrier(|| {
-            if root.is_null() || path.is_null() || entry_out.is_null() {
-                return errors::assert_arg_failed("root").raw();
-            }
+            // (The C asserts none of these and dereferences them:
+            // DEFECTS.md.)
+            git_assert_arg!(!entry_out.is_null(), "entry_out", -1);
+            git_assert_arg!(!root.is_null(), "root", -1);
+            git_assert_arg!(!path.is_null(), "path", -1);
             // SAFETY: a live tree: its repository is live.
             let repo = unsafe { (*root).object.repo };
             let mut lookup = |id: &Oid| -> Result<*mut GitTree> {
@@ -2136,8 +2152,8 @@ pub mod ffi {
             let mut free = |t: *mut GitTree| unsafe { pend::git_tree_free(t) };
             let mut cb = |root: &GitStr, entry: &GitTreeEntry| {
                 // SAFETY: the callback's contract (the caller's); `root` is
-                // NUL-terminated (a `git_str`'s buffer), `entry` a copy of a
-                // live entry, valid for the call.
+                // NUL-terminated (a `git_str`'s buffer), `entry` points into the
+                // entries of a live tree, valid while the tree is.
                 match unsafe { callback(root.as_ptr(), entry, payload) } {
                     e if e < 0 => WalkResult::Stop(e),
                     e if e > 0 => WalkResult::Skip,

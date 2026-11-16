@@ -342,6 +342,7 @@ int git_libgit2_opts(int key, ...)
  * NULL parent as the end of the list, as the C's va_arg reader did.
  */
 #include "git2/commit.h"
+#include "git2/tree.h"
 
 extern int git_commit__create_v(
 	git_oid *id,
@@ -367,23 +368,39 @@ int git_commit_create_v(
 	size_t parent_count,
 	...)
 {
-	const git_commit *stackbuf[8], **parents = stackbuf;
+	const git_commit *stackbuf[8], **parents = stackbuf, **grown;
+	size_t alloc = sizeof(stackbuf) / sizeof(stackbuf[0]), n = 0;
 	va_list ap;
-	size_t i;
-	int error;
+	int error = 0;
 
-	if (parent_count > sizeof(stackbuf) / sizeof(stackbuf[0])) {
-		parents = git__mallocarray(parent_count, sizeof(*parents));
-		GIT_ERROR_CHECK_ALLOC(parents);
-	}
+	/* The C's assertions, before any argument is read. */
+	GIT_ASSERT_ARG(tree);
+	GIT_ASSERT_ARG(git_tree_owner(tree) == repo);
 
+	/* Read as the C's callback did: up to parent_count, stopping at NULL. */
 	va_start(ap, parent_count);
-	for (i = 0; i < parent_count; i++)
-		parents[i] = va_arg(ap, const git_commit *);
+	while (n < parent_count) {
+		const git_commit *c = va_arg(ap, const git_commit *);
+		if (!c)
+			break;
+		if (n == alloc) {
+			alloc *= 2;
+			grown = git__reallocarray(parents == stackbuf ? NULL : (void *)parents, alloc, sizeof(*parents));
+			if (!grown) {
+				error = -1;
+				break;
+			}
+			if (parents == stackbuf)
+				memcpy(grown, stackbuf, sizeof(stackbuf));
+			parents = grown;
+		}
+		parents[n++] = c;
+	}
 	va_end(ap);
 
-	error = git_commit__create_v(id, repo, update_ref, author, committer,
-		message_encoding, message, tree, parent_count, parents);
+	if (!error)
+		error = git_commit__create_v(id, repo, update_ref, author, committer,
+			message_encoding, message, tree, n, parents);
 
 	if (parents != stackbuf)
 		git__free((void *)parents);

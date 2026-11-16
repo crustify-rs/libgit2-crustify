@@ -524,11 +524,13 @@ One entry per difference: component, what differs, why.
   C allocated (and freed). Under `cl_alloc_limit` it therefore makes fewer
   allocations. More than two parents are collected in a Rust `Vec`
   (`try_reserve`).
-- **`git_commit_create_v`** is a C shim (`src/util/rust_shims.c`) that
-  collects the variadic parents into an array (on the heap for more than
-  8, which can fail with the out-of-memory error where the C could not)
-  and calls the Rust `git_commit__create_v`; a NULL parent ends the list,
-  as the C's `va_arg` reader did.
+- **`git_commit_create_v`** is a C shim (`src/util/rust_shims.c`). It
+  asserts `tree` and `git_tree_owner(tree) == repo` before reading any
+  argument, then reads the parents as the C's callback did (up to
+  `parent_count`, stopping at the first NULL) into an array: on the stack
+  for up to 8, grown on the heap beyond, which can fail with the
+  out-of-memory error where the C (which read each parent as it validated
+  it) could not. It then calls the Rust `git_commit__create_v`.
 - **`git_treebuilder` is opaque.** Its body moved from `tree.h` into
   `tree.c` (for the C build); with the Rust it is a Rust struct (allocated
   with `git__allocator`). Its map keeps the C's hashing and iteration order

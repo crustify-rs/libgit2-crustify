@@ -555,7 +555,8 @@ fn commitarray_dispose_empty() {
 }
 
 /// The offsets at which `sys::pending::l_commit` reads other work packages'
-/// structs, against the C headers.
+/// structs (`git_revwalk`'s, until l-revwalk is merged), against the C
+/// headers.
 #[test]
 #[cfg_attr(
     any(miri, not(feature = "link-c")),
@@ -564,38 +565,37 @@ fn commitarray_dispose_empty() {
 fn c_foreign_layout() {
     use crate::sys::pending::l_commit as p;
     let asserts = [
-        format!("offsetof(git_repository, oid_type) == {}", p::REPO_OID_TYPE),
-        format!("offsetof(git_repository, grafts) == {}", p::REPO_GRAFTS),
-        format!(
-            "offsetof(git_repository, shallow_grafts) == {}",
-            p::REPO_SHALLOW_GRAFTS
-        ),
         format!("offsetof(git_revwalk, repo) == {}", p::REVWALK_REPO),
         format!("offsetof(git_revwalk, odb) == {}", p::REVWALK_ODB),
         format!(
             "offsetof(git_revwalk, commit_pool) == {}",
             p::REVWALK_COMMIT_POOL
         ),
-        format!("offsetof(git_index, oid_type) == {}", p::INDEX_OID_TYPE),
-        // The bitfields follow `oid_type` in their own `unsigned int`.
-        format!("offsetof(git_index, oid_type) + 4 == {}", p::INDEX_FLAGS),
-        format!("offsetof(git_index, tree) == {}", p::INDEX_TREE),
-        format!("offsetof(git_index, tree_pool) == {}", p::INDEX_TREE_POOL),
-        format!(
-            "offsetof(git_tree_cache, entry_count) == {}",
-            p::TREE_CACHE_ENTRY_COUNT
-        ),
-        format!("offsetof(git_tree_cache, oid) == {}", p::TREE_CACHE_OID),
         format!(
             "sizeof(git_pool) == {}",
             size_of::<crate::util::pool::GitPool>()
         ),
-        "sizeof(((git_tree_cache *)0)->entry_count) == sizeof(ssize_t)".to_string(),
     ];
     let a: Vec<&str> = asserts.iter().map(String::as_str).collect();
-    crate::util::layout::check(
-        &["repository.h", "revwalk.h", "index.h", "tree-cache.h"],
-        &[],
-        &a,
+    crate::util::layout::check(&["revwalk.h"], &[], &a);
+}
+
+#[test]
+fn review_r1_edges() {
+    let _g = test_support::init();
+    // LC-5: an empty field is never found (the C loops forever).
+    let (mut sig, mut signed) = (GitStr::new(), GitStr::new());
+    assert_eq!(
+        extract_signature(b"tree x\nauthor a\n\nmsg\n", b"", &mut sig, &mut signed).unwrap_err(),
+        ErrorCode::NOT_FOUND
     );
+    // LC-3: INT_MIN offsets are written as the C build does.
+    let mut out = GitStr::new();
+    let when = GitTime {
+        time: 0,
+        offset: i32::MIN,
+        sign: 0,
+    };
+    write_signature(&mut out, b"author ", Some(b"N"), Some(b"e"), when);
+    assert_eq!(out.as_bytes(), b"author N <e> 0 -3579139408\n");
 }

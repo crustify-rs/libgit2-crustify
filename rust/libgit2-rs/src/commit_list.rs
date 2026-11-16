@@ -239,7 +239,9 @@ unsafe fn quick_parse(
     // SAFETY: a live repository.
     let oid_type: git_oid_t = unsafe { (*repo).oid_type_raw() };
     let mut sink = QuickSink::default();
-    commit::parse(data, oid_type, true, &mut sink)?;
+    // As C (`if (git_commit__parse_ext(...) < 0) return -1;`): every parse
+    // error is -1, the message kept.
+    commit::parse(data, oid_type, true, &mut sink).map_err(|_| ErrorCode::GENERIC)?;
 
     // Perform necessary grafts
     // SAFETY: a live repository, whose grafts nothing changes meanwhile.
@@ -639,6 +641,174 @@ mod tests {
             ffi::git_commit_list_free(&raw mut list);
             assert!(list.is_null());
             assert!(ffi::git_commit_list_pop(&raw mut list).is_null());
+        }
+    }
+}
+
+/// Miri tests of the quick parse over a fake walk and repository (byte
+/// blocks with the C's field offsets), with Rust stand-ins for the C that
+/// it calls (`git_grafts_get`, `git_revwalk__commit_lookup`), which Miri
+/// resolves by symbol.
+#[cfg(all(test, miri))]
+#[allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)] // each block's SAFETY covers its sequence
+mod miri_quick {
+    use super::*;
+    use crate::oid::OidType;
+    use std::cell::RefCell;
+
+    thread_local! {
+        static LOOKUPS: RefCell<Vec<(Oid, *mut GitCommitListNode)>> = const { RefCell::new(Vec::new()) };
+        static WALK: RefCell<*mut git_revwalk> = const { RefCell::new(ptr::null_mut()) };
+    }
+
+    /// Stand-in: no grafts.
+    #[unsafe(no_mangle)]
+    extern "C" fn git_grafts_get(
+        _out: *mut *mut c_void,
+        grafts: *mut c_void,
+        _oid: *const Oid,
+    ) -> c_int {
+        assert!(!grafts.is_null());
+        ErrorCode::NOT_FOUND.raw()
+    }
+
+    /// Stand-in: allocate a node from the walk's pool (as revwalk.c does),
+    /// re-entering `git_commit_list_alloc_node` while `quick_parse` is
+    /// between its writes to the parsed node.
+    #[unsafe(no_mangle)]
+    extern "C" fn git_revwalk__commit_lookup(
+        walk: *mut git_revwalk,
+        oid: *const Oid,
+    ) -> *mut GitCommitListNode {
+        WALK.with(|w| assert_eq!(*w.borrow(), walk));
+        // SAFETY: the walk of the test, unused by anything else here.
+        let n = unsafe { ffi::git_commit_list_alloc_node(walk) };
+        assert!(!n.is_null());
+        // SAFETY: a fresh node; `oid` readable.
+        unsafe { (*n).oid = oid.read() };
+        LOOKUPS.with(|l| l.borrow_mut().push((unsafe { oid.read() }, n)));
+        n
+    }
+
+    /// A walk and a repository as zeroed, aligned blocks.
+    struct Fake {
+        walk: Vec<u64>,
+        repo: Vec<u64>,
+        grafts: u64,
+    }
+
+    impl Fake {
+        fn new() -> Box<Fake> {
+            let mut f = Box::new(Fake {
+                walk: vec![0; 208 / 8],
+                repo: vec![0; 400 / 8],
+                grafts: 0,
+            });
+            let repo = f.repo.as_mut_ptr().cast::<pend::git_repository>();
+            let grafts = (&raw mut f.grafts).cast::<pend::git_grafts>();
+            let walk = f.walk.as_mut_ptr().cast::<git_revwalk>();
+            // SAFETY: the blocks are as large as the C structs and aligned;
+            // the fields written are those the code reads.
+            unsafe {
+                pend::field_ptr::<u32, _>(repo, pend::REPO_OID_TYPE).write(OidType::Sha1.raw());
+                pend::field_ptr::<*mut pend::git_grafts, _>(repo, pend::REPO_GRAFTS).write(grafts);
+                pend::field_ptr::<*mut pend::git_grafts, _>(repo, pend::REPO_SHALLOW_GRAFTS)
+                    .write(grafts);
+                pend::field_ptr::<*mut pend::git_repository, _>(walk, pend::REVWALK_REPO)
+                    .write(repo);
+                pend::field_ptr::<GitPool, _>(walk, pend::REVWALK_COMMIT_POOL)
+                    .write(GitPool::with_item_size(COMMIT_ALLOC).unwrap());
+            }
+            WALK.with(|w| *w.borrow_mut() = walk);
+            f
+        }
+        fn walk(&mut self) -> *mut git_revwalk {
+            self.walk.as_mut_ptr().cast()
+        }
+    }
+
+    impl Drop for Fake {
+        fn drop(&mut self) {
+            let walk = self.walk();
+            // SAFETY: the pool written in `new`, dropped once.
+            unsafe {
+                ptr::drop_in_place(pend::field_ptr::<GitPool, _>(
+                    walk,
+                    pend::REVWALK_COMMIT_POOL,
+                ))
+            };
+        }
+    }
+
+    const T: &str = "1810dff58d8a660512d4832e740f692884338ccd";
+
+    fn commit(parents: usize, committer: &str) -> Vec<u8> {
+        let mut s = format!("tree {T}\n");
+        for i in 0..parents {
+            s.push_str(&format!("parent {:040x}\n", i + 1));
+        }
+        s.push_str(&format!("author A <a@b> 1 +0000\n{committer}\n\nmsg\n"));
+        s.into_bytes()
+    }
+
+    #[test]
+    fn quick_parse_nodes() {
+        let _g = crate::util::test_support::init();
+        for np in [0usize, 1, 2, 3, 7] {
+            LOOKUPS.with(|l| l.borrow_mut().clear());
+            let mut f = Fake::new();
+            let walk = f.walk();
+            // SAFETY: the fake walk; the node is allocated from its pool.
+            unsafe {
+                let node = ffi::git_commit_list_alloc_node(walk);
+                let data = commit(np, "committer C <c@d> 1234 +0100");
+                quick_parse(walk, node, &data, &Oid::default()).unwrap();
+                assert!((*node).parsed());
+                assert_eq!((*node).time, 1234);
+                assert_eq!(usize::from((*node).out_degree), np);
+                let ps = (*node).parent_slice();
+                LOOKUPS.with(|l| {
+                    let l = l.borrow();
+                    assert_eq!(l.len(), np);
+                    for (i, (id, n)) in l.iter().enumerate() {
+                        assert_eq!(ps[i], *n);
+                        assert_eq!(id.hex().as_str(), format!("{:040x}", i + 1));
+                    }
+                });
+                // Up to two parents live inline after the node.
+                if np <= PARENTS_PER_COMMIT {
+                    assert_eq!((*node).parents, node.add(1).cast());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn quick_parse_errors_are_minus_one() {
+        let _g = crate::util::test_support::init();
+        let mut f = Fake::new();
+        let walk = f.walk();
+        for (data, msg) in [
+            (
+                commit(1, "committer C c@d> 1 +0000"),
+                "failed to parse signature - malformed e-mail",
+            ),
+            (
+                commit(0, "x"),
+                "failed to parse signature - expected prefix doesn't match actual",
+            ),
+            (b"tree 12\n".to_vec(), "failed to parse bad commit object"),
+        ] {
+            // SAFETY: the fake walk.
+            unsafe {
+                let node = ffi::git_commit_list_alloc_node(walk);
+                assert_eq!(
+                    quick_parse(walk, node, &data, &Oid::default()).unwrap_err(),
+                    ErrorCode::GENERIC
+                );
+                assert_eq!(errors::last_message().unwrap(), msg.as_bytes());
+                assert!(!(*node).parsed());
+            }
         }
     }
 }
