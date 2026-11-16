@@ -24,6 +24,9 @@ pub mod oidarray;
 pub mod parse;
 pub mod strarray;
 
+pub use odb::{
+    Backend, ExpandId, LooseOptions, Mempack, ObjectType, Odb, OdbBackend, OdbObject, OdbReader, OdbWriter,
+};
 pub use oid::{Oid, OidShortener, OidType};
 pub use oidarray::OidArray;
 pub use strarray::StrArray;
