@@ -41,3 +41,6 @@ src/util/varint.c
 src/libgit2/oid.c
 src/libgit2/oidarray.c
 src/libgit2/parse.c
+src/libgit2/pack.c
+src/libgit2/mwindow.c
+src/libgit2/odb_pack.c

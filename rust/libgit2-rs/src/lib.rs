@@ -15,8 +15,11 @@ pub mod util;
 pub mod buf;
 pub mod fs;
 pub mod hashmap_oid;
+pub mod mwindow;
+pub mod odb_pack;
 pub mod oid;
 pub mod oidarray;
+pub mod pack;
 pub mod parse;
 pub mod strarray;
 
