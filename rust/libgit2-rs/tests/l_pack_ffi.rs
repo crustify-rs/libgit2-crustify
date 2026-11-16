@@ -12,15 +12,15 @@ use core::mem::MaybeUninit;
 use core::ptr;
 use std::ffi::CString;
 
-use libgit2_rs::mwindow::{GitMwindow, ffi as mw_ffi};
-use libgit2_rs::odb_pack::{GitOdbBackend, GitOdbBackendPackOptions, ffi as op_ffi};
-use libgit2_rs::oid::{GIT_OID_SHA1, GIT_OID_SHA256};
-use libgit2_rs::pack::{
+use libgit2_rs::__test::mwindow::{GitMwindow, ffi as mw_ffi};
+use libgit2_rs::__test::odb_pack::{GitOdbBackend, GitOdbBackendPackOptions, ffi as op_ffi};
+use libgit2_rs::__test::oid::{GIT_OID_SHA1, GIT_OID_SHA256};
+use libgit2_rs::__test::pack::{
     GIT_OBJECT_BLOB, GIT_OBJECT_COMMIT, GIT_PACKFILE_OFS_DELTA, GIT_PACKFILE_REF_DELTA,
     GitPackEntry, GitPackFile, GitPackfileStream, GitRawobj, ffi as p_ffi,
 };
-use libgit2_rs::util::errors;
-use libgit2_rs::util::test_support;
+use libgit2_rs::__test::util::errors;
+use libgit2_rs::__test::util::test_support;
 use libgit2_rs::{Oid, OidType};
 
 const RES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/resources");
@@ -101,7 +101,7 @@ fn alloc_find_unpack_free() {
         assert!(off > e.offset);
         assert_eq!(*raw.data.cast::<u8>().add(raw.len), 0);
         assert!(std::slice::from_raw_parts(raw.data.cast::<u8>(), 5) == b"tree ");
-        libgit2_rs::util::alloc::free(raw.data);
+        libgit2_rs::__test::util::alloc::free(raw.data);
 
         // The header, by hand, and a stream over the data.
         let mut w: *mut GitMwindow = ptr::null_mut();
@@ -241,7 +241,7 @@ fn names_headers_lookup_id() {
             0
         );
         assert_eq!(CStr::from_ptr(out), c"dir/pack-1.pack");
-        libgit2_rs::util::alloc::free(out.cast());
+        libgit2_rs::__test::util::alloc::free(out.cast());
         assert_eq!(p_ffi::git_packfile__name(&mut out, c"abc".as_ptr()), -3);
         assert_eq!(msg(), "object not found - invalid packfile path");
 
@@ -413,7 +413,7 @@ fn pack_backend_table() {
         let (mut data, mut len, mut kind) = (ptr::null_mut(), 0usize, 0);
         assert_eq!(read(&mut data, &mut len, &mut kind, b, &id), 0);
         assert_eq!(kind, GIT_OBJECT_COMMIT);
-        libgit2_rs::util::alloc::free(data);
+        libgit2_rs::__test::util::alloc::free(data);
 
         let read_header = backend_slot(b, |t| t.read_header);
         let (mut hlen, mut hkind) = (0usize, 0);
@@ -454,7 +454,7 @@ fn pack_backend_table() {
             0
         );
         assert_eq!(full, id);
-        libgit2_rs::util::alloc::free(data);
+        libgit2_rs::__test::util::alloc::free(data);
         assert_eq!(
             read_prefix(&mut full, &mut data, &mut len, &mut kind, b, &id, 3),
             -5

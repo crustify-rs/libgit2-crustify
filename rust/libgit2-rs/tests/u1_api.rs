@@ -4,14 +4,16 @@
 
 #![forbid(unsafe_code)]
 
-use libgit2_rs::hashmap_oid::OidMap;
-use libgit2_rs::parse::GitParseCtx;
-use libgit2_rs::util::array::GitArray;
-use libgit2_rs::util::hashmap::{CStrKey, GitHashMap, GitHashSet};
-use libgit2_rs::util::pool::GitPool;
-use libgit2_rs::util::test_support;
-use libgit2_rs::util::{utf8, varint};
-use libgit2_rs::{Error, ErrorClass, Oid, OidArray, OidShortener, OidType, oidarray};
+use libgit2_rs::__test::hashmap_oid::OidMap;
+use libgit2_rs::__test::parse::GitParseCtx;
+use libgit2_rs::__test::util::array::GitArray;
+use libgit2_rs::__test::util::hashmap::{CStrKey, GitHashMap, GitHashSet};
+use libgit2_rs::__test::util::pool::GitPool;
+use libgit2_rs::__test::util::test_support;
+use libgit2_rs::__test::util::{utf8, varint};
+use libgit2_rs::{
+    __test::oidarray, __test::oidarray::OidArray, Error, ErrorClass, Oid, OidShortener, OidType,
+};
 
 const A: &str = "8b137891791fe96927ad78e64b0aad7bded08bdc";
 const B: &str = "8b137891791fe96927ad78e64b0aad7bded08bdd";

@@ -9,8 +9,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use libgit2_rs::refs_api::{self, RefValue, Repository, set_refdb_backend};
-use libgit2_rs::util::test_support;
+use libgit2_rs::__test::refs_api::{self, RefValue, Repository, set_refdb_backend};
+use libgit2_rs::__test::util::test_support;
 use libgit2_rs::{Error, ErrorCode, Oid, OidType, RefdbBackend, Reference, References};
 
 const MASTER: &str = "a65fedf39aefe402d3bb6e24df4d4f5fe4547750";

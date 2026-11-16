@@ -8,15 +8,15 @@
 use core::ffi::{CStr, c_char, c_int, c_void};
 use core::mem::MaybeUninit;
 
-use libgit2_rs::util::date::ffi as date_ffi;
-use libgit2_rs::util::errors::{self, ErrorClass, ErrorCode};
-use libgit2_rs::util::hash::{GitStrVec, HashCtx, ffi as hash_ffi, raw_algorithm};
-use libgit2_rs::util::rand::ffi as rand_ffi;
-use libgit2_rs::util::regexp::{RegMatch, ffi as re_ffi};
-use libgit2_rs::util::str::GitStr;
-use libgit2_rs::util::test_support;
-use libgit2_rs::util::wildmatch::ffi as wm_ffi;
-use libgit2_rs::util::zstream::{GitZstream, ZstreamKind, ffi as zs_ffi};
+use libgit2_rs::__test::util::date::ffi as date_ffi;
+use libgit2_rs::__test::util::errors::{self, ErrorClass, ErrorCode};
+use libgit2_rs::__test::util::hash::{GitStrVec, HashCtx, ffi as hash_ffi, raw_algorithm};
+use libgit2_rs::__test::util::rand::ffi as rand_ffi;
+use libgit2_rs::__test::util::regexp::{RegMatch, ffi as re_ffi};
+use libgit2_rs::__test::util::str::GitStr;
+use libgit2_rs::__test::util::test_support;
+use libgit2_rs::__test::util::wildmatch::ffi as wm_ffi;
+use libgit2_rs::__test::util::zstream::{GitZstream, ZstreamKind, ffi as zs_ffi};
 
 fn hex(b: &[u8]) -> String {
     b.iter().map(|b| format!("{b:02x}")).collect()

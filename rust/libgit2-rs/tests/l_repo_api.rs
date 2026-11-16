@@ -6,8 +6,8 @@
 
 use std::path::{Path, PathBuf};
 
-use libgit2_rs::repository::api::{RefStorage, RepositoryInitFlags, RepositoryItem};
-use libgit2_rs::settings::opts;
+use libgit2_rs::__test::repository::api::{RefStorage, RepositoryInitFlags, RepositoryItem};
+use libgit2_rs::__test::settings::opts;
 use libgit2_rs::{
     ErrorCode, Libgit2, OidType, Repository, RepositoryInitOptions, RepositoryOpenFlags,
     RepositoryState,
@@ -188,10 +188,10 @@ fn options() {
     assert!(opts::user_agent().starts_with(b"libgit2 "));
     assert_eq!(opts::user_agent_product(), b"git/2.0");
     assert!(opts::extensions().iter().any(|e| e == b"objectformat"));
-    let (maj, min, rev) = libgit2_rs::libgit2::version();
+    let (maj, min, rev) = libgit2_rs::__test::libgit2::version();
     assert_eq!((maj, min, rev), (1, 9, 0));
     assert_eq!(
-        libgit2_rs::libgit2::feature_backend(libgit2_rs::libgit2::feature::THREADS),
+        libgit2_rs::__test::libgit2::feature_backend(libgit2_rs::__test::libgit2::feature::THREADS),
         Some(c"pthread")
     );
 }

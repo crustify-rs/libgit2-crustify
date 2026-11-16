@@ -14,7 +14,7 @@
 //! A test that reaches C is marked `#[cfg_attr(miri, ignore)]`.
 //!
 //! ```
-//! # use libgit2_rs::util::test_support;
+//! # use libgit2_rs::__test::util::test_support;
 //! let _g = test_support::init();
 //! // … the test …
 //! ```

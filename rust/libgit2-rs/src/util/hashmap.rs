@@ -28,8 +28,8 @@
 //! values (pointers), as C's.
 //!
 //! ```
-//! use libgit2_rs::util::hashmap::{CStrKey, GitHashMap};
-//! # let _g = libgit2_rs::util::test_support::init();
+//! use libgit2_rs::__test::util::hashmap::{CStrKey, GitHashMap};
+//! # let _g = libgit2_rs::__test::util::test_support::init();
 //! let mut m: GitHashMap<CStrKey<'_>, u32> = GitHashMap::new();
 //! m.put(CStrKey::new(c"one"), 1)?;
 //! m.put(CStrKey::new(c"two"), 2)?;
@@ -37,7 +37,7 @@
 //! assert_eq!(m.len(), 2);
 //! let mut it = 0;
 //! while let Some((k, v)) = m.iterate(&mut it) { /* bucket order, as C */ let _ = (k, v); }
-//! # Ok::<(), libgit2_rs::util::errors::ErrorCode>(())
+//! # Ok::<(), libgit2_rs::__test::util::errors::ErrorCode>(())
 //! ```
 
 use core::ffi::{CStr, c_char, c_void};
@@ -1374,5 +1374,90 @@ mod tests {
         }
         assert!(m.is_empty());
         assert!(m.buckets() <= 32);
+    }
+}
+
+#[cfg(test)]
+mod exports_macro_tests {
+    use super::*;
+    use core::ffi::{c_char, c_int, c_void};
+    use core::mem::MaybeUninit;
+    use core::ptr;
+
+    // A C-named map family, as `pack.c`'s `git_pack_oidmap` will be exported.
+    type TestMap = GitHashMap<CStrKey<'static>, *mut c_void>;
+    crate::git_hashmap_exports! {
+        map: TestMap, key: *const c_char, val: *mut c_void,
+        size: u1test_strmap_size, contains: u1test_strmap_contains,
+        remove: u1test_strmap_remove, clear: u1test_strmap_clear,
+        dispose: u1test_strmap_dispose, get: u1test_strmap_get,
+        put: u1test_strmap_put, iterate: u1test_strmap_iterate,
+        foreach: u1test_strmap_foreach,
+    }
+
+    unsafe extern "C" {
+        fn u1test_strmap_size(h: *mut TestMap) -> u32;
+        fn u1test_strmap_contains(h: *mut TestMap, k: *const c_char) -> bool;
+        fn u1test_strmap_remove(h: *mut TestMap, k: *const c_char) -> c_int;
+        fn u1test_strmap_clear(h: *mut TestMap);
+        fn u1test_strmap_dispose(h: *mut TestMap);
+        fn u1test_strmap_get(out: *mut *mut c_void, h: *mut TestMap, k: *const c_char) -> c_int;
+        fn u1test_strmap_put(h: *mut TestMap, k: *const c_char, v: *mut c_void) -> c_int;
+        fn u1test_strmap_iterate(
+            it: *mut u32,
+            k: *mut *const c_char,
+            v: *mut *mut c_void,
+            h: *mut TestMap,
+        ) -> c_int;
+        fn u1test_strmap_foreach(
+            h: *mut TestMap,
+            cb: unsafe extern "C" fn(*const c_char, *mut c_void) -> c_int,
+        ) -> c_int;
+    }
+
+    unsafe extern "C" fn count_cb(_k: *const c_char, v: *mut c_void) -> c_int {
+        if v.addr() == 2 { 42 } else { 0 }
+    }
+
+    #[test]
+    fn hashmap_exports_macro() {
+        let _g = crate::util::test_support::init();
+        let mut m: MaybeUninit<TestMap> = MaybeUninit::zeroed();
+        let m = m.as_mut_ptr();
+        // SAFETY: as C would call them; the keys are static strings.
+        unsafe {
+            assert_eq!(
+                u1test_strmap_put(m, c"a".as_ptr(), ptr::without_provenance_mut(1)),
+                0
+            );
+            assert_eq!(
+                u1test_strmap_put(m, c"b".as_ptr(), ptr::without_provenance_mut(2)),
+                0
+            );
+            assert_eq!(
+                u1test_strmap_put(m, c"a".as_ptr(), ptr::without_provenance_mut(3)),
+                0
+            );
+            assert_eq!(u1test_strmap_size(m), 2);
+            assert!(u1test_strmap_contains(m, c"b".as_ptr()));
+            let mut v = ptr::null_mut();
+            assert_eq!(u1test_strmap_get(&mut v, m, c"a".as_ptr()), 0);
+            assert_eq!(v.addr(), 3);
+            assert_eq!(u1test_strmap_get(&mut v, m, c"zz".as_ptr()), -3);
+            let (mut it, mut k, mut n) = (0u32, ptr::null(), 0);
+            while u1test_strmap_iterate(&mut it, &mut k, ptr::null_mut(), m) == 0 {
+                assert!(!k.is_null());
+                n += 1;
+            }
+            assert_eq!(n, 2);
+            assert_eq!(u1test_strmap_iterate(&mut it, &mut k, &mut v, m), -31);
+            assert_eq!(u1test_strmap_foreach(m, count_cb), 42);
+            assert_eq!(u1test_strmap_remove(m, c"a".as_ptr()), 0);
+            assert_eq!(u1test_strmap_remove(m, c"a".as_ptr()), -3);
+            u1test_strmap_clear(m);
+            assert_eq!(u1test_strmap_size(m), 0);
+            u1test_strmap_dispose(m);
+            assert_eq!((*m).buckets(), 0);
+        }
     }
 }

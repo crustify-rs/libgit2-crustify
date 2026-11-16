@@ -6,10 +6,9 @@
 
 use core::ffi::{CStr, c_int};
 use core::fmt;
-use libgit2_rs::util::errors::{self, Bytes, Error, ErrorClass, ErrorCode, GitError, ffi};
-use libgit2_rs::util::export::barrier;
-use libgit2_rs::util::test_support;
-use libgit2_rs::{git_assert, git_assert_arg, git_error_set};
+use libgit2_rs::__test::util::errors::{self, Bytes, Error, ErrorClass, ErrorCode, GitError, ffi};
+use libgit2_rs::__test::util::export::barrier;
+use libgit2_rs::__test::util::test_support;
 
 /// What `git_error_last` shows, as C reads it.
 fn c_last() -> (c_int, Vec<u8>) {
@@ -61,12 +60,18 @@ fn set_clear_last() {
 #[test]
 fn formatted_and_os_errors() {
     let _g = test_support::init();
-    let r: errors::Result<()> = Err(git_error_set!(ErrorClass::NET, "code {} at {:#x}", 7, 255));
+    let r: errors::Result<()> = Err(errors::set_fmt(
+        ErrorClass::NET,
+        format_args!("code {} at {:#x}", 7, 255),
+    ));
     assert_eq!(r, Err(ErrorCode::GENERIC));
     assert_eq!(c_last(), (12, b"code 7 at 0xff".to_vec()));
 
     errors::set_errno(libc::ENOENT);
-    let _ = git_error_set!(ErrorClass::OS, "failed to open '{}'", Bytes(b"/x\xff"));
+    let _ = errors::set_fmt(
+        ErrorClass::OS,
+        format_args!("failed to open '{}'", Bytes(b"/x\xff")),
+    );
     let expect = b"failed to open '/x\xff': No such file or directory";
     if cfg!(miri) {
         // Miri's `strerror_r` appends " (os error 2)" to glibc's text.
@@ -75,7 +80,7 @@ fn formatted_and_os_errors() {
         assert_eq!(c_last(), (2, expect.to_vec()));
     }
     assert_eq!(errors::errno(), 0, "errno is reset");
-    let _ = git_error_set!(ErrorClass::OS, "no errno");
+    let _ = errors::set_fmt(ErrorClass::OS, format_args!("no errno"));
     assert_eq!(c_last(), (2, b"no errno: ".to_vec()));
 
     // The shim's entry point: NULL format, OS class.
@@ -100,35 +105,15 @@ fn reentrant_display_is_harmless() {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             // An argument that itself sets an error while being formatted.
             let _ = errors::set_str(ErrorClass::SSL, "inner");
-            let _ = git_error_set!(ErrorClass::SSL, "inner {}", 2);
+            let _ = errors::set_fmt(ErrorClass::SSL, format_args!("inner {}", 2));
             f.write_str("sneaky")
         }
     }
-    let _ = git_error_set!(ErrorClass::FILTER, "outer {} {}", Sneaky, Bytes(b"\xfe"));
-    assert_eq!(c_last(), (24, b"outer sneaky \xfe".to_vec()));
-}
-
-#[test]
-fn assert_macros() {
-    let _g = test_support::init();
-    fn f(x: Option<u8>) -> errors::Result<u8> {
-        git_assert_arg!(x.is_some(), "x");
-        git_assert!(x != Some(0), "x != 0");
-        Ok(x.unwrap())
-    }
-    assert_eq!(f(None), Err(ErrorCode::GENERIC));
-    assert_eq!(c_last(), (3, b"invalid argument: 'x'".to_vec()));
-    assert_eq!(f(Some(0)), Err(ErrorCode::GENERIC));
-    assert_eq!(
-        c_last(),
-        (35, b"unrecoverable internal error: 'x != 0'".to_vec())
+    let _ = errors::set_fmt(
+        ErrorClass::FILTER,
+        format_args!("outer {} {}", Sneaky, Bytes(b"\xfe")),
     );
-    assert_eq!(f(Some(3)), Ok(3));
-    fn g(x: c_int) -> c_int {
-        git_assert_arg!(x > 0, "x > 0", -7);
-        0
-    }
-    assert_eq!(g(0), -7);
+    assert_eq!(c_last(), (24, b"outer sneaky \xfe".to_vec()));
 }
 
 #[test]

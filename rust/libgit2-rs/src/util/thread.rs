@@ -29,7 +29,7 @@
 //! the struct, as in C.
 //!
 //! ```
-//! use libgit2_rs::util::thread::{GitMutex, Atomic32};
+//! use libgit2_rs::__test::util::thread::{GitMutex, Atomic32};
 //! static M: GitMutex = GitMutex::new();
 //! let count = Atomic32::new(0);
 //! {
@@ -144,7 +144,7 @@ impl Default for GitMutex {
 /// A held [`GitMutex`]; unlocks on drop. Not `Send`:
 ///
 /// ```compile_fail
-/// use libgit2_rs::util::thread::GitMutex;
+/// use libgit2_rs::__test::util::thread::GitMutex;
 /// fn send<T: Send>(_: T) {}
 /// static M: GitMutex = GitMutex::new();
 /// send(M.lock());

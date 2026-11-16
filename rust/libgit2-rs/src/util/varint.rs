@@ -3,7 +3,7 @@
 //! byte).
 //!
 //! ```
-//! use libgit2_rs::util::varint;
+//! use libgit2_rs::__test::util::varint;
 //! let mut buf = [0u8; 16];
 //! let n = varint::encode(Some(&mut buf), 16384);
 //! assert_eq!(&buf[..n as usize], &[0xff, 0x00]);

@@ -5,10 +5,10 @@
 #![forbid(unsafe_code)]
 #![cfg(feature = "link-c")]
 
+use libgit2_rs::__test::commit::api::SignatureRef;
+use libgit2_rs::__test::tree::api::{EntryKind, TreeUpdate, TreeWalk, TreeWalkMode};
+use libgit2_rs::__test::util::test_support;
 use libgit2_rs::Repository;
-use libgit2_rs::commit::api::SignatureRef;
-use libgit2_rs::tree::api::{EntryKind, TreeUpdate, TreeWalk, TreeWalkMode};
-use libgit2_rs::util::test_support;
 use libgit2_rs::{Commit, CommitBuilder, ErrorCode, Oid, OidType, Tree, TreeBuilder};
 use std::path::{Path, PathBuf};
 

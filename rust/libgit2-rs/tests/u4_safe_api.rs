@@ -3,8 +3,13 @@
 
 #![forbid(unsafe_code)]
 
-use libgit2_rs::util::test_support;
-use libgit2_rs::{ErrorClass, ErrorCode, Process, ProcessOptions, ProcessStatus, SortedCache, Url};
+use libgit2_rs::__test::util::test_support;
+use libgit2_rs::__test::util::{
+    net::Url,
+    process::{Process, ProcessOptions, ProcessStatus},
+    sortedcache::SortedCache,
+};
+use libgit2_rs::{ErrorClass, ErrorCode};
 
 #[test]
 fn url() {
@@ -34,8 +39,8 @@ fn url() {
 
     let h = Url::parse_http(b"localhost:3128").unwrap();
     assert_eq!(h.to_bytes().unwrap(), b"http://localhost:3128/");
-    assert!(libgit2_rs::util::net::is_url(b"https://x"));
-    assert!(libgit2_rs::util::net::hostname_matches_cert(
+    assert!(libgit2_rs::__test::util::net::is_url(b"https://x"));
+    assert!(libgit2_rs::__test::util::net::hostname_matches_cert(
         b"a.example.com",
         b"*.example.com"
     ));

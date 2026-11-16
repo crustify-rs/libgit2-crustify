@@ -7,8 +7,8 @@
 
 use std::path::PathBuf;
 
-use libgit2_rs::index::{IndexAddOption, IndexCapability};
-use libgit2_rs::util::test_support;
+use libgit2_rs::__test::index::{IndexAddOption, IndexCapability};
+use libgit2_rs::__test::util::test_support;
 use libgit2_rs::{ErrorClass, ErrorCode, Index, IndexEntry, Oid, OidType, Stage};
 
 fn id(c: char, t: OidType) -> Oid {

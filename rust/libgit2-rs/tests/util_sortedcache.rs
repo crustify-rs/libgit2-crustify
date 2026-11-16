@@ -7,10 +7,10 @@ use core::ffi::{CStr, c_char, c_int, c_void};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use libgit2_rs::SortedCache;
-use libgit2_rs::util::errors::{self, ErrorCode};
-use libgit2_rs::util::sortedcache::{Shared, ffi};
-use libgit2_rs::util::test_support;
+use libgit2_rs::__test::util::errors::{self, ErrorCode};
+use libgit2_rs::__test::util::sortedcache::SortedCache;
+use libgit2_rs::__test::util::sortedcache::{Shared, ffi};
+use libgit2_rs::__test::util::test_support;
 
 fn msg() -> String {
     String::from_utf8(errors::last_message().unwrap_or_default()).unwrap()

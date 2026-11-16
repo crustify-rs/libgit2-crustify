@@ -9,11 +9,11 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use libgit2_rs::refs_api::{
+use libgit2_rs::__test::refs_api::{
     self, PeelTarget, RefValue, ReferenceFormat, ReferenceNames, ReflogRecord, Repository,
     set_refdb_backend,
 };
-use libgit2_rs::util::test_support;
+use libgit2_rs::__test::util::test_support;
 use libgit2_rs::{
     Error, ErrorClass, ErrorCode, Oid, OidType, RefdbBackend, Reference, ReferenceType, References,
     Reflog, Signature, Time,

@@ -39,5 +39,5 @@ pub mod vector;
 pub mod wildmatch;
 pub mod zstream;
 
-#[doc(hidden)]
+#[cfg(any(test, feature = "test-internals"))]
 pub mod test_support;

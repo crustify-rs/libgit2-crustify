@@ -9,13 +9,13 @@ use core::ffi::{c_char, c_int, c_void};
 use core::ptr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use libgit2_rs::cache::{GitCache, GitCachedObj};
-use libgit2_rs::odb::ffi::*;
-use libgit2_rs::odb::{GitOdb, GitOdbBackend, GitOdbObject, GitOdbStream};
-use libgit2_rs::odb_mempack::ffi::*;
-use libgit2_rs::util::alloc;
-use libgit2_rs::util::errors;
-use libgit2_rs::util::test_support;
+use libgit2_rs::__test::cache::{GitCache, GitCachedObj};
+use libgit2_rs::__test::odb::ffi::*;
+use libgit2_rs::__test::odb::{GitOdb, GitOdbBackend, GitOdbObject, GitOdbStream};
+use libgit2_rs::__test::odb_mempack::ffi::*;
+use libgit2_rs::__test::util::alloc;
+use libgit2_rs::__test::util::errors;
+use libgit2_rs::__test::util::test_support;
 use libgit2_rs::{Oid, OidType};
 
 const HELLO: &str = "ce013625030ba8dba906f756967f9e9ca394464a";
@@ -181,7 +181,7 @@ fn argument_checks_and_versions() {
     assert_eq!(unsafe { git_odb_new(ptr::null_mut()) }, -1);
     assert_eq!(last_message(), "invalid argument: 'out'");
     let mut db: *mut GitOdb = ptr::null_mut();
-    let bad = libgit2_rs::odb::GitOdbOptions {
+    let bad = libgit2_rs::__test::odb::GitOdbOptions {
         version: 7,
         oid_type: 0,
     };
@@ -373,7 +373,7 @@ fn plain(i: u8, size: usize) -> *mut GitCachedObj {
 
 #[test]
 fn cache_c_abi_concurrently() {
-    use libgit2_rs::cache::ffi::*;
+    use libgit2_rs::__test::cache::ffi::*;
     let _g = test_support::init();
     let c =
         Box::into_raw(Box::new(core::mem::MaybeUninit::<GitCache>::uninit())).cast::<GitCache>();

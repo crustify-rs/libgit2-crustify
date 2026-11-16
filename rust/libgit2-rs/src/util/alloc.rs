@@ -18,8 +18,8 @@
 //!   (`CBox<Foo, GitAlloc>`, [`GitCStr`], `CVec<T, GitAlloc>`).
 //!
 //! ```
-//! use libgit2_rs::util::alloc::{GitAlloc, GIT_ALLOC};
-//! # let _g = libgit2_rs::util::test_support::init();
+//! use libgit2_rs::__test::util::alloc::{GitAlloc, GIT_ALLOC};
+//! # let _g = libgit2_rs::__test::util::test_support::init();
 //! let mut v: Vec<u32, GitAlloc> = Vec::new_in(GIT_ALLOC);
 //! v.try_reserve(16).expect("allocation"); // fails with the OOM error set
 //! v.push(1);

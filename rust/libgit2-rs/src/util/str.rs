@@ -22,14 +22,14 @@
 //! hands exports strings in any state, as its contract with them.
 //!
 //! ```
-//! use libgit2_rs::util::str::GitStr;
-//! # let _g = libgit2_rs::util::test_support::init();
+//! use libgit2_rs::__test::util::str::GitStr;
+//! # let _g = libgit2_rs::__test::util::test_support::init();
 //! let mut s = GitStr::new();
 //! s.puts(b"refs/heads")?;
 //! s.joinpath_self(b"main")?;
 //! assert_eq!(s.as_bytes(), b"refs/heads/main");
 //! assert_eq!(s.capacity(), 16);
-//! # Ok::<(), libgit2_rs::util::errors::ErrorCode>(())
+//! # Ok::<(), libgit2_rs::__test::util::errors::ErrorCode>(())
 //! ```
 
 use core::cell::UnsafeCell;

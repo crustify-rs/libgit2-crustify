@@ -14,8 +14,8 @@
 //!
 //! ```
 //! use core::ffi::c_void;
-//! use libgit2_rs::util::vector::GitVector;
-//! # let _g = libgit2_rs::util::test_support::init();
+//! use libgit2_rs::__test::util::vector::GitVector;
+//! # let _g = libgit2_rs::__test::util::test_support::init();
 //! let mut v = GitVector::with_capacity(0, None)?;
 //! let (mut a, mut b) = (1u32, 2u32);
 //! v.insert((&raw mut b).cast())?;
@@ -23,7 +23,7 @@
 //! // SAFETY (for the example): the elements point to live `u32`s.
 //! v.sort_by(|x, y| unsafe { *x.cast::<u32>() as i32 - *y.cast::<u32>() as i32 });
 //! assert_eq!(v.get(0), Some((&raw mut a).cast::<c_void>()));
-//! # Ok::<(), libgit2_rs::util::errors::ErrorCode>(())
+//! # Ok::<(), libgit2_rs::__test::util::errors::ErrorCode>(())
 //! ```
 
 use core::ffi::{c_int, c_void};

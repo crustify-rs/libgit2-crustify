@@ -10,16 +10,16 @@
 use core::ffi::{CStr, c_char};
 use core::mem::MaybeUninit;
 
-use libgit2_rs::util::errors::{self, ErrorClass, ErrorCode};
-use libgit2_rs::util::net::{self, GitNetUrl, ffi};
-use libgit2_rs::util::str::GitStr;
-use libgit2_rs::util::test_support;
+use libgit2_rs::__test::util::errors::{self, ErrorClass, ErrorCode};
+use libgit2_rs::__test::util::net::{self, GitNetUrl, ffi};
+use libgit2_rs::__test::util::str::GitStr;
+use libgit2_rs::__test::util::test_support;
 
 fn msg() -> String {
     String::from_utf8(errors::last_message().unwrap_or_default()).unwrap()
 }
 
-fn s(f: &Option<libgit2_rs::util::alloc::GitCStr>) -> Option<&str> {
+fn s(f: &Option<libgit2_rs::__test::util::alloc::GitCStr>) -> Option<&str> {
     f.as_ref().map(|c| c.to_str().unwrap())
 }
 
@@ -456,7 +456,7 @@ fn c(s: &str) -> std::ffi::CString {
     std::ffi::CString::new(s).unwrap()
 }
 
-fn cs(p: &Option<libgit2_rs::util::alloc::GitCStr>) -> Option<&CStr> {
+fn cs(p: &Option<libgit2_rs::__test::util::alloc::GitCStr>) -> Option<&CStr> {
     p.as_deref()
 }
 
@@ -524,7 +524,7 @@ fn exports_alias_and_asserts() {
         let up: *mut GitNetUrl = &mut u;
         assert_eq!(ffi::git_net_url_dup(up, up), 0);
         for p in old {
-            libgit2_rs::util::alloc::free(p.cast());
+            libgit2_rs::__test::util::alloc::free(p.cast());
         }
         assert_eq!(cs(&u.host).unwrap(), c"example.com");
         // joinpath onto itself: `out` is disposed first, so `one` is empty
@@ -570,7 +570,8 @@ fn exports_alias_and_asserts() {
 #[test]
 fn safe_url_api() {
     let _g = test_support::init();
-    let mut u = libgit2_rs::Url::parse(b"https://user@example.com/repo.git").unwrap();
+    let mut u =
+        libgit2_rs::__test::util::net::Url::parse(b"https://user@example.com/repo.git").unwrap();
     assert_eq!(u.host(), Some(&b"example.com"[..]));
     assert!(u.is_default_port() && !u.port_specified());
     u.set_credentials(Some(b"me"), Some(b"secret")).unwrap();
@@ -578,7 +579,7 @@ fn safe_url_api() {
         u.to_bytes().unwrap(),
         b"https://me:secret@example.com/repo.git"
     );
-    let e = libgit2_rs::Url::parse(b"http://[::1").unwrap_err();
+    let e = libgit2_rs::__test::util::net::Url::parse(b"http://[::1").unwrap_err();
     assert_eq!(e.code(), ErrorCode::INVALID_SPEC);
     assert_eq!(e.class(), ErrorClass::NET);
 }

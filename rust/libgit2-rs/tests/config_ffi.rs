@@ -13,15 +13,15 @@
 use core::ffi::{CStr, c_char, c_int, c_void};
 use core::ptr::null_mut;
 
-use libgit2_rs::config::ffi::*;
-use libgit2_rs::config::{
+use libgit2_rs::__test::config::ffi::*;
+use libgit2_rs::__test::config::{
     GIT_CONFIG_LEVEL_APP, GIT_CONFIG_LEVEL_GLOBAL, GIT_CONFIG_LEVEL_LOCAL, GitConfig,
     git_config_backend, git_config_backend_entry, git_config_entry, git_config_iterator,
     git_configmap,
 };
-use libgit2_rs::config_mem::ffi::git_config_backend_from_string;
-use libgit2_rs::util::errors::{self, ErrorCode};
-use libgit2_rs::util::test_support;
+use libgit2_rs::__test::config_mem::ffi::git_config_backend_from_string;
+use libgit2_rs::__test::util::errors::{self, ErrorCode};
+use libgit2_rs::__test::util::test_support;
 
 fn last_message() -> String {
     String::from_utf8_lossy(&errors::last().1).into_owned()
@@ -201,7 +201,7 @@ unsafe extern "C" fn c_entry_free(e: *mut git_config_backend_entry) {
 unsafe extern "C" fn c_open(
     _: *mut git_config_backend,
     _: c_int,
-    _: *const libgit2_rs::repository::GitRepository,
+    _: *const libgit2_rs::__test::repository::GitRepository,
 ) -> c_int {
     0
 }
@@ -379,7 +379,7 @@ fn maps_and_parsers() {
         let mut n = null_mut();
         assert_eq!(git_config__normalize_name(c"A.b.C".as_ptr(), &mut n), 0);
         assert_eq!(cs(n), "a.b.c");
-        libgit2_rs::util::alloc::free(n.cast());
+        libgit2_rs::__test::util::alloc::free(n.cast());
     }
 }
 

@@ -10,8 +10,8 @@
 //!
 //! Setting an error:
 //!
-//! ```
-//! use libgit2_rs::util::errors::{self, ErrorClass, ErrorCode, Result};
+//! ```ignore
+//! use libgit2_rs::__test::util::errors::{self, ErrorClass, ErrorCode, Result};
 //! use libgit2_rs::git_error_set;
 //!
 //! fn parse(s: &[u8]) -> Result<u32> {
@@ -832,7 +832,8 @@ impl std::error::Error for Error {}
 /// [`ErrorClass::OS`](crate::util::errors::ErrorClass::OS) the `errno`
 /// message is appended as C does.
 ///
-/// ```
+/// ```ignore
+/// // (crate-internal: the unit tests run it)
 /// # use libgit2_rs::{git_error_set, util::errors::{ErrorClass, Result}};
 /// fn f(n: usize) -> Result<()> {
 ///     Err(git_error_set!(ErrorClass::INVALID, "too many: {n}"))
@@ -852,7 +853,8 @@ macro_rules! git_error_set {
 /// arguments the function returns `Err(ErrorCode::GENERIC)`; with a third
 /// it returns that value (`GIT_ASSERT_ARG_WITH_RETVAL`).
 ///
-/// ```
+/// ```ignore
+/// // (crate-internal: the unit tests run it)
 /// # use libgit2_rs::{git_assert_arg, util::errors::Result};
 /// fn f(p: Option<&u8>) -> Result<u8> {
 ///     git_assert_arg!(p.is_some(), "p");
@@ -1178,4 +1180,37 @@ crate::c_layout_test! {
         StaticError => "git_error" {},
     ],
     asserts: ["GIT_ERROR_GRAFTS == 36", "GIT_EREADONLY == -40"],
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn last_pair() -> (c_int, Vec<u8>) {
+        let (class, message) = last();
+        (class.0, message)
+    }
+
+    #[test]
+    fn assert_macros() {
+        let _g = crate::util::test_support::init();
+        fn f(x: Option<u8>) -> Result<u8> {
+            git_assert_arg!(x.is_some(), "x");
+            git_assert!(x != Some(0), "x != 0");
+            Ok(x.unwrap())
+        }
+        assert_eq!(f(None), Err(ErrorCode::GENERIC));
+        assert_eq!(last_pair(), (3, b"invalid argument: 'x'".to_vec()));
+        assert_eq!(f(Some(0)), Err(ErrorCode::GENERIC));
+        assert_eq!(
+            last_pair(),
+            (35, b"unrecoverable internal error: 'x != 0'".to_vec())
+        );
+        assert_eq!(f(Some(3)), Ok(3));
+        fn g(x: c_int) -> c_int {
+            git_assert_arg!(x > 0, "x > 0", -7);
+            0
+        }
+        assert_eq!(g(0), -7);
+    }
 }

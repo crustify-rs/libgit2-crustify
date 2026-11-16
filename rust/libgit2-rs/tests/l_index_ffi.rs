@@ -8,11 +8,11 @@
 use core::ffi::{CStr, c_char, c_int, c_void};
 use core::ptr;
 
-use libgit2_rs::index::ffi::*;
-use libgit2_rs::index::{GitIndex, GitIndexEntry, GitIndexWriter};
-use libgit2_rs::util::errors;
-use libgit2_rs::util::test_support;
-use libgit2_rs::util::vector::GitVector;
+use libgit2_rs::__test::index::ffi::*;
+use libgit2_rs::__test::index::{GitIndex, GitIndexEntry, GitIndexWriter};
+use libgit2_rs::__test::util::errors;
+use libgit2_rs::__test::util::test_support;
+use libgit2_rs::__test::util::vector::GitVector;
 use libgit2_rs::{Oid, OidType};
 
 fn last() -> String {
@@ -49,14 +49,14 @@ fn argument_checks() {
         assert_eq!(git_index_remove(ptr::null_mut(), c"x".as_ptr(), 0), -1);
         assert_eq!(git_index_open(ptr::null_mut(), ptr::null()), -1);
         assert_eq!(last(), "invalid argument: 'index_out'");
-        let opts = libgit2_rs::index::GitIndexOptions {
+        let opts = libgit2_rs::__test::index::GitIndexOptions {
             version: 7,
             oid_type: 0,
         };
         let mut ix = ptr::null_mut();
         assert_eq!(git_index_new_ext(&raw mut ix, &raw const opts), -1);
         assert_eq!(last(), "invalid version 7 on git_index_options");
-        let opts = libgit2_rs::index::GitIndexOptions {
+        let opts = libgit2_rs::__test::index::GitIndexOptions {
             version: 1,
             oid_type: 9,
         };
@@ -227,7 +227,7 @@ fn extensions_and_reuc() {
             core::slice::from_raw_parts(buf.ptr().cast::<u8>(), buf.size()),
             b"xy"
         );
-        libgit2_rs::util::alloc::free(buf.ptr().cast());
+        libgit2_rs::__test::util::alloc::free(buf.ptr().cast());
         assert_eq!(git_index_extension_remove(ix, c"AB".as_ptr()), 0);
         assert_eq!(git_index_extension_remove(ix, c"AB".as_ptr()), -3);
 
@@ -323,7 +323,7 @@ fn callbacks_may_reenter() {
         0
     }
     let s = [c"a/*".as_ptr().cast_mut()];
-    let arr = libgit2_rs::strarray::GitStrArray {
+    let arr = libgit2_rs::__test::strarray::GitStrArray {
         strings: s.as_ptr().cast_mut(),
         count: 1,
     };

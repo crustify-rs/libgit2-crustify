@@ -6,9 +6,9 @@
 #![allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)]
 
 use core::ffi::{CStr, c_char};
-use libgit2_rs::util::errors::{self, ErrorClass, ErrorCode};
-use libgit2_rs::util::str::{Bom, GitStr, ffi};
-use libgit2_rs::util::test_support;
+use libgit2_rs::__test::util::errors::{self, ErrorClass, ErrorCode};
+use libgit2_rs::__test::util::str::{Bom, GitStr, ffi};
+use libgit2_rs::__test::util::test_support;
 
 fn msg() -> String {
     String::from_utf8(errors::last_message().unwrap_or_default()).unwrap()

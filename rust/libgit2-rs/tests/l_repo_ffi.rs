@@ -9,16 +9,18 @@
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 
 use core::ptr;
-use libgit2_rs::config::ffi::{git_config_free, git_config_set_int32, git_config_set_string};
+use libgit2_rs::__test::config::ffi::{
+    git_config_free, git_config_set_int32, git_config_set_string,
+};
 use std::ffi::CString;
 use std::path::{Path, PathBuf};
 
-use libgit2_rs::buf::GitBuf;
-use libgit2_rs::repository::GitRepository;
-use libgit2_rs::repository::ffi as r;
-use libgit2_rs::strarray::GitStrArray;
-use libgit2_rs::util::errors;
-use libgit2_rs::util::test_support;
+use libgit2_rs::__test::buf::GitBuf;
+use libgit2_rs::__test::repository::GitRepository;
+use libgit2_rs::__test::repository::ffi as r;
+use libgit2_rs::__test::strarray::GitStrArray;
+use libgit2_rs::__test::util::errors;
+use libgit2_rs::__test::util::test_support;
 
 unsafe extern "C" {
     fn git_libgit2_opts(key: c_int, ...) -> c_int;
@@ -361,11 +363,11 @@ fn ownership_validation() {
         let mut v: c_int = -1;
         assert_eq!(git_libgit2_opts(GIT_OPT_GET_OWNER_VALIDATION, &mut v), 0);
         assert_eq!(v, 1);
-        libgit2_rs::settings::opts::set_owner_validation(false);
+        libgit2_rs::__test::settings::opts::set_owner_validation(false);
         git_fs_path__set_owner(1 << 4);
         let e = r::git_repository_open(&mut o, p.as_ptr());
         git_fs_path__set_owner(0);
-        libgit2_rs::settings::opts::set_owner_validation(true);
+        libgit2_rs::__test::settings::opts::set_owner_validation(true);
         assert_eq!(e, 0);
         r::git_repository_free(o);
     }
@@ -542,9 +544,12 @@ fn init_is_counted() {
     let _g = test_support::init();
     // SAFETY: init/shutdown pairs, with the test's count still held.
     unsafe {
-        let n = libgit2_rs::libgit2::ffi::git_libgit2_init();
+        let n = libgit2_rs::__test::libgit2::ffi::git_libgit2_init();
         assert!(n >= 2);
-        assert_eq!(libgit2_rs::libgit2::ffi::git_libgit2_shutdown(), n - 1);
+        assert_eq!(
+            libgit2_rs::__test::libgit2::ffi::git_libgit2_shutdown(),
+            n - 1
+        );
     }
 }
 

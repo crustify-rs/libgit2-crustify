@@ -13,14 +13,16 @@ use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 
-use libgit2_rs::util::errors::{self, ErrorClass, ErrorCode};
-use libgit2_rs::util::filebuf::{self, GitFilebuf, ffi as fb_ffi};
-use libgit2_rs::util::fs_path::{self, GitFsPathDiriter, ffi as fp_ffi};
-use libgit2_rs::util::futils::{self, Filestamp, MkdirOptions, MkdirPerfdata, ffi as fu_ffi};
-use libgit2_rs::util::posix::{self, GitMap, ffi as px_ffi};
-use libgit2_rs::util::str::GitStr;
-use libgit2_rs::util::test_support;
-use libgit2_rs::util::vector::GitVector;
+use libgit2_rs::__test::util::errors::{self, ErrorClass, ErrorCode};
+use libgit2_rs::__test::util::filebuf::{self, GitFilebuf, ffi as fb_ffi};
+use libgit2_rs::__test::util::fs_path::{self, GitFsPathDiriter, ffi as fp_ffi};
+use libgit2_rs::__test::util::futils::{
+    self, Filestamp, MkdirOptions, MkdirPerfdata, ffi as fu_ffi,
+};
+use libgit2_rs::__test::util::posix::{self, GitMap, ffi as px_ffi};
+use libgit2_rs::__test::util::str::GitStr;
+use libgit2_rs::__test::util::test_support;
+use libgit2_rs::__test::util::vector::GitVector;
 
 /// A scratch directory, removed on drop.
 struct Scratch(PathBuf);
@@ -385,7 +387,7 @@ fn posix_wrappers() {
     unsafe {
         let r = px_ffi::p_realpath(t.c("").as_ptr(), core::ptr::null_mut());
         assert!(!r.is_null());
-        libgit2_rs::util::alloc::free(r.cast());
+        libgit2_rs::__test::util::alloc::free(r.cast());
     }
     let before = posix::p_fsync__cnt.load(core::sync::atomic::Ordering::Relaxed);
     futils::fsync_dir(&t.c("")).unwrap();
@@ -478,7 +480,7 @@ fn directory_iteration() {
     assert_eq!(&got[..2], &[b".".to_vec(), b"..".to_vec()]);
     for p in v.iter() {
         // SAFETY: freed once.
-        unsafe { libgit2_rs::util::alloc::free(p) };
+        unsafe { libgit2_rs::__test::util::alloc::free(p) };
     }
     v.clear();
     assert!(fs_path::dirload(&mut v, &base, base.len() + 10, 0).is_err());

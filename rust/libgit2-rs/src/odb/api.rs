@@ -6,7 +6,7 @@
 //! ```
 //! # #[cfg(not(miri))] {
 //! use libgit2_rs::{Backend, ObjectType, Odb};
-//! let _g = libgit2_rs::util::test_support::init();
+//! let _g = libgit2_rs::__test::util::test_support::init();
 //! let odb = Odb::new()?;
 //! let (backend, mempack) = Backend::mempack();
 //! odb.add_backend(backend, 1)?;

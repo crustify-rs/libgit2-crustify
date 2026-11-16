@@ -8,11 +8,11 @@
 
 use std::sync::Mutex;
 
-use libgit2_rs::config::{
+use libgit2_rs::__test::config::{
     ConfigMap, GIT_CONFIGMAP_STRING, GIT_CONFIGMAP_TRUE, config_parse_bool, config_parse_i32,
     config_parse_i64,
 };
-use libgit2_rs::util::test_support;
+use libgit2_rs::__test::util::test_support;
 use libgit2_rs::{Config, ConfigBackend, ConfigEntry, ConfigLevel, Error, ErrorCode};
 
 const TEXT: &[u8] = b"[core]\n\tbare = false\n\tabbrev = 12\n[remote \"Origin\"]\n\turl = a\n\turl = b\n[x]\n\tflag\n\tsize = 2k\n";

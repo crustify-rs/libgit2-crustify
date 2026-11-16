@@ -7,11 +7,11 @@
 #![allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)]
 
 use core::ffi::{CStr, c_char};
-use libgit2_rs::buf::{GitBuf, ffi as buf_ffi};
-use libgit2_rs::util::errors::{self, ErrorClass, ffi as err_ffi};
-use libgit2_rs::util::str::{GitStr, ffi as str_ffi};
-use libgit2_rs::util::test_support;
-use libgit2_rs::util::util::ffi as util_ffi;
+use libgit2_rs::__test::buf::{GitBuf, ffi as buf_ffi};
+use libgit2_rs::__test::util::errors::{self, ErrorClass, ffi as err_ffi};
+use libgit2_rs::__test::util::str::{GitStr, ffi as str_ffi};
+use libgit2_rs::__test::util::test_support;
+use libgit2_rs::__test::util::util::ffi as util_ffi;
 
 fn c_last() -> (i32, Vec<u8>) {
     // SAFETY: as C: read the returned error before the next error call.
@@ -216,7 +216,8 @@ fn substrdup_huge() {
     let _g = test_support::init();
     errors::clear();
     // SAFETY: the length is refused before anything is read.
-    let p = unsafe { libgit2_rs::util::alloc::ffi::git__substrdup(c"x".as_ptr(), usize::MAX) };
+    let p =
+        unsafe { libgit2_rs::__test::util::alloc::ffi::git__substrdup(c"x".as_ptr(), usize::MAX) };
     assert!(p.is_null());
     assert_eq!(errors::last_class(), Some(ErrorClass::NOMEMORY));
 }

@@ -375,7 +375,7 @@ mod sealed {
 /// live table for as long as `&self` lives.
 ///
 /// ```compile_fail
-/// use libgit2_rs::config::{BackendCalls, git_config_backend};
+/// use libgit2_rs::__test::config::{BackendCalls, git_config_backend};
 /// struct Bogus;
 /// impl BackendCalls for Bogus {
 ///     fn raw(&self) -> *mut git_config_backend { core::ptr::dangling_mut() }

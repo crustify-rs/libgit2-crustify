@@ -13,13 +13,13 @@
 
 use std::sync::atomic::Ordering;
 
-use libgit2_rs::mwindow::{
+use libgit2_rs::__test::mwindow::{
     self, git_mwindow__file_limit, git_mwindow__mapped_limit, git_mwindow__window_size,
 };
-use libgit2_rs::odb_pack::OdbPackBackend;
-use libgit2_rs::pack::PackObjectType;
-use libgit2_rs::util::hash::{HashAlgorithm, hash_vec};
-use libgit2_rs::util::test_support;
+use libgit2_rs::__test::odb_pack::OdbPackBackend;
+use libgit2_rs::__test::pack::PackObjectType;
+use libgit2_rs::__test::util::hash::{HashAlgorithm, hash_vec};
+use libgit2_rs::__test::util::test_support;
 use libgit2_rs::{Oid, OidType};
 
 const RES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/resources");

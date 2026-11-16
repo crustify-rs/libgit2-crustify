@@ -392,7 +392,7 @@ impl core::ops::BitOrAssign for HashSigOptions {
 ///
 /// ```
 /// use libgit2_rs::{HashSig, HashSigOptions};
-/// # let _g = libgit2_rs::util::test_support::init();
+/// # let _g = libgit2_rs::__test::util::test_support::init();
 /// let a = HashSig::new(b"one\ntwo\nthree\nfour\nfive\n", HashSigOptions::NORMAL)?;
 /// let b = HashSig::new(b"one\ntwo\nthree\nfour\nsix\n", HashSigOptions::NORMAL)?;
 /// assert_eq!(a.compare(&a), 100);

@@ -13,14 +13,14 @@
 //! the methods return raw pointers, as C's.
 //!
 //! ```
-//! use libgit2_rs::util::pool::GitPool;
-//! # let _g = libgit2_rs::util::test_support::init();
+//! use libgit2_rs::__test::util::pool::GitPool;
+//! # let _g = libgit2_rs::__test::util::test_support::init();
 //! let mut pool = GitPool::with_item_size(1)?;
 //! let s = pool.strndup(b"hello")?;
 //! // SAFETY (for the example): the pool keeps the string until it is dropped.
 //! assert_eq!(unsafe { core::ffi::CStr::from_ptr(s.as_ptr()) }, c"hello");
 //! assert_eq!(pool.open_pages(), 1);
-//! # Ok::<(), libgit2_rs::util::errors::ErrorCode>(())
+//! # Ok::<(), libgit2_rs::__test::util::errors::ErrorCode>(())
 //! ```
 
 use core::ffi::{CStr, c_char, c_void};

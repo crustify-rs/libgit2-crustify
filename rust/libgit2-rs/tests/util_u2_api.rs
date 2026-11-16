@@ -4,14 +4,14 @@
 
 use core::mem::MaybeUninit;
 
-use libgit2_rs::util::date::{self, Clock, SystemClock, Tm, UtcClock};
-use libgit2_rs::util::errors::{self, ErrorClass, ErrorCode};
-use libgit2_rs::util::hash::{self, HashAlgorithm, Hasher};
-use libgit2_rs::util::regexp::{Regexp, RegexpFlags};
-use libgit2_rs::util::str::GitStr;
-use libgit2_rs::util::wildmatch::{self, WildMatch, WildmatchFlags};
-use libgit2_rs::util::zstream::{self, ZStream, ZstreamKind};
-use libgit2_rs::util::{rand, test_support};
+use libgit2_rs::__test::util::date::{self, Clock, SystemClock, Tm, UtcClock};
+use libgit2_rs::__test::util::errors::{self, ErrorClass, ErrorCode};
+use libgit2_rs::__test::util::hash::{self, HashAlgorithm, Hasher};
+use libgit2_rs::__test::util::regexp::{Regexp, RegexpFlags};
+use libgit2_rs::__test::util::str::GitStr;
+use libgit2_rs::__test::util::wildmatch::{self, WildMatch, WildmatchFlags};
+use libgit2_rs::__test::util::zstream::{self, ZStream, ZstreamKind};
+use libgit2_rs::__test::util::{rand, test_support};
 
 /// `zlib.compress(b"hello world")`.
 const HELLO: [u8; 19] = [

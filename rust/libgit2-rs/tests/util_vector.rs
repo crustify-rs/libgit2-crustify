@@ -5,10 +5,10 @@
 #![allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)]
 
 use core::ffi::{c_int, c_void};
-use libgit2_rs::util::errors::{self, ErrorCode};
-use libgit2_rs::util::test_support;
-use libgit2_rs::util::tsort::tsort;
-use libgit2_rs::util::vector::{GitVector, ffi};
+use libgit2_rs::__test::util::errors::{self, ErrorCode};
+use libgit2_rs::__test::util::test_support;
+use libgit2_rs::__test::util::tsort::tsort;
+use libgit2_rs::__test::util::vector::{GitVector, ffi};
 
 fn msg() -> String {
     String::from_utf8(errors::last_message().unwrap_or_default()).unwrap()
@@ -147,7 +147,7 @@ fn edits() {
     let (ptr, n, a) = v.detach();
     assert_eq!((n, a), (0, 8));
     // SAFETY: the detached array is a `git__allocator` allocation.
-    unsafe { libgit2_rs::util::alloc::free(ptr.cast()) };
+    unsafe { libgit2_rs::__test::util::alloc::free(ptr.cast()) };
     assert_eq!(v.capacity(), 0);
 }
 
@@ -156,7 +156,7 @@ fn dup_and_cmp() {
     let _g = test_support::init();
     // One function pointer value: comparisons of separately reified Rust
     // functions are not reliable (Miri gives them distinct addresses).
-    let cmp: libgit2_rs::util::vector::VectorCmp = cmp_addr;
+    let cmp: libgit2_rs::__test::util::vector::VectorCmp = cmp_addr;
     let mut v = GitVector::with_capacity(0, Some(cmp)).unwrap();
     v.insert(p(2)).unwrap();
     v.insert(p(1)).unwrap();
@@ -298,7 +298,7 @@ fn ffi_calls() {
         let mut asize = 0;
         let arr = ffi::git_vector_detach(&mut size, &mut asize, &mut z);
         assert_eq!((size, asize), (1, 8));
-        libgit2_rs::util::alloc::free(arr.cast());
+        libgit2_rs::__test::util::alloc::free(arr.cast());
     }
 }
 
@@ -307,7 +307,8 @@ fn ffi_dispose_deep() {
     let _g = test_support::init();
     let mut v = GitVector::with_capacity(0, None).unwrap();
     for _ in 0..3 {
-        v.insert(libgit2_rs::util::alloc::malloc(16)).unwrap();
+        v.insert(libgit2_rs::__test::util::alloc::malloc(16))
+            .unwrap();
     }
     v.insert(core::ptr::null_mut()).unwrap();
     // SAFETY: the elements are distinct `git__malloc` allocations or NULL.

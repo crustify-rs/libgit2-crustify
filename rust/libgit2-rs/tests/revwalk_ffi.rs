@@ -8,15 +8,15 @@
 use core::ffi::{c_char, c_int, c_void};
 use core::ptr;
 
-use libgit2_rs::commit_list::ffi::git_commit_list_parse;
-use libgit2_rs::hashsig::ffi as hs;
-use libgit2_rs::repository::GitRepository;
-use libgit2_rs::repository::ffi::{git_repository_free, git_repository_open};
-use libgit2_rs::revwalk::ffi as rw;
-use libgit2_rs::revwalk::node::{CommitListNode, PARSED};
-use libgit2_rs::revwalk::{GIT_SORT_TIME, GitRevwalk, PushOptions};
-use libgit2_rs::util::errors;
-use libgit2_rs::util::test_support;
+use libgit2_rs::__test::commit_list::ffi::git_commit_list_parse;
+use libgit2_rs::__test::hashsig::ffi as hs;
+use libgit2_rs::__test::repository::GitRepository;
+use libgit2_rs::__test::repository::ffi::{git_repository_free, git_repository_open};
+use libgit2_rs::__test::revwalk::ffi as rw;
+use libgit2_rs::__test::revwalk::node::{CommitListNode, PARSED};
+use libgit2_rs::__test::revwalk::{GIT_SORT_TIME, GitRevwalk, PushOptions};
+use libgit2_rs::__test::util::errors;
+use libgit2_rs::__test::util::test_support;
 use libgit2_rs::{Oid, OidType};
 
 fn msg() -> String {

@@ -6,8 +6,8 @@
 
 use std::path::PathBuf;
 
+use libgit2_rs::__test::util::test_support;
 use libgit2_rs::Repository;
-use libgit2_rs::util::test_support;
 use libgit2_rs::{ErrorClass, ErrorCode, HashSig, HashSigOptions, Oid, Revwalk, Sort};
 
 fn resources() -> PathBuf {

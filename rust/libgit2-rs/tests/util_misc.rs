@@ -6,14 +6,14 @@
 #![allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)]
 
 use core::ffi::{CStr, c_char, c_int, c_void};
-use libgit2_rs::buf::{GitBuf, ffi as buf_ffi};
-use libgit2_rs::strarray::{GitStrArray, StrArray, ffi as sa_ffi};
-use libgit2_rs::util::alloc::{self, GitAllocator, ffi as alloc_ffi};
-use libgit2_rs::util::allocators::{failalloc, stdalloc};
-use libgit2_rs::util::errors::{self, ErrorClass};
-use libgit2_rs::util::str::GitStr;
-use libgit2_rs::util::test_support;
-use libgit2_rs::util::util::ffi as util_ffi;
+use libgit2_rs::__test::buf::{GitBuf, ffi as buf_ffi};
+use libgit2_rs::__test::strarray::{GitStrArray, StrArray, ffi as sa_ffi};
+use libgit2_rs::__test::util::alloc::{self, GitAllocator, ffi as alloc_ffi};
+use libgit2_rs::__test::util::allocators::{failalloc, stdalloc};
+use libgit2_rs::__test::util::errors::{self, ErrorClass};
+use libgit2_rs::__test::util::str::GitStr;
+use libgit2_rs::__test::util::test_support;
+use libgit2_rs::__test::util::util::ffi as util_ffi;
 
 #[test]
 fn alloc_exports() {
@@ -101,7 +101,7 @@ fn allocator_setup_and_limit() {
 fn runtime_exports() {
     let _g = test_support::init();
     // SAFETY: reads the count only.
-    let n = unsafe { libgit2_rs::util::runtime::ffi::git_runtime_init_count() };
+    let n = unsafe { libgit2_rs::__test::util::runtime::ffi::git_runtime_init_count() };
     assert!(n >= 1);
 }
 
@@ -215,12 +215,12 @@ fn util_exports() {
 #[cfg_attr(miri, ignore = "sysconf and getenv reach the C library")]
 fn util_system() {
     let _g = test_support::init();
-    assert!(libgit2_rs::util::util::online_cpus() >= 1);
+    assert!(libgit2_rs::__test::util::util::online_cpus() >= 1);
     let mut s = GitStr::new();
-    assert!(libgit2_rs::util::util::getenv(&mut s, c"PATH").is_ok());
+    assert!(libgit2_rs::__test::util::util::getenv(&mut s, c"PATH").is_ok());
     assert!(!s.is_empty());
     assert_eq!(
-        libgit2_rs::util::util::getenv(&mut s, c"LIBGIT2_RS_SURELY_UNSET"),
+        libgit2_rs::__test::util::util::getenv(&mut s, c"LIBGIT2_RS_SURELY_UNSET"),
         Err(libgit2_rs::ErrorCode::NOT_FOUND)
     );
     assert!(s.is_empty());

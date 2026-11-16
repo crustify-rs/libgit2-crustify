@@ -10,8 +10,8 @@
 use core::ffi::c_char;
 use core::ptr;
 
-use libgit2_rs::object::{GIT_OBJECT_TAG, GitObject, ffi as o};
-use libgit2_rs::tag::{GitTag, ffi as t};
+use libgit2_rs::__test::object::{GIT_OBJECT_TAG, GitObject, ffi as o};
+use libgit2_rs::__test::tag::{GitTag, ffi as t};
 
 /// The shared object pointer.
 struct Shared(*mut GitObject);
@@ -23,7 +23,7 @@ unsafe impl Sync for Shared {}
 
 #[test]
 fn shared_tag_dup_free_accessors() {
-    let _g = libgit2_rs::util::test_support::init();
+    let _g = libgit2_rs::__test::util::test_support::init();
     let text: &'static [u8] = b"object e90810b8df3e80c413d903f631643c716887138d\ntype blob\ntag t\ntagger A U Thor <a@b.c> 1234567890 +0100\n\nmessage\n";
     let mut obj: *mut GitObject = ptr::null_mut();
     // SAFETY: a static buffer (outliving the object) and a writable out.

@@ -6,9 +6,9 @@
 
 use std::path::{Path, PathBuf};
 
+use libgit2_rs::__test::grafts::Grafts;
+use libgit2_rs::__test::util::test_support;
 use libgit2_rs::Repository;
-use libgit2_rs::grafts::Grafts;
-use libgit2_rs::util::test_support;
 use libgit2_rs::{
     Blob, ErrorClass, ErrorCode, Object, ObjectType, Oid, OidType, Signature, Tag, Time,
 };
@@ -129,7 +129,7 @@ fn blobs() {
     assert_eq!(
         nb.filter(
             b"x",
-            &libgit2_rs::blob::BlobFilterOptions::default().check_for_binary(false)
+            &libgit2_rs::__test::blob::BlobFilterOptions::default().check_for_binary(false)
         )
         .unwrap()
         .unwrap(),
@@ -137,8 +137,12 @@ fn blobs() {
     );
     assert_eq!(
         id,
-        libgit2_rs::object::id_from_buffer(b"hello\0world", ObjectType::Blob, OidType::Sha1)
-            .unwrap()
+        libgit2_rs::__test::object::id_from_buffer(
+            b"hello\0world",
+            ObjectType::Blob,
+            OidType::Sha1
+        )
+        .unwrap()
     );
 
     let mut w = Blob::writer(&repo, Some(b"streamed.txt")).unwrap();
@@ -166,7 +170,7 @@ fn blobs() {
     assert_eq!(Blob::lookup(&repo, &did).unwrap().content(), b"disk\n");
     let e = Blob::create_from_disk(&repo, &s.0.join("objects")).unwrap_err();
     assert_eq!(e.code(), ErrorCode::DIRECTORY);
-    assert!(libgit2_rs::blob::data_is_binary(b"\0"));
+    assert!(libgit2_rs::__test::blob::data_is_binary(b"\0"));
 }
 
 #[test]
@@ -344,7 +348,11 @@ fn object_types() {
     assert_eq!(ObjectType::Tree.to_string(), "tree");
     assert!(!ObjectType::Any.is_loose());
     assert!(
-        libgit2_rs::object::rawcontent_is_valid(b"anything", ObjectType::Blob, OidType::Sha1)
-            .unwrap()
+        libgit2_rs::__test::object::rawcontent_is_valid(
+            b"anything",
+            ObjectType::Blob,
+            OidType::Sha1
+        )
+        .unwrap()
     );
 }

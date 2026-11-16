@@ -14,8 +14,8 @@
 //!
 //! ```
 //! use core::ffi::{c_int, c_void};
-//! use libgit2_rs::util::pqueue::GitPqueue;
-//! # let _g = libgit2_rs::util::test_support::init();
+//! use libgit2_rs::__test::util::pqueue::GitPqueue;
+//! # let _g = libgit2_rs::__test::util::test_support::init();
 //! let mut vals = [5usize, 1, 4, 2, 3];
 //! let mut pq = GitPqueue::new(0, 0, None)?;
 //! // SAFETY (for the example): the elements point to `vals`.
@@ -25,7 +25,7 @@
 //! }
 //! let first = pq.pop_by(&mut cmp);
 //! assert_eq!(first, (&raw mut vals[1]).cast());
-//! # Ok::<(), libgit2_rs::util::errors::ErrorCode>(())
+//! # Ok::<(), libgit2_rs::__test::util::errors::ErrorCode>(())
 //! ```
 
 use core::ffi::{c_int, c_void};

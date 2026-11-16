@@ -7,7 +7,7 @@
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 
-use libgit2_rs::util::test_support;
+use libgit2_rs::__test::util::test_support;
 use libgit2_rs::{
     Backend, Error, ErrorClass, ErrorCode, ExpandId, LooseOptions, ObjectType, Odb, OdbBackend,
     Oid, OidType,

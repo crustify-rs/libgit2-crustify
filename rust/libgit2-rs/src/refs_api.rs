@@ -834,7 +834,7 @@ pub trait RefdbBackend: Send + Sync + 'static {
 /// no [`Reference`] or iterator of the repository, may be using it.
 ///
 /// ```compile_fail
-/// # use libgit2_rs::refs_api::*;
+/// # use libgit2_rs::__test::refs_api::*;
 /// # fn f<B: RefdbBackend>(mut repo: Repository, b: B) {
 /// let head = Reference::lookup(&repo, b"HEAD").unwrap();
 /// set_refdb_backend(&mut repo, b).unwrap(); // `repo` is borrowed by `head`

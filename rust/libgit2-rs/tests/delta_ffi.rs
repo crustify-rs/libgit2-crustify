@@ -5,8 +5,8 @@
 use core::ffi::c_void;
 use core::ptr;
 
-use libgit2_rs::delta::{self, ffi};
-use libgit2_rs::util::{alloc, errors, test_support};
+use libgit2_rs::__test::delta::{self, ffi};
+use libgit2_rs::__test::util::{alloc, errors, test_support};
 
 fn msg() -> Vec<u8> {
     errors::last_message().unwrap_or_default()

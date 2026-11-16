@@ -5,7 +5,7 @@
 //! the noncharacters U+FDD0..U+FDEF and U+xxFFFE/U+xxFFFF are invalid.
 //!
 //! ```
-//! use libgit2_rs::util::utf8;
+//! use libgit2_rs::__test::util::utf8;
 //! assert_eq!(utf8::iterate(b"\xc2\xa2!"), Some((0xa2, 2)));
 //! assert_eq!(utf8::char_length(b"\x24\xc0\xc1\x34"), 4);
 //! assert_eq!(utf8::valid_buf_length(b"ab\xffcd"), 2);

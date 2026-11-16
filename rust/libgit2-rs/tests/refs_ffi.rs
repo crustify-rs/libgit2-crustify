@@ -7,20 +7,20 @@
 use core::ffi::{CStr, c_char, c_int, c_void};
 use core::ptr::{null, null_mut};
 
+use libgit2_rs::__test::oid::Oid;
+use libgit2_rs::__test::refdb::ffi::*;
+use libgit2_rs::__test::refdb::{GitRefdb, git_refdb_backend, git_reference_iterator};
+use libgit2_rs::__test::refdb_fs::ffi::*;
+use libgit2_rs::__test::reflog::GitReflog;
+use libgit2_rs::__test::reflog::ffi::*;
+use libgit2_rs::__test::refs::GitReference;
+use libgit2_rs::__test::refs::ffi::*;
+use libgit2_rs::__test::repository::GitRepository as git_repository;
+use libgit2_rs::__test::repository::ffi::{git_repository_free, git_repository_open};
+use libgit2_rs::__test::util::errors;
+use libgit2_rs::__test::util::str::GitStr;
+use libgit2_rs::__test::util::test_support;
 use libgit2_rs::OidType;
-use libgit2_rs::oid::Oid;
-use libgit2_rs::refdb::ffi::*;
-use libgit2_rs::refdb::{GitRefdb, git_refdb_backend, git_reference_iterator};
-use libgit2_rs::refdb_fs::ffi::*;
-use libgit2_rs::reflog::GitReflog;
-use libgit2_rs::reflog::ffi::*;
-use libgit2_rs::refs::GitReference;
-use libgit2_rs::refs::ffi::*;
-use libgit2_rs::repository::GitRepository as git_repository;
-use libgit2_rs::repository::ffi::{git_repository_free, git_repository_open};
-use libgit2_rs::util::errors;
-use libgit2_rs::util::str::GitStr;
-use libgit2_rs::util::test_support;
 
 fn last() -> String {
     String::from_utf8(errors::last_message().unwrap_or_default()).unwrap()

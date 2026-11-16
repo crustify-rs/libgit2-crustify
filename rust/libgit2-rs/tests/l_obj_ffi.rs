@@ -9,20 +9,22 @@ use core::ffi::{CStr, c_char, c_int};
 use core::ptr;
 use std::path::{Path, PathBuf};
 
+use libgit2_rs::__test::blob::{GitWriteStream, ffi as blob};
+use libgit2_rs::__test::object::{
+    GIT_OBJECT_ANY, GIT_OBJECT_BLOB, GIT_OBJECT_TAG, GitObject, ffi as obj,
+};
+use libgit2_rs::__test::signature::ffi as sig;
+use libgit2_rs::__test::strarray::GitStrArray;
 use libgit2_rs::Oid;
-use libgit2_rs::blob::{GitWriteStream, ffi as blob};
-use libgit2_rs::object::{GIT_OBJECT_ANY, GIT_OBJECT_BLOB, GIT_OBJECT_TAG, GitObject, ffi as obj};
-use libgit2_rs::signature::ffi as sig;
-use libgit2_rs::strarray::GitStrArray;
 #[allow(non_camel_case_types)]
 type git_repository = core::ffi::c_void;
 unsafe extern "C" {
     fn git_repository_open(out: *mut *mut git_repository, path: *const c_char) -> c_int;
     fn git_repository_free(repo: *mut git_repository);
 }
-use libgit2_rs::tag::{GitTag, ffi as tag};
-use libgit2_rs::util::errors;
-use libgit2_rs::util::test_support;
+use libgit2_rs::__test::tag::{GitTag, ffi as tag};
+use libgit2_rs::__test::util::errors;
+use libgit2_rs::__test::util::test_support;
 
 fn last_message() -> Vec<u8> {
     errors::last_message().unwrap_or_default()
@@ -255,7 +257,7 @@ fn write_stream_through_its_table() {
     assert_eq!(rv, 0);
     assert_eq!(
         id,
-        libgit2_rs::object::id_from_buffer(
+        libgit2_rs::__test::object::id_from_buffer(
             data,
             libgit2_rs::ObjectType::Blob,
             libgit2_rs::OidType::Sha1
@@ -294,7 +296,7 @@ fn tag_lists_and_short_ids() {
     // SAFETY: a NUL-terminated string of the array.
     assert_eq!(unsafe { CStr::from_ptr(first) }.to_bytes(), b"e90810b");
     // SAFETY: the array libgit2 filled, freed once.
-    unsafe { libgit2_rs::strarray::ffi::git_strarray_dispose(&raw mut a) };
+    unsafe { libgit2_rs::__test::strarray::ffi::git_strarray_dispose(&raw mut a) };
 
     let mut n = 0;
     unsafe extern "C" fn count(_: *const c_char, _: *mut Oid, p: *mut core::ffi::c_void) -> c_int {
@@ -317,7 +319,7 @@ fn tag_lists_and_short_ids() {
     let rv =
         unsafe { obj::git_object_lookup(&raw mut o, r.raw.cast(), &raw const id, GIT_OBJECT_ANY) };
     assert_eq!(rv, 0);
-    let mut b = libgit2_rs::buf::GitBuf::new();
+    let mut b = libgit2_rs::__test::buf::GitBuf::new();
     // SAFETY: a valid `git_buf` and a live object.
     assert_eq!(unsafe { obj::git_object_short_id(&raw mut b, o) }, 0);
     assert_eq!(b.as_bytes(), b"a65fedf");
