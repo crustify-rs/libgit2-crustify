@@ -167,7 +167,7 @@ fn hdr_sz(delta: &[u8], pos: &mut usize) -> Result<usize> {
 }
 
 /// [`hdr_sz`]'s loop.
-#[inline(never)]
+#[inline(always)]
 fn hdr_sz_slow(delta: &[u8], pos: &mut usize) -> Result<usize> {
     let mut p = *pos;
     let mut r: usize = 0;
@@ -412,13 +412,19 @@ impl<'a> DeltaIndex<'a> {
 
         let mut hash = try_vec(hsize as usize, NONE)?;
         let mut hash_count = try_vec(hsize as usize, 0u32)?;
-        let empty = Entry {
+        let mut ents: Vec<Entry> = Vec::new();
+        ents.try_reserve_exact(entries as usize)
+            .map_err(|_| errors::oom())?;
+        let slots = ents.spare_capacity_mut();
+        // Entries made: `slots[..n - 1]` are written; the last one is
+        // `last`, which the next window may still move (C's `entry[-1]`),
+        // written to `slots[n - 1]` when the next entry is made.
+        let mut n: usize = 0;
+        let mut last = Entry {
             ptr: 0,
             val: 0,
             next: NONE,
         };
-        let mut ents = try_vec(entries as usize, empty)?;
-        let mut n: usize = 0;
 
         // Populate the index, from the last window back: window `k` is
         // `src[16k + 1..=16k + 16]`, and its entry points after it.
@@ -437,33 +443,38 @@ impl<'a> DeltaIndex<'a> {
                 val = rabin_push(val, b);
             }
             if val == prev_val {
-                // Keep the lowest of consecutive identical blocks.
-                if let Some(e) = n.checked_sub(1).and_then(|l| ents.get_mut(l)) {
-                    e.ptr = ptr;
-                }
+                // Keep the lowest of consecutive identical blocks (an
+                // entry exists: `prev_val` is a window's value, and every
+                // window value is below 2^31, never the initial `!0`).
+                last.ptr = ptr;
             } else {
                 prev_val = val;
+                if n > 0 {
+                    slots[n - 1].write(last);
+                }
                 // `hash.len() == hsize`, a power of two: the bucket
                 // `val & (hsize - 1)`, with a mask the compiler sees is in
                 // bounds.
                 let b = val as usize & (hash.len() - 1);
-                let idx = n as u32;
-                // At most one entry per window: `ents` holds them all, and
-                // the loop has no growth path.
-                ents[n] = Entry {
+                last = Entry {
                     ptr,
                     val,
                     next: hash[b],
                 };
+                hash[b] = n as u32;
                 n += 1;
-                hash[b] = idx;
                 if let Some(c) = hash_count.get_mut(b) {
                     *c += 1;
                 }
             }
         }
-
-        ents.truncate(n);
+        if n > 0 {
+            slots[n - 1].write(last);
+        }
+        // SAFETY: one entry at most per window, so `n <= entries`, the
+        // reserved capacity; the loop wrote `slots[..n]` (each slot when
+        // the entry after it was made, the last one just above).
+        unsafe { ents.set_len(n) };
 
         // Cull over-full buckets uniformly (C's loop, quirks included: the
         // skip count is 0 for 64..127 entries, so `--skip` runs to the end
