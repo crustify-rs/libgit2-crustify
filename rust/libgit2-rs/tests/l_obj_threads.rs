@@ -7,11 +7,35 @@
 // One justified block per thread step.
 #![allow(clippy::multiple_unsafe_ops_per_block)]
 
-use core::ffi::c_char;
+use core::ffi::{c_char, c_int};
 use core::ptr;
 
-use libgit2_rs::__test::object::{GIT_OBJECT_TAG, GitObject, ffi as o};
-use libgit2_rs::__test::tag::{GitTag, ffi as t};
+use libgit2_rs::__test::object::{GIT_OBJECT_TAG, GitObject, git_object_t};
+use libgit2_rs::__test::oid::{Oid, git_oid_t};
+use libgit2_rs::__test::signature::GitSignature;
+use libgit2_rs::__test::tag::GitTag;
+
+// The C ABI under test, declared as C declares it (the signatures are the
+// `src` exports').
+// The handles are Rust types C sees as opaque: it only passes pointers to them.
+#[allow(improper_ctypes)]
+unsafe extern "C" {
+    fn git_object__from_raw(
+        object_out: *mut *mut GitObject,
+        data: *const c_char,
+        size: usize,
+        object_type: git_object_t,
+        oid_type: git_oid_t,
+    ) -> c_int;
+    fn git_object_dup(dest: *mut *mut GitObject, source: *mut GitObject) -> c_int;
+    fn git_object_free(object: *mut GitObject);
+    fn git_object_id(obj: *const GitObject) -> *const Oid;
+    fn git_object_type(obj: *const GitObject) -> git_object_t;
+    fn git_tag_message(t: *const GitTag) -> *const c_char;
+    fn git_tag_name(t: *const GitTag) -> *const c_char;
+    fn git_tag_tagger(t: *const GitTag) -> *const GitSignature;
+    fn git_tag_target_id(t: *const GitTag) -> *const Oid;
+}
 
 /// The shared object pointer.
 struct Shared(*mut GitObject);
@@ -28,7 +52,7 @@ fn shared_tag_dup_free_accessors() {
     let mut obj: *mut GitObject = ptr::null_mut();
     // SAFETY: a static buffer (outliving the object) and a writable out.
     let rc = unsafe {
-        o::git_object__from_raw(
+        git_object__from_raw(
             &raw mut obj,
             text.as_ptr().cast::<c_char>(),
             text.len(),
@@ -48,20 +72,20 @@ fn shared_tag_dup_free_accessors() {
                     // a reference until the scope ends); each step uses the
                     // reference this thread took, given back at the end.
                     unsafe {
-                        assert_eq!(o::git_object_dup(&raw mut d, s.0), 0);
-                        let _ = *o::git_object_id(d);
-                        assert_eq!(o::git_object_type(d), GIT_OBJECT_TAG);
+                        assert_eq!(git_object_dup(&raw mut d, s.0), 0);
+                        let _ = *git_object_id(d);
+                        assert_eq!(git_object_type(d), GIT_OBJECT_TAG);
                         let tg = d.cast::<GitTag>();
-                        assert_eq!(*t::git_tag_name(tg) as u8, b't');
-                        assert!(!t::git_tag_tagger(tg).is_null());
-                        assert_eq!(*t::git_tag_message(tg) as u8, b'm');
-                        let _ = *t::git_tag_target_id(tg);
-                        o::git_object_free(d);
+                        assert_eq!(*git_tag_name(tg) as u8, b't');
+                        assert!(!git_tag_tagger(tg).is_null());
+                        assert_eq!(*git_tag_message(tg) as u8, b'm');
+                        let _ = *git_tag_target_id(tg);
+                        git_object_free(d);
                     }
                 }
             });
         }
     });
     // SAFETY: the main thread's reference, the last one.
-    unsafe { o::git_object_free(shared.0) };
+    unsafe { git_object_free(shared.0) };
 }
