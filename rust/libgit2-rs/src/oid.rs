@@ -18,14 +18,13 @@
 //!
 //! ```
 //! use libgit2_rs::{Oid, OidType};
-//! # let _g = libgit2_rs::__test::util::test_support::init();
 //! let id = Oid::from_hex(b"e69de29bb2d1d6434b8b29ae775ad8c2e48c5391", OidType::Sha1)?;
 //! assert_eq!(id, Oid::EMPTY_BLOB_SHA1);
 //! assert_eq!(id.hex().as_str(), "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391");
 //! assert_eq!(id.hex_path()?.as_str(), "e6/9de29bb2d1d6434b8b29ae775ad8c2e48c5391");
 //! let short = Oid::from_prefix(b"e69de", OidType::Sha1)?;
-//! assert!(id.ncmp(&short, 5) == 0);
-//! # Ok::<(), libgit2_rs::__test::util::errors::ErrorCode>(())
+//! assert!(id.ncmp(&short, 5).is_eq());
+//! # Ok::<(), libgit2_rs::Error>(())
 //! ```
 
 use core::ffi::{c_int, c_uint};
@@ -822,11 +821,10 @@ const EMPTY_NODE: TrieNode = TrieNode { children: [0; 16] };
 ///
 /// ```
 /// use libgit2_rs::OidShortener;
-/// # let _g = libgit2_rs::__test::util::test_support::init();
 /// let mut s = OidShortener::new(0);
 /// s.add(b"22596363b3de40b06f981fb85d82312e8c0ed511")?;
 /// assert_eq!(s.add(b"22596363b3de40b06f981fb85d82312e8c0ed512")?, 40);
-/// # Ok::<(), libgit2_rs::__test::util::errors::ErrorCode>(())
+/// # Ok::<(), libgit2_rs::Error>(())
 /// ```
 pub struct OidShortener<'a> {
     nodes: Vec<TrieNode>,

@@ -11,7 +11,7 @@
 //! use libgit2_rs::__test::oidarray::OidArray;
 //! use libgit2_rs::{Oid, OidType};
 //! # let _g = libgit2_rs::__test::util::test_support::init();
-//! let a = Oid::parse_prefix(b"aa", OidType::Sha1)?;
+//! let a = Oid::from_prefix(b"aa", OidType::Sha1).unwrap();
 //! let mut arr: GitArray<Oid> = GitArray::new();
 //! libgit2_rs::__test::oidarray::add(&mut arr, &a)?;
 //! libgit2_rs::__test::oidarray::add(&mut arr, &a)?; // already there

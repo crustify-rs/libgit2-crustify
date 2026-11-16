@@ -13,7 +13,7 @@
 //! use libgit2_rs::__test::hashmap_oid::OidMap;
 //! use libgit2_rs::{Oid, OidType};
 //! # let _g = libgit2_rs::__test::util::test_support::init();
-//! let a = Oid::parse_prefix(b"abcd", OidType::Sha1)?;
+//! let a = Oid::from_prefix(b"abcd", OidType::Sha1).unwrap();
 //! let mut m: OidMap<'_, u32> = OidMap::new();
 //! m.put(&a, 1)?;
 //! assert_eq!(m.get(&&a), Some(&1));
