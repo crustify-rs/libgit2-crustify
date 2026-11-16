@@ -638,8 +638,10 @@ impl GitStr {
         let new_size = alloc_add(self.size, 2)?;
         self.ensure(new_size)?;
         let n = self.size;
-        self.write_byte(n, c);
-        self.set_size_nul(n + 1);
+        let buf = self.alloc_mut();
+        buf[n].write(c);
+        buf[n + 1].write(0);
+        self.size = n + 1;
         Ok(())
     }
 
@@ -668,8 +670,15 @@ impl GitStr {
             let new_size = alloc_add(alloc_add(self.size, len)?, 1)?;
             self.ensure(new_size)?;
             let n = self.size;
-            self.write_seg(n, data);
-            self.set_size_nul(n + len);
+            let buf = self.alloc_mut();
+            match data {
+                Seg::Ext(b) => {
+                    buf[n..n + len].write_copy_of_slice(b);
+                }
+                Seg::Own { off, len } => buf.copy_within(off..off + len, n),
+            }
+            buf[n + len].write(0);
+            self.size = n + len;
         }
         Ok(())
     }
@@ -1058,19 +1067,25 @@ impl GitStr {
     /// `separator`, without doubling separators. A `None` segment is
     /// skipped, as C skips NULL, but still counts as a segment.
     pub fn join_n(&mut self, separator: u8, segments: &[Option<&[u8]>]) -> Result<()> {
-        let segs: Vec<Option<Seg<'_>>> = segments.iter().map(|s| s.map(Seg::Ext)).collect();
-        self.join_segs(separator, &segs)
+        self.join_segs(separator, segments.len(), |i| segments[i].map(Seg::Ext))
     }
 
-    pub(crate) fn join_segs(&mut self, separator: u8, segs: &[Option<Seg<'_>>]) -> Result<()> {
+    /// `git_str_join_n` over `n` segments, which `seg_at` gives (it is
+    /// called more than once per segment).
+    pub(crate) fn join_segs<'s>(
+        &mut self,
+        separator: u8,
+        n: usize,
+        seg_at: impl Fn(usize) -> Option<Seg<'s>>,
+    ) -> Result<()> {
         let mut total_size = 0usize;
         if self.size > 0 && self.byte(self.size - 1) != separator {
             total_size += 1;
         }
-        for seg in segs.iter().flatten() {
+        for seg in (0..n).filter_map(&seg_at) {
             let len = seg.len();
             total_size = alloc_add(total_size, len)?;
-            if len == 0 || self.seg_byte(seg, len - 1) != separator {
+            if len == 0 || self.seg_byte(&seg, len - 1) != separator {
                 total_size = alloc_add(total_size, 1)?;
             }
         }
@@ -1086,9 +1101,8 @@ impl GitStr {
             out += 1;
             self.size = out;
         }
-        let n = segs.len();
-        for (i, seg) in segs.iter().enumerate() {
-            let Some(seg) = *seg else { continue };
+        for i in 0..n {
+            let Some(seg) = seg_at(i) else { continue };
             let mut seg = seg;
             if out > 0 && self.byte(out - 1) == separator {
                 while seg.len() > 0 && self.seg_byte(&seg, 0) == separator {
@@ -1766,6 +1780,54 @@ pub mod ffi {
         Cow::Borrowed(ext)
     }
 
+    /// Where the `len` bytes at `data` lie, for an operation that appends
+    /// or sets them: outside the buffer, within its contents, or overlapping
+    /// its allocation some other way (then copied).
+    enum Src<'a> {
+        Seg(Seg<'a>),
+        Copy(Vec<u8>),
+    }
+
+    impl Src<'_> {
+        #[inline(always)]
+        fn seg(&self) -> Seg<'_> {
+            match self {
+                Src::Seg(s) => *s,
+                Src::Copy(v) => Seg::Ext(v),
+            }
+        }
+    }
+
+    /// Classify the `len` bytes at `data` against `buf` (see [`Src`]).
+    ///
+    /// # Safety
+    ///
+    /// As [`seg`].
+    #[inline(always)]
+    unsafe fn src<'a>(buf: &GitStr, data: *const c_char, len: usize) -> Src<'a> {
+        if len == 0 || data.is_null() {
+            return Src::Seg(Seg::Ext(&[]));
+        }
+        if buf.owned() {
+            let start = buf.ptr as usize;
+            let d = data as usize;
+            if d < start + buf.asize && d.wrapping_add(len) > start {
+                let size = buf.size.min(buf.asize);
+                if d >= start && d - start + len <= size {
+                    return Src::Seg(Seg::Own {
+                        off: d - start,
+                        len,
+                    });
+                }
+                // SAFETY: the caller passes `len` readable bytes.
+                return Src::Copy(unsafe { bytes(data, len) }.to_vec());
+            }
+        }
+        // SAFETY: the caller passes `len` readable bytes, which lie outside
+        // the buffer's allocation.
+        Src::Seg(Seg::Ext(unsafe { bytes(data, len) }))
+    }
+
     /// The offset of `data` within `buf`'s contents, if `data..data+len`
     /// lies within them.
     fn own_offset(buf: &GitStr, data: *const c_char, len: usize) -> Option<usize> {
@@ -1888,12 +1950,9 @@ pub mod ffi {
                 }
                 return 0;
             }
-            if let Some(off) = own_offset(b, data, len) {
-                return status(b.set_seg(Seg::Own { off, len }));
-            }
             // SAFETY: the caller passes `len` readable bytes.
-            let d = unsafe { seg(b, data, len) };
-            status(b.set(&d))
+            let d = unsafe { src(b, data, len) };
+            status(b.set_seg(d.seg()))
         })
     }
 
@@ -1958,12 +2017,9 @@ pub mod ffi {
             }
             // SAFETY: the module's contract.
             let b = unsafe { s(buf) };
-            if let Some(off) = own_offset(b, data, len) {
-                return status(b.put_seg(Seg::Own { off, len }));
-            }
             // SAFETY: the caller passes `len` readable bytes.
-            let d = unsafe { seg(b, data, len) };
-            status(b.put(&d))
+            let d = unsafe { src(b, data, len) };
+            status(b.put_seg(d.seg()))
         })
     }
 
@@ -2289,39 +2345,51 @@ pub mod ffi {
                 // SAFETY: the caller passes `nbuf` pointers.
                 unsafe { core::slice::from_raw_parts(segments, n) }
             };
-            let mut copies: Vec<Option<Cow<'_, [u8]>>> = Vec::with_capacity(n);
-            let mut owns: Vec<Option<usize>> = Vec::with_capacity(n);
-            for &p in ptrs {
-                if p.is_null() {
-                    copies.push(None);
-                    owns.push(None);
-                } else if let Some(off) = own_offset(b, p, 1) {
-                    // Within the contents: C uses the rest of the original
-                    // contents from there.
-                    copies.push(None);
-                    owns.push(Some(off));
-                } else {
-                    // SAFETY: a non-null segment is NUL-terminated.
-                    let bytes = unsafe { cstr_bytes(p) };
-                    // SAFETY: readable, as just measured.
-                    copies.push(Some(unsafe { seg(b, p, bytes.len()) }));
-                    owns.push(None);
+            // A segment that starts within the contents is the rest of the
+            // original contents from there (C's special case).
+            let contents = b.as_bytes();
+            let (start, size) = (contents.as_ptr() as usize, contents.len());
+            let inside =
+                |p: *const c_char| size > 0 && (p as usize) >= start && (p as usize) < start + size;
+            let (a0, a1) = if b.owned() {
+                (b.ptr as usize, b.ptr as usize + b.asize)
+            } else {
+                (0, 0)
+            };
+            // Any other segment that overlaps the allocation is copied
+            // first (no allocation in the usual case).
+            let mut copies: Vec<(usize, Vec<u8>)> = Vec::new();
+            for (i, &p) in ptrs.iter().enumerate() {
+                if p.is_null() || inside(p) {
+                    continue;
+                }
+                // SAFETY: a non-null segment is NUL-terminated.
+                let bytes = unsafe { cstr_bytes(p) };
+                let (d0, d1) = (p as usize, p as usize + bytes.len() + 1);
+                if d0 < a1 && d1 > a0 {
+                    copies.push((i, bytes.to_vec()));
                 }
             }
-            let size = b.as_bytes().len();
-            let segs: Vec<Option<Seg<'_>>> = copies
-                .iter()
-                .zip(&owns)
-                .map(|(c, o)| match (c, o) {
-                    (Some(c), _) => Some(Seg::Ext(c)),
-                    (None, Some(off)) => Some(Seg::Own {
-                        off: *off,
+            let seg_at = |i: usize| -> Option<Seg<'_>> {
+                let p = ptrs[i];
+                if p.is_null() {
+                    return None;
+                }
+                if inside(p) {
+                    let off = p as usize - start;
+                    return Some(Seg::Own {
+                        off,
                         len: size - off,
-                    }),
-                    (None, None) => None,
-                })
-                .collect();
-            status(b.join_segs(separator as u8, &segs))
+                    });
+                }
+                if let Some((_, c)) = copies.iter().find(|(j, _)| *j == i) {
+                    return Some(Seg::Ext(c));
+                }
+                // SAFETY: a non-null segment is NUL-terminated, readable
+                // for the call, and outside the buffer's allocation.
+                Some(Seg::Ext(unsafe { cstr_bytes(p) }))
+            };
+            status(b.join_segs(separator as u8, n, seg_at))
         })
     }
 
