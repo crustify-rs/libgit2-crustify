@@ -69,3 +69,53 @@ full run.) The sorted cache's key map is a Rust `HashMap` with an Fx-style
 hash and a murmur finalizer (without the finalizer, keys with long common
 prefixes collided and the cache was 12x slower). `git_net_url_fmt` uses the
 foundation's `git_str` fast path for its pieces.
+
+## Filesystem layer (WP u3: `fs_bench.c`, `fs_ops.c`)
+
+`BENCH=fs_bench ./run.sh 5 5`, pinned to CPU 7, load average 170-270.
+Times are the median and minimum of the rounds' medians, ms per iteration.
+The tree is `/work/bench-data/libgit2-wd` (15.6k files, 5.9k directories).
+The `path_*` rows are from a rerun after the last change (`join_unrooted`
+in one pass); the others from the full run before it.
+
+| workload | what | C med | C min | Rust med | Rust min | Rust/C med | Rust/C min |
+|---|---|---:|---:|---:|---:|---:|---:|
+| path_dirname | 1M x (`dirname_r` + `basename_r`) into a `git_str` | 116.9 | 116.5 | 131.2 | 105.0 | 1.12 | 0.90 |
+| path_join | 1M x (`join_unrooted` on `/base/dir` + `to_dir`) | 98.1 | 88.3 | 98.5 | 85.4 | 1.00 | 0.97 |
+| path_resolve | 500k `resolve_relative` (with `git_str_sets`) | 92.9 | 75.0 | 106.9 | 94.8 | 1.15 | 1.26 |
+| path_valid | 1M `is_valid` (defaults, DOS, NT chars, trailing dot) | 220.4 | 209.9 | 97.7 | 85.8 | 0.44 | 0.41 |
+| path_prettify | `prettify` (realpath) of the tree's 5.9k directories | 145.9 | 139.1 | 146.8 | 146.7 | 1.01 | 1.06 |
+| diriter_tree | whole tree with `git_fs_path_diriter` + stat | 521.0 | 469.3 | 551.7 | 489.4 | 1.06 | 1.04 |
+| direach_tree | whole tree with `git_fs_path_direach` | 534.8 | 490.9 | 544.9 | 511.7 | 1.02 | 1.04 |
+| readbuffer | `git_futils_readbuffer` of 4000 files | 154.4 | 128.8 | 151.7 | 130.9 | 0.98 | 1.02 |
+| filebuf_commit | 200 x (open + SHA-1, 48 KiB writes, 400 printf, hash, commit) | 752.9 | 332.6 | 762.4 | 342.0 | 1.01 | 1.03 |
+| mkdir_rmdir | `mkdir -p` of 2000 nested paths, `rmdir_r` | 1540.3 | 1340.1 | 1586.6 | 1378.8 | 1.03 | 1.03 |
+
+Per call (`fs_ops.c`, best of 5 runs of 2M calls, median of 5 interleaved
+process pairs, ns):
+
+| call | C | Rust | Rust/C |
+|---|---:|---:|---:|
+| `dirname_r` | 44.5 | 43.6 | 0.98 |
+| `basename_r` | 45.0 | 42.3 | 0.94 |
+| `dirname_r(NULL, …)` | 28.3 | 33.8 | 1.19 |
+| `git_str_sets` (foundation, reference) | 29.3 | 30.8 | 1.05 |
+| `root` | 3.8 | 4.3 | 1.13 |
+| `join_unrooted` (after one-pass join) | 72.9 | 64.7 | 0.89 |
+| `truncate` + `to_dir` (after in-place append) | 12.7 | 15.0 | 1.18 |
+| `sets` + `resolve_relative` | 148.1 | 186.0 | 1.26 |
+| `is_valid` (rooted: rejected at once) | 11.5 | 12.7 | 1.10 |
+| `is_valid` (relative, 0x1ff) | 26.7 | 20.4 | 0.76 |
+| `is_valid` (one 37-byte component) | 265.0 | 161.9 | 0.61 |
+| `is_valid` (defaults, 36 bytes) | 202.7 | 137.6 | 0.68 |
+| `cmp` | 20.3 | 20.1 | 0.99 |
+| `common_dirlen` | 51.2 | 61.1 | 1.19 |
+
+The filesystem workloads are at parity (system calls dominate). The pure
+path functions were 1.3-2x slower in the first port: a `strlen` of every
+argument, a second scan for the NUL, out-of-line helpers across codegen
+units and the generic `git_str_set`. They now read C strings in place
+(`CBytes`), are `#[inline]`, validate with a byte-class table and join in
+one pass. Remaining gaps: `resolve_relative` (~25-35 ns per call, of which
+~5 are `git_str_sets`), and calls that return at once pay ~5-10 ns of export
+prologue.
