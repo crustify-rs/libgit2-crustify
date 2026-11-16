@@ -6,12 +6,12 @@
 pub mod ffi {
     use core::ffi::{c_int, c_void};
 
+    use crate::object::deps::git_repository;
     use crate::object::ffi as o;
     use crate::object::{
         GIT_OBJECT_BLOB, GIT_OBJECT_COMMIT, GIT_OBJECT_TAG, GIT_OBJECT_TREE, GitObject,
     };
     use crate::oid::Oid;
-    use crate::sys::pending::l_obj::git_repository;
 
     /// `git_commit_lookup`.
     ///

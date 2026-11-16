@@ -1,6 +1,6 @@
 //! Port of `src/libgit2/tag.c`: annotated tags (parsing and accessors),
 //! creating annotated and lightweight tags, deleting, listing and
-//! iterating them (through the references of `refs.c`, PENDING(l-refs)).
+//! iterating them (through the references of the refs module).
 //!
 //! # Types
 //!
@@ -19,13 +19,13 @@
 use core::ffi::{CStr, c_char, c_int, c_void};
 use core::ptr::{self, NonNull};
 
+use crate::object::deps::{self as p, git_reference, git_repository};
 use crate::object::{
     self, GIT_OBJECT_ANY, GIT_OBJECT_INVALID, GIT_OBJECT_TAG, GitObject, Object, ObjectType,
     Repository, git_object_t,
 };
 use crate::oid::{Oid, OidType};
 use crate::signature::{self, GitSignature, Signature};
-use crate::sys::pending::l_obj::{self as p, git_reference, git_repository};
 use crate::util::alloc::{self, GitCStr};
 use crate::util::errors::{self, Bytes, Error, ErrorClass, ErrorCode, Result};
 use crate::util::str::GitStr;
@@ -256,8 +256,8 @@ pub(crate) unsafe fn parse_odb(
     oid_type: crate::oid::git_oid_t,
 ) -> c_int {
     let c = odb_obj.cast::<object::GitCachedObj>();
-    // SAFETY: a live odb object (its `git_cached_obj` prefix,
-    // PENDING(l-odb)); the size is read only.
+    // SAFETY: a live odb object (its `git_cached_obj` prefix); the size is
+    // read only.
     let size = unsafe { (*c).size };
     // SAFETY: a live odb object.
     let d = unsafe { p::git_odb_object_data(odb_obj) };
@@ -551,8 +551,8 @@ pub unsafe fn create_from_buffer(
             }
         }
         let held = Held(target_obj);
-        // SAFETY: a live odb object's `git_cached_obj` prefix (PENDING(l-odb)).
-        let ttype = git_object_t::from(unsafe { (*held.0.cast::<object::GitCachedObj>()).kind });
+        // SAFETY: a live object's `git_cached_obj` prefix.
+        let ttype = git_object_t::from(unsafe { (*held.0.cast::<object::GitCachedObj>()).type_ });
         if tag.kind != ttype {
             let _ = git_error_set!(ErrorClass::TAG, "the type for the given target is invalid");
             return Err(ErrorCode::GENERIC);
@@ -660,11 +660,7 @@ pub unsafe fn foreach(
     // SAFETY: a live repository; the callback and its payload live for the
     // call.
     unsafe {
-        p::git_reference_foreach_name(
-            repo,
-            Some(tags_cb),
-            crate::util::export::payload(&raw mut data),
-        )
+        p::git_reference_foreach_name(repo, tags_cb, crate::util::export::payload(&raw mut data))
     }
 }
 

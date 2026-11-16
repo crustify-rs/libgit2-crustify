@@ -10,8 +10,7 @@
 //!   value as the first member of `git_commit` and `git_tree` (which C
 //!   allocates: `commit_list.c`, the tests), and reads `obj->cached` and
 //!   `obj->repo`. Its first member is [`GitCachedObj`], the cache's
-//!   `git_cached_obj` (PENDING(l-odb): `cache.c` owns it; this mirror is
-//!   replaced by its Rust type at integration).
+//!   `git_cached_obj` (the cache module's type).
 //! - An object is shared by every holder, on any thread, through the
 //!   repository's cache: after it is published (stored in the cache, or
 //!   returned by [`from_raw`]) only `cached.refcount` (an atomic) changes;
@@ -22,16 +21,16 @@
 //!
 //! # The object table
 //!
-//! `git_objects_table` becomes [`Kind`]: commit and tree are C's
-//! (PENDING(l-commit): `git_commit__parse` & co., and their sizes, which the
-//! layout test checks), blob and tag are this crate's ([`crate::blob`],
+//! `git_objects_table` becomes [`Kind`]: commit and tree are the commit and
+//! tree modules' (`git_commit__parse` & co., through their exports, and
+//! their types' sizes), blob and tag are this crate's ([`crate::blob`],
 //! [`crate::tag`]), allocated with `git__allocator` and freed through
 //! [`free_object`].
 //!
 //! # Lifetimes
 //!
 //! A reference is a count in `cached.refcount`: `git_object_free` gives one
-//! back through the cache's `git_cached_obj_decref` (PENDING(l-odb)), which
+//! back through the cache's `git_cached_obj_decref`, which
 //! frees the object with [`ffi::git_object__free`] when the count reaches
 //! zero. The safe [`Object`] holds one reference and borrows its
 //! repository.
@@ -44,7 +43,8 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::oid::{self, GIT_OID_MAX_HEXSIZE, GIT_OID_MINPREFIXLEN, Oid, OidType};
 use crate::sys::blob_filter::{self as cfilter, git_filter_list};
-use crate::sys::pending::l_obj::{self as p, git_odb, git_odb_object, git_repository};
+pub(crate) mod deps;
+
 use crate::util::alloc;
 use crate::util::errors::{self, Bytes, Error, ErrorClass, ErrorCode, Result};
 use crate::util::futils::{self, GIT_BUFSIZE_FILEIO};
@@ -53,6 +53,7 @@ use crate::util::posix;
 use crate::util::str::GitStr;
 use crate::util::thread::Atomic32;
 use crate::{git_assert, git_assert_arg, git_error_set};
+use deps::{self as p, git_odb, git_odb_object, git_repository};
 
 // ---------------------------------------------------------------------------
 // git_object_t
@@ -93,22 +94,9 @@ pub const GIT_CACHE_STORE_RAW: u16 = 1;
 /// `GIT_CACHE_STORE_PARSED`.
 pub const GIT_CACHE_STORE_PARSED: u16 = 2;
 
-/// `git_cached_obj` (`cache.h`), mirrored. PENDING(l-odb): the cache's
-/// type; mirrored here because `git_object` embeds it.
-#[repr(C)]
-#[derive(Debug)]
-pub struct GitCachedObj {
-    /// The object's id.
-    pub oid: Oid,
-    /// Its `git_object_t`.
-    pub kind: i16,
-    /// `GIT_CACHE_STORE_*`.
-    pub flags: u16,
-    /// Its size (of the raw data).
-    pub size: usize,
-    /// The reference count (`git_atomic32`).
-    pub refcount: Atomic32,
-}
+/// `git_cached_obj` (`cache.h`): the cache's type, which `git_object`
+/// embeds.
+pub use crate::cache::GitCachedObj;
 
 /// `struct git_object`, mirrored.
 #[repr(C)]
@@ -130,7 +118,7 @@ impl GitObject {
         GitObject {
             cached: GitCachedObj {
                 oid: Oid::NONE,
-                kind: 0,
+                type_: 0,
                 flags: 0,
                 size: 0,
                 refcount: Atomic32::new(0),
@@ -146,15 +134,15 @@ impl GitObject {
 
     /// Its `git_object_t`.
     pub fn raw_kind(&self) -> git_object_t {
-        git_object_t::from(self.cached.kind)
+        git_object_t::from(self.cached.type_)
     }
 }
 
-/// `sizeof(git_commit)`: allocated here, parsed and freed by `commit.c`.
-/// PENDING(l-commit); checked by the layout test.
-const COMMIT_SIZE: usize = 184;
-/// `sizeof(git_tree)`. PENDING(l-commit); checked by the layout test.
-const TREE_SIZE: usize = 96;
+/// `sizeof(git_commit)`: allocated here, parsed and freed by the commit
+/// module.
+const COMMIT_SIZE: usize = size_of::<crate::commit::GitCommit>();
+/// `sizeof(git_tree)`: likewise, by the tree module.
+const TREE_SIZE: usize = size_of::<crate::tree::GitTree>();
 
 // ---------------------------------------------------------------------------
 // Strict object creation
@@ -178,34 +166,8 @@ pub fn set_strict_input_validation(on: bool) {
 }
 
 // ---------------------------------------------------------------------------
-// The repository's fields (PENDING(l-repo))
+// The repository's fields
 // ---------------------------------------------------------------------------
-
-/// The start of `struct git_repository` up to the fields this module reads
-/// (`objects`, `oid_type`). PENDING(l-repo): replaced by the repository's
-/// Rust type at integration; the layout test checks the offsets.
-#[repr(C)]
-struct RepositoryPrefix {
-    odb: *mut c_void,
-    refdb: *mut c_void,
-    config: *mut c_void,
-    index: *mut c_void,
-    objects: CacheMirror,
-    attrcache: *mut c_void,
-    diff_drivers: *mut c_void,
-    strings: [*mut c_char; 7],
-    reserved_names: [usize; 3],
-    bits: c_uint,
-    oid_type: crate::oid::git_oid_t,
-}
-
-/// `git_cache`'s layout (only its size and place matter here).
-#[repr(C)]
-struct CacheMirror {
-    map: crate::hashmap_oid::OidPtrMap,
-    lock: crate::util::thread::GitRwLock,
-    used_memory: isize,
-}
 
 /// `repo->oid_type`.
 ///
@@ -214,13 +176,8 @@ struct CacheMirror {
 /// `repo` is a live repository.
 #[inline]
 pub unsafe fn repo_oid_type(repo: *mut git_repository) -> crate::oid::git_oid_t {
-    let p = repo.cast::<RepositoryPrefix>();
-    // SAFETY: a live repository starts with `RepositoryPrefix`'s layout
-    // (the layout test checks the offset); no reference is formed.
-    let field = unsafe { &raw const (*p).oid_type };
-    // SAFETY: as above; `oid_type` is set when the repository is opened and
-    // never written after, so the read races with nothing.
-    unsafe { field.read() }
+    // SAFETY: a live repository (`Sync`).
+    unsafe { &*repo }.oid_type_raw()
 }
 
 /// `&repo->objects`.
@@ -230,10 +187,9 @@ pub unsafe fn repo_oid_type(repo: *mut git_repository) -> crate::oid::git_oid_t 
 /// `repo` is a live repository.
 #[inline]
 pub unsafe fn repo_objects(repo: *mut git_repository) -> *mut p::git_cache {
-    let p = repo.cast::<RepositoryPrefix>();
-    // SAFETY: a field of the live repository, at `RepositoryPrefix`'s offset
-    // (the layout test checks it); no reference is formed.
-    unsafe { (&raw mut (*p).objects).cast() }
+    // SAFETY: a live repository (`Sync`); the cache is `Sync` and reached
+    // through `&` (the pointer is only passed to the cache's functions).
+    ptr::from_ref(unsafe { &*repo }.objects()).cast_mut()
 }
 
 /// `git_repository_odb__weakptr`: the repository's odb, owned by it.
@@ -242,11 +198,8 @@ pub unsafe fn repo_objects(repo: *mut git_repository) -> *mut p::git_cache {
 ///
 /// `repo` is a live repository.
 pub unsafe fn repo_odb_weak(repo: *mut git_repository) -> Result<*mut git_odb> {
-    let mut odb = ptr::null_mut();
-    // SAFETY: a live repository, a writable out-parameter.
-    let r = unsafe { p::git_repository_odb__weakptr(&raw mut odb, repo) };
-    ErrorCode::check(r)?;
-    Ok(odb)
+    // SAFETY: a live repository (`Sync`).
+    unsafe { &*repo }.odb_weak().map(NonNull::as_ptr)
 }
 
 // ---------------------------------------------------------------------------
@@ -312,7 +265,7 @@ fn alloc_object(t: git_object_t) -> Result<NonNull<GitObject>> {
         _ => return Err(ErrorCode::GENERIC),
     };
     // SAFETY: a fresh, initialized object header no one else sees.
-    unsafe { (*obj.as_ptr()).cached.kind = t as i16 };
+    unsafe { (*obj.as_ptr()).cached.type_ = t as i16 };
     Ok(obj)
 }
 
@@ -387,7 +340,7 @@ unsafe fn parse_raw(
 /// no reference left.
 pub unsafe fn free_object(obj: *mut GitObject) {
     // SAFETY: a live object no one else holds.
-    let t = git_object_t::from(unsafe { (*obj).cached.kind });
+    let t = git_object_t::from(unsafe { (*obj).cached.type_ });
     let o = obj.cast::<c_void>();
     match t {
         // SAFETY: a commit / tree of C's, freed by C.
@@ -482,11 +435,11 @@ pub unsafe fn from_raw(
 unsafe fn odb_header(odb_obj: *mut git_odb_object) -> (Oid, git_object_t, usize) {
     let c = odb_obj.cast::<GitCachedObj>();
     // SAFETY: a live `git_odb_object` starts with a `git_cached_obj`
-    // (PENDING(l-odb)) whose id, type and size are written only before it
-    // is shared.
+    // (`GitOdbObject.cached`) whose id, type and size are written only
+    // before it is shared.
     let oid = unsafe { (*c).oid };
     // SAFETY: as above.
-    let kind = unsafe { (*c).kind };
+    let kind = unsafe { (*c).type_ };
     // SAFETY: as above.
     let size = unsafe { (*c).size };
     (oid, git_object_t::from(kind), size)
@@ -636,7 +589,7 @@ pub unsafe fn lookup_prefix(
             if flags == GIT_CACHE_STORE_PARSED {
                 let obj = cached.cast::<GitObject>();
                 // SAFETY: a live object.
-                let kind = git_object_t::from(unsafe { (*obj).cached.kind });
+                let kind = git_object_t::from(unsafe { (*obj).cached.type_ });
                 if t != GIT_OBJECT_ANY && t != kind {
                     // SAFETY: the reference the cache gave.
                     unsafe { release(obj) };
@@ -1708,7 +1661,7 @@ pub mod ffi {
     pub unsafe extern "C" fn git_object_type(obj: *const GitObject) -> git_object_t {
         git_assert_arg!(!obj.is_null(), "obj", GIT_OBJECT_INVALID);
         // SAFETY: a live object; its type is read only.
-        git_object_t::from(unsafe { (*obj).cached.kind })
+        git_object_t::from(unsafe { (*obj).cached.type_ })
     }
 
     /// `git_object_owner`.
@@ -2209,18 +2162,6 @@ crate::c_layout_test! {
 mod tests {
     use super::*;
     use crate::util::test_support;
-
-    #[cfg(all(feature = "link-c", not(miri)))]
-    #[test]
-    fn repository_prefix_layout() {
-        let a = format!(
-            "offsetof(git_repository, objects) == {} && offsetof(git_repository, oid_type) == {} && sizeof(git_cache) == {}",
-            core::mem::offset_of!(RepositoryPrefix, objects),
-            core::mem::offset_of!(RepositoryPrefix, oid_type),
-            size_of::<CacheMirror>()
-        );
-        crate::util::layout::check(&["repository.h"], &[], &[&a]);
-    }
 
     #[test]
     fn types_and_strings() {

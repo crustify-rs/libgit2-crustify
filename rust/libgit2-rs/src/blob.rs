@@ -24,14 +24,12 @@ use ffibox::vtable::CTable;
 use ffibox::{define_ctype, impl_cvtable};
 
 use crate::buf::GitBuf;
+use crate::object::deps::{self as p, git_odb, git_odb_object, git_odb_stream, git_repository};
 use crate::object::{
     self, GIT_OBJECT_BLOB, GitCachedObj, GitObject, Object, ObjectType, Repository,
 };
 use crate::oid::Oid;
 use crate::sys::blob_filter::{self as cfilter, FilterList};
-use crate::sys::pending::l_obj::{
-    self as p, git_odb, git_odb_object, git_odb_stream, git_repository,
-};
 use crate::util::alloc::{self, GitCStr};
 use crate::util::errors::{self, Bytes, Error, ErrorClass, ErrorCode, Result};
 use crate::util::filebuf::{GIT_FILEBUF_TEMPORARY, GitFilebuf};
@@ -91,8 +89,8 @@ pub(crate) unsafe fn parse(blob: NonNull<GitBlob>, odb_obj: *mut git_odb_object)
         return errors::assert_arg_failed("obj").raw();
     };
     let c = odb_obj.cast::<GitCachedObj>();
-    // SAFETY: a live odb object starts with its `git_cached_obj`
-    // (PENDING(l-odb)); `git_cached_obj_incref` (the count is atomic).
+    // SAFETY: a live odb object starts with its `git_cached_obj`;
+    // `git_cached_obj_incref` (the count is atomic).
     unsafe { (*c).refcount.inc() };
     // SAFETY: as above; the size is read only.
     let size = unsafe { (*c).size };

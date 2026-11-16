@@ -578,9 +578,7 @@ unsafe fn c_bytes<'a>(p: *const c_char) -> &'a [u8] {
 /// # Safety
 ///
 /// `repo` is a live repository.
-pub unsafe fn default_for(
-    repo: *mut crate::sys::pending::l_obj::git_repository,
-) -> Result<Signature> {
+pub unsafe fn default_for(repo: *mut crate::object::deps::git_repository) -> Result<Signature> {
     let cfg = config_snapshot(repo)?;
     let r = (|| {
         let name = cfg.get_string(c"user.name")?;
@@ -597,12 +595,12 @@ pub unsafe fn default_for(
 }
 
 /// A configuration snapshot, freed on drop.
-struct ConfigSnapshot(*mut crate::sys::pending::l_obj::git_config);
+struct ConfigSnapshot(*mut crate::object::deps::git_config);
 
 impl Drop for ConfigSnapshot {
     fn drop(&mut self) {
         // SAFETY: the snapshot this value owns, freed once.
-        unsafe { crate::sys::pending::l_obj::git_config_free(self.0) }
+        unsafe { crate::object::deps::git_config_free(self.0) }
     }
 }
 
@@ -612,7 +610,7 @@ impl ConfigSnapshot {
         let mut out = ptr::null();
         // SAFETY: a live snapshot, a NUL-terminated name, a writable out.
         let r = unsafe {
-            crate::sys::pending::l_obj::git_config_get_string(&raw mut out, self.0, name.as_ptr())
+            crate::object::deps::git_config_get_string(&raw mut out, self.0, name.as_ptr())
         };
         ErrorCode::check(r)?;
         Ok(out)
@@ -620,14 +618,11 @@ impl ConfigSnapshot {
 }
 
 /// `git_repository_config_snapshot`.
-fn config_snapshot(
-    repo: *mut crate::sys::pending::l_obj::git_repository,
-) -> Result<ConfigSnapshot> {
+fn config_snapshot(repo: *mut crate::object::deps::git_repository) -> Result<ConfigSnapshot> {
     let mut cfg = ptr::null_mut();
     // SAFETY: the caller of every user (`default_for`, `user_from_env`)
     // passes a live repository; `cfg` is writable.
-    let r =
-        unsafe { crate::sys::pending::l_obj::git_repository_config_snapshot(&raw mut cfg, repo) };
+    let r = unsafe { crate::object::deps::git_repository_config_snapshot(&raw mut cfg, repo) };
     ErrorCode::check(r)?;
     Ok(ConfigSnapshot(cfg))
 }
@@ -636,7 +631,7 @@ fn config_snapshot(
 /// configuration (and `$EMAIL` for the e-mail), at `$<date_env_var>` or the
 /// default time.
 fn user_from_env(
-    repo: *mut crate::sys::pending::l_obj::git_repository,
+    repo: *mut crate::object::deps::git_repository,
     name_env_var: &CStr,
     email_env_var: &CStr,
     date_env_var: &CStr,
@@ -698,7 +693,7 @@ fn user_from_env(
 ///
 /// `repo` is a live repository.
 pub unsafe fn default_from_env(
-    repo: *mut crate::sys::pending::l_obj::git_repository,
+    repo: *mut crate::object::deps::git_repository,
     author: bool,
     committer: bool,
 ) -> Result<(Option<Signature>, Option<Signature>)> {
@@ -954,7 +949,7 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_signature_default(
         out: *mut *mut GitSignature,
-        repo: *mut crate::sys::pending::l_obj::git_repository,
+        repo: *mut crate::object::deps::git_repository,
     ) -> c_int {
         barrier(|| {
             // SAFETY: the caller's contract.
@@ -976,7 +971,7 @@ pub mod ffi {
     pub unsafe extern "C" fn git_signature_default_from_env(
         author_out: *mut *mut GitSignature,
         committer_out: *mut *mut GitSignature,
-        repo: *mut crate::sys::pending::l_obj::git_repository,
+        repo: *mut crate::object::deps::git_repository,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(

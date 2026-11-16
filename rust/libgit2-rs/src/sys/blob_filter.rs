@@ -9,8 +9,8 @@ use core::ffi::{CStr, c_char, c_int, c_void};
 use core::ptr::{self, NonNull};
 
 use crate::buf::GitBuf;
+use crate::object::deps::git_repository;
 use crate::oid::Oid;
-use crate::sys::pending::l_obj::git_repository;
 use crate::util::errors::{ErrorCode, Result};
 use crate::util::str::GitStr;
 
@@ -64,6 +64,8 @@ pub const GIT_FILTER_ATTRIBUTES_FROM_COMMIT: u32 = 1 << 3;
 pub const GIT_FILTER_BYTES_TO_CHECK_NUL: usize = 8000;
 
 #[allow(clashing_extern_declarations)]
+// The repository is a Rust type C sees as opaque.
+#[allow(improper_ctypes)]
 unsafe extern "C" {
     fn git_filter_list_length(fl: *const git_filter_list) -> usize;
     fn git_filter_list_free(fl: *mut c_void);
