@@ -11,8 +11,6 @@ pub mod merge_driver;
 pub mod openssl;
 pub mod path;
 pub mod commit_graph;
-pub mod indexer;
-pub mod openssl;
 pub mod pack_objects;
 pub mod pcre2;
 pub mod pending;
