@@ -286,6 +286,10 @@ One entry per difference: component, what differs, why.
   each lookup, and held it across `foreach_entry_offset`'s callbacks, so a
   callback that used the pack deadlocked). `pack_window_open` takes only
   the file's lock when the file is open (C took the pack's too).
+- **pack: a prefix longer than the hash** (`git_pack_entry_find` or a
+  backend slot called directly with `len` over 40 for SHA-1): C compares
+  the extra digits with the bytes after the id in the index (the next
+  entry's); the Rust compares the full id (the odb clamps `len` anyway).
 - **pack: a window smaller than the hash size** (`GIT_OPT_SET_MWINDOW_SIZE`
   below 40 or so): C read a `REF_DELTA`'s base id past the window's end
   (within its page); the Rust returns `GIT_EBUFS` there.

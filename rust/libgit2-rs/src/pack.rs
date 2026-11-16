@@ -380,7 +380,8 @@ impl<'a> IndexView<'a> {
             return i64::from(off32);
         }
         // `index` and the length are well below `usize::MAX`: no overflow.
-        let large = index + num * 4 + (off32 & 0x7fff_ffff) as usize * 8;
+        // C computes `(off32 & 0x7fffffff) * 8` in `uint32_t`, which wraps.
+        let large = index + num * 4 + (off32 & 0x7fff_ffff).wrapping_mul(8) as usize;
         // C: `index >= end - 8` (a large offset may not end within 8 bytes
         // of the end, which is checksum anyway).
         if large >= d.len() - 8 {
@@ -393,6 +394,9 @@ impl<'a> IndexView<'a> {
     /// the first `len` hex digits of `short_id` (whose other digits are
     /// zero), unique unless `len` is the full hex size.
     pub fn lookup(&self, short_id: &[u8; GIT_OID_MAX_SIZE], len: usize) -> Lookup {
+        // C compares a longer prefix with the bytes after the id (the next
+        // entry's): here it is the full id (DIVERGENCES.md).
+        let len = len.min(self.oid_size * 2);
         let fan = self.fanout_base();
         let id0 = short_id[0] as usize;
         let hi = be32(self.data, fan + 4 * id0);
@@ -2137,6 +2141,12 @@ unsafe impl Sync for Pack {}
 impl Pack {
     /// Open the pack of the index `idx_path` (a `.idx` file; its `.pack`
     /// must exist), or share it if this process has it open.
+    ///
+    /// The pack and its index are read through memory maps, borrowed as
+    /// byte slices: this relies on git's rule that pack and index files are
+    /// never modified in place (they are written under a new name and
+    /// renamed). A file truncated under the map makes the process fault
+    /// (`SIGBUS`), as with the C.
     pub fn open(idx_path: &[u8], oid_type: OidType) -> core::result::Result<Pack, errors::Error> {
         let path = CString::new(idx_path).map_err(|_| {
             errors::Error::from(git_error_set!(ErrorClass::INVALID, "path contains a NUL"))
@@ -2269,7 +2279,9 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `id_lookup_table` holds the ids at `i * stride` for `lo <= i < hi`;
+    /// `id_lookup_table` holds readable ids at `i * stride` for every
+    /// `0 <= i < hi` (the slice made covers them all; midx.c and
+    /// commit_graph.c pass the whole table);
     /// `id_prefix` is readable for the hash size of `oid_type`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_pack__lookup_id(
@@ -2937,6 +2949,63 @@ mod tests {
         bad[at..at + 8].copy_from_slice(&u64::MAX.to_be_bytes());
         let view = IndexView::parse(&bad, 20).unwrap();
         assert_eq!(view.nth_offset(1), -1);
+    }
+
+    /// C's `(off32 & 0x7fffffff) * 8` is 32-bit and wraps (L-PACK-6).
+    #[test]
+    fn large_offset_index_wraps_as_c() {
+        let ids = ids(4, 20);
+        let offs = vec![12, 0x8000_0000, 0x1_2345_6789, 99];
+        let mut idx = build_index(2, &ids, &offs);
+        let at = 8 + 1024 + 4 * 24 + 4 * 3;
+        // 2^29 * 8 == 2^32: entry 0 of the 64-bit table.
+        idx[at..at + 4].copy_from_slice(&(0x8000_0000u32 | 1 << 29).to_be_bytes());
+        let view = IndexView::parse(&idx, 20).unwrap();
+        assert_eq!(view.nth_offset(3), 0x8000_0000);
+    }
+
+    /// A prefix longer than the hash is the full id (L-PACK-5: it panicked).
+    #[test]
+    fn long_prefixes_are_the_full_id() {
+        let ids = ids(50, 20);
+        let offs: Vec<u64> = (0..50).map(|i| 12 + i).collect();
+        let idx = build_index(2, &ids, &offs);
+        let view = IndexView::parse(&idx, 20).unwrap();
+        for len in [40, 41, 63, 64, 1000] {
+            assert_eq!(view.lookup(&key(&ids[7]), len), Lookup::Found(7));
+        }
+    }
+
+    /// The cache from several threads: entries in use are never evicted,
+    /// and what one thread adds the others get.
+    #[test]
+    fn base_cache_is_shared_between_threads() {
+        let _g = crate::util::test_support::init();
+        let cache = PackCache::new();
+        cache.lock().memory_limit = 2000;
+        let n = if cfg!(miri) { 30 } else { 2000 };
+        std::thread::scope(|s| {
+            for t in 0..4i64 {
+                let cache = &cache;
+                s.spawn(move || {
+                    for i in 0..n {
+                        let off = (i * 7 + t) % 64;
+                        let held = cache.get(off).or_else(|| {
+                            let data = GitBytes::copy_from(&[off as u8; 100]).unwrap();
+                            cache.add(data, GIT_OBJECT_BLOB, off).ok()
+                        });
+                        if let Some(e) = held {
+                            assert_eq!(e.data.as_bytes(), &[off as u8; 100]);
+                        }
+                    }
+                });
+            }
+        });
+        let c = cache.lock();
+        assert_eq!(
+            c.memory_used,
+            c.entries.values().map(|e| e.data.len()).sum::<usize>()
+        );
     }
 
     #[test]
