@@ -415,6 +415,9 @@ impl core::fmt::Debug for Index<'_> {
     }
 }
 
+/// The closure of [`Index::add_all_with`] and friends.
+type PathCallback<'a> = dyn FnMut(&[u8], Option<&[u8]>) -> IndexMatch + 'a;
+
 /// What a path callback of [`Index::add_all`], [`Index::update_all`] and
 /// [`Index::remove_all`] decides for a path.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -552,9 +555,10 @@ impl<'r> Index<'r> {
     pub fn write_tree(&self) -> Result<Oid> {
         let _g = self.api();
         let ix = self.ptr();
-        // SAFETY: the index is live; its owner is NULL or its live
-        // repository (which the C keeps while the index is attached).
-        let repo = unsafe { super::foreign::Repo::new(ix.get_ref().owner()) };
+        // SAFETY: the owner of the live index is NULL or its live
+        // repository: the safe API's handles of an owned index borrow that
+        // repository, and it clears the owner before it goes.
+        let repo = unsafe { super::foreign::Repo::new(ix.owner()) };
         let Some(repo) = repo else {
             return Err(err(crate::util::errors::set_str(
                 crate::util::errors::ErrorClass::INDEX,
@@ -684,7 +688,7 @@ impl<'r> Index<'r> {
     fn with_callback<I>(
         &self,
         pathspecs: I,
-        mut cb: Option<&mut dyn FnMut(&[u8], Option<&[u8]>) -> IndexMatch>,
+        mut cb: Option<&mut PathCallback<'_>>,
         op: impl FnOnce(IndexPtr, Paths<'_>, Option<ops::MatchedPathCb<'_>>) -> c_int,
     ) -> Result<()>
     where

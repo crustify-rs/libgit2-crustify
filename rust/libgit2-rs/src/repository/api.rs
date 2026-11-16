@@ -886,8 +886,9 @@ impl Repository {
     where
         F: FnMut(Option<&[u8]>, Option<&[u8]>, &Oid, bool) -> bool,
     {
+        type Each<'a> = dyn FnMut(Option<&[u8]>, Option<&[u8]>, &Oid, bool) -> bool + 'a;
         struct State<'a> {
-            f: &'a mut dyn FnMut(Option<&[u8]>, Option<&[u8]>, &Oid, bool) -> bool,
+            f: &'a mut Each<'a>,
             cb: CallbackState,
         }
         unsafe extern "C" fn each(
