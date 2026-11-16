@@ -614,4 +614,49 @@ mod exports {
         assert_eq!(b.as_bytes(), b"a/b/c");
         assert_eq!(&data, b"a//b/c");
     }
+
+    #[test]
+    fn component_callbacks_may_read_one_past_the_component() {
+        // C's validators (`path.c`) read the byte after a component; for
+        // the last one of a sized path that is past the caller's buffer
+        // unless the export hands over a terminated copy (a Rust caller's
+        // exact-size Vec, as the index port's). Miri sees an over-read.
+        let _g = test_support::init();
+        unsafe extern "C" fn peek(c: *const c_char, len: usize, payload: *mut c_void) -> bool {
+            // SAFETY: what C's validators assume: the byte at `len` is
+            // readable (the `/` or NUL after the component).
+            let after = unsafe { c.wrapping_add(len).read() } as u8;
+            // SAFETY: the test's Vec.
+            unsafe { &mut *payload.cast::<Vec<u8>>() }.push(after);
+            true
+        }
+        #[repr(C)]
+        struct Raw {
+            ptr: *const c_char,
+            asize: usize,
+            size: usize,
+        }
+        let data: Vec<u8> = b"dir/.git".to_vec();
+        let exact = data.into_boxed_slice(); // no byte after the path
+        let raw = Raw {
+            ptr: exact.as_ptr().cast(),
+            asize: 0,
+            size: exact.len(),
+        };
+        let mut after: Vec<u8> = Vec::new();
+        // SAFETY: a borrowed-shaped `git_str` over `exact`; the callback
+        // reads one byte past each component it is given.
+        let ok = unsafe {
+            git_fs_path_str_is_valid_ext(
+                (&raw const raw).cast(),
+                GIT_FS_PATH_REJECT_TRAVERSAL,
+                None,
+                Some(peek),
+                None,
+                (&raw mut after).cast(),
+            )
+        };
+        assert!(ok);
+        assert_eq!(after, [b'/', 0]);
+    }
 }
