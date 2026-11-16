@@ -1226,8 +1226,9 @@ out-of-memory error instead.
 
 ### signature: `git_signature__parse` ignores a failed name or e-mail copy
 - C: `extract_trimmed`'s `git__substrdup` result is not checked; on
-  allocation failure the parse returns 0 with `name` or `email` NULL, which
-  callers (`commit.c`, `refdb_fs.c`, the tag parser) then dereference.
+  allocation failure the parse (and so `git_signature_from_buffer`) returns
+  0 with `name` or `email` NULL, which callers (`commit.c`, `refdb_fs.c`,
+  the tag parser) then dereference.
 - Rust: -1 with the out-of-memory error.
 
 ### signature: timezone arithmetic overflows `int`
@@ -1275,8 +1276,30 @@ out-of-memory error instead.
   `git_blob_create_from_stream_commit(…, NULL)` crash; `git_tag_target` of
   a tag parsed from raw data (no repository) dereferences NULL.
 - Rust: `invalid argument: '<name>'` (-1) for the arguments, NULL from
-  `git_tag_tagger`, 0 from `git_grafts_size`, and
-  `unrecoverable internal error: 't->object.repo'` from `git_tag_target`.
+  `git_tag_tagger`, 0 from `git_grafts_size`; `git_tag_target` of a tag
+  without a repository fails with `invalid argument: 'repo'`, and with a
+  NULL out-parameter with `invalid argument: 'object_out'` (C's
+  `git_object_lookup` checks). `git_tag_delete(repo, NULL)` (C crashes)
+  fails as the name `refs/tags/` does: -12, `the given reference name
+  'refs/tags/' is not valid`.
+
+### blob: a NULL buffer with a non-zero length
+- C: `git_blob_create_from_buffer(…, NULL, n)`, `git_blob_data_is_binary(NULL,
+  n)` and a blob stream's `write(s, NULL, n)` (n > 0) dereference NULL.
+- Rust: -1, `invalid argument: 'buffer'` (`'str'` for
+  `git_blob_data_is_binary`); nothing is written. (Review l-obj-r1, LO-3:
+  the first port silently made the empty blob.)
+
+### blob: the write stream after `close`
+- C: `write` (even of 0 bytes) or `git_blob_create_from_stream_commit` after
+  the stream's `close` crash in `flush_buffer` (`filebuf.c`).
+- Rust: -1, `unrecoverable internal error: 'file->write'`; no temporary file
+  is left.
+
+### signature: `git_signature__parse` with `buffer_end` before `*buffer_out`
+- C: `memchr` (or `memrchr`) with a length that wrapped: undefined behaviour.
+- Rust: the range is empty: C's parse error for an empty buffer ("no
+  newline given" with an ender, "malformed e-mail" without).
 
 ### tag: leaks of a failed parse or listing
 - C: `git_tag_create_from_buffer` returns without freeing what `tag_parse`
