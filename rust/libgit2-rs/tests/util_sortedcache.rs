@@ -358,6 +358,9 @@ fn typed_api() {
     assert_eq!(drops.load(Ordering::SeqCst), 8);
 }
 
+/// Fewer under Miri, which is slow.
+const PER_THREAD: u64 = if cfg!(miri) { 8 } else { 200 };
+
 #[test]
 fn typed_api_threads() {
     let _g = test_support::init();
@@ -366,7 +369,7 @@ fn typed_api_threads() {
         for t in 0..4u64 {
             let cache = cache.clone();
             s.spawn(move || {
-                for i in 0..200u64 {
+                for i in 0..PER_THREAD {
                     {
                         let mut w = cache.write();
                         let k = format!("t{t}/{i:04}");
@@ -386,8 +389,9 @@ fn typed_api_threads() {
             });
         }
     });
-    assert_eq!(cache.len(), 800);
-    assert_eq!(*cache.read().get(b"t3/0199").unwrap(), 199);
+    assert_eq!(cache.len(), 4 * PER_THREAD as usize);
+    let last = format!("t3/{:04}", PER_THREAD - 1);
+    assert_eq!(*cache.read().get(last.as_bytes()).unwrap(), PER_THREAD - 1);
 }
 
 #[test]
