@@ -9,7 +9,7 @@
 //! ASCII (the C's `ISASCII(c) && isalpha(c)`, …).
 
 use core::cell::Cell;
-use core::ffi::{c_char, c_int, c_uint};
+use core::ffi::{CStr, c_char, c_int, c_uint};
 use core::marker::PhantomData;
 
 /// `WM_CASEFOLD`
@@ -133,7 +133,33 @@ impl CStrLazy<'_> {
     }
 }
 
+impl CStrLazy<'_> {
+    /// The whole string, measured once (`strlen`) when a scan needs it.
+    fn all(&self) -> &[u8] {
+        let mut n = self.nul.get();
+        if n == usize::MAX {
+            // SAFETY: `p` is NUL-terminated (`new`'s contract).
+            n = unsafe { CStr::from_ptr(self.p.cast()) }.count_bytes();
+            self.nul.set(n);
+            self.known.set(n);
+        }
+        // SAFETY: the `n` bytes before the NUL, readable and unwritten for
+        // `'a` (`new`'s contract), which outlives `&self`.
+        unsafe { core::slice::from_raw_parts(self.p, n) }
+    }
+}
+
 impl Src for CStrLazy<'_> {
+    #[inline]
+    fn find_from(&self, i: usize, c: u8) -> Option<usize> {
+        Z(self.all()).find_from(i, c)
+    }
+
+    #[inline]
+    fn scan(&self, t: usize, lit: u8, up: u8, fold: bool, match_slash: bool) -> usize {
+        Z(self.all()).scan(t, lit, up, fold, match_slash)
+    }
+
     #[inline]
     fn at(&self, i: usize) -> u8 {
         let known = self.known.get();
