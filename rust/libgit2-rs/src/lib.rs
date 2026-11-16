@@ -15,13 +15,18 @@ pub mod util;
 pub mod buf;
 pub mod fs;
 pub mod hashmap_oid;
+pub mod libgit2;
 pub mod oid;
 pub mod oidarray;
 pub mod parse;
+pub mod repository;
+pub mod settings;
 pub mod strarray;
 
+pub use libgit2::Libgit2;
 pub use oid::{Oid, OidShortener, OidType};
 pub use oidarray::OidArray;
+pub use repository::{Repository, RepositoryInitOptions, RepositoryOpenFlags, RepositoryState};
 pub use strarray::StrArray;
 pub use util::errors::{Error, ErrorClass, ErrorCode};
 pub use util::net::Url;

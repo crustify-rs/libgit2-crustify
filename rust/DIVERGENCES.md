@@ -269,3 +269,36 @@ One entry per difference: component, what differs, why.
   where the C would read past the end of the buffer (`git_utf8_iterate`
   with `str_len == 0`, `git_decode_varint` on a truncated varint). The
   exports read exactly what the C read.
+## repository, libgit2, settings (WP l-repo)
+
+- **`git_libgit2_opts` is a C shim** (`src/util/rust_shims.c`): it reads each
+  option's arguments from the `va_list` exactly as the C did (for
+  `GIT_OPT_SET_SEARCH_PATH` the path only after a valid level) and calls
+  `git_libgit2__opts`, an internal Rust export (not in `libgit2.exports`).
+- **The registered extensions** (`GIT_OPT_SET_EXTENSIONS`) live in a Rust
+  `Vec` under a mutex (C: an unsynchronized `git_vector` of `git__strdup`
+  copies), in Rust's allocator: setting them cannot fail with -1 on
+  allocation failure, and concurrent calls are safe. Order, duplicates
+  and the `!` rejection are the C's.
+- **The features and build information** (`git_libgit2_features`,
+  `_feature_backend`, `_buildinfo`, the version) come from the build's
+  `git2_features.h` and `include/git2/version.h`, read by `build.rs` into
+  `cfg`s and constants; without `LIBGIT2_BUILD_DIR` (Miri) the reference
+  configuration is assumed.
+- **Infallible Rust allocations on rare paths**: copies of paths and
+  config values made while opening (`CString`/`Vec` conversions of
+  environment variables, `core.worktree`, ceiling directories, gitlink
+  contents) and the safe API's conversions abort on out-of-memory where C
+  returned -1. The `git_repository` itself, its strings, the extensions
+  array and every `git_str` use `git__allocator` and fail as C.
+- **`GIT_OPT_*` with a NULL out-pointer** fails with `invalid argument: 'out'`
+  instead of crashing (see DEFECTS.md).
+- **The safe `Repository` is `Send`, not `Sync`.** Its setters that replace
+  paths (`set_workdir`, `set_bare`, `set_namespace`, `set_ident`) take
+  `&mut self`. The odb, config, refdb and index it returns are owners with
+  their own reference; until the L-wave integration they are thin types of
+  `repository::handles` (PENDING), not the other WPs' `Odb`, `Config`, ….
+- **The C ABI reads the caller's `git_repository_init_options`** once into
+  Rust values and writes the internal `GIT_REPOSITORY_INIT__*` bits back
+  into its `flags` at the end (C or-ed them in as it went); the caller sees
+  the same flags afterwards.

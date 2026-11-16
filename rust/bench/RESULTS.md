@@ -371,3 +371,46 @@ Public API (`compare.sh /work/build-c /work/builds/u2 codec`):
 `strlen` up front), which brought early-failing patterns to 1.0-1.4 of the C
 (from 1.9) and casefold/slash patterns to 0.2-0.8, but recursion-heavy
 patterns (`*[0-9]*` without casefold) stay 1.5x.
+
+## WP l-repo (repository, libgit2, settings)
+
+`compare.sh /work/build-c /work/builds/l-repo repository` (3 rounds × 3 reps,
+interleaved per workload, CPU 2; load average 364 at the start, so these are
+noisy). Median wall time, and CPU time:
+
+| workload | C ms | Rust ms | ratio | C cpu | Rust cpu | cpu ratio | check |
+|---|---|---|---|---|---|---|---|
+| open_bare_x1000 | 464.9 | 512.9 | 1.103 | 180.4 | 237.4 | 1.316 | ok |
+| open_workdir_x1000 | 697.2 | 716.2 | 1.027 | 213.9 | 242.7 | 1.135 | ok |
+| open_search_x1000 | 970.8 | 1061.5 | 1.093 | 352.5 | 372.3 | 1.056 | ok |
+| discover_x1000 | 352.6 | 464.5 | 1.317 | 144.8 | 166.4 | 1.149 | ok |
+| init_x50 | 2540.4 | 2254.7 | 0.888 | 291.0 | 293.7 | 1.009 | ok |
+| init_ext_x50 | 1317.7 | 1111.1 | 0.843 | 310.7 | 280.4 | 0.903 | ok |
+| head_packed | 398.5 | 412.6 | 1.035 | 144.0 | 126.7 | 0.880 | ok |
+| head_loose | 587.6 | 496.1 | 0.844 | 227.8 | 187.2 | 0.822 | ok |
+| revparse_head | 324.3 | 322.1 | 0.993 | 83.4 | 88.9 | 1.066 | ok |
+| (config) repository_config_x500 | 330.7 | 329.6 | 0.997 | 165.4 | 162.6 | 0.983 | ok |
+| (codec) repository_hashfile_16m | 611.7 | 567.3 | 0.927 | 153.2 | 142.4 | 0.930 | ok |
+
+Geomean wall 0.998, CPU 1.014. The open/discover rows were measured before
+the weak-pointer and item-path fast paths below were added.
+
+Per-call internals (`micro/repo_bench.c`, `BENCH=repo_bench micro/build_lib.sh
+&& BENCH=repo_bench micro/run.sh 5 5`; median of 5 interleaved rounds, ms):
+
+| workload | C | Rust | ratio |
+|---|---|---|---|
+| odb_weakptr_x2M | 98.5 | 73.6 | 0.75 |
+| config_weakptr_x2M | 73.1 | 72.2 | 0.99 |
+| refdb_weakptr_x2M | 101.2 | 79.0 | 0.78 |
+| path_getters_x2M | 193.0 | 167.5 | 0.87 |
+| item_path_x500k | 379.2 | 234.4 | 0.62 |
+| workdir_path_x500k | 271.8 | 366.5 | 1.35 |
+| opts_get_mwindow_x2M | 190.4 | 296.6 | 1.56 |
+| open_free_x2000 | 4246.0 | 4428.7 | 1.04 |
+
+Before the fast paths (an earlier run, same harness), odb/config weak
+pointers were 1.8–2.3× and item_path 1.45×. Still slower: `workdir_path`
+(about 0.2 µs per call; `GitStr::joinpath` + the barrier) and
+`git_libgit2_opts` (about 50 ns per call: the shim's argument struct and the
+barrier).
