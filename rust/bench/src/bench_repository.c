@@ -70,7 +70,13 @@ static uint64_t run_init_ext(void *ctx)
 		opts.initial_head = "main";
 		opts.description = "bench repository";
 		CHECK(git_repository_init_ext(&r, path, &opts));
-		h += strlen(git_repository_workdir(r));
+		{
+			/* not the length: the scratch path differs between runs */
+			const char *wd = git_repository_workdir(r);
+			size_t l = strlen(wd);
+			h += l > 9 && !strcmp(wd + l - 9, "/sub/dir/") ? 3 : 1;
+			h += (uint64_t)git_repository_head_unborn(r) * 5;
+		}
 		git_repository_free(r);
 	}
 	return h;

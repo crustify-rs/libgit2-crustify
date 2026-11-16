@@ -30,13 +30,15 @@ cat "$OUT/info.txt" >&2
 
 status=0
 run_one() { # label bindir program round
-	local f="$OUT/$1/round$4-$3.out"
+	local f="$OUT/$1/round$4-$(printf %02d "$pi")-$3.out"
 	if ! bench_exec "$2" "$3" "$FILTER" > "$f"; then
 		echo "  bench_$3 FAILED for $1 (round $4)" >&2
 		status=1
 	fi
 }
+pi=0
 for p in "${BENCH_PROGRAMS[@]}"; do
+	pi=$((pi + 1))
 	[ -n "$(BENCH_LIST=1 BENCH_FILTER="$FILTER" "$BIN_A/bench_$p")" ] || continue
 	for ((r = 1; r <= ROUNDS; r++)); do
 		echo "== $p round $r/$ROUNDS" >&2

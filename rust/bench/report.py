@@ -3,7 +3,7 @@
 
   report.py json <builddir> <results.tsv>     results.tsv -> JSON on stdout
   report.py compare <outdir> <labelA> <labelB>
-      Aggregate the per-round outputs <outdir>/<label>/round*-*.out of two
+      Aggregate the per-round outputs <outdir>/<label>/round<r>-<NN>-<program>.out of two
       builds, print a table (component, workload, A median, B median, ratio
       B/A, check), and write <outdir>/compare.tsv and compare.json.
       Exit status 1 if a check value differs between the builds, is
@@ -47,7 +47,10 @@ def load_build(outdir, label):
     """{(component, workload): {"samples": [...], "checks": set, "ops": n}}"""
     res = {}
     order = []
-    for path in sorted(glob.glob(os.path.join(outdir, label, "round*-*.out"))):
+    paths = glob.glob(os.path.join(outdir, label, "round*-*.out"))
+    # program order (round<r>-<NN>-<prog>.out), then round
+    paths.sort(key=lambda p: (os.path.basename(p).split("-", 1)[1], os.path.basename(p)))
+    for path in paths:
         with open(path) as f:
             for r in parse_lines(f):
                 key = (r["component"], r["workload"])

@@ -211,7 +211,7 @@ static pack_entry *pe;     /* by offset */
 static size_t pe_n;
 static git_oid *rand_ids;  /* random sample */
 #define PACK_RANDOM 2000
-#define PACK_SEQ 4000
+#define PACK_SEQ 2000
 #define PACK_HEADER 20000
 #define PACK_EXISTS 50000
 #define PACK_MISS 2000
