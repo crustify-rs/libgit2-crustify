@@ -22,10 +22,12 @@ pub mod refdb;
 pub mod refdb_fs;
 pub mod reflog;
 pub mod refs;
+pub mod refs_api;
 pub mod strarray;
 
 pub use oid::{Oid, OidShortener, OidType};
 pub use oidarray::OidArray;
+pub use refs_api::{RefdbBackend, Reference, ReferenceType, References, Reflog, ReflogEntry};
 pub use strarray::StrArray;
 pub use util::errors::{Error, ErrorClass, ErrorCode};
 pub use util::net::Url;

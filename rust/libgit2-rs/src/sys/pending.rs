@@ -517,3 +517,18 @@ impl Drop for CommitBox {
         unsafe { git_commit_free(self.0.as_ptr()) };
     }
 }
+
+unsafe extern "C" {
+    /// `git_libgit2_init` (libgit2.c). PENDING(l-repo)
+    fn git_libgit2_init() -> c_int;
+}
+
+/// Initialize the library once for the safe API's users (a count C never
+/// drops: the library stays initialized). PENDING(l-repo)
+pub fn libgit2_init_once() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    // SAFETY: `git_libgit2_init` may be called at any time, on any thread.
+    ONCE.call_once(|| unsafe {
+        git_libgit2_init();
+    });
+}

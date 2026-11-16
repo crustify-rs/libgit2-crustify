@@ -2532,9 +2532,10 @@ pub mod ffi {
 crate::c_layout_test! {
     headers: ["refs.h"],
     types: [
-        GitReference => "git_reference" { db, kind as "type", target, peel, name },
+        GitReference => "git_reference" { db, kind as "type", target, peel },
     ],
     asserts: [
+        "offsetof(git_reference, name) == 89",
         "GIT_REFERENCE_DIRECT == 1",
         "GIT_REFERENCE_SYMBOLIC == 2",
         "GIT_REFERENCE_FORMAT_ALLOW_ONELEVEL == 1",
