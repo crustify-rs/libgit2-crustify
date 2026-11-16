@@ -8,7 +8,9 @@
 //! Character classes (`[:alpha:]`, …) are the C locale's, restricted to
 //! ASCII (the C's `ISASCII(c) && isalpha(c)`, …).
 
+use core::cell::Cell;
 use core::ffi::{c_char, c_int, c_uint};
+use core::marker::PhantomData;
 
 /// `WM_CASEFOLD`
 pub const WM_CASEFOLD: c_uint = 1;
@@ -33,23 +35,134 @@ fn is_glob_special(c: u8) -> bool {
     matches!(c, b'*' | b'?' | b'[' | b'\\')
 }
 
-/// A byte string that reads NUL past its end.
+/// A string `dowild` reads: byte `i`, NUL at and past the end.
+trait Src {
+    fn at(&self, i: usize) -> u8;
+
+    /// `strchr(s + i, c)` for a non-NUL `c`, with `i` at most the end: the
+    /// index of `c` at or after `i`.
+    #[inline]
+    fn find_from(&self, mut i: usize, c: u8) -> Option<usize> {
+        loop {
+            match self.at(i) {
+                0 => return None,
+                x if x == c => return Some(i),
+                _ => i += 1,
+            }
+        }
+    }
+
+    /// C's scan after `*literal`: the first index at or after `t` that
+    /// holds `lit` (or, when `fold`, `up`), the end, or (without
+    /// `match_slash`) a slash.
+    #[inline]
+    fn scan(&self, mut t: usize, lit: u8, up: u8, fold: bool, match_slash: bool) -> usize {
+        loop {
+            let c = self.at(t);
+            if c == 0 || (!match_slash && c == b'/') || c == lit || (fold && c == up) {
+                return t;
+            }
+            t += 1;
+        }
+    }
+}
+
+/// A byte string without NUL, which reads NUL past its end.
 #[derive(Clone, Copy)]
 struct Z<'a>(&'a [u8]);
 
-impl Z<'_> {
+impl Src for Z<'_> {
     #[inline(always)]
-    fn at(self, i: usize) -> u8 {
+    fn at(&self, i: usize) -> u8 {
         self.0.get(i).copied().unwrap_or(0)
     }
 
-    /// `strchr(s + i, c) != NULL` for a non-NUL `c`: the index of `c` at
-    /// or after `i` (the string holds no NUL: see `wildmatch`).
     #[inline]
-    fn find_from(self, i: usize, c: u8) -> Option<usize> {
+    fn find_from(&self, i: usize, c: u8) -> Option<usize> {
         let s = self.0.get(i..)?;
         memchr::memchr(c, s).map(|j| i + j)
     }
+
+    #[inline]
+    fn scan(&self, t: usize, lit: u8, up: u8, fold: bool, match_slash: bool) -> usize {
+        let rest = self.0.get(t..).unwrap_or(&[]);
+        let found = match (fold && up != lit, match_slash) {
+            (false, true) => memchr::memchr(lit, rest),
+            (false, false) => memchr::memchr2(lit, b'/', rest),
+            (true, true) => memchr::memchr2(lit, up, rest),
+            (true, false) => memchr::memchr3(lit, up, b'/', rest),
+        };
+        t + found.unwrap_or(rest.len())
+    }
+}
+
+/// A C string read lazily, as the C reads it: never past its NUL, and
+/// only as far as the match needs (no `strlen` up front).
+struct CStrLazy<'a> {
+    p: *const u8,
+    /// Bytes `0..known` are known to be non-NUL.
+    known: Cell<usize>,
+    /// Where the NUL is, once found.
+    nul: Cell<usize>,
+    _s: PhantomData<&'a [u8]>,
+}
+
+impl CStrLazy<'_> {
+    /// # Safety
+    ///
+    /// `p` is a NUL-terminated string, readable and unwritten for `'a`.
+    unsafe fn new(p: *const c_char) -> Self {
+        CStrLazy {
+            p: p.cast(),
+            known: Cell::new(0),
+            nul: Cell::new(usize::MAX),
+            _s: PhantomData,
+        }
+    }
+
+    /// Byte `j`, which is at most the NUL's index.
+    #[inline(always)]
+    fn read(&self, j: usize) -> u8 {
+        // SAFETY: `j <=` the NUL's index (every byte before `j` is
+        // non-NUL: `known`), so `p + j` lies in the string `new` vouches
+        // for, and the read is of a byte of it.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
+        unsafe {
+            self.p.add(j).read()
+        }
+    }
+}
+
+impl Src for CStrLazy<'_> {
+    #[inline]
+    fn at(&self, i: usize) -> u8 {
+        let known = self.known.get();
+        if i < known {
+            return self.read(i);
+        }
+        if i >= self.nul.get() {
+            return 0;
+        }
+        let mut j = known;
+        loop {
+            let c = self.read(j);
+            if c == 0 {
+                self.known.set(j);
+                self.nul.set(j);
+                return 0;
+            }
+            j += 1;
+            if j > i {
+                self.known.set(j);
+                return c;
+            }
+        }
+    }
+}
+
+/// Whether the `len` bytes at `s` of `pat` are `name`.
+fn name_is<P: Src>(pat: &P, s: usize, len: usize, name: &[u8]) -> bool {
+    len == name.len() && name.iter().enumerate().all(|(k, &c)| pat.at(s + k) == c)
 }
 
 // The ctype tests of the C, as in the C locale, for ASCII only.
@@ -67,7 +180,7 @@ fn is_space(c: u8) -> bool {
 }
 
 /// `dowild`: match the pattern from `p` against the text from `t`.
-fn dowild(pat: Z<'_>, mut p: usize, text: Z<'_>, mut t: usize, flags: c_uint) -> c_int {
+fn dowild<P: Src, T: Src>(pat: &P, mut p: usize, text: &T, mut t: usize, flags: c_uint) -> c_int {
     let casefold = flags & WM_CASEFOLD != 0;
     let pathname = flags & WM_PATHNAME != 0;
     let pattern_start = p;
@@ -159,27 +272,11 @@ fn dowild(pat: Z<'_>, mut p: usize, text: Z<'_>, mut t: usize, flags: c_uint) ->
                             lit = lit.to_ascii_lowercase();
                         }
                         // C's scan for `lit`, stopping at the end and
-                        // (without match_slash) at a slash, with memchr.
-                        let rest = text.0.get(t..).unwrap_or(&[]);
-                        let up = lit.to_ascii_uppercase();
-                        let found = match (casefold && up != lit, match_slash) {
-                            (false, true) => memchr::memchr(lit, rest),
-                            (false, false) => memchr::memchr2(lit, b'/', rest),
-                            (true, true) => memchr::memchr2(lit, up, rest),
-                            (true, false) => memchr::memchr3(lit, up, b'/', rest),
-                        };
-                        match found {
-                            Some(j) => {
-                                t += j;
-                                t_ch = text.at(t);
-                                if casefold && t_ch.is_ascii_uppercase() {
-                                    t_ch = t_ch.to_ascii_lowercase();
-                                }
-                            }
-                            None => {
-                                t += rest.len();
-                                t_ch = 0;
-                            }
+                        // (without match_slash) at a slash.
+                        t = text.scan(t, lit, lit.to_ascii_uppercase(), casefold, match_slash);
+                        t_ch = text.at(t);
+                        if casefold && t_ch.is_ascii_uppercase() {
+                            t_ch = t_ch.to_ascii_lowercase();
                         }
                         if t_ch != lit {
                             return WM_NOMATCH;
@@ -270,25 +367,35 @@ fn dowild(pat: Z<'_>, mut p: usize, text: Z<'_>, mut t: usize, flags: c_uint) ->
                                 matched = true;
                             }
                         } else {
-                            let class = &pat.0[s..p - 1];
-                            let hit = match class {
-                                b"alnum" => t_ch.is_ascii_alphanumeric(),
-                                b"alpha" => t_ch.is_ascii_alphabetic(),
-                                b"blank" => is_blank(t_ch),
-                                b"cntrl" => t_ch.is_ascii_control(),
-                                b"digit" => t_ch.is_ascii_digit(),
-                                b"graph" => is_graph(t_ch),
-                                b"lower" => t_ch.is_ascii_lowercase(),
-                                b"print" => is_print(t_ch),
-                                b"punct" => t_ch.is_ascii_punctuation(),
-                                b"space" => is_space(t_ch),
-                                b"upper" => {
-                                    t_ch.is_ascii_uppercase()
-                                        || (casefold && t_ch.is_ascii_lowercase())
-                                }
-                                b"xdigit" => t_ch.is_ascii_hexdigit(),
+                            let len = p - 1 - s;
+                            let is = |name: &[u8]| name_is(pat, s, len, name);
+                            let hit = if is(b"alnum") {
+                                t_ch.is_ascii_alphanumeric()
+                            } else if is(b"alpha") {
+                                t_ch.is_ascii_alphabetic()
+                            } else if is(b"blank") {
+                                is_blank(t_ch)
+                            } else if is(b"cntrl") {
+                                t_ch.is_ascii_control()
+                            } else if is(b"digit") {
+                                t_ch.is_ascii_digit()
+                            } else if is(b"graph") {
+                                is_graph(t_ch)
+                            } else if is(b"lower") {
+                                t_ch.is_ascii_lowercase()
+                            } else if is(b"print") {
+                                is_print(t_ch)
+                            } else if is(b"punct") {
+                                t_ch.is_ascii_punctuation()
+                            } else if is(b"space") {
+                                is_space(t_ch)
+                            } else if is(b"upper") {
+                                t_ch.is_ascii_uppercase() || (casefold && t_ch.is_ascii_lowercase())
+                            } else if is(b"xdigit") {
+                                t_ch.is_ascii_hexdigit()
+                            } else {
                                 // A malformed [:class:].
-                                _ => return WM_ABORT_ALL,
+                                return WM_ABORT_ALL;
                             };
                             if hit {
                                 matched = true;
@@ -332,18 +439,63 @@ fn dowild(pat: Z<'_>, mut p: usize, text: Z<'_>, mut t: usize, flags: c_uint) ->
     }
 }
 
-/// `wildmatch`: match `pattern` against `text` (each ending at its first
-/// NUL or its end). Returns [`WM_MATCH`], [`WM_NOMATCH`] or
-/// [`WM_ABORT_ALL`] (as C, `WM_ABORT_TO_STARSTAR` does not escape).
-pub fn wildmatch(pattern: &[u8], text: &[u8], flags: c_uint) -> c_int {
+/// `wildmatch` on byte strings (each ending at its first NUL or its end),
+/// with C's flags and result: [`WM_MATCH`], [`WM_NOMATCH`],
+/// [`WM_ABORT_ALL`], or (as in C, with `WM_PATHNAME`)
+/// [`WM_ABORT_TO_STARSTAR`].
+pub(crate) fn wildmatch_raw(pattern: &[u8], text: &[u8], flags: c_uint) -> c_int {
     let to_nul = |s: &[u8]| -> usize { memchr::memchr(0, s).unwrap_or(s.len()) };
     let (pattern, text) = (&pattern[..to_nul(pattern)], &text[..to_nul(text)]);
-    dowild(Z(pattern), 0, Z(text), 0, flags)
+    dowild(&Z(pattern), 0, &Z(text), 0, flags)
+}
+
+/// [`wildmatch`]'s options.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct WildmatchFlags {
+    /// Letters match either case (`WM_CASEFOLD`).
+    pub casefold: bool,
+    /// `/` is matched only by a literal `/` or by `**` (`WM_PATHNAME`).
+    pub pathname: bool,
+}
+
+/// [`wildmatch`]'s result.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WildMatch {
+    /// The text matches (`WM_MATCH`).
+    Match,
+    /// It does not (`WM_NOMATCH`).
+    NoMatch,
+    /// It does not, and no longer text could (`WM_ABORT_ALL`), or the
+    /// pattern is malformed.
+    AbortAll,
+    /// It does not, and only a `**` could have matched more
+    /// (`WM_ABORT_TO_STARSTAR`, with `pathname`).
+    AbortToStarstar,
+}
+
+impl WildMatch {
+    /// Whether the text matched.
+    pub fn is_match(self) -> bool {
+        self == WildMatch::Match
+    }
+}
+
+/// Match `pattern` against `text` (each ending at its first NUL or its
+/// end), as git's `wildmatch`.
+pub fn wildmatch(pattern: &[u8], text: &[u8], flags: WildmatchFlags) -> WildMatch {
+    let f =
+        if flags.casefold { WM_CASEFOLD } else { 0 } | if flags.pathname { WM_PATHNAME } else { 0 };
+    match wildmatch_raw(pattern, text, f) {
+        WM_MATCH => WildMatch::Match,
+        WM_NOMATCH => WildMatch::NoMatch,
+        WM_ABORT_TO_STARSTAR => WildMatch::AbortToStarstar,
+        _ => WildMatch::AbortAll,
+    }
 }
 
 pub mod ffi {
     use super::*;
-    use crate::util::export::{barrier, cstr_bytes};
+    use crate::util::export::barrier;
 
     /// `wildmatch`.
     ///
@@ -359,11 +511,10 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             // SAFETY: the caller's contract.
-            let p = unsafe { cstr_bytes(pattern) };
+            let p = unsafe { CStrLazy::new(pattern) };
             // SAFETY: the caller's contract.
-            let t = unsafe { cstr_bytes(text) };
-            // C strings hold no NUL before their end.
-            dowild(Z(p), 0, Z(t), 0, flags)
+            let t = unsafe { CStrLazy::new(text) };
+            dowild(&p, 0, &t, 0, flags)
         })
     }
 }
@@ -382,7 +533,7 @@ mod tests {
     use super::*;
 
     fn m(p: &str, t: &str, f: c_uint) -> c_int {
-        wildmatch(p.as_bytes(), t.as_bytes(), f)
+        wildmatch_raw(p.as_bytes(), t.as_bytes(), f)
     }
 
     #[test]
@@ -407,6 +558,7 @@ mod tests {
         assert_eq!(m("a\\", "a", 0), WM_ABORT_ALL);
         assert_eq!(m("[", "[", 0), WM_ABORT_ALL);
         // A NUL ends the strings, as in C.
-        assert_eq!(wildmatch(b"ab\0zz", b"ab\0yy", 0), WM_MATCH);
+        assert_eq!(wildmatch_raw(b"ab\0zz", b"ab\0yy", 0), WM_MATCH);
+        assert_eq!(m("*?", "a/", WM_PATHNAME), WM_ABORT_TO_STARSTAR);
     }
 }

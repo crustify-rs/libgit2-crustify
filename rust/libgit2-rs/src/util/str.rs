@@ -496,35 +496,70 @@ impl GitStr {
         self.ptr = oomstr();
     }
 
-    /// The allocated bytes after the contents, the NUL's included
-    /// (`asize - size` of them, as C writes into `ptr + size`); empty
-    /// unless the string owns its buffer. Commit what is written with
-    /// [`set_len`](Self::set_len).
+    /// The allocated bytes after the contents and their NUL
+    /// (`asize - size - 1` of them); empty unless the string owns its
+    /// buffer. The string reads none of them, so safe code may write
+    /// anything there; [`set_len`](Self::set_len) commits written bytes.
     pub fn spare_capacity_mut(&mut self) -> &mut [MaybeUninit<u8>] {
-        if !self.owned() || self.size >= self.asize {
+        if !self.owned() || self.size.saturating_add(1) >= self.asize {
             return &mut [];
         }
-        let spare = self.ptr.cast::<MaybeUninit<u8>>().wrapping_add(self.size);
+        let spare = self
+            .ptr
+            .cast::<MaybeUninit<u8>>()
+            .wrapping_add(self.size + 1);
         // SAFETY: an owned buffer has `asize` bytes, of which the string
-        // uses `size`; the rest (at `spare`) is ours to write through
-        // `&mut self`.
-        unsafe { core::slice::from_raw_parts_mut(spare, self.asize - self.size) }
+        // uses `size` and the NUL after them; the rest (at `spare`) is
+        // ours to write through `&mut self`, and nothing reads it.
+        unsafe { core::slice::from_raw_parts_mut(spare, self.asize - self.size - 1) }
     }
 
-    /// Set the length to `len`, after writing the bytes up to it through
-    /// [`spare_capacity_mut`](Self::spare_capacity_mut) (`buf->size = len`).
-    /// No NUL is written.
+    /// C's view of the room after the contents: `ptr + size` and
+    /// `asize - size` bytes, the NUL's slot included (NULL and 0 unless
+    /// the string owns its buffer). Writing through the pointer is the
+    /// caller's `unsafe` step; overwriting the NUL leaves the string
+    /// unterminated until [`set_len`](Self::set_len) and
+    /// [`terminate`](Self::terminate) (or a growth) restore it.
+    pub(crate) fn spare_ptr(&mut self) -> (*mut u8, usize) {
+        if !self.owned() || self.size >= self.asize {
+            return (ptr::null_mut(), 0);
+        }
+        (
+            self.ptr.cast::<u8>().wrapping_add(self.size),
+            self.asize - self.size,
+        )
+    }
+
+    /// Set the length to `len` (`buf->size = len`) after writing the bytes
+    /// up to it through [`spare_ptr`](Self::spare_ptr) or
+    /// [`spare_capacity_mut`](Self::spare_capacity_mut). No NUL is written.
     ///
     /// # Safety
     ///
     /// The string owns its buffer, `len <= asize`, and the first `len`
-    /// bytes are initialized. `len == asize` leaves the string without its
-    /// NUL, outside the type's invariant: only as a transient state (C's
-    /// zstream does it), which the next growth (or a smaller `set_len`)
-    /// ends before the string is read as a C string.
+    /// bytes are initialized. Unless the NUL at `len` is known to be there,
+    /// the string is outside its invariant (C's zstream does this, with
+    /// `len == asize` even): call [`terminate`](Self::terminate) or grow it
+    /// before it is read.
     pub unsafe fn set_len(&mut self, len: usize) {
         debug_assert!(self.owned() && len <= self.asize);
         self.size = len;
+    }
+
+    /// Write the NUL after the contents, growing by one byte if the
+    /// contents fill the buffer (the state [`set_len`](Self::set_len) may
+    /// leave). Nothing to do for a string that does not own its buffer.
+    pub fn terminate(&mut self) -> Result<()> {
+        if !self.owned() {
+            return Ok(());
+        }
+        if self.size >= self.asize {
+            // `try_grow` writes the NUL at `size` after growing.
+            return self.grow(self.size.saturating_add(1));
+        }
+        let n = self.size;
+        self.write_byte(n, 0);
+        Ok(())
     }
 
     /// `git_str_grow`.
