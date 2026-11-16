@@ -79,16 +79,9 @@ pub fn repository_head_symbolic_target(
 // PENDING(l-obj), PENDING(l-commit): what the index (WP l-index) calls of
 // `blob.c`, `object.c` and `tree.c`. Safe wrappers: `crate::index::foreign`.
 pub mod l_index {
-    use core::ffi::{c_char, c_int, c_uint, c_void};
+    use core::ffi::{c_char, c_int, c_void};
 
     use crate::oid::Oid;
-
-    /// `git_treewalk_cb`.
-    pub type TreewalkCb = unsafe extern "C" fn(
-        root: *const c_char,
-        entry: *const c_void,
-        payload: *mut c_void,
-    ) -> c_int;
 
     unsafe extern "C" {
 
@@ -116,32 +109,10 @@ pub mod l_index {
             expected_type: c_int,
         ) -> bool;
 
-        /// `git_tree__write_index`. PENDING(l-commit)
-        pub fn git_tree__write_index(oid: *mut Oid, index: *mut c_void, repo: *mut c_void)
-        -> c_int;
-        /// `git_tree_walk`. PENDING(l-commit)
-        pub fn git_tree_walk(
-            tree: *const c_void,
-            mode: c_int,
-            callback: TreewalkCb,
-            payload: *mut c_void,
-        ) -> c_int;
         /// `git_tree_owner` (`object_api.c`). PENDING(l-obj)
         pub fn git_tree_owner(tree: *const c_void) -> *mut c_void;
         /// `git_tree_id` (`object_api.c`). PENDING(l-obj)
         pub fn git_tree_id(tree: *const c_void) -> *const Oid;
-        /// `git_tree_entrycount`. PENDING(l-commit)
-        pub fn git_tree_entrycount(tree: *const c_void) -> usize;
-        /// `git_tree_entry_byindex`. PENDING(l-commit)
-        pub fn git_tree_entry_byindex(tree: *const c_void, idx: usize) -> *const c_void;
-        /// `git_tree_entry_filemode`. PENDING(l-commit)
-        pub fn git_tree_entry_filemode(entry: *const c_void) -> c_uint;
-        /// `git_tree_entry_filemode_raw`. PENDING(l-commit)
-        pub fn git_tree_entry_filemode_raw(entry: *const c_void) -> c_uint;
-        /// `git_tree_entry_name`. PENDING(l-commit)
-        pub fn git_tree_entry_name(entry: *const c_void) -> *const c_char;
-        /// `git_tree_entry_id`. PENDING(l-commit)
-        pub fn git_tree_entry_id(entry: *const c_void) -> *const Oid;
         /// `git_tree_lookup` (`object_api.c`). PENDING(l-obj)
         pub fn git_tree_lookup(out: *mut *mut c_void, repo: *mut c_void, id: *const Oid) -> c_int;
         /// `git_tree_free` (`object_api.c`). PENDING(l-obj)

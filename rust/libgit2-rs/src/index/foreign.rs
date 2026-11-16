@@ -22,6 +22,8 @@ use crate::strarray::GitStrArray;
 use crate::sys::diff as d;
 use crate::sys::pending::l_index as p;
 use crate::sys::{ignore, path, pathspec, submodule};
+use crate::tree::GitTreeEntry;
+use crate::tree::ffi as t;
 use crate::tree_cache::TreeSource;
 use crate::util::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
 use crate::util::str::GitStr;
@@ -239,7 +241,7 @@ pub fn submodule_add_to_index(sm: &Submodule) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
-// tree.c (PENDING(l-commit)), object_api.c (PENDING(l-obj))
+// tree.c (`crate::tree`), object_api.c (PENDING(l-obj))
 // ---------------------------------------------------------------------------
 
 /// A `git_tree`: borrowed, or looked up (and freed on drop).
@@ -295,22 +297,22 @@ unsafe impl TreeSource for CTrees {
 
     fn len(&self, tree: &CTree) -> usize {
         // SAFETY: as above.
-        unsafe { p::git_tree_entrycount(tree.ptr.as_ptr()) }
+        unsafe { t::git_tree_entrycount(tree.ptr.as_ptr().cast()) }
     }
 
     fn entry<'t>(&self, tree: &'t CTree, i: usize) -> (bool, &'t [u8], Oid) {
         // SAFETY: as above; `i < len` (the caller), so the entry is the
         // tree's, which lives (unwritten) as long as the tree.
-        let e = unsafe { p::git_tree_entry_byindex(tree.ptr.as_ptr(), i) };
+        let e = unsafe { t::git_tree_entry_byindex(tree.ptr.as_ptr().cast(), i) };
         // SAFETY: as above.
         unsafe { entry_view(e) }
     }
 
     fn is_tree(&self, tree: &CTree, i: usize) -> bool {
         // SAFETY: as in `entry`.
-        let e = unsafe { p::git_tree_entry_byindex(tree.ptr.as_ptr(), i) };
+        let e = unsafe { t::git_tree_entry_byindex(tree.ptr.as_ptr().cast(), i) };
         // SAFETY: as above.
-        unsafe { p::git_tree_entry_filemode(e) == super::GIT_FILEMODE_TREE }
+        unsafe { t::git_tree_entry_filemode(e) == super::GIT_FILEMODE_TREE }
     }
 
     fn lookup(&self, id: &Oid) -> Result<CTree> {
@@ -329,15 +331,15 @@ unsafe impl TreeSource for CTrees {
 /// # Safety
 ///
 /// `e` is a live tree entry, unwritten for `'a`.
-unsafe fn entry_view<'a>(e: *const c_void) -> (bool, &'a [u8], Oid) {
+unsafe fn entry_view<'a>(e: *const GitTreeEntry) -> (bool, &'a [u8], Oid) {
     // SAFETY: the caller's contract.
-    let is_tree = unsafe { p::git_tree_entry_filemode(e) } == super::GIT_FILEMODE_TREE;
+    let is_tree = unsafe { t::git_tree_entry_filemode(e) } == super::GIT_FILEMODE_TREE;
     // SAFETY: as above.
-    let name = unsafe { p::git_tree_entry_name(e) };
+    let name = unsafe { t::git_tree_entry_name(e) };
     // SAFETY: as above: the name is a string of the entry.
     let name = unsafe { crate::util::export::cstr_bytes(name) };
     // SAFETY: as above.
-    let id = unsafe { p::git_tree_entry_id(e) };
+    let id = unsafe { t::git_tree_entry_id(e) };
     // SAFETY: as above.
     (is_tree, name, unsafe { *id })
 }
@@ -385,7 +387,7 @@ pub fn tree_walk_post(
     );
     unsafe extern "C" fn cb(
         root: *const c_char,
-        entry: *const c_void,
+        entry: *const GitTreeEntry,
         payload: *mut c_void,
     ) -> c_int {
         crate::util::export::barrier(|| {
@@ -397,14 +399,14 @@ pub fn tree_walk_post(
             // SAFETY: as above.
             let (_, name, id) = unsafe { entry_view(entry) };
             // SAFETY: as above.
-            let attr = unsafe { p::git_tree_entry_filemode_raw(entry) };
+            let attr = unsafe { t::git_tree_entry_filemode_raw(entry) };
             (pl.0)(root, &TreeEntryView { name, attr, id })
         })
     }
     let mut pl = Payload(f, PhantomData);
     // SAFETY: `tree` is live (`TreeRef`); `cb` only uses `pl` during the
     // walk.
-    let r = unsafe { p::git_tree_walk(tree.as_ptr(), 1, cb, (&raw mut pl).cast()) };
+    let r = unsafe { t::git_tree_walk(tree.as_ptr().cast(), 1, Some(cb), (&raw mut pl).cast()) };
     ErrorCode::check(r).map(|_| ())
 }
 
@@ -417,7 +419,7 @@ pub unsafe fn tree_write_index(index: *mut super::GitIndex, repo: Repo) -> Resul
     let mut id = Oid::default();
     // SAFETY: `id` writable; the caller's contract for `index`; `repo`
     // live.
-    let r = unsafe { p::git_tree__write_index(&raw mut id, index.cast(), repo.as_ptr()) };
+    let r = unsafe { t::git_tree__write_index(&raw mut id, index, repo.0.as_ptr()) };
     ErrorCode::check(r).map(|_| id)
 }
 
