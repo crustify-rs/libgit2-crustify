@@ -350,12 +350,15 @@ fn publish_races() {
     assert_eq!(FREED.load(Ordering::SeqCst), n);
 }
 
-/// `set_owned` (a setter) racing `publish` (lazy creation) on one slot:
+/// Publishers racing on one slot, then setters racing each other on it:
 /// every object is released exactly once, and the slot ends with one owned
-/// object. (Using a published object while a setter may release it is
-/// outside C's contract, so the publishers do not use results.)
+/// object. A setter may not run while a publisher's borrow is live
+/// (`CAtomicOwner::replace`'s contract, and C's rule that setters do not
+/// run while the repository is used elsewhere): `publish` lends the slot's
+/// object, so a setter concurrent with it would race that borrow (Miri
+/// reports it), hence the two phases.
 #[test]
-fn set_owned_races_publish() {
+fn set_owned_after_publish_races() {
     use crate::util::thread::StartsWithRefcount;
     use std::sync::atomic::AtomicUsize;
     static FREED: AtomicUsize = AtomicUsize::new(0);
@@ -372,6 +375,9 @@ fn set_owned_races_publish() {
                 let _ = r.publish(slot, test_obj(&FREED));
             });
         }
+    });
+    assert_eq!(FREED.load(Ordering::SeqCst), publishers - 1);
+    std::thread::scope(|s| {
         for _ in 0..setters {
             s.spawn(move || {
                 let mine = test_obj(&FREED);

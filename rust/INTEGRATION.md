@@ -491,3 +491,75 @@ port leak; integration notes I-9.
 Green: `79ef0a8` (Rust and C-fallback clar 436/436, `include/` unchanged,
 cargo test link-c, Miri with strict provenance, clippy both
 configurations, fmt). `97f6111` changes only this log.
+
+## 14. ffibox primitives (CShared, CAtomicOwner, CBits) and `wp/l-obj` review fixes
+
+Master `835742a` merged first (the two `rebase::merge` tests free their
+config). Plan: `/work/wtf/grow/PORT_MIGRATION.md`; contracts: reviews
+`ffibox-grow-r1.md`, `r2.md`.
+
+`f2e4b7a`: CShared and CAtomicOwner.
+- `GitRefcount` (util/thread.rs) follows `CCounted`'s contract: no
+  `Default`; safe `one()` only (`unsafe with_count(n)` otherwise); `inc`,
+  `dec`, `init`, `sole`, `own` are `unsafe fn`s on the count's pointer,
+  each borrowing only the atomic it touches (no `&GitRefcount` across a
+  decrement); `inc` refuses at `i32::MAX / 2` (CAS loop); `dec` answers at
+  `== 0` with no owner; all SeqCst. `refcount_of::<T>` replaces
+  `handles::refcount`. `impl_ccounted!` writes each type's `CCounted`
+  impl (with `offset_of!(T, rc) == 0` checked) and a crate-private
+  `StartsWithRefcount` marker, through which the repository sets owners.
+- odb: `GitOdb::new` returns `CShared` (`try_new` in `GitAlloc`);
+  `odb_free` became `impl Drop for GitOdb`; `odb_decref` removed;
+  `CShareable`; `Odb<'r>` is a `CShared` newtype (derived `Clone`, no
+  hand-written `Send`/`Sync`/`Drop`).
+- config: `CShareable`, `Global`; `Config<'r>` a `CShared` newtype;
+  `git_config_free` is `CShared::release`. The constructors still return
+  `Box<GitConfig>`, adopted by `CShared::from_box` where they go out.
+- refdb: `new_db` is `CShared::try_new` (was calloc + inc); `release` is
+  `free_db`; `CShareable`; `git_refdb_free` is `CShared::release`;
+  `refdb_fs`'s hand-written `Counted` owner is a `CShared`;
+  `handles::Refdb` a `CShared` newtype. `decref`/`RefdbPtr::incref` stay
+  as one-line wrappers over `decrement_count`/`increment_count` (the C
+  fields `git_reference.db` / iterator / reflog `db` are dropped by hand,
+  as the plan's note says).
+- index: `GitIndex::new` starts at `one()`; not `CShareable`; `release`
+  is `index_free` (its `readers != 0` leak kept); `Index<'r>` a `CShared`
+  newtype; `open_ext` adopts the box with `from_box` and drops it on a
+  read failure. `IndexPtr::incref`/`decref` stay as wrappers (ops.rs's
+  C-shaped code uses them).
+- repository: `odb`/`refdb`/`config`/`index` are
+  `CAtomicOwner<CShared<_>>`; `set_owned` (`from_borrowed`, own,
+  `replace`, disown, drop) and `publish` (own, `try_insert`, disown and
+  drop the loser) over them; the weak getters read `get()`. The seven
+  strings are `CAtomicOwner<GitCStr>` (`replace_string`, `init_string`,
+  `set_ident` and the final free through `replace`/`set`). The grafts are
+  `CAtomicOwner<GraftsBox>` (a one-pointer owner freed with
+  `git_grafts_free`); `load_grafts` makes grafts into a local and `set`s
+  the slot (no more slot pointers handed to `git_grafts_new`).
+- The race tests (`publish_races`, `set_owned_races_publish`) are ported
+  to a `CShared<TestObj>`; the commit_list Miri fake sets real empty
+  grafts.
+
+`be0b654`: merge `wp/l-obj` `76b6004` (review fixes). The signature.rs
+conflicts kept the integration's `parse_fields`/`dup_raw`/`empty`, made
+crate-private with `parse` and `as_raw` per LO-14; l-obj's `unsafe`
+`default_for`/`config_snapshot`/`user_from_env` (LO-5, LO-13) over
+`object::deps`. LO-6 applies to commit.rs through `signature::free_raw`
+(commit's `free_signature` forwards to it; the old by-value read in
+commit.rs is gone). LO-12: every item was already resolved in §13.
+
+`0c39770`: bitfields.
+- `git_index` bits: `CAtomicBitfield<u32>` with `CBits` fields; the
+  setters are one `fetch_or`/`fetch_and` (`set_flag`), fixing the lost
+  update of the load-then-store setters; new test
+  `concurrent_bit_setters_lose_nothing`.
+- `git_commit_list_node.bits`: `CBitfield<u16>`, fields declared once in
+  commit_list.rs (`SEEN` … `FLAGS`); revwalk/node.rs re-exports them (its
+  duplicate masks removed).
+- repository bits (`USE_ENV`, `IS_BARE`, `IS_WORKTREE`), process options
+  (`util::process::flags` are `CBits` now; `tests/util_process.rs`
+  adapted), `git_commit_create_options.flags` (`ALLOW_EMPTY_COMMIT`),
+  `git_indexwriter.should_write` (`SHOULD_WRITE`).
+
+C ABI: unchanged (`include/` unchanged; every field is
+`repr(transparent)` over the old type; the layout tests pass).
