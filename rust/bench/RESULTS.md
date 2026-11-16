@@ -36,3 +36,28 @@ Before the hot-path work (first port) these were 1.6-2.4x for str_append /
 str_join and join_n 300 ns. Remaining gap: a few nanoseconds per call in the
 export prologue and the C/Rust split of join_n (C shim collects the varargs,
 Rust joins); not closed. See the WP report.
+
+# WP u4: net, sortedcache, process
+
+`u4_bench.c` (`BENCH=u4_bench ./build.sh && BENCH=u4_bench ./run.sh 7 5`),
+C reference `/work/build-c` vs `/work/builds/u4`; 5 alternating rounds of 7
+iterations, pinned to CPU 2, load average 400-570 (noisy). Times are the
+median and minimum over the rounds' medians, in ms per iteration.
+
+| workload | what | C med | C min | Rust med | Rust min | Rust/C med | Rust/C min |
+|---|---|---:|---:|---:|---:|---:|---:|
+| url_parse | 400k `git_net_url_parse` + dispose, 8 URLs (IPv6, credentials, %-escapes) | 385.6 | 380.4 | 379.3 | 376.9 | 0.98 | 0.99 |
+| url_parse_scp | 400k `parse_standard_or_scp` of SCP paths | 239.8 | 231.0 | 225.0 | 203.1 | 0.94 | 0.88 |
+| url_fmt | 1M `git_net_url_fmt` into a reused `git_str` | 206.2 | 203.6 | 195.9 | 184.5 | 0.95 | 0.91 |
+| url_join_redirect | 200k joinpath + apply_redirect with a service suffix | 358.8 | 166.6 | 327.7 | 154.0 | 0.91 | 0.92 |
+| url_pattern | 1M `matches_pattern_list` (10 no_proxy entries) + `hostname_matches_cert` | 629.6 | 550.4 | 476.7 | 472.0 | 0.76 | 0.86 |
+| sortedcache_load | 5x new + lockandload + 54k upserts + wunlock (sort) + free, refs.git packed-refs | 700.5 | 689.7 | 264.6 | 257.8 | 0.38 | 0.37 |
+| sortedcache_lookup | 1M lookups, 125k lookup_index, 62k misses, a walk of 54k entries | 2127.4 | 2081.8 | 1617.8 | 1601.0 | 0.76 | 0.77 |
+| process_spawn | 200x new + start + wait of `/bin/true` | 1237.2 | 1178.2 | 1023.6 | 963.9 | 0.83 | 0.82 |
+| process_pipe | 20x `cat` with 1 MiB written and read back in 16 KiB pieces | 225.4 | 209.5 | 208.5 | 201.4 | 0.93 | 0.96 |
+
+(url_pattern was rerun alone after the last change; the others are from one
+full run.) The sorted cache's key map is a Rust `HashMap` with an Fx-style
+hash and a murmur finalizer (without the finalizer, keys with long common
+prefixes collided and the cache was 12x slower). `git_net_url_fmt` uses the
+foundation's `git_str` fast path for its pieces.

@@ -25,10 +25,17 @@ struct Item {
 }
 const PATH_OFFSET: usize = core::mem::offset_of!(Item, path);
 
+/// `strcmp` (in Rust, so that Miri runs it).
+unsafe fn strcmp(a: *const c_char, b: *const c_char) -> c_int {
+    // SAFETY: the caller passes NUL-terminated strings.
+    let (a, b) = unsafe { (CStr::from_ptr(a), CStr::from_ptr(b)) };
+    a.cmp(b) as c_int
+}
+
 unsafe extern "C" fn item_cmp(a: *const c_void, b: *const c_void) -> c_int {
     // SAFETY: items of the cache, with their keys at `PATH_OFFSET`.
     unsafe {
-        libc::strcmp(
+        strcmp(
             a.cast::<c_char>().add(PATH_OFFSET),
             b.cast::<c_char>().add(PATH_OFFSET),
         )
@@ -45,7 +52,7 @@ unsafe extern "C" fn item_free(payload: *mut c_void, item: *mut c_void) {
 
 unsafe extern "C" fn name_cmp(a: *const c_void, b: *const c_void) -> c_int {
     // SAFETY: NUL-terminated keys at offset 0.
-    unsafe { libc::strcmp(a.cast(), b.cast()) }
+    unsafe { strcmp(a.cast(), b.cast()) }
 }
 
 unsafe fn key<'a>(item: *mut c_void, offset: usize) -> &'a str {
