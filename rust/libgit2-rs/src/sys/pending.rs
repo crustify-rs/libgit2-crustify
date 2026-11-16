@@ -4,14 +4,6 @@
 
 use core::ffi::c_void;
 
-// PENDING(pool): `src/util/pool.c` (in PORTING.md §1's list; not yet
-// ported). `git_futils_mkdir_relative`'s path cache allocates from the
-// caller's (C-owned) pool.
-unsafe extern "C" {
-    /// `git_pool_malloc`. PENDING(pool)
-    pub fn git_pool_malloc(pool: *mut c_void, items: usize) -> *mut c_void;
-}
-
 // ---------------------------------------------------------------------------
 // WP l-refs: what refs.c, refdb.c, refdb_fs.c and reflog.c call in modules
 // that other L WPs are porting.
@@ -87,11 +79,16 @@ pub const REPO_REFDB_TYPE_OFFSET: usize = 240;
 unsafe extern "C" {
     // repository.c, PENDING(l-repo)
     /// `git_repository_refdb__weakptr`. PENDING(l-repo)
-    pub fn git_repository_refdb__weakptr(out: *mut *mut c_void, repo: *mut git_repository) -> c_int;
+    pub fn git_repository_refdb__weakptr(out: *mut *mut c_void, repo: *mut git_repository)
+    -> c_int;
     /// `git_repository_refdb`. PENDING(l-repo)
     pub fn git_repository_refdb(out: *mut *mut c_void, repo: *mut git_repository) -> c_int;
     /// `git_repository__configmap_lookup`. PENDING(l-repo)
-    pub fn git_repository__configmap_lookup(out: *mut c_int, repo: *mut git_repository, item: c_int) -> c_int;
+    pub fn git_repository__configmap_lookup(
+        out: *mut c_int,
+        repo: *mut git_repository,
+        item: c_int,
+    ) -> c_int;
     /// `git_repository_foreach_worktree`. PENDING(l-repo)
     pub fn git_repository_foreach_worktree(
         repo: *mut git_repository,
@@ -119,7 +116,11 @@ unsafe extern "C" {
     /// `git_repository_open`. PENDING(l-repo)
     pub fn git_repository_open(out: *mut *mut git_repository, path: *const c_char) -> c_int;
     /// `git_repository_init`. PENDING(l-repo)
-    pub fn git_repository_init(out: *mut *mut git_repository, path: *const c_char, is_bare: c_uint) -> c_int;
+    pub fn git_repository_init(
+        out: *mut *mut git_repository,
+        path: *const c_char,
+        is_bare: c_uint,
+    ) -> c_int;
     /// `git_repository_free`. PENDING(l-repo)
     pub fn git_repository_free(repo: *mut git_repository);
     /// `git_repository__fsync_gitdir`, written by `git_libgit2_opts`. PENDING(l-repo)
@@ -129,7 +130,12 @@ unsafe extern "C" {
     /// `git_object__is_valid`. PENDING(l-obj)
     pub fn git_object__is_valid(repo: *mut git_repository, id: *const Oid, kind: c_int) -> bool;
     /// `git_object_lookup`. PENDING(l-obj)
-    pub fn git_object_lookup(out: *mut *mut git_object, repo: *mut git_repository, id: *const Oid, kind: c_int) -> c_int;
+    pub fn git_object_lookup(
+        out: *mut *mut git_object,
+        repo: *mut git_repository,
+        id: *const Oid,
+        kind: c_int,
+    ) -> c_int;
     /// `git_object_type`. PENDING(l-obj)
     pub fn git_object_type(obj: *const git_object) -> c_int;
     /// `git_object_id`. PENDING(l-obj)
@@ -137,7 +143,8 @@ unsafe extern "C" {
     /// `git_object_free`. PENDING(l-obj)
     pub fn git_object_free(obj: *mut git_object);
     /// `git_object_peel`. PENDING(l-obj)
-    pub fn git_object_peel(out: *mut *mut git_object, obj: *const git_object, kind: c_int) -> c_int;
+    pub fn git_object_peel(out: *mut *mut git_object, obj: *const git_object, kind: c_int)
+    -> c_int;
     /// `git_object_dup`. PENDING(l-obj)
     pub fn git_object_dup(out: *mut *mut git_object, obj: *mut git_object) -> c_int;
     /// `git_tag_target_id`. PENDING(l-obj)
@@ -153,7 +160,11 @@ unsafe extern "C" {
         offset: c_int,
     ) -> c_int;
     /// `git_signature_now`. PENDING(l-obj)
-    pub fn git_signature_now(out: *mut *mut git_signature, name: *const c_char, email: *const c_char) -> c_int;
+    pub fn git_signature_now(
+        out: *mut *mut git_signature,
+        name: *const c_char,
+        email: *const c_char,
+    ) -> c_int;
     /// `git_signature_default`. PENDING(l-obj)
     pub fn git_signature_default(out: *mut *mut git_signature, repo: *mut git_repository) -> c_int;
     /// `git_signature_dup`. PENDING(l-obj)
@@ -169,11 +180,19 @@ unsafe extern "C" {
         ender: c_char,
     ) -> c_int;
     /// `git_signature__writebuf`. PENDING(l-obj)
-    pub fn git_signature__writebuf(buf: *mut GitStr, header: *const c_char, sig: *const git_signature);
+    pub fn git_signature__writebuf(
+        buf: *mut GitStr,
+        header: *const c_char,
+        sig: *const git_signature,
+    );
 
     // commit.c, PENDING(l-commit)
     /// `git_commit_lookup` (object_api.c). PENDING(l-obj)
-    pub fn git_commit_lookup(out: *mut *mut git_commit, repo: *mut git_repository, id: *const Oid) -> c_int;
+    pub fn git_commit_lookup(
+        out: *mut *mut git_commit,
+        repo: *mut git_repository,
+        id: *const Oid,
+    ) -> c_int;
     /// `git_commit_parentcount`. PENDING(l-commit)
     pub fn git_commit_parentcount(commit: *const git_commit) -> c_uint;
     /// `git_commit_summary`. PENDING(l-commit)
@@ -293,7 +312,9 @@ impl RepoPtr {
     pub fn configmap(self, item: c_int) -> Result<c_int> {
         let mut v = 0;
         // SAFETY: as above; `v` is writable.
-        ErrorCode::check(unsafe { git_repository__configmap_lookup(&raw mut v, self.as_ptr(), item) })?;
+        ErrorCode::check(unsafe {
+            git_repository__configmap_lookup(&raw mut v, self.as_ptr(), item)
+        })?;
         Ok(v)
     }
 
@@ -354,7 +375,8 @@ impl SigBox {
     pub fn new(name: &CStr, email: &CStr, time: i64, offset: c_int) -> Result<SigBox> {
         let mut out = core::ptr::null_mut();
         // SAFETY: as above.
-        let r = unsafe { git_signature_new(&raw mut out, name.as_ptr(), email.as_ptr(), time, offset) };
+        let r =
+            unsafe { git_signature_new(&raw mut out, name.as_ptr(), email.as_ptr(), time, offset) };
         Self::adopt(r, out)
     }
 

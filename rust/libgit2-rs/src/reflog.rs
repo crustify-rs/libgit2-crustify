@@ -81,7 +81,9 @@ pub unsafe fn name_of<'a>(log: *const GitReflog) -> &'a CStr {
 /// # Safety
 ///
 /// As [`name_of`], the entries unchanged during the borrow.
-pub unsafe fn entries_of<'a>(log: *const GitReflog) -> impl Iterator<Item = *mut GitReflogEntry> + 'a {
+pub unsafe fn entries_of<'a>(
+    log: *const GitReflog,
+) -> impl Iterator<Item = *mut GitReflogEntry> + 'a {
     // SAFETY: per the contract: a live reflog whose vector is valid.
     let v: &'a GitVector = unsafe { &(*log).entries };
     v.iter().map(|e| e.cast::<GitReflogEntry>())
@@ -104,7 +106,9 @@ pub unsafe fn entry_byindex(log: *const GitReflog, idx: usize) -> *mut GitReflog
     if idx >= v.len() {
         return core::ptr::null_mut();
     }
-    v.get(inverse(idx, v.len())).unwrap_or(core::ptr::null_mut()).cast()
+    v.get(inverse(idx, v.len()))
+        .unwrap_or(core::ptr::null_mut())
+        .cast()
 }
 
 /// `serialize_reflog_entry`: `<old> <new> <signature>\t<message>\n`, the
@@ -158,8 +162,9 @@ unsafe impl Sync for Reflog {}
 impl Reflog {
     /// `reflog_alloc(name, oid_type)`: an empty reflog.
     pub fn alloc(name: &CStr, oid_type: c_int) -> Result<Reflog> {
-        let log = NonNull::new(alloc::calloc(1, core::mem::size_of::<GitReflog>()).cast::<GitReflog>())
-            .ok_or(ErrorCode::GENERIC)?;
+        let log =
+            NonNull::new(alloc::calloc(1, core::mem::size_of::<GitReflog>()).cast::<GitReflog>())
+                .ok_or(ErrorCode::GENERIC)?;
         let n = alloc::strdup(name);
         if n.is_null() {
             // SAFETY: our block.
@@ -244,8 +249,10 @@ struct EntryBox(NonNull<GitReflogEntry>);
 
 impl EntryBox {
     fn new() -> Result<EntryBox> {
-        let e = NonNull::new(alloc::calloc(1, core::mem::size_of::<GitReflogEntry>()).cast::<GitReflogEntry>())
-            .ok_or(ErrorCode::GENERIC)?;
+        let e = NonNull::new(
+            alloc::calloc(1, core::mem::size_of::<GitReflogEntry>()).cast::<GitReflogEntry>(),
+        )
+        .ok_or(ErrorCode::GENERIC)?;
         Ok(EntryBox(e))
     }
 
@@ -278,12 +285,16 @@ fn parse_line(parser: &mut GitParseCtx<'_>, t: Option<OidType>) -> Result<Option
     }
     entry.get().committer = sig;
     let Some(t) = t else { return Ok(None) };
-    let Ok(old) = parser.advance_oid(t) else { return Ok(None) };
+    let Ok(old) = parser.advance_oid(t) else {
+        return Ok(None);
+    };
     entry.get().oid_old = old;
     if parser.advance_expected(b" ").is_err() {
         return Ok(None);
     }
-    let Ok(cur) = parser.advance_oid(t) else { return Ok(None) };
+    let Ok(cur) = parser.advance_oid(t) else {
+        return Ok(None);
+    };
     entry.get().oid_cur = cur;
     let line = parser.line();
     let mut c = 0u8;
@@ -299,7 +310,13 @@ fn parse_line(parser: &mut GitParseCtx<'_>, t: Option<OidType>) -> Result<Option
     // SAFETY: `start..start + sig_len` is within the parsed buffer; the
     // signature is ours, zeroed; the C parser reads only that range.
     let r = unsafe {
-        p::git_signature__parse(sig, &raw mut start, line.as_ptr().add(sig_len).cast(), core::ptr::null(), 0)
+        p::git_signature__parse(
+            sig,
+            &raw mut start,
+            line.as_ptr().add(sig_len).cast(),
+            core::ptr::null(),
+            0,
+        )
     };
     if r < 0 {
         return Ok(None);
@@ -358,7 +375,12 @@ pub unsafe fn free_raw(log: *mut GitReflog) {
 ///
 /// `log` is a live reflog used by nobody else during the call;
 /// `committer` a valid signature.
-pub unsafe fn append(log: *mut GitReflog, new_oid: &Oid, committer: *const git_signature, msg: Option<&[u8]>) -> Result<()> {
+pub unsafe fn append(
+    log: *mut GitReflog,
+    new_oid: &Oid,
+    committer: *const git_signature,
+    msg: Option<&[u8]>,
+) -> Result<()> {
     let mut entry = EntryBox::new()?;
     // SAFETY: per the contract.
     let sig = unsafe { p::SigBox::dup(committer) }?;
@@ -402,7 +424,11 @@ pub unsafe fn append(log: *mut GitReflog, new_oid: &Oid, committer: *const git_s
 /// # Safety
 ///
 /// As [`append`].
-pub unsafe fn drop_entry(log: *mut GitReflog, idx: usize, rewrite_previous_entry: bool) -> Result<()> {
+pub unsafe fn drop_entry(
+    log: *mut GitReflog,
+    idx: usize,
+    rewrite_previous_entry: bool,
+) -> Result<()> {
     // SAFETY: per the contract.
     let entrycount = unsafe { (*log).entries.len() };
     // SAFETY: per the contract.
@@ -570,7 +596,9 @@ pub mod ffi {
             };
             let b = db.backend();
             // SAFETY: the backend's slot, with C's arguments.
-            unsafe { ((*b).reflog_rename.expect("refdb backend slot is NULL"))(b, old_name, new_name) }
+            unsafe {
+                ((*b).reflog_rename.expect("refdb backend slot is NULL"))(b, old_name, new_name)
+            }
         })
     }
 
@@ -580,7 +608,10 @@ pub mod ffi {
     ///
     /// `repo` live; `name` a string.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reflog_delete(repo: *mut git_repository, name: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git_reflog_delete(
+        repo: *mut git_repository,
+        name: *const c_char,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: per the contract.
             let repo = unsafe { RepoPtr::new(NonNull::new_unchecked(repo)) };
@@ -614,7 +645,10 @@ pub mod ffi {
     ///
     /// See the module.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reflog_entry_byindex(reflog: *const GitReflog, idx: usize) -> *const GitReflogEntry {
+    pub unsafe extern "C" fn git_reflog_entry_byindex(
+        reflog: *const GitReflog,
+        idx: usize,
+    ) -> *const GitReflogEntry {
         barrier(|| {
             crate::git_assert_arg!(!reflog.is_null(), "reflog", core::ptr::null());
             // SAFETY: a live reflog.
@@ -656,7 +690,9 @@ pub mod ffi {
     ///
     /// As [`git_reflog_entry_id_old`].
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reflog_entry_committer(entry: *const GitReflogEntry) -> *const git_signature {
+    pub unsafe extern "C" fn git_reflog_entry_committer(
+        entry: *const GitReflogEntry,
+    ) -> *const git_signature {
         barrier(|| {
             crate::git_assert_arg!(!entry.is_null(), "entry", core::ptr::null());
             // SAFETY: a live entry.
@@ -670,7 +706,9 @@ pub mod ffi {
     ///
     /// As [`git_reflog_entry_id_old`].
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reflog_entry_message(entry: *const GitReflogEntry) -> *const c_char {
+    pub unsafe extern "C" fn git_reflog_entry_message(
+        entry: *const GitReflogEntry,
+    ) -> *const c_char {
         barrier(|| {
             crate::git_assert_arg!(!entry.is_null(), "entry", core::ptr::null());
             // SAFETY: a live entry.
@@ -684,7 +722,11 @@ pub mod ffi {
     ///
     /// See the module (C dereferences a NULL reflog after its assertion).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reflog_drop(reflog: *mut GitReflog, idx: usize, rewrite_previous_entry: c_int) -> c_int {
+    pub unsafe extern "C" fn git_reflog_drop(
+        reflog: *mut GitReflog,
+        idx: usize,
+        rewrite_previous_entry: c_int,
+    ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!reflog.is_null(), "reflog", -1);
             // SAFETY: a live reflog, exclusively used.

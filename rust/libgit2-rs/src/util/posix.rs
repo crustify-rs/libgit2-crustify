@@ -94,10 +94,14 @@ pub fn creat(path: &CStr, mode: mode_t) -> SysResult<c_int> {
 }
 
 /// `p_close`.
+///
+/// # Safety
+///
+/// `fd` is a descriptor the caller owns and gives up: closing one that
+/// something else owns lets the number be reused under it (I/O safety).
 #[inline]
-pub fn close(fd: c_int) -> SysResult<()> {
-    // SAFETY: closing any descriptor number is defined (EBADF at worst).
-    // The descriptor belongs to the caller, which gives it up.
+pub unsafe fn close(fd: c_int) -> SysResult<()> {
+    // SAFETY: the caller gives up its descriptor.
     check(unsafe { libc::close(fd) })
 }
 
@@ -109,10 +113,8 @@ pub fn close(fd: c_int) -> SysResult<()> {
 ///
 /// `buf` is valid for writes of `len` bytes.
 pub unsafe fn read_raw(fd: c_int, buf: *mut u8, len: usize) -> isize {
-    if isize::try_from(len).is_err() {
-        errors::set_errno(libc::EINVAL);
-        return -1;
-    }
+    // C checks `git__is_ssizet(cnt)`, which is always true on LP64: the
+    // kernel judges the length.
     let mut done = 0usize;
     while done < len {
         // SAFETY: `buf + done` has `len - done` writable bytes (caller).

@@ -54,7 +54,8 @@ pub struct GitIndexEntryRaw {
 pub const INDEX_ENTRY_PATH_OFFSET: usize = 80;
 
 /// The `advance` callback of `git_iterator_callbacks`.
-pub type AdvanceFn = unsafe extern "C" fn(*mut *const GitIndexEntryRaw, *mut GitIteratorRaw) -> c_int;
+pub type AdvanceFn =
+    unsafe extern "C" fn(*mut *const GitIndexEntryRaw, *mut GitIteratorRaw) -> c_int;
 
 /// `git_iterator_callbacks`, mirrored.
 #[repr(C)]

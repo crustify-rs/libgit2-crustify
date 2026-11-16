@@ -477,7 +477,7 @@ pub unsafe extern "C" fn git_fs_path_set_error(
         let p = unsafe { cstr_bytes(path) };
         // SAFETY: a NUL-terminated string.
         let a = unsafe { cstr_bytes(action) };
-        set_error(errno_value, p, &String::from_utf8_lossy(a)).raw()
+        set_error_bytes(errno_value, p, a).raw()
     })
 }
 

@@ -36,29 +36,35 @@ use ffibox::vtable::CTable;
 use crate::git_error_set;
 use crate::oid::{GIT_OID_MAX_SIZE, Oid, OidType};
 use crate::refdb::{
-    self, GIT_REFDB_BACKEND_INIT_FORCE_HEAD, GIT_REFDB_BACKEND_INIT_IS_WORKTREE, GIT_REFDB_BACKEND_VERSION,
-    RefIteratorTable, RefdbBackendTable, RefdbPtr, git_refdb_backend, git_reference_iterator,
-};
-use crate::refs::{
-    self, GIT_HEAD_REF, GIT_PACKEDREFS_FILE, GIT_PACKEDREFS_FILE_MODE, GIT_PACKEDREFS_HEADER, GIT_REFERENCE_DIRECT,
-    GIT_REFERENCE_SYMBOLIC, GIT_REFS_DIR, GIT_REFS_FILE_MODE, GIT_REFS_HEADS_DIR, GIT_REFS_TAGS_DIR, GIT_SYMREF,
-    GitReference, RefBox, RefView,
+    self, GIT_REFDB_BACKEND_INIT_FORCE_HEAD, GIT_REFDB_BACKEND_INIT_IS_WORKTREE,
+    GIT_REFDB_BACKEND_VERSION, RefIteratorTable, RefdbBackendTable, RefdbPtr, git_refdb_backend,
+    git_reference_iterator,
 };
 use crate::reflog::{self, GitReflog};
+use crate::refs::{
+    self, GIT_HEAD_REF, GIT_PACKEDREFS_FILE, GIT_PACKEDREFS_FILE_MODE, GIT_PACKEDREFS_HEADER,
+    GIT_REFERENCE_DIRECT, GIT_REFERENCE_SYMBOLIC, GIT_REFS_DIR, GIT_REFS_FILE_MODE,
+    GIT_REFS_HEADS_DIR, GIT_REFS_TAGS_DIR, GIT_SYMREF, GitReference, RefBox, RefView,
+};
 use crate::sys::iterator::{
-    FsIterator, GIT_ITERATOR_DESCEND_SYMLINKS, GIT_ITERATOR_IGNORE_CASE, GIT_ITERATOR_PRECOMPOSE_UNICODE,
+    FsIterator, GIT_ITERATOR_DESCEND_SYMLINKS, GIT_ITERATOR_IGNORE_CASE,
+    GIT_ITERATOR_PRECOMPOSE_UNICODE,
 };
 use crate::sys::pending::{self as p, RepoPtr, configmap, git_repository, git_signature};
 use crate::util::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
 use crate::util::filebuf::{GIT_FILEBUF_CREATE_LEADING_DIRS, GIT_FILEBUF_FSYNC, GitFilebuf};
-use crate::util::fs_path::{self, GIT_FS_PATH_DIR_IGNORE_CASE, GIT_FS_PATH_DIR_PRECOMPOSE_UNICODE, str_cpath};
-use crate::util::futils::{self, GIT_RMDIR_EMPTY_PARENTS, GIT_RMDIR_SKIP_NONEMPTY, GIT_RMDIR_SKIP_ROOT};
+use crate::util::fs_path::{
+    self, GIT_FS_PATH_DIR_IGNORE_CASE, GIT_FS_PATH_DIR_PRECOMPOSE_UNICODE, str_cpath,
+};
+use crate::util::futils::{
+    self, GIT_RMDIR_EMPTY_PARENTS, GIT_RMDIR_SKIP_NONEMPTY, GIT_RMDIR_SKIP_ROOT,
+};
 use crate::util::pool::GitPool;
 use crate::util::posix::GitMap;
 use crate::util::sortedcache::SortedCache;
 use crate::util::str::GitStr;
 use crate::util::util::{memmem, memrchr, prefixcmp, prefixncmp, strcmp, suffixcmp};
-use crate::util::wildmatch::wildmatch;
+use crate::util::wildmatch::{WildmatchFlags, wildmatch};
 
 /// `PACKREF_HAS_PEEL`.
 pub const PACKREF_HAS_PEEL: u8 = 1;
@@ -212,7 +218,8 @@ pub fn parse_packed(
         }
         let cannot_peel = peel.is_none()
             && (traits.peeling_mode == PEELING_FULL
-                || (traits.peeling_mode == PEELING_STANDARD && prefixcmp(name, GIT_REFS_TAGS_DIR) == 0));
+                || (traits.peeling_mode == PEELING_STANDARD
+                    && prefixcmp(name, GIT_REFS_TAGS_DIR) == 0));
         upsert(name, &mut |item: &mut PackRef| {
             item.oid = oid;
             if let Some(p) = peel {
@@ -297,7 +304,11 @@ pub enum Searched {
 
 /// The binary search of `packed_lookup` over a sorted `packed-refs`
 /// mapping. `Err(())` is "corrupted packed references file".
-pub fn packed_search(data: &[u8], ref_name: &[u8], oid_type: OidType) -> core::result::Result<Searched, ()> {
+pub fn packed_search(
+    data: &[u8],
+    ref_name: &[u8],
+    oid_type: OidType,
+) -> core::result::Result<Searched, ()> {
     let hexsize = oid_type.hexsize();
     let data_end = data.len();
     let mut left = 0usize;
@@ -344,7 +355,11 @@ pub fn packed_search(data: &[u8], ref_name: &[u8], oid_type: OidType) -> core::r
 pub fn ref_is_available(old_ref: Option<&[u8]>, new_ref: &[u8], this_ref: &[u8]) -> bool {
     if old_ref.is_none_or(|o| strcmp(o, this_ref) != 0) {
         let cmplen = this_ref.len().min(new_ref.len());
-        let lead = if this_ref.len() < new_ref.len() { new_ref } else { this_ref };
+        let lead = if this_ref.len() < new_ref.len() {
+            new_ref
+        } else {
+            this_ref
+        };
         if new_ref[..cmplen] == this_ref[..cmplen] && at(lead, cmplen) == b'/' {
             return false;
         }
@@ -437,7 +452,9 @@ pub struct LockFile(Box<GitFilebuf>);
 impl LockFile {
     fn open(path: &[u8], flags: c_int, mode: u32) -> Result<LockFile> {
         let mut f = Box::new(GitFilebuf::new());
-        f.open(path, flags, mode)?;
+        // SAFETY: the box keeps the filebuf in place until it is cleaned
+        // up (`Drop`, or the commit); only the box pointer ever moves.
+        unsafe { f.open(path, flags, mode) }?;
         Ok(LockFile(f))
     }
 
@@ -516,9 +533,8 @@ fn cbytes(b: &[u8]) -> CString {
 
 impl FsInner {
     fn oid_kind(&self) -> Result<OidType> {
-        OidType::from_raw(self.oid_type as u32).ok_or_else(|| {
-            git_error_set!(ErrorClass::INVALID, "unknown object id type")
-        })
+        OidType::from_raw(self.oid_type as u32)
+            .ok_or_else(|| git_error_set!(ErrorClass::INVALID, "unknown object id type"))
     }
 
     fn gitpath(&self) -> &[u8] {
@@ -605,7 +621,9 @@ impl FsInner {
             oid_type,
             |t| self.set_traits(t),
             |name, f| {
-                let item = guard.upsert_with(name, PackRef::default).map_err(|e| e.code())?;
+                let item = guard
+                    .upsert_with(name, PackRef::default)
+                    .map_err(|e| e.code())?;
                 f(item);
                 Ok(())
             },
@@ -649,7 +667,8 @@ impl FsInner {
         let stat = match crate::util::posix::fstat(fd) {
             Ok(s) => s,
             Err(_) => {
-                let _ = crate::util::posix::close(fd);
+                // SAFETY: our descriptor, closed once.
+                let _ = unsafe { crate::util::posix::close(fd) };
                 return Err(git_error_set!(
                     ErrorClass::OS,
                     "unable to stat packed-refs '{}'",
@@ -658,12 +677,14 @@ impl FsInner {
             }
         };
         if stat.st_size == 0 {
-            let _ = crate::util::posix::close(fd);
+            // SAFETY: our descriptor, closed once.
+            let _ = unsafe { crate::util::posix::close(fd) };
             return Ok(None);
         }
         st.stamp = futils::Filestamp::from_stat(&stat);
         let map = futils::mmap_ro(fd, 0, stat.st_size as usize);
-        let _ = crate::util::posix::close(fd);
+        // SAFETY: our descriptor, closed once.
+        let _ = unsafe { crate::util::posix::close(fd) };
         let map = Arc::new(Mapping(map?));
         let (t, _) = packed_header(map.bytes());
         self.set_traits(t);
@@ -691,7 +712,10 @@ impl FsInner {
         match packed_search(data, name, self.oid_kind()?) {
             Ok(Searched::Found(oid, peel)) => RefBox::new_direct(name, &oid, peel.as_ref()),
             Ok(Searched::NotFound) => Err(ref_error_notfound(name)),
-            Err(()) => Err(git_error_set!(ErrorClass::REFERENCE, "corrupted packed references file")),
+            Err(()) => Err(git_error_set!(
+                ErrorClass::REFERENCE,
+                "corrupted packed references file"
+            )),
         }
     }
 
@@ -724,10 +748,19 @@ impl FsInner {
         // SAFETY: the backend's repository is live while the backend is
         // (C's contract with `git_refdb_backend_fs`).
         let valid = unsafe {
-            crate::sys::path::is_valid(self.repo.as_ptr(), name, 0, fs_path::GIT_FS_PATH_REJECT_FILESYSTEM_DEFAULTS)
+            crate::sys::path::is_valid(
+                self.repo.as_ptr(),
+                name,
+                0,
+                fs_path::GIT_FS_PATH_REJECT_FILESYSTEM_DEFAULTS,
+            )
         };
         if !valid {
-            let _ = git_error_set!(ErrorClass::INVALID, "invalid reference name '{}'", Bytes(name));
+            let _ = git_error_set!(
+                ErrorClass::INVALID,
+                "invalid reference name '{}'",
+                Bytes(name)
+            );
             return Err(ErrorCode::INVALID_SPEC);
         }
         let basedir = if refs::is_per_worktree_ref(name) {
@@ -756,7 +789,12 @@ impl FsInner {
     }
 
     /// `reference_path_available`.
-    fn reference_path_available(&self, new_ref: &[u8], old_ref: Option<&[u8]>, force: bool) -> Result<()> {
+    fn reference_path_available(
+        &self,
+        new_ref: &[u8],
+        old_ref: Option<&[u8]>,
+        force: bool,
+    ) -> Result<()> {
         self.packed_reload()?;
         if !force && self.exists(new_ref)? {
             let _ = git_error_set!(
@@ -782,7 +820,12 @@ impl FsInner {
     }
 
     /// `cmp_old_ref`: 0 if `name` has the old value (or none is given).
-    fn cmp_old_ref(&self, name: &[u8], old_id: Option<&Oid>, old_target: Option<&[u8]>) -> Result<c_int> {
+    fn cmp_old_ref(
+        &self,
+        name: &[u8],
+        old_id: Option<&Oid>,
+        old_target: Option<&[u8]>,
+    ) -> Result<c_int> {
         if old_id.is_none() && old_target.is_none() {
             return Ok(0);
         }
@@ -814,7 +857,12 @@ impl FsInner {
 
     /// `maybe_append_head`: append to HEAD's reflog when HEAD points to
     /// `r`.
-    fn maybe_append_head(&self, r: RefView<'_>, who: *const git_signature, message: Option<&CStr>) -> Result<()> {
+    fn maybe_append_head(
+        &self,
+        r: RefView<'_>,
+        who: *const git_signature,
+        message: Option<&CStr>,
+    ) -> Result<()> {
         let db = self.repo.refdb()?;
         let db = NonNull::new(db.cast::<refdb::GitRefdb>()).ok_or(ErrorCode::GENERIC)?;
         struct Counted(NonNull<refdb::GitRefdb>);
@@ -865,7 +913,8 @@ impl FsInner {
             Some(n) => *n,
             None if !is_symbolic => *r.oid_field(),
             None => {
-                let id = match refs::name_to_id(self.repo, r.symbolic_target().unwrap_or_default()) {
+                let id = match refs::name_to_id(self.repo, r.symbolic_target().unwrap_or_default())
+                {
                     Ok(id) => id,
                     // Detaching HEAD does not create an entry.
                     Err(ErrorCode::NOT_FOUND) => return Ok(()),
@@ -987,7 +1036,12 @@ impl FsInner {
         }
         // SAFETY: no repository (`NULL`), as C passes.
         if !unsafe {
-            crate::sys::path::is_valid(core::ptr::null_mut(), base.as_bytes(), 0, fs_path::GIT_FS_PATH_REJECT_LONG_PATHS)
+            crate::sys::path::is_valid(
+                core::ptr::null_mut(),
+                base.as_bytes(),
+                0,
+                fs_path::GIT_FS_PATH_REJECT_LONG_PATHS,
+            )
         } {
             return Err(git_error_set!(
                 ErrorClass::FILESYSTEM,
@@ -996,7 +1050,11 @@ impl FsInner {
             ));
         }
         let rest = ref_name.get(commonlen..).unwrap_or_default();
-        match futils::rmdir_r(rest, Some(base.as_bytes()), GIT_RMDIR_EMPTY_PARENTS | GIT_RMDIR_SKIP_ROOT) {
+        match futils::rmdir_r(
+            rest,
+            Some(base.as_bytes()),
+            GIT_RMDIR_EMPTY_PARENTS | GIT_RMDIR_SKIP_ROOT,
+        ) {
             Err(ErrorCode::NOT_FOUND) => Ok(()),
             r => r,
         }
@@ -1035,14 +1093,25 @@ impl FsInner {
     }
 
     /// `refdb_fs_backend__delete_tail`.
-    fn delete_tail(&self, file: LockFile, name: &[u8], old_id: Option<&Oid>, old_target: Option<&[u8]>) -> Result<()> {
+    fn delete_tail(
+        &self,
+        file: LockFile,
+        name: &[u8],
+        old_id: Option<&Oid>,
+        old_target: Option<&[u8]>,
+    ) -> Result<()> {
         let r = self.delete_tail_inner(name, old_id, old_target);
         drop(file);
         r?;
         self.prune_refs(name, Some(b""))
     }
 
-    fn delete_tail_inner(&self, name: &[u8], old_id: Option<&Oid>, old_target: Option<&[u8]>) -> Result<()> {
+    fn delete_tail_inner(
+        &self,
+        name: &[u8],
+        old_id: Option<&Oid>,
+        old_target: Option<&[u8]>,
+    ) -> Result<()> {
         let cmp = self.cmp_old_ref(name, old_id, old_target)?;
         if cmp != 0 {
             let _ = git_error_set!(ErrorClass::REFERENCE, "old reference value does not match");
@@ -1142,7 +1211,9 @@ impl FsInner {
             if prefixcmp(content.as_bytes(), GIT_SYMREF) == 0 {
                 continue;
             }
-            let Ok(current) = refs::loose_parse_oid(original.to_bytes(), content.as_bytes(), self.oid_type) else {
+            let Ok(current) =
+                refs::loose_parse_oid(original.to_bytes(), content.as_bytes(), self.oid_type)
+            else {
                 continue;
             };
             if current != r.oid {
@@ -1162,7 +1233,11 @@ impl FsInner {
             packed_map_free(&mut st);
         }
         let mut g = self.refcache.write();
-        let flags = if self.should_fsync() { GIT_FILEBUF_FSYNC } else { 0 };
+        let flags = if self.should_fsync() {
+            GIT_FILEBUF_FSYNC
+        } else {
+            0
+        };
         let mut file = LockFile::open(self.refcache.path(), flags, GIT_PACKEDREFS_FILE_MODE)?;
         let mut header = GIT_PACKEDREFS_HEADER.to_vec();
         header.push(b'\n');
@@ -1191,12 +1266,10 @@ impl FsInner {
     /// packed references.
     fn loose_lookup_to_packfile(&self, name: &[u8]) -> Result<()> {
         let mut file = GitStr::new();
-        let read = file
-            .joinpath(self.gitpath(), name)
-            .and_then(|()| {
-                let p = cpath(&file);
-                futils::readbuffer(&mut file, &p)
-            });
+        let read = file.joinpath(self.gitpath(), name).and_then(|()| {
+            let p = cpath(&file);
+            futils::readbuffer(&mut file, &p)
+        });
         if read.is_err() {
             errors::clear();
             return Ok(());
@@ -1206,7 +1279,9 @@ impl FsInner {
         }
         let oid = refs::loose_parse_oid(name, file.as_bytes(), self.oid_type)?;
         let mut g = self.refcache.write();
-        let item = g.upsert_with(name, PackRef::default).map_err(|e| e.code())?;
+        let item = g
+            .upsert_with(name, PackRef::default)
+            .map_err(|e| e.code())?;
         item.oid = oid;
         item.flags = PACKREF_WAS_LOOSE;
         Ok(())
@@ -1325,10 +1400,19 @@ impl FsInner {
     fn lock_reflog(&self, refname: &[u8]) -> Result<LockFile> {
         // SAFETY: as in `loose_lock`.
         let valid = unsafe {
-            crate::sys::path::is_valid(self.repo.as_ptr(), refname, 0, fs_path::GIT_FS_PATH_REJECT_FILESYSTEM_DEFAULTS)
+            crate::sys::path::is_valid(
+                self.repo.as_ptr(),
+                refname,
+                0,
+                fs_path::GIT_FS_PATH_REJECT_FILESYSTEM_DEFAULTS,
+            )
         };
         if !valid {
-            let _ = git_error_set!(ErrorClass::INVALID, "invalid reference name '{}'", Bytes(refname));
+            let _ = git_error_set!(
+                ErrorClass::INVALID,
+                "invalid reference name '{}'",
+                Bytes(refname)
+            );
             return Err(ErrorCode::INVALID_SPEC);
         }
         let path = self.reflog_path(refname)?;
@@ -1361,7 +1445,8 @@ impl FsInner {
             let e = unsafe { &*e };
             // SAFETY: an entry's message is NULL or a string.
             let msg = unsafe { crate::util::export::cstr(e.msg) }.map(CStr::to_bytes);
-            if reflog::serialize_entry(&mut buf, &e.oid_old, &e.oid_cur, e.committer, msg).is_err() {
+            if reflog::serialize_entry(&mut buf, &e.oid_old, &e.oid_cur, e.committer, msg).is_err()
+            {
                 // C jumps to its cleanup with `error` still 0.
                 return Ok(());
             }
@@ -1373,9 +1458,16 @@ impl FsInner {
     /// `refdb_reflog_fs__rename`.
     fn reflog_rename(&self, old_name: &[u8], new_name: &[u8]) -> Result<()> {
         let mut normalized = GitStr::new();
-        refs::normalize_name(Some(&mut normalized), new_name, refs::GIT_REFERENCE_FORMAT_ALLOW_ONELEVEL)?;
+        refs::normalize_name(
+            Some(&mut normalized),
+            new_name,
+            refs::GIT_REFERENCE_FORMAT_ALLOW_ONELEVEL,
+        )?;
         let mut temp = GitStr::new();
-        temp.joinpath(self.repo.gitdir().as_deref().unwrap_or_default(), GIT_REFLOG_DIR)?;
+        temp.joinpath(
+            self.repo.gitdir().as_deref().unwrap_or_default(),
+            GIT_REFLOG_DIR,
+        )?;
         let mut old_path = GitStr::new();
         old_path.joinpath(temp.as_bytes(), old_name)?;
         let mut new_path = GitStr::new();
@@ -1385,10 +1477,16 @@ impl FsInner {
         }
         temp.joinpath_self(b"temp_reflog")?;
         let base = temp.as_bytes().to_vec();
-        let fd = futils::mktmp(&mut temp, &base, GIT_REFLOG_FILE_MODE).map_err(|_| ErrorCode::GENERIC)?;
-        let _ = crate::util::posix::close(fd);
+        let fd = futils::mktmp(&mut temp, &base, GIT_REFLOG_FILE_MODE)
+            .map_err(|_| ErrorCode::GENERIC)?;
+        // SAFETY: our descriptor, closed once.
+        let _ = unsafe { crate::util::posix::close(fd) };
         let rename_error = || {
-            git_error_set!(ErrorClass::OS, "failed to rename reflog for {}", Bytes(new_name))
+            git_error_set!(
+                ErrorClass::OS,
+                "failed to rename reflog for {}",
+                Bytes(new_name)
+            )
         };
         if crate::util::posix::rename(&cpath(&old_path), &cpath(&temp)).is_err() {
             return Err(rename_error());
@@ -1451,7 +1549,11 @@ impl FsInner {
             return Ok(());
         };
         let glob = it.glob.clone();
-        let prefix = glob.as_deref().and_then(|g| glob_prefix(g.to_bytes())).unwrap_or(GIT_REFS_DIR).to_vec();
+        let prefix = glob
+            .as_deref()
+            .and_then(|g| glob_prefix(g.to_bytes()))
+            .unwrap_or(GIT_REFS_DIR)
+            .to_vec();
         self.iter_load_paths(it, &prefix, common, false)?;
         if self.repo.is_worktree() {
             self.iter_load_paths(it, &prefix, self.gitpath(), true)?;
@@ -1460,7 +1562,13 @@ impl FsInner {
     }
 
     /// `iter_load_paths`.
-    fn iter_load_paths(&self, it: &mut FsIter, prefix: &[u8], root: &[u8], worktree: bool) -> Result<()> {
+    fn iter_load_paths(
+        &self,
+        it: &mut FsIter,
+        prefix: &[u8],
+        root: &[u8],
+        worktree: bool,
+    ) -> Result<()> {
         let mut path = root.to_vec();
         path.extend_from_slice(prefix);
         let mut fsit = match FsIterator::new(&cbytes(&path), self.iterator_flags(), self.oid_type) {
@@ -1485,7 +1593,7 @@ impl FsInner {
                 continue;
             }
             if let Some(g) = &it.glob {
-                if wildmatch(g.to_bytes(), &name, 0) != 0 {
+                if !wildmatch(g.to_bytes(), &name, WildmatchFlags::default()).is_match() {
                     continue;
                 }
             }
@@ -1506,7 +1614,11 @@ fn packed_map_free(st: &mut PackedMap) {
 
 /// `ref_error_notfound`.
 fn ref_error_notfound(name: &[u8]) -> ErrorCode {
-    let _ = git_error_set!(ErrorClass::REFERENCE, "reference '{}' not found", Bytes(name));
+    let _ = git_error_set!(
+        ErrorClass::REFERENCE,
+        "reference '{}' not found",
+        Bytes(name)
+    );
     ErrorCode::NOT_FOUND
 }
 
@@ -1552,9 +1664,14 @@ fn packed_write_ref(file: &mut LockFile, name: &[u8], r: &PackRef) -> Result<()>
 /// `create_new_reflog_file`.
 fn create_new_reflog_file(path: &GitStr) -> Result<()> {
     futils::mkpath2file(path.as_bytes(), GIT_REFLOG_DIR_MODE)?;
-    let fd = crate::util::posix::open(&cpath(path), libc::O_WRONLY | libc::O_CREAT, GIT_REFLOG_FILE_MODE)
-        .map_err(|_| ErrorCode::GENERIC)?;
-    crate::util::posix::close(fd).map_err(|_| ErrorCode::GENERIC)
+    let fd = crate::util::posix::open(
+        &cpath(path),
+        libc::O_WRONLY | libc::O_CREAT,
+        GIT_REFLOG_FILE_MODE,
+    )
+    .map_err(|_| ErrorCode::GENERIC)?;
+    // SAFETY: our descriptor, closed once.
+    unsafe { crate::util::posix::close(fd) }.map_err(|_| ErrorCode::GENERIC)
 }
 
 /// `setup_namespace(repo, in)`: `in`, or the root of the namespace under
@@ -1567,7 +1684,14 @@ fn setup_namespace(repo: RepoPtr, dir: &[u8]) -> Option<Vec<u8>> {
     };
     path.puts(&namespace_path(&ns)).ok()?;
     let mut opts = futils::MkdirOpts::default();
-    futils::mkdir_relative(path.as_bytes(), Some(dir), 0o777, futils::GIT_MKDIR_PATH, &mut opts).ok()?;
+    futils::mkdir_relative(
+        path.as_bytes(),
+        Some(dir),
+        0o777,
+        futils::GIT_MKDIR_PATH,
+        &mut opts,
+    )
+    .ok()?;
     path.rtruncate_at_char(b'/');
     path.putc(b'/').ok()?;
     Some(path.as_bytes().to_vec())
@@ -1585,7 +1709,10 @@ pub fn backend_fs(repo: RepoPtr) -> Result<*mut git_refdb_backend> {
         None => None,
     };
     let mut packed = GitStr::new();
-    packed.joinpath(commonpath.as_deref().unwrap_or_default(), GIT_PACKEDREFS_FILE)?;
+    packed.joinpath(
+        commonpath.as_deref().unwrap_or_default(),
+        GIT_PACKEDREFS_FILE,
+    )?;
     let refcache = SortedCache::new(Some(packed.as_bytes())).map_err(|e| e.code())?;
     let inner = FsInner {
         repo,
@@ -1643,7 +1770,9 @@ impl FsIter {
     }
 
     fn glob_matches(&self, name: &[u8]) -> bool {
-        self.glob.as_ref().is_none_or(|g| wildmatch(g.to_bytes(), name, 0) == 0)
+        self.glob
+            .as_ref()
+            .is_none_or(|g| wildmatch(g.to_bytes(), name, WildmatchFlags::default()).is_match())
     }
 
     /// `refdb_fs_backend__iterator_next`.
@@ -1698,7 +1827,10 @@ impl FsIter {
 // ---------------------------------------------------------------------------
 
 fn busy() -> c_int {
-    let _ = git_error_set!(ErrorClass::REFERENCE, "the reference database is being freed");
+    let _ = git_error_set!(
+        ErrorClass::REFERENCE,
+        "the reference database is being freed"
+    );
     -1
 }
 
@@ -2053,7 +2185,10 @@ pub mod ffi {
     /// `out` is writable; `repo` a live repository that outlives the
     /// backend.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_refdb_backend_fs(out: *mut *mut git_refdb_backend, repo: *mut git_repository) -> c_int {
+    pub unsafe extern "C" fn git_refdb_backend_fs(
+        out: *mut *mut git_refdb_backend,
+        repo: *mut git_repository,
+    ) -> c_int {
         barrier(|| {
             let Some(r) = NonNull::new(repo) else {
                 return errors::assert_arg_failed("repository").raw();
@@ -2150,7 +2285,10 @@ mod tests {
         assert_eq!(off, None);
         assert_eq!(t.sorted, None);
         let (t, off) = packed_header(b"abc");
-        assert_eq!((t.peeling_mode, t.sorted, off), (PEELING_NONE, None, Some(0)));
+        assert_eq!(
+            (t.peeling_mode, t.sorted, off),
+            (PEELING_NONE, None, Some(0))
+        );
         let (_, off) = packed_header(b"# pack");
         assert_eq!(off, Some(0));
     }
@@ -2188,7 +2326,13 @@ mod tests {
     #[test]
     fn search_sorted() {
         let mut data = String::from("# pack-refs with: peeled fully-peeled sorted \n");
-        let names = ["refs/heads/a", "refs/heads/b", "refs/heads/b/c", "refs/tags/t", "refs/tags/u"];
+        let names = [
+            "refs/heads/a",
+            "refs/heads/b",
+            "refs/heads/b/c",
+            "refs/tags/t",
+            "refs/tags/u",
+        ];
         for (i, n) in names.iter().enumerate() {
             data.push_str(&format!("{A} {n}\n"));
             if i == 3 {
@@ -2197,16 +2341,35 @@ mod tests {
         }
         let d = data.as_bytes();
         for n in names {
-            assert!(matches!(packed_search(d, n.as_bytes(), OidType::Sha1), Ok(Searched::Found(..))), "{n}");
+            assert!(
+                matches!(
+                    packed_search(d, n.as_bytes(), OidType::Sha1),
+                    Ok(Searched::Found(..))
+                ),
+                "{n}"
+            );
         }
         match packed_search(d, b"refs/tags/t", OidType::Sha1) {
             Ok(Searched::Found(_, Some(p))) => assert_eq!(p.hex().as_str(), B),
             r => panic!("{r:?}"),
         }
-        for n in ["refs/heads/0", "refs/heads/ab", "refs/heads/b/", "refs/z", "a"] {
-            assert_eq!(packed_search(d, n.as_bytes(), OidType::Sha1), Ok(Searched::NotFound), "{n}");
+        for n in [
+            "refs/heads/0",
+            "refs/heads/ab",
+            "refs/heads/b/",
+            "refs/z",
+            "a",
+        ] {
+            assert_eq!(
+                packed_search(d, n.as_bytes(), OidType::Sha1),
+                Ok(Searched::NotFound),
+                "{n}"
+            );
         }
-        assert_eq!(packed_search(b"", b"x", OidType::Sha1), Ok(Searched::NotFound));
+        assert_eq!(
+            packed_search(b"", b"x", OidType::Sha1),
+            Ok(Searched::NotFound)
+        );
         assert_eq!(packed_search(b"#abc", b"x", OidType::Sha1), Err(()));
     }
 
@@ -2215,7 +2378,11 @@ mod tests {
         assert!(!ref_is_available(None, b"refs/heads/a/b", b"refs/heads/a"));
         assert!(!ref_is_available(None, b"refs/heads/a", b"refs/heads/a/b"));
         assert!(ref_is_available(None, b"refs/heads/ab", b"refs/heads/a"));
-        assert!(ref_is_available(Some(b"refs/heads/a"), b"refs/heads/a/b", b"refs/heads/a"));
+        assert!(ref_is_available(
+            Some(b"refs/heads/a"),
+            b"refs/heads/a/b",
+            b"refs/heads/a"
+        ));
         assert!(ref_is_available(None, b"refs/heads/a", b"refs/heads/a"));
     }
 
@@ -2227,6 +2394,9 @@ mod tests {
         assert_eq!(glob_prefix(b"*"), None);
         assert_eq!(glob_prefix(b"HEAD"), None);
         assert_eq!(namespace_path(b"foo"), b"refs/namespaces/foo/refs");
-        assert_eq!(namespace_path(b"a/b"), b"refs/namespaces/a/refs/namespaces/b/refs");
+        assert_eq!(
+            namespace_path(b"a/b"),
+            b"refs/namespaces/a/refs/namespaces/b/refs"
+        );
     }
 }

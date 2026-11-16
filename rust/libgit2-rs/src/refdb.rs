@@ -24,8 +24,10 @@ use core::sync::atomic::{AtomicPtr, Ordering};
 
 use crate::git_error_set;
 use crate::oid::Oid;
-use crate::refs::{self, GIT_REFERENCE_DIRECT, GIT_REFERENCE_SYMBOLIC, GitReference, RefBox, RefView};
 use crate::reflog::GitReflog;
+use crate::refs::{
+    self, GIT_REFERENCE_DIRECT, GIT_REFERENCE_SYMBOLIC, GitReference, RefBox, RefView,
+};
 use crate::sys::pending::{RepoPtr, configmap, git_repository, git_signature};
 use crate::util::alloc;
 use crate::util::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
@@ -73,14 +75,20 @@ pub struct GitRefdb {
 }
 
 /// `git_refdb_backend.init`.
-pub type InitFn = unsafe extern "C" fn(*mut git_refdb_backend, *const c_char, libc::mode_t, u32) -> c_int;
+pub type InitFn =
+    unsafe extern "C" fn(*mut git_refdb_backend, *const c_char, libc::mode_t, u32) -> c_int;
 /// `git_refdb_backend.exists`.
-pub type ExistsFn = unsafe extern "C" fn(*mut c_int, *mut git_refdb_backend, *const c_char) -> c_int;
+pub type ExistsFn =
+    unsafe extern "C" fn(*mut c_int, *mut git_refdb_backend, *const c_char) -> c_int;
 /// `git_refdb_backend.lookup`.
-pub type LookupFn = unsafe extern "C" fn(*mut *mut GitReference, *mut git_refdb_backend, *const c_char) -> c_int;
+pub type LookupFn =
+    unsafe extern "C" fn(*mut *mut GitReference, *mut git_refdb_backend, *const c_char) -> c_int;
 /// `git_refdb_backend.iterator`.
-pub type IteratorFn =
-    unsafe extern "C" fn(*mut *mut git_reference_iterator, *mut git_refdb_backend, *const c_char) -> c_int;
+pub type IteratorFn = unsafe extern "C" fn(
+    *mut *mut git_reference_iterator,
+    *mut git_refdb_backend,
+    *const c_char,
+) -> c_int;
 /// `git_refdb_backend.write`.
 pub type WriteFn = unsafe extern "C" fn(
     *mut git_refdb_backend,
@@ -102,7 +110,8 @@ pub type RenameFn = unsafe extern "C" fn(
     *const c_char,
 ) -> c_int;
 /// `git_refdb_backend.del`.
-pub type DelFn = unsafe extern "C" fn(*mut git_refdb_backend, *const c_char, *const Oid, *const c_char) -> c_int;
+pub type DelFn =
+    unsafe extern "C" fn(*mut git_refdb_backend, *const c_char, *const Oid, *const c_char) -> c_int;
 /// `git_refdb_backend.compress`.
 pub type CompressFn = unsafe extern "C" fn(*mut git_refdb_backend) -> c_int;
 /// `git_refdb_backend.has_log` / `ensure_log` / `reflog_delete`.
@@ -110,13 +119,16 @@ pub type NameFn = unsafe extern "C" fn(*mut git_refdb_backend, *const c_char) ->
 /// `git_refdb_backend.free`.
 pub type FreeFn = unsafe extern "C" fn(*mut git_refdb_backend);
 /// `git_refdb_backend.reflog_read`.
-pub type ReflogReadFn = unsafe extern "C" fn(*mut *mut GitReflog, *mut git_refdb_backend, *const c_char) -> c_int;
+pub type ReflogReadFn =
+    unsafe extern "C" fn(*mut *mut GitReflog, *mut git_refdb_backend, *const c_char) -> c_int;
 /// `git_refdb_backend.reflog_write`.
 pub type ReflogWriteFn = unsafe extern "C" fn(*mut git_refdb_backend, *mut GitReflog) -> c_int;
 /// `git_refdb_backend.reflog_rename`.
-pub type ReflogRenameFn = unsafe extern "C" fn(*mut git_refdb_backend, *const c_char, *const c_char) -> c_int;
+pub type ReflogRenameFn =
+    unsafe extern "C" fn(*mut git_refdb_backend, *const c_char, *const c_char) -> c_int;
 /// `git_refdb_backend.lock`.
-pub type LockFn = unsafe extern "C" fn(*mut *mut c_void, *mut git_refdb_backend, *const c_char) -> c_int;
+pub type LockFn =
+    unsafe extern "C" fn(*mut *mut c_void, *mut git_refdb_backend, *const c_char) -> c_int;
 /// `git_refdb_backend.unlock`.
 pub type UnlockFn = unsafe extern "C" fn(
     *mut git_refdb_backend,
@@ -172,9 +184,11 @@ pub struct git_refdb_backend {
 }
 
 /// `git_reference_iterator.next`.
-pub type IterNextFn = unsafe extern "C" fn(*mut *mut GitReference, *mut git_reference_iterator) -> c_int;
+pub type IterNextFn =
+    unsafe extern "C" fn(*mut *mut GitReference, *mut git_reference_iterator) -> c_int;
 /// `git_reference_iterator.next_name`.
-pub type IterNextNameFn = unsafe extern "C" fn(*mut *const c_char, *mut git_reference_iterator) -> c_int;
+pub type IterNextNameFn =
+    unsafe extern "C" fn(*mut *const c_char, *mut git_reference_iterator) -> c_int;
 /// `git_reference_iterator.free`.
 pub type IterFreeFn = unsafe extern "C" fn(*mut git_reference_iterator);
 
@@ -436,7 +450,11 @@ impl RefdbPtr {
     pub fn iterator(self, glob: Option<&CStr>) -> Result<NonNull<git_reference_iterator>> {
         let b = self.backend();
         // SAFETY: as in `slot`.
-        let f = if b.is_null() { None } else { unsafe { (*b).iterator } };
+        let f = if b.is_null() {
+            None
+        } else {
+            unsafe { (*b).iterator }
+        };
         let Some(f) = f else {
             return Err(git_error_set!(
                 ErrorClass::REFERENCE,
@@ -502,9 +520,23 @@ impl RefdbPtr {
         let b = self.backend_checked()?;
         let f = self.slot(|b| b.rename)?;
         let mut out = core::ptr::null_mut();
-        let outp = if want { &raw mut out } else { core::ptr::null_mut() };
+        let outp = if want {
+            &raw mut out
+        } else {
+            core::ptr::null_mut()
+        };
         // SAFETY: as in `init`; `who` is NULL or valid (callers' contract).
-        let r = unsafe { f(outp, b, c(old_name), c(new_name), c_int::from(force), who, opt_c(message)) };
+        let r = unsafe {
+            f(
+                outp,
+                b,
+                c(old_name),
+                c(new_name),
+                c_int::from(force),
+                who,
+                opt_c(message),
+            )
+        };
         // SAFETY: what the backend handed over, if anything.
         let made = unsafe { RefBox::from_raw(out) };
         ErrorCode::check(r)?;
@@ -519,7 +551,12 @@ impl RefdbPtr {
     }
 
     /// `git_refdb_delete`.
-    pub fn delete(self, name: &CStr, old_id: Option<&Oid>, old_target: Option<&CStr>) -> Result<()> {
+    pub fn delete(
+        self,
+        name: &CStr,
+        old_id: Option<&Oid>,
+        old_target: Option<&CStr>,
+    ) -> Result<()> {
         let b = self.backend_checked()?;
         let f = self.slot(|b| b.del)?;
         // SAFETY: as in `init`.
@@ -610,7 +647,10 @@ impl RefdbPtr {
         let b = self.backend();
         // SAFETY: as in `slot`.
         let Some(f) = (unsafe { b.as_ref() }).and_then(|b| b.lock) else {
-            return Err(git_error_set!(ErrorClass::REFERENCE, "backend does not support locking"));
+            return Err(git_error_set!(
+                ErrorClass::REFERENCE,
+                "backend does not support locking"
+            ));
         };
         let mut payload = core::ptr::null_mut();
         // SAFETY: as in `init`.
@@ -657,7 +697,11 @@ impl RefdbPtr {
             Err(e) => return Err(e),
             Ok(resolved) => {
                 if resolved.view().raw_kind() == GIT_REFERENCE_SYMBOLIC {
-                    resolved.view().symbolic_target().unwrap_or_default().to_vec()
+                    resolved
+                        .view()
+                        .symbolic_target()
+                        .unwrap_or_default()
+                        .to_vec()
                 } else {
                     resolved.view().name().to_vec()
                 }
@@ -708,7 +752,10 @@ pub fn open(repo: RepoPtr) -> Result<NonNull<GitRefdb>> {
 
 unsafe extern "C" {
     /// `git_refdb_backend_reftable` (refdb_reftable.c, C that stays C).
-    fn git_refdb_backend_reftable(out: *mut *mut git_refdb_backend, repo: *mut git_repository) -> c_int;
+    fn git_refdb_backend_reftable(
+        out: *mut *mut git_refdb_backend,
+        repo: *mut git_repository,
+    ) -> c_int;
 }
 
 /// `git_refdb_backend_reftable`.
@@ -755,7 +802,10 @@ pub unsafe fn set_backend(db: RefdbPtr, backend: *mut git_refdb_backend) -> Resu
             && !(b.lock.is_some() && b.unlock.is_none())
     });
     if !complete {
-        let _ = git_error_set!(ErrorClass::REFERENCE, "incomplete refdb backend implementation");
+        let _ = git_error_set!(
+            ErrorClass::REFERENCE,
+            "incomplete refdb backend implementation"
+        );
         return Err(ErrorCode::INVALID);
     }
     let old = db.db().backend.swap(backend, Ordering::AcqRel);
@@ -794,7 +844,10 @@ pub unsafe fn iterator_next(iter: *mut git_reference_iterator) -> Result<RefBox>
 /// # Safety
 ///
 /// As [`iterator_next`]; `out` writable.
-pub unsafe fn iterator_next_name(out: *mut *const c_char, iter: *mut git_reference_iterator) -> c_int {
+pub unsafe fn iterator_next_name(
+    out: *mut *const c_char,
+    iter: *mut git_reference_iterator,
+) -> c_int {
     // SAFETY: per the contract.
     unsafe { ((*iter).next_name.expect("iterator next_name is NULL"))(out, iter) }
 }
@@ -848,7 +901,10 @@ pub mod ffi {
     ///
     /// `out` is NULL or writable; `repo` NULL or a live repository.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_refdb_new(out: *mut *mut GitRefdb, repo: *mut git_repository) -> c_int {
+    pub unsafe extern "C" fn git_refdb_new(
+        out: *mut *mut GitRefdb,
+        repo: *mut git_repository,
+    ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!out.is_null(), "out", -1);
             crate::git_assert_arg!(!repo.is_null(), "repo", -1);
@@ -869,7 +925,10 @@ pub mod ffi {
     ///
     /// As [`git_refdb_new`].
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_refdb_open(out: *mut *mut GitRefdb, repo: *mut git_repository) -> c_int {
+    pub unsafe extern "C" fn git_refdb_open(
+        out: *mut *mut GitRefdb,
+        repo: *mut git_repository,
+    ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!out.is_null(), "out", -1);
             crate::git_assert_arg!(!repo.is_null(), "repo", -1);
@@ -895,7 +954,10 @@ pub mod ffi {
     /// `db` is a live database; `backend` NULL or a live backend whose
     /// ownership passes to `db` on success.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_refdb_set_backend(db: *mut GitRefdb, backend: *mut git_refdb_backend) -> c_int {
+    pub unsafe extern "C" fn git_refdb_set_backend(
+        db: *mut GitRefdb,
+        backend: *mut git_refdb_backend,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: per the contract (C dereferences a NULL `db`).
             let r = unsafe { dbp(db) }.and_then(|d| unsafe { set_backend(d, backend) });
@@ -968,7 +1030,11 @@ pub mod ffi {
     ///
     /// See the module; `exists` writable; `ref_name` a string.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_refdb_exists(exists: *mut c_int, db: *mut GitRefdb, ref_name: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git_refdb_exists(
+        exists: *mut c_int,
+        db: *mut GitRefdb,
+        ref_name: *const c_char,
+    ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!exists.is_null(), "exists", -1);
             crate::git_assert_arg!(!db.is_null(), "refdb", -1);
@@ -1146,7 +1212,9 @@ pub mod ffi {
             let b = d.backend();
             // SAFETY: the backend's slot, with C's arguments passed on.
             unsafe {
-                ((*b).write.expect("refdb backend slot is NULL"))(b, r, force, who, message, old_id, old_target)
+                ((*b).write.expect("refdb backend slot is NULL"))(
+                    b, r, force, who, message, old_id, old_target,
+                )
             }
         })
     }
@@ -1174,7 +1242,9 @@ pub mod ffi {
             let b = d.backend();
             // SAFETY: as in `git_refdb_write`.
             let r = unsafe {
-                ((*b).rename.expect("refdb backend slot is NULL"))(out, b, old_name, new_name, force, who, message)
+                ((*b).rename.expect("refdb backend slot is NULL"))(
+                    out, b, old_name, new_name, force, who, message,
+                )
             };
             if r < 0 {
                 return r;
@@ -1211,7 +1281,9 @@ pub mod ffi {
             crate::git_assert_arg!(!d.backend().is_null(), "db->backend", -1);
             let b = d.backend();
             // SAFETY: as in `git_refdb_write`.
-            unsafe { ((*b).del.expect("refdb backend slot is NULL"))(b, ref_name, old_id, old_target) }
+            unsafe {
+                ((*b).del.expect("refdb backend slot is NULL"))(b, ref_name, old_id, old_target)
+            }
         })
     }
 
@@ -1233,7 +1305,8 @@ pub mod ffi {
             crate::git_assert_arg!(!d.backend().is_null(), "db->backend", -1);
             let b = d.backend();
             // SAFETY: as in `git_refdb_write`.
-            let r = unsafe { ((*b).reflog_read.expect("refdb backend slot is NULL"))(out, b, name) };
+            let r =
+                unsafe { ((*b).reflog_read.expect("refdb backend slot is NULL"))(out, b, name) };
             if r < 0 {
                 return r;
             }
@@ -1326,7 +1399,10 @@ pub mod ffi {
     ///
     /// As [`git_refdb_has_log`].
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_refdb_ensure_log(db: *mut GitRefdb, refname: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git_refdb_ensure_log(
+        db: *mut GitRefdb,
+        refname: *const c_char,
+    ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!db.is_null(), "db", -1);
             crate::git_assert_arg!(!refname.is_null(), "refname", -1);
@@ -1346,7 +1422,10 @@ pub mod ffi {
     ///
     /// `backend` is writable for a whole `git_refdb_backend`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_refdb_init_backend(backend: *mut git_refdb_backend, version: c_uint) -> c_int {
+    pub unsafe extern "C" fn git_refdb_init_backend(
+        backend: *mut git_refdb_backend,
+        version: c_uint,
+    ) -> c_int {
         barrier(|| {
             if version == 0 || version > GIT_REFDB_BACKEND_VERSION {
                 let _ = git_error_set!(
@@ -1372,7 +1451,11 @@ pub mod ffi {
     ///
     /// See the module; `payload` writable; `refname` a string.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_refdb_lock(payload: *mut *mut c_void, db: *mut GitRefdb, refname: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git_refdb_lock(
+        payload: *mut *mut c_void,
+        db: *mut GitRefdb,
+        refname: *const c_char,
+    ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!payload.is_null(), "payload", -1);
             crate::git_assert_arg!(!db.is_null(), "db", -1);
@@ -1411,7 +1494,17 @@ pub mod ffi {
             let d = unsafe { RefdbPtr::new(NonNull::new_unchecked(db)) };
             let b = d.backend();
             // SAFETY: the backend's slot (C calls it unconditionally).
-            unsafe { ((*b).unlock.expect("refdb backend slot is NULL"))(b, payload, success, update_reflog, r, sig, message) }
+            unsafe {
+                ((*b).unlock.expect("refdb backend slot is NULL"))(
+                    b,
+                    payload,
+                    success,
+                    update_reflog,
+                    r,
+                    sig,
+                    message,
+                )
+            }
         })
     }
 

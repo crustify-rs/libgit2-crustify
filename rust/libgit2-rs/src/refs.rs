@@ -384,9 +384,7 @@ impl RefBox {
             Some(t) if src.raw_kind() == GIT_REFERENCE_SYMBOLIC => {
                 RefBox::new_symbolic(src.name(), t)
             }
-            _ if src.raw_kind() == GIT_REFERENCE_SYMBOLIC => {
-                RefBox::new_symbolic(src.name(), b"")
-            }
+            _ if src.raw_kind() == GIT_REFERENCE_SYMBOLIC => RefBox::new_symbolic(src.name(), b""),
             _ => RefBox::new_direct(src.name(), src.oid_field(), Some(src.peel())),
         }
         .map_err(|_| errors::oom())?;
@@ -454,7 +452,11 @@ fn is_valid_ref_char(ch: u8) -> bool {
 
 /// `ensure_segment_validity`: the length of the segment at the start of
 /// `name` (up to `/` or the end), or `None` if it is invalid.
-fn ensure_segment_validity(name: &[u8], may_contain_glob: bool, allow_caret_prefix: bool) -> Option<usize> {
+fn ensure_segment_validity(
+    name: &[u8],
+    may_contain_glob: bool,
+    allow_caret_prefix: bool,
+) -> Option<usize> {
     const LOCK: &[u8] = b".lock";
     let mut may_contain_glob = may_contain_glob;
     if at(name, 0) == b'.' {
@@ -701,7 +703,12 @@ pub fn is_per_worktree_ref(name: &[u8]) -> bool {
 
 /// `git_reference__shorthand`: the offset of the short name in `name`.
 pub fn shorthand_offset(name: &[u8]) -> usize {
-    for p in [GIT_REFS_HEADS_DIR, GIT_REFS_TAGS_DIR, GIT_REFS_REMOTES_DIR, GIT_REFS_DIR] {
+    for p in [
+        GIT_REFS_HEADS_DIR,
+        GIT_REFS_TAGS_DIR,
+        GIT_REFS_REMOTES_DIR,
+        GIT_REFS_DIR,
+    ] {
         if prefixcmp(name, p) == 0 {
             return p.len();
         }
@@ -731,7 +738,12 @@ pub fn cmp(a: RefView<'_>, b: RefView<'_>) -> c_int {
 /// `git_reference__lookup_loose(out, ref_dir, ref_name, oid_type)`: read
 /// `<ref_dir>/<ref_name>` as a loose reference; with `want == false` only
 /// check that it parses (`out == NULL`).
-pub fn lookup_loose(ref_dir: &[u8], ref_name: &[u8], oid_type: c_int, want: bool) -> Result<Option<RefBox>> {
+pub fn lookup_loose(
+    ref_dir: &[u8],
+    ref_name: &[u8],
+    oid_type: c_int,
+    want: bool,
+) -> Result<Option<RefBox>> {
     use crate::util::futils;
     let mut buf = GitStr::new();
     buf.joinpath(ref_dir, ref_name)?;
@@ -755,7 +767,10 @@ pub fn lookup_loose(ref_dir: &[u8], ref_name: &[u8], oid_type: c_int, want: bool
 /// `loose_parse_symbolic`: the target after `ref: `.
 pub fn loose_parse_symbolic(content: &[u8]) -> Result<&[u8]> {
     if content.len() < GIT_SYMREF.len() + 1 {
-        return Err(git_error_set!(ErrorClass::REFERENCE, "corrupted loose reference file"));
+        return Err(git_error_set!(
+            ErrorClass::REFERENCE,
+            "corrupted loose reference file"
+        ));
     }
     // C reads up to the NUL of the buffer.
     Ok(crate::util::fs_path::c_str(&content[GIT_SYMREF.len()..]))
@@ -862,7 +877,11 @@ pub fn dwim(repo: RepoPtr, refname: &[u8]) -> Result<RefBox> {
         (b"refs/remotes/", b"/HEAD"),
     ];
     let refname = crate::util::fs_path::c_str(refname);
-    let (name, fallback): (&[u8], bool) = if refname.is_empty() { (GIT_HEAD_REF, false) } else { (refname, true) };
+    let (name, fallback): (&[u8], bool) = if refname.is_empty() {
+        (GIT_HEAD_REF, false)
+    } else {
+        (refname, true)
+    };
     let mut found_valid = false;
     let mut error = ErrorCode::GENERIC;
     let mut result = None;
@@ -957,7 +976,8 @@ pub fn create(
             RefBox::new_direct(normalized.to_bytes(), oid, None)
         }
         NewTarget::Symbolic(t) => {
-            let validate = git_reference__enable_symbolic_ref_target_validation.load(Ordering::Relaxed);
+            let validate =
+                git_reference__enable_symbolic_ref_target_validation.load(Ordering::Relaxed);
             let nt = normalize_for_repo(repo, t, validate)?;
             RefBox::new_symbolic(normalized.to_bytes(), nt.to_bytes())
         }
@@ -965,7 +985,16 @@ pub fn create(
     .map_err(|_| errors::oom())?;
     // SAFETY: our live reference; the signature is NULL or valid (the
     // callers' contract).
-    unsafe { db.write(r.as_ptr(), force, signature, log_message, old_id, old_target) }?;
+    unsafe {
+        db.write(
+            r.as_ptr(),
+            force,
+            signature,
+            log_message,
+            old_id,
+            old_target,
+        )
+    }?;
     Ok(r)
 }
 
@@ -994,7 +1023,16 @@ pub fn create_matching(
     log_message: Option<&CStr>,
 ) -> Result<RefBox> {
     let who = log_signature(repo)?;
-    create(repo, name, NewTarget::Oid(id), force, who.as_ptr(), log_message, old_id, None)
+    create(
+        repo,
+        name,
+        NewTarget::Oid(id),
+        force,
+        who.as_ptr(),
+        log_message,
+        old_id,
+        None,
+    )
 }
 
 /// `git_reference_symbolic_create_matching`.
@@ -1007,7 +1045,16 @@ pub fn symbolic_create_matching(
     log_message: Option<&CStr>,
 ) -> Result<RefBox> {
     let who = log_signature(repo)?;
-    create(repo, name, NewTarget::Symbolic(target), force, who.as_ptr(), log_message, None, old_target)
+    create(
+        repo,
+        name,
+        NewTarget::Symbolic(target),
+        force,
+        who.as_ptr(),
+        log_message,
+        None,
+        old_target,
+    )
 }
 
 /// The repository of a reference (`ref->db->repo`).
@@ -1022,14 +1069,21 @@ pub fn owner(r: RefView<'_>) -> Result<RepoPtr> {
 pub fn set_target(r: RefView<'_>, id: &Oid, log_message: Option<&CStr>) -> Result<RefBox> {
     let repo = owner(r)?;
     if r.raw_kind() != GIT_REFERENCE_DIRECT {
-        return Err(git_error_set!(ErrorClass::REFERENCE, "cannot set OID on symbolic reference"));
+        return Err(git_error_set!(
+            ErrorClass::REFERENCE,
+            "cannot set OID on symbolic reference"
+        ));
     }
     let old = *r.oid_field();
     create_matching(repo, r.name(), id, true, Some(&old), log_message)
 }
 
 /// `git_reference_symbolic_set_target`.
-pub fn symbolic_set_target(r: RefView<'_>, target: &[u8], log_message: Option<&CStr>) -> Result<RefBox> {
+pub fn symbolic_set_target(
+    r: RefView<'_>,
+    target: &[u8],
+    log_message: Option<&CStr>,
+) -> Result<RefBox> {
     if r.raw_kind() != GIT_REFERENCE_SYMBOLIC {
         return Err(git_error_set!(
             ErrorClass::REFERENCE,
@@ -1047,17 +1101,27 @@ struct UpdateHead<'a> {
 }
 
 /// `refs_update_head`: point a worktree's HEAD at the renamed reference.
-unsafe extern "C" fn refs_update_head(worktree: *mut git_repository, payload: *mut c_void) -> c_int {
+unsafe extern "C" fn refs_update_head(
+    worktree: *mut git_repository,
+    payload: *mut c_void,
+) -> c_int {
     crate::util::export::barrier(|| {
         // SAFETY: `git_repository_foreach_worktree` passes a live
         // repository and our payload, for the call.
-        let (repo, p) = unsafe { (RepoPtr::new(NonNull::new_unchecked(worktree)), &*payload.cast::<UpdateHead<'_>>()) };
+        let (repo, p) = unsafe {
+            (
+                RepoPtr::new(NonNull::new_unchecked(worktree)),
+                &*payload.cast::<UpdateHead<'_>>(),
+            )
+        };
         let head = match lookup(repo, GIT_HEAD_REF) {
             Ok(h) => h,
             Err(e) => return e.raw(),
         };
         let v = head.view();
-        if v.raw_kind() != GIT_REFERENCE_SYMBOLIC || strcmp(v.symbolic_target().unwrap_or_default(), p.old_name) != 0 {
+        if v.raw_kind() != GIT_REFERENCE_SYMBOLIC
+            || strcmp(v.symbolic_target().unwrap_or_default(), p.old_name) != 0
+        {
             return 0;
         }
         match symbolic_set_target(v, p.new_name, None) {
@@ -1087,7 +1151,14 @@ pub fn rename(
     let normalized = normalize_for_repo(repo, new_name, true)?;
     // SAFETY: the reference's database is live while it is.
     let db = unsafe { RefdbPtr::new(NonNull::new(r.db()).ok_or(ErrorCode::GENERIC)?) };
-    *out = db.rename(r.name_cstr(), &normalized, force, signature.as_ptr(), log_message, true)?;
+    *out = db.rename(
+        r.name_cstr(),
+        &normalized,
+        force,
+        signature.as_ptr(),
+        log_message,
+        true,
+    )?;
     let mut payload = UpdateHead {
         old_name: r.name(),
         new_name: normalized.to_bytes(),
@@ -1095,7 +1166,11 @@ pub fn rename(
     // SAFETY: a live repository; the callback gets our payload, alive for
     // the call.
     let e = unsafe {
-        p::git_repository_foreach_worktree(repo.as_ptr(), refs_update_head, (&raw mut payload).cast())
+        p::git_repository_foreach_worktree(
+            repo.as_ptr(),
+            refs_update_head,
+            (&raw mut payload).cast(),
+        )
     };
     ErrorCode::check(e).map(drop)
 }
@@ -1104,7 +1179,9 @@ pub fn rename(
 pub fn resolve(r: RefView<'_>) -> Result<RefBox> {
     match r.raw_kind() {
         GIT_REFERENCE_DIRECT => lookup(owner(r)?, r.name()),
-        GIT_REFERENCE_SYMBOLIC => lookup_resolved(owner(r)?, r.symbolic_target().unwrap_or_default(), -1),
+        GIT_REFERENCE_SYMBOLIC => {
+            lookup_resolved(owner(r)?, r.symbolic_target().unwrap_or_default(), -1)
+        }
         _ => Err(git_error_set!(ErrorClass::REFERENCE, "invalid reference")),
     }
 }
@@ -1130,17 +1207,47 @@ pub fn update_terminal(
         Ok(r) => r,
         Err(ErrorCode::NOT_FOUND) => {
             errors::clear();
-            return create(repo, ref_name, NewTarget::Oid(oid), false, to_use, log_message, None, None).map(drop);
+            return create(
+                repo,
+                ref_name,
+                NewTarget::Oid(oid),
+                false,
+                to_use,
+                log_message,
+                None,
+                None,
+            )
+            .map(drop);
         }
         Err(e) => return Err(e),
     };
     let v = r.view();
     if v.raw_kind() == GIT_REFERENCE_SYMBOLIC {
         let target = v.symbolic_target().unwrap_or_default().to_vec();
-        create(repo, &target, NewTarget::Oid(oid), false, to_use, log_message, None, None).map(drop)
+        create(
+            repo,
+            &target,
+            NewTarget::Oid(oid),
+            false,
+            to_use,
+            log_message,
+            None,
+            None,
+        )
+        .map(drop)
     } else {
         let old = *v.oid_field();
-        create(repo, v.name(), NewTarget::Oid(oid), true, to_use, log_message, Some(&old), None).map(drop)
+        create(
+            repo,
+            v.name(),
+            NewTarget::Oid(oid),
+            true,
+            to_use,
+            log_message,
+            Some(&old),
+            None,
+        )
+        .map(drop)
     }
 }
 
@@ -1167,10 +1274,23 @@ pub fn update_for_commit(
     match r {
         Some(r) => {
             if r.raw_kind() != GIT_REFERENCE_DIRECT {
-                return Err(git_error_set!(ErrorClass::REFERENCE, "cannot set OID on symbolic reference"));
+                return Err(git_error_set!(
+                    ErrorClass::REFERENCE,
+                    "cannot set OID on symbolic reference"
+                ));
             }
             let old = *r.oid_field();
-            create(repo, r.name(), NewTarget::Oid(id), true, who, Some(&msg), Some(&old), None).map(drop)
+            create(
+                repo,
+                r.name(),
+                NewTarget::Oid(id),
+                true,
+                who,
+                Some(&msg),
+                Some(&old),
+                None,
+            )
+            .map(drop)
         }
         None => update_terminal(repo, ref_name, id, who, Some(&msg)),
     }
@@ -1202,7 +1322,8 @@ pub fn peel(r: RefView<'_>, target_type: c_int) -> Result<ObjBox> {
     } else {
         resolved.oid_field()
     };
-    let target = ObjBox::lookup(repo, id, OBJECT_ANY).map_err(|e| peel_error(e, r, "Cannot retrieve reference target"))?;
+    let target = ObjBox::lookup(repo, id, OBJECT_ANY)
+        .map_err(|e| peel_error(e, r, "Cannot retrieve reference target"))?;
     if target_type == OBJECT_ANY && target.kind() != OBJECT_TAG {
         target.dup()
     } else {
@@ -1357,7 +1478,10 @@ pub mod ffi {
     ///
     /// The strings are NULL or NUL-terminated.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reference__alloc_symbolic(name: *const c_char, target: *const c_char) -> *mut GitReference {
+    pub unsafe extern "C" fn git_reference__alloc_symbolic(
+        name: *const c_char,
+        target: *const c_char,
+    ) -> *mut GitReference {
         barrier(|| {
             crate::git_assert_arg!(!name.is_null(), "name", core::ptr::null_mut());
             crate::git_assert_arg!(!target.is_null(), "target", core::ptr::null_mut());
@@ -1373,7 +1497,11 @@ pub mod ffi {
     ///
     /// `name` NULL or a string; `oid` NULL or valid; `peel` NULL or valid.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reference__alloc(name: *const c_char, oid: *const Oid, peel: *const Oid) -> *mut GitReference {
+    pub unsafe extern "C" fn git_reference__alloc(
+        name: *const c_char,
+        oid: *const Oid,
+        peel: *const Oid,
+    ) -> *mut GitReference {
         barrier(|| {
             crate::git_assert_arg!(!name.is_null(), "name", core::ptr::null_mut());
             crate::git_assert_arg!(!oid.is_null(), "oid", core::ptr::null_mut());
@@ -1390,7 +1518,10 @@ pub mod ffi {
     /// `ptr_to_ref` NULL or a writable pointer to a live reference the
     /// caller owns; `name` NULL or a string.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reference__realloc(ptr_to_ref: *mut *mut GitReference, name: *const c_char) -> *mut GitReference {
+    pub unsafe extern "C" fn git_reference__realloc(
+        ptr_to_ref: *mut *mut GitReference,
+        name: *const c_char,
+    ) -> *mut GitReference {
         barrier(|| {
             crate::git_assert_arg!(!ptr_to_ref.is_null(), "ptr_to_ref", core::ptr::null_mut());
             crate::git_assert_arg!(!name.is_null(), "name", core::ptr::null_mut());
@@ -1417,7 +1548,10 @@ pub mod ffi {
     ///
     /// `dest` writable; `source` a live reference.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reference_dup(dest: *mut *mut GitReference, source: *mut GitReference) -> c_int {
+    pub unsafe extern "C" fn git_reference_dup(
+        dest: *mut *mut GitReference,
+        source: *mut GitReference,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: per the contract (C dereferences NULL).
             let Some(src) = (unsafe { view(source) }) else {
@@ -1484,7 +1618,10 @@ pub mod ffi {
     ///
     /// See the module.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reference_remove(repo: *mut git_repository, name: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git_reference_remove(
+        repo: *mut git_repository,
+        name: *const c_char,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: per the contract.
             let repo = unsafe { repo_unchecked(repo) };
@@ -1555,7 +1692,11 @@ pub mod ffi {
     ///
     /// See the module; `out` writable.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reference_name_to_id(out: *mut Oid, repo: *mut git_repository, name: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git_reference_name_to_id(
+        out: *mut Oid,
+        repo: *mut git_repository,
+        name: *const c_char,
+    ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!repo.is_null(), "repo", -1);
             crate::git_assert_arg!(!name.is_null(), "name", -1);
@@ -1680,7 +1821,9 @@ pub mod ffi {
     ///
     /// See the module.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reference_symbolic_target(r: *const GitReference) -> *const c_char {
+    pub unsafe extern "C" fn git_reference_symbolic_target(
+        r: *const GitReference,
+    ) -> *const c_char {
         barrier(|| {
             crate::git_assert_arg!(!r.is_null(), "ref", core::ptr::null());
             // SAFETY: a live reference.
@@ -1719,7 +1862,14 @@ pub mod ffi {
             let r = (|| unsafe {
                 let repo = repo_arg(repo)?;
                 crate::git_assert_arg!(!name.is_null(), "name");
-                create_matching(repo, cstr_bytes(name), &*id, force != 0, old_id.as_ref(), cstr(log_message))
+                create_matching(
+                    repo,
+                    cstr_bytes(name),
+                    &*id,
+                    force != 0,
+                    old_id.as_ref(),
+                    cstr(log_message),
+                )
             })();
             match r {
                 Ok(r) if !ref_out.is_null() => {
@@ -1748,7 +1898,17 @@ pub mod ffi {
         log_message: *const c_char,
     ) -> c_int {
         // SAFETY: per the contract.
-        unsafe { git_reference_create_matching(ref_out, repo, name, id, force, core::ptr::null(), log_message) }
+        unsafe {
+            git_reference_create_matching(
+                ref_out,
+                repo,
+                name,
+                id,
+                force,
+                core::ptr::null(),
+                log_message,
+            )
+        }
     }
 
     /// `git_reference_symbolic_create_matching`.
@@ -1813,7 +1973,15 @@ pub mod ffi {
     ) -> c_int {
         // SAFETY: per the contract.
         unsafe {
-            git_reference_symbolic_create_matching(ref_out, repo, name, target, force, core::ptr::null(), log_message)
+            git_reference_symbolic_create_matching(
+                ref_out,
+                repo,
+                name,
+                target,
+                force,
+                core::ptr::null(),
+                log_message,
+            )
         }
     }
 
@@ -1857,7 +2025,13 @@ pub mod ffi {
             crate::git_assert_arg!(!r.is_null(), "ref", -1);
             crate::git_assert_arg!(!target.is_null(), "target", -1);
             // SAFETY: per the contract.
-            let res = unsafe { symbolic_set_target(view(r).expect("checked"), cstr_bytes(target), cstr(log_message)) };
+            let res = unsafe {
+                symbolic_set_target(
+                    view(r).expect("checked"),
+                    cstr_bytes(target),
+                    cstr(log_message),
+                )
+            };
             // SAFETY: writable.
             unsafe { put(out, res) }
         })
@@ -1881,7 +2055,15 @@ pub mod ffi {
             crate::git_assert_arg!(!r.is_null(), "ref", -1);
             let mut made = None;
             // SAFETY: per the contract.
-            let res = unsafe { rename(view(r).expect("checked"), cstr_bytes(new_name), force != 0, cstr(log_message), &mut made) };
+            let res = unsafe {
+                rename(
+                    view(r).expect("checked"),
+                    cstr_bytes(new_name),
+                    force != 0,
+                    cstr(log_message),
+                    &mut made,
+                )
+            };
             if let Some(m) = made {
                 // SAFETY: writable.
                 unsafe { *out = m.into_raw() };
@@ -1896,7 +2078,10 @@ pub mod ffi {
     ///
     /// See the module; `ref_out` writable.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reference_resolve(ref_out: *mut *mut GitReference, r: *const GitReference) -> c_int {
+    pub unsafe extern "C" fn git_reference_resolve(
+        ref_out: *mut *mut GitReference,
+        r: *const GitReference,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: per the contract.
             let Some(v) = (unsafe { view(r) }) else {
@@ -2077,7 +2262,10 @@ pub mod ffi {
     ///
     /// `out` writable; `iter` a live iterator.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reference_next(out: *mut *mut GitReference, iter: *mut git_reference_iterator) -> c_int {
+    pub unsafe extern "C" fn git_reference_next(
+        out: *mut *mut GitReference,
+        iter: *mut git_reference_iterator,
+    ) -> c_int {
         // SAFETY: per the contract.
         unsafe { crate::refdb::ffi::git_refdb_iterator_next(out, iter) }
     }
@@ -2088,7 +2276,10 @@ pub mod ffi {
     ///
     /// As [`git_reference_next`].
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reference_next_name(out: *mut *const c_char, iter: *mut git_reference_iterator) -> c_int {
+    pub unsafe extern "C" fn git_reference_next_name(
+        out: *mut *const c_char,
+        iter: *mut git_reference_iterator,
+    ) -> c_int {
         // SAFETY: per the contract.
         unsafe { crate::refdb::ffi::git_refdb_iterator_next_name(out, iter) }
     }
@@ -2113,7 +2304,10 @@ pub mod ffi {
     ///
     /// `array` writable; see the module.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reference_list(array: *mut GitStrArray, repo: *mut git_repository) -> c_int {
+    pub unsafe extern "C" fn git_reference_list(
+        array: *mut GitStrArray,
+        repo: *mut git_repository,
+    ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!array.is_null(), "array", -1);
             crate::git_assert_arg!(!repo.is_null(), "repo", -1);
@@ -2166,7 +2360,11 @@ pub mod ffi {
     ///
     /// `buf` NULL or a valid `git_str`; `name` NULL or a string.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reference__normalize_name(buf: *mut GitStr, name: *const c_char, flags: c_uint) -> c_int {
+    pub unsafe extern "C" fn git_reference__normalize_name(
+        buf: *mut GitStr,
+        name: *const c_char,
+        flags: c_uint,
+    ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!name.is_null(), "name", -1);
             // SAFETY: a string, copied (it may point into `buf`).
@@ -2199,7 +2397,8 @@ pub mod ffi {
             };
             crate::git_assert_arg!(!buffer_out.is_null(), "data", -1);
             // SAFETY: writable for `buffer_size` bytes (the contract).
-            let out = unsafe { core::slice::from_raw_parts_mut(buffer_out.cast::<u8>(), buffer_size) };
+            let out =
+                unsafe { core::slice::from_raw_parts_mut(buffer_out.cast::<u8>(), buffer_size) };
             status(buf.copy_cstr(out))
         })
     }
@@ -2210,7 +2409,10 @@ pub mod ffi {
     ///
     /// See the module.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reference_cmp(ref1: *const GitReference, ref2: *const GitReference) -> c_int {
+    pub unsafe extern "C" fn git_reference_cmp(
+        ref1: *const GitReference,
+        ref2: *const GitReference,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: per the contract.
             let (Some(a), Some(b)) = (unsafe { view(ref1) }, unsafe { view(ref2) }) else {
@@ -2247,7 +2449,15 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             // SAFETY: per the contract.
-            let r = unsafe { update_terminal(repo_unchecked(repo), cstr_bytes(ref_name), &*oid, sig, cstr(log_message)) };
+            let r = unsafe {
+                update_terminal(
+                    repo_unchecked(repo),
+                    cstr_bytes(ref_name),
+                    &*oid,
+                    sig,
+                    cstr(log_message),
+                )
+            };
             status(r)
         })
     }
@@ -2286,7 +2496,10 @@ pub mod ffi {
     ///
     /// See the module.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reference_has_log(repo: *mut git_repository, refname: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git_reference_has_log(
+        repo: *mut git_repository,
+        refname: *const c_char,
+    ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!repo.is_null(), "repo", -1);
             crate::git_assert_arg!(!refname.is_null(), "refname", -1);
@@ -2309,7 +2522,10 @@ pub mod ffi {
     ///
     /// See the module.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reference_ensure_log(repo: *mut git_repository, refname: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git_reference_ensure_log(
+        repo: *mut git_repository,
+        refname: *const c_char,
+    ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!repo.is_null(), "repo", -1);
             crate::git_assert_arg!(!refname.is_null(), "refname", -1);
@@ -2419,7 +2635,11 @@ pub mod ffi {
     ///
     /// `valid` writable; `refname` a string.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reference__name_is_valid(valid: *mut c_int, refname: *const c_char, flags: c_uint) -> c_int {
+    pub unsafe extern "C" fn git_reference__name_is_valid(
+        valid: *mut c_int,
+        refname: *const c_char,
+        flags: c_uint,
+    ) -> c_int {
         barrier(|| {
             if valid.is_null() || refname.is_null() {
                 return errors::assert_failed("valid && refname").raw();
@@ -2444,7 +2664,10 @@ pub mod ffi {
     ///
     /// As [`git_reference__name_is_valid`].
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reference_name_is_valid(valid: *mut c_int, refname: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git_reference_name_is_valid(
+        valid: *mut c_int,
+        refname: *const c_char,
+    ) -> c_int {
         // SAFETY: per the contract.
         unsafe { git_reference__name_is_valid(valid, refname, GIT_REFERENCE_FORMAT_ALLOW_ONELEVEL) }
     }
@@ -2514,7 +2737,10 @@ pub mod ffi {
     ///
     /// `out` writable; see the module.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reference__log_signature(out: *mut *mut git_signature, repo: *mut git_repository) -> c_int {
+    pub unsafe extern "C" fn git_reference__log_signature(
+        out: *mut *mut git_signature,
+        repo: *mut git_repository,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: per the contract.
             match log_signature(unsafe { repo_unchecked(repo) }) {
@@ -2571,7 +2797,10 @@ mod tests {
     fn normalize() {
         let _g = test_support::init();
         assert_eq!(norm("refs/heads/master", 0).unwrap(), "refs/heads/master");
-        assert_eq!(norm("refs///heads//master", 0).unwrap(), "refs/heads/master");
+        assert_eq!(
+            norm("refs///heads//master", 0).unwrap(),
+            "refs/heads/master"
+        );
         assert_eq!(norm("@", ONE).unwrap(), "HEAD");
         assert_eq!(norm("@/x", SHORT).unwrap(), "HEAD/x");
         assert_eq!(norm("HEAD", ONE).unwrap(), "HEAD");
@@ -2613,8 +2842,14 @@ mod tests {
         assert_eq!(name_is_valid(b"refs//heads/x", 0), Ok(false));
         assert_eq!(name_is_valid(b"refs/heads/x", 0), Ok(true));
         // Validation disabled copies the name, buffer or not.
-        assert_eq!(norm("not valid..", GIT_REFERENCE_FORMAT_VALIDATION_DISABLE).unwrap(), "not valid..");
-        assert_eq!(name_is_valid(b"..", GIT_REFERENCE_FORMAT_VALIDATION_DISABLE), Ok(true));
+        assert_eq!(
+            norm("not valid..", GIT_REFERENCE_FORMAT_VALIDATION_DISABLE).unwrap(),
+            "not valid.."
+        );
+        assert_eq!(
+            name_is_valid(b"..", GIT_REFERENCE_FORMAT_VALIDATION_DISABLE),
+            Ok(true)
+        );
         // The bytes after a NUL are not read (C reads a C string).
         assert_eq!(norm("refs/heads/x\0..", 0).unwrap(), "refs/heads/x");
     }
@@ -2624,7 +2859,10 @@ mod tests {
         let _g = test_support::init();
         let b = normalize_to_buffer(b"refs/heads/abc", 0, 15).unwrap();
         assert_eq!(b.as_bytes(), b"refs/heads/abc");
-        assert_eq!(normalize_to_buffer(b"refs/heads/abc", 0, 14).unwrap_err(), ErrorCode::BUFS);
+        assert_eq!(
+            normalize_to_buffer(b"refs/heads/abc", 0, 14).unwrap_err(),
+            ErrorCode::BUFS
+        );
         assert_eq!(
             errors::last_message().unwrap(),
             b"the provided buffer is too short to hold the normalization of 'refs/heads/abc'"
@@ -2634,8 +2872,12 @@ mod tests {
     #[test]
     fn predicates() {
         assert!(is_branch(b"refs/heads/x") && !is_branch(b"refs/tags/x"));
-        assert!(is_tag(b"refs/tags/x") && is_remote(b"refs/remotes/o/x") && is_note(b"refs/notes/x"));
-        assert!(is_pseudoref(b"FETCH_HEAD") && is_pseudoref(b"MERGE_HEAD") && !is_pseudoref(b"HEAD"));
+        assert!(
+            is_tag(b"refs/tags/x") && is_remote(b"refs/remotes/o/x") && is_note(b"refs/notes/x")
+        );
+        assert!(
+            is_pseudoref(b"FETCH_HEAD") && is_pseudoref(b"MERGE_HEAD") && !is_pseudoref(b"HEAD")
+        );
         for (n, w) in [
             ("HEAD", true),
             ("ORIG_HEAD", true),
@@ -2654,7 +2896,10 @@ mod tests {
             ("refs/notes/n", "notes/n"),
             ("HEAD", "HEAD"),
         ] {
-            assert_eq!(&n.as_bytes()[shorthand_offset(n.as_bytes())..], s.as_bytes());
+            assert_eq!(
+                &n.as_bytes()[shorthand_offset(n.as_bytes())..],
+                s.as_bytes()
+            );
         }
     }
 
@@ -2664,7 +2909,10 @@ mod tests {
         let id = Oid::from_hex(b"a65fedf39aefe402d3bb6e24df4d4f5fe4547750", OidType::Sha1).unwrap();
         let d = RefBox::new_direct(b"refs/heads/x", &id, None).unwrap();
         let v = d.view();
-        assert_eq!((v.name(), v.kind(), v.target()), (&b"refs/heads/x"[..], Some(ReferenceType::Direct), Some(&id)));
+        assert_eq!(
+            (v.name(), v.kind(), v.target()),
+            (&b"refs/heads/x"[..], Some(ReferenceType::Direct), Some(&id))
+        );
         assert!(v.peel().is_zero() && v.peel().kind() == Some(OidType::Sha1));
         assert!(v.symbolic_target().is_none() && v.db().is_null());
         let s = RefBox::new_symbolic(b"HEAD", b"refs/heads/x").unwrap();
@@ -2677,8 +2925,13 @@ mod tests {
         assert_eq!(cmp(s.view(), s3.view()), 0);
         let dd = RefBox::dup(d.view()).unwrap();
         assert_eq!(cmp(dd.view(), d.view()), 0);
-        let long = d.rename(b"refs/heads/a-much-longer-name-than-before").unwrap();
-        assert_eq!(long.view().name(), b"refs/heads/a-much-longer-name-than-before");
+        let long = d
+            .rename(b"refs/heads/a-much-longer-name-than-before")
+            .unwrap();
+        assert_eq!(
+            long.view().name(),
+            b"refs/heads/a-much-longer-name-than-before"
+        );
         assert_eq!(long.view().target(), Some(&id));
         let short = long.rename(b"x").unwrap();
         assert_eq!(short.view().name(), b"x");
@@ -2699,8 +2952,14 @@ mod tests {
         assert!(loose_parse_oid(b"r", &with_nl, sha1).is_ok());
         let mut bad = A.to_vec();
         bad.push(b'x');
-        assert_eq!(loose_parse_oid(b"r", &bad, sha1).unwrap_err(), ErrorCode::GENERIC);
-        assert_eq!(errors::last_message().unwrap(), b"corrupted loose reference file: r");
+        assert_eq!(
+            loose_parse_oid(b"r", &bad, sha1).unwrap_err(),
+            ErrorCode::GENERIC
+        );
+        assert_eq!(
+            errors::last_message().unwrap(),
+            b"corrupted loose reference file: r"
+        );
         assert!(loose_parse_oid(b"r", &A[..39], sha1).is_err());
         assert_eq!(loose_parse_symbolic(b"ref: x").unwrap(), b"x");
         assert!(loose_parse_symbolic(b"ref: ").is_err());
@@ -2732,9 +2991,15 @@ mod ffi_tests {
             assert_eq!(git_reference_is_tag(d), 1);
             assert!(git_reference_target_peel(d).is_null());
             let mut p = d;
-            let r = git_reference__realloc(&raw mut p, c"refs/tags/a-longer-name-for-the-same-tag".as_ptr());
+            let r = git_reference__realloc(
+                &raw mut p,
+                c"refs/tags/a-longer-name-for-the-same-tag".as_ptr(),
+            );
             assert!(p.is_null());
-            assert_eq!(cs(git_reference_name(r)), b"refs/tags/a-longer-name-for-the-same-tag");
+            assert_eq!(
+                cs(git_reference_name(r)),
+                b"refs/tags/a-longer-name-for-the-same-tag"
+            );
             assert_eq!(*git_reference_target(r), id);
             let s = git_reference__alloc_symbolic(c"HEAD".as_ptr(), c"refs/tags/v1".as_ptr());
             let mut dup = core::ptr::null_mut();
@@ -2746,11 +3011,20 @@ mod ffi_tests {
             git_reference_free(r);
 
             let mut buf = [0 as c_char; 8];
-            assert_eq!(git_reference_normalize_name(buf.as_mut_ptr(), 8, c"a/..b".as_ptr(), 0), -12);
-            assert_eq!(git_reference_normalize_name(buf.as_mut_ptr(), 8, c"x/y//z".as_ptr(), 0), 0);
+            assert_eq!(
+                git_reference_normalize_name(buf.as_mut_ptr(), 8, c"a/..b".as_ptr(), 0),
+                -12
+            );
+            assert_eq!(
+                git_reference_normalize_name(buf.as_mut_ptr(), 8, c"x/y//z".as_ptr(), 0),
+                0
+            );
             assert_eq!(cs(buf.as_ptr()), b"x/y/z");
             let mut valid = 7;
-            assert_eq!(git_reference__name_is_valid(&raw mut valid, c"refs/x".as_ptr(), 0), 0);
+            assert_eq!(
+                git_reference__name_is_valid(&raw mut valid, c"refs/x".as_ptr(), 0),
+                0
+            );
             assert_eq!(valid, 1);
             let mut s = GitStr::new();
             s.puts(b"q//w").unwrap();

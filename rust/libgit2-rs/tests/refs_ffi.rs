@@ -6,19 +6,19 @@
 use core::ffi::{CStr, c_char, c_int, c_void};
 use core::ptr::{null, null_mut};
 
+use libgit2_rs::OidType;
 use libgit2_rs::oid::Oid;
 use libgit2_rs::refdb::ffi::*;
 use libgit2_rs::refdb::{GitRefdb, git_refdb_backend, git_reference_iterator};
 use libgit2_rs::refdb_fs::ffi::*;
-use libgit2_rs::reflog::ffi::*;
 use libgit2_rs::reflog::GitReflog;
+use libgit2_rs::reflog::ffi::*;
 use libgit2_rs::refs::GitReference;
 use libgit2_rs::refs::ffi::*;
 use libgit2_rs::sys::pending::{git_repository, git_repository_free, git_repository_open};
 use libgit2_rs::util::errors;
 use libgit2_rs::util::str::GitStr;
 use libgit2_rs::util::test_support;
-use libgit2_rs::OidType;
 
 fn last() -> String {
     String::from_utf8(errors::last_message().unwrap_or_default()).unwrap()
@@ -68,7 +68,10 @@ fn alloc_and_getters() {
         let mut p = dup;
         let r = git_reference__realloc(&mut p, c"refs/heads/a-much-much-longer-name".as_ptr());
         assert!(p.is_null());
-        assert_eq!(cs(git_reference_name(r)), "refs/heads/a-much-much-longer-name");
+        assert_eq!(
+            cs(git_reference_name(r)),
+            "refs/heads/a-much-much-longer-name"
+        );
         assert_eq!(*git_reference_target(r), id);
 
         git_reference_free(r);
@@ -100,21 +103,39 @@ fn names() {
     let mut buf = [0 as c_char; 16];
     // SAFETY: the C contract: `buf` writable for its length.
     unsafe {
-        assert_eq!(git_reference_normalize_name(buf.as_mut_ptr(), 16, c"refs//heads/x".as_ptr(), 0), 0);
+        assert_eq!(
+            git_reference_normalize_name(buf.as_mut_ptr(), 16, c"refs//heads/x".as_ptr(), 0),
+            0
+        );
         assert_eq!(cs(buf.as_ptr()), "refs/heads/x");
-        assert_eq!(git_reference_normalize_name(buf.as_mut_ptr(), 12, c"refs/heads/x".as_ptr(), 0), -6);
+        assert_eq!(
+            git_reference_normalize_name(buf.as_mut_ptr(), 12, c"refs/heads/x".as_ptr(), 0),
+            -6
+        );
         assert_eq!(
             last(),
             "the provided buffer is too short to hold the normalization of 'refs/heads/x'"
         );
         // A size of 0 wraps in C's check, then git_str_copy_cstr refuses it.
-        assert_eq!(git_reference_normalize_name(buf.as_mut_ptr(), 0, c"refs/heads/x".as_ptr(), 0), -1);
+        assert_eq!(
+            git_reference_normalize_name(buf.as_mut_ptr(), 0, c"refs/heads/x".as_ptr(), 0),
+            -1
+        );
         assert_eq!(last(), "invalid argument: 'datasize'");
-        assert_eq!(git_reference_normalize_name(buf.as_mut_ptr(), 16, c"refs/heads/".as_ptr(), 0), -12);
-        assert_eq!(last(), "the given reference name 'refs/heads/' is not valid");
+        assert_eq!(
+            git_reference_normalize_name(buf.as_mut_ptr(), 16, c"refs/heads/".as_ptr(), 0),
+            -12
+        );
+        assert_eq!(
+            last(),
+            "the given reference name 'refs/heads/' is not valid"
+        );
 
         let mut valid = -1;
-        assert_eq!(git_reference_name_is_valid(&mut valid, c"refs/heads/x".as_ptr()), 0);
+        assert_eq!(
+            git_reference_name_is_valid(&mut valid, c"refs/heads/x".as_ptr()),
+            0
+        );
         assert_eq!(valid, 1);
         assert_eq!(git_reference_name_is_valid(&mut valid, c"x".as_ptr()), 0);
         assert_eq!(valid, 0);
@@ -127,13 +148,25 @@ fn names() {
         let p = s.as_ptr();
         assert_eq!(git_reference__normalize_name(&mut s, p, 0), 0);
         assert_eq!(s.as_bytes(), b"refs/heads/y");
-        assert_eq!(git_reference__normalize_name(&mut s, c"a..b".as_ptr(), 1), -12);
+        assert_eq!(
+            git_reference__normalize_name(&mut s, c"a..b".as_ptr(), 1),
+            -12
+        );
         assert_eq!(s.as_bytes(), b"");
 
-        assert_eq!(cs(git_reference__shorthand(c"refs/remotes/o/m".as_ptr())), "o/m");
+        assert_eq!(
+            cs(git_reference__shorthand(c"refs/remotes/o/m".as_ptr())),
+            "o/m"
+        );
         assert_eq!(git_reference__is_pseudoref(c"FETCH_HEAD".as_ptr()), 1);
-        assert_eq!(git_reference__is_per_worktree_ref(c"refs/bisect/x".as_ptr()), 1);
-        assert_eq!(git_reference__is_per_worktree_ref(c"refs/heads/x".as_ptr()), 0);
+        assert_eq!(
+            git_reference__is_per_worktree_ref(c"refs/bisect/x".as_ptr()),
+            1
+        );
+        assert_eq!(
+            git_reference__is_per_worktree_ref(c"refs/heads/x".as_ptr()),
+            0
+        );
     }
 }
 
@@ -141,10 +174,17 @@ struct Repo(*mut git_repository);
 
 impl Repo {
     fn open(name: &str, tag: &str) -> (Repo, std::path::PathBuf) {
-        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/resources").join(name);
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/resources")
+            .join(name);
         let dst = std::env::temp_dir().join(format!("l-refs-ffi-{}-{tag}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dst);
-        let st = std::process::Command::new("cp").arg("-r").arg(&src).arg(&dst).status().unwrap();
+        let st = std::process::Command::new("cp")
+            .arg("-r")
+            .arg(&src)
+            .arg(&dst)
+            .status()
+            .unwrap();
         assert!(st.success());
         let p = std::ffi::CString::new(dst.to_str().unwrap()).unwrap();
         let mut r = null_mut();
@@ -170,9 +210,15 @@ fn refdb_and_backends() {
         let mut db: *mut GitRefdb = null_mut();
         assert_eq!(git_refdb_open(&mut db, repo.0), 0);
         let mut exists = 0;
-        assert_eq!(git_refdb_exists(&mut exists, db, c"refs/heads/master".as_ptr()), 0);
+        assert_eq!(
+            git_refdb_exists(&mut exists, db, c"refs/heads/master".as_ptr()),
+            0
+        );
         assert_eq!(exists, 1);
-        assert_eq!(git_refdb_exists(&mut exists, db, c"refs/heads/nope".as_ptr()), 0);
+        assert_eq!(
+            git_refdb_exists(&mut exists, db, c"refs/heads/nope".as_ptr()),
+            0
+        );
         assert_eq!(exists, 0);
         let mut r: *mut GitReference = null_mut();
         assert_eq!(git_refdb_lookup(&mut r, db, c"HEAD".as_ptr()), 0);
@@ -212,15 +258,24 @@ fn refdb_and_backends() {
         let mut fs: *mut git_refdb_backend = null_mut();
         assert_eq!(git_refdb_backend_fs(&mut fs, repo.0), 0);
         assert_eq!(git_refdb_set_backend(db, fs), 0);
-        assert_eq!(git_refdb_exists(&mut exists, db, c"refs/heads/master".as_ptr()), 0);
+        assert_eq!(
+            git_refdb_exists(&mut exists, db, c"refs/heads/master".as_ptr()),
+            0
+        );
         assert_eq!(exists, 1);
         assert_eq!(git_refdb_compress(db), 0);
         assert!(!dir.join("refs/heads/master").exists());
 
         let mut payload: *mut c_void = null_mut();
-        assert_eq!(git_refdb_lock(&mut payload, db, c"refs/heads/locked".as_ptr()), 0);
+        assert_eq!(
+            git_refdb_lock(&mut payload, db, c"refs/heads/locked".as_ptr()),
+            0
+        );
         assert!(dir.join("refs/heads/locked.lock").exists());
-        assert_eq!(git_refdb_unlock(db, payload, 0, 0, null(), null(), null()), 0);
+        assert_eq!(
+            git_refdb_unlock(db, payload, 0, 0, null(), null(), null()),
+            0
+        );
         assert!(!dir.join("refs/heads/locked.lock").exists());
 
         assert_eq!(git_refdb_has_log(db, c"HEAD".as_ptr()), 1);
@@ -231,8 +286,14 @@ fn refdb_and_backends() {
 
         // Loose lookups without a result.
         let gitdir = std::ffi::CString::new(dir.to_str().unwrap()).unwrap();
-        assert_eq!(git_reference__lookup_loose(null_mut(), gitdir.as_ptr(), c"HEAD".as_ptr(), 1), 0);
-        assert_eq!(git_reference__lookup_loose(null_mut(), gitdir.as_ptr(), c"nope".as_ptr(), 1), -3);
+        assert_eq!(
+            git_reference__lookup_loose(null_mut(), gitdir.as_ptr(), c"HEAD".as_ptr(), 1),
+            0
+        );
+        assert_eq!(
+            git_reference__lookup_loose(null_mut(), gitdir.as_ptr(), c"nope".as_ptr(), 1),
+            -3
+        );
     }
     drop(repo);
     let _ = std::fs::remove_dir_all(&dir);
@@ -257,7 +318,10 @@ fn reflog_abi() {
         let committer = git_reflog_entry_committer(e);
         let id = oid("a65fedf39aefe402d3bb6e24df4d4f5fe4547750");
         assert_eq!(git_reflog_append(log, &id, committer, c"a\nb".as_ptr()), 0);
-        assert_eq!(cs(git_reflog_entry_message(git_reflog_entry_byindex(log, 0))), "a b");
+        assert_eq!(
+            cs(git_reflog_entry_message(git_reflog_entry_byindex(log, 0))),
+            "a b"
+        );
         assert_eq!(git_reflog_drop(log, n + 5, 1), -3);
         assert_eq!(last(), format!("no reflog entry at index {}", n + 5));
         // Dropping the oldest clears the old id of the next one.
@@ -273,7 +337,14 @@ fn reflog_abi() {
         assert_eq!(last(), "invalid argument: 'entry'");
         assert_eq!(git_reflog_append(null_mut(), &id, null(), null()), -1);
         assert_eq!(git_reflog_write(null_mut()), -1);
-        assert_eq!(git_reflog_rename(repo.0, c"refs/heads/nope".as_ptr(), c"refs/heads/n2".as_ptr()), -3);
+        assert_eq!(
+            git_reflog_rename(
+                repo.0,
+                c"refs/heads/nope".as_ptr(),
+                c"refs/heads/n2".as_ptr()
+            ),
+            -3
+        );
         assert_eq!(git_reflog_delete(repo.0, c"refs/heads/nope".as_ptr()), 0);
     }
     drop(repo);

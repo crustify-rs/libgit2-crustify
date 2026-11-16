@@ -10,11 +10,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use libgit2_rs::refs_api::{
-    self, Committer, PeelTarget, RefValue, ReferenceFormat, ReferenceNames, ReflogRecord, Repository,
-    set_refdb_backend,
+    self, Committer, PeelTarget, RefValue, ReferenceFormat, ReferenceNames, ReflogRecord,
+    Repository, set_refdb_backend,
 };
 use libgit2_rs::util::test_support;
-use libgit2_rs::{Error, ErrorClass, ErrorCode, Oid, OidType, RefdbBackend, Reference, ReferenceType, References, Reflog};
+use libgit2_rs::{
+    Error, ErrorClass, ErrorCode, Oid, OidType, RefdbBackend, Reference, ReferenceType, References,
+    Reflog,
+};
 
 const MASTER: &str = "a65fedf39aefe402d3bb6e24df4d4f5fe4547750";
 const BR2: &str = "a4a7dce85cf63874e984719f4fdd239f5145052f";
@@ -41,7 +44,9 @@ struct Sandbox(PathBuf);
 
 impl Sandbox {
     fn new(name: &str, tag: &str) -> Sandbox {
-        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/resources").join(name);
+        let src = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/resources")
+            .join(name);
         let dst = std::env::temp_dir().join(format!("l-refs-{}-{tag}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dst);
         copy_dir(&src, &dst);
@@ -77,28 +82,49 @@ fn lookup_and_resolve() {
 
     // Packed references.
     let packed = Reference::lookup(&repo, b"refs/heads/packed").unwrap();
-    assert_eq!(packed.target(), Some(oid("41bc8c69075bbdb46c5c6f0566cc8cc5b46e8bd9")));
+    assert_eq!(
+        packed.target(),
+        Some(oid("41bc8c69075bbdb46c5c6f0566cc8cc5b46e8bd9"))
+    );
 
     // dwim.
-    assert_eq!(Reference::dwim(&repo, b"br2").unwrap().name(), b"refs/heads/br2");
-    assert_eq!(Reference::dwim(&repo, b"test/master").unwrap().name(), b"refs/remotes/test/master");
+    assert_eq!(
+        Reference::dwim(&repo, b"br2").unwrap().name(),
+        b"refs/heads/br2"
+    );
+    assert_eq!(
+        Reference::dwim(&repo, b"test/master").unwrap().name(),
+        b"refs/remotes/test/master"
+    );
     let e = Reference::dwim(&repo, b"nope").unwrap_err();
     assert_eq!(e.code(), ErrorCode::NOT_FOUND);
     assert_eq!(e.message(), "no reference found for shorthand 'nope'");
 
     let e = Reference::lookup(&repo, b"refs/heads/missing").unwrap_err();
-    assert_eq!((e.code(), e.class()), (ErrorCode::NOT_FOUND, ErrorClass::REFERENCE));
+    assert_eq!(
+        (e.code(), e.class()),
+        (ErrorCode::NOT_FOUND, ErrorClass::REFERENCE)
+    );
     assert_eq!(e.message(), "reference 'refs/heads/missing' not found");
     let e = Reference::lookup(&repo, b"refs/heads/a..b").unwrap_err();
     assert_eq!(e.code(), ErrorCode::INVALID_SPEC);
-    assert_eq!(e.message(), "the given reference name 'refs/heads/a..b' is not valid");
-    assert_eq!(Reference::lookup(&repo, b"a\0b").unwrap_err().code(), ErrorCode::INVALID_SPEC);
+    assert_eq!(
+        e.message(),
+        "the given reference name 'refs/heads/a..b' is not valid"
+    );
+    assert_eq!(
+        Reference::lookup(&repo, b"a\0b").unwrap_err().code(),
+        ErrorCode::INVALID_SPEC
+    );
 
     // Peeling an annotated tag.
     let tag = Reference::lookup(&repo, b"refs/tags/test").unwrap();
     let commit = tag.peel_to_id(PeelTarget::Commit).unwrap();
     assert_ne!(Some(commit), tag.target());
-    assert_eq!(tag.peel_to_id(PeelTarget::Tag).unwrap(), tag.target().unwrap());
+    assert_eq!(
+        tag.peel_to_id(PeelTarget::Tag).unwrap(),
+        tag.target().unwrap()
+    );
 
     // Clone, equality and order.
     let c = master.clone();
@@ -112,32 +138,76 @@ fn create_update_rename_delete() {
     let sb = Sandbox::new("testrepo.git", "write");
     let repo = Repository::open(&sb.0).unwrap();
 
-    let r = Reference::create(&repo, b"refs/heads/new", &oid(MASTER), false, None, Some("made")).unwrap();
+    let r = Reference::create(
+        &repo,
+        b"refs/heads/new",
+        &oid(MASTER),
+        false,
+        None,
+        Some("made"),
+    )
+    .unwrap();
     assert_eq!(r.target(), Some(oid(MASTER)));
-    let e = Reference::create(&repo, b"refs/heads/new", &oid(MASTER), false, None, None).unwrap_err();
+    let e =
+        Reference::create(&repo, b"refs/heads/new", &oid(MASTER), false, None, None).unwrap_err();
     assert_eq!(e.code(), ErrorCode::EXISTS);
     assert_eq!(
         e.message(),
         "failed to write reference 'refs/heads/new': a reference with that name already exists."
     );
     // A collision with an existing directory-to-be.
-    let e = Reference::create(&repo, b"refs/heads/packed/x", &oid(MASTER), false, None, None).unwrap_err();
-    assert_eq!(e.message(), "path to reference 'refs/heads/packed/x' collides with existing one");
+    let e = Reference::create(
+        &repo,
+        b"refs/heads/packed/x",
+        &oid(MASTER),
+        false,
+        None,
+        None,
+    )
+    .unwrap_err();
+    assert_eq!(
+        e.message(),
+        "path to reference 'refs/heads/packed/x' collides with existing one"
+    );
 
     // Compare-and-swap.
-    let e = Reference::create(&repo, b"refs/heads/new", &oid(BR2), true, Some(&oid(BR2)), None).unwrap_err();
+    let e = Reference::create(
+        &repo,
+        b"refs/heads/new",
+        &oid(BR2),
+        true,
+        Some(&oid(BR2)),
+        None,
+    )
+    .unwrap_err();
     assert_eq!(e.code(), ErrorCode::MODIFIED);
     let moved = r.set_target(&oid(BR2), Some("move")).unwrap();
     assert_eq!(moved.target(), Some(oid(BR2)));
-    assert_eq!(r.set_target(&oid(MASTER), None).unwrap_err().code(), ErrorCode::MODIFIED);
+    assert_eq!(
+        r.set_target(&oid(MASTER), None).unwrap_err().code(),
+        ErrorCode::MODIFIED
+    );
 
-    let s = Reference::symbolic_create(&repo, b"refs/heads/sym", b"refs/heads/new", false, None, None).unwrap();
+    let s = Reference::symbolic_create(
+        &repo,
+        b"refs/heads/sym",
+        b"refs/heads/new",
+        false,
+        None,
+        None,
+    )
+    .unwrap();
     assert_eq!(s.kind(), ReferenceType::Symbolic);
-    assert_eq!(s.set_target(&oid(MASTER), None).unwrap_err().message(), "cannot set OID on symbolic reference");
+    assert_eq!(
+        s.set_target(&oid(MASTER), None).unwrap_err().message(),
+        "cannot set OID on symbolic reference"
+    );
     let s2 = s.symbolic_set_target(b"refs/heads/master", None).unwrap();
     assert_eq!(s2.symbolic_target(), Some(&b"refs/heads/master"[..]));
 
-    let renamed = moved.rename(b"refs/heads/renamed", false, Some("rename")).unwrap();
+    let renamed = moved
+        .rename(b"refs/heads/renamed", false, Some("rename"))
+        .unwrap();
     assert_eq!(renamed.name(), b"refs/heads/renamed");
     assert!(Reference::lookup(&repo, b"refs/heads/new").is_err());
     let log = Reflog::read(&repo, b"refs/heads/renamed").unwrap();
@@ -145,7 +215,9 @@ fn create_update_rename_delete() {
 
     renamed.delete().unwrap();
     assert_eq!(
-        Reference::lookup(&repo, b"refs/heads/renamed").unwrap_err().code(),
+        Reference::lookup(&repo, b"refs/heads/renamed")
+            .unwrap_err()
+            .code(),
         ErrorCode::NOT_FOUND
     );
     refs_api::remove(&repo, b"refs/heads/sym").unwrap();
@@ -162,9 +234,15 @@ fn iterate_glob_and_compress() {
     let all = refs_api::list(&repo).unwrap();
     assert!(all.contains(&b"refs/heads/master".to_vec()));
     assert!(all.contains(&b"refs/heads/packed".to_vec()));
-    let refs: Vec<Reference<'_>> = References::new(&repo).unwrap().collect::<Result<_, _>>().unwrap();
+    let refs: Vec<Reference<'_>> = References::new(&repo)
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
     assert_eq!(refs.len(), all.len());
-    let tags: Vec<Vec<u8>> = ReferenceNames::glob(&repo, b"refs/tags/*").unwrap().collect::<Result<_, _>>().unwrap();
+    let tags: Vec<Vec<u8>> = ReferenceNames::glob(&repo, b"refs/tags/*")
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
     assert!(!tags.is_empty() && tags.iter().all(|t| t.starts_with(b"refs/tags/")));
     let mut seen = Vec::new();
     refs_api::for_each_name(&repo, Some(b"refs/heads/*"), |n| {
@@ -194,7 +272,10 @@ fn names() {
     let _g = test_support::init();
     let n = refs_api::normalize_name(b"refs//heads///x", ReferenceFormat::NORMAL).unwrap();
     assert_eq!(n, b"refs/heads/x");
-    assert_eq!(refs_api::normalize_name(b"@", ReferenceFormat::ALLOW_ONELEVEL).unwrap(), b"HEAD");
+    assert_eq!(
+        refs_api::normalize_name(b"@", ReferenceFormat::ALLOW_ONELEVEL).unwrap(),
+        b"HEAD"
+    );
     assert_eq!(
         refs_api::normalize_name(b"refs/heads/*", ReferenceFormat::REFSPEC_PATTERN).unwrap(),
         b"refs/heads/*"
@@ -257,7 +338,11 @@ struct MemBackend {
 }
 
 fn modified() -> Error {
-    Error::new(ErrorCode::MODIFIED, ErrorClass::REFERENCE, "old reference value does not match")
+    Error::new(
+        ErrorCode::MODIFIED,
+        ErrorClass::REFERENCE,
+        "old reference value does not match",
+    )
 }
 
 impl RefdbBackend for MemBackend {
@@ -268,7 +353,13 @@ impl RefdbBackend for MemBackend {
         Ok(self.refs.lock().unwrap().get(name).cloned())
     }
     fn list(&self) -> Result<Vec<(Vec<u8>, RefValue)>, Error> {
-        Ok(self.refs.lock().unwrap().iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+        Ok(self
+            .refs
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect())
     }
     fn write(
         &self,
@@ -281,11 +372,17 @@ impl RefdbBackend for MemBackend {
     ) -> Result<(), Error> {
         let mut m = self.refs.lock().unwrap();
         if !force && m.contains_key(name) {
-            return Err(Error::new(ErrorCode::EXISTS, ErrorClass::REFERENCE, "exists"));
+            return Err(Error::new(
+                ErrorCode::EXISTS,
+                ErrorClass::REFERENCE,
+                "exists",
+            ));
         }
         match (m.get(name), old_id, old_target) {
             (Some(RefValue::Direct { id, .. }), Some(o), _) if id != o => return Err(modified()),
-            (Some(RefValue::Symbolic(t)), _, Some(o)) if t.as_slice() != o => return Err(modified()),
+            (Some(RefValue::Symbolic(t)), _, Some(o)) if t.as_slice() != o => {
+                return Err(modified());
+            }
             _ => {}
         }
         m.insert(name.to_vec(), value.clone());
@@ -299,7 +396,12 @@ impl RefdbBackend for MemBackend {
         m.insert(new_name.to_vec(), v.clone());
         Ok(v)
     }
-    fn delete(&self, name: &[u8], _old_id: Option<&Oid>, _old_target: Option<&[u8]>) -> Result<(), Error> {
+    fn delete(
+        &self,
+        name: &[u8],
+        _old_id: Option<&Oid>,
+        _old_target: Option<&[u8]>,
+    ) -> Result<(), Error> {
         self.refs.lock().unwrap().remove(name);
         Ok(())
     }
@@ -307,10 +409,19 @@ impl RefdbBackend for MemBackend {
         self.logs.lock().unwrap().contains_key(name)
     }
     fn reflog_read(&self, name: &[u8]) -> Result<Vec<ReflogRecord>, Error> {
-        Ok(self.logs.lock().unwrap().get(name).cloned().unwrap_or_default())
+        Ok(self
+            .logs
+            .lock()
+            .unwrap()
+            .get(name)
+            .cloned()
+            .unwrap_or_default())
     }
     fn reflog_write(&self, name: &[u8], entries: &[ReflogRecord]) -> Result<(), Error> {
-        self.logs.lock().unwrap().insert(name.to_vec(), entries.to_vec());
+        self.logs
+            .lock()
+            .unwrap()
+            .insert(name.to_vec(), entries.to_vec());
         Ok(())
     }
 }
@@ -321,23 +432,46 @@ fn rust_backend() {
     let sb = Sandbox::new("testrepo.git", "backend");
     let repo = Repository::open(&sb.0).unwrap();
     let mem = MemBackend::default();
-    mem.refs
-        .lock()
-        .unwrap()
-        .insert(b"HEAD".to_vec(), RefValue::Symbolic(b"refs/heads/main".to_vec()));
+    mem.refs.lock().unwrap().insert(
+        b"HEAD".to_vec(),
+        RefValue::Symbolic(b"refs/heads/main".to_vec()),
+    );
     set_refdb_backend(&repo, mem).unwrap();
 
     // HEAD is dangling until main exists.
-    assert_eq!(refs_api::name_to_id(&repo, b"HEAD").unwrap_err().code(), ErrorCode::NOT_FOUND);
-    Reference::create(&repo, b"refs/heads/main", &oid(MASTER), false, None, Some("init")).unwrap();
+    assert_eq!(
+        refs_api::name_to_id(&repo, b"HEAD").unwrap_err().code(),
+        ErrorCode::NOT_FOUND
+    );
+    Reference::create(
+        &repo,
+        b"refs/heads/main",
+        &oid(MASTER),
+        false,
+        None,
+        Some("init"),
+    )
+    .unwrap();
     assert_eq!(refs_api::name_to_id(&repo, b"HEAD").unwrap(), oid(MASTER));
     Reference::create(&repo, b"refs/tags/v1", &oid(BR2), false, None, None).unwrap();
-    assert_eq!(refs_api::list(&repo).unwrap(), [&b"HEAD"[..], b"refs/heads/main", b"refs/tags/v1"]);
-    let tags: Vec<_> = References::glob(&repo, b"refs/tags/*").unwrap().collect::<Result<_, _>>().unwrap();
+    assert_eq!(
+        refs_api::list(&repo).unwrap(),
+        [&b"HEAD"[..], b"refs/heads/main", b"refs/tags/v1"]
+    );
+    let tags: Vec<_> = References::glob(&repo, b"refs/tags/*")
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
     assert_eq!(tags.len(), 1);
     let main = Reference::lookup(&repo, b"refs/heads/main").unwrap();
-    assert_eq!(main.set_target(&oid(BR2), Some("move")).unwrap().target(), Some(oid(BR2)));
-    assert_eq!(main.set_target(&oid(MASTER), None).unwrap_err().code(), ErrorCode::MODIFIED);
+    assert_eq!(
+        main.set_target(&oid(BR2), Some("move")).unwrap().target(),
+        Some(oid(BR2))
+    );
+    assert_eq!(
+        main.set_target(&oid(MASTER), None).unwrap_err().code(),
+        ErrorCode::MODIFIED
+    );
     let e = Reference::lookup(&repo, b"refs/heads/none").unwrap_err();
     assert_eq!(e.message(), "reference 'refs/heads/none' not found");
 
@@ -372,7 +506,15 @@ impl RefdbBackend for Panicky {
     fn list(&self) -> Result<Vec<(Vec<u8>, RefValue)>, Error> {
         Ok(Vec::new())
     }
-    fn write(&self, _: &[u8], _: &RefValue, _: bool, _: Option<&Oid>, _: Option<&[u8]>, _: Option<&[u8]>) -> Result<(), Error> {
+    fn write(
+        &self,
+        _: &[u8],
+        _: &RefValue,
+        _: bool,
+        _: Option<&Oid>,
+        _: Option<&[u8]>,
+        _: Option<&[u8]>,
+    ) -> Result<(), Error> {
         Ok(())
     }
     fn rename(&self, _: &[u8], _: &[u8], _: bool) -> Result<RefValue, Error> {

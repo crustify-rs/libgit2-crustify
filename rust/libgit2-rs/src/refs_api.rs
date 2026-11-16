@@ -20,17 +20,19 @@ use ffibox::vtable::CTable;
 
 use crate::oid::Oid;
 use crate::refdb::{
-    self, GIT_REFDB_BACKEND_VERSION, RefIteratorTable, RefdbBackendTable, RefdbPtr, git_refdb_backend,
-    git_reference_iterator,
+    self, GIT_REFDB_BACKEND_VERSION, RefIteratorTable, RefdbBackendTable, RefdbPtr,
+    git_refdb_backend, git_reference_iterator,
 };
-use crate::refs::{self, GIT_REFERENCE_DIRECT, GIT_REFERENCE_SYMBOLIC, GitReference, RefBox, RefIter, RefView};
-pub use crate::refs::ReferenceType;
 use crate::reflog::{self as rl, GitReflog};
+pub use crate::refs::ReferenceType;
+use crate::refs::{
+    self, GIT_REFERENCE_DIRECT, GIT_REFERENCE_SYMBOLIC, GitReference, RefBox, RefIter, RefView,
+};
 use crate::sys::pending::{self as p, RepoPtr, SigBox, git_signature};
 use crate::util::errors::{self, Bytes, Error, ErrorClass, ErrorCode};
 use crate::util::fs_path::to_cstring;
 use crate::util::pool::GitPool;
-use crate::util::wildmatch::wildmatch;
+use crate::util::wildmatch::{WildmatchFlags, wildmatch};
 
 type Result<T> = core::result::Result<T, Error>;
 
@@ -114,8 +116,13 @@ impl Drop for Repository {
 
 fn path_c(p: &Path) -> Result<CString> {
     use std::os::unix::ffi::OsStrExt;
-    CString::new(p.as_os_str().as_bytes())
-        .map_err(|_| Error::new(ErrorCode::INVALID, ErrorClass::INVALID, "path contains a NUL byte"))
+    CString::new(p.as_os_str().as_bytes()).map_err(|_| {
+        Error::new(
+            ErrorCode::INVALID,
+            ErrorClass::INVALID,
+            "path contains a NUL byte",
+        )
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -134,7 +141,9 @@ impl core::fmt::Debug for Reference<'_> {
         d.field("name", &Bytes(self.name()));
         match self.kind() {
             ReferenceType::Direct => d.field("target", &self.target()),
-            ReferenceType::Symbolic => d.field("symbolic_target", &self.symbolic_target().map(Bytes)),
+            ReferenceType::Symbolic => {
+                d.field("symbolic_target", &self.symbolic_target().map(Bytes))
+            }
         };
         d.finish()
     }
@@ -187,7 +196,11 @@ impl<'repo> Reference<'repo> {
 
     /// `git_reference_lookup_resolved`: follow symbolic references up to
     /// `max_nesting` deep (negative: the default).
-    pub fn lookup_resolved(repo: &'repo Repository, name: &[u8], max_nesting: i32) -> Result<Reference<'repo>> {
+    pub fn lookup_resolved(
+        repo: &'repo Repository,
+        name: &[u8],
+        max_nesting: i32,
+    ) -> Result<Reference<'repo>> {
         cname(name)?;
         rich(refs::lookup_resolved(repo.ptr(), name, max_nesting)).map(Self::wrap)
     }
@@ -211,7 +224,15 @@ impl<'repo> Reference<'repo> {
     ) -> Result<Reference<'repo>> {
         cname(name)?;
         let msg = log_message.map(|m| to_cstring(m.as_bytes()));
-        rich(refs::create_matching(repo.ptr(), name, id, force, current, msg.as_deref())).map(Self::wrap)
+        rich(refs::create_matching(
+            repo.ptr(),
+            name,
+            id,
+            force,
+            current,
+            msg.as_deref(),
+        ))
+        .map(Self::wrap)
     }
 
     /// `git_reference_symbolic_create_matching`.
@@ -309,28 +330,47 @@ impl<'repo> Reference<'repo> {
     }
 
     /// `git_reference_symbolic_set_target`.
-    pub fn symbolic_set_target(&self, target: &[u8], log_message: Option<&str>) -> Result<Reference<'repo>> {
+    pub fn symbolic_set_target(
+        &self,
+        target: &[u8],
+        log_message: Option<&str>,
+    ) -> Result<Reference<'repo>> {
         cname(target)?;
         let msg = log_message.map(|m| to_cstring(m.as_bytes()));
-        rich(refs::symbolic_set_target(self.view(), target, msg.as_deref())).map(Self::wrap)
+        rich(refs::symbolic_set_target(
+            self.view(),
+            target,
+            msg.as_deref(),
+        ))
+        .map(Self::wrap)
     }
 
     /// `git_reference_rename`: the renamed reference (worktrees' HEADs
     /// pointing at it follow).
-    pub fn rename(&self, new_name: &[u8], force: bool, log_message: Option<&str>) -> Result<Reference<'repo>> {
+    pub fn rename(
+        &self,
+        new_name: &[u8],
+        force: bool,
+        log_message: Option<&str>,
+    ) -> Result<Reference<'repo>> {
         cname(new_name)?;
         let msg = log_message.map(|m| to_cstring(m.as_bytes()));
         let mut out = None;
         let r = refs::rename(self.view(), new_name, force, msg.as_deref(), &mut out);
         rich(r)?;
-        out.map(Self::wrap).ok_or_else(|| Error::from(ErrorCode::GENERIC))
+        out.map(Self::wrap)
+            .ok_or_else(|| Error::from(ErrorCode::GENERIC))
     }
 
     /// `git_reference_delete` (not HEAD).
     pub fn delete(&self) -> Result<()> {
         let v = self.view();
         if v.name() == b"HEAD" {
-            return Err(Error::new(ErrorCode::GENERIC, ErrorClass::REFERENCE, "cannot delete HEAD"));
+            return Err(Error::new(
+                ErrorCode::GENERIC,
+                ErrorClass::REFERENCE,
+                "cannot delete HEAD",
+            ));
         }
         let (old_id, old_target) = if v.raw_kind() == GIT_REFERENCE_DIRECT {
             (Some(v.oid_field()), None)
@@ -411,7 +451,9 @@ pub fn has_log(repo: &Repository, name: &[u8]) -> Result<bool> {
 /// `git_reference_ensure_log`.
 pub fn ensure_log(repo: &Repository, name: &[u8]) -> Result<()> {
     let n = cname(name)?;
-    rich(RefdbPtr::of_repo(repo.ptr()).and_then(|db| ErrorCode::check(db.ensure_log(&n)?).map(drop)))
+    rich(
+        RefdbPtr::of_repo(repo.ptr()).and_then(|db| ErrorCode::check(db.ensure_log(&n)?).map(drop)),
+    )
 }
 
 /// `git_refdb_compress`: pack the loose references.
@@ -427,11 +469,14 @@ impl ReferenceFormat {
     /// `GIT_REFERENCE_FORMAT_NORMAL`.
     pub const NORMAL: ReferenceFormat = ReferenceFormat(0);
     /// `GIT_REFERENCE_FORMAT_ALLOW_ONELEVEL`.
-    pub const ALLOW_ONELEVEL: ReferenceFormat = ReferenceFormat(refs::GIT_REFERENCE_FORMAT_ALLOW_ONELEVEL);
+    pub const ALLOW_ONELEVEL: ReferenceFormat =
+        ReferenceFormat(refs::GIT_REFERENCE_FORMAT_ALLOW_ONELEVEL);
     /// `GIT_REFERENCE_FORMAT_REFSPEC_PATTERN`.
-    pub const REFSPEC_PATTERN: ReferenceFormat = ReferenceFormat(refs::GIT_REFERENCE_FORMAT_REFSPEC_PATTERN);
+    pub const REFSPEC_PATTERN: ReferenceFormat =
+        ReferenceFormat(refs::GIT_REFERENCE_FORMAT_REFSPEC_PATTERN);
     /// `GIT_REFERENCE_FORMAT_REFSPEC_SHORTHAND`.
-    pub const REFSPEC_SHORTHAND: ReferenceFormat = ReferenceFormat(refs::GIT_REFERENCE_FORMAT_REFSPEC_SHORTHAND);
+    pub const REFSPEC_SHORTHAND: ReferenceFormat =
+        ReferenceFormat(refs::GIT_REFERENCE_FORMAT_REFSPEC_SHORTHAND);
 }
 
 impl core::ops::BitOr for ReferenceFormat {
@@ -451,7 +496,11 @@ pub fn normalize_name(name: &[u8], format: ReferenceFormat) -> Result<Vec<u8>> {
 
 /// `git_reference_name_is_valid`.
 pub fn is_valid_name(name: &[u8]) -> bool {
-    !name.contains(&0) && matches!(refs::name_is_valid(name, refs::GIT_REFERENCE_FORMAT_ALLOW_ONELEVEL), Ok(true))
+    !name.contains(&0)
+        && matches!(
+            refs::name_is_valid(name, refs::GIT_REFERENCE_FORMAT_ALLOW_ONELEVEL),
+            Ok(true)
+        )
 }
 
 // ---------------------------------------------------------------------------
@@ -535,10 +584,18 @@ impl Iterator for ReferenceNames<'_> {
 
 /// `git_reference_foreach_glob` (or `_foreach_name` without a glob): call
 /// `f` with each name, until it returns `false`.
-pub fn for_each_name(repo: &Repository, glob: Option<&[u8]>, mut f: impl FnMut(&[u8]) -> bool) -> Result<()> {
+pub fn for_each_name(
+    repo: &Repository,
+    glob: Option<&[u8]>,
+    mut f: impl FnMut(&[u8]) -> bool,
+) -> Result<()> {
     let g = glob.map(cname).transpose()?;
     let mut cb = |n: &CStr| -> c_int { if f(n.to_bytes()) { 0 } else { 1 } };
-    let action = if g.is_some() { "git_reference_foreach_glob" } else { "git_reference_foreach_name" };
+    let action = if g.is_some() {
+        "git_reference_foreach_glob"
+    } else {
+        "git_reference_foreach_name"
+    };
     match refs::foreach_name(repo.ptr(), g.as_deref(), action, &mut cb) {
         Ok(()) => Ok(()),
         // A stop asked by `f` is not an error.
@@ -668,7 +725,8 @@ impl<'repo> Reflog<'repo> {
         let n = cname(name)?;
         let log = rich(RefdbPtr::of_repo(repo.ptr()).and_then(|db| db.reflog_read(&n)))?;
         // SAFETY: the backend's fresh reflog, ours.
-        let inner = unsafe { rl::Reflog::from_raw(log.as_ptr()) }.ok_or_else(|| Error::from(ErrorCode::GENERIC))?;
+        let inner = unsafe { rl::Reflog::from_raw(log.as_ptr()) }
+            .ok_or_else(|| Error::from(ErrorCode::GENERIC))?;
         Ok(Reflog {
             inner,
             _repo: PhantomData,
@@ -708,7 +766,12 @@ impl<'repo> Reflog<'repo> {
 
     /// `git_reflog_append`: a new newest entry to `id` (the message's
     /// newlines become spaces).
-    pub fn append(&mut self, id: &Oid, committer: &Committer, message: Option<&[u8]>) -> Result<()> {
+    pub fn append(
+        &mut self,
+        id: &Oid,
+        committer: &Committer,
+        message: Option<&[u8]>,
+    ) -> Result<()> {
         let sig = committer.to_sig()?;
         let msg = message.map(|m| crate::util::fs_path::c_str(m));
         // SAFETY: our reflog, exclusively borrowed; a valid signature.
@@ -726,7 +789,8 @@ impl<'repo> Reflog<'repo> {
     pub fn write(&mut self) -> Result<()> {
         // SAFETY: our live reflog.
         let db = unsafe { (*self.inner.as_ptr()).db };
-        let db = NonNull::new(db).ok_or_else(|| Error::from(errors::assert_arg_failed("reflog->db")))?;
+        let db =
+            NonNull::new(db).ok_or_else(|| Error::from(errors::assert_arg_failed("reflog->db")))?;
         // SAFETY: the reflog's database, counted by it; our reflog.
         rich(unsafe { RefdbPtr::new(db).reflog_write(self.inner.as_ptr()) })
     }
@@ -808,10 +872,20 @@ pub trait RefdbBackend: Send + Sync + 'static {
         message: Option<&[u8]>,
     ) -> core::result::Result<(), Error>;
     /// Rename `old_name` to `new_name`, returning its value.
-    fn rename(&self, old_name: &[u8], new_name: &[u8], force: bool) -> core::result::Result<RefValue, Error>;
+    fn rename(
+        &self,
+        old_name: &[u8],
+        new_name: &[u8],
+        force: bool,
+    ) -> core::result::Result<RefValue, Error>;
     /// Delete `name` (and its reflog), with the same conditions as
     /// [`write`](Self::write).
-    fn delete(&self, name: &[u8], old_id: Option<&Oid>, old_target: Option<&[u8]>) -> core::result::Result<(), Error>;
+    fn delete(
+        &self,
+        name: &[u8],
+        old_id: Option<&Oid>,
+        old_target: Option<&[u8]>,
+    ) -> core::result::Result<(), Error>;
     /// Optimise storage (`git_refdb_compress`).
     fn compress(&self) -> core::result::Result<(), Error> {
         Ok(())
@@ -829,7 +903,11 @@ pub trait RefdbBackend: Send + Sync + 'static {
         Ok(Vec::new())
     }
     /// Replace the reflog of `name`.
-    fn reflog_write(&self, _name: &[u8], _entries: &[ReflogRecord]) -> core::result::Result<(), Error> {
+    fn reflog_write(
+        &self,
+        _name: &[u8],
+        _entries: &[ReflogRecord],
+    ) -> core::result::Result<(), Error> {
         Ok(())
     }
     /// Rename a reflog.
@@ -876,7 +954,10 @@ fn status<T>(r: core::result::Result<T, Error>) -> c_int {
 }
 
 fn busy() -> c_int {
-    let _ = errors::set_str(ErrorClass::REFERENCE, "the reference database is being freed");
+    let _ = errors::set_str(
+        ErrorClass::REFERENCE,
+        "the reference database is being freed",
+    );
     -1
 }
 
@@ -997,7 +1078,7 @@ ffibox::impl_cvtable! {
                 Err(e) => return e.raw(),
             };
             for (name, v) in list {
-                if glob.is_some_and(|g| wildmatch(g, &name, 0) != 0) {
+                if glob.is_some_and(|g| !wildmatch(g, &name, WildmatchFlags::default()).is_match()) {
                     continue;
                 }
                 match it.pool.strndup(&name) {
@@ -1213,7 +1294,13 @@ mod tests {
             Ok(self.0.lock().unwrap().iter().any(|(n, _)| n == name))
         }
         fn lookup(&self, name: &[u8]) -> Result<Option<RefValue>> {
-            Ok(self.0.lock().unwrap().iter().find(|(n, _)| n == name).map(|(_, v)| v.clone()))
+            Ok(self
+                .0
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, v)| v.clone()))
         }
         fn list(&self) -> Result<Vec<(Vec<u8>, RefValue)>> {
             Ok(self.0.lock().unwrap().clone())
@@ -1231,7 +1318,11 @@ mod tests {
             Ok(())
         }
         fn rename(&self, _old: &[u8], _new: &[u8], _force: bool) -> Result<RefValue> {
-            Err(Error::new(ErrorCode::NOT_FOUND, ErrorClass::REFERENCE, "nope"))
+            Err(Error::new(
+                ErrorCode::NOT_FOUND,
+                ErrorClass::REFERENCE,
+                "nope",
+            ))
         }
         fn delete(&self, name: &[u8], _: Option<&Oid>, _: Option<&[u8]>) -> Result<()> {
             if name == b"panic" {
@@ -1245,7 +1336,11 @@ mod tests {
     #[test]
     fn rust_backend_slots() {
         let _g = test_support::init();
-        let id = Oid::from_hex(b"a65fedf39aefe402d3bb6e24df4d4f5fe4547750", crate::OidType::Sha1).unwrap();
+        let id = Oid::from_hex(
+            b"a65fedf39aefe402d3bb6e24df4d4f5fe4547750",
+            crate::OidType::Sha1,
+        )
+        .unwrap();
         let t = CTable::<RefdbBackendTable, RustBackend<Mem>>::new(RustBackend(Mem::default()));
         let b = t.into_c().as_ptr();
         // SAFETY: libgit2's contract with a backend: its own slots, its
@@ -1254,31 +1349,82 @@ mod tests {
             let tb = &*b;
             assert!(tb.lock.is_none() && tb.unlock.is_none() && tb.init.is_none());
             let r = RefBox::new_direct(b"refs/heads/a", &id, None).unwrap();
-            assert_eq!((tb.write.unwrap())(b, r.as_ptr(), 0, core::ptr::null(), core::ptr::null(), core::ptr::null(), core::ptr::null()), 0);
+            assert_eq!(
+                (tb.write.unwrap())(
+                    b,
+                    r.as_ptr(),
+                    0,
+                    core::ptr::null(),
+                    core::ptr::null(),
+                    core::ptr::null(),
+                    core::ptr::null()
+                ),
+                0
+            );
             let s = RefBox::new_symbolic(b"HEAD", b"refs/heads/a").unwrap();
-            assert_eq!((tb.write.unwrap())(b, s.as_ptr(), 0, core::ptr::null(), c"m".as_ptr(), core::ptr::null(), core::ptr::null()), 0);
+            assert_eq!(
+                (tb.write.unwrap())(
+                    b,
+                    s.as_ptr(),
+                    0,
+                    core::ptr::null(),
+                    c"m".as_ptr(),
+                    core::ptr::null(),
+                    core::ptr::null()
+                ),
+                0
+            );
             let mut e = 0;
             assert_eq!((tb.exists.unwrap())(&raw mut e, b, c"HEAD".as_ptr()), 0);
             assert_eq!(e, 1);
             let mut out = core::ptr::null_mut();
-            assert_eq!((tb.lookup.unwrap())(&raw mut out, b, c"refs/heads/a".as_ptr()), 0);
+            assert_eq!(
+                (tb.lookup.unwrap())(&raw mut out, b, c"refs/heads/a".as_ptr()),
+                0
+            );
             let got = RefBox::from_raw(out).unwrap();
             assert_eq!(got.view().target(), Some(&id));
-            assert_eq!((tb.lookup.unwrap())(&raw mut out, b, c"refs/heads/z".as_ptr()), -3);
-            assert_eq!(errors::last_message().unwrap(), b"reference 'refs/heads/z' not found");
-            assert_eq!((tb.rename.unwrap())(&raw mut out, b, c"a".as_ptr(), c"b".as_ptr(), 0, core::ptr::null(), core::ptr::null()), -3);
+            assert_eq!(
+                (tb.lookup.unwrap())(&raw mut out, b, c"refs/heads/z".as_ptr()),
+                -3
+            );
+            assert_eq!(
+                errors::last_message().unwrap(),
+                b"reference 'refs/heads/z' not found"
+            );
+            assert_eq!(
+                (tb.rename.unwrap())(
+                    &raw mut out,
+                    b,
+                    c"a".as_ptr(),
+                    c"b".as_ptr(),
+                    0,
+                    core::ptr::null(),
+                    core::ptr::null()
+                ),
+                -3
+            );
             assert_eq!(errors::last_message().unwrap(), b"nope");
-            assert_eq!((tb.del.unwrap())(b, c"panic".as_ptr(), core::ptr::null(), core::ptr::null()), -1);
+            assert_eq!(
+                (tb.del.unwrap())(b, c"panic".as_ptr(), core::ptr::null(), core::ptr::null()),
+                -1
+            );
             assert_eq!(errors::last_class(), Some(ErrorClass::INTERNAL));
             assert_eq!((tb.compress.unwrap())(b), 0);
             assert_eq!((tb.has_log.unwrap())(b, c"HEAD".as_ptr()), 0);
 
             let mut it: *mut git_reference_iterator = core::ptr::null_mut();
-            assert_eq!((tb.iterator.unwrap())(&raw mut it, b, c"refs/*".as_ptr()), 0);
+            assert_eq!(
+                (tb.iterator.unwrap())(&raw mut it, b, c"refs/*".as_ptr()),
+                0
+            );
             let mut name = core::ptr::null();
             assert_eq!(((*it).next_name.unwrap())(&raw mut name, it), 0);
             assert_eq!(CStr::from_ptr(name).to_bytes(), b"refs/heads/a");
-            assert_eq!(((*it).next.unwrap())(&raw mut out, it), ErrorCode::ITER_OVER.raw());
+            assert_eq!(
+                ((*it).next.unwrap())(&raw mut out, it),
+                ErrorCode::ITER_OVER.raw()
+            );
             // The name stays valid until the iterator is freed.
             assert_eq!(CStr::from_ptr(name).to_bytes(), b"refs/heads/a");
             ((*it).free.unwrap())(it);
@@ -1287,7 +1433,10 @@ mod tests {
             drop(RefBox::from_raw(out));
             ((*it).free.unwrap())(it);
 
-            assert_eq!((tb.del.unwrap())(b, c"HEAD".as_ptr(), core::ptr::null(), core::ptr::null()), 0);
+            assert_eq!(
+                (tb.del.unwrap())(b, c"HEAD".as_ptr(), core::ptr::null(), core::ptr::null()),
+                0
+            );
             assert_eq!((tb.exists.unwrap())(&raw mut e, b, c"HEAD".as_ptr()), 0);
             assert_eq!(e, 0);
             (tb.free.unwrap())(b);
