@@ -8,10 +8,14 @@ pub mod alloc;
 pub mod allocators;
 pub mod array;
 pub mod ctype_compat;
+pub mod date;
 pub mod errors;
 pub mod export;
+pub mod hash;
 pub mod integer;
 pub mod layout;
+pub mod rand;
+pub mod regexp;
 pub mod runtime;
 pub mod str;
 pub mod thread;
@@ -19,6 +23,8 @@ pub mod tsort;
 #[allow(clippy::module_inception)]
 pub mod util;
 pub mod vector;
+pub mod wildmatch;
+pub mod zstream;
 
 #[doc(hidden)]
 pub mod test_support;

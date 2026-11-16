@@ -14,3 +14,13 @@ src/util/util.c
 src/util/vector.c
 src/libgit2/buf.c
 src/libgit2/strarray.c
+src/util/date.c
+src/util/hash.c
+src/util/hash/collisiondetect.c
+src/util/hash/openssl.c
+src/util/hash/sha1dc/sha1.c
+src/util/hash/sha1dc/ubc_check.c
+src/util/rand.c
+src/util/regexp.c
+src/util/wildmatch.c
+src/util/zstream.c

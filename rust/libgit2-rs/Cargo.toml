@@ -14,6 +14,14 @@ crate-type = ["rlib", "staticlib"]
 ffibox = { path = "/work/ffibox" }
 libc = "0.2"
 memchr = "2"
+# hash: SHA-1 with collision detection (sha1dc, ported to Rust).
+sha1collisiondetection = { version = "0.3.4", default-features = false }
+# zstream: zlib-rs, a Rust zlib, for inflating (see util/zstream.rs).
+libz-rs-sys = { version = "0.6.8", default-features = false, features = ["std", "rust-allocator"] }
+
+[dev-dependencies]
+# A reference SHA-256 for the tests of util/hash/sha256.rs.
+sha2 = "0.11"
 
 [lints]
 workspace = true

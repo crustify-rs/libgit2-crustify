@@ -25,6 +25,18 @@ typedef enum {
 
 #define GIT_HASH_MAX_SIZE GIT_HASH_SHA256_SIZE
 
+#ifdef GIT_RUST
+/*
+ * The Rust port's hash context (`HashCtx` in
+ * rust/libgit2-rs/src/util/hash.rs): an algorithm tag and the computation,
+ * opaque to C, which only embeds it by value.  The layout test checks the
+ * size and alignment.
+ */
+# define GIT_HASH_CTX_WORDS 300
+typedef struct git_hash_ctx {
+	uint64_t opaque[GIT_HASH_CTX_WORDS];
+} git_hash_ctx;
+#else
 typedef struct git_hash_ctx {
 	union {
 		git_hash_sha1_ctx sha1;
@@ -32,6 +44,7 @@ typedef struct git_hash_ctx {
 	} ctx;
 	git_hash_algorithm_t algorithm;
 } git_hash_ctx;
+#endif
 
 int git_hash_global_init(void);
 
