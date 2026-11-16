@@ -1,6 +1,11 @@
 //! The safe Rust API of the revision walker: [`Revwalk`], an iterator of
 //! commit ids, with [`Sort`] flags and push/hide builders.
 //!
+//! PENDING(pathspec): `git_revwalk_pathspec` has no safe counterpart yet;
+//! it needs a Rust `Pathspec` (pathspec.c stays C). Reference names, globs
+//! and ranges are bytes (`impl AsRef<[u8]>`): git allows names that are not
+//! UTF-8.
+//!
 //! ```no_run
 //! use libgit2_rs::revwalk::api::Repository;
 //! use libgit2_rs::{Revwalk, Sort};
@@ -17,11 +22,10 @@
 //! ```
 
 use core::ffi::{c_int, c_void};
-use core::marker::PhantomData;
 use core::ptr::NonNull;
 use std::any::Any;
 use std::ffi::CString;
-use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use super::{GIT_SORT_NONE, GIT_SORT_REVERSE, GIT_SORT_TIME, GIT_SORT_TOPOLOGICAL};
 use super::{GitRevwalk, PushOptions, State, free_walk, new_walk};
@@ -155,7 +159,7 @@ pub struct Revwalk<'repo> {
     raw: NonNull<GitRevwalk>,
     /// From `Box::into_raw`: C holds it as the callback's payload.
     hide: Option<NonNull<HideState<'repo>>>,
-    _repo: PhantomData<&'repo Repository>,
+    repo: &'repo Repository,
 }
 
 impl core::fmt::Debug for Revwalk<'_> {
@@ -179,27 +183,41 @@ impl<'repo> Revwalk<'repo> {
         Ok(Revwalk {
             raw,
             hide: None,
-            _repo: PhantomData,
+            repo,
         })
     }
 
-    /// Run `f` on the walk and its state, then resume a panic of the hide
-    /// callback.
-    fn with<R>(&mut self, f: impl FnOnce(&GitRevwalk, &mut State) -> R) -> R {
+    /// Run `f` on the walk and its state.
+    fn with<R>(&mut self, f: impl FnOnce(&GitRevwalk, &State) -> R) -> R {
         // SAFETY: our live walk; `&mut self` excludes any other use of it
-        // during `f` (the hide callback reaches only its own state).
+        // during `f` (the hide closure cannot reach `self`).
         let w = unsafe { self.raw.as_ref() };
-        // SAFETY: as above: the only reference to the state.
-        let st = unsafe { w.state() };
-        let r = f(w, st);
-        if let Some(h) = self.hide {
-            // SAFETY: our live hide state; the walk is not running, so
-            // nothing else reaches it.
-            if let Some(p) = unsafe { (*h.as_ptr()).panic.take() } {
-                resume_unwind(p);
-            }
-        }
-        r
+        f(w, w.state())
+    }
+
+    /// `git_revwalk_next`, and the end of the walk if the hide closure
+    /// panicked during it (the only call that runs the closure).
+    fn step(&mut self) -> crate::util::errors::Result<Oid> {
+        let r = self.with(|w, st| w.next(st));
+        let Some(h) = self.hide else { return r };
+        // SAFETY: our live hide state; the walk is not running, so nothing
+        // else reaches it.
+        let Some(p) = (unsafe { (*h.as_ptr()).panic.take() }) else {
+            return r;
+        };
+        self.with(|w, st| w.reset(st));
+        let msg = p
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_owned())
+            .or_else(|| p.downcast_ref::<String>().cloned())
+            .unwrap_or_default();
+        let _ = git_error_set!(ErrorClass::INTERNAL, "the hide callback panicked: {msg}");
+        Err(ErrorCode::GENERIC)
+    }
+
+    /// The repository of the walk (`git_revwalk_repository`).
+    pub fn repository(&self) -> &'repo Repository {
+        self.repo
     }
 
     /// Free the hide state (after C stopped using it).
@@ -218,7 +236,7 @@ impl<'repo> Revwalk<'repo> {
 
     /// `git_revwalk_simplify_first_parent`: follow only first parents.
     pub fn simplify_first_parent(&mut self) -> Result<&mut Self> {
-        self.with(|_, st| st.first_parent = true);
+        self.with(|_, st| st.first_parent.set(true));
         Ok(self)
     }
 
@@ -252,13 +270,13 @@ impl<'repo> Revwalk<'repo> {
     }
 
     /// `git_revwalk_push_ref`: start from what the reference points to.
-    pub fn push_ref(&mut self, name: &str) -> Result<&mut Self> {
-        self.push_refname(name.as_bytes(), 0)
+    pub fn push_ref(&mut self, name: impl AsRef<[u8]>) -> Result<&mut Self> {
+        self.push_refname(name.as_ref(), 0)
     }
 
     /// `git_revwalk_hide_ref`.
-    pub fn hide_ref(&mut self, name: &str) -> Result<&mut Self> {
-        self.push_refname(name.as_bytes(), 1)
+    pub fn hide_ref(&mut self, name: impl AsRef<[u8]>) -> Result<&mut Self> {
+        self.push_refname(name.as_ref(), 1)
     }
 
     /// `git_revwalk_push_head`.
@@ -271,8 +289,8 @@ impl<'repo> Revwalk<'repo> {
         self.push_refname(b"HEAD", 1)
     }
 
-    fn glob(&mut self, glob: &str, uninteresting: c_int) -> Result<&mut Self> {
-        let c = cstring(glob.as_bytes())?;
+    fn glob(&mut self, glob: &[u8], uninteresting: c_int) -> Result<&mut Self> {
+        let c = cstring(glob)?;
         let opts = PushOptions {
             uninteresting,
             ..PushOptions::default()
@@ -283,20 +301,20 @@ impl<'repo> Revwalk<'repo> {
 
     /// `git_revwalk_push_glob`: start from every reference matching `glob`
     /// (`refs/` is implied; a glob without `?`, `*` or `[` gets `/*`).
-    pub fn push_glob(&mut self, glob: &str) -> Result<&mut Self> {
-        self.glob(glob, 0)
+    pub fn push_glob(&mut self, glob: impl AsRef<[u8]>) -> Result<&mut Self> {
+        self.glob(glob.as_ref(), 0)
     }
 
     /// `git_revwalk_hide_glob`.
-    pub fn hide_glob(&mut self, glob: &str) -> Result<&mut Self> {
-        self.glob(glob, 1)
+    pub fn hide_glob(&mut self, glob: impl AsRef<[u8]>) -> Result<&mut Self> {
+        self.glob(glob.as_ref(), 1)
     }
 
     /// `git_revwalk_push_range`: `a..b` pushes `b` and hides `a`. The
     /// symmetric difference `a...b` is not supported (an
     /// `ErrorCode::INVALID_SPEC` error, as in C).
-    pub fn push_range(&mut self, range: &str) -> Result<&mut Self> {
-        let c = cstring(range.as_bytes())?;
+    pub fn push_range(&mut self, range: impl AsRef<[u8]>) -> Result<&mut Self> {
+        let c = cstring(range.as_ref())?;
         self.with(|w, st| w.push_range(st, &c))?;
         Ok(self)
     }
@@ -311,7 +329,10 @@ impl<'repo> Revwalk<'repo> {
     /// `git_revwalk_add_hide_cb`: also hide each commit for which `f`
     /// returns `true` (and, in the walk's order, what is only reachable
     /// through it). Replaces a previous callback; resets a walk in
-    /// progress. A panic in `f` stops the walk and resumes in the caller.
+    /// progress. If `f` panics, the panic is caught: the walk answers "hide"
+    /// for the rest of that step, then resets, and the iteration step
+    /// returns an error of class `ErrorClass::INTERNAL` ("the hide callback
+    /// panicked: …"); the walk can be used again after it.
     pub fn set_hide_callback(&mut self, f: impl FnMut(&Oid) -> bool + 'repo) -> &mut Self {
         let state = Box::new(HideState {
             f: Box::new(f),
@@ -338,7 +359,7 @@ impl Iterator for Revwalk<'_> {
 
     /// `git_revwalk_next`: the next id; `None` at the end of the walk.
     fn next(&mut self) -> Option<Result<Oid>> {
-        match self.with(|w, st| w.next(st)) {
+        match self.step() {
             Ok(id) => Some(Ok(id)),
             Err(ErrorCode::ITER_OVER) => None,
             Err(e) => Some(Err(Error::from(e))),

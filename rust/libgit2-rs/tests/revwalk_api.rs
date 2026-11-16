@@ -175,14 +175,42 @@ fn hide_callback() {
 }
 
 #[test]
-#[should_panic(expected = "from the hide callback")]
-fn hide_callback_panic_resumes() {
+fn hide_callback_panic_stops_the_walk() {
     let _g = test_support::init();
     let repo = testrepo();
     let mut walk = Revwalk::new(&repo).unwrap();
-    walk.set_hide_callback(|_| panic!("from the hide callback"));
+    let mut calls = 0;
+    walk.set_hide_callback(move |_| {
+        calls += 1;
+        if calls == 2 {
+            panic!("from the hide callback");
+        }
+        false
+    });
     walk.push_head().unwrap();
-    let _ = walk.next();
+    let e = walk.next().unwrap().unwrap_err();
+    assert_eq!(e.class(), ErrorClass::INTERNAL);
+    assert_eq!(
+        e.message(),
+        "the hide callback panicked: from the hide callback"
+    );
+    // the walk was reset: nothing is pushed any more
+    assert!(walk.next().is_none());
+    // and it works again
+    walk.clear_hide_callback().push_head().unwrap();
+    assert_eq!(short(&mut walk), HEAD_ORDER);
+    assert!(std::ptr::eq(walk.repository(), &raw const repo));
+}
+
+#[test]
+fn byte_names() {
+    let _g = test_support::init();
+    let repo = testrepo();
+    let mut walk = Revwalk::new(&repo).unwrap();
+    walk.push_ref(b"refs/heads/master").unwrap();
+    assert_eq!(short(&mut walk), HEAD_ORDER);
+    let e = walk.push_ref(b"refs/heads/\xff").unwrap_err();
+    assert_eq!(e.code(), ErrorCode::GENERIC);
 }
 
 #[test]

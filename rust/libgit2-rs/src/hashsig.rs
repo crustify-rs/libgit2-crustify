@@ -160,6 +160,10 @@ pub struct Signature {
     opt: u32,
 }
 
+// `git_hashsig_create*` place a `Signature` in git__allocator's 8-aligned
+// storage.
+const _: () = assert!(align_of::<Signature>() <= 8);
+
 /// `hashsig_in_progress`, of which only `use_ignores` is used (C fills a
 /// table that nothing reads).
 struct Progress {

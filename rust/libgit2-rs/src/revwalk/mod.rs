@@ -225,25 +225,145 @@ impl TopoQueue {
 }
 
 /// The walk's own state, after the prefix (Rust-native; C never sees it).
+///
+/// The hide callback may call back into the walk (C defines every such
+/// call: they set fields and edit lists that the walk reads again at its
+/// next step). So the state is reached only through `&State`: the flags
+/// are `Cell`s, read at the C's points of use, and the lists are
+/// `UnsafeCell`s borrowed only inside the small methods below, none of
+/// which calls out. No borrow of the state lives across a callback.
 #[derive(Debug, Default)]
 pub struct State {
-    iterator_topo: VecDeque<NodePtr>,
-    iterator_rand: VecDeque<NodePtr>,
+    iterator_topo: UnsafeCell<VecDeque<NodePtr>>,
+    iterator_rand: UnsafeCell<VecDeque<NodePtr>>,
     /// A stack (C pushes at the head and pops from it).
-    iterator_reverse: Vec<NodePtr>,
-    iterator_time: TimeHeap,
-    get_next: Next,
-    enqueue: Enqueue,
-    walking: bool,
-    first_parent: bool,
-    did_hide: bool,
-    did_push: bool,
-    limited: bool,
-    sorting: c_uint,
-    hide_cb: HideCb,
-    hide_cb_payload: *mut c_void,
-    pathspec: Option<Pathspec>,
-    pathspec_wildcard: bool,
+    iterator_reverse: UnsafeCell<Vec<NodePtr>>,
+    iterator_time: UnsafeCell<TimeHeap>,
+    get_next: Cell<Next>,
+    enqueue: Cell<Enqueue>,
+    walking: Cell<bool>,
+    first_parent: Cell<bool>,
+    did_hide: Cell<bool>,
+    did_push: Cell<bool>,
+    limited: Cell<bool>,
+    sorting: Cell<c_uint>,
+    hide_cb: Cell<HideCb>,
+    hide_cb_payload: Cell<*mut c_void>,
+    pathspec: Cell<Option<Pathspec>>,
+    pathspec_wildcard: Cell<bool>,
+}
+
+/// One of the walk's two commit lists (`iterator_rand`, `iterator_topo`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ListId {
+    Rand,
+    Topo,
+}
+
+impl State {
+    /// The list `id`, for the extent of one of the methods below.
+    ///
+    /// # Safety
+    ///
+    /// No other borrow of the list lives while the result does: the caller
+    /// is a method of `State` that neither calls C nor the hide callback
+    /// nor another of these methods while it holds the borrow.
+    #[allow(clippy::mut_from_ref)]
+    unsafe fn list_mut(&self, id: ListId) -> &mut VecDeque<NodePtr> {
+        let c = match id {
+            ListId::Rand => &self.iterator_rand,
+            ListId::Topo => &self.iterator_topo,
+        };
+        // SAFETY: the caller's contract; a walk is used by one thread.
+        unsafe { &mut *c.get() }
+    }
+
+    /// `git_commit_list_pop(&walk->iterator_*)`.
+    fn list_pop(&self, id: ListId) -> Option<NodePtr> {
+        // SAFETY: this method calls nothing while it holds the borrow.
+        unsafe { self.list_mut(id) }.pop_front()
+    }
+
+    /// `git_commit_list_insert_by_date(n, &walk->iterator_*)`.
+    fn list_insert_by_date(&self, id: ListId, n: NodePtr) -> Result<()> {
+        // SAFETY: `insert_by_date` only reads node times.
+        insert_by_date(unsafe { self.list_mut(id) }, n)
+    }
+
+    /// `git_commit_list_insert(n, &walk->iterator_*)`: at the head.
+    fn list_push_front(&self, id: ListId, n: NodePtr) -> Result<()> {
+        // SAFETY: this method calls nothing while it holds the borrow.
+        let l = unsafe { self.list_mut(id) };
+        l.try_reserve(1).map_err(|_| errors::oom())?;
+        l.push_front(n);
+        Ok(())
+    }
+
+    /// `walk->iterator_* = list`.
+    fn list_set(&self, id: ListId, list: VecDeque<NodePtr>) {
+        // SAFETY: this method calls nothing while it holds the borrow (the
+        // old list's drop runs no code of ours).
+        *unsafe { self.list_mut(id) } = list;
+    }
+
+    fn reverse_mut(&self) -> *mut Vec<NodePtr> {
+        self.iterator_reverse.get()
+    }
+
+    /// `git_commit_list_insert(n, &walk->iterator_reverse)`.
+    fn reverse_push(&self, n: NodePtr) -> Result<()> {
+        // SAFETY: the only borrow of the list, for this method, which
+        // calls nothing while it holds it.
+        let l = unsafe { &mut *self.reverse_mut() };
+        l.try_reserve(1).map_err(|_| errors::oom())?;
+        l.push(n);
+        Ok(())
+    }
+
+    /// `git_commit_list_pop(&walk->iterator_reverse)`.
+    fn reverse_pop(&self) -> Option<NodePtr> {
+        // SAFETY: as in `reverse_push`.
+        unsafe { &mut *self.reverse_mut() }.pop()
+    }
+
+    /// `git_pqueue_insert(&walk->iterator_time, n)`.
+    fn time_insert(&self, n: NodePtr) -> Result<()> {
+        // SAFETY: the only borrow of the queue, for this method, which
+        // calls nothing while it holds it (the heap reads node times).
+        unsafe { &mut *self.iterator_time.get() }.insert(n)
+    }
+
+    /// `git_pqueue_pop(&walk->iterator_time)`.
+    fn time_pop(&self) -> Option<NodePtr> {
+        // SAFETY: as in `time_insert`.
+        unsafe { &mut *self.iterator_time.get() }.pop()
+    }
+
+    /// The list part of `git_revwalk_reset`.
+    fn clear_lists(&self) {
+        // SAFETY: as in `time_insert`.
+        unsafe { &mut *self.iterator_time.get() }.clear();
+        // SAFETY: as in `list_pop`.
+        unsafe { self.list_mut(ListId::Topo) }.clear();
+        // SAFETY: as in `list_pop`.
+        unsafe { self.list_mut(ListId::Rand) }.clear();
+        // SAFETY: as in `reverse_push`.
+        unsafe { &mut *self.reverse_mut() }.clear();
+    }
+
+    /// `walk->hide_cb && walk->hide_cb(&commit->oid, walk->hide_cb_payload)`,
+    /// with the callback and payload read now, as the C does.
+    #[inline]
+    fn hidden(&self, n: NodePtr) -> bool {
+        match self.hide_cb.get() {
+            None => false,
+            // SAFETY: the callback and payload the user registered with
+            // `git_revwalk_add_hide_cb`, called as C does, with the node's
+            // id (valid for the call). It may call back into the walk: no
+            // borrow of the walk's state lives across this call.
+            Some(cb) => unsafe { cb(n.oid_ptr().as_ptr(), self.hide_cb_payload.get()) != 0 },
+        }
+    }
 }
 
 /// `struct git_revwalk`: the C-visible prefix, then the Rust state.
@@ -252,48 +372,27 @@ pub struct State {
 pub struct GitRevwalk {
     /// What C sees.
     pub prefix: RevwalkPrefix,
-    state: UnsafeCell<State>,
+    state: State,
 }
 
-/// What the walk's steps read of the state (copied out, so that the
-/// iterators can be borrowed beside it).
-#[derive(Clone, Copy)]
-struct Ctx<'w> {
-    w: &'w GitRevwalk,
-    hide_cb: HideCb,
-    payload: *mut c_void,
-    first_parent: bool,
-    limited: bool,
-    pathspec: Option<Pathspec>,
-    pathspec_wildcard: bool,
+/// Where `add_parents_to_list` inserts: a list of the caller, or one of
+/// the walk's (re-borrowed at each insertion, as C goes through `walk`).
+enum Target<'a> {
+    Local(&'a mut VecDeque<NodePtr>),
+    Walk(ListId),
 }
 
-impl<'w> Ctx<'w> {
-    fn new(w: &'w GitRevwalk, st: &State) -> Ctx<'w> {
-        Ctx {
-            w,
-            hide_cb: st.hide_cb,
-            payload: st.hide_cb_payload,
-            first_parent: st.first_parent,
-            limited: st.limited,
-            pathspec: st.pathspec,
-            pathspec_wildcard: st.pathspec_wildcard,
-        }
-    }
-
-    /// `walk->hide_cb && walk->hide_cb(&commit->oid, walk->hide_cb_payload)`.
-    #[inline]
-    fn hidden(&self, n: NodePtr) -> bool {
-        match self.hide_cb {
-            None => false,
-            // SAFETY: the callback and payload the user registered with
-            // `git_revwalk_add_hide_cb`, called as C does, with the node's
-            // id (valid for the call). Its contract forbids it to use the
-            // walk.
-            Some(cb) => unsafe { cb(n.oid_ptr().as_ptr(), self.payload) != 0 },
+impl Target<'_> {
+    fn insert_by_date(&mut self, st: &State, n: NodePtr) -> Result<()> {
+        match self {
+            Target::Local(l) => insert_by_date(l, n),
+            Target::Walk(id) => st.list_insert_by_date(*id, n),
         }
     }
 }
+
+// The walk's assumptions about git__allocator's 8-byte alignment.
+const _: () = assert!(align_of::<GitRevwalk>() <= 8);
 
 impl GitRevwalk {
     /// A walk over `repo` with an empty state and no odb (the first half of
@@ -307,24 +406,13 @@ impl GitRevwalk {
                 commit_pool: UnsafeCell::new(GitPool::with_item_size(COMMIT_ALLOC)?),
                 user_input: Cell::new(ptr::null_mut()),
             },
-            state: UnsafeCell::new(State::default()),
+            state: State::default(),
         })
     }
 
     /// The state.
-    ///
-    /// # Safety
-    ///
-    /// No other reference to the state lives while the result does: only
-    /// this module makes one, once per entry point, and an entry point is
-    /// never re-entered while another runs on the same walk (C that stays
-    /// only calls `git_revwalk__commit_lookup`, which does not touch the
-    /// state; the hide callback may not use the walk; a walk is used by one
-    /// thread at a time).
-    #[allow(clippy::mut_from_ref)]
-    unsafe fn state(&self) -> &mut State {
-        // SAFETY: the caller's contract.
-        unsafe { &mut *self.state.get() }
+    fn state(&self) -> &State {
+        &self.state
     }
 
     fn repo(&self) -> Repo {
@@ -377,7 +465,7 @@ impl GitRevwalk {
     // -- pushing and hiding ------------------------------------------------
 
     /// `git_revwalk__push_commit`.
-    fn push_commit(&self, st: &mut State, oid: &Oid, opts: &PushOptions) -> Result<()> {
+    fn push_commit(&self, st: &State, oid: &Oid, opts: &PushOptions) -> Result<()> {
         let oobj = glue::object_lookup(self.repo(), oid, GIT_OBJECT_ANY)?;
         let obj = oobj.peel(GIT_OBJECT_COMMIT);
         drop(oobj);
@@ -408,17 +496,17 @@ impl GitRevwalk {
     }
 
     /// The second half of `git_revwalk__push_commit`, for a node.
-    fn push_node(&self, st: &mut State, commit: NodePtr, opts: &PushOptions) -> Result<()> {
+    fn push_node(&self, st: &State, commit: NodePtr, opts: &PushOptions) -> Result<()> {
         // A previous hide already told us we don't want this commit
         if commit.uninteresting() {
             return Ok(());
         }
 
         if opts.uninteresting != 0 {
-            st.limited = true;
-            st.did_hide = true;
+            st.limited.set(true);
+            st.did_hide.set(true);
         } else {
-            st.did_push = true;
+            st.did_push.set(true);
         }
 
         // `commit->uninteresting = opts->uninteresting`: a 1-bit field
@@ -442,7 +530,7 @@ impl GitRevwalk {
     }
 
     /// `git_revwalk__push_ref`.
-    fn push_ref(&self, st: &mut State, refname: &CStr, opts: &PushOptions) -> Result<()> {
+    fn push_ref(&self, st: &State, refname: &CStr, opts: &PushOptions) -> Result<()> {
         match glue::reference_name_to_id(self.repo(), refname) {
             Err(e)
                 if opts.from_glob != 0
@@ -461,7 +549,7 @@ impl GitRevwalk {
     }
 
     /// `git_revwalk__push_glob`.
-    fn push_glob(&self, st: &mut State, glob: &CStr, given: Option<&PushOptions>) -> Result<()> {
+    fn push_glob(&self, st: &State, glob: &CStr, given: Option<&PushOptions>) -> Result<()> {
         let mut opts = given.copied().unwrap_or_default();
         let g = glob.to_bytes();
 
@@ -504,7 +592,7 @@ impl GitRevwalk {
     }
 
     /// `git_revwalk_push_range`.
-    fn push_range(&self, st: &mut State, range: &CStr) -> Result<()> {
+    fn push_range(&self, st: &State, range: &CStr) -> Result<()> {
         let spec = glue::revparse(self.repo(), range)?;
 
         let Some(to) = spec.to.as_ref() else {
@@ -539,7 +627,7 @@ impl GitRevwalk {
     // -- the walk ----------------------------------------------------------
 
     /// `git_revwalk_reset`.
-    fn reset(&self, st: &mut State) {
+    fn reset(&self, st: &State) {
         {
             // SAFETY: as in `commit_lookup`: the only reference to the map,
             // for a loop that does not reach C.
@@ -548,69 +636,66 @@ impl GitRevwalk {
                 n.reset();
             }
         }
-        st.iterator_time.clear();
-        st.iterator_topo.clear();
-        st.iterator_rand.clear();
-        st.iterator_reverse.clear();
+        st.clear_lists();
         let mut list = self.prefix.user_input.replace(ptr::null_mut());
         // SAFETY: the walk's own list, not used after.
         unsafe { node::list_free(&mut list) };
-        st.first_parent = false;
-        st.walking = false;
-        st.limited = false;
-        st.did_push = false;
-        st.did_hide = false;
-        st.sorting = GIT_SORT_NONE;
+        st.first_parent.set(false);
+        st.walking.set(false);
+        st.limited.set(false);
+        st.did_push.set(false);
+        st.did_hide.set(false);
+        st.sorting.set(GIT_SORT_NONE);
     }
 
     /// `git_revwalk_sorting`.
-    fn set_sorting(&self, st: &mut State, mode: c_uint) {
-        if st.walking {
+    fn set_sorting(&self, st: &State, mode: c_uint) {
+        if st.walking.get() {
             self.reset(st);
         }
-        st.sorting = mode;
+        st.sorting.set(mode);
         if mode & GIT_SORT_TIME != 0 {
-            st.get_next = Next::Time;
-            st.enqueue = Enqueue::Time;
+            st.get_next.set(Next::Time);
+            st.enqueue.set(Enqueue::Time);
         } else {
-            st.get_next = Next::Unsorted;
-            st.enqueue = Enqueue::Unsorted;
+            st.get_next.set(Next::Unsorted);
+            st.enqueue.set(Enqueue::Unsorted);
         }
         if mode != GIT_SORT_NONE {
-            st.limited = true;
+            st.limited.set(true);
         }
     }
 
     /// `git_revwalk_pathspec`.
-    fn set_pathspec(&self, st: &mut State, spec: Option<Pathspec>) {
-        if st.walking {
+    fn set_pathspec(&self, st: &State, spec: Option<Pathspec>) {
+        if st.walking.get() {
             self.reset(st);
         }
         if let Some(spec) = spec {
-            st.pathspec = Some(spec);
-            st.pathspec_wildcard = spec.has_wildcard();
-            st.limited = true;
+            st.pathspec.set(Some(spec));
+            st.pathspec_wildcard.set(spec.has_wildcard());
+            st.limited.set(true);
         }
     }
 
     /// `git_revwalk_add_hide_cb`.
-    fn set_hide_cb(&self, st: &mut State, cb: HideCb, payload: *mut c_void) {
-        if st.walking {
+    fn set_hide_cb(&self, st: &State, cb: HideCb, payload: *mut c_void) {
+        if st.walking.get() {
             self.reset(st);
         }
-        st.hide_cb = cb;
-        st.hide_cb_payload = payload;
+        st.hide_cb.set(cb);
+        st.hide_cb_payload.set(payload);
         if cb.is_some() {
-            st.limited = true;
+            st.limited.set(true);
         }
     }
 
     /// `git_revwalk_next`.
-    fn next(&self, st: &mut State) -> Result<Oid> {
-        if !st.walking {
-            prepare_walk(self, st)?;
+    fn next(&self, st: &State) -> Result<Oid> {
+        if !st.walking.get() {
+            prepare_walk(self)?;
         }
-        match get_next(self, st) {
+        match get_next(self) {
             Ok(n) => Ok(n.oid()),
             Err(ErrorCode::ITER_OVER) => {
                 self.reset(st);
@@ -672,8 +757,11 @@ fn mark_parents_uninteresting(commit: NodePtr) -> Result<()> {
     Ok(())
 }
 
-/// `add_parents_to_list`.
-fn add_parents_to_list(ctx: Ctx<'_>, commit: NodePtr, list: &mut VecDeque<NodePtr>) -> Result<()> {
+/// `add_parents_to_list`. The hide callback may change the walk: what
+/// the C reads of `walk` after it (`first_parent`, the callback, the
+/// lists) is read again here.
+fn add_parents_to_list(w: &GitRevwalk, commit: NodePtr, mut list: Target<'_>) -> Result<()> {
+    let st = w.state();
     if commit.added() {
         return Ok(());
     }
@@ -689,14 +777,14 @@ fn add_parents_to_list(ctx: Ctx<'_>, commit: NodePtr, list: &mut VecDeque<NodePt
             p.set_uninteresting(true);
 
             // git does it gently here, but we don't like missing objects
-            ctx.w.parse(p)?;
+            w.parse(p)?;
 
             if p.has_parents() {
                 mark_parents_uninteresting(p)?;
             }
 
             p.set_seen();
-            insert_by_date(list, p)?;
+            list.insert_by_date(st, p)?;
         }
         return Ok(());
     }
@@ -707,18 +795,18 @@ fn add_parents_to_list(ctx: Ctx<'_>, commit: NodePtr, list: &mut VecDeque<NodePt
     for i in 0..commit.out_degree() {
         let Some(p) = commit.parent(i) else { continue };
 
-        ctx.w.parse(p)?;
+        w.parse(p)?;
 
-        if ctx.hidden(p) {
+        if st.hidden(p) {
             continue;
         }
 
         if !p.seen() {
             p.set_seen();
-            insert_by_date(list, p)?;
+            list.insert_by_date(st, p)?;
         }
 
-        if ctx.first_parent {
+        if st.first_parent.get() {
             break;
         }
     }
@@ -746,14 +834,15 @@ fn still_interesting(list: &VecDeque<NodePtr>, time: i64, slop: c_int) -> c_int 
     slop - 1
 }
 
-/// `limit_list`.
-fn limit_list(ctx: Ctx<'_>, mut list: VecDeque<NodePtr>) -> Result<VecDeque<NodePtr>> {
+/// `limit_list`. Its lists are its own (the callback cannot reach them).
+fn limit_list(w: &GitRevwalk, mut list: VecDeque<NodePtr>) -> Result<VecDeque<NodePtr>> {
+    let st = w.state();
     let mut slop = SLOP;
     let mut time = i64::MAX;
     let mut newlist = VecDeque::new();
 
     while let Some(commit) = list.pop_front() {
-        add_parents_to_list(ctx, commit, &mut list)?;
+        add_parents_to_list(w, commit, Target::Local(&mut list))?;
 
         if commit.uninteresting() {
             mark_parents_uninteresting(commit)?;
@@ -765,13 +854,13 @@ fn limit_list(ctx: Ctx<'_>, mut list: VecDeque<NodePtr>) -> Result<VecDeque<Node
             break;
         }
 
-        if let Some(spec) = ctx.pathspec
-            && !glue::include_path(ctx.w.repo(), spec, ctx.pathspec_wildcard, commit)
+        if let Some(spec) = st.pathspec.get()
+            && !glue::include_path(w.repo(), spec, st.pathspec_wildcard.get(), commit)
         {
             continue;
         }
 
-        if ctx.hidden(commit) {
+        if st.hidden(commit) {
             continue;
         }
 
@@ -783,18 +872,19 @@ fn limit_list(ctx: Ctx<'_>, mut list: VecDeque<NodePtr>) -> Result<VecDeque<Node
     Ok(newlist)
 }
 
-/// `get_revision`.
+/// `get_revision` on one of the walk's lists.
 #[inline]
-fn get_revision(ctx: Ctx<'_>, list: &mut VecDeque<NodePtr>) -> Result<NodePtr> {
-    let Some(commit) = list.pop_front() else {
+fn get_revision(w: &GitRevwalk, id: ListId) -> Result<NodePtr> {
+    let st = w.state();
+    let Some(commit) = st.list_pop(id) else {
         errors::clear();
         return Err(ErrorCode::ITER_OVER);
     };
 
     // If we did not run limit_list, we must add parents to the list
     // ourselves.
-    if !ctx.limited {
-        add_parents_to_list(ctx, commit, list)?;
+    if !st.limited.get() {
+        add_parents_to_list(w, commit, Target::Walk(id))?;
     }
     Ok(commit)
 }
@@ -868,12 +958,12 @@ fn sort_in_topological_order(
     Ok(out)
 }
 
-/// `walk->get_next(&next, walk)`.
-fn get_next(w: &GitRevwalk, st: &mut State) -> Result<NodePtr> {
-    let ctx = Ctx::new(w, st);
-    match st.get_next {
+/// `walk->get_next(&next, walk)`, read now.
+fn get_next(w: &GitRevwalk) -> Result<NodePtr> {
+    let st = w.state();
+    match st.get_next.get() {
         Next::Time => {
-            while let Some(n) = st.iterator_time.pop() {
+            while let Some(n) = st.time_pop() {
                 // Some commits might become uninteresting after being added
                 // to the list
                 if !n.uninteresting() {
@@ -884,25 +974,26 @@ fn get_next(w: &GitRevwalk, st: &mut State) -> Result<NodePtr> {
             Err(ErrorCode::ITER_OVER)
         }
         Next::Unsorted => loop {
-            let n = get_revision(ctx, &mut st.iterator_rand)?;
+            let n = get_revision(w, ListId::Rand)?;
             if !n.uninteresting() {
                 return Ok(n);
             }
         },
         Next::Topo => loop {
-            let n = get_revision(ctx, &mut st.iterator_topo)?;
+            let n = get_revision(w, ListId::Topo)?;
             if !n.uninteresting() {
                 return Ok(n);
             }
         },
-        Next::Reverse => st.iterator_reverse.pop().ok_or(ErrorCode::ITER_OVER),
+        Next::Reverse => st.reverse_pop().ok_or(ErrorCode::ITER_OVER),
     }
 }
 
 /// `prepare_walk`.
-fn prepare_walk(w: &GitRevwalk, st: &mut State) -> Result<()> {
+fn prepare_walk(w: &GitRevwalk) -> Result<()> {
+    let st = w.state();
     // If there were no pushes, we know that the walk is already over
-    if !st.did_push {
+    if !st.did_push.get() {
         errors::clear();
         return Err(ErrorCode::ITER_OVER);
     }
@@ -911,7 +1002,8 @@ fn prepare_walk(w: &GitRevwalk, st: &mut State) -> Result<()> {
     // negotiation).
     let mut commits = VecDeque::new();
     // SAFETY: the walk's well-formed list; nothing changes it during the
-    // loop (parsing and marking touch nodes, not the list).
+    // loop (parsing and marking touch nodes, not the list, and run no
+    // callback).
     for commit in unsafe { node::list_items(w.prefix.user_input.get()) } {
         w.parse(commit)?;
 
@@ -926,45 +1018,38 @@ fn prepare_walk(w: &GitRevwalk, st: &mut State) -> Result<()> {
         }
     }
 
-    if st.limited {
-        commits = limit_list(Ctx::new(w, st), commits)?;
+    if st.limited.get() {
+        commits = limit_list(w, commits)?;
     }
 
-    if st.sorting & GIT_SORT_TOPOLOGICAL != 0 {
-        st.iterator_topo = sort_in_topological_order(st.sorting, commits)?;
-        st.get_next = Next::Topo;
-    } else if st.sorting & GIT_SORT_TIME != 0 {
+    if st.sorting.get() & GIT_SORT_TOPOLOGICAL != 0 {
+        let sorted = sort_in_topological_order(st.sorting.get(), commits)?;
+        st.list_set(ListId::Topo, sorted);
+        st.get_next.set(Next::Topo);
+    } else if st.sorting.get() & GIT_SORT_TIME != 0 {
         for c in commits {
-            match st.enqueue {
-                Enqueue::Time => st.iterator_time.insert(c)?,
-                Enqueue::Unsorted => {
-                    st.iterator_rand.try_reserve(1).map_err(|_| errors::oom())?;
-                    st.iterator_rand.push_front(c);
-                }
+            match st.enqueue.get() {
+                Enqueue::Time => st.time_insert(c)?,
+                Enqueue::Unsorted => st.list_push_front(ListId::Rand, c)?,
             }
         }
     } else {
-        st.iterator_rand = commits;
-        st.get_next = Next::Unsorted;
+        st.list_set(ListId::Rand, commits);
+        st.get_next.set(Next::Unsorted);
     }
 
-    if st.sorting & GIT_SORT_REVERSE != 0 {
+    if st.sorting.get() & GIT_SORT_REVERSE != 0 {
         loop {
-            match get_next(w, st) {
-                Ok(n) => {
-                    st.iterator_reverse
-                        .try_reserve(1)
-                        .map_err(|_| errors::oom())?;
-                    st.iterator_reverse.push(n);
-                }
+            match get_next(w) {
+                Ok(n) => st.reverse_push(n)?,
                 Err(ErrorCode::ITER_OVER) => break,
                 Err(e) => return Err(e),
             }
         }
-        st.get_next = Next::Reverse;
+        st.get_next.set(Next::Reverse);
     }
 
-    st.walking = true;
+    st.walking.set(true);
     Ok(())
 }
 
@@ -1016,8 +1101,7 @@ unsafe fn free_walk(p: NonNull<GitRevwalk>) {
     {
         // SAFETY: a live walk (the contract), for the extent of the block.
         let w = unsafe { p.as_ref() };
-        // SAFETY: nothing else uses the walk now.
-        let st = unsafe { w.state() };
+        let st = w.state();
         w.reset(st);
         // SAFETY: the walk's reference, not used after.
         unsafe { glue::odb_free(w.prefix.odb) };
@@ -1036,9 +1120,10 @@ unsafe fn free_walk(p: NonNull<GitRevwalk>) {
 /// The exports of `revwalk.c`.
 ///
 /// Every export that takes a `git_revwalk *` requires a walk from
-/// `git_revwalk_new` that is not freed, used by one thread at a time, and
-/// not re-entered from the hide callback; and a repository that outlives
-/// it.
+/// `git_revwalk_new` that is not freed, used by one thread at a time; and
+/// a repository that outlives it. The hide callback may call any of them
+/// on its walk, except `git_revwalk_free` (as in C): no borrow of the
+/// walk's state lives across a callback.
 pub mod ffi {
     use core::ffi::{c_char, c_int, c_uint, c_void};
     use core::ptr::{self, NonNull};
@@ -1051,15 +1136,14 @@ pub mod ffi {
     /// # Safety
     ///
     /// The contract of the module's exports: a live walk, not used
-    /// concurrently or re-entrantly.
+    /// concurrently. Re-entry (from the hide callback) is fine: the state is
+    /// only ever borrowed shared.
     #[inline(always)]
-    unsafe fn walk_of<'a>(walk: *mut GitRevwalk) -> (&'a GitRevwalk, &'a mut State) {
+    unsafe fn walk_of<'a>(walk: *mut GitRevwalk) -> (&'a GitRevwalk, &'a State) {
         // SAFETY: a live walk (the contract); a shared reference, since C
         // writes only the `UnsafeCell` parts while it lives.
         let w = unsafe { &*walk };
-        // SAFETY: the only reference to the state: an export is never
-        // re-entered on the same walk (the contract).
-        let st = unsafe { w.state() };
+        let st = w.state();
         (w, st)
     }
 
@@ -1442,7 +1526,7 @@ pub mod ffi {
             git_assert_arg!(!walk.is_null(), "walk", -1);
             // SAFETY: the contract.
             let (_, st) = unsafe { walk_of(walk) };
-            st.first_parent = true;
+            st.first_parent.set(true);
             0
         })
     }
@@ -1513,7 +1597,8 @@ pub mod ffi {
     /// # Safety
     ///
     /// The module's contract; `hide_cb` is NULL or sound to call with a
-    /// commit id and `payload` during the walks, and does not use the walk.
+    /// commit id and `payload` during the walks (it may call the walk's
+    /// exports, but not free the walk).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_revwalk_add_hide_cb(
         walk: *mut GitRevwalk,

@@ -334,7 +334,10 @@ static void pathspecs(void)
 		arr.count = n;
 		if (git_pathspec_new(&ps, &arr) < 0)
 			continue;
-		for (sort = 0; sort < 8; sort += 3) {
+		/* git.git: diffs of each commit's trees are slow: the last 400
+		 * first-parent commits, three modes */
+		int big = !strcmp(repo_name, "git.git");
+		for (sort = 0; sort < 8; sort += big ? 3 : 1) {
 			git_revwalk *w;
 			char label[256];
 			if (git_revwalk_new(&w, repo) < 0)
@@ -342,8 +345,8 @@ static void pathspecs(void)
 			git_revwalk_pathspec(w, ps);
 			git_revwalk_sorting(w, sort);
 			git_revwalk_push_head(w);
-			if (!strcmp(repo_name, "git.git"))
-				git_revwalk_hide_ref(w, "refs/tags/v2.44.0");
+			if (big)
+				apply(w, "oid:HEAD~400", 1);
 			snprintf(label, sizeof(label), "pathspec[%s%s%s] sort=%u", sets[i][0],
 				 sets[i][1] ? "," : "", sets[i][1] ? sets[i][1] : "", sort);
 			drain(label, w, -1);

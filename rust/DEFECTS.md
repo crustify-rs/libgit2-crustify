@@ -461,9 +461,9 @@ DIVERGENCES.md).
   result is the C's (the value is discarded); for files it is the C's
   whenever the C's is determined (the difftest skips the other case).
 
-### hashsig: `git_hashsig_create_fromfile` leaks on a failed option check
-- C: returns the `GIT_ASSERT` error of `hashsig_in_progress_init` (both
-  whitespace options) without freeing the signature.
+### hashsig: `git_hashsig_create` and `_create_fromfile` leak on a failed option check
+- C: both return the `GIT_ASSERT` error of `hashsig_in_progress_init`
+  (both whitespace options) without freeing the signature.
 - Rust: same error, no leak.
 
 ### hashsig: NULL arguments

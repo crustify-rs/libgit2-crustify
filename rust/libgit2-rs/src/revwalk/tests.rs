@@ -56,10 +56,8 @@ impl Graph {
         g
     }
 
-    #[allow(clippy::mut_from_ref)]
-    fn st(&self) -> &mut State {
-        // SAFETY: the tests use one state reference at a time.
-        unsafe { self.w.state() }
+    fn st(&self) -> &State {
+        self.w.state()
     }
 
     fn push(&self, i: usize) -> &Self {
@@ -83,7 +81,7 @@ impl Graph {
     }
 
     fn first_parent(&self) -> &Self {
-        self.st().first_parent = true;
+        self.st().first_parent.set(true);
         self
     }
 
@@ -489,10 +487,119 @@ fn still_interesting_rules() {
     assert_eq!(still_interesting(&l(&[1, 2]), 25, 3), 2);
 }
 
+/// What a re-entrant hide callback does on its first call.
+#[derive(Clone, Copy)]
+enum Reenter {
+    FirstParent,
+    ReplaceCb,
+    Reset,
+    SortTopo,
+    PushNode(usize),
+}
+
+struct ReState {
+    walk: *mut GitRevwalk,
+    nodes: *const Vec<NodePtr>,
+    what: Reenter,
+    calls: core::cell::Cell<usize>,
+    second: core::cell::Cell<usize>,
+}
+
+/// The replacement callback: hides node 1, counts its calls.
+unsafe extern "C" fn second_cb(id: *const Oid, payload: *mut c_void) -> c_int {
+    // SAFETY: the walk passes a node's id and our `ReState`.
+    let st = unsafe { &*payload.cast::<ReState>() };
+    st.second.set(st.second.get() + 1);
+    // SAFETY: as above.
+    c_int::from(unsafe { *id } == oid(1))
+}
+
+/// A callback that calls back into the walk, through its exports, on its
+/// first call (as a C user may).
+unsafe extern "C" fn reentrant_cb(_id: *const Oid, payload: *mut c_void) -> c_int {
+    // SAFETY: our `ReState`, which outlives the walk.
+    let st = unsafe { &*payload.cast::<ReState>() };
+    st.calls.set(st.calls.get() + 1);
+    if st.calls.get() == 1 {
+        // SAFETY: a live walk; the exports support being called from its
+        // hide callback (no borrow of the walk's state lives across it).
+        unsafe {
+            match st.what {
+                Reenter::FirstParent => {
+                    assert_eq!(ffi::git_revwalk_simplify_first_parent(st.walk), 0);
+                }
+                Reenter::ReplaceCb => {
+                    let e = ffi::git_revwalk_add_hide_cb(st.walk, Some(second_cb), payload);
+                    assert_eq!(e, 0);
+                }
+                Reenter::Reset => assert_eq!(ffi::git_revwalk_reset(st.walk), 0),
+                Reenter::SortTopo => {
+                    assert_eq!(ffi::git_revwalk_sorting(st.walk, GIT_SORT_TOPOLOGICAL), 0);
+                }
+                Reenter::PushNode(i) => {
+                    let w = &*st.walk;
+                    let n = (&*st.nodes)[i];
+                    w.push_node(w.state(), n, &PushOptions::default()).unwrap();
+                }
+            }
+        }
+    }
+    0
+}
+
+fn reentrant_walk(what: Reenter, sort: c_uint) -> (Vec<usize>, usize, usize) {
+    let g = testrepo();
+    let st = ReState {
+        walk: ptr::from_ref(&*g.w).cast_mut(),
+        nodes: &raw const g.nodes,
+        what,
+        calls: core::cell::Cell::new(0),
+        second: core::cell::Cell::new(0),
+    };
+    let payload = ptr::from_ref(&st).cast_mut().cast::<c_void>();
+    g.w.set_hide_cb(g.st(), Some(reentrant_cb), payload);
+    g.sort(sort);
+    let out = g.push(0).walk();
+    (out, st.calls.get(), st.second.get())
+}
+
+#[test]
+fn reentrant_hide_callbacks() {
+    let _g = test_support::init();
+    // first-parent from the callback takes effect at once: 1 is not added
+    let (out, calls, _) = reentrant_walk(Reenter::FirstParent, 0);
+    assert_eq!(out, [0, 3, 5, 4]);
+    assert!(calls > 1);
+    // the replacement callback is used from its next call (and hides 1);
+    // the first one is not called again
+    let (out, calls, second) = reentrant_walk(Reenter::ReplaceCb, 0);
+    assert_eq!(out, [0, 3, 5, 4]);
+    assert_eq!(calls, 1);
+    assert!(second > 0);
+    // a sorting set from the callback is the one prepare_walk sees after
+    // limit_list
+    let (out, _, _) = reentrant_walk(Reenter::SortTopo, 0);
+    assert_eq!(out, [0, 1, 2, 3, 5, 4]);
+    // a reset from the callback (inside limit_list): what the C gives
+    let (out, _, _) = reentrant_walk(Reenter::Reset, 0);
+    assert_eq!(out, [0, 3, 1, 2, 5, 4]);
+    for sort in 0..8 {
+        let (out, _, _) = reentrant_walk(Reenter::Reset, sort);
+        assert!(!out.is_empty(), "sort {sort}");
+    }
+    // a push from the callback: into user_input, read at the next prepare
+    let (out, _, _) = reentrant_walk(Reenter::PushNode(2), 0);
+    assert_eq!(out, [0, 3, 1, 2, 5, 4]);
+}
+
 /// Without `link-c`, the C that the walk can reach is absent: these
 /// definitions stand in for it in this test binary (never in the library),
 /// so that it links. The tests' nodes are parsed and no pathspec is set,
 /// so none is ever called.
+///
+/// PENDING(l-commit): remove at integration (the Rust definitions of
+/// commit.c, tree.c and commit_list.c take these names), keeping only
+/// those of the C that stays (diff, pathspec).
 #[cfg(not(feature = "link-c"))]
 mod c_stubs {
     use core::ffi::{c_char, c_int, c_uint, c_void};
