@@ -246,7 +246,8 @@ impl GitFilebuf {
             // SAFETY: `digest` went through `init` while `compute_digest`
             // (the invariant).
             if let Ok(h) = unsafe { self.digest.hasher() } {
-                h.update(data);
+                // C ignores `git_hash_update`'s result here.
+                let _ = h.update(data);
             }
         }
     }
@@ -348,7 +349,7 @@ impl GitFilebuf {
             free_owned(&mut self.z_buf);
             // SAFETY: the stream is initialized while `z_buf` is set (the
             // invariant), and ended once.
-            unsafe { zlib::deflate_end(&mut self.zs) };
+            unsafe { zlib::deflate_end(&raw mut self.zs) };
         }
         free_owned(&mut self.path_original);
         free_owned(&mut self.path_lock);
@@ -410,7 +411,8 @@ impl GitFilebuf {
                 // SAFETY: the stream is initialized (`z_buf` is set) and has
                 // not moved since (the invariant); `next_in` has `avail_in`
                 // readable bytes, `next_out` `avail_out` writable ones.
-                if unsafe { zlib::deflate(&mut self.zs, self.flush_mode) } == z::Z_STREAM_ERROR {
+                if unsafe { zlib::deflate(&raw mut self.zs, self.flush_mode) } == z::Z_STREAM_ERROR
+                {
                     self.last_error = BUFERR_ZLIB;
                     return Err(ErrorCode::GENERIC);
                 }
@@ -494,7 +496,7 @@ impl GitFilebuf {
         };
         if let Some(a) = algorithm {
             self.compute_digest = true;
-            if self.digest.init(a.raw()).is_err() {
+            if self.digest.init(a).is_err() {
                 return Err(ErrorCode::GENERIC);
             }
         }
@@ -502,7 +504,7 @@ impl GitFilebuf {
         if compression != 0 {
             // SAFETY: `zs` is zeroed and does not move until cleanup (the
             // invariant's requirement on the filebuf's owner).
-            if unsafe { zlib::deflate_init(&mut self.zs, compression) } != z::Z_OK {
+            if unsafe { zlib::deflate_init(&raw mut self.zs, compression) } != z::Z_OK {
                 return Err(git_error_set!(
                     ErrorClass::ZLIB,
                     "failed to initialize zlib"
@@ -513,7 +515,7 @@ impl GitFilebuf {
                 // C returns here without ending the stream (a leak):
                 // end it, as cleanup will not (rust/DEFECTS.md).
                 // SAFETY: initialized just above, ended once.
-                unsafe { zlib::deflate_end(&mut self.zs) };
+                unsafe { zlib::deflate_end(&raw mut self.zs) };
                 return Err(ErrorCode::GENERIC);
             }
             self.flush_mode = z::Z_NO_FLUSH;
@@ -602,7 +604,7 @@ impl GitFilebuf {
         // SAFETY: `digest` went through `init` (`compute_digest`).
         if let Ok(h) = unsafe { self.digest.hasher() } {
             let mut d = [0u8; hash::MAX_SIZE];
-            let _collision = h.finalize_raw(&mut d);
+            let _ = h.finalize_raw(&mut d);
             let n = h.algorithm().size();
             // SAFETY: `out` has room for this algorithm's digest (the
             // caller); `d` is a distinct local.

@@ -1,17 +1,19 @@
 //! `src/util/hash.c` and the backends of this configuration: SHA-1 with
 //! collision detection (`hash/collisiondetect.c` over `hash/sha1dc`, here
 //! the `sha1collisiondetection` crate, a Rust port of sha1dc) and SHA-256
-//! (`hash/openssl.c`, here [`sha256`]).
+//! (`hash/openssl.c`, here OpenSSL's `SHA256_*` through
+//! [`crate::sys::openssl`], as the C's).
 //!
 //! # Types
 //!
-//! - [`Hasher`] is the Rust-native computation; [`HashAlgorithm`] picks it.
+//! - [`Hasher`] is the computation; [`HashAlgorithm`] picks it.
 //! - [`HashCtx`] is `git_hash_ctx`, which C that stays embeds by value
 //!   (indexer, pack-objects, filebuf, diff, midx, commit-graph, …). It is
 //!   mirrored as an opaque blob: `hash.h` declares it, under `GIT_RUST`, as
 //!   `uint64_t opaque[GIT_HASH_CTX_WORDS]` (size and alignment checked by
 //!   the layout test), and only this module reads it: an algorithm tag
-//!   followed by the [`Hasher`] in place.
+//!   followed by the [`Hasher`] in place. Rust structs that mirror a C one
+//!   embedding `git_hash_ctx` embed a `HashCtx`.
 //!
 //! # Semantics kept from the C
 //!
@@ -19,7 +21,8 @@
 //! bit conditions on, collision detection on): on a detected collision,
 //! `git_hash_final` writes sha1dc's "safe" digest and fails with
 //! `GIT_ERROR_SHA` "SHA1 collision attack detected". A finished
-//! computation is not reset: `git_hash_init` restarts it.
+//! computation is not reset: `git_hash_init` restarts it (in place, as
+//! `SHA1DCInit` and `SHA256_Init` do).
 
 use core::cell::RefCell;
 use core::ffi::{c_char, c_int, c_void};
@@ -29,19 +32,16 @@ use sha1collisiondetection::{Output as Sha1Output, Sha1CD};
 
 use super::errors::{ErrorClass, ErrorCode, Result};
 use crate::git_error_set;
-
-pub mod sha256;
-
-pub use sha256::Sha256;
+use crate::sys::openssl::Sha256Ctx;
 
 /// `GIT_HASH_SHA1_SIZE`.
 pub const SHA1_SIZE: usize = 20;
 /// `GIT_HASH_SHA256_SIZE`.
-pub const SHA256_SIZE: usize = sha256::SIZE;
+pub const SHA256_SIZE: usize = 32;
 /// `GIT_HASH_MAX_SIZE`.
 pub const MAX_SIZE: usize = SHA256_SIZE;
 
-/// `git_hash_algorithm_t`'s values (`GIT_HASH_ALGORITHM_*`).
+/// `git_hash_algorithm_t`'s values (`GIT_HASH_ALGORITHM_*`), for the C ABI.
 pub mod raw_algorithm {
     use core::ffi::c_int;
     /// `GIT_HASH_ALGORITHM_NONE`
@@ -63,19 +63,11 @@ pub enum HashAlgorithm {
 
 impl HashAlgorithm {
     /// From C's `git_hash_algorithm_t`; `None` for `NONE` and unknown values.
-    pub const fn from_raw(raw: c_int) -> Option<HashAlgorithm> {
+    pub(crate) const fn from_raw(raw: c_int) -> Option<HashAlgorithm> {
         match raw {
             raw_algorithm::SHA1 => Some(HashAlgorithm::Sha1),
             raw_algorithm::SHA256 => Some(HashAlgorithm::Sha256),
             _ => None,
-        }
-    }
-
-    /// C's `git_hash_algorithm_t` value.
-    pub const fn raw(self) -> c_int {
-        match self {
-            HashAlgorithm::Sha1 => raw_algorithm::SHA1,
-            HashAlgorithm::Sha256 => raw_algorithm::SHA256,
         }
     }
 
@@ -85,14 +77,6 @@ impl HashAlgorithm {
             HashAlgorithm::Sha1 => SHA1_SIZE,
             HashAlgorithm::Sha256 => SHA256_SIZE,
         }
-    }
-}
-
-/// `git_hash_size`: the digest size of a C algorithm value, 0 if unknown.
-pub const fn size(raw: c_int) -> usize {
-    match HashAlgorithm::from_raw(raw) {
-        Some(a) => a.size(),
-        None => 0,
     }
 }
 
@@ -124,87 +108,133 @@ impl core::fmt::Debug for Digest {
     }
 }
 
-/// A hash computation (`git_hash_ctx`'s Rust-native state).
-#[derive(Clone, Debug)]
+/// The backends.
+#[derive(Clone)]
 // sha1dc's state is large; it lives in place (in C's `git_hash_ctx`, on the
 // stack), never boxed.
 #[allow(clippy::large_enum_variant)]
-pub enum Hasher {
-    /// SHA-1 with collision detection (sha1dc).
+enum Backend {
     Sha1(Sha1CD),
-    /// SHA-256.
-    Sha256(Sha256),
+    Sha256(Sha256Ctx),
+}
+
+/// A hash computation (`git_hash_ctx`'s state). Plain data: it may be
+/// moved or copied byte for byte (C does both with `git_hash_ctx`).
+#[derive(Clone)]
+pub struct Hasher(Backend);
+
+impl core::fmt::Debug for Hasher {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("Hasher").field(&self.algorithm()).finish()
+    }
 }
 
 // `git_hash_ctx_cleanup` frees nothing; `HashCtx` relies on it.
 const _: () = assert!(!core::mem::needs_drop::<Hasher>());
 
+fn sha256_error(what: &str) -> ErrorCode {
+    git_error_set!(ErrorClass::SHA, "failed to {} sha256", what)
+}
+
 impl Hasher {
     /// A new computation (`git_hash_ctx_init`).
-    pub fn new(algorithm: HashAlgorithm) -> Hasher {
-        match algorithm {
-            HashAlgorithm::Sha1 => Hasher::Sha1(Sha1CD::default()),
-            HashAlgorithm::Sha256 => Hasher::Sha256(Sha256::new()),
-        }
+    pub fn new(algorithm: HashAlgorithm) -> Result<Hasher> {
+        Ok(Hasher(match algorithm {
+            HashAlgorithm::Sha1 => Backend::Sha1(Sha1CD::default()),
+            HashAlgorithm::Sha256 => {
+                let Some(c) = Sha256Ctx::new() else {
+                    return Err(git_error_set!(
+                        ErrorClass::SHA,
+                        "failed to initialize sha256 context"
+                    ));
+                };
+                Backend::Sha256(c)
+            }
+        }))
     }
 
     /// The algorithm.
     pub fn algorithm(&self) -> HashAlgorithm {
-        match self {
-            Hasher::Sha1(_) => HashAlgorithm::Sha1,
-            Hasher::Sha256(_) => HashAlgorithm::Sha256,
+        match self.0 {
+            Backend::Sha1(_) => HashAlgorithm::Sha1,
+            Backend::Sha256(_) => HashAlgorithm::Sha256,
         }
     }
 
-    /// Restart the computation (`git_hash_init`).
-    pub fn reset(&mut self) {
-        match self {
-            Hasher::Sha1(h) => h.reset(),
-            Hasher::Sha256(h) => *h = Sha256::new(),
+    /// Restart the computation in place (`git_hash_init`).
+    pub fn reset(&mut self) -> Result<()> {
+        match &mut self.0 {
+            Backend::Sha1(h) => h.reset(),
+            Backend::Sha256(h) => {
+                if !h.init() {
+                    return Err(git_error_set!(
+                        ErrorClass::SHA,
+                        "failed to initialize sha256 context"
+                    ));
+                }
+            }
         }
+        Ok(())
     }
 
     /// Hash `data` (`git_hash_update`).
     #[inline]
-    pub fn update(&mut self, data: &[u8]) {
-        match self {
-            Hasher::Sha1(h) => h.update(data),
-            Hasher::Sha256(h) => h.update(data),
+    pub fn update(&mut self, data: &[u8]) -> Result<()> {
+        match &mut self.0 {
+            Backend::Sha1(h) => h.update(data),
+            Backend::Sha256(h) => {
+                if !h.update(data) {
+                    return Err(sha256_error("update"));
+                }
+            }
         }
+        Ok(())
     }
 
     /// Write the digest to `out` (its first [`HashAlgorithm::size`] bytes)
     /// and return whether sha1dc detected a collision (then `out` holds the
-    /// "safe" digest), as `SHA1DCFinal`. The computation must be
-    /// [`reset`](Self::reset) before reuse.
-    pub fn finalize_raw(&mut self, out: &mut [u8; MAX_SIZE]) -> bool {
-        match self {
-            Hasher::Sha1(h) => {
+    /// "safe" digest), as `SHA1DCFinal`.
+    pub(crate) fn finalize_raw(&mut self, out: &mut [u8; MAX_SIZE]) -> Result<bool> {
+        match &mut self.0 {
+            Backend::Sha1(h) => {
                 let mut o = Sha1Output::default();
                 let collision = h.finalize_into_dirty_cd(&mut o).is_err();
                 out[..SHA1_SIZE].copy_from_slice(&o);
-                collision
+                Ok(collision)
             }
-            Hasher::Sha256(h) => {
+            Backend::Sha256(h) => {
                 let mut o = [0; SHA256_SIZE];
-                h.finalize_into(&mut o);
+                if !h.finalize(&mut o) {
+                    return Err(sha256_error("finalize"));
+                }
                 out[..SHA256_SIZE].copy_from_slice(&o);
-                false
+                Ok(false)
             }
         }
     }
 
     /// The digest (`git_hash_final`): fails with `GIT_ERROR_SHA` on a
-    /// detected SHA-1 collision.
+    /// detected SHA-1 collision. The computation must be
+    /// [`reset`](Self::reset) before reuse.
     pub fn finalize(&mut self) -> Result<Digest> {
-        let mut bytes = [0; MAX_SIZE];
-        if self.finalize_raw(&mut bytes) {
-            return Err(collision_error());
+        match self.finalize_report()? {
+            (_, true) => Err(collision_error()),
+            (d, false) => Ok(d),
         }
-        Ok(Digest {
-            bytes,
-            len: self.algorithm().size() as u8,
-        })
+    }
+
+    /// The digest, and whether sha1dc detected a collision (the digest is
+    /// then its "safe" one, as `git_hash_final` writes it).
+    pub fn finalize_report(&mut self) -> Result<(Digest, bool)> {
+        let mut bytes = [0; MAX_SIZE];
+        let collision = self.finalize_raw(&mut bytes)?;
+        Ok((
+            Digest {
+                bytes,
+                len: self.algorithm().size() as u8,
+            },
+            collision,
+        ))
     }
 }
 
@@ -217,7 +247,7 @@ fn unknown_algorithm() -> ErrorCode {
 }
 
 /// The algorithm of a C value, or the C's "unknown hash algorithm" error.
-pub fn algorithm(raw: c_int) -> Result<HashAlgorithm> {
+pub(crate) fn algorithm(raw: c_int) -> Result<HashAlgorithm> {
     HashAlgorithm::from_raw(raw).ok_or_else(unknown_algorithm)
 }
 
@@ -229,7 +259,10 @@ std::thread_local! {
 }
 
 /// Run `f` on a new computation of `algorithm`.
-fn with_oneshot<R>(algorithm: HashAlgorithm, f: impl FnOnce(&mut Hasher) -> R) -> R {
+fn with_oneshot<R>(
+    algorithm: HashAlgorithm,
+    f: impl FnOnce(&mut Hasher) -> Result<R>,
+) -> Result<R> {
     let mut f = Some(f);
     let slot = match algorithm {
         HashAlgorithm::Sha1 => 0,
@@ -239,18 +272,21 @@ fn with_oneshot<R>(algorithm: HashAlgorithm, f: impl FnOnce(&mut Hasher) -> R) -
         // Not re-entered (nothing here calls out), but be safe if it were.
         let mut hashers = cell.try_borrow_mut().ok()?;
         let h = match &mut hashers[slot] {
-            Some(h) => {
-                h.reset();
-                h
-            }
-            empty => empty.insert(Hasher::new(algorithm)),
+            Some(h) => match h.reset() {
+                Ok(()) => h,
+                Err(e) => return Some(Err(e)),
+            },
+            empty => match Hasher::new(algorithm) {
+                Ok(h) => empty.insert(h),
+                Err(e) => return Some(Err(e)),
+            },
         };
         f.take().map(|f| f(h))
     });
     match (reused, f) {
         (Ok(Some(r)), _) => r,
         // The thread's storage is gone or busy: a computation of our own.
-        (_, Some(f)) => f(&mut Hasher::new(algorithm)),
+        (_, Some(f)) => f(&mut Hasher::new(algorithm)?),
         (_, None) => unreachable!("`f` ran but returned nothing"),
     }
 }
@@ -258,7 +294,7 @@ fn with_oneshot<R>(algorithm: HashAlgorithm, f: impl FnOnce(&mut Hasher) -> R) -
 /// `git_hash_buf`.
 pub fn hash_buf(data: &[u8], algorithm: HashAlgorithm) -> Result<Digest> {
     with_oneshot(algorithm, |h| {
-        h.update(data);
+        h.update(data)?;
         h.finalize()
     })
 }
@@ -267,7 +303,7 @@ pub fn hash_buf(data: &[u8], algorithm: HashAlgorithm) -> Result<Digest> {
 pub fn hash_vec(data: &[&[u8]], algorithm: HashAlgorithm) -> Result<Digest> {
     with_oneshot(algorithm, |h| {
         for d in data {
-            h.update(d);
+            h.update(d)?;
         }
         h.finalize()
     })
@@ -301,8 +337,11 @@ pub fn fmt_into(out: &mut [u8], hash: &[u8]) {
 /// alignment (`hash.h`), and embeds it by value.
 ///
 /// `hasher` is initialized exactly when `algorithm` is a known algorithm
-/// and the context went through [`HashCtx::init`] (`git_hash_ctx_init`);
-/// that is the contract of the `git_hash_*` exports, as it was C's.
+/// and the context went through `git_hash_ctx_init` ([`HashCtx::init_raw`]);
+/// that is the contract of the `git_hash_*` exports, as it was C's. A
+/// `HashCtx` is valid (as a Rust value) once `algorithm` is initialized;
+/// C hands `git_hash_ctx_init` storage that is not, which is why that
+/// export writes through raw pointers.
 #[repr(C)]
 pub struct HashCtx {
     algorithm: c_int,
@@ -326,43 +365,80 @@ impl HashCtx {
         }
     }
 
-    /// A context for `algorithm`, as `git_hash_ctx_init` leaves it.
-    pub fn new(algorithm: HashAlgorithm) -> HashCtx {
-        HashCtx {
-            algorithm: algorithm.raw(),
-            hasher: MaybeUninit::new(Hasher::new(algorithm)),
+    /// A context for `algorithm`, as `git_hash_ctx_init` leaves it (for
+    /// Rust mirrors of C structs that embed a `git_hash_ctx`).
+    pub fn new(algorithm: HashAlgorithm) -> Result<HashCtx> {
+        Ok(HashCtx {
+            algorithm: match algorithm {
+                HashAlgorithm::Sha1 => raw_algorithm::SHA1,
+                HashAlgorithm::Sha256 => raw_algorithm::SHA256,
+            },
+            hasher: MaybeUninit::new(Hasher::new(algorithm)?),
+        })
+    }
+
+    /// `git_hash_ctx_init` on `ctx`, whose contents (maybe uninitialized)
+    /// are overwritten: record `raw` and start a computation, or fail with
+    /// "unknown hash algorithm" (then `raw` is still recorded, as C does,
+    /// and there is no computation).
+    ///
+    /// # Safety
+    ///
+    /// `ctx` is valid for writes of a `HashCtx`, and nothing else accesses
+    /// it during the call.
+    pub(crate) unsafe fn init_raw(ctx: *mut HashCtx, raw: c_int) -> Result<()> {
+        // SAFETY: the caller's contract; fields are reached and written as
+        // raw places, so no reference covers the uninitialized storage.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
+        unsafe {
+            (&raw mut (*ctx).algorithm).write(raw)
+        };
+        let h = Hasher::new(algorithm(raw)?)?;
+        // SAFETY: as above.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
+        unsafe {
+            (&raw mut (*ctx).hasher).write(MaybeUninit::new(h))
+        };
+        Ok(())
+    }
+
+    /// `git_hash_ctx_init` with a known algorithm, on a valid context.
+    pub(crate) fn init(&mut self, algorithm: HashAlgorithm) -> Result<()> {
+        // SAFETY: `self` is a valid, exclusive `HashCtx`.
+        unsafe {
+            HashCtx::init_raw(
+                self,
+                match algorithm {
+                    HashAlgorithm::Sha1 => raw_algorithm::SHA1,
+                    HashAlgorithm::Sha256 => raw_algorithm::SHA256,
+                },
+            )
         }
     }
 
-    /// `git_hash_ctx_init`: record `raw` and start a computation, or fail
-    /// with "unknown hash algorithm" (the context then has no computation;
-    /// `raw` is still recorded, as C does).
-    pub fn init(&mut self, raw: c_int) -> Result<()> {
-        self.algorithm = raw;
-        let a = algorithm(raw)?;
-        self.hasher.write(Hasher::new(a));
-        Ok(())
-    }
-
-    /// `git_hash_init`: restart the computation of the recorded algorithm.
-    pub fn restart(&mut self) -> Result<()> {
-        let a = algorithm(self.algorithm)?;
-        self.hasher.write(Hasher::new(a));
-        Ok(())
+    /// `git_hash_init`: restart the computation of the recorded algorithm,
+    /// in place.
+    ///
+    /// # Safety
+    ///
+    /// The context went through `git_hash_ctx_init` ([`init_raw`](Self::init_raw)
+    /// or [`new`](Self::new)) with the algorithm it records.
+    pub(crate) unsafe fn restart(&mut self) -> Result<()> {
+        // SAFETY: forwarded to the caller.
+        unsafe { self.hasher() }?.reset()
     }
 
     /// The computation, or the "unknown hash algorithm" error.
     ///
     /// # Safety
     ///
-    /// The context went through [`init`](Self::init) (or [`new`](Self::new))
-    /// with the algorithm it records.
-    pub unsafe fn hasher(&mut self) -> Result<&mut Hasher> {
+    /// As [`restart`](Self::restart).
+    pub(crate) unsafe fn hasher(&mut self) -> Result<&mut Hasher> {
         if HashAlgorithm::from_raw(self.algorithm).is_none() {
             return Err(unknown_algorithm());
         }
         // SAFETY: a known algorithm is recorded, so (the caller vouches)
-        // `init` wrote the computation.
+        // `init_raw` wrote the computation.
         Ok(unsafe { self.hasher.assume_init_mut() })
     }
 }
@@ -400,12 +476,13 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// A non-null `ctx` points to a `git_hash_ctx` (initialized or not)
-    /// that nothing else accesses during the call.
+    /// A non-null `ctx` points to a `git_hash_ctx` that went through
+    /// `git_hash_ctx_init` (so its `algorithm` is initialized), and that
+    /// nothing else accesses during the call.
     unsafe fn ctx<'a>(ctx: *mut HashCtx) -> Result<&'a mut HashCtx> {
         git_assert_arg!(!ctx.is_null(), "ctx");
-        // SAFETY: the caller's contract; `HashCtx` is valid for any bytes
-        // (its computation is `MaybeUninit`).
+        // SAFETY: the caller's contract: an initialized `algorithm` makes a
+        // valid `HashCtx` (its computation is `MaybeUninit`).
         Ok(unsafe { &mut *ctx })
     }
 
@@ -413,13 +490,14 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `ctx` points to a `git_hash_ctx` (its contents are overwritten) that
-    /// nothing else accesses during the call.
+    /// `ctx` points to storage for a `git_hash_ctx` (maybe uninitialized;
+    /// it is overwritten) that nothing else accesses during the call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_hash_ctx_init(ctx_: *mut HashCtx, algorithm: c_int) -> c_int {
+    pub unsafe extern "C" fn git_hash_ctx_init(ctx: *mut HashCtx, algorithm: c_int) -> c_int {
         barrier(|| {
+            git_assert_arg!(!ctx.is_null(), "ctx", -1);
             // SAFETY: forwarded to the caller.
-            status(unsafe { ctx(ctx_) }.and_then(|c| c.init(algorithm)))
+            status(unsafe { HashCtx::init_raw(ctx, algorithm) })
         })
     }
 
@@ -443,8 +521,8 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_hash_init(ctx_: *mut HashCtx) -> c_int {
         barrier(|| {
-            // SAFETY: forwarded to the caller.
-            status(unsafe { ctx(ctx_) }.and_then(|c| c.restart()))
+            // SAFETY: forwarded to the caller (both calls).
+            status(unsafe { ctx(ctx_) }.and_then(|c| unsafe { c.restart() }))
         })
     }
 
@@ -466,11 +544,38 @@ pub mod ffi {
                 // SAFETY: the caller initialized the context.
                 let h = unsafe { c.hasher() }?;
                 // SAFETY: the caller's contract on `data`.
-                h.update(unsafe { bytes(data.cast::<c_char>(), len) });
-                Ok(())
+                h.update(unsafe { bytes(data.cast::<c_char>(), len) })
             });
             status(r)
         })
+    }
+
+    /// Write the first `n` bytes of `d` to `out`.
+    ///
+    /// # Safety
+    ///
+    /// `out` is writable for `n <= MAX_SIZE` bytes.
+    unsafe fn write_out(out: *mut u8, d: &[u8; MAX_SIZE], n: usize) {
+        // SAFETY: the caller's contract; `d` is a distinct local.
+        unsafe { core::ptr::copy_nonoverlapping(d.as_ptr(), out, n) };
+    }
+
+    /// Finish `h` into `out` as `git_hash_final` does: the digest is
+    /// written, then a collision is reported.
+    ///
+    /// # Safety
+    ///
+    /// `out` is writable for `h`'s digest size.
+    unsafe fn final_into(out: *mut u8, h: &mut Hasher) -> Result<()> {
+        let mut d = [0; MAX_SIZE];
+        let collision = h.finalize_raw(&mut d)?;
+        // SAFETY: forwarded to the caller.
+        unsafe { write_out(out, &d, h.algorithm().size()) };
+        if collision {
+            Err(collision_error())
+        } else {
+            Ok(())
+        }
     }
 
     /// `git_hash_final`: write the digest (its algorithm's size) to `out`.
@@ -485,31 +590,11 @@ pub mod ffi {
             let r = unsafe { ctx(ctx_) }.and_then(|c| {
                 // SAFETY: the caller initialized the context.
                 let h = unsafe { c.hasher() }?;
-                let mut d = [0; MAX_SIZE];
-                let collision = h.finalize_raw(&mut d);
-                let n = h.algorithm().size();
-                // SAFETY: the caller's contract on `out`; `d` is a distinct
-                // local.
-                unsafe { core::ptr::copy_nonoverlapping(d.as_ptr(), out, n) };
-                if collision {
-                    Err(collision_error())
-                } else {
-                    Ok(())
-                }
+                // SAFETY: the caller's contract on `out`.
+                unsafe { final_into(out, h) }
             });
             status(r)
         })
-    }
-
-    /// Write `d` to `out` (the digest's size).
-    ///
-    /// # Safety
-    ///
-    /// `out` is writable for `d`'s size.
-    unsafe fn write_digest(out: *mut u8, d: &Digest) {
-        let b = d.as_bytes();
-        // SAFETY: the caller's contract; `b` is a distinct local.
-        unsafe { core::ptr::copy_nonoverlapping(b.as_ptr(), out, b.len()) };
     }
 
     /// `git_hash_buf`.
@@ -529,22 +614,11 @@ pub mod ffi {
             let r = super::algorithm(algorithm).and_then(|a| {
                 // SAFETY: the caller's contract on `data`.
                 let data = unsafe { bytes(data.cast::<c_char>(), len) };
-                let mut d = [0; MAX_SIZE];
-                let collision = with_oneshot(a, |h| {
-                    h.update(data);
-                    h.finalize_raw(&mut d)
-                });
-                let d = Digest {
-                    bytes: d,
-                    len: a.size() as u8,
-                };
-                // SAFETY: the caller's contract on `out`.
-                unsafe { write_digest(out, &d) };
-                if collision {
-                    Err(collision_error())
-                } else {
-                    Ok(())
-                }
+                with_oneshot(a, |h| {
+                    h.update(data)?;
+                    // SAFETY: the caller's contract on `out`.
+                    unsafe { final_into(out, h) }
+                })
             });
             status(r)
         })
@@ -571,25 +645,14 @@ pub mod ffi {
                     // SAFETY: the caller passes `n` entries.
                     unsafe { core::slice::from_raw_parts(vec, n) }
                 };
-                let mut d = [0; MAX_SIZE];
-                let collision = with_oneshot(a, |h| {
+                with_oneshot(a, |h| {
                     for v in vec {
                         // SAFETY: the caller's contract on each entry.
-                        h.update(unsafe { bytes(v.data.cast::<c_char>(), v.len) });
+                        h.update(unsafe { bytes(v.data.cast::<c_char>(), v.len) })?;
                     }
-                    h.finalize_raw(&mut d)
-                });
-                let d = Digest {
-                    bytes: d,
-                    len: a.size() as u8,
-                };
-                // SAFETY: the caller's contract on `out`.
-                unsafe { write_digest(out, &d) };
-                if collision {
-                    Err(collision_error())
-                } else {
-                    Ok(())
-                }
+                    // SAFETY: the caller's contract on `out`.
+                    unsafe { final_into(out, h) }
+                })
             });
             status(r)
         })
@@ -628,10 +691,11 @@ pub mod ffi {
 }
 
 crate::c_layout_test! {
-    headers: ["hash.h"],
+    headers: ["hash.h", "openssl/sha.h"],
     types: [
         HashCtx => "git_hash_ctx" {},
         GitStrVec => "git_str_vec" { data, len },
+        Sha256Ctx => "SHA256_CTX" {},
     ],
     asserts: [
         "GIT_HASH_ALGORITHM_NONE == 0",
@@ -658,6 +722,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "SHA-256 is OpenSSL's (C)")]
     fn sha256_known_answers() {
         let _g = crate::util::test_support::init();
         let d = hash_buf(b"abc", HashAlgorithm::Sha256).unwrap();
@@ -671,8 +736,10 @@ mod tests {
     #[test]
     fn ctx_unknown_algorithm() {
         let _g = crate::util::test_support::init();
-        let mut c = HashCtx::new(HashAlgorithm::Sha1);
-        assert_eq!(c.init(7), Err(ErrorCode::GENERIC));
+        let mut c = HashCtx::new(HashAlgorithm::Sha1).unwrap();
+        // SAFETY: `c` is a valid, unaliased context.
+        let r = unsafe { HashCtx::init_raw(&raw mut c, 7) };
+        assert_eq!(r, Err(ErrorCode::GENERIC));
         assert_eq!(
             crate::util::errors::last(),
             (ErrorClass::INTERNAL, b"unknown hash algorithm".to_vec())
@@ -680,19 +747,27 @@ mod tests {
         // SAFETY: an unknown algorithm is recorded: the computation is not
         // read.
         assert!(unsafe { c.hasher() }.is_err());
-        assert!(c.restart().is_err());
-        assert!(c.init(raw_algorithm::SHA256).is_ok());
+        // SAFETY: as above.
+        assert!(unsafe { c.restart() }.is_err());
+        // SAFETY: `c` is a valid, unaliased context.
+        assert!(unsafe { HashCtx::init_raw(&raw mut c, raw_algorithm::SHA1) }.is_ok());
         // SAFETY: just initialized.
         let h = unsafe { c.hasher() }.unwrap();
-        h.update(b"abc");
-        assert_eq!(h.finalize().unwrap().to_hex()[..8], *"ba7816bf");
+        h.update(b"abc").unwrap();
+        assert_eq!(h.finalize().unwrap().to_hex()[..8], *"a9993e36");
     }
 
     #[test]
-    fn sizes() {
-        assert_eq!(size(raw_algorithm::NONE), 0);
-        assert_eq!(size(raw_algorithm::SHA1), 20);
-        assert_eq!(size(raw_algorithm::SHA256), 32);
-        assert_eq!(size(-1), 0);
+    fn restart_resets_in_place() {
+        let _g = crate::util::test_support::init();
+        let mut c = HashCtx::new(HashAlgorithm::Sha1).unwrap();
+        for _ in 0..3 {
+            // SAFETY: initialized by `new`.
+            unsafe { c.restart() }.unwrap();
+            // SAFETY: as above.
+            let h = unsafe { c.hasher() }.unwrap();
+            h.update(b"abc").unwrap();
+            assert_eq!(h.finalize().unwrap().to_hex()[..8], *"a9993e36");
+        }
     }
 }

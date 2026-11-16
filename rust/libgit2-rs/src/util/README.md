@@ -23,11 +23,11 @@ builds on. This is the short version; each module's rustdoc has the rest.
 | paths (`git_fs_path_*`), directory iteration | `fs_path::{dirname_r, join_unrooted, prettify, direach, GitFsPathDiriter, …}` | `fs_path` |
 | whole files, `mkdir -p`, `rm -r`, file stamps | `futils::{readbuffer, writebuffer, mkdir, rmdir_r, Filestamp, …}` | `futils` |
 | lock files (`git_filebuf`) | `filebuf::GitFilebuf` (C-embedded), `filebuf::Filebuf` (Rust) | `filebuf` |
-| SHA-1 (collision-detecting) / SHA-256; `git_hash_ctx` embedded in a mirrored struct | `hash::{Hasher, HashAlgorithm, hash_buf, hash_vec, Digest}`; `hash::HashCtx` | `hash` |
-| zlib streams; `git_zstream` embedded in a mirrored struct | `zstream::{ZStream, inflate_buf, deflate_buf}`; `zstream::GitZstream` | `zstream` |
-| `git_regexp` (PCRE2) | `regexp::Regexp` | `regexp` |
-| `wildmatch` | `wildmatch::wildmatch` | `wildmatch` |
-| `git_date_parse`, RFC 2822 dates | `date::{parse, offset_parse, rfc2822_fmt}`, `date::{Clock, UtcClock}` | `date` |
+| SHA-1 (collision-detecting) / SHA-256; `git_hash_ctx` embedded in a mirrored struct | `hash::{Hasher, HashAlgorithm, hash_buf, hash_vec, Digest}`; `hash::HashCtx` (`zeroed`, `new`) | `hash` |
+| zlib streams; `git_zstream` embedded in a mirrored struct | `zstream::{ZStream, inflate, deflate}`; `zstream::GitZstream` (through `ZstreamPtr` only: zlib keeps a pointer to it), crate-internal `inflate_buf`/`deflate_buf` into a `GitStr` | `zstream` |
+| `git_regexp` (PCRE2) | `regexp::{Regexp, RegexpFlags}` | `regexp` |
+| `wildmatch` | `wildmatch::{wildmatch, WildmatchFlags, WildMatch}` | `wildmatch` |
+| `git_date_parse`, RFC 2822 dates | `date::{parse, offset_parse, rfc2822}`, `date::{Clock, UtcClock}` | `date` |
 | `git_rand_next` | `rand::{next, seed}` | `rand` |
 
 ## Errors

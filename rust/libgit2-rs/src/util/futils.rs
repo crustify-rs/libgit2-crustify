@@ -219,7 +219,9 @@ pub fn canonical_mode(raw_mode: mode_t) -> mode_t {
 /// Read `len` bytes from `fd` into the room after the contents of `buf`
 /// (which has at least `len + 1` bytes of room); the count read, or -1.
 fn read_into_spare(buf: &mut GitStr, fd: c_int, len: usize) -> isize {
-    let spare = buf.spare_capacity_mut();
+    // SAFETY: the caller writes the NUL back (`readbuffer_fd`) before the
+    // string is read.
+    let spare = unsafe { buf.spare_with_nul_mut() };
     assert!(spare.len() > len, "room was made for the read");
     // SAFETY: `spare` is writable for more than `len` bytes; `read_raw`
     // writes at most `len` (it only initializes them).
@@ -252,7 +254,9 @@ pub fn readbuffer_fd(buf: &mut GitStr, fd: c_int, len: usize) -> Result<()> {
     }
     let n = read_size as usize;
     // C's `buf->ptr[read_size] = '\0'`: the room has `alloc_len > n` bytes.
-    buf.spare_capacity_mut()[n].write(0);
+    // SAFETY: the NUL is written here.
+    let spare = unsafe { buf.spare_with_nul_mut() };
+    spare[n].write(0);
     // SAFETY: owned (grown above); its first `start + n` bytes are
     // initialized (the old contents, empty, and what `read` wrote), and
     // `start + n < capacity` (followed by the NUL just written).
@@ -275,16 +279,12 @@ pub fn readbuffer_fd_full(buf: &mut GitStr, fd: c_int) -> Result<()> {
         let total = buf.len();
         // Each block goes after the previous ones, straight into the
         // string's room (`capacity >= alloc_len = total + BLOCKSIZE`).
-        let spare = buf.spare_capacity_mut();
-        assert!(spare.len() >= BLOCKSIZE, "room was made for the block");
-        // SAFETY: `spare` is writable for at least `BLOCKSIZE` bytes, and
-        // `read_raw` writes at most that many (it only initializes them).
-        let read_size = unsafe { posix::read_raw(fd, spare.as_mut_ptr().cast(), BLOCKSIZE) };
-        if read_size < 0 {
-            let _ = git_error_set!(ErrorClass::OS, "failed to read descriptor");
-            buf.dispose();
-            return Err(ErrorCode::GENERIC);
-        }
+        let (p, room) = buf.spare_ptr();
+        assert!(room >= BLOCKSIZE, "room was made for the block");
+        // SAFETY: `p` is writable for `room >= BLOCKSIZE` bytes, and
+        // `read_raw` writes at most that many; the NUL it may overwrite is
+        // restored below before the string is read.
+        let read_size = unsafe { posix::read_raw(fd, p, BLOCKSIZE) };
         let n = total + read_size as usize;
         // SAFETY: owned; its first `n` bytes are the earlier blocks and what
         // `read` just wrote, and `n <= alloc_len <= capacity` (a full block
@@ -295,9 +295,8 @@ pub fn readbuffer_fd_full(buf: &mut GitStr, fd: c_int) -> Result<()> {
             break;
         }
     }
-    // `size < alloc_len <= capacity`: the NUL's place is in the room.
-    buf.spare_capacity_mut()[0].write(0);
-    Ok(())
+    // `size < alloc_len <= capacity`: the NUL fits without growing.
+    buf.terminate()
 }
 
 /// `git_futils_readbuffer_updated`: read `path` into `out`, unless its
