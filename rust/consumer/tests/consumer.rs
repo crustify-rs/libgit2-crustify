@@ -40,7 +40,7 @@ fn open_walk_read() {
     let mut walk = Revwalk::new(&repo).unwrap();
     walk.sorting(Sort::TOPOLOGICAL | Sort::TIME);
     walk.push(&oid(HEAD)).unwrap();
-    let n = walk.map(|r| r.unwrap()).count();
+    let n = walk.inspect(|r| assert!(r.is_ok())).count();
     assert!(n > 1, "{n}");
     let cfg = repo.config().unwrap();
     assert!(cfg.get_bool("core.bare").unwrap());

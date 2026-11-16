@@ -35,13 +35,13 @@ fn oid_round_trips_and_errors() -> Result<(), Error> {
     assert_eq!(a.hex_path()?.as_str().as_bytes()[2], b'/');
     assert_eq!(Oid::from_prefix(b"8b13", OidType::Sha1)?, a.prefix(4));
 
-    let e: Error = Oid::from_hex("xyz", OidType::Sha1).unwrap_err().into();
+    let e: Error = Oid::from_hex("xyz", OidType::Sha1).unwrap_err();
     assert_eq!(e.class(), ErrorClass::INVALID);
     assert_eq!(
         e.message(),
         "unable to parse OID - contains invalid characters"
     );
-    let e: Error = Oid::from_prefix(b"", OidType::Sha256).unwrap_err().into();
+    let e: Error = Oid::from_prefix(b"", OidType::Sha256).unwrap_err();
     assert_eq!(e.message(), "unable to parse OID - too short");
 
     let z = Oid::zero(OidType::Sha256);
