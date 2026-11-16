@@ -1197,3 +1197,100 @@ ffibox::impl_cvtable! {
     }
     release free;
 }
+
+#[cfg(test)]
+mod tests {
+    //! The Rust backend's tables, called as libgit2 calls them (Miri).
+    use super::*;
+    use crate::util::test_support;
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    struct Mem(Mutex<Vec<(Vec<u8>, RefValue)>>);
+
+    impl RefdbBackend for Mem {
+        fn exists(&self, name: &[u8]) -> Result<bool> {
+            Ok(self.0.lock().unwrap().iter().any(|(n, _)| n == name))
+        }
+        fn lookup(&self, name: &[u8]) -> Result<Option<RefValue>> {
+            Ok(self.0.lock().unwrap().iter().find(|(n, _)| n == name).map(|(_, v)| v.clone()))
+        }
+        fn list(&self) -> Result<Vec<(Vec<u8>, RefValue)>> {
+            Ok(self.0.lock().unwrap().clone())
+        }
+        fn write(
+            &self,
+            name: &[u8],
+            value: &RefValue,
+            _force: bool,
+            _old_id: Option<&Oid>,
+            _old_target: Option<&[u8]>,
+            _message: Option<&[u8]>,
+        ) -> Result<()> {
+            self.0.lock().unwrap().push((name.to_vec(), value.clone()));
+            Ok(())
+        }
+        fn rename(&self, _old: &[u8], _new: &[u8], _force: bool) -> Result<RefValue> {
+            Err(Error::new(ErrorCode::NOT_FOUND, ErrorClass::REFERENCE, "nope"))
+        }
+        fn delete(&self, name: &[u8], _: Option<&Oid>, _: Option<&[u8]>) -> Result<()> {
+            if name == b"panic" {
+                panic!("delete");
+            }
+            self.0.lock().unwrap().retain(|(n, _)| n != name);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn rust_backend_slots() {
+        let _g = test_support::init();
+        let id = Oid::from_hex(b"a65fedf39aefe402d3bb6e24df4d4f5fe4547750", crate::OidType::Sha1).unwrap();
+        let t = CTable::<RefdbBackendTable, RustBackend<Mem>>::new(RustBackend(Mem::default()));
+        let b = t.into_c().as_ptr();
+        // SAFETY: libgit2's contract with a backend: its own slots, its
+        // table, valid arguments, `free` once.
+        unsafe {
+            let tb = &*b;
+            assert!(tb.lock.is_none() && tb.unlock.is_none() && tb.init.is_none());
+            let r = RefBox::new_direct(b"refs/heads/a", &id, None).unwrap();
+            assert_eq!((tb.write.unwrap())(b, r.as_ptr(), 0, core::ptr::null(), core::ptr::null(), core::ptr::null(), core::ptr::null()), 0);
+            let s = RefBox::new_symbolic(b"HEAD", b"refs/heads/a").unwrap();
+            assert_eq!((tb.write.unwrap())(b, s.as_ptr(), 0, core::ptr::null(), c"m".as_ptr(), core::ptr::null(), core::ptr::null()), 0);
+            let mut e = 0;
+            assert_eq!((tb.exists.unwrap())(&raw mut e, b, c"HEAD".as_ptr()), 0);
+            assert_eq!(e, 1);
+            let mut out = core::ptr::null_mut();
+            assert_eq!((tb.lookup.unwrap())(&raw mut out, b, c"refs/heads/a".as_ptr()), 0);
+            let got = RefBox::from_raw(out).unwrap();
+            assert_eq!(got.view().target(), Some(&id));
+            assert_eq!((tb.lookup.unwrap())(&raw mut out, b, c"refs/heads/z".as_ptr()), -3);
+            assert_eq!(errors::last_message().unwrap(), b"reference 'refs/heads/z' not found");
+            assert_eq!((tb.rename.unwrap())(&raw mut out, b, c"a".as_ptr(), c"b".as_ptr(), 0, core::ptr::null(), core::ptr::null()), -3);
+            assert_eq!(errors::last_message().unwrap(), b"nope");
+            assert_eq!((tb.del.unwrap())(b, c"panic".as_ptr(), core::ptr::null(), core::ptr::null()), -1);
+            assert_eq!(errors::last_class(), Some(ErrorClass::INTERNAL));
+            assert_eq!((tb.compress.unwrap())(b), 0);
+            assert_eq!((tb.has_log.unwrap())(b, c"HEAD".as_ptr()), 0);
+
+            let mut it: *mut git_reference_iterator = core::ptr::null_mut();
+            assert_eq!((tb.iterator.unwrap())(&raw mut it, b, c"refs/*".as_ptr()), 0);
+            let mut name = core::ptr::null();
+            assert_eq!(((*it).next_name.unwrap())(&raw mut name, it), 0);
+            assert_eq!(CStr::from_ptr(name).to_bytes(), b"refs/heads/a");
+            assert_eq!(((*it).next.unwrap())(&raw mut out, it), ErrorCode::ITER_OVER.raw());
+            // The name stays valid until the iterator is freed.
+            assert_eq!(CStr::from_ptr(name).to_bytes(), b"refs/heads/a");
+            ((*it).free.unwrap())(it);
+            assert_eq!((tb.iterator.unwrap())(&raw mut it, b, core::ptr::null()), 0);
+            assert_eq!(((*it).next.unwrap())(&raw mut out, it), 0);
+            drop(RefBox::from_raw(out));
+            ((*it).free.unwrap())(it);
+
+            assert_eq!((tb.del.unwrap())(b, c"HEAD".as_ptr(), core::ptr::null(), core::ptr::null()), 0);
+            assert_eq!((tb.exists.unwrap())(&raw mut e, b, c"HEAD".as_ptr()), 0);
+            assert_eq!(e, 0);
+            (tb.free.unwrap())(b);
+        }
+    }
+}

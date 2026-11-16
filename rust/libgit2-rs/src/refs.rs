@@ -2706,3 +2706,58 @@ mod tests {
         assert!(loose_parse_symbolic(b"ref: ").is_err());
     }
 }
+
+#[cfg(test)]
+mod ffi_tests {
+    //! The exports that stay in Rust, called as C would (Miri-tested).
+    use super::ffi::*;
+    use super::*;
+    use crate::util::test_support;
+
+    fn cs<'a>(p: *const c_char) -> &'a [u8] {
+        assert!(!p.is_null());
+        // SAFETY: a string the export returned.
+        unsafe { CStr::from_ptr(p) }.to_bytes()
+    }
+
+    #[test]
+    fn alloc_realloc_getters() {
+        let _g = test_support::init();
+        let id = Oid::from_hex(b"a65fedf39aefe402d3bb6e24df4d4f5fe4547750", OidType::Sha1).unwrap();
+        // SAFETY: valid strings and oids; each reference freed once.
+        unsafe {
+            let d = git_reference__alloc(c"refs/tags/v1".as_ptr(), &id, core::ptr::null());
+            assert_eq!(cs(git_reference_name(d)), b"refs/tags/v1");
+            assert_eq!(cs(git_reference_shorthand(d)), b"v1");
+            assert_eq!(git_reference_is_tag(d), 1);
+            assert!(git_reference_target_peel(d).is_null());
+            let mut p = d;
+            let r = git_reference__realloc(&raw mut p, c"refs/tags/a-longer-name-for-the-same-tag".as_ptr());
+            assert!(p.is_null());
+            assert_eq!(cs(git_reference_name(r)), b"refs/tags/a-longer-name-for-the-same-tag");
+            assert_eq!(*git_reference_target(r), id);
+            let s = git_reference__alloc_symbolic(c"HEAD".as_ptr(), c"refs/tags/v1".as_ptr());
+            let mut dup = core::ptr::null_mut();
+            assert_eq!(git_reference_dup(&raw mut dup, s), 0);
+            assert_eq!(git_reference_cmp(dup, s), 0);
+            assert!(git_reference_cmp(s, r) < 0);
+            git_reference_free(dup);
+            git_reference_free(s);
+            git_reference_free(r);
+
+            let mut buf = [0 as c_char; 8];
+            assert_eq!(git_reference_normalize_name(buf.as_mut_ptr(), 8, c"a/..b".as_ptr(), 0), -12);
+            assert_eq!(git_reference_normalize_name(buf.as_mut_ptr(), 8, c"x/y//z".as_ptr(), 0), 0);
+            assert_eq!(cs(buf.as_ptr()), b"x/y/z");
+            let mut valid = 7;
+            assert_eq!(git_reference__name_is_valid(&raw mut valid, c"refs/x".as_ptr(), 0), 0);
+            assert_eq!(valid, 1);
+            let mut s = GitStr::new();
+            s.puts(b"q//w").unwrap();
+            let own = s.as_ptr();
+            assert_eq!(git_reference__normalize_name(&raw mut s, own, 0), 0);
+            assert_eq!(s.as_bytes(), b"q/w");
+            assert_eq!(git_reference__is_branch(c"refs/heads/".as_ptr()), 1);
+        }
+    }
+}
