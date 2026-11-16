@@ -286,7 +286,9 @@ impl Signature {
         let mut sig = Signature::empty(opts);
         let fd = futils::open_ro(path)?;
         let r = sig.read_fd(fd, path);
-        let _ = posix::close(fd);
+        // SAFETY: `fd` is the descriptor `open_ro` gave us, closed once,
+        // not used after.
+        let _ = unsafe { posix::close(fd) };
         r?;
         sig.finalize()?;
         Ok(sig)
