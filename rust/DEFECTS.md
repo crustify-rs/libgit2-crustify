@@ -449,7 +449,7 @@ C dereferences the index (it returns early only for an empty target);
 `git_delta_create_from_index(…, NULL, trg, n>0, …)` crashes. The Rust fails
 with `invalid argument: 'index'` (-1, NULL output).
 
-### delta: the output buffer's size wraps for deltas above ~2.8 GiB
+### delta: the output buffer's size wraps for deltas above ~1.4 GiB
 `git_delta_create_from_index` grows its buffer with `bufsize * 3 / 2` in
 `unsigned int`; past 2^32/3 bytes this wraps and `git__realloc` shrinks the
 buffer, which the next opcode overflows. The Rust fails with the
