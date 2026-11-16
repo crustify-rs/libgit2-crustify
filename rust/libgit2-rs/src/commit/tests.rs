@@ -589,3 +589,61 @@ fn review_r1_edges() {
     write_signature(&mut out, b"author ", Some(b"N"), Some(b"e"), when);
     assert_eq!(out.as_bytes(), b"author N <e> 0 -3579139408\n");
 }
+
+/// `header_field_cstr` (the C ABI's line walk) and `header_field` (the
+/// whole-buffer search) agree on result, contents and error message.
+#[test]
+fn header_field_line_walk_matches_slices() {
+    let _g = test_support::init();
+    let headers: &[&[u8]] = &[
+        b"",
+        b"\n",
+        b"tree 1\nparent 2\nparent 3\nauthor A\ncommitter C\n",
+        b"tree 1\nmergetag object x\n type commit\n tag v1\n\n -----BEGIN\nauthor A\n",
+        b"a b\n c",
+        b"a b\n c\n",
+        b"a b\n\n",
+        b"a  b\nab c\na\nb c",
+        b" x y\nx z\n",
+        b"gpgsig -----BEGIN\n line2\n \n end\nx y\nxx z\n",
+        b"k v\n k2\n",
+        b"k\n",
+        b"k \n",
+    ];
+    let fields: &[&[u8]] = &[
+        b"",
+        b"tree",
+        b"parent",
+        b"author",
+        b"committer",
+        b"mergetag",
+        b"a",
+        b"ab",
+        b"b",
+        b"x",
+        b"xx",
+        b" x",
+        b"gpgsig",
+        b"k",
+        b"k ",
+        b"a\nb",
+        b"b\na",
+        b"line2",
+        b"zz",
+    ];
+    for &h in headers {
+        let c = std::ffi::CString::new(h).unwrap();
+        for &f in fields {
+            let (mut a, mut b) = (GitStr::new(), GitStr::new());
+            let ra = header_field(h, f, &mut a);
+            let ma = errors::last_message();
+            errors::clear();
+            let rb = header_field_cstr(&c, f, &mut b);
+            let mb = errors::last_message();
+            errors::clear();
+            assert_eq!(ra, rb, "{h:?} {f:?}");
+            assert_eq!(ma, mb, "{h:?} {f:?}");
+            assert_eq!(a.as_bytes(), b.as_bytes(), "{h:?} {f:?}");
+        }
+    }
+}

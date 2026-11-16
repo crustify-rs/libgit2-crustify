@@ -1524,10 +1524,7 @@ mod tests {
     #[test]
     fn pathfmt_in_place() {
         let _g = crate::util::test_support::init();
-        for (hex, t) in [
-            (&HEX[..], OidType::Sha1),
-            (&[b'7'; 64][..], OidType::Sha256),
-        ] {
+        for (hex, t) in [(HEX, OidType::Sha1), (&[b'7'; 64][..], OidType::Sha256)] {
             let id = Oid::from_hex(hex, t).unwrap();
             let n = t.hexsize() + 1;
             // An uninitialized buffer, one byte longer: the last is not
@@ -1535,7 +1532,7 @@ mod tests {
             let mut buf = [core::mem::MaybeUninit::<u8>::uninit(); GIT_OID_MAX_HEXSIZE + 2];
             buf[n].write(0xa5);
             // SAFETY: `n` writable bytes; a valid oid.
-            let r = unsafe { ffi::git_oid_pathfmt(buf.as_mut_ptr().cast(), &id) };
+            let r = unsafe { ffi::git_oid_pathfmt(buf.as_mut_ptr().cast(), &raw const id) };
             assert_eq!(r, 0);
             // SAFETY: the first `n` bytes were written, and byte `n` above.
             let out: Vec<u8> = buf[..=n]

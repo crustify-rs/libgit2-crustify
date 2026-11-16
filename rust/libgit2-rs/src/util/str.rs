@@ -788,7 +788,42 @@ impl GitStr {
             self.size = n + len;
             return Ok(());
         }
+        if len != 0 && n == 0 && !self.owned() && !self.is_oom() {
+            return self.put_first(data);
+        }
         self.put_seg(Seg::Ext(data))
+    }
+
+    /// `put` of non-empty `data` into an empty string that owns no buffer
+    /// (the first `put` into `GIT_STR_INIT`, as when a `git_buf` is
+    /// filled): the steps of `ENSURE_SIZE` and `git_str_try_grow` for that
+    /// state alone, with their results and errors.
+    #[inline(never)]
+    fn put_first(&mut self, data: &[u8]) -> Result<()> {
+        let len = data.len();
+        // `ENSURE_SIZE(size + len + 1)`, with `size == 0`.
+        let target = alloc_add(len, 1)?;
+        // `try_grow` of a buffer it does not own: the target, rounded up
+        // to 8; one that wraps is out of memory.
+        let new_size = target.wrapping_add(7) & !7;
+        if new_size == 0 {
+            self.mark_oom();
+            errors::set_oom();
+            return Err(ErrorCode::GENERIC);
+        }
+        // SAFETY: NULL asks for a new allocation.
+        let p = unsafe { alloc::realloc(ptr::null_mut(), new_size) }.cast::<c_char>();
+        if p.is_null() {
+            self.mark_oom();
+            return Err(ErrorCode::GENERIC);
+        }
+        self.asize = new_size;
+        self.ptr = p;
+        let buf = self.alloc_mut();
+        buf[..len].write_copy_of_slice(data);
+        buf[len].write(0);
+        self.size = len;
+        Ok(())
     }
 
     #[inline]
@@ -3444,6 +3479,23 @@ impl GitStr {
 mod tests {
     use super::*;
 
+    /// `put` into an empty string that owns nothing: one allocation of the
+    /// size `try_grow` picks, as the general path makes it.
+    #[test]
+    fn put_first_allocation() {
+        let _g = crate::util::test_support::init();
+        for n in [1usize, 6, 7, 8, 100] {
+            let data = vec![b'z'; n];
+            let mut a = GitStr::new();
+            a.put(&data).unwrap();
+            let mut b = GitStr::new();
+            b.put_seg(Seg::Ext(&data)).unwrap();
+            assert_eq!(a.as_bytes(), &data[..]);
+            assert_eq!((a.len(), a.capacity()), (b.len(), b.capacity()));
+            assert_eq!(a.capacity(), (n + 1 + 7) & !7);
+        }
+    }
+
     /// `put`'s fast path (room in an owned buffer) and its boundary with
     /// the growing path: the contents and the NUL are those of C.
     #[test]
@@ -3463,8 +3515,9 @@ mod tests {
         assert!(s.capacity() > cap);
         assert_eq!(s.len(), cap);
         assert_eq!(s.as_bytes()[cap - 1], b'b');
+        let nul = s.as_ptr().wrapping_add(s.len());
         // SAFETY: the owned buffer holds the NUL after the contents.
-        assert_eq!(unsafe { *s.as_ptr().add(s.len()) }, 0);
+        assert_eq!(unsafe { *nul }, 0);
         // A borrowed string is never written in place.
         let data = b"xyz";
         let mut b = GitStr::new();
