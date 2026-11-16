@@ -376,6 +376,46 @@ pub fn ref_is_available(old_ref: Option<&[u8]>, new_ref: &[u8], this_ref: &[u8])
     true
 }
 
+/// Whether `new_ref` collides with one of the sorted names `name_at(0..len)`
+/// (none of which contains a NUL), skipping `old_ref`: what
+/// `reference_path_available`'s scan of every packed reference with
+/// [`ref_is_available`] finds, in `O(log n)`: a name that is a directory
+/// of `new_ref` (looked up with `contains`), or a name under `new_ref/`
+/// (a range of the sorted names).
+pub fn path_collides<'a>(
+    new_ref: &[u8],
+    old_ref: Option<&[u8]>,
+    len: usize,
+    name_at: impl Fn(usize) -> &'a [u8],
+    contains: impl Fn(&[u8]) -> bool,
+) -> bool {
+    let skip = |n: &[u8]| old_ref.is_some_and(|o| o == n);
+    for (i, &c) in new_ref.iter().enumerate() {
+        if c == b'/' {
+            let dir = &new_ref[..i];
+            if !skip(dir) && contains(dir) {
+                return true;
+            }
+        }
+    }
+    let mut prefix = Vec::with_capacity(new_ref.len() + 1);
+    prefix.extend_from_slice(new_ref);
+    prefix.push(b'/');
+    let (mut lo, mut hi) = (0, len);
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        if name_at(mid) < prefix.as_slice() {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    (lo..len)
+        .map(&name_at)
+        .take_while(|n| n.starts_with(&prefix))
+        .any(|n| !skip(n))
+}
+
 /// `iter_load_optimize_prefix`: the directory part of a glob before its
 /// first wildcard (with the slash), or `None` (then `refs/`).
 pub fn glob_prefix(glob: &[u8]) -> Option<&[u8]> {
@@ -815,11 +855,17 @@ impl FsInner {
             );
             return Err(ErrorCode::EXISTS);
         }
-        let collides = self
-            .refcache
-            .read()
-            .iter()
-            .any(|(name, _)| !ref_is_available(old_ref, new_ref, name));
+        // C scans every packed reference with `ref_is_available`; the same
+        // answer from the sorted cache.
+        let g = self.refcache.read();
+        let collides = path_collides(
+            new_ref,
+            old_ref,
+            g.len(),
+            |i| g.entry(i).map_or(&[][..], |(n, _)| n),
+            |n| g.get(n).is_some(),
+        );
+        drop(g);
         if collides {
             return Err(git_error_set!(
                 ErrorClass::REFERENCE,
@@ -1253,18 +1299,30 @@ impl FsInner {
         header.push(b'\n');
         file.printf(&header)?;
         let n = g.len();
+        // The packed loose references, for `packed_remove_loose` (which C
+        // finds by walking every entry for `PACKREF_WAS_LOOSE`).
         let mut entries: Vec<(Vec<u8>, PackRef)> = Vec::new();
-        entries.try_reserve(n).map_err(|_| errors::oom())?;
+        let mut line = Vec::with_capacity(256);
         for i in 0..n {
+            let Some((_, item)) = g.entry(i) else {
+                return Err(errors::assert_failed("ref"));
+            };
+            let mut item = *item;
+            if item.flags & (PACKREF_HAS_PEEL | PACKREF_CANNOT_PEEL) == 0 {
+                self.packed_find_peel(&mut item)?;
+                let name = g.entry(i).map(|(n, _)| n.to_vec()).unwrap_or_default();
+                if let Some(stored) = g.get_mut(&name) {
+                    *stored = item;
+                }
+            }
             let Some((name, _)) = g.entry(i) else {
                 return Err(errors::assert_failed("ref"));
             };
-            let name = name.to_vec();
-            let item = g.get_mut(&name).ok_or(ErrorCode::GENERIC)?;
-            self.packed_find_peel(item)?;
-            let item = *item;
-            packed_write_ref(&mut file, &name, &item)?;
-            entries.push((name, item));
+            packed_write_ref(&mut file, &mut line, name, &item)?;
+            if item.flags & PACKREF_WAS_LOOSE != 0 {
+                entries.try_reserve(1).map_err(|_| errors::oom())?;
+                entries.push((name.to_vec(), item));
+            }
         }
         file.commit()?;
         self.packed_remove_loose(&entries)?;
@@ -1657,8 +1715,13 @@ fn loose_commit(file: &mut LockFile, r: RefView<'_>) -> Result<()> {
 }
 
 /// `packed_write_ref`.
-fn packed_write_ref(file: &mut LockFile, name: &[u8], r: &PackRef) -> Result<()> {
-    let mut line = Vec::with_capacity(160);
+fn packed_write_ref(
+    file: &mut LockFile,
+    line: &mut Vec<u8>,
+    name: &[u8],
+    r: &PackRef,
+) -> Result<()> {
+    line.clear();
     line.extend_from_slice(r.oid.hex().as_bytes());
     line.push(b' ');
     line.extend_from_slice(name);
@@ -1668,7 +1731,7 @@ fn packed_write_ref(file: &mut LockFile, name: &[u8], r: &PackRef) -> Result<()>
         line.extend_from_slice(r.peel.hex().as_bytes());
         line.push(b'\n');
     }
-    file.printf(&line)
+    file.printf(line)
 }
 
 /// `create_new_reflog_file`.
@@ -2396,6 +2459,44 @@ mod tests {
             b"refs/heads/a"
         ));
         assert!(ref_is_available(None, b"refs/heads/a", b"refs/heads/a"));
+    }
+
+    #[test]
+    fn collisions_match_the_scan() {
+        let mut state = 12345u64;
+        let mut rnd = |n: u64| {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (state >> 33) % n
+        };
+        let alphabet = b"ab/";
+        for _ in 0..300 {
+            let mut names: Vec<Vec<u8>> = (0..rnd(12))
+                .map(|_| (0..rnd(6)).map(|_| alphabet[rnd(3) as usize]).collect())
+                .collect();
+            names.sort();
+            names.dedup();
+            for _ in 0..20 {
+                let new: Vec<u8> = (0..rnd(6)).map(|_| alphabet[rnd(3) as usize]).collect();
+                let old = if rnd(2) == 0 && !names.is_empty() {
+                    Some(names[rnd(names.len() as u64) as usize].clone())
+                } else {
+                    None
+                };
+                let scan = names
+                    .iter()
+                    .any(|n| !ref_is_available(old.as_deref(), &new, n));
+                let fast = path_collides(
+                    &new,
+                    old.as_deref(),
+                    names.len(),
+                    |i| names[i].as_slice(),
+                    |n| names.binary_search_by(|x| x.as_slice().cmp(n)).is_ok(),
+                );
+                assert_eq!(scan, fast, "{names:?} {new:?} {old:?}");
+            }
+        }
     }
 
     #[test]
