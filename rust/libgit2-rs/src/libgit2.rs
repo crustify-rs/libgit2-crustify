@@ -283,16 +283,18 @@ fn init_fns() -> [crate::util::runtime::InitFn; 17] {
     ]
 }
 
-/// `git_libgit2_init`: the new init count, or a negative error.
-pub fn init() -> c_int {
+/// `git_libgit2_init`: the new init count, or a negative error. Crate-
+/// internal: the safe API is [`Libgit2`], whose guards balance it.
+pub(crate) fn init() -> c_int {
     let fns = init_fns();
     // SAFETY: each is a subsystem's global init function, sound to call at
     // initialization with the runtime's lock held (as in C).
     unsafe { crate::util::runtime::init(&fns) }
 }
 
-/// `git_libgit2_shutdown`: the remaining init count.
-pub fn shutdown() -> c_int {
+/// `git_libgit2_shutdown`: the remaining init count. Crate-internal: a
+/// shutdown not paired with an init would tear down what live objects use.
+pub(crate) fn shutdown() -> c_int {
     crate::util::runtime::shutdown()
 }
 

@@ -139,11 +139,11 @@ fn create_empty_file(path: &CStr, mode: u32) -> Result<()> {
 /// `repo_local_config`: the repository's own configuration file (made if
 /// missing), opened alone (no repository) or as the local level of the
 /// repository's configuration.
-fn repo_local_config(
+fn repo_local_config<'r>(
     config_dir: &mut GitStr,
-    repo: Option<&GitRepository>,
+    repo: Option<&'r GitRepository>,
     repo_dir: &[u8],
-) -> Result<Config> {
+) -> Result<Config<'r>> {
     config_dir
         .joinpath(repo_dir, GIT_CONFIG_FILENAME_INREPO)
         .map_err(|_| ErrorCode::GENERIC)?;
@@ -785,7 +785,13 @@ fn init_open(
 }
 
 /// `git_repository_set_workdir`.
-pub(crate) fn set_workdir(
+///
+/// # Safety
+///
+/// No borrow of the repository's workdir (a `&CStr` from
+/// [`GitRepository::workdir`], or C's `git_repository_workdir`) is used
+/// after the call, and nothing uses the repository concurrently.
+pub(crate) unsafe fn set_workdir(
     repo: &GitRepository,
     workdir: &CStr,
     update_gitlink: bool,
@@ -813,22 +819,26 @@ pub(crate) fn set_workdir(
     }
 
     let new = detach(&mut path)?;
-    // SAFETY: the export's contract (C's): no borrow of the old workdir is
-    // used after this call.
+    // SAFETY: the caller's contract: no borrow of the old workdir is used
+    // after this call.
     unsafe { repo.replace_string(StrField::Workdir, Some(new)) };
     repo.set_is_bare(false);
     Ok(())
 }
 
 /// `git_repository_set_bare`.
-pub(crate) fn set_bare(repo: &GitRepository) -> Result<()> {
+///
+/// # Safety
+///
+/// As [`set_workdir`].
+pub(crate) unsafe fn set_bare(repo: &GitRepository) -> Result<()> {
     if repo.is_bare() {
         return Ok(());
     }
     let config = repo.config_weak()?;
     config.set_bool(c"core.bare", true)?;
     config.update_entry(c"core.worktree", None, true, true)?;
-    // SAFETY: as `set_workdir`.
+    // SAFETY: the caller's contract.
     unsafe { repo.replace_string(StrField::Workdir, None) };
     repo.set_is_bare(true);
     Ok(())

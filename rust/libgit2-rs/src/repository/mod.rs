@@ -269,7 +269,8 @@ impl GitRepository {
         {
             // SAFETY: the caller's contract.
             let r = unsafe { &*repo };
-            let _ = r.cleanup();
+            // SAFETY: the caller's contract: nothing uses the repository.
+            let _ = unsafe { r.cleanup() };
             // SAFETY: the repository's cache, which nothing else uses now.
             unsafe { c::git_cache_dispose(r.objects_ptr()) };
             // SAFETY: the registry, set by C with compare-and-swap, no
@@ -312,7 +313,13 @@ impl GitRepository {
 
     /// `git_repository__cleanup`: drop the caches, grafts and the
     /// odb, config, refdb and index.
-    pub(crate) fn cleanup(&self) -> Result<()> {
+    ///
+    /// # Safety
+    ///
+    /// No weak pointer (`config_weak`, `odb_weak`, …), grafts or cache entry
+    /// of this repository is used after the call, and nothing uses the
+    /// repository concurrently (C's rule).
+    pub(crate) unsafe fn cleanup(&self) -> Result<()> {
         let _ = self.submodule_cache_clear();
         // SAFETY: the repository's own cache.
         unsafe { c::git_cache_clear(self.objects_ptr()) };
@@ -321,10 +328,16 @@ impl GitRepository {
         unsafe { c::git_grafts_free(self.grafts.swap(ptr::null_mut(), Ordering::AcqRel)) };
         // SAFETY: as above.
         unsafe { c::git_grafts_free(self.shallow_grafts.swap(ptr::null_mut(), Ordering::AcqRel)) };
-        self.set_config(None);
-        self.set_index(None);
-        self.set_odb(None);
-        self.set_refdb(None);
+        // SAFETY: the caller's contract: no weak pointer is used after.
+        unsafe {
+            self.set_config(None);
+        }
+        // SAFETY: as above.
+        unsafe { self.set_index(None) };
+        // SAFETY: as above.
+        unsafe { self.set_odb(None) };
+        // SAFETY: as above.
+        unsafe { self.set_refdb(None) };
         Ok(())
     }
 
@@ -426,12 +439,19 @@ impl GitRepository {
     }
 
     /// Set a string field that is still NULL (while the repository is
-    /// being opened, before anyone else sees it).
+    /// being opened). A field that is already set is left alone (nothing is
+    /// freed that a borrow may still use) and `v` is dropped.
     pub(crate) fn init_string(&self, f: StrField, v: GitCStr) {
-        let old = self.string_field(f).swap(v.into_raw(), Ordering::AcqRel);
-        debug_assert!(old.is_null());
-        // SAFETY: NULL or an unreferenced string of the repository.
-        unsafe { alloc::free(old.cast()) };
+        let new = v.into_raw();
+        if self
+            .string_field(f)
+            .compare_exchange(ptr::null_mut(), new, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            debug_assert!(false, "init_string on a set field");
+            // SAFETY: `new` is the string we were given and did not publish.
+            unsafe { alloc::free(new.cast()) };
+        }
     }
 
     #[inline]
@@ -507,38 +527,66 @@ impl GitRepository {
 
     /// `set_odb`: own (and take a reference of) `odb`, releasing the old.
     ///
-    /// The new object, when given, is a live `git_odb`: [`Odb::as_nonnull`]
-    /// or a pointer C passed (the export's contract).
-    pub(crate) fn set_odb(&self, odb: Option<NonNull<c_void>>) {
-        self.set_owned(&self.odb, odb, |p| {
+    /// # Safety
+    ///
+    /// The new object, if any, is a live `git_odb` of which the caller
+    /// holds a reference; no weak pointer to the old one (from
+    /// [`GitRepository::odb_weak`], or C's `git_repository_odb__weakptr`) is
+    /// used after the call.
+    pub(crate) unsafe fn set_odb(&self, odb: Option<NonNull<c_void>>) {
+        let free = |p: *mut c_void| {
             // SAFETY: the reference the repository held.
             unsafe { c::git_odb_free(p) }
-        });
+        };
+        // SAFETY: the caller's contract.
+        unsafe { self.set_owned(&self.odb, odb, free) };
     }
-    /// `set_refdb` (as [`GitRepository::set_odb`]).
-    pub(crate) fn set_refdb(&self, refdb: Option<NonNull<c_void>>) {
-        self.set_owned(&self.refdb, refdb, |p| {
+    /// `set_refdb`.
+    ///
+    /// # Safety
+    ///
+    /// As [`GitRepository::set_odb`], for a `git_refdb`.
+    pub(crate) unsafe fn set_refdb(&self, refdb: Option<NonNull<c_void>>) {
+        let free = |p: *mut c_void| {
             // SAFETY: the reference the repository held.
             unsafe { c::git_refdb_free(p) }
-        });
+        };
+        // SAFETY: the caller's contract.
+        unsafe { self.set_owned(&self.refdb, refdb, free) };
     }
     /// `set_config`: also clears the configmap cache.
-    pub(crate) fn set_config(&self, config: Option<NonNull<c_void>>) {
-        self.set_owned(&self.config, config, |p| {
+    ///
+    /// # Safety
+    ///
+    /// As [`GitRepository::set_odb`], for a `git_config` (and no
+    /// [`ConfigRef`] from [`GitRepository::config_weak`] is used after).
+    pub(crate) unsafe fn set_config(&self, config: Option<NonNull<c_void>>) {
+        let free = |p: *mut c_void| {
             // SAFETY: the reference the repository held.
             unsafe { c::git_config_free(p) }
-        });
+        };
+        // SAFETY: the caller's contract.
+        unsafe { self.set_owned(&self.config, config, free) };
         self.configmap_cache_clear();
     }
     /// `set_index`.
-    pub(crate) fn set_index(&self, index: Option<NonNull<c_void>>) {
-        self.set_owned(&self.index, index, |p| {
+    ///
+    /// # Safety
+    ///
+    /// As [`GitRepository::set_odb`], for a `git_index`.
+    pub(crate) unsafe fn set_index(&self, index: Option<NonNull<c_void>>) {
+        let free = |p: *mut c_void| {
             // SAFETY: the reference the repository held.
             unsafe { c::git_index_free(p) }
-        });
+        };
+        // SAFETY: the caller's contract.
+        unsafe { self.set_owned(&self.index, index, free) };
     }
 
-    fn set_owned(
+    /// # Safety
+    ///
+    /// As [`GitRepository::set_odb`].
+    unsafe fn set_owned(
         &self,
         slot: &AtomicPtr<c_void>,
         new: Option<NonNull<c_void>>,

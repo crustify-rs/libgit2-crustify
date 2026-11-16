@@ -274,3 +274,88 @@ fn bitfield_bits_match_c() {
     assert_eq!(String::from_utf8_lossy(&out.stdout), expected);
     let _ = std::fs::remove_dir_all(&tmp);
 }
+
+/// Review l-repo-r1 LR-9 (the reviewer's test, adopted): threads racing
+/// `publish` on one slot. One winner, every loser released, and every
+/// thread sees the winner owned by the repository.
+#[test]
+fn publish_races() {
+    use crate::util::thread::GitRefcount;
+    use std::sync::atomic::AtomicUsize;
+    static FREED: AtomicUsize = AtomicUsize::new(0);
+    // SAFETY: all-zero is a valid `GitRepository` (atomics, NULLs).
+    let repo: Box<GitRepository> = unsafe { Box::<GitRepository>::new_zeroed().assume_init() };
+    let r: &GitRepository = &repo;
+    let n = 4;
+    let results: Vec<usize> = std::thread::scope(|s| {
+        let hs: Vec<_> = (0..n)
+            .map(|_| {
+                s.spawn(move || {
+                    let obj = Box::into_raw(Box::new(GitRefcount::new(1)));
+                    let p = NonNull::new(obj.cast::<c_void>()).unwrap();
+                    let won = r.publish(&r.config, p, |q| {
+                        FREED.fetch_add(1, Ordering::SeqCst);
+                        // SAFETY: the loser's box.
+                        drop(unsafe { Box::from_raw(q.cast::<GitRefcount>()) });
+                    });
+                    // SAFETY: published, and nothing frees it during the test.
+                    let rc = unsafe { handles::refcount(won) };
+                    assert_eq!(rc.owner(), r.as_ptr());
+                    won.as_ptr() as usize
+                })
+            })
+            .collect();
+        hs.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    assert!(results.windows(2).all(|w| w[0] == w[1]));
+    assert_eq!(FREED.load(Ordering::SeqCst), n - 1);
+    let w = r.config.swap(ptr::null_mut(), Ordering::SeqCst);
+    // SAFETY: the winner, no longer published.
+    drop(unsafe { Box::from_raw(w.cast::<GitRefcount>()) });
+}
+
+/// `set_owned` (a setter) racing `publish` (lazy creation) on one slot:
+/// every object is released exactly once, and the slot ends with one owned
+/// object. (Using a published pointer while a setter may release it is
+/// outside C's contract, so the publishers do not dereference results.)
+#[test]
+fn set_owned_races_publish() {
+    use crate::util::thread::GitRefcount;
+    use std::sync::atomic::AtomicUsize;
+    static FREED: AtomicUsize = AtomicUsize::new(0);
+    fn free(q: *mut c_void) {
+        // SAFETY: a box this test made, released once (the refcount
+        // bookkeeping of the real free functions is not modelled).
+        let b = unsafe { Box::from_raw(q.cast::<GitRefcount>()) };
+        drop(b);
+        FREED.fetch_add(1, Ordering::SeqCst);
+    }
+    fn make() -> NonNull<c_void> {
+        NonNull::new(Box::into_raw(Box::new(GitRefcount::new(1))).cast::<c_void>()).unwrap()
+    }
+    // SAFETY: all-zero is a valid `GitRepository`.
+    let repo: Box<GitRepository> = unsafe { Box::<GitRepository>::new_zeroed().assume_init() };
+    let r: &GitRepository = &repo;
+    let publishers = 3;
+    let setters = 2;
+    std::thread::scope(|s| {
+        for _ in 0..publishers {
+            s.spawn(move || {
+                let _ = r.publish(&r.index, make(), free);
+            });
+        }
+        for _ in 0..setters {
+            s.spawn(move || {
+                // SAFETY: a live refcounted object of ours; no thread uses a
+                // pointer read from the slot.
+                unsafe { r.set_owned(&r.index, Some(make()), free) };
+            });
+        }
+    });
+    let last = r.index.swap(ptr::null_mut(), Ordering::SeqCst);
+    assert!(!last.is_null());
+    // SAFETY: the object left in the slot.
+    assert_eq!(unsafe { handles::refcount(NonNull::new(last).unwrap()) }.owner(), r.as_ptr());
+    free(last);
+    assert_eq!(FREED.load(Ordering::SeqCst), publishers + setters);
+}

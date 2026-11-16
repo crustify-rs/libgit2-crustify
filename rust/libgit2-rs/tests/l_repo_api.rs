@@ -89,7 +89,8 @@ fn init_options_builder() {
     let e = Repository::init_opts(d.join("b.git"), &again).unwrap_err();
     assert_eq!(e.code(), ErrorCode::EXISTS);
     // A path with an embedded NUL is rejected, not truncated.
-    assert!(Repository::open("a\0b").is_err());
+    let e = Repository::open("a\0b").unwrap_err();
+    assert_eq!(e.message(), "path contains a NUL byte");
     let _ = std::fs::remove_dir_all(&d);
 }
 
@@ -98,24 +99,22 @@ fn lazy_owners_and_setters() {
     let _lib = Libgit2::init().unwrap();
     let d = tmpdir("owners");
     let mut repo = Repository::init(d.join("r"), false).unwrap();
-    let odb = repo.odb().unwrap();
-    let odb2 = repo.odb().unwrap();
-    drop(odb2);
-    let _cfg = repo.config().unwrap();
-    let _snap = repo.config_snapshot().unwrap();
-    let _refdb = repo.refdb().unwrap();
-    let index = repo.index().unwrap();
-    // The owners outlive the repository.
-    let wrapped = Repository::wrap_odb(&odb).unwrap();
-    // As C: a wrapped odb is not marked bare, and has no paths.
-    assert!(!wrapped.is_bare());
-    assert_eq!(wrapped.workdir(), None);
-    assert_eq!(wrapped.path(), Path::new(""));
-    drop(wrapped);
+    {
+        // The owners borrow the repository (they cannot outlive it).
+        let odb = repo.odb().unwrap();
+        let odb2 = repo.odb().unwrap();
+        drop(odb2);
+        let _cfg = repo.config().unwrap();
+        let _snap = repo.config_snapshot().unwrap();
+        let _refdb = repo.refdb().unwrap();
+        let _index = repo.index().unwrap();
+        drop(odb);
+    }
 
     repo.set_namespace(Some(b"ns")).unwrap();
     assert_eq!(repo.namespace(), Some(&b"ns"[..]));
-    assert!(repo.set_namespace(Some(b"a\0b")).is_err());
+    let e = repo.set_namespace(Some(b"a\0b")).unwrap_err();
+    assert_eq!(e.message(), "namespace contains a NUL byte");
     repo.set_namespace(None).unwrap();
     assert_eq!(repo.namespace(), None);
     repo.set_ident(Some("Me"), Some("me@example.com")).unwrap();
@@ -123,16 +122,17 @@ fn lazy_owners_and_setters() {
         repo.ident(),
         (Some(&b"Me"[..]), Some(&b"me@example.com"[..]))
     );
+    let e = repo.set_ident(Some("a\0b"), None).unwrap_err();
+    assert_eq!(e.message(), "name contains a NUL byte");
+    let e = repo.set_head("refs/heads/a\0b").unwrap_err();
+    assert_eq!(e.message(), "reference name contains a NUL byte");
 
     repo.set_bare().unwrap();
     assert!(repo.is_bare());
     repo.set_workdir(d.join("r"), false).unwrap();
     assert!(!repo.is_bare());
-    repo.set_index(None);
-    repo.set_index(Some(&index));
-    drop(repo);
-    drop(index);
-    drop(odb);
+    // A repository moves to another thread and drops there.
+    std::thread::spawn(move || drop(repo)).join().unwrap();
 
     let mem = Repository::new_in_memory(OidType::Sha1).unwrap();
     assert!(mem.is_bare());
@@ -189,4 +189,18 @@ fn options() {
         libgit2_rs::libgit2::feature_backend(libgit2_rs::libgit2::feature::THREADS),
         Some(c"pthread")
     );
+}
+
+#[test]
+fn repository_keeps_the_library_initialized() {
+    let d = tmpdir("guard");
+    let repo = {
+        let _lib = Libgit2::init().unwrap();
+        Repository::init(d.join("g"), false).unwrap()
+    };
+    // The user's guard is gone; the repository's own keeps libgit2 up.
+    assert!(repo.is_empty().unwrap());
+    assert!(repo.config().is_ok());
+    drop(repo);
+    let _ = std::fs::remove_dir_all(&d);
 }

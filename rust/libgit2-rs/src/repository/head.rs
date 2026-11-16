@@ -34,7 +34,7 @@ const GIT_OBJECT_COMMIT: c_int = 1;
 const GIT_OBJECT_TREE: c_int = 2;
 
 /// `git_reference_lookup`.
-pub(crate) fn lookup(repo: &GitRepository, name: &CStr) -> Result<Reference> {
+pub(crate) fn lookup<'r>(repo: &'r GitRepository, name: &CStr) -> Result<Reference<'r>> {
     let mut out = ptr::null_mut();
     // SAFETY: a live repository, a NUL-terminated name, a local out.
     check(unsafe { c::git_reference_lookup(&raw mut out, repo.as_ptr(), name.as_ptr()) })?;
@@ -43,7 +43,7 @@ pub(crate) fn lookup(repo: &GitRepository, name: &CStr) -> Result<Reference> {
 }
 
 /// `git_reference_lookup_resolved(…, -1)`.
-fn lookup_resolved(repo: &GitRepository, name: &CStr) -> Result<Reference> {
+fn lookup_resolved<'r>(repo: &'r GitRepository, name: &CStr) -> Result<Reference<'r>> {
     let mut out = ptr::null_mut();
     // SAFETY: as `lookup`.
     check(unsafe {
@@ -105,7 +105,7 @@ fn reference_symbolic_create(
 }
 
 /// `git_object_lookup`.
-fn object_lookup(repo: &GitRepository, id: &Oid, t: c_int) -> Result<Object> {
+fn object_lookup<'r>(repo: &'r GitRepository, id: &Oid, t: c_int) -> Result<Object<'r>> {
     let mut out = ptr::null_mut();
     // SAFETY: a live repository, a valid id, a local out.
     check(unsafe { c::git_object_lookup(&raw mut out, repo.as_ptr(), id, t) })?;
@@ -114,7 +114,7 @@ fn object_lookup(repo: &GitRepository, id: &Oid, t: c_int) -> Result<Object> {
 }
 
 /// `git_repository_head`.
-pub(crate) fn head(repo: &GitRepository) -> Result<Reference> {
+pub(crate) fn head(repo: &GitRepository) -> Result<Reference<'_>> {
     let head = lookup(repo, GIT_HEAD_REF)?;
     if head.kind() == handles::GIT_REFERENCE_DIRECT {
         return Ok(head);
@@ -188,25 +188,34 @@ impl Drop for OwnedRepo {
     }
 }
 
-/// `git_repository_head_for_worktree`.
-pub(crate) fn head_for_worktree(repo: &GitRepository, name: &CStr) -> Result<Reference> {
+/// `git_repository_head_for_worktree`: `f` gets the HEAD of the worktree
+/// `name`, resolved, while that worktree's repository is open.
+///
+/// C returns the reference after freeing that repository; the reference
+/// keeps its refdb alive, but the refdb's repository pointer dangles. The
+/// export hands the raw reference to C as C did; Rust callers get it only
+/// inside `f`.
+pub(crate) fn with_head_for_worktree<T>(
+    repo: &GitRepository,
+    name: &CStr,
+    f: impl FnOnce(Reference<'_>) -> T,
+) -> Result<T> {
     let wt = crate::sys::worktree::Worktree::lookup(repo, name)?;
-    let wrepo = OwnedRepo::new(open_from_worktree(wt.gitlink_path())?);
+    let wrepo = OwnedRepo(open_from_worktree(wt.gitlink_path())?);
     let head = lookup(wrepo.get(), GIT_HEAD_REF)?;
     if head.kind() != handles::GIT_REFERENCE_DIRECT {
         let t = head
             .symbolic_target()
             .map(CStr::to_owned)
             .unwrap_or_default();
-        return lookup_resolved(wrepo.get(), &t);
+        return Ok(f(lookup_resolved(wrepo.get(), &t)?));
     }
-    Ok(head)
+    Ok(f(head))
 }
 
 /// `git_repository_head_detached_for_worktree`.
 pub(crate) fn head_detached_for_worktree(repo: &GitRepository, name: &CStr) -> Result<bool> {
-    let r = head_for_worktree(repo, name)?;
-    Ok(r.kind() != handles::GIT_REFERENCE_SYMBOLIC)
+    with_head_for_worktree(repo, name, |r| r.kind() != handles::GIT_REFERENCE_SYMBOLIC)
 }
 
 /// `git_repository_foreach_worktree`: `cb` on the main repository and each
@@ -663,7 +672,7 @@ pub(crate) fn hashfile(
 }
 
 /// `git_repository_head_commit` / `_tree`: HEAD peeled to `t`.
-pub(crate) fn head_peeled(repo: &GitRepository, t: c_int) -> Result<Object> {
+pub(crate) fn head_peeled(repo: &GitRepository, t: c_int) -> Result<Object<'_>> {
     let h = head(repo)?;
     h.peel(t)
 }
@@ -762,7 +771,12 @@ pub(crate) fn abbrev_length(repo: &GitRepository) -> Result<c_int> {
 }
 
 /// `git_repository__set_objectformat`.
-pub(crate) fn set_objectformat(
+///
+/// # Safety
+///
+/// When the type changes, the index, odb and refdb are released: no weak
+/// pointer to them is used after the call.
+pub(crate) unsafe fn set_objectformat(
     repo: &GitRepository,
     oid_type: crate::oid::git_oid_t,
 ) -> Result<()> {
@@ -784,9 +798,12 @@ pub(crate) fn set_objectformat(
         return Err(ErrorCode::GENERIC);
     }
     if repo.oid_type_raw() != oid_type {
-        repo.set_index(None);
-        repo.set_odb(None);
-        repo.set_refdb(None);
+        // SAFETY: the caller's contract.
+        unsafe { repo.set_index(None) };
+        // SAFETY: as above.
+        unsafe { repo.set_odb(None) };
+        // SAFETY: as above.
+        unsafe { repo.set_refdb(None) };
         repo.set_oid_type_raw(oid_type);
     }
     Ok(())
