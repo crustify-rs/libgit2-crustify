@@ -767,7 +767,9 @@ pub(crate) fn load_grafts(repo: &GitRepository) -> Result<()> {
         }
         if repo.shallow_grafts_ptr().is_null() {
             // SAFETY: as above.
-            check(unsafe { crate::grafts::ffi::git_grafts_new(repo.shallow_grafts_slot(), oid_type) })?;
+            check(unsafe {
+                crate::grafts::ffi::git_grafts_new(repo.shallow_grafts_slot(), oid_type)
+            })?;
         }
         return Ok(());
     }
@@ -775,7 +777,11 @@ pub(crate) fn load_grafts(repo: &GitRepository) -> Result<()> {
     path.joinpath_self(b"grafts")?;
     // SAFETY: the grafts slot and a NUL-terminated path.
     check(unsafe {
-        crate::grafts::ffi::git_grafts_open_or_refresh(repo.grafts_slot(), cs(&path).as_ptr(), oid_type)
+        crate::grafts::ffi::git_grafts_open_or_refresh(
+            repo.grafts_slot(),
+            cs(&path).as_ptr(),
+            oid_type,
+        )
     })?;
     path.clear();
     path.joinpath(
@@ -784,7 +790,11 @@ pub(crate) fn load_grafts(repo: &GitRepository) -> Result<()> {
     )?;
     // SAFETY: as above.
     check(unsafe {
-        crate::grafts::ffi::git_grafts_open_or_refresh(repo.shallow_grafts_slot(), cs(&path).as_ptr(), oid_type)
+        crate::grafts::ffi::git_grafts_open_or_refresh(
+            repo.shallow_grafts_slot(),
+            cs(&path).as_ptr(),
+            oid_type,
+        )
     })?;
     Ok(())
 }

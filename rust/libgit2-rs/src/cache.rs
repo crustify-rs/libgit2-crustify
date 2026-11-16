@@ -218,7 +218,9 @@ pub unsafe fn decref(obj: NonNull<GitCachedObj>) {
         // SAFETY: a raw object is a `git_odb_object` (this crate's).
         GIT_CACHE_STORE_RAW => unsafe { crate::odb::odb_object_free(obj.cast()) },
         // SAFETY: a parsed object is a `git_object`, freed by its module.
-        GIT_CACHE_STORE_PARSED => unsafe { crate::sys::pending::object_free(obj.cast()) },
+        GIT_CACHE_STORE_PARSED => unsafe {
+            crate::object::ffi::git_object__free(obj.as_ptr().cast())
+        },
         // SAFETY: the caller's contract.
         _ => unsafe { alloc::free(obj.as_ptr().cast()) },
     }

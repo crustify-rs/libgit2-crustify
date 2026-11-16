@@ -1,9 +1,8 @@
 //! The index's calls into code that is not this module's: the C that stays
 //! C (`path.c`, `diff*.c`, `pathspec.c`, `ignore.c`, `submodule.c`, in
 //! `crate::sys`) and the modules other work packages are porting
-//! (`refs.c`, `blob.c`, `object.c`, `object_api.c`, `tree.c`:
-//! `crate::sys::pending::l_index`, PENDING), and the repository's Rust
-//! (`crate::repository`). Each wrapper is safe
+//! and the other ported modules (`crate::{blob, object, object_api, tree,
+//! repository}`, whose definitions of the C ABI it calls). Each wrapper is safe
 //! to call: its arguments are types whose constructors establish what the
 //! C needs, and its `SAFETY` comment says why the call's contract holds.
 //!
@@ -20,7 +19,6 @@ use crate::oid::Oid;
 use crate::repository::GitRepository;
 use crate::strarray::GitStrArray;
 use crate::sys::diff as d;
-use crate::sys::pending::l_index as p;
 use crate::sys::{ignore, path, pathspec, submodule};
 use crate::tree::GitTreeEntry;
 use crate::tree::ffi as t;
@@ -160,7 +158,7 @@ pub fn repository_index(repo: Repo) -> Result<NonNull<super::GitIndex>> {
 }
 
 // ---------------------------------------------------------------------------
-// blob.c, object.c (PENDING(l-obj))
+// blob.c, object.c (`crate::blob`, `crate::object`)
 // ---------------------------------------------------------------------------
 
 /// `git_blob__create_from_paths(&id, &st, repo, NULL, rel_path, 0, true)`:
@@ -241,7 +239,7 @@ pub fn submodule_add_to_index(sm: &Submodule) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
-// tree.c (`crate::tree`), object_api.c (PENDING(l-obj))
+// tree.c (`crate::tree`), object_api.c (`crate::object_api`)
 // ---------------------------------------------------------------------------
 
 /// A `git_tree`: borrowed, or looked up (and freed on drop).
@@ -727,3 +725,96 @@ pub fn set_after_callback(code: c_int, func: &str) -> c_int {
 
 #[allow(dead_code)]
 fn _unused(_: Bytes<'_>) {}
+
+/// The object modules' definitions the index calls (blob creation, object
+/// validation, tree lookup), with the untyped repository and tree pointers
+/// this module holds (named as the C functions).
+#[allow(non_snake_case)]
+mod p {
+    use core::ffi::{c_char, c_int, c_void};
+
+    use crate::oid::Oid;
+
+    /// `git_blob__create_from_paths`.
+    ///
+    /// # Safety
+    ///
+    /// As the export's.
+    pub unsafe fn git_blob__create_from_paths(
+        out_oid: *mut Oid,
+        out_st: *mut libc::stat,
+        repo: *mut c_void,
+        full_path: *const c_char,
+        hint_path: *const c_char,
+        hint_mode: libc::mode_t,
+        apply_filters: bool,
+    ) -> c_int {
+        // SAFETY: the caller's contract (`posix::Stat` is `libc::stat`).
+        unsafe {
+            crate::blob::ffi::git_blob__create_from_paths(
+                out_oid,
+                out_st.cast(),
+                repo.cast(),
+                full_path,
+                hint_path,
+                hint_mode,
+                apply_filters,
+            )
+        }
+    }
+
+    /// `git_blob_create_from_buffer`.
+    ///
+    /// # Safety
+    ///
+    /// As the export's.
+    pub unsafe fn git_blob_create_from_buffer(
+        id: *mut Oid,
+        repo: *mut c_void,
+        buffer: *const c_void,
+        len: usize,
+    ) -> c_int {
+        // SAFETY: the caller's contract.
+        unsafe { crate::blob::ffi::git_blob_create_from_buffer(id, repo.cast(), buffer, len) }
+    }
+
+    /// `git_object__is_valid`.
+    ///
+    /// # Safety
+    ///
+    /// As the export's.
+    pub unsafe fn git_object__is_valid(
+        repo: *mut c_void,
+        id: *const Oid,
+        expected_type: c_int,
+    ) -> bool {
+        // SAFETY: the caller's contract.
+        unsafe { crate::object::ffi::git_object__is_valid(repo.cast(), id, expected_type) }
+    }
+
+    pub use crate::object_api::ffi::{git_tree_free, git_tree_id};
+
+    /// `git_tree_owner`.
+    ///
+    /// # Safety
+    ///
+    /// As the export's.
+    pub unsafe fn git_tree_owner(tree: *const c_void) -> *mut c_void {
+        // SAFETY: the caller's contract.
+        unsafe { crate::object_api::ffi::git_tree_owner(tree) }.cast()
+    }
+
+    /// `git_tree_lookup`.
+    ///
+    /// # Safety
+    ///
+    /// As the export's.
+    pub unsafe fn git_tree_lookup(
+        out: *mut *mut c_void,
+        repo: *mut c_void,
+        id: *const Oid,
+    ) -> c_int {
+        // SAFETY: the caller's contract.
+        unsafe { crate::object_api::ffi::git_tree_lookup(out, repo.cast(), id) }
+    }
+}

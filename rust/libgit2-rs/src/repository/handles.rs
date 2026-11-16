@@ -14,10 +14,10 @@ use core::ffi::{CStr, c_char, c_int, c_void};
 use core::marker::PhantomData;
 use core::ptr::{self, NonNull};
 
+pub use crate::object::Object;
 use crate::oid::Oid;
 use crate::refdb::GitRefdb;
 use crate::refs::GitReference;
-pub use crate::object::Object;
 use crate::util::errors::{ErrorCode, Result};
 use crate::util::thread::GitRefcount;
 

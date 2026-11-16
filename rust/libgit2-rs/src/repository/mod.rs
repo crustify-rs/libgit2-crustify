@@ -42,10 +42,10 @@ use core::sync::atomic::{AtomicI32, AtomicIsize, AtomicPtr, AtomicU32, Ordering}
 use crate::cache::GitCache;
 use crate::config::{Config, GitConfig};
 use crate::git_error_set;
+use crate::grafts::Grafts;
 use crate::index::{GIT_INDEX_CAPABILITY_FROM_OWNER, GitIndex, IndexPtr};
 use crate::odb::{GitOdb, Odb};
 use crate::oid::{GIT_OID_SHA1, OidType, git_oid_t};
-use crate::grafts::Grafts;
 use crate::refdb::GitRefdb;
 use crate::util::alloc::{self, GitCStr};
 use crate::util::errors::{ErrorClass, ErrorCode, Result};
@@ -316,10 +316,14 @@ impl GitRepository {
         self.objects.clear();
         let _ = crate::sys::attrcache::flush(self);
         // SAFETY: the grafts are the repository's; taken out first.
-        unsafe { crate::grafts::ffi::git_grafts_free(self.grafts.swap(ptr::null_mut(), Ordering::AcqRel)) };
+        unsafe {
+            crate::grafts::ffi::git_grafts_free(self.grafts.swap(ptr::null_mut(), Ordering::AcqRel))
+        };
         // SAFETY: as above.
         unsafe {
-            crate::grafts::ffi::git_grafts_free(self.shallow_grafts.swap(ptr::null_mut(), Ordering::AcqRel))
+            crate::grafts::ffi::git_grafts_free(
+                self.shallow_grafts.swap(ptr::null_mut(), Ordering::AcqRel),
+            )
         };
         // SAFETY: the caller's contract: no weak pointer is used after.
         unsafe {
