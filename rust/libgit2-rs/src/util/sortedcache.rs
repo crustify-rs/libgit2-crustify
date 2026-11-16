@@ -31,6 +31,7 @@ use std::collections::HashMap;
 use std::ffi::CString;
 use std::sync::Arc;
 
+use crate::git_error_set;
 use crate::sys::pending::{self, FileStamp};
 use crate::util::alloc;
 use crate::util::errors::{self, Error, ErrorClass, ErrorCode, Result};
@@ -38,13 +39,15 @@ use crate::util::integer::alloc_add;
 use crate::util::str::GitStr;
 use crate::util::thread::GitRwLock;
 use crate::util::vector::{GitVector, VectorCmp};
-use crate::git_error_set;
 
 /// `git_sortedcache_free_item_fn`.
 pub type FreeItemFn = unsafe extern "C" fn(payload: *mut c_void, item: *mut c_void);
 /// The `copy_item` of `git_sortedcache_copy`.
-pub type CopyItemFn =
-    unsafe extern "C" fn(payload: *mut c_void, tgt_item: *mut c_void, src_item: *mut c_void) -> c_int;
+pub type CopyItemFn = unsafe extern "C" fn(
+    payload: *mut c_void,
+    tgt_item: *mut c_void,
+    src_item: *mut c_void,
+) -> c_int;
 
 // ---------------------------------------------------------------------------
 // The arena (git_pool with an item size of 1)
@@ -106,7 +109,8 @@ impl Arena {
             .checked_add(POOL_PAGE_HEADER)
             .ok_or_else(errors::oom)?;
         self.pages.try_reserve(1).map_err(|_| errors::oom())?;
-        let base = NonNull::new(alloc::malloc(alloc_size).cast::<u8>()).ok_or(ErrorCode::GENERIC)?;
+        let base =
+            NonNull::new(alloc::malloc(alloc_size).cast::<u8>()).ok_or(ErrorCode::GENERIC)?;
         self.pages.push(Page {
             base,
             size: new_page_size,
@@ -186,13 +190,10 @@ impl FxHasher {
 impl Hasher for FxHasher {
     #[inline]
     fn write(&mut self, bytes: &[u8]) {
-        let mut chunks = bytes.chunks_exact(8);
-        for c in &mut chunks {
-            let mut w = [0u8; 8];
-            w.copy_from_slice(c);
-            self.add(u64::from_le_bytes(w));
+        let (chunks, rest) = bytes.as_chunks::<8>();
+        for c in chunks {
+            self.add(u64::from_le_bytes(*c));
         }
-        let rest = chunks.remainder();
         if !rest.is_empty() {
             let mut w = [0u8; 8];
             w[..rest.len()].copy_from_slice(rest);
@@ -233,7 +234,7 @@ impl Core {
     unsafe fn key_of(&self, item: *mut c_void) -> &CStr {
         // SAFETY: the block holds a NUL-terminated key at the offset,
         // written by `upsert` and never by C.
-        unsafe { CStr::from_ptr(item.cast::<c_char>().add(self.item_path_offset)) }
+        unsafe { CStr::from_ptr(item.cast::<c_char>().wrapping_add(self.item_path_offset)) }
     }
 
     fn lookup(&self, key: &[u8]) -> Option<NonNull<u8>> {
@@ -576,7 +577,9 @@ impl Shared {
         let sorted = unsafe { self.core() }.items.is_sorted();
         if !sorted {
             // SAFETY: unsorted: the caller holds the write lock.
-            unsafe { self.core_mut().sort() };
+            let core = unsafe { self.core_mut() };
+            // SAFETY: the comparison is sound on the items.
+            unsafe { core.sort() };
         }
         // SAFETY: a lock is held.
         unsafe { self.core() }.items.get(pos)
@@ -599,7 +602,9 @@ impl Shared {
         }
         if !sorted {
             // SAFETY: unsorted: the caller holds the write lock.
-            unsafe { self.core_mut().sort() };
+            let core = unsafe { self.core_mut() };
+            // SAFETY: the comparison is sound on the items.
+            unsafe { core.sort() };
         }
         // SAFETY: a lock is held.
         match unsafe { self.core() }.index_of(key) {
@@ -631,12 +636,15 @@ fn load_fd(fd: c_int, buf: Option<&mut GitStr>) -> Result<()> {
     // SAFETY: `stat` is plain data; all-zero is a valid value.
     let mut st: libc::stat = unsafe { core::mem::zeroed() };
     // SAFETY: `fd` is open; `st` is writable.
-    if unsafe { libc::fstat(fd, &mut st) } < 0 {
+    if unsafe { libc::fstat(fd, &raw mut st) } < 0 {
         let _ = git_error_set!(ErrorClass::OS, "failed to stat file");
         return Err(ErrorCode::GENERIC);
     }
     let Ok(size) = usize::try_from(st.st_size) else {
-        let _ = git_error_set!(ErrorClass::INVALID, "unable to load file larger than size_t");
+        let _ = git_error_set!(
+            ErrorClass::INVALID,
+            "unable to load file larger than size_t"
+        );
         return Err(ErrorCode::GENERIC);
     };
     match buf {
@@ -688,12 +696,9 @@ const fn key_offset<T>() -> usize {
 unsafe extern "C" fn typed_cmp<T>(a: *const c_void, b: *const c_void) -> c_int {
     // SAFETY: called by the vector on two items of a `SortedCache<T>`, each
     // a block with its key at `key_offset::<T>()`.
-    let (ka, kb) = unsafe {
-        (
-            CStr::from_ptr(a.cast::<c_char>().add(key_offset::<T>())),
-            CStr::from_ptr(b.cast::<c_char>().add(key_offset::<T>())),
-        )
-    };
+    let ka = unsafe { CStr::from_ptr(a.cast::<c_char>().wrapping_add(key_offset::<T>())) };
+    // SAFETY: as above.
+    let kb = unsafe { CStr::from_ptr(b.cast::<c_char>().wrapping_add(key_offset::<T>())) };
     crate::util::util::strcmp(ka.to_bytes(), kb.to_bytes())
 }
 
@@ -763,7 +768,7 @@ impl<T> SortedCache<T> {
     /// last load (or `updated`), its contents with the write lock held, to
     /// refill the cache; `None` if unchanged. A missing file is an error
     /// with code [`ErrorCode::NOT_FOUND`] (without a message, as C).
-    pub fn lock_and_load(&self) -> core::result::Result<Option<(WriteGuard<'_, T>, Vec<u8>)>, Error> {
+    pub fn lock_and_load(&self) -> core::result::Result<Option<Loaded<'_, T>>, Error> {
         let mut buf = GitStr::new();
         // SAFETY: the comparison is `typed_cmp::<T>`, sound on our items.
         match unsafe { self.shared.lockandload(Some(&mut buf)) } {
@@ -796,6 +801,10 @@ impl<T: Clone> SortedCache<T> {
         Ok(copy)
     }
 }
+
+/// What [`SortedCache::lock_and_load`] gives when the file changed: the
+/// write lock and the file's contents.
+pub type Loaded<'a, T> = (WriteGuard<'a, T>, Vec<u8>);
 
 /// A held read lock of a [`SortedCache`].
 #[must_use]
@@ -876,7 +885,11 @@ impl<T> WriteGuard<'_, T> {
 
     /// The item for `key`, inserted as `init()` if absent
     /// (`git_sortedcache_upsert`).
-    pub fn upsert_with(&mut self, key: &[u8], init: impl FnOnce() -> T) -> core::result::Result<&mut T, Error> {
+    pub fn upsert_with(
+        &mut self,
+        key: &[u8],
+        init: impl FnOnce() -> T,
+    ) -> core::result::Result<&mut T, Error> {
         let key = crate::util::net::c_prefix(key);
         // SAFETY: the write lock is held.
         let existing = unsafe { self.cache.shared.core() }.lookup(key);
@@ -885,7 +898,8 @@ impl<T> WriteGuard<'_, T> {
             None => {
                 let value = init();
                 // SAFETY: the write lock is held.
-                let (item, inserted) = unsafe { self.cache.shared.upsert(key) }.map_err(Error::from)?;
+                let (item, inserted) =
+                    unsafe { self.cache.shared.upsert(key) }.map_err(Error::from)?;
                 debug_assert!(inserted);
                 // SAFETY: a fresh block, 8-aligned (`ALIGN_OK`), with room
                 // for a `T` before the key; written before anything can
@@ -986,7 +1000,13 @@ pub mod ffi {
         barrier(|| {
             // SAFETY: NULL or a NUL-terminated string.
             let path = unsafe { cstr_bytes(path) };
-            match Shared::new(item_path_offset, free_item, free_item_payload, item_cmp, path) {
+            match Shared::new(
+                item_path_offset,
+                free_item,
+                free_item_payload,
+                item_cmp,
+                path,
+            ) {
                 Ok(sc) => {
                     // SAFETY: `out` is writable.
                     unsafe { out.write(Arc::into_raw(sc)) };
@@ -1021,7 +1041,13 @@ pub mod ffi {
                 let core = unsafe { s.core() };
                 (core.items.cmp_fn(), core.item_path_offset)
             };
-            let tgt = match Shared::new(offset, s.free_item, s.free_item_payload, cmp, s.path.to_bytes()) {
+            let tgt = match Shared::new(
+                offset,
+                s.free_item,
+                s.free_item_payload,
+                cmp,
+                s.path.to_bytes(),
+            ) {
                 Ok(t) => t,
                 Err(e) => return e.raw(),
             };
@@ -1036,8 +1062,10 @@ pub mod ffi {
                 let src_item = unsafe { s.core() }.items.get(i);
                 let Some(src_item) = src_item else { break };
                 i += 1;
+                // SAFETY: `src` is read-locked.
+                let src_core = unsafe { s.core() };
                 // SAFETY: an item of `src`; its key lives under the lock.
-                let key = unsafe { s.core().key_of(src_item) }.to_bytes();
+                let key = unsafe { src_core.key_of(src_item) }.to_bytes();
                 // SAFETY: `tgt` is ours alone.
                 let tgt_item = match unsafe { tgt.upsert(key) } {
                     Ok((t, _)) => t,
@@ -1082,8 +1110,10 @@ pub mod ffi {
             }
             // C leaves the copy unsorted until it is first read or
             // unlocked; sorting now gives the same order (rust/DIVERGENCES.md).
-            // SAFETY: `tgt` is ours alone; the comparison is `src`'s.
-            unsafe { tgt.core_mut().sort() };
+            // SAFETY: `tgt` is ours alone.
+            let core = unsafe { tgt.core_mut() };
+            // SAFETY: the comparison is `src`'s, sound on the items.
+            unsafe { core.sort() };
             // SAFETY: `out` is writable.
             unsafe { out.write(Arc::into_raw(tgt)) };
             0
@@ -1147,8 +1177,12 @@ pub mod ffi {
     /// `sc` is a live cache write-locked by this thread.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_sortedcache_wunlock(sc: *const Shared) {
-        // SAFETY: the caller's contract.
-        barrier(|| unsafe { shared(sc).wunlock() })
+        barrier(|| {
+            // SAFETY: a live cache.
+            let s = unsafe { shared(sc) };
+            // SAFETY: the caller's contract (the lock, the callbacks).
+            unsafe { s.wunlock() }
+        })
     }
 
     /// `git_sortedcache_rlock`.
@@ -1169,8 +1203,12 @@ pub mod ffi {
     /// `sc` is a live cache read-locked by this thread.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_sortedcache_runlock(sc: *const Shared) {
-        // SAFETY: the caller's contract.
-        barrier(|| unsafe { shared(sc).runlock() })
+        barrier(|| {
+            // SAFETY: a live cache.
+            let s = unsafe { shared(sc) };
+            // SAFETY: the caller's contract (the lock, the callbacks).
+            unsafe { s.runlock() }
+        })
     }
 
     /// `git_sortedcache_lockandload`: 1 (file changed, loaded into `buf`,
@@ -1181,12 +1219,17 @@ pub mod ffi {
     /// `sc` is a live cache not locked by this thread; `buf` is NULL or a
     /// valid `git_str`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_sortedcache_lockandload(sc: *const Shared, buf: *mut GitStr) -> c_int {
+    pub unsafe extern "C" fn git_sortedcache_lockandload(
+        sc: *const Shared,
+        buf: *mut GitStr,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: NULL or a valid `git_str` in exclusive use.
             let buf = unsafe { buf.as_mut() };
-            // SAFETY: a live cache; the comparison is the caller's.
-            match unsafe { shared(sc).lockandload(buf) } {
+            // SAFETY: a live cache.
+            let s = unsafe { shared(sc) };
+            // SAFETY: the comparison is the caller's, sound on the items.
+            match unsafe { s.lockandload(buf) } {
                 Ok(true) => 1,
                 Ok(false) => 0,
                 Err(e) => e.raw(),
@@ -1201,8 +1244,12 @@ pub mod ffi {
     /// `sc` is a live cache write-locked by this thread.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_sortedcache_updated(sc: *const Shared) {
-        // SAFETY: the caller's contract.
-        barrier(|| unsafe { shared(sc).updated() })
+        barrier(|| {
+            // SAFETY: a live cache.
+            let s = unsafe { shared(sc) };
+            // SAFETY: the caller's contract (the lock, the callbacks).
+            unsafe { s.updated() }
+        })
     }
 
     /// `git_sortedcache_clear`.
@@ -1244,8 +1291,10 @@ pub mod ffi {
         barrier(|| {
             // SAFETY: a NUL-terminated string.
             let key = unsafe { cstr_bytes(key) };
+            // SAFETY: a live cache.
+            let s = unsafe { shared(sc) };
             // SAFETY: the write lock is held.
-            let r = unsafe { shared(sc).upsert(key) };
+            let r = unsafe { s.upsert(key) };
             let (item, code) = match r {
                 Ok((item, _)) => (item.as_ptr().cast(), 0),
                 Err(e) => (core::ptr::null_mut(), e.raw()),
@@ -1263,8 +1312,12 @@ pub mod ffi {
     /// `sc` is a live cache write-locked by this thread.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_sortedcache_remove(sc: *const Shared, pos: usize) -> c_int {
-        // SAFETY: the caller's contract.
-        barrier(|| crate::util::export::status(unsafe { shared(sc).remove(pos) }))
+        barrier(|| {
+            // SAFETY: a live cache.
+            let s = unsafe { shared(sc) };
+            // SAFETY: the caller's contract (the write lock, the callback).
+            crate::util::export::status(unsafe { s.remove(pos) })
+        })
     }
 
     /// `git_sortedcache_lookup`: the item, or NULL.
@@ -1274,10 +1327,15 @@ pub mod ffi {
     /// `sc` is a live cache locked by this thread; `key` a NUL-terminated
     /// string.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_sortedcache_lookup(sc: *const Shared, key: *const c_char) -> *mut c_void {
+    pub unsafe extern "C" fn git_sortedcache_lookup(
+        sc: *const Shared,
+        key: *const c_char,
+    ) -> *mut c_void {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            let (s, key) = unsafe { (shared(sc), cstr_bytes(key)) };
+            // SAFETY: a live cache.
+            let s = unsafe { shared(sc) };
+            // SAFETY: a NUL-terminated string.
+            let key = unsafe { cstr_bytes(key) };
             // SAFETY: a lock is held.
             match unsafe { s.core() }.lookup(key) {
                 Some(p) => p.as_ptr().cast(),
@@ -1305,8 +1363,12 @@ pub mod ffi {
     /// exclusive use, if items were upserted since the last unlock).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_sortedcache_entry(sc: *const Shared, pos: usize) -> *mut c_void {
-        // SAFETY: the caller's contract.
-        barrier(|| unsafe { shared(sc).entry(pos) }.unwrap_or(core::ptr::null_mut()))
+        barrier(|| {
+            // SAFETY: a live cache.
+            let s = unsafe { shared(sc) };
+            // SAFETY: the caller's contract (the lock, the callbacks).
+            unsafe { s.entry(pos) }.unwrap_or(core::ptr::null_mut())
+        })
     }
 
     /// `git_sortedcache_lookup_index`: 0 and the position, or
@@ -1324,8 +1386,10 @@ pub mod ffi {
         key: *const c_char,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            let (s, key) = unsafe { (shared(sc), cstr_bytes(key)) };
+            // SAFETY: a live cache.
+            let s = unsafe { shared(sc) };
+            // SAFETY: a NUL-terminated string.
+            let key = unsafe { cstr_bytes(key) };
             // SAFETY: the caller's contract.
             let (r, pos) = unsafe { s.lookup_index(key) };
             if r != Err(ErrorCode::GENERIC) {

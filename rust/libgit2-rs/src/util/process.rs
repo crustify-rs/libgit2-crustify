@@ -115,7 +115,8 @@ pub struct GitProcess {
 fn try_cstring(s: &[u8]) -> Result<CString> {
     let s = c_prefix(s);
     let mut v = Vec::new();
-    v.try_reserve_exact(s.len() + 1).map_err(|_| errors::oom())?;
+    v.try_reserve_exact(s.len() + 1)
+        .map_err(|_| errors::oom())?;
     v.extend_from_slice(s);
     // No NUL inside (`c_prefix`), and room for the terminator.
     Ok(CString::new(v).unwrap_or_default())
@@ -146,7 +147,8 @@ fn setup_args(args: &[&[u8]], use_shell: bool) -> Result<Vec<CString>> {
     if use_shell {
         let first = c_prefix(args[0]);
         let mut cmd = Vec::new();
-        cmd.try_reserve_exact(first.len() + 6).map_err(|_| errors::oom())?;
+        cmd.try_reserve_exact(first.len() + 6)
+            .map_err(|_| errors::oom())?;
         cmd.extend_from_slice(first);
         cmd.extend_from_slice(b" \"$@\"");
         out.push(try_cstring(b"/bin/sh")?);
@@ -194,7 +196,11 @@ fn environ_entries() -> Vec<&'static [u8]> {
 /// `exclude_env`, the inherited entries whose name `env` does not set;
 /// `None` when that is nothing.
 fn merge_env(env: &[&[u8]], exclude_env: bool) -> Result<Option<Vec<CString>>> {
-    let inherited = if exclude_env { Vec::new() } else { environ_entries() };
+    let inherited = if exclude_env {
+        Vec::new()
+    } else {
+        environ_entries()
+    };
     let mut merged = Vec::new();
     merged
         .try_reserve(env.len() + inherited.len())
@@ -211,7 +217,17 @@ fn merge_env(env: &[&[u8]], exclude_env: bool) -> Result<Option<Vec<CString>>> {
         }
         merged.push(try_cstring(kv)?);
     }
-    Ok(if merged.is_empty() { None } else { Some(merged) })
+    Ok(if merged.is_empty() {
+        None
+    } else {
+        Some(merged)
+    })
+}
+
+/// `pipe(fds)`.
+fn sys_pipe(fds: &mut [c_int; 2]) -> c_int {
+    // SAFETY: `pipe` writes two descriptors into the array.
+    unsafe { libc::pipe(fds.as_mut_ptr()) }
 }
 
 /// `CLOSE_FD`.
@@ -279,8 +295,16 @@ fn read_status(fd: c_int) -> Result<c_int> {
 
     if fn_error != 0 {
         errors::set_errno(os_error);
-        let fn_name: &[u8] = if name_len > 0 { c_prefix(&name[..name_len]) } else { b"" };
-        let fn_name = if fn_name.is_empty() { b"(unknown)" as &[u8] } else { fn_name };
+        let fn_name: &[u8] = if name_len > 0 {
+            c_prefix(&name[..name_len])
+        } else {
+            b""
+        };
+        let fn_name = if fn_name.is_empty() {
+            b"(unknown)" as &[u8]
+        } else {
+            fn_name
+        };
         let _ = git_error_set!(ErrorClass::OS, "could not {}", errors::Bytes(fn_name));
     }
     Ok(fn_error)
@@ -320,9 +344,15 @@ fn child_write_all(fd: c_int, buf: *const u8, len: usize) -> bool {
 /// `write_status`. Async-signal-safe: a stack buffer and `write`.
 fn child_write_status(fd: c_int, name: &'static [u8], error: c_int, os_error: c_int) {
     let fn_len = name.len() as c_int;
-    let (e, o, l) = (error.to_ne_bytes(), os_error.to_ne_bytes(), fn_len.to_ne_bytes());
+    let (e, o, l) = (
+        error.to_ne_bytes(),
+        os_error.to_ne_bytes(),
+        fn_len.to_ne_bytes(),
+    );
     // Constant indices only: no bounds check, so no panic path.
-    let buffer: [u8; STATUS_LEN] = [e[0], e[1], e[2], e[3], o[0], o[1], o[2], o[3], l[0], l[1], l[2], l[3]];
+    let buffer: [u8; STATUS_LEN] = [
+        e[0], e[1], e[2], e[3], o[0], o[1], o[2], o[3], l[0], l[1], l[2], l[3],
+    ];
     // Do our best effort to write all the status.
     if !child_write_all(fd, buffer.as_ptr(), STATUS_LEN) {
         return;
@@ -339,49 +369,56 @@ fn child_write_status(fd: c_int, name: &'static [u8], error: c_int, os_error: c_
 /// `write`, `_exit`, reading `errno`) on the prepared plan: no allocation,
 /// no lock, and no operation that can panic.
 fn child_exec(plan: &ChildPlan) -> ! {
-    // SAFETY (for every call below): plain system calls on descriptors and
-    // NUL-terminated strings / NULL-terminated arrays that the plan holds,
-    // which the parent built and keeps alive (they are in this process's
-    // copy of its memory).
-    unsafe {
-        // Close the opposing side of the pipes
-        if plan.status_read >= 0 {
-            libc::close(plan.status_read);
-        }
-
-        if let Some((r, w)) = plan.in_ {
-            if w >= 0 {
-                libc::close(w);
-            }
-            libc::dup2(r, libc::STDIN_FILENO);
-        }
-        if let Some((r, w)) = plan.out {
-            if r >= 0 {
-                libc::close(r);
-            }
-            libc::dup2(w, libc::STDOUT_FILENO);
-        }
-        if let Some((r, w)) = plan.err {
-            if r >= 0 {
-                libc::close(r);
-            }
-            libc::dup2(w, libc::STDERR_FILENO);
-        }
-
-        if !plan.cwd.is_null() {
-            let error = libc::chdir(plan.cwd);
-            if error < 0 {
-                child_write_status(plan.status_write, b"chdir", error, *libc::__errno_location());
-                libc::_exit(0);
-            }
-        }
-
-        // Exec the process and write the results back if the call fails;
-        // if it succeeds, CLOEXEC closes the status pipe.
-        let error = libc::execve(plan.path, plan.argv, plan.envp);
-        child_write_status(plan.status_write, b"execve", error, *libc::__errno_location());
-        libc::_exit(0)
+    // Close the opposing side of the pipes
+    if plan.status_read >= 0 {
+        // SAFETY: closing a descriptor (async-signal-safe).
+        unsafe { libc::close(plan.status_read) };
     }
+    for (stream, target, ours_is_read) in [
+        (plan.in_, libc::STDIN_FILENO, true),
+        (plan.out, libc::STDOUT_FILENO, false),
+        (plan.err, libc::STDERR_FILENO, false),
+    ] {
+        let Some((r, w)) = stream else { continue };
+        // The child keeps the end the parent does not, as C's CLOSE_FD.
+        let (keep, other) = if ours_is_read { (r, w) } else { (w, r) };
+        if other >= 0 {
+            // SAFETY: as above.
+            unsafe { libc::close(other) };
+        }
+        // SAFETY: duplicating a descriptor (async-signal-safe).
+        unsafe { libc::dup2(keep, target) };
+    }
+
+    if !plan.cwd.is_null() {
+        // SAFETY: `cwd` is a NUL-terminated string the parent keeps alive
+        // (in this copy of its memory); `chdir` is async-signal-safe.
+        let error = unsafe { libc::chdir(plan.cwd) };
+        if error < 0 {
+            child_write_status(plan.status_write, b"chdir", error, child_errno());
+            // SAFETY: `_exit` is async-signal-safe and always sound.
+            unsafe { libc::_exit(0) };
+        }
+    }
+
+    // Exec the process and write the results back if the call fails; if it
+    // succeeds, CLOEXEC closes the status pipe.
+    // SAFETY: `path` and the strings of `argv` / `envp` are NUL-terminated,
+    // the arrays NULL-terminated (or `envp` NULL), all alive in this copy
+    // of the parent's memory; `execve` is async-signal-safe.
+    let error = unsafe { libc::execve(plan.path, plan.argv, plan.envp) };
+    child_write_status(plan.status_write, b"execve", error, child_errno());
+    // SAFETY: as above.
+    unsafe { libc::_exit(0) }
+}
+
+/// `errno`, async-signal-safely.
+fn child_errno() -> c_int {
+    // SAFETY: `__errno_location` has no preconditions, and is
+    // async-signal-safe.
+    let p = unsafe { libc::__errno_location() };
+    // SAFETY: it points to this thread's `errno`, valid and readable.
+    unsafe { *p }
 }
 
 impl GitProcess {
@@ -423,7 +460,11 @@ impl GitProcess {
     }
 
     /// `git_process_new_from_cmdline`: run `cmdline` with `/bin/sh`.
-    pub fn from_cmdline(cmdline: &[u8], env: &[&[u8]], opts: Option<&ProcessOptions>) -> Result<GitProcess> {
+    pub fn from_cmdline(
+        cmdline: &[u8],
+        env: &[&[u8]],
+        opts: Option<&ProcessOptions>,
+    ) -> Result<GitProcess> {
         let mut merged = opts.cloned().unwrap_or_default();
         merged.use_shell = true;
         GitProcess::new(&[cmdline], env, Some(&merged))
@@ -459,7 +500,12 @@ impl GitProcess {
 
         let r = self.start_with(&mut in_, &mut out, &mut err, &mut status);
         if r.is_err() {
-            for fd in in_.iter_mut().chain(&mut out).chain(&mut err).chain(&mut status) {
+            for fd in in_
+                .iter_mut()
+                .chain(&mut out)
+                .chain(&mut err)
+                .chain(&mut status)
+            {
                 close_fd(fd);
             }
         }
@@ -478,33 +524,34 @@ impl GitProcess {
 
         // The pointer arrays for execve, built before the fork.
         let mut argv: Vec<*const c_char> = Vec::new();
-        argv.try_reserve_exact(self.args.len() + 1).map_err(|_| errors::oom())?;
+        argv.try_reserve_exact(self.args.len() + 1)
+            .map_err(|_| errors::oom())?;
         argv.extend(self.args.iter().map(|a| a.as_ptr()));
         argv.push(core::ptr::null());
         let mut envp: Vec<*const c_char> = Vec::new();
         if let Some(env) = &self.env {
-            envp.try_reserve_exact(env.len() + 1).map_err(|_| errors::oom())?;
+            envp.try_reserve_exact(env.len() + 1)
+                .map_err(|_| errors::oom())?;
             envp.extend(env.iter().map(|e| e.as_ptr()));
             envp.push(core::ptr::null());
         }
 
         // Set up the pipes to read from/write to the process
-        // SAFETY (each `pipe`): writes two descriptors into the array.
-        if (self.capture_in && unsafe { libc::pipe(in_.as_mut_ptr()) } < 0)
-            || (self.capture_out && unsafe { libc::pipe(out.as_mut_ptr()) } < 0)
-            || (self.capture_err && unsafe { libc::pipe(err.as_mut_ptr()) } < 0)
+        if (self.capture_in && sys_pipe(in_) < 0)
+            || (self.capture_out && sys_pipe(out) < 0)
+            || (self.capture_err && sys_pipe(err) < 0)
         {
             let _ = git_error_set!(ErrorClass::OS, "could not create pipe");
             return Err(ErrorCode::GENERIC);
         }
 
         // Set up a self-pipe for status from the forked process.
-        // SAFETY: as above; `fcntl` on the descriptor just made.
-        let ok = unsafe { libc::pipe(status.as_mut_ptr()) } >= 0 && {
+        let ok = sys_pipe(status) >= 0 && {
             // SAFETY: an open descriptor.
             let fdflags = unsafe { libc::fcntl(status[1], libc::F_GETFD) };
             // SAFETY: as above.
-            fdflags >= 0 && unsafe { libc::fcntl(status[1], libc::F_SETFD, fdflags | libc::FD_CLOEXEC) } >= 0
+            fdflags >= 0
+                && unsafe { libc::fcntl(status[1], libc::F_SETFD, fdflags | libc::FD_CLOEXEC) } >= 0
         };
         if !ok {
             let _ = git_error_set!(ErrorClass::OS, "could not create pipe");
@@ -520,7 +567,11 @@ impl GitProcess {
             cwd: self.cwd.as_ref().map_or(core::ptr::null(), |c| c.as_ptr()),
             path: self.args[0].as_ptr(),
             argv: argv.as_ptr(),
-            envp: if self.env.is_some() { envp.as_ptr() } else { core::ptr::null() },
+            envp: if self.env.is_some() {
+                envp.as_ptr()
+            } else {
+                core::ptr::null()
+            },
         };
 
         // SAFETY: the child only runs `child_exec`, which is
@@ -557,7 +608,7 @@ impl GitProcess {
                     // C waits on pid 0 here (rust/DEFECTS.md).
                     let mut state = 0;
                     // SAFETY: our child; `state` is writable.
-                    unsafe { libc::waitpid(pid, &mut state, 0) };
+                    unsafe { libc::waitpid(pid, &raw mut state, 0) };
                     // C leaves these naming the descriptors it closes.
                     self.child_in = -1;
                     self.child_out = -1;
@@ -615,7 +666,11 @@ impl GitProcess {
             let _ = git_error_set!(ErrorClass::OS, "could not write to child process");
         }
         restore_signals(&saved)?;
-        if ret < 0 { Err(ErrorCode::GENERIC) } else { Ok(ret as usize) }
+        if ret < 0 {
+            Err(ErrorCode::GENERIC)
+        } else {
+            Ok(ret as usize)
+        }
     }
 
     /// `git_process_close_in`.
@@ -663,7 +718,7 @@ impl GitProcess {
         }
         let mut state = 0;
         // SAFETY: `state` is writable.
-        if unsafe { libc::waitpid(self.pid, &mut state, 0) } < 0 {
+        if unsafe { libc::waitpid(self.pid, &raw mut state, 0) } < 0 {
             let _ = git_error_set!(ErrorClass::OS, "could not wait for child");
             return Err(ErrorCode::GENERIC);
         }
@@ -692,22 +747,27 @@ impl Drop for GitProcess {
     }
 }
 
+/// A signal set holding only `SIGPIPE`.
+fn sigpipe_set() -> libc::sigset_t {
+    // SAFETY: `sigset_t` is plain data; it is initialized by `sigemptyset`.
+    let mut mask: libc::sigset_t = unsafe { core::mem::zeroed() };
+    // SAFETY: a valid set to write.
+    unsafe { libc::sigemptyset(&raw mut mask) };
+    // SAFETY: an initialized set and a valid signal.
+    unsafe { libc::sigaddset(&raw mut mask, libc::SIGPIPE) };
+    mask
+}
+
 /// `disable_signals` (threads): block `SIGPIPE` for this thread, returning
 /// the previous mask.
 fn disable_signals() -> Result<libc::sigset_t> {
-    // SAFETY: `sigset_t` is plain data, initialized by `sigemptyset`.
-    let mut mask: libc::sigset_t = unsafe { core::mem::zeroed() };
-    // SAFETY: as above.
+    let mask = sigpipe_set();
+    // SAFETY: plain data, written by `pthread_sigmask`.
     let mut saved: libc::sigset_t = unsafe { core::mem::zeroed() };
-    // SAFETY: valid sets.
-    unsafe {
-        libc::sigemptyset(&mut mask);
-        libc::sigaddset(&mut mask, libc::SIGPIPE);
-    }
     // pthread reports failure with a positive value, which the C's `< 0`
     // never sees; so here.
     // SAFETY: valid sets.
-    if unsafe { libc::pthread_sigmask(libc::SIG_BLOCK, &mask, &mut saved) } < 0 {
+    if unsafe { libc::pthread_sigmask(libc::SIG_BLOCK, &raw const mask, &raw mut saved) } < 0 {
         let _ = git_error_set!(ErrorClass::OS, "could not configure signal mask");
         return Err(ErrorCode::GENERIC);
     }
@@ -717,26 +777,24 @@ fn disable_signals() -> Result<libc::sigset_t> {
 /// `restore_signals` (threads): consume a `SIGPIPE` raised meanwhile, then
 /// restore the mask.
 fn restore_signals(saved: &libc::sigset_t) -> Result<()> {
-    // SAFETY: plain data, initialized below.
-    let mut mask: libc::sigset_t = unsafe { core::mem::zeroed() };
-    // SAFETY: as above.
+    let mask = sigpipe_set();
+    // SAFETY: plain data, written by `sigpending`.
     let mut pending: libc::sigset_t = unsafe { core::mem::zeroed() };
-    // SAFETY: valid sets.
-    unsafe {
-        libc::sigemptyset(&mut mask);
-        libc::sigaddset(&mut mask, libc::SIGPIPE);
-    }
-    // SAFETY: a valid set.
-    if unsafe { libc::sigpending(&mut pending) } < 0 {
+    // SAFETY: a valid set to write.
+    if unsafe { libc::sigpending(&raw mut pending) } < 0 {
         let _ = git_error_set!(ErrorClass::OS, "could not examine pending signals");
         return Err(ErrorCode::GENERIC);
     }
     let mut signal = 0;
-    // SAFETY: valid sets; `signal` is writable.
-    if unsafe { libc::sigismember(&pending, libc::SIGPIPE) } == 1
-        && unsafe { libc::sigwait(&mask, &mut signal) } < 0
-    {
-        let _ = git_error_set!(ErrorClass::OS, "could not wait for (blocking) signal delivery");
+    // SAFETY: an initialized set.
+    let is_pending = unsafe { libc::sigismember(&raw const pending, libc::SIGPIPE) } == 1;
+    // SAFETY: a valid set; `signal` is writable. SIGPIPE is pending and
+    // blocked, so `sigwait` returns at once.
+    if is_pending && unsafe { libc::sigwait(&raw const mask, &raw mut signal) } < 0 {
+        let _ = git_error_set!(
+            ErrorClass::OS,
+            "could not wait for (blocking) signal delivery"
+        );
         return Err(ErrorCode::GENERIC);
     }
     // SAFETY: a valid set.
@@ -810,13 +868,25 @@ impl Process {
     /// `use_shell`), with `env` added to (or, with `exclude_env`, instead
     /// of) this process's environment; `NAME=` entries remove a variable.
     /// The environment must not be changed meanwhile.
-    pub fn new(args: &[&[u8]], env: &[&[u8]], opts: &ProcessOptions) -> core::result::Result<Process, Error> {
-        GitProcess::new(args, env, Some(opts)).map(Process).map_err(Error::from)
+    pub fn new(
+        args: &[&[u8]],
+        env: &[&[u8]],
+        opts: &ProcessOptions,
+    ) -> core::result::Result<Process, Error> {
+        GitProcess::new(args, env, Some(opts))
+            .map(Process)
+            .map_err(Error::from)
     }
 
     /// `git_process_new_from_cmdline`: run `cmdline` with `/bin/sh`.
-    pub fn from_cmdline(cmdline: &[u8], env: &[&[u8]], opts: &ProcessOptions) -> core::result::Result<Process, Error> {
-        GitProcess::from_cmdline(cmdline, env, Some(opts)).map(Process).map_err(Error::from)
+    pub fn from_cmdline(
+        cmdline: &[u8],
+        env: &[&[u8]],
+        opts: &ProcessOptions,
+    ) -> core::result::Result<Process, Error> {
+        GitProcess::from_cmdline(cmdline, env, Some(opts))
+            .map(Process)
+            .map_err(Error::from)
     }
 
     /// `git_process_start`.
@@ -895,8 +965,10 @@ pub mod ffi {
         }
         v.try_reserve_exact(len).map_err(|_| errors::oom())?;
         for i in 0..len {
-            // SAFETY: the caller's contract.
-            v.push(unsafe { cstr_bytes(*p.add(i)) });
+            // SAFETY: the caller's contract: `len` pointers at `p`.
+            let s = unsafe { *p.wrapping_add(i) };
+            // SAFETY: a NUL-terminated string.
+            v.push(unsafe { cstr_bytes(s) });
         }
         Ok(v)
     }
@@ -996,7 +1068,7 @@ pub mod ffi {
         merged.flags |= flags::USE_SHELL;
         let args = [cmdline];
         // SAFETY: forwarded; `args` is one string pointer.
-        unsafe { git_process_new(out, args.as_ptr(), 1, env, env_len, &mut merged) }
+        unsafe { git_process_new(out, args.as_ptr(), 1, env, env_len, &raw mut merged) }
     }
 
     /// `git_process_start`.
@@ -1016,7 +1088,10 @@ pub mod ffi {
     ///
     /// `out` is NULL or writable; `process` NULL or a live process.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_process_id(out: *mut libc::pid_t, process: *mut GitProcess) -> c_int {
+    pub unsafe extern "C" fn git_process_id(
+        out: *mut libc::pid_t,
+        process: *mut GitProcess,
+    ) -> c_int {
         barrier(|| {
             git_assert!(!out.is_null() && !process.is_null(), "out && process", -1);
             // SAFETY: the caller's contract.
@@ -1045,7 +1120,11 @@ pub mod ffi {
     /// `process` is NULL or a live process; `buf` is writable for `count`
     /// bytes.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_process_read(process: *mut GitProcess, buf: *mut c_void, count: usize) -> isize {
+    pub unsafe extern "C" fn git_process_read(
+        process: *mut GitProcess,
+        buf: *mut c_void,
+        count: usize,
+    ) -> isize {
         barrier(|| {
             git_assert_arg!(!process.is_null(), "process", -1);
             // SAFETY: the caller's contract.
@@ -1064,7 +1143,11 @@ pub mod ffi {
     ///
     /// As [`git_process_read`].
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_process_read_err(process: *mut GitProcess, buf: *mut c_void, count: usize) -> isize {
+    pub unsafe extern "C" fn git_process_read_err(
+        process: *mut GitProcess,
+        buf: *mut c_void,
+        count: usize,
+    ) -> isize {
         barrier(|| {
             git_assert_arg!(!process.is_null(), "process", -1);
             // SAFETY: the caller's contract.
@@ -1097,7 +1180,11 @@ pub mod ffi {
     /// `process` is NULL or a live process; `buf` is readable for `count`
     /// bytes.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_process_write(process: *mut GitProcess, buf: *const c_void, count: usize) -> isize {
+    pub unsafe extern "C" fn git_process_write(
+        process: *mut GitProcess,
+        buf: *const c_void,
+        count: usize,
+    ) -> isize {
         barrier(|| {
             git_assert_arg!(!process.is_null(), "process", -1);
             // SAFETY: the caller's contract.
@@ -1116,7 +1203,10 @@ pub mod ffi {
     ///
     /// `result` is NULL or writable; `process` a live process.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_process_wait(result: *mut GitProcessResult, process: *mut GitProcess) -> c_int {
+    pub unsafe extern "C" fn git_process_wait(
+        result: *mut GitProcessResult,
+        process: *mut GitProcess,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: NULL or writable.
             unsafe { crate::util::export::write_opt(result, GitProcessResult::default()) };
@@ -1185,10 +1275,15 @@ pub mod ffi {
     ///
     /// `out` is a valid `git_str`, `result` a valid result.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_process_result_msg(out: *mut GitStr, result: *mut GitProcessResult) -> c_int {
+    pub unsafe extern "C" fn git_process_result_msg(
+        out: *mut GitStr,
+        result: *mut GitProcessResult,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: the caller's contract; distinct objects.
-            let (out, result) = unsafe { (&mut *out, &*result) };
+            let out = unsafe { &mut *out };
+            // SAFETY: as above.
+            let result = unsafe { &*result };
             to_status(result_msg(out, result))
         })
     }

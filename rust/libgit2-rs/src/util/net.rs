@@ -121,7 +121,7 @@ fn truncate_cstr(s: &mut GitCStr, n: usize) {
         // SAFETY: `n < strlen`, so `p + n` is within the allocation that `s`
         // exclusively owns (we hold `&mut` to it); a NUL earlier keeps it a
         // NUL-terminated string.
-        unsafe { p.add(n).write(0) };
+        unsafe { p.wrapping_add(n).write(0) };
     }
 }
 
@@ -215,7 +215,8 @@ fn is_ssh_scheme(scheme: &[u8]) -> bool {
     if scheme.is_empty() {
         return false;
     }
-    let prefix_of = |lit: &[u8]| scheme.len() <= lit.len() && scheme.eq_ignore_ascii_case(&lit[..scheme.len()]);
+    let prefix_of =
+        |lit: &[u8]| scheme.len() <= lit.len() && scheme.eq_ignore_ascii_case(&lit[..scheme.len()]);
     prefix_of(b"ssh") || prefix_of(b"ssh+git") || prefix_of(b"git+ssh")
 }
 
@@ -412,7 +413,10 @@ fn parse_finalize(url: &mut GitNetUrl, parser: &Parser<'_>) -> Result<()> {
     let port = if !parser.port.is_empty() {
         port_specified = 1;
         copied(parser.port)?
-    } else if let Some(d) = scheme.as_ref().and_then(|s| default_port_for_scheme(s.as_bytes())) {
+    } else if let Some(d) = scheme
+        .as_ref()
+        .and_then(|s| default_port_for_scheme(s.as_bytes()))
+    {
         copied(d)?
     } else {
         None
@@ -545,7 +549,10 @@ pub fn parse(url: &mut GitNetUrl, given: &[u8]) -> Result<()> {
     }
 
     if authority_len > 0 {
-        parse_authority(&mut parser, &given[authority_start..authority_start + authority_len])?;
+        parse_authority(
+            &mut parser,
+            &given[authority_start..authority_start + authority_len],
+        )?;
     }
     if path_len > 0 {
         parse_path(&mut parser, &given[path_start..path_start + path_len]);
@@ -687,7 +694,11 @@ pub fn parse_scp(url: &mut GitNetUrl, given: &[u8]) -> Result<()> {
             State::Host => {
                 if c == b':' {
                     host_len = i - host;
-                    state = if bracket != 0 { State::PortStart } else { State::PathStart };
+                    state = if bracket != 0 {
+                        State::PortStart
+                    } else {
+                        State::PathStart
+                    };
                 } else if c == b']' {
                     let b = bracket;
                     bracket = bracket.wrapping_sub(1);
@@ -714,7 +725,11 @@ pub fn parse_scp(url: &mut GitNetUrl, given: &[u8]) -> Result<()> {
                     return Err(scp_invalid("unexpected character after ipv6 address"));
                 }
                 host_len = i - host;
-                state = if bracket != 0 { State::PortStart } else { State::PathStart };
+                state = if bracket != 0 {
+                    State::PortStart
+                } else {
+                    State::PathStart
+                };
             }
             State::PortStart => {
                 port = i;
@@ -966,7 +981,8 @@ impl GitNetUrl {
             }
             if let Some(orig) = field(&self.host) {
                 let to = field(&tmp.host);
-                if !allow_offsite && to.is_none_or(|t| crate::util::util::strcasecmp(orig, t) != 0) {
+                if !allow_offsite && to.is_none_or(|t| crate::util::util::strcasecmp(orig, t) != 0)
+                {
                     let _ = git_error_set!(
                         ErrorClass::NET,
                         "cannot redirect from '{}' to '{}'",
@@ -1020,11 +1036,11 @@ impl GitNetUrl {
             let _ = buf.putc(b'@');
         }
         let _ = buf.puts(field(&self.host).unwrap_or(b""));
-        if let Some(port) = field(&self.port) {
-            if !self.is_default_port() {
-                let _ = buf.putc(b':');
-                let _ = buf.puts(port);
-            }
+        if let Some(port) = field(&self.port)
+            && !self.is_default_port()
+        {
+            let _ = buf.putc(b':');
+            let _ = buf.puts(port);
         }
         self.fmt_path_query(buf)
     }
@@ -1040,7 +1056,11 @@ impl GitNetUrl {
             let _ = buf.putc(b'?');
             let _ = buf.puts(q);
         }
-        if buf.is_oom() { Err(ErrorCode::GENERIC) } else { Ok(()) }
+        if buf.is_oom() {
+            Err(ErrorCode::GENERIC)
+        } else {
+            Ok(())
+        }
     }
 
     /// `git_net_url_matches_pattern`: `*`, `host`, `.domain`, `*.domain`,
@@ -1120,7 +1140,10 @@ impl GitNetUrl {
 pub struct Url(GitNetUrl);
 
 /// What a URL parser fills.
-fn parsed(f: fn(&mut GitNetUrl, &[u8]) -> Result<()>, s: &[u8]) -> core::result::Result<Url, Error> {
+fn parsed(
+    f: fn(&mut GitNetUrl, &[u8]) -> Result<()>,
+    s: &[u8],
+) -> core::result::Result<Url, Error> {
     let mut u = GitNetUrl::new();
     f(&mut u, s).map_err(Error::from)?;
     Ok(Url(u))
@@ -1192,8 +1215,14 @@ impl Url {
         username: Option<&[u8]>,
         password: Option<&[u8]>,
     ) -> core::result::Result<(), Error> {
-        let u = username.map(|u| dup(c_prefix(u))).transpose().map_err(Error::from)?;
-        let p = password.map(|p| dup(c_prefix(p))).transpose().map_err(Error::from)?;
+        let u = username
+            .map(|u| dup(c_prefix(u)))
+            .transpose()
+            .map_err(Error::from)?;
+        let p = password
+            .map(|p| dup(c_prefix(p)))
+            .transpose()
+            .map_err(Error::from)?;
         if let Some(old) = self.0.username.as_mut() {
             zero_cstr(old);
         }
@@ -1326,7 +1355,9 @@ pub mod ffi {
     ) -> bool {
         barrier(|| {
             // SAFETY: the caller passes NUL-terminated strings.
-            let (h, p) = unsafe { (cstr_bytes(hostname), cstr_bytes(pattern)) };
+            let h = unsafe { cstr_bytes(hostname) };
+            // SAFETY: as above.
+            let p = unsafe { cstr_bytes(pattern) };
             hostname_matches_cert(h, p)
         })
     }
@@ -1363,7 +1394,9 @@ pub mod ffi {
                 return status(out.dup_from(&snapshot));
             }
             // SAFETY: distinct, initialized URLs in exclusive use.
-            let (out, src) = unsafe { (&mut *out, &*in_) };
+            let out = unsafe { &mut *out };
+            // SAFETY: as above.
+            let src = unsafe { &*in_ };
             status(out.dup_from(src))
         })
     }
@@ -1386,7 +1419,10 @@ pub mod ffi {
     ///
     /// As [`git_net_url_parse`].
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_net_url_parse_scp(url: *mut GitNetUrl, str: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git_net_url_parse_scp(
+        url: *mut GitNetUrl,
+        str: *const c_char,
+    ) -> c_int {
         // SAFETY: forwarded.
         unsafe { parse_with(url, str, parse_scp) }
     }
@@ -1412,7 +1448,10 @@ pub mod ffi {
     ///
     /// As [`git_net_url_parse`].
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_net_url_parse_http(url: *mut GitNetUrl, str: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git_net_url_parse_http(
+        url: *mut GitNetUrl,
+        str: *const c_char,
+    ) -> c_int {
         // SAFETY: forwarded.
         unsafe { parse_with(url, str, parse_http) }
     }
@@ -1440,7 +1479,9 @@ pub mod ffi {
                 return status(out.joinpath(&GitNetUrl::new(), path));
             }
             // SAFETY: distinct initialized URLs in exclusive use.
-            let (out, one) = unsafe { (&mut *out, &*one) };
+            let out = unsafe { &mut *out };
+            // SAFETY: as above.
+            let one = unsafe { &*one };
             status(out.joinpath(one, path))
         })
     }
@@ -1463,7 +1504,9 @@ pub mod ffi {
             git_assert!(!url.is_null(), "url", -1);
             git_assert!(!redirect_location.is_null(), "redirect_location", -1);
             // SAFETY: the caller's contract (checked non-null above).
-            let (url, loc) = unsafe { (&mut *url, cstr_bytes(redirect_location)) };
+            let url = unsafe { &mut *url };
+            // SAFETY: a NUL-terminated string not within `url`.
+            let loc = unsafe { cstr_bytes(redirect_location) };
             let suffix = if service_suffix.is_null() {
                 None
             } else {
@@ -1531,7 +1574,9 @@ pub mod ffi {
         barrier(|| {
             git_assert_arg!(!url.is_null(), "url", -1);
             // SAFETY: the caller's contract; the two do not overlap.
-            let (buf, url) = unsafe { (&mut *buf, &*url) };
+            let buf = unsafe { &mut *buf };
+            // SAFETY: as above.
+            let url = unsafe { &*url };
             status(url.fmt(buf))
         })
     }
@@ -1545,7 +1590,9 @@ pub mod ffi {
     pub unsafe extern "C" fn git_net_url_fmt_path(buf: *mut GitStr, url: *mut GitNetUrl) -> c_int {
         barrier(|| {
             // SAFETY: the caller's contract; the two do not overlap.
-            let (buf, url) = unsafe { (&mut *buf, &*url) };
+            let buf = unsafe { &mut *buf };
+            // SAFETY: as above.
+            let url = unsafe { &*url };
             status(url.fmt_path(buf))
         })
     }
@@ -1562,7 +1609,9 @@ pub mod ffi {
     ) -> bool {
         barrier(|| {
             // SAFETY: the caller's contract.
-            let (url, pattern) = unsafe { (&*url, cstr_bytes(pattern)) };
+            let url = unsafe { &*url };
+            // SAFETY: a NUL-terminated string.
+            let pattern = unsafe { cstr_bytes(pattern) };
             url.matches_pattern(pattern)
         })
     }
@@ -1579,9 +1628,11 @@ pub mod ffi {
         pattern_list: *const c_char,
     ) -> bool {
         barrier(|| {
-            // SAFETY: the caller's contract (NULL reads as empty, as C's
-            // loop condition).
-            let (url, list) = unsafe { (&*url, cstr_bytes(pattern_list)) };
+            // SAFETY: the caller's contract.
+            let url = unsafe { &*url };
+            // SAFETY: NULL or a NUL-terminated string (NULL reads as empty,
+            // as C's loop condition).
+            let list = unsafe { cstr_bytes(pattern_list) };
             url.matches_pattern_list(list)
         })
     }

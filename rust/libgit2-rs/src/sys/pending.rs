@@ -27,7 +27,10 @@ pub struct FileStamp {
 impl Default for FileStamp {
     fn default() -> Self {
         FileStamp {
-            mtime: libc::timespec { tv_sec: 0, tv_nsec: 0 },
+            mtime: libc::timespec {
+                tv_sec: 0,
+                tv_nsec: 0,
+            },
             size: 0,
             ino: 0,
         }
