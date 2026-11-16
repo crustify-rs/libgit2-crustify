@@ -14,6 +14,7 @@ pub mod util;
 
 pub mod buf;
 pub mod cache;
+pub mod delta;
 pub mod fs;
 pub mod hashmap_oid;
 pub mod odb;

@@ -297,3 +297,15 @@ One entry per difference: component, what differs, why.
 - **Safe API:** `OdbBackend` implementations return `Vec<u8>`, copied into
   `git__allocator` memory for C; paths with a NUL byte are refused
   (`GIT_EINVALID`) instead of being cut short.
+
+- **delta: the index's block** is one `git__allocator` allocation, as in C
+  (C frees it with `git__free`), but laid out by the Rust: 4-byte bucket
+  heads and 16-byte entries (indices, not pointers), so it is smaller than
+  the C's. `git_delta_index_size` still returns the size of the C's
+  allocation (32 + 24 per entry + 8 per bucket), which `pack-objects.c`
+  accounts with. The temporary bucket counts are a Rust `Vec`
+  (`try_reserve`, out-of-memory error on failure, as C's `git__calloc`). The delta and applied
+  buffers handed to C come from `git__allocator`, as before.
+- **delta: a delta's NUL terminator.** `git_delta_apply` writes the NUL
+  after the result once the result is complete (C wrote it first); the
+  buffer C receives is the same.

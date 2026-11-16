@@ -45,3 +45,4 @@ src/libgit2/cache.c
 src/libgit2/odb.c
 src/libgit2/odb_loose.c
 src/libgit2/odb_mempack.c
+src/libgit2/delta.c

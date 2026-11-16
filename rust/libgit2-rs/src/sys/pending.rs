@@ -80,3 +80,11 @@ pub fn odb_backend_pack(
     crate::util::errors::ErrorCode::check_zero(r)?;
     core::ptr::NonNull::new(out).ok_or(crate::util::errors::ErrorCode::GENERIC)
 }
+
+// PENDING(l-pack): `src/libgit2/pack.c`. `git_delta_read_header_fromstream`
+// reads a delta's header through a pack stream (`git_packfile_stream *`,
+// opaque here).
+unsafe extern "C" {
+    /// `git_packfile_stream_read`. PENDING(l-pack)
+    pub fn git_packfile_stream_read(obj: *mut c_void, buffer: *mut c_void, len: usize) -> isize;
+}
