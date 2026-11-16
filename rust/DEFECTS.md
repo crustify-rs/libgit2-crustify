@@ -429,3 +429,28 @@ DIVERGENCES.md).
 - C: subtracts `char_cnt` from `line_len` and `remain_len` unchecked; more
   than `line_len` wraps them and later reads run past the content.
 - Rust: advances by at most `line_len`.
+
+## odb, odb_loose, odb_mempack, delta, cache (WP l-odb)
+
+### delta: `git_delta_read_header_fromstream` adds a negative read status to the length
+`delta.c:git_delta_read_header_fromstream` does `len += read` for any
+non-zero `read` that is not `GIT_EBUFS`, so an error of
+`git_packfile_stream_read` (-1, "error reading from the zlib stream") makes
+`len` wrap, and `hdr_sz` then parses up to `SIZE_MAX` bytes past the
+16-byte stack buffer (uninitialized and out-of-bounds reads). Input: a pack
+whose delta object's zlib data is corrupt. The Rust returns -1 with the
+stream's error. A `GIT_EBUFS` that never clears (a window that cannot be
+opened) still loops forever, as in C: the stream gives no way to tell it from
+a transient one.
+
+### delta: `git_delta_create_from_index` with a NULL index
+C dereferences the index (it returns early only for an empty target);
+`git_delta_index_init` returns a NULL index for an empty source, so
+`git_delta_create_from_index(…, NULL, trg, n>0, …)` crashes. The Rust fails
+with `invalid argument: 'index'` (-1, NULL output).
+
+### delta: the output buffer's size wraps for deltas above ~2.8 GiB
+`git_delta_create_from_index` grows its buffer with `bufsize * 3 / 2` in
+`unsigned int`; past 2^32/3 bytes this wraps and `git__realloc` shrinks the
+buffer, which the next opcode overflows. The Rust fails with the
+out-of-memory error instead.

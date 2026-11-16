@@ -237,3 +237,16 @@ One entry per difference: component, what differs, why.
   where the C would read past the end of the buffer (`git_utf8_iterate`
   with `str_len == 0`, `git_decode_varint` on a truncated varint). The
   exports read exactly what the C read.
+
+## odb, odb_loose, odb_mempack, delta, cache (WP l-odb)
+
+- **delta: the index is a Rust object** (`DeltaIndex`, Rust's allocator,
+  `try_reserve` for its arrays, which fail with the out-of-memory error as
+  C's `git__malloc` did; the small `Box` itself is infallible, and
+  `cl_alloc_limit` does not see the index). `git_delta_index_size` still
+  returns the size of the C's single allocation (32 + 24 per entry + 8 per
+  bucket), which `pack-objects.c` accounts with. The delta and applied
+  buffers handed to C come from `git__allocator`, as before.
+- **delta: a delta's NUL terminator.** `git_delta_apply` writes the NUL
+  after the result once the result is complete (C wrote it first); the
+  buffer C receives is the same.
