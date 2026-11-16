@@ -4,14 +4,6 @@
 
 use core::ffi::c_void;
 
-// PENDING(pool): `src/util/pool.c` (in PORTING.md §1's list; not yet
-// ported). `git_futils_mkdir_relative`'s path cache allocates from the
-// caller's (C-owned) pool.
-unsafe extern "C" {
-    /// `git_pool_malloc`. PENDING(pool)
-    pub fn git_pool_malloc(pool: *mut c_void, items: usize) -> *mut c_void;
-}
-
 // PENDING(l-odb): `src/libgit2/odb.c` (the odb's error helpers) and
 // `src/libgit2/delta.c`, ported concurrently by WP l-odb. The pack reader
 // (pack.rs, odb_pack.rs) calls them through their C symbols until both have

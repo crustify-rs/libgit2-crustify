@@ -390,23 +390,62 @@ fn hashmap_exports_macro() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "replaces the global allocator")]
 fn out_of_memory() {
     let g = test_support::exclusive();
-    // Nothing allocated before the limit is freed inside it.
-    #[allow(unused_unsafe)]
-    // SAFETY: the closure frees only what it allocates under the limit.
-    let (put, pool, oom_msg) = unsafe {
-        test_support::with_alloc_limit(&g, 0, || {
-            let mut m: GitHashMap<CStrKey<'static>, u32> = GitHashMap::new();
-            let put = m.put(CStrKey::new(c"k"), 1).map(|_| ());
-            let empty = m.is_empty() && m.buckets() == 0;
-            let mut p = GitPool::with_item_size(1).unwrap();
-            let pool = p.malloc(8).is_err() && p.open_pages() == 0;
-            (put.is_err() && empty, pool, errors::last_class())
-        })
-    };
+    let (put, pool, class) = test_support::with_alloc_limit(&g, 0, || {
+        let mut m: GitHashMap<CStrKey<'static>, u32> = GitHashMap::new();
+        let put = m.put(CStrKey::new(c"k"), 1).map(|_| ());
+        let empty = m.is_empty() && m.buckets() == 0;
+        let mut p = GitPool::with_item_size(1).unwrap();
+        let pool = p.malloc(8).is_err() && p.open_pages() == 0;
+        (put.is_err() && empty, pool, errors::last_class())
+    });
     assert!(put);
     assert!(pool);
-    assert_eq!(oom_msg, Some(errors::ErrorClass::NOMEMORY));
+    assert_eq!(class, Some(errors::ErrorClass::NOMEMORY));
+}
+
+/// A grow that fails after the keys were reallocated (the values' array
+/// fails): the map keeps its entries and works afterwards.
+#[test]
+fn map_grow_fails_halfway() {
+    let g = test_support::exclusive();
+    let keys: Vec<std::ffi::CString> = (0..40)
+        .map(|i| std::ffi::CString::new(format!("k{i}")).unwrap())
+        .collect();
+    let mut failures = 0;
+    // 3 entries fit 4 buckets (flags 4 bytes, keys 32, values 32); the
+    // 4th grows to 8: flags 4, keys 64, then values 64.
+    for limit in 68..150usize {
+        let failed = test_support::with_alloc_limit(&g, limit, || {
+            let mut m: GitHashMap<CStrKey<'_>, u64> = GitHashMap::new();
+            for (i, k) in keys.iter().take(3).enumerate() {
+                m.put(CStrKey::new(k), i as u64).unwrap();
+            }
+            let before = m.buckets();
+            let failed = m.put(CStrKey::new(&keys[3]), 3).is_err();
+            if failed {
+                assert_eq!((m.len(), m.buckets()), (3, before));
+                for (i, k) in keys.iter().take(3).enumerate() {
+                    assert_eq!(m.get(&CStrKey::new(k)), Some(&(i as u64)));
+                }
+                assert!(!m.contains(&CStrKey::new(&keys[3])));
+            }
+            failed
+        });
+        failures += failed as usize;
+    }
+    assert!(failures >= 2, "{failures}");
+    // and a map that failed halfway grows later
+    let mut m: GitHashMap<CStrKey<'_>, u64> = GitHashMap::new();
+    for (i, k) in keys.iter().take(3).enumerate() {
+        m.put(CStrKey::new(k), i as u64).unwrap();
+    }
+    let r = test_support::with_alloc_limit(&g, 0, || m.put(CStrKey::new(&keys[3]), 3).map(|_| ()));
+    assert!(r.is_err());
+    for (i, k) in keys.iter().enumerate() {
+        m.put(CStrKey::new(k), i as u64).unwrap();
+    }
+    assert_eq!(m.len(), 40);
+    assert_eq!(m.get(&CStrKey::new(&keys[39])), Some(&39));
 }

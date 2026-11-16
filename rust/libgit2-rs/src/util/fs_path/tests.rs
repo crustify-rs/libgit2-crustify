@@ -376,6 +376,8 @@ mod exports {
         // SAFETY: valid arguments; `base` lies in `b`.
         let r =
             unsafe { git_fs_path_join_unrooted(&raw mut b, c"x/y".as_ptr(), base, &raw mut root) };
+        // Not the C's result (C measures `strlen(base)` after writing the
+        // join, root 9): the base is copied first (rust/DIVERGENCES.md).
         assert_eq!((r, b.as_bytes(), root), (0, &b"/base/x/y"[..], 5));
         // SAFETY: NULL path: the assertion.
         let r = unsafe {
@@ -513,5 +515,103 @@ mod exports {
             errors::last_message().unwrap(),
             b"could not open directory ''"
         );
+    }
+
+    #[test]
+    fn raw_c_strings_are_read_up_to_their_nul() {
+        let _g = test_support::init();
+        let b = *b"a/b\0zz";
+        // SAFETY: a NUL-terminated string, unwritten for the test.
+        let r = unsafe { RawCStr::new(core::ptr::NonNull::from(&b).cast()) };
+        assert_eq!(common_dirlen_with(r, &b"a/c"[..]), 2);
+        assert!(!str_is_valid_with(
+            r,
+            usize::MAX,
+            GIT_FS_PATH_REJECT_SLASH,
+            ValidateCallbacks {
+                char_cb: None,
+                component_cb: None
+            }
+        ));
+        let mut comps = Vec::new();
+        assert!(str_is_valid_with(
+            r,
+            usize::MAX,
+            GIT_FS_PATH_REJECT_TRAVERSAL,
+            ValidateCallbacks {
+                char_cb: None,
+                component_cb: Some(&mut |c: &[u8]| {
+                    comps.push(c.to_vec());
+                    true
+                }),
+            }
+        ));
+        assert_eq!(comps, [b"a".to_vec(), b"b".to_vec()]);
+    }
+
+    #[test]
+    fn aliased_decoders_read_their_input_first() {
+        let _g = test_support::init();
+        // C clears the buffer before reading it: an empty result
+        // (rust/DIVERGENCES.md); the Rust decodes the input.
+        let mut b = s(b"a%41b");
+        let p = b.as_ptr();
+        // SAFETY: a valid git_str and a C string in it.
+        assert_eq!(unsafe { git__percent_decode(&raw mut b, p) }, 0);
+        assert_eq!(b.as_bytes(), b"aAb");
+        let mut b = s(b"file:///x%20y");
+        let p = b.as_ptr();
+        // SAFETY: as above.
+        assert_eq!(unsafe { git_fs_path_fromurl(&raw mut b, p) }, 0);
+        assert_eq!(b.as_bytes(), b"/x y");
+        let mut b = s(b"a\\b");
+        let p = b.as_ptr();
+        // SAFETY: as above.
+        assert_eq!(unsafe { git_fs_path_normalize_slashes(&raw mut b, p) }, 0);
+        // (The whole result is normalized, as in C.)
+        assert_eq!(b.as_bytes(), b"a/ba/b");
+    }
+
+    #[test]
+    fn borrowed_strings_are_not_written() {
+        let _g = test_support::init();
+        let data = *b"a//b/c";
+        let mut b = GitStr::new();
+        // SAFETY: `data` outlives `b`'s use and is not written by it.
+        unsafe { b.attach_notowned(data.as_ptr().cast(), data.len()) };
+        squash_slashes(&mut b);
+        assert_eq!(&data, b"a//b/c");
+        unsafe extern "C" fn cb(payload: *mut c_void, path: *const c_char) -> c_int {
+            // SAFETY: the test's Vec, and a C string from walk_up.
+            let v = unsafe { &mut *payload.cast::<Vec<Vec<u8>>>() };
+            // SAFETY: as above.
+            v.push(unsafe { CStr::from_ptr(path) }.to_bytes().to_vec());
+            0
+        }
+        let mut seen: Vec<Vec<u8>> = Vec::new();
+        // SAFETY: a borrowed git_str; the callback only reads.
+        let r = unsafe {
+            git_fs_path_walk_up(
+                &raw mut b,
+                core::ptr::null(),
+                Some(cb),
+                (&raw mut seen).cast(),
+            )
+        };
+        assert_eq!(r, 0);
+        assert_eq!(
+            seen,
+            [
+                b"a//b/c".to_vec(),
+                b"a//b/".to_vec(),
+                b"a//".to_vec(),
+                b"".to_vec()
+            ]
+        );
+        assert_eq!(&data, b"a//b/c");
+        // Resolving copies it into an owned buffer first.
+        resolve_relative(&mut b, 0).unwrap();
+        assert_eq!(b.as_bytes(), b"a/b/c");
+        assert_eq!(&data, b"a//b/c");
     }
 }

@@ -456,9 +456,10 @@ fn find_lru_file_locked(ctl: &mut Ctl) -> Result<*const GitMwindowFile> {
     Ok(lru_file)
 }
 
-/// `new_window_locked`: map a window of `fd` (of `size` bytes) that starts
-/// at or before `offset`, closing LRU windows while over the mapped limit.
-fn new_window_locked(ctl: &mut Ctl, fd: c_int, size: i64, offset: i64) -> Option<*mut GitMwindow> {
+/// Where `new_window_locked` puts the window for `offset` of a file of
+/// `size` bytes: its offset (aligned to half the window size) and length
+/// (negative past the end of the file).
+fn window_bounds(size: i64, offset: i64) -> (i64, i64) {
     let window_size = git_mwindow__window_size.load(Ordering::Relaxed);
     // C divides by `window_size / 2`, which is 0 for a window size below 2
     // (SIGFPE): see DEFECTS.md.
@@ -468,6 +469,15 @@ fn new_window_locked(ctl: &mut Ctl, fd: c_int, size: i64, offset: i64) -> Option
     if len > window_size as i64 {
         len = window_size as i64;
     }
+    (w_offset, len)
+}
+
+/// `new_window_locked`: map a window of `fd` (of `size` bytes) that starts
+/// at or before `offset`, closing LRU windows while over the mapped limit.
+fn new_window_locked(ctl: &mut Ctl, fd: c_int, size: i64, offset: i64) -> Option<*mut GitMwindow> {
+    let (w_offset, len) = window_bounds(size, offset);
+    // C casts a negative length (an offset past the end) to `size_t`; the
+    // mapping then fails.
     let len = len as usize;
 
     ctl.ctl().mapped = ctl.ctl().mapped.wrapping_add(len);
@@ -617,11 +627,13 @@ impl Cursor {
             }
 
             if w.is_null() {
-                // A new window holds `offset` only if it is in the file; C
-                // does not check, and returns a pointer outside the mapping
-                // (see DEFECTS.md).
+                // A new window holds `offset` only if `offset` is in the
+                // file; C does not check, and returns a pointer outside the
+                // mapping (see DEFECTS.md). A window that cannot be mapped at
+                // all (past the end) fails in `mmap`, as in C.
                 let size = mwf.size();
-                if offset < 0 || offset >= size {
+                let (w_offset, len) = window_bounds(size, offset);
+                if len > 0 && !(w_offset <= offset && offset < w_offset + len) {
                     let _ = git_error_set!(
                         ErrorClass::ODB,
                         "invalid pack window offset {} (file size {})",
@@ -767,7 +779,9 @@ pub unsafe fn file_register(mwf: &GitMwindowFile) -> Result<()> {
             // Its windows are all unused (`find_lru_file_locked`).
             let _ = free_all_locked(&mut ctl, lru_file);
             if let Some(_g) = lru_file.lock.try_lock() {
-                let _ = posix::close(lru_file.fd());
+                // SAFETY: the file's descriptor, which it owns, closed with
+                // its lock held and then set to -1 (as C does).
+                let _ = unsafe { posix::close(lru_file.fd()) };
                 lru_file.set_fd(-1);
             }
         }

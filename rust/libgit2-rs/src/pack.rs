@@ -53,7 +53,7 @@ use crate::util::integer::alloc_add;
 use crate::util::posix::{self, GitMap};
 use crate::util::str::GitStr;
 use crate::util::thread::{Atomic32, GitMutexGuard};
-use crate::util::zstream::{GitZstream, ZstreamKind};
+use crate::util::zstream::{GitZstream, ZstreamKind, ZstreamPtr};
 use crate::{git_assert, git_assert_arg, git_error_set};
 
 /// `GIT_OBJECT_INVALID`.
@@ -526,7 +526,8 @@ impl PackIndex {
         let st = match posix::fstat(fd) {
             Ok(st) => st,
             Err(_) => {
-                let _ = posix::close(fd);
+                // SAFETY: the index descriptor this function opened, closed once.
+                let _ = unsafe { posix::close(fd) };
                 return Err(git_error_set!(
                     ErrorClass::OS,
                     "unable to stat pack index '{}'",
@@ -538,7 +539,8 @@ impl PackIndex {
             || st.st_size < 0
             || (st.st_size as u64) < (4 * 256 + oid_size * 2) as u64
         {
-            let _ = posix::close(fd);
+            // SAFETY: the index descriptor this function opened, closed once.
+            let _ = unsafe { posix::close(fd) };
             return Err(git_error_set!(
                 ErrorClass::ODB,
                 "invalid pack index '{}'",
@@ -546,7 +548,8 @@ impl PackIndex {
             ));
         }
         let r = futils::mmap_ro(fd, 0, st.st_size as usize);
-        let _ = posix::close(fd);
+        // SAFETY: the index descriptor this function opened, closed once.
+        let _ = unsafe { posix::close(fd) };
         let map = Mapping(r?);
         let (version, num_objects) = match IndexView::parse(map.bytes(), oid_size) {
             Ok(v) => (v.version, v.num_objects),
@@ -945,11 +948,10 @@ impl CycleCheck {
     }
 }
 
-/// An inflate stream on the stack, freed on drop. Not moved once
-/// initialized (zlib's state points back to it): it is only used in place.
-struct Inflate(GitZstream);
+/// Frees a stream on drop (`git_zstream_free`).
+struct FreeZstream<'a>(ZstreamPtr<'a>);
 
-impl Drop for Inflate {
+impl Drop for FreeZstream<'_> {
     fn drop(&mut self) {
         self.0.free();
     }
@@ -1140,7 +1142,9 @@ impl GitPackFile {
         );
         let fd = self.mwf.fd();
         if fd >= 0 {
-            let _ = posix::close(fd);
+            // SAFETY: the pack's descriptor, which the pack owns, closed once
+            // (and set to -1 below), with its locks held.
+            let _ = unsafe { posix::close(fd) };
         }
         self.mwf.set_fd(-1);
         Err(ErrorCode::GENERIC)
@@ -1284,8 +1288,11 @@ impl GitPackFile {
             cursor.close();
             base_offset = r?;
             let mut stream = core::mem::MaybeUninit::<GitPackfileStream>::uninit();
-            // SAFETY: `stream` is writable; it is used in place.
-            let stream = unsafe { GitPackfileStream::open_in(stream.as_mut_ptr(), self, curpos) }?;
+            let stream = stream.as_mut_ptr();
+            // SAFETY: `stream` is writable, stays here, and is used only
+            // through the stream functions (by `git_delta_read_header_fromstream`
+            // too); the pack outlives it.
+            unsafe { GitPackfileStream::open_in(stream, self, curpos) }?;
             let mut base_size = 0;
             // SAFETY: an open stream; `git_delta_read_header_fromstream`
             // reads it with `git_packfile_stream_read` and keeps nothing.
@@ -1296,7 +1303,8 @@ impl GitPackFile {
                     stream,
                 )
             };
-            stream.dispose();
+            // SAFETY: the stream we opened, disposed once.
+            unsafe { GitPackfileStream::dispose(stream) };
             ErrorCode::check(r)?;
         } else {
             base_offset = 0;
@@ -1375,8 +1383,12 @@ impl GitPackFile {
         }
         let buf = Buf(data);
 
-        let mut z = Inflate(GitZstream::new());
-        if z.0.init(ZstreamKind::Inflate as c_int).is_err() {
+        let mut zs = GitZstream::new();
+        // SAFETY: `zs` is a local that, from here on, is reached only through
+        // `z` (and the guard's copy), on this thread, and not moved.
+        let z = unsafe { ZstreamPtr::new(&raw mut zs) };
+        let _free = FreeZstream(z);
+        if z.init(ZstreamKind::Inflate as c_int).is_err() {
             return Err(git_error_set!(
                 ErrorClass::ZLIB,
                 "failed to init zlib stream on unpack"
@@ -1390,17 +1402,15 @@ impl GitPackFile {
                 return Err(ErrorCode::GENERIC);
             };
             let window_len = input.len();
-            z.0.set_input_raw(input.as_ptr().cast(), window_len);
+            z.set_input(input.as_ptr().cast(), window_len);
             // SAFETY: the input is the window the cursor holds, mapped and
             // unwritten for the call; `data + total` has `bytes` writable
             // bytes (`total + bytes == buffer_len`), distinct from the input
             // and the stream.
-            let r = unsafe {
-                z.0.get_output_chunk(data.as_ptr().wrapping_add(total), &mut bytes)
-            };
+            let r = unsafe { z.get_output_chunk(data.as_ptr().wrapping_add(total), &mut bytes) };
             cursor.close();
             r?;
-            let consumed = window_len - z.0.in_len();
+            let consumed = window_len - z.in_len();
             if bytes == 0 && consumed == 0 {
                 return Err(git_error_set!(
                     ErrorClass::ZLIB,
@@ -1409,12 +1419,12 @@ impl GitPackFile {
             }
             *position += consumed as i64;
             total += bytes;
-            if z.0.eos() {
+            if z.eos() {
                 break;
             }
         }
 
-        if total != size || !z.0.eos() {
+        if total != size || !z.eos() {
             return Err(git_error_set!(
                 ErrorClass::ZLIB,
                 "error inflating zlib stream"
@@ -1778,7 +1788,9 @@ pub unsafe fn packfile_free(p: *mut GitPackFile, unlink_packfile: bool) {
         let _ = mwindow::free_all(&pack.mwf);
         let fd = pack.mwf.fd();
         if fd >= 0 {
-            let _ = posix::close(fd);
+            // SAFETY: the pack's own descriptor, closed once (and set to -1),
+            // with the pack's lock held and the pack ours alone.
+            let _ = unsafe { posix::close(fd) };
             pack.mwf.set_fd(-1);
         }
     }
@@ -1811,18 +1823,16 @@ pub struct GitPackfileStream {
 }
 
 impl GitPackfileStream {
-    /// `git_packfile_stream_open`: initialize the stream at `obj` in place
-    /// (zlib's state points back to it), to inflate from `curpos` of `p`.
+    /// `git_packfile_stream_open`: initialize the stream at `obj` in place,
+    /// to inflate from `curpos` of `p`.
     ///
     /// # Safety
     ///
-    /// `obj` is writable for a stream, and stays at its address until
-    /// [`dispose`](Self::dispose); `p` outlives the stream.
-    pub unsafe fn open_in<'a>(
-        obj: *mut GitPackfileStream,
-        p: &GitPackFile,
-        curpos: i64,
-    ) -> Result<&'a mut GitPackfileStream> {
+    /// `obj` is writable for a stream; until [`dispose`](Self::dispose) it
+    /// stays at its address and is used only through these functions (and
+    /// C's reads of `curpos` and `done`), by one thread at a time; `p`
+    /// outlives it.
+    pub unsafe fn open_in(obj: *mut GitPackfileStream, p: &GitPackFile, curpos: i64) -> Result<()> {
         // SAFETY: writable (the caller); C's `memset` then the fields.
         unsafe {
             obj.write(GitPackfileStream {
@@ -1833,60 +1843,96 @@ impl GitPackfileStream {
                 mw: ptr::null_mut(),
             })
         };
-        // SAFETY: initialized just above; the caller's for `'a`.
-        let s = unsafe { &mut *obj };
-        if s.zstream.init(ZstreamKind::Inflate as c_int).is_err() {
+        // SAFETY: the stream's zlib stream, reached only through stream
+        // functions (the caller's contract).
+        let z = unsafe { Self::z(obj) };
+        if z.init(ZstreamKind::Inflate as c_int).is_err() {
             return Err(git_error_set!(
                 ErrorClass::ZLIB,
                 "failed to init packfile stream"
             ));
         }
-        Ok(s)
+        Ok(())
     }
 
-    /// `git_packfile_stream_read`: inflate into `buffer`; the bytes
-    /// written, 0 at the end, `GIT_EBUFS` if more input is needed (or the
-    /// window cannot be opened), -1 on a zlib error.
-    pub fn read(&mut self, buffer: &mut [core::mem::MaybeUninit<u8>]) -> isize {
-        if self.done != 0 {
+    /// The zlib stream of a stream.
+    ///
+    /// # Safety
+    ///
+    /// `obj` is a stream as [`open_in`](Self::open_in) states.
+    unsafe fn z<'a>(obj: *mut GitPackfileStream) -> ZstreamPtr<'a> {
+        // SAFETY: a field's place, no reference (`obj` is valid).
+        let zs = unsafe { &raw mut (*obj).zstream };
+        // SAFETY: the zlib stream is reached only through such pointers, by
+        // one thread at a time, and stays put (the caller's contract).
+        unsafe { ZstreamPtr::new(zs) }
+    }
+
+    /// `git_packfile_stream_read`: inflate into `buffer` (`len` writable
+    /// bytes); the bytes written, 0 at the end, `GIT_EBUFS` if more input is
+    /// needed (or the window cannot be opened), -1 on a zlib error.
+    ///
+    /// # Safety
+    ///
+    /// `obj` is an open stream (as [`open_in`](Self::open_in) states);
+    /// `buffer` is writable for `len` bytes and overlaps neither the stream
+    /// nor the pack.
+    pub unsafe fn read(obj: *mut GitPackfileStream, buffer: *mut u8, len: usize) -> isize {
+        // SAFETY: an open stream; fields are read and written as places.
+        if unsafe { (*obj).done } != 0 {
             return 0;
         }
+        // SAFETY: as above.
+        let p = unsafe { (*obj).p };
         // SAFETY: `p` outlives the stream (`open_in`'s contract).
-        let p = unsafe { &*self.p };
-        // SAFETY: `mw` is this stream's cursor: NULL or a held window.
-        let cursor = unsafe { Cursor::from_raw_mut(&raw mut self.mw) };
-        let Some(input) = p.window_open(cursor, self.curpos) else {
+        let p = unsafe { &*p };
+        // SAFETY: as above: a field's place.
+        let mw = unsafe { &raw mut (*obj).mw };
+        // SAFETY: `mw` is this stream's cursor (NULL or a held window), used
+        // only here for the call.
+        let cursor = unsafe { Cursor::from_raw_mut(mw) };
+        // SAFETY: as above.
+        let curpos = unsafe { (*obj).curpos };
+        let Some(input) = p.window_open(cursor, curpos) else {
             return ErrorCode::BUFS.raw() as isize;
         };
+        // SAFETY: an open stream.
+        let z = unsafe { Self::z(obj) };
         let window_len = input.len();
-        self.zstream
-            .set_input_raw(input.as_ptr().cast(), window_len);
-        let mut len = buffer.len();
-        // SAFETY: the input is the window the cursor holds, for the call;
-        // `buffer` is writable for `len` bytes and distinct from both.
-        let r = unsafe {
-            self.zstream
-                .get_output_chunk(buffer.as_mut_ptr().cast(), &mut len)
-        };
+        z.set_input(input.as_ptr().cast(), window_len);
+        let mut len = len;
+        // SAFETY: the input is the window the cursor holds, mapped for the
+        // call; `buffer` is writable for `len` bytes and distinct from both.
+        let r = unsafe { z.get_output_chunk(buffer, &mut len) };
         cursor.close();
         if r.is_err() {
             let _ = git_error_set!(ErrorClass::ZLIB, "error reading from the zlib stream");
             return -1;
         }
-        self.curpos += (window_len - self.zstream.in_len()) as i64;
-        if self.zstream.eos() {
-            self.done = 1;
+        let eos = z.eos();
+        // SAFETY: an open stream, as above.
+        unsafe {
+            (*obj).curpos = curpos + (window_len - z.in_len()) as i64;
+        }
+        if eos {
+            // SAFETY: as above.
+            unsafe { (*obj).done = 1 };
         }
         // If we wrote nothing but are not done, we need more data.
-        if len == 0 && !self.zstream.eos() {
+        if len == 0 && !eos {
             return ErrorCode::BUFS.raw() as isize;
         }
         len as isize
     }
 
     /// `git_packfile_stream_dispose`.
-    pub fn dispose(&mut self) {
-        self.zstream.free();
+    ///
+    /// # Safety
+    ///
+    /// `obj` is an open stream, disposed once.
+    pub unsafe fn dispose(obj: *mut GitPackfileStream) {
+        // SAFETY: an open stream.
+        unsafe { Self::z(obj) }.free();
     }
 }
 
@@ -2414,21 +2460,8 @@ pub mod ffi {
         len: usize,
     ) -> isize {
         barrier(|| {
-            // SAFETY: an open stream (the caller), used only here.
-            let s = unsafe { &mut *obj };
-            let buf = if len == 0 {
-                &mut [][..]
-            } else {
-                // SAFETY: writable for `len` bytes (the caller), maybe
-                // uninitialized.
-                unsafe {
-                    core::slice::from_raw_parts_mut(
-                        buffer.cast::<core::mem::MaybeUninit<u8>>(),
-                        len,
-                    )
-                }
-            };
-            s.read(buf)
+            // SAFETY: the caller's contract is `read`'s.
+            unsafe { GitPackfileStream::read(obj, buffer.cast(), len) }
         })
     }
 
@@ -2439,8 +2472,8 @@ pub mod ffi {
     /// `obj` is an open stream, disposed once.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_packfile_stream_dispose(obj: *mut GitPackfileStream) {
-        // SAFETY: the caller's contract.
-        barrier(|| unsafe { &mut *obj }.dispose())
+        // SAFETY: the caller's contract is `dispose`'s.
+        barrier(|| unsafe { GitPackfileStream::dispose(obj) })
     }
 
     /// `git_pack_entry_find`.
@@ -2544,3 +2577,337 @@ crate::c_layout_test! {
 }
 
 const _: () = assert!(size_of::<PackOidMap>() == 40 && align_of::<PackOidMap>() == 8);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An index (v1 or v2) over sorted `ids` with `offsets`, as git writes
+    /// it: v2 puts offsets of 2^31 and up in the 64-bit table.
+    pub(crate) fn build_index(version: u32, ids: &[Vec<u8>], offsets: &[u64]) -> Vec<u8> {
+        let oid_size = ids.first().map_or(20, Vec::len);
+        let mut fan = [0u32; 256];
+        for id in ids {
+            for f in &mut fan[id[0] as usize..] {
+                *f += 1;
+            }
+        }
+        let mut out = Vec::new();
+        if version == 2 {
+            out.extend_from_slice(&PACK_IDX_SIGNATURE.to_be_bytes());
+            out.extend_from_slice(&2u32.to_be_bytes());
+        }
+        for f in fan {
+            out.extend_from_slice(&f.to_be_bytes());
+        }
+        if version == 1 {
+            for (id, &off) in ids.iter().zip(offsets) {
+                out.extend_from_slice(&(off as u32).to_be_bytes());
+                out.extend_from_slice(id);
+            }
+        } else {
+            for id in ids {
+                out.extend_from_slice(id);
+            }
+            for i in 0..ids.len() {
+                out.extend_from_slice(&(i as u32 * 7).to_be_bytes()); // crc
+            }
+            let mut large = Vec::new();
+            for &off in offsets {
+                if off >= 0x8000_0000 {
+                    out.extend_from_slice(&(0x8000_0000 | (large.len() / 8) as u32).to_be_bytes());
+                    large.extend_from_slice(&off.to_be_bytes());
+                } else {
+                    out.extend_from_slice(&(off as u32).to_be_bytes());
+                }
+            }
+            out.extend_from_slice(&large);
+        }
+        out.extend(core::iter::repeat_n(0xab, 2 * oid_size));
+        out
+    }
+
+    fn ids(n: usize, size: usize) -> Vec<Vec<u8>> {
+        let mut v: Vec<Vec<u8>> = (0..n)
+            .map(|i| {
+                let mut id = vec![0u8; size];
+                let x = (i as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+                id[..8].copy_from_slice(&x.to_be_bytes());
+                id[size - 1] = i as u8;
+                id
+            })
+            .collect();
+        v.sort();
+        v
+    }
+
+    fn key(id: &[u8]) -> [u8; GIT_OID_MAX_SIZE] {
+        let mut k = [0u8; GIT_OID_MAX_SIZE];
+        k[..id.len()].copy_from_slice(id);
+        k
+    }
+
+    #[test]
+    fn parse_checks_version_fanout_and_size() {
+        let ids = ids(10, 20);
+        let offs: Vec<u64> = (0..10).map(|i| 12 + i * 100).collect();
+        for v in [1, 2] {
+            let idx = build_index(v, &ids, &offs);
+            let view = IndexView::parse(&idx, 20).unwrap();
+            assert_eq!((view.version(), view.num_objects()), (v, 10));
+
+            let mut bad = idx.clone();
+            bad.push(0);
+            let want = if v == 1 { "index is corrupted" } else { "wrong index size" };
+            assert_eq!(IndexView::parse(&bad, 20).err(), Some(want));
+
+            let mut bad = idx.clone();
+            let fan = if v == 2 { 8 } else { 0 };
+            bad[fan + 4 * 100..fan + 4 * 101].copy_from_slice(&1000u32.to_be_bytes());
+            assert_eq!(IndexView::parse(&bad, 20).err(), Some("index is non-monotonic"));
+        }
+        let mut idx = build_index(2, &ids, &offs);
+        idx[7] = 3;
+        assert_eq!(IndexView::parse(&idx, 20).err(), Some("unsupported index version"));
+        // v2 allows a large-offset table of up to nr - 1 entries.
+        let mut idx = build_index(2, &ids, &offs);
+        let trailer = idx.split_off(idx.len() - 40);
+        idx.extend(core::iter::repeat_n(0, 9 * 8));
+        idx.extend_from_slice(&trailer);
+        assert!(IndexView::parse(&idx, 20).is_ok());
+        idx.extend_from_slice(&[0; 8]);
+        assert_eq!(IndexView::parse(&idx, 20).err(), Some("wrong index size"));
+    }
+
+    #[test]
+    fn lookup_finds_ids_and_prefixes() {
+        for (size, v) in [(20, 1), (20, 2), (32, 2), (32, 1)] {
+            let ids = ids(300, size);
+            let offs: Vec<u64> = (0..300).map(|i| 12 + i * 3).collect();
+            let idx = build_index(v, &ids, &offs);
+            let view = IndexView::parse(&idx, size).unwrap();
+            for (i, id) in ids.iter().enumerate() {
+                assert_eq!(view.lookup(&key(id), size * 2), Lookup::Found(i as u32));
+                assert_eq!(view.oid_at(i as u32), &id[..]);
+                assert_eq!(view.nth_offset(i as u32), offs[i] as i64);
+            }
+            // An absent full id.
+            let mut absent = ids[17].clone();
+            absent[size - 1] ^= 0xff;
+            assert_eq!(view.lookup(&key(&absent), size * 2), Lookup::NotFound);
+            // A unique prefix: the first 16 hex digits differ between ids.
+            let mut p = key(&ids[42]);
+            p[8..].fill(0);
+            assert_eq!(view.lookup(&p, 16), Lookup::Found(42));
+            // An odd-length prefix matches on the high nibble only.
+            let mut p = key(&ids[42]);
+            p[7] &= 0xf0;
+            p[8..].fill(0);
+            assert_eq!(view.lookup(&p, 15), Lookup::Found(42));
+            // A prefix shared by neighbours is ambiguous; a 1-digit one too.
+            let mut p = [0u8; GIT_OID_MAX_SIZE];
+            p[0] = ids[150][0] & 0xf0;
+            assert_eq!(view.lookup(&p, 1), Lookup::Ambiguous);
+        }
+    }
+
+    #[test]
+    fn large_offsets() {
+        let ids = ids(4, 20);
+        let offs = vec![12, 0x8000_0000, 0x1_2345_6789, 99];
+        let idx = build_index(2, &ids, &offs);
+        let view = IndexView::parse(&idx, 20).unwrap();
+        for (i, &o) in offs.iter().enumerate() {
+            assert_eq!(view.nth_offset(i as u32), o as i64);
+        }
+        let mut seen = Vec::new();
+        view.for_each_offset(
+            |id, off| {
+                seen.push((id.to_vec(), off));
+                Ok::<(), ()>(())
+            },
+            || (),
+        )
+        .unwrap();
+        assert_eq!(seen, ids.iter().cloned().zip(offs.iter().map(|&o| o as i64)).collect::<Vec<_>>());
+
+        // A large offset index past the table: -1 (C's `index >= end - 8`)
+        // and `invalid large offset` for the iteration.
+        let mut bad = idx.clone();
+        let at = 8 + 1024 + 4 * 24 + 4;
+        bad[at..at + 4].copy_from_slice(&0x8000_0005u32.to_be_bytes());
+        let view = IndexView::parse(&bad, 20).unwrap();
+        assert_eq!(view.nth_offset(1), -1);
+        assert_eq!(view.for_each_offset(|_, _| Ok(()), || "invalid"), Err("invalid"));
+        // A 64-bit offset with the top bit set is negative: C's callers call
+        // that corrupt.
+        let mut bad = idx;
+        let at = 8 + 1024 + 4 * 28;
+        bad[at..at + 8].copy_from_slice(&u64::MAX.to_be_bytes());
+        let view = IndexView::parse(&bad, 20).unwrap();
+        assert_eq!(view.nth_offset(1), -1);
+    }
+
+    #[test]
+    fn pack_order_is_a_stable_sort_by_offset() {
+        let ids = ids(6, 20);
+        let offs = vec![500, 12, 300, 12, 0x9000_0000, 40];
+        for v in [1, 2] {
+            let offs = if v == 1 { vec![500, 12, 300, 12, 7, 40] } else { offs.clone() };
+            let idx = build_index(v, &ids, &offs);
+            let view = IndexView::parse(&idx, 20).unwrap();
+            let pos = view.positions_by_offset();
+            // v2 sorts the 32-bit entries: a large offset sorts by its
+            // (MSB-set) table index, after every small one.
+            let want: Vec<u32> = if v == 1 { vec![4, 1, 3, 5, 2, 0] } else { vec![1, 3, 5, 2, 0, 4] };
+            assert_eq!(pos, want, "v{v}");
+        }
+    }
+
+    #[test]
+    fn lookup_id_is_cs() {
+        let table: Vec<u8> = (0u8..10).flat_map(|i| [i * 10, 0, 0]).collect();
+        assert_eq!(lookup_id(&table, 3, 0, 10, &[30, 0], 2), 3);
+        assert_eq!(lookup_id(&table, 3, 0, 10, &[31, 0], 2), -5);
+        assert_eq!(lookup_id(&table, 3, 0, 10, &[0, 0], 2), 0);
+        assert_eq!(lookup_id(&table, 3, 0, 10, &[255, 0], 2), -11);
+        assert_eq!(lookup_id(&table, 3, 4, 4, &[30, 0], 2), -5);
+        assert_eq!(lookup_id(&[], 3, 0, 0, &[1, 2], 2), -1);
+    }
+
+    #[test]
+    fn raw_ncmp_reads_what_c_reads() {
+        assert!(!raw_ncmp(&[0x12, 0x34], &[0x12, 0x3f], 3));
+        assert!(raw_ncmp(&[0x12, 0x34], &[0x12, 0x4f], 3));
+        assert!(!raw_ncmp(&[0x12], &[0x12], 2));
+        assert!(!raw_ncmp(&[], &[], 0));
+    }
+
+    #[test]
+    fn object_headers_round_trip() {
+        for &size in &[0usize, 1, 15, 16, 127, 128, 1 << 20, usize::MAX >> 4, usize::MAX] {
+            for kind in [GIT_OBJECT_COMMIT, GIT_OBJECT_BLOB, GIT_PACKFILE_REF_DELTA] {
+                let mut hdr = [0u8; 10];
+                let n = object_header(&mut hdr, size, kind).unwrap();
+                let h = unpack_header1(&hdr[..n]).unwrap();
+                assert_eq!((h.used, h.size, h.kind), (n, size, kind));
+            }
+        }
+        let _g = crate::util::test_support::init();
+        let mut hdr = [0u8; 10];
+        assert!(object_header(&mut hdr, 1, 0).is_err());
+        assert_eq!(
+            errors::last_message().unwrap(),
+            b"invalid argument: 'type >= GIT_OBJECT_COMMIT && type <= GIT_PACKFILE_REF_DELTA'"
+        );
+    }
+
+    #[test]
+    fn unpack_header1_errors() {
+        let _g = crate::util::test_support::init();
+        assert_eq!(unpack_header1(&[0x95, 0x80]), Err(ErrorCode::BUFS));
+        assert_eq!(errors::last_message().unwrap(), b"buffer too small");
+        assert_eq!(unpack_header1(&[]), Err(ErrorCode::BUFS));
+        // 4 + 9 * 7 = 67 bits: the tenth continuation byte is refused.
+        let long = [0xff; 12];
+        assert_eq!(unpack_header1(&long), Err(ErrorCode::GENERIC));
+        assert_eq!(errors::last_message().unwrap(), b"packfile corrupted");
+        // Nine continuations still decode (bits past 64 are lost, as C's
+        // `unsigned long`).
+        let mut ok = [0xffu8; 11];
+        ok[10] = 0x01;
+        assert!(unpack_header1(&ok[1..]).is_ok());
+    }
+
+    #[test]
+    fn ofs_distances() {
+        let _g = crate::util::test_support::init();
+        assert_eq!(decode_ofs(&[0x05]), Ok((5, 1)));
+        // One continuation: ((c0 & 127) + 1) << 7 + (c1 & 127).
+        assert_eq!(decode_ofs(&[0x80, 0x00]), Ok((128, 2)));
+        assert_eq!(decode_ofs(&[0x81, 0x7f]), Ok(((2 << 7) + 127, 2)));
+        assert_eq!(decode_ofs(&[0x81]), Err(ErrorCode::BUFS));
+        assert_eq!(decode_ofs(&[]), Err(ErrorCode::BUFS));
+        assert_eq!(decode_ofs(&[0xff; 20]), Err(ErrorCode::GENERIC));
+        assert_eq!(errors::last_message().unwrap(), b"invalid pack file - overflow");
+    }
+
+    #[test]
+    fn cycles_are_found() {
+        let _g = crate::util::test_support::init();
+        // A chain 100 -> 90 -> ... -> 10 -> 50 -> 40 -> ... loops.
+        let next = |o: i64| if o == 10 { 50 } else { o - 10 };
+        let mut c = CycleCheck::new(100);
+        let mut o = 100;
+        let mut steps = 0;
+        let r = loop {
+            o = next(o);
+            steps += 1;
+            if let Err(e) = c.step(o) {
+                break e;
+            }
+            assert!(steps < 100);
+        };
+        assert_eq!(r, ErrorCode::GENERIC);
+        assert_eq!(errors::last_message().unwrap(), b"invalid pack file - delta chain loops");
+        // A long chain that does not loop is not refused.
+        let mut c = CycleCheck::new(1_000_000);
+        for o in (0..1_000_000).rev() {
+            c.step(o).unwrap();
+        }
+    }
+
+    #[test]
+    fn chain_spills_to_the_heap() {
+        let _g = crate::util::test_support::init();
+        let mut c = Chain::new();
+        for i in 0..200 {
+            c.push(ChainElem {
+                base_key: i,
+                ..ChainElem::default()
+            })
+            .unwrap()
+            .offset = i * 2;
+            assert_eq!(chain_last(&mut c).base_key, i);
+        }
+        for i in 0..200 {
+            assert_eq!((c.get(i).base_key, c.get(i).offset), (i as i64, i as i64 * 2));
+        }
+    }
+
+    #[test]
+    fn base_cache_evicts_unused_entries() {
+        let _g = crate::util::test_support::init();
+        let cache = PackCache::new();
+        cache.lock().memory_limit = 100;
+        let big = GitBytes::copy_from(&[1; 2 * GIT_PACK_CACHE_SIZE_LIMIT]).unwrap();
+        assert!(cache.add(big, GIT_OBJECT_BLOB, 1).is_err());
+        let a = cache.add(GitBytes::copy_from(&[1; 40]).unwrap(), GIT_OBJECT_BLOB, 10).unwrap();
+        assert!(cache.add(GitBytes::copy_from(&[2; 40]).unwrap(), GIT_OBJECT_BLOB, 10).is_err());
+        let b = cache.add(GitBytes::copy_from(&[3; 40]).unwrap(), GIT_OBJECT_TREE, 20).unwrap();
+        drop(b);
+        // 120 > 100: the unused entry (20) goes, the used one (10) stays.
+        let c = cache.add(GitBytes::copy_from(&[4; 40]).unwrap(), GIT_OBJECT_TAG, 30).unwrap();
+        assert!(cache.get(20).is_none());
+        assert_eq!(cache.get(10).unwrap().data.as_bytes(), &[1; 40]);
+        // All in use and over the limit: added anyway (C loops forever).
+        let d = cache.add(GitBytes::copy_from(&[5; 40]).unwrap(), GIT_OBJECT_TAG, 40).unwrap();
+        assert_eq!(cache.lock().memory_used, 120);
+        assert_eq!(d.kind, GIT_OBJECT_TAG);
+        drop((a, c, d));
+    }
+
+    #[test]
+    fn git_bytes() {
+        let _g = crate::util::test_support::init();
+        let b = GitBytes::copy_from(b"abc").unwrap();
+        assert_eq!(b.as_bytes(), b"abc");
+        let (p, n) = b.into_raw();
+        // SAFETY: the buffer `into_raw` gave up: 3 bytes and a NUL.
+        let b = unsafe { GitBytes::from_raw(NonNull::new(p).unwrap(), n) };
+        // SAFETY: as above.
+        assert_eq!(unsafe { *p.add(3) }, 0);
+        assert!(!b.is_empty());
+        assert!(GitBytes::copy_from(b"").unwrap().is_empty());
+    }
+}

@@ -16,7 +16,7 @@ use core::ffi::{CStr, c_int, c_uint, c_void};
 
 use super::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
 use super::fs_path::{self, WalkStep, c_str, str_c_bytes, str_cpath, to_cstring};
-use super::integer::{alloc_add, is_sizet, is_ssizet};
+use super::integer::alloc_add;
 use super::posix::{self, Errno, GitMap, Stat, mode_t};
 use super::str::GitStr;
 use crate::git_error_set;
@@ -182,7 +182,8 @@ pub fn truncate(path: &CStr, mode: c_int) -> Result<()> {
     let flags = libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC | libc::O_CLOEXEC;
     let fd = posix::open(path, flags, mode as mode_t)
         .map_err(|Errno(e)| fs_path::set_error(e, path.to_bytes(), "open"))?;
-    let _ = posix::close(fd);
+    // SAFETY: a descriptor this code opened, closed once.
+    let _ = unsafe { posix::close(fd) };
     Ok(())
 }
 
@@ -218,7 +219,9 @@ pub fn canonical_mode(raw_mode: mode_t) -> mode_t {
 /// Read `len` bytes from `fd` into the room after the contents of `buf`
 /// (which has at least `len + 1` bytes of room); the count read, or -1.
 fn read_into_spare(buf: &mut GitStr, fd: c_int, len: usize) -> isize {
-    let spare = buf.spare_capacity_mut();
+    // SAFETY: the caller writes the NUL back (`readbuffer_fd`) before the
+    // string is read.
+    let spare = unsafe { buf.spare_with_nul_mut() };
     assert!(spare.len() > len, "room was made for the read");
     // SAFETY: `spare` is writable for more than `len` bytes; `read_raw`
     // writes at most `len` (it only initializes them).
@@ -228,9 +231,8 @@ fn read_into_spare(buf: &mut GitStr, fd: c_int, len: usize) -> isize {
 /// `git_futils_readbuffer_fd`: read exactly `len` bytes of `fd` into `buf`.
 pub fn readbuffer_fd(buf: &mut GitStr, fd: c_int, len: usize) -> Result<()> {
     buf.clear();
-    if !is_ssizet(len) {
-        return Err(git_error_set!(ErrorClass::INVALID, "read too large"));
-    }
+    // C's `git__is_ssizet(len)` check is always true on LP64: a huge `len`
+    // fails the size computation below, with the out-of-memory error.
     let alloc_len = alloc_add(len, 1)?;
     buf.grow(alloc_len)?;
     let start = buf.len();
@@ -252,7 +254,9 @@ pub fn readbuffer_fd(buf: &mut GitStr, fd: c_int, len: usize) -> Result<()> {
     }
     let n = read_size as usize;
     // C's `buf->ptr[read_size] = '\0'`: the room has `alloc_len > n` bytes.
-    buf.spare_capacity_mut()[n].write(0);
+    // SAFETY: the NUL is written here.
+    let spare = unsafe { buf.spare_with_nul_mut() };
+    spare[n].write(0);
     // SAFETY: owned (grown above); its first `start + n` bytes are
     // initialized (the old contents, empty, and what `read` wrote), and
     // `start + n < capacity` (followed by the NUL just written).
@@ -268,30 +272,31 @@ pub fn readbuffer_fd(buf: &mut GitStr, fd: c_int, len: usize) -> Result<()> {
 pub fn readbuffer_fd_full(buf: &mut GitStr, fd: c_int) -> Result<()> {
     const BLOCKSIZE: usize = 10240;
     let mut alloc_len = 0usize;
-    let mut data: Vec<u8> = Vec::new();
     buf.clear();
     loop {
         alloc_len = alloc_add(alloc_len, BLOCKSIZE)?;
         buf.grow(alloc_len)?;
-        let total = data.len();
-        data.try_reserve_exact(BLOCKSIZE)
-            .map_err(|_| errors::oom())?;
-        data.resize(total + BLOCKSIZE, 0);
-        let read_size = match posix::read(fd, &mut data[total..]) {
-            Ok(n) => n,
-            Err(_) => {
-                let _ = git_error_set!(ErrorClass::OS, "failed to read descriptor");
-                buf.dispose();
-                return Err(ErrorCode::GENERIC);
-            }
-        };
-        data.truncate(total + read_size);
-        if read_size < BLOCKSIZE {
+        let total = buf.len();
+        // Each block goes after the previous ones, straight into the
+        // string's room (`capacity >= alloc_len = total + BLOCKSIZE`).
+        let (p, room) = buf.spare_ptr();
+        assert!(room >= BLOCKSIZE, "room was made for the block");
+        // SAFETY: `p` is writable for `room >= BLOCKSIZE` bytes, and
+        // `read_raw` writes at most that many; the NUL it may overwrite is
+        // restored below before the string is read.
+        let read_size = unsafe { posix::read_raw(fd, p, BLOCKSIZE) };
+        let n = total + read_size as usize;
+        // SAFETY: owned; its first `n` bytes are the earlier blocks and what
+        // `read` just wrote, and `n <= alloc_len <= capacity` (a full block
+        // leaves the string without its NUL until the next growth, which
+        // writes it).
+        unsafe { buf.set_len(n) };
+        if (read_size as usize) < BLOCKSIZE {
             break;
         }
     }
-    // `data.len() < alloc_len <= capacity`: no further growth.
-    buf.put(&data)
+    // `size < alloc_len <= capacity`: the NUL fits without growing.
+    buf.terminate()
 }
 
 /// `git_futils_readbuffer_updated`: read `path` into `out`, unless its
@@ -312,17 +317,12 @@ pub fn readbuffer_updated(
         let _ = git_error_set!(ErrorClass::INVALID, "requested file is a directory");
         return Err(ErrorCode::NOT_FOUND);
     }
-    if !is_sizet(st.st_size.wrapping_add(1)) {
-        return Err(git_error_set!(
-            ErrorClass::OS,
-            "invalid regular file stat for '{}'",
-            Bytes(path.to_bytes())
-        ));
-    }
+    // (C's `git__is_sizet(st_size + 1)` check is always true on LP64.)
     let fd = open_ro(path)?;
     let mut buf = GitStr::new();
     let r = readbuffer_fd(&mut buf, fd, st.st_size as usize);
-    let _ = posix::close(fd);
+    // SAFETY: a descriptor this code opened, closed once.
+    let _ = unsafe { posix::close(fd) };
     if r.is_err() {
         return Err(ErrorCode::GENERIC);
     }
@@ -371,15 +371,18 @@ pub fn writebuffer(buf: &[u8], path: &CStr, flags: c_int, mode: mode_t) -> Resul
         .map_err(|_| git_error_set!(ErrorClass::OS, "could not open '{p}' for writing"))?;
     if posix::write(fd, buf).is_err() {
         let _ = git_error_set!(ErrorClass::OS, "could not write to '{p}'");
-        let _ = posix::close(fd);
+        // SAFETY: a descriptor this code opened, closed once.
+        let _ = unsafe { posix::close(fd) };
         return Err(ErrorCode::GENERIC);
     }
     if do_fsync && posix::fsync(fd).is_err() {
         let _ = git_error_set!(ErrorClass::OS, "could not fsync '{p}'");
-        let _ = posix::close(fd);
+        // SAFETY: a descriptor this code opened, closed once.
+        let _ = unsafe { posix::close(fd) };
         return Err(ErrorCode::GENERIC);
     }
-    if posix::close(fd).is_err() {
+    // SAFETY: a descriptor this code opened, closed once.
+    if unsafe { posix::close(fd) }.is_err() {
         return Err(git_error_set!(ErrorClass::OS, "error while closing '{p}'"));
     }
     if do_fsync && flags & libc::O_CREAT != 0 {
@@ -414,16 +417,11 @@ pub fn mmap_ro_file(path: &CStr) -> Result<GitMap> {
     let fd = open_ro(path)?;
     let r = (|| {
         let len = filesize(fd)?;
-        if !is_sizet(len as i64) || len > usize::MAX as u64 {
-            return Err(git_error_set!(
-                ErrorClass::OS,
-                "file `{}` too large to mmap",
-                Bytes(path.to_bytes())
-            ));
-        }
+        // (C's `git__is_sizet(len)` check is always true on LP64.)
         mmap_ro(fd, 0, len as usize)
     })();
-    let _ = posix::close(fd);
+    // SAFETY: a descriptor this code opened, closed once.
+    let _ = unsafe { posix::close(fd) };
     r
 }
 
@@ -629,14 +627,14 @@ fn mkdir_with(path: &[u8], mode: mode_t, mut flags: u32, opts: &mut MkdirOpts<'_
         }
     }
     if depth == 0 {
-        let p = str_cpath(&make_path).into_owned();
+        let p = str_cpath(&make_path);
         validate_dir(&p, &mut st, mode, flags, opts)?;
         return validate_mode(&p, &st, true, mode, flags, opts);
     }
     flags &= !(GIT_MKDIR_SKIP_LAST2 | GIT_MKDIR_SKIP_LAST);
-    let rel = make_path.as_bytes()[relative.min(make_path.len())..].to_vec();
-    let base = (!parent_path.is_empty()).then(|| str_c_bytes(&parent_path).to_vec());
-    mkdir_relative(&rel, base.as_deref(), mode, flags, opts)
+    let rel = &make_path.as_bytes()[relative.min(make_path.len())..];
+    let base = (!parent_path.is_empty()).then(|| str_c_bytes(&parent_path));
+    mkdir_relative(rel, base, mode, flags, opts)
 }
 
 /// `git_futils_mkdir_r`.
@@ -693,7 +691,7 @@ pub fn mkdir_relative(
         if tail < size {
             make_path.as_mut_bytes()[tail] = 0;
         }
-        let r = mkdir_component(&mut make_path, &mut st, lastch, mode, flags, opts);
+        let r = mkdir_component(&make_path, &mut st, lastch, mode, flags, opts);
         if tail < size {
             make_path.as_mut_bytes()[tail] = lastch;
         }
@@ -717,14 +715,14 @@ pub fn mkdir_relative(
 /// One step of `mkdir_relative`'s walk: `make_path` is cut (by a NUL) at
 /// the component to make.
 fn mkdir_component(
-    make_path: &mut GitStr,
+    make_path: &GitStr,
     st: &mut Stat,
     lastch: u8,
     mode: mode_t,
     flags: u32,
     opts: &mut MkdirOpts<'_>,
 ) -> Result<()> {
-    let p = str_cpath(make_path).into_owned();
+    let p = str_cpath(make_path);
     st.st_mode = 0;
     if let Some(cache) = opts.cache.as_deref_mut()
         && cache.contains(&p)
@@ -944,7 +942,8 @@ pub fn rmdir_r(path: &[u8], base: Option<&[u8]>, flags: u32) -> Result<()> {
 pub fn fake_symlink(target: &[u8], path: &CStr) -> Result<()> {
     let fd = creat_withpath(path, 0o755, 0o644).map_err(|_| ErrorCode::GENERIC)?;
     let r = posix::write(fd, c_str(target));
-    let _ = posix::close(fd);
+    // SAFETY: a descriptor this code opened, closed once.
+    let _ = unsafe { posix::close(fd) };
     r.map_err(|_| ErrorCode::GENERIC)
 }
 
@@ -981,8 +980,10 @@ fn cp_by_fd(ifd: c_int, ofd: c_int, close_fd_when_done: bool) -> Result<()> {
         error
     };
     if close_fd_when_done {
-        let _ = posix::close(ifd);
-        let _ = posix::close(ofd);
+        // SAFETY: a descriptor this code opened, closed once.
+        let _ = unsafe { posix::close(ifd) };
+        // SAFETY: a descriptor this code opened, closed once.
+        let _ = unsafe { posix::close(ofd) };
     }
     r
 }
@@ -994,7 +995,8 @@ pub fn cp(from: &CStr, to: &CStr, filemode: mode_t) -> Result<()> {
     let ofd = match posix::open(to, libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL, filemode) {
         Ok(fd) => fd,
         Err(_) => {
-            let _ = posix::close(ifd);
+            // SAFETY: a descriptor this code opened, closed once.
+            let _ = unsafe { posix::close(ifd) };
             return Err(fs_path::set_error(
                 errors::errno(),
                 to.to_bytes(),
@@ -1259,7 +1261,8 @@ pub fn fsync_dir(path: &CStr) -> Result<()> {
         .map_err(|_| git_error_set!(ErrorClass::OS, "failed to open directory '{p}' for fsync"))?;
     let r = posix::fsync(fd)
         .map_err(|_| git_error_set!(ErrorClass::OS, "failed to fsync directory '{p}'"));
-    let _ = posix::close(fd);
+    // SAFETY: a descriptor this code opened, closed once.
+    let _ = unsafe { posix::close(fd) };
     r
 }
 
@@ -1295,4 +1298,77 @@ crate::c_layout_test! {
         "GIT_CPDIR_SIMPLE_TO_MODE == 32", "GIT_CPDIR_LINK_FILES == 64",
         "O_FSYNC == 04010000", "GIT_BUFSIZE_FILEIO == 65536",
     ],
+}
+
+#[cfg(test)]
+mod tests {
+    //! What runs without a filesystem (and so under Miri); the rest is in
+    //! `tests/util_fs.rs` and `rust/difftest/fs_diff.c`.
+    use super::*;
+    use crate::util::test_support;
+
+    #[test]
+    fn canonical_modes() {
+        assert_eq!(canonical_mode(0o100644), 0o100644);
+        assert_eq!(canonical_mode(0o100755), 0o100755);
+        assert_eq!(canonical_mode(0o100600), 0o100644);
+        assert_eq!(canonical_mode(0o100700), 0o100755);
+        assert_eq!(canonical_mode(0o120777), 0o120000);
+        assert_eq!(canonical_mode(0o160000), 0o160000);
+        assert_eq!(canonical_mode(0o040755), 0o040000);
+        assert_eq!(canonical_mode(0o010644), 0);
+        assert_eq!(
+            (perms_canonical(0o700), perms_for_write(0o644)),
+            (0o755, 0o666)
+        );
+    }
+
+    #[test]
+    fn filestamps() {
+        // SAFETY: `struct stat` is plain integers.
+        let mut st: Stat = unsafe { core::mem::zeroed() };
+        st.st_mtime = 7;
+        st.st_mtime_nsec = 9;
+        st.st_size = 42;
+        st.st_ino = (1u64 << 33) | 5;
+        let s = Filestamp::from_stat(&st);
+        assert_eq!(
+            s,
+            Filestamp {
+                mtime: Timespec {
+                    tv_sec: 7,
+                    tv_nsec: 9
+                },
+                size: 42,
+                ino: 5,
+            }
+        );
+        let mut t = Filestamp::default();
+        filestamp_set(&mut t, Some(&s));
+        assert_eq!(t, s);
+        filestamp_set(&mut t, None);
+        assert_eq!(t, Filestamp::default());
+        assert_eq!(filestamp_check(None, c"/nonexistent"), 1);
+    }
+
+    #[test]
+    fn mkdir_paths_that_need_no_system_call() {
+        let _g = test_support::init();
+        assert_eq!(mkdir(b"", 0o755, GIT_MKDIR_PATH), Err(ErrorCode::GENERIC));
+        assert!(
+            errors::last_message()
+                .unwrap()
+                .starts_with(b"attempt to create empty path")
+        );
+        // The root (or a path that SKIP_LAST trims to it): nothing to make.
+        assert_eq!(mkdir(b"/", 0o755, GIT_MKDIR_PATH), Ok(()));
+        assert_eq!(mkdir(b"///", 0o755, 0), Ok(()));
+        assert_eq!(mkdir(b"/x", 0o755, GIT_MKDIR_SKIP_LAST), Ok(()));
+        let mut o = MkdirOpts::default();
+        assert_eq!(
+            mkdir_relative(b"", Some(b"/"), 0o755, GIT_MKDIR_PATH, &mut o),
+            Ok(())
+        );
+        assert_eq!(o.perfdata, MkdirPerfdata::default());
+    }
 }

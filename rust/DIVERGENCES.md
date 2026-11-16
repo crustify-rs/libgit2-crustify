@@ -117,9 +117,8 @@ One entry per difference: component, what differs, why.
   nothing (as both C backends of this configuration).
 - **hash: the backends.** SHA-1 is the `sha1collisiondetection` crate (a
   Rust port of sha1dc, same defaults: safe hash, unavoidable bit conditions,
-  collision detection); SHA-256 is a Rust implementation
-  (`util/hash/sha256.rs`, with an AVX2/BMI path chosen at run time) instead
-  of OpenSSL's `SHA256_*`. Digests, the collision error and the "safe"
+  collision detection); SHA-256 is OpenSSL's `SHA256_*`, as the C's, with
+  `SHA256_CTX` held in place. Digests, the collision error and the "safe"
   digest written on a collision are the C's (rust/difftest/hash_diff.c).
   `git_hash_sha1_*`/`git_hash_sha256_*` are not exported: nothing outside
   `hash.c` called them.
@@ -129,7 +128,12 @@ One entry per difference: component, what differs, why.
   bytes are unchanged. Return codes and messages are zlib's
   (rust/difftest/zstream_diff.c: valid, truncated and corrupted streams).
   zlib-rs allocates its state with Rust's allocator where zlib used
-  `malloc`; neither used `git__allocator`.
+  `malloc`; neither used `git__allocator`. zlib (1.2.9+) rejected a stream
+  that was copied or moved after `inflateInit` (`inflateStateCheck`: its
+  state points back to the stream) with `Z_STREAM_ERROR`; zlib-rs keeps no
+  such pointer and accepts it, so freeing both copies of a copied inflate
+  `git_zstream` frees its state twice. No C that stays copies or moves an
+  initialized `git_zstream`; `git_zstream_init`'s contract forbids it.
 - **rand: the state** is a `std::sync::Mutex` instead of a `git_mutex`, so
   no shutdown callback is registered to free it (one fewer of the
   runtime's 32 slots). Same sequences for the same seed. Under Miri (tests
@@ -171,8 +175,14 @@ One entry per difference: component, what differs, why.
   increments atomically; C's inline `p_fsync` (in the header, for the C
   that stays) still increments it non-atomically, as before.
 - **posix: `p_write` of more than `isize::MAX` bytes** fails with `EINVAL`
-  before any system call, as `p_read` does in C (no buffer can be that
-  large).
+  before any system call (the Rust makes a slice of the bytes, and no
+  buffer can be that large); C called `write(2)`. `p_read`, `read_raw`,
+  `git_futils_readbuffer_fd` and the other `git__is_ssizet`/`git__is_sizet`
+  checks are the C's (always true on LP64: a huge length fails later, as in
+  C, e.g. `readbuffer_fd(…, SIZE_MAX)` with the out-of-memory error).
+- **posix: `p_mmap` failure** leaves `out->data` NULL (and `len` 0); C left
+  `MAP_FAILED` in `data`. Same code and message; no caller reads `data`
+  after a failure.
 - **filebuf: the write buffer is zeroed** (`git__calloc`; C used
   `git__malloc`), so that its bytes are always initialized for the Rust
   (`git_filebuf_reserve` hands out bytes that are flushed as they are). No
@@ -190,17 +200,25 @@ One entry per difference: component, what differs, why.
   (`GIT_PATH_MAX + 1`; C grew a `git_str` to that size), and the APPEND copy
   and `git_futils_cp` use a heap buffer of `GIT_BUFSIZE_FILEIO` (C: the
   stack), with an out-of-memory error if it cannot be had.
-- **futils: `git_futils_readbuffer_fd_full`** reads into a Rust buffer and
-  copies the result into the `git_str` (which grows as the C's did).
-- **futils: the mkdir path cache** (`cache_pool` + `cache_pathset` of
-  `struct git_futils_mkdir_options`, which `checkout.c` owns) is read and
-  extended through out-of-line copies of `hashmap_str.h`'s inline
-  functions (`git_hashset_str__contains`, `git_hashset_str__add`, shims in
-  `rust_shims.c`), so that the set stays exactly the C's.
-- **fs_path / futils: arguments that alias the output `git_str`**
-  (`git_fs_path_dirname_r(&b, b.ptr)`, `git_fs_path_prettify(&b, b.ptr,
-  …)`, …) are copied before the string is written; the results are the
-  C's. A `git_str` that borrows its buffer is not written in place
+- **fs_path / futils: arguments that alias the output `git_str`** are
+  copied before the string is written. Where C's result did not depend on
+  the aliasing (`git_fs_path_dirname_r(&b, b.ptr)`, `basename_r`,
+  `normalize_slashes`, `fromurl`, `mktmp(&b, b.ptr)`, the `git_str_set`
+  of the C idioms) the results are the C's. Where C asserted or read
+  memory it had just overwritten, the Rust gives the result of the
+  unaliased call instead:
+
+  | call | C | Rust |
+  |---|---|---|
+  | `join_unrooted(&b, b.ptr, "/base")` | -1, `invalid argument: 'str_b < buf->ptr \|\| str_b >= buf->ptr + buf->size'` | 0, the join, root 5 |
+  | `join_unrooted(&b, "rel", b.ptr)` | root = `strlen` of the result's start | root = the base's length |
+  | `prettify(&b, b.ptr, base)` (relative `b`) | -1, the same assertion | the prettified join |
+  | `apply_relative(&b, b.ptr + n)` | 1, the same assertion | the applied path |
+  | `git__percent_decode(&b, b.ptr)` | 0, empty (cleared before read) | the decoded input |
+  | `find_executable(&b, b.ptr)` | `GIT_ENOTFOUND` (cleared before use) | the lookup of the name |
+  | `contains*(&dir, <ptr into dir>)` | false (the assertion) | the real check |
+
+  No caller in the tree aliases these. A `git_str` that borrows its buffer is not written in place
   (`git_fs_path_resolve_relative` and `squash_slashes` copy it into an
   owned buffer first, or leave it), as in the foundation.
 - **fs_path: `git_fs_path_walk_up`'s callback** gets the path truncated in
@@ -210,6 +228,20 @@ One entry per difference: component, what differs, why.
   exactly `size` bytes (C read `ptr[size]` too, before testing the length).
 - **fs_path / futils: NULL path arguments** that C passed to the system
   (and crashed on, or got `EFAULT`) are read as `""` by the exports.
+- **fs_path: `git_fs_path_set_error`** prints the action's bytes as they
+  are (`errors::Bytes`).
+- **futils: the mkdir path cache** (checkout's `cache_pool` and
+  `cache_pathset`) is used through u1's `GitPool` and `GitHashSetStr`, the
+  Rust ports of those C types.
+- **Allocations where C had none** (Rust's allocator; an out-of-memory
+  aborts instead of failing): one `CString` per entry in `rmdir_r`'s walk
+  and in `cp_r` (the paths are rewritten during the walks), a copy of
+  `mktmp`'s filename (it may lie in the output), and `CString`s of the
+  `fs` API's paths. Directory iteration, `mkdir`, `filebuf` and
+  `resolve_symlink` borrow their paths.
+- **`libgit2_rs::fs` (the safe API) refuses paths with a NUL byte** (class
+  `INVALID`, "path contains a NUL byte", or `false`), as `std` does; the
+  exports read C strings up to their NUL, as C.
 ## u1 (pool, pqueue, utf8, varint, strlist, hashmap, oid, oidarray, parse)
 
 - **oid: `git_oid_tostr_s`'s buffer** is a 65-byte Rust thread-local (no
@@ -237,3 +269,44 @@ One entry per difference: component, what differs, why.
   where the C would read past the end of the buffer (`git_utf8_iterate`
   with `str_len == 0`, `git_decode_varint` on a truncated varint). The
   exports read exactly what the C read.
+
+## Pack (WP l-pack: pack, mwindow, odb_pack)
+
+- **pack: `struct git_pack_file` is a shared prefix** (`pack.h` under
+  `GIT_RUST`): `mwf`, `refcount`, `has_cache` (an `unsigned int`; C's was a
+  1-bit bitfield), `idx_cache`, and `pack_name`, now a `const char *` (it
+  was a flexible array). The rest is Rust's; `git_pack_cache` and its
+  entries are not C types any more. `git_mwindow` is opaque.
+- **pack: an unknown object id type** given to `git_packfile_alloc` (or the
+  pack backends' options) fails with `invalid oid type` (class
+  `GIT_ERROR_INVALID`); C went on with a hash size of 0.
+- **pack: locking.** The index is opened once under the pack's lock and is
+  immutable after: lookups, `git_pack_foreach_entry` and
+  `git_pack_foreach_entry_offset` read it without the lock (C held it for
+  each lookup, and held it across `foreach_entry_offset`'s callbacks, so a
+  callback that used the pack deadlocked). `pack_window_open` takes only
+  the file's lock when the file is open (C took the pack's too).
+- **pack: a window smaller than the hash size** (`GIT_OPT_SET_MWINDOW_SIZE`
+  below 40 or so): C read a `REF_DELTA`'s base id past the window's end
+  (within its page); the Rust returns `GIT_EBUFS` there.
+- **pack: the delta base cache** is a Rust map of reference-counted
+  entries. Eviction is C's (every entry not in use goes); C's `last_usage`,
+  which nothing read, is not kept. It and the packs live in Rust's
+  allocator, so `cl_alloc_limit` does not make `git_packfile_alloc` fail.
+- **pack: `git_packfile_free`** deregisters the file from the window list
+  even when its descriptor is closed (C only when it was open), so no
+  freed file can stay in the global list.
+- **mwindow: `git_mwindow__mutex`** is statically initialized; neither
+  `git_mwindow_global_init` nor the shutdown re-initializes or destroys it.
+- **odb_pack: the backend's state** (its packs, the multi-pack-index, the
+  last pack an object was found in) is behind a mutex, held for a lookup
+  or a read but never across `foreach`'s callback; `foreach` iterates a
+  snapshot, so a pack that a refresh from its callback adds is not
+  visited (see DEFECTS.md).
+- **odb_pack: tables refused.** A slot of a pack backend called while its
+  release is deferred (C freed it: a use after free) returns -1, `the pack
+  backend is being freed` (class `GIT_ERROR_ODB`; `exists` returns 0). A
+  writepack's `append`/`commit` called re-entrantly (from the indexer's
+  progress callback) or concurrently returns -1, `the writepack is in use`
+  (class `GIT_ERROR_INDEXER`). A panic in a slot returns -1 with
+  `GIT_ERROR_INTERNAL`.
