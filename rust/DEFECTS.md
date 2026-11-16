@@ -443,6 +443,135 @@ DIVERGENCES.md).
   than `line_len` wraps them and later reads run past the content.
 - Rust: advances by at most `line_len`.
 
+## Pack (WP l-pack: pack, mwindow, odb_pack)
+
+### pack: `git_pack_foreach_entry` lists wrong ids for SHA-256 packs
+- C: `src/libgit2/pack.c`, `git_pack_foreach_entry`: the ids in pack order
+  are `&index[5 * (current - off)]`, a stride of 20 bytes: right for SHA-1
+  only.
+- Trigger: `git_odb_foreach` (or the commit-graph writer) over a SHA-256
+  pack (`tests/resources/testrepo_256.git`): every id but the first is
+  made of the bytes of two neighbouring ids.
+- Rust: the stride is the hash size; the ids are the pack's.
+
+### pack: a cyclic `REF_DELTA` chain loops forever
+- C: `git_packfile_resolve_header` follows bases in a `while` loop, and
+  `pack_dependency_chain` pushes one element per base until it runs out of
+  memory, with no check that the chain ends.
+- Trigger: a pack whose `REF_DELTA` names itself (or a cycle of objects)
+  as its base: `git_odb_read` / `git_odb_read_header` of it never returns.
+- Rust: both walks check for a revisited offset (Brent's algorithm, O(1)
+  memory) and fail with `invalid pack file - delta chain loops` (class
+  `GIT_ERROR_ODB`, -1). Valid packs never revisit an object.
+
+### pack: reading a corrupted delta's header hangs or reads uninitialized memory
+- C: `git_packfile_resolve_header` reads a delta's result size with
+  `git_delta_read_header_fromstream` (`delta.c`), whose loop retries
+  `GIT_EBUFS` forever (the window cannot be opened, as when the data runs
+  into the pack's trailer, or zlib needs input it never gets), and adds a
+  failed read's -1 to its length, then parses its uninitialized 16-byte
+  buffer as if it were `SIZE_MAX` bytes long.
+- Trigger: `git_odb_read_header` of a delta whose deflated data is
+  corrupted ("incorrect header check"): C returns 0 with a size made of
+  stack garbage (`difftest/pack_diff.c`, case `t1/11/obj-ref-to`).
+- Rust: the pack reader reads the header bytes itself, with the same reads,
+  and parses them with `git_delta_read_header`; both cases fail with `error
+  reading from the zlib stream` (class `GIT_ERROR_ZLIB`, -1).
+
+### pack: a short pack file is checked against an uninitialized header
+- C: `packfile_open_locked` reads the 12-byte header into an
+  uninitialized `struct git_pack_header` and checks only for a failed read;
+  the trailing checksum is likewise read with `p_pread` into an
+  uninitialized buffer, checked only for `< 0`.
+- Trigger: a `.pack` shorter than 12 bytes (or truncated under the
+  index's checksum).
+- Rust: both buffers start zeroed, so a short read fails the signature or
+  checksum check: `invalid packfile '<name>'`, as for any bad header.
+
+### pack: `git_packfile_unpack` leaks a delta's base on a corrupted delta
+- C: when the base was not cached (too large, or already there) and the
+  delta's data cannot be inflated, `obj->data = NULL` drops the base, which
+  was the caller's to free.
+- Trigger: a delta against a base over 1 MiB whose deflated data is
+  corrupted.
+- Rust: the base is freed. On failure the out-object is left empty (C left
+  `obj->data` pointing at freed memory).
+
+### pack: the delta base cache loops forever when every entry is in use
+- C: `cache_add` runs `while (memory_used + len > memory_limit)
+  free_lowest_entry(cache)`, and `free_lowest_entry` frees only unused
+  entries: if all are in use, it never ends.
+- Trigger: more threads than 16 MiB / 1 MiB unpacking deltas of the same
+  pack at once, each holding a cached base of about 1 MiB.
+- Rust: eviction stops when a pass frees nothing; the cache then exceeds
+  its (soft) limit until the entries are released.
+
+### mwindow: `git_mwindow_open` returns a pointer outside the mapping
+- C: a new window is made for any offset and its containment is not
+  checked: for an offset at or past the end of the file (within the last
+  aligned window), or a small negative one, the pointer is outside the
+  mapping and `*left` wraps around.
+- Trigger: a corrupted index whose offset points past the end of the pack:
+  `git_packfile_unpack_header` (which, unlike `pack_window_open`, does no
+  bounds check) reads it: SIGSEGV (seen in `difftest/pack_diff.c`).
+- Rust: such an offset fails with `invalid pack window offset <off> (file
+  size <size>)` (class `GIT_ERROR_ODB`); `git_packfile_unpack_header` then
+  returns `GIT_EBUFS`, as for a window it cannot open. Offsets so far past
+  the end that the window cannot be mapped at all fail in `mmap`, as in C.
+
+### mwindow: a failed `git_mwindow_open` leaves the cursor on a released window
+- C: when the cursor's window does not hold the offset, its `inuse_cnt` is
+  decremented, and if opening the new window then fails, `*cursor` still
+  points at it: the caller's `git_mwindow_close` decrements it again
+  (`size_t` underflow; that window can never be freed or closed again).
+- Trigger: a cursor on a window, then a request for an offset whose window
+  cannot be mapped.
+- Rust: the cursor is cleared when its window is released.
+
+### mwindow: `mapped` keeps the length of a window that could not be mapped
+- C: `new_window_locked` adds the window's length to `ctl->mapped` before
+  mapping it and does not subtract it when both `mmap` attempts fail.
+- Trigger: an offset past the end of the pack (its "length" is negative,
+  cast to `size_t`): `mapped` becomes huge and from then on every new
+  window first closes every other one.
+- Rust: the length is subtracted again.
+
+### mwindow: a window size below 2 divides by zero
+- C: `new_window_locked` aligns offsets to `git_mwindow__window_size / 2`.
+- Trigger: `git_libgit2_opts(GIT_OPT_SET_MWINDOW_SIZE, 1)`, then any pack
+  read: SIGFPE.
+- Rust: the alignment is at least 1 byte; a window size of 0 then fails to
+  map (`p_mmap`'s argument check).
+
+### mwindow: the file limit closes descriptors of files that may be freed
+- C: `git_mwindow_file_register` picks the least recently used files under
+  `git_mwindow__mutex`, releases it, then locks each file and closes its
+  descriptor: a file whose pack is freed meanwhile (on another thread) is
+  locked and written after it is freed.
+- Trigger: `GIT_OPT_SET_MWINDOW_FILE_LIMIT` and repositories opened and
+  freed on several threads (`tests/libgit2/pack/threadsafety.c` runs this
+  pattern).
+- Rust: the descriptors are closed while the mutex is held (a file is
+  deregistered under the mutex before it is freed), taking each file's
+  lock with `try_lock` so that the lock order cannot deadlock; a file whose
+  lock is held (being read) keeps its descriptor, and the soft limit is
+  then exceeded by one.
+
+### odb_pack: `foreach` iterates state its callback may free
+- C: `pack_backend__foreach` iterates `backend->packs` and passes
+  `backend->midx` to `git_midx_foreach_entry` while calling the callback,
+  which may refresh the odb (a lookup of a missing object does):
+  `git_vector_insert` may reallocate the vector, and a changed
+  `multi-pack-index` is freed, under the iteration.
+- Trigger: a `git_odb_foreach` callback that reads an object which is not
+  there after a pack (or a new multi-pack-index) appeared.
+- Rust: `foreach` iterates a snapshot (references to the packs and to the
+  multi-pack-index), taken after its own refresh.
+
+### odb_pack: `writepack` leaks when the indexer cannot be made
+- C: `pack_backend__writepack` returns -1 without freeing the writepack
+  when `git_indexer_new` fails.
+- Rust: nothing leaks.
 ## repository, libgit2, settings (WP l-repo)
 
 ### repository: `git_repository_open_bare` and `git_repository_wrap_odb` leak on failure

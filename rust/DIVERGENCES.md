@@ -269,6 +269,47 @@ One entry per difference: component, what differs, why.
   where the C would read past the end of the buffer (`git_utf8_iterate`
   with `str_len == 0`, `git_decode_varint` on a truncated varint). The
   exports read exactly what the C read.
+
+## Pack (WP l-pack: pack, mwindow, odb_pack)
+
+- **pack: `struct git_pack_file` is a shared prefix** (`pack.h` under
+  `GIT_RUST`): `mwf`, `refcount`, `has_cache` (an `unsigned int`; C's was a
+  1-bit bitfield), `idx_cache`, and `pack_name`, now a `const char *` (it
+  was a flexible array). The rest is Rust's; `git_pack_cache` and its
+  entries are not C types any more. `git_mwindow` is opaque.
+- **pack: an unknown object id type** given to `git_packfile_alloc` (or the
+  pack backends' options) fails with `invalid oid type` (class
+  `GIT_ERROR_INVALID`); C went on with a hash size of 0.
+- **pack: locking.** The index is opened once under the pack's lock and is
+  immutable after: lookups, `git_pack_foreach_entry` and
+  `git_pack_foreach_entry_offset` read it without the lock (C held it for
+  each lookup, and held it across `foreach_entry_offset`'s callbacks, so a
+  callback that used the pack deadlocked). `pack_window_open` takes only
+  the file's lock when the file is open (C took the pack's too).
+- **pack: a window smaller than the hash size** (`GIT_OPT_SET_MWINDOW_SIZE`
+  below 40 or so): C read a `REF_DELTA`'s base id past the window's end
+  (within its page); the Rust returns `GIT_EBUFS` there.
+- **pack: the delta base cache** is a Rust map of reference-counted
+  entries. Eviction is C's (every entry not in use goes); C's `last_usage`,
+  which nothing read, is not kept. It and the packs live in Rust's
+  allocator, so `cl_alloc_limit` does not make `git_packfile_alloc` fail.
+- **pack: `git_packfile_free`** deregisters the file from the window list
+  even when its descriptor is closed (C only when it was open), so no
+  freed file can stay in the global list.
+- **mwindow: `git_mwindow__mutex`** is statically initialized; neither
+  `git_mwindow_global_init` nor the shutdown re-initializes or destroys it.
+- **odb_pack: the backend's state** (its packs, the multi-pack-index, the
+  last pack an object was found in) is behind a mutex, held for a lookup
+  or a read but never across `foreach`'s callback; `foreach` iterates a
+  snapshot, so a pack that a refresh from its callback adds is not
+  visited (see DEFECTS.md).
+- **odb_pack: tables refused.** A slot of a pack backend called while its
+  release is deferred (C freed it: a use after free) returns -1, `the pack
+  backend is being freed` (class `GIT_ERROR_ODB`; `exists` returns 0). A
+  writepack's `append`/`commit` called re-entrantly (from the indexer's
+  progress callback) or concurrently returns -1, `the writepack is in use`
+  (class `GIT_ERROR_INDEXER`). A panic in a slot returns -1 with
+  `GIT_ERROR_INTERNAL`.
 ## repository, libgit2, settings (WP l-repo)
 
 - **`git_libgit2_opts` is a C shim** (`src/util/rust_shims.c`): it reads each

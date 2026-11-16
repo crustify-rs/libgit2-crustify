@@ -12,6 +12,8 @@ use core::ffi::c_void;
 // ---------------------------------------------------------------------------
 
 use core::ffi::{c_char, c_int};
+use core::ffi::c_int;
+use core::sync::atomic::AtomicBool;
 
 // `git_odb_backend` holds a `git_odb *`, opaque to C (the Rust's).
 #[allow(improper_ctypes)]
@@ -25,6 +27,13 @@ unsafe extern "C" {
         objects_dir: *const c_char,
         opts: *const crate::odb::GitOdbBackendPackOptions,
     ) -> c_int;
+    /// `git_repository__configmap_lookup` (repository.c). PENDING(l-repo)
+    fn git_repository__configmap_lookup(out: *mut c_int, repo: *mut c_void, item: c_int) -> c_int;
+
+    /// `git_repository__fsync_gitdir` (repository.c; settings.c writes it).
+    /// PENDING(l-repo)
+    static git_repository__fsync_gitdir: AtomicBool;
+
 }
 
 /// Free a parsed object (`git_object__free`), PENDING(l-obj).
@@ -177,4 +186,28 @@ pub mod l_index {
         /// `git_tree_free` (`object_api.c`). PENDING(l-obj)
         pub fn git_tree_free(tree: *mut c_void);
     }
+/// `GIT_CONFIGMAP_FSYNCOBJECTFILES` (repository.h).
+pub const GIT_CONFIGMAP_FSYNCOBJECTFILES: c_int = 13;
+
+/// `git_repository__configmap_lookup(&out, repo, item)`, PENDING(l-repo).
+///
+/// # Safety
+///
+/// `repo` is a live `git_repository *`.
+pub unsafe fn repository_configmap_lookup(
+    repo: *mut c_void,
+    item: c_int,
+) -> crate::util::errors::Result<c_int> {
+    let mut out = 0;
+    // SAFETY: the caller's contract; `out` is writable.
+    let r = unsafe { git_repository__configmap_lookup(&raw mut out, repo, item) };
+    crate::util::errors::ErrorCode::check_zero(r).map(|()| out)
+}
+
+/// `git_repository__fsync_gitdir` (`GIT_OPT_ENABLE_FSYNC_GITDIR`),
+/// PENDING(l-repo).
+pub fn repository_fsync_gitdir() -> bool {
+    // SAFETY: a C `bool` global, read atomically (C writes it as a plain
+    // store; an atomic of the same size and alignment).
+    unsafe { &git_repository__fsync_gitdir }.load(core::sync::atomic::Ordering::Relaxed)
 }

@@ -1118,11 +1118,7 @@ pub mod ffi {
                 // SAFETY: `stream` is live (the caller); `buf` is writable
                 // for its length, and the stream writes at most that.
                 unsafe {
-                    crate::sys::pending::git_packfile_stream_read(
-                        stream,
-                        buf.as_mut_ptr().cast(),
-                        buf.len(),
-                    )
+                    crate::pack::GitPackfileStream::read(stream.cast(), buf.as_mut_ptr(), buf.len())
                 }
             };
             match read_header_from(&mut read) {

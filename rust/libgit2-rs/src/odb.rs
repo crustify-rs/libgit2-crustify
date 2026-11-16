@@ -1074,7 +1074,7 @@ impl GitOdb {
             return Err(ErrorCode::GENERIC);
         }
 
-        let packed = crate::sys::pending::odb_backend_pack(objects_dir, &pack_opts)
+        let packed = crate::odb_pack::backend_pack_raw(objects_dir, &pack_opts)
             .map_err(|_| ErrorCode::GENERIC)?;
         if self
             .add_backend_internal(

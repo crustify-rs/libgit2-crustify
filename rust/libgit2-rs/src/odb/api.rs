@@ -618,7 +618,7 @@ impl Backend {
             version: 1,
             oid_type: oid_type.raw(),
         };
-        crate::sys::pending::odb_backend_pack(&dir, &opts)
+        crate::odb_pack::backend_pack_raw(&dir, &opts)
             .map(Backend)
             .map_err(err)
     }

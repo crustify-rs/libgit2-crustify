@@ -78,6 +78,17 @@ impl GitMutex {
         }
     }
 
+    /// Lock if no one holds the mutex (`pthread_mutex_trylock`); `None` if
+    /// it is held, by another thread or by this one.
+    pub fn try_lock(&self) -> Option<GitMutexGuard<'_>> {
+        // SAFETY: as in `lock`.
+        let r = unsafe { libc::pthread_mutex_trylock(self.0.get()) };
+        (r == 0).then_some(GitMutexGuard {
+            m: self,
+            _not_send: core::marker::PhantomData,
+        })
+    }
+
     /// Lock as C's `git_mutex_lock` does: 0, or the pthread error. Pair it
     /// with [`raw_unlock`](Self::raw_unlock).
     ///

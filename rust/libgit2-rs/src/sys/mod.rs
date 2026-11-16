@@ -11,6 +11,7 @@ pub mod ignore;
 pub mod indexer;
 pub mod merge;
 pub mod merge_driver;
+pub mod midx;
 pub mod openssl;
 pub mod pack_objects;
 pub mod path;
