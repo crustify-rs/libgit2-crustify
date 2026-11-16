@@ -2053,7 +2053,9 @@ fn rename_entry(
 /// The exports of `config.c`.
 pub mod ffi {
     use super::*;
-    use crate::util::export::{barrier, cstr_bytes};
+    use crate::git_arg;
+    use crate::util::cabi::{CStrArg, Out};
+    use crate::util::export::barrier;
 
     /// A C string argument, borrowed for the call.
     ///
@@ -2066,34 +2068,13 @@ pub mod ffi {
     }
 
     /// A NULL-able C string argument as `%s` prints it.
-    ///
-    /// # Safety
-    ///
-    /// As [`c`].
-    unsafe fn or_null_c<'a>(p: *const c_char) -> &'a CStr {
-        // SAFETY: per the contract.
-        unsafe { c(p) }.unwrap_or(c"(null)")
-    }
-
-    /// The config at `p`.
-    ///
-    /// # Safety
-    ///
-    /// `p` is a live config, for `'a`.
-    unsafe fn cfg<'a>(p: *const GitConfig) -> &'a GitConfig {
-        // SAFETY: per the contract; `GitConfig` is `Sync` and only read
-        // through `&` (its state has interior mutability).
-        unsafe { &*p }
+    fn or_null(p: CStrArg<'_>) -> &CStr {
+        p.get().unwrap_or(c"(null)")
     }
 
     /// Write a new config to `out`.
-    ///
-    /// # Safety
-    ///
-    /// `out` is writable.
-    unsafe fn out_config(out: *mut *mut GitConfig, c: Box<GitConfig>) {
-        // SAFETY: per the contract.
-        unsafe { out.write(CShared::into_raw(CShared::from_box(c))) };
+    fn out_config(mut out: Out<'_, *mut GitConfig>, c: Box<GitConfig>) {
+        out.write(CShared::into_raw(CShared::from_box(c)));
     }
 
     /// `GIT_BUF_WRAP_PRIVATE`: run `f` on a `git_str` made from `buf`, and
@@ -2144,10 +2125,9 @@ pub mod ffi {
     ///
     /// `out` is writable.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_config_new(out: *mut *mut GitConfig) -> c_int {
+    pub unsafe extern "C" fn git_config_new(out: Out<'_, *mut GitConfig>) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            unsafe { out_config(out, GitConfig::new()) };
+            out_config(out, GitConfig::new());
             0
         })
     }
@@ -2160,19 +2140,15 @@ pub mod ffi {
     /// NULL or a live repository that outlives the backend.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_add_file_ondisk(
-        config: *mut GitConfig,
-        path: *const c_char,
+        config: Option<&GitConfig>,
+        path: CStrArg<'_>,
         level: c_int,
         repo: *const git_repository,
         force: c_int,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!config.is_null(), "config", -1);
-            git_assert_arg!(!path.is_null(), "path", -1);
-            // SAFETY: `config` is a live config (the contract).
-            let config = unsafe { cfg(config) };
-            // SAFETY: `path` is NUL-terminated (the contract).
-            let path = unsafe { CStr::from_ptr(path) };
+            let config = git_arg!(config, "config", -1);
+            let path = git_arg!(path.get(), "path", -1);
             // SAFETY: `repo` is NULL or live for the backend (the contract).
             match unsafe { add_file_ondisk(config, path, level, repo, force != 0) } {
                 Ok(()) => 0,
@@ -2188,20 +2164,17 @@ pub mod ffi {
     /// `out` is writable; `path` is NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_open_ondisk(
-        out: *mut *mut GitConfig,
-        path: *const c_char,
+        mut out: Out<'_, *mut GitConfig>,
+        path: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: `out` is writable.
-            unsafe { out.write(core::ptr::null_mut()) };
-            git_assert_arg!(!path.is_null(), "path", -1);
-            // SAFETY: per the contract.
-            match open_ondisk(unsafe { CStr::from_ptr(path) }) {
-                // SAFETY: `out` is writable.
-                Ok(c) => unsafe {
+            out.write(core::ptr::null_mut());
+            let path = git_arg!(path.get(), "path", -1);
+            match open_ondisk(path) {
+                Ok(c) => {
                     out_config(out, c);
                     0
-                },
+                }
                 Err(e) => e.raw(),
             }
         })
@@ -2214,20 +2187,17 @@ pub mod ffi {
     /// `out` is writable; `config` is live.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_snapshot(
-        out: *mut *mut GitConfig,
-        config: *mut GitConfig,
+        mut out: Out<'_, *mut GitConfig>,
+        config: Option<&GitConfig>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: `config` is a live config (the contract).
-            let config = unsafe { cfg(config) };
-            // SAFETY: `out` is writable.
-            unsafe { out.write(core::ptr::null_mut()) };
+            let config = git_arg!(config, "config", -1);
+            out.write(core::ptr::null_mut());
             match config.snapshot() {
-                // SAFETY: `out` is writable.
-                Ok(c) => unsafe {
+                Ok(c) => {
                     out_config(out, c);
                     0
-                },
+                }
                 Err(e) => e.raw(),
             }
         })
@@ -2240,18 +2210,17 @@ pub mod ffi {
     /// `out` is writable; `parent` is live.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_open_level(
-        out: *mut *mut GitConfig,
-        parent: *const GitConfig,
+        out: Out<'_, *mut GitConfig>,
+        parent: Option<&GitConfig>,
         level: c_int,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            match unsafe { cfg(parent) }.open_level(level) {
-                // SAFETY: `out` is writable.
-                Ok(c) => unsafe {
+            let parent = git_arg!(parent, "parent", -1);
+            match parent.open_level(level) {
+                Ok(c) => {
                     out_config(out, c);
                     0
-                },
+                }
                 Err(e) => e.raw(),
             }
         })
@@ -2264,18 +2233,16 @@ pub mod ffi {
     /// `out` is writable; `config` is live.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_open_global(
-        out: *mut *mut GitConfig,
-        config: *mut GitConfig,
+        out: Out<'_, *mut GitConfig>,
+        config: Option<&GitConfig>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: `config` is a live config (the contract).
-            let config = unsafe { cfg(config) };
+            let config = git_arg!(config, "config", -1);
             match config.open_global() {
-                // SAFETY: `out` is writable.
-                Ok(c) => unsafe {
+                Ok(c) => {
                     out_config(out, c);
                     0
-                },
+                }
                 Err(e) => e.raw(),
             }
         })
@@ -2291,17 +2258,15 @@ pub mod ffi {
     /// `git_config_add_file_ondisk`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_add_backend(
-        config: *mut GitConfig,
+        config: Option<&GitConfig>,
         backend: *mut git_config_backend,
         level: c_int,
         repo: *const git_repository,
         force: c_int,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!config.is_null(), "config", -1);
+            let config = git_arg!(config, "config", -1);
             git_assert_arg!(!backend.is_null(), "backend", -1);
-            // SAFETY: `config` is a live config (the contract).
-            let config = unsafe { cfg(config) };
             // SAFETY: per the contract: a backend the config may own.
             let Some(b) = (unsafe { Backend::from_c(backend.cast()) }) else {
                 return -1;
@@ -2326,13 +2291,12 @@ pub mod ffi {
     /// 0).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_set_writeorder(
-        config: *mut GitConfig,
+        config: Option<&GitConfig>,
         levels: *mut c_int,
         len: usize,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: `config` is a live config (the contract).
-            let config = unsafe { cfg(config) };
+            let config = git_arg!(config, "config", -1);
             git_assert!(len < c_int::MAX as usize, "len < INT_MAX", -1);
             let levels = if len == 0 {
                 &[][..]
@@ -2355,18 +2319,16 @@ pub mod ffi {
     /// alive by itself).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_iterator_new(
-        out: *mut *mut git_config_iterator,
-        config: *const GitConfig,
+        mut out: Out<'_, *mut git_config_iterator>,
+        config: Option<&GitConfig>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: `config` is a live config (the contract).
-            let config = unsafe { cfg(config) };
+            let config = git_arg!(config, "config", -1);
             match config.iterator(None) {
-                // SAFETY: `out` is writable.
-                Ok(it) => unsafe {
+                Ok(it) => {
                     out.write(it.into_raw());
                     0
-                },
+                }
                 Err(e) => e.raw(),
             }
         })
@@ -2379,21 +2341,18 @@ pub mod ffi {
     /// As `git_config_iterator_new`; `regexp` is NULL or NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_iterator_glob_new(
-        out: *mut *mut git_config_iterator,
-        config: *const GitConfig,
-        regexp: *const c_char,
+        mut out: Out<'_, *mut git_config_iterator>,
+        config: Option<&GitConfig>,
+        regexp: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: `config` is a live config (the contract).
-            let config = unsafe { cfg(config) };
-            // SAFETY: `regexp` is NULL or NUL-terminated (the contract).
-            let regexp = unsafe { c(regexp) };
+            let config = git_arg!(config, "config", -1);
+            let regexp = regexp.get();
             match config.iterator(regexp) {
-                // SAFETY: `out` is writable.
-                Ok(it) => unsafe {
+                Ok(it) => {
                     out.write(it.into_raw());
                     0
-                },
+                }
                 Err(e) => e.raw(),
             }
         })
@@ -2406,25 +2365,22 @@ pub mod ffi {
     /// As `git_config_iterator_glob_new`; `name` is NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_multivar_iterator_new(
-        out: *mut *mut git_config_iterator,
-        config: *const GitConfig,
+        mut out: Out<'_, *mut git_config_iterator>,
+        config: Option<&GitConfig>,
         name: *const c_char,
-        regexp: *const c_char,
+        regexp: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!name.is_null(), "in", -1);
-            // SAFETY: `config` is a live config (the contract).
-            let config = unsafe { cfg(config) };
-            // SAFETY: `regexp` is NULL or NUL-terminated (the contract).
-            let regexp = unsafe { c(regexp) };
+            let config = git_arg!(config, "config", -1);
+            let regexp = regexp.get();
             // SAFETY: per the contract.
             let r = unsafe { config.multivar_iterator(CStr::from_ptr(name), regexp) };
             match r {
-                // SAFETY: `out` is writable.
-                Ok(it) => unsafe {
+                Ok(it) => {
                     out.write(it.into_raw());
                     0
-                },
+                }
                 Err(e) => e.raw(),
             }
         })
@@ -2437,7 +2393,7 @@ pub mod ffi {
     /// `entry` is writable; `iter` is a live iterator.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_next(
-        entry: *mut *mut git_config_entry,
+        mut entry: Out<'_, *mut git_config_entry>,
         iter: *mut git_config_iterator,
     ) -> c_int {
         barrier(|| {
@@ -2451,8 +2407,7 @@ pub mod ffi {
             if error != 0 {
                 return error;
             }
-            // SAFETY: `entry` is writable.
-            unsafe { entry.write(be.cast()) };
+            entry.write(be.cast());
             0
         })
     }
@@ -2494,12 +2449,12 @@ pub mod ffi {
     /// `config` is live; `cb` is a valid callback for `payload`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_foreach(
-        config: *const GitConfig,
+        config: Option<&GitConfig>,
         cb: ForeachCb,
         payload: *mut c_void,
     ) -> c_int {
-        // SAFETY: per the contract.
-        unsafe { git_config_foreach_match(config, core::ptr::null(), cb, payload) }
+        // SAFETY: this export's contract, with a NULL pattern.
+        unsafe { git_config_foreach_match(config, CStrArg::NULL, cb, payload) }
     }
 
     /// `git_config_foreach_match`.
@@ -2509,16 +2464,14 @@ pub mod ffi {
     /// As `git_config_foreach`; `regexp` is NULL or NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_foreach_match(
-        config: *const GitConfig,
-        regexp: *const c_char,
+        config: Option<&GitConfig>,
+        regexp: CStrArg<'_>,
         cb: ForeachCb,
         payload: *mut c_void,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: `config` is a live config (the contract).
-            let config = unsafe { cfg(config) };
-            // SAFETY: `regexp` is NULL or NUL-terminated (the contract).
-            let regexp = unsafe { c(regexp) };
+            let config = git_arg!(config, "config", -1);
+            let regexp = regexp.get();
             // SAFETY: per the contract; the callback gets the entry the
             // iterator holds and the caller's payload.
             unsafe { config.foreach_match(regexp, |e| call(cb, e, payload)) }
@@ -2534,13 +2487,12 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_backend_foreach_match(
         backend: *mut git_config_backend,
-        regexp: *const c_char,
+        regexp: CStrArg<'_>,
         cb: ForeachCb,
         payload: *mut c_void,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: `regexp` is NULL or NUL-terminated (the contract).
-            let regexp = unsafe { c(regexp) };
+            let regexp = regexp.get();
             let Some(backend) = NonNull::new(backend) else {
                 return errors::assert_arg_failed("backend").raw();
             };
@@ -2561,20 +2513,16 @@ pub mod ffi {
     /// As `git_config_foreach_match`; `name` is NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_get_multivar_foreach(
-        config: *const GitConfig,
-        name: *const c_char,
-        regexp: *const c_char,
+        config: Option<&GitConfig>,
+        name: CStrArg<'_>,
+        regexp: CStrArg<'_>,
         cb: ForeachCb,
         payload: *mut c_void,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!name.is_null(), "in", -1);
-            // SAFETY: `config` is a live config (the contract).
-            let config = unsafe { cfg(config) };
-            // SAFETY: `regexp` is NULL or NUL-terminated (the contract).
-            let regexp = unsafe { c(regexp) };
-            // SAFETY: `name` is NUL-terminated (the contract).
-            let name = unsafe { CStr::from_ptr(name) };
+            let name = git_arg!(name.get(), "in", -1);
+            let config = git_arg!(config, "config", -1);
+            let regexp = regexp.get();
             // SAFETY: the callback is valid for the payload (the contract).
             config.get_multivar_foreach(name, regexp, |e| unsafe { call(cb, e, payload) })
         })
@@ -2587,14 +2535,12 @@ pub mod ffi {
     /// `config` is live; `name` is NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_delete_entry(
-        config: *mut GitConfig,
-        name: *const c_char,
+        config: Option<&GitConfig>,
+        name: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: `config` is a live config (the contract).
-            let config = unsafe { cfg(config) };
-            // SAFETY: `name` is NULL or NUL-terminated (the contract).
-            let name = unsafe { or_null_c(name) };
+            let config = git_arg!(config, "config", -1);
+            let name = or_null(name);
             match config.delete_entry(name) {
                 Ok(r) => r,
                 Err(e) => e.raw(),
@@ -2609,15 +2555,13 @@ pub mod ffi {
     /// `config` is live; `name` is NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_set_int64(
-        config: *mut GitConfig,
-        name: *const c_char,
+        config: Option<&GitConfig>,
+        name: CStrArg<'_>,
         value: i64,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: `config` is a live config (the contract).
-            let config = unsafe { cfg(config) };
-            // SAFETY: `name` is NULL or NUL-terminated (the contract).
-            let name = unsafe { or_null_c(name) };
+            let config = git_arg!(config, "config", -1);
+            let name = or_null(name);
             crate::util::export::status(config.set_int64(name, value))
         })
     }
@@ -2629,11 +2573,11 @@ pub mod ffi {
     /// As `git_config_set_int64`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_set_int32(
-        config: *mut GitConfig,
-        name: *const c_char,
+        config: Option<&GitConfig>,
+        name: CStrArg<'_>,
         value: i32,
     ) -> c_int {
-        // SAFETY: per the contract.
+        // SAFETY: this export's contract is `git_config_set_int64`'s.
         unsafe { git_config_set_int64(config, name, i64::from(value)) }
     }
 
@@ -2644,13 +2588,13 @@ pub mod ffi {
     /// As `git_config_set_int64`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_set_bool(
-        config: *mut GitConfig,
-        name: *const c_char,
+        config: Option<&GitConfig>,
+        name: CStrArg<'_>,
         value: c_int,
     ) -> c_int {
         let v = if value != 0 { c"true" } else { c"false" };
-        // SAFETY: per the contract.
-        unsafe { git_config_set_string(config, name, v.as_ptr()) }
+        // SAFETY: this export's contract, with a static string value.
+        unsafe { git_config_set_string(config, name, CStrArg::from(v)) }
     }
 
     /// `git_config_set_string`.
@@ -2661,17 +2605,14 @@ pub mod ffi {
     /// NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_set_string(
-        config: *mut GitConfig,
-        name: *const c_char,
-        value: *const c_char,
+        config: Option<&GitConfig>,
+        name: CStrArg<'_>,
+        value: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: `config` is a live config (the contract).
-            let config = unsafe { cfg(config) };
-            // SAFETY: `name` is NULL or NUL-terminated (the contract).
-            let name = unsafe { or_null_c(name) };
-            // SAFETY: `value` is NULL or NUL-terminated (the contract).
-            let value = unsafe { c(value) };
+            let config = git_arg!(config, "config", -1);
+            let name = or_null(name);
+            let value = value.get();
             let r = config.set_string(name, value);
             crate::util::export::status(r)
         })
@@ -2685,20 +2626,16 @@ pub mod ffi {
     /// backend requires `name` and `regexp`).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_set_multivar(
-        config: *mut GitConfig,
-        name: *const c_char,
-        regexp: *const c_char,
-        value: *const c_char,
+        config: Option<&GitConfig>,
+        name: CStrArg<'_>,
+        regexp: CStrArg<'_>,
+        value: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: `config` is a live config (the contract).
-            let config = unsafe { cfg(config) };
-            // SAFETY: `name` is NULL or NUL-terminated (the contract).
-            let name = unsafe { or_null_c(name) };
-            // SAFETY: `regexp` is NULL or NUL-terminated (the contract).
-            let regexp = unsafe { c(regexp) };
-            // SAFETY: `value` is NULL or NUL-terminated (the contract).
-            let value = unsafe { c(value) };
+            let config = git_arg!(config, "config", -1);
+            let name = or_null(name);
+            let regexp = regexp.get();
+            let value = value.get();
             match config.set_multivar(name, regexp, value) {
                 Ok(r) => r,
                 Err(e) => e.raw(),
@@ -2713,17 +2650,14 @@ pub mod ffi {
     /// As `git_config_set_multivar`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_delete_multivar(
-        config: *mut GitConfig,
-        name: *const c_char,
-        regexp: *const c_char,
+        config: Option<&GitConfig>,
+        name: CStrArg<'_>,
+        regexp: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: `config` is a live config (the contract).
-            let config = unsafe { cfg(config) };
-            // SAFETY: `name` is NULL or NUL-terminated (the contract).
-            let name = unsafe { or_null_c(name) };
-            // SAFETY: `regexp` is NULL or NUL-terminated (the contract).
-            let regexp = unsafe { c(regexp) };
+            let config = git_arg!(config, "config", -1);
+            let name = or_null(name);
+            let regexp = regexp.get();
             match config.delete_multivar(name, regexp) {
                 Ok(r) => r,
                 Err(e) => e.raw(),
@@ -2739,19 +2673,16 @@ pub mod ffi {
     /// NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config__update_entry(
-        config: *mut GitConfig,
-        key: *const c_char,
-        value: *const c_char,
+        config: Option<&GitConfig>,
+        key: CStrArg<'_>,
+        value: CStrArg<'_>,
         overwrite_existing: bool,
         only_if_existing: bool,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: `config` is a live config (the contract).
-            let config = unsafe { cfg(config) };
-            // SAFETY: `key` is NULL or NUL-terminated (the contract).
-            let key = unsafe { or_null_c(key) };
-            // SAFETY: `value` is NULL or NUL-terminated (the contract).
-            let value = unsafe { c(value) };
+            let config = git_arg!(config, "config", -1);
+            let key = or_null(key);
+            let value = value.get();
             let r = config.update_entry(key, value, overwrite_existing, only_if_existing);
             crate::util::export::status(r)
         })
@@ -2762,14 +2693,13 @@ pub mod ffi {
     /// # Safety
     ///
     /// `out` is writable.
-    unsafe fn out_entry(out: *mut *mut git_config_entry, r: Result<Option<EntryBox>>) -> c_int {
+    fn out_entry(mut out: Out<'_, *mut git_config_entry>, r: Result<Option<EntryBox>>) -> c_int {
         let (p, code) = match r {
             Ok(Some(e)) => (e.into_raw().cast(), 0),
             Ok(None) => (core::ptr::null_mut(), 0),
             Err(e) => (core::ptr::null_mut(), e.raw()),
         };
-        // SAFETY: per the contract.
-        unsafe { out.write(p) };
+        out.write(p);
         code
     }
 
@@ -2780,17 +2710,14 @@ pub mod ffi {
     /// `out` is writable; `config` is live; `name` is NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_get_entry(
-        out: *mut *mut git_config_entry,
-        config: *const GitConfig,
-        name: *const c_char,
+        out: Out<'_, *mut git_config_entry>,
+        config: Option<&GitConfig>,
+        name: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: `config` is a live config (the contract).
-            let config = unsafe { cfg(config) };
-            // SAFETY: `name` is NULL or NUL-terminated (the contract).
-            let name = unsafe { or_null_c(name) };
-            // SAFETY: per the contract.
-            unsafe { out_entry(out, config.get_entry(name, true, Want::AllErrors)) }
+            let config = git_arg!(config, "config", -1);
+            let name = or_null(name);
+            out_entry(out, config.get_entry(name, true, Want::AllErrors))
         })
     }
 
@@ -2802,41 +2729,32 @@ pub mod ffi {
     /// As `git_config_get_entry`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config__lookup_entry(
-        out: *mut *mut git_config_entry,
-        config: *const GitConfig,
-        key: *const c_char,
+        out: Out<'_, *mut git_config_entry>,
+        config: Option<&GitConfig>,
+        key: CStrArg<'_>,
         no_errors: bool,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: `config` is a live config (the contract).
-            let config = unsafe { cfg(config) };
-            // SAFETY: `key` is NULL or NUL-terminated (the contract).
-            let key = unsafe { or_null_c(key) };
+            let config = git_arg!(config, "config", -1);
+            let key = or_null(key);
             let want = if no_errors {
                 Want::NoErrors
             } else {
                 Want::NoMissing
             };
-            // SAFETY: per the contract.
-            unsafe { out_entry(out, config.get_entry(key, false, want)) }
+            out_entry(out, config.get_entry(key, false, want))
         })
     }
 
-    /// The value of the entry `name` (normalized), with `f`.
-    ///
-    /// # Safety
-    ///
-    /// `config` is live; `name` is NUL-terminated.
-    unsafe fn with_value<T>(
-        config: *const GitConfig,
-        name: *const c_char,
+    /// The value of the entry `name` (normalized), with `f`; a NULL
+    /// `config` (which the C dereferences) is an invalid argument.
+    fn with_value<T>(
+        config: Option<&GitConfig>,
+        name: CStrArg<'_>,
         f: impl FnOnce(Option<&[u8]>) -> Result<T>,
     ) -> Result<T> {
-        // SAFETY: per the contract.
-        let config = unsafe { cfg(config) };
-        // SAFETY: per the contract.
-        let name = unsafe { or_null_c(name) };
-        config.with_value(name, f)
+        let config = git_arg!(config, "config");
+        config.with_value(or_null(name), f)
     }
 
     /// `git_config_get_mapped`.
@@ -2848,22 +2766,20 @@ pub mod ffi {
     /// NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_get_mapped(
-        out: *mut c_int,
-        config: *const GitConfig,
-        name: *const c_char,
+        mut out: Out<'_, c_int>,
+        config: Option<&GitConfig>,
+        name: CStrArg<'_>,
         maps: *const git_configmap,
         map_n: usize,
     ) -> c_int {
         barrier(|| {
             // SAFETY: per the contract.
             let maps = unsafe { configmaps(maps, map_n) };
-            // SAFETY: per the contract.
-            match unsafe { with_value(config, name, |v| lookup_map_value(&maps, v)) } {
-                // SAFETY: `out` is writable.
-                Ok(v) => unsafe {
+            match with_value(config, name, |v| lookup_map_value(&maps, v)) {
+                Ok(v) => {
                     out.write(v);
                     0
-                },
+                }
                 Err(e) => e.raw(),
             }
         })
@@ -2898,20 +2814,16 @@ pub mod ffi {
     /// `out` is writable; `config` is live; `name` is NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_get_int64(
-        out: *mut i64,
-        config: *const GitConfig,
-        name: *const c_char,
+        mut out: Out<'_, i64>,
+        config: Option<&GitConfig>,
+        name: CStrArg<'_>,
     ) -> c_int {
-        barrier(|| {
-            // SAFETY: per the contract.
-            match unsafe { with_value(config, name, parse_int64) } {
-                // SAFETY: `out` is writable.
-                Ok(v) => unsafe {
-                    out.write(v);
-                    0
-                },
-                Err(e) => e.raw(),
+        barrier(|| match with_value(config, name, parse_int64) {
+            Ok(v) => {
+                out.write(v);
+                0
             }
+            Err(e) => e.raw(),
         })
     }
 
@@ -2922,20 +2834,16 @@ pub mod ffi {
     /// As `git_config_get_int64`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_get_int32(
-        out: *mut i32,
-        config: *const GitConfig,
-        name: *const c_char,
+        mut out: Out<'_, i32>,
+        config: Option<&GitConfig>,
+        name: CStrArg<'_>,
     ) -> c_int {
-        barrier(|| {
-            // SAFETY: per the contract.
-            match unsafe { with_value(config, name, parse_int32) } {
-                // SAFETY: `out` is writable.
-                Ok(v) => unsafe {
-                    out.write(v);
-                    0
-                },
-                Err(e) => e.raw(),
+        barrier(|| match with_value(config, name, parse_int32) {
+            Ok(v) => {
+                out.write(v);
+                0
             }
+            Err(e) => e.raw(),
         })
     }
 
@@ -2946,20 +2854,16 @@ pub mod ffi {
     /// As `git_config_get_int64`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_get_bool(
-        out: *mut c_int,
-        config: *const GitConfig,
-        name: *const c_char,
+        mut out: Out<'_, c_int>,
+        config: Option<&GitConfig>,
+        name: CStrArg<'_>,
     ) -> c_int {
-        barrier(|| {
-            // SAFETY: per the contract.
-            match unsafe { with_value(config, name, parse_bool) } {
-                // SAFETY: `out` is writable.
-                Ok(v) => unsafe {
-                    out.write(c_int::from(v));
-                    0
-                },
-                Err(e) => e.raw(),
+        barrier(|| match with_value(config, name, parse_bool) {
+            Ok(v) => {
+                out.write(c_int::from(v));
+                0
             }
+            Err(e) => e.raw(),
         })
     }
 
@@ -2972,8 +2876,8 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config__get_path(
         out: *mut GitStr,
-        config: *const GitConfig,
-        name: *const c_char,
+        config: Option<&GitConfig>,
+        name: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             let parse = |v: Option<&[u8]>| {
@@ -2989,8 +2893,7 @@ pub mod ffi {
                 // excluded above).
                 parse_path(unsafe { &mut *out }, v)
             };
-            // SAFETY: `config` is live, `name` NUL-terminated (the contract).
-            let r = unsafe { with_value(config, name, parse) };
+            let r = with_value(config, name, parse);
             crate::util::export::status(r)
         })
     }
@@ -3003,8 +2906,8 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_get_path(
         out: *mut GitBuf,
-        config: *const GitConfig,
-        name: *const c_char,
+        config: Option<&GitConfig>,
+        name: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             let get = |s: &mut GitStr| {
@@ -3024,13 +2927,9 @@ pub mod ffi {
     /// `out` is NULL or a valid `git_buf`; `value` is NULL or
     /// NUL-terminated.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_config_parse_path(
-        out: *mut GitBuf,
-        value: *const c_char,
-    ) -> c_int {
+    pub unsafe extern "C" fn git_config_parse_path(out: *mut GitBuf, value: CStrArg<'_>) -> c_int {
         barrier(|| {
-            // SAFETY: `value` is NULL or NUL-terminated (the contract).
-            let value = unsafe { c(value) };
+            let value = value.get();
             // SAFETY: per the contract.
             unsafe {
                 wrap_buf(out, |s| {
@@ -3051,15 +2950,13 @@ pub mod ffi {
     /// `out` is writable; `config` is live; `name` is NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_get_string(
-        out: *mut *const c_char,
-        config: *const GitConfig,
-        name: *const c_char,
+        mut out: Out<'_, *const c_char>,
+        config: Option<&GitConfig>,
+        name: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: `config` is a live config (the contract).
-            let config = unsafe { cfg(config) };
-            // SAFETY: `name` is NULL or NUL-terminated (the contract).
-            let name = unsafe { or_null_c(name) };
+            let config = git_arg!(config, "config", -1);
+            let name = or_null(name);
             if !config.is_readonly() {
                 return git_error_set!(
                     ErrorClass::CONFIG,
@@ -3077,8 +2974,7 @@ pub mod ffi {
                 Ok(None) => (core::ptr::null(), ErrorCode::NOT_FOUND.raw()),
                 Err(e) => (core::ptr::null(), e.raw()),
             };
-            // SAFETY: `out` is writable.
-            unsafe { out.write(p) };
+            out.write(p);
             drop(r);
             code
         })
@@ -3093,16 +2989,16 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config__get_string_buf(
         out: *mut GitStr,
-        config: *const GitConfig,
-        name: *const c_char,
+        config: Option<&GitConfig>,
+        name: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!out.is_null(), "out", -1);
-            git_assert_arg!(!config.is_null(), "config", -1);
-            // SAFETY: per the contract.
+            git_assert_arg!(config.is_some(), "config", -1);
+            // SAFETY: a valid `git_str` (the contract), not NULL (checked
+            // above), which no other argument reaches.
             let out = unsafe { &mut *out };
-            // SAFETY: per the contract.
-            let r = unsafe { with_value(config, name, |v| out.puts(v.unwrap_or(b""))) };
+            let r = with_value(config, name, |v| out.puts(v.unwrap_or(b"")));
             crate::util::export::status(r)
         })
     }
@@ -3116,8 +3012,8 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_get_string_buf(
         out: *mut GitBuf,
-        config: *const GitConfig,
-        name: *const c_char,
+        config: Option<&GitConfig>,
+        name: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             let get = |s: &mut GitStr| {
@@ -3139,17 +3035,14 @@ pub mod ffi {
     /// or NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config__get_string_force(
-        config: *const GitConfig,
-        key: *const c_char,
-        fallback_value: *const c_char,
+        config: Option<&GitConfig>,
+        key: CStrArg<'_>,
+        fallback_value: CStrArg<'_>,
     ) -> *mut c_char {
         barrier(|| {
-            // SAFETY: `config` is a live config (the contract).
-            let config = unsafe { cfg(config) };
-            // SAFETY: `key` is NULL or NUL-terminated (the contract).
-            let key = unsafe { or_null_c(key) };
-            // SAFETY: `fallback_value` is NULL or NUL-terminated (the contract).
-            let fallback_value = unsafe { c(fallback_value) };
+            let config = git_arg!(config, "config", core::ptr::null_mut());
+            let key = or_null(key);
+            let fallback_value = fallback_value.get();
             let e = config.get_entry(key, false, Want::NoErrors);
             let e = e.ok().flatten();
             let v = e.as_ref().and_then(|e| e.value().map(<[u8]>::to_vec));
@@ -3168,15 +3061,13 @@ pub mod ffi {
     /// `config` is live; `key` is NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config__get_bool_force(
-        config: *const GitConfig,
-        key: *const c_char,
+        config: Option<&GitConfig>,
+        key: CStrArg<'_>,
         fallback_value: c_int,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: `config` is a live config (the contract).
-            let config = unsafe { cfg(config) };
-            // SAFETY: `key` is NULL or NUL-terminated (the contract).
-            let key = unsafe { or_null_c(key) };
+            let config = git_arg!(config, "config", -1);
+            let key = or_null(key);
             let e = config.get_entry(key, false, Want::NoErrors);
             let mut val = fallback_value;
             if let Ok(Some(e)) = e {
@@ -3196,15 +3087,13 @@ pub mod ffi {
     /// As `git_config__get_bool_force`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config__get_int_force(
-        config: *const GitConfig,
-        key: *const c_char,
+        config: Option<&GitConfig>,
+        key: CStrArg<'_>,
         fallback_value: c_int,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: `config` is a live config (the contract).
-            let config = unsafe { cfg(config) };
-            // SAFETY: `key` is NULL or NUL-terminated (the contract).
-            let key = unsafe { or_null_c(key) };
+            let config = git_arg!(config, "config", -1);
+            let key = or_null(key);
             let e = config.get_entry(key, false, Want::NoErrors);
             let mut val = fallback_value;
             if let Ok(Some(e)) = e {
@@ -3225,22 +3114,20 @@ pub mod ffi {
     /// NULL or NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_lookup_map_value(
-        out: *mut c_int,
+        mut out: Out<'_, c_int>,
         maps: *const git_configmap,
         map_n: usize,
-        value: *const c_char,
+        value: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: `value` is NULL or NUL-terminated (the contract).
-            let value = unsafe { c(value) };
+            let value = value.get();
             // SAFETY: per the contract.
             let (maps, value) = unsafe { (configmaps(maps, map_n), value) };
             match lookup_map_value(&maps, value.map(CStr::to_bytes)) {
-                // SAFETY: `out` is writable.
-                Ok(v) => unsafe {
+                Ok(v) => {
                     out.write(v);
                     0
-                },
+                }
                 Err(e) => e.raw(),
             }
         })
@@ -3254,8 +3141,8 @@ pub mod ffi {
     /// `map_n` maps.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_lookup_map_enum(
-        type_out: *mut c_int,
-        str_out: *mut *const c_char,
+        mut type_out: Out<'_, c_int>,
+        mut str_out: Out<'_, *const c_char>,
         maps: *const git_configmap,
         map_n: usize,
         enum_val: c_int,
@@ -3269,10 +3156,8 @@ pub mod ffi {
             };
             match maps.iter().find(|m| m.map_value == enum_val) {
                 Some(m) => {
-                    // SAFETY: the outputs are writable.
-                    unsafe { type_out.write(m.type_) };
-                    // SAFETY: as above.
-                    unsafe { str_out.write(m.str_match) };
+                    type_out.write(m.type_);
+                    str_out.write(m.str_match);
                     0
                 }
                 None => {
@@ -3289,16 +3174,17 @@ pub mod ffi {
     ///
     /// `out` is writable; `value` is NULL or NUL-terminated.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_config_parse_bool(out: *mut c_int, value: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git_config_parse_bool(
+        mut out: Out<'_, c_int>,
+        value: CStrArg<'_>,
+    ) -> c_int {
         barrier(|| {
-            // SAFETY: `value` is NULL or NUL-terminated (the contract).
-            let value = unsafe { c(value) };
+            let value = value.get();
             match parse_bool(value.map(CStr::to_bytes)) {
-                // SAFETY: `out` is writable.
-                Ok(b) => unsafe {
+                Ok(b) => {
                     out.write(c_int::from(b));
                     0
-                },
+                }
                 Err(e) => e.raw(),
             }
         })
@@ -3310,16 +3196,17 @@ pub mod ffi {
     ///
     /// As `git_config_parse_bool`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_config_parse_int64(out: *mut i64, value: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git_config_parse_int64(
+        mut out: Out<'_, i64>,
+        value: CStrArg<'_>,
+    ) -> c_int {
         barrier(|| {
-            // SAFETY: `value` is NULL or NUL-terminated (the contract).
-            let value = unsafe { c(value) };
+            let value = value.get();
             match parse_int64(value.map(CStr::to_bytes)) {
-                // SAFETY: `out` is writable.
-                Ok(v) => unsafe {
+                Ok(v) => {
                     out.write(v);
                     0
-                },
+                }
                 Err(e) => e.raw(),
             }
         })
@@ -3331,16 +3218,17 @@ pub mod ffi {
     ///
     /// As `git_config_parse_bool`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_config_parse_int32(out: *mut i32, value: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git_config_parse_int32(
+        mut out: Out<'_, i32>,
+        value: CStrArg<'_>,
+    ) -> c_int {
         barrier(|| {
-            // SAFETY: `value` is NULL or NUL-terminated (the contract).
-            let value = unsafe { c(value) };
+            let value = value.get();
             match parse_int32(value.map(CStr::to_bytes)) {
-                // SAFETY: `out` is writable.
-                Ok(v) => unsafe {
+                Ok(v) => {
                     out.write(v);
                     0
-                },
+                }
                 Err(e) => e.raw(),
             }
         })
@@ -3353,14 +3241,13 @@ pub mod ffi {
     /// `input` is NULL or NUL-terminated; `out` is NULL or writable.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config__normalize_name(
-        input: *const c_char,
+        input: CStrArg<'_>,
         out: *mut *mut c_char,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!input.is_null(), "in", -1);
+            let input = git_arg!(input.get(), "in", -1);
             git_assert_arg!(!out.is_null(), "out", -1);
-            // SAFETY: per the contract.
-            match normalize_name(unsafe { cstr_bytes(input) }) {
+            match normalize_name(input.to_bytes()) {
                 Ok(n) => {
                     let s = crate::util::alloc::substrdup(&n);
                     if s.is_null() {
@@ -3494,14 +3381,13 @@ pub mod ffi {
     ///
     /// `out` is writable.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_config_open_default(out: *mut *mut GitConfig) -> c_int {
+    pub unsafe extern "C" fn git_config_open_default(mut out: Out<'_, *mut GitConfig>) -> c_int {
         barrier(|| {
             let (p, code) = match open_default() {
                 Ok(c) => (CShared::into_raw(CShared::from_box(c)), 0),
                 Err(e) => (core::ptr::null_mut(), e.raw()),
             };
-            // SAFETY: `out` is writable.
-            unsafe { out.write(p) };
+            out.write(p);
             code
         })
     }
@@ -3515,12 +3401,10 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_lock(
         tx: *mut *mut crate::sys::transaction::git_transaction,
-        config: *mut GitConfig,
+        config: Option<&GitConfig>,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!config.is_null(), "config", -1);
-            // SAFETY: `config` is a live config (the contract).
-            let config = unsafe { cfg(config) };
+            let config = git_arg!(config, "config", -1);
             // SAFETY: per the contract.
             crate::util::export::status(unsafe { config.lock(tx) })
         })
@@ -3561,14 +3445,12 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_rename_section(
         repo: *mut git_repository,
-        old_section_name: *const c_char,
-        new_section_name: *const c_char,
+        old_section_name: CStrArg<'_>,
+        new_section_name: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: `new_section_name` is NULL or NUL-terminated (the contract).
-            let new_section_name = unsafe { c(new_section_name) };
-            // SAFETY: `old_section_name` is NUL-terminated (the contract).
-            let old = unsafe { cstr_bytes(old_section_name) };
+            let new_section_name = new_section_name.get();
+            let old = old_section_name.to_bytes();
             // SAFETY: `repo` is NULL or a live repository (the contract),
             // which is `Sync`.
             let repo = unsafe { repo.as_ref() };
@@ -3583,7 +3465,7 @@ pub mod ffi {
     /// `backend` is writable for a `git_config_backend`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_init_backend(
-        backend: *mut git_config_backend,
+        mut backend: Out<'_, git_config_backend>,
         version: c_uint,
     ) -> c_int {
         barrier(|| {
@@ -3591,8 +3473,7 @@ pub mod ffi {
             {
                 return e.raw();
             }
-            // SAFETY: per the contract.
-            unsafe { backend.write(git_config_backend::default()) };
+            backend.write(git_config_backend::default());
             0
         })
     }
@@ -4516,7 +4397,6 @@ mod rust_backend {
         fn set_multivar(@cfg, name: *const c_char, regexp: *const c_char, value: *const c_char) -> c_int {
             on panic: slot_panicked(),
             on busy: slot_busy(),
-            // SAFETY: as for `set`; `value` may be NULL.
             |s: &State| {
                 // SAFETY: as for `set`.
                 let (name, regexp) = (unsafe { b(name) }, unsafe { b(regexp) });

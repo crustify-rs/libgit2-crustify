@@ -23,6 +23,7 @@
 //! which may be one past the end when there is no `ender`). It runs in safe
 //! Rust and is checked against the C by `rust/difftest/obj_diff.c`.
 
+use crate::util::cabi::Out;
 use core::ffi::{CStr, c_char, c_int};
 use core::fmt;
 use core::ptr;
@@ -835,10 +836,6 @@ pub(crate) unsafe fn default_for(
     let r = (|| {
         let name = cfg.get_string(c"user.name")?;
         let email = cfg.get_string(c"user.email")?;
-        // SAFETY: a string of the snapshot, alive while `cfg` is.
-        let name = unsafe { CStr::from_ptr(name) };
-        // SAFETY: as above.
-        let email = unsafe { CStr::from_ptr(email) };
         let (now, offset) = current_time();
         found();
         new_sig(name.to_bytes(), email.to_bytes(), now, offset)
@@ -859,14 +856,24 @@ impl Drop for ConfigSnapshot {
 
 impl ConfigSnapshot {
     /// `git_config_get_string`: a string owned by the snapshot.
-    fn get_string(&self, name: &CStr) -> Result<*const c_char> {
+    fn get_string(&self, name: &CStr) -> Result<&CStr> {
         let mut out = ptr::null();
-        // SAFETY: a live snapshot, a NUL-terminated name, a writable out.
+        // SAFETY: `self.0` is the live snapshot this value owns until drop;
+        // a config is only read through `&` (interior mutability).
+        let config = unsafe { &*self.0 };
+        // SAFETY: a writable out, a live config, a NUL-terminated name.
         let r = unsafe {
-            crate::object::deps::git_config_get_string(&raw mut out, self.0, name.as_ptr())
+            crate::object::deps::git_config_get_string(
+                Out::from(&mut out),
+                Some(config),
+                name.into(),
+            )
         };
         ErrorCode::check(r)?;
-        Ok(out)
+        // SAFETY: on success `out` is a non-NULL string of an entry of the
+        // read-only snapshot, which lives and is not written while `self`
+        // (which this borrows) lives.
+        Ok(unsafe { CStr::from_ptr(out) })
     }
 }
 
@@ -909,19 +916,14 @@ unsafe fn user_from_env(
     let name: &[u8] = if gutil::getenv(&mut name_env, name_env_var).is_ok() {
         name_env.as_bytes()
     } else {
-        let p = cfg.get_string(c"user.name")?;
-        // SAFETY: a string of the snapshot, alive while `cfg` is.
-        unsafe { CStr::from_ptr(p) }.to_bytes()
+        cfg.get_string(c"user.name")?.to_bytes()
     };
 
     let email: &[u8] = if gutil::getenv(&mut email_env, email_env_var).is_ok() {
         email_env.as_bytes()
     } else {
         match cfg.get_string(c"user.email") {
-            Ok(p) => {
-                // SAFETY: as above.
-                unsafe { CStr::from_ptr(p) }.to_bytes()
-            }
+            Ok(p) => p.to_bytes(),
             Err(e) if e == ErrorCode::NOT_FOUND => {
                 let saved = errors::save();
                 if gutil::getenv(&mut email_env, c"EMAIL").is_err() {
