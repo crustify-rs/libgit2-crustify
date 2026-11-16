@@ -230,3 +230,33 @@ opaque types (`#[allow(clashing_extern_declarations)]` until they land).
 binaries that need no libgit2 C; the lib test binary and 11 integration
 tests (`config_api`, `delta_*`, `l_index_*`, `l_pack_*`, `odb_*`,
 `util_fs`) still need `--features link-c` (they reach the C rest).
+
+## 7. l-revwalk (merge + resolution `4394660`, `3613d75`, `fb7b34f`)
+
+Merge conflicts: `sys/{diff,pathspec,revparse}.rs` (added by both sides):
+combined, one declaration per C symbol, l-revwalk's names as aliases of
+the existing mirrors (`git_diff_options`, `git_pathspec`); `sys/pending.rs`
+rebuilt (the union lost braces again); `lib.rs`: duplicate re-exports.
+
+Resolved (PENDING entries, deleted):
+
+- l-revwalk → l-repo/l-odb/l-commit (`sys::pending::l_revwalk`): the opaque
+  `git_repository`, `git_odb`, `git_commit`, `git_tree`, `git_tree_entry`
+  are the Rust types; the declarations of `git_repository_{odb,open,free}`,
+  `git_odb_free`, `git_commit_list_parse`, `git_commit_{tree,parent,
+  parentcount}`, `git_tree_entry_{bypath,free,id}` go (calls go to the
+  owners' Rust exports); the `c_stubs` test definitions of those (marked
+  "remove at integration") are removed; `revwalk::api::Repository`
+  (stand-in) is now `crate::Repository`; `revwalk/node.rs`'s mirrors of
+  `git_commit_list_node` / `git_commit_list` are l-commit's
+  `GitCommitListNode` / `GitCommitList`.
+- l-commit → l-revwalk: the `git_revwalk` offsets `REVWALK_REPO` (0),
+  `REVWALK_ODB` (8), `REVWALK_COMMIT_POOL` (56), the `field`/`field_ptr`
+  helpers, the opaque `git_revwalk` and the `git_revwalk__commit_lookup`
+  declaration: replaced by `GitRevwalk.prefix.{repo, odb, commit_pool}`
+  and `crate::revwalk::ffi::git_revwalk__commit_lookup`; the
+  `c_foreign_layout` test (no foreign offsets left) is removed. l-commit's
+  Miri test of the quick parse, which faked a walk by byte offsets and
+  defined `git_revwalk__commit_lookup` itself (now a duplicate symbol),
+  runs over a real `GitRevwalk::with_repo` (made `pub(crate)`) and a zeroed
+  `GitRepository`.
