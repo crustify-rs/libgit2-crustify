@@ -385,14 +385,54 @@ BENCH_CPU=none, 3 rounds x 3 reps, load ~290; the pack code is still C):
 | delta/read_header_deltified | 215.4 | 255.7 | 1.187 | 1.192 |
 | delta/indexer_resolve | 1727.7 | 1606.4 | 0.930 | 0.893 |
 
-Geomean 1.022 (wall), 1.012 (cpu). The workloads above 1.1 were rerun
-directly against `/work/build-c`, `/work/builds/master` (C odb on the
-ported util layer) and `/work/builds/l-odb`: `pack_foreach` (C 182-221,
-master 254-263, l-odb 253-264 ms) and `loose_read_header` / `pack_read_header`
-(master 1.1-1.3x the C, l-odb within ~5% of master) are as slow on master,
-whose odb is C: the cost is below the odb (the C pack code on the ported
-util layer; zlib-rs stream setup per header). `loose_foreach` was 1.2-1.45x
-before the loose backend's hex decoding was made table-driven (now 1.0).
+Geomean 1.022 (wall), 1.012 (cpu). The causes of the workloads above 1.1
+(found by review l-odb-r1, L-ODB-12/13; the earlier attribution here, "the
+C pack code on the ported util layer; zlib-rs stream setup", was half
+wrong):
+
+- `loose_read_header`, `pack_read_header`, `delta/read_header_deltified`:
+  each header read is init, one inflate of at most 64 bytes, end.
+  zlib-rs's init (a ~47 KB allocation and a table memset) and its 10/9-bit
+  root tables cost more than zlib's 9/6-bit ones for such a short stream.
+  Fixed in `util::zstream`: an inflate stream whose first output request
+  is under 4 KiB runs on the system zlib, the bulk readers stay on zlib-rs.
+- `pack_foreach` does not inflate: it was `git_oid_from_raw` (424k calls)
+  building the id on the stack and copying it out; it now writes in place,
+  as C. (The timsort is the C's speed.)
+- `loose_foreach` was 1.2-1.45x before the loose backend's hex decoding was
+  made table-driven (now 1.0).
+
+After these fixes (`compare.sh /work/build-c /work/builds/l-odb odb,delta`,
+same settings): geomean 0.953 wall, 0.963 cpu over the 20 workloads.
+
+| workload | C ms | Rust ms | ratio | cpu ratio |
+|---|---:|---:|---:|---:|
+| odb/loose_read | 458.8 | 395.1 | 0.861 | 0.836 |
+| odb/loose_read_header | 302.0 | 293.6 | 0.972 | 0.958 |
+| odb/loose_exists | 210.1 | 193.5 | 0.921 | 0.928 |
+| odb/loose_foreach | 33.7 | 34.4 | 1.019 | 1.019 |
+| odb/loose_write | 596.5 | 449.3 | 0.753 | 0.965 |
+| odb/loose_write_existing | 53.0 | 53.4 | 1.006 | 1.055 |
+| odb/pack_read_random | 982.5 | 857.7 | 0.873 | 0.889 |
+| odb/pack_read_sequential | 956.3 | 859.2 | 0.898 | 0.895 |
+| odb/pack_read_header | 197.3 | 201.1 | 1.019 | 1.032 |
+| odb/pack_exists | 187.2 | 182.3 | 0.974 | 0.977 |
+| odb/pack_exists_prefix | 103.9 | 102.4 | 0.985 | 0.986 |
+| odb/pack_read_prefix | 486.1 | 435.6 | 0.896 | 0.905 |
+| odb/pack_foreach | 218.6 | 246.6 | 1.128 | 1.138 |
+| odb/mempack_write | 267.5 | 269.1 | 1.006 | 0.968 |
+| odb/mempack_read | 504.3 | 457.6 | 0.907 | 0.914 |
+| odb/mempack_reset | 5.7 | 7.2 | 1.267 | 1.267 |
+| delta/read_deltified_random | 851.1 | 749.7 | 0.881 | 0.903 |
+| delta/read_deep_chains | 267.8 | 254.9 | 0.952 | 0.938 |
+| delta/read_header_deltified | 231.0 | 204.8 | 0.887 | 0.869 |
+| delta/indexer_resolve | 1821.0 | 1750.0 | 0.961 | 0.906 |
+
+`pack_foreach` keeps a ~1.13 gap in the C pack code's loop on the ported
+util layer (the reviewer measured 1.10-1.13 with the same fix);
+`mempack_reset` (5.7 vs 7.2 ms for ~1.5k objects) frees each object's
+`Vec` through the map's drop, and the commits list now that it is freed
+as C frees it.
 
 Internal API (`micro/odb_bench.c`, `micro/odb_run.sh 5 5`):
 

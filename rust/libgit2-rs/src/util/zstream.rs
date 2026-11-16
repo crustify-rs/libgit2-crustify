@@ -152,7 +152,8 @@ impl<'a> ZstreamPtr<'a> {
     /// zlib for a small one (cheaper to set up), zlib-rs otherwise (faster
     /// in bulk). Both give the same output, codes and messages.
     fn start_inflate(self, out_len: usize) -> c_int {
-        let sys = out_len < SMALL_OUTPUT;
+        // Miri cannot run the system zlib (foreign code): zlib-rs there.
+        let sys = !cfg!(miri) && out_len < SMALL_OUTPUT;
         let r = if sys {
             // SAFETY: a stream without state, reached only through this
             // pointer and not moved while initialized (the type's rule).
