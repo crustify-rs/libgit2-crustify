@@ -211,9 +211,10 @@ impl ListEntry {
         self.meta
     }
 
-    /// The public entry C is handed.
+    /// The public entry C is handed: a pointer to the whole entry (its
+    /// `free` reads `list`, after `base`), writable only in `base`.
     pub fn as_backend_entry(&self) -> *mut git_config_backend_entry {
-        self.base.get()
+        core::ptr::from_ref(self).cast_mut().cast()
     }
 }
 
