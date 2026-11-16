@@ -138,6 +138,19 @@ fn copy(s: &[u8]) -> Result<GitCStr> {
     unsafe { GitCStr::from_raw(alloc::substrdup(s)) }.ok_or(ErrorCode::GENERIC)
 }
 
+/// `git__memmem(s, len, "\n\n", 2)`: where the first blank line starts.
+fn find_blank_line(s: &[u8]) -> Option<usize> {
+    let mut from = 0;
+    while let Some(i) = memchr::memchr(b'\n', &s[from..]) {
+        let at = from + i;
+        if s.get(at + 1) == Some(&b'\n') {
+            return Some(at);
+        }
+        from = at + 1;
+    }
+    None
+}
+
 /// `tag_parse`: the target and the rest of a tag's contents. Errors are
 /// `GIT_EINVALID` with C's messages (a tagger's are the signature
 /// parser's), or -1 when out of memory.
@@ -197,7 +210,7 @@ pub fn parse(buf: &[u8], oid_type: crate::oid::git_oid_t) -> Result<(Oid, TagDat
     if pos < end {
         // Not at the end of the header: look for it.
         if buf[pos] != b'\n' {
-            match crate::util::util::memmem(&buf[pos..], b"\n\n") {
+            match find_blank_line(&buf[pos..]) {
                 Some(i) => pos += i + 1,
                 None => return Err(tag_error("tag contains no message")),
             }
@@ -1447,6 +1460,15 @@ This is a test tag\n";
         assert_eq!(d.message.unwrap().as_c_str().to_bytes(), b"");
         assert_eq!(err(OK.split_at(10).0).0, -21);
         assert!(parse(OK, 0).is_err());
+    }
+
+    #[test]
+    fn blank_lines() {
+        assert_eq!(find_blank_line(b"a\n\nb"), Some(1));
+        assert_eq!(find_blank_line(b"a\nb\n"), None);
+        assert_eq!(find_blank_line(b"\n\n"), Some(0));
+        assert_eq!(find_blank_line(b"x\n"), None);
+        assert_eq!(find_blank_line(b""), None);
     }
 
     #[test]
