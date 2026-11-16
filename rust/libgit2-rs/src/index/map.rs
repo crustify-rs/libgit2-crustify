@@ -25,13 +25,25 @@ use crate::util::hashmap::GitHashSet;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct Key(pub(crate) NonNull<EntryHead>);
 
+/// ASCII lower-casing, as a table.
+static LOWER: [u8; 256] = {
+    let mut t = [0u8; 256];
+    let mut i = 0;
+    while i < 256 {
+        t[i] = (i as u8).to_ascii_lowercase();
+        i += 1;
+    }
+    t
+};
+
 /// `git_index_entrymap_hash`: `__ac_X31_hash_string` of the lower-cased
 /// path, plus the stage.
 #[inline]
 fn hash(k: &Key) -> u32 {
     let (path, stage) = parts(k);
-    // `git__tolower` is `tolower((unsigned char)c)` on Unix (the C locale).
-    let low = |c: u8| u32::from(c.to_ascii_lowercase());
+    // `git__tolower` is `tolower((unsigned char)c)` on Unix (the C locale),
+    // as a table
+    let low = |c: u8| u32::from(LOWER[c as usize]);
     let mut h: u32 = 0;
     if let Some((&first, rest)) = path.split_first() {
         h = low(first);

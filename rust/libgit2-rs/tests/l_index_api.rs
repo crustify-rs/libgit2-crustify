@@ -1,6 +1,7 @@
 //! The safe API of the index (WP l-index), used as a Rust consumer would:
-//! no `unsafe`. The paths an index stores are checked by `path.c` (C), so
-//! these tests need `--features link-c`.
+//! no `unsafe`. The paths an index stores are checked by `path.c` (C);
+//! under Miri the index uses a Rust stand-in, so the tests that touch no
+//! file run there too.
 
 #![forbid(unsafe_code)]
 
@@ -29,7 +30,6 @@ fn tmpdir(name: &str) -> PathBuf {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "path checks are C")]
 fn add_get_remove() {
     let _g = test_support::init();
     let mut ix = Index::new().unwrap();
@@ -57,7 +57,6 @@ fn add_get_remove() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "path checks are C")]
 fn invalid_paths_and_modes() {
     let _g = test_support::init();
     let mut ix = Index::new().unwrap();
@@ -73,7 +72,6 @@ fn invalid_paths_and_modes() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "path checks are C")]
 fn snapshot_iteration_survives_changes() {
     let _g = test_support::init();
     let mut ix = Index::new().unwrap();
@@ -92,7 +90,6 @@ fn snapshot_iteration_survives_changes() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "path checks are C")]
 fn conflicts() {
     let _g = test_support::init();
     let mut ix = Index::new().unwrap();
@@ -121,7 +118,6 @@ fn conflicts() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "path checks are C")]
 fn names_extensions_caps_version() {
     let _g = test_support::init();
     let mut ix = Index::new().unwrap();
@@ -240,7 +236,6 @@ fn read_errors_and_in_memory() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "path checks are C")]
 fn read_index_keeps_stat_data() {
     let _g = test_support::init();
     let mut a = Index::new().unwrap();
@@ -277,7 +272,6 @@ fn index_of_the_resources() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "path checks and pathspecs are C")]
 fn remove_all_with_a_reentrant_closure() {
     let _g = test_support::init();
     let mut ix = Index::new().unwrap();
@@ -308,4 +302,19 @@ fn remove_all_with_a_reentrant_closure() {
         .unwrap_err();
     assert_eq!(err.message(), "git_index_remove_all callback returned -7");
     assert_eq!(ix.len(), 2);
+}
+
+#[test]
+fn a_panicking_closure_stops_the_operation() {
+    let _g = test_support::init();
+    let mut ix = Index::new().unwrap();
+    ix.add(&entry("p", 'a')).unwrap();
+    let err = ix
+        .remove_all(
+            &[b"*"],
+            Some(|_: &[u8], _: Option<&[u8]>| -> i32 { panic!("in the closure") }),
+        )
+        .unwrap_err();
+    assert_eq!(err.class(), ErrorClass::INTERNAL);
+    assert_eq!(ix.len(), 1);
 }

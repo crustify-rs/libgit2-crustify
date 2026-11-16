@@ -37,7 +37,6 @@ fn add(ix: *mut GitIndex, path: &CStr, stage: c_int) -> c_int {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "reaches C")]
 fn argument_checks() {
     let _g = test_support::init();
     // SAFETY: (throughout) the exports' contracts, with NULL where they
@@ -105,7 +104,6 @@ fn argument_checks() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "reaches C")]
 fn iterators_and_snapshots() {
     let _g = test_support::init();
     let ix = new_index();
@@ -186,7 +184,6 @@ fn iterators_and_snapshots() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "reaches C")]
 fn comparison_functions() {
     let _g = test_support::init();
     let mut a = GitIndexEntry::zeroed();
@@ -212,7 +209,6 @@ fn comparison_functions() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "reaches C")]
 fn extensions_and_reuc() {
     let _g = test_support::init();
     let ix = new_index();
@@ -309,7 +305,6 @@ fn writer_locks_the_index() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "reaches C")]
 fn callbacks_may_reenter() {
     let _g = test_support::init();
     let ix = new_index();
@@ -340,5 +335,102 @@ fn callbacks_may_reenter() {
         );
         assert_eq!(git_index_entrycount(ix), 1);
         git_index_free(ix);
+    }
+}
+
+#[test]
+fn concurrent_readers_of_one_index() {
+    // C's `threads::diff` reads one repository index from many threads:
+    // snapshots, lookups and counts must not race (Miri checks it).
+    let _g = test_support::init();
+    let ix = new_index();
+    for p in [c"a", c"b/c", c"d"] {
+        assert_eq!(add(ix, p, 0), 0);
+    }
+    #[derive(Clone, Copy)]
+    struct Shared(*mut GitIndex);
+    // SAFETY: the index is used on its read paths only, which C runs on
+    // several threads too.
+    unsafe impl Send for Shared {}
+    let shared = Shared(ix);
+    let threads: Vec<_> = (0..4)
+        .map(|_| {
+            std::thread::spawn(move || {
+                let s = shared;
+                let ix = s.0;
+                for _ in 0..3 {
+                    // SAFETY: a live index, used on read paths only by every
+                    // thread.
+                    unsafe {
+                        let mut snap = core::mem::MaybeUninit::<GitVector>::uninit();
+                        assert_eq!(git_index_snapshot_new(snap.as_mut_ptr(), ix), 0);
+                        assert!(!git_index_get_bypath(ix, c"b/c".as_ptr(), 0).is_null());
+                        assert_eq!(git_index_entrycount(ix), 3);
+                        let mut pos = 0;
+                        assert_eq!(git_index_find(&raw mut pos, ix, c"d".as_ptr()), 0);
+                        assert_eq!(git_index_caps(ix), 0);
+                        git_index_snapshot_release(snap.as_mut_ptr(), ix);
+                    }
+                }
+            })
+        })
+        .collect();
+    for t in threads {
+        t.join().unwrap();
+    }
+    // SAFETY: the threads are done.
+    unsafe { git_index_free(ix) };
+}
+
+#[test]
+fn read_index_with_a_live_iterator_and_conflicts() {
+    let _g = test_support::init();
+    let a = new_index();
+    let b = new_index();
+    for p in [c"keep", c"gone", c"x/y"] {
+        assert_eq!(add(a, p, 0), 0);
+    }
+    assert_eq!(add(b, c"keep", 0), 0);
+    assert_eq!(add(b, c"new", 0), 0);
+    // SAFETY: (throughout) live indexes and iterators.
+    unsafe {
+        let mut it = ptr::null_mut();
+        assert_eq!(git_index_iterator_new(&raw mut it, a), 0);
+        assert_eq!(git_index_read_index(a, b), 0);
+        // the iterator still reads the entries it was made with
+        let mut e = ptr::null();
+        let mut n = 0;
+        while git_index_iterator_next(&raw mut e, it) == 0 {
+            assert!(!CStr::from_ptr((*e).path).to_bytes().is_empty());
+            n += 1;
+        }
+        assert_eq!(n, 3);
+        git_index_iterator_free(it);
+        assert_eq!(git_index_entrycount(a), 2);
+
+        // a conflict over a stage-0 entry, then its resolution
+        let mut sides = [GitIndexEntry::zeroed(); 3];
+        for s in &mut sides {
+            s.mode = 0o100644;
+            s.path = c"keep".as_ptr();
+        }
+        assert_eq!(
+            git_index_conflict_add(
+                a,
+                &raw const sides[0],
+                &raw const sides[1],
+                &raw const sides[2]
+            ),
+            0
+        );
+        assert_eq!(git_index_has_conflicts(a), 1);
+        assert_eq!(git_index__conflict_to_reuc(a, c"keep".as_ptr()), 0);
+        assert_eq!(git_index_has_conflicts(a), 0);
+        assert_eq!(git_index_reuc_entrycount(a), 1);
+        // an invalid path is refused
+        assert_eq!(add(a, c".git/x", 0), -1);
+        assert_eq!(last(), "invalid path: '.git/x'");
+        git_index_free(a);
+        git_index_free(b);
     }
 }

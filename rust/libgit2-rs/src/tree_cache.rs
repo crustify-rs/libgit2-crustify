@@ -91,12 +91,20 @@ impl GitTreeCache {
 
 /// Where nodes are allocated: a pool (`git_pool_malloc`/`mallocz` of
 /// bytes).
-pub trait NodeAlloc {
+///
+/// # Safety
+///
+/// `alloc` returns a fresh block of at least `size` bytes, 8-aligned,
+/// writable (and zeroed when asked), that stays valid as long as the
+/// allocator; the tree cache writes nodes through it.
+pub(crate) unsafe trait NodeAlloc {
     /// `size` bytes, 8-aligned, zeroed if `zeroed`.
     fn alloc(&mut self, size: usize, zeroed: bool) -> Result<core::ptr::NonNull<u8>>;
 }
 
-impl NodeAlloc for GitPool {
+// SAFETY: `GitPool`'s blocks are fresh, 8-aligned (its rounding), of the
+// size asked, valid until the pool is cleared.
+unsafe impl NodeAlloc for GitPool {
     fn alloc(&mut self, size: usize, zeroed: bool) -> Result<core::ptr::NonNull<u8>> {
         if zeroed {
             self.mallocz(size)
@@ -108,7 +116,7 @@ impl NodeAlloc for GitPool {
 
 /// A pool C passed by pointer, borrowed only for each allocation (the tree
 /// lookups between allocations may run C that reaches the pool's index).
-pub struct RawPool(*mut GitPool);
+pub(crate) struct RawPool(*mut GitPool);
 
 impl RawPool {
     /// A handle on `pool`.
@@ -122,7 +130,8 @@ impl RawPool {
     }
 }
 
-impl NodeAlloc for RawPool {
+// SAFETY: as the pool it points to (`RawPool::new`'s contract).
+unsafe impl NodeAlloc for RawPool {
     fn alloc(&mut self, size: usize, zeroed: bool) -> Result<core::ptr::NonNull<u8>> {
         // SAFETY: `new`'s contract; the borrow ends with the allocation.
         unsafe { &mut *self.0 }.alloc(size, zeroed)
@@ -136,7 +145,7 @@ pub fn new(name: &[u8], oid_type: git_oid_t, pool: &mut GitPool) -> Result<*mut 
 }
 
 /// [`new`] in any [`NodeAlloc`].
-pub fn new_in<A: NodeAlloc + ?Sized>(
+pub(crate) fn new_in<A: NodeAlloc + ?Sized>(
     name: &[u8],
     oid_type: git_oid_t,
     pool: &mut A,
@@ -317,6 +326,12 @@ fn read_node(
         p += oid_size;
     }
 
+    // Every child takes at least 6 bytes ("\0-1 0\n"): a count the data
+    // cannot hold is a corruption, found before C's allocation (and zeroing)
+    // of up to 16 GiB for it (see DEFECTS.md).
+    if children_count > (buf.len() - p) / 6 {
+        return corrupt();
+    }
     if children_count > 0 {
         let bufsize =
             crate::util::integer::alloc_multiply(children_count, size_of::<*mut GitTreeCache>())
@@ -390,7 +405,12 @@ pub fn read_into(
 }
 
 /// The tree objects behind a [`read_tree`] (`tree.c`'s accessors).
-pub trait TreeSource {
+///
+/// # Safety
+///
+/// `len` and `entry` give the same answers for a tree as long as it lives
+/// (the subtree count decides the size of the array the entries fill).
+pub(crate) unsafe trait TreeSource {
     /// A tree object (released on drop).
     type Tree;
     /// The tree's id (`git_tree_id`).
@@ -400,6 +420,10 @@ pub trait TreeSource {
     /// Entry `i`: whether it is a tree (`git_tree_entry_filemode` is
     /// `GIT_FILEMODE_TREE`), its name and id.
     fn entry<'t>(&self, tree: &'t Self::Tree, i: usize) -> (bool, &'t [u8], Oid);
+    /// Whether entry `i` is a tree (the first part of [`entry`](Self::entry)).
+    fn is_tree(&self, tree: &Self::Tree, i: usize) -> bool {
+        self.entry(tree, i).0
+    }
     /// Look a subtree up by id (`git_tree_lookup`).
     fn lookup(&self, id: &Oid) -> Result<Self::Tree>;
 }
@@ -417,7 +441,7 @@ fn read_tree_recursive<S: TreeSource, A: NodeAlloc + ?Sized>(
     // reaches until the tree is returned.
     unsafe { (*cache).oid = id };
     let nentries = src.len(tree);
-    let ntrees = (0..nentries).filter(|&i| src.entry(tree, i).0).count();
+    let ntrees = (0..nentries).filter(|&i| src.is_tree(tree, i)).count();
     let alloc_size = crate::util::integer::alloc_multiply(ntrees, size_of::<*mut GitTreeCache>())?;
     // SAFETY: as above.
     let oid_type = unsafe { (*cache).oid_type };
@@ -439,6 +463,10 @@ fn read_tree_recursive<S: TreeSource, A: NodeAlloc + ?Sized>(
             unsafe { (*cache).entry_count += 1 };
             continue;
         }
+        if j >= ntrees {
+            // the source changed its answer (its contract forbids it)
+            break;
+        }
         let child = new_in(name, oid_type, pool)?;
         // SAFETY: `children` has `ntrees` slots and `j < ntrees`.
         unsafe { children.wrapping_add(j).write(child) };
@@ -457,7 +485,7 @@ fn read_tree_recursive<S: TreeSource, A: NodeAlloc + ?Sized>(
 
 /// `git_tree_cache_read_tree`: the tree cache of the tree object `tree`
 /// (as `git read-tree` makes it), in `pool`.
-pub fn read_tree<S: TreeSource, A: NodeAlloc + ?Sized>(
+pub(crate) fn read_tree<S: TreeSource, A: NodeAlloc + ?Sized>(
     src: &S,
     tree: &S::Tree,
     oid_type: git_oid_t,
@@ -487,15 +515,12 @@ pub unsafe fn write(out: &mut GitStr, tree: *const GitTreeCache) -> Result<()> {
             // C: "%s%c%"PRIdZ" %"PRIuZ"\n" (12 characters), `%s` stopping at
             // the name's NUL.
             let name = memchr::memchr(0, name).map_or(name, |z| &name[..z]);
-            let _ = out.printf(
-                12,
-                format_args!(
-                    "{}\0{} {}\n",
-                    crate::util::errors::Bytes(name),
-                    n.entry_count,
-                    n.children_count
-                ),
-            );
+            // the name's bytes as they are (never through a `Display`, which
+            // would rewrite bytes that are not UTF-8); only the numbers are
+            // formatted
+            let _ = out.put(name);
+            let _ = out.putc(0);
+            let _ = out.printf(6, format_args!("{} {}\n", n.entry_count, n.children_count));
             if n.entry_count != -1 {
                 let size = crate::oid::oid_size(n.oid_type);
                 let _ = out.put(&n.oid.raw_id()[..size.min(crate::oid::GIT_OID_MAX_SIZE)]);
@@ -772,6 +797,18 @@ mod tests {
             errors::last_message().unwrap(),
             b"corrupted TREE extension in index (unexpected trailing data)"
         );
+    }
+
+    #[test]
+    fn names_are_written_byte_for_byte() {
+        let _g = crate::util::test_support::init();
+        let mut p = pool();
+        let data = b"\x00-1 1\n\xff\xfe\x00-1 0\n".to_vec();
+        let t = read(&data, OidType::Sha1, &mut p).unwrap();
+        let mut out = GitStr::new();
+        // SAFETY: a tree just read.
+        unsafe { write(&mut out, t) }.unwrap();
+        assert_eq!(out.as_bytes(), &data[..]);
     }
 
     #[test]

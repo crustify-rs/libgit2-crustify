@@ -38,18 +38,29 @@
 //! operations that call out (in [`ops`]) re-derive it afterwards. Entries
 //! are reached through raw pointers, with short-lived references in code
 //! that makes no foreign call.
+//!
+//! # Threads
+//!
+//! The C uses one repository index from several threads at once
+//! (`tests/libgit2/threads/diff.c`: `git_index_read(index, false)` and
+//! snapshots for iterators, on 32 threads). Those read paths take shared
+//! access only ([`IndexPtr::get_ref`], [`IndexPtr::sorted`]); the
+//! reference count, the readers count and the bitfields are atomics; a sort
+//! happens only when the entries are not sorted, where the C's own write
+//! raced too (see `rust/DEFECTS.md`).
 
 pub mod api;
 pub mod ffi;
-pub mod foreign;
+pub(crate) mod foreign;
 pub(crate) mod map;
-pub mod ondisk;
-pub mod ops;
+pub(crate) mod ondisk;
+pub(crate) mod ops;
 #[cfg(test)]
 mod tests;
 
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::ptr::{self, NonNull};
+use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::oid::{Oid, OidType, git_oid_t};
 use crate::tree_cache::{self, GitTreeCache};
@@ -322,12 +333,11 @@ pub struct EntryHead {
 /// `pathlen` bytes, neither written during `'a`.
 #[inline(always)]
 pub(crate) unsafe fn entry_path_raw<'a>(e: *const EntryHead) -> &'a [u8] {
-    // SAFETY: the caller's contract: a live head.
+    // SAFETY: the caller's contract: a live head, whose path pointer is
+    // non-null (an entry's own storage, or a lookup key's slice) and
+    // readable for `pathlen` bytes.
     let h = unsafe { &*e };
-    if h.pathlen == 0 {
-        return &[];
-    }
-    // SAFETY: the caller's contract: `pathlen` readable bytes at the path.
+    // SAFETY: as above.
     unsafe { core::slice::from_raw_parts(h.entry.path.cast::<u8>(), h.pathlen) }
 }
 
@@ -625,10 +635,42 @@ pub(crate) fn find_in_entries(
     stage: c_int,
     icase: bool,
 ) -> core::result::Result<usize, usize> {
-    // SAFETY: as in `sort_entries`.
-    bsearch(v.as_slice(), |&e| unsafe {
-        entry_srch(path, stage, as_entry(e), icase)
-    })
+    let v = v.as_slice();
+    if icase {
+        // SAFETY: as in `sort_entries`.
+        bsearch_entries(v, |e| unsafe { entry_srch(path, stage, e, true) })
+    } else {
+        // SAFETY: as in `sort_entries`.
+        bsearch_entries(v, |e| unsafe { entry_srch(path, stage, e, false) })
+    }
+}
+
+/// `git__bsearch` over a vector of index entries (the same probes, so the
+/// same position for equal keys), inlined.
+#[inline(always)]
+fn bsearch_entries(
+    v: &[*mut c_void],
+    mut cmp: impl FnMut(EntryPtr) -> c_int,
+) -> core::result::Result<usize, usize> {
+    let mut base = 0usize;
+    let mut lim = v.len();
+    while lim != 0 {
+        let part = base + (lim >> 1);
+        // SAFETY: `base + lim <= v.len()` throughout, and `lim >> 1 < lim`.
+        let e = unsafe { *v.get_unchecked(part) };
+        // SAFETY: the index's vectors hold only non-null entries (the
+        // invariant).
+        let c = cmp(unsafe { NonNull::new_unchecked(e.cast::<EntryHead>()) });
+        if c == 0 {
+            return Ok(part);
+        }
+        if c > 0 {
+            base = part + 1;
+            lim -= 1;
+        }
+        lim >>= 1;
+    }
+    Err(base)
 }
 
 /// The entry comparison function C sees on an index's vector.
@@ -837,7 +879,7 @@ pub struct GitIndex {
     pub oid_type: git_oid_t,
     /// `on_disk`, `ignore_case`, `distrust_filemode`, `no_symlinks`,
     /// `dirty` (bits 0 to 4).
-    pub bits: c_uint,
+    pub bits: AtomicU32,
     /// `tree`.
     pub tree: *mut GitTreeCache,
     /// `tree_pool`.
@@ -876,12 +918,18 @@ macro_rules! bit_accessors {
             #[doc = concat!("The `", stringify!($get), "` bit.")]
             #[inline]
             pub fn $get(&self) -> bool {
-                self.bits & $b != 0
+                self.bits.load(Ordering::Relaxed) & $b != 0
             }
-            #[doc = concat!("Set the `", stringify!($get), "` bit.")]
+            #[doc = concat!("Set the `", stringify!($get), "` bit (no write when it")]
+            #[doc = "is set already: read paths that C runs on several threads"]
+            #[doc = "leave the word alone)."]
             #[inline]
-            pub fn $set(&mut self, v: bool) {
-                if v { self.bits |= $b } else { self.bits &= !$b }
+            pub fn $set(&self, v: bool) {
+                let old = self.bits.load(Ordering::Relaxed);
+                let new = if v { old | $b } else { old & !$b };
+                if new != old {
+                    self.bits.store(new, Ordering::Relaxed);
+                }
             }
         )*
     };
@@ -914,7 +962,7 @@ impl GitIndex {
             checksum: [0; crate::util::hash::MAX_SIZE],
             entries,
             oid_type: oid_type.raw(),
-            bits: 0,
+            bits: AtomicU32::new(0),
             tree: ptr::null_mut(),
             tree_pool,
             names,
@@ -961,6 +1009,16 @@ impl GitIndex {
     /// `index_find`: sort, then search for (`path`, `stage`).
     pub(crate) fn find(&mut self, path: &[u8], stage: c_int) -> core::result::Result<usize, usize> {
         self.sort();
+        self.find_sorted(path, stage)
+    }
+
+    /// [`find`](Self::find) of an index already sorted.
+    #[inline]
+    pub(crate) fn find_sorted(
+        &self,
+        path: &[u8],
+        stage: c_int,
+    ) -> core::result::Result<usize, usize> {
         find_in_entries(&self.entries, path, stage, self.ignore_case())
     }
 
@@ -1086,13 +1144,22 @@ impl GitIndex {
 
     /// `git_index_find`: the first entry (of any stage) at `path`.
     pub(crate) fn find_path(&mut self, path: &[u8]) -> Option<usize> {
-        let icase = self.ignore_case();
         self.sort();
+        self.find_path_sorted(path)
+    }
+
+    /// [`find_path`](Self::find_path) of an index already sorted.
+    pub(crate) fn find_path_sorted(&self, path: &[u8]) -> Option<usize> {
+        let icase = self.ignore_case();
         // `entries_search_path`: strcmp/strcasecmp of the path.
-        // SAFETY: as in `sort_entries`.
-        let found = bsearch(self.entries.as_slice(), |&e| unsafe {
-            path_cmp(path, epath(as_entry(e)), icase)
-        });
+        let v = self.entries.as_slice();
+        let found = if icase {
+            // SAFETY: as in `sort_entries`.
+            bsearch_entries(v, |e| path_cmp(path, unsafe { epath(e) }, true))
+        } else {
+            // SAFETY: as in `sort_entries`.
+            bsearch_entries(v, |e| path_cmp(path, unsafe { epath(e) }, false))
+        };
         let mut pos = found.ok()?;
         while pos > 0 {
             let prev = self.entry_at(pos - 1)?;
@@ -1239,8 +1306,8 @@ impl GitIndex {
         ok_to_replace: bool,
     ) -> core::result::Result<(), ()> {
         // SAFETY: `entry` is live and not in the index.
+        // (its path is borrowed: nothing here writes or frees `entry`)
         let (name, stage) = unsafe { eps(entry) };
-        let name = name.to_vec();
         let len = name.len();
         while let Some(p) = self.entry_at(pos) {
             pos += 1;
@@ -1277,8 +1344,8 @@ impl GitIndex {
         ok_to_replace: bool,
     ) -> core::result::Result<(), ()> {
         // SAFETY: `entry` is live and not in the index.
+        // (its path is borrowed: nothing here writes or frees `entry`)
         let (name, stage) = unsafe { eps(entry) };
-        let name = name.to_vec();
         let mut slash = name.len();
         loop {
             // find the previous '/' (C stops at the start of the path)
@@ -1351,11 +1418,11 @@ impl GitIndex {
         trust_path: bool,
     ) -> Result<EntryPtr> {
         // SAFETY: `entry` is live and not in the index.
+        // (its path is borrowed, and not used once `entry` is freed)
         let (path, stage) = unsafe { eps(entry) };
-        let path = path.to_vec();
         // the position (and existing entry) again: C kept them across the
         // object check, which may have run code that changed the index.
-        let (existing, position, _) = self.existing_and_best(&path, stage);
+        let (existing, position, _) = self.existing_and_best(path, stage);
         // (the collision check never removes `existing`: it removes only
         // entries at other paths)
         if let Err(e) = self.check_file_directory_collision(entry, position, replace) {
@@ -1411,7 +1478,7 @@ impl GitIndex {
             if let Err(e) = unsafe { self.entries_map.put(entry) } {
                 // C freed the entry while the vector held it; take it out
                 // first (see `rust/DEFECTS.md`).
-                if let Ok(p) = self.find(&path, stage) {
+                if let Ok(p) = self.find(path, stage) {
                     let _ = self.entries.remove(p);
                 }
                 // SAFETY: removed again; ours.
@@ -1553,7 +1620,13 @@ impl GitIndex {
 
     /// `git_index_find_prefix`.
     pub(crate) fn find_prefix(&mut self, prefix: &[u8]) -> Option<usize> {
-        let pos = match self.find(prefix, GIT_INDEX_STAGE_ANY) {
+        self.sort();
+        self.find_prefix_sorted(prefix)
+    }
+
+    /// [`find_prefix`](Self::find_prefix) of an index already sorted.
+    pub(crate) fn find_prefix_sorted(&self, prefix: &[u8]) -> Option<usize> {
+        let pos = match self.find_sorted(prefix, GIT_INDEX_STAGE_ANY) {
             Ok(p) | Err(p) => p,
         };
         let e = self.entry_at(pos)?;
@@ -1629,7 +1702,10 @@ impl GitIndex {
         for i in 0..3 {
             // SAFETY: `reuc` is fresh and ours.
             unsafe { (*reuc.as_ptr()).mode[i] = modes[i] as u32 };
-            if modes[i] > 0 {
+            // C: `(reuc->mode[i] = mode) > 0` compares the stored
+            // `uint32_t`: any non-zero mode, negative ones included, needs
+            // its id.
+            if modes[i] as u32 != 0 {
                 let Some(o) = oids[i] else {
                     // SAFETY: ours.
                     unsafe { reuc_free(reuc.as_ptr().cast()) };
@@ -1648,7 +1724,9 @@ impl GitIndex {
         if !self.reuc.is_sorted() {
             // SAFETY: ours.
             unsafe { reuc_free(reuc.as_ptr().cast()) };
-            return Err(errors::assert_failed("git_vector_is_sorted(&index->reuc)"));
+            return Err(errors::assert_failed(
+                "(((&index->reuc)->flags & GIT_VECTOR_SORTED) != 0)",
+            ));
         }
         let icase = self.reuc_icase();
         let r = self.reuc.insert_sorted_by(
@@ -1678,6 +1756,11 @@ impl GitIndex {
     /// `git_index_reuc_find`.
     pub(crate) fn reuc_find(&mut self, path: &[u8]) -> core::result::Result<usize, usize> {
         self.sort_reuc();
+        self.reuc_find_sorted(path)
+    }
+
+    /// [`reuc_find`](Self::reuc_find) of a sorted REUC vector.
+    pub(crate) fn reuc_find_sorted(&self, path: &[u8]) -> core::result::Result<usize, usize> {
         // `reuc_search`: strcmp/strcasecmp, by the index's case
         let icase = self.ignore_case();
         // SAFETY: REUC entries.
@@ -1688,7 +1771,10 @@ impl GitIndex {
 
     /// `git_index_reuc_remove`.
     pub(crate) fn reuc_remove(&mut self, position: usize) -> Result<()> {
-        git_assert!(self.reuc.is_sorted(), "git_vector_is_sorted(&index->reuc)");
+        git_assert!(
+            self.reuc.is_sorted(),
+            "(((&index->reuc)->flags & GIT_VECTOR_SORTED) != 0)"
+        );
         let r = self.reuc.get(position);
         let res = self.reuc.remove(position);
         if res.is_ok()
@@ -1776,6 +1862,7 @@ impl GitIndex {
 /// index stays live while the handle is used. [`get`](IndexPtr::get) is the
 /// one place where a reference to the index is formed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(transparent)]
 pub struct IndexPtr(NonNull<GitIndex>);
 
 impl IndexPtr {
@@ -1784,7 +1871,10 @@ impl IndexPtr {
     /// # Safety
     ///
     /// `ix` points to a live index (made by this module) that stays live
-    /// while the handle (or a copy) is used, on this thread only.
+    /// while the handle (or a copy) is used. Other threads may use the
+    /// index at the same time only on C's read paths (shared access through
+    /// [`get_ref`](Self::get_ref), the atomics), as libgit2's C does with a
+    /// repository's index (`threads::diff`).
     #[inline]
     pub unsafe fn new(ix: NonNull<GitIndex>) -> IndexPtr {
         IndexPtr(ix)
@@ -1815,6 +1905,42 @@ impl IndexPtr {
     pub unsafe fn get<'a>(self) -> &'a mut GitIndex {
         // SAFETY: the caller's contract and `new`'s.
         unsafe { &mut *self.0.as_ptr() }
+    }
+
+    /// Shared access to the index, for the read paths that C runs on
+    /// several threads at once (`threads::diff`: one repository index,
+    /// `git_index_read` and snapshots from 32 threads).
+    ///
+    /// # Safety
+    ///
+    /// No `&mut` to the index is live while the result is (C's own writes
+    /// on a read path, which race in C, are the bits, which are atomic, and
+    /// sorting, which [`sorted`](Self::sorted) does only when needed), and
+    /// no foreign code runs while it is.
+    #[inline(always)]
+    pub unsafe fn get_ref<'a>(self) -> &'a GitIndex {
+        // SAFETY: the caller's contract and `new`'s.
+        unsafe { &*self.0.as_ptr() }
+    }
+
+    /// The index with its entries sorted (`git_vector_sort(&index->entries)`
+    /// then a shared view): exclusive access only when the vector is not
+    /// sorted (where the C wrote too, racing with any other thread).
+    ///
+    /// # Safety
+    ///
+    /// As [`get_ref`](Self::get_ref); and when the entries are not sorted,
+    /// as [`get`](Self::get) for the sort.
+    #[inline]
+    pub unsafe fn sorted<'a>(self) -> &'a GitIndex {
+        // SAFETY: the caller's contract.
+        if !unsafe { self.get_ref() }.entries.is_sorted() {
+            // SAFETY: the caller's contract (an unsorted index is not being
+            // read by another thread; if it were, the C raced the same way).
+            unsafe { self.get() }.sort();
+        }
+        // SAFETY: as above.
+        unsafe { self.get_ref() }
     }
 
     /// The owner (`GIT_REFCOUNT_OWNER`), through the atomic: no reference
@@ -1895,8 +2021,8 @@ pub struct GitIndexWriter {
     pub should_write: c_uint,
 }
 
-/// `struct git_index_iterator`, Rust-private (the public header only
-/// declares it).
+/// `struct git_index_iterator`, mirrored: the tests read `snap`.
+#[repr(C)]
 pub struct GitIndexIterator {
     pub(crate) index: IndexPtr,
     pub(crate) snap: GitVector,
@@ -1918,6 +2044,7 @@ crate::c_layout_test! {
         GitIndexNameEntry => "git_index_name_entry" { ancestor, ours, theirs },
         GitIndexOptions => "git_index_options" { version, oid_type },
         GitIndexWriter => "git_indexwriter" { index, file },
+        GitIndexIterator => "git_index_iterator" { index, snap, cur },
         CPrefix => "git_index" { rc, index_file_path, stamp, checksum, entries, oid_type, tree, tree_pool, names, reuc },
     ],
 }
@@ -1933,7 +2060,7 @@ struct CPrefix {
     checksum: [u8; crate::util::hash::MAX_SIZE],
     entries: GitVector,
     oid_type: git_oid_t,
-    bits: c_uint,
+    bits: AtomicU32,
     tree: *mut GitTreeCache,
     tree_pool: GitPool,
     names: GitVector,

@@ -115,8 +115,6 @@ fn strlen_at(b: &[u8], at: usize) -> usize {
 pub struct ParseState {
     /// The index's id type.
     pub oid_type: OidType,
-    /// Whether the index is case-insensitive.
-    pub ignore_case: bool,
     /// The file's version, once its header is read.
     pub version: Option<c_uint>,
     /// `entries`.
@@ -141,7 +139,6 @@ impl GitIndex {
     pub(crate) fn take_parse_state(&mut self) -> ParseState {
         ParseState {
             oid_type: self.oid_kind(),
-            ignore_case: self.ignore_case(),
             version: None,
             entries: core::mem::take(&mut self.entries),
             map: core::mem::take(&mut self.entries_map),

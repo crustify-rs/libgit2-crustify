@@ -572,3 +572,25 @@ cpu time: geomean ratio 0.996, median |ratio-1| 0.031, max |ratio-1| 0.094, with
 ```
 
 Parity within the noise of this machine (C-vs-C baseline: median |ratio−1| 1.8%): reading and writing the 100k-entry index and `add_remove_100k` are faster or equal in wall and CPU time; `find_bypath_100k` (+3.6% CPU) and `read_tree_x10` (+9.4% CPU, 1.02 wall) are the largest CPU ratios above 1, `conflicts` the largest wall ratio (1.09, CPU 1.003).
+
+### After review r1 (`compare.sh /work/build-c /work/builds/l-index 'index/*'`, lighter load)
+
+```
+component  workload                C ms     Rust ms  ratio minrat       C cpu    Rust cpu cpurat  check
+index      read_100k            239.096     208.423  0.872  0.877     234.812     202.634  0.863  ok b9d98eb2eb00ac6b
+index      read_git_x10          90.931      82.522  0.908  0.896      90.729      82.529  0.910  ok ec385a8e65333760
+index      write_100k           368.095     270.727  0.735  0.950     219.321     218.221  0.995  ok 22f0e2201dace099
+index      write_git             12.717      11.904  0.936  1.038      11.497      11.177  0.972  ok ef04e49736db21fe
+index      find_bypath_100k     281.515     263.360  0.936  0.981     273.721     256.727  0.938  ok 000000012ac8478c
+index      find_prefix           12.797      12.295  0.961  0.898      12.803      12.302  0.961  ok 000000001dc5c3e0
+index      add_remove_100k     1135.555    1159.119  1.021  1.000    1123.743    1133.643  1.009  ok 7a7d25999ea53dbc
+index      remove_directory    1128.080    1050.143  0.931  0.989    1046.796    1041.774  0.995  ok ea9aa18304d66022
+index      conflicts           1333.037    1332.761  1.000  1.039    1313.135    1313.164  1.000  ok 453a5b2cb4a9e763
+index      read_tree_x10        112.280     107.913  0.961  0.963     110.478     103.732  0.939  ok ec385a8e65333760
+index      write_tree_git        49.424      57.539  1.164  1.136      49.008      56.889  1.161  ok 154f5a592fc11533
+
+wall time, 11 workloads: geomean ratio 0.942, median |ratio-1| 0.064, max |ratio-1| 0.265, within 5%: 4, within 10%: 8, flagged: 0
+cpu time: geomean ratio 0.974, median |ratio-1| 0.039, max |ratio-1| 0.161, within 5%: 6, within 10%: 9
+```
+
+`find_bypath_100k` is now 0.94 (wall and CPU). `write_tree_git` is 1.12–1.13 in three runs, but so is master's build with the C index (`compare.sh /work/build-c /work/builds/master 'index/write_tree*'`: 1.141 wall, 1.146 CPU): the difference is in the layers below the index (tree writing, hashing), not in the index.

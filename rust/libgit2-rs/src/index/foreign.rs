@@ -66,6 +66,30 @@ fn raw(repo: Option<Repo>) -> *mut c_void {
 // ---------------------------------------------------------------------------
 
 /// `git_path_is_valid` of `path` (a NUL within it makes it invalid).
+///
+/// Under Miri (which cannot call C), a Rust stand-in: the filesystem
+/// checks of the flags (`fs_path`'s port) and a case-insensitive `.git`
+/// component for `GIT_PATH_REJECT_DOT_GIT`, so that the index's own logic
+/// runs under Miri; the repository's NTFS/HFS rules are not modelled.
+#[cfg(miri)]
+pub fn path_is_valid(repo: Option<Repo>, path: &[u8], file_mode: u16, flags: c_uint) -> bool {
+    let _ = (repo, file_mode);
+    let fs_flags = flags & (path::GIT_FS_PATH_REJECT_MAX * 2 - 1);
+    let mut dotgit =
+        |c: &[u8]| flags & path::GIT_PATH_REJECT_DOT_GIT == 0 || !c.eq_ignore_ascii_case(b".git");
+    crate::util::fs_path::str_is_valid_ext(
+        path,
+        true,
+        fs_flags,
+        crate::util::fs_path::ValidateCallbacks {
+            char_cb: None,
+            component_cb: Some(&mut dotgit),
+        },
+    )
+}
+
+/// `git_path_is_valid` of `path` (a NUL within it makes it invalid).
+#[cfg(not(miri))]
 pub fn path_is_valid(repo: Option<Repo>, path: &[u8], file_mode: u16, flags: c_uint) -> bool {
     let s = path::ConstStr {
         ptr: path.as_ptr().cast(),
@@ -257,7 +281,9 @@ impl CTrees {
     }
 }
 
-impl TreeSource for CTrees {
+// SAFETY: a `git_tree` is immutable while it lives: its entry count and
+// entries do not change.
+unsafe impl TreeSource for CTrees {
     type Tree = CTree;
 
     fn id(&self, tree: &CTree) -> Oid {
@@ -278,6 +304,13 @@ impl TreeSource for CTrees {
         let e = unsafe { p::git_tree_entry_byindex(tree.ptr.as_ptr(), i) };
         // SAFETY: as above.
         unsafe { entry_view(e) }
+    }
+
+    fn is_tree(&self, tree: &CTree, i: usize) -> bool {
+        // SAFETY: as in `entry`.
+        let e = unsafe { p::git_tree_entry_byindex(tree.ptr.as_ptr(), i) };
+        // SAFETY: as above.
+        unsafe { p::git_tree_entry_filemode(e) == super::GIT_FILEMODE_TREE }
     }
 
     fn lookup(&self, id: &Oid) -> Result<CTree> {
@@ -397,11 +430,6 @@ pub unsafe fn tree_write_index(index: *mut super::GitIndex, repo: Repo) -> Resul
 pub struct Paths<'a>(*const GitStrArray, PhantomData<&'a ()>);
 
 impl<'a> Paths<'a> {
-    /// No paths (a NULL `git_strarray *`).
-    pub fn none() -> Paths<'a> {
-        Paths(ptr::null(), PhantomData)
-    }
-
     /// The array at `raw` (NULL for none).
     ///
     /// # Safety
@@ -412,8 +440,8 @@ impl<'a> Paths<'a> {
         Paths(raw, PhantomData)
     }
 
-    /// An array over `ptrs` (which must stay as they are for `'a`).
-    pub fn from_ptrs(arr: &'a GitStrArrayBuf) -> Paths<'a> {
+    /// The array `arr` (whose strings live for `'a`).
+    pub fn from_ptrs(arr: &'a GitStrArrayBuf<'a>) -> Paths<'a> {
         Paths(&raw const arr.raw, PhantomData)
     }
 
@@ -423,16 +451,16 @@ impl<'a> Paths<'a> {
     }
 }
 
-/// A `git_strarray` over borrowed strings.
-pub struct GitStrArrayBuf {
+/// A `git_strarray` over strings borrowed for `'a`.
+pub struct GitStrArrayBuf<'a> {
     raw: GitStrArray,
     _ptrs: Vec<*mut c_char>,
+    _strings: PhantomData<&'a CStr>,
 }
 
-impl GitStrArrayBuf {
-    /// An array of the `strings` (which must outlive it: their pointers are
-    /// taken).
-    pub fn new(strings: &[&CStr]) -> GitStrArrayBuf {
+impl<'a> GitStrArrayBuf<'a> {
+    /// An array of the `strings`, borrowed for `'a`.
+    pub fn new(strings: &[&'a CStr]) -> GitStrArrayBuf<'a> {
         let mut ptrs: Vec<*mut c_char> = strings.iter().map(|s| s.as_ptr().cast_mut()).collect();
         GitStrArrayBuf {
             raw: GitStrArray {
@@ -444,13 +472,73 @@ impl GitStrArrayBuf {
                 count: ptrs.len(),
             },
             _ptrs: ptrs,
+            _strings: PhantomData,
         }
     }
 }
 
 /// A parsed pathspec (`git_pathspec`), cleared on drop.
+#[cfg(not(miri))]
 pub struct Pathspec(Box<core::mem::MaybeUninit<pathspec::GitPathspec>>);
 
+/// Under Miri (which cannot call C), a stand-in for `pathspec.c`: the
+/// patterns, matched with `wildmatch`'s port (with `WM_PATHNAME`) or as a
+/// directory prefix; no pattern matches everything. Enough to drive the
+/// index's pathspec operations and their callbacks.
+#[cfg(miri)]
+pub struct Pathspec(Vec<std::ffi::CString>);
+
+#[cfg(miri)]
+impl Pathspec {
+    /// The stand-in of `git_pathspec__init`.
+    pub fn new(paths: Paths<'_>) -> Result<Pathspec> {
+        let mut v = Vec::new();
+        if !paths.0.is_null() {
+            // SAFETY: a valid `git_strarray` (`Paths`).
+            let raw = unsafe { *paths.0 };
+            for i in 0..raw.count {
+                // SAFETY: as above: `count` pointers, each NULL or a string.
+                let p = unsafe { *raw.strings.add(i) };
+                // SAFETY: as above.
+                if let Some(c) = unsafe { crate::util::export::cstr(p) }
+                    && !c.is_empty()
+                {
+                    v.push(c.to_owned());
+                }
+            }
+        }
+        Ok(Pathspec(v))
+    }
+
+    /// The stand-in of `git_pathspec__match`.
+    pub fn matches(&self, path: &CStr, casefold: bool) -> Option<*const c_char> {
+        if self.0.is_empty() {
+            return Some(ptr::null());
+        }
+        let p = path.to_bytes();
+        self.0
+            .iter()
+            .find(|pat| {
+                let pat = pat.to_bytes();
+                let flags = crate::util::wildmatch::WildmatchFlags {
+                    casefold,
+                    pathname: true,
+                };
+                crate::util::wildmatch::wildmatch(pat, p, flags)
+                    == crate::util::wildmatch::WildMatch::Match
+                    || (p.starts_with(pat) && p.get(pat.len()) == Some(&b'/'))
+            })
+            .map(|pat| pat.as_ptr())
+    }
+
+    /// Ignore checks need the repository: none under Miri.
+    pub fn check_exact_ignores(&mut self, repo: Repo, no_fnmatch: bool) -> Result<()> {
+        let _ = (repo, no_fnmatch);
+        Ok(())
+    }
+}
+
+#[cfg(not(miri))]
 impl Pathspec {
     /// `git_pathspec__init`.
     pub fn new(paths: Paths<'_>) -> Result<Pathspec> {
@@ -503,6 +591,7 @@ impl Pathspec {
     }
 }
 
+#[cfg(not(miri))]
 impl Drop for Pathspec {
     fn drop(&mut self) {
         // SAFETY: initialized by `new`, cleared once (the C zeroes it, and
@@ -584,11 +673,6 @@ impl Diff {
     pub fn len(&self) -> usize {
         // SAFETY: a live diff.
         unsafe { d::git_diff_num_deltas(self.0.as_ptr()) }
-    }
-
-    /// Whether there is no delta.
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
     }
 
     /// The old path of delta `i` (`git_diff_get_delta`), copied.
