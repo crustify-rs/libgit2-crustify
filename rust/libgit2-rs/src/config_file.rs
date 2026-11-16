@@ -53,21 +53,22 @@ const CONFIG_FILE_TYPE: &[u8] = b"file";
 pub struct ConfigFile {
     stamp: Filestamp,
     checksum: [u8; 32],
-    path: Vec<u8>,
+    /// The path, with a NUL (made once: every refresh `stat`s it).
+    cpath: Vec<u8>,
     includes: Vec<ConfigFile>,
 }
 
 impl ConfigFile {
-    fn new(path: Vec<u8>) -> ConfigFile {
-        ConfigFile {
-            path,
+    fn new(path: &[u8]) -> Result<ConfigFile> {
+        Ok(ConfigFile {
+            cpath: cstring(path)?,
             ..ConfigFile::default()
-        }
+        })
     }
 
-    /// The path as a C string.
-    fn cpath(&self) -> Result<Vec<u8>> {
-        cstring(&self.path)
+    /// The path.
+    fn path(&self) -> &[u8] {
+        self.cpath.split_last().map_or(&[][..], |(_, p)| p)
     }
 
     /// This file without its includes (`config_file_clear_includes`).
@@ -75,7 +76,7 @@ impl ConfigFile {
         ConfigFile {
             stamp: self.stamp,
             checksum: self.checksum,
-            path: self.path.clone(),
+            cpath: self.cpath.clone(),
             includes: Vec::new(),
         }
     }
@@ -164,7 +165,7 @@ impl Reader<'_> {
         }
         let m = EntryMeta {
             backend_type: self.list.intern(CONFIG_FILE_TYPE)?,
-            origin_path: self.list.intern(&self.file.path)?,
+            origin_path: self.list.intern(self.file.path())?,
             include_depth: self.depth,
             level: self.level,
         };
@@ -176,7 +177,7 @@ impl Reader<'_> {
     fn parse_include(&mut self, value: Option<&[u8]>) -> Result<()> {
         let Some(file) = value else { return Ok(()) };
         let mut dir = GitStr::new();
-        fs_path::dirname_r(Some(&mut dir), Some(&self.file.path))?;
+        fs_path::dirname_r(Some(&mut dir), Some(self.file.path()))?;
         let mut path = GitStr::new();
         included_path(&mut path, dir.as_bytes(), file)?;
         drop(dir);
@@ -184,9 +185,8 @@ impl Reader<'_> {
             .includes
             .try_reserve(1)
             .map_err(|_| errors::oom())?;
-        self.file
-            .includes
-            .push(ConfigFile::new(path.as_bytes().to_vec()));
+        let include = ConfigFile::new(path.as_bytes())?;
+        self.file.includes.push(include);
         let include = self
             .file
             .includes
@@ -222,7 +222,7 @@ impl Reader<'_> {
             if prefixcmp(condition, prefix) != 0 {
                 continue;
             }
-            if matches(self.repo, &self.file.path, &condition[prefix.len()..])? {
+            if matches(self.repo, self.file.path(), &condition[prefix.len()..])? {
                 self.parse_include(value)?;
             }
             break;
@@ -352,7 +352,7 @@ fn read_buffer(
     if buf.first().copied().unwrap_or(0) == 0 {
         return Ok(());
     }
-    let path = file.path.clone();
+    let path = file.path().to_vec();
     let mut reader = Reader {
         repo,
         file,
@@ -373,11 +373,10 @@ fn read(
     level: c_int,
     depth: u32,
 ) -> Result<()> {
-    let cpath = file.cpath()?;
-    let cpath = as_cstr(&cpath);
+    let cpath = as_cstr(&file.cpath);
     let st = match crate::util::posix::stat(cpath) {
         Ok(st) => st,
-        Err(e) => return Err(fs_path::set_error(e.0, &file.path, "stat")),
+        Err(e) => return Err(fs_path::set_error(e.0, file.path(), "stat")),
     };
     let mut contents = GitStr::new();
     futils::readbuffer(&mut contents, cpath)?;
@@ -390,8 +389,7 @@ fn read(
 /// `config_file_is_modified`: whether `file` or one of its includes
 /// changed (refreshing the stamps on the way).
 fn is_modified(file: &mut ConfigFile) -> Result<bool> {
-    let cpath = file.cpath()?;
-    let cpath = as_cstr(&cpath);
+    let cpath = as_cstr(&file.cpath);
     if futils::filestamp_check(Some(&mut file.stamp), cpath) != 0 {
         let mut buf = GitStr::new();
         futils::readbuffer(&mut buf, cpath)?;
@@ -573,8 +571,12 @@ fn fb<T>(r: core::result::Result<T, errors::Error>) -> Result<T> {
 }
 
 impl FileBackend {
-    fn cpath(&self) -> Result<Vec<u8>> {
-        cstring(&self.lock_file().path)
+    fn cpath(&self) -> Vec<u8> {
+        self.lock_file().cpath.clone()
+    }
+
+    fn path(&self) -> Vec<u8> {
+        self.lock_file().path().to_vec()
     }
 
     fn lock_file(&self) -> std::sync::MutexGuard<'_, ConfigFile> {
@@ -622,7 +624,7 @@ impl FileBackend {
         self.level.store(level, Ordering::Release);
         self.repo.store(repo.cast_mut(), Ordering::Release);
         *self.lock_values() = Some(ConfigList::new().freeze());
-        let cpath = self.cpath()?;
+        let cpath = self.cpath();
         let cpath = as_cstr(&cpath);
         if !fs_path::exists(cpath) {
             return Ok(());
@@ -779,7 +781,7 @@ impl FileBackend {
 
     /// `config_file_lock`.
     fn lock(&self) -> Result<()> {
-        let path = self.lock_file().path.clone();
+        let path = self.path();
         let buf = fb(Filebuf::open(&path, 0, GIT_CONFIG_FILE_MODE))?;
         let cpath = cstring(&path)?;
         let mut content = GitStr::new();
@@ -825,7 +827,7 @@ impl FileBackend {
         preg: Option<&Regexp>,
         value: Option<&[u8]>,
     ) -> Result<()> {
-        let path = self.lock_file().path.clone();
+        let path = self.path();
         let (section, name) = split_key(key);
         let (orig_section, orig_name) = split_key(orig_key);
         let writer = |contents: &[u8]| -> Result<Vec<u8>> {
@@ -987,14 +989,12 @@ ffibox::impl_cvtable! {
 /// `git_config_backend_from_file`.
 pub fn backend_from_file(path: &[u8]) -> Result<Backend> {
     let path = until_nul(path);
-    let mut p = Vec::new();
-    p.try_reserve_exact(path.len()).map_err(|_| errors::oom())?;
-    p.extend_from_slice(path);
+    let file = ConfigFile::new(path)?;
     let state = FileBackend {
         values: Mutex::new(None),
         repo: AtomicPtr::new(core::ptr::null_mut()),
         level: AtomicI32::new(0),
-        file: Mutex::new(ConfigFile::new(p)),
+        file: Mutex::new(file),
         locked: Mutex::new(None),
     };
     let t = CTable::<ConfigBackendCell, FileBackend>::new(state).into_c();
