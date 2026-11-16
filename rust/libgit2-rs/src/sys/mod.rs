@@ -7,6 +7,7 @@ pub mod branch;
 pub mod commit_graph;
 pub mod diff;
 pub mod diff_driver;
+pub mod fetchhead;
 pub mod filter;
 pub mod ignore;
 pub mod indexer;

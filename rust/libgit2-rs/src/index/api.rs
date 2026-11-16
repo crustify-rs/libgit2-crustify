@@ -12,7 +12,7 @@
 //! no borrow while they run). A panic in a callback stops the operation
 //! and is resumed after it.
 
-use core::ffi::{CStr, c_char, c_int, c_uint};
+use core::ffi::{CStr, c_char, c_int};
 use core::marker::PhantomData;
 use core::ptr::NonNull;
 use ffibox::CShared;
@@ -354,6 +354,15 @@ fn api_lock_of(ix: NonNull<GitIndex>) -> Arc<ReentrantLock> {
     let l = Arc::new(ReentrantLock::new());
     map.insert(key, Arc::downgrade(&l));
     l
+}
+
+/// Run `f` with the safe API's lock of the index `ix` held (for the
+/// repository's own changes to an index that handles may share, such as
+/// the capabilities it sets when it loads the index).
+pub(crate) fn with_index_locked<R>(ix: NonNull<GitIndex>, f: impl FnOnce() -> R) -> R {
+    let lock = api_lock_of(ix);
+    let _g = lock.lock();
+    f()
 }
 
 /// Run `f` with the safe API's lock of `repo`'s index held (loading the

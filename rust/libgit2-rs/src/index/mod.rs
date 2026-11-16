@@ -80,7 +80,7 @@ use map::EntryMap;
 
 pub use api::{
     ConflictEntries, Index, IndexAddOption, IndexCapability, IndexConflicts, IndexEntries,
-    IndexEntry, IndexTime, Stage,
+    IndexEntry, IndexMatch, IndexTime, NameEntry, ReucEntry, Stage,
 };
 
 // ---------------------------------------------------------------------------
