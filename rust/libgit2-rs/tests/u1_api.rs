@@ -134,3 +134,21 @@ fn utf8_and_varint() {
     let n = varint::encode(Some(&mut buf), 300) as usize;
     assert_eq!(varint::decode(&buf[..n]), Some((300, n)));
 }
+
+/// Review U1-1: an add that fails after reaching a leaf leaves a usable set.
+#[test]
+fn shortener_failed_add_mid_walk() {
+    let _g = test_support::init();
+    let a: &[u8] = b"abcdef0123456789abcdef0123456789abcdef01";
+    let mut s = OidShortener::new(0);
+    assert_eq!(s.add(a).ok(), Some(1));
+    assert!(s.add(b"ax").is_err());
+    assert_eq!(
+        s.add(b"abffffffffffffffffffffffffffffffffffffff").ok(),
+        Some(2)
+    );
+    assert_eq!(
+        s.add(b"a4ffffffffffffffffffffffffffffffffffffff").ok(),
+        Some(2)
+    );
+}

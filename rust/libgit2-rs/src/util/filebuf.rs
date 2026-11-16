@@ -246,14 +246,17 @@ impl GitFilebuf {
             // SAFETY: `digest` went through `init` while `compute_digest`
             // (the invariant).
             if let Ok(h) = unsafe { self.digest.hasher() } {
-                h.update(data);
+                // C ignores `git_hash_update`'s result here.
+                let _ = h.update(data);
             }
         }
     }
 
     fn lock_file(&mut self, flags: c_int, mode: mode_t) -> Result<()> {
-        let lock = opt_cstr(self.path_lock).unwrap_or(c"").to_owned();
-        if fs_path::exists(&lock) {
+        // The paths are borrowed through their own pointers: the fields are
+        // not changed while they are used.
+        let lock = opt_cstr(self.path_lock).unwrap_or(c"");
+        if fs_path::exists(lock) {
             errors::clear();
             let _ = git_error_set!(
                 ErrorClass::OS,
@@ -263,9 +266,9 @@ impl GitFilebuf {
             return Err(ErrorCode::LOCKED);
         }
         let fd = if flags & GIT_FILEBUF_CREATE_LEADING_DIRS != 0 {
-            futils::creat_locked_withpath(&lock, 0o777, mode)
+            futils::creat_locked_withpath(lock, 0o777, mode)
         } else {
-            futils::creat_locked(&lock, mode)
+            futils::creat_locked(lock, mode)
         };
         self.fd = match fd {
             Ok(fd) => fd,
@@ -275,9 +278,9 @@ impl GitFilebuf {
             }
         };
         self.fd_is_open = true;
-        let original = opt_cstr(self.path_original).unwrap_or(c"").to_owned();
-        if flags & GIT_FILEBUF_APPEND != 0 && fs_path::exists(&original) {
-            let Ok(source) = posix::open(&original, libc::O_RDONLY, 0) else {
+        let original = opt_cstr(self.path_original).unwrap_or(c"");
+        if flags & GIT_FILEBUF_APPEND != 0 && fs_path::exists(original) {
+            let Ok(source) = posix::open(original, libc::O_RDONLY, 0) else {
                 return Err(git_error_set!(
                     ErrorClass::OS,
                     "failed to open file '{}' for reading",
@@ -286,7 +289,8 @@ impl GitFilebuf {
             };
             let mut buffer = Vec::new();
             if buffer.try_reserve_exact(GIT_BUFSIZE_FILEIO).is_err() {
-                let _ = posix::close(source);
+                // SAFETY: a descriptor this code opened, closed once.
+                let _ = unsafe { posix::close(source) };
                 return Err(errors::oom());
             }
             buffer.resize(GIT_BUFSIZE_FILEIO, 0);
@@ -304,7 +308,8 @@ impl GitFilebuf {
                     Err(e) => break Err(e),
                 }
             };
-            let _ = posix::close(source);
+            // SAFETY: a descriptor this code opened, closed once.
+            let _ = unsafe { posix::close(source) };
             if read.is_err() {
                 return Err(git_error_set!(
                     ErrorClass::OS,
@@ -327,7 +332,8 @@ impl GitFilebuf {
     /// `fd` -1.
     pub fn cleanup(&mut self) {
         if self.fd_is_open && self.fd >= 0 {
-            let _ = posix::close(self.fd);
+            // SAFETY: a descriptor this code opened, closed once.
+            let _ = unsafe { posix::close(self.fd) };
         }
         if self.created_lock
             && !self.did_rename
@@ -343,7 +349,7 @@ impl GitFilebuf {
             free_owned(&mut self.z_buf);
             // SAFETY: the stream is initialized while `z_buf` is set (the
             // invariant), and ended once.
-            unsafe { zlib::deflate_end(&mut self.zs) };
+            unsafe { zlib::deflate_end(&raw mut self.zs) };
         }
         free_owned(&mut self.path_original);
         free_owned(&mut self.path_lock);
@@ -405,7 +411,8 @@ impl GitFilebuf {
                 // SAFETY: the stream is initialized (`z_buf` is set) and has
                 // not moved since (the invariant); `next_in` has `avail_in`
                 // readable bytes, `next_out` `avail_out` writable ones.
-                if unsafe { zlib::deflate(&mut self.zs, self.flush_mode) } == z::Z_STREAM_ERROR {
+                if unsafe { zlib::deflate(&raw mut self.zs, self.flush_mode) } == z::Z_STREAM_ERROR
+                {
                     self.last_error = BUFERR_ZLIB;
                     return Err(ErrorCode::GENERIC);
                 }
@@ -429,14 +436,26 @@ impl GitFilebuf {
     }
 
     /// `git_filebuf_open`.
-    pub fn open(&mut self, path: &[u8], flags: c_int, mode: mode_t) -> Result<()> {
-        self.open_withsize(path, flags, mode, WRITE_BUFFER_SIZE)
+    ///
+    /// # Safety
+    ///
+    /// As [`open_withsize`](Self::open_withsize).
+    pub unsafe fn open(&mut self, path: &[u8], flags: c_int, mode: mode_t) -> Result<()> {
+        // SAFETY: forwarded.
+        unsafe { self.open_withsize(path, flags, mode, WRITE_BUFFER_SIZE) }
     }
 
     /// `git_filebuf_open_withsize`: start writing `path` (through
     /// `path.lock`, or a temporary file `path_git2_*` with
     /// [`GIT_FILEBUF_TEMPORARY`]) with a buffer of `size` bytes.
-    pub fn open_withsize(
+    ///
+    /// # Safety
+    ///
+    /// The filebuf does not move until it is cleaned up (by `cleanup`,
+    /// `commit` or `commit_at`): with a deflate level in `flags`, zlib keeps
+    /// the address of its `z_stream` (a zlib older than 1.2.9 would write
+    /// through the stale address). [`Filebuf`] keeps it boxed.
+    pub unsafe fn open_withsize(
         &mut self,
         path: &[u8],
         flags: c_int,
@@ -477,7 +496,7 @@ impl GitFilebuf {
         };
         if let Some(a) = algorithm {
             self.compute_digest = true;
-            if self.digest.init(a.raw()).is_err() {
+            if self.digest.init(a).is_err() {
                 return Err(ErrorCode::GENERIC);
             }
         }
@@ -485,7 +504,7 @@ impl GitFilebuf {
         if compression != 0 {
             // SAFETY: `zs` is zeroed and does not move until cleanup (the
             // invariant's requirement on the filebuf's owner).
-            if unsafe { zlib::deflate_init(&mut self.zs, compression) } != z::Z_OK {
+            if unsafe { zlib::deflate_init(&raw mut self.zs, compression) } != z::Z_OK {
                 return Err(git_error_set!(
                     ErrorClass::ZLIB,
                     "failed to initialize zlib"
@@ -496,7 +515,7 @@ impl GitFilebuf {
                 // C returns here without ending the stream (a leak):
                 // end it, as cleanup will not (rust/DEFECTS.md).
                 // SAFETY: initialized just above, ended once.
-                unsafe { zlib::deflate_end(&mut self.zs) };
+                unsafe { zlib::deflate_end(&raw mut self.zs) };
                 return Err(ErrorCode::GENERIC);
             }
             self.flush_mode = z::Z_NO_FLUSH;
@@ -585,7 +604,7 @@ impl GitFilebuf {
         // SAFETY: `digest` went through `init` (`compute_digest`).
         if let Ok(h) = unsafe { self.digest.hasher() } {
             let mut d = [0u8; hash::MAX_SIZE];
-            let _collision = h.finalize_raw(&mut d);
+            let _ = h.finalize_raw(&mut d);
             let n = h.algorithm().size();
             // SAFETY: `out` has room for this algorithm's digest (the
             // caller); `d` is a distinct local.
@@ -619,7 +638,8 @@ impl GitFilebuf {
         let _ = self.flush_buffer();
         self.verify_last_error()?;
         self.fd_is_open = false;
-        let lock = opt_cstr(self.path_lock).unwrap_or(c"").to_owned();
+        // As in `lock_file`: the paths do not change during the commit.
+        let lock = opt_cstr(self.path_lock).unwrap_or(c"");
         if self.do_fsync && posix::fsync(self.fd).is_err() {
             let _ = git_error_set!(
                 ErrorClass::OS,
@@ -627,10 +647,12 @@ impl GitFilebuf {
                 Bytes(lock.to_bytes())
             );
             // C leaves the descriptor open (a leak): close it.
-            let _ = posix::close(self.fd);
+            // SAFETY: a descriptor this code opened, closed once.
+            let _ = unsafe { posix::close(self.fd) };
             return Err(ErrorCode::GENERIC);
         }
-        if posix::close(self.fd).is_err() {
+        // SAFETY: a descriptor this code opened, closed once.
+        if unsafe { posix::close(self.fd) }.is_err() {
             return Err(git_error_set!(
                 ErrorClass::OS,
                 "failed to close file at '{}'",
@@ -638,8 +660,8 @@ impl GitFilebuf {
             ));
         }
         self.fd = -1;
-        let original = opt_cstr(self.path_original).unwrap_or(c"").to_owned();
-        if posix::rename(&lock, &original).is_err() {
+        let original = opt_cstr(self.path_original).unwrap_or(c"");
+        if posix::rename(lock, original).is_err() {
             return Err(git_error_set!(
                 ErrorClass::OS,
                 "failed to rename lockfile to '{}'",
@@ -786,7 +808,7 @@ fn resolve_symlink(out: &mut GitStr, path: &[u8]) -> Result<()> {
     let mut target = [0u8; GIT_PATH_MAX + 1];
     curpath.puts(path)?;
     for _ in 0..MAX_SYMLINK_DEPTH {
-        let cp = str_cpath(&curpath).into_owned();
+        let cp = str_cpath(&curpath);
         let st = match posix::lstat(&cp) {
             Ok(st) => st,
             Err(Errno(libc::ENOENT)) => return out.puts(cp.to_bytes()),
@@ -849,7 +871,9 @@ impl Filebuf {
         mode: mode_t,
     ) -> core::result::Result<Filebuf, errors::Error> {
         let mut f = Box::new(GitFilebuf::new());
-        f.open(path, flags, mode).map_err(errors::Error::from)?;
+        // SAFETY: the box keeps the filebuf in place until `Drop` (or a
+        // commit) cleans it up; it is never moved out.
+        unsafe { f.open(path, flags, mode) }.map_err(errors::Error::from)?;
         Ok(Filebuf(f))
     }
 
@@ -930,4 +954,69 @@ crate::c_layout_test! {
         "GIT_HASH_ALGORITHM_SHA1 == 1", "GIT_HASH_ALGORITHM_SHA256 == 2",
         "GIT_HASH_MAX_SIZE == 32",
     ],
+}
+
+#[cfg(test)]
+mod tests {
+    //! What runs without a filesystem (and so under Miri): a filebuf that
+    //! was never opened, and the formatting placement's guards. The rest is
+    //! in `tests/util_fs.rs` and `rust/difftest/fs_diff.c`.
+    use super::*;
+    use crate::util::test_support;
+
+    #[test]
+    fn unopened_filebuf_fails_cleanly() {
+        let _g = test_support::init();
+        let mut f = GitFilebuf::new();
+        assert_eq!(f.fd(), 0);
+        assert!(!f.has_buffer());
+        // C calls the NULL write function (rust/DEFECTS.md).
+        assert_eq!(f.write(b"x"), Err(ErrorCode::GENERIC));
+        assert_eq!(
+            errors::last_message().unwrap(),
+            b"unrecoverable internal error: 'file->write'"
+        );
+        assert!(f.flush() < 0);
+        assert!(f.printf_formatted(Some(b"abc")).is_err());
+        // A reservation larger than the (empty) buffer poisons it.
+        assert!(f.reserve(1).is_err());
+        assert_eq!(f.write(b"x"), Err(ErrorCode::GENERIC));
+        let mut out = [0u8; hash::MAX_SIZE];
+        assert!(f.hash(&mut out).is_err());
+        assert_eq!(
+            errors::last_message().unwrap(),
+            b"invalid argument: 'file->compute_digest'"
+        );
+        assert_eq!(f.commit(), Err(ErrorCode::GENERIC));
+        assert_eq!(
+            errors::last_message().unwrap(),
+            b"unrecoverable internal error: 'file->path_original'"
+        );
+        f.cleanup();
+        f.cleanup();
+        assert_eq!(f.fd(), -1);
+        assert!(f.lock_path().is_none() && f.original_path().is_none());
+    }
+
+    #[test]
+    fn formatting_failure_is_out_of_memory() {
+        let _g = test_support::init();
+        let mut f = GitFilebuf::new();
+        assert!(f.printf_formatted(None).is_err());
+        assert_eq!(f.last_error, BUFERR_MEM);
+        // Later writes fail without a new message.
+        errors::clear();
+        assert!(f.write(b"x").is_err());
+        assert!(!errors::exists());
+        assert!(f.verify_last_error().is_err());
+        assert_eq!(errors::last_message().unwrap(), b"Out of memory");
+    }
+
+    #[test]
+    fn zeroed_state_is_c_init() {
+        let f = GitFilebuf::new();
+        assert!(f.zs.state.is_null() && f.zs.zalloc.is_none() && f.zs.zfree.is_none());
+        assert!(f.write.is_none() && !f.compute_digest && f.z_buf.is_null());
+        assert_eq!((f.buf_size, f.buf_pos, f.last_error), (0, 0, BUFERR_OK));
+    }
 }

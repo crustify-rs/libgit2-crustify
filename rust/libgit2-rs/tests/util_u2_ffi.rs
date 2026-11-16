@@ -57,14 +57,17 @@ fn hash_ctx_as_c_uses_it() {
         assert_eq!(hex(&out[..20]), "da39a3ee5e6b4b0d3255bfef95601890afd80709");
         hash_ffi::git_hash_ctx_cleanup(ctx);
 
-        assert_eq!(hash_ffi::git_hash_ctx_init(ctx, raw_algorithm::SHA256), 0);
-        assert_eq!(hash_ffi::git_hash_update(ctx, b"abc".as_ptr().cast(), 3), 0);
-        assert_eq!(hash_ffi::git_hash_final(out.as_mut_ptr(), ctx), 0);
-        assert_eq!(
-            hex(&out),
-            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-        );
-        hash_ffi::git_hash_ctx_cleanup(ctx);
+        // SHA-256 is OpenSSL's: C, which Miri does not run.
+        if !cfg!(miri) {
+            assert_eq!(hash_ffi::git_hash_ctx_init(ctx, raw_algorithm::SHA256), 0);
+            assert_eq!(hash_ffi::git_hash_update(ctx, b"abc".as_ptr().cast(), 3), 0);
+            assert_eq!(hash_ffi::git_hash_final(out.as_mut_ptr(), ctx), 0);
+            assert_eq!(
+                hex(&out),
+                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+            );
+            hash_ffi::git_hash_ctx_cleanup(ctx);
+        }
 
         errors::clear();
         assert_eq!(hash_ffi::git_hash_ctx_init(ctx, raw_algorithm::NONE), -1);
@@ -123,14 +126,16 @@ fn hash_buf_vec_fmt() {
         );
         assert_eq!(hex(&out[..20]), "2aae6c35c94fcfb415dbe95f408b9ce91ee846ed");
         assert_eq!(out[20..], [0; 12]);
-        assert_eq!(
-            hash_ffi::git_hash_vec(out.as_mut_ptr(), core::ptr::null(), 0, 2),
-            0
-        );
-        assert_eq!(
-            hex(&out),
-            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-        );
+        if !cfg!(miri) {
+            assert_eq!(
+                hash_ffi::git_hash_vec(out.as_mut_ptr(), core::ptr::null(), 0, 2),
+                0
+            );
+            assert_eq!(
+                hex(&out),
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            );
+        }
         assert_eq!(
             hash_ffi::git_hash_buf(out.as_mut_ptr(), b"x".as_ptr().cast(), 1, 9),
             -1

@@ -552,12 +552,14 @@ fn compare_checksum(path: &CStr, checksum: &[u8]) -> Result<c_int> {
     let fd = crate::util::posix::open(path, libc::O_RDONLY, 0).map_err(|_| ErrorCode::GENERIC)?;
     // SAFETY: `fd` is open; `lseek` has no memory preconditions.
     if unsafe { libc::lseek(fd, -(checksum.len() as libc::off_t), libc::SEEK_END) } < 0 {
-        let _ = crate::util::posix::close(fd);
+        // SAFETY: our descriptor, closed once.
+        let _ = unsafe { crate::util::posix::close(fd) };
         return Err(git_error_set!(ErrorClass::OS, "failed to seek to end of file"));
     }
     let mut buf = [0u8; crate::util::hash::MAX_SIZE];
     let r = crate::util::posix::read(fd, &mut buf[..checksum.len()]);
-    let _ = crate::util::posix::close(fd);
+    // SAFETY: our descriptor, closed once.
+    let _ = unsafe { crate::util::posix::close(fd) };
     match r {
         Ok(n) if n >= checksum.len() => Ok(c_int::from(buf[..checksum.len()] != *checksum)),
         _ => Err(ErrorCode::GENERIC),
@@ -754,7 +756,10 @@ pub(crate) fn writer_init(writer: &mut GitIndexWriter, ix: IndexPtr) -> Result<(
     let Some(path) = index.file_path() else {
         return Err(index_error("failed to write index: The index is in-memory only"));
     };
-    if let Err(e) = writer.file.open(path.to_bytes(), filebuf_hash, GIT_INDEX_FILE_MODE) {
+    // SAFETY: no deflate level in the flags, so zlib keeps no address of
+    // the filebuf (and the writer, C's or `write`'s local, does not move
+    // before its cleanup either).
+    if let Err(e) = unsafe { writer.file.open(path.to_bytes(), filebuf_hash, GIT_INDEX_FILE_MODE) } {
         if e == ErrorCode::LOCKED {
             let _ = git_error_set!(
                 ErrorClass::INDEX,
