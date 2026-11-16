@@ -2181,10 +2181,26 @@ pub mod ffi {
         barrier(|| {
             // SAFETY: valid, read by value.
             let id = unsafe { oid.read() };
-            // SAFETY: NUL-terminated, copied before `buf` is touched.
-            let header = unsafe { CStr::from_ptr(header) }.to_bytes().to_vec();
-            // SAFETY: a valid `git_str`, not otherwise accessed.
-            status(write_oid_header(unsafe { &mut *buf }, &header, &id))
+            // A header inside `buf`'s own buffer (C's `git_str_puts`
+            // allows it) is copied first; any other is borrowed.
+            // SAFETY: a valid `git_str`, read only here.
+            let s = unsafe { &*buf };
+            let (base, cap) = (s.as_ptr() as usize, s.capacity());
+            let h = header as usize;
+            let inside = h >= base && h < base.wrapping_add(cap);
+            // SAFETY: NUL-terminated; if it is outside `buf`'s buffer,
+            // nothing writes it during the call.
+            let hb = unsafe { CStr::from_ptr(header) }.to_bytes();
+            let copy;
+            let header: &[u8] = if inside {
+                copy = hb.to_vec();
+                &copy
+            } else {
+                hb
+            };
+            // SAFETY: a valid `git_str`, not otherwise accessed (`header`
+            // does not point into it).
+            status(write_oid_header(unsafe { &mut *buf }, header, &id))
         })
     }
 
@@ -2335,6 +2351,23 @@ mod tests {
         assert!(parse_oid_header(&b[..45], b"tree ", OidType::Sha1).is_err());
         assert!(parse_oid_header(b, b"parent ", OidType::Sha1).is_err());
         assert!(write_oid_header(&mut s, b"x", &Oid::NONE).is_err());
+    }
+
+    #[test]
+    fn write_oid_header_with_its_own_buffer_as_header() {
+        let _g = test_support::init();
+        let id = Oid::from_hex(b"0123456789012345678901234567890123456789", OidType::Sha1).unwrap();
+        let mut s = GitStr::new();
+        s.puts(b"tree ").unwrap();
+        let header = s.as_ptr();
+        // SAFETY: a valid `git_str`, its own NUL-terminated contents as the
+        // header (as C may pass), a valid id.
+        let rc = unsafe { ffi::git_object__write_oid_header(&raw mut s, header, &raw const id) };
+        assert_eq!(rc, 0);
+        assert_eq!(
+            s.as_bytes(),
+            b"tree tree 0123456789012345678901234567890123456789\n"
+        );
     }
 
     #[test]
