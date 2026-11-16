@@ -851,32 +851,36 @@ change the l-obj code paths):
 
 Geomean 0.910 (wall), 0.920 (CPU); all checks match.
 
-Internal API per call (`RUST_BUILD=/work/builds/l-obj micro/run_lobj.sh 3`,
-ns per call, median of 3 rounds, same load):
+Internal API per call: the first table of this section (median of
+round averages at load ~430) was noise; review l-obj-r1 (LO-8) measured
+the minimum over short chunks instead, and so does `micro/lobj_bench.c`
+now (minimum over chunks of 200 calls, pinned, `LOBJ_REPS` passes).
+Load 47–120 on 144 CPUs, ns per call:
 
-| call | C ns | Rust ns | R/C |
-|---|---|---|---|
-| signature_parse | 1362 | 1427 | 1.05 |
-| signature_from_buffer | 1367 | 1721 | 1.26 |
-| signature_new | 942 | 1223 | 1.30 |
-| signature_dup | 493 | 791 | 1.61 |
-| signature_writebuf | 2328 | 2726 | 1.17 |
-| signature_equal | 66 | 216 | 3.29 |
-| tag_from_raw | 14388 | 23742 | 1.65 |
-| tag_rawcontent_valid | 13152 | 24465 | 1.86 |
-| blob_from_raw_4k | 69167 | 69730 | 1.01 |
-| id_from_buffer_64 | 6155 | 6044 | 0.98 |
-| parse_oid_header | 893 | 350 | 0.39 |
-| write_oid_header | 492 | 495 | 1.01 |
-| type2string | 22 | 13 | 0.60 |
-| stringn2type | 83 | 36 | 0.44 |
-| grafts_parse_1k | 5035006 | 1953347 | 0.39 |
-| grafts_get | 300 | 125 | 0.42 |
-| grafts_get_miss | 501 | 194 | 0.39 |
+| call | C | Rust at 14f30a5 | Rust after the review fixes | R/C after |
+|---|---|---|---|---|
+| signature_parse | 209 | 175 | 184 | 0.88 |
+| signature_from_buffer | 222 | 182 | 181 | 0.81 |
+| signature_new | 147 | 107 | 109 | 0.74 |
+| signature_dup | 97 | 80 | 81 | 0.83 |
+| signature_writebuf | 382 | 238 | 105 | 0.28 |
+| signature_equal | 14.4 | 25.3 | 5.5 | 0.38 |
+| tag_from_raw | 2531 | 2343 | 2207 | 0.87 |
+| tag_rawcontent_valid | 2530 | 2342 | 2205 | 0.87 |
+| blob_from_raw_4k | 1272 | – | 1120 | 0.88 |
+| id_from_buffer_64 | 821 | – | 693 | 0.84 |
+| parse_oid_header | 104 | – | 69 | 0.67 |
+| write_oid_header | 57 | – | 61 | 1.07 |
+| type2string | 2.9 | – | 2.9 | 1.00 |
+| stringn2type | 11.9 | – | 6.7 | 0.56 |
+| grafts_parse_1k | 460559 | – | 344006 | 0.75 |
+| grafts_get | 27.8 | – | 17.2 | 0.62 |
+| grafts_get_miss | 48.2 | – | 26.4 | 0.55 |
 
-Not yet at parity: the raw tag parse (`git_object__from_raw` of a tag,
-1.65×: the extra signature block for the tagger and the per-field
-copies), the signature constructors (1.2–1.6×) and `git_signature__equal`
-(3.3×: two `strlen`s per string through `CStr` and the panic barrier,
-where C does one `strcmp`). The public-API workloads that contain them
-(`tag_lookup_all` 1.05×, `signature_parse` 0.97×) are near parity.
+(The "14f30a5" column was taken with the earlier best-of-averages method
+at the same low load, signature and tag rows only.) The only real
+slowdown at 14f30a5 was `git_signature__equal` (two `strlen`s per string):
+it now compares in one pass. `git_signature__writebuf` no longer formats
+into a temporary `Vec`. `write_oid_header` no longer copies its header
+(only when it aliases the buffer); its remaining 7% is the three growth
+checks of `puts`/`put`/`putc`, kept for C's `asize`.

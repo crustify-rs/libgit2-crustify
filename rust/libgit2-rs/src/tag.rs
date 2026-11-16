@@ -39,7 +39,7 @@ pub const GIT_REFS_TAGS_DIR: &[u8] = b"refs/tags/";
 #[derive(Debug, Default)]
 pub struct TagData {
     /// The target's type.
-    pub kind: git_object_t,
+    pub(crate) kind: git_object_t,
     /// The tag's name.
     pub name: Option<GitCStr>,
     /// The tagger (none for some old tags).
@@ -48,7 +48,9 @@ pub struct TagData {
     pub message: Option<GitCStr>,
 }
 
-/// `struct git_tag`, mirrored: C reads every field (`describe.c` reads
+/// `struct git_tag`, mirrored (the fields are crate-private: the accessors
+/// trust the invariant below, which only this crate's constructors make):
+/// C reads every field (`describe.c` reads
 /// `tagger`, `indexer.c` `target`, the tests all of them), though only this
 /// module allocates and frees tags. `tag_name` and `message` are NULL or
 /// NUL-terminated `git__allocator` strings, `tagger` NULL or a
@@ -58,18 +60,23 @@ pub struct TagData {
 #[derive(Debug)]
 pub struct GitTag {
     /// The object header.
-    pub object: GitObject,
+    pub(crate) object: GitObject,
     /// The target's id.
-    pub target: Oid,
+    pub(crate) target: Oid,
     /// The target's type (`type`).
     pub kind: git_object_t,
     /// The name.
-    pub tag_name: *mut c_char,
+    pub(crate) tag_name: *mut c_char,
     /// The tagger.
-    pub tagger: *mut GitSignature,
+    pub(crate) tagger: *mut GitSignature,
     /// The message.
-    pub message: *mut c_char,
+    pub(crate) message: *mut c_char,
 }
+
+// The header is first (C casts), and the alignment is what `git__allocator`
+// gives.
+const _: () = assert!(core::mem::offset_of!(GitTag, object) == 0);
+const _: () = assert!(align_of::<GitTag>() <= 8);
 
 /// Allocate an empty tag (`git__calloc(1, sizeof(git_tag))`).
 pub(crate) fn alloc() -> Result<NonNull<GitTag>> {
@@ -138,6 +145,19 @@ fn copy(s: &[u8]) -> Result<GitCStr> {
     unsafe { GitCStr::from_raw(alloc::substrdup(s)) }.ok_or(ErrorCode::GENERIC)
 }
 
+/// `git__memmem(s, len, "\n\n", 2)`: where the first blank line starts.
+fn find_blank_line(s: &[u8]) -> Option<usize> {
+    let mut from = 0;
+    while let Some(i) = memchr::memchr(b'\n', &s[from..]) {
+        let at = from + i;
+        if s.get(at + 1) == Some(&b'\n') {
+            return Some(at);
+        }
+        from = at + 1;
+    }
+    None
+}
+
 /// `tag_parse`: the target and the rest of a tag's contents. Errors are
 /// `GIT_EINVALID` with C's messages (a tagger's are the signature
 /// parser's), or -1 when out of memory.
@@ -197,7 +217,7 @@ pub fn parse(buf: &[u8], oid_type: crate::oid::git_oid_t) -> Result<(Oid, TagDat
     if pos < end {
         // Not at the end of the header: look for it.
         if buf[pos] != b'\n' {
-            match crate::util::util::memmem(&buf[pos..], b"\n\n") {
+            match find_blank_line(&buf[pos..]) {
                 Some(i) => pos += i + 1,
                 None => return Err(tag_error("tag contains no message")),
             }
@@ -269,12 +289,12 @@ pub(crate) unsafe fn parse_odb(
 
 impl GitTag {
     /// The target's type.
-    pub fn target_kind(&self) -> git_object_t {
+    pub(crate) fn target_kind(&self) -> git_object_t {
         self.kind
     }
 
     /// The name.
-    pub fn name(&self) -> &[u8] {
+    pub(crate) fn name(&self) -> &[u8] {
         if self.tag_name.is_null() {
             return &[];
         }
@@ -283,7 +303,7 @@ impl GitTag {
     }
 
     /// The tagger.
-    pub fn tagger(&self) -> Option<&Signature> {
+    pub(crate) fn tagger(&self) -> Option<&Signature> {
         // SAFETY: NULL or the tag's own signature block, whose strings it
         // owns (a `Signature`'s invariant; `Signature` is transparent over
         // `git_signature`).
@@ -291,7 +311,7 @@ impl GitTag {
     }
 
     /// The message.
-    pub fn message(&self) -> Option<&[u8]> {
+    pub(crate) fn message(&self) -> Option<&[u8]> {
         if self.message.is_null() {
             return None;
         }
@@ -997,6 +1017,11 @@ pub mod ffi {
             git_assert_arg!(!t.is_null(), "t", -1);
             // SAFETY: non-null (checked above).
             let nn = unsafe { NonNull::new_unchecked(t.cast_mut()) };
+            // As C's `git_object_lookup`: `repo` (C dereferences a NULL one
+            // first), then the out-parameter.
+            // SAFETY: a live tag, read only.
+            git_assert_arg!(!unsafe { nn.as_ref() }.object.repo.is_null(), "repo", -1);
+            git_assert_arg!(!target.is_null(), "object_out", -1);
             // SAFETY: a live tag.
             match unsafe { super::target(nn) } {
                 Ok(o) => {
@@ -1443,6 +1468,15 @@ This is a test tag\n";
         assert_eq!(d.message.unwrap().as_c_str().to_bytes(), b"");
         assert_eq!(err(OK.split_at(10).0).0, -21);
         assert!(parse(OK, 0).is_err());
+    }
+
+    #[test]
+    fn blank_lines() {
+        assert_eq!(find_blank_line(b"a\n\nb"), Some(1));
+        assert_eq!(find_blank_line(b"a\nb\n"), None);
+        assert_eq!(find_blank_line(b"\n\n"), Some(0));
+        assert_eq!(find_blank_line(b"x\n"), None);
+        assert_eq!(find_blank_line(b""), None);
     }
 
     #[test]

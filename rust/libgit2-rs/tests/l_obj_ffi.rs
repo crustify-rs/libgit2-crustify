@@ -95,20 +95,17 @@ fn tag_from_raw_fields_as_c_reads_them() {
     };
     assert_eq!(rc, 0);
     let t = o.cast::<GitTag>();
-    // SAFETY: a live tag, read as C reads `struct git_tag`.
+    // SAFETY: a live tag, read through the exports C uses.
     unsafe {
-        assert_eq!((*t).kind, 1);
-        assert_eq!(CStr::from_ptr((*t).tag_name).to_bytes(), b"v1.0");
+        assert_eq!(tag::git_tag_target_type(t), 1);
+        assert_eq!(CStr::from_ptr(tag::git_tag_name(t)).to_bytes(), b"v1.0");
+        let tagger = tag::git_tag_tagger(t);
+        assert_eq!(CStr::from_ptr((*tagger).name).to_bytes(), b"Vicent Marti");
+        assert_eq!((*tagger).when.offset, 60);
         assert_eq!(
-            CStr::from_ptr((*(*t).tagger).name).to_bytes(),
-            b"Vicent Marti"
-        );
-        assert_eq!((*(*t).tagger).when.offset, 60);
-        assert_eq!(
-            CStr::from_ptr((*t).message).to_bytes(),
+            CStr::from_ptr(tag::git_tag_message(t)).to_bytes(),
             b"This is a test tag\n"
         );
-        assert_eq!(tag::git_tag_tagger(t), (*t).tagger.cast_const());
         assert_eq!(obj::git_object_type(o), GIT_OBJECT_TAG);
         assert!(obj::git_object_owner(o).is_null());
     }

@@ -647,12 +647,14 @@ One entry per difference: component, what differs, why.
 
 - **blob: the write stream** of `git_blob_create_from_stream` is a ffibox
   `CTable` in Rust's allocator (C used `git__calloc`), so `cl_alloc_limit`
-  does not make its allocation fail. Its slots refuse re-entry (-1) and
-  turn a panic into -1 with `GIT_ERROR_INTERNAL`.
+  does not make its allocation fail. Its slots refuse re-entry (-1 with
+  `GIT_ERROR_INTERNAL` "stream in use") and turn a panic into -1 with
+  `GIT_ERROR_INTERNAL`.
 - **object / blob: read buffers.** `id_from_fd` and `write_file_stream`
-  read through a 64 KiB `Vec` (C: a stack array): its allocation aborts
-  on out-of-memory where C could not fail. Symlink targets use
-  `try_reserve`, as C's checked `git__malloc`.
+  read through a 64 KiB heap buffer (C: a stack array), reserved with
+  `try_reserve` (the out-of-memory error where C could not fail) and not
+  zero-filled. Symlink targets use `try_reserve`, as C's checked
+  `git__malloc`.
 - **grafts: the graft map's entries** are `git__allocator` blocks owned by
   the map (C: the same); the `git_grafts` itself is a `git__allocator`
   block holding a Rust value.
