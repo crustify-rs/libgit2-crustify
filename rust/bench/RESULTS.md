@@ -391,8 +391,8 @@ Geomean wall ratio 0.40, CPU 0.38.
   time, and a snapshot copies plain entries without re-interning.
 - Reads and writes of files (`open_*`, `set_*`, `delete_*`): one allocation
   per entry (name and value together) and a word-wise hash, where C made
-  five (entry, name, value, list node, map head) plus `khash`; the writer
-  appends to one buffer.
+  up to five (entry, name, value, list node, map head), and the parser
+  works on slices of the content where C copies each line first.
 - Single lookups are at parity in CPU time (0.97-1.04): each one crosses
   the config's backend list (a mutex and an `Arc` clone, so that no lock is
   held while a backend runs) and the backend's `CTable` entry (two atomic
