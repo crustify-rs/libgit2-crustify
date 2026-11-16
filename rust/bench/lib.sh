@@ -7,7 +7,7 @@ BENCH_CPU=${BENCH_CPU:-2}
 export BENCH_DATA=${BENCH_DATA:-/work/bench-data}
 
 # The programs, in run order.
-BENCH_PROGRAMS=(oid odb delta objects revwalk refs config index repository hashsig util)
+BENCH_PROGRAMS=(oid odb delta objects revwalk refs config index repository hashsig util codec)
 
 die() { echo "error: $*" >&2; exit 1; }
 
