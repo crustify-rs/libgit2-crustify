@@ -542,7 +542,7 @@ mod tests {
 
     #[test]
     fn version_features_buildinfo() {
-        assert_eq!(version(), (1, 9, 0));
+        assert_eq!(Libgit2::version(), (1, 9, 0));
         assert_eq!(VERSION, "1.9.0");
         assert_eq!(prerelease(), None);
         // The reference configuration (PORTING.md §9).
@@ -589,7 +589,7 @@ mod tests {
         // SAFETY: three writable ints.
         let e = unsafe { ffi::git_libgit2_version(&raw mut a, &raw mut b, &raw mut c) };
         assert_eq!(e, 0);
-        assert_eq!((a, b, c), version());
+        assert_eq!((a as u32, b as u32, c as u32), Libgit2::version());
         // SAFETY: no precondition.
         assert!(unsafe { ffi::git_libgit2_prerelease() }.is_null());
         // SAFETY: no precondition.

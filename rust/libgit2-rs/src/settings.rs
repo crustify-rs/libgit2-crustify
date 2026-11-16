@@ -530,9 +530,9 @@ mod tests {
         let _l = AGENT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(user_agent(), b"libgit2 1.9.0");
         assert_eq!(user_agent_product(), b"git/2.0");
-        opts::set_user_agent(Some(c"agent/1")).unwrap();
-        assert_eq!(opts::user_agent(), b"agent/1");
-        opts::set_user_agent(None).unwrap();
+        set_user_agent(Some(c"agent/1")).unwrap();
+        assert_eq!(user_agent(), b"agent/1");
+        set_user_agent(None).unwrap();
         assert_eq!(user_agent(), b"libgit2 1.9.0");
         let mut a = args();
         a.p1 = c"prod/2".as_ptr().cast_mut().cast();
@@ -564,16 +564,16 @@ mod tests {
                 } else {
                     c"b"
                 };
-                opts::set_user_agent(Some(v)).unwrap();
+                set_user_agent(Some(v)).unwrap();
             }
         });
         for _ in 0..20 {
-            let v = opts::user_agent();
+            let v = user_agent();
             assert!(!v.is_empty());
         }
         t.join().unwrap();
-        let held = opts::user_agent();
-        opts::set_user_agent(None).unwrap();
+        let held = user_agent();
+        set_user_agent(None).unwrap();
         // A copy stays valid after the setter frees the global's string.
         assert!(held == b"b" || held.starts_with(b"aaaa"));
     }
@@ -616,13 +616,13 @@ mod tests {
         a.p1 = (&raw mut v).cast();
         // SAFETY: an `int *`.
         unsafe { opts(opt::GET_OWNER_VALIDATION, &a) }.unwrap();
-        assert_eq!(v, c_int::from(opts::owner_validation()));
+        assert_eq!(v, c_int::from(crate::api::opts::owner_validation()));
         let mut b = args();
         b.i = 1;
         // SAFETY: an int.
         unsafe { opts(opt::ENABLE_FSYNC_GITDIR, &b) }.unwrap();
         assert!(crate::repository::git_repository__fsync_gitdir.load(Ordering::Relaxed));
-        opts::set_fsync_gitdir(false);
+        crate::api::opts::enable_fsync_gitdir(false);
         assert!(!crate::repository::git_repository__fsync_gitdir.load(Ordering::Relaxed));
         // A NULL out-pointer is rejected (C would crash).
         // SAFETY: NULL is checked.
