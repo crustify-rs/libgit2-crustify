@@ -1,12 +1,12 @@
 //! The safe API of the revision walker and of similarity signatures, on
-//! the test repositories. Expected orders are the C reference's.
+//! the test repositories (root items only, no `unsafe`, no init).
+//! Expected orders are the C reference's.
 
 #![cfg(all(feature = "link-c", not(miri)))]
 #![forbid(unsafe_code)]
 
 use std::path::PathBuf;
 
-use libgit2_rs::__test::util::test_support;
 use libgit2_rs::Repository;
 use libgit2_rs::{ErrorClass, ErrorCode, HashSig, HashSigOptions, Oid, Revwalk, Sort};
 
@@ -30,14 +30,13 @@ const HEAD_ORDER: [&str; 7] = [
 
 #[test]
 fn every_sorting_mode() {
-    let _g = test_support::init();
     let repo = testrepo();
     let mut walk = Revwalk::new(&repo).unwrap();
     let mut rev = HEAD_ORDER;
     rev.reverse();
     for bits in 0..8 {
-        let sort = Sort::from_bits(bits);
-        walk.sorting(sort).unwrap().push_head().unwrap();
+        let sort = Sort::from_bits(bits).unwrap();
+        walk.sorting(sort).push_head().unwrap();
         let want: &[&str] = if sort.contains(Sort::REVERSE) {
             &rev
         } else {
@@ -45,7 +44,7 @@ fn every_sorting_mode() {
         };
         assert_eq!(short(&mut walk), want, "sort {bits}");
     }
-    walk.simplify_first_parent().unwrap().push_head().unwrap();
+    walk.simplify_first_parent().push_head().unwrap();
     assert_eq!(
         short(&mut walk),
         [
@@ -56,7 +55,6 @@ fn every_sorting_mode() {
 
 #[test]
 fn globs_hides_and_ranges() {
-    let _g = test_support::init();
     let repo = testrepo();
     let mut walk = Revwalk::new(&repo).unwrap();
     walk.push_glob("heads").unwrap();
@@ -67,7 +65,7 @@ fn globs_hides_and_ranges() {
             "4a202b3", "a65fedf", "258f0e2", "a4a7dce", "be3563a", "5b5b025"
         ]
     );
-    walk.sorting(Sort::TIME).unwrap().push_glob("tags").unwrap();
+    walk.sorting(Sort::TIME).push_glob("tags").unwrap();
     assert_eq!(
         short(&mut walk),
         [
@@ -83,7 +81,6 @@ fn globs_hides_and_ranges() {
     walk.push_range("be3563a..HEAD").unwrap();
     assert_eq!(short(&mut walk), ["a65fedf"]);
     walk.sorting(Sort::TOPOLOGICAL)
-        .unwrap()
         .push_glob("heads")
         .unwrap()
         .hide_ref("refs/heads/packed-test")
@@ -99,7 +96,6 @@ fn globs_hides_and_ranges() {
 
 #[test]
 fn push_and_hide_ids() {
-    let _g = test_support::init();
     let repo = testrepo();
     let head = Oid::from_hex(
         b"a65fedf39aefe402d3bb6e24df4d4f5fe4547750",
@@ -123,7 +119,6 @@ fn push_and_hide_ids() {
 
 #[test]
 fn errors() {
-    let _g = test_support::init();
     let repo = testrepo();
     let mut walk = Revwalk::new(&repo).unwrap();
     let e = walk.push_range("HEAD~1...HEAD").unwrap_err();
@@ -154,7 +149,6 @@ fn errors() {
 
 #[test]
 fn hide_callback() {
-    let _g = test_support::init();
     let mut asked = Vec::new();
     let repo = testrepo();
     let mut walk = Revwalk::new(&repo).unwrap();
@@ -175,8 +169,7 @@ fn hide_callback() {
 }
 
 #[test]
-fn hide_callback_panic_stops_the_walk() {
-    let _g = test_support::init();
+fn hide_callback_panic_is_resumed() {
     let repo = testrepo();
     let mut walk = Revwalk::new(&repo).unwrap();
     let mut calls = 0;
@@ -188,12 +181,9 @@ fn hide_callback_panic_stops_the_walk() {
         false
     });
     walk.push_head().unwrap();
-    let e = walk.next().unwrap().unwrap_err();
-    assert_eq!(e.class(), ErrorClass::INTERNAL);
-    assert_eq!(
-        e.message(),
-        "the hide callback panicked: from the hide callback"
-    );
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| walk.next()));
+    let p = r.unwrap_err();
+    assert_eq!(p.downcast_ref::<&str>(), Some(&"from the hide callback"));
     // the walk was reset: nothing is pushed any more
     assert!(walk.next().is_none());
     // and it works again
@@ -203,8 +193,46 @@ fn hide_callback_panic_stops_the_walk() {
 }
 
 #[test]
+fn sort_flags() {
+    assert_eq!(Sort::default(), Sort::NONE);
+    assert!(Sort::NONE.is_empty());
+    let s = Sort::TOPOLOGICAL | Sort::TIME;
+    assert!(s.contains(Sort::TIME) && !s.contains(Sort::REVERSE));
+    assert_eq!(s.bits(), 3);
+    assert_eq!(Sort::all().bits(), 7);
+    assert_eq!(Sort::from_bits(8), None);
+    assert_eq!(Sort::from_bits_truncate(9), Sort::TOPOLOGICAL);
+    assert_eq!(s - Sort::TIME, Sort::TOPOLOGICAL);
+    assert_eq!(format!("{s:?}"), "Sort(TOPOLOGICAL | TIME)");
+    let mut m = Sort::NONE;
+    m |= Sort::REVERSE;
+    assert_eq!(!m, Sort::TOPOLOGICAL | Sort::TIME);
+}
+
+#[test]
+fn reset_forgets_everything() {
+    let repo = testrepo();
+    let mut walk = Revwalk::new(&repo).unwrap();
+    walk.sorting(Sort::REVERSE)
+        .simplify_first_parent()
+        .push_head()
+        .unwrap();
+    walk.reset().push_head().unwrap();
+    assert_eq!(short(&mut walk), HEAD_ORDER);
+    walk.push_head().unwrap().hide_head().unwrap();
+    assert!(walk.next().is_none());
+    walk.push_glob("heads/m*")
+        .unwrap()
+        .hide_ref("refs/heads/br2")
+        .unwrap();
+    assert_eq!(short(&mut walk), ["a65fedf", "be3563a"]);
+    // Everything is reachable from a tag.
+    walk.push_head().unwrap().hide_glob("tags").unwrap();
+    assert!(walk.next().is_none());
+}
+
+#[test]
 fn byte_names() {
-    let _g = test_support::init();
     let repo = testrepo();
     let mut walk = Revwalk::new(&repo).unwrap();
     walk.push_ref(b"refs/heads/master").unwrap();
@@ -215,7 +243,6 @@ fn byte_names() {
 
 #[test]
 fn hashsig_api() {
-    let _g = test_support::init();
     let dir = resources().join("renames");
     let a = HashSig::from_file(&dir.join("songof7cities.txt"), HashSigOptions::NORMAL).unwrap();
     let b = HashSig::from_file(&dir.join("untimely.txt"), HashSigOptions::NORMAL).unwrap();
@@ -231,6 +258,12 @@ fn hashsig_api() {
     assert!(HashSig::new(b"x\n", HashSigOptions::ALLOW_SMALL_FILES).is_ok());
     let e = HashSig::from_file(&dir.join("does-not-exist"), HashSigOptions::NORMAL).unwrap_err();
     assert_eq!(e.code(), ErrorCode::NOT_FOUND);
+    let ws = HashSig::new(&data, HashSigOptions::IGNORE_WHITESPACE).unwrap();
+    assert_eq!(ws.compare(&ws), 100);
+    let smart = HashSig::new(&data, HashSigOptions::SMART_WHITESPACE).unwrap();
+    assert!(smart.compare(&m) <= 100);
+    assert_eq!(HashSigOptions::default(), HashSigOptions::NORMAL);
+    assert_eq!(HashSigOptions::from_bits(8), None);
     let both = HashSigOptions::IGNORE_WHITESPACE | HashSigOptions::SMART_WHITESPACE;
     assert_eq!(
         HashSig::new(&data, both).unwrap_err().class(),
