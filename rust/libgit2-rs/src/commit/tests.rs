@@ -42,12 +42,25 @@ fn cstr<'a>(p: *const c_char) -> Option<&'a [u8]> {
 fn sig_of(p: *const GitSignature) -> (Vec<u8>, Vec<u8>, GitTime) {
     assert!(!p.is_null());
     // SAFETY: a signature the parse allocated.
-    unsafe { (cstr((*p).name).unwrap().to_vec(), cstr((*p).email).unwrap().to_vec(), (*p).when) }
+    unsafe {
+        (
+            cstr((*p).name).unwrap().to_vec(),
+            cstr((*p).email).unwrap().to_vec(),
+            (*p).when,
+        )
+    }
 }
 
 fn parse_full(data: &[u8]) -> (Result<()>, Fresh) {
     let mut c = Fresh::new();
-    let r = parse_into(c.get(), data, &GitCommitParseOptions { oid_type: sha1(), flags: 0 });
+    let r = parse_into(
+        c.get(),
+        data,
+        &GitCommitParseOptions {
+            oid_type: sha1(),
+            flags: 0,
+        },
+    );
     (r, c)
 }
 
@@ -59,7 +72,14 @@ fn signatures() {
     let s = parse_signature(line, &mut pos, b"author ").unwrap();
     assert_eq!(s.name, b"A U Thor");
     assert_eq!(s.email, b"a@b.c");
-    assert_eq!(s.when, GitTime { time: 1234567890, offset: 90, sign: b'+' as c_char });
+    assert_eq!(
+        s.when,
+        GitTime {
+            time: 1234567890,
+            offset: 90,
+            sign: b'+' as c_char
+        }
+    );
     assert_eq!(&line[pos..], b"rest");
 
     let mut pos = 0;
@@ -76,19 +96,39 @@ fn signatures() {
     ] {
         let mut pos = 0;
         let s = parse_signature(l, &mut pos, b"c ").unwrap();
-        assert_eq!((s.when.offset, s.when.sign), (off, sign as c_char), "{:?}", String::from_utf8_lossy(l));
+        assert_eq!(
+            (s.when.offset, s.when.sign),
+            (off, sign as c_char),
+            "{:?}",
+            String::from_utf8_lossy(l)
+        );
     }
 
     let errs: [(&[u8], &str); 5] = [
         (b"c x <y> 5", "failed to parse signature - no newline given"),
-        (b"d x <y> 5\n", "failed to parse signature - expected prefix doesn't match actual"),
-        (b"c \n", "failed to parse signature - expected prefix doesn't match actual"),
-        (b"c x >y< 5\n", "failed to parse signature - malformed e-mail"),
-        (b"c x <y> zz\n", "failed to parse signature - invalid Unix timestamp"),
+        (
+            b"d x <y> 5\n",
+            "failed to parse signature - expected prefix doesn't match actual",
+        ),
+        (
+            b"c \n",
+            "failed to parse signature - expected prefix doesn't match actual",
+        ),
+        (
+            b"c x >y< 5\n",
+            "failed to parse signature - malformed e-mail",
+        ),
+        (
+            b"c x <y> zz\n",
+            "failed to parse signature - invalid Unix timestamp",
+        ),
     ];
     for (l, msg) in errs {
         let mut pos = 0;
-        assert_eq!(parse_signature(l, &mut pos, b"c ").unwrap_err(), ErrorCode::INVALID);
+        assert_eq!(
+            parse_signature(l, &mut pos, b"c ").unwrap_err(),
+            ErrorCode::INVALID
+        );
         assert_eq!(errors::last_message().unwrap(), msg.as_bytes());
         assert_eq!(pos, 0);
     }
@@ -112,7 +152,10 @@ fn full_parse() {
     assert_eq!(c.parent_ids.len(), 2);
     assert_eq!(sig_of(c.author).0, b"A");
     let (n, e, w) = sig_of(c.committer);
-    assert_eq!((n.as_slice(), e.as_slice(), w.time, w.offset), (&b"C"[..], &b"c@d"[..], 3, -90));
+    assert_eq!(
+        (n.as_slice(), e.as_slice(), w.time, w.offset),
+        (&b"C"[..], &b"c@d"[..], 3, -90)
+    );
     assert_eq!(cstr(c.message_encoding).unwrap(), b"UTF-8");
     let header = cstr(c.raw_header).unwrap();
     assert!(header.ends_with(b"gpgsig x\n y\n"));
@@ -140,10 +183,18 @@ fn parse_edges() {
     assert_eq!(cstr(c.get().raw_message).unwrap(), b"msg");
 
     // Bad trees.
-    for d in [String::new(), format!("tree {}\n", &T[..39]), format!("tree {T}x"), format!("tree zz{}\n", &T[2..])] {
+    for d in [
+        String::new(),
+        format!("tree {}\n", &T[..39]),
+        format!("tree {T}x"),
+        format!("tree zz{}\n", &T[2..]),
+    ] {
         let (r, _c) = parse_full(d.as_bytes());
         assert_eq!(r.unwrap_err(), ErrorCode::INVALID);
-        assert_eq!(errors::last_message().unwrap(), b"failed to parse bad commit object");
+        assert_eq!(
+            errors::last_message().unwrap(),
+            b"failed to parse bad commit object"
+        );
     }
     // A bad parent line ends the parents; the author is then expected.
     let d = format!("tree {T}\nparent zz\nauthor A <a@b> 1 +0000\ncommitter C <c@d> 3 +0000\n");
@@ -190,7 +241,10 @@ fn quick_parse_sink() {
         }
     }
     // The tree is not checked by a quick parse, only skipped.
-    let d = format!("tree {}\nparent {T}\nauthor A <a@b> 1 +0000\ncommitter C <c@d> 77 +0000\nencoding x\n\nm", "z".repeat(40));
+    let d = format!(
+        "tree {}\nparent {T}\nauthor A <a@b> 1 +0000\ncommitter C <c@d> 77 +0000\nencoding x\n\nm",
+        "z".repeat(40)
+    );
     let mut s = S::default();
     parse(d.as_bytes(), sha1(), true, &mut s).unwrap();
     assert_eq!((s.parents.len(), s.time), (1, 77));
@@ -201,7 +255,8 @@ fn quick_parse_sink() {
     // Too short to skip the tree.
     assert!(parse(b"tree 1810", sha1(), true, &mut S::default()).is_err());
     let mut s = S::default();
-    let d = format!("tree {T}\nauthor A <a@b> 1 +0000\ncommitter C <c@d> 77 +0000\nencoding x\n\nm");
+    let d =
+        format!("tree {T}\nauthor A <a@b> 1 +0000\ncommitter C <c@d> 77 +0000\nencoding x\n\nm");
     parse(d.as_bytes(), sha1(), false, &mut s).unwrap();
     assert_eq!(s.calls, ["tree", "author", "encoding", "message"]);
 }
@@ -219,25 +274,69 @@ fn summaries_and_bodies() {
     let _g = test_support::init();
     // The cases of tests/libgit2/commit/commit.c (summary, body).
     let cases: &[(&str, &str, Option<&str>)] = &[
-        ("One-liner with no trailing newline", "One-liner with no trailing newline", None),
-        ("One-liner with trailing newline\n", "One-liner with trailing newline", None),
-        ("\n\nTrimmed leading&trailing newlines\n\n", "Trimmed leading&trailing newlines", None),
-        ("First paragraph only\n\nSecond paragraph\n", "First paragraph only", Some("Second paragraph")),
-        ("\n\nFirst paragraph only with surrounding newlines\n\nSecond paragraph\n\n", "First paragraph only with surrounding newlines", Some("Second paragraph")),
-        ("First paragraph\nwith multiple lines\n\nSecond paragraph\n", "First paragraph with multiple lines", Some("Second paragraph")),
-        ("First paragraph\nwith multiple lines\n\n", "First paragraph with multiple lines", None),
-        ("\nFirst paragraph\nwith trailing whitespace  \n\n", "First paragraph with trailing whitespace", None),
+        (
+            "One-liner with no trailing newline",
+            "One-liner with no trailing newline",
+            None,
+        ),
+        (
+            "One-liner with trailing newline\n",
+            "One-liner with trailing newline",
+            None,
+        ),
+        (
+            "\n\nTrimmed leading&trailing newlines\n\n",
+            "Trimmed leading&trailing newlines",
+            None,
+        ),
+        (
+            "First paragraph only\n\nSecond paragraph\n",
+            "First paragraph only",
+            Some("Second paragraph"),
+        ),
+        (
+            "\n\nFirst paragraph only with surrounding newlines\n\nSecond paragraph\n\n",
+            "First paragraph only with surrounding newlines",
+            Some("Second paragraph"),
+        ),
+        (
+            "First paragraph\nwith multiple lines\n\nSecond paragraph\n",
+            "First paragraph with multiple lines",
+            Some("Second paragraph"),
+        ),
+        (
+            "First paragraph\nwith multiple lines\n\n",
+            "First paragraph with multiple lines",
+            None,
+        ),
+        (
+            "\nFirst paragraph\nwith trailing whitespace  \n\n",
+            "First paragraph with trailing whitespace",
+            None,
+        ),
         ("  Leading whitespace\n\n", "  Leading whitespace", None),
         ("Tab\tseparated\n\n", "Tab\tseparated", None),
-        ("trailing spaces and tabs   \t\n\nbody", "trailing spaces and tabs", Some("body")),
+        (
+            "trailing spaces and tabs   \t\n\nbody",
+            "trailing spaces and tabs",
+            Some("body"),
+        ),
         ("line one\n   \nline two", "line one", None),
         ("line one\n\t\r\nline two", "line one", None),
         ("a  \n  b", "a b", None),
         ("", "", None),
         ("\n\n\n", "", None),
         ("   ", "", None),
-        ("Summary\n\n  body with leading and trailing spaces  \n\n", "Summary", Some("body with leading and trailing spaces")),
-        ("Summary\n\nPara 1\n\nPara 2\n", "Summary", Some("Para 1\n\nPara 2")),
+        (
+            "Summary\n\n  body with leading and trailing spaces  \n\n",
+            "Summary",
+            Some("body with leading and trailing spaces"),
+        ),
+        (
+            "Summary\n\nPara 1\n\nPara 2\n",
+            "Summary",
+            Some("Para 1\n\nPara 2"),
+        ),
     ];
     for &(m, s, b) in cases {
         assert_eq!(summary(m), s, "summary of {m:?}");
@@ -248,10 +347,13 @@ fn summaries_and_bodies() {
 #[test]
 fn header_fields() {
     let _g = test_support::init();
-    let h = format!("tree {T}\nauthor A <a@b> 1 +0000\ngpgsig -----BEGIN\n line2\n \n end\nx y\nxx z\n");
+    let h = format!(
+        "tree {T}\nauthor A <a@b> 1 +0000\ngpgsig -----BEGIN\n line2\n \n end\nx y\nxx z\n"
+    );
     let get = |f: &str| {
         let mut out = GitStr::new();
-        header_field(h.as_bytes(), f.as_bytes(), &mut out).map(|()| String::from_utf8(out.as_bytes().to_vec()).unwrap())
+        header_field(h.as_bytes(), f.as_bytes(), &mut out)
+            .map(|()| String::from_utf8(out.as_bytes().to_vec()).unwrap())
     };
     assert_eq!(get("tree").unwrap(), T);
     assert_eq!(get("gpgsig").unwrap(), "-----BEGIN\nline2\n\nend");
@@ -262,7 +364,10 @@ fn header_fields() {
     assert_eq!(get("line2").unwrap_err(), ErrorCode::NOT_FOUND);
     // A continuation without its end.
     let mut out = GitStr::new();
-    assert_eq!(header_field(b"a b\n c", b"a", &mut out).unwrap_err(), ErrorCode::GENERIC);
+    assert_eq!(
+        header_field(b"a b\n c", b"a", &mut out).unwrap_err(),
+        ErrorCode::GENERIC
+    );
     assert_eq!(errors::last_message().unwrap(), b"malformed header");
     // A field with a newline matching across lines (C: a negative length).
     assert!(header_field(b"a\nb c\n", b"a\nb", &mut out).is_err());
@@ -275,16 +380,31 @@ fn signature_extraction() {
     let (mut sig, mut signed) = (GitStr::new(), GitStr::new());
     extract_signature(data.as_bytes(), b"gpgsig", &mut sig, &mut signed).unwrap();
     assert_eq!(sig.as_bytes(), b"-----BEGIN\nmid\n-----END");
-    assert_eq!(signed.as_bytes(), format!("tree {T}\nauthor A\n\nmsg\n").as_bytes());
+    assert_eq!(
+        signed.as_bytes(),
+        format!("tree {T}\nauthor A\n\nmsg\n").as_bytes()
+    );
 
     let (mut sig, mut signed) = (GitStr::new(), GitStr::new());
-    assert_eq!(extract_signature(b"tree x\n\nmsg\n", b"gpgsig", &mut sig, &mut signed).unwrap_err(), ErrorCode::NOT_FOUND);
-    assert_eq!(errors::last_message().unwrap(), b"this commit is not signed");
+    assert_eq!(
+        extract_signature(b"tree x\n\nmsg\n", b"gpgsig", &mut sig, &mut signed).unwrap_err(),
+        ErrorCode::NOT_FOUND
+    );
+    assert_eq!(
+        errors::last_message().unwrap(),
+        b"this commit is not signed"
+    );
 
     // A field name prefix of another header is skipped, and its name dropped
     // from the signed data, as C.
     let (mut sig, mut signed) = (GitStr::new(), GitStr::new());
-    extract_signature(b"gpgsigx a\ngpgsig s\nz\n", b"gpgsig", &mut sig, &mut signed).unwrap();
+    extract_signature(
+        b"gpgsigx a\ngpgsig s\nz\n",
+        b"gpgsig",
+        &mut sig,
+        &mut signed,
+    )
+    .unwrap();
     assert_eq!(sig.as_bytes(), b"s");
     assert_eq!(signed.as_bytes(), b"x a\nz\n");
 }
@@ -293,10 +413,36 @@ fn signature_extraction() {
 fn buffers() {
     let _g = test_support::init();
     let tree = Oid::from_str_hex(T, OidType::Sha1).unwrap();
-    let a = SigOut { name: Some(b"A U"), email: Some(b"a@b"), when: GitTime { time: 1, offset: -90, sign: 0 } };
-    let c = SigOut { name: None, email: Some(b"c"), when: GitTime { time: -1, offset: 60, sign: b'-' as c_char } };
+    let a = SigOut {
+        name: Some(b"A U"),
+        email: Some(b"a@b"),
+        when: GitTime {
+            time: 1,
+            offset: -90,
+            sign: 0,
+        },
+    };
+    let c = SigOut {
+        name: None,
+        email: Some(b"c"),
+        when: GitTime {
+            time: -1,
+            offset: 60,
+            sign: b'-' as c_char,
+        },
+    };
     let mut out = GitStr::new();
-    create_buffer_internal(&mut out, &a, &c, b"msg", &tree, &[tree], Some(b"UTF-8"), &[(b"x", b"1\n2")]).unwrap();
+    create_buffer_internal(
+        &mut out,
+        &a,
+        &c,
+        b"msg",
+        &tree,
+        &[tree],
+        Some(b"UTF-8"),
+        &[(b"x", b"1\n2")],
+    )
+    .unwrap();
     let expect = format!(
         "tree {T}\nparent {T}\nauthor A U <a@b> 1 -0130\ncommitter (null) <c> 4294967295 -0100\nencoding UTF-8\nx 1\n 2\n\nmsg"
     );
@@ -307,7 +453,10 @@ fn buffers() {
     assert!(String::from_utf8_lossy(out2.as_bytes()).contains("x 1\n 2\ngpgsig s1\n s2\n\nmsg"));
     let mut out3 = GitStr::new();
     assert!(append_header(&mut out3, b"no header end", b"a", b"b").is_err());
-    assert_eq!(errors::last_message().unwrap(), b"malformed commit contents");
+    assert_eq!(
+        errors::last_message().unwrap(),
+        b"malformed commit contents"
+    );
 
     // An id of unknown type fails, and the buffer is disposed.
     let mut out = GitStr::new();
@@ -319,32 +468,57 @@ fn buffers() {
 #[test]
 fn c_abi_parse_and_accessors() {
     let _g = test_support::init();
-    let data = format!("tree {T}\nparent {T}\nauthor A <a@b> 1 +0000\ncommitter C <c@d> 3 -0130\n\n\nSum\nmary\n\nBody\n");
+    let data = format!(
+        "tree {T}\nparent {T}\nauthor A <a@b> 1 +0000\ncommitter C <c@d> 3 -0130\n\n\nSum\nmary\n\nBody\n"
+    );
     let c = Fresh::new();
     // SAFETY: a fresh commit and readable data.
     unsafe {
-        assert_eq!(ffi::git_commit__parse_raw(c.0.cast(), data.as_ptr().cast(), data.len(), sha1()), 0);
+        assert_eq!(
+            ffi::git_commit__parse_raw(c.0.cast(), data.as_ptr().cast(), data.len(), sha1()),
+            0
+        );
         assert_eq!(ffi::git_commit_parentcount(c.0), 1);
         assert_eq!(ffi::git_commit_time(c.0), 3);
         assert_eq!(ffi::git_commit_time_offset(c.0), -90);
-        assert_eq!(*ffi::git_commit_tree_id(c.0), Oid::from_str_hex(T, OidType::Sha1).unwrap());
+        assert_eq!(
+            *ffi::git_commit_tree_id(c.0),
+            Oid::from_str_hex(T, OidType::Sha1).unwrap()
+        );
         assert!(ffi::git_commit_parent_id(c.0, 1).is_null());
-        assert_eq!(CStr::from_ptr(ffi::git_commit_message(c.0)).to_bytes(), b"Sum\nmary\n\nBody\n");
+        assert_eq!(
+            CStr::from_ptr(ffi::git_commit_message(c.0)).to_bytes(),
+            b"Sum\nmary\n\nBody\n"
+        );
         let s = ffi::git_commit_summary(c.0);
         assert_eq!(CStr::from_ptr(s).to_bytes(), b"Sum mary");
         assert_eq!(ffi::git_commit_summary(c.0), s, "kept in the commit");
-        assert_eq!(CStr::from_ptr(ffi::git_commit_body(c.0)).to_bytes(), b"Body");
+        assert_eq!(
+            CStr::from_ptr(ffi::git_commit_body(c.0)).to_bytes(),
+            b"Body"
+        );
         let mut out = GitStr::new();
-        assert_eq!(ffi::git_commit__header_field(&mut out, c.0, c"author".as_ptr()), 0);
+        assert_eq!(
+            ffi::git_commit__header_field(&mut out, c.0, c"author".as_ptr()),
+            0
+        );
         assert_eq!(out.as_bytes(), b"A <a@b> 1 +0000");
         assert!(ffi::git_commit_author(core::ptr::null()).is_null());
-        assert_eq!(errors::last_message().unwrap(), b"invalid argument: 'commit'");
+        assert_eq!(
+            errors::last_message().unwrap(),
+            b"invalid argument: 'commit'"
+        );
         assert_eq!(ffi::git_commit_time(core::ptr::null()), i64::MIN);
     }
     // A failed parse leaves a commit that frees cleanly.
     let mut c = Fresh::new();
     // SAFETY: as above.
-    unsafe { assert_eq!(ffi::git_commit__parse_raw(c.0.cast(), b"tree x".as_ptr().cast(), 6, sha1()), ErrorCode::INVALID.raw()) };
+    unsafe {
+        assert_eq!(
+            ffi::git_commit__parse_raw(c.0.cast(), b"tree x".as_ptr().cast(), 6, sha1()),
+            ErrorCode::INVALID.raw()
+        )
+    };
     let _ = c.get();
 }
 
@@ -358,14 +532,20 @@ fn options_init() {
         let o = o.assume_init();
         assert_eq!((o.version, o.flags, o.extra_headers_len), (7, 0, 0));
         assert!(o.sign.is_none());
-        assert_eq!(ffi::git_commit_create_ext_options_init(core::ptr::null_mut(), 1), -1);
+        assert_eq!(
+            ffi::git_commit_create_ext_options_init(core::ptr::null_mut(), 1),
+            -1
+        );
     }
 }
 
 #[test]
 fn commitarray_dispose_empty() {
     let _g = test_support::init();
-    let mut a = crate::sys::pending::l_commit::GitCommitArray { commits: core::ptr::null(), count: 0 };
+    let mut a = crate::sys::pending::l_commit::GitCommitArray {
+        commits: core::ptr::null(),
+        count: 0,
+    };
     // SAFETY: an empty array.
     unsafe {
         ffi::git_commitarray_dispose(&mut a);
@@ -377,26 +557,45 @@ fn commitarray_dispose_empty() {
 /// The offsets at which `sys::pending::l_commit` reads other work packages'
 /// structs, against the C headers.
 #[test]
-#[cfg_attr(any(miri, not(feature = "link-c")), ignore = "runs clang on LIBGIT2_BUILD_DIR: needs --features link-c, not Miri")]
+#[cfg_attr(
+    any(miri, not(feature = "link-c")),
+    ignore = "runs clang on LIBGIT2_BUILD_DIR: needs --features link-c, not Miri"
+)]
 fn c_foreign_layout() {
     use crate::sys::pending::l_commit as p;
     let asserts = [
         format!("offsetof(git_repository, oid_type) == {}", p::REPO_OID_TYPE),
         format!("offsetof(git_repository, grafts) == {}", p::REPO_GRAFTS),
-        format!("offsetof(git_repository, shallow_grafts) == {}", p::REPO_SHALLOW_GRAFTS),
+        format!(
+            "offsetof(git_repository, shallow_grafts) == {}",
+            p::REPO_SHALLOW_GRAFTS
+        ),
         format!("offsetof(git_revwalk, repo) == {}", p::REVWALK_REPO),
         format!("offsetof(git_revwalk, odb) == {}", p::REVWALK_ODB),
-        format!("offsetof(git_revwalk, commit_pool) == {}", p::REVWALK_COMMIT_POOL),
+        format!(
+            "offsetof(git_revwalk, commit_pool) == {}",
+            p::REVWALK_COMMIT_POOL
+        ),
         format!("offsetof(git_index, oid_type) == {}", p::INDEX_OID_TYPE),
         // The bitfields follow `oid_type` in their own `unsigned int`.
         format!("offsetof(git_index, oid_type) + 4 == {}", p::INDEX_FLAGS),
         format!("offsetof(git_index, tree) == {}", p::INDEX_TREE),
         format!("offsetof(git_index, tree_pool) == {}", p::INDEX_TREE_POOL),
-        format!("offsetof(git_tree_cache, entry_count) == {}", p::TREE_CACHE_ENTRY_COUNT),
+        format!(
+            "offsetof(git_tree_cache, entry_count) == {}",
+            p::TREE_CACHE_ENTRY_COUNT
+        ),
         format!("offsetof(git_tree_cache, oid) == {}", p::TREE_CACHE_OID),
-        format!("sizeof(git_pool) == {}", size_of::<crate::util::pool::GitPool>()),
+        format!(
+            "sizeof(git_pool) == {}",
+            size_of::<crate::util::pool::GitPool>()
+        ),
         "sizeof(((git_tree_cache *)0)->entry_count) == sizeof(ssize_t)".to_string(),
     ];
     let a: Vec<&str> = asserts.iter().map(String::as_str).collect();
-    crate::util::layout::check(&["repository.h", "revwalk.h", "index.h", "tree-cache.h"], &[], &a);
+    crate::util::layout::check(
+        &["repository.h", "revwalk.h", "index.h", "tree-cache.h"],
+        &[],
+        &a,
+    );
 }

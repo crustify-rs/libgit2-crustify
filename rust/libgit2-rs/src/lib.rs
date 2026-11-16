@@ -24,11 +24,11 @@ pub mod pending_repository;
 pub mod strarray;
 pub mod tree;
 
-pub use oid::{Oid, OidShortener, OidType};
 pub use commit::api::{Commit, CommitBuilder};
+pub use oid::{Oid, OidShortener, OidType};
 pub use oidarray::OidArray;
-pub use tree::api::{Tree, TreeBuilder, TreeEntry, TreeEntryRef};
 pub use strarray::StrArray;
+pub use tree::api::{Tree, TreeBuilder, TreeEntry, TreeEntryRef};
 pub use util::errors::{Error, ErrorClass, ErrorCode};
 pub use util::net::Url;
 pub use util::process::{Process, ProcessOptions, ProcessStatus};

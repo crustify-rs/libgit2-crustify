@@ -42,16 +42,30 @@ impl Drop for Fresh {
 
 fn names(t: *const GitTree) -> Vec<Vec<u8>> {
     // SAFETY: a live tree parsed from data that outlives this call.
-    unsafe { entries(t) }.iter().map(|e| unsafe { e.name() }.to_vec()).collect()
+    unsafe { entries(t) }
+        .iter()
+        .map(|e| unsafe { e.name() }.to_vec())
+        .collect()
 }
 
 #[test]
 fn parse_zero_copy() {
     let _g = test_support::init();
-    let data = raw_tree(&[("100644", b"a", 1), ("40000", b"a.b", 2), ("40000", b"a", 3), ("160000", b"sub", 4), ("100664", b"z", 5)]);
+    let data = raw_tree(&[
+        ("100644", b"a", 1),
+        ("40000", b"a.b", 2),
+        ("40000", b"a", 3),
+        ("160000", b"sub", 4),
+        ("100664", b"z", 5),
+    ]);
     let t = Fresh::new();
     // SAFETY: a fresh tree; `data` outlives it.
-    unsafe { assert_eq!(ffi::git_tree__parse_raw(t.0.cast(), data.as_ptr().cast(), data.len(), sha1()), 0) };
+    unsafe {
+        assert_eq!(
+            ffi::git_tree__parse_raw(t.0.cast(), data.as_ptr().cast(), data.len(), sha1()),
+            0
+        )
+    };
     // SAFETY: a live tree.
     let es = unsafe { entries(t.0) };
     assert_eq!(es.len(), 5);
@@ -72,24 +86,58 @@ fn parse_zero_copy() {
 fn parse_errors() {
     let _g = test_support::init();
     let cases: &[(&[u8], &str)] = &[
-        (b" 100644 a\0aaaaaaaaaaaaaaaaaaaa", "failed to parse tree: can't parse filemode"),
-        (b"x a\0aaaaaaaaaaaaaaaaaaaa", "failed to parse tree: can't parse filemode"),
-        (b"-1 a\0aaaaaaaaaaaaaaaaaaaa", "failed to parse tree: can't parse filemode"),
-        (b"200000 a\0aaaaaaaaaaaaaaaaaaaa", "failed to parse tree: can't parse filemode"),
-        (b"100644", "failed to parse tree: missing space after filemode"),
-        (b"100644\0", "failed to parse tree: missing space after filemode"),
+        (
+            b" 100644 a\0aaaaaaaaaaaaaaaaaaaa",
+            "failed to parse tree: can't parse filemode",
+        ),
+        (
+            b"x a\0aaaaaaaaaaaaaaaaaaaa",
+            "failed to parse tree: can't parse filemode",
+        ),
+        (
+            b"-1 a\0aaaaaaaaaaaaaaaaaaaa",
+            "failed to parse tree: can't parse filemode",
+        ),
+        (
+            b"200000 a\0aaaaaaaaaaaaaaaaaaaa",
+            "failed to parse tree: can't parse filemode",
+        ),
+        (
+            b"100644",
+            "failed to parse tree: missing space after filemode",
+        ),
+        (
+            b"100644\0",
+            "failed to parse tree: missing space after filemode",
+        ),
         (b"100644 a", "failed to parse tree: object is corrupted"),
-        (b"100644 \0aaaaaaaaaaaaaaaaaaaa", "failed to parse tree: can't parse filename"),
-        (b"100644 a\0aaaaaaaaaaaaaaaaaaa", "failed to parse tree: can't parse OID"),
+        (
+            b"100644 \0aaaaaaaaaaaaaaaaaaaa",
+            "failed to parse tree: can't parse filename",
+        ),
+        (
+            b"100644 a\0aaaaaaaaaaaaaaaaaaa",
+            "failed to parse tree: can't parse OID",
+        ),
     ];
     for &(d, msg) in cases {
         let mut a = GitArray::new();
-        assert_eq!(parse_entries(&mut a, d, sha1()).unwrap_err(), ErrorCode::INVALID, "{:?}", String::from_utf8_lossy(d));
+        assert_eq!(
+            parse_entries(&mut a, d, sha1()).unwrap_err(),
+            ErrorCode::INVALID,
+            "{:?}",
+            String::from_utf8_lossy(d)
+        );
         assert_eq!(errors::last_message().unwrap(), msg.as_bytes());
         assert_eq!(errors::last_class(), Some(ErrorClass::TREE));
     }
     // Modes as git__strntol32 reads them: leading zeros, a sign, many digits.
-    for (m, attr) in [("0100644", 0o100644u16), ("+644", 0o644), ("00000000000000100644", 0o100644), ("177777", 0o177777)] {
+    for (m, attr) in [
+        ("0100644", 0o100644u16),
+        ("+644", 0o644),
+        ("00000000000000100644", 0o100644),
+        ("177777", 0o177777),
+    ] {
         let d = raw_tree(&[(m, b"n", 1)]);
         let mut a = GitArray::new();
         parse_entries(&mut a, &d, sha1()).unwrap();
@@ -131,11 +179,24 @@ fn order_and_search() {
     assert!(entry_cmp_parts(b"a", false, b"a.b", false) < 0);
     assert_eq!(entry_cmp_parts(b"x", false, b"x", false), 0);
 
-    let names_sorted: [(&str, &[u8]); 7] =
-        [("100644", b"a"), ("100644", b"a-b"), ("40000", b"a.b"), ("40000", b"a"), ("100644", b"a0"), ("40000", b"b"), ("100644", b"c")];
+    let names_sorted: [(&str, &[u8]); 7] = [
+        ("100644", b"a"),
+        ("100644", b"a-b"),
+        ("40000", b"a.b"),
+        ("40000", b"a"),
+        ("100644", b"a0"),
+        ("40000", b"b"),
+        ("100644", b"c"),
+    ];
     // Not a valid tree (two "a"), but tree_key_search finds each by its
     // homing search and linear scan.
-    let data = raw_tree(&names_sorted.iter().enumerate().map(|(i, (m, n))| (*m, *n, i as u8)).collect::<Vec<_>>());
+    let data = raw_tree(
+        &names_sorted
+            .iter()
+            .enumerate()
+            .map(|(i, (m, n))| (*m, *n, i as u8))
+            .collect::<Vec<_>>(),
+    );
     let mut a = GitArray::new();
     parse_entries(&mut a, &data, sha1()).unwrap();
     let es = a.as_slice();
@@ -164,7 +225,10 @@ fn entries_alloc_dup() {
         assert_eq!(CStr::from_ptr((*e).filename).to_bytes(), b"name.txt");
         let mut d = ptr::null_mut();
         assert_eq!(ffi::git_tree_entry_dup(&mut d, e), 0);
-        assert_eq!(((*d).attr, (*d).oid, (*d).name()), (0o100755, id, &b"name.txt"[..]));
+        assert_eq!(
+            ((*d).attr, (*d).oid, (*d).name()),
+            (0o100755, id, &b"name.txt"[..])
+        );
         assert_eq!(ffi::git_tree_entry_cmp(e, d), 0);
         assert_eq!(ffi::git_tree_entry_filemode(d), FILEMODE_BLOB_EXECUTABLE);
         assert_eq!(ffi::git_tree_entry_type(d), OBJ_BLOB);
@@ -172,7 +236,10 @@ fn entries_alloc_dup() {
         ffi::git_tree_entry_free(e);
         ffi::git_tree_entry_free(ptr::null_mut());
         assert!(ffi::git_tree_entry_name(ptr::null()).is_null());
-        assert_eq!(errors::last_message().unwrap(), b"invalid argument: 'entry'");
+        assert_eq!(
+            errors::last_message().unwrap(),
+            b"invalid argument: 'entry'"
+        );
     }
 }
 
@@ -180,14 +247,20 @@ fn entries_alloc_dup() {
 fn builder_serialize_and_filter() {
     let _g = test_support::init();
     let mut b = GitTreebuilder::empty(ptr::null_mut());
-    let ids: Vec<Oid> = (1..=4u8).map(|i| Oid::from_bytes(&[i; 20], OidType::Sha1).unwrap()).collect();
+    let ids: Vec<Oid> = (1..=4u8)
+        .map(|i| Oid::from_bytes(&[i; 20], OidType::Sha1).unwrap())
+        .collect();
     // SAFETY: NUL-terminated names; no validation, so no repository is used.
     unsafe {
-        b.append_entry(c"b".as_ptr(), &ids[0], FILEMODE_BLOB, false).unwrap();
-        b.append_entry(c"a".as_ptr(), &ids[1], FILEMODE_TREE, false).unwrap();
-        b.append_entry(c"a.c".as_ptr(), &ids[2], FILEMODE_BLOB_EXECUTABLE, false).unwrap();
+        b.append_entry(c"b".as_ptr(), &ids[0], FILEMODE_BLOB, false)
+            .unwrap();
+        b.append_entry(c"a".as_ptr(), &ids[1], FILEMODE_TREE, false)
+            .unwrap();
+        b.append_entry(c"a.c".as_ptr(), &ids[2], FILEMODE_BLOB_EXECUTABLE, false)
+            .unwrap();
         // A duplicate replaces (and frees) the earlier entry.
-        b.append_entry(c"b".as_ptr(), &ids[3], FILEMODE_LINK, false).unwrap();
+        b.append_entry(c"b".as_ptr(), &ids[3], FILEMODE_LINK, false)
+            .unwrap();
     }
     assert_eq!(b.len(), 3);
     let mut buf = GitStr::new();
@@ -209,11 +282,17 @@ fn builder_serialize_and_filter() {
     // SAFETY: a live builder used by nothing else; NUL-terminated names.
     unsafe {
         assert!(!ffi::git_treebuilder_get(p, c"a".as_ptr()).is_null());
-        assert_eq!(ffi::git_treebuilder_filter(p, Some(drop_trees), ptr::null_mut()), 0);
+        assert_eq!(
+            ffi::git_treebuilder_filter(p, Some(drop_trees), ptr::null_mut()),
+            0
+        );
         assert!(ffi::git_treebuilder_get(p, c"a".as_ptr()).is_null());
         assert_eq!(ffi::git_treebuilder_entrycount(p), 2);
         assert_eq!(ffi::git_treebuilder_remove(p, c"nope".as_ptr()), -1);
-        assert_eq!(errors::last_message().unwrap(), b"failed to remove entry: file isn't in the tree - nope");
+        assert_eq!(
+            errors::last_message().unwrap(),
+            b"failed to remove entry: file isn't in the tree - nope"
+        );
         assert_eq!(ffi::git_treebuilder_remove(p, c"b".as_ptr()), 0);
         assert_eq!(ffi::git_treebuilder_entrycount(p), 1);
         assert_eq!(ffi::git_treebuilder_clear(p), 0);
@@ -227,17 +306,31 @@ fn walks() {
     // root: README, ab/ (4.txt, c/ (3.txt)), z
     let c = raw_tree(&[("100644", b"3.txt", 3)]);
     let ab = raw_tree(&[("100644", b"4.txt", 4), ("40000", b"c", 0xc)]);
-    let root = raw_tree(&[("100644", b"README", 1), ("40000", b"ab", 0xab), ("100644", b"z", 9)]);
+    let root = raw_tree(&[
+        ("100644", b"README", 1),
+        ("40000", b"ab", 0xab),
+        ("100644", b"z", 9),
+    ]);
     let trees: Vec<(u8, Fresh)> = [(0xab, &ab), (0xc, &c), (0, &root)]
         .into_iter()
         .map(|(k, d)| {
             let t = Fresh::new();
             // SAFETY: a fresh tree; the data outlives it.
-            unsafe { assert_eq!(ffi::git_tree__parse_raw(t.0.cast(), d.as_ptr().cast(), d.len(), sha1()), 0) };
+            unsafe {
+                assert_eq!(
+                    ffi::git_tree__parse_raw(t.0.cast(), d.as_ptr().cast(), d.len(), sha1()),
+                    0
+                )
+            };
             (k, t)
         })
         .collect();
-    let by_id = |id: &Oid| trees.iter().find(|(k, _)| id.as_bytes() == [*k; 20]).map(|(_, t)| t.0);
+    let by_id = |id: &Oid| {
+        trees
+            .iter()
+            .find(|(k, _)| id.as_bytes() == [*k; 20])
+            .map(|(_, t)| t.0)
+    };
     let run = |pre: bool, skip: &[u8], stop: &[u8]| {
         let mut seen = Vec::new();
         let mut lookup = |id: &Oid| by_id(id).ok_or(ErrorCode::NOT_FOUND);
@@ -245,7 +338,11 @@ fn walks() {
         let mut cb = |root: &GitStr, e: &GitTreeEntry| {
             // SAFETY: an entry of a live tree.
             let n = unsafe { e.name() };
-            seen.push(format!("{}{}", String::from_utf8_lossy(root.as_bytes()), String::from_utf8_lossy(n)));
+            seen.push(format!(
+                "{}{}",
+                String::from_utf8_lossy(root.as_bytes()),
+                String::from_utf8_lossy(n)
+            ));
             if n == skip {
                 WalkResult::Skip
             } else if n == stop {
@@ -264,13 +361,19 @@ fn walks() {
     assert_eq!(r, 0);
     assert_eq!(pre, ["README", "ab", "ab/4.txt", "ab/c", "ab/c/3.txt", "z"]);
     let (_, post) = run(false, b"-", b"-");
-    assert_eq!(post, ["README", "ab/4.txt", "ab/c/3.txt", "ab/c", "ab", "z"]);
+    assert_eq!(
+        post,
+        ["README", "ab/4.txt", "ab/c/3.txt", "ab/c", "ab", "z"]
+    );
     let (_, skipped) = run(true, b"c", b"-");
     assert_eq!(skipped, ["README", "ab", "ab/4.txt", "ab/c", "z"]);
     let (r, stopped) = run(true, b"-", b"4.txt");
     assert_eq!(r, -42);
     assert_eq!(stopped.len(), 3);
-    assert_eq!(errors::last_message().unwrap(), b"git_tree_walk callback returned -42");
+    assert_eq!(
+        errors::last_message().unwrap(),
+        b"git_tree_walk callback returned -42"
+    );
 
     // By path.
     let root = trees[2].1.0;
@@ -284,11 +387,26 @@ fn walks() {
         let e = entry_bypath(root, b"ab/", &mut lookup, &mut free).unwrap();
         assert_eq!((*e).name(), b"ab");
         alloc::free(e.cast());
-        assert_eq!(entry_bypath(root, b"README/x", &mut lookup, &mut free).unwrap_err(), ErrorCode::NOT_FOUND);
-        assert_eq!(errors::last_message().unwrap(), b"the path 'README' exists but is not a tree");
-        assert_eq!(entry_bypath(root, b"ab/nope", &mut lookup, &mut free).unwrap_err(), ErrorCode::NOT_FOUND);
-        assert_eq!(errors::last_message().unwrap(), b"the path 'nope' does not exist in the given tree");
-        assert_eq!(entry_bypath(root, b"/x", &mut lookup, &mut free).unwrap_err(), ErrorCode::NOT_FOUND);
+        assert_eq!(
+            entry_bypath(root, b"README/x", &mut lookup, &mut free).unwrap_err(),
+            ErrorCode::NOT_FOUND
+        );
+        assert_eq!(
+            errors::last_message().unwrap(),
+            b"the path 'README' exists but is not a tree"
+        );
+        assert_eq!(
+            entry_bypath(root, b"ab/nope", &mut lookup, &mut free).unwrap_err(),
+            ErrorCode::NOT_FOUND
+        );
+        assert_eq!(
+            errors::last_message().unwrap(),
+            b"the path 'nope' does not exist in the given tree"
+        );
+        assert_eq!(
+            entry_bypath(root, b"/x", &mut lookup, &mut free).unwrap_err(),
+            ErrorCode::NOT_FOUND
+        );
         assert_eq!(errors::last_message().unwrap(), b"invalid tree path given");
     }
     // SAFETY: live trees; NUL-terminated names.
@@ -298,9 +416,15 @@ fn walks() {
         assert_eq!(e, ffi::git_tree_entry_byindex(root, 2));
         assert!(ffi::git_tree_entry_byindex(root, 3).is_null());
         let id = Oid::from_bytes(&[0xab; 20], OidType::Sha1).unwrap();
-        assert_eq!(ffi::git_tree_entry_byid(root, &id), ffi::git_tree_entry_byindex(root, 1));
+        assert_eq!(
+            ffi::git_tree_entry_byid(root, &id),
+            ffi::git_tree_entry_byindex(root, 1)
+        );
         assert_eq!(ffi::git_tree_walk(root, 5, None, ptr::null_mut()), -1);
-        assert_eq!(errors::last_message().unwrap(), b"invalid walking mode for tree walk");
+        assert_eq!(
+            errors::last_message().unwrap(),
+            b"invalid walking mode for tree walk"
+        );
     }
 }
 

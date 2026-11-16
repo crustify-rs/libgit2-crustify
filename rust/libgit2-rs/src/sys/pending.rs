@@ -165,36 +165,80 @@ pub mod l_commit {
             oid_type: git_oid_t,
         ) -> c_int;
         pub fn git_object_type2string(kind: c_int) -> *const c_char;
-        pub fn git_object__is_valid(repo: *mut git_repository, id: *const Oid, kind: c_int) -> bool;
-        pub fn git_commit_lookup(out: *mut *mut GitCommit, repo: *mut git_repository, id: *const Oid) -> c_int;
+        pub fn git_object__is_valid(repo: *mut git_repository, id: *const Oid, kind: c_int)
+        -> bool;
+        pub fn git_commit_lookup(
+            out: *mut *mut GitCommit,
+            repo: *mut git_repository,
+            id: *const Oid,
+        ) -> c_int;
         pub fn git_commit_free(commit: *mut GitCommit);
         pub fn git_commit_dup(out: *mut *mut GitCommit, source: *mut GitCommit) -> c_int;
-        pub fn git_tree_lookup(out: *mut *mut GitTree, repo: *mut git_repository, id: *const Oid) -> c_int;
+        pub fn git_tree_lookup(
+            out: *mut *mut GitTree,
+            repo: *mut git_repository,
+            id: *const Oid,
+        ) -> c_int;
         pub fn git_tree_free(tree: *mut GitTree);
         pub fn git_tree_dup(out: *mut *mut GitTree, source: *mut GitTree) -> c_int;
-        pub fn git_signature_default(out: *mut *mut GitSignature, repo: *mut git_repository) -> c_int;
+        pub fn git_signature_default(
+            out: *mut *mut GitSignature,
+            repo: *mut git_repository,
+        ) -> c_int;
         pub fn git_signature_free(sig: *mut GitSignature);
-        pub fn git_grafts_get(out: *mut *mut GitCommitGraft, grafts: *mut git_grafts, oid: *const Oid) -> c_int;
+        pub fn git_grafts_get(
+            out: *mut *mut GitCommitGraft,
+            grafts: *mut git_grafts,
+            oid: *const Oid,
+        ) -> c_int;
 
         // PENDING(l-odb): odb.c
-        pub fn git_odb_read(out: *mut *mut git_odb_object, db: *mut git_odb, id: *const Oid) -> c_int;
+        pub fn git_odb_read(
+            out: *mut *mut git_odb_object,
+            db: *mut git_odb,
+            id: *const Oid,
+        ) -> c_int;
         pub fn git_odb_object_free(obj: *mut git_odb_object);
-        pub fn git_odb_object_dup(out: *mut *mut git_odb_object, source: *mut git_odb_object) -> c_int;
+        pub fn git_odb_object_dup(
+            out: *mut *mut git_odb_object,
+            source: *mut git_odb_object,
+        ) -> c_int;
         pub fn git_odb_object_data(obj: *mut git_odb_object) -> *const c_void;
         pub fn git_odb_object_size(obj: *mut git_odb_object) -> usize;
         pub fn git_odb_object_id(obj: *mut git_odb_object) -> *const Oid;
         pub fn git_odb_object_type(obj: *mut git_odb_object) -> c_int;
-        pub fn git_odb_write(out: *mut Oid, db: *mut git_odb, data: *const c_void, len: usize, kind: c_int) -> c_int;
+        pub fn git_odb_write(
+            out: *mut Oid,
+            db: *mut git_odb,
+            data: *const c_void,
+            len: usize,
+            kind: c_int,
+        ) -> c_int;
         pub fn git_odb__freshen(db: *mut git_odb, id: *const Oid) -> c_int;
-        pub fn git_odb__get_commit_graph_file(out: *mut *mut git_commit_graph_file, db: *mut git_odb) -> c_int;
+        pub fn git_odb__get_commit_graph_file(
+            out: *mut *mut git_commit_graph_file,
+            db: *mut git_odb,
+        ) -> c_int;
 
         // PENDING(l-repo): repository.c
         pub fn git_repository_open(out: *mut *mut git_repository, path: *const c_char) -> c_int;
         pub fn git_repository_free(repo: *mut git_repository);
-        pub fn git_repository_odb__weakptr(out: *mut *mut git_odb, repo: *mut git_repository) -> c_int;
-        pub fn git_repository_head_tree(tree: *mut *mut GitTree, repo: *mut git_repository) -> c_int;
-        pub fn git_repository_head(out: *mut *mut git_reference, repo: *mut git_repository) -> c_int;
-        pub fn git_repository_commit_parents(commits: *mut GitCommitArray, repo: *mut git_repository) -> c_int;
+        pub fn git_repository_odb__weakptr(
+            out: *mut *mut git_odb,
+            repo: *mut git_repository,
+        ) -> c_int;
+        pub fn git_repository_head_tree(
+            tree: *mut *mut GitTree,
+            repo: *mut git_repository,
+        ) -> c_int;
+        pub fn git_repository_head(
+            out: *mut *mut git_reference,
+            repo: *mut git_repository,
+        ) -> c_int;
+        pub fn git_repository_commit_parents(
+            commits: *mut GitCommitArray,
+            repo: *mut git_repository,
+        ) -> c_int;
         pub fn git_repository_index(out: *mut *mut git_index, repo: *mut git_repository) -> c_int;
 
         // PENDING(l-refs): refs.c
@@ -213,7 +257,11 @@ pub mod l_commit {
             id: *const Oid,
             operation: *const c_char,
         ) -> c_int;
-        pub fn git_reference_peel(out: *mut *mut git_object, r: *const git_reference, kind: c_int) -> c_int;
+        pub fn git_reference_peel(
+            out: *mut *mut git_object,
+            r: *const git_reference,
+            kind: c_int,
+        ) -> c_int;
 
         // PENDING(l-index): index.c, tree-cache.c
         pub fn git_index_entrycount(index: *const git_index) -> usize;
@@ -222,7 +270,10 @@ pub mod l_commit {
         pub fn git_index__set_ignore_case(index: *mut git_index, ignore_case: bool);
         pub fn git_index_write_tree(out: *mut Oid, index: *mut git_index) -> c_int;
         pub fn git_index_free(index: *mut git_index);
-        pub fn git_tree_cache_get(tree: *const git_tree_cache, path: *const c_char) -> *const git_tree_cache;
+        pub fn git_tree_cache_get(
+            tree: *const git_tree_cache,
+            path: *const c_char,
+        ) -> *const git_tree_cache;
         pub fn git_tree_cache_read_tree(
             out: *mut *mut git_tree_cache,
             tree: *const GitTree,
@@ -231,6 +282,9 @@ pub mod l_commit {
         ) -> c_int;
 
         // PENDING(l-revwalk): revwalk.c
-        pub fn git_revwalk__commit_lookup(walk: *mut git_revwalk, oid: *const Oid) -> *mut GitCommitListNode;
+        pub fn git_revwalk__commit_lookup(
+            walk: *mut git_revwalk,
+            oid: *const Oid,
+        ) -> *mut GitCommitListNode;
     }
 }

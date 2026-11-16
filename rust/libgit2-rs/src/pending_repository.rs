@@ -22,8 +22,13 @@ impl Repository {
     /// `git_repository_open`.
     pub fn open(path: impl AsRef<Path>) -> Result<Repository, Error> {
         use std::os::unix::ffi::OsStrExt;
-        let path = CString::new(path.as_ref().as_os_str().as_bytes())
-            .map_err(|_| Error::new(ErrorCode::INVALID, ErrorClass::INVALID, "path contains a NUL byte"))?;
+        let path = CString::new(path.as_ref().as_os_str().as_bytes()).map_err(|_| {
+            Error::new(
+                ErrorCode::INVALID,
+                ErrorClass::INVALID,
+                "path contains a NUL byte",
+            )
+        })?;
         let mut raw = core::ptr::null_mut();
         // SAFETY: `raw` is writable; `path` NUL-terminated.
         let e = unsafe { pend::git_repository_open(&mut raw, path.as_ptr()) };

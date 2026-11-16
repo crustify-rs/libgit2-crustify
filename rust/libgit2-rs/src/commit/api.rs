@@ -152,7 +152,13 @@ impl<'r> Commit<'r> {
 
     fn sig(&self, p: *const GitSignature) -> SignatureRef<'_> {
         if p.is_null() {
-            return SignatureRef { name: b"", email: b"", time: 0, offset: 0, sign: 0 };
+            return SignatureRef {
+                name: b"",
+                email: b"",
+                time: 0,
+                offset: 0,
+                sign: 0,
+            };
         }
         // SAFETY: a signature the commit owns, unchanged while it lives.
         unsafe {
@@ -213,7 +219,8 @@ impl<'r> Commit<'r> {
 
     /// `git_commit_summary`: the first paragraph, on one line.
     pub fn summary(&self) -> &[u8] {
-        self.summary.get_or_init(|| super::summary_of(self.message()))
+        self.summary
+            .get_or_init(|| super::summary_of(self.message()))
     }
 
     /// `git_commit_body`: the rest of the message, trimmed; `None` if empty.
@@ -291,7 +298,13 @@ impl Commit<'static> {
         // SAFETY: `raw` writable; `data` readable. The commit copies what it
         // keeps, so it does not borrow `data`.
         let e = unsafe {
-            pend::git_object__from_raw(&mut raw, data.as_ptr().cast(), data.len(), super::OBJ_COMMIT, oid_type.raw())
+            pend::git_object__from_raw(
+                &mut raw,
+                data.as_ptr().cast(),
+                data.len(),
+                super::OBJ_COMMIT,
+                oid_type.raw(),
+            )
         };
         if e < 0 {
             return Err(Error::from(super::ec(e)));
@@ -341,7 +354,12 @@ pub struct CommitBuilder<'a> {
 
 impl<'a> CommitBuilder<'a> {
     /// A commit of `tree` with no parents.
-    pub fn new(tree: Oid, author: SignatureRef<'a>, committer: SignatureRef<'a>, message: &'a [u8]) -> CommitBuilder<'a> {
+    pub fn new(
+        tree: Oid,
+        author: SignatureRef<'a>,
+        committer: SignatureRef<'a>,
+        message: &'a [u8],
+    ) -> CommitBuilder<'a> {
         CommitBuilder {
             tree,
             author,
@@ -411,13 +429,17 @@ impl<'a> CommitBuilder<'a> {
     /// Write the commit to `repo`'s object database (and update the
     /// reference, if one was given); its id.
     pub fn write(&self, repo: &Repository) -> Result<Oid, Error> {
-        let update_ref = self.update_ref.map(|r| cstring(r, "reference name")).transpose()?;
+        let update_ref = self
+            .update_ref
+            .map(|r| cstring(r, "reference name"))
+            .transpose()?;
         let args = self.args(update_ref.as_deref());
         let parents = &self.parents;
         let mut next = |i: usize| parents.get(i).copied();
         let mut id = Oid::default();
         // SAFETY: a live repository; no C callback is involved.
-        unsafe { super::create_internal(&mut id, repo.raw(), &args, &mut next, None) }.map_err(Error::from)?;
+        unsafe { super::create_internal(&mut id, repo.raw(), &args, &mut next, None) }
+            .map_err(Error::from)?;
         Ok(id)
     }
 }

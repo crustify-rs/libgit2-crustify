@@ -130,19 +130,25 @@ impl TreeEntry {
     /// `p` is a non-NULL `alloc_entry` block, handed over.
     unsafe fn from_raw(p: *mut GitTreeEntry) -> TreeEntry {
         // SAFETY: non-NULL (contract).
-        TreeEntry { raw: unsafe { NonNull::new_unchecked(p) } }
+        TreeEntry {
+            raw: unsafe { NonNull::new_unchecked(p) },
+        }
     }
 
     /// The entry, borrowed.
     pub fn as_ref(&self) -> TreeEntryRef<'_> {
         // SAFETY: the block this value owns; nothing writes it.
-        TreeEntryRef { entry: unsafe { self.raw.as_ref() } }
+        TreeEntryRef {
+            entry: unsafe { self.raw.as_ref() },
+        }
     }
 }
 
 impl Clone for TreeEntry {
     fn clone(&self) -> Self {
-        self.as_ref().to_owned().expect("out of memory duplicating a tree entry")
+        self.as_ref()
+            .to_owned()
+            .expect("out of memory duplicating a tree entry")
     }
 }
 
@@ -183,7 +189,11 @@ pub enum TreeWalk {
 #[derive(Clone, Copy, Debug)]
 pub enum TreeUpdate<'a> {
     /// Add or replace the entry at the path.
-    Upsert { path: &'a [u8], id: Oid, filemode: u32 },
+    Upsert {
+        path: &'a [u8],
+        id: Oid,
+        filemode: u32,
+    },
     /// Remove the entry at the path.
     Remove { path: &'a [u8] },
 }
@@ -201,7 +211,10 @@ impl<'a> Tree<'a> {
     /// and whose data and repository outlive `'a`.
     unsafe fn from_raw(raw: *mut GitTree) -> Tree<'a> {
         // SAFETY: non-NULL (contract).
-        Tree { raw: unsafe { NonNull::new_unchecked(raw) }, _data: PhantomData }
+        Tree {
+            raw: unsafe { NonNull::new_unchecked(raw) },
+            _data: PhantomData,
+        }
     }
 
     /// `git_tree_lookup` in a C repository.
@@ -209,7 +222,10 @@ impl<'a> Tree<'a> {
     /// # Safety
     ///
     /// `repo` is NULL or a repository that outlives `'a`.
-    pub(crate) unsafe fn lookup_raw(repo: *mut git_repository, id: &Oid) -> Result<Tree<'a>, Error> {
+    pub(crate) unsafe fn lookup_raw(
+        repo: *mut git_repository,
+        id: &Oid,
+    ) -> Result<Tree<'a>, Error> {
         if repo.is_null() {
             // A parsed object has no repository (the C would crash).
             return Err(Error::from(crate::util::errors::assert_arg_failed("repo")));
@@ -238,7 +254,13 @@ impl<'a> Tree<'a> {
         // SAFETY: `raw` writable; `data` readable, and borrowed by the tree
         // for `'a`.
         let e = unsafe {
-            pend::git_object__from_raw(&mut raw, data.as_ptr().cast(), data.len(), crate::commit::OBJ_TREE, oid_type.raw())
+            pend::git_object__from_raw(
+                &mut raw,
+                data.as_ptr().cast(),
+                data.len(),
+                crate::commit::OBJ_TREE,
+                oid_type.raw(),
+            )
         };
         if e < 0 {
             return Err(err(e));
@@ -295,7 +317,10 @@ impl<'a> Tree<'a> {
 
     /// `git_tree_entry_byid`: the first entry naming `id`.
     pub fn get_id(&self, id: &Oid) -> Option<TreeEntryRef<'_>> {
-        self.entries().iter().find(|e| e.oid == *id).map(|entry| TreeEntryRef { entry })
+        self.entries()
+            .iter()
+            .find(|e| e.oid == *id)
+            .map(|entry| TreeEntryRef { entry })
     }
 
     /// `git_tree_entry_bypath`: the entry at a `/`-separated path, looking
@@ -314,7 +339,8 @@ impl<'a> Tree<'a> {
         // SAFETY: trees from `lookup`, released once.
         let mut free = |t: *mut GitTree| unsafe { pend::git_tree_free(t) };
         // SAFETY: a live tree.
-        let p = unsafe { super::entry_bypath(self.t(), path, &mut lookup, &mut free) }.map_err(Error::from)?;
+        let p = unsafe { super::entry_bypath(self.t(), path, &mut lookup, &mut free) }
+            .map_err(Error::from)?;
         // SAFETY: a fresh entry, ours.
         Ok(unsafe { TreeEntry::from_raw(p) })
     }
@@ -322,7 +348,11 @@ impl<'a> Tree<'a> {
     /// `git_tree_walk`: `f(root, entry)` for every entry under the tree
     /// (`root` is the directory of the entry, with a trailing `/`, empty at
     /// the top). Subtrees are looked up in the tree's repository.
-    pub fn walk(&self, mode: TreeWalkMode, mut f: impl FnMut(&[u8], TreeEntryRef<'_>) -> TreeWalk) -> Result<(), Error> {
+    pub fn walk(
+        &self,
+        mode: TreeWalkMode,
+        mut f: impl FnMut(&[u8], TreeEntryRef<'_>) -> TreeWalk,
+    ) -> Result<(), Error> {
         let repo = self.repo();
         let mut lookup = |id: &Oid| -> crate::util::errors::Result<*mut GitTree> {
             if repo.is_null() {
@@ -335,7 +365,10 @@ impl<'a> Tree<'a> {
         };
         // SAFETY: trees from `lookup`, released once.
         let mut free = |t: *mut GitTree| unsafe { pend::git_tree_free(t) };
-        let mut cb = |root: &GitStr, entry: &GitTreeEntry| match f(root.as_bytes(), TreeEntryRef { entry }) {
+        let mut cb = |root: &GitStr, entry: &GitTreeEntry| match f(
+            root.as_bytes(),
+            TreeEntryRef { entry },
+        ) {
             TreeWalk::Continue => WalkResult::Continue,
             TreeWalk::Skip => WalkResult::Skip,
             TreeWalk::Stop => WalkResult::Stop(ErrorCode::USER.raw()),
@@ -343,13 +376,26 @@ impl<'a> Tree<'a> {
         let mut path = GitStr::new();
         // SAFETY: a live tree; `lookup` returns live trees, released by
         // `free`.
-        let e = unsafe { super::walk(self.t(), &mut path, mode == TreeWalkMode::PreOrder, &mut lookup, &mut free, &mut cb) };
+        let e = unsafe {
+            super::walk(
+                self.t(),
+                &mut path,
+                mode == TreeWalkMode::PreOrder,
+                &mut lookup,
+                &mut free,
+                &mut cb,
+            )
+        };
         if e < 0 { Err(err(e)) } else { Ok(()) }
     }
 
     /// `git_tree_create_updated`: write the tree `baseline` (or an empty
     /// tree) with `updates` applied, and its subtrees, to `repo`.
-    pub fn create_updated(repo: &Repository, baseline: Option<&Tree<'_>>, updates: &[TreeUpdate<'_>]) -> Result<Oid, Error> {
+    pub fn create_updated(
+        repo: &Repository,
+        baseline: Option<&Tree<'_>>,
+        updates: &[TreeUpdate<'_>],
+    ) -> Result<Oid, Error> {
         let mut paths = Vec::with_capacity(updates.len());
         for u in updates {
             let p = match u {
@@ -361,8 +407,18 @@ impl<'a> Tree<'a> {
             .iter()
             .zip(&paths)
             .map(|(u, p)| match *u {
-                TreeUpdate::Upsert { id, filemode, .. } => GitTreeUpdate { action: 0, id, filemode, path: p.as_ptr() },
-                TreeUpdate::Remove { .. } => GitTreeUpdate { action: 1, id: Oid::default(), filemode: 0, path: p.as_ptr() },
+                TreeUpdate::Upsert { id, filemode, .. } => GitTreeUpdate {
+                    action: 0,
+                    id,
+                    filemode,
+                    path: p.as_ptr(),
+                },
+                TreeUpdate::Remove { .. } => GitTreeUpdate {
+                    action: 1,
+                    id: Oid::default(),
+                    filemode: 0,
+                    path: p.as_ptr(),
+                },
             })
             .collect();
         let base = baseline.map_or(ptr::null_mut(), |t| t.raw.as_ptr());
@@ -393,7 +449,10 @@ impl Drop for Tree<'_> {
 
 impl core::fmt::Debug for Tree<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("Tree").field("id", &self.id()).field("entries", &self.len()).finish()
+        f.debug_struct("Tree")
+            .field("id", &self.id())
+            .field("entries", &self.len())
+            .finish()
     }
 }
 
@@ -411,7 +470,10 @@ impl<'r> TreeBuilder<'r> {
         // SAFETY: a live repository; `src` NULL or a live tree.
         let raw = unsafe { GitTreebuilder::new_raw(repo.raw(), src) }.map_err(Error::from)?;
         // SAFETY: non-NULL on success.
-        Ok(TreeBuilder { raw: unsafe { NonNull::new_unchecked(raw) }, _repo: PhantomData })
+        Ok(TreeBuilder {
+            raw: unsafe { NonNull::new_unchecked(raw) },
+            _repo: PhantomData,
+        })
     }
 
     fn b(&self) -> &GitTreebuilder {
@@ -439,19 +501,28 @@ impl<'r> TreeBuilder<'r> {
         let name = CString::new(name).ok()?;
         // SAFETY: an entry the builder owns, unchanged while `self` is
         // borrowed shared.
-        self.b().get(&name).map(|e| TreeEntryRef { entry: unsafe { &*e } })
+        self.b().get(&name).map(|e| TreeEntryRef {
+            entry: unsafe { &*e },
+        })
     }
 
     /// `git_treebuilder_insert`: add or replace the entry `name` (checked:
     /// a valid mode, name and non-zero id of an existing object of the
     /// mode's type, under strict object validation).
-    pub fn insert(&mut self, name: &[u8], id: &Oid, filemode: u32) -> Result<TreeEntryRef<'_>, Error> {
+    pub fn insert(
+        &mut self,
+        name: &[u8],
+        id: &Oid,
+        filemode: u32,
+    ) -> Result<TreeEntryRef<'_>, Error> {
         let name = cstring(name, "name")?;
         // SAFETY: the builder's repository outlives `'r`.
         let e = unsafe { self.b_mut().insert(&name, id, filemode) }.map_err(Error::from)?;
         // SAFETY: an entry the builder owns, unchanged while `self` is
         // borrowed.
-        Ok(TreeEntryRef { entry: unsafe { &*e } })
+        Ok(TreeEntryRef {
+            entry: unsafe { &*e },
+        })
     }
 
     /// `git_treebuilder_remove`.
@@ -478,7 +549,9 @@ impl<'r> TreeBuilder<'r> {
         let mut it = 0;
         while let Some((key, entry)) = b.map.iterate(&mut it).map(|(k, v)| (*k, *v)) {
             // SAFETY: an entry the builder owns.
-            if f(TreeEntryRef { entry: unsafe { &*entry } }) {
+            if f(TreeEntryRef {
+                entry: unsafe { &*entry },
+            }) {
                 if let Some((_, e)) = b.map.remove(&key) {
                     // SAFETY: the entry left the map with its key.
                     unsafe { crate::util::alloc::free(e.cast()) };

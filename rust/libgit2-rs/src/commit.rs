@@ -235,7 +235,9 @@ pub fn parse_signature<'a>(buf: &'a [u8], pos: &mut usize, header: &[u8]) -> Res
     };
     let line = &rest[..nl];
     if header.len() >= line.len() || !line.starts_with(header) {
-        return Err(signature_parse_error("expected prefix doesn't match actual"));
+        return Err(signature_parse_error(
+            "expected prefix doesn't match actual",
+        ));
     }
     let b = &line[header.len()..];
     let (Some(es), Some(ee)) = (memrchr(b, b'<'), memrchr(b, b'>')) else {
@@ -331,10 +333,20 @@ pub(crate) unsafe fn free_signature(sig: *mut GitSignature) {
 
 /// `git_signature__writebuf(buf, header, sig)`:
 /// `"%s%s <%s> %u %c%02d%02d\n"`.
-pub(crate) fn write_signature(buf: &mut GitStr, header: &[u8], name: Option<&[u8]>, email: Option<&[u8]>, when: GitTime) {
+pub(crate) fn write_signature(
+    buf: &mut GitStr,
+    header: &[u8],
+    name: Option<&[u8]>,
+    email: Option<&[u8]>,
+    when: GitTime,
+) {
     const FORMAT: &str = "%s%s <%s> %u %c%02d%02d\n";
     let mut offset = when.offset;
-    let sign = if when.offset < 0 || when.sign == b'-' as c_char { '-' } else { '+' };
+    let sign = if when.offset < 0 || when.sign == b'-' as c_char {
+        '-'
+    } else {
+        '+'
+    };
     if offset < 0 {
         offset = offset.wrapping_neg();
     }
@@ -387,7 +399,12 @@ fn bad_buffer() -> ErrorCode {
 /// `git_object__parse_oid_header` over `buf[*pos..]` (l-obj's; inlined for
 /// the parser's hot loop): `<header><hex>\n`.
 #[inline]
-pub(crate) fn parse_oid_header(buf: &[u8], pos: &mut usize, header: &[u8], kind: Option<OidType>) -> Option<Oid> {
+pub(crate) fn parse_oid_header(
+    buf: &[u8],
+    pos: &mut usize,
+    header: &[u8],
+    kind: Option<OidType>,
+) -> Option<Oid> {
     let hexsize = kind.map_or(0, OidType::hexsize);
     let rest = &buf[*pos..];
     let total = header.len() + hexsize + 1;
@@ -407,7 +424,12 @@ pub(crate) fn parse_oid_header(buf: &[u8], pos: &mut usize, header: &[u8], kind:
 /// `commit_parse`: parse the commit in `data`, giving its fields to `sink`.
 /// A quick parse (`GIT_COMMIT_PARSE_QUICK`) skips the tree, the author, the
 /// extra headers and the message.
-pub fn parse<'a, S: CommitSink<'a>>(data: &'a [u8], oid_type: git_oid_t, quick: bool, sink: &mut S) -> Result<()> {
+pub fn parse<'a, S: CommitSink<'a>>(
+    data: &'a [u8],
+    oid_type: git_oid_t,
+    quick: bool,
+    sink: &mut S,
+) -> Result<()> {
     let kind = OidType::from_raw(oid_type);
     let end = data.len();
     let mut pos = 0usize;
@@ -463,7 +485,11 @@ pub fn parse<'a, S: CommitSink<'a>>(data: &'a [u8], oid_type: git_oid_t, quick: 
 
     let header = &data[..pos];
     // +1 for the final LF
-    let message = if pos < end { Some(&data[pos + 1..]) } else { None };
+    let message = if pos < end {
+        Some(&data[pos + 1..])
+    } else {
+        None
+    };
     sink.header_and_message(header, message)
 }
 
@@ -521,7 +547,11 @@ impl<'a> CommitSink<'a> for CommitFill<'_> {
 }
 
 /// `commit_parse` into `commit`.
-pub(crate) fn parse_into(commit: &mut GitCommit, data: &[u8], opts: &GitCommitParseOptions) -> Result<()> {
+pub(crate) fn parse_into(
+    commit: &mut GitCommit,
+    data: &[u8],
+    opts: &GitCommitParseOptions,
+) -> Result<()> {
     // Allocate for one, which will allow not to realloc 90% of the time.
     commit.parent_ids = GitArray::with_capacity(1)?;
     parse(
@@ -546,7 +576,10 @@ fn parents_from_graft(parents: &mut GitArray<Oid>, graft: &GitArray<Oid>) -> Res
 /// # Safety
 ///
 /// `repo` is a live repository whose grafts nobody changes during the call.
-pub(crate) unsafe fn find_graft(repo: *mut git_repository, id: &Oid) -> Option<*mut GitCommitGraft> {
+pub(crate) unsafe fn find_graft(
+    repo: *mut git_repository,
+    id: &Oid,
+) -> Option<*mut GitCommitGraft> {
     if repo.is_null() {
         return None;
     }
@@ -697,7 +730,11 @@ pub fn header_field(raw_header: &[u8], field: &[u8], out: &mut GitStr) -> Result
         }
         return Ok(());
     }
-    let _ = git_error_set!(ErrorClass::OBJECT, "no such field '{}'", errors::Bytes(field));
+    let _ = git_error_set!(
+        ErrorClass::OBJECT,
+        "no such field '{}'",
+        errors::Bytes(field)
+    );
     Err(ErrorCode::NOT_FOUND)
 }
 
@@ -708,7 +745,12 @@ fn malformed() -> ErrorCode {
 /// `git_commit__extract_signature`'s split of a commit's bytes (as a C
 /// string: up to the first NUL) into the value of the `field` header and
 /// the rest (the signed data).
-pub fn extract_signature(data: &[u8], field: &[u8], signature: &mut GitStr, signed_data: &mut GitStr) -> Result<()> {
+pub fn extract_signature(
+    data: &[u8],
+    field: &[u8],
+    signature: &mut GitStr,
+    signed_data: &mut GitStr,
+) -> Result<()> {
     let buf = &data[..memchr::memchr(0, data).unwrap_or(data.len())];
     let at = |i: usize| buf.get(i).copied().unwrap_or(0);
     let mut pos = 0usize;
@@ -771,7 +813,11 @@ pub fn format_header_field(out: &mut GitStr, field: &[u8], content: &[u8]) -> Re
     }
     let _ = out.puts(c);
     let _ = out.putc(b'\n');
-    if out.is_oom() { Err(ErrorCode::GENERIC) } else { Ok(()) }
+    if out.is_oom() {
+        Err(ErrorCode::GENERIC)
+    } else {
+        Ok(())
+    }
 }
 
 /// `git_object__write_oid_header` (l-obj's).
@@ -782,7 +828,11 @@ pub(crate) fn write_oid_header(buf: &mut GitStr, header: &[u8], id: &Oid) -> Res
     let _ = buf.puts(header);
     let _ = buf.put(id.hex().as_bytes());
     let _ = buf.putc(b'\n');
-    if buf.is_oom() { Err(ErrorCode::GENERIC) } else { Ok(()) }
+    if buf.is_oom() {
+        Err(ErrorCode::GENERIC)
+    } else {
+        Ok(())
+    }
 }
 
 /// A signature to write: its fields, as C strings may be NULL.
@@ -811,7 +861,13 @@ pub fn create_buffer_internal(
             write_oid_header(out, b"parent ", p)?;
         }
         write_signature(out, b"author ", author.name, author.email, author.when);
-        write_signature(out, b"committer ", committer.name, committer.email, committer.when);
+        write_signature(
+            out,
+            b"committer ",
+            committer.name,
+            committer.email,
+            committer.when,
+        );
         if let Some(enc) = message_encoding {
             format_header_field(out, b"encoding", enc)?;
         }
@@ -829,17 +885,29 @@ pub fn create_buffer_internal(
 
 /// `append_header`: `raw_content` with `name value` added at the end of its
 /// header.
-pub fn append_header(out: &mut GitStr, raw_content: &[u8], name: &[u8], value: &[u8]) -> Result<()> {
+pub fn append_header(
+    out: &mut GitStr,
+    raw_content: &[u8],
+    name: &[u8],
+    value: &[u8],
+) -> Result<()> {
     // Identifying the end of the commit header area
     let Some(header_end) = crate::util::util::memmem(raw_content, b"\n\n") else {
-        return Err(git_error_set!(ErrorClass::INVALID, "malformed commit contents"));
+        return Err(git_error_set!(
+            ErrorClass::INVALID,
+            "malformed commit contents"
+        ));
     };
     // The header ends after the first LF
     let header_end = header_end + 1;
     let _ = out.put(&raw_content[..header_end]);
     format_header_field(out, name, value)?;
     let _ = out.puts(&raw_content[header_end..]);
-    if out.is_oom() { Err(ErrorCode::GENERIC) } else { Ok(()) }
+    if out.is_oom() {
+        Err(ErrorCode::GENERIC)
+    } else {
+        Ok(())
+    }
 }
 
 /// The parents of a commit being created, as `git_commit_parent_callback`
@@ -945,7 +1013,9 @@ unsafe fn extra_headers<'a>(headers: *const GitCommitHeader, len: usize) -> Resu
         // SAFETY: NUL-terminated or NULL (contract).
         let (f, val) = unsafe { (opt_cbytes(h.field), opt_cbytes(h.value)) };
         let Some(f) = f else { return Ok(Err("field")) };
-        let Some(val) = val else { return Ok(Err("content")) };
+        let Some(val) = val else {
+            return Ok(Err("content"));
+        };
         v.push((f, val));
     }
     Ok(Ok(v))
@@ -1027,7 +1097,16 @@ pub(crate) unsafe fn create_internal(
     let mut buf = GitStr::new();
     let r = (|| -> Result<()> {
         // SAFETY: `repo` is live (contract).
-        unsafe { validate_tree_and_parents(&mut parents, repo, &args.tree, next, current_id, args.validate) }?;
+        unsafe {
+            validate_tree_and_parents(
+                &mut parents,
+                repo,
+                &args.tree,
+                next,
+                current_id,
+                args.validate,
+            )
+        }?;
         args_buffer(&mut buf, args, parents.as_slice())?;
 
         if let Some(sign) = sign {
@@ -1042,13 +1121,21 @@ pub(crate) unsafe fn create_internal(
         ErrorCode::check(unsafe { pend::git_odb__freshen(odb, &args.tree) })?;
         let bytes = buf.as_bytes();
         // SAFETY: `bytes` are readable for its length; `id` writable.
-        ErrorCode::check(unsafe { pend::git_odb_write(id, odb, bytes.as_ptr().cast(), bytes.len(), OBJ_COMMIT) })?;
+        ErrorCode::check(unsafe {
+            pend::git_odb_write(id, odb, bytes.as_ptr().cast(), bytes.len(), OBJ_COMMIT)
+        })?;
 
         if !update_ref.is_null() {
             // SAFETY: `ref` is NULL or the looked-up reference; the strings
             // are NUL-terminated.
             ErrorCode::check_zero(unsafe {
-                pend::git_reference__update_for_commit(repo, r#ref, update_ref, id, c"commit".as_ptr())
+                pend::git_reference__update_for_commit(
+                    repo,
+                    r#ref,
+                    update_ref,
+                    id,
+                    c"commit".as_ptr(),
+                )
             })?;
         }
         Ok(())
@@ -1134,7 +1221,10 @@ pub mod ffi {
     /// # Safety
     ///
     /// `buf` is NULL or a valid `git_buf`.
-    pub(crate) unsafe fn wrap_buf(buf: *mut GitBuf, f: impl FnOnce(&mut GitStr) -> Result<()>) -> c_int {
+    pub(crate) unsafe fn wrap_buf(
+        buf: *mut GitBuf,
+        f: impl FnOnce(&mut GitStr) -> Result<()>,
+    ) -> c_int {
         let mut s = GitStr::new();
         // SAFETY: `s` is writable; `buf` per the contract.
         let mut error = unsafe { git_buf_tostr(&mut s, buf) };
@@ -1205,7 +1295,10 @@ pub mod ffi {
     ///
     /// `opts` is NULL or writable.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_commit_create_options_init(opts: *mut GitCommitCreateOptions, version: c_uint) -> c_int {
+    pub unsafe extern "C" fn git_commit_create_options_init(
+        opts: *mut GitCommitCreateOptions,
+        version: c_uint,
+    ) -> c_int {
         barrier(|| {
             git_assert_arg!(!opts.is_null(), "opts", -1);
             let mut v = GitCommitCreateOptions::INIT;
@@ -1248,7 +1341,19 @@ pub mod ffi {
                 (!p.is_null()).then(|| unsafe { p.read() })
             };
             // SAFETY: the caller's contract.
-            unsafe { create_from_c(id, repo, author, committer, message, tree, &mut next, Some(&opts), true) }
+            unsafe {
+                create_from_c(
+                    id,
+                    repo,
+                    author,
+                    committer,
+                    message,
+                    tree,
+                    &mut next,
+                    Some(&opts),
+                    true,
+                )
+            }
         })
     }
 
@@ -1364,7 +1469,19 @@ pub mod ffi {
             // SAFETY: a live tree; the rest is the caller's contract.
             let tree_id = unsafe { object_id(tree) }.unwrap_or_default();
             // SAFETY: the caller's contract.
-            unsafe { create_from_c(id, repo, author, committer, message, &tree_id, &mut next, Some(&opts), false) }
+            unsafe {
+                create_from_c(
+                    id,
+                    repo,
+                    author,
+                    committer,
+                    message,
+                    &tree_id,
+                    &mut next,
+                    Some(&opts),
+                    false,
+                )
+            }
         })
     }
 
@@ -1401,7 +1518,19 @@ pub mod ffi {
                 (!p.is_null()).then(|| unsafe { p.read() })
             };
             // SAFETY: the caller's contract.
-            unsafe { create_from_c(id, repo, author, committer, message, tree, &mut next, Some(&opts), true) }
+            unsafe {
+                create_from_c(
+                    id,
+                    repo,
+                    author,
+                    committer,
+                    message,
+                    tree,
+                    &mut next,
+                    Some(&opts),
+                    true,
+                )
+            }
         })
     }
 
@@ -1460,7 +1589,11 @@ pub mod ffi {
             // SAFETY: NULL or a valid options struct, only read.
             let opts = unsafe { opts.as_ref() };
             // SAFETY: the caller's contract.
-            unsafe { create_from_c(id, repo, author, committer, message, &tree_id, &mut next, opts, false) }
+            unsafe {
+                create_from_c(
+                    id, repo, author, committer, message, &tree_id, &mut next, opts, false,
+                )
+            }
         })
     }
 
@@ -1485,8 +1618,12 @@ pub mod ffi {
             let contents = unsafe { &mut *(*builder).contents };
             // SAFETY: NUL-terminated or NULL (contract).
             let (f, v) = unsafe { (opt_cbytes(field), opt_cbytes(value)) };
-            let Some(f) = f else { return errors::assert_arg_failed("field").raw() };
-            let Some(v) = v else { return errors::assert_arg_failed("content").raw() };
+            let Some(f) = f else {
+                return errors::assert_arg_failed("field").raw();
+            };
+            let Some(v) = v else {
+                return errors::assert_arg_failed("content").raw();
+            };
             let raw = contents.as_bytes();
             let raw = &raw[..memchr::memchr(0, raw).unwrap_or(raw.len())];
             let mut signed = GitStr::new();
@@ -1533,7 +1670,19 @@ pub mod ffi {
             // SAFETY: a live tree.
             let tree_id = unsafe { object_id(tree) }.unwrap_or_default();
             // SAFETY: the caller's contract.
-            unsafe { create_from_c(id, repo, author, committer, message, &tree_id, &mut next, Some(&opts), false) }
+            unsafe {
+                create_from_c(
+                    id,
+                    repo,
+                    author,
+                    committer,
+                    message,
+                    &tree_id,
+                    &mut next,
+                    Some(&opts),
+                    false,
+                )
+            }
         })
     }
 
@@ -1563,10 +1712,26 @@ pub mod ffi {
                 let repo = object_owner(c).unwrap_or(ptr::null_mut());
                 (
                     repo,
-                    if author.is_null() { (*c).author.cast_const() } else { author },
-                    if committer.is_null() { (*c).committer.cast_const() } else { committer },
-                    if message_encoding.is_null() { (*c).message_encoding.cast_const() } else { message_encoding },
-                    if message.is_null() { message_ptr(c) } else { message },
+                    if author.is_null() {
+                        (*c).author.cast_const()
+                    } else {
+                        author
+                    },
+                    if committer.is_null() {
+                        (*c).committer.cast_const()
+                    } else {
+                        committer
+                    },
+                    if message_encoding.is_null() {
+                        (*c).message_encoding.cast_const()
+                    } else {
+                        message_encoding
+                    },
+                    if message.is_null() {
+                        message_ptr(c)
+                    } else {
+                        message
+                    },
                 )
             };
             let tree_id = if tree.is_null() {
@@ -1592,12 +1757,18 @@ pub mod ffi {
             let mut r#ref = ptr::null_mut();
             if !update_ref.is_null() {
                 // SAFETY: `repo` is live; `update_ref` NUL-terminated.
-                let e = unsafe { pend::git_reference_lookup_resolved(&mut r#ref, repo, update_ref, 5) };
+                let e =
+                    unsafe { pend::git_reference_lookup_resolved(&mut r#ref, repo, update_ref, 5) };
                 if e < 0 {
                     return e;
                 }
                 // SAFETY: the reference just looked up; the commit is live.
-                let (target, cid) = unsafe { (pend::git_reference_target(r#ref), object_id(c).unwrap_or_default()) };
+                let (target, cid) = unsafe {
+                    (
+                        pend::git_reference_target(r#ref),
+                        object_id(c).unwrap_or_default(),
+                    )
+                };
                 // SAFETY: NULL or the reference's id.
                 if target.is_null() || unsafe { target.read() } != cid {
                     // SAFETY: freed once.
@@ -1616,12 +1787,29 @@ pub mod ffi {
             let pids = unsafe { parent_ids_of(c) };
             let mut next = |i: usize| pids.get(i).copied();
             // SAFETY: the caller's contract.
-            let mut error =
-                unsafe { create_from_c(id, repo, author, committer, message, &tree_id, &mut next, Some(&opts), false) };
+            let mut error = unsafe {
+                create_from_c(
+                    id,
+                    repo,
+                    author,
+                    committer,
+                    message,
+                    &tree_id,
+                    &mut next,
+                    Some(&opts),
+                    false,
+                )
+            };
             if error == 0 && !update_ref.is_null() {
                 // SAFETY: the reference looked up above; `id` was written.
                 error = unsafe {
-                    pend::git_reference__update_for_commit(repo, r#ref, ptr::null(), id, c"commit".as_ptr())
+                    pend::git_reference__update_for_commit(
+                        repo,
+                        r#ref,
+                        ptr::null(),
+                        id,
+                        c"commit".as_ptr(),
+                    )
                 };
             }
             if !update_ref.is_null() {
@@ -1639,7 +1827,11 @@ pub mod ffi {
     /// `commit` is a fresh (zeroed) commit that only the caller holds;
     /// `obj` a live odb object.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_commit__parse(commit: *mut c_void, obj: *mut pend::git_odb_object, oid_type: git_oid_t) -> c_int {
+    pub unsafe extern "C" fn git_commit__parse(
+        commit: *mut c_void,
+        obj: *mut pend::git_odb_object,
+        oid_type: git_oid_t,
+    ) -> c_int {
         let mut opts = GitCommitParseOptions { oid_type, flags: 0 };
         // SAFETY: the caller's contract.
         unsafe { git_commit__parse_ext(commit.cast(), obj, &mut opts) }
@@ -1663,8 +1855,17 @@ pub mod ffi {
             git_assert_arg!(!data.is_null(), "data", -1);
             // SAFETY: the caller's contract: an exclusive, initialized commit
             // and readable bytes.
-            let (c, d) = unsafe { (&mut *commit.cast::<GitCommit>(), crate::util::export::bytes(data, size)) };
-            code(parse_into(c, d, &GitCommitParseOptions { oid_type, flags: 0 }))
+            let (c, d) = unsafe {
+                (
+                    &mut *commit.cast::<GitCommit>(),
+                    crate::util::export::bytes(data, size),
+                )
+            };
+            code(parse_into(
+                c,
+                d,
+                &GitCommitParseOptions { oid_type, flags: 0 },
+            ))
         })
     }
 
@@ -1693,7 +1894,12 @@ pub mod ffi {
                 if p.is_null() {
                     return errors::assert_arg_failed("data").raw();
                 }
-                (&mut *commit, parse_opts.read(), crate::util::export::bytes(p, n), pend::git_odb_object_id(odb_obj).read())
+                (
+                    &mut *commit,
+                    parse_opts.read(),
+                    crate::util::export::bytes(p, n),
+                    pend::git_odb_object_id(odb_obj).read(),
+                )
             };
             if let Err(e) = parse_into(c, data, &opts) {
                 return e.raw();
@@ -1840,11 +2046,20 @@ pub mod ffi {
     ///
     /// `tree_out` writable; `commit` NULL or a live commit.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_commit_tree(tree_out: *mut *mut crate::tree::GitTree, commit: *const GitCommit) -> c_int {
+    pub unsafe extern "C" fn git_commit_tree(
+        tree_out: *mut *mut crate::tree::GitTree,
+        commit: *const GitCommit,
+    ) -> c_int {
         barrier(|| {
             git_assert_arg!(!commit.is_null(), "commit", -1);
             // SAFETY: a live commit; its repository is live while it is.
-            unsafe { pend::git_tree_lookup(tree_out, (*commit).object.repo, ptr::addr_of!((*commit).tree_id)) }
+            unsafe {
+                pend::git_tree_lookup(
+                    tree_out,
+                    (*commit).object.repo,
+                    ptr::addr_of!((*commit).tree_id),
+                )
+            }
         })
     }
 
@@ -1854,11 +2069,16 @@ pub mod ffi {
     ///
     /// `commit` is NULL or a live commit.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_commit_parent_id(commit: *const GitCommit, n: c_uint) -> *const Oid {
+    pub unsafe extern "C" fn git_commit_parent_id(
+        commit: *const GitCommit,
+        n: c_uint,
+    ) -> *const Oid {
         barrier(|| {
             git_assert_arg!(!commit.is_null(), "commit", ptr::null());
             // SAFETY: a live commit (contract).
-            unsafe { parent_ids_of(commit) }.get(n as usize).map_or(ptr::null(), ptr::from_ref)
+            unsafe { parent_ids_of(commit) }
+                .get(n as usize)
+                .map_or(ptr::null(), ptr::from_ref)
         })
     }
 
@@ -1868,7 +2088,11 @@ pub mod ffi {
     ///
     /// `parent` writable; `commit` NULL or a live commit.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_commit_parent(parent: *mut *mut GitCommit, commit: *const GitCommit, n: c_uint) -> c_int {
+    pub unsafe extern "C" fn git_commit_parent(
+        parent: *mut *mut GitCommit,
+        commit: *const GitCommit,
+        n: c_uint,
+    ) -> c_int {
         barrier(|| {
             git_assert_arg!(!commit.is_null(), "commit", -1);
             // SAFETY: a live commit (contract).
@@ -1929,7 +2153,11 @@ pub mod ffi {
     /// `out` a valid `git_buf`; `commit` a live commit; `field`
     /// NUL-terminated.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_commit_header_field(out: *mut GitBuf, commit: *const GitCommit, field: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git_commit_header_field(
+        out: *mut GitBuf,
+        commit: *const GitCommit,
+        field: *const c_char,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: the caller's contract.
             unsafe { wrap_buf(out, |s| header_field_of(s, commit, field)) }
@@ -1941,7 +2169,11 @@ pub mod ffi {
     /// # Safety
     ///
     /// `commit` a live commit; `field` NUL-terminated.
-    unsafe fn header_field_of(out: &mut GitStr, commit: *const GitCommit, field: *const c_char) -> Result<()> {
+    unsafe fn header_field_of(
+        out: &mut GitStr,
+        commit: *const GitCommit,
+        field: *const c_char,
+    ) -> Result<()> {
         if commit.is_null() {
             return Err(errors::assert_arg_failed("commit"));
         }
@@ -1958,7 +2190,11 @@ pub mod ffi {
     /// `out` a valid `git_str`; `commit` a live commit; `field`
     /// NUL-terminated.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_commit__header_field(out: *mut GitStr, commit: *const GitCommit, field: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git_commit__header_field(
+        out: *mut GitStr,
+        commit: *const GitCommit,
+        field: *const c_char,
+    ) -> c_int {
         barrier(|| {
             git_assert_arg!(!out.is_null(), "out", -1);
             // SAFETY: a valid, unaliased `git_str` (contract).
@@ -1990,7 +2226,13 @@ pub mod ffi {
                     error = git_buf_tostr(&mut signed_data, signed_data_out);
                 }
                 if error == 0 {
-                    error = git_commit__extract_signature(&mut signature, &mut signed_data, repo, commit_id, field);
+                    error = git_commit__extract_signature(
+                        &mut signature,
+                        &mut signed_data,
+                        repo,
+                        commit_id,
+                        field,
+                    );
                 }
                 if error == 0 {
                     error = git_buf_fromstr(signature_out, &mut signature);
@@ -2046,7 +2288,11 @@ pub mod ffi {
                 } else {
                     let p = pend::git_odb_object_data(obj).cast::<c_char>();
                     let n = pend::git_odb_object_size(obj);
-                    let data = if p.is_null() { &[][..] } else { crate::util::export::bytes(p, n) };
+                    let data = if p.is_null() {
+                        &[][..]
+                    } else {
+                        crate::util::export::bytes(p, n)
+                    };
                     extract_signature(data, field, sig, sd)
                 }
             };
@@ -2127,7 +2373,9 @@ pub mod ffi {
             let mut next = unsafe { from_array(parents, parent_count, repo) };
             let mut parents_arr = GitArray::new();
             // SAFETY: `repo` live.
-            if let Err(e) = unsafe { validate_tree_and_parents(&mut parents_arr, repo, &tree_id, &mut next, None, true) } {
+            if let Err(e) = unsafe {
+                validate_tree_and_parents(&mut parents_arr, repo, &tree_id, &mut next, None, true)
+            } {
                 return e.raw();
             }
             // SAFETY: the caller's contract on the strings and signatures; a
@@ -2168,7 +2416,11 @@ pub mod ffi {
             git_assert_arg!(!commit_content.is_null(), "commit_content", -1);
             // SAFETY: NUL-terminated or NULL (contract).
             let (content, sig, field) = unsafe {
-                (cstr_bytes(commit_content), opt_cbytes(signature), opt_cbytes(signature_field).unwrap_or(b"gpgsig"))
+                (
+                    cstr_bytes(commit_content),
+                    opt_cbytes(signature),
+                    opt_cbytes(signature_field).unwrap_or(b"gpgsig"),
+                )
             };
             // SAFETY: a live repository (contract).
             let oid_type: git_oid_t = unsafe { pend::field(repo, pend::REPO_OID_TYPE) };
@@ -2189,7 +2441,16 @@ pub mod ffi {
                 let mut next = |i: usize| pids.get(i).copied();
                 let mut parents = GitArray::new();
                 // SAFETY: `repo` live.
-                unsafe { validate_tree_and_parents(&mut parents, repo, &pc.tree_id, &mut next, None, true) }?;
+                unsafe {
+                    validate_tree_and_parents(
+                        &mut parents,
+                        repo,
+                        &pc.tree_id,
+                        &mut next,
+                        None,
+                        true,
+                    )
+                }?;
                 drop(parents);
 
                 let mut signed = GitStr::new();
@@ -2202,7 +2463,10 @@ pub mod ffi {
                 };
                 let odb = repo_odb(repo)?;
                 // SAFETY: readable bytes; `out` writable.
-                ErrorCode::check(unsafe { pend::git_odb_write(out, odb, bytes.as_ptr().cast(), bytes.len(), OBJ_COMMIT) }).map(drop)
+                ErrorCode::check(unsafe {
+                    pend::git_odb_write(out, odb, bytes.as_ptr().cast(), bytes.len(), OBJ_COMMIT)
+                })
+                .map(drop)
             })();
             // SAFETY: the commit allocated above, freed once.
             unsafe { git_commit__free(parsed.cast()) };
@@ -2216,7 +2480,11 @@ pub mod ffi {
     ///
     /// `repo` live; `tree` NULL or a live tree; `index` a live index when
     /// `tree` is NULL.
-    unsafe fn check_for_empty_commit(repo: *mut git_repository, tree: *const crate::tree::GitTree, index: *mut pend::git_index) -> c_int {
+    unsafe fn check_for_empty_commit(
+        repo: *mut git_repository,
+        tree: *const crate::tree::GitTree,
+        index: *mut pend::git_index,
+    ) -> c_int {
         let mut head_tree = ptr::null_mut();
         // SAFETY: `repo` live; `head_tree` writable.
         let error = unsafe { pend::git_repository_head_tree(&mut head_tree, repo) };
@@ -2224,10 +2492,12 @@ pub mod ffi {
             error
         } else {
             // SAFETY: the trees and the index are live (contract).
-            match unsafe { crate::sys::diff::count_deltas(repo, head_tree, tree.cast_mut(), index) } {
+            match unsafe { crate::sys::diff::count_deltas(repo, head_tree, tree.cast_mut(), index) }
+            {
                 Err(e) => e,
                 Ok(0) => {
-                    let _ = git_error_set!(ErrorClass::REPOSITORY, "no changes are staged for commit");
+                    let _ =
+                        git_error_set!(ErrorClass::REPOSITORY, "no changes are staged for commit");
                     ErrorCode::UNCHANGED.raw()
                 }
                 Ok(_) => 0,
@@ -2269,7 +2539,10 @@ pub mod ffi {
         let mut author = opts.author;
         let mut committer = opts.committer;
         let mut default_signature = ptr::null_mut();
-        let mut parents = GitCommitArray { commits: ptr::null(), count: 0 };
+        let mut parents = GitCommitArray {
+            commits: ptr::null(),
+            count: 0,
+        };
         let error = (|| {
             if author.is_null() || committer.is_null() {
                 // SAFETY: `repo` live; writable out-parameter.
@@ -2288,7 +2561,19 @@ pub mod ffi {
                 return -1;
             }
             // SAFETY: the caller's contract; the parents just looked up.
-            unsafe { git_commit_create_ext(out, repo, author, committer, message, tree, parents.count, parents.commits, &ext) }
+            unsafe {
+                git_commit_create_ext(
+                    out,
+                    repo,
+                    author,
+                    committer,
+                    message,
+                    tree,
+                    parents.count,
+                    parents.commits,
+                    &ext,
+                )
+            }
         })();
         // SAFETY: the array and the signature made above, released once.
         unsafe {
@@ -2318,7 +2603,9 @@ pub mod ffi {
                 -1
             );
             // SAFETY: NULL or valid (contract): a copy, as the C's memcpy.
-            let opts = unsafe { given_opts.as_ref() }.copied().unwrap_or(GitCommitCreateOptions::INIT);
+            let opts = unsafe { given_opts.as_ref() }
+                .copied()
+                .unwrap_or(GitCommitCreateOptions::INIT);
             let mut index = ptr::null_mut();
             let mut tree = ptr::null_mut();
             let error = (|| {
@@ -2373,9 +2660,13 @@ pub mod ffi {
                 -1
             );
             // SAFETY: NULL or valid (contract).
-            let opts = unsafe { given_opts.as_ref() }.copied().unwrap_or(GitCommitCreateOptions::INIT);
+            let opts = unsafe { given_opts.as_ref() }
+                .copied()
+                .unwrap_or(GitCommitCreateOptions::INIT);
             // SAFETY: live repository and tree.
-            if !opts.allow_empty_commit() && unsafe { check_for_empty_commit(repo, tree, ptr::null_mut()) } < 0 {
+            if !opts.allow_empty_commit()
+                && unsafe { check_for_empty_commit(repo, tree, ptr::null_mut()) } < 0
+            {
                 return -1;
             }
             // SAFETY: the caller's contract.
@@ -2435,7 +2726,11 @@ pub mod ffi {
         opts: *const GitCommitCreateOptions,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!out.is_null() && !repo.is_null() && !tree.is_null(), "out && repo && tree", -1);
+            git_assert_arg!(
+                !out.is_null() && !repo.is_null() && !tree.is_null(),
+                "out && repo && tree",
+                -1
+            );
             // SAFETY: NULL or valid (contract).
             let opts = unsafe { opts.as_ref() };
             let mut ext = ext_options(opts);
@@ -2447,7 +2742,13 @@ pub mod ffi {
                 let mut e = unsafe { pend::git_repository_head(&mut head_ref, repo) };
                 if e >= 0 {
                     // SAFETY: the reference just looked up.
-                    e = unsafe { pend::git_reference_peel(ptr::addr_of_mut!(head_commit).cast(), head_ref, OBJ_COMMIT) };
+                    e = unsafe {
+                        pend::git_reference_peel(
+                            ptr::addr_of_mut!(head_commit).cast(),
+                            head_ref,
+                            OBJ_COMMIT,
+                        )
+                    };
                 }
                 if e < 0 {
                     return e;
@@ -2483,13 +2784,32 @@ pub mod ffi {
                 // SAFETY: a live tree.
                 let tree_id = unsafe { object_id(tree) }.unwrap_or_default();
                 // SAFETY: the caller's contract.
-                let e =
-                    unsafe { create_from_c(out, repo, author, committer, message, &tree_id, &mut next, Some(&ext), false) };
+                let e = unsafe {
+                    create_from_c(
+                        out,
+                        repo,
+                        author,
+                        committer,
+                        message,
+                        &tree_id,
+                        &mut next,
+                        Some(&ext),
+                        false,
+                    )
+                };
                 if e != 0 {
                     return e;
                 }
                 // SAFETY: the reference looked up; `out` written.
-                unsafe { pend::git_reference__update_for_commit(repo, head_ref, ptr::null(), out, c"commit".as_ptr()) }
+                unsafe {
+                    pend::git_reference__update_for_commit(
+                        repo,
+                        head_ref,
+                        ptr::null(),
+                        out,
+                        c"commit".as_ptr(),
+                    )
+                }
             })();
             // SAFETY: NULL or the objects made above, released once.
             unsafe {
@@ -2513,7 +2833,9 @@ pub mod ffi {
         mailmap: *const c_void,
     ) -> c_int {
         // SAFETY: the caller's contract (the C dereferences `commit`).
-        barrier(|| unsafe { crate::sys::mailmap::resolve_signature(out, mailmap, (*commit).committer) })
+        barrier(|| unsafe {
+            crate::sys::mailmap::resolve_signature(out, mailmap, (*commit).committer)
+        })
     }
 
     /// `git_commit_author_with_mailmap`.
@@ -2528,7 +2850,9 @@ pub mod ffi {
         mailmap: *const c_void,
     ) -> c_int {
         // SAFETY: as above.
-        barrier(|| unsafe { crate::sys::mailmap::resolve_signature(out, mailmap, (*commit).author) })
+        barrier(|| unsafe {
+            crate::sys::mailmap::resolve_signature(out, mailmap, (*commit).author)
+        })
     }
 
     /// `git_commitarray_dispose`.
@@ -2550,7 +2874,10 @@ pub mod ffi {
                     pend::git_commit_free(a.commits.add(i).read());
                 }
                 alloc::free(a.commits.cast_mut().cast());
-                array.write(GitCommitArray { commits: ptr::null(), count: 0 });
+                array.write(GitCommitArray {
+                    commits: ptr::null(),
+                    count: 0,
+                });
             }
         })
     }

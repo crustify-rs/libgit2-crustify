@@ -19,13 +19,13 @@ use core::ffi::{c_int, c_void};
 use core::ptr;
 
 use crate::commit::{self, CommitSink, SigFields};
+use crate::git_error_set;
 use crate::oid::{Oid, git_oid_t};
 use crate::sys::commit_graph;
 use crate::sys::pending::l_commit::{self as pend, git_revwalk};
 use crate::util::alloc;
 use crate::util::errors::{self, ErrorClass, ErrorCode, Result};
 use crate::util::pool::GitPool;
-use crate::git_error_set;
 
 /// `PARENT1`.
 pub const PARENT1: u32 = 1 << 0;
@@ -38,7 +38,8 @@ pub const STALE: u32 = 1 << 3;
 /// `PARENTS_PER_COMMIT`: parents stored inline after a node.
 pub const PARENTS_PER_COMMIT: usize = 2;
 /// `COMMIT_ALLOC`: the pool item size of a walk (a node and two parents).
-pub const COMMIT_ALLOC: usize = size_of::<GitCommitListNode>() + PARENTS_PER_COMMIT * size_of::<*mut GitCommitListNode>();
+pub const COMMIT_ALLOC: usize =
+    size_of::<GitCommitListNode>() + PARENTS_PER_COMMIT * size_of::<*mut GitCommitListNode>();
 
 /// `struct git_commit_list_node` (`commit_list.h`).
 ///
@@ -142,7 +143,11 @@ unsafe fn with_pool<R>(walk: *mut git_revwalk, f: impl FnOnce(&mut GitPool) -> R
 ///
 /// `walk` is live; `node` one of its nodes (allocated with `COMMIT_ALLOC`
 /// bytes).
-unsafe fn alloc_parents(walk: *mut git_revwalk, node: *mut GitCommitListNode, n: usize) -> *mut *mut GitCommitListNode {
+unsafe fn alloc_parents(
+    walk: *mut git_revwalk,
+    node: *mut GitCommitListNode,
+    n: usize,
+) -> *mut *mut GitCommitListNode {
     if n <= PARENTS_PER_COMMIT {
         // The node's item holds two pointers after it.
         return node.wrapping_add(1).cast();
@@ -152,7 +157,12 @@ unsafe fn alloc_parents(walk: *mut git_revwalk, node: *mut GitCommitListNode, n:
     };
     // As C: `git_pool_malloc(pool, bytes)`, `bytes` items of the pool's size.
     // SAFETY: the walk is live and unused meanwhile (contract).
-    unsafe { with_pool(walk, |p| p.malloc(bytes).map_or(ptr::null_mut(), |p| p.as_ptr().cast())) }
+    unsafe {
+        with_pool(walk, |p| {
+            p.malloc(bytes)
+                .map_or(ptr::null_mut(), |p| p.as_ptr().cast())
+        })
+    }
 }
 
 /// The parents and the commit time of a quick parse.
@@ -166,7 +176,11 @@ struct QuickSink {
 
 impl QuickSink {
     fn parents(&self) -> &[Oid] {
-        if self.n <= PARENTS_PER_COMMIT { &self.inline[..self.n] } else { &self.spill }
+        if self.n <= PARENTS_PER_COMMIT {
+            &self.inline[..self.n]
+        } else {
+            &self.spill
+        }
     }
 }
 
@@ -211,7 +225,12 @@ impl<'a> CommitSink<'a> for QuickSink {
 ///
 /// `walk` is live and unused by anything else during the call (except the
 /// C it calls back); `node` is one of its nodes.
-unsafe fn quick_parse(walk: *mut git_revwalk, node: *mut GitCommitListNode, data: &[u8], id: &Oid) -> Result<()> {
+unsafe fn quick_parse(
+    walk: *mut git_revwalk,
+    node: *mut GitCommitListNode,
+    data: &[u8],
+    id: &Oid,
+) -> Result<()> {
     // SAFETY: a live walk's repository (contract).
     let repo: *mut pend::git_repository = unsafe { pend::field(walk, pend::REVWALK_REPO) };
     // SAFETY: a live repository.
@@ -229,7 +248,10 @@ unsafe fn quick_parse(walk: *mut git_revwalk, node: *mut GitCommitListNode, data
     };
 
     let Ok(n) = u16::try_from(parents.len()) else {
-        return Err(git_error_set!(ErrorClass::INVALID, "commit has more than 2^16 parents"));
+        return Err(git_error_set!(
+            ErrorClass::INVALID,
+            "commit has more than 2^16 parents"
+        ));
     };
     // SAFETY: the node is the walk's; written through the pointer.
     unsafe {
@@ -267,8 +289,12 @@ unsafe fn parse(walk: *mut git_revwalk, node: *mut GitCommitListNode) -> Result<
         return Ok(());
     }
     // SAFETY: a live walk.
-    let (repo, odb): (*mut pend::git_repository, *mut pend::git_odb) =
-        unsafe { (pend::field(walk, pend::REVWALK_REPO), pend::field(walk, pend::REVWALK_ODB)) };
+    let (repo, odb): (*mut pend::git_repository, *mut pend::git_odb) = unsafe {
+        (
+            pend::field(walk, pend::REVWALK_REPO),
+            pend::field(walk, pend::REVWALK_ODB),
+        )
+    };
     // SAFETY: as above.
     let id = unsafe { (*node).oid };
 
@@ -299,7 +325,8 @@ unsafe fn parse(walk: *mut git_revwalk, node: *mut GitCommitListNode) -> Result<
                 unsafe { (*node).parents = pp };
                 for i in 0..usize::from(n) {
                     // SAFETY: the file is live; `e` came from it.
-                    let parent = unsafe { commit_graph::entry_parent(file, &e, i) }.map_err(commit::ec)?;
+                    let parent =
+                        unsafe { commit_graph::entry_parent(file, &e, i) }.map_err(commit::ec)?;
                     // SAFETY: the walk is live; no borrow of the pool held.
                     let p = unsafe { pend::git_revwalk__commit_lookup(walk, &parent.sha1) };
                     // SAFETY: `i < n` slots.
@@ -319,11 +346,18 @@ unsafe fn parse(walk: *mut git_revwalk, node: *mut GitCommitListNode) -> Result<
     // readable for its size and unchanged.
     let r = unsafe {
         if pend::git_odb_object_type(obj) != commit::OBJ_COMMIT {
-            Err(git_error_set!(ErrorClass::INVALID, "object is no commit object"))
+            Err(git_error_set!(
+                ErrorClass::INVALID,
+                "object is no commit object"
+            ))
         } else {
             let p = pend::git_odb_object_data(obj).cast::<core::ffi::c_char>();
             let n = pend::git_odb_object_size(obj);
-            let data = if p.is_null() { &[][..] } else { crate::util::export::bytes(p, n) };
+            let data = if p.is_null() {
+                &[][..]
+            } else {
+                crate::util::export::bytes(p, n)
+            };
             quick_parse(walk, node, data, &*pend::git_odb_object_id(obj))
         }
     };
@@ -344,7 +378,10 @@ pub mod ffi {
     ///
     /// `a` and `b` are live nodes.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_commit_list_generation_cmp(a: *const c_void, b: *const c_void) -> c_int {
+    pub unsafe extern "C" fn git_commit_list_generation_cmp(
+        a: *const c_void,
+        b: *const c_void,
+    ) -> c_int {
         let (a, b) = (a.cast::<GitCommitListNode>(), b.cast::<GitCommitListNode>());
         // SAFETY: live nodes (contract), read through the pointers.
         unsafe { generation_cmp(((*a).generation, (*a).time), ((*b).generation, (*b).time)) }
@@ -365,7 +402,10 @@ pub mod ffi {
     /// `git_commit_list_create`: a new list cell (NULL on allocation
     /// failure).
     #[unsafe(no_mangle)]
-    pub extern "C" fn git_commit_list_create(item: *mut GitCommitListNode, next: *mut GitCommitList) -> *mut GitCommitList {
+    pub extern "C" fn git_commit_list_create(
+        item: *mut GitCommitListNode,
+        next: *mut GitCommitList,
+    ) -> *mut GitCommitList {
         barrier(|| {
             let p = alloc::malloc(size_of::<GitCommitList>()).cast::<GitCommitList>();
             if !p.is_null() {
@@ -428,10 +468,16 @@ pub mod ffi {
     ///
     /// `walk` is a live walk that nothing else uses during the call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_commit_list_alloc_node(walk: *mut git_revwalk) -> *mut GitCommitListNode {
+    pub unsafe extern "C" fn git_commit_list_alloc_node(
+        walk: *mut git_revwalk,
+    ) -> *mut GitCommitListNode {
         barrier(|| {
             // SAFETY: the caller's contract.
-            unsafe { with_pool(walk, |p| p.mallocz(1).map_or(ptr::null_mut(), |p| p.as_ptr().cast())) }
+            unsafe {
+                with_pool(walk, |p| {
+                    p.mallocz(1).map_or(ptr::null_mut(), |p| p.as_ptr().cast())
+                })
+            }
         })
     }
 
@@ -464,7 +510,9 @@ pub mod ffi {
     ///
     /// As [`git_commit_list_free`].
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_commit_list_pop(stack: *mut *mut GitCommitList) -> *mut GitCommitListNode {
+    pub unsafe extern "C" fn git_commit_list_pop(
+        stack: *mut *mut GitCommitList,
+    ) -> *mut GitCommitListNode {
         // SAFETY: the caller's contract.
         unsafe {
             let top = stack.read();
@@ -486,7 +534,10 @@ pub mod ffi {
     /// `walk` is a live walk, used by nothing else during the call; `commit`
     /// one of its nodes.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_commit_list_parse(walk: *mut git_revwalk, commit: *mut GitCommitListNode) -> c_int {
+    pub unsafe extern "C" fn git_commit_list_parse(
+        walk: *mut git_revwalk,
+        commit: *mut GitCommitListNode,
+    ) -> c_int {
         // SAFETY: the caller's contract.
         barrier(|| commit::code(unsafe { parse(walk, commit) }))
     }
