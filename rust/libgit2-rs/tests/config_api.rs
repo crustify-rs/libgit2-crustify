@@ -152,7 +152,7 @@ fn names_are_bytes() {
     let name = String::from("core.abbrev");
     assert_eq!(c.get_i32(&name).unwrap(), 12);
     assert_eq!(c.get_i32(name.as_bytes()).unwrap(), 12);
-    assert_eq!(c.get_i32(b"core.abbrev".to_vec()).unwrap(), 12);
+    assert_eq!(c.get_i32(Vec::from("core.abbrev")).unwrap(), 12);
     // A NUL is refused, not cut.
     let e = c.get_i32("core.abbrev\0x").unwrap_err();
     assert_eq!(e.code(), ErrorCode::INVALID);

@@ -244,8 +244,8 @@ fn byte_names() {
 #[test]
 fn hashsig_api() {
     let dir = resources().join("renames");
-    let a = HashSig::from_file(&dir.join("songof7cities.txt"), HashSigOptions::NORMAL).unwrap();
-    let b = HashSig::from_file(&dir.join("untimely.txt"), HashSigOptions::NORMAL).unwrap();
+    let a = HashSig::from_file(dir.join("songof7cities.txt"), HashSigOptions::NORMAL).unwrap();
+    let b = HashSig::from_file(dir.join("untimely.txt"), HashSigOptions::NORMAL).unwrap();
     assert_eq!(a.compare(&a), 100);
     let ab = a.compare(&b);
     assert!((0..100).contains(&ab));
@@ -256,7 +256,7 @@ fn hashsig_api() {
     let e = HashSig::new(b"x\n", HashSigOptions::NORMAL).unwrap_err();
     assert_eq!(e.code(), ErrorCode::BUFS);
     assert!(HashSig::new(b"x\n", HashSigOptions::ALLOW_SMALL_FILES).is_ok());
-    let e = HashSig::from_file(&dir.join("does-not-exist"), HashSigOptions::NORMAL).unwrap_err();
+    let e = HashSig::from_file(dir.join("does-not-exist"), HashSigOptions::NORMAL).unwrap_err();
     assert_eq!(e.code(), ErrorCode::NOT_FOUND);
     let ws = HashSig::new(&data, HashSigOptions::IGNORE_WHITESPACE).unwrap();
     assert_eq!(ws.compare(&ws), 100);

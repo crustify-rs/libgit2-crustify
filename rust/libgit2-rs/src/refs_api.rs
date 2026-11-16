@@ -2006,7 +2006,7 @@ mod transaction_tests {
                 git_transaction_set_target(
                     tx,
                     c"refs/heads/a".as_ptr(),
-                    &id,
+                    &raw const id,
                     who.as_raw(),
                     c"moved".as_ptr()
                 ),
