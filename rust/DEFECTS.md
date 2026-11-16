@@ -464,6 +464,20 @@ DIVERGENCES.md).
   memory) and fail with `invalid pack file - delta chain loops` (class
   `GIT_ERROR_ODB`, -1). Valid packs never revisit an object.
 
+### pack: reading a corrupted delta's header hangs or reads uninitialized memory
+- C: `git_packfile_resolve_header` reads a delta's result size with
+  `git_delta_read_header_fromstream` (`delta.c`), whose loop retries
+  `GIT_EBUFS` forever (the window cannot be opened, as when the data runs
+  into the pack's trailer, or zlib needs input it never gets), and adds a
+  failed read's -1 to its length, then parses its uninitialized 16-byte
+  buffer as if it were `SIZE_MAX` bytes long.
+- Trigger: `git_odb_read_header` of a delta whose deflated data is
+  corrupted ("incorrect header check"): C returns 0 with a size made of
+  stack garbage (`difftest/pack_diff.c`, case `t1/11/obj-ref-to`).
+- Rust: the pack reader reads the header bytes itself, with the same reads,
+  and parses them with `git_delta_read_header`; both cases fail with `error
+  reading from the zlib stream` (class `GIT_ERROR_ZLIB`, -1).
+
 ### pack: a short pack file is checked against an uninitialized header
 - C: `packfile_open_locked` reads the 12-byte header into an
   uninitialized `struct git_pack_header` and checks only for a failed read;

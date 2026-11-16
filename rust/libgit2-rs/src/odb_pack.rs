@@ -298,7 +298,7 @@ unsafe extern "C" fn foreach_trampoline(id: *const Oid, payload: *mut c_void) ->
 }
 
 /// A `foreach` callback: C's, or a Rust closure.
-pub enum ForeachCb<'a> {
+pub(crate) enum ForeachCb<'a> {
     /// A C callback and its payload.
     C(OdbForeachCb, *mut c_void),
     /// A Rust closure.
@@ -494,7 +494,7 @@ impl PackBackend {
     }
 
     /// `pack_backend__read`.
-    pub fn read(&self, id: &Oid) -> Result<(GitBytes, c_int)> {
+    pub(crate) fn read(&self, id: &Oid) -> Result<(GitBytes, c_int)> {
         let mut st = self.lock();
         let e = self.entry_find(&mut st, id)?;
         let mut off = e.offset;
@@ -502,7 +502,11 @@ impl PackBackend {
     }
 
     /// `pack_backend__read_prefix`: the full id, and the object.
-    pub fn read_prefix(&self, short_oid: &Oid, len: usize) -> Result<(Oid, GitBytes, c_int)> {
+    pub(crate) fn read_prefix(
+        &self,
+        short_oid: &Oid,
+        len: usize,
+    ) -> Result<(Oid, GitBytes, c_int)> {
         if len < GIT_OID_MINPREFIXLEN {
             return Err(pending::odb_error_ambiguous(c"prefix length too short"));
         }
@@ -521,28 +525,28 @@ impl PackBackend {
     }
 
     /// `pack_backend__read_header`.
-    pub fn read_header(&self, id: &Oid) -> Result<(usize, c_int)> {
+    pub(crate) fn read_header(&self, id: &Oid) -> Result<(usize, c_int)> {
         let mut st = self.lock();
         let e = self.entry_find(&mut st, id)?;
         e.p.resolve_header(e.offset)
     }
 
     /// `pack_backend__exists`.
-    pub fn exists(&self, id: &Oid) -> bool {
+    pub(crate) fn exists(&self, id: &Oid) -> bool {
         let mut st = self.lock();
         self.entry_find(&mut st, id).is_ok()
     }
 
     /// `pack_backend__exists_prefix`: the result, and the id C copies out
     /// (the last entry found, or zero).
-    pub fn exists_prefix(&self, short_id: &Oid, len: usize) -> (Result<()>, Oid) {
+    pub(crate) fn exists_prefix(&self, short_id: &Oid, len: usize) -> (Result<()>, Oid) {
         let mut st = self.lock();
         let (r, e) = self.entry_find_prefix(&mut st, short_id, len);
         (r, e.map_or(Oid::NONE, |e| e.id))
     }
 
     /// `pack_backend__freshen`.
-    pub fn freshen(&self, id: &Oid) -> Result<()> {
+    pub(crate) fn freshen(&self, id: &Oid) -> Result<()> {
         let mut st = self.lock();
         let e = self.entry_find(&mut st, id)?;
         // SAFETY: `time(NULL)` has no preconditions.
@@ -665,7 +669,7 @@ impl PackBackend {
     }
 
     /// `pack_backend__refresh`.
-    pub fn refresh(&self) -> Result<()> {
+    pub(crate) fn refresh(&self) -> Result<()> {
         let mut st = self.lock();
         self.refresh_locked(&mut st)
     }
@@ -701,7 +705,7 @@ impl PackBackend {
     /// `pack_backend__foreach`: `cb` for every object (of the
     /// multi-pack-index, then of each other pack), until it returns
     /// non-zero, which is returned.
-    pub fn foreach(&self, mut cb: ForeachCb<'_>) -> c_int {
+    pub(crate) fn foreach(&self, mut cb: ForeachCb<'_>) -> c_int {
         // Make sure we know about the packfiles; then iterate a snapshot,
         // without the lock, as the callback may call back.
         let (midx, packs) = {
@@ -755,7 +759,7 @@ impl PackBackend {
     }
 
     /// `pack_backend__writemidx`.
-    pub fn writemidx(&self) -> Result<()> {
+    pub(crate) fn writemidx(&self) -> Result<()> {
         let mut w = MidxWriter::new(self.pack_folder.as_deref(), self.oid_type)?;
         let mut st = self.lock();
         for p in st.midx_packs.iter().chain(st.packs.iter()) {

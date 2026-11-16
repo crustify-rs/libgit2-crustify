@@ -270,13 +270,16 @@ pub struct IndexView<'a> {
 impl<'a> IndexView<'a> {
     /// `pack_index_check_locked`'s checks of the contents: the version and
     /// the size implied by the fanout table. The error is the message of
-    /// C's `packfile_error`. The caller has checked that there are at least
-    /// `4 * 256 + 2 * oid_size` bytes.
+    /// C's `packfile_error`. (C checks first that there are at least `4 *
+    /// 256 + 2 * oid_size` bytes, with another message: `PackIndex::open`
+    /// does; here a shorter index is a wrong size.)
     pub fn parse(
         data: &'a [u8],
         oid_size: usize,
     ) -> core::result::Result<IndexView<'a>, &'static str> {
-        debug_assert!(data.len() >= 4 * 256 + 2 * oid_size);
+        if data.len() < 4 * 256 + 2 * oid_size {
+            return Err("wrong index size");
+        }
         let version = if be32(data, 0) == PACK_IDX_SIGNATURE {
             let v = be32(data, 4);
             if v != 2 {
@@ -1083,7 +1086,7 @@ impl GitPackFile {
 
     /// The index, opened if need be (`pack_index_open_locked`, with the
     /// lock taken only to open it).
-    pub fn index(&self) -> Result<&PackIndex> {
+    pub(crate) fn index(&self) -> Result<&PackIndex> {
         if let Some(i) = self.index.get() {
             return Ok(i);
         }
@@ -1241,7 +1244,11 @@ impl GitPackFile {
     /// `git_packfile_unpack_header`: the inflated size and type of the
     /// object at `*curpos`, which moves past the header. `Err(BUFS)` if the
     /// window cannot be opened or ends within the header.
-    pub fn unpack_header(&self, cursor: &mut Cursor, curpos: &mut i64) -> Result<(usize, c_int)> {
+    pub(crate) fn unpack_header(
+        &self,
+        cursor: &mut Cursor,
+        curpos: &mut i64,
+    ) -> Result<(usize, c_int)> {
         let flock = self.ensure_open()?;
         let r = match cursor.open(&self.mwf, *curpos, self.oid_size()) {
             None => {
@@ -1270,7 +1277,7 @@ impl GitPackFile {
     /// reference. `Err(BUFS)` if the window ends within the reference;
     /// `Err(PASSTHROUGH)`, with no message, for a `REF_DELTA` the indexer
     /// has not seen the base of yet. The cursor is left open.
-    pub fn delta_base(
+    pub(crate) fn delta_base(
         &self,
         cursor: &mut Cursor,
         curpos: &mut i64,
@@ -1328,7 +1335,7 @@ impl GitPackFile {
 
     /// `git_packfile_resolve_header`: the size and type of the object at
     /// `offset`, following deltas to their base for the type.
-    pub fn resolve_header(&self, offset: i64) -> Result<(usize, c_int)> {
+    pub(crate) fn resolve_header(&self, offset: i64) -> Result<(usize, c_int)> {
         drop(self.ensure_open()?);
         let mut cursor = Cursor::new();
         let mut curpos = offset;
@@ -1543,7 +1550,7 @@ impl GitPackFile {
     /// applied. `*obj_offset` becomes what C leaves there: the position
     /// after the last deflated data read (or the offset of the cached base
     /// when the object itself was cached).
-    pub fn unpack(&self, obj_offset: &mut i64) -> Result<(GitBytes, c_int)> {
+    pub(crate) fn unpack(&self, obj_offset: &mut i64) -> Result<(GitBytes, c_int)> {
         drop(self.ensure_open()?);
 
         let mut curpos = *obj_offset;
@@ -1669,7 +1676,7 @@ impl GitPackFile {
 
     /// `pack_entry_find_offset`: the offset and full id of the object whose
     /// id starts with the first `len` hex digits of `short_oid`.
-    pub fn find_offset(&self, short_oid: &Oid, len: usize) -> Result<(i64, Oid)> {
+    pub(crate) fn find_offset(&self, short_oid: &Oid, len: usize) -> Result<(i64, Oid)> {
         let index = self.index()?;
         let view = index.view();
         match view.lookup(short_oid.raw_id(), len) {
@@ -1695,7 +1702,7 @@ impl GitPackFile {
     /// `git_pack_entry_find`: the entry of the object whose id starts with
     /// the first `len` hex digits of `short_oid`, once the pack file is
     /// known to be open.
-    pub fn entry_find(&self, short_oid: &Oid, len: usize) -> Result<(i64, Oid)> {
+    pub(crate) fn entry_find(&self, short_oid: &Oid, len: usize) -> Result<(i64, Oid)> {
         // C checks `bad_object_ids`, which nothing ever fills.
         let r = self.find_offset(short_oid, len)?;
         // Make sure the pack file backing the index still exists on disk
@@ -1707,7 +1714,7 @@ impl GitPackFile {
     }
 
     /// `git_pack_foreach_entry`'s list: the ids, in pack order.
-    pub fn ids(&self) -> Result<Vec<Oid>> {
+    pub(crate) fn ids(&self) -> Result<Vec<Oid>> {
         let index = self.index()?;
         let view = index.view();
         let ids = match self.ids.get() {
@@ -1734,7 +1741,7 @@ impl GitPackFile {
     /// `git_pack_foreach_entry`: call `f` with each id, in pack order, until
     /// it returns non-zero; that code (with the error set as after a
     /// callback), or the error of listing the ids.
-    pub fn foreach_entry(&self, mut f: impl FnMut(&Oid) -> c_int) -> c_int {
+    pub(crate) fn foreach_entry(&self, mut f: impl FnMut(&Oid) -> c_int) -> c_int {
         let ids = match self.ids() {
             Ok(ids) => ids,
             Err(e) => return e.raw(),
@@ -1752,7 +1759,7 @@ impl GitPackFile {
     /// index order, until `f` returns non-zero (which is returned, with the
     /// error set as after a callback). C holds the pack's lock meanwhile;
     /// the index is immutable once open, so this does not.
-    pub fn foreach_entry_offset(
+    pub(crate) fn foreach_entry_offset(
         &self,
         mut f: impl FnMut(&Oid, i64) -> c_int,
     ) -> core::result::Result<(), c_int> {
@@ -2829,6 +2836,56 @@ mod tests {
             let mut p = [0u8; GIT_OID_MAX_SIZE];
             p[0] = ids[150][0] & 0xf0;
             assert_eq!(view.lookup(&p, 1), Lookup::Ambiguous);
+        }
+    }
+
+    /// Any index that parses can be searched and iterated without a panic,
+    /// whatever its ids and offsets (corrupted indexes keep their layout).
+    #[test]
+    fn random_indexes_do_not_panic() {
+        let mut seed = 7u64;
+        let mut rnd = move || {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (seed >> 33) as u32
+        };
+        let rounds = if cfg!(miri) { 20 } else { 2000 };
+        for _ in 0..rounds {
+            let size = if rnd() % 2 == 0 { 20 } else { 32 };
+            let n = (rnd() % 40) as usize;
+            let mut ids: Vec<Vec<u8>> = (0..n)
+                .map(|_| (0..size).map(|_| rnd() as u8).collect())
+                .collect();
+            ids.sort();
+            let offs: Vec<u64> = (0..n).map(|_| u64::from(rnd()) << (rnd() % 8)).collect();
+            let v = 1 + rnd() % 2;
+            let mut idx = build_index(v, &ids, &offs);
+            // Scribble over the ids and offsets (not the fanout).
+            let start = if v == 2 { 8 + 1024 } else { 1024 };
+            for _ in 0..rnd() % 8 {
+                if idx.len() > start {
+                    let at = start + rnd() as usize % (idx.len() - start);
+                    idx[at] = rnd() as u8;
+                }
+            }
+            let Ok(view) = IndexView::parse(&idx, size) else {
+                continue;
+            };
+            for _ in 0..20 {
+                let mut k = [0u8; GIT_OID_MAX_SIZE];
+                k.iter_mut().take(size).for_each(|b| *b = rnd() as u8);
+                if n > 0 && rnd() % 2 == 0 {
+                    k[..size].copy_from_slice(&ids[rnd() as usize % n]);
+                }
+                let len = 1 + rnd() as usize % (2 * size);
+                if let Lookup::Found(p) = view.lookup(&k, len) {
+                    let _ = view.nth_offset(p);
+                    let _ = view.oid_at(p);
+                }
+            }
+            let _ = view.for_each_offset(|_, _| Ok::<(), ()>(()), || ());
+            let _ = view.positions_by_offset();
         }
     }
 
