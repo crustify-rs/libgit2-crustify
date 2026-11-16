@@ -119,7 +119,7 @@ impl Regexp {
     }
 
     /// `git_regexp_compile`, also of a NULL pattern (PCRE2's error).
-    fn compile_opt(pattern: Option<&CStr>, flags: c_int) -> Result<Regexp> {
+    pub(crate) fn compile_opt(pattern: Option<&CStr>, flags: c_int) -> Result<Regexp> {
         let options = if flags & GIT_REGEXP_ICASE != 0 {
             PCRE2_CASELESS
         } else {
