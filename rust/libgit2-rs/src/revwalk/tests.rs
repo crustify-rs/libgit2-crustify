@@ -602,11 +602,11 @@ fn reentrant_hide_callbacks() {
 /// those of the C that stays (diff, pathspec).
 #[cfg(not(feature = "link-c"))]
 mod c_stubs {
-    use core::ffi::{c_char, c_int, c_uint, c_void};
+    use core::ffi::{c_char, c_int};
 
     use crate::oid::Oid;
     use crate::sys::diff::{GitDiffDelta as git_diff_delta, git_diff, git_diff_options};
-    use crate::sys::pending::l_revwalk::{git_commit, git_repository, git_tree, git_tree_entry};
+    use crate::sys::pending::l_revwalk::{git_commit, git_repository, git_tree};
     use crate::util::vector::GitVector;
 
     macro_rules! stubs {
