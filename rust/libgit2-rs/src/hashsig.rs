@@ -546,7 +546,9 @@ pub mod ffi {
             git_assert_arg!(!a.is_null(), "a", -1);
             git_assert_arg!(!b.is_null(), "b", -1);
             // SAFETY: live signatures (the caller's contract), only read.
-            let (a, b) = unsafe { (&*a, &*b) };
+            let a = unsafe { &*a };
+            // SAFETY: as above.
+            let b = unsafe { &*b };
             a.compare(b)
         })
     }

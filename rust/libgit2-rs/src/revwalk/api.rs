@@ -45,7 +45,7 @@ impl Repository {
         let c = cstring(path.as_ref().as_os_str().as_bytes())?;
         let mut out = core::ptr::null_mut();
         // SAFETY: `out` writable; `c` a string.
-        let e = unsafe { p::git_repository_open(&mut out, c.as_ptr()) };
+        let e = unsafe { p::git_repository_open(&raw mut out, c.as_ptr()) };
         ErrorCode::check(e)?;
         NonNull::new(out)
             .map(Repository)
@@ -129,7 +129,9 @@ unsafe extern "C" fn hide_trampoline(id: *const Oid, payload: *mut c_void) -> c_
     // SAFETY: `payload` is the walk's boxed `HideState`, alive while the
     // walk runs, and reached only from here during the call (the walk
     // calls back from `&mut Revwalk` methods); `id` points to a node's id.
-    let (st, id) = unsafe { (&mut *payload.cast::<HideState<'_>>(), &*id) };
+    let st = unsafe { &mut *payload.cast::<HideState<'_>>() };
+    // SAFETY: as above: a node's id, valid for the call.
+    let id = unsafe { &*id };
     if st.panic.is_some() {
         return 1;
     }
@@ -315,8 +317,7 @@ impl<'repo> Revwalk<'repo> {
             f: Box::new(f),
             panic: None,
         });
-        // SAFETY: `Box::into_raw` is never null.
-        let state = unsafe { NonNull::new_unchecked(Box::into_raw(state)) };
+        let state = Box::into_non_null(state);
         let payload = state.as_ptr().cast::<c_void>();
         self.with(|w, st| w.set_hide_cb(st, Some(hide_trampoline), payload));
         self.drop_hide();

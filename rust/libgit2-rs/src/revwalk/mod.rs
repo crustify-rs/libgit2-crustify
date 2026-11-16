@@ -33,6 +33,8 @@
 pub mod api;
 mod glue;
 pub mod node;
+#[cfg(test)]
+mod tests;
 
 use core::cell::{Cell, UnsafeCell};
 use core::ffi::{CStr, c_int, c_uint, c_void};
@@ -1111,7 +1113,9 @@ pub mod ffi {
             // SAFETY: the contract.
             let (w, st) = unsafe { walk_of(walk) };
             // SAFETY: readable (the contract), copied.
-            let (oid, opts) = unsafe { (*oid, *opts) };
+            let oid = unsafe { *oid };
+            // SAFETY: as above.
+            let opts = unsafe { *opts };
             status(w.push_commit(st, &oid, &opts))
         })
     }
@@ -1297,7 +1301,7 @@ pub mod ffi {
         }
         let opts = PushOptions::default();
         // SAFETY: forwarded.
-        unsafe { git_revwalk__push_glob(walk, glob, &opts) }
+        unsafe { git_revwalk__push_glob(walk, glob, &raw const opts) }
     }
 
     /// `git_revwalk_hide_glob`.
@@ -1319,7 +1323,7 @@ pub mod ffi {
             ..PushOptions::default()
         };
         // SAFETY: forwarded.
-        unsafe { git_revwalk__push_glob(walk, glob, &opts) }
+        unsafe { git_revwalk__push_glob(walk, glob, &raw const opts) }
     }
 
     /// `git_revwalk_push_range`.

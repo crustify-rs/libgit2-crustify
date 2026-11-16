@@ -41,7 +41,7 @@ pub fn repository_odb(repo: Repo) -> Result<*mut p::git_odb> {
     let mut out = ptr::null_mut();
     // SAFETY: `out` is writable; the repository is NULL (which C rejects
     // with an error) or live (the invariant).
-    ErrorCode::check(unsafe { p::git_repository_odb(&mut out, repo.0) })?;
+    ErrorCode::check(unsafe { p::git_repository_odb(&raw mut out, repo.0) })?;
     Ok(out)
 }
 
@@ -91,16 +91,17 @@ impl Object {
 
     /// `git_object_id`.
     pub fn id(&self) -> Oid {
-        // SAFETY: a live object; its id lives as long as it does, and is
-        // copied before anything can free it.
-        unsafe { *p::git_object_id(self.0.as_ptr()) }
+        // SAFETY: a live object.
+        let id = unsafe { p::git_object_id(self.0.as_ptr()) };
+        // SAFETY: its id lives as long as it does, and is copied now.
+        unsafe { *id }
     }
 
     /// `git_object_peel`.
     pub fn peel(&self, kind: c_int) -> Result<Object> {
         let mut out = ptr::null_mut();
         // SAFETY: a live object; `out` is writable.
-        ErrorCode::check(unsafe { p::git_object_peel(&mut out, self.0.as_ptr(), kind) })?;
+        ErrorCode::check(unsafe { p::git_object_peel(&raw mut out, self.0.as_ptr(), kind) })?;
         // SAFETY: on success C hands us a new reference.
         unsafe { Object::from_raw(out) }.ok_or(ErrorCode::GENERIC)
     }
@@ -111,7 +112,7 @@ pub fn object_lookup(repo: Repo, id: &Oid, kind: c_int) -> Result<Object> {
     let mut out = ptr::null_mut();
     // SAFETY: `out` writable; `repo` NULL or live (the invariant); `id`
     // readable.
-    ErrorCode::check(unsafe { p::git_object_lookup(&mut out, repo.0, id, kind) })?;
+    ErrorCode::check(unsafe { p::git_object_lookup(&raw mut out, repo.0, id, kind) })?;
     // SAFETY: on success C hands us a new reference.
     unsafe { Object::from_raw(out) }.ok_or(ErrorCode::GENERIC)
 }
@@ -121,7 +122,7 @@ pub fn reference_name_to_id(repo: Repo, name: *const c_char) -> Result<Oid> {
     let mut out = Oid::NONE;
     // SAFETY: `out` writable; `repo` NULL or live; `name` is NULL (which C
     // rejects) or a string (the export's contract).
-    ErrorCode::check(unsafe { p::git_reference_name_to_id(&mut out, repo.0, name) })?;
+    ErrorCode::check(unsafe { p::git_reference_name_to_id(&raw mut out, repo.0, name) })?;
     Ok(out)
 }
 
@@ -161,7 +162,7 @@ impl RefIter {
         let mut out = ptr::null_mut();
         // SAFETY: `out` writable; `repo` NULL or live; `glob` a string.
         ErrorCode::check(unsafe {
-            p::git_reference_iterator_glob_new(&mut out, repo.0, glob.as_ptr())
+            p::git_reference_iterator_glob_new(&raw mut out, repo.0, glob.as_ptr())
         })?;
         NonNull::new(out).map(RefIter).ok_or(ErrorCode::GENERIC)
     }
@@ -170,7 +171,7 @@ impl RefIter {
     pub fn next(&mut self) -> Result<Reference> {
         let mut out = ptr::null_mut();
         // SAFETY: a live iterator; `out` writable.
-        ErrorCode::check(unsafe { p::git_reference_next(&mut out, self.0.as_ptr()) })?;
+        ErrorCode::check(unsafe { p::git_reference_next(&raw mut out, self.0.as_ptr()) })?;
         NonNull::new(out).map(Reference).ok_or(ErrorCode::GENERIC)
     }
 }
@@ -195,9 +196,11 @@ pub fn revparse(repo: Repo, spec: *const c_char) -> Result<Revspec> {
     };
     // SAFETY: `out` writable; `repo` NULL or live; `spec` NULL (which C
     // rejects) or a string (the export's contract).
-    let e = unsafe { rp::git_revparse(&mut out, repo.0, spec) };
+    let e = unsafe { rp::git_revparse(&raw mut out, repo.0, spec) };
     // SAFETY: what C stored in `out` is ours (NULL on failure).
-    let (from, to) = unsafe { (Object::from_raw(out.from), Object::from_raw(out.to)) };
+    let from = unsafe { Object::from_raw(out.from) };
+    // SAFETY: as above.
+    let to = unsafe { Object::from_raw(out.to) };
     ErrorCode::check_zero(e)?;
     Ok(Revspec {
         from,
@@ -294,7 +297,7 @@ impl Commit {
     fn lookup(repo: Repo, id: &Oid) -> Option<Commit> {
         let mut out = ptr::null_mut();
         // SAFETY: `out` writable; `repo` live; `id` readable.
-        if unsafe { p::git_commit_lookup(&mut out, repo.0, id) } != 0 {
+        if unsafe { p::git_commit_lookup(&raw mut out, repo.0, id) } != 0 {
             return None;
         }
         NonNull::new(out).map(Commit)
@@ -303,7 +306,7 @@ impl Commit {
     fn tree(&self) -> Option<Tree> {
         let mut out = ptr::null_mut();
         // SAFETY: a live commit; `out` writable.
-        if unsafe { p::git_commit_tree(&mut out, self.0.as_ptr()) } != 0 {
+        if unsafe { p::git_commit_tree(&raw mut out, self.0.as_ptr()) } != 0 {
             return None;
         }
         NonNull::new(out).map(Tree)
@@ -317,7 +320,7 @@ impl Commit {
     fn parent(&self, n: c_uint) -> Option<Commit> {
         let mut out = ptr::null_mut();
         // SAFETY: a live commit; `out` writable.
-        if unsafe { p::git_commit_parent(&mut out, self.0.as_ptr(), n) } != 0 {
+        if unsafe { p::git_commit_parent(&raw mut out, self.0.as_ptr(), n) } != 0 {
             return None;
         }
         NonNull::new(out).map(Commit)
@@ -350,7 +353,7 @@ impl Tree {
         let mut out = ptr::null_mut();
         // SAFETY: a live tree; `out` writable; `path` a pattern string of a
         // live pathspec.
-        if unsafe { p::git_tree_entry_bypath(&mut out, self.0.as_ptr(), path) } != 0 {
+        if unsafe { p::git_tree_entry_bypath(&raw mut out, self.0.as_ptr(), path) } != 0 {
             return None;
         }
         NonNull::new(out).map(TreeEntry)
@@ -359,8 +362,10 @@ impl Tree {
 
 impl TreeEntry {
     fn id(&self) -> Oid {
-        // SAFETY: a live entry; its id is copied while it lives.
-        unsafe { *p::git_tree_entry_id(self.0.as_ptr()) }
+        // SAFETY: a live entry.
+        let id = unsafe { p::git_tree_entry_id(self.0.as_ptr()) };
+        // SAFETY: its id is copied while it lives.
+        unsafe { *id }
     }
 }
 
@@ -387,7 +392,8 @@ fn include_path_delta(
     // SAFETY: `out` writable; `repo` live; the trees are live (or NULL for
     // the old side, which C accepts); `opts` is a valid options struct
     // whose pathspec strings outlive the call.
-    if unsafe { d::git_diff_tree_to_tree(&mut out, repo.0, old, commit_tree.0.as_ptr(), opts) } != 0
+    if unsafe { d::git_diff_tree_to_tree(&raw mut out, repo.0, old, commit_tree.0.as_ptr(), opts) }
+        != 0
     {
         return false;
     }
@@ -403,7 +409,9 @@ fn include_path_delta(
             continue;
         }
         // SAFETY: a live delta of the diff; its paths live as long as it.
-        let (newp, oldp) = unsafe { ((*delta).new_file.path, (*delta).old_file.path) };
+        let newp = unsafe { (*delta).new_file.path };
+        // SAFETY: as above.
+        let oldp = unsafe { (*delta).old_file.path };
         if (!newp.is_null() && spec.match_path(newp)) || (!oldp.is_null() && spec.match_path(oldp))
         {
             return true;

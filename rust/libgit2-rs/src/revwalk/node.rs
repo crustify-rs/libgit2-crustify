@@ -16,6 +16,15 @@ use crate::oid::Oid;
 use crate::util::alloc;
 use crate::util::errors::{self, Result};
 
+/// A pointer to field `$f` (of type `$t`) of the node at `$p`: safe
+/// pointer arithmetic, in bounds for a live node.
+macro_rules! field {
+    ($p:expr, $f:ident: $t:ty) => {
+        $p.wrapping_byte_add(core::mem::offset_of!(CommitListNode, $f))
+            .cast::<$t>()
+    };
+}
+
 /// `git_commit_list_node` (mirrored, kind 3: C allocates it from the
 /// walk's pool through `git_commit_list_alloc_node`, and reads and writes
 /// its fields).
@@ -106,14 +115,14 @@ impl NodePtr {
     fn bits(self) -> u16 {
         // SAFETY: a live node (the invariant); one field read, no
         // reference formed.
-        unsafe { (&raw const (*self.0.as_ptr()).bits).read() }
+        unsafe { field!(self.0.as_ptr(), bits: u16).read() }
     }
 
     #[inline(always)]
     fn set_bits(self, bits: u16) {
         // SAFETY: as in `bits`, for a write: nothing else reaches the node
         // during the write (single thread, no reference to it).
-        unsafe { (&raw mut (*self.0.as_ptr()).bits).write(bits) }
+        unsafe { field!(self.0.as_ptr(), bits: u16).write(bits) }
     }
 
     #[inline(always)]
@@ -170,14 +179,14 @@ impl NodePtr {
     #[inline(always)]
     pub fn time(self) -> i64 {
         // SAFETY: as in `bits`.
-        unsafe { (&raw const (*self.0.as_ptr()).time).read() }
+        unsafe { field!(self.0.as_ptr(), time: i64).read() }
     }
 
     /// `&oid`, for C and for the map's key.
     #[inline(always)]
     pub fn oid_ptr(self) -> NonNull<Oid> {
         // SAFETY: a field of a live node: in bounds, non-null.
-        unsafe { NonNull::new_unchecked(&raw mut (*self.0.as_ptr()).oid) }
+        unsafe { NonNull::new_unchecked(field!(self.0.as_ptr(), oid: Oid)) }
     }
 
     /// `oid`, copied.
@@ -191,27 +200,27 @@ impl NodePtr {
     #[inline(always)]
     pub fn in_degree(self) -> u16 {
         // SAFETY: as in `bits`.
-        unsafe { (&raw const (*self.0.as_ptr()).in_degree).read() }
+        unsafe { field!(self.0.as_ptr(), in_degree: u16).read() }
     }
     /// `in_degree = v`.
     #[inline(always)]
     pub fn set_in_degree(self, v: u16) {
         // SAFETY: as in `set_bits`.
-        unsafe { (&raw mut (*self.0.as_ptr()).in_degree).write(v) }
+        unsafe { field!(self.0.as_ptr(), in_degree: u16).write(v) }
     }
 
     /// `out_degree`.
     #[inline(always)]
     pub fn out_degree(self) -> usize {
         // SAFETY: as in `bits`.
-        usize::from(unsafe { (&raw const (*self.0.as_ptr()).out_degree).read() })
+        usize::from(unsafe { field!(self.0.as_ptr(), out_degree: u16).read() })
     }
 
     /// Whether `parents` is set (the node was parsed, or C set it).
     #[inline(always)]
     pub fn has_parents(self) -> bool {
         // SAFETY: as in `bits`.
-        !unsafe { (&raw const (*self.0.as_ptr()).parents).read() }.is_null()
+        !unsafe { field!(self.0.as_ptr(), parents: *mut *mut CommitListNode).read() }.is_null()
     }
 
     /// `parents[i]`, for `i < out_degree`; `None` if the array is unset or
@@ -219,14 +228,14 @@ impl NodePtr {
     #[inline(always)]
     pub fn parent(self, i: usize) -> Option<NodePtr> {
         // SAFETY: as in `bits`.
-        let parents = unsafe { (&raw const (*self.0.as_ptr()).parents).read() };
+        let parents = unsafe { field!(self.0.as_ptr(), parents: *mut *mut CommitListNode).read() };
         if parents.is_null() || i >= self.out_degree() {
             return None;
         }
         // SAFETY: a set `parents` holds `out_degree` slots (what
         // `git_commit_list_parse` allocates: in the node's tail or in the
         // pool), and `i < out_degree`.
-        let p = unsafe { parents.add(i).read() };
+        let p = unsafe { parents.wrapping_add(i).read() };
         // SAFETY: the slots point to nodes of the same pool
         // (`git_revwalk__commit_lookup`), or are NULL.
         unsafe { NodePtr::from_raw(p) }
@@ -236,6 +245,33 @@ impl NodePtr {
     #[inline(always)]
     pub fn as_void(self) -> *mut c_void {
         self.0.as_ptr().cast()
+    }
+
+    /// What `git_commit_list_parse` does to a node, for the tests' graphs:
+    /// set `time`, `out_degree`, `parents` (`slots`: the node's tail for
+    /// up to two parents, else an array that outlives the node) and
+    /// `parsed`.
+    #[cfg(test)]
+    pub fn set_parsed(self, time: i64, parents: &[NodePtr], slots: *mut *mut CommitListNode) {
+        let tail = self.0.as_ptr().wrapping_add(1);
+        let arr = if parents.len() <= PARENTS_PER_COMMIT {
+            tail.cast::<*mut CommitListNode>()
+        } else {
+            slots
+        };
+        for (i, p) in parents.iter().enumerate() {
+            // SAFETY: `arr` has room for the parents (the node's tail of
+            // COMMIT_ALLOC, or the caller's array).
+            unsafe { arr.wrapping_add(i).write(p.as_ptr()) };
+        }
+        let n = self.0.as_ptr();
+        // SAFETY: as in `set_bits`.
+        unsafe { field!(n, time: i64).write(time) };
+        // SAFETY: as in `set_bits`.
+        unsafe { field!(n, out_degree: u16).write(parents.len() as u16) };
+        // SAFETY: as in `set_bits`.
+        unsafe { field!(n, parents: *mut *mut CommitListNode).write(arr) };
+        self.set_flag(PARSED, true);
     }
 }
 
@@ -285,8 +321,12 @@ pub unsafe fn list_insert_by_date(item: NodePtr, head: &mut *mut CommitList) -> 
         if p.is_null() {
             break;
         }
-        // SAFETY: a live cell; its item is a valid node (the contract).
-        let n = unsafe { NodePtr::new(NonNull::new_unchecked((*p).item)) };
+        // SAFETY: a live cell.
+        let item_p = unsafe { (*p).item };
+        // SAFETY: its item is a valid node (the contract).
+        let Some(n) = (unsafe { NodePtr::from_raw(item_p) }) else {
+            break;
+        };
         if n.time() < time {
             break;
         }
@@ -326,7 +366,9 @@ pub unsafe fn list_items(head: *const CommitList) -> impl Iterator<Item = NodePt
             return None;
         }
         // SAFETY: a live cell (the contract).
-        let (item, next) = unsafe { ((*p).item, (*p).next) };
+        let item = unsafe { (*p).item };
+        // SAFETY: as above.
+        let next = unsafe { (*p).next };
         p = next;
         // SAFETY: a valid node (the contract); C never stores NULL items.
         unsafe { NodePtr::from_raw(item) }
