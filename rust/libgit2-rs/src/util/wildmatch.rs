@@ -44,12 +44,11 @@ impl Z<'_> {
     }
 
     /// `strchr(s + i, c) != NULL` for a non-NUL `c`: the index of `c` at
-    /// or after `i`, before the string's NUL.
+    /// or after `i` (the string holds no NUL: see `wildmatch`).
     #[inline]
     fn find_from(self, i: usize, c: u8) -> Option<usize> {
         let s = self.0.get(i..)?;
-        let end = memchr::memchr(0, s).unwrap_or(s.len());
-        memchr::memchr(c, &s[..end]).map(|j| i + j)
+        memchr::memchr(c, s).map(|j| i + j)
     }
 }
 
@@ -159,18 +158,28 @@ fn dowild(pat: Z<'_>, mut p: usize, text: Z<'_>, mut t: usize, flags: c_uint) ->
                         if casefold && lit.is_ascii_uppercase() {
                             lit = lit.to_ascii_lowercase();
                         }
-                        loop {
-                            t_ch = text.at(t);
-                            if t_ch == 0 || !(match_slash || t_ch != b'/') {
-                                break;
+                        // C's scan for `lit`, stopping at the end and
+                        // (without match_slash) at a slash, with memchr.
+                        let rest = text.0.get(t..).unwrap_or(&[]);
+                        let up = lit.to_ascii_uppercase();
+                        let found = match (casefold && up != lit, match_slash) {
+                            (false, true) => memchr::memchr(lit, rest),
+                            (false, false) => memchr::memchr2(lit, b'/', rest),
+                            (true, true) => memchr::memchr2(lit, up, rest),
+                            (true, false) => memchr::memchr3(lit, up, b'/', rest),
+                        };
+                        match found {
+                            Some(j) => {
+                                t += j;
+                                t_ch = text.at(t);
+                                if casefold && t_ch.is_ascii_uppercase() {
+                                    t_ch = t_ch.to_ascii_lowercase();
+                                }
                             }
-                            if casefold && t_ch.is_ascii_uppercase() {
-                                t_ch = t_ch.to_ascii_lowercase();
+                            None => {
+                                t += rest.len();
+                                t_ch = 0;
                             }
-                            if t_ch == lit {
-                                break;
-                            }
-                            t += 1;
                         }
                         if t_ch != lit {
                             return WM_NOMATCH;
@@ -327,6 +336,8 @@ fn dowild(pat: Z<'_>, mut p: usize, text: Z<'_>, mut t: usize, flags: c_uint) ->
 /// NUL or its end). Returns [`WM_MATCH`], [`WM_NOMATCH`] or
 /// [`WM_ABORT_ALL`] (as C, `WM_ABORT_TO_STARSTAR` does not escape).
 pub fn wildmatch(pattern: &[u8], text: &[u8], flags: c_uint) -> c_int {
+    let to_nul = |s: &[u8]| -> usize { memchr::memchr(0, s).unwrap_or(s.len()) };
+    let (pattern, text) = (&pattern[..to_nul(pattern)], &text[..to_nul(text)]);
     dowild(Z(pattern), 0, Z(text), 0, flags)
 }
 
@@ -351,7 +362,8 @@ pub mod ffi {
             let p = unsafe { cstr_bytes(pattern) };
             // SAFETY: the caller's contract.
             let t = unsafe { cstr_bytes(text) };
-            super::wildmatch(p, t, flags)
+            // C strings hold no NUL before their end.
+            dowild(Z(p), 0, Z(t), 0, flags)
         })
     }
 }
