@@ -1602,18 +1602,18 @@ mod tests {
         assert_eq!(b.cmp_raw(&a), 3);
         assert!(a < b);
         assert_eq!(a.cmp_raw(&a), 0);
-        assert_eq!(a.ncmp(&b, 10), 0);
-        assert_eq!(a.ncmp(&b, 11), 0);
-        assert_eq!(a.ncmp(&b, 12), 1);
+        assert_eq!(a.ncmp(&b, 10), core::cmp::Ordering::Equal);
+        assert_eq!(a.ncmp(&b, 11), core::cmp::Ordering::Equal);
+        assert_eq!(a.ncmp(&b, 12), core::cmp::Ordering::Greater);
         let c = Oid::zero(OidType::Sha256);
-        assert_eq!(a.ncmp(&c, 1), -1);
+        assert_eq!(a.ncmp(&c, 1), core::cmp::Ordering::Less);
         assert_eq!(a.cmp_raw(&c), -1);
         assert!(a.streq(HEX));
         assert!(a.streq(b"ae90"));
         assert!(a.streq(b"ae9"));
         assert!(!a.streq(b"ae91"));
-        assert_eq!(a.strcmp(b"ae91"), 0x90 - 0x91);
-        assert_eq!(a.strcmp(b"zz"), -1);
+        assert_eq!(a.strcmp(b"ae91"), core::cmp::Ordering::Less);
+        assert_eq!(a.strcmp(b"zz"), core::cmp::Ordering::Less);
         assert!(Oid::SHA1_ZERO.is_zero());
         assert!(Oid::NONE.is_zero());
         assert!(!a.is_zero());
@@ -1766,7 +1766,7 @@ mod tests {
                     assert!((1..=41).contains(&n));
                     ok += 1;
                 }
-                Err(e) => assert_eq!(e, ErrorCode::GENERIC),
+                Err(e) => assert_eq!(e.code(), crate::ErrorCode::GENERIC),
             }
         }
         assert!(ok > 0);
@@ -1795,7 +1795,7 @@ mod tests {
             }
             assert!(n < 40000);
         };
-        assert_eq!(r, ErrorCode::GENERIC);
+        assert_eq!(r.code(), crate::ErrorCode::GENERIC);
         assert!(s.full);
         assert!(s.add(HEX).is_err());
     }
