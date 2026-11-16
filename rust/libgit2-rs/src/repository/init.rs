@@ -125,7 +125,8 @@ fn create_empty_file(path: &CStr, mode: u32) -> Result<()> {
             ));
         }
     };
-    if posix::close(fd).is_err() {
+    // SAFETY: the descriptor just created, ours.
+    if unsafe { posix::close(fd) }.is_err() {
         return Err(git_error_set!(
             ErrorClass::OS,
             "error while closing '{}'",
@@ -337,7 +338,8 @@ fn repo_write_template(
     match posix::open(&cs(&path), flags, mode as libc::mode_t) {
         Ok(fd) => {
             error = posix::write(fd, content).is_err();
-            let _ = posix::close(fd);
+            // SAFETY: the descriptor just opened, ours.
+            let _ = unsafe { posix::close(fd) };
         }
         Err(posix::Errno(e)) => {
             if e != libc::EEXIST {

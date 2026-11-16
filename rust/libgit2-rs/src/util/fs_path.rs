@@ -134,7 +134,7 @@ pub fn to_cstring(p: &[u8]) -> CString {
 
 /// A C string read byte by byte, as the C loops read it: `at(i)` for each
 /// `i` up to the first NUL, without measuring the string first.
-pub trait CBytes: Copy {
+pub(crate) trait CBytes: Copy {
     /// The byte at `i` (0 at and past the end). Called only for `i` up to
     /// the index of the first NUL.
     fn at(self, i: usize) -> u8;
@@ -163,7 +163,7 @@ impl CBytes for &[u8] {
 /// A NUL-terminated string behind a raw pointer, as an export receives it
 /// ([`CBytes`] without a `strlen`).
 #[derive(Clone, Copy)]
-pub struct RawCStr<'a>(core::ptr::NonNull<u8>, core::marker::PhantomData<&'a [u8]>);
+pub(crate) struct RawCStr<'a>(core::ptr::NonNull<u8>, core::marker::PhantomData<&'a [u8]>);
 
 impl<'a> RawCStr<'a> {
     /// The string at `p`.
@@ -173,7 +173,7 @@ impl<'a> RawCStr<'a> {
     /// `p` points to a NUL-terminated string that stays readable and
     /// unwritten for `'a`.
     #[inline(always)]
-    pub unsafe fn new(p: core::ptr::NonNull<c_char>) -> RawCStr<'a> {
+    pub(crate) unsafe fn new(p: core::ptr::NonNull<c_char>) -> RawCStr<'a> {
         RawCStr(p.cast(), core::marker::PhantomData)
     }
 }
@@ -484,7 +484,8 @@ pub fn to_dir(path: &mut GitStr) -> Result<()> {
     let len = path.len();
     if path.capacity() > 0 && len > 0 && path.as_bytes().last().is_some_and(|&c| c != b'/') {
         // `git_str_putc`, in place when the slash and the NUL fit.
-        let spare = path.spare_capacity_mut();
+        // SAFETY: the NUL is written back right away (`spare[1]`).
+        let spare = unsafe { path.spare_with_nul_mut() };
         if spare.len() >= 2 {
             spare[0].write(b'/');
             spare[1].write(0);
@@ -574,7 +575,8 @@ fn joinpath_into(out: &mut GitStr, a: &[u8], b: &[u8]) -> Result<()> {
         out.grow(alloc_len)?;
     }
     out.clear();
-    let spare = out.spare_capacity_mut();
+    // SAFETY: the NUL is written at `total` before the string is used.
+    let spare = unsafe { out.spare_with_nul_mut() };
     spare[..a.len()].write_copy_of_slice(a);
     if need_sep == 1 {
         spare[a.len()].write(b'/');
@@ -817,7 +819,7 @@ pub fn common_dirlen(one: &[u8], two: &[u8]) -> usize {
 
 /// [`common_dirlen`] over [`CBytes`].
 #[inline]
-pub fn common_dirlen_with(one: impl CBytes, two: impl CBytes) -> usize {
+pub(crate) fn common_dirlen_with(one: impl CBytes, two: impl CBytes) -> usize {
     // One past the last common slash, 0 for none.
     let mut dirsep = 0;
     let mut i = 0;
@@ -1097,16 +1099,17 @@ impl Dir {
         core::ptr::NonNull::new(d).map(Dir)
     }
 
-    /// The next entry's name (copied into `name`), `Ok(false)` at the end,
-    /// or the `errno` of a failure.
-    fn read(&mut self, name: &mut Vec<u8>) -> posix::SysResult<bool> {
+    /// The next entry's name, NUL-terminated and valid until the next
+    /// `read` or the close (`readdir`'s contract; not copied, as C does
+    /// not), `None` at the end, or the `errno` of a failure.
+    fn read(&mut self) -> posix::SysResult<Option<*const c_char>> {
         errors::set_errno(0);
         // SAFETY: the stream is open and only this `Dir` uses it.
         let de = unsafe { libc::readdir(self.0.as_ptr()) };
         if de.is_null() {
             let e = errors::errno();
             return if e == 0 {
-                Ok(false)
+                Ok(None)
             } else {
                 Err(posix::Errno(e))
             };
@@ -1114,11 +1117,7 @@ impl Dir {
         // SAFETY: `readdir` returned an entry, valid until the next call on
         // this stream: a place projection, no read.
         let d_name = unsafe { &raw const (*de).d_name };
-        // SAFETY: as above; `d_name` is NUL-terminated.
-        let n = unsafe { CStr::from_ptr(d_name.cast::<c_char>()) };
-        name.clear();
-        name.extend_from_slice(n.to_bytes());
-        Ok(true)
+        Ok(Some(d_name.cast::<c_char>()))
     }
 }
 
@@ -1155,13 +1154,15 @@ pub fn direach<P: PathCell + ?Sized>(
         }
         return Err(ErrorCode::GENERIC);
     };
-    let mut name = Vec::new();
     // C stops at `readdir`'s NULL whatever `errno` says.
-    while let Ok(true) = dir.read(&mut name) {
-        if is_dot_or_dotdot(&name) {
+    while let Ok(Some(name)) = dir.read() {
+        // SAFETY: the entry stays valid until the next `read` (the loop's
+        // next iteration); the callback cannot reach this private stream.
+        let name = unsafe { CStr::from_ptr(name) }.to_bytes();
+        if is_dot_or_dotdot(name) {
             continue;
         }
-        path.path().put(&name)?;
+        path.path().put(name)?;
         errors::clear();
         let error = cb(path);
         path.path().truncate(wd_len);
@@ -1245,16 +1246,22 @@ impl GitFsPathDiriter {
     pub fn next(&mut self) -> Result<()> {
         git_assert!(!self.dir.is_null(), "diriter->dir");
         let skip_dot = self.flags & GIT_FS_PATH_DIR_INCLUDE_DOT_AND_DOTDOT == 0;
-        let mut name = Vec::new();
         // The stream is borrowed for the reads, not owned.
         let mut dir = core::mem::ManuallyDrop::new(Dir(
             core::ptr::NonNull::new(self.dir).expect("checked above")
         ));
-        loop {
-            match dir.read(&mut name) {
-                Ok(true) if skip_dot && is_dot_or_dotdot(&name) => continue,
-                Ok(true) => break,
-                Ok(false) => return Err(ErrorCode::ITER_OVER),
+        let name = loop {
+            match dir.read() {
+                Ok(Some(n)) => {
+                    // SAFETY: valid until the next read of this stream,
+                    // which only this iterator reads.
+                    let n = unsafe { CStr::from_ptr(n) }.to_bytes();
+                    if skip_dot && is_dot_or_dotdot(n) {
+                        continue;
+                    }
+                    break n;
+                }
+                Ok(None) => return Err(ErrorCode::ITER_OVER),
                 Err(_) => {
                     return Err(git_error_set!(
                         ErrorClass::OS,
@@ -1263,12 +1270,12 @@ impl GitFsPathDiriter {
                     ));
                 }
             }
-        }
+        };
         self.path.truncate(self.parent_len);
         if self.parent_len > 0 && self.path.as_bytes().get(self.parent_len - 1) != Some(&b'/') {
             let _ = self.path.putc(b'/');
         }
-        let _ = self.path.put(&name);
+        let _ = self.path.put(name);
         if self.path.is_oom() {
             return Err(ErrorCode::GENERIC);
         }
@@ -1394,7 +1401,14 @@ pub fn is_empty_dir(path: &CStr) -> bool {
 /// `path` with `errno_value` (the message ends with `errno`'s, as every
 /// `GIT_ERROR_OS` one).
 pub fn set_error(errno_value: c_int, path: &[u8], action: &str) -> ErrorCode {
+    set_error_bytes(errno_value, path, action.as_bytes())
+}
+
+/// [`set_error`] with the action as bytes (the export's: C prints them as
+/// they are).
+pub fn set_error_bytes(errno_value: c_int, path: &[u8], action: &[u8]) -> ErrorCode {
     let path = Bytes(c_str(path));
+    let action = Bytes(c_str(action));
     match errno_value {
         libc::ENOENT | libc::ENOTDIR => {
             let _ = git_error_set!(ErrorClass::OS, "could not find '{path}' to {action}");
@@ -1480,7 +1494,8 @@ pub fn supports_symlinks(dir: &[u8]) -> bool {
     let mut supported = false;
     if let Ok(fd) = super::futils::mktmp(&mut path, dir, 0o666) {
         let p = str_cpath(&path).into_owned();
-        if posix::close(fd).is_ok()
+        // SAFETY: a descriptor this code opened, closed once.
+        if unsafe { posix::close(fd) }.is_ok()
             && posix::unlink(&p).is_ok()
             && posix::symlink(c"testing", &p).is_ok()
             && let Ok(st) = posix::lstat(&p)
@@ -1642,7 +1657,7 @@ pub fn str_is_valid_ext(
 /// or `limit` (a `git_str`'s `size`; `usize::MAX` for a C string), which
 /// must be reached without a NUL for a sized path to be valid.
 #[inline]
-pub fn str_is_valid_with<P: CBytes>(
+pub(crate) fn str_is_valid_with<P: CBytes>(
     path: P,
     limit: usize,
     flags: c_uint,
@@ -1727,7 +1742,7 @@ static MOCK_OWNER: AtomicU32 = AtomicU32::new(GIT_FS_PATH_OWNER_NONE);
 
 /// `git_fs_path__set_owner`: make [`owner_is`] answer from `owner` (for
 /// tests); `GIT_FS_PATH_OWNER_NONE` restores the real check.
-pub fn set_owner(owner: c_uint) {
+pub(crate) fn set_owner(owner: c_uint) {
     MOCK_OWNER.store(owner, Ordering::Relaxed);
 }
 

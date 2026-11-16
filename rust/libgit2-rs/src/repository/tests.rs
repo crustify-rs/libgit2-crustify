@@ -27,11 +27,18 @@ fn path_of(d: &ItemDirs<'_>, item: ItemT) -> core::result::Result<Vec<u8>, Error
 #[test]
 fn item_paths_of_a_worktree() {
     let _g = test_support::init();
-    let d = dirs(Some(b"/r/.git/worktrees/w/"), Some(b"/w/"), Some(b"/r/.git/"));
+    let d = dirs(
+        Some(b"/r/.git/worktrees/w/"),
+        Some(b"/w/"),
+        Some(b"/r/.git/"),
+    );
     assert_eq!(path_of(&d, ITEM_GITDIR).unwrap(), b"/r/.git/worktrees/w/");
     assert_eq!(path_of(&d, ITEM_WORKDIR).unwrap(), b"/w/");
     assert_eq!(path_of(&d, ITEM_COMMONDIR).unwrap(), b"/r/.git/");
-    assert_eq!(path_of(&d, ITEM_INDEX).unwrap(), b"/r/.git/worktrees/w/index");
+    assert_eq!(
+        path_of(&d, ITEM_INDEX).unwrap(),
+        b"/r/.git/worktrees/w/index"
+    );
     assert_eq!(path_of(&d, ITEM_OBJECTS).unwrap(), b"/r/.git/objects/");
     assert_eq!(path_of(&d, 6).unwrap(), b"/r/.git/packed-refs");
     assert_eq!(path_of(&d, ITEM_CONFIG).unwrap(), b"/r/.git/config");
@@ -104,7 +111,14 @@ fn extensions_are_checked_as_c() {
     let _g = test_support::init();
     let _x = EXT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     free_extensions();
-    for b in ["noop", "objectformat", "worktreeconfig", "preciousobjects", "refstorage", "relativeworktrees"] {
+    for b in [
+        "noop",
+        "objectformat",
+        "worktreeconfig",
+        "preciousobjects",
+        "refstorage",
+        "relativeworktrees",
+    ] {
         check_valid_extension(format!("extensions.{b}").as_bytes()).unwrap();
     }
     assert!(check_valid_extension(b"extensions.unknown").is_err());
@@ -224,9 +238,13 @@ fn alloc_and_free() {
 /// The bitfield's bits, as the C compiler lays them out: compile and run a
 /// program against the build's headers.
 #[test]
-#[cfg_attr(any(miri, not(feature = "link-c")), ignore = "runs clang on LIBGIT2_BUILD_DIR")]
+#[cfg_attr(
+    any(miri, not(feature = "link-c")),
+    ignore = "runs clang on LIBGIT2_BUILD_DIR"
+)]
 fn bitfield_bits_match_c() {
-    let dir = std::path::PathBuf::from(std::env::var_os("LIBGIT2_BUILD_DIR").expect("LIBGIT2_BUILD_DIR"));
+    let dir =
+        std::path::PathBuf::from(std::env::var_os("LIBGIT2_BUILD_DIR").expect("LIBGIT2_BUILD_DIR"));
     let tmp = std::env::temp_dir().join(format!("l-repo-bits-{}", std::process::id()));
     std::fs::create_dir_all(&tmp).unwrap();
     let src = tmp.join("bits.c");

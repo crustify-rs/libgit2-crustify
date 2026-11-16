@@ -466,7 +466,8 @@ mod tests {
     fn ffi_version() {
         let (mut a, mut b, mut c) = (0, 0, 0);
         // SAFETY: three writable ints.
-        assert_eq!(unsafe { ffi::git_libgit2_version(&raw mut a, &raw mut b, &raw mut c) }, 0);
+        let e = unsafe { ffi::git_libgit2_version(&raw mut a, &raw mut b, &raw mut c) };
+        assert_eq!(e, 0);
         assert_eq!((a, b, c), version());
         // SAFETY: no precondition.
         assert!(unsafe { ffi::git_libgit2_prerelease() }.is_null());

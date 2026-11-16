@@ -637,7 +637,8 @@ pub(crate) fn hashfile(
     struct Fd(c_int);
     impl Drop for Fd {
         fn drop(&mut self) {
-            let _ = posix::close(self.0);
+            // SAFETY: the descriptor this guard opened and owns.
+            let _ = unsafe { posix::close(self.0) };
         }
     }
     let fd = Fd(fd);
@@ -692,7 +693,7 @@ pub(crate) fn shallow_roots(repo: &GitRepository) -> Result<(*mut Oid, usize)> {
 
 /// `git_repository__shallow_roots_write`.
 pub(crate) fn shallow_roots_write(repo: &GitRepository, roots: &[Oid]) -> Result<()> {
-    use crate::util::filebuf::{GIT_FILEBUF_HASH_SHA1, GIT_FILEBUF_HASH_SHA256, GitFilebuf};
+    use crate::util::filebuf::{Filebuf, GIT_FILEBUF_HASH_SHA1, GIT_FILEBUF_HASH_SHA256};
     let hash_flags = match repo.oid_type() {
         OidType::Sha1 => GIT_FILEBUF_HASH_SHA1,
         OidType::Sha256 => GIT_FILEBUF_HASH_SHA256,
@@ -703,8 +704,7 @@ pub(crate) fn shallow_roots_write(repo: &GitRepository, roots: &[Oid]) -> Result
         b"shallow",
     )?;
     let p = cs(&path).into_owned();
-    let mut file = GitFilebuf::new();
-    file.open(p.to_bytes(), hash_flags, 0o666)?;
+    let mut file = Filebuf::open(p.to_bytes(), hash_flags, 0o666).map_err(|e| e.code())?;
     let hexsize = repo.oid_type().hexsize();
     for r in roots {
         // `git_oid_tostr(buf, sizeof(buf), id)`, then `hexsize` bytes of it.
@@ -717,7 +717,6 @@ pub(crate) fn shallow_roots_write(repo: &GitRepository, roots: &[Oid]) -> Result
     }
     // As C, a failed commit is not reported (it cleans the filebuf up).
     let _ = file.commit();
-    file.cleanup();
     if open::load_grafts(repo).is_err() {
         return Err(ErrorCode::GENERIC);
     }

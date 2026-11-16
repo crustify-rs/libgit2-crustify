@@ -573,8 +573,14 @@ mod tests {
         assert_eq!(errors::last_message().unwrap(), b"invalid option key");
         assert_eq!(errors::last_class(), Some(ErrorClass::INVALID));
         assert!(config_level_to_sysdir(1).is_err());
-        assert_eq!(errors::last_message().unwrap(), b"invalid config path selector 1");
-        assert_eq!(config_level_to_sysdir(4), Ok(crate::sys::sysdir::GIT_SYSDIR_GLOBAL));
+        assert_eq!(
+            errors::last_message().unwrap(),
+            b"invalid config path selector 1"
+        );
+        assert_eq!(
+            config_level_to_sysdir(4),
+            Ok(crate::sys::sysdir::GIT_SYSDIR_GLOBAL)
+        );
         let mut a = args();
         a.i = -1;
         // SAFETY: an int argument.

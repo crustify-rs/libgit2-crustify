@@ -21,7 +21,6 @@
 #include "str.h"
 #include "posix.h"
 #include "filebuf.h"
-#include "hashmap_str.h"
 
 /* Implemented in Rust (src/util/errors.rs). */
 extern void git_error__set_formatted(
@@ -207,21 +206,6 @@ int git_filebuf_printf(git_filebuf *file, const char *format, ...)
 
 	return r;
 }
-
-/*
- * The inline functions of hashmap_str.h, out of line, for the Rust port of
- * futils.c (git_futils_mkdir_relative's path cache is a C-owned set).
- */
-int git_hashset_str__contains(git_hashset_str *set, const char *key)
-{
-	return git_hashset_str_contains(set, key);
-}
-
-int git_hashset_str__add(git_hashset_str *set, const char *key)
-{
-	return git_hashset_str_add(set, key);
-}
-
 /*
  * git_libgit2_opts (src/libgit2/settings.c): the shim reads the arguments
  * of each option from the va_list, as the C did, and hands them to the

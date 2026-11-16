@@ -77,7 +77,10 @@ fn init_open_and_paths() {
     unsafe {
         let gitdir = format!("{}/w/.git/", d.display());
         assert_eq!(cs(r::git_repository_path(repo)), Some(gitdir.as_str()));
-        assert_eq!(cs(r::git_repository_workdir(repo)), Some(format!("{}/w/", d.display()).as_str()));
+        assert_eq!(
+            cs(r::git_repository_workdir(repo)),
+            Some(format!("{}/w/", d.display()).as_str())
+        );
         assert_eq!(cs(r::git_repository_commondir(repo)), Some(gitdir.as_str()));
         assert_eq!(r::git_repository_is_bare(repo), 0);
         assert_eq!(r::git_repository_is_worktree(repo), 0);
@@ -106,7 +109,8 @@ fn init_open_and_paths() {
         assert_eq!(buf.as_bytes(), gitdir.as_bytes());
         // A ceiling at `w/a` stops the search.
         let ceil = c(&d.join("w/a"));
-        let e = r::git_repository_discover(&mut buf, c(&d.join("w/a/b")).as_ptr(), 0, ceil.as_ptr());
+        let e =
+            r::git_repository_discover(&mut buf, c(&d.join("w/a/b")).as_ptr(), 0, ceil.as_ptr());
         assert_eq!(e, -3);
         git_buf_dispose(&mut buf);
 
@@ -116,7 +120,10 @@ fn init_open_and_paths() {
         assert_eq!(cs(r::git_repository_path(r2)), Some(gitdir.as_str()));
         r::git_repository_free(r2);
         let mut r3 = ptr::null_mut();
-        assert_eq!(r::git_repository_open_bare(&mut r3, c(&d.join("w/.git")).as_ptr()), 0);
+        assert_eq!(
+            r::git_repository_open_bare(&mut r3, c(&d.join("w/.git")).as_ptr()),
+            0
+        );
         assert_eq!(r::git_repository_is_bare(r3), 1);
         assert!(r::git_repository_workdir(r3).is_null());
         r::git_repository_free(r3);
@@ -136,22 +143,37 @@ fn open_errors_match_c() {
         std::fs::create_dir_all(d.join("nothing")).unwrap();
         assert_eq!(r::git_repository_open(&mut repo, p.as_ptr()), -3);
         assert!(repo.is_null());
-        assert_eq!(msg(), format!("could not find repository at '{}'", d.join("nothing").display()));
+        assert_eq!(
+            msg(),
+            format!(
+                "could not find repository at '{}'",
+                d.join("nothing").display()
+            )
+        );
         assert_eq!(errors::last_class(), Some(errors::ErrorClass::REPOSITORY));
 
         assert_eq!(r::git_repository_open_bare(&mut repo, p.as_ptr()), -3);
-        assert_eq!(msg(), format!("path is not a repository: {}", d.join("nothing").display()));
+        assert_eq!(
+            msg(),
+            format!("path is not a repository: {}", d.join("nothing").display())
+        );
 
         // A `.git` file that is not a gitlink.
         std::fs::write(d.join("nothing/.git"), "garbage\n").unwrap();
         assert_eq!(r::git_repository_open(&mut repo, p.as_ptr()), -1);
         assert_eq!(
             msg(),
-            format!("the `.git` file at '{}/.git' is malformed", d.join("nothing").display())
+            format!(
+                "the `.git` file at '{}/.git' is malformed",
+                d.join("nothing").display()
+            )
         );
 
         // Asserted arguments.
-        assert_eq!(r::git_repository_discover(ptr::null_mut(), ptr::null(), 0, ptr::null()), -1);
+        assert_eq!(
+            r::git_repository_discover(ptr::null_mut(), ptr::null(), 0, ptr::null()),
+            -1
+        );
         assert_eq!(msg(), "invalid argument: 'start_path'");
         assert!(r::git_repository_path(ptr::null()).is_null());
         assert_eq!(msg(), "invalid argument: 'repo'");
@@ -160,7 +182,10 @@ fn open_errors_match_c() {
         let mut v = 7u32;
         assert_eq!(r::git_repository_init_options_init(ptr::null_mut(), 0), -1);
         assert_eq!(msg(), "invalid version 0 on git_repository_init_options");
-        assert_eq!(r::git_repository_new_options_init((&raw mut v).cast(), 2), -1);
+        assert_eq!(
+            r::git_repository_new_options_init((&raw mut v).cast(), 2),
+            -1
+        );
         assert_eq!(msg(), "invalid version 2 on git_repository_new_options");
     }
     let _ = std::fs::remove_dir_all(&d);
@@ -180,8 +205,14 @@ fn reinit_and_init_options() {
         opts.flags = (1 << 0) | (1 << 1); // BARE | NO_REINIT
         let mut out = ptr::null_mut();
         let given = c(&d.join("b.git"));
-        assert_eq!(r::git_repository_init_ext(&mut out, given.as_ptr(), &mut opts), -4);
-        assert_eq!(msg(), format!("attempt to reinitialize '{}'", d.join("b.git").display()));
+        assert_eq!(
+            r::git_repository_init_ext(&mut out, given.as_ptr(), &mut opts),
+            -4
+        );
+        assert_eq!(
+            msg(),
+            format!("attempt to reinitialize '{}'", d.join("b.git").display())
+        );
 
         // A non-bare repository with an explicit initial head and SHA-256.
         let mut opts = core::mem::zeroed::<r::GitRepositoryInitOptions>();
@@ -199,8 +230,14 @@ fn reinit_and_init_options() {
         assert_eq!(r::git_repository_oid_type(out), 2);
         let mut head = ptr::null_mut();
         assert_eq!(r::git_repository_head(&mut head, out), -9);
-        assert_eq!(std::fs::read_to_string(d.join("s/.git/HEAD")).unwrap(), "ref: refs/heads/trunk\n");
-        assert_eq!(std::fs::read_to_string(d.join("s/.git/description")).unwrap(), "my repo\n");
+        assert_eq!(
+            std::fs::read_to_string(d.join("s/.git/HEAD")).unwrap(),
+            "ref: refs/heads/trunk\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(d.join("s/.git/description")).unwrap(),
+            "my repo\n"
+        );
         let cfg = std::fs::read_to_string(d.join("s/.git/config")).unwrap();
         assert!(cfg.contains("objectformat = sha256"), "{cfg}");
         assert!(cfg.contains("repositoryformatversion = 1"), "{cfg}");
@@ -236,7 +273,10 @@ fn extensions_and_format_versions() {
 
         // Allowed once registered; rejected again with `!`.
         let exts = [c"frobnicate".as_ptr()];
-        assert_eq!(git_libgit2_opts(GIT_OPT_SET_EXTENSIONS, exts.as_ptr(), 1usize), 0);
+        assert_eq!(
+            git_libgit2_opts(GIT_OPT_SET_EXTENSIONS, exts.as_ptr(), 1usize),
+            0
+        );
         assert_eq!(r::git_repository_open(&mut o, p.as_ptr()), 0, "{}", msg());
         r::git_repository_free(o);
         let mut arr = GitStrArray {
@@ -244,7 +284,9 @@ fn extensions_and_format_versions() {
             count: 0,
         };
         assert_eq!(git_libgit2_opts(GIT_OPT_GET_EXTENSIONS, &mut arr), 0);
-        let names: Vec<&str> = (0..arr.count).map(|i| cs(*arr.strings.add(i)).unwrap()).collect();
+        let names: Vec<&str> = (0..arr.count)
+            .map(|i| cs(*arr.strings.add(i)).unwrap())
+            .collect();
         assert_eq!(
             names,
             [
@@ -259,9 +301,15 @@ fn extensions_and_format_versions() {
         );
         git_strarray_dispose(&mut arr);
         let exts = [c"!frobnicate".as_ptr()];
-        assert_eq!(git_libgit2_opts(GIT_OPT_SET_EXTENSIONS, exts.as_ptr(), 1usize), 0);
+        assert_eq!(
+            git_libgit2_opts(GIT_OPT_SET_EXTENSIONS, exts.as_ptr(), 1usize),
+            0
+        );
         assert_eq!(r::git_repository_open(&mut o, p.as_ptr()), -1);
-        assert_eq!(git_libgit2_opts(GIT_OPT_SET_EXTENSIONS, ptr::null::<*const c_char>(), 0usize), 0);
+        assert_eq!(
+            git_libgit2_opts(GIT_OPT_SET_EXTENSIONS, ptr::null::<*const c_char>(), 0usize),
+            0
+        );
 
         // An unsupported version.
         std::fs::write(
@@ -270,7 +318,10 @@ fn extensions_and_format_versions() {
         )
         .unwrap();
         assert_eq!(r::git_repository_open(&mut o, p.as_ptr()), -1);
-        assert_eq!(msg(), "unsupported repository version 2; only versions up to 1 are supported");
+        assert_eq!(
+            msg(),
+            "unsupported repository version 2; only versions up to 1 are supported"
+        );
         std::fs::write(
             d.join("e/.git/config"),
             "[core]\n\trepositoryformatversion = 1\n[extensions]\n\tobjectformat = sha512\n",
@@ -298,7 +349,13 @@ fn ownership_validation() {
         let m = msg();
         git_fs_path__set_owner(0);
         assert_eq!(e, -36, "{m}");
-        assert_eq!(m, format!("repository path '{}' is not owned by current user", d.join("o").display()));
+        assert_eq!(
+            m,
+            format!(
+                "repository path '{}' is not owned by current user",
+                d.join("o").display()
+            )
+        );
         // With validation off it opens.
         let mut v: c_int = -1;
         assert_eq!(git_libgit2_opts(GIT_OPT_GET_OWNER_VALIDATION, &mut v), 0);
@@ -325,13 +382,19 @@ fn setters_and_state() {
         assert_eq!(r::git_repository_set_namespace(repo, c"ns".as_ptr()), 0);
         assert_eq!(cs(r::git_repository_get_namespace(repo)), Some("ns"));
         // Setting it to itself (C reads freed memory here).
-        assert_eq!(r::git_repository_set_namespace(repo, r::git_repository_get_namespace(repo)), 0);
+        assert_eq!(
+            r::git_repository_set_namespace(repo, r::git_repository_get_namespace(repo)),
+            0
+        );
         assert_eq!(cs(r::git_repository_get_namespace(repo)), Some("ns"));
         assert_eq!(r::git_repository_set_namespace(repo, ptr::null()), 0);
         assert!(r::git_repository_get_namespace(repo).is_null());
 
         let (mut n, mut e) = (ptr::null(), ptr::null());
-        assert_eq!(r::git_repository_set_ident(repo, c"Me".as_ptr(), c"me@x".as_ptr()), 0);
+        assert_eq!(
+            r::git_repository_set_ident(repo, c"Me".as_ptr(), c"me@x".as_ptr()),
+            0
+        );
         r::git_repository_ident(&mut n, &mut e, repo);
         assert_eq!((cs(n), cs(e)), (Some("Me"), Some("me@x")));
 
@@ -347,7 +410,10 @@ fn setters_and_state() {
         assert_eq!(r::git_repository_state(repo), 0);
         let mut buf = GitBuf::new();
         assert_eq!(r::git_repository_message(&mut buf, repo), -3);
-        assert_eq!(msg(), "could not access message file: No such file or directory");
+        assert_eq!(
+            msg(),
+            "could not access message file: No such file or directory"
+        );
         assert_eq!(r::git_repository_message_remove(repo), -1);
         std::fs::create_dir_all(d.join("s/.git/rebase-merge")).unwrap();
         assert_eq!(r::git_repository_state(repo), 9);
@@ -364,17 +430,34 @@ fn setters_and_state() {
         // which is not there.
         assert_eq!(r::git_repository_set_workdir(repo, wd.as_ptr(), 1), -3);
         assert_eq!(msg(), "could not find key 'core.worktree' to delete");
-        assert_eq!(r::git_repository_set_workdir(repo, wd.as_ptr(), 0), 0, "{}", msg());
+        assert_eq!(
+            r::git_repository_set_workdir(repo, wd.as_ptr(), 0),
+            0,
+            "{}",
+            msg()
+        );
         assert_eq!(r::git_repository_is_bare(repo), 0);
-        assert_eq!(cs(r::git_repository_workdir(repo)), Some(format!("{}/s/", d.display()).as_str()));
+        assert_eq!(
+            cs(r::git_repository_workdir(repo)),
+            Some(format!("{}/s/", d.display()).as_str())
+        );
         // Its own workdir as the argument.
-        assert_eq!(r::git_repository_set_workdir(repo, r::git_repository_workdir(repo), 0), 0);
+        assert_eq!(
+            r::git_repository_set_workdir(repo, r::git_repository_workdir(repo), 0),
+            0
+        );
 
         // HEAD to a new branch name (unborn), then lookup.
-        assert_eq!(r::git_repository_set_head(repo, c"refs/heads/other".as_ptr()), 0);
+        assert_eq!(
+            r::git_repository_set_head(repo, c"refs/heads/other".as_ptr()),
+            0
+        );
         let mut head = ptr::null_mut();
         assert_eq!(r::git_repository_head(&mut head, repo), -9);
-        assert_eq!(r::git_repository_set_head(repo, c"refs/tags/none".as_ptr()), -3);
+        assert_eq!(
+            r::git_repository_set_head(repo, c"refs/tags/none".as_ptr()),
+            -3
+        );
         r::git_repository_free(repo);
     }
     let _ = std::fs::remove_dir_all(&d);
@@ -395,14 +478,20 @@ fn lazy_objects_are_shared_between_threads() {
         // A fresh repository each round, so creation races.
         let mut o = ptr::null_mut();
         // SAFETY: a writable out and a path.
-        assert_eq!(unsafe { r::git_repository_open(&mut o, c(&d.join("t")).as_ptr()) }, 0);
+        let e = unsafe { r::git_repository_open(&mut o, c(&d.join("t")).as_ptr()) };
+        assert_eq!(e, 0);
         let p = P(o);
         let results: Vec<[usize; 4]> = std::thread::scope(|s| {
             let hs: Vec<_> = (0..8)
                 .map(|_| {
                     let p = &p;
                     s.spawn(move || {
-                        let (mut a, mut b, mut c, mut d) = (ptr::null_mut(), ptr::null_mut(), ptr::null_mut(), ptr::null_mut());
+                        let (mut a, mut b, mut c, mut d) = (
+                            ptr::null_mut(),
+                            ptr::null_mut(),
+                            ptr::null_mut(),
+                            ptr::null_mut(),
+                        );
                         // SAFETY: a live repository shared as C shares it.
                         unsafe {
                             assert_eq!(r::git_repository_odb__weakptr(&mut a, p.0), 0);
@@ -465,13 +554,19 @@ fn head_target_after_set_head() {
     let repo = init(&d.join("h"), false);
     // SAFETY: as C would call them.
     unsafe {
-        assert_eq!(r::git_repository_set_head(repo, c"refs/heads/main".as_ptr()), 0);
+        assert_eq!(
+            r::git_repository_set_head(repo, c"refs/heads/main".as_ptr()),
+            0
+        );
         let mut cfg: *mut c_void = ptr::null_mut();
         assert_eq!(r::git_repository_config_snapshot(&mut cfg, repo), 0);
         git_config_free(cfg);
         // HEAD is symbolic to the new branch.
         let mut out = ptr::null_mut();
-        assert_eq!(r::git_repository_head_for_worktree(&mut out, repo, c"nope".as_ptr()), -3);
+        assert_eq!(
+            r::git_repository_head_for_worktree(&mut out, repo, c"nope".as_ptr()),
+            -3
+        );
         let mut h: *mut c_void = ptr::null_mut();
         let e = libgit2_rs::sys::pending::l_repo::git_reference_lookup(
             &mut h,
@@ -479,7 +574,10 @@ fn head_target_after_set_head() {
             c"HEAD".as_ptr(),
         );
         assert_eq!(e, 0);
-        assert_eq!(cs(git_reference_symbolic_target(h)), Some("refs/heads/main"));
+        assert_eq!(
+            cs(git_reference_symbolic_target(h)),
+            Some("refs/heads/main")
+        );
         git_reference_free(h);
         r::git_repository_free(repo);
     }
