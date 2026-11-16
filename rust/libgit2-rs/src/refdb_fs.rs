@@ -455,11 +455,12 @@ pub fn namespace_path(namespace: &[u8]) -> Vec<u8> {
 // ---------------------------------------------------------------------------
 
 /// A read-only mapping of `packed-refs`, unmapped when the last user drops
-/// it.
-struct Mapping(GitMap);
+/// it, with the `sorted` trait of its own header (`None`: no header, so the
+/// trait last seen applies, as in C).
+struct Mapping(GitMap, Option<bool>);
 
-// SAFETY: a private read-only mapping that nothing writes; unmapped once,
-// in `drop`, when no reference into it remains.
+// SAFETY: a private read-only mapping that this process never writes;
+// unmapped once, in `drop`, when no reference into it remains.
 unsafe impl Send for Mapping {}
 // SAFETY: as above.
 unsafe impl Sync for Mapping {}
@@ -470,8 +471,12 @@ impl Mapping {
             return &[];
         }
         // SAFETY: a live mapping of `len` readable bytes, unmapped only
-        // when the last `Arc` drops, after this borrow; nothing writes it
-        // (a file written later is a new file, renamed over the old).
+        // when the last `Arc` drops, after this borrow. This process never
+        // writes the file in place (`packed_write` renames a new file over
+        // it). That no other process does either is an assumption, the
+        // contract git and libgit2 keep (they replace `packed-refs` by a
+        // rename), as for packs: an external in-place rewrite is outside
+        // it (in C it gives mixed reads; a truncation is a SIGBUS in both).
         unsafe { core::slice::from_raw_parts(self.0.data.cast::<u8>(), self.0.len) }
     }
 }
@@ -736,9 +741,11 @@ impl FsInner {
         let map = futils::mmap_ro(fd, 0, stat.st_size as usize);
         // SAFETY: our descriptor, closed once.
         let _ = unsafe { crate::util::posix::close(fd) };
-        let map = Arc::new(Mapping(map?));
+        let mut map = Mapping(map?, None);
         let (t, _) = packed_header(map.bytes());
+        map.1 = t.sorted;
         self.set_traits(t);
+        let map = Arc::new(map);
         st.map = Some(Arc::clone(&map));
         Ok(Some(map))
     }
@@ -756,7 +763,13 @@ impl FsInner {
     /// `packed_lookup`.
     fn packed_lookup(&self, name: &[u8]) -> Result<RefBox> {
         let map = self.packed_map_check()?;
-        if !self.sorted.load(Ordering::Relaxed) {
+        // The trait of the mapping searched, not one a concurrent reload
+        // of another file set (review l-refs-r1, LR-4).
+        let sorted = map
+            .as_deref()
+            .and_then(|m| m.1)
+            .unwrap_or_else(|| self.sorted.load(Ordering::Relaxed));
+        if !sorted {
             return self.packed_unsorted_lookup(name);
         }
         let data = map.as_deref().map_or(&[][..], Mapping::bytes);
@@ -1232,7 +1245,8 @@ impl FsInner {
         if r.flags & (PACKREF_HAS_PEEL | PACKREF_CANNOT_PEEL) != 0 {
             return Ok(());
         }
-        let obj = p::ObjBox::lookup(self.repo, &r.oid, -2)?;
+        // C: `if (git_object_lookup(…) < 0) return -1;`: the code is folded.
+        let obj = p::ObjBox::lookup(self.repo, &r.oid, -2).map_err(|_| ErrorCode::GENERIC)?;
         if let Some(target) = obj.tag_target_id() {
             r.peel = target;
             r.flags |= PACKREF_HAS_PEEL;

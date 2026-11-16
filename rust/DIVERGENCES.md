@@ -312,3 +312,11 @@ One entry per difference: component, what differs, why.
   (`RefdbBackend`) do not offer `lock`/`unlock` (transactions fail with
   "backend does not support locking", as for a C backend without them); a
   panic in one is an error of class `GIT_ERROR_INTERNAL`.
+- **refs_api: `set_refdb_backend` takes `&mut Repository`.** The old
+  backend is freed at once, as `git_refdb_set_backend` frees it (C keeps no
+  count on a backend: only the refdb is counted), so the replacement must
+  exclude every other user. The integrated `Repository` (WP l-repo) must
+  keep that: whatever replaces a refdb or its backend takes `&mut self`.
+  `RefdbPtr` loads `db->backend` once per call and passes that backend to
+  the slot it read (C loads it twice); concurrent replacement through the
+  C ABI stays the caller's error, as in C.

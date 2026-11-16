@@ -375,14 +375,20 @@ impl RefdbPtr {
         self.db().rc.inc();
     }
 
-    /// Read slot `f` of the backend.
-    fn slot<T: Copy>(self, f: impl FnOnce(&git_refdb_backend) -> Option<T>) -> Result<T> {
+    /// The backend (one load of `db->backend`) and its slot `f`: the call
+    /// passes that same backend, so a concurrent `git_refdb_set_backend`
+    /// cannot pair one table's slot with another table (C loads the
+    /// pointer twice).
+    fn slot<T: Copy>(
+        self,
+        f: impl FnOnce(&git_refdb_backend) -> Option<T>,
+    ) -> Result<(*mut git_refdb_backend, T)> {
         let b = self.backend_checked()?;
         // SAFETY: a live backend (the constructor's contract), whose slots
         // C does not change while it is in use.
         let s = f(unsafe { &*b });
         // C calls the slot unconditionally: a NULL one crashes there.
-        Ok(s.expect("refdb backend slot is NULL"))
+        Ok((b, s.expect("refdb backend slot is NULL")))
     }
 
     /// `git_refdb_init`.
@@ -398,19 +404,19 @@ impl RefdbPtr {
 
     /// `git_refdb_exists`.
     pub fn exists(self, name: &CStr) -> Result<bool> {
-        let f = self.slot(|b| b.exists)?;
+        let (b, f) = self.slot(|b| b.exists)?;
         let mut exists = 0;
         // SAFETY: as in `init`; `exists` writable.
-        ErrorCode::check(unsafe { f(&raw mut exists, self.backend(), c(name)) })?;
+        ErrorCode::check(unsafe { f(&raw mut exists, b, c(name)) })?;
         Ok(exists != 0)
     }
 
     /// `git_refdb_lookup`: the reference, with `ref->db` this database.
     pub fn lookup(self, name: &CStr) -> Result<RefBox> {
-        let f = self.slot(|b| b.lookup)?;
+        let (b, f) = self.slot(|b| b.lookup)?;
         let mut out = core::ptr::null_mut();
         // SAFETY: as in `init`; `out` writable.
-        let r = unsafe { f(&raw mut out, self.backend(), c(name)) };
+        let r = unsafe { f(&raw mut out, b, c(name)) };
         // SAFETY: the backend hands over the reference it made, if any.
         let r_ref = unsafe { RefBox::from_raw(out) };
         ErrorCode::check(r)?;
@@ -494,11 +500,10 @@ impl RefdbPtr {
         old_id: Option<&Oid>,
         old_target: Option<&CStr>,
     ) -> Result<()> {
-        let b = self.backend_checked()?;
+        let (b, f) = self.slot(|b| b.write)?;
         self.incref();
         // SAFETY: per the contract.
         unsafe { (*r).db = self.as_ptr() };
-        let f = self.slot(|b| b.write)?;
         // SAFETY: as in `init`, with the caller's pointers.
         ErrorCode::check(unsafe {
             f(
@@ -524,8 +529,7 @@ impl RefdbPtr {
         message: Option<&CStr>,
         want: bool,
     ) -> Result<Option<RefBox>> {
-        let b = self.backend_checked()?;
-        let f = self.slot(|b| b.rename)?;
+        let (b, f) = self.slot(|b| b.rename)?;
         let mut out = core::ptr::null_mut();
         let outp = if want {
             &raw mut out
@@ -564,8 +568,7 @@ impl RefdbPtr {
         old_id: Option<&Oid>,
         old_target: Option<&CStr>,
     ) -> Result<()> {
-        let b = self.backend_checked()?;
-        let f = self.slot(|b| b.del)?;
+        let (b, f) = self.slot(|b| b.del)?;
         // SAFETY: as in `init`.
         ErrorCode::check(unsafe {
             f(
@@ -591,8 +594,7 @@ impl RefdbPtr {
 
     /// `git_refdb_reflog_read`: the reflog, with a count on this database.
     pub fn reflog_read(self, name: &CStr) -> Result<NonNull<GitReflog>> {
-        let b = self.backend_checked()?;
-        let f = self.slot(|b| b.reflog_read)?;
+        let (b, f) = self.slot(|b| b.reflog_read)?;
         let mut out = core::ptr::null_mut();
         // SAFETY: as in `init`.
         ErrorCode::check(unsafe { f(&raw mut out, b, c(name)) })?;
@@ -609,44 +611,44 @@ impl RefdbPtr {
     ///
     /// `log` is a live reflog, not used elsewhere during the call.
     pub unsafe fn reflog_write(self, log: *mut GitReflog) -> Result<()> {
-        let f = self.slot(|b| b.reflog_write)?;
+        let (b, f) = self.slot(|b| b.reflog_write)?;
         // SAFETY: as in `init`, with the caller's reflog.
-        ErrorCode::check(unsafe { f(self.backend(), log) }).map(drop)
+        ErrorCode::check(unsafe { f(b, log) }).map(drop)
     }
 
     /// `backend->reflog_rename`.
     pub fn reflog_rename(self, old_name: &CStr, new_name: &CStr) -> Result<()> {
-        let f = self.slot(|b| b.reflog_rename)?;
+        let (b, f) = self.slot(|b| b.reflog_rename)?;
         // SAFETY: as in `init`.
-        ErrorCode::check(unsafe { f(self.backend(), c(old_name), c(new_name)) }).map(drop)
+        ErrorCode::check(unsafe { f(b, c(old_name), c(new_name)) }).map(drop)
     }
 
     /// `backend->reflog_delete`.
     pub fn reflog_delete(self, name: &CStr) -> Result<()> {
-        let f = self.slot(|b| b.reflog_delete)?;
+        let (b, f) = self.slot(|b| b.reflog_delete)?;
         // SAFETY: as in `init`.
-        ErrorCode::check(unsafe { f(self.backend(), c(name)) }).map(drop)
+        ErrorCode::check(unsafe { f(b, c(name)) }).map(drop)
     }
 
     /// `git_refdb_has_log`: the backend's answer (1, 0, or an error).
     pub fn has_log(self, name: &CStr) -> Result<bool> {
-        let f = self.slot(|b| b.has_log)?;
+        let (b, f) = self.slot(|b| b.has_log)?;
         // SAFETY: as in `init`.
-        Ok(ErrorCode::check(unsafe { f(self.backend(), c(name)) })? != 0)
+        Ok(ErrorCode::check(unsafe { f(b, c(name)) })? != 0)
     }
 
     /// `git_refdb_has_log` as C returns it.
     pub fn has_log_raw(self, name: &CStr) -> Result<c_int> {
-        let f = self.slot(|b| b.has_log)?;
+        let (b, f) = self.slot(|b| b.has_log)?;
         // SAFETY: as in `init`.
-        Ok(unsafe { f(self.backend(), c(name)) })
+        Ok(unsafe { f(b, c(name)) })
     }
 
     /// `git_refdb_ensure_log`.
     pub fn ensure_log(self, name: &CStr) -> Result<c_int> {
-        let f = self.slot(|b| b.ensure_log)?;
+        let (b, f) = self.slot(|b| b.ensure_log)?;
         // SAFETY: as in `init`.
-        Ok(unsafe { f(self.backend(), c(name)) })
+        Ok(unsafe { f(b, c(name)) })
     }
 
     /// `git_refdb_lock`.

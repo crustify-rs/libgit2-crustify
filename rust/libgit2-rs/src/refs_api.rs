@@ -924,7 +924,20 @@ pub trait RefdbBackend: Send + Sync + 'static {
 /// Install `backend` as the reference database backend of `repo`
 /// (`git_refdb_set_backend` on the repository's database); the previous
 /// backend is freed.
-pub fn set_refdb_backend<B: RefdbBackend>(repo: &Repository, backend: B) -> Result<()> {
+///
+/// It takes the repository exclusively: the old backend is freed at once
+/// (as in C, which keeps no count on a backend), so no other thread, and
+/// no [`Reference`] or iterator of the repository, may be using it.
+///
+/// ```compile_fail
+/// # use libgit2_rs::refs_api::*;
+/// # fn f<B: RefdbBackend>(mut repo: Repository, b: B) {
+/// let head = Reference::lookup(&repo, b"HEAD").unwrap();
+/// set_refdb_backend(&mut repo, b).unwrap(); // `repo` is borrowed by `head`
+/// drop(head);
+/// # }
+/// ```
+pub fn set_refdb_backend<B: RefdbBackend>(repo: &mut Repository, backend: B) -> Result<()> {
     let db = RefdbPtr::of_repo(repo.ptr()).map_err(Error::from)?;
     let table = CTable::<RefdbBackendTable, RustBackend<B>>::new(RustBackend(backend));
     let raw = table.into_c().as_ptr();
@@ -1449,5 +1462,146 @@ mod tests {
             assert_eq!(e, 0);
             (tb.free.unwrap())(b);
         }
+    }
+
+    /// Two threads in the slots of one table at once, as libgit2's
+    /// threads do (`tests/libgit2/threads/refdb.c`).
+    #[test]
+    fn rust_backend_two_threads() {
+        let _g = test_support::init();
+        let id = Oid::from_hex(
+            b"a65fedf39aefe402d3bb6e24df4d4f5fe4547750",
+            crate::OidType::Sha1,
+        )
+        .unwrap();
+        let t = CTable::<RefdbBackendTable, RustBackend<Mem>>::new(RustBackend(Mem::default()));
+        let b = t.into_c().as_ptr() as usize;
+        let n = if cfg!(miri) { 4 } else { 200 };
+        std::thread::scope(|s| {
+            for k in 0..2 {
+                s.spawn(move || {
+                    let b = b as *mut git_refdb_backend;
+                    let name = std::ffi::CString::new(format!("refs/heads/t{k}")).unwrap();
+                    for _ in 0..n {
+                        // SAFETY: a live table (freed after the scope), its
+                        // slots called as libgit2 calls them.
+                        unsafe {
+                            let tb = &*b;
+                            let r = RefBox::new_direct(name.to_bytes(), &id, None).unwrap();
+                            let w = (tb.write.unwrap())(
+                                b,
+                                r.as_ptr(),
+                                1,
+                                core::ptr::null(),
+                                core::ptr::null(),
+                                core::ptr::null(),
+                                core::ptr::null(),
+                            );
+                            assert_eq!(w, 0);
+                            let mut e = 0;
+                            assert_eq!((tb.exists.unwrap())(&raw mut e, b, name.as_ptr()), 0);
+                            assert_eq!(e, 1);
+                            let mut out = core::ptr::null_mut();
+                            assert_eq!((tb.lookup.unwrap())(&raw mut out, b, name.as_ptr()), 0);
+                            drop(RefBox::from_raw(out));
+                            let mut it: *mut git_reference_iterator = core::ptr::null_mut();
+                            assert_eq!(
+                                (tb.iterator.unwrap())(&raw mut it, b, core::ptr::null()),
+                                0
+                            );
+                            let mut nm = core::ptr::null();
+                            while ((*it).next_name.unwrap())(&raw mut nm, it) == 0 {
+                                assert!(!CStr::from_ptr(nm).to_bytes().is_empty());
+                            }
+                            ((*it).free.unwrap())(it);
+                            assert_eq!(
+                                (tb.del.unwrap())(
+                                    b,
+                                    name.as_ptr(),
+                                    core::ptr::null(),
+                                    core::ptr::null()
+                                ),
+                                0
+                            );
+                        }
+                    }
+                });
+            }
+        });
+        let b = b as *mut git_refdb_backend;
+        // SAFETY: the table, released once, no slot running.
+        unsafe { ((*b).free.unwrap())(b) };
+    }
+
+    /// A backend whose slot releases its own table (C freeing the backend
+    /// from inside a call): the release is deferred until the slot exits.
+    struct Reentrant {
+        table: std::sync::atomic::AtomicPtr<git_refdb_backend>,
+        dropped: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    }
+
+    impl Drop for Reentrant {
+        fn drop(&mut self) {
+            self.dropped
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    impl RefdbBackend for Reentrant {
+        fn exists(&self, _: &[u8]) -> Result<bool> {
+            let t = self.table.load(std::sync::atomic::Ordering::SeqCst);
+            // SAFETY: our own live table, released once (here).
+            unsafe { ((*t).free.unwrap())(t) };
+            // Still alive: the release waits for this slot to exit.
+            assert!(!self.dropped.load(std::sync::atomic::Ordering::SeqCst));
+            Ok(true)
+        }
+        fn lookup(&self, _: &[u8]) -> Result<Option<RefValue>> {
+            Ok(None)
+        }
+        fn list(&self) -> Result<Vec<(Vec<u8>, RefValue)>> {
+            Ok(Vec::new())
+        }
+        fn write(
+            &self,
+            _: &[u8],
+            _: &RefValue,
+            _: bool,
+            _: Option<&Oid>,
+            _: Option<&[u8]>,
+            _: Option<&[u8]>,
+        ) -> Result<()> {
+            Ok(())
+        }
+        fn rename(&self, _: &[u8], _: &[u8], _: bool) -> Result<RefValue> {
+            Ok(RefValue::Symbolic(b"x".to_vec()))
+        }
+        fn delete(&self, _: &[u8], _: Option<&Oid>, _: Option<&[u8]>) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn rust_backend_reentrant_free() {
+        let _g = test_support::init();
+        let dropped = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let st = Reentrant {
+            table: std::sync::atomic::AtomicPtr::new(core::ptr::null_mut()),
+            dropped: dropped.clone(),
+        };
+        let t = CTable::<RefdbBackendTable, RustBackend<Reentrant>>::new(RustBackend(st));
+        // Tell the state where its table is.
+        t.state()
+            .unwrap()
+            .0
+            .table
+            .store(t.as_c_ptr(), std::sync::atomic::Ordering::SeqCst);
+        let b = t.into_c().as_ptr();
+        let mut e = 0;
+        // SAFETY: the table's own slot; it releases the table inside.
+        let r = unsafe { ((*b).exists.unwrap())(&raw mut e, b, c"x".as_ptr()) };
+        assert_eq!(r, 0);
+        assert_eq!(e, 1);
+        assert!(dropped.load(std::sync::atomic::Ordering::SeqCst));
     }
 }

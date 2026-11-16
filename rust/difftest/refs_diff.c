@@ -88,6 +88,9 @@ static void names_one(const char *name, unsigned flags)
 	git_str_dispose(&buf);
 	git_error_clear();
 
+	/* With validation disabled C dereferences the NULL buffer (DEFECTS.md). */
+	if (flags & GIT_REFERENCE_FORMAT__VALIDATION_DISABLE)
+		return;
 	error = git_reference__name_is_valid(&valid, name, flags);
 	printf("  valid %d %d\n", error, valid);
 	git_error_clear();
@@ -111,9 +114,15 @@ static void names(void)
 	unsigned flags;
 	size_t i;
 
+	static const unsigned extra[] = { 0, GIT_REFERENCE_FORMAT__VALIDATION_DISABLE,
+		GIT_REFERENCE_FORMAT__PRECOMPOSE_UNICODE,
+		GIT_REFERENCE_FORMAT__VALIDATION_DISABLE | GIT_REFERENCE_FORMAT__PRECOMPOSE_UNICODE };
+	size_t x;
+
 	for (i = 0; corpus[i]; i++)
-		for (flags = 0; flags < 8; flags++)
-			names_one(corpus[i], flags);
+		for (x = 0; x < 4; x++)
+			for (flags = 0; flags < 8; flags++)
+				names_one(corpus[i], flags | extra[x]);
 
 	for (i = 0; i < 20000; i++) {
 		char name[24];
@@ -121,7 +130,7 @@ static void names(void)
 		for (j = 0; j < n; j++)
 			name[j] = alphabet[rnd() % (sizeof(alphabet) - 1)];
 		name[n] = '\0';
-		names_one(name, rnd() % 8);
+		names_one(name, (rnd() % 8) | extra[rnd() % 4]);
 	}
 }
 
@@ -406,6 +415,71 @@ static void foreach_stop(void)
 	git_repository_free(repo);
 }
 
+static void print_file(const char *what, const char *path)
+{
+	git_str c = GIT_STR_INIT;
+	int error = git_futils_readbuffer(&c, path);
+	printf("%s %d ", what, error);
+	if (!error)
+		pbytes(c.ptr, c.size);
+	putchar('\n');
+	git_str_dispose(&c);
+	git_error_clear();
+}
+
+/* Write paths on a copy of testrepo.git: packed-refs as written (with
+ * peels), and the error codes and messages of failing writes. */
+static void writes(void)
+{
+	git_repository *repo;
+	git_reference *ref = NULL;
+	git_oid master, other, missing;
+	git_str p = GIT_STR_INIT;
+	int error;
+
+	git_futils_rmdir_r("refs_diff_w.tmp", NULL, GIT_RMDIR_REMOVE_FILES);
+	if (git_futils_cp_r("tests/resources/testrepo.git", "refs_diff_w.tmp", GIT_CPDIR_CREATE_EMPTY_DIRS | GIT_CPDIR_COPY_DOTFILES, 0777) < 0 ||
+	    git_repository_open(&repo, "refs_diff_w.tmp") < 0) {
+		printf("writes: setup failed\n");
+		return;
+	}
+	git_oid_from_string(&master, C, GIT_OID_SHA1);
+	git_oid_from_string(&other, "a4a7dce85cf63874e984719f4fdd239f5145052f", GIT_OID_SHA1);
+	git_oid_from_string(&missing, A, GIT_OID_SHA1);
+
+#define TRY(what, call) do { error = (call); printf("%s", what); perr(error); git_reference_free(ref); ref = NULL; } while (0)
+	TRY("create existing", git_reference_create(&ref, repo, "refs/heads/master", &other, 0, NULL));
+	TRY("create collides", git_reference_create(&ref, repo, "refs/heads/packed/x", &other, 0, NULL));
+	TRY("create under file", git_reference_create(&ref, repo, "refs/heads/master/x", &other, 0, NULL));
+	TRY("create missing object", git_reference_create(&ref, repo, "refs/heads/nope", &missing, 0, NULL));
+	TRY("create invalid", git_reference_create(&ref, repo, "refs/heads/a..b", &other, 0, NULL));
+	TRY("matching mismatch", git_reference_create_matching(&ref, repo, "refs/heads/master", &other, 1, &other, NULL));
+	TRY("symbolic invalid target", git_reference_symbolic_create(&ref, repo, "refs/heads/sym", "refs/heads/a..b", 0, NULL));
+	git_str_sets(&p, "");
+	git_futils_writebuffer(&p, "refs_diff_w.tmp/refs/heads/locked.lock", 0, 0666);
+	TRY("create locked", git_reference_create(&ref, repo, "refs/heads/locked", &other, 0, NULL));
+	p_unlink("refs_diff_w.tmp/refs/heads/locked.lock");
+	TRY("remove HEAD-less missing", git_reference_remove(repo, "refs/heads/never"));
+	TRY("ensure_log", git_reference_ensure_log(repo, "refs/heads/br2"));
+	TRY("has_log", git_reference_has_log(repo, "refs/heads/br2"));
+
+	/* compress writes packed-refs with the peels of annotated tags */
+	TRY("compress", ({ git_refdb *db; int e2 = git_repository_refdb(&db, repo); if (!e2) { e2 = git_refdb_compress(db); git_refdb_free(db); } e2; }));
+	print_file("packed-refs", "refs_diff_w.tmp/packed-refs");
+
+	/* a packed entry whose object is missing: write paths fold to -1 */
+	git_str_sets(&p, A " refs/heads/missing\n" C " refs/heads/other\n");
+	git_futils_writebuffer(&p, "refs_diff_w.tmp/packed-refs", 0, 0666);
+	git_repository_free(repo);
+	git_repository_open(&repo, "refs_diff_w.tmp");
+	TRY("compress missing object", ({ git_refdb *db; int e2 = git_repository_refdb(&db, repo); if (!e2) { e2 = git_refdb_compress(db); git_refdb_free(db); } e2; }));
+	TRY("remove beside missing object", git_reference_remove(repo, "refs/heads/other"));
+#undef TRY
+	git_str_dispose(&p);
+	git_repository_free(repo);
+	git_futils_rmdir_r("refs_diff_w.tmp", NULL, GIT_RMDIR_REMOVE_FILES);
+}
+
 int main(void)
 {
 	git_repository *repo;
@@ -413,6 +487,7 @@ int main(void)
 	git_libgit2_init();
 	names();
 	foreach_stop();
+	writes();
 
 	git_futils_rmdir_r("refs_diff.tmp", NULL, GIT_RMDIR_REMOVE_FILES);
 	if (git_repository_init(&repo, "refs_diff.tmp", 0) < 0) {

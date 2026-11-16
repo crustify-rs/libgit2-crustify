@@ -294,12 +294,40 @@ fn alloc_ref(name: &[u8]) -> Option<NonNull<GitReference>> {
     Some(p)
 }
 
+/// Bytes without a NUL: a C string's contents, or bytes cut at their first
+/// NUL (as C reads them).
+#[derive(Clone, Copy, Debug)]
+pub struct NulFree<'a>(&'a [u8]);
+
+impl<'a> NulFree<'a> {
+    /// `s` up to its first NUL.
+    pub fn cut(s: &'a [u8]) -> NulFree<'a> {
+        NulFree(crate::util::fs_path::c_str(s))
+    }
+
+    /// A C string's bytes (which have no NUL).
+    pub fn of(s: &'a CStr) -> NulFree<'a> {
+        NulFree(s.to_bytes())
+    }
+
+    /// The bytes.
+    pub fn bytes(self) -> &'a [u8] {
+        self.0
+    }
+}
+
 impl RefBox {
     /// `git_reference__alloc(name, oid, peel)`: a direct reference with no
     /// database. Fails (NULL in C) only for lack of memory, with the error
     /// set.
     pub fn new_direct(name: &[u8], oid: &Oid, peel: Option<&Oid>) -> Result<RefBox> {
-        let name = crate::util::fs_path::c_str(name);
+        Self::new_direct_cstr(NulFree::cut(name), oid, peel)
+    }
+
+    /// [`new_direct`](Self::new_direct) of a name already without a NUL
+    /// (a C string's bytes), which is not scanned again.
+    pub fn new_direct_cstr(name: NulFree<'_>, oid: &Oid, peel: Option<&Oid>) -> Result<RefBox> {
+        let name = name.0;
         let ptr = alloc_ref(name).ok_or(ErrorCode::GENERIC)?;
         let r = ptr.as_ptr();
         let peel = match peel {
@@ -317,8 +345,13 @@ impl RefBox {
 
     /// `git_reference__alloc_symbolic(name, target)`.
     pub fn new_symbolic(name: &[u8], target: &[u8]) -> Result<RefBox> {
-        let name = crate::util::fs_path::c_str(name);
-        let target = crate::util::fs_path::c_str(target);
+        Self::new_symbolic_cstr(NulFree::cut(name), NulFree::cut(target))
+    }
+
+    /// [`new_symbolic`](Self::new_symbolic) of strings already without a
+    /// NUL, which are not scanned again.
+    pub fn new_symbolic_cstr(name: NulFree<'_>, target: NulFree<'_>) -> Result<RefBox> {
+        let (name, target) = (name.0, target.0);
         let ptr = alloc_ref(name).ok_or(ErrorCode::GENERIC)?;
         let t = alloc::substrdup(target);
         if t.is_null() {
@@ -409,7 +442,13 @@ impl RefBox {
             Some(t) if src.raw_kind() == GIT_REFERENCE_SYMBOLIC => {
                 RefBox::new_symbolic(src.name(), t)
             }
-            _ if src.raw_kind() == GIT_REFERENCE_SYMBOLIC => RefBox::new_symbolic(src.name(), b""),
+            _ if src.raw_kind() == GIT_REFERENCE_SYMBOLIC => {
+                // C: `git_reference__alloc_symbolic(name, NULL)` asserts
+                // `target`, then `GIT_ERROR_CHECK_ALLOC` sets the
+                // out-of-memory error.
+                let _ = errors::assert_arg_failed("target");
+                Err(ErrorCode::GENERIC)
+            }
             _ => RefBox::new_direct(src.name(), src.oid_field(), Some(src.peel())),
         }
         .map_err(|_| errors::oom())?;
@@ -551,7 +590,16 @@ fn is_valid_normalized_name(name: &[u8], len: usize) -> bool {
 /// invalid name is `GIT_EINVALIDSPEC` with C's message; on any error `buf`
 /// is disposed.
 pub fn normalize_name(buf: Option<&mut GitStr>, name: &[u8], flags: c_uint) -> Result<()> {
-    let name = crate::util::fs_path::c_str(name);
+    normalize_name_nul_free(buf, NulFree::cut(name), flags)
+}
+
+/// [`normalize_name`] of a name already without a NUL.
+pub fn normalize_name_nul_free(
+    buf: Option<&mut GitStr>,
+    name: NulFree<'_>,
+    flags: c_uint,
+) -> Result<()> {
+    let name = name.0;
     let mut buf = buf;
     let r = normalize_inner(buf.as_deref_mut(), name, flags);
     if r == Err(ErrorCode::INVALID_SPEC) {
@@ -1528,7 +1576,8 @@ pub mod ffi {
             let n = unsafe { cstr_bytes(name) };
             // SAFETY: strings.
             let t = unsafe { cstr_bytes(target) };
-            RefBox::new_symbolic(n, t).map_or(core::ptr::null_mut(), RefBox::into_raw)
+            RefBox::new_symbolic_cstr(NulFree(n), NulFree(t))
+                .map_or(core::ptr::null_mut(), RefBox::into_raw)
         })
     }
 
@@ -1552,7 +1601,8 @@ pub mod ffi {
             let o = unsafe { &*oid };
             // SAFETY: NULL or a valid oid.
             let pl = unsafe { peel.as_ref() };
-            RefBox::new_direct(n, o, pl).map_or(core::ptr::null_mut(), RefBox::into_raw)
+            RefBox::new_direct_cstr(NulFree(n), o, pl)
+                .map_or(core::ptr::null_mut(), RefBox::into_raw)
         })
     }
 
@@ -2438,7 +2488,7 @@ pub mod ffi {
             } else {
                 n
             };
-            status(normalize_name(b, n, flags))
+            status(normalize_name_nul_free(b, NulFree(n), flags))
         })
     }
 
@@ -2462,11 +2512,25 @@ pub mod ffi {
                 Ok(b) => b,
                 Err(e) => return e.raw(),
             };
+            // `git_str_copy_cstr`, written through the raw pointer: the
+            // caller's buffer may be uninitialized (a `git_refname_t` on
+            // the stack), so no `&mut [u8]` is made over it.
             crate::git_assert_arg!(!buffer_out.is_null(), "data", -1);
-            // SAFETY: writable for `buffer_size` bytes (the contract).
-            let out =
-                unsafe { core::slice::from_raw_parts_mut(buffer_out.cast::<u8>(), buffer_size) };
-            status(buf.copy_cstr(out))
+            crate::git_assert_arg!(buffer_size != 0, "datasize", -1);
+            let out = buffer_out.cast::<u8>();
+            // SAFETY: writable for `buffer_size` (> 0) bytes (the contract).
+            unsafe { out.write(0) };
+            if buf.is_empty() || buf.capacity() == 0 {
+                return 0;
+            }
+            let src = buf.as_bytes();
+            let n = src.len().min(buffer_size - 1);
+            // SAFETY: `n < buffer_size` bytes of the caller's buffer, which
+            // cannot overlap our fresh `buf`.
+            unsafe { core::ptr::copy_nonoverlapping(src.as_ptr(), out, n) };
+            // SAFETY: `n < buffer_size`.
+            unsafe { out.wrapping_add(n).write(0) };
+            0
         })
     }
 

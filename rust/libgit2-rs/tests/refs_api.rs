@@ -430,13 +430,13 @@ impl RefdbBackend for MemBackend {
 fn rust_backend() {
     let _g = test_support::init();
     let sb = Sandbox::new("testrepo.git", "backend");
-    let repo = Repository::open(&sb.0).unwrap();
+    let mut repo = Repository::open(&sb.0).unwrap();
     let mem = MemBackend::default();
     mem.refs.lock().unwrap().insert(
         b"HEAD".to_vec(),
         RefValue::Symbolic(b"refs/heads/main".to_vec()),
     );
-    set_refdb_backend(&repo, mem).unwrap();
+    set_refdb_backend(&mut repo, mem).unwrap();
 
     // HEAD is dangling until main exists.
     assert_eq!(
@@ -529,8 +529,8 @@ impl RefdbBackend for Panicky {
 fn panicking_backend() {
     let _g = test_support::init();
     let sb = Sandbox::new("testrepo.git", "panic");
-    let repo = Repository::open(&sb.0).unwrap();
-    set_refdb_backend(&repo, Panicky).unwrap();
+    let mut repo = Repository::open(&sb.0).unwrap();
+    set_refdb_backend(&mut repo, Panicky).unwrap();
     let e = Reference::lookup(&repo, b"refs/heads/x").unwrap_err();
     assert_eq!(e.class(), ErrorClass::INTERNAL);
     assert_eq!(refs_api::list(&repo).unwrap().len(), 0);

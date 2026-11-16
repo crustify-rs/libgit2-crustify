@@ -461,7 +461,12 @@ DIVERGENCES.md).
   from `packed_map_check` (under `prlock`), while lookups read them under
   neither: a data race.
 - Rust: both are atomics (relaxed): each read sees one of the values a
-  writer stored.
+  writer stored. Beyond the data race, C's trait and the mapping it
+  describes can come from different files (a reload of a sorted file
+  racing a lookup that mapped an unsorted one, whose binary search then
+  misses a reference): the sorted lookup uses the `sorted` trait of the
+  header of the very mapping it searches, and the shared value only when
+  that file has no header (as C keeps the previous one).
 
 ### refdb_fs: an out-of-memory glob makes the iterator "succeed" without one
 - C: `refdb_fs_backend__iterator` sets `error = GIT_ERROR_NOMEMORY` (the
@@ -529,3 +534,17 @@ DIVERGENCES.md).
   freed memory.
 - Rust: the name is copied before the reallocation; the result is the
   intended rename.
+
+### refs: `git_reference__normalize_name` with a name inside the output buffer
+- C: `git_str_clear(buf)` writes a NUL at `buf->ptr[0]` before the name is
+  read, so a name that points at the buffer's contents is read as `""`
+  (`GIT_EINVALIDSPEC`, "the given reference name '' is not valid"; `""`
+  with validation disabled); a name further into the buffer is overwritten
+  while it is read. No C caller in the tree passes such a name.
+- Rust: the name is copied first; the result is the name's normalization.
+
+### refs: `git_reference_dup` of a symbolic reference without a target
+- C: `git_reference__alloc_symbolic(name, NULL)` fails its `target`
+  assertion and `git_reference_dup` returns -1 (out of memory).
+- Rust: the same (-1, with the assertion's and then the out-of-memory
+  message). (Only a corrupt or hand-made reference has no target.)
