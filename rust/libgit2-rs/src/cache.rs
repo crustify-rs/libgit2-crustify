@@ -701,7 +701,7 @@ mod tests {
 
     #[test]
     fn store_and_get() {
-        let _g = crate::util::test_support::init();
+        let _g = crate::util::test_support::exclusive(); // the global storage counter is shared by every test
         let mut cache = GitCache::new();
         let before = current_storage();
         let mut held = Vec::new();
