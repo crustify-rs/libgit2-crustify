@@ -12,6 +12,7 @@
 
 use core::ffi::{CStr, c_char, c_int, c_uint};
 use core::marker::PhantomData;
+use core::ptr::NonNull;
 use std::ffi::CString;
 use std::path::Path;
 
@@ -397,6 +398,25 @@ impl Index {
             ptr,
             _not_send: PhantomData,
         }
+    }
+
+    /// A new reference to `raw` (`GIT_REFCOUNT_INC`; crate-internal: the
+    /// repository's `git_repository_index`).
+    ///
+    /// # Safety
+    ///
+    /// `raw` is a live index of this module, used by one thread at a time
+    /// while the handle lives (`IndexPtr::new`'s contract).
+    pub(crate) unsafe fn new_ref(raw: NonNull<GitIndex>) -> Index {
+        // SAFETY: the caller's contract.
+        let ptr = unsafe { IndexPtr::new(raw) };
+        ptr.incref();
+        Index::from_ptr(ptr)
+    }
+
+    /// The `git_index *` (the reference stays with this handle).
+    pub(crate) fn as_raw(&self) -> NonNull<GitIndex> {
+        self.ptr.as_nonnull()
     }
 
     /// The index, borrowed for code that makes no foreign call.

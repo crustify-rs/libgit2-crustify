@@ -1,8 +1,9 @@
 //! The index's calls into code that is not this module's: the C that stays
 //! C (`path.c`, `diff*.c`, `pathspec.c`, `ignore.c`, `submodule.c`, in
 //! `crate::sys`) and the modules other work packages are porting
-//! (`repository.c`, `refs.c`, `blob.c`, `object.c`, `object_api.c`,
-//! `tree.c`: `crate::sys::pending::l_index`, PENDING). Each wrapper is safe
+//! (`refs.c`, `blob.c`, `object.c`, `object_api.c`, `tree.c`:
+//! `crate::sys::pending::l_index`, PENDING), and the repository's Rust
+//! (`crate::repository`). Each wrapper is safe
 //! to call: its arguments are types whose constructors establish what the
 //! C needs, and its `SAFETY` comment says why the call's contract holds.
 //!
@@ -16,6 +17,7 @@ use core::ptr::{self, NonNull};
 
 use crate::git_error_set;
 use crate::oid::Oid;
+use crate::repository::GitRepository;
 use crate::strarray::GitStrArray;
 use crate::sys::diff as d;
 use crate::sys::pending::l_index as p;
@@ -27,7 +29,7 @@ use crate::util::str::GitStr;
 /// A repository: an index's owner (`GIT_REFCOUNT_OWNER`), which outlives
 /// the index, or one C passed in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Repo(NonNull<c_void>);
+pub struct Repo(NonNull<GitRepository>);
 
 impl Repo {
     /// A handle on `p`, or `None` for NULL.
@@ -37,12 +39,20 @@ impl Repo {
     /// A non-null `p` is a live `git_repository` for as long as the handle
     /// (or a copy) is used.
     pub unsafe fn new(p: *mut c_void) -> Option<Repo> {
-        NonNull::new(p).map(Repo)
+        NonNull::new(p.cast()).map(Repo)
     }
 
     /// The raw pointer.
     pub fn as_ptr(self) -> *mut c_void {
-        self.0.as_ptr()
+        self.0.as_ptr().cast()
+    }
+
+    /// The repository.
+    pub fn get(&self) -> &GitRepository {
+        // SAFETY: live while the handle is used (`new`'s contract); a
+        // `GitRepository` is `Sync` (every field atomic or locked), so a
+        // shared reference is sound while C uses it too.
+        unsafe { self.0.as_ref() }
     }
 }
 
@@ -68,7 +78,7 @@ pub fn path_is_valid(repo: Option<Repo>, path: &[u8], file_mode: u16, flags: c_u
 }
 
 // ---------------------------------------------------------------------------
-// repository.c (PENDING(l-repo)), refs.c (PENDING(l-refs))
+// repository.c (`crate::repository`), refs.c (PENDING(l-refs))
 // ---------------------------------------------------------------------------
 
 /// `GIT_CONFIGMAP_SYMLINKS`.
@@ -80,22 +90,17 @@ pub const CONFIGMAP_FILEMODE: c_int = 4;
 
 /// `git_repository__configmap_lookup`.
 pub fn configmap_lookup(repo: Repo, item: c_int) -> Result<c_int> {
-    let mut v = 0;
-    // SAFETY: `repo` is live; `v` is a writable int.
-    let r = unsafe { p::git_repository__configmap_lookup(&raw mut v, repo.as_ptr(), item) };
-    ErrorCode::check(r).map(|_| v)
+    repo.get().configmap_lookup(item)
 }
 
 /// Whether `git_repository_workdir` is not NULL.
 pub fn has_workdir(repo: Repo) -> bool {
-    // SAFETY: `repo` is live.
-    !unsafe { p::git_repository_workdir(repo.as_ptr()) }.is_null()
+    repo.get().workdir().is_some()
 }
 
 /// `git_repository__ensure_not_bare`.
 pub fn ensure_not_bare(repo: Repo, operation_name: &str) -> Result<()> {
-    // SAFETY: `repo` is live.
-    if unsafe { p::git_repository_is_bare(repo.as_ptr()) } == 0 {
+    if !repo.get().is_bare() {
         return Ok(());
     }
     let _ = git_error_set!(
@@ -108,48 +113,24 @@ pub fn ensure_not_bare(repo: Repo, operation_name: &str) -> Result<()> {
 /// `git_repository_workdir_path`.
 pub fn workdir_path(repo: Repo, rel: &CStr) -> Result<GitStr> {
     let mut out = GitStr::new();
-    // SAFETY: `out` is a valid `git_str`, `rel` a string, `repo` live.
-    let r = unsafe { p::git_repository_workdir_path(&raw mut out, repo.as_ptr(), rel.as_ptr()) };
-    ErrorCode::check(r).map(|_| out)
+    repo.get().workdir_path(&mut out, rel.to_bytes())?;
+    Ok(out)
 }
 
 /// The id of `HEAD` of the repository at `path` (`add_repo_as_submodule`:
-/// open, `git_repository_head`, `git_reference_target`).
+/// open, `git_repository_head`, `git_reference_target`). The repository
+/// is freed also on failure (C leaks it then).
 pub fn head_target_of(path: &CStr) -> Result<Oid> {
-    let mut sub = ptr::null_mut();
-    // SAFETY: `sub` is writable, `path` a string.
-    ErrorCode::check(unsafe { p::git_repository_open(&raw mut sub, path.as_ptr()) })?;
-    let mut head = ptr::null_mut();
-    // SAFETY: `sub` is the repository just opened; `head` writable.
-    let r = unsafe { p::git_repository_head(&raw mut head, sub) };
-    if r < 0 {
-        // SAFETY: ours (C leaked it here).
-        unsafe { p::git_repository_free(sub) };
-        return Err(ErrorCode::from_raw(r).unwrap_or(ErrorCode::GENERIC));
-    }
-    // SAFETY: `head` is a live reference; its target (NULL for a symbolic
-    // one) is read before it is freed.
-    let target = unsafe { p::git_reference_target(head) };
-    let id = if target.is_null() {
-        Oid::default()
-    } else {
-        // SAFETY: as above.
-        unsafe { *target }
-    };
-    // SAFETY: ours, freed once.
-    unsafe { p::git_reference_free(head) };
-    // SAFETY: as above.
-    unsafe { p::git_repository_free(sub) };
-    Ok(id)
+    let sub = crate::repository::open_owned(path)?;
+    let head = sub.raw().head_ref()?;
+    // `git_reference_target`: NULL (all zeros here) for a symbolic one.
+    Ok(head.target().copied().unwrap_or_default())
 }
 
 /// `git_repository_index__weakptr`: the repository's index (no reference
 /// taken).
 pub fn repository_index(repo: Repo) -> Result<NonNull<super::GitIndex>> {
-    let mut out = ptr::null_mut();
-    // SAFETY: `out` writable, `repo` live.
-    ErrorCode::check(unsafe { p::git_repository_index__weakptr(&raw mut out, repo.as_ptr()) })?;
-    NonNull::new(out.cast()).ok_or(ErrorCode::GENERIC)
+    repo.get().index_weak()
 }
 
 // ---------------------------------------------------------------------------

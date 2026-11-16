@@ -4,24 +4,14 @@
 //! integration step replaces them with calls of the Rust ports.
 //!
 //! The types are those of the C headers: opaque objects are `c_void`, the
-//! public structs the repository builds (`git_index_options`,
-//! `git_object_id_options`) are mirrored here.
+//! public struct the repository builds (`git_object_id_options`) is
+//! mirrored here.
 //! The safe wrappers live there too, on the owner and handle types.
 
 use core::ffi::{c_char, c_int, c_uint, c_void};
 use core::sync::atomic::{AtomicBool, AtomicUsize};
 
 use crate::oid::{Oid, git_oid_t};
-
-/// `git_index_options`.
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct OidTypeOptions {
-    /// The version (1).
-    pub version: c_uint,
-    /// The object id type, or 0 for the default.
-    pub oid_type: git_oid_t,
-}
 
 /// `git_object_id_options` (`include/git2/object.h`).
 #[repr(C)]
@@ -108,20 +98,6 @@ unsafe extern "C" {
 
     /// `git_reference__enable_symbolic_ref_target_validation` (`bool`).
     pub static git_reference__enable_symbolic_ref_target_validation: AtomicBool;
-}
-
-// PENDING(l-index): index.c.
-unsafe extern "C" {
-    pub fn git_index_open_ext(
-        out: *mut *mut c_void,
-        path: *const c_char,
-        opts: *const OidTypeOptions,
-    ) -> c_int;
-    pub fn git_index_free(index: *mut c_void);
-    pub fn git_index_set_caps(index: *mut c_void, caps: c_int) -> c_int;
-
-    /// `git_index__enforce_unsaved_safety` (`bool`).
-    pub static git_index__enforce_unsaved_safety: AtomicBool;
 }
 
 // PENDING(l-obj): grafts.c, object.c.

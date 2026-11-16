@@ -1,10 +1,10 @@
 //! Owners of, and borrowed handles to, the objects of the modules that
-//! other L-wave work packages port concurrently (refdb, index,
-//! references, objects), as the repository uses them. (The odb and the
-//! config are `crate::odb`'s and `crate::config`'s own types.)
+//! other L-wave work packages port concurrently (refdb, references,
+//! objects), as the repository uses them. (The odb, config and index are
+//! `crate::odb`'s, `crate::config`'s and `crate::index`'s own types.)
 //!
-//! PENDING(l-refs, l-index, l-obj, l-commit): each type
-//! here stands for that work package's own Rust type (`Refdb`, `Index`,
+//! PENDING(l-refs, l-obj, l-commit): each type
+//! here stands for that work package's own Rust type (`Refdb`,
 //! `Reference`, `Object`) until the integration step,
 //! which replaces it; they reach the C through `sys::pending::l_repo`. They
 //! are thin: a non-null pointer, a `Drop` that calls the C free, and the
@@ -17,7 +17,7 @@
 use core::ffi::{CStr, c_char, c_int, c_void};
 use core::ptr::{self, NonNull};
 
-use crate::oid::{Oid, OidType};
+use crate::oid::Oid;
 use crate::sys::pending::l_repo as c;
 use crate::util::errors::{ErrorCode, Result};
 use crate::util::thread::GitRefcount;
@@ -173,43 +173,6 @@ impl Refdb {
             c::git_refdb_init(self.as_ptr(), opt_ptr(head), mode as libc::mode_t, flags)
         })
         .map(drop)
-    }
-}
-
-owner!(
-    /// An owned reference to a `git_index` (`git_index_free` on drop).
-    /// PENDING(l-index): `crate::index::Index`.
-    Index,
-    c::git_index_free
-);
-
-// SAFETY: refcounted with atomics, freed from any thread; one owner uses
-// it at a time (it is not `Sync`).
-unsafe impl Send for Index {}
-
-impl Index {
-    /// `git_index_open_ext`.
-    pub(crate) fn open(path: &CStr, oid_type: OidType) -> Result<Index> {
-        let opts = c::OidTypeOptions {
-            version: 1,
-            oid_type: oid_type.raw(),
-        };
-        // SAFETY: a NUL-terminated path, valid options, a local out.
-        make(
-            |out| unsafe { c::git_index_open_ext(out, path.as_ptr(), &raw const opts) },
-            Index::from_raw,
-        )
-    }
-
-    /// Another reference to `p`.
-    ///
-    /// # Safety
-    ///
-    /// `p` is a live `git_index`.
-    pub(crate) unsafe fn new_ref(p: NonNull<c_void>) -> Index {
-        // SAFETY: the caller's contract.
-        unsafe { refcount(p) }.inc();
-        Index(p)
     }
 }
 

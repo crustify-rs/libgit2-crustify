@@ -42,6 +42,7 @@ use core::sync::atomic::{AtomicI32, AtomicIsize, AtomicPtr, AtomicU32, Ordering}
 use crate::cache::GitCache;
 use crate::config::{Config, GitConfig};
 use crate::git_error_set;
+use crate::index::{GIT_INDEX_CAPABILITY_FROM_OWNER, GitIndex, IndexPtr};
 use crate::odb::{GitOdb, Odb};
 use crate::oid::{GIT_OID_SHA1, OidType, git_oid_t};
 use crate::sys::pending::l_repo as c;
@@ -60,7 +61,7 @@ mod open;
 mod tests;
 
 pub use api::{Repository, RepositoryInitOptions, RepositoryOpenFlags, RepositoryState};
-pub use handles::{Index, Refdb, Reference};
+pub use handles::{Refdb, Reference};
 
 use handles::check;
 
@@ -133,9 +134,6 @@ pub use crate::config::{
     GIT_CONFIG_LEVEL_WORKTREE, GIT_CONFIG_LEVEL_XDG,
 };
 
-/// `GIT_INDEX_CAPABILITY_FROM_OWNER`.
-const GIT_INDEX_CAPABILITY_FROM_OWNER: c_int = -1;
-
 /// Bit of `use_env` in the bitfield.
 const BIT_USE_ENV: u32 = 1 << 0;
 /// Bit of `is_bare`.
@@ -159,7 +157,7 @@ pub struct GitRepository {
     odb: AtomicPtr<GitOdb>,
     refdb: AtomicPtr<c_void>,
     config: AtomicPtr<GitConfig>,
-    index: AtomicPtr<c_void>,
+    index: AtomicPtr<GitIndex>,
     /// `git_cache objects`: `Sync` (its map is behind its rwlock).
     objects: GitCache,
     attrcache: AtomicPtr<c_void>,
@@ -521,10 +519,13 @@ impl GitRepository {
         self.configmap_cache_clear();
     }
     /// `set_index`.
-    pub(crate) fn set_index(&self, index: Option<NonNull<c_void>>) {
+    pub(crate) fn set_index(&self, index: Option<NonNull<GitIndex>>) {
         self.set_owned(&self.index, index, |p| {
-            // SAFETY: the reference the repository held.
-            unsafe { c::git_index_free(p.as_ptr()) }
+            // SAFETY: the reference the repository held: a live index of
+            // the index module.
+            let ix = unsafe { IndexPtr::new(p) };
+            // SAFETY: that reference, given up.
+            unsafe { ix.decref() }
         });
     }
 
@@ -673,25 +674,29 @@ impl GitRepository {
     }
 
     /// `git_repository_index__weakptr`.
-    pub fn index_weak(&self) -> Result<NonNull<c_void>> {
+    pub fn index_weak(&self) -> Result<NonNull<GitIndex>> {
         let mut p = load(&self.index);
         let mut error = Ok(());
         if p.is_null() {
             let mut path = GitStr::new();
             open::repository_index_path(&mut path, self)?;
-            let index = Index::open(
-                &crate::util::fs_path::str_cpath(&path),
+            let index = crate::index::ops::open_ext(
+                Some(&crate::util::fs_path::str_cpath(&path)),
                 self.oid_type_raw_or_default(),
             )?;
-            p = self
-                .publish(&self.index, index.into_nonnull(), |p| {
-                    // SAFETY: the loser's reference, released once.
-                    unsafe { c::git_index_free(p.as_ptr()) }
-                })
-                .as_ptr();
-            // SAFETY: the published index.
-            error = check(unsafe { c::git_index_set_caps(p, GIT_INDEX_CAPABILITY_FROM_OWNER) })
-                .map(drop);
+            let index = index.as_nonnull();
+            let published = self.publish(&self.index, index, |p| {
+                // SAFETY: the loser: a live index of the index module.
+                let ix = unsafe { IndexPtr::new(p) };
+                // SAFETY: its one reference, released once.
+                unsafe { ix.decref() }
+            });
+            p = published.as_ptr();
+            // SAFETY: the published index, live while the repository holds
+            // it; C calls `git_index_set_caps` on it the same way (also
+            // when another thread published it).
+            let ix = unsafe { IndexPtr::new(published) };
+            error = crate::index::ops::set_caps(ix, GIT_INDEX_CAPABILITY_FROM_OWNER);
         }
         error?;
         NonNull::new(p).ok_or(ErrorCode::GENERIC)
@@ -708,8 +713,18 @@ impl GitRepository {
     pub(crate) fn config_ptr(&self) -> *mut GitConfig {
         load(&self.config)
     }
-    pub(crate) fn index_ptr(&self) -> *mut c_void {
+    pub(crate) fn index_ptr(&self) -> *mut GitIndex {
         load(&self.index)
+    }
+
+    /// `git_repository_head`, for the crate's modules.
+    pub(crate) fn head_ref(&self) -> Result<Reference> {
+        head::head(self)
+    }
+
+    /// `git_repository_workdir_path`, for the crate's modules.
+    pub(crate) fn workdir_path(&self, out: &mut GitStr, path: &[u8]) -> Result<()> {
+        head::workdir_path(out, self, path)
     }
 
     /// `repo->grafts`.
@@ -763,6 +778,12 @@ impl GitRepository {
         unsafe { alloc::free(old_e.cast()) };
         Ok(())
     }
+}
+
+/// `git_repository_open(path)`, owned.
+pub(crate) fn open_owned(path: &CStr) -> Result<Repository> {
+    let r = open::open_ext(Some(path), GIT_REPOSITORY_OPEN_NO_SEARCH, None, true)?;
+    r.map(Repository::from_nonnull).ok_or(ErrorCode::GENERIC)
 }
 
 /// `git_odb_new_ext` for `oid_type`, with the C's errors.
@@ -1049,7 +1070,6 @@ crate::c_layout_test! {
             submodule_cache
         },
         StaticStr => "git_str" { ptr, asize, size },
-        c::OidTypeOptions => "git_index_options" { version, oid_type },
         c::ObjectIdOptions => "git_object_id_options" { version, object_type, oid_type, filters },
     ],
     asserts: [
@@ -1062,7 +1082,6 @@ crate::c_layout_test! {
         "GIT_CONFIGMAP_ABBREV == 7",
         "GIT_CONFIGMAP_FSYNCOBJECTFILES == 13",
         "GIT_ABBREV_FALSE == 64",
-        "sizeof(git_index_options) == 8 && offsetof(git_index_options, oid_type) == 4",
         "offsetof(git_repository, reserved_names.ptr) == 208",
         "offsetof(git_repository, reserved_names.size) == 216",
         "offsetof(git_repository, reserved_names.asize) == 224",

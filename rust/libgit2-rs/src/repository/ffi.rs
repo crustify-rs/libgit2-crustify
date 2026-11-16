@@ -20,6 +20,7 @@ use super::init::{InitOptions, InitOut};
 use super::*;
 use crate::buf::GitBuf;
 use crate::config::{Config, GitConfig};
+use crate::index::GitIndex;
 use crate::odb::{GitOdb, Odb};
 use crate::oid::Oid;
 use crate::oidarray::GitOidArray;
@@ -680,7 +681,7 @@ pub unsafe extern "C" fn git_repository_set_refdb(
 /// The module's contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_index__weakptr(
-    out: *mut *mut c_void,
+    out: *mut *mut GitIndex,
     repo_: *mut GitRepository,
 ) -> c_int {
     // The fast path: already created. Loads and a store only (nothing
@@ -716,7 +717,7 @@ pub unsafe extern "C" fn git_repository_index__weakptr(
 /// The module's contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_index(
-    out: *mut *mut c_void,
+    out: *mut *mut GitIndex,
     repo_: *mut GitRepository,
 ) -> c_int {
     barrier(|| {
@@ -729,8 +730,9 @@ pub unsafe extern "C" fn git_repository_index(
             let Some(p) = NonNull::new(unsafe { *out }) else {
                 return -1;
             };
-            // SAFETY: the weak pointer: a live object.
-            unsafe { handles::refcount(p) }.inc();
+            // SAFETY: the weak pointer: a live index; the reference goes
+            // to the caller.
+            unsafe { crate::index::IndexPtr::new(p) }.incref();
         }
         0
     })
@@ -744,7 +746,7 @@ pub unsafe extern "C" fn git_repository_index(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_set_index(
     repo_: *mut GitRepository,
-    index: *mut c_void,
+    index: *mut GitIndex,
 ) -> c_int {
     barrier(|| {
         // SAFETY: the module's contract.

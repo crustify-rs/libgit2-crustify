@@ -19,11 +19,12 @@ use std::ffi::{CString, OsStr};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
-use super::handles::{Index, Refdb, Reference};
+use super::handles::{Refdb, Reference};
 use super::head::{self, state};
 use super::init::{InitOptions, InitOut};
 use super::*;
 use crate::config::Config;
+use crate::index::Index;
 use crate::odb::Odb;
 use crate::oid::{Oid, OidType};
 use crate::util::errors::{Error, ErrorCode};
@@ -353,11 +354,11 @@ impl core::fmt::Debug for Repository {
 }
 
 impl Repository {
-    fn from_nonnull(p: NonNull<GitRepository>) -> Repository {
+    pub(crate) fn from_nonnull(p: NonNull<GitRepository>) -> Repository {
         Repository(p)
     }
 
-    fn raw(&self) -> &GitRepository {
+    pub(crate) fn raw(&self) -> &GitRepository {
         // SAFETY: the repository this owner holds, live until drop.
         unsafe { self.0.as_ref() }
     }
@@ -612,7 +613,7 @@ impl Repository {
 
     /// `git_repository_set_index` (`None` drops the index).
     pub fn set_index(&self, index: Option<&Index>) {
-        self.raw().set_index(index.map(Index::as_nonnull));
+        self.raw().set_index(index.map(Index::as_raw));
     }
 
     /// `git_repository_set_workdir`.

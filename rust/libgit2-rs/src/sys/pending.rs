@@ -106,14 +106,13 @@ pub fn repository_head_symbolic_target(
     Ok(result)
 }
 
-// PENDING(l-repo), PENDING(l-refs), PENDING(l-obj), PENDING(l-commit): what
-// the index (WP l-index) calls of `repository.c`, `refs.c`, `blob.c`,
-// `object.c` and `tree.c`. Safe wrappers: `crate::index::foreign`.
+// PENDING(l-refs), PENDING(l-obj), PENDING(l-commit): what the index (WP
+// l-index) calls of `refs.c`, `blob.c`, `object.c` and `tree.c`. Safe
+// wrappers: `crate::index::foreign`.
 pub mod l_index {
     use core::ffi::{c_char, c_int, c_uint, c_void};
 
     use crate::oid::Oid;
-    use crate::util::str::GitStr;
 
     /// `git_treewalk_cb`.
     pub type TreewalkCb = unsafe extern "C" fn(
@@ -123,31 +122,6 @@ pub mod l_index {
     ) -> c_int;
 
     unsafe extern "C" {
-        /// `git_repository__configmap_lookup`. PENDING(l-repo)
-        pub fn git_repository__configmap_lookup(
-            out: *mut c_int,
-            repo: *mut c_void,
-            item: c_int,
-        ) -> c_int;
-        /// `git_repository_workdir`. PENDING(l-repo)
-        pub fn git_repository_workdir(repo: *const c_void) -> *const c_char;
-        /// `git_repository_is_bare`. PENDING(l-repo)
-        pub fn git_repository_is_bare(repo: *const c_void) -> c_int;
-        /// `git_repository_workdir_path`. PENDING(l-repo)
-        pub fn git_repository_workdir_path(
-            out: *mut GitStr,
-            repo: *mut c_void,
-            path: *const c_char,
-        ) -> c_int;
-        /// `git_repository_open`. PENDING(l-repo)
-        pub fn git_repository_open(out: *mut *mut c_void, path: *const c_char) -> c_int;
-        /// `git_repository_head`. PENDING(l-repo)
-        pub fn git_repository_head(out: *mut *mut c_void, repo: *mut c_void) -> c_int;
-        /// `git_repository_free`. PENDING(l-repo)
-        pub fn git_repository_free(repo: *mut c_void);
-        /// `git_repository_index__weakptr`. PENDING(l-repo)
-        pub fn git_repository_index__weakptr(out: *mut *mut c_void, repo: *mut c_void) -> c_int;
-
         /// `git_reference_target`. PENDING(l-refs)
         pub fn git_reference_target(r: *const c_void) -> *const Oid;
         /// `git_reference_free`. PENDING(l-refs)

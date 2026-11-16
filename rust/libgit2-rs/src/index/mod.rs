@@ -1796,6 +1796,12 @@ impl IndexPtr {
         self.0.as_ptr()
     }
 
+    /// The raw pointer, non-null.
+    #[inline]
+    pub fn as_nonnull(self) -> NonNull<GitIndex> {
+        self.0
+    }
+
     /// Exclusive access to the index.
     ///
     /// # Safety

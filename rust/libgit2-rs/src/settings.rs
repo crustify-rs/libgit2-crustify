@@ -204,9 +204,9 @@ unsafe fn buf_out(out: *mut GitBuf, f: impl FnOnce(&mut GitStr) -> Result<()>) -
 mod globals {
     pub(super) use crate::sys::indexer::*;
     pub(super) use crate::sys::pending::l_repo::{
-        git_disable_pack_keep_file_checks, git_index__enforce_unsaved_safety,
-        git_mwindow__file_limit, git_mwindow__mapped_limit, git_mwindow__window_size,
-        git_object__strict_input_validation, git_reference__enable_symbolic_ref_target_validation,
+        git_disable_pack_keep_file_checks, git_mwindow__file_limit, git_mwindow__mapped_limit,
+        git_mwindow__window_size, git_object__strict_input_validation,
+        git_reference__enable_symbolic_ref_target_validation,
     };
     pub(super) use crate::sys::streams::{
         git_socket_stream__connect_timeout, git_socket_stream__timeout,
@@ -345,7 +345,7 @@ pub unsafe fn opts(key: c_int, args: &OptArgs) -> Result<()> {
                 })?;
             }
             ENABLE_UNSAVED_INDEX_SAFETY => {
-                g!(git_index__enforce_unsaved_safety).store(a.0.i != 0, r)
+                crate::index::git_index__enforce_unsaved_safety.store(a.0.i != 0, r)
             }
             SET_PACK_MAX_OBJECTS => g!(git_indexer__max_objects).store(a.0.sz, r),
             GET_PACK_MAX_OBJECTS => a.put1(g!(git_indexer__max_objects).load(r))?,

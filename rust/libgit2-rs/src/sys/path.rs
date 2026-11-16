@@ -57,12 +57,15 @@ pub fn validate_str_length(
     path: &crate::util::str::GitStr,
 ) -> crate::util::errors::Result<()> {
     use crate::util::errors::{Bytes, ErrorClass};
-    let r = repo.map_or(core::ptr::null_mut(), crate::repository::GitRepository::as_ptr);
+    let r = repo.map_or(
+        core::ptr::null_mut(),
+        crate::repository::GitRepository::as_ptr,
+    );
     // A `GitStr` is a `git_str` too (both layout-tested): C only reads it.
     let s = core::ptr::from_ref(path).cast::<ConstStr>();
+    let flags = crate::util::fs_path::GIT_FS_PATH_REJECT_LONG_PATHS;
     // SAFETY: NULL or a live repository, and a valid `git_str` that C
     // only reads.
-    let flags = crate::util::fs_path::GIT_FS_PATH_REJECT_LONG_PATHS;
     if unsafe { git_path_str_is_valid(r, s, 0, flags) } {
         return Ok(());
     }
