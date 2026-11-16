@@ -484,14 +484,11 @@ impl GitStr {
         if !self.owned() || self.size >= self.asize {
             return &mut [];
         }
+        let spare = self.ptr.cast::<MaybeUninit<u8>>().wrapping_add(self.size);
         // SAFETY: an owned buffer has `asize` bytes, of which the string
-        // uses `size`; the rest is ours to write through `&mut self`.
-        unsafe {
-            core::slice::from_raw_parts_mut(
-                self.ptr.cast::<MaybeUninit<u8>>().add(self.size),
-                self.asize - self.size,
-            )
-        }
+        // uses `size`; the rest (at `spare`) is ours to write through
+        // `&mut self`.
+        unsafe { core::slice::from_raw_parts_mut(spare, self.asize - self.size) }
     }
 
     /// Set the length to `len`, after writing the bytes up to it through

@@ -109,7 +109,7 @@ impl Clock for SystemClock {
     fn gmtime(&self, t: i64, tm: &mut Tm) -> bool {
         let mut c = tm.to_libc();
         // SAFETY: both pointers are to locals; `gmtime_r` is reentrant.
-        let ok = !unsafe { libc::gmtime_r(&t, &mut c) }.is_null();
+        let ok = !unsafe { libc::gmtime_r(&raw const t, &raw mut c) }.is_null();
         tm.set_from_libc(&c);
         ok
     }
@@ -118,7 +118,7 @@ impl Clock for SystemClock {
         let mut c = tm.to_libc();
         // SAFETY: as `gmtime_r`; `localtime_r` reads the time zone, which
         // the C library guards.
-        let ok = !unsafe { libc::localtime_r(&t, &mut c) }.is_null();
+        let ok = !unsafe { libc::localtime_r(&raw const t, &raw mut c) }.is_null();
         tm.set_from_libc(&c);
         ok
     }
@@ -127,7 +127,7 @@ impl Clock for SystemClock {
         let mut c = tm.to_libc();
         // SAFETY: a pointer to a local; `mktime` reads the time zone, which
         // the C library guards.
-        let t = unsafe { libc::mktime(&mut c) };
+        let t = unsafe { libc::mktime(&raw mut c) };
         tm.set_from_libc(&c);
         t
     }
@@ -197,7 +197,8 @@ impl Clock for UtcClock {
         let y = i64::from(tm.year) + 1900 + mon.div_euclid(12);
         let m = mon.rem_euclid(12) + 1;
         let days = days_from_civil(y, m, 1) + i64::from(tm.mday) - 1;
-        let t = days * 86_400 + i64::from(tm.hour) * 3600 + i64::from(tm.min) * 60 + i64::from(tm.sec);
+        let t =
+            days * 86_400 + i64::from(tm.hour) * 3600 + i64::from(tm.min) * 60 + i64::from(tm.sec);
         if self.gmtime(t, tm) { t } else { -1 }
     }
 }
@@ -242,7 +243,9 @@ fn scan(s: Z<'_>, i: usize) -> (bool, Option<u64>, usize) {
     let mut v: Option<u64> = Some(0);
     while isdigit(s.at(j)) {
         let d = u64::from(s.at(j) - b'0');
-        v = v.and_then(|v| v.checked_mul(10)).and_then(|v| v.checked_add(d));
+        v = v
+            .and_then(|v| v.checked_mul(10))
+            .and_then(|v| v.checked_add(d));
         j += 1;
     }
     (neg, v, j)
@@ -459,7 +462,7 @@ fn match_alpha(date: Z<'_>, i: usize, tm: &mut Tm, offset: &mut i32) -> usize {
         return 2;
     }
     if match_string(date, i, b"AM") == 2 {
-        tm.hour = tm.hour % 12;
+        tm.hour %= 12;
         return 2;
     }
     // Bad.
@@ -689,7 +692,7 @@ fn match_tz(date: Z<'_>, i: usize, offp: &mut i32) -> usize {
 /// an object header, alone.
 fn match_object_header_date(date: Z<'_>, i: usize) -> Option<(i64, i32)> {
     let c = date.at(i);
-    if !(b'0'..b'9').contains(&c) {
+    if !(b'0'..=b'8').contains(&c) {
         return None;
     }
     let (stamp, end) = strtoul(date, i);
@@ -724,10 +727,10 @@ fn parse_date_basic(clock: &impl Clock, date: Z<'_>) -> Option<(i64, i32)> {
     let mut offset: i32 = -1;
     let mut tm_gmt = false;
 
-    if date.at(0) == b'@' {
-        if let Some(r) = match_object_header_date(date, 1) {
-            return Some(r);
-        }
+    if date.at(0) == b'@'
+        && let Some(r) = match_object_header_date(date, 1)
+    {
+        return Some(r);
     }
 
     let mut i = 0;
@@ -817,8 +820,24 @@ fn date_am_pm(tm: &mut Tm, num: &mut i32, pm: bool) {
 
 /// The special words of approxidate (`special[]`); returns whether `date`
 /// at `i` is one, after applying it.
-fn special(clock: &impl Clock, date: Z<'_>, i: usize, tm: &mut Tm, now: &Tm, num: &mut i32) -> bool {
-    const NAMES: [&[u8]; 8] = [b"yesterday", b"noon", b"midnight", b"tea", b"PM", b"AM", b"never", b"now"];
+fn special(
+    clock: &impl Clock,
+    date: Z<'_>,
+    i: usize,
+    tm: &mut Tm,
+    now: &Tm,
+    num: &mut i32,
+) -> bool {
+    const NAMES: [&[u8]; 8] = [
+        b"yesterday",
+        b"noon",
+        b"midnight",
+        b"tea",
+        b"PM",
+        b"AM",
+        b"never",
+        b"now",
+    ];
     let Some(k) = NAMES
         .iter()
         .position(|name| match_string(date, i, name) == name.len())
@@ -944,7 +963,13 @@ fn approxidate_alpha(
 }
 
 /// `approxidate_digit`: a number at `i`; returns the index after it.
-fn approxidate_digit(clock: &impl Clock, date: Z<'_>, i: usize, tm: &mut Tm, num: &mut i32) -> usize {
+fn approxidate_digit(
+    clock: &impl Clock,
+    date: Z<'_>,
+    i: usize,
+    tm: &mut Tm,
+    num: &mut i32,
+) -> usize {
     let (number, end) = strtoul(date, i);
     let c = date.at(end);
     if matches!(c, b':' | b'.' | b'/' | b'-') && isdigit(date.at(end + 1)) {
@@ -1080,7 +1105,12 @@ pub fn parse(date: &[u8]) -> Result<i64> {
 /// `git_date_rfc2822_fmt` on `clock`: append e.g.
 /// `"Mon, 1 Jan 2024 10:00:00 +0100"` to `out`. Fails with -1 (no
 /// message) when `gmtime_r` does.
-pub fn rfc2822_fmt_with(clock: &impl Clock, out: &mut GitStr, time: i64, offset: i32) -> Result<()> {
+pub fn rfc2822_fmt_with(
+    clock: &impl Clock,
+    out: &mut GitStr,
+    time: i64,
+    offset: i32,
+) -> Result<()> {
     let t = time.wrapping_add(i64::from(offset.wrapping_mul(60)));
     let mut gmt = Tm::default();
     if !clock.gmtime(t, &mut gmt) {
@@ -1157,7 +1187,7 @@ pub mod ffi {
     pub unsafe extern "C" fn git_date_parse(out: *mut i64, date: *const c_char) -> c_int {
         let mut offset: c_int = 0;
         // SAFETY: forwarded to the caller; `offset` is a local.
-        unsafe { git_date_offset_parse(out, &mut offset, date) }
+        unsafe { git_date_offset_parse(out, &raw mut offset, date) }
     }
 
     /// `git_date_rfc2822_fmt`.
@@ -1167,7 +1197,11 @@ pub mod ffi {
     /// `out` is NULL or a valid `git_str` that nothing else accesses during
     /// the call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_date_rfc2822_fmt(out: *mut GitStr, time: i64, offset: c_int) -> c_int {
+    pub unsafe extern "C" fn git_date_rfc2822_fmt(
+        out: *mut GitStr,
+        time: i64,
+        offset: c_int,
+    ) -> c_int {
         barrier(|| {
             git_assert_arg!(!out.is_null(), "out", -1);
             // SAFETY: the caller's contract.
@@ -1198,16 +1232,30 @@ mod tests {
         }
         let mut tm = Tm::default();
         assert!(c.gmtime(NOW, &mut tm));
-        assert_eq!((tm.year, tm.mon, tm.mday, tm.hour, tm.min, tm.sec, tm.wday, tm.yday), (109, 1, 13, 23, 31, 30, 5, 43));
+        assert_eq!(
+            (
+                tm.year, tm.mon, tm.mday, tm.hour, tm.min, tm.sec, tm.wday, tm.yday
+            ),
+            (109, 1, 13, 23, 31, 30, 5, 43)
+        );
     }
 
     #[test]
     fn strict_formats() {
         assert_eq!(p("@1234567890 +0100"), Some((1_234_567_890, Some(60))));
-        assert_eq!(p("2008-12-05 10:11:12 +0200"), Some((1_228_464_672, Some(120))));
-        assert_eq!(p("Thu, 5 Dec 2008 10:11:12 -0130"), Some((1_228_477_272, Some(-90))));
+        assert_eq!(
+            p("2008-12-05 10:11:12 +0200"),
+            Some((1_228_464_672, Some(120)))
+        );
+        assert_eq!(
+            p("Thu, 5 Dec 2008 10:11:12 -0130"),
+            Some((1_228_477_272, Some(-90)))
+        );
         assert_eq!(p("1234567890"), Some((1_234_567_890, Some(0))));
-        assert_eq!(p("2008-12-05 10:11:12 PST"), Some((1_228_500_672, Some(-480))));
+        assert_eq!(
+            p("2008-12-05 10:11:12 PST"),
+            Some((1_228_500_672, Some(-480)))
+        );
     }
 
     #[test]

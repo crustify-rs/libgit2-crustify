@@ -82,22 +82,27 @@ pub type CodeBox = CBox<Code, CodeFree>;
 /// Match data.
 pub type MatchDataBox = CBox<MatchData, MatchDataFree>;
 
+/// `PCRE2_ZERO_TERMINATED`.
+const PCRE2_ZERO_TERMINATED: usize = usize::MAX;
+
 /// `pcre2_compile(pattern, PCRE2_ZERO_TERMINATED, options, …)`: the
-/// compiled pattern, or PCRE2's error code.
-pub fn compile(pattern: &CStr, options: u32) -> Result<CodeBox, c_int> {
+/// compiled pattern, or PCRE2's error code. `None` is a NULL pattern, which
+/// PCRE2 rejects with an error of its own.
+pub fn compile(pattern: Option<&CStr>, options: u32) -> Result<CodeBox, c_int> {
     let mut error: c_int = 0;
     let mut offset: usize = 0;
-    let bytes = pattern.to_bytes();
-    // SAFETY: `bytes` is readable for its length (PCRE2 copies what it
-    // needs into the compiled code); the out-parameters are locals; a NULL
-    // context selects the defaults.
+    let ptr = pattern.map_or(core::ptr::null(), |p| p.as_ptr().cast::<u8>());
+    // SAFETY: `ptr` is NULL (which PCRE2 checks for) or a NUL-terminated
+    // pattern, readable for the call (PCRE2 copies what it needs into the
+    // compiled code); the out-parameters are locals; a NULL context selects
+    // the defaults.
     let code = unsafe {
         pcre2_compile_8(
-            bytes.as_ptr(),
-            bytes.len(),
+            ptr,
+            PCRE2_ZERO_TERMINATED,
             options,
-            &mut error,
-            &mut offset,
+            &raw mut error,
+            &raw mut offset,
             core::ptr::null_mut(),
         )
     };
@@ -149,9 +154,10 @@ pub fn pcre2_match(code: CodeRef<'_>, subject: &[u8], md: &mut MatchDataBox) -> 
 /// The ovector of `md`: two offsets per pair.
 pub fn ovector(md: &MatchDataBox) -> &[usize] {
     let p = md.as_c_ptr();
-    // SAFETY: `md` is a live match data block; these accessors only read
-    // it.
-    let (ptr, pairs) = unsafe { (pcre2_get_ovector_pointer_8(p), pcre2_get_ovector_count_8(p)) };
+    // SAFETY: `md` is a live match data block; the accessor only reads it.
+    let ptr = unsafe { pcre2_get_ovector_pointer_8(p) };
+    // SAFETY: as above.
+    let pairs = unsafe { pcre2_get_ovector_count_8(p) };
     // SAFETY: PCRE2's ovector has `2 * pairs` offsets, owned by `md` and
     // written only by `pcre2_match`, which needs `&mut md`.
     unsafe { core::slice::from_raw_parts(ptr, 2 * pairs as usize) }

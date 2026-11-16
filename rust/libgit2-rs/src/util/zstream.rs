@@ -68,11 +68,13 @@ impl Default for GitZstream {
 impl GitZstream {
     /// `GIT_ZSTREAM_INIT`: all zero.
     pub fn new() -> GitZstream {
-        let mut z = z_stream::default();
         // zlib-rs's `Default` fills in its Rust allocator; C's
         // `GIT_ZSTREAM_INIT` leaves NULL (each library then uses its own).
-        z.zalloc = None;
-        z.zfree = None;
+        let z = z_stream {
+            zalloc: None,
+            zfree: None,
+            ..z_stream::default()
+        };
         GitZstream {
             z,
             kind: ZstreamKind::Inflate as c_int,
@@ -95,7 +97,10 @@ impl GitZstream {
             Z_MEM_ERROR => Err(errors::oom()),
             _ => {
                 if self.z.msg.is_null() {
-                    Err(git_error_set!(ErrorClass::ZLIB, "unknown compression error"))
+                    Err(git_error_set!(
+                        ErrorClass::ZLIB,
+                        "unknown compression error"
+                    ))
                 } else {
                     // SAFETY: zlib (and zlib-rs) set `msg` to NULL or to a
                     // static NUL-terminated message.
@@ -115,7 +120,7 @@ impl GitZstream {
             // (zlib-rs's default) or what C put there, as zlib's contract.
             unsafe {
                 libz_rs_sys::inflateInit_(
-                    &mut self.z,
+                    &raw mut self.z,
                     libz_rs_sys::zlibVersion(),
                     core::mem::size_of::<z_stream>() as c_int,
                 )
@@ -133,7 +138,7 @@ impl GitZstream {
         if self.inflates() {
             // SAFETY: the state is NULL or this stream's inflate state:
             // only `init` sets it, with the library `kind` picks.
-            unsafe { libz_rs_sys::inflateEnd(&mut self.z) };
+            unsafe { libz_rs_sys::inflateEnd(&raw mut self.z) };
         } else {
             // SAFETY: as above, for deflate.
             unsafe { zlib::deflate_end(&mut self.z) };
@@ -144,7 +149,7 @@ impl GitZstream {
     pub fn reset(&mut self) {
         if self.inflates() {
             // SAFETY: as in `free`.
-            unsafe { libz_rs_sys::inflateReset(&mut self.z) };
+            unsafe { libz_rs_sys::inflateReset(&raw mut self.z) };
         } else {
             // SAFETY: as in `free`.
             unsafe { zlib::deflate_reset(&mut self.z) };
@@ -221,7 +226,7 @@ impl GitZstream {
             // (or NULL, which zlib-rs rejects); `next_in` / `next_out` are
             // readable / writable for `avail_in` / `avail_out` bytes, which
             // are at most `in_len` / `*out_len` (the caller's contract).
-            unsafe { libz_rs_sys::inflate(&mut self.z, self.flush) }
+            unsafe { libz_rs_sys::inflate(&raw mut self.z, self.flush) }
         } else {
             // SAFETY: as above, for the system zlib's deflate state.
             unsafe { zlib::deflate(&mut self.z, self.flush) }
@@ -245,7 +250,10 @@ impl GitZstream {
         let mut out_remain = *out_len;
 
         if self.in_len != 0 && self.zerr == Z_STREAM_END {
-            return Err(git_error_set!(ErrorClass::ZLIB, "zlib input had trailing garbage"));
+            return Err(git_error_set!(
+                ErrorClass::ZLIB,
+                "zlib input had trailing garbage"
+            ));
         }
 
         while out_remain > 0 && self.zerr != Z_STREAM_END {
@@ -257,7 +265,10 @@ impl GitZstream {
             // With room left, a Z_BUF_ERROR that wrote nothing is input
             // that ended mid-stream: more will not come within this loop.
             if out_written == 0 && self.zerr == Z_BUF_ERROR {
-                return Err(git_error_set!(ErrorClass::ZLIB, "premature end of zlib stream"));
+                return Err(git_error_set!(
+                    ErrorClass::ZLIB,
+                    "premature end of zlib stream"
+                ));
             }
 
             out_remain -= out_written;
@@ -286,7 +297,9 @@ fn zstream_buf(out: &mut GitStr, input: &[u8], kind: ZstreamKind) -> Result<()> 
         let mut written = spare.len();
         // SAFETY: the input is `input`, borrowed for the call; `spare` is
         // the string's writable spare capacity, distinct from both.
-        unsafe { zs.z.get_output(spare.as_mut_ptr().cast::<u8>(), &mut written) }?;
+        unsafe {
+            zs.z.get_output(spare.as_mut_ptr().cast::<u8>(), &mut written)
+        }?;
         let len = out.len() + written;
         // SAFETY: zlib initialized the `written` bytes after the contents,
         // within the allocation (`len <= asize`).
@@ -348,7 +361,8 @@ impl<'a> ZStream<'a> {
 
     /// Give the input (`git_zstream_set_input`).
     pub fn set_input(&mut self, input: &'a [u8]) {
-        self.z.set_input_raw(input.as_ptr().cast::<c_char>(), input.len());
+        self.z
+            .set_input_raw(input.as_ptr().cast::<c_char>(), input.len());
     }
 
     /// `git_zstream_get_output_chunk`: as much output as the input gives
@@ -511,7 +525,9 @@ pub mod ffi {
             // distinct from the stream.
             let out_len = unsafe { &mut *out_len };
             // SAFETY: forwarded to the caller.
-            status(unsafe { zs(zstream).get_output_chunk(out, out_len) })
+            let zs = unsafe { zs(zstream) };
+            // SAFETY: forwarded to the caller.
+            status(unsafe { zs.get_output_chunk(out, out_len) })
         })
     }
 
@@ -530,7 +546,9 @@ pub mod ffi {
             // SAFETY: as in `git_zstream_get_output_chunk`.
             let out_len = unsafe { &mut *out_len };
             // SAFETY: forwarded to the caller.
-            status(unsafe { zs(zstream).get_output(out, out_len) })
+            let zs = unsafe { zs(zstream) };
+            // SAFETY: forwarded to the caller.
+            status(unsafe { zs.get_output(out, out_len) })
         })
     }
 
@@ -569,7 +587,9 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             // SAFETY: the caller's contract.
-            let (out, input) = unsafe { (&mut *out, crate::util::export::bytes(input, len)) };
+            let out = unsafe { &mut *out };
+            // SAFETY: the caller's contract.
+            let input = unsafe { crate::util::export::bytes(input, len) };
             status(f(out, input))
         })
     }

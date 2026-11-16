@@ -323,6 +323,14 @@ int main(void)
 		re(patterns[i], GIT_REGEXP_ICASE, subjects);
 	}
 	{
+		git_regexp r = (git_regexp)&r;
+		int rc;
+		git_error_clear();
+		rc = git_regexp_compile(&r, NULL, 0);
+		printf("re NULL pattern rc=%d null=%d msg=%s\n", rc, r == NULL,
+			git_error_last() ? git_error_last()->message : "");
+	}
+	{
 		git_regexp r = NULL;
 		printf("re NULL match=%d search=%d\n", git_regexp_match(&r, "a"),
 			git_regexp_search(&r, "a", 0, NULL));

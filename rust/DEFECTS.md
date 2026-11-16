@@ -121,3 +121,51 @@ triggers it, and the Rust's defined behaviour.
 
 ### runtime: `git_runtime_init` with a NULL init function
 - C: calls it. Rust: stops at the first NULL entry.
+
+## hash, zstream, rand, regexp, wildmatch, date (WP u2)
+
+### hash: sha1dc reads input blocks through misaligned `uint32_t` pointers
+- C: `src/util/hash/sha1dc/sha1.c:391` (`SHA1DCUpdate`, with
+  `SHA1DC_ALLOW_UNALIGNED_ACCESS`) casts the input to `const uint32_t *`
+  at any alignment: undefined behaviour (UBSan reports it).
+- Trigger: any `git_hash_update` with an input not 4-byte aligned.
+- Rust: the `sha1collisiondetection` crate copies an unaligned block into
+  its buffer first; same digests.
+
+### hash: a NULL context is dereferenced
+- C: `src/util/hash.c`, `git_hash_ctx_init`/`git_hash_init`/
+  `git_hash_update`/`git_hash_final` read or write `ctx->algorithm` before
+  the backends' `GIT_ASSERT_ARG(ctx)`.
+- Rust: -1 with `invalid argument: 'ctx'` (class `GIT_ERROR_INVALID`).
+
+### zstream: output that fills the buffer exactly is left without its NUL
+- C: `src/util/zstream.c`, `zstream_buf` writes up to `asize - size` bytes
+  (the NUL's byte included) and terminates only `if (out->size <
+  out->asize)`; a `git_str` with `size == asize` has no NUL, and
+  `git_str_cstr` and friends read past its allocation.
+- Trigger: `git_zstream_deflatebuf(&s, "", 0)` (8 bytes into an 8-byte
+  buffer), or inflating `zlib.compress(b"a" * 16)` (16 bytes into 16).
+- Rust: the buffer is grown by one byte and terminated (`asize` then
+  differs from the C's in that case only).
+
+### date: signed `int` overflows
+- C: `src/util/date.c`: `approxidate_alpha` computes `*num - 1`,
+  `diff += 7*n`, `diff * 24 * 60 * 60`, `tm->tm_mon - *num`,
+  `tm->tm_year -= *num` in `int`; `match_tz` `hour * 60 + min`;
+  `git_date_rfc2822_fmt` `offset * 60` and `gmt.tm_year + 1900`. Each
+  overflows (undefined behaviour) on large inputs.
+- Trigger: `git_date_parse(&t, "2147483647 fridays ago")`,
+  `"4294967296 days ago"`, `git_date_rfc2822_fmt(&s, 0, INT_MAX)`.
+- Rust: two's complement wrapping, which is what the C build computes
+  (rust/difftest/date_diff.c gives the same output for these inputs).
+
+### date: an object-header timestamp may not start with 9
+- C: `match_object_header_date` rejects `*date < '0' || '9' <= *date`, so
+  `"@9 +0000"` is not read as a timestamp (it goes on to approxidate).
+- Rust: kept as the C (the result is defined, and callers may depend on it).
+
+### date: "N months ago" loops N/12 times
+- C: `approxidate_alpha` adds 12 to the month (and takes a year) in a loop
+  until it is not negative: `"2147483647 months ago"` iterates 178 million
+  times.
+- Rust: the same result, computed in one step.

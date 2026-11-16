@@ -125,6 +125,9 @@ impl core::fmt::Debug for Digest {
 
 /// A hash computation (`git_hash_ctx`'s Rust-native state).
 #[derive(Clone, Debug)]
+// sha1dc's state is large; it lives in place (in C's `git_hash_ctx`, on the
+// stack), never boxed.
+#[allow(clippy::large_enum_variant)]
 pub enum Hasher {
     /// SHA-1 with collision detection (sha1dc).
     Sha1(Sha1CD),
@@ -241,7 +244,12 @@ pub fn hash_vec(data: &[&[u8]], algorithm: HashAlgorithm) -> Result<Digest> {
 /// If `out` is shorter than that.
 pub fn fmt_into(out: &mut [u8], hash: &[u8]) {
     const HEX: &[u8; 16] = b"0123456789abcdef";
-    for (o, b) in out[..2 * hash.len()].chunks_exact_mut(2).zip(hash) {
+    for (o, b) in out[..2 * hash.len()]
+        .as_chunks_mut::<2>()
+        .0
+        .iter_mut()
+        .zip(hash)
+    {
         o[0] = HEX[(b >> 4) as usize];
         o[1] = HEX[(b & 0x0f) as usize];
     }
@@ -266,7 +274,7 @@ pub struct HashCtx {
 
 /// `GIT_HASH_CTX_WORDS` in `hash.h`: the blob's size in `uint64_t`s.
 pub const HASH_CTX_WORDS: usize = core::mem::size_of::<HashCtx>() / 8;
-const _: () = assert!(core::mem::size_of::<HashCtx>() % 8 == 0);
+const _: () = assert!(core::mem::size_of::<HashCtx>().is_multiple_of(8));
 const _: () = assert!(core::mem::align_of::<HashCtx>() == 8);
 // `hash.h` spells the size out; the layout test checks it against the C.
 const _: () = assert!(HASH_CTX_WORDS == 300, "update GIT_HASH_CTX_WORDS in hash.h");
@@ -437,7 +445,11 @@ pub mod ffi {
                 // SAFETY: the caller's contract on `out`; `d` is a distinct
                 // local.
                 unsafe { core::ptr::copy_nonoverlapping(d.as_ptr(), out, n) };
-                if collision { Err(collision_error()) } else { Ok(()) }
+                if collision {
+                    Err(collision_error())
+                } else {
+                    Ok(())
+                }
             });
             status(r)
         })
@@ -480,7 +492,11 @@ pub mod ffi {
                 };
                 // SAFETY: the caller's contract on `out`.
                 unsafe { write_digest(out, &d) };
-                if collision { Err(collision_error()) } else { Ok(()) }
+                if collision {
+                    Err(collision_error())
+                } else {
+                    Ok(())
+                }
             });
             status(r)
         })
@@ -520,7 +536,11 @@ pub mod ffi {
                 };
                 // SAFETY: the caller's contract on `out`.
                 unsafe { write_digest(out, &d) };
-                if collision { Err(collision_error()) } else { Ok(()) }
+                if collision {
+                    Err(collision_error())
+                } else {
+                    Ok(())
+                }
             });
             status(r)
         })
@@ -534,12 +554,17 @@ pub mod ffi {
     /// `hash` is readable for `hash_len` bytes; `out` is writable for
     /// `2 * hash_len + 1` bytes and does not overlap `hash`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_hash_fmt(out: *mut c_char, hash: *const u8, hash_len: usize) -> c_int {
+    pub unsafe extern "C" fn git_hash_fmt(
+        out: *mut c_char,
+        hash: *const u8,
+        hash_len: usize,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: the caller's contract on `hash`.
             let hash = unsafe { bytes(hash.cast::<c_char>(), hash_len) };
             // SAFETY: the caller's contract on `out`, disjoint from `hash`.
-            let out = unsafe { core::slice::from_raw_parts_mut(out.cast::<u8>(), 2 * hash_len + 1) };
+            let out =
+                unsafe { core::slice::from_raw_parts_mut(out.cast::<u8>(), 2 * hash_len + 1) };
             fmt_into(out, hash);
             out[2 * hash_len] = 0;
             0

@@ -51,3 +51,39 @@ One entry per difference: component, what differs, why.
   `printf("%s")` (same output through the same `stdio` stream).
 - **vector: `git_vector_dup`** with a NULL comparison function on a source
   that has one leaves the copy unsorted, as C (it compares the argument).
+
+## hash, zstream, rand, regexp, wildmatch, date (WP u2)
+
+- **hash: the context.** `git_hash_ctx` is, under `GIT_RUST`, an opaque
+  `uint64_t opaque[GIT_HASH_CTX_WORDS]` (2400 bytes; the C's union was 2408)
+  holding the algorithm and the Rust computation. No C that stays reads its
+  fields; it embeds it by value as before. `git_hash_ctx_cleanup` does
+  nothing (as both C backends of this configuration).
+- **hash: the backends.** SHA-1 is the `sha1collisiondetection` crate (a
+  Rust port of sha1dc, same defaults: safe hash, unavoidable bit conditions,
+  collision detection); SHA-256 is a Rust implementation
+  (`util/hash/sha256.rs`, with an AVX2/BMI path chosen at run time) instead
+  of OpenSSL's `SHA256_*`. Digests, the collision error and the "safe"
+  digest written on a collision are the C's (rust/difftest/hash_diff.c).
+  `git_hash_sha1_*`/`git_hash_sha256_*` are not exported: nothing outside
+  `hash.c` called them.
+- **zstream: inflating.** Inflate streams use zlib-rs (vendored in
+  `rust/vendor/zlib-rs` with a fix that keeps zlib's error messages), not
+  the system zlib; deflate streams still use the system zlib, so compressed
+  bytes are unchanged. Return codes and messages are zlib's
+  (rust/difftest/zstream_diff.c: valid, truncated and corrupted streams).
+  zlib-rs allocates its state with Rust's allocator where zlib used
+  `malloc`; neither used `git__allocator`.
+- **rand: the state** is a `std::sync::Mutex` instead of a `git_mutex`, so
+  no shutdown callback is registered to free it (one fewer of the
+  runtime's 32 slots). Same sequences for the same seed. Under Miri (tests
+  only) the seed is a constant.
+- **regexp:** a `git_regexp` is still the `pcre2_code *` (now owned by a
+  Rust `Regexp` until handed to C). Semantics are PCRE2's own.
+- **date:** the parser reaches the C library's `time`, `gmtime_r`,
+  `localtime_r` and `mktime` through a `Clock` (the C's calls, in the same
+  order); the safe API also offers a pure-Rust UTC clock with a fixed
+  "now".
+- **CMake:** with `USE_RUST`, configuring fails unless `USE_SHA1=builtin`,
+  `USE_SHA256=OpenSSL`, `USE_REGEX=pcre2` and zlib compression (the Rust
+  implements these only). `git2_features.h` gains `GIT_RUST`.

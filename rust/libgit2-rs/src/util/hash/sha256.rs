@@ -53,7 +53,11 @@ impl core::fmt::Debug for Sha256 {
 impl Sha256 {
     /// A new computation (`SHA256_Init`).
     pub const fn new() -> Sha256 {
-        Sha256 { state: H0, buf: [0; BLOCK], total: 0 }
+        Sha256 {
+            state: H0,
+            buf: [0; BLOCK],
+            total: 0,
+        }
     }
 
     /// Hash `data` (`SHA256_Update`).
@@ -86,7 +90,7 @@ impl Sha256 {
         tail[0][fill] = 0x80;
         tail[n - 1][56..].copy_from_slice(&bits.to_be_bytes());
         compress(&mut self.state, &tail[..n]);
-        for (o, s) in out.chunks_exact_mut(4).zip(self.state) {
+        for (o, s) in out.as_chunks_mut::<4>().0.iter_mut().zip(self.state) {
             o.copy_from_slice(&s.to_be_bytes());
         }
     }
@@ -162,7 +166,10 @@ fn compress_soft(state: &mut [u32; 8], blocks: &[[u8; BLOCK]]) {
         for t in 16..64 {
             let s0 = w[t - 15].rotate_right(7) ^ w[t - 15].rotate_right(18) ^ (w[t - 15] >> 3);
             let s1 = w[t - 2].rotate_right(17) ^ w[t - 2].rotate_right(19) ^ (w[t - 2] >> 10);
-            w[t] = w[t - 16].wrapping_add(s0).wrapping_add(w[t - 7]).wrapping_add(s1);
+            w[t] = w[t - 16]
+                .wrapping_add(s0)
+                .wrapping_add(w[t - 7])
+                .wrapping_add(s1);
         }
         macro_rules! wk {
             ($t:expr) => {
@@ -200,18 +207,27 @@ mod avx2 {
 
     macro_rules! ror {
         ($x:expr, $n:literal) => {
-            _mm256_or_si256(_mm256_srli_epi32::<$n>($x), _mm256_slli_epi32::<{ 32 - $n }>($x))
+            _mm256_or_si256(
+                _mm256_srli_epi32::<$n>($x),
+                _mm256_slli_epi32::<{ 32 - $n }>($x),
+            )
         };
     }
 
     #[target_feature(enable = "avx2,bmi1,bmi2")]
     fn sigma0(x: __m256i) -> __m256i {
-        _mm256_xor_si256(_mm256_xor_si256(ror!(x, 7), ror!(x, 18)), _mm256_srli_epi32::<3>(x))
+        _mm256_xor_si256(
+            _mm256_xor_si256(ror!(x, 7), ror!(x, 18)),
+            _mm256_srli_epi32::<3>(x),
+        )
     }
 
     #[target_feature(enable = "avx2,bmi1,bmi2")]
     fn sigma1(x: __m256i) -> __m256i {
-        _mm256_xor_si256(_mm256_xor_si256(ror!(x, 17), ror!(x, 19)), _mm256_srli_epi32::<10>(x))
+        _mm256_xor_si256(
+            _mm256_xor_si256(ror!(x, 17), ror!(x, 19)),
+            _mm256_srli_epi32::<10>(x),
+        )
     }
 
     /// `W[t..t + 4]` of both blocks from `W[t - 16..t]` (`x0` to `x3`).
@@ -222,43 +238,49 @@ mod avx2 {
         let t = _mm256_add_epi32(_mm256_add_epi32(x0, sigma0(w15)), w7);
         // σ1 of W[t - 2], W[t - 1] completes W[t], W[t + 1] ...
         let v = _mm256_shuffle_epi32::<0b11_10_11_10>(x3);
-        let t = _mm256_add_epi32(t, _mm256_blend_epi32::<0b0011_0011>(_mm256_setzero_si256(), sigma1(v)));
+        let t = _mm256_add_epi32(
+            t,
+            _mm256_blend_epi32::<0b0011_0011>(_mm256_setzero_si256(), sigma1(v)),
+        );
         // ... whose σ1 completes W[t + 2], W[t + 3].
         let v = _mm256_shuffle_epi32::<0b01_00_01_00>(t);
-        _mm256_add_epi32(t, _mm256_blend_epi32::<0b1100_1100>(_mm256_setzero_si256(), sigma1(v)))
+        _mm256_add_epi32(
+            t,
+            _mm256_blend_epi32::<0b1100_1100>(_mm256_setzero_si256(), sigma1(v)),
+        )
     }
 
     /// Bytes `16 * i..16 * i + 16` of `b`.
     #[target_feature(enable = "avx2,bmi1,bmi2")]
     fn load(b: &[u8; BLOCK], i: usize) -> __m128i {
         let s = &b[16 * i..16 * i + 16];
-        // SAFETY: `s` holds the 16 bytes the unaligned load reads.
         #[allow(clippy::cast_ptr_alignment)] // `loadu` needs no alignment
-        unsafe {
-            _mm_loadu_si128(s.as_ptr().cast::<__m128i>())
-        }
+        let p = s.as_ptr().cast::<__m128i>();
+        // SAFETY: `p` points to the 16 bytes of `s`, which the unaligned
+        // load reads.
+        unsafe { _mm_loadu_si128(p) }
     }
 
     /// `dst = v`.
     #[target_feature(enable = "avx2,bmi1,bmi2")]
     fn store(dst: &mut [u32], v: __m256i) {
         let dst = &mut dst[..8];
-        // SAFETY: `dst` holds the 32 bytes the unaligned store writes.
         #[allow(clippy::cast_ptr_alignment)] // `storeu` needs no alignment
-        unsafe {
-            _mm256_storeu_si256(dst.as_mut_ptr().cast::<__m256i>(), v)
-        }
+        let p = dst.as_mut_ptr().cast::<__m256i>();
+        // SAFETY: `p` points to the 32 bytes of `dst`, which the unaligned
+        // store writes.
+        unsafe { _mm256_storeu_si256(p, v) }
     }
 
     /// `KK[8 * i..8 * i + 8]`.
     #[target_feature(enable = "avx2,bmi1,bmi2")]
     fn kk(i: usize) -> __m256i {
         let k = &KK[8 * i..8 * i + 8];
-        // SAFETY: `k` holds the 32 bytes the unaligned load reads.
         #[allow(clippy::cast_ptr_alignment)] // `loadu` needs no alignment
-        unsafe {
-            _mm256_loadu_si256(k.as_ptr().cast::<__m256i>())
-        }
+        let p = k.as_ptr().cast::<__m256i>();
+        // SAFETY: `p` points to the 32 bytes of `k`, which the unaligned
+        // load reads.
+        unsafe { _mm256_loadu_si256(p) }
     }
 
     /// Process `b1` and, if `two`, then `b2`.
@@ -289,14 +311,15 @@ mod avx2 {
                 core::hint::black_box(&mut wk);
             }};
         }
+        // Block 1's `W[t] + K[t]`, then block 2's.
         macro_rules! w1 {
             ($t:expr) => {
-                wk[8 * (($t) / 4) + ($t) % 4]
+                wk[(($t) >> 2) * 8 + (($t) & 3)]
             };
         }
         macro_rules! w2 {
             ($t:expr) => {
-                wk[8 * (($t) / 4) + 4 + ($t) % 4]
+                wk[(($t) >> 2) * 8 + 4 + (($t) & 3)]
             };
         }
         let mut s = *state;
@@ -369,7 +392,9 @@ mod tests {
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
         assert_eq!(
-            hex(&Sha256::digest(b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq")),
+            hex(&Sha256::digest(
+                b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"
+            )),
             "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
         );
     }

@@ -55,7 +55,10 @@ fn match_code(code: Option<CodeRef<'_>>, s: &[u8]) -> Result<()> {
 
 /// `git_regexp_search` on a borrowed pattern.
 fn search_code(code: Option<CodeRef<'_>>, s: &[u8], matches: &mut [RegMatch]) -> Result<()> {
-    git_assert!(matches.len() <= u32::MAX as usize, "given_nmatches <= UINT32_MAX");
+    git_assert!(
+        matches.len() <= u32::MAX as usize,
+        "given_nmatches <= UINT32_MAX"
+    );
     let nmatches = matches.len() as u32;
     let Some(mut md) = pcre2::match_data_create(nmatches) else {
         return Err(errors::oom());
@@ -101,6 +104,11 @@ impl Regexp {
 
     /// As [`new`](Self::new), from a C string.
     pub fn compile(pattern: &CStr, flags: c_int) -> Result<Regexp> {
+        Regexp::compile_opt(Some(pattern), flags)
+    }
+
+    /// `git_regexp_compile`, also of a NULL pattern (PCRE2's error).
+    fn compile_opt(pattern: Option<&CStr>, flags: c_int) -> Result<Regexp> {
         let options = if flags & GIT_REGEXP_ICASE != 0 {
             PCRE2_CASELESS
         } else {
@@ -168,11 +176,10 @@ pub mod ffi {
         flags: c_int,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller passes a NUL-terminated pattern.
-            let Some(pattern) = (unsafe { cstr(pattern) }) else {
-                return ErrorCode::INVALID_SPEC.raw();
-            };
-            let (code, rc) = match Regexp::compile(pattern, flags) {
+            // SAFETY: the caller passes a NUL-terminated pattern (or NULL,
+            // which PCRE2 rejects, as for the C).
+            let pattern = unsafe { cstr(pattern) };
+            let (code, rc) = match Regexp::compile_opt(pattern, flags) {
                 Ok(re) => (re.0.into_c(), 0),
                 Err(e) => (core::ptr::null_mut(), e.raw()),
             };
@@ -204,8 +211,10 @@ pub mod ffi {
     /// `*r` is NULL or a live pattern from `git_regexp_compile`, not freed
     /// during `'a`.
     unsafe fn code<'a>(r: *const GitRegexp) -> Option<CodeRef<'a>> {
-        // SAFETY: the caller's contract.
-        unsafe { pcre2::code_ref(r.read()) }
+        // SAFETY: `r` is a readable `git_regexp` (the caller's contract).
+        let code = unsafe { r.read() };
+        // SAFETY: the caller's contract on the pattern.
+        unsafe { pcre2::code_ref(code) }
     }
 
     /// `git_regexp_match`.
@@ -218,7 +227,9 @@ pub mod ffi {
     pub unsafe extern "C" fn git_regexp_match(r: *const GitRegexp, string: *const c_char) -> c_int {
         barrier(|| {
             // SAFETY: the caller's contract.
-            let (code, s) = unsafe { (code(r), cstr_bytes(string)) };
+            let code = unsafe { code(r) };
+            // SAFETY: the caller's contract.
+            let s = unsafe { cstr_bytes(string) };
             status(match_code(code, s))
         })
     }
@@ -238,7 +249,9 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             // SAFETY: the caller's contract.
-            let (code, s) = unsafe { (code(r), cstr_bytes(string)) };
+            let code = unsafe { code(r) };
+            // SAFETY: the caller's contract.
+            let s = unsafe { cstr_bytes(string) };
             let m: &mut [RegMatch] = if nmatches == 0 || matches.is_null() {
                 &mut []
             } else {

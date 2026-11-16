@@ -41,12 +41,18 @@ unsafe extern "C" {
 /// (zlib then reports `Z_STREAM_ERROR`).
 pub unsafe fn deflate_init(strm: &mut z_stream, level: c_int) -> c_int {
     // SAFETY: `zlibVersion` has no precondition and returns a static
-    // string; `deflateInit_` gets this library's version and `z_stream`
+    // string.
+    let version = unsafe { sys_zlibVersion() };
+    // SAFETY: `deflateInit_` gets this library's version and `z_stream`
     // size (checked against `<zlib.h>` by the layout test), and the
     // caller's contract on `strm`.
     unsafe {
-        let version = sys_zlibVersion();
-        sys_deflateInit_(strm, level, version, core::mem::size_of::<z_stream>() as c_int)
+        sys_deflateInit_(
+            strm,
+            level,
+            version,
+            core::mem::size_of::<z_stream>() as c_int,
+        )
     }
 }
 

@@ -70,25 +70,32 @@ fn getseed() -> Result<u64> {
         return Ok(u64::from_ne_bytes(seed));
     }
 
-    let mut tv = libc::timeval { tv_sec: 0, tv_usec: 0 };
+    let mut tv = libc::timeval {
+        tv_sec: 0,
+        tv_usec: 0,
+    };
     // SAFETY: `tv` is writable; the time zone may be NULL.
-    if unsafe { libc::gettimeofday(&mut tv, core::ptr::null_mut()) } < 0 {
-        return Err(git_error_set!(ErrorClass::OS, "could get time for random seed"));
+    if unsafe { libc::gettimeofday(&raw mut tv, core::ptr::null_mut()) } < 0 {
+        return Err(git_error_set!(
+            ErrorClass::OS,
+            "could get time for random seed"
+        ));
     }
     let mut s: u64 = 0;
     s |= (tv.tv_usec as u64) << 40;
     s |= tv.tv_sec as u64;
     // SAFETY: these process queries have no preconditions.
-    let (pid, ppid, pgid, sid, uid, gid) = unsafe {
-        (
-            libc::getpid(),
-            libc::getppid(),
-            libc::getpgid(0),
-            libc::getsid(0),
-            libc::getuid(),
-            libc::getgid(),
-        )
-    };
+    let pid = unsafe { libc::getpid() };
+    // SAFETY: as above.
+    let ppid = unsafe { libc::getppid() };
+    // SAFETY: as above.
+    let pgid = unsafe { libc::getpgid(0) };
+    // SAFETY: as above.
+    let sid = unsafe { libc::getsid(0) };
+    // SAFETY: as above.
+    let uid = unsafe { libc::getuid() };
+    // SAFETY: as above.
+    let gid = unsafe { libc::getgid() };
     s ^= (pid as u64) << 48;
     s ^= (ppid as u64) << 32;
     s ^= (pgid as u64) << 28;
@@ -112,20 +119,20 @@ fn getseed() -> Result<u64> {
     Ok(s)
 }
 
-/// Under Miri, which has no `getentropy`, the time.
+/// Under Miri (no entropy source nor clock under isolation), a constant.
 #[cfg(miri)]
 fn getseed() -> Result<u64> {
-    let d = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    Ok(d.as_nanos() as u64 | 1)
+    Ok(0x9e37_79b9_7f4a_7c15)
 }
 
 /// `git_rand_global_init`: seed from the system.
 pub fn global_init() -> Result<()> {
     let s = getseed()?;
     if s == 0 {
-        return Err(git_error_set!(ErrorClass::INTERNAL, "failed to generate random seed"));
+        return Err(git_error_set!(
+            ErrorClass::INTERNAL,
+            "failed to generate random seed"
+        ));
     }
     seed(s);
     Ok(())

@@ -216,7 +216,10 @@ fn dowild(pat: Z<'_>, mut p: usize, text: Z<'_>, mut t: usize, flags: c_uint) ->
                         if t_ch == p_ch {
                             matched = true;
                         }
-                    } else if p_ch == b'-' && prev_ch != 0 && pat.at(p + 1) != 0 && pat.at(p + 1) != b']'
+                    } else if p_ch == b'-'
+                        && prev_ch != 0
+                        && pat.at(p + 1) != 0
+                        && pat.at(p + 1) != b']'
                     {
                         p += 1;
                         p_ch = pat.at(p);
@@ -271,7 +274,8 @@ fn dowild(pat: Z<'_>, mut p: usize, text: Z<'_>, mut t: usize, flags: c_uint) ->
                                 b"punct" => t_ch.is_ascii_punctuation(),
                                 b"space" => is_space(t_ch),
                                 b"upper" => {
-                                    t_ch.is_ascii_uppercase() || (casefold && t_ch.is_ascii_lowercase())
+                                    t_ch.is_ascii_uppercase()
+                                        || (casefold && t_ch.is_ascii_lowercase())
                                 }
                                 b"xdigit" => t_ch.is_ascii_hexdigit(),
                                 // A malformed [:class:].
@@ -312,7 +316,11 @@ fn dowild(pat: Z<'_>, mut p: usize, text: Z<'_>, mut t: usize, flags: c_uint) ->
         p += 1;
     }
 
-    if text.at(t) != 0 { WM_NOMATCH } else { WM_MATCH }
+    if text.at(t) != 0 {
+        WM_NOMATCH
+    } else {
+        WM_MATCH
+    }
 }
 
 /// `wildmatch`: match `pattern` against `text` (each ending at its first
@@ -340,7 +348,9 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             // SAFETY: the caller's contract.
-            let (p, t) = unsafe { (cstr_bytes(pattern), cstr_bytes(text)) };
+            let p = unsafe { cstr_bytes(pattern) };
+            // SAFETY: the caller's contract.
+            let t = unsafe { cstr_bytes(text) };
             super::wildmatch(p, t, flags)
         })
     }

@@ -72,3 +72,5 @@ default-features = false
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
+# libgit2: the C allocator is not used (feature `c-allocator` is off).
+dead_code = "allow"
