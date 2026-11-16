@@ -151,6 +151,54 @@ fn fromstr(out: &mut GitBuf, s: &mut GitStr) {
     out.size = size;
 }
 
+/// `git_buf_tostr` on a buffer: its allocation (emptied) as a string,
+/// leaving `b` empty.
+fn tostr(b: &mut GitBuf) -> GitStr {
+    b.sanitize();
+    let s = if b.ptr == git_str__initstr.as_ptr() || b.reserved == 0 {
+        // Nothing owned: an empty string (C copies `reserved`, but a
+        // non-zero one with `git_str__initstr` cannot arise).
+        GitStr::new()
+    } else {
+        // SAFETY: `b`'s allocation (`reserved` bytes, now holding an empty
+        // string) becomes the string's: an owned `git_str`; or `ptr` is
+        // `git_str__oom`, the out-of-memory state, as C.
+        unsafe { GitStr::from_raw_parts(b.ptr, b.reserved, 0) }
+    };
+    b.ptr = git_str__initstr.as_ptr();
+    b.reserved = 0;
+    b.size = 0;
+    s
+}
+
+/// C's `GIT_BUF_WRAP_PRIVATE(buf, fn, …)`: `git_buf_tostr` into a string,
+/// run `f` on it, `git_buf_fromstr` back if it succeeded, dispose of the
+/// string. The same as calling the two exports, without their barriers
+/// (the caller's export has one).
+///
+/// # Safety
+///
+/// `buf` is NULL or a valid `git_buf` that nothing else accesses during
+/// the call (`f` included).
+pub(crate) unsafe fn wrap_private(
+    buf: *mut GitBuf,
+    f: impl FnOnce(&mut GitStr) -> Result<()>,
+) -> c_int {
+    crate::git_assert_arg!(!buf.is_null(), "buf", -1);
+    // SAFETY: a valid `git_buf` (contract); the borrow ends here.
+    let mut s = tostr(unsafe { &mut *buf });
+    let error = match f(&mut s) {
+        Ok(()) => {
+            // SAFETY: as above; `f`'s access (if any) has ended.
+            fromstr(unsafe { &mut *buf }, &mut s);
+            0
+        }
+        Err(e) => e.raw(),
+    };
+    drop(s);
+    error
+}
+
 /// The exports of `buf.c`.
 pub mod ffi {
     use super::*;
@@ -185,23 +233,9 @@ pub mod ffi {
             git_assert_arg!(!out.is_null(), "out", -1);
             git_assert_arg!(!buf.is_null(), "buf", -1);
             // SAFETY: a valid `git_buf`, not otherwise accessed.
-            let b = unsafe { &mut *buf };
-            b.sanitize();
-            let s = if b.ptr == git_str__initstr.as_ptr() || b.reserved == 0 {
-                // Nothing owned: an empty string (C copies `reserved`, but
-                // a non-zero one with `git_str__initstr` cannot arise).
-                GitStr::new()
-            } else {
-                // SAFETY: `b`'s allocation (`reserved` bytes, now holding an
-                // empty string) becomes the string's: an owned `git_str`; or
-                // `ptr` is `git_str__oom`, the out-of-memory state, as C.
-                unsafe { GitStr::from_raw_parts(b.ptr, b.reserved, 0) }
-            };
+            let s = tostr(unsafe { &mut *buf });
             // SAFETY: `out` is writable.
             unsafe { out.write(s) };
-            b.ptr = git_str__initstr.as_ptr();
-            b.reserved = 0;
-            b.size = 0;
             0
         })
     }
@@ -217,16 +251,11 @@ pub mod ffi {
         barrier(|| {
             git_assert_arg!(!out.is_null(), "out", -1);
             git_assert_arg!(!str.is_null(), "str", -1);
+            let mut b = GitBuf::new();
             // SAFETY: a valid `git_str`, not otherwise accessed.
-            let (ptr, reserved, size) = unsafe { &mut *str }.take_raw();
-            // SAFETY: `out` is writable.
-            unsafe {
-                out.write(GitBuf {
-                    ptr,
-                    reserved,
-                    size,
-                })
-            };
+            fromstr(&mut b, unsafe { &mut *str });
+            // SAFETY: `out` is writable; its old contents are not freed.
+            unsafe { out.write(b) };
             0
         })
     }

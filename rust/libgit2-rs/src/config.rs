@@ -2107,21 +2107,9 @@ pub mod ffi {
         buf: *mut GitBuf,
         f: impl FnOnce(&mut GitStr) -> Result<()>,
     ) -> c_int {
-        let mut s = GitStr::new();
-        // SAFETY: `s` is a valid `git_str`; `buf` per the contract.
-        let mut error = unsafe { crate::buf::ffi::git_buf_tostr(&raw mut s, buf) };
-        if error == 0 {
-            error = match f(&mut s) {
-                Ok(()) => 0,
-                Err(e) => e.raw(),
-            };
-            if error == 0 {
-                // SAFETY: as above.
-                error = unsafe { crate::buf::ffi::git_buf_fromstr(buf, &raw mut s) };
-            }
-        }
-        drop(s);
-        error
+        // SAFETY: `buf` is NULL or a valid `git_buf` (contract), which `f`
+        // does not reach.
+        unsafe { crate::buf::wrap_private(buf, f) }
     }
 
     /// `git_config_entry_free` (NULL allowed).

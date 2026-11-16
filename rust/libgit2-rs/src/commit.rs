@@ -550,20 +550,28 @@ pub fn body_of(msg: &[u8]) -> Option<&[u8]> {
 /// `git_commit__header_field` over a raw header (as a C string: up to its
 /// first NUL): the value of `field`, continuation lines joined with `\n`.
 pub fn header_field(raw_header: &[u8], field: &[u8], out: &mut GitStr) -> Result<()> {
+    let n = memchr::memchr(0, raw_header).unwrap_or(raw_header.len());
+    header_field_in(&raw_header[..n], field, out)
+}
+
+/// `header_field` over a header that has no NUL (the bytes of a C string),
+/// without the scan for one.
+pub(crate) fn header_field_in(buf: &[u8], field: &[u8], out: &mut GitStr) -> Result<()> {
     out.clear();
-    let buf = &raw_header[..memchr::memchr(0, raw_header).unwrap_or(raw_header.len())];
     let at = |i: usize| buf.get(i).copied().unwrap_or(0);
+    // An empty field matches no line: C's prefix matches, but then wants
+    // the SP that only a (skipped) continuation line starts with.
+    let Some(&first) = field.first() else {
+        return Err(no_such_field(field));
+    };
     let mut pos = 0usize;
     while let Some(eol) = memchr::memchr(b'\n', &buf[pos..]).map(|i| pos + i) {
-        // We can skip continuations here
-        if buf[pos] == b' ' {
-            pos = eol + 1;
-            continue;
-        }
-        // Skip until we find the field we're after (git__prefixcmp: a NUL
-        // in the field ends it)
+        // We can skip continuations here (`first` cannot be SP on a line
+        // that is not one), and skip until we find the field we're after
+        // (git__prefixcmp: a NUL in the field ends it). Most lines already
+        // differ in their first byte, which is compared on its own first.
         let line = &buf[pos..];
-        if !line.starts_with(field) {
+        if line[0] == b' ' || line[0] != first || !line.starts_with(field) {
             pos = eol + 1;
             continue;
         }
@@ -594,12 +602,17 @@ pub fn header_field(raw_header: &[u8], field: &[u8], out: &mut GitStr) -> Result
         }
         return Ok(());
     }
+    Err(no_such_field(field))
+}
+
+#[cold]
+fn no_such_field(field: &[u8]) -> ErrorCode {
     let _ = git_error_set!(
         ErrorClass::OBJECT,
         "no such field '{}'",
         errors::Bytes(field)
     );
-    Err(ErrorCode::NOT_FOUND)
+    ErrorCode::NOT_FOUND
 }
 
 fn malformed() -> ErrorCode {
@@ -1112,18 +1125,9 @@ pub mod ffi {
         buf: *mut GitBuf,
         f: impl FnOnce(&mut GitStr) -> Result<()>,
     ) -> c_int {
-        let mut s = GitStr::new();
-        // SAFETY: `s` is writable; `buf` per the contract.
-        let mut error = unsafe { git_buf_tostr(&raw mut s, buf) };
-        if error == 0 {
-            error = code(f(&mut s));
-            if error == 0 {
-                // SAFETY: as above.
-                error = unsafe { git_buf_fromstr(buf, &raw mut s) };
-            }
-        }
-        drop(s);
-        error
+        // SAFETY: `buf` is NULL or a valid `git_buf` (contract), which `f`
+        // does not reach.
+        unsafe { crate::buf::wrap_private(buf, f) }
     }
 
     /// `git_commit__free`.
@@ -2108,7 +2112,8 @@ pub mod ffi {
         let h = unsafe { opt_cbytes(h) };
         // SAFETY: NUL-terminated (contract).
         let f = unsafe { cstr_bytes(field) };
-        header_field(h.unwrap_or(b""), f, out)
+        // `opt_cbytes` stops at the NUL: no need to look for one.
+        header_field_in(h.unwrap_or(b""), f, out)
     }
 
     /// `git_commit__header_field`.

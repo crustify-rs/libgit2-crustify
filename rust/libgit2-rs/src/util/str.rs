@@ -437,7 +437,10 @@ impl GitStr {
         if self.is_oom() {
             return Err(ErrorCode::GENERIC);
         }
-        if self.capacity_owned() == 0 && self.size != 0 {
+        // (Evaluated once: nothing below changes it before the realloc.)
+        let owned = self.owned();
+        let capacity = if owned { self.asize } else { 0 };
+        if capacity == 0 && self.size != 0 {
             let _ = errors::set_str(ErrorClass::INVALID, "cannot grow a borrowed buffer");
             return Err(ErrorCode::INVALID);
         }
@@ -446,10 +449,10 @@ impl GitStr {
         } else {
             target_size
         };
-        if target <= self.capacity_owned() {
+        if target <= capacity {
             return Ok(());
         }
-        let (mut new_size, old) = if !self.owned() {
+        let (mut new_size, old) = if !owned {
             (target, ptr::null_mut())
         } else {
             let n = self.asize;
@@ -773,6 +776,18 @@ impl GitStr {
     /// `git_str_put`: append `data`.
     #[inline]
     pub fn put(&mut self, data: &[u8]) -> Result<()> {
+        let len = data.len();
+        let n = self.size;
+        // Fast path: an owned buffer with room for `data` and the NUL (what
+        // `ENSURE_SIZE` lets through without growing). Empty data is a
+        // no-op, as in C.
+        if len != 0 && self.owned() && len < self.asize && n < self.asize - len {
+            let buf = self.alloc_mut();
+            buf[n..n + len].write_copy_of_slice(data);
+            buf[n + len].write(0);
+            self.size = n + len;
+            return Ok(());
+        }
         self.put_seg(Seg::Ext(data))
     }
 
