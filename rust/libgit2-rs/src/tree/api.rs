@@ -17,6 +17,7 @@ use std::ffi::CString;
 use super::{GitTree, GitTreeEntry, GitTreeUpdate, GitTreebuilder, WalkResult};
 use crate::commit::deps::{self as pend, git_repository};
 use crate::commit::ec;
+use crate::object::{Object, ObjectType};
 use crate::oid::{Oid, OidType};
 use crate::repository::Repository;
 use crate::util::errors::{Error, ErrorClass, ErrorCode};
@@ -34,32 +35,19 @@ fn err(e: c_int) -> Error {
     Error::from(ec(e))
 }
 
-/// The kind of object a tree entry names.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum EntryKind {
-    /// A file or symbolic link.
-    Blob,
-    /// A directory.
-    Tree,
-    /// A submodule's commit.
-    Commit,
-}
-
-impl EntryKind {
-    fn of(attr: u16) -> EntryKind {
-        match super::entry_type(attr) {
-            crate::commit::OBJ_COMMIT => EntryKind::Commit,
-            crate::commit::OBJ_TREE => EntryKind::Tree,
-            _ => EntryKind::Blob,
-        }
-    }
-}
-
 /// An entry borrowed from a tree or a tree builder.
 #[derive(Clone, Copy)]
 pub struct TreeEntryRef<'t> {
     entry: &'t GitTreeEntry,
 }
+
+// SAFETY: the entry is read only while borrowed (`'t`): a tree's entries
+// are immutable once parsed, a builder's are only changed through
+// `&mut TreeBuilder`, which the borrow excludes. Its name pointer points
+// into the tree's data or the entry's own block, both as immutable.
+unsafe impl Send for TreeEntryRef<'_> {}
+// SAFETY: as above; every method only reads.
+unsafe impl Sync for TreeEntryRef<'_> {}
 
 impl<'t> TreeEntryRef<'t> {
     /// The entry's name.
@@ -69,9 +57,9 @@ impl<'t> TreeEntryRef<'t> {
         unsafe { self.entry.name() }
     }
 
-    /// The id of the object it names.
-    pub fn id(&self) -> Oid {
-        self.entry.oid
+    /// `git_tree_entry_id`: the id of the object it names.
+    pub fn id(&self) -> &'t Oid {
+        &self.entry.oid
     }
 
     /// `git_tree_entry_filemode`: the mode, normalised (a legacy `100664`
@@ -85,9 +73,16 @@ impl<'t> TreeEntryRef<'t> {
         u32::from(self.entry.attr)
     }
 
-    /// `git_tree_entry_type`.
-    pub fn kind(&self) -> EntryKind {
-        EntryKind::of(self.entry.attr)
+    /// `git_tree_entry_type`: the type of the object it names (from the
+    /// mode: a submodule's commit, a tree, else a blob; never invalid).
+    pub fn kind(&self) -> ObjectType {
+        ObjectType::from_raw(super::entry_type(self.entry.attr)).unwrap_or(ObjectType::Blob)
+    }
+
+    /// `git_tree_entry_to_object`: the object it names, looked up in
+    /// `repo`.
+    pub fn to_object<'r>(&self, repo: &'r Repository) -> Result<Object<'r>, Error> {
+        Object::lookup(repo, &self.entry.oid, None)
     }
 
     /// An owned copy (`git_tree_entry_dup`).
@@ -124,6 +119,12 @@ pub struct TreeEntry {
     raw: NonNull<GitTreeEntry>,
 }
 
+// SAFETY: the value owns its `git__allocator` block (the entry and its
+// name), which nothing else reaches; any thread may free it.
+unsafe impl Send for TreeEntry {}
+// SAFETY: `&self` methods only read the block.
+unsafe impl Sync for TreeEntry {}
+
 impl TreeEntry {
     /// # Safety
     ///
@@ -141,6 +142,37 @@ impl TreeEntry {
             // SAFETY: the block this value owns; nothing writes it.
             entry: unsafe { self.raw.as_ref() },
         }
+    }
+
+    /// `git_tree_entry_name`.
+    pub fn name(&self) -> &[u8] {
+        self.as_ref().name()
+    }
+
+    /// `git_tree_entry_id`.
+    pub fn id(&self) -> &Oid {
+        self.as_ref().id()
+    }
+
+    /// `git_tree_entry_filemode`.
+    pub fn filemode(&self) -> u32 {
+        self.as_ref().filemode()
+    }
+
+    /// `git_tree_entry_filemode_raw`.
+    pub fn filemode_raw(&self) -> u32 {
+        self.as_ref().filemode_raw()
+    }
+
+    /// `git_tree_entry_type`.
+    pub fn kind(&self) -> ObjectType {
+        self.as_ref().kind()
+    }
+
+    /// `git_tree_entry_to_object`: the object it names, looked up in
+    /// `repo`.
+    pub fn to_object<'r>(&self, repo: &'r Repository) -> Result<Object<'r>, Error> {
+        self.as_ref().to_object(repo)
     }
 }
 
@@ -198,89 +230,103 @@ pub enum TreeUpdate<'a> {
     Remove { path: &'a [u8] },
 }
 
-/// A tree (`git_tree`).
-pub struct Tree<'a> {
-    raw: NonNull<GitTree>,
-    _data: PhantomData<&'a [u8]>,
+/// A tree (`git_tree`): an [`Object`] of type tree, of a repository or
+/// parsed from bytes ([`Tree::parse`], whose entries borrow them).
+#[derive(Clone)]
+#[repr(transparent)]
+pub struct Tree<'a>(Object<'a>);
+
+impl<'a> TryFrom<Object<'a>> for Tree<'a> {
+    type Error = Object<'a>;
+
+    /// The object as a tree, or the object back if it is not one.
+    fn try_from(obj: Object<'a>) -> Result<Tree<'a>, Object<'a>> {
+        if obj.kind() == ObjectType::Tree {
+            Ok(Tree(obj))
+        } else {
+            Err(obj)
+        }
+    }
+}
+
+impl<'a> From<Tree<'a>> for Object<'a> {
+    fn from(t: Tree<'a>) -> Object<'a> {
+        t.0
+    }
 }
 
 impl<'a> Tree<'a> {
-    /// # Safety
-    ///
-    /// `raw` is a non-NULL parsed tree whose reference the caller hands over,
-    /// and whose data and repository outlive `'a`.
-    unsafe fn from_raw(raw: *mut GitTree) -> Tree<'a> {
-        Tree {
-            // SAFETY: non-NULL (contract).
-            raw: unsafe { NonNull::new_unchecked(raw) },
-            _data: PhantomData,
-        }
+    /// An object known to be a tree.
+    pub(crate) fn wrap(obj: Object<'a>) -> Tree<'a> {
+        debug_assert_eq!(obj.kind(), ObjectType::Tree);
+        Tree(obj)
+    }
+
+    /// An object of type tree, borrowed as a tree.
+    pub(crate) fn from_object_ref<'s>(obj: &'s Object<'a>) -> &'s Tree<'a> {
+        debug_assert_eq!(obj.kind(), ObjectType::Tree);
+        // SAFETY: `Tree` is a `repr(transparent)` wrapper of `Object`, whose
+        // only invariant (the object is a tree) the caller checked.
+        unsafe { &*ptr::from_ref(obj).cast::<Tree<'a>>() }
     }
 
     /// The `git_tree *`, live while `self` is (crate-internal).
     pub(crate) fn as_raw_tree(&self) -> NonNull<GitTree> {
-        self.raw
-    }
-
-    /// `git_tree_lookup` in a C repository.
-    ///
-    /// # Safety
-    ///
-    /// `repo` is NULL or a repository that outlives `'a`.
-    pub(crate) unsafe fn lookup_raw(
-        repo: *mut git_repository,
-        id: &Oid,
-    ) -> Result<Tree<'a>, Error> {
-        if repo.is_null() {
-            // A parsed object has no repository (the C would crash).
-            return Err(Error::from(crate::util::errors::assert_arg_failed("repo")));
-        }
-        let mut raw = ptr::null_mut();
-        // SAFETY: `raw` writable; the repository per the contract (the C
-        // asserts it is not NULL).
-        let e = unsafe { pend::git_tree_lookup(&raw mut raw, repo, id) };
-        if e < 0 {
-            return Err(err(e));
-        }
-        // SAFETY: a tree the lookup returned, ours to release.
-        Ok(unsafe { Tree::from_raw(raw) })
+        self.0.as_ptr().cast()
     }
 
     /// `git_tree_lookup`.
     pub fn lookup(repo: &'a Repository, id: &Oid) -> Result<Tree<'a>, Error> {
-        // SAFETY: the repository lives for `'a`.
-        unsafe { Tree::lookup_raw(repo.raw_ptr(), id) }
+        Ok(Tree(Object::lookup(repo, id, Some(ObjectType::Tree))?))
+    }
+
+    /// `git_tree_lookup_prefix`: by the first `len` hex digits of `id`.
+    pub fn lookup_prefix(repo: &'a Repository, id: &Oid, len: usize) -> Result<Tree<'a>, Error> {
+        Ok(Tree(Object::lookup_prefix(
+            repo,
+            id,
+            len,
+            Some(ObjectType::Tree),
+        )?))
     }
 
     /// Parse a tree from its bytes (`git_object__from_raw`), outside any
-    /// repository; its entries borrow `data`.
+    /// repository; its entries borrow `data` (and
+    /// [`get_path`](Self::get_path) and [`walk`](Self::walk) cannot descend
+    /// into subtrees).
     pub fn parse(data: &'a [u8], oid_type: OidType) -> Result<Tree<'a>, Error> {
-        let mut raw = ptr::null_mut();
-        // SAFETY: `raw` writable; `data` readable, and borrowed by the tree
+        crate::libgit2::ensure_init()?;
+        // SAFETY: `data` readable for its length, and borrowed by the tree
         // for `'a`.
-        let e = unsafe {
-            pend::git_object__from_raw(
-                &raw mut raw,
+        let raw = unsafe {
+            crate::object::from_raw(
                 data.as_ptr().cast(),
                 data.len(),
                 crate::commit::OBJ_TREE,
                 oid_type.raw(),
             )
-        };
-        if e < 0 {
-            return Err(err(e));
-        }
-        // SAFETY: a tree just made, ours to release.
-        Ok(unsafe { Tree::from_raw(raw.cast()) })
+        }?;
+        // SAFETY: a tree just made, with its reference, of no repository;
+        // its data lives for `'a`.
+        Ok(Tree(unsafe { Object::adopt(raw) }))
+    }
+
+    /// The tree as an object.
+    pub fn as_object(&self) -> &Object<'a> {
+        &self.0
+    }
+
+    /// The tree as an object.
+    pub fn into_object(self) -> Object<'a> {
+        self.0
     }
 
     fn t(&self) -> *const GitTree {
-        self.raw.as_ptr()
+        self.as_raw_tree().as_ptr()
     }
 
     fn repo(&self) -> *mut git_repository {
-        // SAFETY: a live tree.
-        unsafe { crate::commit::object_owner(self.t()) }.unwrap_or(ptr::null_mut())
+        self.0.repo_raw().cast()
     }
 
     fn entries(&self) -> &[GitTreeEntry] {
@@ -288,10 +334,9 @@ impl<'a> Tree<'a> {
         unsafe { super::entries(self.t()) }
     }
 
-    /// The tree's id.
-    pub fn id(&self) -> Oid {
-        // SAFETY: a live tree.
-        unsafe { super::ffi::tree_id(self.t()) }
+    /// `git_tree_id`.
+    pub fn id(&self) -> &Oid {
+        self.0.id()
     }
 
     /// The number of entries.
@@ -315,9 +360,10 @@ impl<'a> Tree<'a> {
     }
 
     /// `git_tree_entry_byname`.
-    pub fn get_name(&self, name: &[u8]) -> Option<TreeEntryRef<'_>> {
+    pub fn get_name(&self, name: impl AsRef<[u8]>) -> Option<TreeEntryRef<'_>> {
         // SAFETY: a live tree.
-        unsafe { super::entry_fromname(self.t(), name) }.map(|entry| TreeEntryRef { entry })
+        unsafe { super::entry_fromname(self.t(), name.as_ref()) }
+            .map(|entry| TreeEntryRef { entry })
     }
 
     /// `git_tree_entry_byid`: the first entry naming `id`.
@@ -330,7 +376,8 @@ impl<'a> Tree<'a> {
 
     /// `git_tree_entry_bypath`: the entry at a `/`-separated path, looking
     /// the subtrees up in the tree's repository.
-    pub fn get_path(&self, path: &[u8]) -> Result<TreeEntry, Error> {
+    pub fn get_path(&self, path: impl AsRef<[u8]>) -> Result<TreeEntry, Error> {
+        let path = path.as_ref();
         let repo = self.repo();
         let mut lookup = |id: &Oid| -> crate::util::errors::Result<*mut GitTree> {
             if repo.is_null() {
@@ -426,7 +473,7 @@ impl<'a> Tree<'a> {
                 },
             })
             .collect();
-        let base = baseline.map_or(ptr::null_mut(), |t| t.raw.as_ptr());
+        let base = baseline.map_or(ptr::null_mut(), |t| t.as_raw_tree().as_ptr());
         let mut id = Oid::default();
         // SAFETY: a live repository; `base` NULL or a live tree; the updates'
         // paths live (in `paths`) during the call.
@@ -436,27 +483,10 @@ impl<'a> Tree<'a> {
     }
 }
 
-impl Clone for Tree<'_> {
-    fn clone(&self) -> Self {
-        let mut raw = ptr::null_mut();
-        // SAFETY: a live object; `git_object_dup` only counts a reference.
-        unsafe { pend::git_object_dup(&raw mut raw, self.raw.as_ptr().cast()) };
-        // SAFETY: the reference just taken.
-        unsafe { Tree::from_raw(raw.cast()) }
-    }
-}
-
-impl Drop for Tree<'_> {
-    fn drop(&mut self) {
-        // SAFETY: the reference this value holds, released once.
-        unsafe { pend::git_object_free(self.raw.as_ptr().cast()) }
-    }
-}
-
 impl core::fmt::Debug for Tree<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Tree")
-            .field("id", &self.id())
+            .field("id", self.id())
             .field("entries", &self.len())
             .finish()
     }
@@ -467,6 +497,14 @@ pub struct TreeBuilder<'r> {
     raw: NonNull<GitTreebuilder>,
     _repo: PhantomData<&'r Repository>,
 }
+
+// SAFETY: the value owns its builder (a Rust map of `git__allocator`
+// entries, and a buffer), which nothing else reaches; its repository is
+// `Sync` and outlives `'r`. Any thread may free the entries.
+unsafe impl Send for TreeBuilder<'_> {}
+// SAFETY: `&self` methods (`len`, `is_empty`, `get`) only read the map;
+// every change takes `&mut self`.
+unsafe impl Sync for TreeBuilder<'_> {}
 
 impl<'r> TreeBuilder<'r> {
     /// `git_treebuilder_new`: a builder for `repo`, holding `source`'s
@@ -503,8 +541,8 @@ impl<'r> TreeBuilder<'r> {
     }
 
     /// `git_treebuilder_get`.
-    pub fn get(&self, name: &[u8]) -> Option<TreeEntryRef<'_>> {
-        let name = CString::new(name).ok()?;
+    pub fn get(&self, name: impl AsRef<[u8]>) -> Option<TreeEntryRef<'_>> {
+        let name = CString::new(name.as_ref()).ok()?;
         self.b().get(&name).map(|e| TreeEntryRef {
             // SAFETY: an entry the builder owns, unchanged while `self` is
             // borrowed shared.
@@ -517,11 +555,11 @@ impl<'r> TreeBuilder<'r> {
     /// mode's type, under strict object validation).
     pub fn insert(
         &mut self,
-        name: &[u8],
+        name: impl AsRef<[u8]>,
         id: &Oid,
         filemode: u32,
     ) -> Result<TreeEntryRef<'_>, Error> {
-        let name = cstring(name, "name")?;
+        let name = cstring(name.as_ref(), "name")?;
         // SAFETY: the builder's repository outlives `'r`.
         let e = unsafe { self.b_mut().insert(&name, id, filemode) }.map_err(Error::from)?;
         Ok(TreeEntryRef {
@@ -532,8 +570,8 @@ impl<'r> TreeBuilder<'r> {
     }
 
     /// `git_treebuilder_remove`.
-    pub fn remove(&mut self, name: &[u8]) -> Result<(), Error> {
-        let name = cstring(name, "name")?;
+    pub fn remove(&mut self, name: impl AsRef<[u8]>) -> Result<(), Error> {
+        let name = cstring(name.as_ref(), "name")?;
         if self.b().get(&name).is_none() {
             return Err(Error::from(super::tree_error(
                 "failed to remove entry: file isn't in the tree",

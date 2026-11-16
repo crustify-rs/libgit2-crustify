@@ -1361,12 +1361,37 @@ pub(crate) fn repo_ptr(repo: &Repository) -> *mut git_repository {
     repo.raw_ptr().cast()
 }
 
-/// An object of a repository (`git_object *`), one reference of it; freed
-/// (given back) on drop, duplicated by `Clone`.
+/// An object of a repository (`git_object *`), one reference of it; given
+/// back on drop, duplicated by `Clone` (`git_object_dup`).
+///
+/// [`Commit`](crate::Commit), [`Tree`](crate::Tree), [`Blob`](crate::Blob)
+/// and [`Tag`](crate::Tag) are this type with its kind checked: an object
+/// becomes one with [`into_commit`](Self::into_commit) & co. (or
+/// `TryFrom`), which give the object back when it is of another kind, and
+/// one becomes an object again with `into_object` (`as_object` borrows).
+///
+/// `Object` is `Send` and `Sync`: the object is immutable once parsed (only
+/// its reference count, an atomic, changes), and what its methods reach
+/// besides (the repository's object cache and odb) is synchronised.
 pub struct Object<'repo> {
     raw: NonNull<GitObject>,
     _repo: PhantomData<&'repo Repository>,
 }
+
+// SAFETY: an `Object` holds one counted reference to an object that nothing
+// writes after it is published (module docs: only `cached.refcount`, an
+// atomic, changes; the C ABI's lazily set `summary`/`body` of a commit are
+// never touched by the safe API, and are other fields). Giving the
+// reference back on another thread is `git_cached_obj_decref`, an atomic
+// decrement, and the last one frees the object (and its odb object, with
+// its own atomic count) with `git__allocator`, which any thread may call.
+// The repository it borrows is `Sync`.
+unsafe impl Send for Object<'_> {}
+// SAFETY: every `&self` method only reads the immutable object, takes
+// another reference (atomic), or goes through the repository (lookups,
+// peeling, the odb for short ids), whose caches, odb and configuration are
+// synchronised (`Repository: Sync`).
+unsafe impl Sync for Object<'_> {}
 
 impl<'repo> Object<'repo> {
     /// Adopt a reference to an object of `_repo`.
@@ -1386,12 +1411,13 @@ impl<'repo> Object<'repo> {
     }
 
     /// Adopt a reference to an object (crate-internal: the repository's
-    /// C-shaped code, which ties `'repo` to its own borrow).
+    /// C-shaped code, which ties `'repo` to its own borrow, and objects
+    /// parsed outside any repository, for as long as their data lives).
     ///
     /// # Safety
     ///
     /// `raw` is a live object whose reference passes to the result, and
-    /// whose repository outlives `'repo`.
+    /// whose repository (if any) and data outlive `'repo`.
     pub(crate) unsafe fn adopt(raw: NonNull<GitObject>) -> Object<'repo> {
         Object {
             raw,
@@ -1414,12 +1440,12 @@ impl<'repo> Object<'repo> {
         Ok(unsafe { self.sibling(raw) })
     }
 
-    /// Adopt a reference to an object of the repository an `other` of the
-    /// same lifetime belongs to.
+    /// Adopt a reference to an object of the repository `self` belongs to.
     ///
     /// # Safety
     ///
-    /// As [`from_raw`](Self::from_raw).
+    /// `raw` is a live object of `self`'s repository whose reference passes
+    /// to the result.
     pub(crate) unsafe fn sibling(&self, raw: NonNull<GitObject>) -> Object<'repo> {
         Object {
             raw,
@@ -1427,7 +1453,8 @@ impl<'repo> Object<'repo> {
         }
     }
 
-    /// `git_object_lookup`.
+    /// `git_object_lookup`: the object `id`, of type `kind` (`None`: any;
+    /// another type is `NOT_FOUND`).
     pub fn lookup(
         repo: &'repo Repository,
         id: &Oid,
@@ -1439,7 +1466,8 @@ impl<'repo> Object<'repo> {
         Ok(unsafe { Object::from_raw(repo, raw) })
     }
 
-    /// `git_object_lookup_prefix`: by the first `len` hex digits of `id`.
+    /// `git_object_lookup_prefix`: by the first `len` hex digits of `id`
+    /// (`AMBIGUOUS` below 4 or when several objects match).
     pub fn lookup_prefix(
         repo: &'repo Repository,
         id: &Oid,
@@ -1481,6 +1509,21 @@ impl<'repo> Object<'repo> {
         }
     }
 
+    /// The `git_repository *` of the object (NULL for one parsed outside
+    /// any), live for `'repo`.
+    pub(crate) fn repo_raw(&self) -> *mut git_repository {
+        self.header().repo
+    }
+
+    /// An object parsed outside a repository cannot reach one (C would
+    /// crash): `GIT_ASSERT_ARG(repo)`'s error.
+    pub(crate) fn need_repo(&self) -> core::result::Result<(), Error> {
+        if self.repo_raw().is_null() {
+            return Err(Error::from(errors::assert_arg_failed("repo")));
+        }
+        Ok(())
+    }
+
     /// The C handle, live while `self` is.
     pub(crate) fn as_ptr(&self) -> NonNull<GitObject> {
         self.raw
@@ -1489,46 +1532,134 @@ impl<'repo> Object<'repo> {
     /// `git_object_peel`: peel tags (and commits to their trees) until an
     /// object of type `kind`; `None`: until an object that is not a tag.
     pub fn peel(&self, kind: Option<ObjectType>) -> core::result::Result<Object<'repo>, Error> {
-        // SAFETY: a live object of a repository.
+        if kind != Some(self.kind()) {
+            self.need_repo()?;
+        }
+        // SAFETY: a live object, of a repository unless no step is taken
+        // (checked above).
         let raw = unsafe { peel(self.raw, ObjectType::raw_or_any(kind))? };
         // SAFETY: an object of the same repository, with its reference.
         Ok(unsafe { self.sibling(raw) })
     }
 
-    /// `git_object_short_id`.
-    pub fn short_id(&self) -> core::result::Result<Vec<u8>, Error> {
+    /// `git_object_short_id`: the shortest unambiguous abbreviation of the
+    /// id in the repository (at least `core.abbrev` digits), in hex.
+    pub fn short_id(&self) -> core::result::Result<String, Error> {
+        self.need_repo()?;
         let mut s = GitStr::new();
-        // SAFETY: a live object of a repository.
+        // SAFETY: a live object of a repository (checked above).
         unsafe { short_id(&mut s, self.raw)? };
-        Ok(s.as_bytes().to_vec())
+        // Hex digits only.
+        Ok(String::from_utf8_lossy(s.as_bytes()).into_owned())
     }
 
-    /// `git_object_lookup_bypath`.
+    /// `git_object_lookup_bypath`: the object at `path` (`/`-separated) in
+    /// the tree this object peels to, of type `kind` (`None`: any).
     pub fn lookup_bypath(
         &self,
-        path: &[u8],
+        path: impl AsRef<[u8]>,
         kind: Option<ObjectType>,
     ) -> core::result::Result<Object<'repo>, Error> {
-        let c = std::ffi::CString::new(path).map_err(|_| {
+        self.need_repo()?;
+        let c = std::ffi::CString::new(path.as_ref()).map_err(|_| {
             Error::from(git_error_set!(
                 ErrorClass::INVALID,
                 "path contains a NUL byte"
             ))
         })?;
-        // SAFETY: a live object of a repository, a NUL-terminated path.
+        // SAFETY: a live object of a repository (checked above), a
+        // NUL-terminated path.
         let raw = unsafe { lookup_bypath(self.raw, &c, ObjectType::raw_or_any(kind))? };
         // SAFETY: an object of the same repository.
         Ok(unsafe { self.sibling(raw) })
     }
 
-    /// This object as a blob, if it is one.
-    pub fn into_blob(self) -> core::result::Result<crate::blob::Blob<'repo>, Object<'repo>> {
-        crate::blob::Blob::try_from_object(self)
+    /// This object as a commit, or the object back if it is not one.
+    pub fn into_commit(self) -> core::result::Result<crate::commit::api::Commit<'repo>, Self> {
+        crate::commit::api::Commit::try_from(self)
     }
 
-    /// This object as a tag, if it is one.
-    pub fn into_tag(self) -> core::result::Result<crate::tag::Tag<'repo>, Object<'repo>> {
-        crate::tag::Tag::try_from_object(self)
+    /// This object as a tree, or the object back if it is not one.
+    pub fn into_tree(self) -> core::result::Result<crate::tree::api::Tree<'repo>, Self> {
+        crate::tree::api::Tree::try_from(self)
+    }
+
+    /// This object as a blob, or the object back if it is not one.
+    pub fn into_blob(self) -> core::result::Result<crate::blob::Blob<'repo>, Self> {
+        crate::blob::Blob::try_from(self)
+    }
+
+    /// This object as a tag, or the object back if it is not one.
+    pub fn into_tag(self) -> core::result::Result<crate::tag::Tag<'repo>, Self> {
+        crate::tag::Tag::try_from(self)
+    }
+
+    /// This object borrowed as a tree, if it is one. (A commit cannot be
+    /// borrowed: [`Commit`](crate::Commit) keeps caches beside the object;
+    /// use [`into_commit`](Self::into_commit) on a clone.)
+    pub fn as_tree(&self) -> Option<&crate::tree::api::Tree<'repo>> {
+        (self.kind() == ObjectType::Tree).then(|| crate::tree::api::Tree::from_object_ref(self))
+    }
+
+    /// This object borrowed as a blob, if it is one.
+    pub fn as_blob(&self) -> Option<&crate::blob::Blob<'repo>> {
+        (self.kind() == ObjectType::Blob).then(|| crate::blob::Blob::from_object_ref(self))
+    }
+
+    /// This object borrowed as a tag, if it is one.
+    pub fn as_tag(&self) -> Option<&crate::tag::Tag<'repo>> {
+        (self.kind() == ObjectType::Tag).then(|| crate::tag::Tag::from_object_ref(self))
+    }
+}
+
+impl Object<'static> {
+    /// `git_object_id_from_buffer`: the id `data` would have as an object
+    /// (the header `"<type> <len>\0"` prepended, hashed), with `opts`'
+    /// object and id types. libgit2's filters need a repository (their list
+    /// is loaded from its attributes): use
+    /// [`Repository::hashfile`](crate::Repository::hashfile) for a filtered
+    /// blob id.
+    pub fn id_from_buffer(
+        data: impl AsRef<[u8]>,
+        opts: ObjectIdOptions,
+    ) -> core::result::Result<Oid, Error> {
+        crate::libgit2::ensure_init()?;
+        Ok(id_from_buffer(
+            data.as_ref(),
+            opts.object_type,
+            opts.oid_type,
+        )?)
+    }
+
+    /// `git_object_id_from_file`: as [`id_from_buffer`](Self::id_from_buffer)
+    /// over the contents of the file at `path` (no filters, no attributes:
+    /// see there).
+    pub fn id_from_file(
+        path: impl AsRef<std::path::Path>,
+        opts: ObjectIdOptions,
+    ) -> core::result::Result<Oid, Error> {
+        use std::os::unix::ffi::OsStrExt as _;
+        crate::libgit2::ensure_init()?;
+        let path = std::ffi::CString::new(path.as_ref().as_os_str().as_bytes()).map_err(|_| {
+            Error::from(git_error_set!(
+                ErrorClass::INVALID,
+                "path contains a NUL byte"
+            ))
+        })?;
+        let o = opts.raw();
+        // SAFETY: options without filters, on the stack.
+        Ok(unsafe { id_from_file_c(&path, &raw const o) }?)
+    }
+
+    /// `git_object_rawcontent_is_valid`: whether `data` parses as an object
+    /// of type `kind` whose ids are of type `oid_type` (blobs always do).
+    pub fn rawcontent_is_valid(
+        data: impl AsRef<[u8]>,
+        kind: ObjectType,
+        oid_type: OidType,
+    ) -> core::result::Result<bool, Error> {
+        crate::libgit2::ensure_init()?;
+        Ok(rawcontent_is_valid(data.as_ref(), kind, oid_type)?)
     }
 }
 
@@ -1557,6 +1688,52 @@ impl core::fmt::Debug for Object<'_> {
             .field("kind", &self.kind())
             .field("id", &self.id().hex().as_str())
             .finish()
+    }
+}
+
+/// Options of [`Object::id_from_buffer`] and [`Object::id_from_file`]
+/// (`git_object_id_options`, without the filters: see there). By-value
+/// builder; the default is a blob with a SHA-1 id.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ObjectIdOptions {
+    object_type: ObjectType,
+    oid_type: OidType,
+}
+
+impl Default for ObjectIdOptions {
+    fn default() -> Self {
+        ObjectIdOptions::new()
+    }
+}
+
+impl ObjectIdOptions {
+    /// A blob, SHA-1 (`GIT_OBJECT_ID_OPTIONS_INIT`).
+    pub const fn new() -> ObjectIdOptions {
+        ObjectIdOptions {
+            object_type: ObjectType::Blob,
+            oid_type: OidType::Sha1,
+        }
+    }
+
+    /// The type of the object the data is the content of.
+    pub const fn object_type(mut self, t: ObjectType) -> Self {
+        self.object_type = t;
+        self
+    }
+
+    /// The type of id to compute.
+    pub const fn oid_type(mut self, t: OidType) -> Self {
+        self.oid_type = t;
+        self
+    }
+
+    fn raw(self) -> GitObjectIdOptions {
+        GitObjectIdOptions {
+            version: GIT_OBJECT_ID_OPTIONS_VERSION,
+            object_type: self.object_type.raw(),
+            oid_type: self.oid_type.raw(),
+            filters: ptr::null_mut(),
+        }
     }
 }
 
