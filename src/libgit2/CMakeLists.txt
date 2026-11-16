@@ -24,6 +24,9 @@ file(GLOB SRC_GIT2 *.c *.h
 	streams/*.c streams/*.h
 	transports/*.c transports/*.h)
 list(SORT SRC_GIT2)
+if(RUST_PORTED_SOURCES)
+	list(REMOVE_ITEM SRC_GIT2 ${RUST_PORTED_SOURCES})
+endif()
 target_sources(libgit2 PRIVATE ${SRC_GIT2})
 
 if(WIN32 AND NOT CYGWIN)
@@ -65,7 +68,25 @@ if (NOT BUILD_SHARED_LIBS AND XCODE_VERSION)
 endif()
 
 add_library(libgit2package ${SRC_RC} ${LIBGIT2_OBJECTS})
-target_link_libraries(libgit2package PRIVATE ${LIBGIT2_SYSTEM_LIBS})
+set(LIBGIT2_PACKAGE_LIBS ${LIBGIT2_SYSTEM_LIBS})
+if(USE_RUST)
+	list(REMOVE_ITEM LIBGIT2_PACKAGE_LIBS git2_rust)
+endif()
+target_link_libraries(libgit2package PRIVATE ${LIBGIT2_PACKAGE_LIBS})
+if(USE_RUST)
+	# The Rust port defines public API functions that no C object references;
+	# keep every one of them in the shared library.
+	target_link_libraries(libgit2package PRIVATE "$<LINK_LIBRARY:WHOLE_ARCHIVE,git2_rust>")
+
+	# Export exactly the C library's ABI: rust/libgit2.exports lists the
+	# symbols the C build exports.  Everything else, Rust's standard library
+	# and the port's internal functions alike, stays local.
+	file(STRINGS "${PROJECT_SOURCE_DIR}/rust/libgit2.exports" _exports)
+	string(REPLACE ";" ";\n\t\t" _exports "${_exports}")
+	file(WRITE "${PROJECT_BINARY_DIR}/libgit2.map" "{\n\tglobal:\n\t\t${_exports};\n\tlocal: *;\n};\n")
+	target_link_options(libgit2package PRIVATE "-Wl,--version-script=${PROJECT_BINARY_DIR}/libgit2.map")
+	set_property(TARGET libgit2package APPEND PROPERTY LINK_DEPENDS "${PROJECT_SOURCE_DIR}/rust/libgit2.exports")
+endif()
 target_include_directories(libgit2package SYSTEM PRIVATE ${LIBGIT2_INCLUDES})
 target_include_directories(libgit2package INTERFACE $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
@@ -86,6 +107,21 @@ if(SONAME)
 	elseif(DEFINED LIBGIT2_PREFIX)
 		set_target_properties(libgit2package PROPERTIES PREFIX "${LIBGIT2_PREFIX}")
 	endif()
+endif()
+
+if(USE_RUST)
+	# The C that stays in C, as one static archive, so that the Rust port's
+	# own tests (cargo test --features link-c) can link against it.
+	add_library(git2_c_rest STATIC ${LIBGIT2_OBJECTS})
+	set_target_properties(git2_c_rest PROPERTIES ARCHIVE_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR})
+	set(_rust_link_libs "")
+	foreach(_lib ${LIBGIT2_PACKAGE_LIBS})
+		if(NOT _lib STREQUAL "git2_rust")
+			list(APPEND _rust_link_libs "${_lib}")
+		endif()
+	endforeach()
+	string(REPLACE ";" "\n" _rust_link_libs "${_rust_link_libs}")
+	file(GENERATE OUTPUT "${PROJECT_BINARY_DIR}/rust-link-libs.txt" CONTENT "${_rust_link_libs}\n")
 endif()
 
 pkg_build_config(NAME "lib${LIBGIT2_FILENAME}"

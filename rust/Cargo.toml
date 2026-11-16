@@ -1,0 +1,33 @@
+[workspace]
+resolver = "3"
+members = ["libgit2-rs"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.100"
+license = "GPL-2.0-only WITH GCC-exception-2.0"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+missing_unsafe_on_extern = "deny"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "deny"
+missing_safety_doc = "deny"
+unnecessary_safety_comment = "warn"
+unnecessary_safety_doc = "warn"
+multiple_unsafe_ops_per_block = "warn"
+ptr_as_ptr = "warn"
+borrow_as_ptr = "warn"
+cast_ptr_alignment = "warn"
+transmute_ptr_to_ptr = "warn"
+
+[profile.release]
+opt-level = 3
+debug = "line-tables-only"
+panic = "unwind"
+codegen-units = 16
+
+[profile.dev]
+opt-level = 1

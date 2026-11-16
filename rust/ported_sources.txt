@@ -1,0 +1,4 @@
+# C sources that leave the build when USE_RUST=ON: the Rust port in
+# rust/libgit2-rs implements every function they define.  One path per line,
+# relative to the top of the source tree.
+#src/libgit2/strarray.c

@@ -1,0 +1,23 @@
+[package]
+name = "libgit2-rs"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "libgit2's core (objects, odb, refs, config, index, repository, util) ported to Rust, serving libgit2's C ABI and a safe Rust API"
+
+[lib]
+name = "libgit2_rs"
+crate-type = ["rlib", "staticlib"]
+
+[dependencies]
+ffibox = { path = "/work/ffibox" }
+libc = "0.2"
+
+[lints]
+workspace = true
+
+[features]
+# Link the rest of libgit2's C (see build.rs). Needed by `cargo test` outside
+# Miri, and by Rust consumers of the safe API.
+link-c = []

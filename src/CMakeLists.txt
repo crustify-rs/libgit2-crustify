@@ -155,6 +155,12 @@ list(APPEND LIBGIT2_DEPENDENCY_INCLUDES "${PROJECT_SOURCE_DIR}/deps/reftable")
 list(APPEND LIBGIT2_DEPENDENCY_OBJECTS "$<TARGET_OBJECTS:reftable>")
 
 #
+# The Rust port
+#
+
+include(RustPort)
+
+#
 # Include child projects
 #
 

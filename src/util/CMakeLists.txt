@@ -73,7 +73,11 @@ list(SORT UTIL_SRC_SHA256)
 # Build the library
 #
 
-target_sources(util PRIVATE ${UTIL_SRC} ${UTIL_SRC_OS} ${UTIL_SRC_SHA1} ${UTIL_SRC_SHA256})
+set(UTIL_ALL_SRC ${UTIL_SRC} ${UTIL_SRC_OS} ${UTIL_SRC_SHA1} ${UTIL_SRC_SHA256})
+if(RUST_PORTED_SOURCES)
+	list(REMOVE_ITEM UTIL_ALL_SRC ${RUST_PORTED_SOURCES})
+endif()
+target_sources(util PRIVATE ${UTIL_ALL_SRC})
 ide_split_sources(util)
 
 target_include_directories(util PRIVATE ${UTIL_INCLUDES} ${LIBGIT2_DEPENDENCY_INCLUDES} PUBLIC ${libgit2_SOURCE_DIR}/include)
