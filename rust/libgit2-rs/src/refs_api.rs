@@ -8,8 +8,7 @@
 //!
 //! The repository it works on is the crate's [`Repository`] (`Sync`: the
 //! reference API may be used from several threads on one repository); the
-//! committer of reflog entries is a [`Committer`] until WP l-obj's
-//! `Signature` lands (PENDING(l-obj)).
+//! committer of reflog entries is a [`Signature`].
 
 use core::ffi::{CStr, c_char, c_int};
 use core::marker::PhantomData;
@@ -25,10 +24,11 @@ use crate::refdb::{
 };
 use crate::reflog::{self as rl, GitReflog};
 pub use crate::refs::ReferenceType;
+use crate::refs::deps::{RepoPtr, git_signature};
 use crate::refs::{
     self, GIT_REFERENCE_DIRECT, GIT_REFERENCE_SYMBOLIC, GitReference, RefBox, RefIter, RefView,
 };
-use crate::sys::pending::{RepoPtr, SigBox, git_signature};
+pub use crate::signature::Signature;
 use crate::util::errors::{self, Bytes, Error, ErrorClass, ErrorCode};
 use crate::util::fs_path::to_cstring;
 use crate::util::pool::GitPool;
@@ -555,54 +555,14 @@ pub fn for_each_name(
 // Reflogs
 // ---------------------------------------------------------------------------
 
-/// Who made a reflog entry, and when. PENDING(l-obj): becomes `Signature`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Committer {
-    /// The name.
-    pub name: Vec<u8>,
-    /// The email.
-    pub email: Vec<u8>,
-    /// Seconds since the epoch.
-    pub time: i64,
-    /// The timezone offset, in minutes.
-    pub offset_minutes: i32,
-}
-
-impl Committer {
-    /// A committer.
-    pub fn new(name: &[u8], email: &[u8], time: i64, offset_minutes: i32) -> Committer {
-        Committer {
-            name: name.to_vec(),
-            email: email.to_vec(),
-            time,
-            offset_minutes,
-        }
+/// The committer of the C signature at `sig` (NULL: none).
+fn committer_of(sig: *const git_signature) -> Option<Signature> {
+    if sig.is_null() {
+        return None;
     }
-
-    fn to_sig(&self) -> Result<SigBox> {
-        let (n, e) = (cname(&self.name)?, cname(&self.email)?);
-        rich(SigBox::new(&n, &e, self.time, self.offset_minutes))
-    }
-
-    /// From a C signature.
-    fn from_sig(sig: *const git_signature) -> Option<Committer> {
-        // SAFETY: NULL or a valid signature (an entry's committer, alive
-        // with the entry).
-        let s = unsafe { sig.as_ref() }?;
-        let str_of = |p: *const c_char| -> Vec<u8> {
-            if p.is_null() {
-                return Vec::new();
-            }
-            // SAFETY: the signature's NUL-terminated strings.
-            unsafe { CStr::from_ptr(p) }.to_bytes().to_vec()
-        };
-        Some(Committer {
-            name: str_of(s.name),
-            email: str_of(s.email),
-            time: s.when.time,
-            offset_minutes: s.when.offset,
-        })
-    }
+    // SAFETY: a valid signature (an entry's committer, alive with the
+    // entry).
+    Some(unsafe { Signature::dup_raw(sig) }.expect("out of memory duplicating a signature"))
 }
 
 /// The reflog of a reference (`git_reflog`), freed on drop. Index 0 is
@@ -647,8 +607,8 @@ impl<'a> ReflogEntry<'a> {
     }
 
     /// Who made the change.
-    pub fn committer(&self) -> Option<Committer> {
-        Committer::from_sig(self.get().committer)
+    pub fn committer(&self) -> Option<Signature> {
+        committer_of(self.get().committer)
     }
 }
 
@@ -713,13 +673,12 @@ impl<'repo> Reflog<'repo> {
     pub fn append(
         &mut self,
         id: &Oid,
-        committer: &Committer,
+        committer: &Signature,
         message: Option<&[u8]>,
     ) -> Result<()> {
-        let sig = committer.to_sig()?;
         let msg = message.map(crate::util::fs_path::c_str);
         // SAFETY: our reflog, exclusively borrowed; a valid signature.
-        rich(unsafe { rl::append(self.inner.as_ptr(), id, sig.as_ptr(), msg) })
+        rich(unsafe { rl::append(self.inner.as_ptr(), id, committer.as_raw(), msg) })
     }
 
     /// `git_reflog_drop`: remove entry `idx`; with `rewrite_previous`, keep
@@ -786,7 +745,7 @@ pub struct ReflogRecord {
     /// The new value.
     pub new: Oid,
     /// Who made the change.
-    pub committer: Committer,
+    pub committer: Signature,
     /// The message.
     pub message: Option<Vec<u8>>,
 }
@@ -1142,12 +1101,8 @@ ffibox::impl_cvtable! {
                 Err(e) => return e.raw(),
             };
             for rec in &records {
-                let sig = match rec.committer.to_sig() {
-                    Ok(s) => s,
-                    Err(e) => return fail(&e),
-                };
                 // SAFETY: our reflog; a valid signature.
-                if let Err(e) = unsafe { rl::append(log.as_ptr(), &rec.new, sig.as_ptr(), rec.message.as_deref()) } {
+                if let Err(e) = unsafe { rl::append(log.as_ptr(), &rec.new, rec.committer.as_raw(), rec.message.as_deref()) } {
                     return e.raw();
                 }
                 // `append` chains the old id; keep the record's.
@@ -1176,7 +1131,10 @@ ffibox::impl_cvtable! {
                 records.push(ReflogRecord {
                     old: e.oid_old,
                     new: e.oid_cur,
-                    committer: Committer::from_sig(e.committer).unwrap_or_else(|| Committer::new(b"", b"", 0, 0)),
+                    committer: match committer_of(e.committer) {
+                        Some(c) => c,
+                        None => Signature::empty().expect("out of memory"),
+                    },
                     message,
                 });
             }

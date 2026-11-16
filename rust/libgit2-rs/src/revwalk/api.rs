@@ -1,8 +1,8 @@
 //! The safe Rust API of the revision walker: [`Revwalk`], an iterator of
 //! commit ids, with [`Sort`] flags and push/hide builders.
 //!
-//! PENDING(pathspec): `git_revwalk_pathspec` has no safe counterpart yet;
-//! it needs a Rust `Pathspec` (pathspec.c stays C). Reference names, globs
+//! `git_revwalk_pathspec` has no safe counterpart: it would need a Rust
+//! `Pathspec`, and pathspec.c stays C (PORTING.md). Reference names, globs
 //! and ranges are bytes (`impl AsRef<[u8]>`): git allows names that are not
 //! UTF-8.
 //!

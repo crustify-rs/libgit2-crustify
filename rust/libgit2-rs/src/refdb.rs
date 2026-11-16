@@ -25,10 +25,10 @@ use core::sync::atomic::{AtomicPtr, Ordering};
 use crate::git_error_set;
 use crate::oid::Oid;
 use crate::reflog::GitReflog;
+use crate::refs::deps::{RepoPtr, configmap, git_repository, git_signature};
 use crate::refs::{
     self, GIT_REFERENCE_DIRECT, GIT_REFERENCE_SYMBOLIC, GitReference, RefBox, RefView,
 };
-use crate::sys::pending::{RepoPtr, configmap, git_repository, git_signature};
 use crate::util::alloc;
 use crate::util::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
 use crate::util::thread::GitRefcount;

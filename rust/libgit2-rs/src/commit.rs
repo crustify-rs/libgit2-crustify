@@ -33,7 +33,7 @@ use crate::util::array::GitArray;
 use crate::util::ctype_compat::isspace;
 use crate::util::errors::{self, ErrorClass, ErrorCode, Result};
 use crate::util::str::GitStr;
-use crate::util::util::{isspace_nonlf, memrchr, strntol32, strntol64};
+use crate::util::util::isspace_nonlf;
 use crate::{git_assert_arg, git_error_set};
 use deps::{self as pend, GitCommitGraft, GitObjectHead, git_repository};
 
@@ -172,134 +172,23 @@ pub struct GitCommitbuilder {
 }
 
 // ---------------------------------------------------------------------------
-// Signatures (a port of `git_signature__parse`, l-obj's, kept here so that
-// the commit parser is pure Rust: see DIVERGENCES.md)
+// Signatures (the signature module's parser and writer)
 // ---------------------------------------------------------------------------
 
-/// A parsed signature line: the trimmed name and e-mail (borrowed from the
-/// object's bytes) and the time.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct SigFields<'a> {
-    pub name: &'a [u8],
-    pub email: &'a [u8],
-    pub when: GitTime,
-}
-
-fn signature_parse_error(msg: &str) -> ErrorCode {
-    let _ = git_error_set!(ErrorClass::INVALID, "failed to parse signature - {}", msg);
-    ErrorCode::INVALID
-}
-
-/// `is_crud` of `signature.c`.
-#[inline]
-fn is_crud(c: u8) -> bool {
-    c <= 32 || matches!(c, b',' | b':' | b';' | b'<' | b'>' | b'"' | b'\\' | b'\'')
-}
-
-/// `extract_trimmed` without the copy.
-#[inline]
-fn trimmed(mut s: &[u8]) -> &[u8] {
-    while let [first, rest @ ..] = s {
-        if !is_crud(*first) {
-            break;
-        }
-        s = rest;
-    }
-    while let [rest @ .., last] = s {
-        if !is_crud(*last) {
-            break;
-        }
-        s = rest;
-    }
-    s
-}
+pub use crate::signature::SigFields;
 
 /// `git_signature__parse(sig, &buffer, buffer_end, header, '\n')` over
 /// `buf[*pos..]`: on success `*pos` is past the line's newline.
+#[inline]
 pub fn parse_signature<'a>(buf: &'a [u8], pos: &mut usize, header: &[u8]) -> Result<SigFields<'a>> {
-    let rest = &buf[*pos..];
-    let Some(nl) = memchr::memchr(b'\n', rest) else {
-        return Err(signature_parse_error("no newline given"));
-    };
-    let line = &rest[..nl];
-    if header.len() >= line.len() || !line.starts_with(header) {
-        return Err(signature_parse_error(
-            "expected prefix doesn't match actual",
-        ));
-    }
-    let b = &line[header.len()..];
-    let (Some(es), Some(ee)) = (memrchr(b, b'<'), memrchr(b, b'>')) else {
-        return Err(signature_parse_error("malformed e-mail"));
-    };
-    if ee <= es {
-        return Err(signature_parse_error("malformed e-mail"));
-    }
-    let mut when = GitTime::default();
-    if ee + 2 < b.len() {
-        let ts = ee + 2;
-        let Ok((time, used)) = strntol64(&b[ts..], 10) else {
-            return Err(signature_parse_error("invalid Unix timestamp"));
-        };
-        when.time = time;
-        let time_end = ts + used;
-        if time_end + 1 < b.len() {
-            let tz = time_end + 1;
-            let sign = b[tz];
-            let offset = if sign != b'-' && sign != b'+' {
-                0
-            } else {
-                match strntol32(&b[tz + 1..], 10) {
-                    Ok((v, _)) => v,
-                    // malformed timezone, just assume it's zero
-                    Err(_) => 0,
-                }
-            };
-            let hours = offset / 100;
-            let mins = offset % 100;
-            if hours <= 14 && mins <= 59 {
-                // `offset` is an `i32` (git__strntol32), so `hours` is at
-                // least -21474836 and none of this can overflow.
-                let mut off = hours * 60 + mins;
-                if sign == b'-' {
-                    off = -off;
-                }
-                when.offset = off;
-                when.sign = sign as c_char;
-            }
-        }
-    }
-    *pos += nl + 1;
-    Ok(SigFields {
-        name: trimmed(&b[..es]),
-        email: trimmed(&b[es + 1..ee]),
-        when,
-    })
+    let (f, used) = crate::signature::parse_fields(&buf[*pos..], Some(header), b'\n')?;
+    *pos += used;
+    Ok(f)
 }
 
-/// A `git_signature` allocated as `git_signature__parse` fills one
-/// (`git__malloc`, `git__substrdup` of the name and e-mail).
+/// A `git_signature` allocated as `git_signature__parse` fills one.
 pub(crate) fn alloc_signature(sig: &SigFields<'_>) -> Result<*mut GitSignature> {
-    let name = alloc::substrdup(sig.name);
-    let email = alloc::substrdup(sig.email);
-    let p = alloc::malloc(size_of::<GitSignature>()).cast::<GitSignature>();
-    if p.is_null() || name.is_null() || email.is_null() {
-        // SAFETY: NULL or the allocation just made, freed once.
-        unsafe { alloc::free(name.cast()) };
-        // SAFETY: as above.
-        unsafe { alloc::free(email.cast()) };
-        // SAFETY: as above.
-        unsafe { alloc::free(p.cast()) };
-        return Err(errors::oom());
-    }
-    // SAFETY: `p` is a fresh allocation of a `git_signature`.
-    unsafe {
-        p.write(GitSignature {
-            name,
-            email,
-            when: sig.when,
-        })
-    };
-    Ok(p)
+    crate::signature::alloc_raw(sig)
 }
 
 /// `git_signature_free` of a signature allocated by [`alloc_signature`].
@@ -309,21 +198,12 @@ pub(crate) fn alloc_signature(sig: &SigFields<'_>) -> Result<*mut GitSignature> 
 /// `sig` is NULL or a signature whose strings and struct come from
 /// `git__allocator` and that nothing else frees or uses after.
 pub(crate) unsafe fn free_signature(sig: *mut GitSignature) {
-    if sig.is_null() {
-        return;
-    }
-    // SAFETY: a live signature that the caller hands over.
-    let GitSignature { name, email, .. } = unsafe { sig.read() };
-    // SAFETY: its strings come from `git__allocator`, freed once.
-    unsafe { alloc::free(name.cast()) };
-    // SAFETY: as above.
-    unsafe { alloc::free(email.cast()) };
-    // SAFETY: the struct itself, from `git__allocator`, freed once.
-    unsafe { alloc::free(sig.cast()) };
+    // SAFETY: per the contract.
+    unsafe { crate::signature::free_raw(sig) }
 }
 
-/// `git_signature__writebuf(buf, header, sig)`:
-/// `"%s%s <%s> %u %c%02d%02d\n"`.
+/// `git_signature__writebuf(buf, header, sig)`; a NULL name or e-mail is
+/// printf's `(null)`.
 pub(crate) fn write_signature(
     buf: &mut GitStr,
     header: &[u8],
@@ -331,34 +211,10 @@ pub(crate) fn write_signature(
     email: Option<&[u8]>,
     when: GitTime,
 ) {
-    const FORMAT: &str = "%s%s <%s> %u %c%02d%02d\n";
-    let sign = if when.offset < 0 || when.sign == b'-' as c_char {
-        '-'
-    } else {
-        '+'
-    };
-    // The magnitude, unsigned: for `INT_MIN` the C's `offset = -offset`
-    // overflows, and the C build divides the result as unsigned (see
-    // DEFECTS.md), giving 35791394 hours and 8 minutes.
-    let offset = when.offset.unsigned_abs();
-    let hours = offset / 60;
-    let mins = offset % 60;
     // printf's "%s" of NULL is glibc's "(null)".
     let name = name.unwrap_or(b"(null)");
     let email = email.unwrap_or(b"(null)");
-    let _ = buf.printf(
-        FORMAT.len(),
-        format_args!(
-            "{}{} <{}> {} {}{:02}{:02}\n",
-            errors::Bytes(header),
-            errors::Bytes(name),
-            errors::Bytes(email),
-            when.time as u32,
-            sign,
-            hours,
-            mins
-        ),
-    );
+    crate::signature::writebuf(buf, Some(header), name, email, when);
 }
 
 // ---------------------------------------------------------------------------
@@ -387,8 +243,8 @@ fn bad_buffer() -> ErrorCode {
     ErrorCode::INVALID
 }
 
-/// `git_object__parse_oid_header` over `buf[*pos..]` (l-obj's; inlined for
-/// the parser's hot loop): `<header><hex>\n`.
+/// `git_object__parse_oid_header` over `buf[*pos..]` (the object
+/// module's): `<header><hex>\n`; `None` on a mismatch.
 #[inline]
 pub(crate) fn parse_oid_header(
     buf: &[u8],
@@ -396,19 +252,17 @@ pub(crate) fn parse_oid_header(
     header: &[u8],
     kind: Option<OidType>,
 ) -> Option<Oid> {
-    let hexsize = kind.map_or(0, OidType::hexsize);
     let rest = &buf[*pos..];
-    let total = header.len() + hexsize + 1;
-    if rest.len() < total || !rest.starts_with(header) || rest[header.len() + hexsize] != b'\n' {
-        return None;
-    }
     let Some(kind) = kind else {
-        // git_oid_from_prefix of an unknown type fails.
-        let _ = git_error_set!(ErrorClass::INVALID, "unable to parse OID - too short");
+        // An unknown type has hex size 0: C matches `<header>\n`, then
+        // git_oid_from_prefix fails.
+        if rest.len() > header.len() && rest.starts_with(header) && rest[header.len()] == b'\n' {
+            let _ = git_error_set!(ErrorClass::INVALID, "unable to parse OID - too short");
+        }
         return None;
     };
-    let id = Oid::from_prefix(&rest[header.len()..header.len() + hexsize], kind).ok()?;
-    *pos += total;
+    let (id, used) = crate::object::parse_oid_header(rest, header, kind).ok()?;
+    *pos += used;
     Some(id)
 }
 
@@ -828,19 +682,9 @@ pub fn format_header_field(out: &mut GitStr, field: &[u8], content: &[u8]) -> Re
     }
 }
 
-/// `git_object__write_oid_header` (l-obj's).
+/// `git_object__write_oid_header` (the object module's).
 pub(crate) fn write_oid_header(buf: &mut GitStr, header: &[u8], id: &Oid) -> Result<()> {
-    if id.kind().is_none() {
-        return Err(git_error_set!(ErrorClass::INVALID, "unknown type"));
-    }
-    let _ = buf.puts(header);
-    let _ = buf.put(id.hex().as_bytes());
-    let _ = buf.putc(b'\n');
-    if buf.is_oom() {
-        Err(ErrorCode::GENERIC)
-    } else {
-        Ok(())
-    }
+    crate::object::write_oid_header(buf, header, id)
 }
 
 /// A signature to write: its fields, as C strings may be NULL.

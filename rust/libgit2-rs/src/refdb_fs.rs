@@ -41,6 +41,7 @@ use crate::refdb::{
     git_reference_iterator,
 };
 use crate::reflog::{self, GitReflog};
+use crate::refs::deps::{self as p, RepoPtr, configmap, git_repository, git_signature};
 use crate::refs::{
     self, GIT_HEAD_REF, GIT_PACKEDREFS_FILE, GIT_PACKEDREFS_FILE_MODE, GIT_PACKEDREFS_HEADER,
     GIT_REFERENCE_DIRECT, GIT_REFERENCE_SYMBOLIC, GIT_REFS_DIR, GIT_REFS_FILE_MODE,
@@ -50,7 +51,6 @@ use crate::sys::iterator::{
     FsIterator, GIT_ITERATOR_DESCEND_SYMLINKS, GIT_ITERATOR_IGNORE_CASE,
     GIT_ITERATOR_PRECOMPOSE_UNICODE,
 };
-use crate::sys::pending::{self as p, RepoPtr, configmap, git_repository, git_signature};
 use crate::util::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
 use crate::util::filebuf::{GIT_FILEBUF_CREATE_LEADING_DIRS, GIT_FILEBUF_FSYNC, GitFilebuf};
 use crate::util::fs_path::{

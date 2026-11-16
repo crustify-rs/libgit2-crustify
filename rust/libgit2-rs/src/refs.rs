@@ -24,7 +24,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use crate::git_error_set;
 use crate::oid::{Oid, OidType};
 use crate::refdb::{self, GitRefdb};
-use crate::sys::pending::{self as p, git_repository};
+use crate::refs::deps::{self as p, git_repository};
 use crate::util::alloc;
 use crate::util::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
 use crate::util::str::GitStr;
@@ -882,7 +882,7 @@ pub fn loose_parse_oid(filename: &[u8], content: &[u8], oid_type: c_int) -> Resu
 // ---------------------------------------------------------------------------
 
 use crate::refdb::RefdbPtr;
-use crate::sys::pending::{ObjBox, RepoPtr, SigBox, configmap, git_signature};
+use crate::refs::deps::{ObjBox, RepoPtr, SigBox, configmap, git_signature};
 use crate::util::fs_path::to_cstring;
 use std::ffi::CString;
 
@@ -1041,7 +1041,7 @@ pub(crate) fn create(
     let db = RefdbPtr::of_repo(repo)?;
     let r = match target {
         NewTarget::Oid(oid) => {
-            if !crate::sys::pending::object_is_valid(repo, oid, OBJECT_ANY) {
+            if !crate::refs::deps::object_is_valid(repo, oid, OBJECT_ANY) {
                 return Err(git_error_set!(
                     ErrorClass::REFERENCE,
                     "target OID for the reference doesn't exist on the repository"
@@ -1487,6 +1487,8 @@ pub fn foreach_name(
     }
 }
 
+pub(crate) mod deps;
+
 // ---------------------------------------------------------------------------
 // The C ABI
 // ---------------------------------------------------------------------------
@@ -1501,8 +1503,8 @@ pub fn foreach_name(
 pub mod ffi {
     use super::*;
     use crate::refdb::git_reference_iterator;
+    use crate::refs::deps::git_object;
     use crate::strarray::GitStrArray;
-    use crate::sys::pending::git_object;
     use crate::util::export::{barrier, cstr, cstr_bytes, status};
     use crate::util::vector::GitVector;
 

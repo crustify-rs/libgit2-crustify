@@ -647,33 +647,21 @@ mod tests {
 }
 
 /// Miri tests of the quick parse over a walk of the revwalk module and a
-/// zeroed repository, with a Rust stand-in for the C it calls
-/// (`git_grafts_get`, PENDING(l-obj)), which Miri resolves by symbol.
+/// zeroed repository with empty grafts.
 #[cfg(all(test, miri))]
 #[allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)] // each block's SAFETY covers its sequence
 mod miri_quick {
     use super::*;
     use crate::oid::OidType;
 
-    /// Stand-in: no grafts.
-    #[unsafe(no_mangle)]
-    extern "C" fn git_grafts_get(
-        _out: *mut *mut c_void,
-        grafts: *mut c_void,
-        _oid: *const Oid,
-    ) -> c_int {
-        assert!(!grafts.is_null());
-        ErrorCode::NOT_FOUND.raw()
-    }
-
     /// A walk (the revwalk's own, without an odb) over a zeroed repository
-    /// whose grafts are a dummy (`git_grafts_get` above). The repository
-    /// and the dummy are raw allocations, so that the walk's pointer to
+    /// whose grafts (and shallow grafts) are one empty `Grafts`. The
+    /// repository and the grafts are raw allocations, so that the walk's pointer to
     /// the repository stays valid (a `Box` that moves would retag it).
     struct Fake {
         walk: Box<git_revwalk>,
         repo: *mut crate::repository::GitRepository,
-        grafts: *mut u64,
+        grafts: *mut crate::grafts::Grafts,
     }
 
     impl Fake {
@@ -683,12 +671,12 @@ mod miri_quick {
             let repo: Box<crate::repository::GitRepository> =
                 unsafe { Box::new_zeroed().assume_init() };
             let repo = Box::into_raw(repo);
-            let grafts = Box::into_raw(Box::new(0u64));
+            let grafts = Box::into_raw(Box::new(crate::grafts::Grafts::new(OidType::Sha1)));
             // SAFETY: the fresh repository, ours alone; its own slots.
             unsafe {
                 (*repo).set_oid_type_raw(OidType::Sha1.raw());
-                (*repo).grafts_slot().write(grafts.cast());
-                (*repo).shallow_grafts_slot().write(grafts.cast());
+                (*repo).grafts_slot().write(grafts);
+                (*repo).shallow_grafts_slot().write(grafts);
             }
             let walk = Box::new(git_revwalk::with_repo(repo).unwrap());
             Fake { walk, repo, grafts }

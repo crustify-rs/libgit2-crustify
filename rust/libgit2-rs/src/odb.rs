@@ -110,9 +110,6 @@ pub enum ObjectType {
     RefDelta,
 }
 
-/// The names of `git_objects_table` (object.c), indexed by type.
-const TYPE_NAMES: [&[u8]; 5] = [b"", b"commit", b"tree", b"blob", b"tag"];
-
 impl ObjectType {
     /// From C's value; `None` for `GIT_OBJECT_INVALID` and unknown values.
     pub const fn from_raw(raw: git_object_t) -> Option<ObjectType> {
@@ -166,26 +163,15 @@ impl core::fmt::Display for ObjectType {
     }
 }
 
-/// `git_object_type2string` on C's value.
+/// `git_object_type2string` on C's value (the object module's table).
 pub fn type2string(t: git_object_t) -> &'static [u8] {
-    usize::try_from(t)
-        .ok()
-        .and_then(|i| TYPE_NAMES.get(i).copied())
-        .unwrap_or(b"")
+    crate::object::type2string(t).to_bytes()
 }
 
-/// `git_object_stringn2type` on bytes (C stops at a NUL: the bytes are
-/// taken up to the first one).
+/// `git_object_stringn2type` on bytes (the object module's; C stops at a
+/// NUL).
 pub fn stringn2type(s: &[u8]) -> git_object_t {
-    if s.first().is_none_or(|&c| c == 0) {
-        return GIT_OBJECT_INVALID;
-    }
-    for (i, name) in TYPE_NAMES.iter().enumerate() {
-        if !name.is_empty() && s.len() >= name.len() && &s[..name.len()] == *name {
-            return i as git_object_t;
-        }
-    }
-    GIT_OBJECT_INVALID
+    crate::object::stringn2type(s)
 }
 
 /// `git_object_type_is_valid` on C's value.

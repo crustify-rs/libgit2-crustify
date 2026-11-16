@@ -1233,6 +1233,7 @@ pub fn rawcontent_is_valid(buf: &[u8], t: ObjectType, oid_type: OidType) -> Resu
 /// `git_object__parse_oid_header`: `<header><hex id>\n` at the start of
 /// `buf`; the id and the bytes consumed. -1 (with no message, except an
 /// invalid id's) when it is not there.
+#[inline]
 pub fn parse_oid_header(buf: &[u8], header: &[u8], oid_type: OidType) -> Result<(Oid, usize)> {
     let sha_len = oid_type.hexsize();
     let h = header.len();

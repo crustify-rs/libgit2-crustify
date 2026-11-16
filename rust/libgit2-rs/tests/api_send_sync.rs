@@ -93,7 +93,7 @@ send_sync!(
     Reference<'static>,
     refs_api::PeelTarget,
     refs_api::ReferenceFormat,
-    refs_api::Committer,
+    Signature,
     Reflog,
     refs_api::RefValue,
     HashSigOptions,

@@ -5,8 +5,9 @@
 //! reads each option's arguments from the `va_list`, as the C did, into an
 //! [`OptArgs`], and calls [`ffi::git_libgit2__opts`], which does the rest.
 //! The options are mostly globals of other modules (`git_mwindow__*`,
-//! `git_cache__*`, …): the ported modules' Rust statics, or C globals
-//! declared in `sys` (PENDING for the L-wave modules not yet merged); the
+//! `git_cache__*`, …): the ported modules' Rust statics, or the C globals,
+//! declared in `sys`, of the modules that stay C (sysdir, streams,
+//! transports, indexer); the
 //! user agents and the TLS ciphers are this module's (`git__user_agent`,
 //! `git__user_agent_product`, `git__ssl_ciphers`, read by C).
 //!

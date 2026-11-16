@@ -230,7 +230,7 @@ fn readbuffer_and_writebuffer() {
     // SAFETY: a descriptor this code opened, closed once.
     unsafe { posix::close(fd) }.unwrap();
 
-    // SHA-256 checksums (the hash is still C: PENDING(u2)).
+    // SHA-256 checksums.
     let mut sum = [0u8; 32];
     let mut updated = -1;
     futils::readbuffer_updated(&mut b, &t.c("big"), Some(&mut sum), Some(&mut updated)).unwrap();

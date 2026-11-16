@@ -1,54 +1,26 @@
-//! Functions of modules that another work package is porting concurrently,
-//! called through their C symbols until both have landed (PORTING.md §3).
-//! Each entry carries a `// PENDING(<wp>)` comment.
+//! What refs.c, refdb.c, refdb_fs.c and reflog.c use of the other
+//! modules: the owners' types under the C names, their `ffi` exports, and
+//! small owning wrappers over them.
 
-// ---------------------------------------------------------------------------
-// WP l-refs: what refs.c, refdb.c, refdb_fs.c and reflog.c call in modules
-// that other L WPs are porting.
-// ---------------------------------------------------------------------------
-
-use core::ffi::{c_char, c_int, c_uint};
+use core::ffi::{c_int, c_uint};
 
 use crate::oid::Oid;
-use crate::util::str::GitStr;
 
 /// `git_repository`: the repository module's type.
 #[allow(non_camel_case_types)]
 pub type git_repository = crate::repository::GitRepository;
 
-/// `git_object` (object.h), opaque here. PENDING(l-obj)
-#[repr(C)]
-pub struct git_object {
-    _opaque: [u8; 0],
-}
+/// `git_object`: the object module's type.
+#[allow(non_camel_case_types)]
+pub type git_object = crate::object::GitObject;
 
 /// `git_commit`: the commit module's type.
 #[allow(non_camel_case_types)]
 pub type git_commit = crate::commit::GitCommit;
 
-/// `git_time` (include/git2/types.h, public: mirrored). PENDING(l-obj)
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct git_time {
-    /// Seconds since the epoch.
-    pub time: i64,
-    /// The timezone offset, in minutes.
-    pub offset: c_int,
-    /// `'-'` for a questionable `-0000` offset.
-    pub sign: c_char,
-}
-
-/// `git_signature` (include/git2/types.h, public: mirrored). PENDING(l-obj)
-#[repr(C)]
-#[derive(Debug)]
-pub struct git_signature {
-    /// The name, NUL-terminated.
-    pub name: *mut c_char,
-    /// The email, NUL-terminated.
-    pub email: *mut c_char,
-    /// When.
-    pub when: git_time,
-}
+/// `git_signature`: the signature module's type.
+#[allow(non_camel_case_types)]
+pub type git_signature = crate::signature::GitSignature;
 
 /// `git_configmap_item` values (repository.h).
 pub mod configmap {
@@ -63,83 +35,50 @@ pub mod configmap {
     pub const FSYNCOBJECTFILES: c_int = crate::repository::GIT_CONFIGMAP_FSYNCOBJECTFILES;
 }
 
-// The repository and commits are Rust types C sees as opaque; the l-obj
-// symbols are also declared by other sections.
-#[allow(improper_ctypes, clashing_extern_declarations)]
-unsafe extern "C" {
-    // object.c, object_api.c, tag.c, PENDING(l-obj)
-    /// `git_object__is_valid`. PENDING(l-obj)
-    pub fn git_object__is_valid(repo: *mut git_repository, id: *const Oid, kind: c_int) -> bool;
-    /// `git_object_lookup`. PENDING(l-obj)
-    pub fn git_object_lookup(
-        out: *mut *mut git_object,
-        repo: *mut git_repository,
-        id: *const Oid,
-        kind: c_int,
-    ) -> c_int;
-    /// `git_object_type`. PENDING(l-obj)
-    pub fn git_object_type(obj: *const git_object) -> c_int;
-    /// `git_object_id`. PENDING(l-obj)
-    pub fn git_object_id(obj: *const git_object) -> *const Oid;
-    /// `git_object_free`. PENDING(l-obj)
-    pub fn git_object_free(obj: *mut git_object);
-    /// `git_object_peel`. PENDING(l-obj)
-    pub fn git_object_peel(out: *mut *mut git_object, obj: *const git_object, kind: c_int)
-    -> c_int;
-    /// `git_object_dup`. PENDING(l-obj)
-    pub fn git_object_dup(out: *mut *mut git_object, obj: *mut git_object) -> c_int;
-    /// `git_tag_target_id`. PENDING(l-obj)
-    pub fn git_tag_target_id(tag: *const git_object) -> *const Oid;
+pub use crate::object::ffi::{
+    git_object__is_valid, git_object_dup, git_object_free, git_object_id, git_object_lookup,
+    git_object_peel, git_object_type,
+};
+pub use crate::signature::ffi::{
+    git_signature__parse, git_signature__writebuf, git_signature_default, git_signature_dup,
+    git_signature_free, git_signature_new, git_signature_now,
+};
 
-    // signature.c, PENDING(l-obj)
-    /// `git_signature_new`. PENDING(l-obj)
-    pub fn git_signature_new(
-        out: *mut *mut git_signature,
-        name: *const c_char,
-        email: *const c_char,
-        time: i64,
-        offset: c_int,
-    ) -> c_int;
-    /// `git_signature_now`. PENDING(l-obj)
-    pub fn git_signature_now(
-        out: *mut *mut git_signature,
-        name: *const c_char,
-        email: *const c_char,
-    ) -> c_int;
-    /// `git_signature_default`. PENDING(l-obj)
-    pub fn git_signature_default(out: *mut *mut git_signature, repo: *mut git_repository) -> c_int;
-    /// `git_signature_dup`. PENDING(l-obj)
-    pub fn git_signature_dup(out: *mut *mut git_signature, sig: *const git_signature) -> c_int;
-    /// `git_signature_free`. PENDING(l-obj)
-    pub fn git_signature_free(sig: *mut git_signature);
-    /// `git_signature__parse`. PENDING(l-obj)
-    pub fn git_signature__parse(
-        sig: *mut git_signature,
-        buffer_out: *mut *const c_char,
-        buffer_end: *const c_char,
-        header: *const c_char,
-        ender: c_char,
-    ) -> c_int;
-    /// `git_signature__writebuf`. PENDING(l-obj)
-    pub fn git_signature__writebuf(
-        buf: *mut GitStr,
-        header: *const c_char,
-        sig: *const git_signature,
-    );
-
-    /// `git_commit_lookup` (object_api.c). PENDING(l-obj)
-    pub fn git_commit_lookup(
-        out: *mut *mut git_commit,
-        repo: *mut git_repository,
-        id: *const Oid,
-    ) -> c_int;
-    /// `git_commit_free` (object_api.c). PENDING(l-obj)
-    pub fn git_commit_free(commit: *mut git_commit);
+/// `git_tag_target_id` of a tag object.
+///
+/// # Safety
+///
+/// `tag` is a live tag object.
+pub unsafe fn git_tag_target_id(tag: *const git_object) -> *const Oid {
+    // SAFETY: per the contract (a tag object is a `git_tag`).
+    unsafe { crate::tag::ffi::git_tag_target_id(tag.cast()) }
 }
 
-// ---------------------------------------------------------------------------
-// Safe wrappers of the above (PORTING.md §4.6)
-// ---------------------------------------------------------------------------
+/// `git_commit_lookup` (object_api.c).
+///
+/// # Safety
+///
+/// As the export's.
+pub unsafe fn git_commit_lookup(
+    out: *mut *mut git_commit,
+    repo: *mut git_repository,
+    id: *const Oid,
+) -> c_int {
+    // SAFETY: per the contract.
+    unsafe { crate::object_api::ffi::git_commit_lookup(out.cast(), repo, id) }
+}
+
+/// `git_commit_free` (object_api.c).
+///
+/// # Safety
+///
+/// As the export's.
+pub unsafe fn git_commit_free(commit: *mut git_commit) {
+    // SAFETY: per the contract.
+    unsafe { crate::object_api::ffi::git_commit_free(commit.cast()) }
+}
+
+// Safe wrappers of the above (PORTING.md §4.6).
 
 use core::ffi::CStr;
 use core::ptr::NonNull;
@@ -263,7 +202,7 @@ pub fn fsync_gitdir() -> bool {
     crate::repository::fsync_gitdir()
 }
 
-/// An owned `git_signature`, freed with `git_signature_free`. PENDING(l-obj)
+/// An owned `git_signature`, freed with `git_signature_free`.
 #[derive(Debug)]
 pub struct SigBox(NonNull<git_signature>);
 
@@ -350,7 +289,7 @@ impl Drop for SigBox {
     }
 }
 
-/// An owned `git_object`, freed with `git_object_free`. PENDING(l-obj)
+/// An owned `git_object`, freed with `git_object_free`.
 pub struct ObjBox(NonNull<git_object>);
 
 impl ObjBox {
@@ -378,7 +317,7 @@ impl ObjBox {
 
     /// `git_tag_target_id` of a tag object.
     pub fn tag_target_id(&self) -> Option<Oid> {
-        if self.kind() != 4 {
+        if self.kind() != crate::object::GIT_OBJECT_TAG {
             return None;
         }
         // SAFETY: a live tag object.
@@ -425,7 +364,7 @@ pub fn object_is_valid(repo: RepoPtr, id: &Oid, kind: c_int) -> bool {
 }
 
 /// An owned `git_commit` (looked up and freed through object_api.c,
-/// PENDING(l-obj)).
+///).
 pub struct CommitBox(NonNull<git_commit>);
 
 impl CommitBox {
@@ -460,9 +399,8 @@ impl CommitBox {
 
     /// `git_commit_committer`, alive as long as the commit.
     pub fn committer(&self) -> *const git_signature {
-        // SAFETY: a live commit (l-commit's `GitSignature` and this
-        // `git_signature` both mirror the public `git_signature`).
-        unsafe { crate::commit::ffi::git_commit_committer(self.0.as_ptr()) }.cast()
+        // SAFETY: a live commit.
+        unsafe { crate::commit::ffi::git_commit_committer(self.0.as_ptr()) }
     }
 }
 

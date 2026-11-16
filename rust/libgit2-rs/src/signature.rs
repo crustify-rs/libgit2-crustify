@@ -249,6 +249,31 @@ impl Signature {
         dup_parts(self.name(), self.email(), self.0.when)
     }
 
+    /// A copy of the C signature at `sig` (`git_signature_dup`; a NULL
+    /// name or e-mail copies as empty).
+    ///
+    /// # Safety
+    ///
+    /// `sig` is a valid signature for the call.
+    pub(crate) unsafe fn dup_raw(sig: *const GitSignature) -> Result<Signature> {
+        // SAFETY: per the contract.
+        let s = unsafe { &*sig };
+        let str_of = |p: *const c_char| -> &[u8] {
+            if p.is_null() {
+                return b"";
+            }
+            // SAFETY: the signature's NUL-terminated strings, valid for the
+            // call.
+            unsafe { CStr::from_ptr(p) }.to_bytes()
+        };
+        dup_parts(str_of(s.name), str_of(s.email), s.when)
+    }
+
+    /// An empty signature (empty name and e-mail, time 0).
+    pub(crate) fn empty() -> Result<Signature> {
+        dup_parts(b"", b"", GitTime::default())
+    }
+
     /// The C view (`const git_signature *`), valid while `self` is.
     pub fn as_raw(&self) -> *const GitSignature {
         &raw const self.0
@@ -452,6 +477,28 @@ pub fn current_time() -> (i64, c_int) {
 /// A timestamp that is not a number fails; a timezone that is not one
 /// (or out of range) leaves the offset 0 (and, out of range, the sign 0).
 pub fn parse(buf: &[u8], header: Option<&[u8]>, ender: u8) -> Result<(Signature, usize)> {
+    let (f, used) = parse_fields(buf, header, ender)?;
+    Ok((dup_parts(f.name, f.email, f.when)?, used))
+}
+
+/// A parsed signature, borrowed from the parsed bytes: the trimmed name
+/// and e-mail, and the time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SigFields<'a> {
+    /// The name, trimmed.
+    pub name: &'a [u8],
+    /// The e-mail, trimmed.
+    pub email: &'a [u8],
+    /// The time.
+    pub when: GitTime,
+}
+
+/// [`parse`] without the copies: the fields borrow `buf`.
+pub fn parse_fields<'a>(
+    buf: &'a [u8],
+    header: Option<&[u8]>,
+    ender: u8,
+) -> Result<(SigFields<'a>, usize)> {
     let mut end = buf.len();
     if ender != 0 {
         match memchr::memchr(ender, buf) {
@@ -477,8 +524,8 @@ pub fn parse(buf: &[u8], header: Option<&[u8]>, ender: u8) -> Result<(Signature,
     if gt <= lt {
         return Err(signature_parse_error("malformed e-mail"));
     }
-    let name = extract_trimmed(&s[..lt])?;
-    let email = extract_trimmed(&s[lt + 1..gt])?;
+    let name = trimmed(&s[..lt]);
+    let email = trimmed(&s[lt + 1..gt]);
     let mut when = GitTime::default();
 
     // Is there a time at the end of the signature? (`email_end + 2 <
@@ -516,7 +563,7 @@ pub fn parse(buf: &[u8], header: Option<&[u8]>, ender: u8) -> Result<(Signature,
             }
         }
     }
-    Ok((Signature::from_parts(name, email, when), end + 1))
+    Ok((SigFields { name, email, when }, end + 1))
 }
 
 /// The bytes `git_signature__writebuf` appends.
@@ -745,6 +792,14 @@ pub unsafe fn free_raw(sig: *mut GitSignature) {
     unsafe { alloc::free(s.email.cast()) };
     // SAFETY: as above.
     unsafe { alloc::free(sig.cast()) };
+}
+
+/// A `git__allocator` `git_signature` holding copies of `f`'s strings, as
+/// `git_signature__parse` fills one (freed with [`free_raw`]).
+pub fn alloc_raw(f: &SigFields<'_>) -> Result<*mut GitSignature> {
+    dup_parts(f.name, f.email, f.when)?
+        .into_raw()
+        .map_err(|_| crate::util::errors::oom())
 }
 
 /// The exports of `signature.c`.

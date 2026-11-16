@@ -10,13 +10,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use libgit2_rs::refs_api::{
-    self, Committer, PeelTarget, RefValue, ReferenceFormat, ReferenceNames, ReflogRecord,
-    Repository, set_refdb_backend,
+    self, PeelTarget, RefValue, ReferenceFormat, ReferenceNames, ReflogRecord, Repository,
+    set_refdb_backend,
 };
 use libgit2_rs::util::test_support;
 use libgit2_rs::{
     Error, ErrorClass, ErrorCode, Oid, OidType, RefdbBackend, Reference, ReferenceType, References,
-    Reflog,
+    Reflog, Signature, Time,
 };
 
 const MASTER: &str = "a65fedf39aefe402d3bb6e24df4d4f5fe4547750";
@@ -300,7 +300,12 @@ fn reflogs() {
     assert!(n > 0);
     let newest = log.get(0).unwrap();
     assert!(newest.committer().is_some());
-    let who = Committer::new(b"A U Thor", b"author@example.com", 1_234_567_890, 60);
+    let who = Signature::new(
+        b"A U Thor",
+        b"author@example.com",
+        Time::new(1_234_567_890, 60),
+    )
+    .unwrap();
     log.append(&oid(BR2), &who, Some(b"one\ntwo")).unwrap();
     assert_eq!(log.len(), n + 1);
     let e = log.get(0).unwrap();
@@ -478,7 +483,7 @@ fn rust_backend() {
     // Reflogs round-trip through the backend.
     let mut log = Reflog::read(&repo, b"refs/heads/main").unwrap();
     assert!(log.is_empty());
-    let who = Committer::new(b"me", b"me@example.com", 10, -120);
+    let who = Signature::new(b"me", b"me@example.com", Time::new(10, -120)).unwrap();
     log.append(&oid(MASTER), &who, Some(b"hello")).unwrap();
     log.write().unwrap();
     let log = Reflog::read(&repo, b"refs/heads/main").unwrap();

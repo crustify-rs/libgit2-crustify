@@ -371,11 +371,10 @@ One entry per difference: component, what differs, why.
   state; the repository's is `GitRepository::objects()` of the owner.
 - **odb: `git_odb_write_multi_pack_index`** calls the backends on a copy
   of the list taken under the lock (C walked the list without the lock).
-- **odb: object type names.** `odb.rs` has its own copy of
-  `git_objects_table`'s names (`git_object_type2string`,
-  `git_object_stringn2type`, `git_object_type_is_valid`) and of
-  `git_object_id_from_buffer` without filters (all the odb needs), so that
-  the odb and loose parsing run without object.c (l-obj); same results.
+- **odb: object type names.** `odb::type2string` and `odb::stringn2type`
+  are the object module's (`git_objects_table`), on bytes;
+  `odb::type_is_valid` stays a `const fn` (for `ObjectType::is_loose`) with
+  the same answer as `object::type_is_valid`.
 - **Rust backends and streams are `ffibox::CTable`s** in Rust's allocator
   (C: `git__calloc`), so `cl_alloc_limit` does not see the tables
   themselves; their buffers (object data, the fake stream's buffer, the
@@ -538,14 +537,12 @@ One entry per difference: component, what differs, why.
   C's readers (`git_settings__user_agent`, the transports) keep C's rule.
 ## l-commit (commit, commit_list, tree)
 
-- **Copies of other work packages' parsers.** The commit parser carries its
-  own ports of `git_signature__parse`, `git_signature__writebuf`,
-  `git_object__parse_oid_header` and `git_object__write_oid_header`
-  (l-obj's), with the same messages and results (differential test
-  `rust/difftest/commit_tree_diff.c`), so that it is pure Rust (Miri) and
-  calls no C per header line. The integration step replaces them with
-  l-obj's Rust. The commit's signatures are freed as `git_signature_free`
-  does.
+- **Signatures and oid headers.** The commit parser and writer call the
+  signature and object modules' Rust (`signature::parse_fields`, which
+  borrows the name and e-mail until the commit copies them,
+  `signature::writebuf`, `object::parse_oid_header`,
+  `object::write_oid_header`): no C per header line, and the parse runs
+  under Miri.
 - **Quick parse without a `git_commit`.** `git_commit_list_parse` parses
   the parents and the commit time straight into the walk's node, without
   the temporary `git_commit`, its parent array and its committer that the
@@ -575,9 +572,8 @@ One entry per difference: component, what differs, why.
   `Commit::parent`, `nth_gen_ancestor`, `tree` and `Tree::walk` /
   `get_path` of an object parsed from bytes (no repository) fail with
   `invalid argument: 'repo'`, where the C dereferences NULL.
-- **Repository stand-in.** The safe API takes a
-  `pending_repository::Repository` (PENDING(l-repo)), a minimal owner of a
-  `git_repository *`, until l-repo's `Repository` replaces it.
+- **Repository.** The safe API takes the crate's `Repository` (the
+  stand-in of the work package is gone).
 ## revwalk, hashsig (WP l-revwalk)
 
 - **revwalk: `git_revwalk` is a shared prefix.** `revwalk.h` keeps `repo`,
@@ -632,9 +628,9 @@ One entry per difference: component, what differs, why.
   -1. The objects C sees (references, reflogs, entries, names handed out)
   still come from `git__allocator` or a `git_pool`, so `cl_alloc_limit`
   still makes them fail.
-- **Safe API placeholders.** `refs_api::Repository` (open/init/free) stands
-  in for WP l-repo's `Repository`, and `refs_api::Committer` for WP l-obj's
-  `Signature`, until those land (PENDING). Rust backends
+- **refs_api backends.** (The placeholders `refs_api::Repository` and
+  `refs_api::Committer` are gone: the API takes the crate's `Repository`
+  and `Signature`.) Rust backends
   (`RefdbBackend`) do not offer `lock`/`unlock` (transactions fail with
   "backend does not support locking", as for a C backend without them); a
   panic in one is an error of class `GIT_ERROR_INTERNAL`.

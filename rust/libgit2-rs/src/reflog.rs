@@ -20,7 +20,7 @@ use crate::oid::{Oid, OidType};
 use crate::parse::GitParseCtx;
 use crate::refdb::{self, GitRefdb, RefdbPtr};
 use crate::refdb_fs::oid_clear;
-use crate::sys::pending::{self as p, RepoPtr, git_repository, git_signature};
+use crate::refs::deps::{self as p, RepoPtr, git_repository, git_signature};
 use crate::util::alloc;
 use crate::util::errors::{self, ErrorClass, ErrorCode, Result};
 use crate::util::str::GitStr;
