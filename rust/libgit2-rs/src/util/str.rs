@@ -3444,6 +3444,37 @@ impl GitStr {
 mod tests {
     use super::*;
 
+    /// `put`'s fast path (room in an owned buffer) and its boundary with
+    /// the growing path: the contents and the NUL are those of C.
+    #[test]
+    fn put_fast_path_and_growth() {
+        let _g = crate::util::test_support::init();
+        let mut s = GitStr::with_capacity(8).unwrap();
+        let cap = s.capacity();
+        s.put(b"").unwrap();
+        assert_eq!(s.as_bytes(), b"");
+        // Exactly fills the buffer, NUL included: no growth.
+        let fill = vec![b'a'; cap - 1];
+        s.put(&fill).unwrap();
+        assert_eq!(s.capacity(), cap);
+        assert_eq!(s.as_bytes(), &fill[..]);
+        // One more byte must grow.
+        s.put(b"b").unwrap();
+        assert!(s.capacity() > cap);
+        assert_eq!(s.len(), cap);
+        assert_eq!(s.as_bytes()[cap - 1], b'b');
+        // SAFETY: the owned buffer holds the NUL after the contents.
+        assert_eq!(unsafe { *s.as_ptr().add(s.len()) }, 0);
+        // A borrowed string is never written in place.
+        let data = b"xyz";
+        let mut b = GitStr::new();
+        // SAFETY: `data` outlives `b` and is not written.
+        unsafe { b.attach_notowned(data.as_ptr().cast(), data.len()) };
+        // (`ENSURE_SIZE` returns -1 whatever the growth failed with.)
+        assert_eq!(b.put(b"q").unwrap_err(), ErrorCode::GENERIC);
+        assert_eq!(b.as_bytes(), b"xyz");
+    }
+
     /// F-5: segments of the string's own contents are checked, whatever
     /// the crate-internal caller passes.
     #[test]

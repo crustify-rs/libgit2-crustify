@@ -1522,6 +1522,32 @@ mod tests {
     const HEX: &[u8] = b"ae90f12eea699729ed24555e40b9fd669da12a12";
 
     #[test]
+    fn pathfmt_in_place() {
+        let _g = crate::util::test_support::init();
+        for (hex, t) in [
+            (&HEX[..], OidType::Sha1),
+            (&[b'7'; 64][..], OidType::Sha256),
+        ] {
+            let id = Oid::from_hex(hex, t).unwrap();
+            let n = t.hexsize() + 1;
+            // An uninitialized buffer, one byte longer: the last is not
+            // written.
+            let mut buf = [core::mem::MaybeUninit::<u8>::uninit(); GIT_OID_MAX_HEXSIZE + 2];
+            buf[n].write(0xa5);
+            // SAFETY: `n` writable bytes; a valid oid.
+            let r = unsafe { ffi::git_oid_pathfmt(buf.as_mut_ptr().cast(), &id) };
+            assert_eq!(r, 0);
+            // SAFETY: the first `n` bytes were written, and byte `n` above.
+            let out: Vec<u8> = buf[..=n]
+                .iter()
+                .map(|b| unsafe { b.assume_init() })
+                .collect();
+            assert_eq!(&out[..n], id.hex_path().unwrap().as_bytes());
+            assert_eq!(out[n], 0xa5);
+        }
+    }
+
+    #[test]
     fn parse_and_format() {
         let _g = crate::util::test_support::init();
         let id = Oid::from_hex(HEX, OidType::Sha1).unwrap();

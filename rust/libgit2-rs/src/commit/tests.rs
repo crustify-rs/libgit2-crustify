@@ -369,6 +369,19 @@ fn header_fields() {
         ErrorCode::GENERIC
     );
     assert_eq!(errors::last_message().unwrap(), b"malformed header");
+    // An empty field, or one starting with SP, matches no line (C skips
+    // continuation lines before comparing).
+    assert_eq!(get("").unwrap_err(), ErrorCode::NOT_FOUND);
+    assert_eq!(errors::last_message().unwrap(), b"no such field ''");
+    assert_eq!(get(" line2").unwrap_err(), ErrorCode::NOT_FOUND);
+    // The header is read as a C string: up to its first NUL.
+    let mut out = GitStr::new();
+    assert_eq!(
+        header_field(b"a 1\n\0b 2\n", b"b", &mut out).unwrap_err(),
+        ErrorCode::NOT_FOUND
+    );
+    header_field(b"a 1\nb 2\0\n", b"a", &mut out).unwrap();
+    assert_eq!(out.as_bytes(), b"1");
     // A field with a newline matching across lines (C: a negative length).
     assert!(header_field(b"a\nb c\n", b"a\nb", &mut out).is_err());
 }
