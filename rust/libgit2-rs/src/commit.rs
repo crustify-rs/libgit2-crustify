@@ -26,7 +26,8 @@ use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::ptr;
 
 use crate::oid::{Oid, OidType, git_oid_t};
-use crate::sys::pending::l_commit::{self as pend, GitCommitGraft, GitObjectHead, git_repository};
+pub(crate) mod deps;
+
 use crate::util::alloc;
 use crate::util::array::GitArray;
 use crate::util::ctype_compat::isspace;
@@ -34,6 +35,7 @@ use crate::util::errors::{self, ErrorClass, ErrorCode, Result};
 use crate::util::str::GitStr;
 use crate::util::util::{isspace_nonlf, memrchr, strntol32, strntol64};
 use crate::{git_assert_arg, git_error_set};
+use deps::{self as pend, GitCommitGraft, GitObjectHead, git_repository};
 
 pub mod api;
 
@@ -55,25 +57,11 @@ pub const GIT_COMMIT_PARSE_QUICK: c_uint = 1 << 0;
 // Types
 // ---------------------------------------------------------------------------
 
-/// `git_time` (`include/git2/types.h`, public).
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct GitTime {
-    /// `git_time_t`.
-    pub time: i64,
-    pub offset: c_int,
-    pub sign: c_char,
-}
-
-/// `git_signature` (`include/git2/types.h`, public). The signature module is
-/// l-obj's; the commit allocates and frees its own (as
-/// `git_signature_free` does: `name`, `email`, then the struct).
-#[repr(C)]
-pub struct GitSignature {
-    pub name: *mut c_char,
-    pub email: *mut c_char,
-    pub when: GitTime,
-}
+/// `git_time` and `git_signature` (`include/git2/types.h`, public): the
+/// signature module's mirrors. The commit allocates and frees its own
+/// signatures (as `git_signature_free` does: `name`, `email`, then the
+/// struct).
+pub use crate::signature::{GitSignature, GitTime};
 
 /// `struct git_commit` (`commit.h`).
 #[repr(C)]
@@ -1265,7 +1253,7 @@ pub mod ffi {
     use super::*;
     use crate::buf::GitBuf;
     use crate::buf::ffi::{git_buf_fromstr, git_buf_tostr};
-    use crate::sys::pending::l_commit::GitCommitArray;
+    use crate::commit::deps::GitCommitArray;
     use crate::util::export::{barrier, cstr_bytes};
 
     /// `GIT_BUF_WRAP_PRIVATE(buf, fn, …)`.
@@ -3075,9 +3063,7 @@ crate::c_layout_test! {
             version, author, committer, message_encoding, extra_headers,
             extra_headers_len, sign, payload
         },
-        crate::sys::pending::l_commit::GitObjectHead => "git_object" { cached, repo },
-        crate::sys::pending::l_commit::GitCommitGraft => "git_commit_graft" { oid, parents },
-        crate::sys::pending::l_commit::GitCommitArray => "git_commitarray" { commits, count },
+        crate::commit::deps::GitCommitArray => "git_commitarray" { commits, count },
     ],
     asserts: ["GIT_COMMIT_PARSE_QUICK == 1"],
 }

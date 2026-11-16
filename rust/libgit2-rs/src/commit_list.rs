@@ -18,11 +18,11 @@
 use core::ffi::{c_int, c_void};
 use core::ptr;
 
+use crate::commit::deps::{self as pend, git_revwalk};
 use crate::commit::{self, CommitSink, SigFields};
 use crate::git_error_set;
 use crate::oid::{Oid, git_oid_t};
 use crate::sys::commit_graph;
-use crate::sys::pending::l_commit::{self as pend, git_revwalk};
 use crate::util::alloc;
 use crate::util::errors::{self, ErrorClass, ErrorCode, Result};
 use crate::util::pool::GitPool;

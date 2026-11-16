@@ -58,7 +58,7 @@ pub unsafe fn odb_free(odb: *mut p::git_odb) {
 /// `git_commit_list_parse` of a node of `walk` (it is not parsed yet: the
 /// Rust checks `parsed` first, as the C does on entry).
 pub fn commit_list_parse(walk: &GitRevwalk, node: NodePtr) -> Result<()> {
-    let w: *mut crate::sys::pending::l_commit::git_revwalk = ptr::from_ref(walk).cast_mut().cast();
+    let w: *mut crate::commit::deps::git_revwalk = ptr::from_ref(walk).cast_mut().cast();
     // SAFETY: a live walk and one of its nodes. C reads `repo` and `odb`,
     // writes the node (no Rust reference covers it) and the pool, and calls
     // `git_revwalk__commit_lookup`, which reaches `commits` and the pool:

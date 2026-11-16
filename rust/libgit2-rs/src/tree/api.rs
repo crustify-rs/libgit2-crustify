@@ -15,10 +15,10 @@ use core::ptr::{self, NonNull};
 use std::ffi::CString;
 
 use super::{GitTree, GitTreeEntry, GitTreeUpdate, GitTreebuilder, WalkResult};
+use crate::commit::deps::{self as pend, git_repository};
 use crate::commit::ec;
 use crate::oid::{Oid, OidType};
 use crate::repository::Repository;
-use crate::sys::pending::l_commit::{self as pend, git_repository};
 use crate::util::errors::{Error, ErrorClass, ErrorCode};
 use crate::util::str::GitStr;
 

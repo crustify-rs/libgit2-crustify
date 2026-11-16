@@ -15,9 +15,9 @@ use core::ptr::{self, NonNull};
 use std::ffi::CString;
 
 use super::{CreateArgs, GitCommit, GitSignature, GitTime, SigOut};
+use crate::commit::deps as pend;
 use crate::oid::{Oid, OidType};
 use crate::repository::Repository;
-use crate::sys::pending::l_commit as pend;
 use crate::tree::api::Tree;
 use crate::util::errors::{Error, ErrorClass, ErrorCode};
 use crate::util::str::GitStr;

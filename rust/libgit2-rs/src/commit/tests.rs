@@ -542,7 +542,7 @@ fn options_init() {
 #[test]
 fn commitarray_dispose_empty() {
     let _g = test_support::init();
-    let mut a = crate::sys::pending::l_commit::GitCommitArray {
+    let mut a = crate::commit::deps::GitCommitArray {
         commits: core::ptr::null(),
         count: 0,
     };

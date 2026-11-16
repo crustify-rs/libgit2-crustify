@@ -8,7 +8,7 @@
 use core::ffi::{c_char, c_int, c_void};
 use core::marker::{PhantomData, PhantomPinned};
 
-use crate::sys::pending::l_commit::{git_index, git_repository};
+use crate::commit::deps::{git_index, git_repository};
 use crate::tree::GitTree;
 
 use crate::oid::{Oid, git_oid_t};

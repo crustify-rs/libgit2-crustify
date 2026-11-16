@@ -7,7 +7,6 @@ use core::ffi::{c_char, c_int, c_void};
 use core::ptr::NonNull;
 
 use crate::oid::{Oid, git_oid_t};
-use crate::sys::pending::l_commit::git_commit_graph_file;
 use crate::util::errors::{ErrorCode, Result};
 
 unsafe extern "C" {
@@ -72,6 +71,14 @@ impl Drop for CommitGraph {
         // SAFETY: owned, freed once.
         unsafe { git_commit_graph_free(self.0.as_ptr()) }
     }
+}
+
+/// `git_commit_graph_file` (`commit_graph.h`), opaque here.
+#[repr(C)]
+#[allow(non_camel_case_types)]
+pub struct git_commit_graph_file {
+    _private: [u8; 0],
+    _marker: core::marker::PhantomData<(*mut u8, core::marker::PhantomPinned)>,
 }
 
 /// `git_commit_graph_entry` (`commit_graph.h`), filled by the C.

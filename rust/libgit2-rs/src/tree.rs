@@ -32,11 +32,11 @@
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::ptr;
 
+use crate::commit::deps::{self as pend, GitObjectHead, git_repository};
 use crate::commit::{
     OBJ_ANY, OBJ_BLOB, OBJ_COMMIT, OBJ_INVALID, OBJ_TREE, code, object_id, repo_odb,
 };
 use crate::oid::{Oid, OidType, git_oid_t};
-use crate::sys::pending::l_commit::{self as pend, GitObjectHead, git_repository};
 use crate::util::alloc;
 use crate::util::array::GitArray;
 use crate::util::ctype_compat::isspace;
@@ -1255,10 +1255,7 @@ fn next_component(input: &[u8]) -> Option<&[u8]> {
 
 /// The type name of an object type.
 fn type2string(t: c_int) -> &'static [u8] {
-    // SAFETY: any type value is accepted.
-    let s = unsafe { pend::git_object_type2string(t) };
-    // SAFETY: git_object_type2string returns a static NUL-terminated string.
-    unsafe { CStr::from_ptr(s) }.to_bytes()
+    crate::object::type2string(t).to_bytes()
 }
 
 /// `create_popped_tree`: write the tree of `popped` (or remove it when
