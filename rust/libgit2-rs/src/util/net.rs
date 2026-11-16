@@ -22,7 +22,7 @@ use core::mem;
 use crate::util::alloc::{self, GitCStr};
 use crate::util::errors::{self, Bytes, Error, ErrorClass, ErrorCode, Result};
 use crate::util::str::GitStr;
-use crate::util::util::{memzero, strlcmp};
+use crate::util::util::memzero;
 use crate::{git_assert, git_assert_arg, git_error_set};
 
 const DEFAULT_PORT_HTTP: &[u8] = b"80";
@@ -786,6 +786,25 @@ pub fn parse_standard_or_scp(url: &mut GitNetUrl, given: &[u8]) -> Result<()> {
     }
 }
 
+/// `git_str_puts`, with the foundation's fast path first (the pieces of a
+/// URL never lie within `buf`); errors are left in `buf` (out of memory),
+/// as C checks `git_str_oom` at the end.
+#[inline(always)]
+fn append(buf: &mut GitStr, s: &[u8]) {
+    // SAFETY: `s` is readable for its length.
+    if !unsafe { buf.try_put_fast(s.as_ptr(), s.len()) } {
+        let _ = buf.puts(s);
+    }
+}
+
+/// `git_str_putc`, as [`append`].
+#[inline(always)]
+fn append_c(buf: &mut GitStr, c: u8) {
+    if !buf.try_putc_fast(c) {
+        let _ = buf.putc(c);
+    }
+}
+
 /// A NULL `%s` as glibc's printf shows it.
 fn or_null(f: Option<&[u8]>) -> &[u8] {
     f.unwrap_or(b"(null)")
@@ -794,6 +813,54 @@ fn or_null(f: Option<&[u8]>) -> &[u8] {
 /// Replace `slot` without freeing what it held, as C's assignment does.
 fn overwrite(slot: &mut Option<GitCStr>, value: GitCStr) {
     mem::forget(slot.replace(value));
+}
+
+/// `matches_pattern` on the URL's host and port.
+fn matches_one(host: &[u8], url_port: &[u8], pattern: &[u8]) -> bool {
+    let pattern_len = pattern.len();
+    let wildcard = if pattern_len == 0 {
+        return false;
+    } else if pattern == b"*" {
+        return true;
+    } else if pattern_len > 1 && pattern[0] == b'*' && pattern[1] == b'.' {
+        2
+    } else if pattern[0] == b'.' {
+        1
+    } else {
+        0
+    };
+
+    let mut domain = &pattern[wildcard..];
+    let mut port: &[u8] = b"";
+    if let Some(colon) = memchr::memchr(b':', domain) {
+        port = &domain[colon + 1..];
+        domain = &domain[..colon];
+    }
+
+    // A pattern's port *must* match if it's specified (`git__strlcmp`
+    // on strings without NULs: equality)
+    if !port.is_empty() && url_port != port {
+        return false;
+    }
+
+    // No wildcard? Host must match exactly.
+    if wildcard == 0 {
+        return host == domain;
+    }
+
+    // Wildcard: ensure there's (at least) a suffix match
+    let (host_len, domain_len) = (host.len(), domain.len());
+    if host_len < domain_len || &host[host_len - domain_len..] != domain {
+        return false;
+    }
+
+    // The pattern is *.domain and the host is simply domain
+    if host_len == domain_len {
+        return true;
+    }
+
+    // The pattern is *.domain and the host is foo.domain
+    host[host_len - domain_len - 1] == b'.'
 }
 
 impl GitNetUrl {
@@ -1025,22 +1092,23 @@ impl GitNetUrl {
         git_assert_arg!(self.scheme.is_some(), "url->scheme");
         git_assert_arg!(self.host.is_some(), "url->host");
 
-        let _ = buf.puts(field(&self.scheme).unwrap_or(b""));
-        let _ = buf.puts(b"://");
+        append(buf, field(&self.scheme).unwrap_or(b""));
+        append(buf, b"://");
         if let Some(u) = field(&self.username) {
-            let _ = buf.puts(u);
+            append(buf, u);
             if let Some(p) = field(&self.password) {
-                let _ = buf.puts(b":");
-                let _ = buf.puts(p);
+                append(buf, b":");
+                append(buf, p);
             }
-            let _ = buf.putc(b'@');
+            append_c(buf, b'@');
         }
-        let _ = buf.puts(field(&self.host).unwrap_or(b""));
+        append(buf, field(&self.host).unwrap_or(b""));
+        let default = field(&self.scheme).and_then(default_port_for_scheme);
         if let Some(port) = field(&self.port)
-            && !self.is_default_port()
+            && default != Some(port)
         {
-            let _ = buf.putc(b':');
-            let _ = buf.puts(port);
+            append_c(buf, b':');
+            append(buf, port);
         }
         self.fmt_path_query(buf)
     }
@@ -1051,10 +1119,10 @@ impl GitNetUrl {
     }
 
     fn fmt_path_query(&self, buf: &mut GitStr) -> Result<()> {
-        let _ = buf.puts(field(&self.path).unwrap_or(b"/"));
+        append(buf, field(&self.path).unwrap_or(b"/"));
         if let Some(q) = field(&self.query) {
-            let _ = buf.putc(b'?');
-            let _ = buf.puts(q);
+            append_c(buf, b'?');
+            append(buf, q);
         }
         if buf.is_oom() {
             Err(ErrorCode::GENERIC)
@@ -1070,54 +1138,13 @@ impl GitNetUrl {
     }
 
     fn matches_one(&self, pattern: &[u8]) -> bool {
-        let pattern_len = pattern.len();
-        let wildcard = if pattern_len == 0 {
-            return false;
-        } else if pattern == b"*" {
-            return true;
-        } else if pattern_len > 1 && pattern[0] == b'*' && pattern[1] == b'.' {
-            2
-        } else if pattern[0] == b'.' {
-            1
-        } else {
-            0
-        };
-
-        let mut domain = &pattern[wildcard..];
-        let mut port: &[u8] = b"";
-        if let Some(colon) = memchr::memchr(b':', domain) {
-            port = &domain[colon + 1..];
-            domain = &domain[..colon];
-        }
-
         // C reads NULL host and port fields; they are "" here (DEFECTS.md).
-        let host = field(&self.host).unwrap_or(b"");
-
-        // A pattern's port *must* match if it's specified
-        if !port.is_empty() && strlcmp(field(&self.port).unwrap_or(b""), port) != 0 {
-            return false;
-        }
-
-        // No wildcard? Host must match exactly.
-        if wildcard == 0 {
-            return strlcmp(host, domain) == 0;
-        }
-
-        // Wildcard: ensure there's (at least) a suffix match
-        let (host_len, domain_len) = (host.len(), domain.len());
-        if host_len < domain_len || &host[host_len - domain_len..] != domain {
-            return false;
-        }
-
-        // The pattern is *.domain and the host is simply domain
-        if host_len == domain_len {
-            return true;
-        }
-
-        // The pattern is *.domain and the host is foo.domain
-        host[host_len - domain_len - 1] == b'.'
+        matches_one(
+            field(&self.host).unwrap_or(b""),
+            field(&self.port).unwrap_or(b""),
+            pattern,
+        )
     }
-
     /// `git_net_url_matches_pattern_list`: any of the comma-separated
     /// patterns matches.
     pub fn matches_pattern_list(&self, pattern_list: &[u8]) -> bool {
@@ -1125,7 +1152,10 @@ impl GitNetUrl {
         if list.is_empty() {
             return false;
         }
-        list.split(|&c| c == b',').any(|p| self.matches_one(p))
+        let host = field(&self.host).unwrap_or(b"");
+        let port = field(&self.port).unwrap_or(b"");
+        list.split(|&c| c == b',')
+            .any(|p| matches_one(host, port, p))
     }
 }
 

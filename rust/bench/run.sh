@@ -8,6 +8,7 @@
 #   FILTER  substring of workload names
 #   BENCH_CPU=N  pin to CPU N with taskset (default 2; set BENCH_CPU= to disable)
 set -euo pipefail
+BENCH="${BENCH:-util_bench}"   # which <name>.c to build/run (e.g. u4_bench)
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="$HERE/out"
@@ -16,7 +17,7 @@ ROUNDS="${2:-5}"
 FILTER="${3:-}"
 CPU="${BENCH_CPU-2}"
 
-for b in util_bench_c util_bench_rust; do
+for b in ${BENCH}_c ${BENCH}_rust; do
 	[ -x "$OUT/$b" ] || { echo "run.sh: $OUT/$b missing; run build.sh first" >&2; exit 1; }
 done
 
@@ -25,15 +26,15 @@ if [ -n "$CPU" ] && command -v taskset >/dev/null 2>&1; then
 	PIN=(taskset -c "$CPU")
 fi
 
-names=$("$OUT/util_bench_c" 1 $FILTER 2>/dev/null | awk '$1=="bench"{print $2}')
+names=$("$OUT/${BENCH}_c" 1 $FILTER 2>/dev/null | awk '$1=="bench"{print $2}')
 echo "# iters=$ITERS rounds=$ROUNDS pin=${PIN[*]:-none} load=$(cut -d' ' -f1 /proc/loadavg)" >&2
 printf "%-22s | %9s %9s | %9s %9s | %6s %6s\n" name "C med" "C min" "Rust med" "Rust min" "r med" "r min"
 printf -- "-----------------------+---------------------+---------------------+--------------\n"
 for n in $names; do
 	cs=(); rs=()
 	for ((i = 0; i < ROUNDS; i++)); do
-		cs+=("$("${PIN[@]}" "$OUT/util_bench_c" "$ITERS" "$n" 2>/dev/null | awk -v n="$n" '$1=="bench" && $2==n{print $4}')")
-		rs+=("$("${PIN[@]}" "$OUT/util_bench_rust" "$ITERS" "$n" 2>/dev/null | awk -v n="$n" '$1=="bench" && $2==n{print $4}')")
+		cs+=("$("${PIN[@]}" "$OUT/${BENCH}_c" "$ITERS" "$n" 2>/dev/null | awk -v n="$n" '$1=="bench" && $2==n{print $4}')")
+		rs+=("$("${PIN[@]}" "$OUT/${BENCH}_rust" "$ITERS" "$n" 2>/dev/null | awk -v n="$n" '$1=="bench" && $2==n{print $4}')")
 	done
 	printf "%s\n" "${cs[@]}" | sort -g > "$OUT/.c"; printf "%s\n" "${rs[@]}" | sort -g > "$OUT/.r"
 	cmed=$(awk '{a[NR]=$1} END{print a[int((NR+1)/2)]}' "$OUT/.c"); cmin=$(head -1 "$OUT/.c")

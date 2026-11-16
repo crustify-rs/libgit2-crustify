@@ -206,7 +206,14 @@ impl Hasher for FxHasher {
     }
     #[inline]
     fn finish(&self) -> u64 {
-        self.0
+        // The multiplication only carries low bits upwards, and the table
+        // indexes by the low bits: fold the high bits down (murmur3's
+        // finalizer), or keys that differ late collide.
+        let mut h = self.0;
+        h ^= h >> 33;
+        h = h.wrapping_mul(0xff51_afd7_ed55_8ccd);
+        h ^= h >> 33;
+        h
     }
 }
 
