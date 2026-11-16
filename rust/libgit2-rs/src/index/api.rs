@@ -12,8 +12,9 @@
 //! no borrow while they run). A panic in a callback stops the operation
 //! and is resumed after it.
 
-use core::ffi::{CStr, c_char, c_int, c_uint};
+use core::ffi::{CStr, c_char, c_int};
 use core::marker::PhantomData;
+use core::mem::ManuallyDrop;
 use core::ptr::NonNull;
 use ffibox::CShared;
 use std::collections::HashMap;
@@ -356,6 +357,15 @@ fn api_lock_of(ix: NonNull<GitIndex>) -> Arc<ReentrantLock> {
     l
 }
 
+/// Run `f` with the safe API's lock of the index `ix` held (for the
+/// repository's own changes to an index that handles may share, such as
+/// the capabilities it sets when it loads the index).
+pub(crate) fn with_index_locked<R>(ix: NonNull<GitIndex>, f: impl FnOnce() -> R) -> R {
+    let lock = api_lock_of(ix);
+    let _g = lock.lock();
+    f()
+}
+
 /// Run `f` with the safe API's lock of `repo`'s index held (loading the
 /// index if it is not yet): for the safe API's operations whose C reads
 /// the repository's index (attributes for filters, …), so that they do not
@@ -380,11 +390,36 @@ pub(crate) fn with_repository_index_locked<R>(
 /// `Sync`: threads may share it (each call is atomic with respect to the
 /// others). An index from [`Repository::index`](crate::Repository::index)
 /// borrows the repository (`'r`); one made alone is `Index<'static>`.
-#[derive(Clone)]
 pub struct Index<'r> {
-    ix: CShared<GitIndex>,
+    /// The reference; taken and dropped with `lock` held (`Clone`,
+    /// `Drop`), since the count is in the index's memory, which the
+    /// safe API's operations borrow exclusively under the lock.
+    ix: ManuallyDrop<CShared<GitIndex>>,
     lock: Arc<ReentrantLock>,
     _repo: PhantomData<&'r ()>,
+}
+
+impl Clone for Index<'_> {
+    fn clone(&self) -> Self {
+        let ix = {
+            let _g = self.api();
+            CShared::clone(&self.ix)
+        };
+        Index {
+            ix: ManuallyDrop::new(ix),
+            lock: Arc::clone(&self.lock),
+            _repo: PhantomData,
+        }
+    }
+}
+
+impl Drop for Index<'_> {
+    fn drop(&mut self) {
+        let lock = &self.lock;
+        let _g = lock.lock();
+        // SAFETY: dropped once, here; the field is not used after.
+        unsafe { ManuallyDrop::drop(&mut self.ix) };
+    }
 }
 
 // SAFETY: the index is released (its count dropped, and freed with the
@@ -406,6 +441,9 @@ impl core::fmt::Debug for Index<'_> {
     }
 }
 
+/// The closure of [`Index::add_all_with`] and friends.
+type PathCallback<'a> = dyn FnMut(&[u8], Option<&[u8]>) -> IndexMatch + 'a;
+
 /// What a path callback of [`Index::add_all`], [`Index::update_all`] and
 /// [`Index::remove_all`] decides for a path.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -419,13 +457,20 @@ pub enum IndexMatch {
 }
 
 impl<'r> Index<'r> {
-    fn wrap(ix: CShared<GitIndex>) -> Index<'r> {
-        let lock = api_lock_of(shared_nn(&ix));
+    /// A handle of a reference `ix` the caller holds (and gives up), for
+    /// an index no other safe user reaches yet, or with `lock` (the
+    /// index's) held since the reference was taken.
+    fn wrap_locked(ix: CShared<GitIndex>, lock: Arc<ReentrantLock>) -> Index<'r> {
         Index {
-            ix,
+            ix: ManuallyDrop::new(ix),
             lock,
             _repo: PhantomData,
         }
+    }
+
+    fn wrap(ix: CShared<GitIndex>) -> Index<'r> {
+        let lock = api_lock_of(shared_nn(&ix));
+        Index::wrap_locked(ix, lock)
     }
 
     fn from_ptr(ptr: IndexPtr) -> Index<'r> {
@@ -447,10 +492,22 @@ impl<'r> Index<'r> {
         unsafe { IndexPtr::new(shared_nn(&self.ix)) }
     }
 
+    /// A new reference to `raw`, as a handle.
+    ///
+    /// # Safety
+    ///
+    /// `raw` is a live index of this module, which stays live while the
+    /// handle's lifetime `'r` (it is the repository's, borrowed for `'r`).
     pub(crate) unsafe fn new_ref(raw: NonNull<GitIndex>) -> Index<'r> {
-        // SAFETY: the caller's contract.
-        let ix = unsafe { CShared::from_borrowed(raw.as_ptr()) }.expect("non-null");
-        Index::wrap(ix)
+        // The count is taken under the index's lock: other handles of the
+        // index may be in use on other threads.
+        let lock = api_lock_of(raw);
+        let ix = {
+            let _g = lock.lock();
+            // SAFETY: the caller's contract.
+            unsafe { CShared::from_borrowed(raw.as_ptr()) }.expect("non-null")
+        };
+        Index::wrap_locked(ix, lock)
     }
 
     /// The `git_index *` (crate-internal), live while `self` is; used with
@@ -543,9 +600,10 @@ impl<'r> Index<'r> {
     pub fn write_tree(&self) -> Result<Oid> {
         let _g = self.api();
         let ix = self.ptr();
-        // SAFETY: the index is live; its owner is NULL or its live
-        // repository (which the C keeps while the index is attached).
-        let repo = unsafe { super::foreign::Repo::new(ix.get_ref().owner()) };
+        // SAFETY: the owner of the live index is NULL or its live
+        // repository: the safe API's handles of an owned index borrow that
+        // repository, and it clears the owner before it goes.
+        let repo = unsafe { super::foreign::Repo::new(ix.owner()) };
         let Some(repo) = repo else {
             return Err(err(crate::util::errors::set_str(
                 crate::util::errors::ErrorClass::INDEX,
@@ -675,7 +733,7 @@ impl<'r> Index<'r> {
     fn with_callback<I>(
         &self,
         pathspecs: I,
-        mut cb: Option<&mut dyn FnMut(&[u8], Option<&[u8]>) -> IndexMatch>,
+        mut cb: Option<&mut PathCallback<'_>>,
         op: impl FnOnce(IndexPtr, Paths<'_>, Option<ops::MatchedPathCb<'_>>) -> c_int,
     ) -> Result<()>
     where

@@ -173,7 +173,10 @@ pub use blob::{Blob, BlobFilterOptions, BlobWriter};
 pub use commit::api::{AmendOptions, Commit, CommitBuilder, CommitCreateOptions};
 pub use config::{Config, ConfigBackend, ConfigEntries, ConfigEntry, ConfigLevel};
 pub use hashsig::{HashSig, HashSigOptions};
-pub use index::{Index, IndexEntry, IndexTime, Stage};
+pub use index::{
+    ConflictEntries, Index, IndexAddOption, IndexCapability, IndexConflicts, IndexEntries,
+    IndexEntry, IndexMatch, IndexTime, NameEntry, ReucEntry, Stage,
+};
 pub use libgit2::{Features, Libgit2};
 pub use object::{Object, ObjectIdOptions};
 pub use odb::{
@@ -182,7 +185,10 @@ pub use odb::{
 };
 pub use oid::{Oid, OidShortener, OidType};
 pub use refs_api::{RefdbBackend, Reference, ReferenceType, References, Reflog, ReflogEntry};
-pub use repository::{Repository, RepositoryInitOptions, RepositoryOpenFlags, RepositoryState};
+pub use repository::{
+    RefStorage, Refdb, Repository, RepositoryInitFlags, RepositoryInitMode, RepositoryInitOptions,
+    RepositoryItem, RepositoryOpenFlags, RepositoryState,
+};
 pub use revwalk::api::{Revwalk, Sort};
 pub use signature::{Signature, SignatureRef, Time};
 pub use tag::Tag;
