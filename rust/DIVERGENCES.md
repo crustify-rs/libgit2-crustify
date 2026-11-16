@@ -60,8 +60,9 @@ One entry per difference: component, what differs, why.
 - **posix: `p_fsync__cnt`** is an `AtomicUsize` that the Rust's `fsync`
   increments atomically; C's inline `p_fsync` (in the header, for the C
   that stays) still increments it non-atomically, as before.
-- **posix: `p_write` / `p_read` of more than `isize::MAX` bytes** fail with
-  `EINVAL` before any system call (no buffer can be that large).
+- **posix: `p_write` of more than `isize::MAX` bytes** fails with `EINVAL`
+  before any system call, as `p_read` does in C (no buffer can be that
+  large).
 - **filebuf: the write buffer is zeroed** (`git__calloc`; C used
   `git__malloc`), so that its bytes are always initialized for the Rust
   (`git_filebuf_reserve` hands out bytes that are flushed as they are). No
