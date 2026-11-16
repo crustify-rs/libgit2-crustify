@@ -43,7 +43,7 @@ fn rich<T>(r: errors::Result<T>) -> Result<T> {
 /// A name as a C string: an interior NUL makes it an invalid name.
 fn cname(name: &[u8]) -> Result<CString> {
     CString::new(name).map_err(|_| {
-        Error::new(
+        Error::with(
             ErrorCode::INVALID_SPEC,
             ErrorClass::REFERENCE,
             format!("the given reference name '{}' is not valid", Bytes(name)),
@@ -310,7 +310,7 @@ impl<'repo> Reference<'repo> {
     pub fn delete(&self) -> Result<()> {
         let v = self.view();
         if v.name() == b"HEAD" {
-            return Err(Error::new(
+            return Err(Error::with(
                 ErrorCode::GENERIC,
                 ErrorClass::REFERENCE,
                 "cannot delete HEAD",
@@ -607,8 +607,11 @@ impl<'a> ReflogEntry<'a> {
     }
 
     /// Who made the change.
-    pub fn committer(&self) -> Option<Signature> {
-        committer_of(self.get().committer)
+    pub fn committer(&self) -> Option<crate::signature::SignatureRef<'a>> {
+        let p = self.get().committer;
+        // SAFETY: NULL or the entry's signature, whose strings live (and are
+        // not written) as long as the reflog the entry borrows.
+        unsafe { p.as_ref() }.map(|s| unsafe { crate::signature::SignatureRef::from_raw(s) })
     }
 }
 
@@ -843,7 +846,10 @@ pub trait RefdbBackend: Send + Sync + 'static {
 /// ```
 pub fn set_refdb_backend<B: RefdbBackend>(repo: &mut Repository, backend: B) -> Result<()> {
     let db = RefdbPtr::of_repo(repo.ptr()).map_err(Error::from)?;
-    let table = CTable::<RefdbBackendTable, RustBackend<B>>::new(RustBackend(backend));
+    let table = CTable::<RefdbBackendTable, RustBackend<B>>::new(RustBackend(
+        crate::api::NoUnwindDrop::new(backend),
+        repo.oid_type(),
+    ));
     let raw = table.into_c().as_ptr();
     // SAFETY: a live database and a complete backend, whose ownership
     // passes to the database.
@@ -857,11 +863,10 @@ pub fn set_refdb_backend<B: RefdbBackend>(repo: &mut Repository, backend: B) -> 
 }
 
 /// The state behind a Rust backend's table.
-pub struct RustBackend<B>(B);
+pub struct RustBackend<B>(crate::api::NoUnwindDrop<B>, crate::oid::OidType);
 
 fn fail(e: &Error) -> c_int {
-    let _ = errors::set_str(e.class(), e.message_bytes());
-    e.code().raw()
+    e.set_last().raw()
 }
 
 fn status<T>(r: core::result::Result<T, Error>) -> c_int {
@@ -900,7 +905,25 @@ unsafe fn opt_bytes<'a>(p: *const c_char) -> Option<&'a [u8]> {
     unsafe { crate::util::export::cstr(p) }.map(CStr::to_bytes)
 }
 
+/// A name or target from a Rust backend: a NUL would cut it short in C
+/// (S-6e), so it is refused.
+fn check_no_nul(b: &[u8], what: &str) -> errors::Result<()> {
+    if b.contains(&0) {
+        let _ = crate::git_error_set!(
+            ErrorClass::REFERENCE,
+            "the {what} '{}' from the backend contains a NUL byte",
+            Bytes(&b[..memchr::memchr(0, b).unwrap_or(b.len())])
+        );
+        return Err(ErrorCode::INVALID_SPEC);
+    }
+    Ok(())
+}
+
 fn make_ref(name: &[u8], v: &RefValue) -> errors::Result<RefBox> {
+    check_no_nul(name, "reference name")?;
+    if let RefValue::Symbolic(t) = v {
+        check_no_nul(t, "symbolic target")?;
+    }
     match v {
         RefValue::Direct { id, peel } => RefBox::new_direct(name, id, peel.as_ref()),
         RefValue::Symbolic(t) => RefBox::new_symbolic(name, t),
@@ -996,6 +1019,14 @@ ffibox::impl_cvtable! {
                 Err(e) => return e.raw(),
             };
             for (name, v) in list {
+                if let Err(e) = check_no_nul(&name, "reference name") {
+                    return e.raw();
+                }
+                if let RefValue::Symbolic(t) = &v
+                    && let Err(e) = check_no_nul(t, "symbolic target")
+                {
+                    return e.raw();
+                }
                 if glob.is_some_and(|g| !wildmatch(g, &name, WildmatchFlags::default()).is_match()) {
                     continue;
                 }
@@ -1096,7 +1127,7 @@ ffibox::impl_cvtable! {
                 Ok(r) => r,
                 Err(e) => return fail(&e),
             };
-            let log = match rl::Reflog::alloc(n, crate::oid::OidType::Sha1 as c_int) {
+            let log = match rl::Reflog::alloc(n, s.1 as c_int) {
                 Ok(l) => l,
                 Err(e) => return e.raw(),
             };
@@ -1260,7 +1291,7 @@ mod tests {
     #[test]
     fn rust_backend_slots() {
         let _g = test_support::init();
-        let id = Oid::from_hex(
+        let id = Oid::parse_hex(
             b"a65fedf39aefe402d3bb6e24df4d4f5fe4547750",
             crate::OidType::Sha1,
         )
@@ -1386,7 +1417,7 @@ mod tests {
     #[test]
     fn rust_backend_two_threads() {
         let _g = test_support::init();
-        let id = Oid::from_hex(
+        let id = Oid::parse_hex(
             b"a65fedf39aefe402d3bb6e24df4d4f5fe4547750",
             crate::OidType::Sha1,
         )

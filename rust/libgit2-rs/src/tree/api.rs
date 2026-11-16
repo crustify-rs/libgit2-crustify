@@ -23,7 +23,7 @@ use crate::util::errors::{Error, ErrorClass, ErrorCode};
 use crate::util::str::GitStr;
 
 fn invalid(msg: &str) -> Error {
-    Error::new(ErrorCode::INVALID, ErrorClass::INVALID, msg)
+    Error::with(ErrorCode::INVALID, ErrorClass::INVALID, msg)
 }
 
 fn cstring(s: &[u8], what: &str) -> Result<CString, Error> {
@@ -215,6 +215,11 @@ impl<'a> Tree<'a> {
             raw: unsafe { NonNull::new_unchecked(raw) },
             _data: PhantomData,
         }
+    }
+
+    /// The `git_tree *`, live while `self` is (crate-internal).
+    pub(crate) fn as_raw_tree(&self) -> NonNull<GitTree> {
+        self.raw
     }
 
     /// `git_tree_lookup` in a C repository.

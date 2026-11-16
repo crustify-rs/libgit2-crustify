@@ -75,6 +75,18 @@ macro_rules! codes {
                 }
             }
         }
+
+        impl crate::api::error::ErrorCode {
+            $($(#[$m])* #[doc = concat!("`", $c, "`")] pub const $name: Self = Self($v);)*
+
+            /// The C name of a known code (`"GIT_ENOTFOUND"`).
+            pub const fn name(self) -> Option<&'static str> {
+                match self.0 {
+                    $($v => Some($c),)*
+                    _ => None,
+                }
+            }
+        }
     };
 }
 
@@ -183,6 +195,18 @@ macro_rules! classes {
             $(#[doc = concat!("`", $c, "`")] pub const $name: ErrorClass = ErrorClass($v);)*
 
             /// The C name of a known class.
+            pub const fn name(self) -> Option<&'static str> {
+                match self.0 {
+                    $($v => Some($c),)*
+                    _ => None,
+                }
+            }
+        }
+
+        impl crate::api::error::ErrorClass {
+            $(#[doc = concat!("`", $c, "`")] pub const $name: Self = Self($v);)*
+
+            /// The C name of a known class (`"GIT_ERROR_ODB"`).
             pub const fn name(self) -> Option<&'static str> {
                 match self.0 {
                     $($v => Some($c),)*
@@ -746,79 +770,9 @@ pub fn global_init() -> Result<()> {
 // The rich error of the safe API
 // ---------------------------------------------------------------------------
 
-/// An error of the safe Rust API: the code, the class and the message.
-#[derive(Clone, PartialEq, Eq)]
-pub struct Error {
-    code: ErrorCode,
-    class: ErrorClass,
-    message: Box<[u8]>,
-}
-
-impl Error {
-    /// An error from its parts.
-    pub fn new(code: ErrorCode, class: ErrorClass, message: impl Into<Vec<u8>>) -> Error {
-        Error {
-            code,
-            class,
-            message: message.into().into_boxed_slice(),
-        }
-    }
-
-    /// The error `code` with the class and message of this thread's error
-    /// state (which is left as it is).
-    pub fn last(code: ErrorCode) -> Error {
-        let (class, message) = last();
-        Error {
-            code,
-            class,
-            message: message.into_boxed_slice(),
-        }
-    }
-
-    /// The code.
-    pub fn code(&self) -> ErrorCode {
-        self.code
-    }
-
-    /// The class.
-    pub fn class(&self) -> ErrorClass {
-        self.class
-    }
-
-    /// The message, as bytes (paths in it need not be UTF-8).
-    pub fn message_bytes(&self) -> &[u8] {
-        &self.message
-    }
-
-    /// The message, with invalid UTF-8 replaced.
-    pub fn message(&self) -> Cow<'_, str> {
-        String::from_utf8_lossy(&self.message)
-    }
-}
-
-impl From<ErrorCode> for Error {
-    fn from(code: ErrorCode) -> Error {
-        Error::last(code)
-    }
-}
-
-impl fmt::Debug for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Error")
-            .field("code", &self.code)
-            .field("class", &self.class)
-            .field("message", &self.message())
-            .finish()
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.message())
-    }
-}
-
-impl std::error::Error for Error {}
+/// The safe API's error (`crate::api::error`), named here for the
+/// internals that build one.
+pub use crate::api::error::Error;
 
 // ---------------------------------------------------------------------------
 // Macros

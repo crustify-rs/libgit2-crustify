@@ -682,7 +682,7 @@ impl<'repo> Blob<'repo> {
 
     /// `git_blob_lookup`.
     pub fn lookup(repo: &'repo Repository, id: &Oid) -> core::result::Result<Blob<'repo>, Error> {
-        Ok(Blob(Object::lookup(repo, id, ObjectType::Blob)?))
+        Ok(Blob(Object::lookup(repo, id, Some(ObjectType::Blob))?))
     }
 
     /// `git_blob_lookup_prefix`.
@@ -695,7 +695,7 @@ impl<'repo> Blob<'repo> {
             repo,
             id,
             len,
-            ObjectType::Blob,
+            Some(ObjectType::Blob),
         )?))
     }
 
@@ -755,7 +755,12 @@ impl<'repo> Blob<'repo> {
         }
         let mut out = GitBuf::new();
         // SAFETY: a live blob of a repository and a valid `git_buf`.
-        unsafe { filter(&raw mut out, self.0.as_ptr().cast(), &path, &o)? };
+        let mut run = || unsafe { filter(&raw mut out, self.0.as_ptr().cast(), &path, &o) };
+        match self.0.owner() {
+            // The filters read attributes, which C may read from the index.
+            Some(repo) => crate::index::api::with_repository_index_locked(repo, &mut run)?,
+            None => run()?,
+        }
         Ok(Some(out.into_vec()))
     }
 
@@ -774,17 +779,23 @@ impl<'repo> Blob<'repo> {
                 "path contains a NUL byte"
             ))
         })?;
-        // SAFETY: a live repository.
-        Ok(unsafe {
-            create_from_paths(
-                None,
-                crate::object::repo_ptr(repo),
-                None,
-                Some(&path),
-                0,
-                true,
-            )?
-        })
+        // The filters read attributes, which C may read from the index.
+        Ok(crate::index::api::with_repository_index_locked(
+            repo.raw(),
+            || {
+                // SAFETY: a live repository.
+                unsafe {
+                    create_from_paths(
+                        None,
+                        crate::object::repo_ptr(repo),
+                        None,
+                        Some(&path),
+                        0,
+                        true,
+                    )
+                }
+            },
+        )?)
     }
 
     /// `git_blob_create_from_disk`.
@@ -799,8 +810,14 @@ impl<'repo> Blob<'repo> {
                 "path contains a NUL byte"
             ))
         })?;
-        // SAFETY: a live repository.
-        Ok(unsafe { create_from_disk(crate::object::repo_ptr(repo), &path)? })
+        // The filters read attributes, which C may read from the index.
+        Ok(crate::index::api::with_repository_index_locked(
+            repo.raw(),
+            || {
+                // SAFETY: a live repository.
+                unsafe { create_from_disk(crate::object::repo_ptr(repo), &path) }
+            },
+        )?)
     }
 
     /// `git_blob_create_from_stream`: a writer whose
@@ -820,10 +837,7 @@ impl<'repo> Blob<'repo> {
         };
         // SAFETY: a live repository, which the writer borrows.
         let t = unsafe { create_from_stream(crate::object::repo_ptr(repo), hint.as_deref())? };
-        Ok(BlobWriter {
-            table: t,
-            _repo: core::marker::PhantomData,
-        })
+        Ok(BlobWriter { table: t, repo })
     }
 }
 
@@ -835,7 +849,7 @@ pub fn data_is_binary(data: &[u8]) -> bool {
 /// A blob being written (`git_blob_create_from_stream`).
 pub struct BlobWriter<'repo> {
     table: CTable<WriteStream, BlobWriteStream>,
-    _repo: core::marker::PhantomData<&'repo Repository>,
+    repo: &'repo Repository,
 }
 
 impl BlobWriter<'_> {
@@ -846,7 +860,12 @@ impl BlobWriter<'_> {
 
     /// `git_blob_create_from_stream_commit`.
     pub fn commit(self) -> core::result::Result<Oid, Error> {
-        Ok(stream_commit(self.table)?)
+        let repo = self.repo;
+        // The filters read attributes, which C may read from the index.
+        Ok(crate::index::api::with_repository_index_locked(
+            repo.raw(),
+            || stream_commit(self.table),
+        )?)
     }
 }
 

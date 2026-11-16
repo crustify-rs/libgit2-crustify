@@ -868,7 +868,7 @@ pub fn loose_parse_oid(filename: &[u8], content: &[u8], oid_type: c_int) -> Resu
     if content.len() < hexsize {
         return Err(corrupted());
     }
-    let Ok(oid) = Oid::from_prefix(&content[..hexsize], t) else {
+    let Ok(oid) = Oid::parse_prefix(&content[..hexsize], t) else {
         return Err(corrupted());
     };
     let next = at(content, hexsize);
@@ -3036,7 +3036,8 @@ mod tests {
     #[test]
     fn boxes() {
         let _g = test_support::init();
-        let id = Oid::from_hex(b"a65fedf39aefe402d3bb6e24df4d4f5fe4547750", OidType::Sha1).unwrap();
+        let id =
+            Oid::parse_hex(b"a65fedf39aefe402d3bb6e24df4d4f5fe4547750", OidType::Sha1).unwrap();
         let d = RefBox::new_direct(b"refs/heads/x", &id, None).unwrap();
         let v = d.view();
         assert_eq!(
@@ -3114,7 +3115,8 @@ mod ffi_tests {
     #[test]
     fn alloc_realloc_getters() {
         let _g = test_support::init();
-        let id = Oid::from_hex(b"a65fedf39aefe402d3bb6e24df4d4f5fe4547750", OidType::Sha1).unwrap();
+        let id =
+            Oid::parse_hex(b"a65fedf39aefe402d3bb6e24df4d4f5fe4547750", OidType::Sha1).unwrap();
         // SAFETY: valid strings and oids; each reference freed once.
         unsafe {
             let d =

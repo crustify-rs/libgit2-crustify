@@ -37,7 +37,7 @@ fn err(code: ErrorCode) -> Error {
 /// shorter path).
 fn c_path(path: &[u8]) -> ApiResult<std::ffi::CString> {
     std::ffi::CString::new(path).map_err(|_| {
-        Error::new(
+        Error::with(
             ErrorCode::INVALID,
             ErrorClass::INVALID,
             "path contains a NUL byte",
@@ -310,7 +310,7 @@ impl<'r> Odb<'r> {
     /// (`git_odb_open_rstream`).
     pub fn reader(&self, id: &Oid) -> ApiResult<(OdbReader<'_>, usize, Option<ObjectType>)> {
         let Some((stream, len, t)) = self.inner().open_rstream(id).map_err(err)? else {
-            return Err(Error::new(
+            return Err(Error::with(
                 ErrorCode::GENERIC,
                 ErrorClass::ODB,
                 "backend returned no stream",
@@ -619,8 +619,10 @@ impl Backend {
     /// A backend implemented in Rust.
     pub fn custom(backend: impl OdbBackend) -> Backend {
         Backend(
-            ffibox::CTable::<BackendTable, RustBackend>::new(RustBackend(Box::new(backend)))
-                .into_c(),
+            ffibox::CTable::<BackendTable, RustBackend>::new(RustBackend(
+                crate::api::NoUnwindDrop::new(Box::new(backend)),
+            ))
+            .into_c(),
         )
     }
 }
@@ -704,7 +706,7 @@ pub trait OdbBackend: Send + Sync + 'static {
         if self.exists(id) {
             Ok(())
         } else {
-            Err(Error::new(
+            Err(Error::with(
                 ErrorCode::NOT_FOUND,
                 ErrorClass::ODB,
                 "object not found",
@@ -714,20 +716,20 @@ pub trait OdbBackend: Send + Sync + 'static {
 }
 
 fn passthrough() -> Error {
-    Error::new(ErrorCode::PASSTHROUGH, ErrorClass::NONE, "")
+    Error::with(ErrorCode::PASSTHROUGH, ErrorClass::NONE, "")
 }
 
 /// A Rust backend's state behind its table.
-struct RustBackend(Box<dyn OdbBackend>);
+struct RustBackend(crate::api::NoUnwindDrop<Box<dyn OdbBackend>>);
 
 /// The C status of a Rust backend's error: the message set as C does.
 fn raise(e: &Error) -> c_int {
-    if e.code() != ErrorCode::PASSTHROUGH && e.code() != ErrorCode::NOT_FOUND
+    if e.raw_code() != ErrorCode::PASSTHROUGH && e.raw_code() != ErrorCode::NOT_FOUND
         || !e.message_bytes().is_empty()
     {
-        let _ = errors::set_str(e.class(), e.message_bytes());
+        let _ = errors::set_str(e.raw_class(), e.message_bytes());
     }
-    e.code().raw()
+    e.user_code().raw()
 }
 
 /// Copy `data` into `git__allocator` memory for C (with a NUL).
@@ -750,7 +752,7 @@ ffibox::impl_cvtable! {
     unsafe impl CVtable<RustBackend> for BackendTable {}
     base = backend_base();
     fn read(buffer_p: *mut *mut c_void, len_p: *mut usize, type_p: *mut git_object_t, @backend, oid: *const Oid) -> c_int {
-        on panic: -1,
+        on panic: { errors::set_panic_error(); -1 },
         on busy: busy(),
         |s: &RustBackend| {
             // SAFETY: C's contract: a readable id.
@@ -772,7 +774,7 @@ ffibox::impl_cvtable! {
         },
     }
     fn read_prefix(out: *mut Oid, buffer_p: *mut *mut c_void, len_p: *mut usize, type_p: *mut git_object_t, @backend, short: *const Oid, len: usize) -> c_int {
-        on panic: -1,
+        on panic: { errors::set_panic_error(); -1 },
         on busy: busy(),
         |s: &RustBackend| {
             // SAFETY: C's contract: a readable id.
@@ -796,7 +798,7 @@ ffibox::impl_cvtable! {
         },
     }
     fn read_header(len_p: *mut usize, type_p: *mut git_object_t, @backend, oid: *const Oid) -> c_int {
-        on panic: -1,
+        on panic: { errors::set_panic_error(); -1 },
         on busy: busy(),
         |s: &RustBackend| {
             // SAFETY: C's contract: a readable id.
@@ -813,7 +815,7 @@ ffibox::impl_cvtable! {
         },
     }
     fn write(@backend, oid: *const Oid, data: *const c_void, len: usize, type_: git_object_t) -> c_int {
-        on panic: -1,
+        on panic: { errors::set_panic_error(); -1 },
         on busy: busy(),
         |s: &RustBackend| {
             let Some(kind) = ObjectType::from_raw(type_) else {
@@ -839,7 +841,7 @@ ffibox::impl_cvtable! {
         |s: &RustBackend| c_int::from(s.0.exists(unsafe { &*oid })),
     }
     fn exists_prefix(out: *mut Oid, @backend, short: *const Oid, len: usize) -> c_int {
-        on panic: -1,
+        on panic: { errors::set_panic_error(); -1 },
         on busy: busy(),
         |s: &RustBackend| {
             // SAFETY: C's contract: a readable id.
@@ -854,7 +856,7 @@ ffibox::impl_cvtable! {
         },
     }
     fn refresh(@backend) -> c_int {
-        on panic: -1,
+        on panic: { errors::set_panic_error(); -1 },
         on busy: busy(),
         |s: &RustBackend| match s.0.refresh() {
             Ok(()) => 0,
@@ -862,7 +864,7 @@ ffibox::impl_cvtable! {
         },
     }
     fn foreach(@backend, cb: ForeachCb, payload: *mut c_void) -> c_int {
-        on panic: -1,
+        on panic: { errors::set_panic_error(); -1 },
         on busy: busy(),
         |s: &RustBackend| {
             let Some(cb) = cb else {
@@ -870,6 +872,11 @@ ffibox::impl_cvtable! {
             };
             let mut stop = 0;
             let r = s.0.foreach(&mut |id| {
+                // A backend that ignores `false` gets `false` again, and C's
+                // callback is not called after it asked to stop (S-6b).
+                if stop != 0 {
+                    return false;
+                }
                 // SAFETY: C's callback, with its payload.
                 stop = errors::set_after_callback(unsafe { cb(id, payload) }, "git_odb_foreach");
                 stop == 0
@@ -884,7 +891,7 @@ ffibox::impl_cvtable! {
         },
     }
     fn freshen(@backend, oid: *const Oid) -> c_int {
-        on panic: -1,
+        on panic: { errors::set_panic_error(); -1 },
         on busy: busy(),
         // SAFETY: C's contract: a readable id.
         |s: &RustBackend| match s.0.freshen(unsafe { &*oid }) {

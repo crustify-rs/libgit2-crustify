@@ -11,7 +11,7 @@
 //! use libgit2_rs::__test::oidarray::OidArray;
 //! use libgit2_rs::{Oid, OidType};
 //! # let _g = libgit2_rs::__test::util::test_support::init();
-//! let a = Oid::from_prefix(b"aa", OidType::Sha1)?;
+//! let a = Oid::parse_prefix(b"aa", OidType::Sha1)?;
 //! let mut arr: GitArray<Oid> = GitArray::new();
 //! libgit2_rs::__test::oidarray::add(&mut arr, &a)?;
 //! libgit2_rs::__test::oidarray::add(&mut arr, &a)?; // already there
@@ -292,7 +292,7 @@ mod tests {
     fn add_remove_reverse() {
         let _g = crate::util::test_support::init();
         let ids: Vec<Oid> = (0..5u8)
-            .map(|i| Oid::from_prefix(&[b'a' + i], OidType::Sha1).unwrap())
+            .map(|i| Oid::parse_prefix(&[b'a' + i], OidType::Sha1).unwrap())
             .collect();
         let mut arr = GitArray::new();
         for id in ids.iter().chain(ids.iter()) {

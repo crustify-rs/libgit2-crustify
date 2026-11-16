@@ -148,7 +148,7 @@ fn full_parse() {
     let (r, mut c) = parse_full(data.as_bytes());
     r.unwrap();
     let c = c.get();
-    assert_eq!(c.tree_id, Oid::from_str_hex(T, OidType::Sha1).unwrap());
+    assert_eq!(c.tree_id, Oid::parse_str_hex(T, OidType::Sha1).unwrap());
     assert_eq!(c.parent_ids.len(), 2);
     assert_eq!(sig_of(c.author).0, b"A");
     let (n, e, w) = sig_of(c.committer);
@@ -412,7 +412,7 @@ fn signature_extraction() {
 #[test]
 fn buffers() {
     let _g = test_support::init();
-    let tree = Oid::from_str_hex(T, OidType::Sha1).unwrap();
+    let tree = Oid::parse_str_hex(T, OidType::Sha1).unwrap();
     let a = SigOut {
         name: Some(b"A U"),
         email: Some(b"a@b"),
@@ -483,7 +483,7 @@ fn c_abi_parse_and_accessors() {
         assert_eq!(ffi::git_commit_time_offset(c.0), -90);
         assert_eq!(
             *ffi::git_commit_tree_id(c.0),
-            Oid::from_str_hex(T, OidType::Sha1).unwrap()
+            Oid::parse_str_hex(T, OidType::Sha1).unwrap()
         );
         assert!(ffi::git_commit_parent_id(c.0, 1).is_null());
         assert_eq!(

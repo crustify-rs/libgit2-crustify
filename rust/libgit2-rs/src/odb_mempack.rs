@@ -401,8 +401,8 @@ mod tests {
     fn write_read_reset() {
         let _g = crate::util::test_support::init();
         let s = MempackState::default();
-        let a = Oid::from_prefix(b"abcd", OidType::Sha1).unwrap();
-        let b = Oid::from_prefix(b"1234", OidType::Sha1).unwrap();
+        let a = Oid::parse_prefix(b"abcd", OidType::Sha1).unwrap();
+        let b = Oid::parse_prefix(b"1234", OidType::Sha1).unwrap();
         s.write(&a, b"hello", 3).unwrap();
         s.write(&a, b"other", 3).unwrap();
         s.write(&b, b"tree", GIT_OBJECT_COMMIT).unwrap();

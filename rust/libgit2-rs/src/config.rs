@@ -305,8 +305,7 @@ pub(crate) fn slot_busy() -> c_int {
 /// A Rust error raised into C's thread state: its code, with its class and
 /// message set.
 pub(crate) fn raise(e: &Error) -> ErrorCode {
-    let _ = errors::set_str(e.class(), e.message_bytes());
-    e.code()
+    e.set_last()
 }
 
 // ---------------------------------------------------------------------------
@@ -3766,7 +3765,7 @@ type ApiResult<T> = core::result::Result<T, Error>;
 /// it holds a NUL, which C could not pass).
 fn arg(s: &[u8]) -> ApiResult<Vec<u8>> {
     if s.contains(&0) {
-        return Err(Error::new(
+        return Err(Error::with(
             ErrorCode::INVALID,
             ErrorClass::INVALID,
             "a config string argument contains a NUL byte",
@@ -3944,7 +3943,7 @@ impl<'r> Config<'r> {
     pub fn get_string(&self, name: &str) -> ApiResult<String> {
         let v = self.get_bytes(name)?;
         String::from_utf8(v).map_err(|_| {
-            Error::new(
+            Error::with(
                 ErrorCode::GENERIC,
                 ErrorClass::CONFIG,
                 "the config value is not valid UTF-8",
@@ -4160,7 +4159,7 @@ pub trait ConfigBackend: Send + Sync + 'static {
 
 /// The error of a read-only backend's writes.
 pub fn read_only() -> Error {
-    Error::new(
+    Error::with(
         ErrorCode::GENERIC,
         ErrorClass::CONFIG,
         "this backend is read-only",
@@ -4173,7 +4172,7 @@ mod rust_backend {
     use crate::config_list::{ConfigList, EntryMeta};
 
     pub(super) struct State {
-        backend: Box<dyn ConfigBackend>,
+        backend: crate::api::NoUnwindDrop<Box<dyn ConfigBackend>>,
         level: std::sync::atomic::AtomicI32,
     }
 
@@ -4200,6 +4199,15 @@ mod rust_backend {
     fn list_of(entries: &[ConfigEntry]) -> Result<Arc<ConfigList>> {
         let mut l = ConfigList::new();
         for e in entries {
+            // A NUL would cut the name short in C (S-6e): refuse it.
+            if e.name.contains(&0) {
+                let _ = git_error_set!(
+                    ErrorClass::CONFIG,
+                    "the config entry name '{}' from the backend contains a NUL byte",
+                    errors::Bytes(&e.name[..memchr::memchr(0, &e.name).unwrap_or(e.name.len())])
+                );
+                return Err(ErrorCode::INVALID_SPEC);
+            }
             let backend_type = match &e.backend_type {
                 Some(t) => l.intern(t)?,
                 None => l.intern(b"rust")?,
@@ -4336,7 +4344,7 @@ mod rust_backend {
     pub(super) fn new<B: ConfigBackend>(backend: B) -> Backend {
         let readonly = backend.readonly();
         let state = State {
-            backend: Box::new(backend),
+            backend: crate::api::NoUnwindDrop::new(Box::new(backend)),
             level: std::sync::atomic::AtomicI32::new(0),
         };
         let table = CTable::<ConfigBackendCell, State>::new(state);

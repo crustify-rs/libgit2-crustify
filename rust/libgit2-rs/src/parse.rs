@@ -247,7 +247,7 @@ impl<'a> GitParseCtx<'a> {
         if line.len() < hexsize {
             return Err(ErrorCode::GENERIC);
         }
-        let oid = Oid::from_prefix(&line[..hexsize], t).map_err(|_| ErrorCode::GENERIC)?;
+        let oid = Oid::parse_prefix(&line[..hexsize], t).map_err(|_| ErrorCode::GENERIC)?;
         self.advance_chars(hexsize);
         Ok(oid)
     }

@@ -770,7 +770,7 @@ impl<'repo> Tag<'repo> {
 
     /// `git_tag_lookup`.
     pub fn lookup(repo: &'repo Repository, id: &Oid) -> core::result::Result<Tag<'repo>, Error> {
-        Ok(Tag(Object::lookup(repo, id, ObjectType::Tag)?))
+        Ok(Tag(Object::lookup(repo, id, Some(ObjectType::Tag))?))
     }
 
     /// `git_tag_lookup_prefix`.
@@ -779,7 +779,12 @@ impl<'repo> Tag<'repo> {
         id: &Oid,
         len: usize,
     ) -> core::result::Result<Tag<'repo>, Error> {
-        Ok(Tag(Object::lookup_prefix(repo, id, len, ObjectType::Tag)?))
+        Ok(Tag(Object::lookup_prefix(
+            repo,
+            id,
+            len,
+            Some(ObjectType::Tag),
+        )?))
     }
 
     fn raw(&self) -> &GitTag {
@@ -808,8 +813,8 @@ impl<'repo> Tag<'repo> {
     }
 
     /// `git_tag_tagger`.
-    pub fn tagger(&self) -> Option<&Signature> {
-        self.raw().tagger()
+    pub fn tagger(&self) -> Option<crate::signature::SignatureRef<'_>> {
+        self.raw().tagger().map(Signature::as_ref)
     }
 
     /// `git_tag_target_id`.
@@ -819,7 +824,7 @@ impl<'repo> Tag<'repo> {
 
     /// `git_tag_target_type`.
     pub fn target_type(&self) -> ObjectType {
-        ObjectType::from_raw(self.raw().target_kind()).unwrap_or(ObjectType::Any)
+        ObjectType::from_raw(self.raw().target_kind()).unwrap_or(ObjectType::Blob)
     }
 
     /// `git_tag_target`.
@@ -832,7 +837,7 @@ impl<'repo> Tag<'repo> {
 
     /// `git_tag_peel`: the first non-tag object the tag leads to.
     pub fn peel(&self) -> core::result::Result<Object<'repo>, Error> {
-        self.0.peel(ObjectType::Any)
+        self.0.peel(None)
     }
 
     /// `git_tag_create`: an annotated tag `name` of `target`, and its
@@ -947,15 +952,42 @@ impl<'repo> Tag<'repo> {
         Ok(arr.to_vec())
     }
 
-    /// `git_tag_foreach`: `f(refname, id)` for each tag; a non-zero return
-    /// stops the iteration and is returned as the error code.
+    /// `git_tag_foreach`: `f(refname, id)` for each tag reference; `false`
+    /// stops the iteration (with `Ok`). A panic in `f` stops it and is
+    /// resumed after.
     pub fn foreach(
         repo: &Repository,
-        mut f: impl FnMut(&[u8], &Oid) -> i32,
+        mut f: impl FnMut(&[u8], &Oid) -> bool,
     ) -> core::result::Result<(), Error> {
-        let mut cb = |n: &CStr, id: &Oid| f(n.to_bytes(), id);
+        let mut panic = None;
+        let mut stopped = false;
+        let mut cb = |n: &CStr, id: &Oid| -> c_int {
+            if panic.is_some() || stopped {
+                return 1;
+            }
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(n.to_bytes(), id))) {
+                Ok(true) => 0,
+                Ok(false) => {
+                    stopped = true;
+                    1
+                }
+                Err(p) => {
+                    panic = Some(p);
+                    1
+                }
+            }
+        };
         // SAFETY: a live repository.
         let r = unsafe { foreach(crate::object::repo_ptr(repo), &mut cb) };
+        // A panic in `f` resumes here, after the walk let go of its state
+        // (S-6d), as the other closures of the API do.
+        if let Some(p) = panic {
+            std::panic::resume_unwind(p);
+        }
+        if stopped {
+            crate::util::errors::clear();
+            return Ok(());
+        }
         ErrorCode::check_zero(r)?;
         Ok(())
     }

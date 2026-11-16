@@ -51,26 +51,33 @@
 //!
 //! ```compile_fail
 //! # use libgit2_rs::Repository;
-//! let mut repo = Repository::open("/nonexistent").unwrap();
+//! let repo = Repository::open("/nonexistent").unwrap();
 //! let index = repo.index().unwrap().clone();
-//! drop(repo); // error: `repo` is still (mutably) borrowed by the index
+//! drop(repo); // error: `repo` is still borrowed by the index's clone
 //! drop(index);
 //! ```
 //!
 //! ```compile_fail
 //! # use libgit2_rs::Repository;
-//! let mut repo = Repository::open("/nonexistent").unwrap();
+//! let repo = Repository::open("/nonexistent").unwrap();
 //! let index = repo.index().unwrap();
-//! let _ = repo.head(); // error: the index borrows `repo` exclusively
-//! drop(index);
+//! // error: the index borrows `repo`, so it is not `'static`
+//! std::thread::spawn(move || drop(index));
 //! ```
 //!
-//! ```compile_fail
+//! The index and the repository are usable together, and from several
+//! threads (I-1):
+//!
+//! ```no_run
 //! # use libgit2_rs::Repository;
-//! let mut repo = Repository::open("/nonexistent").unwrap();
+//! let repo = Repository::open("/some/repo").unwrap();
 //! let index = repo.index().unwrap();
-//! fn send<T: Send>(_: T) {}
-//! send(index); // error: an index is single-threaded
+//! let head = repo.head().unwrap(); // fine: the repository is shared
+//! std::thread::scope(|s| {
+//!     s.spawn(|| index.len());
+//!     s.spawn(|| repo.is_empty());
+//! });
+//! # drop(head);
 //! ```
 //!
 //! Re-parenting an odb, config or index into another repository
@@ -89,7 +96,6 @@ use super::init::{InitOptions, InitOut};
 use super::*;
 use crate::config::Config;
 use crate::index::Index;
-use crate::libgit2::Libgit2;
 use crate::odb::Odb;
 use crate::oid::{Oid, OidType};
 use crate::refs_api::Reference;
@@ -419,11 +425,10 @@ pub enum RepositoryItem {
 
 /// An owned repository (`git_repository`), freed on drop.
 ///
-/// It holds a [`Libgit2`] guard: the library stays initialized while any
-/// repository lives (and while anything borrowed from one does).
+/// The library is initialized on first use and stays so (see
+/// [`Libgit2`](crate::Libgit2)).
 pub struct Repository {
     repo: NonNull<GitRepository>,
-    _lib: Libgit2,
 }
 
 // SAFETY: the repository and what it owns are released from any thread.
@@ -454,8 +459,8 @@ impl core::fmt::Debug for Repository {
 }
 
 impl Repository {
-    fn from_nonnull(repo: NonNull<GitRepository>, lib: Libgit2) -> Repository {
-        Repository { repo, _lib: lib }
+    fn from_nonnull(repo: NonNull<GitRepository>) -> Repository {
+        Repository { repo }
     }
 
     /// The `git_repository *` (crate-internal: the commit and tree APIs
@@ -483,9 +488,9 @@ impl Repository {
     ) -> Result<Repository> {
         let p = path.map(path_c).transpose()?;
         let ceil = ceiling_list(ceiling_dirs)?;
-        let lib = Libgit2::init()?;
+        crate::libgit2::ensure_init()?;
         match open::open_ext(p.as_deref(), flags.bits(), ceil.as_deref(), true)? {
-            Some(r) => Ok(Repository::from_nonnull(r, lib)),
+            Some(r) => Ok(Repository::from_nonnull(r)),
             None => Err(ErrorCode::GENERIC.into()),
         }
     }
@@ -500,8 +505,8 @@ impl Repository {
     /// `git_repository_open_bare`.
     pub fn open_bare(path: impl AsRef<Path>) -> Result<Repository> {
         let p = path_c(path.as_ref())?;
-        let lib = Libgit2::init()?;
-        Ok(Repository::from_nonnull(open::open_bare(&p)?, lib))
+        crate::libgit2::ensure_init()?;
+        Ok(Repository::from_nonnull(open::open_bare(&p)?))
     }
 
     /// `git_repository_discover`: the git directory of the repository that
@@ -513,7 +518,7 @@ impl Repository {
     ) -> Result<PathBuf> {
         let s = path_c(start.as_ref())?;
         let ceil = ceiling_list(ceiling_dirs)?;
-        let _lib = Libgit2::init()?;
+        crate::libgit2::ensure_init()?;
         let g = open::discover(&s, across_fs, ceil.as_deref())?;
         Ok(str_path(&g))
     }
@@ -529,10 +534,10 @@ impl Repository {
     pub fn init_opts(path: impl AsRef<Path>, opts: &RepositoryInitOptions) -> Result<Repository> {
         let p = path_c(path.as_ref())?;
         let mut raw = opts.to_raw()?;
-        let lib = Libgit2::init()?;
+        crate::libgit2::ensure_init()?;
         let (r, out) = init::init_ext(&p, &mut raw);
         let repo = match out {
-            InitOut::Repo(p) => Some(Repository::from_nonnull(p, lib)),
+            InitOut::Repo(p) => Some(Repository::from_nonnull(p)),
             _ => None,
         };
         r?;
@@ -541,11 +546,8 @@ impl Repository {
 
     /// `git_repository_new_ext`: a repository with no backends.
     pub fn new_in_memory(oid_type: OidType) -> Result<Repository> {
-        let lib = Libgit2::init()?;
-        Ok(Repository::from_nonnull(
-            open::new_ext(Some(oid_type))?,
-            lib,
-        ))
+        crate::libgit2::ensure_init()?;
+        Ok(Repository::from_nonnull(open::new_ext(Some(oid_type))?))
     }
 
     /// `git_repository_path`: the git directory (with a trailing slash).
@@ -689,13 +691,14 @@ impl Repository {
         Ok(unsafe { Refdb::new_ref(p) })
     }
 
-    /// `git_repository_index`. The index is single-threaded: while it (or
-    /// a clone) lives, the repository is borrowed exclusively.
-    pub fn index(&mut self) -> Result<Index<'_>> {
+    /// `git_repository_index`: the repository's index (loaded on first
+    /// use). It borrows the repository, which stays usable meanwhile: the
+    /// index serialises its own operations, and those of the repository
+    /// whose C reads the index (I-1).
+    pub fn index(&self) -> Result<Index<'_>> {
         let p = self.raw().index_weak()?;
         // SAFETY: the repository's live index; a new reference, bound to the
-        // exclusive borrow of the repository (so no other thread reaches
-        // the index while it lives; `Index` is not `Send`).
+        // borrow of the repository (the index uses its owner).
         Ok(unsafe { Index::new_ref(p) })
     }
 
@@ -752,18 +755,23 @@ impl Repository {
         Ok(self.raw().set_ident(n.as_deref(), e.as_deref())?)
     }
 
-    /// `git_repository_hashfile`: the id `path` would get as an object of
-    /// type `object_type` (`GIT_OBJECT_BLOB` = 3), filtered as `as_path`
-    /// (`Some("")`: no filters; `None`: as `path`).
+    /// `git_repository_hashfile`: the id the file at `path` would get as
+    /// an object of type `kind`, filtered as the working-directory path
+    /// `as_path` (`Some(b"")`: no filters; `None`: as `path`, which is then
+    /// relative to the working directory).
     pub fn hashfile(
         &self,
         path: impl AsRef<Path>,
-        object_type: i32,
-        as_path: Option<&Path>,
+        kind: crate::ObjectType,
+        as_path: Option<&[u8]>,
     ) -> Result<Oid> {
         let p = path_c(path.as_ref())?;
-        let a = as_path.map(path_c).transpose()?;
-        Ok(head::hashfile(self.raw(), &p, object_type, a.as_deref())?)
+        let a = as_path.map(|a| c_string(a, "path")).transpose()?;
+        // The filters read attributes, which C may read from the index.
+        Ok(crate::index::api::with_repository_index_locked(
+            self.raw(),
+            || head::hashfile(self.raw(), &p, kind.raw(), a.as_deref()),
+        )?)
     }
 }
 

@@ -1378,6 +1378,7 @@ mod tests {
 }
 
 #[cfg(test)]
+#[allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)]
 mod exports_macro_tests {
     use super::*;
     use core::ffi::{c_char, c_int, c_void};

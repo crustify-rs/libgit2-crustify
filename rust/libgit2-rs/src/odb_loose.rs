@@ -255,7 +255,7 @@ impl Loose {
             return Err(error_ambiguous(b"multiple matches in loose objects"));
         }
         let kind = OidType::from_raw(self.oid_type()).ok_or(ErrorCode::GENERIC)?;
-        let res_oid = Oid::from_prefix(&res[..kind.hexsize()], kind)?;
+        let res_oid = Oid::parse_prefix(&res[..kind.hexsize()], kind)?;
 
         loc.truncate(dir_len);
         self.object_file_name(loc, &res_oid)?;
@@ -1328,7 +1328,8 @@ mod tests {
         let _g = crate::util::test_support::init();
         let l = Loose::new(b"/tmp/objs", None).unwrap();
         assert_eq!(l.objects_dir(), b"/tmp/objs/");
-        let id = Oid::from_hex(b"e69de29bb2d1d6434b8b29ae775ad8c2e48c5391", OidType::Sha1).unwrap();
+        let id =
+            Oid::parse_hex(b"e69de29bb2d1d6434b8b29ae775ad8c2e48c5391", OidType::Sha1).unwrap();
         let mut s = GitStr::new();
         l.object_file_name(&mut s, &id).unwrap();
         assert_eq!(

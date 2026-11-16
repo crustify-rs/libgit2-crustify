@@ -1,5 +1,5 @@
 //! The safe API of commits (PORTING.md §5): [`Commit`], its signatures
-//! ([`SignatureRef`]), and [`CommitBuilder`] to create commits.
+//! ([`SignatureRef`](crate::SignatureRef)), and [`CommitBuilder`] to create commits.
 //!
 //! A [`Commit`] holds one reference to a libgit2 commit object (from the
 //! repository's cache, or parsed from bytes), released on drop; `Clone`
@@ -14,57 +14,20 @@ use core::marker::PhantomData;
 use core::ptr::{self, NonNull};
 use std::ffi::CString;
 
-use super::{CreateArgs, GitCommit, GitSignature, GitTime, SigOut};
+use super::{CreateArgs, GitCommit, GitSignature, SigOut};
 use crate::commit::deps as pend;
 use crate::oid::{Oid, OidType};
 use crate::repository::Repository;
+use crate::signature::{SignatureRef, Time};
 use crate::tree::api::Tree;
 use crate::util::errors::{Error, ErrorClass, ErrorCode};
 use crate::util::str::GitStr;
 
-/// A borrowed signature: the name, e-mail and time of an author or
-/// committer.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct SignatureRef<'a> {
-    /// The name (bytes; usually UTF-8).
-    pub name: &'a [u8],
-    /// The e-mail.
-    pub email: &'a [u8],
-    /// Seconds since the epoch.
-    pub time: i64,
-    /// The time zone's offset from UTC, in minutes.
-    pub offset: i32,
-    /// The sign of the offset as written (`b'+'` or `b'-'`), or 0.
-    pub sign: u8,
-}
-
-impl<'a> SignatureRef<'a> {
-    /// A signature with a non-negative offset written with `+`, a negative
-    /// one with `-`.
-    pub fn new(name: &'a [u8], email: &'a [u8], time: i64, offset: i32) -> SignatureRef<'a> {
-        SignatureRef {
-            name,
-            email,
-            time,
-            offset,
-            sign: if offset < 0 { b'-' } else { b'+' },
-        }
-    }
-
-    fn when(&self) -> GitTime {
-        GitTime {
-            time: self.time,
-            offset: self.offset,
-            sign: self.sign as core::ffi::c_char,
-        }
-    }
-
-    fn as_out(&self) -> SigOut<'a> {
-        SigOut {
-            name: Some(self.name),
-            email: Some(self.email),
-            when: self.when(),
-        }
+fn sig_out<'a>(s: &SignatureRef<'a>) -> SigOut<'a> {
+    SigOut {
+        name: Some(s.name()),
+        email: Some(s.email()),
+        when: s.when().raw(),
     }
 }
 
@@ -77,7 +40,7 @@ pub struct Commit<'r> {
 }
 
 fn invalid(msg: &str) -> Error {
-    Error::new(ErrorCode::INVALID, ErrorClass::INVALID, msg)
+    Error::with(ErrorCode::INVALID, ErrorClass::INVALID, msg)
 }
 
 fn cstring(s: &[u8], what: &str) -> Result<CString, Error> {
@@ -154,28 +117,12 @@ impl<'r> Commit<'r> {
 
     fn sig(&self, p: *const GitSignature) -> SignatureRef<'_> {
         if p.is_null() {
-            return SignatureRef {
-                name: b"",
-                email: b"",
-                time: 0,
-                offset: 0,
-                sign: 0,
-            };
+            return SignatureRef::new(b"", b"", Time::from_raw(Default::default()));
         }
-        // SAFETY: a signature the commit owns, unchanged while it lives.
-        let s = unsafe { &*p };
-        // SAFETY: its strings are NUL-terminated, owned by the commit and
-        // unwritten while it lives (the result borrows `self`).
-        let name = unsafe { cbytes(s.name) };
-        // SAFETY: as above.
-        let email = unsafe { cbytes(s.email) };
-        SignatureRef {
-            name,
-            email,
-            time: s.when.time,
-            offset: s.when.offset,
-            sign: s.when.sign as u8,
-        }
+        // SAFETY: a signature the commit owns, unchanged while it lives;
+        // its strings are NUL-terminated, owned by the commit and unwritten
+        // while it lives (the result borrows `self`).
+        unsafe { SignatureRef::from_raw(&*p) }
     }
 
     /// The author.
@@ -196,12 +143,12 @@ impl<'r> Commit<'r> {
 
     /// `git_commit_time`.
     pub fn time(&self) -> i64 {
-        self.committer().time
+        self.committer().when().seconds()
     }
 
     /// `git_commit_time_offset`.
     pub fn time_offset(&self) -> i32 {
-        self.committer().offset
+        self.committer().when().offset_minutes()
     }
 
     /// `git_commit_message_raw`: the message as stored.
@@ -381,14 +328,14 @@ impl<'a> CommitBuilder<'a> {
     /// A commit of `tree` with no parents.
     pub fn new(
         tree: Oid,
-        author: SignatureRef<'a>,
-        committer: SignatureRef<'a>,
+        author: impl Into<SignatureRef<'a>>,
+        committer: impl Into<SignatureRef<'a>>,
         message: &'a [u8],
     ) -> CommitBuilder<'a> {
         CommitBuilder {
             tree,
-            author,
-            committer,
+            author: author.into(),
+            committer: committer.into(),
             message,
             parents: Vec::new(),
             encoding: None,
@@ -432,8 +379,8 @@ impl<'a> CommitBuilder<'a> {
 
     fn args<'s>(&'s self, update_ref: Option<&'s CStr>) -> CreateArgs<'s> {
         CreateArgs {
-            author: Some(self.author.as_out()),
-            committer: Some(self.committer.as_out()),
+            author: Some(sig_out(&self.author)),
+            committer: Some(sig_out(&self.committer)),
             message: Some(self.message),
             tree: self.tree,
             encoding: self.encoding,

@@ -1280,7 +1280,7 @@ pub fn parse_oid_header(buf: &[u8], header: &[u8], oid_type: OidType) -> Result<
     if h + sha_len + 1 > buf.len() || &buf[..h] != header || buf[h + sha_len] != b'\n' {
         return Err(ErrorCode::GENERIC);
     }
-    let id = Oid::from_prefix(&buf[h..h + sha_len], oid_type).map_err(|_| ErrorCode::GENERIC)?;
+    let id = Oid::parse_prefix(&buf[h..h + sha_len], oid_type).map_err(|_| ErrorCode::GENERIC)?;
     Ok((id, h + sha_len + 1))
 }
 
@@ -1431,10 +1431,10 @@ impl<'repo> Object<'repo> {
     pub fn lookup(
         repo: &'repo Repository,
         id: &Oid,
-        kind: ObjectType,
+        kind: Option<ObjectType>,
     ) -> core::result::Result<Object<'repo>, Error> {
         // SAFETY: a live repository.
-        let raw = unsafe { lookup(repo_ptr(repo), id, kind.raw())? };
+        let raw = unsafe { lookup(repo_ptr(repo), id, ObjectType::raw_or_any(kind))? };
         // SAFETY: an object of `repo`, with its reference.
         Ok(unsafe { Object::from_raw(repo, raw) })
     }
@@ -1444,10 +1444,10 @@ impl<'repo> Object<'repo> {
         repo: &'repo Repository,
         id: &Oid,
         len: usize,
-        kind: ObjectType,
+        kind: Option<ObjectType>,
     ) -> core::result::Result<Object<'repo>, Error> {
         // SAFETY: a live repository.
-        let raw = unsafe { lookup_prefix(repo_ptr(repo), id, len, kind.raw())? };
+        let raw = unsafe { lookup_prefix(repo_ptr(repo), id, len, ObjectType::raw_or_any(kind))? };
         // SAFETY: as above.
         Ok(unsafe { Object::from_raw(repo, raw) })
     }
@@ -1464,7 +1464,21 @@ impl<'repo> Object<'repo> {
 
     /// `git_object_type`.
     pub fn kind(&self) -> ObjectType {
-        ObjectType::from_raw(self.header().raw_kind()).unwrap_or(ObjectType::Any)
+        // A cached object's type is one of the four (the parsers set it).
+        ObjectType::from_raw(self.header().raw_kind()).unwrap_or(ObjectType::Blob)
+    }
+
+    /// The object's repository (crate-internal), `None` for an object
+    /// parsed outside any.
+    pub(crate) fn owner(&self) -> Option<&'repo crate::repository::GitRepository> {
+        // SAFETY: NULL or the repository that outlives `'repo` (an object
+        // of the safe API borrows its repository).
+        unsafe {
+            self.header()
+                .repo
+                .cast::<crate::repository::GitRepository>()
+                .as_ref()
+        }
     }
 
     /// The C handle, live while `self` is.
@@ -1472,10 +1486,11 @@ impl<'repo> Object<'repo> {
         self.raw
     }
 
-    /// `git_object_peel`.
-    pub fn peel(&self, kind: ObjectType) -> core::result::Result<Object<'repo>, Error> {
+    /// `git_object_peel`: peel tags (and commits to their trees) until an
+    /// object of type `kind`; `None`: until an object that is not a tag.
+    pub fn peel(&self, kind: Option<ObjectType>) -> core::result::Result<Object<'repo>, Error> {
         // SAFETY: a live object of a repository.
-        let raw = unsafe { peel(self.raw, kind.raw())? };
+        let raw = unsafe { peel(self.raw, ObjectType::raw_or_any(kind))? };
         // SAFETY: an object of the same repository, with its reference.
         Ok(unsafe { self.sibling(raw) })
     }
@@ -1492,7 +1507,7 @@ impl<'repo> Object<'repo> {
     pub fn lookup_bypath(
         &self,
         path: &[u8],
-        kind: ObjectType,
+        kind: Option<ObjectType>,
     ) -> core::result::Result<Object<'repo>, Error> {
         let c = std::ffi::CString::new(path).map_err(|_| {
             Error::from(git_error_set!(
@@ -1501,7 +1516,7 @@ impl<'repo> Object<'repo> {
             ))
         })?;
         // SAFETY: a live object of a repository, a NUL-terminated path.
-        let raw = unsafe { lookup_bypath(self.raw, &c, kind.raw())? };
+        let raw = unsafe { lookup_bypath(self.raw, &c, ObjectType::raw_or_any(kind))? };
         // SAFETY: an object of the same repository.
         Ok(unsafe { self.sibling(raw) })
     }
@@ -2326,7 +2341,8 @@ mod tests {
     #[test]
     fn write_oid_header_with_its_own_buffer_as_header() {
         let _g = test_support::init();
-        let id = Oid::from_hex(b"0123456789012345678901234567890123456789", OidType::Sha1).unwrap();
+        let id =
+            Oid::parse_hex(b"0123456789012345678901234567890123456789", OidType::Sha1).unwrap();
         let mut s = GitStr::new();
         s.puts(b"tree ").unwrap();
         let header = s.as_ptr();

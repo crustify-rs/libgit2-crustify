@@ -26,7 +26,7 @@
 
 use core::ffi::{CStr, c_char, c_int, c_uint, c_ushort, c_void};
 use core::ptr::NonNull;
-use core::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use crate::cache::{self, GIT_CACHE_STORE_RAW, GitCache, GitCachedObj};
@@ -92,11 +92,11 @@ const GIT_ALTERNATES_MAX_DEPTH: c_int = 5;
 // Object types
 // ---------------------------------------------------------------------------
 
-/// An object's type (`git_object_t`), for the safe API.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// An object's type (`git_object_t`): the four kinds of object a
+/// repository stores. "Any type" (`GIT_OBJECT_ANY`) is `None` where an
+/// `Option<ObjectType>` is taken; the pack's delta kinds are internal.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ObjectType {
-    /// `GIT_OBJECT_ANY`: any type (a lookup's wildcard).
-    Any,
     /// `GIT_OBJECT_COMMIT`.
     Commit,
     /// `GIT_OBJECT_TREE`.
@@ -105,56 +105,73 @@ pub enum ObjectType {
     Blob,
     /// `GIT_OBJECT_TAG`.
     Tag,
-    /// `GIT_OBJECT_OFS_DELTA`.
-    OfsDelta,
-    /// `GIT_OBJECT_REF_DELTA`.
-    RefDelta,
 }
 
 impl ObjectType {
-    /// From C's value; `None` for `GIT_OBJECT_INVALID` and unknown values.
-    pub const fn from_raw(raw: git_object_t) -> Option<ObjectType> {
+    /// From C's value; `None` for any other (`GIT_OBJECT_ANY`, the delta
+    /// kinds, `GIT_OBJECT_INVALID`, unknown values).
+    pub(crate) const fn from_raw(raw: git_object_t) -> Option<ObjectType> {
         Some(match raw {
-            GIT_OBJECT_ANY => ObjectType::Any,
             GIT_OBJECT_COMMIT => ObjectType::Commit,
             GIT_OBJECT_TREE => ObjectType::Tree,
             GIT_OBJECT_BLOB => ObjectType::Blob,
             GIT_OBJECT_TAG => ObjectType::Tag,
-            GIT_OBJECT_OFS_DELTA => ObjectType::OfsDelta,
-            GIT_OBJECT_REF_DELTA => ObjectType::RefDelta,
             _ => return None,
         })
     }
 
     /// C's value.
-    pub const fn raw(self) -> git_object_t {
+    pub(crate) const fn raw(self) -> git_object_t {
         match self {
-            ObjectType::Any => GIT_OBJECT_ANY,
             ObjectType::Commit => GIT_OBJECT_COMMIT,
             ObjectType::Tree => GIT_OBJECT_TREE,
             ObjectType::Blob => GIT_OBJECT_BLOB,
             ObjectType::Tag => GIT_OBJECT_TAG,
-            ObjectType::OfsDelta => GIT_OBJECT_OFS_DELTA,
-            ObjectType::RefDelta => GIT_OBJECT_REF_DELTA,
         }
     }
 
-    /// `git_object_type2string`: the loose header name (`""` for the types
-    /// that have none).
+    /// C's value of a type filter: `GIT_OBJECT_ANY` for `None`.
+    pub(crate) const fn raw_or_any(t: Option<ObjectType>) -> git_object_t {
+        match t {
+            Some(t) => t.raw(),
+            None => GIT_OBJECT_ANY,
+        }
+    }
+
+    /// `git_object_type2string`: the name in object headers (`"commit"`,
+    /// `"tree"`, `"blob"`, `"tag"`).
     pub fn name(self) -> &'static str {
-        // The table holds ASCII names.
-        core::str::from_utf8(type2string(self.raw())).unwrap_or("")
+        match self {
+            ObjectType::Commit => "commit",
+            ObjectType::Tree => "tree",
+            ObjectType::Blob => "blob",
+            ObjectType::Tag => "tag",
+        }
     }
 
-    /// `git_object_stringn2type`: the first type whose name prefixes `s`
-    /// (C's `git__prefixncmp`, so `"commitx"` is a commit).
-    pub fn from_name(s: &[u8]) -> Option<ObjectType> {
-        Self::from_raw(stringn2type(s))
+    /// `git_object_string2type`: the type named `s` exactly; `None` for
+    /// any other name.
+    pub fn from_name(s: impl AsRef<[u8]>) -> Option<ObjectType> {
+        match s.as_ref() {
+            b"commit" => Some(ObjectType::Commit),
+            b"tree" => Some(ObjectType::Tree),
+            b"blob" => Some(ObjectType::Blob),
+            b"tag" => Some(ObjectType::Tag),
+            _ => None,
+        }
     }
+}
 
-    /// `git_object_type_is_valid`: commit, tree, blob or tag.
-    pub const fn is_loose(self) -> bool {
-        type_is_valid(self.raw())
+impl core::str::FromStr for ObjectType {
+    type Err = crate::Error;
+    fn from_str(s: &str) -> core::result::Result<ObjectType, crate::Error> {
+        ObjectType::from_name(s).ok_or_else(|| {
+            crate::Error::with(
+                ErrorCode::INVALID,
+                ErrorClass::INVALID,
+                format!("invalid object type '{s}'"),
+            )
+        })
     }
 }
 
@@ -847,8 +864,39 @@ pub struct GitOdb {
     /// The options, normalized (immutable after creation).
     pub(crate) options: GitOdbOptions,
     locked: Mutex<Locked>,
+    /// The thread holding `locked` (its [`thread_token`]), 0 if none: a
+    /// backend that calls back into its own odb on the same thread would
+    /// deadlock on `locked`; it gets an error instead (S-6a).
+    holder: AtomicUsize,
     own_cache: GitCache,
     do_fsync: AtomicBool,
+}
+
+use crate::util::thread::thread_token;
+
+/// The backends' lock, held: clears the holder when released.
+struct OdbGuard<'a> {
+    g: MutexGuard<'a, Locked>,
+    holder: &'a AtomicUsize,
+}
+
+impl core::ops::Deref for OdbGuard<'_> {
+    type Target = Locked;
+    fn deref(&self) -> &Locked {
+        &self.g
+    }
+}
+
+impl core::ops::DerefMut for OdbGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Locked {
+        &mut self.g
+    }
+}
+
+impl Drop for OdbGuard<'_> {
+    fn drop(&mut self) {
+        self.holder.store(0, Ordering::Release);
+    }
 }
 
 crate::impl_ccounted!(GitOdb, crate::util::alloc::GitAlloc);
@@ -908,15 +956,41 @@ impl GitOdb {
                 backends,
                 cgraph: None,
             }),
+            holder: AtomicUsize::new(0),
             own_cache: GitCache::new(),
             do_fsync: AtomicBool::new(false),
         };
         CShared::try_new(db).map_err(|_| errors::oom())
     }
 
-    /// The backends' lock (C's `git_mutex_lock`, which never fails).
-    fn lock(&self) -> MutexGuard<'_, Locked> {
-        self.locked.lock().unwrap_or_else(PoisonError::into_inner)
+    /// The backends' lock (C's `git_mutex_lock`). C deadlocks when a
+    /// backend re-enters its odb on the same thread; this fails instead,
+    /// with "failed to acquire the odb lock" (C's message for a failed
+    /// lock), see [`lock`](Self::lock).
+    fn try_lock(&self) -> Result<OdbGuard<'_>> {
+        let me = thread_token();
+        if self.holder.load(Ordering::Acquire) == me {
+            return Err(git_error_set!(
+                ErrorClass::ODB,
+                "failed to acquire the odb lock: a backend re-entered its own object database"
+            ));
+        }
+        let g = self.locked.lock().unwrap_or_else(PoisonError::into_inner);
+        self.holder.store(me, Ordering::Release);
+        Ok(OdbGuard {
+            g,
+            holder: &self.holder,
+        })
+    }
+
+    /// [`try_lock`](Self::try_lock) where the caller has no way to fail:
+    /// a re-entry panics (which the export or slot barrier around every
+    /// re-entering call turns into an error).
+    fn lock(&self) -> OdbGuard<'_> {
+        match self.try_lock() {
+            Ok(g) => g,
+            Err(_) => panic!("a backend re-entered its own object database"),
+        }
     }
 
     /// The oid type.
@@ -1174,7 +1248,7 @@ impl GitOdb {
 
     /// `git_odb__get_commit_graph_file`.
     pub(crate) fn get_commit_graph_file(&self) -> Result<*mut c_void> {
-        let mut l = self.lock();
+        let mut l = self.try_lock()?;
         match l.cgraph.as_mut() {
             None => Err(ErrorCode::NOT_FOUND),
             Some(g) => g.get_file(),
@@ -1185,7 +1259,9 @@ impl GitOdb {
 
     /// `odb_exists_1`.
     fn exists_1(&self, id: &Oid, only_refreshed: bool) -> bool {
-        let l = self.lock();
+        let Ok(l) = self.try_lock() else {
+            return false;
+        };
         for bi in &l.backends {
             let b = bi.backend.as_ptr();
             // SAFETY: a live backend table (the odb's), read in place.
@@ -1207,7 +1283,9 @@ impl GitOdb {
 
     /// `odb_freshen_1`.
     fn freshen_1(&self, id: &Oid, only_refreshed: bool) -> bool {
-        let l = self.lock();
+        let Ok(l) = self.try_lock() else {
+            return false;
+        };
         for bi in &l.backends {
             let b = bi.backend.as_ptr();
             // SAFETY: as in `exists_1`.
@@ -1264,7 +1342,7 @@ impl GitOdb {
 
     /// `odb_exists_prefix_1`.
     fn exists_prefix_1(&self, key: &Oid, len: usize, only_refreshed: bool) -> Result<Oid> {
-        let l = self.lock();
+        let l = self.try_lock()?;
         let mut last_found: Option<Oid> = None;
         for bi in &l.backends {
             let b = bi.backend.as_ptr();
@@ -1381,7 +1459,7 @@ impl GitOdb {
             }
         }
         let mut passthrough = false;
-        let l = self.lock();
+        let l = self.try_lock()?;
         for bi in &l.backends {
             let b = bi.backend.as_ptr();
             // SAFETY: as in `exists_1`.
@@ -1488,7 +1566,7 @@ impl GitOdb {
             found = true;
         }
         if !found {
-            let l = self.lock();
+            let l = self.try_lock()?;
             for bi in &l.backends {
                 let b = bi.backend.as_ptr();
                 // SAFETY: as in `exists_1`.
@@ -1596,7 +1674,7 @@ impl GitOdb {
         let mut data: *mut c_void = core::ptr::null_mut();
         let mut found: Option<Oid> = None;
         let r = (|| {
-            let l = self.lock();
+            let l = self.try_lock()?;
             for bi in &l.backends {
                 let b = bi.backend.as_ptr();
                 // SAFETY: as in `exists_1`.
@@ -1694,7 +1772,7 @@ impl GitOdb {
     /// A copy of the backends (`git_vector_dup` under the lock), to call
     /// without the lock.
     fn backends_snapshot(&self) -> Result<Vec<BackendInternal>> {
-        let l = self.lock();
+        let l = self.try_lock()?;
         let mut v = Vec::new();
         v.try_reserve_exact(l.backends.len())
             .map_err(|_| errors::oom())?;
@@ -1750,7 +1828,7 @@ impl GitOdb {
         let data_ptr = data.as_ptr().cast::<c_void>();
         let mut error = ErrorCode::GENERIC.raw();
         {
-            let l = self.lock();
+            let l = self.try_lock()?;
             for bi in &l.backends {
                 if error >= 0 {
                     break;
@@ -1797,7 +1875,7 @@ impl GitOdb {
         let mut error = ErrorCode::GENERIC.raw();
         let mut stream: *mut GitOdbStream = core::ptr::null_mut();
         {
-            let l = self.lock();
+            let l = self.try_lock()?;
             for bi in &l.backends {
                 if error >= 0 {
                     break;
@@ -1893,7 +1971,7 @@ impl GitOdb {
         let mut len = 0usize;
         let mut t = GIT_OBJECT_INVALID;
         {
-            let l = self.lock();
+            let l = self.try_lock()?;
             for bi in &l.backends {
                 if error >= 0 {
                     break;
@@ -1934,7 +2012,7 @@ impl GitOdb {
         let mut out: *mut GitOdbWritepack = core::ptr::null_mut();
         let me = core::ptr::from_ref(self).cast_mut();
         {
-            let l = self.lock();
+            let l = self.try_lock()?;
             for bi in &l.backends {
                 if error >= 0 {
                     break;
@@ -1993,7 +2071,7 @@ impl GitOdb {
 
     /// `git_odb_refresh`.
     pub(crate) fn refresh(&self) -> Result<()> {
-        let mut l = self.lock();
+        let mut l = self.try_lock()?;
         for bi in &l.backends {
             let b = bi.backend.as_ptr();
             // SAFETY: as in `exists_1`.
