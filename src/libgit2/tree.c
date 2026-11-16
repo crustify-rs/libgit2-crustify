@@ -21,14 +21,6 @@
 #define TREE_ENTRY_CHECK_NAMELEN(n) \
 	if (n > UINT16_MAX) { git_error_set(GIT_ERROR_INVALID, "tree entry path too long"); }
 
-GIT_HASHMAP_STR_STRUCT(git_treebuilder_entrymap, git_tree_entry *);
-
-struct git_treebuilder {
-	git_repository *repo;
-	git_treebuilder_entrymap map;
-	git_str write_cache;
-};
-
 GIT_HASHMAP_STR_FUNCTIONS(git_treebuilder_entrymap, GIT_HASHMAP_INLINE, git_tree_entry *);
 
 static bool valid_filemode(const int filemode)

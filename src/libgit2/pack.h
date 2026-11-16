@@ -68,6 +68,7 @@ struct git_pack_idx_header {
 	uint32_t idx_version;
 };
 
+#ifdef GIT_RUST
 typedef struct git_pack_cache_entry git_pack_cache_entry;
 
 struct git_pack_entry {
@@ -81,7 +82,6 @@ GIT_HASHMAP_STRUCT(git_pack_offsetmap, off64_t, git_pack_cache_entry *);
 GIT_HASHMAP_OID_STRUCT(git_pack_oidmap, struct git_pack_entry *);
 GIT_HASHMAP_OID_PROTOTYPES(git_pack_oidmap, struct git_pack_entry *);
 
-#ifdef GIT_RUST
 /*
  * The Rust port's pack file (`GitPackFile` in rust/libgit2-rs/src/pack.rs):
  * this is the prefix of its allocation that the C that stays (the indexer,
@@ -103,11 +103,11 @@ struct git_pack_file {
 	const char *pack_name;
 };
 #else
-struct git_pack_cache_entry {
+typedef struct git_pack_cache_entry {
 	size_t last_usage; /* enough? */
 	git_atomic32 refcount;
 	git_rawobj raw;
-};
+} git_pack_cache_entry;
 
 struct pack_chain_elem {
 	off64_t base_key;
@@ -120,6 +120,17 @@ typedef git_array_t(struct pack_chain_elem) git_dependency_chain;
 
 #define GIT_PACK_CACHE_MEMORY_LIMIT 16 * 1024 * 1024
 #define GIT_PACK_CACHE_SIZE_LIMIT 1024 * 1024 /* don't bother caching anything over 1MB */
+
+struct git_pack_entry {
+	off64_t offset;
+	git_oid id;
+	struct git_pack_file *p;
+};
+
+GIT_HASHMAP_STRUCT(git_pack_offsetmap, off64_t, git_pack_cache_entry *);
+
+GIT_HASHMAP_OID_STRUCT(git_pack_oidmap, struct git_pack_entry *);
+GIT_HASHMAP_OID_PROTOTYPES(git_pack_oidmap, struct git_pack_entry *);
 
 typedef struct {
 	size_t memory_used;

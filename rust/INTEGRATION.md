@@ -2,8 +2,11 @@
 
 The integration branch is `integ` (`/work/wt/integ`, build dir
 `/work/builds/integ`). "Green" means: every offline clar suite passes
-(`runtests.sh`), `cargo test --features link-c` passes, `cargo +nightly miri
-test` passes (with `-Zmiri-strict-provenance`), `cargo clippy --all-targets`
+(`runtests.sh`) on the Rust build and, since section 11, on the C fallback
+build (`/work/tools/configure.sh /work/wt/integ /work/builds/integ-c
+-DUSE_RUST=OFF`); `git diff 186c04b -- include/` is empty (no public header
+changed); `cargo test --features link-c` passes; `cargo +nightly miri test`
+passes (with `-Zmiri-strict-provenance`); `cargo clippy --all-targets`
 (with and without `link-c`) and `cargo fmt --check` are clean.
 
 ## Status (latest first)
@@ -382,3 +385,35 @@ the `grafts` slots), plus `revwalk::api`'s note that
 
 Green: `ff2db8c` (clar 436/436, cargo test link-c, Miri, clippy both
 configurations, fmt).
+
+## 11. The C fallback build (`USE_RUST=OFF`)
+
+The coordinator found that master no longer compiled without the Rust
+port: `revwalk.h`'s shared-prefix `git_revwalk` had dropped the C fields
+with no fallback (`revwalk.c:82`: `limited`, `did_hide`, …). Every header
+the port changed since `186c04b` now keeps its original C definition,
+verbatim, under `#ifndef GIT_RUST` (the Rust's under `#ifdef GIT_RUST`):
+
+- `revwalk.h` (`git_revwalk`): the original struct restored for the
+  fallback (the only one that failed to compile).
+- `odb.h` (`git_odb`): the fallback keeps the original field order (`lock`
+  before `options`; the port's prefix is `rc, options`).
+- `pack.h`: the fallback region (`git_pack_cache_entry` … `git_pack_file`)
+  is the original text; the declarations the port moved up (the entry and
+  the maps) are inside the `GIT_RUST` branch.
+- `mwindow.h`: the original `typedef struct git_mwindow {…} git_mwindow;`.
+- `tree.h`: `git_treebuilder` (and its map) back in the header for the
+  fallback; `tree.c` restored to the original (it is built only without the
+  port).
+- `sortedcache.h`: the original anonymous-struct typedef for the fallback;
+  `sortedcache.c` restored to the original (built only without the port).
+  `refdb_fs.c` (built in both) keeps using `git_sortedcache_path`, which
+  the C `sortedcache.c` provides.
+- Already had both branches: `config.h`, `index.h` (and `index_map.h`
+  included only without the port), `hash.h`, `hash/sha.h`.
+- `include/` is unchanged since `186c04b`.
+
+Results: the C fallback build passes all 436 offline suites (as
+`/work/build-c`); the Rust build 436/436; `cargo test --features link-c`
+(including the layout tests over the headers) passes. No Rust source
+changed, so `ff2db8c`'s Miri run still applies.

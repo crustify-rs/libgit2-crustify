@@ -28,10 +28,16 @@ struct git_tree {
 	git_array_t(git_tree_entry) entries;
 };
 
-/*
- * git_treebuilder is opaque outside tree.c: with the Rust port it is defined
- * in rust/libgit2-rs/src/tree.rs, without it in tree.c.
- */
+#ifndef GIT_RUST
+/* (opaque with GIT_RUST: rust/libgit2-rs/src/tree.rs defines it) */
+GIT_HASHMAP_STR_STRUCT(git_treebuilder_entrymap, git_tree_entry *);
+
+struct git_treebuilder {
+	git_repository *repo;
+	git_treebuilder_entrymap map;
+	git_str write_cache;
+};
+#endif
 
 GIT_INLINE(bool) git_tree_entry__is_tree(const struct git_tree_entry *e)
 {
