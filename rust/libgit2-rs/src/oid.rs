@@ -646,6 +646,26 @@ fn write_path(out: &mut [u8], id: &[u8; GIT_OID_MAX_SIZE], hex_size: usize) {
     fmt_substr(&mut out[3..], id, 2, hex_size - 2);
 }
 
+/// `write_path` into memory that may be uninitialized (C's output buffer).
+#[inline]
+fn write_path_uninit(
+    out: &mut [core::mem::MaybeUninit<u8>],
+    id: &[u8; GIT_OID_MAX_SIZE],
+    hex_size: usize,
+) {
+    let (head, rest) = out.split_at_mut(3);
+    let [a, b] = HEX_PAIRS[id[0] as usize];
+    head[0].write(a);
+    head[1].write(b);
+    head[2].write(b'/');
+    let pairs = &id[1..hex_size / 2];
+    for (d, &x) in rest.as_chunks_mut::<2>().0.iter_mut().zip(pairs) {
+        let [a, b] = HEX_PAIRS[x as usize];
+        d[0].write(a);
+        d[1].write(b);
+    }
+}
+
 /// The length checks of `git_oid_from_prefix`, in C's order.
 #[inline]
 fn prefix_checks(len: usize, hexsize: usize) -> Result<()> {
@@ -864,7 +884,7 @@ impl<'a> OidShortener<'a> {
     /// tail `tail`. `Err` when the set became full.
     #[inline(always)]
     fn push_leaf(&mut self, idx: usize, push_at: usize, tail: Tail) -> Result<()> {
-        if self.nodes.try_reserve(1).is_err() {
+        if self.nodes.len() == self.nodes.capacity() && self.nodes.try_reserve(1).is_err() {
             return Err(shorten_oom());
         }
         let idx_leaf = self.nodes.len();
@@ -955,7 +975,8 @@ impl<'a> OidShortener<'a> {
                 self.push_leaf(idx, (tc & 15) as usize, rest)?;
             }
 
-            let next = self.children(idx)[c];
+            let children = self.children(idx);
+            let next = children[c];
             if next == 0 {
                 let rest = Tail {
                     ptr: p.wrapping_add(i + 1),
@@ -966,7 +987,7 @@ impl<'a> OidShortener<'a> {
             }
             is_leaf = next < 0;
             if is_leaf {
-                self.children(idx)[c] = -next;
+                children[c] = -next;
             }
             idx = next.unsigned_abs() as usize;
             i += 1;
@@ -1189,14 +1210,23 @@ pub mod ffi {
         barrier(|| {
             // SAFETY: a valid oid.
             let oid = unsafe { &*oid };
-            let hex_size = oid.hexsize();
+            let (hex_size, id) = (oid.hexsize(), oid.id);
             if hex_size == 0 {
                 return oid_error_invalid("unknown type").raw();
             }
-            let mut buf = [0u8; GIT_OID_MAX_HEXSIZE + 1];
-            write_path(&mut buf[..hex_size + 1], &oid.id, hex_size);
-            // SAFETY: `hex_size + 1` writable bytes, not overlapping the local.
-            unsafe { ptr::copy_nonoverlapping(buf.as_ptr(), str.cast::<u8>(), hex_size + 1) };
+            // Written in place, as C does: going through a local and a copy
+            // stalls on store forwarding (oid/pathfmt, perf WP). The id is a
+            // copy, so `str` may even overlap the oid.
+            // SAFETY: `str` is writable for `hex_size + 1` bytes (contract),
+            // which nothing else accesses during the call; `MaybeUninit`
+            // admits them uninitialized.
+            let out = unsafe {
+                core::slice::from_raw_parts_mut(
+                    str.cast::<core::mem::MaybeUninit<u8>>(),
+                    hex_size + 1,
+                )
+            };
+            write_path_uninit(out, &id, hex_size);
             0
         })
     }
