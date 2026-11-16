@@ -1054,3 +1054,12 @@ pub mod ffi {
         })
     }
 }
+
+crate::c_layout_test! {
+    headers: ["git2/errors.h"],
+    types: [
+        GitError => "git_error" { message, klass },
+        StaticError => "git_error" {},
+    ],
+    asserts: ["GIT_ERROR_GRAFTS == 36", "GIT_EREADONLY == -40"],
+}

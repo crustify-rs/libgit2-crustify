@@ -534,3 +534,11 @@ mod tests {
         });
     }
 }
+
+crate::c_layout_test! {
+    headers: ["alloc.h"],
+    types: [
+        GitAllocator => "git_allocator" { gmalloc, grealloc, gfree },
+        AllocatorCell => "git_allocator" {},
+    ],
+}

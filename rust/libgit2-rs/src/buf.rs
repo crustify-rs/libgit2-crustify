@@ -249,3 +249,10 @@ mod tests {
         assert_ne!(b.ptr.cast_const(), data.as_ptr().cast());
     }
 }
+
+crate::c_layout_test! {
+    headers: ["buf.h"],
+    types: [
+        GitBuf => "git_buf" { ptr, reserved, size },
+    ],
+}

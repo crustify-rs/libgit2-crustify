@@ -1079,3 +1079,11 @@ pub mod ffi {
         barrier(|| unsafe { v(vec) }.reverse())
     }
 }
+
+crate::c_layout_test! {
+    headers: ["vector.h"],
+    types: [
+        GitVector => "git_vector" { alloc_size as "_alloc_size", cmp as "_cmp", contents, length, flags },
+    ],
+    asserts: ["GIT_VECTOR_SORTED == 1"],
+}

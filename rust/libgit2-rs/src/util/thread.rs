@@ -534,3 +534,16 @@ mod tests {
         }
     }
 }
+
+crate::c_layout_test! {
+    headers: ["thread.h", "util.h"],
+    types: [
+        GitMutex => "git_mutex" {},
+        GitRwLock => "git_rwlock" {},
+        GitCond => "git_cond" {},
+        Atomic32 => "git_atomic32" {},
+        Atomic64 => "git_atomic64" {},
+        GitRefcount => "git_refcount" { refcount, owner },
+        TlsdataKey => "git_tlsdata_key" {},
+    ],
+}

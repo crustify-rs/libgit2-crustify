@@ -282,3 +282,11 @@ mod tests {
         }
     }
 }
+
+crate::c_layout_test! {
+    headers: ["git2/strarray.h"],
+    types: [
+        GitStrArray => "git_strarray" { strings, count },
+        StrArray => "git_strarray" {},
+    ],
+}

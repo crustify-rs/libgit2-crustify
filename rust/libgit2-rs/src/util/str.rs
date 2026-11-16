@@ -192,9 +192,8 @@ impl fmt::Debug for GitStr {
     }
 }
 
-/// Appending through `write!`: as [`GitStr::put`]. (C's `git_str_printf`
-/// reserves `2 * strlen(format)` first; Rust formatting grows as it goes,
-/// so `asize` may differ.)
+/// Appending through `write!`: each piece as [`GitStr::put`]. (For the
+/// C's growth, and so its `asize`, use [`GitStr::printf`].)
 impl fmt::Write for GitStr {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.put(s.as_bytes()).map_err(|_| fmt::Error)
@@ -419,7 +418,9 @@ impl GitStr {
         };
         new_size = new_size.wrapping_add(7) & !7;
 
-        if new_size < self.size {
+        // A rounding that wrapped to 0 is an overflow too (C goes on and
+        // writes `ptr[SIZE_MAX]`; rust/DEFECTS.md).
+        if new_size < self.size || new_size == 0 {
             if mark_oom {
                 self.mark_oom();
             }
@@ -655,17 +656,31 @@ impl GitStr {
         self.put(s)
     }
 
-    /// `git_str_printf` for Rust callers: append formatted text, failing
-    /// with -1 (and the string out of memory) as C's does.
-    pub fn printf(&mut self, args: fmt::Arguments<'_>) -> Result<()> {
-        use fmt::Write;
-        if self.is_oom() {
-            return Err(ErrorCode::GENERIC);
+    /// `git_str_printf` for Rust callers: append formatted text, with the
+    /// C's growth: first room for `2 * format_len` more bytes (`format_len`
+    /// is the length of the C format string the call replaces; 0 skips
+    /// this), then, if the text did not fit, exactly enough for it. Fails
+    /// with -1 as C's does.
+    ///
+    /// Arguments are formatted with Rust's `Display`; byte strings that are
+    /// not UTF-8 should be appended with [`put`](Self::put).
+    pub fn printf(&mut self, format_len: usize, args: fmt::Arguments<'_>) -> Result<()> {
+        self.vprintf_begin(format_len)?;
+        loop {
+            let n = self.size;
+            let mut w = SpareWriter { buf: &mut self.alloc_mut()[n..], len: 0 };
+            if fmt::write(&mut w, args).is_err() {
+                return Err(ErrorCode::GENERIC);
+            }
+            let len = w.len;
+            if self.owned() && len < self.asize - self.size {
+                // Everything was written: count it and add the NUL.
+                self.set_size_nul(n + len);
+                return Ok(());
+            }
+            let new_size = alloc_add(alloc_add(self.size, len)?, 1)?;
+            self.ensure(new_size)?;
         }
-        if self.write_fmt(args).is_err() {
-            return Err(ErrorCode::GENERIC);
-        }
-        Ok(())
     }
 
     // ----- encodings -----
@@ -1227,7 +1242,8 @@ impl GitStr {
                 let _ = quoted.putc(b'\\');
                 let _ = quoted.putc(byte);
             } else if byte != b' ' && (c < b'!' as i8 || c > b'~' as i8) {
-                let _ = quoted.printf(format_args!("\\{byte:03o}"));
+                // C: `git_str_printf(&quoted, "\\%03o", ...)`.
+                let _ = quoted.printf(5, format_args!("\\{byte:03o}"));
             } else {
                 let _ = quoted.putc(byte);
             }
@@ -1294,11 +1310,13 @@ impl GitStr {
                             ));
                         }
                         let is_oct = |c: u8| (b'0'..=b'7').contains(&c);
-                        if !is_oct(b[j + 1]) || !is_oct(b[j + 2]) {
+                        // `j + 2` may be `size`: C reads the NUL there.
+                        let (c1, c2) = (b[j + 1], b.get(j + 2).copied().unwrap_or(0));
+                        if !is_oct(c1) || !is_oct(c2) {
                             return Err(git_error_set!(
                                 ErrorClass::INVALID,
                                 "truncated quoted character \\{}",
-                                Bytes(&b[j..j + 3])
+                                Bytes(&[ch, c1, c2])
                             ));
                         }
                         ch = ((b[j] - b'0') << 6) | ((b[j + 1] - b'0') << 3) | (b[j + 2] - b'0');
@@ -1470,6 +1488,25 @@ impl GitStr {
     /// looks binary.
     pub fn gather_text_stats(&self, skip_bom: bool) -> (TextStats, bool) {
         gather_text_stats(self.as_bytes(), skip_bom)
+    }
+}
+
+/// Formats into the spare room of a buffer, counting what does not fit
+/// (`vsnprintf`'s contract).
+struct SpareWriter<'a> {
+    buf: &'a mut [MaybeUninit<u8>],
+    len: usize,
+}
+
+impl fmt::Write for SpareWriter<'_> {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        let b = s.as_bytes();
+        if let Some(room) = self.buf.get_mut(self.len..) {
+            let n = b.len().min(room.len());
+            room[..n].write_copy_of_slice(&b[..n]);
+        }
+        self.len += b.len();
+        Ok(())
     }
 }
 
@@ -2465,4 +2502,14 @@ pub mod ffi {
             bin
         })
     }
+}
+
+crate::c_layout_test! {
+    headers: ["str.h"],
+    types: [
+        GitStr => "git_str" { ptr, asize, size },
+        TextStats => "git_str_text_stats" { bom, nul, cr, lf, crlf, printable, nonprintable },
+        Bom => "git_str_bom_t" {},
+    ],
+    asserts: ["GIT_STR_BOM_UTF32_BE == 5"],
 }
