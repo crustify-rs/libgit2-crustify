@@ -1395,7 +1395,7 @@ pub(crate) fn printf_bytes(buf: &mut GitStr, format_len: usize, bytes: &[u8]) ->
             // (borrowed through `&mut buf`), disjoint from `bytes`.
             unsafe { ptr::copy_nonoverlapping(bytes.as_ptr(), spare, bytes.len()) };
             // SAFETY: the byte after them, within `room`.
-            unsafe { spare.add(bytes.len()).write(0) };
+            unsafe { spare.wrapping_add(bytes.len()).write(0) };
             // SAFETY: the string owns its buffer (`room > 0`), the bytes up
             // to `size + len` are written and the NUL follows them.
             unsafe { buf.set_len(size + bytes.len()) };
@@ -2416,17 +2416,19 @@ mod tests {
         assert_eq!(rc, 0);
         let t = o.cast::<crate::tag::GitTag>();
         // SAFETY: a live tag.
-        let name = unsafe { CStr::from_ptr(crate::tag::ffi::git_tag_name(t)) };
+        let name = unsafe { crate::tag::ffi::git_tag_name(t) };
+        // SAFETY: its NUL-terminated name.
+        let name = unsafe { CStr::from_ptr(name) };
         assert_eq!(name.to_bytes(), b"t");
         // SAFETY: a live tag.
-        assert_eq!(
-            unsafe { crate::tag::ffi::git_tag_target_type(t) },
-            GIT_OBJECT_BLOB
-        );
+        let kind = unsafe { crate::tag::ffi::git_tag_target_type(t) };
+        assert_eq!(kind, GIT_OBJECT_BLOB);
         // SAFETY: a live tag.
-        assert!(unsafe { crate::tag::ffi::git_tag_tagger(t) }.is_null());
+        let tagger = unsafe { crate::tag::ffi::git_tag_tagger(t) };
+        assert!(tagger.is_null());
         // SAFETY: a live object.
-        assert_eq!(unsafe { (*o).cached.refcount.get() }, 1);
+        let refs = unsafe { (*o).cached.refcount.get() };
+        assert_eq!(refs, 1);
         // SAFETY: the only reference: freed as the cache would.
         unsafe { free_object(o) };
 
@@ -2444,17 +2446,15 @@ mod tests {
         assert_eq!(rc, 0);
         let b = o.cast::<crate::blob::GitBlob>();
         // SAFETY: a live blob.
-        assert_eq!(
-            unsafe { crate::blob::ffi::git_blob_rawsize(b) },
-            data.len() as u64
-        );
+        let size = unsafe { crate::blob::ffi::git_blob_rawsize(b) };
+        assert_eq!(size, data.len() as u64);
         // SAFETY: a live blob.
-        assert_eq!(
-            unsafe { crate::blob::ffi::git_blob_rawcontent(b) },
-            data.as_ptr().cast()
-        );
+        let content = unsafe { crate::blob::ffi::git_blob_rawcontent(b) };
+        assert_eq!(content, data.as_ptr().cast());
         // SAFETY: a live object.
-        let id = unsafe { *ffi::git_object_id(o) };
+        let id = unsafe { ffi::git_object_id(o) };
+        // SAFETY: its id, live with it.
+        let id = unsafe { *id };
         assert_eq!(
             id,
             id_from_buffer(data, ObjectType::Blob, OidType::Sha1).unwrap()

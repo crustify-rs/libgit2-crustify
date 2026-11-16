@@ -2,6 +2,9 @@
 //! out-parameters, the write stream's function table, argument checks and
 //! their messages.
 
+// The tests read C's structs field by field in one justified block each.
+#![allow(clippy::multiple_unsafe_ops_per_block)]
+
 use core::ffi::{CStr, c_char, c_int};
 use core::ptr;
 use std::path::{Path, PathBuf};
@@ -115,7 +118,7 @@ fn tag_from_raw_fields_as_c_reads_them() {
     }
 
     // Invalid content: GIT_EINVALID, and the out-parameter NULL.
-    let mut o = 0x1 as *mut GitObject;
+    let mut o = std::ptr::dangling_mut::<GitObject>();
     // SAFETY: as above.
     let rc = unsafe {
         obj::git_object__from_raw(
@@ -208,10 +211,8 @@ fn peel_errors_are_cs() {
     .unwrap();
     let mut o = ptr::null_mut();
     // SAFETY: a live repository, a valid id, a writable out.
-    assert_eq!(
-        unsafe { obj::git_object_lookup(&raw mut o, r.raw, &id, GIT_OBJECT_BLOB) },
-        0
-    );
+    let rv = unsafe { obj::git_object_lookup(&raw mut o, r.raw, &raw const id, GIT_OBJECT_BLOB) };
+    assert_eq!(rv, 0);
     let mut p = ptr::null_mut();
     // SAFETY: a live object.
     let rc = unsafe { obj::git_object_peel(&raw mut p, o, 1) };
@@ -235,10 +236,8 @@ fn write_stream_through_its_table() {
     let r = Repo::scratch("stream");
     let mut s: *mut GitWriteStream = ptr::null_mut();
     // SAFETY: a live repository, a writable out, a NUL-terminated hint.
-    assert_eq!(
-        unsafe { blob::git_blob_create_from_stream(&raw mut s, r.raw, c"hint.txt".as_ptr()) },
-        0
-    );
+    let rv = unsafe { blob::git_blob_create_from_stream(&raw mut s, r.raw, c"hint.txt".as_ptr()) };
+    assert_eq!(rv, 0);
     let data = b"streamed through the C table\n";
     for chunk in data.chunks(5) {
         // SAFETY: the stream's own slot, called with the stream, as C.
@@ -247,10 +246,8 @@ fn write_stream_through_its_table() {
     }
     let mut id = Oid::NONE;
     // SAFETY: a stream of `git_blob_create_from_stream`, not used after.
-    assert_eq!(
-        unsafe { blob::git_blob_create_from_stream_commit(&raw mut id, s) },
-        0
-    );
+    let rv = unsafe { blob::git_blob_create_from_stream_commit(&raw mut id, s) };
+    assert_eq!(rv, 0);
     assert_eq!(
         id,
         libgit2_rs::object::id_from_buffer(
@@ -264,10 +261,8 @@ fn write_stream_through_its_table() {
     // close, then free, as filter.c's users do.
     let mut s: *mut GitWriteStream = ptr::null_mut();
     // SAFETY: as above, no hint.
-    assert_eq!(
-        unsafe { blob::git_blob_create_from_stream(&raw mut s, r.raw, ptr::null()) },
-        0
-    );
+    let rv = unsafe { blob::git_blob_create_from_stream(&raw mut s, r.raw, ptr::null()) };
+    assert_eq!(rv, 0);
     // SAFETY: the stream's slots, each with the stream; `free` last.
     unsafe {
         assert_eq!(((*s).write.unwrap())(s, c"x".as_ptr(), 1), 0);
@@ -286,13 +281,13 @@ fn tag_lists_and_short_ids() {
         count: 0,
     };
     // SAFETY: a writable array, a NUL-terminated pattern, a live repository.
-    assert_eq!(
-        unsafe { tag::git_tag_list_match(&raw mut a, c"e*".as_ptr(), r.raw) },
-        0
-    );
+    let rv = unsafe { tag::git_tag_list_match(&raw mut a, c"e*".as_ptr(), r.raw) };
+    assert_eq!(rv, 0);
     assert_eq!(a.count, 1);
-    // SAFETY: the array's first string.
-    assert_eq!(unsafe { CStr::from_ptr(*a.strings) }.to_bytes(), b"e90810b");
+    // SAFETY: the array's first element.
+    let first = unsafe { *a.strings };
+    // SAFETY: a NUL-terminated string of the array.
+    assert_eq!(unsafe { CStr::from_ptr(first) }.to_bytes(), b"e90810b");
     // SAFETY: the array libgit2 filled, freed once.
     unsafe { libgit2_rs::strarray::ffi::git_strarray_dispose(&raw mut a) };
 
@@ -303,10 +298,8 @@ fn tag_lists_and_short_ids() {
         0
     }
     // SAFETY: a live repository; the callback and its payload live for the call.
-    assert_eq!(
-        unsafe { tag::git_tag_foreach(r.raw, Some(count), (&raw mut n).cast()) },
-        0
-    );
+    let rv = unsafe { tag::git_tag_foreach(r.raw, Some(count), (&raw mut n).cast()) };
+    assert_eq!(rv, 0);
     assert!(n >= 7);
 
     let id = Oid::from_str_hex(
@@ -316,10 +309,8 @@ fn tag_lists_and_short_ids() {
     .unwrap();
     let mut o = ptr::null_mut();
     // SAFETY: a live repository, a valid id, a writable out.
-    assert_eq!(
-        unsafe { obj::git_object_lookup(&raw mut o, r.raw, &id, GIT_OBJECT_ANY) },
-        0
-    );
+    let rv = unsafe { obj::git_object_lookup(&raw mut o, r.raw, &raw const id, GIT_OBJECT_ANY) };
+    assert_eq!(rv, 0);
     let mut b = libgit2_rs::buf::GitBuf::new();
     // SAFETY: a valid `git_buf` and a live object.
     assert_eq!(unsafe { obj::git_object_short_id(&raw mut b, o) }, 0);
