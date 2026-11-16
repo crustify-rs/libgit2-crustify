@@ -2261,6 +2261,7 @@ ffibox::impl_cvtable! {
 /// The exports of `refdb_fs.c`.
 pub mod ffi {
     use super::*;
+    use crate::util::cabi::CStrArg;
     use crate::util::export::barrier;
 
     /// `git_refdb_backend_fs`.
@@ -2298,8 +2299,8 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference__lookup_loose(
         out: *mut *mut GitReference,
-        ref_dir: *const c_char,
-        ref_name: *const c_char,
+        ref_dir: CStrArg<'_>,
+        ref_name: CStrArg<'_>,
         oid_type: c_int,
     ) -> c_int {
         barrier(|| {
@@ -2307,10 +2308,8 @@ pub mod ffi {
                 // SAFETY: writable.
                 unsafe { *out = core::ptr::null_mut() };
             }
-            // SAFETY: strings (C dereferences NULL).
-            let dir = unsafe { crate::util::export::cstr_bytes(ref_dir) };
-            // SAFETY: as above.
-            let n = unsafe { crate::util::export::cstr_bytes(ref_name) };
+            let dir = ref_dir.to_bytes();
+            let n = ref_name.to_bytes();
             match refs::lookup_loose(dir, n, oid_type, !out.is_null()) {
                 Ok(Some(r)) => {
                     // SAFETY: writable (`want` is `!out.is_null()`).

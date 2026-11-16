@@ -106,6 +106,12 @@ impl<'a> CStrArg<'a> {
         }
     }
 
+    /// The string, or `""` for NULL.
+    #[inline(always)]
+    pub fn or_empty(self) -> &'a CStr {
+        self.get().unwrap_or(c"")
+    }
+
     /// The string's bytes without the NUL; empty for NULL
     /// ([`export::cstr_bytes`](super::export::cstr_bytes)).
     #[inline(always)]
@@ -169,6 +175,15 @@ impl<'a, T> Out<'a, T> {
     pub const unsafe fn from_ptr(p: *mut T) -> Self {
         Out {
             ptr: p,
+            _life: PhantomData,
+        }
+    }
+
+    /// The NULL out-parameter (nothing is written).
+    #[inline(always)]
+    pub const fn null() -> Self {
+        Out {
+            ptr: ptr::null_mut(),
             _life: PhantomData,
         }
     }

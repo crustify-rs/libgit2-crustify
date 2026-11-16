@@ -22,6 +22,7 @@
 //! into a [`GitCommit`] as the C did; `commit_list.c`'s quick parse keeps only
 //! the parents and the commit time, without allocating.
 
+use crate::util::cabi::CStrArg;
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::ptr;
 
@@ -1110,11 +1111,16 @@ pub(crate) unsafe fn create_internal(
     sign: Option<Signer<'_>>,
 ) -> Result<()> {
     let mut r#ref: *mut pend::git_reference = ptr::null_mut();
-    let update_ref = args.update_ref.map_or(ptr::null(), CStr::as_ptr);
+    let update_ref = CStrArg::from(args.update_ref);
     if !update_ref.is_null() {
         // SAFETY: `repo` is live; `update_ref` NUL-terminated.
         let e = unsafe {
-            crate::refs::ffi::git_reference_lookup_resolved(&raw mut r#ref, repo, update_ref, 10)
+            crate::refs::ffi::git_reference_lookup_resolved(
+                &raw mut r#ref,
+                repo,
+                update_ref.as_ptr(),
+                10,
+            )
         };
         if e < 0 && e != ErrorCode::NOT_FOUND.raw() {
             return Err(ec(e));
@@ -1270,6 +1276,8 @@ pub(crate) fn code(r: Result<()>) -> c_int {
 
 pub mod ffi {
     //! The exports of `commit.c`.
+    use crate::git_arg;
+    use crate::util::cabi::CStrArg;
 
     use super::*;
     use crate::buf::GitBuf;
@@ -1674,7 +1682,7 @@ pub mod ffi {
     pub unsafe extern "C" fn git_commitbuilder_add_header(
         builder: *mut GitCommitbuilder,
         field: *const c_char,
-        value: *const c_char,
+        value: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             if builder.is_null() {
@@ -1687,8 +1695,7 @@ pub mod ffi {
             let contents = unsafe { &mut *contents };
             // SAFETY: NUL-terminated or NULL (contract).
             let f = unsafe { opt_cbytes(field) };
-            // SAFETY: as above.
-            let v = unsafe { opt_cbytes(value) };
+            let v = value.get().map(CStr::to_bytes);
             let Some(f) = f else {
                 return errors::assert_arg_failed("field").raw();
             };
@@ -1881,7 +1888,7 @@ pub mod ffi {
                     crate::refs::ffi::git_reference__update_for_commit(
                         repo,
                         r#ref,
-                        ptr::null(),
+                        CStrArg::NULL,
                         id,
                         c"commit".as_ptr(),
                     )
@@ -2312,7 +2319,7 @@ pub mod ffi {
         signed_data_out: *mut GitBuf,
         repo: *mut git_repository,
         commit_id: *mut Oid,
-        field: *const c_char,
+        field: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             let mut signature = GitStr::new();
@@ -2359,7 +2366,7 @@ pub mod ffi {
         signed_data: *mut GitStr,
         repo: *mut git_repository,
         commit_id: *mut Oid,
-        field: *const c_char,
+        field: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!signature.is_null(), "signature", -1);
@@ -2371,8 +2378,7 @@ pub mod ffi {
             let sd = unsafe { &mut *signed_data };
             sig.clear();
             sd.clear();
-            // SAFETY: NULL or NUL-terminated (contract).
-            let field = unsafe { opt_cbytes(field) }.unwrap_or(b"gpgsig");
+            let field = field.get().map(CStr::to_bytes).unwrap_or(b"gpgsig");
             // SAFETY: a live repository (contract).
             let odb = match unsafe { repo_odb(repo) } {
                 Ok(o) => o,
@@ -2427,7 +2433,7 @@ pub mod ffi {
         repo: *mut git_repository,
         author: *const GitSignature,
         committer: *const GitSignature,
-        message_encoding: *const c_char,
+        message_encoding: CStrArg<'_>,
         message: *const c_char,
         tree: *const crate::tree::GitTree,
         parent_count: usize,
@@ -2467,7 +2473,7 @@ pub mod ffi {
         repo: *mut git_repository,
         author: *const GitSignature,
         committer: *const GitSignature,
-        message_encoding: *const c_char,
+        message_encoding: CStrArg<'_>,
         message: *const c_char,
         tree: *const crate::tree::GitTree,
         parent_count: usize,
@@ -2498,8 +2504,7 @@ pub mod ffi {
                 // SAFETY: NULL or NUL-terminated (contract).
                 message: unsafe { opt_cbytes(message) },
                 tree: tree_id,
-                // SAFETY: as above.
-                encoding: unsafe { opt_cbytes(message_encoding) },
+                encoding: message_encoding.get().map(CStr::to_bytes),
                 headers: Ok(Vec::new()),
                 update_ref: None,
                 validate: true,
@@ -2520,20 +2525,20 @@ pub mod ffi {
     pub unsafe extern "C" fn git_commit_create_with_signature(
         out: *mut Oid,
         repo: *mut git_repository,
-        commit_content: *const c_char,
-        signature: *const c_char,
-        signature_field: *const c_char,
+        commit_content: CStrArg<'_>,
+        signature: CStrArg<'_>,
+        signature_field: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!out.is_null(), "out", -1);
             git_assert_arg!(!repo.is_null(), "repo", -1);
-            git_assert_arg!(!commit_content.is_null(), "commit_content", -1);
-            // SAFETY: NUL-terminated (contract).
-            let content = unsafe { cstr_bytes(commit_content) };
-            // SAFETY: NULL or NUL-terminated (contract).
-            let sig = unsafe { opt_cbytes(signature) };
-            // SAFETY: as above.
-            let field = unsafe { opt_cbytes(signature_field) }.unwrap_or(b"gpgsig");
+            let commit_content = git_arg!(commit_content.get(), "commit_content", -1);
+            let content = commit_content.to_bytes();
+            let sig = signature.get().map(CStr::to_bytes);
+            let field = signature_field
+                .get()
+                .map(CStr::to_bytes)
+                .unwrap_or(b"gpgsig");
             // SAFETY: a live repository (contract).
             let oid_type: git_oid_t = unsafe { (*repo).oid_type_raw() };
 
@@ -2939,7 +2944,7 @@ pub mod ffi {
                     crate::refs::ffi::git_reference__update_for_commit(
                         repo,
                         head_ref,
-                        ptr::null(),
+                        CStrArg::NULL,
                         out,
                         c"commit".as_ptr(),
                     )

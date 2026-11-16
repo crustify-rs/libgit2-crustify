@@ -10,6 +10,7 @@
 //! the [index module](super)): any of them may run code that reaches the
 //! index.
 
+use crate::util::cabi::{CStrArg, Out};
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::marker::PhantomData;
 use core::ptr::{self, NonNull};
@@ -169,11 +170,11 @@ pub fn blob_from_workdir(repo: Repo, rel_path: &CStr, st: &mut libc::stat) -> Re
     // SAFETY: `id` and `st` are writable, `rel_path` a string, `repo` live.
     let r = unsafe {
         p::git_blob__create_from_paths(
-            &raw mut id,
+            Out::from(&mut id),
             st,
             repo.as_ptr(),
-            ptr::null(),
-            rel_path.as_ptr(),
+            CStrArg::NULL,
+            rel_path.into(),
             0,
             true,
         )
@@ -731,7 +732,9 @@ fn _unused(_: Bytes<'_>) {}
 /// this module holds (named as the C functions).
 #[allow(non_snake_case)]
 mod p {
-    use core::ffi::{c_char, c_int, c_void};
+    use crate::util::cabi::CStrArg;
+    use crate::util::cabi::Out;
+    use core::ffi::{c_int, c_void};
 
     use crate::oid::Oid;
 
@@ -741,11 +744,11 @@ mod p {
     ///
     /// As the export's.
     pub unsafe fn git_blob__create_from_paths(
-        out_oid: *mut Oid,
+        out_oid: Out<'_, Oid>,
         out_st: *mut libc::stat,
         repo: *mut c_void,
-        full_path: *const c_char,
-        hint_path: *const c_char,
+        full_path: CStrArg<'_>,
+        hint_path: CStrArg<'_>,
         hint_mode: libc::mode_t,
         apply_filters: bool,
     ) -> c_int {

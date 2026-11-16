@@ -345,6 +345,7 @@ fn owner_mock() {
 mod exports {
     use super::super::ffi::*;
     use super::*;
+    use crate::util::cabi::Out;
     use core::ffi::c_void;
 
     #[test]
@@ -374,14 +375,15 @@ mod exports {
         let base = b.as_ptr();
         let mut root = -7isize;
         // SAFETY: valid arguments; `base` lies in `b`.
-        let r =
-            unsafe { git_fs_path_join_unrooted(&raw mut b, c"x/y".as_ptr(), base, &raw mut root) };
+        let r = unsafe {
+            git_fs_path_join_unrooted(&raw mut b, c"x/y".as_ptr(), base, Out::from(&mut root))
+        };
         // Not the C's result (C measures `strlen(base)` after writing the
         // join, root 9): the base is copied first (rust/DIVERGENCES.md).
         assert_eq!((r, b.as_bytes(), root), (0, &b"/base/x/y"[..], 5));
         // SAFETY: NULL path: the assertion.
         let r = unsafe {
-            git_fs_path_join_unrooted(&raw mut b, core::ptr::null(), base, &raw mut root)
+            git_fs_path_join_unrooted(&raw mut b, core::ptr::null(), base, Out::from(&mut root))
         };
         assert_eq!(r, -1);
         assert_eq!(errors::last_message().unwrap(), b"invalid argument: 'path'");

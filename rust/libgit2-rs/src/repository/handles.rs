@@ -10,6 +10,7 @@
 //! are `ffibox::CShared`s over their leading `git_refcount`
 //! ([`GitRefcount`](crate::util::thread::GitRefcount)).
 
+use crate::util::cabi::CStrArg;
 use core::ffi::{CStr, c_char, c_int, c_void};
 use core::marker::PhantomData;
 use core::ptr::{self, NonNull};
@@ -175,7 +176,7 @@ impl<'r> Refdb<'r> {
         check(unsafe {
             crate::refdb::ffi::git_refdb_init(
                 self.as_ptr(),
-                opt_ptr(head),
+                CStrArg::from(head),
                 mode as libc::mode_t,
                 flags,
             )

@@ -10,6 +10,7 @@ use libgit2_rs::__test::buf::GitBuf;
 use libgit2_rs::__test::strarray::{GitStrArray, StrArray};
 use libgit2_rs::__test::util::alloc::{self, GitAllocator};
 use libgit2_rs::__test::util::allocators::{failalloc, stdalloc};
+use libgit2_rs::__test::util::cabi::Out;
 use libgit2_rs::__test::util::errors::{self, ErrorClass};
 use libgit2_rs::__test::util::str::GitStr;
 use libgit2_rs::__test::util::test_support;
@@ -108,7 +109,7 @@ fn allocator_init_functions() {
     // SAFETY: as C: fill an allocator struct, and use the allocators'
     // functions as their contract says.
     unsafe {
-        assert_eq!(stdalloc::git_stdalloc_init_allocator(&mut a), 0);
+        assert_eq!(stdalloc::git_stdalloc_init_allocator(Out::from(&mut a)), 0);
         let p = a.gmalloc.unwrap()(8, core::ptr::null(), 0);
         assert!(!p.is_null());
         let p = a.grealloc.unwrap()(p, 16, core::ptr::null(), 0);

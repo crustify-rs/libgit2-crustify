@@ -224,7 +224,7 @@ fn entries_alloc_dup() {
         assert_eq!((*e).name(), b"name.txt");
         assert_eq!(CStr::from_ptr((*e).filename).to_bytes(), b"name.txt");
         let mut d = ptr::null_mut();
-        assert_eq!(ffi::git_tree_entry_dup(&raw mut d, e), 0);
+        assert_eq!(ffi::git_tree_entry_dup(Out::from(&mut d), e), 0);
         assert_eq!(
             ((*d).attr, (*d).oid, (*d).name()),
             (0o100755, id, &b"name.txt"[..])
@@ -281,19 +281,19 @@ fn builder_serialize_and_filter() {
     }
     // SAFETY: a live builder used by nothing else; NUL-terminated names.
     unsafe {
-        assert!(!ffi::git_treebuilder_get(p, c"a".as_ptr()).is_null());
+        assert!(!ffi::git_treebuilder_get(p, c"a".into()).is_null());
         assert_eq!(
             ffi::git_treebuilder_filter(p, Some(drop_trees), ptr::null_mut()),
             0
         );
-        assert!(ffi::git_treebuilder_get(p, c"a".as_ptr()).is_null());
+        assert!(ffi::git_treebuilder_get(p, c"a".into()).is_null());
         assert_eq!(ffi::git_treebuilder_entrycount(p), 2);
-        assert_eq!(ffi::git_treebuilder_remove(p, c"nope".as_ptr()), -1);
+        assert_eq!(ffi::git_treebuilder_remove(p, c"nope".into()), -1);
         assert_eq!(
             errors::last_message().unwrap(),
             b"failed to remove entry: file isn't in the tree - nope"
         );
-        assert_eq!(ffi::git_treebuilder_remove(p, c"b".as_ptr()), 0);
+        assert_eq!(ffi::git_treebuilder_remove(p, c"b".into()), 0);
         assert_eq!(ffi::git_treebuilder_entrycount(p), 1);
         assert_eq!(ffi::git_treebuilder_clear(p), 0);
         assert_eq!(ffi::git_treebuilder_entrycount(p), 0);
@@ -436,7 +436,7 @@ fn walks() {
     // SAFETY: live trees; NUL-terminated names.
     unsafe {
         assert_eq!(ffi::git_tree_entrycount(root), 3);
-        let e = ffi::git_tree_entry_byname(root, c"z".as_ptr());
+        let e = ffi::git_tree_entry_byname(root, c"z".into());
         assert_eq!(e, ffi::git_tree_entry_byindex(root, 2));
         assert!(ffi::git_tree_entry_byindex(root, 3).is_null());
         let id = Oid::from_bytes(&[0xab; 20], OidType::Sha1).unwrap();
@@ -496,13 +496,16 @@ fn filter_reentrant_callback() {
                 // remove itself, then ask to remove it again
                 0 => {
                     let own = std::ffi::CString::new(name).unwrap();
-                    assert_eq!(ffi::git_treebuilder_remove(ctx.bld, own.as_ptr()), 0);
+                    assert_eq!(
+                        ffi::git_treebuilder_remove(ctx.bld, own.as_c_str().into()),
+                        0
+                    );
                     1
                 }
                 // remove the next one (which may already have been visited)
                 1 => {
                     let next = std::ffi::CString::new(format!("n{}", n + 1)).unwrap();
-                    let _ = ffi::git_treebuilder_remove(ctx.bld, next.as_ptr());
+                    let _ = ffi::git_treebuilder_remove(ctx.bld, next.as_c_str().into());
                     0
                 }
                 // plain removal by the filter

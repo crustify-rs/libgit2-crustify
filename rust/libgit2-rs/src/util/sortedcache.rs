@@ -1050,7 +1050,8 @@ impl<T> Drop for WriteGuard<'_, T> {
 /// must be sound on the items, and must not use the cache.
 pub mod ffi {
     use super::*;
-    use crate::util::export::{barrier, cstr_bytes, write_opt};
+    use crate::util::cabi::{CStrArg, Out};
+    use crate::util::export::barrier;
 
     /// The shared cache behind a C pointer.
     ///
@@ -1070,16 +1071,15 @@ pub mod ffi {
     /// `free_item` and `item_cmp` follow the module's contract.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_sortedcache_new(
-        out: *mut *const Shared,
+        mut out: Out<'_, *const Shared>,
         item_path_offset: usize,
         free_item: Option<FreeItemFn>,
         free_item_payload: *mut c_void,
         item_cmp: Option<VectorCmp>,
-        path: *const c_char,
+        path: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: NULL or a NUL-terminated string.
-            let path = unsafe { cstr_bytes(path) };
+            let path = path.to_bytes();
             match Shared::new(
                 item_path_offset,
                 free_item,
@@ -1088,8 +1088,7 @@ pub mod ffi {
                 path,
             ) {
                 Ok(sc) => {
-                    // SAFETY: `out` is writable.
-                    unsafe { out.write(Arc::into_raw(sc)) };
+                    out.write(Arc::into_raw(sc));
                     0
                 }
                 Err(e) => e.raw(),
@@ -1107,7 +1106,7 @@ pub mod ffi {
     /// fresh ones.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_sortedcache_copy(
-        out: *mut *const Shared,
+        mut out: Out<'_, *const Shared>,
         src: *const Shared,
         lock: bool,
         copy_item: Option<CopyItemFn>,
@@ -1182,8 +1181,7 @@ pub mod ffi {
             if error != 0 {
                 // `git_sortedcache_free(tgt)`: drops the last reference.
                 drop(tgt);
-                // SAFETY: `out` is writable.
-                unsafe { out.write(core::ptr::null()) };
+                out.write(core::ptr::null());
                 return error;
             }
             // C leaves the copy unsorted until it is first read or
@@ -1192,8 +1190,7 @@ pub mod ffi {
             let core = unsafe { tgt.core_mut() };
             // SAFETY: the comparison is `src`'s, sound on the items.
             unsafe { core.sort() };
-            // SAFETY: `out` is writable.
-            unsafe { out.write(Arc::into_raw(tgt)) };
+            out.write(Arc::into_raw(tgt));
             0
         })
     }
@@ -1362,13 +1359,12 @@ pub mod ffi {
     /// writable; `key` a NUL-terminated string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_sortedcache_upsert(
-        out: *mut *mut c_void,
+        mut out: Out<'_, *mut c_void>,
         sc: *const Shared,
-        key: *const c_char,
+        key: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: a NUL-terminated string.
-            let key = unsafe { cstr_bytes(key) };
+            let key = key.to_bytes();
             // SAFETY: a live cache.
             let s = unsafe { shared(sc) };
             // SAFETY: the write lock is held.
@@ -1377,8 +1373,7 @@ pub mod ffi {
                 Ok((item, _)) => (item.as_ptr().cast(), 0),
                 Err(e) => (core::ptr::null_mut(), e.raw()),
             };
-            // SAFETY: NULL or writable.
-            unsafe { write_opt(out, item) };
+            out.write(item);
             code
         })
     }
@@ -1407,13 +1402,12 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_sortedcache_lookup(
         sc: *const Shared,
-        key: *const c_char,
+        key: CStrArg<'_>,
     ) -> *mut c_void {
         barrier(|| {
             // SAFETY: a live cache.
             let s = unsafe { shared(sc) };
-            // SAFETY: a NUL-terminated string.
-            let key = unsafe { cstr_bytes(key) };
+            let key = key.to_bytes();
             // SAFETY: a lock is held.
             match unsafe { s.core() }.lookup(key) {
                 Some(p) => p.as_ptr().cast(),
@@ -1459,20 +1453,18 @@ pub mod ffi {
     /// NUL-terminated string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_sortedcache_lookup_index(
-        out: *mut usize,
+        mut out: Out<'_, usize>,
         sc: *const Shared,
-        key: *const c_char,
+        key: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             // SAFETY: a live cache.
             let s = unsafe { shared(sc) };
-            // SAFETY: a NUL-terminated string.
-            let key = unsafe { cstr_bytes(key) };
+            let key = key.to_bytes();
             // SAFETY: the caller's contract.
             let (r, pos) = unsafe { s.lookup_index(key) };
             if r != Err(ErrorCode::GENERIC) {
-                // SAFETY: writable (`git__bsearch` writes it either way).
-                unsafe { write_opt(out, pos) };
+                out.write(pos);
             }
             crate::util::export::status(r)
         })

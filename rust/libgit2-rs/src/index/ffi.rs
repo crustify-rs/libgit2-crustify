@@ -6,6 +6,8 @@
 //! where the C dereferenced a NULL index or path, the export fails the same
 //! check instead (see `rust/DEFECTS.md`).
 
+use crate::git_arg;
+use crate::util::cabi::{CStrArg, Out};
 use core::ffi::{c_char, c_int, c_uint, c_void};
 use core::ptr::{self, NonNull};
 
@@ -310,7 +312,7 @@ pub unsafe extern "C" fn git_index_options_init(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_open_ext(
     index_out: *mut *mut GitIndex,
-    index_path: *const c_char,
+    index_path: CStrArg<'_>,
     opts: *const GitIndexOptions,
 ) -> c_int {
     barrier(|| {
@@ -335,8 +337,7 @@ pub unsafe extern "C" fn git_index_open_ext(
         } else {
             OidType::Sha1
         };
-        // SAFETY: a string when non-null.
-        let path = unsafe { cstr(index_path) };
+        let path = index_path.get();
         match ops::open_ext(path, t) {
             Ok(ix) => {
                 // SAFETY: writable.
@@ -356,7 +357,7 @@ pub unsafe extern "C" fn git_index_open_ext(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_open(
     index_out: *mut *mut GitIndex,
-    index_path: *const c_char,
+    index_path: CStrArg<'_>,
 ) -> c_int {
     // SAFETY: forwarded.
     unsafe { git_index_open_ext(index_out, index_path, ptr::null()) }
@@ -370,7 +371,7 @@ pub unsafe extern "C" fn git_index_open(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_new(out: *mut *mut GitIndex) -> c_int {
     // SAFETY: forwarded.
-    unsafe { git_index_open_ext(out, ptr::null(), ptr::null()) }
+    unsafe { git_index_open_ext(out, CStrArg::NULL, ptr::null()) }
 }
 
 /// `git_index_new_ext`.
@@ -384,7 +385,7 @@ pub unsafe extern "C" fn git_index_new_ext(
     opts: *const GitIndexOptions,
 ) -> c_int {
     // SAFETY: forwarded.
-    unsafe { git_index_open_ext(out, ptr::null(), opts) }
+    unsafe { git_index_open_ext(out, CStrArg::NULL, opts) }
 }
 
 /// `git_index_free`.
@@ -672,13 +673,12 @@ pub unsafe extern "C" fn git_index_get_byindex(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_get_bypath(
     index: *mut GitIndex,
-    path: *const c_char,
+    path: CStrArg<'_>,
     stage: c_int,
 ) -> *const GitIndexEntry {
     barrier(|| {
         let ix = index_arg!(index, ptr::null());
-        // SAFETY: a string.
-        let path = unsafe { cstr_bytes(path) };
+        let path = path.to_bytes();
         // SAFETY: no foreign call; shared access (a read path that C may run on several threads).
         match unsafe { ix.get_ref() }.get_bypath(path, stage) {
             Some(e) => e.as_ptr().cast::<GitIndexEntry>().cast_const(),
@@ -822,12 +822,11 @@ pub unsafe extern "C" fn git_index_add_from_buffer(
 ///
 /// `index` NULL or a live index; `path` NULL or a string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_add_bypath(index: *mut GitIndex, path: *const c_char) -> c_int {
+pub unsafe extern "C" fn git_index_add_bypath(index: *mut GitIndex, path: CStrArg<'_>) -> c_int {
     barrier(|| {
         let ix = index_arg!(index, -1);
-        git_assert_arg!(!path.is_null(), "path", -1);
-        // SAFETY: a string; copied (it may be an entry's path).
-        let p = match ops::c_copy(unsafe { cstr_bytes(path) }) {
+        let path = git_arg!(path.get(), "path", -1);
+        let p = match ops::c_copy(path.to_bytes()) {
             Ok(p) => p,
             Err(e) => return e.raw(),
         };
@@ -841,15 +840,11 @@ pub unsafe extern "C" fn git_index_add_bypath(index: *mut GitIndex, path: *const
 ///
 /// As [`git_index_add_bypath`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_index_remove_bypath(
-    index: *mut GitIndex,
-    path: *const c_char,
-) -> c_int {
+pub unsafe extern "C" fn git_index_remove_bypath(index: *mut GitIndex, path: CStrArg<'_>) -> c_int {
     barrier(|| {
         let ix = index_arg!(index, -1);
-        git_assert_arg!(!path.is_null(), "path", -1);
-        // SAFETY: a string, copied (it may be an entry's path).
-        let p = unsafe { cstr_bytes(path) }.to_vec();
+        let path = git_arg!(path.get(), "path", -1);
+        let p = path.to_bytes().to_vec();
         // SAFETY: no foreign call.
         status(ops::remove_bypath(unsafe { ix.get() }, &p))
     })
@@ -885,14 +880,13 @@ pub unsafe extern "C" fn git_index__fill(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_remove(
     index: *mut GitIndex,
-    path: *const c_char,
+    path: CStrArg<'_>,
     stage: c_int,
 ) -> c_int {
     barrier(|| {
         let ix = index_arg!(index, -1);
-        git_assert_arg!(!path.is_null(), "path", -1);
-        // SAFETY: a string, copied.
-        let p = unsafe { cstr_bytes(path) }.to_vec();
+        let path = git_arg!(path.get(), "path", -1);
+        let p = path.to_bytes().to_vec();
         // SAFETY: no foreign call.
         status(unsafe { ix.get() }.remove(&p, stage))
     })
@@ -906,15 +900,14 @@ pub unsafe extern "C" fn git_index_remove(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_remove_directory(
     index: *mut GitIndex,
-    dir: *const c_char,
+    dir: CStrArg<'_>,
     stage: c_int,
 ) -> c_int {
     barrier(|| {
         let ix = index_arg!(index, -1);
-        git_assert_arg!(!dir.is_null(), "dir", -1);
+        let dir = git_arg!(dir.get(), "dir", -1);
         let mut pfx = GitStr::new();
-        // SAFETY: a string.
-        if let Err(e) = pfx.sets(unsafe { cstr_bytes(dir) }) {
+        if let Err(e) = pfx.sets(dir.to_bytes()) {
             return e.raw();
         }
         if let Err(e) = crate::util::fs_path::to_dir(&mut pfx) {
@@ -932,20 +925,18 @@ pub unsafe extern "C" fn git_index_remove_directory(
 /// `at_pos` NULL or writable; `index` NULL or live; `prefix` a string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_find_prefix(
-    at_pos: *mut usize,
+    mut at_pos: Out<'_, usize>,
     index: *mut GitIndex,
-    prefix: *const c_char,
+    prefix: CStrArg<'_>,
 ) -> c_int {
     barrier(|| {
         let ix = index_arg!(index, -1);
-        git_assert_arg!(!prefix.is_null(), "prefix", -1);
-        // SAFETY: a string.
-        let p = unsafe { cstr_bytes(prefix) };
+        let prefix = git_arg!(prefix.get(), "prefix", -1);
+        let p = prefix.to_bytes();
         // SAFETY: no foreign call; shared access (a read path that C may run on several threads).
         match unsafe { ix.sorted() }.find_prefix_sorted(p) {
             Some(pos) => {
-                // SAFETY: NULL or writable.
-                unsafe { crate::util::export::write_opt(at_pos, pos) };
+                at_pos.write(pos);
                 0
             }
             None => ErrorCode::NOT_FOUND.raw(),
@@ -961,7 +952,7 @@ pub unsafe extern "C" fn git_index_find_prefix(
 /// for `path_len` bytes (a string when `path_len` is 0).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index__find_pos(
-    out: *mut usize,
+    mut out: Out<'_, usize>,
     index: *mut GitIndex,
     path: *const c_char,
     path_len: usize,
@@ -978,8 +969,7 @@ pub unsafe extern "C" fn git_index__find_pos(
             Ok(p) => (p, 0),
             Err(p) => (p, ErrorCode::NOT_FOUND.raw()),
         };
-        // SAFETY: NULL or writable.
-        unsafe { crate::util::export::write_opt(out, pos) };
+        out.write(pos);
         ret
     })
 }
@@ -991,20 +981,18 @@ pub unsafe extern "C" fn git_index__find_pos(
 /// As [`git_index_find_prefix`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_find(
-    at_pos: *mut usize,
+    mut at_pos: Out<'_, usize>,
     index: *mut GitIndex,
-    path: *const c_char,
+    path: CStrArg<'_>,
 ) -> c_int {
     barrier(|| {
         let ix = index_arg!(index, -1);
-        git_assert_arg!(!path.is_null(), "path", -1);
-        // SAFETY: a string.
-        let p = unsafe { cstr_bytes(path) };
+        let path = git_arg!(path.get(), "path", -1);
+        let p = path.to_bytes();
         // SAFETY: no foreign call; shared access (a read path that C may run on several threads).
         match unsafe { ix.sorted() }.find_path_sorted(p) {
             Some(pos) => {
-                // SAFETY: NULL or writable.
-                unsafe { crate::util::export::write_opt(at_pos, pos) };
+                at_pos.write(pos);
                 0
             }
             None => {
@@ -1077,19 +1065,18 @@ pub unsafe extern "C" fn git_index_conflict_get(
     our_out: *mut *const GitIndexEntry,
     their_out: *mut *const GitIndexEntry,
     index: *mut GitIndex,
-    path: *const c_char,
+    path: CStrArg<'_>,
 ) -> c_int {
     barrier(|| {
         git_assert_arg!(!ancestor_out.is_null(), "ancestor_out", -1);
         git_assert_arg!(!our_out.is_null(), "our_out", -1);
         git_assert_arg!(!their_out.is_null(), "their_out", -1);
         let ix = index_arg!(index, -1);
-        git_assert_arg!(!path.is_null(), "path", -1);
+        let path = git_arg!(path.get(), "path", -1);
         let out = [ancestor_out, our_out, their_out];
         // SAFETY: writable.
         unsafe { write_conflict(out, [None; 3]) };
-        // SAFETY: a string.
-        let p = unsafe { cstr_bytes(path) };
+        let p = path.to_bytes();
         // SAFETY: no foreign call.
         match unsafe { ix.get() }.conflict_get(p) {
             Ok(sides) => {
@@ -1110,13 +1097,12 @@ pub unsafe extern "C" fn git_index_conflict_get(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_conflict_remove(
     index: *mut GitIndex,
-    path: *const c_char,
+    path: CStrArg<'_>,
 ) -> c_int {
     barrier(|| {
         let ix = index_arg!(index, -1);
-        git_assert_arg!(!path.is_null(), "path", -1);
-        // SAFETY: a string, copied.
-        let p = unsafe { cstr_bytes(path) }.to_vec();
+        let path = git_arg!(path.get(), "path", -1);
+        let p = path.to_bytes().to_vec();
         // SAFETY: no foreign call.
         status(unsafe { ix.get() }.conflict_remove(Some(&p)))
     })
@@ -1158,13 +1144,12 @@ pub unsafe extern "C" fn git_index_has_conflicts(index: *const GitIndex) -> c_in
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index__conflict_to_reuc(
     index: *mut GitIndex,
-    path: *const c_char,
+    path: CStrArg<'_>,
 ) -> c_int {
     barrier(|| {
         let ix = index_arg!(index, -1);
-        git_assert_arg!(!path.is_null(), "path", -1);
-        // SAFETY: a string, copied (it may be an entry's path).
-        let p = unsafe { cstr_bytes(path) }.to_vec();
+        let path = git_arg!(path.get(), "path", -1);
+        let p = path.to_bytes().to_vec();
         // SAFETY: no foreign call.
         status(ops::conflict_to_reuc(unsafe { ix.get() }, &p))
     })
@@ -1330,7 +1315,7 @@ pub unsafe extern "C" fn git_index_conflict_iterator_free(iterator: *mut GitInde
 /// not freed); `index` NULL or live.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_snapshot_new(
-    snap: *mut GitVector,
+    mut snap: Out<'_, GitVector>,
     index: *mut GitIndex,
 ) -> c_int {
     barrier(|| {
@@ -1339,8 +1324,7 @@ pub unsafe extern "C" fn git_index_snapshot_new(
             Ok(v) => (v, 0),
             Err(e) => (GitVector::new(), e.raw()),
         };
-        // SAFETY: writable (raw write: no old value is dropped).
-        unsafe { snap.write(v) };
+        snap.write(v);
         r
     })
 }
@@ -1379,7 +1363,7 @@ pub unsafe extern "C" fn git_index_snapshot_release(snap: *mut GitVector, index:
 /// 0).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_snapshot_find(
-    out: *mut usize,
+    mut out: Out<'_, usize>,
     snap: *mut GitVector,
     entry_srch_fn: Option<VectorCmp>,
     path: *const c_char,
@@ -1435,8 +1419,7 @@ pub unsafe extern "C" fn git_index_snapshot_find(
             Ok(p) => (p, 0),
             Err(p) => (p, ErrorCode::NOT_FOUND.raw()),
         };
-        // SAFETY: NULL or writable.
-        unsafe { crate::util::export::write_opt(out, pos) };
+        out.write(pos);
         ret
     })
 }
@@ -1807,7 +1790,7 @@ pub unsafe extern "C" fn git_index_reuc_entrycount(index: *mut GitIndex) -> usiz
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_reuc_add(
     index: *mut GitIndex,
-    path: *const c_char,
+    path: CStrArg<'_>,
     ancestor_mode: c_int,
     ancestor_id: *const Oid,
     our_mode: c_int,
@@ -1817,11 +1800,10 @@ pub unsafe extern "C" fn git_index_reuc_add(
 ) -> c_int {
     barrier(|| {
         let ix = index_arg!(index, -1);
-        git_assert_arg!(!path.is_null(), "path", -1);
+        let path = git_arg!(path.get(), "path", -1);
         // SAFETY: readable or NULL.
         let oids = [ancestor_id, our_id, their_id].map(|p| unsafe { p.as_ref() }.copied());
-        // SAFETY: a string, copied (it may be a REUC entry's path).
-        let p = unsafe { cstr_bytes(path) }.to_vec();
+        let p = path.to_bytes().to_vec();
         // SAFETY: no foreign call.
         status(unsafe { ix.get() }.reuc_add(&p, [ancestor_mode, our_mode, their_mode], oids))
     })
@@ -1835,22 +1817,20 @@ pub unsafe extern "C" fn git_index_reuc_add(
 /// string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_reuc_find(
-    at_pos: *mut usize,
+    mut at_pos: Out<'_, usize>,
     index: *mut GitIndex,
-    path: *const c_char,
+    path: CStrArg<'_>,
 ) -> c_int {
     barrier(|| {
         let ix = index_arg!(index, -1);
-        git_assert_arg!(!path.is_null(), "key", -1);
-        // SAFETY: a string.
-        let p = unsafe { cstr_bytes(path) };
+        let path = git_arg!(path.get(), "key", -1);
+        let p = path.to_bytes();
         // SAFETY: no foreign call; shared access (a read path that C may run on several threads).
         let (pos, r) = match unsafe { sorted_reuc(ix) }.reuc_find_sorted(p) {
             Ok(pos) => (pos, 0),
             Err(pos) => (pos, ErrorCode::NOT_FOUND.raw()),
         };
-        // SAFETY: NULL or writable.
-        unsafe { crate::util::export::write_opt(at_pos, pos) };
+        at_pos.write(pos);
         r
     })
 }
@@ -1863,11 +1843,11 @@ pub unsafe extern "C" fn git_index_reuc_find(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_reuc_get_bypath(
     index: *mut GitIndex,
-    path: *const c_char,
+    path: CStrArg<'_>,
 ) -> *const GitIndexReucEntry {
     barrier(|| {
         let ix = index_arg!(index, ptr::null());
-        git_assert_arg!(!path.is_null(), "path", ptr::null());
+        let path = git_arg!(path.get(), "path", ptr::null());
         // SAFETY: no foreign call; shared access (a read path that C may run on several threads).
         let i = unsafe { ix.get_ref() };
         if i.reuc.is_empty() {
@@ -1878,8 +1858,7 @@ pub unsafe extern "C" fn git_index_reuc_get_bypath(
             "(((&index->reuc)->flags & GIT_VECTOR_SORTED) != 0)",
             ptr::null()
         );
-        // SAFETY: a string.
-        let p = unsafe { cstr_bytes(path) };
+        let p = path.to_bytes();
         match i.reuc_find_sorted(p) {
             Ok(pos) => i
                 .reuc

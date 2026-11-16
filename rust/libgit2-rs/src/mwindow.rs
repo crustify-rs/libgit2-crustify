@@ -966,6 +966,7 @@ pub fn global_init() -> Result<()> {
 /// The exports of `mwindow.c`.
 pub mod ffi {
     use super::*;
+    use crate::util::cabi::Out;
     use crate::util::export::{barrier, status};
 
     /// `git_mwindow_global_init`.
@@ -1023,7 +1024,7 @@ pub mod ffi {
         cursor: *mut *mut GitMwindow,
         offset: i64,
         extra: usize,
-        left: *mut c_uint,
+        mut left: Out<'_, c_uint>,
     ) -> *mut u8 {
         barrier(|| {
             // SAFETY: a live file (the caller's contract), which is `Sync`.
@@ -1033,8 +1034,7 @@ pub mod ffi {
             match cursor.open_raw(mwf, offset, extra) {
                 Some((p, l)) => {
                     if !left.is_null() {
-                        // SAFETY: writable (the caller).
-                        unsafe { left.write(l) };
+                        left.write(l);
                     }
                     p.cast_mut()
                 }
@@ -1088,7 +1088,7 @@ pub mod ffi {
     /// `out` is writable; `path` is a NUL-terminated string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_mwindow_get_pack(
-        out: *mut *mut GitPackFile,
+        mut out: Out<'_, *mut GitPackFile>,
         path: *const c_char,
         oid_type: git_oid_t,
     ) -> c_int {
@@ -1097,8 +1097,7 @@ pub mod ffi {
             let path = unsafe { CStr::from_ptr(path) };
             match get_pack(path, oid_type) {
                 Ok(p) => {
-                    // SAFETY: writable (the caller).
-                    unsafe { out.write(p) };
+                    out.write(p);
                     0
                 }
                 Err(e) => e.raw(),

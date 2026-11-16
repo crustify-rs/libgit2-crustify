@@ -2,10 +2,12 @@
 //! `set_head`/`detach_head`, the state files, the merge message,
 //! `hashfile`, shallow roots, worktree iteration, commit parents.
 
+use crate::util::cabi::CStrArg;
+use crate::util::cabi::Out;
 use core::ffi::{CStr, c_int, c_void};
 use core::ptr::{self, NonNull};
 
-use super::handles::{self, Object, RefIter, Reference, check, opt_ptr, refname};
+use super::handles::{self, Object, RefIter, Reference, check, refname};
 use super::*;
 use crate::oid::Oid;
 use crate::util::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
@@ -72,7 +74,7 @@ fn reference_create(
             name.as_ptr(),
             id,
             c_int::from(force),
-            opt_ptr(log),
+            CStrArg::from(log),
         )
     })?;
     // SAFETY: the new reference, ours to free.
@@ -97,7 +99,7 @@ fn reference_symbolic_create(
             name.as_ptr(),
             target.as_ptr(),
             c_int::from(force),
-            opt_ptr(log),
+            CStrArg::from(log),
         )
     })?;
     // SAFETY: the new reference, ours to free.
@@ -574,7 +576,7 @@ pub(crate) fn state_cleanup(repo: &GitRepository) -> Result<()> {
     ErrorCode::check(cleanup_files(repo, &STATE_FILES))?;
     for r in [GIT_REVERT_HEAD_REF, GIT_CHERRYPICK_HEAD_REF] {
         // SAFETY: a live repository and a NUL-terminated name.
-        match check(unsafe { crate::refs::ffi::git_reference_remove(rp(repo), r.as_ptr()) }) {
+        match check(unsafe { crate::refs::ffi::git_reference_remove(rp(repo), r.into()) }) {
             Ok(_) | Err(ErrorCode::NOT_FOUND) => {}
             Err(e) => return Err(e),
         }
@@ -712,7 +714,11 @@ pub(crate) fn shallow_roots(repo: &GitRepository) -> Result<(*mut Oid, usize)> {
     let (mut out, mut len) = (ptr::null_mut(), 0usize);
     // SAFETY: as above, and local outs.
     check(unsafe {
-        crate::grafts::ffi::git_grafts_oids(&raw mut out, &raw mut len, repo.shallow_grafts_ptr())
+        crate::grafts::ffi::git_grafts_oids(
+            &raw mut out,
+            Out::from(&mut len),
+            repo.shallow_grafts_ptr(),
+        )
     })?;
     Ok((out, len))
 }

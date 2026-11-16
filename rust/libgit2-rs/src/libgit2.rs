@@ -451,6 +451,7 @@ impl Libgit2 {
 /// The exports of `libgit2.c`.
 pub mod ffi {
     use super::*;
+    use crate::util::cabi::Out;
     use crate::util::export::barrier;
 
     /// `git_libgit2_init`.
@@ -480,17 +481,14 @@ pub mod ffi {
     /// The three pointers are writable.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_libgit2_version(
-        major: *mut c_int,
-        minor: *mut c_int,
-        rev: *mut c_int,
+        mut major: Out<'_, c_int>,
+        mut minor: Out<'_, c_int>,
+        mut rev: Out<'_, c_int>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            unsafe { major.write(VERSION_MAJOR) };
-            // SAFETY: the caller's contract.
-            unsafe { minor.write(VERSION_MINOR) };
-            // SAFETY: the caller's contract.
-            unsafe { rev.write(VERSION_REVISION) };
+            major.write(VERSION_MAJOR);
+            minor.write(VERSION_MINOR);
+            rev.write(VERSION_REVISION);
             0
         })
     }
@@ -539,6 +537,7 @@ pub mod ffi {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::util::cabi::Out;
 
     #[test]
     fn version_features_buildinfo() {
@@ -587,7 +586,9 @@ mod tests {
     fn ffi_version() {
         let (mut a, mut b, mut c) = (0, 0, 0);
         // SAFETY: three writable ints.
-        let e = unsafe { ffi::git_libgit2_version(&raw mut a, &raw mut b, &raw mut c) };
+        let e = unsafe {
+            ffi::git_libgit2_version(Out::from(&mut a), Out::from(&mut b), Out::from(&mut c))
+        };
         assert_eq!(e, 0);
         assert_eq!((a as u32, b as u32, c as u32), Libgit2::version());
         // SAFETY: no precondition.

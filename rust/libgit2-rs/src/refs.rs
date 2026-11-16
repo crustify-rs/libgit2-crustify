@@ -1506,6 +1506,7 @@ pub mod ffi {
     use crate::refdb::git_reference_iterator;
     use crate::refs::deps::git_object;
     use crate::strarray::GitStrArray;
+    use crate::util::cabi::CStrArg;
     use crate::util::export::{barrier, cstr, cstr_bytes, status};
     use crate::util::vector::GitVector;
 
@@ -1720,7 +1721,7 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_remove(
         repo: *mut git_repository,
-        name: *const c_char,
+        name: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             // SAFETY: per the contract.
@@ -1729,8 +1730,7 @@ pub mod ffi {
                 Ok(d) => d,
                 Err(e) => return e.raw(),
             };
-            // SAFETY: a string (C hands NULL to the backend).
-            let n = unsafe { cstr(name) }.unwrap_or(c"");
+            let n = name.get().unwrap_or(c"");
             status(db.delete(n, None, None))
         })
     }
@@ -1826,13 +1826,12 @@ pub mod ffi {
     pub unsafe extern "C" fn git_reference_dwim(
         out: *mut *mut GitReference,
         repo: *mut git_repository,
-        refname: *const c_char,
+        refname: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             // SAFETY: per the contract.
             let repo = unsafe { repo_unchecked(repo) };
-            // SAFETY: per the contract.
-            let n = unsafe { cstr_bytes(refname) };
+            let n = refname.to_bytes();
             // SAFETY: writable.
             unsafe { put(out, dwim(repo, n)) }
         })
@@ -1953,7 +1952,7 @@ pub mod ffi {
         id: *const Oid,
         force: c_int,
         old_id: *const Oid,
-        log_message: *const c_char,
+        log_message: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!id.is_null(), "id", -1);
@@ -1971,8 +1970,7 @@ pub mod ffi {
                 let id = unsafe { &*id };
                 // SAFETY: NULL or a valid oid.
                 let old = unsafe { old_id.as_ref() };
-                // SAFETY: NULL or a string.
-                let msg = unsafe { cstr(log_message) };
+                let msg = log_message.get();
                 create_matching(repo, n, id, force != 0, old, msg)
             })();
             match r {
@@ -1999,7 +1997,7 @@ pub mod ffi {
         name: *const c_char,
         id: *const Oid,
         force: c_int,
-        log_message: *const c_char,
+        log_message: CStrArg<'_>,
     ) -> c_int {
         // SAFETY: per the contract.
         unsafe {
@@ -2027,8 +2025,8 @@ pub mod ffi {
         name: *const c_char,
         target: *const c_char,
         force: c_int,
-        old_target: *const c_char,
-        log_message: *const c_char,
+        old_target: CStrArg<'_>,
+        log_message: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!target.is_null(), "target", -1);
@@ -2042,8 +2040,7 @@ pub mod ffi {
                 crate::git_assert_arg!(!name.is_null(), "name");
                 // SAFETY: strings, or NULL for the last two.
                 let (n, t) = (unsafe { cstr_bytes(name) }, unsafe { cstr_bytes(target) });
-                // SAFETY: as above.
-                let (old, msg) = (unsafe { cstr(old_target) }, unsafe { cstr(log_message) });
+                let (old, msg) = (old_target.get(), log_message.get());
                 symbolic_create_matching(repo, n, t, force != 0, old, msg)
             })();
             match r {
@@ -2070,7 +2067,7 @@ pub mod ffi {
         name: *const c_char,
         target: *const c_char,
         force: c_int,
-        log_message: *const c_char,
+        log_message: CStrArg<'_>,
     ) -> c_int {
         // SAFETY: per the contract.
         unsafe {
@@ -2080,7 +2077,7 @@ pub mod ffi {
                 name,
                 target,
                 force,
-                core::ptr::null(),
+                CStrArg::NULL,
                 log_message,
             )
         }
@@ -2096,7 +2093,7 @@ pub mod ffi {
         out: *mut *mut GitReference,
         r: *mut GitReference,
         id: *const Oid,
-        log_message: *const c_char,
+        log_message: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!out.is_null(), "out", -1);
@@ -2105,7 +2102,7 @@ pub mod ffi {
             // SAFETY: a live reference (checked non-NULL).
             let v = unsafe { view(r) }.expect("checked");
             // SAFETY: a valid oid; NULL or a string.
-            let (id, msg) = (unsafe { &*id }, unsafe { cstr(log_message) });
+            let (id, msg) = (unsafe { &*id }, log_message.get());
             let res = set_target(v, id, msg);
             // SAFETY: writable.
             unsafe { put(out, res) }
@@ -2122,7 +2119,7 @@ pub mod ffi {
         out: *mut *mut GitReference,
         r: *mut GitReference,
         target: *const c_char,
-        log_message: *const c_char,
+        log_message: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!out.is_null(), "out", -1);
@@ -2131,7 +2128,7 @@ pub mod ffi {
             // SAFETY: a live reference (checked non-NULL).
             let v = unsafe { view(r) }.expect("checked");
             // SAFETY: a string; NULL or a string.
-            let (t, msg) = (unsafe { cstr_bytes(target) }, unsafe { cstr(log_message) });
+            let (t, msg) = (unsafe { cstr_bytes(target) }, log_message.get());
             let res = symbolic_set_target(v, t, msg);
             // SAFETY: writable.
             unsafe { put(out, res) }
@@ -2147,7 +2144,7 @@ pub mod ffi {
     pub unsafe extern "C" fn git_reference_rename(
         out: *mut *mut GitReference,
         r: *mut GitReference,
-        new_name: *const c_char,
+        new_name: CStrArg<'_>,
         force: c_int,
         log_message: *const c_char,
     ) -> c_int {
@@ -2158,9 +2155,7 @@ pub mod ffi {
             // SAFETY: a live reference (checked non-NULL).
             let v = unsafe { view(r) }.expect("checked");
             // SAFETY: a string; NULL or a string.
-            let (n, msg) = (unsafe { cstr_bytes(new_name) }, unsafe {
-                cstr(log_message)
-            });
+            let (n, msg) = (new_name.to_bytes(), unsafe { cstr(log_message) });
             let res = rename(v, n, force != 0, msg, &mut made);
             if let Some(m) = made {
                 // SAFETY: writable.
@@ -2284,15 +2279,14 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_foreach_glob(
         repo: *mut git_repository,
-        glob: *const c_char,
+        glob: CStrArg<'_>,
         callback: ForeachNameCb,
         payload: *mut c_void,
     ) -> c_int {
         barrier(|| {
             // SAFETY: per the contract.
             let repo = unsafe { repo_unchecked(repo) };
-            // SAFETY: per the contract.
-            let g = unsafe { cstr(glob) };
+            let g = glob.get();
             let mut it = match RefIter::new(repo, g) {
                 Ok(it) => it,
                 Err(e) => return e.raw(),
@@ -2324,7 +2318,7 @@ pub mod ffi {
         repo: *mut git_repository,
     ) -> c_int {
         // SAFETY: per the contract.
-        unsafe { git_reference_iterator_glob_new(out, repo, core::ptr::null()) }
+        unsafe { git_reference_iterator_glob_new(out, repo, CStrArg::NULL) }
     }
 
     /// `git_reference_iterator_glob_new`.
@@ -2336,13 +2330,12 @@ pub mod ffi {
     pub unsafe extern "C" fn git_reference_iterator_glob_new(
         out: *mut *mut git_reference_iterator,
         repo: *mut git_repository,
-        glob: *const c_char,
+        glob: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             // SAFETY: per the contract.
             let repo = unsafe { repo_unchecked(repo) };
-            // SAFETY: per the contract.
-            let g = unsafe { cstr(glob) };
+            let g = glob.get();
             let db = match RefdbPtr::of_repo(repo) {
                 Ok(d) => d,
                 Err(_) => return -1,
@@ -2576,7 +2569,7 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference__update_terminal(
         repo: *mut git_repository,
-        ref_name: *const c_char,
+        ref_name: CStrArg<'_>,
         oid: *const Oid,
         sig: *const git_signature,
         log_message: *const c_char,
@@ -2585,7 +2578,7 @@ pub mod ffi {
             // SAFETY: a live repository.
             let repo = unsafe { repo_unchecked(repo) };
             // SAFETY: a string; a valid oid; NULL or a string.
-            let (n, id, msg) = (unsafe { cstr_bytes(ref_name) }, unsafe { &*oid }, unsafe {
+            let (n, id, msg) = (ref_name.to_bytes(), unsafe { &*oid }, unsafe {
                 cstr(log_message)
             });
             let r = update_terminal(repo, n, id, sig, msg);
@@ -2602,7 +2595,7 @@ pub mod ffi {
     pub unsafe extern "C" fn git_reference__update_for_commit(
         repo: *mut git_repository,
         r: *mut GitReference,
-        ref_name: *const c_char,
+        ref_name: CStrArg<'_>,
         id: *const Oid,
         operation: *const c_char,
     ) -> c_int {
@@ -2610,7 +2603,7 @@ pub mod ffi {
             // SAFETY: a live repository; NULL or a live reference.
             let (repo, v) = (unsafe { repo_unchecked(repo) }, unsafe { view(r) });
             // SAFETY: a string; a valid oid; NULL or a string.
-            let (n, id, op) = (unsafe { cstr_bytes(ref_name) }, unsafe { &*id }, unsafe {
+            let (n, id, op) = (ref_name.to_bytes(), unsafe { &*id }, unsafe {
                 cstr(operation)
             });
             let res = update_for_commit(repo, v, n, id, op.map(CStr::to_bytes));

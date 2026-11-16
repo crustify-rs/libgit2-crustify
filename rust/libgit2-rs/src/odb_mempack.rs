@@ -281,6 +281,7 @@ pub(crate) unsafe fn dump(
 pub mod ffi {
     use super::*;
     use crate::buf::GitBuf;
+    use crate::util::cabi::Out;
     use crate::util::export::barrier;
     use crate::util::str::GitStr;
 
@@ -382,7 +383,7 @@ pub mod ffi {
     /// `out` is writable; `backend` NULL or a mempack table.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_mempack_object_count(
-        out: *mut usize,
+        mut out: Out<'_, usize>,
         backend: *mut GitOdbBackend,
     ) -> c_int {
         barrier(|| {
@@ -391,8 +392,7 @@ pub mod ffi {
             let n = unsafe { with_state(backend, MempackState::object_count) };
             match n {
                 Some(n) => {
-                    // SAFETY: the caller's contract.
-                    unsafe { out.write(n) };
+                    out.write(n);
                     0
                 }
                 None => -1,

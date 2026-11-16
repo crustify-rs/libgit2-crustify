@@ -557,7 +557,8 @@ pub unsafe fn write(out: &mut GitStr, tree: *const GitTreeCache) -> Result<()> {
 /// The C ABI of `tree-cache.c`.
 pub mod ffi {
     use super::*;
-    use crate::util::export::{barrier, cstr_bytes, status};
+    use crate::util::cabi::{CStrArg, Out};
+    use crate::util::export::{barrier, status};
 
     /// `git_tree_cache_write`.
     ///
@@ -587,7 +588,7 @@ pub mod ffi {
     /// meanwhile.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tree_cache_read(
-        tree: *mut *mut GitTreeCache,
+        mut tree: Out<'_, *mut GitTreeCache>,
         buffer: *const c_char,
         buffer_size: usize,
         oid_type: git_oid_t,
@@ -604,8 +605,7 @@ pub mod ffi {
             let mut t_out = ptr::null_mut();
             let r = read_into(&mut t_out, buf, t, pool);
             if !t_out.is_null() {
-                // SAFETY: `tree` is writable (the contract).
-                unsafe { tree.write(t_out) };
+                tree.write(t_out);
             }
             status(r)
         })
@@ -620,11 +620,10 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tree_cache_invalidate_path(
         tree: *mut GitTreeCache,
-        path: *const c_char,
+        path: CStrArg<'_>,
     ) {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            let path = unsafe { cstr_bytes(path) };
+            let path = path.to_bytes();
             // SAFETY: as above.
             unsafe { invalidate_path(tree, path) }
         })
@@ -638,11 +637,10 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tree_cache_get(
         tree: *const GitTreeCache,
-        path: *const c_char,
+        path: CStrArg<'_>,
     ) -> *const GitTreeCache {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            let path = unsafe { cstr_bytes(path) };
+            let path = path.to_bytes();
             // SAFETY: as above.
             unsafe { get(tree, path) }
         })
@@ -656,20 +654,18 @@ pub mod ffi {
     /// valid, initialized `git_pool` not used meanwhile.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tree_cache_new(
-        out: *mut *mut GitTreeCache,
-        name: *const c_char,
+        mut out: Out<'_, *mut GitTreeCache>,
+        name: CStrArg<'_>,
         oid_type: git_oid_t,
         pool: *mut GitPool,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            let name = unsafe { cstr_bytes(name) };
+            let name = name.to_bytes();
             // SAFETY: as above.
             let pool = unsafe { &mut *pool };
             match new(name, oid_type, pool) {
                 Ok(t) => {
-                    // SAFETY: as above.
-                    unsafe { out.write(t) };
+                    out.write(t);
                     0
                 }
                 Err(e) => e.raw(),
@@ -686,7 +682,7 @@ pub mod ffi {
     /// other C, which must not use it either).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tree_cache_read_tree(
-        out: *mut *mut GitTreeCache,
+        mut out: Out<'_, *mut GitTreeCache>,
         tree: *const c_void,
         oid_type: git_oid_t,
         pool: *mut GitPool,
@@ -698,8 +694,7 @@ pub mod ffi {
             let mut pool = unsafe { RawPool::new(pool) };
             match read_tree(&src, &root, oid_type, &mut pool) {
                 Ok(t) => {
-                    // SAFETY: as above.
-                    unsafe { out.write(t) };
+                    out.write(t);
                     0
                 }
                 Err(e) => e.raw(),

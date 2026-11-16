@@ -1119,6 +1119,7 @@ fn to_object(data: GitBytes, kind: c_int) -> ApiResult<PackObject> {
 /// The exports of `odb_pack.c`.
 pub mod ffi {
     use super::*;
+    use crate::util::cabi::Out;
     use crate::util::export::barrier;
 
     /// `git_odb_backend_pack_options_init`.
@@ -1160,7 +1161,7 @@ pub mod ffi {
     /// or valid.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_odb_backend_one_pack(
-        backend_out: *mut *mut GitOdbBackend,
+        mut backend_out: Out<'_, *mut GitOdbBackend>,
         idx: *const c_char,
         opts: *const GitOdbBackendPackOptions,
     ) -> c_int {
@@ -1171,9 +1172,7 @@ pub mod ffi {
             let opts = unsafe { opts.as_ref() };
             match backend_one_pack(idx, opts) {
                 Ok(t) => {
-                    // SAFETY: writable (the caller); the odb frees it
-                    // through its `free` slot.
-                    unsafe { backend_out.write(t.into_c().as_ptr()) };
+                    backend_out.write(t.into_c().as_ptr());
                     0
                 }
                 Err(e) => e.raw(),
@@ -1189,7 +1188,7 @@ pub mod ffi {
     /// NULL or valid.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_odb_backend_pack(
-        backend_out: *mut *mut GitOdbBackend,
+        mut backend_out: Out<'_, *mut GitOdbBackend>,
         objects_dir: *const c_char,
         opts: *const GitOdbBackendPackOptions,
     ) -> c_int {
@@ -1202,8 +1201,7 @@ pub mod ffi {
                 Ok(t) => (t.into_c().as_ptr(), 0),
                 Err(e) => (ptr::null_mut(), e.raw()),
             };
-            // SAFETY: writable (the caller); C sets it to NULL on failure.
-            unsafe { backend_out.write(out) };
+            backend_out.write(out);
             r
         })
     }

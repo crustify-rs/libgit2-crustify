@@ -18,6 +18,7 @@
 //! `git_commit_signature_cb` with `git_commitbuilder_add_header`. A panic
 //! in one stops the operation and is resumed after it returns.
 
+use crate::util::cabi::CStrArg;
 use core::ffi::{CStr, c_char, c_int, c_void};
 use core::ptr::{self, NonNull};
 use std::any::Any;
@@ -430,7 +431,7 @@ impl Commit<'_> {
                 &raw mut signed,
                 repo.raw_ptr(),
                 &raw mut id,
-                opt_ptr(&field),
+                CStrArg::from(field.as_deref()),
             )
         })?;
         Ok((sig.as_bytes().to_vec(), signed.as_bytes().to_vec()))
@@ -456,9 +457,9 @@ impl Commit<'_> {
             super::ffi::git_commit_create_with_signature(
                 &raw mut id,
                 repo.raw_ptr(),
-                content.as_ptr(),
-                opt_ptr(&signature),
-                opt_ptr(&field),
+                content.as_c_str().into(),
+                CStrArg::from(signature.as_deref()),
+                CStrArg::from(field.as_deref()),
             )
         })?;
         Ok(id)

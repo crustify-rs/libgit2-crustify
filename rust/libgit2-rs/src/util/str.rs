@@ -2069,6 +2069,7 @@ const fn base85_decode_table() -> [i8; 256] {
 /// indeterminate `char`s.
 pub mod ffi {
     use super::*;
+    use crate::util::cabi::{CStrArg, Out};
     use crate::util::export::{barrier, bytes, cstr_bytes, status};
     use std::borrow::Cow;
 
@@ -3251,9 +3252,9 @@ pub mod ffi {
     pub unsafe extern "C" fn git_str_puts_escaped(
         buf: *mut GitStr,
         string: *const c_char,
-        esc_chars: *const c_char,
-        esc_prefix: *const c_char,
-        esc_suffix: *const c_char,
+        esc_chars: CStrArg<'_>,
+        esc_prefix: CStrArg<'_>,
+        esc_suffix: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             if string.is_null() {
@@ -3265,12 +3266,9 @@ pub mod ffi {
             let l = unsafe { libc::strlen(string) };
             // SAFETY: `l` readable bytes, as just measured.
             let st = unsafe { seg(b, string, l) };
-            // SAFETY: NUL-terminated.
-            let ec = unsafe { cstr_bytes(esc_chars) };
-            // SAFETY: NULL or NUL-terminated.
-            let ep = unsafe { cstr_bytes(esc_prefix) };
-            // SAFETY: NULL or NUL-terminated.
-            let es = unsafe { cstr_bytes(esc_suffix) };
+            let ec = esc_chars.to_bytes();
+            let ep = esc_prefix.to_bytes();
+            let es = esc_suffix.to_bytes();
             status(b.puts_escaped(&st, ec, ep, es))
         })
     }
@@ -3423,12 +3421,14 @@ pub mod ffi {
     ///
     /// `bom` is writable; `buf` is a valid `git_str`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_detect_bom(bom: *mut Bom, buf: *const GitStr) -> c_int {
+    pub unsafe extern "C" fn git_str_detect_bom(
+        mut bom: Out<'_, Bom>,
+        buf: *const GitStr,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: a valid `git_str`, only read.
             let (b, n) = unsafe { &*buf }.detect_bom();
-            // SAFETY: `bom` is writable.
-            unsafe { bom.write(b) };
+            bom.write(b);
             n as c_int
         })
     }
@@ -3440,15 +3440,14 @@ pub mod ffi {
     /// `stats` is writable; `buf` is a valid `git_str`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_gather_text_stats(
-        stats: *mut TextStats,
+        mut stats: Out<'_, TextStats>,
         buf: *const GitStr,
         skip_bom: bool,
     ) -> bool {
         barrier(|| {
             // SAFETY: a valid `git_str`, only read.
             let (st, bin) = unsafe { &*buf }.gather_text_stats(skip_bom);
-            // SAFETY: `stats` is writable.
-            unsafe { stats.write(st) };
+            stats.write(st);
             bin
         })
     }

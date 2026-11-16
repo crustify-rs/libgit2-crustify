@@ -4,6 +4,7 @@
 
 /// The exports of `object_api.c`.
 pub mod ffi {
+    use crate::util::cabi::Out;
     use core::ffi::{c_int, c_void};
 
     use crate::object::deps::git_repository;
@@ -84,8 +85,10 @@ pub mod ffi {
     /// As `git_object_dup`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_commit_dup(out: *mut *mut c_void, obj: *mut c_void) -> c_int {
+        // SAFETY: `out` is writable (this export's contract).
+        let out = unsafe { Out::from_ptr(out.cast()) };
         // SAFETY: forwarded.
-        unsafe { o::git_object_dup(out.cast(), obj.cast::<GitObject>()) }
+        unsafe { o::git_object_dup(out, obj.cast::<GitObject>()) }
     }
 
     /// `git_tree_lookup`.
@@ -159,8 +162,10 @@ pub mod ffi {
     /// As `git_object_dup`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tree_dup(out: *mut *mut c_void, obj: *mut c_void) -> c_int {
+        // SAFETY: `out` is writable (this export's contract).
+        let out = unsafe { Out::from_ptr(out.cast()) };
         // SAFETY: forwarded.
-        unsafe { o::git_object_dup(out.cast(), obj.cast::<GitObject>()) }
+        unsafe { o::git_object_dup(out, obj.cast::<GitObject>()) }
     }
 
     /// `git_tag_lookup`.
@@ -234,8 +239,10 @@ pub mod ffi {
     /// As `git_object_dup`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tag_dup(out: *mut *mut c_void, obj: *mut c_void) -> c_int {
+        // SAFETY: `out` is writable (this export's contract).
+        let out = unsafe { Out::from_ptr(out.cast()) };
         // SAFETY: forwarded.
-        unsafe { o::git_object_dup(out.cast(), obj.cast::<GitObject>()) }
+        unsafe { o::git_object_dup(out, obj.cast::<GitObject>()) }
     }
 
     /// `git_blob_lookup`.
@@ -309,7 +316,9 @@ pub mod ffi {
     /// As `git_object_dup`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_blob_dup(out: *mut *mut c_void, obj: *mut c_void) -> c_int {
+        // SAFETY: `out` is writable (this export's contract).
+        let out = unsafe { Out::from_ptr(out.cast()) };
         // SAFETY: forwarded.
-        unsafe { o::git_object_dup(out.cast(), obj.cast::<GitObject>()) }
+        unsafe { o::git_object_dup(out, obj.cast::<GitObject>()) }
     }
 }

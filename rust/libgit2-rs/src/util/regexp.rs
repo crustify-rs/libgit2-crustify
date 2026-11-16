@@ -6,7 +6,7 @@
 //! (diff drivers, revparse, config): [`Regexp`] owns one, and the exports
 //! hand its pointer to C and take it back (`git_regexp_dispose`).
 
-use core::ffi::{CStr, c_char, c_int};
+use core::ffi::{CStr, c_int};
 use core::mem::MaybeUninit;
 use core::ops::Range;
 
@@ -189,7 +189,8 @@ impl Regexp {
 pub mod ffi {
     use super::*;
     use crate::sys::pcre2::raw::pcre2_code_8;
-    use crate::util::export::{barrier, cstr, cstr_bytes, status};
+    use crate::util::cabi::{CStrArg, Out};
+    use crate::util::export::{barrier, status};
 
     /// `git_regexp`.
     pub type GitRegexp = *mut pcre2_code_8;
@@ -201,20 +202,17 @@ pub mod ffi {
     /// `r` is writable; `pattern` is a NUL-terminated string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_regexp_compile(
-        r: *mut GitRegexp,
-        pattern: *const c_char,
+        mut r: Out<'_, GitRegexp>,
+        pattern: CStrArg<'_>,
         flags: c_int,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller passes a NUL-terminated pattern (or NULL,
-            // which PCRE2 rejects, as for the C).
-            let pattern = unsafe { cstr(pattern) };
+            let pattern = pattern.get();
             let (code, rc) = match Regexp::compile_opt(pattern, flags) {
                 Ok(re) => (re.0.into_c(), 0),
                 Err(e) => (core::ptr::null_mut(), e.raw()),
             };
-            // SAFETY: `r` is writable (the caller's contract).
-            unsafe { r.write(code) };
+            r.write(code);
             rc
         })
     }
@@ -254,12 +252,11 @@ pub mod ffi {
     /// `r` points to a `git_regexp` that is NULL or compiled, and not
     /// disposed during the call; `string` is NUL-terminated.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_regexp_match(r: *const GitRegexp, string: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git_regexp_match(r: *const GitRegexp, string: CStrArg<'_>) -> c_int {
         barrier(|| {
             // SAFETY: the caller's contract.
             let code = unsafe { code(r) };
-            // SAFETY: the caller's contract.
-            let s = unsafe { cstr_bytes(string) };
+            let s = string.to_bytes();
             status(match_code(code, s))
         })
     }
@@ -273,15 +270,14 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_regexp_search(
         r: *const GitRegexp,
-        string: *const c_char,
+        string: CStrArg<'_>,
         nmatches: usize,
         matches: *mut RegMatch,
     ) -> c_int {
         barrier(|| {
             // SAFETY: the caller's contract.
             let code = unsafe { code(r) };
-            // SAFETY: the caller's contract.
-            let s = unsafe { cstr_bytes(string) };
+            let s = string.to_bytes();
             let m: &mut [MaybeUninit<RegMatch>] = if nmatches == 0 || matches.is_null() {
                 &mut []
             } else {

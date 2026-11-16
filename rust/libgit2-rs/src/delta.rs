@@ -926,6 +926,7 @@ pub mod ffi {
     use super::*;
     use crate::git_assert_arg;
     use crate::util::alloc::{GIT_ALLOC, GitAlloc};
+    use crate::util::cabi::Out;
     use crate::util::export::{barrier, bytes};
     use core::ffi::c_char;
     use core::mem::ManuallyDrop;
@@ -967,13 +968,12 @@ pub mod ffi {
     /// [`git_delta_index_free`].
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_delta_index_init(
-        out: *mut *mut git_delta_index,
+        mut out: Out<'_, *mut git_delta_index>,
         buf: *const c_void,
         bufsize: usize,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller passes a writable `out`.
-            unsafe { out.write(core::ptr::null_mut()) };
+            out.write(core::ptr::null_mut());
             if buf.is_null() || bufsize == 0 {
                 return 0;
             }
@@ -983,8 +983,7 @@ pub mod ffi {
             let src: &'static [u8] = unsafe { bytes(buf.cast::<c_char>(), bufsize) };
             match DeltaIndex::new(src) {
                 Ok(Some(index)) => {
-                    // SAFETY: as above.
-                    unsafe { out.write(ManuallyDrop::new(index).block.as_ptr()) };
+                    out.write(ManuallyDrop::new(index).block.as_ptr());
                     0
                 }
                 Ok(None) => 0,
@@ -1085,8 +1084,8 @@ pub mod ffi {
     /// readable for `delta_len` bytes.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_delta_read_header(
-        base_out: *mut usize,
-        result_out: *mut usize,
+        mut base_out: Out<'_, usize>,
+        mut result_out: Out<'_, usize>,
         delta: *const u8,
         delta_len: usize,
     ) -> c_int {
@@ -1096,14 +1095,12 @@ pub mod ffi {
             let mut pos = 0;
             // C writes the base size before reading the result's.
             let r = hdr_sz(delta, &mut pos).and_then(|b| {
-                // SAFETY: the caller passes a writable `base_out`.
-                unsafe { base_out.write(b) };
+                base_out.write(b);
                 hdr_sz(delta, &mut pos)
             });
             match r {
                 Ok(res) => {
-                    // SAFETY: the caller passes a writable `result_out`.
-                    unsafe { result_out.write(res) };
+                    result_out.write(res);
                     0
                 }
                 Err(_) => -1,

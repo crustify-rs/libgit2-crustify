@@ -1193,7 +1193,9 @@ pub fn new_backend(
 /// The C ABI of `odb_loose.c`.
 pub mod ffi {
     use super::*;
-    use crate::util::export::{barrier, cstr_bytes};
+    use crate::git_arg;
+    use crate::util::cabi::CStrArg;
+    use crate::util::export::barrier;
 
     /// `git_odb_backend_loose_options_init`.
     ///
@@ -1227,14 +1229,13 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_odb__backend_loose(
         backend_out: *mut *mut GitOdbBackend,
-        objects_dir: *const c_char,
+        objects_dir: CStrArg<'_>,
         opts: *mut GitOdbBackendLooseOptions,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!backend_out.is_null(), "backend_out", -1);
-            git_assert_arg!(!objects_dir.is_null(), "objects_dir", -1);
-            // SAFETY: the caller's contract.
-            let dir = unsafe { cstr_bytes(objects_dir) };
+            let objects_dir = git_arg!(objects_dir.get(), "objects_dir", -1);
+            let dir = objects_dir.to_bytes();
             // SAFETY: the caller's contract.
             let opts = unsafe { opts.as_ref() };
             match new_backend(dir, opts) {
@@ -1256,7 +1257,7 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_odb_backend_loose(
         backend_out: *mut *mut GitOdbBackend,
-        objects_dir: *const c_char,
+        objects_dir: CStrArg<'_>,
         opts: *mut GitOdbBackendLooseOptions,
     ) -> c_int {
         // SAFETY: forwarded.

@@ -2,6 +2,7 @@
 //! modules: the owners' types under the C names, their `ffi` exports, and
 //! small owning wrappers over them.
 
+use crate::util::cabi::Out;
 use core::ffi::{c_int, c_uint};
 
 use crate::oid::Oid;
@@ -226,7 +227,7 @@ impl SigBox {
     pub fn now(name: &CStr, email: &CStr) -> Result<SigBox> {
         let mut out = core::ptr::null_mut();
         // SAFETY: NUL-terminated strings; `out` writable.
-        let r = unsafe { git_signature_now(&raw mut out, name.as_ptr(), email.as_ptr()) };
+        let r = unsafe { git_signature_now(&raw mut out, name.into(), email.into()) };
         Self::adopt(r, out)
     }
 
@@ -234,8 +235,7 @@ impl SigBox {
     pub fn new(name: &CStr, email: &CStr, time: i64, offset: c_int) -> Result<SigBox> {
         let mut out = core::ptr::null_mut();
         // SAFETY: as above.
-        let r =
-            unsafe { git_signature_new(&raw mut out, name.as_ptr(), email.as_ptr(), time, offset) };
+        let r = unsafe { git_signature_new(&raw mut out, name.into(), email.into(), time, offset) };
         Self::adopt(r, out)
     }
 
@@ -255,7 +255,7 @@ impl SigBox {
     pub unsafe fn dup(sig: *const git_signature) -> Result<SigBox> {
         let mut out = core::ptr::null_mut();
         // SAFETY: per the contract.
-        let r = unsafe { git_signature_dup(&raw mut out, sig) };
+        let r = unsafe { git_signature_dup(Out::from(&mut out), sig) };
         Self::adopt(r, out)
     }
 
@@ -338,7 +338,7 @@ impl ObjBox {
     pub fn dup(&self) -> Result<ObjBox> {
         let mut out = core::ptr::null_mut();
         // SAFETY: as above.
-        ErrorCode::check(unsafe { git_object_dup(&raw mut out, self.0.as_ptr()) })?;
+        ErrorCode::check(unsafe { git_object_dup(Out::from(&mut out), self.0.as_ptr()) })?;
         NonNull::new(out).map(ObjBox).ok_or(ErrorCode::GENERIC)
     }
 

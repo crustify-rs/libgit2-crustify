@@ -1126,6 +1126,8 @@ unsafe fn free_walk(p: NonNull<GitRevwalk>) {
 /// on its walk, except `git_revwalk_free` (as in C): no borrow of the
 /// walk's state lives across a callback.
 pub mod ffi {
+    use crate::git_arg;
+    use crate::util::cabi::{CStrArg, Out};
     use core::ffi::{c_char, c_int, c_uint, c_void};
     use core::ptr::{self, NonNull};
 
@@ -1358,16 +1360,15 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_revwalk__push_glob(
         walk: *mut GitRevwalk,
-        glob: *const c_char,
+        glob: CStrArg<'_>,
         given_opts: *const PushOptions,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!walk.is_null(), "walk", -1);
-            git_assert_arg!(!glob.is_null(), "glob", -1);
+            let glob = git_arg!(glob.get(), "glob", -1);
             // SAFETY: the contract.
             let (w, st) = unsafe { walk_of(walk) };
-            // SAFETY: a string (the contract), unchanged during the call.
-            let Some(glob) = (unsafe { cstr(glob) }) else {
+            let Some(glob) = Some(glob) else {
                 return -1;
             };
             // SAFETY: NULL or readable, copied.
@@ -1384,7 +1385,7 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_revwalk_push_glob(
         walk: *mut GitRevwalk,
-        glob: *const c_char,
+        glob: CStrArg<'_>,
     ) -> c_int {
         if walk.is_null() || glob.is_null() {
             let _ = errors::assert_arg_failed(if walk.is_null() { "walk" } else { "glob" });
@@ -1403,7 +1404,7 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_revwalk_hide_glob(
         walk: *mut GitRevwalk,
-        glob: *const c_char,
+        glob: CStrArg<'_>,
     ) -> c_int {
         if walk.is_null() || glob.is_null() {
             let _ = errors::assert_arg_failed(if walk.is_null() { "walk" } else { "glob" });
@@ -1450,7 +1451,7 @@ pub mod ffi {
     /// outlives the walk.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_revwalk_new(
-        out: *mut *mut GitRevwalk,
+        mut out: Out<'_, *mut GitRevwalk>,
         repo: *mut git_repository,
     ) -> c_int {
         barrier(|| {
@@ -1458,8 +1459,7 @@ pub mod ffi {
             git_assert_arg!(!out.is_null(), "revwalk_out", -1);
             match new_walk(repo) {
                 Ok(p) => {
-                    // SAFETY: writable (the contract).
-                    unsafe { out.write(p.as_ptr()) };
+                    out.write(p.as_ptr());
                     0
                 }
                 Err(e) => e.raw(),

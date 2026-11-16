@@ -1,7 +1,8 @@
 //! The C ABI of `futils.c`: thin shims over [`super`].
 
 use super::*;
-use crate::util::export::{barrier, cstr, cstr_bytes, status, write_opt};
+use crate::util::cabi::{CStrArg, Out};
+use crate::util::export::{barrier, cstr, status};
 use crate::util::hashmap::{CStrKey, GitHashSetStr};
 use crate::util::pool::GitPool;
 use core::ptr::NonNull;
@@ -32,9 +33,8 @@ fn fd_status(r: Result<c_int>) -> c_int {
 ///
 /// `path` is a NUL-terminated string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_futils_mkpath2file(path: *const c_char, mode: mode_t) -> c_int {
-    // SAFETY: a NUL-terminated string.
-    barrier(|| status(mkpath2file(unsafe { cstr_bytes(path) }, mode)))
+pub unsafe extern "C" fn git_futils_mkpath2file(path: CStrArg<'_>, mode: mode_t) -> c_int {
+    barrier(|| status(mkpath2file(path.to_bytes(), mode)))
 }
 
 /// `git_futils_mktmp`.
@@ -46,13 +46,11 @@ pub unsafe extern "C" fn git_futils_mkpath2file(path: *const c_char, mode: mode_
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_futils_mktmp(
     path_out: *mut GitStr,
-    filename: *const c_char,
+    filename: CStrArg<'_>,
     mode: mode_t,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: a NUL-terminated string, copied since it may lie in
-        // `path_out` (`git_fs_path_does_decompose_unicode` passes it so).
-        let f = unsafe { cstr_bytes(filename) }.to_vec();
+        let f = filename.to_bytes().to_vec();
         // SAFETY: a valid `git_str`.
         let Some(out) = (unsafe { path_out.as_mut() }) else {
             return -1;
@@ -130,11 +128,10 @@ pub unsafe extern "C" fn git_futils_truncate(path: *const c_char, mode: c_int) -
 ///
 /// `out` is writable.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_futils_filesize(out: *mut u64, fd: c_int) -> c_int {
+pub unsafe extern "C" fn git_futils_filesize(mut out: Out<'_, u64>, fd: c_int) -> c_int {
     barrier(|| match filesize(fd) {
         Ok(n) => {
-            // SAFETY: a writable `uint64_t`.
-            unsafe { write_opt(out, n) };
+            out.write(n);
             0
         }
         Err(e) => e.raw(),
@@ -383,17 +380,15 @@ impl MkdirCache for CCache {
 /// NULL or a live `git_pool` (of 1-byte items) that outlives the set.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_futils_mkdir_relative(
-    relative_path: *const c_char,
-    base: *const c_char,
+    relative_path: CStrArg<'_>,
+    base: CStrArg<'_>,
     mode: mode_t,
     flags: u32,
     opts: *mut MkdirOptions,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: a NUL-terminated string.
-        let rel = unsafe { cstr_bytes(relative_path) };
-        // SAFETY: NULL or a NUL-terminated string.
-        let base = unsafe { cstr(base) }.map(CStr::to_bytes);
+        let rel = relative_path.to_bytes();
+        let base = base.get().map(CStr::to_bytes);
         // SAFETY: NULL or valid options, used only by this call.
         let opts = unsafe { opts.as_mut() };
         match opts {
@@ -427,9 +422,8 @@ pub unsafe extern "C" fn git_futils_mkdir_relative(
 ///
 /// `path` is a NUL-terminated string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_futils_mkdir(path: *const c_char, mode: mode_t, flags: u32) -> c_int {
-    // SAFETY: a NUL-terminated string.
-    barrier(|| status(mkdir(unsafe { cstr_bytes(path) }, mode, flags)))
+pub unsafe extern "C" fn git_futils_mkdir(path: CStrArg<'_>, mode: mode_t, flags: u32) -> c_int {
+    barrier(|| status(mkdir(path.to_bytes(), mode, flags)))
 }
 
 /// `git_futils_mkdir_r`.
@@ -438,9 +432,8 @@ pub unsafe extern "C" fn git_futils_mkdir(path: *const c_char, mode: mode_t, fla
 ///
 /// `path` is a NUL-terminated string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_futils_mkdir_r(path: *const c_char, mode: mode_t) -> c_int {
-    // SAFETY: a NUL-terminated string.
-    barrier(|| status(mkdir_r(unsafe { cstr_bytes(path) }, mode)))
+pub unsafe extern "C" fn git_futils_mkdir_r(path: CStrArg<'_>, mode: mode_t) -> c_int {
+    barrier(|| status(mkdir_r(path.to_bytes(), mode)))
 }
 
 /// `git_futils_rmdir_r`.
@@ -450,15 +443,13 @@ pub unsafe extern "C" fn git_futils_mkdir_r(path: *const c_char, mode: mode_t) -
 /// `path` is a NUL-terminated string, `base` NULL or one.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_futils_rmdir_r(
-    path: *const c_char,
-    base: *const c_char,
+    path: CStrArg<'_>,
+    base: CStrArg<'_>,
     flags: u32,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: a NUL-terminated string.
-        let p = unsafe { cstr_bytes(path) };
-        // SAFETY: NULL or a NUL-terminated string.
-        let b = unsafe { cstr(base) }.map(CStr::to_bytes);
+        let p = path.to_bytes();
+        let b = base.get().map(CStr::to_bytes);
         status(rmdir_r(p, b, flags))
     })
 }
@@ -470,12 +461,11 @@ pub unsafe extern "C" fn git_futils_rmdir_r(
 /// `target` and `path` are NUL-terminated strings.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_futils_fake_symlink(
-    target: *const c_char,
+    target: CStrArg<'_>,
     path: *const c_char,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: a NUL-terminated string.
-        let target = unsafe { cstr_bytes(target) };
+        let target = target.to_bytes();
         // SAFETY: a NUL-terminated string.
         let path = unsafe { cpath(path) };
         status(fake_symlink(target, path))
@@ -524,16 +514,14 @@ pub unsafe extern "C" fn git_futils_touch(path: *const c_char, when: *const libc
 /// `from` and `to` are NUL-terminated strings.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_futils_cp_r(
-    from: *const c_char,
-    to: *const c_char,
+    from: CStrArg<'_>,
+    to: CStrArg<'_>,
     flags: u32,
     dirmode: mode_t,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: a NUL-terminated string.
-        let from = unsafe { cstr_bytes(from) };
-        // SAFETY: a NUL-terminated string.
-        let to = unsafe { cstr_bytes(to) };
+        let from = from.to_bytes();
+        let to = to.to_bytes();
         status(cp_r(from, to, flags, dirmode))
     })
 }
@@ -566,14 +554,13 @@ pub unsafe extern "C" fn git_futils_filestamp_check(
 /// `target`).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_futils_filestamp_set(
-    target: *mut Filestamp,
+    mut target: Out<'_, Filestamp>,
     source: *const Filestamp,
 ) {
     barrier(|| {
         // SAFETY: NULL or a readable stamp, copied out first.
         let src = unsafe { source.as_ref() }.copied();
-        // SAFETY: a writable stamp.
-        unsafe { write_opt(target, src.unwrap_or_default()) };
+        target.write(src.unwrap_or_default());
     })
 }
 
@@ -584,7 +571,7 @@ pub unsafe extern "C" fn git_futils_filestamp_set(
 /// `stamp` is writable; `st` NULL or a readable `struct stat`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_futils_filestamp_set_from_stat(
-    stamp: *mut Filestamp,
+    mut stamp: Out<'_, Filestamp>,
     st: *const Stat,
 ) {
     barrier(|| {
@@ -592,8 +579,7 @@ pub unsafe extern "C" fn git_futils_filestamp_set_from_stat(
         let v = unsafe { st.as_ref() }
             .map(Filestamp::from_stat)
             .unwrap_or_default();
-        // SAFETY: a writable stamp.
-        unsafe { write_opt(stamp, v) };
+        stamp.write(v);
     })
 }
 
@@ -614,7 +600,6 @@ pub unsafe extern "C" fn git_futils_fsync_dir(path: *const c_char) -> c_int {
 ///
 /// `path` is a NUL-terminated string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_futils_fsync_parent(path: *const c_char) -> c_int {
-    // SAFETY: a NUL-terminated string.
-    barrier(|| status(fsync_parent(unsafe { cstr_bytes(path) })))
+pub unsafe extern "C" fn git_futils_fsync_parent(path: CStrArg<'_>) -> c_int {
+    barrier(|| status(fsync_parent(path.to_bytes())))
 }

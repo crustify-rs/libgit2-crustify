@@ -204,6 +204,7 @@ pub unsafe fn backend_snapshot(source: NonNull<git_config_backend>) -> Backend {
 /// The exports of `config_snapshot.c`.
 pub mod ffi {
     use super::*;
+
     use crate::util::export::barrier;
 
     /// `git_config_backend_snapshot` (also the `snapshot` slot of every
@@ -225,7 +226,8 @@ pub mod ffi {
             // SAFETY: `source` is live until the snapshot is opened (the
             // contract).
             let b = unsafe { backend_snapshot(source) };
-            // SAFETY: `out` is writable.
+            // SAFETY: `out` is writable (the contract; the slot's caller
+            // passes its own out-parameter).
             unsafe { out.write(b.into_c().cast()) };
             0
         })

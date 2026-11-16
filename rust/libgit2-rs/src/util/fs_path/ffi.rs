@@ -6,7 +6,8 @@
 //! ([`arg`]).
 
 use super::*;
-use crate::util::export::{barrier, bytes, cstr, cstr_bytes, status, write_opt};
+use crate::util::cabi::{CStrArg, Out};
+use crate::util::export::{barrier, bytes, cstr, cstr_bytes, status};
 use core::ffi::c_void;
 use core::ptr::NonNull;
 
@@ -73,10 +74,9 @@ unsafe fn cpath<'a>(p: *const c_char) -> &'a CStr {
 ///
 /// `path` is NULL or a NUL-terminated string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_fs_path_dirname(path: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn git_fs_path_dirname(path: CStrArg<'_>) -> *mut c_char {
     barrier(|| {
-        // SAFETY: the caller passes NULL or a NUL-terminated string.
-        let p = unsafe { cstr(path) }.map(CStr::to_bytes);
+        let p = path.get().map(CStr::to_bytes);
         dirname(p).map_or(core::ptr::null_mut(), GitCStr::into_raw)
     })
 }
@@ -87,10 +87,9 @@ pub unsafe extern "C" fn git_fs_path_dirname(path: *const c_char) -> *mut c_char
 ///
 /// `path` is NULL or a NUL-terminated string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_fs_path_basename(path: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn git_fs_path_basename(path: CStrArg<'_>) -> *mut c_char {
     barrier(|| {
-        // SAFETY: the caller passes NULL or a NUL-terminated string.
-        let p = unsafe { cstr(path) }.map(CStr::to_bytes);
+        let p = path.get().map(CStr::to_bytes);
         basename(p).map_or(core::ptr::null_mut(), GitCStr::into_raw)
     })
 }
@@ -216,9 +215,8 @@ pub unsafe extern "C" fn git_fs_path_string_to_dir(path: *mut c_char, size: usiz
 ///
 /// `path` is a NUL-terminated string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_fs_path_dirlen(path: *const c_char) -> usize {
-    // SAFETY: the caller passes a NUL-terminated string.
-    barrier(|| dirlen(unsafe { cstr_bytes(path) }))
+pub unsafe extern "C" fn git_fs_path_dirlen(path: CStrArg<'_>) -> usize {
+    barrier(|| dirlen(path.to_bytes()))
 }
 
 /// `git__percent_decode`.
@@ -269,9 +267,8 @@ pub unsafe extern "C" fn git_fs_path_fromurl(
 ///
 /// `file_url` is a NUL-terminated string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_fs_path_is_local_file_url(file_url: *const c_char) -> bool {
-    // SAFETY: the caller passes a NUL-terminated string.
-    barrier(|| is_local_file_url(unsafe { cstr_bytes(file_url) }))
+pub unsafe extern "C" fn git_fs_path_is_local_file_url(file_url: CStrArg<'_>) -> bool {
+    barrier(|| is_local_file_url(file_url.to_bytes()))
 }
 
 /// `git_fs_path_from_url_or_path`.
@@ -469,14 +466,12 @@ pub unsafe extern "C" fn git_fs_path_is_empty_dir(path: *const c_char) -> bool {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_fs_path_set_error(
     errno_value: c_int,
-    path: *const c_char,
-    action: *const c_char,
+    path: CStrArg<'_>,
+    action: CStrArg<'_>,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: a NUL-terminated string.
-        let p = unsafe { cstr_bytes(path) };
-        // SAFETY: a NUL-terminated string.
-        let a = unsafe { cstr_bytes(action) };
+        let p = path.to_bytes();
+        let a = action.to_bytes();
         set_error_bytes(errno_value, p, a).raw()
     })
 }
@@ -487,13 +482,12 @@ pub unsafe extern "C" fn git_fs_path_set_error(
 ///
 /// `path` is a NUL-terminated string; `st` is writable.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_fs_path_lstat(path: *const c_char, st: *mut Stat) -> c_int {
+pub unsafe extern "C" fn git_fs_path_lstat(path: *const c_char, mut st: Out<'_, Stat>) -> c_int {
     barrier(|| {
         // SAFETY: a NUL-terminated string.
         match lstat(unsafe { cpath(path) }) {
             Ok(v) => {
-                // SAFETY: the caller passes a writable `struct stat`.
-                unsafe { write_opt(st, v) };
+                st.write(v);
                 0
             }
             Err(e) => e.raw(),
@@ -581,7 +575,7 @@ pub unsafe extern "C" fn git_fs_path_join_unrooted(
     path_out: *mut GitStr,
     path: *const c_char,
     base: *const c_char,
-    root_at: *mut isize,
+    mut root_at: Out<'_, isize>,
 ) -> c_int {
     barrier(|| {
         crate::git_assert_arg!(!path_out.is_null(), "path_out", -1);
@@ -593,8 +587,7 @@ pub unsafe extern "C" fn git_fs_path_join_unrooted(
         // SAFETY: as above.
         match join_unrooted(unsafe { &mut *path_out }, &p, b.as_deref()) {
             Ok(r) => {
-                // SAFETY: NULL or writable.
-                unsafe { write_opt(root_at, r) };
+                root_at.write(r);
                 0
             }
             Err(e) => e.raw(),
@@ -1097,9 +1090,8 @@ pub unsafe extern "C" fn git_fs_path_normalize_slashes(
 ///
 /// `dir` is a NUL-terminated string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_fs_path_supports_symlinks(dir: *const c_char) -> bool {
-    // SAFETY: a NUL-terminated string.
-    barrier(|| supports_symlinks(unsafe { cstr_bytes(dir) }))
+pub unsafe extern "C" fn git_fs_path_supports_symlinks(dir: CStrArg<'_>) -> bool {
+    barrier(|| supports_symlinks(dir.to_bytes()))
 }
 
 /// `git_fs_path__set_owner`.
@@ -1119,7 +1111,7 @@ pub unsafe extern "C" fn git_fs_path__set_owner(owner: c_uint) {
 /// `out` is writable; `path` a NUL-terminated string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_fs_path_owner_is(
-    out: *mut bool,
+    mut out: Out<'_, bool>,
     path: *const c_char,
     owner_type: c_uint,
 ) -> c_int {
@@ -1127,8 +1119,7 @@ pub unsafe extern "C" fn git_fs_path_owner_is(
         // SAFETY: a NUL-terminated string.
         match owner_is(unsafe { cpath(path) }, owner_type) {
             Ok(v) => {
-                // SAFETY: a writable `bool`.
-                unsafe { write_opt(out, v) };
+                out.write(v);
                 0
             }
             Err(e) => e.raw(),
@@ -1143,7 +1134,7 @@ pub unsafe extern "C" fn git_fs_path_owner_is(
 /// As [`git_fs_path_owner_is`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_fs_path_owner_is_current_user(
-    out: *mut bool,
+    out: Out<'_, bool>,
     path: *const c_char,
 ) -> c_int {
     // SAFETY: forwarded.
@@ -1156,7 +1147,10 @@ pub unsafe extern "C" fn git_fs_path_owner_is_current_user(
 ///
 /// As [`git_fs_path_owner_is`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_fs_path_owner_is_system(out: *mut bool, path: *const c_char) -> c_int {
+pub unsafe extern "C" fn git_fs_path_owner_is_system(
+    out: Out<'_, bool>,
+    path: *const c_char,
+) -> c_int {
     // SAFETY: forwarded.
     unsafe { git_fs_path_owner_is(out, path, GIT_FS_PATH_OWNER_ADMINISTRATOR) }
 }

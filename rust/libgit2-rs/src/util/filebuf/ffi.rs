@@ -4,7 +4,8 @@
 //! `vsnprintf` and calls [`git_filebuf__printf_formatted`].
 
 use super::*;
-use crate::util::export::{barrier, cstr, cstr_bytes, status, write_opt};
+use crate::util::cabi::{CStrArg, Out};
+use crate::util::export::{barrier, cstr_bytes, status};
 
 /// The filebuf at `file`.
 ///
@@ -161,17 +162,13 @@ pub unsafe extern "C" fn git_filebuf_hash(out: *mut u8, file: *mut GitFilebuf) -
 ///
 /// As [`f`]; `path` is a NUL-terminated string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_filebuf_commit_at(
-    file: *mut GitFilebuf,
-    path: *const c_char,
-) -> c_int {
+pub unsafe extern "C" fn git_filebuf_commit_at(file: *mut GitFilebuf, path: CStrArg<'_>) -> c_int {
     barrier(|| {
         // SAFETY: NULL or a valid filebuf, used only by this call.
         let Some(file) = (unsafe { f(file) }) else {
             return -1;
         };
-        // SAFETY: NULL or a NUL-terminated string.
-        let Some(p) = (unsafe { cstr(path) }) else {
+        let Some(p) = path.get() else {
             return -1;
         };
         status(file.commit_at(p))
@@ -230,12 +227,11 @@ pub unsafe extern "C" fn git_filebuf_write(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_filebuf_reserve(
     file: *mut GitFilebuf,
-    buff: *mut *mut c_void,
+    mut buff: Out<'_, *mut c_void>,
     len: usize,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: a writable pointer.
-        unsafe { write_opt(buff, core::ptr::null_mut()) };
+        buff.write(core::ptr::null_mut());
         // SAFETY: the caller's contract.
         let Some(file) = (unsafe { f(file) }) else {
             return -1;
@@ -243,8 +239,7 @@ pub unsafe extern "C" fn git_filebuf_reserve(
         match file.reserve_offset(len) {
             Ok(at) => {
                 let p = file.buffer.wrapping_add(at);
-                // SAFETY: a writable pointer.
-                unsafe { write_opt(buff, p.cast()) };
+                buff.write(p.cast());
                 0
             }
             Err(e) => e.raw(),
@@ -286,8 +281,8 @@ pub unsafe extern "C" fn git_filebuf__printf_formatted(
 /// As [`f`]; `mtime` and `size` are NULL or writable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_filebuf_stats(
-    mtime: *mut libc::time_t,
-    size: *mut usize,
+    mut mtime: Out<'_, libc::time_t>,
+    mut size: Out<'_, usize>,
     file: *mut GitFilebuf,
 ) -> c_int {
     barrier(|| {
@@ -297,10 +292,8 @@ pub unsafe extern "C" fn git_filebuf_stats(
         };
         match file.stats() {
             Ok((m, s)) => {
-                // SAFETY: NULL or writable.
-                unsafe { write_opt(mtime, m) };
-                // SAFETY: NULL or writable.
-                unsafe { write_opt(size, s) };
+                mtime.write(m);
+                size.write(s);
                 0
             }
             Err(e) => e.raw(),

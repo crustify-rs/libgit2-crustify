@@ -14,7 +14,7 @@
 //! overflows a signed `int` (undefined behaviour), the Rust wraps
 //! (rust/DEFECTS.md).
 
-use core::ffi::{c_char, c_int};
+use core::ffi::c_int;
 
 use super::ctype_compat::{isalnum, isalpha, isdigit, isspace, toupper};
 use super::errors::{ErrorCode, Result};
@@ -1165,7 +1165,8 @@ pub fn rfc2822(time: i64, offset: i32) -> Result<String> {
 pub mod ffi {
     use super::*;
     use crate::git_assert_arg;
-    use crate::util::export::{barrier, cstr_bytes, status, write_opt};
+    use crate::util::cabi::{CStrArg, Out};
+    use crate::util::export::{barrier, status};
 
     /// `git_date_offset_parse`.
     ///
@@ -1174,21 +1175,18 @@ pub mod ffi {
     /// `out` and `out_offset` are writable; `date` is NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_date_offset_parse(
-        out: *mut i64,
-        out_offset: *mut c_int,
-        date: *const c_char,
+        mut out: Out<'_, i64>,
+        mut out_offset: Out<'_, c_int>,
+        date: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            let date = unsafe { cstr_bytes(date) };
+            let date = date.to_bytes();
             let r = offset_parse_raw(&SystemClock, date);
             if let Some(t) = r.time {
-                // SAFETY: the caller's contract.
-                unsafe { write_opt(out, t) };
+                out.write(t);
             }
             if let Some(o) = r.offset {
-                // SAFETY: the caller's contract.
-                unsafe { write_opt(out_offset, o) };
+                out_offset.write(o);
             }
             r.status
         })
@@ -1200,10 +1198,10 @@ pub mod ffi {
     ///
     /// `out` is writable; `date` is NUL-terminated.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_date_parse(out: *mut i64, date: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git_date_parse(out: Out<'_, i64>, date: CStrArg<'_>) -> c_int {
         let mut offset: c_int = 0;
         // SAFETY: forwarded to the caller; `offset` is a local.
-        unsafe { git_date_offset_parse(out, &raw mut offset, date) }
+        unsafe { git_date_offset_parse(out, Out::from(&mut offset), date) }
     }
 
     /// `git_date_rfc2822_fmt`.

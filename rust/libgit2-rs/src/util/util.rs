@@ -636,7 +636,8 @@ pub fn strsep(buf: &mut [u8], pos: &mut usize, sep: &[u8]) -> Option<core::ops::
 /// The exports of `util.c`.
 pub mod ffi {
     use super::*;
-    use crate::util::export::{barrier, bytes, cstr_bytes, status, write_opt};
+    use crate::util::cabi::{CStrArg, Out};
+    use crate::util::export::{barrier, bytes, cstr_bytes, status};
 
     /// The bytes of `s`, bounded to what a comparison with a `bound`-byte
     /// string can read: C stops at the first difference, so at most
@@ -660,10 +661,10 @@ pub mod ffi {
     /// `endptr` is NULL or writable.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git__strntol64(
-        result: *mut i64,
+        mut result: Out<'_, i64>,
         nptr: *const c_char,
         nptr_len: usize,
-        endptr: *mut *const c_char,
+        mut endptr: Out<'_, *const c_char>,
         base: c_int,
     ) -> c_int {
         barrier(|| {
@@ -674,15 +675,12 @@ pub mod ffi {
             match outcome {
                 ParseOutcome::NotANumber => status(Err(not_a_number())),
                 ParseOutcome::Overflow => {
-                    // SAFETY: the caller passes NULL or a writable `endptr`.
-                    unsafe { write_opt(endptr, endp) };
+                    endptr.write(endp);
                     status(Err(overflow()))
                 }
                 ParseOutcome::Value(n) => {
-                    // SAFETY: the caller passes NULL or a writable `endptr`.
-                    unsafe { write_opt(endptr, endp) };
-                    // SAFETY: the caller passes a writable `result`.
-                    unsafe { result.write(n) };
+                    endptr.write(endp);
+                    result.write(n);
                     0
                 }
             }
@@ -696,10 +694,10 @@ pub mod ffi {
     /// As `git__strntol64`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git__strntol32(
-        result: *mut i32,
+        mut result: Out<'_, i32>,
         nptr: *const c_char,
         nptr_len: usize,
-        endptr: *mut *const c_char,
+        mut endptr: Out<'_, *const c_char>,
         base: c_int,
     ) -> c_int {
         barrier(|| {
@@ -707,10 +705,8 @@ pub mod ffi {
             let s = unsafe { bytes(nptr, nptr_len) };
             match strntol32(s, base) {
                 Ok((v, end)) => {
-                    // SAFETY: the caller passes a writable `result`.
-                    unsafe { result.write(v) };
-                    // SAFETY: the caller passes NULL or a writable `endptr`.
-                    unsafe { write_opt(endptr, nptr.wrapping_add(end)) };
+                    result.write(v);
+                    endptr.write(nptr.wrapping_add(end));
                     0
                 }
                 Err(e) => e.raw(),
@@ -811,10 +807,9 @@ pub mod ffi {
     ///
     /// Both arguments are NUL-terminated strings.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git__prefixcmp(s: *const c_char, prefix: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git__prefixcmp(s: *const c_char, prefix: CStrArg<'_>) -> c_int {
         barrier(|| {
-            // SAFETY: the caller passes a NUL-terminated `prefix`.
-            let p = unsafe { cstr_bytes(prefix) };
+            let p = prefix.to_bytes();
             // SAFETY: `s` is NUL-terminated; only its first `strlen(prefix)
             // + 1` bytes can be compared.
             let s = unsafe { bounded(s, p.len()) };
@@ -828,13 +823,9 @@ pub mod ffi {
     ///
     /// Both arguments are NUL-terminated strings.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git__prefixcmp_icase(
-        s: *const c_char,
-        prefix: *const c_char,
-    ) -> c_int {
+    pub unsafe extern "C" fn git__prefixcmp_icase(s: *const c_char, prefix: CStrArg<'_>) -> c_int {
         barrier(|| {
-            // SAFETY: as in `git__prefixcmp`.
-            let p = unsafe { cstr_bytes(prefix) };
+            let p = prefix.to_bytes();
             // SAFETY: as in `git__prefixcmp`.
             let s = unsafe { bounded(s, p.len()) };
             prefixcmp_icase(s, p)
@@ -851,11 +842,10 @@ pub mod ffi {
     pub unsafe extern "C" fn git__prefixncmp(
         s: *const c_char,
         str_n: usize,
-        prefix: *const c_char,
+        prefix: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller passes a NUL-terminated `prefix`.
-            let p = unsafe { cstr_bytes(prefix) };
+            let p = prefix.to_bytes();
             // SAFETY: `s` is read up to its NUL or the bytes C could
             // compare, whichever comes first.
             let n = unsafe { libc::strnlen(s, str_n.min(p.len() + 1)) };
@@ -874,11 +864,10 @@ pub mod ffi {
     pub unsafe extern "C" fn git__prefixncmp_icase(
         s: *const c_char,
         str_n: usize,
-        prefix: *const c_char,
+        prefix: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: as in `git__prefixncmp`.
-            let p = unsafe { cstr_bytes(prefix) };
+            let p = prefix.to_bytes();
             // SAFETY: as in `git__prefixncmp`.
             let n = unsafe { libc::strnlen(s, str_n.min(p.len() + 1)) };
             // SAFETY: as in `git__prefixncmp`.
@@ -934,14 +923,13 @@ pub mod ffi {
     ///
     /// `*end` is a writable NUL-terminated string; `sep` is NUL-terminated.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git__strtok(end: *mut *mut c_char, sep: *const c_char) -> *mut c_char {
+    pub unsafe extern "C" fn git__strtok(end: *mut *mut c_char, sep: CStrArg<'_>) -> *mut c_char {
         barrier(|| {
             // SAFETY: the caller passes a valid `end`.
             let base = unsafe { *end };
             // SAFETY: `*end` is a writable NUL-terminated string.
             let buf = unsafe { cstr_mut(base) };
-            // SAFETY: `sep` is NUL-terminated.
-            let sep = unsafe { cstr_bytes(sep) };
+            let sep = sep.to_bytes();
             let mut pos = 0;
             match strtok(buf, &mut pos, sep) {
                 Some(r) => {
@@ -962,14 +950,13 @@ pub mod ffi {
     ///
     /// As `git__strtok`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git__strsep(end: *mut *mut c_char, sep: *const c_char) -> *mut c_char {
+    pub unsafe extern "C" fn git__strsep(end: *mut *mut c_char, sep: CStrArg<'_>) -> *mut c_char {
         barrier(|| {
             // SAFETY: the caller passes a valid `end`.
             let base = unsafe { *end };
             // SAFETY: `*end` is a writable NUL-terminated string.
             let buf = unsafe { cstr_mut(base) };
-            // SAFETY: `sep` is NUL-terminated.
-            let sep = unsafe { cstr_bytes(sep) };
+            let sep = sep.to_bytes();
             let mut pos = 0;
             match strsep(buf, &mut pos, sep) {
                 Some(_) => {
@@ -1068,7 +1055,7 @@ pub mod ffi {
         array_len: usize,
         key: *const c_void,
         compare: BsearchCmp,
-        position: *mut usize,
+        mut position: Out<'_, usize>,
     ) -> c_int {
         barrier(|| {
             let a: &[*mut c_void] = if array_len == 0 {
@@ -1083,8 +1070,7 @@ pub mod ffi {
                 Ok(p) => (p, 0),
                 Err(p) => (p, ErrorCode::NOT_FOUND.raw()),
             };
-            // SAFETY: `position` is NULL or writable.
-            unsafe { write_opt(position, pos) };
+            position.write(pos);
             ret
         })
     }
@@ -1101,7 +1087,7 @@ pub mod ffi {
         key: *const c_void,
         compare_r: BsearchCmpR,
         payload: *mut c_void,
-        position: *mut usize,
+        mut position: Out<'_, usize>,
     ) -> c_int {
         barrier(|| {
             let a: &[*mut c_void] = if array_len == 0 {
@@ -1116,8 +1102,7 @@ pub mod ffi {
                 Ok(p) => (p, 0),
                 Err(p) => (p, ErrorCode::NOT_FOUND.raw()),
             };
-            // SAFETY: `position` is NULL or writable.
-            unsafe { write_opt(position, pos) };
+            position.write(pos);
             ret
         })
     }
@@ -1128,14 +1113,12 @@ pub mod ffi {
     ///
     /// `out` is writable; `value` is NULL or NUL-terminated.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git__parse_bool(out: *mut c_int, value: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git__parse_bool(mut out: Out<'_, c_int>, value: CStrArg<'_>) -> c_int {
         barrier(|| {
-            // SAFETY: the caller passes NULL or a NUL-terminated string.
-            let v = unsafe { crate::util::export::cstr(value) }.map(CStr::to_bytes);
+            let v = value.get().map(CStr::to_bytes);
             match parse_bool(v) {
                 Some(b) => {
-                    // SAFETY: `out` is writable.
-                    unsafe { out.write(c_int::from(b)) };
+                    out.write(c_int::from(b));
                     0
                 }
                 None => -1,

@@ -860,6 +860,7 @@ macro_rules! git_assert {
 pub mod ffi {
     use super::*;
     use crate::util::alloc;
+    use crate::util::cabi::Out;
     use crate::util::export::{barrier, cstr};
 
     /// Hand C the `git_error` to show: the thread's, or a static one.
@@ -1017,11 +1018,10 @@ pub mod ffi {
     /// `out` is valid for a write of a pointer. The error stored there is
     /// given to `git_error_restore` or `git_error_free` exactly once.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_error_save(out: *mut *mut GitError) -> c_int {
+    pub unsafe extern "C" fn git_error_save(mut out: Out<'_, *mut GitError>) -> c_int {
         barrier(|| {
             let (ptr, ret) = save_c();
-            // SAFETY: the caller passes a valid `out`.
-            unsafe { out.write(ptr.cast_mut()) };
+            out.write(ptr.cast_mut());
             ret
         })
     }

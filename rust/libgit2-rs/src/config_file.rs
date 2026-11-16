@@ -1012,7 +1012,8 @@ pub fn backend_from_file(path: &[u8]) -> Result<Backend> {
 /// The exports of `config_file.c`.
 pub mod ffi {
     use super::*;
-    use crate::util::export::{barrier, cstr_bytes};
+    use crate::util::cabi::{CStrArg, Out};
+    use crate::util::export::barrier;
 
     /// `git_config_backend_from_file`.
     ///
@@ -1021,19 +1022,15 @@ pub mod ffi {
     /// `out` is writable; `path` is NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_backend_from_file(
-        out: *mut *mut git_config_backend,
-        path: *const c_char,
+        mut out: Out<'_, *mut git_config_backend>,
+        path: CStrArg<'_>,
     ) -> c_int {
-        barrier(|| {
-            // SAFETY: per the contract.
-            match backend_from_file(unsafe { cstr_bytes(path) }) {
-                // SAFETY: `out` is writable.
-                Ok(b) => unsafe {
-                    out.write(b.into_c().cast());
-                    0
-                },
-                Err(e) => e.raw(),
+        barrier(|| match backend_from_file(path.to_bytes()) {
+            Ok(b) => {
+                out.write(b.into_c().cast());
+                0
             }
+            Err(e) => e.raw(),
         })
     }
 }

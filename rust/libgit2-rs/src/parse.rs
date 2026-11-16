@@ -268,6 +268,7 @@ impl<'a> GitParseCtx<'a> {
 
 /// The exports of `parse.c`.
 pub mod ffi {
+    use crate::util::cabi::Out;
     use core::ffi::{c_char, c_int};
 
     use super::*;
@@ -286,7 +287,7 @@ pub mod ffi {
     /// bytes for as long as the context is used.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_parse_ctx_init(
-        ctx: *mut Ctx,
+        mut ctx: Out<'_, Ctx>,
         content: *const c_char,
         content_len: usize,
     ) -> c_int {
@@ -294,8 +295,7 @@ pub mod ffi {
             // SAFETY: the caller keeps the content alive while the context
             // is used: that is the context's `'static` here.
             let content = unsafe { bytes(content, content_len) };
-            // SAFETY: writable.
-            unsafe { ctx.write(GitParseCtx::new(content)) };
+            ctx.write(GitParseCtx::new(content));
             0
         })
     }
@@ -306,11 +306,10 @@ pub mod ffi {
     ///
     /// `ctx` is writable.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_parse_ctx_clear(ctx: *mut Ctx) {
+    pub unsafe extern "C" fn git_parse_ctx_clear(mut ctx: Out<'_, Ctx>) {
         let mut c = GitParseCtx::default();
         c.clear();
-        // SAFETY: writable.
-        unsafe { ctx.write(c) };
+        ctx.write(c);
     }
 
     /// The context, exclusively for the call.
@@ -396,7 +395,7 @@ pub mod ffi {
     /// As [`ctx_mut`]; `out` is writable.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_parse_advance_digit(
-        out: *mut i64,
+        mut out: Out<'_, i64>,
         ctx: *mut Ctx,
         base: c_int,
     ) -> c_int {
@@ -404,8 +403,7 @@ pub mod ffi {
             // SAFETY: forwarded.
             match unsafe { ctx_mut(ctx) }.advance_digit(base) {
                 Ok(v) => {
-                    // SAFETY: writable.
-                    unsafe { out.write(v) };
+                    out.write(v);
                     0
                 }
                 Err(e) => e.raw(),
@@ -453,7 +451,7 @@ pub mod ffi {
     /// As [`ctx_mut`]; `out` is writable.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_parse_peek(
-        out: *mut c_char,
+        mut out: Out<'_, c_char>,
         ctx: *mut Ctx,
         flags: c_int,
     ) -> c_int {
@@ -462,8 +460,7 @@ pub mod ffi {
             let ctx = unsafe { ctx_mut(ctx) };
             match ctx.peek(flags & GIT_PARSE_PEEK_SKIP_WHITESPACE != 0) {
                 Some(c) => {
-                    // SAFETY: writable.
-                    unsafe { out.write(c as c_char) };
+                    out.write(c as c_char);
                     0
                 }
                 None => -1,

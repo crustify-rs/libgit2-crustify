@@ -480,6 +480,7 @@ impl OidPtr {
 /// The C ABI of `cache.c`.
 pub mod ffi {
     use super::*;
+    use crate::util::cabi::Out;
     use crate::util::export::barrier;
 
     /// The cache at `cache`.
@@ -511,9 +512,8 @@ pub mod ffi {
     /// `cache` is writable for a `git_cache` (its contents are ignored) and
     /// not in use.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_cache_init(cache: *mut GitCache) -> c_int {
-        // SAFETY: the caller's contract; nothing is read.
-        unsafe { cache.write(GitCache::new()) };
+    pub unsafe extern "C" fn git_cache_init(mut cache: Out<'_, GitCache>) -> c_int {
+        cache.write(GitCache::new());
         0
     }
 

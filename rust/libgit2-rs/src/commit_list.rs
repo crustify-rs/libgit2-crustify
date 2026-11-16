@@ -15,6 +15,7 @@
 //! writes the fields through the raw pointer, and borrows the pool only for
 //! the extent of one allocation.
 
+use crate::util::cabi::Out;
 use core::ffi::{c_int, c_void};
 use core::ptr;
 
@@ -307,10 +308,11 @@ unsafe fn parse(walk: *mut git_revwalk, node: *mut GitCommitListNode) -> Result<
     let id = unsafe { (*node).oid };
 
     // Let's try to use the commit graph first.
-    let mut file: *mut pend::git_commit_graph_file = ptr::null_mut();
-    // SAFETY: the walk's odb; `file` writable. (Its status is ignored, as
+    let mut file: *mut c_void = ptr::null_mut();
+    // SAFETY: the walk's odb; `file` a local. (Its status is ignored, as
     // the C's.)
-    let _ = unsafe { crate::odb::ffi::git_odb__get_commit_graph_file((&raw mut file).cast(), odb) };
+    let _ = unsafe { crate::odb::ffi::git_odb__get_commit_graph_file(Out::from(&mut file), odb) };
+    let file = file.cast::<pend::git_commit_graph_file>();
     if !file.is_null() {
         // SAFETY: a live repository.
         let oid_type: git_oid_t = unsafe { (*repo).oid_type_raw() };

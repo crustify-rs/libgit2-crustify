@@ -12,6 +12,7 @@
 //! The entries are kept oldest first, as in the file; index 0 of the API
 //! is the newest (`reflog_inverse_index`).
 
+use crate::util::cabi::{CStrArg, Out};
 use core::ffi::{CStr, c_char, c_int};
 use core::ptr::NonNull;
 
@@ -130,7 +131,7 @@ pub(crate) fn serialize_entry(
     let _ = buf.puts(new.hex().as_bytes());
     // SAFETY: `buf` is a valid `git_str`; `committer` is the caller's
     // signature (C's contract for the reflog writers: valid).
-    unsafe { p::git_signature__writebuf(buf.as_mut_ptr(), c" ".as_ptr(), committer) };
+    unsafe { p::git_signature__writebuf(buf.as_mut_ptr(), c" ".into(), committer) };
     buf.rtrim();
     if let Some(msg) = msg {
         let _ = buf.putc(b'\t');
@@ -314,14 +315,17 @@ fn parse_line(parser: &mut GitParseCtx<'_>, t: Option<OidType>) -> Result<Option
     }
     let sig_len = line.len() - parser.line().len();
     let mut start = line.as_ptr().cast::<c_char>();
+    // SAFETY: `sig` is the signature allocated above (`calloc`: aligned,
+    // writable, or NULL), which nothing references.
+    let sig_out = unsafe { Out::from_ptr(sig) };
     // SAFETY: `start..start + sig_len` is within the parsed buffer; the
-    // signature is ours, zeroed; the C parser reads only that range.
+    // C parser reads only that range.
     let r = unsafe {
         p::git_signature__parse(
-            sig,
+            sig_out,
             &raw mut start,
             line.as_ptr().wrapping_add(sig_len).cast(),
-            core::ptr::null(),
+            CStrArg::NULL,
             0,
         )
     };
@@ -492,7 +496,8 @@ fn refdb_of(repo: RepoPtr) -> Result<RefdbPtr> {
 /// by one thread at a time; every `git_repository *` a live repository.
 pub mod ffi {
     use super::*;
-    use crate::util::export::{barrier, cstr, status};
+    use crate::util::cabi::CStrArg;
+    use crate::util::export::{barrier, status};
 
     /// `git_reflog_entry__free`.
     ///
@@ -579,14 +584,14 @@ pub mod ffi {
         reflog: *mut GitReflog,
         new_oid: *const Oid,
         committer: *const git_signature,
-        msg: *const c_char,
+        msg: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!reflog.is_null(), "reflog", -1);
             crate::git_assert_arg!(!new_oid.is_null(), "new_oid", -1);
             crate::git_assert_arg!(!committer.is_null(), "committer", -1);
             // SAFETY: a valid oid; NULL or a string.
-            let (id, m) = (unsafe { &*new_oid }, unsafe { cstr(msg) });
+            let (id, m) = (unsafe { &*new_oid }, msg.get());
             // SAFETY: a live reflog, exclusively used; a valid signature.
             let r = unsafe { append(reflog, id, committer, m.map(CStr::to_bytes)) };
             match r {

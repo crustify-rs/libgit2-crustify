@@ -166,6 +166,7 @@ pub fn remove(arr: &mut GitArray<Oid>, id: &Oid) -> bool {
 
 /// The exports of `oidarray.c`.
 pub mod ffi {
+    use crate::util::cabi::Out;
     use core::ffi::c_int;
 
     use super::*;
@@ -194,7 +195,7 @@ pub mod ffi {
     /// buffer `out` now shares.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oidarray__from_array(
-        out: *mut GitOidArray,
+        mut out: Out<'_, GitOidArray>,
         array: *const GitArray<Oid>,
     ) {
         // SAFETY: a valid array, only read.
@@ -203,8 +204,7 @@ pub mod ffi {
             ids: a.as_ptr().cast_mut(),
             count: a.len(),
         };
-        // SAFETY: writable.
-        unsafe { out.write(raw) };
+        out.write(raw);
     }
 
     /// `git_oidarray__to_array`.
@@ -215,7 +215,7 @@ pub mod ffi {
     /// `out` now shares.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oidarray__to_array(
-        out: *mut GitArray<Oid>,
+        mut out: Out<'_, GitArray<Oid>>,
         array: *const GitOidArray,
     ) {
         // SAFETY: a valid `git_oidarray`.
@@ -223,8 +223,7 @@ pub mod ffi {
         // SAFETY: the new array shares the buffer, as in C (C keeps track
         // of which one frees it).
         let arr = unsafe { GitArray::from_raw_parts(a.ids, a.count, a.count) };
-        // SAFETY: writable; `write` does not drop what `out` held.
-        unsafe { out.write(arr) };
+        out.write(arr);
     }
 
     /// `git_oidarray__reverse`.

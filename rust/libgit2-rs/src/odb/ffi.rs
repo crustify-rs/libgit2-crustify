@@ -9,11 +9,13 @@
 //! to an odb belongs to it; streams are used by one thread at a time.
 //! Out-parameters are writable; ids are readable `git_oid`s.
 
-use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
+use crate::git_arg;
+use crate::util::cabi::{CStrArg, Out};
+use core::ffi::{c_char, c_int, c_uint, c_void};
 use core::ptr::NonNull;
 
 use super::*;
-use crate::util::export::{barrier, bytes, cstr, status};
+use crate::util::export::{barrier, bytes, status};
 use ffibox::CShared;
 
 /// The odb at `db`.
@@ -34,7 +36,7 @@ unsafe fn odb<'a>(db: *mut GitOdb) -> &'a GitOdb {
 /// `written` is writable; `hdr` is writable for `hdr_size` bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_odb__format_object_header(
-    written: *mut usize,
+    mut written: Out<'_, usize>,
     hdr: *mut c_char,
     hdr_size: usize,
     obj_len: git_object_size_t,
@@ -55,8 +57,7 @@ pub unsafe extern "C" fn git_odb__format_object_header(
         if n >= hdr_max {
             return header_error().raw();
         }
-        // SAFETY: the caller's contract.
-        unsafe { written.write(n + 1) };
+        written.write(n + 1);
         0
     })
 }
@@ -127,15 +128,14 @@ pub unsafe extern "C" fn git_odb_object_type(object: *mut GitOdbObject) -> git_o
 /// `dest` is writable; `source` is a live object.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_odb_object_dup(
-    dest: *mut *mut GitOdbObject,
+    mut dest: Out<'_, *mut GitOdbObject>,
     source: *mut GitOdbObject,
 ) -> c_int {
     barrier(|| {
         // SAFETY: the caller's contract: a live object, whose count is
         // atomic.
         unsafe { (*source).cached.refcount.inc() };
-        // SAFETY: the caller's contract.
-        unsafe { dest.write(source) };
+        dest.write(source);
         0
     })
 }
@@ -317,13 +317,12 @@ pub unsafe extern "C" fn git_odb_get_backend(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_odb__add_default_backends(
     db: *mut GitOdb,
-    objects_dir: *const c_char,
+    objects_dir: CStrArg<'_>,
     as_alternates: bool,
     alternate_depth: c_int,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: the caller's contract.
-        let dir = unsafe { cstr(objects_dir) }.unwrap_or(c"");
+        let dir = objects_dir.get().unwrap_or(c"");
         // SAFETY: as above.
         status(unsafe { odb(db) }.add_default_backends(dir, as_alternates, alternate_depth))
     })
@@ -335,7 +334,7 @@ pub unsafe extern "C" fn git_odb__add_default_backends(
 ///
 /// As [`git_odb__add_default_backends`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_odb_add_disk_alternate(db: *mut GitOdb, path: *const c_char) -> c_int {
+pub unsafe extern "C" fn git_odb_add_disk_alternate(db: *mut GitOdb, path: CStrArg<'_>) -> c_int {
     // SAFETY: forwarded.
     unsafe { git_odb__add_default_backends(db, path, true, 0) }
 }
@@ -367,12 +366,12 @@ pub unsafe extern "C" fn git_odb_set_commit_graph(db: *mut GitOdb, cgraph: *mut 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_odb_open_ext(
     out: *mut *mut GitOdb,
-    objects_dir: *const c_char,
+    objects_dir: CStrArg<'_>,
     opts: *const GitOdbOptions,
 ) -> c_int {
     barrier(|| {
         git_assert_arg!(!out.is_null(), "out", -1);
-        git_assert_arg!(!objects_dir.is_null(), "objects_dir", -1);
+        let objects_dir = git_arg!(objects_dir.get(), "objects_dir", -1);
         // SAFETY: the caller's contract.
         let opts = unsafe { read_opts(opts) };
         if let Err(e) = check_version(
@@ -388,8 +387,7 @@ pub unsafe extern "C" fn git_odb_open_ext(
             Ok(db) => db,
             Err(_) => return -1,
         };
-        // SAFETY: the caller's contract.
-        let dir = unsafe { CStr::from_ptr(objects_dir) };
+        let dir = objects_dir;
         if db.add_default_backends(dir, false, 0).is_err() {
             return -1;
         }
@@ -405,7 +403,7 @@ pub unsafe extern "C" fn git_odb_open_ext(
 ///
 /// As [`git_odb_open_ext`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_odb_open(out: *mut *mut GitOdb, objects_dir: *const c_char) -> c_int {
+pub unsafe extern "C" fn git_odb_open(out: *mut *mut GitOdb, objects_dir: CStrArg<'_>) -> c_int {
     // SAFETY: forwarded.
     unsafe { git_odb_open_ext(out, objects_dir, core::ptr::null()) }
 }
@@ -439,15 +437,14 @@ pub unsafe extern "C" fn git_odb_free(db: *mut GitOdb) {
 /// `out` is writable; `db` is a live odb.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_odb__get_commit_graph_file(
-    out: *mut *mut c_void,
+    mut out: Out<'_, *mut c_void>,
     db: *mut GitOdb,
 ) -> c_int {
     barrier(|| {
         // SAFETY: the caller's contract.
         match unsafe { odb(db) }.get_commit_graph_file() {
             Ok(f) => {
-                // SAFETY: the caller's contract.
-                unsafe { out.write(f) };
+                out.write(f);
                 0
             }
             Err(e) => e.raw(),
@@ -513,7 +510,7 @@ pub unsafe extern "C" fn git_odb_exists_ext(
 /// `out` is NULL or writable; otherwise as [`git_odb__freshen`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_odb_exists_prefix(
-    out: *mut Oid,
+    mut out: Out<'_, Oid>,
     db: *mut GitOdb,
     short_id: *const Oid,
     len: usize,
@@ -527,8 +524,7 @@ pub unsafe extern "C" fn git_odb_exists_prefix(
         let short_id_ = unsafe { &*short_id };
         match db.exists_prefix(short_id_, len) {
             Ok(id) => {
-                // SAFETY: the caller's contract.
-                unsafe { crate::util::export::write_opt(out, id) };
+                out.write(id);
                 0
             }
             Err(e) => e.raw(),
@@ -926,8 +922,8 @@ pub unsafe extern "C" fn git_odb_stream_free(stream: *mut GitOdbStream) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_odb_open_rstream(
     stream: *mut *mut GitOdbStream,
-    len: *mut usize,
-    type_: *mut git_object_t,
+    mut len: Out<'_, usize>,
+    mut type_: Out<'_, git_object_t>,
     db: *mut GitOdb,
     oid: *const Oid,
 ) -> c_int {
@@ -944,10 +940,8 @@ pub unsafe extern "C" fn git_odb_open_rstream(
             Ok(Some((s, l, t))) => {
                 // SAFETY: the caller's contract.
                 unsafe { stream.write(s.as_ptr()) };
-                // SAFETY: the caller's contract.
-                unsafe { len.write(l) };
-                // SAFETY: the caller's contract.
-                unsafe { type_.write(t) };
+                len.write(l);
+                type_.write(t);
                 0
             }
             Err(e) => e.raw(),
@@ -1068,13 +1062,12 @@ pub unsafe extern "C" fn git_odb__error_mismatch(
 /// `message` is a NUL-terminated string; `oid` is NULL or readable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_odb__error_notfound(
-    message: *const c_char,
+    message: CStrArg<'_>,
     oid: *const Oid,
     oid_len: usize,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: the caller's contract.
-        let m = unsafe { crate::util::export::cstr_bytes(message) };
+        let m = message.to_bytes();
         // SAFETY: the caller's contract.
         let o = unsafe { oid.as_ref() };
         error_notfound(m, o, oid_len).raw()
@@ -1087,9 +1080,8 @@ pub unsafe extern "C" fn git_odb__error_notfound(
 ///
 /// `message` is a NUL-terminated string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_odb__error_ambiguous(message: *const c_char) -> c_int {
-    // SAFETY: the caller's contract.
-    barrier(|| error_ambiguous(unsafe { crate::util::export::cstr_bytes(message) }).raw())
+pub unsafe extern "C" fn git_odb__error_ambiguous(message: CStrArg<'_>) -> c_int {
+    barrier(|| error_ambiguous(message.to_bytes()).raw())
 }
 
 /// `git_odb_init_backend`.

@@ -754,7 +754,8 @@ impl GitVector {
 /// the vector, may read it. No caller in libgit2 does otherwise.
 pub mod ffi {
     use super::*;
-    use crate::util::export::{barrier, status, write_opt};
+    use crate::util::cabi::Out;
+    use crate::util::export::{barrier, status};
 
     /// # Safety
     ///
@@ -772,7 +773,7 @@ pub mod ffi {
     /// `v` is NULL or writable (its old contents are overwritten).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_vector_init(
-        vec: *mut GitVector,
+        mut vec: Out<'_, GitVector>,
         initial_size: usize,
         cmp: Option<VectorCmp>,
     ) -> c_int {
@@ -786,8 +787,7 @@ pub mod ffi {
                 flags: GIT_VECTOR_SORTED,
             };
             let r = nv.resize_vector(initial_size.max(MIN_ALLOCSIZE));
-            // SAFETY: a writable `git_vector`; C does not free the old one.
-            unsafe { vec.write(nv) };
+            vec.write(nv);
             status(r)
         })
     }
@@ -844,7 +844,7 @@ pub mod ffi {
     /// `vec` is NULL or writable; `src` is NULL or a valid `git_vector`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_vector_dup(
-        vec: *mut GitVector,
+        mut vec: Out<'_, GitVector>,
         src: *const GitVector,
         cmp: Option<VectorCmp>,
     ) -> c_int {
@@ -855,8 +855,7 @@ pub mod ffi {
             let s = unsafe { &*src };
             match s.dup(cmp) {
                 Ok(d) => {
-                    // SAFETY: a writable target.
-                    unsafe { vec.write(d) };
+                    vec.write(d);
                     0
                 }
                 Err(e) => {
@@ -868,8 +867,7 @@ pub mod ffi {
                     if !same_cmp(cmp, s.cmp) {
                         d.set_sorted(false);
                     }
-                    // SAFETY: a writable target.
-                    unsafe { vec.write(d) };
+                    vec.write(d);
                     e.raw()
                 }
             }
@@ -905,17 +903,15 @@ pub mod ffi {
     /// See the [module](self); `size` and `asize` are NULL or writable.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_vector_detach(
-        size: *mut usize,
-        asize: *mut usize,
+        mut size: Out<'_, usize>,
+        mut asize: Out<'_, usize>,
         vec: *mut GitVector,
     ) -> *mut *mut c_void {
         barrier(|| {
             // SAFETY: the module's contract: a valid, unaliased vector.
             let (p, n, a) = unsafe { v(vec) }.detach();
-            // SAFETY: `size` is NULL or writable.
-            unsafe { write_opt(size, n) };
-            // SAFETY: `asize` is NULL or writable.
-            unsafe { write_opt(asize, a) };
+            size.write(n);
+            asize.write(a);
             p
         })
     }
@@ -942,7 +938,7 @@ pub mod ffi {
     /// See the [module](self); `at_pos` is NULL or writable.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_vector_search(
-        at_pos: *mut usize,
+        mut at_pos: Out<'_, usize>,
         vec: *const GitVector,
         entry: *const c_void,
     ) -> c_int {
@@ -953,8 +949,7 @@ pub mod ffi {
             // SAFETY: the module's contract covers the comparison function.
             match unsafe { vv.search(entry) } {
                 Ok(i) => {
-                    // SAFETY: optional out-parameter.
-                    unsafe { write_opt(at_pos, i) };
+                    at_pos.write(i);
                     0
                 }
                 Err(e) => e.raw(),
@@ -969,7 +964,7 @@ pub mod ffi {
     /// See the [module](self); `at_pos` is NULL or writable.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_vector_search2(
-        at_pos: *mut usize,
+        mut at_pos: Out<'_, usize>,
         vec: *const GitVector,
         key_lookup: Option<VectorCmp>,
         key: *const c_void,
@@ -986,8 +981,7 @@ pub mod ffi {
             // SAFETY: the module's contract covers `key_lookup`.
             match unsafe { vv.search2(f, key) } {
                 Ok(i) => {
-                    // SAFETY: optional out-parameter.
-                    unsafe { write_opt(at_pos, i) };
+                    at_pos.write(i);
                     0
                 }
                 Err(e) => e.raw(),
@@ -1198,7 +1192,7 @@ pub mod ffi {
     /// See the [module](self); `old` is NULL or writable.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_vector_set(
-        old: *mut *mut c_void,
+        mut old: Out<'_, *mut c_void>,
         vec: *mut GitVector,
         position: usize,
         value: *mut c_void,
@@ -1207,8 +1201,7 @@ pub mod ffi {
             // SAFETY: the module's contract.
             match unsafe { v(vec) }.set(position, value) {
                 Ok(prev) => {
-                    // SAFETY: optional out-parameter.
-                    unsafe { write_opt(old, prev) };
+                    old.write(prev);
                     0
                 }
                 Err(e) => e.raw(),

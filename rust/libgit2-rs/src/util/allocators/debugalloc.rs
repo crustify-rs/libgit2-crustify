@@ -4,6 +4,7 @@
 //! zero-sized allocations. Installed when built with
 //! `GIT_DEBUG_STRICT_ALLOC`.
 
+use crate::util::cabi::Out;
 use core::ffi::{c_char, c_int, c_void};
 use core::mem::size_of;
 
@@ -102,9 +103,10 @@ unsafe extern "C" fn debugalloc_free(ptr: *mut c_void) {
 ///
 /// `allocator` is valid for a write of a `git_allocator`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_debugalloc_init_allocator(allocator: *mut GitAllocator) -> c_int {
-    // SAFETY: the caller passes a writable `git_allocator`.
-    unsafe { allocator.write(ALLOCATOR) };
+pub unsafe extern "C" fn git_debugalloc_init_allocator(
+    mut allocator: Out<'_, GitAllocator>,
+) -> c_int {
+    allocator.write(ALLOCATOR);
     0
 }
 

@@ -17,6 +17,7 @@
 //!   slot.
 //! - [`Blob`] is the safe API's blob: an [`Object`] of type blob.
 
+use crate::util::cabi::CStrArg;
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::ptr::{self, NonNull};
 
@@ -338,7 +339,7 @@ pub unsafe fn create_from_paths(
     let content_path: &CStr = match content_path {
         Some(c) => c,
         None => {
-            let hp = hint_path.map_or(ptr::null(), CStr::as_ptr);
+            let hp = CStrArg::from(hint_path);
             // SAFETY: a live repository, a valid `git_str`, NULL or a
             // NUL-terminated path.
             if unsafe { p::git_repository_workdir_path(&raw mut path, repo, hp) } < 0 {
@@ -992,8 +993,10 @@ impl BlobFilterOptions {
 /// The exports of `blob.c`.
 pub mod ffi {
     use super::*;
+    use crate::git_arg;
     use crate::object::ffi::check_version;
-    use crate::util::export::{barrier, bytes, cstr, status};
+    use crate::util::cabi::{CStrArg, Out};
+    use crate::util::export::{barrier, bytes, status};
 
     /// `git_blob_rawcontent`.
     ///
@@ -1041,26 +1044,23 @@ pub mod ffi {
     /// repository; the paths NULL or NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_blob__create_from_paths(
-        id: *mut Oid,
+        mut id: Out<'_, Oid>,
         out_st: *mut posix::Stat,
         repo: *mut git_repository,
-        content_path: *const c_char,
-        hint_path: *const c_char,
+        content_path: CStrArg<'_>,
+        hint_path: CStrArg<'_>,
         hint_mode: libc::mode_t,
         try_load_filters: bool,
     ) -> c_int {
         barrier(|| {
             // SAFETY: NULL or writable, used only here.
             let st = unsafe { out_st.as_mut() };
-            // SAFETY: NULL or NUL-terminated.
-            let c = unsafe { cstr(content_path) };
-            // SAFETY: NULL or NUL-terminated.
-            let h = unsafe { cstr(hint_path) };
+            let c = content_path.get();
+            let h = hint_path.get();
             // SAFETY: a live repository.
             match unsafe { create_from_paths(st, repo, c, h, hint_mode, try_load_filters) } {
                 Ok(oid) => {
-                    // SAFETY: writable.
-                    unsafe { id.write(oid) };
+                    id.write(oid);
                     0
                 }
                 Err(e) => e.raw(),
@@ -1113,11 +1113,10 @@ pub mod ffi {
     pub unsafe extern "C" fn git_blob_create_from_workdir(
         id: *mut Oid,
         repo: *mut git_repository,
-        path: *const c_char,
+        path: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: NULL or NUL-terminated.
-            let h = unsafe { cstr(path) };
+            let h = path.get();
             // SAFETY: a live repository.
             write_oid(id, unsafe {
                 create_from_paths(None, repo, None, h, 0, true)
@@ -1134,12 +1133,10 @@ pub mod ffi {
     pub unsafe extern "C" fn git_blob_create_from_disk(
         id: *mut Oid,
         repo: *mut git_repository,
-        path: *const c_char,
+        path: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!path.is_null(), "path", -1);
-            // SAFETY: NUL-terminated.
-            let path = unsafe { CStr::from_ptr(path) };
+            let path = git_arg!(path.get(), "path", -1);
             // SAFETY: a live repository.
             write_oid(id, unsafe { create_from_disk(repo, path) })
         })
@@ -1157,13 +1154,12 @@ pub mod ffi {
     pub unsafe extern "C" fn git_blob_create_from_stream(
         out: *mut *mut GitWriteStream,
         repo: *mut git_repository,
-        hintpath: *const c_char,
+        hintpath: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!out.is_null(), "out", -1);
             git_assert_arg!(!repo.is_null(), "repo", -1);
-            // SAFETY: NULL or NUL-terminated.
-            let h = unsafe { cstr(hintpath) };
+            let h = hintpath.get();
             // SAFETY: the caller's contract.
             match unsafe { create_from_stream(repo, h) } {
                 Ok(t) => {
@@ -1237,7 +1233,7 @@ pub mod ffi {
     /// `opts` is writable.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_blob_filter_options_init(
-        opts: *mut GitBlobFilterOptions,
+        mut opts: Out<'_, GitBlobFilterOptions>,
         version: c_uint,
     ) -> c_int {
         barrier(|| {
@@ -1251,8 +1247,7 @@ pub mod ffi {
             } {
                 return e.raw();
             }
-            // SAFETY: writable.
-            unsafe { opts.write(GitBlobFilterOptions::INIT) };
+            opts.write(GitBlobFilterOptions::INIT);
             0
         })
     }
@@ -1268,12 +1263,12 @@ pub mod ffi {
     pub unsafe extern "C" fn git_blob_filter(
         out: *mut GitBuf,
         blob: *mut GitBlob,
-        path: *const c_char,
+        path: CStrArg<'_>,
         given_opts: *const GitBlobFilterOptions,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!blob.is_null(), "blob", -1);
-            git_assert_arg!(!path.is_null(), "path", -1);
+            let path = git_arg!(path.get(), "path", -1);
             git_assert_arg!(!out.is_null(), "out", -1);
             // SAFETY: NULL or valid (`version` is its first member).
             if let Err(e) = unsafe {
@@ -1291,8 +1286,6 @@ pub mod ffi {
                 .unwrap_or(GitBlobFilterOptions::INIT);
             // SAFETY: non-null (checked above).
             let blob = unsafe { NonNull::new_unchecked(blob) };
-            // SAFETY: NUL-terminated (the caller's contract).
-            let path = unsafe { CStr::from_ptr(path) };
             // SAFETY: a live blob of a repository; a valid `git_buf`.
             status(unsafe { filter(out, blob, path, &opts) })
         })

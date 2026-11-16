@@ -3,7 +3,8 @@
 //! and pathspec (C that stays, `sys::{revparse, diff, pathspec}`), as
 //! small owners and safe functions over them.
 
-use core::ffi::{CStr, c_char, c_int, c_uint};
+use crate::util::cabi::CStrArg;
+use core::ffi::{CStr, c_int, c_uint};
 use core::ptr::{self, NonNull};
 
 use super::GitRevwalk;
@@ -168,7 +169,7 @@ impl RefIter {
         let mut out = ptr::null_mut();
         // SAFETY: `out` writable; `repo` NULL or live; `glob` a string.
         ErrorCode::check(unsafe {
-            crate::refs::ffi::git_reference_iterator_glob_new(&raw mut out, repo.0, glob.as_ptr())
+            crate::refs::ffi::git_reference_iterator_glob_new(&raw mut out, repo.0, glob.into())
         })?;
         NonNull::new(out).map(RefIter).ok_or(ErrorCode::GENERIC)
     }
@@ -268,19 +269,24 @@ impl Pathspec {
         })
     }
 
-    fn patterns(&self) -> impl Iterator<Item = *const c_char> + '_ {
-        // SAFETY: as in `has_wildcard`.
-        self.matches().map(|m| unsafe { (*m).pattern }.cast_const())
+    fn patterns(&self) -> impl Iterator<Item = CStrArg<'_>> + '_ {
+        self.matches().map(|m| {
+            // SAFETY: as in `has_wildcard`.
+            let p = unsafe { (*m).pattern };
+            // SAFETY: a pattern string of the live pathspec, which `self`
+            // borrows and nothing writes while it lives.
+            unsafe { CStrArg::from_ptr(p) }
+        })
     }
 
     /// `git_pathspec__match(&ps->pathspec, path, false, false, NULL, NULL)`.
-    fn match_path(&self, path: *const c_char) -> bool {
+    fn match_path(&self, path: CStrArg<'_>) -> bool {
         // SAFETY: a live vector of patterns; `path` is a string of a live
         // diff delta; the out-parameters are NULL, which C accepts.
         unsafe {
             ps::git_pathspec__match(
                 self.vector(),
-                path,
+                path.as_ptr(),
                 false,
                 false,
                 ptr::null_mut(),
@@ -356,7 +362,7 @@ impl Drop for TreeEntry {
 
 impl Tree {
     /// `git_tree_entry_bypath`; `None` on any failure.
-    fn entry_bypath(&self, path: *const c_char) -> Option<TreeEntry> {
+    fn entry_bypath(&self, path: CStrArg<'_>) -> Option<TreeEntry> {
         let mut out = ptr::null_mut();
         // SAFETY: a live tree; `out` writable; `path` a pattern string of a
         // live pathspec.
@@ -428,6 +434,11 @@ fn include_path_delta(
         let newp = unsafe { (*delta).new_file.path };
         // SAFETY: as above.
         let oldp = unsafe { (*delta).old_file.path };
+        // SAFETY: NULL or a path string of the delta, which lives, unwritten,
+        // as long as the diff (held to the end of the loop).
+        let newp = unsafe { CStrArg::from_ptr(newp) };
+        // SAFETY: as above.
+        let oldp = unsafe { CStrArg::from_ptr(oldp) };
         if (!newp.is_null() && spec.match_path(newp)) || (!oldp.is_null() && spec.match_path(oldp))
         {
             return true;

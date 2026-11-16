@@ -1018,6 +1018,7 @@ impl Process {
 /// by one thread at a time.
 pub mod ffi {
     use super::*;
+    use crate::util::cabi::Out;
     use crate::util::export::{barrier, cstr_bytes, status as to_status};
 
     /// The strings of a C array (`len` NUL-terminated strings, or NULL).
@@ -1257,17 +1258,15 @@ pub mod ffi {
     /// `result` is NULL or writable; `process` a live process.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_process_wait(
-        result: *mut GitProcessResult,
+        mut result: Out<'_, GitProcessResult>,
         process: *mut GitProcess,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: NULL or writable.
-            unsafe { crate::util::export::write_opt(result, GitProcessResult::default()) };
+            result.write(GitProcessResult::default());
             // SAFETY: the caller's contract.
             match unsafe { super::ffi::process(process) }.wait() {
                 Ok(r) => {
-                    // SAFETY: NULL or writable.
-                    unsafe { crate::util::export::write_opt(result, r) };
+                    result.write(r);
                     0
                 }
                 Err(e) => e.raw(),

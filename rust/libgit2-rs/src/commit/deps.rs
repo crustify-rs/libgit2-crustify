@@ -66,7 +66,7 @@ pub unsafe fn git_commit_free(commit: *mut GitCommit) {
 ///
 /// As the export's.
 pub unsafe fn git_commit_dup(out: *mut *mut GitCommit, source: *mut GitCommit) -> c_int {
-    // SAFETY: the caller's contract.
+    // SAFETY: forwarded (the caller's contract).
     unsafe { crate::object_api::ffi::git_commit_dup(out.cast(), source.cast()) }
 }
 
@@ -100,7 +100,7 @@ pub unsafe fn git_tree_free(tree: *mut GitTree) {
 ///
 /// As the export's.
 pub unsafe fn git_tree_dup(out: *mut *mut GitTree, source: *mut GitTree) -> c_int {
-    // SAFETY: the caller's contract.
+    // SAFETY: forwarded (the caller's contract).
     unsafe { crate::object_api::ffi::git_tree_dup(out.cast(), source.cast()) }
 }
 

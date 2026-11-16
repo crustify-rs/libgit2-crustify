@@ -1360,6 +1360,7 @@ pub fn is_url(s: &[u8]) -> bool {
 /// strings of a URL the call writes or frees.
 pub mod ffi {
     use super::*;
+    use crate::util::cabi::CStrArg;
     use crate::util::export::{barrier, cstr_bytes, status};
 
     /// The export prologue of the parsers: clear `url` (C's `memset`) and
@@ -1393,14 +1394,12 @@ pub mod ffi {
     /// Both are NUL-terminated strings.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_net_hostname_matches_cert(
-        hostname: *const c_char,
-        pattern: *const c_char,
+        hostname: CStrArg<'_>,
+        pattern: CStrArg<'_>,
     ) -> bool {
         barrier(|| {
-            // SAFETY: the caller passes NUL-terminated strings.
-            let h = unsafe { cstr_bytes(hostname) };
-            // SAFETY: as above.
-            let p = unsafe { cstr_bytes(pattern) };
+            let h = hostname.to_bytes();
+            let p = pattern.to_bytes();
             cert_match(h, p)
         })
     }
@@ -1411,9 +1410,8 @@ pub mod ffi {
     ///
     /// `str` is a NUL-terminated string.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_net_str_is_url(str: *const c_char) -> bool {
-        // SAFETY: the caller passes a NUL-terminated string.
-        barrier(|| str_is_url(unsafe { cstr_bytes(str) }))
+    pub unsafe extern "C" fn git_net_str_is_url(str: CStrArg<'_>) -> bool {
+        barrier(|| str_is_url(str.to_bytes()))
     }
 
     /// `git_net_url_dup`.
@@ -1510,11 +1508,10 @@ pub mod ffi {
     pub unsafe extern "C" fn git_net_url_joinpath(
         out: *mut GitNetUrl,
         one: *mut GitNetUrl,
-        path: *const c_char,
+        path: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: a NUL-terminated string that the call does not free.
-            let path = unsafe { cstr_bytes(path) };
+            let path = path.to_bytes();
             if core::ptr::eq(out, one) {
                 // SAFETY: an initialized URL in exclusive use.
                 let out = unsafe { &mut *out };
@@ -1541,7 +1538,7 @@ pub mod ffi {
         url: *mut GitNetUrl,
         redirect_location: *const c_char,
         allow_offsite: bool,
-        service_suffix: *const c_char,
+        service_suffix: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             git_assert!(!url.is_null(), "url", -1);
@@ -1553,8 +1550,7 @@ pub mod ffi {
             let suffix = if service_suffix.is_null() {
                 None
             } else {
-                // SAFETY: a non-null NUL-terminated string.
-                Some(unsafe { cstr_bytes(service_suffix) })
+                Some(service_suffix.to_bytes())
             };
             status(url.apply_redirect(loc, allow_offsite, suffix))
         })
@@ -1648,13 +1644,12 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_net_url_matches_pattern(
         url: *mut GitNetUrl,
-        pattern: *const c_char,
+        pattern: CStrArg<'_>,
     ) -> bool {
         barrier(|| {
             // SAFETY: the caller's contract.
             let url = unsafe { &*url };
-            // SAFETY: a NUL-terminated string.
-            let pattern = unsafe { cstr_bytes(pattern) };
+            let pattern = pattern.to_bytes();
             url.matches_pattern(pattern)
         })
     }
@@ -1668,14 +1663,12 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_net_url_matches_pattern_list(
         url: *mut GitNetUrl,
-        pattern_list: *const c_char,
+        pattern_list: CStrArg<'_>,
     ) -> bool {
         barrier(|| {
             // SAFETY: the caller's contract.
             let url = unsafe { &*url };
-            // SAFETY: NULL or a NUL-terminated string (NULL reads as empty,
-            // as C's loop condition).
-            let list = unsafe { cstr_bytes(pattern_list) };
+            let list = pattern_list.to_bytes();
             url.matches_list(list)
         })
     }

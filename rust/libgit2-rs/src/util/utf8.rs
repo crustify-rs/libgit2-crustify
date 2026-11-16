@@ -148,6 +148,7 @@ pub fn valid_buf_length(s: &[u8]) -> usize {
 
 /// The exports of `utf8.c`.
 pub mod ffi {
+    use crate::util::cabi::Out;
     use core::ffi::{c_char, c_int};
 
     use super::*;
@@ -164,7 +165,7 @@ pub mod ffi {
     /// NUL-terminated string suffices).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_utf8_iterate(
-        out: *mut u32,
+        mut out: Out<'_, u32>,
         str: *const c_char,
         str_len: usize,
     ) -> c_int {
@@ -193,8 +194,7 @@ pub mod ffi {
             &buf[..n]
         };
         let (uc, len) = iterate(s).map_or((0, -1), |(uc, len)| (uc, len as c_int));
-        // SAFETY: writable.
-        unsafe { out.write(uc) };
+        out.write(uc);
         len
     }
 
@@ -228,6 +228,7 @@ pub mod ffi {
 #[allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)]
 mod tests {
     use super::*;
+    use crate::util::cabi::Out;
 
     #[test]
     fn c_cases() {
@@ -262,11 +263,20 @@ mod tests {
         let mut out = 7u32;
         // SAFETY: NUL-terminated strings.
         unsafe {
-            assert_eq!(ffi::git_utf8_iterate(&mut out, c"\xc2\xa2".as_ptr(), 0), 2);
+            assert_eq!(
+                ffi::git_utf8_iterate(Out::from(&mut out), c"\xc2\xa2".as_ptr(), 0),
+                2
+            );
             assert_eq!(out, 0xa2);
-            assert_eq!(ffi::git_utf8_iterate(&mut out, c"\xe2\x82".as_ptr(), 0), -1);
+            assert_eq!(
+                ffi::git_utf8_iterate(Out::from(&mut out), c"\xe2\x82".as_ptr(), 0),
+                -1
+            );
             assert_eq!(out, 0);
-            assert_eq!(ffi::git_utf8_iterate(&mut out, c"".as_ptr(), 0), 1);
+            assert_eq!(
+                ffi::git_utf8_iterate(Out::from(&mut out), c"".as_ptr(), 0),
+                1
+            );
         }
     }
 }

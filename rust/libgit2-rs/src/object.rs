@@ -35,6 +35,7 @@
 //! zero. The safe [`Object`] holds one reference and borrows its
 //! repository.
 
+use crate::util::cabi::Out;
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::marker::PhantomData;
 use core::mem::size_of;
@@ -789,9 +790,8 @@ pub unsafe fn lookup_bypath(
     let tree = Held(unsafe { peel(treeish, GIT_OBJECT_TREE)? });
     let mut entry = Entry(ptr::null_mut());
     // SAFETY: a live tree, a NUL-terminated path, a writable out.
-    let r = unsafe {
-        p::git_tree_entry_bypath(&raw mut entry.0, tree.0.as_ptr().cast(), path.as_ptr())
-    };
+    let r =
+        unsafe { p::git_tree_entry_bypath(&raw mut entry.0, tree.0.as_ptr().cast(), path.into()) };
     ErrorCode::check(r)?;
     // SAFETY: a live entry.
     if t != GIT_OBJECT_ANY && unsafe { p::git_tree_entry_type(entry.0) } != t {
@@ -847,7 +847,7 @@ pub unsafe fn short_id(out: &mut GitStr, obj: NonNull<GitObject>) -> Result<()> 
             dst[l / 2] &= 0xf0;
         }
         // SAFETY: a live odb, a valid id.
-        error = unsafe { p::git_odb_exists_prefix(ptr::null_mut(), odb, &raw const id, l) };
+        error = unsafe { p::git_odb_exists_prefix(Out::null(), odb, &raw const id, l) };
         if error != ErrorCode::AMBIGUOUS.raw() {
             break;
         }
@@ -1745,6 +1745,8 @@ impl ObjectIdOptions {
 pub mod ffi {
     use super::*;
     use crate::buf::GitBuf;
+    use crate::git_arg;
+    use crate::util::cabi::{CStrArg, Out};
     use crate::util::export::{barrier, bytes, cstr, status};
 
     /// Write an object result to C's out-parameter.
@@ -2032,7 +2034,7 @@ pub mod ffi {
     /// either).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_object_dup(
-        dest: *mut *mut GitObject,
+        mut dest: Out<'_, *mut GitObject>,
         source: *mut GitObject,
     ) -> c_int {
         barrier(|| {
@@ -2041,8 +2043,7 @@ pub mod ffi {
             let nn = unsafe { NonNull::new_unchecked(source) };
             // SAFETY: a live object.
             unsafe { add_ref(nn) };
-            // SAFETY: writable.
-            unsafe { dest.write(source) };
+            dest.write(source);
             0
         })
     }
@@ -2057,17 +2058,15 @@ pub mod ffi {
     pub unsafe extern "C" fn git_object_lookup_bypath(
         out: *mut *mut GitObject,
         treeish: *const GitObject,
-        path: *const c_char,
+        path: CStrArg<'_>,
         object_type: git_object_t,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!out.is_null(), "out", -1);
             git_assert_arg!(!treeish.is_null(), "treeish", -1);
-            git_assert_arg!(!path.is_null(), "path", -1);
+            let path = git_arg!(path.get(), "path", -1);
             // SAFETY: non-null (checked above).
             let t = unsafe { NonNull::new_unchecked(treeish.cast_mut()) };
-            // SAFETY: NUL-terminated (the caller's contract).
-            let path = unsafe { CStr::from_ptr(path) };
             // SAFETY: a live object; `out` writable.
             match unsafe { lookup_bypath(t, path, object_type) } {
                 Ok(r) => {
@@ -2185,14 +2184,12 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_object_id_from_symlink(
         id: *mut Oid,
-        path: *const c_char,
+        path: CStrArg<'_>,
         opts: *const GitObjectIdOptions,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!id.is_null(), "id", -1);
-            git_assert_arg!(!path.is_null(), "path", -1);
-            // SAFETY: NUL-terminated.
-            let path = unsafe { CStr::from_ptr(path) };
+            let path = git_arg!(path.get(), "path", -1);
             // SAFETY: the caller's contract.
             write_id(id, unsafe { id_from_symlink_c(path, opts) })
         })
@@ -2206,14 +2203,12 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_object_id_from_file(
         id: *mut Oid,
-        path: *const c_char,
+        path: CStrArg<'_>,
         opts: *const GitObjectIdOptions,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!id.is_null(), "id", -1);
-            git_assert_arg!(!path.is_null(), "path", -1);
-            // SAFETY: NUL-terminated.
-            let path = unsafe { CStr::from_ptr(path) };
+            let path = git_arg!(path.get(), "path", -1);
             // SAFETY: the caller's contract.
             write_id(id, unsafe { id_from_file_c(path, opts) })
         })
@@ -2304,7 +2299,7 @@ pub mod ffi {
     /// NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_object__parse_oid_header(
-        oid: *mut Oid,
+        mut oid: Out<'_, Oid>,
         buffer_out: *mut *const c_char,
         buffer_end: *const c_char,
         header: *const c_char,
@@ -2330,8 +2325,7 @@ pub mod ffi {
             };
             match parse_oid_header(buf, header, t) {
                 Ok((id, n)) => {
-                    // SAFETY: writable.
-                    unsafe { oid.write(id) };
+                    oid.write(id);
                     // SAFETY: writable; within the range.
                     unsafe { buffer_out.write(start.wrapping_add(n)) };
                     0

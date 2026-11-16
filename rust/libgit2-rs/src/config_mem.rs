@@ -303,6 +303,7 @@ pub fn backend_from_values(
 /// The exports of `config_mem.c`.
 pub mod ffi {
     use super::*;
+    use crate::util::cabi::Out;
     use crate::util::export::barrier;
     use crate::{git_assert_arg, git_error_set};
 
@@ -366,7 +367,7 @@ pub mod ffi {
     /// `options` requires.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_backend_from_string(
-        out: *mut *mut git_config_backend,
+        mut out: Out<'_, *mut git_config_backend>,
         cfg: *const c_char,
         len: usize,
         opts: *mut git_config_backend_memory_options,
@@ -377,11 +378,10 @@ pub mod ffi {
             // SAFETY: `opts` is NULL or valid (the contract).
             let (t, o) = unsafe { options(opts) };
             match backend_from_string(text, t, o) {
-                // SAFETY: `out` is writable.
-                Ok(b) => unsafe {
+                Ok(b) => {
                     out.write(b.into_c().cast());
                     0
-                },
+                }
                 Err(e) => e.raw(),
             }
         })
@@ -395,7 +395,7 @@ pub mod ffi {
     /// strings; `opts` as `options` requires.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_backend_from_values(
-        out: *mut *mut git_config_backend,
+        mut out: Out<'_, *mut git_config_backend>,
         values: *const *const c_char,
         len: usize,
         opts: *mut git_config_backend_memory_options,
@@ -412,11 +412,10 @@ pub mod ffi {
             // SAFETY: per the contract.
             let (t, o) = unsafe { options(opts) };
             match backend_from_values(&v, t, o) {
-                // SAFETY: `out` is writable.
-                Ok(b) => unsafe {
+                Ok(b) => {
                     out.write(b.into_c().cast());
                     0
-                },
+                }
                 Err(e) => e.raw(),
             }
         })

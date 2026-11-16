@@ -2271,6 +2271,7 @@ impl core::fmt::Debug for Pack {
 /// The exports of `pack.c`.
 pub mod ffi {
     use super::*;
+    use crate::util::cabi::Out;
     use crate::util::export::{barrier, status};
 
     /// `git_pack__lookup_id`.
@@ -2322,7 +2323,7 @@ pub mod ffi {
     /// size).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_packfile__object_header(
-        out: *mut usize,
+        mut out: Out<'_, usize>,
         hdr: *mut u8,
         size: usize,
         type_: c_int,
@@ -2333,8 +2334,7 @@ pub mod ffi {
                 Ok(n) => {
                     // SAFETY: `hdr` has room for `n` bytes (the caller).
                     unsafe { ptr::copy_nonoverlapping(buf.as_ptr(), hdr, n) };
-                    // SAFETY: writable (the caller).
-                    unsafe { out.write(n) };
+                    out.write(n);
                     0
                 }
                 Err(e) => e.raw(),
@@ -2349,7 +2349,7 @@ pub mod ffi {
     /// `out` is writable; `path` is NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_packfile__name(
-        out: *mut *mut c_char,
+        mut out: Out<'_, *mut c_char>,
         path: *const c_char,
     ) -> c_int {
         barrier(|| {
@@ -2357,8 +2357,7 @@ pub mod ffi {
             let path = unsafe { CStr::from_ptr(path) };
             match packfile_name(path.to_bytes()) {
                 Ok(s) => {
-                    // SAFETY: writable (the caller); C frees it.
-                    unsafe { out.write(s.into_raw()) };
+                    out.write(s.into_raw());
                     0
                 }
                 Err(e) => e.raw(),
@@ -2373,13 +2372,12 @@ pub mod ffi {
     /// `pack_out` is writable; `path` is NULL or NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_packfile_alloc(
-        pack_out: *mut *mut GitPackFile,
+        mut pack_out: Out<'_, *mut GitPackFile>,
         path: *const c_char,
         oid_type: git_oid_t,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: writable (the caller).
-            unsafe { pack_out.write(ptr::null_mut()) };
+            pack_out.write(ptr::null_mut());
             let path = if path.is_null() {
                 &[][..]
             } else {
@@ -2388,8 +2386,7 @@ pub mod ffi {
             };
             match packfile_alloc(path, oid_type) {
                 Ok(p) => {
-                    // SAFETY: as above.
-                    unsafe { pack_out.write(p) };
+                    pack_out.write(p);
                     0
                 }
                 Err(e) => e.raw(),
@@ -2416,8 +2413,8 @@ pub mod ffi {
     /// `w_curs` is a valid cursor.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_packfile_unpack_header(
-        size_p: *mut usize,
-        type_p: *mut c_int,
+        mut size_p: Out<'_, usize>,
+        mut type_p: Out<'_, c_int>,
         p: *mut GitPackFile,
         w_curs: *mut *mut GitMwindow,
         curpos: *mut i64,
@@ -2431,10 +2428,8 @@ pub mod ffi {
             let curpos = unsafe { &mut *curpos };
             match p.unpack_header(cursor, curpos) {
                 Ok((size, kind)) => {
-                    // SAFETY: writable (the caller).
-                    unsafe { size_p.write(size) };
-                    // SAFETY: writable (the caller).
-                    unsafe { type_p.write(kind) };
+                    size_p.write(size);
+                    type_p.write(kind);
                     0
                 }
                 Err(e) => e.raw(),
@@ -2449,8 +2444,8 @@ pub mod ffi {
     /// `size_p` and `type_p` are writable; `p` is a live pack.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_packfile_resolve_header(
-        size_p: *mut usize,
-        type_p: *mut c_int,
+        mut size_p: Out<'_, usize>,
+        mut type_p: Out<'_, c_int>,
         p: *mut GitPackFile,
         offset: i64,
     ) -> c_int {
@@ -2458,10 +2453,8 @@ pub mod ffi {
             // SAFETY: a live pack (the caller).
             match unsafe { &*p }.resolve_header(offset) {
                 Ok((size, kind)) => {
-                    // SAFETY: writable (the caller).
-                    unsafe { size_p.write(size) };
-                    // SAFETY: writable (the caller).
-                    unsafe { type_p.write(kind) };
+                    size_p.write(size);
+                    type_p.write(kind);
                     0
                 }
                 Err(e) => e.raw(),

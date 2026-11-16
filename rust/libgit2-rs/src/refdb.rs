@@ -915,7 +915,8 @@ pub unsafe fn iterator_free(iter: *mut git_reference_iterator) {
 /// backend is live; libgit2's threading rules hold for it.
 pub mod ffi {
     use super::*;
-    use crate::util::export::{barrier, cstr, status};
+    use crate::util::cabi::{CStrArg, Out};
+    use crate::util::export::{barrier, status};
 
     /// The database behind `db`, checked as `GIT_ASSERT_ARG(db)`.
     ///
@@ -1039,7 +1040,7 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_refdb_init(
         db: *mut GitRefdb,
-        head_target: *const c_char,
+        head_target: CStrArg<'_>,
         mode: libc::mode_t,
         flags: u32,
     ) -> c_int {
@@ -1048,8 +1049,7 @@ pub mod ffi {
             // SAFETY: per the contract.
             let d = unsafe { RefdbPtr::from_raw(db) };
             crate::git_assert_arg!(!d.backend().is_null(), "refdb->backend", -1);
-            // SAFETY: per the contract.
-            status(d.init(unsafe { cstr(head_target) }, mode, flags))
+            status(d.init(head_target.get(), mode, flags))
         })
     }
 
@@ -1155,11 +1155,11 @@ pub mod ffi {
     pub unsafe extern "C" fn git_refdb_iterator(
         out: *mut *mut git_reference_iterator,
         db: *mut GitRefdb,
-        glob: *const c_char,
+        glob: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             // SAFETY: per the contract (C dereferences a NULL `db`).
-            let r = unsafe { dbp(db) }.and_then(|d| d.iterator(unsafe { cstr(glob) }));
+            let r = unsafe { dbp(db) }.and_then(|d| d.iterator(glob.get()));
             match r {
                 Ok(it) => {
                     // SAFETY: `out` writable.
@@ -1468,7 +1468,7 @@ pub mod ffi {
     /// `backend` is writable for a whole `git_refdb_backend`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_refdb_init_backend(
-        backend: *mut git_refdb_backend,
+        mut backend: Out<'_, git_refdb_backend>,
         version: c_uint,
     ) -> c_int {
         barrier(|| {
@@ -1484,8 +1484,7 @@ pub mod ffi {
                 version: GIT_REFDB_BACKEND_VERSION,
                 ..Default::default()
             };
-            // SAFETY: `backend` writable (the contract).
-            unsafe { backend.write(tmpl) };
+            backend.write(tmpl);
             0
         })
     }

@@ -13,6 +13,7 @@
 //! `workdir`, `commondir` or `get_namespace` is still in use. Out-pointers
 //! are writable; strings are NUL-terminated.
 
+use crate::util::cabi::CStrArg;
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::ptr::{self, NonNull};
 
@@ -229,11 +230,10 @@ pub unsafe extern "C" fn git_repository_new(out: *mut *mut GitRepository) -> c_i
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_open_bare(
     repo_ptr: *mut *mut GitRepository,
-    bare_path: *const c_char,
+    bare_path: CStrArg<'_>,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: NULL or a string.
-        let Some(p) = (unsafe { cstr(bare_path) }) else {
+        let Some(p) = bare_path.get() else {
             return errors::assert_arg_failed("path").raw();
         };
         match open::open_bare(p) {
@@ -255,17 +255,15 @@ pub unsafe extern "C" fn git_repository_open_bare(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_open_ext(
     repo_ptr: *mut *mut GitRepository,
-    start_path: *const c_char,
+    start_path: CStrArg<'_>,
     flags: c_uint,
-    ceiling_dirs: *const c_char,
+    ceiling_dirs: CStrArg<'_>,
 ) -> c_int {
     barrier(|| {
         // SAFETY: NULL or writable.
         unsafe { put(repo_ptr, ptr::null_mut()) };
-        // SAFETY: NULL or strings.
-        let s = unsafe { cstr(start_path) };
-        // SAFETY: as above.
-        let c = unsafe { cstr(ceiling_dirs) };
+        let s = start_path.get();
+        let c = ceiling_dirs.get();
         match open::open_ext(s, flags, c, !repo_ptr.is_null()) {
             Ok(r) => {
                 if let Some(r) = r {
@@ -287,10 +285,10 @@ pub unsafe extern "C" fn git_repository_open_ext(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_open(
     repo_out: *mut *mut GitRepository,
-    path: *const c_char,
+    path: CStrArg<'_>,
 ) -> c_int {
     // SAFETY: forwarded.
-    unsafe { git_repository_open_ext(repo_out, path, GIT_REPOSITORY_OPEN_NO_SEARCH, ptr::null()) }
+    unsafe { git_repository_open_ext(repo_out, path, GIT_REPOSITORY_OPEN_NO_SEARCH, CStrArg::NULL) }
 }
 
 /// `git_repository_open_from_worktree`.
@@ -362,13 +360,12 @@ pub unsafe extern "C" fn git_repository_discover(
     out: *mut GitBuf,
     start_path: *const c_char,
     across_fs: c_int,
-    ceiling_dirs: *const c_char,
+    ceiling_dirs: CStrArg<'_>,
 ) -> c_int {
     barrier(|| {
         // SAFETY: NULL or strings.
         let s = unsafe { cstr(start_path) };
-        // SAFETY: as above.
-        let c = unsafe { cstr(ceiling_dirs) };
+        let c = ceiling_dirs.get();
         let Some(s) = s else {
             return errors::assert_arg_failed("start_path").raw();
         };
@@ -827,16 +824,14 @@ pub unsafe extern "C" fn git_repository_shallow_grafts__weakptr(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_set_namespace(
     repo_: *mut GitRepository,
-    namespace: *const c_char,
+    namespace: CStrArg<'_>,
 ) -> c_int {
     barrier(|| {
         // SAFETY: the module's contract.
         let Some(r) = (unsafe { repo(repo_) }) else {
             return errors::assert_arg_failed("repo").raw();
         };
-        // SAFETY: NULL or a string (which may be the current namespace:
-        // copied before the old one is freed).
-        let n = unsafe { cstr(namespace) };
+        let n = namespace.get();
         let v = match n {
             None => None,
             Some(n) => match alloc_cstr(n.to_bytes()) {
@@ -1418,12 +1413,11 @@ string_getter!(
 pub unsafe extern "C" fn git_repository_workdir_path(
     out: *mut GitStr,
     repo_: *mut GitRepository,
-    path: *const c_char,
+    path: CStrArg<'_>,
 ) -> c_int {
     barrier(|| {
         git_assert_arg!(!out.is_null(), "out", -1);
-        // SAFETY: `path` is NULL or a string.
-        let p = unsafe { crate::util::export::cstr_bytes(path) };
+        let p = path.to_bytes();
         // `path` may point into `out`'s buffer: then it is copied first.
         // SAFETY: a valid `git_str`; only its fields are read.
         let o_ref = unsafe { &*out };
@@ -1623,7 +1617,7 @@ pub unsafe extern "C" fn git_repository_hashfile(
     repo_: *mut GitRepository,
     path: *const c_char,
     object_type: c_int,
-    as_path: *const c_char,
+    as_path: CStrArg<'_>,
 ) -> c_int {
     barrier(|| {
         // SAFETY: the module's contract.
@@ -1635,8 +1629,7 @@ pub unsafe extern "C" fn git_repository_hashfile(
         git_assert_arg!(!out.is_null(), "out", -1);
         // SAFETY: NULL or strings.
         let p = unsafe { cstr(path) };
-        // SAFETY: as above.
-        let a = unsafe { cstr(as_path) };
+        let a = as_path.get();
         let Some(p) = p else {
             return errors::assert_arg_failed("path").raw();
         };
@@ -1871,15 +1864,13 @@ pub unsafe extern "C" fn git_repository_ident(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_set_ident(
     repo_: *mut GitRepository,
-    name: *const c_char,
-    email: *const c_char,
+    name: CStrArg<'_>,
+    email: CStrArg<'_>,
 ) -> c_int {
     barrier(|| {
         with_repo!(repo_, "repo", |r| {
-            // SAFETY: NULL or strings (copied before the old ones go).
-            let n = unsafe { cstr(name) }.map(CStr::to_owned);
-            // SAFETY: as above.
-            let e = unsafe { cstr(email) }.map(CStr::to_owned);
+            let n = name.get().map(CStr::to_owned);
+            let e = email.get().map(CStr::to_owned);
             status(r.set_ident(n.as_deref(), e.as_deref()))
         })
     })

@@ -361,11 +361,13 @@ impl GitPool {
 
 /// The exports of `pool.c`.
 pub mod ffi {
+    use crate::git_arg;
+    use crate::util::cabi::CStrArg;
     use core::ffi::{c_char, c_int, c_void};
     use core::ptr;
 
     use super::*;
-    use crate::util::export::{barrier, cstr_bytes, status};
+    use crate::util::export::{barrier, status};
 
     /// `git_pool_global_init`.
     ///
@@ -499,13 +501,10 @@ pub mod ffi {
     ///
     /// `pool` as [`git_pool_strndup`]; `str` NULL or a NUL-terminated string.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_pool_strdup(
-        pool: *mut GitPool,
-        str: *const c_char,
-    ) -> *mut c_char {
+    pub unsafe extern "C" fn git_pool_strdup(pool: *mut GitPool, str: CStrArg<'_>) -> *mut c_char {
         barrier(|| {
             git_assert_arg!(!pool.is_null(), "pool", ptr::null_mut());
-            git_assert_arg!(!str.is_null(), "str", ptr::null_mut());
+            let str = git_arg!(str.get(), "str", ptr::null_mut());
             // SAFETY: a valid pool.
             let pool = unsafe { &mut *pool };
             git_assert_arg!(
@@ -513,8 +512,7 @@ pub mod ffi {
                 "pool->item_size == sizeof(char)",
                 ptr::null_mut()
             );
-            // SAFETY: a NUL-terminated string.
-            let s = unsafe { cstr_bytes(str) };
+            let s = str.to_bytes();
             pool.strndup_bytes(s)
                 .map_or(ptr::null_mut(), NonNull::as_ptr)
         })
@@ -528,7 +526,7 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_pool_strdup_safe(
         pool: *mut GitPool,
-        str: *const c_char,
+        str: CStrArg<'_>,
     ) -> *mut c_char {
         if str.is_null() {
             return ptr::null_mut();
@@ -545,8 +543,8 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_pool_strcat(
         pool: *mut GitPool,
-        a: *const c_char,
-        b: *const c_char,
+        a: CStrArg<'_>,
+        b: CStrArg<'_>,
     ) -> *mut c_char {
         barrier(|| {
             git_assert_arg!(!pool.is_null(), "pool", ptr::null_mut());
@@ -557,10 +555,8 @@ pub mod ffi {
                 "pool->item_size == sizeof(char)",
                 ptr::null_mut()
             );
-            // SAFETY: NULL or a NUL-terminated string.
-            let a = unsafe { cstr_bytes(a) };
-            // SAFETY: as above.
-            let b = unsafe { cstr_bytes(b) };
+            let a = a.to_bytes();
+            let b = b.to_bytes();
             pool.strcat(a, b).map_or(ptr::null_mut(), NonNull::as_ptr)
         })
     }

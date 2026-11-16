@@ -292,6 +292,7 @@ impl Grafts {
 /// The exports of `grafts.c`.
 pub mod ffi {
     use super::*;
+    use crate::util::cabi::Out;
     use crate::util::export::{barrier, bytes, status};
 
     /// `git_grafts_new`.
@@ -540,7 +541,7 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_grafts_oids(
         out: *mut *mut Oid,
-        out_len: *mut usize,
+        mut out_len: Out<'_, usize>,
         grafts: *mut Grafts,
     ) -> c_int {
         barrier(|| {
@@ -553,8 +554,7 @@ pub mod ffi {
                     unsafe {
                         out.write(p);
                     }
-                    // SAFETY: writable.
-                    unsafe { out_len.write(n) };
+                    out_len.write(n);
                     0
                 }
                 Err(e) => e.raw(),

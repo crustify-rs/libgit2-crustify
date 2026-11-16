@@ -71,6 +71,7 @@ pub fn encode(buf: Option<&mut [u8]>, mut value: u64) -> c_int {
 
 /// The exports of `varint.c`.
 pub mod ffi {
+    use crate::util::cabi::Out;
     use core::ffi::{c_int, c_uchar};
 
     use super::*;
@@ -85,14 +86,13 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_decode_varint(
         bufp: *const c_uchar,
-        varint_len: *mut usize,
+        mut varint_len: Out<'_, usize>,
     ) -> u64 {
         // SAFETY: `decode_with` reads in order and stops where C does: the
         // caller guarantees those bytes.
         let r = decode_with(|i| Some(unsafe { bufp.wrapping_add(i).read() }));
         let (val, len) = r.unwrap_or((0, 0));
-        // SAFETY: writable.
-        unsafe { varint_len.write(len) };
+        varint_len.write(len);
         val
     }
 
@@ -125,6 +125,7 @@ pub mod ffi {
 #[allow(clippy::borrow_as_ptr)]
 mod tests {
     use super::*;
+    use crate::util::cabi::Out;
 
     #[test]
     fn round_trip() {
@@ -161,7 +162,7 @@ mod tests {
         assert_eq!(decode(&[0xff; 12]), Some((0, 0)));
         let mut len = 9;
         // SAFETY: the varint overflows within the array.
-        let v = unsafe { ffi::git_decode_varint([0xffu8; 12].as_ptr(), &mut len) };
+        let v = unsafe { ffi::git_decode_varint([0xffu8; 12].as_ptr(), Out::from(&mut len)) };
         assert_eq!((v, len), (0, 0));
     }
 }
