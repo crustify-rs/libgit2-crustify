@@ -4,23 +4,150 @@
 #![cfg(feature = "link-c")]
 #![allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)]
 
-use core::ffi::{CStr, c_char, c_int, c_void};
+use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::ptr::{null, null_mut};
 
 use libgit2_rs::__test::oid::Oid;
-use libgit2_rs::__test::refdb::ffi::*;
 use libgit2_rs::__test::refdb::{GitRefdb, git_refdb_backend, git_reference_iterator};
-use libgit2_rs::__test::refdb_fs::ffi::*;
-use libgit2_rs::__test::reflog::GitReflog;
-use libgit2_rs::__test::reflog::ffi::*;
+use libgit2_rs::__test::reflog::{GitReflog, GitReflogEntry};
 use libgit2_rs::__test::refs::GitReference;
-use libgit2_rs::__test::refs::ffi::*;
+use libgit2_rs::__test::refs::ffi::ForeachNameCb;
 use libgit2_rs::__test::repository::GitRepository as git_repository;
-use libgit2_rs::__test::repository::ffi::{git_repository_free, git_repository_open};
-use libgit2_rs::__test::util::errors;
+use libgit2_rs::__test::signature::GitSignature;
 use libgit2_rs::__test::util::str::GitStr;
-use libgit2_rs::__test::util::test_support;
+use libgit2_rs::__test::util::{errors, test_support};
 use libgit2_rs::OidType;
+
+// The C ABI under test, declared as C declares it (the signatures are the
+// `src` exports').
+// The handles are Rust types C sees as opaque: it only passes pointers to them.
+#[allow(improper_ctypes)]
+unsafe extern "C" {
+    fn git_refdb_backend_fs(out: *mut *mut git_refdb_backend, repo: *mut git_repository) -> c_int;
+    fn git_refdb_compress(db: *mut GitRefdb) -> c_int;
+    fn git_refdb_exists(exists: *mut c_int, db: *mut GitRefdb, ref_name: *const c_char) -> c_int;
+    fn git_refdb_free(db: *mut GitRefdb);
+    fn git_refdb_has_log(db: *mut GitRefdb, refname: *const c_char) -> c_int;
+    fn git_refdb_init_backend(backend: *mut git_refdb_backend, version: c_uint) -> c_int;
+    fn git_refdb_iterator(
+        out: *mut *mut git_reference_iterator,
+        db: *mut GitRefdb,
+        glob: *const c_char,
+    ) -> c_int;
+    fn git_refdb_iterator_free(iter: *mut git_reference_iterator);
+    fn git_refdb_iterator_next_name(
+        out: *mut *const c_char,
+        iter: *mut git_reference_iterator,
+    ) -> c_int;
+    fn git_refdb_lock(
+        payload: *mut *mut c_void,
+        db: *mut GitRefdb,
+        refname: *const c_char,
+    ) -> c_int;
+    fn git_refdb_lookup(
+        out: *mut *mut GitReference,
+        db: *mut GitRefdb,
+        ref_name: *const c_char,
+    ) -> c_int;
+    fn git_refdb_open(out: *mut *mut GitRefdb, repo: *mut git_repository) -> c_int;
+    fn git_refdb_resolve(
+        out: *mut *mut GitReference,
+        db: *mut GitRefdb,
+        ref_name: *const c_char,
+        max_nesting: c_int,
+    ) -> c_int;
+    fn git_refdb_set_backend(db: *mut GitRefdb, backend: *mut git_refdb_backend) -> c_int;
+    fn git_refdb_unlock(
+        db: *mut GitRefdb,
+        payload: *mut c_void,
+        success: c_int,
+        update_reflog: c_int,
+        r: *const GitReference,
+        sig: *const GitSignature,
+        message: *const c_char,
+    ) -> c_int;
+    fn git_reference__alloc(
+        name: *const c_char,
+        oid: *const Oid,
+        peel: *const Oid,
+    ) -> *mut GitReference;
+    fn git_reference__alloc_symbolic(
+        name: *const c_char,
+        target: *const c_char,
+    ) -> *mut GitReference;
+    fn git_reference__cmp_cb(a: *const c_void, b: *const c_void) -> c_int;
+    fn git_reference__is_per_worktree_ref(ref_name: *const c_char) -> c_int;
+    fn git_reference__is_pseudoref(ref_name: *const c_char) -> c_int;
+    fn git_reference__lookup_loose(
+        out: *mut *mut GitReference,
+        ref_dir: *const c_char,
+        ref_name: *const c_char,
+        oid_type: c_int,
+    ) -> c_int;
+    fn git_reference__name_is_valid(
+        valid: *mut c_int,
+        refname: *const c_char,
+        flags: c_uint,
+    ) -> c_int;
+    fn git_reference__normalize_name(buf: *mut GitStr, name: *const c_char, flags: c_uint)
+    -> c_int;
+    fn git_reference__realloc(
+        ptr_to_ref: *mut *mut GitReference,
+        name: *const c_char,
+    ) -> *mut GitReference;
+    fn git_reference__shorthand(name: *const c_char) -> *const c_char;
+    fn git_reference_cmp(ref1: *const GitReference, ref2: *const GitReference) -> c_int;
+    fn git_reference_dup(dest: *mut *mut GitReference, source: *mut GitReference) -> c_int;
+    fn git_reference_foreach_name(
+        repo: *mut git_repository,
+        callback: ForeachNameCb,
+        payload: *mut c_void,
+    ) -> c_int;
+    fn git_reference_free(reference: *mut GitReference);
+    fn git_reference_is_branch(r: *const GitReference) -> c_int;
+    fn git_reference_is_tag(r: *const GitReference) -> c_int;
+    fn git_reference_name(r: *const GitReference) -> *const c_char;
+    fn git_reference_name_is_valid(valid: *mut c_int, refname: *const c_char) -> c_int;
+    fn git_reference_normalize_name(
+        buffer_out: *mut c_char,
+        buffer_size: usize,
+        name: *const c_char,
+        flags: c_uint,
+    ) -> c_int;
+    fn git_reference_shorthand(r: *const GitReference) -> *const c_char;
+    fn git_reference_symbolic_target(r: *const GitReference) -> *const c_char;
+    fn git_reference_target(r: *const GitReference) -> *const Oid;
+    fn git_reference_target_peel(r: *const GitReference) -> *const Oid;
+    fn git_reference_type(r: *const GitReference) -> c_int;
+    fn git_reflog_append(
+        reflog: *mut GitReflog,
+        new_oid: *const Oid,
+        committer: *const GitSignature,
+        msg: *const c_char,
+    ) -> c_int;
+    fn git_reflog_delete(repo: *mut git_repository, name: *const c_char) -> c_int;
+    fn git_reflog_drop(reflog: *mut GitReflog, idx: usize, rewrite_previous_entry: c_int) -> c_int;
+    fn git_reflog_entry_byindex(reflog: *const GitReflog, idx: usize) -> *const GitReflogEntry;
+    fn git_reflog_entry_committer(entry: *const GitReflogEntry) -> *const GitSignature;
+    fn git_reflog_entry_id_new(entry: *const GitReflogEntry) -> *const Oid;
+    fn git_reflog_entry_id_old(entry: *const GitReflogEntry) -> *const Oid;
+    fn git_reflog_entry_message(entry: *const GitReflogEntry) -> *const c_char;
+    fn git_reflog_entrycount(reflog: *mut GitReflog) -> usize;
+    fn git_reflog_free(reflog: *mut GitReflog);
+    fn git_reflog_read(
+        reflog: *mut *mut GitReflog,
+        repo: *mut git_repository,
+        name: *const c_char,
+    ) -> c_int;
+    fn git_reflog_rename(
+        repo: *mut git_repository,
+        old_name: *const c_char,
+        new_name: *const c_char,
+    ) -> c_int;
+    fn git_reflog_write(reflog: *mut GitReflog) -> c_int;
+    fn git_repository_free(repo: *mut git_repository);
+    fn git_repository_open(repo_out: *mut *mut git_repository, path: *const c_char) -> c_int;
+}
 
 fn last() -> String {
     String::from_utf8(errors::last_message().unwrap_or_default()).unwrap()
