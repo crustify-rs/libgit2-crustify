@@ -11,8 +11,9 @@ passes (with `-Zmiri-strict-provenance`); `cargo clippy --all-targets`
 
 ## Status (latest first)
 
-- **`ff2db8c`** (2026-11-16, after master = `572eede`): I-6 and I-2 done
-  (section 10); fully green. Earlier:
+- **`4d3032b`** (2026-11-16): C fallback fixed (section 11), `wp/u3-fix`
+  merged (section 12); fully green, including the `USE_RUST=OFF` build.
+- **`ff2db8c`**: I-6 and I-2 done (section 10); fully green. Earlier:
 - **`1172dfc`/`dec005c`** (2026-11-16): merged on `integ`: l-repo, l-odb, l-config,
   l-index, l-pack, l-commit, l-revwalk, l-refs, each with its review fixes
   as of the coordinator's messages (l-config `de91683`, l-index `6aacd37`,
@@ -417,3 +418,15 @@ Results: the C fallback build passes all 436 offline suites (as
 `/work/build-c`); the Rust build 436/436; `cargo test --features link-c`
 (including the layout tests over the headers) passes. No Rust source
 changed, so `ff2db8c`'s Miri run still applies.
+
+Green: `f81bc32` (both builds' clar 436/436, `include/` unchanged, cargo
+test link-c, clippy, fmt; Miri as `ff2db8c`, no Rust change).
+
+## 12. `wp/u3-fix` (merge `4d3032b`)
+
+`git_fs_path_str_is_valid_ext` hands the C validators pointers into the
+caller's path or a NUL-terminated copy of the last component (an over-read
+TSan found in `win32::forbidden`). Clean merge (fs_path only).
+
+Green: `4d3032b` (Rust and C-fallback clar 436/436, `include/` unchanged,
+cargo test link-c, Miri, clippy both configurations, fmt).
