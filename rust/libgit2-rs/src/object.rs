@@ -720,7 +720,9 @@ pub unsafe fn lookup_prefix(
                 odb_obj = cached.cast::<git_odb_object>();
                 0
             } else {
-                // (C leaks the reference here.)
+                // (C leaks the reference here: rust/DEFECTS.md.)
+                // SAFETY: the reference the cache gave.
+                unsafe { p::git_cached_obj_decref(cached.cast()) };
                 return Err(errors::assert_failed(
                     "!\"Wrong caching type in the global object cache\"",
                 ));
@@ -2386,5 +2388,57 @@ mod tests {
         let long = vec![b'x'; 1000];
         printf_bytes(&mut s, 3, &long).unwrap();
         assert_eq!(s.len(), 1004);
+    }
+
+    /// `git_object__from_raw` of a tag and a blob, read through the
+    /// exports and freed with the table's free (no C involved).
+    #[test]
+    fn raw_objects_without_c() {
+        let _g = test_support::init();
+        let text = b"object e90810b8df3e80c413d903f631643c716887138d\ntype blob\ntag t\n\nm";
+        let mut o: *mut GitObject = ptr::null_mut();
+        // SAFETY: a readable buffer that outlives the object; a writable out.
+        let rc = unsafe {
+            ffi::git_object__from_raw(&raw mut o, text.as_ptr().cast(), text.len(), GIT_OBJECT_TAG, 1)
+        };
+        assert_eq!(rc, 0);
+        let t = o.cast::<crate::tag::GitTag>();
+        // SAFETY: a live tag.
+        let name = unsafe { CStr::from_ptr(crate::tag::ffi::git_tag_name(t)) };
+        assert_eq!(name.to_bytes(), b"t");
+        // SAFETY: a live tag.
+        assert_eq!(unsafe { crate::tag::ffi::git_tag_target_type(t) }, GIT_OBJECT_BLOB);
+        // SAFETY: a live tag.
+        assert!(unsafe { crate::tag::ffi::git_tag_tagger(t) }.is_null());
+        // SAFETY: a live object.
+        assert_eq!(unsafe { (*o).cached.refcount.get() }, 1);
+        // SAFETY: the only reference: freed as the cache would.
+        unsafe { free_object(o) };
+
+        let data = b"blob contents";
+        // SAFETY: as above.
+        let rc = unsafe {
+            ffi::git_object__from_raw(&raw mut o, data.as_ptr().cast(), data.len(), GIT_OBJECT_BLOB, 1)
+        };
+        assert_eq!(rc, 0);
+        let b = o.cast::<crate::blob::GitBlob>();
+        // SAFETY: a live blob.
+        assert_eq!(unsafe { crate::blob::ffi::git_blob_rawsize(b) }, data.len() as u64);
+        // SAFETY: a live blob.
+        assert_eq!(unsafe { crate::blob::ffi::git_blob_rawcontent(b) }, data.as_ptr().cast());
+        // SAFETY: a live object.
+        let id = unsafe { *ffi::git_object_id(o) };
+        assert_eq!(id, id_from_buffer(data, ObjectType::Blob, OidType::Sha1).unwrap());
+        // SAFETY: the only reference.
+        unsafe { free_object(o) };
+
+        // An unknown oid type: C's message, nothing leaked.
+        // SAFETY: as above.
+        let rc = unsafe {
+            ffi::git_object__from_raw(&raw mut o, data.as_ptr().cast(), data.len(), GIT_OBJECT_BLOB, 9)
+        };
+        assert_eq!(rc, -1);
+        assert!(o.is_null());
+        assert_eq!(errors::last_message().unwrap(), b"unknown oid type");
     }
 }

@@ -69,7 +69,8 @@ pub struct Grafts {
     /// Grafts by their oid; each key points at its value's `oid`, which
     /// lives (unmoved, unwritten) as long as the entry.
     commits: GitHashMap<OidPtr, NonNull<GitCommitGraft>>,
-    oid_type: OidType,
+    /// `None` for an unknown type C gave (every graft line then fails).
+    oid_type: Option<OidType>,
     /// The backing file (NULL for in-memory grafts).
     path: Option<std::ffi::CString>,
     path_checksum: [u8; SHA256_SIZE],
@@ -99,6 +100,10 @@ impl core::fmt::Debug for Grafts {
 impl Grafts {
     /// `git_grafts_new`: in-memory grafts.
     pub fn new(oid_type: OidType) -> Grafts {
+        Grafts::new_raw(Some(oid_type))
+    }
+
+    fn new_raw(oid_type: Option<OidType>) -> Grafts {
         Grafts {
             commits: GitHashMap::new(),
             oid_type,
@@ -110,7 +115,11 @@ impl Grafts {
     /// `git_grafts_open`: the grafts of the file at `path` (none if it does
     /// not exist).
     pub fn open(path: &CStr, oid_type: OidType) -> Result<Grafts> {
-        let mut g = Grafts::new(oid_type);
+        Grafts::open_raw(path, Some(oid_type))
+    }
+
+    fn open_raw(path: &CStr, oid_type: Option<OidType>) -> Result<Grafts> {
+        let mut g = Grafts::new_raw(oid_type);
         g.path = Some(path.to_owned());
         g.refresh()?;
         Ok(g)
@@ -159,7 +168,10 @@ impl Grafts {
         self.clear();
         let mut parser = GitParseCtx::new(buf);
         while parser.remain_len() > 0 {
-            let Ok(graft_oid) = parser.advance_oid(self.oid_type) else {
+            // An unknown type has no hex size: C's `git_oid_from_prefix`
+            // fails, as here.
+            let graft_oid = self.oid_type.map(|t| parser.advance_oid(t));
+            let Some(Ok(graft_oid)) = graft_oid else {
                 return Err(git_error_set!(
                     ErrorClass::GRAFTS,
                     "invalid graft OID at line {}",
@@ -170,7 +182,7 @@ impl Grafts {
             while parser.line_len() > 0 && parser.advance_expected(b"\n").is_err() {
                 let r = parser
                     .advance_expected(b" ")
-                    .and_then(|()| parser.advance_oid(self.oid_type));
+                    .and_then(|()| parser.advance_oid(self.oid_type.unwrap_or(OidType::Sha1)));
                 match r {
                     Ok(id) => {
                         parents.push(id)?;
@@ -294,10 +306,7 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!out.is_null() && oid_type != 0, "out && oid_type", -1);
-            // (An unknown non-zero type: C keeps it, and every parse fails;
-            // here it parses as SHA-1.)
-            let t = OidType::from_raw(oid_type).unwrap_or(OidType::Sha1);
-            match boxed(Grafts::new(t)) {
+            match boxed(Grafts::new_raw(OidType::from_raw(oid_type))) {
                 Ok(g) => {
                     // SAFETY: writable.
                     unsafe { out.write(g.as_ptr()) };
@@ -325,10 +334,9 @@ pub mod ffi {
                 "out && path && oid_type",
                 -1
             );
-            let t = OidType::from_raw(oid_type).unwrap_or(OidType::Sha1);
             // SAFETY: NUL-terminated.
             let path = unsafe { CStr::from_ptr(path) };
-            match Grafts::open(path, t).and_then(boxed) {
+            match Grafts::open_raw(path, OidType::from_raw(oid_type)).and_then(boxed) {
                 Ok(g) => {
                     // SAFETY: writable.
                     unsafe { out.write(g.as_ptr()) };

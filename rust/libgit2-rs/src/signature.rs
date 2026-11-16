@@ -194,6 +194,27 @@ impl Signature {
         Ok(parse(buf, None, 0)?.0)
     }
 
+    /// `git_signature_default`: `user.name` and `user.email` of the
+    /// repository's configuration, now.
+    pub fn default_for(repo: &crate::object::Repository) -> core::result::Result<Signature, Error> {
+        // SAFETY: a live repository.
+        Ok(unsafe { default_for(repo.as_ptr()) }?)
+    }
+
+    /// `git_signature_default_from_env`: the author and committer
+    /// (`GIT_AUTHOR_NAME`/`_EMAIL`/`_DATE`, `GIT_COMMITTER_*`, else the
+    /// configuration and `$EMAIL`).
+    pub fn default_from_env(
+        repo: &crate::object::Repository,
+    ) -> core::result::Result<(Signature, Signature), Error> {
+        // SAFETY: a live repository.
+        let (a, c) = unsafe { default_from_env(repo.as_ptr(), true, true) }?;
+        match (a, c) {
+            (Some(a), Some(c)) => Ok((a, c)),
+            _ => Err(Error::from(ErrorCode::GENERIC)),
+        }
+    }
+
     /// The name.
     pub fn name(&self) -> &[u8] {
         // SAFETY: by the invariant, a live NUL-terminated string.
@@ -501,18 +522,18 @@ pub fn parse(buf: &[u8], header: Option<&[u8]>, ender: u8) -> Result<(Signature,
 /// The bytes `git_signature__writebuf` appends.
 pub fn format_into(out: &mut Vec<u8>, header: &[u8], name: &[u8], email: &[u8], when: GitTime) {
     use std::io::Write as _;
-    let mut offset = when.offset;
     let sign = if when.offset < 0 || when.sign == b'-' as c_char {
         '-'
     } else {
         '+'
     };
-    if offset < 0 {
-        // C's `-offset`: INT_MIN stays INT_MIN.
-        offset = offset.wrapping_neg();
-    }
-    let hours = offset / 60;
-    let mins = offset % 60;
+    // C's `if (offset < 0) offset = -offset`, then `/ 60`, `% 60`. For
+    // INT_MIN the negation overflows (undefined behaviour); the C compiled
+    // as the reference does uses the magnitude, 2^31, and so does this
+    // (rust/DEFECTS.md).
+    let magnitude = when.offset.unsigned_abs();
+    let hours = magnitude / 60;
+    let mins = magnitude % 60;
     out.extend_from_slice(header);
     out.extend_from_slice(name);
     out.extend_from_slice(b" <");
@@ -1250,7 +1271,7 @@ mod tests {
                 sign: b'+' as c_char,
             },
         );
-        assert_eq!(v, b"n <e> 4294967295 --35791394-8\n");
+        assert_eq!(v, b"n <e> 4294967295 -3579139408\n");
         let mut s = GitStr::new();
         writebuf(
             &mut s,
