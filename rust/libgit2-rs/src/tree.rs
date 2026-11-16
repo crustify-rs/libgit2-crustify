@@ -1134,7 +1134,8 @@ pub(crate) unsafe fn walk(
 
 /// `subpath_len`.
 fn subpath_len(path: &[u8]) -> usize {
-    memchr::memchr(b'/', path).unwrap_or(path.len())
+    // Components are short: a plain scan beats `memchr`'s setup.
+    path.iter().position(|&c| c == b'/').unwrap_or(path.len())
 }
 
 /// `git_tree_entry_dup` of an entry.
@@ -1161,55 +1162,74 @@ pub(crate) unsafe fn entry_dup(source: &GitTreeEntry) -> Result<*mut GitTreeEntr
 pub(crate) unsafe fn entry_bypath(
     root: *const GitTree,
     path: &[u8],
-    lookup: &mut dyn FnMut(&Oid) -> Result<*mut GitTree>,
-    free: &mut dyn FnMut(*mut GitTree),
+    lookup: &mut impl FnMut(&Oid) -> Result<*mut GitTree>,
+    free: &mut impl FnMut(*mut GitTree),
 ) -> Result<*mut GitTreeEntry> {
-    // Find how long is the current path component (i.e. the filename
-    // between two slashes)
-    let filename_len = subpath_len(path);
-    if filename_len == 0 {
-        let _ = git_error_set!(ErrorClass::TREE, "invalid tree path given");
-        return Err(ErrorCode::NOT_FOUND);
-    }
-    let comp = &path[..filename_len];
-    // SAFETY: a live tree (contract).
-    let Some(entry) = (unsafe { entry_fromname(root, comp) }) else {
-        let _ = git_error_set!(
-            ErrorClass::TREE,
-            "the path '{}' does not exist in the given tree",
-            Bytes(comp)
-        );
-        return Err(ErrorCode::NOT_FOUND);
-    };
-    let entry = *entry;
-    match at(path, filename_len) {
-        b'/' => {
-            // If there are more components in the path... then this entry
-            // *must* be a tree
-            if !entry.is_tree() {
-                let _ = git_error_set!(
-                    ErrorClass::TREE,
-                    "the path '{}' exists but is not a tree",
-                    Bytes(comp)
-                );
-                return Err(ErrorCode::NOT_FOUND);
-            }
-            // If there's only a slash left in the path, we return the
-            // current entry; otherwise, we keep walking down the path
-            if at(path, filename_len + 1) == 0 {
-                // SAFETY: an entry of a live tree.
-                return unsafe { entry_dup(&entry) };
-            }
+    // C recurses once per component; this walks down in a loop (perf WP),
+    // releasing each subtree it looked up once it is done with it: the
+    // entry it goes on with is a copy, which needs only its id.
+    let mut tree = root;
+    let mut looked_up: *mut GitTree = ptr::null_mut();
+    let mut path = path;
+    let r = loop {
+        // Find how long is the current path component (i.e. the filename
+        // between two slashes)
+        let filename_len = subpath_len(path);
+        if filename_len == 0 {
+            let _ = git_error_set!(ErrorClass::TREE, "invalid tree path given");
+            break Err(ErrorCode::NOT_FOUND);
         }
-        // If there are no more components in the path, return this entry
-        // SAFETY: as above.
-        0 => return unsafe { entry_dup(&entry) },
-        _ => {}
+        let comp = &path[..filename_len];
+        // SAFETY: a live tree (contract, or looked up below and not yet
+        // released).
+        let Some(entry) = (unsafe { entry_fromname(tree, comp) }) else {
+            let _ = git_error_set!(
+                ErrorClass::TREE,
+                "the path '{}' does not exist in the given tree",
+                Bytes(comp)
+            );
+            break Err(ErrorCode::NOT_FOUND);
+        };
+        let entry = *entry;
+        match at(path, filename_len) {
+            b'/' => {
+                // If there are more components in the path... then this
+                // entry *must* be a tree
+                if !entry.is_tree() {
+                    let _ = git_error_set!(
+                        ErrorClass::TREE,
+                        "the path '{}' exists but is not a tree",
+                        Bytes(comp)
+                    );
+                    break Err(ErrorCode::NOT_FOUND);
+                }
+                // If there's only a slash left in the path, we return the
+                // current entry; otherwise, we keep walking down the path
+                if at(path, filename_len + 1) == 0 {
+                    // SAFETY: an entry of a live tree.
+                    break unsafe { entry_dup(&entry) };
+                }
+            }
+            // If there are no more components in the path, return this
+            // entry
+            // SAFETY: as above.
+            0 => break unsafe { entry_dup(&entry) },
+            _ => {}
+        }
+        let subtree = match lookup(&entry.oid) {
+            Ok(t) => t,
+            Err(_) => break Err(ErrorCode::GENERIC),
+        };
+        if !looked_up.is_null() {
+            free(looked_up);
+        }
+        looked_up = subtree;
+        tree = subtree;
+        path = &path[filename_len + 1..];
+    };
+    if !looked_up.is_null() {
+        free(looked_up);
     }
-    let subtree = lookup(&entry.oid).map_err(|_| ErrorCode::GENERIC)?;
-    // SAFETY: the subtree just looked up.
-    let r = unsafe { entry_bypath(subtree, &path[filename_len + 1..], lookup, free) };
-    free(subtree);
     r
 }
 
