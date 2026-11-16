@@ -322,3 +322,24 @@ Left: `refs_api::Repository`, l-refs' `Sync` stand-in for l-repo's
 safe `Repository::head()` still returns `repository::handles::Reference`,
 not l-refs' safe `refs_api::Reference` (they are tied to the two
 different repository types).
+
+## 9. Cleanup (`dec005c`)
+
+Duplicated constants between merged modules now come from their owners:
+`GIT_REFERENCE_{DIRECT,SYMBOLIC}` (repository → refs), `GIT_OBJECT_{COMMIT,
+TREE}` (pack → odb), `GIT_OBJECT_{ANY,COMMIT}` (revwalk → odb),
+`GIT_REFDB_FILES` (repository → refdb), `GIT_REFS_DIR` /
+`GIT_REFS_HEADS_DIR` (repository → refs).
+
+## PENDING left (at `dec005c`)
+
+68 `PENDING` mentions in the crate (from 36 at the start, before l-config
+… l-refs added theirs). Between merged WPs only one is left:
+`refs_api::Repository` (l-refs' `Sync` stand-in for l-repo's
+`Repository`, integration notes I-6). The rest are PENDING(l-obj) (WP
+l-obj not merged: object lookup/free/dup/peel/type names, signatures,
+grafts, blob creation, tree lookup/free, `git_commit_lookup`/`_free`,
+`git_tag_target_id`, l-commit's own copies of signature/header parsing,
+l-odb's copy of the object type names, `repository::handles::Object`,
+the `grafts` slots), plus `revwalk::api`'s note that
+`git_revwalk_pathspec` has no safe counterpart (C pathspec, stays C).
