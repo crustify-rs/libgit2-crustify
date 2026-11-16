@@ -178,8 +178,10 @@ pub mod ffi {
     /// `git__allocator`, not used again.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oidarray_dispose(arr: *mut GitOidArray) {
-        // SAFETY: the caller's contract.
-        unsafe { alloc::free((*arr).ids.cast()) };
+        // SAFETY: a valid `git_oidarray`.
+        let ids = unsafe { (*arr).ids };
+        // SAFETY: NULL or from `git__allocator`, not used again.
+        unsafe { alloc::free(ids.cast()) };
     }
 
     /// `git_oidarray__from_array`.
@@ -189,7 +191,10 @@ pub mod ffi {
     /// `out` is writable; `array` is a valid `git_array_oid_t`, whose
     /// buffer `out` now shares.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_oidarray__from_array(out: *mut GitOidArray, array: *const GitArray<Oid>) {
+    pub unsafe extern "C" fn git_oidarray__from_array(
+        out: *mut GitOidArray,
+        array: *const GitArray<Oid>,
+    ) {
         // SAFETY: a valid array, only read.
         let a = unsafe { &*array };
         let raw = GitOidArray {
@@ -207,12 +212,17 @@ pub mod ffi {
     /// `out` is writable; `array` is a valid `git_oidarray`, whose buffer
     /// `out` now shares.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_oidarray__to_array(out: *mut GitArray<Oid>, array: *const GitOidArray) {
+    pub unsafe extern "C" fn git_oidarray__to_array(
+        out: *mut GitArray<Oid>,
+        array: *const GitOidArray,
+    ) {
         // SAFETY: a valid `git_oidarray`.
         let a = unsafe { &*array };
-        // SAFETY: the new array shares the buffer, as in C; `write` does
-        // not drop what `out` held.
-        unsafe { out.write(GitArray::from_raw_parts(a.ids, a.count, a.count)) };
+        // SAFETY: the new array shares the buffer, as in C (C keeps track
+        // of which one frees it).
+        let arr = unsafe { GitArray::from_raw_parts(a.ids, a.count, a.count) };
+        // SAFETY: writable; `write` does not drop what `out` held.
+        unsafe { out.write(arr) };
     }
 
     /// `git_oidarray__reverse`.
@@ -271,6 +281,7 @@ crate::c_layout_test! {
 }
 
 #[cfg(test)]
+#[allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)]
 mod tests {
     use super::*;
     use crate::oid::OidType;

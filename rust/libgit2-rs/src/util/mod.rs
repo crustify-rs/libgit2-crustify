@@ -20,9 +20,9 @@ pub mod str;
 pub mod strlist;
 pub mod thread;
 pub mod tsort;
+pub mod utf8;
 #[allow(clippy::module_inception)]
 pub mod util;
-pub mod utf8;
 pub mod varint;
 pub mod vector;
 

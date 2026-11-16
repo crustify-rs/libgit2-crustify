@@ -83,10 +83,13 @@ pub mod ffi {
     /// until a byte without the continuation bit, or until the value
     /// overflows); `varint_len` is writable.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_decode_varint(bufp: *const c_uchar, varint_len: *mut usize) -> u64 {
+    pub unsafe extern "C" fn git_decode_varint(
+        bufp: *const c_uchar,
+        varint_len: *mut usize,
+    ) -> u64 {
         // SAFETY: `decode_with` reads in order and stops where C does: the
         // caller guarantees those bytes.
-        let r = decode_with(|i| Some(unsafe { bufp.add(i).read() }));
+        let r = decode_with(|i| Some(unsafe { bufp.wrapping_add(i).read() }));
         let (val, len) = r.unwrap_or((0, 0));
         // SAFETY: writable.
         unsafe { varint_len.write(len) };
@@ -99,7 +102,11 @@ pub mod ffi {
     ///
     /// `buf` is NULL or writable for `bufsize` bytes.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_encode_varint(buf: *mut c_uchar, bufsize: usize, value: u64) -> c_int {
+    pub unsafe extern "C" fn git_encode_varint(
+        buf: *mut c_uchar,
+        bufsize: usize,
+        value: u64,
+    ) -> c_int {
         let out = if buf.is_null() {
             None
         } else if bufsize == 0 {
@@ -113,12 +120,24 @@ pub mod ffi {
 }
 
 #[cfg(test)]
+#[allow(clippy::borrow_as_ptr)]
 mod tests {
     use super::*;
 
     #[test]
     fn round_trip() {
-        for v in [0u64, 1, 127, 128, 255, 16383, 16384, 1 << 32, u64::MAX / 3, u64::MAX] {
+        for v in [
+            0u64,
+            1,
+            127,
+            128,
+            255,
+            16383,
+            16384,
+            1 << 32,
+            u64::MAX / 3,
+            u64::MAX,
+        ] {
             let mut buf = [0u8; 16];
             let n = encode(Some(&mut buf), v);
             assert!(n > 0);

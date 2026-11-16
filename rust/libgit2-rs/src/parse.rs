@@ -255,7 +255,10 @@ impl<'a> GitParseCtx<'a> {
     /// `git_parse_peek`: the line's first byte, after whitespace (`\n`
     /// included) if `skip_ws`; `None` if there is none.
     pub fn peek(&self, skip_ws: bool) -> Option<u8> {
-        self.line().iter().copied().find(|&c| !(skip_ws && isspace(c)))
+        self.line()
+            .iter()
+            .copied()
+            .find(|&c| !(skip_ws && isspace(c)))
     }
 }
 
@@ -357,7 +360,9 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             // SAFETY: forwarded.
-            let (ctx, e) = unsafe { (ctx_mut(ctx), bytes(expected, expected_len)) };
+            let ctx = unsafe { ctx_mut(ctx) };
+            // SAFETY: `expected_len` readable bytes.
+            let e = unsafe { bytes(expected, expected_len) };
             status(ctx.advance_expected(e))
         })
     }
@@ -390,7 +395,11 @@ pub mod ffi {
     ///
     /// As [`ctx_mut`]; `out` is writable.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_parse_advance_digit(out: *mut i64, ctx: *mut Ctx, base: c_int) -> c_int {
+    pub unsafe extern "C" fn git_parse_advance_digit(
+        out: *mut i64,
+        ctx: *mut Ctx,
+        base: c_int,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: forwarded.
             match unsafe { ctx_mut(ctx) }.advance_digit(base) {
@@ -443,7 +452,11 @@ pub mod ffi {
     ///
     /// As [`ctx_mut`]; `out` is writable.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_parse_peek(out: *mut c_char, ctx: *mut Ctx, flags: c_int) -> c_int {
+    pub unsafe extern "C" fn git_parse_peek(
+        out: *mut c_char,
+        ctx: *mut Ctx,
+        flags: c_int,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: forwarded.
             let ctx = unsafe { ctx_mut(ctx) };

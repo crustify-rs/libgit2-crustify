@@ -56,10 +56,8 @@ fn os_page_size() -> usize {
         // SAFETY: `sysconf` has no preconditions.
         let n = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
         if n < 0 {
-            let _ = crate::git_error_set!(
-                errors::ErrorClass::OS,
-                "can't determine system page size"
-            );
+            let _ =
+                crate::git_error_set!(errors::ErrorClass::OS, "can't determine system page size");
             4096
         } else {
             n as usize
@@ -248,14 +246,13 @@ impl GitPool {
         if !fits {
             return self.alloc_page(size);
         }
-        // SAFETY: the front page, exclusively ours through `&mut self`;
+        // SAFETY: the front page, exclusively ours through `&mut self`.
+        let p = unsafe { &mut *page };
         // `size - avail` is within its data (`avail <= size`).
-        unsafe {
-            let p = &mut *page;
-            let ptr = page_data(page).add(p.size - p.avail);
-            p.avail -= size;
-            Ok(NonNull::new_unchecked(ptr))
-        }
+        let ptr = page_data(page).wrapping_add(p.size - p.avail);
+        p.avail -= size;
+        // SAFETY: within a non-null allocation.
+        Ok(unsafe { NonNull::new_unchecked(ptr) })
     }
 
     /// `git_pool_malloc`: room for `items` items, uninitialized. Fails
@@ -288,11 +285,11 @@ impl GitPool {
             return Err(errors::oom());
         };
         let p = self.malloc(n1)?;
-        // SAFETY: `n1` bytes of the pool, disjoint from `s`.
-        unsafe {
-            ptr::copy_nonoverlapping(s.as_ptr(), p.as_ptr(), s.len());
-            p.as_ptr().add(s.len()).write(0);
-        }
+        // SAFETY: `n1` bytes of the pool, just handed out (disjoint from
+        // `s`), and no reference to them exists.
+        let dst = unsafe { core::slice::from_raw_parts_mut(p.as_ptr(), n1) };
+        dst[..s.len()].copy_from_slice(s);
+        dst[s.len()] = 0;
         Ok(p.cast())
     }
 
@@ -307,15 +304,14 @@ impl GitPool {
         let Some(total) = a.len().checked_add(b.len()).and_then(|t| t.checked_add(1)) else {
             return Err(errors::oom());
         };
-        let p = self.malloc(total)?.as_ptr();
-        // SAFETY: `total` bytes of the pool, disjoint from `a` and `b`.
-        unsafe {
-            ptr::copy_nonoverlapping(a.as_ptr(), p, a.len());
-            ptr::copy_nonoverlapping(b.as_ptr(), p.add(a.len()), b.len());
-            p.add(a.len() + b.len()).write(0);
-        }
-        // SAFETY: from a `NonNull`.
-        Ok(unsafe { NonNull::new_unchecked(p.cast()) })
+        let p = self.malloc(total)?;
+        // SAFETY: `total` bytes of the pool, just handed out (disjoint from
+        // `a` and `b`), and no reference to them exists.
+        let dst = unsafe { core::slice::from_raw_parts_mut(p.as_ptr(), total) };
+        dst[..a.len()].copy_from_slice(a);
+        dst[a.len()..a.len() + b.len()].copy_from_slice(b);
+        dst[a.len() + b.len()] = 0;
+        Ok(p.cast())
     }
 
     /// `git_pool__open_pages`.
@@ -426,7 +422,8 @@ pub mod ffi {
         barrier(|| {
             // SAFETY: the caller's contract.
             let pool = unsafe { &mut *pool };
-            pool.malloc(items).map_or(ptr::null_mut(), |p| p.as_ptr().cast())
+            pool.malloc(items)
+                .map_or(ptr::null_mut(), |p| p.as_ptr().cast())
         })
     }
 
@@ -440,7 +437,8 @@ pub mod ffi {
         barrier(|| {
             // SAFETY: the caller's contract.
             let pool = unsafe { &mut *pool };
-            pool.mallocz(items).map_or(ptr::null_mut(), |p| p.as_ptr().cast())
+            pool.mallocz(items)
+                .map_or(ptr::null_mut(), |p| p.as_ptr().cast())
         })
     }
 
@@ -483,7 +481,10 @@ pub mod ffi {
     ///
     /// `pool` as [`git_pool_strndup`]; `str` NULL or a NUL-terminated string.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_pool_strdup(pool: *mut GitPool, str: *const c_char) -> *mut c_char {
+    pub unsafe extern "C" fn git_pool_strdup(
+        pool: *mut GitPool,
+        str: *const c_char,
+    ) -> *mut c_char {
         barrier(|| {
             git_assert_arg!(!pool.is_null(), "pool", ptr::null_mut());
             git_assert_arg!(!str.is_null(), "str", ptr::null_mut());
@@ -537,8 +538,10 @@ pub mod ffi {
                 "pool->item_size == sizeof(char)",
                 ptr::null_mut()
             );
-            // SAFETY: NULL or NUL-terminated strings.
-            let (a, b) = unsafe { (cstr_bytes(a), cstr_bytes(b)) };
+            // SAFETY: NULL or a NUL-terminated string.
+            let a = unsafe { cstr_bytes(a) };
+            // SAFETY: as above.
+            let b = unsafe { cstr_bytes(b) };
             pool.strcat(a, b).map_or(ptr::null_mut(), NonNull::as_ptr)
         })
     }

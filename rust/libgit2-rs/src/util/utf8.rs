@@ -72,7 +72,11 @@ pub fn iterate(s: &[u8]) -> Option<(u32, usize)> {
                 + ((b(1) & 0x3f) << 12)
                 + ((b(2) & 0x3f) << 6)
                 + (b(3) & 0x3f);
-            if !(0x10000..0x110000).contains(&uc) { u32::MAX } else { uc }
+            if !(0x10000..0x110000).contains(&uc) {
+                u32::MAX
+            } else {
+                uc
+            }
         }
     };
     if (uc & 0xffff) >= 0xfffe {
@@ -127,7 +131,11 @@ pub mod ffi {
     /// `str_len` is 0, up to the end of the sequence it starts (a
     /// NUL-terminated string suffices).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_utf8_iterate(out: *mut u32, str: *const c_char, str_len: usize) -> c_int {
+    pub unsafe extern "C" fn git_utf8_iterate(
+        out: *mut u32,
+        str: *const c_char,
+        str_len: usize,
+    ) -> c_int {
         let mut buf = [0u8; 4];
         let s: &[u8] = if str_len > 0 {
             // SAFETY: `str_len` readable bytes.
@@ -143,7 +151,7 @@ pub mod ffi {
             while n < length {
                 // SAFETY: the previous byte continued the sequence, so this
                 // one is within what the caller guarantees.
-                let c = unsafe { p.add(n).read() };
+                let c = unsafe { p.wrapping_add(n).read() };
                 buf[n] = c;
                 n += 1;
                 if c & 0xc0 != 0x80 {
@@ -175,13 +183,17 @@ pub mod ffi {
     ///
     /// `str` is readable for `str_len` bytes.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_utf8_valid_buf_length(str: *const c_char, str_len: usize) -> usize {
+    pub unsafe extern "C" fn git_utf8_valid_buf_length(
+        str: *const c_char,
+        str_len: usize,
+    ) -> usize {
         // SAFETY: `str_len` readable bytes.
         valid_buf_length(unsafe { bytes(str, str_len) })
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)]
 mod tests {
     use super::*;
 

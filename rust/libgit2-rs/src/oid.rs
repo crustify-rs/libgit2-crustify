@@ -244,8 +244,8 @@ fn fmt_substr(out: &mut [u8], id: &[u8; GIT_OID_MAX_SIZE], start: usize, count: 
     if i < max {
         let pairs = &id[i..max];
         let dst = &mut out[o..o + 2 * pairs.len()];
-        for (d, &b) in dst.chunks_exact_mut(2).zip(pairs) {
-            d.copy_from_slice(&HEX_PAIRS[b as usize]);
+        for (d, &b) in dst.as_chunks_mut::<2>().0.iter_mut().zip(pairs) {
+            *d = HEX_PAIRS[b as usize];
         }
         o += 2 * pairs.len();
         i = max;
@@ -454,7 +454,12 @@ impl Oid {
         if self.kind != other.kind {
             return self.kind as c_int - other.kind as c_int;
         }
-        match self.id.iter().zip(other.id.iter()).position(|(a, b)| a != b) {
+        match self
+            .id
+            .iter()
+            .zip(other.id.iter())
+            .position(|(a, b)| a != b)
+        {
             Some(i) => self.id[i] as c_int - other.id[i] as c_int,
             None => 0,
         }
@@ -549,7 +554,10 @@ impl Oid {
     /// `git_oid_fmt_substr`: hex digits `start..start + out.len()` into
     /// `out`. Panics if the range exceeds `GIT_OID_MAX_HEXSIZE`.
     pub fn fmt_substr(&self, out: &mut [u8], start: usize) {
-        assert!(start + out.len() <= GIT_OID_MAX_HEXSIZE, "oid digit range out of bounds");
+        assert!(
+            start + out.len() <= GIT_OID_MAX_HEXSIZE,
+            "oid digit range out of bounds"
+        );
         let count = out.len();
         fmt_substr(out, &self.id, start, count);
     }
@@ -781,13 +789,7 @@ impl OidShortener {
 
     /// `push_leaf`: a new leaf under `idx` at digit `push_at`, for the
     /// tail `(text, offset)`. `Err` when the set became full.
-    fn push_leaf(
-        &mut self,
-        idx: usize,
-        push_at: usize,
-        text: u32,
-        offset: usize,
-    ) -> Result<()> {
+    fn push_leaf(&mut self, idx: usize, push_at: usize, text: u32, offset: usize) -> Result<()> {
         if self.nodes.try_reserve(1).is_err() {
             return Err(errors::oom());
         }
@@ -945,7 +947,7 @@ pub mod ffi {
         };
         // SAFETY: `i < len`, and `parse_hex_into` reads in order and stops
         // at the first non-hex byte: the caller's guarantee covers it.
-        let r = parse_hex_into(&mut oid.id, len, |i| unsafe { s.add(i).read() });
+        let r = parse_hex_into(&mut oid.id, len, |i| unsafe { s.wrapping_add(i).read() });
         // SAFETY: `out` is writable (the caller's contract); C leaves the
         // partial result there on failure too.
         unsafe { out.write(oid) };
@@ -977,7 +979,7 @@ pub mod ffi {
             }
             // SAFETY: the `hexsize` bytes before were digits, so not the NUL:
             // this byte is within the string.
-            if unsafe { str.add(hexsize).read() } != 0 {
+            if unsafe { str.wrapping_add(hexsize).read() } != 0 {
                 return oid_error_invalid("too long").raw();
             }
             0
@@ -1142,7 +1144,11 @@ pub mod ffi {
     ///
     /// `out` is NULL or writable for `n` bytes; `oid` is NULL or valid.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_oid_tostr(out: *mut c_char, n: usize, oid: *const Oid) -> *mut c_char {
+    pub unsafe extern "C" fn git_oid_tostr(
+        out: *mut c_char,
+        n: usize,
+        oid: *const Oid,
+    ) -> *mut c_char {
         barrier(|| {
             if out.is_null() || n == 0 {
                 return c"".as_ptr().cast_mut();
@@ -1183,8 +1189,11 @@ pub mod ffi {
     /// Both are valid oids.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oid_cmp(a: *const Oid, b: *const Oid) -> c_int {
-        // SAFETY: valid oids, only read.
-        unsafe { (*a).cmp_raw(&*b) }
+        // SAFETY: a valid oid, only read.
+        let a = unsafe { &*a };
+        // SAFETY: as above.
+        let b = unsafe { &*b };
+        a.cmp_raw(b)
     }
 
     /// `git_oid_equal`.
@@ -1194,8 +1203,11 @@ pub mod ffi {
     /// Both are valid oids.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oid_equal(a: *const Oid, b: *const Oid) -> c_int {
-        // SAFETY: valid oids, only read.
-        unsafe { (*a == *b) as c_int }
+        // SAFETY: a valid oid, only read.
+        let a = unsafe { &*a };
+        // SAFETY: as above.
+        let b = unsafe { &*b };
+        (a == b) as c_int
     }
 
     /// `git_oid_ncmp`.
@@ -1205,8 +1217,11 @@ pub mod ffi {
     /// Both are valid oids.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oid_ncmp(a: *const Oid, b: *const Oid, len: usize) -> c_int {
-        // SAFETY: valid oids, only read.
-        unsafe { (*a).ncmp(&*b, len) }
+        // SAFETY: a valid oid, only read.
+        let a = unsafe { &*a };
+        // SAFETY: as above.
+        let b = unsafe { &*b };
+        a.ncmp(b, len)
     }
 
     /// `git_oid_strcmp`.
@@ -1217,8 +1232,10 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oid_strcmp(oid: *const Oid, str: *const c_char) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            unsafe { (*oid).strcmp(cstr_bytes(str)) }
+            // SAFETY: a valid oid.
+            let oid = unsafe { &*oid };
+            // SAFETY: a NUL-terminated string.
+            oid.strcmp(unsafe { cstr_bytes(str) })
         })
     }
 
@@ -1230,7 +1247,11 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oid_streq(oid: *const Oid, str: *const c_char) -> c_int {
         // SAFETY: forwarded.
-        if unsafe { git_oid_strcmp(oid, str) } == 0 { 0 } else { -1 }
+        if unsafe { git_oid_strcmp(oid, str) } == 0 {
+            0
+        } else {
+            -1
+        }
     }
 
     /// `git_oid_is_zero`.
@@ -1307,7 +1328,6 @@ pub mod ffi {
             }
         })
     }
-
 }
 
 crate::c_layout_test! {
@@ -1467,11 +1487,26 @@ mod tests {
     fn shortener() {
         let _g = crate::util::test_support::init();
         let mut s = OidShortener::new(0);
-        assert_eq!(s.add(b"22596363b3de40b06f981fb85d82312e8c0ed511").unwrap(), 1);
-        assert_eq!(s.add(b"ce08fe4884650f067bd5703b6a59a8b3b3c99a09").unwrap(), 1);
-        assert_eq!(s.add(b"16a0123456789abcdef4b775213c23a8bd74f5e0").unwrap(), 1);
-        assert_eq!(s.add(b"22a0123456789abcdef4b775213c23a8bd74f5e0").unwrap(), 3);
-        assert_eq!(s.add(b"ce08fe4884650f067bd5703b6a59a8b3b3c99a00").unwrap(), 40);
+        assert_eq!(
+            s.add(b"22596363b3de40b06f981fb85d82312e8c0ed511").unwrap(),
+            1
+        );
+        assert_eq!(
+            s.add(b"ce08fe4884650f067bd5703b6a59a8b3b3c99a09").unwrap(),
+            1
+        );
+        assert_eq!(
+            s.add(b"16a0123456789abcdef4b775213c23a8bd74f5e0").unwrap(),
+            1
+        );
+        assert_eq!(
+            s.add(b"22a0123456789abcdef4b775213c23a8bd74f5e0").unwrap(),
+            3
+        );
+        assert_eq!(
+            s.add(b"ce08fe4884650f067bd5703b6a59a8b3b3c99a00").unwrap(),
+            40
+        );
         assert!(s.add(b"zz").is_err());
         // a short id whose tail is later needed
         let mut s = OidShortener::new(4);
@@ -1480,6 +1515,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "32000 insertions: too slow under Miri")]
     fn shortener_fills_up() {
         let _g = crate::util::test_support::init();
         let mut s = OidShortener::new(0);

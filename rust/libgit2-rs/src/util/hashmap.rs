@@ -42,6 +42,7 @@
 
 use core::ffi::{CStr, c_char, c_void};
 use core::marker::PhantomData;
+use core::mem::MaybeUninit;
 use core::ptr::{self, NonNull};
 
 use super::alloc;
@@ -78,54 +79,87 @@ fn roundup(mut x: u32) -> u32 {
     x.wrapping_add(1)
 }
 
-/// The bucket flags: two bits per bucket, bit 1 "empty", bit 0 "deleted".
-#[derive(Clone, Copy)]
-struct Flags(*mut u32);
+// The bucket flags: two bits per bucket, bit 1 "empty", bit 0 "deleted"
+// (C's `GIT_HASHMAP_IS_*` and `GIT_HASHMAP_SET_*` macros).
 
-impl Flags {
-    /// # Safety
-    ///
-    /// `i` is a bucket of the array.
-    #[inline(always)]
-    unsafe fn bits(self, i: u32) -> u32 {
-        // SAFETY: the caller's `i` is within the array.
-        let w = unsafe { self.0.add((i >> 4) as usize).read() };
-        (w >> ((i & 0xf) << 1)) & 3
+#[inline(always)]
+fn bits(f: &[u32], i: u32) -> u32 {
+    (f[(i >> 4) as usize] >> ((i & 0xf) << 1)) & 3
+}
+#[inline(always)]
+fn is_empty(f: &[u32], i: u32) -> bool {
+    bits(f, i) & 2 != 0
+}
+#[inline(always)]
+fn is_del(f: &[u32], i: u32) -> bool {
+    bits(f, i) & 1 != 0
+}
+#[inline(always)]
+fn is_either(f: &[u32], i: u32) -> bool {
+    bits(f, i) != 0
+}
+#[inline(always)]
+fn set_empty_false(f: &mut [u32], i: u32) {
+    f[(i >> 4) as usize] &= !(2 << ((i & 0xf) << 1));
+}
+#[inline(always)]
+fn set_both_false(f: &mut [u32], i: u32) {
+    f[(i >> 4) as usize] &= !(3 << ((i & 0xf) << 1));
+}
+#[inline(always)]
+fn set_del_true(f: &mut [u32], i: u32) {
+    f[(i >> 4) as usize] |= 1 << ((i & 0xf) << 1);
+}
+
+/// A map's arrays as slices: flags, keys and values (a value slot of a
+/// zero-sized `V` is nothing).
+struct Parts<'a, K, V> {
+    flags: &'a mut [u32],
+    keys: &'a mut [MaybeUninit<K>],
+    vals: &'a mut [MaybeUninit<V>],
+}
+
+/// [`Parts`], shared.
+struct View<'a, K, V> {
+    flags: &'a [u32],
+    keys: &'a [MaybeUninit<K>],
+    vals: &'a [MaybeUninit<V>],
+}
+
+/// `n` slots at `p`, or none if `n` is 0.
+///
+/// # Safety
+///
+/// When `n > 0` and `T` is not zero-sized, `p` is valid for `n` `T`s for
+/// `'a`, and nothing else accesses them meanwhile.
+#[inline(always)]
+unsafe fn slots_mut<'a, T>(p: *mut T, n: usize) -> &'a mut [MaybeUninit<T>] {
+    if n == 0 {
+        &mut []
+    } else if size_of::<T>() == 0 {
+        // SAFETY: zero-sized elements need no memory.
+        unsafe { core::slice::from_raw_parts_mut(NonNull::dangling().as_ptr(), n) }
+    } else {
+        // SAFETY: the caller's contract.
+        unsafe { core::slice::from_raw_parts_mut(p.cast(), n) }
     }
-    #[inline(always)]
-    unsafe fn is_empty(self, i: u32) -> bool {
-        // SAFETY: forwarded.
-        unsafe { self.bits(i) & 2 != 0 }
-    }
-    #[inline(always)]
-    unsafe fn is_del(self, i: u32) -> bool {
-        // SAFETY: forwarded.
-        unsafe { self.bits(i) & 1 != 0 }
-    }
-    #[inline(always)]
-    unsafe fn is_either(self, i: u32) -> bool {
-        // SAFETY: forwarded.
-        unsafe { self.bits(i) != 0 }
-    }
-    #[inline(always)]
-    unsafe fn and(self, i: u32, mask: u32) {
-        // SAFETY: the caller's `i` is within the array, which the map owns.
-        unsafe { *self.0.add((i >> 4) as usize) &= !(mask << ((i & 0xf) << 1)) }
-    }
-    #[inline(always)]
-    unsafe fn set_empty_false(self, i: u32) {
-        // SAFETY: forwarded.
-        unsafe { self.and(i, 2) }
-    }
-    #[inline(always)]
-    unsafe fn set_both_false(self, i: u32) {
-        // SAFETY: forwarded.
-        unsafe { self.and(i, 3) }
-    }
-    #[inline(always)]
-    unsafe fn set_del_true(self, i: u32) {
-        // SAFETY: the caller's `i` is within the array, which the map owns.
-        unsafe { *self.0.add((i >> 4) as usize) |= 1 << ((i & 0xf) << 1) }
+}
+
+/// As [`slots_mut`], shared.
+///
+/// # Safety
+///
+/// As [`slots_mut`], with only reads meanwhile.
+#[inline(always)]
+unsafe fn slots<'a, T>(p: *const T, n: usize) -> &'a [MaybeUninit<T>] {
+    if n == 0 {
+        &[]
+    } else if size_of::<T>() == 0 {
+        // SAFETY: zero-sized elements need no memory.
+        unsafe { core::slice::from_raw_parts(NonNull::dangling().as_ptr(), n) }
+    } else {
+        // SAFETY: the caller's contract.
+        unsafe { core::slice::from_raw_parts(p.cast(), n) }
     }
 }
 
@@ -228,43 +262,95 @@ impl<K, V, X> GitHashMap<K, V, X> {
         self.n_buckets
     }
 
+    /// The number of buckets in use or marked deleted (`n_occupied`).
+    #[inline]
+    pub fn occupied(&self) -> u32 {
+        self.n_occupied
+    }
+
+    /// The arrays, for `n` buckets (at most what they hold).
+    ///
+    /// # Safety
+    ///
+    /// The arrays hold at least `n` slots (`n_buckets`, or more during a
+    /// resize).
     #[inline(always)]
-    fn fl(&self) -> Flags {
-        Flags(self.flags)
+    unsafe fn parts_n(&mut self, n: u32) -> Parts<'_, K, V> {
+        let n = n as usize;
+        let flags: &mut [u32] = if self.n_buckets == 0 {
+            &mut []
+        } else {
+            // SAFETY: the invariant: with buckets, the map owns its flags
+            // array of `flagsize(n_buckets)` words; `&mut self` makes this
+            // the only access.
+            unsafe { core::slice::from_raw_parts_mut(self.flags, flagsize(self.n_buckets)) }
+        };
+        // SAFETY: the map owns its key array of at least `n` slots (the
+        // caller's contract), distinct from the others; `&mut self` makes
+        // this the only access.
+        let keys = unsafe { slots_mut(self.keys, n) };
+        // SAFETY: as above.
+        let vals = unsafe { slots_mut(self.vals, n) };
+        Parts { flags, keys, vals }
+    }
+
+    /// The arrays.
+    #[inline(always)]
+    fn parts(&mut self) -> Parts<'_, K, V> {
+        // SAFETY: `n_buckets` slots: the invariant.
+        unsafe { self.parts_n(self.n_buckets) }
+    }
+
+    /// The arrays, shared.
+    #[inline(always)]
+    fn view(&self) -> View<'_, K, V> {
+        let n = self.n_buckets as usize;
+        if n == 0 {
+            return View {
+                flags: &[],
+                keys: &[],
+                vals: &[],
+            };
+        }
+        // SAFETY: as in `parts_n`, with `&self` excluding writers.
+        let flags = unsafe { core::slice::from_raw_parts(self.flags, flagsize(self.n_buckets)) };
+        // SAFETY: as above.
+        let keys = unsafe { slots(self.keys, n) };
+        // SAFETY: as above.
+        let vals = unsafe { slots(self.vals, n) };
+        View { flags, keys, vals }
     }
 
     /// Whether bucket `i` (< `n_buckets`) is live.
     #[inline(always)]
     fn is_live(&self, i: u32) -> bool {
-        debug_assert!(i < self.n_buckets);
-        // SAFETY: `i < n_buckets`, within the flags array (the invariant).
-        unsafe { !self.fl().is_either(i) }
-    }
-
-    #[inline(always)]
-    fn val_ptr(&self, i: u32) -> *mut V {
-        if Self::IS_MAP {
-            self.vals.wrapping_add(i as usize)
-        } else {
-            NonNull::dangling().as_ptr()
-        }
+        !is_either(self.view().flags, i)
     }
 
     /// The live bucket `i`'s key and value.
     #[inline(always)]
     fn entry(&self, i: u32) -> (&K, &V) {
-        debug_assert!(self.is_live(i));
-        // SAFETY: a live bucket holds an initialized key and value (the
-        // invariant), which `&self` keeps unwritten.
-        unsafe { (&*self.keys.add(i as usize), &*self.val_ptr(i)) }
+        let v = self.view();
+        debug_assert!(!is_either(v.flags, i));
+        let i = i as usize;
+        // SAFETY: a live bucket holds an initialized key (the invariant).
+        let k = unsafe { v.keys[i].assume_init_ref() };
+        // SAFETY: and an initialized value.
+        let val = unsafe { v.vals[i].assume_init_ref() };
+        (k, val)
     }
 
     /// The live bucket `i`'s key and value, the value mutable.
     #[inline(always)]
     fn entry_mut(&mut self, i: u32) -> (&K, &mut V) {
-        debug_assert!(self.is_live(i));
-        // SAFETY: as `entry`, with `&mut self` making this the only access.
-        unsafe { (&*self.keys.add(i as usize), &mut *self.val_ptr(i)) }
+        let p = self.parts();
+        debug_assert!(!is_either(p.flags, i));
+        let i = i as usize;
+        // SAFETY: a live bucket holds an initialized key (the invariant).
+        let k = unsafe { p.keys[i].assume_init_ref() };
+        // SAFETY: and an initialized value.
+        let val = unsafe { p.vals[i].assume_init_mut() };
+        (k, val)
     }
 
     /// `name##__idx`: the bucket of `key`, by `hash` and `eq`.
@@ -278,24 +364,25 @@ impl<K, V, X> GitHashMap<K, V, X> {
         if self.n_buckets == 0 {
             return None;
         }
-        let fl = self.fl();
+        let v = self.view();
         let mask = self.n_buckets - 1;
         let mut i = hash(key) & mask;
         let last = i;
         let mut step = 0u32;
-        // SAFETY (for the flag reads): every `i` is masked to a bucket; a
-        // key is read only from a bucket that is neither empty nor deleted
-        // (live).
-        unsafe {
-            while !fl.is_empty(i) && (fl.is_del(i) || !eq(&*self.keys.add(i as usize), key)) {
-                step += 1;
-                i = (i + step) & mask;
-                if i == last {
-                    return None;
-                }
+        // a live bucket's key: only read where neither flag is set
+        let live_eq = |i: u32| {
+            // SAFETY: called only for a bucket that is neither empty nor
+            // deleted, which holds an initialized key.
+            eq(unsafe { v.keys[i as usize].assume_init_ref() }, key)
+        };
+        while !is_empty(v.flags, i) && (is_del(v.flags, i) || !live_eq(i)) {
+            step += 1;
+            i = (i + step) & mask;
+            if i == last {
+                return None;
             }
-            if fl.is_either(i) { None } else { Some(i) }
         }
+        if is_either(v.flags, i) { None } else { Some(i) }
     }
 
     /// `name##__resize`, by `hash`: make room for `new_n_buckets` (rounded
@@ -313,113 +400,120 @@ impl<K, V, X> GitHashMap<K, V, X> {
             return Ok(());
         }
         let fwords = flagsize(new_n_buckets);
-        let new_flags = alloc::mallocarray(fwords, size_of::<u32>()).cast::<u32>();
-        if new_flags.is_null() {
+        let new_flags_ptr = alloc::mallocarray(fwords, size_of::<u32>()).cast::<u32>();
+        if new_flags_ptr.is_null() {
             return Err(ErrorCode::GENERIC);
         }
-        // SAFETY: a fresh array of `fwords` words.
-        unsafe { ptr::write_bytes(new_flags.cast::<u8>(), 0xaa, fwords * size_of::<u32>()) };
+        // SAFETY: a fresh array of `fwords` words, which only this function
+        // uses until it is installed below.
+        unsafe { ptr::write_bytes(new_flags_ptr, 0xaa, fwords) };
+        // SAFETY: as above, initialized now.
+        let new_flags = unsafe { core::slice::from_raw_parts_mut(new_flags_ptr, fwords) };
         if self.n_buckets < new_n_buckets {
             // expand
-            // SAFETY: `keys` is NULL or the map's own array.
-            let nk = unsafe {
-                alloc::reallocarray(self.keys.cast(), new_n_buckets as usize, size_of::<K>())
-            };
-            if nk.is_null() {
+            if let Err(e) = self.grow_arrays(new_n_buckets) {
                 // SAFETY: the fresh flags array, not used again.
-                unsafe { alloc::free(new_flags.cast()) };
-                return Err(ErrorCode::GENERIC);
-            }
-            self.keys = nk.cast();
-            if Self::IS_MAP {
-                // SAFETY: `vals` is NULL or the map's own array.
-                let nv = unsafe {
-                    alloc::reallocarray(self.vals.cast(), new_n_buckets as usize, size_of::<V>())
-                };
-                if nv.is_null() {
-                    // SAFETY: as above.
-                    unsafe { alloc::free(new_flags.cast()) };
-                    return Err(ErrorCode::GENERIC);
-                }
-                self.vals = nv.cast();
+                unsafe { alloc::free(new_flags_ptr.cast()) };
+                return Err(e);
             }
         }
 
-        // Rehash in place ("kick-out", as C).
-        let old = self.fl();
-        let new = Flags(new_flags);
+        // Rehash in place ("kick-out", as C): entries move between slots as
+        // `MaybeUninit`s; a slot is read as a key only while live in the
+        // old flags, which are then marked deleted.
+        let old_n = self.n_buckets;
         let new_mask = new_n_buckets - 1;
-        // SAFETY: `j` and `i` index buckets of the arrays, which hold at
-        // least `max(n_buckets, new_n_buckets)` slots; keys and values are
-        // moved bitwise between slots, and a slot is read only while live
-        // in the old flags (which are then marked deleted, so each value is
-        // moved exactly once and never duplicated).
-        unsafe {
-            for j in 0..self.n_buckets {
-                if old.is_either(j) {
-                    continue;
+        // SAFETY: the arrays hold `max(old_n, new_n_buckets)` slots now.
+        let p = unsafe { self.parts_n(old_n.max(new_n_buckets)) };
+        let (old, keys, vals) = (p.flags, p.keys, p.vals);
+        for j in 0..old_n {
+            if is_either(old, j) {
+                continue;
+            }
+            let mut key = core::mem::replace(&mut keys[j as usize], MaybeUninit::uninit());
+            let mut val = core::mem::replace(&mut vals[j as usize], MaybeUninit::uninit());
+            set_del_true(old, j);
+            loop {
+                // SAFETY: `key` came from a live slot: initialized.
+                let k = hash(unsafe { key.assume_init_ref() });
+                let mut i = k & new_mask;
+                let mut step = 0;
+                while !is_empty(new_flags, i) {
+                    step += 1;
+                    i = (i + step) & new_mask;
                 }
-                let mut key = self.keys.add(j as usize).read();
-                let mut val = self.val_ptr(j).read();
-                old.set_del_true(j);
-                loop {
-                    let mut i = hash(&key) & new_mask;
-                    let mut step = 0;
-                    while !new.is_empty(i) {
-                        step += 1;
-                        i = (i + step) & new_mask;
-                    }
-                    new.set_empty_false(i);
-                    if i < self.n_buckets && !old.is_either(i) {
-                        // kick out the existing element
-                        key = self.keys.add(i as usize).replace(key);
-                        val = self.val_ptr(i).replace(val);
-                        old.set_del_true(i);
-                    } else {
-                        self.keys.add(i as usize).write(key);
-                        self.val_ptr(i).write(val);
-                        break;
-                    }
+                set_empty_false(new_flags, i);
+                if i < old_n && !is_either(old, i) {
+                    // kick out the existing element
+                    core::mem::swap(&mut key, &mut keys[i as usize]);
+                    core::mem::swap(&mut val, &mut vals[i as usize]);
+                    set_del_true(old, i);
+                } else {
+                    keys[i as usize] = key;
+                    vals[i as usize] = val;
+                    break;
                 }
             }
         }
-        if self.n_buckets > new_n_buckets {
-            // Shrink. C assigns the result even when it is NULL; keep the
-            // larger arrays then (they are still valid and big enough).
-            // SAFETY: the map's own arrays.
-            let nk = unsafe {
-                alloc::reallocarray(self.keys.cast(), new_n_buckets as usize, size_of::<K>())
-            };
-            if !nk.is_null() {
-                self.keys = nk.cast();
-            }
-            if Self::IS_MAP {
-                // SAFETY: as above.
-                let nv = unsafe {
-                    alloc::reallocarray(self.vals.cast(), new_n_buckets as usize, size_of::<V>())
-                };
-                if !nv.is_null() {
-                    self.vals = nv.cast();
-                }
-            }
+        if old_n > new_n_buckets {
+            self.shrink_arrays(new_n_buckets);
         }
         // SAFETY: the old flags array (or NULL), replaced.
         unsafe { alloc::free(self.flags.cast()) };
-        self.flags = new_flags;
+        self.flags = new_flags_ptr;
         self.n_buckets = new_n_buckets;
         self.n_occupied = self.size;
         self.upper_bound = (self.n_buckets as f64 * UPPER_BOUND + 0.5) as u32;
         Ok(())
     }
 
+    /// Grow the key and value arrays to `n` slots (C's expand step).
+    fn grow_arrays(&mut self, n: u32) -> Result<()> {
+        // SAFETY: `keys` is NULL or the map's own array; on failure it is
+        // left as it was.
+        let nk = unsafe { alloc::reallocarray(self.keys.cast(), n as usize, size_of::<K>()) };
+        if nk.is_null() {
+            return Err(ErrorCode::GENERIC);
+        }
+        self.keys = nk.cast();
+        if Self::IS_MAP {
+            // SAFETY: as above, for `vals`.
+            let nv = unsafe { alloc::reallocarray(self.vals.cast(), n as usize, size_of::<V>()) };
+            if nv.is_null() {
+                return Err(ErrorCode::GENERIC);
+            }
+            self.vals = nv.cast();
+        }
+        Ok(())
+    }
+
+    /// Shrink the key and value arrays to `n` slots. C assigns the result
+    /// even when it is NULL; the larger arrays are kept then (still valid
+    /// and big enough).
+    fn shrink_arrays(&mut self, n: u32) {
+        // SAFETY: the map's own array; on failure it is left as it was.
+        let nk = unsafe { alloc::reallocarray(self.keys.cast(), n as usize, size_of::<K>()) };
+        if !nk.is_null() {
+            self.keys = nk.cast();
+        }
+        if Self::IS_MAP {
+            // SAFETY: as above, for `vals`.
+            let nv = unsafe { alloc::reallocarray(self.vals.cast(), n as usize, size_of::<V>()) };
+            if !nv.is_null() {
+                self.vals = nv.cast();
+            }
+        }
+    }
+
     /// `name##__put_idx`: the bucket for `key`, and whether it was newly
-    /// taken (`true`: the key is written; `false`: present, untouched).
-    pub fn put_idx_with(
+    /// taken (`true`: the key is written, the value slot is empty);
+    /// otherwise the key is given back, and the bucket's pair untouched.
+    fn put_idx_with(
         &mut self,
         key: K,
         hash: impl Fn(&K) -> u32,
         eq: impl Fn(&K, &K) -> bool,
-    ) -> Result<(u32, bool, Option<K>)> {
+    ) -> Result<(u32, Option<K>)> {
         if self.n_occupied >= self.upper_bound {
             if self.n_buckets > (self.size << 1) {
                 // clear "deleted" elements
@@ -428,50 +522,60 @@ impl<K, V, X> GitHashMap<K, V, X> {
                 self.resize_with(self.n_buckets + 1, &hash)?;
             }
         }
-        let fl = self.fl();
         let n = self.n_buckets;
         let mask = n - 1;
+        let h = hash(&key);
+        let p = self.parts();
+        let (fl, keys) = (p.flags, p.keys);
         let mut x;
         let mut site = n;
-        let mut i = hash(&key) & mask;
-        // SAFETY (flags and keys): every index is masked to a bucket, or is
-        // a bucket found below; keys are read from live buckets only.
-        unsafe {
-            if fl.is_empty(i) {
-                x = i;
-            } else {
-                x = n;
-                let last = i;
-                let mut step = 0;
-                while !fl.is_empty(i) && (fl.is_del(i) || !eq(&*self.keys.add(i as usize), &key)) {
-                    if fl.is_del(i) {
-                        site = i;
-                    }
-                    step += 1;
-                    i = (i + step) & mask;
-                    if i == last {
-                        x = site;
+        let mut i = h & mask;
+        if is_empty(fl, i) {
+            x = i;
+        } else {
+            x = n;
+            let last = i;
+            let mut step = 0;
+            loop {
+                if is_empty(fl, i) {
+                    break;
+                }
+                if !is_del(fl, i) {
+                    // SAFETY: a live bucket: an initialized key.
+                    if eq(unsafe { keys[i as usize].assume_init_ref() }, &key) {
                         break;
                     }
+                } else {
+                    site = i;
                 }
-                if x == n {
-                    x = if fl.is_empty(i) && site != n { site } else { i };
+                step += 1;
+                i = (i + step) & mask;
+                if i == last {
+                    x = site;
+                    break;
                 }
             }
-            if fl.is_empty(x) {
-                self.keys.add(x as usize).write(key);
-                fl.set_both_false(x);
-                self.size += 1;
-                self.n_occupied += 1;
-                Ok((x, true, None))
-            } else if fl.is_del(x) {
-                self.keys.add(x as usize).write(key);
-                fl.set_both_false(x);
-                self.size += 1;
-                Ok((x, true, None))
-            } else {
-                Ok((x, false, Some(key)))
+            if x == n {
+                x = if is_empty(fl, i) && site != n {
+                    site
+                } else {
+                    i
+                };
             }
+        }
+        if is_empty(fl, x) {
+            keys[x as usize] = MaybeUninit::new(key);
+            set_both_false(fl, x);
+            self.size += 1;
+            self.n_occupied += 1;
+            Ok((x, None))
+        } else if is_del(fl, x) {
+            keys[x as usize] = MaybeUninit::new(key);
+            set_both_false(fl, x);
+            self.size += 1;
+            Ok((x, None))
+        } else {
+            Ok((x, Some(key)))
         }
     }
 
@@ -484,18 +588,21 @@ impl<K, V, X> GitHashMap<K, V, X> {
         hash: impl Fn(&K) -> u32,
         eq: impl Fn(&K, &K) -> bool,
     ) -> Result<Option<(K, V)>> {
-        let (x, new, key) = self.put_idx_with(key, hash, eq)?;
-        // SAFETY: `x` is a live bucket now: on `new`, its key was written
-        // and its value slot is uninitialized; otherwise both are
-        // initialized and replaced here.
-        unsafe {
-            if new {
-                self.val_ptr(x).write(val);
+        let (x, present) = self.put_idx_with(key, hash, eq)?;
+        let p = self.parts();
+        let x = x as usize;
+        match present {
+            None => {
+                p.vals[x] = MaybeUninit::new(val);
                 Ok(None)
-            } else {
-                let key = key.expect("put_idx returns the key when present");
-                let old_k = self.keys.add(x as usize).replace(key);
-                let old_v = self.val_ptr(x).replace(val);
+            }
+            Some(key) => {
+                let old_k = core::mem::replace(&mut p.keys[x], MaybeUninit::new(key));
+                let old_v = core::mem::replace(&mut p.vals[x], MaybeUninit::new(val));
+                // SAFETY: the bucket was live: both were initialized.
+                let old_k = unsafe { old_k.assume_init() };
+                // SAFETY: as above.
+                let old_v = unsafe { old_v.assume_init() };
                 Ok(Some((old_k, old_v)))
             }
         }
@@ -506,13 +613,18 @@ impl<K, V, X> GitHashMap<K, V, X> {
         if idx >= self.n_buckets || !self.is_live(idx) {
             return None;
         }
-        // SAFETY: a live bucket: its pair is initialized, moved out once (the
-        // bucket is marked deleted).
-        unsafe {
-            self.fl().set_del_true(idx);
-            self.size -= 1;
-            Some((self.keys.add(idx as usize).read(), self.val_ptr(idx).read()))
-        }
+        self.size -= 1;
+        let p = self.parts();
+        set_del_true(p.flags, idx);
+        let i = idx as usize;
+        let k = core::mem::replace(&mut p.keys[i], MaybeUninit::uninit());
+        let v = core::mem::replace(&mut p.vals[i], MaybeUninit::uninit());
+        // SAFETY: the bucket was live: its pair was initialized, and is moved
+        // out once (the bucket is marked deleted).
+        let k = unsafe { k.assume_init() };
+        // SAFETY: as above.
+        let v = unsafe { v.assume_init() };
+        Some((k, v))
     }
 
     /// `name##_remove` by `hash` and `eq`.
@@ -601,9 +713,7 @@ impl<K, V, X> GitHashMap<K, V, X> {
             return;
         }
         for i in 0..self.n_buckets {
-            if self.is_live(i) {
-                drop(self.remove_at(i));
-            }
+            drop(self.remove_at(i));
         }
     }
 
@@ -611,14 +721,7 @@ impl<K, V, X> GitHashMap<K, V, X> {
     pub fn clear(&mut self) {
         self.drop_entries();
         if !self.flags.is_null() {
-            // SAFETY: the map's flags array of `flagsize(n_buckets)` words.
-            unsafe {
-                ptr::write_bytes(
-                    self.flags.cast::<u8>(),
-                    0xaa,
-                    flagsize(self.n_buckets) * size_of::<u32>(),
-                )
-            };
+            self.parts().flags.fill(0xaaaa_aaaa);
             self.size = 0;
             self.n_occupied = 0;
         }
@@ -629,11 +732,14 @@ impl<K, V, X> GitHashMap<K, V, X> {
     /// left as is.)
     pub fn dispose(&mut self) {
         self.drop_entries();
-        // SAFETY: the map's own arrays (or NULL), freed once and forgotten.
-        unsafe {
-            alloc::free(self.flags.cast());
-            alloc::free(self.keys.cast());
-            alloc::free(self.vals.cast());
+        for p in [
+            self.flags.cast::<c_void>(),
+            self.keys.cast(),
+            self.vals.cast(),
+        ] {
+            // SAFETY: the map's own arrays (or NULL), freed once and
+            // forgotten below.
+            unsafe { alloc::free(p) };
         }
         self.n_buckets = 0;
         self.size = 0;
@@ -777,7 +883,10 @@ impl<'a> CStrKey<'a> {
     #[inline]
     pub const fn new(s: &'a CStr) -> CStrKey<'a> {
         // SAFETY: a reference's pointer is not null.
-        CStrKey(unsafe { NonNull::new_unchecked(s.as_ptr().cast_mut()) }, PhantomData)
+        CStrKey(
+            unsafe { NonNull::new_unchecked(s.as_ptr().cast_mut()) },
+            PhantomData,
+        )
     }
 
     /// The key for a C string pointer.
@@ -893,7 +1002,11 @@ macro_rules! git_hashmap_exports {
             type M = $map;
             #[inline(always)]
             unsafe fn key_of(k: $k) -> <M as $crate::util::hashmap::MapTypes>::Key {
-                const { assert!(size_of::<$k>() == size_of::<<M as $crate::util::hashmap::MapTypes>::Key>()) };
+                const {
+                    assert!(
+                        size_of::<$k>() == size_of::<<M as $crate::util::hashmap::MapTypes>::Key>()
+                    )
+                };
                 // SAFETY: the key types are layout-identical (the macro's
                 // contract), and the caller's key meets the Rust key's.
                 unsafe { ::core::mem::transmute_copy(&k) }
@@ -1117,13 +1230,16 @@ mod tests {
         // a byte over 0x7f is a negative `char`
         assert_eq!(str_hash(b"\xe9"), 0xffff_ffe9);
         assert_eq!(str_hash(b"a\0b"), 97);
-        assert_eq!(7i64.hash_code(), ((7i64 >> 33) ^ 7 ^ (7 << 11)) as u32);
+        assert_eq!(7i64.hash_code(), 7 ^ (7 << 11));
+        assert_eq!((-1i64).hash_code(), 0x7ff);
     }
 
     #[test]
     fn put_get_remove() {
         let _g = crate::util::test_support::init();
-        let strs: Vec<CString> = (0..2000).map(|i| CString::new(format!("k{i}")).unwrap()).collect();
+        let strs: Vec<CString> = (0..2000)
+            .map(|i| CString::new(format!("k{i}")).unwrap())
+            .collect();
         let other = CString::new("k5").unwrap();
         let mut m: GitHashMap<CStrKey<'_>, usize> = GitHashMap::new();
         for (i, s) in strs.iter().enumerate() {
@@ -1137,7 +1253,10 @@ mod tests {
         assert!(!m.contains(&CStrKey::new(c"nope")));
         let old = m.put(CStrKey::new(&other), 55).unwrap().unwrap();
         assert_eq!(old.1, 5);
-        assert_eq!(m.get_key_value(&CStrKey::new(c"k5")).unwrap().0.as_ptr(), other.as_ptr());
+        assert_eq!(
+            m.get_key_value(&CStrKey::new(c"k5")).unwrap().0.as_ptr(),
+            other.as_ptr()
+        );
         for s in strs.iter().step_by(2) {
             assert!(m.remove(&CStrKey::new(s)).is_some());
         }

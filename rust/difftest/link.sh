@@ -13,7 +13,11 @@ src=$1; out=$2; name=$(basename "$src" .c)
 mkdir -p "$out"
 CFLAGS=(-O1 -g -D_GNU_SOURCE -I "$SRC_ROOT/src/util" -I "$SRC_ROOT/src/libgit2" -I "$SRC_ROOT/include" -I "$C_BUILD/gen_headers")
 "$CC" "${CFLAGS[@]}" -c "$src" -o "$out/$name.o"
-link_line="$(awk '/^build util_tests: /{f=1} f{print} f&&/^$/{exit}' "$C_BUILD/build.ninja")"
+# The C reference's objects come from a test binary's link edge: util_tests,
+# or the one a driver names in a "difftest-link: <target>" comment.
+edge=$(sed -n 's/.*difftest-link: *\([a-z0-9_]*\).*/\1/p' "$src" | head -n1)
+edge=${edge:-util_tests}
+link_line="$(awk -v e="build $edge: " 'index($0, e) == 1 {f=1} f{print} f&&/^$/{exit}' "$C_BUILD/build.ninja")"
 mapfile -t C_OBJS < <(echo "$link_line" | head -n1 | sed 's/ | .*//' | tr ' ' '\n' | grep '\.o$' | grep -v '^tests/' | sed "s|^|$C_BUILD/|")
 read -r -a C_LIBS <<<"$(echo "$link_line" | sed -n 's/^ *LINK_LIBRARIES = //p')"
 "$CC" -o "$out/${name}_c" "$out/$name.o" "${C_OBJS[@]}" "${C_LIBS[@]}" -ldl -lm -lpthread

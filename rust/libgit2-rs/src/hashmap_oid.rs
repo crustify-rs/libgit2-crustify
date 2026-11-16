@@ -131,7 +131,11 @@ mod tests {
             a.put(id, i).unwrap();
             b.put(*id, i).unwrap();
             // SAFETY: `ids` outlives `c`.
-            c.put(unsafe { OidPtr::new(NonNull::from(id)) }, core::ptr::null_mut()).unwrap();
+            c.put(
+                unsafe { OidPtr::new(NonNull::from(id)) },
+                core::ptr::null_mut(),
+            )
+            .unwrap();
         }
         for i in (0..500).step_by(3) {
             a.remove(&&ids[i]);
@@ -142,6 +146,8 @@ mod tests {
         assert_eq!(ka, kb);
         assert_eq!(a.get(&&ids[1]), Some(&1));
         assert_eq!(c.len(), 500);
-        assert!(c.contains(&unsafe { OidPtr::new(NonNull::from(&ids[7])) }));
+        // SAFETY: `ids` outlives the key.
+        let k = unsafe { OidPtr::new(NonNull::from(&ids[7])) };
+        assert!(c.contains(&k));
     }
 }

@@ -29,12 +29,12 @@ pub fn contains_key(strings: &[&CStr], key: &[u8], delimiter: u8) -> bool {
 
 /// The exports of `strlist.c`.
 pub mod ffi {
-    use core::ffi::{CStr, c_char, c_int};
     use super::*;
     use crate::util::alloc;
     use crate::util::errors::{self, ErrorCode};
     use crate::util::export::{barrier, cstr_bytes};
     use crate::util::integer::alloc_add;
+    use core::ffi::{CStr, c_char, c_int};
 
     /// Copy `len` strings into a new `git__calloc`'d array of `size`
     /// slots; on failure, free what was copied (C leaks it) and set the
@@ -43,14 +43,21 @@ pub mod ffi {
     /// # Safety
     ///
     /// `input` is readable for `len` NUL-terminated strings; `size >= len`.
-    unsafe fn copy(out: *mut *mut *mut c_char, input: *const *const c_char, len: usize, size: usize) -> c_int {
+    unsafe fn copy(
+        out: *mut *mut *mut c_char,
+        input: *const *const c_char,
+        len: usize,
+        size: usize,
+    ) -> c_int {
         let dup = alloc::calloc(size, size_of::<*mut c_char>()).cast::<*mut c_char>();
         if dup.is_null() {
             return ErrorCode::GENERIC.raw();
         }
         for i in 0..len {
-            // SAFETY: `i < len`: a NUL-terminated string.
-            let s = unsafe { CStr::from_ptr(input.add(i).read()) };
+            // SAFETY: `i < len`: within the caller's array.
+            let p = unsafe { input.wrapping_add(i).read() };
+            // SAFETY: a NUL-terminated string.
+            let s = unsafe { CStr::from_ptr(p) };
             let d = alloc::strdup(s);
             if d.is_null() {
                 // SAFETY: the first `i` slots hold our copies; the array
@@ -59,7 +66,7 @@ pub mod ffi {
                 return errors::oom().raw();
             }
             // SAFETY: `i < len <= size`, a slot of the array.
-            unsafe { dup.add(i).write(d) };
+            unsafe { dup.wrapping_add(i).write(d) };
         }
         // SAFETY: writable.
         unsafe { out.write(dup) };
@@ -110,8 +117,12 @@ pub mod ffi {
     /// `strings` is readable for `len` NUL-terminated strings.
     unsafe fn list<'a>(strings: *const *const c_char, len: usize) -> Vec<&'a CStr> {
         (0..len)
-            // SAFETY: `i < len`.
-            .map(|i| unsafe { CStr::from_ptr(strings.add(i).read()) })
+            .map(|i| {
+                // SAFETY: `i < len`: within the caller's array.
+                let p = unsafe { strings.wrapping_add(i).read() };
+                // SAFETY: a NUL-terminated string.
+                unsafe { CStr::from_ptr(p) }
+            })
             .collect()
     }
 
@@ -154,7 +165,9 @@ pub mod ffi {
     ) -> bool {
         barrier(|| {
             // SAFETY: the caller's contract.
-            let (strings, key) = unsafe { (list(strings, len), cstr_bytes(key)) };
+            let strings = unsafe { list(strings, len) };
+            // SAFETY: a NUL-terminated string.
+            let key = unsafe { cstr_bytes(key) };
             contains_key(&strings, key, delimiter as u8)
         })
     }
@@ -171,8 +184,10 @@ pub mod ffi {
             return;
         }
         for i in 0..len {
-            // SAFETY: the caller's contract.
-            unsafe { alloc::free(strings.add(i).read().cast()) };
+            // SAFETY: `i < len`: within the caller's array.
+            let p = unsafe { strings.wrapping_add(i).read() };
+            // SAFETY: the caller's contract: ours to free.
+            unsafe { alloc::free(p.cast()) };
         }
         // SAFETY: as above.
         unsafe { alloc::free(strings.cast()) };
@@ -206,6 +221,7 @@ pub mod ffi {
 }
 
 #[cfg(test)]
+#[allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)]
 mod tests {
     use super::*;
     use core::ffi::c_char;
@@ -233,8 +249,18 @@ mod tests {
             assert_eq!(ffi::git_strlist_copy_with_null(&mut out, a.as_ptr(), 2), 0);
             assert_eq!(CStr::from_ptr(*out.add(1)), c"two");
             assert!(out.add(2).read().is_null());
-            assert!(ffi::git_strlist_contains_prefix(out.cast(), 2, c"tw".as_ptr(), 2));
-            assert!(ffi::git_strlist_contains_key(out.cast(), 2, c"one:x".as_ptr(), b':' as c_char));
+            assert!(ffi::git_strlist_contains_prefix(
+                out.cast(),
+                2,
+                c"tw".as_ptr(),
+                2
+            ));
+            assert!(ffi::git_strlist_contains_key(
+                out.cast(),
+                2,
+                c"one:x".as_ptr(),
+                b':' as c_char
+            ));
             ffi::git_strlist_free_with_null(out);
             assert_eq!(ffi::git_strlist_copy(&mut out, a.as_ptr(), 2), 0);
             ffi::git_strlist_free(out, 2);

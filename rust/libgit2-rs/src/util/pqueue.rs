@@ -303,9 +303,12 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_pqueue_insert(pq: *mut GitPqueue, item: *mut c_void) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract; the comparison may not reach
-            // the queue (C's contract for comparison functions).
-            status(unsafe { (*pq).insert(item) })
+            // SAFETY: a valid queue, exclusively ours (the caller's
+            // contract).
+            let pq = unsafe { &mut *pq };
+            // SAFETY: the comparison is sound on the elements and does not
+            // reach the queue (C's contract for comparison functions).
+            status(unsafe { pq.insert(item) })
         })
     }
 
@@ -317,8 +320,10 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_pqueue_pop(pq: *mut GitPqueue) -> *mut c_void {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            unsafe { (*pq).pop() }
+            // SAFETY: a valid queue, exclusively ours.
+            let pq = unsafe { &mut *pq };
+            // SAFETY: as in `git_pqueue_insert`.
+            unsafe { pq.pop() }
         })
     }
 }
@@ -332,6 +337,7 @@ crate::c_layout_test! {
 }
 
 #[cfg(test)]
+#[allow(clippy::multiple_unsafe_ops_per_block)]
 mod tests {
     use super::*;
 
