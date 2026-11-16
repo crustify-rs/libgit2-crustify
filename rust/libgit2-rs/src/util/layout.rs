@@ -156,7 +156,7 @@ pub fn c_source(headers: &[&str], types: &[TypeLayout], asserts: &[&str]) -> Str
 /// The `INCLUDES`, `DEFINES` and `-D` flags of `src/libgit2`'s objects in the build at
 /// `dir`.
 #[cfg(test)]
-fn build_flags(dir: &std::path::Path) -> Vec<String> {
+pub(crate) fn build_flags(dir: &std::path::Path) -> Vec<String> {
     let ninja = std::fs::read_to_string(dir.join("build.ninja"))
         .unwrap_or_else(|e| panic!("cannot read {}/build.ninja: {e}", dir.display()));
     let mut in_edge = false;

@@ -206,3 +206,132 @@ int git_filebuf_printf(git_filebuf *file, const char *format, ...)
 
 	return r;
 }
+/*
+ * git_libgit2_opts (src/libgit2/settings.c): the shim reads the arguments
+ * of each option from the va_list, as the C did, and hands them to the
+ * Rust (rust/libgit2-rs/src/settings.rs), which does the rest.
+ */
+#include "git2/common.h"
+#include "git2/config.h"
+
+struct git_libgit2__opt_args {
+	int i;
+	size_t sz;
+	ssize_t ssz;
+	void *p1;
+	void *p2;
+};
+
+/* Implemented in Rust (src/settings.rs). */
+extern int git_libgit2__opts(int key, const struct git_libgit2__opt_args *args);
+
+int git_libgit2_opts(int key, ...)
+{
+	struct git_libgit2__opt_args a = { 0 };
+	va_list ap;
+
+	va_start(ap, key);
+
+	switch (key) {
+	/* (size_t) */
+	case GIT_OPT_SET_MWINDOW_SIZE:
+	case GIT_OPT_SET_MWINDOW_MAPPED_LIMIT:
+	case GIT_OPT_SET_MWINDOW_FILE_LIMIT:
+	case GIT_OPT_SET_PACK_MAX_OBJECTS:
+	case GIT_OPT_SET_PACK_MAX_OBJECT_SIZE:
+		a.sz = va_arg(ap, size_t);
+		break;
+
+	/* (ssize_t) */
+	case GIT_OPT_SET_CACHE_MAX_SIZE:
+		a.ssz = va_arg(ap, ssize_t);
+		break;
+
+	/* (int) */
+	case GIT_OPT_ENABLE_CACHING:
+	case GIT_OPT_ENABLE_STRICT_OBJECT_CREATION:
+	case GIT_OPT_ENABLE_STRICT_SYMBOLIC_REF_CREATION:
+	case GIT_OPT_ENABLE_OFS_DELTA:
+	case GIT_OPT_ENABLE_FSYNC_GITDIR:
+	case GIT_OPT_ENABLE_STRICT_HASH_VERIFICATION:
+	case GIT_OPT_ENABLE_UNSAVED_INDEX_SAFETY:
+	case GIT_OPT_DISABLE_PACK_KEEP_FILE_CHECKS:
+	case GIT_OPT_ENABLE_HTTP_EXPECT_CONTINUE:
+	case GIT_OPT_SET_ODB_PACKED_PRIORITY:
+	case GIT_OPT_SET_ODB_LOOSE_PRIORITY:
+	case GIT_OPT_SET_OWNER_VALIDATION:
+	case GIT_OPT_SET_SERVER_CONNECT_TIMEOUT:
+	case GIT_OPT_SET_SERVER_TIMEOUT:
+		a.i = va_arg(ap, int);
+		break;
+
+	/* (one pointer) */
+	case GIT_OPT_GET_MWINDOW_SIZE:
+	case GIT_OPT_GET_MWINDOW_MAPPED_LIMIT:
+	case GIT_OPT_GET_MWINDOW_FILE_LIMIT:
+	case GIT_OPT_GET_TEMPLATE_PATH:
+	case GIT_OPT_SET_TEMPLATE_PATH:
+	case GIT_OPT_ADD_SSL_X509_CERT:
+	case GIT_OPT_SET_USER_AGENT:
+	case GIT_OPT_GET_USER_AGENT:
+	case GIT_OPT_SET_USER_AGENT_PRODUCT:
+	case GIT_OPT_GET_USER_AGENT_PRODUCT:
+	case GIT_OPT_SET_SSL_CIPHERS:
+	case GIT_OPT_SET_ALLOCATOR:
+	case GIT_OPT_GET_PACK_MAX_OBJECTS:
+	case GIT_OPT_GET_PACK_MAX_OBJECT_SIZE:
+	case GIT_OPT_GET_EXTENSIONS:
+	case GIT_OPT_GET_OWNER_VALIDATION:
+	case GIT_OPT_GET_HOMEDIR:
+	case GIT_OPT_SET_HOMEDIR:
+	case GIT_OPT_GET_SERVER_CONNECT_TIMEOUT:
+	case GIT_OPT_GET_SERVER_TIMEOUT:
+		a.p1 = va_arg(ap, void *);
+		break;
+
+	/* (two pointers) */
+	case GIT_OPT_GET_CACHED_MEMORY:
+	case GIT_OPT_SET_SSL_CERT_LOCATIONS:
+		a.p1 = va_arg(ap, void *);
+		a.p2 = va_arg(ap, void *);
+		break;
+
+	/* (int level, git_buf *) */
+	case GIT_OPT_GET_SEARCH_PATH:
+		a.i = va_arg(ap, int);
+		a.p1 = va_arg(ap, void *);
+		break;
+
+	/* (int level, const char *): the path is read only for a valid
+	 * level, as the C did. */
+	case GIT_OPT_SET_SEARCH_PATH:
+		a.i = va_arg(ap, int);
+		if (a.i == GIT_CONFIG_LEVEL_SYSTEM ||
+		    a.i == GIT_CONFIG_LEVEL_XDG ||
+		    a.i == GIT_CONFIG_LEVEL_GLOBAL)
+			a.p1 = va_arg(ap, void *);
+		break;
+
+	/* (git_object_t, size_t) */
+	case GIT_OPT_SET_CACHE_OBJECT_LIMIT:
+		a.i = va_arg(ap, int);
+		a.sz = va_arg(ap, size_t);
+		break;
+
+	/* (const char **, size_t) */
+	case GIT_OPT_SET_EXTENSIONS:
+		a.p1 = va_arg(ap, void *);
+		a.sz = va_arg(ap, size_t);
+		break;
+
+	/* Windows only: nothing is read elsewhere (as the C). */
+	case GIT_OPT_GET_WINDOWS_SHAREMODE:
+	case GIT_OPT_SET_WINDOWS_SHAREMODE:
+	default:
+		break;
+	}
+
+	va_end(ap);
+
+	return git_libgit2__opts(key, &a);
+}

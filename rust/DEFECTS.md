@@ -572,3 +572,142 @@ DIVERGENCES.md).
 - C: `pack_backend__writepack` returns -1 without freeing the writepack
   when `git_indexer_new` fails.
 - Rust: nothing leaks.
+## repository, libgit2, settings (WP l-repo)
+
+### repository: `git_repository_open_bare` and `git_repository_wrap_odb` leak on failure
+- C: `open_bare` returns the error of `read_repository_format` without
+  freeing the repository it allocated; `wrap_odb` leaks it when its
+  `GIT_ASSERT(git_oid_type_is_valid(odb->options.oid_type))` fails.
+- Trigger: a bare repository whose config has `repositoryformatversion = 2`.
+- Rust: the repository is freed; the error is the C's.
+
+### repository: `git_repository_odb__weakptr` leaks an odb whose backends fail
+- C: the odb is owned by the repository (`GIT_REFCOUNT_OWN`) before
+  `git_odb__set_caps` / `git_odb__add_default_backends`; on their failure
+  `git_odb_free` decrements the count but frees only an unowned object.
+- Rust: the owner is cleared first, so the odb is freed.
+
+### repository: `repo_local_config` frees a weak pointer
+- C: `git_repository_reinit_filesystem` calls `git_config_free` on the
+  pointer from `git_repository_config__weakptr`, which holds no reference.
+  The count ends one too low: a configuration the user holds (from
+  `git_repository_config`) is freed under it when the repository releases
+  its own.
+- Rust: the weak pointer is not released.
+
+### repository: `git_repository_commit_parents` frees commits with `git__free`
+- C: on a merge-head failure the commits looked up so far are freed with
+  `git__free`, not `git_commit_free`: cached objects are freed under the
+  object cache (use after free, double free).
+- Trigger: a `MERGE_HEAD` naming a missing commit after a valid one.
+- Rust: they are released with `git_object_free`.
+
+### repository: `git_repository__item_path` reads past its table
+- C: `items[item]` is not bounds-checked; `item >= GIT_REPOSITORY_ITEM__LAST`
+  reads beyond the static array.
+- Rust: such an item fails with "invalid item directory" (class
+  `INVALID`), -1.
+
+### repository: `git_repository_set_namespace` with its own namespace
+- C: frees `repo->namespace`, then `git__strdup`s the argument, which is
+  that freed string.
+- Trigger: `git_repository_set_namespace(repo, git_repository_get_namespace(repo))`.
+- Rust: the argument is copied first; the namespace is unchanged.
+
+### repository: `git_repository_initialbranch` with a valueless `init.defaultBranch`
+- C: dereferences `entry->value`, NULL for `[init] defaultBranch` with no
+  `=`.
+- Rust: treats it as empty, so the default `master` is used.
+
+### repository: NULL arguments the C dereferences
+- C: most of `repository.c`'s functions without `GIT_ASSERT_ARG` crash on
+  a NULL repository (`git_repository_config__weakptr`, `_message`,
+  `_state_cleanup`, `_set_namespace`, `_head_detached`, …), and the
+  `git_libgit2_opts` getters on a NULL out-pointer; `GIT_OPT_SET_SSL_CIPHERS`
+  with NULL calls `strdup(NULL)`.
+- Rust: they fail with `invalid argument: 'repo'` (or `'out'`), -1 (NULL
+  for the string getters); `GIT_OPT_SET_SSL_CIPHERS` with NULL clears the
+  setting.
+
+### repository: `git_repository__extensions` leaks on allocation failure
+- C: returns -1 with the strings copied so far and the vector leaked.
+- Rust: frees them.
+## odb, odb_loose, odb_mempack, delta, cache (WP l-odb)
+
+### odb: `git_odb_foreach` calls a NULL `foreach` slot
+- C: `src/libgit2/odb.c` (`git_odb_foreach`) calls `b->foreach` of every
+  backend without checking it; a backend without one (the mempack backend
+  has none, and it is optional in `git2/sys/odb_backend.h`) crashes.
+- Trigger: `git_odb_foreach` on an odb with a mempack backend.
+- Rust: backends without `foreach` are skipped.
+
+### odb: `git_odb_write` reads the odb before checking it
+- C: `git_odb_write` reads `db->options.oid_type` before
+  `GIT_ASSERT_ARG(db)`; a NULL `db` crashes.
+- Rust: -1 with `invalid argument: 'db'`.
+
+### odb: `git_odb__add_default_backends` leaks a backend it fails to add
+- C: when `add_backend_internal` fails for the new loose (or pack)
+  backend, the backend is not freed.
+- Trigger: an allocation failure in `add_backend_internal`.
+- Rust: the backend is freed through its `free` slot; the result is -1, as C.
+
+### odb: streams without a hash context or a slot
+- C: `git_odb_stream_write` hashes into `stream->hash_ctx`, NULL for a read
+  stream or a stream a backend returned with `GIT_PASSTHROUGH`;
+  `git_odb_stream_read` / `git_odb_stream_finalize_write` call `read` /
+  `finalize_write` unchecked (NULL for write-only / read-only streams).
+- Rust: no hashing without a context; a missing slot is an error
+  (`stream does not support reading` / `writing`, class `GIT_ERROR_ODB`).
+
+### cache: the size limit of an out-of-range type
+- C: `cache_should_store` indexes `git_cache__max_object_size[8]` with the
+  object's type, out of bounds for a type outside 0..7.
+- Trigger: a backend that returns such a type, with strict hash
+  verification off (`GIT_OPT_ENABLE_STRICT_HASH_VERIFICATION`).
+- Rust: such objects are not cached.
+
+### odb_loose: an empty objects directory
+- C: `git_odb__backend_loose` reads `objects_dir[objects_dirlen - 1]` with
+  `objects_dirlen == 0`.
+- Rust: appends the `/` (the directory is `/`).
+
+### odb_loose: a pack-like object whose body is shorter than its header says
+- C: `read_loose_packlike` returns `hdr.size` bytes of a buffer whose tail
+  past what was inflated is uninitialized.
+- Trigger: a pack-like loose object (first byte not a zlib header) with a
+  short deflated body, strict hash verification off.
+- Rust: the tail is zero (as `read_loose_standard`'s zero padding).
+
+### odb_loose: an id of another type than the backend's
+- C: `object_file_name` grows the path for the backend's hex size, then
+  `git_oid_pathfmt` writes the id's (64 digits for a SHA-256 id in a SHA-1
+  backend: a heap overflow when the string has no slack).
+- Rust: the path has the backend's hex size, the digits taken from the id.
+
+### odb_mempack: `impl__write` leaks the object when the map insert fails
+- C: on `git_odb_mempack_oidmap_put` failure the `memobject` is not freed.
+- Rust: freed (the error is returned as C).
+
+### delta: `git_delta_read_header_fromstream` adds a negative read status to the length
+`delta.c:git_delta_read_header_fromstream` does `len += read` for any
+non-zero `read` that is not `GIT_EBUFS`, so an error of
+`git_packfile_stream_read` (-1, "error reading from the zlib stream") makes
+`len` wrap, and `hdr_sz` then parses up to `SIZE_MAX` bytes past the
+16-byte stack buffer (uninitialized and out-of-bounds reads). Input: a pack
+whose delta object's zlib data is corrupt. The Rust returns -1 with the
+stream's error. A `GIT_EBUFS` that never clears (a window that cannot be
+opened) still loops forever, as in C: the stream gives no way to tell it from
+a transient one.
+
+### delta: `git_delta_create_from_index` with a NULL index
+C dereferences the index (it returns early only for an empty target);
+`git_delta_index_init` returns a NULL index for an empty source, so
+`git_delta_create_from_index(…, NULL, trg, n>0, …)` crashes. The Rust fails
+with `invalid argument: 'index'` (-1, NULL output).
+
+### delta: the output buffer's size wraps for deltas above ~1.4 GiB
+`git_delta_create_from_index` grows its buffer with `bufsize * 3 / 2` in
+`unsigned int`; past 2^32/3 bytes this wraps and `git__realloc` shrinks the
+buffer, which the next opcode overflows. The Rust fails with the
+out-of-memory error instead.

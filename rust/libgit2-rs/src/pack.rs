@@ -44,7 +44,6 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use crate::hashmap_oid::OidPtr;
 use crate::mwindow::{self, Cursor, GitMwindow, GitMwindowFile};
 use crate::oid::{self, GIT_OID_MAX_SIZE, Oid, OidType, git_oid_t};
-use crate::sys::pending;
 use crate::util::alloc;
 use crate::util::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
 use crate::util::futils;
@@ -204,8 +203,9 @@ impl core::fmt::Debug for GitBytes {
     }
 }
 
-/// `git_rawobj` (`odb.h`), mirrored. PENDING(l-odb): l-odb owns
-/// `git_rawobj`; this is the out-parameter of [`ffi::git_packfile_unpack`].
+/// `git_rawobj` (`odb.h`), mirrored: the out-parameter of
+/// [`ffi::git_packfile_unpack`] (`odb.rs` keeps its raw objects in Rust
+/// types and does not define it).
 #[repr(C)]
 pub struct GitRawobj {
     /// `data`.
@@ -873,6 +873,32 @@ fn decode_ofs(buf: &[u8]) -> core::result::Result<(usize, usize), ErrorCode> {
     Ok((ubo, used))
 }
 
+/// `git_delta_apply` into `git__allocator`'s memory (the result is the
+/// caller's, which may hand it to C).
+fn delta_apply(base: &[u8], delta: &[u8]) -> Result<GitBytes> {
+    let max = crate::sys::indexer::max_object_size();
+    let (res_sz, pos) = crate::delta::apply_header(base.len(), delta, max)?;
+    let alloc_sz = alloc_add(res_sz, 1)?;
+    if alloc_sz > isize::MAX as usize {
+        return Err(errors::oom());
+    }
+    let p = NonNull::new(alloc::malloc(alloc_sz).cast::<u8>()).ok_or(ErrorCode::GENERIC)?;
+    // SAFETY: a fresh allocation of `alloc_sz <= isize::MAX` bytes that
+    // nothing else references; `MaybeUninit` needs no initialization.
+    let buf = unsafe {
+        core::slice::from_raw_parts_mut(p.as_ptr().cast::<core::mem::MaybeUninit<u8>>(), alloc_sz)
+    };
+    let (body, nul) = buf.split_at_mut(res_sz);
+    if let Err(e) = crate::delta::apply_body(base, delta, pos, body) {
+        // SAFETY: ours, not handed out; `buf` is not used again.
+        unsafe { alloc::free(p.as_ptr().cast()) };
+        return Err(e);
+    }
+    nul[0].write(0);
+    // SAFETY: `apply_body` wrote the `res_sz` bytes, and the NUL follows.
+    Ok(unsafe { GitBytes::from_raw(p, res_sz) })
+}
+
 /// A delta chain element (`struct pack_chain_elem`).
 #[derive(Clone, Copy, Default)]
 struct ChainElem {
@@ -1118,8 +1144,8 @@ impl GitPackFile {
         let index = match self.index_locked(plock) {
             Ok(i) => i,
             Err(_) => {
-                return Err(pending::odb_error_notfound(
-                    c"failed to open packfile",
+                return Err(crate::odb::error_notfound(
+                    b"failed to open packfile",
                     None,
                     0,
                 ));
@@ -1537,13 +1563,7 @@ impl GitPackFile {
             }
             Ok(())
         })?;
-        let (mut base, mut result) = (0usize, 0usize);
-        // SAFETY: the out-parameters are writable; `buf` has `len` bytes.
-        let r = unsafe {
-            pending::git_delta_read_header(&raw mut base, &raw mut result, buf.as_ptr(), len)
-        };
-        ErrorCode::check(r)?;
-        Ok((base, result))
+        crate::delta::read_header(&buf[..len])
     }
 
     /// `git_packfile_unpack`: the object at `*obj_offset`, its deltas
@@ -1636,27 +1656,7 @@ impl GitPackFile {
                 // C leaks an uncached base when this fails (DEFECTS.md).
                 let delta = delta?;
 
-                let base = base.bytes();
-                let mut out: *mut c_void = ptr::null_mut();
-                let mut out_len = 0usize;
-                // SAFETY: `out` and `out_len` are writable; `base` and
-                // `delta` are readable for their lengths and not kept; C
-                // allocates the result with `git__malloc`.
-                let r = unsafe {
-                    pending::git_delta_apply(
-                        &raw mut out,
-                        &raw mut out_len,
-                        base.as_ptr(),
-                        base.len(),
-                        delta.as_bytes().as_ptr(),
-                        delta.len(),
-                    )
-                };
-                ErrorCode::check(r)?;
-                let out = NonNull::new(out.cast::<u8>()).ok_or(ErrorCode::GENERIC)?;
-                // SAFETY: `git_delta_apply` gives a `git__malloc`ed buffer of
-                // `out_len` bytes and a NUL, which we now own.
-                current = Obj::Owned(unsafe { GitBytes::from_raw(out, out_len) });
+                current = Obj::Owned(delta_apply(base.bytes(), delta.as_bytes())?);
                 elem_pos -= 1;
             }
 
@@ -1680,13 +1680,13 @@ impl GitPackFile {
         let index = self.index()?;
         let view = index.view();
         match view.lookup(short_oid.raw_id(), len) {
-            Lookup::NotFound => Err(pending::odb_error_notfound(
-                c"failed to find offset for pack entry",
+            Lookup::NotFound => Err(crate::odb::error_notfound(
+                b"failed to find offset for pack entry",
                 Some(short_oid),
                 len,
             )),
-            Lookup::Ambiguous => Err(pending::odb_error_ambiguous(
-                c"found multiple offsets for pack entry",
+            Lookup::Ambiguous => Err(crate::odb::error_ambiguous(
+                b"found multiple offsets for pack entry",
             )),
             Lookup::Found(pos) => {
                 let offset = view.nth_offset(pos);
@@ -1797,8 +1797,8 @@ fn chain_last(chain: &mut Chain) -> &mut ChainElem {
 /// `git_packfile__name`: the `.pack` name of the index `path`.
 pub fn packfile_name(path: &[u8]) -> Result<crate::util::alloc::GitCStr> {
     if path.len() < ".idx".len() {
-        return Err(pending::odb_error_notfound(
-            c"invalid packfile path",
+        return Err(crate::odb::error_notfound(
+            b"invalid packfile path",
             None,
             0,
         ));
@@ -1813,8 +1813,8 @@ pub fn packfile_name(path: &[u8]) -> Result<crate::util::alloc::GitCStr> {
 /// pack file must exist; nothing is opened yet.
 pub fn packfile_alloc(path: &[u8], oid_type: git_oid_t) -> Result<*mut GitPackFile> {
     if path.len() < ".idx".len() {
-        return Err(pending::odb_error_notfound(
-            c"invalid packfile path",
+        return Err(crate::odb::error_notfound(
+            b"invalid packfile path",
             None,
             0,
         ));
@@ -1854,7 +1854,7 @@ pub fn packfile_alloc(path: &[u8], oid_type: git_oid_t) -> Result<*mut GitPackFi
 
     let st = match posix::stat(&name) {
         Ok(st) if posix::s_isreg(st.st_mode) => st,
-        _ => return Err(pending::odb_error_notfound(c"packfile not found", None, 0)),
+        _ => return Err(crate::odb::error_notfound(b"packfile not found", None, 0)),
     };
 
     let pack_name = name.as_ptr();

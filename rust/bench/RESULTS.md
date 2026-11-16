@@ -286,11 +286,26 @@ pinned to CPU 2 and interleaved.
 | equal_ncmp_streq | 63.7 | 43.5 | 0.68 |
 | shorten (20 x 12000 ids) | 14.2 | 26.9 | 1.90 |
 
-Check values identical. `shorten` is the one regression: the trie walk has
-C's algorithm and node layout (32-byte nodes, tails borrowed from the
-caller's strings) but costs ~110 ns per id against C's ~60 ns; nothing
-inside libgit2 calls `git_oid_shorten_*`. (A first version that copied
-the ids was 2.9x, from page faults and an extra indirection.)
+Check values identical. `shorten` was 1.9x at first; fixed afterwards
+(see below).
+
+### `oid/shorten` after the fix
+
+The export scanned each id with `strnlen` (40 bytes, ~20 ns) before the
+walk, where C reads only the digits it walks (about 5) and a tail's first
+byte when a leaf is split; and splitting a leaf rewrote all 32 bytes of the
+node. The walk now reads exactly the bytes C reads, and a split zeroes
+only the tail. `compare.sh /work/build-c /work/builds/u1 'oid/shorten*'`,
+5 rounds:
+
+| pinned CPU | C ms | Rust ms | Rust/C wall | Rust/C cpu |
+|---|---:|---:|---:|---:|
+| 5 | 17.38 | 16.99 | 0.98 | 0.99 |
+| 5 | 14.45 | 13.18 | 0.91 | 0.91 |
+| 7 | 13.37 | 14.14 | 1.06 | 1.06 |
+| 2 (default, busiest) | 34.14 | 33.01 | 0.97 | 1.08 |
+
+Parity within the machine's noise (±6%), from 1.9x.
 
 ## Internal API, per call: `micro/u1_bench.c` (`micro/run_u1.sh 5`)
 
@@ -398,3 +413,92 @@ Internal API (`micro/pack_bench.sh 5 5`, git.git's pack, ns per call):
 
 The last two rows of ratios above 1 vary between 0.88 and 1.09 across
 runs (minimum ratios 1.09 and 0.88).
+## WP l-repo (repository, libgit2, settings)
+
+`compare.sh /work/build-c /work/builds/l-repo repository` (3 rounds × 3 reps,
+interleaved per workload, CPU 2; load average 364 at the start, so these are
+noisy). Median wall time, and CPU time:
+
+| workload | C ms | Rust ms | ratio | C cpu | Rust cpu | cpu ratio | check |
+|---|---|---|---|---|---|---|---|
+| open_bare_x1000 | 464.9 | 512.9 | 1.103 | 180.4 | 237.4 | 1.316 | ok |
+| open_workdir_x1000 | 697.2 | 716.2 | 1.027 | 213.9 | 242.7 | 1.135 | ok |
+| open_search_x1000 | 970.8 | 1061.5 | 1.093 | 352.5 | 372.3 | 1.056 | ok |
+| discover_x1000 | 352.6 | 464.5 | 1.317 | 144.8 | 166.4 | 1.149 | ok |
+| init_x50 | 2540.4 | 2254.7 | 0.888 | 291.0 | 293.7 | 1.009 | ok |
+| init_ext_x50 | 1317.7 | 1111.1 | 0.843 | 310.7 | 280.4 | 0.903 | ok |
+| head_packed | 398.5 | 412.6 | 1.035 | 144.0 | 126.7 | 0.880 | ok |
+| head_loose | 587.6 | 496.1 | 0.844 | 227.8 | 187.2 | 0.822 | ok |
+| revparse_head | 324.3 | 322.1 | 0.993 | 83.4 | 88.9 | 1.066 | ok |
+| (config) repository_config_x500 | 330.7 | 329.6 | 0.997 | 165.4 | 162.6 | 0.983 | ok |
+| (codec) repository_hashfile_16m | 611.7 | 567.3 | 0.927 | 153.2 | 142.4 | 0.930 | ok |
+
+Geomean wall 0.998, CPU 1.014. The open/discover rows were measured before
+the weak-pointer and item-path fast paths below were added.
+
+Per-call internals (`micro/repo_bench.c`, `BENCH=repo_bench micro/build_lib.sh
+&& BENCH=repo_bench micro/run.sh 5 5`; median of 5 interleaved rounds, ms):
+
+| workload | C | Rust | ratio |
+|---|---|---|---|
+| odb_weakptr_x2M | 98.5 | 73.6 | 0.75 |
+| config_weakptr_x2M | 73.1 | 72.2 | 0.99 |
+| refdb_weakptr_x2M | 101.2 | 79.0 | 0.78 |
+| path_getters_x2M | 193.0 | 167.5 | 0.87 |
+| item_path_x500k | 379.2 | 234.4 | 0.62 |
+| workdir_path_x500k | 271.8 | 366.5 | 1.35 |
+| opts_get_mwindow_x2M | 190.4 | 296.6 | 1.56 |
+| open_free_x2000 | 4246.0 | 4428.7 | 1.04 |
+
+Before the fast paths (an earlier run, same harness), odb/config weak
+pointers were 1.8–2.3× and item_path 1.45×. Still slower: `workdir_path`
+(about 0.2 µs per call; `GitStr::joinpath` + the barrier) and
+`git_libgit2_opts` (about 50 ns per call: the shim's argument struct and the
+barrier).
+## WP l-odb (odb, odb_loose, odb_mempack, cache, delta)
+
+Public API (`compare.sh /work/build-c /work/builds/l-odb odb,delta`,
+BENCH_CPU=none, 3 rounds x 3 reps, load ~290; the pack code is still C):
+
+| workload | C ms | Rust ms | ratio | cpu ratio |
+|---|---:|---:|---:|---:|
+| odb/loose_read | 470.5 | 411.5 | 0.875 | 0.859 |
+| odb/loose_read_header | 307.8 | 387.7 | 1.260 | 1.220 |
+| odb/loose_exists | 184.8 | 188.8 | 1.022 | 1.064 |
+| odb/loose_foreach | 33.3 | 34.4 | 1.031 | 1.021 |
+| odb/loose_write | 554.4 | 584.3 | 1.054 | 0.981 |
+| odb/loose_write_existing | 50.6 | 58.8 | 1.161 | 1.031 |
+| odb/pack_read_random | 959.5 | 847.6 | 0.883 | 0.865 |
+| odb/pack_read_sequential | 923.7 | 888.9 | 0.962 | 0.966 |
+| odb/pack_read_header | 176.3 | 217.4 | 1.233 | 1.280 |
+| odb/pack_exists | 195.8 | 177.4 | 0.906 | 0.989 |
+| odb/pack_exists_prefix | 97.0 | 103.3 | 1.065 | 1.051 |
+| odb/pack_read_prefix | 480.4 | 429.4 | 0.894 | 0.904 |
+| odb/pack_foreach | 206.1 | 257.0 | 1.247 | 1.252 |
+| odb/mempack_write | 279.9 | 251.6 | 0.899 | 0.889 |
+| odb/mempack_read | 497.2 | 464.9 | 0.935 | 0.929 |
+| odb/mempack_reset | 5.6 | 6.4 | 1.151 | 1.131 |
+| delta/read_deltified_random | 813.3 | 728.9 | 0.896 | 0.895 |
+| delta/read_deep_chains | 257.5 | 258.2 | 1.003 | 0.984 |
+| delta/read_header_deltified | 215.4 | 255.7 | 1.187 | 1.192 |
+| delta/indexer_resolve | 1727.7 | 1606.4 | 0.930 | 0.893 |
+
+Geomean 1.022 (wall), 1.012 (cpu). The workloads above 1.1 were rerun
+directly against `/work/build-c`, `/work/builds/master` (C odb on the
+ported util layer) and `/work/builds/l-odb`: `pack_foreach` (C 182-221,
+master 254-263, l-odb 253-264 ms) and `loose_read_header` / `pack_read_header`
+(master 1.1-1.3x the C, l-odb within ~5% of master) are as slow on master,
+whose odb is C: the cost is below the odb (the C pack code on the ported
+util layer; zlib-rs stream setup per header). `loose_foreach` was 1.2-1.45x
+before the loose backend's hex decoding was made table-driven (now 1.0).
+
+Internal API (`micro/odb_bench.c`, `micro/odb_run.sh 5 5`):
+
+| workload | C ms | Rust ms | Rust/C |
+|---|---:|---:|---:|
+| odb_read_cached (cache hit, 409.6k reads) | 55.3 | 48.9 | 0.885 |
+| odb_exists_cached | 54.8 | 44.3 | 0.808 |
+| odb_read_blob_mempack | 1464.0 | 1292.5 | 0.883 |
+| odb_read_header_mempack | 59.3 | 48.9 | 0.826 |
+| odb_write_existing (hash + freshen) | 741.9 | 683.1 | 0.921 |
+| format_object_header (2M) | 516.2 | 141.7 | 0.275 |

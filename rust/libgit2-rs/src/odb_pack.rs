@@ -34,11 +34,11 @@ use ffibox::define_ctype;
 use ffibox::vtable::CTable;
 
 use crate::mwindow;
+use crate::odb;
 use crate::oid::{self, GIT_OID_MINPREFIXLEN, Oid, OidType, git_oid_t};
 use crate::pack::{GitBytes, GitPackFile, Pack, PackObject, PackObjectType};
 use crate::sys::indexer::{GitIndexerOptions, GitIndexerProgress, Indexer, IndexerProgressCb};
 use crate::sys::midx::{Midx, MidxWriter, OdbForeachCb};
-use crate::sys::pending;
 use crate::util::errors::{self, ErrorClass, ErrorCode, Result};
 use crate::util::str::GitStr;
 use crate::util::{fs_path, futils, posix};
@@ -52,136 +52,16 @@ pub const GIT_ODB_BACKEND_VERSION: c_uint = 1;
 /// `GIT_ODB_BACKEND_PACK_OPTIONS_VERSION`.
 pub const GIT_ODB_BACKEND_PACK_OPTIONS_VERSION: c_uint = 1;
 
-/// The layout of the public C tables.
-pub mod sys {
-    use super::*;
+use crate::odb::{ForeachCb as OdbForeachCbOpt, GitOdb};
+pub use crate::odb::{GitOdbBackend, GitOdbBackendPackOptions, GitOdbWritepack};
 
-    /// `git_odb_backend`, mirrored (`git2/sys/odb_backend.h`).
-    /// PENDING(l-odb): the odb's own definition replaces this at
-    /// integration.
-    #[repr(C)]
-    #[allow(missing_docs)]
-    pub struct GitOdbBackend {
-        pub version: c_uint,
-        pub odb: *mut c_void,
-        pub read: Option<
-            unsafe extern "C" fn(
-                *mut *mut c_void,
-                *mut usize,
-                *mut c_int,
-                *mut GitOdbBackend,
-                *const Oid,
-            ) -> c_int,
-        >,
-        pub read_prefix: Option<
-            unsafe extern "C" fn(
-                *mut Oid,
-                *mut *mut c_void,
-                *mut usize,
-                *mut c_int,
-                *mut GitOdbBackend,
-                *const Oid,
-                usize,
-            ) -> c_int,
-        >,
-        pub read_header: Option<
-            unsafe extern "C" fn(*mut usize, *mut c_int, *mut GitOdbBackend, *const Oid) -> c_int,
-        >,
-        pub write: Option<
-            unsafe extern "C" fn(
-                *mut GitOdbBackend,
-                *const Oid,
-                *const c_void,
-                usize,
-                c_int,
-            ) -> c_int,
-        >,
-        pub writestream:
-            Option<unsafe extern "C" fn(*mut *mut c_void, *mut GitOdbBackend, u64, c_int) -> c_int>,
-        pub readstream: Option<
-            unsafe extern "C" fn(
-                *mut *mut c_void,
-                *mut usize,
-                *mut c_int,
-                *mut GitOdbBackend,
-                *const Oid,
-            ) -> c_int,
-        >,
-        pub exists: Option<unsafe extern "C" fn(*mut GitOdbBackend, *const Oid) -> c_int>,
-        pub exists_prefix:
-            Option<unsafe extern "C" fn(*mut Oid, *mut GitOdbBackend, *const Oid, usize) -> c_int>,
-        pub refresh: Option<unsafe extern "C" fn(*mut GitOdbBackend) -> c_int>,
-        pub foreach: Option<
-            unsafe extern "C" fn(*mut GitOdbBackend, Option<OdbForeachCb>, *mut c_void) -> c_int,
-        >,
-        pub writepack: Option<
-            unsafe extern "C" fn(
-                *mut *mut GitOdbWritepack,
-                *mut GitOdbBackend,
-                *mut c_void,
-                IndexerProgressCb,
-                *mut c_void,
-            ) -> c_int,
-        >,
-        pub writemidx: Option<unsafe extern "C" fn(*mut GitOdbBackend) -> c_int>,
-        pub freshen: Option<unsafe extern "C" fn(*mut GitOdbBackend, *const Oid) -> c_int>,
-        pub free: Option<unsafe extern "C" fn(*mut GitOdbBackend)>,
-    }
-
-    impl GitOdbBackend {
-        /// A table of `GIT_ODB_BACKEND_VERSION` with no slot set.
-        pub const fn empty() -> GitOdbBackend {
-            GitOdbBackend {
-                version: GIT_ODB_BACKEND_VERSION,
-                odb: ptr::null_mut(),
-                read: None,
-                read_prefix: None,
-                read_header: None,
-                write: None,
-                writestream: None,
-                readstream: None,
-                exists: None,
-                exists_prefix: None,
-                refresh: None,
-                foreach: None,
-                writepack: None,
-                writemidx: None,
-                freshen: None,
-                free: None,
-            }
-        }
-    }
-
-    /// `git_odb_writepack`, mirrored (`git2/odb_backend.h`).
-    #[repr(C)]
-    #[allow(missing_docs)]
-    pub struct GitOdbWritepack {
-        pub backend: *mut GitOdbBackend,
-        pub append: Option<
-            unsafe extern "C" fn(
-                *mut GitOdbWritepack,
-                *const c_void,
-                usize,
-                *mut GitIndexerProgress,
-            ) -> c_int,
-        >,
-        pub commit:
-            Option<unsafe extern "C" fn(*mut GitOdbWritepack, *mut GitIndexerProgress) -> c_int>,
-        pub free: Option<unsafe extern "C" fn(*mut GitOdbWritepack)>,
-    }
-
-    /// `git_odb_backend_pack_options`, mirrored (`git2/odb_backend.h`).
-    #[repr(C)]
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    pub struct GitOdbBackendPackOptions {
-        /// `version`.
-        pub version: c_uint,
-        /// `oid_type`: 0 for the default (SHA-1).
-        pub oid_type: git_oid_t,
+/// A `git_odb_backend` of `GIT_ODB_BACKEND_VERSION` with no slot set.
+fn empty_backend() -> GitOdbBackend {
+    GitOdbBackend {
+        version: GIT_ODB_BACKEND_VERSION,
+        ..GitOdbBackend::default()
     }
 }
-
-pub use sys::{GitOdbBackend, GitOdbBackendPackOptions, GitOdbWritepack};
 
 define_ctype!(
     /// A `git_odb_backend` table.
@@ -387,8 +267,8 @@ impl PackBackend {
                 p: st.packs[i].file(),
             });
         }
-        Err(pending::odb_error_notfound(
-            c"failed to find pack entry",
+        Err(odb::error_notfound(
+            b"failed to find pack entry",
             Some(id),
             hexsize,
         ))
@@ -439,7 +319,7 @@ impl PackBackend {
                 Ok((offset, id)) => {
                     e = Some((offset, id, last.expect("set")));
                     if found && id != found_full {
-                        let r = pending::odb_error_ambiguous(c"found multiple pack entries");
+                        let r = odb::error_ambiguous(b"found multiple pack entries");
                         return (Err(r), finish(st, e));
                     }
                     found_full = id;
@@ -468,7 +348,7 @@ impl PackBackend {
                         if let Some(l) = new_last {
                             st.last_found = Some(l);
                         }
-                        let r = pending::odb_error_ambiguous(c"found multiple pack entries");
+                        let r = odb::error_ambiguous(b"found multiple pack entries");
                         return (Err(r), finish(st, e));
                     }
                     found_full = id;
@@ -483,11 +363,7 @@ impl PackBackend {
         }
 
         if !found {
-            let r = pending::odb_error_notfound(
-                c"no matching pack entry for prefix",
-                Some(short_oid),
-                len,
-            );
+            let r = odb::error_notfound(b"no matching pack entry for prefix", Some(short_oid), len);
             return (Err(r), finish(st, e));
         }
         (Ok(()), finish(st, e))
@@ -508,7 +384,7 @@ impl PackBackend {
         len: usize,
     ) -> Result<(Oid, GitBytes, c_int)> {
         if len < GIT_OID_MINPREFIXLEN {
-            return Err(pending::odb_error_ambiguous(c"prefix length too short"));
+            return Err(odb::error_ambiguous(b"prefix length too short"));
         }
         if len >= self.oid_hexsize() {
             // The regular read will do.
@@ -571,8 +447,8 @@ impl PackBackend {
         let path = pack_path.as_bytes();
         // Ensured by midx_parse_packfile_name().
         if path.len() <= ".idx".len() || !path.ends_with(b".idx") {
-            return Err(pending::odb_error_notfound(
-                c"midx file contained a non-index",
+            return Err(odb::error_notfound(
+                b"midx file contained a non-index",
                 None,
                 0,
             ));
@@ -681,11 +557,7 @@ impl PackBackend {
         match posix::stat(folder) {
             Ok(s) if posix::s_isdir(s.st_mode) => {}
             _ => {
-                return Err(pending::odb_error_notfound(
-                    c"failed to refresh packfiles",
-                    None,
-                    0,
-                ));
+                return Err(odb::error_notfound(b"failed to refresh packfiles", None, 0));
             }
         }
         if self.refresh_multi_pack_index(st).is_err() {
@@ -748,8 +620,8 @@ impl PackBackend {
         fs_path::prettify(&mut idx_path, p.name(), base)?;
         let len = idx_path.len();
         if len <= ".pack".len() || !idx_path.as_bytes().ends_with(b".pack") {
-            return Err(pending::odb_error_notfound(
-                c"packfile does not end in .pack",
+            return Err(odb::error_notfound(
+                b"packfile does not end in .pack",
                 None,
                 0,
             ));
@@ -853,7 +725,7 @@ ffibox::impl_cvtable! {
     // before it calls it), and every slot it calls unconditionally (`free`)
     // is set.
     unsafe impl CVtable<PackBackend> for OdbBackend {}
-    base = GitOdbBackend::empty();
+    base = empty_backend();
     /// `pack_backend__read`.
     fn read(buffer_p: *mut *mut c_void, len_p: *mut usize, type_p: *mut c_int, @backend, oid: *const Oid) -> c_int {
         on panic: panicked(),
@@ -947,7 +819,7 @@ ffibox::impl_cvtable! {
         |b: &PackBackend| crate::util::export::status(b.refresh()),
     }
     /// `pack_backend__foreach`.
-    fn foreach(@backend, cb: Option<OdbForeachCb>, data: *mut c_void) -> c_int {
+    fn foreach(@backend, cb: OdbForeachCbOpt, data: *mut c_void) -> c_int {
         on panic: panicked(),
         on busy: busy(),
         |b: &PackBackend| {
@@ -959,7 +831,7 @@ ffibox::impl_cvtable! {
     fn writepack(
         out: *mut *mut GitOdbWritepack,
         @backend,
-        odb: *mut c_void,
+        odb: *mut GitOdb,
         progress_cb: IndexerProgressCb,
         progress_payload: *mut c_void,
     ) -> c_int {
@@ -972,7 +844,7 @@ ffibox::impl_cvtable! {
             // SAFETY: the odb's contract: `odb` is the odb this backend is
             // in, which outlives the writepack, and the callback may be
             // called with its payload.
-            match unsafe { b.writepack(odb, progress_cb, progress_payload) } {
+            match unsafe { b.writepack(odb.cast(), progress_cb, progress_payload) } {
                 Ok(w) => {
                     let base = GitOdbWritepack {
                         backend,
@@ -1061,6 +933,15 @@ pub fn backend_pack(
         backend.refresh()?;
     }
     Ok(new_table(backend))
+}
+
+/// `git_odb_backend_pack`, as the odb adds it: the table, which the odb
+/// frees through its `free` slot.
+pub(crate) fn backend_pack_raw(
+    objects_dir: &CStr,
+    opts: &GitOdbBackendPackOptions,
+) -> Result<NonNull<GitOdbBackend>> {
+    Ok(backend_pack(objects_dir.to_bytes(), Some(opts))?.into_c())
 }
 
 /// `git_odb_backend_one_pack`: the backend over the one pack of the index
@@ -1328,15 +1209,6 @@ pub mod ffi {
     }
 }
 
-crate::c_layout_test! {
-    headers: ["git2/sys/odb_backend.h", "git2/odb_backend.h"],
-    types: [
-        GitOdbBackend => "git_odb_backend" {
-            version, odb, read, read_prefix, read_header, write, writestream, readstream, exists,
-            exists_prefix, refresh, foreach, writepack, writemidx, freshen, free
-        },
-        GitOdbWritepack => "git_odb_writepack" { backend, append, commit, free },
-        GitOdbBackendPackOptions => "git_odb_backend_pack_options" { version, oid_type },
-    ],
-    asserts: ["GIT_ODB_BACKEND_VERSION == 1", "GIT_ODB_BACKEND_PACK_OPTIONS_VERSION == 1"],
-}
+// The layouts of `git_odb_backend`, `git_odb_writepack` and
+// `git_odb_backend_pack_options` are tested with `crate::odb`'s.
+const _: () = assert!(GIT_ODB_BACKEND_VERSION == 1 && GIT_ODB_BACKEND_PACK_OPTIONS_VERSION == 1);

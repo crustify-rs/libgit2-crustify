@@ -310,3 +310,76 @@ One entry per difference: component, what differs, why.
   progress callback) or concurrently returns -1, `the writepack is in use`
   (class `GIT_ERROR_INDEXER`). A panic in a slot returns -1 with
   `GIT_ERROR_INTERNAL`.
+## repository, libgit2, settings (WP l-repo)
+
+- **`git_libgit2_opts` is a C shim** (`src/util/rust_shims.c`): it reads each
+  option's arguments from the `va_list` exactly as the C did (for
+  `GIT_OPT_SET_SEARCH_PATH` the path only after a valid level) and calls
+  `git_libgit2__opts`, an internal Rust export (not in `libgit2.exports`).
+- **The registered extensions** (`GIT_OPT_SET_EXTENSIONS`) live in a Rust
+  `Vec` under a mutex (C: an unsynchronized `git_vector` of `git__strdup`
+  copies), in Rust's allocator: setting them cannot fail with -1 on
+  allocation failure, and concurrent calls are safe. Order, duplicates
+  and the `!` rejection are the C's.
+- **The features and build information** (`git_libgit2_features`,
+  `_feature_backend`, `_buildinfo`, the version) come from the build's
+  `git2_features.h` and `include/git2/version.h`, read by `build.rs` into
+  `cfg`s and constants; without `LIBGIT2_BUILD_DIR` (Miri) the reference
+  configuration is assumed.
+- **Infallible Rust allocations on rare paths**: copies of paths and
+  config values made while opening (`CString`/`Vec` conversions of
+  environment variables, `core.worktree`, ceiling directories, gitlink
+  contents) and the safe API's conversions abort on out-of-memory where C
+  returned -1. The `git_repository` itself, its strings, the extensions
+  array and every `git_str` use `git__allocator` and fail as C.
+- **`GIT_OPT_*` with a NULL out-pointer** fails with `invalid argument: 'out'`
+  instead of crashing (see DEFECTS.md).
+- **The safe `Repository` is `Send`, not `Sync`.** Its setters that replace
+  paths (`set_workdir`, `set_bare`, `set_namespace`, `set_ident`) take
+  `&mut self`. The odb, config, refdb and index it returns are owners with
+  their own reference; until the L-wave integration they are thin types of
+  `repository::handles` (PENDING), not the other WPs' `Odb`, `Config`, ….
+- **The C ABI reads the caller's `git_repository_init_options`** once into
+  Rust values and writes the internal `GIT_REPOSITORY_INIT__*` bits back
+  into its `flags` at the end (C or-ed them in as it went); the caller sees
+  the same flags afterwards.
+
+## odb, odb_loose, odb_mempack, delta, cache (WP l-odb)
+
+- **odb: `git_odb` is a shared prefix** (`rc`, `options`; `odb.h` keeps
+  the other fields only without `GIT_RUST`), allocated with
+  `git__allocator`; the backends are a Rust `Vec` (with `try_reserve`)
+  under a `std::sync::Mutex`, sorted with the C's timsort and comparison,
+  so the order is C's. The odb's own cache is a `git_cache` in the Rust
+  state; the repository's (`repo->objects`) is reached through its offset
+  in `git_repository`, checked by a layout test (PENDING(l-repo)).
+- **odb: `git_odb_write_multi_pack_index`** calls the backends on a copy
+  of the list taken under the lock (C walked the list without the lock).
+- **odb: object type names.** `odb.rs` has its own copy of
+  `git_objects_table`'s names (`git_object_type2string`,
+  `git_object_stringn2type`, `git_object_type_is_valid`) and of
+  `git_object_id_from_buffer` without filters (all the odb needs), so that
+  the odb and loose parsing run without object.c (l-obj); same results.
+- **Rust backends and streams are `ffibox::CTable`s** in Rust's allocator
+  (C: `git__calloc`), so `cl_alloc_limit` does not see the tables
+  themselves; their buffers (object data, the fake stream's buffer, the
+  hash contexts) still come from `git__allocator`. A slot refused because
+  its table is being released returns -1 with `the object database backend
+  is being freed` (class `GIT_ERROR_INTERNAL`); C used the freed memory.
+- **cache: `git_cache_size`** takes the read lock (C read the map's size
+  unlocked).
+- **Safe API:** `OdbBackend` implementations return `Vec<u8>`, copied into
+  `git__allocator` memory for C; paths with a NUL byte are refused
+  (`GIT_EINVALID`) instead of being cut short.
+
+- **delta: the index's block** is one `git__allocator` allocation, as in C
+  (C frees it with `git__free`), but laid out by the Rust: 4-byte bucket
+  heads and 16-byte entries (indices, not pointers), so it is smaller than
+  the C's. `git_delta_index_size` still returns the size of the C's
+  allocation (32 + 24 per entry + 8 per bucket), which `pack-objects.c`
+  accounts with. The temporary bucket counts are a Rust `Vec`
+  (`try_reserve`, out-of-memory error on failure, as C's `git__calloc`). The delta and applied
+  buffers handed to C come from `git__allocator`, as before.
+- **delta: a delta's NUL terminator.** `git_delta_apply` writes the NUL
+  after the result once the result is complete (C wrote it first); the
+  buffer C receives is the same.
