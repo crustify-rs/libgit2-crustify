@@ -240,3 +240,29 @@ same-process, finely interleaved comparison on 64 KiB inputs gives 1.09-1.10.
 `pathspec_match` is mostly wildmatch on short paths that fail early: the
 Rust pays ~20 ns per call more (two `strlen`s for its slices, entry cost),
 while long scans are as fast or faster (memchr).
+
+## Filesystem layer (WP u3: futils, fs_path, filebuf, posix)
+
+The layer has no public API of its own; these public-API workloads write
+lock files (`git_filebuf`), read files (`git_futils_readbuffer`) and make
+directories. `compare.sh /work/build-c /work/builds/u3` (master with u2/u4
+merged, plus u3), 3 rounds x 3 reps, CPU 9, load 160-270. Everything else in
+the Rust build is also ported (foundation, hash, zstream, …), so these show
+the whole port on these paths; no check mismatch.
+
+| workload | C ms | Rust ms | ratio | minrat | cpu ratio |
+|---|---:|---:|---:|---:|---:|
+| refs/create_loose | 861.4 | 764.2 | 0.89 | 0.93 | 0.89 |
+| refs/delete_loose | 1348.5 | 1320.3 | 0.98 | 0.95 | 0.99 |
+| refs/update_with_reflog | 856.6 | 841.9 | 0.98 | 0.80 | 1.00 |
+| refs/reflog_append_write | 77.5 | 74.8 | 0.97 | 0.94 | 0.96 |
+| config/open_big_x20 | 1160.1 | 1191.2 | 1.03 | 1.06 | 1.03 |
+| config/open_small_x2000 | 140.3 | 142.1 | 1.01 | 1.05 | 1.01 |
+| config/set_big_x10 | 573.6 | 579.9 | 1.01 | 1.05 | 1.04 |
+| config/set_small_x400 | 508.1 | 519.0 | 1.02 | 1.15 | 1.02 |
+| index/read_100k | 228.7 | 216.1 | 0.95 | 0.90 | 0.94 |
+| index/write_100k | 217.9 | 200.2 | 0.92 | 0.92 | 0.93 |
+| index/write_git | 11.4 | 10.9 | 0.96 | 0.95 | 0.96 |
+
+Geomean wall ratio 0.97 (cpu 0.98), within the C-vs-C noise of
+`baseline-c-vs-c.tsv`. Micro-benchmarks: `micro/RESULTS.md`.
