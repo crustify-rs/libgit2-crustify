@@ -986,9 +986,47 @@ pub unsafe extern "C" fn git_fs_path_str_is_valid_ext(
             Some(f) => unsafe { f(c as c_char, payload) },
             None => true,
         };
+        // Where a sized path ends (`ptr + size`): C's validators read the
+        // byte after a component (`path.c`'s `validate_dotgit_ntfs` reads
+        // `path[len]`), which inside the path is the `/` or the NUL that
+        // ended it, but after the last component of a sized path is
+        // `ptr[size]`, which the caller's buffer need not have (a Rust
+        // caller's slice). That component goes to the callback as a
+        // NUL-terminated copy: what C saw after an owned `git_str`.
+        let sized_end = (raw.size != usize::MAX).then(|| (raw.ptr as usize).wrapping_add(raw.size));
         let mut comp = |c: &[u8]| match validate_component_cb {
-            // SAFETY: the callback's contract; `c` lies in the caller's path.
-            Some(f) => unsafe { f(c.as_ptr().cast(), c.len(), payload) },
+            Some(f) if sized_end == Some(c.as_ptr() as usize + c.len()) => {
+                let mut stack = [0u8; 256];
+                let mut heap = Vec::new();
+                let buf: &mut [u8] = if c.len() < stack.len() {
+                    &mut stack[..=c.len()]
+                } else {
+                    if heap.try_reserve_exact(c.len() + 1).is_err() {
+                        let _ = crate::util::errors::oom();
+                        return false;
+                    }
+                    heap.resize(c.len() + 1, 0);
+                    &mut heap
+                };
+                buf[..c.len()].copy_from_slice(c);
+                buf[c.len()] = 0;
+                // SAFETY: the callback's contract; `buf` holds the component
+                // and a NUL after it, for the call.
+                unsafe { f(buf.as_ptr().cast(), c.len(), payload) }
+            }
+            // The component is handed over as a pointer into the caller's
+            // path (the C's), whose provenance covers the `/` or NUL after
+            // it, not as the slice's pointer, which covers only the
+            // component.
+            // SAFETY: the callback's contract; `c` lies in the caller's path
+            // at that offset and is followed there by its `/` or NUL.
+            Some(f) => unsafe {
+                f(
+                    raw.ptr.wrapping_add(c.as_ptr() as usize - raw.ptr as usize),
+                    c.len(),
+                    payload,
+                )
+            },
             None => true,
         };
         let cbs = ValidateCallbacks {

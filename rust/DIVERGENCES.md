@@ -226,6 +226,12 @@ One entry per difference: component, what differs, why.
   NUL-terminated copy instead.
 - **fs_path: `git_fs_path_str_is_valid_ext`** on a sized `git_str` reads
   exactly `size` bytes (C read `ptr[size]` too, before testing the length).
+  Its component callback gets a pointer into the caller's path, as C, so
+  that it may read the `/` or NUL after the component (`path.c`'s
+  validators do); for the last component of a sized path it gets a
+  NUL-terminated copy instead, since `ptr[size]` need not exist (a Rust
+  caller's exact-size buffer): what C's callers saw after an owned
+  `git_str`.
 - **fs_path / futils: NULL path arguments** that C passed to the system
   (and crashed on, or got `EFAULT`) are read as `""` by the exports.
 - **fs_path: `git_fs_path_set_error`** prints the action's bytes as they
