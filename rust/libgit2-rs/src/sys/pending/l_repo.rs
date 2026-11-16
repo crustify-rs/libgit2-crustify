@@ -9,7 +9,7 @@
 //! The safe wrappers live there too, on the owner and handle types.
 
 use core::ffi::{c_char, c_int, c_uint, c_void};
-use core::sync::atomic::{AtomicBool, AtomicUsize};
+use core::sync::atomic::AtomicBool;
 
 use crate::oid::{Oid, git_oid_t};
 
@@ -25,19 +25,6 @@ pub struct ObjectIdOptions {
     pub oid_type: git_oid_t,
     /// `git_filter_list *`.
     pub filters: *mut c_void,
-}
-
-// PENDING(l-pack): mwindow.c, pack.c.
-unsafe extern "C" {
-    pub fn git_mwindow_global_init() -> c_int;
-    /// `git_mwindow__window_size`.
-    pub static git_mwindow__window_size: AtomicUsize;
-    /// `git_mwindow__mapped_limit`.
-    pub static git_mwindow__mapped_limit: AtomicUsize;
-    /// `git_mwindow__file_limit`.
-    pub static git_mwindow__file_limit: AtomicUsize;
-    /// `git_disable_pack_keep_file_checks` (`bool`, pack.c).
-    pub static git_disable_pack_keep_file_checks: AtomicBool;
 }
 
 // PENDING(l-refs): refdb.c, refs.c.

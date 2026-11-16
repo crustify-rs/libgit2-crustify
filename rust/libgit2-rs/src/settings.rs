@@ -5,10 +5,10 @@
 //! reads each option's arguments from the `va_list`, as the C did, into an
 //! [`OptArgs`], and calls [`ffi::git_libgit2__opts`], which does the rest.
 //! The options are mostly globals of other modules (`git_mwindow__*`,
-//! `git_cache__*`, …), declared in `sys` (PENDING for the L-wave
-//! modules); the user agents and the TLS ciphers are this module's
-//! (`git__user_agent`, `git__user_agent_product`, `git__ssl_ciphers`, read
-//! by C).
+//! `git_cache__*`, …): the ported modules' Rust statics, or C globals
+//! declared in `sys` (PENDING for the L-wave modules not yet merged); the
+//! user agents and the TLS ciphers are this module's (`git__user_agent`,
+//! `git__user_agent_product`, `git__ssl_ciphers`, read by C).
 //!
 //! The safe API is the [`opts`] module.
 
@@ -234,9 +234,7 @@ unsafe fn buf_out(out: *mut GitBuf, f: impl FnOnce(&mut GitStr) -> Result<()>) -
 mod globals {
     pub(super) use crate::sys::indexer::*;
     pub(super) use crate::sys::pending::l_repo::{
-        git_disable_pack_keep_file_checks, git_mwindow__file_limit, git_mwindow__mapped_limit,
-        git_mwindow__window_size, git_object__strict_input_validation,
-        git_reference__enable_symbolic_ref_target_validation,
+        git_object__strict_input_validation, git_reference__enable_symbolic_ref_target_validation,
     };
     pub(super) use crate::sys::streams::{
         git_socket_stream__connect_timeout, git_socket_stream__timeout,
@@ -306,12 +304,14 @@ pub unsafe fn opts(key: c_int, args: &OptArgs) -> Result<()> {
     let a = Args(args);
     {
         match key {
-            SET_MWINDOW_SIZE => g!(git_mwindow__window_size).store(a.0.sz, r),
-            GET_MWINDOW_SIZE => a.put1(g!(git_mwindow__window_size).load(r))?,
-            SET_MWINDOW_MAPPED_LIMIT => g!(git_mwindow__mapped_limit).store(a.0.sz, r),
-            GET_MWINDOW_MAPPED_LIMIT => a.put1(g!(git_mwindow__mapped_limit).load(r))?,
-            SET_MWINDOW_FILE_LIMIT => g!(git_mwindow__file_limit).store(a.0.sz, r),
-            GET_MWINDOW_FILE_LIMIT => a.put1(g!(git_mwindow__file_limit).load(r))?,
+            SET_MWINDOW_SIZE => crate::mwindow::git_mwindow__window_size.store(a.0.sz, r),
+            GET_MWINDOW_SIZE => a.put1(crate::mwindow::git_mwindow__window_size.load(r))?,
+            SET_MWINDOW_MAPPED_LIMIT => crate::mwindow::git_mwindow__mapped_limit.store(a.0.sz, r),
+            GET_MWINDOW_MAPPED_LIMIT => {
+                a.put1(crate::mwindow::git_mwindow__mapped_limit.load(r))?
+            }
+            SET_MWINDOW_FILE_LIMIT => crate::mwindow::git_mwindow__file_limit.store(a.0.sz, r),
+            GET_MWINDOW_FILE_LIMIT => a.put1(crate::mwindow::git_mwindow__file_limit.load(r))?,
             GET_SEARCH_PATH => a.buf1(|s| {
                 let level = config_level_to_sysdir(a.0.i)?;
                 crate::sys::sysdir::get_into(s, level)
@@ -382,7 +382,7 @@ pub unsafe fn opts(key: c_int, args: &OptArgs) -> Result<()> {
             SET_PACK_MAX_OBJECT_SIZE => g!(git_indexer__max_object_size).store(a.0.sz, r),
             GET_PACK_MAX_OBJECT_SIZE => a.put1(g!(git_indexer__max_object_size).load(r))?,
             DISABLE_PACK_KEEP_FILE_CHECKS => {
-                g!(git_disable_pack_keep_file_checks).store(a.0.i != 0, r)
+                crate::pack::git_disable_pack_keep_file_checks.store(a.0.i != 0, r)
             }
             ENABLE_HTTP_EXPECT_CONTINUE => g!(git_http__expect_continue).store(a.0.i != 0, r),
             SET_ODB_PACKED_PRIORITY => crate::odb::git_odb__packed_priority.store(a.0.i, r),

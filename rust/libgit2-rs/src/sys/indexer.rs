@@ -117,7 +117,7 @@ impl Indexer {
     ///
     /// `opts.odb` is NULL or an odb that outlives the indexer;
     /// `opts.progress_cb`, if set, may be called with `progress_cb_payload`
-    /// during [`append`](Self::append) and [`commit`](Self::commit).
+    /// during [`append_raw`](Self::append_raw) and [`commit`](Self::commit).
     pub unsafe fn new(path: Option<&CStr>, opts: &mut GitIndexerOptions) -> Result<Indexer> {
         let mut out = core::ptr::null_mut();
         let path = path.map_or(core::ptr::null(), CStr::as_ptr);
@@ -126,17 +126,6 @@ impl Indexer {
         let r = unsafe { git_indexer_new(&raw mut out, path, opts) };
         ErrorCode::check(r)?;
         NonNull::new(out).map(Indexer).ok_or(ErrorCode::GENERIC)
-    }
-
-    /// `git_indexer_append`.
-    ///
-    /// # Safety
-    ///
-    /// `stats` is NULL or a writable `git_indexer_progress`.
-    pub unsafe fn append(&mut self, data: &[u8], stats: *mut GitIndexerProgress) -> c_int {
-        // SAFETY: a live indexer used by this thread alone; `data` is
-        // readable for its length; `stats` per the caller.
-        unsafe { git_indexer_append(self.0.as_ptr(), data.as_ptr().cast(), data.len(), stats) }
     }
 
     /// `git_indexer_append` over raw input, as C passed it.

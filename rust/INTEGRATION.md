@@ -158,3 +158,20 @@ returns l-repo's `OwnedRepo`. The branch's publish/set_owned race tests
 use the `refdb` slot (the only one still `AtomicPtr<c_void>`). Open
 soundness gap of `RepoHandle` (a `Clone` of the inner type escapes the
 lifetime): `/work/reviews/integration-notes.md` I-2.
+
+## 5. l-pack (merge `e.g. below`)
+
+`merge_wp.sh` union of `sys/pending.rs` resurrected the l-repo entries of
+l-odb's section that step 1 had deleted (l-pack had edited the same
+lines); rebuilt from integ's version minus what l-pack removed
+(`git_odb_backend_pack`, `odb_backend_pack`, `git_packfile_stream_read`:
+l-pack had already replaced the l-odb↔l-pack PENDING entries). The rest
+merged cleanly (l-pack had merged master with l-odb and l-repo).
+
+Resolved (PENDING between l-pack and l-repo, deleted): `l_repo.rs`
+PENDING(l-pack) `git_mwindow_global_init` (init table now
+`crate::mwindow::ffi::git_mwindow_global_init`), `git_mwindow__window_size`,
+`__mapped_limit`, `__file_limit`, `git_disable_pack_keep_file_checks`
+(settings uses `crate::mwindow::*` / `crate::pack::*`). `sys::indexer`'s
+unused `Indexer::append` (dead now that `sys` is crate-private) removed;
+`DEFAULT_MAX_OBJECT_SIZE` is Miri-only.

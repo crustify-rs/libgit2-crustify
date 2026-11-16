@@ -275,8 +275,7 @@ fn init_fns() -> [crate::util::runtime::InitFn; 17] {
         sys::streams::git_socket_stream_global_init,
         sys::streams::git_openssl_stream_global_init,
         sys::streams::git_mbedtls_stream_global_init,
-        // PENDING(l-pack): `crate::mwindow::global_init`.
-        sys::pending::l_repo::git_mwindow_global_init,
+        crate::mwindow::ffi::git_mwindow_global_init,
         crate::util::pool::ffi::git_pool_global_init,
         crate::settings::ffi::git_settings_global_init,
         sys::refdb_reftable::git_reftable_global_init,
