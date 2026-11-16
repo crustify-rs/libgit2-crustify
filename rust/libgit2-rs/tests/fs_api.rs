@@ -211,3 +211,22 @@ fn lock_files() {
     let z = fs::read(&t.p("z")).unwrap();
     assert!(z.starts_with(b"hello 42\nmore!!\x78"));
 }
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn nul_bytes_are_refused() {
+    let _g = test_support::init();
+    let e = fs::write(b"/tmp/a\0b", b"x", 0o644, false).unwrap_err();
+    assert_eq!(e.class(), ErrorClass::INVALID);
+    assert_eq!(e.message(), "path contains a NUL byte");
+    assert!(fs::owner_is_current_user(b"/tmp\0/../etc").is_err());
+    assert!(!fs::exists(b"/tmp\0x"));
+    assert!(fs::dirname(b"a\0/b").is_err());
+    let mut st = Filestamp::default();
+    let e = st.check(b"/nonexistent-u3/x").unwrap_err();
+    assert_eq!(e.code(), ErrorCode::NOT_FOUND);
+    assert!(
+        e.message()
+            .starts_with("could not find '/nonexistent-u3/x' to stat")
+    );
+}
