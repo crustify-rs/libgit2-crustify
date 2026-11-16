@@ -597,9 +597,8 @@ fn reentrant_hide_callbacks() {
 /// so that it links. The tests' nodes are parsed and no pathspec is set,
 /// so none is ever called.
 ///
-/// PENDING(l-commit): remove at integration (the Rust definitions of
-/// commit.c, tree.c and commit_list.c take these names), keeping only
-/// those of the C that stays (diff, pathspec).
+/// Stand-ins for the C that stays (diff, pathspec) and for l-obj's
+/// object_api.c (PENDING(l-obj)) when the C rest is not linked.
 #[cfg(not(feature = "link-c"))]
 mod c_stubs {
     use core::ffi::{c_char, c_int};

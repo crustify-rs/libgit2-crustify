@@ -8,18 +8,18 @@ test` passes (with `-Zmiri-strict-provenance`), `cargo clippy --all-targets`
 
 ## Status (latest first)
 
-- **`18afb35`** (2026-11-16): merged on `integ`: l-repo, l-odb, l-config,
+- **`04e2c73`+** (2026-11-16): merged on `integ`: l-repo, l-odb, l-config,
   l-index, l-pack, l-commit, l-revwalk, l-refs, each with its review fixes
   as of the coordinator's messages (l-config `de91683`, l-index `6aacd37`,
   l-pack `1822f62`, l-commit `df73db3`, l-repo `2b5638b`, l-revwalk
   `06cc18b`, l-odb `686da6b`/`32eaa1a`, l-refs `f58892b`). Not merged: l-obj
-  (not finished). Last fully green commits (clar 436/436, cargo test
-  link-c, Miri, clippy, fmt): `63818f6`, `4162edd`, `af822f1`, `076ca1b`;
-  later commits are green on clar/cargo test/clippy/fmt with Miri pending
-  (see the sections below). PENDING markers left in the crate: 81, of which
-  48 are PENDING(l-obj) (unmerged); the rest are the l-refs resolution in
-  progress (l-refs ↔ l-repo/l-config/l-commit/l-revwalk/l-index) and a few
-  comments.
+  (not finished). Fully green commits (clar 436/436, cargo test link-c,
+  Miri, clippy, fmt): `63818f6`, `4162edd`, `af822f1`, `076ca1b`; green on
+  clar/cargo test/clippy/fmt, Miri pending: `18afb35`, `f621775`,
+  `04e2c73` (Miri failed to compile on `8324cc3`..`d0eeeed`, fixed in
+  `fb7b34f`). PENDING between merged WPs: all resolved but
+  `refs_api::Repository` (integration notes I-6). The other PENDING markers
+  are PENDING(l-obj) (unmerged).
 
 ## 1. l-repo + l-odb (already merged on master at `c7f5662`)
 
@@ -275,3 +275,50 @@ Resolved (PENDING entries, deleted):
   defined `git_revwalk__commit_lookup` itself (now a duplicate symbol),
   runs over a real `GitRevwalk::with_repo` (made `pub(crate)`) and a zeroed
   `GitRepository`.
+
+## 8. l-refs (merge `6d069e0`; re-merge of review fixes `18afb35`; resolution `1ea897c`, `f621775`, `04e2c73`)
+
+Also re-merged on the way: `wp/l-odb` review fixes (`77c7e3e`;
+`GitRefcount::own` became `unsafe`: the repository's owner contracts are
+stated at each call, `163a783`).
+
+Merge conflict: `sys/path.rs` (added by both): combined; l-refs'
+byte-string `is_valid` is `is_valid_bytes` over the shared `ConstStr`.
+
+Resolved (PENDING entries, deleted):
+
+- l-refs → l-repo (top-level of `sys/pending.rs`): the opaque
+  `git_repository` and `git_commit` are the Rust types; the declarations of
+  `git_repository_{refdb__weakptr, refdb, __configmap_lookup,
+  foreach_worktree, path, commondir, get_namespace, ident, is_bare,
+  is_worktree, oid_type, open, init, free}` and `git_repository__fsync_gitdir`,
+  and the fixed offset `REPO_REFDB_TYPE_OFFSET` (240), go: `RepoPtr`'s
+  methods read `GitRepository` directly; `refs::rename` calls the
+  repository's `git_repository_foreach_worktree` export.
+- l-refs → l-commit: `git_commit_{parentcount, summary, committer}`
+  declarations go (`crate::commit::ffi`).
+- l-repo → l-refs (`l_repo.rs`): every `git_refdb_*` / `git_reference_*`
+  declaration and `git_reference__enable_symbolic_ref_target_validation`
+  go. `handles::{Refdb, Reference, RefIter}` are now typed owners of
+  `GitRefdb`, `GitReference`, `refdb::git_reference_iterator` over l-refs'
+  exports; `GitRepository._refdb` is `AtomicPtr<GitRefdb>`; the C ABI of
+  `git_repository_refdb*`/`_set_refdb` is typed `*mut GitRefdb`. The
+  publish/set_owned race tests now use the `grafts` slot.
+- l-config → l-refs: `git_refdb_lookup` and the l_repo reference
+  declarations used by `repository_head_symbolic_target` go (l-refs'
+  exports).
+- l-commit → l-refs: `git_reference_{lookup_resolved, target, free,
+  __update_for_commit, peel}` declarations and the opaque `git_reference`
+  go.
+- l-revwalk → l-refs: `git_reference_{name_to_id, iterator_glob_new, next,
+  name, free, iterator_free}` declarations and the opaque
+  `git_reference`/`git_reference_iterator` go.
+- l-refs → l-index: `sys::iterator::INDEX_ENTRY_PATH_OFFSET` (80) is
+  `offset_of!(index::GitIndexEntry, path)`.
+- `libgit2_init_once` calls `crate::libgit2::init` (no C declaration).
+
+Left: `refs_api::Repository`, l-refs' `Sync` stand-in for l-repo's
+`Repository` (integration notes I-6: an API decision is needed); the
+safe `Repository::head()` still returns `repository::handles::Reference`,
+not l-refs' safe `refs_api::Reference` (they are tied to the two
+different repository types).
