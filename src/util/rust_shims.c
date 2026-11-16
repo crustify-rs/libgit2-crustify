@@ -334,4 +334,58 @@ int git_libgit2_opts(int key, ...)
 	va_end(ap);
 
 	return git_libgit2__opts(key, &a);
+
+/*
+ * git_commit_create_v (src/libgit2/commit.c, ported): the variadic parents
+ * are collected into an array for the Rust (src/commit.rs), which treats a
+ * NULL parent as the end of the list, as the C's va_arg reader did.
+ */
+#include "git2/commit.h"
+
+extern int git_commit__create_v(
+	git_oid *id,
+	git_repository *repo,
+	const char *update_ref,
+	const git_signature *author,
+	const git_signature *committer,
+	const char *message_encoding,
+	const char *message,
+	const git_tree *tree,
+	size_t parent_count,
+	const git_commit **parents);
+
+int git_commit_create_v(
+	git_oid *id,
+	git_repository *repo,
+	const char *update_ref,
+	const git_signature *author,
+	const git_signature *committer,
+	const char *message_encoding,
+	const char *message,
+	const git_tree *tree,
+	size_t parent_count,
+	...)
+{
+	const git_commit *stackbuf[8], **parents = stackbuf;
+	va_list ap;
+	size_t i;
+	int error;
+
+	if (parent_count > sizeof(stackbuf) / sizeof(stackbuf[0])) {
+		parents = git__mallocarray(parent_count, sizeof(*parents));
+		GIT_ERROR_CHECK_ALLOC(parents);
+	}
+
+	va_start(ap, parent_count);
+	for (i = 0; i < parent_count; i++)
+		parents[i] = va_arg(ap, const git_commit *);
+	va_end(ap);
+
+	error = git_commit__create_v(id, repo, update_ref, author, committer,
+		message_encoding, message, tree, parent_count, parents);
+
+	if (parents != stackbuf)
+		git__free((void *)parents);
+
+	return error;
 }

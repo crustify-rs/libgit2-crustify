@@ -1,9 +1,15 @@
 //! `src/libgit2/diff*.c` (C that stays C): the index diffs its entries
 //! against the working directory (`git_index_add_all`,
-//! `git_index_update_all`, and the racy-entry check of `git_index_write`).
-//! Safe wrappers: `crate::index::foreign`.
+//! `git_index_update_all`, and the racy-entry check of `git_index_write`;
+//! safe wrappers: `crate::index::foreign`), and what
+//! `git_commit_create_from_stage` / `_from_tree` use to refuse an empty
+//! commit ([`count_deltas`]).
 
 use core::ffi::{c_char, c_int, c_void};
+use core::marker::{PhantomData, PhantomPinned};
+
+use crate::sys::pending::l_commit::{git_index, git_repository};
+use crate::tree::GitTree;
 
 use crate::oid::{Oid, git_oid_t};
 use crate::strarray::GitStrArray;
@@ -161,4 +167,63 @@ crate::c_layout_test! {
         GitDiffFile => "git_diff_file" { id, path, size, flags, mode, id_abbrev },
         GitDiffDelta => "git_diff_delta" { status, flags, similarity, nfiles, old_file, new_file },
     ],
+}
+
+/// `git_diff`, opaque.
+#[repr(C)]
+#[allow(non_camel_case_types)]
+pub struct git_diff {
+    _private: [u8; 0],
+    _marker: PhantomData<(*mut u8, PhantomPinned)>,
+}
+
+unsafe extern "C" {
+    fn git_diff_tree_to_tree(
+        diff: *mut *mut git_diff,
+        repo: *mut git_repository,
+        old_tree: *mut GitTree,
+        new_tree: *mut GitTree,
+        opts: *const c_void,
+    ) -> c_int;
+    fn git_diff_tree_to_index(
+        diff: *mut *mut git_diff,
+        repo: *mut git_repository,
+        old_tree: *mut GitTree,
+        index: *mut git_index,
+        opts: *const c_void,
+    ) -> c_int;
+}
+
+/// The number of deltas between `old_tree` and `new_tree` (when given) or
+/// `index`, with the default options; the diff is freed.
+///
+/// # Safety
+///
+/// `repo` is a live repository; `old_tree` is NULL or a live tree of it;
+/// `new_tree` is NULL or a live tree, and `index` a live index when
+/// `new_tree` is NULL; none is freed by another thread during the call.
+pub unsafe fn count_deltas(
+    repo: *mut git_repository,
+    old_tree: *mut GitTree,
+    new_tree: *mut GitTree,
+    index: *mut git_index,
+) -> Result<usize, c_int> {
+    let mut diff = core::ptr::null_mut();
+    let r = if new_tree.is_null() {
+        // SAFETY: the caller's contract; `diff` is writable.
+        unsafe { git_diff_tree_to_index(&raw mut diff, repo, old_tree, index, core::ptr::null()) }
+    } else {
+        // SAFETY: as above.
+        unsafe { git_diff_tree_to_tree(&raw mut diff, repo, old_tree, new_tree, core::ptr::null()) }
+    };
+    if r < 0 {
+        // SAFETY: NULL or the diff the call made.
+        unsafe { git_diff_free(diff.cast()) };
+        return Err(r);
+    }
+    // SAFETY: the diff just made.
+    let n = unsafe { git_diff_num_deltas(diff.cast()) };
+    // SAFETY: freed once.
+    unsafe { git_diff_free(diff.cast()) };
+    Ok(n)
 }

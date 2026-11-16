@@ -594,3 +594,46 @@ cpu time: geomean ratio 0.974, median |ratio-1| 0.039, max |ratio-1| 0.161, with
 ```
 
 `find_bypath_100k` is now 0.94 (wall and CPU). `write_tree_git` is 1.12–1.13 in three runs, but so is master's build with the C index (`compare.sh /work/build-c /work/builds/master 'index/write_tree*'`: 1.141 wall, 1.146 CPU): the difference is in the layers below the index (tree writing, hashing), not in the index.
+## l-commit (commit, commit_list, tree)
+
+Public API, `compare.sh /work/build-c /work/builds/l-commit objects,revwalk`
+(3 rounds × 3 reps, interleaved; load average 300–450 on the machine, so
+wall times are noisy: CPU time is the steadier figure). All checks equal.
+
+| workload | C ms | Rust ms | ratio | minrat | cpurat |
+|---|---:|---:|---:|---:|---:|
+| objects/commit_lookup_all | 3253.6 | 5837.4 | 1.79 | 0.87 | 0.97 |
+| objects/cache_hit | 200.8 | 179.6 | 0.89 | 0.66 | 0.77 |
+| objects/tree_lookup_iterate | 823.7 | 683.7 | 0.83 | 0.64 | 0.84 |
+| objects/tree_walk | 63.4 | 63.8 | 1.01 | 1.11 | 0.99 |
+| objects/tree_entry_bypath | 68.7 | 71.6 | 1.04 | 1.00 | 1.03 |
+| objects/commit_create_buffer | 94.5 | 108.5 | 1.15 | 0.90 | 0.86 |
+| revwalk/cold_all_refs | 16137.5 | 14374.5 | 0.89 | 0.91 | 0.99 |
+| revwalk/master_unsorted | 2087.7 | 1719.5 | 0.82 | 0.52 | 0.76 |
+| revwalk/master_topo | 2039.6 | 1701.9 | 0.83 | 0.98 | 0.82 |
+| revwalk/all_refs | 2021.7 | 1553.7 | 0.77 | 0.67 | 0.80 |
+| revwalk/hide_ref_time | 629.6 | 438.3 | 0.70 | 0.66 | 0.73 |
+
+(The other workloads of the two components are in
+`/tmp/lc/bench-objects/table.txt` of the run; geomean over 26: wall 0.92,
+CPU 0.88. `commit_lookup_all`'s wall median is a load burst: its minimum and
+CPU time are at or below the C's. The hot revwalk paths gain from the quick
+parse that no longer allocates a `git_commit`.)
+
+Internal API, per object, `micro/run_l_commit.sh` (best of 5 runs per
+round; 4 C rounds, 3 Rust rounds at load 300–450; the minima are the
+meaningful figures):
+
+| workload | C min ns | Rust min ns | min ratio | median ratio |
+|---|---:|---:|---:|---:|
+| commit_parse_full (86k commits) | 4606 | 3423 | 0.74 | 1.09 |
+| commit_parse_quick | 3326 | 2341 | 0.70 | 0.84 |
+| commit_summary_body | 7732 | 7985 | 1.03 | 1.03 |
+| tree_parse (40k trees) | 81898 | 64360 | 0.79 | 0.89 |
+| tree_byname (every entry) | 261924 | 143779 | 0.55 | 1.02 |
+| treebuilder_from_tree | 391280 | 270334 | 0.69 | 0.80 |
+| revwalk_all (whole walk, ns) | 3.55e9 | 3.10e9 | 0.87 | 0.84 |
+
+`commit_summary_body`'s minimum was measured before the summary was changed
+to copy runs of bytes rather than one byte at a time; the later rounds have
+Rust at 17.4/19.0 µs against C at 14.4–34.4 µs.

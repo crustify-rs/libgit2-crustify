@@ -22,6 +22,8 @@ pub mod config_mem;
 pub mod config_parse;
 pub mod config_snapshot;
 pub mod delta;
+pub mod commit;
+pub mod commit_list;
 pub mod fs;
 pub mod hashmap_oid;
 pub mod index;
@@ -47,10 +49,15 @@ pub use odb::{
     Backend, ExpandId, LooseOptions, Mempack, ObjectType, Odb, OdbBackend, OdbObject, OdbReader,
     OdbWriter,
 };
+pub mod pending_repository;
+pub mod tree;
+
+pub use commit::api::{Commit, CommitBuilder};
 pub use oid::{Oid, OidShortener, OidType};
 pub use oidarray::OidArray;
 pub use repository::{Repository, RepositoryInitOptions, RepositoryOpenFlags, RepositoryState};
 pub use strarray::StrArray;
+pub use tree::api::{Tree, TreeBuilder, TreeEntry, TreeEntryRef};
 pub use util::errors::{Error, ErrorClass, ErrorCode};
 pub use util::net::Url;
 pub use util::process::{Process, ProcessOptions, ProcessStatus};

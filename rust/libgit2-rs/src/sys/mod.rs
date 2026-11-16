@@ -16,6 +16,7 @@ pub mod openssl;
 pub mod pack_objects;
 pub mod path;
 pub mod pathspec;
+pub mod mailmap;
 pub mod pcre2;
 pub mod pending;
 pub mod refdb_reftable;

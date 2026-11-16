@@ -62,3 +62,6 @@ src/libgit2/config_snapshot.c
 src/libgit2/index.c
 src/libgit2/index_map.c
 src/libgit2/tree-cache.c
+src/libgit2/commit.c
+src/libgit2/commit_list.c
+src/libgit2/tree.c
