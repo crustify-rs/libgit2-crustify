@@ -481,23 +481,25 @@ impl<'a> DeltaIndex<'a> {
         let Some(block) = NonNull::new(alloc::malloc(block_len).cast::<u8>()) else {
             return Err(ErrorCode::GENERIC);
         };
-        // SAFETY: a fresh block of `block_len` bytes, 8-aligned (what
-        // `git__allocator` gives), which nothing else references: the
-        // header at 0, the heads (`u32`, initialized here) at `HASH_OFFSET`,
-        // the entries (8-aligned, left uninitialized) at `entries_offset`,
-        // three disjoint ranges within it.
-        let (hash, slots) = unsafe {
-            let base = block.as_ptr();
-            let hash = base.add(HASH_OFFSET).cast::<u32>();
-            core::ptr::write_bytes(hash, 0xff, hsize); // NONE
-            (
-                core::slice::from_raw_parts_mut(hash, hsize),
-                core::slice::from_raw_parts_mut(
-                    base.add(entries_offset).cast::<MaybeUninit<Entry>>(),
-                    cap,
-                ),
-            )
-        };
+        // A fresh block of `block_len` bytes, 8-aligned (what
+        // `git__allocator` gives), which nothing else references: the header
+        // at 0, the heads (`u32`) at `HASH_OFFSET`, the entries (8-aligned)
+        // at `entries_offset`, three disjoint ranges within it.
+        let hash_ptr = block
+            .cast::<IndexHeader>()
+            .as_ptr()
+            .wrapping_add(1)
+            .cast::<u32>();
+        #[expect(clippy::cast_ptr_alignment, reason = "8-aligned: see above")]
+        let slots_ptr = hash_ptr.wrapping_add(hsize).cast::<MaybeUninit<Entry>>();
+        // SAFETY: the heads' range of the block (above); writing initializes
+        // them (to NONE).
+        unsafe { core::ptr::write_bytes(hash_ptr, 0xff, hsize) };
+        // SAFETY: the heads, initialized just above, referenced only here.
+        let hash = unsafe { core::slice::from_raw_parts_mut(hash_ptr, hsize) };
+        // SAFETY: the entries' range of the block, referenced only here;
+        // `MaybeUninit` needs no initialization.
+        let slots = unsafe { core::slice::from_raw_parts_mut(slots_ptr, cap) };
         let index = DeltaIndex {
             block: block.cast(),
             _src: PhantomData,
@@ -613,35 +615,30 @@ impl<'a> DeltaIndex<'a> {
         unsafe { self.block.as_ref() }
     }
 
+    /// The bucket heads' address (after the header).
+    fn hash_ptr(&self) -> *const u32 {
+        self.block.as_ptr().wrapping_add(1).cast::<u32>()
+    }
+
     /// The bucket heads.
     fn hash(&self) -> &[u32] {
-        let h = self.header();
-        // SAFETY: the invariant: `hash_mask + 1` initialized heads at
-        // `HASH_OFFSET` of the live, immutable block.
-        unsafe {
-            core::slice::from_raw_parts(
-                self.block
-                    .as_ptr()
-                    .cast::<u8>()
-                    .add(HASH_OFFSET)
-                    .cast::<u32>(),
-                h.hash_mask as usize + 1,
-            )
-        }
+        let n = self.header().hash_mask as usize + 1;
+        // SAFETY: the invariant: `hash_mask + 1` initialized heads after the
+        // header of the live, immutable block.
+        unsafe { core::slice::from_raw_parts(self.hash_ptr(), n) }
     }
 
     /// The entries.
     fn entries(&self) -> &[Entry] {
         let h = self.header();
-        let offset = HASH_OFFSET + (h.hash_mask as usize + 1) * 4;
+        #[expect(clippy::cast_ptr_alignment, reason = "8-aligned: the invariant")]
+        let p = self
+            .hash_ptr()
+            .wrapping_add(h.hash_mask as usize + 1)
+            .cast::<Entry>();
         // SAFETY: the invariant: `entries` initialized entries after the
         // heads (8-aligned) of the live, immutable block.
-        unsafe {
-            core::slice::from_raw_parts(
-                self.block.as_ptr().cast::<u8>().add(offset).cast::<Entry>(),
-                h.entries as usize,
-            )
-        }
+        unsafe { core::slice::from_raw_parts(p, h.entries as usize) }
     }
 
     /// `git_delta_index_size`: the bytes the C's index occupied.
