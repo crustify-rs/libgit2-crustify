@@ -156,17 +156,32 @@ struct Head {
 
 /// Where an entry was read: what C copies into each `git_config_entry`
 /// besides its name and value.
+///
+/// The fields are crate-private: only this crate's readers build one, from
+/// strings the list interned; [`ConfigList::push`] checks that.
 #[derive(Clone, Copy, Debug)]
 pub struct EntryMeta {
     /// `backend_type`, a string of the list ([`ConfigList::intern`]) or
     /// NULL.
-    pub backend_type: *const c_char,
+    pub(crate) backend_type: *const c_char,
     /// `origin_path`, likewise.
-    pub origin_path: *const c_char,
+    pub(crate) origin_path: *const c_char,
     /// `include_depth`.
-    pub include_depth: c_uint,
+    pub(crate) include_depth: c_uint,
     /// `level`.
-    pub level: c_int,
+    pub(crate) level: c_int,
+}
+
+impl EntryMeta {
+    /// `include_depth`.
+    pub fn include_depth(&self) -> c_uint {
+        self.include_depth
+    }
+
+    /// `level`.
+    pub fn level(&self) -> c_int {
+        self.level
+    }
 }
 
 /// `git_config_list_entry`: the public entry, then the list it belongs to.
@@ -327,7 +342,18 @@ impl ConfigList {
 
     /// `git_config_list_append`: add an entry (a multivar if its name is
     /// already there).
+    ///
+    /// # Panics
+    ///
+    /// If `meta`'s strings are not NULL or strings this list interned.
     pub fn push(&mut self, name: &[u8], value: Option<&[u8]>, meta: EntryMeta) -> Result<()> {
+        let owned = |p: *const c_char| {
+            p.is_null() || self.strings.iter().any(|t| core::ptr::eq(t.c_ptr(0), p))
+        };
+        assert!(
+            owned(meta.backend_type) && owned(meta.origin_path),
+            "EntryMeta strings must be interned in the list they are pushed to"
+        );
         self.entries.try_reserve(1).map_err(|_| errors::oom())?;
         self.map.try_reserve(1).map_err(|_| errors::oom())?;
         let text = match value {
@@ -461,8 +487,16 @@ impl ConfigList {
     /// Lend `entry` (of `list`) to C: a reference to the list, which the
     /// entry's `free` releases (`git_config_list_incref` and `*out =
     /// &entry->base`).
+    ///
+    /// # Panics
+    ///
+    /// If `entry` is not an entry of `list` (an entry of an unfrozen list,
+    /// for one, has no list to lend).
     pub fn lend(list: &Arc<ConfigList>, entry: &ListEntry) -> *mut git_config_backend_entry {
-        debug_assert!(core::ptr::eq(entry.list, Arc::as_ptr(list)));
+        assert!(
+            core::ptr::eq(entry.list, Arc::as_ptr(list)),
+            "ConfigList::lend: the entry is not one of this list's"
+        );
         // SAFETY: `entry.list` is `list`'s data pointer (`freeze`), and
         // `list` keeps the count above zero during the call.
         unsafe { Arc::increment_strong_count(entry.list) };
@@ -499,7 +533,7 @@ ffibox::impl_cvtable! {
     /// `config_iterator_next`.
     fn next(entry: *mut *mut git_config_backend_entry, @iter) -> c_int {
         on panic: crate::config::slot_panicked(),
-        on busy: crate::config::slot_busy(),
+        on busy: crate::config::iter_busy(),
         |it: &mut ListIter| match it.next_entry() {
             Some(e) => {
                 // SAFETY: `entry` is C's writable out-parameter.
@@ -558,6 +592,32 @@ mod tests {
             ((*e).free.unwrap())(e);
         }
         assert_eq!(Arc::strong_count(&l), 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "not one of this list's")]
+    fn lend_unfrozen_entry_panics() {
+        let _g = crate::util::test_support::init();
+        let mut l = ConfigList::new();
+        l.push(b"a.b", Some(b"1"), meta()).unwrap();
+        let other = ConfigList::new().freeze();
+        // An entry of an unfrozen list has no list to lend: a panic, not
+        // an `Arc` made from NULL.
+        let _ = ConfigList::lend(&other, &l.entries()[0]);
+    }
+
+    #[test]
+    #[should_panic(expected = "interned in the list")]
+    fn push_foreign_strings_panics() {
+        let _g = crate::util::test_support::init();
+        let mut a = ConfigList::new();
+        let t = a.intern(b"file").unwrap();
+        let mut b = ConfigList::new();
+        let m = EntryMeta {
+            backend_type: t,
+            ..meta()
+        };
+        let _ = b.push(b"a.b", None, m);
     }
 
     #[test]

@@ -33,7 +33,7 @@
 
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::ptr::NonNull;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use ffibox::vtable::CTable;
 use ffibox::{CBox, CRefSeam};
@@ -286,6 +286,17 @@ pub(crate) fn slot_panicked() -> c_int {
 /// The `on busy:` result of this crate's table slots: a slot refused
 /// because the table is being released.
 #[cold]
+pub(crate) fn iter_busy() -> c_int {
+    git_error_set!(
+        ErrorClass::CONFIG,
+        "the config iterator is already in use or being released"
+    )
+    .raw()
+}
+
+/// The `on busy:` result of the backend tables' slots (all shared): a slot
+/// refused because the table is being released.
+#[cold]
 pub(crate) fn slot_busy() -> c_int {
     git_error_set!(ErrorClass::CONFIG, "the config backend is being released").raw()
 }
@@ -347,12 +358,29 @@ fn opt_ptr(s: Option<&CStr>) -> *const c_char {
     s.map_or(core::ptr::null(), CStr::as_ptr)
 }
 
+mod sealed {
+    /// Only this crate's handles of a live table implement
+    /// [`BackendCalls`](super::BackendCalls): [`Backend`](super::Backend)
+    /// (an owner) and [`BackendPtr`](super::BackendPtr) (whose `unsafe`
+    /// constructor carries the liveness).
+    pub trait Sealed {}
+}
+
 /// The slots of a backend, called as `config.c` calls them.
 ///
 /// Every method keeps the slot's contract (sys/config.h): the table is
 /// live (the handle borrows its owner), and each argument is what the slot
-/// expects.
-pub trait BackendCalls {
+/// expects. The trait is sealed: `raw` of every implementation returns a
+/// live table for as long as `&self` lives.
+///
+/// ```compile_fail
+/// use libgit2_rs::config::{BackendCalls, git_config_backend};
+/// struct Bogus;
+/// impl BackendCalls for Bogus {
+///     fn raw(&self) -> *mut git_config_backend { core::ptr::dangling_mut() }
+/// }
+/// ```
+pub trait BackendCalls: sealed::Sealed {
     /// The table.
     fn raw(&self) -> *mut git_config_backend;
 
@@ -475,6 +503,8 @@ pub trait BackendCalls {
     }
 }
 
+impl sealed::Sealed for Backend {}
+
 impl BackendCalls for Backend {
     fn raw(&self) -> *mut git_config_backend {
         self.as_ref().as_ptr().cast_mut().cast()
@@ -495,6 +525,8 @@ impl BackendPtr {
         BackendPtr(p)
     }
 }
+
+impl sealed::Sealed for BackendPtr {}
 
 impl BackendCalls for BackendPtr {
     fn raw(&self) -> *mut git_config_backend {
@@ -738,7 +770,7 @@ pub struct GitConfig {
     /// `rc`: C takes and drops references (`GIT_REFCOUNT_INC`,
     /// `git_config_free`) and sets the owner (`GIT_REFCOUNT_OWN`).
     pub rc: GitRefcount,
-    backends: Mutex<Arc<Backends>>,
+    backends: std::sync::RwLock<Arc<Backends>>,
 }
 
 /// `git_vector_insert_sorted`'s position for `key` (with `git__bsearch` and
@@ -800,13 +832,14 @@ impl GitConfig {
     pub fn new() -> Box<GitConfig> {
         Box::new(GitConfig {
             rc: GitRefcount::new(1),
-            backends: Mutex::new(Arc::new(Backends::default())),
+            backends: std::sync::RwLock::new(Arc::new(Backends::default())),
         })
     }
 
     /// The current backends (shared: later changes replace them).
     pub fn backends(&self) -> Arc<Backends> {
-        let g = self.backends.lock().unwrap_or_else(|e| e.into_inner());
+        // Readers share the lock; it is released before any backend runs.
+        let g = self.backends.read().unwrap_or_else(|e| e.into_inner());
         Arc::clone(&g)
     }
 
@@ -816,7 +849,7 @@ impl GitConfig {
         let old;
         let r;
         {
-            let mut g = self.backends.lock().unwrap_or_else(|e| e.into_inner());
+            let mut g = self.backends.write().unwrap_or_else(|e| e.into_inner());
             let mut copy = Backends::clone(&g);
             r = f(&mut copy)?;
             old = core::mem::replace(&mut *g, Arc::new(copy));
@@ -1392,7 +1425,7 @@ ffibox::impl_cvtable! {
     /// `all_iter_next` / `all_iter_glob_next`.
     fn next(entry: *mut *mut git_config_backend_entry, @iter) -> c_int {
         on panic: slot_panicked(),
-        on busy: slot_busy(),
+        on busy: iter_busy(),
         // SAFETY: `entry` is C's writable out-parameter.
         |it: &mut AllIter| unsafe { iter_result(entry, it.next_entry()) },
     }
@@ -1433,7 +1466,7 @@ ffibox::impl_cvtable! {
     /// `multivar_iter_next`.
     fn next(entry: *mut *mut git_config_backend_entry, @iter) -> c_int {
         on panic: slot_panicked(),
-        on busy: slot_busy(),
+        on busy: iter_busy(),
         // SAFETY: `entry` is C's writable out-parameter.
         |it: &mut MultivarIter| unsafe { iter_result(entry, it.next_entry()) },
     }
@@ -1842,7 +1875,10 @@ pub unsafe fn rename_section(
         }
     }
     let base_len = replace.len();
-    let pattern = cstring(pattern.as_bytes()).unwrap_or_default();
+    let pattern = match cstring(pattern.as_bytes()) {
+        Ok(p) => p,
+        Err(e) => return e.raw(),
+    };
     config.foreach_match(Some(as_cstr(&pattern)), |entry| {
         // SAFETY: the entry the iterator holds, live during the callback.
         let e = unsafe { EntryView::of(entry.cast()) };
@@ -2473,9 +2509,31 @@ pub mod ffi {
         name: *const c_char,
         value: i64,
     ) -> c_int {
-        let s = cstring(value.to_string().as_bytes()).unwrap_or_default();
-        // SAFETY: per the contract; `s` is NUL-terminated.
-        unsafe { git_config_set_string(config, name, s.as_ptr().cast()) }
+        // `p_snprintf(str_value, 32, "%" PRId64, value)`, on the stack.
+        let mut buf = [0u8; 32];
+        let mut n = 0;
+        let mut mag = value.unsigned_abs();
+        let mut digits = [0u8; 20];
+        let mut d = 0;
+        loop {
+            digits[d] = b'0' + (mag % 10) as u8;
+            d += 1;
+            mag /= 10;
+            if mag == 0 {
+                break;
+            }
+        }
+        if value < 0 {
+            buf[0] = b'-';
+            n = 1;
+        }
+        for k in (0..d).rev() {
+            buf[n] = digits[k];
+            n += 1;
+        }
+        // SAFETY: per the contract; `buf` is NUL-terminated (at most 20
+        // characters of 32).
+        unsafe { git_config_set_string(config, name, buf.as_ptr().cast()) }
     }
 
     /// `git_config_set_int32`.
@@ -2825,8 +2883,8 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `out` is a valid `git_str`; `config` is live; `name` is
-    /// NUL-terminated.
+    /// `out` is NULL (an error, as C's assertion) or a valid `git_str`;
+    /// `config` is live; `name` is NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config__get_path(
         out: *mut GitStr,
@@ -2834,18 +2892,21 @@ pub mod ffi {
         name: *const c_char,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            let out = unsafe { &mut *out };
-            // SAFETY: per the contract.
-            let r = unsafe {
-                with_value(config, name, |v| {
-                    // `GIT_ASSERT_ARG(value)` in `git_config__parse_path`.
-                    let Some(v) = v else {
-                        return Err(errors::assert_arg_failed("value"));
-                    };
-                    parse_path(out, v)
-                })
+            let parse = |v: Option<&[u8]>| {
+                // `GIT_ASSERT_ARG(out)` and `(value)` in
+                // `git_config__parse_path`, after the lookup, as C.
+                if out.is_null() {
+                    return Err(errors::assert_arg_failed("out"));
+                }
+                let Some(v) = v else {
+                    return Err(errors::assert_arg_failed("value"));
+                };
+                // SAFETY: a valid, exclusive `git_str` (the contract; NULL
+                // excluded above).
+                parse_path(unsafe { &mut *out }, v)
             };
+            // SAFETY: `config` is live, `name` NUL-terminated (the contract).
+            let r = unsafe { with_value(config, name, parse) };
             crate::util::export::status(r)
         })
     }
@@ -3251,7 +3312,8 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `path` is a valid `git_str`.
+    /// `path` is a valid (non-NULL) `git_str`, as C requires (it crashes on
+    /// NULL).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config__find_global(path: *mut GitStr) -> c_int {
         barrier(|| {
@@ -3285,7 +3347,8 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `path` is a valid `git_str`.
+    /// `path` is a valid (non-NULL) `git_str`, as C requires (it crashes on
+    /// NULL).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config__find_xdg(path: *mut GitStr) -> c_int {
         barrier(|| {
@@ -3319,7 +3382,8 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `path` is a valid `git_str`.
+    /// `path` is a valid (non-NULL) `git_str`, as C requires (it crashes on
+    /// NULL).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config__find_system(path: *mut GitStr) -> c_int {
         barrier(|| {
@@ -3336,7 +3400,7 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `buf` is a valid `git_str`.
+    /// `buf` is a valid (non-NULL) `git_str`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config__global_location(buf: *mut GitStr) -> c_int {
         barrier(|| {

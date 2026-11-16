@@ -518,6 +518,11 @@ DIVERGENCES.md).
 - Rust: the backend has no entries (`GIT_ENOTFOUND`); the iterator holds
   the backends it iterates alive.
 
+### config: `GIT_CONFIGMAP_STRING` with a NULL `str_match`
+- C: `git_config_lookup_map_value` calls `strcasecmp(value, m->str_match)`
+  unchecked: a user's map with a NULL `str_match` crashes.
+- Rust: a NULL `str_match` is matched as `""`.
+
 ### config_parse: the variable callback is optional but its strings leak
 - C: `git_config_parse` with a NULL `on_variable` leaks each variable's
   name and value. (No caller passes NULL.)
