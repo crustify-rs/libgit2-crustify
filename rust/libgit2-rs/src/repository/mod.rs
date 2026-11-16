@@ -599,14 +599,19 @@ impl GitRepository {
             // SAFETY: a live refcounted object (the caller's owner holds a
             // reference).
             let rc = unsafe { handles::refcount(p.cast()) };
-            rc.own(self.as_ptr());
+            // SAFETY: the repository owns the object from now until it
+            // clears the owner (below, when the slot is replaced, or in
+            // `cleanup`), and outlives it while it does.
+            unsafe { rc.own(self.as_ptr()) };
             rc.inc();
         }
         let old = thread::swap(slot, new.map_or(ptr::null_mut(), NonNull::as_ptr));
         if let Some(old) = NonNull::new(old) {
             // SAFETY: the object the repository owned and held a reference
             // of.
-            unsafe { handles::refcount(old.cast()) }.own(ptr::null_mut());
+            let rc = unsafe { handles::refcount(old.cast()) };
+            // SAFETY: NULL: the object is no longer the repository's.
+            unsafe { rc.own(ptr::null_mut()) };
             free(old);
         }
     }
@@ -622,11 +627,13 @@ impl GitRepository {
     ) -> NonNull<T> {
         // SAFETY: `obj` is the live refcounted object the caller made.
         let rc = unsafe { handles::refcount(obj.cast()) };
-        rc.own(self.as_ptr());
+        // SAFETY: as in `set_owned`: the repository owns what it publishes.
+        unsafe { rc.own(self.as_ptr()) };
         let prev = thread::compare_and_swap(slot, ptr::null_mut(), obj.as_ptr());
         match NonNull::new(prev) {
             Some(prev) => {
-                rc.own(ptr::null_mut());
+                // SAFETY: NULL: the loser is not the repository's.
+                unsafe { rc.own(ptr::null_mut()) };
                 free(obj);
                 prev
             }
@@ -681,14 +688,17 @@ impl GitRepository {
         open::repository_odb_alternates(&odb, self)?;
         let db = odb.inner();
         // Owned first: `GIT_ODB_CAP_FROM_OWNER` reads the owner's config.
-        db.rc.own(self.as_ptr());
+        // SAFETY: the repository owns the odb from here (it is published
+        // below, or disowned on failure).
+        unsafe { db.rc.own(self.as_ptr()) };
         let r = db
             .set_caps(crate::odb::GIT_ODB_CAP_FROM_OWNER)
             .and_then(|()| db.add_default_backends(&cs(&path), false, 0));
         if let Err(e) = r {
             // C frees the odb with its owner still set, which leaks it
             // (DEFECTS.md): released here.
-            db.rc.own(ptr::null_mut());
+            // SAFETY: NULL: the odb is not the repository's after all.
+            unsafe { db.rc.own(ptr::null_mut()) };
             return Err(e);
         }
         Ok(self.publish(&self.odb, odb.into_raw(), |p| {
