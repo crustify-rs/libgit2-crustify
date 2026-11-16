@@ -25,7 +25,7 @@ use core::sync::atomic::{AtomicPtr, Ordering};
 use crate::git_error_set;
 use crate::oid::Oid;
 use crate::reflog::GitReflog;
-use crate::refs::deps::{RepoPtr, configmap, git_repository, git_signature};
+use crate::refs::deps::{RepoPtr, SigRef, configmap, git_repository, git_signature};
 use crate::refs::{
     self, GIT_REFERENCE_DIRECT, GIT_REFERENCE_SYMBOLIC, GitReference, RefBox, RefView,
 };
@@ -440,8 +440,7 @@ impl RefdbPtr {
             // C dereferences the NULL reference.
             git_error_set!(ErrorClass::REFERENCE, "refdb backend returned no reference")
         })?;
-        // SAFETY: a live database.
-        unsafe { r_ref.attach_db(self.as_ptr()) };
+        r_ref.attach_db(self);
         Ok(r_ref)
     }
 
@@ -502,31 +501,28 @@ impl RefdbPtr {
 
     /// `git_refdb_write`: `ref->db` becomes this database (counted), then
     /// the backend writes.
-    ///
-    /// # Safety
-    ///
-    /// `r` is a live reference the caller owns, and `who` NULL or a valid
-    /// signature, for the call.
-    pub unsafe fn write(
+    pub fn write(
         self,
-        r: *mut GitReference,
+        r: &mut RefBox,
         force: bool,
-        who: *const git_signature,
+        who: Option<SigRef<'_>>,
         message: Option<&CStr>,
         old_id: Option<&Oid>,
         old_target: Option<&CStr>,
     ) -> Result<()> {
         let (b, f) = self.slot(|b| b.write)?;
-        self.incref();
-        // SAFETY: per the contract.
-        unsafe { (*r).db = self.as_ptr() };
-        // SAFETY: as in `init`, with the caller's pointers.
+        r.attach_db(self);
+        // SAFETY: `f` is the `write` slot of the backend `b` (one load, see
+        // `slot`), live by `RefdbPtr`'s contract; `r` is our live reference
+        // (borrowed mutably, so nothing else touches it during the call),
+        // `who` NULL or a valid signature (`SigRef`), the strings and oid
+        // NULL or valid for the call (references), as the slot takes them.
         ErrorCode::check(unsafe {
             f(
                 b,
-                r,
+                r.as_ptr(),
                 c_int::from(force),
-                who,
+                SigRef::opt_ptr(who),
                 opt_c(message),
                 old_id.map_or(core::ptr::null(), |o| o as *const Oid),
                 opt_c(old_target),
@@ -541,7 +537,7 @@ impl RefdbPtr {
         old_name: &CStr,
         new_name: &CStr,
         force: bool,
-        who: *const git_signature,
+        who: Option<SigRef<'_>>,
         message: Option<&CStr>,
         want: bool,
     ) -> Result<Option<RefBox>> {
@@ -552,7 +548,8 @@ impl RefdbPtr {
         } else {
             core::ptr::null_mut()
         };
-        // SAFETY: as in `init`; `who` is NULL or valid (callers' contract).
+        // SAFETY: as in `init`; `outp` NULL or our writable local; `who`
+        // NULL or a valid signature (`SigRef`).
         let r = unsafe {
             f(
                 outp,
@@ -560,7 +557,7 @@ impl RefdbPtr {
                 c(old_name),
                 c(new_name),
                 c_int::from(force),
-                who,
+                SigRef::opt_ptr(who),
                 opt_c(message),
             )
         };
@@ -569,8 +566,7 @@ impl RefdbPtr {
         ErrorCode::check(r)?;
         match made {
             Some(mut m) => {
-                // SAFETY: a live database.
-                unsafe { m.attach_db(self.as_ptr()) };
+                m.attach_db(self);
                 Ok(Some(m))
             }
             None => Ok(None),
@@ -847,21 +843,26 @@ pub fn name_of(r: RefView<'_>) -> Bytes<'_> {
 /// else during the call.
 pub unsafe fn iterator_next(iter: *mut git_reference_iterator) -> Result<RefBox> {
     let mut out = core::ptr::null_mut();
-    // per the contract; `next` is set by every backend.
-    let r = {
-        // SAFETY: a live table, whose slots C does not change while it is used.
-        let f = unsafe { (*iter).next }.expect("iterator next is NULL");
-        // SAFETY: the slot of that table, with its own table and C's arguments.
-        unsafe { f(&raw mut out, iter) }
-    };
-    // SAFETY: what the backend handed over, if anything.
+    // SAFETY: `iter` is a live iterator (the contract): its table is
+    // readable, and C does not change its slots while it is used.
+    let f = unsafe { (*iter).next }.expect("iterator next is NULL");
+    // SAFETY: the `next` slot of that iterator, with the iterator itself
+    // (used by nobody else during the call, the contract) and our writable
+    // local `out`.
+    let r = unsafe { f(&raw mut out, iter) };
+    // SAFETY: `out` is NULL or the reference the backend made and handed
+    // over to us (a `git_reference__alloc*` block nothing else holds).
     let made = unsafe { RefBox::from_raw(out) };
     ErrorCode::check(r)?;
     let mut made = made.ok_or(ErrorCode::GENERIC)?;
-    // SAFETY: a live iterator.
+    // SAFETY: a live iterator (as above); `db` is a plain field that only
+    // `git_refdb_iterator` writes, before the iterator is handed out.
     let db = unsafe { (*iter).db };
-    // SAFETY: the iterator's database is live (it holds a count).
-    unsafe { made.attach_db(db) };
+    // C increments a NULL `db` (a crash): the panic becomes an error.
+    let db = NonNull::new(db).expect("iterator without a database");
+    // SAFETY: the iterator holds a count on its database, which keeps it
+    // live for this call; only its count is touched.
+    made.attach_db(unsafe { RefdbPtr::new(db) });
     Ok(made)
 }
 

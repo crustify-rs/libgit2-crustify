@@ -395,18 +395,14 @@ impl RefBox {
     }
 
     /// Set `ref->db` to `db`, taking a count on it (`GIT_REFCOUNT_INC(db);
-    /// ref->db = db;`). The count of a database set before is not dropped,
-    /// as in C, where these references come straight from a backend.
-    ///
-    /// # Safety
-    ///
-    /// `db` is a live `git_refdb`.
-    pub unsafe fn attach_db(&mut self, db: *mut GitRefdb) {
-        // SAFETY: per the contract (a live database, which its holder's
-        // count keeps live).
-        unsafe { ffibox::CShared::increment_count(db) };
-        // SAFETY: we own the block.
-        unsafe { (*self.ptr.as_ptr()).db = db };
+    /// ref->db = db;`). The count of a database set before is not dropped
+    /// (a leak, not a dangling pointer), as in C, where these references
+    /// come straight from a backend.
+    pub fn attach_db(&mut self, db: RefdbPtr) {
+        db.incref();
+        // SAFETY: we own the live block (`&mut self`: no other reference
+        // to it); `db` is aligned and in bounds of the block's header.
+        unsafe { (*self.ptr.as_ptr()).db = db.as_ptr() };
     }
 
     /// `git_reference__realloc(&ref, name)`: give the reference a new name,
@@ -453,14 +449,14 @@ impl RefBox {
             _ => RefBox::new_direct(src.name(), src.oid_field(), Some(src.peel())),
         }
         .map_err(|_| errors::oom())?;
-        let db = src.db();
-        // SAFETY: we own the block. C increments `db` unconditionally
-        // (`GIT_REFCOUNT_INC((*dest)->db)` with a NULL `db` crashes in C):
-        // here only a set database is counted.
-        unsafe { (*d.ptr.as_ptr()).db = core::ptr::null_mut() };
-        if !db.is_null() {
-            // SAFETY: the source's database is live while the source is.
-            unsafe { d.attach_db(db) };
+        // C increments `db` unconditionally (`GIT_REFCOUNT_INC((*dest)->db)`
+        // with a NULL `db` crashes in C): here only a set database is
+        // counted. The fresh block's `db` is NULL already.
+        if let Some(db) = NonNull::new(src.db()) {
+            // SAFETY: the source holds a count on its database, which keeps
+            // it live while the source is (all of `src`'s lifetime, longer
+            // than this call); only its count is touched here.
+            d.attach_db(unsafe { RefdbPtr::new(db) });
         }
         Ok(d)
     }
@@ -883,7 +879,7 @@ pub fn loose_parse_oid(filename: &[u8], content: &[u8], oid_type: c_int) -> Resu
 // ---------------------------------------------------------------------------
 
 use crate::refdb::RefdbPtr;
-use crate::refs::deps::{ObjBox, RepoPtr, SigBox, configmap, git_signature};
+use crate::refs::deps::{ObjBox, RepoPtr, SigBox, SigRef, configmap, git_signature};
 use crate::util::fs_path::to_cstring;
 use std::ffi::CString;
 
@@ -914,9 +910,7 @@ pub fn lookup_resolved(repo: RepoPtr, name: &[u8], max_nesting: c_int) -> Result
         let gitdir = repo.gitdir().unwrap_or_default();
         let r = lookup_loose(&gitdir, name, repo.oid_type(), true)?;
         let mut r = r.ok_or(ErrorCode::GENERIC)?;
-        let db = RefdbPtr::of_repo(repo)?;
-        // SAFETY: the repository's live database.
-        unsafe { r.attach_db(db.as_ptr()) };
+        r.attach_db(RefdbPtr::of_repo(repo)?);
         return Ok(r);
     }
     let normalized = normalize_for_repo(repo, name, true)?;
@@ -1029,13 +1023,13 @@ pub(crate) fn create(
     name: &[u8],
     target: NewTarget<'_>,
     force: bool,
-    signature: *const git_signature,
+    signature: Option<SigRef<'_>>,
     log_message: Option<&CStr>,
     old_id: Option<&Oid>,
     old_target: Option<&CStr>,
 ) -> Result<RefBox> {
     crate::git_assert_arg!(
-        matches!(target, NewTarget::Symbolic(_)) || !signature.is_null(),
+        matches!(target, NewTarget::Symbolic(_)) || signature.is_some(),
         "symbolic || signature"
     );
     let normalized = normalize_for_repo(repo, name, true)?;
@@ -1058,18 +1052,8 @@ pub(crate) fn create(
         }
     }
     .map_err(|_| errors::oom())?;
-    // SAFETY: our live reference; the signature is NULL or valid (the
-    // callers' contract).
-    unsafe {
-        db.write(
-            r.as_ptr(),
-            force,
-            signature,
-            log_message,
-            old_id,
-            old_target,
-        )
-    }?;
+    let mut r = r;
+    db.write(&mut r, force, signature, log_message, old_id, old_target)?;
     Ok(r)
 }
 
@@ -1103,7 +1087,7 @@ pub fn create_matching(
         name,
         NewTarget::Oid(id),
         force,
-        who.as_ptr(),
+        Some(who.sig()),
         log_message,
         old_id,
         None,
@@ -1125,7 +1109,7 @@ pub fn symbolic_create_matching(
         name,
         NewTarget::Symbolic(target),
         force,
-        who.as_ptr(),
+        Some(who.sig()),
         log_message,
         None,
         old_target,
@@ -1227,7 +1211,7 @@ pub fn rename(
         r.name_cstr(),
         &normalized,
         force,
-        signature.as_ptr(),
+        Some(signature.sig()),
         log_message,
         true,
     )?;
@@ -1267,15 +1251,16 @@ pub(crate) fn update_terminal(
     repo: RepoPtr,
     ref_name: &[u8],
     oid: &Oid,
-    sig: *const git_signature,
+    sig: Option<SigRef<'_>>,
     log_message: Option<&CStr>,
 ) -> Result<()> {
     let who;
-    let to_use = if sig.is_null() {
-        who = log_signature(repo)?;
-        who.as_ptr().cast_const()
-    } else {
-        sig
+    let to_use = match sig {
+        Some(s) => Some(s),
+        None => {
+            who = log_signature(repo)?;
+            Some(who.sig())
+        }
     };
     let db = RefdbPtr::of_repo(repo)?;
     let r = match db.resolve(&to_cstring(ref_name), -1) {
@@ -2584,6 +2569,9 @@ pub mod ffi {
             let repo = unsafe { repo_unchecked(repo) };
             // SAFETY: a string; a valid oid; NULL or a string.
             let (n, id, msg) = (ref_name.to_bytes(), oid, unsafe { cstr(log_message) });
+            // SAFETY: `sig` is NULL or a valid signature that nothing
+            // writes or frees during the call (this export's contract).
+            let sig = unsafe { SigRef::from_raw(sig) };
             let r = update_terminal(repo, n, id, sig, msg);
             status(r)
         })

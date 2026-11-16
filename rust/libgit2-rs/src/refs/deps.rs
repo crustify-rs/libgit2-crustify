@@ -88,17 +88,29 @@ use crate::util::errors::{ErrorCode, Result};
 
 /// A live repository, as the C passes one around (a `git_repository *` of
 /// the repository module).
+///
+/// `#[repr(transparent)]` over the pointer, so an export may take an
+/// `Option<RepoPtr>` where C passes a `git_repository *` (NULL is `None`).
+/// Every `RepoPtr` comes from [`new`](Self::new) / [`from_raw`](Self::from_raw)
+/// (or is such a parameter, whose export's contract is the same), so the
+/// repository is live while the value is used.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(transparent)]
 pub struct RepoPtr(NonNull<git_repository>);
 
-// SAFETY: libgit2's repository may be passed between threads; the
-// functions called through `RepoPtr` are those libgit2 lets several
-// threads use on one repository (its caches, refdb and config are
-// thread-safe; `GitRepository` is `Sync`), and the contract of
-// `RepoPtr::new` holds for each use.
+// SAFETY: the one field is a pointer to a `GitRepository`, which is
+// `Send + Sync` (all its state is behind atomics, locks or `OnceLock`s;
+// it is only reached through `&`). `RepoPtr` only forms a `&GitRepository`
+// (`get`), so moving or sharing the handle is moving or sharing a
+// `&GitRepository`; the constructors' contract makes the repository live
+// for every use, on whichever thread uses it.
 unsafe impl Send for RepoPtr {}
-// SAFETY: as above.
+// SAFETY: as for `Send`: a `&RepoPtr` gives only `&GitRepository`.
 unsafe impl Sync for RepoPtr {}
+const _: () = {
+    fn sync_send<T: Send + Sync>() {}
+    let _ = sync_send::<git_repository>;
+};
 
 impl RepoPtr {
     /// The repository at `repo`.
@@ -126,10 +138,15 @@ impl RepoPtr {
         self.0.as_ptr()
     }
 
-    /// The repository.
-    fn get<'a>(self) -> &'a git_repository {
-        // SAFETY: live while this value is used (the constructor's
-        // contract); `GitRepository` is `Sync`.
+    /// The repository, borrowed for as long as this copy of the handle
+    /// is (no unbounded lifetime: a caller cannot keep the reference past
+    /// its use of the handle).
+    fn get(&self) -> &git_repository {
+        // SAFETY: the pointer is non-null and aligned (a `NonNull` to a
+        // repository), and the repository is live while this value is used
+        // (the constructors' contract), which covers this borrow of `self`;
+        // `GitRepository` is only read through `&` (its state is
+        // interior-mutable), so no `&mut` to it exists.
         unsafe { self.0.as_ref() }
     }
 
@@ -203,6 +220,46 @@ pub fn fsync_gitdir() -> bool {
     crate::repository::fsync_gitdir()
 }
 
+/// A valid `git_signature` borrowed for `'a`: its `name` and `email` are
+/// NUL-terminated strings, and nothing writes or frees the signature or
+/// its strings during `'a`.
+///
+/// `GitSignature`'s fields are public raw pointers, so a `&GitSignature`
+/// alone does not promise valid strings; this handle does, by its
+/// constructors: [`SigBox::sig`], [`CommitBox::committer`] and the
+/// `unsafe` [`from_raw`](Self::from_raw) for a pointer C passed.
+#[derive(Clone, Copy, Debug)]
+pub struct SigRef<'a> {
+    ptr: NonNull<git_signature>,
+    _life: core::marker::PhantomData<&'a git_signature>,
+}
+
+impl<'a> SigRef<'a> {
+    /// The signature at `p`, or `None` for NULL.
+    ///
+    /// # Safety
+    ///
+    /// `p` is NULL, or points to a `git_signature` whose `name` and `email`
+    /// are NUL-terminated strings, and which (with its strings) nothing
+    /// writes or frees during `'a`.
+    pub unsafe fn from_raw(p: *const git_signature) -> Option<SigRef<'a>> {
+        NonNull::new(p.cast_mut()).map(|ptr| SigRef {
+            ptr,
+            _life: core::marker::PhantomData,
+        })
+    }
+
+    /// The pointer, for a C call that reads it during `'a`.
+    pub fn as_ptr(self) -> *const git_signature {
+        self.ptr.as_ptr()
+    }
+
+    /// The pointer of an optional signature (NULL for `None`).
+    pub fn opt_ptr(s: Option<SigRef<'_>>) -> *const git_signature {
+        s.map_or(core::ptr::null(), SigRef::as_ptr)
+    }
+}
+
 /// An owned `git_signature`, freed with `git_signature_free`.
 #[derive(Debug)]
 pub struct SigBox(NonNull<git_signature>);
@@ -272,6 +329,14 @@ impl SigBox {
     /// The raw pointer.
     pub fn as_ptr(&self) -> *mut git_signature {
         self.0.as_ptr()
+    }
+
+    /// The signature, borrowed.
+    pub fn sig(&self) -> SigRef<'_> {
+        SigRef {
+            ptr: self.0,
+            _life: core::marker::PhantomData,
+        }
     }
 
     /// Give the signature away.
@@ -399,10 +464,16 @@ impl CommitBox {
         Some(crate::commit::summary_of(msg))
     }
 
-    /// `git_commit_committer`, alive as long as the commit.
-    pub fn committer(&self) -> *const git_signature {
-        // SAFETY: a live commit.
-        unsafe { crate::commit::ffi::git_commit_committer(self.0.as_ptr()) }
+    /// `git_commit_committer` (NULL as `None`), alive as long as the
+    /// commit.
+    pub fn committer(&self) -> Option<SigRef<'_>> {
+        // SAFETY: a live commit (we own it).
+        let p = unsafe { crate::commit::ffi::git_commit_committer(self.0.as_ptr()) };
+        // SAFETY: NULL, or a parsed commit's committer: a valid signature
+        // the commit owns, never written after the parse and freed only
+        // with the commit, which `&self` keeps alive for the result's
+        // lifetime.
+        unsafe { SigRef::from_raw(p) }
     }
 }
 
