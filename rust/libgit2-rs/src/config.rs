@@ -1122,7 +1122,7 @@ impl GitConfig {
     /// pattern).
     pub fn iterator(&self, regexp: Option<&CStr>) -> Result<IterBox> {
         let regex = match regexp {
-            Some(r) => Some(Regexp::compile(r, 0).map_err(|_| ErrorCode::GENERIC)?),
+            Some(r) => Some(Regexp::compile_opt(Some(r), 0).map_err(|_| ErrorCode::GENERIC)?),
             None => None,
         };
         let backends = self.backends();
@@ -1143,7 +1143,7 @@ impl GitConfig {
         let inner = self.iterator(None)?;
         let name = normalize_name(name.to_bytes())?;
         let regex = match regexp {
-            Some(r) => Some(Regexp::compile(r, 0)?),
+            Some(r) => Some(Regexp::compile_opt(Some(r), 0)?),
             None => None,
         };
         let it = MultivarIter { inner, name, regex };
@@ -1418,7 +1418,7 @@ pub fn backend_foreach_match(
     mut cb: impl FnMut(*const git_config_entry) -> c_int,
 ) -> c_int {
     let regex = match regexp {
-        Some(r) => match Regexp::compile(r, 0) {
+        Some(r) => match Regexp::compile_opt(Some(r), 0) {
             Ok(r) => Some(r),
             Err(_) => return -1,
         },
@@ -3685,7 +3685,7 @@ impl Config {
         use std::os::unix::ffi::OsStrExt;
         let mut out = GitStr::new();
         self.with_value(name, |v| match v {
-            Some(v) => parse_path(&raw mut out, v),
+            Some(v) => parse_path(&mut out, v),
             None => Err(errors::assert_arg_failed("value")),
         })?;
         Ok(std::path::PathBuf::from(std::ffi::OsStr::from_bytes(

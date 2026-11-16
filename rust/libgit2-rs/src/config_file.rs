@@ -32,14 +32,14 @@ use crate::config_parse::{ESCAPED, ESCAPES, ParseHandler, parse};
 use crate::sys::pending::git_repository;
 use crate::sys::sysdir;
 use crate::util::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
-use crate::util::filebuf::{GIT_FILEBUF_HASH_SHA256, GitFilebuf};
+use crate::util::filebuf::{Filebuf, GIT_FILEBUF_HASH_SHA256, GitFilebuf};
 use crate::util::fs_path;
 use crate::util::futils::{self, Filestamp};
 use crate::util::hash::{self, HashAlgorithm};
 use crate::util::regexp::Regexp;
 use crate::util::str::GitStr;
 use crate::util::util::{prefixcmp, strcasecmp};
-use crate::util::wildmatch::{WM_CASEFOLD, WM_MATCH, WM_PATHNAME, wildmatch};
+use crate::util::wildmatch::{WM_CASEFOLD, WM_MATCH, WM_PATHNAME, wildmatch_raw as wildmatch};
 use crate::{git_assert_arg, git_error_set};
 
 /// `MAX_INCLUDE_DEPTH`.
@@ -85,7 +85,7 @@ impl ConfigFile {
 /// writes edit until `unlock`.
 #[derive(Debug)]
 struct Locked {
-    buf: Box<GitFilebuf>,
+    buf: Filebuf,
     content: Vec<u8>,
 }
 
@@ -567,13 +567,9 @@ fn split_key(key: &[u8]) -> (&[u8], &[u8]) {
     }
 }
 
-/// `git_filebuf_cleanup` on drop.
-struct FilebufGuard(Box<GitFilebuf>);
-
-impl Drop for FilebufGuard {
-    fn drop(&mut self) {
-        self.0.cleanup();
-    }
+/// The C status of a `Filebuf` result (its message is already set).
+fn fb<T>(r: core::result::Result<T, errors::Error>) -> Result<T> {
+    r.map_err(|e| e.code())
 }
 
 impl FileBackend {
@@ -784,17 +780,14 @@ impl FileBackend {
     /// `config_file_lock`.
     fn lock(&self) -> Result<()> {
         let path = self.lock_file().path.clone();
-        let mut buf = Box::new(GitFilebuf::new());
-        buf.open(&path, 0, GIT_CONFIG_FILE_MODE)?;
+        let buf = fb(Filebuf::open(&path, 0, GIT_CONFIG_FILE_MODE))?;
         let cpath = cstring(&path)?;
         let mut content = GitStr::new();
         match futils::readbuffer(&mut content, as_cstr(&cpath)) {
             Ok(()) => {}
             Err(e) if e == ErrorCode::NOT_FOUND => {}
-            Err(e) => {
-                buf.cleanup();
-                return Err(e);
-            }
+            // Dropping the filebuf removes the lock file.
+            Err(e) => return Err(e),
         }
         *self.lock_locked() = Some(Locked {
             buf,
@@ -805,18 +798,16 @@ impl FileBackend {
 
     /// `config_file_unlock`.
     fn unlock(&self, success: bool) -> Result<()> {
-        let locked = self.lock_locked().take();
-        let Locked { mut buf, content } = locked.unwrap_or_else(|| Locked {
-            buf: Box::new(GitFilebuf::new()),
-            content: Vec::new(),
-        });
-        let mut r = Ok(());
-        if success {
-            let _ = buf.write(&content);
-            r = buf.commit();
+        let Some(Locked { mut buf, content }) = self.lock_locked().take() else {
+            // Not locked: C commits its zeroed filebuf, which fails.
+            return if success { GitFilebuf::new().commit() } else { Ok(()) };
+        };
+        if !success {
+            // Dropping the filebuf removes the lock file.
+            return Ok(());
         }
-        buf.cleanup();
-        r
+        let _ = buf.write(&content);
+        fb(buf.commit())
     }
 
     /// `config_file_write`: rewrite the file with `key` (`orig_key` as the
@@ -859,9 +850,8 @@ impl FileBackend {
             }
         }
 
-        let mut file = FilebufGuard(Box::new(GitFilebuf::new()));
-        file.0
-            .open(&path, GIT_FILEBUF_HASH_SHA256, GIT_CONFIG_FILE_MODE)?;
+        // Dropped on the way out, it removes the lock file.
+        let mut file = fb(Filebuf::open(&path, GIT_FILEBUF_HASH_SHA256, GIT_CONFIG_FILE_MODE))?;
         let cpath = cstring(&path)?;
         let mut contents = GitStr::new();
         match futils::readbuffer(&mut contents, as_cstr(&cpath)) {
@@ -871,8 +861,8 @@ impl FileBackend {
         }
         let buf = writer(contents.as_bytes())?;
         drop(contents);
-        let _ = file.0.write(&buf);
-        file.0.commit()?;
+        let _ = file.write(&buf);
+        fb(file.commit())?;
         self.refresh_from_buffer(cfg, &buf)
     }
 }

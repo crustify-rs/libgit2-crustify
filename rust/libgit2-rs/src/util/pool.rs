@@ -131,8 +131,10 @@ fn page_data(page: *mut PoolPage) -> *mut u8 {
 }
 
 impl GitPool {
-    /// An uninitialized pool (`GIT_POOL_INIT`): allocating from it fails
-    /// until [`init`](GitPool::init).
+    /// An uninitialized pool (`GIT_POOL_INIT`). As in C, `malloc` and
+    /// `mallocz` still work on it (item size 0 counts as bytes, page size 0
+    /// gives each allocation its own page); the string functions fail
+    /// (their item size must be 1) until [`init`](GitPool::init).
     pub const fn new() -> GitPool {
         GitPool {
             pages: ptr::null_mut(),

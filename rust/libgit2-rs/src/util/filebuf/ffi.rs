@@ -130,7 +130,9 @@ pub unsafe extern "C" fn git_filebuf_open_withsize(
         let file = unsafe { &mut *file };
         // SAFETY: a NUL-terminated string.
         let p = unsafe { cstr_bytes(path) };
-        status(file.open_withsize(p, flags, mode, size))
+        // SAFETY: the caller keeps the filebuf in place until it is cleaned
+        // up (this export's contract).
+        status(unsafe { file.open_withsize(p, flags, mode, size) })
     })
 }
 

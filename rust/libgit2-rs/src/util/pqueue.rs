@@ -287,7 +287,8 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `pq` is writable (it need not be initialized).
+    /// `pq` is NULL (an error, as C) or writable (it need not be
+    /// initialized).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_pqueue_init(
         pq: *mut GitPqueue,
@@ -295,7 +296,26 @@ pub mod ffi {
         init_size: usize,
         cmp: Option<VectorCmp>,
     ) -> c_int {
-        barrier(|| match GitPqueue::new(flags, init_size, cmp) {
+        barrier(|| {
+            // `git_vector_init`'s check.
+            crate::git_assert_arg!(!pq.is_null(), "v", -1);
+            // SAFETY: the caller's contract, `pq` non-null.
+            unsafe { pqueue_init(pq, flags, init_size, cmp) }
+        })
+    }
+
+    /// The body of [`git_pqueue_init`], `pq` non-null.
+    ///
+    /// # Safety
+    ///
+    /// As [`git_pqueue_init`], `pq` writable.
+    unsafe fn pqueue_init(
+        pq: *mut GitPqueue,
+        flags: u32,
+        init_size: usize,
+        cmp: Option<VectorCmp>,
+    ) -> c_int {
+        match GitPqueue::new(flags, init_size, cmp) {
             Ok(q) => {
                 // SAFETY: writable; the old contents are not read or
                 // dropped (as C's `git_vector_init`).
@@ -312,7 +332,7 @@ pub mod ffi {
                 unsafe { pq.write(GitPqueue(v)) };
                 status(Err(e))
             }
-        })
+        }
     }
 
     /// `git_pqueue_insert`.
