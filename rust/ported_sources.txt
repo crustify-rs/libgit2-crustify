@@ -42,3 +42,4 @@ src/libgit2/oid.c
 src/libgit2/oidarray.c
 src/libgit2/parse.c
 src/libgit2/hashsig.c
+src/libgit2/revwalk.c

@@ -185,8 +185,7 @@ impl Signature {
             "!(sig->opt & GIT_HASHSIG_IGNORE_WHITESPACE) || !(sig->opt & GIT_HASHSIG_SMART_WHITESPACE)"
         );
         Ok(Progress {
-            use_ignores: self.opt
-                & (GIT_HASHSIG_IGNORE_WHITESPACE | GIT_HASHSIG_SMART_WHITESPACE)
+            use_ignores: self.opt & (GIT_HASHSIG_IGNORE_WHITESPACE | GIT_HASHSIG_SMART_WHITESPACE)
                 != 0,
         })
     }
@@ -412,7 +411,10 @@ impl HashSig {
     ) -> core::result::Result<HashSig, Error> {
         use std::os::unix::ffi::OsStrExt;
         let c = std::ffi::CString::new(path.as_os_str().as_bytes()).map_err(|_| {
-            Error::from(git_error_set!(ErrorClass::INVALID, "path contains a NUL byte"))
+            Error::from(git_error_set!(
+                ErrorClass::INVALID,
+                "path contains a NUL byte"
+            ))
         })?;
         Ok(HashSig(Box::new(Signature::from_file(&c, opts.0)?)))
     }
@@ -535,7 +537,10 @@ pub mod ffi {
     /// `a` and `b` are live signatures (C does not accept NULL), which
     /// nothing frees during the call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_hashsig_compare(a: *const GitHashsig, b: *const GitHashsig) -> c_int {
+    pub unsafe extern "C" fn git_hashsig_compare(
+        a: *const GitHashsig,
+        b: *const GitHashsig,
+    ) -> c_int {
         barrier(|| {
             // C dereferences both; a NULL is reported rather than crash.
             git_assert_arg!(!a.is_null(), "a", -1);
@@ -579,7 +584,8 @@ mod tests {
         }
         fn up(&mut self, mut el: i32) {
             let mut parent_el = (el - 1) >> 1;
-            while el > 0 && self.cmp(self.values[parent_el as usize], self.values[el as usize]) > 0 {
+            while el > 0 && self.cmp(self.values[parent_el as usize], self.values[el as usize]) > 0
+            {
                 self.values.swap(el as usize, parent_el as usize);
                 el = parent_el;
                 parent_el = (el - 1) >> 1;
@@ -614,7 +620,9 @@ mod tests {
     }
 
     fn lcg(seed: &mut u64) -> u32 {
-        *seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        *seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         (*seed >> 33) as u32
     }
 
@@ -622,14 +630,26 @@ mod tests {
     fn heaps_match_the_c_transcription() {
         let mut seed = 7u64;
         for round in 0..40 {
-            let mut cmin = CHeap { size: 0, values: [0; HEAP_SIZE], min: true };
-            let mut cmax = CHeap { size: 0, values: [0; HEAP_SIZE], min: false };
+            let mut cmin = CHeap {
+                size: 0,
+                values: [0; HEAP_SIZE],
+                min: true,
+            };
+            let mut cmax = CHeap {
+                size: 0,
+                values: [0; HEAP_SIZE],
+                min: false,
+            };
             let mut rmin = Heap::<true>::new();
             let mut rmax = Heap::<false>::new();
             let n = 50 + round * 37;
             for _ in 0..n {
                 // small ranges make ties
-                let v = if round % 3 == 0 { lcg(&mut seed) % 50 } else { lcg(&mut seed) };
+                let v = if round % 3 == 0 {
+                    lcg(&mut seed) % 50
+                } else {
+                    lcg(&mut seed)
+                };
                 cmin.insert(v);
                 cmax.insert(v);
                 rmin.insert(v);
@@ -645,7 +665,10 @@ mod tests {
     #[test]
     fn small_files() {
         let _g = crate::util::test_support::init();
-        assert_eq!(Signature::from_buf(b"a\nb\nc\n", 0).unwrap_err(), ErrorCode::BUFS);
+        assert_eq!(
+            Signature::from_buf(b"a\nb\nc\n", 0).unwrap_err(),
+            ErrorCode::BUFS
+        );
         assert_eq!(
             errors::last_message().unwrap(),
             b"file too small for similarity signature calculation"
@@ -701,7 +724,9 @@ mod tests {
         let mut b = Vec::new();
         for i in 0..1000 {
             a.extend_from_slice(format!("line number {i}\n").as_bytes());
-            b.extend_from_slice(format!("line number {}\n", if i % 4 == 0 { i + 7000 } else { i }).as_bytes());
+            b.extend_from_slice(
+                format!("line number {}\n", if i % 4 == 0 { i + 7000 } else { i }).as_bytes(),
+            );
         }
         let sa = Signature::from_buf(&a, 0).unwrap();
         let sb = Signature::from_buf(&b, 0).unwrap();
@@ -709,7 +734,12 @@ mod tests {
         assert_eq!(sa.compare(&sa), 100);
         let s = sa.compare(&sb);
         assert!(s > 0 && s < 100, "{s}");
-        assert_eq!(HashSig::new(&a, HashSigOptions::NORMAL).unwrap().compare(&HashSig::new(&b, HashSigOptions::NORMAL).unwrap()), s);
+        assert_eq!(
+            HashSig::new(&a, HashSigOptions::NORMAL)
+                .unwrap()
+                .compare(&HashSig::new(&b, HashSigOptions::NORMAL).unwrap()),
+            s
+        );
     }
 
     #[test]

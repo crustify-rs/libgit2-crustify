@@ -19,11 +19,13 @@ pub mod hashsig;
 pub mod oid;
 pub mod oidarray;
 pub mod parse;
+pub mod revwalk;
 pub mod strarray;
 
 pub use hashsig::{HashSig, HashSigOptions};
 pub use oid::{Oid, OidShortener, OidType};
 pub use oidarray::OidArray;
+pub use revwalk::api::{Revwalk, Sort};
 pub use strarray::StrArray;
 pub use util::errors::{Error, ErrorClass, ErrorCode};
 pub use util::net::Url;
