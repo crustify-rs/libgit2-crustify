@@ -145,9 +145,10 @@ triggers it, and the Rust's defined behaviour.
   written (heap overflow). The tail is also a pointer into the caller's
   string, read later.
 - Trigger: add `"ab"`, then `"abcd"`; or add `"12x…"`, then `"12…"`.
-- Rust: the tails are copied when added; a non-hex tail digit fails the
-  add with `unable to shorten OID - invalid hex value` (class INVALID),
-  the trie as C would leave it before the bad write.
+- Rust: a tail is a bounded slice of the id (at most 40 bytes, borrowed as
+  in C); a non-hex or missing tail digit fails the add with `unable to
+  shorten OID - invalid hex value` (class INVALID), the trie as C would
+  leave it before the bad write.
 
 ### oid: `resize_trie` loses the trie on allocation failure
 - C: `self->nodes = git__reallocarray(self->nodes, …)` overwrites the

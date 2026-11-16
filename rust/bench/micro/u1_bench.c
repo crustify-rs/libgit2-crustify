@@ -3,8 +3,8 @@
  *
  * difftest-link: libgit2_tests
  *
- * Build:  RUST_BUILD=/work/builds/u1 ../difftest/link.sh u1_ops.c out
- * Run:    ./run_u1.sh   (interleaves out/u1_ops_c and out/u1_ops_rust)
+ * Build:  RUST_BUILD=/work/builds/u1 ../../difftest/link.sh u1_bench.c out
+ * Run:    ./run_u1.sh   (builds, then interleaves out/u1_bench_c and out/u1_bench_rust)
  */
 #include "common.h"
 #include "git2/global.h"

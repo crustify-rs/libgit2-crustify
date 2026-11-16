@@ -66,6 +66,7 @@ fn ascii_words(s: &[u8]) -> usize {
 /// `git_utf8_iterate`: the code point at the start of `s` and its length
 /// in bytes; `None` if it is invalid (overlong, a surrogate, beyond
 /// U+10FFFF, a noncharacter) or `s` is empty.
+#[inline]
 pub fn iterate(s: &[u8]) -> Option<(u32, usize)> {
     let (&b0, _) = s.split_first()?;
     if b0 < 0x80 {

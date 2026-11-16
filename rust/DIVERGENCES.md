@@ -59,11 +59,10 @@ One entry per difference: component, what differs, why.
   (C returned NULL on allocation failure), is not freed by
   `git_libgit2_shutdown`, and stays valid until the thread's next call or
   its end. `git_oid_global_init` does nothing and returns 0.
-- **oid: the shortener copies the ids** (C kept pointers into the
-  caller's strings, which its contract says must stay unchanged). A caller
-  that reuses one buffer for every id got wrong lengths (41) from C and
-  gets the right ones from Rust. The shortener lives in Rust's allocator,
-  so `cl_alloc_limit` does not make `git_oid_shorten_new`/`_add` fail.
+- **oid: the shortener's memory** is Rust's allocator (C used
+  `git__allocator`), so `cl_alloc_limit` does not make
+  `git_oid_shorten_new`/`_add` fail. As in C, it keeps pointers into the
+  caller's id strings (the safe `OidShortener<'a>` borrows them for `'a`).
 - **oid: `git_oid_cmp`'s magnitude** is the difference of the first
   differing bytes (what glibc's `memcmp` returns); C returned `memcmp`'s
   unspecified value. Only the sign is documented.

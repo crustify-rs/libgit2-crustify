@@ -30,6 +30,7 @@
 
 use core::ffi::{c_int, c_uint};
 use core::fmt;
+use core::marker::PhantomData;
 
 use crate::util::errors::{self, ErrorClass, ErrorCode, Result};
 
@@ -740,28 +741,35 @@ type NodeIndex = i16;
 /// `SHRT_MAX`: the node count at which the set is full.
 const MAX_NODES: usize = i16::MAX as usize;
 
-/// A trie node: C's union of a node's 16 children and a leaf's tail.
+/// A leaf's tail: the rest of the id it was made for, borrowed from the
+/// caller (as C's `const char *tail`).
+#[repr(C)]
 #[derive(Clone, Copy)]
-enum TrieNode {
-    /// A normal node: an index per hex digit; 0 none, < 0 a leaf.
-    Inner([NodeIndex; 16]),
-    /// A leaf: the rest of an id, as `(id, offset)` into the shortener's
-    /// copies of the ids.
-    Leaf { text: u32, offset: u8 },
+struct Tail {
+    ptr: *const u8,
+    len: usize,
 }
 
-const EMPTY_NODE: TrieNode = TrieNode::Inner([0; 16]);
+/// A trie node: C's union of 16 children (an index per hex digit; 0 none,
+/// < 0 a leaf) and a leaf's tail. As in C, whether a node is a leaf is
+/// known from the negative index that leads to it (the trie's invariant:
+/// a leaf is only read as a tail, any other node only as children), and a
+/// converted leaf's children are all zero.
+#[repr(C)]
+#[derive(Clone, Copy)]
+union TrieNode {
+    children: [NodeIndex; 16],
+    tail: Tail,
+}
 
-/// The text of an id, as C would have read it: up to 40 bytes, stopping at
-/// a NUL.
-type IdText = ([u8; GIT_OID_SHA1_HEXSIZE], u8);
+const EMPTY_NODE: TrieNode = TrieNode { children: [0; 16] };
 
 /// `git_oid_shorten`: the shortest prefix length that tells a set of SHA1
 /// hex ids apart.
 ///
-/// The algorithm, its limits (about 32000 ids: `OID set full`) and its
-/// results are C's; the ids' text is copied, where C kept a pointer to the
-/// caller's string.
+/// The algorithm, its memory layout (32-byte nodes), its limits (about
+/// 32000 ids: `OID set full`) and its results are C's. As in C, the ids are
+/// not copied: the shortener borrows them for `'a`.
 ///
 /// ```
 /// use libgit2_rs::OidShortener;
@@ -771,14 +779,15 @@ type IdText = ([u8; GIT_OID_SHA1_HEXSIZE], u8);
 /// assert_eq!(s.add(b"22596363b3de40b06f981fb85d82312e8c0ed512")?, 40);
 /// # Ok::<(), libgit2_rs::util::errors::ErrorCode>(())
 /// ```
-pub struct OidShortener {
+pub struct OidShortener<'a> {
     nodes: Vec<TrieNode>,
-    texts: Vec<IdText>,
+    /// The ids, which the leaves' tails borrow.
+    _ids: PhantomData<&'a [u8]>,
     min_length: c_int,
     full: bool,
 }
 
-impl fmt::Debug for OidShortener {
+impl fmt::Debug for OidShortener<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("OidShortener")
             .field("nodes", &self.nodes.len())
@@ -792,15 +801,15 @@ fn shorten_error(msg: &str) -> ErrorCode {
     crate::git_error_set!(ErrorClass::INVALID, "unable to shorten OID - {msg}")
 }
 
-impl OidShortener {
+impl<'a> OidShortener<'a> {
     /// `git_oid_shorten_new`: a shortener whose results are at least
     /// `min_length` (capped at `c_int::MAX`).
-    pub fn new(min_length: usize) -> OidShortener {
+    pub fn new(min_length: usize) -> OidShortener<'a> {
         let mut nodes = Vec::with_capacity(16);
         nodes.push(EMPTY_NODE);
         OidShortener {
             nodes,
-            texts: Vec::new(),
+            _ids: PhantomData,
             min_length: c_int::try_from(min_length).unwrap_or(c_int::MAX),
             full: false,
         }
@@ -812,34 +821,48 @@ impl OidShortener {
         self.min_length as usize
     }
 
-    fn tail_char(&self, text: u32, offset: usize) -> u8 {
-        let (bytes, len) = &self.texts[text as usize];
-        if offset < *len as usize {
-            bytes[offset]
-        } else {
-            0
-        }
+    /// The children of the normal node `idx`.
+    #[inline(always)]
+    fn children(&mut self, idx: usize) -> &mut [NodeIndex; 16] {
+        // SAFETY: the trie's invariant: `idx` is reached through a
+        // non-negative index (or converted from a leaf, whose children were
+        // then zeroed), so it holds children; every bit pattern is a valid
+        // `[i16; 16]`.
+        unsafe { &mut self.nodes[idx].children }
+    }
+
+    /// Turn the leaf `idx` into a normal node with no children; its tail.
+    #[inline(always)]
+    fn take_tail(&mut self, idx: usize) -> &'a [u8] {
+        // SAFETY: the trie's invariant: `idx` was reached through a negative
+        // index, so it is a leaf, whose `tail` was written by `push_leaf`.
+        let t = unsafe { self.nodes[idx].tail };
+        self.nodes[idx] = EMPTY_NODE;
+        // SAFETY: `push_leaf` made the tail from a `&'a [u8]` (a sub-slice of
+        // an id given to `add`), which lives and stays unwritten for `'a`.
+        unsafe { core::slice::from_raw_parts(t.ptr, t.len) }
     }
 
     /// `push_leaf`: a new leaf under `idx` at digit `push_at`, for the
-    /// tail `(text, offset)`. `Err` when the set became full.
-    fn push_leaf(&mut self, idx: usize, push_at: usize, text: u32, offset: usize) -> Result<()> {
+    /// tail `tail`. `Err` when the set became full.
+    #[inline]
+    fn push_leaf(&mut self, idx: usize, push_at: usize, tail: &'a [u8]) -> Result<()> {
         if self.nodes.try_reserve(1).is_err() {
             return Err(errors::oom());
         }
         let idx_leaf = self.nodes.len();
-        self.nodes.push(EMPTY_NODE);
-        if self.nodes.len() == MAX_NODES {
+        if idx_leaf + 1 == MAX_NODES {
+            self.nodes.push(EMPTY_NODE);
             self.full = true;
             return Err(shorten_error("OID set full"));
         }
-        if let TrieNode::Inner(children) = &mut self.nodes[idx] {
-            children[push_at] = -(idx_leaf as NodeIndex);
-        }
-        self.nodes[idx_leaf] = TrieNode::Leaf {
-            text,
-            offset: offset as u8,
-        };
+        self.nodes.push(TrieNode {
+            tail: Tail {
+                ptr: tail.as_ptr(),
+                len: tail.len(),
+            },
+        });
+        self.children(idx)[push_at] = -(idx_leaf as NodeIndex);
         Ok(())
     }
 
@@ -848,69 +871,46 @@ impl OidShortener {
     ///
     /// Errors (class `GIT_ERROR_INVALID`): `unable to shorten OID - invalid
     /// hex value`, `- OID set full`.
-    pub fn add(&mut self, text_id: &[u8]) -> Result<usize> {
+    pub fn add(&mut self, text_id: &'a [u8]) -> Result<usize> {
         if self.full {
             return Err(shorten_error("OID set full"));
         }
-        // C reads the caller's string as far as it walks; take the same
-        // bytes.
-        let mut copy = [0u8; GIT_OID_SHA1_HEXSIZE];
+        // C reads at most 40 bytes, and stops at a NUL: it is not a hex
+        // digit, so the walk (and a later tail) ends with an error there.
         let text = &text_id[..text_id.len().min(GIT_OID_SHA1_HEXSIZE)];
-        let text = match memchr::memchr(0, text) {
-            Some(n) => &text[..n],
-            None => text,
-        };
-        copy[..text.len()].copy_from_slice(text);
-        let at = |i: usize| -> u8 { if i < text.len() { copy[i] } else { 0 } };
+        let at = |t: &[u8], i: usize| -> u8 { t.get(i).copied().unwrap_or(0) };
 
         let mut idx: usize = 0;
         let mut is_leaf = false;
         let mut i = 0;
         while i < GIT_OID_SHA1_HEXSIZE {
-            let c = fromhex(at(i));
+            let c = fromhex(at(text, i));
             if c < 0 {
                 return Err(shorten_error("invalid hex value"));
             }
-            let c = c as usize;
+            let c = (c & 15) as usize;
 
             if is_leaf {
-                let TrieNode::Leaf { text, offset } = self.nodes[idx] else {
-                    unreachable!("a negative index names a leaf");
-                };
-                self.nodes[idx] = EMPTY_NODE;
-                let offset = offset as usize;
+                let tail = self.take_tail(idx);
                 // C reads the tail's next digit unchecked (and indexes the
                 // children with -1 when it is not one).
-                let tc = fromhex(self.tail_char(text, offset));
+                let tc = fromhex(at(tail, 0));
                 if tc < 0 {
                     return Err(shorten_error("invalid hex value"));
                 }
-                self.push_leaf(idx, tc as usize, text, offset + 1)?;
+                self.push_leaf(idx, (tc & 15) as usize, tail.get(1..).unwrap_or(&[]))?;
             }
 
-            let TrieNode::Inner(children) = self.nodes[idx] else {
-                unreachable!("a walked node is a normal node");
-            };
-            if children[c] == 0 {
-                if self.texts.try_reserve(1).is_err() {
-                    return Err(errors::oom());
-                }
-                self.texts.push((copy, text.len() as u8));
-                let t = (self.texts.len() - 1) as u32;
-                self.push_leaf(idx, c, t, i + 1)?;
+            let next = self.children(idx)[c];
+            if next == 0 {
+                self.push_leaf(idx, c, text.get(i + 1..).unwrap_or(&[]))?;
                 break;
             }
-
-            let mut next = children[c];
-            is_leaf = false;
-            if next < 0 {
-                next = -next;
-                if let TrieNode::Inner(children) = &mut self.nodes[idx] {
-                    children[c] = next;
-                }
-                is_leaf = true;
+            is_leaf = next < 0;
+            if is_leaf {
+                self.children(idx)[c] = -next;
             }
-            idx = next as usize;
+            idx = next.unsigned_abs() as usize;
             i += 1;
         }
 
@@ -921,6 +921,12 @@ impl OidShortener {
         Ok(self.min_length as usize)
     }
 }
+
+// SAFETY: the tails are shared borrows of `[u8]` (`Sync`), so the shortener
+// may move to, and be read from, another thread.
+unsafe impl Send for OidShortener<'_> {}
+// SAFETY: as above; `&OidShortener` only reads.
+unsafe impl Sync for OidShortener<'_> {}
 
 // ---------------------------------------------------------------------------
 // The C ABI
@@ -935,7 +941,7 @@ pub mod ffi {
     use super::*;
     use crate::git_assert_arg;
     use crate::util::alloc;
-    use crate::util::export::{barrier, cstr_bytes, status};
+    use crate::util::export::{barrier, status};
 
     /// `git_oid__empty_blob_sha1`.
     #[unsafe(no_mangle)]
@@ -1305,7 +1311,7 @@ pub mod ffi {
 
     /// `git_oid_shorten`: opaque to C.
     #[allow(non_camel_case_types)]
-    pub type git_oid_shorten = OidShortener;
+    pub type git_oid_shorten = OidShortener<'static>;
 
     /// `git_oid_shorten_new`. Freed with [`git_oid_shorten_free`].
     ///
@@ -1344,7 +1350,10 @@ pub mod ffi {
     /// # Safety
     ///
     /// `os` is from [`git_oid_shorten_new`], not used concurrently;
-    /// `text_id` is NULL or a NUL-terminated string.
+    /// `text_id` is NULL or a NUL-terminated string that stays alive and
+    /// unchanged until `os` is freed (C's contract: "the OID is owned by the
+    /// user and will not be modified or freed"; the shortener reads it
+    /// later, as C's does).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oid_shorten_add(
         os: *mut git_oid_shorten,
@@ -1359,8 +1368,17 @@ pub mod ffi {
             if text_id.is_null() {
                 return os.min_length;
             }
-            // SAFETY: a NUL-terminated string.
-            match os.add(unsafe { cstr_bytes(text_id) }) {
+            // Its first 40 bytes at most, up to a NUL: what C may read.
+            let p = text_id.cast::<u8>();
+            let n = (0..GIT_OID_SHA1_HEXSIZE)
+                // SAFETY: reading in order up to the NUL, within the string.
+                .take_while(|&i| unsafe { p.wrapping_add(i).read() } != 0)
+                .count();
+            // SAFETY: those `n` bytes, of a string that outlives the
+            // shortener, unwritten (the caller's contract): the `'static`
+            // of a `git_oid_shorten`.
+            let text: &'static [u8] = unsafe { core::slice::from_raw_parts(p, n) };
+            match os.add(text) {
                 Ok(n) => n as c_int,
                 Err(e) => e.raw(),
             }
@@ -1556,15 +1574,20 @@ mod tests {
     #[cfg_attr(miri, ignore = "32000 insertions: too slow under Miri")]
     fn shortener_fills_up() {
         let _g = crate::util::test_support::init();
+        let ids: Vec<[u8; 40]> = (0..40000u32)
+            .map(|n| {
+                let mut h = [0u8; 40];
+                let x = n.wrapping_mul(2_654_435_761);
+                for (i, d) in h.iter_mut().enumerate() {
+                    *d = HEX_DIGITS[((x >> ((i % 8) * 4)) as usize ^ i) & 15];
+                }
+                h
+            })
+            .collect();
         let mut s = OidShortener::new(0);
         let mut n = 0u32;
         let r = loop {
-            let mut h = [0u8; 40];
-            let x = n.wrapping_mul(2_654_435_761);
-            for (i, d) in h.iter_mut().enumerate() {
-                *d = HEX_DIGITS[((x >> ((i % 8) * 4)) as usize ^ i) & 15];
-            }
-            match s.add(&h) {
+            match s.add(&ids[n as usize]) {
                 Ok(_) => n += 1,
                 Err(e) => break e,
             }
