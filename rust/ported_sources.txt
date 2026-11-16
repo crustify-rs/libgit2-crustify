@@ -12,6 +12,7 @@ src/util/sortedcache.c
 src/util/str.c
 src/util/thread.c
 src/util/tsort.c
+src/util/unix/process.c
 src/util/util.c
 src/util/vector.c
 src/libgit2/buf.c
