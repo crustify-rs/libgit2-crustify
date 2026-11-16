@@ -1116,26 +1116,57 @@ unsafe fn id_from_buffer_c(
     }
 }
 
+/// The `char buffer[GIT_BUFSIZE_FILEIO]` C reads files through: 64 KiB,
+/// reserved fallibly and never zero-filled.
+pub(crate) struct FileReadBuffer(Vec<u8>);
+
+impl FileReadBuffer {
+    /// Reserve the buffer (the out-of-memory error if that fails).
+    pub(crate) fn new() -> Result<FileReadBuffer> {
+        let mut v = Vec::new();
+        v.try_reserve_exact(GIT_BUFSIZE_FILEIO)
+            .map_err(|_| errors::oom())?;
+        Ok(FileReadBuffer(v))
+    }
+
+    /// `p_read(fd, buffer, sizeof(buffer))`: the bytes read (empty at end of
+    /// file), or the error with `errno` kept.
+    pub(crate) fn read(&mut self, fd: c_int) -> posix::SysResult<&[u8]> {
+        let spare = self.0.spare_capacity_mut();
+        let len = spare.len().min(GIT_BUFSIZE_FILEIO);
+        let p = spare.as_mut_ptr().cast::<u8>();
+        // SAFETY: `p` is valid for writes of `len` bytes (the reserved,
+        // unused capacity, borrowed through `&mut self`).
+        let r = unsafe { posix::read_raw(fd, p, len) };
+        let Ok(n) = usize::try_from(r) else {
+            return Err(posix::Errno(errors::errno()));
+        };
+        // SAFETY: `read_raw` initialized the first `n <= len` bytes at `p`,
+        // which stay borrowed (and unwritten) as long as the result.
+        Ok(unsafe { core::slice::from_raw_parts(p, n) })
+    }
+}
+
 /// `id_from_fd`: hash `size` bytes of `fd` as an object (no filters).
 fn id_from_fd_raw(fd: c_int, mut size: usize, opts: &IdOptions) -> Result<Oid> {
     let mut h = Hasher::new(algorithm(opts.oid_type))?;
     let mut header = [0u8; 64];
     let n = format_object_header(&mut header, size as u64, opts.object_type)?;
     h.update(&header[..n])?;
-    let mut buffer = vec![0u8; GIT_BUFSIZE_FILEIO];
+    let mut buffer = FileReadBuffer::new()?;
     let mut read_failed = false;
     while size > 0 {
-        match posix::read(fd, &mut buffer) {
-            Ok(0) => break,
-            Ok(r) => {
-                if r > size {
+        match buffer.read(fd) {
+            Ok([]) => break,
+            Ok(data) => {
+                if data.len() > size {
                     return Err(git_error_set!(
                         ErrorClass::OS,
                         "error reading file for hashing"
                     ));
                 }
-                h.update(&buffer[..r])?;
-                size -= r;
+                h.update(data)?;
+                size -= data.len();
             }
             Err(posix::Errno(e)) => {
                 errors::set_errno(e);
@@ -1226,7 +1257,8 @@ unsafe fn id_from_symlink_c(path: &CStr, given: *const GitObjectIdOptions) -> Re
             "symbolic links must be blob types"
         ));
     }
-    let st = crate::util::fs_path::lstat(path)?;
+    // (C folds lstat's error to -1, keeping its message.)
+    let st = crate::util::fs_path::lstat(path).map_err(|_| ErrorCode::GENERIC)?;
     let o = GitObjectIdOptions {
         version: GIT_OBJECT_ID_OPTIONS_VERSION,
         object_type: opts.object_type,
@@ -1319,26 +1351,41 @@ pub fn write_oid_header(buf: &mut GitStr, header: &[u8], id: &Oid) -> Result<()>
 /// (which need not be UTF-8), with printf's growth: room for `2 *
 /// format_len` more bytes first, then exactly what is missing.
 pub(crate) fn printf_bytes(buf: &mut GitStr, format_len: usize, bytes: &[u8]) -> Result<()> {
+    printf_pieces(buf, format_len, &[bytes])
+}
+
+/// [`printf_bytes`] of the concatenation of `pieces` (no copy of them is
+/// made first).
+pub(crate) fn printf_pieces(buf: &mut GitStr, format_len: usize, pieces: &[&[u8]]) -> Result<()> {
     buf.vprintf_begin(format_len)?;
-    let Ok(len) = c_int::try_from(bytes.len()) else {
+    let total = pieces
+        .iter()
+        .try_fold(0usize, |t, p| t.checked_add(p.len()));
+    let Some(len) = total.and_then(|t| c_int::try_from(t).ok()) else {
         // `vsnprintf` fails beyond INT_MAX.
         // SAFETY: -1 is never written.
         unsafe { buf.vprintf_written(-1)? };
         return Err(ErrorCode::GENERIC);
     };
+    let total = len as usize;
     loop {
         let size = buf.len();
         // The room after the contents, the NUL's slot included.
         let (spare, room) = buf.spare_ptr();
-        if bytes.len() < room {
-            // SAFETY: `room > len` bytes at `spare`, the string's own buffer
-            // (borrowed through `&mut buf`), disjoint from `bytes`.
-            unsafe { ptr::copy_nonoverlapping(bytes.as_ptr(), spare, bytes.len()) };
+        if total < room {
+            let mut at = spare;
+            for p in pieces {
+                // SAFETY: the pieces fit in the `room > total` bytes at
+                // `spare`, the string's own buffer (borrowed through
+                // `&mut buf`), disjoint from them.
+                unsafe { ptr::copy_nonoverlapping(p.as_ptr(), at, p.len()) };
+                at = at.wrapping_add(p.len());
+            }
             // SAFETY: the byte after them, within `room`.
-            unsafe { spare.wrapping_add(bytes.len()).write(0) };
+            unsafe { at.write(0) };
             // SAFETY: the string owns its buffer (`room > 0`), the bytes up
-            // to `size + len` are written and the NUL follows them.
-            unsafe { buf.set_len(size + bytes.len()) };
+            // to `size + total` are written and the NUL follows them.
+            unsafe { buf.set_len(size + total) };
             return Ok(());
         }
         // SAFETY: they do not fit, so this only grows the buffer.
