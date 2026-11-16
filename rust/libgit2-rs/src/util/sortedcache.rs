@@ -327,6 +327,11 @@ pub struct Shared {
     stamp: UnsafeCell<FileStamp>,
     core: UnsafeCell<Core>,
     path: CString,
+    /// Taken by the safe API's guards before `lock`: a thread that asks for
+    /// the write lock while it holds the lock deadlocks or panics in
+    /// `std` (defined) instead of reaching `pthread_rwlock_wrlock`, for
+    /// which POSIX leaves that undefined. C does not use it.
+    gate: std::sync::RwLock<()>,
 }
 
 // SAFETY: `core` and `stamp` are only reached under the rwlock (or with
@@ -364,6 +369,7 @@ impl Shared {
                 map: KeyMap::default(),
             }),
             path,
+            gate: std::sync::RwLock::new(()),
         }))
     }
 
@@ -670,7 +676,9 @@ fn load_fd(fd: c_int, buf: Option<&mut GitStr>) -> Result<()> {
 /// Items are kept in key order (bytewise). Clones share the cache (C's
 /// reference count). Reading and writing take the cache's lock in guards:
 /// [`read`](Self::read), [`write`](Self::write),
-/// [`lock_and_load`](Self::lock_and_load).
+/// [`lock_and_load`](Self::lock_and_load). As with `std`'s locks, asking
+/// for the write lock while this thread holds a guard of the same cache
+/// deadlocks or panics.
 pub struct SortedCache<T> {
     shared: Arc<Shared>,
     _t: PhantomData<T>,
@@ -754,9 +762,11 @@ impl<T> SortedCache<T> {
 
     /// Take a read lock (`git_sortedcache_rlock`).
     pub fn read(&self) -> ReadGuard<'_, T> {
+        let gate = self.shared.gate.read().unwrap_or_else(|e| e.into_inner());
         let _ = self.shared.rlock();
         ReadGuard {
             cache: self,
+            _gate: gate,
             _not_send: PhantomData,
         }
     }
@@ -764,9 +774,11 @@ impl<T> SortedCache<T> {
     /// Take the write lock (`git_sortedcache_wlock`); the items are sorted
     /// when it is released.
     pub fn write(&self) -> WriteGuard<'_, T> {
+        let gate = self.shared.gate.write().unwrap_or_else(|e| e.into_inner());
         let _ = self.shared.wlock();
         WriteGuard {
             cache: self,
+            _gate: gate,
             _not_send: PhantomData,
         }
     }
@@ -777,11 +789,13 @@ impl<T> SortedCache<T> {
     /// with code [`ErrorCode::NOT_FOUND`] (without a message, as C).
     pub fn lock_and_load(&self) -> core::result::Result<Option<Loaded<'_, T>>, Error> {
         let mut buf = GitStr::new();
+        let gate = self.shared.gate.write().unwrap_or_else(|e| e.into_inner());
         // SAFETY: the comparison is `typed_cmp::<T>`, sound on our items.
         match unsafe { self.shared.lockandload(Some(&mut buf)) } {
             Ok(true) => Ok(Some((
                 WriteGuard {
                     cache: self,
+                    _gate: gate,
                     _not_send: PhantomData,
                 },
                 buf.as_bytes().to_vec(),
@@ -817,6 +831,8 @@ pub type Loaded<'a, T> = (WriteGuard<'a, T>, Vec<u8>);
 #[must_use]
 pub struct ReadGuard<'a, T> {
     cache: &'a SortedCache<T>,
+    // Released after the cache's lock (fields drop after `Drop::drop`).
+    _gate: std::sync::RwLockReadGuard<'a, ()>,
     _not_send: PhantomData<*const ()>,
 }
 
@@ -824,6 +840,8 @@ pub struct ReadGuard<'a, T> {
 #[must_use]
 pub struct WriteGuard<'a, T> {
     cache: &'a SortedCache<T>,
+    // Released after the cache's lock (fields drop after `Drop::drop`).
+    _gate: std::sync::RwLockWriteGuard<'a, ()>,
     _not_send: PhantomData<*const ()>,
 }
 
