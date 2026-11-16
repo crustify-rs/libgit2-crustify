@@ -1,4 +1,4 @@
-#![cfg(not(miri))]
+#![cfg(all(feature = "link-c", not(miri)))]
 use libgit2_rs as _;
 unsafe extern "C" {
     fn git_libgit2_init() -> i32;
