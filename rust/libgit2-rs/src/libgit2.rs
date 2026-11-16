@@ -414,3 +414,63 @@ pub mod ffi {
         barrier(|| buildinfo(key).map_or(core::ptr::null(), CStr::as_ptr))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn version_features_buildinfo() {
+        assert_eq!(version(), (1, 9, 0));
+        assert_eq!(VERSION, "1.9.0");
+        assert_eq!(prerelease(), None);
+        // The reference configuration (PORTING.md §9).
+        let f = features();
+        for x in [
+            feature::THREADS,
+            feature::HTTPS,
+            feature::SSH,
+            feature::NSEC,
+            feature::HTTP_PARSER,
+            feature::REGEX,
+            feature::AUTH_NTLM,
+            feature::AUTH_NEGOTIATE,
+            feature::COMPRESSION,
+            feature::SHA1,
+            feature::SHA256,
+            feature::HTTP,
+        ] {
+            assert_ne!(f & x, 0, "feature {x:#x}");
+        }
+        assert_eq!(f & feature::I18N, 0);
+        let b = |x| feature_backend(x).map(|c: &CStr| c.to_str().unwrap().to_owned());
+        assert_eq!(b(feature::THREADS).as_deref(), Some("pthread"));
+        assert_eq!(b(feature::HTTPS).as_deref(), Some("openssl"));
+        assert_eq!(b(feature::SSH).as_deref(), Some("libssh2"));
+        assert_eq!(b(feature::NSEC).as_deref(), Some("mtim"));
+        assert_eq!(b(feature::HTTP_PARSER).as_deref(), Some("httpparser"));
+        assert_eq!(b(feature::REGEX).as_deref(), Some("pcre2"));
+        assert_eq!(b(feature::I18N), None);
+        assert_eq!(b(feature::AUTH_NTLM).as_deref(), Some("builtin"));
+        assert_eq!(b(feature::AUTH_NEGOTIATE).as_deref(), Some("gssapi"));
+        assert_eq!(b(feature::COMPRESSION).as_deref(), Some("zlib"));
+        assert_eq!(b(feature::SHA1).as_deref(), Some("builtin"));
+        assert_eq!(b(feature::SHA256).as_deref(), Some("openssl"));
+        assert_eq!(b(feature::HTTP), None);
+        assert_eq!(b(12345), None);
+        assert_eq!(buildinfo(GIT_BUILDINFO_CPU), Some(c"x86_64"));
+        assert_eq!(buildinfo(99), None);
+    }
+
+    #[test]
+    fn ffi_version() {
+        let (mut a, mut b, mut c) = (0, 0, 0);
+        // SAFETY: three writable ints.
+        assert_eq!(unsafe { ffi::git_libgit2_version(&raw mut a, &raw mut b, &raw mut c) }, 0);
+        assert_eq!((a, b, c), version());
+        // SAFETY: no precondition.
+        assert!(unsafe { ffi::git_libgit2_prerelease() }.is_null());
+        // SAFETY: no precondition.
+        assert_eq!(unsafe { ffi::git_libgit2_features() }, features());
+    }
+}

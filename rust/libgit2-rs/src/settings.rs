@@ -525,3 +525,87 @@ pub mod ffi {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_support;
+
+    fn args() -> OptArgs {
+        OptArgs {
+            i: 0,
+            sz: 0,
+            ssz: 0,
+            p1: ptr::null_mut(),
+            p2: ptr::null_mut(),
+        }
+    }
+
+    #[test]
+    fn user_agents() {
+        let _g = test_support::init();
+        let _l = AGENT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        assert_eq!(user_agent(), c"libgit2 1.9.0");
+        assert_eq!(user_agent_product(), c"git/2.0");
+        opts::set_user_agent(Some(c"agent/1")).unwrap();
+        assert_eq!(opts::user_agent(), b"agent/1");
+        opts::set_user_agent(None).unwrap();
+        assert_eq!(user_agent(), c"libgit2 1.9.0");
+        let mut a = args();
+        a.p1 = c"prod/2".as_ptr().cast_mut().cast();
+        // SAFETY: a string argument.
+        unsafe { opts(opt::SET_USER_AGENT_PRODUCT, &a) }.unwrap();
+        assert_eq!(user_agent_product(), c"prod/2");
+        a.p1 = ptr::null_mut();
+        // SAFETY: NULL: back to the default.
+        unsafe { opts(opt::SET_USER_AGENT_PRODUCT, &a) }.unwrap();
+        assert_eq!(user_agent_product(), c"git/2.0");
+    }
+
+    static AGENT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn errors_as_c() {
+        let _g = test_support::init();
+        let a = args();
+        // SAFETY: no argument is used.
+        assert_eq!(unsafe { opts(9999, &a) }, Err(ErrorCode::GENERIC));
+        assert_eq!(errors::last_message().unwrap(), b"invalid option key");
+        assert_eq!(errors::last_class(), Some(ErrorClass::INVALID));
+        assert!(config_level_to_sysdir(1).is_err());
+        assert_eq!(errors::last_message().unwrap(), b"invalid config path selector 1");
+        assert_eq!(config_level_to_sysdir(4), Ok(crate::sys::sysdir::GIT_SYSDIR_GLOBAL));
+        let mut a = args();
+        a.i = -1;
+        // SAFETY: an int argument.
+        assert!(unsafe { opts(opt::SET_SERVER_TIMEOUT, &a) }.is_err());
+        assert_eq!(errors::last_message().unwrap(), b"invalid timeout");
+        // SAFETY: as above.
+        assert!(unsafe { opts(opt::SET_SERVER_CONNECT_TIMEOUT, &a) }.is_err());
+        assert_eq!(errors::last_message().unwrap(), b"invalid connect timeout");
+        // Windows-only options do nothing.
+        // SAFETY: no argument is used.
+        unsafe { opts(opt::GET_WINDOWS_SHAREMODE, &args()) }.unwrap();
+    }
+
+    #[test]
+    fn owner_validation_and_fsync() {
+        let _g = test_support::init();
+        let mut v: c_int = -1;
+        let mut a = args();
+        a.p1 = (&raw mut v).cast();
+        // SAFETY: an `int *`.
+        unsafe { opts(opt::GET_OWNER_VALIDATION, &a) }.unwrap();
+        assert_eq!(v, c_int::from(opts::owner_validation()));
+        let mut b = args();
+        b.i = 1;
+        // SAFETY: an int.
+        unsafe { opts(opt::ENABLE_FSYNC_GITDIR, &b) }.unwrap();
+        assert!(crate::repository::git_repository__fsync_gitdir.load(Ordering::Relaxed));
+        opts::set_fsync_gitdir(false);
+        assert!(!crate::repository::git_repository__fsync_gitdir.load(Ordering::Relaxed));
+        // A NULL out-pointer is rejected (C would crash).
+        // SAFETY: NULL is checked.
+        assert!(unsafe { opts(opt::GET_OWNER_VALIDATION, &args()) }.is_err());
+    }
+}
