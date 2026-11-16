@@ -3,9 +3,11 @@
 //! Everything here is Rust under the exports, so it runs under Miri but
 //! for the tests that touch files or patterns.
 
+// C-style test code: each test drives the exports under one contract.
 #![allow(
     clippy::multiple_unsafe_ops_per_block,
-    clippy::undocumented_unsafe_blocks
+    clippy::undocumented_unsafe_blocks,
+    clippy::borrow_as_ptr
 )]
 
 use core::ffi::{CStr, c_char, c_int, c_void};

@@ -106,7 +106,7 @@ fn strip_comments(line: &[u8], in_quotes: i32) -> (usize, i32) {
         if c == b'"' && (i == 0 || line[i - 1] != b'\\') {
             quote_count = quote_count.wrapping_add(1);
         }
-        if (c == b';' || c == b'#') && quote_count % 2 == 0 && backslash_count % 2 == 0 {
+        if (c == b';' || c == b'#') && quote_count % 2 == 0 && backslash_count.is_multiple_of(2) {
             break;
         }
         if c == b'\\' {

@@ -373,9 +373,10 @@ pub mod ffi {
         opts: *mut git_config_backend_memory_options,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            let (text, (t, o)) =
-                unsafe { (crate::util::export::bytes(cfg.cast(), len), options(opts)) };
+            // SAFETY: `cfg` is readable for `len` bytes (the contract).
+            let text = unsafe { crate::util::export::bytes(cfg.cast(), len) };
+            // SAFETY: `opts` is NULL or valid (the contract).
+            let (t, o) = unsafe { options(opts) };
             match backend_from_string(text, t, o) {
                 // SAFETY: `out` is writable.
                 Ok(b) => unsafe {

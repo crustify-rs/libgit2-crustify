@@ -800,7 +800,11 @@ impl FileBackend {
     fn unlock(&self, success: bool) -> Result<()> {
         let Some(Locked { mut buf, content }) = self.lock_locked().take() else {
             // Not locked: C commits its zeroed filebuf, which fails.
-            return if success { GitFilebuf::new().commit() } else { Ok(()) };
+            return if success {
+                GitFilebuf::new().commit()
+            } else {
+                Ok(())
+            };
         };
         if !success {
             // Dropping the filebuf removes the lock file.
@@ -851,7 +855,11 @@ impl FileBackend {
         }
 
         // Dropped on the way out, it removes the lock file.
-        let mut file = fb(Filebuf::open(&path, GIT_FILEBUF_HASH_SHA256, GIT_CONFIG_FILE_MODE))?;
+        let mut file = fb(Filebuf::open(
+            &path,
+            GIT_FILEBUF_HASH_SHA256,
+            GIT_CONFIG_FILE_MODE,
+        ))?;
         let cpath = cstring(&path)?;
         let mut contents = GitStr::new();
         match futils::readbuffer(&mut contents, as_cstr(&cpath)) {
@@ -924,9 +932,15 @@ ffibox::impl_cvtable! {
     fn set_multivar(@cfg, name: *const c_char, regexp: *const c_char, value: *const c_char) -> c_int {
         on panic: slot_panicked(),
         on busy: slot_busy(),
-        // SAFETY: as for `set`.
-        |b: &FileBackend| status(b.set_multivar(cfg, unsafe { arg(name) }, unsafe { opt(regexp) },
-            unsafe { opt(value) }.map(CStr::to_bytes))),
+        |b: &FileBackend| {
+            // SAFETY: as for `set`.
+            let name = unsafe { arg(name) };
+            // SAFETY: as for `set`.
+            let regexp = unsafe { opt(regexp) };
+            // SAFETY: as for `set`.
+            let value = unsafe { opt(value) }.map(CStr::to_bytes);
+            status(b.set_multivar(cfg, name, regexp, value))
+        },
     }
     /// `config_file_delete`.
     fn del(@cfg, name: *const c_char) -> c_int {

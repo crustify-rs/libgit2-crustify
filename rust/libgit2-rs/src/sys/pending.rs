@@ -50,17 +50,20 @@ pub const GIT_REPOSITORY_CONFIGMAP_CACHE_OFFSET: usize = 272;
 pub unsafe fn repository_configmap_cache<'a>(
     repo: *mut git_repository,
 ) -> &'a [core::sync::atomic::AtomicIsize; GIT_CONFIGMAP_CACHE_MAX] {
-    // SAFETY: per the contract the repository is live; the cache is an
-    // array of `intptr_t` at this offset (layout test), which C accesses
-    // only atomically (`git_atomic_load`, `git_atomic_compare_and_swap`) or
-    // while nothing else uses the repository (`git_repository_new`/`_free`),
-    // so an array of atomics over it is sound; it lives as long as `repo`.
-    unsafe {
-        &*repo
-            .cast::<u8>()
-            .add(GIT_REPOSITORY_CONFIGMAP_CACHE_OFFSET)
-            .cast::<[core::sync::atomic::AtomicIsize; GIT_CONFIGMAP_CACHE_MAX]>()
-    }
+    // The cache is an array of `intptr_t` at this offset (layout test),
+    // which C accesses only atomically (`git_atomic_load`,
+    // `git_atomic_compare_and_swap`) or while nothing else uses the
+    // repository (`git_repository_new`/`_free`), so an array of atomics over
+    // it is sound; it lives as long as `repo`.
+    // SAFETY: the repository is live (the contract) and the field is within
+    // it.
+    let field = unsafe { repo.byte_add(GIT_REPOSITORY_CONFIGMAP_CACHE_OFFSET) };
+    // The field is an `intptr_t` array, so aligned as one (layout test).
+    #[allow(clippy::cast_ptr_alignment)]
+    let cache = field.cast::<[core::sync::atomic::AtomicIsize; GIT_CONFIGMAP_CACHE_MAX]>();
+    // SAFETY: as above: a live, aligned array that C only accesses
+    // atomically.
+    unsafe { &*cache }
 }
 
 unsafe extern "C" {
@@ -146,11 +149,11 @@ pub unsafe fn repository_head_symbolic_target(
     use crate::util::errors::ErrorCode;
     let mut refdb = core::ptr::null_mut();
     // SAFETY: `refdb` is writable; `repo` is live (contract).
-    ErrorCode::check(unsafe { git_repository_refdb(&mut refdb, repo) })?;
+    ErrorCode::check(unsafe { git_repository_refdb(&raw mut refdb, repo) })?;
     let mut r = core::ptr::null_mut();
     // SAFETY: `refdb` is the live refdb just returned; the name is
     // NUL-terminated.
-    let e = unsafe { git_refdb_lookup(&mut r, refdb, c"HEAD".as_ptr()) };
+    let e = unsafe { git_refdb_lookup(&raw mut r, refdb, c"HEAD".as_ptr()) };
     let result = if e < 0 {
         Err(ErrorCode::check(e).unwrap_err())
     } else {

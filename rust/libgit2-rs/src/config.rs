@@ -364,7 +364,12 @@ pub trait BackendCalls {
     }
 
     /// `open`.
-    fn open(&self, level: c_int, repo: *const git_repository) -> Result<()> {
+    ///
+    /// # Safety
+    ///
+    /// `repo` is NULL or a live repository that outlives the backend (the
+    /// file backend keeps it, for conditional includes).
+    unsafe fn open(&self, level: c_int, repo: *const git_repository) -> Result<()> {
         let p = self.raw();
         let f = slot!(p, open).ok_or_else(|| no_slot("open"))?;
         // SAFETY: the slot's contract (see the trait).
@@ -640,7 +645,7 @@ impl IterBox {
 
     /// `next`: the next entry (owned by the iterator, valid until the next
     /// call or its release); `Err(GIT_ITEROVER)` at the end.
-    pub fn next(&mut self) -> Result<NonNull<git_config_backend_entry>> {
+    pub fn next_entry(&mut self) -> Result<NonNull<git_config_backend_entry>> {
         let p = self.0.as_ptr();
         // SAFETY: a live iterator, ours; the slot is read raw.
         let Some(f) = (unsafe { (*p).next }) else {
@@ -852,7 +857,11 @@ impl GitConfig {
 
     /// `git_config_add_backend`: open `backend` at `level` and add it. On
     /// failure the backend is given back (C leaves it to the caller).
-    pub fn add_backend(
+    ///
+    /// # Safety
+    ///
+    /// As [`BackendCalls::open`] for `repo`.
+    pub unsafe fn add_backend(
         &self,
         backend: Backend,
         level: c_int,
@@ -865,7 +874,8 @@ impl GitConfig {
         if let Err(e) = check_version(version, GIT_CONFIG_BACKEND_VERSION, "git_config_backend") {
             return Err((e, backend));
         }
-        if let Err(e) = backend.open(level, repo) {
+        // SAFETY: `repo` per this function's contract.
+        if let Err(e) = unsafe { backend.open(level, repo) } {
             return Err((e, backend));
         }
         // SAFETY: a live table (owned); C writes the field the same way.
@@ -879,6 +889,17 @@ impl GitConfig {
                 Err(_) => Err((e, unreachable_backend())),
             },
         }
+    }
+
+    /// [`add_backend`](Self::add_backend) with no repository.
+    pub fn add_backend_norepo(
+        &self,
+        backend: Backend,
+        level: c_int,
+        force: bool,
+    ) -> core::result::Result<(), (ErrorCode, Backend)> {
+        // SAFETY: NULL is a valid repository argument.
+        unsafe { self.add_backend(backend, level, core::ptr::null(), force) }
     }
 
     /// `git_config_set_writeorder`: the write order of the backend at
@@ -951,8 +972,7 @@ impl GitConfig {
                     break;
                 }
                 Ok(b) => {
-                    if let Err((err, b)) = config.add_backend(b, e.level, core::ptr::null(), false)
-                    {
+                    if let Err((err, b)) = config.add_backend_norepo(b, e.level, false) {
                         drop(b);
                         result = Err(err);
                         break;
@@ -1165,7 +1185,7 @@ impl GitConfig {
         };
         let mut error;
         loop {
-            match iter.next() {
+            match iter.next_entry() {
                 Ok(be) => {
                     error = cb(be.as_ptr().cast());
                     if error != 0 {
@@ -1201,7 +1221,7 @@ impl GitConfig {
         let mut found = false;
         let mut err;
         loop {
-            match iter.next() {
+            match iter.next_entry() {
                 Ok(be) => {
                     found = true;
                     err = cb(be.as_ptr().cast());
@@ -1292,7 +1312,7 @@ impl AllIter {
     /// `all_iter_next`.
     fn next_any(&mut self) -> Result<NonNull<git_config_backend_entry>> {
         if let Some(cur) = &mut self.current {
-            match cur.next() {
+            match cur.next_entry() {
                 Ok(be) => return Ok(be),
                 Err(e) if e == ErrorCode::ITER_OVER => {}
                 Err(e) => return Err(e),
@@ -1310,7 +1330,7 @@ impl AllIter {
                 Err(e) => return Err(e),
                 Ok(it) => {
                     let cur = self.current.insert(it);
-                    match cur.next() {
+                    match cur.next_entry() {
                         Ok(be) => return Ok(be),
                         Err(e) if e == ErrorCode::ITER_OVER => continue,
                         Err(e) => return Err(e),
@@ -1381,7 +1401,7 @@ impl MultivarIter {
     /// `multivar_iter_next`. A NULL value matches as `""` (C would crash).
     fn next_entry(&mut self) -> Result<NonNull<git_config_backend_entry>> {
         loop {
-            let be = self.inner.next()?;
+            let be = self.inner.next_entry()?;
             // SAFETY: an entry the inner iterator holds.
             let v = unsafe { EntryView::of(be.as_ptr()) };
             if v.name != self.name.as_slice() {
@@ -1428,7 +1448,7 @@ pub fn backend_foreach_match(
         return -1;
     };
     let mut error = 0;
-    while let Ok(be) = iter.next() {
+    while let Ok(be) = iter.next_entry() {
         if let Some(regex) = &regex {
             // SAFETY: an entry the iterator holds.
             let name = unsafe { EntryView::of(be.as_ptr()) }.name;
@@ -1666,7 +1686,11 @@ pub fn global_location(buf: &mut GitStr) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 /// `git_config_add_file_ondisk`.
-pub fn add_file_ondisk(
+///
+/// # Safety
+///
+/// As [`BackendCalls::open`] for `repo`.
+pub unsafe fn add_file_ondisk(
     config: &GitConfig,
     path: &CStr,
     level: c_int,
@@ -1684,24 +1708,23 @@ pub fn add_file_ondisk(
         }
     }
     let file = crate::config_file::backend_from_file(path.to_bytes())?;
-    config
-        .add_backend(file, level, repo, force)
-        .map_err(|(e, file)| {
-            drop(file);
-            e
-        })
+    // SAFETY: `repo` per this function's contract.
+    unsafe { config.add_backend(file, level, repo, force) }.map_err(|(e, file)| {
+        drop(file);
+        e
+    })
+}
+
+/// [`add_file_ondisk`] with no repository.
+pub fn add_file(config: &GitConfig, path: &CStr, level: c_int, force: bool) -> Result<()> {
+    // SAFETY: NULL is a valid repository argument.
+    unsafe { add_file_ondisk(config, path, level, core::ptr::null(), force) }
 }
 
 /// `git_config_open_ondisk`.
 pub fn open_ondisk(path: &CStr) -> Result<Box<GitConfig>> {
     let config = GitConfig::new();
-    add_file_ondisk(
-        &config,
-        path,
-        GIT_CONFIG_LEVEL_LOCAL,
-        core::ptr::null(),
-        false,
-    )?;
+    add_file(&config, path, GIT_CONFIG_LEVEL_LOCAL, false)?;
     Ok(config)
 }
 
@@ -1714,31 +1737,13 @@ pub fn open_default() -> Result<Box<GitConfig>> {
     if sysdir::find_global_file(&mut buf, GIT_CONFIG_FILENAME_GLOBAL).is_ok()
         || global_location(&mut buf).is_ok()
     {
-        error = add_file_ondisk(
-            &config,
-            str_cstr(&buf),
-            GIT_CONFIG_LEVEL_GLOBAL,
-            core::ptr::null(),
-            false,
-        );
+        error = add_file(&config, str_cstr(&buf), GIT_CONFIG_LEVEL_GLOBAL, false);
     }
     if error.is_ok() && sysdir::find_xdg_file(&mut buf, GIT_CONFIG_FILENAME_XDG).is_ok() {
-        error = add_file_ondisk(
-            &config,
-            str_cstr(&buf),
-            GIT_CONFIG_LEVEL_XDG,
-            core::ptr::null(),
-            false,
-        );
+        error = add_file(&config, str_cstr(&buf), GIT_CONFIG_LEVEL_XDG, false);
     }
     if error.is_ok() && sysdir::find_system_file(&mut buf, GIT_CONFIG_FILENAME_SYSTEM).is_ok() {
-        error = add_file_ondisk(
-            &config,
-            str_cstr(&buf),
-            GIT_CONFIG_LEVEL_SYSTEM,
-            core::ptr::null(),
-            false,
-        );
+        error = add_file(&config, str_cstr(&buf), GIT_CONFIG_LEVEL_SYSTEM, false);
     }
     error.map(|()| config)
 }
@@ -1795,10 +1800,10 @@ pub unsafe fn rename_section(
     let base_len = replace.len();
     let pattern = cstring(pattern.as_bytes()).unwrap_or_default();
     config.foreach_match(Some(as_cstr(&pattern)), |entry| {
-        // SAFETY: the entry the iterator holds, during the callback.
-        let e = unsafe { EntryView::new(&*entry) };
+        // SAFETY: the entry the iterator holds, live during the callback.
+        let e = unsafe { EntryView::of(entry.cast()) };
         let r = rename_entry(config, &mut replace, base_len, old_len, &e);
-        let _ = replace.truncate(base_len);
+        replace.truncate(base_len);
         match r {
             Ok(()) => 0,
             Err(code) => code.raw(),
@@ -1898,7 +1903,7 @@ pub mod ffi {
     ) -> c_int {
         let mut s = GitStr::new();
         // SAFETY: `s` is a valid `git_str`; `buf` per the contract.
-        let mut error = unsafe { crate::buf::ffi::git_buf_tostr(&mut s, buf) };
+        let mut error = unsafe { crate::buf::ffi::git_buf_tostr(&raw mut s, buf) };
         if error == 0 {
             error = match f(&mut s) {
                 Ok(()) => 0,
@@ -1906,7 +1911,7 @@ pub mod ffi {
             };
             if error == 0 {
                 // SAFETY: as above.
-                error = unsafe { crate::buf::ffi::git_buf_fromstr(buf, &mut s) };
+                error = unsafe { crate::buf::ffi::git_buf_fromstr(buf, &raw mut s) };
             }
         }
         drop(s);
@@ -1980,9 +1985,12 @@ pub mod ffi {
         barrier(|| {
             git_assert_arg!(!config.is_null(), "config", -1);
             git_assert_arg!(!path.is_null(), "path", -1);
-            // SAFETY: per the contract.
-            let (config, path) = unsafe { (cfg(config), CStr::from_ptr(path)) };
-            match add_file_ondisk(config, path, level, repo, force != 0) {
+            // SAFETY: `config` is a live config (the contract).
+            let config = unsafe { cfg(config) };
+            // SAFETY: `path` is NUL-terminated (the contract).
+            let path = unsafe { CStr::from_ptr(path) };
+            // SAFETY: `repo` is NULL or live for the backend (the contract).
+            match unsafe { add_file_ondisk(config, path, level, repo, force != 0) } {
                 Ok(()) => 0,
                 Err(e) => e.raw(),
             }
@@ -2026,10 +2034,11 @@ pub mod ffi {
         config: *mut GitConfig,
     ) -> c_int {
         barrier(|| {
+            // SAFETY: `config` is a live config (the contract).
+            let config = unsafe { cfg(config) };
             // SAFETY: `out` is writable.
             unsafe { out.write(core::ptr::null_mut()) };
-            // SAFETY: per the contract.
-            match unsafe { cfg(config) }.snapshot() {
+            match config.snapshot() {
                 // SAFETY: `out` is writable.
                 Ok(c) => unsafe {
                     out_config(out, c);
@@ -2075,8 +2084,9 @@ pub mod ffi {
         config: *mut GitConfig,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            match unsafe { cfg(config) }.open_global() {
+            // SAFETY: `config` is a live config (the contract).
+            let config = unsafe { cfg(config) };
+            match config.open_global() {
                 // SAFETY: `out` is writable.
                 Ok(c) => unsafe {
                     out_config(out, c);
@@ -2106,12 +2116,14 @@ pub mod ffi {
         barrier(|| {
             git_assert_arg!(!config.is_null(), "config", -1);
             git_assert_arg!(!backend.is_null(), "backend", -1);
+            // SAFETY: `config` is a live config (the contract).
+            let config = unsafe { cfg(config) };
             // SAFETY: per the contract: a backend the config may own.
             let Some(b) = (unsafe { Backend::from_c(backend.cast()) }) else {
                 return -1;
             };
-            // SAFETY: per the contract.
-            match unsafe { cfg(config) }.add_backend(b, level, repo, force != 0) {
+            // SAFETY: `repo` is NULL or live for the backend (the contract).
+            match unsafe { config.add_backend(b, level, repo, force != 0) } {
                 Ok(()) => 0,
                 Err((e, b)) => {
                     // Not ours: the caller frees it.
@@ -2135,6 +2147,8 @@ pub mod ffi {
         len: usize,
     ) -> c_int {
         barrier(|| {
+            // SAFETY: `config` is a live config (the contract).
+            let config = unsafe { cfg(config) };
             git_assert!(len < c_int::MAX as usize, "len < INT_MAX", -1);
             let levels = if len == 0 {
                 &[][..]
@@ -2142,8 +2156,7 @@ pub mod ffi {
                 // SAFETY: per the contract.
                 unsafe { core::slice::from_raw_parts(levels, len) }
             };
-            // SAFETY: per the contract.
-            match unsafe { cfg(config) }.set_writeorder(levels) {
+            match config.set_writeorder(levels) {
                 Ok(()) => 0,
                 Err(e) => e.raw(),
             }
@@ -2162,8 +2175,9 @@ pub mod ffi {
         config: *const GitConfig,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            match unsafe { cfg(config) }.iterator(None) {
+            // SAFETY: `config` is a live config (the contract).
+            let config = unsafe { cfg(config) };
+            match config.iterator(None) {
                 // SAFETY: `out` is writable.
                 Ok(it) => unsafe {
                     out.write(it.into_raw());
@@ -2186,8 +2200,11 @@ pub mod ffi {
         regexp: *const c_char,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            match unsafe { cfg(config) }.iterator(unsafe { c(regexp) }) {
+            // SAFETY: `config` is a live config (the contract).
+            let config = unsafe { cfg(config) };
+            // SAFETY: `regexp` is NULL or NUL-terminated (the contract).
+            let regexp = unsafe { c(regexp) };
+            match config.iterator(regexp) {
                 // SAFETY: `out` is writable.
                 Ok(it) => unsafe {
                     out.write(it.into_raw());
@@ -2212,8 +2229,12 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!name.is_null(), "in", -1);
+            // SAFETY: `config` is a live config (the contract).
+            let config = unsafe { cfg(config) };
+            // SAFETY: `regexp` is NULL or NUL-terminated (the contract).
+            let regexp = unsafe { c(regexp) };
             // SAFETY: per the contract.
-            let r = unsafe { cfg(config).multivar_iterator(CStr::from_ptr(name), c(regexp)) };
+            let r = unsafe { config.multivar_iterator(CStr::from_ptr(name), regexp) };
             match r {
                 // SAFETY: `out` is writable.
                 Ok(it) => unsafe {
@@ -2242,7 +2263,7 @@ pub mod ffi {
             };
             let mut be = core::ptr::null_mut();
             // SAFETY: C's contract for `next`.
-            let error = unsafe { next(&mut be, iter) };
+            let error = unsafe { next(&raw mut be, iter) };
             if error != 0 {
                 return error;
             }
@@ -2310,9 +2331,13 @@ pub mod ffi {
         payload: *mut c_void,
     ) -> c_int {
         barrier(|| {
+            // SAFETY: `config` is a live config (the contract).
+            let config = unsafe { cfg(config) };
+            // SAFETY: `regexp` is NULL or NUL-terminated (the contract).
+            let regexp = unsafe { c(regexp) };
             // SAFETY: per the contract; the callback gets the entry the
             // iterator holds and the caller's payload.
-            unsafe { cfg(config).foreach_match(c(regexp), |e| call(cb, e, payload)) }
+            unsafe { config.foreach_match(regexp, |e| call(cb, e, payload)) }
         })
     }
 
@@ -2330,6 +2355,8 @@ pub mod ffi {
         payload: *mut c_void,
     ) -> c_int {
         barrier(|| {
+            // SAFETY: `regexp` is NULL or NUL-terminated (the contract).
+            let regexp = unsafe { c(regexp) };
             let Some(backend) = NonNull::new(backend) else {
                 return errors::assert_arg_failed("backend").raw();
             };
@@ -2339,7 +2366,7 @@ pub mod ffi {
             // SAFETY: a live backend (contract).
             let b = unsafe { BackendPtr::new(backend) };
             // SAFETY: per the contract, as `git_config_foreach_match`.
-            unsafe { backend_foreach_match(&b, c(regexp), |e| cb(e, payload)) }
+            unsafe { backend_foreach_match(&b, regexp, |e| cb(e, payload)) }
         })
     }
 
@@ -2358,11 +2385,14 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!name.is_null(), "in", -1);
-            // SAFETY: per the contract.
-            unsafe {
-                cfg(config)
-                    .get_multivar_foreach(CStr::from_ptr(name), c(regexp), |e| call(cb, e, payload))
-            }
+            // SAFETY: `config` is a live config (the contract).
+            let config = unsafe { cfg(config) };
+            // SAFETY: `regexp` is NULL or NUL-terminated (the contract).
+            let regexp = unsafe { c(regexp) };
+            // SAFETY: `name` is NUL-terminated (the contract).
+            let name = unsafe { CStr::from_ptr(name) };
+            // SAFETY: the callback is valid for the payload (the contract).
+            config.get_multivar_foreach(name, regexp, |e| unsafe { call(cb, e, payload) })
         })
     }
 
@@ -2377,8 +2407,11 @@ pub mod ffi {
         name: *const c_char,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            match unsafe { cfg(config).delete_entry(or_null_c(name)) } {
+            // SAFETY: `config` is a live config (the contract).
+            let config = unsafe { cfg(config) };
+            // SAFETY: `name` is NULL or NUL-terminated (the contract).
+            let name = unsafe { or_null_c(name) };
+            match config.delete_entry(name) {
                 Ok(r) => r,
                 Err(e) => e.raw(),
             }
@@ -2445,8 +2478,13 @@ pub mod ffi {
         value: *const c_char,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            let r = unsafe { cfg(config).set_string(or_null_c(name), c(value)) };
+            // SAFETY: `config` is a live config (the contract).
+            let config = unsafe { cfg(config) };
+            // SAFETY: `name` is NULL or NUL-terminated (the contract).
+            let name = unsafe { or_null_c(name) };
+            // SAFETY: `value` is NULL or NUL-terminated (the contract).
+            let value = unsafe { c(value) };
+            let r = config.set_string(name, value);
             crate::util::export::status(r)
         })
     }
@@ -2465,8 +2503,15 @@ pub mod ffi {
         value: *const c_char,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            match unsafe { cfg(config).set_multivar(or_null_c(name), c(regexp), c(value)) } {
+            // SAFETY: `config` is a live config (the contract).
+            let config = unsafe { cfg(config) };
+            // SAFETY: `name` is NULL or NUL-terminated (the contract).
+            let name = unsafe { or_null_c(name) };
+            // SAFETY: `regexp` is NULL or NUL-terminated (the contract).
+            let regexp = unsafe { c(regexp) };
+            // SAFETY: `value` is NULL or NUL-terminated (the contract).
+            let value = unsafe { c(value) };
+            match config.set_multivar(name, regexp, value) {
                 Ok(r) => r,
                 Err(e) => e.raw(),
             }
@@ -2485,8 +2530,13 @@ pub mod ffi {
         regexp: *const c_char,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            match unsafe { cfg(config).delete_multivar(or_null_c(name), c(regexp)) } {
+            // SAFETY: `config` is a live config (the contract).
+            let config = unsafe { cfg(config) };
+            // SAFETY: `name` is NULL or NUL-terminated (the contract).
+            let name = unsafe { or_null_c(name) };
+            // SAFETY: `regexp` is NULL or NUL-terminated (the contract).
+            let regexp = unsafe { c(regexp) };
+            match config.delete_multivar(name, regexp) {
                 Ok(r) => r,
                 Err(e) => e.raw(),
             }
@@ -2508,15 +2558,13 @@ pub mod ffi {
         only_if_existing: bool,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            let r = unsafe {
-                cfg(config).update_entry(
-                    or_null_c(key),
-                    c(value),
-                    overwrite_existing,
-                    only_if_existing,
-                )
-            };
+            // SAFETY: `config` is a live config (the contract).
+            let config = unsafe { cfg(config) };
+            // SAFETY: `key` is NULL or NUL-terminated (the contract).
+            let key = unsafe { or_null_c(key) };
+            // SAFETY: `value` is NULL or NUL-terminated (the contract).
+            let value = unsafe { c(value) };
+            let r = config.update_entry(key, value, overwrite_existing, only_if_existing);
             crate::util::export::status(r)
         })
     }
@@ -2549,13 +2597,12 @@ pub mod ffi {
         name: *const c_char,
     ) -> c_int {
         barrier(|| {
+            // SAFETY: `config` is a live config (the contract).
+            let config = unsafe { cfg(config) };
+            // SAFETY: `name` is NULL or NUL-terminated (the contract).
+            let name = unsafe { or_null_c(name) };
             // SAFETY: per the contract.
-            unsafe {
-                out_entry(
-                    out,
-                    cfg(config).get_entry(or_null_c(name), true, Want::AllErrors),
-                )
-            }
+            unsafe { out_entry(out, config.get_entry(name, true, Want::AllErrors)) }
         })
     }
 
@@ -2573,13 +2620,17 @@ pub mod ffi {
         no_errors: bool,
     ) -> c_int {
         barrier(|| {
+            // SAFETY: `config` is a live config (the contract).
+            let config = unsafe { cfg(config) };
+            // SAFETY: `key` is NULL or NUL-terminated (the contract).
+            let key = unsafe { or_null_c(key) };
             let want = if no_errors {
                 Want::NoErrors
             } else {
                 Want::NoMissing
             };
             // SAFETY: per the contract.
-            unsafe { out_entry(out, cfg(config).get_entry(or_null_c(key), false, want)) }
+            unsafe { out_entry(out, config.get_entry(key, false, want)) }
         })
     }
 
@@ -2594,7 +2645,10 @@ pub mod ffi {
         f: impl FnOnce(Option<&[u8]>) -> Result<T>,
     ) -> Result<T> {
         // SAFETY: per the contract.
-        let e = unsafe { cfg(config).get_entry(or_null_c(name), true, Want::AllErrors) }?;
+        let config = unsafe { cfg(config) };
+        // SAFETY: per the contract.
+        let name = unsafe { or_null_c(name) };
+        let e = config.get_entry(name, true, Want::AllErrors)?;
         let e = e.ok_or(ErrorCode::NOT_FOUND)?;
         f(e.view().value)
     }
@@ -2764,12 +2818,13 @@ pub mod ffi {
         name: *const c_char,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            unsafe {
-                wrap_buf(out, |s| {
-                    ErrorCode::check_zero(git_config__get_path(s, config, name))
-                })
-            }
+            let get = |s: &mut GitStr| {
+                // SAFETY: `s` is a valid `git_str`; `config` and `name` are
+                // as `git_config__get_path` requires (the contract).
+                ErrorCode::check_zero(unsafe { git_config__get_path(s, config, name) })
+            };
+            // SAFETY: `out` is NULL or a valid `git_buf` (the contract).
+            unsafe { wrap_buf(out, get) }
         })
     }
 
@@ -2785,10 +2840,12 @@ pub mod ffi {
         value: *const c_char,
     ) -> c_int {
         barrier(|| {
+            // SAFETY: `value` is NULL or NUL-terminated (the contract).
+            let value = unsafe { c(value) };
             // SAFETY: per the contract.
             unsafe {
                 wrap_buf(out, |s| {
-                    let Some(v) = c(value) else {
+                    let Some(v) = value else {
                         return Err(errors::assert_arg_failed("value"));
                     };
                     parse_path(s, v.to_bytes())
@@ -2810,8 +2867,10 @@ pub mod ffi {
         name: *const c_char,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
+            // SAFETY: `config` is a live config (the contract).
             let config = unsafe { cfg(config) };
+            // SAFETY: `name` is NULL or NUL-terminated (the contract).
+            let name = unsafe { or_null_c(name) };
             if !config.is_readonly() {
                 return git_error_set!(
                     ErrorClass::CONFIG,
@@ -2819,8 +2878,7 @@ pub mod ffi {
                 )
                 .raw();
             }
-            // SAFETY: per the contract.
-            let r = config.get_entry(unsafe { or_null_c(name) }, true, Want::AllErrors);
+            let r = config.get_entry(name, true, Want::AllErrors);
             let (p, code) = match &r {
                 Ok(Some(e)) => {
                     // SAFETY: a live entry; read by value.
@@ -2873,12 +2931,13 @@ pub mod ffi {
         name: *const c_char,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            unsafe {
-                wrap_buf(out, |s| {
-                    ErrorCode::check_zero(git_config__get_string_buf(s, config, name))
-                })
-            }
+            let get = |s: &mut GitStr| {
+                // SAFETY: `s` is a valid `git_str`; `config` and `name` are
+                // as `git_config__get_string_buf` requires (the contract).
+                ErrorCode::check_zero(unsafe { git_config__get_string_buf(s, config, name) })
+            };
+            // SAFETY: `out` is NULL or a valid `git_buf` (the contract).
+            unsafe { wrap_buf(out, get) }
         })
     }
 
@@ -2896,12 +2955,16 @@ pub mod ffi {
         fallback_value: *const c_char,
     ) -> *mut c_char {
         barrier(|| {
-            // SAFETY: per the contract.
-            let e = unsafe { cfg(config).get_entry(or_null_c(key), false, Want::NoErrors) };
+            // SAFETY: `config` is a live config (the contract).
+            let config = unsafe { cfg(config) };
+            // SAFETY: `key` is NULL or NUL-terminated (the contract).
+            let key = unsafe { or_null_c(key) };
+            // SAFETY: `fallback_value` is NULL or NUL-terminated (the contract).
+            let fallback_value = unsafe { c(fallback_value) };
+            let e = config.get_entry(key, false, Want::NoErrors);
             let e = e.ok().flatten();
             let v = e.as_ref().and_then(|e| e.view().value.map(<[u8]>::to_vec));
-            // SAFETY: per the contract.
-            let v = v.or_else(|| unsafe { c(fallback_value) }.map(|f| f.to_bytes().to_vec()));
+            let v = v.or_else(|| fallback_value.map(|f| f.to_bytes().to_vec()));
             match v {
                 Some(v) => crate::util::alloc::substrdup(&v),
                 None => core::ptr::null_mut(),
@@ -2921,8 +2984,11 @@ pub mod ffi {
         fallback_value: c_int,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            let e = unsafe { cfg(config).get_entry(or_null_c(key), false, Want::NoErrors) };
+            // SAFETY: `config` is a live config (the contract).
+            let config = unsafe { cfg(config) };
+            // SAFETY: `key` is NULL or NUL-terminated (the contract).
+            let key = unsafe { or_null_c(key) };
+            let e = config.get_entry(key, false, Want::NoErrors);
             let mut val = fallback_value;
             if let Ok(Some(e)) = e {
                 match parse_bool(e.view().value) {
@@ -2946,8 +3012,11 @@ pub mod ffi {
         fallback_value: c_int,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            let e = unsafe { cfg(config).get_entry(or_null_c(key), false, Want::NoErrors) };
+            // SAFETY: `config` is a live config (the contract).
+            let config = unsafe { cfg(config) };
+            // SAFETY: `key` is NULL or NUL-terminated (the contract).
+            let key = unsafe { or_null_c(key) };
+            let e = config.get_entry(key, false, Want::NoErrors);
             let mut val = fallback_value;
             if let Ok(Some(e)) = e {
                 match parse_int32(e.view().value) {
@@ -2973,8 +3042,10 @@ pub mod ffi {
         value: *const c_char,
     ) -> c_int {
         barrier(|| {
+            // SAFETY: `value` is NULL or NUL-terminated (the contract).
+            let value = unsafe { c(value) };
             // SAFETY: per the contract.
-            let (maps, value) = unsafe { (configmaps(maps, map_n), c(value)) };
+            let (maps, value) = unsafe { (configmaps(maps, map_n), value) };
             match lookup_map_value(&maps, value.map(CStr::to_bytes)) {
                 // SAFETY: `out` is writable.
                 Ok(v) => unsafe {
@@ -3008,12 +3079,13 @@ pub mod ffi {
                 unsafe { core::slice::from_raw_parts(maps, map_n) }
             };
             match maps.iter().find(|m| m.map_value == enum_val) {
-                // SAFETY: the outputs are writable.
-                Some(m) => unsafe {
-                    type_out.write(m.type_);
-                    str_out.write(m.str_match);
+                Some(m) => {
+                    // SAFETY: the outputs are writable.
+                    unsafe { type_out.write(m.type_) };
+                    // SAFETY: as above.
+                    unsafe { str_out.write(m.str_match) };
                     0
-                },
+                }
                 None => {
                     let _ = git_error_set!(ErrorClass::CONFIG, "invalid enum value");
                     ErrorCode::NOT_FOUND.raw()
@@ -3030,8 +3102,9 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_parse_bool(out: *mut c_int, value: *const c_char) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            match parse_bool(unsafe { c(value) }.map(CStr::to_bytes)) {
+            // SAFETY: `value` is NULL or NUL-terminated (the contract).
+            let value = unsafe { c(value) };
+            match parse_bool(value.map(CStr::to_bytes)) {
                 // SAFETY: `out` is writable.
                 Ok(b) => unsafe {
                     out.write(c_int::from(b));
@@ -3050,8 +3123,9 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_parse_int64(out: *mut i64, value: *const c_char) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            match parse_int64(unsafe { c(value) }.map(CStr::to_bytes)) {
+            // SAFETY: `value` is NULL or NUL-terminated (the contract).
+            let value = unsafe { c(value) };
+            match parse_int64(value.map(CStr::to_bytes)) {
                 // SAFETY: `out` is writable.
                 Ok(v) => unsafe {
                     out.write(v);
@@ -3070,8 +3144,9 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_parse_int32(out: *mut i32, value: *const c_char) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            match parse_int32(unsafe { c(value) }.map(CStr::to_bytes)) {
+            // SAFETY: `value` is NULL or NUL-terminated (the contract).
+            let value = unsafe { c(value) };
+            match parse_int32(value.map(CStr::to_bytes)) {
                 // SAFETY: `out` is writable.
                 Ok(v) => unsafe {
                     out.write(v);
@@ -3261,8 +3336,10 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!config.is_null(), "config", -1);
+            // SAFETY: `config` is a live config (the contract).
+            let config = unsafe { cfg(config) };
             // SAFETY: per the contract.
-            crate::util::export::status(unsafe { cfg(config).lock(tx) })
+            crate::util::export::status(unsafe { config.lock(tx) })
         })
     }
 
@@ -3305,14 +3382,12 @@ pub mod ffi {
         new_section_name: *const c_char,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            unsafe {
-                rename_section(
-                    repo,
-                    cstr_bytes(old_section_name),
-                    c(new_section_name).map(CStr::to_bytes),
-                )
-            }
+            // SAFETY: `new_section_name` is NULL or NUL-terminated (the contract).
+            let new_section_name = unsafe { c(new_section_name) };
+            // SAFETY: `old_section_name` is NUL-terminated (the contract).
+            let old = unsafe { cstr_bytes(old_section_name) };
+            // SAFETY: `repo` is a live repository (the contract).
+            unsafe { rename_section(repo, old, new_section_name.map(CStr::to_bytes)) }
         })
     }
 
@@ -3576,13 +3651,7 @@ impl Config {
         force: bool,
     ) -> ApiResult<()> {
         let p = arg(path_bytes(path))?;
-        Ok(add_file_ondisk(
-            self.inner(),
-            as_cstr(&p),
-            level.raw(),
-            core::ptr::null(),
-            force,
-        )?)
+        Ok(add_file(self.inner(), as_cstr(&p), level.raw(), force)?)
     }
 
     /// `git_config_backend_from_string` + `git_config_add_backend`: the
@@ -3590,7 +3659,7 @@ impl Config {
     pub fn add_memory(&self, text: &[u8], level: ConfigLevel, force: bool) -> ApiResult<()> {
         let b = crate::config_mem::backend_from_string(text, None, None)?;
         self.inner()
-            .add_backend(b, level.raw(), core::ptr::null(), force)
+            .add_backend_norepo(b, level.raw(), force)
             .map_err(|(e, _)| Error::from(e))
     }
 
@@ -3603,7 +3672,7 @@ impl Config {
     ) -> ApiResult<()> {
         let b = rust_backend::new(backend);
         self.inner()
-            .add_backend(b, level.raw(), core::ptr::null(), force)
+            .add_backend_norepo(b, level.raw(), force)
             .map_err(|(e, _)| Error::from(e))
     }
 
@@ -3801,7 +3870,7 @@ impl Iterator for ConfigEntries<'_> {
     type Item = ApiResult<ConfigEntry>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.it.next() {
+        match self.it.next_entry() {
             // SAFETY: the entry the iterator holds, copied at once.
             Ok(be) => Some(Ok(ConfigEntry::from_view(&unsafe {
                 EntryView::of(be.as_ptr())
@@ -4022,8 +4091,13 @@ mod rust_backend {
             on panic: slot_panicked(),
             on busy: slot_busy(),
             // SAFETY: as for `set`; `value` may be NULL.
-            |s: &State| status(s.backend.set_multivar(unsafe { b(name) }, unsafe { b(regexp) },
-                (!value.is_null()).then(|| unsafe { b(value) }))),
+            |s: &State| {
+                // SAFETY: as for `set`.
+                let (name, regexp) = (unsafe { b(name) }, unsafe { b(regexp) });
+                // SAFETY: as above; `value` may be NULL.
+                let value = (!value.is_null()).then(|| unsafe { b(value) });
+                status(s.backend.set_multivar(name, regexp, value))
+            },
         }
         fn del(@cfg, name: *const c_char) -> c_int {
             on panic: slot_panicked(),

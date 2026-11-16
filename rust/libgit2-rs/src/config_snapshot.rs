@@ -47,7 +47,7 @@ impl SnapshotBackend {
         let src = unsafe { BackendPtr::new(self.source) };
         let mut it = src.iterator()?;
         loop {
-            match it.next() {
+            match it.next_entry() {
                 Ok(be) => {
                     // SAFETY: the entry the source's iterator holds, valid
                     // until its next call.

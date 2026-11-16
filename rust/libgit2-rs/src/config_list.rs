@@ -62,7 +62,9 @@ impl Text {
         debug_assert!(off + len <= self.alloc);
         // SAFETY: per the contract: within the allocation, which nothing
         // writes after `new`.
-        unsafe { core::slice::from_raw_parts(self.ptr.as_ptr().add(off), len) }
+        let p = unsafe { self.ptr.as_ptr().add(off) };
+        // SAFETY: as above: `len` initialized bytes at `p`.
+        unsafe { core::slice::from_raw_parts(p, len) }
     }
 
     /// The C string at `off`.
@@ -513,6 +515,7 @@ pub fn iterator_new(list: Arc<ConfigList>) -> *mut git_config_iterator {
 }
 
 #[cfg(test)]
+#[allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)] // each block's SAFETY covers its sequence
 mod tests {
     use super::*;
 
