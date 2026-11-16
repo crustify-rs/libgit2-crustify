@@ -241,6 +241,7 @@ pub fn at_end_of_segment(p: &[u8]) -> bool {
 /// `git_fs_path_equal_or_prefixed`: whether `child` is `parent` or lies
 /// beneath it, and the length of the common prefix (without a trailing
 /// slash of `parent`) when it does.
+#[inline]
 pub fn equal_or_prefixed(parent: &[u8], child: &[u8]) -> (c_int, Option<isize>) {
     let (mut p, mut c) = (0usize, 0usize);
     let mut lastslash = 0isize;
@@ -309,6 +310,7 @@ fn set_bytes(buf: &mut GitStr, data: &[u8]) -> Result<()> {
 
 /// The basename of the C string `path` (`None`: C's NULL), as
 /// `git_fs_path_basename_r` finds it.
+#[inline]
 pub fn basename_piece(path: Option<&[u8]>) -> Piece {
     let path = path.unwrap_or(b"");
     let Some(&first) = path.first() else {
@@ -335,6 +337,7 @@ fn trailing_slashes_end(path: &[u8]) -> usize {
 
 /// `git_fs_path_basename_r`: the basename's length, and the basename in
 /// `buffer` if given.
+#[inline]
 pub fn basename_r(buffer: Option<&mut GitStr>, path: Option<&[u8]>) -> Result<c_int> {
     let p = path.unwrap_or(b"");
     let piece = basename_piece(path);
@@ -348,6 +351,7 @@ pub fn basename_r(buffer: Option<&mut GitStr>, path: Option<&[u8]>) -> Result<c_
 /// The dirname of the C string `path` (`None`: C's NULL), as
 /// `git_fs_path_dirname_r` finds it: a prefix of `path`, or a static
 /// string.
+#[inline]
 pub fn dirname_piece(path: Option<&[u8]>) -> Result<Piece> {
     let path = path.unwrap_or(b"");
     let Some(&first) = path.first() else {
@@ -375,6 +379,7 @@ pub fn dirname_piece(path: Option<&[u8]>) -> Result<Piece> {
 
 /// `git_fs_path_dirname_r`: the dirname's length, and the dirname in
 /// `buffer` if given.
+#[inline]
 pub fn dirname_r(buffer: Option<&mut GitStr>, path: Option<&[u8]>) -> Result<c_int> {
     let p = path.unwrap_or(b"");
     let piece = dirname_piece(path)?;
@@ -411,6 +416,7 @@ pub fn basename(path: Option<&[u8]>) -> Option<GitCStr> {
 }
 
 /// `git_fs_path_basename_offset`.
+#[inline]
 pub fn basename_offset(buffer: Option<&GitStr>) -> usize {
     let Some(b) = buffer else { return 0 };
     if b.is_empty() {
@@ -453,10 +459,12 @@ pub(crate) fn root_with(at: impl Fn(usize) -> u8) -> c_int {
 /// not rooted. (A DOS drive prefix such as `C:` is recognized on every
 /// platform, as in C.) It reads at most five bytes and never past a NUL, so
 /// `path` may extend past its C string.
+#[inline]
 pub fn root(path: &[u8]) -> c_int {
     root_with(|i| self::at(path, i))
 }
 
+#[inline]
 fn trim_slashes(path: &mut GitStr) {
     let ceiling = root(path.as_bytes()) + 1;
     if ceiling < 0 {
@@ -471,6 +479,7 @@ fn trim_slashes(path: &mut GitStr) {
 
 /// `git_fs_path_to_dir`: append a slash unless there is one (an empty or
 /// unallocated string is left alone).
+#[inline]
 pub fn to_dir(path: &mut GitStr) -> Result<()> {
     if path.capacity() > 0 && !path.is_empty() && path.as_bytes()[path.len() - 1] != b'/' {
         let _ = path.putc(b'/');
@@ -498,6 +507,7 @@ pub fn string_to_dir(path: &mut [u8], size: usize) {
 
 /// `git_fs_path_dirlen`: the length without trailing slashes (keeping
 /// one character).
+#[inline]
 pub fn dirlen(path: &[u8]) -> usize {
     let mut len = path.len();
     while len > 1 && path[len - 1] == b'/' {
@@ -508,6 +518,7 @@ pub fn dirlen(path: &[u8]) -> usize {
 
 /// `git_fs_path_join_unrooted`: join `path` to `base` unless it is rooted;
 /// the offset of the root in the result.
+#[inline]
 pub fn join_unrooted(path_out: &mut GitStr, path: &[u8], base: Option<&[u8]>) -> Result<isize> {
     let mut r = root(path) as isize;
     match base {
@@ -530,6 +541,7 @@ pub fn join_unrooted(path_out: &mut GitStr, path: &[u8], base: Option<&[u8]>) ->
 }
 
 /// `git_fs_path_squash_slashes`: collapse runs of slashes.
+#[inline]
 pub fn squash_slashes(path: &mut GitStr) {
     if path.is_empty() {
         return;
@@ -611,6 +623,7 @@ pub fn find_dir(dir: &mut GitStr) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 /// Make a borrowed string owned, so that it can be written in place.
+#[inline]
 fn make_owned(path: &mut GitStr) -> Result<()> {
     if path.capacity() == 0 && !path.is_empty() {
         let copy = GitStr::from_bytes(path.as_bytes())?;
@@ -622,6 +635,7 @@ fn make_owned(path: &mut GitStr) -> Result<()> {
 /// `git_fs_path_resolve_relative`: resolve `.` and `..` components in
 /// place, not backing up over the first `ceiling` bytes (0: the root, or a
 /// URL's `scheme://`).
+#[inline]
 pub fn resolve_relative(path: &mut GitStr, ceiling: usize) -> Result<()> {
     if path.is_oom() {
         return Err(ErrorCode::GENERIC);
@@ -642,12 +656,18 @@ pub fn resolve_relative(path: &mut GitStr, ceiling: usize) -> Result<()> {
             ceiling = next + 3;
         }
     }
+    // C walks from the ceiling to the next NUL (the end of the contents,
+    // unless a NUL is embedded); `at(b, end)` is that 0.
+    let end = ceiling + memchr::memchr(0, &b[ceiling..]).unwrap_or(b.len() - ceiling);
+    let b = &mut b[..end];
     let (mut base, mut to, mut from) = (ceiling, ceiling, ceiling);
-    while at(b, from) != 0 {
-        let mut next = from;
-        while at(b, next) != 0 && b[next] != b'/' {
-            next += 1;
-        }
+    while from < end {
+        let next = from
+            + b[from..]
+                .iter()
+                .position(|&c| c == b'/')
+                .unwrap_or(end - from);
+        let at_slash = next < end;
         let mut len = next - from;
         if len == 1 && b[from] == b'.' {
             // a singleton dot: nothing
@@ -659,7 +679,7 @@ pub fn resolve_relative(path: &mut GitStr, ceiling: usize) -> Result<()> {
                 ));
             }
             if to == base {
-                if at(b, next) == b'/' {
+                if at_slash {
                     len += 1;
                 }
                 if to != from {
@@ -676,7 +696,7 @@ pub fn resolve_relative(path: &mut GitStr, ceiling: usize) -> Result<()> {
                 }
             }
         } else {
-            if at(b, next) == b'/' && b[from] != b'/' {
+            if at_slash && b[from] != b'/' {
                 len += 1;
             }
             if to != from {
@@ -685,7 +705,7 @@ pub fn resolve_relative(path: &mut GitStr, ceiling: usize) -> Result<()> {
             to += len;
         }
         from += len;
-        while at(b, from) == b'/' {
+        while from < end && b[from] == b'/' {
             from += 1;
         }
     }
@@ -749,6 +769,7 @@ pub fn common_dirlen(one: &[u8], two: &[u8]) -> usize {
 }
 
 /// [`common_dirlen`] over [`CBytes`].
+#[inline]
 pub fn common_dirlen_with(one: impl CBytes, two: impl CBytes) -> usize {
     // One past the last common slash, 0 for none.
     let mut dirsep = 0;
@@ -773,6 +794,7 @@ pub fn common_dirlen_with(one: impl CBytes, two: impl CBytes) -> usize {
 }
 
 /// `git_fs_path_make_relative`: make `path` relative to `parent`.
+#[inline]
 pub fn make_relative(path: &mut GitStr, parent: &[u8]) -> Result<()> {
     let parent = c_str(parent);
     let size = path.len();
@@ -842,6 +864,7 @@ pub fn make_relative(path: &mut GitStr, parent: &[u8]) -> Result<()> {
 }
 
 /// `git_fs_path_has_non_ascii`.
+#[inline]
 pub fn has_non_ascii(path: &[u8]) -> bool {
     path.iter().any(|&c| c & 0x80 != 0)
 }
@@ -1425,6 +1448,7 @@ pub fn supports_symlinks(dir: &[u8]) -> bool {
 // Validation
 // ---------------------------------------------------------------------------
 
+#[inline(always)]
 fn validate_dospath(component: &[u8], dospath: &[u8; 3], trailing_num: bool) -> bool {
     let last = if trailing_num { 4 } else { 3 };
     let len = component.len();
@@ -1437,8 +1461,54 @@ fn validate_dospath(component: &[u8], dospath: &[u8; 3], trailing_num: bool) -> 
     len > last && component[last] != b'.' && component[last] != b':'
 }
 
+const CLASS_PLAIN: u8 = 0;
+const CLASS_REJECT: u8 = 1;
+const CLASS_SLASH: u8 = 2;
+const CLASS_NUL: u8 = 3;
+
+/// The index in [`CHAR_CLASSES`] of the flags that `validate_char` reads.
+#[inline(always)]
+fn char_table_index(flags: c_uint) -> usize {
+    (flags & GIT_FS_PATH_REJECT_BACKSLASH != 0) as usize
+        | ((flags & GIT_FS_PATH_REJECT_SLASH != 0) as usize) << 1
+        | ((flags & GIT_FS_PATH_REJECT_NT_CHARS != 0) as usize) << 2
+}
+
+/// `validate_char` (and the slash and the NUL) as tables, one per
+/// combination of the three flags it reads.
+static CHAR_CLASSES: [[u8; 256]; 8] = {
+    let mut t = [[CLASS_PLAIN; 256]; 8];
+    let mut idx = 0;
+    while idx < 8 {
+        let mut flags = 0;
+        if idx & 1 != 0 {
+            flags |= GIT_FS_PATH_REJECT_BACKSLASH;
+        }
+        if idx & 2 != 0 {
+            flags |= GIT_FS_PATH_REJECT_SLASH;
+        }
+        if idx & 4 != 0 {
+            flags |= GIT_FS_PATH_REJECT_NT_CHARS;
+        }
+        let mut c = 1;
+        while c < 256 {
+            t[idx][c] = if !validate_char(c as u8, flags) {
+                CLASS_REJECT
+            } else if c == b'/' as usize {
+                CLASS_SLASH
+            } else {
+                CLASS_PLAIN
+            };
+            c += 1;
+        }
+        t[idx][0] = CLASS_NUL;
+        idx += 1;
+    }
+    t
+};
+
 #[inline]
-fn validate_char(c: u8, flags: c_uint) -> bool {
+const fn validate_char(c: u8, flags: c_uint) -> bool {
     if flags & GIT_FS_PATH_REJECT_BACKSLASH != 0 && c == b'\\' {
         return false;
     }
@@ -1456,6 +1526,7 @@ fn validate_char(c: u8, flags: c_uint) -> bool {
     true
 }
 
+#[inline(always)]
 fn validate_component(component: &[u8], flags: c_uint) -> bool {
     let len = component.len();
     if len == 0 {
@@ -1506,6 +1577,7 @@ pub struct ValidateCallbacks<'a> {
 /// within them makes it invalid); otherwise it is a C string
 /// (`git_fs_path_is_valid`, size `SIZE_MAX`) and ends at its first NUL.
 /// `GIT_FS_PATH_REJECT_LONG_PATHS` has no effect on Unix.
+#[inline]
 pub fn str_is_valid_ext(
     path: &[u8],
     sized: bool,
@@ -1519,6 +1591,7 @@ pub fn str_is_valid_ext(
 /// [`str_is_valid_ext`] over a [`CBytes`]: the bytes up to the first NUL
 /// or `limit` (a `git_str`'s `size`; `usize::MAX` for a C string), which
 /// must be reached without a NUL for a sized path to be valid.
+#[inline]
 pub fn str_is_valid_with<P: CBytes>(
     path: P,
     limit: usize,
@@ -1532,22 +1605,28 @@ pub fn str_is_valid_with<P: CBytes>(
     if flags == 0 {
         return true;
     }
+    let table = &CHAR_CLASSES[char_table_index(flags)];
     let mut start = 0usize;
     let mut i = 0usize;
     while i < limit {
         let c = path.at(i);
-        if c == 0 {
-            break;
-        }
-        if !validate_char(c, flags) {
-            return false;
+        // One lookup per byte: the NUL, a rejected byte, a slash, or none
+        // of these (`validate_char` under `flags`, as a table).
+        let class = table[c as usize];
+        if class != CLASS_PLAIN {
+            if class == CLASS_NUL {
+                break;
+            }
+            if class == CLASS_REJECT {
+                return false;
+            }
         }
         if let Some(cb) = char_cb.as_mut()
             && !cb(c)
         {
             return false;
         }
-        if c == b'/' {
+        if class == CLASS_SLASH {
             let comp = path.seg(start, i);
             if !validate_component(comp, flags) {
                 return false;

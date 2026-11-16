@@ -541,7 +541,7 @@ fn filebuf_lifecycle() {
     let mut g = GitFilebuf::new();
     assert_eq!(g.open(&target, 0, 0o644), Err(ErrorCode::LOCKED));
     assert!(last().1.starts_with("failed to lock file '"));
-    assert_eq!(g.fd, -1);
+    assert_eq!(g.fd(), -1);
     for i in 0..3000 {
         f.printf_formatted(Some(format!("line {i}\n").as_bytes()))
             .unwrap();
@@ -631,7 +631,7 @@ fn filebuf_exports() {
             fb_ffi::git_filebuf_commit_at(&mut f, t.c("final").as_ptr()),
             0
         );
-        assert!(f.buffer.is_null() && f.fd == -1);
+        assert!(!f.has_buffer() && f.fd() == -1);
         // Without a hash, the assertion.
         let mut out = [0u8; 32];
         assert_eq!(fb_ffi::git_filebuf_hash(out.as_mut_ptr(), &mut f), -1);
@@ -650,7 +650,7 @@ fn filebuf_exports() {
             -1
         );
         fb_ffi::git_filebuf_cleanup(&mut f);
-        assert_eq!(f.fd, -1);
+        assert_eq!(f.fd(), -1);
     }
     let mut b = GitStr::new();
     futils::readbuffer(&mut b, &t.c("final")).unwrap();

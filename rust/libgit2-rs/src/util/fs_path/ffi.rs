@@ -161,7 +161,7 @@ pub unsafe extern "C" fn git_fs_path_root(path: *const c_char) -> c_int {
         root_with(|i| {
             // SAFETY: `path` is a NUL-terminated string and `i` is at most
             // the index of its NUL.
-            unsafe { path.cast::<u8>().add(i).read() }
+            unsafe { path.cast::<u8>().wrapping_add(i).read() }
         })
     })
 }
@@ -537,7 +537,9 @@ pub unsafe extern "C" fn git_fs_path_common_dirlen(
     };
     // SAFETY: the caller passes NUL-terminated strings, unwritten during
     // the call.
-    let (one, two) = unsafe { (RawCStr::new(one), RawCStr::new(two)) };
+    let one = unsafe { RawCStr::new(one) };
+    // SAFETY: as above.
+    let two = unsafe { RawCStr::new(two) };
     barrier(|| common_dirlen_with(one, two))
 }
 
@@ -736,12 +738,18 @@ pub unsafe extern "C" fn git_fs_path_cmp(
                 return r;
             }
         }
-        // SAFETY: the caller passes `len + 1` readable bytes of each (C
-        // reads the byte after the common length).
-        let a = unsafe { bytes(name1, len + 1) };
+        // C reads the byte after the common length of each name.
+        // SAFETY: the caller passes `len + 1` readable bytes of each.
+        let mut c1 = unsafe { name1.cast::<u8>().wrapping_add(len).read() };
         // SAFETY: as above.
-        let b = unsafe { bytes(name2, len + 1) };
-        cmp(a, len, isdir1 != 0, b, len, isdir2 != 0, |_, _, _| 0)
+        let mut c2 = unsafe { name2.cast::<u8>().wrapping_add(len).read() };
+        if c1 == 0 && isdir1 != 0 {
+            c1 = b'/';
+        }
+        if c2 == 0 && isdir2 != 0 {
+            c2 = b'/';
+        }
+        (c1 > c2) as c_int - (c1 < c2) as c_int
     })
 }
 
@@ -752,8 +760,12 @@ pub unsafe extern "C" fn git_fs_path_cmp(
 /// `path` is readable for `pathlen` bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_fs_path_has_non_ascii(path: *const c_char, pathlen: usize) -> bool {
-    // SAFETY: the caller passes `pathlen` readable bytes.
-    barrier(|| has_non_ascii(unsafe { bytes(path, pathlen) }))
+    barrier(|| {
+        // No readable buffer is larger than `isize::MAX` bytes.
+        let n = pathlen.min(isize::MAX as usize);
+        // SAFETY: the caller passes `pathlen` readable bytes.
+        has_non_ascii(unsafe { bytes(path, n) })
+    })
 }
 
 /// `git_fs_path_does_decompose_unicode`.

@@ -488,6 +488,11 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn p_write(fd: c_int, buf: *const c_void, cnt: usize) -> c_int {
         barrier(|| {
+            if cnt > isize::MAX as usize {
+                // No readable buffer is this large (`write` would fail).
+                errors::set_errno(libc::EINVAL);
+                return -1;
+            }
             // SAFETY: the caller passes `cnt` readable bytes.
             let b = unsafe { crate::util::export::bytes(buf.cast(), cnt) };
             match write(fd, b) {

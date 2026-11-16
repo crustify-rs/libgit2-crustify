@@ -67,45 +67,48 @@ const MAX_SYMLINK_DEPTH: usize = 5;
 /// `git_filebuf`'s write function (`write_normal` or `write_deflate`).
 pub type WriteFn = unsafe extern "C" fn(*mut GitFilebuf, *mut c_void, usize) -> c_int;
 
-/// `git_filebuf`, mirrored (see the [module documentation](self)).
+/// `git_filebuf`, mirrored (see the [module documentation](self)). The
+/// fields are private: the safe methods rely on the invariant, which only
+/// [`new`](Self::new) and the methods establish (C reaches the fields
+/// through the exports' contracts).
 #[repr(C)]
 pub struct GitFilebuf {
     /// The target path (NULL for a temporary file).
-    pub path_original: *mut c_char,
+    path_original: *mut c_char,
     /// The lock (or temporary) file's path.
-    pub path_lock: *mut c_char,
+    path_lock: *mut c_char,
     /// The write function: `write_normal` or `write_deflate`.
-    pub write: Option<WriteFn>,
+    write: Option<WriteFn>,
     /// Whether `digest` runs.
-    pub compute_digest: bool,
+    compute_digest: bool,
     /// The running hash.
-    pub digest: GitHashCtx,
+    digest: GitHashCtx,
     /// The write buffer.
-    pub buffer: *mut u8,
+    buffer: *mut u8,
     /// The deflate output buffer.
-    pub z_buf: *mut u8,
+    z_buf: *mut u8,
     /// The deflate stream.
-    pub zs: ZStream,
+    zs: ZStream,
     /// `Z_NO_FLUSH`, or `Z_FINISH` on commit.
-    pub flush_mode: c_int,
+    flush_mode: c_int,
     /// The size of `buffer` (and `z_buf`).
-    pub buf_size: usize,
+    buf_size: usize,
     /// The bytes in `buffer`.
-    pub buf_pos: usize,
+    buf_pos: usize,
     /// The lock file.
-    pub fd: c_int,
+    fd: c_int,
     /// Whether `fd` is open.
-    pub fd_is_open: bool,
+    fd_is_open: bool,
     /// Whether the lock file was created (and is removed on cleanup).
-    pub created_lock: bool,
+    created_lock: bool,
     /// Whether the lock file was renamed over the target.
-    pub did_rename: bool,
+    did_rename: bool,
     /// Whether writes bypass the buffer.
-    pub do_not_buffer: bool,
+    do_not_buffer: bool,
     /// Whether commit `fsync`s.
-    pub do_fsync: bool,
+    do_fsync: bool,
     /// The first write error (`BUFERR_*`).
-    pub last_error: c_int,
+    last_error: c_int,
 }
 
 // SAFETY: a filebuf owns its buffers, paths, descriptor and contexts; none
@@ -173,6 +176,17 @@ impl GitFilebuf {
             do_fsync: false,
             last_error: 0,
         }
+    }
+
+    /// The lock file's descriptor (-1 after cleanup; 0 in a zeroed
+    /// filebuf, as C's `GIT_FILEBUF_INIT`).
+    pub fn fd(&self) -> c_int {
+        self.fd
+    }
+
+    /// Whether the write buffer is allocated (`file->buffer != NULL`).
+    pub fn has_buffer(&self) -> bool {
+        !self.buffer.is_null()
     }
 
     /// The target path.

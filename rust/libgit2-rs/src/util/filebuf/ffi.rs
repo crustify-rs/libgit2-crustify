@@ -209,6 +209,10 @@ pub unsafe extern "C" fn git_filebuf_write(
         let Some(file) = (unsafe { f(file) }) else {
             return -1;
         };
+        if len > isize::MAX as usize {
+            // No readable buffer is this large.
+            return -1;
+        }
         // SAFETY: `len` readable bytes outside the filebuf.
         let data = unsafe { crate::util::export::bytes(buff.cast(), len) };
         status(file.write(data))

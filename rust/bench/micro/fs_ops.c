@@ -41,7 +41,10 @@ int main(void)
 	TIME("join_unrooted", { git_fs_path_join_unrooted(&b, "a/b/c", "/base/dir", &root); sink += b.size; });
 	TIME("to_dir", { git_str_truncate(&b, 3); git_fs_path_to_dir(&b); sink += b.size; });
 	TIME("resolve_relative", { git_str_sets(&b, r); git_fs_path_resolve_relative(&b, 0); sink += b.size; });
-	TIME("is_valid", sink += git_fs_path_is_valid(p, 0x1ff));
+	TIME("is_valid(rooted)", sink += git_fs_path_is_valid(p, 0x1ff));
+	TIME("is_valid(relative)", sink += git_fs_path_is_valid(p + 1, 0x1ff));
+	TIME("is_valid(1 component)", sink += git_fs_path_is_valid("abcdefghijklmnopqrstuvwxyz0123456789a", 0x1ff));
+	TIME("is_valid(defaults)", sink += git_fs_path_is_valid(p + 1, GIT_FS_PATH_REJECT_FILESYSTEM_DEFAULTS));
 	TIME("cmp", sink += git_fs_path_cmp(p, 20, 0, r, 20, 1, strncmp));
 	TIME("common_dirlen", sink += git_fs_path_common_dirlen(p, "/usr/lib/libgit2/src/x"));
 	git_str_dispose(&b);
