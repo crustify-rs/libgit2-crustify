@@ -342,6 +342,20 @@ impl GitVector {
 
     // ----- insertion and removal -----
 
+    /// Append `element` if there is room; `false` (nothing done) otherwise.
+    #[inline(always)]
+    fn try_insert_fast(&mut self, element: *mut c_void) -> bool {
+        if self.contents.is_null() || self.length >= self.alloc_size {
+            return false;
+        }
+        // SAFETY: the invariant: `contents` holds `alloc_size` slots, and
+        // `length < alloc_size`.
+        unsafe { self.contents.wrapping_add(self.length).write(element) };
+        self.length += 1;
+        self.set_sorted(self.length <= 1);
+        true
+    }
+
     /// `git_vector_insert`: append `element`.
     #[inline]
     pub fn insert(&mut self, element: *mut c_void) -> Result<()> {
@@ -986,6 +1000,14 @@ pub mod ffi {
     /// See the [module](self).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_vector_insert(vec: *mut GitVector, element: *mut c_void) -> c_int {
+        if !vec.is_null() {
+            // SAFETY: the module's contract: a valid, unaliased vector.
+            let vv = unsafe { v(vec) };
+            // Hot path (no panic is possible): room in the array.
+            if vv.try_insert_fast(element) {
+                return 0;
+            }
+        }
         barrier(|| {
             git_assert_arg!(!vec.is_null(), "v", -1);
             // SAFETY: the module's contract.

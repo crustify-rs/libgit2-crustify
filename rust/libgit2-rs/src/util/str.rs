@@ -683,6 +683,78 @@ impl GitStr {
         Ok(())
     }
 
+    /// Append `len` bytes from `data` when they fit the allocation and lie
+    /// outside it; `false` (nothing done) otherwise. The hot path of
+    /// `git_str_put`, without a panic or an error path.
+    ///
+    /// # Safety
+    ///
+    /// `data` is readable for `len` bytes.
+    #[inline(always)]
+    pub(crate) unsafe fn try_put_fast(&mut self, data: *const u8, len: usize) -> bool {
+        if !self.owned() || self.size >= self.asize || len >= self.asize - self.size {
+            return false;
+        }
+        let start = self.ptr as usize;
+        let d = data as usize;
+        if d < start + self.asize && d.wrapping_add(len) > start {
+            return false;
+        }
+        let at = self.ptr.cast::<u8>().wrapping_add(self.size);
+        // SAFETY: the string owns `asize` bytes at `ptr` (owned), and
+        // `size + len < asize`, so `at..at + len + 1` is within them;
+        // `data` (readable for `len` bytes) lies outside the allocation.
+        unsafe { ptr::copy_nonoverlapping(data, at, len) };
+        // SAFETY: the byte after them, within the allocation (as above).
+        unsafe { at.wrapping_add(len).write(0) };
+        self.size += len;
+        true
+    }
+
+    /// Append `c` when it fits the allocation; `false` (nothing done)
+    /// otherwise. The hot path of `git_str_putc`.
+    #[inline(always)]
+    pub(crate) fn try_putc_fast(&mut self, c: u8) -> bool {
+        if !self.owned() || self.size >= self.asize || self.asize - self.size < 2 {
+            return false;
+        }
+        let at = self.ptr.cast::<u8>().wrapping_add(self.size);
+        // SAFETY: the string owns `asize` bytes at `ptr`, and `size + 2 <=
+        // asize`: both bytes are within them.
+        unsafe { at.write(c) };
+        // SAFETY: as above.
+        unsafe { at.wrapping_add(1).write(0) };
+        self.size += 1;
+        true
+    }
+
+    /// Replace the contents with `len` bytes from `data` when they fit the
+    /// allocation and lie outside it; `false` (nothing done) otherwise. The
+    /// hot path of `git_str_set`.
+    ///
+    /// # Safety
+    ///
+    /// `data` is readable for `len` bytes.
+    #[inline(always)]
+    pub(crate) unsafe fn try_set_fast(&mut self, data: *const u8, len: usize) -> bool {
+        if !self.owned() || len == 0 || len >= self.asize {
+            return false;
+        }
+        let start = self.ptr as usize;
+        let d = data as usize;
+        if d < start + self.asize && d.wrapping_add(len) > start {
+            return false;
+        }
+        let p = self.ptr.cast::<u8>();
+        // SAFETY: the string owns `asize > len` bytes at `ptr`; `data`
+        // (readable for `len` bytes) lies outside them.
+        unsafe { ptr::copy_nonoverlapping(data, p, len) };
+        // SAFETY: byte `len < asize`, within the allocation.
+        unsafe { p.wrapping_add(len).write(0) };
+        self.size = len;
+        true
+    }
+
     /// `git_str_puts`.
     #[inline]
     pub fn puts(&mut self, s: &[u8]) -> Result<()> {
@@ -1067,67 +1139,110 @@ impl GitStr {
     /// `separator`, without doubling separators. A `None` segment is
     /// skipped, as C skips NULL, but still counts as a segment.
     pub fn join_n(&mut self, separator: u8, segments: &[Option<&[u8]>]) -> Result<()> {
-        self.join_segs(separator, segments.len(), |i| segments[i].map(Seg::Ext))
+        with_segs(
+            segments.len(),
+            |i| segments[i].map(Seg::Ext),
+            |segs| self.join_segs(separator, segs),
+        )
     }
 
-    /// `git_str_join_n` over `n` segments, which `seg_at` gives (it is
-    /// called more than once per segment).
-    pub(crate) fn join_segs<'s>(
-        &mut self,
-        separator: u8,
-        n: usize,
-        seg_at: impl Fn(usize) -> Option<Seg<'s>>,
-    ) -> Result<()> {
-        let mut total_size = 0usize;
-        if self.size > 0 && self.byte(self.size - 1) != separator {
-            total_size += 1;
+    /// `git_str_join_n` over the segments `segs`.
+    pub(crate) fn join_segs(&mut self, separator: u8, segs: &[Option<Seg<'_>>]) -> Result<()> {
+        if self.is_oom() {
+            // C reads a stale byte here, then fails in `git_str_grow_by`.
+            return Err(ErrorCode::GENERIC);
         }
-        for seg in (0..n).filter_map(&seg_at) {
-            let len = seg.len();
-            total_size = alloc_add(total_size, len)?;
-            if len == 0 || self.seg_byte(&seg, len - 1) != separator {
-                total_size = alloc_add(total_size, 1)?;
+        let size = self.size;
+        let total_size = {
+            let contents = self.as_bytes();
+            let mut total: Option<usize> =
+                Some(usize::from(size > 0 && contents.last() != Some(&separator)));
+            for seg in segs.iter().flatten() {
+                let (len, last) = match *seg {
+                    Seg::Ext(b) => (b.len(), b.last()),
+                    Seg::Own { off, len } => (len, contents.get((off + len).wrapping_sub(1))),
+                };
+                let extra = usize::from(len == 0 || last != Some(&separator));
+                total = total
+                    .and_then(|t| t.checked_add(len))
+                    .and_then(|t| t.checked_add(extra));
             }
-        }
+            match total {
+                Some(t) => t,
+                None => return Err(errors::oom()),
+            }
+        };
         if total_size == 0 {
             return Ok(());
         }
-        total_size = alloc_add(total_size, 1)?;
+        let total_size = alloc_add(total_size, 1)?;
         self.grow_by(total_size).map_err(|_| ErrorCode::GENERIC)?;
 
-        let mut out = self.size;
-        if self.size > 0 && self.byte(self.size - 1) != separator {
-            self.write_byte(out, separator);
+        // C's second pass, over raw pointers (a measured hot path). After
+        // `grow_by`, the buffer is owned with room for `size + total_size`
+        // bytes, which pass 1 counted; each write is also checked against
+        // `asize` below, so soundness does not rest on that count.
+        let asize = self.asize;
+        let base = self.ptr.cast::<u8>();
+        let mut out = size;
+        let mut last = if size > 0 {
+            // SAFETY: `size - 1 < size < asize`: a byte of the contents.
+            unsafe { base.wrapping_add(size - 1).read() }
+        } else {
+            0
+        };
+        let room = |out: usize, len: usize| {
+            assert!(
+                out.checked_add(len).is_some_and(|e| e < asize),
+                "join_n accounting"
+            );
+        };
+        if size > 0 && last != separator {
+            room(out, 1);
+            // SAFETY: `out < asize` (checked): within the allocation.
+            unsafe { base.wrapping_add(out).write(separator) };
             out += 1;
-            self.size = out;
+            last = separator;
         }
-        for i in 0..n {
-            let Some(seg) = seg_at(i) else { continue };
-            let mut seg = seg;
-            if out > 0 && self.byte(out - 1) == separator {
-                while seg.len() > 0 && self.seg_byte(&seg, 0) == separator {
-                    seg = match seg {
-                        Seg::Ext(b) => Seg::Ext(&b[1..]),
-                        Seg::Own { off, len } => Seg::Own {
-                            off: off + 1,
-                            len: len - 1,
-                        },
-                    };
+        let n = segs.len();
+        for (i, seg) in segs.iter().enumerate() {
+            let Some(seg) = *seg else { continue };
+            let (mut from, mut len) = match seg {
+                Seg::Ext(b) => (b.as_ptr(), b.len()),
+                // The original contents, below `size <= out`: never written
+                // by this loop.
+                Seg::Own { off, len } => (base.wrapping_add(off).cast_const(), len),
+            };
+            if out > 0 && last == separator {
+                // SAFETY: `from` is readable for `len` bytes (an external
+                // slice, or contents within the allocation).
+                while len > 0 && unsafe { from.read() } == separator {
+                    from = from.wrapping_add(1);
+                    len -= 1;
                 }
             }
-            let len = seg.len();
             if len > 0 {
-                self.write_seg(out, seg);
+                room(out, len);
+                // SAFETY: `from` is readable for `len` bytes; the target
+                // `out..out + len` is within the allocation (checked); they
+                // may overlap only as `memmove` allows.
+                unsafe { ptr::copy(from, base.wrapping_add(out), len) };
                 out += len;
-                self.size = out;
+                // SAFETY: the byte just written.
+                last = unsafe { base.wrapping_add(out - 1).read() };
             }
-            if i + 1 < n && out > 0 && self.byte(out - 1) != separator {
-                self.write_byte(out, separator);
+            if i + 1 < n && out > 0 && last != separator {
+                room(out, 1);
+                // SAFETY: `out < asize` (checked).
+                unsafe { base.wrapping_add(out).write(separator) };
                 out += 1;
-                self.size = out;
+                last = separator;
             }
         }
-        self.set_size_nul(out);
+        room(out, 0);
+        // SAFETY: `out < asize` (checked).
+        unsafe { base.wrapping_add(out).write(0) };
+        self.size = out;
         Ok(())
     }
 
@@ -1179,17 +1294,36 @@ impl GitStr {
         }
         let alloc_len = alloc_add(alloc_add(alloc_add(strlen_a, b.len())?, need_sep)?, 1)?;
         self.ensure(alloc_len)?;
-        if let Some(a) = a
-            && !matches!(a, Seg::Own { off: 0, .. })
-            && strlen_a > 0
-        {
-            self.write_seg(0, a);
+        let total = strlen_a + need_sep + b.len();
+        // A measured hot path: raw copies into the allocation, which
+        // `ensure` made at least `total + 1 <= asize` bytes (checked again).
+        assert!(self.owned() && total < self.asize, "join accounting");
+        let base = self.ptr.cast::<u8>();
+        match a {
+            Some(Seg::Ext(a)) => {
+                // SAFETY: `a` (outside the allocation) is readable for
+                // `strlen_a <= total` bytes, written at the start.
+                unsafe { ptr::copy_nonoverlapping(a.as_ptr(), base, strlen_a) };
+            }
+            Some(Seg::Own { off, len }) if off != 0 => {
+                // SAFETY: `off..off + len` lies within the contents, `0..len`
+                // within the allocation; `copy` allows them to overlap.
+                unsafe { ptr::copy(base.wrapping_add(off), base, len) };
+            }
+            _ => {}
         }
         if need_sep == 1 {
-            self.write_byte(strlen_a, separator);
+            // SAFETY: `strlen_a < total < asize`.
+            unsafe { base.wrapping_add(strlen_a).write(separator) };
         }
-        self.write_at(strlen_a + need_sep, b);
-        self.set_size_nul(strlen_a + b.len() + need_sep);
+        // SAFETY: `b` (outside the allocation) is readable for its length,
+        // written at `strlen_a + need_sep`, ending at `total < asize`.
+        unsafe {
+            ptr::copy_nonoverlapping(b.as_ptr(), base.wrapping_add(strlen_a + need_sep), b.len())
+        };
+        // SAFETY: `total < asize`.
+        unsafe { base.wrapping_add(total).write(0) };
+        self.size = total;
         Ok(())
     }
 
@@ -1586,6 +1720,26 @@ impl GitStr {
     }
 }
 
+/// Collect `n` segments from `seg_at` (on the stack for up to 8), and
+/// run `f` on them.
+pub(crate) fn with_segs<'s, R>(
+    n: usize,
+    seg_at: impl Fn(usize) -> Option<Seg<'s>>,
+    f: impl FnOnce(&[Option<Seg<'s>>]) -> R,
+) -> R {
+    const STACK: usize = 8;
+    if n <= STACK {
+        let mut arr: [Option<Seg<'s>>; STACK] = [None; STACK];
+        for (i, slot) in arr[..n].iter_mut().enumerate() {
+            *slot = seg_at(i);
+        }
+        f(&arr[..n])
+    } else {
+        let v: Vec<Option<Seg<'s>>> = (0..n).map(seg_at).collect();
+        f(&v)
+    }
+}
+
 /// Formats into the spare room of a buffer, counting what does not fit
 /// (`vsnprintf`'s contract).
 struct SpareWriter<'a> {
@@ -1828,19 +1982,6 @@ pub mod ffi {
         Src::Seg(Seg::Ext(unsafe { bytes(data, len) }))
     }
 
-    /// The offset of `data` within `buf`'s contents, if `data..data+len`
-    /// lies within them.
-    fn own_offset(buf: &GitStr, data: *const c_char, len: usize) -> Option<usize> {
-        let b = buf.as_bytes();
-        let start = b.as_ptr() as usize;
-        let d = data as usize;
-        if b.is_empty() || d < start || d >= start + b.len() {
-            return None;
-        }
-        let off = d - start;
-        (off.checked_add(len)? <= b.len()).then_some(off)
-    }
-
     /// `git_str_init`.
     ///
     /// # Safety
@@ -1933,9 +2074,14 @@ pub mod ffi {
         data: *const libc::c_void,
         len: usize,
     ) -> c_int {
+        // SAFETY: the module's contract.
+        let b = unsafe { s(buf) };
+        // Hot path (no panic is possible): room enough, no aliasing.
+        // SAFETY: a non-null `data` is readable for `len` bytes.
+        if !data.is_null() && unsafe { b.try_set_fast(data.cast(), len) } {
+            return 0;
+        }
         barrier(|| {
-            // SAFETY: the module's contract.
-            let b = unsafe { s(buf) };
             if len == 0 || data.is_null() {
                 b.clear();
                 return 0;
@@ -1980,8 +2126,14 @@ pub mod ffi {
     /// See the [module](self).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_putc(buf: *mut GitStr, c: c_char) -> c_int {
+        let ch = c as u8;
         // SAFETY: the module's contract.
-        barrier(|| status(unsafe { s(buf) }.putc(c as u8)))
+        let b = unsafe { s(buf) };
+        // Hot path (no panic is possible).
+        if b.try_putc_fast(ch) {
+            return 0;
+        }
+        barrier(|| status(b.putc(ch)))
     }
 
     /// `git_str_putcn`.
@@ -2007,16 +2159,21 @@ pub mod ffi {
         data: *const c_char,
         len: usize,
     ) -> c_int {
+        if len == 0 {
+            return 0;
+        }
+        // SAFETY: the module's contract.
+        let b = unsafe { s(buf) };
+        // Hot path (no panic is possible): room enough, no aliasing.
+        // SAFETY: a non-null `data` is readable for `len` bytes.
+        if !data.is_null() && unsafe { b.try_put_fast(data.cast(), len) } {
+            return 0;
+        }
         barrier(|| {
-            if len == 0 {
-                return 0;
-            }
             if data.is_null() {
                 let _ = errors::assert_arg_failed("data");
                 return -1;
             }
-            // SAFETY: the module's contract.
-            let b = unsafe { s(buf) };
             // SAFETY: the caller passes `len` readable bytes.
             let d = unsafe { src(b, data, len) };
             status(b.put_seg(d.seg()))
@@ -2356,40 +2513,59 @@ pub mod ffi {
             } else {
                 (0, 0)
             };
-            // Any other segment that overlaps the allocation is copied
-            // first (no allocation in the usual case).
-            let mut copies: Vec<(usize, Vec<u8>)> = Vec::new();
-            for (i, &p) in ptrs.iter().enumerate() {
-                if p.is_null() || inside(p) {
-                    continue;
-                }
-                // SAFETY: a non-null segment is NUL-terminated.
-                let bytes = unsafe { cstr_bytes(p) };
-                let (d0, d1) = (p as usize, p as usize + bytes.len() + 1);
-                if d0 < a1 && d1 > a0 {
-                    copies.push((i, bytes.to_vec()));
-                }
-            }
-            let seg_at = |i: usize| -> Option<Seg<'_>> {
-                let p = ptrs[i];
+            let mut stack: [Option<Seg<'_>>; 8] = [None; 8];
+            let mut heap: Vec<Option<Seg<'_>>> = Vec::new();
+            let segs: &mut [Option<Seg<'_>>] = if n <= stack.len() {
+                &mut stack[..n]
+            } else {
+                heap.resize(n, None);
+                &mut heap
+            };
+            let mut overlap = false;
+            for (slot, &p) in segs.iter_mut().zip(ptrs) {
                 if p.is_null() {
-                    return None;
+                    continue;
                 }
                 if inside(p) {
                     let off = p as usize - start;
-                    return Some(Seg::Own {
+                    *slot = Some(Seg::Own {
                         off,
                         len: size - off,
                     });
+                    continue;
                 }
-                if let Some((_, c)) = copies.iter().find(|(j, _)| *j == i) {
-                    return Some(Seg::Ext(c));
-                }
-                // SAFETY: a non-null segment is NUL-terminated, readable
-                // for the call, and outside the buffer's allocation.
-                Some(Seg::Ext(unsafe { cstr_bytes(p) }))
-            };
-            status(b.join_segs(separator as u8, n, seg_at))
+                // SAFETY: a non-null segment is NUL-terminated and readable
+                // for the call (one that overlaps the allocation outside
+                // the contents is copied below, before the buffer changes).
+                let x = unsafe { cstr_bytes(p) };
+                let (d0, d1) = (x.as_ptr() as usize, x.as_ptr() as usize + x.len() + 1);
+                overlap |= d0 < a1 && d1 > a0;
+                *slot = Some(Seg::Ext(x));
+            }
+            if !overlap {
+                return status(b.join_segs(separator as u8, segs));
+            }
+            // Rare: copy the segments that overlap the allocation.
+            let copies: Vec<Option<Vec<u8>>> = segs
+                .iter()
+                .map(|sg| match sg {
+                    Some(Seg::Ext(x))
+                        if (x.as_ptr() as usize) < a1 && x.as_ptr() as usize + x.len() + 1 > a0 =>
+                    {
+                        Some(x.to_vec())
+                    }
+                    _ => None,
+                })
+                .collect();
+            let fixed: Vec<Option<Seg<'_>>> = segs
+                .iter()
+                .zip(&copies)
+                .map(|(sg, c)| match c {
+                    Some(c) => Some(Seg::Ext(c)),
+                    None => *sg,
+                })
+                .collect();
+            status(b.join_segs(separator as u8, &fixed))
         })
     }
 
@@ -2423,21 +2599,50 @@ pub mod ffi {
             let a_bytes = unsafe { cstr_bytes(str_a) };
             // SAFETY: `str_b` is NUL-terminated.
             let b_bytes = unsafe { cstr_bytes(str_b) };
-            let a_len = a_bytes.len();
-            let a_copy;
-            let a = if str_a.is_null() {
-                None
-            } else if let Some(off) = own_offset(b, str_a, a_len) {
-                // Within the contents (C's `offset_a`).
-                Some(Seg::Own { off, len: a_len })
+            let (a_len, b_len) = (a_bytes.len(), b_bytes.len());
+            // The usual case: neither lies in the buffer's allocation.
+            let alloc = if b.owned() {
+                b.ptr as usize..b.ptr as usize + b.asize
             } else {
-                // SAFETY: readable, as just measured.
-                a_copy = unsafe { seg(b, str_a, a_len) };
-                Some(Seg::Ext(&a_copy))
+                0..0
             };
-            // SAFETY: readable, as just measured.
-            let bb = unsafe { seg(b, str_b, b_bytes.len()) };
-            status(b.join_seg(separator as u8, a, &bb))
+            let clear = |x: &[u8]| {
+                let (d0, d1) = (x.as_ptr() as usize, x.as_ptr() as usize + x.len());
+                x.is_empty() || d1 <= alloc.start || d0 >= alloc.end
+            };
+            if clear(b_bytes) {
+                if clear(a_bytes) {
+                    let a = (!str_a.is_null()).then_some(Seg::Ext(a_bytes));
+                    return status(b.join_seg(separator as u8, a, b_bytes));
+                }
+                // The `git_str_joinpath(buf, buf->ptr, …)` idiom: `str_a`
+                // within the contents (C's `offset_a`).
+                let contents = b.as_bytes();
+                let start = contents.as_ptr() as usize;
+                let off = (str_a as usize).wrapping_sub(start);
+                if (str_a as usize) >= start && off + a_len <= contents.len() {
+                    let a = Some(Seg::Own { off, len: a_len });
+                    return status(b.join_seg(separator as u8, a, b_bytes));
+                }
+            }
+            // `str_a` within the contents is C's `offset_a` case; either is
+            // copied if it overlaps the allocation otherwise.
+            // SAFETY: `a_len` readable bytes, as just measured.
+            let a = (!str_a.is_null()).then(|| unsafe { src(b, str_a, a_len) });
+            // SAFETY: `b_len` readable bytes, as just measured.
+            let bb = unsafe { src(b, str_b, b_len) };
+            let bb_copy;
+            let bb: &[u8] = match bb.seg() {
+                Seg::Ext(x) => x,
+                Seg::Own { off, len } => {
+                    // Only past the contents' end, which the assertion
+                    // excludes; copy for safety.
+                    bb_copy = b.as_bytes()[off..off + len].to_vec();
+                    &bb_copy
+                }
+            };
+            let a = a.as_ref().map(Src::seg);
+            status(b.join_seg(separator as u8, a, bb))
         })
     }
 
