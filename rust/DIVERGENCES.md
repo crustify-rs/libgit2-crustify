@@ -568,3 +568,53 @@ One entry per difference: component, what differs, why.
   (C freed its lists and kept the pqueue's array).
 - **hashsig and revwalk safe APIs** (`HashSig`, `Revwalk`) reject a string
   with an interior NUL (class `INVALID`) instead of truncating it.
+## References (WP l-refs: refs, refdb, refdb_fs, reflog)
+
+- **refdb_fs: the backend and its iterators are Rust tables** (ffibox
+  `CTable`, Rust's allocator), not `git__calloc`'d `refdb_fs_backend` /
+  `refdb_fs_iter` structs; C reaches them only through the
+  `git_refdb_backend` / `git_reference_iterator` slots, which keep their
+  signatures. The `lock` slot's payload is a boxed `git_filebuf` in Rust's
+  allocator (opaque to `transaction.c`, which only hands it back to
+  `unlock`). A slot called while the backend's release is deferred (C
+  freed it while another thread was inside a slot) returns -1, "the
+  reference database is being freed"; in C that call used freed memory.
+- **refdb_fs: the packed references an iterator walks** are a snapshot
+  copied into the iterator (C copied the sorted cache with
+  `git_sortedcache_copy`); same order, same contents.
+- **refdb_fs: the `packed-refs` mapping** is read as a `&[u8]` while a
+  lookup holds it: `packed-refs` is replaced by a rename (git and libgit2
+  write it through a lock file), never rewritten in place, so the mapped
+  pages do not change; another process truncating the file in place is a
+  `SIGBUS`, as in C.
+- **refdb: `db->backend` is an `AtomicPtr`**; `git_refdb_set_backend`
+  swaps it atomically (C wrote the pointer plainly).
+- **refs: failed lookups write NULL to `*out`.** C sets it to NULL in most
+  failure paths (the refdb lookup does), and leaves it unchanged after a
+  name-validation or repository error; the Rust writes NULL in every case.
+  The same holds for the out-parameters of `git_reference_set_target`,
+  `_symbolic_set_target`, `_resolve` and `_dwim`.
+- **refs: `git_reference__update_for_commit`** prints a NULL commit summary
+  as `(null)`, which is what glibc's `printf("%s", NULL)` printed for C.
+- **Infallible Rust allocations on rare paths.** The names and paths that
+  the refs code copies into Rust `Vec`s / `CString`s (the normalized name
+  of a lookup, the repository's directories, the loose names of an
+  iteration before they go to the iterator's pool, the namespace path)
+  abort on allocation failure where C, using `git__allocator`, failed with
+  -1. The objects C sees (references, reflogs, entries, names handed out)
+  still come from `git__allocator` or a `git_pool`, so `cl_alloc_limit`
+  still makes them fail.
+- **Safe API placeholders.** `refs_api::Repository` (open/init/free) stands
+  in for WP l-repo's `Repository`, and `refs_api::Committer` for WP l-obj's
+  `Signature`, until those land (PENDING). Rust backends
+  (`RefdbBackend`) do not offer `lock`/`unlock` (transactions fail with
+  "backend does not support locking", as for a C backend without them); a
+  panic in one is an error of class `GIT_ERROR_INTERNAL`.
+- **refs_api: `set_refdb_backend` takes `&mut Repository`.** The old
+  backend is freed at once, as `git_refdb_set_backend` frees it (C keeps no
+  count on a backend: only the refdb is counted), so the replacement must
+  exclude every other user. The integrated `Repository` (WP l-repo) must
+  keep that: whatever replaces a refdb or its backend takes `&mut self`.
+  `RefdbPtr` loads `db->backend` once per call and passes that backend to
+  the slot it read (C loads it twice); concurrent replacement through the
+  C ABI stays the caller's error, as in C.

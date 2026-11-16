@@ -107,3 +107,20 @@ pub unsafe fn is_valid<R>(
     // NUL-terminated string; `repo` per the contract.
     unsafe { git_path_str_is_valid(repo.cast(), &raw const s, file_mode, flags) }
 }
+
+/// `git_path_is_valid(repo, path, file_mode, flags)` over a byte string
+/// (the refdb's reference names and paths).
+///
+/// # Safety
+///
+/// `repo` is NULL or a live repository that may be used on this thread.
+pub unsafe fn is_valid_bytes<R>(repo: *mut R, path: &[u8], file_mode: u16, flags: c_uint) -> bool {
+    let s = ConstStr {
+        ptr: path.as_ptr().cast(),
+        asize: 0,
+        size: path.len(),
+    };
+    // SAFETY: `s` is a borrowed `git_str` over `path`, which the C only
+    // reads, alive for the call; `repo` per this function's contract.
+    unsafe { git_path_str_is_valid(repo.cast(), &raw const s, file_mode, flags) }
+}

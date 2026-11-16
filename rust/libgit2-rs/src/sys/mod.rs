@@ -9,6 +9,7 @@ pub mod diff_driver;
 pub mod filter;
 pub mod ignore;
 pub mod indexer;
+pub mod iterator;
 pub mod mailmap;
 pub mod merge;
 pub mod merge_driver;

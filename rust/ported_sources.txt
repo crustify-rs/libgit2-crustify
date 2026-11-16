@@ -67,3 +67,7 @@ src/libgit2/commit_list.c
 src/libgit2/tree.c
 src/libgit2/hashsig.c
 src/libgit2/revwalk.c
+src/libgit2/refs.c
+src/libgit2/refdb.c
+src/libgit2/refdb_fs.c
+src/libgit2/reflog.c

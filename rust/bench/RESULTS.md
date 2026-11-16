@@ -707,3 +707,82 @@ machine. hashsig is 0.70–0.87 (CPU), `create_1MiB_x16` 1.01.
 
 `all_refs` (1.067 CPU above) rerun alone, 5 rounds on CPU 5: master_unsorted
 0.959, all_refs 0.953 (CPU) — the 1.07 was noise.
+# WP l-refs: refs, refdb, refdb_fs, reflog (C reference vs Rust port)
+
+Machine as above; load 190-440 during the runs (it varied by a factor of
+two within minutes, so single ratios move by more than the C-vs-C noise).
+Both builds' programs pinned to CPU 2 and interleaved. The Rust build is
+master (util layer, oid, parse) plus l-refs; what the refs code calls
+outside the WP (odb, objects, signatures, repository, config, the
+filesystem iterator) is C in both builds.
+
+## Public API: `src/bench_refs.c` (`compare.sh /work/build-c /work/builds/l-refs 'refs/*'`)
+
+3 rounds x 3 repetitions, medians; check values identical.
+
+| workload | C ms | Rust ms | ratio | C cpu ms | Rust cpu ms | cpu ratio |
+|---|---:|---:|---:|---:|---:|---:|
+| open_lookup_packed_x100 | 41.758 | 43.491 | 1.042 | 34.891 | 42.890 | 1.229 |
+| lookup | 464.792 | 368.111 | 0.792 | 377.576 | 357.141 | 0.946 |
+| name_to_id | 439.852 | 405.001 | 0.921 | 414.034 | 382.584 | 0.924 |
+| dwim | 312.788 | 277.794 | 0.888 | 293.320 | 245.249 | 0.836 |
+| iterate_all_names | 433.099 | 274.500 | 0.634 | 386.433 | 259.516 | 0.672 |
+| iterate_all_refs | 416.634 | 276.278 | 0.663 | 392.722 | 264.233 | 0.673 |
+| iterate_glob | 251.317 | 132.250 | 0.526 | 248.647 | 128.604 | 0.517 |
+| foreach_glob_tags | 175.751 | 60.283 | 0.343 | 170.450 | 58.025 | 0.340 |
+| create_loose | 896.745 | 1402.684 | 1.564 | 842.061 | 857.113 | 1.018 |
+| delete_loose | 5137.885 | 5263.896 | 1.025 | 1415.362 | 1497.597 | 1.058 |
+| delete_packed | 1248.264 | 1063.791 | 0.852 | 1168.822 | 906.936 | 0.776 |
+| update_with_reflog | 1532.677 | 1325.241 | 0.865 | 879.491 | 886.155 | 1.008 |
+| reflog_read_10k_entries_x5 | 122.051 | 70.991 | 0.582 | 122.060 | 70.802 | 0.580 |
+| reflog_read_2000_reflogs | 102.727 | 81.973 | 0.798 | 102.721 | 81.965 | 0.798 |
+| reflog_append_write | 70.117 | 56.700 | 0.809 | 70.107 | 55.459 | 0.791 |
+
+Geomean: wall 0.78, CPU 0.78. A first full run (`compare.sh … refs`, at
+load ~300, before the two `packed_write` / collision-check changes below)
+gave CPU ratios within ±7% of these for every workload but
+`delete_packed` (1.29 then) and `open_lookup_packed_x100` (0.99 then, 1.23
+here: the C-vs-C baseline shows 1.11 for that workload, so it is noise).
+
+- Iteration and reflog reads are 1.3-3x faster. For iteration, one known
+  difference: the iterator's snapshot of the packed references is a vector
+  of names in a pool, where C copied the sorted cache (re-inserting 53k
+  keys into a new hash map per iterator). The reflog speed-up was not
+  profiled (the signature parser is C in both builds).
+- `delete_packed` (rewrite a 53k-line `packed-refs` 20 times): the first
+  port was 1.29x (two name copies, a hash lookup and a line allocation per
+  entry); `packed_write` now copies a name only for entries it must peel or
+  remove, and reuses one line buffer: 0.78x.
+- `create_loose` / `delete_loose` / `update_with_reflog` are at CPU parity
+  (1.02 / 1.06 / 1.01, inside the ±5% band of the C-vs-C baseline). The
+  scan of every packed reference for a directory/file collision
+  (`reference_path_available`) is now a binary search over the sorted cache
+  (same answer as C's scan; `refdb_fs::tests::collisions_match_the_scan`).
+
+## Internal API, per call: `micro/refs_bench.c` (`micro/run_refs.sh 3`)
+
+Best of 5 runs of N calls, median over 3 interleaved rounds, ns per call;
+the `git_refdb_*` calls on refs.git.
+
+| call | C ns | Rust ns | Rust/C |
+|---|---:|---:|---:|
+| git_reference__normalize_name (8 names) | 397.79 | 455.63 | 1.15 |
+| git_reference_normalize_name | 457.72 | 551.85 | 1.21 |
+| git_reference_name_is_valid | 253.65 | 236.70 | 0.93 |
+| git_reference__is_per_worktree_ref | 29.11 | 24.52 | 0.84 |
+| git_reference__shorthand | 21.96 | 20.39 | 0.93 |
+| git_reference__alloc + free | 89.06 | 90.35 | 1.01 |
+| git_reference__alloc_symbolic + free | 138.97 | 160.94 | 1.16 |
+| git_refdb_lookup (loose) | 23835.17 | 26842.03 | 1.13 |
+| git_refdb_lookup (packed, sorted) | 7853.15 | 7858.75 | 1.00 |
+| git_refdb_exists (packed) | 5056.85 | 5822.08 | 1.15 |
+| git_refdb_resolve HEAD | 51187.13 | 53101.94 | 1.04 |
+| git_refdb_lookup (missing) | 8861.23 | 6332.74 | 0.71 |
+
+At load 190 (this run). An earlier run at load 440 had the same calls at
+0.59-1.07 except `shorthand` (1.28, then reading the whole name: the
+predicates now look at a 32-byte head, as C's `git__prefixcmp` reads only
+to the mismatch). The name functions are within ±20% of C either way (C's
+normalization copies the rest of the name per segment, the Rust appends
+the segment; both run in tens of ns per segment). The refdb calls are
+dominated by the file system.
