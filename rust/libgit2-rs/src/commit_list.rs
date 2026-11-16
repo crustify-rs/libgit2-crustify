@@ -667,11 +667,13 @@ mod miri_quick {
     }
 
     /// A walk (the revwalk's own, without an odb) over a zeroed repository
-    /// whose grafts are a dummy (`git_grafts_get` above).
+    /// whose grafts are a dummy (`git_grafts_get` above). The repository
+    /// and the dummy are raw allocations, so that the walk's pointer to
+    /// the repository stays valid (a `Box` that moves would retag it).
     struct Fake {
         walk: Box<git_revwalk>,
-        _repo: Box<crate::repository::GitRepository>,
-        _grafts: Box<u64>,
+        repo: *mut crate::repository::GitRepository,
+        grafts: *mut u64,
     }
 
     impl Fake {
@@ -680,24 +682,31 @@ mod miri_quick {
             // an empty cache).
             let repo: Box<crate::repository::GitRepository> =
                 unsafe { Box::new_zeroed().assume_init() };
-            repo.set_oid_type_raw(OidType::Sha1.raw());
-            let mut grafts = Box::new(0u64);
-            let g = (&raw mut *grafts).cast::<c_void>();
-            // SAFETY: the repository's own slots, which nothing else uses.
+            let repo = Box::into_raw(repo);
+            let grafts = Box::into_raw(Box::new(0u64));
+            // SAFETY: the fresh repository, ours alone; its own slots.
             unsafe {
-                repo.grafts_slot().write(g);
-                repo.shallow_grafts_slot().write(g);
+                (*repo).set_oid_type_raw(OidType::Sha1.raw());
+                (*repo).grafts_slot().write(grafts.cast());
+                (*repo).shallow_grafts_slot().write(grafts.cast());
             }
-            let rp = core::ptr::from_ref(&*repo).cast_mut();
-            let walk = Box::new(git_revwalk::with_repo(rp).unwrap());
-            Fake {
-                walk,
-                _repo: repo,
-                _grafts: grafts,
-            }
+            let walk = Box::new(git_revwalk::with_repo(repo).unwrap());
+            Fake { walk, repo, grafts }
         }
         fn walk(&mut self) -> *mut git_revwalk {
             &raw mut *self.walk
+        }
+    }
+
+    impl Drop for Fake {
+        fn drop(&mut self) {
+            // SAFETY: the allocations of `new`, freed once (the walk, which
+            // points to the repository, is dropped after this body, but
+            // does not use it when dropped).
+            unsafe {
+                drop(Box::from_raw(self.repo));
+                drop(Box::from_raw(self.grafts));
+            }
         }
     }
 
