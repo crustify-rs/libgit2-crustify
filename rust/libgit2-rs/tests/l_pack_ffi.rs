@@ -12,7 +12,7 @@ use core::mem::MaybeUninit;
 use core::ptr;
 use std::ffi::CString;
 
-use libgit2_rs::mwindow::{self, GitMwindow, ffi as mw_ffi};
+use libgit2_rs::mwindow::{GitMwindow, ffi as mw_ffi};
 use libgit2_rs::odb_pack::{GitOdbBackend, GitOdbBackendPackOptions, ffi as op_ffi};
 use libgit2_rs::oid::{GIT_OID_SHA1, GIT_OID_SHA256};
 use libgit2_rs::pack::{
@@ -319,10 +319,6 @@ fn the_pack_cache_shares_and_counts() {
         // Other tests of this process may hold it too.
         let n = (*a).refcount.get();
         assert!(n >= 2);
-        {
-            let mut ctl = mwindow::Ctl::lock();
-            let _ = &mut ctl;
-        }
         assert_eq!(mw_ffi::git_mwindow_put_pack(a), 0);
         assert_eq!((*b).refcount.get(), n - 1);
         assert_eq!(mw_ffi::git_mwindow_put_pack(b), 0);

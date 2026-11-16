@@ -199,7 +199,7 @@ impl GitMwindowFile {
 
     /// Set the descriptor; the caller holds `lock`, or the file is its own.
     #[inline]
-    pub fn set_fd(&self, fd: c_int) {
+    pub(crate) fn set_fd(&self, fd: c_int) {
         self.fd.store(fd, Ordering::Relaxed);
     }
 
@@ -211,7 +211,7 @@ impl GitMwindowFile {
 
     /// Set the size.
     #[inline]
-    pub fn set_size(&self, size: i64) {
+    pub(crate) fn set_size(&self, size: i64) {
         self.size.store(size, Ordering::Relaxed);
     }
 }
@@ -228,14 +228,14 @@ impl Default for GitMwindowFile {
 
 /// The global mutex, held: the only way to reach the control block, the
 /// pack cache, the files' window lists and the windows.
-pub struct Ctl {
+pub(crate) struct Ctl {
     _guard: GitMutexGuard<'static>,
 }
 
 impl Ctl {
     /// Lock `git_mwindow__mutex` (C's `git_mutex_lock(&git_mwindow__mutex)`,
     /// which cannot fail for a default mutex).
-    pub fn lock() -> Ctl {
+    pub(crate) fn lock() -> Ctl {
         Ctl {
             _guard: git_mwindow__mutex.lock(),
         }
@@ -429,13 +429,20 @@ unsafe fn free_window(w: *mut GitMwindow) {
 /// `git_mwindow_find_lru_file_locked`: the file all of whose windows are
 /// unused, whose most recently used window is the least recently used of
 /// all such files.
-fn find_lru_file_locked(ctl: &mut Ctl) -> Result<*const GitMwindowFile> {
+/// Files in `skip` are not considered (the closer could not lock them).
+fn find_lru_file_locked(
+    ctl: &mut Ctl,
+    skip: &[*const GitMwindowFile],
+) -> Result<*const GitMwindowFile> {
     let mut lru_file: *const GitMwindowFile = ptr::null();
     let mut lru_window: *mut GitMwindow = ptr::null_mut();
     let mut i = 0;
     while let Some(current) = ctl.file(i) {
         let current: *const GitMwindowFile = current;
         i += 1;
+        if skip.contains(&current) {
+            continue;
+        }
         let mut mru_window = ptr::null_mut();
         // SAFETY: a registered file.
         if !scan_recently_used(ctl, unsafe { &*current }, &mut mru_window, None, true, MRU) {
@@ -583,7 +590,7 @@ impl Cursor {
     ///
     /// `mwf` stays at its address while its windows exist (it is in a
     /// heap-allocated pack, or registered: [`file_register`]).
-    pub fn open<'c>(
+    pub(crate) fn open<'c>(
         &'c mut self,
         mwf: &GitMwindowFile,
         offset: i64,
@@ -761,8 +768,10 @@ pub fn free_all(mwf: &GitMwindowFile) -> Result<()> {
 /// C closes those files' descriptors after releasing the mutex, under each
 /// file's lock: the file may be freed meanwhile (a use after free). The
 /// Rust closes them before releasing it, taking each file's lock only if it
-/// is free (`try_lock`, so the lock order cannot deadlock); a file whose
-/// lock is held keeps its descriptor (see DEFECTS.md).
+/// is free (`try_lock`, so the lock order cannot deadlock). A file whose
+/// lock is held is left registered and open, and the next least recently
+/// used file is closed instead (see DEFECTS.md); every open file stays
+/// registered, so the mapped limit and the file limit keep applying.
 ///
 /// # Safety
 ///
@@ -777,20 +786,31 @@ pub unsafe fn file_register(mwf: &GitMwindowFile) -> Result<()> {
 
     let limit = git_mwindow__file_limit.load(Ordering::Relaxed);
     if limit != 0 {
+        // Files whose lock is held (a reader is opening a window of it):
+        // left registered and open, and another file is closed instead.
+        let mut busy: Vec<*const GitMwindowFile> = Vec::new();
         while limit <= ctl.ctl().windowfiles.len() {
-            let Ok(lru_file) = find_lru_file_locked(&mut ctl) else {
+            let Ok(lru_file) = find_lru_file_locked(&mut ctl, &busy) else {
                 break;
             };
             // SAFETY: a registered file.
-            let lru_file = unsafe { &*lru_file };
-            // Its windows are all unused (`find_lru_file_locked`).
-            let _ = free_all_locked(&mut ctl, lru_file);
-            if let Some(_g) = lru_file.lock.try_lock() {
-                // SAFETY: the file's descriptor, which it owns, closed with
-                // its lock held and then set to -1 (as C does).
-                let _ = unsafe { posix::close(lru_file.fd()) };
-                lru_file.set_fd(-1);
-            }
+            let file = unsafe { &*lru_file };
+            let Some(_g) = file.lock.try_lock() else {
+                if busy.try_reserve(1).is_err() {
+                    // As C: exceeding the limit beats any worse outcome.
+                    break;
+                }
+                busy.push(lru_file);
+                continue;
+            };
+            // Its windows are all unused (`find_lru_file_locked`), and stay
+            // so: windows are opened under the file's lock, which we hold.
+            let _ = free_all_locked(&mut ctl, file);
+            // SAFETY: the file's descriptor, which it owns, closed with its
+            // lock held and then set to -1 (as C does): the next use opens
+            // and registers it again.
+            let _ = unsafe { posix::close(file.fd()) };
+            file.set_fd(-1);
         }
     }
 
@@ -878,6 +898,55 @@ pub unsafe fn put_pack(pack: *mut GitPackFile) -> Result<()> {
         unsafe { pack::packfile_free(to_delete, false) };
     }
     Ok(())
+}
+
+/// A snapshot of the process's window accounting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MwindowStats {
+    /// Bytes mapped by all windows.
+    pub mapped: usize,
+    /// Windows mapped.
+    pub open_windows: u32,
+    /// The most windows mapped at once.
+    pub peak_open_windows: u32,
+    /// Files registered (whose windows the LRU may close).
+    pub registered_files: usize,
+    /// Packs of the pack cache whose file is open.
+    pub open_pack_files: usize,
+    /// Packs of the pack cache whose file is open and registered.
+    pub registered_pack_files: usize,
+}
+
+/// The window accounting now (under the global mutex).
+pub fn stats() -> MwindowStats {
+    let mut ctl = Ctl::lock();
+    let c = ctl.ctl();
+    let (mapped, open_windows, peak_open_windows) = (c.mapped, c.open_windows, c.peak_open_windows);
+    let files: Vec<*const GitMwindowFile> = c
+        .windowfiles
+        .iter()
+        .map(|p| p.cast_const().cast())
+        .collect();
+    let mut open_pack_files = 0;
+    let mut registered_pack_files = 0;
+    for &p in ctl.packs().values() {
+        // SAFETY: a pack in the cache is live while the mutex is held.
+        let mwf = unsafe { &(*p).mwf };
+        if mwf.fd() >= 0 {
+            open_pack_files += 1;
+            if files.contains(&ptr::from_ref(mwf)) {
+                registered_pack_files += 1;
+            }
+        }
+    }
+    MwindowStats {
+        mapped,
+        open_windows,
+        peak_open_windows,
+        registered_files: files.len(),
+        open_pack_files,
+        registered_pack_files,
+    }
 }
 
 extern "C" fn global_shutdown() {

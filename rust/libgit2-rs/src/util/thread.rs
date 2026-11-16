@@ -83,10 +83,16 @@ impl GitMutex {
     pub fn try_lock(&self) -> Option<GitMutexGuard<'_>> {
         // SAFETY: as in `lock`.
         let r = unsafe { libc::pthread_mutex_trylock(self.0.get()) };
-        (r == 0).then_some(GitMutexGuard {
-            m: self,
-            _not_send: core::marker::PhantomData,
-        })
+        // Not `then_some`: it would build the guard eagerly and, on failure,
+        // drop it, unlocking a mutex someone else holds.
+        if r == 0 {
+            Some(GitMutexGuard {
+                m: self,
+                _not_send: core::marker::PhantomData,
+            })
+        } else {
+            None
+        }
     }
 
     /// Lock as C's `git_mutex_lock` does: 0, or the pthread error. Pair it
@@ -542,6 +548,26 @@ pub mod ffi {
 mod tests {
     use super::*;
     use std::sync::Arc;
+
+    /// A failed `try_lock` leaves the lock held by its owner (L-PACK-1: the
+    /// guard was built eagerly and dropped, unlocking the owner's lock).
+    #[test]
+    fn try_lock_does_not_release_a_held_lock() {
+        let m = Arc::new(GitMutex::new());
+        let g = m.lock();
+        assert!(m.try_lock().is_none());
+        assert!(m.try_lock().is_none());
+        let m2 = m.clone();
+        let other = std::thread::spawn(move || m2.try_lock().is_none())
+            .join()
+            .unwrap();
+        assert!(other, "still held after failed try_locks");
+        drop(g);
+        let g = m.try_lock();
+        assert!(g.is_some());
+        drop(g);
+        assert!(m.try_lock().is_some());
+    }
 
     #[test]
     fn mutex_and_cond() {

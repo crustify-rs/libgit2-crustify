@@ -553,9 +553,13 @@ DIVERGENCES.md).
   pattern).
 - Rust: the descriptors are closed while the mutex is held (a file is
   deregistered under the mutex before it is freed), taking each file's
-  lock with `try_lock` so that the lock order cannot deadlock; a file whose
-  lock is held (being read) keeps its descriptor, and the soft limit is
-  then exceeded by one.
+  lock with `try_lock` so that the lock order cannot deadlock. A file whose
+  lock is held (a reader is opening a window of it) is left registered and
+  open, and the next least recently used file is closed instead; if every
+  candidate is busy, the (soft) file limit is exceeded until the next
+  registration, as when C finds no candidate. (Round 1 left such a file
+  open but deregistered, so its windows escaped the mapped limit: review
+  L-PACK-2.)
 
 ### odb_pack: `foreach` iterates state its callback may free
 - C: `pack_backend__foreach` iterates `backend->packs` and passes
