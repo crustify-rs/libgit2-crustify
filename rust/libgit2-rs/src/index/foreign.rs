@@ -325,6 +325,13 @@ unsafe impl TreeSource for CTrees {
         unsafe { entry_view(e) }
     }
 
+    fn is_tree(&self, tree: &CTree, i: usize) -> bool {
+        // SAFETY: as in `entry`.
+        let e = unsafe { p::git_tree_entry_byindex(tree.ptr.as_ptr(), i) };
+        // SAFETY: as above.
+        unsafe { p::git_tree_entry_filemode(e) == super::GIT_FILEMODE_TREE }
+    }
+
     fn lookup(&self, id: &Oid) -> Result<CTree> {
         let mut out = ptr::null_mut();
         // SAFETY: `out` writable; `repo` is the tree's live repository.

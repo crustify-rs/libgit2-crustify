@@ -420,6 +420,10 @@ pub(crate) unsafe trait TreeSource {
     /// Entry `i`: whether it is a tree (`git_tree_entry_filemode` is
     /// `GIT_FILEMODE_TREE`), its name and id.
     fn entry<'t>(&self, tree: &'t Self::Tree, i: usize) -> (bool, &'t [u8], Oid);
+    /// Whether entry `i` is a tree (the first part of [`entry`](Self::entry)).
+    fn is_tree(&self, tree: &Self::Tree, i: usize) -> bool {
+        self.entry(tree, i).0
+    }
     /// Look a subtree up by id (`git_tree_lookup`).
     fn lookup(&self, id: &Oid) -> Result<Self::Tree>;
 }
@@ -437,7 +441,7 @@ fn read_tree_recursive<S: TreeSource, A: NodeAlloc + ?Sized>(
     // reaches until the tree is returned.
     unsafe { (*cache).oid = id };
     let nentries = src.len(tree);
-    let ntrees = (0..nentries).filter(|&i| src.entry(tree, i).0).count();
+    let ntrees = (0..nentries).filter(|&i| src.is_tree(tree, i)).count();
     let alloc_size = crate::util::integer::alloc_multiply(ntrees, size_of::<*mut GitTreeCache>())?;
     // SAFETY: as above.
     let oid_type = unsafe { (*cache).oid_type };
