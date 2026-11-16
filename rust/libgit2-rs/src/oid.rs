@@ -825,9 +825,12 @@ impl<'a> OidShortener<'a> {
     #[inline(always)]
     fn children(&mut self, idx: usize) -> &mut [NodeIndex; 16] {
         // SAFETY: the trie's invariant: `idx` is reached through a
-        // non-negative index (or converted from a leaf, whose children were
-        // then zeroed), so it holds children; every bit pattern is a valid
-        // `[i16; 16]`.
+        // non-negative index, so it is a normal node. A leaf's link is made
+        // positive only together with its conversion: in the same
+        // iteration of `add`'s walk when the next digit is valid, or by
+        // `add`'s error path, which empties the leaf (see there). Every node
+        // is fully initialized (leaves start as `EMPTY_NODE`), and every bit
+        // pattern is a valid `[i16; 16]`.
         unsafe { &mut self.nodes[idx].children }
     }
 
@@ -856,12 +859,13 @@ impl<'a> OidShortener<'a> {
             self.full = true;
             return Err(shorten_error("OID set full"));
         }
-        self.nodes.push(TrieNode {
-            tail: Tail {
-                ptr: tail.as_ptr(),
-                len: tail.len(),
-            },
-        });
+        // All 32 bytes initialized first, then the 16 of the tail.
+        let mut leaf = EMPTY_NODE;
+        leaf.tail = Tail {
+            ptr: tail.as_ptr(),
+            len: tail.len(),
+        };
+        self.nodes.push(leaf);
         self.children(idx)[push_at] = -(idx_leaf as NodeIndex);
         Ok(())
     }
@@ -886,6 +890,15 @@ impl<'a> OidShortener<'a> {
         while i < GIT_OID_SHA1_HEXSIZE {
             let c = fromhex(at(text, i));
             if c < 0 {
+                if is_leaf {
+                    // The leaf's link was made positive (as C does) but the
+                    // leaf is not converted. C leaves the node holding its
+                    // tail pointer, later read as children (pointer bits as
+                    // indices for digits 0..3, zero for 4..f): DEFECTS.md.
+                    // Here it becomes an empty normal node, which is C's
+                    // result for 4..f; the leaf's id is dropped, as in C.
+                    self.nodes[idx] = EMPTY_NODE;
+                }
                 return Err(shorten_error("invalid hex value"));
             }
             let c = (c & 15) as usize;
@@ -1335,12 +1348,17 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oid_shorten_new(min_length: usize) -> *mut git_oid_shorten {
         barrier(|| {
+            // C's check, sign extension included: SIZE_MAX - 2^31 + 1 ..=
+            // SIZE_MAX pass too, and are stored negative.
+            let as_int = min_length as c_int;
             git_assert_arg!(
-                c_int::try_from(min_length).is_ok(),
+                as_int as isize as usize == min_length,
                 "(size_t)((int)min_length) == min_length",
                 ptr::null_mut()
             );
-            Box::into_raw(Box::new(OidShortener::new(min_length)))
+            let mut os = OidShortener::new(0);
+            os.min_length = as_int;
+            Box::into_raw(Box::new(os))
         })
     }
 
@@ -1582,6 +1600,76 @@ mod tests {
         let mut s = OidShortener::new(4);
         assert_eq!(s.add(b"ab").unwrap(), 4);
         assert!(s.add(b"abcd").is_err());
+    }
+
+    /// U1-1: an add that fails right after reaching a leaf, then more adds
+    /// through that node.
+    #[test]
+    fn shortener_fails_after_a_leaf() {
+        let _g = crate::util::test_support::init();
+        let mut s = OidShortener::new(0);
+        assert_eq!(
+            s.add(b"abcdef0123456789abcdef0123456789abcdef01").unwrap(),
+            1
+        );
+        assert!(s.add(b"ax").is_err());
+        // C: the node reads as empty for digits 4..f
+        assert_eq!(
+            s.add(b"a4ffffffffffffffffffffffffffffffffffffff").unwrap(),
+            2
+        );
+        assert_eq!(
+            s.add(b"abffffffffffffffffffffffffffffffffffffff").unwrap(),
+            2
+        );
+        // digits 0..3 (C's undefined behaviour) read as empty too
+        assert_eq!(
+            s.add(b"a0ffffffffffffffffffffffffffffffffffffff").unwrap(),
+            2
+        );
+        assert_eq!(s.add(b"a0fe").unwrap(), 4);
+    }
+
+    /// Random valid, invalid and short ids, interleaved, then valid ones
+    /// again: every add returns (Miri checks the trie's memory).
+    #[test]
+    fn shortener_random_failures() {
+        let _g = crate::util::test_support::init();
+        let mut st = 0x2545_f491_4f6c_dd1du64;
+        let mut rnd = move || {
+            st ^= st << 13;
+            st ^= st >> 7;
+            st ^= st << 17;
+            st
+        };
+        let n = if cfg!(miri) { 300 } else { 5000 };
+        let ids: Vec<Vec<u8>> = (0..n)
+            .map(|_| {
+                // few distinct digits, so that walks go deep and meet leaves
+                let len = match rnd() % 4 {
+                    0 => (rnd() % 40) as usize,
+                    _ => 40,
+                };
+                let mut v: Vec<u8> = (0..len).map(|_| b"012ab"[(rnd() % 5) as usize]).collect();
+                if len > 0 && rnd() % 3 == 0 {
+                    let at = (rnd() % len as u64) as usize;
+                    v[at] = b"xg \0"[(rnd() % 4) as usize];
+                }
+                v
+            })
+            .collect();
+        let mut s = OidShortener::new(0);
+        let mut ok = 0;
+        for id in ids.iter().chain(ids.iter()) {
+            match s.add(id) {
+                Ok(n) => {
+                    assert!((1..=41).contains(&n));
+                    ok += 1;
+                }
+                Err(e) => assert_eq!(e, ErrorCode::GENERIC),
+            }
+        }
+        assert!(ok > 0);
     }
 
     #[test]
