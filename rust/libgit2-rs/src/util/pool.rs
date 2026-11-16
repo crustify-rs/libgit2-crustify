@@ -468,6 +468,11 @@ pub mod ffi {
             if n == usize::MAX {
                 return ptr::null_mut();
             }
+            if n > isize::MAX as usize {
+                // C's `git_pool_malloc(n + 1)` fails before reading `str`.
+                let _ = errors::oom();
+                return ptr::null_mut();
+            }
             // SAFETY: `n` readable bytes, which the allocation below does
             // not write (it hands out memory that is not `str`'s).
             let s = unsafe { core::slice::from_raw_parts(str.cast::<u8>(), n) };

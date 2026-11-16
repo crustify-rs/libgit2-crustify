@@ -33,18 +33,34 @@ static UTF8_CLASS: [u8; 256] = {
 /// `utf8_charlen`: the length of the sequence at the start of `s` if its
 /// first byte starts one, it fits in `s` and its continuation bytes are
 /// such; `None` otherwise (and for an empty `s`).
-#[inline]
+#[inline(always)]
 pub fn charlen(s: &[u8]) -> Option<usize> {
     let first = *s.first()?;
+    if first < 0x80 {
+        return Some(1);
+    }
     let length = UTF8_CLASS[first as usize] as usize;
     if length == 0 || length > s.len() {
         return None;
     }
-    if s[1..length].iter().all(|&c| c & 0xc0 == 0x80) {
-        Some(length)
-    } else {
-        None
+    for &c in &s[1..length] {
+        if c & 0xc0 != 0x80 {
+            return None;
+        }
     }
+    Some(length)
+}
+
+/// The number of leading ASCII bytes of `s`, a multiple of 8 (a fast path
+/// of the scans below).
+#[inline(always)]
+fn ascii_words(s: &[u8]) -> usize {
+    let (chunks, _) = s.as_chunks::<8>();
+    chunks
+        .iter()
+        .take_while(|c| u64::from_ne_bytes(**c) & 0x8080_8080_8080_8080 == 0)
+        .count()
+        * 8
 }
 
 /// `git_utf8_iterate`: the code point at the start of `s` and its length
@@ -91,7 +107,15 @@ pub fn char_length(s: &[u8]) -> usize {
     let mut offset = 0;
     let mut count = 0;
     while offset < s.len() {
-        offset += charlen(&s[offset..]).unwrap_or(1);
+        let rest = &s[offset..];
+        if rest[0] < 0x80 {
+            // each ASCII byte is a character
+            let n = ascii_words(rest).max(1);
+            offset += n;
+            count += n;
+            continue;
+        }
+        offset += charlen(rest).unwrap_or(1);
         count += 1;
     }
     count
@@ -102,7 +126,12 @@ pub fn char_length(s: &[u8]) -> usize {
 pub fn valid_buf_length(s: &[u8]) -> usize {
     let mut offset = 0;
     while offset < s.len() {
-        match charlen(&s[offset..]) {
+        let rest = &s[offset..];
+        if rest[0] < 0x80 {
+            offset += ascii_words(rest).max(1);
+            continue;
+        }
+        match charlen(rest) {
             Some(n) => offset += n,
             None => break,
         }

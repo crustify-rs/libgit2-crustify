@@ -208,3 +208,86 @@ with clang using the include paths and `-D` flags of `LIBGIT2_BUILD_DIR`'s
 LIBGIT2_BUILD_DIR=/work/builds/<wp> cargo test --features link-c
 MIRIFLAGS=-Zmiri-strict-provenance cargo +nightly miri test
 ```
+
+## Object ids, maps, pool, pqueue, parse context (WP u1)
+
+| You need | Use | Module |
+|---|---|---|
+| `git_oid`, `git_oid_t` | `Oid`, `OidType` (crate root) | `crate::oid` |
+| `git_oid_shorten` | `OidShortener` | `crate::oid` |
+| `git_oidarray`, `git_array_oid_t` | `OidArray`, `GitArray<Oid>`, `oidarray::{add, remove}` | `crate::oidarray` |
+| a khash map/set (`hashmap.h`) | `GitHashMap<K, V, X = ()>`, `GitHashSet<K>` | `hashmap` |
+| `hashmap_str.h` keys | `CStrKey<'a>`; `GitHashMapStr`, `GitHashSetStr` | `hashmap` |
+| `hashmap_oid.h` keys | `&'a Oid`, `Oid`, `OidPtr`; `OidMap<'a, V>`, `OidSet`, `OidPtrMap` | `crate::hashmap_oid` |
+| exports of a C-named map (`git_pack_oidmap_*`) | `git_hashmap_exports!` | `hashmap` |
+| `git_pool` | `pool::GitPool` | `pool` |
+| `git_pqueue` | `pqueue::GitPqueue` | `pqueue` |
+| `git_parse_ctx` | `crate::parse::GitParseCtx<'a>` | `crate::parse` |
+| utf8 / varint / strlist | `utf8::{iterate, char_length, valid_buf_length}`, `varint::{encode, decode}`, `strlist::*` | |
+
+**`Oid`** is the mirrored `git_oid` (33 bytes, align 1): a `*const git_oid`
+from C is a `*const Oid`, and C structs that embed a `git_oid` embed an
+`Oid`. It is `Copy`; `==`, `Ord` and `Hash` are over the whole struct (C's
+`git_oid_cmp`/`git_oid_equal`). Any byte pattern is valid, so `kind()` is
+`Option<OidType>`; size-dependent functions treat an unknown type as C does.
+
+```rust
+let id = Oid::from_hex(b"e69de29bb2d1d6434b8b29ae775ad8c2e48c5391", OidType::Sha1)?; // git_oid_from_string
+let p  = Oid::from_prefix(b"e69de", OidType::Sha1)?;   // git_oid_from_prefix
+let r  = Oid::from_bytes(raw, OidType::Sha256);        // git_oid_from_raw (None if short)
+id.hex();          // HexOid on the stack: as_str()/as_bytes()/as_c_str() (git_oid_fmt)
+id.hex_path()?;    // "e6/9de2…" (git_oid_pathfmt)
+id.hex_prefix(8);  // git_oid_tostr(buf, 8, id): 7 digits
+id.nfmt(&mut out)?;            // git_oid_nfmt
+id.fmt_substr(&mut out, start); // git_oid_fmt_substr
+id.ncmp(&p, 5); id.cmp_raw(&p); id.strcmp(b"e69d"); id.is_zero(); id.prefix(7);
+id.hashcode();     // git_hashmap_oid_hashcode
+```
+
+Errors are `Result<T>` with `ErrorCode` and C's messages (`unable to parse
+OID - too short` …); `?` into `Result<_, Error>` gives the rich error.
+
+**`GitHashMap<K, V, X>`** is `GIT_HASHMAP_STRUCT` (with `X` a field C puts
+before the members, e.g. `git_index_entrymap`'s `ignore_case`: use
+`GitHashMap<_, _, c_uint>` — a `GitHashMap` *after* a `u32` field would be
+at offset 8, not 4). It runs khash exactly (tested against the C macros:
+`tests/u1_hashmap_c.rs`), so iteration order is the C's, and C's inline
+functions and the Rust can work on the same map (arrays from
+`git__allocator`). Keys implement `HashKey`; `*_with(hash, eq)` variants
+take runtime hash/equality (the index's icase map). `put` replaces key and
+value of an equal key (as C) and returns the old pair; `remove` returns the
+pair; `iterate(&mut it)` is C's cursor (removal between calls is fine);
+`retain` is C's iterate-and-remove loop.
+
+Maps embedded in C-visible structs, found by grepping the C that stays:
+- `git_pack_file.idx_cache` (`git_pack_oidmap`, pack.h): `indexer.c` calls
+  `git_pack_oidmap_{contains,put,iterate,dispose}`, which `pack.c` defines
+  extern: the pack WP must export them (`git_hashmap_exports!`) over a
+  `GitHashMap<OidPtr, *mut git_pack_entry>` at the same offset.
+- `git_mwindow__pack_cache` (`git_mwindow_packmap`, mwindow.h): a global;
+  `tests/libgit2/pack/sharing.c` calls `git_mwindow_packmap_{iterate,size}`,
+  defined extern in `mwindow.c`: export them, and the global, with the
+  layout of `GitHashMap<CStrKey<'static>, *mut git_pack_file>`.
+- `git_hashset_str` (hashmap_str.h): `checkout.c` owns one and passes it to
+  `git_futils_mkdir_relative` (`git_mkdir_options.cache_pathset`), whose
+  ported Rust then adds to it, while `checkout.c` disposes it with the C
+  inline: use `GitHashSetStr<'static>` on the pointer.
+- `git_sortedcache.map` (`git_hashmap_str`): only `sortedcache.c` and its
+  ported users touch it.
+- `git_cache.map` (`git_cache_oidmap`, in `git_repository` by value),
+  `git_revwalk.commits`, `git_treebuilder.map`, `git_index.entries_map`:
+  only their (ported) modules touch the maps, but the structs are seen by C,
+  so keep the layout (`OidPtrMap`/`OidMap` match `git_cache_oidmap`).
+- Module-local maps (`odb_mempack`, `grafts`, `config_list`): free to use
+  any `GitHashMap` instantiation; use one (not `std::HashMap`) wherever the
+  iteration order is observable (`git_grafts_oids` → shallow roots).
+
+**`GitPool`** is the mirrored `git_pool` (C's paging: 4056-byte pages,
+8-byte rounding, big requests on their own page). `malloc`, `mallocz`,
+`strndup`, `strdup`, `strcat` return `NonNull` pointers valid until
+`clear`/drop. **`GitPqueue`** is `#[repr(transparent)]` over `GitVector`:
+`insert`/`pop` (`unsafe`: they call the C comparison) or `insert_by`/
+`pop_by` with a Rust closure; `as_vector()` for `git_pqueue_get` & co.
+**`GitParseCtx<'a>`** is the mirrored `git_parse_ctx` over a `&'a [u8]`:
+`line()`, `rest()`, `advance_line/chars/expected/ws/nl/digit/oid`,
+`peek(skip_ws)`, `contains`.

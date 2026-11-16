@@ -1231,7 +1231,7 @@ mod tests {
         assert_eq!(str_hash(b"\xe9"), 0xffff_ffe9);
         assert_eq!(str_hash(b"a\0b"), 97);
         assert_eq!(7i64.hash_code(), 7 ^ (7 << 11));
-        assert_eq!((-1i64).hash_code(), 0x7ff);
+        assert_eq!((-1i64).hash_code(), 0xffff_f800);
     }
 
     #[test]

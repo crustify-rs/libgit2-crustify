@@ -9,12 +9,20 @@ use super::util::strncmp;
 /// `git_strlist_contains_prefix`: whether `strncmp(s, str, n) == 0` for
 /// one of `strings` (each read up to its NUL, as `strncmp` does).
 pub fn contains_prefix(strings: &[&CStr], s: &[u8], n: usize) -> bool {
-    strings.iter().any(|x| strncmp(x.to_bytes(), s, n) == 0)
+    contains_prefix_iter(strings.iter().copied(), s, n)
+}
+
+fn contains_prefix_iter<'a>(mut strings: impl Iterator<Item = &'a CStr>, s: &[u8], n: usize) -> bool {
+    strings.any(|x| strncmp(x.to_bytes(), s, n) == 0)
 }
 
 /// `git_strlist_contains_key`: whether one of `strings` starts with the
 /// part of `key` before the first `delimiter`; false if `key` has none.
 pub fn contains_key(strings: &[&CStr], key: &[u8], delimiter: u8) -> bool {
+    contains_key_iter(strings.iter().copied(), key, delimiter)
+}
+
+fn contains_key_iter<'a>(strings: impl Iterator<Item = &'a CStr>, key: &[u8], delimiter: u8) -> bool {
     let key = match memchr::memchr(0, key) {
         Some(n) => &key[..n],
         None => key,
@@ -22,7 +30,7 @@ pub fn contains_key(strings: &[&CStr], key: &[u8], delimiter: u8) -> bool {
     match key.iter().position(|&c| c == delimiter) {
         // C's loop stops at the delimiter or the NUL; a NUL delimiter is
         // the end of the string, which means "none".
-        Some(n) if delimiter != 0 => contains_prefix(strings, key, n),
+        Some(n) if delimiter != 0 => contains_prefix_iter(strings, key, n),
         _ => false,
     }
 }
@@ -110,20 +118,19 @@ pub mod ffi {
         })
     }
 
-    /// The `len` strings at `strings`.
+    /// The `len` strings at `strings`, without allocating (C does not).
     ///
     /// # Safety
     ///
-    /// `strings` is readable for `len` NUL-terminated strings.
-    unsafe fn list<'a>(strings: *const *const c_char, len: usize) -> Vec<&'a CStr> {
-        (0..len)
-            .map(|i| {
-                // SAFETY: `i < len`: within the caller's array.
-                let p = unsafe { strings.wrapping_add(i).read() };
-                // SAFETY: a NUL-terminated string.
-                unsafe { CStr::from_ptr(p) }
-            })
-            .collect()
+    /// `strings` is readable for `len` NUL-terminated strings, which stay
+    /// unwritten for `'a`.
+    unsafe fn list<'a>(strings: *const *const c_char, len: usize) -> impl Iterator<Item = &'a CStr> {
+        (0..len).map(move |i| {
+            // SAFETY: `i < len`: within the caller's array.
+            let p = unsafe { strings.wrapping_add(i).read() };
+            // SAFETY: a NUL-terminated string.
+            unsafe { CStr::from_ptr(p) }
+        })
     }
 
     /// `git_strlist_contains_prefix`.
@@ -140,13 +147,17 @@ pub mod ffi {
         n: usize,
     ) -> bool {
         barrier(|| {
+            if len == 0 {
+                // C reads nothing
+                return false;
+            }
             // SAFETY: `strnlen` reads at most `n` bytes and stops at a NUL.
             let slen = unsafe { libc::strnlen(str, n) };
             // SAFETY: those bytes are readable.
             let s = unsafe { crate::util::export::bytes(str, slen) };
             // SAFETY: the caller's contract.
             let strings = unsafe { list(strings, len) };
-            contains_prefix(&strings, s, n)
+            contains_prefix_iter(strings, s, n)
         })
     }
 
@@ -168,7 +179,7 @@ pub mod ffi {
             let strings = unsafe { list(strings, len) };
             // SAFETY: a NUL-terminated string.
             let key = unsafe { cstr_bytes(key) };
-            contains_key(&strings, key, delimiter as u8)
+            contains_key_iter(strings, key, delimiter as u8)
         })
     }
 

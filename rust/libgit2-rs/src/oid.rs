@@ -259,15 +259,31 @@ fn fmt_substr(out: &mut [u8], id: &[u8; GIT_OID_MAX_SIZE], start: usize, count: 
 /// differ (0 if equal, 1 otherwise); `len` is capped at
 /// `GIT_OID_MAX_HEXSIZE`.
 pub fn raw_ncmp(a: &[u8; GIT_OID_MAX_SIZE], b: &[u8; GIT_OID_MAX_SIZE], len: usize) -> c_int {
-    let len = len.min(GIT_OID_MAX_HEXSIZE);
-    let full = len / 2;
-    if a[..full] != b[..full] {
-        return 1;
-    }
-    if len & 1 == 1 && (a[full] ^ b[full]) & 0xf0 != 0 {
-        return 1;
+    let mut bits = len.min(GIT_OID_MAX_HEXSIZE) * 4;
+    let (wa, wb) = (words(a), words(b));
+    for i in 0..4 {
+        if bits == 0 {
+            break;
+        }
+        let mask = if bits >= 64 { !0u64 } else { !0u64 << (64 - bits) };
+        if (wa[i] ^ wb[i]) & mask != 0 {
+            return 1;
+        }
+        bits = bits.saturating_sub(64);
     }
     0
+}
+
+/// The id as four big-endian words (so that their order is the bytes').
+#[inline(always)]
+fn words(id: &[u8; GIT_OID_MAX_SIZE]) -> [u64; 4] {
+    let (c, _) = id.as_chunks::<8>();
+    [
+        u64::from_be_bytes(c[0]),
+        u64::from_be_bytes(c[1]),
+        u64::from_be_bytes(c[2]),
+        u64::from_be_bytes(c[3]),
+    ]
 }
 
 /// `git_oid__is_hexstr`: whether `s` (up to a NUL) is all hex digits and
@@ -454,15 +470,15 @@ impl Oid {
         if self.kind != other.kind {
             return self.kind as c_int - other.kind as c_int;
         }
-        match self
-            .id
-            .iter()
-            .zip(other.id.iter())
-            .position(|(a, b)| a != b)
-        {
-            Some(i) => self.id[i] as c_int - other.id[i] as c_int,
-            None => 0,
+        let (a, b) = (words(&self.id), words(&other.id));
+        for i in 0..4 {
+            let x = a[i] ^ b[i];
+            if x != 0 {
+                let at = i * 8 + (x.leading_zeros() / 8) as usize;
+                return self.id[at] as c_int - other.id[at] as c_int;
+            }
         }
+        0
     }
 
     /// `git_oid_ncmp`: 0 if the first `len` hex digits are equal; the
@@ -480,17 +496,29 @@ impl Oid {
     /// as the high nibble of a byte whose low nibble is 0); an invalid digit
     /// gives -1; otherwise the difference of the first differing bytes.
     pub fn strcmp(&self, s: &[u8]) -> c_int {
+        self.strcmp_with(|i| s.get(i).copied().unwrap_or(0))
+    }
+
+    /// [`strcmp`](Oid::strcmp) reading the string with `byte_at`, in order
+    /// and not past its first NUL (as C reads it).
+    #[inline(always)]
+    fn strcmp_with(&self, mut byte_at: impl FnMut(usize) -> u8) -> c_int {
         let size = self.size();
-        let mut s = s.iter().copied().take_while(|&c| c != 0);
-        let mut a = 0;
-        while a < size {
-            let Some(c) = s.next() else { break };
+        let mut p = 0;
+        for a in 0..size {
+            let c = byte_at(p);
+            if c == 0 {
+                break;
+            }
+            p += 1;
             let hv = fromhex(c);
             if hv < 0 {
                 return -1;
             }
             let mut strval = (hv as u8) << 4;
-            if let Some(c) = s.next() {
+            let c = byte_at(p);
+            if c != 0 {
+                p += 1;
                 let hv = fromhex(c);
                 if hv < 0 {
                     return -1;
@@ -500,7 +528,9 @@ impl Oid {
             if self.id[a] != strval {
                 return self.id[a] as c_int - strval as c_int;
             }
-            a += 1;
+            if c == 0 {
+                break;
+            }
         }
         0
     }
@@ -1160,10 +1190,12 @@ pub mod ffi {
             // SAFETY: `n` is at most the caller's `n` writable bytes.
             let buf = unsafe { core::slice::from_raw_parts_mut(out.cast::<u8>(), n) };
             match oid {
-                None => {}
-                Some(oid) => {
-                    let _ = oid.nfmt(&mut buf[..n - 1]);
+                Some(oid) if hex_size == 0 => {
+                    // `git_oid_nfmt(out, 0, oid)`: the unknown type's error
+                    let _ = oid.nfmt(&mut buf[..0]);
                 }
+                Some(oid) => fmt_substr(&mut buf[..n - 1], &oid.id, 0, n - 1),
+                None => {}
             }
             buf[n - 1] = 0;
             out
@@ -1234,8 +1266,10 @@ pub mod ffi {
         barrier(|| {
             // SAFETY: a valid oid.
             let oid = unsafe { &*oid };
-            // SAFETY: a NUL-terminated string.
-            oid.strcmp(unsafe { cstr_bytes(str) })
+            let p = str.cast::<u8>();
+            // SAFETY: `strcmp_with` reads in order and stops at the NUL:
+            // within the string.
+            oid.strcmp_with(|i| unsafe { p.wrapping_add(i).read() })
         })
     }
 

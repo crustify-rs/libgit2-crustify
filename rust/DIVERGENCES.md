@@ -51,3 +51,32 @@ One entry per difference: component, what differs, why.
   `printf("%s")` (same output through the same `stdio` stream).
 - **vector: `git_vector_dup`** with a NULL comparison function on a source
   that has one leaves the copy unsorted, as C (it compares the argument).
+
+## u1 (pool, pqueue, utf8, varint, strlist, hashmap, oid, oidarray, parse)
+
+- **oid: `git_oid_tostr_s`'s buffer** is a 65-byte Rust thread-local (no
+  destructor), not a `git__malloc`'d `git_tlsdata` slot: it never fails
+  (C returned NULL on allocation failure), is not freed by
+  `git_libgit2_shutdown`, and stays valid until the thread's next call or
+  its end. `git_oid_global_init` does nothing and returns 0.
+- **oid: the shortener copies the ids** (C kept pointers into the
+  caller's strings, which its contract says must stay unchanged). A caller
+  that reuses one buffer for every id got wrong lengths (41) from C and
+  gets the right ones from Rust. The shortener lives in Rust's allocator,
+  so `cl_alloc_limit` does not make `git_oid_shorten_new`/`_add` fail.
+- **oid: `git_oid_cmp`'s magnitude** is the difference of the first
+  differing bytes (what glibc's `memcmp` returns); C returned `memcmp`'s
+  unspecified value. Only the sign is documented.
+- **pool: the page size** comes from `sysconf(_SC_PAGESIZE)` directly (the
+  Unix `git__page_size`, whose error it reproduces); a pool initialized
+  before `git_pool_global_init` gets it lazily (C used 0, one page per
+  allocation). `GitPool::init` (Rust) frees the pool's pages first; the
+  export `git_pool_init` overwrites the struct without reading it, as C.
+- **hashmap: `dispose`** leaves a leading field (`GitHashMap<K, V, X>`'s
+  `extra`, `git_index_entrymap`'s `ignore_case`) as it is; C's `memset`
+  zeroed it. Maps that hold owned Rust values drop them on `clear`,
+  `dispose` and drop (C's maps hold pointers and free nothing).
+- **utf8 / varint: the Rust functions take slices** and return `None`
+  where the C would read past the end of the buffer (`git_utf8_iterate`
+  with `str_len == 0`, `git_decode_varint` on a truncated varint). The
+  exports read exactly what the C read.

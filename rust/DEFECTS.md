@@ -121,3 +121,58 @@ triggers it, and the Rust's defined behaviour.
 
 ### runtime: `git_runtime_init` with a NULL init function
 - C: calls it. Rust: stops at the first NULL entry.
+
+## u1 (pool, pqueue, utf8, varint, strlist, hashmap, oid, oidarray, parse)
+
+### pool: `alloc_size` overflows
+- C: `src/util/pool.c`, `alloc_size`: `item_size * count` and
+  `(count + 7) & ~7` wrap; `git_pool_strndup(pool, s, SIZE_MAX - 1)` passes
+  the `n == SIZE_MAX` guard, `n + 1` rounds to 0, and `memcpy` copies
+  `SIZE_MAX - 1` bytes into a 0-byte block.
+- Trigger: `git_pool_malloc(pool_of_8_byte_items, SIZE_MAX / 4)`.
+- Rust: checked arithmetic; NULL with the out-of-memory error.
+
+### oid: `git_oid_allocfmt` leaks for an unknown type
+- C: allocates `hex_size + 1` bytes before checking `hex_size`, and returns
+  NULL without freeing them when it is 0.
+- Rust: checks first; allocates nothing; NULL.
+
+### oid: `git_oid_shorten_add` writes out of bounds
+- C: when a leaf is split, the next digit of its stored tail is converted
+  with `git__fromhex` unchecked; a non-hex byte (the tail of an id that
+  had an invalid digit after the point where it became a leaf, or the NUL
+  of an id shorter than 40 digits) gives -1, and `children[-1]` is
+  written (heap overflow). The tail is also a pointer into the caller's
+  string, read later.
+- Trigger: add `"ab"`, then `"abcd"`; or add `"12x…"`, then `"12…"`.
+- Rust: the tails are copied when added; a non-hex tail digit fails the
+  add with `unable to shorten OID - invalid hex value` (class INVALID),
+  the trie as C would leave it before the bad write.
+
+### oid: `resize_trie` loses the trie on allocation failure
+- C: `self->nodes = git__reallocarray(self->nodes, …)` overwrites the
+  pointer with NULL (leak; the next add dereferences NULL).
+- Rust: the out-of-memory error; the set is unchanged.
+
+### strlist: `git_strlist_copy*` leak on allocation failure
+- C: returns -1 from inside the loop without freeing the copies made so
+  far or the array.
+- Rust: frees them, then the out-of-memory error.
+
+### hashmap: a set's `iterate` does not advance
+- C: `src/util/hashmap.h`, `GIT_HASHSET_FUNCTIONS`' `name##_iterate`
+  returns the entry at `*iter` without incrementing it, so repeated calls
+  (and `name##_foreach`) return the first live key forever. No C caller
+  iterates a set today; the C macro stays as it is.
+- Rust: `GitHashMap::iterate_keys` advances past the key, as the map's
+  `iterate` does.
+
+### hashmap: shrinking assigns a failed `realloc`
+- C: `__resize`'s shrink step assigns `git__reallocarray`'s result to
+  `keys`/`vals` even when it is NULL (leak, then NULL dereference).
+- Rust: keeps the larger arrays (still valid) when shrinking fails.
+
+### parse: `git_parse_advance_chars` past the line
+- C: subtracts `char_cnt` from `line_len` and `remain_len` unchecked; more
+  than `line_len` wraps them and later reads run past the content.
+- Rust: advances by at most `line_len`.

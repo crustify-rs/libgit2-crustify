@@ -114,43 +114,46 @@ impl GitPqueue {
     }
 
     fn up(&mut self, mut el: usize, cmp: PqueueCmp<'_>) {
-        let mut parent_el = parent_of(el);
-        let kid = self.at(el);
         let c = self.0.as_mut_slice();
+        let Some(&kid) = c.get(el) else { return };
         while el > 0 {
+            let parent_el = parent_of(el);
             let parent = c[parent_el];
             if cmp(parent, kid) <= 0 {
                 break;
             }
             c[el] = parent;
             el = parent_el;
-            parent_el = parent_of(el);
         }
         c[el] = kid;
     }
 
+    /// Sift down from `el`. A NULL element ends it as the end does (C's
+    /// `git_vector_get` returns NULL for both).
     fn down(&mut self, mut el: usize, cmp: PqueueCmp<'_>) {
-        let parent = self.at(el);
+        let c = self.0.as_mut_slice();
+        let n = c.len();
+        let Some(&parent) = c.get(el) else { return };
         loop {
             let mut kid_el = lchild_of(el);
-            let mut kid = self.at(kid_el);
-            if kid.is_null() {
+            if kid_el >= n || c[kid_el].is_null() {
                 break;
             }
-            let rkid = self.at(kid_el + 1);
-            if !rkid.is_null() && cmp(kid, rkid) > 0 {
-                kid = rkid;
-                kid_el += 1;
+            let mut kid = c[kid_el];
+            if kid_el + 1 < n {
+                let rkid = c[kid_el + 1];
+                if !rkid.is_null() && cmp(kid, rkid) > 0 {
+                    kid = rkid;
+                    kid_el += 1;
+                }
             }
             if cmp(parent, kid) <= 0 {
                 break;
             }
-            self.0.as_mut_slice()[el] = kid;
+            c[el] = kid;
             el = kid_el;
         }
-        if let Some(slot) = self.0.as_mut_slice().get_mut(el) {
-            *slot = parent;
-        }
+        c[el] = parent;
     }
 
     fn insert_impl(&mut self, item: *mut c_void, mut cmp: Option<PqueueCmp<'_>>) -> Result<()> {
