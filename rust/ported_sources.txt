@@ -8,6 +8,7 @@ src/util/allocators/stdalloc.c
 src/util/errors.c
 src/util/net.c
 src/util/runtime.c
+src/util/sortedcache.c
 src/util/str.c
 src/util/thread.c
 src/util/tsort.c
