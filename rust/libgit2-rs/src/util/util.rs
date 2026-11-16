@@ -638,7 +638,7 @@ pub mod ffi {
     use super::*;
     use crate::git_arg;
     use crate::util::cabi::{CStrArg, Out};
-    use crate::util::export::{barrier, bytes, cstr_bytes, status};
+    use crate::util::export::{barrier, bytes, status};
 
     /// The bytes of `s`, bounded to what a comparison with a `bound`-byte
     /// string can read: C stops at the first difference, so at most
@@ -723,9 +723,8 @@ pub mod ffi {
             ///
             /// Both arguments are NUL-terminated strings.
             #[unsafe(no_mangle)]
-            pub unsafe extern "C" fn $name(a: *const c_char, b: *const c_char) -> c_int {
-                // SAFETY: the caller passes NUL-terminated strings.
-                barrier(|| $f(unsafe { cstr_bytes(a) }, unsafe { cstr_bytes(b) }))
+            pub unsafe extern "C" fn $name(a: CStrArg<'_>, b: CStrArg<'_>) -> c_int {
+                barrier(|| $f(a.to_bytes(), b.to_bytes()))
             }
         };
     }
@@ -798,8 +797,12 @@ pub mod ffi {
     /// Both arguments are NUL-terminated strings.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git__strcasecmp_cb(a: *const c_void, b: *const c_void) -> c_int {
-        // SAFETY: forwarded.
-        unsafe { git__strcasecmp(a.cast(), b.cast()) }
+        // SAFETY: a NUL-terminated string (the contract), read for the call.
+        let a = unsafe { CStrArg::from_ptr(a.cast()) };
+        // SAFETY: as above.
+        let b = unsafe { CStrArg::from_ptr(b.cast()) };
+        // SAFETY: no precondition beyond the strings'.
+        unsafe { git__strcasecmp(a, b) }
     }
 
     /// `git__prefixcmp`.

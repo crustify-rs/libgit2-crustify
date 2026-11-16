@@ -33,18 +33,6 @@ use crate::util::export::{barrier, cstr, status};
 use crate::util::str::GitStr;
 use crate::{git_assert, git_assert_arg};
 
-/// The repository behind a C pointer.
-///
-/// # Safety
-///
-/// `p` is NULL or a live repository (the module's contract) for `'a`.
-#[inline]
-unsafe fn repo<'a>(p: *const GitRepository) -> Option<&'a GitRepository> {
-    // SAFETY: the caller's contract; all fields are interior-mutable, so a
-    // shared reference allows C's concurrent updates.
-    unsafe { p.as_ref() }
-}
-
 /// `GIT_BUF_WRAP_PRIVATE(out, f)`.
 ///
 /// # Safety
@@ -1327,9 +1315,8 @@ macro_rules! string_getter {
         ///
         /// The module's contract.
         #[unsafe(no_mangle)]
-        pub unsafe extern "C" fn $name(repo_: *const GitRepository) -> *const c_char {
-            // SAFETY: the module's contract.
-            if let Some(r) = unsafe { repo(repo_) } {
+        pub unsafe extern "C" fn $name(repo_: Option<&GitRepository>) -> *const c_char {
+            if let Some(r) = repo_ {
                 // Loads only: nothing can panic, so no barrier.
                 return $get(r);
             }

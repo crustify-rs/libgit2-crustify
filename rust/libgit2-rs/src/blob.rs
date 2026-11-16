@@ -421,8 +421,11 @@ pub unsafe fn create_from_paths(
 pub unsafe fn create_from_disk(repo: *mut git_repository, path: &CStr) -> Result<Oid> {
     let mut full_path = GitStr::new();
     crate::util::fs_path::prettify(&mut full_path, path, None)?;
+    // SAFETY: `repo` is NULL or a live repository (as the call below requires),
+    // only read through `&` (its state is interior-mutable).
+    let repo_ref = unsafe { repo.as_ref() };
     // SAFETY: a live repository; the work dir lives as long as it does.
-    let workdir = unsafe { p::git_repository_workdir(repo) };
+    let workdir = unsafe { p::git_repository_workdir(repo_ref) };
     let full = full_path.as_bytes();
     let mut hint: Option<&CStr> = None;
     if !workdir.is_null() {

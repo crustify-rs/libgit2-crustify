@@ -433,12 +433,8 @@ macro_rules! path_pred {
         ///
         /// `path` is NULL or a NUL-terminated string.
         #[unsafe(no_mangle)]
-        pub unsafe extern "C" fn $name(path: *const c_char) -> bool {
-            barrier(|| {
-                crate::git_assert_arg!(!path.is_null(), "path", false);
-                // SAFETY: a NUL-terminated string.
-                $f(unsafe { cpath(path) })
-            })
+        pub unsafe extern "C" fn $name(path: CStrArg<'_>) -> bool {
+            barrier(|| $f(crate::git_arg!(path.get(), "path", false)))
         }
     };
 }

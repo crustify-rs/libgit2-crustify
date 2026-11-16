@@ -334,12 +334,14 @@ ffibox::impl_cdrop!(BackendFree, ConfigBackendCell, backend_free);
 /// it releases through the table's `free` slot.
 pub type Backend = CBox<ConfigBackendCell, BackendFree>;
 
-/// Read slot `$f` of the backend at `$p` (raw, as C may write the table).
+/// Read slot `$f` of the table of `$h`, a [`BackendCalls`] handle (raw, as
+/// C may write the table). Only a handle's table is read: the sealed trait's
+/// `raw` is live while the handle is borrowed.
 macro_rules! slot {
-    ($p:expr, $f:ident) => {{
-        let p: *mut git_config_backend = $p;
-        // SAFETY: `p` is a live table (the caller's invariant); the field is
-        // read through a raw pointer.
+    ($h:expr, $f:ident) => {{
+        let p: *mut git_config_backend = BackendCalls::raw($h);
+        // SAFETY: `p` is the live table of a `BackendCalls` handle (the
+        // trait's invariant); the field is read through a raw pointer.
         unsafe { (&raw const (*p).$f).read() }
     }};
 }
@@ -399,7 +401,7 @@ pub trait BackendCalls: sealed::Sealed {
     /// file backend keeps it, for conditional includes).
     unsafe fn open(&self, level: c_int, repo: *const git_repository) -> Result<()> {
         let p = self.raw();
-        let f = slot!(p, open).ok_or_else(|| no_slot("open"))?;
+        let f = slot!(self, open).ok_or_else(|| no_slot("open"))?;
         // SAFETY: the slot's contract (see the trait).
         ErrorCode::check(unsafe { f(p, level, repo) }).map(drop)
     }
@@ -407,7 +409,7 @@ pub trait BackendCalls: sealed::Sealed {
     /// `get`: `Ok(None)` for `GIT_ENOTFOUND` (the backend's message kept).
     fn get(&self, key: &CStr) -> Result<Option<EntryBox>> {
         let p = self.raw();
-        let f = slot!(p, get).ok_or_else(|| no_slot("get"))?;
+        let f = slot!(self, get).ok_or_else(|| no_slot("get"))?;
         let mut out = core::ptr::null_mut();
         // SAFETY: the slot's contract; `out` is writable.
         let r = unsafe { f(p, key.as_ptr(), &raw mut out) };
@@ -424,7 +426,7 @@ pub trait BackendCalls: sealed::Sealed {
     /// `set`.
     fn set(&self, name: &CStr, value: &CStr) -> Result<c_int> {
         let p = self.raw();
-        let f = slot!(p, set).ok_or_else(|| no_slot("set"))?;
+        let f = slot!(self, set).ok_or_else(|| no_slot("set"))?;
         // SAFETY: the slot's contract.
         ErrorCode::check(unsafe { f(p, name.as_ptr(), value.as_ptr()) })
     }
@@ -437,7 +439,7 @@ pub trait BackendCalls: sealed::Sealed {
         value: Option<&CStr>,
     ) -> Result<c_int> {
         let p = self.raw();
-        let f = slot!(p, set_multivar).ok_or_else(|| no_slot("set_multivar"))?;
+        let f = slot!(self, set_multivar).ok_or_else(|| no_slot("set_multivar"))?;
         // SAFETY: the slot's contract (the file backend checks `regexp`).
         ErrorCode::check(unsafe { f(p, name.as_ptr(), opt_ptr(regexp), opt_ptr(value)) })
     }
@@ -445,7 +447,7 @@ pub trait BackendCalls: sealed::Sealed {
     /// `del`.
     fn del(&self, name: &CStr) -> Result<c_int> {
         let p = self.raw();
-        let f = slot!(p, del).ok_or_else(|| no_slot("del"))?;
+        let f = slot!(self, del).ok_or_else(|| no_slot("del"))?;
         // SAFETY: the slot's contract.
         ErrorCode::check(unsafe { f(p, name.as_ptr()) })
     }
@@ -453,7 +455,7 @@ pub trait BackendCalls: sealed::Sealed {
     /// `del_multivar`.
     fn del_multivar(&self, name: &CStr, regexp: Option<&CStr>) -> Result<c_int> {
         let p = self.raw();
-        let f = slot!(p, del_multivar).ok_or_else(|| no_slot("del_multivar"))?;
+        let f = slot!(self, del_multivar).ok_or_else(|| no_slot("del_multivar"))?;
         // SAFETY: the slot's contract.
         ErrorCode::check(unsafe { f(p, name.as_ptr(), opt_ptr(regexp)) })
     }
@@ -461,7 +463,7 @@ pub trait BackendCalls: sealed::Sealed {
     /// `iterator`.
     fn iterator(&self) -> Result<IterBox> {
         let p = self.raw();
-        let f = slot!(p, iterator).ok_or_else(|| no_slot("iterator"))?;
+        let f = slot!(self, iterator).ok_or_else(|| no_slot("iterator"))?;
         let mut out = core::ptr::null_mut();
         // SAFETY: the slot's contract; `out` is writable.
         let r = unsafe { f(&raw mut out, p) };
@@ -475,7 +477,7 @@ pub trait BackendCalls: sealed::Sealed {
     /// `snapshot`: a new backend, ours.
     fn snapshot(&self) -> Result<Backend> {
         let p = self.raw();
-        let f = slot!(p, snapshot).ok_or_else(|| no_slot("snapshot"))?;
+        let f = slot!(self, snapshot).ok_or_else(|| no_slot("snapshot"))?;
         let mut out = core::ptr::null_mut();
         // SAFETY: the slot's contract; `out` is writable.
         let r = unsafe { f(&raw mut out, p) };
@@ -489,7 +491,7 @@ pub trait BackendCalls: sealed::Sealed {
     /// `lock`.
     fn lock(&self) -> Result<c_int> {
         let p = self.raw();
-        let f = slot!(p, lock).ok_or_else(|| no_slot("lock"))?;
+        let f = slot!(self, lock).ok_or_else(|| no_slot("lock"))?;
         // SAFETY: the slot's contract.
         ErrorCode::check(unsafe { f(p) })
     }
@@ -497,7 +499,7 @@ pub trait BackendCalls: sealed::Sealed {
     /// `unlock`.
     fn unlock(&self, success: c_int) -> Result<c_int> {
         let p = self.raw();
-        let f = slot!(p, unlock).ok_or_else(|| no_slot("unlock"))?;
+        let f = slot!(self, unlock).ok_or_else(|| no_slot("unlock"))?;
         // SAFETY: the slot's contract.
         ErrorCode::check(unsafe { f(p, success) })
     }
