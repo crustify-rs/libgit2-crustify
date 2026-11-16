@@ -32,7 +32,7 @@
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::ptr;
 
-use crate::commit::{OBJ_ANY, OBJ_BLOB, OBJ_COMMIT, OBJ_INVALID, OBJ_TREE, code, ec, object_id, repo_odb};
+use crate::commit::{OBJ_ANY, OBJ_BLOB, OBJ_COMMIT, OBJ_INVALID, OBJ_TREE, code, object_id, repo_odb};
 use crate::oid::{Oid, OidType, git_oid_t};
 use crate::sys::pending::l_commit::{self as pend, GitObjectHead, git_repository};
 use crate::util::alloc;
@@ -1409,7 +1409,9 @@ pub mod ffi {
             }
             // SAFETY: the tree is handed over: ours alone.
             unsafe {
-                pend::git_odb_object_free((*t).odb_obj);
+                if !(*t).odb_obj.is_null() {
+                    pend::git_odb_object_free((*t).odb_obj);
+                }
                 (*t).entries.dispose();
                 alloc::free(tree);
             }
@@ -1946,11 +1948,6 @@ pub mod ffi {
     pub(crate) unsafe fn tree_id(tree: *const GitTree) -> Oid {
         // SAFETY: the caller's contract.
         unsafe { object_id(tree) }.unwrap_or_default()
-    }
-
-    /// `ec` re-exported for the API.
-    pub(crate) fn status(e: c_int) -> Result<()> {
-        if e < 0 { Err(ec(e)) } else { Ok(()) }
     }
 }
 

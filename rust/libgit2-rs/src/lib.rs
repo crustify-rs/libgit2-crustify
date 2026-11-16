@@ -20,11 +20,14 @@ pub mod hashmap_oid;
 pub mod oid;
 pub mod oidarray;
 pub mod parse;
+pub mod pending_repository;
 pub mod strarray;
 pub mod tree;
 
 pub use oid::{Oid, OidShortener, OidType};
+pub use commit::api::{Commit, CommitBuilder};
 pub use oidarray::OidArray;
+pub use tree::api::{Tree, TreeBuilder, TreeEntry, TreeEntryRef};
 pub use strarray::StrArray;
 pub use util::errors::{Error, ErrorClass, ErrorCode};
 pub use util::net::Url;

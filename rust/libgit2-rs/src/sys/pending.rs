@@ -166,6 +166,14 @@ pub mod l_commit {
             kind: c_int,
         ) -> c_int;
         pub fn git_object_free(obj: *mut git_object);
+        pub fn git_object_dup(out: *mut *mut git_object, source: *mut git_object) -> c_int;
+        pub fn git_object__from_raw(
+            out: *mut *mut git_object,
+            data: *const c_char,
+            size: usize,
+            kind: c_int,
+            oid_type: git_oid_t,
+        ) -> c_int;
         pub fn git_object_type2string(kind: c_int) -> *const c_char;
         pub fn git_object__is_valid(repo: *mut git_repository, id: *const Oid, kind: c_int) -> bool;
         pub fn git_commit_lookup(out: *mut *mut GitCommit, repo: *mut git_repository, id: *const Oid) -> c_int;

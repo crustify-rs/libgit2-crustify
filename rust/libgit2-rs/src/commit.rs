@@ -35,6 +35,8 @@ use crate::util::str::GitStr;
 use crate::util::util::{isspace_nonlf, memrchr, strntol32, strntol64};
 use crate::{git_assert_arg, git_error_set};
 
+pub mod api;
+
 /// `GIT_OBJECT_COMMIT`.
 pub(crate) const OBJ_COMMIT: c_int = 1;
 /// `GIT_OBJECT_TREE`.
@@ -890,20 +892,20 @@ unsafe fn validate_tree_and_parents(
     r
 }
 
-/// A signature pointer as [`SigOut`].
+/// A signature pointer as [`SigOut`] (`None` for NULL, which the C
+/// dereferences: see DEFECTS.md).
 ///
 /// # Safety
 ///
 /// `sig` is NULL or a live `git_signature` whose strings are NULL or
 /// NUL-terminated, unchanged while the result lives.
-unsafe fn sig_out<'a>(sig: *const GitSignature) -> Result<SigOut<'a>> {
+unsafe fn sig_out<'a>(sig: *const GitSignature) -> Option<SigOut<'a>> {
     if sig.is_null() {
-        // (The C dereferences it: see DEFECTS.md.)
-        return Err(errors::assert_arg_failed("sig"));
+        return None;
     }
     // SAFETY: the caller's contract.
     unsafe {
-        Ok(SigOut {
+        Some(SigOut {
             name: opt_cbytes((*sig).name),
             email: opt_cbytes((*sig).email),
             when: (*sig).when,
@@ -921,15 +923,19 @@ pub(crate) unsafe fn opt_cbytes<'a>(p: *const c_char) -> Option<&'a [u8]> {
     unsafe { crate::util::export::cstr(p) }.map(CStr::to_bytes)
 }
 
+/// Extra headers, or the C expression of the `GIT_ASSERT_ARG` that a NULL
+/// string fails in `format_header_field`.
+pub(crate) type Headers<'a> = core::result::Result<Vec<(&'a [u8], &'a [u8])>, &'static str>;
+
 /// The extra headers of an options struct.
 ///
 /// # Safety
 ///
 /// `headers` is NULL or `len` readable `git_commit_header`s whose strings
 /// are NULL or NUL-terminated, live for `'a`.
-unsafe fn extra_headers<'a>(headers: *const GitCommitHeader, len: usize) -> Result<Vec<(&'a [u8], &'a [u8])>> {
+unsafe fn extra_headers<'a>(headers: *const GitCommitHeader, len: usize) -> Result<Headers<'a>> {
     if len == 0 {
-        return Ok(Vec::new());
+        return Ok(Ok(Vec::new()));
     }
     let mut v = Vec::new();
     v.try_reserve(len).map_err(|_| errors::oom())?;
@@ -938,39 +944,69 @@ unsafe fn extra_headers<'a>(headers: *const GitCommitHeader, len: usize) -> Resu
         let h = unsafe { headers.add(i).read() };
         // SAFETY: NUL-terminated or NULL (contract).
         let (f, val) = unsafe { (opt_cbytes(h.field), opt_cbytes(h.value)) };
-        // format_header_field's GIT_ASSERT_ARGs.
-        let Some(f) = f else { return Err(errors::assert_arg_failed("field")) };
-        let Some(val) = val else { return Err(errors::assert_arg_failed("content")) };
+        let Some(f) = f else { return Ok(Err("field")) };
+        let Some(val) = val else { return Ok(Err("content")) };
         v.push((f, val));
     }
-    Ok(v)
+    Ok(Ok(v))
+}
+
+/// What `git_commit__create_internal` writes, in Rust form. A `None`
+/// signature or message is the C's NULL, reported when the buffer is made.
+pub(crate) struct CreateArgs<'a> {
+    pub author: Option<SigOut<'a>>,
+    pub committer: Option<SigOut<'a>>,
+    pub message: Option<&'a [u8]>,
+    pub tree: Oid,
+    pub encoding: Option<&'a [u8]>,
+    pub headers: Headers<'a>,
+    pub update_ref: Option<&'a CStr>,
+    pub validate: bool,
+}
+
+/// The signing callback: given the commit's buffer, `< 0` to fail.
+pub(crate) type Signer<'a> = &'a mut dyn FnMut(&mut GitStr) -> c_int;
+
+/// The buffer of `args` and `parents` (`git_commit__create_buffer_internal`
+/// with the C's NULL checks).
+pub(crate) fn args_buffer(out: &mut GitStr, args: &CreateArgs<'_>, parents: &[Oid]) -> Result<()> {
+    // The C fails these after writing the start of the buffer, which it
+    // then disposes.
+    let fail = |out: &mut GitStr, expr: &str| {
+        out.dispose();
+        Err(errors::assert_arg_failed(expr))
+    };
+    let (Some(a), Some(c)) = (args.author.as_ref(), args.committer.as_ref()) else {
+        return fail(out, "sig");
+    };
+    let headers = match &args.headers {
+        Ok(h) => h.as_slice(),
+        Err(expr) => return fail(out, expr),
+    };
+    let Some(msg) = args.message else {
+        // git_str_puts's GIT_ASSERT_ARG(string), after the header.
+        return fail(out, "string");
+    };
+    create_buffer_internal(out, a, c, msg, &args.tree, parents, args.encoding, headers)
 }
 
 /// `git_commit__create_internal`.
 ///
 /// # Safety
 ///
-/// `repo` is a live repository; `author` and `committer` are NULL or live
-/// signatures; `message` is NULL or NUL-terminated; `opts` is NULL or a
-/// valid options struct (its strings NUL-terminated, its headers readable,
-/// its `sign` callable with its `payload`); `next` may call C callbacks
+/// `repo` is a live repository; `next` and `sign` may call C callbacks
 /// whose contracts the caller guarantees.
-#[allow(clippy::too_many_arguments)]
-unsafe fn create_internal(
+pub(crate) unsafe fn create_internal(
     id: &mut Oid,
     repo: *mut git_repository,
-    author: *const GitSignature,
-    committer: *const GitSignature,
-    message: *const c_char,
-    tree: &Oid,
+    args: &CreateArgs<'_>,
     next: ParentSource<'_>,
-    opts: Option<&GitCommitCreateExtOptions>,
-    validate: bool,
+    sign: Option<Signer<'_>>,
 ) -> Result<()> {
     let mut r#ref: *mut pend::git_reference = ptr::null_mut();
-    let update_ref = opts.map_or(ptr::null(), |o| o.update_ref);
+    let update_ref = args.update_ref.map_or(ptr::null(), CStr::as_ptr);
     if !update_ref.is_null() {
-        // SAFETY: `repo` is live and `update_ref` NUL-terminated (contract).
+        // SAFETY: `repo` is live; `update_ref` NUL-terminated.
         let e = unsafe { pend::git_reference_lookup_resolved(&mut r#ref, repo, update_ref, 10) };
         if e < 0 && e != ErrorCode::NOT_FOUND.raw() {
             return Err(ec(e));
@@ -991,37 +1027,19 @@ unsafe fn create_internal(
     let mut buf = GitStr::new();
     let r = (|| -> Result<()> {
         // SAFETY: `repo` is live (contract).
-        unsafe { validate_tree_and_parents(&mut parents, repo, tree, next, current_id, validate) }?;
+        unsafe { validate_tree_and_parents(&mut parents, repo, &args.tree, next, current_id, args.validate) }?;
+        args_buffer(&mut buf, args, parents.as_slice())?;
 
-        // SAFETY: the caller's contract on the options and signatures.
-        let (enc, headers, a, c, msg) = unsafe {
-            let enc = opts.and_then(|o| opt_cbytes(o.message_encoding));
-            let headers = match opts {
-                Some(o) => extra_headers(o.extra_headers, o.extra_headers_len)?,
-                None => Vec::new(),
-            };
-            (enc, headers, sig_out(author)?, sig_out(committer)?, opt_cbytes(message))
-        };
-        let Some(msg) = msg else {
-            // git_str_puts's GIT_ASSERT_ARG(string), after the header.
-            return Err(errors::assert_arg_failed("string"));
-        };
-        create_buffer_internal(&mut buf, &a, &c, msg, tree, parents.as_slice(), enc, &headers)?;
-
-        if let Some(sign) = opts.and_then(|o| o.sign) {
-            let mut builder = GitCommitbuilder { contents: &mut buf };
-            let content = builder_content(&builder);
-            // SAFETY: the callback's contract (the caller's); the builder and
-            // the content are valid for the call.
-            let e = unsafe { sign(&mut builder, repo, content, opts.map_or(ptr::null_mut(), |o| o.payload)) };
+        if let Some(sign) = sign {
+            let e = sign(&mut buf);
             if e < 0 {
                 return Err(ec(e));
             }
         }
 
         let odb = repo_odb(repo)?;
-        // SAFETY: `odb` is the repository's; `tree` readable.
-        ErrorCode::check(unsafe { pend::git_odb__freshen(odb, tree) })?;
+        // SAFETY: `odb` is the repository's; the tree id readable.
+        ErrorCode::check(unsafe { pend::git_odb__freshen(odb, &args.tree) })?;
         let bytes = buf.as_bytes();
         // SAFETY: `bytes` are readable for its length; `id` writable.
         ErrorCode::check(unsafe { pend::git_odb_write(id, odb, bytes.as_ptr().cast(), bytes.len(), OBJ_COMMIT) })?;
@@ -1038,12 +1056,6 @@ unsafe fn create_internal(
     // SAFETY: NULL or the reference looked up above, freed once.
     unsafe { pend::git_reference_free(r#ref) };
     r
-}
-
-/// The content pointer of a builder (its string's `ptr`).
-fn builder_content(b: &GitCommitbuilder) -> *const c_char {
-    // SAFETY: `contents` points to the live string of `create_internal`.
-    unsafe { (*b.contents).as_ptr() }
 }
 
 /// `git_repository_odb__weakptr`.
@@ -1264,11 +1276,43 @@ pub mod ffi {
         if tree.is_null() {
             return errors::assert_arg_failed("tree").raw();
         }
-        // SAFETY: readable (contract).
-        let tree = unsafe { tree.read() };
+        // SAFETY: the caller's contract: readable id; the strings and
+        // signatures live and unchanged during the call.
+        let args = unsafe {
+            CreateArgs {
+                author: sig_out(author),
+                committer: sig_out(committer),
+                message: opt_cbytes(message),
+                tree: tree.read(),
+                encoding: opts.and_then(|o| opt_cbytes(o.message_encoding)),
+                headers: match opts {
+                    Some(o) => match extra_headers(o.extra_headers, o.extra_headers_len) {
+                        Ok(h) => h,
+                        Err(e) => return e.raw(),
+                    },
+                    None => Ok(Vec::new()),
+                },
+                update_ref: opts.and_then(|o| crate::util::export::cstr(o.update_ref)),
+                validate,
+            }
+        };
+        let mut sign_c;
+        let sign: Option<Signer<'_>> = match opts.and_then(|o| o.sign.map(|f| (f, o.payload))) {
+            Some((f, payload)) => {
+                sign_c = move |buf: &mut GitStr| {
+                    let content = buf.as_ptr();
+                    let mut builder = GitCommitbuilder { contents: buf };
+                    // SAFETY: the callback's contract (the caller's); the
+                    // builder and the content are valid for the call.
+                    unsafe { f(&mut builder, repo, content, payload) }
+                };
+                Some(&mut sign_c)
+            }
+            None => None,
+        };
         let mut out = Oid::default();
         // SAFETY: the caller's contract.
-        let r = unsafe { create_internal(&mut out, repo, author, committer, message, &tree, next, opts, validate) };
+        let r = unsafe { create_internal(&mut out, repo, &args, next, sign) };
         // The C writes `id` with git_odb_write before updating the ref.
         if r.is_ok() || out != Oid::default() {
             // SAFETY: writable (contract).
@@ -2089,24 +2133,17 @@ pub mod ffi {
             // SAFETY: the caller's contract on the strings and signatures; a
             // valid, unaliased `git_str`.
             unsafe {
-                let r = (|| {
-                    let a = sig_out(author)?;
-                    let c = sig_out(committer)?;
-                    let Some(msg) = opt_cbytes(message) else {
-                        return Err(errors::assert_arg_failed("string"));
-                    };
-                    create_buffer_internal(
-                        &mut *out,
-                        &a,
-                        &c,
-                        msg,
-                        &tree_id,
-                        parents_arr.as_slice(),
-                        opt_cbytes(message_encoding),
-                        &[],
-                    )
-                })();
-                code(r)
+                let args = CreateArgs {
+                    author: sig_out(author),
+                    committer: sig_out(committer),
+                    message: opt_cbytes(message),
+                    tree: tree_id,
+                    encoding: opt_cbytes(message_encoding),
+                    headers: Ok(Vec::new()),
+                    update_ref: None,
+                    validate: true,
+                };
+                code(args_buffer(&mut *out, &args, parents_arr.as_slice()))
             }
         })
     }
