@@ -71,3 +71,9 @@ src/libgit2/refs.c
 src/libgit2/refdb.c
 src/libgit2/refdb_fs.c
 src/libgit2/reflog.c
+src/libgit2/object.c
+src/libgit2/object_api.c
+src/libgit2/blob.c
+src/libgit2/tag.c
+src/libgit2/signature.c
+src/libgit2/grafts.c

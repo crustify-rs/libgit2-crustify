@@ -12,6 +12,7 @@
 pub(crate) mod sys;
 pub mod util;
 
+pub mod blob;
 pub mod buf;
 pub mod cache;
 pub mod commit;
@@ -25,11 +26,14 @@ pub mod config_parse;
 pub mod config_snapshot;
 pub mod delta;
 pub mod fs;
+pub mod grafts;
 pub mod hashmap_oid;
 pub mod hashsig;
 pub mod index;
 pub mod libgit2;
 pub mod mwindow;
+pub mod object;
+pub mod object_api;
 pub mod odb;
 pub mod odb_loose;
 pub mod odb_mempack;
@@ -46,7 +50,9 @@ pub mod refs_api;
 pub mod repository;
 pub mod revwalk;
 pub mod settings;
+pub mod signature;
 pub mod strarray;
+pub mod tag;
 pub mod tree_cache;
 
 pub use config::{Config, ConfigBackend, ConfigEntries, ConfigEntry, ConfigLevel};
@@ -58,14 +64,18 @@ pub use odb::{
 };
 pub mod tree;
 
+pub use blob::Blob;
 pub use commit::api::{Commit, CommitBuilder};
 pub use hashsig::{HashSig, HashSigOptions};
+pub use object::Object;
 pub use oid::{Oid, OidShortener, OidType};
 pub use oidarray::OidArray;
 pub use refs_api::{RefdbBackend, Reference, ReferenceType, References, Reflog, ReflogEntry};
 pub use repository::{Repository, RepositoryInitOptions, RepositoryOpenFlags, RepositoryState};
 pub use revwalk::api::{Revwalk, Sort};
+pub use signature::{Signature, Time};
 pub use strarray::StrArray;
+pub use tag::Tag;
 pub use tree::api::{Tree, TreeBuilder, TreeEntry, TreeEntryRef};
 pub use util::errors::{Error, ErrorClass, ErrorCode};
 pub use util::net::Url;

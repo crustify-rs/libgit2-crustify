@@ -2,6 +2,7 @@
 
 pub mod annotated_commit;
 pub mod attrcache;
+pub mod blob_filter;
 pub mod branch;
 pub mod commit_graph;
 pub mod diff;

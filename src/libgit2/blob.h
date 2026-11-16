@@ -14,6 +14,7 @@
 #include "odb.h"
 #include "futils.h"
 
+#ifndef GIT_RUST
 struct git_blob {
 	git_object object;
 
@@ -26,6 +27,12 @@ struct git_blob {
 	} data;
 	unsigned int raw:1;
 };
+#endif
+/*
+ * With the Rust port (GIT_RUST), `git_blob` is `GitBlob` in
+ * rust/libgit2-rs/src/blob.rs: a `git_object` header, then Rust's state.
+ * Only the header is C-visible (through a cast to `git_object`).
+ */
 
 #define GIT_ERROR_CHECK_BLOBSIZE(n) \
 	do { \

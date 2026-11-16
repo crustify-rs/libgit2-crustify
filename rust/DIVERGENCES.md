@@ -646,3 +646,24 @@ One entry per difference: component, what differs, why.
   `RefdbPtr` loads `db->backend` once per call and passes that backend to
   the slot it read (C loads it twice); concurrent replacement through the
   C ABI stays the caller's error, as in C.
+
+## l-obj (object, object_api, blob, tag, signature, grafts)
+
+- **blob: the write stream** of `git_blob_create_from_stream` is a ffibox
+  `CTable` in Rust's allocator (C used `git__calloc`), so `cl_alloc_limit`
+  does not make its allocation fail. Its slots refuse re-entry (-1) and
+  turn a panic into -1 with `GIT_ERROR_INTERNAL`.
+- **object / blob: read buffers.** `id_from_fd` and `write_file_stream`
+  read through a 64 KiB `Vec` (C: a stack array): its allocation aborts
+  on out-of-memory where C could not fail. Symlink targets use
+  `try_reserve`, as C's checked `git__malloc`.
+- **grafts: the graft map's entries** are `git__allocator` blocks owned by
+  the map (C: the same); the `git_grafts` itself is a `git__allocator`
+  block holding a Rust value.
+- **signature / tag / blob: the safe API rejects interior NUL bytes**
+  (`Signature::new`, `Tag::create`, `Blob::create_from_workdir`, …) with
+  `GIT_ERROR_INVALID`, where C, taking C strings, would stop at the NUL.
+  `Signature::from_buffer` stops at the first NUL, as
+  `git_signature_from_buffer`.
+- **object: `git_object_peel` / `git_tag_target` of a tag parsed from raw
+  data** fail with an internal error (C crashes, rust/DEFECTS.md).

@@ -826,3 +826,57 @@ to the mismatch). The name functions are within ±20% of C either way (C's
 normalization copies the rest of the name per segment, the Rust appends
 the segment; both run in tens of ns per segment). The refdb calls are
 dominated by the file system.
+
+## l-obj (object, object_api, blob, tag, signature, grafts) — 2026-11-16
+
+Machine load during the runs: 395–434 (144 CPUs, pinned to CPU 2), so
+the numbers are noisy; CPU-time ratios are the more reliable.
+
+Public API (`compare.sh /work/build-c /work/builds/l-obj objects`,
+BENCH_ROUNDS=3; built before the final merge of master, which did not
+change the l-obj code paths):
+
+| workload | C ms | Rust ms | ratio | cpu ratio |
+|---|---|---|---|---|
+| commit_lookup_all | 2972.3 | 3485.2 | 1.173 | 1.014 |
+| cache_hit | 231.4 | 172.8 | 0.747 | 0.819 |
+| tree_lookup_iterate | 925.3 | 886.4 | 0.958 | 1.000 |
+| tree_walk | 79.1 | 71.8 | 0.908 | 0.945 |
+| tree_entry_bypath | 92.8 | 74.5 | 0.802 | 0.937 |
+| blob_lookup | 1100.9 | 828.9 | 0.753 | 0.845 |
+| tag_lookup_all | 31.7 | 33.1 | 1.045 | 1.075 |
+| signature_parse | 44.2 | 43.1 | 0.973 | 0.812 |
+| signature_new | 15.8 | 14.3 | 0.905 | 0.865 |
+| commit_create_buffer | 90.6 | 83.3 | 0.919 | 0.922 |
+
+Geomean 0.910 (wall), 0.920 (CPU); all checks match.
+
+Internal API per call (`RUST_BUILD=/work/builds/l-obj micro/run_lobj.sh 3`,
+ns per call, median of 3 rounds, same load):
+
+| call | C ns | Rust ns | R/C |
+|---|---|---|---|
+| signature_parse | 1362 | 1427 | 1.05 |
+| signature_from_buffer | 1367 | 1721 | 1.26 |
+| signature_new | 942 | 1223 | 1.30 |
+| signature_dup | 493 | 791 | 1.61 |
+| signature_writebuf | 2328 | 2726 | 1.17 |
+| signature_equal | 66 | 216 | 3.29 |
+| tag_from_raw | 14388 | 23742 | 1.65 |
+| tag_rawcontent_valid | 13152 | 24465 | 1.86 |
+| blob_from_raw_4k | 69167 | 69730 | 1.01 |
+| id_from_buffer_64 | 6155 | 6044 | 0.98 |
+| parse_oid_header | 893 | 350 | 0.39 |
+| write_oid_header | 492 | 495 | 1.01 |
+| type2string | 22 | 13 | 0.60 |
+| stringn2type | 83 | 36 | 0.44 |
+| grafts_parse_1k | 5035006 | 1953347 | 0.39 |
+| grafts_get | 300 | 125 | 0.42 |
+| grafts_get_miss | 501 | 194 | 0.39 |
+
+Not yet at parity: the raw tag parse (`git_object__from_raw` of a tag,
+1.65×: the extra signature block for the tagger and the per-field
+copies), the signature constructors (1.2–1.6×) and `git_signature__equal`
+(3.3×: two `strlen`s per string through `CStr` and the panic barrier,
+where C does one `strcmp`). The public-API workloads that contain them
+(`tag_lookup_all` 1.05×, `signature_parse` 0.97×) are near parity.
