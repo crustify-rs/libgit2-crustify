@@ -1,4 +1,16 @@
 # C sources that leave the build when USE_RUST=ON: the Rust port in
 # rust/libgit2-rs implements every function they define.  One path per line,
 # relative to the top of the source tree.
-#src/libgit2/strarray.c
+src/util/alloc.c
+src/util/allocators/debugalloc.c
+src/util/allocators/failalloc.c
+src/util/allocators/stdalloc.c
+src/util/errors.c
+src/util/runtime.c
+src/util/str.c
+src/util/thread.c
+src/util/tsort.c
+src/util/util.c
+src/util/vector.c
+src/libgit2/buf.c
+src/libgit2/strarray.c
