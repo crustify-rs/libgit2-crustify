@@ -405,6 +405,11 @@ fn patterns_and_certs() {
         b"*.example.com"
     ));
     assert!(!net::hostname_matches_cert(b"", b"x"));
+    // as C on Unix: a pattern byte >= 0x80 never matches; a `*` still
+    // spans host bytes >= 0x80
+    assert!(!net::hostname_matches_cert(b"\x80", b"\x80"));
+    assert!(!net::hostname_matches_cert(b"a\xc3", b"*\xc3"));
+    assert!(net::hostname_matches_cert(b"\xc3\x80b", b"*b"));
 }
 
 #[test]

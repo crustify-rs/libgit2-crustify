@@ -143,3 +143,21 @@ One entry per difference: component, what differs, why.
 - **CMake:** with `USE_RUST`, configuring fails unless `USE_SHA1=builtin`,
   `USE_SHA256=OpenSSL`, `USE_REGEX=pcre2` and zlib compression (the Rust
   implements these only). `git2_features.h` gains `GIT_RUST`.
+- **process: the safe `Process` restores `SIGPIPE`'s default disposition
+  in the child** (as std's `Command`: a Rust host ignores `SIGPIPE`, and
+  `execve` keeps an ignored disposition). The C ABI keeps the inherited
+  disposition, as C did.
+- **process: `git_process_read` / `_read_err`** write into the caller's
+  buffer through a raw pointer (C passes uninitialized buffers).
+- **sortedcache: the safe API's guards** take a `std::sync::RwLock` gate
+  before the cache's `pthread_rwlock_t` (re-locking on one thread
+  deadlocks or panics in std instead of being POSIX-undefined), and
+  panic if `pthread_rwlock_*lock` fails (the C ignores positive errors).
+  `SortedCache::lock_and_load` returns the file's contents without a
+  copy (`FileContents`). A panic in a cached `T`'s `Drop` aborts (it
+  runs in the C-ABI free callback).
+- **sortedcache: `git_sortedcache_entry` / `lookup_index` never sort
+  without a comparison function** (as `git_vector_sort`), so readers of
+  a cache without one never write; the configuration (`item_path_offset`,
+  the comparison) is read without the lock, outside the lock-protected
+  state.

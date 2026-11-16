@@ -77,6 +77,7 @@ fn run(
 #[test]
 fn exit_codes_and_pipes() {
     let _g = test_support::init();
+    let _l = fd_lock();
     let (_, r) = run(&[c"/bin/false"], &[], opts(flags::CAPTURE_OUT), b"");
     assert_eq!(
         r,
@@ -121,6 +122,7 @@ fn exit_codes_and_pipes() {
 #[test]
 fn environment() {
     let _g = test_support::init();
+    let _l = fd_lock();
     let (out, _) = run(
         &[c"/usr/bin/env"],
         &[c"U4_A=1", c"U4_GONE=", c"PATH=/bin"],
@@ -140,6 +142,7 @@ fn environment() {
 #[test]
 fn start_failures() {
     let _g = test_support::init();
+    let _l = fd_lock();
     let mut p: *mut GitProcess = core::ptr::null_mut();
     let args = [c"/a/b/z/y/not_found".as_ptr()];
     let mut o = opts(flags::CAPTURE_OUT);
@@ -179,6 +182,7 @@ fn start_failures() {
 #[test]
 fn argument_checks_and_messages() {
     let _g = test_support::init();
+    let _l = fd_lock();
     let mut p: *mut GitProcess = core::ptr::null_mut();
     let args = [c"/bin/true".as_ptr()];
     let mut c = 0u8;
@@ -284,6 +288,7 @@ fn argument_checks_and_messages() {
 #[test]
 fn write_to_dead_child_is_epipe() {
     let _g = test_support::init();
+    let _l = fd_lock();
     let mut p: *mut GitProcess = core::ptr::null_mut();
     let args = [c"/bin/true".as_ptr()];
     let mut o = opts(flags::CAPTURE_IN);
@@ -301,4 +306,169 @@ fn write_to_dead_child_is_epipe() {
         ffi::git_process_close(p);
         ffi::git_process_free(p);
     }
+}
+
+// ----- descriptors, buffers and signals (review U4-3, U4-4, U4-6, U4-8) -----
+
+fn open_fds() -> usize {
+    std::fs::read_dir("/proc/self/fd").unwrap().count()
+}
+
+/// Every test of this file holds it: the descriptor counts must not see
+/// another test's pipes.
+static FD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn fd_lock() -> std::sync::MutexGuard<'static, ()> {
+    FD_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+#[test]
+fn no_descriptor_leaks() {
+    let _g = test_support::init();
+    let _l = fd_lock();
+    let all = libgit2_rs::ProcessOptions {
+        capture_in: true,
+        capture_out: true,
+        capture_err: true,
+        ..Default::default()
+    };
+    let before = open_fds();
+    for _ in 0..10 {
+        // the safe API: new, start, wait, drop
+        let mut p = libgit2_rs::Process::new(&[b"/bin/true"], &[], &all).unwrap();
+        p.start().unwrap();
+        assert_eq!(p.wait().unwrap(), libgit2_rs::ProcessStatus::Exited(0));
+        drop(p);
+        // the C ABI: new, start, wait, free (without git_process_close)
+        let args = [c"/bin/true".as_ptr()];
+        let mut o = opts(flags::CAPTURE_IN | flags::CAPTURE_OUT | flags::CAPTURE_ERR);
+        let mut p: *mut GitProcess = core::ptr::null_mut();
+        // SAFETY: valid arguments.
+        unsafe {
+            assert_eq!(
+                ffi::git_process_new(&mut p, args.as_ptr(), 1, core::ptr::null(), 0, &mut o),
+                0
+            );
+            assert_eq!(ffi::git_process_start(p), 0);
+            assert_eq!(ffi::git_process_wait(core::ptr::null_mut(), p), 0);
+            ffi::git_process_free(p);
+        }
+        // failed starts: not found, and a failing chdir after the fork
+        let mut p = libgit2_rs::Process::new(&[b"/no/such/program"], &[], &all).unwrap();
+        assert!(p.start().is_err());
+        drop(p);
+        let cwd = libgit2_rs::ProcessOptions {
+            cwd: Some(b"/no/such/dir".to_vec()),
+            ..all.clone()
+        };
+        let mut p = libgit2_rs::Process::new(&[b"/bin/true"], &[], &cwd).unwrap();
+        assert!(p.start().is_err());
+        drop(p);
+    }
+    assert_eq!(open_fds(), before, "descriptors leaked");
+}
+
+#[test]
+fn read_into_uninitialized_buffers() {
+    let _g = test_support::init();
+    let _l = fd_lock();
+    let args = [c"echo hello; echo oops >&2".as_ptr()];
+    let mut o = opts(flags::USE_SHELL | flags::CAPTURE_OUT | flags::CAPTURE_ERR);
+    let mut p: *mut GitProcess = core::ptr::null_mut();
+    let mut buf = core::mem::MaybeUninit::<[u8; 64]>::uninit();
+    // SAFETY: valid arguments; the buffer is writable (uninitialized), and
+    // only the bytes `read` reports are read back.
+    unsafe {
+        assert_eq!(
+            ffi::git_process_new(&mut p, args.as_ptr(), 1, core::ptr::null(), 0, &mut o),
+            0
+        );
+        assert_eq!(ffi::git_process_start(p), 0);
+        let n = ffi::git_process_read(p, buf.as_mut_ptr().cast(), 64);
+        assert_eq!(&buf.assume_init_ref()[..n as usize], b"hello\n");
+        let mut ebuf = core::mem::MaybeUninit::<[u8; 64]>::uninit();
+        let n = ffi::git_process_read_err(p, ebuf.as_mut_ptr().cast(), 64);
+        assert_eq!(&ebuf.assume_init_ref()[..n as usize], b"oops\n");
+        assert_eq!(ffi::git_process_wait(core::ptr::null_mut(), p), 0);
+        ffi::git_process_free(p);
+    }
+}
+
+/// The parent's ends of the pipes are close-on-exec: a child spawned
+/// meanwhile does not hold them, so closing our stdin pipe gives EOF.
+#[test]
+fn pipes_do_not_leak_into_other_children() {
+    let _g = test_support::init();
+    let _l = fd_lock();
+    let io = libgit2_rs::ProcessOptions {
+        capture_in: true,
+        capture_out: true,
+        ..Default::default()
+    };
+    let mut cat = libgit2_rs::Process::new(&[b"/bin/cat"], &[], &io).unwrap();
+    cat.start().unwrap();
+    // a second child, started while `cat`'s pipes are open, lives on
+    let mut sleeper =
+        libgit2_rs::Process::new(&[b"/bin/sleep", b"30"], &[], &Default::default()).unwrap();
+    sleeper.start().unwrap();
+    assert_eq!(cat.write(b"x").unwrap(), 1);
+    cat.close_in().unwrap();
+    let mut b = [0u8; 8];
+    assert_eq!(cat.read(&mut b).unwrap(), 1);
+    // EOF although `sleeper` still runs: it did not inherit our write end
+    assert_eq!(cat.read(&mut b).unwrap(), 0);
+    assert_eq!(cat.wait().unwrap(), libgit2_rs::ProcessStatus::Exited(0));
+    let pid = sleeper.id().unwrap();
+    // SAFETY: our child.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    assert_eq!(
+        sleeper.wait().unwrap(),
+        libgit2_rs::ProcessStatus::Signaled(libc::SIGKILL)
+    );
+}
+
+/// SIGPIPE's disposition in the child, from `/proc/self/status`.
+fn child_ignores_sigpipe(out: &[u8]) -> bool {
+    let s = String::from_utf8_lossy(out);
+    let line = s.lines().find(|l| l.starts_with("SigIgn:")).unwrap();
+    let mask = u64::from_str_radix(line["SigIgn:".len()..].trim(), 16).unwrap();
+    mask & (1 << (libc::SIGPIPE - 1)) != 0
+}
+
+#[test]
+fn sigpipe_disposition() {
+    let _g = test_support::init();
+    let _l = fd_lock();
+    // The test harness (a Rust program) ignores SIGPIPE.
+    let (out, _) = run(
+        &[c"/bin/cat", c"/proc/self/status"],
+        &[],
+        opts(flags::CAPTURE_OUT),
+        b"",
+    );
+    assert!(
+        child_ignores_sigpipe(&out),
+        "the C ABI keeps the inherited disposition"
+    );
+
+    let o = libgit2_rs::ProcessOptions {
+        capture_out: true,
+        ..Default::default()
+    };
+    let mut p = libgit2_rs::Process::new(&[b"/bin/cat", b"/proc/self/status"], &[], &o).unwrap();
+    p.start().unwrap();
+    let mut out = Vec::new();
+    let mut b = [0u8; 256];
+    loop {
+        let n = p.read(&mut b).unwrap();
+        if n == 0 {
+            break;
+        }
+        out.extend_from_slice(&b[..n]);
+    }
+    p.wait().unwrap();
+    assert!(
+        !child_ignores_sigpipe(&out),
+        "the safe API restores SIGPIPE"
+    );
 }

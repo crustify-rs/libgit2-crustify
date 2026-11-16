@@ -176,7 +176,11 @@ fn cert_match(hostname: &[u8], pattern: &[u8]) -> bool {
             continue;
         }
 
-        if c != tolower(at(hostname, h)) {
+        // C compares `char c` (signed: a byte >= 0x80 is negative) with
+        // `git__tolower`'s `int` (0..255): a pattern byte >= 0x80 never
+        // matches (a `*` only finds where to resume, then this compare
+        // fails). Kept as C (rust/DEFECTS.md).
+        if c >= 0x80 || c != tolower(at(hostname, h)) {
             return false;
         }
         h += 1;

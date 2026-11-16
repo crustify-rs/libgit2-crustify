@@ -109,6 +109,8 @@ pub struct GitProcess {
     child_in: c_int,
     child_out: c_int,
     child_err: c_int,
+    /// Set by the safe API: the child restores `SIGPIPE`'s default.
+    reset_sigpipe: bool,
 }
 
 /// A copy of `s` (up to a NUL) as a `CString`, or the out-of-memory error.
@@ -162,17 +164,20 @@ fn setup_args(args: &[&[u8]], use_shell: bool) -> Result<Vec<CString>> {
 }
 
 unsafe extern "C" {
-    static environ: *const *const c_char;
+    // The C library writes it (`setenv`, `putenv`): a mutable static, only
+    // ever read through a raw pointer here.
+    static mut environ: *const *const c_char;
 }
 
-/// This process's environment, as `environ` lists it.
-///
-/// The caller must not let the environment be changed meanwhile (the
-/// header's contract for `git_process_new`).
-fn environ_entries() -> Vec<&'static [u8]> {
+/// This process's environment, as `environ` lists it. The slices borrow
+/// the C library's strings: `'a` is the caller's scope, during which (the
+/// header's contract for `git_process_new`) the environment must not be
+/// changed.
+fn environ_entries<'a>() -> Vec<&'a [u8]> {
     let mut v = Vec::new();
-    // SAFETY: `environ` is the C library's, read (not written) here.
-    let mut p = unsafe { environ };
+    // SAFETY: a read of the C library's pointer through a raw place (no
+    // reference to the mutable static is formed).
+    let mut p = unsafe { (&raw const environ).read() };
     if p.is_null() {
         return v;
     }
@@ -183,8 +188,7 @@ fn environ_entries() -> Vec<&'static [u8]> {
         if s.is_null() {
             break;
         }
-        // SAFETY: as above; the slice is used before `git_process_new`
-        // returns.
+        // SAFETY: as above; the caller uses the slices within its scope.
         v.push(unsafe { CStr::from_ptr(s) }.to_bytes());
         // SAFETY: not past the terminating NULL.
         p = unsafe { p.add(1) };
@@ -192,15 +196,10 @@ fn environ_entries() -> Vec<&'static [u8]> {
     v
 }
 
-/// `merge_env`: `env` (less its `NAME=` entries), then, unless
-/// `exclude_env`, the inherited entries whose name `env` does not set;
-/// `None` when that is nothing.
-fn merge_env(env: &[&[u8]], exclude_env: bool) -> Result<Option<Vec<CString>>> {
-    let inherited = if exclude_env {
-        Vec::new()
-    } else {
-        environ_entries()
-    };
+/// `merge_env`: `env` (less its `NAME=` entries), then the `inherited`
+/// entries (this process's environment, or nothing with `exclude_env`)
+/// whose name `env` does not set; `None` when that is nothing.
+fn merge_env(env: &[&[u8]], inherited: &[&[u8]]) -> Result<Option<Vec<CString>>> {
     let mut merged = Vec::new();
     merged
         .try_reserve(env.len() + inherited.len())
@@ -224,10 +223,12 @@ fn merge_env(env: &[&[u8]], exclude_env: bool) -> Result<Option<Vec<CString>>> {
     })
 }
 
-/// `pipe(fds)`.
+/// `pipe2(fds, O_CLOEXEC)`: C used `pipe` (and `fcntl` for the status
+/// pipe), which leaks the descriptors into programs that other threads
+/// spawn meanwhile (rust/DEFECTS.md).
 fn sys_pipe(fds: &mut [c_int; 2]) -> c_int {
-    // SAFETY: `pipe` writes two descriptors into the array.
-    unsafe { libc::pipe(fds.as_mut_ptr()) }
+    // SAFETY: `pipe2` writes two descriptors into the array.
+    unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) }
 }
 
 /// `CLOSE_FD`.
@@ -239,37 +240,59 @@ fn close_fd(fd: &mut c_int) {
     }
 }
 
-/// `try_read_status`: read up to `buf.len()` bytes, stopping at EOF.
-fn try_read_status(fd: c_int, buf: &mut [u8]) -> Result<usize> {
+/// `try_read_status`: fill `buf` from `read` (C's `read(2)` loop),
+/// stopping at EOF; `read` returns the count, or `Err(errno)`.
+fn try_read_status(
+    read: &mut impl FnMut(&mut [u8]) -> core::result::Result<usize, c_int>,
+    buf: &mut [u8],
+) -> Result<usize> {
     let mut read_len = 0;
     while read_len < buf.len() {
-        let rest = &mut buf[read_len..];
-        // SAFETY: `rest` is writable for its length.
-        let ret = unsafe { libc::read(fd, rest.as_mut_ptr().cast(), rest.len()) };
-        if ret < 0 {
-            let e = errors::errno();
-            if e != libc::EAGAIN && e != libc::EINTR {
+        match read(&mut buf[read_len..]) {
+            Err(e) if e == libc::EAGAIN || e == libc::EINTR => {
+                // C adds the -1 to its count here (rust/DEFECTS.md); retry.
+                continue;
+            }
+            Err(_) => {
                 let _ = git_error_set!(ErrorClass::OS, "could not read child status");
                 return Err(ErrorCode::GENERIC);
             }
-            // C adds the -1 to its count here (rust/DEFECTS.md); retry.
-            continue;
+            Ok(0) => break,
+            Ok(n) => read_len += n.min(buf.len() - read_len),
         }
-        if ret == 0 {
-            break;
-        }
-        read_len += ret as usize;
     }
     Ok(read_len)
 }
 
 const STATUS_LEN: usize = 3 * core::mem::size_of::<c_int>();
 
+/// `read(2)` on `fd` as a byte source for [`parse_status`].
+fn fd_source(fd: c_int) -> impl FnMut(&mut [u8]) -> core::result::Result<usize, c_int> {
+    move |buf: &mut [u8]| {
+        // SAFETY: `buf` is writable for its length.
+        let ret = unsafe { libc::read(fd, buf.as_mut_ptr().cast(), buf.len()) };
+        if ret < 0 {
+            Err(errors::errno())
+        } else {
+            Ok(ret as usize)
+        }
+    }
+}
+
 /// `read_status`: 0 when the child's `exec` succeeded (immediate EOF), or
 /// the failure it reported (with the OS error set).
 fn read_status(fd: c_int) -> Result<c_int> {
+    parse_status(fd_source(fd))
+}
+
+/// The status protocol of `read_status` over a byte source: three native
+/// `int`s (the failure, `errno`, the length of the function's name), then
+/// the name.
+fn parse_status(
+    mut read: impl FnMut(&mut [u8]) -> core::result::Result<usize, c_int>,
+) -> Result<c_int> {
     let mut buffer = [0u8; STATUS_LEN];
-    let read_len = try_read_status(fd, &mut buffer)?;
+    let read_len = try_read_status(&mut read, &mut buffer)?;
 
     // Immediate EOF indicates the exec succeeded.
     if read_len == 0 {
@@ -290,16 +313,12 @@ fn read_status(fd: c_int) -> Result<c_int> {
     let mut name_len = 0;
     if fn_len > 0 {
         let want = (fn_len as usize).min(name.len() - 1);
-        name_len = try_read_status(fd, &mut name[..want])?;
+        name_len = try_read_status(&mut read, &mut name[..want])?;
     }
 
     if fn_error != 0 {
         errors::set_errno(os_error);
-        let fn_name: &[u8] = if name_len > 0 {
-            c_prefix(&name[..name_len])
-        } else {
-            b""
-        };
+        let fn_name: &[u8] = c_prefix(&name[..name_len]);
         let fn_name = if fn_name.is_empty() {
             b"(unknown)" as &[u8]
         } else {
@@ -323,6 +342,9 @@ struct ChildPlan {
     path: *const c_char,
     argv: *const *const c_char,
     envp: *const *const c_char,
+    /// Restore `SIGPIPE`'s default disposition (the safe API, as std's
+    /// `Command`: a Rust host ignores `SIGPIPE`, which `execve` keeps).
+    reset_sigpipe: bool,
 }
 
 /// `try_write_status`: write all of `len` bytes at `buf` unless `write`
@@ -332,11 +354,19 @@ fn child_write_all(fd: c_int, buf: *const u8, len: usize) -> bool {
     while written < len {
         // SAFETY: `buf` has `len` readable bytes (a local array or a
         // static string); `write` is async-signal-safe.
-        let ret = unsafe { libc::write(fd, buf.wrapping_add(written).cast(), len - written) };
+        let ret = unsafe {
+            libc::write(
+                fd,
+                buf.wrapping_add(written).cast(),
+                len.wrapping_sub(written),
+            )
+        };
         if ret <= 0 {
             break;
         }
-        written += ret as usize;
+        // Wrapping (`0 < ret <= len - written`, so it never wraps): no
+        // overflow check, so no panic edge in any build profile.
+        written = written.wrapping_add(ret as usize);
     }
     written == len
 }
@@ -365,9 +395,11 @@ fn child_write_status(fd: c_int, name: &'static [u8], error: c_int, os_error: c_
 /// The child: arrange its descriptors, change directory, `execve`; on
 /// failure, report through the status pipe and `_exit(0)`.
 ///
-/// Only async-signal-safe calls (`close`, `dup2`, `chdir`, `execve`,
-/// `write`, `_exit`, reading `errno`) on the prepared plan: no allocation,
-/// no lock, and no operation that can panic.
+/// Only async-signal-safe calls (`close`, `dup2`, `fcntl`, `signal`,
+/// `chdir`, `execve`, `write`, `_exit`, reading `errno`) on the prepared
+/// plan: no allocation, no lock, and no operation that can panic (the
+/// arithmetic is wrapping and the indices constant, so there is no panic
+/// edge in debug builds either).
 fn child_exec(plan: &ChildPlan) -> ! {
     // Close the opposing side of the pipes
     if plan.status_read >= 0 {
@@ -386,8 +418,20 @@ fn child_exec(plan: &ChildPlan) -> ! {
             // SAFETY: as above.
             unsafe { libc::close(other) };
         }
-        // SAFETY: duplicating a descriptor (async-signal-safe).
-        unsafe { libc::dup2(keep, target) };
+        if keep == target {
+            // `dup2` onto itself does nothing: clear the close-on-exec flag
+            // that `pipe2` set. SAFETY: `fcntl` is async-signal-safe.
+            unsafe { libc::fcntl(target, libc::F_SETFD, 0) };
+        } else {
+            // SAFETY: duplicating a descriptor (async-signal-safe); the
+            // copy is not close-on-exec.
+            unsafe { libc::dup2(keep, target) };
+        }
+    }
+
+    if plan.reset_sigpipe {
+        // SAFETY: `signal` is async-signal-safe.
+        unsafe { libc::signal(libc::SIGPIPE, libc::SIG_DFL) };
     }
 
     if !plan.cwd.is_null() {
@@ -432,7 +476,12 @@ impl GitProcess {
         git_assert_arg!(!args.is_empty(), "out && args && args_len > 0");
         let use_shell = opts.is_some_and(|o| o.use_shell);
         let argv = setup_args(args, use_shell)?;
-        let envv = merge_env(env, opts.is_some_and(|o| o.exclude_env))?;
+        let inherited = if opts.is_some_and(|o| o.exclude_env) {
+            Vec::new()
+        } else {
+            environ_entries()
+        };
+        let envv = merge_env(env, &inherited)?;
 
         let mut p = GitProcess {
             args: argv,
@@ -446,6 +495,7 @@ impl GitProcess {
             child_in: -1,
             child_out: -1,
             child_err: -1,
+            reset_sigpipe: false,
         };
         if let Some(o) = opts {
             p.use_shell = o.use_shell;
@@ -572,6 +622,7 @@ impl GitProcess {
             } else {
                 core::ptr::null()
             },
+            reset_sigpipe: self.reset_sigpipe,
         };
 
         // SAFETY: the child only runs `child_exec`, which is
@@ -631,10 +682,16 @@ impl GitProcess {
         Ok(self.pid)
     }
 
-    fn read_fd(fd: c_int, buf: &mut [u8]) -> Result<usize> {
-        let count = buf.len().min(isize::MAX as usize);
-        // SAFETY: `buf` is writable for `count` bytes.
-        let ret = unsafe { libc::read(fd, buf.as_mut_ptr().cast(), count) };
+    /// `process_read` into `count` bytes at `buf`, which `read(2)` only
+    /// writes (C passes uninitialized buffers: no `&mut [u8]` is formed).
+    ///
+    /// # Safety
+    ///
+    /// `buf` is valid for writes of `count` bytes (any pointer if 0).
+    unsafe fn read_fd(fd: c_int, buf: *mut u8, count: usize) -> Result<usize> {
+        let count = count.min(isize::MAX as usize);
+        // SAFETY: the caller's contract; `read` writes at most `count`.
+        let ret = unsafe { libc::read(fd, buf.cast(), count) };
         if ret < 0 {
             let _ = git_error_set!(ErrorClass::OS, "could not read from child process");
             return Err(ErrorCode::GENERIC);
@@ -645,13 +702,15 @@ impl GitProcess {
     /// `git_process_read`: from the child's standard output.
     pub fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         git_assert!(self.capture_out, "process->capture_out");
-        Self::read_fd(self.child_out, buf)
+        // SAFETY: `buf` is writable for its length.
+        unsafe { Self::read_fd(self.child_out, buf.as_mut_ptr(), buf.len()) }
     }
 
     /// `git_process_read_err`: from the child's standard error.
     pub fn read_err(&mut self, buf: &mut [u8]) -> Result<usize> {
         git_assert!(self.capture_err, "process->capture_err");
-        Self::read_fd(self.child_err, buf)
+        // SAFETY: `buf` is writable for its length.
+        unsafe { Self::read_fd(self.child_err, buf.as_mut_ptr(), buf.len()) }
     }
 
     /// `git_process_write`: to the child's standard input, with `SIGPIPE`
@@ -738,12 +797,11 @@ impl GitProcess {
 }
 
 impl Drop for GitProcess {
-    /// `git_process_free`: close the pipes if the child was not waited for
-    /// (as C: after `wait`, the pipes are the caller's to close).
+    /// `git_process_free`: close the pipes. C closed them only while the
+    /// child was not waited for, leaking them after `wait`
+    /// (rust/DEFECTS.md); closing an already closed (-1) pipe is a no-op.
     fn drop(&mut self) {
-        if self.pid != 0 {
-            self.close();
-        }
+        self.close();
     }
 }
 
@@ -858,8 +916,8 @@ pub fn describe(result: &GitProcessResult) -> String {
 
 /// A child process (`git_process`): the safe API.
 ///
-/// Dropping it closes its pipes unless it was waited for (as
-/// `git_process_free`), but does not wait for it.
+/// Dropping it closes its pipes (`git_process_free`), but does not wait
+/// for it.
 pub struct Process(GitProcess);
 
 impl Process {
@@ -868,14 +926,19 @@ impl Process {
     /// `use_shell`), with `env` added to (or, with `exclude_env`, instead
     /// of) this process's environment; `NAME=` entries remove a variable.
     /// The environment must not be changed meanwhile.
+    ///
+    /// As std's `Command`, the child starts with `SIGPIPE`'s default
+    /// disposition (a Rust program ignores it, and `execve` would keep
+    /// that); the C ABI leaves it as inherited, as C did. Dropping the
+    /// process closes its pipes, but does not wait for it.
     pub fn new(
         args: &[&[u8]],
         env: &[&[u8]],
         opts: &ProcessOptions,
     ) -> core::result::Result<Process, Error> {
-        GitProcess::new(args, env, Some(opts))
-            .map(Process)
-            .map_err(Error::from)
+        let mut p = GitProcess::new(args, env, Some(opts)).map_err(Error::from)?;
+        p.reset_sigpipe = true;
+        Ok(Process(p))
     }
 
     /// `git_process_new_from_cmdline`: run `cmdline` with `/bin/sh`.
@@ -884,9 +947,9 @@ impl Process {
         env: &[&[u8]],
         opts: &ProcessOptions,
     ) -> core::result::Result<Process, Error> {
-        GitProcess::from_cmdline(cmdline, env, Some(opts))
-            .map(Process)
-            .map_err(Error::from)
+        let mut p = GitProcess::from_cmdline(cmdline, env, Some(opts)).map_err(Error::from)?;
+        p.reset_sigpipe = true;
+        Ok(Process(p))
     }
 
     /// `git_process_start`.
@@ -1117,8 +1180,8 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `process` is NULL or a live process; `buf` is writable for `count`
-    /// bytes.
+    /// `process` is NULL or a live process; `buf` is valid for writes of
+    /// `count` bytes (it need not be initialized).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_process_read(
         process: *mut GitProcess,
@@ -1131,9 +1194,8 @@ pub mod ffi {
             let p = unsafe { super::ffi::process(process) };
             git_assert!(p.capture_out, "process->capture_out", -1);
             let count = count.min(isize::MAX as usize);
-            // SAFETY: writable for `count` bytes, and not otherwise in use.
-            let buf = unsafe { slice_mut(buf, count) };
-            ssize(GitProcess::read_fd(p.child_out, buf))
+            // SAFETY: writable for `count` bytes (maybe uninitialized).
+            ssize(unsafe { GitProcess::read_fd(p.child_out, buf.cast(), count) })
         })
     }
 
@@ -1155,22 +1217,8 @@ pub mod ffi {
             git_assert!(p.capture_err, "process->capture_err", -1);
             let count = count.min(isize::MAX as usize);
             // SAFETY: as in `git_process_read`.
-            let buf = unsafe { slice_mut(buf, count) };
-            ssize(GitProcess::read_fd(p.child_err, buf))
+            ssize(unsafe { GitProcess::read_fd(p.child_err, buf.cast(), count) })
         })
-    }
-
-    /// `count` bytes at `buf` (any pointer when `count` is 0).
-    ///
-    /// # Safety
-    ///
-    /// When `count > 0`, `buf` is writable for `count` bytes, unaliased.
-    unsafe fn slice_mut<'a>(buf: *mut c_void, count: usize) -> &'a mut [u8] {
-        if count == 0 || buf.is_null() {
-            return &mut [];
-        }
-        // SAFETY: the caller's contract.
-        unsafe { core::slice::from_raw_parts_mut(buf.cast::<u8>(), count) }
     }
 
     /// `git_process_write`.
@@ -1316,4 +1364,168 @@ crate::c_layout_test! {
         "sizeof(git_process_result_status) == 4",
         "GIT_PROCESS_STATUS_NONE == 0 && GIT_PROCESS_STATUS_NORMAL == 1 && GIT_PROCESS_STATUS_ERROR == 2",
     ],
+}
+
+/// The logic of the module apart from the system calls, so that Miri runs
+/// it.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_support;
+
+    fn strs(v: &[CString]) -> Vec<&[u8]> {
+        v.iter().map(|c| c.to_bytes()).collect()
+    }
+
+    #[test]
+    fn args_and_shell_wrapping() {
+        let _g = test_support::init();
+        let a = setup_args(&[b"/bin/echo", b"a b"], false).unwrap();
+        assert_eq!(strs(&a), [&b"/bin/echo"[..], b"a b"]);
+        let a = setup_args(&[b"echo $1", b"x"], true).unwrap();
+        assert_eq!(
+            strs(&a),
+            [&b"/bin/sh"[..], b"-c", b"echo $1 \"$@\"", b"echo $1", b"x"]
+        );
+    }
+
+    #[test]
+    fn environment_merge() {
+        let _g = test_support::init();
+        assert!(is_delete_env(b"A="));
+        assert!(!is_delete_env(b"A=1"));
+        assert!(!is_delete_env(b"A"));
+        // the C's prefix match: `FOOBAR=x` hides `FOO=…`
+        assert!(strlist_contains_key(&[b"FOOBAR=x"], b"FOO=1"));
+        assert!(!strlist_contains_key(&[b"FO=x"], b"FOO=1"));
+        assert!(!strlist_contains_key(&[b"FOO=x"], b"FOO"));
+
+        let inherited: [&[u8]; 4] = [b"HOME=/h", b"FOO=old", b"NOEQUALS", b"KEEP=1"];
+        let m = merge_env(&[b"FOO=new", b"HOME=", b"ADD=2"], &inherited)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            strs(&m),
+            [&b"FOO=new"[..], b"ADD=2", b"NOEQUALS", b"KEEP=1"]
+        );
+        // nothing at all: NULL
+        assert!(merge_env(&[b"X="], &[]).unwrap().is_none());
+    }
+
+    #[test]
+    fn result_messages() {
+        let _g = test_support::init();
+        let r = |status, exitcode, signal| GitProcessResult {
+            status,
+            exitcode,
+            signal,
+        };
+        for (res, m) in [
+            (r(status::NONE, 0, 0), "process not started"),
+            (r(status::NORMAL, 3, 0), "process exited with code 3"),
+            (r(status::ERROR, 0, 9), "process exited on signal 9"),
+            (r(status::ERROR, 0, 0), "unknown error"),
+        ] {
+            assert_eq!(describe(&res), m);
+            assert_eq!(
+                ProcessStatus::from(res) == ProcessStatus::Other,
+                m == "unknown error"
+            );
+        }
+    }
+
+    /// A byte source that hands out `data` in pieces of `chunk` bytes,
+    /// with an `EINTR` before each.
+    fn source(
+        data: Vec<u8>,
+        chunk: usize,
+    ) -> impl FnMut(&mut [u8]) -> core::result::Result<usize, c_int> {
+        let mut pos = 0;
+        let mut intr = true;
+        move |buf: &mut [u8]| {
+            intr = !intr;
+            if !intr {
+                return Err(libc::EINTR);
+            }
+            let n = buf.len().min(chunk).min(data.len() - pos);
+            buf[..n].copy_from_slice(&data[pos..pos + n]);
+            pos += n;
+            Ok(n)
+        }
+    }
+
+    fn status_bytes(fn_error: c_int, os_error: c_int, fn_len: c_int, name: &[u8]) -> Vec<u8> {
+        let mut v = Vec::new();
+        v.extend_from_slice(&fn_error.to_ne_bytes());
+        v.extend_from_slice(&os_error.to_ne_bytes());
+        v.extend_from_slice(&fn_len.to_ne_bytes());
+        v.extend_from_slice(name);
+        v
+    }
+
+    fn msg() -> String {
+        String::from_utf8(errors::last_message().unwrap_or_default()).unwrap()
+    }
+
+    /// An OS error's message (Miri's `strerror` adds an `(os error N)`).
+    #[track_caller]
+    fn assert_os_msg(expected: &str) {
+        let m = msg();
+        assert!(m.starts_with(expected), "{m:?} vs {expected:?}");
+    }
+
+    #[test]
+    fn status_protocol() {
+        let _g = test_support::init();
+        // immediate EOF: the exec succeeded
+        assert_eq!(parse_status(source(vec![], 1)), Ok(0));
+        // truncated header
+        assert_eq!(
+            parse_status(source(vec![1, 2, 3], 1)),
+            Err(ErrorCode::GENERIC)
+        );
+        assert_eq!(msg(), "child status truncated");
+        // a report, delivered a byte at a time with EINTRs in between
+        let d = status_bytes(-1, libc::ENOENT, 6, b"execve");
+        assert_eq!(parse_status(source(d, 1)), Ok(-1));
+        assert_os_msg("could not execve: No such file or directory");
+        // fn_len 0 or negative: "(unknown)"
+        for len in [0, -5] {
+            let d = status_bytes(-1, libc::EACCES, len, b"");
+            assert_eq!(parse_status(source(d, 64)), Ok(-1));
+            assert_os_msg("could not (unknown): Permission denied");
+        }
+        // fn_len beyond what was sent: the name read so far
+        let d = status_bytes(-1, libc::ENOENT, 50, b"chd");
+        assert_eq!(parse_status(source(d, 64)), Ok(-1));
+        assert_os_msg("could not chd: No such file or directory");
+        // fn_len over 127: truncated to 127 bytes
+        let long = vec![b'x'; 300];
+        let d = status_bytes(-1, libc::ENOENT, 300, &long);
+        assert_eq!(parse_status(source(d, 64)), Ok(-1));
+        assert_os_msg(&format!(
+            "could not {}: No such file or directory",
+            "x".repeat(127)
+        ));
+        // an embedded NUL ends the name
+        let d = status_bytes(-1, libc::ENOENT, 6, b"ch\0dir");
+        assert_eq!(parse_status(source(d, 64)), Ok(-1));
+        assert_os_msg("could not ch: No such file or directory");
+        // no failure reported: 0, no message
+        let d = status_bytes(0, 0, 0, b"");
+        errors::clear();
+        assert_eq!(parse_status(source(d, 64)), Ok(0));
+        assert!(!errors::exists());
+        // a read error other than EINTR/EAGAIN
+        let mut first = true;
+        let r = parse_status(|_: &mut [u8]| {
+            if core::mem::take(&mut first) {
+                Err(libc::EIO)
+            } else {
+                Ok(0)
+            }
+        });
+        assert_eq!(r, Err(ErrorCode::GENERIC));
+        assert!(msg().starts_with("could not read child status: "));
+    }
 }
