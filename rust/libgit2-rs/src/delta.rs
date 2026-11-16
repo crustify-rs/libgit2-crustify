@@ -4,13 +4,16 @@
 //!
 //! # Types
 //!
-//! `git_delta_index` is opaque to C: `pack-objects.c` only holds the pointer
-//! and calls [`git_delta_index_size`](ffi::git_delta_index_size), whose value
-//! (`memsize`) is the size the C's single allocation had, so the packer's
-//! memory accounting is unchanged. In Rust it is [`DeltaIndex<'a>`], which
-//! borrows its source buffer: C's contract ("the given buffer must not be
-//! freed nor altered before `git_delta_index_free`") is the `'a`, and the
-//! exports state it.
+//! `git_delta_index` is opaque to C, but C frees it: `pack-objects.c` calls
+//! `git_delta_index_free` in one place and `git__free` in another. So, as in
+//! C, an index is one `git__allocator` block (its header, the bucket heads,
+//! the entries; see [`IndexHeader`]), smaller than the C's (indices instead
+//! of pointers), and [`git_delta_index_size`](ffi::git_delta_index_size)
+//! reports the size of the C's allocation (`memsize`), so the packer's
+//! memory accounting is unchanged. In Rust it is [`DeltaIndex<'a>`], the
+//! block's owner, which borrows its source buffer: C's contract ("the given
+//! buffer must not be freed nor altered before `git_delta_index_free`") is
+//! the `'a`, and the exports state it.
 //!
 //! # Equivalence
 //!
@@ -23,9 +26,12 @@
 
 use core::alloc::Allocator;
 use core::ffi::{c_int, c_void};
+use core::marker::PhantomData;
 use core::mem::MaybeUninit;
+use core::ptr::NonNull;
 
 use crate::git_error_set;
+use crate::util::alloc;
 use crate::util::errors::{self, ErrorClass, ErrorCode, Result};
 use crate::util::integer::{alloc_add, alloc_multiply};
 
@@ -355,6 +361,7 @@ pub fn apply(base: &[u8], delta: &[u8]) -> Result<Vec<u8>> {
 const NONE: u32 = u32::MAX;
 
 /// `struct index_entry`: a Rabin window ending at `ptr` in the source.
+#[repr(C)]
 #[derive(Clone, Copy, Debug)]
 struct Entry {
     /// Offset of the byte after the window in the source (C's `ptr`).
@@ -365,14 +372,66 @@ struct Entry {
     next: u32,
 }
 
+/// The head of an index's allocation (`git_delta_index` as C sees it: a
+/// pointer it frees with `git__free`, as `pack-objects.c` does, or with
+/// `git_delta_index_free`). The allocation is one `git__allocator` block:
+/// this header, the `hash_mask + 1` bucket heads (`u32`), then the `entries`
+/// entries.
+#[repr(C)]
+#[derive(Debug)]
+pub struct IndexHeader {
+    /// The size of the C's index (what `git_delta_index_size` reports).
+    memsize: usize,
+    /// The source buffer.
+    src_buf: *const u8,
+    /// Its length.
+    src_size: usize,
+    /// The bucket count minus one (a power of two minus one).
+    hash_mask: u32,
+    /// The entries kept.
+    entries: u32,
+}
+
+/// Offset of the bucket heads in an index's block.
+const HASH_OFFSET: usize = core::mem::size_of::<IndexHeader>();
+
 /// `git_delta_index`: the Rabin fingerprints of a source buffer, from which
 /// deltas against it are made. Borrows the source.
-#[derive(Debug)]
+///
+/// Its invariant (made by [`new`](Self::new), the only constructor but the
+/// export's `from_raw`): `block` is a live `git__allocator` block this index
+/// owns, laid out as [`IndexHeader`] says, fully initialized, never written
+/// again; `src_buf`/`src_size` are the source, borrowed for `'a`; every
+/// bucket head and `next` is [`NONE`] or below `entries`; every entry's
+/// `ptr` is below `src_size`.
 pub struct DeltaIndex<'a> {
-    src: &'a [u8],
-    memsize: usize,
-    hash: Vec<u32>,
-    entries: Vec<Entry>,
+    block: NonNull<IndexHeader>,
+    _src: PhantomData<&'a [u8]>,
+}
+
+// SAFETY: the block is owned and immutable once built; the source is a
+// shared borrow of bytes (`&[u8]` is `Send` and `Sync`).
+unsafe impl Send for DeltaIndex<'_> {}
+// SAFETY: as above: shared access only reads.
+unsafe impl Sync for DeltaIndex<'_> {}
+
+impl core::fmt::Debug for DeltaIndex<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("DeltaIndex")
+            .field("memsize", &self.memsize())
+            .field("source_len", &self.source().len())
+            .field("buckets", &self.hash().len())
+            .field("entries", &self.entries().len())
+            .finish()
+    }
+}
+
+impl Drop for DeltaIndex<'_> {
+    fn drop(&mut self) {
+        // SAFETY: the block is this index's own `git__allocator` block (the
+        // invariant), freed once, here.
+        unsafe { alloc::free(self.block.as_ptr().cast()) };
+    }
 }
 
 fn try_vec<T: Clone>(n: usize, v: T) -> Result<Vec<T>> {
@@ -404,18 +463,58 @@ impl<'a> DeltaIndex<'a> {
             i += 1;
         }
         hsize = 1 << i;
+        let hsize = hsize as usize;
+        let cap = entries as usize;
 
         // `lookup_index_alloc`'s size, as the C allocated it.
-        let entries_len = alloc_multiply(entries as usize, C_INDEX_ENTRY_SIZE)?;
-        let hash_len = alloc_multiply(hsize as usize, C_POINTER_SIZE)?;
+        let entries_len = alloc_multiply(cap, C_INDEX_ENTRY_SIZE)?;
+        let hash_len = alloc_multiply(hsize, C_POINTER_SIZE)?;
         let memsize = alloc_add(alloc_add(C_INDEX_HEADER_SIZE, entries_len)?, hash_len)?;
 
-        let mut hash = try_vec(hsize as usize, NONE)?;
-        let mut hash_count = try_vec(hsize as usize, 0u32)?;
-        let mut ents: Vec<Entry> = Vec::new();
-        ents.try_reserve_exact(entries as usize)
-            .map_err(|_| errors::oom())?;
-        let slots = ents.spare_capacity_mut();
+        // This port's block, no larger than the C's (4-byte heads, 16-byte
+        // entries). `hsize >= 16`, so the entries start 8-aligned.
+        let entries_offset = HASH_OFFSET + hsize * 4;
+        let block_len = alloc_add(entries_offset, alloc_multiply(cap, size_of::<Entry>())?)?;
+        if block_len > isize::MAX as usize {
+            return Err(errors::oom());
+        }
+        let Some(block) = NonNull::new(alloc::malloc(block_len).cast::<u8>()) else {
+            return Err(ErrorCode::GENERIC);
+        };
+        // SAFETY: a fresh block of `block_len` bytes, 8-aligned (what
+        // `git__allocator` gives), which nothing else references: the
+        // header at 0, the heads (`u32`, initialized here) at `HASH_OFFSET`,
+        // the entries (8-aligned, left uninitialized) at `entries_offset`,
+        // three disjoint ranges within it.
+        let (hash, slots) = unsafe {
+            let base = block.as_ptr();
+            let hash = base.add(HASH_OFFSET).cast::<u32>();
+            core::ptr::write_bytes(hash, 0xff, hsize); // NONE
+            (
+                core::slice::from_raw_parts_mut(hash, hsize),
+                core::slice::from_raw_parts_mut(
+                    base.add(entries_offset).cast::<MaybeUninit<Entry>>(),
+                    cap,
+                ),
+            )
+        };
+        let index = DeltaIndex {
+            block: block.cast(),
+            _src: PhantomData,
+        };
+        // Until the header is written the drop only frees the block.
+        // SAFETY: the header's place in the fresh block (see above).
+        unsafe {
+            block.cast::<IndexHeader>().write(IndexHeader {
+                memsize,
+                src_buf: src.as_ptr(),
+                src_size: src.len(),
+                hash_mask: (hsize - 1) as u32,
+                entries: 0,
+            })
+        };
+
+        let mut hash_count = try_vec(hsize, 0u32)?;
         // Entries made: `slots[..n - 1]` are written; the last one is
         // `last`, which the next window may still move (C's `entry[-1]`),
         // written to `slots[n - 1]` when the next entry is made.
@@ -429,7 +528,7 @@ impl<'a> DeltaIndex<'a> {
         // Populate the index, from the last window back: window `k` is
         // `src[16k + 1..=16k + 16]`, and its entry points after it.
         let mut prev_val = !0u32;
-        let windows = &src[1..1 + entries as usize * RABIN_WINDOW];
+        let windows = &src[1..1 + cap * RABIN_WINDOW];
         for (k, w) in windows
             .as_chunks::<RABIN_WINDOW>()
             .0
@@ -471,10 +570,11 @@ impl<'a> DeltaIndex<'a> {
         if n > 0 {
             slots[n - 1].write(last);
         }
-        // SAFETY: one entry at most per window, so `n <= entries`, the
-        // reserved capacity; the loop wrote `slots[..n]` (each slot when
-        // the entry after it was made, the last one just above).
-        unsafe { ents.set_len(n) };
+        // SAFETY: one entry at most per window, so `n <= cap`; the loop
+        // wrote `slots[..n]` (each slot when the entry after it was made,
+        // the last one just above). `slots` is not used again.
+        let ents =
+            unsafe { core::slice::from_raw_parts_mut(slots.as_mut_ptr().cast::<Entry>(), n) };
 
         // Cull over-full buckets uniformly (C's loop, quirks included: the
         // skip count is 0 for 64..127 entries, so `--skip` runs to the end
@@ -501,22 +601,59 @@ impl<'a> DeltaIndex<'a> {
             }
         }
 
-        Ok(Some(DeltaIndex {
-            src,
-            memsize,
-            hash,
-            entries: ents,
-        }))
+        // SAFETY: the header, written above; `hash`/`ents` are not used
+        // again, so the block is immutable from here on.
+        unsafe { (*index.block.as_ptr()).entries = n as u32 };
+        Ok(Some(index))
+    }
+
+    fn header(&self) -> &IndexHeader {
+        // SAFETY: the invariant: a live, initialized header never written
+        // again.
+        unsafe { self.block.as_ref() }
+    }
+
+    /// The bucket heads.
+    fn hash(&self) -> &[u32] {
+        let h = self.header();
+        // SAFETY: the invariant: `hash_mask + 1` initialized heads at
+        // `HASH_OFFSET` of the live, immutable block.
+        unsafe {
+            core::slice::from_raw_parts(
+                self.block
+                    .as_ptr()
+                    .cast::<u8>()
+                    .add(HASH_OFFSET)
+                    .cast::<u32>(),
+                h.hash_mask as usize + 1,
+            )
+        }
+    }
+
+    /// The entries.
+    fn entries(&self) -> &[Entry] {
+        let h = self.header();
+        let offset = HASH_OFFSET + (h.hash_mask as usize + 1) * 4;
+        // SAFETY: the invariant: `entries` initialized entries after the
+        // heads (8-aligned) of the live, immutable block.
+        unsafe {
+            core::slice::from_raw_parts(
+                self.block.as_ptr().cast::<u8>().add(offset).cast::<Entry>(),
+                h.entries as usize,
+            )
+        }
     }
 
     /// `git_delta_index_size`: the bytes the C's index occupied.
     pub fn memsize(&self) -> usize {
-        self.memsize
+        self.header().memsize
     }
 
     /// The indexed source.
     pub fn source(&self) -> &'a [u8] {
-        self.src
+        let h = self.header();
+        // SAFETY: the invariant: the source, borrowed for `'a`.
+        unsafe { core::slice::from_raw_parts(h.src_buf, h.src_size) }
     }
 
     /// `git_delta_create_from_index`: a delta from the source to `target`,
@@ -536,7 +673,8 @@ impl<'a> DeltaIndex<'a> {
         if trg.is_empty() {
             return Ok(None);
         }
-        let src = self.src;
+        let src = self.source();
+        let (hash, entries) = (self.hash(), self.entries());
         if src.len() > u32::MAX as usize
             || trg.len() > u32::MAX as usize
             || max_size > (u32::MAX as usize - MAX_OP_SIZE - 1)
@@ -589,9 +727,9 @@ impl<'a> DeltaIndex<'a> {
                 val ^= U[trg[d - RABIN_WINDOW] as usize];
                 val = rabin_push(val, trg[d]);
                 // `hash.len() == hash_mask + 1`, a power of two.
-                let mut e = self.hash[val as usize & (self.hash.len() - 1)];
+                let mut e = hash[val as usize & (hash.len() - 1)];
                 while e != NONE {
-                    let entry = self.entries[e as usize];
+                    let entry = entries[e as usize];
                     e = entry.next;
                     if entry.val != val {
                         continue;
@@ -780,15 +918,31 @@ fn read_header_from(read: &mut dyn FnMut(&mut [u8]) -> isize) -> Result<(usize, 
 pub mod ffi {
     use super::*;
     use crate::git_assert_arg;
-    use crate::util::alloc::{self, GIT_ALLOC, GitAlloc};
+    use crate::util::alloc::{GIT_ALLOC, GitAlloc};
     use crate::util::export::{barrier, bytes};
     use core::ffi::c_char;
     use core::mem::ManuallyDrop;
 
-    /// `git_delta_index` (opaque to C): a [`DeltaIndex`] over the buffer C
-    /// passed, which C keeps alive and unaltered until the index is freed.
+    /// `git_delta_index` (opaque to C): the block of a [`DeltaIndex`] over
+    /// the buffer C passed, which C keeps alive and unaltered until the
+    /// index is freed (with `git_delta_index_free`, or `git__free`, which
+    /// `pack-objects.c` uses).
     #[allow(non_camel_case_types)]
-    pub type git_delta_index = DeltaIndex<'static>;
+    pub type git_delta_index = IndexHeader;
+
+    /// The index whose block C holds, borrowed (not freed when dropped).
+    ///
+    /// # Safety
+    ///
+    /// `p` is a live index from [`git_delta_index_init`], not freed while
+    /// the result is used, whose source is still allocated and unwritten.
+    unsafe fn borrow_index(p: *const git_delta_index) -> ManuallyDrop<DeltaIndex<'static>> {
+        ManuallyDrop::new(DeltaIndex {
+            // SAFETY: the caller's contract: a non-null live block.
+            block: unsafe { NonNull::new_unchecked(p.cast_mut()) },
+            _src: core::marker::PhantomData,
+        })
+    }
 
     /// Hand a `git__allocator` buffer to C.
     fn into_c(v: Vec<u8, GitAlloc>) -> (*mut c_void, usize) {
@@ -823,7 +977,7 @@ pub mod ffi {
             match DeltaIndex::new(src) {
                 Ok(Some(index)) => {
                     // SAFETY: as above.
-                    unsafe { out.write(Box::into_raw(Box::new(index))) };
+                    unsafe { out.write(ManuallyDrop::new(index).block.as_ptr()) };
                     0
                 }
                 Ok(None) => 0,
@@ -837,13 +991,13 @@ pub mod ffi {
     /// # Safety
     ///
     /// `index` is NULL or an index from [`git_delta_index_init`] not freed
-    /// yet, and not used again.
+    /// yet (with this or `git__free`), and not used again.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_delta_index_free(index: *mut git_delta_index) {
         barrier(|| {
             if !index.is_null() {
                 // SAFETY: the caller's contract: a live index from `init`.
-                drop(unsafe { Box::from_raw(index) });
+                unsafe { alloc::free(index.cast()) };
             }
         })
     }
@@ -858,7 +1012,7 @@ pub mod ffi {
         barrier(|| {
             git_assert_arg!(!index.is_null(), "index", usize::MAX);
             // SAFETY: the caller's contract; indexes are only read.
-            unsafe { &*index }.memsize()
+            unsafe { borrow_index(index) }.memsize()
         })
     }
 
@@ -894,7 +1048,7 @@ pub mod ffi {
             git_assert_arg!(!index.is_null(), "index", -1);
             // SAFETY: the caller's contract: a live index, and `trg_size`
             // readable target bytes.
-            let index = unsafe { &*index };
+            let index = unsafe { borrow_index(index) };
             // SAFETY: as above.
             let trg = unsafe { bytes(trg_buf.cast::<c_char>(), trg_size) };
             match index.create_in(trg, max_size, GIT_ALLOC) {

@@ -165,3 +165,32 @@ fn apply_under_alloc_limit() {
     });
     assert_eq!(errors::last().0, errors::ErrorClass::NOMEMORY);
 }
+
+#[test]
+fn index_freed_with_git_free() {
+    let _g = test_support::init();
+    let src = vec![3u8; 1000];
+    // SAFETY: as `pack-objects.c` does: init, use, then `git__free`.
+    unsafe {
+        let mut index = ptr::null_mut();
+        assert_eq!(
+            ffi::git_delta_index_init(&mut index, src.as_ptr().cast(), src.len()),
+            0
+        );
+        let (mut out, mut out_len) = (ptr::null_mut::<c_void>(), 0usize);
+        assert_eq!(
+            ffi::git_delta_create_from_index(
+                &mut out,
+                &mut out_len,
+                index,
+                src.as_ptr().cast(),
+                500,
+                0
+            ),
+            0
+        );
+        assert!(out_len >= delta::GIT_DELTA_SIZE_MIN);
+        alloc::free(out);
+        alloc::free(index.cast());
+    }
+}
