@@ -616,6 +616,9 @@ pub fn summary_into(msg: &[u8], out: &mut GitStr) -> Result<()> {
     let at = |i: usize| msg.get(i).copied().unwrap_or(0);
     let mut space: Option<usize> = None;
     let mut space_contains_newline = false;
+    // The pending run of message bytes the summary copies unchanged.
+    let mut run_start: Option<usize> = None;
+    let mut run_end = 0usize;
     let mut i = 0;
     while i < msg.len() && msg[i] != 0 {
         let c = msg[i];
@@ -641,17 +644,29 @@ pub fn summary_into(msg: &[u8], out: &mut GitStr) -> Result<()> {
             }
             space_contains_newline |= c == b'\n';
         } else {
-            // process any recorded whitespace
+            // process any recorded whitespace: a run with a newline becomes
+            // one space; one without is copied, so it joins the pending run
+            // of bytes copied as they are (put in one go, not per byte)
             if let Some(s) = space.take() {
                 if space_contains_newline {
+                    if let Some(rs) = run_start.take() {
+                        out.put(&msg[rs..run_end])?;
+                    }
                     out.putc(b' ')?;
-                } else {
-                    out.put(&msg[s..i])?;
+                } else if run_start.is_none() {
+                    run_start = Some(s);
                 }
             }
-            out.putc(c)?;
+            // copy the next character
+            if run_start.is_none() {
+                run_start = Some(i);
+            }
+            run_end = i + 1;
         }
         i += 1;
+    }
+    if let Some(rs) = run_start {
+        out.put(&msg[rs..run_end])?;
     }
     Ok(())
 }
