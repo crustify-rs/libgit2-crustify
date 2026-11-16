@@ -210,6 +210,40 @@ impl<T: Copy> GitArray<T> {
         self.asize = 0;
     }
 
+    /// The buffer (`ptr`; NULL when none was allocated).
+    #[inline]
+    pub fn as_ptr(&self) -> *const T {
+        self.ptr
+    }
+
+    /// Remove the element at `i`, moving the rest down; `None` if out of
+    /// range.
+    pub fn remove(&mut self, i: usize) -> Option<T> {
+        let v = *self.as_slice().get(i)?;
+        let n = self.size;
+        self.as_mut_slice().copy_within(i + 1..n, i);
+        self.size = n - 1;
+        Some(v)
+    }
+
+    /// Give up the buffer: `(ptr, size, asize)`, which the caller frees
+    /// with `git__free`.
+    pub fn into_raw_parts(self) -> (*mut T, usize, usize) {
+        let me = core::mem::ManuallyDrop::new(self);
+        (me.ptr, me.size, me.asize)
+    }
+
+    /// An array over a buffer.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` is NULL (with `size` and `asize` 0) or an allocation of
+    /// `git__allocator` with room for `asize` elements, of which the first
+    /// `size` are initialized, owned by the new array.
+    pub unsafe fn from_raw_parts(ptr: *mut T, size: usize, asize: usize) -> GitArray<T> {
+        GitArray { ptr, size, asize }
+    }
+
     /// `git_array_search`: binary search with `cmp(element)` giving the
     /// key's order against it; `Ok(index)` or `Err(insertion index)`
     /// (`GIT_ENOTFOUND` in C).

@@ -33,3 +33,11 @@ src/util/unix/realpath.c
 src/util/futils.c
 src/util/fs_path.c
 src/util/filebuf.c
+src/util/pool.c
+src/util/pqueue.c
+src/util/strlist.c
+src/util/utf8.c
+src/util/varint.c
+src/libgit2/oid.c
+src/libgit2/oidarray.c
+src/libgit2/parse.c
