@@ -388,3 +388,25 @@ fn hashmap_exports_macro() {
         assert_eq!((*m).buckets(), 0);
     }
 }
+
+#[test]
+#[cfg_attr(miri, ignore = "replaces the global allocator")]
+fn out_of_memory() {
+    let g = test_support::exclusive();
+    // Nothing allocated before the limit is freed inside it.
+    #[allow(unused_unsafe)]
+    // SAFETY: the closure frees only what it allocates under the limit.
+    let (put, pool, oom_msg) = unsafe {
+        test_support::with_alloc_limit(&g, 0, || {
+            let mut m: GitHashMap<CStrKey<'static>, u32> = GitHashMap::new();
+            let put = m.put(CStrKey::new(c"k"), 1).map(|_| ());
+            let empty = m.is_empty() && m.buckets() == 0;
+            let mut p = GitPool::with_item_size(1).unwrap();
+            let pool = p.malloc(8).is_err() && p.open_pages() == 0;
+            (put.is_err() && empty, pool, errors::last_class())
+        })
+    };
+    assert!(put);
+    assert!(pool);
+    assert_eq!(oom_msg, Some(errors::ErrorClass::NOMEMORY));
+}
