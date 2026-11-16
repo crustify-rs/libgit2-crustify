@@ -14,13 +14,13 @@
 //! Its invariant (which [`GitFilebuf::new`] and [`GitFilebuf::open`] keep):
 //! `buffer` is NULL or a `git__allocator` allocation of `buf_size`
 //! initialized bytes, `buf_pos <= buf_size`; `z_buf` is NULL or one of
-//! `buf_size` bytes, and `zs` is an initialized deflate stream exactly when
-//! `z_buf` is set; `digest` went through `HashCtx::init` when
-//! `compute_digest`;
-//! the paths are NULL or NUL-terminated `git__allocator` strings; `fd` is
-//! open when `fd_is_open`. A `GitFilebuf` with a deflate stream must not
-//! move between `open` and its cleanup (zlib keeps its address): the safe
-//! [`Filebuf`](crate::util::filebuf::Filebuf) boxes it.
+//! `buf_size` bytes, and `zs` points to an initialized deflate stream in
+//! its own heap cell exactly when `z_buf` is set (the cell may outlive a
+//! failed init until cleanup); `digest` went through `HashCtx::init` when
+//! `compute_digest`; the paths are NULL or NUL-terminated `git__allocator`
+//! strings; `fd` is open when `fd_is_open`. The deflate stream lives apart
+//! (see `StreamSlot`), so zlib's stored address never points into the
+//! filebuf and no `&mut GitFilebuf` covers it.
 
 use core::ffi::{CStr, c_char, c_int, c_void};
 
@@ -42,6 +42,46 @@ mod z {
     pub const Z_STREAM_ERROR: c_int = -2;
     pub const Z_NO_FLUSH: c_int = 0;
     pub const Z_FINISH: c_int = 4;
+}
+
+/// The `zs` field: C's `z_stream` storage, which C never reads (it only
+/// embeds and sizes `git_filebuf`). The stream itself lives in a heap cell
+/// that `stream` points to (NULL when there is none): zlib keeps the
+/// stream's address from `deflateInit` on and writes through it, so no
+/// Rust reference may cover the stream between zlib calls. A `&mut
+/// GitFilebuf` covers only this slot; the cell is reached through the raw
+/// pointer alone. (And the stream does not move with the filebuf.)
+#[repr(C)]
+struct StreamSlot {
+    stream: *mut ZStream,
+    _rest: [u8; core::mem::size_of::<ZStream>() - core::mem::size_of::<*mut ZStream>()],
+}
+
+const _: () = assert!(core::mem::size_of::<StreamSlot>() == core::mem::size_of::<ZStream>());
+const _: () = assert!(core::mem::align_of::<StreamSlot>() == core::mem::align_of::<ZStream>());
+
+impl StreamSlot {
+    const fn empty() -> StreamSlot {
+        StreamSlot {
+            stream: core::ptr::null_mut(),
+            _rest: [0; core::mem::size_of::<ZStream>() - core::mem::size_of::<*mut ZStream>()],
+        }
+    }
+
+    /// A zeroed stream in a new heap cell (Rust's allocator: 112 bytes).
+    fn alloc() -> *mut ZStream {
+        Box::into_raw(Box::new(zeroed_stream()))
+    }
+
+    /// Free the cell (after `deflateEnd`, or when `deflateInit` failed).
+    fn free(&mut self) {
+        if !self.stream.is_null() {
+            // SAFETY: the cell `alloc` made, freed once; zlib holds no state
+            // in it any more (the callers' order).
+            drop(unsafe { Box::from_raw(self.stream) });
+            self.stream = core::ptr::null_mut();
+        }
+    }
 }
 
 /// A zeroed `z_stream` (C's `{0}`): no state, zlib's default allocator.
@@ -118,7 +158,7 @@ pub struct GitFilebuf {
     /// The deflate output buffer.
     z_buf: *mut u8,
     /// The deflate stream.
-    zs: ZStream,
+    zs: StreamSlot,
     /// `Z_NO_FLUSH`, or `Z_FINISH` on commit.
     flush_mode: c_int,
     /// The size of `buffer` (and `z_buf`).
@@ -194,7 +234,7 @@ impl GitFilebuf {
             digest: HashCtx::zeroed(),
             buffer: core::ptr::null_mut(),
             z_buf: core::ptr::null_mut(),
-            zs: zeroed_stream(),
+            zs: StreamSlot::empty(),
             flush_mode: 0,
             buf_size: 0,
             buf_pos: 0,
@@ -348,9 +388,10 @@ impl GitFilebuf {
         if !self.z_buf.is_null() {
             free_owned(&mut self.z_buf);
             // SAFETY: the stream is initialized while `z_buf` is set (the
-            // invariant), and ended once.
-            unsafe { zlib::deflate_end(&raw mut self.zs) };
+            // invariant), and ended once; reached only through its pointer.
+            unsafe { zlib::deflate_end(self.zs.stream) };
         }
+        self.zs.free();
         free_owned(&mut self.path_original);
         free_owned(&mut self.path_lock);
         *self = GitFilebuf::new();
@@ -403,20 +444,29 @@ impl GitFilebuf {
 
     fn write_deflate(&mut self, source: &[u8]) -> Result<()> {
         if !source.is_empty() || self.flush_mode == z::Z_FINISH {
-            self.zs.next_in = source.as_ptr();
-            self.zs.avail_in = source.len() as u32;
+            // The stream's cell is reached only through this pointer (see
+            // `StreamSlot`): its fields are read and written in place.
+            let zs = self.zs.stream;
+            // SAFETY: the cell is live while `z_buf` is set (the invariant),
+            // and nothing else accesses it during this call.
+            unsafe { (*zs).next_in = source.as_ptr() };
+            // SAFETY: as above.
+            unsafe { (*zs).avail_in = source.len() as u32 };
             loop {
-                self.zs.next_out = self.z_buf;
-                self.zs.avail_out = self.buf_size as u32;
-                // SAFETY: the stream is initialized (`z_buf` is set) and has
-                // not moved since (the invariant); `next_in` has `avail_in`
+                // SAFETY: as above.
+                unsafe { (*zs).next_out = self.z_buf };
+                // SAFETY: as above.
+                unsafe { (*zs).avail_out = self.buf_size as u32 };
+                // SAFETY: the stream is initialized (`z_buf` is set) and
+                // has not moved (a heap cell); `next_in` has `avail_in`
                 // readable bytes, `next_out` `avail_out` writable ones.
-                if unsafe { zlib::deflate(&raw mut self.zs, self.flush_mode) } == z::Z_STREAM_ERROR
-                {
+                if unsafe { zlib::deflate(zs, self.flush_mode) } == z::Z_STREAM_ERROR {
                     self.last_error = BUFERR_ZLIB;
                     return Err(ErrorCode::GENERIC);
                 }
-                let have = self.buf_size - self.zs.avail_out as usize;
+                // SAFETY: as above, between zlib calls.
+                let avail_out = unsafe { (*zs).avail_out };
+                let have = self.buf_size - avail_out as usize;
                 // SAFETY: `deflate` wrote `have` bytes at `z_buf`, an
                 // allocation of `buf_size` bytes.
                 let out = unsafe { core::slice::from_raw_parts(self.z_buf, have) };
@@ -424,12 +474,15 @@ impl GitFilebuf {
                     self.last_error = BUFERR_WRITE;
                     return Err(ErrorCode::GENERIC);
                 }
-                if self.zs.avail_out != 0 {
+                if avail_out != 0 {
                     break;
                 }
             }
-            self.zs.next_in = core::ptr::null();
-            crate::git_assert!(self.zs.avail_in == 0, "zs->avail_in == 0");
+            // SAFETY: as above.
+            unsafe { (*zs).next_in = core::ptr::null() };
+            // SAFETY: as above.
+            let avail_in = unsafe { (*zs).avail_in };
+            crate::git_assert!(avail_in == 0, "zs->avail_in == 0");
             self.hash_update(source);
         }
         Ok(())
@@ -452,9 +505,10 @@ impl GitFilebuf {
     /// # Safety
     ///
     /// The filebuf does not move until it is cleaned up (by `cleanup`,
-    /// `commit` or `commit_at`): with a deflate level in `flags`, zlib keeps
-    /// the address of its `z_stream` (a zlib older than 1.2.9 would write
-    /// through the stale address). [`Filebuf`] keeps it boxed.
+    /// `commit` or `commit_at`). (Since the deflate stream moved to its own
+    /// heap cell, nothing in the Rust relies on this any more; the contract
+    /// is kept so that the signature stays as the other WPs use it, and as
+    /// C embeds the filebuf in place anyway.) [`Filebuf`] keeps it boxed.
     pub unsafe fn open_withsize(
         &mut self,
         path: &[u8],
@@ -502,9 +556,11 @@ impl GitFilebuf {
         }
         let compression = flags >> GIT_FILEBUF_DEFLATE_SHIFT;
         if compression != 0 {
-            // SAFETY: `zs` is zeroed and does not move until cleanup (the
-            // invariant's requirement on the filebuf's owner).
-            if unsafe { zlib::deflate_init(&raw mut self.zs, compression) } != z::Z_OK {
+            self.zs.stream = StreamSlot::alloc();
+            // SAFETY: a zeroed stream in its own heap cell, which does not
+            // move and is reached only through this pointer.
+            if unsafe { zlib::deflate_init(self.zs.stream, compression) } != z::Z_OK {
+                // No zlib state: cleanup frees the cell.
                 return Err(git_error_set!(
                     ErrorClass::ZLIB,
                     "failed to initialize zlib"
@@ -514,8 +570,9 @@ impl GitFilebuf {
             if self.z_buf.is_null() {
                 // C returns here without ending the stream (a leak):
                 // end it, as cleanup will not (rust/DEFECTS.md).
-                // SAFETY: initialized just above, ended once.
-                unsafe { zlib::deflate_end(&raw mut self.zs) };
+                // SAFETY: initialized just above, ended once; cleanup then
+                // frees the cell (`z_buf` is NULL, so it does not end it).
+                unsafe { zlib::deflate_end(self.zs.stream) };
                 return Err(ErrorCode::GENERIC);
             }
             self.flush_mode = z::Z_NO_FLUSH;
@@ -1013,9 +1070,33 @@ mod tests {
     }
 
     #[test]
+    fn stream_cell_lives_apart() {
+        // The cell the deflate stream lives in: allocated zeroed (no zlib
+        // state, default allocator), reached through its pointer only, freed
+        // once. (`deflate` itself is C: not under Miri.)
+        let mut slot = StreamSlot::empty();
+        slot.stream = StreamSlot::alloc();
+        // SAFETY: the fresh cell, read through its pointer.
+        let state = unsafe { (*slot.stream).state };
+        assert!(state.is_null());
+        // SAFETY: as above.
+        unsafe { (*slot.stream).avail_in = 3 };
+        // A `&mut` to the slot does not cover the cell: moving the slot
+        // leaves the stream where zlib would have its address.
+        let p = slot.stream;
+        let mut moved = slot;
+        assert_eq!(moved.stream, p);
+        // SAFETY: as above.
+        assert_eq!(unsafe { (*p).avail_in }, 3);
+        moved.free();
+        moved.free();
+        assert!(moved.stream.is_null());
+    }
+
+    #[test]
     fn zeroed_state_is_c_init() {
         let f = GitFilebuf::new();
-        assert!(f.zs.state.is_null() && f.zs.zalloc.is_none() && f.zs.zfree.is_none());
+        assert!(f.zs.stream.is_null());
         assert!(f.write.is_none() && !f.compute_digest && f.z_buf.is_null());
         assert_eq!((f.buf_size, f.buf_pos, f.last_error), (0, 0, BUFERR_OK));
     }
