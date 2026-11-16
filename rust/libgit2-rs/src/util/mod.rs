@@ -7,6 +7,7 @@
 pub mod alloc;
 pub mod allocators;
 pub mod array;
+pub mod cabi;
 pub mod ctype_compat;
 pub mod date;
 pub mod errors;
