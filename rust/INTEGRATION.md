@@ -141,3 +141,20 @@ Resolved (PENDING entries between l-index and l-repo, deleted):
   removed.
 - C ABI unchanged (`git_repository_index*`, `_set_index` typed
   `*mut GitIndex`).
+
+Green: `af822f1` (clar, cargo test link-c, clippy, fmt; Miri queued).
+
+## 4. l-repo review r1 fixes (merge `8c47cab`)
+
+Conflicts in `repository/{api,handles,open}.rs` (and a bad automatic merge
+of `GitRepository::free` / the setters in `mod.rs`, rewritten by hand):
+the setters, `cleanup`, `set_workdir`/`set_bare`/`set_objectformat` take
+l-repo's `unsafe` contracts over the integration's Rust types; the safe
+`Repository::{odb, config, config_snapshot, index}` return
+`RepoHandle<'_, T>` (borrows the repository, `!Send`/`!Sync`, `Deref` to
+`crate::{Odb, Config, Index}`); `set_odb`/`set_config`/`set_index`/
+`wrap_odb` leave the safe API as on the branch. `repository::open_owned`
+returns l-repo's `OwnedRepo`. The branch's publish/set_owned race tests
+use the `refdb` slot (the only one still `AtomicPtr<c_void>`). Open
+soundness gap of `RepoHandle` (a `Clone` of the inner type escapes the
+lifetime): `/work/reviews/integration-notes.md` I-2.

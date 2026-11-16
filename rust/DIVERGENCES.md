@@ -295,9 +295,12 @@ One entry per difference: component, what differs, why.
   instead of crashing (see DEFECTS.md).
 - **The safe `Repository` is `Send`, not `Sync`.** Its setters that replace
   paths (`set_workdir`, `set_bare`, `set_namespace`, `set_ident`) take
-  `&mut self`. The odb, config, refdb and index it returns are owners with
-  their own reference; until the L-wave integration they are thin types of
-  `repository::handles` (PENDING), not the other WPs' `Odb`, `Config`, ….
+  `&mut self`. The odb, config and index it returns are the odb, config
+  and index modules' own `Odb`, `Config`, `Index`, each with its own
+  reference, wrapped in a `RepoHandle<'_, T>` that borrows the repository
+  and is neither `Send` nor `Sync` (the C objects point back to it); the
+  refdb and references are still thin types of `repository::handles`
+  (PENDING(l-refs)).
 - **The C ABI reads the caller's `git_repository_init_options`** once into
   Rust values and writes the internal `GIT_REPOSITORY_INIT__*` bits back
   into its `flags` at the end (C or-ed them in as it went); the caller sees
@@ -310,8 +313,7 @@ One entry per difference: component, what differs, why.
   `git__allocator`; the backends are a Rust `Vec` (with `try_reserve`)
   under a `std::sync::Mutex`, sorted with the C's timsort and comparison,
   so the order is C's. The odb's own cache is a `git_cache` in the Rust
-  state; the repository's (`repo->objects`) is reached through its offset
-  in `git_repository`, checked by a layout test (PENDING(l-repo)).
+  state; the repository's is `GitRepository::objects()` of the owner.
 - **odb: `git_odb_write_multi_pack_index`** calls the backends on a copy
   of the list taken under the lock (C walked the list without the lock).
 - **odb: object type names.** `odb.rs` has its own copy of
