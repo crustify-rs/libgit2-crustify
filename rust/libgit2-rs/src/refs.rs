@@ -2420,11 +2420,25 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!name.is_null(), "name", -1);
-            // SAFETY: a string, copied (it may point into `buf`).
-            let n = unsafe { cstr_bytes(name) }.to_vec();
             // SAFETY: NULL or a valid `git_str` used by nobody else now.
             let b = unsafe { buf.as_mut() };
-            status(normalize_name(b, &n, flags))
+            // The name may point into `buf`, which normalizing clears and
+            // writes: then it is copied first.
+            let aliased = b.as_deref().is_some_and(|s| {
+                let start = s.as_ptr() as usize;
+                (start..=start + s.capacity()).contains(&(name as usize))
+            });
+            // SAFETY: a string, not in `buf`'s allocation (or copied out of
+            // it before `buf` is written).
+            let n = unsafe { cstr_bytes(name) };
+            let copy;
+            let n = if aliased {
+                copy = n.to_vec();
+                &copy[..]
+            } else {
+                n
+            };
+            status(normalize_name(b, n, flags))
         })
     }
 
