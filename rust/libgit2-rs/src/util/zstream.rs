@@ -288,23 +288,37 @@ impl GitZstream {
 
 /// `zstream_buf`: append the (de/in)flated `input` to `out`.
 fn zstream_buf(out: &mut GitStr, input: &[u8], kind: ZstreamKind) -> Result<()> {
-    let mut zs = ZStream::new(kind)?;
-    zs.set_input(input);
-    while !zs.done() {
-        let step = zs.suggest_output_len();
+    /// Frees the stream however the function returns.
+    struct Free<'a>(&'a mut GitZstream);
+    impl Drop for Free<'_> {
+        fn drop(&mut self) {
+            self.0.free();
+        }
+    }
+
+    // On the stack, as C's: it does not move until it is freed.
+    let mut stream = GitZstream::new();
+    // C returns without freeing when the init fails (zlib then holds no
+    // state).
+    stream.init(kind as c_int)?;
+    let zs = Free(&mut stream);
+    zs.0.set_input_raw(input.as_ptr().cast::<c_char>(), input.len());
+    while !zs.0.done() {
+        let step = zs.0.suggest_output_len();
         out.grow_by(step)?;
         let spare = out.spare_capacity_mut();
         let mut written = spare.len();
         // SAFETY: the input is `input`, borrowed for the call; `spare` is
         // the string's writable spare capacity, distinct from both.
         unsafe {
-            zs.z.get_output(spare.as_mut_ptr().cast::<u8>(), &mut written)
+            zs.0.get_output(spare.as_mut_ptr().cast::<u8>(), &mut written)
         }?;
         let len = out.len() + written;
         // SAFETY: zlib initialized the `written` bytes after the contents,
         // within the allocation (`len <= asize`).
         unsafe { out.set_len(len) };
     }
+    drop(zs);
     // NUL-terminate. C does so only if there is room: output that filled
     // the buffer exactly was left without its NUL (rust/DEFECTS.md).
     if out.len() == out.capacity() && out.capacity() > 0 {

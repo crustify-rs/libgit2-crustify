@@ -5,7 +5,8 @@
 //! and BMI1/2 (detected at run time) the blocks go through a faster path
 //! that computes the message schedule of two blocks at once with AVX2,
 //! interleaved with the scalar rounds of the first, as OpenSSL's
-//! `sha256_block_data_order_avx2` does; the rounds use BMI's `rorx`/`andn`.
+//! `sha256_block_data_order_avx2` does (with its trick of rotating pairs of
+//! words by 64-bit shifts for σ1); the rounds use BMI's `rorx`/`andn`.
 //! The `sha2` crate's portable code ran at half OpenSSL's speed on such
 //! CPUs (see `rust/bench/RESULTS.md`), hence this implementation.
 
@@ -222,32 +223,39 @@ mod avx2 {
         )
     }
 
+    /// `σ1` of the dwords 0 and 2 of `v`, whose 64-bit lanes hold each
+    /// word twice (so a 64-bit shift right is a 32-bit rotation), in
+    /// dwords 0 and 2 (the others are junk).
     #[target_feature(enable = "avx2,bmi1,bmi2")]
-    fn sigma1(x: __m256i) -> __m256i {
-        _mm256_xor_si256(
-            _mm256_xor_si256(ror!(x, 17), ror!(x, 19)),
-            _mm256_srli_epi32::<10>(x),
-        )
+    fn sigma1_pairs(v: __m256i) -> __m256i {
+        let a = _mm256_srli_epi32::<10>(v);
+        let b = _mm256_srli_epi64::<17>(v);
+        let a = _mm256_xor_si256(a, b);
+        let b = _mm256_srli_epi64::<2>(b);
+        _mm256_xor_si256(a, b)
     }
 
     /// `W[t..t + 4]` of both blocks from `W[t - 16..t]` (`x0` to `x3`).
     #[target_feature(enable = "avx2,bmi1,bmi2")]
     fn schedule(x0: __m256i, x1: __m256i, x2: __m256i, x3: __m256i) -> __m256i {
+        // Dwords 0 and 2 to 0 and 1, zeros above; and to 2 and 3.
+        let lo = _mm256_set_epi8(
+            -1, -1, -1, -1, -1, -1, -1, -1, 11, 10, 9, 8, 3, 2, 1, 0, -1, -1, -1, -1, -1, -1, -1,
+            -1, 11, 10, 9, 8, 3, 2, 1, 0,
+        );
+        let hi = _mm256_set_epi8(
+            11, 10, 9, 8, 3, 2, 1, 0, -1, -1, -1, -1, -1, -1, -1, -1, 11, 10, 9, 8, 3, 2, 1, 0, -1,
+            -1, -1, -1, -1, -1, -1, -1,
+        );
         let w15 = _mm256_alignr_epi8::<4>(x1, x0);
         let w7 = _mm256_alignr_epi8::<4>(x3, x2);
         let t = _mm256_add_epi32(_mm256_add_epi32(x0, sigma0(w15)), w7);
         // σ1 of W[t - 2], W[t - 1] completes W[t], W[t + 1] ...
-        let v = _mm256_shuffle_epi32::<0b11_10_11_10>(x3);
-        let t = _mm256_add_epi32(
-            t,
-            _mm256_blend_epi32::<0b0011_0011>(_mm256_setzero_si256(), sigma1(v)),
-        );
+        let v = _mm256_shuffle_epi32::<0b11_11_10_10>(x3);
+        let t = _mm256_add_epi32(t, _mm256_shuffle_epi8(sigma1_pairs(v), lo));
         // ... whose σ1 completes W[t + 2], W[t + 3].
-        let v = _mm256_shuffle_epi32::<0b01_00_01_00>(t);
-        _mm256_add_epi32(
-            t,
-            _mm256_blend_epi32::<0b1100_1100>(_mm256_setzero_si256(), sigma1(v)),
-        )
+        let v = _mm256_shuffle_epi32::<0b01_01_00_00>(t);
+        _mm256_add_epi32(t, _mm256_shuffle_epi8(sigma1_pairs(v), hi))
     }
 
     /// Bytes `16 * i..16 * i + 16` of `b`.
@@ -324,23 +332,31 @@ mod avx2 {
         }
         let mut s = *state;
         // Block 1, computing the schedule four groups ahead of the rounds.
-        let mut g = 0;
-        while g < 12 {
-            let [mut a, mut b, mut c, mut d, mut e, mut f, mut gg, mut h] = s;
-            let t = 4 * g;
-            round!(a, b, c, d, e, f, gg, h, w1!(t));
-            round!(h, a, b, c, d, e, f, gg, w1!(t + 1));
-            sched!(g + 4);
-            round!(gg, h, a, b, c, d, e, f, w1!(t + 2));
-            round!(f, gg, h, a, b, c, d, e, w1!(t + 3));
-            round!(e, f, gg, h, a, b, c, d, w1!(t + 4));
-            round!(d, e, f, gg, h, a, b, c, w1!(t + 5));
-            sched!(g + 5);
-            round!(c, d, e, f, gg, h, a, b, w1!(t + 6));
-            round!(b, c, d, e, f, gg, h, a, w1!(t + 7));
-            s = [a, b, c, d, e, f, gg, h];
-            g += 2;
+        macro_rules! g8s {
+            ($g:expr) => {{
+                let [mut a, mut b, mut c, mut d, mut e, mut f, mut gg, mut h] = s;
+                let t = 4 * $g;
+                round!(a, b, c, d, e, f, gg, h, w1!(t));
+                round!(h, a, b, c, d, e, f, gg, w1!(t + 1));
+                sched!($g + 4);
+                round!(gg, h, a, b, c, d, e, f, w1!(t + 2));
+                round!(f, gg, h, a, b, c, d, e, w1!(t + 3));
+                round!(e, f, gg, h, a, b, c, d, w1!(t + 4));
+                round!(d, e, f, gg, h, a, b, c, w1!(t + 5));
+                sched!($g + 5);
+                round!(c, d, e, f, gg, h, a, b, w1!(t + 6));
+                round!(b, c, d, e, f, gg, h, a, w1!(t + 7));
+                s = [a, b, c, d, e, f, gg, h];
+            }};
         }
+        g8s!(0);
+        g8s!(2);
+        g8s!(4);
+        g8s!(6);
+        g8s!(8);
+        g8s!(10);
+        // The last schedule step shifted the window past its end.
+        let _ = (x0, x1, x2, x3);
         rounds8!(s, w1, 48);
         rounds8!(s, w1, 56);
         for (st, v) in state.iter_mut().zip(s) {
