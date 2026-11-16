@@ -397,9 +397,10 @@ pub fn new_sig(name: &[u8], email: &[u8], time: git_time_t, offset: c_int) -> Re
             "Neither `name` nor `email` should contain angle brackets chars.",
         ));
     }
-    let name = extract_trimmed(name)?;
-    let email = extract_trimmed(email)?;
-    if name.as_c_str().is_empty() || email.as_c_str().is_empty() {
+    let (name_t, email_t) = (trimmed(name), trimmed(email));
+    let name = dup(name_t)?;
+    let email = dup(email_t)?;
+    if name_t.is_empty() || email_t.is_empty() {
         return Err(signature_error(
             "Signature cannot have an empty name or email",
         ));
@@ -553,6 +554,33 @@ pub fn writebuf(buf: &mut GitStr, header: Option<&[u8]>, name: &[u8], email: &[u
     let mut v = Vec::with_capacity(header.map_or(0, <[u8]>::len) + name.len() + email.len() + 32);
     format_into(&mut v, header.unwrap_or(b""), name, email, when);
     let _ = crate::object::printf_bytes(buf, WRITEBUF_FORMAT_LEN, &v);
+}
+
+/// `strcmp(a, b) == 0` in one pass, reading each string only up to its
+/// NUL or the first difference.
+///
+/// # Safety
+///
+/// `a` and `b` are NUL-terminated strings.
+#[inline]
+unsafe fn c_str_eq(a: *const c_char, b: *const c_char) -> bool {
+    let mut i = 0;
+    loop {
+        // `i` is at most the index of either string's NUL: the earlier
+        // bytes were equal and not NUL.
+        let (pa, pb) = (a.wrapping_add(i), b.wrapping_add(i));
+        // SAFETY: `pa` is within `a`, up to its NUL (above).
+        let x = unsafe { pa.read() };
+        // SAFETY: as above for `b`.
+        let y = unsafe { pb.read() };
+        if x != y {
+            return false;
+        }
+        if x == 0 {
+            return true;
+        }
+        i += 1;
+    }
 }
 
 /// glibc's `%s` of NULL.
@@ -1145,13 +1173,16 @@ pub mod ffi {
             let a = unsafe { one.read() };
             // SAFETY: as above.
             let b = unsafe { two.read() };
-            let s = |p: *mut c_char| {
-                // SAFETY: NULL or NUL-terminated (C crashes on NULL: here
-                // NULL equals only NULL).
-                (!p.is_null()).then(|| unsafe { CStr::from_ptr(p) })
+            // `git__strcmp` (C crashes on NULL: here NULL equals only NULL).
+            let same = |x: *mut c_char, y: *mut c_char| {
+                if x.is_null() || y.is_null() {
+                    return x.is_null() && y.is_null();
+                }
+                // SAFETY: NUL-terminated strings (the caller's contract).
+                unsafe { c_str_eq(x, y) }
             };
-            s(a.name) == s(b.name)
-                && s(a.email) == s(b.email)
+            same(a.name, b.name)
+                && same(a.email, b.email)
                 && a.when.time == b.when.time
                 && a.when.offset == b.when.offset
                 && a.when.sign == b.when.sign
@@ -1245,6 +1276,20 @@ mod tests {
             )
         );
         assert_eq!(p(b"a >b< 1", None, 0).unwrap_err().0, -21);
+    }
+
+    #[test]
+    fn c_strings_compare_like_strcmp() {
+        let eq = |a: &CStr, b: &CStr| {
+            // SAFETY: NUL-terminated strings.
+            unsafe { c_str_eq(a.as_ptr(), b.as_ptr()) }
+        };
+        assert!(eq(c"", c""));
+        assert!(eq(c"abc", c"abc"));
+        assert!(!eq(c"ab", c"abc"));
+        assert!(!eq(c"abc", c"ab"));
+        assert!(!eq(c"abd", c"abc"));
+        assert!(!eq(c"\xff", c"\xfe"));
     }
 
     #[test]
