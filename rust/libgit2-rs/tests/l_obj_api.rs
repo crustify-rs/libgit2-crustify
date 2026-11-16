@@ -5,6 +5,7 @@
 //! `tests/libgit2/object`, `blob`, `tag`, the reference build).
 
 #![forbid(unsafe_code)]
+#![cfg(feature = "link-c")]
 
 use std::path::{Path, PathBuf};
 
@@ -457,6 +458,7 @@ fn tags() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "initializes the library, which reaches C")]
 fn signatures() {
     let s = Signature::from_buffer(b"Name <e@mail> 1600000000 -0130").unwrap();
     assert_eq!(s.name(), b"Name");
@@ -612,7 +614,7 @@ fn objects_across_threads() {
             assert_eq!(c2.parent(0).unwrap().parent_count(), 2);
             let e = t2.get_path("README").unwrap();
             let entry = std::thread::scope(|s2| s2.spawn(move || e).join().unwrap());
-            assert_eq!(entry.to_object(&repo).unwrap().kind(), ObjectType::Blob);
+            assert_eq!(entry.to_object(repo).unwrap().kind(), ObjectType::Blob);
             drop((b2, g2));
         }));
         for h in hs {
