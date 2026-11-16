@@ -139,7 +139,11 @@ fn at(s: &[u8], i: usize) -> u8 {
 /// `git_net_hostname_matches_cert`: whether `hostname` matches the
 /// certificate name `pattern` (RFC 2818: `*` matches within one label).
 pub fn hostname_matches_cert(hostname: &[u8], pattern: &[u8]) -> bool {
-    let (hostname, pattern) = (c_prefix(hostname), c_prefix(pattern));
+    cert_match(c_prefix(hostname), c_prefix(pattern))
+}
+
+/// [`hostname_matches_cert`] on strings without NUL bytes.
+fn cert_match(hostname: &[u8], pattern: &[u8]) -> bool {
     let (mut h, mut p) = (0usize, 0usize);
     loop {
         let c = tolower(at(pattern, p));
@@ -1148,7 +1152,12 @@ impl GitNetUrl {
     /// `git_net_url_matches_pattern_list`: any of the comma-separated
     /// patterns matches.
     pub fn matches_pattern_list(&self, pattern_list: &[u8]) -> bool {
-        let list = c_prefix(pattern_list);
+        self.matches_list(c_prefix(pattern_list))
+    }
+
+    /// [`matches_pattern_list`](Self::matches_pattern_list) on a list
+    /// without NUL bytes.
+    fn matches_list(&self, list: &[u8]) -> bool {
         if list.is_empty() {
             return false;
         }
@@ -1388,7 +1397,7 @@ pub mod ffi {
             let h = unsafe { cstr_bytes(hostname) };
             // SAFETY: as above.
             let p = unsafe { cstr_bytes(pattern) };
-            hostname_matches_cert(h, p)
+            cert_match(h, p)
         })
     }
 
@@ -1663,7 +1672,7 @@ pub mod ffi {
             // SAFETY: NULL or a NUL-terminated string (NULL reads as empty,
             // as C's loop condition).
             let list = unsafe { cstr_bytes(pattern_list) };
-            url.matches_pattern_list(list)
+            url.matches_list(list)
         })
     }
 
