@@ -14,6 +14,7 @@ use core::ptr::NonNull;
 
 use super::*;
 use crate::util::export::{barrier, bytes, cstr, status};
+use ffibox::CShared;
 
 /// The odb at `db`.
 ///
@@ -199,7 +200,7 @@ pub unsafe extern "C" fn git_odb_new_ext(
         match GitOdb::new(opts.as_ref()) {
             Ok(db) => {
                 // SAFETY: the caller's contract.
-                unsafe { out.write(db.as_ptr()) };
+                unsafe { out.write(CShared::into_raw(db)) };
                 0
             }
             Err(e) => e.raw(),
@@ -389,17 +390,11 @@ pub unsafe extern "C" fn git_odb_open_ext(
         };
         // SAFETY: the caller's contract.
         let dir = unsafe { CStr::from_ptr(objects_dir) };
-        // SAFETY: a live odb of ours.
-        if unsafe { db.as_ref() }
-            .add_default_backends(dir, false, 0)
-            .is_err()
-        {
-            // SAFETY: our only reference.
-            unsafe { odb_decref(db) };
+        if db.add_default_backends(dir, false, 0).is_err() {
             return -1;
         }
         // SAFETY: the caller's contract.
-        unsafe { out.write(db.as_ptr()) };
+        unsafe { out.write(CShared::into_raw(db)) };
         0
     })
 }
@@ -433,12 +428,8 @@ pub unsafe extern "C" fn git_odb__set_caps(db: *mut GitOdb, caps: c_int) -> c_in
 /// `db` is NULL or a live odb whose reference the caller gives up.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_odb_free(db: *mut GitOdb) {
-    barrier(|| {
-        if let Some(db) = NonNull::new(db) {
-            // SAFETY: the caller's contract.
-            unsafe { odb_decref(db) }
-        }
-    })
+    // SAFETY: the caller's contract.
+    barrier(|| unsafe { CShared::release(db) })
 }
 
 /// `git_odb__get_commit_graph_file`.

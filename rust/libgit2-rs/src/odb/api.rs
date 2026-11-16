@@ -50,23 +50,15 @@ fn c_path(path: &[u8]) -> ApiResult<std::ffi::CString> {
 // ---------------------------------------------------------------------------
 
 /// An object database (`git_odb`): refcounted (`Clone` shares it), usable
-/// from several threads at once.
-pub struct Odb<'r> {
-    raw: NonNull<GitOdb>,
+/// from several threads at once (`Send + Sync` as `CShared<GitOdb>`).
+#[derive(Clone)]
+pub struct Odb<'r>(
+    CShared<GitOdb>,
     /// The repository the odb came from (`'static` for one made alone):
     /// an odb of a repository uses its owner's object cache, so it cannot
     /// outlive it.
-    _parent: PhantomData<&'r ()>,
-}
-
-// SAFETY: `GitOdb` is `Sync` (its backends are reached under a mutex, its
-// caches under rwlocks, the rest is atomic or immutable), and its count is
-// atomic: a reference may move to, and be dropped on, any thread. The
-// repository an odb borrows (`'r`), whose object cache it uses, is `Sync`
-// too.
-unsafe impl Send for Odb<'_> {}
-// SAFETY: as above.
-unsafe impl Sync for Odb<'_> {}
+    PhantomData<&'r ()>,
+);
 
 impl core::fmt::Debug for Odb<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -77,40 +69,20 @@ impl core::fmt::Debug for Odb<'_> {
     }
 }
 
-impl<'r> Clone for Odb<'r> {
-    fn clone(&self) -> Odb<'r> {
-        self.inner().rc.inc();
-        Odb {
-            raw: self.raw,
-            _parent: PhantomData,
-        }
-    }
-}
-
-impl Drop for Odb<'_> {
-    fn drop(&mut self) {
-        // SAFETY: this handle's reference.
-        unsafe { odb_decref(self.raw) }
-    }
-}
-
 impl<'r> Odb<'r> {
     /// The odb (crate-internal: the repository calls it directly).
     pub(crate) fn inner(&self) -> &GitOdb {
-        // SAFETY: the handle holds a reference: the odb is live.
-        unsafe { self.raw.as_ref() }
+        &self.0
     }
 
-    /// Adopt a reference to `raw` that the caller gives up.
-    ///
-    /// # Safety
-    ///
-    /// `raw` is a live odb and the caller owns one of its references.
-    pub(crate) unsafe fn from_raw(raw: NonNull<GitOdb>) -> Odb<'r> {
-        Odb {
-            raw,
-            _parent: PhantomData,
-        }
+    /// The odb's reference, as a handle.
+    pub(crate) fn from_shared(db: CShared<GitOdb>) -> Odb<'r> {
+        Odb(db, PhantomData)
+    }
+
+    /// The handle's reference.
+    pub(crate) fn into_shared(self) -> CShared<GitOdb> {
+        self.0
     }
 
     /// A new reference to `raw` (`GIT_REFCOUNT_INC`).
@@ -120,23 +92,14 @@ impl<'r> Odb<'r> {
     /// `raw` is a live odb.
     pub(crate) unsafe fn new_ref(raw: NonNull<GitOdb>) -> Odb<'r> {
         // SAFETY: the caller's contract.
-        unsafe { raw.as_ref() }.rc.inc();
-        Odb {
-            raw,
-            _parent: PhantomData,
-        }
+        let db = unsafe { CShared::from_borrowed(raw.as_ptr()) }.expect("non-null");
+        Odb(db, PhantomData)
     }
 
     /// The `git_odb *` (the reference stays with this handle).
     pub(crate) fn as_raw(&self) -> NonNull<GitOdb> {
-        self.raw
-    }
-
-    /// Give this handle's reference up, as a `git_odb *`.
-    pub(crate) fn into_raw(self) -> NonNull<GitOdb> {
-        let raw = self.raw;
-        core::mem::forget(self);
-        raw
+        // SAFETY: a `CShared`'s pointer is not NULL.
+        unsafe { NonNull::new_unchecked(CShared::as_ptr(&self.0)) }
     }
 
     /// An odb without backends, for SHA-1 ids (`git_odb_new`).
@@ -150,11 +113,7 @@ impl<'r> Odb<'r> {
             version: GIT_ODB_OPTIONS_VERSION,
             oid_type: oid_type.raw(),
         };
-        let raw = GitOdb::new(Some(&opts)).map_err(err)?;
-        Ok(Odb {
-            raw,
-            _parent: PhantomData,
-        })
+        Ok(Odb::from_shared(GitOdb::new(Some(&opts)).map_err(err)?))
     }
 
     /// The odb of an `objects` directory, with its loose and pack backends

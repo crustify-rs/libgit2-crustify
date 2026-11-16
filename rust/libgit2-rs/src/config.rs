@@ -45,6 +45,7 @@ use crate::util::regexp::Regexp;
 use crate::util::str::GitStr;
 use crate::util::thread::GitRefcount;
 use crate::{git_assert, git_assert_arg, git_error_set};
+use ffibox::CShared;
 
 // ---------------------------------------------------------------------------
 // The public C types
@@ -773,6 +774,12 @@ pub struct GitConfig {
     backends: std::sync::RwLock<Arc<Backends>>,
 }
 
+crate::impl_ccounted!(GitConfig, std::alloc::Global);
+
+// SAFETY: C writes only `rc` (GIT_REFCOUNT_*, atomics); the backends are
+// behind an `RwLock`.
+unsafe impl ffibox::CShareable for GitConfig {}
+
 /// `git_vector_insert_sorted`'s position for `key` (with `git__bsearch` and
 /// comparison `cmp(key, element)`), or the position of an equal element.
 fn sorted_position<T>(v: &[T], cmp: impl FnMut(&T) -> c_int) -> core::result::Result<usize, usize> {
@@ -831,7 +838,7 @@ impl GitConfig {
     /// `git_config_new`: a config with one reference.
     pub fn new() -> Box<GitConfig> {
         Box::new(GitConfig {
-            rc: GitRefcount::new(1),
+            rc: GitRefcount::one(),
             backends: std::sync::RwLock::new(Arc::new(Backends::default())),
         })
     }
@@ -2087,7 +2094,7 @@ pub mod ffi {
     /// `out` is writable.
     unsafe fn out_config(out: *mut *mut GitConfig, c: Box<GitConfig>) {
         // SAFETY: per the contract.
-        unsafe { out.write(Box::into_raw(c)) };
+        unsafe { out.write(CShared::into_raw(CShared::from_box(c))) };
     }
 
     /// `GIT_BUF_WRAP_PRIVATE`: run `f` on a `git_str` made from `buf`, and
@@ -2140,17 +2147,8 @@ pub mod ffi {
     /// up.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_free(config: *mut GitConfig) {
-        barrier(|| {
-            if config.is_null() {
-                return;
-            }
-            // SAFETY: a live config (contract).
-            if unsafe { cfg(config) }.rc.dec() {
-                // SAFETY: the last reference: `git_config_new` allocated it
-                // as a `Box`, and nothing reaches it any more.
-                drop(unsafe { Box::from_raw(config) });
-            }
-        })
+        // SAFETY: the contract.
+        barrier(|| unsafe { CShared::release(config) })
     }
 
     /// `git_config_new`.
@@ -3512,7 +3510,7 @@ pub mod ffi {
     pub unsafe extern "C" fn git_config_open_default(out: *mut *mut GitConfig) -> c_int {
         barrier(|| {
             let (p, code) = match open_default() {
-                Ok(c) => (Box::into_raw(c), 0),
+                Ok(c) => (CShared::into_raw(CShared::from_box(c)), 0),
                 Err(e) => (core::ptr::null_mut(), e.raw()),
             };
             // SAFETY: `out` is writable.
@@ -3790,34 +3788,8 @@ fn path_bytes(p: &std::path::Path) -> &[u8] {
 /// made alone): a repository's file backends keep the repository for their
 /// include conditions, so the configuration (and its clones, levels and
 /// snapshots) cannot outlive it.
-pub struct Config<'r> {
-    raw: NonNull<GitConfig>,
-    _parent: core::marker::PhantomData<&'r ()>,
-}
-
-// SAFETY: `GitConfig` is `Send + Sync` (interior mutability under a mutex,
-// atomic refcount); the handle is a counted reference to it. The
-// repository it borrows (`'r`) is `Sync`.
-unsafe impl Send for Config<'_> {}
-// SAFETY: as above.
-unsafe impl Sync for Config<'_> {}
-
-impl<'r> Clone for Config<'r> {
-    fn clone(&self) -> Self {
-        self.inner().rc.inc();
-        Config {
-            raw: self.raw,
-            _parent: core::marker::PhantomData,
-        }
-    }
-}
-
-impl Drop for Config<'_> {
-    fn drop(&mut self) {
-        // SAFETY: the handle's reference, given up once.
-        unsafe { ffi::git_config_free(self.raw.as_ptr()) }
-    }
-}
+#[derive(Clone)]
+pub struct Config<'r>(CShared<GitConfig>, core::marker::PhantomData<&'r ()>);
 
 impl core::fmt::Debug for Config<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -3828,29 +3800,12 @@ impl core::fmt::Debug for Config<'_> {
 impl<'r> Config<'r> {
     /// A handle of a new config (its one reference).
     pub(crate) fn from_box(b: Box<GitConfig>) -> Config<'r> {
-        Config {
-            raw: NonNull::from(Box::leak(b)),
-            _parent: core::marker::PhantomData,
-        }
+        Config(CShared::from_box(b), core::marker::PhantomData)
     }
 
     /// The config (crate-internal: the repository calls it directly).
     pub(crate) fn inner(&self) -> &GitConfig {
-        // SAFETY: the handle holds a reference, so the config is live.
-        unsafe { self.raw.as_ref() }
-    }
-
-    /// Adopt a reference to `raw` that the caller gives up.
-    ///
-    /// # Safety
-    ///
-    /// `raw` is a live config (from `git_config_new` & co.) and the caller
-    /// owns one of its references.
-    pub(crate) unsafe fn from_raw(raw: NonNull<GitConfig>) -> Config<'r> {
-        Config {
-            raw,
-            _parent: core::marker::PhantomData,
-        }
+        &self.0
     }
 
     /// A new reference to `raw` (`GIT_REFCOUNT_INC`).
@@ -3860,18 +3815,19 @@ impl<'r> Config<'r> {
     /// `raw` is a live config.
     pub(crate) unsafe fn new_ref(raw: NonNull<GitConfig>) -> Config<'r> {
         // SAFETY: the caller's contract.
-        unsafe { raw.as_ref() }.rc.inc();
-        Config {
-            raw,
-            _parent: core::marker::PhantomData,
-        }
+        let c = unsafe { CShared::from_borrowed(raw.as_ptr()) }.expect("non-null");
+        Config(c, core::marker::PhantomData)
+    }
+
+    /// The handle's reference.
+    pub(crate) fn into_shared(self) -> CShared<GitConfig> {
+        self.0
     }
 
     /// Give this handle's reference up, as a `git_config *`.
     pub(crate) fn into_raw(self) -> NonNull<GitConfig> {
-        let raw = self.raw;
-        core::mem::forget(self);
-        raw
+        // SAFETY: a `CShared`'s pointer is not NULL.
+        unsafe { NonNull::new_unchecked(CShared::into_raw(self.0)) }
     }
 
     /// `git_config_new`: an empty configuration.

@@ -556,18 +556,18 @@ pub(crate) fn open_ext(path: Option<&CStr>, oid_type: OidType) -> Result<IndexPt
             index.set_on_disk(true);
         }
     }
-    let raw = NonNull::from(Box::leak(index));
+    let shared = ffibox::CShared::from_box(index);
     // SAFETY: a fresh index, live until its last reference goes.
-    let ix = unsafe { IndexPtr::new(raw) };
+    let ix = unsafe { IndexPtr::new(crate::util::thread::shared_nn(&shared)) };
     if path.is_some()
         && let Err(e) = read(ix, true)
     {
-        // SAFETY: the index has no reference yet: `git_index_free` of a
-        // count of 0 frees it.
-        unsafe { ix.decref() };
+        // Its only reference: the index is freed.
+        drop(shared);
         return Err(e);
     }
-    ix.incref();
+    // The reference goes to the caller, in `ix`.
+    let _ = ffibox::CShared::into_raw(shared);
     Ok(ix)
 }
 

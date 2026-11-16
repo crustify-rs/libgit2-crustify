@@ -40,6 +40,7 @@
 
 use core::cell::UnsafeCell;
 use core::ffi::{c_int, c_void};
+use core::ptr::NonNull;
 use core::sync::atomic::{AtomicI32, AtomicI64, AtomicPtr, Ordering};
 
 // ---------------------------------------------------------------------------
@@ -418,8 +419,17 @@ pub fn load<T>(p: &AtomicPtr<T>) -> *mut T {
 
 /// `git_refcount` (`src/util/util.h`): the count and owner at the start of
 /// libgit2's refcounted objects, mirrored.
+///
+/// It is what [`CShared`](ffibox::CShared) counts with (through
+/// [`impl_ccounted!`](crate::impl_ccounted)), so it keeps `CCounted`'s
+/// rules: safe code can make only [`one`](Self::one) (one reference, no
+/// owner) and cannot change a count; the operations that change it take the
+/// count's pointer and borrow only the atomic they touch, so that no
+/// reference wider than an atomic is live across a decrement; an increment
+/// refuses before the count could wrap; every operation is `SeqCst`, as C's
+/// `git_atomic32_*`.
 #[repr(C)]
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct GitRefcount {
     /// The count.
     refcount: Atomic32,
@@ -430,49 +440,249 @@ pub struct GitRefcount {
     owner: AtomicPtr<c_void>,
 }
 
+/// The bound at which [`GitRefcount::inc`] refuses (`Arc`'s
+/// `MAX_REFCOUNT`, for a 32-bit count).
+const REFCOUNT_MAX: i32 = i32::MAX / 2;
+
 impl GitRefcount {
+    /// One reference, no owner: the only count safe code can make.
+    pub const fn one() -> GitRefcount {
+        GitRefcount {
+            refcount: Atomic32::new(1),
+            owner: AtomicPtr::new(core::ptr::null_mut()),
+        }
+    }
+
     /// A count of `n` with no owner.
-    pub const fn new(n: i32) -> GitRefcount {
+    ///
+    /// # Safety
+    ///
+    /// The object it goes into is never shared through a `CShared` that
+    /// trusts the count (`c_is_sole_owner`), or `n` is the number of
+    /// references that will be dropped.
+    pub const unsafe fn with_count(n: i32) -> GitRefcount {
         GitRefcount {
             refcount: Atomic32::new(n),
             owner: AtomicPtr::new(core::ptr::null_mut()),
         }
     }
-    /// `GIT_REFCOUNT_INC`.
-    #[inline]
-    pub fn inc(&self) {
-        self.refcount.inc();
+
+    /// The count's atomic, borrowed alone.
+    ///
+    /// # Safety
+    ///
+    /// `p` addresses a live `GitRefcount`.
+    unsafe fn count<'a>(p: *const GitRefcount) -> &'a Atomic32 {
+        // SAFETY: the caller's contract: a projection of a live count's
+        // place, which forms no reference.
+        let f = unsafe { &raw const (*p).refcount };
+        // SAFETY: the caller's contract; a pointer to the field alone, so
+        // only the atomic is borrowed.
+        unsafe { &*f }
     }
-    /// `GIT_REFCOUNT_DEC` without the free: decrement, and whether the
-    /// object must now be freed (the count reached 0 or less and it has no
-    /// owner).
+
+    /// The owner's atomic, borrowed alone.
+    ///
+    /// # Safety
+    ///
+    /// As [`count`](Self::count).
+    unsafe fn owner_cell<'a>(p: *const GitRefcount) -> &'a AtomicPtr<c_void> {
+        // SAFETY: the caller's contract: a projection of a live count's
+        // place, which forms no reference.
+        let f = unsafe { &raw const (*p).owner };
+        // SAFETY: as above.
+        unsafe { &*f }
+    }
+
+    /// One reference and no owner, for an object nothing else reaches
+    /// (`CCounted::c_init`).
+    ///
+    /// # Safety
+    ///
+    /// `p` addresses a live count of an object nothing else reaches.
+    #[inline]
+    pub unsafe fn init(p: *const GitRefcount) {
+        // SAFETY: the caller's contract.
+        unsafe { Self::count(p) }.set(1);
+        // SAFETY: as above.
+        unsafe { Self::owner_cell(p) }.store(core::ptr::null_mut(), Ordering::SeqCst);
+    }
+
+    /// `GIT_REFCOUNT_INC`, refusing (and changing nothing) at the bound:
+    /// whether the count was incremented.
+    ///
+    /// # Safety
+    ///
+    /// `p` addresses a live count on which the caller holds a reference.
     #[inline]
     #[must_use]
-    pub fn dec(&self) -> bool {
-        let v = self.refcount.dec();
-        v <= 0 && self.owner.load(Ordering::SeqCst).is_null()
+    pub unsafe fn inc(p: *const GitRefcount) -> bool {
+        // SAFETY: the caller's contract.
+        let c = unsafe { Self::count(p) };
+        let mut n = c.0.load(Ordering::SeqCst);
+        while n < REFCOUNT_MAX {
+            match c
+                .0
+                .compare_exchange_weak(n, n + 1, Ordering::SeqCst, Ordering::SeqCst)
+            {
+                Ok(_) => return true,
+                Err(now) => n = now,
+            }
+        }
+        false
     }
+
+    /// `GIT_REFCOUNT_DEC` without the free: drop the caller's reference,
+    /// and whether the object must now be freed (the count reached 0 and
+    /// it has no owner).
+    ///
+    /// # Safety
+    ///
+    /// `p` addresses a live count; the caller gives up a reference it
+    /// holds, and does not reach the object through it afterwards.
+    #[inline]
+    #[must_use]
+    pub unsafe fn dec(p: *const GitRefcount) -> bool {
+        // SAFETY: the caller's contract.
+        let v = unsafe { Self::count(p) }.dec();
+        // SAFETY: as above: the object is live until its last reference
+        // is dropped, which is this one only if `v == 0` and no owner
+        // holds it.
+        v == 0
+            && unsafe { Self::owner_cell(p) }
+                .load(Ordering::SeqCst)
+                .is_null()
+    }
+
+    /// Whether the caller's reference is the only one and no owner holds
+    /// the object (`CCounted::c_is_sole_owner`).
+    ///
+    /// # Safety
+    ///
+    /// `p` addresses a live count on which the caller holds a reference.
+    #[inline]
+    pub unsafe fn sole(p: *const GitRefcount) -> bool {
+        // SAFETY: the caller's contract.
+        unsafe { Self::count(p) }.get() == 1
+            // SAFETY: as above.
+            && unsafe { Self::owner_cell(p) }.load(Ordering::SeqCst).is_null()
+    }
+
     /// `GIT_REFCOUNT_OWN`.
     ///
     /// # Safety
     ///
+    /// `p` addresses a live count on which the caller holds a reference;
     /// `owner` is NULL or the live object that owns this one, and stays
     /// live until it clears the owner again (code that holds the object
     /// dereferences the owner as that type).
     #[inline]
-    pub unsafe fn own(&self, owner: *mut c_void) {
-        self.owner.swap(owner, Ordering::SeqCst);
+    pub unsafe fn own(p: *const GitRefcount, owner: *mut c_void) {
+        // SAFETY: the caller's contract.
+        unsafe { Self::owner_cell(p) }.swap(owner, Ordering::SeqCst);
     }
+
     /// `GIT_REFCOUNT_OWNER`.
     #[inline]
     pub fn owner(&self) -> *mut c_void {
         self.owner.load(Ordering::SeqCst)
     }
+
     /// `GIT_REFCOUNT_VAL`.
     #[inline]
     pub fn val(&self) -> i32 {
         self.refcount.get()
     }
+}
+
+/// The `git_refcount` at offset 0 of `p` (a `#[repr(C)]` type whose first
+/// field is a [`GitRefcount`]): a pointer, not a reference, so that no
+/// `&GitRefcount` is live across a decrement.
+#[inline]
+pub(crate) fn refcount_of<T>(p: NonNull<T>) -> *const GitRefcount {
+    p.as_ptr().cast_const().cast()
+}
+
+/// The object `s` references, as a non-null pointer (with the provenance
+/// of the `CShared`, not of a shared reference).
+#[inline]
+pub(crate) fn shared_nn<T: ffibox::CCounted>(s: &ffibox::CShared<T>) -> NonNull<T> {
+    NonNull::new(ffibox::CShared::as_ptr(s)).unwrap_or_else(|| unreachable!("CShared is non-null"))
+}
+
+/// A `#[repr(C)]` type whose first field is its [`GitRefcount`] (what
+/// [`impl_ccounted!`](crate::impl_ccounted) checks): its owner can be set
+/// through [`refcount_of`].
+///
+/// # Safety
+///
+/// `Self` starts with a `GitRefcount` at offset 0.
+pub(crate) unsafe trait StartsWithRefcount: ffibox::CCounted {
+    /// `GIT_REFCOUNT_OWN(obj, owner)` on the object `s` holds.
+    ///
+    /// # Safety
+    ///
+    /// As [`GitRefcount::own`].
+    #[inline]
+    unsafe fn own(s: &ffibox::CShared<Self>, owner: *mut c_void) {
+        // SAFETY: the caller's contract; `s` keeps the object live and the
+        // count is at offset 0.
+        unsafe { GitRefcount::own(ffibox::CShared::as_ptr(s).cast_const().cast(), owner) }
+    }
+}
+
+/// `unsafe impl CCounted for $t` over its leading `git_refcount` `rc`
+/// field (checked at offset 0), with allocator `$alloc` and, optionally,
+/// a release function replacing the default drop of the box.
+#[macro_export]
+#[doc(hidden)]
+macro_rules! impl_ccounted {
+    ($t:ty, $alloc:ty $(, release = $rel:expr)?) => {
+        const _: () = assert!(core::mem::offset_of!($t, rc) == 0);
+        // SAFETY: checked just above.
+        unsafe impl $crate::util::thread::StartsWithRefcount for $t {}
+        // SAFETY: `rc` is the object's `git_refcount` (offset 0), which C
+        // changes only with GIT_REFCOUNT_* (SeqCst atomics). `GitRefcount`
+        // has no safe mutator and no safe constructor other than `one()`,
+        // so every value safe code can make or store holds one reference
+        // and no owner; `inc` refuses before the count wraps; `dec`
+        // answers `true` once, at 0 with no owner (an owned object is
+        // released by its owner's disown and drop); every operation is
+        // SeqCst (Release on each decrement, Acquire on the last and on
+        // `sole`) and borrows only the atomic it touches. The allocator is
+        // zero-sized and stateless; the release frees the box it adopted.
+        unsafe impl ffibox::CCounted for $t {
+            type Alloc = $alloc;
+            #[inline]
+            unsafe fn c_init(this: core::ptr::NonNull<Self>) {
+                // SAFETY: the caller's contract.
+                unsafe { $crate::util::thread::GitRefcount::init($crate::util::thread::refcount_of(this)) }
+            }
+            #[inline]
+            unsafe fn c_up_ref(this: core::ptr::NonNull<Self>) -> bool {
+                // SAFETY: the caller's contract.
+                unsafe { $crate::util::thread::GitRefcount::inc($crate::util::thread::refcount_of(this)) }
+            }
+            #[inline]
+            unsafe fn c_down_ref(this: core::ptr::NonNull<Self>) -> bool {
+                // SAFETY: the caller's contract.
+                unsafe { $crate::util::thread::GitRefcount::dec($crate::util::thread::refcount_of(this)) }
+            }
+            #[inline]
+            unsafe fn c_is_sole_owner(this: core::ptr::NonNull<Self>) -> bool {
+                // SAFETY: the caller's contract.
+                unsafe { $crate::util::thread::GitRefcount::sole($crate::util::thread::refcount_of(this)) }
+            }
+            $(
+            #[inline]
+            unsafe fn c_release(this: core::ptr::NonNull<Self>) {
+                let f: unsafe fn(core::ptr::NonNull<$t>) = $rel;
+                // SAFETY: the caller's contract: the last reference.
+                unsafe { f(this) }
+            }
+            )?
+        }
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -624,10 +834,22 @@ mod tests {
         assert_eq!(a.add(-10), -5);
         let b = Atomic64::new(0);
         assert_eq!(b.add(1 << 40), 1 << 40);
-        let r = GitRefcount::new(1);
-        r.inc();
-        assert!(!r.dec());
-        assert!(r.dec());
+        let r = GitRefcount::one();
+        let p = &raw const r;
+        // SAFETY: a live count, whose references this test holds.
+        unsafe {
+            assert!(GitRefcount::inc(p));
+            assert!(!GitRefcount::dec(p));
+            assert!(GitRefcount::sole(p));
+            assert!(GitRefcount::dec(p));
+            GitRefcount::init(p);
+            assert!(GitRefcount::sole(p));
+        }
+        // SAFETY: a count no object uses.
+        let full = unsafe { GitRefcount::with_count(REFCOUNT_MAX) };
+        // SAFETY: as above.
+        assert!(!unsafe { GitRefcount::inc(&raw const full) });
+        assert_eq!(full.val(), REFCOUNT_MAX);
         let mut x = 0u8;
         let p = AtomicPtr::new(core::ptr::null_mut::<u8>());
         assert!(compare_and_swap(&p, core::ptr::null_mut(), &mut x).is_null());

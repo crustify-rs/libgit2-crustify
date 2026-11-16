@@ -190,9 +190,9 @@ impl RepoPtr {
     /// `git_repository_refdb`: the refdb, with a count the caller drops.
     pub fn refdb(self) -> Result<*mut crate::refdb::GitRefdb> {
         let p = self.get().refdb_weak()?;
-        // SAFETY: the repository's live refdb, which starts with a
-        // `git_refcount`; the reference goes to the caller.
-        unsafe { crate::repository::handles::refcount(p.cast()) }.inc();
+        // SAFETY: the repository's live refdb, which its count keeps live;
+        // the reference goes to the caller.
+        unsafe { ffibox::CShared::increment_count(p.as_ptr()) };
         Ok(p.as_ptr())
     }
 }

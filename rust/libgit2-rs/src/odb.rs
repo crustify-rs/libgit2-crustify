@@ -37,6 +37,7 @@ use crate::util::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
 use crate::util::hash::{self, HashCtx};
 use crate::util::thread::{Atomic32, GitRefcount};
 use crate::{git_assert, git_assert_arg, git_error_set};
+use ffibox::{CShareable, CShared};
 
 pub use crate::util::errors::Error;
 
@@ -850,6 +851,34 @@ pub struct GitOdb {
     do_fsync: AtomicBool,
 }
 
+crate::impl_ccounted!(GitOdb, crate::util::alloc::GitAlloc);
+
+// SAFETY: C writes only `rc` (GIT_REFCOUNT_*, atomics); holders reach the
+// backends and the commit-graph through `locked`'s mutex, `own_cache` is
+// synchronised by its own locks, `do_fsync` is atomic, and `options` is
+// fixed once made.
+unsafe impl CShareable for GitOdb {}
+
+/// `odb_free`: free the backends (with the lock held, as C), the
+/// commit-graph and the cache; the box is freed by `CShared`.
+impl Drop for GitOdb {
+    fn drop(&mut self) {
+        {
+            let mut l = self.lock();
+            for bi in core::mem::take(&mut l.backends) {
+                // SAFETY: each backend was handed to this odb, which frees
+                // it once (its `free` slot is required).
+                if let Some(free) = unsafe { (*bi.backend.as_ptr()).free } {
+                    // SAFETY: as above.
+                    unsafe { free(bi.backend.as_ptr()) };
+                }
+            }
+            l.cgraph = None;
+        }
+        self.own_cache.dispose();
+    }
+}
+
 impl core::fmt::Debug for GitOdb {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("GitOdb")
@@ -860,7 +889,7 @@ impl core::fmt::Debug for GitOdb {
 
 impl GitOdb {
     /// `git_odb_new_ext`: an odb with no backends and one reference.
-    pub(crate) fn new(opts: Option<&GitOdbOptions>) -> Result<NonNull<GitOdb>> {
+    pub(crate) fn new(opts: Option<&GitOdbOptions>) -> Result<CShared<GitOdb>> {
         check_version(
             opts.map(|o| o.version),
             GIT_ODB_OPTIONS_VERSION,
@@ -873,7 +902,7 @@ impl GitOdb {
         let mut backends = Vec::new();
         backends.try_reserve(4).map_err(|_| errors::oom())?;
         let db = GitOdb {
-            rc: GitRefcount::new(1),
+            rc: GitRefcount::one(),
             options,
             locked: Mutex::new(Locked {
                 backends,
@@ -882,36 +911,7 @@ impl GitOdb {
             own_cache: GitCache::new(),
             do_fsync: AtomicBool::new(false),
         };
-        let b = GIT_ALLOC.try_box(db).map_err(|_| errors::oom())?;
-        let (p, _) = Box::into_raw_with_allocator(b);
-        // SAFETY: from a box.
-        Ok(unsafe { NonNull::new_unchecked(p) })
-    }
-
-    /// `odb_free`: free the backends (with the lock held, as C), the
-    /// commit-graph, the cache and the odb.
-    ///
-    /// # Safety
-    ///
-    /// `db` came from [`new`](Self::new); its last reference is gone and
-    /// nothing uses it again.
-    unsafe fn free(db: NonNull<GitOdb>) {
-        // SAFETY: the caller's contract: a box of `GIT_ALLOC`.
-        let mut b = unsafe { Box::from_raw_in(db.as_ptr(), GIT_ALLOC) };
-        {
-            let mut l = b.lock();
-            for bi in core::mem::take(&mut l.backends) {
-                // SAFETY: each backend was handed to this odb, which frees
-                // it once (its `free` slot is required).
-                if let Some(free) = unsafe { (*bi.backend.as_ptr()).free } {
-                    // SAFETY: as above.
-                    unsafe { free(bi.backend.as_ptr()) };
-                }
-            }
-            l.cgraph = None;
-        }
-        b.own_cache.dispose();
-        drop(b);
+        CShared::try_new(db).map_err(|_| errors::oom())
     }
 
     /// The backends' lock (C's `git_mutex_lock`, which never fails).
@@ -2066,19 +2066,6 @@ pub unsafe fn stream_free(stream: *mut GitOdbStream) {
     if let Some(free) = unsafe { (*stream).free } {
         // SAFETY: as above.
         unsafe { free(stream) };
-    }
-}
-
-/// The odb whose last reference was dropped, freed (`git_odb_free`).
-///
-/// # Safety
-///
-/// `db` is a live odb the caller gives a reference to.
-pub unsafe fn odb_decref(db: NonNull<GitOdb>) {
-    // SAFETY: the caller's contract.
-    if unsafe { db.as_ref() }.rc.dec() {
-        // SAFETY: the last reference, with no owner.
-        unsafe { GitOdb::free(db) };
     }
 }
 

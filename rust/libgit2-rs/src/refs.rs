@@ -402,8 +402,9 @@ impl RefBox {
     ///
     /// `db` is a live `git_refdb`.
     pub unsafe fn attach_db(&mut self, db: *mut GitRefdb) {
-        // SAFETY: per the contract.
-        unsafe { (*db).rc.inc() };
+        // SAFETY: per the contract (a live database, which its holder's
+        // count keeps live).
+        unsafe { ffibox::CShared::increment_count(db) };
         // SAFETY: we own the block.
         unsafe { (*self.ptr.as_ptr()).db = db };
     }

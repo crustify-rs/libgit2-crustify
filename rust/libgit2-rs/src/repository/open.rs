@@ -762,41 +762,58 @@ pub(crate) fn load_grafts(repo: &GitRepository) -> Result<()> {
             return Err(e);
         }
         if repo.grafts_ptr().is_null() {
-            // SAFETY: the repository's grafts slot, which C fills.
-            check(unsafe { crate::grafts::ffi::git_grafts_new(repo.grafts_slot(), oid_type) })?;
+            repo.init_grafts(new_grafts(oid_type)?);
         }
         if repo.shallow_grafts_ptr().is_null() {
-            // SAFETY: as above.
-            check(unsafe {
-                crate::grafts::ffi::git_grafts_new(repo.shallow_grafts_slot(), oid_type)
-            })?;
+            repo.init_shallow_grafts(new_grafts(oid_type)?);
         }
         return Ok(());
     }
 
     path.joinpath_self(b"grafts")?;
-    // SAFETY: the grafts slot and a NUL-terminated path.
-    check(unsafe {
-        crate::grafts::ffi::git_grafts_open_or_refresh(
-            repo.grafts_slot(),
-            cs(&path).as_ptr(),
-            oid_type,
-        )
-    })?;
+    if let Some(g) = open_or_refresh_grafts(repo.grafts_ptr(), &path, oid_type)? {
+        repo.init_grafts(g);
+    }
     path.clear();
     path.joinpath(
         repo.gitdir().map(CStr::to_bytes).unwrap_or_default(),
         b"shallow",
     )?;
-    // SAFETY: as above.
-    check(unsafe {
-        crate::grafts::ffi::git_grafts_open_or_refresh(
-            repo.shallow_grafts_slot(),
-            cs(&path).as_ptr(),
-            oid_type,
-        )
-    })?;
+    if let Some(g) = open_or_refresh_grafts(repo.shallow_grafts_ptr(), &path, oid_type)? {
+        repo.init_shallow_grafts(g);
+    }
     Ok(())
+}
+
+/// `git_grafts_new(&g, oid_type)`, owned.
+fn new_grafts(oid_type: git_oid_t) -> Result<super::GraftsBox> {
+    let mut g = ptr::null_mut();
+    // SAFETY: a local out-parameter.
+    check(unsafe { crate::grafts::ffi::git_grafts_new(&raw mut g, oid_type) })?;
+    // SAFETY: the grafts just made, ours.
+    unsafe { super::GraftsBox::from_raw(g) }.ok_or(ErrorCode::GENERIC)
+}
+
+/// `git_grafts_open_or_refresh(&slot, path, oid_type)` over the current
+/// grafts `cur` of a slot: `cur` refreshed (`None`), or, when `cur` is
+/// NULL, new grafts read from `path` for the slot.
+fn open_or_refresh_grafts(
+    cur: *mut crate::grafts::Grafts,
+    path: &GitStr,
+    oid_type: git_oid_t,
+) -> Result<Option<super::GraftsBox>> {
+    let mut g = cur;
+    // SAFETY: a local slot holding NULL or the repository's live grafts;
+    // a NUL-terminated path.
+    check(unsafe {
+        crate::grafts::ffi::git_grafts_open_or_refresh(&raw mut g, cs(path).as_ptr(), oid_type)
+    })?;
+    if cur.is_null() {
+        // SAFETY: the grafts just opened, ours.
+        Ok(unsafe { super::GraftsBox::from_raw(g) })
+    } else {
+        Ok(None)
+    }
 }
 
 /// `git_repository_open_bare`.

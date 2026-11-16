@@ -7,8 +7,8 @@
 //! safe calls the repository makes.
 //!
 //! The refcounted ones (`git_config`, `git_odb`, `git_refdb`, `git_index`)
-//! start with a `git_refcount` (`src/util/util.h`, mirrored by
-//! [`GitRefcount`]): [`refcount`] reaches it.
+//! are `ffibox::CShared`s over their leading `git_refcount`
+//! ([`GitRefcount`](crate::util::thread::GitRefcount)).
 
 use core::ffi::{CStr, c_char, c_int, c_void};
 use core::marker::PhantomData;
@@ -19,20 +19,7 @@ use crate::oid::Oid;
 use crate::refdb::GitRefdb;
 use crate::refs::GitReference;
 use crate::util::errors::{ErrorCode, Result};
-use crate::util::thread::GitRefcount;
-
-/// The `git_refcount` at the start of a refcounted libgit2 object.
-///
-/// # Safety
-///
-/// `p` points to a live `git_config`, `git_odb`, `git_refdb` or
-/// `git_index` (each starts with a `git_refcount`), and stays live while
-/// the result is used.
-pub(crate) unsafe fn refcount<'a>(p: NonNull<c_void>) -> &'a GitRefcount {
-    // SAFETY: the caller's contract; `GitRefcount` is all atomics, so a
-    // shared reference allows the C's concurrent updates.
-    unsafe { p.cast::<GitRefcount>().as_ref() }
-}
+use ffibox::CShared;
 
 /// Read the field of type `T` at byte `offset` of the C struct at `p`.
 ///
@@ -132,11 +119,13 @@ macro_rules! owner {
     };
 }
 
-owner!(
-    /// An owned reference to a `git_refdb` (`git_refdb_free` on drop).
-    Refdb: GitRefdb,
-    crate::refdb::ffi::git_refdb_free
-);
+/// An owned reference to a `git_refdb`.
+///
+/// `'r` is the repository the database points back to: the handle cannot
+/// outlive it. It is neither `Send` nor `Sync` (`GitRefdb` keeps a raw
+/// back pointer).
+#[derive(Debug, Clone)]
+pub struct Refdb<'r>(CShared<GitRefdb>, PhantomData<&'r ()>);
 
 impl<'r> Refdb<'r> {
     /// Another reference to `p`.
@@ -145,10 +134,14 @@ impl<'r> Refdb<'r> {
     ///
     /// `p` is a live `git_refdb`.
     pub(crate) unsafe fn new_ref(p: NonNull<GitRefdb>) -> Refdb<'r> {
-        // SAFETY: the caller's contract; a refdb starts with its
-        // `git_refcount`.
-        unsafe { refcount(p.cast()) }.inc();
-        Refdb(p, PhantomData)
+        // SAFETY: the caller's contract.
+        let db = unsafe { CShared::from_borrowed(p.as_ptr()) }.expect("non-null");
+        Refdb(db, PhantomData)
+    }
+
+    /// The C pointer (still owned).
+    pub(crate) fn as_ptr(&self) -> *mut GitRefdb {
+        CShared::as_ptr(&self.0)
     }
 
     /// `git_refdb_init`.

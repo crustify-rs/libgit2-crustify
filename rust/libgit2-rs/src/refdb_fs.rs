@@ -934,17 +934,11 @@ impl FsInner {
         message: Option<&CStr>,
     ) -> Result<()> {
         let db = self.repo.refdb()?;
-        let db = NonNull::new(db.cast::<refdb::GitRefdb>()).ok_or(ErrorCode::GENERIC)?;
-        struct Counted(NonNull<refdb::GitRefdb>);
-        impl Drop for Counted {
-            fn drop(&mut self) {
-                // SAFETY: the count `git_repository_refdb` gave us.
-                unsafe { refdb::decref(self.0.as_ptr()) };
-            }
-        }
-        let counted = Counted(db);
+        // SAFETY: the count `git_repository_refdb` gave us.
+        let counted = unsafe { ffibox::CShared::from_raw(db.cast::<refdb::GitRefdb>()) }
+            .ok_or(ErrorCode::GENERIC)?;
         // SAFETY: we hold a count on the live database.
-        let dbp = unsafe { RefdbPtr::new(counted.0) };
+        let dbp = unsafe { RefdbPtr::new(NonNull::from(&*counted)) };
         if !dbp.should_write_head_reflog(r)? {
             return Ok(());
         }

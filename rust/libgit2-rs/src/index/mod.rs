@@ -74,6 +74,7 @@ use crate::util::tsort::tsort;
 use crate::util::util::bsearch;
 use crate::util::vector::{GitVector, VectorCmp};
 use crate::{git_assert, git_error_set};
+use ffibox::CShared;
 
 use map::EntryMap;
 
@@ -944,7 +945,7 @@ impl GitIndex {
         dirty, set_dirty, bit::DIRTY;
     }
 
-    /// The first part of `git_index_open_ext`: an empty index, refcount 0.
+    /// The first part of `git_index_open_ext`: an empty index, refcount 1.
     pub(crate) fn new(oid_type: OidType) -> Result<Box<GitIndex>> {
         let entries = GitVector::with_capacity(32, Some(ffi::git_index_entry_cmp))?;
         let names = GitVector::with_capacity(8, Some(conflict_name_cmp))?;
@@ -956,7 +957,7 @@ impl GitIndex {
         let mut extensions = Vec::new();
         extensions.try_reserve(8).map_err(|_| errors::oom())?;
         Ok(Box::new(GitIndex {
-            rc: GitRefcount::new(0),
+            rc: GitRefcount::one(),
             index_file_path: ptr::null_mut(),
             stamp: Filestamp::default(),
             checksum: [0; crate::util::hash::MAX_SIZE],
@@ -1947,16 +1948,9 @@ impl IndexPtr {
     /// to the rest of the index.
     #[inline]
     pub fn owner(self) -> *mut c_void {
-        self.rc().owner()
-    }
-
-    /// The reference count (atomics, which C also reads and writes through
-    /// shared access): `rc` is the first field.
-    #[inline]
-    fn rc<'a>(self) -> &'a GitRefcount {
         // SAFETY: the index is live (`new`); `rc` is its first field
         // (`repr(C)`), only ever accessed through shared references.
-        unsafe { &*self.0.as_ptr().cast::<GitRefcount>() }
+        unsafe { &*crate::util::thread::refcount_of(self.0) }.owner()
     }
 
     /// The readers count (atomic).
@@ -1973,7 +1967,9 @@ impl IndexPtr {
     /// `GIT_REFCOUNT_INC`.
     #[inline]
     pub fn incref(self) {
-        self.rc().inc()
+        // SAFETY: a live index (`new`), on which the user of the handle
+        // holds a reference.
+        unsafe { CShared::increment_count(self.as_ptr()) }
     }
 
     /// `git_index_free`: drop a reference, and free the index when it was
@@ -1984,13 +1980,27 @@ impl IndexPtr {
     /// The caller gives up its reference: it does not use the handle
     /// afterwards (unless it holds another reference).
     pub unsafe fn decref(self) {
-        let free = self.rc().dec();
-        if free {
-            // SAFETY: the last reference: nothing else uses the index.
-            unsafe { index_free(self) };
-        }
+        // SAFETY: the caller's contract.
+        unsafe { CShared::decrement_count(self.as_ptr()) }
     }
 }
+
+/// `CCounted::c_release`: [`index_free`].
+///
+/// # Safety
+///
+/// As [`index_free`].
+unsafe fn release_index(p: NonNull<GitIndex>) {
+    // SAFETY: the caller's contract: the last reference.
+    let ix = unsafe { IndexPtr::new(p) };
+    // SAFETY: as above.
+    unsafe { index_free(ix) }
+}
+
+// `GitIndex` is not `CShareable`: C writes `entries`, the bits, `tree` and
+// others in place while the index is shared, so no `&GitIndex` is formed
+// from a `CShared` (it is reached through `IndexPtr`).
+crate::impl_ccounted!(GitIndex, std::alloc::Global, release = release_index);
 
 /// `index_free`.
 ///
@@ -2005,7 +2015,7 @@ unsafe fn index_free(ix: IndexPtr) {
         return;
     }
     index.dispose();
-    // SAFETY: indexes are made by `Box::into_raw` (`ops::open_ext`), and
+    // SAFETY: indexes are boxes adopted by `CShared` (`ops::open_ext`), and
     // this is the last reference.
     drop(unsafe { Box::from_raw(ix.as_ptr()) });
 }

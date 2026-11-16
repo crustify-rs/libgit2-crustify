@@ -13,6 +13,7 @@
 use core::ffi::{CStr, c_char, c_int, c_uint};
 use core::marker::PhantomData;
 use core::ptr::NonNull;
+use ffibox::CShared;
 use std::ffi::CString;
 use std::path::Path;
 
@@ -363,10 +364,8 @@ pub(crate) fn conflict_next(
 /// `'r` is the repository the index came from (`'static` for one made or
 /// opened alone): a repository's index uses its owner (capabilities,
 /// workdir), so the index and its clones cannot outlive it.
-pub struct Index<'r> {
-    ptr: IndexPtr,
-    _not_send: PhantomData<(*mut (), &'r ())>,
-}
+#[derive(Clone)]
+pub struct Index<'r>(CShared<GitIndex>, PhantomData<(*mut (), &'r ())>);
 
 impl core::fmt::Debug for Index<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -376,32 +375,22 @@ impl core::fmt::Debug for Index<'_> {
     }
 }
 
-impl<'r> Clone for Index<'r> {
-    fn clone(&self) -> Index<'r> {
-        self.ptr.incref();
-        Index {
-            ptr: self.ptr,
-            _not_send: PhantomData,
-        }
-    }
-}
-
-impl Drop for Index<'_> {
-    fn drop(&mut self) {
-        // SAFETY: this handle's reference, given up.
-        unsafe { self.ptr.decref() };
-    }
-}
-
 /// A callback result: 0 to go on, > 0 to skip the path, < 0 to stop.
 pub type MatchResult = i32;
 
 impl<'r> Index<'r> {
+    /// Adopt the reference `ptr` holds (from `ops::open_ext`).
     fn from_ptr(ptr: IndexPtr) -> Index<'r> {
-        Index {
-            ptr,
-            _not_send: PhantomData,
-        }
+        // SAFETY: `open_ext` gives up a reference to a live index.
+        let ix = unsafe { CShared::from_raw(ptr.as_ptr()) }.expect("non-null");
+        Index(ix, PhantomData)
+    }
+
+    /// The index's handle (the reference stays with `self`).
+    fn ptr(&self) -> IndexPtr {
+        // SAFETY: the index this reference keeps live, used by this thread
+        // (the handle is neither `Send` nor `Sync`).
+        unsafe { IndexPtr::new(crate::util::thread::shared_nn(&self.0)) }
     }
 
     /// A new reference to `raw` (`GIT_REFCOUNT_INC`; crate-internal: the
@@ -413,9 +402,8 @@ impl<'r> Index<'r> {
     /// while the handle lives (`IndexPtr::new`'s contract).
     pub(crate) unsafe fn new_ref(raw: NonNull<GitIndex>) -> Index<'r> {
         // SAFETY: the caller's contract.
-        let ptr = unsafe { IndexPtr::new(raw) };
-        ptr.incref();
-        Index::from_ptr(ptr)
+        let ix = unsafe { CShared::from_borrowed(raw.as_ptr()) }.expect("non-null");
+        Index(ix, PhantomData)
     }
 
     /// The index, borrowed for code that makes no foreign call.
@@ -424,7 +412,7 @@ impl<'r> Index<'r> {
         // which make no foreign call and do not reenter this API; no other
         // reference is live (the index is not shared across threads, and
         // no borrow outlives a call).
-        f(unsafe { self.ptr.get() })
+        f(unsafe { self.ptr().get() })
     }
 
     /// An in-memory index (`git_index_new`) for SHA-1 ids.
@@ -465,12 +453,12 @@ impl<'r> Index<'r> {
     /// Re-read the file (`git_index_read`); with `force`, even when it did
     /// not change, discarding unsaved changes.
     pub fn read(&mut self, force: bool) -> Result<()> {
-        ops::read(self.ptr, force).map(|_| ()).map_err(err)
+        ops::read(self.ptr(), force).map(|_| ()).map_err(err)
     }
 
     /// Write the index to its file (`git_index_write`).
     pub fn write(&mut self) -> Result<()> {
-        ops::write(self.ptr).map_err(err)
+        ops::write(self.ptr()).map_err(err)
     }
 
     /// The number of entries (`git_index_entrycount`).
@@ -514,9 +502,9 @@ impl<'r> Index<'r> {
 
     /// All the entries, as of now (`git_index_iterator`).
     pub fn iter(&self) -> IndexEntries<'r> {
-        match ops::snapshot_new(self.ptr) {
+        match ops::snapshot_new(self.ptr()) {
             Ok(snap) => IndexEntries {
-                index: Some(self.ptr),
+                index: Some(self.ptr()),
                 snap,
                 cur: 0,
                 _parent: PhantomData,
@@ -534,20 +522,20 @@ impl<'r> Index<'r> {
     /// exist in the repository's object database, if the index has one.
     pub fn add(&mut self, entry: &IndexEntry) -> Result<()> {
         let p = c_path(&entry.path)?;
-        ops::add(self.ptr, &entry.raw(&p), p.as_bytes()).map_err(err)
+        ops::add(self.ptr(), &entry.raw(&p), p.as_bytes()).map_err(err)
     }
 
     /// Write `data` as a blob and add an entry for it
     /// (`git_index_add_from_buffer`).
     pub fn add_from_buffer(&mut self, entry: &IndexEntry, data: &[u8]) -> Result<()> {
         let p = c_path(&entry.path)?;
-        ops::add_from_buffer(self.ptr, &entry.raw(&p), p.as_bytes(), Ok(data)).map_err(err)
+        ops::add_from_buffer(self.ptr(), &entry.raw(&p), p.as_bytes(), Ok(data)).map_err(err)
     }
 
     /// Add the working-directory file at `path` (`git_index_add_bypath`).
     pub fn add_path(&mut self, path: &Path) -> Result<()> {
         let p = c_path(path_bytes(path))?;
-        ops::add_bypath(self.ptr, &p).map_err(err)
+        ops::add_bypath(self.ptr(), &p).map_err(err)
     }
 
     /// Remove the entry at `path` and `stage` (`git_index_remove`).
@@ -619,7 +607,7 @@ impl<'r> Index<'r> {
     where
         F: FnMut(&[u8], Option<&[u8]>) -> MatchResult,
     {
-        let ix = self.ptr;
+        let ix = self.ptr();
         Self::with_callback(pathspecs, cb, |paths, cb| {
             ops::add_all(ix, paths, flags.raw(), cb)
         })
@@ -631,7 +619,7 @@ impl<'r> Index<'r> {
     where
         F: FnMut(&[u8], Option<&[u8]>) -> MatchResult,
     {
-        let ix = self.ptr;
+        let ix = self.ptr();
         Self::with_callback(pathspecs, cb, |paths, cb| ops::update_all(ix, paths, cb))
     }
 
@@ -640,7 +628,7 @@ impl<'r> Index<'r> {
     where
         F: FnMut(&[u8], Option<&[u8]>) -> MatchResult,
     {
-        let ix = self.ptr;
+        let ix = self.ptr();
         Self::with_callback(pathspecs, cb, |paths, cb| ops::remove_all(ix, paths, cb))
     }
 
@@ -672,7 +660,7 @@ impl<'r> Index<'r> {
                 .zip(paths[i].as_ref())
                 .map(|(r, p)| (r, p.as_bytes()))
         };
-        ops::conflict_add(self.ptr, [side(0), side(1), side(2)]).map_err(err)
+        ops::conflict_add(self.ptr(), [side(0), side(1), side(2)]).map_err(err)
     }
 
     /// The conflict at `path` (`git_index_conflict_get`).
@@ -725,13 +713,13 @@ impl<'r> Index<'r> {
 
     /// Set the capabilities (`git_index_set_caps`).
     pub fn set_caps(&mut self, caps: IndexCapability) -> Result<()> {
-        ops::set_caps(self.ptr, caps.raw()).map_err(err)
+        ops::set_caps(self.ptr(), caps.raw()).map_err(err)
     }
 
     /// Take the capabilities from the owning repository's configuration
     /// (`GIT_INDEX_CAPABILITY_FROM_OWNER`).
     pub fn set_caps_from_owner(&mut self) -> Result<()> {
-        ops::set_caps(self.ptr, GIT_INDEX_CAPABILITY_FROM_OWNER).map_err(err)
+        ops::set_caps(self.ptr(), GIT_INDEX_CAPABILITY_FROM_OWNER).map_err(err)
     }
 
     /// The checksum of the file last read or written (the id type's hash
@@ -743,7 +731,7 @@ impl<'r> Index<'r> {
     /// Make the entries those of `other`, keeping the cached stat data of
     /// the unchanged ones (`git_index_read_index`).
     pub fn read_index(&mut self, other: &Index<'_>) -> Result<()> {
-        ops::read_index(self.ptr, other.ptr).map_err(err)
+        ops::read_index(self.ptr(), other.ptr()).map_err(err)
     }
 
     /// The number of REUC records.

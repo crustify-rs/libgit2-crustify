@@ -33,6 +33,7 @@ use crate::util::alloc;
 use crate::util::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
 use crate::util::thread::GitRefcount;
 use crate::util::util::{prefixcmp, strcmp};
+use ffibox::CShared;
 
 /// `DEFAULT_NESTING_LEVEL`.
 pub const DEFAULT_NESTING_LEVEL: c_int = 5;
@@ -73,6 +74,22 @@ pub struct GitRefdb {
     /// The backend, owned (freed with its `free` slot).
     pub backend: AtomicPtr<git_refdb_backend>,
 }
+
+/// `CCounted::c_release`: [`free_db`].
+///
+/// # Safety
+///
+/// As [`free_db`].
+unsafe fn release_db(db: NonNull<GitRefdb>) {
+    // SAFETY: the caller's contract.
+    unsafe { free_db(db.as_ptr()) }
+}
+
+crate::impl_ccounted!(GitRefdb, crate::util::alloc::GitAlloc, release = release_db);
+
+// SAFETY: C writes only `rc` (GIT_REFCOUNT_*) and `backend` (atomic) while
+// the database is shared; `repo` is fixed once made.
+unsafe impl ffibox::CShareable for GitRefdb {}
 
 /// `git_refdb_backend.init`.
 pub type InitFn =
@@ -280,10 +297,7 @@ unsafe fn free_backend(backend: *mut git_refdb_backend) {
 /// `db` is a live database on which the caller holds a count it drops.
 pub unsafe fn decref(db: *mut GitRefdb) {
     // SAFETY: per the contract.
-    if unsafe { (*db).rc.dec() } {
-        // SAFETY: the last count, with no owner.
-        unsafe { free_db(db) };
-    }
+    unsafe { CShared::decrement_count(db) }
 }
 
 // ---------------------------------------------------------------------------
@@ -372,7 +386,9 @@ impl RefdbPtr {
 
     /// `GIT_REFCOUNT_INC(db)`.
     pub fn incref(self) {
-        self.db().rc.inc();
+        // SAFETY: a live database (the constructor's contract), which a
+        // count someone holds keeps live.
+        unsafe { CShared::increment_count(self.as_ptr()) }
     }
 
     /// The backend (one load of `db->backend`) and its slot `f`: the call
@@ -721,20 +737,18 @@ impl RefdbPtr {
 }
 
 /// `git_refdb_new`: a database of `repo`, without a backend, with one count.
-pub fn new_db(repo: *mut git_repository) -> Result<NonNull<GitRefdb>> {
-    let db = NonNull::new(alloc::calloc(1, core::mem::size_of::<GitRefdb>()).cast::<GitRefdb>())
-        .ok_or(ErrorCode::GENERIC)?;
-    // SAFETY: a fresh zeroed block, which is a valid `GitRefdb` (atomics
-    // and pointers at zero).
-    unsafe { (*db.as_ptr()).repo = repo };
-    // SAFETY: as above.
-    unsafe { (*db.as_ptr()).rc.inc() };
-    Ok(db)
+pub fn new_db(repo: *mut git_repository) -> Result<CShared<GitRefdb>> {
+    CShared::try_new(GitRefdb {
+        rc: GitRefcount::one(),
+        repo,
+        backend: AtomicPtr::default(),
+    })
+    .map_err(|_| errors::oom())
 }
 
 /// `git_refdb_open`: a database of `repo` with the backend of its
 /// reference storage format.
-pub fn open(repo: RepoPtr) -> Result<NonNull<GitRefdb>> {
+pub fn open(repo: RepoPtr) -> Result<CShared<GitRefdb>> {
     let db = new_db(repo.as_ptr())?;
     let backend = match repo.refdb_type() {
         GIT_REFDB_FILES => crate::refdb_fs::backend_fs(repo),
@@ -746,15 +760,10 @@ pub fn open(repo: RepoPtr) -> Result<NonNull<GitRefdb>> {
     };
     match backend {
         Ok(b) => {
-            // SAFETY: our fresh database.
-            unsafe { (*db.as_ptr()).backend.store(b, Ordering::Release) };
+            db.backend.store(b, Ordering::Release);
             Ok(db)
         }
-        Err(e) => {
-            // SAFETY: our database, with its only count.
-            unsafe { decref(db.as_ptr()) };
-            Err(e)
-        }
+        Err(e) => Err(e),
     }
 }
 
@@ -935,7 +944,7 @@ pub mod ffi {
             match new_db(repo) {
                 Ok(db) => {
                     // SAFETY: `out` writable.
-                    unsafe { *out = db.as_ptr() };
+                    unsafe { *out = CShared::into_raw(db) };
                     0
                 }
                 Err(e) => e.raw(),
@@ -963,7 +972,7 @@ pub mod ffi {
             match open(repo) {
                 Ok(db) => {
                     // SAFETY: as above.
-                    unsafe { *out = db.as_ptr() };
+                    unsafe { *out = CShared::into_raw(db) };
                     0
                 }
                 Err(e) => e.raw(),
@@ -1018,12 +1027,8 @@ pub mod ffi {
     /// `db` is NULL or a live database on which the caller drops a count.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_refdb_free(db: *mut GitRefdb) {
-        barrier(|| {
-            if !db.is_null() {
-                // SAFETY: per the contract.
-                unsafe { decref(db) };
-            }
-        })
+        // SAFETY: per the contract.
+        barrier(|| unsafe { CShared::release(db) })
     }
 
     /// `git_refdb_init`.

@@ -273,9 +273,43 @@ fn bitfield_bits_match_c() {
         .unwrap();
     assert!(st.success());
     let out = std::process::Command::new(&exe).output().unwrap();
-    let expected = format!("{} {} {}", BIT_USE_ENV, BIT_IS_BARE, BIT_IS_WORKTREE);
+    let expected = format!(
+        "{} {} {}",
+        USE_ENV.mask(),
+        IS_BARE.mask(),
+        IS_WORKTREE.mask()
+    );
     assert_eq!(String::from_utf8_lossy(&out.stdout), expected);
     let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// A refcounted test object, counting its frees in `freed`.
+#[repr(C)]
+struct TestObj {
+    rc: crate::util::thread::GitRefcount,
+    freed: &'static std::sync::atomic::AtomicUsize,
+}
+
+impl Drop for TestObj {
+    fn drop(&mut self) {
+        self.freed.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+crate::impl_ccounted!(TestObj, std::alloc::Global);
+
+fn test_obj(freed: &'static std::sync::atomic::AtomicUsize) -> CShared<TestObj> {
+    CShared::from_box(Box::new(TestObj {
+        rc: crate::util::thread::GitRefcount::one(),
+        freed,
+    }))
+}
+
+/// The owner recorded in `o`'s count.
+fn owner_of(o: &CShared<TestObj>) -> *mut c_void {
+    let p = crate::util::thread::refcount_of(crate::util::thread::shared_nn(o));
+    // SAFETY: the live count of an object `o` keeps live.
+    unsafe { &*p }.owner()
 }
 
 /// Review l-repo-r1 LR-9 (the reviewer's test, adopted): threads racing
@@ -283,32 +317,24 @@ fn bitfield_bits_match_c() {
 /// thread sees the winner owned by the repository.
 #[test]
 fn publish_races() {
-    use crate::util::thread::GitRefcount;
+    use crate::util::thread::StartsWithRefcount;
     use std::sync::atomic::AtomicUsize;
     static FREED: AtomicUsize = AtomicUsize::new(0);
-    // SAFETY: all-zero is a valid `GitRepository` (atomics, NULLs).
+    // SAFETY: all-zero is a valid `GitRepository` (atomics, NULLs, empty
+    // owners).
     let repo: Box<GitRepository> = unsafe { Box::<GitRepository>::new_zeroed().assume_init() };
     let r: &GitRepository = &repo;
-    // A slot of the kind the repository has (`AtomicPtr` to a refcounted
-    // object), outside it.
-    let slot = AtomicPtr::<c_void>::new(ptr::null_mut());
+    // A slot of the kind the repository has, outside it.
+    let slot = CAtomicOwner::<CShared<TestObj>>::new();
     let slot = &slot;
     let n = 4;
     let results: Vec<usize> = std::thread::scope(|s| {
         let hs: Vec<_> = (0..n)
             .map(|_| {
                 s.spawn(move || {
-                    let obj = Box::into_raw(Box::new(GitRefcount::new(1)));
-                    let p = NonNull::new(obj.cast::<c_void>()).unwrap();
-                    let won = r.publish(slot, p, |q| {
-                        FREED.fetch_add(1, Ordering::SeqCst);
-                        // SAFETY: the loser's box.
-                        drop(unsafe { Box::from_raw(q.cast::<GitRefcount>().as_ptr()) });
-                    });
-                    // SAFETY: published, and nothing frees it during the test.
-                    let rc = unsafe { handles::refcount(won) };
-                    assert_eq!(rc.owner(), r.as_ptr());
-                    won.as_ptr() as usize
+                    let won = r.publish(slot, test_obj(&FREED));
+                    assert_eq!(owner_of(won), r.as_ptr());
+                    CShared::as_ptr(won) as usize
                 })
             })
             .collect();
@@ -316,56 +342,50 @@ fn publish_races() {
     });
     assert!(results.windows(2).all(|w| w[0] == w[1]));
     assert_eq!(FREED.load(Ordering::SeqCst), n - 1);
-    let w = slot.swap(ptr::null_mut(), Ordering::SeqCst);
-    // SAFETY: the winner, no longer published.
-    drop(unsafe { Box::from_raw(w.cast::<GitRefcount>()) });
+    // SAFETY: no borrow of the winner is live any more.
+    let w = unsafe { slot.replace(None) }.unwrap();
+    // SAFETY: NULL: the winner is no longer owned.
+    unsafe { TestObj::own(&w, ptr::null_mut()) };
+    drop(w);
+    assert_eq!(FREED.load(Ordering::SeqCst), n);
 }
 
 /// `set_owned` (a setter) racing `publish` (lazy creation) on one slot:
 /// every object is released exactly once, and the slot ends with one owned
-/// object. (Using a published pointer while a setter may release it is
-/// outside C's contract, so the publishers do not dereference results.)
+/// object. (Using a published object while a setter may release it is
+/// outside C's contract, so the publishers do not use results.)
 #[test]
 fn set_owned_races_publish() {
-    use crate::util::thread::GitRefcount;
+    use crate::util::thread::StartsWithRefcount;
     use std::sync::atomic::AtomicUsize;
     static FREED: AtomicUsize = AtomicUsize::new(0);
-    fn free(q: NonNull<c_void>) {
-        // SAFETY: a box this test made, released once (the refcount
-        // bookkeeping of the real free functions is not modelled).
-        let b = unsafe { Box::from_raw(q.cast::<GitRefcount>().as_ptr()) };
-        drop(b);
-        FREED.fetch_add(1, Ordering::SeqCst);
-    }
-    fn make() -> NonNull<c_void> {
-        NonNull::new(Box::into_raw(Box::new(GitRefcount::new(1))).cast::<c_void>()).unwrap()
-    }
     // SAFETY: all-zero is a valid `GitRepository`.
     let repo: Box<GitRepository> = unsafe { Box::<GitRepository>::new_zeroed().assume_init() };
     let r: &GitRepository = &repo;
-    let slot = AtomicPtr::<c_void>::new(ptr::null_mut());
+    let slot = CAtomicOwner::<CShared<TestObj>>::new();
     let slot = &slot;
     let publishers = 3;
     let setters = 2;
     std::thread::scope(|s| {
         for _ in 0..publishers {
             s.spawn(move || {
-                let _ = r.publish(slot, make(), free);
+                let _ = r.publish(slot, test_obj(&FREED));
             });
         }
         for _ in 0..setters {
             s.spawn(move || {
-                // SAFETY: a live refcounted object of ours; no thread uses a
-                // pointer read from the slot.
-                unsafe { r.set_owned(slot, Some(make()), free) };
+                let mine = test_obj(&FREED);
+                // SAFETY: a live object of which `mine` holds a reference;
+                // no thread uses an object borrowed from the slot.
+                unsafe { r.set_owned(slot, Some(crate::util::thread::shared_nn(&mine))) };
             });
         }
     });
-    let last = slot.swap(ptr::null_mut(), Ordering::SeqCst);
-    assert!(!last.is_null());
-    // SAFETY: the object left in the slot, live until `free` below.
-    let rc = unsafe { handles::refcount(NonNull::new(last).unwrap()) };
-    assert_eq!(rc.owner(), r.as_ptr());
-    free(NonNull::new(last).unwrap());
+    // SAFETY: no borrow of the slot's object is live.
+    let last = unsafe { slot.replace(None) }.unwrap();
+    assert_eq!(owner_of(&last), r.as_ptr());
+    // SAFETY: NULL: no longer owned.
+    unsafe { TestObj::own(&last, ptr::null_mut()) };
+    drop(last);
     assert_eq!(FREED.load(Ordering::SeqCst), publishers + setters);
 }

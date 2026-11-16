@@ -568,8 +568,9 @@ pub unsafe extern "C" fn git_repository_odb(
         let Some(p) = NonNull::new(unsafe { *out }) else {
             return -1;
         };
-        // SAFETY: a live odb; the reference goes to the caller.
-        unsafe { p.as_ref() }.rc.inc();
+        // SAFETY: the repository's live odb, which its reference keeps
+        // live; the new reference goes to the caller.
+        unsafe { ffibox::CShared::increment_count(p.as_ptr()) };
         0
     })
 }
@@ -653,8 +654,10 @@ pub unsafe extern "C" fn git_repository_refdb(
             let Some(p) = NonNull::new(unsafe { *out }) else {
                 return -1;
             };
-            // SAFETY: the weak pointer: a live object.
-            unsafe { handles::refcount(p.cast()) }.inc();
+            // SAFETY: the weak pointer: a live refdb, which the
+            // repository's reference keeps live; the new reference goes to
+            // the caller.
+            unsafe { ffibox::CShared::increment_count(p.as_ptr()) };
         }
         0
     })
@@ -739,9 +742,10 @@ pub unsafe extern "C" fn git_repository_index(
             let Some(p) = NonNull::new(unsafe { *out }) else {
                 return -1;
             };
-            // SAFETY: the weak pointer: a live index; the reference goes
-            // to the caller.
-            unsafe { crate::index::IndexPtr::new(p) }.incref();
+            // SAFETY: the weak pointer: a live index, which the
+            // repository's reference keeps live; the new reference goes to
+            // the caller.
+            unsafe { ffibox::CShared::increment_count(p.as_ptr()) };
         }
         0
     })
