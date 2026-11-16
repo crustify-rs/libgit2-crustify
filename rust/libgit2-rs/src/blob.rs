@@ -35,7 +35,7 @@ use crate::sys::pending::l_obj::{
 use crate::util::alloc::{self, GitCStr};
 use crate::util::errors::{self, Bytes, Error, ErrorClass, ErrorCode, Result};
 use crate::util::filebuf::{GIT_FILEBUF_TEMPORARY, GitFilebuf};
-use crate::util::futils::{self, GIT_BUFSIZE_FILEIO};
+use crate::util::futils;
 use crate::util::posix;
 use crate::util::str::GitStr;
 use crate::{git_assert_arg, git_error_set};
@@ -62,13 +62,18 @@ pub struct GitBlob {
     data: BlobData,
 }
 
+// The header is first (C casts a `git_blob *` to `git_object *`), and the
+// alignment is what `git__allocator` gives.
+const _: () = assert!(core::mem::offset_of!(GitBlob, object) == 0);
+const _: () = assert!(align_of::<GitBlob>() <= 8);
+
 /// Allocate an empty blob (`git__calloc(1, sizeof(git_blob))`).
 pub(crate) fn alloc() -> Result<NonNull<GitBlob>> {
     let p = NonNull::new(alloc::malloc(size_of::<GitBlob>()).cast::<GitBlob>())
         .ok_or(ErrorCode::GENERIC)?;
-    // SAFETY: a fresh `git__allocator` block of a `GitBlob`'s size,
-    // 8-aligned (as `git__allocator`'s memory is, checked by the layout
-    // test's alignment).
+    // SAFETY: a fresh `git__allocator` block of a `GitBlob`'s size;
+    // `git__allocator` memory is malloc-aligned, enough for `GitBlob`
+    // (`align_of <= 8`, asserted below).
     unsafe {
         p.as_ptr().write(GitBlob {
             object: GitObject::zeroed(),
@@ -241,16 +246,23 @@ unsafe fn write_file_stream(odb: *mut git_odb, path: &CStr, file_size: u64) -> R
     // SAFETY: a live odb.
     let mut stream = unsafe { OdbStream::open(odb, file_size, GIT_OBJECT_BLOB)? };
     let fd = futils::open_ro(path).map_err(|_| ErrorCode::GENERIC)?;
-    let mut buffer = vec![0u8; GIT_BUFSIZE_FILEIO];
+    let mut buffer = match object::FileReadBuffer::new() {
+        Ok(b) => b,
+        Err(e) => {
+            // SAFETY: the descriptor opened above, closed once.
+            let _ = unsafe { posix::close(fd) };
+            return Err(e);
+        }
+    };
     let mut error = 0;
     let mut written: u64 = 0;
     let mut read_failed = false;
     while error == 0 {
-        match posix::read(fd, &mut buffer) {
-            Ok(0) => break,
-            Ok(n) => {
-                error = stream.write(&buffer[..n]);
-                written += n as u64;
+        match buffer.read(fd) {
+            Ok([]) => break,
+            Ok(data) => {
+                error = stream.write(data);
+                written += data.len() as u64;
             }
             Err(posix::Errno(e)) => {
                 errors::set_errno(e);
@@ -449,10 +461,12 @@ pub struct BlobWriteStream {
     hintpath: Option<GitCStr>,
 }
 
-// SAFETY: the state owns its filebuf and path; `repo` is only passed to C,
-// which (libgit2's contract for streams) uses it on whichever thread uses
-// the stream, one at a time. Every slot takes `&mut`, so `&Self` is never
-// shared across threads by the table.
+// SAFETY: the state owns its filebuf and path, which move between threads
+// freely; `repo` is a pointer only passed to C (`git_repository` is usable
+// from any thread). Sync: no method or slot takes `&BlobWriteStream`
+// (every slot is exclusive and the owner only uses `state_mut` /
+// `into_inner`), so a shared reference is never used to reach the state;
+// it is asserted only because `CTable::into_c` asks for it.
 unsafe impl Send for BlobWriteStream {}
 // SAFETY: as above.
 unsafe impl Sync for BlobWriteStream {}
@@ -464,6 +478,12 @@ impl Drop for BlobWriteStream {
     }
 }
 
+/// A stream slot refused because another one runs on the stream (re-entry
+/// or a concurrent call): -1 with `GIT_ERROR_INTERNAL`.
+fn busy() -> c_int {
+    git_error_set!(ErrorClass::INTERNAL, "stream in use").raw()
+}
+
 impl_cvtable! {
     // SAFETY: libgit2's contract for a `git_writestream`: its slots are
     // called with the stream itself, first, and `write`, `close` and `free`
@@ -473,8 +493,12 @@ impl_cvtable! {
     /// `blob_writestream_write`.
     fn write(@stream, buffer: *const c_char, len: usize) -> c_int {
         on panic: { errors::set_panic_error(); -1 },
-        on busy: -1,
+        on busy: busy(),
         |s: &mut BlobWriteStream| {
+            if buffer.is_null() && len > 0 {
+                // (C dereferences it: rust/DEFECTS.md.)
+                return errors::assert_arg_failed("buffer").raw();
+            }
             // SAFETY: C passes `len` readable bytes at `buffer`.
             let data = unsafe { crate::util::export::bytes(buffer, len) };
             crate::util::export::status(s.fbuf.write(data))
@@ -483,7 +507,7 @@ impl_cvtable! {
     /// `blob_writestream_close`.
     fn close(@stream) -> c_int {
         on panic: { errors::set_panic_error(); -1 },
-        on busy: -1,
+        on busy: busy(),
         |s: &mut BlobWriteStream| {
             s.fbuf.cleanup();
             0
@@ -534,16 +558,18 @@ pub unsafe fn create_from_stream(
 
 /// `git_blob_create_from_stream_commit`: flush the stream and create the
 /// blob (the stream is freed).
-pub fn stream_commit(mut stream: CTable<WriteStream, BlobWriteStream>) -> Result<Oid> {
-    let s = stream.state_mut();
-    if s.fbuf.flush() < 0 {
-        return Err(ErrorCode::GENERIC);
-    }
-    let lock = s.fbuf.lock_path().map(|c| c.to_owned());
+pub fn stream_commit(stream: CTable<WriteStream, BlobWriteStream>) -> Result<Oid> {
+    // The state is taken out of the table first: filter loading and the
+    // filters (user code) run below, and no slot may reach the state then.
+    let mut s = stream.into_inner();
+    ErrorCode::check(s.fbuf.flush())?;
+    let lock = s.fbuf.lock_path();
     let hint = s.hintpath.as_ref().map(|h| h.as_c_str());
     // SAFETY: the stream's repository, which outlives it (the contract of
     // `create_from_stream`).
-    unsafe { create_from_paths(None, s.repo, lock.as_deref(), hint, 0, hint.is_some()) }
+    let r = unsafe { create_from_paths(None, s.repo, lock, hint, 0, hint.is_some()) };
+    drop(s);
+    r
 }
 
 // ---------------------------------------------------------------------------
@@ -1001,6 +1027,8 @@ pub mod ffi {
         barrier(|| {
             git_assert_arg!(!id.is_null(), "id", -1);
             git_assert_arg!(!repo.is_null(), "repo", -1);
+            // (C dereferences a NULL buffer: rust/DEFECTS.md.)
+            git_assert_arg!(!buffer.is_null() || len == 0, "buffer", -1);
             // SAFETY: readable for `len` bytes.
             let data = unsafe { bytes(buffer.cast(), len) };
             // SAFETY: a live repository.
@@ -1127,6 +1155,8 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_blob_data_is_binary(str: *const c_char, len: usize) -> c_int {
         barrier(|| {
+            // (C dereferences a NULL buffer: rust/DEFECTS.md.)
+            git_assert_arg!(!str.is_null() || len == 0, "str", -1);
             // SAFETY: readable for `len` bytes.
             c_int::from(data_is_binary(unsafe { bytes(str, len) }))
         })
