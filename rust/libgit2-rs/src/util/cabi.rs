@@ -14,6 +14,7 @@
 //! | `T *out` written, not read | [`Out<'_, T>`] | [`write`](Out::write) |
 //! | `const T *x` read, nothing writes it during the call | `Option<&T>` | [`git_arg!`](crate::git_arg) |
 //! | `T *x`, the call has the only access | `Option<&mut T>` | [`git_arg!`](crate::git_arg) |
+//! | `const T *v, size_t n`, read, nothing writes it during the call | `*const T`, `usize` | [`slice`](fn@slice) (`unsafe`) |
 //!
 //! Choose `Option<&T>` only when a shared reference may cover the whole
 //! pointee for the whole call: nothing (another thread, a callback, the
@@ -250,6 +251,36 @@ impl<T> fmt::Debug for Out<'_, T> {
     }
 }
 
+/// The `len` elements at `ptr` as a slice, for a C `(const T *ptr, size_t
+/// len)` pair: empty when `len` is 0 or `ptr` is NULL, whatever the other
+/// is (C passes NULL with 0, and `from_raw_parts` needs a non-null, aligned
+/// pointer even then).
+///
+/// A `len` whose byte size exceeds `isize::MAX` (which no readable range
+/// can have, but a C `size_t` can carry) panics rather than form the slice:
+/// an export's barrier turns it into an internal error. This is
+/// [`export::bytes`](super::export::bytes) for any element type.
+///
+/// # Safety
+///
+/// When `len > 0` and `ptr` is not NULL: `ptr` is aligned for `T` and valid
+/// for reads of `len` initialized `T`s for `'a`, and nothing writes them
+/// during `'a` (except inside an `UnsafeCell` of `T`).
+#[inline(always)]
+pub unsafe fn slice<'a, T>(ptr: *const T, len: usize) -> &'a [T] {
+    if len == 0 || ptr.is_null() {
+        return &[];
+    }
+    assert!(
+        len <= isize::MAX as usize / size_of::<T>().max(1),
+        "length beyond isize::MAX bytes"
+    );
+    // SAFETY: `ptr` is non-null, and the caller guarantees it aligned and
+    // valid for reads of `len` initialized `T`s, unwritten for `'a`; their
+    // size, `len * size_of::<T>()`, is at most `isize::MAX` (checked).
+    unsafe { core::slice::from_raw_parts(ptr, len) }
+}
+
 /// `GIT_ASSERT_ARG(x)` for an `Option<&T>` / `Option<&mut T>` argument:
 /// the reference, or set `invalid argument: '<text>'` and return `$ret`
 /// (`Err(GENERIC)` without it), as [`git_assert_arg!`](crate::git_assert_arg).
@@ -314,6 +345,25 @@ mod tests {
         let mut n = unsafe { Out::<u32>::from_ptr(ptr::null_mut()) };
         assert!(n.is_null());
         n.write(5);
+    }
+
+    #[test]
+    fn slice_maps_null_and_zero_to_empty() {
+        let v = [1u32, 2, 3];
+        // SAFETY: `v` is readable for 3 elements and unwritten.
+        assert_eq!(unsafe { slice(v.as_ptr(), 3) }, &[1, 2, 3]);
+        // SAFETY: NULL and 0 form no slice of the pointee.
+        assert!(unsafe { slice::<u32>(ptr::null(), 5) }.is_empty());
+        // SAFETY: as above.
+        assert!(unsafe { slice::<u32>(ptr::dangling(), 0) }.is_empty());
+    }
+
+    #[test]
+    #[should_panic(expected = "isize::MAX")]
+    fn slice_rejects_lengths_beyond_isize_max() {
+        let v = [0u64; 1];
+        // SAFETY: the length check panics before any slice is formed.
+        let _ = unsafe { slice(v.as_ptr(), usize::MAX / 8) };
     }
 
     // The ABI the exports rely on: C's pointer passes as these types (Miri
