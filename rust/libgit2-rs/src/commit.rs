@@ -269,10 +269,11 @@ pub fn parse_signature<'a>(buf: &'a [u8], pos: &mut usize, header: &[u8]) -> Res
             let hours = offset / 100;
             let mins = offset % 100;
             if hours <= 14 && mins <= 59 {
-                // (C overflows here for hours < -35791394: wrapping.)
-                let mut off = hours.wrapping_mul(60).wrapping_add(mins);
+                // `offset` is an `i32` (git__strntol32), so `hours` is at
+                // least -21474836 and none of this can overflow.
+                let mut off = hours * 60 + mins;
                 if sign == b'-' {
-                    off = off.wrapping_neg();
+                    off = -off;
                 }
                 when.offset = off;
                 when.sign = sign as c_char;
@@ -343,15 +344,15 @@ pub(crate) fn write_signature(
     when: GitTime,
 ) {
     const FORMAT: &str = "%s%s <%s> %u %c%02d%02d\n";
-    let mut offset = when.offset;
     let sign = if when.offset < 0 || when.sign == b'-' as c_char {
         '-'
     } else {
         '+'
     };
-    if offset < 0 {
-        offset = offset.wrapping_neg();
-    }
+    // The magnitude, unsigned: for `INT_MIN` the C's `offset = -offset`
+    // overflows, and the C build divides the result as unsigned (see
+    // DEFECTS.md), giving 35791394 hours and 8 minutes.
+    let offset = when.offset.unsigned_abs();
     let hours = offset / 60;
     let mins = offset % 60;
     // printf's "%s" of NULL is glibc's "(null)".
@@ -587,7 +588,7 @@ pub(crate) unsafe fn find_graft(
     }
     for off in [pend::REPO_GRAFTS, pend::REPO_SHALLOW_GRAFTS] {
         // SAFETY: `repo` is live (contract); the field is a pointer.
-        let grafts: *mut pend::git_grafts = unsafe { pend::field(repo, off) };
+        let grafts = unsafe { pend::repo_grafts(repo, off) };
         let mut g = ptr::null_mut();
         // SAFETY: `grafts` is the repository's (the C asserts it is not
         // NULL); `g` is writable.
@@ -771,7 +772,11 @@ pub fn extract_signature(
     let buf = &data[..memchr::memchr(0, data).unwrap_or(data.len())];
     let at = |i: usize| buf.get(i).copied().unwrap_or(0);
     let mut pos = 0usize;
-    while let Some(h) = memchr::memchr(b'\n', &buf[pos..]).map(|i| pos + i) {
+    // An empty field matches every line without advancing: the C loops
+    // forever on the first line that does not start with a space. It is
+    // never found here (DEFECTS.md).
+    let lines = if field.is_empty() { None } else { Some(()) };
+    while let Some(h) = lines.and_then(|()| memchr::memchr(b'\n', &buf[pos..]).map(|i| pos + i)) {
         if at(h + 1) == 0 {
             break;
         }
@@ -1138,7 +1143,8 @@ pub(crate) unsafe fn create_internal(
             }
         }
 
-        let odb = repo_odb(repo)?;
+        // SAFETY: `repo` is live (contract).
+        let odb = unsafe { repo_odb(repo) }?;
         // SAFETY: `odb` is the repository's; the tree id readable.
         ErrorCode::check(unsafe { pend::git_odb__freshen(odb, &raw const args.tree) })?;
         let bytes = buf.as_bytes();
@@ -1168,10 +1174,13 @@ pub(crate) unsafe fn create_internal(
 }
 
 /// `git_repository_odb__weakptr`.
-pub(crate) fn repo_odb(repo: *mut git_repository) -> Result<*mut pend::git_odb> {
+///
+/// # Safety
+///
+/// `repo` is a live repository, not freed during the call.
+pub(crate) unsafe fn repo_odb(repo: *mut git_repository) -> Result<*mut pend::git_odb> {
     let mut odb = ptr::null_mut();
-    // SAFETY: `repo` is a live repository (every caller's contract);
-    // `odb` is writable.
+    // SAFETY: `repo` is live (contract); `odb` is writable.
     ErrorCode::check(unsafe { pend::git_repository_odb__weakptr(&raw mut odb, repo) })?;
     Ok(odb)
 }
@@ -2354,7 +2363,8 @@ pub mod ffi {
             sd.clear();
             // SAFETY: NULL or NUL-terminated (contract).
             let field = unsafe { opt_cbytes(field) }.unwrap_or(b"gpgsig");
-            let odb = match repo_odb(repo) {
+            // SAFETY: a live repository (contract).
+            let odb = match unsafe { repo_odb(repo) } {
                 Ok(o) => o,
                 Err(e) => return e.raw(),
             };
@@ -2515,7 +2525,7 @@ pub mod ffi {
             // SAFETY: as above.
             let field = unsafe { opt_cbytes(signature_field) }.unwrap_or(b"gpgsig");
             // SAFETY: a live repository (contract).
-            let oid_type: git_oid_t = unsafe { pend::field(repo, pend::REPO_OID_TYPE) };
+            let oid_type: git_oid_t = unsafe { pend::repo_oid_type(repo) };
 
             // The first step is to verify that all the tree and parents exist
             let parsed = alloc::calloc(1, size_of::<GitCommit>()).cast::<GitCommit>();
@@ -2553,7 +2563,8 @@ pub mod ffi {
                     }
                     None => content,
                 };
-                let odb = repo_odb(repo)?;
+                // SAFETY: `repo` is live (contract).
+                let odb = unsafe { repo_odb(repo) }?;
                 // SAFETY: readable bytes; `out` writable.
                 ErrorCode::check(unsafe {
                     pend::git_odb_write(out, odb, bytes.as_ptr().cast(), bytes.len(), OBJ_COMMIT)

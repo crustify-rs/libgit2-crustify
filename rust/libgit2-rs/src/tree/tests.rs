@@ -375,6 +375,30 @@ fn walks() {
         b"git_tree_walk callback returned -42"
     );
 
+    // The callback gets pointers into the trees' arrays (LC-1): kept past
+    // the walk, they are the by-index entries.
+    {
+        let root = trees[2].1.0;
+        let mut saved: Vec<*const GitTreeEntry> = Vec::new();
+        let mut lookup = |id: &Oid| by_id(id).ok_or(ErrorCode::NOT_FOUND);
+        let mut free = |_t: *mut GitTree| {};
+        let mut cb = |r: &GitStr, e: &GitTreeEntry| {
+            if r.is_empty() {
+                saved.push(ptr::from_ref(e));
+            }
+            WalkResult::Continue
+        };
+        let mut path = GitStr::new();
+        // SAFETY: live trees from `lookup`.
+        let r = unsafe { walk(root, &mut path, true, &mut lookup, &mut free, &mut cb) };
+        assert_eq!(r, 0);
+        for (i, p) in saved.iter().enumerate() {
+            // SAFETY: a live tree.
+            assert_eq!(*p, unsafe { ffi::git_tree_entry_byindex(root, i) });
+        }
+        assert_eq!(saved.len(), 3);
+    }
+
     // By path.
     let root = trees[2].1.0;
     let mut lookup = |id: &Oid| by_id(id).ok_or(ErrorCode::NOT_FOUND);
@@ -437,4 +461,74 @@ fn update_helpers() {
     assert!(left_dir(b"win32mmap.c", b"win32"));
     assert!(!left_dir(b"win32/mmap.c", b"win32"));
     assert!(!left_dir(b"x", b""));
+}
+
+/// A C filter callback that re-enters the builder: it removes the current
+/// entry itself, removes another one, and reads the count, while
+/// `git_treebuilder_filter` iterates.
+#[test]
+fn filter_reentrant_callback() {
+    let _g = test_support::init();
+    let mut b = GitTreebuilder::empty(ptr::null_mut());
+    let names: Vec<std::ffi::CString> = (0..40)
+        .map(|i| std::ffi::CString::new(format!("n{i}")).unwrap())
+        .collect();
+    for (i, n) in names.iter().enumerate() {
+        let id = Oid::from_bytes(&[i as u8 + 1; 20], OidType::Sha1).unwrap();
+        // SAFETY: NUL-terminated; no validation (no repository used).
+        unsafe { b.append_entry(n.as_ptr(), &id, FILEMODE_BLOB, false) }.unwrap();
+    }
+    struct Ctx {
+        bld: *mut GitTreebuilder,
+        calls: usize,
+    }
+    unsafe extern "C" fn cb(e: *const GitTreeEntry, payload: *mut c_void) -> c_int {
+        // SAFETY: the context passed below, live during the filter.
+        let ctx = unsafe { &mut *payload.cast::<Ctx>() };
+        ctx.calls += 1;
+        // SAFETY: a live entry; its name is NUL-terminated.
+        let name = unsafe { CStr::from_ptr((*e).filename) }.to_bytes().to_vec();
+        let n: usize = String::from_utf8_lossy(&name[1..]).parse().unwrap();
+        // SAFETY: the builder, re-entered through the C ABI only.
+        unsafe {
+            assert!(ffi::git_treebuilder_entrycount(ctx.bld) > 0);
+            match n % 4 {
+                // remove itself, then ask to remove it again
+                0 => {
+                    let own = std::ffi::CString::new(name).unwrap();
+                    assert_eq!(ffi::git_treebuilder_remove(ctx.bld, own.as_ptr()), 0);
+                    1
+                }
+                // remove the next one (which may already have been visited)
+                1 => {
+                    let next = std::ffi::CString::new(format!("n{}", n + 1)).unwrap();
+                    let _ = ffi::git_treebuilder_remove(ctx.bld, next.as_ptr());
+                    0
+                }
+                // plain removal by the filter
+                2 => 1,
+                _ => 0,
+            }
+        }
+    }
+    let p = &raw mut b;
+    let mut ctx = Ctx { bld: p, calls: 0 };
+    // SAFETY: a live builder; the callback and its context are valid.
+    unsafe {
+        assert_eq!(
+            ffi::git_treebuilder_filter(p, Some(cb), (&raw mut ctx).cast()),
+            0
+        );
+    }
+    // n%4 == 0 removed by itself, 2 by the filter; 1 removed n+1 (= 2 mod 4).
+    // What is left are the n%4 == 1 and 3 that no callback removed.
+    let left = b.len();
+    assert!(left <= 20 && left > 0, "{left}");
+    for (_, &e) in b.map.iter() {
+        // SAFETY: an entry the builder owns.
+        let n = unsafe { CStr::from_ptr((*e).filename) };
+        let k: usize = n.to_str().unwrap()[1..].parse().unwrap();
+        assert!(k % 2 == 1, "{k}");
+    }
+    assert!(ctx.calls >= 20);
 }

@@ -599,3 +599,23 @@ fn c_foreign_layout() {
         &a,
     );
 }
+
+#[test]
+fn review_r1_edges() {
+    let _g = test_support::init();
+    // LC-5: an empty field is never found (the C loops forever).
+    let (mut sig, mut signed) = (GitStr::new(), GitStr::new());
+    assert_eq!(
+        extract_signature(b"tree x\nauthor a\n\nmsg\n", b"", &mut sig, &mut signed).unwrap_err(),
+        ErrorCode::NOT_FOUND
+    );
+    // LC-3: INT_MIN offsets are written as the C build does.
+    let mut out = GitStr::new();
+    let when = GitTime {
+        time: 0,
+        offset: i32::MIN,
+        sign: 0,
+    };
+    write_signature(&mut out, b"author ", Some(b"N"), Some(b"e"), when);
+    assert_eq!(out.as_bytes(), b"author N <e> 0 -3579139408\n");
+}

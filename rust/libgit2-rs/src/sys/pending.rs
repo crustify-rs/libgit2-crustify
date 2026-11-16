@@ -135,6 +135,41 @@ pub mod l_commit {
         unsafe { p.read() }
     }
 
+    /// `repo->oid_type`, with an atomic load: l-repo's `GitRepository` (on
+    /// master) declares it atomic.
+    ///
+    /// # Safety
+    ///
+    /// `repo` is a live repository.
+    #[inline]
+    pub unsafe fn repo_oid_type(repo: *const git_repository) -> crate::oid::git_oid_t {
+        // SAFETY: a live repository (contract): `oid_type` is at that offset.
+        let p: *mut core::sync::atomic::AtomicU32 =
+            unsafe { field_ptr(repo.cast_mut(), REPO_OID_TYPE) };
+        // SAFETY: a 4-byte aligned `git_oid_t` of a live repository, which
+        // may be written as an atomic (so it is reached as one).
+        let a = unsafe { &*p };
+        a.load(core::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// `repo->grafts` / `repo->shallow_grafts` (`off`), with an atomic load:
+    /// l-repo declares them `AtomicPtr` (the cleanup swaps them).
+    ///
+    /// # Safety
+    ///
+    /// `repo` is a live repository; `off` is [`REPO_GRAFTS`] or
+    /// [`REPO_SHALLOW_GRAFTS`].
+    #[inline]
+    pub unsafe fn repo_grafts(repo: *const git_repository, off: usize) -> *mut git_grafts {
+        // SAFETY: a live repository (contract): a pointer field at `off`.
+        let p: *mut core::sync::atomic::AtomicPtr<git_grafts> =
+            unsafe { field_ptr(repo.cast_mut(), off) };
+        // SAFETY: an aligned pointer field of a live repository, which may
+        // be written atomically.
+        let a = unsafe { &*p };
+        a.load(core::sync::atomic::Ordering::SeqCst)
+    }
+
     /// The address of the field at `off` of `base`.
     ///
     /// # Safety

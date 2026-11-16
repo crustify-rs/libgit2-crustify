@@ -474,11 +474,38 @@ DIVERGENCES.md).
 ### commit: allocation failures in signature parsing are ignored
 - C: `signature.c`, `extract_trimmed` (`git_signature__parse`): a failed
   `git__substrdup` of the name or e-mail leaves it NULL, and the parse
-  succeeds. The time zone's `hours * 60` overflows for a parsed offset
-  below about `-3.6e9` (signed overflow).
-- Trigger: `cl_alloc_limit` during a commit parse; `committer a <b> 1 +-2147483648`.
+  succeeds.
+- Trigger: `cl_alloc_limit` during a commit parse.
 - Rust (the commit parser's copy of the signature parser): the parse fails
-  with the out-of-memory error; the offset arithmetic wraps.
+  with the out-of-memory error.
+
+### commit: `git_signature__writebuf` with an offset of `INT_MIN`
+- C: `signature.c`, `git_signature__writebuf`: `offset = -offset` is a
+  signed overflow for `INT_MIN`. The C build (clang) then divides the
+  result as unsigned, and writes `-3579139408` (35791394 hours, 08 minutes).
+- Trigger: `git_commit_create_buffer` with a signature whose
+  `when.offset == INT_MIN` (`git_signature_new` accepts it).
+- Rust: the unsigned magnitude (`unsigned_abs`), so the bytes are the C
+  build's.
+
+### commit: `git_commit_extract_signature` with an empty field never returns
+- C: `git_commit__extract_signature` with `field == ""`: every line matches
+  the empty prefix, and a line that does not continue with a space sets
+  `buf = h` (the same position): an endless loop.
+- Trigger: `git_commit_extract_signature(&sig, &data, repo, &id, "")`.
+- Rust: an empty field is never found: `GIT_ENOTFOUND`, `this commit is not
+  signed`.
+
+### commit: `git_commit_amend` leaks the reference when the creation fails
+- C: `git_commit_amend` frees the looked-up `update_ref` only
+  `if (!error && update_ref)`.
+- Rust: freed on every path.
+
+### tree: NULL arguments of `git_tree_entry_bypath` and `git_tree_walk`
+- C: neither asserts its arguments; NULL `entry_out`, `root`, `path`,
+  `tree` or `callback` are dereferenced or called.
+- Rust: `invalid argument: '<name>'` (-1) for each (`git_tree_walk` checks
+  the mode first, as the C does).
 
 ### commit: `git_commit__extract_signature` leaks the object
 - C: when appending to `signed_data` fails, it returns -1 without freeing
