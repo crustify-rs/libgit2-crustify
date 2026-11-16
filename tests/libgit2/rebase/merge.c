@@ -715,6 +715,7 @@ void test_rebase_merge__copy_notes_specified_in_config(void)
 		"notes.rewriteRef", "refs/notes/test"));
 
 	test_copy_note(NULL, 1);
+	git_config_free(config);
 }
 
 void test_rebase_merge__copy_notes_disabled_in_config(void)
@@ -727,6 +728,7 @@ void test_rebase_merge__copy_notes_disabled_in_config(void)
 		"notes.rewriteRef", "refs/notes/test"));
 
 	test_copy_note(NULL, 0);
+	git_config_free(config);
 }
 
 static void rebase_checkout_progress_cb(

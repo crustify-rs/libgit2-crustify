@@ -1288,3 +1288,9 @@ out-of-memory error instead.
 - C: `GIT_ERROR_CHECK_ALLOC(grafts->path)` returns without freeing the
   grafts.
 - Rust: frees them.
+
+## Tests: `rebase::merge::copy_notes_{specified,disabled}_in_config` leak their config
+
+- **C location:** `tests/libgit2/rebase/merge.c`, both tests take `git_repository_config(&config, repo)` and never free it.
+- **Why the C build did not show it:** `repo_local_config` in the C `repository.c` frees a config reference it does not own (see the l-repo entry above), which leaves the repository's config one count low; that cancels the tests' missing free. The Rust fixes that defect, so LeakSanitizer reports the tests' 47 blocks.
+- **Change:** the two tests now call `git_config_free(config)` (the only edit to a test file in the port).
