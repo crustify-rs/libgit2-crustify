@@ -323,6 +323,15 @@ pub mod l_revwalk {
     }
 }
 
+/// Initialize the library once for `refs_api`'s stand-in repository (a
+/// count never dropped: the library stays initialized).
+pub fn libgit2_init_once() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let _ = crate::libgit2::init();
+    });
+}
+
 // ---------------------------------------------------------------------------
 // WP l-refs: what refs.c, refdb.c, refdb_fs.c and reflog.c call in modules
 // that other L WPs are porting.
@@ -785,19 +794,4 @@ impl Drop for CommitBox {
         // SAFETY: a commit we own.
         unsafe { git_commit_free(self.0.as_ptr()) };
     }
-}
-
-unsafe extern "C" {
-    /// `git_libgit2_init` (libgit2.c). PENDING(l-repo)
-    fn git_libgit2_init() -> c_int;
-}
-
-/// Initialize the library once for the safe API's users (a count C never
-/// drops: the library stays initialized). PENDING(l-repo)
-pub fn libgit2_init_once() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    // SAFETY: `git_libgit2_init` may be called at any time, on any thread.
-    ONCE.call_once(|| unsafe {
-        git_libgit2_init();
-    });
 }

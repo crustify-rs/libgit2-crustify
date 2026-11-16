@@ -49,9 +49,8 @@ pub struct GitIndexEntryRaw {
     _opaque: [u8; 0],
 }
 
-/// `offsetof(git_index_entry, path)`. PENDING(l-index): read through the
-/// integrated `IndexEntry`.
-pub const INDEX_ENTRY_PATH_OFFSET: usize = 80;
+/// `offsetof(git_index_entry, path)` (the index module's mirror).
+pub const INDEX_ENTRY_PATH_OFFSET: usize = core::mem::offset_of!(crate::index::GitIndexEntry, path);
 
 /// The `advance` callback of `git_iterator_callbacks`.
 pub type AdvanceFn =
