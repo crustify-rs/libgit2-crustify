@@ -13,8 +13,12 @@ pub mod sys;
 pub mod util;
 
 pub mod buf;
+pub mod cache;
 pub mod fs;
 pub mod hashmap_oid;
+pub mod odb;
+pub mod odb_loose;
+pub mod odb_mempack;
 pub mod oid;
 pub mod oidarray;
 pub mod parse;
