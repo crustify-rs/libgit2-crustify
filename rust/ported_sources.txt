@@ -56,3 +56,6 @@ src/libgit2/config_list.c
 src/libgit2/config_mem.c
 src/libgit2/config_parse.c
 src/libgit2/config_snapshot.c
+src/libgit2/index.c
+src/libgit2/index_map.c
+src/libgit2/tree-cache.c

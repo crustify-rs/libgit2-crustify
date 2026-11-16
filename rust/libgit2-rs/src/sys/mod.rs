@@ -23,4 +23,7 @@ pub mod sysdir;
 pub mod transaction;
 pub mod transports;
 pub mod worktree;
+pub mod diff;
+pub mod ignore;
+pub mod pathspec;
 pub mod zlib;

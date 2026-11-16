@@ -507,3 +507,27 @@ Geomean wall ratio 0.40, CPU 0.38.
   (`git_config_get_bool`/`_int64` on a snapshot of big.config, 200,000
   calls, CPU 5) gives C 372-433 ns, Rust 384-470 ns, and 494 vs 483 ns for
   a missing key.
+## WP l-index (index, tree-cache, index_map): `compare.sh /work/build-c /work/builds/l-index index`
+
+2026-11-16 10:02–10:40 UTC, defaults (3 rounds × 3 reps, 1 warm-up), CPU 2; load average 290–380. The filter also matched `delta/indexer_resolve`. All check values match.
+
+```
+component  workload                C ms     Rust ms  ratio minrat       C cpu    Rust cpu cpurat  check
+delta      indexer_resolve     8450.996    8313.228  0.984  0.790    1678.631    1569.955  0.935  ok 3eee8855b4b539e5
+index      read_100k           1688.408    1651.458  0.978  1.053     241.591     226.782  0.939  ok b9d98eb2eb00ac6b
+index      read_git_x10         693.007     740.763  1.069  1.322      90.706      92.954  1.025  ok ec385a8e65333760
+index      write_100k          1953.661    1867.533  0.956  0.943     242.092     223.804  0.924  ok 22f0e2201dace099
+index      write_git            104.770     105.015  1.002  0.980      13.146      13.088  0.996  ok ef04e49736db21fe
+index      find_bypath_100k    2592.074    2747.242  1.060  0.952     328.293     340.161  1.036  ok 000000012ac8478c
+index      find_prefix           88.462      88.726  1.003  1.004      13.162      13.145  0.999  ok 000000001dc5c3e0
+index      add_remove_100k     9246.715    8125.577  0.879  1.001    1148.065    1118.937  0.975  ok 7a7d25999ea53dbc
+index      remove_directory    8155.602    8105.181  0.994  0.932    1025.860    1021.864  0.996  ok ea9aa18304d66022
+index      conflicts           9576.100   10446.001  1.091  0.988    1336.362    1339.870  1.003  ok 453a5b2cb4a9e763
+index      read_tree_x10        732.237     747.054  1.020  1.088     104.565     114.404  1.094  ok ec385a8e65333760
+index      write_tree_git       357.784     356.777  0.997  1.249      51.547      53.799  1.044  ok 154f5a592fc11533
+
+wall time, 12 workloads: geomean ratio 1.001, median |ratio-1| 0.021, max |ratio-1| 0.121, within 5%: 8, within 10%: 11, flagged: 0
+cpu time: geomean ratio 0.996, median |ratio-1| 0.031, max |ratio-1| 0.094, within 5%: 8, within 10%: 12
+```
+
+Parity within the noise of this machine (C-vs-C baseline: median |ratio−1| 1.8%): reading and writing the 100k-entry index and `add_remove_100k` are faster or equal in wall and CPU time; `find_bypath_100k` (+3.6% CPU) and `read_tree_x10` (+9.4% CPU, 1.02 wall) are the largest CPU ratios above 1, `conflicts` the largest wall ratio (1.09, CPU 1.003).

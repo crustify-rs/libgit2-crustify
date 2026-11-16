@@ -666,3 +666,102 @@ out-of-memory error instead.
 - C: `git_config_parse` with a NULL `on_variable` leaks each variable's
   name and value. (No caller passes NULL.)
 - Rust: nothing is allocated for the callback.
+## index, tree-cache, index_map (WP l-index)
+
+### index_map: a removal after a case change leaves a dangling key
+- C: `git_index_entrymap_remove` removes the key *equal* to the entry.
+  After `git_index__set_ignore_case` (through `git_index_set_caps`) turned
+  a case-sensitive map holding `x/a` and `x/A` into a case-insensitive one
+  (without rehashing), removing `x/A` can remove `x/a`'s key and leave
+  `x/A`'s; the entry is then freed, and the next probe of that bucket
+  chain (`git_index_get_bypath`, another removal) reads freed memory.
+- Trigger: add `x/a` then `x/A`, `git_index_set_caps(ix, IGNORE_CASE)`,
+  `git_index_remove_directory(ix, "x", 0)`, `git_index_get_bypath(ix,
+  "x/a", 0)`.
+- Rust: removes the equal key as C, then also the entry's own key if it is
+  still there; lookups never see a freed entry.
+
+### index: an entry freed while the entries vector holds it
+- C: `index_insert` frees the entry when `git_index_entrymap_put` fails
+  after `git_vector_insert_sorted` put it in `index->entries`; so does
+  `parse_index`. The vector keeps a dangling pointer.
+- Trigger: an allocation failure growing the map.
+- Rust: takes the entry out of the vector before freeing it.
+
+### index: `git_index_read_index` frees entries an iterator still reads
+- C: `git_index_read_iterator` frees the old entries it does not keep with
+  `index_entry_free`, ignoring `readers`: a `git_index_iterator` (or a C
+  iterator's snapshot) of the index then reads freed entries.
+- Rust: the entries go to the deferred list while another reader is
+  active, as `index_remove_entry` does.
+
+### index: paths read past the index file's data
+- C: `read_entry` looks for the NUL of a path of 0xFFF or more bytes with
+  `memchr(path_ptr, 0, buffer_size)`, `buffer_size` counted from the
+  entry's start, not the path's; takes the path with `strlen`; and in
+  version 4 decodes the varint and `strlen`s the suffix with no bound.
+  Only the `git_str` terminator of the file's buffer stops them, and a file
+  that ends inside a varint makes `strlen` start past it.
+- Trigger: a crafted index whose last entry's path or varint runs to the
+  end of the data.
+- Rust: every read stays within the data (its end counts as the NUL that
+  ends the buffer); the result is C's: `invalid data in index - invalid
+  entry`.
+
+### tree-cache: recursion per level of the `TREE` extension
+- C: `read_tree_internal` and `write_tree` recurse once per nesting level,
+  so a crafted index with a deeply nested `TREE` extension (7 bytes per
+  level) overflows the stack.
+- Rust: an explicit stack; the same trees, errors and bytes.
+
+### index: leaks on failures
+- C: `git_index_read_tree` leaks the entries it made when the tree walk or
+  the map fails; `git_index_read_iterator` leaks the copies it made when
+  it fails; `add_repo_as_submodule` leaks the entry, the path and the
+  opened repository on its errors; `read_conflict_names` the record on an
+  allocation failure; `read_reuc` and `git_index__fill` an entry the
+  vector could not take; a duplicate unknown extension's copy is leaked.
+- Rust: frees them (the duplicate's error message is still set, as the
+  C's `extension_ondup` set it while the read went on).
+
+### index: entries read after a callback or a removal may have freed them
+- C: `index_apply_to_all` copies `entry->path` after the user's callback,
+  which may have removed (freed) the entry; `git_index_add_from_buffer`
+  reads `entry->path` after `git_index__conflict_to_reuc`, which removes a
+  source entry given with a stage.
+- Rust: copies the path first.
+
+### index: `git_index_extension_add` reads 4 bytes of any signature
+- C: `memcpy(ext->header.signature, signature, 4)` reads past a shorter
+  string (and stores what follows its NUL).
+- Rust: reads up to the NUL (at most 4 bytes) and pads with NULs. Lookups
+  and removals compare with `strncmp`, as C.
+
+### index: NULL arguments dereferenced
+- C: `git_index_read`, `git_index_write`, `git_index_read_tree`,
+  `git_index_read_index`, `git_index_remove`, `git_index_remove_directory`,
+  `git_index_find_prefix`, `git_index_caps`, `git_index_owner`,
+  `git_index_name_add`, `git_index_reuc_find`, `git_index__conflict_to_reuc`,
+  `git_index_snapshot_*`, `git_indexwriter_*`, `git_index_entry_stage` and
+  `git_index_entry_is_conflict` dereference a NULL index (or path, or
+  entry) without checking it.
+- Rust: `invalid argument: 'index'` (or `'path'`, `'dir'`, `'prefix'`,
+  `'tree'`) and C's failure value (-1, NULL, 0; `git_index_reuc_find` of a
+  NULL path fails `git_vector_bsearch2`'s `'key'` check, as C).
+
+### index: kept as the C behaves (defined, but surprising)
+- `git_index_read` returns **1** (with `failed to read index: '…' no longer
+  exists` set) when the file disappears between its existence check and
+  its `stat` (`updated = git_futils_filestamp_check(...) < 0`); the stamp's
+  "changed" result is otherwise ignored, only the checksum decides.
+- `git_index_read_tree` and `git_index_read_index` install a
+  case-sensitive path map (`GIT_INDEX_ENTRYMAP_INIT`) even in a
+  case-insensitive index, so `git_index_get_bypath` is case-sensitive until
+  the next `git_index__set_ignore_case`.
+- Version 4 is written without `is_index_extended`, so the extended flags
+  of an entry whose `flags` lack `GIT_INDEX_ENTRY_EXTENDED` are dropped.
+- A `TREE` node with an entry count below -1 is read without an id and
+  written with one.
+- The index's `version` field may say 4 after a failed read of a version-4
+  file (it is set from the header before the entries are parsed), and the
+  entries read before a failure stay in the index.

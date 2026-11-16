@@ -395,3 +395,42 @@ One entry per difference: component, what differs, why.
   `ConfigLevel`, `ConfigBackend`) copies entries out (`ConfigEntry` owns its
   strings) and rejects string arguments with an interior NUL; a Rust
   `ConfigBackend`'s entries without a backend type get `"rust"`.
+
+## index, tree-cache, index_map (WP l-index)
+
+- **`struct git_index`** (under `GIT_RUST` in `index.h`) keeps only the
+  fields the C that stays touches (`rc`, `index_file_path`, `stamp`,
+  `checksum`, `entries`, `oid_type`, the bitfields, `tree`, `tree_pool`,
+  `names`, `reuc`), in the C's order; the path map, deferred deletions,
+  readers count, unknown extensions and version are Rust-private, after
+  them. The index itself is allocated by Rust's allocator (nothing in C
+  frees it); entries, REUC and NAME records, snapshots' vectors and the
+  tree cache keep `git__allocator` and the pool, as C.
+- **`index_map.c`'s functions** are not exported: nothing outside
+  `index.c` referenced them. The map keeps the C's khash, hash and
+  equality (keys are entry pointers, lookup keys stack entries).
+- **`git_index_read_index`** walks copies of both indexes' entry lists,
+  sorted case-sensitively, instead of two C index iterators (which yielded
+  exactly those, conflicts included); it takes the references and readers
+  the iterators' snapshots took.
+- **`index_insert`** looks the existing entry up again after the object
+  check (`git_object__is_valid`, which can run code that changes the
+  index); the C reused its pointers. The mode is still taken from the
+  first lookup, as C.
+- **Path checks** pass `git_path_str_is_valid` a sized `git_str` (the
+  path's length) instead of `SIZE_MAX`; for paths without a NUL (all the C
+  could pass) the result is the same. The safe API rejects a path with a
+  NUL.
+- **Rust-allocator copies that abort on out-of-memory**: the exports copy
+  path arguments that may alias the index's own memory (`to_vec`), and
+  `git_index__fill` copies the source vector's pointers; the parser's
+  version-4 paths and the deferred-deletion and extension lists use
+  `try_reserve` (fallible). `cl_alloc_limit` does not limit these.
+- **The safe API** (`Index`, `IndexEntry`, `IndexTime`, `Stage`,
+  `IndexEntries`, `IndexConflicts`, …) returns owned copies of entries;
+  `Index` is a reference (`Clone` takes another), neither `Send` nor
+  `Sync`. A panic in a callback closure stops the operation with an error
+  of class `GIT_ERROR_INTERNAL`. `read_tree`/`write_tree`/`add_path`'s
+  submodule cases need the `Tree` and `Repository` types of l-commit and
+  l-repo, so the safe API has no `read_tree`/`write_tree` yet (the C ABI
+  has them).

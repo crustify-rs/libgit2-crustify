@@ -13,7 +13,9 @@
 #include "filebuf.h"
 #include "vector.h"
 #include "tree-cache.h"
-#include "index_map.h"
+#ifndef GIT_RUST
+# include "index_map.h"
+#endif
 #include "git2/odb.h"
 #include "git2/index.h"
 
@@ -26,6 +28,41 @@
 
 extern bool git_index__enforce_unsaved_safety;
 
+#ifdef GIT_RUST
+/*
+ * The Rust port (rust/libgit2-rs/src/index) allocates and owns the index:
+ * only the fields that the C that stays reads or writes are here, in this
+ * order, at the start of the Rust structure (the layout test checks them).
+ * The rest (the path map, deferred deletions, readers count, unknown
+ * extensions and the format version) is private to the Rust.  C must never
+ * allocate, copy or size a git_index.
+ */
+struct git_index {
+	git_refcount rc;
+
+	char *index_file_path;
+	git_futils_filestamp stamp;
+	unsigned char checksum[GIT_HASH_MAX_SIZE];
+
+	git_vector entries;
+
+	git_oid_t oid_type;
+
+	unsigned int on_disk:1;
+	unsigned int ignore_case:1;
+	unsigned int distrust_filemode:1;
+	unsigned int no_symlinks:1;
+	unsigned int dirty:1;	/* whether we have unsaved changes */
+
+	git_tree_cache *tree;
+	git_pool tree_pool;
+
+	git_vector names;
+	git_vector reuc;
+
+	/* followed by the Rust-private state */
+};
+#else
 struct git_index {
 	git_refcount rc;
 
@@ -61,6 +98,7 @@ struct git_index {
 
 	unsigned int version;
 };
+#endif
 
 struct git_index_iterator {
 	git_index *index;

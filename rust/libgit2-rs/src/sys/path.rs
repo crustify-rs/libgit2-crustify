@@ -1,35 +1,74 @@
-//! `src/libgit2/path.c` (C that stays C): repository-aware path checks.
+//! `src/libgit2/path.c` (C that stays C): repository-aware path
+//! validation, which the index applies to every path it stores.
 
-use core::ffi::{c_uint, c_void};
+use core::ffi::{c_char, c_uint, c_void};
 
-use crate::git_error_set;
-use crate::repository::GitRepository;
-use crate::util::errors::{Bytes, ErrorClass, Result};
-use crate::util::fs_path::GIT_FS_PATH_REJECT_LONG_PATHS;
-use crate::util::str::GitStr;
+/// A `git_str` that C only reads (`GIT_STR_INIT_CONST`): `asize` 0.
+#[repr(C)]
+pub struct ConstStr {
+    /// The bytes.
+    pub ptr: *const c_char,
+    /// 0: borrowed.
+    pub asize: usize,
+    /// The length (`SIZE_MAX` for a C string).
+    pub size: usize,
+}
+
+/// `GIT_FS_PATH_REJECT_EMPTY_COMPONENT`.
+pub const GIT_FS_PATH_REJECT_EMPTY_COMPONENT: c_uint = 1 << 0;
+/// `GIT_FS_PATH_REJECT_TRAVERSAL`.
+pub const GIT_FS_PATH_REJECT_TRAVERSAL: c_uint = 1 << 1;
+/// `GIT_FS_PATH_REJECT_MAX`.
+pub const GIT_FS_PATH_REJECT_MAX: c_uint = 1 << 9;
+/// `GIT_PATH_REJECT_DOT_GIT`.
+pub const GIT_PATH_REJECT_DOT_GIT: c_uint = GIT_FS_PATH_REJECT_MAX << 1;
+/// `GIT_FS_PATH_REJECT_FILESYSTEM_DEFAULTS` (Unix).
+pub const GIT_FS_PATH_REJECT_FILESYSTEM_DEFAULTS: c_uint =
+    GIT_FS_PATH_REJECT_EMPTY_COMPONENT | GIT_FS_PATH_REJECT_TRAVERSAL;
+/// `GIT_PATH_REJECT_WORKDIR_DEFAULTS`.
+pub const GIT_PATH_REJECT_WORKDIR_DEFAULTS: c_uint =
+    GIT_FS_PATH_REJECT_FILESYSTEM_DEFAULTS | GIT_PATH_REJECT_DOT_GIT;
+/// `GIT_PATH_REJECT_INDEX_DEFAULTS`.
+pub const GIT_PATH_REJECT_INDEX_DEFAULTS: c_uint =
+    GIT_FS_PATH_REJECT_TRAVERSAL | GIT_PATH_REJECT_DOT_GIT;
 
 unsafe extern "C" {
-    fn git_path_str_is_valid(
+    /// `git_path_str_is_valid`. Safe wrapper:
+    /// `crate::index::foreign::path_is_valid`.
+    pub fn git_path_str_is_valid(
         repo: *mut c_void,
-        path: *const GitStr,
+        path: *const ConstStr,
         file_mode: u16,
         flags: c_uint,
     ) -> bool;
 }
 
+crate::c_layout_test! {
+    headers: ["str.h"],
+    types: [
+        ConstStr => "git_str" { ptr, asize, size },
+    ],
+}
+
 /// `git_path_validate_str_length` (`path.h`'s inline): fails with
 /// "path too long" when `path` is too long for the platform.
-pub fn validate_str_length(repo: Option<&GitRepository>, path: &GitStr) -> Result<()> {
-    let r = repo.map_or(core::ptr::null_mut(), GitRepository::as_ptr);
+pub fn validate_str_length(
+    repo: Option<&crate::repository::GitRepository>,
+    path: &crate::util::str::GitStr,
+) -> crate::util::errors::Result<()> {
+    use crate::util::errors::{Bytes, ErrorClass};
+    let r = repo.map_or(core::ptr::null_mut(), crate::repository::GitRepository::as_ptr);
+    // A `GitStr` is a `git_str` too (both layout-tested): C only reads it.
+    let s = core::ptr::from_ref(path).cast::<ConstStr>();
     // SAFETY: NULL or a live repository, and a valid `git_str` that C
     // only reads.
-    if unsafe { git_path_str_is_valid(r, path, 0, GIT_FS_PATH_REJECT_LONG_PATHS) } {
+    let flags = crate::util::fs_path::GIT_FS_PATH_REJECT_LONG_PATHS;
+    if unsafe { git_path_str_is_valid(r, s, 0, flags) } {
         return Ok(());
     }
-    let b = path.as_bytes();
-    Err(git_error_set!(
+    Err(crate::git_error_set!(
         ErrorClass::FILESYSTEM,
         "path too long: '{}'",
-        Bytes(b)
+        Bytes(path.as_bytes())
     ))
 }

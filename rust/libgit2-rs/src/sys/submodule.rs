@@ -1,5 +1,7 @@
 //! `src/libgit2/submodule.c` (C that stays C): the repository's submodule
-//! cache and the calls of `git_repository_reinit_filesystem`.
+//! cache, the calls of `git_repository_reinit_filesystem`, and
+//! `git_index_add_bypath` of a directory that is a submodule (safe
+//! wrappers of those: `crate::index::foreign`).
 
 use core::ffi::{c_char, c_int, c_void};
 
@@ -14,6 +16,16 @@ unsafe extern "C" {
     fn git_submodule_cache_free(cache: *mut c_void) -> c_int;
     fn git_submodule_foreach(repo: *mut c_void, cb: SubmoduleCb, payload: *mut c_void) -> c_int;
     fn git_submodule_open(repo: *mut *mut c_void, sm: *mut c_void) -> c_int;
+    /// `git_submodule_lookup`.
+    pub fn git_submodule_lookup(
+        out: *mut *mut c_void,
+        repo: *mut c_void,
+        name: *const c_char,
+    ) -> c_int;
+    /// `git_submodule_add_to_index`.
+    pub fn git_submodule_add_to_index(sm: *mut c_void, write_index: c_int) -> c_int;
+    /// `git_submodule_free`.
+    pub fn git_submodule_free(sm: *mut c_void);
 }
 
 /// `git_submodule_cache_init(&repo->submodule_cache, repo)`.
