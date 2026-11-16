@@ -62,6 +62,24 @@ pub struct Loose {
     objects_dir: Vec<u8>,
 }
 
+/// `git__fromhex` as a table: a digit's value, or -1.
+static FROM_HEX: [i8; 256] = {
+    let mut t = [-1i8; 256];
+    let mut c = 0;
+    while c < 256 {
+        t[c] = crate::util::util::fromhex(c as u8) as i8;
+        c += 1;
+    }
+    t
+};
+
+/// `(git__fromhex(a) << 4) | git__fromhex(b)`, when both are digits.
+#[inline(always)]
+fn hex_pair(a: u8, b: u8) -> Option<u8> {
+    let v = (i32::from(FROM_HEX[usize::from(a)]) << 4) | i32::from(FROM_HEX[usize::from(b)]);
+    (v >= 0).then_some(v as u8)
+}
+
 /// The digits of the hex alphabet.
 const HEX: &[u8; 16] = b"0123456789abcdef";
 
@@ -347,21 +365,15 @@ impl Loose {
     /// `filename_to_oid`: the id of `"xx/yyyy…"`.
     fn filename_to_oid(&self, name: &[u8]) -> Option<Oid> {
         let hexsize = self.oid_hexsize;
-        if name.len() != hexsize + 1 || name[2] != b'/' {
+        if hexsize < 2 || name.len() != hexsize + 1 || name[2] != b'/' {
             return None;
         }
-        let digit = |c: u8| crate::util::util::fromhex(c);
-        let pair = |a: u8, b: u8| -> Option<u8> {
-            let v = (digit(a) << 4) | digit(b);
-            (v >= 0).then_some(v as u8)
-        };
         let mut id = [0u8; crate::oid::GIT_OID_MAX_SIZE];
-        id[0] = pair(name[0], name[1])?;
-        let rest = &name[3..];
-        let mut i = 0;
-        while i < hexsize - 2 {
-            id[1 + i / 2] = pair(rest[i], rest[i + 1])?;
-            i += 2;
+        let (first, rest) = id.split_at_mut(1);
+        first[0] = hex_pair(name[0], name[1])?;
+        let digits = &name[3..];
+        for (out, pair) in rest.iter_mut().zip(digits.as_chunks::<2>().0) {
+            *out = hex_pair(pair[0], pair[1])?;
         }
         Some(Oid::from_raw_parts(self.oid_type() as u8, id))
     }

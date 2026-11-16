@@ -663,7 +663,7 @@ mod tests {
                 type_,
                 flags: 0,
                 size,
-                refcount: Atomic32::new(1),
+                refcount: Atomic32::new(0),
             })
         };
         p
