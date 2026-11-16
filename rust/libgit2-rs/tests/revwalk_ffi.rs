@@ -234,7 +234,7 @@ fn commit_nodes_are_cs() {
 
 #[test]
 fn hashsig_exports() {
-    let _g = test_support::init();
+    let g0 = test_support::init();
     let text = b"one\ntwo\nthree\nfour\nfive\nsix\n";
     // SAFETY: as C calls them.
     unsafe {
@@ -278,6 +278,7 @@ fn hashsig_exports() {
     }
 
     // under an allocation limit: the C's out-of-memory error
+    drop(g0);
     let g = test_support::exclusive();
     let r = test_support::with_alloc_limit(&g, 0, || {
         let mut c = ptr::null_mut();
