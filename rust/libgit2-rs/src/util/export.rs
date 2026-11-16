@@ -53,6 +53,13 @@ impl PanicValue for usize {
     }
 }
 
+impl PanicValue for u64 {
+    #[inline]
+    fn panic_value() -> Self {
+        0
+    }
+}
+
 impl PanicValue for u32 {
     #[inline]
     fn panic_value() -> Self {

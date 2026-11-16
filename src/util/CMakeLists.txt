@@ -69,6 +69,20 @@ endif()
 
 list(SORT UTIL_SRC_SHA256)
 
+# The Rust port (USE_RUST) implements the hash backends, the regular
+# expressions and the compression of this configuration only.
+if(USE_RUST)
+	if(NOT USE_SHA1 STREQUAL "builtin" OR NOT USE_SHA256 STREQUAL "openssl")
+		message(FATAL_ERROR "USE_RUST needs USE_SHA1=builtin (collision detection) and USE_SHA256=OpenSSL; the Rust implements both")
+	endif()
+	if(NOT GIT_REGEX_PCRE2)
+		message(FATAL_ERROR "USE_RUST needs USE_REGEX=pcre2; the Rust implements src/util/regexp.c over PCRE2")
+	endif()
+	if(NOT GIT_COMPRESSION_ZLIB)
+		message(FATAL_ERROR "USE_RUST needs USE_COMPRESSION=zlib")
+	endif()
+endif()
+
 #
 # Build the library
 #

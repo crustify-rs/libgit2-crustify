@@ -10,6 +10,9 @@
 
 /* Feature enablement and provider / backend selection */
 
+/* libgit2's core is built from the Rust port (rust/, USE_RUST) */
+#cmakedefine GIT_RUST 1
+
 #cmakedefine GIT_THREADS 1
 #cmakedefine GIT_THREADS_PTHREADS 1
 #cmakedefine GIT_THREADS_WIN32 1

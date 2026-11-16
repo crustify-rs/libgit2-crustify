@@ -59,6 +59,8 @@ if(USE_RUST)
 	# Rust's standard library needs these on glibc.
 	list(APPEND LIBGIT2_SYSTEM_LIBS git2_rust dl m)
 	list(APPEND LIBGIT2_PC_LIBS "-ldl" "-lm")
+	# GIT_RUST in git2_features.h: headers whose types the Rust defines.
+	set(GIT_RUST 1)
 	add_feature_info("Rust port" ON "core ported to Rust (rust/ported_sources.txt)")
 else()
 	add_feature_info("Rust port" OFF "core built from C")
