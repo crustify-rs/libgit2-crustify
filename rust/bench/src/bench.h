@@ -9,6 +9,9 @@
  *
  * Output: one TSV line per workload on stdout:
  *   component  workload  reps  median_ns  min_ns  ops  check  samples_ns(,-sep)
+ *   cpu_median_ns  cpu_min_ns  cpu_samples_ns(,-sep)
+ * (wall time from CLOCK_MONOTONIC; CPU time, user + system, from
+ * CLOCK_PROCESS_CPUTIME_ID).
  * Lines starting with '#' are comments.
  *
  * Environment:
@@ -372,6 +375,14 @@ static inline uint64_t now_ns(void)
 	return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
 }
 
+/* CPU time of the process (user + system, all threads) */
+static inline uint64_t cpu_ns(void)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts);
+	return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+}
+
 static int u64cmp(const void *a, const void *b)
 {
 	uint64_t x = *(const uint64_t *)a, y = *(const uint64_t *)b;
@@ -418,13 +429,30 @@ static void bench_global_init(void)
 	CHECK(git_libgit2_opts(GIT_OPT_SET_SEARCH_PATH, GIT_CONFIG_LEVEL_XDG, empty));
 }
 
+static void print_stats(const uint64_t *samples, int reps)
+{
+	uint64_t *s = xmalloc(sizeof(*s) * (size_t)reps), median;
+	memcpy(s, samples, sizeof(*s) * (size_t)reps);
+	qsort(s, (size_t)reps, sizeof(*s), u64cmp);
+	median = reps % 2 ? s[reps / 2] : (s[reps / 2 - 1] + s[reps / 2]) / 2;
+	printf("%" PRIu64 "\t%" PRIu64 "\t", median, s[0]);
+	free(s);
+}
+
+static void print_samples(const uint64_t *samples, int reps)
+{
+	int r;
+	for (r = 0; r < reps; r++)
+		printf("%s%" PRIu64, r ? "," : "", samples[r]);
+}
+
 static int bench_main(bench_t *benches, size_t n)
 {
 	int reps = env_int("BENCH_REPS", 10);
 	int warmup = env_int("BENCH_WARMUP", 2);
 	int failed = 0;
 	size_t i;
-	uint64_t *samples;
+	uint64_t *samples, *cpu;
 
 	if (getenv("BENCH_LIST")) {
 		for (i = 0; i < n; i++)
@@ -435,6 +463,7 @@ static int bench_main(bench_t *benches, size_t n)
 	if (reps < 1) reps = 1;
 	bench_global_init();
 	samples = xmalloc(sizeof(*samples) * (size_t)reps);
+	cpu = xmalloc(sizeof(*cpu) * (size_t)reps);
 	{
 		int major, minor, rev;
 		git_libgit2_version(&major, &minor, &rev);
@@ -443,7 +472,7 @@ static int bench_main(bench_t *benches, size_t n)
 
 	for (i = 0; i < n; i++) {
 		bench_t *b = &benches[i];
-		uint64_t check = 0, sorted_median;
+		uint64_t check = 0;
 		int r, consistent = 1;
 
 		if (!bench_selected(b))
@@ -451,28 +480,25 @@ static int bench_main(bench_t *benches, size_t n)
 		bench_ops = b->ops;
 		if (b->prep) b->prep(b->ctx);
 		for (r = -warmup; r < reps; r++) {
-			uint64_t t0, t1, c;
+			uint64_t t0, t1, c0, c1, c;
 			if (b->setup) b->setup(b->ctx);
+			c0 = cpu_ns();
 			t0 = now_ns();
 			c = b->run(b->ctx);
 			t1 = now_ns();
+			c1 = cpu_ns();
 			if (b->teardown) b->teardown(b->ctx);
 			if (r == -warmup)
 				check = c;
 			else if (c != check)
 				consistent = 0;
-			if (r >= 0)
+			if (r >= 0) {
 				samples[r] = t1 - t0;
+				cpu[r] = c1 - c0;
+			}
 		}
 		printf("%s\t%s\t%d\t", b->component, b->name, reps);
-		{
-			uint64_t *s = xmalloc(sizeof(*s) * (size_t)reps);
-			memcpy(s, samples, sizeof(*s) * (size_t)reps);
-			qsort(s, (size_t)reps, sizeof(*s), u64cmp);
-			sorted_median = reps % 2 ? s[reps / 2] : (s[reps / 2 - 1] + s[reps / 2]) / 2;
-			printf("%" PRIu64 "\t%" PRIu64 "\t", sorted_median, s[0]);
-			free(s);
-		}
+		print_stats(samples, reps);
 		printf("%" PRIu64 "\t", b->ops ? b->ops : bench_ops);
 		if (consistent)
 			printf("%016" PRIx64 "\t", check);
@@ -480,12 +506,15 @@ static int bench_main(bench_t *benches, size_t n)
 			printf("INCONSISTENT\t");
 			failed = 1;
 		}
-		for (r = 0; r < reps; r++)
-			printf("%s%" PRIu64, r ? "," : "", samples[r]);
+		print_samples(samples, reps);
+		printf("\t");
+		print_stats(cpu, reps);
+		print_samples(cpu, reps);
 		printf("\n");
 		fflush(stdout);
 	}
 	free(samples);
+	free(cpu);
 	git_libgit2_shutdown();
 	return failed;
 }

@@ -5,7 +5,7 @@
   report.py compare <outdir> <labelA> <labelB>
       Aggregate the per-round outputs <outdir>/<label>/round<r>-<NN>-<program>.out of two
       builds, print a table (component, workload, A median, B median, ratio
-      B/A, check), and write <outdir>/compare.tsv and compare.json.
+      B/A, ratio of minima, A/B median CPU time, CPU ratio, check), and write <outdir>/compare.tsv and compare.json.
       Exit status 1 if a check value differs between the builds, is
       inconsistent across repetitions/rounds, or a workload is missing.
 """
@@ -16,7 +16,8 @@ import os
 import statistics
 import sys
 
-FIELDS = ["component", "workload", "reps", "median_ns", "min_ns", "ops", "check", "samples_ns"]
+FIELDS = ["component", "workload", "reps", "median_ns", "min_ns", "ops", "check", "samples_ns",
+          "cpu_median_ns", "cpu_min_ns", "cpu_samples_ns"]
 
 
 def parse_lines(lines):
@@ -25,14 +26,14 @@ def parse_lines(lines):
         if not line or line.startswith("#") or line.startswith("component\t"):
             continue
         parts = line.split("\t")
-        if len(parts) != len(FIELDS):
+        if len(parts) not in (8, len(FIELDS)):
             continue
         rec = dict(zip(FIELDS, parts))
-        rec["reps"] = int(rec["reps"])
-        rec["median_ns"] = int(rec["median_ns"])
-        rec["min_ns"] = int(rec["min_ns"])
-        rec["ops"] = int(rec["ops"])
-        rec["samples_ns"] = [int(x) for x in rec["samples_ns"].split(",") if x]
+        for k in ("reps", "median_ns", "min_ns", "ops", "cpu_median_ns", "cpu_min_ns"):
+            if k in rec:
+                rec[k] = int(rec[k])
+        for k in ("samples_ns", "cpu_samples_ns"):
+            rec[k] = [int(x) for x in rec.get(k, "").split(",") if x]
         yield rec
 
 
@@ -55,9 +56,10 @@ def load_build(outdir, label):
             for r in parse_lines(f):
                 key = (r["component"], r["workload"])
                 if key not in res:
-                    res[key] = {"samples": [], "checks": set(), "ops": r["ops"]}
+                    res[key] = {"samples": [], "cpu": [], "checks": set(), "ops": r["ops"]}
                     order.append(key)
                 res[key]["samples"].extend(r["samples_ns"])
+                res[key]["cpu"].extend(r["cpu_samples_ns"])
                 res[key]["checks"].add(r["check"])
     return res, order
 
@@ -84,6 +86,7 @@ def cmd_compare(outdir, a, b):
                 "median_ns": int(statistics.median(r["samples"])),
                 "min_ns": min(r["samples"]),
                 "n": len(r["samples"]),
+                "cpu_median_ns": int(statistics.median(r["cpu"])) if r["cpu"] else None,
                 "ops": r["ops"],
                 "checks": sorted(r["checks"]),
             }
@@ -92,6 +95,8 @@ def cmd_compare(outdir, a, b):
         if x and y:
             row["ratio"] = row[b]["median_ns"] / max(row[a]["median_ns"], 1)
             row["ratio_min"] = row[b]["min_ns"] / max(row[a]["min_ns"], 1)
+            if row[a]["cpu_median_ns"] and row[b]["cpu_median_ns"]:
+                row["ratio_cpu"] = row[b]["cpu_median_ns"] / row[a]["cpu_median_ns"]
             if x["checks"] != y["checks"]:
                 flags.append("CHECK-MISMATCH")
         row["flags"] = flags
@@ -100,26 +105,31 @@ def cmd_compare(outdir, a, b):
         rows.append(row)
 
     hdr = ("component", "workload", "%s_median_ms" % a, "%s_median_ms" % b, "ratio",
-           "%s_min_ms" % a, "%s_min_ms" % b, "ratio_min", "check")
+           "%s_min_ms" % a, "%s_min_ms" % b, "ratio_min",
+           "%s_cpu_median_ms" % a, "%s_cpu_median_ms" % b, "ratio_cpu", "check")
     tsv_lines = ["\t".join(hdr)]
     w = max([len(r["workload"]) for r in rows] + [8])
-    print("%-10s %-*s %12s %12s %7s %7s  %s" % ("component", w, "workload", a + " ms", b + " ms",
-                                               "ratio", "minrat", "check"))
+
+    def get(r, lab, k):
+        v = r.get(lab, {}).get(k)
+        return fmt_ms(v) if v is not None else "-"
+
+    def rat(r, k):
+        return "%.3f" % r[k] if k in r else "-"
+
+    print("%-10s %-*s %11s %11s %6s %6s %11s %11s %6s  %s" % (
+        "component", w, "workload", a + " ms", b + " ms", "ratio", "minrat",
+        a + " cpu", b + " cpu", "cpurat", "check"))
     for r in rows:
-        ma = r[a]["median_ns"] if a in r else None
-        mb = r[b]["median_ns"] if b in r else None
         status = " ".join(r["flags"]) if r["flags"] else "ok " + (r[a]["checks"][0] if a in r else "")
-        ratio = "%.3f" % r["ratio"] if "ratio" in r else "-"
-        rmin = "%.3f" % r["ratio_min"] if "ratio_min" in r else "-"
-        print("%-10s %-*s %12s %12s %7s %7s  %s" % (
-            r["component"], w, r["workload"], fmt_ms(ma) if ma is not None else "-",
-            fmt_ms(mb) if mb is not None else "-", ratio, rmin, status))
+        print("%-10s %-*s %11s %11s %6s %6s %11s %11s %6s  %s" % (
+            r["component"], w, r["workload"], get(r, a, "median_ns"), get(r, b, "median_ns"),
+            rat(r, "ratio"), rat(r, "ratio_min"), get(r, a, "cpu_median_ns"),
+            get(r, b, "cpu_median_ns"), rat(r, "ratio_cpu"), status))
         tsv_lines.append("\t".join([
-            r["component"], r["workload"],
-            fmt_ms(ma) if ma is not None else "", fmt_ms(mb) if mb is not None else "",
-            ratio if "ratio" in r else "",
-            fmt_ms(r[a]["min_ns"]) if a in r else "", fmt_ms(r[b]["min_ns"]) if b in r else "",
-            rmin if "ratio_min" in r else "", status]))
+            r["component"], r["workload"], get(r, a, "median_ns"), get(r, b, "median_ns"),
+            rat(r, "ratio"), get(r, a, "min_ns"), get(r, b, "min_ns"), rat(r, "ratio_min"),
+            get(r, a, "cpu_median_ns"), get(r, b, "cpu_median_ns"), rat(r, "ratio_cpu"), status]))
 
     ratios = [r["ratio"] for r in rows if "ratio" in r]
     summary = {}
@@ -134,11 +144,24 @@ def cmd_compare(outdir, a, b):
             "within_10pct": sum(1 for x in ratios if abs(x - 1) <= 0.10),
             "flagged": bad,
         }
+        cr = [r["ratio_cpu"] for r in rows if "ratio_cpu" in r]
+        if cr:
+            summary["cpu_geomean_ratio"] = math.exp(sum(math.log(v) for v in cr) / len(cr))
+            summary["cpu_median_abs_dev"] = statistics.median(abs(v - 1) for v in cr)
+            summary["cpu_max_abs_dev"] = max(abs(v - 1) for v in cr)
+            summary["cpu_within_5pct"] = sum(1 for v in cr if abs(v - 1) <= 0.05)
+            summary["cpu_within_10pct"] = sum(1 for v in cr if abs(v - 1) <= 0.10)
         print()
-        print("%d workloads: geomean ratio %.3f, median |ratio-1| %.3f, max |ratio-1| %.3f, "
+        print("wall time, %d workloads: geomean ratio %.3f, median |ratio-1| %.3f, max |ratio-1| %.3f, "
               "within 5%%: %d, within 10%%: %d, flagged: %d" % (
                   len(rows), summary["geomean_ratio"], summary["median_abs_dev"],
                   summary["max_abs_dev"], summary["within_5pct"], summary["within_10pct"], bad))
+        if "cpu_geomean_ratio" in summary:
+            print("cpu time: geomean ratio %.3f, median |ratio-1| %.3f, max |ratio-1| %.3f, "
+                  "within 5%%: %d, within 10%%: %d" % (
+                      summary["cpu_geomean_ratio"], summary["cpu_median_abs_dev"],
+                      summary["cpu_max_abs_dev"], summary["cpu_within_5pct"],
+                      summary["cpu_within_10pct"]))
     with open(os.path.join(outdir, "compare.tsv"), "w") as f:
         f.write("\n".join(tsv_lines) + "\n")
     with open(os.path.join(outdir, "compare.json"), "w") as f:
