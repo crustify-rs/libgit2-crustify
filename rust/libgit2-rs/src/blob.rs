@@ -886,6 +886,16 @@ pub struct BlobWriter<'repo> {
     repo: &'repo Repository,
 }
 
+// SAFETY: the writer owns its table alone: the stream's C handle is never
+// handed to C by the safe API (writes go to the state through
+// `state_mut`, the commit takes the state out), so nothing else reaches
+// the table or the state, which is `Send` (a filebuf and a path); the
+// repository is `Sync`.
+unsafe impl Send for BlobWriter<'_> {}
+// SAFETY: no method takes `&BlobWriter` (writes and the commit need
+// `&mut self` / `self`), so a shared reference reaches nothing.
+unsafe impl Sync for BlobWriter<'_> {}
+
 impl BlobWriter<'_> {
     /// Append `data`.
     pub fn write(&mut self, data: &[u8]) -> core::result::Result<(), Error> {

@@ -307,6 +307,18 @@ fn blobs() {
         Blob::lookup(&repo, &sid).unwrap().content(),
         b"from a stream\n"
     );
+    // A writer may be moved to (and committed on) another thread.
+    let mut w = Blob::writer(&repo, None).unwrap();
+    w.write(b"thr").unwrap();
+    let tid = std::thread::scope(|sc| {
+        sc.spawn(move || {
+            w.write(b"ead\n").unwrap();
+            w.commit().unwrap()
+        })
+        .join()
+        .unwrap()
+    });
+    assert_eq!(Blob::lookup(&repo, &tid).unwrap().content(), b"thread\n");
     // A writer dropped without commit leaves nothing behind.
     let mut w = Blob::writer(&repo, None).unwrap();
     w.write(b"abandoned").unwrap();
