@@ -1,0 +1,2578 @@
+//! `src/libgit2/commit.c`: commit objects: parsing, accessors, the summary
+//! and body, header fields, signatures, and commit creation.
+//!
+//! [`GitCommit`] is a *mirrored* type (PORTING.md §4.1): `object.c`
+//! allocates it with `sizeof(git_commit)` (`git_objects_table`), the clar
+//! tests allocate one and read its fields, and `indexer.c` reads
+//! `parent_ids` and `tree_id`. Its strings and signatures are allocated with
+//! `git__allocator` and freed by [`ffi::git_commit__free`].
+//!
+//! A commit in the object cache is shared: every lookup of the same id, on
+//! any thread, returns the same pointer, and the cache writes its refcount
+//! concurrently. So the exports never form a Rust reference to a shared
+//! commit: they read its fields through the raw pointer (the fields are
+//! written only by the parse, before the commit is published). The two
+//! lazily computed fields (`summary`, `body`) are written by
+//! `git_commit_summary`/`git_commit_body` exactly as the C does, without
+//! synchronisation: concurrent first calls race in the C as well. The safe
+//! API ([`Commit`]) never writes them; it computes and keeps its own copy.
+//!
+//! The parser ([`parse`]) is pure Rust over the object's bytes, generic over
+//! a [`CommitSink`] that receives the fields: the C ABI's sink allocates them
+//! into a [`GitCommit`] as the C did; `commit_list.c`'s quick parse keeps only
+//! the parents and the commit time, without allocating.
+
+use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
+use core::ptr;
+
+use crate::oid::{Oid, OidType, git_oid_t};
+use crate::sys::pending::l_commit::{self as pend, GitCommitGraft, GitObjectHead, git_repository};
+use crate::util::alloc;
+use crate::util::array::GitArray;
+use crate::util::ctype_compat::isspace;
+use crate::util::errors::{self, ErrorClass, ErrorCode, Result};
+use crate::util::str::GitStr;
+use crate::util::util::{isspace_nonlf, memrchr, strntol32, strntol64};
+use crate::{git_assert_arg, git_error_set};
+
+/// `GIT_OBJECT_COMMIT`.
+pub(crate) const OBJ_COMMIT: c_int = 1;
+/// `GIT_OBJECT_TREE`.
+pub(crate) const OBJ_TREE: c_int = 2;
+/// `GIT_OBJECT_BLOB`.
+pub(crate) const OBJ_BLOB: c_int = 3;
+/// `GIT_OBJECT_ANY`.
+pub(crate) const OBJ_ANY: c_int = -2;
+/// `GIT_OBJECT_INVALID`.
+pub(crate) const OBJ_INVALID: c_int = -1;
+
+/// `GIT_COMMIT_PARSE_QUICK`: only the parents and the committer.
+pub const GIT_COMMIT_PARSE_QUICK: c_uint = 1 << 0;
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+/// `git_time` (`include/git2/types.h`, public).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GitTime {
+    /// `git_time_t`.
+    pub time: i64,
+    pub offset: c_int,
+    pub sign: c_char,
+}
+
+/// `git_signature` (`include/git2/types.h`, public). The signature module is
+/// l-obj's; the commit allocates and frees its own (as
+/// `git_signature_free` does: `name`, `email`, then the struct).
+#[repr(C)]
+pub struct GitSignature {
+    pub name: *mut c_char,
+    pub email: *mut c_char,
+    pub when: GitTime,
+}
+
+/// `struct git_commit` (`commit.h`).
+#[repr(C)]
+pub struct GitCommit {
+    pub object: GitObjectHead,
+    pub parent_ids: GitArray<Oid>,
+    pub tree_id: Oid,
+    pub author: *mut GitSignature,
+    pub committer: *mut GitSignature,
+    pub message_encoding: *mut c_char,
+    pub raw_message: *mut c_char,
+    pub raw_header: *mut c_char,
+    pub summary: *mut c_char,
+    pub body: *mut c_char,
+}
+
+/// `git_commit__parse_options` (`commit.h`).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct GitCommitParseOptions {
+    pub oid_type: git_oid_t,
+    pub flags: c_uint,
+}
+
+/// `git_commit_header` (`include/git2/commit.h`, public).
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct GitCommitHeader {
+    pub field: *const c_char,
+    pub value: *const c_char,
+}
+
+/// `git_commit_signature_cb`.
+pub type GitCommitSignatureCb = Option<
+    unsafe extern "C" fn(
+        builder: *mut GitCommitbuilder,
+        repo: *mut git_repository,
+        commit_content: *const c_char,
+        payload: *mut c_void,
+    ) -> c_int,
+>;
+
+/// `git_commit_create_ext_options` (public).
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct GitCommitCreateExtOptions {
+    pub version: c_uint,
+    pub update_ref: *const c_char,
+    pub message_encoding: *const c_char,
+    pub extra_headers: *const GitCommitHeader,
+    pub extra_headers_len: usize,
+    pub sign: GitCommitSignatureCb,
+    pub payload: *mut c_void,
+}
+
+impl GitCommitCreateExtOptions {
+    /// `GIT_COMMIT_CREATE_EXT_OPTIONS_INIT`.
+    pub const INIT: GitCommitCreateExtOptions = GitCommitCreateExtOptions {
+        version: 1,
+        update_ref: ptr::null(),
+        message_encoding: ptr::null(),
+        extra_headers: ptr::null(),
+        extra_headers_len: 0,
+        sign: None,
+        payload: ptr::null_mut(),
+    };
+}
+
+/// `git_commit_create_options` (public). `allow_empty_commit` is bit 0 of
+/// `flags` (the first bitfield of an `unsigned int`).
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct GitCommitCreateOptions {
+    pub version: c_uint,
+    pub flags: c_uint,
+    pub author: *const GitSignature,
+    pub committer: *const GitSignature,
+    pub message_encoding: *const c_char,
+    pub extra_headers: *const GitCommitHeader,
+    pub extra_headers_len: usize,
+    pub sign: GitCommitSignatureCb,
+    pub payload: *mut c_void,
+}
+
+impl GitCommitCreateOptions {
+    /// `GIT_COMMIT_CREATE_OPTIONS_INIT`.
+    pub const INIT: GitCommitCreateOptions = GitCommitCreateOptions {
+        version: 1,
+        flags: 0,
+        author: ptr::null(),
+        committer: ptr::null(),
+        message_encoding: ptr::null(),
+        extra_headers: ptr::null(),
+        extra_headers_len: 0,
+        sign: None,
+        payload: ptr::null_mut(),
+    };
+
+    fn allow_empty_commit(&self) -> bool {
+        self.flags & 1 != 0
+    }
+}
+
+/// `struct git_commitbuilder` (opaque to C: only `commit.c` reads it).
+#[repr(C)]
+pub struct GitCommitbuilder {
+    contents: *mut GitStr,
+}
+
+// ---------------------------------------------------------------------------
+// Signatures (a port of `git_signature__parse`, l-obj's, kept here so that
+// the commit parser is pure Rust: see DIVERGENCES.md)
+// ---------------------------------------------------------------------------
+
+/// A parsed signature line: the trimmed name and e-mail (borrowed from the
+/// object's bytes) and the time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SigFields<'a> {
+    pub name: &'a [u8],
+    pub email: &'a [u8],
+    pub when: GitTime,
+}
+
+fn signature_parse_error(msg: &str) -> ErrorCode {
+    let _ = git_error_set!(ErrorClass::INVALID, "failed to parse signature - {}", msg);
+    ErrorCode::INVALID
+}
+
+/// `is_crud` of `signature.c`.
+#[inline]
+fn is_crud(c: u8) -> bool {
+    c <= 32 || matches!(c, b',' | b':' | b';' | b'<' | b'>' | b'"' | b'\\' | b'\'')
+}
+
+/// `extract_trimmed` without the copy.
+#[inline]
+fn trimmed(mut s: &[u8]) -> &[u8] {
+    while let [first, rest @ ..] = s {
+        if !is_crud(*first) {
+            break;
+        }
+        s = rest;
+    }
+    while let [rest @ .., last] = s {
+        if !is_crud(*last) {
+            break;
+        }
+        s = rest;
+    }
+    s
+}
+
+/// `git_signature__parse(sig, &buffer, buffer_end, header, '\n')` over
+/// `buf[*pos..]`: on success `*pos` is past the line's newline.
+pub fn parse_signature<'a>(buf: &'a [u8], pos: &mut usize, header: &[u8]) -> Result<SigFields<'a>> {
+    let rest = &buf[*pos..];
+    let Some(nl) = memchr::memchr(b'\n', rest) else {
+        return Err(signature_parse_error("no newline given"));
+    };
+    let line = &rest[..nl];
+    if header.len() >= line.len() || !line.starts_with(header) {
+        return Err(signature_parse_error("expected prefix doesn't match actual"));
+    }
+    let b = &line[header.len()..];
+    let (Some(es), Some(ee)) = (memrchr(b, b'<'), memrchr(b, b'>')) else {
+        return Err(signature_parse_error("malformed e-mail"));
+    };
+    if ee <= es {
+        return Err(signature_parse_error("malformed e-mail"));
+    }
+    let mut when = GitTime::default();
+    if ee + 2 < b.len() {
+        let ts = ee + 2;
+        let Ok((time, used)) = strntol64(&b[ts..], 10) else {
+            return Err(signature_parse_error("invalid Unix timestamp"));
+        };
+        when.time = time;
+        let time_end = ts + used;
+        if time_end + 1 < b.len() {
+            let tz = time_end + 1;
+            let sign = b[tz];
+            let offset = if sign != b'-' && sign != b'+' {
+                0
+            } else {
+                match strntol32(&b[tz + 1..], 10) {
+                    Ok((v, _)) => v,
+                    // malformed timezone, just assume it's zero
+                    Err(_) => 0,
+                }
+            };
+            let hours = offset / 100;
+            let mins = offset % 100;
+            if hours <= 14 && mins <= 59 {
+                // (C overflows here for hours < -35791394: wrapping.)
+                let mut off = hours.wrapping_mul(60).wrapping_add(mins);
+                if sign == b'-' {
+                    off = off.wrapping_neg();
+                }
+                when.offset = off;
+                when.sign = sign as c_char;
+            }
+        }
+    }
+    *pos += nl + 1;
+    Ok(SigFields {
+        name: trimmed(&b[..es]),
+        email: trimmed(&b[es + 1..ee]),
+        when,
+    })
+}
+
+/// A `git_signature` allocated as `git_signature__parse` fills one
+/// (`git__malloc`, `git__substrdup` of the name and e-mail).
+pub(crate) fn alloc_signature(sig: &SigFields<'_>) -> Result<*mut GitSignature> {
+    let name = alloc::substrdup(sig.name);
+    let email = alloc::substrdup(sig.email);
+    let p = alloc::malloc(size_of::<GitSignature>()).cast::<GitSignature>();
+    if p.is_null() || name.is_null() || email.is_null() {
+        // SAFETY: NULL or the allocations just made, freed once.
+        unsafe {
+            alloc::free(name.cast());
+            alloc::free(email.cast());
+            alloc::free(p.cast());
+        }
+        return Err(errors::oom());
+    }
+    // SAFETY: `p` is a fresh allocation of a `git_signature`.
+    unsafe {
+        p.write(GitSignature {
+            name,
+            email,
+            when: sig.when,
+        })
+    };
+    Ok(p)
+}
+
+/// `git_signature_free` of a signature allocated by [`alloc_signature`].
+///
+/// # Safety
+///
+/// `sig` is NULL or a signature whose strings and struct come from
+/// `git__allocator` and that nothing else frees or uses after.
+pub(crate) unsafe fn free_signature(sig: *mut GitSignature) {
+    if sig.is_null() {
+        return;
+    }
+    // SAFETY: the caller's contract.
+    unsafe {
+        alloc::free((*sig).name.cast());
+        alloc::free((*sig).email.cast());
+        alloc::free(sig.cast());
+    }
+}
+
+/// `git_signature__writebuf(buf, header, sig)`:
+/// `"%s%s <%s> %u %c%02d%02d\n"`.
+pub(crate) fn write_signature(buf: &mut GitStr, header: &[u8], name: Option<&[u8]>, email: Option<&[u8]>, when: GitTime) {
+    const FORMAT: &str = "%s%s <%s> %u %c%02d%02d\n";
+    let mut offset = when.offset;
+    let sign = if when.offset < 0 || when.sign == b'-' as c_char { '-' } else { '+' };
+    if offset < 0 {
+        offset = offset.wrapping_neg();
+    }
+    let hours = offset / 60;
+    let mins = offset % 60;
+    // printf's "%s" of NULL is glibc's "(null)".
+    let name = name.unwrap_or(b"(null)");
+    let email = email.unwrap_or(b"(null)");
+    let _ = buf.printf(
+        FORMAT.len(),
+        format_args!(
+            "{}{} <{}> {} {}{:02}{:02}\n",
+            errors::Bytes(header),
+            errors::Bytes(name),
+            errors::Bytes(email),
+            when.time as u32,
+            sign,
+            hours,
+            mins
+        ),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Parsing
+// ---------------------------------------------------------------------------
+
+/// Receives the fields of a commit as [`parse`] finds them.
+pub trait CommitSink<'a> {
+    /// The tree (not called by a quick parse).
+    fn tree(&mut self, id: Oid);
+    /// The next parent.
+    fn parent(&mut self, id: Oid) -> Result<()>;
+    /// The (first) author (not called by a quick parse).
+    fn author(&mut self, sig: &SigFields<'a>) -> Result<()>;
+    /// The committer.
+    fn committer(&mut self, sig: &SigFields<'a>) -> Result<()>;
+    /// An `encoding` header's value, to the end of its line.
+    fn encoding(&mut self, value: &'a [u8]) -> Result<()>;
+    /// The header (up to the blank line) and the message (after it; `None`
+    /// when there is none).
+    fn header_and_message(&mut self, header: &'a [u8], message: Option<&'a [u8]>) -> Result<()>;
+}
+
+fn bad_buffer() -> ErrorCode {
+    let _ = git_error_set!(ErrorClass::OBJECT, "failed to parse bad commit object");
+    ErrorCode::INVALID
+}
+
+/// `git_object__parse_oid_header` over `buf[*pos..]` (l-obj's; inlined for
+/// the parser's hot loop): `<header><hex>\n`.
+#[inline]
+pub(crate) fn parse_oid_header(buf: &[u8], pos: &mut usize, header: &[u8], kind: Option<OidType>) -> Option<Oid> {
+    let hexsize = kind.map_or(0, OidType::hexsize);
+    let rest = &buf[*pos..];
+    let total = header.len() + hexsize + 1;
+    if rest.len() < total || !rest.starts_with(header) || rest[header.len() + hexsize] != b'\n' {
+        return None;
+    }
+    let Some(kind) = kind else {
+        // git_oid_from_prefix of an unknown type fails.
+        let _ = git_error_set!(ErrorClass::INVALID, "unable to parse OID - too short");
+        return None;
+    };
+    let id = Oid::from_prefix(&rest[header.len()..header.len() + hexsize], kind).ok()?;
+    *pos += total;
+    Some(id)
+}
+
+/// `commit_parse`: parse the commit in `data`, giving its fields to `sink`.
+/// A quick parse (`GIT_COMMIT_PARSE_QUICK`) skips the tree, the author, the
+/// extra headers and the message.
+pub fn parse<'a, S: CommitSink<'a>>(data: &'a [u8], oid_type: git_oid_t, quick: bool, sink: &mut S) -> Result<()> {
+    let kind = OidType::from_raw(oid_type);
+    let end = data.len();
+    let mut pos = 0usize;
+
+    // The tree is always the first field.
+    if !quick {
+        match parse_oid_header(data, &mut pos, b"tree ", kind) {
+            Some(id) => sink.tree(id),
+            None => return Err(bad_buffer()),
+        }
+    } else {
+        let tree_len = 5 + kind.map_or(0, OidType::hexsize) + 1;
+        if tree_len > end {
+            return Err(bad_buffer());
+        }
+        pos = tree_len;
+    }
+
+    while let Some(id) = parse_oid_header(data, &mut pos, b"parent ", kind) {
+        sink.parent(id)?;
+    }
+
+    if !quick {
+        let sig = parse_signature(data, &mut pos, b"author ")?;
+        sink.author(&sig)?;
+    }
+
+    // Some tools create multiple author fields, ignore the extra ones.
+    while data[pos..].starts_with(b"author ") {
+        parse_signature(data, &mut pos, b"author ")?;
+    }
+
+    // Always parse the committer; we need the commit time.
+    let sig = parse_signature(data, &mut pos, b"committer ")?;
+    sink.committer(&sig)?;
+
+    if quick {
+        return Ok(());
+    }
+
+    // Parse add'l header entries. (`pos > 0` here: the committer's line
+    // ends with a newline at `pos - 1`.)
+    while pos < end {
+        if data[pos - 1] == b'\n' && data[pos] == b'\n' {
+            break;
+        }
+        let eoln = memchr::memchr(b'\n', &data[pos..]).map_or(end, |i| pos + i);
+        if data[pos..].starts_with(b"encoding ") {
+            sink.encoding(&data[pos + 9..eoln])?;
+        }
+        pos = if eoln < end { eoln + 1 } else { eoln };
+    }
+
+    let header = &data[..pos];
+    // +1 for the final LF
+    let message = if pos < end { Some(&data[pos + 1..]) } else { None };
+    sink.header_and_message(header, message)
+}
+
+/// The sink of the C ABI: fills a [`GitCommit`] as `commit_parse` did.
+struct CommitFill<'c> {
+    commit: &'c mut GitCommit,
+}
+
+impl<'a> CommitSink<'a> for CommitFill<'_> {
+    fn tree(&mut self, id: Oid) {
+        self.commit.tree_id = id;
+    }
+    #[inline]
+    fn parent(&mut self, id: Oid) -> Result<()> {
+        self.commit.parent_ids.push(id).map(|_| ())
+    }
+    fn author(&mut self, sig: &SigFields<'a>) -> Result<()> {
+        let p = alloc_signature(sig)?;
+        // SAFETY: the old value is NULL (a fresh commit) or one this sink set.
+        unsafe { free_signature(self.commit.author) };
+        self.commit.author = p;
+        Ok(())
+    }
+    fn committer(&mut self, sig: &SigFields<'a>) -> Result<()> {
+        let p = alloc_signature(sig)?;
+        // SAFETY: as in `author`.
+        unsafe { free_signature(self.commit.committer) };
+        self.commit.committer = p;
+        Ok(())
+    }
+    fn encoding(&mut self, value: &'a [u8]) -> Result<()> {
+        let p = alloc::strndup(value, value.len());
+        if p.is_null() {
+            return Err(errors::oom());
+        }
+        // (The C leaks the previous value of a repeated header.)
+        // SAFETY: NULL or this sink's own allocation.
+        unsafe { alloc::free(self.commit.message_encoding.cast()) };
+        self.commit.message_encoding = p;
+        Ok(())
+    }
+    fn header_and_message(&mut self, header: &'a [u8], message: Option<&'a [u8]>) -> Result<()> {
+        let h = alloc::strndup(header, header.len());
+        if h.is_null() {
+            return Err(errors::oom());
+        }
+        self.commit.raw_header = h;
+        let m = alloc::strndup(message.unwrap_or(b""), message.map_or(0, <[u8]>::len));
+        if m.is_null() {
+            return Err(errors::oom());
+        }
+        self.commit.raw_message = m;
+        Ok(())
+    }
+}
+
+/// `commit_parse` into `commit`.
+pub(crate) fn parse_into(commit: &mut GitCommit, data: &[u8], opts: &GitCommitParseOptions) -> Result<()> {
+    // Allocate for one, which will allow not to realloc 90% of the time.
+    commit.parent_ids = GitArray::with_capacity(1)?;
+    parse(
+        data,
+        opts.oid_type,
+        opts.flags & GIT_COMMIT_PARSE_QUICK != 0,
+        &mut CommitFill { commit },
+    )
+}
+
+/// `assign_commit_parents_from_graft`.
+fn parents_from_graft(parents: &mut GitArray<Oid>, graft: &GitArray<Oid>) -> Result<()> {
+    *parents = GitArray::with_capacity(graft.len())?;
+    for id in graft.iter() {
+        parents.push(*id)?;
+    }
+    Ok(())
+}
+
+/// The graft of `id` in the repository's grafts, then its shallow grafts.
+///
+/// # Safety
+///
+/// `repo` is a live repository whose grafts nobody changes during the call.
+pub(crate) unsafe fn find_graft(repo: *mut git_repository, id: &Oid) -> Option<*mut GitCommitGraft> {
+    if repo.is_null() {
+        return None;
+    }
+    for off in [pend::REPO_GRAFTS, pend::REPO_SHALLOW_GRAFTS] {
+        // SAFETY: `repo` is live (contract); the field is a pointer.
+        let grafts: *mut pend::git_grafts = unsafe { pend::field(repo, off) };
+        let mut g = ptr::null_mut();
+        // SAFETY: `grafts` is the repository's (the C asserts it is not
+        // NULL); `g` is writable.
+        if unsafe { pend::git_grafts_get(&mut g, grafts, id) } == 0 {
+            return Some(g);
+        }
+    }
+    None
+}
+
+// ---------------------------------------------------------------------------
+// Summary, body, header fields
+// ---------------------------------------------------------------------------
+
+/// `git_commit_message` of a raw message: without its leading newlines.
+pub fn message_of(raw: &[u8]) -> &[u8] {
+    let n = raw.iter().take_while(|&&c| c == b'\n').count();
+    &raw[n..]
+}
+
+/// `git_commit_summary`'s computation over the message (without its
+/// leading newlines): the first paragraph, with each run of whitespace that
+/// contains a newline collapsed to one space, and the trailing whitespace
+/// dropped.
+pub fn summary_into(msg: &[u8], out: &mut GitStr) -> Result<()> {
+    let at = |i: usize| msg.get(i).copied().unwrap_or(0);
+    let mut space: Option<usize> = None;
+    let mut space_contains_newline = false;
+    let mut i = 0;
+    while i < msg.len() && msg[i] != 0 {
+        let c = msg[i];
+        // stop processing at the end of the first paragraph
+        if c == b'\n' {
+            if at(i + 1) == 0 || at(i + 1) == b'\n' {
+                break;
+            }
+            // stop processing if next line contains only whitespace
+            let mut next = i + 1;
+            while at(next) != 0 && isspace_nonlf(at(next)) {
+                next += 1;
+            }
+            if at(next) == 0 || at(next) == b'\n' {
+                break;
+            }
+        }
+        if isspace(c) {
+            // record the beginning of contiguous whitespace runs
+            if space.is_none() {
+                space = Some(i);
+                space_contains_newline = false;
+            }
+            space_contains_newline |= c == b'\n';
+        } else {
+            // process any recorded whitespace
+            if let Some(s) = space.take() {
+                if space_contains_newline {
+                    out.putc(b' ')?;
+                } else {
+                    out.put(&msg[s..i])?;
+                }
+            }
+            out.putc(c)?;
+        }
+        i += 1;
+    }
+    Ok(())
+}
+
+/// [`summary_into`] as a `Vec`.
+pub fn summary_of(msg: &[u8]) -> Vec<u8> {
+    let mut s = GitStr::new();
+    let _ = summary_into(msg, &mut s);
+    s.as_bytes().to_vec()
+}
+
+/// `git_commit_body`'s computation over the message (without its leading
+/// newlines): what follows the first paragraph, trimmed of whitespace at
+/// both ends; `None` if that is empty.
+pub fn body_of(msg: &[u8]) -> Option<&[u8]> {
+    let msg = &msg[..memchr::memchr(0, msg).unwrap_or(msg.len())];
+    // search for end of summary
+    let mut i = 0;
+    while i < msg.len() {
+        if msg[i] == b'\n' && (i + 1 == msg.len() || msg[i + 1] == b'\n') {
+            break;
+        }
+        i += 1;
+    }
+    // trim leading and trailing whitespace
+    while i < msg.len() && isspace(msg[i]) {
+        i += 1;
+    }
+    let rest = &msg[i..];
+    let n = rest.iter().rposition(|&c| !isspace(c))?;
+    Some(&rest[..=n])
+}
+
+/// `git_commit__header_field` over a raw header (as a C string: up to its
+/// first NUL): the value of `field`, continuation lines joined with `\n`.
+pub fn header_field(raw_header: &[u8], field: &[u8], out: &mut GitStr) -> Result<()> {
+    out.clear();
+    let buf = &raw_header[..memchr::memchr(0, raw_header).unwrap_or(raw_header.len())];
+    let at = |i: usize| buf.get(i).copied().unwrap_or(0);
+    let mut pos = 0usize;
+    while let Some(eol) = memchr::memchr(b'\n', &buf[pos..]).map(|i| pos + i) {
+        // We can skip continuations here
+        if buf[pos] == b' ' {
+            pos = eol + 1;
+            continue;
+        }
+        // Skip until we find the field we're after (git__prefixcmp: a NUL
+        // in the field ends it)
+        let line = &buf[pos..];
+        if !line.starts_with(field) {
+            pos = eol + 1;
+            continue;
+        }
+        let mut b = pos + field.len();
+        // Check that we're not matching a prefix but the field itself
+        if at(b) != b' ' {
+            pos = eol + 1;
+            continue;
+        }
+        b += 1; // skip the SP
+        if b > eol {
+            // A field containing a newline matched across lines: the C
+            // copies `eol - buf` (negative) bytes, which fails as out of
+            // memory (DEFECTS.md).
+            return Err(errors::oom());
+        }
+        let mut eol = eol;
+        out.put(&buf[b..eol])?;
+        // If the next line starts with SP, it's multi-line, we must continue
+        while at(eol + 1) == b' ' {
+            out.putc(b'\n')?;
+            let start = eol + 2;
+            let Some(i) = memchr::memchr(b'\n', &buf[start.min(buf.len())..]) else {
+                return Err(malformed());
+            };
+            eol = start + i;
+            out.put(&buf[start..eol])?;
+        }
+        return Ok(());
+    }
+    let _ = git_error_set!(ErrorClass::OBJECT, "no such field '{}'", errors::Bytes(field));
+    Err(ErrorCode::NOT_FOUND)
+}
+
+fn malformed() -> ErrorCode {
+    git_error_set!(ErrorClass::OBJECT, "malformed header")
+}
+
+/// `git_commit__extract_signature`'s split of a commit's bytes (as a C
+/// string: up to the first NUL) into the value of the `field` header and
+/// the rest (the signed data).
+pub fn extract_signature(data: &[u8], field: &[u8], signature: &mut GitStr, signed_data: &mut GitStr) -> Result<()> {
+    let buf = &data[..memchr::memchr(0, data).unwrap_or(data.len())];
+    let at = |i: usize| buf.get(i).copied().unwrap_or(0);
+    let mut pos = 0usize;
+    loop {
+        let Some(h) = memchr::memchr(b'\n', &buf[pos..]).map(|i| pos + i) else {
+            break;
+        };
+        if at(h + 1) == 0 {
+            break;
+        }
+        let h = h + 1;
+        if !buf[pos..].starts_with(field) {
+            signed_data.put(&buf[pos..h])?;
+            pos = h;
+            continue;
+        }
+        let mut hh = pos + field.len();
+        let eol = memchr::memchr(b'\n', &buf[hh..]).map(|i| hh + i);
+        if at(hh) != b' ' {
+            // (C: the line is neither copied nor skipped past; the search
+            // goes on from after the field name.)
+            pos = hh;
+            continue;
+        }
+        let Some(mut eol) = eol else {
+            return Err(malformed());
+        };
+        hh += 1; // skip the SP
+        signature.put(&buf[hh..eol])?;
+        // If the next line starts with SP, it's multi-line, we must continue
+        while at(eol + 1) == b' ' {
+            signature.putc(b'\n')?;
+            let start = eol + 2;
+            let Some(i) = memchr::memchr(b'\n', &buf[start.min(buf.len())..]) else {
+                return Err(malformed());
+            };
+            eol = start + i;
+            signature.put(&buf[start..eol])?;
+        }
+        return signed_data.puts(&buf[eol + 1..]);
+    }
+    let _ = git_error_set!(ErrorClass::OBJECT, "this commit is not signed");
+    Err(ErrorCode::NOT_FOUND)
+}
+
+// ---------------------------------------------------------------------------
+// Creation
+// ---------------------------------------------------------------------------
+
+/// `format_header_field`: `field SP content LF`, each newline of `content`
+/// followed by a space (a continuation).
+pub fn format_header_field(out: &mut GitStr, field: &[u8], content: &[u8]) -> Result<()> {
+    let _ = out.puts(field);
+    let _ = out.putc(b' ');
+    let mut c = content;
+    while let Some(lf) = memchr::memchr(b'\n', c) {
+        let _ = out.put(&c[..lf]);
+        let _ = out.puts(b"\n ");
+        c = &c[lf + 1..];
+    }
+    let _ = out.puts(c);
+    let _ = out.putc(b'\n');
+    if out.is_oom() { Err(ErrorCode::GENERIC) } else { Ok(()) }
+}
+
+/// `git_object__write_oid_header` (l-obj's).
+pub(crate) fn write_oid_header(buf: &mut GitStr, header: &[u8], id: &Oid) -> Result<()> {
+    if id.kind().is_none() {
+        return Err(git_error_set!(ErrorClass::INVALID, "unknown type"));
+    }
+    let _ = buf.puts(header);
+    let _ = buf.put(id.hex().as_bytes());
+    let _ = buf.putc(b'\n');
+    if buf.is_oom() { Err(ErrorCode::GENERIC) } else { Ok(()) }
+}
+
+/// A signature to write: its fields, as C strings may be NULL.
+#[derive(Clone, Copy, Debug)]
+pub struct SigOut<'a> {
+    pub name: Option<&'a [u8]>,
+    pub email: Option<&'a [u8]>,
+    pub when: GitTime,
+}
+
+/// `git_commit__create_buffer_internal`: the commit's bytes. On failure the
+/// buffer is disposed, as C does.
+pub fn create_buffer_internal(
+    out: &mut GitStr,
+    author: &SigOut<'_>,
+    committer: &SigOut<'_>,
+    message: &[u8],
+    tree: &Oid,
+    parents: &[Oid],
+    message_encoding: Option<&[u8]>,
+    extra_headers: &[(&[u8], &[u8])],
+) -> Result<()> {
+    let r = (|| {
+        write_oid_header(out, b"tree ", tree)?;
+        for p in parents {
+            write_oid_header(out, b"parent ", p)?;
+        }
+        write_signature(out, b"author ", author.name, author.email, author.when);
+        write_signature(out, b"committer ", committer.name, committer.email, committer.when);
+        if let Some(enc) = message_encoding {
+            format_header_field(out, b"encoding", enc)?;
+        }
+        for (f, v) in extra_headers {
+            format_header_field(out, f, v)?;
+        }
+        let _ = out.putc(b'\n');
+        out.puts(message)
+    })();
+    if r.is_err() {
+        out.dispose();
+    }
+    r
+}
+
+/// `append_header`: `raw_content` with `name value` added at the end of its
+/// header.
+pub fn append_header(out: &mut GitStr, raw_content: &[u8], name: &[u8], value: &[u8]) -> Result<()> {
+    // Identifying the end of the commit header area
+    let Some(header_end) = crate::util::util::memmem(raw_content, b"\n\n") else {
+        return Err(git_error_set!(ErrorClass::INVALID, "malformed commit contents"));
+    };
+    // The header ends after the first LF
+    let header_end = header_end + 1;
+    let _ = out.put(&raw_content[..header_end]);
+    format_header_field(out, name, value)?;
+    let _ = out.puts(&raw_content[header_end..]);
+    if out.is_oom() { Err(ErrorCode::GENERIC) } else { Ok(()) }
+}
+
+/// The parents of a commit being created, as `git_commit_parent_callback`
+/// gives them: the `n`th, or `None` after the last.
+pub(crate) type ParentSource<'a> = &'a mut dyn FnMut(usize) -> Option<Oid>;
+
+/// `validate_tree_and_parents`: collect the parents, checking (when
+/// `validate`) that the tree and the parents exist with the right types,
+/// and that `current_id` (when given) is the first parent.
+///
+/// # Safety
+///
+/// `repo` is a live repository (used only when `validate`).
+unsafe fn validate_tree_and_parents(
+    parents: &mut GitArray<Oid>,
+    repo: *mut git_repository,
+    tree: &Oid,
+    next: ParentSource<'_>,
+    current_id: Option<Oid>,
+    validate: bool,
+) -> Result<()> {
+    // SAFETY: `repo` is live (contract).
+    if validate && !unsafe { pend::git_object__is_valid(repo, tree, OBJ_TREE) } {
+        return Err(ErrorCode::GENERIC);
+    }
+    let mut i = 0;
+    let r = (|| {
+        while let Some(parent) = next(i) {
+            // SAFETY: as above.
+            if validate && !unsafe { pend::git_object__is_valid(repo, &parent, OBJ_COMMIT) } {
+                return Err(ErrorCode::GENERIC);
+            }
+            parents.push(parent)?;
+            i += 1;
+        }
+        if let Some(cur) = current_id {
+            if parents.as_slice().first() != Some(&cur) {
+                let _ = git_error_set!(
+                    ErrorClass::OBJECT,
+                    "failed to create commit: current tip is not the first parent"
+                );
+                return Err(ErrorCode::MODIFIED);
+            }
+        }
+        Ok(())
+    })();
+    if r.is_err() {
+        parents.clear();
+    }
+    r
+}
+
+/// A signature pointer as [`SigOut`].
+///
+/// # Safety
+///
+/// `sig` is NULL or a live `git_signature` whose strings are NULL or
+/// NUL-terminated, unchanged while the result lives.
+unsafe fn sig_out<'a>(sig: *const GitSignature) -> Result<SigOut<'a>> {
+    if sig.is_null() {
+        // (The C dereferences it: see DEFECTS.md.)
+        return Err(errors::assert_arg_failed("sig"));
+    }
+    // SAFETY: the caller's contract.
+    unsafe {
+        Ok(SigOut {
+            name: opt_cbytes((*sig).name),
+            email: opt_cbytes((*sig).email),
+            when: (*sig).when,
+        })
+    }
+}
+
+/// The bytes of a C string, or `None` for NULL.
+///
+/// # Safety
+///
+/// `p` is NULL or NUL-terminated, live and unwritten for `'a`.
+pub(crate) unsafe fn opt_cbytes<'a>(p: *const c_char) -> Option<&'a [u8]> {
+    // SAFETY: the caller's contract.
+    unsafe { crate::util::export::cstr(p) }.map(CStr::to_bytes)
+}
+
+/// The extra headers of an options struct.
+///
+/// # Safety
+///
+/// `headers` is NULL or `len` readable `git_commit_header`s whose strings
+/// are NULL or NUL-terminated, live for `'a`.
+unsafe fn extra_headers<'a>(headers: *const GitCommitHeader, len: usize) -> Result<Vec<(&'a [u8], &'a [u8])>> {
+    if len == 0 {
+        return Ok(Vec::new());
+    }
+    let mut v = Vec::new();
+    v.try_reserve(len).map_err(|_| errors::oom())?;
+    for i in 0..len {
+        // SAFETY: `i < len` headers are readable (contract).
+        let h = unsafe { headers.add(i).read() };
+        // SAFETY: NUL-terminated or NULL (contract).
+        let (f, val) = unsafe { (opt_cbytes(h.field), opt_cbytes(h.value)) };
+        // format_header_field's GIT_ASSERT_ARGs.
+        let Some(f) = f else { return Err(errors::assert_arg_failed("field")) };
+        let Some(val) = val else { return Err(errors::assert_arg_failed("content")) };
+        v.push((f, val));
+    }
+    Ok(v)
+}
+
+/// `git_commit__create_internal`.
+///
+/// # Safety
+///
+/// `repo` is a live repository; `author` and `committer` are NULL or live
+/// signatures; `message` is NULL or NUL-terminated; `opts` is NULL or a
+/// valid options struct (its strings NUL-terminated, its headers readable,
+/// its `sign` callable with its `payload`); `next` may call C callbacks
+/// whose contracts the caller guarantees.
+#[allow(clippy::too_many_arguments)]
+unsafe fn create_internal(
+    id: &mut Oid,
+    repo: *mut git_repository,
+    author: *const GitSignature,
+    committer: *const GitSignature,
+    message: *const c_char,
+    tree: &Oid,
+    next: ParentSource<'_>,
+    opts: Option<&GitCommitCreateExtOptions>,
+    validate: bool,
+) -> Result<()> {
+    let mut r#ref: *mut pend::git_reference = ptr::null_mut();
+    let update_ref = opts.map_or(ptr::null(), |o| o.update_ref);
+    if !update_ref.is_null() {
+        // SAFETY: `repo` is live and `update_ref` NUL-terminated (contract).
+        let e = unsafe { pend::git_reference_lookup_resolved(&mut r#ref, repo, update_ref, 10) };
+        if e < 0 && e != ErrorCode::NOT_FOUND.raw() {
+            return Err(ec(e));
+        }
+    }
+    errors::clear();
+
+    let current_id = if r#ref.is_null() {
+        None
+    } else {
+        // SAFETY: the reference just looked up.
+        let t = unsafe { pend::git_reference_target(r#ref) };
+        // SAFETY: NULL or the reference's id.
+        (!t.is_null()).then(|| unsafe { t.read() })
+    };
+
+    let mut parents = GitArray::new();
+    let mut buf = GitStr::new();
+    let r = (|| -> Result<()> {
+        // SAFETY: `repo` is live (contract).
+        unsafe { validate_tree_and_parents(&mut parents, repo, tree, next, current_id, validate) }?;
+
+        // SAFETY: the caller's contract on the options and signatures.
+        let (enc, headers, a, c, msg) = unsafe {
+            let enc = opts.and_then(|o| opt_cbytes(o.message_encoding));
+            let headers = match opts {
+                Some(o) => extra_headers(o.extra_headers, o.extra_headers_len)?,
+                None => Vec::new(),
+            };
+            (enc, headers, sig_out(author)?, sig_out(committer)?, opt_cbytes(message))
+        };
+        let Some(msg) = msg else {
+            // git_str_puts's GIT_ASSERT_ARG(string), after the header.
+            return Err(errors::assert_arg_failed("string"));
+        };
+        create_buffer_internal(&mut buf, &a, &c, msg, tree, parents.as_slice(), enc, &headers)?;
+
+        if let Some(sign) = opts.and_then(|o| o.sign) {
+            let mut builder = GitCommitbuilder { contents: &mut buf };
+            let content = builder_content(&builder);
+            // SAFETY: the callback's contract (the caller's); the builder and
+            // the content are valid for the call.
+            let e = unsafe { sign(&mut builder, repo, content, opts.map_or(ptr::null_mut(), |o| o.payload)) };
+            if e < 0 {
+                return Err(ec(e));
+            }
+        }
+
+        let odb = repo_odb(repo)?;
+        // SAFETY: `odb` is the repository's; `tree` readable.
+        ErrorCode::check(unsafe { pend::git_odb__freshen(odb, tree) })?;
+        let bytes = buf.as_bytes();
+        // SAFETY: `bytes` are readable for its length; `id` writable.
+        ErrorCode::check(unsafe { pend::git_odb_write(id, odb, bytes.as_ptr().cast(), bytes.len(), OBJ_COMMIT) })?;
+
+        if !update_ref.is_null() {
+            // SAFETY: `ref` is NULL or the looked-up reference; the strings
+            // are NUL-terminated.
+            ErrorCode::check_zero(unsafe {
+                pend::git_reference__update_for_commit(repo, r#ref, update_ref, id, c"commit".as_ptr())
+            })?;
+        }
+        Ok(())
+    })();
+    // SAFETY: NULL or the reference looked up above, freed once.
+    unsafe { pend::git_reference_free(r#ref) };
+    r
+}
+
+/// The content pointer of a builder (its string's `ptr`).
+fn builder_content(b: &GitCommitbuilder) -> *const c_char {
+    // SAFETY: `contents` points to the live string of `create_internal`.
+    unsafe { (*b.contents).as_ptr() }
+}
+
+/// `git_repository_odb__weakptr`.
+pub(crate) fn repo_odb(repo: *mut git_repository) -> Result<*mut pend::git_odb> {
+    let mut odb = ptr::null_mut();
+    // SAFETY: `repo` is a live repository (every caller's contract);
+    // `odb` is writable.
+    ErrorCode::check(unsafe { pend::git_repository_odb__weakptr(&mut odb, repo) })?;
+    Ok(odb)
+}
+
+/// `git_object_owner` of a commit or tree pointer (asserting, as C's, that
+/// it is not NULL).
+///
+/// # Safety
+///
+/// `obj` is NULL or a live object.
+pub(crate) unsafe fn object_owner<T>(obj: *const T) -> Result<*mut git_repository> {
+    if obj.is_null() {
+        return Err(errors::assert_arg_failed("obj"));
+    }
+    // SAFETY: a live object starts with its `git_object` head, whose `repo`
+    // is set before the object is published and never changed.
+    Ok(unsafe { ptr::addr_of!((*obj.cast::<GitObjectHead>()).repo).read() })
+}
+
+/// `git_object_id` of a live object (NULL asserted as C's).
+///
+/// # Safety
+///
+/// As [`object_owner`].
+pub(crate) unsafe fn object_id<T>(obj: *const T) -> Result<Oid> {
+    if obj.is_null() {
+        return Err(errors::assert_arg_failed("obj"));
+    }
+    // SAFETY: as in `object_owner`: the id is set before publication.
+    Ok(unsafe { ptr::addr_of!((*obj.cast::<GitObjectHead>()).cached.oid).read() })
+}
+
+/// The parents of a commit (as `commit_parent_for_amend`).
+///
+/// # Safety
+///
+/// `commit` is a live commit whose parents nobody changes meanwhile.
+unsafe fn parent_ids_of<'a>(commit: *const GitCommit) -> &'a [Oid] {
+    // SAFETY: the parse wrote the array before the commit was published;
+    // nothing writes it after.
+    unsafe { (*ptr::addr_of!((*commit).parent_ids)).as_slice() }
+}
+
+/// A C status (non-zero) as an `ErrorCode`.
+#[inline]
+pub(crate) fn ec(e: c_int) -> ErrorCode {
+    ErrorCode::from_raw(e).unwrap_or(ErrorCode::GENERIC)
+}
+
+/// The C callers' error code.
+pub(crate) fn code(r: Result<()>) -> c_int {
+    match r {
+        Ok(()) => 0,
+        Err(e) => e.raw(),
+    }
+}
+
+pub mod ffi {
+    //! The exports of `commit.c`.
+
+    use super::*;
+    use crate::buf::GitBuf;
+    use crate::buf::ffi::{git_buf_fromstr, git_buf_tostr};
+    use crate::sys::pending::l_commit::GitCommitArray;
+    use crate::util::export::{barrier, cstr_bytes};
+
+    /// `GIT_BUF_WRAP_PRIVATE(buf, fn, …)`.
+    ///
+    /// # Safety
+    ///
+    /// `buf` is NULL or a valid `git_buf`.
+    pub(crate) unsafe fn wrap_buf(buf: *mut GitBuf, f: impl FnOnce(&mut GitStr) -> Result<()>) -> c_int {
+        let mut s = GitStr::new();
+        // SAFETY: `s` is writable; `buf` per the contract.
+        let mut error = unsafe { git_buf_tostr(&mut s, buf) };
+        if error == 0 {
+            error = code(f(&mut s));
+            if error == 0 {
+                // SAFETY: as above.
+                error = unsafe { git_buf_fromstr(buf, &mut s) };
+            }
+        }
+        drop(s);
+        error
+    }
+
+    /// `git_commit__free`.
+    ///
+    /// # Safety
+    ///
+    /// `commit` is a commit allocated with `git__allocator` (zeroed, then
+    /// parsed or not), which nothing uses after.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit__free(commit: *mut c_void) {
+        barrier(|| {
+            let c = commit.cast::<GitCommit>();
+            if c.is_null() {
+                return;
+            }
+            // SAFETY: the caller hands over the commit: it is ours alone.
+            let cm = unsafe { &mut *c };
+            cm.parent_ids.dispose();
+            // SAFETY: the commit's own allocations, freed once.
+            unsafe {
+                free_signature(cm.author);
+                free_signature(cm.committer);
+                alloc::free(cm.raw_header.cast());
+                alloc::free(cm.raw_message.cast());
+                alloc::free(cm.message_encoding.cast());
+                alloc::free(cm.summary.cast());
+                alloc::free(cm.body.cast());
+                alloc::free(commit);
+            }
+        })
+    }
+
+    /// `git_commit_create_ext_options_init`.
+    ///
+    /// # Safety
+    ///
+    /// `opts` is NULL or writable.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit_create_ext_options_init(
+        opts: *mut GitCommitCreateExtOptions,
+        version: c_uint,
+    ) -> c_int {
+        barrier(|| {
+            git_assert_arg!(!opts.is_null(), "opts", -1);
+            let mut v = GitCommitCreateExtOptions::INIT;
+            v.version = version;
+            // SAFETY: writable (contract).
+            unsafe { opts.write(v) };
+            0
+        })
+    }
+
+    /// `git_commit_create_options_init`.
+    ///
+    /// # Safety
+    ///
+    /// `opts` is NULL or writable.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit_create_options_init(opts: *mut GitCommitCreateOptions, version: c_uint) -> c_int {
+        barrier(|| {
+            git_assert_arg!(!opts.is_null(), "opts", -1);
+            let mut v = GitCommitCreateOptions::INIT;
+            v.version = version;
+            // SAFETY: writable (contract).
+            unsafe { opts.write(v) };
+            0
+        })
+    }
+
+    /// `git_commit_create_from_callback`.
+    ///
+    /// # Safety
+    ///
+    /// The C's: `id` writable; `repo` live; the signatures live; strings
+    /// NUL-terminated or NULL; `tree` readable; `parent_cb` callable with
+    /// `parent_payload`, returning NULL or a readable id.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit_create_from_callback(
+        id: *mut Oid,
+        repo: *mut git_repository,
+        update_ref: *const c_char,
+        author: *const GitSignature,
+        committer: *const GitSignature,
+        message_encoding: *const c_char,
+        message: *const c_char,
+        tree: *const Oid,
+        parent_cb: pend::GitCommitParentCallback,
+        parent_payload: *mut c_void,
+    ) -> c_int {
+        barrier(|| {
+            let mut opts = GitCommitCreateExtOptions::INIT;
+            opts.update_ref = update_ref;
+            opts.message_encoding = message_encoding;
+            let mut next = |i: usize| -> Option<Oid> {
+                let cb = parent_cb?;
+                // SAFETY: the callback's contract (the caller's).
+                let p = unsafe { cb(i, parent_payload) };
+                // SAFETY: NULL or a readable id.
+                (!p.is_null()).then(|| unsafe { p.read() })
+            };
+            // SAFETY: the caller's contract.
+            unsafe { create_from_c(id, repo, author, committer, message, tree, &mut next, Some(&opts), true) }
+        })
+    }
+
+    /// [`create_internal`] with C's out-parameter and tree pointer.
+    ///
+    /// # Safety
+    ///
+    /// As [`create_internal`]; `id` writable, `tree` readable (both may be
+    /// NULL, which crashes the C: here an error).
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn create_from_c(
+        id: *mut Oid,
+        repo: *mut git_repository,
+        author: *const GitSignature,
+        committer: *const GitSignature,
+        message: *const c_char,
+        tree: *const Oid,
+        next: ParentSource<'_>,
+        opts: Option<&GitCommitCreateExtOptions>,
+        validate: bool,
+    ) -> c_int {
+        if id.is_null() {
+            return errors::assert_arg_failed("id").raw();
+        }
+        if tree.is_null() {
+            return errors::assert_arg_failed("tree").raw();
+        }
+        // SAFETY: readable (contract).
+        let tree = unsafe { tree.read() };
+        let mut out = Oid::default();
+        // SAFETY: the caller's contract.
+        let r = unsafe { create_internal(&mut out, repo, author, committer, message, &tree, next, opts, validate) };
+        // The C writes `id` with git_odb_write before updating the ref.
+        if r.is_ok() || out != Oid::default() {
+            // SAFETY: writable (contract).
+            unsafe { id.write(out) };
+        }
+        code(r)
+    }
+
+    /// `git_commit__create_v`: `git_commit_create_v`'s body, called by its
+    /// C shim (`src/util/rust_shims.c`) with the variadic parents collected.
+    ///
+    /// # Safety
+    ///
+    /// As `git_commit_create`; `parents` holds `parent_count` readable
+    /// pointers (NULL ends the list early, as the C's `va_arg` reading does).
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit__create_v(
+        id: *mut Oid,
+        repo: *mut git_repository,
+        update_ref: *const c_char,
+        author: *const GitSignature,
+        committer: *const GitSignature,
+        message_encoding: *const c_char,
+        message: *const c_char,
+        tree: *const crate::tree::GitTree,
+        parent_count: usize,
+        parents: *const *const GitCommit,
+    ) -> c_int {
+        barrier(|| {
+            git_assert_arg!(!tree.is_null(), "tree", -1);
+            // SAFETY: a live tree (contract).
+            let owner = unsafe { object_owner(tree) };
+            git_assert_arg!(owner == Ok(repo), "git_tree_owner(tree) == repo", -1);
+            let mut opts = GitCommitCreateExtOptions::INIT;
+            opts.update_ref = update_ref;
+            opts.message_encoding = message_encoding;
+            let mut next = |i: usize| -> Option<Oid> {
+                if i >= parent_count {
+                    return None;
+                }
+                // SAFETY: `i < parent_count` pointers are readable.
+                let c = unsafe { parents.add(i).read() };
+                if c.is_null() {
+                    return None;
+                }
+                // SAFETY: a live commit (contract).
+                unsafe { object_id(c) }.ok()
+            };
+            // SAFETY: a live tree; the rest is the caller's contract.
+            let tree_id = unsafe { object_id(tree) }.unwrap_or_default();
+            // SAFETY: the caller's contract.
+            unsafe { create_from_c(id, repo, author, committer, message, &tree_id, &mut next, Some(&opts), false) }
+        })
+    }
+
+    /// `git_commit_create_from_ids`.
+    ///
+    /// # Safety
+    ///
+    /// As `git_commit_create_from_callback`; `parents` holds `parent_count`
+    /// readable ids.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit_create_from_ids(
+        id: *mut Oid,
+        repo: *mut git_repository,
+        update_ref: *const c_char,
+        author: *const GitSignature,
+        committer: *const GitSignature,
+        message_encoding: *const c_char,
+        message: *const c_char,
+        tree: *const Oid,
+        parent_count: usize,
+        parents: *const *const Oid,
+    ) -> c_int {
+        barrier(|| {
+            let mut opts = GitCommitCreateExtOptions::INIT;
+            opts.update_ref = update_ref;
+            opts.message_encoding = message_encoding;
+            let mut next = |i: usize| -> Option<Oid> {
+                if i >= parent_count {
+                    return None;
+                }
+                // SAFETY: `i < parent_count` entries are readable.
+                let p = unsafe { parents.add(i).read() };
+                // SAFETY: NULL or a readable id.
+                (!p.is_null()).then(|| unsafe { p.read() })
+            };
+            // SAFETY: the caller's contract.
+            unsafe { create_from_c(id, repo, author, committer, message, tree, &mut next, Some(&opts), true) }
+        })
+    }
+
+    /// `commit_parent_from_array`: the parents in `parents` that belong to
+    /// `repo` (the first that does not ends the list).
+    ///
+    /// # Safety
+    ///
+    /// `parents` holds `n` readable pointers to live commits (or NULL).
+    unsafe fn from_array<'a>(
+        parents: *const *mut GitCommit,
+        n: usize,
+        repo: *mut git_repository,
+    ) -> impl FnMut(usize) -> Option<Oid> + 'a {
+        move |i| {
+            if i >= n {
+                return None;
+            }
+            // SAFETY: `i < n` pointers are readable (contract).
+            let c = unsafe { parents.add(i).read() };
+            // SAFETY: NULL or a live commit (contract).
+            if unsafe { object_owner(c) }.ok()? != repo {
+                return None;
+            }
+            // SAFETY: as above.
+            unsafe { object_id(c) }.ok()
+        }
+    }
+
+    /// `git_commit_create_ext`.
+    ///
+    /// # Safety
+    ///
+    /// As `git_commit_create`; `opts` NULL or a valid options struct.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit_create_ext(
+        id: *mut Oid,
+        repo: *mut git_repository,
+        author: *const GitSignature,
+        committer: *const GitSignature,
+        message: *const c_char,
+        tree: *const crate::tree::GitTree,
+        parent_count: usize,
+        parents: *const *mut GitCommit,
+        opts: *const GitCommitCreateExtOptions,
+    ) -> c_int {
+        barrier(|| {
+            git_assert_arg!(!tree.is_null(), "tree", -1);
+            // SAFETY: a live tree (contract).
+            let owner = unsafe { object_owner(tree) };
+            git_assert_arg!(owner == Ok(repo), "git_tree_owner(tree) == repo", -1);
+            // SAFETY: the caller's contract.
+            let mut next = unsafe { from_array(parents, parent_count, repo) };
+            // SAFETY: a live tree.
+            let tree_id = unsafe { object_id(tree) }.unwrap_or_default();
+            // SAFETY: NULL or a valid options struct, only read.
+            let opts = unsafe { opts.as_ref() };
+            // SAFETY: the caller's contract.
+            unsafe { create_from_c(id, repo, author, committer, message, &tree_id, &mut next, opts, false) }
+        })
+    }
+
+    /// `git_commitbuilder_add_header`.
+    ///
+    /// # Safety
+    ///
+    /// `builder` is the builder a signing callback was given, during that
+    /// callback; `field` and `value` are NUL-terminated.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commitbuilder_add_header(
+        builder: *mut GitCommitbuilder,
+        field: *const c_char,
+        value: *const c_char,
+    ) -> c_int {
+        barrier(|| {
+            if builder.is_null() {
+                return errors::assert_arg_failed("builder").raw();
+            }
+            // SAFETY: the builder's string is live during the callback, and
+            // only this call uses it meanwhile.
+            let contents = unsafe { &mut *(*builder).contents };
+            // SAFETY: NUL-terminated or NULL (contract).
+            let (f, v) = unsafe { (opt_cbytes(field), opt_cbytes(value)) };
+            let Some(f) = f else { return errors::assert_arg_failed("field").raw() };
+            let Some(v) = v else { return errors::assert_arg_failed("content").raw() };
+            let raw = contents.as_bytes();
+            let raw = &raw[..memchr::memchr(0, raw).unwrap_or(raw.len())];
+            let mut signed = GitStr::new();
+            match append_header(&mut signed, raw, f, v) {
+                Ok(()) => {
+                    contents.swap(&mut signed);
+                    0
+                }
+                Err(e) => e.raw(),
+            }
+        })
+    }
+
+    /// `git_commit_create`.
+    ///
+    /// # Safety
+    ///
+    /// The C's: `id` writable; `repo` live; `tree` a live tree of `repo`;
+    /// `parents` holds `parent_count` live commits; the signatures live;
+    /// strings NUL-terminated or NULL.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit_create(
+        id: *mut Oid,
+        repo: *mut git_repository,
+        update_ref: *const c_char,
+        author: *const GitSignature,
+        committer: *const GitSignature,
+        message_encoding: *const c_char,
+        message: *const c_char,
+        tree: *const crate::tree::GitTree,
+        parent_count: usize,
+        parents: *const *mut GitCommit,
+    ) -> c_int {
+        barrier(|| {
+            git_assert_arg!(!tree.is_null(), "tree", -1);
+            // SAFETY: a live tree (contract).
+            let owner = unsafe { object_owner(tree) };
+            git_assert_arg!(owner == Ok(repo), "git_tree_owner(tree) == repo", -1);
+            let mut opts = GitCommitCreateExtOptions::INIT;
+            opts.update_ref = update_ref;
+            opts.message_encoding = message_encoding;
+            // SAFETY: the caller's contract.
+            let mut next = unsafe { from_array(parents, parent_count, repo) };
+            // SAFETY: a live tree.
+            let tree_id = unsafe { object_id(tree) }.unwrap_or_default();
+            // SAFETY: the caller's contract.
+            unsafe { create_from_c(id, repo, author, committer, message, &tree_id, &mut next, Some(&opts), false) }
+        })
+    }
+
+    /// `git_commit_amend`.
+    ///
+    /// # Safety
+    ///
+    /// `id` writable; `commit_to_amend` a live commit; the rest NULL or as
+    /// `git_commit_create`'s.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit_amend(
+        id: *mut Oid,
+        commit_to_amend: *const GitCommit,
+        update_ref: *const c_char,
+        author: *const GitSignature,
+        committer: *const GitSignature,
+        message_encoding: *const c_char,
+        message: *const c_char,
+        tree: *const crate::tree::GitTree,
+    ) -> c_int {
+        barrier(|| {
+            git_assert_arg!(!id.is_null(), "id", -1);
+            git_assert_arg!(!commit_to_amend.is_null(), "commit_to_amend", -1);
+            let c = commit_to_amend;
+            // SAFETY: a live commit (contract); its fields are read only.
+            let (repo, author, committer, message_encoding, message) = unsafe {
+                let repo = object_owner(c).unwrap_or(ptr::null_mut());
+                (
+                    repo,
+                    if author.is_null() { (*c).author.cast_const() } else { author },
+                    if committer.is_null() { (*c).committer.cast_const() } else { committer },
+                    if message_encoding.is_null() { (*c).message_encoding.cast_const() } else { message_encoding },
+                    if message.is_null() { message_ptr(c) } else { message },
+                )
+            };
+            let tree_id = if tree.is_null() {
+                let mut old: *mut crate::tree::GitTree = ptr::null_mut();
+                // SAFETY: `old` is writable; the commit is live.
+                let e = unsafe { ffi::git_commit_tree(&mut old, c) };
+                if e < 0 {
+                    return e;
+                }
+                // SAFETY: the tree just looked up.
+                let t = unsafe { object_id(old) }.unwrap_or_default();
+                // SAFETY: freed once.
+                unsafe { pend::git_tree_free(old) };
+                t
+            } else {
+                // SAFETY: a live tree (contract).
+                let owner = unsafe { object_owner(tree) };
+                git_assert_arg!(owner == Ok(repo), "git_tree_owner(tree) == repo", -1);
+                // SAFETY: as above.
+                unsafe { object_id(tree) }.unwrap_or_default()
+            };
+
+            let mut r#ref = ptr::null_mut();
+            if !update_ref.is_null() {
+                // SAFETY: `repo` is live; `update_ref` NUL-terminated.
+                let e = unsafe { pend::git_reference_lookup_resolved(&mut r#ref, repo, update_ref, 5) };
+                if e < 0 {
+                    return e;
+                }
+                // SAFETY: the reference just looked up; the commit is live.
+                let (target, cid) = unsafe { (pend::git_reference_target(r#ref), object_id(c).unwrap_or_default()) };
+                // SAFETY: NULL or the reference's id.
+                if target.is_null() || unsafe { target.read() } != cid {
+                    // SAFETY: freed once.
+                    unsafe { pend::git_reference_free(r#ref) };
+                    let _ = git_error_set!(
+                        ErrorClass::REFERENCE,
+                        "commit to amend is not the tip of the given branch"
+                    );
+                    return -1;
+                }
+            }
+
+            let mut opts = GitCommitCreateExtOptions::INIT;
+            opts.message_encoding = message_encoding;
+            // SAFETY: the commit is live and its parents unchanged.
+            let pids = unsafe { parent_ids_of(c) };
+            let mut next = |i: usize| pids.get(i).copied();
+            // SAFETY: the caller's contract.
+            let mut error =
+                unsafe { create_from_c(id, repo, author, committer, message, &tree_id, &mut next, Some(&opts), false) };
+            if error == 0 && !update_ref.is_null() {
+                // SAFETY: the reference looked up above; `id` was written.
+                error = unsafe {
+                    pend::git_reference__update_for_commit(repo, r#ref, ptr::null(), id, c"commit".as_ptr())
+                };
+            }
+            if !update_ref.is_null() {
+                // SAFETY: freed once.
+                unsafe { pend::git_reference_free(r#ref) };
+            }
+            error
+        })
+    }
+
+    /// `git_commit__parse`.
+    ///
+    /// # Safety
+    ///
+    /// `commit` is a fresh (zeroed) commit that only the caller holds;
+    /// `obj` a live odb object.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit__parse(commit: *mut c_void, obj: *mut pend::git_odb_object, oid_type: git_oid_t) -> c_int {
+        let mut opts = GitCommitParseOptions { oid_type, flags: 0 };
+        // SAFETY: the caller's contract.
+        unsafe { git_commit__parse_ext(commit.cast(), obj, &mut opts) }
+    }
+
+    /// `git_commit__parse_raw`.
+    ///
+    /// # Safety
+    ///
+    /// `commit` is a fresh (zeroed) commit that only the caller holds;
+    /// `data` is readable for `size` bytes.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit__parse_raw(
+        commit: *mut c_void,
+        data: *const c_char,
+        size: usize,
+        oid_type: git_oid_t,
+    ) -> c_int {
+        barrier(|| {
+            git_assert_arg!(!commit.is_null(), "commit", -1);
+            git_assert_arg!(!data.is_null(), "data", -1);
+            // SAFETY: the caller's contract: an exclusive, initialized commit
+            // and readable bytes.
+            let (c, d) = unsafe { (&mut *commit.cast::<GitCommit>(), crate::util::export::bytes(data, size)) };
+            code(parse_into(c, d, &GitCommitParseOptions { oid_type, flags: 0 }))
+        })
+    }
+
+    /// `git_commit__parse_ext`: parse `odb_obj` into `commit`, then apply
+    /// the repository's grafts.
+    ///
+    /// # Safety
+    ///
+    /// `commit` is a zeroed commit that only the caller holds, whose
+    /// `object.repo` is NULL or a live repository; `odb_obj` a live odb
+    /// object; `parse_opts` readable.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit__parse_ext(
+        commit: *mut GitCommit,
+        odb_obj: *mut pend::git_odb_object,
+        parse_opts: *mut GitCommitParseOptions,
+    ) -> c_int {
+        barrier(|| {
+            git_assert_arg!(!commit.is_null(), "commit", -1);
+            git_assert_arg!(!parse_opts.is_null(), "opts", -1);
+            // SAFETY: the caller's contract: exclusive access to the commit,
+            // a live object whose data is readable for its size.
+            let (c, opts, data, id) = unsafe {
+                let p = pend::git_odb_object_data(odb_obj).cast::<c_char>();
+                let n = pend::git_odb_object_size(odb_obj);
+                if p.is_null() {
+                    return errors::assert_arg_failed("data").raw();
+                }
+                (&mut *commit, parse_opts.read(), crate::util::export::bytes(p, n), pend::git_odb_object_id(odb_obj).read())
+            };
+            if let Err(e) = parse_into(c, data, &opts) {
+                return e.raw();
+            }
+            // Perform necessary grafts
+            // SAFETY: the repository is live (contract).
+            if let Some(g) = unsafe { find_graft(c.object.repo, &id) } {
+                // SAFETY: the graft is the repository's, live meanwhile.
+                let graft = unsafe { &(*g).parents };
+                return code(parents_from_graft(&mut c.parent_ids, graft));
+            }
+            0
+        })
+    }
+
+    macro_rules! getter {
+        ($(#[$m:meta])* $name:ident -> $ret:ty, $invalid:expr, |$c:ident| $body:expr) => {
+            $(#[$m])*
+            ///
+            /// # Safety
+            ///
+            /// `commit` is NULL or a live commit.
+            #[unsafe(no_mangle)]
+            pub unsafe extern "C" fn $name(commit: *const GitCommit) -> $ret {
+                barrier(|| {
+                    git_assert_arg!(!commit.is_null(), "commit", $invalid);
+                    let $c = commit;
+                    // SAFETY: a live commit (contract), whose fields the parse
+                    // set before it was published; read through the pointer.
+                    unsafe { $body }
+                })
+            }
+        };
+    }
+
+    getter!(
+        /// `git_commit_author`.
+        git_commit_author -> *const GitSignature, ptr::null(), |c| (*c).author.cast_const()
+    );
+    getter!(
+        /// `git_commit_committer`.
+        git_commit_committer -> *const GitSignature, ptr::null(), |c| (*c).committer.cast_const()
+    );
+    getter!(
+        /// `git_commit_message_raw`.
+        git_commit_message_raw -> *const c_char, ptr::null(), |c| (*c).raw_message.cast_const()
+    );
+    getter!(
+        /// `git_commit_message_encoding`.
+        git_commit_message_encoding -> *const c_char, ptr::null(), |c| (*c).message_encoding.cast_const()
+    );
+    getter!(
+        /// `git_commit_raw_header`.
+        git_commit_raw_header -> *const c_char, ptr::null(), |c| (*c).raw_header.cast_const()
+    );
+    getter!(
+        /// `git_commit_time` (`INT64_MIN` without a committer, which the C
+        /// dereferences).
+        git_commit_time -> i64, i64::MIN, |c| {
+            let s = (*c).committer;
+            if s.is_null() { i64::MIN } else { (*s).when.time }
+        }
+    );
+    getter!(
+        /// `git_commit_time_offset`.
+        git_commit_time_offset -> c_int, -1, |c| {
+            let s = (*c).committer;
+            if s.is_null() { -1 } else { (*s).when.offset }
+        }
+    );
+    getter!(
+        /// `git_commit_parentcount`.
+        git_commit_parentcount -> c_uint, 0, |c| parent_ids_of(c).len() as c_uint
+    );
+    getter!(
+        /// `git_commit_tree_id`.
+        git_commit_tree_id -> *const Oid, ptr::null(), |c| ptr::addr_of!((*c).tree_id)
+    );
+    getter!(
+        /// `git_commit_message`: the raw message without its leading
+        /// newlines.
+        git_commit_message -> *const c_char, ptr::null(), |c| message_ptr(c)
+    );
+
+    /// `git_commit_summary`: computed on first use and kept in the commit.
+    ///
+    /// # Safety
+    ///
+    /// `commit` is NULL or a live commit, and no other thread calls this
+    /// (or `git_commit__free`) on it meanwhile (as the C's).
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit_summary(commit: *mut GitCommit) -> *const c_char {
+        barrier(|| {
+            git_assert_arg!(!commit.is_null(), "commit", ptr::null());
+            // SAFETY: a live commit; `summary` is written only here (and by
+            // the free), by the contract not concurrently.
+            unsafe {
+                let slot = ptr::addr_of_mut!((*commit).summary);
+                if slot.read().is_null() {
+                    let msg = message_ptr(commit);
+                    let mut s = GitStr::new();
+                    if !msg.is_null() {
+                        let _ = summary_into(CStr::from_ptr(msg).to_bytes(), &mut s);
+                    }
+                    let mut p = s.detach().map_or(ptr::null_mut(), |d| d.into_raw());
+                    if p.is_null() {
+                        p = alloc::strdup(c"");
+                    }
+                    slot.write(p);
+                }
+                slot.read().cast_const()
+            }
+        })
+    }
+
+    /// `git_commit_body`: computed on first use and kept in the commit.
+    ///
+    /// # Safety
+    ///
+    /// As [`git_commit_summary`].
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit_body(commit: *mut GitCommit) -> *const c_char {
+        barrier(|| {
+            git_assert_arg!(!commit.is_null(), "commit", ptr::null());
+            // SAFETY: as in `git_commit_summary`, for `body`.
+            unsafe {
+                let slot = ptr::addr_of_mut!((*commit).body);
+                if slot.read().is_null() {
+                    let msg = message_ptr(commit);
+                    if !msg.is_null() {
+                        if let Some(b) = body_of(CStr::from_ptr(msg).to_bytes()) {
+                            slot.write(alloc::strndup(b, b.len()));
+                        }
+                    }
+                }
+                slot.read().cast_const()
+            }
+        })
+    }
+
+    /// `git_commit_tree`.
+    ///
+    /// # Safety
+    ///
+    /// `tree_out` writable; `commit` NULL or a live commit.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit_tree(tree_out: *mut *mut crate::tree::GitTree, commit: *const GitCommit) -> c_int {
+        barrier(|| {
+            git_assert_arg!(!commit.is_null(), "commit", -1);
+            // SAFETY: a live commit; its repository is live while it is.
+            unsafe { pend::git_tree_lookup(tree_out, (*commit).object.repo, ptr::addr_of!((*commit).tree_id)) }
+        })
+    }
+
+    /// `git_commit_parent_id`.
+    ///
+    /// # Safety
+    ///
+    /// `commit` is NULL or a live commit.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit_parent_id(commit: *const GitCommit, n: c_uint) -> *const Oid {
+        barrier(|| {
+            git_assert_arg!(!commit.is_null(), "commit", ptr::null());
+            // SAFETY: a live commit (contract).
+            unsafe { parent_ids_of(commit) }.get(n as usize).map_or(ptr::null(), ptr::from_ref)
+        })
+    }
+
+    /// `git_commit_parent`.
+    ///
+    /// # Safety
+    ///
+    /// `parent` writable; `commit` NULL or a live commit.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit_parent(parent: *mut *mut GitCommit, commit: *const GitCommit, n: c_uint) -> c_int {
+        barrier(|| {
+            git_assert_arg!(!commit.is_null(), "commit", -1);
+            // SAFETY: a live commit (contract).
+            let Some(id) = unsafe { parent_ids_of(commit) }.get(n as usize).copied() else {
+                let _ = git_error_set!(ErrorClass::INVALID, "parent {} does not exist", n);
+                return ErrorCode::NOT_FOUND.raw();
+            };
+            // SAFETY: `parent` writable; the repository live with the commit.
+            unsafe { pend::git_commit_lookup(parent, (*commit).object.repo, &id) }
+        })
+    }
+
+    /// `git_commit_nth_gen_ancestor`.
+    ///
+    /// # Safety
+    ///
+    /// `ancestor` NULL or writable; `commit` NULL or a live commit.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit_nth_gen_ancestor(
+        ancestor: *mut *mut GitCommit,
+        commit: *const GitCommit,
+        n: c_uint,
+    ) -> c_int {
+        barrier(|| {
+            git_assert_arg!(!ancestor.is_null(), "ancestor", -1);
+            git_assert_arg!(!commit.is_null(), "commit", -1);
+            let mut current = ptr::null_mut();
+            // SAFETY: a live commit; `current` writable.
+            if unsafe { pend::git_commit_dup(&mut current, commit.cast_mut()) } < 0 {
+                return -1;
+            }
+            if n == 0 {
+                // SAFETY: writable (contract).
+                unsafe { ancestor.write(current) };
+                return 0;
+            }
+            let mut parent = ptr::null_mut();
+            for _ in 0..n {
+                // SAFETY: `current` is a commit we hold.
+                let error = unsafe { git_commit_parent(&mut parent, current, 0) };
+                // SAFETY: released once.
+                unsafe { pend::git_commit_free(current) };
+                if error < 0 {
+                    return error;
+                }
+                current = parent;
+            }
+            // SAFETY: writable (contract).
+            unsafe { ancestor.write(parent) };
+            0
+        })
+    }
+
+    /// `git_commit_header_field`.
+    ///
+    /// # Safety
+    ///
+    /// `out` a valid `git_buf`; `commit` a live commit; `field`
+    /// NUL-terminated.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit_header_field(out: *mut GitBuf, commit: *const GitCommit, field: *const c_char) -> c_int {
+        barrier(|| {
+            // SAFETY: the caller's contract.
+            unsafe { wrap_buf(out, |s| header_field_of(s, commit, field)) }
+        })
+    }
+
+    /// The header field of a commit for the exports.
+    ///
+    /// # Safety
+    ///
+    /// `commit` a live commit; `field` NUL-terminated.
+    unsafe fn header_field_of(out: &mut GitStr, commit: *const GitCommit, field: *const c_char) -> Result<()> {
+        if commit.is_null() {
+            return Err(errors::assert_arg_failed("commit"));
+        }
+        // SAFETY: a live commit's header (or NULL for a quick-parsed one),
+        // and the field: NUL-terminated (contract).
+        let (h, f) = unsafe { (opt_cbytes((*commit).raw_header), cstr_bytes(field)) };
+        header_field(h.unwrap_or(b""), f, out)
+    }
+
+    /// `git_commit__header_field`.
+    ///
+    /// # Safety
+    ///
+    /// `out` a valid `git_str`; `commit` a live commit; `field`
+    /// NUL-terminated.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit__header_field(out: *mut GitStr, commit: *const GitCommit, field: *const c_char) -> c_int {
+        barrier(|| {
+            git_assert_arg!(!out.is_null(), "out", -1);
+            // SAFETY: a valid, unaliased `git_str` (contract).
+            code(unsafe { header_field_of(&mut *out, commit, field) })
+        })
+    }
+
+    /// `git_commit_extract_signature`.
+    ///
+    /// # Safety
+    ///
+    /// `signature_out`, `signed_data_out` valid `git_buf`s; `repo` live;
+    /// `commit_id` readable; `field` NULL or NUL-terminated.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit_extract_signature(
+        signature_out: *mut GitBuf,
+        signed_data_out: *mut GitBuf,
+        repo: *mut git_repository,
+        commit_id: *mut Oid,
+        field: *const c_char,
+    ) -> c_int {
+        barrier(|| {
+            let mut signature = GitStr::new();
+            let mut signed_data = GitStr::new();
+            // SAFETY: the caller's contract.
+            unsafe {
+                let mut error = git_buf_tostr(&mut signature, signature_out);
+                if error == 0 {
+                    error = git_buf_tostr(&mut signed_data, signed_data_out);
+                }
+                if error == 0 {
+                    error = git_commit__extract_signature(&mut signature, &mut signed_data, repo, commit_id, field);
+                }
+                if error == 0 {
+                    error = git_buf_fromstr(signature_out, &mut signature);
+                }
+                if error == 0 {
+                    error = git_buf_fromstr(signed_data_out, &mut signed_data);
+                }
+                error
+            }
+        })
+    }
+
+    /// `git_commit__extract_signature`.
+    ///
+    /// # Safety
+    ///
+    /// As `git_commit_extract_signature`, with valid `git_str`s.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit__extract_signature(
+        signature: *mut GitStr,
+        signed_data: *mut GitStr,
+        repo: *mut git_repository,
+        commit_id: *mut Oid,
+        field: *const c_char,
+    ) -> c_int {
+        barrier(|| {
+            git_assert_arg!(!signature.is_null(), "signature", -1);
+            git_assert_arg!(!signed_data.is_null(), "signed_data", -1);
+            // SAFETY: valid, distinct `git_str`s (contract).
+            let (sig, sd) = unsafe { (&mut *signature, &mut *signed_data) };
+            sig.clear();
+            sd.clear();
+            // SAFETY: NULL or NUL-terminated (contract).
+            let field = unsafe { opt_cbytes(field) }.unwrap_or(b"gpgsig");
+            let odb = match repo_odb(repo) {
+                Ok(o) => o,
+                Err(e) => return e.raw(),
+            };
+            let mut obj = ptr::null_mut();
+            // SAFETY: `obj` writable; `commit_id` readable (contract).
+            let error = unsafe { pend::git_odb_read(&mut obj, odb, commit_id) };
+            if error < 0 {
+                return error;
+            }
+            // SAFETY: the object just read, live until freed below.
+            let r = unsafe {
+                if pend::git_odb_object_type(obj) != OBJ_COMMIT {
+                    let _ = git_error_set!(
+                        ErrorClass::INVALID,
+                        "the requested type does not match the type in the ODB"
+                    );
+                    Err(ErrorCode::NOT_FOUND)
+                } else {
+                    let p = pend::git_odb_object_data(obj).cast::<c_char>();
+                    let n = pend::git_odb_object_size(obj);
+                    let data = if p.is_null() { &[][..] } else { crate::util::export::bytes(p, n) };
+                    extract_signature(data, field, sig, sd)
+                }
+            };
+            // SAFETY: freed once.
+            unsafe { pend::git_odb_object_free(obj) };
+            if let Err(e) = r {
+                sig.clear();
+                sd.clear();
+                return e.raw();
+            }
+            0
+        })
+    }
+
+    /// `git_commit_create_buffer`.
+    ///
+    /// # Safety
+    ///
+    /// `out` a valid `git_buf`; the rest as `git_commit_create`'s.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit_create_buffer(
+        out: *mut GitBuf,
+        repo: *mut git_repository,
+        author: *const GitSignature,
+        committer: *const GitSignature,
+        message_encoding: *const c_char,
+        message: *const c_char,
+        tree: *const crate::tree::GitTree,
+        parent_count: usize,
+        parents: *const *mut GitCommit,
+    ) -> c_int {
+        barrier(|| {
+            // SAFETY: the caller's contract.
+            unsafe {
+                wrap_buf(out, |s| {
+                    ErrorCode::check_zero(git_commit__create_buffer(
+                        s,
+                        repo,
+                        author,
+                        committer,
+                        message_encoding,
+                        message,
+                        tree,
+                        parent_count,
+                        parents,
+                    ))
+                })
+            }
+        })
+    }
+
+    /// `git_commit__create_buffer`.
+    ///
+    /// # Safety
+    ///
+    /// `out` a valid `git_str`; the rest as `git_commit_create`'s.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit__create_buffer(
+        out: *mut GitStr,
+        repo: *mut git_repository,
+        author: *const GitSignature,
+        committer: *const GitSignature,
+        message_encoding: *const c_char,
+        message: *const c_char,
+        tree: *const crate::tree::GitTree,
+        parent_count: usize,
+        parents: *const *mut GitCommit,
+    ) -> c_int {
+        barrier(|| {
+            git_assert_arg!(!tree.is_null(), "tree", -1);
+            // SAFETY: a live tree (contract).
+            let owner = unsafe { object_owner(tree) };
+            git_assert_arg!(owner == Ok(repo), "git_tree_owner(tree) == repo", -1);
+            git_assert_arg!(!out.is_null(), "out", -1);
+            // SAFETY: a live tree.
+            let tree_id = unsafe { object_id(tree) }.unwrap_or_default();
+            // SAFETY: the caller's contract.
+            let mut next = unsafe { from_array(parents, parent_count, repo) };
+            let mut parents_arr = GitArray::new();
+            // SAFETY: `repo` live.
+            if let Err(e) = unsafe { validate_tree_and_parents(&mut parents_arr, repo, &tree_id, &mut next, None, true) } {
+                return e.raw();
+            }
+            // SAFETY: the caller's contract on the strings and signatures; a
+            // valid, unaliased `git_str`.
+            unsafe {
+                let r = (|| {
+                    let a = sig_out(author)?;
+                    let c = sig_out(committer)?;
+                    let Some(msg) = opt_cbytes(message) else {
+                        return Err(errors::assert_arg_failed("string"));
+                    };
+                    create_buffer_internal(
+                        &mut *out,
+                        &a,
+                        &c,
+                        msg,
+                        &tree_id,
+                        parents_arr.as_slice(),
+                        opt_cbytes(message_encoding),
+                        &[],
+                    )
+                })();
+                code(r)
+            }
+        })
+    }
+
+    /// `git_commit_create_with_signature`.
+    ///
+    /// # Safety
+    ///
+    /// `out` writable; `repo` live; `commit_content` NUL-terminated;
+    /// `signature`, `signature_field` NULL or NUL-terminated.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit_create_with_signature(
+        out: *mut Oid,
+        repo: *mut git_repository,
+        commit_content: *const c_char,
+        signature: *const c_char,
+        signature_field: *const c_char,
+    ) -> c_int {
+        barrier(|| {
+            git_assert_arg!(!out.is_null(), "out", -1);
+            git_assert_arg!(!repo.is_null(), "repo", -1);
+            git_assert_arg!(!commit_content.is_null(), "commit_content", -1);
+            // SAFETY: NUL-terminated or NULL (contract).
+            let (content, sig, field) = unsafe {
+                (cstr_bytes(commit_content), opt_cbytes(signature), opt_cbytes(signature_field).unwrap_or(b"gpgsig"))
+            };
+            // SAFETY: a live repository (contract).
+            let oid_type: git_oid_t = unsafe { pend::field(repo, pend::REPO_OID_TYPE) };
+
+            // The first step is to verify that all the tree and parents exist
+            let parsed = alloc::calloc(1, size_of::<GitCommit>()).cast::<GitCommit>();
+            if parsed.is_null() {
+                return -1;
+            }
+            let r = (|| -> Result<()> {
+                // SAFETY: a zeroed commit, all-zero being a valid (empty)
+                // `GitCommit`; ours alone.
+                let pc = unsafe { &mut *parsed };
+                if parse_into(pc, content, &GitCommitParseOptions { oid_type, flags: 0 }).is_err() {
+                    return Err(ErrorCode::GENERIC);
+                }
+                let pids = pc.parent_ids.as_slice();
+                let mut next = |i: usize| pids.get(i).copied();
+                let mut parents = GitArray::new();
+                // SAFETY: `repo` live.
+                unsafe { validate_tree_and_parents(&mut parents, repo, &pc.tree_id, &mut next, None, true) }?;
+                drop(parents);
+
+                let mut signed = GitStr::new();
+                let bytes = match sig {
+                    Some(s) => {
+                        append_header(&mut signed, content, field, s)?;
+                        signed.as_bytes()
+                    }
+                    None => content,
+                };
+                let odb = repo_odb(repo)?;
+                // SAFETY: readable bytes; `out` writable.
+                ErrorCode::check(unsafe { pend::git_odb_write(out, odb, bytes.as_ptr().cast(), bytes.len(), OBJ_COMMIT) }).map(drop)
+            })();
+            // SAFETY: the commit allocated above, freed once.
+            unsafe { git_commit__free(parsed.cast()) };
+            code(r)
+        })
+    }
+
+    /// `check_for_empty_commit`.
+    ///
+    /// # Safety
+    ///
+    /// `repo` live; `tree` NULL or a live tree; `index` a live index when
+    /// `tree` is NULL.
+    unsafe fn check_for_empty_commit(repo: *mut git_repository, tree: *const crate::tree::GitTree, index: *mut pend::git_index) -> c_int {
+        let mut head_tree = ptr::null_mut();
+        // SAFETY: `repo` live; `head_tree` writable.
+        let error = unsafe { pend::git_repository_head_tree(&mut head_tree, repo) };
+        let r = if error != 0 && error != ErrorCode::UNBORN_BRANCH.raw() {
+            error
+        } else {
+            // SAFETY: the trees and the index are live (contract).
+            match unsafe { crate::sys::diff::count_deltas(repo, head_tree, tree.cast_mut(), index) } {
+                Err(e) => e,
+                Ok(0) => {
+                    let _ = git_error_set!(ErrorClass::REPOSITORY, "no changes are staged for commit");
+                    ErrorCode::UNCHANGED.raw()
+                }
+                Ok(_) => 0,
+            }
+        };
+        // SAFETY: NULL or the tree looked up, freed once.
+        unsafe { pend::git_tree_free(head_tree) };
+        r
+    }
+
+    /// `init_ext_options`.
+    fn ext_options(create: Option<&GitCommitCreateOptions>) -> GitCommitCreateExtOptions {
+        let mut e = GitCommitCreateExtOptions::INIT;
+        if let Some(c) = create {
+            e.message_encoding = c.message_encoding;
+            e.extra_headers = c.extra_headers;
+            e.extra_headers_len = c.extra_headers_len;
+            e.sign = c.sign;
+            e.payload = c.payload;
+        }
+        e
+    }
+
+    /// `create_from_tree`.
+    ///
+    /// # Safety
+    ///
+    /// `out` writable; `repo` live; `tree` a live tree of it; `message`
+    /// NUL-terminated; `opts` valid.
+    unsafe fn create_from_tree(
+        out: *mut Oid,
+        repo: *mut git_repository,
+        tree: *const crate::tree::GitTree,
+        message: *const c_char,
+        opts: &GitCommitCreateOptions,
+    ) -> c_int {
+        let mut ext = ext_options(Some(opts));
+        ext.update_ref = c"HEAD".as_ptr();
+        let mut author = opts.author;
+        let mut committer = opts.committer;
+        let mut default_signature = ptr::null_mut();
+        let mut parents = GitCommitArray { commits: ptr::null(), count: 0 };
+        let error = (|| {
+            if author.is_null() || committer.is_null() {
+                // SAFETY: `repo` live; writable out-parameter.
+                if unsafe { pend::git_signature_default(&mut default_signature, repo) } < 0 {
+                    return -1;
+                }
+                if author.is_null() {
+                    author = default_signature;
+                }
+                if committer.is_null() {
+                    committer = default_signature;
+                }
+            }
+            // SAFETY: `repo` live; writable out-parameter.
+            if unsafe { pend::git_repository_commit_parents(&mut parents, repo) } < 0 {
+                return -1;
+            }
+            // SAFETY: the caller's contract; the parents just looked up.
+            unsafe { git_commit_create_ext(out, repo, author, committer, message, tree, parents.count, parents.commits, &ext) }
+        })();
+        // SAFETY: the array and the signature made above, released once.
+        unsafe {
+            git_commitarray_dispose(&mut parents);
+            pend::git_signature_free(default_signature);
+        }
+        error
+    }
+
+    /// `git_commit_create_from_stage`.
+    ///
+    /// # Safety
+    ///
+    /// `out` writable; `repo` live; `message` NUL-terminated; `given_opts`
+    /// NULL or valid.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit_create_from_stage(
+        out: *mut Oid,
+        repo: *mut git_repository,
+        message: *const c_char,
+        given_opts: *const GitCommitCreateOptions,
+    ) -> c_int {
+        barrier(|| {
+            git_assert_arg!(
+                !out.is_null() && !repo.is_null() && !message.is_null(),
+                "out && repo && message",
+                -1
+            );
+            // SAFETY: NULL or valid (contract): a copy, as the C's memcpy.
+            let opts = unsafe { given_opts.as_ref() }.copied().unwrap_or(GitCommitCreateOptions::INIT);
+            let mut index = ptr::null_mut();
+            let mut tree = ptr::null_mut();
+            let error = (|| {
+                // SAFETY: `repo` live; writable out-parameter.
+                if unsafe { pend::git_repository_index(&mut index, repo) } < 0 {
+                    return -1;
+                }
+                if !opts.allow_empty_commit() {
+                    // SAFETY: `repo` and `index` live.
+                    let e = unsafe { check_for_empty_commit(repo, ptr::null(), index) };
+                    if e < 0 {
+                        return e;
+                    }
+                }
+                let mut tree_id = Oid::default();
+                // SAFETY: the index looked up; writable out-parameters.
+                if unsafe { pend::git_index_write_tree(&mut tree_id, index) } < 0
+                    || unsafe { pend::git_tree_lookup(&mut tree, repo, &tree_id) } < 0
+                {
+                    return -1;
+                }
+                // SAFETY: the caller's contract; the tree just looked up.
+                unsafe { create_from_tree(out, repo, tree, message, &opts) }
+            })();
+            // SAFETY: NULL or the objects made above, released once.
+            unsafe {
+                pend::git_tree_free(tree);
+                pend::git_index_free(index);
+            }
+            error
+        })
+    }
+
+    /// `git_commit_create_from_tree`.
+    ///
+    /// # Safety
+    ///
+    /// `out` writable; `repo` live; `tree` a live tree of it; `message`
+    /// NUL-terminated; `given_opts` NULL or valid.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit_create_from_tree(
+        out: *mut Oid,
+        repo: *mut git_repository,
+        tree: *const crate::tree::GitTree,
+        message: *const c_char,
+        given_opts: *const GitCommitCreateOptions,
+    ) -> c_int {
+        barrier(|| {
+            git_assert_arg!(
+                !out.is_null() && !repo.is_null() && !tree.is_null() && !message.is_null(),
+                "out && repo && tree && message",
+                -1
+            );
+            // SAFETY: NULL or valid (contract).
+            let opts = unsafe { given_opts.as_ref() }.copied().unwrap_or(GitCommitCreateOptions::INIT);
+            // SAFETY: live repository and tree.
+            if !opts.allow_empty_commit() && unsafe { check_for_empty_commit(repo, tree, ptr::null_mut()) } < 0 {
+                return -1;
+            }
+            // SAFETY: the caller's contract.
+            unsafe { create_from_tree(out, repo, tree, message, &opts) }
+        })
+    }
+
+    /// `git_commit_amend_from_stage`.
+    ///
+    /// # Safety
+    ///
+    /// As `git_commit_amend_from_tree`, without a tree.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit_amend_from_stage(
+        out: *mut Oid,
+        repo: *mut git_repository,
+        message: *const c_char,
+        opts: *const GitCommitCreateOptions,
+    ) -> c_int {
+        barrier(|| {
+            git_assert_arg!(!out.is_null() && !repo.is_null(), "out && repo", -1);
+            let mut index = ptr::null_mut();
+            let mut tree = ptr::null_mut();
+            let mut tree_id = Oid::default();
+            // SAFETY: `repo` live; writable out-parameters.
+            let error = unsafe {
+                if pend::git_repository_index(&mut index, repo) < 0
+                    || pend::git_index_write_tree(&mut tree_id, index) < 0
+                    || pend::git_tree_lookup(&mut tree, repo, &tree_id) < 0
+                {
+                    -1
+                } else {
+                    git_commit_amend_from_tree(out, repo, tree, message, opts)
+                }
+            };
+            // SAFETY: NULL or the objects made above, released once.
+            unsafe {
+                pend::git_tree_free(tree);
+                pend::git_index_free(index);
+            }
+            error
+        })
+    }
+
+    /// `git_commit_amend_from_tree`.
+    ///
+    /// # Safety
+    ///
+    /// `out` writable; `repo` live; `tree` a live tree of it; `given_message`
+    /// NULL or NUL-terminated; `opts` NULL or valid.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit_amend_from_tree(
+        out: *mut Oid,
+        repo: *mut git_repository,
+        tree: *const crate::tree::GitTree,
+        given_message: *const c_char,
+        opts: *const GitCommitCreateOptions,
+    ) -> c_int {
+        barrier(|| {
+            git_assert_arg!(!out.is_null() && !repo.is_null() && !tree.is_null(), "out && repo && tree", -1);
+            // SAFETY: NULL or valid (contract).
+            let opts = unsafe { opts.as_ref() };
+            let mut ext = ext_options(opts);
+            let mut head_ref = ptr::null_mut();
+            let mut head_commit: *mut GitCommit = ptr::null_mut();
+            let mut new_committer = ptr::null_mut();
+            let error = (|| {
+                // SAFETY: `repo` live; writable out-parameters.
+                let mut e = unsafe { pend::git_repository_head(&mut head_ref, repo) };
+                if e >= 0 {
+                    // SAFETY: the reference just looked up.
+                    e = unsafe { pend::git_reference_peel(ptr::addr_of_mut!(head_commit).cast(), head_ref, OBJ_COMMIT) };
+                }
+                if e < 0 {
+                    return e;
+                }
+                let author = match opts.map(|o| o.author).filter(|a| !a.is_null()) {
+                    Some(a) => a,
+                    // SAFETY: the commit just looked up.
+                    None => unsafe { (*head_commit).author.cast_const() },
+                };
+                let committer = match opts.map(|o| o.committer).filter(|c| !c.is_null()) {
+                    Some(c) => c,
+                    None => {
+                        // SAFETY: `repo` live; writable out-parameter.
+                        let e = unsafe { pend::git_signature_default(&mut new_committer, repo) };
+                        if e < 0 {
+                            return e;
+                        }
+                        new_committer.cast_const()
+                    }
+                };
+                let message = if given_message.is_null() {
+                    // SAFETY: the commit just looked up.
+                    unsafe {
+                        ext.message_encoding = (*head_commit).message_encoding;
+                        message_ptr(head_commit)
+                    }
+                } else {
+                    given_message
+                };
+                // SAFETY: the head commit is live; its parents unchanged.
+                let pids = unsafe { parent_ids_of(head_commit) };
+                let mut next = |i: usize| pids.get(i).copied();
+                // SAFETY: a live tree.
+                let tree_id = unsafe { object_id(tree) }.unwrap_or_default();
+                // SAFETY: the caller's contract.
+                let e =
+                    unsafe { create_from_c(out, repo, author, committer, message, &tree_id, &mut next, Some(&ext), false) };
+                if e != 0 {
+                    return e;
+                }
+                // SAFETY: the reference looked up; `out` written.
+                unsafe { pend::git_reference__update_for_commit(repo, head_ref, ptr::null(), out, c"commit".as_ptr()) }
+            })();
+            // SAFETY: NULL or the objects made above, released once.
+            unsafe {
+                pend::git_signature_free(new_committer);
+                pend::git_commit_free(head_commit);
+                pend::git_reference_free(head_ref);
+            }
+            error
+        })
+    }
+
+    /// `git_commit_committer_with_mailmap`.
+    ///
+    /// # Safety
+    ///
+    /// `out` writable; `commit` a live commit; `mailmap` NULL or live.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit_committer_with_mailmap(
+        out: *mut *mut GitSignature,
+        commit: *const GitCommit,
+        mailmap: *const c_void,
+    ) -> c_int {
+        // SAFETY: the caller's contract (the C dereferences `commit`).
+        barrier(|| unsafe { crate::sys::mailmap::resolve_signature(out, mailmap, (*commit).committer) })
+    }
+
+    /// `git_commit_author_with_mailmap`.
+    ///
+    /// # Safety
+    ///
+    /// As [`git_commit_committer_with_mailmap`].
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commit_author_with_mailmap(
+        out: *mut *mut GitSignature,
+        commit: *const GitCommit,
+        mailmap: *const c_void,
+    ) -> c_int {
+        // SAFETY: as above.
+        barrier(|| unsafe { crate::sys::mailmap::resolve_signature(out, mailmap, (*commit).author) })
+    }
+
+    /// `git_commitarray_dispose`.
+    ///
+    /// # Safety
+    ///
+    /// `array` NULL or a `git_commitarray` that libgit2 filled.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn git_commitarray_dispose(array: *mut GitCommitArray) {
+        barrier(|| {
+            if array.is_null() {
+                return;
+            }
+            // SAFETY: a filled array (contract): `count` commits we release,
+            // and the buffer from `git__allocator`.
+            unsafe {
+                let a = array.read();
+                for i in 0..a.count {
+                    pend::git_commit_free(a.commits.add(i).read());
+                }
+                alloc::free(a.commits.cast_mut().cast());
+                array.write(GitCommitArray { commits: ptr::null(), count: 0 });
+            }
+        })
+    }
+}
+
+/// `git_commit_message`'s pointer: into the raw message, past its leading
+/// newlines (NULL without one).
+///
+/// # Safety
+///
+/// `c` is a live commit.
+pub(crate) unsafe fn message_ptr(c: *const GitCommit) -> *const c_char {
+    // SAFETY: a live commit's raw message: NULL or NUL-terminated, set by
+    // the parse and unchanged after.
+    unsafe {
+        let mut m = ptr::addr_of!((*c).raw_message).read().cast_const();
+        if m.is_null() {
+            return m;
+        }
+        while m.read() == b'\n' as c_char {
+            m = m.add(1);
+        }
+        m
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests;
+
+crate::c_layout_test! {
+    headers: ["commit.h", "cache.h", "grafts.h", "git2/index.h"],
+    types: [
+        GitCommit => "git_commit" {
+            object, parent_ids, tree_id, author, committer, message_encoding,
+            raw_message, raw_header, summary, body
+        },
+        GitTime => "git_time" { time, offset, sign },
+        GitSignature => "git_signature" { name, email, when },
+        GitCommitParseOptions => "git_commit__parse_options" { oid_type, flags },
+        GitCommitHeader => "git_commit_header" { field, value },
+        GitCommitCreateExtOptions => "git_commit_create_ext_options" {
+            version, update_ref, message_encoding, extra_headers,
+            extra_headers_len, sign, payload
+        },
+        GitCommitCreateOptions => "git_commit_create_options" {
+            version, author, committer, message_encoding, extra_headers,
+            extra_headers_len, sign, payload
+        },
+        crate::sys::pending::l_commit::GitCachedObj => "git_cached_obj" { oid, type_ as "type", flags, size, refcount },
+        crate::sys::pending::l_commit::GitObjectHead => "git_object" { cached, repo },
+        crate::sys::pending::l_commit::GitCommitGraft => "git_commit_graft" { oid, parents },
+        crate::sys::pending::l_commit::GitIndexEntry => "git_index_entry" {
+            ctime, mtime, dev, ino, mode, uid, gid, file_size, id, flags, flags_extended, path
+        },
+        crate::sys::pending::l_commit::GitCommitArray => "git_commitarray" { commits, count },
+    ],
+    asserts: ["GIT_COMMIT_PARSE_QUICK == 1"],
+}

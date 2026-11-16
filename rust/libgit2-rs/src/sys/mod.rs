@@ -4,3 +4,7 @@ pub mod hashmap_str;
 pub mod pcre2;
 pub mod pending;
 pub mod zlib;
+pub mod commit_graph;
+pub mod diff;
+pub mod mailmap;
+pub mod path;

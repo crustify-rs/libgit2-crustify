@@ -13,12 +13,15 @@ pub mod sys;
 pub mod util;
 
 pub mod buf;
+pub mod commit;
+pub mod commit_list;
 pub mod fs;
 pub mod hashmap_oid;
 pub mod oid;
 pub mod oidarray;
 pub mod parse;
 pub mod strarray;
+pub mod tree;
 
 pub use oid::{Oid, OidShortener, OidType};
 pub use oidarray::OidArray;
