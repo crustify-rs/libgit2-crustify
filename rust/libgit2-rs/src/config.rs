@@ -4136,12 +4136,11 @@ mod rust_backend {
             backend: Box::new(backend),
             level: std::sync::atomic::AtomicI32::new(0),
         };
-        let mut table = CTable::<ConfigBackendCell, State>::new(state);
+        let table = CTable::<ConfigBackendCell, State>::new(state);
         let p = table.as_c_ptr();
         // SAFETY: the table is ours alone here (no slot runs); `readonly`
         // is a plain field C reads.
         unsafe { (*p).readonly = c_int::from(readonly) };
-        let _ = table.state_mut();
         let p = table.into_c();
         // SAFETY: a table surrendered just now, released through its `free`
         // slot (`CTable::release`), which `BackendFree` calls.
