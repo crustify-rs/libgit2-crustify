@@ -503,3 +503,82 @@ DIVERGENCES.md).
 ### repository: `git_repository__extensions` leaks on allocation failure
 - C: returns -1 with the strings copied so far and the vector leaked.
 - Rust: frees them.
+## odb, odb_loose, odb_mempack, delta, cache (WP l-odb)
+
+### odb: `git_odb_foreach` calls a NULL `foreach` slot
+- C: `src/libgit2/odb.c` (`git_odb_foreach`) calls `b->foreach` of every
+  backend without checking it; a backend without one (the mempack backend
+  has none, and it is optional in `git2/sys/odb_backend.h`) crashes.
+- Trigger: `git_odb_foreach` on an odb with a mempack backend.
+- Rust: backends without `foreach` are skipped.
+
+### odb: `git_odb_write` reads the odb before checking it
+- C: `git_odb_write` reads `db->options.oid_type` before
+  `GIT_ASSERT_ARG(db)`; a NULL `db` crashes.
+- Rust: -1 with `invalid argument: 'db'`.
+
+### odb: `git_odb__add_default_backends` leaks a backend it fails to add
+- C: when `add_backend_internal` fails for the new loose (or pack)
+  backend, the backend is not freed.
+- Trigger: an allocation failure in `add_backend_internal`.
+- Rust: the backend is freed through its `free` slot; the result is -1, as C.
+
+### odb: streams without a hash context or a slot
+- C: `git_odb_stream_write` hashes into `stream->hash_ctx`, NULL for a read
+  stream or a stream a backend returned with `GIT_PASSTHROUGH`;
+  `git_odb_stream_read` / `git_odb_stream_finalize_write` call `read` /
+  `finalize_write` unchecked (NULL for write-only / read-only streams).
+- Rust: no hashing without a context; a missing slot is an error
+  (`stream does not support reading` / `writing`, class `GIT_ERROR_ODB`).
+
+### cache: the size limit of an out-of-range type
+- C: `cache_should_store` indexes `git_cache__max_object_size[8]` with the
+  object's type, out of bounds for a type outside 0..7.
+- Trigger: a backend that returns such a type, with strict hash
+  verification off (`GIT_OPT_ENABLE_STRICT_HASH_VERIFICATION`).
+- Rust: such objects are not cached.
+
+### odb_loose: an empty objects directory
+- C: `git_odb__backend_loose` reads `objects_dir[objects_dirlen - 1]` with
+  `objects_dirlen == 0`.
+- Rust: appends the `/` (the directory is `/`).
+
+### odb_loose: a pack-like object whose body is shorter than its header says
+- C: `read_loose_packlike` returns `hdr.size` bytes of a buffer whose tail
+  past what was inflated is uninitialized.
+- Trigger: a pack-like loose object (first byte not a zlib header) with a
+  short deflated body, strict hash verification off.
+- Rust: the tail is zero (as `read_loose_standard`'s zero padding).
+
+### odb_loose: an id of another type than the backend's
+- C: `object_file_name` grows the path for the backend's hex size, then
+  `git_oid_pathfmt` writes the id's (64 digits for a SHA-256 id in a SHA-1
+  backend: a heap overflow when the string has no slack).
+- Rust: the path has the backend's hex size, the digits taken from the id.
+
+### odb_mempack: `impl__write` leaks the object when the map insert fails
+- C: on `git_odb_mempack_oidmap_put` failure the `memobject` is not freed.
+- Rust: freed (the error is returned as C).
+
+### delta: `git_delta_read_header_fromstream` adds a negative read status to the length
+`delta.c:git_delta_read_header_fromstream` does `len += read` for any
+non-zero `read` that is not `GIT_EBUFS`, so an error of
+`git_packfile_stream_read` (-1, "error reading from the zlib stream") makes
+`len` wrap, and `hdr_sz` then parses up to `SIZE_MAX` bytes past the
+16-byte stack buffer (uninitialized and out-of-bounds reads). Input: a pack
+whose delta object's zlib data is corrupt. The Rust returns -1 with the
+stream's error. A `GIT_EBUFS` that never clears (a window that cannot be
+opened) still loops forever, as in C: the stream gives no way to tell it from
+a transient one.
+
+### delta: `git_delta_create_from_index` with a NULL index
+C dereferences the index (it returns early only for an empty target);
+`git_delta_index_init` returns a NULL index for an empty source, so
+`git_delta_create_from_index(…, NULL, trg, n>0, …)` crashes. The Rust fails
+with `invalid argument: 'index'` (-1, NULL output).
+
+### delta: the output buffer's size wraps for deltas above ~1.4 GiB
+`git_delta_create_from_index` grows its buffer with `bufsize * 3 / 2` in
+`unsigned int`; past 2^32/3 bytes this wraps and `git__realloc` shrinks the
+buffer, which the next opcode overflows. The Rust fails with the
+out-of-memory error instead.

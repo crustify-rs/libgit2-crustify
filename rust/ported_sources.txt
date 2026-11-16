@@ -44,3 +44,8 @@ src/libgit2/parse.c
 src/libgit2/repository.c
 src/libgit2/libgit2.c
 src/libgit2/settings.c
+src/libgit2/cache.c
+src/libgit2/odb.c
+src/libgit2/odb_loose.c
+src/libgit2/odb_mempack.c
+src/libgit2/delta.c

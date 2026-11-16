@@ -13,9 +13,14 @@ pub mod sys;
 pub mod util;
 
 pub mod buf;
+pub mod cache;
+pub mod delta;
 pub mod fs;
 pub mod hashmap_oid;
 pub mod libgit2;
+pub mod odb;
+pub mod odb_loose;
+pub mod odb_mempack;
 pub mod oid;
 pub mod oidarray;
 pub mod parse;
@@ -24,6 +29,10 @@ pub mod settings;
 pub mod strarray;
 
 pub use libgit2::Libgit2;
+pub use odb::{
+    Backend, ExpandId, LooseOptions, Mempack, ObjectType, Odb, OdbBackend, OdbObject, OdbReader,
+    OdbWriter,
+};
 pub use oid::{Oid, OidShortener, OidType};
 pub use oidarray::OidArray;
 pub use repository::{Repository, RepositoryInitOptions, RepositoryOpenFlags, RepositoryState};
