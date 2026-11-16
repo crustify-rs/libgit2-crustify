@@ -29,10 +29,15 @@ pub struct GitBuf {
     size: usize,
 }
 
-// SAFETY: the allocation belongs to the buffer alone and `git__allocator`
-// frees from any thread; `&GitBuf` only reads.
+// SAFETY: the one field that is not plain data is `ptr`: by the invariant
+// either a sentinel (a static that nothing writes through a `GitBuf`:
+// `sanitize` skips them) or NULL, or an allocation owned by this buffer
+// alone, which `git__allocator` frees from any thread. So moving the
+// buffer to another thread moves sole ownership of its allocation.
 unsafe impl Send for GitBuf {}
-// SAFETY: as above.
+// SAFETY: through `&GitBuf` the buffer is only read (`as_bytes`,
+// `to_vec`); every write (`dispose`, `sanitize`, the conversions) takes
+// `&mut`.
 unsafe impl Sync for GitBuf {}
 
 impl Default for GitBuf {
@@ -128,11 +133,17 @@ impl GitBuf {
         if self.reserved > 0 && !self.ptr.is_null() {
             // As C: `ptr[0] = '\0'`. A buffer with `reserved > 0` owns an
             // allocation of `reserved` bytes, or (moved from an
-            // out-of-memory `git_str`) holds a sentinel, which is a writable
-            // byte that holds 0.
-            // SAFETY: `ptr` is valid for a write of one byte, as above; a
-            // sentinel is an `UnsafeCell`, so the write is allowed.
-            unsafe { self.ptr.write(0) };
+            // out-of-memory `git_str`) holds a sentinel, a static byte that
+            // always holds 0: it is not written, as two buffers on two
+            // threads could hold it at once (a data race in Rust, where C
+            // stored the same 0).
+            if !is_sentinel(self.ptr) {
+                // SAFETY: a non-sentinel `ptr` with `reserved > 0` is the
+                // buffer's own allocation of `reserved` bytes (the
+                // invariant, or C's contract for a buffer C filled), valid
+                // for a write of one byte, which `&mut self` makes ours.
+                unsafe { self.ptr.write(0) };
+            }
         } else {
             // (NULL with `reserved > 0` would crash the C; reset it.)
             self.ptr = git_str__initstr.as_ptr();
@@ -174,29 +185,36 @@ fn tostr(b: &mut GitBuf) -> GitStr {
 /// C's `GIT_BUF_WRAP_PRIVATE(buf, fn, …)`: `git_buf_tostr` into a string,
 /// run `f` on it, `git_buf_fromstr` back if it succeeded, dispose of the
 /// string. The same as calling the two exports, without their barriers
-/// (the caller's export has one).
-///
-/// # Safety
-///
-/// `buf` is NULL or a valid `git_buf` that nothing else accesses during
-/// the call (`f` included).
-pub(crate) unsafe fn wrap_private(
-    buf: *mut GitBuf,
-    f: impl FnOnce(&mut GitStr) -> Result<()>,
-) -> c_int {
-    crate::git_assert_arg!(!buf.is_null(), "buf", -1);
-    // SAFETY: a valid `git_buf` (contract); the borrow ends here.
-    let mut s = tostr(unsafe { &mut *buf });
+/// (the caller's export has one). `None` (C's NULL) fails with `invalid
+/// argument: 'buf'`.
+pub(crate) fn wrap(buf: Option<&mut GitBuf>, f: impl FnOnce(&mut GitStr) -> Result<()>) -> c_int {
+    let buf = crate::git_arg!(buf, "buf", -1);
+    let mut s = tostr(buf);
     let error = match f(&mut s) {
         Ok(()) => {
-            // SAFETY: as above; `f`'s access (if any) has ended.
-            fromstr(unsafe { &mut *buf }, &mut s);
+            fromstr(buf, &mut s);
             0
         }
         Err(e) => e.raw(),
     };
     drop(s);
     error
+}
+
+/// [`wrap`] over a raw `git_buf *`.
+///
+/// # Safety
+///
+/// `buf` is NULL or a valid, aligned `git_buf` that nothing else reads or
+/// writes during the call (`f` included).
+pub(crate) unsafe fn wrap_private(
+    buf: *mut GitBuf,
+    f: impl FnOnce(&mut GitStr) -> Result<()>,
+) -> c_int {
+    // SAFETY: NULL, or a valid `git_buf` that only this call accesses
+    // until it returns (this function's contract), so a `&mut` may cover
+    // it for the call.
+    wrap(unsafe { buf.as_mut() }, f)
 }
 
 /// The exports of `buf.c`.
@@ -211,13 +229,11 @@ pub mod ffi {
     /// # Safety
     ///
     /// `buf` is NULL or a valid `git_buf` that libgit2 filled (or
-    /// `GIT_BUF_INIT`).
+    /// `GIT_BUF_INIT`), which nothing else accesses during the call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_buf_sanitize(buf: *mut GitBuf) -> c_int {
+    pub unsafe extern "C" fn git_buf_sanitize(buf: Option<&mut GitBuf>) -> c_int {
         barrier(|| {
-            git_assert_arg!(!buf.is_null(), "buf", -1);
-            // SAFETY: a valid `git_buf`, not otherwise accessed.
-            unsafe { &mut *buf }.sanitize();
+            git_arg!(buf, "buf", -1).sanitize();
             0
         })
     }
@@ -227,15 +243,19 @@ pub mod ffi {
     /// # Safety
     ///
     /// `out` is NULL or writable (its old contents are overwritten, not
-    /// freed); `buf` is NULL or a valid `git_buf`.
+    /// freed); `buf` is NULL or a valid `git_buf` that nothing else
+    /// (`out` included) accesses during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_buf_tostr(out: *mut GitStr, buf: *mut GitBuf) -> c_int {
         barrier(|| {
             git_assert_arg!(!out.is_null(), "out", -1);
             git_assert_arg!(!buf.is_null(), "buf", -1);
-            // SAFETY: a valid `git_buf`, not otherwise accessed.
+            // SAFETY: `buf` is non-null, so a valid `git_buf` (this
+            // export's contract) that nothing else accesses during the call
+            // (`out` does not overlap it); the borrow ends here.
             let s = tostr(unsafe { &mut *buf });
-            // SAFETY: `out` is writable.
+            // SAFETY: `out` is non-null, so aligned and writable for a
+            // `git_str` (contract); its old contents are not read.
             unsafe { out.write(s) };
             0
         })
@@ -246,7 +266,8 @@ pub mod ffi {
     /// # Safety
     ///
     /// `out` is NULL or writable (its old contents are overwritten, not
-    /// freed); `str` is NULL or a valid `git_str`.
+    /// freed); `str` is NULL or a valid `git_str` that nothing else (`out`
+    /// included) accesses during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_buf_fromstr(out: *mut GitBuf, str: Option<&mut GitStr>) -> c_int {
         barrier(|| {
@@ -254,7 +275,8 @@ pub mod ffi {
             let str = git_arg!(str, "str", -1);
             let mut b = GitBuf::new();
             fromstr(&mut b, str);
-            // SAFETY: `out` is writable; its old contents are not freed.
+            // SAFETY: `out` is non-null, so aligned and writable for a
+            // `git_buf` (contract); its old contents are not read or freed.
             unsafe { out.write(b) };
             0
         })
@@ -265,13 +287,12 @@ pub mod ffi {
     /// # Safety
     ///
     /// `buf` is NULL or a valid `git_buf` that libgit2 filled (or
-    /// `GIT_BUF_INIT`).
+    /// `GIT_BUF_INIT`), which nothing else accesses during the call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_buf_dispose(buf: *mut GitBuf) {
+    pub unsafe extern "C" fn git_buf_dispose(buf: Option<&mut GitBuf>) {
         barrier(|| {
-            if !buf.is_null() {
-                // SAFETY: a valid `git_buf`, not otherwise accessed.
-                unsafe { &mut *buf }.dispose()
+            if let Some(buf) = buf {
+                buf.dispose()
             }
         })
     }
