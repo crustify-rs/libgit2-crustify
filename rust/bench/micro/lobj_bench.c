@@ -20,12 +20,13 @@
 
 static double now(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec * 1e3 + t.tv_nsec / 1e6; }
 static volatile size_t sink;
+static int g_reps = 5; /* LOBJ_REPS */
 static uint64_t st = 0x9E3779B97F4A7C15ull;
 static uint64_t rng(void) { st ^= st >> 12; st ^= st << 25; st ^= st >> 27; return st * 2685821657736338717ull; }
 
 #define BENCH(name, n, setup, body) do { double best = 1e18; int r_; size_t i; \
 	if (only && !strstr(name, only)) break; \
-	for (r_ = 0; r_ < 5; r_++) { double t; setup; t = now(); for (i = 0; i < (n); i++) { body; } t = now() - t; if (t < best) best = t; } \
+	for (r_ = 0; r_ < g_reps; r_++) { double t; setup; t = now(); for (i = 0; i < (n); i++) { body; } t = now() - t; if (t < best) best = t; } \
 	printf("bench %-22s %8.2f ns\n", name, best * 1e6 / (n)); } while (0)
 
 #define K 1024
@@ -48,6 +49,8 @@ int main(int argc, char **argv)
 	git_grafts *grafts;
 	static char blob[4096];
 
+	if (getenv("LOBJ_REPS"))
+		g_reps = atoi(getenv("LOBJ_REPS"));
 	git_libgit2_init();
 	for (j = 0; j < K; j++) {
 		size_t b;
