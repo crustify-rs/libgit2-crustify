@@ -4,6 +4,17 @@
 # (a crash on a corrupted pack: SIGSEGV/SIGBUS; a cyclic delta chain:
 # SIGALRM after 20 s) is skipped, but the Rust must survive every case.
 #   usage: pack_diff.sh [cases per set]     (RUST_BUILD as for link.sh)
+#
+# Expected differences (rust/DEFECTS.md, "Pack"): with 150 cases per set
+# (906 cases), 20 are skipped (the C crashed, SIGSEGV, or looped on a
+# cyclic delta chain, SIGALRM) and about 43 differ, all where the C reads
+# memory it should not: a corrupted delta's header, which the C parses from
+# an uninitialized buffer after a zlib error (git_odb_read_header /
+# git_packfile_resolve_header return 0 with a garbage size where the Rust
+# fails with "error reading from the zlib stream"), and offsets past the
+# end of the pack within its last window (the C reads past the mapping;
+# the Rust: "invalid pack window offset"). Run one case with
+# PACKDIFF_ONLY=<case> PACKDIFF_VERBOSE=1 out/pack_diff_{c,rust} out/pack-corpus 150.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="$HERE/out"

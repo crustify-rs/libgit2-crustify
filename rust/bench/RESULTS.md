@@ -356,3 +356,45 @@ Public API (`compare.sh /work/build-c /work/builds/u2 codec`):
 `strlen` up front), which brought early-failing patterns to 1.0-1.4 of the C
 (from 1.9) and casefold/slash patterns to 0.2-0.8, but recursion-heavy
 patterns (`*[0-9]*` without casefold) stay 1.5x.
+
+## WP l-pack (pack, mwindow, odb_pack)
+
+Public API (`compare.sh /work/build-c /work/builds/l-pack 'odb/pack*,delta'`,
+3 rounds x 3 reps, interleaved; load average ~340):
+
+| workload | C ms | Rust ms | ratio | minrat | cpurat |
+|---|---:|---:|---:|---:|---:|
+| odb/pack_read_random | 5438.8 | 4222.1 | 0.78 | 0.79 | 0.79 |
+| odb/pack_read_sequential | 5594.8 | 4916.3 | 0.88 | 0.90 | 0.89 |
+| odb/pack_read_header | 1017.4 | 1011.1 | 0.99 | 0.92 | 1.04 |
+| odb/pack_exists | 831.1 | 989.9 | 1.19 | 1.28 | 1.13 |
+| odb/pack_exists_prefix | 589.3 | 548.0 | 0.93 | 1.06 | 1.04 |
+| odb/pack_read_prefix | 2547.6 | 2167.7 | 0.85 | 0.84 | 0.91 |
+| odb/pack_foreach | 1208.1 | 730.1 | 0.60 | 0.67 | 0.61 |
+| delta/read_deltified_random | 4609.8 | 3928.6 | 0.85 | 0.73 | 0.81 |
+| delta/read_deep_chains | 1424.8 | 1394.3 | 0.98 | 0.97 | 0.99 |
+| delta/read_header_deltified | 1136.5 | 1165.8 | 1.03 | 0.99 | 1.00 |
+| delta/indexer_resolve | 9723.6 | 9588.7 | 0.99 | 1.01 | 0.94 |
+
+Geomean 0.90 (wall), 0.91 (CPU). `pack_exists` is half misses, and a miss
+makes the odb refresh the backend (a `stat`, a failed `multi-pack-index`
+open, a directory walk): per call, `git_odb_refresh` measured 35-45 µs in C
+and 37-50 µs in the port, with its parts (`git_fs_path_direach`, `p_stat`,
+`git_midx_open`) equal in both; the remaining gap is within this machine's
+noise but shows in every round. Reads gain from zlib-rs inflate and from a
+per-thread inflate stream reset per object (C makes and frees one).
+
+Internal API (`micro/pack_bench.sh 5 5`, git.git's pack, ns per call):
+
+| workload | C | Rust | ratio |
+|---|---:|---:|---:|
+| `git_pack_entry_find` (full id) | 1173.8 | 1136.0 | 0.97 |
+| `git_pack_entry_find` (10-digit prefix) | 1178.1 | 1153.5 | 0.98 |
+| `git_packfile_resolve_header` | 6620.6 | 6579.4 | 0.99 |
+| `git_packfile_unpack` (random) | 272018 | 201574 | 0.74 |
+| `git_packfile_unpack` (pack order) | 13774.2 | 14367.3 | 1.04 |
+| `git_pack_foreach_entry_offset` (424k entries) | 6767698 | 4797718 | 0.71 |
+| `git_mwindow_open` + `close` (open window) | 69.3 | 75.1 | 1.08 |
+
+The last two rows of ratios above 1 vary between 0.88 and 1.09 across
+runs (minimum ratios 1.09 and 0.88).
