@@ -429,3 +429,75 @@ DIVERGENCES.md).
 - C: subtracts `char_cnt` from `line_len` and `remain_len` unchecked; more
   than `line_len` wraps them and later reads run past the content.
 - Rust: advances by at most `line_len`.
+
+## l-commit (commit, commit_list, tree)
+
+### commit: a repeated `encoding` header leaks
+- C: `commit.c`, `commit_parse`: each `encoding ` header assigns
+  `commit->message_encoding = git__strndup(...)` without freeing the
+  previous one.
+- Trigger: a commit with two `encoding` headers.
+- Rust: the earlier value is freed; the last one is kept, as in C.
+
+### commit: a field with a newline in `git_commit_header_field`
+- C: `git_commit__header_field`: `git__prefixcmp(buf, field)` can match
+  across the line's end when `field` contains `\n`; `eol - buf` is then
+  negative, and `git_str_put` is asked for `SIZE_MAX`-ish bytes.
+- Trigger: `git_commit_header_field(&buf, commit, "tree\nparent")`.
+- Rust: fails with the out-of-memory error (-1) without reading anything,
+  which is what the C's `git_str_put` reports when it does not crash.
+
+### commit: NULL signatures and missing fields are dereferenced
+- C: `git_commit_create*` / `git_commit__create_buffer` pass `author` /
+  `committer` to `git_signature__writebuf`, which dereferences them;
+  `git_commit_time` / `_time_offset` dereference `committer`;
+  `git_commit__header_field` and `git_commit_message` read `raw_header` /
+  `raw_message`, which are NULL in a quick-parsed commit.
+- Trigger: `git_commit_create(..., NULL, NULL, ...)`.
+- Rust: `invalid argument: 'sig'` (-1) after the buffer is disposed;
+  `INT64_MIN` / -1 (the getters' "invalid" values); a NULL header is
+  empty (`GIT_ENOTFOUND`); a NULL message gives NULL.
+
+### commit: allocation failures in signature parsing are ignored
+- C: `signature.c`, `extract_trimmed` (`git_signature__parse`): a failed
+  `git__substrdup` of the name or e-mail leaves it NULL, and the parse
+  succeeds. The time zone's `hours * 60` overflows for a parsed offset
+  below about `-3.6e9` (signed overflow).
+- Trigger: `cl_alloc_limit` during a commit parse; `committer a <b> 1 +-2147483648`.
+- Rust (the commit parser's copy of the signature parser): the parse fails
+  with the out-of-memory error; the offset arithmetic wraps.
+
+### commit: `git_commit__extract_signature` leaks the object
+- C: when appending to `signed_data` fails, it returns -1 without freeing
+  the odb object (or clearing the outputs).
+- Rust: the object is freed and both outputs are cleared, as on its other
+  error paths.
+
+### tree: a tree builder replacing a duplicate name leaks
+- C: `tree.c`, `append_entry` (`git_treebuilder_new` from a tree with
+  two entries of the same name; `git_tree__write_index`) puts the new
+  entry into the map, which replaces the old one without freeing it.
+- Trigger: `git_treebuilder_new` with a source tree parsed from a buffer
+  that names the same file twice.
+- Rust: the replaced entry is freed.
+
+### tree: names longer than 65535 bytes
+- C: `TREE_ENTRY_CHECK_NAMELEN` sets an error but does not return:
+  `alloc_entry` stores the length truncated to 16 bits (a tree written from
+  such an entry has a wrong name), and `tree_key_search` searches with the
+  truncated length.
+- Trigger: `git_treebuilder_insert` of a 70,000-byte name (with strict
+  object validation off).
+- Rust: the same (the behaviour is defined, and the result matches the C's
+  byte for byte); recorded here because it is wrong.
+
+### tree: an unknown object id type in a tree parse
+- C: `git_tree__parse_raw` with an invalid `oid_type` reads 0 bytes per id
+  and leaves each entry's `oid` uninitialized (`git_oid_from_raw` fails;
+  its result is ignored).
+- Rust: the ids are zero (the same error is set).
+
+### tree: `git_tree_create_updated` leaks on allocation failure
+- C: `GIT_ERROR_CHECK_ALLOC` of the stack's new levels returns without
+  freeing the levels' builders and trees.
+- Rust: everything is released on every error path.

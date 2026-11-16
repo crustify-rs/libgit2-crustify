@@ -237,3 +237,44 @@ One entry per difference: component, what differs, why.
   where the C would read past the end of the buffer (`git_utf8_iterate`
   with `str_len == 0`, `git_decode_varint` on a truncated varint). The
   exports read exactly what the C read.
+
+## l-commit (commit, commit_list, tree)
+
+- **Copies of other work packages' parsers.** The commit parser carries its
+  own ports of `git_signature__parse`, `git_signature__writebuf`,
+  `git_object__parse_oid_header` and `git_object__write_oid_header`
+  (l-obj's), with the same messages and results (differential test
+  `rust/difftest/commit_tree_diff.c`), so that it is pure Rust (Miri) and
+  calls no C per header line. The integration step replaces them with
+  l-obj's Rust. The commit's signatures are freed as `git_signature_free`
+  does.
+- **Quick parse without a `git_commit`.** `git_commit_list_parse` parses
+  the parents and the commit time straight into the walk's node, without
+  the temporary `git_commit`, its parent array and its committer that the
+  C allocated (and freed). Under `cl_alloc_limit` it therefore makes fewer
+  allocations. More than two parents are collected in a Rust `Vec`
+  (`try_reserve`).
+- **`git_commit_create_v`** is a C shim (`src/util/rust_shims.c`) that
+  collects the variadic parents into an array (on the heap for more than
+  8, which can fail with the out-of-memory error where the C could not)
+  and calls the Rust `git_commit__create_v`; a NULL parent ends the list,
+  as the C's `va_arg` reader did.
+- **`git_treebuilder` is opaque.** Its body moved from `tree.h` into
+  `tree.c` (for the C build); with the Rust it is a Rust struct (allocated
+  with `git__allocator`). Its map keeps the C's hashing and iteration order
+  (`git_treebuilder_filter` visits entries in the same order). Writing a
+  builder sorts its entries with Rust's sort in a Rust `Vec` (`try_reserve`)
+  rather than `git_vector_sort`; names are unique, so the order is the
+  same.
+- **`git_tree_create_updated`** detects duplicate paths after sorting them
+  (the C did on each sorted insertion); the result and the error are the
+  same.
+- **The safe API's summary and body** (`Commit::summary`, `Commit::body`)
+  are computed into the Rust value, never into the shared commit object
+  (whose `summary` / `body` fields the C ABI keeps filling lazily, as in C).
+  `Commit::parent`, `nth_gen_ancestor`, `tree` and `Tree::walk` /
+  `get_path` of an object parsed from bytes (no repository) fail with
+  `invalid argument: 'repo'`, where the C dereferences NULL.
+- **Repository stand-in.** The safe API takes a
+  `pending_repository::Repository` (PENDING(l-repo)), a minimal owner of a
+  `git_repository *`, until l-repo's `Repository` replaces it.
