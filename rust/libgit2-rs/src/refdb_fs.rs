@@ -534,8 +534,8 @@ pub struct FsInner {
 /// The state behind a filesystem backend's table.
 pub struct FsBackend(Arc<FsInner>);
 
-fn cpath(s: &GitStr) -> CString {
-    str_cpath(s).into_owned()
+fn cpath(s: &GitStr) -> std::borrow::Cow<'_, CStr> {
+    str_cpath(s)
 }
 
 fn cbytes(b: &[u8]) -> CString {
@@ -1275,11 +1275,11 @@ impl FsInner {
     /// `loose_lookup_to_packfile`: add the loose reference `name` to the
     /// packed references.
     fn loose_lookup_to_packfile(&self, name: &[u8]) -> Result<()> {
+        let mut path = GitStr::new();
         let mut file = GitStr::new();
-        let read = file.joinpath(self.gitpath(), name).and_then(|()| {
-            let p = cpath(&file);
-            futils::readbuffer(&mut file, &p)
-        });
+        let read = path
+            .joinpath(self.gitpath(), name)
+            .and_then(|()| futils::readbuffer(&mut file, &cpath(&path)));
         if read.is_err() {
             errors::clear();
             return Ok(());

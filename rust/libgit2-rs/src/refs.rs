@@ -771,10 +771,10 @@ pub fn lookup_loose(
     want: bool,
 ) -> Result<Option<RefBox>> {
     use crate::util::futils;
+    let mut path = GitStr::new();
+    path.joinpath(ref_dir, ref_name)?;
     let mut buf = GitStr::new();
-    buf.joinpath(ref_dir, ref_name)?;
-    let path = crate::util::fs_path::str_cpath(&buf).into_owned();
-    futils::readbuffer(&mut buf, &path)?;
+    futils::readbuffer(&mut buf, &crate::util::fs_path::str_cpath(&path))?;
     if prefixcmp(buf.as_bytes(), GIT_SYMREF) == 0 {
         buf.rtrim();
         let target = loose_parse_symbolic(buf.as_bytes())?;
@@ -1458,6 +1458,22 @@ pub mod ffi {
     use crate::util::export::{barrier, cstr, cstr_bytes, status};
     use crate::util::vector::GitVector;
 
+    /// The first bytes of the name `p` (at most 32, which is more than any
+    /// prefix or root name the predicates compare with), without measuring
+    /// the whole string: C's `git__prefixcmp` reads only to the mismatch.
+    ///
+    /// # Safety
+    ///
+    /// `p` is a NUL-terminated string.
+    unsafe fn head<'a>(p: *const c_char) -> &'a [u8] {
+        const HEAD_MAX: usize = 32;
+        // SAFETY: a string: `strnlen` reads to its NUL or 32 bytes.
+        let n = unsafe { libc::strnlen(p, HEAD_MAX) };
+        // SAFETY: those `n` bytes are the string's, unchanged during the
+        // call (the caller's string).
+        unsafe { crate::util::export::bytes(p, n) }
+    }
+
     /// The repository, checked as `GIT_ASSERT_ARG(repo)`.
     unsafe fn repo_arg(repo: *mut git_repository) -> Result<RepoPtr> {
         crate::git_assert_arg!(!repo.is_null(), "repo");
@@ -1562,12 +1578,14 @@ pub mod ffi {
             let Some(b) = (unsafe { RefBox::from_raw(old) }) else {
                 return core::ptr::null_mut();
             };
-            // SAFETY: a string.
-            let n = unsafe { cstr_bytes(name) };
+            // SAFETY: a string. It may be the reference's own name (or
+            // its target), which the reallocation frees: copied first
+            // (see DEFECTS.md).
+            let n = unsafe { cstr_bytes(name) }.to_vec();
             // On failure C leaves the old block with the caller, NULL in
             // `*ptr_to_ref`: it leaks (see DEFECTS.md); here `rename`
             // frees it.
-            b.rename(n).map_or(core::ptr::null_mut(), RefBox::into_raw)
+            b.rename(&n).map_or(core::ptr::null_mut(), RefBox::into_raw)
         })
     }
 
@@ -2581,7 +2599,7 @@ pub mod ffi {
             #[unsafe(no_mangle)]
             pub unsafe extern "C" fn $raw(ref_name: *const c_char) -> c_int {
                 // SAFETY: per the contract.
-                barrier(|| c_int::from($f(unsafe { cstr_bytes(ref_name) })))
+                barrier(|| c_int::from($f(unsafe { head(ref_name) })))
             }
 
             #[doc = concat!("`", stringify!($pub), "`.")]
@@ -2617,7 +2635,7 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference__is_pseudoref(ref_name: *const c_char) -> c_int {
         // SAFETY: per the contract.
-        barrier(|| c_int::from(is_pseudoref(unsafe { cstr_bytes(ref_name) })))
+        barrier(|| c_int::from(is_pseudoref(unsafe { head(ref_name) })))
     }
 
     /// `git_reference__is_per_worktree_ref`.
@@ -2628,7 +2646,7 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference__is_per_worktree_ref(ref_name: *const c_char) -> c_int {
         // SAFETY: per the contract.
-        barrier(|| c_int::from(is_per_worktree_ref(unsafe { cstr_bytes(ref_name) })))
+        barrier(|| c_int::from(is_per_worktree_ref(unsafe { head(ref_name) })))
     }
 
     /// `git_reference_peel`.
@@ -2710,7 +2728,7 @@ pub mod ffi {
     pub unsafe extern "C" fn git_reference__shorthand(name: *const c_char) -> *const c_char {
         barrier(|| {
             // SAFETY: a string.
-            let n = unsafe { cstr_bytes(name) };
+            let n = unsafe { head(name) };
             name.wrapping_add(shorthand_offset(n))
         })
     }
@@ -3024,6 +3042,10 @@ mod ffi_tests {
             assert_eq!(cs(git_reference_shorthand(d)), b"v1");
             assert_eq!(git_reference_is_tag(d), 1);
             assert!(git_reference_target_peel(d).is_null());
+            // The new name may be the reference's own.
+            let mut p = d;
+            let d = git_reference__realloc(&raw mut p, git_reference_name(d));
+            assert_eq!(cs(git_reference_name(d)), b"refs/tags/v1");
             let mut p = d;
             let r = git_reference__realloc(
                 &raw mut p,
@@ -3066,6 +3088,27 @@ mod ffi_tests {
             assert_eq!(git_reference__normalize_name(&raw mut s, own, 0), 0);
             assert_eq!(s.as_bytes(), b"q/w");
             assert_eq!(git_reference__is_branch(c"refs/heads/".as_ptr()), 1);
+            // The predicates read a bounded head of the name.
+            let long = c"refs/heads/a-branch-name-much-longer-than-thirty-two-bytes";
+            assert_eq!(
+                cs(git_reference__shorthand(long.as_ptr())),
+                &long.to_bytes()[11..]
+            );
+            assert_eq!(git_reference__is_pseudoref(c"FETCH_HEAD".as_ptr()), 1);
+            assert_eq!(
+                git_reference__is_pseudoref(c"FETCH_HEAD_and_a_lot_more_after_it_x".as_ptr()),
+                0
+            );
+            assert_eq!(git_reference__is_pseudoref(c"FETCH_HEADS".as_ptr()), 0);
+            assert_eq!(
+                git_reference__is_per_worktree_ref(c"refs/bisect/".as_ptr()),
+                1
+            );
+            assert_eq!(
+                git_reference__is_per_worktree_ref(c"refs/bisec".as_ptr()),
+                0
+            );
+            assert_eq!(git_reference__is_per_worktree_ref(c"ref".as_ptr()), 1);
         }
     }
 }

@@ -521,3 +521,11 @@ DIVERGENCES.md).
 - C: `GIT_ERROR_CHECK_VERSION` accepts NULL, then `!backend->exists`
   dereferences it.
 - Rust: "incomplete refdb backend implementation", `GIT_EINVALID`.
+
+### refs: `git_reference__realloc` with the reference's own name
+- C: `git__realloc(*ptr_to_ref, reflen)` may move (and free) the block,
+  then `memcpy(rewrite->name, name, …)` reads `name`: if it points into the
+  old block (`git_reference__realloc(&ref, ref->name)`), that is a read of
+  freed memory.
+- Rust: the name is copied before the reallocation; the result is the
+  intended rename.
