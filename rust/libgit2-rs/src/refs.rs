@@ -1237,9 +1237,9 @@ pub fn rename(
     // SAFETY: a live repository; the callback gets our payload, alive for
     // the call.
     let e = unsafe {
-        p::git_repository_foreach_worktree(
+        crate::repository::ffi::git_repository_foreach_worktree(
             repo.as_ptr(),
-            refs_update_head,
+            Some(refs_update_head),
             (&raw mut payload).cast(),
         )
     };

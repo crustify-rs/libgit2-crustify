@@ -758,6 +758,8 @@ pub fn open(repo: RepoPtr) -> Result<NonNull<GitRefdb>> {
     }
 }
 
+// The repository is a Rust type C sees as opaque.
+#[allow(improper_ctypes)]
 unsafe extern "C" {
     /// `git_refdb_backend_reftable` (refdb_reftable.c, C that stays C).
     fn git_refdb_backend_reftable(

@@ -81,7 +81,7 @@ impl Repository {
         let p = path_c(path.as_ref())?;
         let mut out = core::ptr::null_mut();
         // SAFETY: a NUL-terminated path; `out` writable.
-        let r = unsafe { p::git_repository_open(&raw mut out, p.as_ptr()) };
+        let r = unsafe { crate::repository::ffi::git_repository_open(&raw mut out, p.as_ptr()) };
         Self::adopt(r, out)
     }
 
@@ -91,7 +91,9 @@ impl Repository {
         let p = path_c(path.as_ref())?;
         let mut out = core::ptr::null_mut();
         // SAFETY: as above.
-        let r = unsafe { p::git_repository_init(&raw mut out, p.as_ptr(), u32::from(bare)) };
+        let r = unsafe {
+            crate::repository::ffi::git_repository_init(&raw mut out, p.as_ptr(), u32::from(bare))
+        };
         Self::adopt(r, out)
     }
 
@@ -109,7 +111,7 @@ impl Drop for Repository {
     fn drop(&mut self) {
         // SAFETY: our repository, freed once; references borrowing it are
         // gone (`'repo`).
-        unsafe { p::git_repository_free(self.repo.as_ptr()) };
+        unsafe { crate::repository::ffi::git_repository_free(self.repo.as_ptr()) };
     }
 }
 

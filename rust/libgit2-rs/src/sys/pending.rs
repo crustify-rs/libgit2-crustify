@@ -378,11 +378,9 @@ use core::ffi::{c_char, c_int, c_uint};
 use crate::oid::Oid;
 use crate::util::str::GitStr;
 
-/// `git_repository` (repository.h), opaque here. PENDING(l-repo)
-#[repr(C)]
-pub struct git_repository {
-    _opaque: [u8; 0],
-}
+/// `git_repository`: the repository module's type.
+#[allow(non_camel_case_types)]
+pub type git_repository = crate::repository::GitRepository;
 
 /// `git_object` (object.h), opaque here. PENDING(l-obj)
 #[repr(C)]
@@ -390,11 +388,9 @@ pub struct git_object {
     _opaque: [u8; 0],
 }
 
-/// `git_commit` (commit.h), opaque here. PENDING(l-commit)
-#[repr(C)]
-pub struct git_commit {
-    _opaque: [u8; 0],
-}
+/// `git_commit`: the commit module's type.
+#[allow(non_camel_case_types)]
+pub type git_commit = crate::commit::GitCommit;
 
 /// `git_time` (include/git2/types.h, public: mirrored). PENDING(l-obj)
 #[repr(C)]
@@ -420,76 +416,23 @@ pub struct git_signature {
     pub when: git_time,
 }
 
-/// `git_repository_foreach_worktree_cb`. PENDING(l-repo)
-pub type ForeachWorktreeCb = unsafe extern "C" fn(*mut git_repository, *mut c_void) -> c_int;
-
-/// `git_configmap_item` values (repository.h). PENDING(l-repo)
+/// `git_configmap_item` values (repository.h).
 pub mod configmap {
     use core::ffi::c_int;
     /// `GIT_CONFIGMAP_IGNORECASE`.
-    pub const IGNORECASE: c_int = 3;
+    pub const IGNORECASE: c_int = crate::repository::GIT_CONFIGMAP_IGNORECASE;
     /// `GIT_CONFIGMAP_PRECOMPOSE`.
     pub const PRECOMPOSE: c_int = 8;
     /// `GIT_CONFIGMAP_LOGALLREFUPDATES`.
     pub const LOGALLREFUPDATES: c_int = 10;
     /// `GIT_CONFIGMAP_FSYNCOBJECTFILES`.
-    pub const FSYNCOBJECTFILES: c_int = 13;
+    pub const FSYNCOBJECTFILES: c_int = crate::repository::GIT_CONFIGMAP_FSYNCOBJECTFILES;
 }
 
-/// `offsetof(git_repository, refdb_type)` (asserted by `refdb`'s layout
-/// test). PENDING(l-repo): read through the integrated `Repository`.
-pub const REPO_REFDB_TYPE_OFFSET: usize = 240;
-
+// The repository and commits are Rust types C sees as opaque; the l-obj
+// symbols are also declared by other sections.
+#[allow(improper_ctypes, clashing_extern_declarations)]
 unsafe extern "C" {
-    // repository.c, PENDING(l-repo)
-    /// `git_repository_refdb__weakptr`. PENDING(l-repo)
-    pub fn git_repository_refdb__weakptr(out: *mut *mut c_void, repo: *mut git_repository)
-    -> c_int;
-    /// `git_repository_refdb`. PENDING(l-repo)
-    pub fn git_repository_refdb(out: *mut *mut c_void, repo: *mut git_repository) -> c_int;
-    /// `git_repository__configmap_lookup`. PENDING(l-repo)
-    pub fn git_repository__configmap_lookup(
-        out: *mut c_int,
-        repo: *mut git_repository,
-        item: c_int,
-    ) -> c_int;
-    /// `git_repository_foreach_worktree`. PENDING(l-repo)
-    pub fn git_repository_foreach_worktree(
-        repo: *mut git_repository,
-        cb: ForeachWorktreeCb,
-        payload: *mut c_void,
-    ) -> c_int;
-    /// `git_repository_path` (`repo->gitdir`). PENDING(l-repo)
-    pub fn git_repository_path(repo: *const git_repository) -> *const c_char;
-    /// `git_repository_commondir` (`repo->commondir`). PENDING(l-repo)
-    pub fn git_repository_commondir(repo: *const git_repository) -> *const c_char;
-    /// `git_repository_get_namespace` (`repo->namespace`). PENDING(l-repo)
-    pub fn git_repository_get_namespace(repo: *mut git_repository) -> *const c_char;
-    /// `git_repository_ident` (`repo->ident_name`, `repo->ident_email`). PENDING(l-repo)
-    pub fn git_repository_ident(
-        name: *mut *const c_char,
-        email: *mut *const c_char,
-        repo: *const git_repository,
-    ) -> c_int;
-    /// `git_repository_is_bare`. PENDING(l-repo)
-    pub fn git_repository_is_bare(repo: *const git_repository) -> c_int;
-    /// `git_repository_is_worktree`. PENDING(l-repo)
-    pub fn git_repository_is_worktree(repo: *const git_repository) -> c_int;
-    /// `git_repository_oid_type`. PENDING(l-repo)
-    pub fn git_repository_oid_type(repo: *const git_repository) -> c_int;
-    /// `git_repository_open`. PENDING(l-repo)
-    pub fn git_repository_open(out: *mut *mut git_repository, path: *const c_char) -> c_int;
-    /// `git_repository_init`. PENDING(l-repo)
-    pub fn git_repository_init(
-        out: *mut *mut git_repository,
-        path: *const c_char,
-        is_bare: c_uint,
-    ) -> c_int;
-    /// `git_repository_free`. PENDING(l-repo)
-    pub fn git_repository_free(repo: *mut git_repository);
-    /// `git_repository__fsync_gitdir`, written by `git_libgit2_opts`. PENDING(l-repo)
-    pub static git_repository__fsync_gitdir: core::sync::atomic::AtomicBool;
-
     // object.c, object_api.c, tag.c, PENDING(l-obj)
     /// `git_object__is_valid`. PENDING(l-obj)
     pub fn git_object__is_valid(repo: *mut git_repository, id: *const Oid, kind: c_int) -> bool;
@@ -550,19 +493,12 @@ unsafe extern "C" {
         sig: *const git_signature,
     );
 
-    // commit.c, PENDING(l-commit)
     /// `git_commit_lookup` (object_api.c). PENDING(l-obj)
     pub fn git_commit_lookup(
         out: *mut *mut git_commit,
         repo: *mut git_repository,
         id: *const Oid,
     ) -> c_int;
-    /// `git_commit_parentcount`. PENDING(l-commit)
-    pub fn git_commit_parentcount(commit: *const git_commit) -> c_uint;
-    /// `git_commit_summary`. PENDING(l-commit)
-    pub fn git_commit_summary(commit: *mut git_commit) -> *const c_char;
-    /// `git_commit_committer`. PENDING(l-commit)
-    pub fn git_commit_committer(commit: *const git_commit) -> *const git_signature;
     /// `git_commit_free` (object_api.c). PENDING(l-obj)
     pub fn git_commit_free(commit: *mut git_commit);
 }
@@ -576,27 +512,19 @@ use core::ptr::NonNull;
 
 use crate::util::errors::{ErrorCode, Result};
 
-/// A live repository, as the C passes one around. PENDING(l-repo): becomes
-/// the integrated `Repository`.
+/// A live repository, as the C passes one around (a `git_repository *` of
+/// the repository module).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RepoPtr(NonNull<git_repository>);
 
 // SAFETY: libgit2's repository may be passed between threads; the
 // functions called through `RepoPtr` are those libgit2 lets several
 // threads use on one repository (its caches, refdb and config are
-// thread-safe), and the contract of `RepoPtr::new` holds for each use.
+// thread-safe; `GitRepository` is `Sync`), and the contract of
+// `RepoPtr::new` holds for each use.
 unsafe impl Send for RepoPtr {}
 // SAFETY: as above.
 unsafe impl Sync for RepoPtr {}
-
-/// A C string the repository owns, copied out.
-fn owned(p: *const c_char) -> Option<Vec<u8>> {
-    if p.is_null() {
-        return None;
-    }
-    // SAFETY: a NUL-terminated string of the live repository, read now.
-    Some(unsafe { CStr::from_ptr(p) }.to_bytes().to_vec())
-}
 
 impl RepoPtr {
     /// The repository at `repo`.
@@ -624,96 +552,81 @@ impl RepoPtr {
         self.0.as_ptr()
     }
 
+    /// The repository.
+    fn get<'a>(self) -> &'a git_repository {
+        // SAFETY: live while this value is used (the constructor's
+        // contract); `GitRepository` is `Sync`.
+        unsafe { self.0.as_ref() }
+    }
+
     /// `repo->gitdir`.
     pub fn gitdir(self) -> Option<Vec<u8>> {
-        // SAFETY: a live repository (the constructor's contract).
-        owned(unsafe { git_repository_path(self.as_ptr()) })
+        self.get().gitdir().map(|s| s.to_bytes().to_vec())
     }
 
     /// `repo->commondir`.
     pub fn commondir(self) -> Option<Vec<u8>> {
-        // SAFETY: as above.
-        owned(unsafe { git_repository_commondir(self.as_ptr()) })
+        self.get().commondir().map(|s| s.to_bytes().to_vec())
     }
 
     /// `repo->namespace`.
     pub fn namespace(self) -> Option<Vec<u8>> {
-        // SAFETY: as above.
-        owned(unsafe { git_repository_get_namespace(self.as_ptr()) })
+        self.get().namespace().map(|s| s.to_bytes().to_vec())
     }
 
     /// `repo->ident_name` and `repo->ident_email`.
     pub fn ident(self) -> (Option<Vec<u8>>, Option<Vec<u8>>) {
-        let (mut n, mut e) = (core::ptr::null(), core::ptr::null());
-        // SAFETY: as above; the out-parameters are writable.
-        unsafe { git_repository_ident(&raw mut n, &raw mut e, self.as_ptr()) };
-        (owned(n), owned(e))
+        let r = self.get();
+        (
+            r.ident_name().map(|s| s.to_bytes().to_vec()),
+            r.ident_email().map(|s| s.to_bytes().to_vec()),
+        )
     }
 
     /// `repo->oid_type`.
     pub fn oid_type(self) -> c_int {
-        // SAFETY: as above.
-        unsafe { git_repository_oid_type(self.as_ptr()) }
+        self.get().oid_type_raw() as c_int
     }
 
     /// `repo->refdb_type`.
     pub fn refdb_type(self) -> c_int {
-        // SAFETY: a live repository, whose `refdb_type` (a `git_refdb_t`,
-        // an `int`) is at `REPO_REFDB_TYPE_OFFSET` (layout-tested); C sets
-        // it when the repository is opened, before any refdb is made.
-        unsafe {
-            self.as_ptr()
-                .wrapping_byte_add(REPO_REFDB_TYPE_OFFSET)
-                .cast::<c_int>()
-                .read_unaligned()
-        }
+        self.get().refdb_type()
     }
 
     /// `git_repository_is_bare`.
     pub fn is_bare(self) -> bool {
-        // SAFETY: as above.
-        unsafe { git_repository_is_bare(self.as_ptr()) != 0 }
+        self.get().is_bare()
     }
 
     /// `git_repository_is_worktree`.
     pub fn is_worktree(self) -> bool {
-        // SAFETY: as above.
-        unsafe { git_repository_is_worktree(self.as_ptr()) != 0 }
+        self.get().is_worktree()
     }
 
     /// `git_repository__configmap_lookup`.
     pub fn configmap(self, item: c_int) -> Result<c_int> {
-        let mut v = 0;
-        // SAFETY: as above; `v` is writable.
-        ErrorCode::check(unsafe {
-            git_repository__configmap_lookup(&raw mut v, self.as_ptr(), item)
-        })?;
-        Ok(v)
+        self.get().configmap_lookup(item)
     }
 
     /// `git_repository_refdb__weakptr`: the repository's refdb, without a
     /// count of the caller's.
     pub fn refdb_weak(self) -> Result<*mut c_void> {
-        let mut db = core::ptr::null_mut();
-        // SAFETY: as above; `db` is writable.
-        ErrorCode::check(unsafe { git_repository_refdb__weakptr(&raw mut db, self.as_ptr()) })?;
-        Ok(db)
+        self.get().refdb_weak().map(NonNull::as_ptr)
     }
 
     /// `git_repository_refdb`: the refdb, with a count the caller drops.
     pub fn refdb(self) -> Result<*mut c_void> {
-        let mut db = core::ptr::null_mut();
-        // SAFETY: as above.
-        ErrorCode::check(unsafe { git_repository_refdb(&raw mut db, self.as_ptr()) })?;
-        Ok(db)
+        let p = self.get().refdb_weak()?;
+        // SAFETY: the repository's live refdb, which starts with a
+        // `git_refcount`; the reference goes to the caller.
+        unsafe { crate::repository::handles::refcount(p) }.inc();
+        Ok(p.as_ptr())
     }
 }
 
 /// `git_repository__fsync_gitdir`.
 pub fn fsync_gitdir() -> bool {
-    // SAFETY: a C `bool` global with the layout of `AtomicBool`; C writes
-    // it only through `git_libgit2_opts`.
-    unsafe { git_repository__fsync_gitdir.load(core::sync::atomic::Ordering::Relaxed) }
+    crate::repository::fsync_gitdir()
 }
 
 /// An owned `git_signature`, freed with `git_signature_free`. PENDING(l-obj)
@@ -877,7 +790,8 @@ pub fn object_is_valid(repo: RepoPtr, id: &Oid, kind: c_int) -> bool {
     unsafe { git_object__is_valid(repo.as_ptr(), id, kind) }
 }
 
-/// An owned `git_commit`. PENDING(l-commit)
+/// An owned `git_commit` (looked up and freed through object_api.c,
+/// PENDING(l-obj)).
 pub struct CommitBox(NonNull<git_commit>);
 
 impl CommitBox {
@@ -892,19 +806,22 @@ impl CommitBox {
     /// `git_commit_parentcount`.
     pub fn parentcount(&self) -> c_uint {
         // SAFETY: a live commit.
-        unsafe { git_commit_parentcount(self.0.as_ptr()) }
+        unsafe { crate::commit::ffi::git_commit_parentcount(self.0.as_ptr()) }
     }
 
     /// `git_commit_summary`, copied (empty if NULL).
     pub fn summary(&self) -> Option<Vec<u8>> {
         // SAFETY: a live commit; the summary is cached in it.
-        owned(unsafe { git_commit_summary(self.0.as_ptr()) })
+        let p = unsafe { crate::commit::ffi::git_commit_summary(self.0.as_ptr()) };
+        // SAFETY: NULL or a NUL-terminated string the commit keeps, read now.
+        (!p.is_null()).then(|| unsafe { CStr::from_ptr(p) }.to_bytes().to_vec())
     }
 
     /// `git_commit_committer`, alive as long as the commit.
     pub fn committer(&self) -> *const git_signature {
-        // SAFETY: a live commit.
-        unsafe { git_commit_committer(self.0.as_ptr()) }
+        // SAFETY: a live commit (l-commit's `GitSignature` and this
+        // `git_signature` both mirror the public `git_signature`).
+        unsafe { crate::commit::ffi::git_commit_committer(self.0.as_ptr()) }.cast()
     }
 }
 
