@@ -2361,14 +2361,20 @@ mod tests {
             id.hex().as_str(),
             "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
         );
-        let id = id_from_buffer(b"hello\n", ObjectType::Blob, OidType::Sha256).unwrap();
-        assert_eq!(id.kind(), Some(OidType::Sha256));
         let mut h = [0u8; 64];
         assert_eq!(
             format_object_header(&mut h, 12, GIT_OBJECT_TREE).unwrap(),
             8
         );
         assert_eq!(&h[..8], b"tree 12\0");
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore = "SHA-256 is OpenSSL's")]
+    fn sha256_ids() {
+        let _g = test_support::init();
+        let id = id_from_buffer(b"hello\n", ObjectType::Blob, OidType::Sha256).unwrap();
+        assert_eq!(id.kind(), Some(OidType::Sha256));
     }
 
     #[test]
