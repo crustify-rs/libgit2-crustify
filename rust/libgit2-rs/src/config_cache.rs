@@ -10,8 +10,8 @@ use core::ffi::c_int;
 use core::sync::atomic::Ordering;
 
 use crate::config::{
-    ConfigMap, GIT_CONFIGMAP_FALSE, GIT_CONFIGMAP_INT32, GIT_CONFIGMAP_STRING, GIT_CONFIGMAP_TRUE,
-    GitConfig, Want, lookup_map_value, parse_bool,
+    GIT_CONFIGMAP_FALSE, GIT_CONFIGMAP_INT32, GIT_CONFIGMAP_STRING, GIT_CONFIGMAP_TRUE, GitConfig,
+    RawConfigMap, Want, lookup_map_value, parse_bool,
 };
 use crate::repository::{GIT_CONFIGMAP_CACHE_MAX, GitRepository};
 use crate::util::errors::Result;
@@ -19,8 +19,8 @@ use crate::util::errors::Result;
 /// `GIT_CONFIGMAP_NOT_CACHED`.
 pub const GIT_CONFIGMAP_NOT_CACHED: isize = -1;
 
-const fn map(kind: c_int, s: Option<&'static [u8]>, v: c_int) -> ConfigMap<'static> {
-    ConfigMap {
+const fn map(kind: c_int, s: Option<&'static [u8]>, v: c_int) -> RawConfigMap<'static> {
+    RawConfigMap {
         kind,
         str_match: s,
         map_value: v,
@@ -46,23 +46,23 @@ const GIT_LOGALLREFUPDATES_ALWAYS: c_int = 3;
 const GIT_ABBREV_FALSE: c_int = 64;
 const GIT_ABBREV_DEFAULT: c_int = 7;
 
-static EOL: [ConfigMap<'static>; 4] = [
+static EOL: [RawConfigMap<'static>; 4] = [
     map(GIT_CONFIGMAP_FALSE, None, GIT_EOL_UNSET),
     map(GIT_CONFIGMAP_STRING, Some(b"lf"), GIT_EOL_LF),
     map(GIT_CONFIGMAP_STRING, Some(b"crlf"), GIT_EOL_CRLF),
     map(GIT_CONFIGMAP_STRING, Some(b"native"), GIT_EOL_NATIVE),
 ];
-static AUTOCRLF: [ConfigMap<'static>; 3] = [
+static AUTOCRLF: [RawConfigMap<'static>; 3] = [
     map(GIT_CONFIGMAP_FALSE, None, GIT_AUTO_CRLF_FALSE),
     map(GIT_CONFIGMAP_TRUE, None, GIT_AUTO_CRLF_TRUE),
     map(GIT_CONFIGMAP_STRING, Some(b"input"), GIT_AUTO_CRLF_INPUT),
 ];
-static SAFECRLF: [ConfigMap<'static>; 3] = [
+static SAFECRLF: [RawConfigMap<'static>; 3] = [
     map(GIT_CONFIGMAP_FALSE, None, GIT_SAFE_CRLF_FALSE),
     map(GIT_CONFIGMAP_TRUE, None, GIT_SAFE_CRLF_FAIL),
     map(GIT_CONFIGMAP_STRING, Some(b"warn"), GIT_SAFE_CRLF_WARN),
 ];
-static LOGALLREFUPDATES: [ConfigMap<'static>; 3] = [
+static LOGALLREFUPDATES: [RawConfigMap<'static>; 3] = [
     map(GIT_CONFIGMAP_FALSE, None, GIT_LOGALLREFUPDATES_FALSE),
     map(GIT_CONFIGMAP_TRUE, None, GIT_LOGALLREFUPDATES_TRUE),
     map(
@@ -71,7 +71,7 @@ static LOGALLREFUPDATES: [ConfigMap<'static>; 3] = [
         GIT_LOGALLREFUPDATES_ALWAYS,
     ),
 ];
-static ABBREV: [ConfigMap<'static>; 3] = [
+static ABBREV: [RawConfigMap<'static>; 3] = [
     map(GIT_CONFIGMAP_INT32, None, 0),
     map(GIT_CONFIGMAP_FALSE, None, GIT_ABBREV_FALSE),
     map(GIT_CONFIGMAP_STRING, Some(b"auto"), GIT_ABBREV_DEFAULT),
@@ -80,7 +80,7 @@ static ABBREV: [ConfigMap<'static>; 3] = [
 /// `struct map_data`.
 struct MapData {
     name: &'static core::ffi::CStr,
-    maps: &'static [ConfigMap<'static>],
+    maps: &'static [RawConfigMap<'static>],
     default_value: c_int,
 }
 

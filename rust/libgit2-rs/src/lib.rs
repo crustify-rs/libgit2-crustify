@@ -171,7 +171,10 @@ pub use api::opts;
 pub use api::error::{Error, ErrorClass, ErrorCode, Result};
 pub use blob::{Blob, BlobFilterOptions, BlobWriter};
 pub use commit::api::{AmendOptions, Commit, CommitBuilder, CommitCreateOptions};
-pub use config::{Config, ConfigBackend, ConfigEntries, ConfigEntry, ConfigLevel};
+pub use config::{
+    Config, ConfigBackend, ConfigEntries, ConfigEntry, ConfigLevel, ConfigLock, ConfigMap,
+    ConfigMapKind,
+};
 pub use hashsig::{HashSig, HashSigOptions};
 pub use index::{
     ConflictEntries, Index, IndexAddOption, IndexCapability, IndexConflicts, IndexEntries,
@@ -180,13 +183,16 @@ pub use index::{
 pub use libgit2::{Features, Libgit2};
 pub use object::{Object, ObjectIdOptions};
 pub use odb::{
-    Backend, ExpandId, LooseOptions, Mempack, ObjectType, Odb, OdbBackend, OdbObject, OdbReader,
-    OdbWriter,
+    Backend, BackendRef, ExpandId, IndexerProgress, LooseOptions, Mempack, ObjectType, Odb,
+    OdbBackend, OdbObject, OdbPackWriter, OdbReader, OdbWriter,
 };
 pub use oid::{Oid, OidShortener, OidType};
-pub use refs_api::{RefdbBackend, Reference, ReferenceType, References, Reflog, ReflogEntry};
+pub use refs_api::{
+    RefValue, Refdb, RefdbBackend, RefdbLock, RefdbUnlock, Reference, ReferenceFormat,
+    ReferenceNames, ReferenceType, References, Reflog, ReflogEntry, ReflogRecord,
+};
 pub use repository::{
-    RefStorage, Refdb, Repository, RepositoryInitFlags, RepositoryInitMode, RepositoryInitOptions,
+    RefStorage, Repository, RepositoryInitFlags, RepositoryInitMode, RepositoryInitOptions,
     RepositoryItem, RepositoryOpenFlags, RepositoryState,
 };
 pub use revwalk::api::{Revwalk, Sort};
