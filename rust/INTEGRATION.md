@@ -563,3 +563,69 @@ commit.rs is gone). LO-12: every item was already resolved in §13.
 
 C ABI: unchanged (`include/` unchanged; every field is
 `repr(transparent)` over the old type; the layout tests pass).
+
+`091cf77`: Miri found that `set_owned_races_publish` raced a setter's
+`CAtomicOwner::replace` against the `&CShared` that a concurrent
+`publish` lends (a retag read against the swap). `replace`'s contract
+forbids that, and so does C's rule (setters do not run while the
+repository is used elsewhere); the old hand-written `publish` returned a
+raw pointer, so nothing was borrowed. The test became
+`set_owned_after_publish_races` (publishers race, then setters race each
+other).
+
+Unsafe counts (`grep -o`, `rust/libgit2-rs/src`; tests/ in brackets):
+
+| | `unsafe {` | `unsafe fn` | `unsafe impl` |
+|---|---|---|---|
+| before (`835742a`) | 4988 [301] | 500 [4] | 139 [10] |
+| after CShared + CAtomicOwner (`f2e4b7a`) | 4986 [301] | 513 [4] | 142 [10] |
+| after the bitfields (`0c39770`, less the l-obj merge's +19/+3/+0 [+3/0/+2]) | 4986 [301] | 513 [4] | 142 [10] |
+
+By file (`835742a` to `f2e4b7a`, blocks): repository/mod.rs 59→45,
+odb.rs 85→81, refdb.rs 121→118, config.rs 213→211, odb/ffi.rs 105→103,
+odb/api.rs 37→36 (`unsafe impl` 6→4), handles.rs 25→24, index/ops.rs
+119→118; up: util/thread.rs 21→42 (`unsafe fn` 8→22, `unsafe impl` 6→9),
+index/mod.rs 114→117, index/api.rs 12→13, commit_list.rs 67→68 (the
+Miri fake).
+
+What did not work out as PORT_MIGRATION.md expected:
+- **The ~80 removed blocks.** The owners lost 23 blocks and the
+  hand-written `Send`/`Sync`/`Clone`/`Drop`, but `GitRefcount` gained
+  them back: the contract requires every count change to be an
+  `unsafe fn` on the count's pointer (§1.1), which is 7 `unsafe fn`s and
+  ~20 blocks in util/thread.rs, plus `impl_ccounted!`'s impl and the
+  `StartsWithRefcount` marker. The bitfields changed no unsafe (as
+  planned).
+- **Wrappers kept.** `refdb::decref`, `RefdbPtr::incref`,
+  `IndexPtr::incref`/`decref` stay as one-line wrappers over
+  `CShared::decrement_count`/`increment_count`: `git_reference.db`, the
+  iterator's and the reflog's `db` are C fields freed with `alloc::free`
+  (the plan's note), and index/ops.rs's C-shaped code counts by hand.
+- **Owner setting stays unsafe.** `GIT_REFCOUNT_OWN` in `set_owned`,
+  `publish` and `odb()` is an `unsafe` call per site (the owner is
+  dereferenced by holders); ffibox does not model owners (as planned),
+  so `set_owned` is 3 unsafe ops, `publish` 2.
+- **Config constructors** still return `Box<GitConfig>`; they are adopted
+  with `CShared::from_box` where they leave (unchanged call sites).
+- **Grafts:** `CBox<Grafts, GraftsFree>` needs `Grafts: CCell`, which a
+  Rust struct is not; a one-pointer `GraftsBox` with
+  `unsafe impl CPtrOwner` (freed with `git_grafts_free`) stands in (+1
+  `unsafe impl`).
+- **Concurrent setter and publisher:** see `091cf77` above: the
+  primitive makes the overlap UB in Rust's model; C's rule already
+  excluded it, the test did not.
+- **Public Rust API changes:** `util::process::flags` are `CBits` (was
+  `c_uint` masks) and `GitProcessOptions.flags`,
+  `GitCommitCreateOptions.flags`, `GitIndexWriter.should_write`,
+  `GitCommitListNode.bits` are `CBitfield`s; the C ABI is unchanged.
+
+TSan (`/work/builds/integ-tsan`, `TSAN_OPTIONS=halt_on_error=0`):
+`threads::{atomic,basic,iterator,tlsdata}` clean; `threads::diff` one
+report (filter.c `filter_initialize`, C that stays C) and
+`threads::refdb` one report (libc's timezone state under
+`current_time`), both as in the baseline (`tsan-master-r1.md`).
+
+Green: `091cf77` (Rust and C-fallback clar 436/436 and cargo test link-c,
+clippy both configurations and fmt at `0c39770`, whose Rust differs from
+`091cf77` only in the restructured test; `include/` unchanged; Miri with
+strict provenance at `091cf77`; TSan threads as above).
