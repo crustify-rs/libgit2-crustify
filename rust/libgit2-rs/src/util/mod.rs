@@ -11,6 +11,7 @@ pub mod ctype_compat;
 pub mod errors;
 pub mod export;
 pub mod integer;
+pub mod net;
 pub mod layout;
 pub mod runtime;
 pub mod str;
