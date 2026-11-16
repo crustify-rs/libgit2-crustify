@@ -26,6 +26,7 @@ pub mod config_snapshot;
 pub mod delta;
 pub mod fs;
 pub mod hashmap_oid;
+pub mod hashsig;
 pub mod index;
 pub mod libgit2;
 pub mod mwindow;
@@ -38,6 +39,7 @@ pub mod oidarray;
 pub mod pack;
 pub mod parse;
 pub mod repository;
+pub mod revwalk;
 pub mod settings;
 pub mod strarray;
 pub mod tree_cache;
@@ -52,9 +54,11 @@ pub use odb::{
 pub mod tree;
 
 pub use commit::api::{Commit, CommitBuilder};
+pub use hashsig::{HashSig, HashSigOptions};
 pub use oid::{Oid, OidShortener, OidType};
 pub use oidarray::OidArray;
 pub use repository::{Repository, RepositoryInitOptions, RepositoryOpenFlags, RepositoryState};
+pub use revwalk::api::{Revwalk, Sort};
 pub use strarray::StrArray;
 pub use tree::api::{Tree, TreeBuilder, TreeEntry, TreeEntryRef};
 pub use util::errors::{Error, ErrorClass, ErrorCode};

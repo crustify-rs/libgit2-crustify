@@ -65,3 +65,5 @@ src/libgit2/tree-cache.c
 src/libgit2/commit.c
 src/libgit2/commit_list.c
 src/libgit2/tree.c
+src/libgit2/hashsig.c
+src/libgit2/revwalk.c

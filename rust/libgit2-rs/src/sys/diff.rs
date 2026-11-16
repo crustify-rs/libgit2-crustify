@@ -180,7 +180,8 @@ pub struct git_diff {
 // The repository, trees and index are Rust types C sees as opaque.
 #[allow(improper_ctypes)]
 unsafe extern "C" {
-    fn git_diff_tree_to_tree(
+    /// `git_diff_tree_to_tree`.
+    pub fn git_diff_tree_to_tree(
         diff: *mut *mut git_diff,
         repo: *mut git_repository,
         old_tree: *mut GitTree,
@@ -228,4 +229,14 @@ pub unsafe fn count_deltas(
     // SAFETY: freed once.
     unsafe { git_diff_free(diff.cast()) };
     Ok(n)
+}
+
+// The names the revwalk (WP l-revwalk) uses for the same mirrors.
+/// `git_diff_options`.
+#[allow(non_camel_case_types)]
+pub type git_diff_options = GitDiffOptions;
+
+impl GitDiffOptions {
+    /// `GIT_DIFF_OPTIONS_INIT`.
+    pub const INIT: GitDiffOptions = GitDiffOptions::new();
 }

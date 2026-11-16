@@ -1034,3 +1034,53 @@ out-of-memory error instead.
 - C: `GIT_ERROR_CHECK_ALLOC` of the stack's new levels returns without
   freeing the levels' builders and trees.
 - Rust: everything is released on every error path.
+## revwalk, hashsig (WP l-revwalk)
+
+### hashsig: `hashsig_add_hashes` reads one byte past the input
+- C: `src/libgit2/hashsig.c`, the whitespace-skipping loops
+  (`for (; scan < end && git__isspace_nonlf(ch); ch = *scan) ++scan;` and
+  the `'\r'` one) read `*scan` after `++scan` reached `end`. Triggered by
+  any input that ends in non-LF whitespace (with `IGNORE_WHITESPACE`,
+  `SMART_WHITESPACE`, or after a newline under `SMART_WHITESPACE`): with
+  `git_hashsig_create`, an out-of-bounds read of the caller's buffer (a
+  crash at a page end); with `git_hashsig_create_fromfile`, of the stack
+  buffer (stale or past it at a full 4096-byte block). The byte decides
+  `use_ignores` for the next block of a file, so a file whose 4096-byte
+  block ends in such whitespace hashes from an indeterminate value.
+- Rust: reads nothing past the input and uses 0 for that byte (so
+  `use_ignores` becomes false under `SMART_WHITESPACE`). For buffers the
+  result is the C's (the value is discarded); for files it is the C's
+  whenever the C's is determined (the difftest skips the other case).
+
+### hashsig: `git_hashsig_create` and `_create_fromfile` leak on a failed option check
+- C: both return the `GIT_ASSERT` error of `hashsig_in_progress_init`
+  (both whitespace options) without freeing the signature.
+- Rust: same error, no leak.
+
+### hashsig: NULL arguments
+- C: `git_hashsig_create(NULL, …)`, `_create_fromfile` with a NULL path and
+  `git_hashsig_compare` with a NULL signature dereference NULL.
+- Rust: `invalid argument: '<name>'`, -1.
+
+### revwalk: unchecked NULL walks and out-parameters
+- C: `git_revwalk_push_range`, `git_revwalk_simplify_first_parent`,
+  `git_revwalk__push_commit`, `__push_ref` (and `opts`) and
+  `git_revwalk__commit_lookup` dereference a NULL `walk` (or `oid`,
+  `opts`); `git_revwalk_new` writes a NULL `revwalk_out`.
+- Rust: `invalid argument: '<name>'` and -1 (NULL for the lookup).
+
+### revwalk: allocation failures that the C ignores
+- C: `add_parents_to_list` ignores a failed `git_commit_list_insert_by_date`
+  (the parent is silently dropped from the walk) and
+  `mark_parents_uninteresting` a failed `git_commit_list_insert` (part of
+  the history is not marked uninteresting and is shown); `limit_list` and
+  `prepare_walk` leak their lists on errors; `git_revwalk_new` leaks the
+  walk when `git_pqueue_init` or `git_pool_init` fails.
+- Rust: every such failure is the out-of-memory error, returned from
+  `git_revwalk_next`; nothing leaks.
+
+### revwalk: a NULL parent slot
+- C: `commit_list.c` stores the NULL of a failed
+  `git_revwalk__commit_lookup` (out of memory) in `parents[i]` and goes
+  on; the walk then dereferences it.
+- Rust: the walk skips a NULL parent.

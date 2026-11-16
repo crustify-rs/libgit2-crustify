@@ -554,32 +554,6 @@ fn commitarray_dispose_empty() {
     assert!(a.commits.is_null());
 }
 
-/// The offsets at which `sys::pending::l_commit` reads other work packages'
-/// structs (`git_revwalk`'s, until l-revwalk is merged), against the C
-/// headers.
-#[test]
-#[cfg_attr(
-    any(miri, not(feature = "link-c")),
-    ignore = "runs clang on LIBGIT2_BUILD_DIR: needs --features link-c, not Miri"
-)]
-fn c_foreign_layout() {
-    use crate::sys::pending::l_commit as p;
-    let asserts = [
-        format!("offsetof(git_revwalk, repo) == {}", p::REVWALK_REPO),
-        format!("offsetof(git_revwalk, odb) == {}", p::REVWALK_ODB),
-        format!(
-            "offsetof(git_revwalk, commit_pool) == {}",
-            p::REVWALK_COMMIT_POOL
-        ),
-        format!(
-            "sizeof(git_pool) == {}",
-            size_of::<crate::util::pool::GitPool>()
-        ),
-    ];
-    let a: Vec<&str> = asserts.iter().map(String::as_str).collect();
-    crate::util::layout::check(&["revwalk.h"], &[], &a);
-}
-
 #[test]
 fn review_r1_edges() {
     let _g = test_support::init();

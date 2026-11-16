@@ -550,3 +550,21 @@ One entry per difference: component, what differs, why.
 - **Repository stand-in.** The safe API takes a
   `pending_repository::Repository` (PENDING(l-repo)), a minimal owner of a
   `git_repository *`, until l-repo's `Repository` replaces it.
+## revwalk, hashsig (WP l-revwalk)
+
+- **revwalk: `git_revwalk` is a shared prefix.** `revwalk.h` keeps `repo`,
+  `odb`, `commits`, `commit_pool` and `user_input` (what `commit_list.c`
+  and `pack-objects.c` read); the iterators, sorting, flags, hide callback
+  and pathspec are Rust-native state after them. The walk's internal lists
+  (`iterator_rand`, `iterator_topo`, `iterator_reverse`, the time queue and
+  the topological sort's queue) are `VecDeque`/`Vec`s, not
+  `git_commit_list` cells or `git_pqueue`s; the order they produce is the
+  C's (same insert positions, same heap). `user_input` stays a
+  `git_commit_list` of `git__allocator` cells.
+- **revwalk: `git_commit_list_parse` is not called on a parsed node** (the
+  C checks `parsed` on entry and returns 0; the Rust checks before the
+  call).
+- **revwalk: `git_revwalk_reset`** keeps the capacity of the walk's queues
+  (C freed its lists and kept the pqueue's array).
+- **hashsig and revwalk safe APIs** (`HashSig`, `Revwalk`) reject a string
+  with an interior NUL (class `INVALID`) instead of truncating it.

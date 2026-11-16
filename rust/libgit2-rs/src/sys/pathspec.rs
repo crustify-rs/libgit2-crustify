@@ -1,8 +1,9 @@
 //! `src/libgit2/pathspec.c` (C that stays C): the pathspecs of
-//! `git_index_add_all`, `git_index_remove_all` and `git_index_update_all`.
-//! Safe wrappers: `crate::index::foreign`.
+//! `git_index_add_all`, `git_index_remove_all` and `git_index_update_all`
+//! (safe wrappers: `crate::index::foreign`), and what a revwalk limited by
+//! a pathspec reads of it and calls.
 
-use core::ffi::{c_char, c_int};
+use core::ffi::{c_char, c_int, c_uint};
 
 use crate::strarray::GitStrArray;
 use crate::util::pool::GitPool;
@@ -23,6 +24,30 @@ pub struct GitPathspec {
     pub pool: GitPool,
 }
 
+/// `git_pathspec` under the revwalk's name.
+#[allow(non_camel_case_types)]
+pub type git_pathspec = GitPathspec;
+
+/// `git_attr_fnmatch` (attr_file.h): the fields read here, a prefix.
+#[repr(C)]
+#[derive(Debug)]
+#[allow(non_camel_case_types)]
+pub struct git_attr_fnmatch {
+    /// `pattern`.
+    pub pattern: *mut c_char,
+    /// `length`.
+    pub length: usize,
+    /// `containing_dir`.
+    pub containing_dir: *mut c_char,
+    /// `containing_dir_length`.
+    pub containing_dir_length: usize,
+    /// `flags`.
+    pub flags: c_uint,
+}
+
+/// `GIT_ATTR_FNMATCH_HASWILD`.
+pub const GIT_ATTR_FNMATCH_HASWILD: c_uint = 1 << 5;
+
 unsafe extern "C" {
     /// `git_pathspec__init`.
     pub fn git_pathspec__init(ps: *mut GitPathspec, paths: *const GitStrArray) -> c_int;
@@ -40,8 +65,10 @@ unsafe extern "C" {
 }
 
 crate::c_layout_test! {
-    headers: ["pathspec.h"],
+    headers: ["pathspec.h", "attr_file.h"],
     types: [
         GitPathspec => "git_pathspec" { rc, prefix, pathspec, pool },
+        git_attr_fnmatch => "git_attr_fnmatch" { pattern, length, containing_dir, containing_dir_length, flags },
     ],
+    asserts: ["GIT_ATTR_FNMATCH_HASWILD == (1U << 5)"],
 }

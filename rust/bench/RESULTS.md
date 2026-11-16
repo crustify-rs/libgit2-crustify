@@ -637,3 +637,73 @@ meaningful figures):
 `commit_summary_body`'s minimum was measured before the summary was changed
 to copy runs of bytes rather than one byte at a time; the later rounds have
 Rust at 17.4/19.0 µs against C at 14.4–34.4 µs.
+# WP l-revwalk: revwalk, hashsig (C reference vs Rust port)
+
+Machine load during the runs: 250–350 (oversubscribed), so wall times of
+the pinned runs are inflated several times; CPU times (`cpu` columns) are
+the reliable figure. Every check value matches the C's.
+
+## The walker alone (`src/bench_revwalk_reuse.c`, `compare.sh /work/build-c /work/builds/l-revwalk reuse_`, BENCH_CPU=5)
+
+One walker over git.git whose ~86k nodes are already parsed (no object is
+read): 5 walks of master per run, each ending in the walker's reset.
+
+| workload | C ms | Rust ms | ratio | C cpu | Rust cpu | cpu ratio |
+|---|---|---|---|---|---|---|
+| reset_reuse_x17 | 393.5 | 329.4 | 0.837 | 390.7 | 316.8 | 0.811 |
+| reuse_unsorted_x5 | 103.8 | 91.5 | 0.882 | 103.6 | 90.8 | 0.877 |
+| reuse_time_x5 | 439.5 | 181.5 | 0.413 | 415.9 | 179.3 | 0.431 |
+| reuse_topo_x5 | 349.1 | 135.3 | 0.388 | 347.6 | 135.0 | 0.388 |
+| reuse_topo_time_x5 | 344.6 | 174.1 | 0.505 | 343.0 | 174.1 | 0.508 |
+| reuse_time_reverse_x5 | 511.7 | 239.4 | 0.468 | 502.4 | 236.1 | 0.470 |
+| reuse_topo_reverse_x5 | 465.1 | 183.4 | 0.394 | 449.6 | 181.5 | 0.404 |
+| reuse_first_parent_x5 | 41.7 | 44.0 | 1.055 (min 0.882) | 41.7 | 43.7 | 1.048 |
+| reuse_hide_2.30_time_x5 | 147.8 | 84.3 | 0.570 | 147.9 | 84.2 | 0.569 |
+| reuse_hide_2.45_x5 | 110.4 | 67.3 | 0.610 | 109.2 | 67.3 | 0.617 |
+| reuse_hide_cb_x5 | 172.4 | 103.9 | 0.602 | 170.8 | 103.9 | 0.608 |
+
+Geomean 0.58. The gain is the containers: the C allocates a
+`git_commit_list` cell per queued commit (and per limited, sorted and
+reversed list entry); the Rust keeps them in `VecDeque`/`Vec`s, and its
+time heap holds (time, node) pairs. `first_parent` (short walks, the
+reset of the whole map dominates) is within the noise (min ratio 0.88).
+
+## Public API suite (`compare.sh /work/build-c /work/builds/l-revwalk revwalk,hashsig`, 3 rounds x 3 reps, CPU 2)
+
+```
+component  workload                      C ms     Rust ms  ratio minrat       C cpu    Rust cpu cpurat  check
+revwalk    cold_master_unsorted     14805.244   12785.961  0.864  0.841    2570.156    2584.293  1.006  ok 014420d921298666
+revwalk    cold_master_time         15324.964   16212.683  1.058  1.006    2574.757    2659.386  1.033  ok 0144202ad2a4857e
+revwalk    cold_master_topo         14393.590   13614.612  0.946  0.935    2597.228    2459.608  0.947  ok 0144206c439ea9a2
+revwalk    cold_all_refs            16318.834   16937.667  1.038  1.192    2698.393    2855.117  1.058  ok 0151114e150f2fe9
+revwalk    master_unsorted           1986.450    1947.082  0.980  0.922     365.550     334.585  0.915  ok 014420d921298666
+revwalk    master_time               2522.537    1984.894  0.787  0.867     434.626     365.478  0.841  ok 0144202ad2a4857e
+revwalk    master_topo               2085.499    1821.893  0.874  0.691     391.733     347.430  0.887  ok 0144206c439ea9a2
+revwalk    master_topo_time          2268.353    1907.361  0.841  0.850     393.214     316.793  0.806  ok 014420e5e3a97a3a
+revwalk    master_time_reverse       2501.877    1803.979  0.721  0.972     446.405     355.423  0.796  ok 0144208408aab15a
+revwalk    master_first_parent        559.857     566.412  1.012  0.968     110.114     105.079  0.954  ok 005fc2899a391c41
+revwalk    all_refs                  2010.413    2135.175  1.062  1.314     344.080     367.156  1.067  ok 0151114e150f2fe9
+revwalk    range_2.30_2.47           1170.583    1059.128  0.905  0.604     209.510     175.921  0.840  ok 0034f47edfa49331
+revwalk    range_2.30_2.47_topo      1098.410     909.967  0.828  0.942     209.827     183.055  0.872  ok 0034f4cf32284efd
+revwalk    hide_ref_time              571.763     412.791  0.722  0.879     105.703      90.627  0.857  ok 0026cabfd40b71ba
+revwalk    release_ranges_x17        4372.319    2966.881  0.679  0.710     821.363     607.816  0.740  ok 4f08de45cb2354ad
+revwalk    reset_reuse_x17           2263.999    1822.846  0.805  0.754     405.980     317.800  0.783  ok c5b51e0847efe4d6
+hashsig    create_files_normal       1620.184    1160.728  0.716  0.639     404.176     284.817  0.705  ok 000000000006bc6a
+hashsig    create_files_ignore_ws    1883.536    1373.913  0.729  0.701     492.839     346.921  0.704  ok 0000000000070a88
+hashsig    create_files_smart_ws     1679.310    1308.164  0.779  0.719     408.223     334.837  0.820  ok 000000000006bc6a
+hashsig    create_1MiB_x16            435.526     381.045  0.875  1.076     107.248     108.585  1.012  ok 0025b4876b34e41a
+hashsig    create_16MiB_x2            805.041     702.070  0.872  0.961     213.906     180.517  0.844  ok 0000000000000063
+hashsig    compare                    492.684     363.321  0.737  0.730     134.249      95.946  0.715  ok 00000000000bb1f3
+hashsig    create_fromfile            879.614     808.224  0.919  0.828     232.269     203.003  0.874  ok 00000000000178bd
+
+wall time, 23 workloads: geomean ratio 0.851, median |ratio-1| 0.136, max |ratio-1| 0.321, within 5%: 3, within 10%: 8, flagged: 0
+cpu time: geomean ratio 0.866, median |ratio-1| 0.143, max |ratio-1| 0.296, within 5%: 4, within 10%: 8
+```
+
+Warm walks (commits in the odb cache, parsed by C `commit_list.c`) are
+0.80–0.92 of the C in CPU time; cold walks are dominated by reading and
+inflating commits (C and Rust util) and are within the noise of this
+machine. hashsig is 0.70–0.87 (CPU), `create_1MiB_x16` 1.01.
+
+`all_refs` (1.067 CPU above) rerun alone, 5 rounds on CPU 5: master_unsorted
+0.959, all_refs 0.953 (CPU) — the 1.07 was noise.

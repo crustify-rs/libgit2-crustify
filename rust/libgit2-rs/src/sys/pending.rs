@@ -129,7 +129,6 @@ pub mod l_commit {
     use core::marker::{PhantomData, PhantomPinned};
 
     use crate::commit::{GitCommit, GitSignature};
-    use crate::commit_list::GitCommitListNode;
     use crate::oid::{Oid, git_oid_t};
     use crate::tree::GitTree;
     use crate::util::array::GitArray;
@@ -145,13 +144,7 @@ pub mod l_commit {
             }
         )*};
     }
-    opaque!(
-        git_reference,
-        git_grafts,
-        git_revwalk,
-        git_object,
-        git_commit_graph_file,
-    );
+    opaque!(git_reference, git_grafts, git_object, git_commit_graph_file,);
 
     // The ported modules' types, under the names this module used for them.
     /// `git_repository`.
@@ -166,6 +159,9 @@ pub mod l_commit {
     /// `git_index`.
     #[allow(non_camel_case_types)]
     pub type git_index = crate::index::GitIndex;
+    /// `git_revwalk`.
+    #[allow(non_camel_case_types)]
+    pub type git_revwalk = crate::revwalk::GitRevwalk;
     /// `git_tree_cache`.
     #[allow(non_camel_case_types)]
     pub type git_tree_cache = crate::tree_cache::GitTreeCache;
@@ -191,41 +187,6 @@ pub mod l_commit {
     pub struct GitCommitArray {
         pub commits: *const *mut GitCommit,
         pub count: usize,
-    }
-
-    // Offsets of the fields read here (`commit::tests::c_foreign_layout`):
-    // `git_revwalk`'s, until l-revwalk is merged.
-    /// `offsetof(git_revwalk, repo)`. PENDING(l-revwalk)
-    pub const REVWALK_REPO: usize = 0;
-    /// `offsetof(git_revwalk, odb)`. PENDING(l-revwalk)
-    pub const REVWALK_ODB: usize = 8;
-    /// `offsetof(git_revwalk, commit_pool)`. PENDING(l-revwalk)
-    pub const REVWALK_COMMIT_POOL: usize = 56;
-
-    /// Read the field at `off` of `base`.
-    ///
-    /// # Safety
-    ///
-    /// `base` points to a live object of the C type whose field of type `T`
-    /// is at offset `off`, and nothing writes that field concurrently.
-    #[inline]
-    pub unsafe fn field<T: Copy, B>(base: *const B, off: usize) -> T {
-        // SAFETY: `base + off` is inside the object (the caller's contract).
-        let p = unsafe { base.cast::<u8>().add(off) }.cast::<T>();
-        // SAFETY: the caller's contract: an initialized, aligned `T` there,
-        // not written concurrently.
-        unsafe { p.read() }
-    }
-
-    /// The address of the field at `off` of `base`.
-    ///
-    /// # Safety
-    ///
-    /// As [`field`] (without the read).
-    #[inline]
-    pub unsafe fn field_ptr<T, B>(base: *mut B, off: usize) -> *mut T {
-        // SAFETY: the caller's contract: `base + off` is inside the object.
-        unsafe { base.cast::<u8>().add(off).cast::<T>() }
     }
 
     pub type GitCommitParentCallback =
@@ -303,10 +264,106 @@ pub mod l_commit {
             kind: c_int,
         ) -> c_int;
 
-        // PENDING(l-revwalk): revwalk.c
-        pub fn git_revwalk__commit_lookup(
-            walk: *mut git_revwalk,
-            oid: *const Oid,
-        ) -> *mut GitCommitListNode;
+    }
+}
+
+/// What the revwalk (WP l-revwalk) calls of modules that other L work
+/// packages port concurrently, through their C symbols, with the opaque
+/// C types they take. The integration step replaces each with the Rust
+/// call of its module.
+pub mod l_revwalk {
+    use core::ffi::{c_char, c_int};
+    use core::marker::{PhantomData, PhantomPinned};
+
+    use crate::oid::Oid;
+
+    macro_rules! opaque {
+        ($($(#[$m:meta])* $name:ident;)*) => {$(
+            $(#[$m])*
+            #[repr(C)]
+            pub struct $name {
+                _opaque: [u8; 0],
+                _marker: PhantomData<(*mut u8, PhantomPinned)>,
+            }
+        )*};
+    }
+
+    // The ported modules' types, under the names this module used.
+    /// `git_repository`.
+    #[allow(non_camel_case_types)]
+    pub type git_repository = crate::repository::GitRepository;
+    /// `git_odb`.
+    #[allow(non_camel_case_types)]
+    pub type git_odb = crate::odb::GitOdb;
+    /// `git_commit`.
+    #[allow(non_camel_case_types)]
+    pub type git_commit = crate::commit::GitCommit;
+    /// `git_tree`.
+    #[allow(non_camel_case_types)]
+    pub type git_tree = crate::tree::GitTree;
+    /// `git_tree_entry`.
+    #[allow(non_camel_case_types)]
+    pub type git_tree_entry = crate::tree::GitTreeEntry;
+
+    opaque! {
+        /// `git_object`. PENDING(l-obj)
+        git_object;
+        /// `git_reference`. PENDING(l-refs)
+        git_reference;
+        /// `git_reference_iterator`. PENDING(l-refs)
+        git_reference_iterator;
+    }
+
+    /// `GIT_OBJECT_ANY`.
+    pub const GIT_OBJECT_ANY: c_int = -2;
+    /// `GIT_OBJECT_COMMIT`.
+    pub const GIT_OBJECT_COMMIT: c_int = 1;
+
+    // The repository and commits are Rust types C sees as opaque; the
+    // l-obj/l-refs symbols are also declared by other sections.
+    #[allow(improper_ctypes, clashing_extern_declarations)]
+    unsafe extern "C" {
+        // PENDING(l-obj)
+        pub fn git_object_lookup(
+            out: *mut *mut git_object,
+            repo: *mut git_repository,
+            id: *const Oid,
+            kind: c_int,
+        ) -> c_int;
+        pub fn git_object_peel(
+            out: *mut *mut git_object,
+            object: *const git_object,
+            kind: c_int,
+        ) -> c_int;
+        pub fn git_object_free(object: *mut git_object);
+        pub fn git_object_id(object: *const git_object) -> *const Oid;
+
+        // PENDING(l-refs)
+        pub fn git_reference_name_to_id(
+            out: *mut Oid,
+            repo: *mut git_repository,
+            name: *const c_char,
+        ) -> c_int;
+        pub fn git_reference_iterator_glob_new(
+            out: *mut *mut git_reference_iterator,
+            repo: *mut git_repository,
+            glob: *const c_char,
+        ) -> c_int;
+        pub fn git_reference_next(
+            out: *mut *mut git_reference,
+            iter: *mut git_reference_iterator,
+        ) -> c_int;
+        pub fn git_reference_name(r: *const git_reference) -> *const c_char;
+        pub fn git_reference_free(r: *mut git_reference);
+        pub fn git_reference_iterator_free(iter: *mut git_reference_iterator);
+
+        // PENDING(l-obj): object_api.c
+        pub fn git_commit_lookup(
+            out: *mut *mut git_commit,
+            repo: *mut git_repository,
+            id: *const Oid,
+        ) -> c_int;
+        pub fn git_commit_free(commit: *mut git_commit);
+        pub fn git_tree_free(tree: *mut git_tree);
     }
 }

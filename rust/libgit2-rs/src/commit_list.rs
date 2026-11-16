@@ -130,9 +130,8 @@ pub fn generation_cmp(a: (u32, i64), b: (u32, i64)) -> c_int {
 ///
 /// `walk` is a live walk that nothing else uses during `f`.
 unsafe fn with_pool<R>(walk: *mut git_revwalk, f: impl FnOnce(&mut GitPool) -> R) -> R {
-    // SAFETY: the pool is a `git_pool` by value at that offset of a live
-    // walk (contract).
-    let pool = unsafe { pend::field_ptr::<GitPool, _>(walk, pend::REVWALK_COMMIT_POOL) };
+    // SAFETY: a live walk's pool, a `git_pool` by value (contract).
+    let pool = unsafe { (*walk).prefix.commit_pool.get() };
     // SAFETY: nothing else touches the pool during `f` (contract), and `f`
     // calls no C.
     let pool = unsafe { &mut *pool };
@@ -235,7 +234,7 @@ unsafe fn quick_parse(
     id: &Oid,
 ) -> Result<()> {
     // SAFETY: a live walk's repository (contract).
-    let repo: *mut pend::git_repository = unsafe { pend::field(walk, pend::REVWALK_REPO) };
+    let repo: *mut pend::git_repository = unsafe { (*walk).prefix.repo };
     // SAFETY: a live repository.
     let oid_type: git_oid_t = unsafe { (*repo).oid_type_raw() };
     let mut sink = QuickSink::default();
@@ -277,7 +276,7 @@ unsafe fn quick_parse(
     for (i, p) in parents.iter().enumerate() {
         // SAFETY: the walk is live; `p` readable. The lookup may allocate
         // from the pool: no borrow of it is held here.
-        let parent = unsafe { pend::git_revwalk__commit_lookup(walk, p) };
+        let parent = unsafe { crate::revwalk::ffi::git_revwalk__commit_lookup(walk, p) };
         // SAFETY: `i < n`: within the parents' room.
         let slot = unsafe { pp.add(i) };
         // SAFETY: a writable slot of that room.
@@ -299,9 +298,9 @@ unsafe fn parse(walk: *mut git_revwalk, node: *mut GitCommitListNode) -> Result<
         return Ok(());
     }
     // SAFETY: a live walk's `repo` field.
-    let repo: *mut pend::git_repository = unsafe { pend::field(walk, pend::REVWALK_REPO) };
+    let repo: *mut pend::git_repository = unsafe { (*walk).prefix.repo };
     // SAFETY: a live walk's `odb` field.
-    let odb: *mut pend::git_odb = unsafe { pend::field(walk, pend::REVWALK_ODB) };
+    let odb: *mut pend::git_odb = unsafe { (*walk).prefix.odb };
     // SAFETY: as above.
     let id = unsafe { (*node).oid };
 
@@ -338,7 +337,9 @@ unsafe fn parse(walk: *mut git_revwalk, node: *mut GitCommitListNode) -> Result<
                 let parent =
                     unsafe { commit_graph::entry_parent(file, &e, i) }.map_err(commit::ec)?;
                 // SAFETY: the walk is live; no borrow of the pool held.
-                let p = unsafe { pend::git_revwalk__commit_lookup(walk, &raw const parent.sha1) };
+                let p = unsafe {
+                    crate::revwalk::ffi::git_revwalk__commit_lookup(walk, &raw const parent.sha1)
+                };
                 // SAFETY: `i < n`: within the parents' room.
                 let slot = unsafe { pp.add(i) };
                 // SAFETY: a writable slot of that room.
@@ -645,21 +646,14 @@ mod tests {
     }
 }
 
-/// Miri tests of the quick parse over a fake walk and repository (byte
-/// blocks with the C's field offsets), with Rust stand-ins for the C that
-/// it calls (`git_grafts_get`, `git_revwalk__commit_lookup`), which Miri
-/// resolves by symbol.
+/// Miri tests of the quick parse over a walk of the revwalk module and a
+/// zeroed repository, with a Rust stand-in for the C it calls
+/// (`git_grafts_get`, PENDING(l-obj)), which Miri resolves by symbol.
 #[cfg(all(test, miri))]
 #[allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)] // each block's SAFETY covers its sequence
 mod miri_quick {
     use super::*;
     use crate::oid::OidType;
-    use std::cell::RefCell;
-
-    thread_local! {
-        static LOOKUPS: RefCell<Vec<(Oid, *mut GitCommitListNode)>> = const { RefCell::new(Vec::new()) };
-        static WALK: RefCell<*mut git_revwalk> = const { RefCell::new(ptr::null_mut()) };
-    }
 
     /// Stand-in: no grafts.
     #[unsafe(no_mangle)]
@@ -672,71 +666,38 @@ mod miri_quick {
         ErrorCode::NOT_FOUND.raw()
     }
 
-    /// Stand-in: allocate a node from the walk's pool (as revwalk.c does),
-    /// re-entering `git_commit_list_alloc_node` while `quick_parse` is
-    /// between its writes to the parsed node.
-    #[unsafe(no_mangle)]
-    extern "C" fn git_revwalk__commit_lookup(
-        walk: *mut git_revwalk,
-        oid: *const Oid,
-    ) -> *mut GitCommitListNode {
-        WALK.with(|w| assert_eq!(*w.borrow(), walk));
-        // SAFETY: the walk of the test, unused by anything else here.
-        let n = unsafe { ffi::git_commit_list_alloc_node(walk) };
-        assert!(!n.is_null());
-        // SAFETY: a fresh node; `oid` readable.
-        unsafe { (*n).oid = oid.read() };
-        LOOKUPS.with(|l| l.borrow_mut().push((unsafe { oid.read() }, n)));
-        n
-    }
-
-    /// A walk and a repository as zeroed, aligned blocks.
+    /// A walk (the revwalk's own, without an odb) over a zeroed repository
+    /// whose grafts are a dummy (`git_grafts_get` above).
     struct Fake {
-        walk: Vec<u64>,
-        repo: Vec<u64>,
-        grafts: u64,
+        walk: Box<git_revwalk>,
+        _repo: Box<crate::repository::GitRepository>,
+        _grafts: Box<u64>,
     }
 
     impl Fake {
-        fn new() -> Box<Fake> {
-            let mut f = Box::new(Fake {
-                walk: vec![0; 208 / 8],
-                repo: vec![0; 400 / 8],
-                grafts: 0,
-            });
-            let repo = f.repo.as_mut_ptr().cast::<pend::git_repository>();
-            let grafts = (&raw mut f.grafts).cast::<pend::git_grafts>();
-            let walk = f.walk.as_mut_ptr().cast::<git_revwalk>();
-            // SAFETY: the blocks are as large as the C structs and aligned;
-            // the fields written are those the code reads.
+        fn new() -> Fake {
+            // SAFETY: all-zero is a valid `GitRepository` (atomics, NULLs,
+            // an empty cache).
+            let repo: Box<crate::repository::GitRepository> =
+                unsafe { Box::new_zeroed().assume_init() };
+            repo.set_oid_type_raw(OidType::Sha1.raw());
+            let mut grafts = Box::new(0u64);
+            let g = (&raw mut *grafts).cast::<c_void>();
+            // SAFETY: the repository's own slots, which nothing else uses.
             unsafe {
-                pend::field_ptr::<u32, _>(repo, pend::REPO_OID_TYPE).write(OidType::Sha1.raw());
-                pend::field_ptr::<*mut pend::git_grafts, _>(repo, pend::REPO_GRAFTS).write(grafts);
-                pend::field_ptr::<*mut pend::git_grafts, _>(repo, pend::REPO_SHALLOW_GRAFTS)
-                    .write(grafts);
-                pend::field_ptr::<*mut pend::git_repository, _>(walk, pend::REVWALK_REPO)
-                    .write(repo);
-                pend::field_ptr::<GitPool, _>(walk, pend::REVWALK_COMMIT_POOL)
-                    .write(GitPool::with_item_size(COMMIT_ALLOC).unwrap());
+                repo.grafts_slot().write(g);
+                repo.shallow_grafts_slot().write(g);
             }
-            WALK.with(|w| *w.borrow_mut() = walk);
-            f
+            let rp = core::ptr::from_ref(&*repo).cast_mut();
+            let walk = Box::new(git_revwalk::with_repo(rp).unwrap());
+            Fake {
+                walk,
+                _repo: repo,
+                _grafts: grafts,
+            }
         }
         fn walk(&mut self) -> *mut git_revwalk {
-            self.walk.as_mut_ptr().cast()
-        }
-    }
-
-    impl Drop for Fake {
-        fn drop(&mut self) {
-            let walk = self.walk();
-            // SAFETY: the pool written in `new`, dropped once.
-            unsafe {
-                ptr::drop_in_place(pend::field_ptr::<GitPool, _>(
-                    walk,
-                    pend::REVWALK_COMMIT_POOL,
-                ))
-            };
+            &raw mut *self.walk
         }
     }
 
@@ -755,7 +716,6 @@ mod miri_quick {
     fn quick_parse_nodes() {
         let _g = crate::util::test_support::init();
         for np in [0usize, 1, 2, 3, 7] {
-            LOOKUPS.with(|l| l.borrow_mut().clear());
             let mut f = Fake::new();
             let walk = f.walk();
             // SAFETY: the fake walk; the node is allocated from its pool.
@@ -767,14 +727,11 @@ mod miri_quick {
                 assert_eq!((*node).time, 1234);
                 assert_eq!(usize::from((*node).out_degree), np);
                 let ps = (*node).parent_slice();
-                LOOKUPS.with(|l| {
-                    let l = l.borrow();
-                    assert_eq!(l.len(), np);
-                    for (i, (id, n)) in l.iter().enumerate() {
-                        assert_eq!(ps[i], *n);
-                        assert_eq!(id.hex().as_str(), format!("{:040x}", i + 1));
-                    }
-                });
+                assert_eq!(ps.len(), np);
+                for (i, &n) in ps.iter().enumerate() {
+                    // The walk's own node for each parent.
+                    assert_eq!((*n).oid.hex().as_str(), format!("{:040x}", i + 1));
+                }
                 // Up to two parents live inline after the node.
                 if np <= PARENTS_PER_COMMIT {
                     assert_eq!((*node).parents, node.add(1).cast());
