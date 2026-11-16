@@ -43,8 +43,8 @@ use core::ptr::{self, NonNull};
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::oid::{self, GIT_OID_MAX_HEXSIZE, GIT_OID_MINPREFIXLEN, Oid, OidType};
-use crate::sys::filter::{self as cfilter, git_filter_list};
-use crate::sys::pending::{self as p, git_odb, git_odb_object, git_repository};
+use crate::sys::blob_filter::{self as cfilter, git_filter_list};
+use crate::sys::pending::l_obj::{self as p, git_odb, git_odb_object, git_repository};
 use crate::util::alloc;
 use crate::util::errors::{self, Bytes, Error, ErrorClass, ErrorCode, Result};
 use crate::util::futils::{self, GIT_BUFSIZE_FILEIO};
@@ -79,76 +79,8 @@ pub const GIT_OBJECT_OFS_DELTA: git_object_t = 6;
 /// `GIT_OBJECT_REF_DELTA`.
 pub const GIT_OBJECT_REF_DELTA: git_object_t = 7;
 
-/// An object type (`git_object_t`, without `GIT_OBJECT_INVALID`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum ObjectType {
-    /// `GIT_OBJECT_ANY`: any type (a lookup or peel target).
-    Any,
-    /// `GIT_OBJECT_COMMIT`.
-    Commit,
-    /// `GIT_OBJECT_TREE`.
-    Tree,
-    /// `GIT_OBJECT_BLOB`.
-    Blob,
-    /// `GIT_OBJECT_TAG`.
-    Tag,
-    /// `GIT_OBJECT_OFS_DELTA` (a pack entry, not an object).
-    OfsDelta,
-    /// `GIT_OBJECT_REF_DELTA` (a pack entry, not an object).
-    RefDelta,
-}
-
-impl ObjectType {
-    /// The type of a C value; `None` for `GIT_OBJECT_INVALID` or an
-    /// unknown value.
-    pub const fn from_raw(t: git_object_t) -> Option<ObjectType> {
-        match t {
-            GIT_OBJECT_ANY => Some(ObjectType::Any),
-            GIT_OBJECT_COMMIT => Some(ObjectType::Commit),
-            GIT_OBJECT_TREE => Some(ObjectType::Tree),
-            GIT_OBJECT_BLOB => Some(ObjectType::Blob),
-            GIT_OBJECT_TAG => Some(ObjectType::Tag),
-            GIT_OBJECT_OFS_DELTA => Some(ObjectType::OfsDelta),
-            GIT_OBJECT_REF_DELTA => Some(ObjectType::RefDelta),
-            _ => None,
-        }
-    }
-
-    /// The C value.
-    pub const fn raw(self) -> git_object_t {
-        match self {
-            ObjectType::Any => GIT_OBJECT_ANY,
-            ObjectType::Commit => GIT_OBJECT_COMMIT,
-            ObjectType::Tree => GIT_OBJECT_TREE,
-            ObjectType::Blob => GIT_OBJECT_BLOB,
-            ObjectType::Tag => GIT_OBJECT_TAG,
-            ObjectType::OfsDelta => GIT_OBJECT_OFS_DELTA,
-            ObjectType::RefDelta => GIT_OBJECT_REF_DELTA,
-        }
-    }
-
-    /// `git_object_type2string`: `"commit"`, `"tree"`, `"blob"`, `"tag"`,
-    /// or `""`.
-    pub fn as_str(self) -> &'static str {
-        type2string(self.raw()).to_str().unwrap_or("")
-    }
-
-    /// `git_object_string2type` (`None` for `GIT_OBJECT_INVALID`).
-    pub fn from_str_bytes(s: &[u8]) -> Option<ObjectType> {
-        ObjectType::from_raw(stringn2type(s))
-    }
-
-    /// `git_object_type_is_valid`: commit, tree, blob or tag.
-    pub fn is_valid(self) -> bool {
-        type_is_valid(self.raw())
-    }
-}
-
-impl core::fmt::Display for ObjectType {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
+/// The safe API's object type (the odb's, `crate::odb::ObjectType`).
+pub use crate::odb::ObjectType;
 
 // ---------------------------------------------------------------------------
 // git_cached_obj and git_object
@@ -1412,61 +1344,13 @@ pub(crate) fn printf_bytes(buf: &mut GitStr, format_len: usize, bytes: &[u8]) ->
 // The safe API
 // ---------------------------------------------------------------------------
 
-/// A repository, for the object API. PENDING(l-repo): the repository's
-/// Rust type replaces this at integration.
-pub mod repo {
-    use super::*;
+/// The repository of the safe API.
+pub use crate::repository::Repository;
 
-    /// An open repository (`git_repository`), freed on drop.
-    #[derive(Debug)]
-    pub struct Repository {
-        raw: NonNull<git_repository>,
-    }
-
-    // SAFETY: a repository may be used from one thread at a time on any
-    // thread (libgit2's threading rules).
-    unsafe impl Send for Repository {}
-
-    impl Repository {
-        /// `git_repository_open`.
-        pub fn open(path: &std::path::Path) -> core::result::Result<Repository, Error> {
-            use std::os::unix::ffi::OsStrExt as _;
-            let c = std::ffi::CString::new(path.as_os_str().as_bytes()).map_err(|_| {
-                Error::from(git_error_set!(
-                    ErrorClass::INVALID,
-                    "path contains a NUL byte"
-                ))
-            })?;
-            let mut out = ptr::null_mut();
-            // SAFETY: a NUL-terminated path and a writable out-parameter.
-            let r = unsafe { p::git_repository_open(&raw mut out, c.as_ptr()) };
-            ErrorCode::check(r)?;
-            NonNull::new(out)
-                .map(|raw| Repository { raw })
-                .ok_or_else(|| Error::from(ErrorCode::GENERIC))
-        }
-
-        /// The C handle, live while `self` is.
-        pub(crate) fn as_ptr(&self) -> *mut git_repository {
-            self.raw.as_ptr()
-        }
-
-        /// The repository's oid type.
-        pub fn oid_type(&self) -> OidType {
-            // SAFETY: a live repository.
-            OidType::from_raw(unsafe { repo_oid_type(self.as_ptr()) }).unwrap_or(OidType::Sha1)
-        }
-    }
-
-    impl Drop for Repository {
-        fn drop(&mut self) {
-            // SAFETY: the repository this value owns, freed once.
-            unsafe { p::git_repository_free(self.raw.as_ptr()) }
-        }
-    }
+/// The `git_repository *` of `repo`, live while it is.
+pub(crate) fn repo_ptr(repo: &Repository) -> *mut git_repository {
+    repo.raw_ptr().cast()
 }
-
-pub use repo::Repository;
 
 /// An object of a repository (`git_object *`), one reference of it; freed
 /// (given back) on drop, duplicated by `Clone`.
@@ -1512,7 +1396,7 @@ impl<'repo> Object<'repo> {
         kind: ObjectType,
     ) -> core::result::Result<Object<'repo>, Error> {
         // SAFETY: a live repository.
-        let raw = unsafe { lookup(repo.as_ptr(), id, kind.raw())? };
+        let raw = unsafe { lookup(repo_ptr(repo), id, kind.raw())? };
         // SAFETY: an object of `repo`, with its reference.
         Ok(unsafe { Object::from_raw(repo, raw) })
     }
@@ -1525,7 +1409,7 @@ impl<'repo> Object<'repo> {
         kind: ObjectType,
     ) -> core::result::Result<Object<'repo>, Error> {
         // SAFETY: a live repository.
-        let raw = unsafe { lookup_prefix(repo.as_ptr(), id, len, kind.raw())? };
+        let raw = unsafe { lookup_prefix(repo_ptr(repo), id, len, kind.raw())? };
         // SAFETY: as above.
         Ok(unsafe { Object::from_raw(repo, raw) })
     }
@@ -2309,7 +2193,7 @@ crate::c_layout_test! {
         GitCachedObj => "git_cached_obj" { oid, kind as "type", flags, size, refcount },
         GitObject => "git_object" { cached, repo },
         GitObjectIdOptions => "git_object_id_options" { version, object_type, oid_type, filters },
-        crate::sys::filter::git_filter_options => "git_filter_options" { version, flags, reserved, attr_commit_id },
+        crate::sys::blob_filter::git_filter_options => "git_filter_options" { version, flags, reserved, attr_commit_id },
     ],
     asserts: [
         "sizeof(git_commit) == 184",
@@ -2350,7 +2234,7 @@ mod tests {
         assert_eq!(stringn2type(b"\0blob"), GIT_OBJECT_INVALID);
         assert!(type_is_valid(GIT_OBJECT_BLOB));
         assert!(!type_is_valid(GIT_OBJECT_OFS_DELTA));
-        assert_eq!(ObjectType::Blob.as_str(), "blob");
+        assert_eq!(ObjectType::Blob.name(), "blob");
     }
 
     #[test]

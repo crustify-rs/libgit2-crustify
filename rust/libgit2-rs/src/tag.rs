@@ -25,7 +25,7 @@ use crate::object::{
 };
 use crate::oid::{Oid, OidType};
 use crate::signature::{self, GitSignature, Signature};
-use crate::sys::pending::{self as p, git_reference, git_repository};
+use crate::sys::pending::l_obj::{self as p, git_reference, git_repository};
 use crate::util::alloc::{self, GitCStr};
 use crate::util::errors::{self, Bytes, Error, ErrorClass, ErrorCode, Result};
 use crate::util::str::GitStr;
@@ -836,7 +836,7 @@ impl<'repo> Tag<'repo> {
         unsafe {
             create_internal(
                 &raw mut oid,
-                repo.as_ptr(),
+                crate::object::repo_ptr(repo),
                 no_nul(name)?,
                 target.header(),
                 Some((&v, no_nul(message)?)),
@@ -858,7 +858,7 @@ impl<'repo> Tag<'repo> {
         // SAFETY: a live repository and object.
         Ok(unsafe {
             write_annotation(
-                repo.as_ptr(),
+                crate::object::repo_ptr(repo),
                 no_nul(name)?,
                 target.header(),
                 &v,
@@ -880,7 +880,7 @@ impl<'repo> Tag<'repo> {
         unsafe {
             create_internal(
                 &raw mut oid,
-                repo.as_ptr(),
+                crate::object::repo_ptr(repo),
                 no_nul(name)?,
                 target.header(),
                 None,
@@ -898,14 +898,21 @@ impl<'repo> Tag<'repo> {
     ) -> core::result::Result<Oid, Error> {
         let mut oid = Oid::NONE;
         // SAFETY: a live repository.
-        unsafe { create_from_buffer(&raw mut oid, repo.as_ptr(), no_nul(buffer)?, force)? };
+        unsafe {
+            create_from_buffer(
+                &raw mut oid,
+                crate::object::repo_ptr(repo),
+                no_nul(buffer)?,
+                force,
+            )?
+        };
         Ok(oid)
     }
 
     /// `git_tag_delete`.
     pub fn delete(repo: &Repository, name: &[u8]) -> core::result::Result<(), Error> {
         // SAFETY: a live repository.
-        let _: () = unsafe { delete(repo.as_ptr(), no_nul(name)?)? };
+        let _: () = unsafe { delete(crate::object::repo_ptr(repo), no_nul(name)?)? };
         Ok(())
     }
 
@@ -916,7 +923,7 @@ impl<'repo> Tag<'repo> {
     ) -> core::result::Result<Vec<Vec<u8>>, Error> {
         let pattern = no_nul(pattern.unwrap_or(b""))?;
         // SAFETY: a live repository.
-        let (strings, count) = unsafe { list_match(repo.as_ptr(), pattern) };
+        let (strings, count) = unsafe { list_match(crate::object::repo_ptr(repo), pattern) };
         // SAFETY: the array and strings `list_match` made, owned here.
         let arr = unsafe {
             crate::strarray::StrArray::from_raw(crate::strarray::GitStrArray { strings, count })
@@ -932,7 +939,7 @@ impl<'repo> Tag<'repo> {
     ) -> core::result::Result<(), Error> {
         let mut cb = |n: &CStr, id: &Oid| f(n.to_bytes(), id);
         // SAFETY: a live repository.
-        let r = unsafe { foreach(repo.as_ptr(), &mut cb) };
+        let r = unsafe { foreach(crate::object::repo_ptr(repo), &mut cb) };
         ErrorCode::check_zero(r)?;
         Ok(())
     }

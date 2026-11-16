@@ -6,8 +6,8 @@
 
 use std::path::{Path, PathBuf};
 
+use libgit2_rs::Repository;
 use libgit2_rs::grafts::Grafts;
-use libgit2_rs::object::Repository;
 use libgit2_rs::util::test_support;
 use libgit2_rs::{
     Blob, ErrorClass, ErrorCode, Object, ObjectType, Oid, OidType, Signature, Tag, Time,
@@ -339,10 +339,10 @@ fn grafts_file_refresh() {
 
 #[test]
 fn object_types() {
-    assert_eq!(ObjectType::from_str_bytes(b"tag"), Some(ObjectType::Tag));
-    assert_eq!(ObjectType::from_str_bytes(b"x"), None);
+    assert_eq!(ObjectType::from_name(b"tag"), Some(ObjectType::Tag));
+    assert_eq!(ObjectType::from_name(b"x"), None);
     assert_eq!(ObjectType::Tree.to_string(), "tree");
-    assert!(!ObjectType::Any.is_valid());
+    assert!(!ObjectType::Any.is_loose());
     assert!(
         libgit2_rs::object::rawcontent_is_valid(b"anything", ObjectType::Blob, OidType::Sha1)
             .unwrap()

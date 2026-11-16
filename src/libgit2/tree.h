@@ -28,6 +28,8 @@ struct git_tree {
 	git_array_t(git_tree_entry) entries;
 };
 
+#ifndef GIT_RUST
+/* (opaque with GIT_RUST: rust/libgit2-rs/src/tree.rs defines it) */
 GIT_HASHMAP_STR_STRUCT(git_treebuilder_entrymap, git_tree_entry *);
 
 struct git_treebuilder {
@@ -35,6 +37,7 @@ struct git_treebuilder {
 	git_treebuilder_entrymap map;
 	git_str write_cache;
 };
+#endif
 
 GIT_INLINE(bool) git_tree_entry__is_tree(const struct git_tree_entry *e)
 {

@@ -78,6 +78,23 @@ impl GitMutex {
         }
     }
 
+    /// Lock if no one holds the mutex (`pthread_mutex_trylock`); `None` if
+    /// it is held, by another thread or by this one.
+    pub fn try_lock(&self) -> Option<GitMutexGuard<'_>> {
+        // SAFETY: as in `lock`.
+        let r = unsafe { libc::pthread_mutex_trylock(self.0.get()) };
+        // Not `then_some`: it would build the guard eagerly and, on failure,
+        // drop it, unlocking a mutex someone else holds.
+        if r == 0 {
+            Some(GitMutexGuard {
+                m: self,
+                _not_send: core::marker::PhantomData,
+            })
+        } else {
+            None
+        }
+    }
+
     /// Lock as C's `git_mutex_lock` does: 0, or the pthread error. Pair it
     /// with [`raw_unlock`](Self::raw_unlock).
     ///
@@ -405,9 +422,12 @@ pub fn load<T>(p: &AtomicPtr<T>) -> *mut T {
 #[derive(Debug, Default)]
 pub struct GitRefcount {
     /// The count.
-    pub refcount: Atomic32,
-    /// The owning object, or NULL.
-    pub owner: AtomicPtr<c_void>,
+    refcount: Atomic32,
+    /// The owning object, or NULL. Private: holders of the object trust
+    /// it to be NULL or a live owner (the odb reads its repository's
+    /// cache through it), so only [`own`](Self::own), an `unsafe fn`,
+    /// sets it.
+    owner: AtomicPtr<c_void>,
 }
 
 impl GitRefcount {
@@ -433,8 +453,14 @@ impl GitRefcount {
         v <= 0 && self.owner.load(Ordering::SeqCst).is_null()
     }
     /// `GIT_REFCOUNT_OWN`.
+    ///
+    /// # Safety
+    ///
+    /// `owner` is NULL or the live object that owns this one, and stays
+    /// live until it clears the owner again (code that holds the object
+    /// dereferences the owner as that type).
     #[inline]
-    pub fn own(&self, owner: *mut c_void) {
+    pub unsafe fn own(&self, owner: *mut c_void) {
         self.owner.swap(owner, Ordering::SeqCst);
     }
     /// `GIT_REFCOUNT_OWNER`.
@@ -531,6 +557,26 @@ pub mod ffi {
 mod tests {
     use super::*;
     use std::sync::Arc;
+
+    /// A failed `try_lock` leaves the lock held by its owner (L-PACK-1: the
+    /// guard was built eagerly and dropped, unlocking the owner's lock).
+    #[test]
+    fn try_lock_does_not_release_a_held_lock() {
+        let m = Arc::new(GitMutex::new());
+        let g = m.lock();
+        assert!(m.try_lock().is_none());
+        assert!(m.try_lock().is_none());
+        let m2 = m.clone();
+        let other = std::thread::spawn(move || m2.try_lock().is_none())
+            .join()
+            .unwrap();
+        assert!(other, "still held after failed try_locks");
+        drop(g);
+        let g = m.try_lock();
+        assert!(g.is_some());
+        drop(g);
+        assert!(m.try_lock().is_some());
+    }
 
     #[test]
     fn mutex_and_cond() {

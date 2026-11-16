@@ -11,7 +11,7 @@ pub mod ffi {
         GIT_OBJECT_BLOB, GIT_OBJECT_COMMIT, GIT_OBJECT_TAG, GIT_OBJECT_TREE, GitObject,
     };
     use crate::oid::Oid;
-    use crate::sys::pending::git_repository;
+    use crate::sys::pending::l_obj::git_repository;
 
     /// `git_commit_lookup`.
     ///

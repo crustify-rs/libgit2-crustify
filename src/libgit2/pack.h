@@ -68,6 +68,41 @@ struct git_pack_idx_header {
 	uint32_t idx_version;
 };
 
+#ifdef GIT_RUST
+typedef struct git_pack_cache_entry git_pack_cache_entry;
+
+struct git_pack_entry {
+	off64_t offset;
+	git_oid id;
+	struct git_pack_file *p;
+};
+
+GIT_HASHMAP_STRUCT(git_pack_offsetmap, off64_t, git_pack_cache_entry *);
+
+GIT_HASHMAP_OID_STRUCT(git_pack_oidmap, struct git_pack_entry *);
+GIT_HASHMAP_OID_PROTOTYPES(git_pack_oidmap, struct git_pack_entry *);
+
+/*
+ * The Rust port's pack file (`GitPackFile` in rust/libgit2-rs/src/pack.rs):
+ * this is the prefix of its allocation that the C that stays (the indexer,
+ * the multi-pack-index and commit-graph writers, the tests) reads and
+ * writes. The rest of the pack's state (its index, the delta base cache,
+ * its locks) is private to the Rust. C never allocates, embeds or sizes a
+ * git_pack_file: it gets one from git_packfile_alloc or
+ * git_mwindow_get_pack. The layout test checks the offsets.
+ */
+struct git_pack_file {
+	git_mwindow_file mwf;
+	git_atomic32 refcount;
+
+	/* set by the indexer: resolve REF_DELTA bases through idx_cache */
+	unsigned int has_cache;
+	git_pack_oidmap idx_cache;
+
+	/* something like ".git/objects/pack/xxxxx.pack" */
+	const char *pack_name;
+};
+#else
 typedef struct git_pack_cache_entry {
 	size_t last_usage; /* enough? */
 	git_atomic32 refcount;
@@ -135,6 +170,7 @@ struct git_pack_file {
 	/* something like ".git/objects/pack/xxxxx.pack" */
 	char pack_name[GIT_FLEX_ARRAY]; /* more */
 };
+#endif
 
 /**
  * Return the position where an OID (or a prefix) would be inserted within

@@ -44,6 +44,17 @@ struct git_odb_object {
 };
 
 /* EXPORT */
+#ifdef GIT_RUST
+/*
+ * The rest of the odb (the backends and their lock, the commit-graph, the
+ * odb's own cache) is private to the Rust (rust/libgit2-rs/src/odb.rs): C
+ * reads `rc` and `options` only.
+ */
+struct git_odb {
+	git_refcount rc;
+	git_odb_options options;
+};
+#else
 struct git_odb {
 	git_refcount rc;
 	git_mutex lock;  /* protects backends */
@@ -53,6 +64,7 @@ struct git_odb {
 	git_commit_graph *cgraph;
 	unsigned int do_fsync :1;
 };
+#endif
 
 typedef enum {
 	GIT_ODB_CAP_FROM_OWNER = -1

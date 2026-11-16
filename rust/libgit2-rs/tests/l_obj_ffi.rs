@@ -14,7 +14,12 @@ use libgit2_rs::blob::{GitWriteStream, ffi as blob};
 use libgit2_rs::object::{GIT_OBJECT_ANY, GIT_OBJECT_BLOB, GIT_OBJECT_TAG, GitObject, ffi as obj};
 use libgit2_rs::signature::ffi as sig;
 use libgit2_rs::strarray::GitStrArray;
-use libgit2_rs::sys::pending::{git_repository, git_repository_free, git_repository_open};
+#[allow(non_camel_case_types)]
+type git_repository = core::ffi::c_void;
+unsafe extern "C" {
+    fn git_repository_open(out: *mut *mut git_repository, path: *const c_char) -> c_int;
+    fn git_repository_free(repo: *mut git_repository);
+}
 use libgit2_rs::tag::{GitTag, ffi as tag};
 use libgit2_rs::util::errors;
 use libgit2_rs::util::test_support;
@@ -211,7 +216,8 @@ fn peel_errors_are_cs() {
     .unwrap();
     let mut o = ptr::null_mut();
     // SAFETY: a live repository, a valid id, a writable out.
-    let rv = unsafe { obj::git_object_lookup(&raw mut o, r.raw, &raw const id, GIT_OBJECT_BLOB) };
+    let rv =
+        unsafe { obj::git_object_lookup(&raw mut o, r.raw.cast(), &raw const id, GIT_OBJECT_BLOB) };
     assert_eq!(rv, 0);
     let mut p = ptr::null_mut();
     // SAFETY: a live object.
@@ -236,7 +242,9 @@ fn write_stream_through_its_table() {
     let r = Repo::scratch("stream");
     let mut s: *mut GitWriteStream = ptr::null_mut();
     // SAFETY: a live repository, a writable out, a NUL-terminated hint.
-    let rv = unsafe { blob::git_blob_create_from_stream(&raw mut s, r.raw, c"hint.txt".as_ptr()) };
+    let rv = unsafe {
+        blob::git_blob_create_from_stream(&raw mut s, r.raw.cast(), c"hint.txt".as_ptr())
+    };
     assert_eq!(rv, 0);
     let data = b"streamed through the C table\n";
     for chunk in data.chunks(5) {
@@ -261,7 +269,7 @@ fn write_stream_through_its_table() {
     // close, then free, as filter.c's users do.
     let mut s: *mut GitWriteStream = ptr::null_mut();
     // SAFETY: as above, no hint.
-    let rv = unsafe { blob::git_blob_create_from_stream(&raw mut s, r.raw, ptr::null()) };
+    let rv = unsafe { blob::git_blob_create_from_stream(&raw mut s, r.raw.cast(), ptr::null()) };
     assert_eq!(rv, 0);
     // SAFETY: the stream's slots, each with the stream; `free` last.
     unsafe {
@@ -298,7 +306,7 @@ fn tag_lists_and_short_ids() {
         0
     }
     // SAFETY: a live repository; the callback and its payload live for the call.
-    let rv = unsafe { tag::git_tag_foreach(r.raw, Some(count), (&raw mut n).cast()) };
+    let rv = unsafe { tag::git_tag_foreach(r.raw.cast(), Some(count), (&raw mut n).cast()) };
     assert_eq!(rv, 0);
     assert!(n >= 7);
 
@@ -309,7 +317,8 @@ fn tag_lists_and_short_ids() {
     .unwrap();
     let mut o = ptr::null_mut();
     // SAFETY: a live repository, a valid id, a writable out.
-    let rv = unsafe { obj::git_object_lookup(&raw mut o, r.raw, &raw const id, GIT_OBJECT_ANY) };
+    let rv =
+        unsafe { obj::git_object_lookup(&raw mut o, r.raw.cast(), &raw const id, GIT_OBJECT_ANY) };
     assert_eq!(rv, 0);
     let mut b = libgit2_rs::buf::GitBuf::new();
     // SAFETY: a valid `git_buf` and a live object.

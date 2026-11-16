@@ -18,6 +18,28 @@
 
 GIT_HASHMAP_OID_STRUCT(git_revwalk_oidmap, git_commit_list_node *);
 
+/*
+ * With GIT_RUST, the walker is defined in Rust (rust/libgit2-rs/src/revwalk). C sees only
+ * this prefix of it, which the Rust allocates and lays out at offset 0;
+ * the walk's own state (iterators, sorting, flags, the hide callback, the
+ * pathspec) follows it and is private to the Rust. Never allocate, embed
+ * or size a git_revwalk in C.
+ *
+ * `commits` is only touched by the Rust (git_revwalk__commit_lookup), but
+ * stays here so that `commit_pool` keeps its offset.
+ */
+#ifdef GIT_RUST
+struct git_revwalk {
+	git_repository *repo;
+	git_odb *odb;
+
+	git_revwalk_oidmap commits;
+	git_pool commit_pool;
+
+	/* the pushes and hides */
+	git_commit_list *user_input;
+};
+#else
 struct git_revwalk {
 	git_repository *repo;
 	git_odb *odb;
@@ -50,6 +72,7 @@ struct git_revwalk {
 	git_pathspec *pathspec;
 	bool pathspec_wildcard;
 };
+#endif
 
 git_commit_list_node *git_revwalk__commit_lookup(git_revwalk *walk, const git_oid *oid);
 

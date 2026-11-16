@@ -28,8 +28,10 @@ use crate::object::{
     self, GIT_OBJECT_BLOB, GitCachedObj, GitObject, Object, ObjectType, Repository,
 };
 use crate::oid::Oid;
-use crate::sys::filter::{self as cfilter, FilterList};
-use crate::sys::pending::{self as p, git_odb, git_odb_object, git_odb_stream, git_repository};
+use crate::sys::blob_filter::{self as cfilter, FilterList};
+use crate::sys::pending::l_obj::{
+    self as p, git_odb, git_odb_object, git_odb_stream, git_repository,
+};
 use crate::util::alloc::{self, GitCStr};
 use crate::util::errors::{self, Bytes, Error, ErrorClass, ErrorCode, Result};
 use crate::util::filebuf::{GIT_FILEBUF_TEMPORARY, GitFilebuf};
@@ -736,7 +738,7 @@ impl<'repo> Blob<'repo> {
     /// `git_blob_create_from_buffer`.
     pub fn create_from_buffer(repo: &Repository, data: &[u8]) -> core::result::Result<Oid, Error> {
         // SAFETY: a live repository.
-        Ok(unsafe { create_from_buffer(repo.as_ptr(), data)? })
+        Ok(unsafe { create_from_buffer(crate::object::repo_ptr(repo), data)? })
     }
 
     /// `git_blob_create_from_workdir`: a blob of the work-tree file at
@@ -749,7 +751,16 @@ impl<'repo> Blob<'repo> {
             ))
         })?;
         // SAFETY: a live repository.
-        Ok(unsafe { create_from_paths(None, repo.as_ptr(), None, Some(&path), 0, true)? })
+        Ok(unsafe {
+            create_from_paths(
+                None,
+                crate::object::repo_ptr(repo),
+                None,
+                Some(&path),
+                0,
+                true,
+            )?
+        })
     }
 
     /// `git_blob_create_from_disk`.
@@ -765,7 +776,7 @@ impl<'repo> Blob<'repo> {
             ))
         })?;
         // SAFETY: a live repository.
-        Ok(unsafe { create_from_disk(repo.as_ptr(), &path)? })
+        Ok(unsafe { create_from_disk(crate::object::repo_ptr(repo), &path)? })
     }
 
     /// `git_blob_create_from_stream`: a writer whose
@@ -784,7 +795,7 @@ impl<'repo> Blob<'repo> {
             None => None,
         };
         // SAFETY: a live repository, which the writer borrows.
-        let t = unsafe { create_from_stream(repo.as_ptr(), hint.as_deref())? };
+        let t = unsafe { create_from_stream(crate::object::repo_ptr(repo), hint.as_deref())? };
         Ok(BlobWriter {
             table: t,
             _repo: core::marker::PhantomData,

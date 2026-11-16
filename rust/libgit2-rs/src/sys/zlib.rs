@@ -96,3 +96,64 @@ pub unsafe fn deflate_reset(strm: *mut z_stream) -> c_int {
     // SAFETY: the caller's contract.
     unsafe { sys_deflateReset(strm) }
 }
+
+// The system zlib's inflate, for streams whose first output request is
+// small (header reads): zlib's setup and 9/6-bit root tables cost less
+// there than zlib-rs's (rust/bench/RESULTS.md, review l-odb-r1 L-ODB-12).
+unsafe extern "C" {
+    #[link_name = "inflateInit_"]
+    fn sys_inflateInit_(strm: *mut z_stream, version: *const c_char, stream_size: c_int) -> c_int;
+    #[link_name = "inflate"]
+    fn sys_inflate(strm: *mut z_stream, flush: c_int) -> c_int;
+    #[link_name = "inflateEnd"]
+    fn sys_inflateEnd(strm: *mut z_stream) -> c_int;
+    #[link_name = "inflateReset"]
+    fn sys_inflateReset(strm: *mut z_stream) -> c_int;
+}
+
+/// `inflateInit(strm)` with the system zlib.
+///
+/// # Safety
+///
+/// As [`deflate_init`]: `strm` is a valid stream with no state, which does
+/// not move and is reached only through pointers derived from this one
+/// until [`inflate_end`] (zlib keeps a pointer back to it).
+pub unsafe fn inflate_init(strm: *mut z_stream) -> c_int {
+    // SAFETY: zlib's static version string.
+    let version = unsafe { sys_zlibVersion() };
+    // SAFETY: the caller's contract; the size is that of the stream.
+    unsafe { sys_inflateInit_(strm, version, core::mem::size_of::<z_stream>() as c_int) }
+}
+
+/// `inflate(strm, flush)` with the system zlib.
+///
+/// # Safety
+///
+/// `strm` went through [`inflate_init`] (as its contract requires), and
+/// `next_in` / `next_out` are readable / writable for `avail_in` /
+/// `avail_out` bytes.
+pub unsafe fn inflate(strm: *mut z_stream, flush: c_int) -> c_int {
+    // SAFETY: the caller's contract.
+    unsafe { sys_inflate(strm, flush) }
+}
+
+/// `inflateEnd(strm)` with the system zlib.
+///
+/// # Safety
+///
+/// `strm` is a valid stream whose state is NULL or the system zlib's
+/// inflate state for it.
+pub unsafe fn inflate_end(strm: *mut z_stream) -> c_int {
+    // SAFETY: the caller's contract.
+    unsafe { sys_inflateEnd(strm) }
+}
+
+/// `inflateReset(strm)` with the system zlib.
+///
+/// # Safety
+///
+/// As [`inflate_end`].
+pub unsafe fn inflate_reset(strm: *mut z_stream) -> c_int {
+    // SAFETY: the caller's contract.
+    unsafe { sys_inflateReset(strm) }
+}

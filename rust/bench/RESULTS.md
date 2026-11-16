@@ -286,11 +286,26 @@ pinned to CPU 2 and interleaved.
 | equal_ncmp_streq | 63.7 | 43.5 | 0.68 |
 | shorten (20 x 12000 ids) | 14.2 | 26.9 | 1.90 |
 
-Check values identical. `shorten` is the one regression: the trie walk has
-C's algorithm and node layout (32-byte nodes, tails borrowed from the
-caller's strings) but costs ~110 ns per id against C's ~60 ns; nothing
-inside libgit2 calls `git_oid_shorten_*`. (A first version that copied
-the ids was 2.9x, from page faults and an extra indirection.)
+Check values identical. `shorten` was 1.9x at first; fixed afterwards
+(see below).
+
+### `oid/shorten` after the fix
+
+The export scanned each id with `strnlen` (40 bytes, ~20 ns) before the
+walk, where C reads only the digits it walks (about 5) and a tail's first
+byte when a leaf is split; and splitting a leaf rewrote all 32 bytes of the
+node. The walk now reads exactly the bytes C reads, and a split zeroes
+only the tail. `compare.sh /work/build-c /work/builds/u1 'oid/shorten*'`,
+5 rounds:
+
+| pinned CPU | C ms | Rust ms | Rust/C wall | Rust/C cpu |
+|---|---:|---:|---:|---:|
+| 5 | 17.38 | 16.99 | 0.98 | 0.99 |
+| 5 | 14.45 | 13.18 | 0.91 | 0.91 |
+| 7 | 13.37 | 14.14 | 1.06 | 1.06 |
+| 2 (default, busiest) | 34.14 | 33.01 | 0.97 | 1.08 |
+
+Parity within the machine's noise (±6%), from 1.9x.
 
 ## Internal API, per call: `micro/u1_bench.c` (`micro/run_u1.sh 5`)
 
@@ -356,3 +371,458 @@ Public API (`compare.sh /work/build-c /work/builds/u2 codec`):
 `strlen` up front), which brought early-failing patterns to 1.0-1.4 of the C
 (from 1.9) and casefold/slash patterns to 0.2-0.8, but recursion-heavy
 patterns (`*[0-9]*` without casefold) stay 1.5x.
+
+## WP l-pack (pack, mwindow, odb_pack)
+
+Public API (`compare.sh /work/build-c /work/builds/l-pack 'odb/pack*,delta'`,
+3 rounds x 3 reps, interleaved; load average ~340):
+
+| workload | C ms | Rust ms | ratio | minrat | cpurat |
+|---|---:|---:|---:|---:|---:|
+| odb/pack_read_random | 5438.8 | 4222.1 | 0.78 | 0.79 | 0.79 |
+| odb/pack_read_sequential | 5594.8 | 4916.3 | 0.88 | 0.90 | 0.89 |
+| odb/pack_read_header | 1017.4 | 1011.1 | 0.99 | 0.92 | 1.04 |
+| odb/pack_exists | 831.1 | 989.9 | 1.19 | 1.28 | 1.13 |
+| odb/pack_exists_prefix | 589.3 | 548.0 | 0.93 | 1.06 | 1.04 |
+| odb/pack_read_prefix | 2547.6 | 2167.7 | 0.85 | 0.84 | 0.91 |
+| odb/pack_foreach | 1208.1 | 730.1 | 0.60 | 0.67 | 0.61 |
+| delta/read_deltified_random | 4609.8 | 3928.6 | 0.85 | 0.73 | 0.81 |
+| delta/read_deep_chains | 1424.8 | 1394.3 | 0.98 | 0.97 | 0.99 |
+| delta/read_header_deltified | 1136.5 | 1165.8 | 1.03 | 0.99 | 1.00 |
+| delta/indexer_resolve | 9723.6 | 9588.7 | 0.99 | 1.01 | 0.94 |
+
+Geomean 0.90 (wall), 0.91 (CPU). `pack_exists` is half misses, and a miss
+makes the odb refresh the backend (a `stat`, a failed `multi-pack-index`
+open, a directory walk): per call, `git_odb_refresh` measured 35-45 µs in C
+and 37-50 µs in the port, with its parts (`git_fs_path_direach`, `p_stat`,
+`git_midx_open`) equal in both; the remaining gap is within this machine's
+noise but shows in every round. Reads gain from zlib-rs inflate and from a
+per-thread inflate stream reset per object (C makes and frees one).
+
+Internal API (`micro/pack_bench.sh 5 5`, git.git's pack, ns per call):
+
+| workload | C | Rust | ratio |
+|---|---:|---:|---:|
+| `git_pack_entry_find` (full id) | 1173.8 | 1136.0 | 0.97 |
+| `git_pack_entry_find` (10-digit prefix) | 1178.1 | 1153.5 | 0.98 |
+| `git_packfile_resolve_header` | 6620.6 | 6579.4 | 0.99 |
+| `git_packfile_unpack` (random) | 272018 | 201574 | 0.74 |
+| `git_packfile_unpack` (pack order) | 13774.2 | 14367.3 | 1.04 |
+| `git_pack_foreach_entry_offset` (424k entries) | 6767698 | 4797718 | 0.71 |
+| `git_mwindow_open` + `close` (open window) | 69.3 | 75.1 | 1.08 |
+
+The last two rows of ratios above 1 vary between 0.88 and 1.09 across
+runs (minimum ratios 1.09 and 0.88).
+## WP l-repo (repository, libgit2, settings)
+
+`compare.sh /work/build-c /work/builds/l-repo repository` (3 rounds × 3 reps,
+interleaved per workload, CPU 2; load average 364 at the start, so these are
+noisy). Median wall time, and CPU time:
+
+| workload | C ms | Rust ms | ratio | C cpu | Rust cpu | cpu ratio | check |
+|---|---|---|---|---|---|---|---|
+| open_bare_x1000 | 464.9 | 512.9 | 1.103 | 180.4 | 237.4 | 1.316 | ok |
+| open_workdir_x1000 | 697.2 | 716.2 | 1.027 | 213.9 | 242.7 | 1.135 | ok |
+| open_search_x1000 | 970.8 | 1061.5 | 1.093 | 352.5 | 372.3 | 1.056 | ok |
+| discover_x1000 | 352.6 | 464.5 | 1.317 | 144.8 | 166.4 | 1.149 | ok |
+| init_x50 | 2540.4 | 2254.7 | 0.888 | 291.0 | 293.7 | 1.009 | ok |
+| init_ext_x50 | 1317.7 | 1111.1 | 0.843 | 310.7 | 280.4 | 0.903 | ok |
+| head_packed | 398.5 | 412.6 | 1.035 | 144.0 | 126.7 | 0.880 | ok |
+| head_loose | 587.6 | 496.1 | 0.844 | 227.8 | 187.2 | 0.822 | ok |
+| revparse_head | 324.3 | 322.1 | 0.993 | 83.4 | 88.9 | 1.066 | ok |
+| (config) repository_config_x500 | 330.7 | 329.6 | 0.997 | 165.4 | 162.6 | 0.983 | ok |
+| (codec) repository_hashfile_16m | 611.7 | 567.3 | 0.927 | 153.2 | 142.4 | 0.930 | ok |
+
+Geomean wall 0.998, CPU 1.014. The open/discover rows were measured before
+the weak-pointer and item-path fast paths below were added.
+
+Per-call internals (`micro/repo_bench.c`, `BENCH=repo_bench micro/build_lib.sh
+&& BENCH=repo_bench micro/run.sh 5 5`; median of 5 interleaved rounds, ms):
+
+| workload | C | Rust | ratio |
+|---|---|---|---|
+| odb_weakptr_x2M | 98.5 | 73.6 | 0.75 |
+| config_weakptr_x2M | 73.1 | 72.2 | 0.99 |
+| refdb_weakptr_x2M | 101.2 | 79.0 | 0.78 |
+| path_getters_x2M | 193.0 | 167.5 | 0.87 |
+| item_path_x500k | 379.2 | 234.4 | 0.62 |
+| workdir_path_x500k | 271.8 | 366.5 | 1.35 |
+| opts_get_mwindow_x2M | 190.4 | 296.6 | 1.56 |
+| open_free_x2000 | 4246.0 | 4428.7 | 1.04 |
+
+Before the fast paths (an earlier run, same harness), odb/config weak
+pointers were 1.8–2.3× and item_path 1.45×. Still slower: `workdir_path`
+(about 0.2 µs per call; `GitStr::joinpath` + the barrier) and
+`git_libgit2_opts` (about 50 ns per call: the shim's argument struct and the
+barrier).
+## WP l-odb (odb, odb_loose, odb_mempack, cache, delta)
+
+Public API (`compare.sh /work/build-c /work/builds/l-odb odb,delta`,
+BENCH_CPU=none, 3 rounds x 3 reps, load ~290; the pack code is still C):
+
+| workload | C ms | Rust ms | ratio | cpu ratio |
+|---|---:|---:|---:|---:|
+| odb/loose_read | 470.5 | 411.5 | 0.875 | 0.859 |
+| odb/loose_read_header | 307.8 | 387.7 | 1.260 | 1.220 |
+| odb/loose_exists | 184.8 | 188.8 | 1.022 | 1.064 |
+| odb/loose_foreach | 33.3 | 34.4 | 1.031 | 1.021 |
+| odb/loose_write | 554.4 | 584.3 | 1.054 | 0.981 |
+| odb/loose_write_existing | 50.6 | 58.8 | 1.161 | 1.031 |
+| odb/pack_read_random | 959.5 | 847.6 | 0.883 | 0.865 |
+| odb/pack_read_sequential | 923.7 | 888.9 | 0.962 | 0.966 |
+| odb/pack_read_header | 176.3 | 217.4 | 1.233 | 1.280 |
+| odb/pack_exists | 195.8 | 177.4 | 0.906 | 0.989 |
+| odb/pack_exists_prefix | 97.0 | 103.3 | 1.065 | 1.051 |
+| odb/pack_read_prefix | 480.4 | 429.4 | 0.894 | 0.904 |
+| odb/pack_foreach | 206.1 | 257.0 | 1.247 | 1.252 |
+| odb/mempack_write | 279.9 | 251.6 | 0.899 | 0.889 |
+| odb/mempack_read | 497.2 | 464.9 | 0.935 | 0.929 |
+| odb/mempack_reset | 5.6 | 6.4 | 1.151 | 1.131 |
+| delta/read_deltified_random | 813.3 | 728.9 | 0.896 | 0.895 |
+| delta/read_deep_chains | 257.5 | 258.2 | 1.003 | 0.984 |
+| delta/read_header_deltified | 215.4 | 255.7 | 1.187 | 1.192 |
+| delta/indexer_resolve | 1727.7 | 1606.4 | 0.930 | 0.893 |
+
+Geomean 1.022 (wall), 1.012 (cpu). The causes of the workloads above 1.1
+(found by review l-odb-r1, L-ODB-12/13; the earlier attribution here, "the
+C pack code on the ported util layer; zlib-rs stream setup", was half
+wrong):
+
+- `loose_read_header`, `pack_read_header`, `delta/read_header_deltified`:
+  each header read is init, one inflate of at most 64 bytes, end.
+  zlib-rs's init (a ~47 KB allocation and a table memset) and its 10/9-bit
+  root tables cost more than zlib's 9/6-bit ones for such a short stream.
+  Fixed in `util::zstream`: an inflate stream whose first output request
+  is under 4 KiB runs on the system zlib, the bulk readers stay on zlib-rs.
+- `pack_foreach` does not inflate: it was `git_oid_from_raw` (424k calls)
+  building the id on the stack and copying it out; it now writes in place,
+  as C. (The timsort is the C's speed.)
+- `loose_foreach` was 1.2-1.45x before the loose backend's hex decoding was
+  made table-driven (now 1.0).
+
+After these fixes (`compare.sh /work/build-c /work/builds/l-odb odb,delta`,
+same settings): geomean 0.953 wall, 0.963 cpu over the 20 workloads.
+
+| workload | C ms | Rust ms | ratio | cpu ratio |
+|---|---:|---:|---:|---:|
+| odb/loose_read | 458.8 | 395.1 | 0.861 | 0.836 |
+| odb/loose_read_header | 302.0 | 293.6 | 0.972 | 0.958 |
+| odb/loose_exists | 210.1 | 193.5 | 0.921 | 0.928 |
+| odb/loose_foreach | 33.7 | 34.4 | 1.019 | 1.019 |
+| odb/loose_write | 596.5 | 449.3 | 0.753 | 0.965 |
+| odb/loose_write_existing | 53.0 | 53.4 | 1.006 | 1.055 |
+| odb/pack_read_random | 982.5 | 857.7 | 0.873 | 0.889 |
+| odb/pack_read_sequential | 956.3 | 859.2 | 0.898 | 0.895 |
+| odb/pack_read_header | 197.3 | 201.1 | 1.019 | 1.032 |
+| odb/pack_exists | 187.2 | 182.3 | 0.974 | 0.977 |
+| odb/pack_exists_prefix | 103.9 | 102.4 | 0.985 | 0.986 |
+| odb/pack_read_prefix | 486.1 | 435.6 | 0.896 | 0.905 |
+| odb/pack_foreach | 218.6 | 246.6 | 1.128 | 1.138 |
+| odb/mempack_write | 267.5 | 269.1 | 1.006 | 0.968 |
+| odb/mempack_read | 504.3 | 457.6 | 0.907 | 0.914 |
+| odb/mempack_reset | 5.7 | 7.2 | 1.267 | 1.267 |
+| delta/read_deltified_random | 851.1 | 749.7 | 0.881 | 0.903 |
+| delta/read_deep_chains | 267.8 | 254.9 | 0.952 | 0.938 |
+| delta/read_header_deltified | 231.0 | 204.8 | 0.887 | 0.869 |
+| delta/indexer_resolve | 1821.0 | 1750.0 | 0.961 | 0.906 |
+
+`pack_foreach` keeps a ~1.13 gap in the C pack code's loop on the ported
+util layer (the reviewer measured 1.10-1.13 with the same fix);
+`mempack_reset` (5.7 vs 7.2 ms for ~1.5k objects) frees each object's
+`Vec` through the map's drop, and the commits list now that it is freed
+as C frees it.
+
+Internal API (`micro/odb_bench.c`, `micro/odb_run.sh 5 5`):
+
+| workload | C ms | Rust ms | Rust/C |
+|---|---:|---:|---:|
+| odb_read_cached (cache hit, 409.6k reads) | 55.3 | 48.9 | 0.885 |
+| odb_exists_cached | 54.8 | 44.3 | 0.808 |
+| odb_read_blob_mempack | 1464.0 | 1292.5 | 0.883 |
+| odb_read_header_mempack | 59.3 | 48.9 | 0.826 |
+| odb_write_existing (hash + freshen) | 741.9 | 683.1 | 0.921 |
+| format_object_header (2M) | 516.2 | 141.7 | 0.275 |
+# WP l-config: config, config_file, config_parse, config_list, config_cache, config_mem, config_snapshot (C reference vs Rust port)
+
+Public API, `compare.sh /work/build-c /work/builds/l-config config`
+(defaults: 3 rounds × 3 repetitions, per-workload interleaving, CPU 2),
+2026-11-16 10:03 UTC, load average 378 / 326 / 293 (very loaded: wall
+times are about 3× those of the C-vs-C baseline, so the CPU-time ratio is
+the steadier figure here). All check values match.
+
+| workload | C ms | Rust ms | ratio | minrat | C cpu ms | Rust cpu ms | cpu ratio |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| config/open_big_x20 | 9726.2 | 4739.6 | 0.49 | 0.50 | 1224.6 | 591.0 | 0.48 |
+| config/open_small_x2000 | 1106.6 | 743.4 | 0.67 | 0.93 | 128.3 | 105.5 | 0.82 |
+| config/get_string_snapshot | 111.0 | 153.0 | 1.38 | 0.79 | 20.3 | 20.0 | 0.98 |
+| config/get_bool_int_snapshot | 288.3 | 266.3 | 0.92 | 1.07 | 39.0 | 37.7 | 0.97 |
+| config/get_entry_live | 1516.5 | 1754.0 | 1.16 | 1.00 | 268.5 | 279.7 | 1.04 |
+| config/iterate_all | 551.7 | 46.6 | 0.08 | 0.06 | 81.9 | 6.2 | 0.08 |
+| config/iterate_glob | 315.5 | 53.2 | 0.17 | 0.13 | 54.1 | 7.5 | 0.14 |
+| config/multivar_iterate | 1343.7 | 72.2 | 0.05 | 0.03 | 168.8 | 9.7 | 0.06 |
+| config/multivar_foreach | 6339.5 | 297.4 | 0.05 | 0.04 | 829.3 | 38.1 | 0.05 |
+| config/snapshot_x5 | 3125.5 | 697.5 | 0.22 | 0.22 | 408.4 | 88.7 | 0.22 |
+| config/set_big_x10 | 4637.9 | 2877.0 | 0.62 | 0.61 | 571.2 | 343.5 | 0.60 |
+| config/set_small_x400 | 4463.1 | 3712.6 | 0.83 | 0.66 | 530.2 | 401.1 | 0.76 |
+| config/delete_big_x10 | 6306.4 | 3633.4 | 0.58 | 0.54 | 740.4 | 442.4 | 0.60 |
+| config/repository_config_x500 | 1126.0 | 1023.9 | 0.91 | 1.09 | 141.9 | 134.7 | 0.95 |
+| config/parse_bool_int | 168.2 | 143.1 | 0.85 | 1.25 | 21.2 | 17.1 | 0.81 |
+
+Geomean wall ratio 0.40, CPU 0.38.
+
+- Iteration (`iterate_*`, `multivar_*`) and `snapshot_x5` are 5-20× faster:
+  a backend's entry list is immutable once read, so an iterator shares it
+  instead of copying all 22,000 entries (C's `git_config_list_dup`) every
+  time, and a snapshot copies plain entries without re-interning.
+- Reads and writes of files (`open_*`, `set_*`, `delete_*`): one allocation
+  per entry (name and value together) and a word-wise hash, where C made
+  up to five (entry, name, value, list node, map head), and the parser
+  works on slices of the content where C copies each line first.
+- Single lookups are at parity in CPU time (0.97-1.04): each one crosses
+  the config's backend list (a mutex and an `Arc` clone, so that no lock is
+  held while a backend runs) and the backend's `CTable` entry (two atomic
+  operations), against C's unguarded vectors. An earlier build that
+  allocated the normalized name twice per lookup and copied the list's
+  `Arc` was 1.5× on `get_bool_int_snapshot`; with the name on the stack
+  and the entry lent under the list's lock, a per-call loop
+  (`git_config_get_bool`/`_int64` on a snapshot of big.config, 200,000
+  calls, CPU 5) gives C 372-433 ns, Rust 384-470 ns, and 494 vs 483 ns for
+  a missing key.
+## WP l-index (index, tree-cache, index_map): `compare.sh /work/build-c /work/builds/l-index index`
+
+2026-11-16 10:02–10:40 UTC, defaults (3 rounds × 3 reps, 1 warm-up), CPU 2; load average 290–380. The filter also matched `delta/indexer_resolve`. All check values match.
+
+```
+component  workload                C ms     Rust ms  ratio minrat       C cpu    Rust cpu cpurat  check
+delta      indexer_resolve     8450.996    8313.228  0.984  0.790    1678.631    1569.955  0.935  ok 3eee8855b4b539e5
+index      read_100k           1688.408    1651.458  0.978  1.053     241.591     226.782  0.939  ok b9d98eb2eb00ac6b
+index      read_git_x10         693.007     740.763  1.069  1.322      90.706      92.954  1.025  ok ec385a8e65333760
+index      write_100k          1953.661    1867.533  0.956  0.943     242.092     223.804  0.924  ok 22f0e2201dace099
+index      write_git            104.770     105.015  1.002  0.980      13.146      13.088  0.996  ok ef04e49736db21fe
+index      find_bypath_100k    2592.074    2747.242  1.060  0.952     328.293     340.161  1.036  ok 000000012ac8478c
+index      find_prefix           88.462      88.726  1.003  1.004      13.162      13.145  0.999  ok 000000001dc5c3e0
+index      add_remove_100k     9246.715    8125.577  0.879  1.001    1148.065    1118.937  0.975  ok 7a7d25999ea53dbc
+index      remove_directory    8155.602    8105.181  0.994  0.932    1025.860    1021.864  0.996  ok ea9aa18304d66022
+index      conflicts           9576.100   10446.001  1.091  0.988    1336.362    1339.870  1.003  ok 453a5b2cb4a9e763
+index      read_tree_x10        732.237     747.054  1.020  1.088     104.565     114.404  1.094  ok ec385a8e65333760
+index      write_tree_git       357.784     356.777  0.997  1.249      51.547      53.799  1.044  ok 154f5a592fc11533
+
+wall time, 12 workloads: geomean ratio 1.001, median |ratio-1| 0.021, max |ratio-1| 0.121, within 5%: 8, within 10%: 11, flagged: 0
+cpu time: geomean ratio 0.996, median |ratio-1| 0.031, max |ratio-1| 0.094, within 5%: 8, within 10%: 12
+```
+
+Parity within the noise of this machine (C-vs-C baseline: median |ratio−1| 1.8%): reading and writing the 100k-entry index and `add_remove_100k` are faster or equal in wall and CPU time; `find_bypath_100k` (+3.6% CPU) and `read_tree_x10` (+9.4% CPU, 1.02 wall) are the largest CPU ratios above 1, `conflicts` the largest wall ratio (1.09, CPU 1.003).
+
+### After review r1 (`compare.sh /work/build-c /work/builds/l-index 'index/*'`, lighter load)
+
+```
+component  workload                C ms     Rust ms  ratio minrat       C cpu    Rust cpu cpurat  check
+index      read_100k            239.096     208.423  0.872  0.877     234.812     202.634  0.863  ok b9d98eb2eb00ac6b
+index      read_git_x10          90.931      82.522  0.908  0.896      90.729      82.529  0.910  ok ec385a8e65333760
+index      write_100k           368.095     270.727  0.735  0.950     219.321     218.221  0.995  ok 22f0e2201dace099
+index      write_git             12.717      11.904  0.936  1.038      11.497      11.177  0.972  ok ef04e49736db21fe
+index      find_bypath_100k     281.515     263.360  0.936  0.981     273.721     256.727  0.938  ok 000000012ac8478c
+index      find_prefix           12.797      12.295  0.961  0.898      12.803      12.302  0.961  ok 000000001dc5c3e0
+index      add_remove_100k     1135.555    1159.119  1.021  1.000    1123.743    1133.643  1.009  ok 7a7d25999ea53dbc
+index      remove_directory    1128.080    1050.143  0.931  0.989    1046.796    1041.774  0.995  ok ea9aa18304d66022
+index      conflicts           1333.037    1332.761  1.000  1.039    1313.135    1313.164  1.000  ok 453a5b2cb4a9e763
+index      read_tree_x10        112.280     107.913  0.961  0.963     110.478     103.732  0.939  ok ec385a8e65333760
+index      write_tree_git        49.424      57.539  1.164  1.136      49.008      56.889  1.161  ok 154f5a592fc11533
+
+wall time, 11 workloads: geomean ratio 0.942, median |ratio-1| 0.064, max |ratio-1| 0.265, within 5%: 4, within 10%: 8, flagged: 0
+cpu time: geomean ratio 0.974, median |ratio-1| 0.039, max |ratio-1| 0.161, within 5%: 6, within 10%: 9
+```
+
+`find_bypath_100k` is now 0.94 (wall and CPU). `write_tree_git` is 1.12–1.13 in three runs, but so is master's build with the C index (`compare.sh /work/build-c /work/builds/master 'index/write_tree*'`: 1.141 wall, 1.146 CPU): the difference is in the layers below the index (tree writing, hashing), not in the index.
+## l-commit (commit, commit_list, tree)
+
+Public API, `compare.sh /work/build-c /work/builds/l-commit objects,revwalk`
+(3 rounds × 3 reps, interleaved; load average 300–450 on the machine, so
+wall times are noisy: CPU time is the steadier figure). All checks equal.
+
+| workload | C ms | Rust ms | ratio | minrat | cpurat |
+|---|---:|---:|---:|---:|---:|
+| objects/commit_lookup_all | 3253.6 | 5837.4 | 1.79 | 0.87 | 0.97 |
+| objects/cache_hit | 200.8 | 179.6 | 0.89 | 0.66 | 0.77 |
+| objects/tree_lookup_iterate | 823.7 | 683.7 | 0.83 | 0.64 | 0.84 |
+| objects/tree_walk | 63.4 | 63.8 | 1.01 | 1.11 | 0.99 |
+| objects/tree_entry_bypath | 68.7 | 71.6 | 1.04 | 1.00 | 1.03 |
+| objects/commit_create_buffer | 94.5 | 108.5 | 1.15 | 0.90 | 0.86 |
+| revwalk/cold_all_refs | 16137.5 | 14374.5 | 0.89 | 0.91 | 0.99 |
+| revwalk/master_unsorted | 2087.7 | 1719.5 | 0.82 | 0.52 | 0.76 |
+| revwalk/master_topo | 2039.6 | 1701.9 | 0.83 | 0.98 | 0.82 |
+| revwalk/all_refs | 2021.7 | 1553.7 | 0.77 | 0.67 | 0.80 |
+| revwalk/hide_ref_time | 629.6 | 438.3 | 0.70 | 0.66 | 0.73 |
+
+(The other workloads of the two components are in
+`/tmp/lc/bench-objects/table.txt` of the run; geomean over 26: wall 0.92,
+CPU 0.88. `commit_lookup_all`'s wall median is a load burst: its minimum and
+CPU time are at or below the C's. The hot revwalk paths gain from the quick
+parse that no longer allocates a `git_commit`.)
+
+Internal API, per object, `micro/run_l_commit.sh` (best of 5 runs per
+round; 4 C rounds, 3 Rust rounds at load 300–450; the minima are the
+meaningful figures):
+
+| workload | C min ns | Rust min ns | min ratio | median ratio |
+|---|---:|---:|---:|---:|
+| commit_parse_full (86k commits) | 4606 | 3423 | 0.74 | 1.09 |
+| commit_parse_quick | 3326 | 2341 | 0.70 | 0.84 |
+| commit_summary_body | 7732 | 7985 | 1.03 | 1.03 |
+| tree_parse (40k trees) | 81898 | 64360 | 0.79 | 0.89 |
+| tree_byname (every entry) | 261924 | 143779 | 0.55 | 1.02 |
+| treebuilder_from_tree | 391280 | 270334 | 0.69 | 0.80 |
+| revwalk_all (whole walk, ns) | 3.55e9 | 3.10e9 | 0.87 | 0.84 |
+
+`commit_summary_body`'s minimum was measured before the summary was changed
+to copy runs of bytes rather than one byte at a time; the later rounds have
+Rust at 17.4/19.0 µs against C at 14.4–34.4 µs.
+# WP l-revwalk: revwalk, hashsig (C reference vs Rust port)
+
+Machine load during the runs: 250–350 (oversubscribed), so wall times of
+the pinned runs are inflated several times; CPU times (`cpu` columns) are
+the reliable figure. Every check value matches the C's.
+
+## The walker alone (`src/bench_revwalk_reuse.c`, `compare.sh /work/build-c /work/builds/l-revwalk reuse_`, BENCH_CPU=5)
+
+One walker over git.git whose ~86k nodes are already parsed (no object is
+read): 5 walks of master per run, each ending in the walker's reset.
+
+| workload | C ms | Rust ms | ratio | C cpu | Rust cpu | cpu ratio |
+|---|---|---|---|---|---|---|
+| reset_reuse_x17 | 393.5 | 329.4 | 0.837 | 390.7 | 316.8 | 0.811 |
+| reuse_unsorted_x5 | 103.8 | 91.5 | 0.882 | 103.6 | 90.8 | 0.877 |
+| reuse_time_x5 | 439.5 | 181.5 | 0.413 | 415.9 | 179.3 | 0.431 |
+| reuse_topo_x5 | 349.1 | 135.3 | 0.388 | 347.6 | 135.0 | 0.388 |
+| reuse_topo_time_x5 | 344.6 | 174.1 | 0.505 | 343.0 | 174.1 | 0.508 |
+| reuse_time_reverse_x5 | 511.7 | 239.4 | 0.468 | 502.4 | 236.1 | 0.470 |
+| reuse_topo_reverse_x5 | 465.1 | 183.4 | 0.394 | 449.6 | 181.5 | 0.404 |
+| reuse_first_parent_x5 | 41.7 | 44.0 | 1.055 (min 0.882) | 41.7 | 43.7 | 1.048 |
+| reuse_hide_2.30_time_x5 | 147.8 | 84.3 | 0.570 | 147.9 | 84.2 | 0.569 |
+| reuse_hide_2.45_x5 | 110.4 | 67.3 | 0.610 | 109.2 | 67.3 | 0.617 |
+| reuse_hide_cb_x5 | 172.4 | 103.9 | 0.602 | 170.8 | 103.9 | 0.608 |
+
+Geomean 0.58. The gain is the containers: the C allocates a
+`git_commit_list` cell per queued commit (and per limited, sorted and
+reversed list entry); the Rust keeps them in `VecDeque`/`Vec`s, and its
+time heap holds (time, node) pairs. `first_parent` (short walks, the
+reset of the whole map dominates) is within the noise (min ratio 0.88).
+
+## Public API suite (`compare.sh /work/build-c /work/builds/l-revwalk revwalk,hashsig`, 3 rounds x 3 reps, CPU 2)
+
+```
+component  workload                      C ms     Rust ms  ratio minrat       C cpu    Rust cpu cpurat  check
+revwalk    cold_master_unsorted     14805.244   12785.961  0.864  0.841    2570.156    2584.293  1.006  ok 014420d921298666
+revwalk    cold_master_time         15324.964   16212.683  1.058  1.006    2574.757    2659.386  1.033  ok 0144202ad2a4857e
+revwalk    cold_master_topo         14393.590   13614.612  0.946  0.935    2597.228    2459.608  0.947  ok 0144206c439ea9a2
+revwalk    cold_all_refs            16318.834   16937.667  1.038  1.192    2698.393    2855.117  1.058  ok 0151114e150f2fe9
+revwalk    master_unsorted           1986.450    1947.082  0.980  0.922     365.550     334.585  0.915  ok 014420d921298666
+revwalk    master_time               2522.537    1984.894  0.787  0.867     434.626     365.478  0.841  ok 0144202ad2a4857e
+revwalk    master_topo               2085.499    1821.893  0.874  0.691     391.733     347.430  0.887  ok 0144206c439ea9a2
+revwalk    master_topo_time          2268.353    1907.361  0.841  0.850     393.214     316.793  0.806  ok 014420e5e3a97a3a
+revwalk    master_time_reverse       2501.877    1803.979  0.721  0.972     446.405     355.423  0.796  ok 0144208408aab15a
+revwalk    master_first_parent        559.857     566.412  1.012  0.968     110.114     105.079  0.954  ok 005fc2899a391c41
+revwalk    all_refs                  2010.413    2135.175  1.062  1.314     344.080     367.156  1.067  ok 0151114e150f2fe9
+revwalk    range_2.30_2.47           1170.583    1059.128  0.905  0.604     209.510     175.921  0.840  ok 0034f47edfa49331
+revwalk    range_2.30_2.47_topo      1098.410     909.967  0.828  0.942     209.827     183.055  0.872  ok 0034f4cf32284efd
+revwalk    hide_ref_time              571.763     412.791  0.722  0.879     105.703      90.627  0.857  ok 0026cabfd40b71ba
+revwalk    release_ranges_x17        4372.319    2966.881  0.679  0.710     821.363     607.816  0.740  ok 4f08de45cb2354ad
+revwalk    reset_reuse_x17           2263.999    1822.846  0.805  0.754     405.980     317.800  0.783  ok c5b51e0847efe4d6
+hashsig    create_files_normal       1620.184    1160.728  0.716  0.639     404.176     284.817  0.705  ok 000000000006bc6a
+hashsig    create_files_ignore_ws    1883.536    1373.913  0.729  0.701     492.839     346.921  0.704  ok 0000000000070a88
+hashsig    create_files_smart_ws     1679.310    1308.164  0.779  0.719     408.223     334.837  0.820  ok 000000000006bc6a
+hashsig    create_1MiB_x16            435.526     381.045  0.875  1.076     107.248     108.585  1.012  ok 0025b4876b34e41a
+hashsig    create_16MiB_x2            805.041     702.070  0.872  0.961     213.906     180.517  0.844  ok 0000000000000063
+hashsig    compare                    492.684     363.321  0.737  0.730     134.249      95.946  0.715  ok 00000000000bb1f3
+hashsig    create_fromfile            879.614     808.224  0.919  0.828     232.269     203.003  0.874  ok 00000000000178bd
+
+wall time, 23 workloads: geomean ratio 0.851, median |ratio-1| 0.136, max |ratio-1| 0.321, within 5%: 3, within 10%: 8, flagged: 0
+cpu time: geomean ratio 0.866, median |ratio-1| 0.143, max |ratio-1| 0.296, within 5%: 4, within 10%: 8
+```
+
+Warm walks (commits in the odb cache, parsed by C `commit_list.c`) are
+0.80–0.92 of the C in CPU time; cold walks are dominated by reading and
+inflating commits (C and Rust util) and are within the noise of this
+machine. hashsig is 0.70–0.87 (CPU), `create_1MiB_x16` 1.01.
+
+`all_refs` (1.067 CPU above) rerun alone, 5 rounds on CPU 5: master_unsorted
+0.959, all_refs 0.953 (CPU) — the 1.07 was noise.
+# WP l-refs: refs, refdb, refdb_fs, reflog (C reference vs Rust port)
+
+Machine as above; load 190-440 during the runs (it varied by a factor of
+two within minutes, so single ratios move by more than the C-vs-C noise).
+Both builds' programs pinned to CPU 2 and interleaved. The Rust build is
+master (util layer, oid, parse) plus l-refs; what the refs code calls
+outside the WP (odb, objects, signatures, repository, config, the
+filesystem iterator) is C in both builds.
+
+## Public API: `src/bench_refs.c` (`compare.sh /work/build-c /work/builds/l-refs 'refs/*'`)
+
+3 rounds x 3 repetitions, medians; check values identical.
+
+| workload | C ms | Rust ms | ratio | C cpu ms | Rust cpu ms | cpu ratio |
+|---|---:|---:|---:|---:|---:|---:|
+| open_lookup_packed_x100 | 41.758 | 43.491 | 1.042 | 34.891 | 42.890 | 1.229 |
+| lookup | 464.792 | 368.111 | 0.792 | 377.576 | 357.141 | 0.946 |
+| name_to_id | 439.852 | 405.001 | 0.921 | 414.034 | 382.584 | 0.924 |
+| dwim | 312.788 | 277.794 | 0.888 | 293.320 | 245.249 | 0.836 |
+| iterate_all_names | 433.099 | 274.500 | 0.634 | 386.433 | 259.516 | 0.672 |
+| iterate_all_refs | 416.634 | 276.278 | 0.663 | 392.722 | 264.233 | 0.673 |
+| iterate_glob | 251.317 | 132.250 | 0.526 | 248.647 | 128.604 | 0.517 |
+| foreach_glob_tags | 175.751 | 60.283 | 0.343 | 170.450 | 58.025 | 0.340 |
+| create_loose | 896.745 | 1402.684 | 1.564 | 842.061 | 857.113 | 1.018 |
+| delete_loose | 5137.885 | 5263.896 | 1.025 | 1415.362 | 1497.597 | 1.058 |
+| delete_packed | 1248.264 | 1063.791 | 0.852 | 1168.822 | 906.936 | 0.776 |
+| update_with_reflog | 1532.677 | 1325.241 | 0.865 | 879.491 | 886.155 | 1.008 |
+| reflog_read_10k_entries_x5 | 122.051 | 70.991 | 0.582 | 122.060 | 70.802 | 0.580 |
+| reflog_read_2000_reflogs | 102.727 | 81.973 | 0.798 | 102.721 | 81.965 | 0.798 |
+| reflog_append_write | 70.117 | 56.700 | 0.809 | 70.107 | 55.459 | 0.791 |
+
+Geomean: wall 0.78, CPU 0.78. A first full run (`compare.sh … refs`, at
+load ~300, before the two `packed_write` / collision-check changes below)
+gave CPU ratios within ±7% of these for every workload but
+`delete_packed` (1.29 then) and `open_lookup_packed_x100` (0.99 then, 1.23
+here: the C-vs-C baseline shows 1.11 for that workload, so it is noise).
+
+- Iteration and reflog reads are 1.3-3x faster. For iteration, one known
+  difference: the iterator's snapshot of the packed references is a vector
+  of names in a pool, where C copied the sorted cache (re-inserting 53k
+  keys into a new hash map per iterator). The reflog speed-up was not
+  profiled (the signature parser is C in both builds).
+- `delete_packed` (rewrite a 53k-line `packed-refs` 20 times): the first
+  port was 1.29x (two name copies, a hash lookup and a line allocation per
+  entry); `packed_write` now copies a name only for entries it must peel or
+  remove, and reuses one line buffer: 0.78x.
+- `create_loose` / `delete_loose` / `update_with_reflog` are at CPU parity
+  (1.02 / 1.06 / 1.01, inside the ±5% band of the C-vs-C baseline). The
+  scan of every packed reference for a directory/file collision
+  (`reference_path_available`) is now a binary search over the sorted cache
+  (same answer as C's scan; `refdb_fs::tests::collisions_match_the_scan`).
+
+## Internal API, per call: `micro/refs_bench.c` (`micro/run_refs.sh 3`)
+
+Best of 5 runs of N calls, median over 3 interleaved rounds, ns per call;
+the `git_refdb_*` calls on refs.git.
+
+| call | C ns | Rust ns | Rust/C |
+|---|---:|---:|---:|
+| git_reference__normalize_name (8 names) | 397.79 | 455.63 | 1.15 |
+| git_reference_normalize_name | 457.72 | 551.85 | 1.21 |
+| git_reference_name_is_valid | 253.65 | 236.70 | 0.93 |
+| git_reference__is_per_worktree_ref | 29.11 | 24.52 | 0.84 |
+| git_reference__shorthand | 21.96 | 20.39 | 0.93 |
+| git_reference__alloc + free | 89.06 | 90.35 | 1.01 |
+| git_reference__alloc_symbolic + free | 138.97 | 160.94 | 1.16 |
+| git_refdb_lookup (loose) | 23835.17 | 26842.03 | 1.13 |
+| git_refdb_lookup (packed, sorted) | 7853.15 | 7858.75 | 1.00 |
+| git_refdb_exists (packed) | 5056.85 | 5822.08 | 1.15 |
+| git_refdb_resolve HEAD | 51187.13 | 53101.94 | 1.04 |
+| git_refdb_lookup (missing) | 8861.23 | 6332.74 | 0.71 |
+
+At load 190 (this run). An earlier run at load 440 had the same calls at
+0.59-1.07 except `shorthand` (1.28, then reading the whole name: the
+predicates now look at a 32-byte head, as C's `git__prefixcmp` reads only
+to the mismatch). The name functions are within ±20% of C either way (C's
+normalization copies the rest of the name per segment, the Rust appends
+the segment; both run in tens of ns per segment). The refdb calls are
+dominated by the file system.

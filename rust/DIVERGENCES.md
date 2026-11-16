@@ -226,6 +226,12 @@ One entry per difference: component, what differs, why.
   NUL-terminated copy instead.
 - **fs_path: `git_fs_path_str_is_valid_ext`** on a sized `git_str` reads
   exactly `size` bytes (C read `ptr[size]` too, before testing the length).
+  Its component callback gets a pointer into the caller's path, as C, so
+  that it may read the `/` or NUL after the component (`path.c`'s
+  validators do); for the last component of a sized path it gets a
+  NUL-terminated copy instead, since `ptr[size]` need not exist (a Rust
+  caller's exact-size buffer): what C's callers saw after an owned
+  `git_str`.
 - **fs_path / futils: NULL path arguments** that C passed to the system
   (and crashed on, or got `EFAULT`) are read as `""` by the exports.
 - **fs_path: `git_fs_path_set_error`** prints the action's bytes as they
@@ -269,6 +275,377 @@ One entry per difference: component, what differs, why.
   where the C would read past the end of the buffer (`git_utf8_iterate`
   with `str_len == 0`, `git_decode_varint` on a truncated varint). The
   exports read exactly what the C read.
+
+## Pack (WP l-pack: pack, mwindow, odb_pack)
+
+- **pack: `struct git_pack_file` is a shared prefix** (`pack.h` under
+  `GIT_RUST`): `mwf`, `refcount`, `has_cache` (an `unsigned int`; C's was a
+  1-bit bitfield), `idx_cache`, and `pack_name`, now a `const char *` (it
+  was a flexible array). The rest is Rust's; `git_pack_cache` and its
+  entries are not C types any more. `git_mwindow` is opaque.
+- **pack: an unknown object id type** given to `git_packfile_alloc` (or the
+  pack backends' options) fails with `invalid oid type` (class
+  `GIT_ERROR_INVALID`); C went on with a hash size of 0.
+- **pack: locking.** The index is opened once under the pack's lock and is
+  immutable after: lookups, `git_pack_foreach_entry` and
+  `git_pack_foreach_entry_offset` read it without the lock (C held it for
+  each lookup, and held it across `foreach_entry_offset`'s callbacks, so a
+  callback that used the pack deadlocked). `pack_window_open` takes only
+  the file's lock when the file is open (C took the pack's too).
+- **pack: a prefix longer than the hash** (`git_pack_entry_find` or a
+  backend slot called directly with `len` over 40 for SHA-1): C compares
+  the extra digits with the bytes after the id in the index (the next
+  entry's); the Rust compares the full id (the odb clamps `len` anyway).
+- **pack: a window smaller than the hash size** (`GIT_OPT_SET_MWINDOW_SIZE`
+  below 40 or so): C read a `REF_DELTA`'s base id past the window's end
+  (within its page); the Rust returns `GIT_EBUFS` there.
+- **pack: the delta base cache** is a Rust map of reference-counted
+  entries. Eviction is C's (every entry not in use goes); C's `last_usage`,
+  which nothing read, is not kept. It and the packs live in Rust's
+  allocator, so `cl_alloc_limit` does not make `git_packfile_alloc` fail.
+- **pack: `git_packfile_free`** deregisters the file from the window list
+  even when its descriptor is closed (C only when it was open), so no
+  freed file can stay in the global list.
+- **mwindow: `git_mwindow__mutex`** is statically initialized; neither
+  `git_mwindow_global_init` nor the shutdown re-initializes or destroys it.
+- **odb_pack: the backend's state** (its packs, the multi-pack-index, the
+  last pack an object was found in) is behind a mutex, held for a lookup
+  or a read but never across `foreach`'s callback; `foreach` iterates a
+  snapshot, so a pack that a refresh from its callback adds is not
+  visited (see DEFECTS.md).
+- **odb_pack: tables refused.** A slot of a pack backend called while its
+  release is deferred (C freed it: a use after free) returns -1, `the pack
+  backend is being freed` (class `GIT_ERROR_ODB`; `exists` returns 0). A
+  writepack's `append`/`commit` called re-entrantly (from the indexer's
+  progress callback) or concurrently returns -1, `the writepack is in use`
+  (class `GIT_ERROR_INDEXER`). A panic in a slot returns -1 with
+  `GIT_ERROR_INTERNAL`.
+## repository, libgit2, settings (WP l-repo)
+
+- **`git_libgit2_opts` is a C shim** (`src/util/rust_shims.c`): it reads each
+  option's arguments from the `va_list` exactly as the C did (for
+  `GIT_OPT_SET_SEARCH_PATH` the path only after a valid level) and calls
+  `git_libgit2__opts`, an internal Rust export (not in `libgit2.exports`).
+- **The registered extensions** (`GIT_OPT_SET_EXTENSIONS`) live in a Rust
+  `Vec` under a mutex (C: an unsynchronized `git_vector` of `git__strdup`
+  copies), in Rust's allocator: setting them cannot fail with -1 on
+  allocation failure, and concurrent calls are safe. Order, duplicates
+  and the `!` rejection are the C's.
+- **The features and build information** (`git_libgit2_features`,
+  `_feature_backend`, `_buildinfo`, the version) come from the build's
+  `git2_features.h` and `include/git2/version.h`, read by `build.rs` into
+  `cfg`s and constants; without `LIBGIT2_BUILD_DIR` (Miri) the reference
+  configuration is assumed.
+- **Infallible Rust allocations on rare paths**: copies of paths and
+  config values made while opening (`CString`/`Vec` conversions of
+  environment variables, `core.worktree`, ceiling directories, gitlink
+  contents) and the safe API's conversions abort on out-of-memory where C
+  returned -1. The `git_repository` itself, its strings, the extensions
+  array and every `git_str` use `git__allocator` and fail as C.
+- **`GIT_OPT_*` with a NULL out-pointer** fails with `invalid argument: 'out'`
+  instead of crashing (see DEFECTS.md).
+- **The safe `Repository` is `Send + Sync`** (as libgit2 lets threads share
+  one repository for reference, object and configuration work). What is
+  single-threaded takes `&mut self`: `index()` (the index, and its clones
+  and iterators, borrow the repository exclusively), the path setters
+  (`set_workdir`, `set_bare`, `set_namespace`, `set_ident`) and
+  `reinit_filesystem` (submodules read the index). The odb, config and
+  index it returns are the odb, config and index modules' `Odb<'r>`,
+  `Config<'r>`, `Index<'r>`, bound to the repository's lifetime, as are
+  their clones, levels, snapshots and iterators (free-standing ones are
+  `'static`); `head()` returns the refs API's `Reference<'r>`. The refdb is
+  still a thin handle of `repository::handles`. Every public type's
+  `Send`/`Sync` is asserted in `tests/api_send_sync.rs`.
+- **The C ABI reads the caller's `git_repository_init_options`** once into
+  Rust values and writes the internal `GIT_REPOSITORY_INIT__*` bits back
+  into its `flags` at the end (C or-ed them in as it went); the caller sees
+  the same flags afterwards.
+
+## odb, odb_loose, odb_mempack, delta, cache (WP l-odb)
+
+- **odb: `git_odb` is a shared prefix** (`rc`, `options`; `odb.h` keeps
+  the other fields only without `GIT_RUST`), allocated with
+  `git__allocator`; the backends are a Rust `Vec` (with `try_reserve`)
+  under a `std::sync::Mutex`, sorted with the C's timsort and comparison,
+  so the order is C's. The odb's own cache is a `git_cache` in the Rust
+  state; the repository's is `GitRepository::objects()` of the owner.
+- **odb: `git_odb_write_multi_pack_index`** calls the backends on a copy
+  of the list taken under the lock (C walked the list without the lock).
+- **odb: object type names.** `odb.rs` has its own copy of
+  `git_objects_table`'s names (`git_object_type2string`,
+  `git_object_stringn2type`, `git_object_type_is_valid`) and of
+  `git_object_id_from_buffer` without filters (all the odb needs), so that
+  the odb and loose parsing run without object.c (l-obj); same results.
+- **Rust backends and streams are `ffibox::CTable`s** in Rust's allocator
+  (C: `git__calloc`), so `cl_alloc_limit` does not see the tables
+  themselves; their buffers (object data, the fake stream's buffer, the
+  hash contexts) still come from `git__allocator`. A slot refused because
+  its table is being released returns -1 with `the object database backend
+  is being freed` (class `GIT_ERROR_INTERNAL`); C used the freed memory.
+- **cache: `git_cache_size`** takes the read lock (C read the map's size
+  unlocked).
+- **Safe API:** `OdbBackend` implementations return `Vec<u8>`, copied into
+  `git__allocator` memory for C; paths with a NUL byte are refused
+  (`GIT_EINVALID`) instead of being cut short.
+
+- **zstream: small first reads inflate with the system zlib.** An
+  inflate stream starts its library at its first output request: the
+  system zlib (already linked for deflate) under 4 KiB, zlib-rs otherwise;
+  whole-object readers (`ZStream::new_bulk`, `git_zstream_inflatebuf`, the
+  loose reader) start on zlib-rs. Same output, codes and messages (zlib's
+  for the small ones, as in C). Because the library is chosen at the first
+  output call, an allocation failure of the inflate state is reported
+  there instead of by `git_zstream_init`. (Review l-odb-r1, L-ODB-12:
+  zlib-rs's setup and larger root tables made header reads 1.1-1.3x the C.)
+- **odb_mempack: the objects are under a `RwLock`**: concurrent reads copy
+  their object out in parallel (C's mempack had no lock; the odb's mutex
+  serialized it).
+- **odb: out-parameters** are written where C writes them (`*oid` of
+  `git_odb_write` once hashed, `*out` of `git_odb_read_prefix` NULL for a
+  full-length id, the loose `read_prefix` slot's full id once located), but
+  `git_odb_open_ext` checks the options' version before setting `*out =
+  NULL`, as C does.
+
+- **delta: the index's block** is one `git__allocator` allocation, as in C
+  (C frees it with `git__free`), but laid out by the Rust: 4-byte bucket
+  heads and 16-byte entries (indices, not pointers), so it is smaller than
+  the C's. `git_delta_index_size` still returns the size of the C's
+  allocation (32 + 24 per entry + 8 per bucket), which `pack-objects.c`
+  accounts with. The temporary bucket counts are a Rust `Vec`
+  (`try_reserve`, out-of-memory error on failure, as C's `git__calloc`). The delta and applied
+  buffers handed to C come from `git__allocator`, as before.
+- **delta: a delta's NUL terminator.** `git_delta_apply` writes the NUL
+  after the result once the result is complete (C wrote it first); the
+  buffer C receives is the same.
+
+## config (WP l-config)
+
+- **config_list: shared, immutable lists.** A backend's entries are built
+  once, then frozen in an `Arc` and never changed; an iterator shares the
+  list where C duplicated it (`git_config_list_dup`) for every iteration,
+  and a list's strings are interned once per file read. Entries are freed
+  when the last reference (backend, iterator or entry handed out) goes, as
+  with C's refcount. Not observable but in speed and memory.
+- **config_list: memory.** Entry names, values and the lists are in Rust's
+  allocator (C: `git__allocator`); `cl_alloc_limit` does not make reads
+  fail, and allocation failures of the `Arc`s and iterator tables (small,
+  fixed size) abort, where C reported -1. The variable-size buffers use
+  `try_reserve` and fail with the out-of-memory error.
+- **config: the backends of a config** are a copy-on-write list (an `Arc`
+  behind a read-write lock, read in parallel): lookups and iterators take the list as it is when they
+  start and keep its backends alive, and no lock is held while a backend
+  runs, so a backend may re-enter the config. C read the live vectors (an
+  iterator created before `git_config_add_backend` could see the new
+  backend, by index).
+- **config_file: the tree of files read** (stamps, checksums, includes) is
+  rebuilt and swapped in after each read instead of being edited in place,
+  and no lock is held while the includes are read (`onbranch:` reads
+  `HEAD`, which may read the repository's config and so this backend
+  again). As in C, a failed reload keeps the stamps and includes read so
+  far and the previous entries.
+- **config_file: concurrent writes.** Each slot takes `&self` (several
+  threads read a repository's config); the lock state of
+  `git_config_lock` is under a mutex. Concurrent writers to one backend
+  were a race in C; here each write is a whole read-modify-write of the
+  file under the file lock (`.lock`), the later writer failing with
+  `GIT_ELOCKED` as in C.
+- **config: tables.** The file, memory and snapshot backends and every
+  iterator are ffibox `CTable`s: a slot called while the table is being
+  released (C calling `free` from another thread during a slot) is refused
+  with `the config backend is being released` (C: use after free). An
+  iterator's `next` is exclusive: called while another call of the same
+  iterator runs (re-entrantly, or from another thread) or while it is being
+  released, it fails with `the config iterator is already in use or being
+  released` (C would run it). A panic in a slot returns -1 with the
+  barrier's internal error.
+- **config: `git_config_backend.cfg`** is written when the backend is
+  added, as C does; nothing reads it.
+- **config: a memory backend opened twice** reads its text again into a
+  new list; C appended the entries to the list a second time. A failed
+  `open` keeps the entries read before the error, as C does.
+- **config: `git_config_unlock` without `git_config_lock`** on a file
+  backend fails as committing the C's zeroed `git_filebuf` fails (C wrote
+  into the zeroed filebuf first, which could crash).
+- **config: the safe API** (`Config`, `ConfigEntry`, `ConfigEntries`,
+  `ConfigLevel`, `ConfigBackend`) copies entries out (`ConfigEntry` owns its
+  strings) and rejects string arguments with an interior NUL; a Rust
+  `ConfigBackend`'s entries without a backend type get `"rust"`.
+
+## index, tree-cache, index_map (WP l-index)
+
+- **`struct git_index`** (under `GIT_RUST` in `index.h`) keeps only the
+  fields the C that stays touches (`rc`, `index_file_path`, `stamp`,
+  `checksum`, `entries`, `oid_type`, the bitfields, `tree`, `tree_pool`,
+  `names`, `reuc`), in the C's order; the path map, deferred deletions,
+  readers count, unknown extensions and version are Rust-private, after
+  them. The index itself is allocated by Rust's allocator (nothing in C
+  frees it); entries, REUC and NAME records, snapshots' vectors and the
+  tree cache keep `git__allocator` and the pool, as C.
+- **`index_map.c`'s functions** are not exported: nothing outside
+  `index.c` referenced them. The map keeps the C's khash, hash and
+  equality (keys are entry pointers, lookup keys stack entries).
+- **`git_index_read_index`** walks copies of both indexes' entry lists,
+  sorted case-sensitively, instead of two C index iterators (which yielded
+  exactly those, conflicts included); it takes the references and readers
+  the iterators' snapshots took.
+- **`index_insert`** looks the existing entry up again after the object
+  check (`git_object__is_valid`, which can run code that changes the
+  index); the C reused its pointers. The mode is still taken from the
+  first lookup, as C.
+- **Path checks** pass `git_path_str_is_valid` a sized `git_str` (the
+  path's length) instead of `SIZE_MAX`; for paths without a NUL (all the C
+  could pass) the result is the same. The safe API rejects a path with a
+  NUL.
+- **Rust-allocator copies that abort on out-of-memory**: the exports copy
+  path arguments that may alias the index's own memory (`to_vec`);
+  `git_index__fill` copies the source vector's pointers;
+  `git_index_read_index` copies the two entry lists (it sorts them in
+  place, with the C's timsort); `canonicalize_directory_path` copies the
+  path (C's `git__strdup`); the index and conflict iterators are `Box`es
+  (C's `git__calloc` failed cleanly). The parser's version-4 paths, the
+  path copies of `add_bypath` and the deferred-deletion and extension
+  lists are fallible. `cl_alloc_limit` limits none of the Rust
+  allocations.
+- **Miri stand-ins.** Under Miri only (`cfg(miri)`, which cannot call C),
+  path validation is `fs_path`'s port of the filesystem checks plus a
+  `.git` component check, and pathspecs are `wildmatch`'s port: the
+  index's own logic, callbacks and re-entrancy run under Miri. The real
+  builds call `path.c` and `pathspec.c`.
+- **`git_index_iterator`** stays mirrored (the tests read its `snap`);
+  `git_index_conflict_iterator` is opaque under `GIT_RUST`.
+- **The safe API** (`Index`, `IndexEntry`, `IndexTime`, `Stage`,
+  `IndexEntries`, `IndexConflicts`, …) returns owned copies of entries;
+  `Index` is a reference (`Clone` takes another), neither `Send` nor
+  `Sync`. A panic in a callback closure stops the operation (`add_all`,
+  `update_all` and `remove_all` alike) with an error of class
+  `GIT_ERROR_INTERNAL`. `read_tree`/`write_tree`/`add_path`'s
+  submodule cases need the `Tree` and `Repository` types of l-commit and
+  l-repo, so the safe API has no `read_tree`/`write_tree` yet (the C ABI
+  has them).
+- **(review l-repo-r1) The safe repository API ties its children to the
+  repository**: `odb()`, `config()`, `config_snapshot()`, `refdb()`,
+  `index()` and `head()` return `Odb<'_>`, `Config<'_>`, `Refdb<'_>`,
+  `Index<'_>`, `Reference<'_>`, which are neither `Send` nor `Sync` (in C an
+  odb uses its owner's object cache, config backends keep the repository,
+  a reference's refdb keeps it). C lets some of them outlive the
+  repository; the safe API does not, until the owning modules' ports can
+  say which may. `wrap_odb`, `set_odb`, `set_config` and `set_index`
+  (re-parenting) are not in the safe API for the same reason (open
+  integration item). Every `Repository` holds a `Libgit2` guard; the free
+  `libgit2::init`/`shutdown` are crate-internal.
+- **(review l-repo-r1) The Rust readers of the user agents copy them under
+  a lock** the setters take (`settings::user_agent()` returns a `Vec<u8>`);
+  C's readers (`git_settings__user_agent`, the transports) keep C's rule.
+## l-commit (commit, commit_list, tree)
+
+- **Copies of other work packages' parsers.** The commit parser carries its
+  own ports of `git_signature__parse`, `git_signature__writebuf`,
+  `git_object__parse_oid_header` and `git_object__write_oid_header`
+  (l-obj's), with the same messages and results (differential test
+  `rust/difftest/commit_tree_diff.c`), so that it is pure Rust (Miri) and
+  calls no C per header line. The integration step replaces them with
+  l-obj's Rust. The commit's signatures are freed as `git_signature_free`
+  does.
+- **Quick parse without a `git_commit`.** `git_commit_list_parse` parses
+  the parents and the commit time straight into the walk's node, without
+  the temporary `git_commit`, its parent array and its committer that the
+  C allocated (and freed). Under `cl_alloc_limit` it therefore makes fewer
+  allocations. More than two parents are collected in a Rust `Vec`
+  (`try_reserve`).
+- **`git_commit_create_v`** is a C shim (`src/util/rust_shims.c`). It
+  asserts `tree` and `git_tree_owner(tree) == repo` before reading any
+  argument, then reads the parents as the C's callback did (up to
+  `parent_count`, stopping at the first NULL) into an array: on the stack
+  for up to 8, grown on the heap beyond, which can fail with the
+  out-of-memory error where the C (which read each parent as it validated
+  it) could not. It then calls the Rust `git_commit__create_v`.
+- **`git_treebuilder` is opaque.** Its body moved from `tree.h` into
+  `tree.c` (for the C build); with the Rust it is a Rust struct (allocated
+  with `git__allocator`). Its map keeps the C's hashing and iteration order
+  (`git_treebuilder_filter` visits entries in the same order). Writing a
+  builder sorts its entries with Rust's sort in a Rust `Vec` (`try_reserve`)
+  rather than `git_vector_sort`; names are unique, so the order is the
+  same.
+- **`git_tree_create_updated`** detects duplicate paths after sorting them
+  (the C did on each sorted insertion); the result and the error are the
+  same.
+- **The safe API's summary and body** (`Commit::summary`, `Commit::body`)
+  are computed into the Rust value, never into the shared commit object
+  (whose `summary` / `body` fields the C ABI keeps filling lazily, as in C).
+  `Commit::parent`, `nth_gen_ancestor`, `tree` and `Tree::walk` /
+  `get_path` of an object parsed from bytes (no repository) fail with
+  `invalid argument: 'repo'`, where the C dereferences NULL.
+- **Repository stand-in.** The safe API takes a
+  `pending_repository::Repository` (PENDING(l-repo)), a minimal owner of a
+  `git_repository *`, until l-repo's `Repository` replaces it.
+## revwalk, hashsig (WP l-revwalk)
+
+- **revwalk: `git_revwalk` is a shared prefix.** `revwalk.h` keeps `repo`,
+  `odb`, `commits`, `commit_pool` and `user_input` (what `commit_list.c`
+  and `pack-objects.c` read); the iterators, sorting, flags, hide callback
+  and pathspec are Rust-native state after them. The walk's internal lists
+  (`iterator_rand`, `iterator_topo`, `iterator_reverse`, the time queue and
+  the topological sort's queue) are `VecDeque`/`Vec`s, not
+  `git_commit_list` cells or `git_pqueue`s; the order they produce is the
+  C's (same insert positions, same heap). `user_input` stays a
+  `git_commit_list` of `git__allocator` cells.
+- **revwalk: `git_commit_list_parse` is not called on a parsed node** (the
+  C checks `parsed` on entry and returns 0; the Rust checks before the
+  call).
+- **revwalk: `git_revwalk_reset`** keeps the capacity of the walk's queues
+  (C freed its lists and kept the pqueue's array).
+- **hashsig and revwalk safe APIs** (`HashSig`, `Revwalk`) reject a string
+  with an interior NUL (class `INVALID`) instead of truncating it.
+## References (WP l-refs: refs, refdb, refdb_fs, reflog)
+
+- **refdb_fs: the backend and its iterators are Rust tables** (ffibox
+  `CTable`, Rust's allocator), not `git__calloc`'d `refdb_fs_backend` /
+  `refdb_fs_iter` structs; C reaches them only through the
+  `git_refdb_backend` / `git_reference_iterator` slots, which keep their
+  signatures. The `lock` slot's payload is a boxed `git_filebuf` in Rust's
+  allocator (opaque to `transaction.c`, which only hands it back to
+  `unlock`). A slot called while the backend's release is deferred (C
+  freed it while another thread was inside a slot) returns -1, "the
+  reference database is being freed"; in C that call used freed memory.
+- **refdb_fs: the packed references an iterator walks** are a snapshot
+  copied into the iterator (C copied the sorted cache with
+  `git_sortedcache_copy`); same order, same contents.
+- **refdb_fs: the `packed-refs` mapping** is read as a `&[u8]` while a
+  lookup holds it: `packed-refs` is replaced by a rename (git and libgit2
+  write it through a lock file), never rewritten in place, so the mapped
+  pages do not change; another process truncating the file in place is a
+  `SIGBUS`, as in C.
+- **refdb: `db->backend` is an `AtomicPtr`**; `git_refdb_set_backend`
+  swaps it atomically (C wrote the pointer plainly).
+- **refs: failed lookups write NULL to `*out`.** C sets it to NULL in most
+  failure paths (the refdb lookup does), and leaves it unchanged after a
+  name-validation or repository error; the Rust writes NULL in every case.
+  The same holds for the out-parameters of `git_reference_set_target`,
+  `_symbolic_set_target`, `_resolve` and `_dwim`.
+- **refs: `git_reference__update_for_commit`** prints a NULL commit summary
+  as `(null)`, which is what glibc's `printf("%s", NULL)` printed for C.
+- **Infallible Rust allocations on rare paths.** The names and paths that
+  the refs code copies into Rust `Vec`s / `CString`s (the normalized name
+  of a lookup, the repository's directories, the loose names of an
+  iteration before they go to the iterator's pool, the namespace path)
+  abort on allocation failure where C, using `git__allocator`, failed with
+  -1. The objects C sees (references, reflogs, entries, names handed out)
+  still come from `git__allocator` or a `git_pool`, so `cl_alloc_limit`
+  still makes them fail.
+- **Safe API placeholders.** `refs_api::Repository` (open/init/free) stands
+  in for WP l-repo's `Repository`, and `refs_api::Committer` for WP l-obj's
+  `Signature`, until those land (PENDING). Rust backends
+  (`RefdbBackend`) do not offer `lock`/`unlock` (transactions fail with
+  "backend does not support locking", as for a C backend without them); a
+  panic in one is an error of class `GIT_ERROR_INTERNAL`.
+- **refs_api: `set_refdb_backend` takes `&mut Repository`.** The old
+  backend is freed at once, as `git_refdb_set_backend` frees it (C keeps no
+  count on a backend: only the refdb is counted), so the replacement must
+  exclude every other user. The integrated `Repository` (WP l-repo) must
+  keep that: whatever replaces a refdb or its backend takes `&mut self`.
+  `RefdbPtr` loads `db->backend` once per call and passes that backend to
+  the slot it read (C loads it twice); concurrent replacement through the
+  C ABI stays the caller's error, as in C.
 
 ## l-obj (object, object_api, blob, tag, signature, grafts)
 

@@ -119,3 +119,25 @@ units and the generic `git_str_set`. They now read C strings in place
 one pass. Remaining gaps: `resolve_relative` (~25-35 ns per call, of which
 ~5 are `git_str_sets`), and calls that return at once pay ~5-10 ns of export
 prologue.
+
+# WP l-odb: delta
+
+`delta_bench.c` (`RUST_BUILD=/work/builds/l-odb-delta ../../difftest/link.sh
+delta_bench.c out && BENCH=delta_bench BENCH_CPU=13 ./run.sh 9 5`): 232
+files of `/work/bench-data/git-wd/*.c` (5.5 MB), each paired with an edited
+copy. C reference `/work/build-c` vs `/work/builds/l-odb-delta`; two runs of
+5 alternating rounds of 9 iterations, pinned, load average 230-255 (noisy).
+ms per iteration (median / min over rounds' medians).
+
+| workload | what | run 1 C med | run 1 Rust med | run 2 C med | run 2 Rust med | Rust/C med (1, 2) | Rust/C min (1, 2) |
+|---|---|---:|---:|---:|---:|---:|---:|
+| delta_apply | 20 x 232 `git_delta_apply` | 14.01 | 14.07 | 12.89 | 11.85 | 1.00, 0.92 | 1.20, 0.95 |
+| delta_apply_small_x200k | 200k applies of a 3-op delta to a 512-byte base | 23.98 | 23.67 | 21.33 | 21.22 | 0.99, 0.99 | 0.80, 1.00 |
+| delta_index_init | 5 x 232 `git_delta_index_init` + free | 63.48 | 69.06 | 62.22 | 56.68 | 1.09, 0.91 | 0.96, 0.98 |
+| delta_create | 2 x 232 `git_delta` (index + create) | 54.78 | 44.44 | 52.98 | 48.42 | 0.81, 0.91 | 0.92, 0.87 |
+
+Parity within the noise for apply and index; create is faster (the match
+extension compares 8 bytes at a time). Earlier versions were 1.25x (index:
+a masked table index on the fingerprint's dependency chain, register
+spills around `Vec::push`) and 1.15-1.3x (small applies: out-of-line
+header parsing, inline error formatting); see the commit log.

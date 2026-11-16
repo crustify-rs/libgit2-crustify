@@ -17,6 +17,10 @@
 GIT_HASHMAP_STR_STRUCT(git_mwindow_packmap, struct git_pack_file *);
 GIT_HASHMAP_STR_PROTOTYPES(git_mwindow_packmap, struct git_pack_file *);
 
+#ifdef GIT_RUST
+/* Opaque (implemented in rust/libgit2-rs/src/mwindow.rs). */
+typedef struct git_mwindow git_mwindow;
+#else
 typedef struct git_mwindow {
 	struct git_mwindow *next;
 	git_map window_map;
@@ -24,6 +28,7 @@ typedef struct git_mwindow {
 	size_t last_used;
 	size_t inuse_cnt;
 } git_mwindow;
+#endif
 
 typedef struct git_mwindow_file {
 	git_mutex lock; /* protects updates to fd */

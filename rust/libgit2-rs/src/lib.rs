@@ -9,30 +9,74 @@
 //! See `rust/PORTING.md` for the design and the conventions every module
 //! follows, and `src/util/README.md` for the foundation's API.
 
-pub mod sys;
+pub(crate) mod sys;
 pub mod util;
 
 pub mod blob;
 pub mod buf;
+pub mod cache;
+pub mod commit;
+pub mod commit_list;
+pub mod config;
+pub mod config_cache;
+pub mod config_file;
+pub mod config_list;
+pub mod config_mem;
+pub mod config_parse;
+pub mod config_snapshot;
+pub mod delta;
 pub mod fs;
 pub mod grafts;
 pub mod hashmap_oid;
+pub mod hashsig;
+pub mod index;
+pub mod libgit2;
+pub mod mwindow;
 pub mod object;
 pub mod object_api;
+pub mod odb;
+pub mod odb_loose;
+pub mod odb_mempack;
+pub mod odb_pack;
 pub mod oid;
 pub mod oidarray;
+pub mod pack;
 pub mod parse;
+pub mod refdb;
+pub mod refdb_fs;
+pub mod reflog;
+pub mod refs;
+pub mod refs_api;
+pub mod repository;
+pub mod revwalk;
+pub mod settings;
 pub mod signature;
 pub mod strarray;
 pub mod tag;
+pub mod tree_cache;
+
+pub use config::{Config, ConfigBackend, ConfigEntries, ConfigEntry, ConfigLevel};
+pub use index::{Index, IndexEntry, IndexTime, Stage};
+pub use libgit2::Libgit2;
+pub use odb::{
+    Backend, ExpandId, LooseOptions, Mempack, ObjectType, Odb, OdbBackend, OdbObject, OdbReader,
+    OdbWriter,
+};
+pub mod tree;
 
 pub use blob::Blob;
-pub use object::{Object, ObjectType};
+pub use commit::api::{Commit, CommitBuilder};
+pub use hashsig::{HashSig, HashSigOptions};
+pub use object::Object;
 pub use oid::{Oid, OidShortener, OidType};
 pub use oidarray::OidArray;
+pub use refs_api::{RefdbBackend, Reference, ReferenceType, References, Reflog, ReflogEntry};
+pub use repository::{Repository, RepositoryInitOptions, RepositoryOpenFlags, RepositoryState};
+pub use revwalk::api::{Revwalk, Sort};
 pub use signature::{Signature, Time};
 pub use strarray::StrArray;
 pub use tag::Tag;
+pub use tree::api::{Tree, TreeBuilder, TreeEntry, TreeEntryRef};
 pub use util::errors::{Error, ErrorClass, ErrorCode};
 pub use util::net::Url;
 pub use util::process::{Process, ProcessOptions, ProcessStatus};

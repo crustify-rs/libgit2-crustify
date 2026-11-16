@@ -7,7 +7,12 @@
 //!
 //! Inflating uses zlib-rs (`libz-rs-sys`), a Rust zlib with zlib's API,
 //! stream layout, return codes and messages, and faster than the system
-//! zlib (see `rust/bench/RESULTS.md`). Deflating uses the system zlib
+//! zlib in bulk (see `rust/bench/RESULTS.md`) — but slower to set up and
+//! to start (larger root tables). So an inflate stream picks its library
+//! at its first output request: the system zlib for a request under
+//! 4 KiB (header reads), zlib-rs otherwise; streams known to read whole
+//! objects ([`ZStream::new_bulk`], `zstream_buf`) start on zlib-rs. The
+//! outputs, codes and messages are the same either way. Deflating uses the system zlib
 //! ([`crate::sys::zlib`]): zlib-rs compresses to other bytes, and the
 //! deflated bytes are visible (binary patches, packs, loose objects). A
 //! stream is one or the other for its whole life, so the two never see
@@ -45,6 +50,13 @@ use crate::{git_assert, git_error_set};
 
 /// `ZSTREAM_BUFFER_SIZE`.
 pub const ZSTREAM_BUFFER_SIZE: usize = 1024 * 1024;
+/// Internal `kind` values of an inflating stream (C never
+/// reads the field back): not started yet (the library is picked by the
+/// first output request), and started on the system zlib.
+const KIND_INFLATE_PENDING: c_int = -1;
+const KIND_INFLATE_SYS: c_int = -2;
+/// First output requests below this go to the system zlib.
+const SMALL_OUTPUT: usize = 4096;
 /// `ZSTREAM_BUFFER_MIN_EXTRA`.
 pub const ZSTREAM_BUFFER_MIN_EXTRA: usize = 8;
 
@@ -133,7 +145,35 @@ impl<'a> ZstreamPtr<'a> {
     }
 
     fn inflates(self) -> bool {
-        self.kind() == ZstreamKind::Inflate as c_int
+        matches!(self.kind(), 0 | KIND_INFLATE_PENDING | KIND_INFLATE_SYS)
+    }
+
+    /// Start the inflater the first output request picks: the system
+    /// zlib for a small one (cheaper to set up), zlib-rs otherwise (faster
+    /// in bulk). Both give the same output, codes and messages.
+    fn start_inflate(self, out_len: usize) -> c_int {
+        // Miri cannot run the system zlib (foreign code): zlib-rs there.
+        let sys = !cfg!(miri) && out_len < SMALL_OUTPUT;
+        let r = if sys {
+            // SAFETY: a stream without state, reached only through this
+            // pointer and not moved while initialized (the type's rule).
+            unsafe { zlib::inflate_init(self.z()) }
+        } else {
+            let version = libz_rs_sys::zlibVersion();
+            // SAFETY: as above; the size is that of the stream.
+            unsafe {
+                libz_rs_sys::inflateInit_(
+                    self.z(),
+                    version,
+                    core::mem::size_of::<z_stream>() as c_int,
+                )
+            }
+        };
+        if r == Z_OK {
+            // SAFETY: as in `z`.
+            unsafe { (*self.0).kind = if sys { KIND_INFLATE_SYS } else { 0 } };
+        }
+        r
     }
 
     fn zerr(self) -> c_int {
@@ -178,8 +218,16 @@ impl<'a> ZstreamPtr<'a> {
     /// `git_zstream_init`. `kind` is C's `git_zstream_t` value.
     pub(crate) fn init(self, kind: c_int) -> Result<()> {
         // SAFETY: as in `z`.
-        unsafe { (*self.0).kind = kind };
-        let r = if self.inflates() {
+        unsafe {
+            (*self.0).kind = if kind == 0 {
+                KIND_INFLATE_PENDING
+            } else {
+                kind
+            }
+        };
+        let r = if self.kind() == KIND_INFLATE_PENDING {
+            Z_OK
+        } else if self.inflates() {
             // SAFETY: `zlibVersion` returns zlib-rs's static version; the
             // size is that of the stream; the allocator fields are NULL
             // (zlib-rs's default) or what C put there, as zlib's contract.
@@ -200,10 +248,27 @@ impl<'a> ZstreamPtr<'a> {
         self.seterr()
     }
 
+    /// `init`, with an inflater that is zlib-rs from the
+    /// start (streams that read the whole object, whatever their first
+    /// output size).
+    pub(crate) fn init_bulk(self, kind: c_int) -> Result<()> {
+        self.init(kind)?;
+        if self.kind() == KIND_INFLATE_PENDING {
+            let r = self.start_inflate(usize::MAX);
+            self.set_zerr(r);
+            self.seterr()?;
+        }
+        Ok(())
+    }
+
     /// `git_zstream_free`. Ending a stream that has no state (never
     /// initialized, or freed) does nothing.
     pub(crate) fn free(self) {
-        if self.inflates() {
+        if self.kind() == KIND_INFLATE_PENDING {
+        } else if self.kind() == KIND_INFLATE_SYS {
+            // SAFETY: the system zlib's inflate state of this stream.
+            unsafe { zlib::inflate_end(self.z()) };
+        } else if self.inflates() {
             // SAFETY: the state is NULL or this stream's inflate state:
             // only `init` sets it, with the library `kind` picks.
             unsafe { libz_rs_sys::inflateEnd(self.z()) };
@@ -215,7 +280,11 @@ impl<'a> ZstreamPtr<'a> {
 
     /// `git_zstream_reset`.
     pub(crate) fn reset(self) {
-        if self.inflates() {
+        if self.kind() == KIND_INFLATE_PENDING {
+        } else if self.kind() == KIND_INFLATE_SYS {
+            // SAFETY: as in `free`.
+            unsafe { zlib::inflate_reset(self.z()) };
+        } else if self.inflates() {
             // SAFETY: as in `free`.
             unsafe { libz_rs_sys::inflateReset(self.z()) };
         } else {
@@ -299,7 +368,17 @@ impl<'a> ZstreamPtr<'a> {
         };
         // SAFETY: as above.
         let flush = unsafe { (*p).flush };
-        let r = if self.inflates() {
+        if self.kind() == KIND_INFLATE_PENDING {
+            let r = self.start_inflate(out_queued);
+            if r != Z_OK {
+                self.set_zerr(r);
+                return self.seterr();
+            }
+        }
+        let r = if self.kind() == KIND_INFLATE_SYS {
+            // SAFETY: as below, for the system zlib's inflate state.
+            unsafe { zlib::inflate(z, flush) }
+        } else if self.inflates() {
             // SAFETY: the stream's state is the inflate state `init` made
             // (or NULL, which zlib-rs rejects); `next_in` / `next_out` are
             // readable / writable for `avail_in` / `avail_out` bytes, which
@@ -388,7 +467,7 @@ fn zstream_buf(out: &mut GitStr, input: &[u8], kind: ZstreamKind) -> Result<()> 
     let zs = unsafe { ZstreamPtr::new(&raw mut stream) };
     // C returns without freeing when the init fails (zlib then holds no
     // state).
-    zs.init(kind as c_int)?;
+    zs.init_bulk(kind as c_int)?;
     let guard = Free(zs);
     zs.set_input(input.as_ptr().cast::<c_char>(), input.len());
     while !zs.done() {
@@ -450,6 +529,18 @@ impl core::fmt::Debug for ZStream<'_> {
 }
 
 impl<'a> ZStream<'a> {
+    /// A stream that inflates with zlib-rs from the start (for streams
+    /// that read whole objects), or deflates.
+    pub fn new_bulk(kind: ZstreamKind) -> Result<ZStream<'a>> {
+        let raw = Box::into_raw(Box::new(GitZstream::new()));
+        let zs = ZStream {
+            raw,
+            _owns: PhantomData,
+            _input: PhantomData,
+        };
+        zs.z().init_bulk(kind as c_int).map(|()| zs)
+    }
+
     /// A stream that inflates or deflates (`git_zstream_init`).
     pub fn new(kind: ZstreamKind) -> Result<ZStream<'a>> {
         let raw = Box::into_raw(Box::new(GitZstream::new()));
