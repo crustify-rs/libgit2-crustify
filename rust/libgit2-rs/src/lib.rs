@@ -18,6 +18,10 @@ pub mod hashmap_oid;
 pub mod oid;
 pub mod oidarray;
 pub mod parse;
+pub mod refdb;
+pub mod refdb_fs;
+pub mod reflog;
+pub mod refs;
 pub mod strarray;
 
 pub use oid::{Oid, OidShortener, OidType};

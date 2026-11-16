@@ -41,3 +41,7 @@ src/util/varint.c
 src/libgit2/oid.c
 src/libgit2/oidarray.c
 src/libgit2/parse.c
+src/libgit2/refs.c
+src/libgit2/refdb.c
+src/libgit2/refdb_fs.c
+src/libgit2/reflog.c
