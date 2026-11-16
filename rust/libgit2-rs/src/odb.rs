@@ -856,9 +856,9 @@ fn backend_sort_cmp(a: BackendInternal, b: BackendInternal) -> c_int {
 #[repr(C)]
 pub struct GitOdb {
     /// The count and owner (a repository).
-    pub rc: GitRefcount,
+    pub(crate) rc: GitRefcount,
     /// The options, normalized (immutable after creation).
-    pub options: GitOdbOptions,
+    pub(crate) options: GitOdbOptions,
     locked: Mutex<Locked>,
     own_cache: GitCache,
     do_fsync: AtomicBool,
@@ -879,7 +879,7 @@ const REPOSITORY_OBJECTS_OFFSET: usize = 32;
 
 impl GitOdb {
     /// `git_odb_new_ext`: an odb with no backends and one reference.
-    pub fn new(opts: Option<&GitOdbOptions>) -> Result<NonNull<GitOdb>> {
+    pub(crate) fn new(opts: Option<&GitOdbOptions>) -> Result<NonNull<GitOdb>> {
         check_version(
             opts.map(|o| o.version),
             GIT_ODB_OPTIONS_VERSION,
@@ -939,16 +939,16 @@ impl GitOdb {
     }
 
     /// The oid type.
-    pub fn oid_type(&self) -> git_oid_t {
+    pub(crate) fn oid_type(&self) -> git_oid_t {
         self.options.oid_type
     }
 
-    fn hexsize(&self) -> usize {
+    pub(crate) fn hexsize(&self) -> usize {
         oid_hexsize(self.options.oid_type)
     }
 
     /// `odb_cache`: the owning repository's cache, or the odb's own.
-    pub fn cache(&self) -> &GitCache {
+    pub(crate) fn cache(&self) -> &GitCache {
         let owner = self.rc.owner();
         if owner.is_null() {
             &self.own_cache
@@ -963,12 +963,17 @@ impl GitOdb {
     }
 
     /// Whether objects are fsync'd (`do_fsync`).
-    pub fn do_fsync(&self) -> bool {
+    pub(crate) fn do_fsync(&self) -> bool {
         self.do_fsync.load(Ordering::Relaxed)
     }
 
     /// `add_backend_internal`.
-    fn add_backend_internal(
+    ///
+    /// # Safety
+    ///
+    /// `backend` is a live backend table (as `git_odb_add_backend`
+    /// requires), whose ownership passes to the odb on success.
+    unsafe fn add_backend_internal(
         &self,
         backend: NonNull<GitOdbBackend>,
         priority: c_int,
@@ -1003,22 +1008,27 @@ impl GitOdb {
     }
 
     /// `git_odb_add_backend` / `git_odb_add_alternate`.
-    pub fn add_backend(
+    ///
+    /// # Safety
+    ///
+    /// As [`add_backend_internal`](Self::add_backend_internal).
+    pub(crate) unsafe fn add_backend(
         &self,
         backend: NonNull<GitOdbBackend>,
         priority: c_int,
         is_alternate: bool,
     ) -> Result<()> {
-        self.add_backend_internal(backend, priority, is_alternate, 0)
+        // SAFETY: the caller's contract.
+        unsafe { self.add_backend_internal(backend, priority, is_alternate, 0) }
     }
 
     /// `git_odb_num_backends`.
-    pub fn num_backends(&self) -> usize {
+    pub(crate) fn num_backends(&self) -> usize {
         self.lock().backends.len()
     }
 
     /// `git_odb_get_backend`.
-    pub fn get_backend(&self, pos: usize) -> Result<NonNull<GitOdbBackend>> {
+    pub(crate) fn get_backend(&self, pos: usize) -> Result<NonNull<GitOdbBackend>> {
         match self.lock().backends.get(pos) {
             Some(b) => Ok(b.backend),
             None => {
@@ -1029,7 +1039,7 @@ impl GitOdb {
     }
 
     /// `git_odb__add_default_backends`.
-    pub fn add_default_backends(
+    pub(crate) fn add_default_backends(
         &self,
         objects_dir: &CStr,
         as_alternates: bool,
@@ -1066,14 +1076,16 @@ impl GitOdb {
         // C returns -1 for each failure below, whatever the callee's code.
         let loose = crate::odb_loose::new_backend(objects_dir.to_bytes(), Some(&loose_opts))
             .map_err(|_| ErrorCode::GENERIC)?;
-        if self
-            .add_backend_internal(
+        // SAFETY: a backend table this function just made.
+        if unsafe {
+            self.add_backend_internal(
                 loose,
                 git_odb__loose_priority.load(Ordering::Relaxed),
                 as_alternates,
                 inode,
             )
-            .is_err()
+        }
+        .is_err()
         {
             // C leaked the backend here (rust/DEFECTS.md).
             // SAFETY: ours, not added: freed once.
@@ -1083,14 +1095,16 @@ impl GitOdb {
 
         let packed = crate::sys::pending::odb_backend_pack(objects_dir, &pack_opts)
             .map_err(|_| ErrorCode::GENERIC)?;
-        if self
-            .add_backend_internal(
+        // SAFETY: a backend table the pack backend just made.
+        if unsafe {
+            self.add_backend_internal(
                 packed,
                 git_odb__packed_priority.load(Ordering::Relaxed),
                 as_alternates,
                 inode,
             )
-            .is_err()
+        }
+        .is_err()
         {
             // SAFETY: as above.
             unsafe { free_backend(packed) };
@@ -1152,13 +1166,13 @@ impl GitOdb {
 
     /// `git_odb_set_commit_graph`: take `cgraph` (or none), freeing the
     /// previous one.
-    pub fn set_commit_graph(&self, cgraph: Option<CommitGraph>) {
+    pub(crate) fn set_commit_graph(&self, cgraph: Option<CommitGraph>) {
         let old = core::mem::replace(&mut self.lock().cgraph, cgraph);
         drop(old);
     }
 
     /// `git_odb__set_caps`.
-    pub fn set_caps(&self, caps: c_int) -> Result<()> {
+    pub(crate) fn set_caps(&self, caps: c_int) -> Result<()> {
         if caps == GIT_ODB_CAP_FROM_OWNER {
             let repo = self.rc.owner();
             if repo.is_null() {
@@ -1181,7 +1195,7 @@ impl GitOdb {
     }
 
     /// `git_odb__get_commit_graph_file`.
-    pub fn get_commit_graph_file(&self) -> Result<*mut c_void> {
+    pub(crate) fn get_commit_graph_file(&self) -> Result<*mut c_void> {
         let mut l = self.lock();
         match l.cgraph.as_mut() {
             None => Err(ErrorCode::NOT_FOUND),
@@ -1241,7 +1255,7 @@ impl GitOdb {
     }
 
     /// `git_odb__freshen`.
-    pub fn freshen(&self, id: &Oid) -> bool {
+    pub(crate) fn freshen(&self, id: &Oid) -> bool {
         if self.freshen_1(id, false) {
             return true;
         }
@@ -1252,7 +1266,7 @@ impl GitOdb {
     }
 
     /// `git_odb_exists_ext`.
-    pub fn exists_ext(&self, id: &Oid, flags: c_uint) -> bool {
+    pub(crate) fn exists_ext(&self, id: &Oid, flags: c_uint) -> bool {
         if id.is_zero() {
             return false;
         }
@@ -1307,7 +1321,7 @@ impl GitOdb {
     }
 
     /// `git_odb_exists_prefix`.
-    pub fn exists_prefix(&self, short_id: &Oid, len: usize) -> Result<Oid> {
+    pub(crate) fn exists_prefix(&self, short_id: &Oid, len: usize) -> Result<Oid> {
         if len < GIT_OID_MINPREFIXLEN {
             return Err(error_ambiguous(b"prefix length too short"));
         }
@@ -1333,7 +1347,7 @@ impl GitOdb {
     }
 
     /// `git_odb_expand_ids`.
-    pub fn expand_ids(&self, ids: &mut [GitOdbExpandId]) -> Result<()> {
+    pub(crate) fn expand_ids(&self, ids: &mut [GitOdbExpandId]) -> Result<()> {
         let hex_size = self.hexsize();
         for query in ids.iter_mut() {
             let mut error: Result<()> = Err(ErrorCode::AMBIGUOUS);
@@ -1422,7 +1436,7 @@ impl GitOdb {
 
     /// `git_odb__read_header_or_object`: the size and type, and the object
     /// when it had to be read (or was cached).
-    pub fn read_header_or_object(
+    pub(crate) fn read_header_or_object(
         &self,
         id: &Oid,
     ) -> Result<(usize, git_object_t, Option<NonNull<GitOdbObject>>)> {
@@ -1459,7 +1473,7 @@ impl GitOdb {
     }
 
     /// `git_odb_read_header`.
-    pub fn read_header(&self, id: &Oid) -> Result<(usize, git_object_t)> {
+    pub(crate) fn read_header(&self, id: &Oid) -> Result<(usize, git_object_t)> {
         let (len, t, obj) = self.read_header_or_object(id)?;
         if let Some(obj) = obj {
             // SAFETY: our reference.
@@ -1547,7 +1561,7 @@ impl GitOdb {
     }
 
     /// `git_odb_read`: a new reference to the object.
-    pub fn read(&self, id: &Oid) -> Result<NonNull<GitOdbObject>> {
+    pub(crate) fn read(&self, id: &Oid) -> Result<NonNull<GitOdbObject>> {
         if id.is_zero() {
             return Err(error_null_oid(ErrorCode::NOT_FOUND, "cannot read object"));
         }
@@ -1677,7 +1691,7 @@ impl GitOdb {
     }
 
     /// `git_odb_read_prefix`.
-    pub fn read_prefix(&self, short_id: &Oid, len: usize) -> Result<NonNull<GitOdbObject>> {
+    pub(crate) fn read_prefix(&self, short_id: &Oid, len: usize) -> Result<NonNull<GitOdbObject>> {
         let hex_size = self.hexsize();
         if len < GIT_OID_MINPREFIXLEN {
             return Err(error_ambiguous(b"prefix length too short"));
@@ -1715,7 +1729,7 @@ impl GitOdb {
     /// # Safety
     ///
     /// `cb` may be called with `payload` (the caller's contract with it).
-    pub unsafe fn foreach_raw(&self, cb: ForeachCb, payload: *mut c_void) -> c_int {
+    pub(crate) unsafe fn foreach_raw(&self, cb: ForeachCb, payload: *mut c_void) -> c_int {
         let backends = match self.backends_snapshot() {
             Ok(b) => b,
             Err(e) => return e.raw(),
@@ -1737,16 +1751,25 @@ impl GitOdb {
         0
     }
 
-    /// `git_odb_write`.
-    pub fn write(&self, data: Option<&[u8]>, len: usize, type_: git_object_t) -> Result<Oid> {
-        let oid = hash_object(data, len, type_, self.options.oid_type)?;
+    /// `git_odb_write`: the id is written to `out` once computed (C wrote
+    /// `*oid` before trying the backends, so it is set on their failures
+    /// too).
+    pub(crate) fn write(
+        &self,
+        data: &[u8],
+        type_: git_object_t,
+        out: &mut Option<Oid>,
+    ) -> Result<()> {
+        let len = data.len();
+        let oid = hash_object(Some(data), len, type_, self.options.oid_type)?;
+        *out = Some(oid);
         if oid.is_zero() {
             return Err(error_null_oid(ErrorCode::INVALID, "cannot write object"));
         }
         if self.freshen(&oid) {
-            return Ok(oid);
+            return Ok(());
         }
-        let data_ptr = data.map_or(core::ptr::null(), |d| d.as_ptr().cast::<c_void>());
+        let data_ptr = data.as_ptr().cast::<c_void>();
         let mut error = ErrorCode::GENERIC.raw();
         {
             let l = self.lock();
@@ -1761,13 +1784,13 @@ impl GitOdb {
                 // SAFETY: as in `exists_1`.
                 if let Some(write) = unsafe { (*b).write } {
                     // SAFETY: as in `exists_1`; `data` is readable for
-                    // `len` bytes (the caller's contract).
+                    // `len` bytes (a slice).
                     error = unsafe { write(b, &raw const oid, data_ptr, len, type_) };
                 }
             }
         }
         if error == 0 || error == ErrorCode::PASSTHROUGH.raw() {
-            return Ok(oid);
+            return Ok(());
         }
         let stream = self.open_wstream(len as git_object_size_t, type_)?;
         let stream = stream.as_ptr();
@@ -1783,11 +1806,11 @@ impl GitOdb {
         }
         // SAFETY: ours, freed once.
         unsafe { stream_free(stream) };
-        ErrorCode::check(r).map(|_| oid)
+        ErrorCode::check(r).map(drop)
     }
 
     /// `git_odb_open_wstream`.
-    pub fn open_wstream(
+    pub(crate) fn open_wstream(
         &self,
         size: git_object_size_t,
         type_: git_object_t,
@@ -1840,10 +1863,15 @@ impl GitOdb {
                 "backend returned no stream"
             ));
         };
-        let ctx = GIT_ALLOC
-            .try_box(HashCtx::zeroed())
-            .map_err(|_| errors::oom())?;
-        let (ctx, _) = Box::into_raw_with_allocator(ctx);
+        // `git__malloc`: `init_raw` writes the context in place, so it is
+        // not zeroed first.
+        let ctx = alloc::malloc(size_of::<HashCtx>()).cast::<HashCtx>();
+        if ctx.is_null() {
+            // C leaked the stream here (rust/DEFECTS.md).
+            // SAFETY: the backend's stream, not handed out.
+            unsafe { stream_free(stream.as_ptr()) };
+            return Err(ErrorCode::GENERIC);
+        }
         let r = (|| {
             // SAFETY: a fresh context of ours, written in place.
             unsafe { HashCtx::init_raw(ctx, oid_algorithm(self.options.oid_type)) }?;
@@ -1857,6 +1885,10 @@ impl GitOdb {
         if let Err(e) = r {
             // SAFETY: ours, not handed out.
             unsafe { alloc::free(ctx.cast()) };
+            // C leaked the stream here (rust/DEFECTS.md).
+            // SAFETY: the backend's stream, not handed out; its context
+            // is still NULL.
+            unsafe { stream_free(stream.as_ptr()) };
             return Err(e);
         }
         let s = stream.as_ptr();
@@ -1871,7 +1903,12 @@ impl GitOdb {
     }
 
     /// `git_odb_open_rstream`: the stream, the object's size and type.
-    pub fn open_rstream(&self, oid: &Oid) -> Result<(NonNull<GitOdbStream>, usize, git_object_t)> {
+    /// `Ok(None)`: a backend passed through without making a stream (C
+    /// returns 0 and writes nothing then).
+    pub(crate) fn open_rstream(
+        &self,
+        oid: &Oid,
+    ) -> Result<Option<(NonNull<GitOdbStream>, usize, git_object_t)>> {
         let mut reads = 0usize;
         let mut error = ErrorCode::GENERIC.raw();
         let mut stream: *mut GitOdbStream = core::ptr::null_mut();
@@ -1901,8 +1938,7 @@ impl GitOdb {
             return Err(error_unsupported_in_backend("read object streamed"));
         }
         ErrorCode::check(error)?;
-        let stream = NonNull::new(stream).ok_or(ErrorCode::GENERIC)?;
-        Ok((stream, len, t))
+        Ok(NonNull::new(stream).map(|s| (s, len, t)))
     }
 
     /// `git_odb_write_pack`.
@@ -1910,7 +1946,7 @@ impl GitOdb {
     /// # Safety
     ///
     /// `progress_cb` may be called with `progress_payload`.
-    pub unsafe fn write_pack(
+    pub(crate) unsafe fn write_pack(
         &self,
         progress_cb: IndexerProgressCb,
         progress_payload: *mut c_void,
@@ -1950,7 +1986,7 @@ impl GitOdb {
 
     /// `git_odb_write_multi_pack_index`. C walked the backends without the
     /// lock; this walks a copy taken under it.
-    pub fn write_multi_pack_index(&self) -> Result<()> {
+    pub(crate) fn write_multi_pack_index(&self) -> Result<()> {
         let mut writes = 0usize;
         let mut error = ErrorCode::GENERIC.raw();
         for bi in self.backends_snapshot()? {
@@ -1978,7 +2014,7 @@ impl GitOdb {
     }
 
     /// `git_odb_refresh`.
-    pub fn refresh(&self) -> Result<()> {
+    pub(crate) fn refresh(&self) -> Result<()> {
         let mut l = self.lock();
         for bi in &l.backends {
             let b = bi.backend.as_ptr();

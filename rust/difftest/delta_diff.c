@@ -136,6 +136,27 @@ int main(void)
 			free(src); free(trg);
 		}
 
+	/* periodic sources whose buckets overflow HASH_LIMIT (culling:
+	 * 64..127 entries per bucket keep one, more keep every n-th) */
+	{
+		static const int periods[] = { 17, 3, 5, 33, 257 };
+		static const int counts[] = { 1, 63, 64, 65, 100, 127, 128, 129, 200, 255, 256, 513, 1000 };
+		size_t pi, ci;
+		for (pi = 0; pi < ARRAY_SIZE(periods); pi++)
+			for (ci = 0; ci < ARRAY_SIZE(counts); ci++) {
+				size_t slen = (size_t)periods[pi] * 16 * counts[ci] + 1 + below(40), tlen, j;
+				unsigned char *src = malloc(slen + 1), *trg;
+				for (j = 0; j < slen; j++)
+					src[j] = (unsigned char)('a' + (j % periods[pi]) % 26 + (j % periods[pi]) / 26);
+				for (j = 0; j < slen / 997; j++)
+					src[below(slen)] = (unsigned char)rnd();
+				trg = mutate(src, slen, &tlen, 1 + (int)below(30));
+				delta_case(i++, src, slen, trg, tlen, 0);
+				delta_case(i++, src, slen, src, slen, 0);
+				free(src); free(trg);
+			}
+	}
+
 	/* many random small pairs */
 	for (k = 0; k < 3000; k++) {
 		size_t slen = below(3000), tlen;

@@ -135,7 +135,9 @@ impl Odb {
 
     fn add(&self, backend: Backend, priority: i32, alternate: bool) -> ApiResult<()> {
         let b = backend.0;
-        match self.inner().add_backend(b, priority, alternate) {
+        // SAFETY: `b` is the live table this handle owns, which passes to
+        // the odb on success (and is forgotten below).
+        match unsafe { self.inner().add_backend(b, priority, alternate) } {
             Ok(()) => {
                 // The odb owns it now.
                 core::mem::forget(backend);
@@ -280,9 +282,9 @@ impl Odb {
 
     /// Write an object (`git_odb_write`); its id.
     pub fn write(&self, data: &[u8], kind: ObjectType) -> ApiResult<Oid> {
-        self.inner()
-            .write(Some(data), data.len(), kind.raw())
-            .map_err(err)
+        let mut id = None;
+        self.inner().write(data, kind.raw(), &mut id).map_err(err)?;
+        id.ok_or_else(|| err(ErrorCode::GENERIC))
     }
 
     /// A stream to write an object of `size` bytes (`git_odb_open_wstream`).
@@ -297,7 +299,13 @@ impl Odb {
     /// A stream to read an object, its size and type
     /// (`git_odb_open_rstream`).
     pub fn reader(&self, id: &Oid) -> ApiResult<(OdbReader<'_>, usize, Option<ObjectType>)> {
-        let (stream, len, t) = self.inner().open_rstream(id).map_err(err)?;
+        let Some((stream, len, t)) = self.inner().open_rstream(id).map_err(err)? else {
+            return Err(Error::new(
+                ErrorCode::GENERIC,
+                ErrorClass::ODB,
+                "backend returned no stream",
+            ));
+        };
         Ok((
             OdbReader {
                 stream,
@@ -801,6 +809,9 @@ ffibox::impl_cvtable! {
             let Some(kind) = ObjectType::from_raw(type_) else {
                 return git_error_set!(ErrorClass::ODB, "invalid object type").raw();
             };
+            if data.is_null() && len != 0 {
+                return errors::assert_arg_failed("data").raw();
+            }
             // SAFETY: C's contract: a readable id.
             let oid = unsafe { &*oid };
             // SAFETY: C's contract: `len` readable bytes.
