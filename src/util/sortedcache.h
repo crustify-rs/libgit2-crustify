@@ -28,18 +28,8 @@
 
 typedef void (*git_sortedcache_free_item_fn)(void *payload, void *item);
 
-typedef struct {
-	git_refcount rc;
-	git_rwlock   lock;
-	size_t       item_path_offset;
-	git_sortedcache_free_item_fn free_item;
-	void         *free_item_payload;
-	git_pool     pool;
-	git_vector   items;
-	git_hashmap_str map;
-	git_futils_filestamp stamp;
-	char         path[GIT_FLEX_ARRAY];
-} git_sortedcache;
+/* Opaque (its body is in sortedcache.c, or Rust's util/sortedcache.rs). */
+typedef struct git_sortedcache git_sortedcache;
 
 /* Create a new sortedcache
  *

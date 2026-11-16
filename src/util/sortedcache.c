@@ -8,6 +8,19 @@
 #include "sortedcache.h"
 #include "hashmap.h"
 
+struct git_sortedcache {
+	git_refcount rc;
+	git_rwlock   lock;
+	size_t       item_path_offset;
+	git_sortedcache_free_item_fn free_item;
+	void         *free_item_payload;
+	git_pool     pool;
+	git_vector   items;
+	git_hashmap_str map;
+	git_futils_filestamp stamp;
+	char         path[GIT_FLEX_ARRAY];
+};
+
 int git_sortedcache_new(
 	git_sortedcache **out,
 	size_t item_path_offset,

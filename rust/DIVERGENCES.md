@@ -74,3 +74,37 @@ One entry per difference: component, what differs, why.
 - **Lock API (Rust side).** The guards of `GitMutex`/`GitRwLock` are `!Send`;
   `GitMutex::raw_lock` and `GitCond::wait` are `unsafe` (POSIX rules: no
   move or relock while held; one mutex per condition variable).
+## net, sortedcache, process (WP u4)
+
+- **net: inputs are read up to their first NUL** (as C reads its strings);
+  the safe API (`Url`) takes byte slices and does the same.
+- **net: `git_net_url_dup` and `git_net_url_joinpath` with `out == in`**
+  are handled as C behaves (dup copies each string onto itself, leaking
+  the originals; joinpath disposes `out` first, so it joins onto an empty
+  URL), without aliased Rust references.
+- **net: `git_net_url_fmt` / `fmt_path` append with the foundation's
+  fast path** when the piece fits the buffer: same bytes, same `asize`.
+- **sortedcache: the struct is opaque.** Its body moved from
+  `sortedcache.h` into `sortedcache.c` (built only with `USE_RUST=OFF`);
+  `refdb_fs.c` reads the path through `git_sortedcache_path` instead of
+  `refcache->path` (3 lines). The cache is an `Arc` in Rust's allocator
+  (`git_sortedcache_new` no longer fails gracefully on out-of-memory for
+  the cache itself; the items, the vector and the pages still come from
+  `git__allocator`, with the C's page sizes, and fail as C).
+- **sortedcache: the key map** is a Rust `HashMap` (Rust's allocator, a
+  `try_reserve` before each insert) instead of `git_hashmap_str`; lookups
+  are the same. The item vector (`git_vector`, C's growth and sort), the
+  arena (`git_pool`'s page sizes and zeroed 8-aligned items) are kept.
+- **sortedcache: `git_sortedcache_copy` sorts the copy** before returning
+  it; C left it unsorted until its first sorted read or unlock, which
+  sorts it the same way. This keeps reads under a read lock free of
+  writes.
+- **sortedcache: `git_sortedcache_entrycount` without the lock** reads an
+  atomic copy of the count (C read the vector's length racily).
+- **process: `git_process` is a Rust object** (`Box`, Rust's allocator);
+  its arguments and environment are `CString`s (Rust's allocator, with
+  `try_reserve` where C checked allocations; `CString`'s own allocation
+  is infallible). The `execve` pointer arrays are built in the parent
+  before `fork`.
+- **process: `git_process_result_msg`** formats with Rust's formatting
+  (same text).

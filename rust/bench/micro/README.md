@@ -47,3 +47,15 @@ available; `BENCH_CPU=N` picks another CPU, `BENCH_CPU=` turns pinning off.
 Either binary can be run directly: `out/util_bench_c [ITERS] [FILTER]`.
 
 Results: see `RESULTS.md`.
+
+Results: see `RESULTS.md`.
+
+## Other benchmark programs
+
+`build.sh` and `run.sh` take `BENCH=<name>` (default `util_bench`) to build
+and run `<name>.c` the same way:
+
+- `u4_bench.c` (WP u4): URL parsing / formatting / patterns (`net.c`), the
+  sorted cache on `refs.git`'s 54k-line `packed-refs` (`sortedcache.c`),
+  and process spawning and pipes (`unix/process.c`).
+  `BENCH=u4_bench ./build.sh && BENCH=u4_bench ./run.sh 7 5`.
