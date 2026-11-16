@@ -128,9 +128,11 @@ pub mod l_commit {
     /// is at offset `off`, and nothing writes that field concurrently.
     #[inline]
     pub unsafe fn field<T: Copy, B>(base: *const B, off: usize) -> T {
-        // SAFETY: the caller's contract: an initialized, aligned `T` at
-        // `base + off`, inside the same allocation.
-        unsafe { base.cast::<u8>().add(off).cast::<T>().read() }
+        // SAFETY: `base + off` is inside the object (the caller's contract).
+        let p = unsafe { base.cast::<u8>().add(off) }.cast::<T>();
+        // SAFETY: the caller's contract: an initialized, aligned `T` there,
+        // not written concurrently.
+        unsafe { p.read() }
     }
 
     /// The address of the field at `off` of `base`.

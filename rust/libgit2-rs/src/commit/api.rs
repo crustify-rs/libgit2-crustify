@@ -99,7 +99,7 @@ impl<'r> Commit<'r> {
     pub fn lookup(repo: &'r Repository, id: &Oid) -> Result<Commit<'r>, Error> {
         let mut raw = ptr::null_mut();
         // SAFETY: `raw` writable; the repository live for `'r`.
-        let e = unsafe { pend::git_commit_lookup(&mut raw, repo.raw(), id) };
+        let e = unsafe { pend::git_commit_lookup(&raw mut raw, repo.raw(), id) };
         if e < 0 {
             return Err(Error::from(super::ec(e)));
         }
@@ -135,8 +135,10 @@ impl<'r> Commit<'r> {
 
     /// The id of its tree.
     pub fn tree_id(&self) -> Oid {
-        // SAFETY: a live commit's field, set by the parse.
-        unsafe { ptr::addr_of!((*self.c()).tree_id).read() }
+        // SAFETY: `self.c()` is the live commit this value holds.
+        let p = unsafe { &raw const (*self.c()).tree_id };
+        // SAFETY: a field set by the parse, never written after.
+        unsafe { p.read() }
     }
 
     /// The ids of its parents.
@@ -161,27 +163,35 @@ impl<'r> Commit<'r> {
             };
         }
         // SAFETY: a signature the commit owns, unchanged while it lives.
-        unsafe {
-            SignatureRef {
-                name: cbytes((*p).name),
-                email: cbytes((*p).email),
-                time: (*p).when.time,
-                offset: (*p).when.offset,
-                sign: (*p).when.sign as u8,
-            }
+        let s = unsafe { &*p };
+        // SAFETY: its strings are NUL-terminated, owned by the commit and
+        // unwritten while it lives (the result borrows `self`).
+        let name = unsafe { cbytes(s.name) };
+        // SAFETY: as above.
+        let email = unsafe { cbytes(s.email) };
+        SignatureRef {
+            name,
+            email,
+            time: s.when.time,
+            offset: s.when.offset,
+            sign: s.when.sign as u8,
         }
     }
 
     /// The author.
     pub fn author(&self) -> SignatureRef<'_> {
-        // SAFETY: a live commit's field.
-        self.sig(unsafe { ptr::addr_of!((*self.c()).author).read() })
+        // SAFETY: `self.c()` is the live commit this value holds.
+        let p = unsafe { &raw const (*self.c()).author };
+        // SAFETY: a field set by the parse, never written after.
+        self.sig(unsafe { p.read() })
     }
 
     /// The committer.
     pub fn committer(&self) -> SignatureRef<'_> {
-        // SAFETY: a live commit's field.
-        self.sig(unsafe { ptr::addr_of!((*self.c()).committer).read() })
+        // SAFETY: `self.c()` is the live commit this value holds.
+        let p = unsafe { &raw const (*self.c()).committer };
+        // SAFETY: a field set by the parse, never written after.
+        self.sig(unsafe { p.read() })
     }
 
     /// `git_commit_time`.
@@ -196,8 +206,13 @@ impl<'r> Commit<'r> {
 
     /// `git_commit_message_raw`: the message as stored.
     pub fn message_raw(&self) -> &[u8] {
-        // SAFETY: a live commit's string.
-        unsafe { cbytes(ptr::addr_of!((*self.c()).raw_message).read()) }
+        // SAFETY: `self.c()` is the live commit this value holds.
+        let p = unsafe { &raw const (*self.c()).raw_message };
+        // SAFETY: a field set by the parse, never written after.
+        let s = unsafe { p.read() };
+        // SAFETY: NULL or a NUL-terminated string the commit owns, unwritten
+        // while it lives (the result borrows `self`).
+        unsafe { cbytes(s) }
     }
 
     /// `git_commit_message`: the message without its leading newlines.
@@ -207,14 +222,24 @@ impl<'r> Commit<'r> {
 
     /// `git_commit_message_encoding`.
     pub fn message_encoding(&self) -> Option<&[u8]> {
-        // SAFETY: a live commit's string.
-        unsafe { super::opt_cbytes(ptr::addr_of!((*self.c()).message_encoding).read()) }
+        // SAFETY: `self.c()` is the live commit this value holds.
+        let p = unsafe { &raw const (*self.c()).message_encoding };
+        // SAFETY: a field set by the parse, never written after.
+        let s = unsafe { p.read() };
+        // SAFETY: NULL or a NUL-terminated string the commit owns, unwritten
+        // while it lives (the result borrows `self`).
+        unsafe { super::opt_cbytes(s) }
     }
 
     /// `git_commit_raw_header`.
     pub fn raw_header(&self) -> &[u8] {
-        // SAFETY: a live commit's string.
-        unsafe { cbytes(ptr::addr_of!((*self.c()).raw_header).read()) }
+        // SAFETY: `self.c()` is the live commit this value holds.
+        let p = unsafe { &raw const (*self.c()).raw_header };
+        // SAFETY: a field set by the parse, never written after.
+        let s = unsafe { p.read() };
+        // SAFETY: NULL or a NUL-terminated string the commit owns, unwritten
+        // while it lives (the result borrows `self`).
+        unsafe { cbytes(s) }
     }
 
     /// `git_commit_summary`: the first paragraph, on one line.
@@ -264,7 +289,7 @@ impl<'r> Commit<'r> {
         let mut raw = ptr::null_mut();
         let n = u32::try_from(n).unwrap_or(u32::MAX);
         // SAFETY: `raw` writable; a live commit.
-        let e = unsafe { super::ffi::git_commit_parent(&mut raw, self.c(), n) };
+        let e = unsafe { super::ffi::git_commit_parent(&raw mut raw, self.c(), n) };
         if e < 0 {
             return Err(Error::from(super::ec(e)));
         }
@@ -280,7 +305,7 @@ impl<'r> Commit<'r> {
         }
         let mut raw = ptr::null_mut();
         // SAFETY: `raw` writable; a live commit.
-        let e = unsafe { super::ffi::git_commit_nth_gen_ancestor(&mut raw, self.c(), n) };
+        let e = unsafe { super::ffi::git_commit_nth_gen_ancestor(&raw mut raw, self.c(), n) };
         if e < 0 {
             return Err(Error::from(super::ec(e)));
         }
@@ -299,7 +324,7 @@ impl Commit<'static> {
         // keeps, so it does not borrow `data`.
         let e = unsafe {
             pend::git_object__from_raw(
-                &mut raw,
+                &raw mut raw,
                 data.as_ptr().cast(),
                 data.len(),
                 super::OBJ_COMMIT,
@@ -319,7 +344,7 @@ impl Clone for Commit<'_> {
         let mut raw = ptr::null_mut();
         // SAFETY: a live object; `git_object_dup` only counts a reference
         // (it cannot fail).
-        unsafe { pend::git_object_dup(&mut raw, self.raw.as_ptr().cast()) };
+        unsafe { pend::git_object_dup(&raw mut raw, self.raw.as_ptr().cast()) };
         // SAFETY: the reference just taken.
         unsafe { Commit::from_raw(raw.cast()) }
     }

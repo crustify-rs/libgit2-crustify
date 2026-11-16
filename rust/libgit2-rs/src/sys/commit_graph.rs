@@ -64,7 +64,7 @@ pub unsafe fn entry_find(
 ) -> Result<GitCommitGraphEntry, c_int> {
     let mut e = GitCommitGraphEntry::zeroed();
     // SAFETY: `e` is writable, `id` readable; `file` is live (contract).
-    let r = unsafe { git_commit_graph_entry_find(&mut e, file, id, len) };
+    let r = unsafe { git_commit_graph_entry_find(&raw mut e, file, id, len) };
     if r == 0 { Ok(e) } else { Err(r) }
 }
 
@@ -80,7 +80,7 @@ pub unsafe fn entry_parent(
 ) -> Result<GitCommitGraphEntry, c_int> {
     let mut e = GitCommitGraphEntry::zeroed();
     // SAFETY: `e` is writable, `entry` readable; `file` is live (contract).
-    let r = unsafe { git_commit_graph_entry_parent(&mut e, file, entry, n) };
+    let r = unsafe { git_commit_graph_entry_parent(&raw mut e, file, entry, n) };
     if r == 0 { Ok(e) } else { Err(r) }
 }
 

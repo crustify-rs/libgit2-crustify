@@ -224,7 +224,7 @@ fn entries_alloc_dup() {
         assert_eq!((*e).name(), b"name.txt");
         assert_eq!(CStr::from_ptr((*e).filename).to_bytes(), b"name.txt");
         let mut d = ptr::null_mut();
-        assert_eq!(ffi::git_tree_entry_dup(&mut d, e), 0);
+        assert_eq!(ffi::git_tree_entry_dup(&raw mut d, e), 0);
         assert_eq!(
             ((*d).attr, (*d).oid, (*d).name()),
             (0o100755, id, &b"name.txt"[..])
@@ -274,7 +274,7 @@ fn builder_serialize_and_filter() {
     assert!(buf.capacity() >= 3 * 72);
 
     // Through the C ABI: get, filter, remove, clear.
-    let p = &mut b as *mut GitTreebuilder;
+    let p = &raw mut b;
     unsafe extern "C" fn drop_trees(e: *const GitTreeEntry, _: *mut c_void) -> c_int {
         // SAFETY: a live entry, given by the filter.
         c_int::from(unsafe { (*e).is_tree() })
@@ -417,7 +417,7 @@ fn walks() {
         assert!(ffi::git_tree_entry_byindex(root, 3).is_null());
         let id = Oid::from_bytes(&[0xab; 20], OidType::Sha1).unwrap();
         assert_eq!(
-            ffi::git_tree_entry_byid(root, &id),
+            ffi::git_tree_entry_byid(root, &raw const id),
             ffi::git_tree_entry_byindex(root, 1)
         );
         assert_eq!(ffi::git_tree_walk(root, 5, None, ptr::null_mut()), -1);

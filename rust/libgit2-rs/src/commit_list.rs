@@ -130,9 +130,12 @@ pub fn generation_cmp(a: (u32, i64), b: (u32, i64)) -> c_int {
 ///
 /// `walk` is a live walk that nothing else uses during `f`.
 unsafe fn with_pool<R>(walk: *mut git_revwalk, f: impl FnOnce(&mut GitPool) -> R) -> R {
-    // SAFETY: the pool is a `git_pool` by value at that offset of the walk;
-    // nothing else touches it during `f` (contract), and `f` calls no C.
-    let pool = unsafe { &mut *pend::field_ptr::<GitPool, _>(walk, pend::REVWALK_COMMIT_POOL) };
+    // SAFETY: the pool is a `git_pool` by value at that offset of a live
+    // walk (contract).
+    let pool = unsafe { pend::field_ptr::<GitPool, _>(walk, pend::REVWALK_COMMIT_POOL) };
+    // SAFETY: nothing else touches the pool during `f` (contract), and `f`
+    // calls no C.
+    let pool = unsafe { &mut *pool };
     f(pool)
 }
 
@@ -241,8 +244,9 @@ unsafe fn quick_parse(
     // Perform necessary grafts
     // SAFETY: a live repository, whose grafts nothing changes meanwhile.
     let graft = unsafe { commit::find_graft(repo, id) };
-    // SAFETY: the graft is the repository's, live during the call.
     let parents: &[Oid] = match graft {
+        // SAFETY: the graft is the repository's, live and unchanged during
+        // the call.
         Some(g) => unsafe { (*g).parents.as_slice() },
         None => sink.parents(),
     };
@@ -253,11 +257,13 @@ unsafe fn quick_parse(
             "commit has more than 2^16 parents"
         ));
     };
-    // SAFETY: the node is the walk's; written through the pointer.
-    unsafe {
-        (*node).generation = 0;
-        (*node).time = sink.time;
-        (*node).out_degree = n;
+    {
+        // SAFETY: the walk's live node; nothing else reaches it while this
+        // borrow lives (no C is called).
+        let nd = unsafe { &mut *node };
+        nd.generation = 0;
+        nd.time = sink.time;
+        nd.out_degree = n;
     }
     // SAFETY: the walk and the node, per the contract.
     let pp = unsafe { alloc_parents(walk, node, usize::from(n)) };
@@ -270,8 +276,10 @@ unsafe fn quick_parse(
         // SAFETY: the walk is live; `p` readable. The lookup may allocate
         // from the pool: no borrow of it is held here.
         let parent = unsafe { pend::git_revwalk__commit_lookup(walk, p) };
-        // SAFETY: `i < n` slots of the parents' room.
-        unsafe { pp.add(i).write(parent) };
+        // SAFETY: `i < n`: within the parents' room.
+        let slot = unsafe { pp.add(i) };
+        // SAFETY: a writable slot of that room.
+        unsafe { slot.write(parent) };
     }
     // SAFETY: as above.
     unsafe { (*node).bits |= BIT_PARSED };
@@ -288,13 +296,10 @@ unsafe fn parse(walk: *mut git_revwalk, node: *mut GitCommitListNode) -> Result<
     if unsafe { (*node).bits } & BIT_PARSED != 0 {
         return Ok(());
     }
-    // SAFETY: a live walk.
-    let (repo, odb): (*mut pend::git_repository, *mut pend::git_odb) = unsafe {
-        (
-            pend::field(walk, pend::REVWALK_REPO),
-            pend::field(walk, pend::REVWALK_ODB),
-        )
-    };
+    // SAFETY: a live walk's `repo` field.
+    let repo: *mut pend::git_repository = unsafe { pend::field(walk, pend::REVWALK_REPO) };
+    // SAFETY: a live walk's `odb` field.
+    let odb: *mut pend::git_odb = unsafe { pend::field(walk, pend::REVWALK_ODB) };
     // SAFETY: as above.
     let id = unsafe { (*node).oid };
 
@@ -302,64 +307,74 @@ unsafe fn parse(walk: *mut git_revwalk, node: *mut GitCommitListNode) -> Result<
     let mut file = ptr::null_mut();
     // SAFETY: the walk's odb; `file` writable. (Its status is ignored, as
     // the C's.)
-    let _ = unsafe { pend::git_odb__get_commit_graph_file(&mut file, odb) };
+    let _ = unsafe { pend::git_odb__get_commit_graph_file(&raw mut file, odb) };
     if !file.is_null() {
         // SAFETY: a live repository.
         let oid_type: git_oid_t = unsafe { pend::field(repo, pend::REPO_OID_TYPE) };
         // SAFETY: the odb's commit-graph file, live with the odb.
         let e = unsafe { commit_graph::entry_find(file, &id, crate::oid::oid_size(oid_type)) };
-        if let Ok(e) = e {
-            if let Ok(n) = u16::try_from(e.parent_count) {
-                // SAFETY: the walk's node, written through the pointer.
-                unsafe {
-                    (*node).generation = e.generation as u32;
-                    (*node).time = e.commit_time;
-                    (*node).out_degree = n;
-                }
-                // SAFETY: the walk and its node.
-                let pp = unsafe { alloc_parents(walk, node, usize::from(n)) };
-                if pp.is_null() {
-                    return Err(errors::oom());
-                }
-                // SAFETY: as above.
-                unsafe { (*node).parents = pp };
-                for i in 0..usize::from(n) {
-                    // SAFETY: the file is live; `e` came from it.
-                    let parent =
-                        unsafe { commit_graph::entry_parent(file, &e, i) }.map_err(commit::ec)?;
-                    // SAFETY: the walk is live; no borrow of the pool held.
-                    let p = unsafe { pend::git_revwalk__commit_lookup(walk, &parent.sha1) };
-                    // SAFETY: `i < n` slots.
-                    unsafe { pp.add(i).write(p) };
-                }
-                // SAFETY: as above.
-                unsafe { (*node).bits |= BIT_PARSED };
-                return Ok(());
+        if let Ok(e) = e
+            && let Ok(n) = u16::try_from(e.parent_count)
+        {
+            {
+                // SAFETY: the walk's live node; nothing else reaches it
+                // while this borrow lives (no C is called).
+                let nd = unsafe { &mut *node };
+                nd.generation = e.generation as u32;
+                nd.time = e.commit_time;
+                nd.out_degree = n;
             }
+            // SAFETY: the walk and its node.
+            let pp = unsafe { alloc_parents(walk, node, usize::from(n)) };
+            if pp.is_null() {
+                return Err(errors::oom());
+            }
+            // SAFETY: as above.
+            unsafe { (*node).parents = pp };
+            for i in 0..usize::from(n) {
+                // SAFETY: the file is live; `e` came from it.
+                let parent =
+                    unsafe { commit_graph::entry_parent(file, &e, i) }.map_err(commit::ec)?;
+                // SAFETY: the walk is live; no borrow of the pool held.
+                let p = unsafe { pend::git_revwalk__commit_lookup(walk, &raw const parent.sha1) };
+                // SAFETY: `i < n`: within the parents' room.
+                let slot = unsafe { pp.add(i) };
+                // SAFETY: a writable slot of that room.
+                unsafe { slot.write(p) };
+            }
+            // SAFETY: as above.
+            unsafe { (*node).bits |= BIT_PARSED };
+            return Ok(());
         }
     }
 
     let mut obj = ptr::null_mut();
     // SAFETY: the walk's odb; `obj` writable.
-    ErrorCode::check_zero(unsafe { pend::git_odb_read(&mut obj, odb, &id) })?;
-    // SAFETY: the object just read, live until freed below: its data is
-    // readable for its size and unchanged.
-    let r = unsafe {
-        if pend::git_odb_object_type(obj) != commit::OBJ_COMMIT {
-            Err(git_error_set!(
-                ErrorClass::INVALID,
-                "object is no commit object"
-            ))
+    ErrorCode::check_zero(unsafe { pend::git_odb_read(&raw mut obj, odb, &raw const id) })?;
+    // SAFETY: the object just read, live until freed below.
+    let r = if unsafe { pend::git_odb_object_type(obj) } != commit::OBJ_COMMIT {
+        Err(git_error_set!(
+            ErrorClass::INVALID,
+            "object is no commit object"
+        ))
+    } else {
+        // SAFETY: as above.
+        let p = unsafe { pend::git_odb_object_data(obj) }.cast::<core::ffi::c_char>();
+        // SAFETY: as above.
+        let n = unsafe { pend::git_odb_object_size(obj) };
+        let data = if p.is_null() {
+            &[][..]
         } else {
-            let p = pend::git_odb_object_data(obj).cast::<core::ffi::c_char>();
-            let n = pend::git_odb_object_size(obj);
-            let data = if p.is_null() {
-                &[][..]
-            } else {
-                crate::util::export::bytes(p, n)
-            };
-            quick_parse(walk, node, data, &*pend::git_odb_object_id(obj))
-        }
+            // SAFETY: the object's data is readable for its size and
+            // unchanged until it is freed below.
+            unsafe { crate::util::export::bytes(p, n) }
+        };
+        // SAFETY: the object is live.
+        let id = unsafe { pend::git_odb_object_id(obj) };
+        // SAFETY: its id, live with it.
+        let id = unsafe { &*id };
+        // SAFETY: the caller's contract on the walk and node.
+        unsafe { quick_parse(walk, node, data, id) }
     };
     // SAFETY: freed once.
     unsafe { pend::git_odb_object_free(obj) };
@@ -383,8 +398,11 @@ pub mod ffi {
         b: *const c_void,
     ) -> c_int {
         let (a, b) = (a.cast::<GitCommitListNode>(), b.cast::<GitCommitListNode>());
-        // SAFETY: live nodes (contract), read through the pointers.
-        unsafe { generation_cmp(((*a).generation, (*a).time), ((*b).generation, (*b).time)) }
+        // SAFETY: a live node (contract), read only during the call.
+        let a = unsafe { &*a };
+        // SAFETY: as above.
+        let b = unsafe { &*b };
+        generation_cmp((a.generation, a.time), (b.generation, b.time))
     }
 
     /// `git_commit_list_time_cmp`.
@@ -395,8 +413,11 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_commit_list_time_cmp(a: *const c_void, b: *const c_void) -> c_int {
         let (a, b) = (a.cast::<GitCommitListNode>(), b.cast::<GitCommitListNode>());
-        // SAFETY: live nodes (contract), read through the pointers.
-        unsafe { time_cmp((*a).time, (*b).time) }
+        // SAFETY: a live node (contract), read only during the call.
+        let a = unsafe { &*a };
+        // SAFETY: as above.
+        let b = unsafe { &*b };
+        time_cmp(a.time, b.time)
     }
 
     /// `git_commit_list_create`: a new list cell (NULL on allocation
@@ -426,12 +447,11 @@ pub mod ffi {
         item: *mut GitCommitListNode,
         list_p: *mut *mut GitCommitList,
     ) -> *mut GitCommitList {
-        // SAFETY: a valid head (contract).
-        unsafe {
-            let new_list = git_commit_list_create(item, list_p.read());
-            list_p.write(new_list);
-            new_list
-        }
+        // SAFETY: a valid, readable head (contract).
+        let new_list = git_commit_list_create(item, unsafe { list_p.read() });
+        // SAFETY: a writable head (contract).
+        unsafe { list_p.write(new_list) };
+        new_list
     }
 
     /// `git_commit_list_insert_by_date`: insert before the first cell that
@@ -447,18 +467,23 @@ pub mod ffi {
         list_p: *mut *mut GitCommitList,
     ) -> *mut GitCommitList {
         let mut pp = list_p;
-        // SAFETY: a valid list of live nodes (contract), walked through the
-        // raw pointers.
-        unsafe {
-            loop {
-                let p = pp.read();
-                if p.is_null() || git_commit_list_time_cmp((*p).item.cast(), item.cast()) > 0 {
-                    break;
-                }
-                pp = ptr::addr_of_mut!((*p).next);
+        loop {
+            // SAFETY: `pp` is the head or a live cell's `next` (contract).
+            let p = unsafe { pp.read() };
+            if p.is_null() {
+                break;
             }
-            git_commit_list_insert(item, pp)
+            // SAFETY: a live cell of the list.
+            let cell_item = unsafe { (*p).item };
+            // SAFETY: live nodes (contract).
+            if unsafe { git_commit_list_time_cmp(cell_item.cast(), item.cast()) } > 0 {
+                break;
+            }
+            // SAFETY: a live cell of the list.
+            pp = unsafe { &raw mut (*p).next };
         }
+        // SAFETY: `pp` is a writable link of the list.
+        unsafe { git_commit_list_insert(item, pp) }
     }
 
     /// `git_commit_list_alloc_node`: a zeroed node from the walk's pool
@@ -489,19 +514,20 @@ pub mod ffi {
     /// not used after.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_commit_list_free(list_p: *mut *mut GitCommitList) {
-        // SAFETY: the caller's contract.
-        unsafe {
-            let mut list = list_p.read();
-            if list.is_null() {
-                return;
-            }
-            while !list.is_null() {
-                let temp = list;
-                list = (*temp).next;
-                alloc::free(temp.cast());
-            }
-            list_p.write(ptr::null_mut());
+        // SAFETY: a readable head (contract).
+        let mut list = unsafe { list_p.read() };
+        if list.is_null() {
+            return;
         }
+        while !list.is_null() {
+            let temp = list;
+            // SAFETY: a live cell of the list.
+            list = unsafe { (*temp).next };
+            // SAFETY: a `git__malloc`ed cell, not used after (contract).
+            unsafe { alloc::free(temp.cast()) };
+        }
+        // SAFETY: a writable head (contract).
+        unsafe { list_p.write(ptr::null_mut()) };
     }
 
     /// `git_commit_list_pop`.
@@ -513,17 +539,18 @@ pub mod ffi {
     pub unsafe extern "C" fn git_commit_list_pop(
         stack: *mut *mut GitCommitList,
     ) -> *mut GitCommitListNode {
-        // SAFETY: the caller's contract.
-        unsafe {
-            let top = stack.read();
-            if top.is_null() {
-                return ptr::null_mut();
-            }
-            let item = (*top).item;
-            stack.write((*top).next);
-            alloc::free(top.cast());
-            item
+        // SAFETY: a readable head (contract).
+        let top = unsafe { stack.read() };
+        if top.is_null() {
+            return ptr::null_mut();
         }
+        // SAFETY: the live first cell, read before it is freed.
+        let GitCommitList { item, next } = unsafe { top.read() };
+        // SAFETY: a writable head (contract).
+        unsafe { stack.write(next) };
+        // SAFETY: a `git__malloc`ed cell, not used after (contract).
+        unsafe { alloc::free(top.cast()) };
+        item
     }
 
     /// `git_commit_list_parse`: fill `commit`'s parents and time, from the
@@ -544,6 +571,7 @@ pub mod ffi {
 }
 
 #[cfg(test)]
+#[allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)] // each block's SAFETY covers its sequence
 mod tests {
     use super::*;
 
@@ -596,19 +624,19 @@ mod tests {
         // SAFETY: the nodes outlive the list; the list head is ours.
         unsafe {
             for i in 0..4 {
-                ffi::git_commit_list_insert_by_date(base.add(i), &mut list);
+                ffi::git_commit_list_insert_by_date(base.add(i), &raw mut list);
             }
             let mut times = vec![];
             while !list.is_null() {
-                times.push((*ffi::git_commit_list_pop(&mut list)).time);
+                times.push((*ffi::git_commit_list_pop(&raw mut list)).time);
             }
             assert_eq!(times, [9, 5, 3, 3]);
-            ffi::git_commit_list_insert(base, &mut list);
-            ffi::git_commit_list_insert(base.add(1), &mut list);
+            ffi::git_commit_list_insert(base, &raw mut list);
+            ffi::git_commit_list_insert(base.add(1), &raw mut list);
             assert_eq!((*(*list).item).time, 3);
-            ffi::git_commit_list_free(&mut list);
+            ffi::git_commit_list_free(&raw mut list);
             assert!(list.is_null());
-            assert!(ffi::git_commit_list_pop(&mut list).is_null());
+            assert!(ffi::git_commit_list_pop(&raw mut list).is_null());
         }
     }
 }

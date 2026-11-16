@@ -31,7 +31,7 @@ impl Repository {
         })?;
         let mut raw = core::ptr::null_mut();
         // SAFETY: `raw` is writable; `path` NUL-terminated.
-        let e = unsafe { pend::git_repository_open(&mut raw, path.as_ptr()) };
+        let e = unsafe { pend::git_repository_open(&raw mut raw, path.as_ptr()) };
         if e < 0 {
             return Err(Error::from(crate::commit::ec(e)));
         }

@@ -43,5 +43,5 @@ pub unsafe fn is_valid(
     });
     // SAFETY: `s` is a borrowed `git_str` over `path`, which the C reads as a
     // NUL-terminated string; `repo` per the contract.
-    unsafe { git_path_str_is_valid(repo, &*s, file_mode, flags) }
+    unsafe { git_path_str_is_valid(repo, &raw const *s, file_mode, flags) }
 }

@@ -499,7 +499,7 @@ fn c_abi_parse_and_accessors() {
         );
         let mut out = GitStr::new();
         assert_eq!(
-            ffi::git_commit__header_field(&mut out, c.0, c"author".as_ptr()),
+            ffi::git_commit__header_field(&raw mut out, c.0, c"author".as_ptr()),
             0
         );
         assert_eq!(out.as_bytes(), b"A <a@b> 1 +0000");
@@ -548,7 +548,7 @@ fn commitarray_dispose_empty() {
     };
     // SAFETY: an empty array.
     unsafe {
-        ffi::git_commitarray_dispose(&mut a);
+        ffi::git_commitarray_dispose(&raw mut a);
         ffi::git_commitarray_dispose(core::ptr::null_mut());
     }
     assert!(a.commits.is_null());

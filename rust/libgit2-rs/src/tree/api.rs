@@ -99,7 +99,7 @@ impl<'t> TreeEntryRef<'t> {
     }
 
     /// `git_tree_entry_cmp`: git's tree order.
-    pub fn cmp(&self, other: &TreeEntryRef<'_>) -> core::cmp::Ordering {
+    pub fn cmp_tree_order(&self, other: &TreeEntryRef<'_>) -> core::cmp::Ordering {
         crate::util::util::ordering(super::entry_cmp_parts(
             self.name(),
             self.entry.is_tree(),
@@ -129,16 +129,16 @@ impl TreeEntry {
     ///
     /// `p` is a non-NULL `alloc_entry` block, handed over.
     unsafe fn from_raw(p: *mut GitTreeEntry) -> TreeEntry {
-        // SAFETY: non-NULL (contract).
         TreeEntry {
+            // SAFETY: non-NULL (contract).
             raw: unsafe { NonNull::new_unchecked(p) },
         }
     }
 
     /// The entry, borrowed.
     pub fn as_ref(&self) -> TreeEntryRef<'_> {
-        // SAFETY: the block this value owns; nothing writes it.
         TreeEntryRef {
+            // SAFETY: the block this value owns; nothing writes it.
             entry: unsafe { self.raw.as_ref() },
         }
     }
@@ -210,8 +210,8 @@ impl<'a> Tree<'a> {
     /// `raw` is a non-NULL parsed tree whose reference the caller hands over,
     /// and whose data and repository outlive `'a`.
     unsafe fn from_raw(raw: *mut GitTree) -> Tree<'a> {
-        // SAFETY: non-NULL (contract).
         Tree {
+            // SAFETY: non-NULL (contract).
             raw: unsafe { NonNull::new_unchecked(raw) },
             _data: PhantomData,
         }
@@ -233,7 +233,7 @@ impl<'a> Tree<'a> {
         let mut raw = ptr::null_mut();
         // SAFETY: `raw` writable; the repository per the contract (the C
         // asserts it is not NULL).
-        let e = unsafe { pend::git_tree_lookup(&mut raw, repo, id) };
+        let e = unsafe { pend::git_tree_lookup(&raw mut raw, repo, id) };
         if e < 0 {
             return Err(err(e));
         }
@@ -255,7 +255,7 @@ impl<'a> Tree<'a> {
         // for `'a`.
         let e = unsafe {
             pend::git_object__from_raw(
-                &mut raw,
+                &raw mut raw,
                 data.as_ptr().cast(),
                 data.len(),
                 crate::commit::OBJ_TREE,
@@ -333,7 +333,7 @@ impl<'a> Tree<'a> {
             }
             let mut t = ptr::null_mut();
             // SAFETY: the tree's repository (or NULL: the C's assertion).
-            ErrorCode::check(unsafe { pend::git_tree_lookup(&mut t, repo, id) })?;
+            ErrorCode::check(unsafe { pend::git_tree_lookup(&raw mut t, repo, id) })?;
             Ok(t)
         };
         // SAFETY: trees from `lookup`, released once.
@@ -360,7 +360,7 @@ impl<'a> Tree<'a> {
             }
             let mut t = ptr::null_mut();
             // SAFETY: the tree's repository.
-            ErrorCode::check(unsafe { pend::git_tree_lookup(&mut t, repo, id) })?;
+            ErrorCode::check(unsafe { pend::git_tree_lookup(&raw mut t, repo, id) })?;
             Ok(t)
         };
         // SAFETY: trees from `lookup`, released once.
@@ -434,7 +434,7 @@ impl Clone for Tree<'_> {
     fn clone(&self) -> Self {
         let mut raw = ptr::null_mut();
         // SAFETY: a live object; `git_object_dup` only counts a reference.
-        unsafe { pend::git_object_dup(&mut raw, self.raw.as_ptr().cast()) };
+        unsafe { pend::git_object_dup(&raw mut raw, self.raw.as_ptr().cast()) };
         // SAFETY: the reference just taken.
         unsafe { Tree::from_raw(raw.cast()) }
     }
@@ -469,8 +469,8 @@ impl<'r> TreeBuilder<'r> {
         let src = source.map_or(ptr::null(), |t| t.t());
         // SAFETY: a live repository; `src` NULL or a live tree.
         let raw = unsafe { GitTreebuilder::new_raw(repo.raw(), src) }.map_err(Error::from)?;
-        // SAFETY: non-NULL on success.
         Ok(TreeBuilder {
+            // SAFETY: `new_raw` returns a non-NULL builder on success.
             raw: unsafe { NonNull::new_unchecked(raw) },
             _repo: PhantomData,
         })
@@ -499,9 +499,9 @@ impl<'r> TreeBuilder<'r> {
     /// `git_treebuilder_get`.
     pub fn get(&self, name: &[u8]) -> Option<TreeEntryRef<'_>> {
         let name = CString::new(name).ok()?;
-        // SAFETY: an entry the builder owns, unchanged while `self` is
-        // borrowed shared.
         self.b().get(&name).map(|e| TreeEntryRef {
+            // SAFETY: an entry the builder owns, unchanged while `self` is
+            // borrowed shared.
             entry: unsafe { &*e },
         })
     }
@@ -518,9 +518,9 @@ impl<'r> TreeBuilder<'r> {
         let name = cstring(name, "name")?;
         // SAFETY: the builder's repository outlives `'r`.
         let e = unsafe { self.b_mut().insert(&name, id, filemode) }.map_err(Error::from)?;
-        // SAFETY: an entry the builder owns, unchanged while `self` is
-        // borrowed.
         Ok(TreeEntryRef {
+            // SAFETY: an entry the builder owns, unchanged while `self` is
+            // borrowed.
             entry: unsafe { &*e },
         })
     }
@@ -548,14 +548,14 @@ impl<'r> TreeBuilder<'r> {
         let b = self.b_mut();
         let mut it = 0;
         while let Some((key, entry)) = b.map.iterate(&mut it).map(|(k, v)| (*k, *v)) {
-            // SAFETY: an entry the builder owns.
             if f(TreeEntryRef {
+                // SAFETY: an entry the builder owns, not freed before the
+                // callback returns.
                 entry: unsafe { &*entry },
-            }) {
-                if let Some((_, e)) = b.map.remove(&key) {
-                    // SAFETY: the entry left the map with its key.
-                    unsafe { crate::util::alloc::free(e.cast()) };
-                }
+            }) && let Some((_, e)) = b.map.remove(&key)
+            {
+                // SAFETY: the entry left the map with its key.
+                unsafe { crate::util::alloc::free(e.cast()) };
             }
         }
     }

@@ -51,10 +51,10 @@ pub unsafe fn count_deltas(
     let mut diff = core::ptr::null_mut();
     let r = if new_tree.is_null() {
         // SAFETY: the caller's contract; `diff` is writable.
-        unsafe { git_diff_tree_to_index(&mut diff, repo, old_tree, index, core::ptr::null()) }
+        unsafe { git_diff_tree_to_index(&raw mut diff, repo, old_tree, index, core::ptr::null()) }
     } else {
         // SAFETY: as above.
-        unsafe { git_diff_tree_to_tree(&mut diff, repo, old_tree, new_tree, core::ptr::null()) }
+        unsafe { git_diff_tree_to_tree(&raw mut diff, repo, old_tree, new_tree, core::ptr::null()) }
     };
     if r < 0 {
         // SAFETY: NULL or the diff the call made.
