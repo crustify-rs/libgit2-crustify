@@ -516,6 +516,10 @@ impl OdbBackend for Reentrant {
 
 /// S-6a: a backend that reads its own odb gets an error, not a hang.
 #[test]
+#[cfg_attr(
+    miri,
+    ignore = "the backend holds its own Odb: a cycle that leaks by design (S-6h)"
+)]
 fn reentrant_backend_does_not_hang() -> Result<(), Error> {
     let cell = Arc::new(OnceLock::new());
     let odb = Odb::new()?;
@@ -548,6 +552,7 @@ impl OdbBackend for DropPanics {}
 
 /// S-3: a backend whose `Drop` panics, freed by its odb: no abort.
 #[test]
+#[cfg_attr(miri, ignore = "the panic payload is leaked by design (S-3)")]
 fn backend_drop_panic_added() -> Result<(), Error> {
     let odb = Odb::new()?;
     odb.add_backend(Backend::custom(DropPanics(PanicDrop)), 1)?;
@@ -558,6 +563,7 @@ fn backend_drop_panic_added() -> Result<(), Error> {
 
 /// S-3: the same, for a backend never added.
 #[test]
+#[cfg_attr(miri, ignore = "the panic payload is leaked by design (S-3)")]
 fn backend_drop_panic_never_added() {
     let b = Backend::custom(DropPanics(PanicDrop));
     let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(b)));

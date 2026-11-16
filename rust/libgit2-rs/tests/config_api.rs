@@ -473,6 +473,10 @@ impl ConfigBackend for Reenter {
 }
 
 #[test]
+#[cfg_attr(
+    miri,
+    ignore = "the backend holds its own Config: a cycle that leaks by design (S-6h)"
+)]
 fn reentrant_backend() {
     let me = Arc::new(OnceLock::new());
     let c = Config::new();
@@ -498,6 +502,7 @@ impl ConfigBackend for DropPanics {}
 
 /// S-3: a backend whose `Drop` panics: no abort.
 #[test]
+#[cfg_attr(miri, ignore = "the panic payload is leaked by design (S-3)")]
 fn backend_drop_panic() {
     let c = Config::new();
     c.add_backend(DropPanics(PanicDrop), ConfigLevel::App, false)
