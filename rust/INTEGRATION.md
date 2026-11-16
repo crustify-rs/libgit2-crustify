@@ -430,3 +430,60 @@ TSan found in `win32::forbidden`). Clean merge (fs_path only).
 
 Green: `4d3032b` (Rust and C-fallback clar 436/436, `include/` unchanged,
 cargo test link-c, Miri, clippy both configurations, fmt).
+
+## 13. `wp/l-obj` (merge `62254bc`) and PENDING to zero
+
+Merged `wp/l-obj` at `14f30a5` (object, object_api, blob, tag, signature,
+grafts). Then every PENDING entry of the crate was resolved with direct
+Rust calls/types (commits `2cdeacd` … `79ef0a8`):
+
+- l-obj's own: `sys::pending::l_obj` (its calls into odb, cache,
+  repository, config, commit, tree, refs) becomes `object/deps.rs`
+  (aliases of the owners' types, `pub use` of their `ffi` exports); its
+  `GitCachedObj` mirror is l-odb's `cache::GitCachedObj`; its repository
+  offset mirror is gone (`oid_type_raw()`, `objects()`, `odb_weak()`); the
+  commit/tree sizes are `size_of` of l-commit's types.
+- l-repo: the grafts slots are `AtomicPtr<grafts::Grafts>` freed with
+  `git_grafts_free`; `handles::Object` is `object::Object` (`adopt`,
+  `into_raw`, `peel_raw`); `head.rs`/`ffi.rs` call the object, object_api
+  and grafts exports; `sys/pending/l_repo.rs` deleted.
+- l-index: `index/foreign.rs` calls the blob/object/tree exports.
+- l-commit: `commit/deps.rs`; `GitTime`/`GitSignature` are l-obj's; the
+  commit parser/writer use `signature::parse_fields` (new: the borrowed
+  core of `signature::parse`), `signature::writebuf`/`free_raw`/
+  `alloc_raw`, `object::parse_oid_header`/`write_oid_header` (its own
+  copies removed); `tree::type2string` is `object::type2string`.
+- l-odb: `odb::type2string`/`stringn2type` forward to object.rs (its
+  `TYPE_NAMES` copy removed).
+- l-revwalk: `revwalk/deps.rs`; the revwalk tests' stubs of
+  `git_commit_lookup`/`free`/`git_tree_free` removed.
+- l-refs: the rest of `sys/pending.rs` becomes `refs/deps.rs`
+  (`git_object`/`git_signature`/`git_commit` are the owners' types, the
+  externs are the object/signature/tag/object_api exports); `sys/pending.rs`
+  is deleted. `refs_api::Committer` is retired for the crate's `Signature`
+  (`ReflogEntry::committer`, `Reflog::append`, `ReflogRecord::committer`).
+- commit_list's Miri test uses a real empty `Grafts` instead of a
+  `git_grafts_get` stand-in.
+- Stale notes reworded: settings.rs (the `sys` globals are of modules that
+  stay C), `revwalk::api` (`git_revwalk_pathspec`: pathspec.c stays C),
+  tests/util_fs.rs (the hash is Rust).
+
+PENDING left: 0 (`grep -rn PENDING --include=*.rs rust/` matches only
+`KIND_INFLATE_PENDING`, a pack constant).
+
+C fallback: `blob.h` keeps `git_blob` under `#ifndef GIT_RUST`; the
+fallback build passes 436/436.
+
+`rebase::merge` under ASan (`/work/builds/integ-asan`): LSan reports 47
+indirect blocks, all of one repository configuration, from
+`copy_notes_specified_in_config` and `copy_notes_disabled_in_config`. Those
+tests take `git_repository_config` and never free it. The pristine C
+(`/work/builds/orig-asan`) does not report: C's `repo_local_config` (run by
+`cl_git_sandbox_init` through `git_repository_reinit_filesystem`) frees a
+weak pointer (DEFECTS.md, "repo_local_config frees a weak pointer"), which
+leaves the repository's config one count low and so cancels the tests'
+missing free (traced with gdb: the count goes 1 → 0 there, and the
+repository's cleanup frees the config the test still holds). The Rust does
+not have that defect, so the tests' own leak shows. A standalone program
+that drops a `git_repository_config` reference leaks on both builds. Not a
+port leak; integration notes I-9.
