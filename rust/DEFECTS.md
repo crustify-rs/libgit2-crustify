@@ -1317,3 +1317,19 @@ out-of-memory error instead.
 - **C location:** `tests/libgit2/rebase/merge.c`, both tests take `git_repository_config(&config, repo)` and never free it.
 - **Why the C build did not show it:** `repo_local_config` in the C `repository.c` frees a config reference it does not own (see the l-repo entry above), which leaves the repository's config one count low; that cancels the tests' missing free. The Rust fixes that defect, so LeakSanitizer reports the tests' 47 blocks.
 - **Change:** the two tests now call `git_config_free(config)` (the only edit to a test file in the port).
+
+## Exports (cross-cutting)
+
+### NULL object, string or out-parameter arguments that the C dereferences unchecked
+- C: exports without `GIT_ASSERT_ARG` for a pointer they dereference
+  (e.g. `git_config_snapshot(out, NULL)`, `git_config_set_string(NULL, …)`,
+  `git_oid_cmp(NULL, b)`, `git_repository_odb(NULL, repo)`): a NULL
+  argument crashes.
+- Trigger: any such export called with NULL for that argument.
+- Rust: an export parameter typed `Option<&T>` / `Option<&mut T>` that the C
+  dereferences unchecked fails as `GIT_ASSERT_ARG` would (`invalid
+  argument: '<name>'`, -1 / NULL / nothing, per the return type); a NULL
+  `Out<'_, T>` out-parameter is not written; a NULL `CStrArg` string reads
+  as the code reading it decides (absent, or empty where the C would read
+  it as a string). Before, such a NULL was a NULL reference or a write
+  through NULL in the Rust as well (undefined behaviour).
