@@ -1466,6 +1466,20 @@ mod tests {
         }
     }
 
+    /// A table pointer handed to the test's threads.
+    #[derive(Clone, Copy)]
+    struct SendPtr(*mut git_refdb_backend);
+    // SAFETY: the table's state is `Send + Sync` (the slots it is used
+    // through are shared ones).
+    unsafe impl Send for SendPtr {}
+    // SAFETY: as above.
+    unsafe impl Sync for SendPtr {}
+    impl SendPtr {
+        fn get(self) -> *mut git_refdb_backend {
+            self.0
+        }
+    }
+
     /// Two threads in the slots of one table at once, as libgit2's
     /// threads do (`tests/libgit2/threads/refdb.c`).
     #[test]
@@ -1477,12 +1491,12 @@ mod tests {
         )
         .unwrap();
         let t = CTable::<RefdbBackendTable, RustBackend<Mem>>::new(RustBackend(Mem::default()));
-        let b = t.into_c().as_ptr() as usize;
+        let b = SendPtr(t.into_c().as_ptr());
         let n = if cfg!(miri) { 4 } else { 200 };
         std::thread::scope(|s| {
             for k in 0..2 {
                 s.spawn(move || {
-                    let b = b as *mut git_refdb_backend;
+                    let b = b.get();
                     let name = std::ffi::CString::new(format!("refs/heads/t{k}")).unwrap();
                     for _ in 0..n {
                         // SAFETY: a live table (freed after the scope), its
@@ -1530,7 +1544,7 @@ mod tests {
                 });
             }
         });
-        let b = b as *mut git_refdb_backend;
+        let b = b.get();
         // SAFETY: the table, released once, no slot running.
         unsafe { ((*b).free.unwrap())(b) };
     }
