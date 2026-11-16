@@ -481,8 +481,20 @@ fn trim_slashes(path: &mut GitStr) {
 /// unallocated string is left alone).
 #[inline]
 pub fn to_dir(path: &mut GitStr) -> Result<()> {
-    if path.capacity() > 0 && !path.is_empty() && path.as_bytes()[path.len() - 1] != b'/' {
-        let _ = path.putc(b'/');
+    let len = path.len();
+    if path.capacity() > 0 && len > 0 && path.as_bytes().last().is_some_and(|&c| c != b'/') {
+        // `git_str_putc`, in place when the slash and the NUL fit.
+        let spare = path.spare_capacity_mut();
+        if spare.len() >= 2 {
+            spare[0].write(b'/');
+            spare[1].write(0);
+            // SAFETY: owned (it has spare room); the first `len` bytes are
+            // the contents and byte `len` was just written, followed by the
+            // NUL.
+            unsafe { path.set_len(len + 1) };
+        } else {
+            let _ = path.putc(b'/');
+        }
     }
     if path.is_oom() {
         Err(ErrorCode::GENERIC)
