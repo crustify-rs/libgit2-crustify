@@ -130,6 +130,8 @@ pub fn new(name: &[u8], oid_type: git_oid_t, pool: &mut GitPool) -> Result<*mut 
 pub fn new_in<A: NodeAlloc + ?Sized>(name: &[u8], oid_type: git_oid_t, pool: &mut A) -> Result<*mut GitTreeCache> {
     let alloc_size = crate::util::integer::alloc_add(size_of::<GitTreeCache>(), name.len())
         .and_then(|n| crate::util::integer::alloc_add(n, 1))?;
+    // pool blocks are 8-aligned (the pool's rounding)
+    #[allow(clippy::cast_ptr_alignment)]
     let p = pool.alloc(alloc_size, false)?.as_ptr().cast::<GitTreeCache>();
     let node = GitTreeCache {
         children: ptr::null_mut(),
@@ -143,8 +145,8 @@ pub fn new_in<A: NodeAlloc + ?Sized>(name: &[u8], oid_type: git_oid_t, pool: &mu
     // SAFETY: `p` is a fresh pool block of `alloc_size` bytes, aligned to 8
     // (the pool's rounding), room for the node and `name` and its NUL.
     unsafe { p.write(node) };
-    // SAFETY: the bytes right after the node, within the block.
-    let name_ptr = unsafe { (&raw mut (*p).name).cast::<u8>() };
+    // the bytes right after the node, within the block
+    let name_ptr = p.cast::<u8>().wrapping_add(size_of::<GitTreeCache>());
     // SAFETY: as above; `name` is a distinct allocation.
     unsafe { ptr::copy_nonoverlapping(name.as_ptr(), name_ptr, name.len()) };
     // SAFETY: the last byte of the block.
@@ -167,7 +169,7 @@ unsafe fn find_child(tree: *const GitTreeCache, name: &[u8]) -> *mut GitTreeCach
         // SAFETY: a child of a tree is a node of it.
         let c = unsafe { &*child };
         // SAFETY: as above.
-        if c.namelen == name.len() && unsafe { c.name_bytes() } == name {
+        if c.namelen == name.len() && name == unsafe { c.name_bytes() } {
             return child;
         }
     }
@@ -350,8 +352,10 @@ pub fn read_into(
             Ok(c) => c,
             Err(_) => return Err(corrupted()),
         };
+        // SAFETY: `node` is a node of `pool`, only accessed here.
+        let slots = unsafe { (*node).children };
         // SAFETY: `node`'s children array has `count` slots, `i < count`.
-        unsafe { (*node).children.add(i).write(child) };
+        unsafe { slots.add(i).write(child) };
         if stack.try_reserve(1).is_err() {
             return Err(corrupted());
         }
@@ -401,6 +405,8 @@ fn read_tree_recursive<S: TreeSource, A: NodeAlloc + ?Sized>(
     let oid_type = unsafe { (*cache).oid_type };
     // SAFETY: as above.
     unsafe { (*cache).children_count = ntrees };
+    // pool blocks are 8-aligned (the pool's rounding)
+    #[allow(clippy::cast_ptr_alignment)]
     let children = pool.alloc(alloc_size, true)?.as_ptr().cast::<*mut GitTreeCache>();
     // SAFETY: as above.
     unsafe { (*cache).children = children };
@@ -419,7 +425,9 @@ fn read_tree_recursive<S: TreeSource, A: NodeAlloc + ?Sized>(
         let r = read_tree_recursive(src, child, &subtree, pool);
         drop(subtree);
         // SAFETY: as above.
-        unsafe { (*cache).entry_count += (*child).entry_count };
+        let n = unsafe { (*child).entry_count };
+        // SAFETY: as above.
+        unsafe { (*cache).entry_count += n };
         j += 1;
         r?;
     }

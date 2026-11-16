@@ -29,9 +29,7 @@ pub(crate) struct Key(pub(crate) NonNull<EntryHead>);
 /// path, plus the stage.
 #[inline]
 fn hash(k: &Key) -> u32 {
-    // SAFETY: the map's invariant: a key points to a live entry or to the
-    // caller's lookup key, unwritten during the call.
-    let (path, stage) = unsafe { (entry_path_raw(k.0.as_ptr()), entry_stage_raw(k.0.as_ptr())) };
+    let (path, stage) = parts(k);
     // `git__tolower` is `tolower((unsigned char)c)` on Unix (the C locale).
     let low = |c: u8| u32::from(c.to_ascii_lowercase());
     let mut h: u32 = 0;
@@ -44,22 +42,26 @@ fn hash(k: &Key) -> u32 {
     h.wrapping_add(stage)
 }
 
+/// A key's path and stage.
+#[inline(always)]
+fn parts<'a>(k: &Key) -> (&'a [u8], u32) {
+    // SAFETY: the map's invariant: a key points to a live entry or to the
+    // caller's lookup key, unwritten during the call.
+    let path = unsafe { entry_path_raw(k.0.as_ptr()) };
+    // SAFETY: as above.
+    (path, unsafe { entry_stage_raw(k.0.as_ptr()) })
+}
+
 #[inline]
 fn equal_default(a: &Key, b: &Key) -> bool {
-    // SAFETY: as in `hash`.
-    unsafe {
-        entry_stage_raw(a.0.as_ptr()) == entry_stage_raw(b.0.as_ptr())
-            && entry_path_raw(a.0.as_ptr()) == entry_path_raw(b.0.as_ptr())
-    }
+    let ((pa, sa), (pb, sb)) = (parts(a), parts(b));
+    sa == sb && pa == pb
 }
 
 #[inline]
 fn equal_icase(a: &Key, b: &Key) -> bool {
-    // SAFETY: as in `hash`.
-    unsafe {
-        entry_stage_raw(a.0.as_ptr()) == entry_stage_raw(b.0.as_ptr())
-            && entry_path_raw(a.0.as_ptr()).eq_ignore_ascii_case(entry_path_raw(b.0.as_ptr()))
-    }
+    let ((pa, sa), (pb, sb)) = (parts(a), parts(b));
+    sa == sb && pa.eq_ignore_ascii_case(pb)
 }
 
 /// `git_index_entrymap`.

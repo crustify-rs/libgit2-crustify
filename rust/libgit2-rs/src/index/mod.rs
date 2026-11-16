@@ -320,16 +320,13 @@ pub struct EntryHead {
 /// `pathlen` bytes, neither written during `'a`.
 #[inline(always)]
 pub(crate) unsafe fn entry_path_raw<'a>(e: *const EntryHead) -> &'a [u8] {
-    // SAFETY: the caller's contract.
-    unsafe {
-        let p = (*e).entry.path;
-        let n = (*e).pathlen;
-        if n == 0 {
-            &[]
-        } else {
-            core::slice::from_raw_parts(p.cast::<u8>(), n)
-        }
+    // SAFETY: the caller's contract: a live head.
+    let h = unsafe { &*e };
+    if h.pathlen == 0 {
+        return &[];
     }
+    // SAFETY: the caller's contract: `pathlen` readable bytes at the path.
+    unsafe { core::slice::from_raw_parts(h.entry.path.cast::<u8>(), h.pathlen) }
 }
 
 /// The stage of an entry head.
@@ -359,6 +356,19 @@ pub(crate) unsafe fn epath<'a>(e: EntryPtr) -> &'a [u8] {
     unsafe { entry_path_raw(e.as_ptr()) }
 }
 
+/// An index entry's path and stage.
+///
+/// # Safety
+///
+/// As [`epath`].
+#[inline(always)]
+pub(crate) unsafe fn eps<'a>(e: EntryPtr) -> (&'a [u8], c_int) {
+    // SAFETY: the caller's contract.
+    let p = unsafe { epath(e) };
+    // SAFETY: as above.
+    (p, unsafe { estage(e) })
+}
+
 /// An index entry's stage.
 ///
 /// # Safety
@@ -379,15 +389,16 @@ pub(crate) fn entry_alloc(path: &[u8]) -> Result<EntryPtr> {
     let Some(p) = NonNull::new(p) else {
         return Err(ErrorCode::GENERIC);
     };
-    // SAFETY: `p` is a fresh, zeroed block of `alloclen` bytes, 8-aligned
-    // (the allocator's), room for the head, the path and its NUL; a zeroed
+    // `p` is a fresh, zeroed block of `alloclen` bytes, 8-aligned (the
+    // allocator's), room for the head, the path and its NUL; a zeroed
     // `EntryHead` is valid (all integers, a null pointer).
-    unsafe {
-        let pathp = p.as_ptr().cast::<u8>().add(size_of::<EntryHead>());
-        ptr::copy_nonoverlapping(path.as_ptr(), pathp, path.len());
-        (*p.as_ptr()).pathlen = path.len();
-        (*p.as_ptr()).entry.path = pathp.cast();
-    }
+    let pathp = p.as_ptr().cast::<u8>().wrapping_add(size_of::<EntryHead>());
+    // SAFETY: the path's room in the block, disjoint from `path`.
+    unsafe { ptr::copy_nonoverlapping(path.as_ptr(), pathp, path.len()) };
+    // SAFETY: the fresh, valid head, not otherwise referenced.
+    let h = unsafe { &mut *p.as_ptr() };
+    h.pathlen = path.len();
+    h.entry.path = pathp.cast();
     Ok(p)
 }
 
@@ -397,11 +408,10 @@ pub(crate) fn entry_alloc(path: &[u8]) -> Result<EntryPtr> {
 ///
 /// `e` is an entry made by [`entry_alloc`] that nothing uses afterwards.
 pub(crate) unsafe fn entry_free(e: EntryPtr) {
-    // SAFETY: the caller's contract.
-    unsafe {
-        (*e.as_ptr()).entry.id = Oid::default();
-        alloc::free(e.as_ptr().cast());
-    }
+    // SAFETY: the caller's contract: a live entry, now ours alone.
+    unsafe { (*e.as_ptr()).entry.id = Oid::default() };
+    // SAFETY: as above; `entry_alloc`'s block, freed once.
+    unsafe { alloc::free(e.as_ptr().cast()) };
 }
 
 /// `index_entry_cpy`: copy every field of `src` but the path pointer.
@@ -411,11 +421,10 @@ pub(crate) unsafe fn entry_free(e: EntryPtr) {
 /// `tgt` is a live entry not otherwise borrowed.
 pub(crate) unsafe fn entry_cpy(tgt: EntryPtr, src: &GitIndexEntry) {
     // SAFETY: the caller's contract.
-    unsafe {
-        let path = (*tgt.as_ptr()).entry.path;
-        (*tgt.as_ptr()).entry = *src;
-        (*tgt.as_ptr()).entry.path = path;
-    }
+    let t = unsafe { &mut (*tgt.as_ptr()).entry };
+    let path = t.path;
+    *t = *src;
+    t.path = path;
 }
 
 /// `index_entry_cpy_nocache`.
@@ -506,10 +515,11 @@ fn path_cmp(a: &[u8], b: &[u8], icase: bool) -> c_int {
 #[inline(always)]
 pub(crate) unsafe fn entry_cmp(a: EntryPtr, b: EntryPtr, icase: bool) -> c_int {
     // SAFETY: the caller's contract.
-    unsafe {
-        let d = path_cmp(epath(a), epath(b), icase);
-        if d != 0 { d } else { estage(a) - estage(b) }
-    }
+    let (pa, sa) = unsafe { eps(a) };
+    // SAFETY: as above.
+    let (pb, sb) = unsafe { eps(b) };
+    let d = path_cmp(pa, pb, icase);
+    if d != 0 { d } else { sa - sb }
 }
 
 /// `git_index_entry_srch` / `isrch`: the order of the key (`path`,
@@ -523,7 +533,7 @@ pub(crate) unsafe fn entry_cmp(a: EntryPtr, b: EntryPtr, icase: bool) -> c_int {
 #[inline(always)]
 pub(crate) unsafe fn entry_srch(path: &[u8], stage: c_int, e: EntryPtr, icase: bool) -> c_int {
     // SAFETY: the caller's contract.
-    let (epath, estage) = unsafe { (epath(e), estage(e)) };
+    let (epath, estage) = unsafe { eps(e) };
     let len = path.len().min(epath.len());
     let cmp = if icase {
         let mut c = 0;
@@ -606,25 +616,24 @@ pub(crate) fn entry_cmp_fn(icase: bool) -> VectorCmp {
 /// `r` is a live REUC entry made by [`reuc_alloc`].
 unsafe fn reuc_path<'a>(r: *const GitIndexReucEntry) -> &'a [u8] {
     // SAFETY: a `reuc_alloc` entry starts a `ReucHead`, whose path follows.
-    unsafe {
-        let h = r.cast::<ReucHead>();
-        let n = (*h).pathlen;
-        core::slice::from_raw_parts((*h).entry.path.cast::<u8>(), n)
-    }
+    let h = unsafe { &*r.cast::<ReucHead>() };
+    // SAFETY: as above: `pathlen` bytes at `path`.
+    unsafe { core::slice::from_raw_parts(h.entry.path.cast::<u8>(), h.pathlen) }
 }
 
 /// `reuc_entry_alloc`.
 fn reuc_alloc(path: &[u8]) -> Option<NonNull<GitIndexReucEntry>> {
     let alloclen = size_of::<ReucHead>().checked_add(path.len())?.checked_add(1)?;
     let p = NonNull::new(alloc::calloc(1, alloclen).cast::<ReucHead>())?;
-    // SAFETY: a fresh zeroed block with room for the head and the path; a
-    // zeroed head is valid.
-    unsafe {
-        let pathp = p.as_ptr().cast::<u8>().add(size_of::<ReucHead>());
-        ptr::copy_nonoverlapping(path.as_ptr(), pathp, path.len());
-        (*p.as_ptr()).pathlen = path.len();
-        (*p.as_ptr()).entry.path = pathp.cast();
-    }
+    // a fresh zeroed block with room for the head and the path; a zeroed
+    // head is valid
+    let pathp = p.as_ptr().cast::<u8>().wrapping_add(size_of::<ReucHead>());
+    // SAFETY: the path's room in the block, disjoint from `path`.
+    unsafe { ptr::copy_nonoverlapping(path.as_ptr(), pathp, path.len()) };
+    // SAFETY: the fresh head, not otherwise referenced.
+    let h = unsafe { &mut *p.as_ptr() };
+    h.pathlen = path.len();
+    h.entry.path = pathp.cast();
     Some(p.cast())
 }
 
@@ -643,14 +652,27 @@ fn reuc_path_cmp(a: &[u8], b: &[u8], icase: bool) -> c_int {
     path_cmp(a, b, icase)
 }
 
+/// `reuc_cmp`/`reuc_icmp` of two REUC entries.
+///
+/// # Safety
+///
+/// Both are live REUC entries made by [`reuc_alloc`].
+unsafe fn reuc_cmp_raw(a: *const c_void, b: *const c_void, icase: bool) -> c_int {
+    // SAFETY: the caller's contract.
+    let pa = unsafe { reuc_path(a.cast()) };
+    // SAFETY: as above.
+    let pb = unsafe { reuc_path(b.cast()) };
+    reuc_path_cmp(pa, pb, icase)
+}
+
 unsafe extern "C" fn reuc_cmp(a: *const c_void, b: *const c_void) -> c_int {
     // SAFETY: the vector's elements are REUC entries.
-    unsafe { reuc_path_cmp(reuc_path(a.cast()), reuc_path(b.cast()), false) }
+    unsafe { reuc_cmp_raw(a, b, false) }
 }
 
 unsafe extern "C" fn reuc_icmp(a: *const c_void, b: *const c_void) -> c_int {
     // SAFETY: as above.
-    unsafe { reuc_path_cmp(reuc_path(a.cast()), reuc_path(b.cast()), true) }
+    unsafe { reuc_cmp_raw(a, b, true) }
 }
 
 /// The bytes of a C string field, or `None` for NULL.
@@ -669,19 +691,23 @@ unsafe fn opt_cstr<'a>(p: *const c_char) -> Option<&'a [u8]> {
 ///
 /// Both are live name entries.
 unsafe fn name_cmp(a: *const GitIndexNameEntry, b: *const GitIndexNameEntry) -> c_int {
-    // SAFETY: the caller's contract; the fields are NULL or strings.
-    unsafe {
-        let (aa, ba) = (opt_cstr((*a).ancestor), opt_cstr((*b).ancestor));
-        match (aa, ba) {
-            (Some(_), None) => return 1,
-            (None, Some(_)) => return -1,
-            (Some(x), Some(y)) => return crate::util::util::strcmp(x, y),
-            (None, None) => {}
-        }
-        match (opt_cstr((*a).ours), opt_cstr((*b).ours)) {
-            (Some(x), Some(y)) => crate::util::util::strcmp(x, y),
-            _ => 0,
-        }
+    // SAFETY: the caller's contract.
+    let a = unsafe { &*a };
+    // SAFETY: as above.
+    let b = unsafe { &*b };
+    let f = |p: *const c_char| {
+        // SAFETY: the fields are NULL or strings (name entries' invariant).
+        unsafe { opt_cstr(p) }
+    };
+    match (f(a.ancestor), f(b.ancestor)) {
+        (Some(_), None) => return 1,
+        (None, Some(_)) => return -1,
+        (Some(x), Some(y)) => return crate::util::util::strcmp(x, y),
+        (None, None) => {}
+    }
+    match (f(a.ours), f(b.ours)) {
+        (Some(x), Some(y)) => crate::util::util::strcmp(x, y),
+        _ => 0,
     }
 }
 
@@ -699,13 +725,14 @@ unsafe fn name_free(ne: *mut GitIndexNameEntry) {
     if ne.is_null() {
         return;
     }
-    // SAFETY: the caller's contract: the strings are `git__allocator`'s.
-    unsafe {
-        alloc::free((*ne).ancestor.cast());
-        alloc::free((*ne).ours.cast());
-        alloc::free((*ne).theirs.cast());
-        alloc::free(ne.cast());
+    // SAFETY: the caller's contract: a live name entry, ours alone.
+    let n = unsafe { &*ne };
+    for s in [n.ancestor, n.ours, n.theirs] {
+        // SAFETY: NULL or a `git__allocator` string the entry owns.
+        unsafe { alloc::free(s.cast()) };
     }
+    // SAFETY: the entry's block, freed once.
+    unsafe { alloc::free(ne.cast()) };
 }
 
 // ---------------------------------------------------------------------------
@@ -916,8 +943,10 @@ impl GitIndex {
     pub(crate) fn remove_entry(&mut self, pos: usize) -> Result<()> {
         let entry = self.entry_at(pos);
         if let Some(e) = entry {
-            // SAFETY: the tree invariant; `e` is a live entry of the index.
-            unsafe { tree_cache::invalidate_path(self.tree, epath(e)) };
+            // SAFETY: `e` is a live entry of the index.
+            let p = unsafe { epath(e) };
+            // SAFETY: the tree invariant.
+            unsafe { tree_cache::invalidate_path(self.tree, p) };
             // SAFETY: `e` is live.
             unsafe { self.entries_map.remove(e) };
         }
@@ -979,9 +1008,7 @@ impl GitIndex {
         let icase = self.reuc_icase();
         if self.reuc.len() > 1 {
             // SAFETY: the vector holds REUC entries (the invariant).
-            tsort(self.reuc.as_mut_slice(), |a, b| unsafe {
-                reuc_path_cmp(reuc_path(a.cast()), reuc_path(b.cast()), icase)
-            });
+            tsort(self.reuc.as_mut_slice(), |a, b| unsafe { reuc_cmp_raw(a, b, icase) });
         }
         self.reuc.set_sorted(true);
     }
@@ -1056,7 +1083,7 @@ impl GitIndex {
                     let mut p = pos;
                     while let Some(e) = self.entry_at(p) {
                         // SAFETY: a live entry of the index.
-                        let (ep, es) = unsafe { (epath(e), estage(e)) };
+                        let (ep, es) = unsafe { eps(e) };
                         // `git__strcasecmp` / `git__strcmp`.
                         if path_cmp(path, ep, icase) != 0 {
                             break;
@@ -1100,14 +1127,14 @@ impl GitIndex {
         // SAFETY: `entry` is live and not in the index (the caller), so
         // this is its only access; `existing` is a live entry of the index,
         // distinct from `entry`.
-        let (path, len) = unsafe { ((*entry.as_ptr()).entry.path.cast_mut().cast::<u8>(), (*entry.as_ptr()).pathlen) };
+        let head = unsafe { &*entry.as_ptr() };
+        let (path, len) = (head.entry.path.cast_mut().cast::<u8>(), head.pathlen);
         if let Some(ex) = existing {
+            // SAFETY: as above.
+            let ep = unsafe { epath(ex) };
             // SAFETY: as above; C copies `strlen(existing->path)` bytes,
             // the same length (the paths are equal but for case).
-            unsafe {
-                let ep = epath(ex);
-                ptr::copy_nonoverlapping(ep.as_ptr(), path, ep.len().min(len));
-            }
+            unsafe { ptr::copy_nonoverlapping(ep.as_ptr(), path, ep.len().min(len)) };
             return;
         }
         // SAFETY: as above.
@@ -1134,7 +1161,7 @@ impl GitIndex {
             let mut p = pos;
             while let Some(m) = self.entry_at(p) {
                 // SAFETY: a live entry of the index.
-                let (mp, ms) = unsafe { (epath(m), estage(m)) };
+                let (mp, ms) = unsafe { eps(m) };
                 if ms != 0 {
                     // conflicts do not contribute to canonical paths
                 } else if mp.starts_with(prefix) {
@@ -1152,11 +1179,10 @@ impl GitIndex {
             end = sep;
         }
         if let Some((b, blen)) = best {
+            // SAFETY: as above.
+            let bp = unsafe { epath(b) };
             // SAFETY: as above; `blen` is within both paths.
-            unsafe {
-                let bp = epath(b);
-                ptr::copy_nonoverlapping(bp.as_ptr(), path, blen.min(len));
-            }
+            unsafe { ptr::copy_nonoverlapping(bp.as_ptr(), path, blen.min(len)) };
         }
     }
 
@@ -1164,12 +1190,13 @@ impl GitIndex {
     /// path, as a directory, at its stage.
     fn has_file_name(&mut self, entry: EntryPtr, mut pos: usize, ok_to_replace: bool) -> core::result::Result<(), ()> {
         // SAFETY: `entry` is live and not in the index.
-        let (name, stage) = unsafe { (epath(entry).to_vec(), estage(entry)) };
+        let (name, stage) = unsafe { eps(entry) };
+        let name = name.to_vec();
         let len = name.len();
         while let Some(p) = self.entry_at(pos) {
             pos += 1;
             // SAFETY: a live entry of the index.
-            let (pp, ps) = unsafe { (epath(p), estage(p)) };
+            let (pp, ps) = unsafe { eps(p) };
             if len >= pp.len() {
                 break;
             }
@@ -1197,7 +1224,8 @@ impl GitIndex {
     /// `entry`'s parent directories, at its stage.
     fn has_dir_name(&mut self, entry: EntryPtr, ok_to_replace: bool) -> core::result::Result<(), ()> {
         // SAFETY: `entry` is live and not in the index.
-        let (name, stage) = unsafe { (epath(entry).to_vec(), estage(entry)) };
+        let (name, stage) = unsafe { eps(entry) };
+        let name = name.to_vec();
         let mut slash = name.len();
         loop {
             // find the previous '/' (C stops at the start of the path)
@@ -1224,7 +1252,7 @@ impl GitIndex {
                 Err(mut pos) => {
                     while let Some(p) = self.entry_at(pos) {
                         // SAFETY: a live entry of the index.
-                        let (pp, ps) = unsafe { (epath(p), estage(p)) };
+                        let (pp, ps) = unsafe { eps(p) };
                         if pp.len() <= len || pp[len] != b'/' || pp[..len] != name[..len] {
                             break;
                         }
@@ -1270,7 +1298,8 @@ impl GitIndex {
         trust_path: bool,
     ) -> Result<EntryPtr> {
         // SAFETY: `entry` is live and not in the index.
-        let (path, stage) = unsafe { (epath(entry).to_vec(), estage(entry)) };
+        let (path, stage) = unsafe { eps(entry) };
+        let path = path.to_vec();
         // the position (and existing entry) again: C kept them across the
         // object check, which may have run code that changed the index.
         let (existing, position, _) = self.existing_and_best(&path, stage);
@@ -1284,15 +1313,18 @@ impl GitIndex {
         let result = if let Some(ex) = existing {
             if replace {
                 // SAFETY: `ex` is a live entry of the index and `entry` a
-                // distinct live one.
-                unsafe {
-                    let src = (*entry.as_ptr()).entry;
-                    entry_cpy(ex, &src);
-                    if trust_path {
-                        let ep = epath(entry);
-                        let xp = (*ex.as_ptr()).entry.path.cast_mut().cast::<u8>();
-                        ptr::copy_nonoverlapping(ep.as_ptr(), xp, ep.len().min((*ex.as_ptr()).pathlen));
-                    }
+                // distinct live one (for this whole block).
+                let src = unsafe { (*entry.as_ptr()).entry };
+                // SAFETY: as above.
+                unsafe { entry_cpy(ex, &src) };
+                if trust_path {
+                    // SAFETY: as above.
+                    let ep = unsafe { epath(entry) };
+                    // SAFETY: as above.
+                    let xh = unsafe { &*ex.as_ptr() };
+                    let (xp, xlen) = (xh.entry.path.cast_mut().cast::<u8>(), xh.pathlen);
+                    // SAFETY: as above: within `ex`'s own path.
+                    unsafe { ptr::copy_nonoverlapping(ep.as_ptr(), xp, ep.len().min(xlen)) };
                 }
             }
             // SAFETY: the entry is ours, not in the index.
@@ -1309,7 +1341,7 @@ impl GitIndex {
                 Some(&mut |_old: &mut *mut c_void, new: *mut c_void| {
                     let e = as_entry(new);
                     // SAFETY: `new` is `entry`, live.
-                    let (p, s) = unsafe { (epath(e), estage(e)) };
+                    let (p, s) = unsafe { eps(e) };
                     let _ = errors::set_fmt(
                         ErrorClass::INDEX,
                         format_args!("'{}' appears multiple times at stage {}", Bytes(p), s),
@@ -1350,19 +1382,16 @@ impl GitIndex {
         let mut path: Option<&[u8]> = None;
         while let Some(e) = self.entry_at(n) {
             // SAFETY: a live entry of the index.
-            let (ep, es) = unsafe { (epath(e), estage(e)) };
+            let (ep, es) = unsafe { eps(e) };
             if let Some(p) = path
                 && path_cmp(ep, p, icase) != 0
             {
                 break;
             }
             path = Some(ep);
-            match es {
-                3 | 2 | 1 => {
-                    out[es as usize - 1] = Some(e);
-                    len += 1;
-                }
-                _ => {}
+            if (1..=3).contains(&es) {
+                out[es as usize - 1] = Some(e);
+                len += 1;
             }
             n += 1;
         }
@@ -1398,7 +1427,7 @@ impl GitIndex {
         let icase = self.ignore_case();
         while let Some(e) = self.entry_at(pos) {
             // SAFETY: a live entry of the index.
-            let (ep, es) = unsafe { (epath(e), estage(e)) };
+            let (ep, es) = unsafe { eps(e) };
             if let Some(p) = path
                 && path_cmp(ep, p, icase) != 0
             {
@@ -1453,7 +1482,7 @@ impl GitIndex {
         };
         while let Some(e) = self.entry_at(pos) {
             // SAFETY: a live entry of the index.
-            let (ep, es) = unsafe { (epath(e), estage(e)) };
+            let (ep, es) = unsafe { eps(e) };
             if !ep.starts_with(pfx) {
                 break;
             }
@@ -1500,12 +1529,12 @@ impl GitIndex {
                 }
             }
         };
-        // SAFETY: `ne` is a fresh zeroed name entry.
-        let ok = unsafe {
-            dup(ancestor, &raw mut (*ne).ancestor)
-                && dup(ours, &raw mut (*ne).ours)
-                && dup(theirs, &raw mut (*ne).theirs)
-        } && self.names.insert(ne.cast()).is_ok();
+        // SAFETY: `ne` is a fresh zeroed name entry, ours alone.
+        let n = unsafe { &mut *ne };
+        let ok = dup(ancestor, &raw mut n.ancestor)
+            && dup(ours, &raw mut n.ours)
+            && dup(theirs, &raw mut n.theirs)
+            && self.names.insert(ne.cast()).is_ok();
         if !ok {
             // SAFETY: ours, not inserted.
             unsafe { name_free(ne) };
@@ -1560,7 +1589,7 @@ impl GitIndex {
         let r = self.reuc.insert_sorted_by(
             reuc.as_ptr().cast(),
             // SAFETY: REUC entries.
-            |a, b| unsafe { reuc_path_cmp(reuc_path(a.cast()), reuc_path(b.cast()), icase) },
+            |a, b| unsafe { reuc_cmp_raw(a, b, icase) },
             Some(&mut |old: &mut *mut c_void, new: *mut c_void| {
                 // `index_reuc_on_dup`
                 // SAFETY: the old entry is ours, replaced by `new`.
@@ -1718,16 +1747,33 @@ impl IndexPtr {
     /// to the rest of the index.
     #[inline]
     pub fn owner(self) -> *mut c_void {
-        // SAFETY: the index is live (`new`); `rc` is atomics, which C also
-        // reads and writes through shared access.
-        unsafe { (*(&raw const (*self.0.as_ptr()).rc)).owner() }
+        self.rc().owner()
+    }
+
+    /// The reference count (atomics, which C also reads and writes through
+    /// shared access): `rc` is the first field.
+    #[inline]
+    fn rc<'a>(self) -> &'a GitRefcount {
+        // SAFETY: the index is live (`new`); `rc` is its first field
+        // (`repr(C)`), only ever accessed through shared references.
+        unsafe { &*self.0.as_ptr().cast::<GitRefcount>() }
+    }
+
+    /// The readers count (atomic).
+    #[inline]
+    pub(crate) fn readers<'a>(self) -> &'a Atomic32 {
+        // SAFETY: the index is live; only the field's address is taken.
+        let p = unsafe { &raw const (*self.0.as_ptr()).readers };
+        // SAFETY: as above; the counter is atomic, never borrowed
+        // exclusively while a handle reads it (the index's methods that
+        // take `&mut self` only read or change it through `&`).
+        unsafe { &*p }
     }
 
     /// `GIT_REFCOUNT_INC`.
     #[inline]
     pub fn incref(self) {
-        // SAFETY: as in `owner`.
-        unsafe { (*(&raw const (*self.0.as_ptr()).rc)).inc() }
+        self.rc().inc()
     }
 
     /// `git_index_free`: drop a reference, and free the index when it was
@@ -1738,8 +1784,7 @@ impl IndexPtr {
     /// The caller gives up its reference: it does not use the handle
     /// afterwards (unless it holds another reference).
     pub unsafe fn decref(self) {
-        // SAFETY: as in `owner`.
-        let free = unsafe { (*(&raw const (*self.0.as_ptr()).rc)).dec() };
+        let free = self.rc().dec();
         if free {
             // SAFETY: the last reference: nothing else uses the index.
             unsafe { index_free(self) };

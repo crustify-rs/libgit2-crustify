@@ -1428,9 +1428,8 @@ pub(crate) fn snapshot_new(ix: IndexPtr) -> Result<GitVector> {
 /// `git_index_snapshot_release`.
 pub(crate) fn snapshot_release(mut snap: GitVector, ix: IndexPtr) {
     snap.dispose();
-    // SAFETY: the reader and reference the snapshot holds; `readers` is
-    // atomic, read through a shared reference.
-    unsafe { (*(&raw const (*ix.as_ptr()).readers)).dec() };
+    // the reader and reference the snapshot holds
+    ix.readers().dec();
     // SAFETY: the snapshot's reference, given up.
     unsafe { ix.decref() };
 }
