@@ -114,7 +114,7 @@ fn apply_failures() {
     let delta = [0x10u8, 0x10, 0xff, 0xff, 0xff, 0xff, 0xff, 0x10, 0x00, 0x00];
     // SAFETY: as C calls it.
     unsafe {
-        let (mut out, mut len) = (1usize as *mut c_void, 7usize);
+        let (mut out, mut len) = (ptr::dangling_mut::<c_void>(), 7usize);
         assert_eq!(
             ffi::git_delta_apply(
                 &mut out,

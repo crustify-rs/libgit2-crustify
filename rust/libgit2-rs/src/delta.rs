@@ -23,6 +23,7 @@
 
 use core::alloc::Allocator;
 use core::ffi::{c_int, c_void};
+use core::mem::MaybeUninit;
 
 use crate::git_error_set;
 use crate::util::errors::{self, ErrorClass, ErrorCode, Result};
@@ -121,13 +122,25 @@ static U: [u32; 256] = [
     0x1400edeb, 0x6ab5cde6, 0x42331920, 0x3c86392d, 0x133eb0ac, 0x6d8b90a1, 0x450d4467, 0x3bb8646a,
 ];
 
-/// `T[val >> RABIN_SHIFT]`. `val` stays below 2^31 (each `T[i]` has bit 31
-/// equal to bit 0 of `i`, which cancels the bit shifted into position 31),
-/// so the index is below 256; the mask only spares the bounds check and
-/// changes nothing.
+/// [`T`] padded to 512 entries, the range of `val >> RABIN_SHIFT` for a
+/// `u32`, so that `t_of` needs neither a bounds check nor a mask on the
+/// fingerprint's dependency chain. `val` stays below 2^31 (each `T[i]` has
+/// bit 31 equal to bit 0 of `i`, which cancels the bit shifted into
+/// position 31), so the padding is never read.
+static T512: [u32; 512] = {
+    let mut t = [0u32; 512];
+    let mut i = 0;
+    while i < 256 {
+        t[i] = T[i];
+        i += 1;
+    }
+    t
+};
+
+/// `T[val >> RABIN_SHIFT]`.
 #[inline(always)]
 fn t_of(val: u32) -> u32 {
-    T[((val >> RABIN_SHIFT) & 0xff) as usize]
+    T512[(val >> RABIN_SHIFT) as usize]
 }
 
 /// One step of the Rabin fingerprint: shift in `byte`.
@@ -141,17 +154,30 @@ fn rabin_push(val: u32, byte: u8) -> u32 {
 // ---------------------------------------------------------------------------
 
 /// `hdr_sz`: one varint size of the delta header, from `delta[*pos..]`.
-#[inline]
+#[inline(always)]
 fn hdr_sz(delta: &[u8], pos: &mut usize) -> Result<usize> {
+    // The one-byte case, without the loop.
+    if let Some(&c) = delta.get(*pos)
+        && c & 0x80 == 0
+    {
+        *pos += 1;
+        return Ok(c as usize);
+    }
+    hdr_sz_slow(delta, pos)
+}
+
+/// [`hdr_sz`]'s loop.
+#[inline(never)]
+fn hdr_sz_slow(delta: &[u8], pos: &mut usize) -> Result<usize> {
     let mut p = *pos;
     let mut r: usize = 0;
     let mut shift: u32 = 0;
     loop {
         let Some(&c) = delta.get(p) else {
-            return Err(git_error_set!(ErrorClass::INVALID, "truncated delta"));
+            return Err(invalid("truncated delta"));
         };
         if shift >= usize::BITS {
-            return Err(git_error_set!(ErrorClass::INVALID, "delta header overflow"));
+            return Err(invalid("delta header overflow"));
         }
         p += 1;
         // Bits shifted out at shift 63 are lost, as in C.
@@ -177,50 +203,61 @@ pub fn read_header(delta: &[u8]) -> Result<(usize, usize)> {
 // Apply
 // ---------------------------------------------------------------------------
 
-fn apply_failed() -> ErrorCode {
-    git_error_set!(ErrorClass::INVALID, "failed to apply delta")
+/// Set `msg` (class `GIT_ERROR_INVALID`) and return -1, off the hot path.
+#[cold]
+#[inline(never)]
+fn invalid(msg: &'static str) -> ErrorCode {
+    errors::set_str(ErrorClass::INVALID, msg)
 }
 
-/// `git_delta_apply`'s work: the result of applying `delta` to `base`, in
-/// `alloc`, with a NUL after it when `nul` (the C's buffer has one; it is
-/// not part of the result's length). `max_object_size` is
+#[cold]
+#[inline(never)]
+fn apply_failed() -> ErrorCode {
+    invalid("failed to apply delta")
+}
+
+/// `git_delta_apply`'s checks of the header: the result size, and where
+/// the instructions start. `max_object_size` is
 /// `git_indexer__max_object_size`.
-pub(crate) fn apply_in<A: Allocator>(
-    base: &[u8],
+#[inline(always)]
+pub(crate) fn apply_header(
+    base_len: usize,
     delta: &[u8],
     max_object_size: usize,
-    nul: bool,
-    alloc: A,
-) -> Result<Vec<u8, A>> {
+) -> Result<(usize, usize)> {
     let mut pos = 0;
     // Check that the base size matches the data we were given.
     match hdr_sz(delta, &mut pos) {
-        Ok(base_sz) if base_sz == base.len() => {}
+        Ok(base_sz) if base_sz == base_len => {}
         _ => {
-            return Err(git_error_set!(
-                ErrorClass::INVALID,
-                "failed to apply delta: base size does not match given data"
+            return Err(invalid(
+                "failed to apply delta: base size does not match given data",
             ));
         }
     }
     let Ok(res_sz) = hdr_sz(delta, &mut pos) else {
-        return Err(git_error_set!(
-            ErrorClass::INVALID,
-            "failed to apply delta: base size does not match given data"
+        return Err(invalid(
+            "failed to apply delta: base size does not match given data",
         ));
     };
     if res_sz > max_object_size {
-        return Err(git_error_set!(
-            ErrorClass::INVALID,
-            "failed to apply delta: overly large object"
-        ));
+        return Err(invalid("failed to apply delta: overly large object"));
     }
-    let alloc_sz = alloc_add(res_sz, 1)?;
-    let mut out: Vec<u8, A> = Vec::new_in(alloc);
-    out.try_reserve_exact(alloc_sz).map_err(|_| errors::oom())?;
+    Ok((res_sz, pos))
+}
 
-    let mut remaining = res_sz;
+/// `git_delta_apply`'s loop: run the instructions of `delta[pos..]` on
+/// `base` into `out`, which is the result's size; on success every byte of
+/// `out` was written.
+#[inline(always)]
+pub(crate) fn apply_body(
+    base: &[u8],
+    delta: &[u8],
+    mut pos: usize,
+    out: &mut [MaybeUninit<u8>],
+) -> Result<()> {
     let end = delta.len();
+    let mut o: usize = 0;
     while pos < end {
         let cmd = delta[pos];
         pos += 1;
@@ -263,34 +300,43 @@ pub(crate) fn apply_in<A: Allocator>(
             if len == 0 {
                 len = 0x10000;
             }
-            let Some(src) = off.checked_add(len).and_then(|e| base.get(off..e)) else {
+            // `off + len` cannot overflow: both are below 2^32. `o + len`
+            // cannot either: `o <= out.len() <= isize::MAX`.
+            let (Some(src), Some(dst)) = (base.get(off..off + len), out.get_mut(o..o + len)) else {
                 return Err(apply_failed());
             };
-            if remaining < len {
-                return Err(apply_failed());
-            }
-            out.extend_from_slice(src);
-            remaining -= len;
+            dst.write_copy_of_slice(src);
+            o += len;
         } else if cmd != 0 {
             // A literal insert from the delta itself.
             let n = cmd as usize;
-            if end - pos < n || remaining < n {
+            let (Some(src), Some(dst)) = (delta.get(pos..pos + n), out.get_mut(o..o + n)) else {
                 return Err(apply_failed());
-            }
-            out.extend_from_slice(&delta[pos..pos + n]);
+            };
+            dst.write_copy_of_slice(src);
             pos += n;
-            remaining -= n;
+            o += n;
         } else {
             // cmd == 0 is reserved for future encodings.
             return Err(apply_failed());
         }
     }
-    if remaining != 0 {
+    if o != out.len() {
         return Err(apply_failed());
     }
-    if nul {
-        out.push(0);
-    }
+    Ok(())
+}
+
+/// Apply `delta` to `base` with the result-size limit `max_object_size`.
+pub fn apply_with_limit(base: &[u8], delta: &[u8], max_object_size: usize) -> Result<Vec<u8>> {
+    let (res_sz, pos) = apply_header(base.len(), delta, max_object_size)?;
+    let mut out: Vec<u8> = Vec::new();
+    out.try_reserve_exact(alloc_add(res_sz, 1)?)
+        .map_err(|_| errors::oom())?;
+    apply_body(base, delta, pos, &mut out.spare_capacity_mut()[..res_sz])?;
+    // SAFETY: `apply_body` succeeded, so it wrote all `res_sz` bytes of the
+    // spare capacity, which the reservation made at least that long.
+    unsafe { out.set_len(res_sz) };
     Ok(out)
 }
 
@@ -298,13 +344,7 @@ pub(crate) fn apply_in<A: Allocator>(
 /// error (`failed to apply delta…`, class `GIT_ERROR_INVALID`). Results
 /// larger than `GIT_OPT_SET_MAX_OBJECT_SIZE` are refused, as in C.
 pub fn apply(base: &[u8], delta: &[u8]) -> Result<Vec<u8>> {
-    apply_in(
-        base,
-        delta,
-        crate::sys::indexer::max_object_size(),
-        false,
-        std::alloc::Global,
-    )
+    apply_with_limit(base, delta, crate::sys::indexer::max_object_size())
 }
 
 // ---------------------------------------------------------------------------
@@ -331,7 +371,6 @@ struct Entry {
 pub struct DeltaIndex<'a> {
     src: &'a [u8],
     memsize: usize,
-    hash_mask: u32,
     hash: Vec<u32>,
     entries: Vec<Entry>,
 }
@@ -365,7 +404,6 @@ impl<'a> DeltaIndex<'a> {
             i += 1;
         }
         hsize = 1 << i;
-        let hmask = hsize - 1;
 
         // `lookup_index_alloc`'s size, as the C allocated it.
         let entries_len = alloc_multiply(entries as usize, C_INDEX_ENTRY_SIZE)?;
@@ -374,38 +412,58 @@ impl<'a> DeltaIndex<'a> {
 
         let mut hash = try_vec(hsize as usize, NONE)?;
         let mut hash_count = try_vec(hsize as usize, 0u32)?;
-        let mut ents: Vec<Entry> = Vec::new();
-        ents.try_reserve_exact(entries as usize)
-            .map_err(|_| errors::oom())?;
+        let empty = Entry {
+            ptr: 0,
+            val: 0,
+            next: NONE,
+        };
+        let mut ents = try_vec(entries as usize, empty)?;
+        let mut n: usize = 0;
 
-        // Populate the index, from the last window back.
+        // Populate the index, from the last window back: window `k` is
+        // `src[16k + 1..=16k + 16]`, and its entry points after it.
         let mut prev_val = !0u32;
-        let mut d = entries as isize * RABIN_WINDOW as isize - RABIN_WINDOW as isize;
-        while d >= 0 {
-            let du = d as usize;
+        let windows = &src[1..1 + entries as usize * RABIN_WINDOW];
+        for (k, w) in windows
+            .as_chunks::<RABIN_WINDOW>()
+            .0
+            .iter()
+            .enumerate()
+            .rev()
+        {
+            let ptr = (k + 1) * RABIN_WINDOW;
             let mut val = 0u32;
-            for &b in &src[du + 1..=du + RABIN_WINDOW] {
+            for &b in w {
                 val = rabin_push(val, b);
             }
             if val == prev_val {
                 // Keep the lowest of consecutive identical blocks.
-                if let Some(e) = ents.last_mut() {
-                    e.ptr = du + RABIN_WINDOW;
+                if let Some(e) = n.checked_sub(1).and_then(|l| ents.get_mut(l)) {
+                    e.ptr = ptr;
                 }
             } else {
                 prev_val = val;
-                let b = (val & hmask) as usize;
-                let idx = ents.len() as u32;
-                ents.push(Entry {
-                    ptr: du + RABIN_WINDOW,
+                // `hash.len() == hsize`, a power of two: the bucket
+                // `val & (hsize - 1)`, with a mask the compiler sees is in
+                // bounds.
+                let b = val as usize & (hash.len() - 1);
+                let idx = n as u32;
+                // At most one entry per window: `ents` holds them all, and
+                // the loop has no growth path.
+                ents[n] = Entry {
+                    ptr,
                     val,
                     next: hash[b],
-                });
+                };
+                n += 1;
                 hash[b] = idx;
-                hash_count[b] += 1;
+                if let Some(c) = hash_count.get_mut(b) {
+                    *c += 1;
+                }
             }
-            d -= RABIN_WINDOW as isize;
         }
+
+        ents.truncate(n);
 
         // Cull over-full buckets uniformly (C's loop, quirks included: the
         // skip count is 0 for 64..127 entries, so `--skip` runs to the end
@@ -435,7 +493,6 @@ impl<'a> DeltaIndex<'a> {
         Ok(Some(DeltaIndex {
             src,
             memsize,
-            hash_mask: hmask,
             hash,
             entries: ents,
         }))
@@ -520,7 +577,8 @@ impl<'a> DeltaIndex<'a> {
             if msize < 4096 {
                 val ^= U[trg[d - RABIN_WINDOW] as usize];
                 val = rabin_push(val, trg[d]);
-                let mut e = self.hash[(val & self.hash_mask) as usize];
+                // `hash.len() == hash_mask + 1`, a power of two.
+                let mut e = self.hash[val as usize & (self.hash.len() - 1)];
                 while e != NONE {
                     let entry = self.entries[e as usize];
                     e = entry.next;
@@ -580,7 +638,7 @@ impl<'a> DeltaIndex<'a> {
                 }
 
                 // A copy op is limited to 64KB (pack v2).
-                let left = if msize < 0x10000 { 0 } else { msize - 0x10000 };
+                let left = msize.saturating_sub(0x10000);
                 msize -= left;
 
                 let op = bufpos;
@@ -711,7 +769,7 @@ fn read_header_from(read: &mut dyn FnMut(&mut [u8]) -> isize) -> Result<(usize, 
 pub mod ffi {
     use super::*;
     use crate::git_assert_arg;
-    use crate::util::alloc::{GIT_ALLOC, GitAlloc};
+    use crate::util::alloc::{self, GIT_ALLOC, GitAlloc};
     use crate::util::export::{barrier, bytes};
     use core::ffi::c_char;
     use core::mem::ManuallyDrop;
@@ -814,6 +872,9 @@ pub mod ffi {
             // SAFETY: the caller passes writable out-parameters.
             unsafe {
                 out.write(core::ptr::null_mut());
+            }
+            // SAFETY: as above.
+            unsafe {
                 out_size.write(0);
             }
             if trg_buf.is_null() || trg_size == 0 {
@@ -822,13 +883,18 @@ pub mod ffi {
             git_assert_arg!(!index.is_null(), "index", -1);
             // SAFETY: the caller's contract: a live index, and `trg_size`
             // readable target bytes.
-            let (index, trg) = unsafe { (&*index, bytes(trg_buf.cast::<c_char>(), trg_size)) };
+            let index = unsafe { &*index };
+            // SAFETY: as above.
+            let trg = unsafe { bytes(trg_buf.cast::<c_char>(), trg_size) };
             match index.create_in(trg, max_size, GIT_ALLOC) {
                 Ok(Some(v)) => {
                     let (p, n) = into_c(v);
                     // SAFETY: as above.
                     unsafe {
                         out.write(p);
+                    }
+                    // SAFETY: as above.
+                    unsafe {
                         out_size.write(n);
                     }
                     0
@@ -902,6 +968,9 @@ pub mod ffi {
                     // SAFETY: the caller passes writable out-parameters.
                     unsafe {
                         base_sz.write(b);
+                    }
+                    // SAFETY: as above.
+                    unsafe {
                         res_sz.write(r);
                     }
                     0
@@ -909,6 +978,37 @@ pub mod ffi {
                 Err(_) => -1,
             }
         })
+    }
+
+    /// `git_delta_apply` into a `git__malloc` buffer of the result's size
+    /// plus a NUL, as C.
+    fn apply_c(base: &[u8], delta: &[u8], max: usize) -> Result<(*mut c_void, usize)> {
+        let (res_sz, pos) = apply_header(base.len(), delta, max)?;
+        let alloc_sz = alloc_add(res_sz, 1)?;
+        if alloc_sz > isize::MAX as usize {
+            return Err(errors::oom());
+        }
+        let p = alloc::malloc(alloc_sz);
+        if p.is_null() {
+            return Err(ErrorCode::GENERIC);
+        }
+        // SAFETY: `p` is a fresh allocation of `alloc_sz <= isize::MAX`
+        // bytes, which nothing else references; `MaybeUninit` needs no
+        // initialization.
+        let buf = unsafe { core::slice::from_raw_parts_mut(p.cast::<MaybeUninit<u8>>(), alloc_sz) };
+        let (body, nul) = buf.split_at_mut(res_sz);
+        match apply_body(base, delta, pos, body) {
+            Ok(()) => {
+                nul[0].write(0);
+                Ok((p, res_sz))
+            }
+            Err(e) => {
+                // SAFETY: `p` is ours (from `malloc` above), not handed out;
+                // `buf` is not used again.
+                unsafe { alloc::free(p) };
+                Err(e)
+            }
+        }
     }
 
     /// `git_delta_apply`.
@@ -930,23 +1030,25 @@ pub mod ffi {
             // SAFETY: the caller passes writable out-parameters.
             unsafe {
                 out.write(core::ptr::null_mut());
+            }
+            // SAFETY: as above.
+            unsafe {
                 out_len.write(0);
             }
             // SAFETY: the caller's contract.
-            let (base, delta) = unsafe {
-                (
-                    bytes(base.cast::<c_char>(), base_len),
-                    bytes(delta.cast::<c_char>(), delta_len),
-                )
-            };
+            let base = unsafe { bytes(base.cast::<c_char>(), base_len) };
+            // SAFETY: as above.
+            let delta = unsafe { bytes(delta.cast::<c_char>(), delta_len) };
             let max = crate::sys::indexer::max_object_size();
-            match apply_in(base, delta, max, true, GIT_ALLOC) {
-                Ok(v) => {
-                    let (p, n) = into_c(v);
-                    // SAFETY: as above; the length excludes the NUL.
+            match apply_c(base, delta, max) {
+                Ok((p, n)) => {
+                    // SAFETY: as above.
                     unsafe {
                         out.write(p);
-                        out_len.write(n - 1);
+                    }
+                    // SAFETY: as above.
+                    unsafe {
+                        out_len.write(n);
                     }
                     0
                 }
