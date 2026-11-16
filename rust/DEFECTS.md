@@ -402,6 +402,19 @@ DIVERGENCES.md).
   shorten OID - invalid hex value` (class INVALID), the trie as C would
   leave it before the bad write.
 
+### oid: `git_oid_shorten_add` leaves a leaf behind a positive link
+- C: `src/libgit2/oid.c`, `git_oid_shorten_add`: when the walk reaches a
+  leaf it makes the parent's link positive, and converts the leaf only on
+  the next iteration, after validating that iteration's digit. If that
+  digit is not hex the add fails and the node keeps its `tail` pointer
+  while its link says it is a normal node. Later walks through it read the
+  pointer's bytes as `children[0..3]`: a digit 0..3 follows pointer bits
+  as a node index (out of bounds); 4..f read 0 (zeroed memory).
+- Trigger: add `"abcdef…01"`, then `"ax"`, then `"a0…"`.
+- Rust: the failing add empties that node (C's view of it for digits
+  4..f, also used for 0..3); the leaf's id is dropped, as in C. (Review
+  u1-r1, U1-1: the first port read the union's tail as children here.)
+
 ### oid: `resize_trie` loses the trie on allocation failure
 - C: `self->nodes = git__reallocarray(self->nodes, …)` overwrites the
   pointer with NULL (leak; the next add dereferences NULL).

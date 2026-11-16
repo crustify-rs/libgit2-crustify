@@ -1,8 +1,10 @@
 //! The C ABI of `futils.c`: thin shims over [`super`].
 
 use super::*;
-use crate::sys::{hashmap_str, pending};
 use crate::util::export::{barrier, cstr, cstr_bytes, status, write_opt};
+use crate::util::hashmap::{CStrKey, GitHashSetStr};
+use crate::util::pool::GitPool;
+use core::ptr::NonNull;
 
 /// A path argument as a C string (`c""` for NULL, which C would crash on).
 ///
@@ -317,7 +319,8 @@ pub unsafe extern "C" fn git_futils_mmap_ro_file(out: *mut GitMap, path: *const 
             Ok(len) => unsafe { git_futils_mmap_ro(out, fd, 0, len as usize) },
             Err(e) => e.raw(),
         };
-        let _ = posix::close(fd);
+        // SAFETY: a descriptor this code opened, closed once.
+        let _ = unsafe { posix::close(fd) };
         r
     })
 }
@@ -333,36 +336,40 @@ pub unsafe extern "C" fn git_futils_mmap_free(out: *mut GitMap) {
     unsafe { crate::util::posix::ffi::p_munmap(out) };
 }
 
-/// C's mkdir cache: `git_pool` + `git_hashset_str`.
+/// C's mkdir cache: the caller's `git_pool` and `git_hashset_str`, through
+/// their Rust ports (`GitPool`, `GitHashSetStr`).
 struct CCache {
-    pool: *mut c_void,
-    set: *mut c_void,
+    pool: *mut GitPool,
+    set: *mut GitHashSetStr<'static>,
 }
 
 impl MkdirCache for CCache {
     fn contains(&mut self, path: &CStr) -> bool {
-        // SAFETY: `set` is NULL or the caller's live `git_hashset_str`
-        // (`git_futils_mkdir_relative`'s contract); `path` is a C string.
-        !self.set.is_null()
-            && unsafe { hashmap_str::git_hashset_str__contains(self.set, path.as_ptr()) } != 0
+        // SAFETY: `set` is NULL or the caller's live set, which nothing else
+        // uses during the call (`git_futils_mkdir_relative`'s contract).
+        let Some(set) = (unsafe { self.set.as_ref() }) else {
+            return false;
+        };
+        // SAFETY: the key is only looked up, not stored: `path` outlives the
+        // lookup, whatever lifetime the set's type names.
+        let key = unsafe { CStrKey::from_ptr(NonNull::from(path).cast()) };
+        set.contains(&key)
     }
 
     fn add(&mut self, buf: &[u8]) -> Result<()> {
-        if self.set.is_null() || self.pool.is_null() {
+        // SAFETY: NULL or the caller's live pool and set, used by nothing
+        // else during the call (the contract).
+        let (Some(pool), Some(set)) = (unsafe { self.pool.as_mut() }, unsafe { self.set.as_mut() })
+        else {
             return Ok(());
-        }
-        // SAFETY: `pool` is the caller's live `git_pool` of 1-byte items.
-        let p = unsafe { pending::git_pool_malloc(self.pool, buf.len()) }.cast::<u8>();
-        if p.is_null() {
-            return Err(errors::oom());
-        }
+        };
+        let p = pool.malloc(buf.len())?;
         // SAFETY: `p` is a fresh pool allocation of `buf.len()` bytes.
-        unsafe { core::ptr::copy_nonoverlapping(buf.as_ptr(), p, buf.len()) };
-        // SAFETY: `set` is live; `p` is a C string (buf ends with NUL) that
-        // lives as long as the pool, which outlives the set by the caller's
-        // contract.
-        let r = unsafe { hashmap_str::git_hashset_str__add(self.set, p.cast()) };
-        ErrorCode::check(r).map(|_| ())
+        unsafe { core::ptr::copy_nonoverlapping(buf.as_ptr(), p.as_ptr(), buf.len()) };
+        // SAFETY: `p` is a C string (`buf` ends with a NUL) that lives as
+        // long as the pool, which outlives the set (the contract).
+        let key = unsafe { CStrKey::from_ptr(p.cast()) };
+        set.add(key).map(|_| ())
     }
 }
 
@@ -399,8 +406,8 @@ pub unsafe extern "C" fn git_futils_mkdir_relative(
             )),
             Some(o) => {
                 let mut cache = CCache {
-                    pool: o.cache_pool,
-                    set: o.cache_pathset,
+                    pool: o.cache_pool.cast(),
+                    set: o.cache_pathset.cast(),
                 };
                 let mut ro = MkdirOpts {
                     cache: Some(&mut cache),
