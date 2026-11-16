@@ -442,3 +442,64 @@ DIVERGENCES.md).
 - C: subtracts `char_cnt` from `line_len` and `remain_len` unchecked; more
   than `line_len` wraps them and later reads run past the content.
 - Rust: advances by at most `line_len`.
+
+## repository, libgit2, settings (WP l-repo)
+
+### repository: `git_repository_open_bare` and `git_repository_wrap_odb` leak on failure
+- C: `open_bare` returns the error of `read_repository_format` without
+  freeing the repository it allocated; `wrap_odb` leaks it when its
+  `GIT_ASSERT(git_oid_type_is_valid(odb->options.oid_type))` fails.
+- Trigger: a bare repository whose config has `repositoryformatversion = 2`.
+- Rust: the repository is freed; the error is the C's.
+
+### repository: `git_repository_odb__weakptr` leaks an odb whose backends fail
+- C: the odb is owned by the repository (`GIT_REFCOUNT_OWN`) before
+  `git_odb__set_caps` / `git_odb__add_default_backends`; on their failure
+  `git_odb_free` decrements the count but frees only an unowned object.
+- Rust: the owner is cleared first, so the odb is freed.
+
+### repository: `repo_local_config` frees a weak pointer
+- C: `git_repository_reinit_filesystem` calls `git_config_free` on the
+  pointer from `git_repository_config__weakptr`, which holds no reference.
+  The count ends one too low: a configuration the user holds (from
+  `git_repository_config`) is freed under it when the repository releases
+  its own.
+- Rust: the weak pointer is not released.
+
+### repository: `git_repository_commit_parents` frees commits with `git__free`
+- C: on a merge-head failure the commits looked up so far are freed with
+  `git__free`, not `git_commit_free`: cached objects are freed under the
+  object cache (use after free, double free).
+- Trigger: a `MERGE_HEAD` naming a missing commit after a valid one.
+- Rust: they are released with `git_object_free`.
+
+### repository: `git_repository__item_path` reads past its table
+- C: `items[item]` is not bounds-checked; `item >= GIT_REPOSITORY_ITEM__LAST`
+  reads beyond the static array.
+- Rust: such an item fails with "invalid item directory" (class
+  `INVALID`), -1.
+
+### repository: `git_repository_set_namespace` with its own namespace
+- C: frees `repo->namespace`, then `git__strdup`s the argument, which is
+  that freed string.
+- Trigger: `git_repository_set_namespace(repo, git_repository_get_namespace(repo))`.
+- Rust: the argument is copied first; the namespace is unchanged.
+
+### repository: `git_repository_initialbranch` with a valueless `init.defaultBranch`
+- C: dereferences `entry->value`, NULL for `[init] defaultBranch` with no
+  `=`.
+- Rust: treats it as empty, so the default `master` is used.
+
+### repository: NULL arguments the C dereferences
+- C: most of `repository.c`'s functions without `GIT_ASSERT_ARG` crash on
+  a NULL repository (`git_repository_config__weakptr`, `_message`,
+  `_state_cleanup`, `_set_namespace`, `_head_detached`, …), and the
+  `git_libgit2_opts` getters on a NULL out-pointer; `GIT_OPT_SET_SSL_CIPHERS`
+  with NULL calls `strdup(NULL)`.
+- Rust: they fail with `invalid argument: 'repo'` (or `'out'`), -1 (NULL
+  for the string getters); `GIT_OPT_SET_SSL_CIPHERS` with NULL clears the
+  setting.
+
+### repository: `git_repository__extensions` leaks on allocation failure
+- C: returns -1 with the strings copied so far and the vector leaked.
+- Rust: frees them.
