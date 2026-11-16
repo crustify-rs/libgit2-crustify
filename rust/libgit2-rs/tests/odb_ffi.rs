@@ -83,7 +83,13 @@ fn backends_sorted_by_priority() {
     static FREES: AtomicUsize = AtomicUsize::new(0);
     let mut db: *mut GitOdb = ptr::null_mut();
     assert_eq!(unsafe { git_odb_new(&raw mut db) }, 0);
-    let prios = [(b'a', 1, false), (b'b', 3, false), (b'c', 2, true), (b'd', 2, false), (b'e', 3, true)];
+    let prios = [
+        (b'a', 1, false),
+        (b'b', 3, false),
+        (b'c', 2, true),
+        (b'd', 2, false),
+        (b'e', 3, true),
+    ];
     for (n, p, alt) in prios {
         let b = fake(n, &FREES);
         let r = if alt {
@@ -144,7 +150,10 @@ fn argument_checks_and_versions() {
     assert_eq!(unsafe { git_odb_new(ptr::null_mut()) }, -1);
     assert_eq!(last_message(), "invalid argument: 'out'");
     let mut db: *mut GitOdb = ptr::null_mut();
-    let bad = libgit2_rs::odb::GitOdbOptions { version: 7, oid_type: 0 };
+    let bad = libgit2_rs::odb::GitOdbOptions {
+        version: 7,
+        oid_type: 0,
+    };
     assert_eq!(unsafe { git_odb_new_ext(&raw mut db, &bad) }, -1);
     assert_eq!(last_message(), "invalid version 7 on git_odb_options");
     let mut be = GitOdbBackend::default();
@@ -155,7 +164,10 @@ fn argument_checks_and_versions() {
     assert_eq!(unsafe { git_odb_add_backend(db, &raw mut be, 1) }, -1);
     assert_eq!(last_message(), "invalid version 0 on git_odb_backend");
     let mut out = Oid::NONE;
-    assert_eq!(unsafe { git_odb_write(&raw mut out, db, b"x".as_ptr().cast(), 1, 3) }, -1);
+    assert_eq!(
+        unsafe { git_odb_write(&raw mut out, db, b"x".as_ptr().cast(), 1, 3) },
+        -1
+    );
     assert_eq!(
         last_message(),
         "cannot write object - unsupported in the loaded odb backends"
@@ -170,21 +182,35 @@ fn object_headers() {
     let _g = test_support::init();
     let mut hdr = [0x55u8; 64];
     let mut n = 0usize;
-    let r = unsafe { git_odb__format_object_header(&raw mut n, hdr.as_mut_ptr().cast::<c_char>(), 64, 12345, 1) };
+    let r = unsafe {
+        git_odb__format_object_header(&raw mut n, hdr.as_mut_ptr().cast::<c_char>(), 64, 12345, 1)
+    };
     assert_eq!((r, n), (0, 13));
     assert_eq!(&hdr[..13], b"commit 12345\0");
     // An unknown type has an empty name, as `git_object_type2string`.
-    let r = unsafe { git_odb__format_object_header(&raw mut n, hdr.as_mut_ptr().cast::<c_char>(), 64, 1, 5) };
+    let r = unsafe {
+        git_odb__format_object_header(&raw mut n, hdr.as_mut_ptr().cast::<c_char>(), 64, 1, 5)
+    };
     assert_eq!((r, n), (0, 3));
     assert_eq!(&hdr[..3], b" 1\0");
     // Too small: snprintf's truncation, and the error.
     let mut small = [0x55u8; 6];
-    let r = unsafe { git_odb__format_object_header(&raw mut n, small.as_mut_ptr().cast::<c_char>(), 6, 1234, 3) };
+    let r = unsafe {
+        git_odb__format_object_header(&raw mut n, small.as_mut_ptr().cast::<c_char>(), 6, 1234, 3)
+    };
     assert_eq!(r, -1);
     assert_eq!(&small, b"blob \0");
     assert!(last_message().starts_with("object header creation failed"));
     // A size above i64::MAX prints as C's `(int64_t)` cast.
-    let r = unsafe { git_odb__format_object_header(&raw mut n, hdr.as_mut_ptr().cast::<c_char>(), 64, u64::MAX, 3) };
+    let r = unsafe {
+        git_odb__format_object_header(
+            &raw mut n,
+            hdr.as_mut_ptr().cast::<c_char>(),
+            64,
+            u64::MAX,
+            3,
+        )
+    };
     assert_eq!(r, 0);
     assert_eq!(&hdr[..n], b"blob -1\0");
 }
@@ -193,9 +219,15 @@ fn object_headers() {
 fn error_helpers() {
     let _g = test_support::init();
     let id = oid(HELLO);
-    assert_eq!(unsafe { git_odb__error_notfound(c"no match".as_ptr(), &id, 7) }, -3);
+    assert_eq!(
+        unsafe { git_odb__error_notfound(c"no match".as_ptr(), &id, 7) },
+        -3
+    );
     assert_eq!(last_message(), "object not found - no match (ce01362)");
-    assert_eq!(unsafe { git_odb__error_notfound(c"plain".as_ptr(), ptr::null(), 0) }, -3);
+    assert_eq!(
+        unsafe { git_odb__error_notfound(c"plain".as_ptr(), ptr::null(), 0) },
+        -3
+    );
     assert_eq!(last_message(), "object not found - plain");
     assert_eq!(unsafe { git_odb__error_ambiguous(c"x".as_ptr()) }, -5);
     assert_eq!(last_message(), "ambiguous OID prefix - x");
@@ -203,7 +235,9 @@ fn error_helpers() {
     assert_eq!(unsafe { git_odb__error_mismatch(&id, &other) }, -33);
     assert_eq!(
         last_message(),
-        format!("object hash mismatch - expected {HELLO} but got e69de29bb2d1d6434b8b29ae775ad8c2e48c5391")
+        format!(
+            "object hash mismatch - expected {HELLO} but got e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+        )
     );
 }
 
@@ -226,7 +260,10 @@ fn mempack_c_abi_from_threads() {
                 for i in 0..10u8 {
                     let data = [t, i, b'\n'];
                     let mut id = Oid::NONE;
-                    assert_eq!(unsafe { git_odb_write(&raw mut id, p.0, data.as_ptr().cast(), 3, 1) }, 0);
+                    assert_eq!(
+                        unsafe { git_odb_write(&raw mut id, p.0, data.as_ptr().cast(), 3, 1) },
+                        0
+                    );
                     let mut obj = ptr::null_mut();
                     assert_eq!(unsafe { git_odb_read(&raw mut obj, p.0, &id) }, 0);
                     assert_eq!(unsafe { git_odb_object_size(obj) }, 3);
@@ -245,7 +282,10 @@ fn mempack_c_abi_from_threads() {
     assert_eq!(unsafe { git_mempack_reset(mp) }, 0);
     assert_eq!(unsafe { git_mempack_object_count(&raw mut n, mp) }, 0);
     assert_eq!(n, 0);
-    assert_eq!(unsafe { git_mempack_object_count(&raw mut n, ptr::null_mut()) }, -1);
+    assert_eq!(
+        unsafe { git_mempack_object_count(&raw mut n, ptr::null_mut()) },
+        -1
+    );
     assert_eq!(last_message(), "invalid argument: '_backend'");
     unsafe { git_odb_free(db) };
 }
@@ -272,7 +312,8 @@ fn plain(i: u8, size: usize) -> *mut GitCachedObj {
 fn cache_c_abi_concurrently() {
     use libgit2_rs::cache::ffi::*;
     let _g = test_support::init();
-    let c = Box::into_raw(Box::new(core::mem::MaybeUninit::<GitCache>::uninit())).cast::<GitCache>();
+    let c =
+        Box::into_raw(Box::new(core::mem::MaybeUninit::<GitCache>::uninit())).cast::<GitCache>();
     assert_eq!(unsafe { git_cache_init(c) }, 0);
     struct P(*mut GitCache);
     unsafe impl Send for P {}
@@ -285,7 +326,9 @@ fn cache_c_abi_concurrently() {
                 for i in 0..8u8 {
                     let e = plain(t * 16 + i, 10);
                     // `flags` 0: the cache frees it as plain memory.
-                    let r = unsafe { cache::GitCache::store(&*p.0, core::ptr::NonNull::new(e).unwrap()) };
+                    let r = unsafe {
+                        cache::GitCache::store(&*p.0, core::ptr::NonNull::new(e).unwrap())
+                    };
                     let id = unsafe { (*e).oid };
                     let g = unsafe { git_cache_get_any(p.0, &id) };
                     assert!(!g.is_null());

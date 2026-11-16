@@ -429,3 +429,60 @@ DIVERGENCES.md).
 - C: subtracts `char_cnt` from `line_len` and `remain_len` unchecked; more
   than `line_len` wraps them and later reads run past the content.
 - Rust: advances by at most `line_len`.
+
+## odb, odb_loose, odb_mempack, delta, cache (WP l-odb)
+
+### odb: `git_odb_foreach` calls a NULL `foreach` slot
+- C: `src/libgit2/odb.c` (`git_odb_foreach`) calls `b->foreach` of every
+  backend without checking it; a backend without one (the mempack backend
+  has none, and it is optional in `git2/sys/odb_backend.h`) crashes.
+- Trigger: `git_odb_foreach` on an odb with a mempack backend.
+- Rust: backends without `foreach` are skipped.
+
+### odb: `git_odb_write` reads the odb before checking it
+- C: `git_odb_write` reads `db->options.oid_type` before
+  `GIT_ASSERT_ARG(db)`; a NULL `db` crashes.
+- Rust: -1 with `invalid argument: 'db'`.
+
+### odb: `git_odb__add_default_backends` leaks a backend it fails to add
+- C: when `add_backend_internal` fails for the new loose (or pack)
+  backend, the backend is not freed.
+- Trigger: an allocation failure in `add_backend_internal`.
+- Rust: the backend is freed through its `free` slot; the result is -1, as C.
+
+### odb: streams without a hash context or a slot
+- C: `git_odb_stream_write` hashes into `stream->hash_ctx`, NULL for a read
+  stream or a stream a backend returned with `GIT_PASSTHROUGH`;
+  `git_odb_stream_read` / `git_odb_stream_finalize_write` call `read` /
+  `finalize_write` unchecked (NULL for write-only / read-only streams).
+- Rust: no hashing without a context; a missing slot is an error
+  (`stream does not support reading` / `writing`, class `GIT_ERROR_ODB`).
+
+### cache: the size limit of an out-of-range type
+- C: `cache_should_store` indexes `git_cache__max_object_size[8]` with the
+  object's type, out of bounds for a type outside 0..7.
+- Trigger: a backend that returns such a type, with strict hash
+  verification off (`GIT_OPT_ENABLE_STRICT_HASH_VERIFICATION`).
+- Rust: such objects are not cached.
+
+### odb_loose: an empty objects directory
+- C: `git_odb__backend_loose` reads `objects_dir[objects_dirlen - 1]` with
+  `objects_dirlen == 0`.
+- Rust: appends the `/` (the directory is `/`).
+
+### odb_loose: a pack-like object whose body is shorter than its header says
+- C: `read_loose_packlike` returns `hdr.size` bytes of a buffer whose tail
+  past what was inflated is uninitialized.
+- Trigger: a pack-like loose object (first byte not a zlib header) with a
+  short deflated body, strict hash verification off.
+- Rust: the tail is zero (as `read_loose_standard`'s zero padding).
+
+### odb_loose: an id of another type than the backend's
+- C: `object_file_name` grows the path for the backend's hex size, then
+  `git_oid_pathfmt` writes the id's (64 digits for a SHA-256 id in a SHA-1
+  backend: a heap overflow when the string has no slack).
+- Rust: the path has the backend's hex size, the digits taken from the id.
+
+### odb_mempack: `impl__write` leaks the object when the map insert fails
+- C: on `git_odb_mempack_oidmap_put` failure the `memobject` is not freed.
+- Rust: freed (the error is returned as C).

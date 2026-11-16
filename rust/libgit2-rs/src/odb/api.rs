@@ -36,8 +36,13 @@ fn err(code: ErrorCode) -> Error {
 /// `path` as a C string; a NUL inside it is refused (C would see a
 /// shorter path).
 fn c_path(path: &[u8]) -> ApiResult<std::ffi::CString> {
-    std::ffi::CString::new(path)
-        .map_err(|_| Error::new(ErrorCode::INVALID, ErrorClass::INVALID, "path contains a NUL byte"))
+    std::ffi::CString::new(path).map_err(|_| {
+        Error::new(
+            ErrorCode::INVALID,
+            ErrorClass::INVALID,
+            "path contains a NUL byte",
+        )
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -632,7 +637,8 @@ impl Mempack {
 /// An odb backend implemented in Rust ([`Backend::custom`]). Errors with
 /// the code [`ErrorCode::NOT_FOUND`] mean "not here"; with
 /// [`ErrorCode::PASSTHROUGH`], "ask the other backends". The odb calls a
-/// backend with its lock held, from any thread.
+/// backend with its lock held, from any thread: a backend must not call
+/// back into the odb it belongs to (that deadlocks, as in C).
 pub trait OdbBackend: Send + Sync + 'static {
     /// The data and type of `id`.
     fn read(&self, id: &Oid) -> ApiResult<(Vec<u8>, ObjectType)>;

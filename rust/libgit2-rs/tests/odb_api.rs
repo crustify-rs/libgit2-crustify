@@ -8,7 +8,10 @@ use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 
 use libgit2_rs::util::test_support;
-use libgit2_rs::{Backend, Error, ErrorClass, ErrorCode, ExpandId, LooseOptions, ObjectType, Odb, OdbBackend, Oid, OidType};
+use libgit2_rs::{
+    Backend, Error, ErrorClass, ErrorCode, ExpandId, LooseOptions, ObjectType, Odb, OdbBackend,
+    Oid, OidType,
+};
 
 const HELLO: &str = "ce013625030ba8dba906f756967f9e9ca394464a";
 const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
@@ -33,7 +36,10 @@ fn object_types() {
 #[test]
 fn hashing() -> Result<(), Error> {
     let _g = test_support::init();
-    assert_eq!(Odb::hash(b"hello\n", ObjectType::Blob, OidType::Sha1)?, oid(HELLO));
+    assert_eq!(
+        Odb::hash(b"hello\n", ObjectType::Blob, OidType::Sha1)?,
+        oid(HELLO)
+    );
     assert_eq!(
         Odb::hash(b"hello\n", ObjectType::Blob, OidType::Sha256)?.to_string(),
         "2cf8d83d9ee29543b34a87727421fdecb7e3f3a183d337639025de576db9ebb4"
@@ -88,15 +94,24 @@ fn mempack_round_trip() -> Result<(), Error> {
     );
     assert!(!odb.exists(&missing));
     let e = odb.read(&Oid::SHA1_ZERO).unwrap_err();
-    assert_eq!(e.message(), "odb: cannot read object: null OID cannot exist");
+    assert_eq!(
+        e.message(),
+        "odb: cannot read object: null OID cannot exist"
+    );
 
     // A mempack has no prefix lookup.
     let e = odb.read_prefix(&id, 7).unwrap_err();
     assert_eq!(e.code(), ErrorCode::NOT_FOUND);
-    assert_eq!(e.message(), "object not found - no match for prefix (ce01362)");
+    assert_eq!(
+        e.message(),
+        "object not found - no match for prefix (ce01362)"
+    );
     let e = odb.read_prefix(&id, 3).unwrap_err();
     assert_eq!(e.code(), ErrorCode::AMBIGUOUS);
-    assert_eq!(e.message(), "ambiguous OID prefix - prefix length too short");
+    assert_eq!(
+        e.message(),
+        "ambiguous OID prefix - prefix length too short"
+    );
 
     drop(odb.read(&c)?);
     mempack.reset();
@@ -133,11 +148,17 @@ fn streams_through_a_write_only_backend() -> Result<(), Error> {
     let mut short = odb.writer(6, ObjectType::Blob)?;
     short.write_all(b"he").unwrap();
     let e = short.finalize().unwrap_err();
-    assert!(e.message().starts_with("cannot stream_finalize_write() - Invalid length."));
+    assert!(
+        e.message()
+            .starts_with("cannot stream_finalize_write() - Invalid length.")
+    );
 
     // No backend can stream reads.
     let e = odb.reader(&oid(HELLO)).unwrap_err();
-    assert_eq!(e.message(), "cannot read object streamed - unsupported in the loaded odb backends");
+    assert_eq!(
+        e.message(),
+        "cannot read object streamed - unsupported in the loaded odb backends"
+    );
     Ok(())
 }
 
@@ -169,7 +190,10 @@ impl OdbBackend for MapBackend {
     }
 
     fn write(&self, id: &Oid, data: &[u8], kind: ObjectType) -> Result<(), Error> {
-        self.objects.lock().unwrap().push((*id, data.to_vec(), kind));
+        self.objects
+            .lock()
+            .unwrap()
+            .push((*id, data.to_vec(), kind));
         Ok(())
     }
 
@@ -179,11 +203,18 @@ impl OdbBackend for MapBackend {
 
     fn exists_prefix(&self, short: &Oid, len: usize) -> Result<Oid, Error> {
         let o = self.objects.lock().unwrap();
-        let found: Vec<_> = o.iter().filter(|(i, _, _)| i.ncmp(short, len) == 0).collect();
+        let found: Vec<_> = o
+            .iter()
+            .filter(|(i, _, _)| i.ncmp(short, len) == 0)
+            .collect();
         match found.as_slice() {
             [] => Err(Error::new(ErrorCode::NOT_FOUND, ErrorClass::ODB, "")),
             [one] => Ok(one.0),
-            _ => Err(Error::new(ErrorCode::AMBIGUOUS, ErrorClass::ODB, "ambiguous")),
+            _ => Err(Error::new(
+                ErrorCode::AMBIGUOUS,
+                ErrorClass::ODB,
+                "ambiguous",
+            )),
         }
     }
 
@@ -215,8 +246,16 @@ fn rust_backend() -> Result<(), Error> {
     assert_eq!(odb.exists_prefix(&a, 7)?, a);
 
     let mut q = [
-        ExpandId { id: a.prefix(8), length: 8, kind: None },
-        ExpandId { id: b, length: 40, kind: Some(ObjectType::Commit) },
+        ExpandId {
+            id: a.prefix(8),
+            length: 8,
+            kind: None,
+        },
+        ExpandId {
+            id: b,
+            length: 40,
+            kind: Some(ObjectType::Commit),
+        },
     ];
     odb.expand_ids(&mut q)?;
     assert_eq!(q[0].id, a);
@@ -259,7 +298,9 @@ fn corrupt_backend_data_is_detected() -> Result<(), Error> {
     odb.add_backend(Backend::custom(Liar), 1)?;
     let e = odb.read(&oid(HELLO)).unwrap_err();
     assert_eq!(e.code(), ErrorCode::MISMATCH);
-    assert!(e.message().starts_with("object hash mismatch - expected ce013625030ba8dba906f756967f9e9ca394464a but got "));
+    assert!(e.message().starts_with(
+        "object hash mismatch - expected ce013625030ba8dba906f756967f9e9ca394464a but got "
+    ));
     Ok(())
 }
 
@@ -312,7 +353,10 @@ fn loose_backend_on_disk() -> Result<(), Error> {
     let bytes = std::fs::read(&path).unwrap();
     // zlib level 1 (Z_BEST_SPEED) by default, as C.
     assert_eq!(&bytes[..2], &[0x78, 0x01]);
-    assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o444);
+    assert_eq!(
+        std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+        0o444
+    );
     assert_eq!(odb.read(&id)?.data(), b"hello\n");
     assert_eq!(odb.read_prefix(&id, 6)?.data(), b"hello\n");
     assert_eq!(odb.exists_prefix(&id, 5)?, id);
@@ -368,10 +412,17 @@ fn loose_sha256() -> Result<(), Error> {
     let _g = test_support::init();
     let dir = tempdir("loose256");
     let odb = Odb::with_oid_type(OidType::Sha256)?;
-    let opts = LooseOptions { oid_type: OidType::Sha256, compression_level: Some(9), ..LooseOptions::default() };
+    let opts = LooseOptions {
+        oid_type: OidType::Sha256,
+        compression_level: Some(9),
+        ..LooseOptions::default()
+    };
     odb.add_backend(Backend::loose(dir.as_os_str().as_bytes(), &opts)?, 1)?;
     let id = odb.write(b"hello\n", ObjectType::Blob)?;
-    assert_eq!(id.to_string(), "2cf8d83d9ee29543b34a87727421fdecb7e3f3a183d337639025de576db9ebb4");
+    assert_eq!(
+        id.to_string(),
+        "2cf8d83d9ee29543b34a87727421fdecb7e3f3a183d337639025de576db9ebb4"
+    );
     let s = id.to_string();
     let bytes = std::fs::read(dir.join(&s[..2]).join(&s[2..])).unwrap();
     assert_eq!(&bytes[..2], &[0x78, 0xda]);

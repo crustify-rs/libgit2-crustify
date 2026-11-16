@@ -237,3 +237,31 @@ One entry per difference: component, what differs, why.
   where the C would read past the end of the buffer (`git_utf8_iterate`
   with `str_len == 0`, `git_decode_varint` on a truncated varint). The
   exports read exactly what the C read.
+
+## odb, odb_loose, odb_mempack, delta, cache (WP l-odb)
+
+- **odb: `git_odb` is a shared prefix** (`rc`, `options`; `odb.h` keeps
+  the other fields only without `GIT_RUST`), allocated with
+  `git__allocator`; the backends are a Rust `Vec` (with `try_reserve`)
+  under a `std::sync::Mutex`, sorted with the C's timsort and comparison,
+  so the order is C's. The odb's own cache is a `git_cache` in the Rust
+  state; the repository's (`repo->objects`) is reached through its offset
+  in `git_repository`, checked by a layout test (PENDING(l-repo)).
+- **odb: `git_odb_write_multi_pack_index`** calls the backends on a copy
+  of the list taken under the lock (C walked the list without the lock).
+- **odb: object type names.** `odb.rs` has its own copy of
+  `git_objects_table`'s names (`git_object_type2string`,
+  `git_object_stringn2type`, `git_object_type_is_valid`) and of
+  `git_object_id_from_buffer` without filters (all the odb needs), so that
+  the odb and loose parsing run without object.c (l-obj); same results.
+- **Rust backends and streams are `ffibox::CTable`s** in Rust's allocator
+  (C: `git__calloc`), so `cl_alloc_limit` does not see the tables
+  themselves; their buffers (object data, the fake stream's buffer, the
+  hash contexts) still come from `git__allocator`. A slot refused because
+  its table is being released returns -1 with `the object database backend
+  is being freed` (class `GIT_ERROR_INTERNAL`); C used the freed memory.
+- **cache: `git_cache_size`** takes the read lock (C read the map's size
+  unlocked).
+- **Safe API:** `OdbBackend` implementations return `Vec<u8>`, copied into
+  `git__allocator` memory for C; paths with a NUL byte are refused
+  (`GIT_EINVALID`) instead of being cut short.

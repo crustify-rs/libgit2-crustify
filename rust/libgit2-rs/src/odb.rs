@@ -1063,35 +1063,47 @@ impl GitOdb {
             oid_type: self.options.oid_type,
         };
 
-        let loose = crate::odb_loose::new_backend(objects_dir.to_bytes(), Some(&loose_opts))?;
-        if let Err(e) = self.add_backend_internal(
-            loose,
-            git_odb__loose_priority.load(Ordering::Relaxed),
-            as_alternates,
-            inode,
-        ) {
+        // C returns -1 for each failure below, whatever the callee's code.
+        let loose = crate::odb_loose::new_backend(objects_dir.to_bytes(), Some(&loose_opts))
+            .map_err(|_| ErrorCode::GENERIC)?;
+        if self
+            .add_backend_internal(
+                loose,
+                git_odb__loose_priority.load(Ordering::Relaxed),
+                as_alternates,
+                inode,
+            )
+            .is_err()
+        {
             // C leaked the backend here (rust/DEFECTS.md).
             // SAFETY: ours, not added: freed once.
             unsafe { free_backend(loose) };
-            return Err(e);
+            return Err(ErrorCode::GENERIC);
         }
 
-        let packed = crate::sys::pending::odb_backend_pack(objects_dir, &pack_opts)?;
-        if let Err(e) = self.add_backend_internal(
-            packed,
-            git_odb__packed_priority.load(Ordering::Relaxed),
-            as_alternates,
-            inode,
-        ) {
+        let packed = crate::sys::pending::odb_backend_pack(objects_dir, &pack_opts)
+            .map_err(|_| ErrorCode::GENERIC)?;
+        if self
+            .add_backend_internal(
+                packed,
+                git_odb__packed_priority.load(Ordering::Relaxed),
+                as_alternates,
+                inode,
+            )
+            .is_err()
+        {
             // SAFETY: as above.
             unsafe { free_backend(packed) };
-            return Err(e);
+            return Err(ErrorCode::GENERIC);
         }
 
         {
             let mut l = self.lock();
             if l.cgraph.is_none() {
-                l.cgraph = Some(CommitGraph::new(objects_dir, self.options.oid_type)?);
+                l.cgraph = Some(
+                    CommitGraph::new(objects_dir, self.options.oid_type)
+                        .map_err(|_| ErrorCode::GENERIC)?,
+                );
             }
         }
 

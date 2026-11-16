@@ -248,7 +248,8 @@ unsafe fn dump(
 ) -> Result<()> {
     let commits = state.commits()?;
     // SAFETY: the caller's contract.
-    let mut pb = unsafe { crate::sys::pack_objects::Packbuilder::new(repo) }?;
+    let mut pb = unsafe { crate::sys::pack_objects::Packbuilder::new(repo) }
+        .map_err(|_| ErrorCode::GENERIC)?;
     pb.set_threads(0);
     for c in &commits {
         pb.insert_commit(c)?;
