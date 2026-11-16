@@ -17,7 +17,7 @@ use std::ffi::CString;
 use super::{GitTree, GitTreeEntry, GitTreeUpdate, GitTreebuilder, WalkResult};
 use crate::commit::ec;
 use crate::oid::{Oid, OidType};
-use crate::pending_repository::Repository;
+use crate::repository::Repository;
 use crate::sys::pending::l_commit::{self as pend, git_repository};
 use crate::util::errors::{Error, ErrorClass, ErrorCode};
 use crate::util::str::GitStr;
@@ -244,7 +244,7 @@ impl<'a> Tree<'a> {
     /// `git_tree_lookup`.
     pub fn lookup(repo: &'a Repository, id: &Oid) -> Result<Tree<'a>, Error> {
         // SAFETY: the repository lives for `'a`.
-        unsafe { Tree::lookup_raw(repo.raw(), id) }
+        unsafe { Tree::lookup_raw(repo.raw_ptr(), id) }
     }
 
     /// Parse a tree from its bytes (`git_object__from_raw`), outside any
@@ -425,7 +425,8 @@ impl<'a> Tree<'a> {
         let mut id = Oid::default();
         // SAFETY: a live repository; `base` NULL or a live tree; the updates'
         // paths live (in `paths`) during the call.
-        unsafe { super::create_updated(&mut id, repo.raw(), base, &ups) }.map_err(Error::from)?;
+        unsafe { super::create_updated(&mut id, repo.raw_ptr(), base, &ups) }
+            .map_err(Error::from)?;
         Ok(id)
     }
 }
@@ -468,7 +469,7 @@ impl<'r> TreeBuilder<'r> {
     pub fn new(repo: &'r Repository, source: Option<&Tree<'_>>) -> Result<TreeBuilder<'r>, Error> {
         let src = source.map_or(ptr::null(), |t| t.t());
         // SAFETY: a live repository; `src` NULL or a live tree.
-        let raw = unsafe { GitTreebuilder::new_raw(repo.raw(), src) }.map_err(Error::from)?;
+        let raw = unsafe { GitTreebuilder::new_raw(repo.raw_ptr(), src) }.map_err(Error::from)?;
         Ok(TreeBuilder {
             // SAFETY: `new_raw` returns a non-NULL builder on success.
             raw: unsafe { NonNull::new_unchecked(raw) },

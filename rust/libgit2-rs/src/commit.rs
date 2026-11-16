@@ -585,9 +585,10 @@ pub(crate) unsafe fn find_graft(
     if repo.is_null() {
         return None;
     }
-    for off in [pend::REPO_GRAFTS, pend::REPO_SHALLOW_GRAFTS] {
-        // SAFETY: `repo` is live (contract); the field is a pointer.
-        let grafts: *mut pend::git_grafts = unsafe { pend::field(repo, off) };
+    // SAFETY: `repo` is live (contract); `GitRepository` is `Sync`.
+    let r = unsafe { &*repo };
+    for grafts in [r.grafts_ptr(), r.shallow_grafts_ptr()] {
+        let grafts = grafts.cast::<pend::git_grafts>();
         let mut g = ptr::null_mut();
         // SAFETY: `grafts` is the repository's (the C asserts it is not
         // NULL); `g` is writable.
@@ -1140,11 +1141,11 @@ pub(crate) unsafe fn create_internal(
 
         let odb = repo_odb(repo)?;
         // SAFETY: `odb` is the repository's; the tree id readable.
-        ErrorCode::check(unsafe { pend::git_odb__freshen(odb, &raw const args.tree) })?;
+        ErrorCode::check(unsafe { crate::odb::ffi::git_odb__freshen(odb, &raw const args.tree) })?;
         let bytes = buf.as_bytes();
         // SAFETY: `bytes` are readable for its length; `id` writable.
         ErrorCode::check(unsafe {
-            pend::git_odb_write(id, odb, bytes.as_ptr().cast(), bytes.len(), OBJ_COMMIT)
+            crate::odb::ffi::git_odb_write(id, odb, bytes.as_ptr().cast(), bytes.len(), OBJ_COMMIT)
         })?;
 
         if !update_ref.is_null() {
@@ -1172,7 +1173,9 @@ pub(crate) fn repo_odb(repo: *mut git_repository) -> Result<*mut pend::git_odb> 
     let mut odb = ptr::null_mut();
     // SAFETY: `repo` is a live repository (every caller's contract);
     // `odb` is writable.
-    ErrorCode::check(unsafe { pend::git_repository_odb__weakptr(&raw mut odb, repo) })?;
+    ErrorCode::check(unsafe {
+        crate::repository::ffi::git_repository_odb__weakptr(&raw mut odb, repo)
+    })?;
     Ok(odb)
 }
 
@@ -1942,9 +1945,9 @@ pub mod ffi {
             git_assert_arg!(!commit.is_null(), "commit", -1);
             git_assert_arg!(!parse_opts.is_null(), "opts", -1);
             // SAFETY: a live odb object (contract).
-            let p = unsafe { pend::git_odb_object_data(odb_obj) }.cast::<c_char>();
+            let p = unsafe { crate::odb::ffi::git_odb_object_data(odb_obj) }.cast::<c_char>();
             // SAFETY: as above.
-            let n = unsafe { pend::git_odb_object_size(odb_obj) };
+            let n = unsafe { crate::odb::ffi::git_odb_object_size(odb_obj) };
             if p.is_null() {
                 return errors::assert_arg_failed("data").raw();
             }
@@ -1956,7 +1959,7 @@ pub mod ffi {
             // during the call.
             let data = unsafe { crate::util::export::bytes(p, n) };
             // SAFETY: the object's id, live with it.
-            let id = unsafe { pend::git_odb_object_id(odb_obj) };
+            let id = unsafe { crate::odb::ffi::git_odb_object_id(odb_obj) };
             // SAFETY: as above.
             let id = unsafe { id.read() };
             if let Err(e) = parse_into(c, data, &opts) {
@@ -2360,12 +2363,12 @@ pub mod ffi {
             };
             let mut obj = ptr::null_mut();
             // SAFETY: `obj` writable; `commit_id` readable (contract).
-            let error = unsafe { pend::git_odb_read(&raw mut obj, odb, commit_id) };
+            let error = unsafe { crate::odb::ffi::git_odb_read(&raw mut obj, odb, commit_id) };
             if error < 0 {
                 return error;
             }
             // SAFETY: the object just read, live until freed below.
-            let r = if unsafe { pend::git_odb_object_type(obj) } != OBJ_COMMIT {
+            let r = if unsafe { crate::odb::ffi::git_odb_object_type(obj) } != OBJ_COMMIT {
                 let _ = git_error_set!(
                     ErrorClass::INVALID,
                     "the requested type does not match the type in the ODB"
@@ -2373,9 +2376,9 @@ pub mod ffi {
                 Err(ErrorCode::NOT_FOUND)
             } else {
                 // SAFETY: as above.
-                let p = unsafe { pend::git_odb_object_data(obj) }.cast::<c_char>();
+                let p = unsafe { crate::odb::ffi::git_odb_object_data(obj) }.cast::<c_char>();
                 // SAFETY: as above.
-                let n = unsafe { pend::git_odb_object_size(obj) };
+                let n = unsafe { crate::odb::ffi::git_odb_object_size(obj) };
                 let data = if p.is_null() {
                     &[][..]
                 } else {
@@ -2386,7 +2389,7 @@ pub mod ffi {
                 extract_signature(data, field, sig, sd)
             };
             // SAFETY: freed once.
-            unsafe { pend::git_odb_object_free(obj) };
+            unsafe { crate::odb::ffi::git_odb_object_free(obj) };
             if let Err(e) = r {
                 sig.clear();
                 sd.clear();
@@ -2515,7 +2518,7 @@ pub mod ffi {
             // SAFETY: as above.
             let field = unsafe { opt_cbytes(signature_field) }.unwrap_or(b"gpgsig");
             // SAFETY: a live repository (contract).
-            let oid_type: git_oid_t = unsafe { pend::field(repo, pend::REPO_OID_TYPE) };
+            let oid_type: git_oid_t = unsafe { (*repo).oid_type_raw() };
 
             // The first step is to verify that all the tree and parents exist
             let parsed = alloc::calloc(1, size_of::<GitCommit>()).cast::<GitCommit>();
@@ -2556,7 +2559,13 @@ pub mod ffi {
                 let odb = repo_odb(repo)?;
                 // SAFETY: readable bytes; `out` writable.
                 ErrorCode::check(unsafe {
-                    pend::git_odb_write(out, odb, bytes.as_ptr().cast(), bytes.len(), OBJ_COMMIT)
+                    crate::odb::ffi::git_odb_write(
+                        out,
+                        odb,
+                        bytes.as_ptr().cast(),
+                        bytes.len(),
+                        OBJ_COMMIT,
+                    )
                 })
                 .map(drop)
             })();
@@ -2577,9 +2586,11 @@ pub mod ffi {
         tree: *const crate::tree::GitTree,
         index: *mut pend::git_index,
     ) -> c_int {
-        let mut head_tree = ptr::null_mut();
-        // SAFETY: `repo` live; `head_tree` writable.
-        let error = unsafe { pend::git_repository_head_tree(&raw mut head_tree, repo) };
+        let mut head_tree: *mut crate::tree::GitTree = ptr::null_mut();
+        // SAFETY: `repo` live; `head_tree` writable (a `git_tree *`).
+        let error = unsafe {
+            crate::repository::ffi::git_repository_head_tree((&raw mut head_tree).cast(), repo)
+        };
         let r = if error != 0 && error != ErrorCode::UNBORN_BRANCH.raw() {
             error
         } else {
@@ -2649,7 +2660,15 @@ pub mod ffi {
                 }
             }
             // SAFETY: `repo` live; writable out-parameter.
-            if unsafe { pend::git_repository_commit_parents(&raw mut parents, repo) } < 0 {
+            // (`l_commit::GitCommitArray` and the repository's are both
+            // `git_commitarray`.)
+            if unsafe {
+                crate::repository::ffi::git_repository_commit_parents(
+                    (&raw mut parents).cast(),
+                    repo,
+                )
+            } < 0
+            {
                 return -1;
             }
             // SAFETY: the caller's contract; the parents just looked up.
@@ -2701,7 +2720,8 @@ pub mod ffi {
             let mut tree = ptr::null_mut();
             let error = (|| {
                 // SAFETY: `repo` live; writable out-parameter.
-                if unsafe { pend::git_repository_index(&raw mut index, repo) } < 0 {
+                if unsafe { crate::repository::ffi::git_repository_index(&raw mut index, repo) } < 0
+                {
                     return -1;
                 }
                 if !opts.allow_empty_commit() {
@@ -2713,7 +2733,8 @@ pub mod ffi {
                 }
                 let mut tree_id = Oid::default();
                 // SAFETY: the index looked up above; `tree_id` writable.
-                let written = unsafe { pend::git_index_write_tree(&raw mut tree_id, index) };
+                let written =
+                    unsafe { crate::index::ffi::git_index_write_tree(&raw mut tree_id, index) };
                 if written < 0
                     // SAFETY: `repo` live; `tree` writable; `tree_id` set.
                     || unsafe { pend::git_tree_lookup(&raw mut tree, repo, &raw const tree_id) } < 0
@@ -2726,7 +2747,7 @@ pub mod ffi {
             // SAFETY: NULL or the tree looked up above, released once.
             unsafe { pend::git_tree_free(tree) };
             // SAFETY: NULL or the index looked up above, released once.
-            unsafe { pend::git_index_free(index) };
+            unsafe { crate::index::ffi::git_index_free(index) };
             error
         })
     }
@@ -2785,9 +2806,9 @@ pub mod ffi {
             let mut tree_id = Oid::default();
             // `repo` is live and the out-parameters writable (contract).
             // SAFETY: as above.
-            let error = if unsafe { pend::git_repository_index(&raw mut index, repo) } < 0
+            let error = if unsafe { crate::repository::ffi::git_repository_index(&raw mut index, repo) } < 0
                 // SAFETY: the index just looked up.
-                || unsafe { pend::git_index_write_tree(&raw mut tree_id, index) } < 0
+                || unsafe { crate::index::ffi::git_index_write_tree(&raw mut tree_id, index) } < 0
                 // SAFETY: as above; `tree_id` set.
                 || unsafe { pend::git_tree_lookup(&raw mut tree, repo, &raw const tree_id) } < 0
             {
@@ -2799,7 +2820,7 @@ pub mod ffi {
             // SAFETY: NULL or the tree looked up above, released once.
             unsafe { pend::git_tree_free(tree) };
             // SAFETY: NULL or the index looked up above, released once.
-            unsafe { pend::git_index_free(index) };
+            unsafe { crate::index::ffi::git_index_free(index) };
             error
         })
     }
@@ -2827,12 +2848,14 @@ pub mod ffi {
             // SAFETY: NULL or valid (contract).
             let opts = unsafe { opts.as_ref() };
             let mut ext = ext_options(opts);
-            let mut head_ref = ptr::null_mut();
+            let mut head_ref: *mut pend::git_reference = ptr::null_mut();
             let mut head_commit: *mut GitCommit = ptr::null_mut();
             let mut new_committer = ptr::null_mut();
             let error = (|| {
                 // SAFETY: `repo` live; writable out-parameters.
-                let mut e = unsafe { pend::git_repository_head(&raw mut head_ref, repo) };
+                let mut e = unsafe {
+                    crate::repository::ffi::git_repository_head((&raw mut head_ref).cast(), repo)
+                };
                 if e >= 0 {
                     // SAFETY: the reference just looked up.
                     e = unsafe {

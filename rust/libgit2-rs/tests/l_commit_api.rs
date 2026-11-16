@@ -5,8 +5,8 @@
 #![forbid(unsafe_code)]
 #![cfg(feature = "link-c")]
 
+use libgit2_rs::Repository;
 use libgit2_rs::commit::api::SignatureRef;
-use libgit2_rs::pending_repository::Repository;
 use libgit2_rs::tree::api::{EntryKind, TreeUpdate, TreeWalk, TreeWalkMode};
 use libgit2_rs::util::test_support;
 use libgit2_rs::{Commit, CommitBuilder, ErrorCode, Oid, OidType, Tree, TreeBuilder};

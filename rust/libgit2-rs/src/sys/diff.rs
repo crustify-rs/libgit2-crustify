@@ -177,6 +177,8 @@ pub struct git_diff {
     _marker: PhantomData<(*mut u8, PhantomPinned)>,
 }
 
+// The repository, trees and index are Rust types C sees as opaque.
+#[allow(improper_ctypes)]
 unsafe extern "C" {
     fn git_diff_tree_to_tree(
         diff: *mut *mut git_diff,

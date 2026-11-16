@@ -90,7 +90,12 @@ pub const REJECT_DOT_GIT: c_uint = GIT_PATH_REJECT_DOT_GIT;
 ///
 /// `repo` is NULL or a live repository not freed during the call; `path`
 /// is NUL-terminated.
-pub unsafe fn is_valid<R>(repo: *mut R, path: *const c_char, file_mode: u16, flags: c_uint) -> bool {
+pub unsafe fn is_valid<R>(
+    repo: *mut R,
+    path: *const c_char,
+    file_mode: u16,
+    flags: c_uint,
+) -> bool {
     // GIT_STR_INIT_CONST(path, SIZE_MAX): a borrowed string the C only reads
     // up to its NUL.
     let s = ConstStr {

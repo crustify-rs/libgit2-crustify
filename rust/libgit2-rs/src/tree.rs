@@ -769,14 +769,14 @@ impl GitTreebuilder {
     /// The builder's repository is live.
     unsafe fn write_with_buffer(&self, buf: &mut GitStr) -> Result<Oid> {
         // SAFETY: a live repository (contract).
-        let oid_type: git_oid_t = unsafe { pend::field(self.repo, pend::REPO_OID_TYPE) };
+        let oid_type: git_oid_t = unsafe { (*self.repo).oid_type_raw() };
         self.serialize(buf, crate::oid::oid_size(oid_type))?;
         let odb = repo_odb(self.repo)?;
         let mut oid = Oid::default();
         let bytes = buf.as_bytes();
         // SAFETY: readable bytes; `oid` writable.
         ErrorCode::check(unsafe {
-            pend::git_odb_write(
+            crate::odb::ffi::git_odb_write(
                 &raw mut oid,
                 odb,
                 bytes.as_ptr().cast(),
@@ -847,7 +847,7 @@ fn left_dir(path: &[u8], dirname: &[u8]) -> bool {
 /// `index` is live and unchanged while the bytes are used.
 unsafe fn index_entry<'a>(index: *mut pend::git_index, i: usize) -> (&'a [u8], Oid, u32) {
     // SAFETY: a live index (contract).
-    let e = unsafe { pend::git_index_get_byindex(index, i) };
+    let e = unsafe { crate::index::ffi::git_index_get_byindex(index, i) };
     // SAFETY: a live entry of it, unchanged meanwhile (contract).
     let e = unsafe { &*e };
     // SAFETY: its path is NUL-terminated and lives with the entry.
@@ -862,7 +862,7 @@ unsafe fn index_entry<'a>(index: *mut pend::git_index, i: usize) -> (&'a [u8], O
 /// As [`index_entry`].
 unsafe fn find_next_dir(dirname: &[u8], index: *mut pend::git_index, start: usize) -> usize {
     // SAFETY: a live index.
-    let n = unsafe { pend::git_index_entrycount(index) };
+    let n = unsafe { crate::index::ffi::git_index_entrycount(index) };
     let mut i = start;
     while i < n {
         // SAFETY: `i < n`.
@@ -890,15 +890,15 @@ unsafe fn write_tree(
     shared_buf: &mut GitStr,
 ) -> Result<usize> {
     let dir = dirname.to_bytes();
-    // SAFETY: a live index's `tree` field.
-    let root: *const pend::git_tree_cache = unsafe { pend::field(index, pend::INDEX_TREE) };
+    // SAFETY: a live index's `tree` field, read in place.
+    let root: *const pend::git_tree_cache = unsafe { (*index).tree };
     // SAFETY: the index's tree cache, NULL or live; `dirname` NUL-terminated.
-    let cache = unsafe { pend::git_tree_cache_get(root, dirname.as_ptr()) };
+    let cache = unsafe { crate::tree_cache::ffi::git_tree_cache_get(root, dirname.as_ptr()) };
     if !cache.is_null() {
         // SAFETY: a live tree cache entry's `entry_count`.
-        let count: isize = unsafe { pend::field(cache, pend::TREE_CACHE_ENTRY_COUNT) };
+        let count = unsafe { (*cache).entry_count };
         // SAFETY: the same entry's `oid`.
-        let cid: Oid = unsafe { pend::field(cache, pend::TREE_CACHE_OID) };
+        let cid = unsafe { (*cache).oid };
         if count >= 0 {
             *oid = cid;
             // SAFETY: as above.
@@ -913,7 +913,7 @@ unsafe fn write_tree(
         // C reaches it).
         let b = unsafe { &mut *bld };
         // SAFETY: a live index.
-        let entries = unsafe { pend::git_index_entrycount(index) };
+        let entries = unsafe { crate::index::ffi::git_index_entrycount(index) };
         let mut i = start;
         // This loop is unfortunate, but necessary. The index doesn't have
         // any directories, so we need to handle that manually, and we need
@@ -985,7 +985,7 @@ unsafe fn write_index(
     repo: *mut git_repository,
 ) -> Result<()> {
     // SAFETY: a live index.
-    if unsafe { pend::git_index_has_conflicts(index) } != 0 {
+    if unsafe { crate::index::ffi::git_index_has_conflicts(index) } != 0 {
         let _ = git_error_set!(
             ErrorClass::INDEX,
             "cannot create a tree from a not fully merged index."
@@ -993,12 +993,12 @@ unsafe fn write_index(
         return Err(ErrorCode::UNMERGED);
     }
     // SAFETY: a live index: its tree cache is NULL or live.
-    let root: *const pend::git_tree_cache = unsafe { pend::field(index, pend::INDEX_TREE) };
+    let root: *const pend::git_tree_cache = unsafe { (*index).tree };
     if !root.is_null() {
         // SAFETY: a live tree cache entry's `entry_count`.
-        let count: isize = unsafe { pend::field(root, pend::TREE_CACHE_ENTRY_COUNT) };
+        let count = unsafe { (*root).entry_count };
         // SAFETY: the same entry's `oid`.
-        let cid: Oid = unsafe { pend::field(root, pend::TREE_CACHE_OID) };
+        let cid = unsafe { (*root).oid };
         if count >= 0 {
             *oid = cid;
             return Ok(());
@@ -1008,12 +1008,12 @@ unsafe fn write_index(
     // The tree cache didn't help us; we'll have to write out a tree. If the
     // index is ignore_case, we must make it case-sensitive for the duration
     // of the tree-write operation.
-    // SAFETY: a live index's bitfields.
-    let flags: c_uint = unsafe { pend::field(index, pend::INDEX_FLAGS) };
-    let old_ignore_case = flags & 2 != 0;
+    // SAFETY: a live index, not written during the call (`bits` is
+    // atomic).
+    let old_ignore_case = unsafe { (*index).ignore_case() };
     if old_ignore_case {
         // SAFETY: a live index.
-        unsafe { pend::git_index__set_ignore_case(index, false) };
+        unsafe { crate::index::ffi::git_index__set_ignore_case(index, false) };
     }
     let mut shared_buf = GitStr::new();
     // SAFETY: the caller's contract.
@@ -1021,18 +1021,16 @@ unsafe fn write_index(
     drop(shared_buf);
     if old_ignore_case {
         // SAFETY: as above.
-        unsafe { pend::git_index__set_ignore_case(index, true) };
+        unsafe { crate::index::ffi::git_index__set_ignore_case(index, true) };
     }
     // SAFETY: the live index's `tree` field.
-    let tree_field =
-        unsafe { pend::field_ptr::<*mut pend::git_tree_cache, _>(index, pend::INDEX_TREE) };
+    let tree_field = unsafe { &raw mut (*index).tree };
     // SAFETY: a writable pointer field, not otherwise used meanwhile.
     unsafe { tree_field.write(ptr::null_mut()) };
     ret?;
 
     // SAFETY: the live index's tree pool, a `git_pool` by value.
-    let pool =
-        unsafe { pend::field_ptr::<crate::util::pool::GitPool, _>(index, pend::INDEX_TREE_POOL) };
+    let pool = unsafe { &raw mut (*index).tree_pool };
     // SAFETY: not otherwise used meanwhile (its cache, which pointed into
     // it, was just dropped).
     unsafe { (*pool).clear() };
@@ -1042,10 +1040,12 @@ unsafe fn write_index(
     ErrorCode::check(unsafe { pend::git_tree_lookup(&raw mut tree, repo, oid) })?;
     // Read the tree cache into the index
     // SAFETY: the live index's `oid_type`.
-    let oid_type: git_oid_t = unsafe { pend::field(index, pend::INDEX_OID_TYPE) };
+    let oid_type: git_oid_t = unsafe { (*index).oid_type };
     // SAFETY: the tree just looked up; the index's `tree` and `tree_pool`
     // fields (`tree_field`, `pool`), not otherwise used meanwhile.
-    let ret = unsafe { pend::git_tree_cache_read_tree(tree_field, tree, oid_type, pool) };
+    let ret = unsafe {
+        crate::tree_cache::ffi::git_tree_cache_read_tree(tree_field, tree.cast(), oid_type, pool)
+    };
     // SAFETY: freed once.
     unsafe { pend::git_tree_free(tree) };
     ErrorCode::check_zero(ret)
@@ -1585,7 +1585,7 @@ pub mod ffi {
                 let tr = unsafe { &mut *t };
                 if !tr.odb_obj.is_null() {
                     // SAFETY: the reference the parse took, released once.
-                    unsafe { pend::git_odb_object_free(tr.odb_obj) };
+                    unsafe { crate::odb::ffi::git_odb_object_free(tr.odb_obj) };
                 }
                 tr.entries.dispose();
             }
@@ -1807,9 +1807,9 @@ pub mod ffi {
             // SAFETY: a fresh tree that only the caller holds (contract).
             let t = unsafe { &mut *tree.cast::<GitTree>() };
             // SAFETY: a live odb object (contract).
-            let p = unsafe { pend::git_odb_object_data(odb_obj) }.cast::<c_char>();
+            let p = unsafe { crate::odb::ffi::git_odb_object_data(odb_obj) }.cast::<c_char>();
             // SAFETY: as above.
-            let n = unsafe { pend::git_odb_object_size(odb_obj) };
+            let n = unsafe { crate::odb::ffi::git_odb_object_size(odb_obj) };
             let d = if p.is_null() {
                 &[][..]
             } else {
@@ -1822,7 +1822,7 @@ pub mod ffi {
                 return e.raw();
             }
             // SAFETY: a live object; the tree's field is writable.
-            unsafe { pend::git_odb_object_dup(&raw mut t.odb_obj, odb_obj) }
+            unsafe { crate::odb::ffi::git_odb_object_dup(&raw mut t.odb_obj, odb_obj) }
         })
     }
 

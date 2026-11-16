@@ -446,6 +446,12 @@ impl Repository {
         Repository { repo, _lib: lib }
     }
 
+    /// The `git_repository *` (crate-internal: the commit and tree APIs
+    /// hand it to their C-shaped internals), live while `self` is.
+    pub(crate) fn raw_ptr(&self) -> *mut GitRepository {
+        self.repo.as_ptr()
+    }
+
     pub(crate) fn raw(&self) -> &GitRepository {
         // SAFETY: the repository this owner holds, live until drop.
         unsafe { self.repo.as_ref() }

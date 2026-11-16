@@ -237,7 +237,7 @@ unsafe fn quick_parse(
     // SAFETY: a live walk's repository (contract).
     let repo: *mut pend::git_repository = unsafe { pend::field(walk, pend::REVWALK_REPO) };
     // SAFETY: a live repository.
-    let oid_type: git_oid_t = unsafe { pend::field(repo, pend::REPO_OID_TYPE) };
+    let oid_type: git_oid_t = unsafe { (*repo).oid_type_raw() };
     let mut sink = QuickSink::default();
     commit::parse(data, oid_type, true, &mut sink)?;
 
@@ -304,13 +304,13 @@ unsafe fn parse(walk: *mut git_revwalk, node: *mut GitCommitListNode) -> Result<
     let id = unsafe { (*node).oid };
 
     // Let's try to use the commit graph first.
-    let mut file = ptr::null_mut();
+    let mut file: *mut pend::git_commit_graph_file = ptr::null_mut();
     // SAFETY: the walk's odb; `file` writable. (Its status is ignored, as
     // the C's.)
-    let _ = unsafe { pend::git_odb__get_commit_graph_file(&raw mut file, odb) };
+    let _ = unsafe { crate::odb::ffi::git_odb__get_commit_graph_file((&raw mut file).cast(), odb) };
     if !file.is_null() {
         // SAFETY: a live repository.
-        let oid_type: git_oid_t = unsafe { pend::field(repo, pend::REPO_OID_TYPE) };
+        let oid_type: git_oid_t = unsafe { (*repo).oid_type_raw() };
         // SAFETY: the odb's commit-graph file, live with the odb.
         let e = unsafe { commit_graph::entry_find(file, &id, crate::oid::oid_size(oid_type)) };
         if let Ok(e) = e
@@ -350,18 +350,20 @@ unsafe fn parse(walk: *mut git_revwalk, node: *mut GitCommitListNode) -> Result<
 
     let mut obj = ptr::null_mut();
     // SAFETY: the walk's odb; `obj` writable.
-    ErrorCode::check_zero(unsafe { pend::git_odb_read(&raw mut obj, odb, &raw const id) })?;
+    ErrorCode::check_zero(unsafe {
+        crate::odb::ffi::git_odb_read(&raw mut obj, odb, &raw const id)
+    })?;
     // SAFETY: the object just read, live until freed below.
-    let r = if unsafe { pend::git_odb_object_type(obj) } != commit::OBJ_COMMIT {
+    let r = if unsafe { crate::odb::ffi::git_odb_object_type(obj) } != commit::OBJ_COMMIT {
         Err(git_error_set!(
             ErrorClass::INVALID,
             "object is no commit object"
         ))
     } else {
         // SAFETY: as above.
-        let p = unsafe { pend::git_odb_object_data(obj) }.cast::<core::ffi::c_char>();
+        let p = unsafe { crate::odb::ffi::git_odb_object_data(obj) }.cast::<core::ffi::c_char>();
         // SAFETY: as above.
-        let n = unsafe { pend::git_odb_object_size(obj) };
+        let n = unsafe { crate::odb::ffi::git_odb_object_size(obj) };
         let data = if p.is_null() {
             &[][..]
         } else {
@@ -370,14 +372,14 @@ unsafe fn parse(walk: *mut git_revwalk, node: *mut GitCommitListNode) -> Result<
             unsafe { crate::util::export::bytes(p, n) }
         };
         // SAFETY: the object is live.
-        let id = unsafe { pend::git_odb_object_id(obj) };
+        let id = unsafe { crate::odb::ffi::git_odb_object_id(obj) };
         // SAFETY: its id, live with it.
         let id = unsafe { &*id };
         // SAFETY: the caller's contract on the walk and node.
         unsafe { quick_parse(walk, node, data, id) }
     };
     // SAFETY: freed once.
-    unsafe { pend::git_odb_object_free(obj) };
+    unsafe { crate::odb::ffi::git_odb_object_free(obj) };
     r
 }
 

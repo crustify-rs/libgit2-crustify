@@ -16,7 +16,7 @@ use std::ffi::CString;
 
 use super::{CreateArgs, GitCommit, GitSignature, GitTime, SigOut};
 use crate::oid::{Oid, OidType};
-use crate::pending_repository::Repository;
+use crate::repository::Repository;
 use crate::sys::pending::l_commit as pend;
 use crate::tree::api::Tree;
 use crate::util::errors::{Error, ErrorClass, ErrorCode};
@@ -99,7 +99,7 @@ impl<'r> Commit<'r> {
     pub fn lookup(repo: &'r Repository, id: &Oid) -> Result<Commit<'r>, Error> {
         let mut raw = ptr::null_mut();
         // SAFETY: `raw` writable; the repository live for `'r`.
-        let e = unsafe { pend::git_commit_lookup(&raw mut raw, repo.raw(), id) };
+        let e = unsafe { pend::git_commit_lookup(&raw mut raw, repo.raw_ptr(), id) };
         if e < 0 {
             return Err(Error::from(super::ec(e)));
         }
@@ -463,7 +463,7 @@ impl<'a> CommitBuilder<'a> {
         let mut next = |i: usize| parents.get(i).copied();
         let mut id = Oid::default();
         // SAFETY: a live repository; no C callback is involved.
-        unsafe { super::create_internal(&mut id, repo.raw(), &args, &mut next, None) }
+        unsafe { super::create_internal(&mut id, repo.raw_ptr(), &args, &mut next, None) }
             .map_err(Error::from)?;
         Ok(id)
     }

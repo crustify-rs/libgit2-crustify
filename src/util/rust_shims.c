@@ -334,6 +334,7 @@ int git_libgit2_opts(int key, ...)
 	va_end(ap);
 
 	return git_libgit2__opts(key, &a);
+}
 
 /*
  * git_commit_create_v (src/libgit2/commit.c, ported): the variadic parents

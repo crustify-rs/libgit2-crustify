@@ -14,6 +14,8 @@ pub mod util;
 
 pub mod buf;
 pub mod cache;
+pub mod commit;
+pub mod commit_list;
 pub mod config;
 pub mod config_cache;
 pub mod config_file;
@@ -22,8 +24,6 @@ pub mod config_mem;
 pub mod config_parse;
 pub mod config_snapshot;
 pub mod delta;
-pub mod commit;
-pub mod commit_list;
 pub mod fs;
 pub mod hashmap_oid;
 pub mod index;
@@ -49,7 +49,6 @@ pub use odb::{
     Backend, ExpandId, LooseOptions, Mempack, ObjectType, Odb, OdbBackend, OdbObject, OdbReader,
     OdbWriter,
 };
-pub mod pending_repository;
 pub mod tree;
 
 pub use commit::api::{Commit, CommitBuilder};
