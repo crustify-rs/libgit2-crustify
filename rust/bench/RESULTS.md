@@ -286,11 +286,26 @@ pinned to CPU 2 and interleaved.
 | equal_ncmp_streq | 63.7 | 43.5 | 0.68 |
 | shorten (20 x 12000 ids) | 14.2 | 26.9 | 1.90 |
 
-Check values identical. `shorten` is the one regression: the trie walk has
-C's algorithm and node layout (32-byte nodes, tails borrowed from the
-caller's strings) but costs ~110 ns per id against C's ~60 ns; nothing
-inside libgit2 calls `git_oid_shorten_*`. (A first version that copied
-the ids was 2.9x, from page faults and an extra indirection.)
+Check values identical. `shorten` was 1.9x at first; fixed afterwards
+(see below).
+
+### `oid/shorten` after the fix
+
+The export scanned each id with `strnlen` (40 bytes, ~20 ns) before the
+walk, where C reads only the digits it walks (about 5) and a tail's first
+byte when a leaf is split; and splitting a leaf rewrote all 32 bytes of the
+node. The walk now reads exactly the bytes C reads, and a split zeroes
+only the tail. `compare.sh /work/build-c /work/builds/u1 'oid/shorten*'`,
+5 rounds:
+
+| pinned CPU | C ms | Rust ms | Rust/C wall | Rust/C cpu |
+|---|---:|---:|---:|---:|
+| 5 | 17.38 | 16.99 | 0.98 | 0.99 |
+| 5 | 14.45 | 13.18 | 0.91 | 0.91 |
+| 7 | 13.37 | 14.14 | 1.06 | 1.06 |
+| 2 (default, busiest) | 34.14 | 33.01 | 0.97 | 1.08 |
+
+Parity within the machine's noise (±6%), from 1.9x.
 
 ## Internal API, per call: `micro/u1_bench.c` (`micro/run_u1.sh 5`)
 

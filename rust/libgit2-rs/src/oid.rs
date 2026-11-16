@@ -742,7 +742,9 @@ type NodeIndex = i16;
 const MAX_NODES: usize = i16::MAX as usize;
 
 /// A leaf's tail: the rest of the id it was made for, borrowed from the
-/// caller (as C's `const char *tail`).
+/// caller (as C's `const char *tail`): at most `len` bytes, read as
+/// [`OidShortener::add_raw`] reads its id. It always starts right after a
+/// hex digit of the id, so its first byte (when `len > 0`) is readable.
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct Tail {
@@ -797,8 +799,16 @@ impl fmt::Debug for OidShortener<'_> {
     }
 }
 
+#[cold]
+#[inline(never)]
 fn shorten_error(msg: &str) -> ErrorCode {
     crate::git_error_set!(ErrorClass::INVALID, "unable to shorten OID - {msg}")
+}
+
+#[cold]
+#[inline(never)]
+fn shorten_oom() -> ErrorCode {
+    errors::oom()
 }
 
 impl<'a> OidShortener<'a> {
@@ -836,22 +846,26 @@ impl<'a> OidShortener<'a> {
 
     /// Turn the leaf `idx` into a normal node with no children; its tail.
     #[inline(always)]
-    fn take_tail(&mut self, idx: usize) -> &'a [u8] {
+    fn take_tail(&mut self, idx: usize) -> Tail {
+        let node = &mut self.nodes[idx];
         // SAFETY: the trie's invariant: `idx` was reached through a negative
         // index, so it is a leaf, whose `tail` was written by `push_leaf`.
-        let t = unsafe { self.nodes[idx].tail };
-        self.nodes[idx] = EMPTY_NODE;
-        // SAFETY: `push_leaf` made the tail from a `&'a [u8]` (a sub-slice of
-        // an id given to `add`), which lives and stays unwritten for `'a`.
-        unsafe { core::slice::from_raw_parts(t.ptr, t.len) }
+        let t = unsafe { node.tail };
+        // A leaf starts as `EMPTY_NODE` and only its tail is written: zeroing
+        // the tail makes the whole node `EMPTY_NODE` again.
+        node.tail = Tail {
+            ptr: core::ptr::null(),
+            len: 0,
+        };
+        t
     }
 
     /// `push_leaf`: a new leaf under `idx` at digit `push_at`, for the
     /// tail `tail`. `Err` when the set became full.
-    #[inline]
-    fn push_leaf(&mut self, idx: usize, push_at: usize, tail: &'a [u8]) -> Result<()> {
+    #[inline(always)]
+    fn push_leaf(&mut self, idx: usize, push_at: usize, tail: Tail) -> Result<()> {
         if self.nodes.try_reserve(1).is_err() {
-            return Err(errors::oom());
+            return Err(shorten_oom());
         }
         let idx_leaf = self.nodes.len();
         if idx_leaf + 1 == MAX_NODES {
@@ -861,10 +875,7 @@ impl<'a> OidShortener<'a> {
         }
         // All 32 bytes initialized first, then the 16 of the tail.
         let mut leaf = EMPTY_NODE;
-        leaf.tail = Tail {
-            ptr: tail.as_ptr(),
-            len: tail.len(),
-        };
+        leaf.tail = tail;
         self.nodes.push(leaf);
         self.children(idx)[push_at] = -(idx_leaf as NodeIndex);
         Ok(())
@@ -876,19 +887,37 @@ impl<'a> OidShortener<'a> {
     /// Errors (class `GIT_ERROR_INVALID`): `unable to shorten OID - invalid
     /// hex value`, `- OID set full`.
     pub fn add(&mut self, text_id: &'a [u8]) -> Result<usize> {
+        let len = text_id.len().min(GIT_OID_SHA1_HEXSIZE);
+        // SAFETY: the `len` bytes of the slice are readable for `'a`.
+        unsafe { self.add_raw(text_id.as_ptr(), len) }
+    }
+
+    /// [`add`](OidShortener::add) of the id at `p`, of at most `len`
+    /// bytes, read lazily, as C reads it: byte `i` only after bytes
+    /// `0..i` were hex digits (so never past a NUL), and the bytes after
+    /// a leaf's position only when that leaf is split later.
+    ///
+    /// # Safety
+    ///
+    /// For every `i < len` such that bytes `0..i` are not NUL, byte `i` is
+    /// readable, and stays so and unwritten for `'a` (a slice of `len`
+    /// bytes, or a NUL-terminated string: C's contract).
+    #[inline(always)]
+    unsafe fn add_raw(&mut self, p: *const u8, len: usize) -> Result<usize> {
         if self.full {
             return Err(shorten_error("OID set full"));
         }
-        // C reads at most 40 bytes, and stops at a NUL: it is not a hex
-        // digit, so the walk (and a later tail) ends with an error there.
-        let text = &text_id[..text_id.len().min(GIT_OID_SHA1_HEXSIZE)];
-        let at = |t: &[u8], i: usize| -> u8 { t.get(i).copied().unwrap_or(0) };
-
         let mut idx: usize = 0;
         let mut is_leaf = false;
         let mut i = 0;
         while i < GIT_OID_SHA1_HEXSIZE {
-            let c = fromhex(at(text, i));
+            // Byte `i`: bytes `0..i` were hex digits (the walk got here).
+            let c = if i < len {
+                // SAFETY: the contract, as just said.
+                fromhex(unsafe { p.wrapping_add(i).read() })
+            } else {
+                -1
+            };
             if c < 0 {
                 if is_leaf {
                     // The leaf's link was made positive (as C does) but the
@@ -904,19 +933,35 @@ impl<'a> OidShortener<'a> {
             let c = (c & 15) as usize;
 
             if is_leaf {
-                let tail = self.take_tail(idx);
+                let t = self.take_tail(idx);
                 // C reads the tail's next digit unchecked (and indexes the
                 // children with -1 when it is not one).
-                let tc = fromhex(at(tail, 0));
+                let tc = if t.len > 0 {
+                    // SAFETY: a tail starts right after a hex digit of its
+                    // id (`push_leaf`'s callers), so its first byte is
+                    // readable by the contract of the `add_raw` that made it,
+                    // for `'a`.
+                    fromhex(unsafe { t.ptr.read() })
+                } else {
+                    -1
+                };
                 if tc < 0 {
                     return Err(shorten_error("invalid hex value"));
                 }
-                self.push_leaf(idx, (tc & 15) as usize, tail.get(1..).unwrap_or(&[]))?;
+                let rest = Tail {
+                    ptr: t.ptr.wrapping_add(1),
+                    len: t.len - 1,
+                };
+                self.push_leaf(idx, (tc & 15) as usize, rest)?;
             }
 
             let next = self.children(idx)[c];
             if next == 0 {
-                self.push_leaf(idx, c, text.get(i + 1..).unwrap_or(&[]))?;
+                let rest = Tail {
+                    ptr: p.wrapping_add(i + 1),
+                    len: len - i - 1,
+                };
+                self.push_leaf(idx, c, rest)?;
                 break;
             }
             is_leaf = next < 0;
@@ -1400,17 +1445,12 @@ pub mod ffi {
             if text_id.is_null() {
                 return os.min_length;
             }
-            // Its first 40 bytes at most, up to a NUL: what C may read.
-            let p = text_id.cast::<u8>();
-            let n = (0..GIT_OID_SHA1_HEXSIZE)
-                // SAFETY: reading in order up to the NUL, within the string.
-                .take_while(|&i| unsafe { p.wrapping_add(i).read() } != 0)
-                .count();
-            // SAFETY: those `n` bytes, of a string that outlives the
-            // shortener, unwritten (the caller's contract): the `'static`
-            // of a `git_oid_shorten`.
-            let text: &'static [u8] = unsafe { core::slice::from_raw_parts(p, n) };
-            match os.add(text) {
+            // SAFETY: a NUL-terminated string that outlives the shortener,
+            // unwritten (the caller's contract: the `'static` of a
+            // `git_oid_shorten`); `add_raw` reads it as C does, never past
+            // its NUL.
+            let r = unsafe { os.add_raw(text_id.cast(), GIT_OID_SHA1_HEXSIZE) };
+            match r {
                 Ok(n) => n as c_int,
                 Err(e) => e.raw(),
             }
