@@ -8,7 +8,6 @@ use core::ffi::c_void;
 // `src/libgit2/delta.c`, ported concurrently by WP l-odb. The pack reader
 // (pack.rs, odb_pack.rs) calls them through their C symbols until both have
 // landed.
-#[allow(improper_ctypes)] // the stream is passed through to C, opaque
 unsafe extern "C" {
     /// `git_odb__error_notfound`: sets `object not found - <message>` (with
     /// the first `oid_len` hex digits of `oid` when it is not NULL), class
@@ -32,13 +31,13 @@ unsafe extern "C" {
         delta: *const u8,
         delta_len: usize,
     ) -> core::ffi::c_int;
-    /// `git_delta_read_header_fromstream`: the base and result sizes of the
-    /// delta that `stream` inflates (it reads the stream through
-    /// `git_packfile_stream_read`). PENDING(l-odb)
-    pub fn git_delta_read_header_fromstream(
+    /// `git_delta_read_header`: the base and result sizes of the delta whose
+    /// first `delta_len` bytes are at `delta`. PENDING(l-odb)
+    pub fn git_delta_read_header(
         base_out: *mut usize,
         result_out: *mut usize,
-        stream: *mut crate::pack::GitPackfileStream,
+        delta: *const u8,
+        delta_len: usize,
     ) -> core::ffi::c_int;
 }
 

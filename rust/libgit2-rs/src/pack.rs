@@ -98,7 +98,8 @@ fn is_delta(t: c_int) -> bool {
 
 #[inline]
 fn be32(b: &[u8], at: usize) -> u32 {
-    u32::from_be_bytes([b[at], b[at + 1], b[at + 2], b[at + 3]])
+    let w: [u8; 4] = b[at..at + 4].try_into().expect("4 bytes");
+    u32::from_be_bytes(w)
 }
 
 /// `packfile_error`: `invalid pack file - <message>`, class `GIT_ERROR_ODB`.
@@ -461,12 +462,17 @@ impl<'a> IndexView<'a> {
         let num = self.num_objects as usize;
         let oid = self.oid_size;
         let index = self.fanout_base() + 4 * 256;
+        if oid == 0 {
+            return Ok(());
+        }
         if self.version > 1 {
             let offsets = index + (oid + 4) * num;
             let large_offsets = index + (oid + 8) * num;
             let large_offsets_end = d.len() - oid;
-            for i in 0..num {
-                let mut current = i64::from(be32(d, offsets + 4 * i));
+            let ids = d[index..index + oid * num].chunks_exact(oid);
+            let offs = d[offsets..offsets + 4 * num].as_chunks::<4>().0;
+            for (raw, o) in ids.zip(offs) {
+                let mut current = i64::from(u32::from_be_bytes(*o));
                 if current & 0x8000_0000 != 0 {
                     let p = large_offsets + (current & 0x7fff_ffff) as usize * 8;
                     if p >= large_offsets_end {
@@ -474,12 +480,15 @@ impl<'a> IndexView<'a> {
                     }
                     current = ((u64::from(be32(d, p)) << 32) | u64::from(be32(d, p + 4))) as i64;
                 }
-                f(&d[index + oid * i..index + oid * (i + 1)], current)?;
+                f(raw, current)?;
             }
         } else {
-            for i in 0..num {
-                let at = index + (oid + 4) * i;
-                f(&d[at + 4..at + 4 + oid], i64::from(be32(d, at)))?;
+            for e in d[index..index + (oid + 4) * num].chunks_exact(oid + 4) {
+                let (o, raw) = e.split_at(4);
+                f(
+                    raw,
+                    i64::from(u32::from_be_bytes(o.try_into().expect("4 bytes"))),
+                )?;
             }
         }
         Ok(())
@@ -948,13 +957,57 @@ impl CycleCheck {
     }
 }
 
-/// Frees a stream on drop (`git_zstream_free`).
-struct FreeZstream<'a>(ZstreamPtr<'a>);
+/// An initialized inflate stream on the heap, freed on drop.
+///
+/// zlib-rs's `inflateInit` and `inflateEnd` cost more than inflating a
+/// small object (about 0.5 µs more than zlib's); so the stream an object is
+/// inflated with is kept per thread ([`with_inflater`]) and reset for the
+/// next one (`inflateReset`), where C makes and frees one per object.
+struct Inflater(NonNull<GitZstream>);
 
-impl Drop for FreeZstream<'_> {
-    fn drop(&mut self) {
-        self.0.free();
+impl Inflater {
+    fn new() -> core::result::Result<Inflater, ()> {
+        let me = Inflater(NonNull::from(Box::leak(Box::new(GitZstream::new()))));
+        me.z().init(ZstreamKind::Inflate as c_int).map_err(|_| ())?;
+        Ok(me)
     }
+
+    fn z(&self) -> ZstreamPtr<'_> {
+        // SAFETY: the box this owns, reached only through this pointer (one
+        // at a time: `with_inflater` lends it to one user), on this thread,
+        // and never moved.
+        unsafe { ZstreamPtr::new(self.0.as_ptr()) }
+    }
+}
+
+impl Drop for Inflater {
+    fn drop(&mut self) {
+        self.z().free();
+        // SAFETY: the box `new` leaked, freed once; zlib's state is freed.
+        drop(unsafe { Box::from_raw(self.0.as_ptr()) });
+    }
+}
+
+std::thread_local! {
+    static INFLATER: core::cell::Cell<Option<Inflater>> = const { core::cell::Cell::new(None) };
+}
+
+/// Run `f` with a reset inflate stream: the thread's, or a new one (at the
+/// first use, re-entrantly, or while the thread's locals are destroyed).
+/// `init_error` is the message for a stream that cannot be made.
+fn with_inflater<R>(init_error: &str, f: impl FnOnce(ZstreamPtr<'_>) -> Result<R>) -> Result<R> {
+    let cached = INFLATER.try_with(core::cell::Cell::take).ok().flatten();
+    let inflater = match cached {
+        Some(i) => {
+            i.z().reset();
+            i
+        }
+        None => Inflater::new().map_err(|()| git_error_set!(ErrorClass::ZLIB, "{}", init_error))?,
+    };
+    let r = f(inflater.z());
+    // Keep it for the next object (dropping it if the thread is exiting).
+    let _ = INFLATER.try_with(|c| c.set(Some(inflater)));
+    r
 }
 
 impl GitPackFile {
@@ -1287,25 +1340,7 @@ impl GitPackFile {
             let r = self.delta_base(&mut cursor, &mut curpos, kind, offset);
             cursor.close();
             base_offset = r?;
-            let mut stream = core::mem::MaybeUninit::<GitPackfileStream>::uninit();
-            let stream = stream.as_mut_ptr();
-            // SAFETY: `stream` is writable, stays here, and is used only
-            // through the stream functions (by `git_delta_read_header_fromstream`
-            // too); the pack outlives it.
-            unsafe { GitPackfileStream::open_in(stream, self, curpos) }?;
-            let mut base_size = 0;
-            // SAFETY: an open stream; `git_delta_read_header_fromstream`
-            // reads it with `git_packfile_stream_read` and keeps nothing.
-            let r = unsafe {
-                pending::git_delta_read_header_fromstream(
-                    &raw mut base_size,
-                    &raw mut size_out,
-                    stream,
-                )
-            };
-            // SAFETY: the stream we opened, disposed once.
-            unsafe { GitPackfileStream::dispose(stream) };
-            ErrorCode::check(r)?;
+            size_out = self.delta_header(curpos)?.1;
         } else {
             base_offset = 0;
         }
@@ -1383,18 +1418,27 @@ impl GitPackFile {
         }
         let buf = Buf(data);
 
-        let mut zs = GitZstream::new();
-        // SAFETY: `zs` is a local that, from here on, is reached only through
-        // `z` (and the guard's copy), on this thread, and not moved.
-        let z = unsafe { ZstreamPtr::new(&raw mut zs) };
-        let _free = FreeZstream(z);
-        if z.init(ZstreamKind::Inflate as c_int).is_err() {
-            return Err(git_error_set!(
-                ErrorClass::ZLIB,
-                "failed to init zlib stream on unpack"
-            ));
-        }
+        with_inflater("failed to init zlib stream on unpack", |z| {
+            self.inflate_into(z, cursor, position, data, buffer_len, size)
+        })?;
+        core::mem::forget(buf);
+        // SAFETY: `data` is ours, `size + 1` initialized bytes
+        // (`inflate_into`).
+        Ok(unsafe { GitBytes::from_raw(data, size) })
+    }
 
+    /// The loop of `packfile_unpack_compressed`: inflate exactly `size`
+    /// bytes from `*position` into `data` (`buffer_len = size + 1` bytes),
+    /// then the NUL.
+    fn inflate_into(
+        &self,
+        z: ZstreamPtr<'_>,
+        cursor: &mut Cursor,
+        position: &mut i64,
+        data: NonNull<u8>,
+        buffer_len: usize,
+        size: usize,
+    ) -> Result<()> {
         let mut total = 0usize;
         loop {
             let mut bytes = buffer_len - total;
@@ -1433,9 +1477,66 @@ impl GitPackFile {
         // SAFETY: zlib wrote `total == size` bytes; the NUL makes all
         // `buffer_len` initialized.
         unsafe { data.as_ptr().wrapping_add(size).write(0) };
-        core::mem::forget(buf);
-        // SAFETY: `data` is ours, `size + 1` initialized bytes.
-        Ok(unsafe { GitBytes::from_raw(data, size) })
+        Ok(())
+    }
+
+    /// `git_delta_read_header_fromstream` over a stream from `curpos`: the
+    /// base and result sizes of the delta whose data starts there. Its
+    /// first 16 inflated bytes (or all, if fewer) are parsed by
+    /// `git_delta_read_header`.
+    ///
+    /// C's loop retries forever when the stream makes no progress (the
+    /// window cannot be opened, or zlib needs input it does not get), and
+    /// counts a failed read's -1 into its length, parsing uninitialized
+    /// memory: both fail here (DEFECTS.md).
+    fn delta_header(&self, mut curpos: i64) -> Result<(usize, usize)> {
+        const LEN: usize = 16;
+        let mut buf = [0u8; LEN];
+        let mut len = 0;
+        with_inflater("failed to init packfile stream", |z| {
+            let mut cursor = Cursor::new();
+            let mut done = false;
+            let stuck = || git_error_set!(ErrorClass::ZLIB, "error reading from the zlib stream");
+            while len < LEN && !done {
+                // `git_packfile_stream_read`.
+                let Some(input) = self.window_open(&mut cursor, curpos) else {
+                    return Err(stuck());
+                };
+                let window_len = input.len();
+                z.set_input(input.as_ptr().cast(), window_len);
+                let mut n = LEN - len;
+                // SAFETY: the input is the window the cursor holds, for the
+                // call; `buf[len..]` has `n` writable bytes.
+                let r = unsafe { z.get_output_chunk(buf.as_mut_ptr().wrapping_add(len), &mut n) };
+                cursor.close();
+                if r.is_err() {
+                    return Err(stuck());
+                }
+                let consumed = window_len - z.in_len();
+                curpos += consumed as i64;
+                done = z.eos();
+                if n == 0 {
+                    // The end, or no output yet (`GIT_EBUFS`): C tries
+                    // again, which only helps if input was consumed.
+                    if done {
+                        break;
+                    }
+                    if consumed == 0 {
+                        return Err(stuck());
+                    }
+                    continue;
+                }
+                len += n;
+            }
+            Ok(())
+        })?;
+        let (mut base, mut result) = (0usize, 0usize);
+        // SAFETY: the out-parameters are writable; `buf` has `len` bytes.
+        let r = unsafe {
+            pending::git_delta_read_header(&raw mut base, &raw mut result, buf.as_ptr(), len)
+        };
+        ErrorCode::check(r)?;
+        Ok((base, result))
     }
 
     /// `git_packfile_unpack`: the object at `*obj_offset`, its deltas
@@ -1656,10 +1757,13 @@ impl GitPackFile {
         mut f: impl FnMut(&Oid, i64) -> c_int,
     ) -> core::result::Result<(), c_int> {
         let index = self.index().map_err(ErrorCode::raw)?;
-        let oid_type = self.oid_type;
+        // One id, of which each entry overwrites the hash bytes (the rest
+        // stay zero), as C's `current_oid`.
+        let mut id = Oid::zero(self.oid_type);
+        let n = self.oid_size();
         index.view().for_each_offset(
             |raw, off| {
-                let id = Oid::from_bytes(raw, oid_type).expect("oid_size bytes");
+                id.raw_id_mut()[..n].copy_from_slice(raw);
                 match f(&id, off) {
                     0 => Ok(()),
                     e => Err(errors::set_after_callback(
@@ -2656,19 +2760,36 @@ mod tests {
             let view = IndexView::parse(&idx, 20).unwrap();
             assert_eq!((view.version(), view.num_objects()), (v, 10));
 
+            // v1's size is exact; v2's has room for a large-offset table.
             let mut bad = idx.clone();
             bad.push(0);
-            let want = if v == 1 { "index is corrupted" } else { "wrong index size" };
-            assert_eq!(IndexView::parse(&bad, 20).err(), Some(want));
+            if v == 1 {
+                assert_eq!(IndexView::parse(&bad, 20).err(), Some("index is corrupted"));
+            } else {
+                assert!(IndexView::parse(&bad, 20).is_ok());
+            }
+            let bad = &idx[..idx.len() - 1];
+            let want = if v == 1 {
+                "index is corrupted"
+            } else {
+                "wrong index size"
+            };
+            assert_eq!(IndexView::parse(bad, 20).err(), Some(want));
 
             let mut bad = idx.clone();
             let fan = if v == 2 { 8 } else { 0 };
             bad[fan + 4 * 100..fan + 4 * 101].copy_from_slice(&1000u32.to_be_bytes());
-            assert_eq!(IndexView::parse(&bad, 20).err(), Some("index is non-monotonic"));
+            assert_eq!(
+                IndexView::parse(&bad, 20).err(),
+                Some("index is non-monotonic")
+            );
         }
         let mut idx = build_index(2, &ids, &offs);
         idx[7] = 3;
-        assert_eq!(IndexView::parse(&idx, 20).err(), Some("unsupported index version"));
+        assert_eq!(
+            IndexView::parse(&idx, 20).err(),
+            Some("unsupported index version")
+        );
         // v2 allows a large-offset table of up to nr - 1 entries.
         let mut idx = build_index(2, &ids, &offs);
         let trailer = idx.split_off(idx.len() - 40);
@@ -2729,16 +2850,29 @@ mod tests {
             || (),
         )
         .unwrap();
-        assert_eq!(seen, ids.iter().cloned().zip(offs.iter().map(|&o| o as i64)).collect::<Vec<_>>());
+        assert_eq!(
+            seen,
+            ids.iter()
+                .cloned()
+                .zip(offs.iter().map(|&o| o as i64))
+                .collect::<Vec<_>>()
+        );
 
-        // A large offset index past the table: -1 (C's `index >= end - 8`)
-        // and `invalid large offset` for the iteration.
+        // A large offset index past the table. C's lookup refuses it only
+        // within 8 bytes of the end (`index >= end - 8`: it reads the
+        // checksum before that), its iteration within the checksum.
         let mut bad = idx.clone();
         let at = 8 + 1024 + 4 * 24 + 4;
         bad[at..at + 4].copy_from_slice(&0x8000_0005u32.to_be_bytes());
         let view = IndexView::parse(&bad, 20).unwrap();
+        assert_eq!(view.nth_offset(1), 0xabab_abab_abab_abab_u64 as i64);
+        assert_eq!(
+            view.for_each_offset(|_, _| Ok(()), || "invalid"),
+            Err("invalid")
+        );
+        bad[at..at + 4].copy_from_slice(&0x8000_0006u32.to_be_bytes());
+        let view = IndexView::parse(&bad, 20).unwrap();
         assert_eq!(view.nth_offset(1), -1);
-        assert_eq!(view.for_each_offset(|_, _| Ok(()), || "invalid"), Err("invalid"));
         // A 64-bit offset with the top bit set is negative: C's callers call
         // that corrupt.
         let mut bad = idx;
@@ -2753,13 +2887,21 @@ mod tests {
         let ids = ids(6, 20);
         let offs = vec![500, 12, 300, 12, 0x9000_0000, 40];
         for v in [1, 2] {
-            let offs = if v == 1 { vec![500, 12, 300, 12, 7, 40] } else { offs.clone() };
+            let offs = if v == 1 {
+                vec![500, 12, 300, 12, 7, 40]
+            } else {
+                offs.clone()
+            };
             let idx = build_index(v, &ids, &offs);
             let view = IndexView::parse(&idx, 20).unwrap();
             let pos = view.positions_by_offset();
             // v2 sorts the 32-bit entries: a large offset sorts by its
             // (MSB-set) table index, after every small one.
-            let want: Vec<u32> = if v == 1 { vec![4, 1, 3, 5, 2, 0] } else { vec![1, 3, 5, 2, 0, 4] };
+            let want: Vec<u32> = if v == 1 {
+                vec![4, 1, 3, 5, 2, 0]
+            } else {
+                vec![1, 3, 5, 2, 0, 4]
+            };
             assert_eq!(pos, want, "v{v}");
         }
     }
@@ -2785,7 +2927,17 @@ mod tests {
 
     #[test]
     fn object_headers_round_trip() {
-        for &size in &[0usize, 1, 15, 16, 127, 128, 1 << 20, usize::MAX >> 4, usize::MAX] {
+        for &size in &[
+            0usize,
+            1,
+            15,
+            16,
+            127,
+            128,
+            1 << 20,
+            usize::MAX >> 4,
+            usize::MAX,
+        ] {
             for kind in [GIT_OBJECT_COMMIT, GIT_OBJECT_BLOB, GIT_PACKFILE_REF_DELTA] {
                 let mut hdr = [0u8; 10];
                 let n = object_header(&mut hdr, size, kind).unwrap();
@@ -2829,7 +2981,10 @@ mod tests {
         assert_eq!(decode_ofs(&[0x81]), Err(ErrorCode::BUFS));
         assert_eq!(decode_ofs(&[]), Err(ErrorCode::BUFS));
         assert_eq!(decode_ofs(&[0xff; 20]), Err(ErrorCode::GENERIC));
-        assert_eq!(errors::last_message().unwrap(), b"invalid pack file - overflow");
+        assert_eq!(
+            errors::last_message().unwrap(),
+            b"invalid pack file - overflow"
+        );
     }
 
     #[test]
@@ -2849,10 +3004,14 @@ mod tests {
             assert!(steps < 100);
         };
         assert_eq!(r, ErrorCode::GENERIC);
-        assert_eq!(errors::last_message().unwrap(), b"invalid pack file - delta chain loops");
+        assert_eq!(
+            errors::last_message().unwrap(),
+            b"invalid pack file - delta chain loops"
+        );
         // A long chain that does not loop is not refused.
-        let mut c = CycleCheck::new(1_000_000);
-        for o in (0..1_000_000).rev() {
+        let n = if cfg!(miri) { 5_000 } else { 1_000_000 };
+        let mut c = CycleCheck::new(n);
+        for o in (0..n).rev() {
             c.step(o).unwrap();
         }
     }
@@ -2871,7 +3030,10 @@ mod tests {
             assert_eq!(chain_last(&mut c).base_key, i);
         }
         for i in 0..200 {
-            assert_eq!((c.get(i).base_key, c.get(i).offset), (i as i64, i as i64 * 2));
+            assert_eq!(
+                (c.get(i).base_key, c.get(i).offset),
+                (i as i64, i as i64 * 2)
+            );
         }
     }
 
@@ -2882,16 +3044,28 @@ mod tests {
         cache.lock().memory_limit = 100;
         let big = GitBytes::copy_from(&[1; 2 * GIT_PACK_CACHE_SIZE_LIMIT]).unwrap();
         assert!(cache.add(big, GIT_OBJECT_BLOB, 1).is_err());
-        let a = cache.add(GitBytes::copy_from(&[1; 40]).unwrap(), GIT_OBJECT_BLOB, 10).unwrap();
-        assert!(cache.add(GitBytes::copy_from(&[2; 40]).unwrap(), GIT_OBJECT_BLOB, 10).is_err());
-        let b = cache.add(GitBytes::copy_from(&[3; 40]).unwrap(), GIT_OBJECT_TREE, 20).unwrap();
+        let a = cache
+            .add(GitBytes::copy_from(&[1; 40]).unwrap(), GIT_OBJECT_BLOB, 10)
+            .unwrap();
+        assert!(
+            cache
+                .add(GitBytes::copy_from(&[2; 40]).unwrap(), GIT_OBJECT_BLOB, 10)
+                .is_err()
+        );
+        let b = cache
+            .add(GitBytes::copy_from(&[3; 40]).unwrap(), GIT_OBJECT_TREE, 20)
+            .unwrap();
         drop(b);
         // 120 > 100: the unused entry (20) goes, the used one (10) stays.
-        let c = cache.add(GitBytes::copy_from(&[4; 40]).unwrap(), GIT_OBJECT_TAG, 30).unwrap();
+        let c = cache
+            .add(GitBytes::copy_from(&[4; 40]).unwrap(), GIT_OBJECT_TAG, 30)
+            .unwrap();
         assert!(cache.get(20).is_none());
         assert_eq!(cache.get(10).unwrap().data.as_bytes(), &[1; 40]);
         // All in use and over the limit: added anyway (C loops forever).
-        let d = cache.add(GitBytes::copy_from(&[5; 40]).unwrap(), GIT_OBJECT_TAG, 40).unwrap();
+        let d = cache
+            .add(GitBytes::copy_from(&[5; 40]).unwrap(), GIT_OBJECT_TAG, 40)
+            .unwrap();
         assert_eq!(cache.lock().memory_used, 120);
         assert_eq!(d.kind, GIT_OBJECT_TAG);
         drop((a, c, d));
@@ -2905,8 +3079,10 @@ mod tests {
         let (p, n) = b.into_raw();
         // SAFETY: the buffer `into_raw` gave up: 3 bytes and a NUL.
         let b = unsafe { GitBytes::from_raw(NonNull::new(p).unwrap(), n) };
+        // SAFETY: as above: byte 3 is the NUL.
+        let nul = unsafe { p.add(3) };
         // SAFETY: as above.
-        assert_eq!(unsafe { *p.add(3) }, 0);
+        assert_eq!(unsafe { *nul }, 0);
         assert!(!b.is_empty());
         assert!(GitBytes::copy_from(b"").unwrap().is_empty());
     }

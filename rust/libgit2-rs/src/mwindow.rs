@@ -292,8 +292,11 @@ impl Ctl {
 /// window.
 #[inline]
 fn contains(w: &GitMwindow, offset: i64, extra: i64) -> bool {
+    // C's `offset + extra` overflows (UB) for huge values; it does not
+    // hold them here.
     let win_off = w.offset;
-    win_off <= offset && offset.wrapping_add(extra) <= win_off.wrapping_add(w.window_map.len as i64)
+    let end = win_off.saturating_add(w.window_map.len as i64);
+    win_off <= offset && offset.checked_add(extra).is_some_and(|e| e <= end)
 }
 
 const LRU: isize = -1;
@@ -662,11 +665,15 @@ impl Cursor {
 
         // SAFETY: the window the cursor now holds.
         let win = unsafe { ctl.win(w) };
-        let rel = (offset - win.offset) as usize;
-        // `rel` is within the mapping: a window found holds `offset`
-        // (`contains`), and a new one does too (`offset < size`).
-        debug_assert!(rel <= win.window_map.len);
-        let left = (win.window_map.len - rel) as c_uint;
+        // `offset` is within the mapping: a window found holds it
+        // (`contains`), and a new one does too (checked above). Checked
+        // again, as the slice's bounds rest on it.
+        let len = win.window_map.len;
+        let rel = usize::try_from(offset - win.offset)
+            .ok()
+            .filter(|&r| r <= len)
+            .expect("the window holds the offset");
+        let left = (len - rel) as c_uint;
         let p = win
             .window_map
             .data

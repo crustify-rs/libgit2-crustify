@@ -1091,6 +1091,15 @@ impl core::fmt::Debug for OdbPackBackend {
     }
 }
 
+// SAFETY: the wrapper reaches the state only shared (`CTable::state`), and
+// `PackBackend` is `Sync` (its mutable state is behind a mutex); it reaches
+// the table (raw pointers, which C reads) only to give it up in
+// `into_c(self)`. Dropping it on another thread drops the state, which is
+// `Send`, and frees the allocation.
+unsafe impl Send for OdbPackBackend {}
+// SAFETY: as above.
+unsafe impl Sync for OdbPackBackend {}
+
 type ApiResult<T> = core::result::Result<T, errors::Error>;
 
 impl OdbPackBackend {
