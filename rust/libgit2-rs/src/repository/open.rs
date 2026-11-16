@@ -943,7 +943,8 @@ pub(crate) fn wrap_odb(odb: &Odb) -> Result<NonNull<GitRepository>> {
     }
     r.set_oid_type_raw(t);
     r.set_refdb_type(GIT_REFDB_FILES);
-    r.set_odb(Some(odb.as_raw()));
+    // SAFETY: a live odb the caller holds; the fresh repository had none.
+    unsafe { r.set_odb(Some(odb.as_raw())) };
     Ok(repo)
 }
 

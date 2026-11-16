@@ -39,8 +39,19 @@ const DEFAULT_USER_AGENT: &CStr = {
     }
 };
 
+/// Serializes the Rust's writers and readers of the string globals: a
+/// safe reader copies under it, so no setter can free what it reads. (C's
+/// readers, `git_settings__user_agent` and `streams/openssl.c`, keep C's
+/// rule: no options call while they use the string.)
+static STRINGS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn strings_lock() -> std::sync::MutexGuard<'static, ()> {
+    STRINGS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// Replace a string global, freeing the old value.
 fn replace(g: &AtomicPtr<c_char>, v: Option<&CStr>) -> Result<()> {
+    let _l = strings_lock();
     // C frees the old value first, then copies (so the global is NULL if
     // the copy fails).
     let new = match v {
@@ -63,28 +74,47 @@ fn replace(g: &AtomicPtr<c_char>, v: Option<&CStr>) -> Result<()> {
     Ok(())
 }
 
-fn read(g: &AtomicPtr<c_char>) -> Option<&'static CStr> {
+/// A copy of a string global (or `default`), taken under the lock the
+/// setters take.
+fn copy(g: &AtomicPtr<c_char>, default: &CStr) -> Vec<u8> {
+    let _l = strings_lock();
     let p = g.load(Ordering::Acquire);
     if p.is_null() {
-        None
+        return default.to_bytes().to_vec();
+    }
+    // SAFETY: the global's string, which no setter frees while the lock is
+    // held.
+    unsafe { CStr::from_ptr(p) }.to_bytes().to_vec()
+}
+
+/// The string global (or `default`), as C reads it.
+///
+/// # Safety
+///
+/// The result is used only until the next options call that replaces the
+/// global or the last `git_libgit2_shutdown` (C's rule).
+unsafe fn read(g: &AtomicPtr<c_char>, default: &'static CStr) -> &'static CStr {
+    let p = g.load(Ordering::Acquire);
+    if p.is_null() {
+        default
     } else {
-        // SAFETY: a string of the global, valid until the next options
-        // call replaces it (C's rule too).
-        Some(unsafe { CStr::from_ptr(p) })
+        // SAFETY: the caller's contract.
+        unsafe { CStr::from_ptr(p) }
     }
 }
 
-/// `git_settings__user_agent`.
-pub fn user_agent() -> &'static CStr {
-    read(&git__user_agent).unwrap_or(DEFAULT_USER_AGENT)
+/// `git_settings__user_agent`: the user agent (a copy).
+pub fn user_agent() -> Vec<u8> {
+    copy(&git__user_agent, DEFAULT_USER_AGENT)
 }
 
-/// `git_settings__user_agent_product`.
-pub fn user_agent_product() -> &'static CStr {
-    read(&git__user_agent_product).unwrap_or(c"git/2.0")
+/// `git_settings__user_agent_product`: the product (a copy).
+pub fn user_agent_product() -> Vec<u8> {
+    copy(&git__user_agent_product, c"git/2.0")
 }
 
 extern "C" fn settings_global_shutdown() {
+    let _l = strings_lock();
     for g in [
         &git__user_agent,
         &git__user_agent_product,
@@ -313,9 +343,9 @@ pub unsafe fn opts(key: c_int, args: &OptArgs) -> Result<()> {
                 unsafe { crate::sys::streams::openssl_add_x509_cert(a.0.p1) }?
             }
             SET_USER_AGENT => replace(&git__user_agent, a.cstr1())?,
-            GET_USER_AGENT => a.buf1(|s| s.puts(user_agent().to_bytes()))?,
+            GET_USER_AGENT => a.buf1(|s| s.puts(&user_agent()))?,
             SET_USER_AGENT_PRODUCT => replace(&git__user_agent_product, a.cstr1())?,
-            GET_USER_AGENT_PRODUCT => a.buf1(|s| s.puts(user_agent_product().to_bytes()))?,
+            GET_USER_AGENT_PRODUCT => a.buf1(|s| s.puts(&user_agent_product()))?,
             ENABLE_STRICT_OBJECT_CREATION => {
                 g!(git_object__strict_input_validation).store(a.0.i != 0, r)
             }
@@ -419,7 +449,7 @@ pub mod opts {
 
     /// `GIT_OPT_GET_USER_AGENT`.
     pub fn user_agent() -> Vec<u8> {
-        super::user_agent().to_bytes().to_vec()
+        super::user_agent()
     }
 
     /// `GIT_OPT_SET_USER_AGENT` (`None`: the default).
@@ -429,7 +459,7 @@ pub mod opts {
 
     /// `GIT_OPT_GET_USER_AGENT_PRODUCT`.
     pub fn user_agent_product() -> Vec<u8> {
-        super::user_agent_product().to_bytes().to_vec()
+        super::user_agent_product()
     }
 
     /// `GIT_OPT_SET_USER_AGENT_PRODUCT` (`None`: the default).
@@ -489,7 +519,8 @@ pub mod ffi {
     /// The result is valid until the next `GIT_OPT_SET_USER_AGENT`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_settings__user_agent() -> *const c_char {
-        user_agent().as_ptr()
+        // SAFETY: the caller's contract is `read`'s.
+        unsafe { read(&git__user_agent, DEFAULT_USER_AGENT) }.as_ptr()
     }
 
     /// `git_settings__user_agent_product`.
@@ -499,7 +530,8 @@ pub mod ffi {
     /// As [`git_settings__user_agent`].
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_settings__user_agent_product() -> *const c_char {
-        user_agent_product().as_ptr()
+        // SAFETY: the caller's contract is `read`'s.
+        unsafe { read(&git__user_agent_product, c"git/2.0") }.as_ptr()
     }
 
     /// `git_libgit2_opts`' body: the shim in `rust_shims.c` read the
@@ -539,24 +571,55 @@ mod tests {
     fn user_agents() {
         let _g = test_support::init();
         let _l = AGENT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        assert_eq!(user_agent(), c"libgit2 1.9.0");
-        assert_eq!(user_agent_product(), c"git/2.0");
+        assert_eq!(user_agent(), b"libgit2 1.9.0");
+        assert_eq!(user_agent_product(), b"git/2.0");
         opts::set_user_agent(Some(c"agent/1")).unwrap();
         assert_eq!(opts::user_agent(), b"agent/1");
         opts::set_user_agent(None).unwrap();
-        assert_eq!(user_agent(), c"libgit2 1.9.0");
+        assert_eq!(user_agent(), b"libgit2 1.9.0");
         let mut a = args();
         a.p1 = c"prod/2".as_ptr().cast_mut().cast();
         // SAFETY: a string argument.
         unsafe { opts(opt::SET_USER_AGENT_PRODUCT, &a) }.unwrap();
-        assert_eq!(user_agent_product(), c"prod/2");
+        assert_eq!(user_agent_product(), b"prod/2");
         a.p1 = ptr::null_mut();
         // SAFETY: NULL: back to the default.
         unsafe { opts(opt::SET_USER_AGENT_PRODUCT, &a) }.unwrap();
-        assert_eq!(user_agent_product(), c"git/2.0");
+        assert_eq!(user_agent_product(), b"git/2.0");
     }
 
+    /// Keeps the two tests that set the user agent from seeing each
+    /// other's values (it orders expectations; memory safety does not
+    /// depend on it: `user_agent_reader_races_setter` races its own
+    /// threads without it).
     static AGENT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Review l-repo-r1 LR-1: safe readers against a safe setter on another
+    /// thread (a use after free and a data race under Miri before the fix).
+    #[test]
+    fn user_agent_reader_races_setter() {
+        let _g = test_support::init();
+        let _l = AGENT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let t = std::thread::spawn(|| {
+            for i in 0..20 {
+                let v: &CStr = if i % 2 == 0 {
+                    c"aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                } else {
+                    c"b"
+                };
+                opts::set_user_agent(Some(v)).unwrap();
+            }
+        });
+        for _ in 0..20 {
+            let v = opts::user_agent();
+            assert!(!v.is_empty());
+        }
+        t.join().unwrap();
+        let held = opts::user_agent();
+        opts::set_user_agent(None).unwrap();
+        // A copy stays valid after the setter frees the global's string.
+        assert!(held == b"b" || held.starts_with(b"aaaa"));
+    }
 
     #[test]
     fn errors_as_c() {

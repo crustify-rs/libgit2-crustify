@@ -108,7 +108,9 @@ pub unsafe extern "C" fn git_repository__cleanup(repo_: *mut GitRepository) -> c
         let Some(r) = (unsafe { repo(repo_) }) else {
             return errors::assert_arg_failed("repo").raw();
         };
-        status(r.cleanup())
+        // SAFETY: the module's contract (C's: nothing else uses the
+        // repository or a weak pointer of it during and after the call).
+        status(unsafe { r.cleanup() })
     })
 }
 
@@ -495,7 +497,9 @@ pub unsafe extern "C" fn git_repository_set_config(
             return errors::assert_arg_failed("repo").raw();
         };
         git_assert_arg!(!config.is_null(), "config", -1);
-        r.set_config(NonNull::new(config));
+        // SAFETY: the module's contract: `config` is NULL or a live object of
+        // the caller's, and no weak pointer to the old one is used after.
+        unsafe { r.set_config(NonNull::new(config)) };
         0
     })
 }
@@ -585,7 +589,9 @@ pub unsafe extern "C" fn git_repository_set_odb(
             return errors::assert_arg_failed("repo").raw();
         };
         git_assert_arg!(!odb.is_null(), "odb", -1);
-        r.set_odb(NonNull::new(odb));
+        // SAFETY: the module's contract: `odb` is NULL or a live object of
+        // the caller's, and no weak pointer to the old one is used after.
+        unsafe { r.set_odb(NonNull::new(odb)) };
         0
     })
 }
@@ -669,7 +675,9 @@ pub unsafe extern "C" fn git_repository_set_refdb(
             return errors::assert_arg_failed("repo").raw();
         };
         git_assert_arg!(!refdb.is_null(), "refdb", -1);
-        r.set_refdb(NonNull::new(refdb));
+        // SAFETY: the module's contract: `refdb` is NULL or a live object of
+        // the caller's, and no weak pointer to the old one is used after.
+        unsafe { r.set_refdb(NonNull::new(refdb)) };
         0
     })
 }
@@ -753,7 +761,9 @@ pub unsafe extern "C" fn git_repository_set_index(
         let Some(r) = (unsafe { repo(repo_) }) else {
             return errors::assert_arg_failed("repo").raw();
         };
-        r.set_index(NonNull::new(index));
+        // SAFETY: the module's contract: `index` is NULL or a live object of
+        // the caller's, and no weak pointer to the old one is used after.
+        unsafe { r.set_index(NonNull::new(index)) };
         0
     })
 }
@@ -1232,10 +1242,10 @@ pub unsafe extern "C" fn git_repository_head_for_worktree(
             };
             // SAFETY: writable.
             unsafe { out.write(ptr::null_mut()) };
-            match head::head_for_worktree(r, n) {
+            match head::with_head_for_worktree(r, n, |h| h.into_raw()) {
                 Ok(h) => {
                     // SAFETY: writable.
-                    unsafe { out.write(h.into_raw()) };
+                    unsafe { out.write(h) };
                     0
                 }
                 Err(e) => e.raw(),
@@ -1445,7 +1455,8 @@ pub unsafe extern "C" fn git_repository_set_workdir(
             let Some(w) = (unsafe { cstr(workdir) }).map(CStr::to_owned) else {
                 return errors::assert_arg_failed("workdir").raw();
             };
-            status(init::set_workdir(r, &w, update_gitlink != 0))
+            // SAFETY: the module's contract (a string-replacing setter).
+            status(unsafe { init::set_workdir(r, &w, update_gitlink != 0) })
         })
     })
 }
@@ -1487,7 +1498,12 @@ pub unsafe extern "C" fn git_repository_is_worktree(repo_: *const GitRepository)
 /// The module's contract (a string-replacing setter).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_set_bare(repo_: *mut GitRepository) -> c_int {
-    barrier(|| with_repo!(repo_, "repo", |r| status(init::set_bare(r))))
+    barrier(|| {
+        with_repo!(repo_, "repo", |r| {
+            // SAFETY: the module's contract (a string-replacing setter).
+            status(unsafe { init::set_bare(r) })
+        })
+    })
 }
 
 /// `git_repository_head_commit`.
@@ -1985,8 +2001,10 @@ pub unsafe extern "C" fn git_repository__set_objectformat(
     oid_type: crate::oid::git_oid_t,
 ) -> c_int {
     barrier(|| {
-        with_repo!(repo_, "repo", |r| status(head::set_objectformat(
-            r, oid_type
-        )))
+        with_repo!(repo_, "repo", |r| {
+            // SAFETY: the module's contract (no weak pointer of the old
+            // index, odb or refdb is used after).
+            status(unsafe { head::set_objectformat(r, oid_type) })
+        })
     })
 }

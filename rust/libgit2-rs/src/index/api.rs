@@ -414,11 +414,6 @@ impl Index {
         Index::from_ptr(ptr)
     }
 
-    /// The `git_index *` (the reference stays with this handle).
-    pub(crate) fn as_raw(&self) -> NonNull<GitIndex> {
-        self.ptr.as_nonnull()
-    }
-
     /// The index, borrowed for code that makes no foreign call.
     fn with<R>(&self, f: impl FnOnce(&mut GitIndex) -> R) -> R {
         // SAFETY: `f` is this module's code over the index's own methods,

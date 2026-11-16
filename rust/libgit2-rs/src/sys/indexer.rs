@@ -5,7 +5,9 @@ use core::sync::atomic::AtomicUsize;
 #[cfg(not(miri))]
 use core::sync::atomic::Ordering;
 
-/// `UINT31_MAX`, `git_indexer__max_object_size`'s initial value.
+/// `UINT31_MAX`, `git_indexer__max_object_size`'s initial value (what
+/// Miri, without the C, reads).
+#[cfg(miri)]
 pub const DEFAULT_MAX_OBJECT_SIZE: usize = 0x7fff_ffff;
 
 #[cfg_attr(miri, allow(dead_code))]

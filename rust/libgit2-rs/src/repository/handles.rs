@@ -15,6 +15,7 @@
 //! [`GitRefcount`]): [`refcount`] reaches it.
 
 use core::ffi::{CStr, c_char, c_int, c_void};
+use core::marker::PhantomData;
 use core::ptr::{self, NonNull};
 
 use crate::oid::Oid;
@@ -78,19 +79,24 @@ pub(crate) fn opt_ptr(s: Option<&CStr>) -> *const c_char {
 macro_rules! owner {
     ($(#[$m:meta])* $name:ident, $free:path) => {
         $(#[$m])*
+        ///
+        /// `'r` is the repository (or other parent) the C object points
+        /// back to: the handle cannot outlive it. It is neither `Send` nor
+        /// `Sync` (the C objects follow those back pointers).
         #[derive(Debug)]
-        pub struct $name(NonNull<c_void>);
+        pub struct $name<'r>(NonNull<c_void>, PhantomData<&'r ()>);
 
         #[allow(dead_code)]
-        impl $name {
+        impl<'r> $name<'r> {
             /// Adopt a pointer C returned (NULL gives `None`).
             ///
             /// # Safety
             ///
             /// `p` is NULL, or an object of this type whose reference the
             /// caller owns and gives up.
-            pub(crate) unsafe fn from_raw(p: *mut c_void) -> Option<$name> {
-                NonNull::new(p).map($name)
+            /// The C object must stay valid (its parent alive) for `'r`.
+            pub(crate) unsafe fn from_raw(p: *mut c_void) -> Option<$name<'r>> {
+                NonNull::new(p).map(|p| $name(p, PhantomData))
             }
 
             /// The C pointer (still owned).
@@ -118,7 +124,7 @@ macro_rules! owner {
             }
         }
 
-        impl Drop for $name {
+        impl Drop for $name<'_> {
             fn drop(&mut self) {
                 // SAFETY: this owner holds one reference of a live object
                 // (`from_raw`'s contract), released once here.
@@ -150,20 +156,16 @@ owner!(
     c::git_refdb_free
 );
 
-// SAFETY: `git_refdb` is refcounted with atomics; the files backend locks
-// its caches (tests/libgit2/threads/refdb.c shares one between threads).
-unsafe impl Send for Refdb {}
-
-impl Refdb {
+impl<'r> Refdb<'r> {
     /// Another reference to `p`.
     ///
     /// # Safety
     ///
     /// `p` is a live `git_refdb`.
-    pub(crate) unsafe fn new_ref(p: NonNull<c_void>) -> Refdb {
+    pub(crate) unsafe fn new_ref(p: NonNull<c_void>) -> Refdb<'r> {
         // SAFETY: the caller's contract.
         unsafe { refcount(p) }.inc();
-        Refdb(p)
+        Refdb(p, PhantomData)
     }
 
     /// `git_refdb_init`.
@@ -188,7 +190,7 @@ pub const GIT_REFERENCE_DIRECT: c_int = 1;
 /// `GIT_REFERENCE_SYMBOLIC`.
 pub const GIT_REFERENCE_SYMBOLIC: c_int = 2;
 
-impl Reference {
+impl<'r> Reference<'r> {
     /// `git_reference_type`.
     pub fn kind(&self) -> c_int {
         // SAFETY: a live reference.
@@ -243,7 +245,7 @@ impl Reference {
     }
 
     /// `git_reference_peel`.
-    pub(crate) fn peel(&self, t: c_int) -> Result<Object> {
+    pub(crate) fn peel(&self, t: c_int) -> Result<Object<'r>> {
         // SAFETY: a live reference, a local out-parameter.
         make(
             |out| unsafe { c::git_reference_peel(out, self.as_ptr(), t) },
@@ -259,7 +261,7 @@ owner!(
     c::git_object_free
 );
 
-impl Object {
+impl<'r> Object<'r> {
     /// `git_object_id`.
     pub fn id(&self) -> Oid {
         // SAFETY: a live object's id.
@@ -269,7 +271,7 @@ impl Object {
     }
 
     /// `git_object_peel`.
-    pub(crate) fn peel(&self, t: c_int) -> Result<Object> {
+    pub(crate) fn peel(&self, t: c_int) -> Result<Object<'r>> {
         // SAFETY: a live object, a local out-parameter.
         make(
             |out| unsafe { c::git_object_peel(out, self.as_ptr(), t) },

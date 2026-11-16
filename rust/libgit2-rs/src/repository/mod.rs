@@ -60,8 +60,11 @@ mod open;
 #[cfg(test)]
 mod tests;
 
-pub use api::{Repository, RepositoryInitOptions, RepositoryOpenFlags, RepositoryState};
+pub use api::{
+    RepoHandle, Repository, RepositoryInitOptions, RepositoryOpenFlags, RepositoryState,
+};
 pub use handles::{Refdb, Reference};
+pub(crate) use head::OwnedRepo;
 
 use handles::check;
 
@@ -252,8 +255,12 @@ impl GitRepository {
         if repo.is_null() {
             return;
         }
-        // SAFETY: the caller's contract.
-        let _ = unsafe { &*repo }.cleanup();
+        {
+            // SAFETY: the caller's contract.
+            let r = unsafe { &*repo };
+            // SAFETY: the caller's contract: nothing uses the repository.
+            let _ = unsafe { r.cleanup() };
+        }
         // SAFETY: the caller's contract: nothing else uses the repository,
         // and no reference to it is live.
         unsafe { (*repo).objects.dispose() };
@@ -300,7 +307,13 @@ impl GitRepository {
 
     /// `git_repository__cleanup`: drop the caches, grafts and the
     /// odb, config, refdb and index.
-    pub(crate) fn cleanup(&self) -> Result<()> {
+    ///
+    /// # Safety
+    ///
+    /// No weak pointer (`config_weak`, `odb_weak`, …), grafts or cache entry
+    /// of this repository is used after the call, and nothing uses the
+    /// repository concurrently (C's rule).
+    pub(crate) unsafe fn cleanup(&self) -> Result<()> {
         let _ = self.submodule_cache_clear();
         self.objects.clear();
         let _ = crate::sys::attrcache::flush(self);
@@ -308,10 +321,16 @@ impl GitRepository {
         unsafe { c::git_grafts_free(self.grafts.swap(ptr::null_mut(), Ordering::AcqRel)) };
         // SAFETY: as above.
         unsafe { c::git_grafts_free(self.shallow_grafts.swap(ptr::null_mut(), Ordering::AcqRel)) };
-        self.set_config(None);
-        self.set_index(None);
-        self.set_odb(None);
-        self.set_refdb(None);
+        // SAFETY: the caller's contract: no weak pointer is used after.
+        unsafe {
+            self.set_config(None);
+        }
+        // SAFETY: as above.
+        unsafe { self.set_index(None) };
+        // SAFETY: as above.
+        unsafe { self.set_odb(None) };
+        // SAFETY: as above.
+        unsafe { self.set_refdb(None) };
         Ok(())
     }
 
@@ -413,12 +432,19 @@ impl GitRepository {
     }
 
     /// Set a string field that is still NULL (while the repository is
-    /// being opened, before anyone else sees it).
+    /// being opened). A field that is already set is left alone (nothing is
+    /// freed that a borrow may still use) and `v` is dropped.
     pub(crate) fn init_string(&self, f: StrField, v: GitCStr) {
-        let old = self.string_field(f).swap(v.into_raw(), Ordering::AcqRel);
-        debug_assert!(old.is_null());
-        // SAFETY: NULL or an unreferenced string of the repository.
-        unsafe { alloc::free(old.cast()) };
+        let new = v.into_raw();
+        if self
+            .string_field(f)
+            .compare_exchange(ptr::null_mut(), new, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            debug_assert!(false, "init_string on a set field");
+            // SAFETY: `new` is the string we were given and did not publish.
+            unsafe { alloc::free(new.cast()) };
+        }
     }
 
     #[inline]
@@ -495,45 +521,75 @@ impl GitRepository {
 
     /// `set_odb`: own (and take a reference of) `odb`, releasing the old.
     ///
-    /// The new object, when given, is a live `git_odb`: [`Odb::as_raw`]
-    /// or a pointer C passed (the export's contract).
-    pub(crate) fn set_odb(&self, odb: Option<NonNull<GitOdb>>) {
-        self.set_owned(&self.odb, odb, |p| {
+    /// # Safety
+    ///
+    /// The new object, if any, is a live `git_odb` of which the caller
+    /// holds a reference ([`Odb::as_raw`], or a pointer C passed); no weak
+    /// pointer to the old one (from [`GitRepository::odb_weak`], or C's
+    /// `git_repository_odb__weakptr`) is used after the call.
+    pub(crate) unsafe fn set_odb(&self, odb: Option<NonNull<GitOdb>>) {
+        let free = |p| {
             // SAFETY: the reference the repository held.
             drop(unsafe { Odb::from_raw(p) })
-        });
+        };
+        // SAFETY: the caller's contract.
+        unsafe { self.set_owned(&self.odb, odb, free) };
     }
-    /// `set_refdb` (as [`GitRepository::set_odb`]).
-    pub(crate) fn set_refdb(&self, refdb: Option<NonNull<c_void>>) {
-        self.set_owned(&self.refdb, refdb, |p| {
+    /// `set_refdb`.
+    ///
+    /// # Safety
+    ///
+    /// As [`GitRepository::set_odb`], for a `git_refdb`.
+    pub(crate) unsafe fn set_refdb(&self, refdb: Option<NonNull<c_void>>) {
+        let free = |p: NonNull<c_void>| {
             // SAFETY: the reference the repository held.
             unsafe { c::git_refdb_free(p.as_ptr()) }
-        });
+        };
+        // SAFETY: the caller's contract.
+        unsafe { self.set_owned(&self.refdb, refdb, free) };
     }
     /// `set_config`: also clears the configmap cache.
-    pub(crate) fn set_config(&self, config: Option<NonNull<GitConfig>>) {
-        self.set_owned(&self.config, config, |p| {
+    ///
+    /// # Safety
+    ///
+    /// As [`GitRepository::set_odb`], for a `git_config` (and no
+    /// `&GitConfig` from [`GitRepository::config_weak`] is used after).
+    pub(crate) unsafe fn set_config(&self, config: Option<NonNull<GitConfig>>) {
+        let free = |p| {
             // SAFETY: the reference the repository held.
             drop(unsafe { Config::from_raw(p) })
-        });
+        };
+        // SAFETY: the caller's contract.
+        unsafe { self.set_owned(&self.config, config, free) };
         self.configmap_cache_clear();
     }
     /// `set_index`.
-    pub(crate) fn set_index(&self, index: Option<NonNull<GitIndex>>) {
-        self.set_owned(&self.index, index, |p| {
+    ///
+    /// # Safety
+    ///
+    /// As [`GitRepository::set_odb`], for a `git_index` of the index
+    /// module.
+    pub(crate) unsafe fn set_index(&self, index: Option<NonNull<GitIndex>>) {
+        let free = |p| {
             // SAFETY: the reference the repository held: a live index of
             // the index module.
             let ix = unsafe { IndexPtr::new(p) };
             // SAFETY: that reference, given up.
             unsafe { ix.decref() }
-        });
+        };
+        // SAFETY: the caller's contract.
+        unsafe { self.set_owned(&self.index, index, free) };
     }
 
     /// Store `new` in `slot`, owned (and referenced) by the repository;
     /// the old object is disowned and released with `free`. `T` is one of
     /// the refcounted objects (`git_odb`, `git_config`, `git_refdb`,
     /// `git_index`), which start with a `git_refcount`.
-    fn set_owned<T>(
+    ///
+    /// # Safety
+    ///
+    /// As [`GitRepository::set_odb`].
+    unsafe fn set_owned<T>(
         &self,
         slot: &AtomicPtr<T>,
         new: Option<NonNull<T>>,
@@ -718,7 +774,7 @@ impl GitRepository {
     }
 
     /// `git_repository_head`, for the crate's modules.
-    pub(crate) fn head_ref(&self) -> Result<Reference> {
+    pub(crate) fn head_ref(&self) -> Result<Reference<'_>> {
         head::head(self)
     }
 
@@ -781,9 +837,11 @@ impl GitRepository {
 }
 
 /// `git_repository_open(path)`, owned.
-pub(crate) fn open_owned(path: &CStr) -> Result<Repository> {
+pub(crate) fn open_owned(path: &CStr) -> Result<OwnedRepo> {
     let r = open::open_ext(Some(path), GIT_REPOSITORY_OPEN_NO_SEARCH, None, true)?;
-    r.map(Repository::from_nonnull).ok_or(ErrorCode::GENERIC)
+    let r = r.ok_or(ErrorCode::GENERIC)?;
+    // SAFETY: the repository `open_ext` just opened, ours.
+    Ok(unsafe { OwnedRepo::new(r) })
 }
 
 /// `git_odb_new_ext` for `oid_type`, with the C's errors.

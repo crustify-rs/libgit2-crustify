@@ -100,3 +100,44 @@ Left (PENDING(l-refs)): `sys/pending.rs` `git_refdb_lookup` and
 `repository_head_symbolic_target` (config_file's `onbranch:` condition;
 uses l_repo's `git_reference_*` declarations, which the duplicates in the
 l-config section were folded into).
+
+Re-merge of `wp/l-config` review r1 fixes (`de91683`): merge `4162edd`.
+Conflict in `git_config_set_int64`'s export: kept the integration's
+version (formats on the stack through `GitConfig::set_int64`).
+
+Green: `bbdbe25` (Miri unit tests; its doctest run picked up the re-merged
+sources and is superseded), `4162edd` (clar 436/436, cargo test link-c,
+clippy, fmt; Miri: see below).
+
+## 3. l-index (merge `9fc5715`)
+
+Merge conflicts: `sys/path.rs` and `sys/submodule.rs` (added by both
+l-repo and l-index): combined (`validate_str_length` passes its `GitStr`
+as l-index's `ConstStr` mirror of `git_str`); `sys/pending.rs` union lost a
+brace again.
+
+Resolved (PENDING entries between l-index and l-repo, deleted):
+
+- l-index's `sys/pending.rs` `l_index` PENDING(l-repo):
+  `git_repository__configmap_lookup`, `git_repository_workdir`,
+  `git_repository_is_bare`, `git_repository_workdir_path`,
+  `git_repository_open`, `git_repository_head`, `git_repository_free`,
+  `git_repository_index__weakptr`. `index::foreign::Repo` now wraps
+  `NonNull<GitRepository>` (`Repo::get() -> &GitRepository`) and calls
+  `configmap_lookup`, `workdir()`, `is_bare()`, `workdir_path`,
+  `index_weak`; `head_target_of` opens with `repository::open_owned` and
+  reads `head_ref()` (the sub-repository is now also freed when HEAD
+  fails; C leaks it).
+- l-repo's `l_repo.rs` PENDING(l-index): `git_index_open_ext`,
+  `git_index_free`, `git_index_set_caps`, `git_index__enforce_unsaved_safety`,
+  and the `git_index_options` mirror `OidTypeOptions`: removed (settings
+  uses `crate::index::git_index__enforce_unsaved_safety`).
+- `repository/handles.rs` `Index` stand-in: removed. `_index:
+  AtomicPtr<GitIndex>`; `index_weak()` opens with `index::ops::open_ext`
+  and calls `ops::set_caps(…, FROM_OWNER)`; releases go through
+  `IndexPtr::decref`. Safe `Repository::index`/`set_index` use
+  `crate::index::Index` (new crate-internal `Index::{new_ref, as_raw}`,
+  `IndexPtr::as_nonnull`). Duplicate `GIT_INDEX_CAPABILITY_FROM_OWNER`
+  removed.
+- C ABI unchanged (`git_repository_index*`, `_set_index` typed
+  `*mut GitIndex`).

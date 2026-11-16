@@ -78,7 +78,7 @@ pub fn path_is_valid(repo: Option<Repo>, path: &[u8], file_mode: u16, flags: c_u
 }
 
 // ---------------------------------------------------------------------------
-// repository.c (`crate::repository`), refs.c (PENDING(l-refs))
+// repository.c (`crate::repository`)
 // ---------------------------------------------------------------------------
 
 /// `GIT_CONFIGMAP_SYMLINKS`.
@@ -122,7 +122,7 @@ pub fn workdir_path(repo: Repo, rel: &CStr) -> Result<GitStr> {
 /// is freed also on failure (C leaks it then).
 pub fn head_target_of(path: &CStr) -> Result<Oid> {
     let sub = crate::repository::open_owned(path)?;
-    let head = sub.raw().head_ref()?;
+    let head = sub.get().head_ref()?;
     // `git_reference_target`: NULL (all zeros here) for a symbolic one.
     Ok(head.target().copied().unwrap_or_default())
 }

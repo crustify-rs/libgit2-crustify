@@ -314,7 +314,9 @@ pub(crate) fn reinit_filesystem(repo: &GitRepository, recurse: bool) -> Result<(
                 let mut smrepo = core::ptr::null_mut();
                 // SAFETY: the live submodule C passes, a local out.
                 let opened = unsafe { crate::sys::submodule::open(&mut smrepo, sm) } >= 0;
-                let smrepo = NonNull::new(smrepo.cast::<GitRepository>()).map(OwnedRepo::new);
+                // SAFETY: NULL or the repository `git_submodule_open` gave us.
+                let smrepo = NonNull::new(smrepo.cast::<GitRepository>())
+                    .map(|p| unsafe { OwnedRepo::new(p) });
                 match (&smrepo, opened) {
                     (Some(r), true) => {
                         if reinit_filesystem(r.get(), true).is_err() {
@@ -796,7 +798,13 @@ fn init_open(
 }
 
 /// `git_repository_set_workdir`.
-pub(crate) fn set_workdir(
+///
+/// # Safety
+///
+/// No borrow of the repository's workdir (a `&CStr` from
+/// [`GitRepository::workdir`], or C's `git_repository_workdir`) is used
+/// after the call, and nothing uses the repository concurrently.
+pub(crate) unsafe fn set_workdir(
     repo: &GitRepository,
     workdir: &CStr,
     update_gitlink: bool,
@@ -824,22 +832,26 @@ pub(crate) fn set_workdir(
     }
 
     let new = detach(&mut path)?;
-    // SAFETY: the export's contract (C's): no borrow of the old workdir is
-    // used after this call.
+    // SAFETY: the caller's contract: no borrow of the old workdir is used
+    // after this call.
     unsafe { repo.replace_string(StrField::Workdir, Some(new)) };
     repo.set_is_bare(false);
     Ok(())
 }
 
 /// `git_repository_set_bare`.
-pub(crate) fn set_bare(repo: &GitRepository) -> Result<()> {
+///
+/// # Safety
+///
+/// As [`set_workdir`].
+pub(crate) unsafe fn set_bare(repo: &GitRepository) -> Result<()> {
     if repo.is_bare() {
         return Ok(());
     }
     let config = repo.config_weak()?;
     config.set_bool(c"core.bare", true)?;
     config.update_entry(c"core.worktree", None, true, true)?;
-    // SAFETY: as `set_workdir`.
+    // SAFETY: the caller's contract.
     unsafe { repo.replace_string(StrField::Workdir, None) };
     repo.set_is_bare(true);
     Ok(())

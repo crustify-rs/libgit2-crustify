@@ -3850,11 +3850,6 @@ impl Config {
         Config { raw }
     }
 
-    /// The `git_config *` (the reference stays with this handle).
-    pub(crate) fn as_raw(&self) -> NonNull<GitConfig> {
-        self.raw
-    }
-
     /// Give this handle's reference up, as a `git_config *`.
     pub(crate) fn into_raw(self) -> NonNull<GitConfig> {
         let raw = self.raw;

@@ -434,3 +434,17 @@ One entry per difference: component, what differs, why.
   submodule cases need the `Tree` and `Repository` types of l-commit and
   l-repo, so the safe API has no `read_tree`/`write_tree` yet (the C ABI
   has them).
+- **(review l-repo-r1) The safe repository API ties its children to the
+  repository**: `odb()`, `config()`, `config_snapshot()`, `refdb()`,
+  `index()` and `head()` return `Odb<'_>`, `Config<'_>`, `Refdb<'_>`,
+  `Index<'_>`, `Reference<'_>`, which are neither `Send` nor `Sync` (in C an
+  odb uses its owner's object cache, config backends keep the repository,
+  a reference's refdb keeps it). C lets some of them outlive the
+  repository; the safe API does not, until the owning modules' ports can
+  say which may. `wrap_odb`, `set_odb`, `set_config` and `set_index`
+  (re-parenting) are not in the safe API for the same reason (open
+  integration item). Every `Repository` holds a `Libgit2` guard; the free
+  `libgit2::init`/`shutdown` are crate-internal.
+- **(review l-repo-r1) The Rust readers of the user agents copy them under
+  a lock** the setters take (`settings::user_agent()` returns a `Vec<u8>`);
+  C's readers (`git_settings__user_agent`, the transports) keep C's rule.

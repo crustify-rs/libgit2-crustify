@@ -9,7 +9,7 @@
 //! See `rust/PORTING.md` for the design and the conventions every module
 //! follows, and `src/util/README.md` for the foundation's API.
 
-pub mod sys;
+pub(crate) mod sys;
 pub mod util;
 
 pub mod buf;

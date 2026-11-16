@@ -12,6 +12,30 @@
 //! the paths take `&mut self`, so no path borrowed from it can dangle.
 //!
 //! Paths are bytes: they are `&Path` on Unix (`OsStr` bytes).
+//!
+//! The owners a repository hands out point back to it in C (an odb uses
+//! its owner's object cache, config file backends keep the repository for
+//! their include conditions, a reference's refdb keeps it too), so they
+//! borrow it, and they are neither `Send` nor `Sync`:
+//!
+//! ```compile_fail
+//! # use libgit2_rs::Repository;
+//! let repo = Repository::open("/nonexistent").unwrap();
+//! let odb = repo.odb().unwrap();
+//! drop(repo); // error: `repo` is still borrowed by `odb`
+//! drop(odb);
+//! ```
+//!
+//! ```compile_fail
+//! # use libgit2_rs::Repository;
+//! fn send<T: Send>(_: T) {}
+//! let repo = Repository::open("/nonexistent").unwrap();
+//! send(repo.config().unwrap()); // error: `Config` is not `Send`
+//! ```
+//!
+//! Re-parenting an odb, config or index into another repository
+//! (`git_repository_set_odb` & co., `git_repository_wrap_odb`) is not in the
+//! safe API until the odb/config/index ports can express what C requires.
 
 use core::ffi::{CStr, c_int};
 use core::ptr::NonNull;
@@ -25,6 +49,7 @@ use super::init::{InitOptions, InitOut};
 use super::*;
 use crate::config::Config;
 use crate::index::Index;
+use crate::libgit2::Libgit2;
 use crate::odb::Odb;
 use crate::oid::{Oid, OidType};
 use crate::util::errors::{Error, ErrorCode};
@@ -32,14 +57,36 @@ use crate::util::str::GitStr;
 
 type Result<T> = core::result::Result<T, Error>;
 
+/// The error for an argument with an interior NUL byte (class `INVALID`,
+/// "<what> contains a NUL byte"), with the thread's message set.
+fn nul_error(what: &str) -> Error {
+    let e = crate::git_error_set!(
+        crate::util::errors::ErrorClass::INVALID,
+        "{what} contains a NUL byte"
+    );
+    Error::from(e)
+}
+
+/// `b` as a C string, or [`nul_error`]`(what)`.
+fn c_string(b: impl Into<Vec<u8>>, what: &str) -> Result<CString> {
+    CString::new(b).map_err(|_| nul_error(what))
+}
+
+/// The ceiling directories as C's `:`-separated list.
+fn ceiling_list(dirs: &[&Path]) -> Result<Option<CString>> {
+    if dirs.is_empty() {
+        return Ok(None);
+    }
+    let joined = dirs
+        .iter()
+        .map(|d| d.as_os_str().as_bytes())
+        .collect::<Vec<_>>()
+        .join(&crate::util::fs_path::GIT_PATH_LIST_SEPARATOR);
+    c_string(joined, "ceiling directory").map(Some)
+}
+
 fn path_c(p: &Path) -> Result<CString> {
-    CString::new(p.as_os_str().as_bytes()).map_err(|_| {
-        let _ = crate::git_error_set!(
-            crate::util::errors::ErrorClass::INVALID,
-            "path contains a NUL byte"
-        );
-        Error::from(ErrorCode::GENERIC)
-    })
+    c_string(p.as_os_str().as_bytes(), "path")
 }
 
 fn to_path(c: &CStr) -> &Path {
@@ -223,20 +270,18 @@ impl RepositoryInitOptions {
     }
 
     fn to_raw(&self) -> Result<InitOptions> {
-        let bytes = |b: &Option<Vec<u8>>| -> Result<Option<CString>> {
-            b.as_ref()
-                .map(|v| CString::new(v.clone()).map_err(|_| Error::from(ErrorCode::GENERIC)))
-                .transpose()
+        let bytes = |b: &Option<Vec<u8>>, what: &str| -> Result<Option<CString>> {
+            b.as_ref().map(|v| c_string(v.clone(), what)).transpose()
         };
         let path = |p: &Option<PathBuf>| p.as_deref().map(path_c).transpose();
         Ok(InitOptions {
             flags: self.flags.bits(),
             mode: self.mode.raw(),
             workdir_path: path(&self.workdir_path)?,
-            description: bytes(&self.description)?,
+            description: bytes(&self.description, "description")?,
             template_path: path(&self.template_path)?,
-            initial_head: bytes(&self.initial_head)?,
-            origin_url: bytes(&self.origin_url)?,
+            initial_head: bytes(&self.initial_head, "initial head")?,
+            origin_url: bytes(&self.origin_url, "origin URL")?,
             oid_type: self.oid_type.map_or(0, OidType::raw),
             refdb_type: match self.ref_storage {
                 None => 0,
@@ -331,8 +376,51 @@ pub enum RepositoryItem {
     WorktreeConfig,
 }
 
+/// One of a repository's objects (its [`Odb`], [`Config`] or [`Index`]),
+/// borrowing the repository: the C object points back to it (the odb uses
+/// its owner's object cache, the config's file backends keep the
+/// repository for their include conditions), so the handle cannot outlive
+/// it, and it is neither `Send` nor `Sync`. It dereferences to the object.
+///
+/// Known gap: `T` is `Clone` (another reference), and a clone made through
+/// the `Deref` is not bound to the repository (see
+/// `/work/reviews/integration-notes.md`); the owning modules' types need
+/// a lifetime of their own to close it.
+pub struct RepoHandle<'r, T> {
+    inner: T,
+    _repo: core::marker::PhantomData<(&'r Repository, *mut ())>,
+}
+
+impl<T> RepoHandle<'_, T> {
+    fn new(inner: T) -> Self {
+        RepoHandle {
+            inner,
+            _repo: core::marker::PhantomData,
+        }
+    }
+}
+
+impl<T> core::ops::Deref for RepoHandle<'_, T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.inner
+    }
+}
+
+impl<T: core::fmt::Debug> core::fmt::Debug for RepoHandle<'_, T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        self.inner.fmt(f)
+    }
+}
+
 /// An owned repository (`git_repository`), freed on drop.
-pub struct Repository(NonNull<GitRepository>);
+///
+/// It holds a [`Libgit2`] guard: the library stays initialized while any
+/// repository lives (and while anything borrowed from one does).
+pub struct Repository {
+    repo: NonNull<GitRepository>,
+    _lib: Libgit2,
+}
 
 // SAFETY: the repository and what it owns are released from any thread,
 // and it is used by one owner at a time (it is not `Sync`).
@@ -341,7 +429,7 @@ unsafe impl Send for Repository {}
 impl Drop for Repository {
     fn drop(&mut self) {
         // SAFETY: the repository this owner holds alone.
-        unsafe { GitRepository::free(self.0.as_ptr()) }
+        unsafe { GitRepository::free(self.repo.as_ptr()) }
     }
 }
 
@@ -354,13 +442,13 @@ impl core::fmt::Debug for Repository {
 }
 
 impl Repository {
-    pub(crate) fn from_nonnull(p: NonNull<GitRepository>) -> Repository {
-        Repository(p)
+    fn from_nonnull(repo: NonNull<GitRepository>, lib: Libgit2) -> Repository {
+        Repository { repo, _lib: lib }
     }
 
     pub(crate) fn raw(&self) -> &GitRepository {
         // SAFETY: the repository this owner holds, live until drop.
-        unsafe { self.0.as_ref() }
+        unsafe { self.repo.as_ref() }
     }
 
     /// `git_repository_open`: open the repository at `path` (its git
@@ -376,20 +464,10 @@ impl Repository {
         ceiling_dirs: &[&Path],
     ) -> Result<Repository> {
         let p = path.map(path_c).transpose()?;
-        let ceil = if ceiling_dirs.is_empty() {
-            None
-        } else {
-            let mut v = Vec::new();
-            for (i, d) in ceiling_dirs.iter().enumerate() {
-                if i > 0 {
-                    v.push(crate::util::fs_path::GIT_PATH_LIST_SEPARATOR);
-                }
-                v.extend_from_slice(d.as_os_str().as_bytes());
-            }
-            Some(CString::new(v).map_err(|_| Error::from(ErrorCode::GENERIC))?)
-        };
+        let ceil = ceiling_list(ceiling_dirs)?;
+        let lib = Libgit2::init()?;
         match open::open_ext(p.as_deref(), flags.bits(), ceil.as_deref(), true)? {
-            Some(r) => Ok(Repository::from_nonnull(r)),
+            Some(r) => Ok(Repository::from_nonnull(r, lib)),
             None => Err(ErrorCode::GENERIC.into()),
         }
     }
@@ -404,7 +482,8 @@ impl Repository {
     /// `git_repository_open_bare`.
     pub fn open_bare(path: impl AsRef<Path>) -> Result<Repository> {
         let p = path_c(path.as_ref())?;
-        Ok(Repository::from_nonnull(open::open_bare(&p)?))
+        let lib = Libgit2::init()?;
+        Ok(Repository::from_nonnull(open::open_bare(&p)?, lib))
     }
 
     /// `git_repository_discover`: the git directory of the repository that
@@ -415,16 +494,8 @@ impl Repository {
         ceiling_dirs: &[&Path],
     ) -> Result<PathBuf> {
         let s = path_c(start.as_ref())?;
-        let ceil = if ceiling_dirs.is_empty() {
-            None
-        } else {
-            let joined = ceiling_dirs
-                .iter()
-                .map(|d| d.as_os_str().as_bytes())
-                .collect::<Vec<_>>()
-                .join(&b':');
-            Some(CString::new(joined).map_err(|_| Error::from(ErrorCode::GENERIC))?)
-        };
+        let ceil = ceiling_list(ceiling_dirs)?;
+        let _lib = Libgit2::init()?;
         let g = open::discover(&s, across_fs, ceil.as_deref())?;
         Ok(str_path(&g))
     }
@@ -440,9 +511,10 @@ impl Repository {
     pub fn init_opts(path: impl AsRef<Path>, opts: &RepositoryInitOptions) -> Result<Repository> {
         let p = path_c(path.as_ref())?;
         let mut raw = opts.to_raw()?;
+        let lib = Libgit2::init()?;
         let (r, out) = init::init_ext(&p, &mut raw);
         let repo = match out {
-            InitOut::Repo(p) => Some(Repository::from_nonnull(p)),
+            InitOut::Repo(p) => Some(Repository::from_nonnull(p, lib)),
             _ => None,
         };
         r?;
@@ -451,12 +523,11 @@ impl Repository {
 
     /// `git_repository_new_ext`: a repository with no backends.
     pub fn new_in_memory(oid_type: OidType) -> Result<Repository> {
-        Ok(Repository::from_nonnull(open::new_ext(Some(oid_type))?))
-    }
-
-    /// `git_repository_wrap_odb`: a repository over an object database.
-    pub fn wrap_odb(odb: &Odb) -> Result<Repository> {
-        Ok(Repository::from_nonnull(open::wrap_odb(odb)?))
+        let lib = Libgit2::init()?;
+        Ok(Repository::from_nonnull(
+            open::new_ext(Some(oid_type))?,
+            lib,
+        ))
     }
 
     /// `git_repository_path`: the git directory (with a trailing slash).
@@ -502,7 +573,7 @@ impl Repository {
     }
 
     /// `git_repository_head`.
-    pub fn head(&self) -> Result<Reference> {
+    pub fn head(&self) -> Result<Reference<'_>> {
         Ok(head::head(self.raw())?)
     }
 
@@ -522,7 +593,7 @@ impl Repository {
 
     /// `git_repository_set_head`.
     pub fn set_head(&self, refname: &str) -> Result<()> {
-        let n = CString::new(refname).map_err(|_| Error::from(ErrorCode::GENERIC))?;
+        let n = c_string(refname, "reference name")?;
         Ok(head::set_head(self.raw(), &n)?)
     }
 
@@ -569,62 +640,53 @@ impl Repository {
     }
 
     /// `git_repository_odb`.
-    pub fn odb(&self) -> Result<Odb> {
+    pub fn odb(&self) -> Result<RepoHandle<'_, Odb>> {
         let p = self.raw().odb_weak()?;
         // SAFETY: the repository's live odb; a new reference.
-        Ok(unsafe { Odb::new_ref(p) })
+        Ok(RepoHandle::new(unsafe { Odb::new_ref(p) }))
     }
 
     /// `git_repository_config`.
-    pub fn config(&self) -> Result<Config> {
+    pub fn config(&self) -> Result<RepoHandle<'_, Config>> {
         let c = self.raw().config_weak()?;
         // SAFETY: the repository's live config; a new reference.
-        Ok(unsafe { Config::new_ref(NonNull::from(c)) })
+        Ok(RepoHandle::new(unsafe {
+            Config::new_ref(NonNull::from(c))
+        }))
     }
 
     /// `git_repository_config_snapshot`.
-    pub fn config_snapshot(&self) -> Result<Config> {
-        Ok(Config::from_box(self.raw().config_weak()?.snapshot()?))
+    pub fn config_snapshot(&self) -> Result<RepoHandle<'_, Config>> {
+        let snap = self.raw().config_weak()?.snapshot()?;
+        Ok(RepoHandle::new(Config::from_box(snap)))
     }
 
     /// `git_repository_refdb`.
-    pub fn refdb(&self) -> Result<Refdb> {
+    pub fn refdb(&self) -> Result<Refdb<'_>> {
         let p = self.raw().refdb_weak()?;
         // SAFETY: the repository's live refdb; a new reference.
         Ok(unsafe { Refdb::new_ref(p) })
     }
 
     /// `git_repository_index`.
-    pub fn index(&self) -> Result<Index> {
+    pub fn index(&self) -> Result<RepoHandle<'_, Index>> {
         let p = self.raw().index_weak()?;
         // SAFETY: the repository's live index; a new reference.
-        Ok(unsafe { Index::new_ref(p) })
-    }
-
-    /// `git_repository_set_odb`.
-    pub fn set_odb(&self, odb: &Odb) {
-        self.raw().set_odb(Some(odb.as_raw()));
-    }
-
-    /// `git_repository_set_config`.
-    pub fn set_config(&self, config: &Config) {
-        self.raw().set_config(Some(config.as_raw()));
-    }
-
-    /// `git_repository_set_index` (`None` drops the index).
-    pub fn set_index(&self, index: Option<&Index>) {
-        self.raw().set_index(index.map(Index::as_raw));
+        Ok(RepoHandle::new(unsafe { Index::new_ref(p) }))
     }
 
     /// `git_repository_set_workdir`.
     pub fn set_workdir(&mut self, workdir: impl AsRef<Path>, update_gitlink: bool) -> Result<()> {
         let w = path_c(workdir.as_ref())?;
-        Ok(init::set_workdir(self.raw(), &w, update_gitlink)?)
+        // SAFETY: `&mut self`: no path borrowed from the repository, and no
+        // handle of it, is live.
+        Ok(unsafe { init::set_workdir(self.raw(), &w, update_gitlink) }?)
     }
 
     /// `git_repository_set_bare`.
     pub fn set_bare(&mut self) -> Result<()> {
-        Ok(init::set_bare(self.raw())?)
+        // SAFETY: as `set_workdir`.
+        Ok(unsafe { init::set_bare(self.raw()) }?)
     }
 
     /// `git_repository_reinit_filesystem`.
@@ -640,7 +702,7 @@ impl Repository {
     /// `git_repository_set_namespace`.
     pub fn set_namespace(&mut self, ns: Option<&[u8]>) -> Result<()> {
         if ns.is_some_and(|n| n.contains(&0)) {
-            return Err(path_c(Path::new(OsStr::from_bytes(b"\0"))).unwrap_err());
+            return Err(nul_error("namespace"));
         }
         let v = ns.map(super::alloc_cstr).transpose()?;
         // SAFETY: `&mut self`: no namespace borrowed from this repository
@@ -659,14 +721,8 @@ impl Repository {
 
     /// `git_repository_set_ident`.
     pub fn set_ident(&mut self, name: Option<&str>, email: Option<&str>) -> Result<()> {
-        let n = name
-            .map(CString::new)
-            .transpose()
-            .map_err(|_| Error::from(ErrorCode::GENERIC))?;
-        let e = email
-            .map(CString::new)
-            .transpose()
-            .map_err(|_| Error::from(ErrorCode::GENERIC))?;
+        let n = name.map(|n| c_string(n, "name")).transpose()?;
+        let e = email.map(|e| c_string(e, "email")).transpose()?;
         Ok(self.raw().set_ident(n.as_deref(), e.as_deref())?)
     }
 

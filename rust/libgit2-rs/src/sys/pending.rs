@@ -106,9 +106,8 @@ pub fn repository_head_symbolic_target(
     Ok(result)
 }
 
-// PENDING(l-refs), PENDING(l-obj), PENDING(l-commit): what the index (WP
-// l-index) calls of `refs.c`, `blob.c`, `object.c` and `tree.c`. Safe
-// wrappers: `crate::index::foreign`.
+// PENDING(l-obj), PENDING(l-commit): what the index (WP l-index) calls of
+// `blob.c`, `object.c` and `tree.c`. Safe wrappers: `crate::index::foreign`.
 pub mod l_index {
     use core::ffi::{c_char, c_int, c_uint, c_void};
 
@@ -122,10 +121,6 @@ pub mod l_index {
     ) -> c_int;
 
     unsafe extern "C" {
-        /// `git_reference_target`. PENDING(l-refs)
-        pub fn git_reference_target(r: *const c_void) -> *const Oid;
-        /// `git_reference_free`. PENDING(l-refs)
-        pub fn git_reference_free(r: *mut c_void);
 
         /// `git_blob__create_from_paths`. PENDING(l-obj)
         pub fn git_blob__create_from_paths(

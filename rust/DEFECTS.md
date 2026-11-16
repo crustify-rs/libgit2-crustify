@@ -765,3 +765,20 @@ out-of-memory error instead.
 - The index's `version` field may say 4 after a failed read of a version-4
   file (it is set from the header before the entries are parsed), and the
   entries read before a failure stay in the index.
+
+### settings: `settings_global_shutdown` leaves the freed strings set
+- C: frees `git__user_agent`, `git__user_agent_product` and
+  `git__ssl_ciphers` at the last shutdown but leaves the pointers set.
+- Trigger: `git_libgit2_init`, `GIT_OPT_SET_USER_AGENT`,
+  `git_libgit2_shutdown`, `git_libgit2_init`, then `GIT_OPT_SET_USER_AGENT`
+  (frees it again) or `GIT_OPT_GET_USER_AGENT` (reads freed memory).
+- Rust: the pointers are reset to NULL (the defaults apply again).
+
+### repository: `git_repository_head_for_worktree` returns a reference into a freed repository
+- C: the reference is looked up in the worktree's repository, which is
+  freed before returning; the reference keeps its refdb (refcounted), but
+  the refdb's `repo` pointer dangles, so `git_reference_peel`,
+  `git_reference_resolve` and the like on it use freed memory.
+- Rust: the export returns the reference as C does (C callers only read
+  its name, type and target); the Rust callers see it only while the
+  worktree's repository is open.
