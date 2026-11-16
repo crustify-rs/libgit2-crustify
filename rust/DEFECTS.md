@@ -121,3 +121,87 @@ triggers it, and the Rust's defined behaviour.
 
 ### runtime: `git_runtime_init` with a NULL init function
 - C: calls it. Rust: stops at the first NULL entry.
+
+## Filesystem layer (WP u3: posix, unix/map, unix/realpath, futils, fs_path, filebuf)
+
+### posix: `p_getcwd` writes one byte past the buffer
+- C: `src/util/posix.c`, `p_getcwd` calls `git_fs_path_string_to_dir(buffer,
+  size)` with the buffer's size, but `git_fs_path_string_to_dir` appends the
+  slash when `strlen < size` and writes the NUL at `path[strlen + 1]`, i.e.
+  at `buffer[size]` when the directory is `size - 1` bytes long.
+- Trigger: `p_getcwd(buf, strlen(cwd) + 1)`.
+- Rust: the slash is appended only when it and the NUL fit the buffer
+  (`git_fs_path_string_to_dir` itself keeps the C's contract, which its
+  test relies on: `size + 1` writable bytes).
+
+### fs_path: `git_fs_path_diriter_init` with an empty path dereferences NULL
+- C: `git_fs_path_diriter_init` `memset`s the iterator (so `path.ptr` is
+  NULL), `git_str_puts(&path, "")` allocates nothing, and
+  `path_trim_slashes` calls `git_fs_path_root(NULL)`.
+- Trigger: `git_fs_path_diriter_init(&it, "", 0)` (or `git_fs_path_dirload`
+  of `""`).
+- Rust: fails with `could not open directory ''` (`GIT_ERROR_FILESYSTEM`),
+  -1, as the C meant to.
+
+### fs_path: `git_fs_path_diriter_next` on an iterator that was never opened
+- C: `readdir(NULL)`.
+- Trigger: `GIT_FS_PATH_DIRITER_INIT`, then `git_fs_path_diriter_next`.
+- Rust: -1 with `unrecoverable internal error: 'diriter->dir'`.
+
+### fs_path: `git_fs_path_dirload` leaks on failure
+- C: on `GIT_ASSERT(name_len > prefix_len)` and on `GIT_ERROR_CHECK_ALLOC`
+  it returns without `git_fs_path_diriter_free` (the `DIR` and the path
+  leak); when `git_vector_insert` fails the copy of the name leaks.
+- Rust: frees the iterator, and the copy, on every path.
+
+### fs_path: `git_fs_path_direach` never returns `GIT_ENOTFOUND`
+- C: it tests `errno == ENOENT` after `git_error_set(GIT_ERROR_OS, …)`,
+  which reset `errno` to 0: a missing directory gives -1.
+- Rust: the same (kept: callers may depend on -1).
+
+### fs_path: `ensure_error_set` is dead code
+- C: `git_fs_path_direach` and `git_fs_path_walk_up` set "filesystem callback
+  returned %d" only when `git_error_last()` is NULL or has no message,
+  which it never is since `git_error_last` returns the static "no error".
+- Rust: does not set it either.
+
+### fs_path: `git_fs_path_apply_relative` returns 1 on failure
+- C: `return git_str_joinpath(…) || git_fs_path_resolve_relative(…);` is 0
+  or 1; `filebuf.c`'s `resolve_symlink` tests `< 0`, so a failure (a symlink
+  target with `..` above the root) is ignored and the loop goes on.
+- Rust: the same (kept).
+
+### fs_path: `git_fs_path_diriter_filename` of an entry of `/`
+- C: the name starts at `parent_len + 1`, which skips its first byte when
+  the parent ends with a slash (only the root keeps one).
+- Rust: the same (kept).
+
+### futils: `git_futils_readbuffer_fd_full` reads every block at the start
+- C: `p_read(fd, buf->ptr, blocksize)` in the loop: for more than 10240
+  bytes, each block overwrites the previous ones and the result (of the
+  total size) ends with uninitialized bytes.
+- Trigger: `git_futils_readbuffer_fd_full` of a pipe or file of more than
+  10240 bytes (`git hash-object --stdin` in the CLI).
+- Rust: the blocks are kept in order: the result is the input.
+
+### filebuf: `git_filebuf_open_withsize` leaks on a late allocation failure
+- C: when `git__malloc` of `z_buf` (or of the lock path) fails it returns
+  -1 without cleaning up; the deflate stream is never ended (cleanup ends it
+  only when `z_buf` is set) and the other buffers leak unless the caller
+  calls `git_filebuf_cleanup`.
+- Rust: ends the stream and cleans up (a later `git_filebuf_cleanup` is a
+  no-op).
+
+### filebuf: `git_filebuf_commit` leaks the descriptor when `fsync` fails
+- C: `fd_is_open` is cleared before the `fsync`, so cleanup does not close.
+- Rust: closes it.
+
+### filebuf: a filebuf that was never opened
+- C: `git_filebuf_write`, `_flush`, `_reserve` and `_printf` on
+  `GIT_FILEBUF_INIT` call the NULL `write` function.
+- Rust: -1 with `unrecoverable internal error: 'file->write'`.
+
+### filebuf: `git_filebuf_printf` with `GIT_FILEBUF_DO_NOT_BUFFER`
+- C: formats into `buffer + buf_pos` with `buffer` NULL and a size of
+  `buf_size` (a write through NULL).
+- Rust: the message is written directly, as `git_filebuf_write` would.
