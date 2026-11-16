@@ -33,6 +33,13 @@ fn err(code: ErrorCode) -> Error {
     Error::from(code)
 }
 
+/// `path` as a C string; a NUL inside it is refused (C would see a
+/// shorter path).
+fn c_path(path: &[u8]) -> ApiResult<std::ffi::CString> {
+    std::ffi::CString::new(path)
+        .map_err(|_| Error::new(ErrorCode::INVALID, ErrorClass::INVALID, "path contains a NUL byte"))
+}
+
 // ---------------------------------------------------------------------------
 // Odb
 // ---------------------------------------------------------------------------
@@ -97,8 +104,8 @@ impl Odb {
     /// The odb of an `objects` directory, with its loose and pack backends
     /// and its alternates (`git_odb_open_ext`).
     pub fn open(objects_dir: &[u8], oid_type: OidType) -> ApiResult<Odb> {
+        let dir = c_path(objects_dir)?;
         let odb = Self::with_oid_type(oid_type)?;
-        let dir = crate::util::fs_path::to_cstring(objects_dir);
         odb.inner()
             .add_default_backends(&dir, false, 0)
             .map_err(err)?;
@@ -136,7 +143,7 @@ impl Odb {
     /// Add the loose and pack backends of another `objects` directory as
     /// alternates (`git_odb_add_disk_alternate`).
     pub fn add_disk_alternate(&self, path: &[u8]) -> ApiResult<()> {
-        let dir = crate::util::fs_path::to_cstring(path);
+        let dir = c_path(path)?;
         self.inner()
             .add_default_backends(&dir, true, 0)
             .map_err(err)
@@ -546,6 +553,7 @@ impl Default for LooseOptions {
 impl Backend {
     /// The loose backend of `objects_dir` (`git_odb_backend_loose`).
     pub fn loose(objects_dir: &[u8], opts: &LooseOptions) -> ApiResult<Backend> {
+        c_path(objects_dir)?;
         let o = GitOdbBackendLooseOptions {
             version: 1,
             flags: if opts.fsync {
@@ -567,7 +575,7 @@ impl Backend {
 
     /// The pack backend of `objects_dir` (`git_odb_backend_pack`).
     pub fn pack(objects_dir: &[u8], oid_type: OidType) -> ApiResult<Backend> {
-        let dir = crate::util::fs_path::to_cstring(objects_dir);
+        let dir = c_path(objects_dir)?;
         let opts = GitOdbBackendPackOptions {
             version: 1,
             oid_type: oid_type.raw(),
