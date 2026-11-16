@@ -123,7 +123,9 @@ pub fn object_lookup(repo: Repo, id: &Oid, kind: c_int) -> Result<Object> {
 pub fn reference_name_to_id(repo: Repo, name: &CStr) -> Result<Oid> {
     let mut out = Oid::NONE;
     // SAFETY: `out` writable; `repo` NULL or live; `name` a string.
-    ErrorCode::check(unsafe { p::git_reference_name_to_id(&raw mut out, repo.0, name.as_ptr()) })?;
+    ErrorCode::check(unsafe {
+        crate::refs::ffi::git_reference_name_to_id(&raw mut out, repo.0, name.as_ptr())
+    })?;
     Ok(out)
 }
 
@@ -134,7 +136,7 @@ pub struct Reference(NonNull<p::git_reference>);
 impl Drop for Reference {
     fn drop(&mut self) {
         // SAFETY: we own the reference; not used after.
-        unsafe { p::git_reference_free(self.0.as_ptr()) }
+        unsafe { crate::refs::ffi::git_reference_free(self.0.as_ptr()) }
     }
 }
 
@@ -142,7 +144,7 @@ impl Reference {
     /// `git_reference_name`.
     pub fn name(&self) -> &CStr {
         // SAFETY: a live reference.
-        let p = unsafe { p::git_reference_name(self.0.as_ptr()) };
+        let p = unsafe { crate::refs::ffi::git_reference_name(self.0.as_ptr()) };
         // SAFETY: a reference's name is a string that lives, unchanged, as
         // long as the reference (borrowed from `self`).
         unsafe { CStr::from_ptr(p) }
@@ -156,7 +158,7 @@ pub struct RefIter(NonNull<p::git_reference_iterator>);
 impl Drop for RefIter {
     fn drop(&mut self) {
         // SAFETY: we own the iterator; not used after.
-        unsafe { p::git_reference_iterator_free(self.0.as_ptr()) }
+        unsafe { crate::refs::ffi::git_reference_iterator_free(self.0.as_ptr()) }
     }
 }
 
@@ -166,7 +168,7 @@ impl RefIter {
         let mut out = ptr::null_mut();
         // SAFETY: `out` writable; `repo` NULL or live; `glob` a string.
         ErrorCode::check(unsafe {
-            p::git_reference_iterator_glob_new(&raw mut out, repo.0, glob.as_ptr())
+            crate::refs::ffi::git_reference_iterator_glob_new(&raw mut out, repo.0, glob.as_ptr())
         })?;
         NonNull::new(out).map(RefIter).ok_or(ErrorCode::GENERIC)
     }
@@ -175,7 +177,9 @@ impl RefIter {
     pub fn next(&mut self) -> Result<Reference> {
         let mut out = ptr::null_mut();
         // SAFETY: a live iterator; `out` writable.
-        ErrorCode::check(unsafe { p::git_reference_next(&raw mut out, self.0.as_ptr()) })?;
+        ErrorCode::check(unsafe {
+            crate::refs::ffi::git_reference_next(&raw mut out, self.0.as_ptr())
+        })?;
         NonNull::new(out).map(Reference).ok_or(ErrorCode::GENERIC)
     }
 }

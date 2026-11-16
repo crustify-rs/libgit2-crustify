@@ -1104,8 +1104,9 @@ pub(crate) unsafe fn create_internal(
     let update_ref = args.update_ref.map_or(ptr::null(), CStr::as_ptr);
     if !update_ref.is_null() {
         // SAFETY: `repo` is live; `update_ref` NUL-terminated.
-        let e =
-            unsafe { pend::git_reference_lookup_resolved(&raw mut r#ref, repo, update_ref, 10) };
+        let e = unsafe {
+            crate::refs::ffi::git_reference_lookup_resolved(&raw mut r#ref, repo, update_ref, 10)
+        };
         if e < 0 && e != ErrorCode::NOT_FOUND.raw() {
             return Err(ec(e));
         }
@@ -1116,7 +1117,7 @@ pub(crate) unsafe fn create_internal(
         None
     } else {
         // SAFETY: the reference just looked up.
-        let t = unsafe { pend::git_reference_target(r#ref) };
+        let t = unsafe { crate::refs::ffi::git_reference_target(r#ref) };
         // SAFETY: NULL or the reference's id.
         (!t.is_null()).then(|| unsafe { t.read() })
     };
@@ -1158,7 +1159,7 @@ pub(crate) unsafe fn create_internal(
             // SAFETY: `ref` is NULL or the looked-up reference; the strings
             // are NUL-terminated.
             ErrorCode::check_zero(unsafe {
-                pend::git_reference__update_for_commit(
+                crate::refs::ffi::git_reference__update_for_commit(
                     repo,
                     r#ref,
                     update_ref,
@@ -1170,7 +1171,7 @@ pub(crate) unsafe fn create_internal(
         Ok(())
     })();
     // SAFETY: NULL or the reference looked up above, freed once.
-    unsafe { pend::git_reference_free(r#ref) };
+    unsafe { crate::refs::ffi::git_reference_free(r#ref) };
     r
 }
 
@@ -1829,19 +1830,24 @@ pub mod ffi {
             if !update_ref.is_null() {
                 // SAFETY: `repo` is live; `update_ref` NUL-terminated.
                 let e = unsafe {
-                    pend::git_reference_lookup_resolved(&raw mut r#ref, repo, update_ref, 5)
+                    crate::refs::ffi::git_reference_lookup_resolved(
+                        &raw mut r#ref,
+                        repo,
+                        update_ref,
+                        5,
+                    )
                 };
                 if e < 0 {
                     return e;
                 }
                 // SAFETY: the reference just looked up.
-                let target = unsafe { pend::git_reference_target(r#ref) };
+                let target = unsafe { crate::refs::ffi::git_reference_target(r#ref) };
                 // SAFETY: the commit is live.
                 let cid = unsafe { object_id(c) }.unwrap_or_default();
                 // SAFETY: NULL or the reference's id.
                 if target.is_null() || unsafe { target.read() } != cid {
                     // SAFETY: freed once.
-                    unsafe { pend::git_reference_free(r#ref) };
+                    unsafe { crate::refs::ffi::git_reference_free(r#ref) };
                     let _ = git_error_set!(
                         ErrorClass::REFERENCE,
                         "commit to amend is not the tip of the given branch"
@@ -1872,7 +1878,7 @@ pub mod ffi {
             if error == 0 && !update_ref.is_null() {
                 // SAFETY: the reference looked up above; `id` was written.
                 error = unsafe {
-                    pend::git_reference__update_for_commit(
+                    crate::refs::ffi::git_reference__update_for_commit(
                         repo,
                         r#ref,
                         ptr::null(),
@@ -1883,7 +1889,7 @@ pub mod ffi {
             }
             if !update_ref.is_null() {
                 // SAFETY: freed once.
-                unsafe { pend::git_reference_free(r#ref) };
+                unsafe { crate::refs::ffi::git_reference_free(r#ref) };
             }
             error
         })
@@ -2868,7 +2874,7 @@ pub mod ffi {
                 if e >= 0 {
                     // SAFETY: the reference just looked up.
                     e = unsafe {
-                        pend::git_reference_peel(
+                        crate::refs::ffi::git_reference_peel(
                             ptr::addr_of_mut!(head_commit).cast(),
                             head_ref,
                             OBJ_COMMIT,
@@ -2927,7 +2933,7 @@ pub mod ffi {
                 }
                 // SAFETY: the reference looked up; `out` written.
                 unsafe {
-                    pend::git_reference__update_for_commit(
+                    crate::refs::ffi::git_reference__update_for_commit(
                         repo,
                         head_ref,
                         ptr::null(),
@@ -2941,7 +2947,7 @@ pub mod ffi {
             // SAFETY: NULL or the commit looked up above, released once.
             unsafe { pend::git_commit_free(head_commit) };
             // SAFETY: NULL or the reference looked up above, freed once.
-            unsafe { pend::git_reference_free(head_ref) };
+            unsafe { crate::refs::ffi::git_reference_free(head_ref) };
             error
         })
     }

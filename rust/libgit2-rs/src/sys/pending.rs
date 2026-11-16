@@ -2,8 +2,8 @@
 //! called through their C symbols until both have landed (PORTING.md §3).
 //! Each entry carries a `// PENDING(<wp>)` comment.
 
-// PENDING(l-config, l-odb, l-pack, l-refs, l-index, l-obj, l-commit): what
-// the repository (WP l-repo) calls of them.
+// PENDING(l-obj): what the repository (WP l-repo) calls of grafts.c,
+// object.c and object_api.c.
 pub mod l_repo;
 use core::ffi::c_void;
 
@@ -28,55 +28,46 @@ pub unsafe fn object_free(object: core::ptr::NonNull<c_void>) {
     unsafe { git_object__free(object.as_ptr()) }
 }
 
-// ---------------------------------------------------------------------------
-// PENDING(l-refs): `src/libgit2/refdb.c`, `refs.c`, for the config modules.
-// ---------------------------------------------------------------------------
-
-unsafe extern "C" {
-    /// `git_refdb_lookup`. PENDING(l-refs)
-    fn git_refdb_lookup(
-        out: *mut *mut c_void,
-        refdb: *mut c_void,
-        ref_name: *const core::ffi::c_char,
-    ) -> core::ffi::c_int;
-}
-
 /// The symbolic target of the repository's `HEAD`, read from its refdb
 /// directly (`None` if `HEAD` is not symbolic): config_file.c's
-/// `conditional_match_onbranch`. PENDING(l-refs)
+/// `conditional_match_onbranch` (the higher-level functions read the
+/// repository's config, which is being read).
 pub fn repository_head_symbolic_target(
     repo: &crate::repository::GitRepository,
 ) -> crate::util::errors::Result<Option<Vec<u8>>> {
+    use crate::refs::ffi as r;
     use crate::util::errors::ErrorCode;
-    use l_repo::{git_reference_free, git_reference_symbolic_target, git_reference_type};
     // C takes a reference (`git_repository_refdb`) and drops it at the
     // end; the repository keeps the refdb live meanwhile either way.
     let refdb = repo.refdb_weak()?;
-    let mut r = core::ptr::null_mut();
-    // SAFETY: `r` is writable; `refdb` is the repository's live refdb; the
-    // name is NUL-terminated.
-    ErrorCode::check(unsafe { git_refdb_lookup(&raw mut r, refdb.as_ptr(), c"HEAD".as_ptr()) })?;
-    // SAFETY: `r` is the live reference just returned.
-    let result =
-        if unsafe { git_reference_type(r) } != crate::repository::handles::GIT_REFERENCE_SYMBOLIC {
-            None
+    let mut head = core::ptr::null_mut();
+    // SAFETY: `head` is writable; `refdb` is the repository's live refdb;
+    // the name is NUL-terminated.
+    ErrorCode::check(unsafe {
+        crate::refdb::ffi::git_refdb_lookup(&raw mut head, refdb.as_ptr(), c"HEAD".as_ptr())
+    })?;
+    // SAFETY: `head` is the live reference just returned.
+    let result = if unsafe { r::git_reference_type(head) }
+        != crate::repository::handles::GIT_REFERENCE_SYMBOLIC
+    {
+        None
+    } else {
+        // SAFETY: as above; the target is NUL-terminated (or NULL) and
+        // lives as long as `head`, which it is copied before.
+        let p = unsafe { r::git_reference_symbolic_target(head) };
+        Some(if p.is_null() {
+            Vec::new()
         } else {
-            // SAFETY: as above; the target is NUL-terminated (or NULL) and
-            // lives as long as `r`, which it is copied before.
-            let p = unsafe { git_reference_symbolic_target(r) };
-            Some(if p.is_null() {
-                Vec::new()
-            } else {
-                // SAFETY: as above.
-                unsafe { core::ffi::CStr::from_ptr(p) }.to_bytes().to_vec()
-            })
-        };
-    // SAFETY: `r` is ours, released once.
-    unsafe { git_reference_free(r) };
+            // SAFETY: as above.
+            unsafe { core::ffi::CStr::from_ptr(p) }.to_bytes().to_vec()
+        })
+    };
+    // SAFETY: `head` is ours, released once.
+    unsafe { r::git_reference_free(head) };
     Ok(result)
 }
 
-// PENDING(l-obj), PENDING(l-commit): what the index (WP l-index) calls of
+// PENDING(l-obj): what the index (WP l-index) calls of
 // `blob.c`, `object.c` and `tree.c`. Safe wrappers: `crate::index::foreign`.
 pub mod l_index {
     use core::ffi::{c_char, c_int, c_void};
@@ -144,7 +135,7 @@ pub mod l_commit {
             }
         )*};
     }
-    opaque!(git_reference, git_grafts, git_object, git_commit_graph_file,);
+    opaque!(git_grafts, git_object, git_commit_graph_file,);
 
     // The ported modules' types, under the names this module used for them.
     /// `git_repository`.
@@ -159,6 +150,9 @@ pub mod l_commit {
     /// `git_index`.
     #[allow(non_camel_case_types)]
     pub type git_index = crate::index::GitIndex;
+    /// `git_reference`.
+    #[allow(non_camel_case_types)]
+    pub type git_reference = crate::refs::GitReference;
     /// `git_revwalk`.
     #[allow(non_camel_case_types)]
     pub type git_revwalk = crate::revwalk::GitRevwalk;
@@ -242,28 +236,6 @@ pub mod l_commit {
             oid: *const Oid,
         ) -> c_int;
 
-        // PENDING(l-refs): refs.c
-        pub fn git_reference_lookup_resolved(
-            out: *mut *mut git_reference,
-            repo: *mut git_repository,
-            name: *const c_char,
-            max_deref: c_int,
-        ) -> c_int;
-        pub fn git_reference_target(r: *const git_reference) -> *const Oid;
-        pub fn git_reference_free(r: *mut git_reference);
-        pub fn git_reference__update_for_commit(
-            repo: *mut git_repository,
-            r: *mut git_reference,
-            ref_name: *const c_char,
-            id: *const Oid,
-            operation: *const c_char,
-        ) -> c_int;
-        pub fn git_reference_peel(
-            out: *mut *mut git_object,
-            r: *const git_reference,
-            kind: c_int,
-        ) -> c_int;
-
     }
 }
 
@@ -272,7 +244,7 @@ pub mod l_commit {
 /// C types they take. The integration step replaces each with the Rust
 /// call of its module.
 pub mod l_revwalk {
-    use core::ffi::{c_char, c_int};
+    use core::ffi::c_int;
     use core::marker::{PhantomData, PhantomPinned};
 
     use crate::oid::Oid;
@@ -301,6 +273,12 @@ pub mod l_revwalk {
     /// `git_tree`.
     #[allow(non_camel_case_types)]
     pub type git_tree = crate::tree::GitTree;
+    /// `git_reference`.
+    #[allow(non_camel_case_types)]
+    pub type git_reference = crate::refs::GitReference;
+    /// `git_reference_iterator`.
+    #[allow(non_camel_case_types)]
+    pub type git_reference_iterator = crate::refdb::git_reference_iterator;
     /// `git_tree_entry`.
     #[allow(non_camel_case_types)]
     pub type git_tree_entry = crate::tree::GitTreeEntry;
@@ -308,10 +286,6 @@ pub mod l_revwalk {
     opaque! {
         /// `git_object`. PENDING(l-obj)
         git_object;
-        /// `git_reference`. PENDING(l-refs)
-        git_reference;
-        /// `git_reference_iterator`. PENDING(l-refs)
-        git_reference_iterator;
     }
 
     /// `GIT_OBJECT_ANY`.
@@ -337,25 +311,6 @@ pub mod l_revwalk {
         ) -> c_int;
         pub fn git_object_free(object: *mut git_object);
         pub fn git_object_id(object: *const git_object) -> *const Oid;
-
-        // PENDING(l-refs)
-        pub fn git_reference_name_to_id(
-            out: *mut Oid,
-            repo: *mut git_repository,
-            name: *const c_char,
-        ) -> c_int;
-        pub fn git_reference_iterator_glob_new(
-            out: *mut *mut git_reference_iterator,
-            repo: *mut git_repository,
-            glob: *const c_char,
-        ) -> c_int;
-        pub fn git_reference_next(
-            out: *mut *mut git_reference,
-            iter: *mut git_reference_iterator,
-        ) -> c_int;
-        pub fn git_reference_name(r: *const git_reference) -> *const c_char;
-        pub fn git_reference_free(r: *mut git_reference);
-        pub fn git_reference_iterator_free(iter: *mut git_reference_iterator);
 
         // PENDING(l-obj): object_api.c
         pub fn git_commit_lookup(
@@ -610,16 +565,16 @@ impl RepoPtr {
 
     /// `git_repository_refdb__weakptr`: the repository's refdb, without a
     /// count of the caller's.
-    pub fn refdb_weak(self) -> Result<*mut c_void> {
+    pub fn refdb_weak(self) -> Result<*mut crate::refdb::GitRefdb> {
         self.get().refdb_weak().map(NonNull::as_ptr)
     }
 
     /// `git_repository_refdb`: the refdb, with a count the caller drops.
-    pub fn refdb(self) -> Result<*mut c_void> {
+    pub fn refdb(self) -> Result<*mut crate::refdb::GitRefdb> {
         let p = self.get().refdb_weak()?;
         // SAFETY: the repository's live refdb, which starts with a
         // `git_refcount`; the reference goes to the caller.
-        unsafe { crate::repository::handles::refcount(p) }.inc();
+        unsafe { crate::repository::handles::refcount(p.cast()) }.inc();
         Ok(p.as_ptr())
     }
 }

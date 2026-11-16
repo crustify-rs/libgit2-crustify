@@ -11,5 +11,5 @@ unsafe extern "C" {
 /// `git_branch_is_checked_out` (1, 0, or an error code).
 pub fn is_checked_out(branch: &Reference) -> c_int {
     // SAFETY: a live reference.
-    unsafe { git_branch_is_checked_out(branch.as_ptr()) }
+    unsafe { git_branch_is_checked_out(branch.as_ptr().cast()) }
 }

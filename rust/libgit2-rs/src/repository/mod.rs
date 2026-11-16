@@ -45,6 +45,7 @@ use crate::git_error_set;
 use crate::index::{GIT_INDEX_CAPABILITY_FROM_OWNER, GitIndex, IndexPtr};
 use crate::odb::{GitOdb, Odb};
 use crate::oid::{GIT_OID_SHA1, OidType, git_oid_t};
+use crate::refdb::GitRefdb;
 use crate::sys::pending::l_repo as c;
 use crate::util::alloc::{self, GitCStr};
 use crate::util::errors::{ErrorClass, ErrorCode, Result};
@@ -158,7 +159,7 @@ struct ReservedNames {
 #[repr(C)]
 pub struct GitRepository {
     odb: AtomicPtr<GitOdb>,
-    refdb: AtomicPtr<c_void>,
+    refdb: AtomicPtr<GitRefdb>,
     config: AtomicPtr<GitConfig>,
     index: AtomicPtr<GitIndex>,
     /// `git_cache objects`: `Sync` (its map is behind its rwlock).
@@ -540,10 +541,10 @@ impl GitRepository {
     /// # Safety
     ///
     /// As [`GitRepository::set_odb`], for a `git_refdb`.
-    pub(crate) unsafe fn set_refdb(&self, refdb: Option<NonNull<c_void>>) {
-        let free = |p: NonNull<c_void>| {
+    pub(crate) unsafe fn set_refdb(&self, refdb: Option<NonNull<GitRefdb>>) {
+        let free = |p: NonNull<GitRefdb>| {
             // SAFETY: the reference the repository held.
-            unsafe { c::git_refdb_free(p.as_ptr()) }
+            unsafe { crate::refdb::ffi::git_refdb_free(p.as_ptr()) }
         };
         // SAFETY: the caller's contract.
         unsafe { self.set_owned(&self.refdb, refdb, free) };
@@ -722,17 +723,18 @@ impl GitRepository {
     }
 
     /// `git_repository_refdb__weakptr`.
-    pub fn refdb_weak(&self) -> Result<NonNull<c_void>> {
+    pub fn refdb_weak(&self) -> Result<NonNull<GitRefdb>> {
         let mut p = load(&self.refdb);
         if p.is_null() {
             let mut out = ptr::null_mut();
+            let me = ptr::from_ref(self).cast_mut();
             // SAFETY: a live repository and a local out-parameter.
-            check(unsafe { c::git_refdb_open(&raw mut out, self.as_ptr()) })?;
+            check(unsafe { crate::refdb::ffi::git_refdb_open(&raw mut out, me) })?;
             let out = NonNull::new(out).ok_or(ErrorCode::GENERIC)?;
             p = self
                 .publish(&self.refdb, out, |p| {
                     // SAFETY: the loser's reference, released once.
-                    unsafe { c::git_refdb_free(p.as_ptr()) }
+                    unsafe { crate::refdb::ffi::git_refdb_free(p.as_ptr()) }
                 })
                 .as_ptr();
         }
@@ -773,7 +775,7 @@ impl GitRepository {
     pub(crate) fn odb_ptr(&self) -> *mut GitOdb {
         load(&self.odb)
     }
-    pub(crate) fn refdb_ptr(&self) -> *mut c_void {
+    pub(crate) fn refdb_ptr(&self) -> *mut GitRefdb {
         load(&self.refdb)
     }
     pub(crate) fn config_ptr(&self) -> *mut GitConfig {

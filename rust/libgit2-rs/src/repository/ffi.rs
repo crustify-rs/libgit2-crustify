@@ -24,6 +24,7 @@ use crate::index::GitIndex;
 use crate::odb::{GitOdb, Odb};
 use crate::oid::Oid;
 use crate::oidarray::GitOidArray;
+use crate::refdb::GitRefdb;
 use crate::util::errors::{self, ErrorCode, Result};
 use crate::util::export::{barrier, cstr, status};
 use crate::util::str::GitStr;
@@ -603,7 +604,7 @@ pub unsafe extern "C" fn git_repository_set_odb(
 /// The module's contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_refdb__weakptr(
-    out: *mut *mut c_void,
+    out: *mut *mut GitRefdb,
     repo_: *mut GitRepository,
 ) -> c_int {
     // The fast path: already created. Loads and a store only (nothing
@@ -639,7 +640,7 @@ pub unsafe extern "C" fn git_repository_refdb__weakptr(
 /// The module's contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_refdb(
-    out: *mut *mut c_void,
+    out: *mut *mut GitRefdb,
     repo_: *mut GitRepository,
 ) -> c_int {
     barrier(|| {
@@ -653,7 +654,7 @@ pub unsafe extern "C" fn git_repository_refdb(
                 return -1;
             };
             // SAFETY: the weak pointer: a live object.
-            unsafe { handles::refcount(p) }.inc();
+            unsafe { handles::refcount(p.cast()) }.inc();
         }
         0
     })
@@ -667,7 +668,7 @@ pub unsafe extern "C" fn git_repository_refdb(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_set_refdb(
     repo_: *mut GitRepository,
-    refdb: *mut c_void,
+    refdb: *mut GitRefdb,
 ) -> c_int {
     barrier(|| {
         // SAFETY: the module's contract.
@@ -1214,7 +1215,7 @@ pub unsafe extern "C" fn git_repository_head(
         with_repo!(repo_, "repo", |r| match head::head(r) {
             Ok(h) => {
                 // SAFETY: writable.
-                unsafe { head_out.write(h.into_raw()) };
+                unsafe { head_out.write(h.into_raw().cast()) };
                 0
             }
             Err(e) => e.raw(),
@@ -1242,7 +1243,7 @@ pub unsafe extern "C" fn git_repository_head_for_worktree(
             };
             // SAFETY: writable.
             unsafe { out.write(ptr::null_mut()) };
-            match head::with_head_for_worktree(r, n, |h| h.into_raw()) {
+            match head::with_head_for_worktree(r, n, |h| h.into_raw().cast()) {
                 Ok(h) => {
                     // SAFETY: writable.
                     unsafe { out.write(h) };

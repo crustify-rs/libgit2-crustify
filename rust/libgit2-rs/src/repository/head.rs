@@ -28,11 +28,18 @@ const GIT_REFS_HEADS_DIR: &[u8] = b"refs/heads/";
 
 use crate::odb::{GIT_OBJECT_ANY, GIT_OBJECT_COMMIT, GIT_OBJECT_TREE};
 
+/// The `git_repository *` of `repo`, for the refs exports.
+fn rp(repo: &GitRepository) -> *mut GitRepository {
+    ptr::from_ref(repo).cast_mut()
+}
+
 /// `git_reference_lookup`.
 pub(crate) fn lookup<'r>(repo: &'r GitRepository, name: &CStr) -> Result<Reference<'r>> {
     let mut out = ptr::null_mut();
     // SAFETY: a live repository, a NUL-terminated name, a local out.
-    check(unsafe { c::git_reference_lookup(&raw mut out, repo.as_ptr(), name.as_ptr()) })?;
+    check(unsafe {
+        crate::refs::ffi::git_reference_lookup(&raw mut out, rp(repo), name.as_ptr())
+    })?;
     // SAFETY: the reference C returned to us.
     unsafe { Reference::from_raw(out) }.ok_or(ErrorCode::GENERIC)
 }
@@ -42,7 +49,7 @@ fn lookup_resolved<'r>(repo: &'r GitRepository, name: &CStr) -> Result<Reference
     let mut out = ptr::null_mut();
     // SAFETY: as `lookup`.
     check(unsafe {
-        c::git_reference_lookup_resolved(&raw mut out, repo.as_ptr(), name.as_ptr(), -1)
+        crate::refs::ffi::git_reference_lookup_resolved(&raw mut out, rp(repo), name.as_ptr(), -1)
     })?;
     // SAFETY: as `lookup`.
     unsafe { Reference::from_raw(out) }.ok_or(ErrorCode::GENERIC)
@@ -60,9 +67,9 @@ fn reference_create(
     // SAFETY: a live repository, NUL-terminated strings (or NULL), a
     // valid id, a local out.
     check(unsafe {
-        c::git_reference_create(
+        crate::refs::ffi::git_reference_create(
             &raw mut out,
-            repo.as_ptr(),
+            rp(repo),
             name.as_ptr(),
             id,
             c_int::from(force),
@@ -85,9 +92,9 @@ fn reference_symbolic_create(
     let mut out = ptr::null_mut();
     // SAFETY: as `reference_create`.
     check(unsafe {
-        c::git_reference_symbolic_create(
+        crate::refs::ffi::git_reference_symbolic_create(
             &raw mut out,
-            repo.as_ptr(),
+            rp(repo),
             name.as_ptr(),
             target.as_ptr(),
             c_int::from(force),
@@ -268,7 +275,7 @@ pub(crate) fn foreach_worktree(
 fn repo_contains_no_reference(repo: &GitRepository) -> c_int {
     let mut it = ptr::null_mut();
     // SAFETY: a live repository and a local out.
-    let e = unsafe { c::git_reference_iterator_new(&raw mut it, repo.as_ptr()) };
+    let e = unsafe { crate::refs::ffi::git_reference_iterator_new(&raw mut it, rp(repo)) };
     if e < 0 {
         return e;
     }
@@ -279,7 +286,7 @@ fn repo_contains_no_reference(repo: &GitRepository) -> c_int {
     };
     let mut name = ptr::null();
     // SAFETY: a live iterator and a local out.
-    let e = unsafe { c::git_reference_next_name(&raw mut name, it.as_ptr()) };
+    let e = unsafe { crate::refs::ffi::git_reference_next_name(&raw mut name, it.as_ptr()) };
     drop(it);
     if e == ErrorCode::ITER_OVER.raw() {
         1
@@ -567,7 +574,7 @@ pub(crate) fn state_cleanup(repo: &GitRepository) -> Result<()> {
     ErrorCode::check(cleanup_files(repo, &STATE_FILES))?;
     for r in [GIT_REVERT_HEAD_REF, GIT_CHERRYPICK_HEAD_REF] {
         // SAFETY: a live repository and a NUL-terminated name.
-        match check(unsafe { c::git_reference_remove(repo.as_ptr(), r.as_ptr()) }) {
+        match check(unsafe { crate::refs::ffi::git_reference_remove(rp(repo), r.as_ptr()) }) {
             Ok(_) | Err(ErrorCode::NOT_FOUND) => {}
             Err(e) => return Err(e),
         }

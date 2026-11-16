@@ -233,9 +233,7 @@ unsafe fn buf_out(out: *mut GitBuf, f: impl FnOnce(&mut GitStr) -> Result<()>) -
 /// of the same layout.
 mod globals {
     pub(super) use crate::sys::indexer::*;
-    pub(super) use crate::sys::pending::l_repo::{
-        git_object__strict_input_validation, git_reference__enable_symbolic_ref_target_validation,
-    };
+    pub(super) use crate::sys::pending::l_repo::git_object__strict_input_validation;
     pub(super) use crate::sys::streams::{
         git_socket_stream__connect_timeout, git_socket_stream__timeout,
     };
@@ -350,7 +348,8 @@ pub unsafe fn opts(key: c_int, args: &OptArgs) -> Result<()> {
                 g!(git_object__strict_input_validation).store(a.0.i != 0, r)
             }
             ENABLE_STRICT_SYMBOLIC_REF_CREATION => {
-                g!(git_reference__enable_symbolic_ref_target_validation).store(a.0.i != 0, r)
+                crate::refs::git_reference__enable_symbolic_ref_target_validation
+                    .store(a.0.i != 0, r)
             }
             SET_SSL_CIPHERS => {
                 // C copies with `git__strdup` and reports its failure as

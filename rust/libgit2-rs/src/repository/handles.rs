@@ -1,14 +1,11 @@
-//! Owners of, and borrowed handles to, the objects of the modules that
-//! other L-wave work packages port concurrently (refdb, references,
-//! objects), as the repository uses them. (The odb, config and index are
-//! `crate::odb`'s, `crate::config`'s and `crate::index`'s own types.)
-//!
-//! PENDING(l-refs, l-obj, l-commit): each type
-//! here stands for that work package's own Rust type (`Refdb`,
-//! `Reference`, `Object`) until the integration step,
-//! which replaces it; they reach the C through `sys::pending::l_repo`. They
-//! are thin: a non-null pointer, a `Drop` that calls the C free, and the
-//! few safe calls the repository makes.
+//! Owners of the objects the repository hands out or uses: `Refdb`,
+//! `Reference` and `RefIter` are lifetime-bound owners of the refs modules'
+//! `GitRefdb`, `GitReference` and iterators, used through their exports;
+//! `Object` stands for l-obj's type (PENDING(l-obj)) and reaches the C
+//! through `sys::pending::l_repo`. (The odb, config and index are
+//! `crate::odb`'s, `crate::config`'s and `crate::index`'s own types.) They
+//! are thin: a non-null pointer, a `Drop` that releases it, and the few
+//! safe calls the repository makes.
 //!
 //! The refcounted ones (`git_config`, `git_odb`, `git_refdb`, `git_index`)
 //! start with a `git_refcount` (`src/util/util.h`, mirrored by
@@ -19,6 +16,8 @@ use core::marker::PhantomData;
 use core::ptr::{self, NonNull};
 
 use crate::oid::Oid;
+use crate::refdb::GitRefdb;
+use crate::refs::GitReference;
 use crate::sys::pending::l_repo as c;
 use crate::util::errors::{ErrorCode, Result};
 use crate::util::thread::GitRefcount;
@@ -77,14 +76,14 @@ pub(crate) fn opt_ptr(s: Option<&CStr>) -> *const c_char {
 }
 
 macro_rules! owner {
-    ($(#[$m:meta])* $name:ident, $free:path) => {
+    ($(#[$m:meta])* $name:ident: $t:ty, $free:path) => {
         $(#[$m])*
         ///
         /// `'r` is the repository (or other parent) the C object points
         /// back to: the handle cannot outlive it. It is neither `Send` nor
         /// `Sync` (the C objects follow those back pointers).
         #[derive(Debug)]
-        pub struct $name<'r>(NonNull<c_void>, PhantomData<&'r ()>);
+        pub struct $name<'r>(NonNull<$t>, PhantomData<&'r ()>);
 
         #[allow(dead_code)]
         impl<'r> $name<'r> {
@@ -95,29 +94,29 @@ macro_rules! owner {
             /// `p` is NULL, or an object of this type whose reference the
             /// caller owns and gives up.
             /// The C object must stay valid (its parent alive) for `'r`.
-            pub(crate) unsafe fn from_raw(p: *mut c_void) -> Option<$name<'r>> {
+            pub(crate) unsafe fn from_raw(p: *mut $t) -> Option<$name<'r>> {
                 NonNull::new(p).map(|p| $name(p, PhantomData))
             }
 
             /// The C pointer (still owned).
-            pub(crate) fn as_ptr(&self) -> *mut c_void {
+            pub(crate) fn as_ptr(&self) -> *mut $t {
                 self.0.as_ptr()
             }
 
             /// The C pointer, non-null.
-            pub(crate) fn as_nonnull(&self) -> NonNull<c_void> {
+            pub(crate) fn as_nonnull(&self) -> NonNull<$t> {
                 self.0
             }
 
             /// Give the reference up to C, as a non-null pointer.
-            pub(crate) fn into_nonnull(self) -> NonNull<c_void> {
+            pub(crate) fn into_nonnull(self) -> NonNull<$t> {
                 let p = self.0;
                 core::mem::forget(self);
                 p
             }
 
             /// Give the reference up to C.
-            pub(crate) fn into_raw(self) -> *mut c_void {
+            pub(crate) fn into_raw(self) -> *mut $t {
                 let p = self.0.as_ptr();
                 core::mem::forget(self);
                 p
@@ -135,11 +134,11 @@ macro_rules! owner {
 }
 
 /// Run a C constructor `f(&mut out)` and adopt what it wrote.
-fn make<T>(
-    f: impl FnOnce(*mut *mut c_void) -> c_int,
-    adopt: unsafe fn(*mut c_void) -> Option<T>,
+fn make<P, T>(
+    f: impl FnOnce(*mut *mut P) -> c_int,
+    adopt: unsafe fn(*mut P) -> Option<T>,
 ) -> Result<T> {
-    let mut out: *mut c_void = ptr::null_mut();
+    let mut out: *mut P = ptr::null_mut();
     check(f(&raw mut out))?;
     // SAFETY: on success the constructor gave the caller its reference
     // (or NULL, which is `None`).
@@ -151,9 +150,8 @@ fn make<T>(
 
 owner!(
     /// An owned reference to a `git_refdb` (`git_refdb_free` on drop).
-    /// PENDING(l-refs): `crate::refdb::Refdb`.
-    Refdb,
-    c::git_refdb_free
+    Refdb: GitRefdb,
+    crate::refdb::ffi::git_refdb_free
 );
 
 impl<'r> Refdb<'r> {
@@ -162,9 +160,10 @@ impl<'r> Refdb<'r> {
     /// # Safety
     ///
     /// `p` is a live `git_refdb`.
-    pub(crate) unsafe fn new_ref(p: NonNull<c_void>) -> Refdb<'r> {
-        // SAFETY: the caller's contract.
-        unsafe { refcount(p) }.inc();
+    pub(crate) unsafe fn new_ref(p: NonNull<GitRefdb>) -> Refdb<'r> {
+        // SAFETY: the caller's contract; a refdb starts with its
+        // `git_refcount`.
+        unsafe { refcount(p.cast()) }.inc();
         Refdb(p, PhantomData)
     }
 
@@ -172,7 +171,12 @@ impl<'r> Refdb<'r> {
     pub(crate) fn init(&self, head: Option<&CStr>, mode: u32, flags: u32) -> Result<()> {
         // SAFETY: a live refdb; `head` is NULL or NUL-terminated.
         check(unsafe {
-            c::git_refdb_init(self.as_ptr(), opt_ptr(head), mode as libc::mode_t, flags)
+            crate::refdb::ffi::git_refdb_init(
+                self.as_ptr(),
+                opt_ptr(head),
+                mode as libc::mode_t,
+                flags,
+            )
         })
         .map(drop)
     }
@@ -180,9 +184,8 @@ impl<'r> Refdb<'r> {
 
 owner!(
     /// An owned `git_reference` (`git_reference_free` on drop).
-    /// PENDING(l-refs): `crate::refs::Reference`.
-    Reference,
-    c::git_reference_free
+    Reference: GitReference,
+    crate::refs::ffi::git_reference_free
 );
 
 /// `GIT_REFERENCE_DIRECT`.
@@ -194,7 +197,7 @@ impl<'r> Reference<'r> {
     /// `git_reference_type`.
     pub fn kind(&self) -> c_int {
         // SAFETY: a live reference.
-        unsafe { c::git_reference_type(self.as_ptr()) }
+        unsafe { crate::refs::ffi::git_reference_type(self.as_ptr()) }
     }
 
     /// Whether it is symbolic.
@@ -205,7 +208,7 @@ impl<'r> Reference<'r> {
     /// `git_reference_name`.
     pub fn name(&self) -> &CStr {
         // SAFETY: a live reference's name lives as long as it.
-        let p = unsafe { c::git_reference_name(self.as_ptr()) };
+        let p = unsafe { crate::refs::ffi::git_reference_name(self.as_ptr()) };
         // SAFETY: the name lives as long as the reference.
         unsafe { opt_cstr(p) }.unwrap_or(c"")
     }
@@ -213,7 +216,7 @@ impl<'r> Reference<'r> {
     /// `git_reference_symbolic_target` (`None` for a direct reference).
     pub fn symbolic_target(&self) -> Option<&CStr> {
         // SAFETY: as `name`.
-        let p = unsafe { c::git_reference_symbolic_target(self.as_ptr()) };
+        let p = unsafe { crate::refs::ffi::git_reference_symbolic_target(self.as_ptr()) };
         // SAFETY: as `name`.
         unsafe { opt_cstr(p) }
     }
@@ -221,7 +224,7 @@ impl<'r> Reference<'r> {
     /// `git_reference_target` (`None` for a symbolic reference).
     pub fn target(&self) -> Option<&Oid> {
         // SAFETY: NULL or the id inside the live reference.
-        let p = unsafe { c::git_reference_target(self.as_ptr()) };
+        let p = unsafe { crate::refs::ffi::git_reference_target(self.as_ptr()) };
         // SAFETY: NULL or the id inside the live reference.
         unsafe { p.as_ref() }
     }
@@ -229,26 +232,28 @@ impl<'r> Reference<'r> {
     /// `git_reference_is_branch`.
     pub fn is_branch(&self) -> bool {
         // SAFETY: a live reference.
-        unsafe { c::git_reference_is_branch(self.as_ptr()) != 0 }
+        unsafe { crate::refs::ffi::git_reference_is_branch(self.as_ptr()) != 0 }
     }
 
     /// `git_reference_is_tag`.
     pub fn is_tag(&self) -> bool {
         // SAFETY: a live reference.
-        unsafe { c::git_reference_is_tag(self.as_ptr()) != 0 }
+        unsafe { crate::refs::ffi::git_reference_is_tag(self.as_ptr()) != 0 }
     }
 
     /// `git_reference_is_remote`.
     pub fn is_remote(&self) -> bool {
         // SAFETY: a live reference.
-        unsafe { c::git_reference_is_remote(self.as_ptr()) != 0 }
+        unsafe { crate::refs::ffi::git_reference_is_remote(self.as_ptr()) != 0 }
     }
 
     /// `git_reference_peel`.
     pub(crate) fn peel(&self, t: c_int) -> Result<Object<'r>> {
         // SAFETY: a live reference, a local out-parameter.
         make(
-            |out| unsafe { c::git_reference_peel(out, self.as_ptr(), t) },
+            |out: *mut *mut c_void| unsafe {
+                crate::refs::ffi::git_reference_peel(out.cast(), self.as_ptr(), t)
+            },
             Object::from_raw,
         )
     }
@@ -257,7 +262,7 @@ impl<'r> Reference<'r> {
 owner!(
     /// An owned `git_object` (`git_object_free` on drop).
     /// PENDING(l-obj): `crate::object::Object`.
-    Object,
+    Object: c_void,
     c::git_object_free
 );
 
@@ -282,8 +287,8 @@ impl<'r> Object<'r> {
 
 owner!(
     /// An owned `git_reference_iterator`.
-    RefIter,
-    c::git_reference_iterator_free
+    RefIter: crate::refdb::git_reference_iterator,
+    crate::refs::ffi::git_reference_iterator_free
 );
 
 /// `git_reference__is_branch` and friends, on names.
@@ -293,23 +298,23 @@ pub(crate) mod refname {
     /// `git_reference__is_branch`.
     pub fn is_branch(name: &CStr) -> bool {
         // SAFETY: a NUL-terminated name.
-        unsafe { c::git_reference__is_branch(name.as_ptr()) != 0 }
+        unsafe { crate::refs::ffi::git_reference__is_branch(name.as_ptr()) != 0 }
     }
     /// `git_reference__is_tag`.
     pub fn is_tag(name: &CStr) -> bool {
         // SAFETY: as above.
-        unsafe { c::git_reference__is_tag(name.as_ptr()) != 0 }
+        unsafe { crate::refs::ffi::git_reference__is_tag(name.as_ptr()) != 0 }
     }
     /// `git_reference__is_remote`.
     pub fn is_remote(name: &CStr) -> bool {
         // SAFETY: as above.
-        unsafe { c::git_reference__is_remote(name.as_ptr()) != 0 }
+        unsafe { crate::refs::ffi::git_reference__is_remote(name.as_ptr()) != 0 }
     }
     /// `git_reference__shorthand`: a suffix of `name`.
     pub fn shorthand(name: &CStr) -> &CStr {
         // SAFETY: the result points into `name` (a suffix), so it lives
         // as long as it.
-        let p = unsafe { c::git_reference__shorthand(name.as_ptr()) };
+        let p = unsafe { crate::refs::ffi::git_reference__shorthand(name.as_ptr()) };
         // SAFETY: a suffix of `name`.
         unsafe { opt_cstr(p) }.unwrap_or(name)
     }
@@ -317,7 +322,7 @@ pub(crate) mod refname {
     pub fn is_valid(name: &CStr) -> Result<bool> {
         let mut v: c_int = 0;
         // SAFETY: a NUL-terminated name, a local out.
-        check(unsafe { c::git_reference_name_is_valid(&raw mut v, name.as_ptr()) })?;
+        check(unsafe { crate::refs::ffi::git_reference_name_is_valid(&raw mut v, name.as_ptr()) })?;
         Ok(v != 0)
     }
 }

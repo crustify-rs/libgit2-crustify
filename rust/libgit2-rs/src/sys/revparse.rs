@@ -27,7 +27,7 @@ pub fn ext<'r>(
     // SAFETY: what C wrote is NULL or owned by us.
     let o = unsafe { Object::from_raw(o) };
     // SAFETY: as above.
-    let r = unsafe { Reference::from_raw(r) };
+    let r = unsafe { Reference::from_raw(r.cast()) };
     (e, o, r)
 }
 
