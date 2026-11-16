@@ -1099,11 +1099,24 @@ pub mod ffi {
             let Some(t) = OidType::from_raw(type_) else {
                 return oid_error_invalid("unknown type").raw();
             };
-            // SAFETY: the caller passes `t.size()` readable bytes.
-            let raw = unsafe { core::slice::from_raw_parts(raw, t.size()) };
-            let oid = Oid::from_bytes(raw, t).unwrap_or(Oid::NONE);
-            // SAFETY: `out` is writable.
-            unsafe { out.write(oid) };
+            // Written in place, as C does (no temporary: building the
+            // oid on the stack and copying it out costs a memset call, a
+            // memcpy call and a store-forwarding stall per id, which
+            // dominates pack.c's foreach loop over a cold index).
+            let n = t.size();
+            // SAFETY: `out` is writable (an `Oid`: a type byte and
+            // GIT_OID_MAX_SIZE id bytes, raw places, no reference formed);
+            // `raw` is readable for `n <= GIT_OID_MAX_SIZE` bytes and does
+            // not overlap `out` (the C contract).
+            let kind = unsafe { &raw mut (*out).kind };
+            // SAFETY: as above.
+            unsafe { kind.write(t as u8) };
+            // SAFETY: as above.
+            let id = unsafe { (&raw mut (*out).id).cast::<u8>() };
+            // SAFETY: as above.
+            unsafe { core::ptr::copy_nonoverlapping(raw, id, n) };
+            // SAFETY: as above: `n..GIT_OID_MAX_SIZE` is within the id.
+            unsafe { core::ptr::write_bytes(id.wrapping_add(n), 0, GIT_OID_MAX_SIZE - n) };
             0
         })
     }

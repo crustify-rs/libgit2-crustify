@@ -378,6 +378,24 @@ One entry per difference: component, what differs, why.
   `git__allocator` memory for C; paths with a NUL byte are refused
   (`GIT_EINVALID`) instead of being cut short.
 
+- **zstream: small first reads inflate with the system zlib.** An
+  inflate stream starts its library at its first output request: the
+  system zlib (already linked for deflate) under 4 KiB, zlib-rs otherwise;
+  whole-object readers (`ZStream::new_bulk`, `git_zstream_inflatebuf`, the
+  loose reader) start on zlib-rs. Same output, codes and messages (zlib's
+  for the small ones, as in C). Because the library is chosen at the first
+  output call, an allocation failure of the inflate state is reported
+  there instead of by `git_zstream_init`. (Review l-odb-r1, L-ODB-12:
+  zlib-rs's setup and larger root tables made header reads 1.1-1.3x the C.)
+- **odb_mempack: the objects are under a `RwLock`**: concurrent reads copy
+  their object out in parallel (C's mempack had no lock; the odb's mutex
+  serialized it).
+- **odb: out-parameters** are written where C writes them (`*oid` of
+  `git_odb_write` once hashed, `*out` of `git_odb_read_prefix` NULL for a
+  full-length id, the loose `read_prefix` slot's full id once located), but
+  `git_odb_open_ext` checks the options' version before setting `*out =
+  NULL`, as C does.
+
 - **delta: the index's block** is one `git__allocator` allocation, as in C
   (C frees it with `git__free`), but laid out by the Rust: 4-byte bucket
   heads and 16-byte entries (indices, not pointers), so it is smaller than

@@ -693,6 +693,38 @@ DIVERGENCES.md).
 - C: on `git_odb_mempack_oidmap_put` failure the `memobject` is not freed.
 - Rust: freed (the error is returned as C).
 
+### odb: finalizing a stream whose backend belongs to no odb
+- C: `git_odb_stream_finalize_write` does `if (git_odb__freshen(stream->backend->odb, out)) return 0;`;
+  with `backend->odb == NULL` the freshen fails its `GIT_ASSERT_ARG(db)`
+  and returns -1, which is true: C returns 0 without calling
+  `finalize_write` (nothing is written) and leaves `invalid argument: 'db'` set.
+- Trigger: a stream of a backend used directly (`backend->writestream`),
+  never added to an odb (review l-odb-r1, L-ODB-2).
+- Rust: no freshen without an odb; `finalize_write` runs and writes the object.
+
+### odb: `git_odb_open_wstream` leaks the stream when the hash setup fails
+- C: when `git__malloc` of the hash context, `git_hash_ctx_init` or the
+  header fails after a backend made the stream, the stream is not freed
+  and the error returned (the caller never sees it).
+- Rust: the stream is freed through its `free` slot.
+
+### odb_loose: an unknown `oid_type`
+- C: `git_odb_backend_loose` takes any `opts.oid_type` (e.g. 3);
+  `object_file_name` then sizes the path for a hex size of 0 and
+  `git_oid_pathfmt` writes 41 bytes: a heap overflow.
+- Rust: lookups and writes fail with `unknown oid type` (class
+  `GIT_ERROR_INVALID`).
+
+### odb_loose, odb_mempack: NULL data with a non-zero length
+- C: the backends' `write` slots `memcpy` / deflate from NULL (a crash).
+- Rust: -1 with `invalid argument: 'data'`. (`git_odb_write` itself fails
+  earlier, as C, with `invalid object`.)
+
+### cache: NULL objects
+- C: `git_cached_obj_decref(NULL)` and `git_cache_store_raw/parsed(cache, NULL)`
+  dereference NULL.
+- Rust: they do nothing (decref) or return NULL (store).
+
 ### delta: `git_delta_read_header_fromstream` adds a negative read status to the length
 `delta.c:git_delta_read_header_fromstream` does `len += read` for any
 non-zero `read` that is not `GIT_EBUFS`, so an error of

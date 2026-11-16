@@ -230,8 +230,11 @@ fn add_backend(
             let _ = crate::util::errors::assert_arg_failed("backend");
             return -1;
         };
-        // SAFETY: the exports' contract.
-        status(unsafe { odb(odb_) }.add_backend(b, priority, alternate))
+        // SAFETY: the exports' contract: a live odb.
+        let db = unsafe { odb(odb_) };
+        // SAFETY: the exports' contract: a live backend table, which the
+        // odb takes on success.
+        status(unsafe { db.add_backend(b, priority, alternate) })
     })
 }
 
@@ -694,7 +697,14 @@ pub unsafe extern "C" fn git_odb_read_prefix(
                 unsafe { out.write(o.as_ptr()) };
                 0
             }
-            Err(e) => e.raw(),
+            Err(e) => {
+                // C set `*out` to the cache's answer (NULL) for a full id.
+                if len >= crate::oid::GIT_OID_MINPREFIXLEN && len >= db.hexsize() {
+                    // SAFETY: the caller's contract.
+                    unsafe { out.write(core::ptr::null_mut()) };
+                }
+                e.raw()
+            }
         }
     })
 }
@@ -736,17 +746,24 @@ pub unsafe extern "C" fn git_odb_write(
         // C reads `db->options` before these checks (a NULL `db` crashed).
         git_assert_arg!(!oid.is_null(), "oid", -1);
         git_assert_arg!(!db.is_null(), "db", -1);
-        // SAFETY: the caller's contract.
-        let data = (!data.is_null()).then(|| unsafe { bytes(data.cast(), len) });
-        // SAFETY: the caller's contract.
-        match unsafe { odb(db) }.write(data, len, type_) {
-            Ok(id) => {
-                // SAFETY: the caller's contract.
-                unsafe { oid.write(id) };
-                0
-            }
-            Err(e) => e.raw(),
+        if data.is_null() && len != 0 {
+            // `git_object_id_from_buffer`'s "invalid object"; `*oid` is
+            // not written.
+            // SAFETY: the caller's contract: a live odb.
+            let oid_type = unsafe { odb(db) }.oid_type();
+            return hash_object(None, len, type_, oid_type).map_or_else(|e| e.raw(), |_| -1);
         }
+        // SAFETY: the caller's contract (NULL only with `len == 0`).
+        let data = unsafe { bytes(data.cast(), len) };
+        let mut id = None;
+        // SAFETY: the caller's contract.
+        let r = unsafe { odb(db) }.write(data, type_, &mut id);
+        if let Some(id) = id {
+            // C wrote `*oid` once hashed, whatever followed.
+            // SAFETY: the caller's contract.
+            unsafe { oid.write(id) };
+        }
+        status(r)
     })
 }
 
@@ -931,7 +948,9 @@ pub unsafe extern "C" fn git_odb_open_rstream(
         // SAFETY: the caller's contract: a readable id.
         let oid_ = unsafe { &*oid };
         match db.open_rstream(oid_) {
-            Ok((s, l, t)) => {
+            // C: 0, with `*stream` as the backend left it (untouched).
+            Ok(None) => 0,
+            Ok(Some((s, l, t))) => {
                 // SAFETY: the caller's contract.
                 unsafe { stream.write(s.as_ptr()) };
                 // SAFETY: the caller's contract.

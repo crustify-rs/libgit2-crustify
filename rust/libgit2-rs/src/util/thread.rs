@@ -422,9 +422,12 @@ pub fn load<T>(p: &AtomicPtr<T>) -> *mut T {
 #[derive(Debug, Default)]
 pub struct GitRefcount {
     /// The count.
-    pub refcount: Atomic32,
-    /// The owning object, or NULL.
-    pub owner: AtomicPtr<c_void>,
+    refcount: Atomic32,
+    /// The owning object, or NULL. Private: holders of the object trust
+    /// it to be NULL or a live owner (the odb reads its repository's
+    /// cache through it), so only [`own`](Self::own), an `unsafe fn`,
+    /// sets it.
+    owner: AtomicPtr<c_void>,
 }
 
 impl GitRefcount {
@@ -450,8 +453,14 @@ impl GitRefcount {
         v <= 0 && self.owner.load(Ordering::SeqCst).is_null()
     }
     /// `GIT_REFCOUNT_OWN`.
+    ///
+    /// # Safety
+    ///
+    /// `owner` is NULL or the live object that owns this one, and stays
+    /// live until it clears the owner again (code that holds the object
+    /// dereferences the owner as that type).
     #[inline]
-    pub fn own(&self, owner: *mut c_void) {
+    pub unsafe fn own(&self, owner: *mut c_void) {
         self.owner.swap(owner, Ordering::SeqCst);
     }
     /// `GIT_REFCOUNT_OWNER`.

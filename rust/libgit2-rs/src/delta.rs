@@ -55,6 +55,9 @@ const C_INDEX_HEADER_SIZE: usize = 32;
 const C_INDEX_ENTRY_SIZE: usize = 24;
 /// `sizeof(struct index_entry *)`.
 const C_POINTER_SIZE: usize = 8;
+// The C sizes above are LP64's (the configuration this port builds).
+const _: () =
+    assert!(size_of::<*const u8>() == C_POINTER_SIZE && size_of::<core::ffi::c_ulong>() == 8);
 
 /// The Rabin polynomial table `T` of the C.
 static T: [u32; 256] = [
@@ -254,7 +257,12 @@ pub(crate) fn apply_header(
 
 /// `git_delta_apply`'s loop: run the instructions of `delta[pos..]` on
 /// `base` into `out`, which is the result's size; on success every byte of
-/// `out` was written.
+/// `out` was written (an `Ok` is only returned when the writes, which are
+/// contiguous from 0, reached `out.len()`).
+///
+/// Callers rely on that postcondition to treat `out` as initialized after
+/// an `Ok`: they call `set_len`/`assume_init` right after this call, and
+/// nowhere else.
 #[inline(always)]
 pub(crate) fn apply_body(
     base: &[u8],
@@ -585,6 +593,8 @@ impl<'a> DeltaIndex<'a> {
             if count < HASH_LIMIT {
                 continue;
             }
+            #[cfg(test)]
+            CULLED.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             let mut entry = hash[b];
             loop {
                 let keep = entry;
@@ -1213,5 +1223,52 @@ pub mod ffi {
                 Err(e) => e.raw(),
             }
         })
+    }
+}
+
+/// Buckets culled so far (tests check the culling runs).
+#[cfg(test)]
+static CULLED: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+
+#[cfg(test)]
+mod cull_tests {
+    use super::*;
+    use core::sync::atomic::Ordering;
+
+    /// A source of `per` windows of each of 17 different contents: a
+    /// period of 17 bytes, so the 16-byte windows do not collapse into
+    /// one entry per run, and each bucket gets `per` entries.
+    fn source(per: usize) -> Vec<u8> {
+        (0..17 * 16 * per + 7)
+            .map(|i| b'a' + (i % 17) as u8)
+            .collect()
+    }
+
+    #[test]
+    fn over_full_buckets_are_culled() {
+        let _g = crate::util::test_support::init();
+        // 64..127 entries (skip 0: C's quirk keeps one entry), 128+
+        // (skip 1, 2, …).
+        for per in [
+            64usize,
+            100,
+            127,
+            128,
+            200,
+            if cfg!(miri) { 260 } else { 1000 },
+        ] {
+            let src = source(per);
+            let before = CULLED.load(Ordering::Relaxed);
+            let idx = DeltaIndex::new(&src).unwrap().unwrap();
+            assert!(
+                CULLED.load(Ordering::Relaxed) > before,
+                "no culling for {per}"
+            );
+            let mut trg = src[5..].to_vec();
+            trg.extend_from_slice(b"some new tail bytes");
+            trg.extend_from_slice(&src[..300]);
+            let d = idx.create(&trg, 0).unwrap().unwrap();
+            assert_eq!(apply(&src, &d).unwrap(), trg);
+        }
     }
 }

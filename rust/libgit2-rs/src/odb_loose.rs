@@ -24,7 +24,7 @@ use crate::odb::{
     error_ambiguous, error_notfound, git_object_size_t, git_object_t, stringn2type, type_is_valid,
 };
 use crate::oid::{GIT_OID_MINPREFIXLEN, Oid, OidType, git_oid_t, oid_hexsize};
-use crate::util::alloc::{self, GIT_ALLOC, GitAlloc};
+use crate::util::alloc::{self, GitAlloc};
 use crate::util::errors::{self, ErrorClass, ErrorCode, Result};
 use crate::util::filebuf::{
     GIT_FILEBUF_DEFLATE_SHIFT, GIT_FILEBUF_FSYNC, GIT_FILEBUF_TEMPORARY, GitFilebuf,
@@ -149,8 +149,9 @@ impl Loose {
             o += 1;
         }
         if n < 2 {
-            // An unknown type: C's `git_oid_pathfmt` wrote nothing.
-            return Err(ErrorCode::GENERIC);
+            // An unknown type: C overflowed its path buffer here
+            // (rust/DEFECTS.md).
+            return Err(git_error_set!(ErrorClass::INVALID, "unknown oid type"));
         }
         name.put(&path[..o])
     }
@@ -302,19 +303,27 @@ impl Loose {
     }
 
     /// `loose_backend__read_prefix`.
-    pub fn read_prefix(&self, short_oid: &Oid, len: usize) -> Result<(Oid, RawData)> {
+    /// The full id goes to `out_oid` as soon as it is known (C wrote it
+    /// before reading the object, so it is set when the read fails).
+    pub fn read_prefix(
+        &self,
+        short_oid: &Oid,
+        len: usize,
+        out_oid: &mut Option<Oid>,
+    ) -> Result<RawData> {
         git_assert_arg!(
             len >= GIT_OID_MINPREFIXLEN && len <= self.oid_hexsize,
             "len >= 4 && len <= backend->oid_hexsize"
         );
         if len == self.oid_hexsize {
             let raw = self.read(short_oid)?;
-            return Ok((*short_oid, raw));
+            *out_oid = Some(*short_oid);
+            return Ok(raw);
         }
         let mut path = GitStr::new();
         let id = self.locate_object_short_oid(&mut path, short_oid, len)?;
-        let raw = read_loose(&path)?;
-        Ok((id, raw))
+        *out_oid = Some(id);
+        read_loose(&path)
     }
 
     /// `loose_backend__exists`.
@@ -557,15 +566,23 @@ fn read_loose_packlike(obj: &[u8]) -> Result<RawData> {
     crate::util::zstream::inflate_buf(&mut body, data)?;
     // C hands out `hdr.size` bytes whatever was inflated: the rest of a
     // short body was uninitialized there, zero here (rust/DEFECTS.md).
-    let mut out = calloc_buf(alloc_size)?;
-    let n = body.len().min(hdr.size);
-    out.as_mut_slice()[..n].copy_from_slice(&body.as_bytes()[..n]);
+    if body.len() < hdr.size {
+        body.putcn(0, hdr.size - body.len())?;
+    }
+    // The string's own buffer (C's `git_str_detach`): `len + 1 >=
+    // hdr.size + 1` initialized bytes, NUL-terminated.
+    let n = body.len() + 1;
+    let p = body.detach().ok_or(ErrorCode::GENERIC)?.into_raw();
+    // SAFETY: a `git__allocator` buffer of at least `n` initialized bytes
+    // (the contents and the NUL), whose ownership passes to the vector.
+    let out =
+        unsafe { ffibox::CVec::from_raw_parts(p.cast::<u8>(), n) }.ok_or(ErrorCode::GENERIC)?;
     Ok((out, hdr.size, hdr.type_))
 }
 
 /// `read_loose_standard`.
 fn read_loose_standard(obj: &[u8]) -> Result<RawData> {
-    let mut zs = ZStream::new(ZstreamKind::Inflate)?;
+    let mut zs = ZStream::new_bulk(ZstreamKind::Inflate)?;
     zs.set_input(obj);
     let mut head = [0u8; MAX_HEADER_LEN];
     let mut decompressed = zs.get_output(&mut head)?;
@@ -828,9 +845,12 @@ impl Loose {
         if self.locate_object(&mut path, oid).is_err() {
             return Err(self.notfound(oid));
         }
-        let ctx = GIT_ALLOC
-            .try_box(crate::util::hash::HashCtx::zeroed())
-            .map_err(|_| errors::oom())?;
+        // `git__malloc` (8-aligned): `init_raw` writes it in place.
+        let ctx = alloc::malloc(size_of::<crate::util::hash::HashCtx>())
+            .cast::<crate::util::hash::HashCtx>();
+        if ctx.is_null() {
+            return Err(ErrorCode::GENERIC);
+        }
         let t = CTable::<StreamTable, LooseReadStream>::new(LooseReadStream {
             state: Mutex::new(ReadState {
                 map: GitMap::default(),
@@ -840,7 +860,6 @@ impl Loose {
                 start_read: 0,
             }),
         });
-        let (ctx, _) = Box::into_raw_with_allocator(ctx);
         // Freed unless handed to the stream.
         struct Ctx(*mut crate::util::hash::HashCtx);
         impl Drop for Ctx {
@@ -863,7 +882,7 @@ impl Loose {
                 .unwrap_or_else(PoisonError::into_inner);
             st.map = futils::mmap_ro_file(c_path(&path)?)?;
             // In place: the stream does not move until freed.
-            st.zs().init(ZstreamKind::Inflate as c_int)?;
+            st.zs().init_bulk(ZstreamKind::Inflate as c_int)?;
             // SAFETY: the mapping's bytes, read only, alive while the state
             // is (the stream's input points into them until it is freed).
             let data = unsafe { map_bytes(st.map.data, st.map.len) };
@@ -1005,10 +1024,14 @@ ffibox::impl_cvtable! {
                 let text = if len == s.0.oid_hexsize { "oid" } else { "backend && short_oid" };
                 return errors::assert_arg_failed(text).raw();
             };
-            match s.0.read_prefix(short_oid, len) {
-                Ok((id, raw)) => {
-                    // SAFETY: C's contract: writable out-parameters.
-                    unsafe { out_oid.write(id) };
+            let mut id = None;
+            let r = s.0.read_prefix(short_oid, len, &mut id);
+            if let Some(id) = id {
+                // SAFETY: C's contract: writable out-parameters.
+                unsafe { out_oid.write(id) };
+            }
+            match r {
+                Ok(raw) => {
                     // SAFETY: as above.
                     unsafe { write_raw(buffer_p, len_p, type_p, raw) };
                     0
@@ -1041,6 +1064,10 @@ ffibox::impl_cvtable! {
         on panic: -1,
         on busy: busy(),
         |s: &LooseBackend| {
+            if data.is_null() && len != 0 {
+                // C read through NULL (rust/DEFECTS.md).
+                return errors::assert_arg_failed("data").raw();
+            }
             // SAFETY: C's contract: a readable id.
             let oid = unsafe { &*oid };
             // SAFETY: C's contract: `len` readable bytes.

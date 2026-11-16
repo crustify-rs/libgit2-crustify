@@ -14,7 +14,7 @@
 
 use core::ffi::{c_int, c_void};
 use core::ptr::NonNull;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use ffibox::CTable;
 
@@ -44,12 +44,18 @@ struct Objects {
 /// The state of a mempack backend.
 #[derive(Debug, Default)]
 pub struct MempackState {
-    inner: Mutex<Objects>,
+    /// Readers share it (a read copies the object out under the read
+    /// lock), writers take it alone.
+    inner: RwLock<Objects>,
 }
 
 impl MempackState {
-    fn lock(&self) -> MutexGuard<'_, Objects> {
-        self.inner.lock().unwrap_or_else(PoisonError::into_inner)
+    fn lock(&self) -> RwLockWriteGuard<'_, Objects> {
+        self.inner.write().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn read(&self) -> RwLockReadGuard<'_, Objects> {
+        self.inner.read().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// `impl__write`.
@@ -71,38 +77,39 @@ impl MempackState {
 
     /// `impl__exists`.
     pub fn exists(&self, oid: &Oid) -> bool {
-        self.lock().objects.contains(oid)
+        self.read().objects.contains(oid)
     }
 
     /// `impl__read_header`: the size and type.
     pub fn read_header(&self, oid: &Oid) -> Result<(usize, git_object_t)> {
-        let o = self.lock();
+        let o = self.read();
         let obj = o.objects.get(oid).ok_or(ErrorCode::NOT_FOUND)?;
         Ok((obj.data.len(), obj.type_))
     }
 
     /// `impl__read`, with the data given to `f` (under the lock).
     pub fn read_with<R>(&self, oid: &Oid, f: impl FnOnce(&[u8], git_object_t) -> R) -> Result<R> {
-        let o = self.lock();
+        let o = self.read();
         let obj = o.objects.get(oid).ok_or(ErrorCode::NOT_FOUND)?;
         Ok(f(&obj.data, obj.type_))
     }
 
     /// `git_mempack_object_count`.
     pub fn object_count(&self) -> usize {
-        self.lock().objects.len()
+        self.read().objects.len()
     }
 
     /// `git_mempack_reset`.
     pub fn reset(&self) {
         let mut o = self.lock();
-        o.commits.clear();
+        // `git_array_clear` frees the array; the map keeps its buckets.
+        o.commits = Vec::new();
         o.objects.clear();
     }
 
     /// The commits written, in order.
     fn commits(&self) -> Result<Vec<Oid>> {
-        let o = self.lock();
+        let o = self.read();
         let mut v = Vec::new();
         v.try_reserve_exact(o.commits.len())
             .map_err(|_| errors::oom())?;
@@ -112,7 +119,7 @@ impl MempackState {
 
     /// The ids, in the map's (C's) order.
     pub fn ids(&self) -> Result<Vec<Oid>> {
-        let o = self.lock();
+        let o = self.read();
         let mut v = Vec::new();
         v.try_reserve_exact(o.objects.len())
             .map_err(|_| errors::oom())?;
@@ -185,6 +192,10 @@ ffibox::impl_cvtable! {
         on panic: -1,
         on busy: busy(),
         |s: &MempackBackend| {
+            if data.is_null() && len != 0 {
+                // C read through NULL (rust/DEFECTS.md).
+                return errors::assert_arg_failed("data").raw();
+            }
             // SAFETY: C's contract: a readable id.
             let oid = unsafe { &*oid };
             // SAFETY: C's contract: `len` readable bytes.

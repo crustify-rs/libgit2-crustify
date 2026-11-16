@@ -59,7 +59,9 @@ pub struct GitCachedObj {
 /// git_cached_obj *)`): keys point at the entries' own oids.
 pub type CacheMap = GitHashMap<OidPtr, *mut GitCachedObj>;
 
-/// `git_cache`, mirrored.
+/// `git_cache`, mirrored. Its rwlock must not move once used: Rust
+/// makes one only inside a `git_odb` (heap, never moved) or initializes
+/// C's in place (`git_cache_init`); `new` is crate-private for that.
 ///
 /// Invariant: `map` is read under `lock` (read or write) and written under
 /// its write lock only; every value is a live cached object to which the
@@ -80,8 +82,8 @@ unsafe impl Send for GitCache {}
 
 impl core::fmt::Debug for GitCache {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // No lock: `Debug` may run under this thread's write lock.
         f.debug_struct("GitCache")
-            .field("size", &self.size())
             .field("used_memory", &self.used_memory())
             .finish_non_exhaustive()
     }
@@ -180,8 +182,9 @@ fn should_store(type_: i16, size: usize) -> bool {
 /// `obj` is a live cached object to which the caller holds a reference.
 #[inline]
 pub unsafe fn incref(obj: NonNull<GitCachedObj>) {
-    // SAFETY: the caller's contract; the count is atomic.
-    unsafe { obj.as_ref() }.refcount.inc();
+    // SAFETY: the caller's contract; a projection to the atomic count
+    // only (C may write the header's other fields of a `git_object`).
+    unsafe { &(*obj.as_ptr()).refcount }.inc();
 }
 
 /// Give up a reference to `drop` and take one to `take`.
@@ -205,8 +208,8 @@ unsafe fn swap_ref(drop: NonNull<GitCachedObj>, take: NonNull<GitCachedObj>) {
 /// `obj` is a live cached object, and the caller gives up one reference
 /// to it; an object of `flags` 0 was allocated with `git__allocator`.
 pub unsafe fn decref(obj: NonNull<GitCachedObj>) {
-    // SAFETY: the caller's contract.
-    if unsafe { obj.as_ref() }.refcount.dec() != 0 {
+    // SAFETY: the caller's contract; as in `incref`.
+    if unsafe { &(*obj.as_ptr()).refcount }.dec() != 0 {
         return;
     }
     // SAFETY: this was the last reference; nothing else reads the object.
@@ -225,15 +228,9 @@ pub unsafe fn decref(obj: NonNull<GitCachedObj>) {
 // The cache
 // ---------------------------------------------------------------------------
 
-impl Default for GitCache {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl GitCache {
     /// `git_cache_init`'s result: empty, unlocked.
-    pub const fn new() -> GitCache {
+    pub(crate) const fn new() -> GitCache {
         GitCache {
             map: UnsafeCell::new(GitHashMap::new()),
             lock: GitRwLock::new(),
@@ -286,6 +283,20 @@ impl GitCache {
         map.clear();
         let used = self.used_memory.swap(0, Ordering::SeqCst);
         git_cache__current_storage.fetch_sub(used, Ordering::SeqCst);
+    }
+
+    /// [`clear`](Self::clear), with `f` run on each entry first (tests).
+    #[cfg(test)]
+    fn clear_with(&self, f: impl Fn(NonNull<GitCachedObj>)) {
+        let _g = self.lock.write();
+        // SAFETY: the write lock is held.
+        for (_, &v) in unsafe { self.map_mut() }.iter() {
+            if let Some(v) = NonNull::new(v) {
+                f(v);
+            }
+        }
+        // SAFETY: the write lock is held.
+        unsafe { self.clear_locked() };
     }
 
     /// `git_cache_clear`.
@@ -344,7 +355,7 @@ impl GitCache {
 
     /// `cache_get`: a new reference to the entry for `oid`, if it is cached
     /// with `flags` (any, for 0).
-    pub fn get(&self, oid: &Oid, flags: u16) -> Option<NonNull<GitCachedObj>> {
+    pub(crate) fn get(&self, oid: &Oid, flags: u16) -> Option<NonNull<GitCachedObj>> {
         if !enabled() {
             return None;
         }
@@ -364,14 +375,17 @@ impl GitCache {
     }
 
     /// `cache_store`: store `entry` (whose `flags` the caller set), and
-    /// return the reference the caller now holds: to `entry`, or to the
-    /// entry already cached for its id, which replaces it.
+    /// return a new reference for the caller: to `entry`, or to the entry
+    /// already cached for its id with the same flags, in which case
+    /// `entry` is freed (its count goes back to 0).
     ///
     /// # Safety
     ///
-    /// `entry` is a live cached object of the kind its `flags` say, private
-    /// to the caller, who gives up one reference to it.
-    pub unsafe fn store(&self, entry: NonNull<GitCachedObj>) -> NonNull<GitCachedObj> {
+    /// `entry` is a fresh cached object of the kind its `flags` say, with
+    /// a count of 0 and private to the caller (as `odb.c` and `object.c`
+    /// pass it); the caller uses `entry` again only through the returned
+    /// reference.
+    pub(crate) unsafe fn store(&self, entry: NonNull<GitCachedObj>) -> NonNull<GitCachedObj> {
         // SAFETY: the caller's contract.
         unsafe { incref(entry) };
 
@@ -380,9 +394,14 @@ impl GitCache {
             return entry;
         }
 
-        // SAFETY: private to the caller: read without a lock.
-        let e = unsafe { &*entry.as_ptr() };
-        let (type_, size, flags) = (e.type_, e.size, e.flags);
+        let e = entry.as_ptr();
+        // SAFETY: private to the caller: read without a lock, as raw
+        // places (no reference to the header outlives this).
+        let type_ = unsafe { (*e).type_ };
+        // SAFETY: as above.
+        let size = unsafe { (*e).size };
+        // SAFETY: as above.
+        let flags = unsafe { (*e).flags };
         if !should_store(type_, size) {
             return entry;
         }
@@ -397,7 +416,10 @@ impl GitCache {
 
         // SAFETY: the entry's oid lives as long as the entry, which the map
         // keeps a reference to while the key is in it.
-        let key = unsafe { OidPtr::new(NonNull::from(&e.oid)) };
+        let oid = unsafe { &raw mut (*e).oid };
+        let oid = NonNull::new(oid).unwrap_or(NonNull::dangling());
+        // SAFETY: as above (a field of the live entry, never NULL).
+        let key = unsafe { OidPtr::new(oid) };
         let mut result = entry;
         match map.get(&key).copied().and_then(NonNull::new) {
             None => {
@@ -585,7 +607,10 @@ pub mod ffi {
         })
     }
 
-    fn get(c: *mut GitCache, oid: *const Oid, flags: u16) -> *mut c_void {
+    /// # Safety
+    ///
+    /// As [`git_cache_get_raw`].
+    unsafe fn get(c: *mut GitCache, oid: *const Oid, flags: u16) -> *mut c_void {
         barrier(|| {
             // SAFETY: the exports' contract: a live cache.
             let c = unsafe { cache(c) };
@@ -603,7 +628,8 @@ pub mod ffi {
     /// As [`git_cache_clear`]; `oid` is a readable `git_oid`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_cache_get_raw(c: *mut GitCache, oid: *const Oid) -> *mut c_void {
-        get(c, oid, GIT_CACHE_STORE_RAW)
+        // SAFETY: forwarded.
+        unsafe { get(c, oid, GIT_CACHE_STORE_RAW) }
     }
 
     /// `git_cache_get_parsed`.
@@ -616,7 +642,8 @@ pub mod ffi {
         c: *mut GitCache,
         oid: *const Oid,
     ) -> *mut c_void {
-        get(c, oid, GIT_CACHE_STORE_PARSED)
+        // SAFETY: forwarded.
+        unsafe { get(c, oid, GIT_CACHE_STORE_PARSED) }
     }
 
     /// `git_cache_get_any`.
@@ -626,7 +653,8 @@ pub mod ffi {
     /// As [`git_cache_get_raw`].
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_cache_get_any(c: *mut GitCache, oid: *const Oid) -> *mut c_void {
-        get(c, oid, GIT_CACHE_STORE_ANY)
+        // SAFETY: forwarded.
+        unsafe { get(c, oid, GIT_CACHE_STORE_ANY) }
     }
 
     /// `git_cached_obj_decref`.
@@ -670,7 +698,7 @@ mod tests {
     }
 
     #[test]
-    fn store_get_and_evict() {
+    fn store_and_get() {
         let _g = crate::util::test_support::init();
         let mut cache = GitCache::new();
         let before = current_storage();
@@ -705,6 +733,197 @@ mod tests {
         }
         cache.dispose();
         assert_eq!(current_storage(), before);
+    }
+
+    /// The count of `e`.
+    fn count(e: NonNull<GitCachedObj>) -> i32 {
+        // SAFETY: a live object of the test.
+        unsafe { &(*e.as_ptr()).refcount }.get()
+    }
+
+    #[test]
+    fn eviction_runs_and_accounts() {
+        // `max_storage` and `current_storage` are global: no other cache
+        // test may run meanwhile.
+        let _g = crate::util::test_support::exclusive();
+        let old = max_storage();
+        let before = current_storage();
+        // Over the limit from the first entry on: every store evicts
+        // first, 8 entries (`max(size / 2048, 8)`), or clears when there
+        // are fewer than 8.
+        set_max_storage(before + 1);
+        let mut cache = GitCache::new();
+        let mut sizes = Vec::new();
+        for i in 0..20u32 {
+            let e = plain_obj(i, 1, 100);
+            // SAFETY: fresh, private, count 0.
+            let r = unsafe { cache.store(e) };
+            assert_eq!(r, e);
+            assert_eq!(count(e), 2);
+            // SAFETY: the reference `store` returned.
+            unsafe { decref(r) };
+            sizes.push(cache.size());
+        }
+        // 1 (stored), then over the limit: 1 < 8, cleared, 1 again, …
+        // until the map holds 8: evict 8 (all), store 1.
+        assert!(sizes.iter().all(|&n| n <= 8), "{sizes:?}");
+        assert!(sizes.contains(&1));
+        assert_eq!(cache.used_memory(), 100 * cache.size() as isize);
+        assert_eq!(current_storage() - before, cache.used_memory());
+        set_max_storage(old);
+        cache.dispose();
+        assert_eq!(current_storage(), before);
+    }
+
+    #[test]
+    fn store_branches() {
+        let _g = crate::util::test_support::init();
+        let mut cache = GitCache::new();
+        // Same flags: the fresh entry is freed, the cached one returned.
+        let a = plain_obj(1, 1, 10);
+        // SAFETY: fresh.
+        let ra = unsafe { cache.store(a) };
+        assert_eq!(ra, a);
+        let dup = plain_obj(1, 1, 10);
+        // SAFETY: fresh; `dup` is freed by the store (not used again).
+        let rd = unsafe { cache.store(dup) };
+        assert_eq!(rd, a);
+        assert_eq!(count(a), 3); // the map, `ra`, `rd`
+        // SAFETY: our two references.
+        unsafe { decref(ra) };
+        // SAFETY: as above.
+        unsafe { decref(rd) };
+
+        // A raw entry is replaced by a parsed one of the same id.
+        let raw = plain_obj(2, 1, 10);
+        // SAFETY: fresh.
+        unsafe { (*raw.as_ptr()).flags = GIT_CACHE_STORE_RAW };
+        // SAFETY: fresh.
+        let rr = unsafe { cache.store(raw) };
+        let parsed = plain_obj(2, 1, 10);
+        // SAFETY: fresh.
+        unsafe { (*parsed.as_ptr()).flags = GIT_CACHE_STORE_PARSED };
+        // SAFETY: fresh.
+        let rp = unsafe { cache.store(parsed) };
+        assert_eq!(rp, parsed);
+        assert_eq!(count(raw), 1); // only `rr`: the map let go
+        assert_eq!(count(parsed), 2);
+        let id = rp;
+        let oid = Oid::from_raw_parts(OidType::Sha1 as u8, {
+            let mut x = [0u8; 32];
+            x[..4].copy_from_slice(&2u32.to_be_bytes());
+            x
+        });
+        let g = cache
+            .get(&oid, GIT_CACHE_STORE_PARSED)
+            .expect("parsed cached");
+        assert_eq!(g, id);
+        assert!(cache.get(&oid, GIT_CACHE_STORE_RAW).is_none());
+        // A raw one does not replace a parsed one.
+        let raw2 = plain_obj(2, 1, 10);
+        // SAFETY: fresh.
+        unsafe { (*raw2.as_ptr()).flags = GIT_CACHE_STORE_RAW };
+        // SAFETY: fresh.
+        let rr2 = unsafe { cache.store(raw2) };
+        assert_eq!(rr2, raw2);
+        assert_eq!(count(raw2), 1);
+        // Release everything as plain memory (a real parsed object would
+        // be freed by object.c): drop the flags of what we still hold.
+        for e in [rr, rr2] {
+            // SAFETY: our references; the map holds none.
+            unsafe { (*e.as_ptr()).flags = 0 };
+            // SAFETY: as above.
+            unsafe { decref(e) };
+        }
+        // SAFETY: our references to `parsed` (the map keeps one).
+        unsafe { decref(g) };
+        // SAFETY: as above.
+        unsafe { decref(rp) };
+        cache.clear_with(|e| {
+            // SAFETY: the map's last reference to an object of the test.
+            unsafe { (*e.as_ptr()).flags = 0 }
+        });
+        assert_eq!(cache.size(), 0);
+        cache.dispose();
+    }
+
+    #[test]
+    fn disabled_cache_clears_on_store() {
+        let _g = crate::util::test_support::exclusive();
+        let mut cache = GitCache::new();
+        let a = plain_obj(7, 1, 10);
+        // SAFETY: fresh.
+        let r = unsafe { cache.store(a) };
+        // SAFETY: ours.
+        unsafe { decref(r) };
+        assert_eq!(cache.size(), 1);
+        set_enabled(false);
+        let b = plain_obj(8, 1, 10);
+        // SAFETY: fresh.
+        let rb = unsafe { cache.store(b) };
+        assert_eq!(rb, b);
+        assert_eq!(cache.size(), 0);
+        assert_eq!(cache.used_memory(), 0);
+        assert!(cache.get(&Oid::NONE, 0).is_none());
+        set_enabled(true);
+        // SAFETY: ours.
+        unsafe { decref(rb) };
+        cache.dispose();
+    }
+
+    /// Several threads storing, getting, evicting and clearing (review
+    /// l-odb-r1's stress test); Miri checks the races.
+    #[test]
+    fn concurrent_store_get_evict_clear() {
+        struct P(NonNull<GitCachedObj>);
+        // SAFETY: references to thread-safe cached objects.
+        unsafe impl Send for P {}
+        let _g = crate::util::test_support::exclusive();
+        let n: u32 = if cfg!(miri) { 24 } else { 20000 };
+        let old = max_storage();
+        let before = current_storage();
+        set_max_storage(before + if cfg!(miri) { 300 } else { 5000 });
+        let mut cb = Box::new(GitCache::new());
+        let c: &GitCache = &cb;
+        std::thread::scope(|s| {
+            for t in 0..4 {
+                s.spawn(move || {
+                    let mut held = Vec::new();
+                    for i in 0..n {
+                        let e = plain_obj(i % (n / 2 + 1), 1, 100);
+                        // SAFETY: fresh.
+                        let r = unsafe { c.store(e) };
+                        held.push(P(r));
+                        // SAFETY: our reference.
+                        let oid = unsafe { (*r.as_ptr()).oid };
+                        if let Some(g) = c.get(&oid, 0) {
+                            held.push(P(g));
+                        }
+                        if t == 0 && i % 7 == 0 {
+                            c.clear();
+                        }
+                        if t == 1 && i % 5 == 0 {
+                            let _ = (c.size(), c.ids());
+                        }
+                        if held.len() > 8 {
+                            for h in held.drain(..) {
+                                // SAFETY: our references.
+                                unsafe { decref(h.0) };
+                            }
+                        }
+                    }
+                    for h in held.drain(..) {
+                        // SAFETY: our references.
+                        unsafe { decref(h.0) };
+                    }
+                });
+            }
+        });
+        c.clear();
+        assert_eq!(c.used_memory(), 0);
+        cb.dispose();
+        assert_eq!(current_storage(), before);
+        set_max_storage(old);
     }
 
     #[test]

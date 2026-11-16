@@ -9,7 +9,7 @@ use core::ffi::{c_char, c_int, c_void};
 use core::ptr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use libgit2_rs::cache::{self, GitCache, GitCachedObj};
+use libgit2_rs::cache::{GitCache, GitCachedObj};
 use libgit2_rs::odb::ffi::*;
 use libgit2_rs::odb::{GitOdb, GitOdbBackend, GitOdbObject, GitOdbStream};
 use libgit2_rs::odb_mempack::ffi::*;
@@ -352,9 +352,9 @@ fn mempack_c_abi_from_threads() {
     unsafe { git_odb_free(db) };
 }
 
-/// A cached object of C's kind 0 (plain memory), as C would make one.
+/// A fresh `git_odb_object` (no data), as odb.c makes one for the cache.
 fn plain(i: u8, size: usize) -> *mut GitCachedObj {
-    let p = alloc::calloc(1, size_of::<GitCachedObj>()).cast::<GitCachedObj>();
+    let p = alloc::calloc(1, size_of::<GitOdbObject>()).cast::<GitCachedObj>();
     let mut id = [0u8; 32];
     id[0] = i;
     id[1] = i.wrapping_mul(7);
@@ -391,11 +391,8 @@ fn cache_c_abi_concurrently() {
             s.spawn(move || {
                 for i in 0..8u8 {
                     let e = plain(t * 16 + i, 10);
-                    // `flags` 0: the cache frees it as plain memory.
-                    // SAFETY: live objects of this test, as the C contract requires.
-                    let r = unsafe {
-                        cache::GitCache::store(&*p.0, core::ptr::NonNull::new(e).unwrap())
-                    };
+                    // SAFETY: a fresh odb object (count 0, no buffer).
+                    let r = unsafe { git_cache_store_raw(p.0, e.cast()) }.cast::<GitCachedObj>();
                     // SAFETY: live objects of this test, as the C contract requires.
                     let id = unsafe { (*e).oid };
                     // SAFETY: live objects of this test, as the C contract requires.
@@ -404,7 +401,7 @@ fn cache_c_abi_concurrently() {
                     // SAFETY: live objects of this test, as the C contract requires.
                     unsafe { git_cached_obj_decref(g) };
                     // SAFETY: live objects of this test, as the C contract requires.
-                    unsafe { git_cached_obj_decref(r.as_ptr().cast()) };
+                    unsafe { git_cached_obj_decref(r.cast()) };
                     // SAFETY: live objects of this test, as the C contract requires.
                     let _ = unsafe { git_cache_size(p.0) };
                 }
