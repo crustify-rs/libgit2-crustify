@@ -111,15 +111,12 @@ pub fn compile(pattern: Option<&CStr>, options: u32) -> Result<CodeBox, c_int> {
     unsafe { CodeBox::from_c(code) }.ok_or(error)
 }
 
-/// `pcre2_get_error_message` into a buffer of `N` bytes: the message,
-/// truncated to fit (PCRE2 NUL-terminates it).
-pub fn error_message<const N: usize>(error: c_int) -> Vec<u8> {
-    let mut buf = [0u8; N];
-    // SAFETY: `buf` is writable for `N` bytes.
-    unsafe { pcre2_get_error_message_8(error, buf.as_mut_ptr(), N) };
-    CStr::from_bytes_until_nul(&buf)
-        .map(|m| m.to_bytes().to_vec())
-        .unwrap_or_default()
+/// `pcre2_get_error_message` into `buf`: the message (truncated to fit;
+/// PCRE2 NUL-terminates it), without its NUL.
+pub fn error_message(error: c_int, buf: &mut [u8]) -> &[u8] {
+    // SAFETY: `buf` is writable for its length.
+    unsafe { pcre2_get_error_message_8(error, buf.as_mut_ptr(), buf.len()) };
+    CStr::from_bytes_until_nul(buf).map_or(&[], CStr::to_bytes)
 }
 
 /// `pcre2_match_data_create(pairs, NULL)`; `None` when PCRE2 cannot

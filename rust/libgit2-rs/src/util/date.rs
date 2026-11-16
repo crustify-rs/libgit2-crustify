@@ -1045,7 +1045,7 @@ fn approxidate_str(clock: &impl Clock, date: Z<'_>, time_sec: i64) -> (i64, bool
 /// What `git_date_offset_parse` does: its status, and what it writes to
 /// `*out` and `*out_offset`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ParseOutcome {
+pub(crate) struct ParseOutcome {
     /// The return value: 0, or -1 (with no error message, as the C).
     pub status: c_int,
     /// What is written to `*out` (also on approxidate's failure, as C).
@@ -1055,7 +1055,7 @@ pub struct ParseOutcome {
 }
 
 /// `git_date_offset_parse`, with the C's outputs.
-pub fn offset_parse_raw(clock: &impl Clock, date: &[u8]) -> ParseOutcome {
+pub(crate) fn offset_parse_raw(clock: &impl Clock, date: &[u8]) -> ParseOutcome {
     let date = Z(date);
     if let Some((t, o)) = parse_date_basic(clock, date) {
         return ParseOutcome {
@@ -1105,7 +1105,7 @@ pub fn parse(date: &[u8]) -> Result<i64> {
 /// `git_date_rfc2822_fmt` on `clock`: append e.g.
 /// `"Mon, 1 Jan 2024 10:00:00 +0100"` to `out`. Fails with -1 (no
 /// message) when `gmtime_r` does.
-pub fn rfc2822_fmt_with(
+pub(crate) fn rfc2822_fmt_with(
     clock: &impl Clock,
     out: &mut GitStr,
     time: i64,
@@ -1138,8 +1138,24 @@ pub fn rfc2822_fmt_with(
 }
 
 /// `git_date_rfc2822_fmt`.
-pub fn rfc2822_fmt(out: &mut GitStr, time: i64, offset: i32) -> Result<()> {
+pub(crate) fn rfc2822_fmt(out: &mut GitStr, time: i64, offset: i32) -> Result<()> {
     rfc2822_fmt_with(&SystemClock, out, time, offset)
+}
+
+/// The RFC 2822 form of `time` at `offset` minutes from UTC (as
+/// `git_date_rfc2822_fmt`), e.g. `"Wed, 9 Apr 2014 10:21:03 +0200"`, on
+/// `clock` (whose `gmtime` it uses). Fails with -1 (no message) when the
+/// time cannot be broken down.
+pub fn rfc2822_with(clock: &impl Clock, time: i64, offset: i32) -> Result<String> {
+    let mut s = GitStr::new();
+    rfc2822_fmt_with(clock, &mut s, time, offset)?;
+    // The format writes ASCII only.
+    Ok(String::from_utf8_lossy(s.as_bytes()).into_owned())
+}
+
+/// [`rfc2822_with`] on the C library's clock.
+pub fn rfc2822(time: i64, offset: i32) -> Result<String> {
+    rfc2822_with(&SystemClock, time, offset)
 }
 
 // ---------------------------------------------------------------------------
