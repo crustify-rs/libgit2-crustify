@@ -735,8 +735,12 @@ impl GitFilebuf {
     pub fn stats(&self) -> Result<(libc::time_t, usize)> {
         let st = if self.fd_is_open {
             posix::fstat(self.fd)
+        } else if let Some(p) = self.original_path() {
+            posix::stat(p)
         } else {
-            posix::stat(self.original_path().unwrap_or(c""))
+            // C passes the NULL path of a temporary file to `stat`.
+            errors::set_errno(libc::EFAULT);
+            Err(Errno(libc::EFAULT))
         };
         match st {
             Ok(st) => Ok((st.st_mtime, st.st_size as usize)),
