@@ -1021,23 +1021,31 @@ unsafe fn needs_filter(opts: &IdOptions) -> bool {
 /// `git_odb__format_object_header`: `"<type> <len>\0"`; the length
 /// written, the NUL included.
 pub fn format_object_header(out: &mut [u8; 64], len: u64, t: git_object_t) -> Result<usize> {
-    use std::io::Write as _;
-    let mut cur = std::io::Cursor::new(&mut out[..63]);
-    // `%s %"PRId64`, which must fit with its NUL in the 64 bytes.
-    if write!(
-        cur,
-        "{} {}",
-        type2string(t).to_str().unwrap_or(""),
-        len as i64
-    )
-    .is_err()
-    {
-        return Err(git_error_set!(
-            ErrorClass::OS,
-            "object header creation failed"
-        ));
+    // `%s %"PRId64` (at most 27 bytes with the NUL, so it always fits).
+    let name = type2string(t).to_bytes();
+    out[..name.len()].copy_from_slice(name);
+    let mut n = name.len();
+    out[n] = b' ';
+    n += 1;
+    let v = len as i64;
+    if v < 0 {
+        out[n] = b'-';
+        n += 1;
     }
-    let n = cur.position() as usize;
+    let mut digits = [0u8; 20];
+    let mut m = v.unsigned_abs();
+    let mut d = digits.len();
+    loop {
+        d -= 1;
+        digits[d] = b'0' + (m % 10) as u8;
+        m /= 10;
+        if m == 0 {
+            break;
+        }
+    }
+    let dl = digits.len() - d;
+    out[n..n + dl].copy_from_slice(&digits[d..]);
+    n += dl;
     out[n] = 0;
     Ok(n + 1)
 }
@@ -2251,6 +2259,13 @@ mod tests {
             8
         );
         assert_eq!(&h[..8], b"tree 12\0");
+        // `(int64_t)` of a huge length, and the longest header.
+        let n = format_object_header(&mut h, u64::MAX, GIT_OBJECT_BLOB).unwrap();
+        assert_eq!(&h[..n], b"blob -1\0");
+        let n = format_object_header(&mut h, 1 << 63, GIT_OBJECT_COMMIT).unwrap();
+        assert_eq!(&h[..n], b"commit -9223372036854775808\0");
+        let n = format_object_header(&mut h, 0, 0).unwrap();
+        assert_eq!(&h[..n], b" 0\0");
     }
 
     #[test]
