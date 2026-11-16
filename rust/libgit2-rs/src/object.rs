@@ -827,15 +827,21 @@ pub unsafe fn short_id(out: &mut GitStr, obj: NonNull<GitObject>) -> Result<()> 
     let mut id = Oid::from_raw_parts(oid_type as u8, [0; oid::GIT_OID_MAX_SIZE]);
     let hexsize = oid::oid_hexsize(oid_type);
     let mut len: c_int = 0;
+    // SAFETY: `repo` is NULL or a live repository (as the call below requires),
+    // only read through `&` (its state is interior-mutable).
+    let repo_ref = unsafe { repo.as_ref() };
     // SAFETY: a live repository, a writable out.
-    ErrorCode::check(unsafe { p::git_repository__abbrev_length(&raw mut len, repo) })?;
+    ErrorCode::check(unsafe { p::git_repository__abbrev_length(Out::from(&mut len), repo_ref) })?;
     if len as usize == hexsize {
         // `git_oid_cpy` copies the type too.
         id = o.cached.oid;
     }
     let mut odb = ptr::null_mut();
+    // SAFETY: `repo` is NULL or a live repository (this function's contract),
+    // only read through `&` (its state is interior-mutable).
+    let repo_ref = unsafe { repo.as_ref() };
     // SAFETY: as above; the odb comes with a reference.
-    ErrorCode::check(unsafe { p::git_repository_odb(&raw mut odb, repo) })?;
+    ErrorCode::check(unsafe { p::git_repository_odb(&raw mut odb, repo_ref) })?;
     let mut error = 0;
     while (len as usize) < hexsize {
         let l = len as usize;

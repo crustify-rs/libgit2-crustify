@@ -886,8 +886,11 @@ unsafe fn config_snapshot(
     repo: *mut crate::object::deps::git_repository,
 ) -> Result<ConfigSnapshot> {
     let mut cfg = ptr::null_mut();
+    // SAFETY: `repo` is NULL or a live repository (this function's contract),
+    // only read through `&` (its state is interior-mutable).
+    let repo_ref = unsafe { repo.as_ref() };
     // SAFETY: a live repository (the caller's contract); `cfg` is writable.
-    let r = unsafe { crate::object::deps::git_repository_config_snapshot(&raw mut cfg, repo) };
+    let r = unsafe { crate::object::deps::git_repository_config_snapshot(&raw mut cfg, repo_ref) };
     ErrorCode::check(r)?;
     Ok(ConfigSnapshot(cfg))
 }

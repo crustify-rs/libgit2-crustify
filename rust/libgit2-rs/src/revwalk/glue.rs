@@ -40,9 +40,14 @@ impl Repo {
 /// `git_repository_odb`.
 pub fn repository_odb(repo: Repo) -> Result<*mut p::git_odb> {
     let mut out = ptr::null_mut();
+    // SAFETY: `repo` is NULL or a live repository (this function's contract),
+    // only read through `&` (its state is interior-mutable).
+    let repo_ref = unsafe { repo.0.as_ref() };
     // SAFETY: `out` is writable; the repository is NULL (which C rejects
     // with an error) or live (the invariant).
-    ErrorCode::check(unsafe { crate::repository::ffi::git_repository_odb(&raw mut out, repo.0) })?;
+    ErrorCode::check(unsafe {
+        crate::repository::ffi::git_repository_odb(&raw mut out, repo_ref)
+    })?;
     Ok(out)
 }
 

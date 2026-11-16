@@ -1278,6 +1278,7 @@ pub mod ffi {
     //! The exports of `commit.c`.
     use crate::git_arg;
     use crate::util::cabi::CStrArg;
+    use crate::util::cabi::Out;
 
     use super::*;
     use crate::buf::GitBuf;
@@ -2606,11 +2607,15 @@ pub mod ffi {
         tree: *const crate::tree::GitTree,
         index: *mut pend::git_index,
     ) -> c_int {
-        let mut head_tree: *mut crate::tree::GitTree = ptr::null_mut();
-        // SAFETY: `repo` live; `head_tree` writable (a `git_tree *`).
+        let mut head_tree: *mut c_void = ptr::null_mut();
+        // SAFETY: `repo` is NULL or a live repository (as the call below
+        // requires), only read through `&` (its state is interior-mutable).
+        let repo_ref = unsafe { repo.as_ref() };
+        // SAFETY: a live repository; `head_tree` a local `git_tree *`.
         let error = unsafe {
-            crate::repository::ffi::git_repository_head_tree((&raw mut head_tree).cast(), repo)
+            crate::repository::ffi::git_repository_head_tree(Out::from(&mut head_tree), repo_ref)
         };
+        let head_tree = head_tree.cast::<crate::tree::GitTree>();
         let r = if error != 0 && error != ErrorCode::UNBORN_BRANCH.raw() {
             error
         } else {
@@ -2679,13 +2684,16 @@ pub mod ffi {
                     committer = default_signature;
                 }
             }
-            // SAFETY: `repo` live; writable out-parameter.
+            // SAFETY: `repo` is a live repository (contract), only read
+            // through `&` (its state is interior-mutable).
+            let repo_ref = unsafe { repo.as_ref() };
+            // SAFETY: a live repository; writable out-parameter.
             // (`l_commit::GitCommitArray` and the repository's are both
             // `git_commitarray`.)
             if unsafe {
                 crate::repository::ffi::git_repository_commit_parents(
                     (&raw mut parents).cast(),
-                    repo,
+                    repo_ref,
                 )
             } < 0
             {
@@ -2738,9 +2746,13 @@ pub mod ffi {
                 .unwrap_or(GitCommitCreateOptions::INIT);
             let mut index = ptr::null_mut();
             let mut tree = ptr::null_mut();
+            // SAFETY: `repo` is a live repository (contract), only read
+            // through `&` (its state is interior-mutable).
+            let repo_ref = unsafe { repo.as_ref() };
             let error = (|| {
-                // SAFETY: `repo` live; writable out-parameter.
-                if unsafe { crate::repository::ffi::git_repository_index(&raw mut index, repo) } < 0
+                // SAFETY: a live repository; writable out-parameter.
+                if unsafe { crate::repository::ffi::git_repository_index(&raw mut index, repo_ref) }
+                    < 0
                 {
                     return -1;
                 }
@@ -2824,9 +2836,12 @@ pub mod ffi {
             let mut index = ptr::null_mut();
             let mut tree = ptr::null_mut();
             let mut tree_id = Oid::default();
+            // SAFETY: `repo` is a live repository (contract), only read
+            // through `&` (its state is interior-mutable).
+            let repo_ref = unsafe { repo.as_ref() };
             // `repo` is live and the out-parameters writable (contract).
             // SAFETY: as above.
-            let error = if unsafe { crate::repository::ffi::git_repository_index(&raw mut index, repo) } < 0
+            let error = if unsafe { crate::repository::ffi::git_repository_index(&raw mut index, repo_ref) } < 0
                 // SAFETY: the index just looked up.
                 || unsafe { crate::index::ffi::git_index_write_tree(&raw mut tree_id, index) } < 0
                 // SAFETY: as above; `tree_id` set.
@@ -2872,9 +2887,15 @@ pub mod ffi {
             let mut head_commit: *mut GitCommit = ptr::null_mut();
             let mut new_committer = ptr::null_mut();
             let error = (|| {
+                // SAFETY: `repo` is NULL or a live repository (as the call below
+                // requires), only read through `&` (its state is interior-mutable).
+                let repo_ref = unsafe { repo.as_ref() };
                 // SAFETY: `repo` live; writable out-parameters.
                 let mut e = unsafe {
-                    crate::repository::ffi::git_repository_head((&raw mut head_ref).cast(), repo)
+                    crate::repository::ffi::git_repository_head(
+                        (&raw mut head_ref).cast(),
+                        repo_ref,
+                    )
                 };
                 if e >= 0 {
                     // SAFETY: the reference just looked up.

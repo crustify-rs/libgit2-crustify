@@ -340,9 +340,12 @@ pub unsafe fn create_from_paths(
         Some(c) => c,
         None => {
             let hp = CStrArg::from(hint_path);
+            // SAFETY: `repo` is NULL or a live repository (as the call below requires),
+            // only read through `&` (its state is interior-mutable).
+            let repo_ref = unsafe { repo.as_ref() };
             // SAFETY: a live repository, a valid `git_str`, NULL or a
             // NUL-terminated path.
-            if unsafe { p::git_repository_workdir_path(&raw mut path, repo, hp) } < 0 {
+            if unsafe { p::git_repository_workdir_path(&raw mut path, repo_ref, hp) } < 0 {
                 return Err(ErrorCode::GENERIC);
             }
             match path.as_c_str() {
@@ -353,8 +356,11 @@ pub unsafe fn create_from_paths(
     };
     let st = crate::util::fs_path::lstat(content_path)?;
     let mut odb = OdbRef(ptr::null_mut());
+    // SAFETY: `repo` is a live repository (this function's contract), only
+    // read through `&` (its state is interior-mutable).
+    let repo_ref = unsafe { repo.as_ref() };
     // SAFETY: a live repository; the reference is held by `odb`.
-    ErrorCode::check(unsafe { p::git_repository_odb(&raw mut odb.0, repo) })?;
+    ErrorCode::check(unsafe { p::git_repository_odb(&raw mut odb.0, repo_ref) })?;
     if posix::s_isdir(st.st_mode) {
         let _ = git_error_set!(
             ErrorClass::ODB,
@@ -533,9 +539,12 @@ pub unsafe fn create_from_stream(
         None => None,
     };
     let mut path = GitStr::new();
+    // SAFETY: `repo` is NULL or a live repository (as the call below requires),
+    // only read through `&` (its state is interior-mutable).
+    let repo_ref = unsafe { repo.as_ref() };
     // `GIT_REPOSITORY_ITEM_OBJECTS`.
     // SAFETY: a live repository, a valid `git_str`.
-    ErrorCode::check(unsafe { p::git_repository__item_path(Some(&mut path), repo, 4) })?;
+    ErrorCode::check(unsafe { p::git_repository__item_path(Some(&mut path), repo_ref, 4) })?;
     path.joinpath_self(b"streamed")?;
     let mut fbuf = Box::new(GitFilebuf::new());
     // SAFETY: the filebuf is boxed: it does not move until the stream's

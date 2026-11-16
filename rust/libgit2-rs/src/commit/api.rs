@@ -617,9 +617,12 @@ impl Repository {
             commits: ptr::null_mut(),
             count: 0,
         };
+        // SAFETY: `repo` is NULL or a live repository (this function's contract),
+        // only read through `&` (its state is interior-mutable).
+        let repo_ref = unsafe { self.raw_ptr().as_ref() };
         // SAFETY: a live repository; `arr` writable.
         check(unsafe {
-            crate::repository::ffi::git_repository_commit_parents(&raw mut arr, self.raw_ptr())
+            crate::repository::ffi::git_repository_commit_parents(&raw mut arr, repo_ref)
         })?;
         let mut out = Vec::with_capacity(arr.count);
         for i in 0..arr.count {

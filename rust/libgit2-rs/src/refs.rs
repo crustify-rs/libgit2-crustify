@@ -1235,11 +1235,14 @@ pub fn rename(
         old_name: r.name(),
         new_name: normalized.to_bytes(),
     };
+    // SAFETY: `repo.as_ptr()` is NULL or a live repository (as the call below
+    // requires), only read through `&` (its state is interior-mutable).
+    let repo_ref = unsafe { repo.as_ptr().as_ref() };
     // SAFETY: a live repository; the callback gets our payload, alive for
     // the call.
     let e = unsafe {
         crate::repository::ffi::git_repository_foreach_worktree(
-            repo.as_ptr(),
+            repo_ref,
             Some(refs_update_head),
             (&raw mut payload).cast(),
         )

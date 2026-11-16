@@ -15,6 +15,7 @@
 
 use crate::git_arg;
 use crate::util::cabi::CStrArg;
+use crate::util::cabi::Out;
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::ptr::{self, NonNull};
 
@@ -42,19 +43,6 @@ unsafe fn repo<'a>(p: *const GitRepository) -> Option<&'a GitRepository> {
     // SAFETY: the caller's contract; all fields are interior-mutable, so a
     // shared reference allows C's concurrent updates.
     unsafe { p.as_ref() }
-}
-
-/// Write `v` to `out` when `out` is not NULL.
-///
-/// # Safety
-///
-/// `out` is NULL or writable.
-#[inline]
-unsafe fn put<T>(out: *mut T, v: T) {
-    if !out.is_null() {
-        // SAFETY: the caller's contract.
-        unsafe { out.write(v) };
-    }
 }
 
 /// `GIT_BUF_WRAP_PRIVATE(out, f)`.
@@ -105,10 +93,9 @@ unsafe fn check_version(s: *const c_uint, max: c_uint, name: &str) -> Result<()>
 ///
 /// The module's contract.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_repository__cleanup(repo_: *mut GitRepository) -> c_int {
+pub unsafe extern "C" fn git_repository__cleanup(repo_: Option<&GitRepository>) -> c_int {
     barrier(|| {
-        // SAFETY: the module's contract.
-        let Some(r) = (unsafe { repo(repo_) }) else {
+        let Some(r) = repo_ else {
             return errors::assert_arg_failed("repo").raw();
         };
         // SAFETY: the module's contract (C's: nothing else uses the
@@ -230,7 +217,7 @@ pub unsafe extern "C" fn git_repository_new(out: *mut *mut GitRepository) -> c_i
 /// `repo_ptr` is writable; `bare_path` NULL (rejected) or a string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_open_bare(
-    repo_ptr: *mut *mut GitRepository,
+    mut repo_ptr: Out<'_, *mut GitRepository>,
     bare_path: CStrArg<'_>,
 ) -> c_int {
     barrier(|| {
@@ -239,8 +226,7 @@ pub unsafe extern "C" fn git_repository_open_bare(
         };
         match open::open_bare(p) {
             Ok(r) => {
-                // SAFETY: the caller's contract (C writes it unchecked).
-                unsafe { put(repo_ptr, r.as_ptr()) };
+                repo_ptr.write(r.as_ptr());
                 0
             }
             Err(e) => e.raw(),
@@ -255,21 +241,19 @@ pub unsafe extern "C" fn git_repository_open_bare(
 /// `repo_ptr` is NULL or writable; the strings NULL or NUL-terminated.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_open_ext(
-    repo_ptr: *mut *mut GitRepository,
+    mut repo_ptr: Out<'_, *mut GitRepository>,
     start_path: CStrArg<'_>,
     flags: c_uint,
     ceiling_dirs: CStrArg<'_>,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: NULL or writable.
-        unsafe { put(repo_ptr, ptr::null_mut()) };
+        repo_ptr.write(ptr::null_mut());
         let s = start_path.get();
         let c = ceiling_dirs.get();
         match open::open_ext(s, flags, c, !repo_ptr.is_null()) {
             Ok(r) => {
                 if let Some(r) = r {
-                    // SAFETY: non-null (checked by `open_ext`'s want).
-                    unsafe { put(repo_ptr, r.as_ptr()) };
+                    repo_ptr.write(r.as_ptr());
                 }
                 0
             }
@@ -285,7 +269,7 @@ pub unsafe extern "C" fn git_repository_open_ext(
 /// As [`git_repository_open_ext`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_open(
-    repo_out: *mut *mut GitRepository,
+    repo_out: Out<'_, *mut GitRepository>,
     path: CStrArg<'_>,
 ) -> c_int {
     // SAFETY: forwarded.
@@ -330,7 +314,7 @@ pub unsafe extern "C" fn git_repository_open_from_worktree(
 /// `out` writable; `odb` a live `git_odb`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_wrap_odb(
-    out: *mut *mut GitRepository,
+    mut out: Out<'_, *mut GitRepository>,
     odb: *mut GitOdb,
 ) -> c_int {
     barrier(|| {
@@ -342,8 +326,7 @@ pub unsafe extern "C" fn git_repository_wrap_odb(
         let o = unsafe { Odb::new_ref(o) };
         match open::wrap_odb(&o) {
             Ok(r) => {
-                // SAFETY: the caller's contract.
-                unsafe { put(out, r.as_ptr()) };
+                out.write(r.as_ptr());
                 0
             }
             Err(e) => e.raw(),
@@ -385,30 +368,26 @@ pub unsafe extern "C" fn git_repository_discover(
 /// The module's contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_config__weakptr(
-    out: *mut *mut GitConfig,
-    repo_: *mut GitRepository,
+    mut out: Out<'_, *mut GitConfig>,
+    repo_: Option<&GitRepository>,
 ) -> c_int {
     // The fast path: already created. Loads and a store only (nothing
     // can panic or allocate), so no barrier.
-    if !out.is_null() {
-        // SAFETY: the module's contract.
-        if let Some(r) = unsafe { repo(repo_) } {
-            let p = r.config_ptr();
-            if !p.is_null() {
-                // SAFETY: writable.
-                unsafe { out.write(p) };
-                return 0;
-            }
+    if !out.is_null()
+        && let Some(r) = repo_
+    {
+        let p = r.config_ptr();
+        if !p.is_null() {
+            out.write(p);
+            return 0;
         }
     }
     barrier(|| {
-        // SAFETY: the module's contract.
-        let Some(r) = (unsafe { repo(repo_) }) else {
+        let Some(r) = repo_ else {
             return errors::assert_arg_failed("repo").raw();
         };
         let e = r.config_weak().err();
-        // SAFETY: the caller's contract.
-        unsafe { put(out, r.config_ptr()) };
+        out.write(r.config_ptr());
         e.map_or(0, ErrorCode::raw)
     })
 }
@@ -420,12 +399,11 @@ pub unsafe extern "C" fn git_repository_config__weakptr(
 /// The module's contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_config(
-    out: *mut *mut GitConfig,
-    repo_: *mut GitRepository,
+    mut out: Out<'_, *mut GitConfig>,
+    repo_: Option<&GitRepository>,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: the module's contract.
-        let Some(r) = (unsafe { repo(repo_) }) else {
+        let Some(r) = repo_ else {
             return errors::assert_arg_failed("repo").raw();
         };
         match r.config_weak() {
@@ -433,13 +411,11 @@ pub unsafe extern "C" fn git_repository_config(
                 // SAFETY: the repository's live config: a new reference for
                 // the caller.
                 let owned = unsafe { Config::new_ref(NonNull::from(c)) };
-                // SAFETY: the caller's contract.
-                unsafe { put(out, owned.into_raw().as_ptr()) };
+                out.write(owned.into_raw().as_ptr());
                 0
             }
             Err(_) => {
-                // SAFETY: the caller's contract.
-                unsafe { put(out, r.config_ptr()) };
+                out.write(r.config_ptr());
                 -1
             }
         }
@@ -454,11 +430,10 @@ pub unsafe extern "C" fn git_repository_config(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_config_snapshot(
     out: *mut *mut GitConfig,
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: the module's contract.
-        let Some(r) = (unsafe { repo(repo_) }) else {
+        let Some(r) = repo_ else {
             return errors::assert_arg_failed("repo").raw();
         };
         let weak = match r.config_weak() {
@@ -487,12 +462,11 @@ pub unsafe extern "C" fn git_repository_config_snapshot(
 /// The module's contract; `config` a live `git_config`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_set_config(
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
     config: *mut GitConfig,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: the module's contract.
-        let Some(r) = (unsafe { repo(repo_) }) else {
+        let Some(r) = repo_ else {
             return errors::assert_arg_failed("repo").raw();
         };
         git_assert_arg!(!config.is_null(), "config", -1);
@@ -511,24 +485,22 @@ pub unsafe extern "C" fn git_repository_set_config(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_odb__weakptr(
     out: *mut *mut GitOdb,
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
 ) -> c_int {
     // The fast path: already created. Loads and a store only (nothing
     // can panic or allocate), so no barrier.
-    if !out.is_null() {
-        // SAFETY: the module's contract.
-        if let Some(r) = unsafe { repo(repo_) } {
-            let p = r.odb_ptr();
-            if !p.is_null() {
-                // SAFETY: writable.
-                unsafe { out.write(p) };
-                return 0;
-            }
+    if !out.is_null()
+        && let Some(r) = repo_
+    {
+        let p = r.odb_ptr();
+        if !p.is_null() {
+            // SAFETY: writable.
+            unsafe { out.write(p) };
+            return 0;
         }
     }
     barrier(|| {
-        // SAFETY: the module's contract.
-        let Some(r) = (unsafe { repo(repo_) }) else {
+        let Some(r) = repo_ else {
             return errors::assert_arg_failed("repo").raw();
         };
         git_assert_arg!(!out.is_null(), "out", -1);
@@ -555,7 +527,7 @@ pub unsafe extern "C" fn git_repository_odb__weakptr(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_odb(
     out: *mut *mut GitOdb,
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
 ) -> c_int {
     barrier(|| {
         // SAFETY: forwarded.
@@ -580,12 +552,11 @@ pub unsafe extern "C" fn git_repository_odb(
 /// The module's contract; `odb` a live `git_odb`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_set_odb(
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
     odb: *mut GitOdb,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: the module's contract.
-        let Some(r) = (unsafe { repo(repo_) }) else {
+        let Some(r) = repo_ else {
             return errors::assert_arg_failed("repo").raw();
         };
         git_assert_arg!(!odb.is_null(), "odb", -1);
@@ -604,25 +575,23 @@ pub unsafe extern "C" fn git_repository_set_odb(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_refdb__weakptr(
     out: *mut *mut GitRefdb,
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
 ) -> c_int {
     // The fast path: already created. Loads and a store only (nothing
     // can panic or allocate), so no barrier.
-    if !out.is_null() {
-        // SAFETY: the module's contract.
-        if let Some(r) = unsafe { repo(repo_) } {
-            let p = r.refdb_ptr();
-            if !p.is_null() {
-                // SAFETY: writable.
-                unsafe { out.write(p) };
-                return 0;
-            }
+    if !out.is_null()
+        && let Some(r) = repo_
+    {
+        let p = r.refdb_ptr();
+        if !p.is_null() {
+            // SAFETY: writable.
+            unsafe { out.write(p) };
+            return 0;
         }
     }
     barrier(|| {
         git_assert_arg!(!out.is_null(), "out", -1);
-        // SAFETY: the module's contract.
-        let Some(r) = (unsafe { repo(repo_) }) else {
+        let Some(r) = repo_ else {
             return errors::assert_arg_failed("repo").raw();
         };
         let e = r.refdb_weak().err();
@@ -640,7 +609,7 @@ pub unsafe extern "C" fn git_repository_refdb__weakptr(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_refdb(
     out: *mut *mut GitRefdb,
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
 ) -> c_int {
     barrier(|| {
         // SAFETY: forwarded.
@@ -668,12 +637,11 @@ pub unsafe extern "C" fn git_repository_refdb(
 /// The module's contract; `refdb` a live `git_refdb`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_set_refdb(
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
     refdb: *mut GitRefdb,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: the module's contract.
-        let Some(r) = (unsafe { repo(repo_) }) else {
+        let Some(r) = repo_ else {
             return errors::assert_arg_failed("repo").raw();
         };
         git_assert_arg!(!refdb.is_null(), "refdb", -1);
@@ -692,25 +660,23 @@ pub unsafe extern "C" fn git_repository_set_refdb(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_index__weakptr(
     out: *mut *mut GitIndex,
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
 ) -> c_int {
     // The fast path: already created. Loads and a store only (nothing
     // can panic or allocate), so no barrier.
-    if !out.is_null() {
-        // SAFETY: the module's contract.
-        if let Some(r) = unsafe { repo(repo_) } {
-            let p = r.index_ptr();
-            if !p.is_null() {
-                // SAFETY: writable.
-                unsafe { out.write(p) };
-                return 0;
-            }
+    if !out.is_null()
+        && let Some(r) = repo_
+    {
+        let p = r.index_ptr();
+        if !p.is_null() {
+            // SAFETY: writable.
+            unsafe { out.write(p) };
+            return 0;
         }
     }
     barrier(|| {
         git_assert_arg!(!out.is_null(), "out", -1);
-        // SAFETY: the module's contract.
-        let Some(r) = (unsafe { repo(repo_) }) else {
+        let Some(r) = repo_ else {
             return errors::assert_arg_failed("repo").raw();
         };
         let e = r.index_weak().err();
@@ -728,7 +694,7 @@ pub unsafe extern "C" fn git_repository_index__weakptr(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_index(
     out: *mut *mut GitIndex,
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
 ) -> c_int {
     barrier(|| {
         // SAFETY: forwarded.
@@ -756,12 +722,11 @@ pub unsafe extern "C" fn git_repository_index(
 /// The module's contract; `index` NULL or a live `git_index`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_set_index(
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
     index: *mut GitIndex,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: the module's contract.
-        let Some(r) = (unsafe { repo(repo_) }) else {
+        let Some(r) = repo_ else {
             return errors::assert_arg_failed("repo").raw();
         };
         // SAFETY: the module's contract: `index` is NULL or a live object of
@@ -779,11 +744,10 @@ pub unsafe extern "C" fn git_repository_set_index(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_grafts__weakptr(
     out: *mut *mut crate::grafts::Grafts,
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: the module's contract.
-        let r = unsafe { repo(repo_) };
+        let r = repo_;
         git_assert_arg!(!out.is_null() && r.is_some(), "out && repo", -1);
         let Some(r) = r else { return -1 };
         let g = r.grafts_ptr();
@@ -802,11 +766,10 @@ pub unsafe extern "C" fn git_repository_grafts__weakptr(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_shallow_grafts__weakptr(
     out: *mut *mut crate::grafts::Grafts,
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: the module's contract.
-        let r = unsafe { repo(repo_) };
+        let r = repo_;
         git_assert_arg!(!out.is_null() && r.is_some(), "out && repo", -1);
         let Some(r) = r else { return -1 };
         let g = r.shallow_grafts_ptr();
@@ -824,12 +787,11 @@ pub unsafe extern "C" fn git_repository_shallow_grafts__weakptr(
 /// The module's contract (a string-replacing setter).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_set_namespace(
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
     namespace: CStrArg<'_>,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: the module's contract.
-        let Some(r) = (unsafe { repo(repo_) }) else {
+        let Some(r) = repo_ else {
             return errors::assert_arg_failed("repo").raw();
         };
         let n = namespace.get();
@@ -857,15 +819,14 @@ pub unsafe extern "C" fn git_repository_set_namespace(
 ///
 /// The module's contract.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_repository_get_namespace(repo_: *mut GitRepository) -> *const c_char {
-    barrier(|| {
-        // SAFETY: the module's contract.
-        match unsafe { repo(repo_) } {
-            Some(r) => r.string_ptr(StrField::Namespace),
-            None => {
-                let _ = errors::assert_arg_failed("repo");
-                ptr::null()
-            }
+pub unsafe extern "C" fn git_repository_get_namespace(
+    repo_: Option<&GitRepository>,
+) -> *const c_char {
+    barrier(|| match repo_ {
+        Some(r) => r.string_ptr(StrField::Namespace),
+        None => {
+            let _ = errors::assert_arg_failed("repo");
+            ptr::null()
         }
     })
 }
@@ -877,8 +838,8 @@ pub unsafe extern "C" fn git_repository_get_namespace(repo_: *mut GitRepository)
 /// `out` and `outlen` are writable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository__reserved_names(
-    out: *mut *const StaticStr,
-    outlen: *mut usize,
+    mut out: Out<'_, *const StaticStr>,
+    mut outlen: Out<'_, usize>,
     _repo: *mut GitRepository,
     include_ntfs: bool,
 ) -> bool {
@@ -894,10 +855,8 @@ pub unsafe extern "C" fn git_repository__reserved_names(
                 git_repository__reserved_names_posix.len(),
             )
         };
-        // SAFETY: the caller's contract.
-        unsafe { put(out, p) };
-        // SAFETY: the caller's contract.
-        unsafe { put(outlen, n) };
+        out.write(p);
+        outlen.write(n);
         true
     })
 }
@@ -940,10 +899,10 @@ pub unsafe extern "C" fn git_repository__extensions(
             // SAFETY: as above.
             unsafe { slot.write(s) };
         }
-        // SAFETY: the caller's contract.
-        unsafe { put(out, arr) };
-        // SAFETY: the caller's contract.
-        unsafe { put(out_len, exts.len()) };
+        // SAFETY: writable (the contract).
+        unsafe { out.write(arr) };
+        // SAFETY: writable (the contract).
+        unsafe { out_len.write(exts.len()) };
         0
     })
 }
@@ -1139,12 +1098,11 @@ pub unsafe extern "C" fn git_repository_init(
 /// The module's contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_reinit_filesystem(
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
     recurse: c_int,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: the module's contract.
-        let Some(r) = (unsafe { repo(repo_) }) else {
+        let Some(r) = repo_ else {
             return errors::assert_arg_failed("repo").raw();
         };
         status(init::reinit_filesystem(r, recurse != 0))
@@ -1158,8 +1116,8 @@ fn call<R>(r: &GitRepository, f: impl FnOnce(&GitRepository) -> R) -> R {
 
 macro_rules! with_repo {
     ($p:expr, $name:literal, $f:expr) => {{
-        // SAFETY: the module's contract.
-        match unsafe { repo($p) } {
+        let p: Option<&GitRepository> = $p;
+        match p {
             Some(r) => call(r, $f),
             None => errors::assert_arg_failed($name).raw(),
         }
@@ -1172,7 +1130,7 @@ macro_rules! with_repo {
 ///
 /// The module's contract.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_repository_head_detached(repo_: *mut GitRepository) -> c_int {
+pub unsafe extern "C" fn git_repository_head_detached(repo_: Option<&GitRepository>) -> c_int {
     barrier(|| with_repo!(repo_, "repo", head::head_detached))
 }
 
@@ -1183,7 +1141,7 @@ pub unsafe extern "C" fn git_repository_head_detached(repo_: *mut GitRepository)
 /// The module's contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_head_detached_for_worktree(
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
     name: *const c_char,
 ) -> c_int {
     barrier(|| {
@@ -1208,7 +1166,7 @@ pub unsafe extern "C" fn git_repository_head_detached_for_worktree(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_head(
     head_out: *mut *mut c_void,
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
 ) -> c_int {
     barrier(|| {
         git_assert_arg!(!head_out.is_null(), "head_out", -1);
@@ -1231,7 +1189,7 @@ pub unsafe extern "C" fn git_repository_head(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_head_for_worktree(
     out: *mut *mut c_void,
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
     name: *const c_char,
 ) -> c_int {
     barrier(|| {
@@ -1266,7 +1224,7 @@ pub type ForeachWorktreeCb =
 /// The module's contract; `cb` is sound to call with `payload`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_foreach_worktree(
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
     cb: Option<ForeachWorktreeCb>,
     payload: *mut c_void,
 ) -> c_int {
@@ -1290,7 +1248,7 @@ pub unsafe extern "C" fn git_repository_foreach_worktree(
 ///
 /// The module's contract.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_repository_head_unborn(repo_: *mut GitRepository) -> c_int {
+pub unsafe extern "C" fn git_repository_head_unborn(repo_: Option<&GitRepository>) -> c_int {
     barrier(|| with_repo!(repo_, "repo", head::head_unborn))
 }
 
@@ -1302,7 +1260,7 @@ pub unsafe extern "C" fn git_repository_head_unborn(repo_: *mut GitRepository) -
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_initialbranch(
     out: Option<&mut GitStr>,
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
 ) -> c_int {
     barrier(|| {
         let out = git_arg!(out, "out", -1);
@@ -1317,7 +1275,7 @@ pub unsafe extern "C" fn git_repository_initialbranch(
 ///
 /// The module's contract.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_repository_is_empty(repo_: *mut GitRepository) -> c_int {
+pub unsafe extern "C" fn git_repository_is_empty(repo_: Option<&GitRepository>) -> c_int {
     barrier(|| with_repo!(repo_, "repo", head::is_empty))
 }
 
@@ -1329,7 +1287,7 @@ pub unsafe extern "C" fn git_repository_is_empty(repo_: *mut GitRepository) -> c
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_item_path(
     out: *mut GitBuf,
-    repo_: *const GitRepository,
+    repo_: Option<&GitRepository>,
     item: ItemT,
 ) -> c_int {
     barrier(|| {
@@ -1349,7 +1307,7 @@ pub unsafe extern "C" fn git_repository_item_path(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository__item_path(
     out: Option<&mut GitStr>,
-    repo_: *const GitRepository,
+    repo_: Option<&GitRepository>,
     item: ItemT,
 ) -> c_int {
     barrier(|| {
@@ -1411,7 +1369,7 @@ string_getter!(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_workdir_path(
     out: *mut GitStr,
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
     path: CStrArg<'_>,
 ) -> c_int {
     barrier(|| {
@@ -1442,7 +1400,7 @@ pub unsafe extern "C" fn git_repository_workdir_path(
 /// The module's contract (a string-replacing setter).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_set_workdir(
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
     workdir: *const c_char,
     update_gitlink: c_int,
 ) -> c_int {
@@ -1465,9 +1423,8 @@ pub unsafe extern "C" fn git_repository_set_workdir(
 ///
 /// The module's contract.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_repository_is_bare(repo_: *const GitRepository) -> c_int {
-    // SAFETY: the module's contract.
-    if let Some(r) = unsafe { repo(repo_) } {
+pub unsafe extern "C" fn git_repository_is_bare(repo_: Option<&GitRepository>) -> c_int {
+    if let Some(r) = repo_ {
         // A load only: nothing can panic, so no barrier.
         return c_int::from(r.is_bare());
     }
@@ -1480,9 +1437,8 @@ pub unsafe extern "C" fn git_repository_is_bare(repo_: *const GitRepository) -> 
 ///
 /// The module's contract.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_repository_is_worktree(repo_: *const GitRepository) -> c_int {
-    // SAFETY: the module's contract.
-    if let Some(r) = unsafe { repo(repo_) } {
+pub unsafe extern "C" fn git_repository_is_worktree(repo_: Option<&GitRepository>) -> c_int {
+    if let Some(r) = repo_ {
         // A load only: nothing can panic, so no barrier.
         return c_int::from(r.is_worktree());
     }
@@ -1495,7 +1451,7 @@ pub unsafe extern "C" fn git_repository_is_worktree(repo_: *const GitRepository)
 ///
 /// The module's contract (a string-replacing setter).
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_repository_set_bare(repo_: *mut GitRepository) -> c_int {
+pub unsafe extern "C" fn git_repository_set_bare(repo_: Option<&GitRepository>) -> c_int {
     barrier(|| {
         with_repo!(repo_, "repo", |r| {
             // SAFETY: the module's contract (a string-replacing setter).
@@ -1511,8 +1467,8 @@ pub unsafe extern "C" fn git_repository_set_bare(repo_: *mut GitRepository) -> c
 /// The module's contract; `commit` writable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_head_commit(
-    commit: *mut *mut c_void,
-    repo_: *mut GitRepository,
+    mut commit: Out<'_, *mut c_void>,
+    repo_: Option<&GitRepository>,
 ) -> c_int {
     barrier(|| {
         with_repo!(
@@ -1520,8 +1476,7 @@ pub unsafe extern "C" fn git_repository_head_commit(
             "repo",
             |r| match head::head_peeled(r, head::PEEL_COMMIT) {
                 Ok(o) => {
-                    // SAFETY: the caller's contract.
-                    unsafe { put(commit, o.into_raw().cast()) };
+                    commit.write(o.into_raw().cast());
                     0
                 }
                 Err(e) => e.raw(),
@@ -1537,8 +1492,8 @@ pub unsafe extern "C" fn git_repository_head_commit(
 /// The module's contract; `tree` writable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_head_tree(
-    tree: *mut *mut c_void,
-    repo_: *mut GitRepository,
+    mut tree: Out<'_, *mut c_void>,
+    repo_: Option<&GitRepository>,
 ) -> c_int {
     barrier(|| {
         with_repo!(
@@ -1546,8 +1501,7 @@ pub unsafe extern "C" fn git_repository_head_tree(
             "repo",
             |r| match head::head_peeled(r, head::PEEL_TREE) {
                 Ok(o) => {
-                    // SAFETY: the caller's contract.
-                    unsafe { put(tree, o.into_raw().cast()) };
+                    tree.write(o.into_raw().cast());
                     0
                 }
                 Err(e) => e.raw(),
@@ -1563,7 +1517,7 @@ pub unsafe extern "C" fn git_repository_head_tree(
 /// The module's contract; `orig_head` a valid id.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository__set_orig_head(
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
     orig_head: *const Oid,
 ) -> c_int {
     barrier(|| {
@@ -1585,7 +1539,7 @@ pub unsafe extern "C" fn git_repository__set_orig_head(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_message(
     out: *mut GitBuf,
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
 ) -> c_int {
     barrier(|| {
         with_repo!(repo_, "repo", |r| {
@@ -1601,7 +1555,7 @@ pub unsafe extern "C" fn git_repository_message(
 ///
 /// The module's contract.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_repository_message_remove(repo_: *mut GitRepository) -> c_int {
+pub unsafe extern "C" fn git_repository_message_remove(repo_: Option<&GitRepository>) -> c_int {
     barrier(|| with_repo!(repo_, "repo", head::message_remove))
 }
 
@@ -1613,14 +1567,13 @@ pub unsafe extern "C" fn git_repository_message_remove(repo_: *mut GitRepository
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_hashfile(
     out: *mut Oid,
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
     path: *const c_char,
     object_type: c_int,
     as_path: CStrArg<'_>,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: the module's contract.
-        let r = unsafe { repo(repo_) };
+        let r = repo_;
         if r.is_none() {
             // `git_repository_workdir(repo)` runs first and asserts too.
             let _ = errors::assert_arg_failed("repo");
@@ -1653,7 +1606,7 @@ pub unsafe extern "C" fn git_repository_hashfile(
 /// The module's contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_set_head(
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
     refname: *const c_char,
 ) -> c_int {
     barrier(|| {
@@ -1674,7 +1627,7 @@ pub unsafe extern "C" fn git_repository_set_head(
 /// The module's contract; `committish` NULL or a valid id.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_set_head_detached(
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
     committish: *const Oid,
 ) -> c_int {
     barrier(|| {
@@ -1693,7 +1646,7 @@ pub unsafe extern "C" fn git_repository_set_head_detached(
 /// The module's contract; `committish` NULL or a live annotated commit.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_set_head_detached_from_annotated(
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
     committish: *const c_void,
 ) -> c_int {
     barrier(|| {
@@ -1713,7 +1666,7 @@ pub unsafe extern "C" fn git_repository_set_head_detached_from_annotated(
 ///
 /// The module's contract.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_repository_detach_head(repo_: *mut GitRepository) -> c_int {
+pub unsafe extern "C" fn git_repository_detach_head(repo_: Option<&GitRepository>) -> c_int {
     barrier(|| with_repo!(repo_, "repo", |r| status(head::detach_head(r))))
 }
 
@@ -1723,7 +1676,7 @@ pub unsafe extern "C" fn git_repository_detach_head(repo_: *mut GitRepository) -
 ///
 /// The module's contract.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_repository_state(repo_: *mut GitRepository) -> c_int {
+pub unsafe extern "C" fn git_repository_state(repo_: Option<&GitRepository>) -> c_int {
     barrier(|| with_repo!(repo_, "repo", |r| head::repo_state(r).unwrap_or(-1)))
 }
 
@@ -1734,7 +1687,7 @@ pub unsafe extern "C" fn git_repository_state(repo_: *mut GitRepository) -> c_in
 /// The module's contract; `files` points to `files_len` strings.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository__cleanup_files(
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
     files: *const *const c_char,
     files_len: usize,
 ) -> c_int {
@@ -1762,7 +1715,7 @@ pub unsafe extern "C" fn git_repository__cleanup_files(
 ///
 /// The module's contract.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_repository_state_cleanup(repo_: *mut GitRepository) -> c_int {
+pub unsafe extern "C" fn git_repository_state_cleanup(repo_: Option<&GitRepository>) -> c_int {
     barrier(|| with_repo!(repo_, "repo", |r| status(head::state_cleanup(r))))
 }
 
@@ -1773,17 +1726,15 @@ pub unsafe extern "C" fn git_repository_state_cleanup(repo_: *mut GitRepository)
 /// The module's contract; `out` and `out_len` writable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository__shallow_roots(
-    out: *mut *mut Oid,
-    out_len: *mut usize,
-    repo_: *mut GitRepository,
+    mut out: Out<'_, *mut Oid>,
+    mut out_len: Out<'_, usize>,
+    repo_: Option<&GitRepository>,
 ) -> c_int {
     barrier(|| {
         with_repo!(repo_, "repo", |r| match head::shallow_roots(r) {
             Ok((p, n)) => {
-                // SAFETY: the caller's contract.
-                unsafe { put(out, p) };
-                // SAFETY: the caller's contract.
-                unsafe { put(out_len, n) };
+                out.write(p);
+                out_len.write(n);
                 0
             }
             Err(e) => e.raw(),
@@ -1798,7 +1749,7 @@ pub unsafe extern "C" fn git_repository__shallow_roots(
 /// The module's contract; `roots` a valid `git_oidarray`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository__shallow_roots_write(
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
     roots: *const GitOidArray,
 ) -> c_int {
     barrier(|| {
@@ -1824,7 +1775,7 @@ pub unsafe extern "C" fn git_repository__shallow_roots_write(
 ///
 /// The module's contract.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_repository_is_shallow(repo_: *mut GitRepository) -> c_int {
+pub unsafe extern "C" fn git_repository_is_shallow(repo_: Option<&GitRepository>) -> c_int {
     barrier(|| {
         with_repo!(repo_, "repo", |r| match head::is_shallow(r) {
             Ok(b) => c_int::from(b),
@@ -1840,16 +1791,14 @@ pub unsafe extern "C" fn git_repository_is_shallow(repo_: *mut GitRepository) ->
 /// The module's contract; `name` and `email` writable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_ident(
-    name: *mut *const c_char,
-    email: *mut *const c_char,
-    repo_: *const GitRepository,
+    mut name: Out<'_, *const c_char>,
+    mut email: Out<'_, *const c_char>,
+    repo_: Option<&GitRepository>,
 ) -> c_int {
     barrier(|| {
         with_repo!(repo_, "repo", |r: &GitRepository| {
-            // SAFETY: the caller's contract.
-            unsafe { put(name, r.ident_name().map_or(ptr::null(), CStr::as_ptr)) };
-            // SAFETY: the caller's contract.
-            unsafe { put(email, r.ident_email().map_or(ptr::null(), CStr::as_ptr)) };
+            name.write(r.ident_name().map_or(ptr::null(), CStr::as_ptr));
+            email.write(r.ident_email().map_or(ptr::null(), CStr::as_ptr));
             0
         })
     })
@@ -1862,7 +1811,7 @@ pub unsafe extern "C" fn git_repository_ident(
 /// The module's contract; strings NULL or NUL-terminated.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_set_ident(
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
     name: CStrArg<'_>,
     email: CStrArg<'_>,
 ) -> c_int {
@@ -1881,7 +1830,9 @@ pub unsafe extern "C" fn git_repository_set_ident(
 ///
 /// The module's contract.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_repository_submodule_cache_all(repo_: *mut GitRepository) -> c_int {
+pub unsafe extern "C" fn git_repository_submodule_cache_all(
+    repo_: Option<&GitRepository>,
+) -> c_int {
     barrier(|| with_repo!(repo_, "repo", crate::sys::submodule::cache_init))
 }
 
@@ -1891,7 +1842,9 @@ pub unsafe extern "C" fn git_repository_submodule_cache_all(repo_: *mut GitRepos
 ///
 /// The module's contract.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_repository_submodule_cache_clear(repo_: *mut GitRepository) -> c_int {
+pub unsafe extern "C" fn git_repository_submodule_cache_clear(
+    repo_: Option<&GitRepository>,
+) -> c_int {
     barrier(|| with_repo!(repo_, "repo", GitRepository::submodule_cache_clear))
 }
 
@@ -1902,12 +1855,9 @@ pub unsafe extern "C" fn git_repository_submodule_cache_clear(repo_: *mut GitRep
 /// The module's contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_oid_type(
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
 ) -> crate::oid::git_oid_t {
-    barrier(|| {
-        // SAFETY: the module's contract.
-        unsafe { repo(repo_) }.map_or(0, GitRepository::oid_type_raw)
-    })
+    barrier(|| repo_.map_or(0, GitRepository::oid_type_raw))
 }
 
 /// `git_commitarray` (`include/git2/commit.h`).
@@ -1927,11 +1877,10 @@ pub struct GitCommitArray {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository_commit_parents(
     out: *mut GitCommitArray,
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: the module's contract.
-        let r = unsafe { repo(repo_) };
+        let r = repo_;
         git_assert_arg!(!out.is_null() && r.is_some(), "out && repo", -1);
         let Some(r) = r else { return -1 };
         // SAFETY: writable.
@@ -1970,14 +1919,13 @@ pub unsafe extern "C" fn git_repository_commit_parents(
 /// The module's contract; `out` writable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository__abbrev_length(
-    out: *mut c_int,
-    repo_: *mut GitRepository,
+    mut out: Out<'_, c_int>,
+    repo_: Option<&GitRepository>,
 ) -> c_int {
     barrier(|| {
         with_repo!(repo_, "repo", |r| match head::abbrev_length(r) {
             Ok(n) => {
-                // SAFETY: the caller's contract.
-                unsafe { put(out, n) };
+                out.write(n);
                 0
             }
             Err(e) => e.raw(),
@@ -1992,7 +1940,7 @@ pub unsafe extern "C" fn git_repository__abbrev_length(
 /// The module's contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository__set_objectformat(
-    repo_: *mut GitRepository,
+    repo_: Option<&GitRepository>,
     oid_type: crate::oid::git_oid_t,
 ) -> c_int {
     barrier(|| {
