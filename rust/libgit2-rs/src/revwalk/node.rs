@@ -80,7 +80,7 @@ pub const COMMIT_ALLOC: usize =
 /// node; the type is private to the walk.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(transparent)]
-pub struct NodePtr(NonNull<CommitListNode>);
+pub(crate) struct NodePtr(NonNull<CommitListNode>);
 
 impl NodePtr {
     /// The node at `p`.
@@ -288,7 +288,7 @@ pub struct CommitList {
 }
 
 /// `git_commit_list_insert`: a new cell holding `item` in front of `*at`.
-pub fn list_insert(item: NodePtr, at: &mut *mut CommitList) -> Result<()> {
+pub(crate) fn list_insert(item: NodePtr, at: &mut *mut CommitList) -> Result<()> {
     let cell = alloc::malloc(size_of::<CommitList>()).cast::<CommitList>();
     if cell.is_null() {
         return Err(errors::oom());
@@ -312,7 +312,7 @@ pub fn list_insert(item: NodePtr, at: &mut *mut CommitList) -> Result<()> {
 ///
 /// `*head` is a well-formed list (NULL-terminated, of live cells holding
 /// [`NodePtr`]-valid nodes) that nothing else reaches during the call.
-pub unsafe fn list_insert_by_date(item: NodePtr, head: &mut *mut CommitList) -> Result<()> {
+pub(crate) unsafe fn list_insert_by_date(item: NodePtr, head: &mut *mut CommitList) -> Result<()> {
     let time = item.time();
     let mut pp: *mut *mut CommitList = head;
     loop {
@@ -342,7 +342,7 @@ pub unsafe fn list_insert_by_date(item: NodePtr, head: &mut *mut CommitList) -> 
 /// # Safety
 ///
 /// `*head` is a well-formed list whose cells nothing else uses after.
-pub unsafe fn list_free(head: &mut *mut CommitList) {
+pub(crate) unsafe fn list_free(head: &mut *mut CommitList) {
     let mut p = core::mem::replace(head, ptr::null_mut());
     while !p.is_null() {
         // SAFETY: a live cell, read before it is freed.
@@ -359,7 +359,7 @@ pub unsafe fn list_free(head: &mut *mut CommitList) {
 ///
 /// `head` is a well-formed list that stays unchanged while the iterator
 /// is used, whose items are [`NodePtr`]-valid nodes.
-pub unsafe fn list_items(head: *const CommitList) -> impl Iterator<Item = NodePtr> {
+pub(crate) unsafe fn list_items(head: *const CommitList) -> impl Iterator<Item = NodePtr> {
     let mut p = head;
     core::iter::from_fn(move || {
         if p.is_null() {

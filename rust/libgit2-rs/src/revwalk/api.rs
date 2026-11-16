@@ -247,7 +247,7 @@ impl<'repo> Revwalk<'repo> {
             uninteresting,
             ..PushOptions::default()
         };
-        self.with(|w, st| w.push_ref(st, c.as_ptr(), &opts))?;
+        self.with(|w, st| w.push_ref(st, &c, &opts))?;
         Ok(self)
     }
 
@@ -297,7 +297,7 @@ impl<'repo> Revwalk<'repo> {
     /// `ErrorCode::INVALID_SPEC` error, as in C).
     pub fn push_range(&mut self, range: &str) -> Result<&mut Self> {
         let c = cstring(range.as_bytes())?;
-        self.with(|w, st| w.push_range(st, c.as_ptr()))?;
+        self.with(|w, st| w.push_range(st, &c))?;
         Ok(self)
     }
 

@@ -118,11 +118,10 @@ pub fn object_lookup(repo: Repo, id: &Oid, kind: c_int) -> Result<Object> {
 }
 
 /// `git_reference_name_to_id`.
-pub fn reference_name_to_id(repo: Repo, name: *const c_char) -> Result<Oid> {
+pub fn reference_name_to_id(repo: Repo, name: &CStr) -> Result<Oid> {
     let mut out = Oid::NONE;
-    // SAFETY: `out` writable; `repo` NULL or live; `name` is NULL (which C
-    // rejects) or a string (the export's contract).
-    ErrorCode::check(unsafe { p::git_reference_name_to_id(&raw mut out, repo.0, name) })?;
+    // SAFETY: `out` writable; `repo` NULL or live; `name` a string.
+    ErrorCode::check(unsafe { p::git_reference_name_to_id(&raw mut out, repo.0, name.as_ptr()) })?;
     Ok(out)
 }
 
@@ -138,10 +137,13 @@ impl Drop for Reference {
 }
 
 impl Reference {
-    /// `git_reference_name`, as C's pointer (valid while `self` lives).
-    pub fn name_ptr(&self) -> *const c_char {
+    /// `git_reference_name`.
+    pub fn name(&self) -> &CStr {
         // SAFETY: a live reference.
-        unsafe { p::git_reference_name(self.0.as_ptr()) }
+        let p = unsafe { p::git_reference_name(self.0.as_ptr()) };
+        // SAFETY: a reference's name is a string that lives, unchanged, as
+        // long as the reference (borrowed from `self`).
+        unsafe { CStr::from_ptr(p) }
     }
 }
 
@@ -188,15 +190,14 @@ pub struct Revspec {
 }
 
 /// `git_revparse`. Any non-zero status is an error (as the walk tests it).
-pub fn revparse(repo: Repo, spec: *const c_char) -> Result<Revspec> {
+pub fn revparse(repo: Repo, spec: &CStr) -> Result<Revspec> {
     let mut out = rp::git_revspec {
         from: ptr::null_mut(),
         to: ptr::null_mut(),
         flags: 0,
     };
-    // SAFETY: `out` writable; `repo` NULL or live; `spec` NULL (which C
-    // rejects) or a string (the export's contract).
-    let e = unsafe { rp::git_revparse(&raw mut out, repo.0, spec) };
+    // SAFETY: `out` writable; `repo` NULL or live; `spec` a string.
+    let e = unsafe { rp::git_revparse(&raw mut out, repo.0, spec.as_ptr()) };
     // SAFETY: what C stored in `out` is ours (NULL on failure).
     let from = unsafe { Object::from_raw(out.from) };
     // SAFETY: as above.

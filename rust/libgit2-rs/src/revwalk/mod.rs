@@ -52,7 +52,8 @@ use crate::util::str::GitStr;
 use crate::{git_assert_arg, git_error_set};
 
 use glue::{Pathspec, Repo};
-pub use node::{COMMIT_ALLOC, CommitList, CommitListNode, NodePtr};
+pub(crate) use node::NodePtr;
+pub use node::{COMMIT_ALLOC, CommitList, CommitListNode};
 
 /// `GIT_SORT_NONE`.
 pub const GIT_SORT_NONE: c_uint = 0;
@@ -73,7 +74,7 @@ pub type HideCb =
 
 /// `git_revwalk_oidmap`: `GIT_HASHMAP_OID_STRUCT(git_revwalk_oidmap,
 /// git_commit_list_node *)`, keyed by the nodes' own `oid`.
-pub type CommitMap = GitHashMap<OidPtr, NodePtr>;
+pub(crate) type CommitMap = GitHashMap<OidPtr, NodePtr>;
 
 /// `git_revwalk__push_options` (mirrored: C fills it on its stack).
 #[repr(C)]
@@ -96,7 +97,7 @@ pub struct RevwalkPrefix {
     /// `odb`: set at creation, read by C.
     pub odb: *mut git_odb,
     /// `commits`: every node of the walk, by id (only the Rust touches it).
-    pub commits: UnsafeCell<CommitMap>,
+    pub(crate) commits: UnsafeCell<CommitMap>,
     /// `commit_pool`: the nodes and their parent arrays; C allocates from
     /// it (`git_commit_list_alloc_node`, `alloc_parents`).
     pub commit_pool: UnsafeCell<GitPool>,
@@ -334,7 +335,7 @@ impl GitRevwalk {
 
     /// `git_revwalk__commit_lookup`: the node of `oid`, made if new; `None`
     /// (with the error set) if out of memory.
-    pub fn commit_lookup(&self, oid: &Oid) -> Option<NodePtr> {
+    pub(crate) fn commit_lookup(&self, oid: &Oid) -> Option<NodePtr> {
         // SAFETY: no other reference to the map lives: they are made only
         // here and in `reset`, for the extent of a call that does not reach
         // C or the user.
@@ -441,12 +442,7 @@ impl GitRevwalk {
     }
 
     /// `git_revwalk__push_ref`.
-    fn push_ref(
-        &self,
-        st: &mut State,
-        refname: *const core::ffi::c_char,
-        opts: &PushOptions,
-    ) -> Result<()> {
+    fn push_ref(&self, st: &mut State, refname: &CStr, opts: &PushOptions) -> Result<()> {
         match glue::reference_name_to_id(self.repo(), refname) {
             Err(e)
                 if opts.from_glob != 0
@@ -493,7 +489,7 @@ impl GitRevwalk {
         let r = loop {
             match iter.next() {
                 Ok(r) => {
-                    let e = self.push_ref(st, r.name_ptr(), &opts);
+                    let e = self.push_ref(st, r.name(), &opts);
                     drop(r);
                     if let Err(e) = e {
                         break Err(e);
@@ -508,7 +504,7 @@ impl GitRevwalk {
     }
 
     /// `git_revwalk_push_range`.
-    fn push_range(&self, st: &mut State, range: *const core::ffi::c_char) -> Result<()> {
+    fn push_range(&self, st: &mut State, range: &CStr) -> Result<()> {
         let spec = glue::revparse(self.repo(), range)?;
 
         let Some(to) = spec.to.as_ref() else {
@@ -1181,6 +1177,12 @@ pub mod ffi {
             let (w, st) = unsafe { walk_of(walk) };
             // SAFETY: readable, copied.
             let opts = unsafe { *opts };
+            // A NULL name: `git_reference_name_to_id`'s check, and -1.
+            // SAFETY: a string (the contract), unchanged during the call.
+            let Some(refname) = (unsafe { cstr(refname) }) else {
+                let _ = errors::assert_arg_failed("name");
+                return -1;
+            };
             status(w.push_ref(st, refname, &opts))
         })
     }
@@ -1200,6 +1202,10 @@ pub mod ffi {
             git_assert_arg!(!refname.is_null(), "refname", -1);
             // SAFETY: the contract.
             let (w, st) = unsafe { walk_of(walk) };
+            // SAFETY: a non-null string (the contract and the check above).
+            let Some(refname) = (unsafe { cstr(refname) }) else {
+                return -1;
+            };
             let opts = PushOptions {
                 uninteresting,
                 ..PushOptions::default()
@@ -1341,6 +1347,12 @@ pub mod ffi {
             git_assert_arg!(!walk.is_null(), "walk", -1);
             // SAFETY: the contract.
             let (w, st) = unsafe { walk_of(walk) };
+            // A NULL range: `git_revparse`'s check.
+            // SAFETY: a string (the contract), unchanged during the call.
+            let Some(range) = (unsafe { cstr(range) }) else {
+                let _ = errors::assert_arg_failed("spec");
+                return -1;
+            };
             status(w.push_range(st, range))
         })
     }
