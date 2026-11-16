@@ -530,7 +530,10 @@ fn options_init() {
     unsafe {
         assert_eq!(ffi::git_commit_create_options_init(o.as_mut_ptr(), 7), 0);
         let o = o.assume_init();
-        assert_eq!((o.version, o.flags, o.extra_headers_len), (7, 0, 0));
+        assert_eq!(
+            (o.version, o.flags.into_inner(), o.extra_headers_len),
+            (7, 0, 0)
+        );
         assert!(o.sign.is_none());
         assert_eq!(
             ffi::git_commit_create_ext_options_init(core::ptr::null_mut(), 1),

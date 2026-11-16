@@ -130,13 +130,13 @@ impl GitCommitCreateExtOptions {
     };
 }
 
-/// `git_commit_create_options` (public). `allow_empty_commit` is bit 0 of
-/// `flags` (the first bitfield of an `unsigned int`).
+/// `git_commit_create_options` (public). `flags` is the bitfield
+/// `unsigned allow_empty_commit : 1` ([`ALLOW_EMPTY_COMMIT`]).
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct GitCommitCreateOptions {
     pub version: c_uint,
-    pub flags: c_uint,
+    pub flags: ffibox::CBitfield<c_uint>,
     pub author: *const GitSignature,
     pub committer: *const GitSignature,
     pub message_encoding: *const c_char,
@@ -150,7 +150,7 @@ impl GitCommitCreateOptions {
     /// `GIT_COMMIT_CREATE_OPTIONS_INIT`.
     pub const INIT: GitCommitCreateOptions = GitCommitCreateOptions {
         version: 1,
-        flags: 0,
+        flags: ffibox::CBitfield::new(0),
         author: ptr::null(),
         committer: ptr::null(),
         message_encoding: ptr::null(),
@@ -161,9 +161,12 @@ impl GitCommitCreateOptions {
     };
 
     fn allow_empty_commit(&self) -> bool {
-        self.flags & 1 != 0
+        self.flags.is_set(ALLOW_EMPTY_COMMIT)
     }
 }
+
+/// `unsigned allow_empty_commit : 1` of [`GitCommitCreateOptions::flags`].
+pub const ALLOW_EMPTY_COMMIT: ffibox::CBits<c_uint> = ffibox::CBits::first(1);
 
 /// `struct git_commitbuilder` (opaque to C: only `commit.c` reads it).
 #[repr(C)]

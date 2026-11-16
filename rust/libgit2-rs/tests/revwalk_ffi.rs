@@ -211,7 +211,7 @@ fn commit_nodes_are_cs() {
         assert_eq!((*n).oid, head);
         // C parses it: parents, time, the parsed bit where the Rust reads it
         assert_eq!(git_commit_list_parse(w.cast(), n.cast()), 0);
-        assert_eq!((*n).bits & PARSED, PARSED);
+        assert!((*n).bits.is_set(PARSED));
         assert_eq!((*n).out_degree, 1);
         assert_eq!((*n).time, 1_312_943_626);
         let parent: *mut CommitListNode = *(*n).parents;
@@ -225,7 +225,7 @@ fn commit_nodes_are_cs() {
         let bogus = hex("4242424242424242424242424242424242424242");
         let b = rw::git_revwalk__commit_lookup(w, &bogus);
         assert_eq!(git_commit_list_parse(w.cast(), b.cast()), -3);
-        (*b).bits |= PARSED;
+        (*b).bits.set_flag(PARSED, true);
         assert_eq!(git_commit_list_parse(w.cast(), b.cast()), 0);
 
         assert!(rw::git_revwalk__commit_lookup(w, ptr::null()).is_null());

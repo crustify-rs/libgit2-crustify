@@ -18,6 +18,8 @@
 use core::ffi::{c_int, c_void};
 use core::ptr;
 
+use ffibox::{CBitfield, CBits};
+
 use crate::commit::deps::{self as pend, git_revwalk};
 use crate::commit::{self, CommitSink, SigFields};
 use crate::git_error_set;
@@ -52,37 +54,37 @@ pub struct GitCommitListNode {
     pub oid: Oid,
     pub time: i64,
     pub generation: u32,
-    pub bits: u16,
+    pub bits: CBitfield<u16>,
     pub in_degree: u16,
     pub out_degree: u16,
     pub parents: *mut *mut GitCommitListNode,
 }
 
-/// The bit of `seen`.
-pub const BIT_SEEN: u16 = 1 << 0;
-/// The bit of `uninteresting`.
-pub const BIT_UNINTERESTING: u16 = 1 << 1;
-/// The bit of `topo_delay`.
-pub const BIT_TOPO_DELAY: u16 = 1 << 2;
-/// The bit of `parsed`.
-pub const BIT_PARSED: u16 = 1 << 3;
-/// The bit of `added`.
-pub const BIT_ADDED: u16 = 1 << 4;
-/// The shift of `flags` (4 bits).
-pub const FLAGS_SHIFT: u16 = 5;
+/// `unsigned seen:1`.
+pub const SEEN: CBits<u16> = CBits::first(1);
+/// `unsigned uninteresting:1`.
+pub const UNINTERESTING: CBits<u16> = SEEN.next(1);
+/// `unsigned topo_delay:1`.
+pub const TOPO_DELAY: CBits<u16> = UNINTERESTING.next(1);
+/// `unsigned parsed:1`.
+pub const PARSED: CBits<u16> = TOPO_DELAY.next(1);
+/// `unsigned added:1`.
+pub const ADDED: CBits<u16> = PARSED.next(1);
+/// `unsigned flags : FLAG_BITS` (4).
+pub const FLAGS: CBits<u16> = ADDED.next(4);
 
 impl GitCommitListNode {
     /// `parsed`.
     pub fn parsed(&self) -> bool {
-        self.bits & BIT_PARSED != 0
+        self.bits.is_set(PARSED)
     }
     /// `flags` (4 bits).
     pub fn flags(&self) -> u32 {
-        u32::from((self.bits >> FLAGS_SHIFT) & 0xf)
+        u32::from(self.bits.get(FLAGS))
     }
-    /// Set `flags` (the low 4 bits of `f`).
+    /// Set `flags` (the low 4 bits of `f`, as C's assignment truncates).
     pub fn set_flags(&mut self, f: u32) {
-        self.bits = (self.bits & !(0xf << FLAGS_SHIFT)) | (((f & 0xf) as u16) << FLAGS_SHIFT);
+        self.bits.set(FLAGS, (f & 0xf) as u16);
     }
     /// The parents (`out_degree` of them).
     ///
@@ -283,7 +285,7 @@ unsafe fn quick_parse(
         unsafe { slot.write(parent) };
     }
     // SAFETY: as above.
-    unsafe { (*node).bits |= BIT_PARSED };
+    unsafe { (*node).bits.set_flag(PARSED, true) };
     Ok(())
 }
 
@@ -294,7 +296,7 @@ unsafe fn quick_parse(
 /// As [`quick_parse`].
 unsafe fn parse(walk: *mut git_revwalk, node: *mut GitCommitListNode) -> Result<()> {
     // SAFETY: a live node (contract).
-    if unsafe { (*node).bits } & BIT_PARSED != 0 {
+    if unsafe { (*node).bits }.is_set(PARSED) {
         return Ok(());
     }
     // SAFETY: a live walk's `repo` field.
@@ -346,7 +348,7 @@ unsafe fn parse(walk: *mut git_revwalk, node: *mut GitCommitListNode) -> Result<
                 unsafe { slot.write(p) };
             }
             // SAFETY: as above.
-            unsafe { (*node).bits |= BIT_PARSED };
+            unsafe { (*node).bits.set_flag(PARSED, true) };
             return Ok(());
         }
     }
@@ -597,7 +599,7 @@ mod tests {
             oid: Oid::default(),
             time: 0,
             generation: 0,
-            bits: BIT_SEEN | BIT_PARSED,
+            bits: CBitfield::new(SEEN.mask() | PARSED.mask()),
             in_degree: 0,
             out_degree: 0,
             parents: ptr::null_mut(),
@@ -605,7 +607,8 @@ mod tests {
         assert!(n.parsed());
         n.set_flags(0x1f);
         assert_eq!(n.flags(), 0xf);
-        assert_eq!(n.bits & 0x1f, BIT_SEEN | BIT_PARSED);
+        assert_eq!(n.bits.into_inner() & 0x1f, SEEN.mask() | PARSED.mask());
+        assert_eq!(n.bits.into_inner() >> 5, 0xf);
         assert_eq!(COMMIT_ALLOC, 88);
     }
 
@@ -618,7 +621,7 @@ mod tests {
                 oid: Oid::default(),
                 time: t,
                 generation: 0,
-                bits: 0,
+                bits: CBitfield::new(0),
                 in_degree: 0,
                 out_degree: 0,
                 parents: ptr::null_mut(),

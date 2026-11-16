@@ -60,7 +60,7 @@ mod tests;
 
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::ptr::{self, NonNull};
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::Ordering;
 
 use crate::oid::{Oid, OidType, git_oid_t};
 use crate::tree_cache::{self, GitTreeCache};
@@ -74,7 +74,7 @@ use crate::util::tsort::tsort;
 use crate::util::util::bsearch;
 use crate::util::vector::{GitVector, VectorCmp};
 use crate::{git_assert, git_error_set};
-use ffibox::CShared;
+use ffibox::{CAtomicBitfield, CShared};
 
 use map::EntryMap;
 
@@ -846,14 +846,15 @@ fn sig_cmp(a: &[u8], b: &[u8; 4]) -> c_int {
 // The index
 // ---------------------------------------------------------------------------
 
-/// Bits of `GitIndex::bits` (C bitfields, the first declared lowest).
+/// The fields of `GitIndex::bits` (`unsigned on_disk:1, ignore_case:1,
+/// distrust_filemode:1, no_symlinks:1, dirty:1`, in declaration order).
 mod bit {
-    use core::ffi::c_uint;
-    pub const ON_DISK: c_uint = 1 << 0;
-    pub const IGNORE_CASE: c_uint = 1 << 1;
-    pub const DISTRUST_FILEMODE: c_uint = 1 << 2;
-    pub const NO_SYMLINKS: c_uint = 1 << 3;
-    pub const DIRTY: c_uint = 1 << 4;
+    use ffibox::CBits;
+    pub const ON_DISK: CBits<u32> = CBits::first(1);
+    pub const IGNORE_CASE: CBits<u32> = ON_DISK.next(1);
+    pub const DISTRUST_FILEMODE: CBits<u32> = IGNORE_CASE.next(1);
+    pub const NO_SYMLINKS: CBits<u32> = DISTRUST_FILEMODE.next(1);
+    pub const DIRTY: CBits<u32> = NO_SYMLINKS.next(1);
 }
 
 /// `git_index` (see the [module documentation](self)): the C-visible
@@ -880,7 +881,7 @@ pub struct GitIndex {
     pub oid_type: git_oid_t,
     /// `on_disk`, `ignore_case`, `distrust_filemode`, `no_symlinks`,
     /// `dirty` (bits 0 to 4).
-    pub bits: AtomicU32,
+    pub bits: CAtomicBitfield<u32>,
     /// `tree`.
     pub tree: *mut GitTreeCache,
     /// `tree_pool`.
@@ -919,18 +920,15 @@ macro_rules! bit_accessors {
             #[doc = concat!("The `", stringify!($get), "` bit.")]
             #[inline]
             pub fn $get(&self) -> bool {
-                self.bits.load(Ordering::Relaxed) & $b != 0
+                self.bits.is_set($b, Ordering::Relaxed)
             }
-            #[doc = concat!("Set the `", stringify!($get), "` bit (no write when it")]
-            #[doc = "is set already: read paths that C runs on several threads"]
-            #[doc = "leave the word alone)."]
+            #[doc = concat!("Set the `", stringify!($get), "` bit: one atomic")]
+            #[doc = "read-modify-write of the word (no write when it is set"]
+            #[doc = "already: read paths that C runs on several threads leave the"]
+            #[doc = "word alone), so a concurrent change of another bit is kept."]
             #[inline]
             pub fn $set(&self, v: bool) {
-                let old = self.bits.load(Ordering::Relaxed);
-                let new = if v { old | $b } else { old & !$b };
-                if new != old {
-                    self.bits.store(new, Ordering::Relaxed);
-                }
+                let _ = self.bits.set_flag($b, v, Ordering::Relaxed);
             }
         )*
     };
@@ -963,7 +961,7 @@ impl GitIndex {
             checksum: [0; crate::util::hash::MAX_SIZE],
             entries,
             oid_type: oid_type.raw(),
-            bits: AtomicU32::new(0),
+            bits: CAtomicBitfield::new(0),
             tree: ptr::null_mut(),
             tree_pool,
             names,
@@ -2020,6 +2018,9 @@ unsafe fn index_free(ix: IndexPtr) {
     drop(unsafe { Box::from_raw(ix.as_ptr()) });
 }
 
+/// `should_write:1` of [`GitIndexWriter`].
+pub const SHOULD_WRITE: ffibox::CBits<c_uint> = ffibox::CBits::first(1);
+
 /// `git_indexwriter`, mirrored.
 #[repr(C)]
 pub struct GitIndexWriter {
@@ -2027,8 +2028,8 @@ pub struct GitIndexWriter {
     pub index: *mut GitIndex,
     /// `file`.
     pub file: GitFilebuf,
-    /// `should_write:1` (bit 0).
-    pub should_write: c_uint,
+    /// `unsigned should_write:1` ([`SHOULD_WRITE`]).
+    pub should_write: ffibox::CBitfield<c_uint>,
 }
 
 /// `struct git_index_iterator`, mirrored: the tests read `snap`.
@@ -2070,11 +2071,46 @@ struct CPrefix {
     checksum: [u8; crate::util::hash::MAX_SIZE],
     entries: GitVector,
     oid_type: git_oid_t,
-    bits: AtomicU32,
+    bits: CAtomicBitfield<u32>,
     tree: *mut GitTreeCache,
     tree_pool: GitPool,
     names: GitVector,
     reuc: GitVector,
+}
+
+/// The bit setters are one read-modify-write each: threads that set
+/// different bits of one index at once (as C's read paths do) keep every
+/// change (the survey's lost update: a load, then a store of the word).
+/// The threads share the bitfield (`GitIndex` itself is not `Sync`), and
+/// each makes the call its setter makes.
+#[cfg(test)]
+#[test]
+fn concurrent_bit_setters_lose_nothing() {
+    let _g = crate::util::test_support::init();
+    let rounds = if cfg!(miri) { 4 } else { 2000 };
+    for _ in 0..rounds {
+        let ix = GitIndex::new(OidType::Sha1).unwrap();
+        let bits = &ix.bits;
+        std::thread::scope(|s| {
+            for b in [
+                bit::ON_DISK,
+                bit::IGNORE_CASE,
+                bit::DISTRUST_FILEMODE,
+                bit::NO_SYMLINKS,
+                bit::DIRTY,
+            ] {
+                s.spawn(move || bits.set_flag(b, true, Ordering::Relaxed));
+            }
+        });
+        assert!(
+            ix.on_disk()
+                && ix.ignore_case()
+                && ix.distrust_filemode()
+                && ix.no_symlinks()
+                && ix.dirty()
+        );
+        ix.dispose_box();
+    }
 }
 
 #[cfg(test)]

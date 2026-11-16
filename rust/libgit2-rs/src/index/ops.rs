@@ -573,7 +573,7 @@ pub(crate) fn open_ext(path: Option<&CStr>, oid_type: OidType) -> Result<IndexPt
 
 impl GitIndex {
     /// Free a boxed index that never got a reference.
-    fn dispose_box(mut self: Box<Self>) {
+    pub(super) fn dispose_box(mut self: Box<Self>) {
         self.dispose();
     }
 }
@@ -787,7 +787,7 @@ pub(crate) fn write(ix: IndexPtr) -> Result<()> {
     let mut writer = GitIndexWriter {
         index: ptr::null_mut(),
         file: crate::util::filebuf::GitFilebuf::new(),
-        should_write: 0,
+        should_write: ffibox::CBitfield::new(0),
     };
     let mut r = writer_init(&mut writer, ix);
     if r.is_ok() {
@@ -832,7 +832,7 @@ pub(crate) fn writer_init(writer: &mut GitIndexWriter, ix: IndexPtr) -> Result<(
         }
         return Err(e);
     }
-    writer.should_write = 1;
+    writer.should_write.set_flag(super::SHOULD_WRITE, true);
     Ok(())
 }
 
@@ -849,14 +849,17 @@ pub(crate) fn writer_init_for_operation(
     // SAFETY: the repository's index, live while the repository is (and
     // the writer takes a reference).
     writer_init(writer, unsafe { IndexPtr::new(index) })?;
-    writer.should_write = c_uint::from(*checkout_strategy & GIT_CHECKOUT_DONT_WRITE_INDEX == 0);
+    writer.should_write.set_flag(
+        super::SHOULD_WRITE,
+        *checkout_strategy & GIT_CHECKOUT_DONT_WRITE_INDEX == 0,
+    );
     *checkout_strategy |= GIT_CHECKOUT_DONT_WRITE_INDEX;
     Ok(())
 }
 
 /// `git_indexwriter_commit`.
 pub(crate) fn writer_commit(writer: &mut GitIndexWriter) -> Result<()> {
-    if writer.should_write & 1 == 0 {
+    if !writer.should_write.is_set(super::SHOULD_WRITE) {
         return Ok(());
     }
     let Some(ixp) = NonNull::new(writer.index) else {

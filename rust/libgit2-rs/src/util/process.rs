@@ -17,6 +17,7 @@
 //! closes its status pipe and waits for the right child when `exec` failed.
 
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
+use ffibox::CBitfield;
 use std::ffi::CString;
 
 use crate::util::errors::{self, Error, ErrorClass, ErrorCode, Result};
@@ -43,25 +44,26 @@ pub mod status {
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct GitProcessOptions {
-    /// The bitfield.
-    pub flags: c_uint,
+    /// The bitfield (fields in [`flags`]).
+    pub flags: CBitfield<c_uint>,
     /// `cwd`: the directory to run in, or NULL.
     pub cwd: *mut c_char,
 }
 
-/// Bit masks of [`GitProcessOptions::flags`].
+/// The fields of [`GitProcessOptions::flags`], in declaration order.
 pub mod flags {
     use core::ffi::c_uint;
-    /// `use_shell`.
-    pub const USE_SHELL: c_uint = 1 << 0;
-    /// `capture_in`.
-    pub const CAPTURE_IN: c_uint = 1 << 1;
-    /// `capture_out`.
-    pub const CAPTURE_OUT: c_uint = 1 << 2;
-    /// `capture_err`.
-    pub const CAPTURE_ERR: c_uint = 1 << 3;
-    /// `exclude_env`.
-    pub const EXCLUDE_ENV: c_uint = 1 << 4;
+    use ffibox::CBits;
+    /// `unsigned use_shell:1`.
+    pub const USE_SHELL: CBits<c_uint> = CBits::first(1);
+    /// `unsigned capture_in:1`.
+    pub const CAPTURE_IN: CBits<c_uint> = USE_SHELL.next(1);
+    /// `unsigned capture_out:1`.
+    pub const CAPTURE_OUT: CBits<c_uint> = CAPTURE_IN.next(1);
+    /// `unsigned capture_err:1`.
+    pub const CAPTURE_ERR: CBits<c_uint> = CAPTURE_OUT.next(1);
+    /// `unsigned exclude_env:1`.
+    pub const EXCLUDE_ENV: CBits<c_uint> = CAPTURE_ERR.next(1);
 }
 
 /// `git_process_result`, mirrored.
@@ -1041,11 +1043,11 @@ pub mod ffi {
 
     fn options(o: &GitProcessOptions) -> ProcessOptions {
         ProcessOptions {
-            use_shell: o.flags & flags::USE_SHELL != 0,
-            capture_in: o.flags & flags::CAPTURE_IN != 0,
-            capture_out: o.flags & flags::CAPTURE_OUT != 0,
-            capture_err: o.flags & flags::CAPTURE_ERR != 0,
-            exclude_env: o.flags & flags::EXCLUDE_ENV != 0,
+            use_shell: o.flags.is_set(flags::USE_SHELL),
+            capture_in: o.flags.is_set(flags::CAPTURE_IN),
+            capture_out: o.flags.is_set(flags::CAPTURE_OUT),
+            capture_err: o.flags.is_set(flags::CAPTURE_ERR),
+            exclude_env: o.flags.is_set(flags::EXCLUDE_ENV),
             // SAFETY: `cwd` is NULL or a NUL-terminated string (the
             // options' contract).
             cwd: (!o.cwd.is_null()).then(|| unsafe { cstr_bytes(o.cwd) }.to_vec()),
@@ -1124,14 +1126,14 @@ pub mod ffi {
         opts: *mut GitProcessOptions,
     ) -> c_int {
         let mut merged = GitProcessOptions {
-            flags: 0,
+            flags: CBitfield::new(0),
             cwd: core::ptr::null_mut(),
         };
         if !opts.is_null() {
             // SAFETY: valid options.
             merged = unsafe { opts.read() };
         }
-        merged.flags |= flags::USE_SHELL;
+        merged.flags.set_flag(flags::USE_SHELL, true);
         let args = [cmdline];
         // SAFETY: forwarded; `args` is one string pointer.
         unsafe { git_process_new(out, args.as_ptr(), 1, env, env_len, &raw mut merged) }

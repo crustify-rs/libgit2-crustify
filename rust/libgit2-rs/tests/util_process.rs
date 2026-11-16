@@ -7,6 +7,8 @@
 
 use core::ffi::{c_char, c_void};
 
+use ffibox::{CBitfield, CBits};
+
 use libgit2_rs::util::errors::{self, ErrorClass};
 use libgit2_rs::util::process::{
     GitProcess, GitProcessOptions, GitProcessResult, ffi, flags, status,
@@ -18,9 +20,14 @@ fn msg() -> String {
     String::from_utf8(errors::last_message().unwrap_or_default()).unwrap()
 }
 
-fn opts(f: u32) -> GitProcessOptions {
+/// Options with the bitfield fields `f` set.
+fn opts(f: &[CBits<u32>]) -> GitProcessOptions {
+    let mut flags = CBitfield::new(0);
+    for &b in f {
+        flags.set_flag(b, true);
+    }
     GitProcessOptions {
-        flags: f,
+        flags,
         cwd: core::ptr::null_mut(),
     }
 }
@@ -51,7 +58,7 @@ fn run(
             0
         );
         assert_eq!(ffi::git_process_start(p), 0, "{}", msg());
-        if o.flags & flags::CAPTURE_IN != 0 {
+        if o.flags.is_set(flags::CAPTURE_IN) {
             assert_eq!(
                 ffi::git_process_write(p, input.as_ptr().cast(), input.len()),
                 input.len() as isize
@@ -78,7 +85,7 @@ fn run(
 fn exit_codes_and_pipes() {
     let _g = test_support::init();
     let _l = fd_lock();
-    let (_, r) = run(&[c"/bin/false"], &[], opts(flags::CAPTURE_OUT), b"");
+    let (_, r) = run(&[c"/bin/false"], &[], opts(&[flags::CAPTURE_OUT]), b"");
     assert_eq!(
         r,
         GitProcessResult {
@@ -90,7 +97,7 @@ fn exit_codes_and_pipes() {
     let (out, r) = run(
         &[c"cat"],
         &[],
-        opts(flags::CAPTURE_IN | flags::CAPTURE_OUT),
+        opts(&[flags::CAPTURE_IN, flags::CAPTURE_OUT]),
         b"Hello, world.\r\n",
     );
     assert_eq!(out, b"Hello, world.\r\n");
@@ -98,7 +105,7 @@ fn exit_codes_and_pipes() {
     let (out, _) = run(
         &[c"echo \"$0:$1\"", c"a b", c"c"],
         &[],
-        opts(flags::USE_SHELL | flags::CAPTURE_OUT),
+        opts(&[flags::USE_SHELL, flags::CAPTURE_OUT]),
         b"",
     );
     // `sh -c '<args[0]> "$@"' <args[0]> <args...>`: $0 is args[0]
@@ -106,7 +113,7 @@ fn exit_codes_and_pipes() {
     let (_, r) = run(
         &[c"kill -TERM $$"],
         &[],
-        opts(flags::USE_SHELL | flags::CAPTURE_OUT),
+        opts(&[flags::USE_SHELL, flags::CAPTURE_OUT]),
         b"",
     );
     assert_eq!(
@@ -126,14 +133,14 @@ fn environment() {
     let (out, _) = run(
         &[c"/usr/bin/env"],
         &[c"U4_A=1", c"U4_GONE=", c"PATH=/bin"],
-        opts(flags::CAPTURE_OUT | flags::EXCLUDE_ENV),
+        opts(&[flags::CAPTURE_OUT, flags::EXCLUDE_ENV]),
         b"",
     );
     assert_eq!(out, b"U4_A=1\nPATH=/bin\n");
     let (out, _) = run(
         &[c"/usr/bin/env"],
         &[],
-        opts(flags::CAPTURE_OUT | flags::EXCLUDE_ENV),
+        opts(&[flags::CAPTURE_OUT, flags::EXCLUDE_ENV]),
         b"",
     );
     assert_eq!(out, b"");
@@ -145,7 +152,7 @@ fn start_failures() {
     let _l = fd_lock();
     let mut p: *mut GitProcess = core::ptr::null_mut();
     let args = [c"/a/b/z/y/not_found".as_ptr()];
-    let mut o = opts(flags::CAPTURE_OUT);
+    let mut o = opts(&[flags::CAPTURE_OUT]);
     // SAFETY: valid arguments.
     unsafe {
         assert_eq!(
@@ -161,7 +168,7 @@ fn start_failures() {
         ffi::git_process_free(p);
 
         let pwd = [c"/bin/pwd".as_ptr()];
-        let mut o = opts(flags::CAPTURE_OUT);
+        let mut o = opts(&[flags::CAPTURE_OUT]);
         o.cwd = c"/no/such/dir".as_ptr().cast_mut();
         assert_eq!(
             ffi::git_process_new(&mut p, pwd.as_ptr(), 1, core::ptr::null(), 0, &mut o),
@@ -291,7 +298,7 @@ fn write_to_dead_child_is_epipe() {
     let _l = fd_lock();
     let mut p: *mut GitProcess = core::ptr::null_mut();
     let args = [c"/bin/true".as_ptr()];
-    let mut o = opts(flags::CAPTURE_IN);
+    let mut o = opts(&[flags::CAPTURE_IN]);
     // SAFETY: valid arguments.
     unsafe {
         assert_eq!(
@@ -341,7 +348,7 @@ fn no_descriptor_leaks() {
         drop(p);
         // the C ABI: new, start, wait, free (without git_process_close)
         let args = [c"/bin/true".as_ptr()];
-        let mut o = opts(flags::CAPTURE_IN | flags::CAPTURE_OUT | flags::CAPTURE_ERR);
+        let mut o = opts(&[flags::CAPTURE_IN, flags::CAPTURE_OUT, flags::CAPTURE_ERR]);
         let mut p: *mut GitProcess = core::ptr::null_mut();
         // SAFETY: valid arguments.
         unsafe {
@@ -373,7 +380,7 @@ fn read_into_uninitialized_buffers() {
     let _g = test_support::init();
     let _l = fd_lock();
     let args = [c"echo hello; echo oops >&2".as_ptr()];
-    let mut o = opts(flags::USE_SHELL | flags::CAPTURE_OUT | flags::CAPTURE_ERR);
+    let mut o = opts(&[flags::USE_SHELL, flags::CAPTURE_OUT, flags::CAPTURE_ERR]);
     let mut p: *mut GitProcess = core::ptr::null_mut();
     let mut buf = core::mem::MaybeUninit::<[u8; 64]>::uninit();
     // SAFETY: valid arguments; the buffer is writable (uninitialized), and
@@ -443,7 +450,7 @@ fn sigpipe_disposition() {
     let (out, _) = run(
         &[c"/bin/cat", c"/proc/self/status"],
         &[],
-        opts(flags::CAPTURE_OUT),
+        opts(&[flags::CAPTURE_OUT]),
         b"",
     );
     assert!(

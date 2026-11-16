@@ -27,19 +27,10 @@ macro_rules! field {
 /// it). C allocates it from the walk's pool through
 /// `git_commit_list_alloc_node`, and reads and writes its fields.
 pub use crate::commit_list::GitCommitListNode as CommitListNode;
+use ffibox::{CBitfield, CBits};
 
-/// `seen` (bit 0).
-pub const SEEN: u16 = 1 << 0;
-/// `uninteresting` (bit 1).
-pub const UNINTERESTING: u16 = 1 << 1;
-/// `topo_delay` (bit 2).
-pub const TOPO_DELAY: u16 = 1 << 2;
-/// `parsed` (bit 3).
-pub const PARSED: u16 = 1 << 3;
-/// `added` (bit 4).
-pub const ADDED: u16 = 1 << 4;
-/// `flags` (bits 5 to 8, `FLAG_BITS` = 4).
-pub const FLAGS_MASK: u16 = 0xf << 5;
+/// The node's bitfields: l-commit's declaration (`commit_list.rs`).
+pub use crate::commit_list::{ADDED, FLAGS, PARSED, SEEN, TOPO_DELAY, UNINTERESTING};
 
 /// `PARENTS_PER_COMMIT`.
 pub const PARENTS_PER_COMMIT: usize = 2;
@@ -90,29 +81,30 @@ impl NodePtr {
     }
 
     #[inline(always)]
-    fn bits(self) -> u16 {
+    fn bits(self) -> CBitfield<u16> {
         // SAFETY: a live node (the invariant); one field read, no
         // reference formed.
-        unsafe { field!(self.0.as_ptr(), bits: u16).read() }
+        unsafe { field!(self.0.as_ptr(), bits: CBitfield<u16>).read() }
     }
 
     #[inline(always)]
-    fn set_bits(self, bits: u16) {
+    fn set_bits(self, bits: CBitfield<u16>) {
         // SAFETY: as in `bits`, for a write: nothing else reaches the node
         // during the write (single thread, no reference to it).
-        unsafe { field!(self.0.as_ptr(), bits: u16).write(bits) }
+        unsafe { field!(self.0.as_ptr(), bits: CBitfield<u16>).write(bits) }
     }
 
     #[inline(always)]
-    fn set_flag(self, mask: u16, on: bool) {
-        let b = self.bits();
-        self.set_bits(if on { b | mask } else { b & !mask });
+    fn set_flag(self, field: CBits<u16>, on: bool) {
+        let mut b = self.bits();
+        b.set_flag(field, on);
+        self.set_bits(b);
     }
 
     /// `seen`.
     #[inline(always)]
     pub fn seen(self) -> bool {
-        self.bits() & SEEN != 0
+        self.bits().is_set(SEEN)
     }
     /// `seen = 1`.
     #[inline(always)]
@@ -122,7 +114,7 @@ impl NodePtr {
     /// `uninteresting`.
     #[inline(always)]
     pub fn uninteresting(self) -> bool {
-        self.bits() & UNINTERESTING != 0
+        self.bits().is_set(UNINTERESTING)
     }
     /// `uninteresting = on`.
     #[inline(always)]
@@ -132,12 +124,12 @@ impl NodePtr {
     /// `parsed`.
     #[inline(always)]
     pub fn parsed(self) -> bool {
-        self.bits() & PARSED != 0
+        self.bits().is_set(PARSED)
     }
     /// `added`.
     #[inline(always)]
     pub fn added(self) -> bool {
-        self.bits() & ADDED != 0
+        self.bits().is_set(ADDED)
     }
     /// `added = 1`.
     #[inline(always)]
@@ -149,7 +141,11 @@ impl NodePtr {
     /// `uninteresting`, `added` and `flags` (not `parsed`).
     #[inline]
     pub fn reset(self) {
-        self.set_bits(self.bits() & !(SEEN | UNINTERESTING | TOPO_DELAY | ADDED | FLAGS_MASK));
+        let mut b = self.bits();
+        for f in [SEEN, UNINTERESTING, TOPO_DELAY, ADDED, FLAGS] {
+            b.set(f, 0);
+        }
+        self.set_bits(b);
         self.set_in_degree(0);
     }
 
