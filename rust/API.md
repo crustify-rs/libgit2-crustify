@@ -66,7 +66,7 @@ for entry in tree.iter() {
 }
 // Any object, then the kind you need:
 let obj = Object::lookup(&repo, commit.id(), None)?;  // None: any type
-let commit: Commit<'_> = obj.try_into().map_err(|_| unreachable!())?;
+let commit: Commit<'_> = Commit::try_from(obj).expect("a commit"); // Err gives the object back
 # Ok::<(), libgit2_rs::Error>(())
 ```
 
@@ -94,9 +94,17 @@ let id = CommitBuilder::new(tree, &me, &me, b"first\n")
 # Ok::<(), libgit2_rs::Error>(())
 ```
 
+`Commit::create_from_tree`, `create_from_stage`, `amend` (`AmendOptions`),
+`amend_from_tree`/`_from_stage` and `CommitBuilder::write_signed` (a signing
+closure) cover the rest of `git_commit_create*`; `CommitCreateOptions`
+sets `allow_empty`, the signatures and a signer. `Commit`, `Tree`, `Blob`
+and `Tag` convert to and from `Object` (`TryFrom`, `into_object`).
+
 References: `Reference::lookup`, `create`, `symbolic_create`, `resolve`,
 `peel(Option<ObjectType>)`, `rename`, `delete`; `References::new`/`glob`
-iterate; `Reflog` reads and writes reflogs.
+iterate; `Reflog` reads and writes reflogs. `Refdb` (`Repository::refdb`,
+`Refdb::open`) compresses and swaps backends (`set_backend`,
+`set_backend_fs`).
 
 History: `Revwalk::new(&repo)`, `push`/`hide` ids, refs, globs and ranges,
 `sorting(Sort::TOPOLOGICAL | Sort::TIME)`, then iterate the ids.
@@ -108,7 +116,12 @@ History: `Revwalk::new(&repo)`, `push`/`hide` ids, refs, globs and ranges,
   `Backend::custom(impl OdbBackend)` add backends.
 - `Config` (a repository's, `Config::open_default`, or built from files,
   memory and `ConfigBackend`s) gets and sets typed values, iterates
-  entries, takes snapshots.
+  entries, takes snapshots; `Config::lock` is a transaction (`commit`, or
+  rolled back on drop); `Config::find_global` & co. give the files' paths.
+- `Odb::get_backend` gives back an added backend (`BackendRef::as_mempack`,
+  `downcast_ref`); `Odb::write_pack` streams a pack in (`io::Write`).
+- `Repository::set_odb`, `set_config`, `set_index` take an owner made alone
+  (and not shared); `Repository::wrap_odb` makes a repository of an odb.
 - `Index` (a repository's, or `Index::new`/`open` alone): entries,
   conflicts, resolve-undo records, `add_all`/`update_all`/`remove_all`,
   `read_tree`/`write_tree`.
@@ -133,8 +146,11 @@ std::thread::scope(|s| {
 # Ok::<(), libgit2_rs::Error>(())
 ```
 
-Iterators and streams are driven by one thread at a time (`Send`, not
-`Sync`). `tests/api_send_sync.rs` states each type's traits.
+Objects (`Object`, `Commit`, `Tree`, `Blob`, `Tag`) are immutable and
+`Send + Sync`. Reference iterators and backends are driven by one thread at
+a time (`Send`, not `Sync`); odb streams, revwalks and the refdb handle stay
+on their thread. `tests/api_send_sync.rs` states each type's traits. The examples of this
+guide are compiled by `consumer/tests/api_md.rs`.
 
 ## Callbacks and backends
 
