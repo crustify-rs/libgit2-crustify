@@ -159,7 +159,7 @@ use the `refdb` slot (the only one still `AtomicPtr<c_void>`). Open
 soundness gap of `RepoHandle` (a `Clone` of the inner type escapes the
 lifetime): `/work/reviews/integration-notes.md` I-2.
 
-## 5. l-pack (merge `e.g. below`)
+## 5. l-pack (merge `c1de8ce`, resolution `b9b6032`)
 
 `merge_wp.sh` union of `sys/pending.rs` resurrected the l-repo entries of
 l-odb's section that step 1 had deleted (l-pack had edited the same
