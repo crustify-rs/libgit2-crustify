@@ -248,7 +248,7 @@ fn util_system() {
     assert!(!s.is_empty());
     assert_eq!(
         libgit2_rs::__test::util::util::getenv(&mut s, c"LIBGIT2_RS_SURELY_UNSET"),
-        Err(libgit2_rs::ErrorCode::NOT_FOUND)
+        Err(libgit2_rs::__test::util::errors::ErrorCode::NOT_FOUND)
     );
     assert!(s.is_empty());
 }

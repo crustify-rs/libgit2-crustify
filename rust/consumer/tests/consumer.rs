@@ -50,9 +50,10 @@ fn open_walk_read() {
 #[test]
 #[cfg_attr(miri, ignore)]
 fn write_in_memory() {
-    let repo = Repository::new_in_memory(OidType::Sha1).unwrap();
+    let odb = Odb::new().unwrap();
     let (backend, mempack) = Backend::mempack();
-    repo.odb().unwrap().add_backend(backend, 1).unwrap();
+    odb.add_backend(backend, 1).unwrap();
+    let repo = Repository::wrap_odb(odb).unwrap();
     let blob = repo
         .odb()
         .unwrap()
@@ -69,7 +70,7 @@ fn write_in_memory() {
         .write(&repo)
         .unwrap();
     let c = Commit::lookup(&repo, &commit).unwrap();
-    assert_eq!(c.tree_id(), tree);
+    assert_eq!(c.tree_id(), &tree);
     assert_eq!(c.author().name(), b"A U Thor");
     assert_eq!(c.author().when().offset_minutes(), 60);
 }
@@ -78,13 +79,13 @@ fn write_in_memory() {
 #[test]
 #[cfg_attr(miri, ignore)]
 fn standalone_owners() {
-    let cfg = Config::new().unwrap();
+    let cfg = Config::new();
     cfg.add_memory(b"[a]\n\tb = 7\n", ConfigLevel::App, false)
         .unwrap();
     assert_eq!(cfg.get_i32("a.b").unwrap(), 7);
     let odb = Odb::open(testrepo().join("objects"), OidType::Sha1).unwrap();
     let o = odb.read(&oid(HEAD)).unwrap();
-    assert_eq!(o.kind(), Some(ObjectType::Commit));
+    assert_eq!(o.kind(), ObjectType::Commit);
 }
 
 /// The constructors, each the first thing a fresh process does (S-4: none
@@ -156,7 +157,7 @@ fn first_call_child() {
             ix.add(&IndexEntry::new("a", 0o100644, oid(HEAD))).unwrap();
         }
         "config_new" => {
-            let c = Config::new().unwrap();
+            let c = Config::new();
             c.add_memory(b"[a]\nb = 1\n", ConfigLevel::Local, false)
                 .unwrap();
             assert_eq!(c.get_i32("a.b").unwrap(), 1);

@@ -186,7 +186,7 @@ pub use odb::{
     Backend, BackendRef, ExpandId, IndexerProgress, LooseOptions, Mempack, ObjectType, Odb,
     OdbBackend, OdbObject, OdbPackWriter, OdbReader, OdbWriter,
 };
-pub use oid::{Oid, OidShortener, OidType};
+pub use oid::{HexOid, Oid, OidShortener, OidType};
 pub use refs_api::{
     RefValue, Refdb, RefdbBackend, RefdbLock, RefdbUnlock, Reference, ReferenceFormat,
     ReferenceNames, ReferenceType, References, Reflog, ReflogEntry, ReflogRecord,

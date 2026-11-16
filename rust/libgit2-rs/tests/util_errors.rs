@@ -171,8 +171,8 @@ fn rich_error_and_callbacks() {
     let _g = test_support::init();
     let _ = errors::set_str(ErrorClass::REFERENCE, "ref not found");
     let e = Error::from(ErrorCode::NOT_FOUND);
-    assert_eq!(e.code(), ErrorCode::NOT_FOUND);
-    assert_eq!(e.class(), ErrorClass::REFERENCE);
+    assert_eq!(e.code(), ErrorCode::NOT_FOUND.into());
+    assert_eq!(e.class(), ErrorClass::REFERENCE.into());
     assert_eq!(e.message(), "ref not found");
     assert_eq!(e.to_string(), "ref not found");
     assert!(format!("{e:?}").contains("GIT_ENOTFOUND"));

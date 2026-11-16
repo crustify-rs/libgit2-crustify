@@ -413,11 +413,6 @@ impl Oid {
         Ok(out)
     }
 
-    /// [`parse_hex`](Oid::parse_hex) of a `&str`.
-    pub(crate) fn parse_str_hex(s: &str, t: OidType) -> Result<Oid> {
-        Oid::parse_hex(s.as_bytes(), t)
-    }
-
     /// `git_oid_from_string`: the id of type `t` written as exactly
     /// `t.hexsize()` hex digits (errors as C's: `unable to parse OID -
     /// contains invalid characters`, `- too long`).
@@ -614,6 +609,7 @@ impl Oid {
 
     /// `git_oid_fmt_substr`: hex digits `start..start + out.len()` into
     /// `out`. Panics if the range exceeds `GIT_OID_MAX_HEXSIZE`.
+    #[cfg(test)]
     pub(crate) fn fmt_substr(&self, out: &mut [u8], start: usize) {
         assert!(
             start + out.len() <= GIT_OID_MAX_HEXSIZE,
@@ -750,12 +746,6 @@ impl HexOid {
     pub fn as_str(&self) -> &str {
         // The buffer only ever holds hex digits and '/'.
         core::str::from_utf8(self.as_bytes()).unwrap_or_default()
-    }
-
-    /// The digits with their NUL.
-    #[inline]
-    pub(crate) fn as_c_str(&self) -> &core::ffi::CStr {
-        core::ffi::CStr::from_bytes_until_nul(&self.buf).unwrap_or_default()
     }
 }
 
@@ -1796,5 +1786,24 @@ mod tests {
         assert_eq!(r.raw_code(), ErrorCode::GENERIC);
         assert!(s.full);
         assert!(s.add(HEX).is_err());
+    }
+}
+
+/// The raw-field helpers, for the crate's own tests of the C ABI (an id of
+/// any type byte, as C may make one). Not in the API.
+#[cfg(feature = "test-internals")]
+pub mod test_raw {
+    use super::*;
+    /// [`Oid::from_raw_parts`].
+    pub fn from_raw_parts(kind: u8, id: [u8; GIT_OID_MAX_SIZE]) -> Oid {
+        Oid::from_raw_parts(kind, id)
+    }
+    /// [`Oid::raw_id`].
+    pub fn raw_id(o: &Oid) -> &[u8; GIT_OID_MAX_SIZE] {
+        o.raw_id()
+    }
+    /// [`Oid::raw_id_mut`].
+    pub fn raw_id_mut(o: &mut Oid) -> &mut [u8; GIT_OID_MAX_SIZE] {
+        o.raw_id_mut()
     }
 }

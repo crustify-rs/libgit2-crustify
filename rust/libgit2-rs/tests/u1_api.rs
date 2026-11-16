@@ -21,21 +21,21 @@ const B: &str = "8b137891791fe96927ad78e64b0aad7bded08bdd";
 #[test]
 fn oid_round_trips_and_errors() -> Result<(), Error> {
     let _g = test_support::init();
-    let a = Oid::from_str_hex(A, OidType::Sha1)?;
-    let b = Oid::from_str_hex(B, OidType::Sha1)?;
+    let a = Oid::from_hex(A, OidType::Sha1)?;
+    let b = Oid::from_hex(B, OidType::Sha1)?;
     assert!(a < b);
     assert_eq!(a.kind(), Some(OidType::Sha1));
     assert_eq!(a.to_string(), A);
     assert_eq!(a.as_bytes().len(), 20);
     assert_eq!(Oid::from_bytes(a.as_bytes(), OidType::Sha1), Some(a));
-    assert_eq!(a.ncmp(&b, 39), 0);
-    assert_ne!(a.ncmp(&b, 40), 0);
+    assert!(a.ncmp(&b, 39).is_eq());
+    assert!(a.ncmp(&b, 40).is_ne());
     assert!(a.streq(A.as_bytes()));
     assert_eq!(a.hex_prefix(8).as_str(), "8b13789");
     assert_eq!(a.hex_path()?.as_str().as_bytes()[2], b'/');
     assert_eq!(Oid::from_prefix(b"8b13", OidType::Sha1)?, a.prefix(4));
 
-    let e: Error = Oid::from_str_hex("xyz", OidType::Sha1).unwrap_err().into();
+    let e: Error = Oid::from_hex("xyz", OidType::Sha1).unwrap_err().into();
     assert_eq!(e.class(), ErrorClass::INVALID);
     assert_eq!(
         e.message(),
@@ -63,8 +63,8 @@ fn shortener_and_arrays() -> Result<(), Error> {
     assert_eq!(s.add(B.as_bytes())?, 40);
     assert_eq!(s.min_length(), 40);
 
-    let a = Oid::from_str_hex(A, OidType::Sha1)?;
-    let b = Oid::from_str_hex(B, OidType::Sha1)?;
+    let a = Oid::from_hex(A, OidType::Sha1)?;
+    let b = Oid::from_hex(B, OidType::Sha1)?;
     let mut arr = GitArray::new();
     oidarray::add(&mut arr, &a)?;
     oidarray::add(&mut arr, &b)?;

@@ -51,7 +51,7 @@ std::thread_local! {
 }
 
 /// A read hold of [`SYSDIR`] (re-entrant on its thread).
-struct ReadGuard(Option<std::sync::RwLockReadGuard<'static, ()>>);
+struct ReadGuard(#[allow(dead_code)] Option<std::sync::RwLockReadGuard<'static, ()>>);
 
 fn read_guard() -> ReadGuard {
     let outer = READERS.with(|r| {

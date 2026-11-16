@@ -6,10 +6,12 @@
 //!
 //! The rules (see each type's documentation): what libgit2 lets several
 //! threads use at once is `Send + Sync` (`Repository`, `Odb`, `Config`,
-//! `Reference`, ids, errors, options); single-threaded C objects (the index
-//! and its iterators, objects and trees, revwalks, odb streams, reflog
-//! entries, the refdb handle) are neither; iterators and backends that one
-//! thread drives at a time are `Send` but not `Sync`.
+//! `Reference`, ids, errors, options); objects are immutable after parse
+//! and counted atomically, so they are too (I-14); the index is
+//! single-threaded in C, and the safe `Index` takes its lock for every
+//! operation, so it is `Send + Sync` as well (I-1); iterators and backends
+//! that one thread drives at a time are `Send` but not `Sync`; streams over
+//! raw tables, revwalks, reflog entries and the refdb handle are neither.
 #![forbid(unsafe_code)]
 #![allow(dead_code)]
 
@@ -59,77 +61,106 @@ macro_rules! neither {
 }
 
 send_sync!(
-    __test::index::api::ReucEntry,
-    __test::index::api::NameEntry,
-    __test::repository::api::RepositoryInitMode,
-    __test::repository::api::RefStorage,
-    RepositoryInitOptions,
-    RepositoryState,
-    __test::repository::api::RepositoryItem,
-    Repository,
-    Odb<'static>,
-    ExpandId,
-    OdbObject,
-    LooseOptions,
-    Mempack,
-    ConfigLevel,
-    ConfigEntry,
-    Config<'static>,
-    ConfigEntries<'static>,
-    __test::config::ConfigMap<'static>,
-    Stage,
-    IndexTime,
-    IndexEntry,
-    __test::index::IndexCapability,
-    __test::index::IndexAddOption,
-    __test::index::ConflictEntries,
-    __test::commit::api::SignatureRef<'static>,
-    CommitBuilder,
-    __test::tree::api::EntryKind,
-    __test::tree::api::TreeWalkMode,
-    __test::tree::api::TreeWalk,
-    __test::tree::api::TreeUpdate,
-    Sort,
-    Reference<'static>,
-    __test::refs_api::PeelTarget,
-    __test::refs_api::ReferenceFormat,
-    Signature,
-    Reflog,
-    __test::refs_api::RefValue,
-    HashSigOptions,
-    HashSig,
-    OidType,
-    Oid,
-    __test::oid::HexOid,
-    OidShortener,
-    __test::oidarray::OidArray,
-    __test::strarray::StrArray,
-    Libgit2,
+    // errors, ids, options, plain data
+    Error,
     ErrorCode,
     ErrorClass,
-    Error,
+    Oid,
+    OidType,
+    HexOid,
+    OidShortener<'static>,
+    ObjectType,
+    Libgit2,
+    Features,
+    Signature,
+    SignatureRef<'static>,
+    Time,
+    // repository
+    Repository,
+    RepositoryInitOptions,
+    RepositoryInitFlags,
+    RepositoryInitMode,
+    RepositoryOpenFlags,
+    RepositoryState,
+    RepositoryItem,
+    RefStorage,
+    // objects (immutable after parse, atomically counted)
+    Object<'static>,
+    Commit<'static>,
+    Tree<'static>,
+    TreeEntry,
+    TreeEntryRef<'static>,
+    TreeBuilder<'static>,
+    TreeUpdate<'static>,
+    TreeWalk,
+    TreeWalkMode,
+    Blob<'static>,
+    BlobWriter<'static>,
+    BlobFilterOptions,
+    Tag<'static>,
+    CommitBuilder<'static>,
+    AmendOptions<'static>,
+    ObjectIdOptions,
+    // odb
+    Odb<'static>,
+    OdbObject,
+    Mempack,
+    LooseOptions,
+    ExpandId,
+    IndexerProgress,
+    // config
+    Config<'static>,
+    ConfigEntries<'static>,
+    ConfigEntry,
+    ConfigLevel,
+    ConfigLock<'static>,
+    ConfigMap<'static>,
+    ConfigMapKind,
+    // index: every operation under the index's lock (I-1)
+    Index<'static>,
+    IndexEntries<'static>,
+    IndexConflicts<'static>,
+    IndexEntry,
+    IndexTime,
+    IndexCapability,
+    IndexAddOption,
+    IndexMatch,
+    ConflictEntries,
+    ReucEntry,
+    NameEntry,
+    Stage,
+    // references
+    Reference<'static>,
+    ReferenceType,
+    ReferenceFormat,
+    Reflog<'static>,
+    RefValue,
+    ReflogRecord,
+    RefdbUnlock,
+    Sort,
+    HashSig,
+    HashSigOptions,
 );
 
 send_not_sync!(
+    // driven by one thread at a time
     Backend,
     References<'static>,
-    __test::refs_api::ReferenceNames<'static>,
+    ReferenceNames<'static>,
+    RefdbLock,
 );
 
 neither!(
-    __test::repository::Refdb<'static>,
+    // streams over raw tables, single-threaded handles
     OdbWriter<'static>,
     OdbReader<'static>,
-    Index<'static>,
-    __test::index::IndexEntries<'static>,
-    __test::index::IndexConflicts<'static>,
-    Commit<'static>,
-    TreeEntryRef<'static>,
-    TreeEntry,
-    Tree<'static>,
-    TreeBuilder<'static>,
+    OdbPackWriter<'static>,
+    BackendRef<'static>,
+    ReflogEntry<'static>,
+    Refdb<'static>,
     Revwalk<'static>,
-    ReflogEntry,
+    // holds a boxed signing closure (not required to be Send)
+    CommitCreateOptions<'static>,
 );
 
 #[test]

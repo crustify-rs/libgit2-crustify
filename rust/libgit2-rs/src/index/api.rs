@@ -379,7 +379,9 @@ pub(crate) fn with_repository_index_locked<R>(
     let lock = repo.index_weak().ok().map(api_lock_of);
     crate::util::errors::restore(saved);
     let _g = lock.as_ref().map(|l| l.lock());
-    f()
+    // The same operations' C (attributes, ignores) reads the search paths:
+    // hold their setters off too.
+    crate::sys::sysdir::reading(f)
 }
 
 /// An index (`git_index`): a reference to it, freed with the last one.

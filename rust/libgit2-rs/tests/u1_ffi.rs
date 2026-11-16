@@ -126,7 +126,10 @@ fn oid_parse_exports() {
             -1
         );
         assert_eq!(msg(), b"unable to parse OID - contains invalid characters");
-        assert_eq!(&p.raw_id()[..2], &[0xab, 0xc0]);
+        assert_eq!(
+            &libgit2_rs::__test::oid::test_raw::raw_id(&p)[..2],
+            &[0xab, 0xc0]
+        );
         assert_eq!(
             git_oid_from_prefix(&mut p, ptr::null(), 4, GIT_OID_SHA1),
             -1
@@ -189,7 +192,7 @@ fn oid_format_exports() {
         let a = git_oid_allocfmt(&o);
         assert_eq!(CStr::from_ptr(a), HEX);
         libgit2_rs::__test::util::alloc::free(a.cast());
-        let bad = Oid::from_raw_parts(9, [0; 32]);
+        let bad = libgit2_rs::__test::oid::test_raw::from_raw_parts(9, [0; 32]);
         assert!(git_oid_allocfmt(&bad).is_null());
         assert_eq!(git_oid_fmt(buf.as_mut_ptr(), &bad), -1);
         assert_eq!(msg(), b"unable to parse OID - unknown type");
@@ -206,7 +209,7 @@ fn oid_compare_and_shorten_exports() {
         assert_eq!(git_oid_cpy(&mut b, &a), 0);
         assert_eq!(git_oid_equal(&a, &b), 1);
         assert_eq!(git_oid_cpy(&mut b, &b), 0);
-        b.raw_id_mut()[19] = 0xdf;
+        libgit2_rs::__test::oid::test_raw::raw_id_mut(&mut b)[19] = 0xdf;
         assert_eq!(git_oid_cmp(&a, &b), 0xdc - 0xdf);
         assert_eq!(git_oid_ncmp(&a, &b, 38), 0);
         assert_eq!(git_oid_ncmp(&a, &b, 40), 1);

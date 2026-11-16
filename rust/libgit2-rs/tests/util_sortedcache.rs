@@ -437,7 +437,7 @@ fn lock_and_load_on_disk() {
 
     // missing file: GIT_ENOTFOUND, unlocked
     let e = cache.lock_and_load().err().unwrap();
-    assert_eq!(e.code(), ErrorCode::NOT_FOUND);
+    assert_eq!(e.code(), ErrorCode::NOT_FOUND.into());
 
     std::fs::write(&path, "10 abc\n20 bcd\n30 cde\n").unwrap();
     let reload = |cache: &SortedCache<i64>| {

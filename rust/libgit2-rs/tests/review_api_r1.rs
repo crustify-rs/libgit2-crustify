@@ -46,9 +46,9 @@ fn odb_outlives_libgit2_value() {
     let g = Libgit2::init().unwrap();
     let odb = Odb::open(testrepo().join("objects"), OidType::Sha1).unwrap();
     let o = odb.read(&oid(HEAD_COMMIT)).unwrap();
-    assert_eq!(o.kind(), Some(ObjectType::Commit));
+    assert_eq!(o.kind(), ObjectType::Commit);
     drop(o);
-    drop(g);
+    let _ = g; // a witness only: there is nothing to tear down
     let o = odb.read(&oid(HEAD_COMMIT)).unwrap();
     assert!(o.data().starts_with(b"tree "));
 }

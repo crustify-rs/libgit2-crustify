@@ -440,7 +440,7 @@ mod with_a_repository {
         let tree = Tree::lookup(&repo, &tree_id).unwrap();
         assert_eq!(tree.len(), 2);
         assert_eq!(
-            tree.get_name(b"a.txt").unwrap().id(),
+            *tree.get_name(b"a.txt").unwrap().id(),
             index.get_path("a.txt", Stage::Normal).unwrap().id
         );
         // the same tree again (the tree cache)
@@ -522,7 +522,7 @@ mod with_a_repository {
         assert!(repo.odb().unwrap().exists(&blob));
         assert_eq!(
             repo.odb().unwrap().read(&blob).unwrap().kind(),
-            Some(ObjectType::Blob)
+            ObjectType::Blob
         );
 
         // Stop: Ok, and nothing after

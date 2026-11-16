@@ -602,6 +602,6 @@ fn safe_url_api() {
         b"https://me:secret@example.com/repo.git"
     );
     let e = libgit2_rs::__test::util::net::Url::parse(b"http://[::1").unwrap_err();
-    assert_eq!(e.code(), ErrorCode::INVALID_SPEC);
-    assert_eq!(e.class(), ErrorClass::NET);
+    assert_eq!(e.code(), ErrorCode::INVALID_SPEC.into());
+    assert_eq!(e.class(), ErrorClass::NET.into());
 }

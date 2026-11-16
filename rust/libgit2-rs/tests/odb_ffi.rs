@@ -82,7 +82,7 @@ unsafe extern "C" {
 const HELLO: &str = "ce013625030ba8dba906f756967f9e9ca394464a";
 
 fn oid(s: &str) -> Oid {
-    Oid::from_str_hex(s, OidType::Sha1).unwrap()
+    Oid::from_hex(s, OidType::Sha1).unwrap()
 }
 
 fn last_message() -> String {
@@ -422,7 +422,7 @@ fn plain(i: u8, size: usize) -> *mut GitCachedObj {
     // SAFETY: live objects of this test, as the C contract requires.
     unsafe {
         p.write(GitCachedObj {
-            oid: Oid::from_raw_parts(1, id),
+            oid: libgit2_rs::__test::oid::test_raw::from_raw_parts(1, id),
             type_: 1,
             flags: 0,
             size,

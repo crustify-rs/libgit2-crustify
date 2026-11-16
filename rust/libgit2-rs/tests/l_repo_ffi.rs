@@ -457,11 +457,11 @@ fn ownership_validation() {
         let mut v: c_int = -1;
         assert_eq!(git_libgit2_opts(GIT_OPT_GET_OWNER_VALIDATION, &mut v), 0);
         assert_eq!(v, 1);
-        libgit2_rs::__test::settings::opts::set_owner_validation(false);
+        libgit2_rs::opts::set_owner_validation(false);
         git_fs_path__set_owner(1 << 4);
         let e = git_repository_open(&mut o, p.as_ptr());
         git_fs_path__set_owner(0);
-        libgit2_rs::__test::settings::opts::set_owner_validation(true);
+        libgit2_rs::opts::set_owner_validation(true);
         assert_eq!(e, 0);
         git_repository_free(o);
     }

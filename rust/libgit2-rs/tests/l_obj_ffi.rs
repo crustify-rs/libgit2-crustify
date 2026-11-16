@@ -274,7 +274,7 @@ fn argument_checks() {
 fn peel_errors_are_cs() {
     let _g = test_support::init();
     let r = Repo::scratch("peel");
-    let id = Oid::from_str_hex(
+    let id = Oid::from_hex(
         "1385f264afb75a56a5bec74243be9b367ba4ca08",
         libgit2_rs::OidType::Sha1,
     )
@@ -372,7 +372,7 @@ fn tag_lists_and_short_ids() {
     assert_eq!(rv, 0);
     assert!(n >= 7);
 
-    let id = Oid::from_str_hex(
+    let id = Oid::from_hex(
         "a65fedf39aefe402d3bb6e24df4d4f5fe4547750",
         libgit2_rs::OidType::Sha1,
     )

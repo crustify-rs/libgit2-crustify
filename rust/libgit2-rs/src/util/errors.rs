@@ -40,7 +40,6 @@
 use core::cell::{Cell, RefCell, UnsafeCell};
 use core::ffi::{CStr, c_char, c_int};
 use core::fmt;
-use std::borrow::Cow;
 
 use super::runtime;
 
