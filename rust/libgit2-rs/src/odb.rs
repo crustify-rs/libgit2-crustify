@@ -2236,7 +2236,7 @@ fn fake_wstream_new(
 pub mod ffi;
 
 /// The safe Rust API.
-mod api;
+pub(crate) mod api;
 pub use api::*;
 
 crate::c_layout_test! {

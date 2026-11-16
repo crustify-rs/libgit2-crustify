@@ -119,15 +119,40 @@ macro_rules! owner {
     };
 }
 
-/// An owned reference to a `git_refdb`.
+/// A reference database (`git_refdb`): the repository's
+/// ([`Repository::refdb`](crate::Repository::refdb)) or one made beside it
+/// ([`Refdb::new`], [`Refdb::open`]). Refcounted: `Clone` takes another
+/// reference to the same database. Its methods are in `refs_api`.
 ///
 /// `'r` is the repository the database points back to: the handle cannot
 /// outlive it. It is neither `Send` nor `Sync` (`GitRefdb` keeps a raw
 /// back pointer).
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Refdb<'r>(CShared<GitRefdb>, PhantomData<&'r ()>);
 
+impl core::fmt::Debug for Refdb<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Refdb").finish_non_exhaustive()
+    }
+}
+
 impl<'r> Refdb<'r> {
+    /// A handle of a new database (its one reference).
+    pub(crate) fn from_shared(db: CShared<GitRefdb>) -> Refdb<'r> {
+        Refdb(db, PhantomData)
+    }
+
+    /// The C pointer, non-null (still owned).
+    pub(crate) fn as_nonnull(&self) -> NonNull<GitRefdb> {
+        // SAFETY: a `CShared`'s pointer is not NULL.
+        unsafe { NonNull::new_unchecked(CShared::as_ptr(&self.0)) }
+    }
+
+    /// Whether this handle holds the only reference to the database.
+    pub(crate) fn is_unique(&mut self) -> bool {
+        CShared::get_mut(&mut self.0).is_some()
+    }
+
     /// Another reference to `p`.
     ///
     /// # Safety

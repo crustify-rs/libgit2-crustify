@@ -345,46 +345,18 @@ impl Signature {
 // The safe API
 // ---------------------------------------------------------------------------
 
-/// Options of a [`HashSig`] (`git_hashsig_option_t`).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct HashSigOptions(u32);
-
-impl HashSigOptions {
-    /// `GIT_HASHSIG_NORMAL`: use all data.
-    pub const NORMAL: HashSigOptions = HashSigOptions(GIT_HASHSIG_NORMAL);
-    /// `GIT_HASHSIG_IGNORE_WHITESPACE`: ignore whitespace.
-    pub const IGNORE_WHITESPACE: HashSigOptions = HashSigOptions(GIT_HASHSIG_IGNORE_WHITESPACE);
-    /// `GIT_HASHSIG_SMART_WHITESPACE`: ignore `\r` and all space after `\n`.
-    pub const SMART_WHITESPACE: HashSigOptions = HashSigOptions(GIT_HASHSIG_SMART_WHITESPACE);
-    /// `GIT_HASHSIG_ALLOW_SMALL_FILES`: allow hashing of small files.
-    pub const ALLOW_SMALL_FILES: HashSigOptions = HashSigOptions(GIT_HASHSIG_ALLOW_SMALL_FILES);
-
-    /// The flags as bits.
-    pub const fn bits(self) -> u32 {
-        self.0
-    }
-
-    /// The options of `bits` (unknown bits are kept, as C does).
-    pub const fn from_bits(bits: u32) -> HashSigOptions {
-        HashSigOptions(bits)
-    }
-
-    /// Whether every flag of `other` is set.
-    pub const fn contains(self, other: HashSigOptions) -> bool {
-        self.0 & other.0 == other.0
-    }
-}
-
-impl core::ops::BitOr for HashSigOptions {
-    type Output = HashSigOptions;
-    fn bitor(self, rhs: HashSigOptions) -> HashSigOptions {
-        HashSigOptions(self.0 | rhs.0)
-    }
-}
-
-impl core::ops::BitOrAssign for HashSigOptions {
-    fn bitor_assign(&mut self, rhs: HashSigOptions) {
-        self.0 |= rhs.0;
+crate::api::flags::bitflags! {
+    /// Options of a [`HashSig`] (`git_hashsig_option_t`).
+    pub struct HashSigOptions: u32 {
+        /// `GIT_HASHSIG_NORMAL`: use all data (no flag).
+        NORMAL = GIT_HASHSIG_NORMAL;
+        /// `GIT_HASHSIG_IGNORE_WHITESPACE`: ignore whitespace.
+        IGNORE_WHITESPACE = GIT_HASHSIG_IGNORE_WHITESPACE;
+        /// `GIT_HASHSIG_SMART_WHITESPACE`: ignore `\r` and all space after
+        /// `\n`.
+        SMART_WHITESPACE = GIT_HASHSIG_SMART_WHITESPACE;
+        /// `GIT_HASHSIG_ALLOW_SMALL_FILES`: allow hashing of small files.
+        ALLOW_SMALL_FILES = GIT_HASHSIG_ALLOW_SMALL_FILES;
     }
 }
 
@@ -392,7 +364,6 @@ impl core::ops::BitOrAssign for HashSigOptions {
 ///
 /// ```
 /// use libgit2_rs::{HashSig, HashSigOptions};
-/// # let _g = libgit2_rs::__test::util::test_support::init();
 /// let a = HashSig::new(b"one\ntwo\nthree\nfour\nfive\n", HashSigOptions::NORMAL)?;
 /// let b = HashSig::new(b"one\ntwo\nthree\nfour\nsix\n", HashSigOptions::NORMAL)?;
 /// assert_eq!(a.compare(&a), 100);
@@ -406,29 +377,38 @@ impl HashSig {
     /// `git_hashsig_create`: the signature of `buf`. Fails with
     /// `ErrorCode::BUFS` for content with fewer than 4 runs, unless
     /// [`HashSigOptions::ALLOW_SMALL_FILES`] is set.
-    pub fn new(buf: &[u8], opts: HashSigOptions) -> core::result::Result<HashSig, Error> {
-        Ok(HashSig(Box::new(Signature::from_buf(buf, opts.0)?)))
+    pub fn new(
+        buf: impl AsRef<[u8]>,
+        opts: HashSigOptions,
+    ) -> core::result::Result<HashSig, Error> {
+        crate::libgit2::ensure_init()?;
+        Ok(HashSig(Box::new(Signature::from_buf(
+            buf.as_ref(),
+            opts.raw(),
+        )?)))
     }
 
     /// `git_hashsig_create_fromfile`: the signature of the file at `path`.
     pub fn from_file(
-        path: &std::path::Path,
+        path: impl AsRef<std::path::Path>,
         opts: HashSigOptions,
     ) -> core::result::Result<HashSig, Error> {
         use std::os::unix::ffi::OsStrExt;
-        let c = std::ffi::CString::new(path.as_os_str().as_bytes()).map_err(|_| {
+        crate::libgit2::ensure_init()?;
+        let c = std::ffi::CString::new(path.as_ref().as_os_str().as_bytes()).map_err(|_| {
             Error::from(git_error_set!(
                 ErrorClass::INVALID,
                 "path contains a NUL byte"
             ))
         })?;
-        Ok(HashSig(Box::new(Signature::from_file(&c, opts.0)?)))
+        Ok(HashSig(Box::new(Signature::from_file(&c, opts.raw())?)))
     }
 
     /// `git_hashsig_compare`: the similarity with `other`, from 0
-    /// (different) to 100 (same).
-    pub fn compare(&self, other: &HashSig) -> i32 {
-        self.0.compare(&other.0)
+    /// (different) to 100 (same). It cannot fail (C's negative status is
+    /// never returned for two signatures).
+    pub fn compare(&self, other: &HashSig) -> u8 {
+        u8::try_from(self.0.compare(&other.0).clamp(0, SCALE)).unwrap_or(0)
     }
 }
 
@@ -746,7 +726,7 @@ mod tests {
             HashSig::new(&a, HashSigOptions::NORMAL)
                 .unwrap()
                 .compare(&HashSig::new(&b, HashSigOptions::NORMAL).unwrap()),
-            s
+            u8::try_from(s).unwrap()
         );
     }
 
