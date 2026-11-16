@@ -106,11 +106,6 @@ impl Time {
         }
     }
 
-    /// The C value.
-    pub const fn from_raw(raw: GitTime) -> Time {
-        Time { raw }
-    }
-
     /// Seconds since the epoch.
     pub const fn seconds(&self) -> i64 {
         self.raw.time
@@ -128,7 +123,7 @@ impl Time {
     }
 
     /// The C value.
-    pub const fn raw(&self) -> GitTime {
+    pub(crate) const fn raw(&self) -> GitTime {
         self.raw
     }
 }
@@ -198,7 +193,7 @@ impl Signature {
     /// repository's configuration, now.
     pub fn default_for(repo: &crate::object::Repository) -> core::result::Result<Signature, Error> {
         // SAFETY: a live repository.
-        Ok(unsafe { default_for(crate::object::repo_ptr(repo)) }?)
+        Ok(unsafe { default_for(crate::object::repo_ptr(repo), || ()) }?)
     }
 
     /// `git_signature_default_from_env`: the author and committer
@@ -249,11 +244,6 @@ impl Signature {
         dup_parts(self.name(), self.email(), self.0.when)
     }
 
-    /// The C view (`const git_signature *`), valid while `self` is.
-    pub fn as_raw(&self) -> *const GitSignature {
-        &raw const self.0
-    }
-
     /// The serialised form, `<header>name <email> time ±hhmm\n`
     /// (`git_signature__writebuf`).
     pub fn to_header(&self, header: &[u8]) -> Vec<u8> {
@@ -262,14 +252,9 @@ impl Signature {
         v
     }
 
-    /// Append the serialised form to `buf` (`git_signature__writebuf`).
-    pub fn write_to(&self, buf: &mut GitStr, header: Option<&[u8]>) {
-        writebuf(buf, header, self.name(), self.email(), self.0.when);
-    }
-
     /// Move into a `git__allocator` block that C frees with
     /// `git_signature_free`.
-    pub fn into_raw(self) -> Result<*mut GitSignature> {
+    pub(crate) fn into_raw(self) -> Result<*mut GitSignature> {
         let p = alloc::malloc(size_of::<GitSignature>()).cast::<GitSignature>();
         if p.is_null() {
             return Err(ErrorCode::GENERIC);
@@ -299,7 +284,11 @@ impl Clone for Signature {
 /// `git_signature__equal`.
 impl PartialEq for Signature {
     fn eq(&self, other: &Signature) -> bool {
-        self.name() == other.name() && self.email() == other.email() && self.0.when == other.0.when
+        // SAFETY: the invariant: both strings of each are NUL-terminated
+        // and live (one pass each, as C's `strcmp`).
+        let names = unsafe { c_str_eq(self.0.name, other.0.name) };
+        // SAFETY: as above.
+        names && unsafe { c_str_eq(self.0.email, other.0.email) } && self.0.when == other.0.when
     }
 }
 
@@ -391,7 +380,12 @@ fn dup_parts(name: &[u8], email: &[u8], when: GitTime) -> Result<Signature> {
 }
 
 /// `git_signature_new` on strings without NUL bytes.
-pub fn new_sig(name: &[u8], email: &[u8], time: git_time_t, offset: c_int) -> Result<Signature> {
+pub(crate) fn new_sig(
+    name: &[u8],
+    email: &[u8],
+    time: git_time_t,
+    offset: c_int,
+) -> Result<Signature> {
     if contains_angle_brackets(name) || contains_angle_brackets(email) {
         return Err(signature_error(
             "Neither `name` nor `email` should contain angle brackets chars.",
@@ -422,7 +416,7 @@ pub fn new_sig(name: &[u8], email: &[u8], time: git_time_t, offset: c_int) -> Re
 
 /// `current_time`: now, and the local timezone's offset in minutes (as C:
 /// `mktime` of the UTC broken-down time with `tm_isdst = -1`).
-pub fn current_time() -> (i64, c_int) {
+pub(crate) fn current_time() -> (i64, c_int) {
     // SAFETY: `time(NULL)` has no precondition.
     let now = unsafe { libc::time(ptr::null_mut()) };
     // SAFETY: `tm` is plain data; zero is a valid value.
@@ -452,7 +446,7 @@ pub fn current_time() -> (i64, c_int) {
 ///
 /// A timestamp that is not a number fails; a timezone that is not one
 /// (or out of range) leaves the offset 0 (and, out of range, the sign 0).
-pub fn parse(buf: &[u8], header: Option<&[u8]>, ender: u8) -> Result<(Signature, usize)> {
+pub(crate) fn parse(buf: &[u8], header: Option<&[u8]>, ender: u8) -> Result<(Signature, usize)> {
     let mut end = buf.len();
     if ender != 0 {
         match memchr::memchr(ender, buf) {
@@ -521,27 +515,67 @@ pub fn parse(buf: &[u8], header: Option<&[u8]>, ender: u8) -> Result<(Signature,
 }
 
 /// The bytes `git_signature__writebuf` appends.
-pub fn format_into(out: &mut Vec<u8>, header: &[u8], name: &[u8], email: &[u8], when: GitTime) {
-    use std::io::Write as _;
+pub(crate) fn format_into(
+    out: &mut Vec<u8>,
+    header: &[u8],
+    name: &[u8],
+    email: &[u8],
+    when: GitTime,
+) {
+    let mut tail = [0u8; TAIL_MAX];
+    let n = format_tail(&mut tail, when);
+    for p in [header, name, b" <", email, b"> ", &tail[..n]] {
+        out.extend_from_slice(p);
+    }
+}
+
+/// The longest `"%u %c%02d%02d\n"` (u32 digits, sign, two `int`s).
+const TAIL_MAX: usize = 10 + 2 + 2 * 11 + 1;
+
+/// Append `v`'s decimal digits at `out[n..]` (`%u`; with `width` 2 and a
+/// value below 10, a leading 0 as `%02d`); the new length.
+fn put_decimal(out: &mut [u8; TAIL_MAX], mut n: usize, v: u32, width: usize) -> usize {
+    let mut digits = [0u8; 10];
+    let mut d = digits.len();
+    let mut m = v;
+    loop {
+        d -= 1;
+        digits[d] = b'0' + (m % 10) as u8;
+        m /= 10;
+        if m == 0 {
+            break;
+        }
+    }
+    while digits.len() - d < width {
+        d -= 1;
+        digits[d] = b'0';
+    }
+    let k = digits.len() - d;
+    out[n..n + k].copy_from_slice(&digits[d..]);
+    n += k;
+    n
+}
+
+/// `"%u %c%02d%02d\n"` of the time: the timestamp truncated to 32 bits,
+/// the sign, hours and minutes.
+fn format_tail(out: &mut [u8; TAIL_MAX], when: GitTime) -> usize {
     let sign = if when.offset < 0 || when.sign == b'-' as c_char {
-        '-'
+        b'-'
     } else {
-        '+'
+        b'+'
     };
     // C's `if (offset < 0) offset = -offset`, then `/ 60`, `% 60`. For
     // INT_MIN the negation overflows (undefined behaviour); the C compiled
     // as the reference does uses the magnitude, 2^31, and so does this
-    // (rust/DEFECTS.md).
+    // (rust/DEFECTS.md). Both are then non-negative.
     let magnitude = when.offset.unsigned_abs();
-    let hours = magnitude / 60;
-    let mins = magnitude % 60;
-    out.extend_from_slice(header);
-    out.extend_from_slice(name);
-    out.extend_from_slice(b" <");
-    out.extend_from_slice(email);
-    out.extend_from_slice(b"> ");
-    // `%u %c%02d%02d\n`
-    let _ = writeln!(out, "{} {}{:02}{:02}", when.time as u32, sign, hours, mins);
+    let mut n = put_decimal(out, 0, when.time as u32, 0);
+    out[n] = b' ';
+    out[n + 1] = sign;
+    n = put_decimal(out, n + 2, magnitude / 60, 2);
+    n = put_decimal(out, n, magnitude % 60, 2);
+    out[n] = b'\n';
+    n + 1
 }
 
 /// The length of `"%s%s <%s> %u %c%02d%02d\n"`, for `git_str_printf`'s
@@ -550,10 +584,17 @@ const WRITEBUF_FORMAT_LEN: usize = 24;
 
 /// `git_signature__writebuf`: append `<header>name <email> time ±hhmm\n`.
 /// Fails silently (the string becomes out of memory), as C.
-pub fn writebuf(buf: &mut GitStr, header: Option<&[u8]>, name: &[u8], email: &[u8], when: GitTime) {
-    let mut v = Vec::with_capacity(header.map_or(0, <[u8]>::len) + name.len() + email.len() + 32);
-    format_into(&mut v, header.unwrap_or(b""), name, email, when);
-    let _ = crate::object::printf_bytes(buf, WRITEBUF_FORMAT_LEN, &v);
+pub(crate) fn writebuf(
+    buf: &mut GitStr,
+    header: Option<&[u8]>,
+    name: &[u8],
+    email: &[u8],
+    when: GitTime,
+) {
+    let mut tail = [0u8; TAIL_MAX];
+    let n = format_tail(&mut tail, when);
+    let pieces: [&[u8]; 6] = [header.unwrap_or(b""), name, b" <", email, b"> ", &tail[..n]];
+    let _ = crate::object::printf_pieces(buf, WRITEBUF_FORMAT_LEN, &pieces);
 }
 
 /// `strcmp(a, b) == 0` in one pass, reading each string only up to its
@@ -601,15 +642,19 @@ unsafe fn c_bytes<'a>(p: *const c_char) -> &'a [u8] {
 }
 
 /// `git_signature_default`: `user.name` and `user.email` from the
-/// repository's configuration, now.
+/// repository's configuration, now. `found` runs once both strings are read,
+/// before they are validated (where C's `git_signature_new` sets
+/// `*sig_out = NULL`).
 ///
 /// # Safety
 ///
 /// `repo` is a live repository.
-pub unsafe fn default_for(
+pub(crate) unsafe fn default_for(
     repo: *mut crate::sys::pending::l_obj::git_repository,
+    found: impl FnOnce(),
 ) -> Result<Signature> {
-    let cfg = config_snapshot(repo)?;
+    // SAFETY: the caller's contract.
+    let cfg = unsafe { config_snapshot(repo)? };
     let r = (|| {
         let name = cfg.get_string(c"user.name")?;
         let email = cfg.get_string(c"user.email")?;
@@ -618,6 +663,7 @@ pub unsafe fn default_for(
         // SAFETY: as above.
         let email = unsafe { CStr::from_ptr(email) };
         let (now, offset) = current_time();
+        found();
         new_sig(name.to_bytes(), email.to_bytes(), now, offset)
     })();
     drop(cfg);
@@ -648,12 +694,15 @@ impl ConfigSnapshot {
 }
 
 /// `git_repository_config_snapshot`.
-fn config_snapshot(
+///
+/// # Safety
+///
+/// `repo` is a live repository.
+unsafe fn config_snapshot(
     repo: *mut crate::sys::pending::l_obj::git_repository,
 ) -> Result<ConfigSnapshot> {
     let mut cfg = ptr::null_mut();
-    // SAFETY: the caller of every user (`default_for`, `user_from_env`)
-    // passes a live repository; `cfg` is writable.
+    // SAFETY: a live repository (the caller's contract); `cfg` is writable.
     let r =
         unsafe { crate::sys::pending::l_obj::git_repository_config_snapshot(&raw mut cfg, repo) };
     ErrorCode::check(r)?;
@@ -663,7 +712,11 @@ fn config_snapshot(
 /// `user_from_env`: a signature from the environment variables, else the
 /// configuration (and `$EMAIL` for the e-mail), at `$<date_env_var>` or the
 /// default time.
-fn user_from_env(
+///
+/// # Safety
+///
+/// `repo` is a live repository.
+unsafe fn user_from_env(
     repo: *mut crate::sys::pending::l_obj::git_repository,
     name_env_var: &CStr,
     email_env_var: &CStr,
@@ -671,7 +724,8 @@ fn user_from_env(
     default_time: i64,
     default_offset: c_int,
 ) -> Result<Signature> {
-    let cfg = config_snapshot(repo)?;
+    // SAFETY: the caller's contract.
+    let cfg = unsafe { config_snapshot(repo)? };
     let mut name_env = GitStr::new();
     let mut email_env = GitStr::new();
     let mut date_env = GitStr::new();
@@ -725,33 +779,39 @@ fn user_from_env(
 /// # Safety
 ///
 /// `repo` is a live repository.
-pub unsafe fn default_from_env(
+pub(crate) unsafe fn default_from_env(
     repo: *mut crate::sys::pending::l_obj::git_repository,
     author: bool,
     committer: bool,
 ) -> Result<(Option<Signature>, Option<Signature>)> {
     let (now, offset) = current_time();
     let a = if author {
-        Some(user_from_env(
-            repo,
-            c"GIT_AUTHOR_NAME",
-            c"GIT_AUTHOR_EMAIL",
-            c"GIT_AUTHOR_DATE",
-            now,
-            offset,
-        )?)
+        // SAFETY: the caller's contract.
+        Some(unsafe {
+            user_from_env(
+                repo,
+                c"GIT_AUTHOR_NAME",
+                c"GIT_AUTHOR_EMAIL",
+                c"GIT_AUTHOR_DATE",
+                now,
+                offset,
+            )?
+        })
     } else {
         None
     };
     let c = if committer {
-        Some(user_from_env(
-            repo,
-            c"GIT_COMMITTER_NAME",
-            c"GIT_COMMITTER_EMAIL",
-            c"GIT_COMMITTER_DATE",
-            now,
-            offset,
-        )?)
+        // SAFETY: the caller's contract.
+        Some(unsafe {
+            user_from_env(
+                repo,
+                c"GIT_COMMITTER_NAME",
+                c"GIT_COMMITTER_EMAIL",
+                c"GIT_COMMITTER_DATE",
+                now,
+                offset,
+            )?
+        })
     } else {
         None
     };
@@ -764,18 +824,25 @@ pub unsafe fn default_from_env(
 ///
 /// `sig` is NULL or a `git__allocator` block holding a `git_signature`
 /// whose strings are NULL or `git__allocator` strings, none used again.
-pub unsafe fn free_raw(sig: *mut GitSignature) {
+pub(crate) unsafe fn free_raw(sig: *mut GitSignature) {
     if sig.is_null() {
         return;
     }
-    // SAFETY: the caller's contract: a live block, read once.
-    let s = unsafe { sig.read() };
+    // Only the two pointers are read: C may have set nothing else.
+    // SAFETY: the caller's contract: a live block (no reference formed).
+    let pn = unsafe { &raw const (*sig).name };
+    // SAFETY: as above.
+    let pe = unsafe { &raw const (*sig).email };
+    // SAFETY: a field the caller set (NULL or a string).
+    let name = unsafe { pn.read() };
+    // SAFETY: as above.
+    let email = unsafe { pe.read() };
     // SAFETY: the strings and the block, each freed once.
     unsafe {
-        alloc::free(s.name.cast());
+        alloc::free(name.cast());
     }
     // SAFETY: as above.
-    unsafe { alloc::free(s.email.cast()) };
+    unsafe { alloc::free(email.cast()) };
     // SAFETY: as above.
     unsafe { alloc::free(sig.cast()) };
 }
@@ -858,9 +925,11 @@ pub mod ffi {
         name: *const c_char,
         email: *const c_char,
     ) -> c_int {
-        let (now, offset) = current_time();
-        // SAFETY: forwarded.
-        unsafe { git_signature_new(sig_out, name, email, now, offset) }
+        barrier(|| {
+            let (now, offset) = current_time();
+            // SAFETY: forwarded.
+            unsafe { git_signature_new(sig_out, name, email, now, offset) }
+        })
     }
 
     /// `git_signature_dup` (`*dest` untouched when `source` is NULL).
@@ -985,8 +1054,12 @@ pub mod ffi {
         repo: *mut crate::sys::pending::l_obj::git_repository,
     ) -> c_int {
         barrier(|| {
+            // C's `git_signature_new` sets `*out = NULL` once the identity
+            // is read, before validating it.
+            // SAFETY: `out` is writable (the caller's contract).
+            let found = || unsafe { out.write(ptr::null_mut()) };
             // SAFETY: the caller's contract.
-            match unsafe { default_for(repo) } {
+            match unsafe { default_for(repo, found) } {
                 // SAFETY: writable.
                 Ok(s) => unsafe { give(out, s) },
                 Err(e) => e.raw(),
@@ -1066,7 +1139,9 @@ pub mod ffi {
             unsafe { sig.write(GitSignature::ZERO) };
             // SAFETY: readable.
             let start = unsafe { *buffer_out };
-            let len = (buffer_end as usize).wrapping_sub(start as usize);
+            // An end before the start (C's `memchr` with a huge length, UB)
+            // is an empty range: rust/DEFECTS.md.
+            let len = (buffer_end as usize).saturating_sub(start as usize);
             // SAFETY: the caller's readable range.
             let buf = unsafe { crate::util::export::bytes(start, len) };
             let header = if header.is_null() {
