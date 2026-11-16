@@ -47,9 +47,9 @@ use super::handles::{Config, Index, Odb, Refdb, Reference};
 use super::head::{self, state};
 use super::init::{InitOptions, InitOut};
 use super::*;
+use crate::libgit2::Libgit2;
 use crate::oid::{Oid, OidType};
 use crate::util::errors::{Error, ErrorCode};
-use crate::libgit2::Libgit2;
 use crate::util::str::GitStr;
 
 type Result<T> = core::result::Result<T, Error>;
@@ -484,7 +484,10 @@ impl Repository {
     /// `git_repository_new_ext`: a repository with no backends.
     pub fn new_in_memory(oid_type: OidType) -> Result<Repository> {
         let lib = Libgit2::init()?;
-        Ok(Repository::from_nonnull(open::new_ext(Some(oid_type))?, lib))
+        Ok(Repository::from_nonnull(
+            open::new_ext(Some(oid_type))?,
+            lib,
+        ))
     }
 
     /// `git_repository_path`: the git directory (with a trailing slash).

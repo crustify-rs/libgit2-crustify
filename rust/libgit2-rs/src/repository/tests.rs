@@ -354,8 +354,9 @@ fn set_owned_races_publish() {
     });
     let last = r.index.swap(ptr::null_mut(), Ordering::SeqCst);
     assert!(!last.is_null());
-    // SAFETY: the object left in the slot.
-    assert_eq!(unsafe { handles::refcount(NonNull::new(last).unwrap()) }.owner(), r.as_ptr());
+    // SAFETY: the object left in the slot, live until `free` below.
+    let rc = unsafe { handles::refcount(NonNull::new(last).unwrap()) };
+    assert_eq!(rc.owner(), r.as_ptr());
     free(last);
     assert_eq!(FREED.load(Ordering::SeqCst), publishers + setters);
 }

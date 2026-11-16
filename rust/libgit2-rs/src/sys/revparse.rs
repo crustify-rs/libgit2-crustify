@@ -17,7 +17,10 @@ unsafe extern "C" {
 
 /// `git_revparse_ext`: the C status, the object, and the reference (each
 /// owned, or `None`).
-pub fn ext<'r>(repo: &'r GitRepository, spec: &CStr) -> (c_int, Option<Object<'r>>, Option<Reference<'r>>) {
+pub fn ext<'r>(
+    repo: &'r GitRepository,
+    spec: &CStr,
+) -> (c_int, Option<Object<'r>>, Option<Reference<'r>>) {
     let (mut o, mut r) = (ptr::null_mut(), ptr::null_mut());
     // SAFETY: a live repository, a NUL-terminated spec, local outs.
     let e = unsafe { git_revparse_ext(&raw mut o, &raw mut r, repo.as_ptr(), spec.as_ptr()) };

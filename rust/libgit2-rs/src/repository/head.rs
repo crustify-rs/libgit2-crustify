@@ -172,7 +172,13 @@ pub(crate) fn open_from_worktree(gitlink_path: Option<&CStr>) -> Result<NonNull<
 pub(crate) struct OwnedRepo(NonNull<GitRepository>);
 
 impl OwnedRepo {
-    pub(crate) fn new(p: NonNull<GitRepository>) -> OwnedRepo {
+    /// Own `p`.
+    ///
+    /// # Safety
+    ///
+    /// `p` is a live repository (from `GitRepository::alloc`, or one C
+    /// opened) that the caller owns and gives up: the owner frees it.
+    pub(crate) unsafe fn new(p: NonNull<GitRepository>) -> OwnedRepo {
         OwnedRepo(p)
     }
     pub(crate) fn get(&self) -> &GitRepository {
@@ -228,7 +234,8 @@ pub(crate) fn foreach_worktree(
         return cb(repo);
     };
     let main = match open::open_ext(Some(commondir), GIT_REPOSITORY_OPEN_NO_SEARCH, None, true) {
-        Ok(Some(r)) => OwnedRepo::new(r),
+        // SAFETY: the repository `open_ext` just opened, ours.
+        Ok(Some(r)) => unsafe { OwnedRepo::new(r) },
         Ok(None) => return -1,
         Err(e) => return e.raw(),
     };
@@ -246,7 +253,8 @@ pub(crate) fn foreach_worktree(
         let opened = crate::sys::worktree::Worktree::lookup(repo, name)
             .and_then(|wt| open_from_worktree(wt.gitlink_path()));
         let wrepo = match opened {
-            Ok(r) => OwnedRepo::new(r),
+            // SAFETY: the repository just opened, ours.
+            Ok(r) => unsafe { OwnedRepo::new(r) },
             Err(ErrorCode::NOT_FOUND) => continue,
             Err(e) => return e.raw(),
         };

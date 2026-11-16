@@ -608,7 +608,11 @@ mod tests {
         let _l = AGENT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let t = std::thread::spawn(|| {
             for i in 0..20 {
-                let v: &CStr = if i % 2 == 0 { c"aaaaaaaaaaaaaaaaaaaaaaaaaaaa" } else { c"b" };
+                let v: &CStr = if i % 2 == 0 {
+                    c"aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                } else {
+                    c"b"
+                };
                 opts::set_user_agent(Some(v)).unwrap();
             }
         });

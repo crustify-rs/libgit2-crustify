@@ -27,7 +27,8 @@ unsafe extern "C" {
     fn git_config_set_int32(cfg: *mut c_void, name: *const c_char, value: i32) -> c_int;
     fn git_config_free(cfg: *mut c_void);
     fn git_reference_free(r: *mut c_void);
-    fn git_reference_lookup(out: *mut *mut c_void, repo: *mut c_void, name: *const c_char) -> c_int;
+    fn git_reference_lookup(out: *mut *mut c_void, repo: *mut c_void, name: *const c_char)
+    -> c_int;
     fn git_reference_symbolic_target(r: *const c_void) -> *const c_char;
 }
 
@@ -569,11 +570,7 @@ fn head_target_after_set_head() {
             -3
         );
         let mut h: *mut c_void = ptr::null_mut();
-        let e = git_reference_lookup(
-            &mut h,
-            repo.cast(),
-            c"HEAD".as_ptr(),
-        );
+        let e = git_reference_lookup(&mut h, repo.cast(), c"HEAD".as_ptr());
         assert_eq!(e, 0);
         assert_eq!(
             cs(git_reference_symbolic_target(h)),

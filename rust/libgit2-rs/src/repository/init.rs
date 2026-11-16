@@ -298,7 +298,9 @@ pub(crate) fn reinit_filesystem(repo: &GitRepository, recurse: bool) -> Result<(
                 let mut smrepo = core::ptr::null_mut();
                 // SAFETY: the live submodule C passes, a local out.
                 let opened = unsafe { crate::sys::submodule::open(&mut smrepo, sm) } >= 0;
-                let smrepo = NonNull::new(smrepo.cast::<GitRepository>()).map(OwnedRepo::new);
+                // SAFETY: NULL or the repository `git_submodule_open` gave us.
+                let smrepo = NonNull::new(smrepo.cast::<GitRepository>())
+                    .map(|p| unsafe { OwnedRepo::new(p) });
                 match (&smrepo, opened) {
                     (Some(r), true) => {
                         if reinit_filesystem(r.get(), true).is_err() {

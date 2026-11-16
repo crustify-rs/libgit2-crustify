@@ -156,7 +156,6 @@ owner!(
     c::git_config_free
 );
 
-
 impl<'r> Config<'r> {
     /// `git_config_new`.
     pub(crate) fn new() -> Result<Config<'r>> {
@@ -492,7 +491,6 @@ owner!(
     c::git_odb_free
 );
 
-
 impl<'r> Odb<'r> {
     /// `git_odb_new_ext` with `oid_type`.
     pub(crate) fn new(oid_type: OidType) -> Result<Odb<'r>> {
@@ -565,7 +563,6 @@ owner!(
     c::git_refdb_free
 );
 
-
 impl<'r> Refdb<'r> {
     /// Another reference to `p`.
     ///
@@ -594,7 +591,6 @@ owner!(
     Index,
     c::git_index_free
 );
-
 
 impl<'r> Index<'r> {
     /// `git_index_open_ext`.
