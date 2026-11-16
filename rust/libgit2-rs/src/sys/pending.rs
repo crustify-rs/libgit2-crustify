@@ -11,3 +11,7 @@ unsafe extern "C" {
     /// `git_pool_malloc`. PENDING(pool)
     pub fn git_pool_malloc(pool: *mut c_void, items: usize) -> *mut c_void;
 }
+
+// PENDING(l-config, l-odb, l-pack, l-refs, l-index, l-obj, l-commit): what
+// the repository (WP l-repo) calls of them.
+pub mod l_repo;
