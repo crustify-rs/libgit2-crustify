@@ -8,16 +8,17 @@ test` passes (with `-Zmiri-strict-provenance`), `cargo clippy --all-targets`
 
 ## Status (latest first)
 
-- **`04e2c73`+** (2026-11-16): merged on `integ`: l-repo, l-odb, l-config,
+- **`1172dfc`/`dec005c`** (2026-11-16): merged on `integ`: l-repo, l-odb, l-config,
   l-index, l-pack, l-commit, l-revwalk, l-refs, each with its review fixes
   as of the coordinator's messages (l-config `de91683`, l-index `6aacd37`,
   l-pack `1822f62`, l-commit `df73db3`, l-repo `2b5638b`, l-revwalk
   `06cc18b`, l-odb `686da6b`/`32eaa1a`, l-refs `f58892b`). Not merged: l-obj
   (not finished). Fully green commits (clar 436/436, cargo test link-c,
-  Miri, clippy, fmt): `63818f6`, `4162edd`, `af822f1`, `076ca1b`; green on
-  clar/cargo test/clippy/fmt, Miri pending: `18afb35`, `f621775`,
-  `04e2c73` (Miri failed to compile on `8324cc3`..`d0eeeed`, fixed in
-  `fb7b34f`). PENDING between merged WPs: all resolved but
+  Miri, clippy, fmt): `63818f6`, `4162edd`, `af822f1`, `076ca1b`,
+  `1172dfc` (= `04e2c73` + comments). `dec005c` (constants re-exported
+  from their owners) and `2d2cd18` (log): clar, cargo test, clippy, fmt
+  green; Miri not re-run. Not Miri-green: `b1f31de`..`8324cc3` (l-commit's
+  Miri-only test did not compile; fixed in `4394660`/`fb7b34f`). PENDING between merged WPs: all resolved but
   `refs_api::Repository` (integration notes I-6). The other PENDING markers
   are PENDING(l-obj) (unmerged).
 
